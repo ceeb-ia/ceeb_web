@@ -1,0 +1,95 @@
+{% load static static_extras %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}{% endblock %}</title>
+    <!-- slider stylesheet -->
+    <link rel="stylesheet" type="text/css" href="https://cdnjs.cloudflare.com/ajax/libs/OwlCarousel2/2.1.3/assets/owl.carousel.min.css"/>
+    <!-- bootstrap core css -->
+    <link rel="stylesheet" type="text/css" href="{% staticv 'css/bootstrap.css' %}"/>
+    <!-- fonts style -->
+    <link href="https://fonts.googleapis.com/css?family=Dosis:400,500|Poppins:400,700&amp;display=swap" rel="stylesheet"/>
+    <!-- Custom styles for this template -->
+    <link rel="stylesheet" href="{% staticv 'css/style.css' %}">
+    <!-- responsive style -->
+    <link href="{% staticv 'css/responsive.css' %}" rel="stylesheet"/>
+</head>
+<body>
+    <div class="hero_area">
+        <!-- Header -->
+        <header class="header_section">
+            <div class="container-fluid">
+                <div class="row align-items-center">
+                    <div class="col-lg-3 col-md-4 col-6">
+                        <a class="navbar-brand" href="{% url 'home' %}">
+                            <span>CEEB</span>
+                        </a>
+                    </div>
+                    <div class="col-lg-9 col-md-8 col-6 ">
+                        <nav class="navbar navbar-expand-lg custom_nav-container ">
+                        
+                            <div class="collapse navbar-collapse" id="navbarSupportedContent">
+                                <ul class="navbar-nav ml-auto">
+                                    <li class="nav-item dropdown">
+                                        <a class="nav-link" href="#">Comunicació</a>
+                                        <ul class="dropdown-menu">
+                                            <li><a class="dropdown-item" href="https://chatgpt.com/g/g-66kVOt7c9-comunicacio-ceeb-redaccio">Redacció</a></li>
+                                        </ul>
+                                    </li>
+                                    <li class="nav-item">
+                                        <a class="nav-link" href="{% url 'esports_equip' %}">Esports d'Equip</a>
+                                    </li>
+                                </ul>
+                            </div>
+                        </nav>
+                    </div>
+                </div>
+            </div>
+        </header>
+        <!-- End Header -->
+    </div>
+    <!-- Contingut específic de cada pàgina -->
+    <main>
+        <!-- Chatbot Section -->
+<!-- Botó flotant per obrir el xat -->
+<button id="chatbot-open" type="button" aria-label="Obrir xat" aria-expanded="false">💬</button>
+
+<!-- Widget Chatbot -->
+<section id="chatbot" role="dialog" aria-label="Assistència CEEB" class="minimized" aria-live="polite">
+  <div id="chatbot-header">
+    <h3>Assistència CEEB</h3>
+    <div>
+        <button id="minimize-chatbot" type="button" title="Minimitza" aria-label="Minimitza">—</button>
+        <button id="close-chatbot" type="button" title="Tanca" aria-label="Tanca">×</button>    </div>
+  </div>
+
+  <div id="chatbot-messages">
+    <div class="msg bot">
+      <div class="bubble">Hola! Sóc el xat del CEEB. Pregunta’m el que vulguis. ✨</div>
+    </div>
+  </div>
+
+  <div id="chatbot-input">
+    <div id="loading-spinner" class="hidden">Carregant...</div>
+    <input id="user-input" type="text" inputmode="text" autocomplete="off" placeholder="Escriu el teu missatge…" aria-label="Escriu el teu missatge" />
+    <button id="send-message" type="button">Envia</button>
+  </div>
+</section>
+        {% block content %}
+        {% endblock %}
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer_section">
+        <p>© 2025 All Rights Reserved By <a href="https://html.design/">Free Html Templates</a></p>
+    </footer>
+    <!-- End Footer -->
+
+    <!-- Scripts -->
+    <script type="text/javascript" src="{% staticv 'js/jquery-3.4.1.min.js' %}"></script>
+    <script type="text/javascript" src="{% staticv 'js/bootstrap.js' %}"></script>
+    <script src="{% staticv 'js/chatbot.js' %}" defer></script>
+</body>
+</html>

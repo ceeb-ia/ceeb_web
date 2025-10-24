@@ -1,0 +1,59 @@
+{% extends 'base.html' %}
+
+{% block title %}About Us{% endblock %}
+
+{% block content %}
+<h1>Taula en temps real</h1>
+<table id="realTimeTable" border="1">
+    <thead>
+        <tr>
+            <th>Columna 1</th>
+            <th>Columna 2</th>
+            <th>Columna 3</th>
+            <!-- Afegeix més columnes si cal -->
+        </tr>
+    </thead>
+    <tbody>
+        <!-- Les files s'afegiran aquí dinàmicament -->
+    </tbody>
+</table>
+
+<script>
+    // URL externa d'on obtenir les dades
+    const externalUrl = 'https://example.com/api/taula'; // Substitueix amb la URL real
+
+    // Funció per obtenir dades de l'URL i actualitzar la taula
+    async function updateTable() {
+        try {
+            const response = await fetch(externalUrl);
+            if (!response.ok) {
+                throw new Error('Error en obtenir les dades');
+            }
+            const data = await response.json();
+
+            // Selecciona el cos de la taula
+            const tableBody = document.querySelector('#realTimeTable tbody');
+            tableBody.innerHTML = ''; // Neteja les files existents
+
+            // Afegeix les noves files
+            data.forEach(row => {
+                const tr = document.createElement('tr');
+                Object.values(row).forEach(cell => {
+                    const td = document.createElement('td');
+                    td.textContent = cell;
+                    tr.appendChild(td);
+                });
+                tableBody.appendChild(tr);
+            });
+        } catch (error) {
+            console.error('Error actualitzant la taula:', error);
+        }
+    }
+
+    // Actualitza la taula cada 5 segons
+    setInterval(updateTable, 5000);
+
+    // Carrega inicial
+    updateTable();
+</script>
+{% endblock %}

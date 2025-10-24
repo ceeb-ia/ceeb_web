@@ -1,0 +1,129 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    environment:
+      CALENDARITZACIONS_URL: "http://calendaritzacions:8000"  # host dins la xarxa de Compose
+      CERTIFICATS_API: "http://certificats:8000/process-pdfs/"
+      CELERY_BROKER_URL: "redis://redis:6379/0"  # URL del backend de missatgeria
+      RAG_URL: "http://rag:8000/chatbot/"
+    depends_on:
+      - redis
+    command: ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+
+  calendaritzacions:
+    build:
+      context: ../calendaritzacions
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ../calendaritzacions:/app
+    expose:
+      - "8000"  # només per a la xarxa interna; si vols provar des del navegador, afegeix ports: ["8001:8000"]
+    command: ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://calendaritzacions:8000/health"]
+      interval: 5s
+      timeout: 2s
+      retries: 10
+
+  certificats:
+    build:
+      context: ../formacio
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ../formacio:/app
+    expose:
+      - "8000"  # només per a la xarxa interna; si vols provar des del navegador, afegeix ports: ["8001:8000"]
+    command: ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://certificats:8000/health"]
+      interval: 5s
+      timeout: 2s
+      retries: 10
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      start_period: 25s     # dona temps per arrencar
+      retries: 10
+
+
+  rag:
+    build:
+      context: ../RAG
+      dockerfile: Dockerfile.api
+    environment:
+      - PERSIST_DIR=/app/vector_db
+      - OLLAMA_HOST=http://ollama:11434     # <--- URL del servei, no 0.0.0.0
+      - EMBED_MODEL=nomic-embed-text
+    volumes:
+      - ../RAG:/app
+      - ../RAG/vector_db:/app/vector_db
+    expose:
+      - "8000"
+    command: ["uvicorn", "src.api_server:app", "--host", "0.0.0.0", "--port", "8000"]
+    depends_on:
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://rag:8000/health"]
+      interval: 5s
+      timeout: 2s
+      retries: 10
+
+  # ----------------------------------------------------------------------------------------------------------
+  # DEPURACIÓ, LOGS I TASQUES
+  # ----------------------------------------------------------------------------------------------------------
+  # Servei Redis com a backend de missatgeria per a Celery
+  redis:
+    image: redis:7  # Utilitza la imatge oficial de Redis
+    container_name: redis
+    ports:
+      - "6379:6379"  # Exposa el port 6379 per a connexions locals
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 2s
+      retries: 5
+
+  # Worker per a tasques pesades (p. ex. processar certificats)
+  worker-heavy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: celery -A ceeb_web worker -l info -Q heavy_queue -c 4 --hostname=worker-heavy@%h
+    depends_on:
+      - redis
+    environment:
+      CELERY_BROKER_URL: "redis://redis:6379/0"
+    volumes:
+      - .:/app
+
+  # Worker per a tasques lleugeres (emails, neteges, etc.)
+  worker-default:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: celery -A ceeb_web worker -l info -Q default -c 2 --hostname=worker-default@%h
+    depends_on:
+      - redis
+    environment:
+      CELERY_BROKER_URL: "redis://redis:6379/0"
+    volumes:
+      - .:/app
+
+volumes:
+  ollama_models:  # Volum persistent per models Ollama

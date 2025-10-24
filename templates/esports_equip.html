@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Esports d'Equip{% endblock %}
+
+{% block content %}
+<section class="about_section layout_padding">
+<div class="container">
+    <div class="card-container">
+        <!-- Card 1 -->
+        <div class="card">
+            <img src="{% static 'images/slider-img.png' %}" class="card-img-top" alt="Calendaritzacions">
+            <div class="card-body">
+                <h3 class="card-title">Calendaritzacions</h3>
+                <p class="card-text">Realitza les calendaritzacions dels esports d'equip.</p>
+                <a href="calendaritzacions" class="btn btn-primary">Accedeix</a>
+            </div>
+        </div>
+        <!-- Card 2 -->
+        <div class="card">
+            <img src="{% static 'images/slider-img.png' %}" class="card-img-top" alt="Certificats">
+            <div class="card-body">
+                <h3 class="card-title">Nomenament de Certificats</h3>
+                <p class="card-text">Reanomena els certificats de cada bloc.</p>
+                <a href="certificats" class="btn btn-primary">Accedeix</a>
+            </div>
+        </div>
+        <!-- Card 3 -->
+        <div class="card">
+            <img src="{% static 'images/slider-img.png' %}" class="card-img-top" alt="Enviament de Certificats">
+            <div class="card-body">
+                <h3 class="card-title">Enviament de Certificats</h3>
+                <p class="card-text">Envia certificats.</p>
+                <a href="certificats" class="btn btn-primary">Accedeix</a>
+            </div>
+        </div>
+    </div>
+</div>
+</section>
+{% endblock %}

@@ -1,0 +1,88 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Calendaritzacions{% endblock %}
+
+{% block content %}
+<section class="chat_section layout_padding">
+  <div class="container">
+    <h2>Calendaritzacions</h2>
+    <p>Adjunta un fitxer `.xlsx` o `.csv` per processar-lo.</p>
+
+    <!-- Formulari -->
+    <form method="POST" enctype="multipart/form-data" action="{% url 'calendaritzacions' %}">
+      {% csrf_token %}
+      <div class="form-group">
+        <label for="fileInput">Adjunta un fitxer:</label>
+        <input type="file" name="file" id="fileInput" class="form-control" accept=".xlsx,.csv" required>
+      </div>
+      <button type="submit" class="btn btn-primary">Processa</button>
+    </form>
+
+    <!-- Missatges (sincrons) -->
+    <div class="chat_box mt-4">
+      <h4>Missatges</h4>
+      <div class="chat_messages">
+        {% for message in messages %}
+          <div class="chat_message"><p>{{ message }}</p></div>
+        {% empty %}
+          <p>No hi ha missatges encara.</p>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Estat asíncron -->
+    {% if job_id %}
+      <hr class="my-4">
+      <h4>Estat del procés</h4>
+      <p id="status">Inicialitzant…</p>
+      <ul id="logs" style="max-height:240px; overflow:auto; padding-left: 1rem;"></ul>
+      <div id="download" class="mt-3"></div>
+
+      <script>
+        (function () {
+          const jobId = "{{ job_id }}";
+          const statusUrl = "/calendaritzacions/status/" + jobId + "/";     // rutes proxy a Django
+          const downloadUrl = "/calendaritzacions/download/" + jobId + "/"; // (vegeu nota a sota)
+
+          const $status = document.getElementById('status');
+          const $logs = document.getElementById('logs');
+          const $dl = document.getElementById('download');
+
+          async function poll() {
+            try {
+              const r = await fetch(statusUrl, { cache: "no-store" });
+              if (!r.ok) throw new Error("Error d'estat");
+              const data = await r.json();    // {status, logs: []}
+              $status.textContent = "Estat: " + (data.status || "desconegut");
+
+              // pinta logs
+              $logs.innerHTML = "";
+              (data.logs || []).forEach(line => {
+                const li = document.createElement('li');
+                li.textContent = line;
+                $logs.appendChild(li);
+              });
+
+              if (data.status === "done") {
+                $dl.innerHTML = '<a class="btn btn-success" href="' + downloadUrl + '">Descarrega el resultat</a>';
+                return; // atura polling
+              }
+              if (data.status === "error") {
+                $dl.textContent = "Hi ha hagut un error durant el processament.";
+                return;
+              }
+            } catch (e) {
+              console.error(e);
+              $status.textContent = "Error consultant l'estat. Reintentant…";
+            }
+            setTimeout(poll, 2000); // torna a preguntar d'aquí 2s
+          }
+
+          poll();
+        })();
+      </script>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}
