@@ -1,9 +1,0 @@
-﻿Nom Lliga,Grup,Id,Nom,Entitat,Nivell,Dia partit,Núm. sorteig,Núm. sorteig assignat,Diferències jornades
-FUTBOL 5 BENJAMÍ MIXT COPA CEEB 25-26,G1,2E6CA6F877,"FC Xavi ""A""",FC Xavi,Nivell A,Divendres,1,1,[]
-FUTBOL 5 BENJAMÍ MIXT COPA CEEB 25-26,G1,06F24EB703,"FC Xavi ""B""",FC Xavi,Nivell A,Divendres,1,2,"[(1, 'Fora', 'FC Xavi ""A""'), (2, 'Casa', 'FC Xavi ""C""')]"
-FUTBOL 5 BENJAMÍ MIXT COPA CEEB 25-26,G1,DUMMY-1,Dummy 1,Dummy,Dummy,,,3,[]
-FUTBOL 5 BENJAMÍ MIXT COPA CEEB 25-26,G1,987254A10B,"EFS Vesuvi ""A""",Trinitat Unió Esportiva,Nivell C,Divendres,4,4,[]
-FUTBOL 5 BENJAMÍ MIXT COPA CEEB 25-26,G1,DUMMY-2,Dummy 2,Dummy,Dummy,,,5,[]
-FUTBOL 5 BENJAMÍ MIXT COPA CEEB 25-26,G1,DUMMY-3,Dummy 3,Dummy,Dummy,,,6,[]
-FUTBOL 5 BENJAMÍ MIXT COPA CEEB 25-26,G1,DUMMY-4,Dummy 4,Dummy,Dummy,,,7,[]
-FUTBOL 5 BENJAMÍ MIXT COPA CEEB 25-26,G1,8D3B447A21,"FC Xavi ""C""",FC Xavi,Nivell A,Dimarts,Casa,8,"[(6, 'Casa', 'EFS Vesuvi ""A""'), (7, 'Fora', 'FC Xavi ""A""')]"

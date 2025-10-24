@@ -1,9 +1,0 @@
-﻿Nom Lliga,Grup,Id,Nom,Entitat,Nivell,Dia partit,Núm. sorteig,Núm. sorteig assignat,Diferències jornades
-FUTBOL 5 LLIGA ABSOLUTA MIXT 1ª FASE CEEB,G1,2120020427,Coret AE,Coret AE,Nivell C,Diumenge,,1,[]
-FUTBOL 5 LLIGA ABSOLUTA MIXT 1ª FASE CEEB,G1,DFB02C5533,"Jesuïtes El Clot-Escola del Clot ""B""",Jesuïtes El Clot-Escola del Clot,Nivell D,Divendres,2,2,[]
-FUTBOL 5 LLIGA ABSOLUTA MIXT 1ª FASE CEEB,G1,F03389BBE7,"AI Estel Vallseca ""A""",AI Estel Vallseca,Nivell A,Divendres,3,3,[]
-FUTBOL 5 LLIGA ABSOLUTA MIXT 1ª FASE CEEB,G1,5A9F90675D,"Fundació Escola Teresianes Ganduxer ""A""",Fundació Escola Teresianes Ganduxer,Nivell C,Divendres,3,4,"[(5, 'Fora', 'AI Estel Vallseca ""A""')]"
-FUTBOL 5 LLIGA ABSOLUTA MIXT 1ª FASE CEEB,G1,B499AE85DD,Col·legi Teresianes de Gràcia (A.E.V.G.),Col·legi Teresianes de Gràcia (A.E.V.G.),Nivell E,Dimecres,Fora,5,[]
-FUTBOL 5 LLIGA ABSOLUTA MIXT 1ª FASE CEEB,G1,58F0A65C8F,Col·legi Abat Oliba - Spínola,Col·legi Abat Oliba - Spínola,Nivell C,Divendres,5,6,"[(1, 'Casa', 'Fundació Escola Teresianes Ganduxer ""A""'), (2, 'Fora', 'Col·legi Teresianes de Gràcia (A.E.V.G.)')]"
-FUTBOL 5 LLIGA ABSOLUTA MIXT 1ª FASE CEEB,G1,4895102342,"Jesuïtes El Clot-Escola del Clot ""A""",Jesuïtes El Clot-Escola del Clot,Nivell C,Dissabte,6,7,"[(3, 'Casa', 'Col·legi Teresianes de Gràcia (A.E.V.G.)'), (4, 'Fora', 'Col·legi Abat Oliba - Spínola')]"
-FUTBOL 5 LLIGA ABSOLUTA MIXT 1ª FASE CEEB,G1,2F13B9FE30,"Futsal Comtal ""C""",Futsal Comtal,Nivell E,Divendres,Indiferent,8,[]

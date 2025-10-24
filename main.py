@@ -1,4 +1,5 @@
 from collections import Counter
+import io
 import sys
 import pandas as pd
 import os
@@ -7,6 +8,8 @@ from convert import xlsx_to_csv
 import numpy as np
 from assignacions import assignar_grups_hungares
 import unicodedata, hashlib
+import tempfile, shutil
+from pathlib import Path
 # Helper per convertir índex de columna (0-based) a lletra Excel, amb fallback si no hi ha xlsxwriter
 try:
     from xlsxwriter.utility import xl_col_to_name as _xl_col_to_name
@@ -107,8 +110,8 @@ def analitzar_equitabilitat_costos(entity_costs, all_results):
     if not entity_costs:
         return {"status": "No hi ha costos d'entitat per analitzar"}
     
-    # Filtrem les entitats reals (no Dummy)
-    costos_reals = {e: c for e, c in entity_costs.items() if e != 'Dummy'}
+    # Filtrem les entitats reals (no Descans)
+    costos_reals = {e: c for e, c in entity_costs.items() if e != 'Descans'}
     
     if not costos_reals:
         return {"status": "No hi ha entitats reals amb costos"}
@@ -126,7 +129,7 @@ def analitzar_equitabilitat_costos(entity_costs, all_results):
     equips_per_entitat = {}
     for _, row in all_results.iterrows():
         entitat = row.get('Entitat', '')
-        if entitat and entitat != 'Dummy':
+        if entitat and entitat != 'Descans':
             equips_per_entitat[entitat] = equips_per_entitat.get(entitat, 0) + 1
     
     # Cost per equip (normalitzat)
@@ -210,6 +213,7 @@ def _normalize_entity_name(name: str) -> str:
     return s
 
 def processar_dades_2(df, nom_fitxer="dades.csv"):
+    print(df.head())
     entity_costs = {}
     # Assegurem columnes mínimes
     cols_ok = {'Nom', 'Entitat', 'Nom Lliga', 'Nivell', 'Núm. sorteig', 'Dia partit'}
@@ -225,6 +229,9 @@ def processar_dades_2(df, nom_fitxer="dades.csv"):
         sys.exit("Falta la columna 'Entitat' i no es pot deduir automàticament.")
         df['Entitat'] = df['Nom'].apply(obtenir_entitat)
 
+    if 'Id' in df.columns:
+        # fem el drop
+        df = df.drop(columns=['Id'])
     # Afegim un Id estable per a cada equip basat en Nom i Nom Lliga
     if 'Id' not in df.columns:
         def _mk_id(row):
@@ -260,11 +267,24 @@ def processar_dades_2(df, nom_fitxer="dades.csv"):
             print(msg)
             sys.exit(msg)
 
+    from assignacions import primera_fase
+    # Calculem el nombre total de jornades que juga la entitat
+    total_jornades = len(primera_fase)
+    
+    # Per simplicitat, assumim que totes les entitats tenen el mateix nombre de jornades
+    # Pots refinar això si tens diferents formats de lliga per entitat
+    jornades_per_entitat = {}
+    
+    # Per cada entitat única, assignem el total de jornades
+    for entitat in df['Entitat'].dropna().unique():
+        # Comptem el nombre d'equips reals (no Descans) d'aquesta entitat
+        num_equips = len(df[(df['Entitat'] == entitat) & (df['Nom'].notna()) & (df['Nom'].str.strip() != "")])
+    
+    jornades_per_entitat[entitat] = total_jornades * num_equips
 
     # -------------------------------------------------------
     # Assignem a cada entitat casa/fora un numero de sorteig.
     # -------------------------------------------------------
-
 
     # 1) Commptem "enllaços" d'entitats que han demanat casa/fora amb altres que també han demanat
     entitats_links = {}
@@ -323,6 +343,9 @@ def processar_dades_2(df, nom_fitxer="dades.csv"):
         )
 
         for categoria in sorted(cats_req, key=lambda s: str(s).casefold()):
+            cat = str(categoria).strip()
+            if not any(sport in cat.lower() for sport in ["volei", "futbol", "hoquei"]):
+                continue
             # Recollim els números de sorteig demanats en aquesta categoria
             equips_cat = df[df['Nom Lliga'] == categoria]
             for _, r_cat in equips_cat.iterrows():
@@ -347,7 +370,7 @@ def processar_dades_2(df, nom_fitxer="dades.csv"):
         # Guardem l'ordre de preferència per aquesta entitat
         preferencies_entitat[entitat] = entitat_count
 
-    #print ("Preferències d'entitats:", {k: v for k, v in preferencies_entitat.items()})
+    print ("Preferències d'entitats estipulades")
 
     # Ara, tornem a recorrer tots els equips de cada entitat que han demanat casa/fora i, per cada
     # equip que ha demanat casa/fora, assignem el número de sorteig segons la preferència de l'entitat
@@ -435,8 +458,8 @@ def processar_dades_2(df, nom_fitxer="dades.csv"):
             "Fora": fora,
             "#Entitats": int(counts.get(idx, 0)),
         })
-    print("Repartiment de duples (comptatge per idx):", dict(counts))
-    print("Detall duples:", resum_duples)    
+    #print("Repartiment de duples (comptatge per idx):", dict(counts))
+    #print("Detall duples:", resum_duples)    
     #sys.exit()
     categories = sorted(df['Nom Lliga'].dropna().unique())
 
@@ -444,7 +467,10 @@ def processar_dades_2(df, nom_fitxer="dades.csv"):
     info_totals = []
 
     for categoria in categories:
+        if not any(sport in categoria.lower() for sport in ["volei", "futbol", "hoquei"]):
+            continue
         df_cat = df[df['Nom Lliga'] == categoria].copy()
+        print(f"\nProcessant categoria '{categoria}' amb {len(df_cat)} equips...")
         if df_cat.empty:
             continue
 
@@ -465,20 +491,20 @@ def processar_dades_2(df, nom_fitxer="dades.csv"):
 
 
 
-        # Desa CSV per categoria
+        '''# Desa CSV per categoria
         safe = "".join(c for c in categoria if c.isalnum() or c in "._- ").strip().replace(" ", "_")
         out_path = os.path.join(BASE_PATH, f"csv_generats/assignacio_{safe}.csv")
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
         res_df.to_csv(out_path, index=False, encoding="utf-8-sig")
 
         print(f"[OK] {categoria} → {out_path}")
-        print("Info:", info)
+        print("Info:", info)'''
 
         resultats_totals.append(res_df.assign(_Categoria=categoria))
         info_totals.append({'categoria': categoria, **info})
 
 
-
+    
     # --- PREPARA VALIDACIONS PER ESCRIURE A L'EXCEL (si hi ha resultats) ---
     df_val_count_summary = pd.DataFrame()
     df_val_count_by_cat = pd.DataFrame()
@@ -487,6 +513,141 @@ def processar_dades_2(df, nom_fitxer="dades.csv"):
     df_val_num_mismatch = pd.DataFrame(columns=["Entitat", "Categoria", "Equip", "Sol·licitat", "Assignat"])  # Núm. explícit diferent
     df_val_level_spread = pd.DataFrame(columns=["Categoria", "Grup", "Nivells", "Min", "Max", "Dif"])  # Nivells dispars
     df_entitat_slots = pd.DataFrame(columns=["Entitat", "Casa", "Fora", "#Equips CASA", "#Equips FORA"])  # Assignació per entitat
+    
+    # Comptatge de números demanats per categoria - format matricial
+    # Comptatge de números demanats per categoria - format matricial
+    df_num_requests_by_cat = pd.DataFrame()
+    df_num_requests_by_cat_futbol = pd.DataFrame()
+    df_num_requests_by_cat_hoquei = pd.DataFrame()
+
+    # Obtenim totes les categories de volei
+    categories_volei = sorted([cat for cat in df['Nom Lliga'].dropna().unique() if "volei" in cat.lower()])
+
+    # Obtenim totes les categories de futbol
+    categories_futbol = sorted([cat for cat in df['Nom Lliga'].dropna().unique() if "futbol" in cat.lower()])
+
+    # Obtenim totes les categories d'hoquei
+    categories_hoquei = sorted([cat for cat in df['Nom Lliga'].dropna().unique() if "hoquei" in cat.lower()])
+
+    # TAULA PER VOLEI
+    if categories_volei:
+        # Definim tots els possibles números de sorteig
+        numeros_sorteig = ['1', '2', '3', '4', '5', '6', '7', '8', 'CASA', 'FORA']
+        
+        # Creem la matriu: files = números de sorteig, columnes = categories
+        matriu_data = {}
+        
+        # Inicialitzem totes les columnes de categories amb zeros
+        for categoria in categories_volei:
+            matriu_data[categoria] = [0] * len(numeros_sorteig)
+        
+        # Processem cada categoria per comptar les peticions
+        for categoria in categories_volei:
+            df_cat = df[df['Nom Lliga'] == categoria].copy()
+            if df_cat.empty:
+                continue
+                
+            # Comptem peticions de números específics (1-8)
+            for i, num in enumerate(['1', '2', '3', '4', '5', '6', '7', '8']):
+                count = len(df_cat[df_cat['Núm. sorteig'].astype(str).str.strip() == num])
+                matriu_data[categoria][i] = count
+            
+            # Comptem peticions de CASA/FORA
+            casa_count = len(df_cat[df_cat['Núm. sorteig'].astype(str).str.strip().str.lower() == 'casa'])
+            fora_count = len(df_cat[df_cat['Núm. sorteig'].astype(str).str.strip().str.lower() == 'fora'])
+            
+            matriu_data[categoria][8] = casa_count  # CASA
+            matriu_data[categoria][9] = fora_count  # FORA
+        
+        # Creem el DataFrame amb la matriu
+        df_num_requests_by_cat = pd.DataFrame(matriu_data, index=numeros_sorteig)
+        
+        # Afegim la columna TOTAL sumant totes les categories
+        df_num_requests_by_cat['TOTAL'] = df_num_requests_by_cat.sum(axis=1)
+        
+        # Resetem l'índex per fer que els números de sorteig siguin una columna
+        df_num_requests_by_cat = df_num_requests_by_cat.reset_index()
+        df_num_requests_by_cat = df_num_requests_by_cat.rename(columns={'index': 'Núm. sorteig'})
+
+    # TAULA PER FUTBOL
+    if categories_futbol:
+        # Definim tots els possibles números de sorteig
+        numeros_sorteig_futbol = ['1', '2', '3', '4', '5', '6', '7', '8', 'CASA', 'FORA']
+        
+        # Creem la matriu: files = números de sorteig, columnes = categories
+        matriu_data_futbol = {}
+        
+        # Inicialitzem totes les columnes de categories amb zeros
+        for categoria in categories_futbol:
+            matriu_data_futbol[categoria] = [0] * len(numeros_sorteig_futbol)
+        
+        # Processem cada categoria per comptar les peticions
+        for categoria in categories_futbol:
+            df_cat = df[df['Nom Lliga'] == categoria].copy()
+            if df_cat.empty:
+                continue
+                
+            # Comptem peticions de números específics (1-8)
+            for i, num in enumerate(['1', '2', '3', '4', '5', '6', '7', '8']):
+                count = len(df_cat[df_cat['Núm. sorteig'].astype(str).str.strip() == num])
+                matriu_data_futbol[categoria][i] = count
+            
+            # Comptem peticions de CASA/FORA
+            casa_count = len(df_cat[df_cat['Núm. sorteig'].astype(str).str.strip().str.lower() == 'casa'])
+            fora_count = len(df_cat[df_cat['Núm. sorteig'].astype(str).str.strip().str.lower() == 'fora'])
+            
+            matriu_data_futbol[categoria][8] = casa_count  # CASA
+            matriu_data_futbol[categoria][9] = fora_count  # FORA
+        
+        # Creem el DataFrame amb la matriu
+        df_num_requests_by_cat_futbol = pd.DataFrame(matriu_data_futbol, index=numeros_sorteig_futbol)
+        
+        # Afegim la columna TOTAL sumant totes les categories
+        df_num_requests_by_cat_futbol['TOTAL'] = df_num_requests_by_cat_futbol.sum(axis=1)
+        
+        # Resetem l'índex per fer que els números de sorteig siguin una columna
+        df_num_requests_by_cat_futbol = df_num_requests_by_cat_futbol.reset_index()
+        df_num_requests_by_cat_futbol = df_num_requests_by_cat_futbol.rename(columns={'index': 'Núm. sorteig'})
+
+    # TAULA PER HOQUEI
+    if categories_hoquei:
+        # Definim tots els possibles números de sorteig
+        numeros_sorteig_hoquei = ['1', '2', '3', '4', '5', '6', '7', '8', 'CASA', 'FORA']
+        
+        # Creem la matriu: files = números de sorteig, columnes = categories
+        matriu_data_hoquei = {}
+        
+        # Inicialitzem totes les columnes de categories amb zeros
+        for categoria in categories_hoquei:
+            matriu_data_hoquei[categoria] = [0] * len(numeros_sorteig_hoquei)
+        
+        # Processem cada categoria per comptar les peticions
+        for categoria in categories_hoquei:
+            df_cat = df[df['Nom Lliga'] == categoria].copy()
+            if df_cat.empty:
+                continue
+                
+            # Comptem peticions de números específics (1-8)
+            for i, num in enumerate(['1', '2', '3', '4', '5', '6', '7', '8']):
+                count = len(df_cat[df_cat['Núm. sorteig'].astype(str).str.strip() == num])
+                matriu_data_hoquei[categoria][i] = count
+            
+            # Comptem peticions de CASA/FORA
+            casa_count = len(df_cat[df_cat['Núm. sorteig'].astype(str).str.strip().str.lower() == 'casa'])
+            fora_count = len(df_cat[df_cat['Núm. sorteig'].astype(str).str.strip().str.lower() == 'fora'])
+            
+            matriu_data_hoquei[categoria][8] = casa_count  # CASA
+            matriu_data_hoquei[categoria][9] = fora_count  # FORA
+        
+        # Creem el DataFrame amb la matriu
+        df_num_requests_by_cat_hoquei = pd.DataFrame(matriu_data_hoquei, index=numeros_sorteig_hoquei)
+        
+        # Afegim la columna TOTAL sumant totes les categories
+        df_num_requests_by_cat_hoquei['TOTAL'] = df_num_requests_by_cat_hoquei.sum(axis=1)
+        
+        # Resetem l'índex per fer que els números de sorteig siguin una columna
+        df_num_requests_by_cat_hoquei = df_num_requests_by_cat_hoquei.reset_index()
+        df_num_requests_by_cat_hoquei = df_num_requests_by_cat_hoquei.rename(columns={'index': 'Núm. sorteig'})
 
     def _req_type(x):
         s = str(x).strip().casefold()
@@ -501,7 +662,7 @@ def processar_dades_2(df, nom_fitxer="dades.csv"):
         ent = row.get("Entitat", "")
         if pd.isna(nom) or str(nom).strip() == "":
             return False
-        if str(ent).strip() in ("", "Dummy"):
+        if str(ent).strip() in ("", "Descans"):
             return False
         return True
 
@@ -534,7 +695,7 @@ def processar_dades_2(df, nom_fitxer="dades.csv"):
         rows_conf = []
         for cat, df_cat_res in all_results.groupby("Nom Lliga"):
             for grup, df_grup in df_cat_res.groupby("Grup"):
-                ents = [e for e in df_grup["Entitat"].tolist() if e and e != "Dummy"]
+                ents = [e for e in df_grup["Entitat"].tolist() if e and e != "Descans"]
                 if not ents:
                     continue
                 cnt = pd.Series(ents).value_counts()
@@ -663,8 +824,8 @@ def processar_dades_2(df, nom_fitxer="dades.csv"):
     nom_fitxer = os.path.splitext(os.path.basename(nom_fitxer))[0]
     excel_path = os.path.join(BASE_PATH, f"assignacions_{nom_fitxer}.xlsx")
     os.makedirs(os.path.dirname(excel_path), exist_ok=True)
-
-    with pd.ExcelWriter(excel_path, engine="xlsxwriter") as writer:
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         workbook = writer.book
 
         # Formats
@@ -675,7 +836,7 @@ def processar_dades_2(df, nom_fitxer="dades.csv"):
         fmt_title = workbook.add_format({
             "bold": True, "font_size": 14, "align": "left", "valign": "vcenter"
         })
-        fmt_default = workbook.add_format({"border": 1})
+        fmt_default = workbook.add_format({"text_wrap": True, "border": 1})
         fmt_wrap = workbook.add_format({"text_wrap": True, "border": 1})
         fmt_group_colors = {
             # ajusta colors si vols (8 → blau, 7 → verd, 6 → taronja, 5 → gris, etc.)
@@ -741,6 +902,60 @@ def processar_dades_2(df, nom_fitxer="dades.csv"):
                 df_val_count_by_cat.to_excel(writer, sheet_name="Resum", index=False, startrow=start_row+1)
                 start_row = start_row + 2 + len(df_val_count_by_cat)
 
+            # Comptatge de números demanats per categoria - VOLEI
+            if not df_num_requests_by_cat.empty:
+                start_row += 1
+                ws_info.write(start_row, 0, "Comptatge de números demanats per categoria - VOLEI", fmt_header)
+                df_num_requests_by_cat.to_excel(writer, sheet_name="Resum", index=False, startrow=start_row+1)
+                # Configuració d'amplades per aquesta secció matricial
+                ws_info.set_column(0, 0, 15)  # Núm. sorteig
+                # Configurem amplades per les columnes de categories i total
+                for col_idx in range(1, len(df_num_requests_by_cat.columns)):
+                    col_name = df_num_requests_by_cat.columns[col_idx]
+                    if col_name == 'TOTAL':
+                        ws_info.set_column(col_idx, col_idx, 12)  # Columna TOTAL
+                    else:
+                        # Calculem amplada basada en el nom de la categoria (màxim 25)
+                        width = min(max(len(str(col_name)), 12), 25)
+                        ws_info.set_column(col_idx, col_idx, width)
+                start_row = start_row + 2 + len(df_num_requests_by_cat)
+
+            # Comptatge de números demanats per categoria - FUTBOL
+            if not df_num_requests_by_cat_futbol.empty:
+                start_row += 1
+                ws_info.write(start_row, 0, "Comptatge de números demanats per categoria - FUTBOL", fmt_header)
+                df_num_requests_by_cat_futbol.to_excel(writer, sheet_name="Resum", index=False, startrow=start_row+1)
+                # Configuració d'amplades per aquesta secció matricial
+                ws_info.set_column(0, 0, 15)  # Núm. sorteig
+                # Configurem amplades per les columnes de categories i total
+                for col_idx in range(1, len(df_num_requests_by_cat_futbol.columns)):
+                    col_name = df_num_requests_by_cat_futbol.columns[col_idx]
+                    if col_name == 'TOTAL':
+                        ws_info.set_column(col_idx, col_idx, 12)  # Columna TOTAL
+                    else:
+                        # Calculem amplada basada en el nom de la categoria (màxim 25)
+                        width = min(max(len(str(col_name)), 12), 25)
+                        ws_info.set_column(col_idx, col_idx, width)
+                start_row = start_row + 2 + len(df_num_requests_by_cat_futbol)
+
+            # Comptatge de números demanats per categoria - HOQUEI
+            if not df_num_requests_by_cat_hoquei.empty:
+                start_row += 1
+                ws_info.write(start_row, 0, "Comptatge de números demanats per categoria - HOQUEI", fmt_header)
+                df_num_requests_by_cat_hoquei.to_excel(writer, sheet_name="Resum", index=False, startrow=start_row+1)
+                # Configuració d'amplades per aquesta secció matricial
+                ws_info.set_column(0, 0, 15)  # Núm. sorteig
+                # Configurem amplades per les columnes de categories i total
+                for col_idx in range(1, len(df_num_requests_by_cat_hoquei.columns)):
+                    col_name = df_num_requests_by_cat_hoquei.columns[col_idx]
+                    if col_name == 'TOTAL':
+                        ws_info.set_column(col_idx, col_idx, 12)  # Columna TOTAL
+                    else:
+                        # Calculem amplada basada en el nom de la categoria (màxim 25)
+                        width = min(max(len(str(col_name)), 12), 25)
+                        ws_info.set_column(col_idx, col_idx, width)
+                start_row = start_row + 2 + len(df_num_requests_by_cat_hoquei)
+
             # Conflictes d'entitat
             if not df_val_entity_conflicts.empty:
                 start_row += 1
@@ -763,63 +978,6 @@ def processar_dades_2(df, nom_fitxer="dades.csv"):
                 ws_info.write(start_row+1, 0, "Cap entitat amb assignació CASA/FORA.")
                 start_row += 3
 
-            ''' # --- Equitabilitat (FAIRNESS) ---
-            # 1) Resum per categoria
-            fair_summary_rows = []
-            fair_entity_rows = []
-            def _to_float(x):
-                try:
-                    if x is None:
-                        return None
-                    return float(x)
-                except Exception:
-                    return None
-            for item in info_totals:
-                cat = item.get('categoria', '')
-                fair = item.get('fairness', {}) or {}
-                ratio = _to_float(fair.get('ratio_per_equip'))
-                std = _to_float(fair.get('std_per_equip'))
-                # Format amigable de ràtio
-                if ratio is None:
-                    ratio_disp = ""
-                else:
-                    try:
-                        ratio_disp = "∞" if not np.isfinite(ratio) else round(ratio, 2)
-                    except Exception:
-                        ratio_disp = round(ratio, 2)
-                std_disp = "" if std is None else round(std, 2)
-                fair_summary_rows.append({
-                    'Categoria': cat,
-                    'Ràtio (max/min)': ratio_disp,
-                    'Desv. estàndard': std_disp,
-                })
-                # 2) Cost per equip per entitat (taula llarga)
-                cpe = fair.get('cost_per_equip', {}) or {}
-                for ent, val in cpe.items():
-                    v = _to_float(val)
-                    fair_entity_rows.append({
-                        'Categoria': cat,
-                        'Entitat': ent,
-                        'Cost per equip': ("" if v is None else round(v, 2))
-                    })
-
-            df_fair_summary = pd.DataFrame(fair_summary_rows)
-            if not df_fair_summary.empty:
-                ws_info.write(start_row, 0, "Equitabilitat – Resum per categoria", fmt_header)
-                df_fair_summary.to_excel(writer, sheet_name="Resum", index=False, startrow=start_row+1)
-                # ajust columnes
-                start_row = start_row + 2 + len(df_fair_summary)
-
-            df_fair_entity = pd.DataFrame(fair_entity_rows)
-            if not df_fair_entity.empty:
-                start_row += 1
-                ws_info.write(start_row, 0, "Equitabilitat – Cost per equip per entitat", fmt_header)
-                df_fair_entity = df_fair_entity.sort_values(['Categoria','Entitat'])
-                df_fair_entity.to_excel(writer, sheet_name="Resum", index=False, startrow=start_row+1)
-                start_row = start_row + 2 + len(df_fair_entity)
-            
-            
-            '''
         # --- FULL "Incidències" amb totes les incidències agrupades per entitat ---
         # Combinem totes les incidències en una sola taula agrupada per entitat
         all_incidents = []
@@ -989,6 +1147,33 @@ def processar_dades_2(df, nom_fitxer="dades.csv"):
 
             # copia i ordena per “Grup” i dins de cada grup per “Núm. sorteig assignat” si existeixen
             df = res_df_cat.drop(columns=[c for c in ["_Categoria"] if c in res_df_cat.columns] + ["Id"]).copy()
+
+            # Substitueix files DUMMY per "DESCANS"
+            def _convertir_dummy_a_descans(row):
+                if pd.isna(row.get('Nom')) or str(row.get('Nom')).strip() == '':
+                    # Fila buida (slot buit)
+                    return row
+                if str(row.get('Entitat', '')).strip() == 'Descans':
+                    # És un equip dummy, converteix a descans
+                    row_copy = row.copy()
+                    row_copy['Nom'] = 'DESCANS'
+                    row_copy['Entitat'] = '—'
+                    row_copy['Nivell'] = '—'
+                    row_copy['Dia partit'] = '—'
+                    # Mantenim Grup i Núm. sorteig assignat
+                    # Netegem altres camps opcionals
+                    for col in ['Núm. sorteig', 'Modalitat', 'Categoria', 'Subcategoria', 'Horari partit', 'Observacions']:
+                        if col in row_copy:
+                            row_copy[col] = '—'
+                    if 'Diferències jornades' in row_copy:
+                        row_copy['Diferències jornades'] = '—'
+                    return row_copy
+                return row
+
+            # Aplica la conversió a cada fila
+            df = df.apply(_convertir_dummy_a_descans, axis=1)
+
+            
             # Format amigable per a "Diferències jornades" (multi-línia per Excel)
             if "Diferències jornades" in df.columns:
                 df["Diferències jornades"] = df["Diferències jornades"].apply(_format_diffs_excel)
@@ -1013,13 +1198,31 @@ def processar_dades_2(df, nom_fitxer="dades.csv"):
 
             # vora per defecte + autoajust aproximat
             for col_idx, col_name in enumerate(df.columns):
-                # amplada segons el màxim entre header i dades (simple aproximació)
+                # Calcula la longitud màxima de totes les cel·les de la columna (capçalera + dades)
                 max_len = max(
-                    len(str(col_name)),
-                    *(len(str(x)) for x in df[col_name].head(200))  # no escanegem tot per rendiment
+                    [len(str(col_name))] +
+                    [len(str(x)) for x in df[col_name].astype(str).fillna("")]
                 )
-                ws.set_column(col_idx, col_idx, min(40, max(12, max_len + 2)))  # límit 40
-
+                # Amplada mínima de 10, màxima de 50 per evitar columnes massa estretes o amples
+                width = min(max(max_len + 2, 10), 50)
+                
+                # Configuració específica per columnes especials
+                if col_name == "Nom":
+                    width = 35
+                elif col_name == "Entitat":
+                    width = 25
+                elif col_name == "Nom Lliga":
+                    width = 25
+                elif col_name == "Diferències jornades":
+                    width = 45
+                elif col_name in ["Observacions", "Horari partit"]:
+                    width = 30
+                elif col_name in ["Nivell", "Grup", "Núm. sorteig", "Núm. sorteig assignat"]:
+                    width = 12
+                elif col_name == "Dia partit":
+                    width = 15
+                
+                ws.set_column(col_idx, col_idx, width)
             # congela panell sota capçalera
             ws.freeze_panes(start_row + 1, 0)
 
@@ -1027,9 +1230,9 @@ def processar_dades_2(df, nom_fitxer="dades.csv"):
             ws.autofilter(start_row, 0, start_row + max(0, n_rows), max(0, n_cols - 1))
 
             # text wrap per columnes llargues (opcional)
-            for col_idx, col_name in enumerate(df.columns):
-                if any(isinstance(x, str) and len(x) > 40 for x in df[col_name].head(100)):
-                    ws.set_column(col_idx, col_idx, None, fmt_wrap)
+            #for col_idx, col_name in enumerate(df.columns):
+            #    if any(isinstance(x, str) and len(x) > 40 for x in df[col_name].head(100)):
+            #        ws.set_column(col_idx, col_idx, None, fmt_wrap)
 
             # Assegura wrap específic per a la columna "Diferències jornades"
             if "Diferències jornades" in df.columns:
@@ -1073,6 +1276,9 @@ def processar_dades_2(df, nom_fitxer="dades.csv"):
         # missatge final
     print(f"[OK] Excel generat → {excel_path}")
 
+    output.seek(0)
+    return output
+
     # --- VALIDACIONS GLOBALS POST-PROCÉS ---
     def _req_type(x):
         s = str(x).strip().casefold()
@@ -1087,7 +1293,7 @@ def processar_dades_2(df, nom_fitxer="dades.csv"):
         ent = row.get("Entitat", "")
         if pd.isna(nom) or str(nom).strip() == "":
             return False
-        if str(ent).strip() in ("", "Dummy"):
+        if str(ent).strip() in ("", "Descans"):
             return False
         return True
 
@@ -1121,7 +1327,7 @@ def processar_dades_2(df, nom_fitxer="dades.csv"):
         any_conflicts = False
         for cat, df_cat_res in all_results.groupby("Nom Lliga"):
             for grup, df_grup in df_cat_res.groupby("Grup"):
-                ents = [e for e in df_grup["Entitat"].tolist() if e and e != "Dummy"]
+                ents = [e for e in df_grup["Entitat"].tolist() if e and e != "Descans"]
                 cnt = pd.Series(ents).value_counts() if ents else pd.Series(dtype=int)
                 dup = cnt[cnt > 1]
                 if not dup.empty:
@@ -1243,26 +1449,104 @@ def processar_dades_2(df, nom_fitxer="dades.csv"):
         return pd.concat(resultats_totals, ignore_index=True), info_totals
     return pd.DataFrame(), info_totals
 
+
+
+# ----------------------------------------------------------------------
+
+
+def process_excel(input_path: str, return_logs: bool = False) -> str:
+    """
+    Llegeix l'Excel d'entrada, executa la pipeline i retorna el path
+    a un ZIP amb els resultats generats (p.ex. 'csv_generats', informes, etc.).
+    """
+    # 1) Llegeix l’Excel d’entrada
+    logs = []
+    logs.append("Llegint fitxer Excel...")
+    df = pd.read_excel(input_path)
+    logs.append(f"S’han carregat {len(df)} files.")
+
+    print(f"[INFO] Processant fitxer: {input_path} ({len(df)} files)")
+    # 2) Executa la teva lògica existent (fa servir processar_dades_2)
+    #    Aquesta funció ja escriu sortides a BASE_PATH/csv_generats
+    excel_path = processar_dades_2(df, nom_fitxer=Path(input_path).name)  # <- la teva funció existent
+    '''logs.append("Procés de dades complet.")
+
+    # 3) Empaqueta les sortides en un ZIP temporal
+    base_dir = Path(os.getcwd()) if os.getenv("APP_ENV","DEV")=="DEV" else Path("/app/dades")
+    out_dir = base_dir / "csv_generats"
+    if not out_dir.exists():
+        # Si no es generen CSVs, com a fallback, crea un "resultat_vuit.txt"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / "resultat_vuit.txt").write_text("No s'han generat fitxers.")
+
+    zip_fd, zip_path = tempfile.mkstemp(suffix=".zip")
+    os.close(zip_fd)
+    zip_dst = Path(zip_path)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmpdir = Path(tmp)
+        # Copia tota la carpeta de sortida
+        if out_dir.exists():
+            shutil.copytree(out_dir, tmpdir / out_dir.name)
+        shutil.make_archive(str(zip_dst.with_suffix("")), "zip", tmpdir)'''
+
+    logs.append("Resultat generat correctament.")
+    if return_logs:
+            return excel_path, logs
+    return str(excel_path)
+
+
+
 if __name__ == "__main__":
     # Llista tots els fitxers CSV del directori actual
-    ruta_csv = os.path.join(BASE_PATH, "csv/")
-    print("Ruta CSV:", ruta_csv)
-    fitxers_csv = [f for f in os.listdir(ruta_csv) if (f.endswith('.csv') or f.endswith('.xlsx'))]
-    print("Fitxers CSV disponibles:")
-    for idx, f in enumerate(fitxers_csv, 1):
-        print(f"{idx}. {f}")
-
-    try:
-        num = int(input("Introdueix el número del fitxer CSV: "))
-        if 1 <= num <= len(fitxers_csv):
-            nom_fitxer = fitxers_csv[num - 1]
-            df = llegir_csv(os.path.join(ruta_csv, nom_fitxer))
-            if nom_fitxer.endswith('.xlsx'):
-                path = xlsx_to_csv(os.path.join(ruta_csv, nom_fitxer))
-                df = llegir_csv(path)
-            if df is not None:
-                processar_dades_2(df, nom_fitxer)
+    if len(sys.argv) > 1:
+        in_path = sys.argv[1]
+        out_path = sys.argv[2] if len(sys.argv) > 2 else None
+        zip_path = process_excel(in_path)
+        if out_path and out_path.lower().endswith(".zip"):
+            shutil.move(zip_path, out_path)
         else:
-            print("Número fora de rang.")
-    except ValueError:
-        print("Has d'introduir un número vàlid.")
+            print(f"Resultat empaquetat: {zip_path}")
+
+        '''fitxer_csv = sys.argv[1]
+        if not os.path.isfile(fitxer_csv):
+            print(f"Error: El fitxer '{fitxer_csv}' no existeix.")
+            sys.exit(1)
+
+        # Verifiquem que el fitxer tingui extensió .csv o .xlsx
+        if not (fitxer_csv.endswith('.csv') or fitxer_csv.endswith('.xlsx')):
+            print(f"Error: El fitxer '{fitxer_csv}' no té una extensió vàlida.")
+            sys.exit(1)
+
+        # Si és un fitxer .xlsx, el convertim a .csv temporalment
+        if fitxer_csv.endswith('.xlsx'):
+            fitxer_csv = xlsx_to_csv(fitxer_csv)
+
+        df = llegir_csv(fitxer_csv)
+        # Llancem el procés principal
+        if df is not None:
+            processar_dades_2(df, fitxer_csv)
+        sys.exit(0)'''
+    
+    else: 
+        ruta_csv = os.path.join(BASE_PATH, "csv/")
+        print("Ruta CSV:", ruta_csv)
+        fitxers_csv = [f for f in os.listdir(ruta_csv) if (f.endswith('.csv') or f.endswith('.xlsx'))]
+        print("Fitxers CSV disponibles:")
+        for idx, f in enumerate(fitxers_csv, 1):
+            print(f"{idx}. {f}")
+
+        try:
+            num = int(input("Introdueix el número del fitxer CSV: "))
+            if 1 <= num <= len(fitxers_csv):
+                nom_fitxer = fitxers_csv[num - 1]
+                df = llegir_csv(os.path.join(ruta_csv, nom_fitxer))
+                if nom_fitxer.endswith('.xlsx'):
+                    path = xlsx_to_csv(os.path.join(ruta_csv, nom_fitxer))
+                    df = llegir_csv(path)
+                if df is not None:
+                    processar_dades_2(df, nom_fitxer)
+            else:
+                print("Número fora de rang.")
+        except ValueError:
+            print("Has d'introduir un número vàlid.")

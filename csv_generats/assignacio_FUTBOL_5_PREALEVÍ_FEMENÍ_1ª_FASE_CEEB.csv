@@ -1,9 +1,0 @@
-﻿Nom Lliga,Grup,Id,Nom,Entitat,Nivell,Dia partit,Núm. sorteig,Núm. sorteig assignat,Diferències jornades
-FUTBOL 5 PREALEVÍ FEMENÍ 1ª FASE CEEB,G1,6B16426986,Manyanet Sant Andreu,Manyanet Sant Andreu,Nivell E,Dissabte,1,1,[]
-FUTBOL 5 PREALEVÍ FEMENÍ 1ª FASE CEEB,G1,8A72604233,"AE Sant Andreu ""A""",AE Sant Andreu,Nivell B,Dissabte,2,2,[]
-FUTBOL 5 PREALEVÍ FEMENÍ 1ª FASE CEEB,G1,DUMMY-1,Dummy 1,Dummy,Dummy,,,3,[]
-FUTBOL 5 PREALEVÍ FEMENÍ 1ª FASE CEEB,G1,DUMMY-2,Dummy 2,Dummy,Dummy,,,4,[]
-FUTBOL 5 PREALEVÍ FEMENÍ 1ª FASE CEEB,G1,04552E3BC3,"CE Vincit-Provençalenc ""A""",CE Vincit-Provençalenc,Nivell C,Divendres,Fora,5,[]
-FUTBOL 5 PREALEVÍ FEMENÍ 1ª FASE CEEB,G1,DUMMY-3,Dummy 3,Dummy,Dummy,,,6,[]
-FUTBOL 5 PREALEVÍ FEMENÍ 1ª FASE CEEB,G1,FE16F5CE37,"Escola Grevol ""A""",Escola Grevol,Nivell C,Dissabte,7,7,[]
-FUTBOL 5 PREALEVÍ FEMENÍ 1ª FASE CEEB,G1,1A4387DFA3,"Col·legi Padre Damian Sagrados Corazones ""A""",Col·legi Padre Damian Sagrados Corazones,Nivell C,Divendres,Casa,8,"[(6, 'Casa', 'Dummy 2'), (7, 'Fora', 'Manyanet Sant Andreu')]"

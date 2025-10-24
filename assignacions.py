@@ -109,7 +109,7 @@ def cost_calc(equip, seed, g, p, disposicions, equips_to_num_sorteig, fase, w_di
             print ("Atenció: ", equip, seed)
             sys.exit("No hi ha número vàlid per a l'equip")
             
-        cost += -10.0  # Petita bonificació per demanar casa/fora
+        cost += -5.0  # Petita bonificació per demanar casa/fora
     else:
         try:
             seed_int = int(seed_norm)
@@ -136,7 +136,8 @@ def cost_calc(equip, seed, g, p, disposicions, equips_to_num_sorteig, fase, w_di
     difs = sum(a != b for a, b in zip(seed_matches, match))
 
     # Penalització creixent amb les diferències del patró casa/fora
-    cost += (1 + difs) ** w_dif_sorteig
+
+    cost += 4 ** difs
     return cost
 
 
@@ -196,7 +197,7 @@ def build_disposicions(fase):
 
 def add_dummies(df_cat, repartiment):
     """
-    Afegeix files Dummy fins a omplir tots els slots (8 per grup).
+    Afegeix files Descans fins a omplir tots els slots (8 per grup).
     Retorna nou df_cat i nombre de dummies afegits.
     """
     total_slots = 8 * len(repartiment)
@@ -206,11 +207,11 @@ def add_dummies(df_cat, repartiment):
     nom_lliga = df_cat.iloc[0]['Nom Lliga'] if 'Nom Lliga' in df_cat.columns and len(df_cat) else ''
     for k in range(falta):
         df_cat.loc[len(df_cat)] = {
-            'Nom': f'Dummy {k+1}',
+            'Nom': f'Descans {k+1}',
             'Nom Lliga': nom_lliga,
             'Núm. sorteig': np.nan,
-            'Entitat': 'Dummy',
-            'Nivell': 'Dummy',
+            'Entitat': 'Descans',
+            'Nivell': 'Descans',
             'Id': f'DUMMY-{k+1}'
         }
     return df_cat.reset_index(drop=True), falta
@@ -240,7 +241,7 @@ def build_cost_matrix(df_cat, entity_costs, equips_to_num_sorteig, repartiment, 
     # Per cada num. sorteig (en ordre d'equips))
     vals = []
     if entity_costs:
-        vals = [v for k, v in entity_costs.items() if k in set(entitats) and k != 'Dummy']
+        vals = [v for k, v in entity_costs.items() if k in set(entitats) and k != 'Descans']
     if vals:
         vmin, vmax = min(vals), max(vals)
         def norm(v):
@@ -248,7 +249,12 @@ def build_cost_matrix(df_cat, entity_costs, equips_to_num_sorteig, repartiment, 
                 return 1.0
             return (v - vmin) / (vmax - vmin)  # [0,1]
         
+    equips_per_entitat = Counter(df_cat['Entitat'])
     
+    # Calculem els factors d'entitat utilitzant la desviació estàndard
+    entitat_factors = rebuild_entitat_factor(df_cat, entity_costs)
+
+
     for i, seed in enumerate(seeds):
         # i numera els equips.
         equip_id = df_cat.iloc[i]['Id']
@@ -260,8 +266,10 @@ def build_cost_matrix(df_cat, entity_costs, equips_to_num_sorteig, repartiment, 
             entity_costs[entitat] = 0
 
         # i el seu cost acumulat
+        num_equips = equips_per_entitat.get(entitat, 1)
         cost_entitat = entity_costs.get(entitat, 0) if entity_costs else 0
-        factor_entitat = 1.0 + norm(cost_entitat) if vals else 1.0
+        #factor_entitat = 1.0 + norm(cost_entitat) if vals else 1.0
+        factor_entitat = entitat_factors[entitat]
         for j, (g, p) in enumerate(slots):
             # j númera els slots, combinacions úniques (grup, posició)
             cost = 0.
@@ -275,7 +283,7 @@ def build_cost_matrix(df_cat, entity_costs, equips_to_num_sorteig, repartiment, 
 
 def level_entropy(nivells):
     # Excloem dummies i buits
-    nivells_filtrats = [n for n in nivells if str(n).strip() not in ("", "Dummy") and not pd.isna(n)]
+    nivells_filtrats = [n for n in nivells if str(n).strip() not in ("", "Descans") and not pd.isna(n)]
     total = len(nivells_filtrats)
     if total == 0:
         return 0.0
@@ -292,13 +300,13 @@ def level_entropy(nivells):
         for j, n2 in enumerate(nums):
             if j > i and n1 != n2:
                 if abs(n1 - n2) > 3:
-                    entropia += 3**(abs(n1 - n2))
+                    entropia += 1/3*(abs(n1 - n2))
                 #entropia += 3**(abs(n1 - n2))
     return entropia
 
 def day_entropy(dies):
     # Excloem dummies i buits
-    dies_filtrats = [d for d in dies if str(d).strip() not in ("", "Dummy") and not pd.isna(d)]
+    dies_filtrats = [d for d in dies if str(d).strip() not in ("", "Descans") and not pd.isna(d)]
     total = len(dies_filtrats)
     #print("Dies filtrats:", dies_filtrats)
     if total == 0:
@@ -367,7 +375,7 @@ def entity_conflicts(df_cat, groups):
         idxs = list(pos_dict.values())  # Ara pos_dict és {posició: índex_equip}
         ents = [df_cat.iloc[i]['Entitat'] for i in idxs]
         cnt = Counter(ents)
-        over = {e: c for e, c in cnt.items() if c > 1 and e != 'Dummy'}
+        over = {e: c for e, c in cnt.items() if c > 1 and e != 'Descans'}
         if over:
             conflicts[g] = over
     return conflicts
@@ -448,21 +456,7 @@ def repair_by_hungarian_per_position(df_cat, C, slots, row_ind, col_ind, conflic
 
 
 
-def recompute_entity_costs_from_groups(df_cat, groups, C):
-    """
-    Recalcula el cost acumulat per entitat segons la disposició actual (groups).
-    SIMPLIFICAT: Retorna els costos tal com estan a la matriu C (ja inclouen factors).
-    Els factors s'aplicaran a la següent iteració.
-    """
-    entity_costs_new = {}
-    for g, pos_dict in groups.items():
-        for p, i_equ in pos_dict.items():
-            ent = df_cat.iloc[i_equ]['Entitat']
-            if ent == 'Dummy':
-                continue
-            slot_idx = g * 8 + p
-            entity_costs_new[ent] = entity_costs_new.get(ent, 0.0) + C[i_equ, slot_idx]
-    return entity_costs_new
+
 
 def recalcular_costos_base_sense_factors(df_cat, groups, equips_to_num_sorteig=None):
     """
@@ -484,7 +478,7 @@ def recalcular_costos_base_sense_factors(df_cat, groups, equips_to_num_sorteig=N
             equip = df_cat.iloc[i_equ]
             entitat = equip['Entitat']
             
-            if entitat == 'Dummy':
+            if entitat == 'Descans':
                 continue
             
             # Calculem el cost base directament sense factors
@@ -507,291 +501,6 @@ def normalize_seed_value(x):
         return s
     return parse_int(x, default=np.nan)
 
-
-# --- Afegir penalització per mala distribució de dummies ---
-def homogeneitzar_costs(df_cat, groups, C, entity_costs, entitats_casa_fora, slots,
-                               equips_to_num_sorteig=None,
-                               fase=primera_fase,
-                               w_dif_sorteig=5,
-                               lambda_entropia=1.0,
-                               max_iters=3,
-                               allow_intragroup=True,
-                               same_pos_only=False,
-                               incorpora_entity_costs=True,
-                               update_entity_costs=True,
-                               lambda_dummy_spread=50.0):
-    """
-    Millora local sobre:
-        cost_sorteig * factor_entitat
-        + lambda_entropia * entropia_nivells
-        + lambda_dummy_spread * penalització_mala_distribució_dummies
-
-    Nova part:
-      - lambda_dummy_spread controla el pes de penalitzar que els dummies estiguin concentrats en pocs grups.
-        Penalització = sum( (d_g - d_avg)^2 ) on d_g = #dummies del grup g i d_avg = total_dummies/num_grups
-    """
-
-    disposicions = build_disposicions(fase)
-
-    def slot_idx(g, p): return g * 8 + p
-
-    def rebuild_entitat_factor(entity_costs):
-        if not (incorpora_entity_costs and entity_costs):
-            return defaultdict(lambda: 1.0)
-        
-        vals = [v for e, v in entity_costs.items() if e != 'Dummy']
-        if not vals or len(vals) < 2:
-            return defaultdict(lambda: 1.0)
-        
-        # Calculem estadístiques per una normalització més equitativa
-        mitjana = sum(vals) / len(vals)
-        desviacio = (sum((v - mitjana) ** 2 for v in vals) / len(vals)) ** 0.5
-        
-        # Factor màxim d'amplificació basat en desviació estàndard
-        max_factor = 1.5  # Factor màxim d'amplificació
-        
-        ef = {}
-        for e in df_cat['Entitat'].unique():
-            if e == 'Dummy':
-                ef[e] = 1.0
-            else:
-                cost_entitat = entity_costs.get(e, 0.0)
-                
-                if desviacio > 0:
-                    # Factor basat en quant es desvia de la mitjana
-                    desviacions = (cost_entitat - mitjana) / desviacio
-                    # Apliquem una funció suau per evitar salts bruscos
-                    factor_amplificacio = min(max_factor, 1.0 + max(0, desviacions * 0.1))
-                else:
-                    factor_amplificacio = 1.0
-                
-                ef[e] = factor_amplificacio
-        
-        return ef
-
-    entitat_factor = rebuild_entitat_factor(entity_costs)
-    
-    # DEBUG: Mostra els factors d'entitat aplicats
-    if entity_costs and incorpora_entity_costs:
-        #print(f"\nFactors entitat aplicats:")
-        for entitat, factor in sorted(entitat_factor.items()):
-            if entitat != 'Dummy':
-                cost = entity_costs.get(entitat, 0.0)
-                #print(f"  {entitat}: factor={factor:.3f} (cost acumulat: {cost:.2f})")
-
-    def cost_equip_slot(i_equ, g, p):
-        raw = df_cat.loc[i_equ]['Núm. sorteig']
-        # Normalització del seed: "casa"/"fora" o enter, sinó NaN
-        seed = normalize_seed_value(raw)
-        equip_id = df_cat.loc[i_equ]['Id']
-
-        base = cost_calc(equip_id, seed, g, p, disposicions, equips_to_num_sorteig, fase, w_dif_sorteig)
-        fact = entitat_factor[df_cat.iloc[i_equ]['Entitat']]
-        return base * fact
-
-    def entropia_grup(g):
-        idxs = list(groups[g].values())
-        nivells = [df_cat.iloc[i]['Nivell'] for i in idxs if df_cat.iloc[i]['Entitat'] != 'Dummy']
-        dies = [df_cat.iloc[i]['Dia partit'] for i in idxs if df_cat.iloc[i]['Entitat'] != 'Dummy']
-        #print("Entropia de dies", day_entropy(dies))
-        return level_entropy(nivells) + day_entropy(dies)
-
-    def dummy_counts(groups):
-        return {g: sum(1 for idx in pos_dict.values() if df_cat.iloc[idx]['Entitat'] == 'Dummy')
-                for g, pos_dict in groups.items()}
-
-    def dummy_penalty(counts):
-        if lambda_dummy_spread == 0.0:
-            return 0.0
-        total_dum = sum(counts.values())
-        if not counts:
-            return 0.0
-        d_avg = total_dum / len(counts)
-        # Variància no normalitzada (sum (d_g - d_avg)^2)
-        return sum((c - d_avg) ** 2 for c in counts.values())
-
-    # Inicial
-    entropies = {g: entropia_grup(g) for g in groups}
-    entropia_total = sum(entropies.values())
-
-    d_counts = dummy_counts(groups)
-    d_penalty = dummy_penalty(d_counts)
-
-    def recalc_rows_for_entities(entities):
-        if not incorpora_entity_costs:
-            return
-        target = set(entities)
-        seeds = df_cat['Núm. sorteig'].apply(
-            lambda x: str(x).strip() if str(x).strip().lower() in ["fora", "casa"] else parse_int(x, default=np.nan)
-        ).tolist()
-        for i in range(len(df_cat)):
-            ent = df_cat.iloc[i]['Entitat']
-            if ent not in target:
-                continue
-            seed = seeds[i]
-            fact = entitat_factor[ent]
-            for j, (g, p) in enumerate(slots):
-                equip_id = df_cat.loc[i]['Id']
-                base = cost_calc(equip_id, seed, g, p, disposicions, equips_to_num_sorteig, fase, w_dif_sorteig)
-                C[i, j] = base * fact
-
-    grups_ids_ordenats = sorted(groups.keys())
-
-    for _ in range(max_iters):
-        for i_g, g1 in enumerate(grups_ids_ordenats):
-            for g2 in grups_ids_ordenats[i_g:]:
-                
-                # INTER-GRUP
-                if same_pos_only:
-                    parelles = [(p, p) for p in sorted(groups[g1].keys() & groups[g2].keys())]
-                else:
-                    parelles = [(p1, p2) for p1 in sorted(groups[g1].keys()) for p2 in sorted(groups[g2].keys())]
-
-                for p1, p2 in parelles:
-                    e1 = groups[g1][p1]
-                    e2 = groups[g2][p2]
-                    if e1 == e2:
-                        continue
-
-                    ent1 = df_cat.iloc[e1]['Entitat']
-                    ent2 = df_cat.iloc[e2]['Entitat']
-                    ents_g1_rest = [df_cat.iloc[idx]['Entitat'] for pos, idx in sorted(groups[g1].items()) if pos != p1]
-                    ents_g2_rest = [df_cat.iloc[idx]['Entitat'] for pos, idx in sorted(groups[g2].items()) if pos != p2]
-
-                    # Si algun equip pertany a entitats_casa_fora, només es permet swap si mantenen el mateix número (posició)
-                    #if (ent1 in entitats_casa_fora or ent2 in entitats_casa_fora) and p1 != p2:
-                    #    continue
-
-                    if p1 == p2:
-                        if (ent2 != 'Dummy') and (ent2 in ents_g1_rest):
-                            continue
-                        if (ent1 != 'Dummy') and (ent1 in ents_g2_rest):
-                            continue
-                    else:
-                        # Comprova que el swap no genera conflicte d'entitat
-                        if (ent2 != 'Dummy') and (ent2 in ents_g1_rest):# or ent2 in entitats_casa_fora):
-                            continue
-                        if (ent1 != 'Dummy') and (ent1 in ents_g2_rest):# or ent1 in entitats_casa_fora):
-                            continue
-
-                    # Cost actual
-                    cost1_cur = cost_equip_slot(e1, g1, p1)
-                    cost2_cur = cost_equip_slot(e2, g2, p2)
-                    cost_actual_parell = cost1_cur + cost2_cur
-
-                    # Entropia actual ja inclosa via entropia_total
-                    # Dummy penalty actual = d_penalty
-
-                    total_actual = cost_actual_parell + lambda_entropia * entropia_total #+ lambda_dummy_spread * d_penalty
-                    swap_toca_dummy = (ent1 == 'Dummy') or (ent2 == 'Dummy')
-                    if swap_toca_dummy:
-                        total_actual += lambda_dummy_spread * d_penalty
-
-                    # Cost nou
-                    cost1_new = cost_equip_slot(e1, g2, p2)
-                    cost2_new = cost_equip_slot(e2, g1, p1)
-                    parell_nou = cost1_new + cost2_new
-
-                    # Entropia nova
-                    nivells_g1_new = [df_cat.iloc[idx]['Nivell'] for pos, idx in groups[g1].items()
-                                      if pos != p1 and df_cat.iloc[idx]['Entitat'] != 'Dummy']
-                    dies_g1_new = [df_cat.iloc[idx]['Dia partit'] for pos, idx in groups[g1].items()
-                                   if pos != p1 and df_cat.iloc[idx]['Entitat'] != 'Dummy']
-                    if ent2 != 'Dummy':
-                        nivells_g1_new.append(df_cat.iloc[e2]['Nivell'])
-                        dies_g1_new.append(df_cat.iloc[e2]['Dia partit'])
-                    nivells_g2_new = [df_cat.iloc[idx]['Nivell'] for pos, idx in groups[g2].items()
-                                      if pos != p2 and df_cat.iloc[idx]['Entitat'] != 'Dummy']
-                    dies_g2_new = [df_cat.iloc[idx]['Dia partit'] for pos, idx in groups[g2].items()
-                                   if pos != p2 and df_cat.iloc[idx]['Entitat'] != 'Dummy']
-                    if ent1 != 'Dummy':
-                        nivells_g2_new.append(df_cat.iloc[e1]['Nivell'])
-                        dies_g2_new.append(df_cat.iloc[e1]['Dia partit'])
-                    ent_g1_new = level_entropy(nivells_g1_new) + day_entropy(dies_g1_new)
-                    ent_g2_new = level_entropy(nivells_g2_new) + day_entropy(dies_g2_new)
-                    
-                    entropia_total_new = entropia_total - entropies[g1] - entropies[g2] + ent_g1_new + ent_g2_new
-
-                    # Dummy penalty nova (només canvien counts dels dos grups si algun involucrat és Dummy)
-                    if ent1 == 'Dummy' or ent2 == 'Dummy':
-                        d_counts_new = d_counts.copy()
-                        # Ajustar
-                        if ent1 == 'Dummy':
-                            d_counts_new[g1] -= 1
-                            d_counts_new[g2] += 1
-                        if ent2 == 'Dummy':
-                            d_counts_new[g2] -= 1
-                            d_counts_new[g1] += 1
-                        d_penalty_new = dummy_penalty(d_counts_new)
-                    else:
-                        d_penalty_new = d_penalty  # sense canvi
-
-                    total_nou = parell_nou + lambda_entropia * entropia_total_new #+ lambda_dummy_spread * d_penalty_new
-                    # Si el swap toca Dummy, inclou la penalització
-                    if swap_toca_dummy:
-                        total_nou += lambda_dummy_spread * d_penalty_new
-
-                    if total_nou < total_actual:
-                        # Accepta swap
-                        groups[g1][p1], groups[g2][p2] = e2, e1
-                        C[e1, slot_idx(g2, p2)] = cost1_new
-                        C[e2, slot_idx(g1, p1)] = cost2_new
-                        entropies[g1] = ent_g1_new
-                        entropies[g2] = ent_g2_new
-                        entropia_total = entropia_total_new
-                        if ent1 == 'Dummy' or ent2 == 'Dummy':
-                            d_counts = d_counts_new
-                            d_penalty = d_penalty_new
-                        if update_entity_costs:
-                            old_factors = dict(entitat_factor)
-                            entity_costs = recompute_entity_costs_from_groups(df_cat, groups, C)
-                            entitat_factor = rebuild_entitat_factor(entity_costs)
-                            changed = [e for e in entitat_factor if entitat_factor[e] != old_factors.get(e)]
-                            if changed:
-                                recalc_rows_for_entities(changed)
-        #if not millora:
-        #    break
-    
-        for i_g, g1 in enumerate(grups_ids_ordenats):
-            if not allow_intragroup:
-                continue
-            # Repetim fins que no hi hagi millores dins del grup
-            changed = True
-            for _ in range(4):
-                posicions = sorted(groups[g1].keys())
-                for a in range(len(posicions)):
-                    for b in range(a + 1, len(posicions)):
-                        changed = False
-                        i_equ1 = groups[g1][posicions[a]]
-                        i_equ2 = groups[g1][posicions[b]]
-                        p1, p2 = posicions[a], posicions[b]
-                        e1, e2 = groups[g1][p1], groups[g1][p2]
-                        ent1_ent = df_cat.iloc[e1]['Entitat']
-                        ent2_ent = df_cat.iloc[e2]['Entitat']
-                        if e1 == e2 or ent1_ent in entitats_casa_fora or ent2_ent in entitats_casa_fora:
-                            continue
-                        cost_cur = cost_equip_slot(e1, g1, p1) + cost_equip_slot(e2, g1, p2)
-                        cost_new = cost_equip_slot(e1, g1, p2) + cost_equip_slot(e2, g1, p1)
-                        #print(f"[INTRA] G{g1+1} prova swap p{p1+1}<->p{p2+1} ::",
-                        #f"{df_cat.iloc[i_equ1]['Nom']} (seed={df_cat.iloc[i_equ1]['Núm. sorteig']})",
-                        #"<->",
-                        #f"{df_cat.iloc[i_equ2]['Nom']} (seed={df_cat.iloc[i_equ2]['Núm. sorteig']})")
-
-                        #print("   cost_cur=", cost_cur, " cost_new=", cost_new)
-                        if cost_new < cost_cur:
-                            groups[g1][p1], groups[g1][p2] = e2, e1
-                            C[e1, slot_idx(g1, p2)] = cost_equip_slot(e1, g1, p2)
-                            C[e2, slot_idx(g1, p1)] = cost_equip_slot(e2, g1, p1)
-                            changed = True
-                            if changed:
-                                old_factors = dict(entitat_factor)
-                                entity_costs = recompute_entity_costs_from_groups(df_cat, groups, C)
-                                entitat_factor = rebuild_entitat_factor(entity_costs)
-                                changed_teams = [e for e in entitat_factor if entitat_factor[e] != old_factors.get(e)]
-                                recalc_rows_for_entities(changed_teams)
-                    
-
-    return groups, C
 
 
 
@@ -839,67 +548,354 @@ def homogeneitzar_nivell(df_cat, groups, max_iters=100):
     return groups
 
 
-def actualitzar_costos_entitat(entity_costs, df_cat, C, row_ind, col_ind):
+def actualitzar_costos_entitat(disposicions, equips_to_num_sorteig, df_cat, C, row_ind, col_ind):
     
     '''
     Actualitza els costos per entitat segons l'assignació.
     CORRECCIÓ: Usa el cost base real, no el multiplicat pel factor entitat.
-    '''
-    costos_actualitzats = entity_costs.copy() if entity_costs else {}
-    
-    # Necessitem recalcular el cost base per evitar amplificació exponencial
+    '''    
     from collections import defaultdict
     costs_base_per_entitat = defaultdict(float)
     
+    # Necessitem les mateixes dades que build_cost_matrix
+    disposicions = build_disposicions(primera_fase)
+    
     for r, c in zip(row_ind, col_ind):
-        # Obtenim entitat del equips r
         if r >= len(df_cat):
             continue
-        entitat = df_cat.iloc[r]['Entitat']
         
-        if entitat == 'Dummy':
+        equip = df_cat.iloc[r]
+        entitat = equip['Entitat']
+        
+        if entitat == 'Descans':
             continue
-            
-        # CORRECCIÓ: Recalculem el cost base sense factor entitat
-        # Per fer-ho, dividim pel factor entitat actual
-        cost_amb_factor = C[r, c]
         
-        # Obtenim el factor entitat actual per aquesta entitat
-        cost_entitat_actual = entity_costs.get(entitat, 0) if entity_costs else 0
+        # Reconstruim els paràmetres per cost_calc
+        equip_id = equip.get('Id', '')
+        raw_seed = equip.get('Núm. sorteig', '')
         
-        # Calculem el factor que s'havia aplicat
-        if entity_costs:
-            vals = [v for e, v in entity_costs.items() if e != 'Dummy']
-            if vals:
-                vmin, vmax = min(vals), max(vals)
-                if vmax == vmin:
-                    norm_val = 0.0
-                else:
-                    norm_val = (cost_entitat_actual - vmin) / (vmax - vmin)
-                factor_aplicat = 1.0 + norm_val
-            else:
-                factor_aplicat = 1.0
-        else:
-            factor_aplicat = 1.0
+        # Obtenim g, p del slot c
+        # Assumint que els slots segueixen l'ordre: g*8 + p
+        g = c // 8
+        p = c % 8
         
-        # Cost base real = cost_amb_factor / factor_aplicat
-        cost_base = cost_amb_factor / max(factor_aplicat, 1.0)
+        # AQUÍ: Usem cost_calc directament
+        cost_base_real = cost_calc(
+            equip_id, raw_seed, g, p, disposicions, 
+            equips_to_num_sorteig=equips_to_num_sorteig,  # O el valor correcte si està disponible
+            fase=primera_fase, 
+            w_dif_sorteig=5
+        )
+        #cost_base_real = C[r, c]  # cost base amb factors
         
-        # Acumulem el cost base real
-        costs_base_per_entitat[entitat] += cost_base
+        costs_base_per_entitat[entitat] += cost_base_real
     
-    # Actualitzem els costos acumulats amb els costs base reals
-    for entitat, cost_base_nou in costs_base_per_entitat.items():
-        cost_anterior = entity_costs.get(entitat, 0.0) if entity_costs else 0.0
-        costos_actualitzats[entitat] = cost_anterior + cost_base_nou
 
-    return costos_actualitzats
+    return costs_base_per_entitat
 
-def _normalize_entity_name(name: str) -> str:
-    # treu variacions d’accents/espais/majús-minus
-    s = unicodedata.normalize('NFKC', str(name)).casefold().strip()
-    s = " ".join(s.split())  # col·lapsa espais múltiples
-    return s
+
+def rebuild_entitat_factor(df_cat, entity_costs):
+    '''
+        Reconstrueix els factors d'entitat a partir dels costos que se li passin d'entitat.
+    '''
+    if not entity_costs:
+        return defaultdict(lambda: 1.0)
+    
+    vals = [v for e, v in entity_costs.items() if e != 'Descans']
+    if not vals or len(vals) < 2:
+        return defaultdict(lambda: 1.0)
+    
+    # Calculem estadístiques per una normalització més equitativa
+    mitjana = sum(vals) / len(vals)
+    desviacio = (sum((v - mitjana) ** 2 for v in vals) / len(vals)) ** 0.5
+    
+    # Factor màxim d'amplificació basat en desviació estàndard
+    max_factor = 4 # Factor màxim d'amplificació
+    
+    ef = {}
+    for e in df_cat['Entitat'].unique():
+        if e == 'Descans':
+            ef[e] = 1.0
+        else:
+            cost_entitat = entity_costs.get(e, 0.0)
+            
+            if desviacio > 0:
+                # Factor basat en quant es desvia de la mitjana
+                desviacions = (cost_entitat - mitjana) / desviacio
+                # Apliquem una funció suau per evitar salts bruscos
+                factor_amplificacio = min(max_factor, 1.0 + max(0, desviacions * 0.5))
+                factor_amplificacio = max(0.1, factor_amplificacio) # Com a mínim 0.1
+            else:
+                factor_amplificacio = 1.0
+            
+            ef[e] = factor_amplificacio
+    
+    return ef
+    
+
+
+# --- Afegir penalització per mala distribució de dummies ---
+def homogeneitzar_costs(df_cat, groups, C, entity_costs_cat, entity_global_costs, entitats_casa_fora, slots,
+                               equips_to_num_sorteig=None,
+                               fase=primera_fase,
+                               w_dif_sorteig=5,
+                               lambda_entropia=1.0,
+                               max_iters=3,
+                               allow_intragroup=True,
+                               same_pos_only=False,
+                               incorpora_entity_costs=True,
+                               update_entity_costs=True,
+                               lambda_dummy_spread=50.0):
+    """
+    Millora local sobre:
+        cost_sorteig * factor_entitat
+        + lambda_entropia * entropia_nivells
+        + lambda_dummy_spread * penalització_mala_distribució_dummies
+
+    Nova part:
+      - lambda_dummy_spread controla el pes de penalitzar que els dummies estiguin concentrats en pocs grups.
+        Penalització = sum( (d_g - d_avg)^2 ) on d_g = #dummies del grup g i d_avg = total_dummies/num_grups
+    """
+
+    disposicions = build_disposicions(fase)
+
+    def slot_idx(g, p): return g * 8 + p
+
+
+    def cost_equip_slot(i_equ, g, p, entitat_factor):
+        raw = df_cat.loc[i_equ]['Núm. sorteig']
+        # Normalització del seed: "casa"/"fora" o enter, sinó NaN
+        seed = normalize_seed_value(raw)
+        equip_id = df_cat.loc[i_equ]['Id']
+
+        base = cost_calc(equip_id, seed, g, p, disposicions, equips_to_num_sorteig, fase, w_dif_sorteig)
+        fact = entitat_factor[df_cat.iloc[i_equ]['Entitat']]
+        num_equips = len(df_cat[df_cat['Entitat'] == df_cat.iloc[i_equ]['Entitat']])
+        return base * fact
+
+    def entropia_grup(g):
+        idxs = list(groups[g].values())
+        nivells = [df_cat.iloc[i]['Nivell'] for i in idxs if df_cat.iloc[i]['Entitat'] != 'Descans']
+        dies = [df_cat.iloc[i]['Dia partit'] for i in idxs if df_cat.iloc[i]['Entitat'] != 'Descans']
+        #print("Entropia de dies", day_entropy(dies))
+        return level_entropy(nivells) + day_entropy(dies)
+
+    def dummy_counts(groups):
+        return {g: sum(1 for idx in pos_dict.values() if df_cat.iloc[idx]['Entitat'] == 'Descans')
+                for g, pos_dict in groups.items()}
+
+    def dummy_penalty(counts):
+        if lambda_dummy_spread == 0.0:
+            return 0.0
+        total_dum = sum(counts.values())
+        if not counts:
+            return 0.0
+        d_avg = total_dum / len(counts)
+        # Variància no normalitzada (sum (d_g - d_avg)^2)
+        return sum((c - d_avg) ** 2 for c in counts.values())
+
+
+    def rebuild_global_costs(entity_costs_cat, entity_costs_global):
+        '''
+            Combina els costos d'entitat globals (costos base globlas, no modificats per la categoria) amb els específics de categoria.
+        '''
+        if not entity_costs_cat:
+            return entity_costs_global
+        
+        global_copy = entity_costs_global.copy()
+        for e, v in entity_costs_cat.items():
+            global_copy[e] = global_copy.get(e, 0.0) + v
+
+        return global_copy
+
+    # Inicial
+    entropies = {g: entropia_grup(g) for g in groups}
+    entropia_total = sum(entropies.values())
+
+    d_counts = dummy_counts(groups)
+    d_penalty = dummy_penalty(d_counts)
+
+    actual_global_costs = rebuild_global_costs(entity_costs_cat, entity_global_costs)
+    entitat_factor = rebuild_entitat_factor(df_cat, actual_global_costs)
+
+    grups_ids_ordenats = sorted(groups.keys())
+
+    for _ in range(max_iters):
+        for i_g, g1 in enumerate(grups_ids_ordenats):
+            for g2 in grups_ids_ordenats[i_g:]:
+                
+                # INTER-GRUP
+                if same_pos_only:
+                    parelles = [(p, p) for p in sorted(groups[g1].keys() & groups[g2].keys())]
+                else:
+                    parelles = [(p1, p2) for p1 in sorted(groups[g1].keys()) for p2 in sorted(groups[g2].keys())]
+
+                for p1, p2 in parelles:
+                    e1 = groups[g1][p1]
+                    e2 = groups[g2][p2]
+                    if e1 == e2:
+                        continue
+
+                    ent1 = df_cat.iloc[e1]['Entitat']
+                    ent2 = df_cat.iloc[e2]['Entitat']
+                    ents_g1_rest = [df_cat.iloc[idx]['Entitat'] for pos, idx in sorted(groups[g1].items()) if pos != p1]
+                    ents_g2_rest = [df_cat.iloc[idx]['Entitat'] for pos, idx in sorted(groups[g2].items()) if pos != p2]
+
+                    # Si algun equip pertany a entitats_casa_fora, només es permet swap si mantenen el mateix número (posició)
+                    #if (ent1 in entitats_casa_fora or ent2 in entitats_casa_fora) and p1 != p2:
+                    #    continue
+
+                    if p1 == p2:
+                        if (ent2 != 'Descans') and (ent2 in ents_g1_rest):
+                            continue
+                        if (ent1 != 'Descans') and (ent1 in ents_g2_rest):
+                            continue
+                    else:
+                        # Comprova que el swap no genera conflicte d'entitat
+                        if (ent2 != 'Descans') and (ent2 in ents_g1_rest):# or ent2 in entitats_casa_fora):
+                            continue
+                        if (ent1 != 'Descans') and (ent1 in ents_g2_rest):# or ent1 in entitats_casa_fora):
+                            continue
+
+                    # Cost actual
+
+                    cost1_cur = cost_equip_slot(e1, g1, p1, entitat_factor)
+                    cost2_cur = cost_equip_slot(e2, g2, p2, entitat_factor)
+                    cost_actual_parell = cost1_cur + cost2_cur
+
+                    # Entropia actual ja inclosa via entropia_total
+                    # Descans penalty actual = d_penalty
+
+                    total_actual = cost_actual_parell + lambda_entropia * entropia_total 
+                    swap_toca_dummy = (ent1 == 'Descans') or (ent2 == 'Descans')
+                    if swap_toca_dummy:
+                        total_actual += lambda_dummy_spread * d_penalty
+
+                    # Cost nou
+                    cost1_new = cost_equip_slot(e1, g2, p2, entitat_factor)
+                    cost2_new = cost_equip_slot(e2, g1, p1, entitat_factor)
+                    parell_nou = cost1_new + cost2_new
+
+                    # Entropia nova
+                    nivells_g1_new = [df_cat.iloc[idx]['Nivell'] for pos, idx in groups[g1].items()
+                                      if pos != p1 and df_cat.iloc[idx]['Entitat'] != 'Descans']
+                    dies_g1_new = [df_cat.iloc[idx]['Dia partit'] for pos, idx in groups[g1].items()
+                                   if pos != p1 and df_cat.iloc[idx]['Entitat'] != 'Descans']
+                    if ent2 != 'Descans':
+                        nivells_g1_new.append(df_cat.iloc[e2]['Nivell'])
+                        dies_g1_new.append(df_cat.iloc[e2]['Dia partit'])
+                    nivells_g2_new = [df_cat.iloc[idx]['Nivell'] for pos, idx in groups[g2].items()
+                                      if pos != p2 and df_cat.iloc[idx]['Entitat'] != 'Descans']
+                    dies_g2_new = [df_cat.iloc[idx]['Dia partit'] for pos, idx in groups[g2].items()
+                                   if pos != p2 and df_cat.iloc[idx]['Entitat'] != 'Descans']
+                    if ent1 != 'Descans':
+                        nivells_g2_new.append(df_cat.iloc[e1]['Nivell'])
+                        dies_g2_new.append(df_cat.iloc[e1]['Dia partit'])
+                    ent_g1_new = level_entropy(nivells_g1_new) + day_entropy(dies_g1_new)
+                    ent_g2_new = level_entropy(nivells_g2_new) + day_entropy(dies_g2_new)
+                    
+                    entropia_total_new = entropia_total - entropies[g1] - entropies[g2] + ent_g1_new + ent_g2_new
+
+                    # Descans penalty nova (només canvien counts dels dos grups si algun involucrat és Descans)
+                    if ent1 == 'Descans' or ent2 == 'Descans':
+                        d_counts_new = d_counts.copy()
+                        # Ajustar
+                        if ent1 == 'Descans':
+                            d_counts_new[g1] -= 1
+                            d_counts_new[g2] += 1
+                        if ent2 == 'Descans':
+                            d_counts_new[g2] -= 1
+                            d_counts_new[g1] += 1
+                        d_penalty_new = dummy_penalty(d_counts_new)
+                    else:
+                        d_penalty_new = d_penalty  # sense canvi
+
+                    total_nou = parell_nou + lambda_entropia * entropia_total_new #+ lambda_dummy_spread * d_penalty_new
+                    # Si el swap toca Descans, inclou la penalització
+                    if swap_toca_dummy:
+                        total_nou += lambda_dummy_spread * d_penalty_new
+
+                    if total_nou < total_actual:
+                        # Accepta swap
+                        groups[g1][p1], groups[g2][p2] = e2, e1
+                        C[e1, slot_idx(g2, p2)] = cost1_new
+                        C[e2, slot_idx(g1, p1)] = cost2_new
+                        entropies[g1] = ent_g1_new
+                        entropies[g2] = ent_g2_new
+                        entropia_total = entropia_total_new
+                        if ent1 == 'Descans' or ent2 == 'Descans':
+                            d_counts = d_counts_new
+                            d_penalty = d_penalty_new
+                        if update_entity_costs:
+                            old_factors = dict(entitat_factor)
+
+                            # Actualitzem costs de la categoria
+                            entity_costs = recalcular_costos_base_sense_factors(df_cat, groups, equips_to_num_sorteig)
+
+                            # Actualitzem el entity_costs_cat
+                            for e, v in entity_costs.items():
+                                if e in entity_costs_cat:
+                                    entity_costs_cat[e] = v
+                                
+                            # Actualitzem costos globals
+                            actual_global_costs = rebuild_global_costs(entity_costs_cat, entity_global_costs)
+
+                            # Recalculem factors
+                            entitat_factor = rebuild_entitat_factor(df_cat, actual_global_costs)
+
+                            #if changed:
+                            #    recalc_rows_for_entities(changed, entitat_factor, entity_costs)
+
+        # INTRA-GRUP. Només swaps amb números de sorteig, no casa/fora
+
+        for i_g, g1 in enumerate(grups_ids_ordenats):
+            if not allow_intragroup:
+                continue
+            # Repetim fins que no hi hagi millores dins del grup
+            changed = True
+            for _ in range(4):
+                posicions = sorted(groups[g1].keys())
+                for a in range(len(posicions)):
+                    for b in range(a + 1, len(posicions)):
+                        changed = False
+                        i_equ1 = groups[g1][posicions[a]]
+                        i_equ2 = groups[g1][posicions[b]]
+                        p1, p2 = posicions[a], posicions[b]
+                        e1, e2 = groups[g1][p1], groups[g1][p2]
+                        ent1_ent = df_cat.iloc[e1]['Entitat']
+                        ent2_ent = df_cat.iloc[e2]['Entitat']
+                        if e1 == e2 or ent1_ent in entitats_casa_fora or ent2_ent in entitats_casa_fora:
+                            continue
+                        cost_cur = cost_equip_slot(e1, g1, p1, entitat_factor) + cost_equip_slot(e2, g1, p2, entitat_factor)
+                        cost_new = cost_equip_slot(e1, g1, p2, entitat_factor) + cost_equip_slot(e2, g1, p1, entitat_factor)
+
+                        if cost_new < cost_cur:
+                            # Accepta swap
+                            groups[g1][p1], groups[g1][p2] = e2, e1
+                            C[e1, slot_idx(g1, p2)] = cost_equip_slot(e1, g1, p2, entitat_factor)
+                            C[e2, slot_idx(g1, p1)] = cost_equip_slot(e2, g1, p1, entitat_factor)
+
+                            old_factors = dict(entitat_factor)
+                            entity_costs = recalcular_costos_base_sense_factors(df_cat, groups, equips_to_num_sorteig)
+
+                            # Actualitzem el entity_costs_cat
+                            for e, v in entity_costs.items():
+                                if e in entity_costs_cat:
+                                    entity_costs_cat[e] = v
+                                
+                            # Actualitzem costos globals
+                            actual_global_costs = rebuild_global_costs(entity_costs_cat, entity_global_costs)
+
+                            # Recalculem factors
+                            entitat_factor = rebuild_entitat_factor(df_cat, actual_global_costs)
+                    
+
+    return groups, entity_costs_cat
+
+
+
+
+
 
 # ---------- FUNCIÓ PRINCIPAL ----------
 
@@ -909,6 +905,9 @@ def assignar_grups_hungares(df_categoria, max_grup=8, min_grup=6, entity_costs=N
       - 'Nom', 'Nom Lliga', 'Núm. sorteig'
       - i opcionalment 'Entitat' (si no, es deriva de 'Nom')
     """
+    disposicions = build_disposicions(primera_fase)
+
+    entity_global_costs = entity_costs.copy() if entity_costs else {}
 
     df_cat = df_categoria.copy().reset_index(drop=True)  
     if 'Entitat' not in df_cat.columns:
@@ -926,8 +925,11 @@ def assignar_grups_hungares(df_categoria, max_grup=8, min_grup=6, entity_costs=N
 
     if weights is None:
         weights = dict(w_seed_group=5, w_seed_pos=1)
-    C, slots, entity_costs = build_cost_matrix(df_cat, entity_costs=entity_costs, equips_to_num_sorteig=equips_to_num_sorteig, repartiment=repartiment, w_dif_sorteig=weights.get('w_dif_sorteig', np.log2(27)) )
-    #C_aug, bye_info = augment_with_byes_demanda(C, slots, repartiment, mega_penalty=1e9, epsilon=1e-3)
+    C, slots, entity_costs = build_cost_matrix(df_cat, entity_costs=entity_global_costs, equips_to_num_sorteig=equips_to_num_sorteig, repartiment=repartiment, w_dif_sorteig=weights.get('w_dif_sorteig', np.log2(27)) )
+    
+    
+    # El dict entity_costs no s'ha modificat del global, només s'han afegit entitats noves amb cost 0
+    entity_global_costs = entity_costs.copy() if entity_costs else {}
 
     # resolució hongaresa
 
@@ -938,24 +940,15 @@ def assignar_grups_hungares(df_categoria, max_grup=8, min_grup=6, entity_costs=N
     
     # Utilitzem la nova funció per obtenir costos base nets
     costos_base_nets = recalcular_costos_base_sense_factors(df_cat, groups, equips_to_num_sorteig)
+    # son costos base de la categoria, sense factors entitat
+
+    entity_costs_cat = {entitat: 0.0 for entitat in df_cat['Entitat'].unique()}
+
+    # Actualitzem costos d'entitat amb els costos base de la categoria
+    for entitat, cost_base in costos_base_nets.items():
+        entity_costs_cat[entitat] += cost_base
     
-    # DEBUG: Mostra els costos base calculats
-    #print(f"\nCostos base nets per aquesta categoria:")
-    #for entitat, cost in sorted(costos_base_nets.items()):
-    #    print(f"  {entitat}: +{cost:.2f}")
     
-    # Acumulem als costos existents
-    if entity_costs:
-        for entitat, cost_base in costos_base_nets.items():
-            entity_costs[entitat] = entity_costs.get(entitat, 0.0) + cost_base
-    else:
-        entity_costs = costos_base_nets.copy()
-    
-    # DEBUG: Mostra els costos acumulats
-    #print(f"\nCostos acumulats després d'aquesta categoria:")
-    #for entitat, cost in sorted(entity_costs.items()):
-    #    if entitat != 'Dummy':
-    #        print(f"  {entitat}: {cost:.2f}")
 
     # Es creen els grups i es comproven conflictes
     g_assigned = build_groups_from_assignment(df_cat, slots, col_ind)
@@ -965,10 +958,8 @@ def assignar_grups_hungares(df_categoria, max_grup=8, min_grup=6, entity_costs=N
     max_repair_iters = 10
     repair_iter = 0
     while conflicts and repair_iter < max_repair_iters:
-        #print(f"Iteració de reparació {repair_iter+1}: Conflictes d'entitat: {conflicts}")
-        
-        #print("Conflictes per posició:", conflicts.keys())
-        # Torna a intentar reparar
+
+        # Reparem conflictes
         row_ind, col_ind = repair_by_hungarian_per_position(
             df_cat, C, slots, row_ind=row_ind, col_ind=col_ind, conflicting_groups=conflicts, groups=g_assigned, max_iters=5
         )
@@ -976,89 +967,54 @@ def assignar_grups_hungares(df_categoria, max_grup=8, min_grup=6, entity_costs=N
         g_assigned = build_groups_from_assignment(df_cat, slots, col_ind)
         conflicts = entity_conflicts(df_cat, g_assigned)
         repair_iter += 1
-        entity_costs = actualitzar_costos_entitat(entity_costs, df_cat, C, row_ind, col_ind)
+    
 
-    if repair_iter == max_repair_iters:
-        print("AVÍS: No s'ha pogut resoldre tots els conflictes d'entitat després de diverses iteracions.")
-
+    # Obtenim costos base nets de la categoria segons la disposició de grups
+    costos_base_nets = recalcular_costos_base_sense_factors(df_cat, groups, equips_to_num_sorteig)
+    entity_costs_cat = {entitat: 0.0 for entitat in df_cat['Entitat'].unique()}
+    
+    # Actualitzem costos d'entitat amb els costos base de la categoria
+    for entitat, cost_base in costos_base_nets.items():
+        entity_costs_cat[entitat] += cost_base
+    
+    # Reconstuïm els grups segons l'assignació final
     groups = build_groups_from_assignment(df_cat, slots, col_ind)
     
-    # Un cop resolts els conflictes, tractem els casos casa/fora. Aquí hem d'assignar
-    # Enforç per-equip: si tenim mapping equips_to_num_sorteig, imposa el número a cada equip (swap dins del grup)
-    '''    
-    if equips_to_num_sorteig:
-        for g, pos_dict in groups.items():
-            # Fes diverses passades per estabilitzar
-            for _ in range(3):
-                changed = False
-                for p, i_equ in list(pos_dict.items()):
-                    nom_equip = df_cat.iloc[i_equ]['Nom']
-                    desitjat = equips_to_num_sorteig.get(nom_equip)
-                    if not desitjat:
-                        continue  # aquest equip no té número preassignat
-                    target_pos = desitjat - 1  # posició 0-based
-                    if target_pos == p:
-                        continue
-                    if target_pos in groups[g]:
-                        # Intercanvi dins del mateix grup
-                        i_equ2 = groups[g][target_pos]
-                        groups[g][target_pos], groups[g][p] = i_equ, i_equ2
-                        changed = True
-                if not changed:
-                    break    # Actualitzem els cost de les entitats segons l'assignació final
-    '''    
-# Entitats amb equips que tenen número preassignat (casa/fora): restringeix swaps
+    # Entitats amb equips que tenen número preassignat (casa/fora): restringeix swaps
     if equips_to_num_sorteig:
         ids_pref = set(equips_to_num_sorteig.keys())
         entitats_casa_fora = set(
             df_cat.loc[df_cat['Id'].isin(ids_pref), 'Entitat'].dropna().astype(str)
         )
-        entitats_casa_fora.discard('Dummy')
+        entitats_casa_fora.discard('Descans')
     else:
         entitats_casa_fora = set()
  
     groups = homogeneitzar_nivell(df_cat, groups)
-    entity_costs = actualitzar_costos_entitat(entity_costs, df_cat, C, row_ind, col_ind)
-    groups, _ = homogeneitzar_costs(
-        df_cat, groups, C, entity_costs, entitats_casa_fora, slots,
+    groups, entity_costs_cat = homogeneitzar_costs(
+        df_cat, groups, C, entity_costs_cat, entity_global_costs, entitats_casa_fora, slots,
         equips_to_num_sorteig=equips_to_num_sorteig,
         w_dif_sorteig=5, lambda_entropia=1.0, max_iters=3
     )
-    entity_costs = actualitzar_costos_entitat(entity_costs, df_cat, C, row_ind, col_ind)
-    '''
-    # Enforç final: garanteix que cada equip amb mapping estigui al número desitjat dins el seu grup
-    if equips_to_num_sorteig:
-        for g, pos_dict in groups.items():
-            for _ in range(2):  # unes poques passades són suficients
-                changed = False
-                for p, i_equ in list(pos_dict.items()):
-                    nom_equip = df_cat.iloc[i_equ]['Nom']
-                    desitjat = equips_to_num_sorteig.get(nom_equip)
-                    if not desitjat:
-                        continue
-                    tp = desitjat - 1
-                    if tp == p:
-                        continue
-                    if tp in groups[g]:
-                        i_equ2 = groups[g][tp]
-                        groups[g][tp], groups[g][p] = i_equ, i_equ2
-                        changed = True
-                if not changed:
-                    break
-    '''
-    
+
+    # Actualitzem els costs globals de les entitats segons l'assignació final
+    for e, v in entity_costs_cat.items():
+        entity_global_costs[e] = entity_global_costs.get(e, 0.0) + v
+
+
+    # Calculem l'ordre dels grups segons el nivell més alt    
     nivell_map = {"Nivell A": 1, "Nivell B": 2, "Nivell C": 3, "Nivell D": 4, "Nivell E": 5}
     grup_ordre_nivell = {}
     for g, pos_dict in groups.items():
         nums = []
         for i in pos_dict.values():
             niv = df_cat.iloc[i]['Nivell']
-            if pd.isna(niv) or str(niv).strip() in ("", "Dummy"):
+            if pd.isna(niv) or str(niv).strip() in ("", "Descans"):
                 continue
             nums.append(nivell_map.get(str(niv), 99))
         grup_ordre_nivell[g] = sum(nums) if nums else 99
     
-# crea el resultat
+    # Crea el resultat
     assign = []
     diferencies_jornades = {}
     for g, pos_dict in sorted(groups.items()):
@@ -1070,7 +1026,7 @@ def assignar_grups_hungares(df_categoria, max_grup=8, min_grup=6, entity_costs=N
             # Comprovem jornades diferents
             raw = r['Núm. sorteig']
             seed = normalize_seed_value(raw)
-# Determina el número de referència per calcular diferències:
+            # Determina el número de referència per calcular diferències:
             # - si seed és 'casa'/'fora' → usa el número preassignat a l'equip (equips_to_num_sorteig)
             # - si seed és enter 1..8 → usa aquest número
             # - altrament → None (no es calculen diferències)
@@ -1087,28 +1043,7 @@ def assignar_grups_hungares(df_categoria, max_grup=8, min_grup=6, entity_costs=N
                 except Exception:
                     seed_num = None
 
-            # Construeix patrons casa/fora per al número de referència i per al slot assignat
-            seed_matches = []
-            '''if seed_num is not None:
-                for jornada in primera_fase:
-                    for partit in jornada:
-                        if partit[0] == seed_num:
-                            seed_matches.append("casa")
-                        if partit[1] == seed_num:
-                            seed_matches.append("fora")
-
-            slot_matches = []
-            for jornada in primera_fase:
-                for partit in jornada:
-                    if partit[0] == (pos + 1):
-                        slot_matches.append("casa")
-                    if partit[1] == (pos + 1):
-                        slot_matches.append("fora")
-
-            # Jornades on no coincideix (si no hi ha seed_num, queda llista buida)
-            dif_jornades = [j + 1 for j, (a, b) in enumerate(zip(seed_matches, slot_matches)) if a != b]
-            diferencies_jornades[i] = dif_jornades
-            '''
+            
             # Diferències amb detall: (jornada, Casa/Fora assignat, Opponent dins el grup)
             dif_jornades = []
             assigned_num = pos + 1
@@ -1141,8 +1076,6 @@ def assignar_grups_hungares(df_categoria, max_grup=8, min_grup=6, entity_costs=N
                             opponent_name = df_cat.iloc[i_op]['Nom']
                         dif_jornades.append((j_idx, actual, opponent_name))
             diferencies_jornades[i] = dif_jornades
-    # Fem un map entre el index de grup i l'ordre de grup, per tal que s'escriguin els grups
-    # en ordre de nivell (els que tenen nivell més alt primer)    
 
     # Ordenem els grups segons el nivell més alt
     grups_ordenats = sorted(groups.keys(), key=lambda g: grup_ordre_nivell[g])
@@ -1197,113 +1130,16 @@ def assignar_grups_hungares(df_categoria, max_grup=8, min_grup=6, entity_costs=N
     for _, r in res.iterrows():
         groups_final[r['Grup']].append(r['Entitat'])
         conflicts_final = {
-        g: {e: c for e, c in Counter([e for e in v if e and e != 'Dummy']).items() if c > 1}
+        g: {e: c for e, c in Counter([e for e in v if e and e != 'Descans']).items() if c > 1}
         for g, v in groups_final.items()
     }
     conflicts_final = {g: d for g, d in conflicts_final.items() if d}    
     
-    
-    # --- VALIDACIÓ FINAL ---
-    conflicte_entitat = False
-    # 1. Comprova que no hi ha grups amb equips de la mateixa entitat
-    for g, pos_dict in groups.items():
-        idxs = list(pos_dict.values())
-        ents = [df_cat.iloc[i]['Entitat'] for i in idxs if df_cat.iloc[i]['Entitat'] != 'Dummy']
-        cnt = Counter(ents)
-        if any(c > 1 for c in cnt.values()):
-            #print(f"AVÍS: El grup G{g+1} té més d'un equip de la mateixa entitat: {dict(cnt)}")
-            conflicte_entitat = True
-
-    # 2. Comprova que cada equip està assignat al número de sorteig sol·licitat
-    sorteig_incorrecte = False
-    for g, pos_dict in groups.items():
-        for pos in sorted(pos_dict.keys()):
-            i_equ = pos_dict[pos]
-            sorteig_esperat = df_cat.iloc[i_equ]['Núm. sorteig']
-            # Si és NaN, es considera correcte
-            if pd.isna(sorteig_esperat):
-                continue
-
-            s = str(sorteig_esperat).strip().lower()
-            # Si tenim mapping per equip (per Id), valida contra mapping i evita confusions amb conjunts estàtics
-            if equips_to_num_sorteig:
-                id_equip = df_cat.iloc[i_equ]['Id']
-                exp = equips_to_num_sorteig.get(id_equip)
-                if exp is not None:
-                    if (pos + 1) != exp:
-                        nom_equip = df_cat.iloc[i_equ]['Nom']
-                        #print(f"AVÍS: L'equip '{nom_equip}' (grup G{g+1}) segons mapping global esperava {exp}, però té {pos+1}")
-                        sorteig_incorrecte = True
-                    continue  # no facis més validacions genèriques
-            # Cas especial "Fora"
-            if s == "fora":
-                if (pos + 1) in {5, 4, 3, 2}:
-                    continue  # Correcte
-                else:
-                    #print(f"AVÍS: L'equip '{df_cat.iloc[i_equ]['Nom']}' (grup G{g+1}) amb 'Fora' no està en una posició preferida ({pos+1})")
-                    sorteig_incorrecte = True
-                continue
-            # Cas especial "Casa"
-            if s == "casa":
-                if (pos + 1) in {8, 6, 7, 1}:
-                    continue  # Correcte
-                else:
-                    #print(f"AVÍS: L'equip '{df_cat.iloc[i_equ]['Nom']}' (grup G{g+1}) amb 'Casa' no està en una posició preferida ({pos+1})")
-                    sorteig_incorrecte = True
-                continue
-
-            # Si no és cap cas especial, intenta convertir a int
-            try:
-                sorteig_esperat_int = int(sorteig_esperat)
-                if sorteig_esperat_int != (pos + 1):
-                    #print(f"AVÍS: L'equip '{df_cat.iloc[i_equ]['Nom']}' (grup G{g+1}) no té el número de sorteig assignat sol·licitat ({sorteig_esperat}), sinó {pos+1}")
-                    sorteig_incorrecte = True
-            except Exception:
-                #print(f"AVÍS: L'equip '{df_cat.iloc[i_equ]['Nom']}' (grup G{g+1}) té un número de sorteig invàlid: {sorteig_esperat}")
-                sorteig_incorrecte = True
-
-    '''if not conflicte_entitat and not sorteig_incorrecte:
-        print("VALIDACIÓ: Assignació correcta. No hi ha conflictes d'entitat ni errors de sorteig.")
-    if conflicte_entitat:
-        print("VALIDACIÓ: S'han detectat conflictes d'entitat.")
-    if sorteig_incorrecte:
-        print("VALIDACIÓ: S'han detectat errors de sorteig.")'''
-    
-    # --- FAIRNESS (EQUITAT) PER CATEGORIA ---
-    try:
-        # Costos per entitat només d'aquesta categoria (excloent dummies)
-        cat_entity_costs = recompute_entity_costs_from_groups(df_cat, groups, C)
-        cat_entity_costs = {e: c for e, c in cat_entity_costs.items() if e and e != 'Dummy'}
-        # Comptem equips per entitat dins de la categoria
-        equips_per_entitat_cat = Counter([e for e in df_cat['Entitat'].tolist() if e and e != 'Dummy'])
-        # Cost per equip (normalitzat per entitat)
-        cost_per_equip_cat = {}
-        for e, cnt in equips_per_entitat_cat.items():
-            if cnt > 0:
-                cost_per_equip_cat[e] = cat_entity_costs.get(e, 0.0) / cnt
-        fairness_ratio = None
-        fairness_std = None
-        if cost_per_equip_cat:
-            vals = list(cost_per_equip_cat.values())
-            vmin = min(vals)
-            vmax = max(vals)
-            fairness_ratio = (vmax / vmin) if vmin > 0 else float('inf')
-            # Desviació estàndard sense dependències externes
-            mean_val = sum(vals) / len(vals)
-            fairness_std = (sum((v - mean_val) ** 2 for v in vals) / len(vals)) ** 0.5
-        fairness_info = {
-            'ratio_per_equip': fairness_ratio,
-            'std_per_equip': fairness_std,
-            'cost_per_equip': cost_per_equip_cat,
-        }
-    except Exception:
-        fairness_info = {'ratio_per_equip': None, 'std_per_equip': None, 'cost_per_equip': {}}
-
-
-    return res, entity_costs, {
+        
+    # Retorna el DataFrame amb l'assignació, els costos globals i informació addicional
+    return res, entity_global_costs, {
         'num_grups': len(repartiment),
         'repartiment': repartiment,
         'conflictes_entitat': conflicts_final,
         'categoria': df_cat.iloc[0]['Nom Lliga'],
-        'fairness': fairness_info,
     }

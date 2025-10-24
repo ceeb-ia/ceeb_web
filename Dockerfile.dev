@@ -17,4 +17,4 @@ RUN chmod +x /entrypoint.sh
 
 # Per defecte, la font es muntarà per volum (no la copiem)
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["python", "main.py"]   # canvia-ho si cal
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]

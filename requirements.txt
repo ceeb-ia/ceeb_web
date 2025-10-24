@@ -1,4 +1,8 @@
+fastapi
+uvicorn
 pandas
 openpyxl
+numpy
 scipy
 xlsxwriter
+python-multipart
