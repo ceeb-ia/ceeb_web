@@ -1,15 +1,22 @@
+import asyncio
 from collections import Counter
 import io
 import sys
 import pandas as pd
 import os
 import re
+from consulta_resultats import fetch_ceeb_async, parse_ceeb_xml, xml_to_dataframe
 from convert import xlsx_to_csv
 import numpy as np
 from assignacions import assignar_grups_hungares
 import unicodedata, hashlib
 import tempfile, shutil
+from asgiref.sync import async_to_sync
+from logs import push_log
 from pathlib import Path
+from logs import primera_fase, segona_fase
+
+
 # Helper per convertir índex de columna (0-based) a lletra Excel, amb fallback si no hi ha xlsxwriter
 try:
     from xlsxwriter.utility import xl_col_to_name as _xl_col_to_name
@@ -30,12 +37,38 @@ except Exception:
 
 
 
-ENV = os.getenv("APP_ENV", "DEV")
+MEDIA_ROOT = os.getenv("MEDIA_ROOT", "/data/media")
+BASE_PATH = MEDIA_ROOT
 
-if ENV == "DEV":
-    BASE_PATH = os.getcwd()  # o una ruta fixa local
-else:
-    BASE_PATH = "/app/dades"  # ruta dins el contenidor en producció
+def _normalize_team_key(name: str) -> str:
+    s = unicodedata.normalize('NFKC', str(name or '')).casefold().strip()
+    # normalitza cometes “rares”
+    s = s.replace('“', '"').replace('”', '"').replace('«', '"').replace('»', '"')
+    s = s.replace('’', "'").replace('`', "'")
+    s = " ".join(s.split())
+    return s
+
+
+# De cada partit, obtenim l'equip local i visitant i mirem la seva posició a la classificació
+def _get_team_position(equip: str, df_classificacions: pd.DataFrame, task_id) -> int:
+    equip_norm = _normalize_team_key(equip)
+    # Construeix l'set d'equips presents a la classificació (nom tal qual es mostra)
+    category_teams = set()
+    for _, row_df in df_classificacions.iterrows():
+        team_name = row_df.get('NomEquipMostrar', '')
+        if pd.isna(team_name):
+            team_name = ''
+        category_teams.add(_normalize_team_key(team_name))
+
+    # Recorrem per trobar la posició (1-based) comparant noms normalitzats
+    for idx, row in df_classificacions.iterrows():
+        nom_equip = _normalize_team_key(row.get('NomEquipMostrar', ''))
+        if nom_equip == equip_norm:
+            
+            return idx + 1, category_teams  # posició 1-based
+
+
+    return -1, category_teams  # no trobat
 
 
 def llegir_csv(nom_fitxer):
@@ -206,27 +239,44 @@ def obtenir_entitat(nom):
     import re
     return re.sub(r'\s+((["\']{1,2}).+?\2|[A-Za-zÀ-ÿ]+)$', '', str(nom)).strip()
 
+
+
 def _normalize_entity_name(name: str) -> str:
     # treu variacions d’accents/espais/majús-minus
     s = unicodedata.normalize('NFKC', str(name)).casefold().strip()
     s = " ".join(s.split())  # col·lapsa espais múltiples
     return s
 
-def processar_dades_2(df, nom_fitxer="dades.csv"):
+def processar_dades_2(df, nom_fitxer="dades.csv", task_id=None, segona_fase_bool=False):
     print(df.head())
     entity_costs = {}
+    
+    map_modalitat_nom = pd.read_csv("map_modalitat_nom.csv", delimiter=';')
+
+    # Llista per recollir equips que no s'ha pogut detectar a la classificació
+    missing_classifications = []
+    if segona_fase_bool:
+        fase = segona_fase
+    else:
+        fase = primera_fase
+
     # Assegurem columnes mínimes
-    cols_ok = {'Nom', 'Entitat', 'Nom Lliga', 'Nivell', 'Núm. sorteig', 'Dia partit'}
+    cols_ok = {'Nom', 'Entitat', 'Nom Lliga', 'Nivell', 'Núm. sorteig', 'Dia partit', 'Categoria'}
     missing = cols_ok - set(df.columns)
     print("Columnes del DataFrame:", df.columns)
     if missing:
         print(f"Falten columnes necessàries: {missing}")
+        if task_id:
+            async_to_sync(push_log)(task_id, f"ERROR: Falten columnes necessàries: {missing}", 100)
         raise ValueError(f"Falten columnes necessàries: {missing}")
 
     df = df.copy()
     
     if 'Entitat' not in df.columns:
+        if task_id:
+            async_to_sync(push_log)(task_id, "Falta la columna 'Entitat' i no es pot deduir automàticament.", 100)
         sys.exit("Falta la columna 'Entitat' i no es pot deduir automàticament.")
+
         df['Entitat'] = df['Nom'].apply(obtenir_entitat)
 
     if 'Id' in df.columns:
@@ -236,9 +286,13 @@ def processar_dades_2(df, nom_fitxer="dades.csv"):
     if 'Id' not in df.columns:
         def _mk_id(row):
             nom = _normalize_entity_name(row.get('Nom', ''))
-            cat = _normalize_entity_name(row.get('Nom Lliga', ''))
-            key = f"{nom}|{cat}"
+            lliga = _normalize_entity_name(row.get('Nom Lliga', ''))
+            cat = _normalize_entity_name(row.get('Categoria', '')) 
+
+            key = f"{nom}|{lliga}|{cat}"
             return hashlib.sha1(key.encode('utf-8')).hexdigest()[:10].upper()
+        if task_id:
+            async_to_sync(push_log)(task_id, "Assignant Ids als equips...", 20)
         df['Id'] = df.apply(_mk_id, axis=1)
 
     # Abans de construir el mapping, verifiquem incoherències: un mateix equip (Id)
@@ -265,11 +319,12 @@ def processar_dades_2(df, nom_fitxer="dades.csv"):
                 "Un equip només pot demanar un tipus. Equips afectats:\n" + "\n".join(details)
             )
             print(msg)
+            if task_id:
+                async_to_sync(push_log)(task_id, msg, 100)
             sys.exit(msg)
 
-    from assignacions import primera_fase
     # Calculem el nombre total de jornades que juga la entitat
-    total_jornades = len(primera_fase)
+    total_jornades = len(fase)
     
     # Per simplicitat, assumim que totes les entitats tenen el mateix nombre de jornades
     # Pots refinar això si tens diferents formats de lliga per entitat
@@ -289,8 +344,12 @@ def processar_dades_2(df, nom_fitxer="dades.csv"):
     # 1) Commptem "enllaços" d'entitats que han demanat casa/fora amb altres que també han demanat
     entitats_links = {}
     # Per cada entitat del df
+    if task_id:
+        async_to_sync(push_log)(task_id, "Analitzant números de sorteig per assignacions casa/fora...", 30)
     for _, row in df.iterrows():
         entitat = row['Entitat']
+        if "Pista joc" in df.columns:
+            entitat = row['Pista joc']
         peticio = str(row['Núm. sorteig']).strip().lower()
         if peticio not in ('casa', 'fora'):
             continue
@@ -300,10 +359,16 @@ def processar_dades_2(df, nom_fitxer="dades.csv"):
 
         # Repassem tots els equips de l'entitat que han demanat casa/fora
         # NOMÉS categories on aquesta entitat ha demanat casa/fora
-        equips_entitat_req = df[
-            (df['Entitat'] == entitat) &
-            (df['Núm. sorteig'].astype(str).str.strip().str.lower().isin(['casa', 'fora']))
-        ]
+        if "Pista joc" in df.columns:
+            equips_entitat_req = df[
+                (df['Pista joc'] == entitat) &
+                (df['Núm. sorteig'].astype(str).str.strip().str.lower().isin(['casa', 'fora']))
+            ]
+        else:
+            equips_entitat_req = df[
+                (df['Entitat'] == entitat) &
+                (df['Núm. sorteig'].astype(str).str.strip().str.lower().isin(['casa', 'fora']))
+            ]
         # Obtenim les categories d'aquests equips
         categories_entitat = equips_entitat_req['Nom Lliga'].dropna().unique()
 
@@ -311,8 +376,8 @@ def processar_dades_2(df, nom_fitxer="dades.csv"):
         for cat in categories_entitat:
             equips_cat = df[df['Nom Lliga'] == cat]
             for _, r in equips_cat.iterrows():
-                equip = r['Nom']
-                entitat2 = r['Entitat']
+                equip = r['Id']
+                entitat2 = r['Pista joc'] if "Pista joc" in df.columns else r['Entitat']
                 peticio2 = str(r['Núm. sorteig']).strip().lower()
                 if entitat2 != entitat and peticio2 in ('casa', 'fora'):
                     entitats_links[entitat].add(equip)
@@ -331,23 +396,39 @@ def processar_dades_2(df, nom_fitxer="dades.csv"):
     # Recorrem les entitats en ordre d'importància (més enllaços primer)
     for entitat in list(entitats_links.keys()):  # preserva l'ordre establert i el fa explícit
         entitat_count = {} # {idx_dupla : count}
+        
+        # Ens assegurem que totes les duples estan representades
+        for id_ in range(len(duples_casa_fora)):
+            entitat_count.setdefault(id_, 0)
+
         # Per aquesta entitat, observem el panorama de números de sorteig que es pot trobar per
         # assignar la millor dupla casa/fora possible.
         # Categories on aquesta entitat HA DEMANAT casa/fora (no totes on juga)
-        cats_req = (
-            df.loc[
-                (df['Entitat'] == entitat) &
-                (df['Núm. sorteig'].astype(str).str.strip().str.lower().isin(['casa', 'fora'])),
-                'Nom Lliga'
-            ].dropna().unique()
-        )
+        if "Pista joc" in df.columns:
+            cats_req = (
+                df.loc[
+                    (df['Pista joc'] == entitat) &
+                    (df['Núm. sorteig'].astype(str).str.strip().str.lower().isin(['casa', 'fora'])),
+                    'Nom Lliga'
+                ].dropna().unique()
+            )
+        else:
+            cats_req = (
+                df.loc[
+                    (df['Entitat'] == entitat) &
+                    (df['Núm. sorteig'].astype(str).str.strip().str.lower().isin(['casa', 'fora'])),
+                    'Nom Lliga'
+                ].dropna().unique()
+            )
 
         for categoria in sorted(cats_req, key=lambda s: str(s).casefold()):
             cat = str(categoria).strip()
-            if not any(sport in cat.lower() for sport in ["volei", "futbol", "hoquei"]):
-                continue
+            #print(f"Analitzant entitat '{entitat}' a la categoria '{categoria}'...")
             # Recollim els números de sorteig demanats en aquesta categoria
             equips_cat = df[df['Nom Lliga'] == categoria]
+            #print(f"  Equips a categoria '{categoria}': {len(equips_cat)}")
+            # Fem value counts dels números de sorteig
+            #print("  Comptatge de números de sorteig a la categoria:", equips_cat['Núm. sorteig'].value_counts().to_dict())
             for _, r_cat in equips_cat.iterrows():
                 seed = normalize_seed_value(r_cat['Núm. sorteig'])
                 if not pd.isna(seed):
@@ -355,67 +436,105 @@ def processar_dades_2(df, nom_fitxer="dades.csv"):
                     for id_, (casa, fora) in enumerate(duples_casa_fora):
                         if seed == casa or seed == fora:
                             entitat_count[id_] = entitat_count.get(id_, 0) + 1
+                            #print(f"Entitat '{entitat}' veu el número {seed} a la categoria '{categoria}' (dupla {id_})")
                             break
 
-        # Ens assegurem que totes les duples estan representades
-        for id_ in range(len(duples_casa_fora)):
-            entitat_count.setdefault(id_, 0)
+            #print(f"Comptatge de duples per l'entitat '{entitat}' a la categoria '{categoria}': {entitat_count}")
 
         # Si no hi ha cap compte (per ex. només hi ha peticions textuals casa/fora), fem un fallback estable
-        if not entitat_count:
+        if sum(entitat_count.values()) == 0:
+
             h = int(hashlib.sha1(_normalize_entity_name(entitat).encode('utf-8')).hexdigest(), 16)
             entitat_count = {h % len(duples_casa_fora): 0}
         # Triem l'ordre de preferència de les duples endreçant per nombre ascendent d'aparicions
         entitat_count = dict(sorted(entitat_count.items(), key=lambda item: item[1]))
         # Guardem l'ordre de preferència per aquesta entitat
         preferencies_entitat[entitat] = entitat_count
+        print(f"Preferències de duples per l'entitat '{entitat}': {preferencies_entitat[entitat]}")
 
-    print ("Preferències d'entitats estipulades")
+
+    if task_id:
+        async_to_sync(push_log)(task_id, "Assignant números de sorteig als equips segons preferències...", 50)
+
+
+    # Ids dels equips que han demanat 'casa' o 'fora' (textual) per cada entitat
+    mask_textual = df['Núm. sorteig'].astype(str).str.strip().str.lower().isin(['casa', 'fora'])
+
+    if "Pista joc" in df.columns:
+        ids_textuals_per_entitat = (
+            df.loc[mask_textual, ['Pista joc', 'Id']]
+            .dropna(subset=['Pista joc', 'Id'])
+            .groupby('Pista joc')['Id']
+            .apply(lambda s: set(s.values))
+            .to_dict()
+        )
+    else:
+        ids_textuals_per_entitat = (
+            df.loc[mask_textual, ['Entitat', 'Id']]
+            .dropna(subset=['Entitat', 'Id'])
+            .groupby('Entitat')['Id']
+            .apply(lambda s: set(s.values))
+            .to_dict()
+        )
+
 
     # Ara, tornem a recorrer tots els equips de cada entitat que han demanat casa/fora i, per cada
     # equip que ha demanat casa/fora, assignem el número de sorteig segons la preferència de l'entitat
-
+    ids_assigned_per_dupla = {0: set(), 1: set(), 2: set(), 3: set()}
     equip_to_num_sorteig = {}
     entitats_assigned = {}
     for entitat, preferencies in preferencies_entitat.items():
-        equips_entitat = df[
-            (df['Entitat'] == entitat) &
-            (df['Núm. sorteig'].astype(str).str.strip().str.lower().isin(['casa', 'fora']))
-        ].copy()
-        # primera dupla preferida (clau int) si existeix
-        tupla_preferida = next(iter(preferencies.keys()), None)
-        tuples_used = set()
-        tuples_used.add(tupla_preferida)
-        # Verifiquem els links d'aquesta entitat amb qualsevol altra entitat que estigui
-        # a entitats_assigned. Si hi ha conflicte, passem a la següent preferència
-        for equip_link in sorted(entitats_links.get(entitat, []), key=lambda s: str(s).casefold()):
-            for entitat2, dupla2 in entitats_assigned.items():
-                equips_entitat2 = df[
-                    (df['Entitat'] == entitat2) &
-                    (df['Núm. sorteig'].astype(str).str.strip().str.lower().isin(['casa', 'fora']))
-                ]
-                if equip_link in equips_entitat2['Nom'].values:
-                    # Hi ha un enllaç entre entitat i entitat2
-                    if tupla_preferida == dupla2:
-                        # Conflicte: mateixa dupla assignada
-                        # Busquem la següent preferència
-                        tupla_preferida = None
-                        for pref in sorted(preferencies.keys()):
-                            if pref != dupla2 and pref not in tuples_used:
-                                tupla_preferida = pref
-                                tuples_used.add(pref)
-                                #print(f"Preferència actualitzada per l'entitat '{entitat}': {tupla_preferida}")
-                                break
-        # Si no hi ha preferència vàlida, assignem la original (no canviarem res)
+        print(f"Processant entitat '{entitat}' per assignar números de sorteig...")
+        if "Pista joc" in df.columns:
+            equips_entitat = df[
+                (df['Pista joc'] == entitat) & mask_textual
+            ].copy()
+        
+        else:
+            equips_entitat = df[
+                (df['Entitat'] == entitat) & mask_textual
+            ].copy()
+
+        links = set(entitats_links.get(entitat, []))  # Ids d'equip "enllaçats" amb aquesta entitat
+
+        total_assigned_ids = set().union(*ids_assigned_per_dupla.values())
+
+        #print("  links:", len(links))
+        #print("  assigned_ids:", len(total_assigned_ids))
+        #print("  overlap links∩assigned:", len(links & total_assigned_ids))
+
+        # Conflictes per dupla = quants Ids enllaçats ja estan assignats a aquella dupla
+        duples_ocupades = Counter({
+            d: len(links & ids_assigned_per_dupla[d])
+            for d in range(len(duples_casa_fora))
+        })
+        #print("  duples_ocupades:", dict(duples_ocupades))
+
+        # Tria la dupla amb menys conflictes, respectant ordre de preferència
+        tupla_preferida = None
+        min_conflictes = float('inf')
+
+        for pref in preferencies.keys():  # IMPORTANT: no sorted()
+            c = duples_ocupades.get(pref, 0)
+            if c < min_conflictes:
+                min_conflictes = c
+                tupla_preferida = pref
+
         if tupla_preferida is None:
             tupla_preferida = next(iter(preferencies.keys()), None)
+            min_conflictes = duples_ocupades.get(tupla_preferida, 0)
+
+        #print(f"  Dupla assignada a l'entitat '{entitat}': {tupla_preferida} (conflictes: {min_conflictes})")
+
 
         casa_num, fora_num = duples_casa_fora[tupla_preferida]
         for _, equip in equips_entitat.iterrows():
             req = str(equip['Núm. sorteig']).strip().lower()
             if req == 'casa':
                 if casa_num not in [8,7,6,1]:
-                    print ("Atenció 2: ", equip, req)
+
+                    if task_id:
+                        async_to_sync(push_log)(task_id, "Número de sorteig assignat a 'casa' no vàlid", 100)
                     sys.exit("Número de sorteig assignat a 'casa' no vàlid")
                 prev = equip_to_num_sorteig.get(equip['Id'])
                 if prev is not None and prev != casa_num:
@@ -423,12 +542,16 @@ def processar_dades_2(df, nom_fitxer="dades.csv"):
                         f"ERROR: Conflicte de mapping per a l'equip '{equip['Id']}'. "
                         f"Ja tenia assignat {prev} i s'està intentant assignar {casa_num} (CASA)."
                     )
-                    print(msg)
+
+                    if task_id:
+                        async_to_sync(push_log)(task_id, msg, 100)
                     sys.exit(msg)
                 equip_to_num_sorteig[equip['Id']] = casa_num
             elif req == 'fora':
                 if fora_num not in [5,4,3,2]:
-                    print ("Atenció 3: ", equip, req)
+
+                    if task_id:
+                        async_to_sync(push_log)(task_id, "Número de sorteig assignat a 'fora' no vàlid", 100)
                     sys.exit("Número de sorteig assignat a 'fora' no vàlid")
                 prev = equip_to_num_sorteig.get(equip['Id'])
                 if prev is not None and prev != fora_num:
@@ -436,18 +559,25 @@ def processar_dades_2(df, nom_fitxer="dades.csv"):
                         f"ERROR: Conflicte de mapping per a l'equip '{equip['Id']}'. "
                         f"Ja tenia assignat {prev} i s'està intentant assignar {fora_num} (FORA)."
                     )
-                    print(msg)
+
+                    if task_id:
+                        async_to_sync(push_log)(task_id, msg, 100)
                     sys.exit(msg)
                 equip_to_num_sorteig[equip['Id']] = fora_num
             else: 
-                print ("Atenció 4: ", equip, req)
+
+                if task_id:
+                    async_to_sync(push_log)(task_id, f"Petició de número de sorteig no vàlida per a l'equip '{equip['Id']}' (ha de ser 'casa' o 'fora')", 100)
                 sys.exit("Petició de número de sorteig no vàlida (ha de ser 'casa' o 'fora')")
 
         # Guardem la dupla assignada a aquesta entitat
         entitats_assigned[entitat] = tupla_preferida
+
+        # IMPORTANT: actualitza l'acumulat d'Ids assignats per aquesta dupla
+        ids_assigned_per_dupla[tupla_preferida] |= ids_textuals_per_entitat.get(entitat, set())
             
-    print("Assignació de números de sorteig per equips (segons peticions):", equip_to_num_sorteig)
-# Resum i comptatge de duples assignades
+    #print("Assignació de números de sorteig per equips (segons peticions):", equip_to_num_sorteig)
+    # Resum i comptatge de duples assignades
     counts = Counter(entitats_assigned.values())
     resum_duples = []
     for idx in range(len(duples_casa_fora)):
@@ -458,19 +588,165 @@ def processar_dades_2(df, nom_fitxer="dades.csv"):
             "Fora": fora,
             "#Entitats": int(counts.get(idx, 0)),
         })
-    #print("Repartiment de duples (comptatge per idx):", dict(counts))
-    #print("Detall duples:", resum_duples)    
-    #sys.exit()
+    print("Repartiment de duples (comptatge per idx):", dict(counts))
+    print("Detall duples:", resum_duples)    
+
+
+    # En cas que estiguem a la segona fase, hem de consultar les classificacions
+    if segona_fase_bool:
+        print("Segona fase: processant classificacions prèvies...")
+        if task_id:
+            async_to_sync(push_log)(task_id, "Consultant classificacions per equips... (això pot portar uns minuts)", 60)
+        # Agrupem tot el df per modalidat
+        # Recull d'equips que apareixen a la classificació però no s'han utilitzat
+        unused_classification_teams = []
+
+        df_grouped_modalitat = df.groupby(['Modalitat', 'Categoria', 'Subcategoria'])
+        for (modalitat, categoria, subcategoria), df_modalitat in df_grouped_modalitat:
+
+            print(f"Processant modalitat '{modalitat}, {categoria}, {subcategoria}' amb {len(df_modalitat)} equips...")
+            map_modalitat = map_modalitat_nom.loc[map_modalitat_nom['Modalitat'] == modalitat]
+            p2 = map_modalitat[map_modalitat["Nom"] == categoria]  # agafem el primer (només n'hi ha un)
+            if subcategoria == "MIXT":
+                p5 = "SXMIX"
+            elif subcategoria == "FEMENÍ" or subcategoria == "FEMENI" or subcategoria == "FEM" or subcategoria == "F":
+                p5 = "SXFEM"
+            else:
+                raise ValueError(f"Subcategoria desconeguda: {subcategoria}")
+
+            # ------------ Consultem classificacions actualitzades ------------
+            #print("P2:", p2, "P5:", p5)
+            root = asyncio.run(fetch_ceeb_async(str(p2["Id Categoria"].values[0]), p5))   #(idModalitat, Sexe/Subcategoria)
+            if root is None:
+                print(f"Error fetching classifications for modalitat: {modalitat}")
+                continue
+            parsed = parse_ceeb_xml(root)
+            #print("Parsed XML:", parsed)
+            classificacions_list = xml_to_dataframe(parsed)
+            OUTPUT_COLUMNS = ['NomEquipMostrar', 'isBaixa', 'PJ', 'PG', 'PE', 'PP', 'PUNTS', 'PUNTSBASE', 'PUNTSTOTALSAMBVALORS', 'PUNTSVALORS', 'PUNTSVALORSESPORTISTA', 'PUNTSVALORSTECNIC', 'PUNTSVALORSFAMILIAR', 'AVG', 'PF', 'PC', 'SANC', 'BONIF', 'NOPRESENTAT']
+
+            print(f"Classificació obtinguda per modalitat '{modalitat}, {categoria}, {subcategoria}':")
+            print(classificacions_list)
+
+            # Per cada equip de la modalitat, obtenim la seva posició a la classificació
+            used_teams = set()
+            total_teams = set()
+            for idx, row in df_modalitat.iterrows():
+                posicio = -1
+                equip_id = row['Id']
+                equip_nom = row['Nom']
+                lliga_nom = row['Nom Lliga']
+
+                # Busquem en la llista de classificacions de cada grup l'equip que es digui igual
+                # clau fixa del “context” de la classificació (no depèn del Nom Lliga de l’Excel)
+                ctx = f"{modalitat}||{categoria}||{subcategoria}"
+
+                for idx2, df_grup in enumerate(classificacions_list):
+                    posicio, category_teams_raw = _get_team_position(equip_nom, df_grup, task_id)
+
+                    grup_id = f"G{idx2}"
+
+                    # equips totals del grup (preservant variants)
+                    group_team_tags = {
+                        f"{_normalize_team_key(t)}||{ctx}||{grup_id}"
+                        for t in category_teams_raw
+                    }
+                    total_teams.update(group_team_tags)
+
+                    if posicio != -1:
+                        found_tag = f"{_normalize_team_key(equip_nom)}||{ctx}||{grup_id}"
+                        used_teams.add(found_tag)
+                        break
+
+                if posicio == -1:
+                    print(f"    → NO TROBAT a cap grup per la modalitat '{modalitat}, {categoria}, {subcategoria}'")
+                    #if task_id:
+                    #    async_to_sync(push_log)(task_id, f"Equip '{equip_nom}' no trobat a la classificació de la modalitat '{modalitat}, {categoria}, {subcategoria}'. Revisa que el nom sigui correcte.", 99)
+                    # recollim l'equip com a "no trobat" per full extra (segona fase)
+                    missing_classifications.append({
+                        'Modalitat': modalitat,
+                        'Categoria': categoria,
+                        'Subcategoria': subcategoria,
+                        'Nom Lliga': row.get('Nom Lliga', ''),
+                        'Id': equip_id,
+                        'Nom': equip_nom,
+                        'Motiu': 'No trobat a la classificació'
+                    })
+                    posicio = 10  # no trobat
+                top = posicio <= 4 and posicio >= 0
+                print(f"    → Posició final assignada: {posicio} (Top3: {top})")
+                # Guardem la posició numèrica en una columna separada i
+                # la columna `Posició Classificació` com a boolean indicant Top3
+                df.loc[df['Id'] == equip_id, 'Posició Classificació Num'] = posicio
+                df.loc[df['Id'] == equip_id, 'Posició Classificació'] = bool(top)
+
+            # Unused teams for THIS modalitat: apareixien a la classificació però no s'han utilitzat
+            unused_teams_modalitat = total_teams - used_teams
+            print(f"Total equips a la classificació: {len(total_teams)} modalitat {modalitat}, equips utilitzats: {len(used_teams)}, no utilitzats: {len(unused_teams_modalitat)}")
+
+            if unused_teams_modalitat:
+                print(f"Equips no utilitzats a la classificació (modalitat {modalitat}): {unused_teams_modalitat}")
+                for entry in sorted(unused_teams_modalitat):
+                    try:
+                        parts = entry.split('||')
+                        team_name = parts[0] if len(parts) > 0 else entry
+                        modalitat_name = parts[1] if len(parts) > 1 else ''
+                        categoria_name = parts[2] if len(parts) > 2 else ''
+                        subcat_name = parts[3] if len(parts) > 3 else ''
+                        grup_name = parts[4] if len(parts) > 4 else ''
+                    except Exception:
+                        team_name = entry
+                        modalitat_name = ''
+                        categoria_name = ''
+                        subcat_name = ''
+                        grup_name = ''
+
+                    unused_classification_teams.append({
+                        'Modalitat': modalitat_name or modalitat,
+                        'Categoria': categoria_name or categoria,
+                        'Subcategoria': subcat_name or subcategoria,
+                        'Nom Lliga': f"{modalitat_name} {categoria_name} {subcat_name}".strip(),
+                        'Nom': team_name,
+                        'Grup': grup_name,
+                        'Motiu': "Present a la classificació però no trobat a l'input"
+                    })
+
+        print(f"Equips no utilitzats a la classificació (TOTAL): {len(unused_classification_teams)}")
+        if len(unused_classification_teams) > 0:
+            df_unused = pd.DataFrame(unused_classification_teams)
+            print(df_unused)
+
+
+
+
+        # Per totes les files del df, comprovem si tenen posició de classificació assignada, sino els hi donem False
+        for idx, row in df.iterrows():
+            if 'Posició Classificació Num' not in df.columns or pd.isna(row['Posició Classificació Num']):
+                df.at[idx, 'Posició Classificació Num'] = 10  # no trobat
+            if 'Posició Classificació' not in df.columns or pd.isna(row['Posició Classificació']):
+                df.at[idx, 'Posició Classificació'] = False  # no trobat
+
+
+        # Mostrem el DataFrame amb les posicions assignades
+        print("DataFrame amb posicions de classificació assignades:")
+        print(df[['Nom', 'Nom Lliga', 'Modalitat', 'Categoria', 'Subcategoria', 'Posició Classificació Num']])    
+
+
+
     categories = sorted(df['Nom Lliga'].dropna().unique())
 
     resultats_totals = []
     info_totals = []
 
-    for categoria in categories:
-        if not any(sport in categoria.lower() for sport in ["volei", "futbol", "hoquei"]):
-            continue
+    for num_cat, categoria in enumerate(categories):
+
         df_cat = df[df['Nom Lliga'] == categoria].copy()
-        print(f"\nProcessant categoria '{categoria}' amb {len(df_cat)} equips...")
+        print(f"Processant categoria '{categoria}' amb {len(df_cat)} equips...")
+
+        if task_id:
+            # Normalitzem entre 50 i 100 la progressió
+            prog = (50 + (num_cat + 1)*40 // len(categories))
+            async_to_sync(push_log)(task_id, f"Processant categoria '{categoria}' amb {len(df_cat)} equips...", prog)
         if df_cat.empty:
             continue
 
@@ -482,7 +758,9 @@ def processar_dades_2(df, nom_fitxer="dades.csv"):
                 min_grup=6,
                 entity_costs=entity_costs,
                 equips_to_num_sorteig=equip_to_num_sorteig.copy(),
-                weights={'w_dif_sorteig': np.log2(27)}
+                fase=fase,
+                weights={'w_dif_sorteig': np.log2(27)},
+                segona_fase_bool=segona_fase_bool,
             )
         except ValueError as e:
             # p.ex. una entitat té més equips que grups (no factible separar)
@@ -500,12 +778,24 @@ def processar_dades_2(df, nom_fitxer="dades.csv"):
         print(f"[OK] {categoria} → {out_path}")
         print("Info:", info)'''
 
+        # Si estem a la segona fase, afegim la columna 'Posició Classificació'
+        # a l'output per categoria, fent mapping des del `df` original via `Id`.
+        if segona_fase_bool and 'Posició Classificació Num' in df.columns:
+            pos_map = df[df['Nom Lliga'] == categoria].set_index('Id')['Posició Classificació Num'].to_dict()
+            res_df = res_df.copy()
+            if 'Id' in res_df.columns:
+                res_df['Posició Classificació Num'] = res_df['Id'].map(pos_map).fillna('')
+            else:
+                res_df['Posició Classificació Num'] = ''
+
         resultats_totals.append(res_df.assign(_Categoria=categoria))
         info_totals.append({'categoria': categoria, **info})
 
 
     
     # --- PREPARA VALIDACIONS PER ESCRIURE A L'EXCEL (si hi ha resultats) ---
+    if task_id:
+        async_to_sync(push_log)(task_id, "Preparant excel final", 92)
     df_val_count_summary = pd.DataFrame()
     df_val_count_by_cat = pd.DataFrame()
     df_val_entity_conflicts = pd.DataFrame(columns=["Categoria", "Grup", "Entitat", "Count"])
@@ -760,8 +1050,13 @@ def processar_dades_2(df, nom_fitxer="dades.csv"):
                 casa_num, fora_num = duples_casa_fora[int(dupla_idx)]
             except Exception:
                 continue
-            n_casa = int(((df['Entitat'] == entitat) & s_lower.eq('casa')).sum())
-            n_fora = int(((df['Entitat'] == entitat) & s_lower.eq('fora')).sum())
+            if 'Pista joc' in df.columns:
+                n_casa = int(((df['Pista joc'] == entitat) & s_lower.eq('casa')).sum())
+                n_fora = int(((df['Pista joc'] == entitat) & s_lower.eq('fora')).sum())
+            else:
+                n_casa = int(((df['Entitat'] == entitat) & s_lower.eq('casa')).sum())
+                n_fora = int(((df['Entitat'] == entitat) & s_lower.eq('fora')).sum())            
+            
             ent_rows.append({
                 "Entitat": entitat,
                 "Casa": casa_num,
@@ -825,7 +1120,7 @@ def processar_dades_2(df, nom_fitxer="dades.csv"):
     excel_path = os.path.join(BASE_PATH, f"assignacions_{nom_fitxer}.xlsx")
     os.makedirs(os.path.dirname(excel_path), exist_ok=True)
     output = io.BytesIO()
-    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+    with pd.ExcelWriter(excel_path, engine="xlsxwriter") as writer:
         workbook = writer.book
 
         # Formats
@@ -1127,6 +1422,60 @@ def processar_dades_2(df, nom_fitxer="dades.csv"):
             ws_inc.write(0, 0, "INCIDÈNCIES", fmt_title)
             ws_inc.write(2, 0, "Cap incidència detectada.", fmt_default)
 
+
+        if segona_fase_bool and missing_classifications:
+            try:
+                df_missing = pd.DataFrame(missing_classifications)
+                # Ordena per Modalitat → Categoria → Subcategoria → Nom
+                df_missing.sort_values(['Modalitat', 'Categoria', 'Subcategoria', 'Nom'], inplace=True)
+                sheet_missing = "Equips No Classificats"
+                # Evita col·lisió amb noms existents
+                orig_sheet = sheet_missing
+                k = 1
+                while sheet_missing in writer.sheets:
+                    sheet_missing = f"{orig_sheet}_{k}"
+                    k += 1
+                df_missing.to_excel(writer, sheet_name=sheet_missing, index=False, startrow=0)
+                ws_m = writer.sheets[sheet_missing]
+                # capçalera
+                for col_idx, _ in enumerate(df_missing.columns):
+                    ws_m.write(0, col_idx, df_missing.columns[col_idx], fmt_header)
+                    ws_m.set_column(col_idx, col_idx, max(12, min(40, len(str(df_missing.columns[col_idx])) + 5)))
+                ws_m.autofilter(0, 0, max(0, len(df_missing)), max(0, len(df_missing.columns) - 1))
+                ws_m.freeze_panes(1, 0)
+            except Exception:
+                # No volem que un error a aquesta funcionalitat pari tota la generació
+                pass
+
+        # Escriu equips que surten a la classificació però no han estat utilitzats
+        try:
+            if len(unused_classification_teams) > 0:
+                df_unused = pd.DataFrame(unused_classification_teams)
+                # Ordena per Modalitat → Categoria → Subcategoria → Nom
+                df_unused.sort_values(['Modalitat', 'Categoria', 'Subcategoria', 'Nom'], inplace=True)
+                orig_sheet_u = "Equips Classificació No Utilitzats"
+                # Assegura que el nom del full compleixi el límit de 31 caràcters
+                max_len = 31
+                sheet_unused = orig_sheet_u[:max_len]
+                k = 2
+                while sheet_unused in writer.sheets:
+                    suffix = f"_{k}"
+                    allowed_base_len = max_len - len(suffix)
+                    sheet_unused = (orig_sheet_u[:allowed_base_len] + suffix)[:max_len]
+                    k += 1
+                df_unused.to_excel(writer, sheet_name=sheet_unused, index=False, startrow=0)
+                ws_u = writer.sheets[sheet_unused]
+                # capçalera
+                for col_idx, _ in enumerate(df_unused.columns):
+                    ws_u.write(0, col_idx, df_unused.columns[col_idx], fmt_header)
+                    ws_u.set_column(col_idx, col_idx, max(12, min(40, len(str(df_unused.columns[col_idx])) + 5)))
+                ws_u.autofilter(0, 0, max(0, len(df_unused)), max(0, len(df_unused.columns) - 1))
+                ws_u.freeze_panes(1, 0)
+        except Exception as e:
+            # No volem que un error a aquesta funcionalitat pari tota la generació
+            print("Error escrivint equips de classificació no utilitzats.", str(e)) 
+
+
         # --- FULL per categoria ---
         for res_df_cat in resultats_totals:
             categoria = res_df_cat["_Categoria"].iloc[0] if "_Categoria" in res_df_cat.columns else "Categoria"
@@ -1272,264 +1621,91 @@ def processar_dades_2(df, nom_fitxer="dades.csv"):
             # línies de taula (vora fina) a totes les cel·les
             for r in range(start_row + 1, start_row + 1 + n_rows):
                 ws.set_row(r, None, fmt_default)
+        # Si és segona fase, afegim full amb equips no classificats (agrupats per Modalitat)
+
 
         # missatge final
     print(f"[OK] Excel generat → {excel_path}")
 
     output.seek(0)
-    return output
-
-    # --- VALIDACIONS GLOBALS POST-PROCÉS ---
-    def _req_type(x):
-        s = str(x).strip().casefold()
-        if s == "casa":
-            return "casa"
-        if s == "fora":
-            return "fora"
-        return None
-
-    def _is_real_team(row) -> bool:
-        nom = row.get("Nom", "")
-        ent = row.get("Entitat", "")
-        if pd.isna(nom) or str(nom).strip() == "":
-            return False
-        if str(ent).strip() in ("", "Descans"):
-            return False
-        return True
-
-    contraris = {1: 5, 2: 6, 3: 7, 4: 8, 5: 1, 6: 2, 7: 3, 8: 4}
-
-    if resultats_totals:
-        all_results = pd.concat(resultats_totals, ignore_index=True)
-
-        # 1) Verificació de recompte d'equips (excloent dummies i files buides)
-        input_total = len(df)
-        assigned_real = all_results[all_results.apply(_is_real_team, axis=1)]
-        assigned_total = len(assigned_real)
-        ok_count = (input_total == assigned_total)
-
-        if not ok_count:
-            print(f"VALIDACIÓ (COMPTATGE): Esperats {input_total} equips, assignats {assigned_total} (excloent dummies).")
-            # detall per categoria
-            per_cat_in = df.groupby("Nom Lliga").size().to_dict()
-            per_cat_assigned = (
-                assigned_real.groupby("Nom Lliga").size().to_dict()
-                if not assigned_real.empty else {}
-            )
-            diffs = {k: (per_cat_in.get(k, 0), per_cat_assigned.get(k, 0)) for k in set(per_cat_in) | set(per_cat_assigned)}
-            for cat, (exp, got) in sorted(diffs.items()):
-                if exp != got:
-                    print(f"  - [{cat}] esperats {exp}, assignats {got}")
-        else:
-            print("VALIDACIÓ (COMPTATGE): OK – totals coincideixen (excloent dummies).")
-
-        # 2) Verificació de conflictes d'entitat dins de cada grup per categoria
-        any_conflicts = False
-        for cat, df_cat_res in all_results.groupby("Nom Lliga"):
-            for grup, df_grup in df_cat_res.groupby("Grup"):
-                ents = [e for e in df_grup["Entitat"].tolist() if e and e != "Descans"]
-                cnt = pd.Series(ents).value_counts() if ents else pd.Series(dtype=int)
-                dup = cnt[cnt > 1]
-                if not dup.empty:
-                    any_conflicts = True
-                    print(f"VALIDACIÓ (ENTITAT): Conflicte a {cat} / {grup} → {dup.to_dict()}")
-        if not any_conflicts:
-            print("VALIDACIÓ (ENTITAT): OK – cap grup té duplicats d'entitat.")
-
-        # 2.5) Anàlisi d'equitabilitat de costos entre entitats
-        print("\n--- ANÀLISI D'EQUITABILITAT DE COSTOS ---")
-        equitabilitat = analitzar_equitabilitat_costos(entity_costs, all_results)
-        
-        if equitabilitat["status"] == "Analitzat":
-            print(f"Nombre d'entitats: {equitabilitat['num_entitats']}")
-            print(f"Cost mitjà per entitat: {equitabilitat['cost_mitjà']:.2f}")
-            print(f"Rang de costos: {equitabilitat['cost_min']:.2f} - {equitabilitat['cost_max']:.2f}")
-            print(f"Desviació estàndard: {equitabilitat['desviació_estàndard']:.2f}")
-            print(f"Ràtio de desigualtat (màx/mín): {equitabilitat['ràtio_desigualtat']:.2f}")
-            
-            if equitabilitat['entitats_molt_perjudicades']:
-                print(f"\n⚠️  ENTITATS MOLT PERJUDICADES (>2σ): {equitabilitat['entitats_molt_perjudicades']}")
-            
-            if equitabilitat['entitats_perjudicades']:
-                print(f"\n⚠️  ENTITATS PERJUDICADES (>1σ): {equitabilitat['entitats_perjudicades']}")
-            
-            # Mostra els 5 costos més alts i més baixos
-            costos_ordenats = sorted(equitabilitat['costos_detallats'].items(), key=lambda x: x[1], reverse=True)
-            print("\nTOP 5 ENTITATS AMB MÉS COST:")
-            for i, (entitat, cost) in enumerate(costos_ordenats[:5]):
-                num_equips = equitabilitat['equips_per_entitat'].get(entitat, 1)
-                cost_per_equip = equitabilitat['cost_per_equip'].get(entitat, 0)
-                print(f"  {i+1}. {entitat}: {cost:.2f} total ({num_equips} equips, {cost_per_equip:.2f}/equip)")
-            
-            print("\nTOP 5 ENTITATS AMB MENYS COST:")
-            for i, (entitat, cost) in enumerate(costos_ordenats[-5:][::-1]):
-                num_equips = equitabilitat['equips_per_entitat'].get(entitat, 1)
-                cost_per_equip = equitabilitat['cost_per_equip'].get(entitat, 0)
-                print(f"  {i+1}. {entitat}: {cost:.2f} total ({num_equips} equips, {cost_per_equip:.2f}/equip)")
-            
-            # Avaluació de l'equitabilitat
-            if equitabilitat['ràtio_desigualtat'] > 5.0:
-                print("\n🚨 AVALUACIÓ: Distribució MOLT DESIGUAL de costos (ràtio > 5.0)")
-            elif equitabilitat['ràtio_desigualtat'] > 3.0:
-                print("\n⚠️  AVALUACIÓ: Distribució DESIGUAL de costos (ràtio > 3.0)")
-            elif equitabilitat['ràtio_desigualtat'] > 2.0:
-                print("\n⚡ AVALUACIÓ: Distribució MODERADAMENT DESIGUAL (ràtio > 2.0)")
-            else:
-                print("\n✅ AVALUACIÓ: Distribució RELATIVAMENT EQUITATIVA de costos")
-        else:
-            print(f"No es pot analitzar equitabilitat: {equitabilitat['status']}")
-
-        # 3) Coherència CASA/FORA per equips segons mapping global (equips_to_num_sorteig)
-        incoherencies = []
-        if 'equip_to_num_sorteig' in locals():
-            mapping = equip_to_num_sorteig
-            sub = all_results.copy()
-            sub = sub[sub.apply(_is_real_team, axis=1)]
-            for _, r in sub.iterrows():
-                req = _req_type(r.get("Núm. sorteig"))
-                if req is None:
-                    continue
-                equip_id = r.get("Id")
-                expected = mapping.get(equip_id)
-                if expected is None:
-                    continue
-                try:
-                    assigned = int(r.get("Núm. sorteig assignat", 0))
-                except Exception:
-                    continue
-                if assigned != expected:
-                    diffs = r.get("Diferències jornades")
-                    incoherencies.append((r["Entitat"], r["Nom Lliga"], r.get("Nom"), req, expected, assigned, diffs))
-        if incoherencies:
-            print("VALIDACIÓ (CASA/FORA): S'han detectat incoherències d'slot segons mapping global:")
-            for entitat, cat, nom, req, esperat, assignat, diffs in incoherencies:
-                print(f"  - {entitat} · {cat} · {nom} · petició={req} → esperat {esperat}, assignat {assignat} · diferències jornades: {diffs if diffs else '—'}")
-        else:
-            print("VALIDACIÓ (CASA/FORA): OK – cada equip amb CASA/FORA està al número del mapping global.")
-
-        # 4) Nivells dispars (≥3) – consola
-        level_spread_issues = []
-        def _level_idx2(val):
-            s = str(val).strip()
-            if not s:
-                return None
-            m = re.search(r"(?i)(?:nivell\s*)?([A-E])\s*$", s)
-            if not m:
-                toks = [t for t in re.split(r"\s+", s) if t]
-                if toks:
-                    last = toks[-1].upper()
-                    if last in {"A", "B", "C", "D", "E"}:
-                        m = [None, last]
-                    else:
-                        return None
-            ch = (m[1] if isinstance(m, (list, tuple)) else m.group(1)).upper()
-            return {"A": 1, "B": 2, "C": 3, "D": 4, "E": 5}.get(ch)
-        
-        for (cat, grup), df_grp in all_results.groupby(["Nom Lliga", "Grup"]):
-            df_grp = df_grp[df_grp.apply(_is_real_team, axis=1)]
-            if df_grp.empty:
-                continue
-            idxs = [idx for idx in ( _level_idx2(x) for x in df_grp["Nivell"] ) if idx is not None]
-            if not idxs:
-                continue
-            mn, mx = min(idxs), max(idxs)
-            dif = mx - mn
-            if dif >= 3:
-                letters = { {1:"A",2:"B",3:"C",4:"D",5:"E"}[i] for i in set(idxs) if i in {1,2,3,4,5} }
-                level_spread_issues.append((cat, grup, ", ".join(sorted(letters)), {1:"A",2:"B",3:"C",4:"D",5:"E"}[mn], {1:"A",2:"B",3:"C",4:"D",5:"E"}[mx], int(dif)))
-        if level_spread_issues:
-            print("VALIDACIÓ (NIVELLS): Grups amb diferència de nivell ≥ 3:")
-            for cat, grup, lvls, mn, mx, dif in level_spread_issues:
-                print(f"  - {cat} / {grup} → nivells: {lvls} · min={mn}, max={mx}, dif={dif}")
-        else:
-            print("VALIDACIÓ (NIVELLS): OK – cap grup té diferència de nivell ≥ 3.")
-
-    # (Opcional) Retorna un únic DataFrame concatenat amb totes les categories
-    if resultats_totals:
-        return pd.concat(resultats_totals, ignore_index=True), info_totals
-    return pd.DataFrame(), info_totals
-
+    return excel_path
 
 
 # ----------------------------------------------------------------------
 
 
-def process_excel(input_path: str, return_logs: bool = False) -> str:
+def process_excel(input_path: str, return_logs: bool = False, task_id: str = None, segona_fase_bool: bool = False) -> str:
     """
     Llegeix l'Excel d'entrada, executa la pipeline i retorna el path
     a un ZIP amb els resultats generats (p.ex. 'csv_generats', informes, etc.).
     """
     # 1) Llegeix l’Excel d’entrada
     logs = []
-    logs.append("Llegint fitxer Excel...")
+    async_to_sync(push_log)(task_id, f"Llegint fitxer Excel... {Path(input_path).name}", 10)
     df = pd.read_excel(input_path)
-    logs.append(f"S’han carregat {len(df)} files.")
 
-    print(f"[INFO] Processant fitxer: {input_path} ({len(df)} files)")
-    # 2) Executa la teva lògica existent (fa servir processar_dades_2)
+
+    async_to_sync(push_log)(task_id, f"S’han carregat {len(df)} inscripcions.", 15)
     #    Aquesta funció ja escriu sortides a BASE_PATH/csv_generats
-    excel_path = processar_dades_2(df, nom_fitxer=Path(input_path).name)  # <- la teva funció existent
-    '''logs.append("Procés de dades complet.")
+    excel_path = processar_dades_2(df, nom_fitxer=Path(input_path).name, task_id=task_id, segona_fase_bool=segona_fase_bool)  # <- la teva funció existent
 
-    # 3) Empaqueta les sortides en un ZIP temporal
-    base_dir = Path(os.getcwd()) if os.getenv("APP_ENV","DEV")=="DEV" else Path("/app/dades")
-    out_dir = base_dir / "csv_generats"
-    if not out_dir.exists():
-        # Si no es generen CSVs, com a fallback, crea un "resultat_vuit.txt"
-        out_dir.mkdir(parents=True, exist_ok=True)
-        (out_dir / "resultat_vuit.txt").write_text("No s'han generat fitxers.")
+    async_to_sync(push_log)(task_id, f"Resultat generat: {Path(excel_path).name}", 90)
 
-    zip_fd, zip_path = tempfile.mkstemp(suffix=".zip")
-    os.close(zip_fd)
-    zip_dst = Path(zip_path)
+    # Ensure the produced file is moved into the MEDIA_ROOT (so external
+    # services can access it via the app's RESULTS_DIR mounting). Use the
+    # env var `MEDIA_ROOT` if present, otherwise default to `/data/results`.
+    try:
+        if isinstance(excel_path, (str, Path)) and os.path.exists(str(excel_path)):
+            media_root = os.getenv('MEDIA_ROOT', '/data/results')
+            os.makedirs(media_root, exist_ok=True)
+            basename = os.path.basename(str(excel_path))
+            dest_path = os.path.join(media_root, basename)
+            # avoid clobbering existing files: add short hash suffix if needed
+            if os.path.exists(dest_path):
+                name, ext = os.path.splitext(basename)
+                suffix = hashlib.sha1(basename.encode()).hexdigest()[:8]
+                dest_path = os.path.join(media_root, f"{name}_{suffix}{ext}")
+                logs.append(f"El fitxer de resultat ja existia a MEDIA_ROOT; s'ha afegit un sufix per evitar sobreescriptura: {os.path.basename(dest_path)}")
+            try:
+                shutil.move(str(excel_path), dest_path)
+                excel_path = dest_path
+                logs.append(f"Fitxer de resultat mogut a MEDIA_ROOT: {os.path.basename(dest_path)}")
+            except Exception:
+                try:
+                    shutil.copy(str(excel_path), dest_path)
+                    excel_path = dest_path
+                    logs.append(f"Fitxer de resultat copiat a MEDIA_ROOT: {os.path.basename(dest_path)}")
+                except Exception:
+                    # if move/copy fail, keep original path
+                    excel_path = str(excel_path)
+                    logs.append("Warning: no s'ha pogut moure ni copiar el fitxer de resultat a MEDIA_ROOT.")
+    except Exception:
+        logs.append("Warning: no s'ha pogut moure el fitxer de resultat a MEDIA_ROOT.")
+        # be resilient: don't fail the whole pipeline because of a move error
+        pass
 
-    with tempfile.TemporaryDirectory() as tmp:
-        tmpdir = Path(tmp)
-        # Copia tota la carpeta de sortida
-        if out_dir.exists():
-            shutil.copytree(out_dir, tmpdir / out_dir.name)
-        shutil.make_archive(str(zip_dst.with_suffix("")), "zip", tmpdir)'''
-
-    logs.append("Resultat generat correctament.")
     if return_logs:
-            return excel_path, logs
+        return str(excel_path), logs
     return str(excel_path)
 
 
 
 if __name__ == "__main__":
     # Llista tots els fitxers CSV del directori actual
+    segona_fase_bool = True
     if len(sys.argv) > 1:
         in_path = sys.argv[1]
         out_path = sys.argv[2] if len(sys.argv) > 2 else None
-        zip_path = process_excel(in_path)
+        zip_path = process_excel(in_path, segona_fase_bool=segona_fase_bool)
         if out_path and out_path.lower().endswith(".zip"):
             shutil.move(zip_path, out_path)
         else:
             print(f"Resultat empaquetat: {zip_path}")
 
-        '''fitxer_csv = sys.argv[1]
-        if not os.path.isfile(fitxer_csv):
-            print(f"Error: El fitxer '{fitxer_csv}' no existeix.")
-            sys.exit(1)
 
-        # Verifiquem que el fitxer tingui extensió .csv o .xlsx
-        if not (fitxer_csv.endswith('.csv') or fitxer_csv.endswith('.xlsx')):
-            print(f"Error: El fitxer '{fitxer_csv}' no té una extensió vàlida.")
-            sys.exit(1)
-
-        # Si és un fitxer .xlsx, el convertim a .csv temporalment
-        if fitxer_csv.endswith('.xlsx'):
-            fitxer_csv = xlsx_to_csv(fitxer_csv)
-
-        df = llegir_csv(fitxer_csv)
-        # Llancem el procés principal
-        if df is not None:
-            processar_dades_2(df, fitxer_csv)
-        sys.exit(0)'''
-    
     else: 
         ruta_csv = os.path.join(BASE_PATH, "csv/")
+        ruta_csv = "./csv/"
         print("Ruta CSV:", ruta_csv)
         fitxers_csv = [f for f in os.listdir(ruta_csv) if (f.endswith('.csv') or f.endswith('.xlsx'))]
         print("Fitxers CSV disponibles:")
@@ -1539,14 +1715,28 @@ if __name__ == "__main__":
         try:
             num = int(input("Introdueix el número del fitxer CSV: "))
             if 1 <= num <= len(fitxers_csv):
+                print(f"Has seleccionat: {fitxers_csv[num - 1]}")
                 nom_fitxer = fitxers_csv[num - 1]
                 df = llegir_csv(os.path.join(ruta_csv, nom_fitxer))
-                if nom_fitxer.endswith('.xlsx'):
+                if nom_fitxer.endswith('.xlsx') or nom_fitxer.endswith('.csv'):
                     path = xlsx_to_csv(os.path.join(ruta_csv, nom_fitxer))
                     df = llegir_csv(path)
+                    # Prefiltre de les categories no vàlides, si estem a la segona fase
+                    if segona_fase_bool:
+                        # Exclou categories que corresponen a la "1ª FASE".
+                        # Abans es filtrava per la columna `Categoria` (pot no ser la que conté la descripció
+                        # de la categoria). Les categories principals s'obtenen de `Nom Lliga`, així que
+                        # filtrem per allà. Regex cobreix "1ª FASE" o un " 1" a final de text.
+                        mask = df['Nom Lliga'].astype(str).str.contains(r"1ª\s*FASE|\b1\b", case=False, na=False)
+                        df = df[~mask]
+                        print(df["Nom Lliga"].unique())
+
+                else:
+                    print("Format de fitxer no suportat. Només .csv o .xlsx")
+                    df = None
                 if df is not None:
-                    processar_dades_2(df, nom_fitxer)
+                    processar_dades_2(df, nom_fitxer, segona_fase_bool=segona_fase_bool)
             else:
                 print("Número fora de rang.")
-        except ValueError:
-            print("Has d'introduir un número vàlid.")
+        except ValueError as e:
+            print("Has d'introduir un número vàlid.", e)

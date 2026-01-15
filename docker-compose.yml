@@ -7,9 +7,12 @@ services:
     volumes:
       - ./:/app                 # codi en hot-reload
       - venv:/venv              # venv persistent (no reinstal·lar cada cop)
-      - pip-cache:/root/.cache/pip  # cache de pip per accelerar
+      - pip-cache:/root/.cache/pip 
+      - ../db_provisional:/data/media
     tty: true
     command: bash     # o bash, uvicorn, flask, etc.
+    environment:
+      MEDIA_ROOT: /data/media
 
 volumes:
   venv:

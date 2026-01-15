@@ -6,3 +6,10 @@ numpy
 scipy
 xlsxwriter
 python-multipart
+celery[redis]==5.3.1
+anyio>=3.6.2
+aiofiles>=23.1.0
+asgiref>=3.6.0
+httpx>=0.24.0
+beautifulsoup4>=4.12.2
+lxml>=4.9.2
