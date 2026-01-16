@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Configurar aparell – {{ competicio.nom }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+  <div class="card-surface">
+
+    <div class="d-flex justify-content-between align-items-start mb-3">
+      <div>
+        <h2 class="mb-1">{% if object %}Editar{% else %}Afegir{% endif %} aparell</h2>
+        <div class="text-muted small">{{ competicio.nom }}</div>
+      </div>
+      <div class="d-flex gap-2">
+        <a class="btn btn-sm btn-outline-secondary"
+           href="{% url 'trampoli_aparells_list' competicio.id %}">Tornar</a>
+      </div>
+    </div>
+
+    <form method="post">
+      {% csrf_token %}
+
+      <div class="border rounded p-3 mb-3">
+        <div class="fw-semibold mb-2">Dades bàsiques</div>
+        <div class="row g-3">
+          <div class="col-12 col-md-6">
+            <div class="d-flex justify-content-between align-items-center">
+              <label class="form-label mb-0">Aparell</label>
+              <a class="btn btn-sm btn-outline-primary" href="{% url 'aparell_create' %}">
+                Crear aparell
+              </a>
+            </div>
+            {{ form.aparell }}
+
+            {{ form.aparell.errors }}
+          </div>
+          <div class="col-6 col-md-3">
+            <label class="form-label">Ordre</label>
+            {{ form.ordre }}
+            {{ form.ordre.errors }}
+          </div>
+          <div class="col-6 col-md-3">
+            <label class="form-label">Elements</label>
+            {{ form.nombre_elements }}
+            {{ form.nombre_elements.errors }}
+          </div>
+          <div class="col-12 col-md-6">
+            <label class="form-label">Mode d’execució</label>
+            {{ form.mode_execucio }}
+            {{ form.mode_execucio.errors }}
+          </div>
+          <div class="col-12 col-md-6 d-flex align-items-end">
+            <div class="form-check">
+              {{ form.actiu }}
+              <label class="form-check-label" for="{{ form.actiu.id_for_label }}">Actiu</label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="border rounded p-3 mb-3">
+        <div class="fw-semibold mb-2">Ítems de puntuació</div>
+        <div class="row">
+          <div class="col-12 col-md-4"><div class="form-check">{{ form.te_execucio }} <label class="form-check-label" for="{{ form.te_execucio.id_for_label }}">Execució</label></div></div>
+          <div class="col-12 col-md-4"><div class="form-check">{{ form.te_dificultat }} <label class="form-check-label" for="{{ form.te_dificultat.id_for_label }}">Dificultat</label></div></div>
+          <div class="col-12 col-md-4"><div class="form-check">{{ form.te_tof }} <label class="form-check-label" for="{{ form.te_tof.id_for_label }}">ToF</label></div></div>
+          <div class="col-12 col-md-4"><div class="form-check">{{ form.te_hd }} <label class="form-check-label" for="{{ form.te_hd.id_for_label }}">HD</label></div></div>
+          <div class="col-12 col-md-4"><div class="form-check">{{ form.te_penalitzacio }} <label class="form-check-label" for="{{ form.te_penalitzacio.id_for_label }}">Penalització</label></div></div>
+        </div>
+      </div>
+
+      <div class="d-flex gap-2">
+        <button class="btn btn-primary" type="submit">Desar</button>
+        <a class="btn btn-outline-secondary"
+           href="{% url 'trampoli_aparells_list' competicio.id %}">Cancel·lar</a>
+      </div>
+    </form>
+
+  </div>
+</div>
+{% endblock %}

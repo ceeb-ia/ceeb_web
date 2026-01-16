@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}{% if object %}Editar{% else %}Crear{% endif %} aparell{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+  <div class="card-surface">
+
+    <div class="d-flex justify-content-between align-items-start mb-3">
+      <div>
+        <h2 class="mb-1">{% if object %}Editar{% else %}Crear{% endif %} aparell</h2>
+        <div class="text-muted small">Aquest aparell apareixerà al desplegable quan afegeixis aparells a una competició.</div>
+      </div>
+
+      <div class="d-flex gap-2">
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'aparells_list' %}">Tornar</a>
+      </div>
+    </div>
+
+    <form method="post">
+      {% csrf_token %}
+
+      <div class="row g-3">
+        <div class="col-12 col-md-4">
+          <label class="form-label" for="{{ form.codi.id_for_label }}">{{ form.codi.label }}</label>
+          {{ form.codi }}
+          {% if form.codi.errors %}<div class="text-danger small mt-1">{{ form.codi.errors }}</div>{% endif %}
+          {% if form.codi.help_text %}<div class="form-text">{{ form.codi.help_text }}</div>{% endif %}
+        </div>
+
+        <div class="col-12 col-md-8">
+          <label class="form-label" for="{{ form.nom.id_for_label }}">{{ form.nom.label }}</label>
+          {{ form.nom }}
+          {% if form.nom.errors %}<div class="text-danger small mt-1">{{ form.nom.errors }}</div>{% endif %}
+        </div>
+
+        <div class="col-12">
+          <div class="form-check">
+            {{ form.actiu }}
+            <label class="form-check-label" for="{{ form.actiu.id_for_label }}">{{ form.actiu.label }}</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="d-flex gap-2 mt-3">
+        <button class="btn btn-primary" type="submit">Desar</button>
+        <a class="btn btn-outline-secondary" href="{% url 'aparells_list' %}">Cancel·lar</a>
+      </div>
+    </form>
+
+  </div>
+</div>
+{% endblock %}

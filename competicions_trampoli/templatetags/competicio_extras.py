@@ -34,3 +34,10 @@ def attr_default(obj, args):
         return val
     except Exception:
         return ""
+
+
+@register.filter
+def get_item(d, key):
+    if not d:
+        return None
+    return d.get(key)

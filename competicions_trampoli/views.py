@@ -24,6 +24,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill
 from openpyxl.utils import get_column_letter
 from django.db.models import Max, Min, Case, When, IntegerField
+from collections import defaultdict
 
 
 
@@ -184,6 +185,16 @@ def renumber_groups_for_competicio(competicio):
     )
 
 
+# ------------------------------------------------------------------------------------------------
+#
+#
+#           CREACIÓ COMPETICIONS
+#
+#
+# ------------------------------------------------------------------------------------------------
+
+
+
 
 class CompeticioHomeView(TemplateView):
     template_name = "competicio/home.html"
@@ -200,6 +211,36 @@ class CompeticioDeleteView(DeleteView):
     model = Competicio
     template_name = "competicio/competicio_confirm_delete.html"
     success_url = reverse_lazy("created")
+
+class CompeticioListView(ListView):
+    model = Competicio
+    template_name = "competicio/competicio_created_list.html"
+    context_object_name = "competicions"
+    paginate_by = 20
+
+
+
+def notes_home_router(request, pk):
+    c = get_object_or_404(Competicio, pk=pk)
+
+    if c.tipus == Competicio.Tipus.TRAMPOLI:
+        return redirect("trampoli_notes_home", pk=pk)
+
+    # futurs:
+    # if c.tipus == Competicio.Tipus.NATACIO: return redirect(...)
+    # ...
+
+    return redirect("created")
+# ------------------------------------------------------------------------------------------------
+#
+#
+#           TRACTAMENT INSCRIPCIONS
+#
+#
+# ------------------------------------------------------------------------------------------------
+
+
+
 
 class InscripcionsImportExcelView(FormView):
     template_name = "competicio/inscripcions_import.html"
@@ -711,12 +752,16 @@ class InscripcionsListView(ListView):
 
         # 1) Treure agrupació explícitament
         if request.GET.get("clear_group") == "1":
+            # Treure agrupació (mai None)
             self.competicio.group_by_default = []
-            self.competicio.save(update_fields=["group_by_default"])
+
+            # ✅ Desfer fusions de pestanyes
+            self.competicio.tab_merges = {}
+
+            self.competicio.save(update_fields=["group_by_default", "tab_merges"])
 
             query = request.GET.copy()
             query.pop("clear_group", None)
-            # assegura que no queda cap group_by
             query.setlist("group_by", [])
             return redirect(f"{request.path}?{query.urlencode()}")
 
@@ -774,24 +819,72 @@ class InscripcionsListView(ListView):
         return qs.order_by("ordre_sortida", "id")
 
     def get_paginate_by(self, queryset):
-        # mantinc la teva lògica
         if self.request.GET.getlist("group_by"):
+            return None  # amb pestanyes, sense paginació
+
+        per_page = self.request.GET.get("per_page")
+        if not per_page or per_page == "all":
+            return None  # sense agrupació: mostra tots
+
+        try:
+            return int(per_page)
+        except ValueError:
             return None
-        return int(self.request.GET.get("per_page") or 10)
+
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         ctx["competicio"] = self.competicio
-        ctx["allowed_group_fields"] = ["categoria", "subcategoria", "entitat"]
-        ctx["current_query"] = self.request.GET.urlencode()
         ctx["allowed_group_fields"] = list(ALLOWED_GROUP_FIELDS.keys())
+        ctx["current_query"] = self.request.GET.urlencode()
         ctx["title_fields_selected"] = self.request.GET.getlist("title_fields")
 
         selected = self.request.GET.getlist("group_by")
         if not selected:
             selected = self.competicio.group_by_default or []
-
         ctx["selected_group_fields"] = selected
+
+        # Agrupació per pestanyes: agrupem pel primer camp seleccionat
+        from collections import OrderedDict
+
+        records = self.get_queryset_base_filtrada().order_by("ordre_sortida", "id")
+
+
+        records_grouped = None
+        if selected:
+            g1 = selected[0]
+            grouped = OrderedDict()
+
+            for r in records:
+                key = getattr(r, g1, None) or "(Sense valor)"
+                grouped.setdefault(key, []).append(r)
+
+            records_grouped = list(grouped.items())
+
+            # Merge logic only if grouping is active
+            merges = (self.competicio.tab_merges or {}).get(g1, [])
+            def key_to_label(k: str) -> str:
+                return k or "(Sense valor)"
+            merge_map = {}
+            for group_keys in merges:
+                norm = [key_to_label(x) for x in group_keys]
+                t = tuple(norm)
+                for x in norm:
+                    merge_map[x] = t
+
+            merged_grouped = OrderedDict()
+            for k, items in grouped.items():
+                kk = key_to_label(k)
+                merge_id = merge_map.get(kk)
+                if merge_id:
+                    label = " + ".join(merge_id)
+                    merged_grouped.setdefault(label, []).extend(items)
+                else:
+                    merged_grouped.setdefault(kk, []).extend(items)
+
+            records_grouped = list(merged_grouped.items())
+
+        ctx["records_grouped"] = records_grouped
         return ctx
 
 
@@ -933,9 +1026,65 @@ def inscripcions_reorder(request, pk):
     return JsonResponse({"ok": True})
 
 
+@require_POST
+@csrf_protect
+def inscripcions_merge_tabs(request, pk):
+    c = get_object_or_404(Competicio, pk=pk)
 
-class CompeticioListView(ListView):
-    model = Competicio
-    template_name = "competicio/competicio_created_list.html"
-    context_object_name = "competicions"
-    paginate_by = 20
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+        group_field = payload.get("group_field")
+        source_key = payload.get("source_key")
+        target_key = payload.get("target_key")
+    except Exception:
+        return HttpResponseBadRequest("JSON invàlid")
+
+    if not group_field:
+        return HttpResponseBadRequest("group_field buit")
+    if not source_key or not target_key or source_key == target_key:
+        return HttpResponseBadRequest("claus invàlides")
+
+    merges = c.tab_merges or {}
+    lst = merges.get(group_field, [])
+
+    # Normalitza
+    def norm(x):
+        return "(Sense valor)" if x in (None, "") else str(x)
+
+    s = norm(source_key)
+    t = norm(target_key)
+
+    # Busca si ja existeixen grups que continguin s o t, i els uneix
+    new_set = []
+    consumed = []
+    for i, g in enumerate(lst):
+        g_norm = [norm(x) for x in g]
+        if s in g_norm or t in g_norm:
+            new_set.extend(g_norm)
+            consumed.append(i)
+
+    # elimina els grups consumits
+    for i in sorted(consumed, reverse=True):
+        lst.pop(i)
+
+    # afegeix source+target si no estaven en cap merge prèvia
+    if not new_set:
+        new_set = [t, s]
+    else:
+        new_set.extend([s, t])
+
+    # dedup preservant ordre
+    seen = set()
+    merged = []
+    for x in new_set:
+        if x not in seen:
+            seen.add(x)
+            merged.append(x)
+
+    lst.append(merged)
+    merges[group_field] = lst
+    c.tab_merges = merges
+    c.save(update_fields=["tab_merges"])
+
+    return JsonResponse({"ok": True, "merged": merged})
+

@@ -1,0 +1,560 @@
+{% extends "base.html" %}
+{% load static %}
+{% load competicio_extras %}
+{% block title %}Notes – Trampolí{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+  <div class="card-surface">
+
+    <!-- CAPÇALERA -->
+    <div class="d-flex justify-content-between align-items-start mb-3">
+      <div>
+        <h2 class="mb-1">Notes · Gimnàstica trampolí</h2>
+
+        <div class="text-muted small">
+          Competició: <span class="fw-semibold">{{ competicio.nom }}</span>
+        </div>
+        <div class="text-muted small">
+          Inscripcions: <span class="fw-semibold">{{ ins_count }}</span>
+        </div>
+        <div class="text-muted small">
+          Jutges execució: <span class="fw-semibold">{{ n_jutges }}</span> ·
+          Exercicis: <span class="fw-semibold">{{ n_exercicis }}</span> ·
+          Aparells: <span class="fw-semibold">{{ aparells_cfg|length }}</span>
+        </div>
+      </div>
+
+      <div class="d-flex gap-2">
+        <a class="btn btn-sm btn-outline-secondary"
+           href="{% url 'trampoli_config' competicio.id %}">
+          Configuració
+        </a>
+
+        <a class="btn btn-sm btn-outline-primary"
+           href="{% url 'trampoli_aparells_list' competicio.id %}">
+          Aparells
+        </a>
+
+        <a class="btn btn-sm btn-info"
+           href="{% url 'created' %}">
+          Tornar a competicions
+        </a>
+      </div>
+    </div>
+
+    {% if groups %}
+      <!-- PESTANYES DE GRUPS -->
+      <ul class="nav nav-tabs" role="tablist">
+        {% for g, inscripcions in groups %}
+          <li class="nav-item" role="presentation">
+            <a class="nav-link {% if forloop.first %}active{% endif %}"
+               data-toggle="tab"
+               href="#pane-{{ g }}"
+               role="tab"
+               aria-controls="pane-{{ g }}"
+               aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
+              {% if g == 0 %}Sense grup{% else %}Grup {{ g }}{% endif %}
+              <span class="badge badge-light ml-1">{{ inscripcions|length }}</span>
+            </a>
+          </li>
+        {% endfor %}
+      </ul>
+
+      <!-- CONTINGUT DE CADA GRUP -->
+      <div class="tab-content pt-3">
+        {% for g, inscripcions in groups %}
+          <div class="tab-pane fade {% if forloop.first %}show active{% endif %}"
+               id="pane-{{ g }}"
+               role="tabpanel">
+
+            <!-- SUB-PESTANYES D’APARELL -->
+            <ul class="nav nav-pills mb-3" role="tablist">
+              {% for app in aparells_cfg %}
+                <li class="nav-item" role="presentation">
+                  <a class="nav-link {% if forloop.first %}active{% endif %}"
+                     data-toggle="tab"
+                     href="#pane-{{ g }}-app-{{ app.id }}"
+                     role="tab"
+                     aria-controls="pane-{{ g }}-app-{{ app.id }}"
+                     aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
+                    {{ app.aparell.nom }}
+                    <span class="badge badge-light ml-1">{{ app.nombre_elements }}</span>
+                  </a>
+                </li>
+              {% endfor %}
+            </ul>
+
+            <div class="tab-content">
+              {% for app in aparells_cfg %}
+                <div class="tab-pane fade {% if forloop.first %}show active{% endif %}"
+                     id="pane-{{ g }}-app-{{ app.id }}"
+                     role="tabpanel"
+                     data-comp-aparell-id="{{ app.id }}"
+                     data-n-elements="{{ app.nombre_elements }}"
+                     data-mode-exec="{{ app.mode_execucio }}">
+
+                  <!-- SUB-PESTANYES D’EXERCICI (DINS DE CADA APARELL) -->
+                  <ul class="nav nav-tabs mb-3" role="tablist">
+                    {% for ex in exercicis %}
+                      <li class="nav-item" role="presentation">
+                        <a class="nav-link {% if forloop.first %}active{% endif %}"
+                           data-toggle="tab"
+                           href="#pane-{{ g }}-app-{{ app.id }}-ex-{{ ex }}"
+                           role="tab"
+                           aria-controls="pane-{{ g }}-app-{{ app.id }}-ex-{{ ex }}"
+                           aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
+                          Exercici {{ ex }}
+                        </a>
+                      </li>
+                    {% endfor %}
+                  </ul>
+
+                  <div class="tab-content">
+                    {% for ex in exercicis %}
+                      <div class="tab-pane fade {% if forloop.first %}show active{% endif %}"
+                           id="pane-{{ g }}-app-{{ app.id }}-ex-{{ ex }}"
+                           role="tabpanel">
+
+                        <table class="table table-bordered table-sm align-middle">
+                          <thead class="table-light">
+                            <tr>
+                              <th style="min-width:260px; text-align:center;">Nom</th>
+
+                              {% if app.te_execucio and app.mode_execucio == "salts" and cfg.mostrar_salts %}
+                                {% for _ in "x"|ljust:max_salts %}
+                                  {% if forloop.counter <= app.nombre_elements %}
+                                    <th style="min-width:90px; text-align:center;">S{{ forloop.counter }}</th>
+                                  {% endif %}
+                                {% endfor %}
+                              {% endif %}
+
+                              {% if app.te_execucio %}
+                                <th style="min-width:130px; text-align:center;">
+                                  {% if app.mode_execucio == "manual" %}Execució (manual){% else %}Execució{% endif %}
+                                </th>
+                              {% endif %}
+
+                              {% if app.te_dificultat and cfg.mostrar_dificultat %}<th style="min-width:80px; text-align:center;">Dificultat</th>{% endif %}
+                              {% if app.te_tof and cfg.mostrar_tof %}<th style="min-width:70px; text-align:center;">ToF</th>{% endif %}
+                              {% if app.te_hd and cfg.mostrar_hd %}<th style="min-width:70px; text-align:center;">HD</th>{% endif %}
+                              {% if app.te_penalitzacio and cfg.mostrar_penalitzacio %}<th style="min-width:90px; text-align:center;">Penalització</th>{% endif %}
+                              {% if cfg.mostrar_total %}<th style="min-width:120px; text-align:center;">Total</th>{% endif %}
+                            </tr>
+                          </thead>
+
+                          <tbody>
+                            {% for r in inscripcions %}
+                              {% for _j in "x"|ljust:n_jutges %}
+                                <tr data-ins="{{ r.id }}"
+                                    data-ex="{{ ex }}"
+                                    data-app="{{ app.id }}"
+                                    data-jutge="{{ forloop.counter }}">
+
+                                  {% if forloop.first %}
+                                    <td rowspan="{{ n_jutges }}" class="fw-semibold">
+                                      {{ r.nom_i_cognoms }}
+                                      <div class="text-muted small">
+                                        {% if r.entitat %}{{ r.entitat }}{% endif %}
+                                        {% if r.categoria %} · {{ r.categoria }}{% endif %}
+                                        {% if r.subcategoria %} · {{ r.subcategoria }}{% endif %}
+                                      </div>
+                                    </td>
+                                  {% endif %}
+
+                                  {% if app.te_execucio and app.mode_execucio == "salts" and cfg.mostrar_salts %}
+                                    {% for _s in "x"|ljust:max_salts %}
+                                      {% if forloop.counter <= app.nombre_elements %}
+                                        <td>
+                                          <div class="d-flex align-items-center" style="gap:6px;">
+                                            <input type="number"
+                                                   step="1" min="0" max="10"
+                                                   class="form-control form-control-sm js-salt"
+                                                   name="s_{{ r.id }}_{{ ex }}_{{ app.id }}_{{ forloop.parentloop.counter }}_{{ forloop.counter }}"
+                                                   placeholder="0"
+                                                   style="width:72px;">
+
+                                            <button type="button"
+                                                    class="btn btn-sm btn-outline-danger js-crash p-0"
+                                                    title="Crash"
+                                                    data-ins="{{ r.id }}"
+                                                    data-ex="{{ ex }}"
+                                                    data-app="{{ app.id }}"
+                                                    data-j="{{ forloop.parentloop.counter }}"
+                                                    data-s="{{ forloop.counter }}"
+                                                    style="width:22px;height:22px;">
+                                              💥
+                                            </button>
+                                          </div>
+
+                                          <input type="hidden"
+                                                 name="crash_{{ r.id }}_{{ ex }}_{{ app.id }}_{{ forloop.parentloop.counter }}"
+                                                 value="0">
+                                        </td>
+                                      {% endif %}
+                                    {% endfor %}
+                                  {% endif %}
+
+                                  {% if forloop.first %}
+                                    {% if app.te_execucio %}
+                                      <td rowspan="{{ n_jutges }}">
+                                        <input type="number"
+                                               class="form-control form-control-sm js-exec-total"
+                                               name="exec_total_{{ r.id }}_{{ ex }}_{{ app.id }}"
+                                               {% if app.mode_execucio == "salts" %}readonly{% endif %}>
+                                      </td>
+                                    {% endif %}
+
+                                    {% if app.te_dificultat and cfg.mostrar_dificultat %}
+                                      <td rowspan="{{ n_jutges }}">
+                                        <input type="number"
+                                               class="form-control form-control-sm"
+                                               name="dif_{{ r.id }}_{{ ex }}_{{ app.id }}">
+                                      </td>
+                                    {% endif %}
+
+                                    {% if app.te_tof and cfg.mostrar_tof %}
+                                      <td rowspan="{{ n_jutges }}">
+                                        <input type="number"
+                                               class="form-control form-control-sm"
+                                               name="tof_{{ r.id }}_{{ ex }}_{{ app.id }}">
+                                      </td>
+                                    {% endif %}
+
+                                    {% if app.te_hd and cfg.mostrar_hd %}
+                                      <td rowspan="{{ n_jutges }}">
+                                        <input type="number"
+                                               class="form-control form-control-sm"
+                                               name="hd_{{ r.id }}_{{ ex }}_{{ app.id }}">
+                                      </td>
+                                    {% endif %}
+
+                                    {% if app.te_penalitzacio and cfg.mostrar_penalitzacio %}
+                                      <td rowspan="{{ n_jutges }}">
+                                        <input type="number"
+                                               class="form-control form-control-sm"
+                                               name="pen_{{ r.id }}_{{ ex }}_{{ app.id }}">
+                                      </td>
+                                    {% endif %}
+
+                                    {% if cfg.mostrar_total %}
+                                      <td rowspan="{{ n_jutges }}">
+                                        <input type="number"
+                                               class="form-control form-control-sm js-total"
+                                               name="total_{{ r.id }}_{{ ex }}_{{ app.id }}"
+                                               readonly>
+                                      </td>
+                                    {% endif %}
+                                  {% endif %}
+
+                                </tr>
+                              {% endfor %}
+                            {% endfor %}
+                          </tbody>
+                        </table>
+
+                      </div>
+                    {% endfor %}
+                  </div>
+
+                </div>
+              {% endfor %}
+            </div>
+
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="text-muted">Encara no hi ha inscripcions en aquesta competició.</div>
+    {% endif %}
+
+  </div>
+</div>
+
+<!-- DADES PRECÀRREGADES DE NOTES -->
+<script id="notes-data" type="application/json">
+  {{ notes_json|safe }}
+</script>
+{% endblock %}
+
+{% block extra_scripts %}
+<div id="trampoli-config"
+     data-n-jutges="{{ n_jutges|default:0 }}"
+     data-n-salts="{{ max_salts|default:11 }}"
+     data-save-url="{% url 'trampoli_save' competicio.id %}">
+</div>
+
+<script>
+  // -----------------------------
+  // CSRF (Django)
+  // -----------------------------
+  function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== "") {
+      const cookies = document.cookie.split(";");
+      for (let i = 0; i < cookies.length; i++) {
+        const cookie = cookies[i].trim();
+        if (cookie.substring(0, name.length + 1) === (name + "=")) {
+          cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+          break;
+        }
+      }
+    }
+    return cookieValue;
+  }
+  const CSRF_TOKEN = getCookie("csrftoken");
+
+  // -----------------------------
+  // Config del template
+  // -----------------------------
+  const cfgEl = document.getElementById("trampoli-config");
+  const N_JUTGES = parseInt(cfgEl?.dataset?.nJutges || "0", 10);
+  const MAX_SALTS = parseInt(cfgEl?.dataset?.nSalts || "11", 10); // max per tots els aparells (per iterar)
+  const SAVE_URL = cfgEl?.dataset?.saveUrl || "";
+
+  const qs = (sel, root=document) => root.querySelector(sel);
+
+  function num(v){
+    const x = parseFloat(String(v).replace(",", "."));
+    return Number.isFinite(x) ? x : 0;
+  }
+
+  function getAppPane(appId){
+    return document.querySelector(`[data-comp-aparell-id="${appId}"]`);
+  }
+  function getModeExec(appId){
+    return (getAppPane(appId)?.dataset?.modeExec || "salts");
+  }
+  function getNElements(appId){
+    const n = parseInt(getAppPane(appId)?.dataset?.nElements || "11", 10);
+    return Number.isFinite(n) ? n : 11;
+  }
+
+  // -----------------------------
+  // Crash helpers (ins/ex/app)
+  // -----------------------------
+  function updateCrashButtonsVisual(insId, ex, appId, j){
+    const N = getNElements(appId);
+    for (let s=1; s<=N; s++){
+      const btn = qs(`button[data-ins="${insId}"][data-ex="${ex}"][data-app="${appId}"][data-j="${j}"][data-s="${s}"]`);
+      if (!btn) continue;
+      const inp = qs(`input[name="s_${insId}_${ex}_${appId}_${j}_${s}"]`);
+      btn.style.opacity = inp && inp.disabled ? "0.35" : "1";
+    }
+  }
+
+  function setCrash(insId, ex, appId, j, s){
+    const N = getNElements(appId);
+    const crashInp = qs(`input[name="crash_${insId}_${ex}_${appId}_${j}"]`);
+    if (!crashInp) return;
+    crashInp.value = String(s || 0);
+
+    for (let k=s; k<=N; k++){
+      const inp = qs(`input[name="s_${insId}_${ex}_${appId}_${j}_${k}"]`);
+      if (inp) {
+        inp.value = "";
+        inp.disabled = true;
+      }
+    }
+    for (let k=1; k<s; k++){
+      const inp = qs(`input[name="s_${insId}_${ex}_${appId}_${j}_${k}"]`);
+      if (inp) inp.disabled = false;
+    }
+  }
+
+  function clearCrash(insId, ex, appId, j){
+    const N = getNElements(appId);
+    const crashInp = qs(`input[name="crash_${insId}_${ex}_${appId}_${j}"]`);
+    if (!crashInp) return;
+    crashInp.value = "0";
+
+    for (let k=1; k<=N; k++){
+      const inp = qs(`input[name="s_${insId}_${ex}_${appId}_${j}_${k}"]`);
+      if (inp) inp.disabled = false;
+    }
+  }
+
+  document.addEventListener("click", (ev) => {
+    const btn = ev.target.closest("button[data-ins][data-ex][data-app][data-j][data-s]");
+    if (!btn) return;
+
+    const insId = btn.dataset.ins;
+    const ex = btn.dataset.ex;
+    const appId = btn.dataset.app;
+    const j = parseInt(btn.dataset.j, 10);
+    const s = parseInt(btn.dataset.s, 10);
+
+    const crashInp = qs(`input[name="crash_${insId}_${ex}_${appId}_${j}"]`);
+    const current = crashInp ? (parseInt(crashInp.value, 10) || 0) : 0;
+
+    if (current === s) clearCrash(insId, ex, appId, j);
+    else setCrash(insId, ex, appId, j, s);
+
+    updateCrashButtonsVisual(insId, ex, appId, j);
+    scheduleSave(insId, ex, appId);
+  });
+
+  // -----------------------------
+  // Prefill
+  // -----------------------------
+  function applySaved(insId, ex, appId, obj){
+    const dif = qs(`input[name="dif_${insId}_${ex}_${appId}"]`);
+    if (dif) dif.value = (obj.dificultat ?? "");
+
+    const tof = qs(`input[name="tof_${insId}_${ex}_${appId}"]`);
+    if (tof) tof.value = (obj.tof ?? "");
+
+    const hd = qs(`input[name="hd_${insId}_${ex}_${appId}"]`);
+    if (hd) hd.value = (obj.hd ?? "");
+
+    const pen = qs(`input[name="pen_${insId}_${ex}_${appId}"]`);
+    if (pen) pen.value = (obj.penalitzacio ?? "");
+
+    const execOut = qs(`input[name="exec_total_${insId}_${ex}_${appId}"]`);
+    if (execOut) {
+      const v = (obj.execucio_manual ?? obj.execucio_total ?? 0);
+      execOut.value = Number(v).toFixed(3);
+    }
+
+    const totalOut = qs(`input[name="total_${insId}_${ex}_${appId}"]`);
+    if (totalOut) totalOut.value = Number(obj.total ?? 0).toFixed(3);
+
+    // salts
+    (obj.notes_execucio || []).forEach((row, jIdx) => {
+      const j = jIdx + 1;
+      (row || []).forEach((val, sIdx) => {
+        const s = sIdx + 1;
+        const inp = qs(`input[name="s_${insId}_${ex}_${appId}_${j}_${s}"]`);
+        if (inp) inp.value = (val ?? "");
+      });
+    });
+
+    // crash
+    (obj.crash_execucio || []).forEach((c, jIdx) => {
+      const j = jIdx + 1;
+      const crashInp = qs(`input[name="crash_${insId}_${ex}_${appId}_${j}"]`);
+      if (crashInp) crashInp.value = String(c || 0);
+
+      if ((c || 0) > 0) setCrash(insId, ex, appId, j, c);
+      else clearCrash(insId, ex, appId, j);
+
+      updateCrashButtonsVisual(insId, ex, appId, j);
+    });
+  }
+
+  // -----------------------------
+  // Auto-save (debounce) per (ins, ex, app)
+  // -----------------------------
+  const timers = new Map();
+  function tkey(insId, ex, appId){ return `${insId}::${ex}::${appId}`; }
+
+  function buildPayload(insId, ex, appId){
+    const MODE_EXEC = getModeExec(appId);
+    const N = getNElements(appId);
+
+    const dif = qs(`input[name="dif_${insId}_${ex}_${appId}"]`);
+    const tof = qs(`input[name="tof_${insId}_${ex}_${appId}"]`);
+    const hd  = qs(`input[name="hd_${insId}_${ex}_${appId}"]`);
+    const pen = qs(`input[name="pen_${insId}_${ex}_${appId}"]`);
+    const execInp = qs(`input[name="exec_total_${insId}_${ex}_${appId}"]`);
+
+    if (MODE_EXEC === "manual") {
+      return {
+        inscripcio_id: parseInt(insId, 10),
+        exercici: parseInt(ex, 10),
+        comp_aparell_id: parseInt(appId, 10),
+        execucio_manual: execInp ? execInp.value : "",
+        notes_execucio: [],
+        crash_execucio: [],
+        dificultat: dif ? dif.value : 0,
+        tof: tof ? tof.value : 0,
+        hd: hd ? hd.value : 0,
+        penalitzacio: pen ? pen.value : 0,
+      };
+    }
+
+    const notes = [];
+    const crash = [];
+
+    for (let j = 1; j <= N_JUTGES; j++){
+      const row = [];
+      for (let s = 1; s <= N; s++){
+        const inp = qs(`input[name="s_${insId}_${ex}_${appId}_${j}_${s}"]`);
+        row.push(inp && inp.value !== "" ? num(inp.value) : 0);
+      }
+      notes.push(row);
+
+      const crashInp = qs(`input[name="crash_${insId}_${ex}_${appId}_${j}"]`);
+      crash.push(crashInp ? (parseInt(crashInp.value, 10) || 0) : 0);
+    }
+
+    return {
+      inscripcio_id: parseInt(insId, 10),
+      exercici: parseInt(ex, 10),
+      comp_aparell_id: parseInt(appId, 10),
+      notes_execucio: notes,
+      crash_execucio: crash,
+      dificultat: dif ? dif.value : 0,
+      tof: tof ? tof.value : 0,
+      hd: hd ? hd.value : 0,
+      penalitzacio: pen ? pen.value : 0,
+    };
+  }
+
+  async function saveIns(insId, ex, appId){
+    if (!SAVE_URL) return;
+    try {
+      const payload = buildPayload(insId, ex, appId);
+
+      const res = await fetch(SAVE_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": CSRF_TOKEN,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) return;
+
+      const data = await res.json();
+
+      const execOut = qs(`input[name="exec_total_${insId}_${ex}_${appId}"]`);
+      if (execOut) {
+        const v = (data.execucio_manual ?? data.execucio_total ?? 0);
+        execOut.value = Number(v).toFixed(3);
+      }
+
+      const totalOut = qs(`input[name="total_${insId}_${ex}_${appId}"]`);
+      if (totalOut) totalOut.value = Number(data.total ?? 0).toFixed(3);
+
+    } catch (e) {}
+  }
+
+  function scheduleSave(insId, ex, appId){
+    const k = tkey(insId, ex, appId);
+    if (timers.has(k)) clearTimeout(timers.get(k));
+    const t = setTimeout(() => saveIns(insId, ex, appId), 350);
+    timers.set(k, t);
+  }
+
+  document.addEventListener("input", (ev) => {
+    const tr = ev.target.closest('tr[data-ins][data-ex][data-app]');
+    if (!tr) return;
+    scheduleSave(tr.dataset.ins, tr.dataset.ex, tr.dataset.app);
+  });
+
+  document.addEventListener("DOMContentLoaded", () => {
+    const dataEl = document.getElementById("notes-data");
+    let saved = {};
+    try { saved = JSON.parse(dataEl?.textContent || "{}"); } catch(e){}
+
+    Object.entries(saved).forEach(([k, obj]) => {
+      const parts = k.split("|");
+      if (parts.length !== 3) return;
+      const [insId, ex, appId] = parts;
+      applySaved(insId, ex, appId, obj);
+    });
+  });
+</script>
+{% endblock %}

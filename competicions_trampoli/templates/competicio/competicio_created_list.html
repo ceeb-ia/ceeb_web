@@ -32,6 +32,9 @@
             <td class="text-end">
               <a class="btn btn-sm btn-outline-primary" href="{% url 'inscripcions_list' c.id %}">Inscripcions</a>
               <a class="btn btn-sm btn-outline-success" href="{% url 'import' c.id %}">Importar</a>
+              {% if c.te_notes %}
+                <a class="btn btn-sm btn-outline-dark" href="{% url 'notes_home' c.id %}">Notes</a>
+              {% endif %}
               <a class="btn btn-sm btn-outline-danger" href="{% url 'delete' c.id %}">Eliminar</a>
               {# quan el tinguis: <a ... href="{% url 'live' c.id %}">Directe</a> #}
             </td>
