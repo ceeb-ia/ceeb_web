@@ -107,6 +107,7 @@ class TrampoliNotesHome(TemplateView):
             key = f"{n.inscripcio_id}|{n.exercici}|{n.comp_aparell_id}"
             notes_payload[key] = {
                 "notes_execucio": n.notes_execucio,
+                "execucio_manuals": n.execucio_manuals,
                 "crash_execucio": n.crash_execucio,
                 "dificultat": float(n.dificultat),
                 "tof": float(n.tof),
@@ -142,7 +143,8 @@ class TrampoliConfigUpdate(UpdateView):
     model = TrampoliConfiguracio
     fields = [
         "nombre_jutges_execucio",
-        "mode_execucio",
+        "nombre_notes_valides_execucio",   
+        "criteri_execucio",
         "mostrar_salts",
         "mostrar_dificultat",
         "mostrar_tof",
@@ -167,6 +169,7 @@ class TrampoliConfigUpdate(UpdateView):
 
 
 NUM_SALTS = 11
+
 
 
 def calc_execucio_jutge(deduccions_11, crash_at: int) -> float:
@@ -210,6 +213,84 @@ def _to_float(v):
         return float(v)
     except (TypeError, ValueError):
         return 0.0
+
+def _avg(vals):
+    vals = list(vals or [])
+    return (sum(vals) / len(vals)) if vals else 0.0
+
+
+def _select_exec_notes(exec_scores, k: int, criteri: str):
+    """
+    exec_scores: llista de notes (float) per jutge (mes alta = millor).
+    k: quantes notes compten (>=1)
+    criteri:
+      - totes: agafa les millors k (si k<n) i mitjana
+      - eliminar_extrems: elimina extrems fins quedar k
+          * si n = k+1: elimina el valor mes allunyat de la mediana
+            (empat -> elimina el maxim)
+      - maximes: agafa les k mes altes
+      - minimes: agafa les k mes baixes
+    """
+    vals = [float(x) for x in (exec_scores or [])]
+    n = len(vals)
+    if n == 0:
+        return []
+
+    k = max(1, min(int(k), n))
+
+    if criteri == "minimes":
+        return sorted(vals)[:k]
+
+    if criteri == "maximes":
+        return sorted(vals, reverse=True)[:k]
+
+    if criteri == "eliminar_extrems":
+        s = sorted(vals)
+        if len(s) <= k:
+            return s
+
+        # Cas especial: n = k + 1 (nomes sobra 1)
+        if len(s) == k + 1:
+            # mediana de s (len impar o parell)
+            m = len(s)
+            if m % 2 == 1:
+                med = s[m // 2]
+            else:
+                med = (s[m // 2 - 1] + s[m // 2]) / 2.0
+
+            # elimina el mes llunya de la mediana; si empat, elimina el maxim
+            dists = [abs(x - med) for x in s]
+            max_dist = max(dists)
+            idxs = [i for i, d in enumerate(dists) if d == max_dist]
+            drop_idx = idxs[-1]  # el de mes a la dreta = el maxim en empat
+
+            s.pop(drop_idx)
+            return s
+
+        # Cas general: si sobren >= 2, treu parelles min+max
+        while len(s) > k and (len(s) - 2) >= k:
+            s = s[1:-1]
+
+        # Si encara sobra 1 (molt poc habitual despres d'aixo), aplica mateixa regla de mediana
+        if len(s) > k:
+            m = len(s)
+            if m % 2 == 1:
+                med = s[m // 2]
+            else:
+                med = (s[m // 2 - 1] + s[m // 2]) / 2.0
+            dists = [abs(x - med) for x in s]
+            max_dist = max(dists)
+            idxs = [i for i, d in enumerate(dists) if d == max_dist]
+            drop_idx = idxs[-1]
+            s.pop(drop_idx)
+
+        return s
+
+    # "totes": si k < n, agafa les millors k
+    s = sorted(vals, reverse=True)
+    return s[:k]
+
+
 
 @require_POST
 @transaction.atomic
@@ -291,14 +372,28 @@ def trampoli_guardar_nota(request, pk):
 
     # -------- calcula execució per jutge i execució global --------
     # --- decideix execució segons configuració ---
-    mode = getattr(cfg, "mode_execucio", "salts") or "salts"
+    mode = getattr(comp_aparell, "mode_execucio", "salts") or "salts"
 
     if mode == "manual":
-        # execució global entrada a mà
-        nota.execucio_manual = _to_float(execucio_manual)
-        nota.execucio_total = float(nota.execucio_manual or 0.0)
+        manuals = payload.get("execucio_manuals", [])
+        if not isinstance(manuals, list):
+            manuals = []
+        # normalitza longitud n_jutges
+        while len(manuals) < n_jutges:
+            manuals.append(0)
+        manuals = manuals[:n_jutges]
+        manuals = [_to_float(x) for x in manuals]
+        nota.execucio_manuals = manuals  # NOU
+        nota.execucio_manual = None      # (opcional) ja no el necessites com a input únic
 
-        # opcional: si no vols guardar salts quan estàs en manual
+        k = int(getattr(cfg, "nombre_notes_valides_execucio", n_jutges) or n_jutges)
+        k = max(1, min(k, n_jutges))
+        criteri = getattr(cfg, "criteri_execucio", "totes") or "totes"
+
+        selected = _select_exec_notes(manuals, k=k, criteri=criteri)
+        nota.execucio_total = sum(selected)
+
+        # en manual no uses salts/crash
         nota.notes_execucio = []
         nota.crash_execucio = []
     else:
@@ -309,7 +404,16 @@ def trampoli_guardar_nota(request, pk):
         for j in range(n_jutges):
             exec_j.append(calc_execucio_jutge(notes_execucio[j], crash[j]))
 
-        nota.execucio_total = (sum(exec_j) / n_jutges) if n_jutges else 0.0
+        # NOU: k notes vàlides + criteri
+        k = int(getattr(cfg, "nombre_notes_valides_execucio", n_jutges) or n_jutges)
+        k = max(1, min(k, n_jutges))
+
+        criteri = getattr(cfg, "criteri_execucio", "totes") or "totes"
+
+        selected = _select_exec_notes(exec_j, k=k, criteri=criteri)
+
+        # FIG-like: mitjana de les notes seleccionades
+        nota.execucio_total = sum(selected)
 
     # -------- total global segons el teu criteri --------
     nota.total = (
@@ -423,4 +527,4 @@ class AparellUpdate(UpdateView):
     model = Aparell
 
     def get_success_url(self):
-        return reverse("competicios_home")
+        return reverse("created")

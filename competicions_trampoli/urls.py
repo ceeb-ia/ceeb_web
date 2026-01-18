@@ -2,7 +2,7 @@ from django.urls import path
 
 from .views_trampoli import TrampoliConfigUpdate, TrampoliNotesHome, trampoli_guardar_nota, TrampoliAparellList, TrampoliAparellCreate, TrampoliAparellUpdate
 from .views import CompeticioCreateView, CompeticioDeleteView, CompeticioHomeView, CompeticioListView, InscripcionsImportExcelView, InscripcionsListView
-from competicions_trampoli import views
+from competicions_trampoli import views, views_rotacions
 from .views_trampoli import AparellList, AparellCreate, AparellUpdate
 
 
@@ -28,5 +28,19 @@ urlpatterns = [
     path("trampoli/aparells/", AparellList.as_view(), name="aparells_list"),
     path("trampoli/aparells/nou/", AparellCreate.as_view(), name="aparell_create"),
     path("trampoli/aparells/<int:pk>/editar/", AparellUpdate.as_view(), name="aparell_update"),
+    path("competicio/<int:pk>/rotacions/", views_rotacions.rotacions_planner, name="rotacions_planner"),
+    path("competicio/<int:pk>/rotacions/save/", views_rotacions.rotacions_save, name="rotacions_save"),
+    path("competicio/<int:pk>/rotacions/franges/auto/",views_rotacions.franges_auto_create,name="rotacions_franges_auto_create",),
+    path("competicio/<int:pk>/rotacions/franja/create/", views_rotacions.franja_create, name="rotacions_franja_create"),
+    path("competicio/<int:pk>/rotacions/franja/<int:franja_id>/delete/", views_rotacions.franja_delete, name="rotacions_franja_delete"),
+    path("competicio/<int:pk>/rotacions/estacio/descans/create/",views_rotacions.estacio_descans_create,name="rotacions_estacio_descans_create",),
+    path("competicio/<int:pk>/rotacions/estacio/<int:estacio_id>/delete/",views_rotacions.estacio_delete,name="rotacions_estacio_delete",),
+    path("competicio/<int:pk>/rotacions/franja/<int:franja_id>/extrapolar/", views_rotacions.rotacions_extrapolar, name="rotacions_extrapolar"),
+    path("competicio/<int:pk>/rotacions/estacions/reorder/", views_rotacions.estacions_reorder, name="rotacions_estacions_reorder"),
+    path(
+    "competicio/<int:pk>/rotacions/clear_all/",
+    views_rotacions.rotacions_clear_all,
+    name="rotacions_clear_all",
+    ),
 
 ]

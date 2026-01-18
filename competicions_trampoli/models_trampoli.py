@@ -14,6 +14,9 @@ class Aparell(models.Model):
     class Meta:
         ordering = ["nom"]
 
+    def __str__(self):
+        return self.nom
+
 
 class CompeticioAparell(models.Model):
     competicio = models.ForeignKey(Competicio, on_delete=models.CASCADE, related_name="aparells_cfg")
@@ -51,7 +54,24 @@ class TrampoliConfiguracio(models.Model):
     sistema_classificacio = models.CharField(max_length=50, default="suma")
     nombre_exercicis = models.PositiveSmallIntegerField(default=1, verbose_name="Nombre d'exercicis de cada gimnasta")
 
-
+    # quantes notes d'execució compten (<= nombre_jutges_execucio)
+    nombre_notes_valides_execucio = models.PositiveSmallIntegerField(
+        default=3,
+        verbose_name="Nombre de notes d'execució vàlides"
+    )
+    # criteri de selecció
+    CRITERI_EXEC_CHOICES = [
+        ("totes", "Totes (mitjana)"),
+        ("eliminar_extrems", "Eliminar extrems"),
+        ("maximes", "Notes màximes"),
+        ("minimes", "Notes mínimes"),
+    ]
+    criteri_execucio = models.CharField(
+        max_length=20,
+        choices=CRITERI_EXEC_CHOICES,
+        default="totes",
+        verbose_name="Criteri selecció execució",
+    )
     MODE_EXECUCIO_CHOICES = [
         ("salts", "Per salts (S1..S11)"),
         ("manual", "Execució global manual"),
@@ -65,6 +85,15 @@ class TrampoliConfiguracio(models.Model):
     mostrar_penalitzacio = models.BooleanField(default=True, verbose_name="Mostrar Penalització")
     mostrar_total = models.BooleanField(default=True, verbose_name="Mostrar Total")
 
+
+    def clean(self):
+        super().clean()
+        if self.nombre_notes_valides_execucio and self.nombre_jutges_execucio:
+            if self.nombre_notes_valides_execucio > self.nombre_jutges_execucio:
+                raise ValidationError({
+                    "nombre_notes_valides_execucio": "Ha de ser menor o igual al nombre de jutges d'execució."
+                })
+
 class TrampoliNota(models.Model):
     competicio = models.ForeignKey(Competicio, on_delete=models.CASCADE, related_name="notes_trampoli")
     inscripcio = models.ForeignKey(Inscripcio, on_delete=models.CASCADE, related_name="notes_trampoli")
@@ -76,6 +105,7 @@ class TrampoliNota(models.Model):
     )
 
     execucio_manual = models.DecimalField(max_digits=7, decimal_places=3, null=True, blank=True)
+    execucio_manuals = models.JSONField(default=list, blank=True)  # NOU: [J1..Jn]
     notes_execucio = models.JSONField(default=list, blank=True)
     crash_execucio = models.JSONField(default=list, blank=True)
     execucio_total = models.DecimalField(max_digits=7, decimal_places=3, default=0)

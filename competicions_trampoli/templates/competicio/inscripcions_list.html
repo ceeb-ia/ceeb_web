@@ -34,12 +34,9 @@
     .group-chip input { margin: 0; }
     .grouping-actions { display: flex; gap: 8px; align-items: center; }
 
-    /* Files d’agrupació (si les uses fora de pestanyes) */
+    /* Files d’agrupació */
     tr.group-row { background-color: #f2f4f7; border-top: 2px solid #cbd5e1; }
     tr.group-row td { padding: 10px 12px; font-weight: 600; color: #1f2937; }
-    tr.group-categoria { background-color: #e0f2fe; }
-    tr.group-subcategoria { background-color: #ecfeff; }
-
     tr.group-row > td {
       background-color: #e0f2fe !important;
       border-top: 2px solid #94a3b8;
@@ -84,150 +81,374 @@
       border-radius: 6px;
     }
 
-    /* Un petit “cursor” perquè es noti que es pot arrossegar */
+    /* Cursor d’arrossegament */
     .nav-tabs .nav-item { cursor: grab; }
     .inscripcio-row { cursor: grab; }
+
+    /* Panels plegables */
+    .panel { border: 1px solid #e3e6ef; border-radius: 12px; background: #fff; }
+    .panel-head { padding: 10px 14px; display:flex; justify-content:space-between; align-items:center; gap:12px; cursor:pointer; }
+    .panel-body { padding: 12px 14px; border-top: 1px solid #eef1f7; }
+    .panel-title { font-weight: 600; margin:0; }
+    .subtle { color:#6b7280; font-size:.85rem; }
+    .chips { display:flex; flex-wrap:wrap; gap:8px 10px; align-items:center; }
+    .chip { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border:1px solid #cfd6e6; border-radius:999px; background:#fff; }
+    .btn-row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    .chev { transition: transform .15s ease; }
+    .panel-collapse.is-collapsed { display: none; }
+    .collapsed .chev { transform: rotate(-90deg); }
+
+    /* Selector de pestanyes (Crear X grups) */
+    .tab-select-card{
+      background:#f7f8fb;
+      border:1px solid #e3e6ef;
+      border-radius:10px;
+      padding:10px 12px;
+    }
+    .tab-select-grid{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 10px;
+      max-height: 220px;
+      overflow: auto;
+      padding-right: 6px;
+    }
+    .tab-select-item{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      background:#ffffff;
+      border:1px solid #e3e6ef;
+      border-radius:8px;
+      padding:6px 10px;
+      min-width:0;
+      width:100%;
+      box-sizing:border-box;
+    }
+    .tab-select-item input[type="checkbox"]{ margin:0; flex:0 0 auto; }
+    .tab-select-item .tab-label{
+      display:block;
+      flex:1 1 auto;
+      min-width:0;
+      max-width:100%;
+      overflow:hidden;
+      white-space:nowrap;
+      text-overflow:ellipsis;
+    }
+    .tab-select-item .badge{ margin-left:auto; flex:0 0 auto; }
   </style>
 
   <div class="card-surface">
     <!-- CAPÇALERA -->
-    <div class="d-flex justify-content-between align-items-center mb-3">
+    <div class="d-flex justify-content-between align-items-start mb-3">
       <div>
-        <h2 class="mb-0">Inscripcions</h2>
+        <h2 class="mb-1">Inscripcions</h2>
         <div class="text-muted small">
-          Competició: <span class="font-weight-bold">{{ competicio.nom }}</span>
+          Competició: <span class="fw-semibold">{{ competicio.nom }}</span>
+        </div>
+        <div class="text-muted small">
+          Gestiona inscripcions, agrupacions i creació de grups.
         </div>
       </div>
 
-      <div class="d-flex align-items-center" style="gap: 8px;">
-        <a href="{% url 'import' competicio.id %}" class="btn btn-success">+ Importar Excel</a>
-        <a href="{% url 'inscripcio_add' competicio.id %}?next={{ request.get_full_path|urlencode }}" class="btn btn-primary">+ Afegir inscripció</a>
-        <a href="{% url 'trampoli_config' competicio.id %}" class="btn btn-outline-secondary">Configuració competició</a>
-        <a href="{% url 'created' %}" class="btn btn-info">Tornar a competicions</a>
+      <div class="d-flex gap-2 flex-wrap">
+        <a href="{% url 'import' competicio.id %}" class="btn btn-sm btn-success">+ Importar Excel</a>
+        <a href="{% url 'inscripcio_add' competicio.id %}?next={{ request.get_full_path|urlencode }}"
+           class="btn btn-sm btn-primary">+ Afegir inscripció</a>
+        <a href="{% url 'trampoli_config' competicio.id %}" class="btn btn-sm btn-outline-secondary">
+          Configuració competició
+        </a>
+        <a href="{% url 'created' %}" class="btn btn-sm btn-outline-secondary">Tornar a competicions</a>
       </div>
     </div>
+    <div class="d-flex justify-content-between align-items-start mb-3"> 
+      <a href="{% url 'rotacions_planner' competicio.id %}" class="btn btn-sm btn-outline-primary">
+        Rotacions
+      </a>
 
-    <!-- FILTRES + AGRUPACIÓ -->
+    </div>
+
+    <!-- CONTROLS -->
     <form method="get" class="mb-3">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <div class="text-muted small">Configuracions plegables · obre només el que necessitis.</div>
+        <div class="d-flex gap-2">
+          <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleAllPanels(true)">Desplegar tot</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleAllPanels(false)">Plegar tot</button>
+        </div>
+      </div>
+
+      <!-- conserva estat -->
       <input type="hidden" name="q" value="{{ request.GET.q|default:'' }}">
       <input type="hidden" name="categoria" value="{{ request.GET.categoria|default:'' }}">
       <input type="hidden" name="subcategoria" value="{{ request.GET.subcategoria|default:'' }}">
       <input type="hidden" name="entitat" value="{{ request.GET.entitat|default:'' }}">
-      <input type="hidden" name="per_page" value="{{ request.GET.per_page|default:'10' }}">
+      <!-- clau per no paginar quan no hi ha agrupació -->
+      <input type="hidden" name="per_page" value="{{ request.GET.per_page|default:'all' }}">
 
-      <div class="grouping-controls grouping-chips">
-        <span class="font-weight-bold small text-muted">Agrupa per:</span>
+      <div class="d-flex flex-column gap-2 mb-3" id="inscripcions-panels">
 
-        {% for f in allowed_group_fields %}
-          <label class="group-chip small mb-0">
-            <input type="checkbox"
-                   name="group_by"
-                   value="{{ f }}"
-                   {% if f in selected_group_fields %}checked{% endif %}>
-            {{ f|capfirst }}
-          </label>
-        {% endfor %}
+        <!-- AGRUPACIÓ -->
+        <div class="panel">
+          <div class="panel-head collapsed" data-target="#panel-agrupacio" aria-expanded="false">
+            <div>
+              <p class="panel-title mb-0">Agrupació</p>
+              <div class="subtle">Tria camps d’agrupació i aplica/treu l’agrupació.</div>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+              <span class="subtle d-none d-md-inline">Mostra/Oculta</span>
+              <span class="chev">▾</span>
+            </div>
+          </div>
 
-        <div class="grouping-actions">
-          <button type="submit" name="recalc_order" value="1" class="btn btn-sm btn-outline-primary">
-            Aplicar agrupació
-          </button>
+          <div id="panel-agrupacio" class="panel-collapse is-collapsed">
+            <div class="panel-body">
+              <div class="btn-row mb-2">
+                <button type="submit" name="recalc_order" value="1" class="btn btn-sm btn-outline-primary">
+                  Aplicar agrupació
+                </button>
 
-          <button type="submit" name="shuffle_order" value="1" class="btn btn-sm btn-outline-warning">
-            Barreja aleatòriament
-          </button>
+                <button type="submit" name="shuffle_order" value="1" class="btn btn-sm btn-outline-warning">
+                  Barreja aleatòriament
+                </button>
 
-          {% if selected_group_fields %}
-            <a class="btn btn-sm btn-outline-secondary"
-               href="?clear_group=1&q={{ request.GET.q|urlencode }}&categoria={{ request.GET.categoria|urlencode }}&subcategoria={{ request.GET.subcategoria|urlencode }}&entitat={{ request.GET.entitat|urlencode }}">
-              Treure agrupació
-            </a>
-          {% endif %}
+                {% if selected_group_fields %}
+                  <a class="btn btn-sm btn-outline-secondary"
+                     href="?clear_group=1&q={{ request.GET.q|urlencode }}&categoria={{ request.GET.categoria|urlencode }}&subcategoria={{ request.GET.subcategoria|urlencode }}&entitat={{ request.GET.entitat|urlencode }}">
+                    Treure agrupació
+                  </a>
+                {% endif %}
+
+                <button class="btn btn-sm btn-outline-warning"
+                        name="undo" value="1"
+                        {% if not request.session.inscripcions_undo_state %}disabled{% endif %}>
+                  Tirar enrere
+                </button>
+              </div>
+
+              <div class="chips">
+                <span class="text-muted small fw-semibold">Agrupa per:</span>
+                {% for f in allowed_group_fields %}
+                  <label class="chip small mb-0">
+                    <input type="checkbox" name="group_by" value="{{ f }}"
+                           {% if f in selected_group_fields %}checked{% endif %}>
+                    {{ f|capfirst }}
+                  </label>
+                {% endfor %}
+              </div>
+
+              {% if selected_group_fields %}
+                <div class="text-muted small mt-2">
+                  * Per fusionar pestanyes: mantén <b>SHIFT</b> i deixa anar una pestanya sobre una altra.
+                </div>
+              {% endif %}
+            </div>
+          </div>
         </div>
 
-        <button class="btn btn-sm btn-outline-warning"
-                name="undo"
-                value="1"
-                {% if not request.session.inscripcions_undo_state %}disabled{% endif %}>
-          Tirar enrere
-        </button>
+        <!-- GRUPS -->
+        <div class="panel">
+          <div class="panel-head collapsed" data-target="#panel-grups" aria-expanded="false">
+            <div>
+              <p class="panel-title mb-0">Grups</p>
+              <div class="subtle">Crea i esborra grups amb mida o nombre de grups.</div>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+              <span class="subtle d-none d-md-inline">Mostra/Oculta</span>
+              <span class="chev">▾</span>
+            </div>
+          </div>
 
-        <span>Grups:</span>
-        <select name="group_mode" class="form-control form-control-sm" style="width:170px">
-          {% with gm=request.GET.group_mode|default:"fixed" %}
-            <option value="fixed" {% if gm == "fixed" %}selected{% endif %}>Mida fixa</option>
-            <option value="balanced" {% if gm == "balanced" %}selected{% endif %}>Grups equilibrats</option>
-          {% endwith %}
-        </select>
+          <div id="panel-grups" class="panel-collapse is-collapsed">
+            <div class="panel-body">
+              <div class="btn-row mb-3">
+                <button type="submit" name="clear_groups" value="1" class="btn btn-sm btn-outline-secondary">
+                  Esborrar grups
+                </button>
+              </div>
 
-        Mida dels grups:
-        <input type="number" name="group_size" min="2" max="50"
-               value="{{ request.GET.group_size|default:8 }}"
-               class="form-control form-control-sm" style="width:90px"
-               placeholder="Mida">
+              <div class="d-flex align-items-center flex-wrap" style="gap:10px;">
+                <span class="text-muted small fw-semibold">Mode:</span>
+                <select name="group_mode" class="form-control form-control-sm" style="width:170px">
+                  {% with gm=request.GET.group_mode|default:"fixed" %}
+                    <option value="fixed" {% if gm == "fixed" %}selected{% endif %}>Mida fixa</option>
+                    <option value="balanced" {% if gm == "balanced" %}selected{% endif %}>Grups equilibrats</option>
+                  {% endwith %}
+                </select>
 
-        <button type="submit" name="make_groups" value="1" class="btn btn-sm btn-outline-dark">
-          Crear grups
-        </button>
+                <span class="text-muted small fw-semibold">Mida:</span>
+                <input type="number" name="group_size" min="2" max="50"
+                       value="{{ request.GET.group_size|default:8 }}"
+                       class="form-control form-control-sm" style="width:90px">
 
-        <div class="d-flex align-items-center flex-wrap" style="gap: 8px;">
-          <select name="sort_key" class="form-control form-control-sm" style="width: 210px;">
-            {% with sk=request.GET.sort_key|default:"nom" %}
-              <option value="nom" {% if sk == "nom" %}selected{% endif %}>Nom (A-Z)</option>
-              <option value="edat" {% if sk == "edat" %}selected{% endif %}>Edat / Data naixement</option>
-              <option value="entitat" {% if sk == "entitat" %}selected{% endif %}>Entitat</option>
-              <option value="categoria" {% if sk == "categoria" %}selected{% endif %}>Categoria</option>
-              <option value="subcategoria" {% if sk == "subcategoria" %}selected{% endif %}>Subcategoria</option>
-              <option value="sexe" {% if sk == "sexe" %}selected{% endif %}>Sexe</option>
-              <option value="document" {% if sk == "document" %}selected{% endif %}>Document</option>
-            {% endwith %}
-          </select>
+                <button type="submit" name="make_groups" value="1" class="btn btn-sm btn-outline-dark">
+                  Crear grups
+                </button>
+              </div>
 
-          <select name="sort_dir" class="form-control form-control-sm" style="width: 110px;">
-            {% with sd=request.GET.sort_dir|default:"asc" %}
-              <option value="asc" {% if sd == "asc" %}selected{% endif %}>Asc</option>
-              <option value="desc" {% if sd == "desc" %}selected{% endif %}>Desc</option>
-              <option value="arrow_asc" {% if sd == "arrow_asc" %}selected{% endif %}>Fletxa (asc)</option>
-              <option value="arrow_desc" {% if sd == "arrow_desc" %}selected{% endif %}>Fletxa (desc)</option>
-            {% endwith %}
-          </select>
+              <hr class="my-3">
 
-          <button class="btn btn-sm btn-outline-secondary" name="sort_within_groups" value="1">
-            Ordena dins grups
-          </button>
+              <div class="mb-2">
+                <div class="d-flex align-items-center flex-wrap" style="gap:10px;">
+                  <span class="text-muted small fw-semibold">Crear X grups:</span>
+                  <input type="number" name="group_count" min="1" max="200"
+                         value="{{ request.GET.group_count|default:4 }}"
+                         class="form-control form-control-sm" style="width:90px">
+
+                  <button type="submit" name="make_groups_count" value="1" class="btn btn-sm btn-outline-dark">
+                    Crear X grups
+                  </button>
+                </div>
+              </div>
+
+              {% if selected_group_fields and records_grouped %}
+                <div class="tab-select-card">
+                  <div class="d-flex justify-content-between align-items-center mb-2">
+                    <div class="fw-semibold">Aplica a pestanyes</div>
+                    <div class="text-muted small">Si no marques cap, s’aplica a totes</div>
+                  </div>
+
+                  <div class="tab-select-grid">
+                    {% for group_label, group_records, group_key in records_grouped %}
+                      <label class="tab-select-item">
+                        <input type="checkbox" name="tab_keys" value="{{ group_key }}">
+                        <span class="tab-label small" title="{{ group_label }}">{{ group_label }}</span>
+                        <span class="badge badge-light">{{ group_records|length }}</span>
+                      </label>
+                    {% endfor %}
+                  </div>
+                </div>
+              {% else %}
+                <div class="text-muted small">No hi ha agrupació activa: s’aplicarà a totes les inscripcions filtrades.</div>
+              {% endif %}
+            </div>
+          </div>
         </div>
 
-        <button type="submit" name="clear_groups" value="1" class="btn btn-sm btn-outline-secondary">
-          Esborrar grups
-        </button>
+        <!-- ALTRES -->
+        <div class="panel">
+          <div class="panel-head collapsed" data-target="#panel-altres" aria-expanded="false">
+            <div>
+              <p class="panel-title mb-0">Altres</p>
+              <div class="subtle">Ordena dins grups, defineix títols i exporta.</div>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+              <span class="subtle d-none d-md-inline">Mostra/Oculta</span>
+              <span class="chev">▾</span>
+            </div>
+          </div>
+          <div id="panel-altres" class="panel-collapse is-collapsed">
+            <div class="panel-body">
+              <div class="btn-row mb-3">
+                <button class="btn btn-sm btn-outline-success" name="export_excel" value="1">
+                  Exportar Excel
+                </button>
+              </div>
+
+              <div class="d-flex align-items-center flex-wrap" style="gap:8px;">
+                <span class="text-muted small fw-semibold">Ordenació de les inscripcions:</span>
+
+                <select name="sort_key" class="form-control form-control-sm" style="width: 210px;">
+                  {% with sk=request.GET.sort_key|default:"nom" %}
+                    <option value="nom" {% if sk == "nom" %}selected{% endif %}>Nom (A-Z)</option>
+                    <option value="edat" {% if sk == "edat" %}selected{% endif %}>Edat / Data naixement</option>
+                    <option value="entitat" {% if sk == "entitat" %}selected{% endif %}>Entitat</option>
+                    <option value="categoria" {% if sk == "categoria" %}selected{% endif %}>Categoria</option>
+                    <option value="subcategoria" {% if sk == "subcategoria" %}selected{% endif %}>Subcategoria</option>
+                    <option value="sexe" {% if sk == "sexe" %}selected{% endif %}>Sexe</option>
+                    <option value="document" {% if sk == "document" %}selected{% endif %}>Document</option>
+                  {% endwith %}
+                </select>
+
+                <select name="sort_dir" class="form-control form-control-sm" style="width: 130px;">
+                  {% with sd=request.GET.sort_dir|default:"asc" %}
+                    <option value="asc" {% if sd == "asc" %}selected{% endif %}>Asc</option>
+                    <option value="desc" {% if sd == "desc" %}selected{% endif %}>Desc</option>
+                    <option value="arrow_asc" {% if sd == "arrow_asc" %}selected{% endif %}>Fletxa (asc)</option>
+                    <option value="arrow_desc" {% if sd == "arrow_desc" %}selected{% endif %}>Fletxa (desc)</option>
+                  {% endwith %}
+                </select>
+
+                <button class="btn btn-sm btn-outline-primary" name="sort_by_grouping" value="1">
+                  Ordena per agrupació
+                </button>
+                <button class="btn btn-sm btn-outline-secondary" name="sort_within_groups" value="1">
+                  Ordena dins de cada grup
+                </button>
+              </div>
+
+              <hr class="my-3">
+
+              <div class="d-flex align-items-center flex-wrap" style="gap:10px;">
+                <span class="text-muted small fw-semibold">Columnes a l'Excel:</span>
+
+                {% for key, label in allowed_excel_columns %}
+                  <label class="form-check form-check-inline m-0">
+                    <input class="form-check-input" type="checkbox" name="excel_cols" value="{{ key }}"
+                          {% if key in excel_cols_selected %}checked{% endif %}>
+                    <span class="form-check-label">{{ label }}</span>
+                  </label>
+                {% endfor %}
+              </div>
+
+
+            </div>
+          </div>
+        </div>
+
       </div>
 
-      <div class="d-flex align-items-center flex-wrap mt-2" style="gap: 10px;">
-        <div class="small text-muted">Títol de grup:</div>
+      <!-- JS panels -->
+      <script>
+        function setPanelOpen(headEl, open) {
+          const sel = headEl.getAttribute('data-target');
+          const panel = sel ? document.querySelector(sel) : null;
+          if (!panel) return;
 
-        {% for key in allowed_group_fields %}
-          <label class="form-check form-check-inline m-0">
-            <input class="form-check-input"
-                   type="checkbox"
-                   name="title_fields"
-                   value="{{ key }}"
-                   {% if key in title_fields_selected %}checked{% endif %}>
-            <span class="form-check-label">{{ key|capfirst }}</span>
-          </label>
-        {% endfor %}
+          if (open) {
+            panel.classList.remove('is-collapsed');
+            headEl.classList.remove('collapsed');
+            headEl.setAttribute('aria-expanded', 'true');
+          } else {
+            panel.classList.add('is-collapsed');
+            headEl.classList.add('collapsed');
+            headEl.setAttribute('aria-expanded', 'false');
+          }
+        }
 
-        <button class="btn btn-sm btn-outline-success" name="export_excel" value="1">
-          Exportar Excel
-        </button>
-      </div>
+        function togglePanel(headEl) {
+          const sel = headEl.getAttribute('data-target');
+          const panel = sel ? document.querySelector(sel) : null;
+          if (!panel) return;
+          const isCollapsed = panel.classList.contains('is-collapsed');
+          setPanelOpen(headEl, isCollapsed);
+        }
+
+        function toggleAllPanels(open) {
+          document.querySelectorAll('.panel-head[data-target]').forEach(head => setPanelOpen(head, open));
+        }
+        window.toggleAllPanels = toggleAllPanels;
+
+        document.addEventListener('DOMContentLoaded', () => {
+          document.querySelectorAll('.panel-head[data-target]').forEach(head => {
+            head.addEventListener('click', (e) => {
+              if (e.target.closest('button, a, input, select, textarea, label')) return;
+              togglePanel(head);
+            });
+          });
+        });
+      </script>
     </form>
 
     <!-- TAULA AMB PESTANYES -->
-    {% if records_grouped %}
-      <ul class="nav nav-tabs mt-3 js-sortable-tabs" role="tablist" id="tabs-root">
-        {% for group, group_records in records_grouped %}
-          <li class="nav-item"role="presentation" data-pane-id="pane-{{ forloop.counter0 }}" data-group-key="{{ group|default:'(Sense valor)' }}">
+    {% if selected_group_fields and records_grouped %}
 
+      <ul class="nav nav-tabs mt-3" role="tablist" id="tabs-root">
+        {% for group_label, group_records, group_key in records_grouped %}
+          <li class="nav-item" role="presentation"
+              data-pane-id="pane-{{ forloop.counter0 }}"
+              data-group-key="{{ group_key }}"
+              data-group-label="{{ group_label|escape }}">
             <a class="nav-link {% if forloop.first %}active{% endif %}"
                id="tab-{{ forloop.counter0 }}"
                data-toggle="tab"
@@ -235,7 +456,7 @@
                role="tab"
                aria-controls="pane-{{ forloop.counter0 }}"
                aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
-              {{ group|default:"(Sense valor)" }}
+              {{ group_label|default:"(Sense valor)" }}
               <span class="badge badge-light ml-1">{{ group_records|length }}</span>
             </a>
           </li>
@@ -243,11 +464,20 @@
       </ul>
 
       <div class="tab-content pt-3" id="tabs-content">
-        {% for group, group_records in records_grouped %}
+        {% for group_label, group_records, group_key in records_grouped %}
           <div class="tab-pane fade {% if forloop.first %}show active{% endif %}"
                id="pane-{{ forloop.counter0 }}"
                role="tabpanel"
                aria-labelledby="tab-{{ forloop.counter0 }}">
+
+            <div class="d-flex justify-content-end mb-2">
+              <button type="button"
+                      class="btn btn-sm btn-outline-dark js-independent-tab"
+                      data-tab-key="{{ group_key }}">
+                Fer grup independent de la pestanya
+              </button>
+            </div>
+
             <div class="table-responsive">
               <table class="table table-striped table-bordered table-sm align-middle">
                 <thead class="table-light">
@@ -265,75 +495,24 @@
                   </tr>
                 </thead>
 
-                <!-- IMPORTANT: class sortable-body -->
-                {% with g1=selected_group_fields.0 g2=selected_group_fields.1 g3=selected_group_fields.2 %}
                 <tbody class="sortable-body" data-pane-id="pane-{{ forloop.counter0 }}">
                   {% for r in group_records %}
 
-                    {# HEADER g2 (subagrupació) #}
-                    {% if g2 %}
-                      {% ifchanged r|attr:g2 %}
-                        <tr class="group-row group-g2"
-                            id="header-g2-{{ forloop.parentloop.counter0 }}-{{ forloop.counter }}"
-                            data-label="{{ r|attr_default:g2|default:'(Sense valor)' }}">
+                    {% ifchanged r.grup %}
+                      {% if r.grup %}
+                        <tr class="group-row group-grup">
                           <td colspan="10">
                             <div class="d-flex justify-content-between align-items-center">
                               <div class="d-flex align-items-center" style="gap:10px;">
-                                <span class="font-weight-bold">{{ g2|capfirst }}:</span>
-                                <span>{{ r|attr_default:g2|default:"(Sense valor)" }}</span>
-
-                                <button type="button"
-                                        class="btn btn-sm btn-outline-dark js-independent-group"
-                                        data-lvl="g2"
-                                        data-v1="{{ group|default:'__NULL__' }}"
-                                        data-v2="{% if r|attr_default:g2 %}{{ r|attr_default:g2 }}{% else %}__NULL__{% endif %}">
-                                  Fer grup independent
-                                </button>
+                                <input type="checkbox" class="js-mark-group" value="{{ r.grup|default:'' }}">
+                                <span class="font-weight-bold">GRUP {{ r.grup }}</span>
                               </div>
-
-                              <button class="btn btn-sm btn-outline-secondary"
-                                      onclick="event.stopPropagation(); toggleHeader('header-g2-{{ forloop.parentloop.counter0 }}-{{ forloop.counter }}')">
-                                Oculta
-                              </button>
                             </div>
                           </td>
                         </tr>
-                      {% endifchanged %}
-                    {% endif %}
+                      {% endif %}
+                    {% endifchanged %}
 
-                    {# HEADER g3 (sub-subagrupació) #}
-                    {% if g3 %}
-                      {% ifchanged r|attr:g3 %}
-                        <tr class="group-row group-g3"
-                            id="header-g3-{{ forloop.parentloop.counter0 }}-{{ forloop.counter }}"
-                            data-label="{{ r|attr_default:g3|default:'(Sense valor)' }}">
-                          <td colspan="10">
-                            <div class="d-flex justify-content-between align-items-center">
-                              <div class="d-flex align-items-center" style="gap:10px;">
-                                <span class="font-weight-bold">{{ g3|capfirst }}:</span>
-                                <span>{{ r|attr_default:g3|default:"(Sense valor)" }}</span>
-
-                                <button type="button"
-                                        class="btn btn-sm btn-outline-dark js-independent-group"
-                                        data-lvl="g3"
-                                        data-v1="{{ group|default:'__NULL__' }}"
-                                        data-v2="{% if r|attr_default:g2 %}{{ r|attr_default:g2 }}{% else %}__NULL__{% endif %}"
-                                        data-v3="{% if r|attr_default:g3 %}{{ r|attr_default:g3 }}{% else %}__NULL__{% endif %}">
-                                  Fer grup independent
-                                </button>
-                              </div>
-
-                              <button class="btn btn-sm btn-outline-secondary"
-                                      onclick="event.stopPropagation(); toggleHeader('header-g3-{{ forloop.parentloop.counter0 }}-{{ forloop.counter }}')">
-                                Oculta
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      {% endifchanged %}
-                    {% endif %}
-
-                    {# FILA inscripció #}
                     <tr class="inscripcio-row" data-id="{{ r.id }}">
                       <td class="font-weight-bold">{{ r.nom_i_cognoms|default:"-" }}</td>
                       <td>{{ r.document|default:"-" }}</td>
@@ -346,17 +525,14 @@
                       <td>{{ r.ordre_sortida|default:"-" }}</td>
                       <td class="text-nowrap">
                         <a class="btn btn-sm btn-outline-primary"
-                          href="{% url 'inscripcio_edit' competicio.id r.id %}?next={{ request.get_full_path|urlencode }}">Editar</a>
+                           href="{% url 'inscripcio_edit' competicio.id r.id %}?next={{ request.get_full_path|urlencode }}">Editar</a>
                         <a class="btn btn-sm btn-outline-danger"
-                          href="{% url 'inscripcio_delete' competicio.id r.id %}?next={{ request.get_full_path|urlencode }}">Eliminar</a>
+                           href="{% url 'inscripcio_delete' competicio.id r.id %}?next={{ request.get_full_path|urlencode }}">Eliminar</a>
                       </td>
                     </tr>
 
                   {% endfor %}
                 </tbody>
-                {% endwith %}
-
-
               </table>
             </div>
           </div>
@@ -364,7 +540,7 @@
       </div>
 
     {% else %}
-      <!-- Sense agrupació: mostra la taula normal -->
+      <!-- Sense agrupació -->
       <div class="table-responsive">
         <table class="table table-striped table-bordered table-sm align-middle">
           <thead class="table-light">
@@ -407,13 +583,10 @@
               </tr>
             {% empty %}
               <tr>
-                <td colspan="10" class="text-center text-muted">
-                  No hi ha inscripcions per aquesta competició
-                </td>
+                <td colspan="10" class="text-center text-muted">No hi ha inscripcions per aquesta competició</td>
               </tr>
             {% endfor %}
           </tbody>
-
         </table>
       </div>
     {% endif %}
@@ -443,6 +616,12 @@
     return !!document.querySelector('#tabs-root');
   }
 
+  function labelForKey(groupKey) {
+    if (!groupKey) return '';
+    const li = document.querySelector(`#tabs-root > li.nav-item[data-group-key="${CSS.escape(groupKey)}"]`);
+    return (li && li.getAttribute('data-group-label')) ? li.getAttribute('data-group-label') : groupKey;
+  }
+
   function collectGlobalIds() {
     const ids = [];
 
@@ -451,6 +630,7 @@
       tabItems.forEach(li => {
         const paneId = li.getAttribute('data-pane-id');
         if (!paneId) return;
+
         const tbody = document.querySelector(`#${paneId} tbody.sortable-body`);
         if (!tbody) return;
 
@@ -496,10 +676,17 @@
     }
     return true;
   }
+
   async function mergeTabs(sourceKey, targetKey) {
     if (!sourceKey || !targetKey || sourceKey === targetKey) return;
 
-    const ok = confirm(`Vols fusionar:\n\n- ${sourceKey}\namb\n- ${targetKey}\n\nEs mostrarà com: "${targetKey} + ${sourceKey}"`);
+    const sourceLabel = labelForKey(sourceKey);
+    const targetLabel = labelForKey(targetKey);
+
+    const ok = confirm(
+      `Vols fusionar:\n\n- ${sourceLabel}\namb\n- ${targetLabel}\n\n` +
+      `Es mostrarà com: "${targetLabel} + ${sourceLabel}"`
+    );
     if (!ok) return;
 
     const resp = await fetch("{% url 'inscripcions_merge_tabs' competicio.id %}", {
@@ -509,7 +696,7 @@
         'X-CSRFToken': getCookie('csrftoken')
       },
       body: JSON.stringify({
-        group_field: "{{ selected_group_fields.0|default:'' }}",
+        group_field: "{{ grouping_sig|default:'' }}",
         source_key: sourceKey,
         target_key: targetKey
       })
@@ -524,7 +711,6 @@
     window.location.reload();
   }
 
-
   document.addEventListener('DOMContentLoaded', function() {
     // DEBUG ràpid (mira la consola)
     console.log("Sortable present?", typeof Sortable !== "undefined");
@@ -535,8 +721,7 @@
       return;
     }
 
-    // Tabs Bootstrap 4 (això sí depèn de jQuery + bootstrap.js)
-    // Ho fem “segur”: només ho activem si existeix jQuery
+    // Tabs Bootstrap 4 (depèn de jQuery + bootstrap.js)
     if (window.jQuery) {
       window.jQuery('a[data-toggle="tab"]').on('click', function (e) {
         e.preventDefault();
@@ -556,6 +741,7 @@
         delayOnTouchOnly: true,
         forceFallback: true,
         fallbackOnBody: true,
+
         onEnd: async function(evt) {
           // Detecta si el drop s'ha fet sobre una altra pestanya
           const oe = evt.originalEvent;
@@ -567,15 +753,14 @@
               const sourceKey = evt.item.getAttribute('data-group-key');
               const targetKey = targetLi.getAttribute('data-group-key');
               await mergeTabs(sourceKey, targetKey);
-              return; // Important: NO fem reorder si hem fusionat
+              return; // IMPORTANT: NO fem reorder si hem fusionat
             }
           }
 
-  // Si no hi ha fusió, fem reorder normal
-  const ok = await saveGlobalOrder(null);
-  if (ok) window.location.reload();
-}
-
+          // Si no hi ha fusió, fem reorder normal
+          const ok = await saveGlobalOrder(null);
+          if (ok) window.location.reload();
+        }
       });
     }
 
@@ -642,12 +827,77 @@
           const ok = await saveGlobalOrder(movedId);
           if (ok) window.location.reload();
         }
-
       });
     });
 
+    // --- Fer grup independent (headers g2/g3 i pestanya sencera) ---
+    document.addEventListener('click', async (e) => {
+      let btn = e.target.closest('.js-independent-group');
+      let tabBtn = e.target.closest('.js-independent-tab') || e.target.closest('.js-independent-group-tab');
+      if (!btn && !tabBtn) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      const url = new URL(window.location.href);
+
+      url.searchParams.set('make_independent_group', '1');
+      if (tabBtn) {
+        url.searchParams.set('lvl', 'g1');
+
+        // nou (preferit)
+        const tabKey = tabBtn.dataset.tabKey;
+
+        // compat (si encara quedés algun botó vell)
+        const groupKey = tabBtn.dataset.groupKey;
+
+        url.searchParams.set('v1', tabKey || groupKey || '__NULL__');
+      }
+
+      if (btn) {
+        url.searchParams.set('lvl', btn.dataset.lvl || 'g1');
+        url.searchParams.set('v1', btn.dataset.v1 || '__NULL__');
+        if (btn.dataset.v2 !== undefined) url.searchParams.set('v2', btn.dataset.v2 || '__NULL__');
+        if (btn.dataset.v3 !== undefined) url.searchParams.set('v3', btn.dataset.v3 || '__NULL__');
+      } 
+
+      // Opció 1: AJAX
+      try {
+        const resp = await fetch(url.toString(), {
+          headers: { 'x-requested-with': 'XMLHttpRequest' }
+        });
+        if (!resp.ok) {
+          const txt = await resp.text();
+          alert(`No s'ha pogut crear el grup (${resp.status}).\n${txt}`);
+          return;
+        }
+        const data = await resp.json();
+        if (!data.ok) {
+          alert('Resposta inesperada del servidor.');
+          return;
+        }
+        window.location.reload();
+      } catch (err) {
+        console.error(err);
+        // Fallback: redirecció normal
+        window.location.href = url.toString();
+      }
+    });
+
+    // --- Oculta/mostra header de grup (g2/g3) ---
+    window.toggleHeader = function(headerId) {
+      var headerTr = document.getElementById(headerId);
+      if (!headerTr) return;
+      if (headerTr.style.display === 'none') {
+        headerTr.style.display = '';
+      } else {
+        headerTr.style.display = 'none';
+      }
+    };
 
     console.log("Sortables inicialitzats:", document.querySelectorAll('tbody.sortable-body').length);
   });
 </script>
+
+
 {% endblock %}

@@ -1,0 +1,549 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Rotacions{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+  <style>
+    .board { display:grid; grid-template-columns: 280px 1fr; gap:14px; }
+    .cardx { background:#fff; border:1px solid #e3e6ef; border-radius:14px; box-shadow:0 1px 2px rgba(0,0,0,.04); }
+    .cardx-h { padding:12px 14px; border-bottom:1px solid #eef1f7; display:flex; justify-content:space-between; align-items:center; gap:10px; }
+    .cardx-b { padding:12px 14px; }
+
+    .chip { display:inline-flex; align-items:center; justify-content:center; padding:8px 10px; border-radius:999px; border:1px solid #cfd6e6; background:#f7f8fb; cursor:grab; user-select:none; font-weight:600; }
+    .chip:active { cursor:grabbing; }
+    .chip-muted { background:#fff; font-weight:500; color:#6b7280; }
+
+    .grid-wrap { overflow:auto; border-radius:12px; }
+    table.rot { border-collapse:separate; border-spacing:0; min-width:900px; }
+    table.rot th, table.rot td { border:1px solid #e6e9f2; padding:10px; vertical-align:middle; text-align:center; }
+    table.rot thead th { position:sticky; top:0; background:#fbfcff; z-index:2; }
+    table.rot tbody th { position:sticky; left:0; background:#fbfcff; z-index:1; text-align:left; min-width:210px; }
+
+    .cell { min-width:150px; height:56px; border-radius:10px; background:#ffffff; display:flex; align-items:center; justify-content:center; gap:8px; }
+    .cell.is-over { outline:2px dashed #94a3b8; outline-offset:2px; background:#f8fafc; }
+    .pill { padding:8px 10px; border-radius:12px; background:#111827; color:#fff; font-weight:700; }
+    .pill.empty { background:#e5e7eb; color:#111827; font-weight:600; }
+
+    .mini { font-size:.85rem; color:#6b7280; }
+    .row-actions { display:flex; gap:8px; align-items:center; }
+  </style>
+
+  <div class="card-surface mb-3" style="border-radius:14px; border:1px solid #e3e6ef; background:#fff; box-shadow:0 1px 2px rgba(0,0,0,.04);">
+    <div class="d-flex justify-content-between align-items-start p-3 flex-wrap gap-3">
+      <div>
+        <h2 class="mb-1">Rotacions</h2>
+        <div class="text-muted small">Competició: <span class="fw-semibold">{{ competicio.nom }}</span></div>
+        <div class="text-muted small">Arrossega grups a la graella i guarda el programa.</div>
+      </div>
+      <div class="d-flex gap-2 flex-wrap">
+        <a href="{% url 'inscripcions_list' competicio.id %}" class="btn btn-sm btn-outline-secondary">Inscripcions</a>
+        <a href="{% url 'created' %}" class="btn btn-sm btn-outline-secondary">Tornar</a>
+        <button class="btn btn-sm btn-primary" id="btnSave">Guardar rotacions</button>
+       
+      </div>
+    </div>
+  </div>
+
+  <div class="board">
+    <!-- Sidebar -->
+    <div class="cardx">
+      <div class="cardx-h">
+        <div>
+          <div class="fw-semibold">Grups</div>
+          <div class="mini">Drag & drop</div>
+        </div>
+        <span class="badge badge-light">{{ grups|length }}</span>
+      </div>
+
+      <div class="cardx-b">
+        <div class="d-flex flex-wrap" style="gap:10px;">
+          {% for g in grups %}
+            <div class="chip" draggable="true" data-grup="{{ g }}">G{{ g }}</div>
+          {% endfor %}
+          <div class="chip chip-muted" draggable="true" data-grup="">(Buit)</div>
+        </div>
+
+        <hr class="my-3">
+
+        <div class="fw-semibold mb-2">Afegir franja</div>
+        <div class="d-flex" style="gap:8px; align-items:center; flex-wrap:wrap;">
+          <input type="time" class="form-control form-control-sm" id="hi" style="width:130px;">
+          <input type="time" class="form-control form-control-sm" id="hf" style="width:130px;">
+          <input type="text" class="form-control form-control-sm" id="ft" placeholder="Títol" style="flex:1; min-width:140px;">
+          <button class="btn btn-sm btn-outline-dark" id="btnAddFranja">+</button>
+        </div>
+        <hr class="my-3">
+
+        <div class="fw-semibold mb-2">Generar franges automàticament</div>
+        <div class="d-flex flex-column" style="gap:8px;">
+        <div class="d-flex" style="gap:8px; flex-wrap:wrap;">
+            <input type="time" class="form-control form-control-sm" id="auto_hi" style="width:130px;" placeholder="Inici">
+            <input type="time" class="form-control form-control-sm" id="auto_hf" style="width:130px;" placeholder="Fi">
+            <input type="number" class="form-control form-control-sm" id="auto_int" style="width:120px;" min="1" value="20" placeholder="Min">
+        </div>
+
+        <input type="text" class="form-control form-control-sm" id="auto_tb" value="Franja" placeholder="Títol base (ex: Rotació)">
+
+        <label class="mini" style="display:flex; gap:8px; align-items:center;">
+            <input type="checkbox" id="auto_clear">
+            Esborrar franges existents abans de generar
+        </label>
+
+        <button class="btn btn-sm btn-outline-primary" id="btnAutoFranges">
+            Generar franges
+        </button>
+
+        <div class="mini" id="autoStatus"></div>
+        </div>
+
+        <hr class="my-3">
+
+        <div class="fw-semibold mb-2">Afegir descans</div>
+        <div class="d-flex" style="gap:8px; align-items:center;">
+          <button class="btn btn-sm btn-outline-dark" id="btnAddDescans">+ Descans</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Grid -->
+    <div class="cardx">
+      <div class="cardx-h">
+        <div class="fw-semibold">Programa (franges × estacions)</div>
+            <div>
+        <button class="btn btn-sm btn-outline-danger" id="btnClearAll" title="Netejar tot el programa">🧹 Netejar Programa</button>
+    </div>
+
+        <div class="mini">Tip: arrossega “(Buit)” per esborrar una cel·la</div>
+      </div>
+
+      <div class="cardx-b">
+        <div class="grid-wrap">
+          <table class="rot">
+            <thead>
+              <tr>
+                <th>Franja</th>
+                {% for a in estacions %}
+                  <th class="js-col-h" draggable="true" data-estacio="{{ a.id }}">
+                    <div class="d-flex justify-content-between align-items-center" style="gap:10px;">
+                    <span>⠿ {{ a.nom }}</span>
+                    <button class="btn btn-sm btn-outline-danger py-0 px-2 js-del-es" data-es="{{ a.id }}" title="Eliminar estació">×</button>
+                    </div>
+                </th>
+                {% endfor %}
+              </tr>
+            </thead>
+
+            <tbody>
+              {% for f in franges %}
+                <tr>
+                  <th>
+                    <div class="d-flex justify-content-between align-items-center">
+                      <div>
+                        <div class="fw-semibold">{{ f.titol|default:"Franja" }}</div>
+                        <div class="mini">{{ f.hora_inici }} – {{ f.hora_fi }}</div>
+                      </div>
+                      <div class="row-actions">
+                        <button class="btn btn-sm btn-outline-warning py-0 px-2 js-clear-franja"
+                            data-fr="{{ f.id }}"
+                            title="Netejar franja">
+                          🧹
+                        </button>
+                        <button class="btn btn-sm btn-outline-primary py-0 px-2 js-extrapolar"
+                            data-fr="{{ f.id }}"
+                            title="Extrapolar rotacions">
+                          ⇢
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger py-0 px-2 js-del-fr"
+                                data-fr="{{ f.id }}"
+                                title="Eliminar franja">
+                            ×
+                        </button>
+                        </div>
+
+                    </div>
+                  </th>
+
+                  {% for a in estacions %}
+                    <td>
+                      <div class="cell js-cell" data-franja="{{ f.id }}" data-estacio="{{ a.id }}">
+                        <span class="pill empty">—</span>
+                      </div>
+                    </td>
+                  {% endfor %}
+                </tr>
+              {% empty %}
+                <tr>
+                  <td colspan="{{ estacions|length|add:1 }}" class="text-muted">
+                    Encara no hi ha franges. Crea’n una a l’esquerra.
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="mini mt-2" id="saveStatus"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script id="grid-data" type="application/json">{{ grid_json|safe }}</script>
+
+<script>
+  // --- CSRF ---
+  function getCookie(name) {
+    let v = null;
+    if (document.cookie && document.cookie !== "") {
+      for (const c of document.cookie.split(";")) {
+        const x = c.trim();
+        if (x.substring(0, name.length + 1) === (name + "=")) {
+          v = decodeURIComponent(x.substring(name.length + 1));
+          break;
+        }
+      }
+    }
+    return v;
+  }
+
+  const CSRF = getCookie("csrftoken");
+
+  const SAVE_URL     = "{% url 'rotacions_save' competicio.id %}";
+  const ADD_FR_URL   = "{% url 'rotacions_franja_create' competicio.id %}";
+  const ADD_REST_URL = "{% url 'rotacions_estacio_descans_create' competicio.id %}";
+  const AUTO_FR_URL  = "{% url 'rotacions_franges_auto_create' competicio.id %}";
+  const REORDER_COLS_URL = "{% url 'rotacions_estacions_reorder' competicio.id %}";
+  const CLEAR_ALL_URL = "{% url 'rotacions_clear_all' competicio.id %}";
+
+  function extrapolarUrl(frId){
+    return "{% url 'rotacions_extrapolar' competicio.id 0 %}".replace("/0/extrapolar/", `/${frId}/extrapolar/`);
+    }
+    
+  function delEstacioUrl(id){
+    return "{% url 'rotacions_estacio_delete' competicio.id 0 %}".replace("/0/", `/${id}/`);
+  }
+  function delFrUrl(id){
+    return "{% url 'rotacions_franja_delete' competicio.id 0 %}".replace("/0/delete/", `/${id}/delete/`);
+  }
+
+  // ✅ Declara postJSON ABANS d'usar-la
+  async function postJSON(url, body){
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": CSRF
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return await res.json();
+  }
+
+  const statusEl = document.getElementById("saveStatus");
+  const autoStatusEl = document.getElementById("autoStatus");
+
+  function pillFor(grup){
+    if (!grup) return `<span class="pill empty">—</span>`;
+    return `<span class="pill">G${grup}</span>`;
+  }
+
+  // --- Estat local ---
+  let grid = {};
+  try {
+    grid = JSON.parse(document.getElementById("grid-data").textContent || "{}");
+  } catch(e){
+    grid = {};
+  }
+
+  // --- Reorder columnes (drag & drop capçalera) ---
+    let dragColEstacioId = null;
+
+    function getColIndexByEstacioId(estacioId){
+    const headers = Array.from(document.querySelectorAll("table.rot thead th.js-col-h"));
+    return headers.findIndex(h => h.dataset.estacio === String(estacioId));
+    }
+
+    function moveColumn(fromIdx, toIdx){
+    if (fromIdx === toIdx || fromIdx < 0 || toIdx < 0) return;
+
+    const table = document.querySelector("table.rot");
+    const rows = Array.from(table.rows); // inclou thead i tbody
+
+    rows.forEach((row) => {
+        const cells = Array.from(row.cells);
+        // row.cells[0] és la primera columna (Franja)
+        const a = cells[fromIdx + 1];
+        const b = cells[toIdx + 1];
+        if (!a || !b) return;
+
+        if (fromIdx < toIdx) {
+        // mou a després de b
+        b.insertAdjacentElement("afterend", a);
+        } else {
+        // mou a abans de b
+        b.insertAdjacentElement("beforebegin", a);
+        }
+    });
+    }
+
+    async function persistColumnOrder(){
+    const ids = Array.from(document.querySelectorAll("table.rot thead th.js-col-h"))
+        .map(th => parseInt(th.dataset.estacio, 10))
+        .filter(Boolean);
+
+    await postJSON(REORDER_COLS_URL, {order: ids});
+    }
+
+    // drag handlers a headers
+    function initColumnDnD(){
+    document.querySelectorAll("table.rot thead th.js-col-h").forEach((th) => {
+        th.addEventListener("dragstart", (ev) => {
+        dragColEstacioId = th.dataset.estacio;
+        ev.dataTransfer.effectAllowed = "move";
+        // necessari per alguns navegadors
+        ev.dataTransfer.setData("text/plain", dragColEstacioId);
+        th.style.opacity = "0.6";
+        });
+
+        th.addEventListener("dragend", () => {
+        dragColEstacioId = null;
+        th.style.opacity = "";
+        });
+
+        th.addEventListener("dragover", (ev) => {
+        ev.preventDefault();
+        ev.dataTransfer.dropEffect = "move";
+        th.style.outline = "2px dashed #94a3b8";
+        th.style.outlineOffset = "2px";
+        });
+
+        th.addEventListener("dragleave", () => {
+        th.style.outline = "";
+        th.style.outlineOffset = "";
+        });
+
+        th.addEventListener("drop", async (ev) => {
+        ev.preventDefault();
+        th.style.outline = "";
+        th.style.outlineOffset = "";
+
+        const fromId = dragColEstacioId || ev.dataTransfer.getData("text/plain");
+        const toId = th.dataset.estacio;
+
+        if (!fromId || !toId || fromId === toId) return;
+
+        const fromIdx = getColIndexByEstacioId(fromId);
+        const toIdx = getColIndexByEstacioId(toId);
+
+        moveColumn(fromIdx, toIdx);
+
+        // guardem ordre al backend
+        statusEl.textContent = "Guardant ordre columnes…";
+        try {
+            await persistColumnOrder();
+            statusEl.textContent = "✅ Ordre columnes guardat.";
+        } catch(e){
+            statusEl.textContent = "❌ Error guardant ordre: " + (e.message || e);
+        }
+        });
+    });
+    }
+
+    initColumnDnD();
+
+
+
+  function renderAll(){
+    document.querySelectorAll(".js-cell").forEach((cell) => {
+      const fr = cell.dataset.franja;
+      const es = cell.dataset.estacio;
+      const g = (grid[fr] && grid[fr][es] != null) ? grid[fr][es] : null;
+      cell.innerHTML = pillFor(g);
+    });
+  }
+
+  // --- Drag start ---
+  document.querySelectorAll(".chip[draggable='true']").forEach((chip) => {
+    chip.addEventListener("dragstart", (ev) => {
+      ev.dataTransfer.setData("text/plain", chip.dataset.grup ?? "");
+    });
+  });
+
+  // --- Drop targets ---
+  document.querySelectorAll(".js-cell").forEach((cell) => {
+    cell.addEventListener("dragover", (ev) => {
+      ev.preventDefault();
+      cell.classList.add("is-over");
+    });
+    cell.addEventListener("dragleave", () => cell.classList.remove("is-over"));
+    cell.addEventListener("drop", (ev) => {
+      ev.preventDefault();
+      cell.classList.remove("is-over");
+
+      const grup = ev.dataTransfer.getData("text/plain"); // "" => buida
+      const fr = cell.dataset.franja;
+      const es = cell.dataset.estacio;
+
+      if (!grid[fr]) grid[fr] = {};
+      grid[fr][es] = (grup === "" ? null : parseInt(grup, 10));
+      renderAll();
+    });
+  });
+
+ // --- Netejar tot el programa ---
+    document.getElementById("btnClearAll").addEventListener("click", async () => {
+    if (!confirm("Segur que vols netejar tot el programa? Aquesta acció no es pot desfer.")) return;
+
+    statusEl.textContent = "Netejant programa…";
+    try {
+        // neteja a BD
+        await postJSON(CLEAR_ALL_URL, {});
+        // neteja estat local i UI
+        grid = {};
+        renderAll();
+        statusEl.textContent = "✅ Programa netejat.";
+    } catch(e){
+        statusEl.textContent = "❌ Error netejant: " + (e.message || e);
+    }
+    });
+  // --- Guardar rotacions ---
+  document.getElementById("btnSave").addEventListener("click", async () => {
+    const cells = [];
+    for (const fr in grid){
+      for (const es in grid[fr]){
+        const g = grid[fr][es];
+        cells.push({
+          franja: parseInt(fr, 10),
+          estacio: parseInt(es, 10),
+          grup: (g == null ? "" : g),
+        });
+      }
+    }
+
+    statusEl.textContent = "Guardant…";
+    try {
+      await postJSON(SAVE_URL, {cells});
+      statusEl.textContent = "✅ Guardat.";
+    } catch(e){
+      statusEl.textContent = "❌ Error guardant: " + (e.message || e);
+    }
+  });
+
+  // --- Afegir franja manual ---
+  document.getElementById("btnAddFranja").addEventListener("click", async () => {
+    const hora_inici = document.getElementById("hi").value;
+    const hora_fi = document.getElementById("hf").value;
+    const titol = document.getElementById("ft").value;
+    try {
+      await postJSON(ADD_FR_URL, {hora_inici, hora_fi, titol});
+      location.reload();
+    } catch(e){
+      alert("Error creant franja: " + (e.message || e));
+    }
+  });
+
+  // --- Afegir descans ---
+  document.getElementById("btnAddDescans").addEventListener("click", async () => {
+    try {
+      await postJSON(ADD_REST_URL, {});
+      location.reload();
+    } catch(e){
+      alert("Error creant descans: " + (e.message || e));
+    }
+  });
+
+  // --- Generar franges automàticament ---
+  document.getElementById("btnAutoFranges").addEventListener("click", async () => {
+    const hora_inici = document.getElementById("auto_hi").value;
+    const hora_fi = document.getElementById("auto_hf").value;
+    const interval_min = parseInt(document.getElementById("auto_int").value || "0", 10);
+    const titol_base = document.getElementById("auto_tb").value;
+    const clear_existing = document.getElementById("auto_clear").checked;
+
+    if (!hora_inici || !hora_fi || !interval_min || interval_min <= 0) {
+      autoStatusEl.textContent = "❌ Omple inici, fi i interval (>0).";
+      return;
+    }
+
+    autoStatusEl.textContent = "Generant…";
+    try {
+      const r = await postJSON(AUTO_FR_URL, {hora_inici, hora_fi, interval_min, titol_base, clear_existing});
+      autoStatusEl.textContent = `✅ Creat ${r.created} franges.`;
+      location.reload();
+    } catch (e) {
+      autoStatusEl.textContent = "❌ Error: " + (e.message || e);
+    }
+  });
+
+  // --- Esborrar franja / estació ---
+  document.addEventListener("click", async (ev) => {
+    const clearBtn = ev.target.closest(".js-clear-franja");
+    if (clearBtn && clearBtn.dataset.fr) {
+      const frId = clearBtn.dataset.fr;
+      if (!confirm("Netejar totes les caselles d'aquesta franja?")) return;
+      if (!grid[frId]) grid[frId] = {};
+      for (const es of Object.keys(grid[frId])) {
+        grid[frId][es] = null;
+      }
+      renderAll();
+      return;
+    }
+
+    const ex = ev.target.closest(".js-extrapolar")?.dataset?.fr;
+    if (ex){
+    const countStr = prompt("Quantes franges següents vols omplir?", "");
+    if (countStr === null) return;
+
+    const count = (countStr.trim() === "") ? null : parseInt(countStr, 10);
+
+    statusEl.textContent = "Guardant i extrapolant…";
+
+    try {
+        // 1) AUTOSAVE (guarda l'estat actual del grid)
+        const cells = [];
+        for (const fr in grid){
+        for (const es in grid[fr]){
+            const g = grid[fr][es];
+            cells.push({
+            franja: parseInt(fr, 10),
+            estacio: parseInt(es, 10),
+            grup: (g == null ? "" : g),
+            });
+        }
+        }
+        await postJSON(SAVE_URL, {cells});
+
+        // 2) EXTRAPOLA
+        const r = await postJSON(extrapolarUrl(ex), {count});
+        statusEl.textContent = `✅ Extrapolat. Franges creades: ${r.created_franges}, cel·les omplertes: ${r.filled}.`;
+        location.reload();
+    } catch(e){
+        alert("Error extrapolant: " + (e.message || e));
+        statusEl.textContent = "❌ Error extrapolant: " + (e.message || e);
+    }
+    return;
+    }
+    const fr = ev.target.closest(".js-del-fr")?.dataset?.fr;
+    if (fr){
+      if (!confirm("Eliminar franja?")) return;
+      try {
+        await postJSON(delFrUrl(fr), {});
+        location.reload();
+      } catch(e){ alert(e.message || e); }
+    }
+
+    const es = ev.target.closest(".js-del-es")?.dataset?.es;
+    if (es){
+      if (!confirm("Eliminar estació?")) return;
+      try {
+        await postJSON(delEstacioUrl(es), {});
+        location.reload();
+      } catch(e){ alert(e.message || e); }
+    }
+  });
+
+  renderAll();
+</script>
+{% endblock %}

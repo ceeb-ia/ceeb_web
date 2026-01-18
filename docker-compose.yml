@@ -41,99 +41,99 @@ services:
   # ----------------------------------------------------------------------------------------------------------
 
 
-  calendaritzacions:
-    build:
-      context: ../calendaritzacions
-      dockerfile: Dockerfile.dev
-    volumes:
-      - ../calendaritzacions:/app
-      - ../db_provisional:/data/media
-    environment:
-      MEDIA_ROOT: /data/media
+  # calendaritzacions:
+  #   build:
+  #     context: ../calendaritzacions
+  #     dockerfile: Dockerfile.dev
+  #   volumes:
+  #     - ../calendaritzacions:/app
+  #     - ../db_provisional:/data/media
+  #   environment:
+  #     MEDIA_ROOT: /data/media
 
-    expose:
-      - "8000"  # només per a la xarxa interna; si vols provar des del navegador, afegeix ports: ["8001:8000"]
-    command: ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://calendaritzacions:8000/health"]
-      interval: 5s
-      timeout: 2s
-      retries: 10
-
+  #   expose:
+  #     - "8000"  # només per a la xarxa interna; si vols provar des del navegador, afegeix ports: ["8001:8000"]
+  #   command: ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+  #   healthcheck:
+  #     test: ["CMD", "wget", "-qO-", "http://calendaritzacions:8000/health"]
+  #     interval: 5s
+  #     timeout: 2s
+  #     retries: 10}
+      
 
   # ----------------------------------------------------------------------------------------------------------
   # CERTIFICATS
   # ----------------------------------------------------------------------------------------------------------
 
-  certificats:
-    build:
-      context: ../formacio
-      dockerfile: Dockerfile.dev
-    volumes:
-      - ../formacio:/app
-      - ../db_provisional:/data/media
-    environment:
-      MEDIA_ROOT: /data/media
+  # certificats:
+  #   build:
+  #     context: ../formacio
+  #     dockerfile: Dockerfile.dev
+  #   volumes:
+  #     - ../formacio:/app
+  #     - ../db_provisional:/data/media
+  #   environment:
+  #     MEDIA_ROOT: /data/media
 
-    expose:
-      - "8000"  # només per a la xarxa interna; si vols provar des del navegador, afegeix ports: ["8001:8000"]
-    command: ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://certificats:8000/health"]
-      interval: 5s
-      timeout: 2s
-      retries: 10
+  #   expose:
+  #     - "8000"  # només per a la xarxa interna; si vols provar des del navegador, afegeix ports: ["8001:8000"]
+  #   command: ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+  #   healthcheck:
+  #     test: ["CMD", "wget", "-qO-", "http://certificats:8000/health"]
+  #     interval: 5s
+  #     timeout: 2s
+  #     retries: 10
 
 
   # ----------------------------------------------------------------------------------------------------------
   # NATACIO
   # ----------------------------------------------------------------------------------------------------------
 
-  natacio:
-    build: 
-      context: ../natacio
-      dockerfile: Dockerfile
-    container_name: natacio
+  # natacio:
+  #   build: 
+  #     context: ../natacio
+  #     dockerfile: Dockerfile
+  #   container_name: natacio
     
-    volumes:
-      - ../natacio:/app
-      - ../db_provisional:/data/media/
+  #   volumes:
+  #     - ../natacio:/app
+  #     - ../db_provisional:/data/media/
 
-    environment:
-      MEDIA_ROOT: /data/media/
-      MEDIA_URL: /media/
-    expose:
-      - "8000"
-    command: ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://natacio:8000/health"]
-      interval: 5s
-      timeout: 2s
-      retries: 10
+  #   environment:
+  #     MEDIA_ROOT: /data/media/
+  #     MEDIA_URL: /media/
+  #   expose:
+  #     - "8000"
+  #   command: ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+  #   healthcheck:
+  #     test: ["CMD", "wget", "-qO-", "http://natacio:8000/health"]
+  #     interval: 5s
+  #     timeout: 2s
+  #     retries: 10
 
 
   # ----------------------------------------------------------------------------------------------------------
   # DESIGNACIONS
   # ----------------------------------------------------------------------------------------------------------
 
-  designacions:
-    build:
-      context: ../designacions
-      dockerfile: Dockerfile
-    volumes:
-      - ../designacions:/app
-      - ../db_provisional:/data/media
-    environment:
-      MEDIA_ROOT: /data/media
+  # designacions:
+  #   build:
+  #     context: ../designacions
+  #     dockerfile: Dockerfile
+  #   volumes:
+  #     - ../designacions:/app
+  #     - ../db_provisional:/data/media
+  #   environment:
+  #     MEDIA_ROOT: /data/media
 
-    expose:
-      - "8000"  # només per a la xarxa interna; si vols provar des del navegador, afegeix ports: ["8001:8000"]
-    command: ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://designacions:8000/health"]
-      interval: 5s
-      timeout: 2s
-      retries: 10
+  #   expose:
+  #     - "8000"  # només per a la xarxa interna; si vols provar des del navegador, afegeix ports: ["8001:8000"]
+  #   command: ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+  #   healthcheck:
+  #     test: ["CMD", "wget", "-qO-", "http://designacions:8000/health"]
+  #     interval: 5s
+  #     timeout: 2s
+  #     retries: 10
 
 
   # ----------------------------------------------------------------------------------------------------------
@@ -155,28 +155,28 @@ services:
       retries: 10
 
 
-  rag:
-    build:
-      context: ../RAG
-      dockerfile: Dockerfile.api
-    environment:
-      - PERSIST_DIR=/app/vector_db
-      - OLLAMA_HOST=http://ollama:11434     # <--- URL del servei, no 0.0.0.0
-      - EMBED_MODEL=nomic-embed-text
-    volumes:
-      - ../RAG:/app
-      - ../RAG/vector_db:/app/vector_db
-    expose:
-      - "8000"
-    command: ["uvicorn", "src.api_server:app", "--host", "0.0.0.0", "--port", "8000"]
-    depends_on:
-      ollama:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://rag:8000/health"]
-      interval: 5s
-      timeout: 2s
-      retries: 10
+  # rag:
+  #   build:
+  #     context: ../RAG
+  #     dockerfile: Dockerfile.api
+  #   environment:
+  #     - PERSIST_DIR=/app/vector_db
+  #     - OLLAMA_HOST=http://ollama:11434     # <--- URL del servei, no 0.0.0.0
+  #     - EMBED_MODEL=nomic-embed-text
+  #   volumes:
+  #     - ../RAG:/app
+  #     - ../RAG/vector_db:/app/vector_db
+  #   expose:
+  #     - "8000"
+  #   command: ["uvicorn", "src.api_server:app", "--host", "0.0.0.0", "--port", "8000"]
+  #   depends_on:
+  #     ollama:
+  #       condition: service_healthy
+  #   healthcheck:
+  #     test: ["CMD", "wget", "-qO-", "http://rag:8000/health"]
+  #     interval: 5s
+  #     timeout: 2s
+  #     retries: 10
 
 
   # ----------------------------------------------------------------------------------------------------------

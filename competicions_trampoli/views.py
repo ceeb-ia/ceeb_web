@@ -23,9 +23,9 @@ from django.http import HttpResponse
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill
 from openpyxl.utils import get_column_letter
-from django.db.models import Max, Min, Case, When, IntegerField
+from django.db.models import Q, Max, Min, Case, When, IntegerField
 from collections import defaultdict
-
+from collections import OrderedDict
 
 
 ALLOWED_SORT_FIELDS = {
@@ -33,9 +33,9 @@ ALLOWED_SORT_FIELDS = {
     "edat": "data_naixement",        # per edat, ordenarem per data naixement
     "document": "document",
     "sexe": "sexe",
-    "entitat": "entitat__nom",
-    "categoria": "categoria__nom",
-    "subcategoria": "subcategoria__nom",
+    "entitat": "entitat",
+    "categoria": "categoria",
+    "subcategoria": "subcategoria",
     "grup": "grup",
 }
 
@@ -184,6 +184,29 @@ def renumber_groups_for_competicio(competicio):
         )
     )
 
+def assign_groups_k(objs, k, start_group_num):
+    """
+    Reparteix objs en k grups (k fix), equilibrant mides (difereixen com a màxim 1).
+    """
+    n = len(objs)
+    if n == 0 or k <= 0:
+        return start_group_num
+
+    k = min(k, n)  # no té sentit més grups que persones
+
+    base = n // k
+    rem = n % k
+
+    idx = 0
+    group_num = start_group_num
+    for g in range(k):
+        group_num += 1
+        this_size = base + (1 if g < rem else 0)
+        for _ in range(this_size):
+            objs[idx].grup = group_num
+            idx += 1
+
+    return group_num
 
 # ------------------------------------------------------------------------------------------------
 #
@@ -290,6 +313,9 @@ class InscripcionsListView(ListView):
         self.competicio = get_object_or_404(Competicio, pk=kwargs["pk"])
         return super().dispatch(request, *args, **kwargs)
 
+    def get_queryset(self):
+        return self.get_queryset_base_filtrada().order_by("ordre_sortida", "id")
+
     def get_queryset_base_filtrada(self):
         qs = Inscripcio.objects.filter(competicio=self.competicio)
 
@@ -327,130 +353,239 @@ class InscripcionsListView(ListView):
             return redirect(f"{request.path}?{query.urlencode()}")
 
 
-        # 0x) Exportar Excel (respectant ordre_sortida actual)
+        # 0x) Exportar Excel (títol = pestanya (amb merges) + Grup N; columnes seleccionables)
         if request.GET.get("export_excel") == "1":
-            # Camps que vols al títol del grup (només els que també es poden usar per agrupar)
-            # Ex: title_fields=categoria&title_fields=subcategoria
-            title_fields_keys = [k for k in request.GET.getlist("title_fields") if k in ALLOWED_GROUP_FIELDS]
-            title_fields = [ALLOWED_GROUP_FIELDS[k] for k in title_fields_keys]
 
-            qs = self.get_queryset_base_filtrada().order_by("ordre_sortida", "id")
-            save_undo_state(request, qs)
+            # --- Columnes possibles (clau -> (títol, func(obj)->valor)) ---
+            def fmt_date(d):
+                return d.strftime("%d/%m/%Y") if d else "-"
 
-            # Camps que exportem al full (pots ajustar-los)
-            columns = [
-                ("Ordre", "ordre_sortida"),
-                ("Grup", "grup"),
-                ("Nom i cognoms", "nom_i_cognoms"),
-                ("Categoria", "categoria"),
-                ("Subcategoria", "subcategoria"),
-                ("Entitat", "entitat"),
-                ("Sexe", "sexe"),
-                ("Data naixement", "data_naixement"),
-                ("Document", "document"),
-            ]
+            ALL_COLUMNS = OrderedDict([
+                ("nom", ("Nom i cognoms", lambda o: o.nom_i_cognoms or "-")),
+                ("dni", ("DNI", lambda o: o.document or "-")),
+                ("sexe", ("Sexe", lambda o: o.sexe or "-")),
+                ("naixement", ("Data naixement", lambda o: fmt_date(o.data_naixement))),
+                ("entitat", ("Entitat", lambda o: o.entitat or "-")),
+                ("categoria", ("Categoria", lambda o: o.categoria or "-")),
+                ("subcategoria", ("Subcategoria", lambda o: o.subcategoria or "-")),
+                ("grup", ("Grup", lambda o: o.grup if o.grup is not None else "-")),
+                ("ordre", ("Ordre", lambda o: o.ordre_sortida if o.ordre_sortida is not None else "-")),
+            ])
 
+            selected_cols = request.GET.getlist("excel_cols")
+            if not selected_cols:
+                selected_cols = list(ALL_COLUMNS.keys())
+            selected_cols = [c for c in selected_cols if c in ALL_COLUMNS]
+
+            columns = [(ALL_COLUMNS[c][0], ALL_COLUMNS[c][1]) for c in selected_cols]
+            if not columns:
+                # fallback per seguretat
+                columns = [(ALL_COLUMNS["nom"][0], ALL_COLUMNS["nom"][1])]
+
+            # --- Determina agrupació activa (per construir pestanyes) ---
+            selected = [g for g in request.GET.getlist("group_by") if g in ALLOWED_GROUP_FIELDS]
+            if not selected:
+                selected = self.competicio.group_by_default or []
+            selected = [g for g in selected if g in ALLOWED_GROUP_FIELDS]
+            group_fields = [ALLOWED_GROUP_FIELDS[g] for g in selected]
+
+            grouping_sig = "|".join(selected)
+
+            # --- QS base (respecta filtres) ---
+            qs_base = self.get_queryset_base_filtrada()
+
+            # --- Helpers per construir clau estable de pestanya ---
+            def norm_val(v):
+                return "__NULL__" if v in (None, "") else str(v)
+
+            def pretty_val(v):
+                return "(Sense valor)" if v in (None, "") else str(v)
+
+            # Si no hi ha group_fields, tot és una sola pestanya
+            # Si n'hi ha, construïm pestanyes i apliquem merges (tab_merges)
+            tabs = []  # [(tab_label, tab_qs)]
+
+            if not group_fields:
+                tabs = [("Sense agrupació", qs_base)]
+            else:
+                # 1) Agrupa per clau simple (vals de group_fields)
+                grouped_ids = OrderedDict()   # key(json vals) -> [ids]
+                label_map = {}                # key -> label llegible
+
+                for r in qs_base.only("id", *group_fields):
+                    vals = [norm_val(getattr(r, f, None)) for f in group_fields]
+                    key = json.dumps(vals, ensure_ascii=False)
+                    grouped_ids.setdefault(key, []).append(r.id)
+
+                    if key not in label_map:
+                        parts = [pretty_val(getattr(r, f, None)) for f in group_fields]
+                        label_map[key] = " · ".join(parts)
+
+                # 2) Aplica merges configurats a competicio.tab_merges per aquest grouping_sig
+                merges = (self.competicio.tab_merges or {}).get(grouping_sig, [])
+                merge_map = {}
+                for group_keys in merges:
+                    t = tuple(group_keys)
+                    for x in group_keys:
+                        merge_map[x] = t
+
+                merged_ids = OrderedDict()     # merged_key(json llista subkeys o key simple) -> [ids]
+                merged_label = {}              # merged_key -> label
+
+                for k, ids in grouped_ids.items():
+                    merge_id = merge_map.get(k)
+                    if merge_id:
+                        merged_key = json.dumps(list(merge_id), ensure_ascii=False)
+                        merged_ids.setdefault(merged_key, []).extend(ids)
+                        if merged_key not in merged_label:
+                            merged_label[merged_key] = " + ".join(label_map.get(x, x) for x in merge_id)
+                    else:
+                        merged_ids.setdefault(k, []).extend(ids)
+                        merged_label[k] = label_map.get(k, k)
+
+                # 3) Construeix tabs (label + queryset filtrat pels ids)
+                for k, ids in merged_ids.items():
+                    tab_label = merged_label.get(k, k)
+                    tabs.append((tab_label, qs_base.filter(id__in=ids)))
+
+            # --- Excel workbook/estils (mantenim “format maco”) ---
             wb = Workbook()
             ws = wb.active
             ws.title = "Inscripcions"
 
-            bold = Font(bold=True)
             title_font = Font(bold=True, size=12)
-            center = Alignment(vertical="center")
-            group_fill = PatternFill("solid", fgColor="DBEAFE")  # blau suau
+            header_font = Font(bold=True)
+            header_fill = PatternFill("solid", fgColor="E9EEF7")
+            group_fill = PatternFill("solid", fgColor="DDE7FF")
+
+            def write_table_header(r):
+                for col_i, (label, _) in enumerate(columns, start=1):
+                    c = ws.cell(row=r, column=col_i, value=label)
+                    c.font = header_font
+                    c.fill = header_fill
+                    c.alignment = Alignment(vertical="center")
+
+            def write_row(r, obj):
+                for col_i, (_, getter) in enumerate(columns, start=1):
+                    ws.cell(row=r, column=col_i, value=getter(obj))
 
             row = 1
 
-            # --- Capçalera amb competició i filtres actius ---
-            ws.cell(row=row, column=1, value="Competició:").font = bold
-            ws.cell(row=row, column=2, value=self.competicio.nom)
-            row += 1
+            # --- Escriu cada pestanya (i dins, cada grup) ---
+            # IMPORTANT: ordenem per grup i després per ordre_sortida (que és el que has estat modificant)
+            
 
-            # Mostrem filtres actius (q/categoria/subcategoria/entitat/prova)
-            active_filters = []
-            for key in ["q", "categoria", "subcategoria", "entitat", "prova"]:
-                v = request.GET.get(key)
-                if v:
-                    active_filters.append(f"{key}={v}")
+            # --- Escriu TAULES en ordre GLOBAL de grup (1..N), però el títol inclou la pestanya ---
+            selected = [g for g in request.GET.getlist("group_by") if g in ALLOWED_GROUP_FIELDS]
+            if not selected:
+                selected = self.competicio.group_by_default or []
+            selected = [g for g in selected if g in ALLOWED_GROUP_FIELDS]
+            group_fields = [ALLOWED_GROUP_FIELDS[g] for g in selected]
+            grouping_sig = "|".join(selected) if selected else ""
 
-            ws.cell(row=row, column=1, value="Filtres:").font = bold
-            ws.cell(row=row, column=2, value=", ".join(active_filters) if active_filters else "(cap)")
-            row += 2
+            merges = (self.competicio.tab_merges or {}).get(grouping_sig, [])
+            merge_map = {}
+            for group_keys in merges:
+                t = tuple(group_keys)
+                for x in group_keys:
+                    merge_map[x] = t
 
-            # --- Sense grups? -> export plana ---
-            has_groups = qs.exclude(grup__isnull=True).exists()
+            def norm_val(v):
+                return "__NULL__" if v in (None, "") else str(v)
 
-            def write_table_header(r):
-                for col_idx, (label, _) in enumerate(columns, start=1):
-                    c = ws.cell(row=r, column=col_idx, value=label)
-                    c.font = bold
-                    c.alignment = center
+            def pretty_val(v):
+                return "(Sense valor)" if v in (None, "") else str(v)
 
-            def write_row(r, obj):
-                for col_idx, (_, field) in enumerate(columns, start=1):
-                    v = getattr(obj, field)
-                    ws.cell(row=r, column=col_idx, value=v)
+            # label per “simple key”
+            def label_for_simple_key(simple_key: str) -> str:
+                try:
+                    vals = json.loads(simple_key)
+                    if isinstance(vals, list):
+                        return " · ".join(pretty_val(x) for x in vals)
+                except Exception:
+                    pass
+                return simple_key
 
-            if not has_groups:
+            # label final de pestanya (simple o merged)
+            merged_label_map = {}
+            for group_keys in merges:
+                merged_key = json.dumps(list(tuple(group_keys)), ensure_ascii=False)
+                merged_label_map[merged_key] = " + ".join(label_for_simple_key(x) for x in group_keys)
+
+            def tab_label_for_obj(obj) -> str:
+                if not group_fields:
+                    return "Sense agrupació"
+
+                vals = [norm_val(getattr(obj, f, None)) for f in group_fields]
+                simple_key = json.dumps(vals, ensure_ascii=False)
+                mid = merge_map.get(simple_key)
+                if mid:
+                    merged_key = json.dumps(list(mid), ensure_ascii=False)
+                    return merged_label_map.get(merged_key, merged_key)
+                return label_for_simple_key(simple_key)
+
+            # QS global ordenat per grup (numèric) i dins per ordre_sortida
+            qs_all = qs_base.annotate(
+                grup_null=Case(
+                    When(grup__isnull=True, then=1),
+                    default=0,
+                    output_field=IntegerField(),
+                )
+            ).order_by(
+                "grup_null",
+                "grup",
+                "ordre_sortida",
+                "id",
+            )
+
+            SENTINEL = object()
+            current_grp = SENTINEL
+            buffer = []
+
+            def flush_group(objs, grp_num):
+                nonlocal row
+                if not objs:
+                    return
+
+                # pestanya: la deduïm del primer (normalment tot el grup és de la mateixa pestanya)
+                tab_label = tab_label_for_obj(objs[0])
+
+                # IMPORTANT: mantenim "Grup X" com sempre
+                if grp_num is None:
+                    group_title = f"{tab_label} · Sense grup"
+                else:
+                    group_title = f"{tab_label} · Grup {grp_num}"
+
+                ws.cell(row=row, column=1, value=group_title).font = title_font
+                ws.cell(row=row, column=1).fill = group_fill
+                ws.cell(row=row, column=1).alignment = Alignment(vertical="center")
+                ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=len(columns))
+                row += 1
+
                 write_table_header(row)
                 row += 1
-                for obj in qs:
-                    write_row(row, obj)
-                    row += 1
-            else:
-                # --- Export per blocs de grup (respectant ordre_sortida) ---
-                current_group = None
-                buffer = []
 
-                def flush_group(buf):
-                    nonlocal row, current_group
-                    if not buf:
-                        return
-
-                    # títol del grup: "<camp1> <camp2> ... Grup X"
-                    sample = buf[0]
-                    title_parts = []
-                    for f in title_fields:
-                        title_parts.append(_s(getattr(sample, f)))
-
-                    grp_num = getattr(sample, "grup")
-                    if grp_num is None:
-                        group_title = "Sense grup"
-                    else:
-                        group_title = (" ".join([p for p in title_parts if p])) + f" Grup {grp_num}"
-                        group_title = group_title.strip()
-
-                    # fila títol (merge)
-                    ws.cell(row=row, column=1, value=group_title).font = title_font
-                    ws.cell(row=row, column=1).fill = group_fill
-                    ws.cell(row=row, column=1).alignment = Alignment(vertical="center")
-                    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=len(columns))
+                for o in objs:
+                    write_row(row, o)
                     row += 1
 
-                    # capçalera taula
-                    write_table_header(row)
-                    row += 1
+                row += 1  # espai
 
-                    # dades
-                    for o in buf:
-                        write_row(row, o)
-                        row += 1
+            for obj in qs_all:
+                g = obj.grup
+                if current_grp is SENTINEL:
+                    current_grp = g
 
-                    row += 1  # espai
+                if g != current_grp:
+                    flush_group(buffer, current_grp)
+                    buffer = []
+                    current_grp = g
 
-                for obj in qs:
-                    g = obj.grup
-                    if current_group is None:
-                        current_group = g
-                    if g != current_group:
-                        flush_group(buffer)
-                        buffer = []
-                        current_group = g
-                    buffer.append(obj)
+                buffer.append(obj)
 
-                flush_group(buffer)
+            flush_group(buffer, current_grp)
 
-            # Ajust d'amplades (simple)
+            # Ajust d'amplades (simple, però decent)
             for i, (label, _) in enumerate(columns, start=1):
                 ws.column_dimensions[get_column_letter(i)].width = max(12, min(35, len(label) + 4))
 
@@ -507,76 +642,223 @@ class InscripcionsListView(ListView):
             v2 = request.GET.get("v2")
             v3 = request.GET.get("v3")
 
-            # Quants nivells aplicar segons header clicat
-            if lvl == "g1":
-                upto = 1
-            elif lvl == "g2":
-                upto = 2
-            elif lvl == "g3":
-                upto = 3
-            else:
-                upto = 1
+            # --- CAS ESPECIAL: s'ha clicat el botó "Fer grup independent de la pestanya" ---
+            # v1 aquí és la group_key (JSON). Pot ser:
+            #  - clau simple: ["CAT","SUB",...]
+            #  - clau merged: ['["CAT1","SUB1"]','["CAT2","SUB2"]', ...]
+            def _is_merged_key_list(lst):
+                return (
+                    isinstance(lst, list) and lst
+                    and all(isinstance(x, str) for x in lst)
+                    and all(x.strip().startswith("[") for x in lst)
+                )
 
-            upto = min(upto, len(group_fields))
+            def _build_kwargs_from_vals(vals):
+                kwargs = {}
+                for f, v in zip(group_fields, vals):
+                    if v == "__NULL__":
+                        kwargs[f"{f}__isnull"] = True
+                    else:
+                        kwargs[f] = v
+                return kwargs
 
-            # Construïm el filtre del subgrup
-            vals = [v1, v2, v3][:upto]
-            filtres = {}
+            # Si lvl=g1 i v1 sembla JSON, intentem interpretar-ho com a clau de pestanya
+            if lvl == "g1" and v1 and v1.strip().startswith("["):
+                try:
+                    parsed = json.loads(v1)
+                except Exception:
+                    parsed = None
 
-            # Per diferenciar "sense valor", usem el sentinel "__NULL__"
-            for f, v in zip(group_fields[:upto], vals):
-                if v == "__NULL__":
-                    filtres[f"{f}__isnull"] = True
+                if isinstance(parsed, list):
+                    base_qs = self.get_queryset_base_filtrada()
+
+                    # merged: llista de subkeys JSON
+                    if _is_merged_key_list(parsed):
+                        q_or = Q()
+                        for subk in parsed:
+                            try:
+                                sub_vals = json.loads(subk)
+                            except Exception:
+                                continue
+                            if isinstance(sub_vals, list):
+                                q_or |= Q(**_build_kwargs_from_vals(sub_vals))
+                        sub_qs = base_qs.filter(q_or)
+
+                    # simple: llista de valors (per cada group_field)
+                    else:
+                        sub_qs = base_qs.filter(**_build_kwargs_from_vals(parsed))
+
+                    save_undo_state(request, base_qs)
+
+                    # i continuem amb la lògica existent a partir d'aquí (existing_groups, etc.)
+                    # IMPORTANT: SALTEM la construcció antiga de filtres
+                    existing_groups = list(
+                        sub_qs.exclude(grup__isnull=True).values_list("grup", flat=True).distinct()
+                    )
+
+                    if existing_groups:
+                        new_group_num = min(existing_groups)
+                        with transaction.atomic():
+                            Inscripcio.objects.filter(competicio=self.competicio, grup=new_group_num).update(grup=None)
+                            updated = sub_qs.update(grup=new_group_num)
+                            renumber_groups_for_competicio(self.competicio)
+                    else:
+                        max_grup = (
+                            Inscripcio.objects
+                            .filter(competicio=self.competicio)
+                            .aggregate(m=Max("grup"))["m"]
+                            or 0
+                        )
+                        new_group_num = max_grup + 1
+                        with transaction.atomic():
+                            updated = sub_qs.update(grup=new_group_num)
+                            renumber_groups_for_competicio(self.competicio)
+
+                    messages.success(request, f"Creat el grup {new_group_num} amb {updated} inscripcions del subgrup.")
+                    is_ajax = request.headers.get("x-requested-with") == "XMLHttpRequest"
+                    if is_ajax:
+                        return JsonResponse({"ok": True, "new_group_num": new_group_num, "updated": updated})
+
+                    query = request.GET.copy()
+                    query.pop("make_independent_group", None)
+                    query.pop("lvl", None)
+                    query.pop("v1", None)
+                    query.pop("v2", None)
+                    query.pop("v3", None)
+                    return redirect(f"{request.path}?{query.urlencode()}")
+
+            
+        # 0e) Ordenar inscripcions per agrupació (SENSE crear grups)
+        if request.GET.get("sort_by_grouping") == "1":
+            print("START SORT BY GROUPING", flush=True)
+
+            sort_key = request.GET.get("sort_key") or "nom"
+            sort_dir = request.GET.get("sort_dir") or "asc"
+            if sort_dir not in ("asc", "desc", "arrow_asc", "arrow_desc"):
+                sort_dir = "asc"
+ 
+            if sort_key not in ALLOWED_SORT_FIELDS:
+                messages.error(request, "Camp d'ordenació no vàlid.")
+                query = request.GET.copy()
+                query.pop("sort_by_grouping", None)
+                return redirect(f"{request.path}?{query.urlencode()}")
+
+            order_field = ALLOWED_SORT_FIELDS[sort_key]
+
+            # agrupació activa (la que has triat a la UI)
+            # IMPORTANT: si el botó/link no porta group_by, usem el guardat (com fa el context)
+            selected = [g for g in request.GET.getlist("group_by") if g in ALLOWED_GROUP_FIELDS]
+            if not selected:
+                selected = self.competicio.group_by_default or []
+
+            group_by_keys = selected
+            group_fields = [ALLOWED_GROUP_FIELDS[g] for g in selected if g in ALLOWED_GROUP_FIELDS]
+
+            qs = self.get_queryset_base_filtrada()
+            save_undo_state(request, qs)
+
+            updates = []
+            idx = 1
+            print("SORT group_by_keys:", group_by_keys, flush=True)
+            print("SORT grouping_sig:", "|".join(group_by_keys), flush=True)
+            print("SORT merges:", (self.competicio.tab_merges or {}).get("|".join(group_by_keys), []), flush=True)
+            print("SORT merges:", (self.competicio.tab_merges or {}).get("|".join(group_by_keys), []), flush=True)
+
+            # Cas simple: sense agrupació -> un sol “bloc”
+            if not group_fields:
+                if sort_dir in ("arrow_asc", "arrow_desc"):
+                    base_prefix = "-" if sort_dir == "arrow_desc" else ""
+                    base_list = list(qs.order_by(f"{base_prefix}{order_field}", "id").only("id"))
+                    n = len(base_list)
+                    pos = arrow_positions(n)
+                    placed = [None] * n
+                    for i, obj in enumerate(base_list):
+                        placed[pos[i]] = obj
+                    for obj in placed:
+                        obj.ordre_sortida = idx
+                        updates.append(obj)
+                        idx += 1
                 else:
-                    filtres[f] = v
+                    prefix = "-" if sort_dir == "desc" else ""
+                    base_list = list(qs.order_by(f"{prefix}{order_field}", "id").only("id"))
+                    for obj in base_list:
+                        obj.ordre_sortida = idx
+                        updates.append(obj)
+                        idx += 1
 
-            # QS del subgrup dins els filtres actuals (q/categoria/subcategoria/entitat...)
-            sub_qs = self.get_queryset_base_filtrada().filter(**filtres)
-            save_undo_state(request, self.get_queryset_base_filtrada())
+            # Cas agrupat: EXISTEIXEN pestanyes (i possibles fusions)
+            else:
+                # Bloc = pestanya final (fusionada o no)
+                base_prefix = "-" if sort_dir in ("desc", "arrow_desc") else ""
 
+                grouping_sig = "|".join(group_by_keys) if group_by_keys else ""
+                merges = (self.competicio.tab_merges or {}).get(grouping_sig, [])
 
+                # simple_key -> merged_tuple
+                merge_map = {}
+                for group_keys in merges:
+                    t = tuple(group_keys)  # group_keys = llista de simple keys
+                    for x in group_keys:
+                        merge_map[x] = t
 
-            # 1) Si el subgrup ja té grup(s), fem servir el mínim
-            existing_groups = list(
-                sub_qs.exclude(grup__isnull=True).values_list("grup", flat=True).distinct()
+                def norm_val(v):
+                    return "__NULL__" if v in (None, "") else str(v)
+
+                # 1) Assignem cada inscripcio a una pestanya FINAL (merged o simple)
+                # i conservem l'ordre de pestanyes tal com "apareixen" a ordre_sortida actual.
+                tab_to_ids = OrderedDict()
+                records = list(qs.order_by("ordre_sortida", "id").only("id", *group_fields))
+
+                for r in records:
+                    vals = [norm_val(getattr(r, f, None)) for f in group_fields]
+                    simple_key = json.dumps(vals, ensure_ascii=False)
+
+                    merge_id = merge_map.get(simple_key)
+                    if merge_id:
+                        tab_key = json.dumps(list(merge_id), ensure_ascii=False)  # merged key
+                    else:
+                        tab_key = simple_key  # tab simple
+
+                    tab_to_ids.setdefault(tab_key, []).append(r.id)
+
+                # 2) Ordenem DINS de cada pestanya FINAL:
+                # IMPORTANT: aquí NO respectem sub-blocs; és una sola ordenació global del conjunt.
+                for tab_key, tab_ids in tab_to_ids.items():
+                    tab_qs = qs.filter(id__in=tab_ids).order_by(f"{base_prefix}{order_field}", "id").only("id")
+                    base_list = list(tab_qs)
+
+                    if sort_dir in ("arrow_asc", "arrow_desc"):
+                        n = len(base_list)
+                        pos = arrow_positions(n)
+                        placed = [None] * n
+                        for i, obj in enumerate(base_list):
+                            placed[pos[i]] = obj
+                        for obj in placed:
+                            obj.ordre_sortida = idx
+                            updates.append(obj)
+                            idx += 1
+                    else:
+                        for obj in base_list:
+                            obj.ordre_sortida = idx
+                            updates.append(obj)
+                            idx += 1
+
+            with transaction.atomic():
+                Inscripcio.objects.bulk_update(updates, ["ordre_sortida"], batch_size=500)
+
+            messages.success(
+                request,
+                f"Inscripcions ordenades per agrupació ({', '.join(group_by_keys) or 'cap'}) i camp '{sort_key}' ({sort_dir})."
             )
 
-            if existing_groups:
-                new_group_num = min(existing_groups)
-
-                with transaction.atomic():
-                    # Allibera aquest número de grup dins la competició per evitar duplicats
-                    Inscripcio.objects.filter(competicio=self.competicio, grup=new_group_num).update(grup=None)
-                    updated = sub_qs.update(grup=new_group_num)
-                    renumber_groups_for_competicio(self.competicio)
-
-            else:
-                # 2) Si no hi havia grups previs al subgrup, mantenim lògica actual: max + 1
-                max_grup = (
-                    Inscripcio.objects
-                    .filter(competicio=self.competicio)
-                    .aggregate(m=Max("grup"))["m"]
-                    or 0
-                )
-                new_group_num = max_grup + 1
-
-                with transaction.atomic():
-                    updated = sub_qs.update(grup=new_group_num)
-                    renumber_groups_for_competicio(self.competicio)
-
-
-            messages.success(request, f"Creat el grup {new_group_num} amb {updated} inscripcions del subgrup.")
-            # Si és una petició AJAX, retornem JSON i NO redirigim
-            is_ajax = request.headers.get("x-requested-with") == "XMLHttpRequest"
-            if is_ajax:
-                return JsonResponse({"ok": True, "new_group_num": new_group_num, "updated": updated})
             query = request.GET.copy()
-            query.pop("make_independent_group", None)
-            query.pop("lvl", None)
-            query.pop("v1", None)
-            query.pop("v2", None)
-            query.pop("v3", None)
+            query.pop("sort_by_grouping", None)
+            query.pop("sort_key", None)
+            query.pop("sort_dir", None)
             return redirect(f"{request.path}?{query.urlencode()}")
+
+
+
 
 
         # 0d) Reendreçar dins de cada grup segons un camp
@@ -660,6 +942,169 @@ class InscripcionsListView(ListView):
             query.pop("sort_key", None)
             query.pop("sort_dir", None)
             return redirect(f"{request.path}?{query.urlencode()}")
+
+        # 0b) Crear X grups (PER PESTANYA de l’agrupació; si la pestanya és fusionada => ES TRACTA COM 1 SOLA)
+        if request.GET.get("make_groups_count") == "1":
+
+            # --- validar k ---
+            try:
+                k = int(request.GET.get("group_count") or 0)
+            except ValueError:
+                k = 0
+            if k < 1:
+                messages.error(request, "El nombre de grups ha de ser com a mínim 1.")
+                query = request.GET.copy()
+                query.pop("make_groups_count", None)
+                return redirect(f"{request.path}?{query.urlencode()}")
+
+            qs_base = self.get_queryset_base_filtrada()
+            save_undo_state(request, qs_base)
+
+            # --- agrupació activa (fields) ---
+            selected = self.request.GET.getlist("group_by") or (self.competicio.group_by_default or [])
+            selected = [g for g in selected if g in ALLOWED_GROUP_FIELDS]
+            group_fields = [ALLOWED_GROUP_FIELDS[g] for g in selected]
+
+            tab_keys = request.GET.getlist("tab_keys")  # checkboxes de pestanyes
+
+            def norm_val(v):
+                return "__NULL__" if v in (None, "") else str(v)
+
+            def parse_tab_key(tk: str):
+                """
+                Retorna:
+                - ("simple", [v1,v2,...]) si tk és JSON list de longitud = len(group_fields)
+                - ("merged", [[v...],[v...],...]) si tk és JSON list d'strings JSON (simple keys)
+                """
+                vals = json.loads(tk)
+
+                # simple: ["ALEVI","CN X",...]
+                if isinstance(vals, list) and len(vals) == len(group_fields):
+                    return ("simple", vals)
+
+                # merged: ["[...]", "[...]", ...]  (cada sub és una simple key en format JSON string)
+                if isinstance(vals, list) and vals and all(isinstance(x, str) for x in vals):
+                    out = []
+                    for sub in vals:
+                        try:
+                            sub_vals = json.loads(sub)
+                        except Exception:
+                            continue
+                        if isinstance(sub_vals, list) and len(sub_vals) == len(group_fields):
+                            out.append(sub_vals)
+                    return ("merged", out)
+
+                return ("invalid", None)
+
+            def build_q_from_vals(vlist):
+                q = Q()
+                for f, v in zip(group_fields, vlist):
+                    if v == "__NULL__":
+                        q &= Q(**{f"{f}__isnull": True})
+                    else:
+                        q &= Q(**{f: v})
+                return q
+
+            # --- Cas 1: NO hi ha agrupació -> aplica a tot el queryset (una sola “pestanya”) ---
+            if not group_fields:
+                objs = list(qs_base.order_by("ordre_sortida", "id").only("id", "grup"))
+                if not objs:
+                    messages.warning(request, "No hi ha inscripcions per crear grups.")
+                    query = request.GET.copy()
+                    query.pop("make_groups_count", None)
+                    query.pop("group_count", None)
+                    query.setlist("tab_keys", [])
+                    return redirect(f"{request.path}?{query.urlencode()}")
+
+                for o in objs:
+                    o.grup = None
+
+                max_grup = (
+                    Inscripcio.objects.filter(competicio=self.competicio)
+                    .aggregate(m=Max("grup"))["m"] or 0
+                )
+                start = max_grup
+
+                with transaction.atomic():
+                    start = assign_groups_k(objs, k, start)
+                    Inscripcio.objects.bulk_update(objs, ["grup"], batch_size=500)
+                    renumber_groups_for_competicio(self.competicio)
+
+                messages.success(request, f"Creats grups (k={k}) per totes les inscripcions filtrades.")
+                query = request.GET.copy()
+                query.pop("make_groups_count", None)
+                query.pop("group_count", None)
+                query.setlist("tab_keys", [])
+                return redirect(f"{request.path}?{query.urlencode()}")
+
+            
+            # --- Cas 2: hi ha agrupació -> aplica a pestanyes seleccionades (però fent k grups TOTALS) ---
+
+            # Si no marques cap pestanya, apliquem a TOTES les pestanyes “simples”
+            if not tab_keys:
+                existing_simple = set()
+                for r in qs_base.order_by("ordre_sortida", "id").only("id", *group_fields):
+                    vals = [norm_val(getattr(r, f, None)) for f in group_fields]
+                    existing_simple.add(json.dumps(vals, ensure_ascii=False))
+                tab_keys = list(existing_simple)
+
+            # Construim un únic Q = OR de totes les pestanyes seleccionades (simple i merged)
+            combined_q = Q()
+            valid_tabs = 0
+
+            for tk in tab_keys:
+                try:
+                    kind, payload = parse_tab_key(tk)
+                except Exception:
+                    kind, payload = ("invalid", None)
+
+                if kind == "invalid":
+                    continue
+
+                valid_tabs += 1
+
+                if kind == "simple":
+                    combined_q |= build_q_from_vals(payload)
+                else:  # merged
+                    for sub_vals in payload:
+                        combined_q |= build_q_from_vals(sub_vals)
+
+            # Apliquem a TOTES les inscripcions d’aquest conjunt
+            sub_qs = qs_base.filter(combined_q)
+            objs = list(sub_qs.order_by("ordre_sortida", "id").only("id", "grup"))
+
+            if not objs:
+                messages.warning(request, "No s'han creat grups: les pestanyes seleccionades no tenen inscripcions.")
+                query = request.GET.copy()
+                query.pop("make_groups_count", None)
+                query.pop("group_count", None)
+                query.setlist("tab_keys", [])
+                return redirect(f"{request.path}?{query.urlencode()}")
+
+            for o in objs:
+                o.grup = None
+
+            max_grup = (
+                Inscripcio.objects.filter(competicio=self.competicio)
+                .aggregate(m=Max("grup"))["m"] or 0
+            )
+            start = max_grup
+
+            with transaction.atomic():
+                start = assign_groups_k(objs, k, start)
+                Inscripcio.objects.bulk_update(objs, ["grup"], batch_size=500)
+                renumber_groups_for_competicio(self.competicio)
+
+            messages.success(request, f"Creats {min(k, len(objs))} grups (k={k}) amb {len(objs)} inscripcions (pestanyes seleccionades: {valid_tabs}).")
+
+            query = request.GET.copy()
+            query.pop("make_groups_count", None)
+            query.pop("group_count", None)
+            query.setlist("tab_keys", [])
+            return redirect(f"{request.path}?{query.urlencode()}")
+
+
+
 
 
         # 0b) Crear grups de mida N (respectant group_by però amb numeració global única)
@@ -811,13 +1256,6 @@ class InscripcionsListView(ListView):
         return super().get(request, *args, **kwargs)
 
 
-
-    def get_queryset(self):
-        qs = self.get_queryset_base_filtrada()
-        save_undo_state(self.request, qs)
-
-        return qs.order_by("ordre_sortida", "id")
-
     def get_paginate_by(self, queryset):
         if self.request.GET.getlist("group_by"):
             return None  # amb pestanyes, sense paginació
@@ -845,46 +1283,98 @@ class InscripcionsListView(ListView):
         ctx["selected_group_fields"] = selected
 
         # Agrupació per pestanyes: agrupem pel primer camp seleccionat
-        from collections import OrderedDict
-
         records = self.get_queryset_base_filtrada().order_by("ordre_sortida", "id")
 
-
         records_grouped = None
+        grouping_sig = "|".join(selected) if selected else ""
+        ctx["grouping_sig"] = grouping_sig  # per JS / merge
+
+        def norm_val(v):
+            return "__NULL__" if v in (None, "") else str(v)
+
+        def pretty_val(v):
+            return "(Sense valor)" if v in (None, "") else str(v)
+
         if selected:
-            g1 = selected[0]
+            group_fields = [ALLOWED_GROUP_FIELDS[g] for g in selected if g in ALLOWED_GROUP_FIELDS]
+
             grouped = OrderedDict()
+            label_map = {}
 
             for r in records:
-                key = getattr(r, g1, None) or "(Sense valor)"
+                vals = [norm_val(getattr(r, f, None)) for f in group_fields]
+                key = json.dumps(vals, ensure_ascii=False)  # clau estable per merge/checkbox
                 grouped.setdefault(key, []).append(r)
 
-            records_grouped = list(grouped.items())
+                # etiqueta visible (Categoria: X · Entitat: Y ...)
+                if key not in label_map:
+                    parts = []
+                    for gkey, f in zip(selected, group_fields):
+                        parts.append(f"{pretty_val(getattr(r, f, None))}")
+                    label_map[key] = " · ".join(parts)
 
-            # Merge logic only if grouping is active
-            merges = (self.competicio.tab_merges or {}).get(g1, [])
-            def key_to_label(k: str) -> str:
-                return k or "(Sense valor)"
+            # --- merge tabs (ara per agrupació completa) ---
+            merges = (self.competicio.tab_merges or {}).get(grouping_sig, [])
+
             merge_map = {}
             for group_keys in merges:
-                norm = [key_to_label(x) for x in group_keys]
-                t = tuple(norm)
-                for x in norm:
+                t = tuple(group_keys)
+                for x in group_keys:
                     merge_map[x] = t
 
             merged_grouped = OrderedDict()
-            for k, items in grouped.items():
-                kk = key_to_label(k)
-                merge_id = merge_map.get(kk)
-                if merge_id:
-                    label = " + ".join(merge_id)
-                    merged_grouped.setdefault(label, []).extend(items)
-                else:
-                    merged_grouped.setdefault(kk, []).extend(items)
+            merged_label_map = {}
 
-            records_grouped = list(merged_grouped.items())
+            for k, items in grouped.items():
+                merge_id = merge_map.get(k)
+                if merge_id:
+                    merged_key = json.dumps(list(merge_id), ensure_ascii=False)
+                    merged_grouped.setdefault(merged_key, []).extend(items)
+
+                    if merged_key not in merged_label_map:
+                        merged_label_map[merged_key] = " + ".join(label_map.get(x, x) for x in merge_id)
+                else:
+                    merged_grouped.setdefault(k, []).extend(items)
+                    merged_label_map[k] = label_map.get(k, k)
+            # IMPORTANT: si una pestanya és fusionada, hem concatenat llistes de subpestanyes.
+            # Reordena el conjunt final per ordre_sortida perquè es vegi com un únic bloc real.
+            for _k, _items in merged_grouped.items():
+                _items.sort(key=lambda r: ((r.ordre_sortida or 10**12), r.id))
+
+            # format final: (label, items, key)
+            records_grouped = [(merged_label_map[k], items, k) for k, items in merged_grouped.items()]
 
         ctx["records_grouped"] = records_grouped
+
+        # Columnes possibles a exportar (mateixes que la taula)
+        ALL_EXCEL_COLUMNS = [
+            ("nom", "Nom i cognoms"),
+            ("dni", "DNI"),
+            ("sexe", "Sexe"),
+            ("naixement", "Data naixement"),
+            ("entitat", "Entitat"),
+            ("categoria", "Categoria"),
+            ("subcategoria", "Subcategoria"),
+            ("grup", "Grup"),
+            ("ordre", "Ordre"),
+        ]
+
+        ctx["allowed_excel_columns"] = ALL_EXCEL_COLUMNS
+
+        sel_cols = self.request.GET.getlist("excel_cols")
+        if not sel_cols:
+            sel_cols = [k for k, _ in ALL_EXCEL_COLUMNS]
+        ctx["excel_cols_selected"] = sel_cols
+
+        # Categories disponibles dins el conjunt filtrat (respecta q/categoria/subcategoria/entitat/prova)
+        base = self.get_queryset_base_filtrada()
+        ctx["categories_distinct"] = list(
+            base.order_by()
+                .values_list("categoria", flat=True)
+                .distinct()
+        )
+        ctx["cats_selected"] = self.request.GET.getlist("cats")
+
         return ctx
 
 
@@ -1033,7 +1523,7 @@ def inscripcions_merge_tabs(request, pk):
 
     try:
         payload = json.loads(request.body.decode("utf-8"))
-        group_field = payload.get("group_field")
+        group_field = payload.get("group_field")   # IMPORTANT: ha de ser la "signature" (grouping_sig)
         source_key = payload.get("source_key")
         target_key = payload.get("target_key")
     except Exception:
@@ -1047,44 +1537,63 @@ def inscripcions_merge_tabs(request, pk):
     merges = c.tab_merges or {}
     lst = merges.get(group_field, [])
 
-    # Normalitza
-    def norm(x):
-        return "(Sense valor)" if x in (None, "") else str(x)
+    def normalize_key_to_simple_list(k: str) -> list[str]:
+        """
+        Retorna SEMPRE una llista de 'simple keys' (strings JSON del tipus ["A","B"...]).
+        - Si k és simple: retorna [k]
+        - Si k és merged: retorna [sub1, sub2, ...] on cada subX és un string JSON d'una clau simple
+        """
+        try:
+            v = json.loads(k)
+        except Exception:
+            return [k]
 
-    s = norm(source_key)
-    t = norm(target_key)
+        # merged: ['["..."]','["..."]', ...]  (cada element és un JSON de llista)
+        if (
+            isinstance(v, list) and v
+            and all(isinstance(x, str) for x in v)
+            and all(x.strip().startswith("[") for x in v)
+        ):
+            return v
 
-    # Busca si ja existeixen grups que continguin s o t, i els uneix
-    new_set = []
-    consumed = []
+        # simple: ["ALEVI","FEMENI", ...]
+        if isinstance(v, list):
+            return [k]
+
+        return [k]
+
+
+    s_list = normalize_key_to_simple_list(source_key)
+    t_list = normalize_key_to_simple_list(target_key)
+
+    # Unim t + s preservant ordre i dedup
+    desired = []
+    for x in (t_list + s_list):
+        if x not in desired:
+            desired.append(x)
+
+    # Si ja hi ha merges que contenen alguna d'aquestes keys, els absorbim
+    consumed_idx = []
+    merged_all = []
     for i, g in enumerate(lst):
-        g_norm = [norm(x) for x in g]
-        if s in g_norm or t in g_norm:
-            new_set.extend(g_norm)
-            consumed.append(i)
+        # g és una llista de simple keys
+        if any(x in g for x in desired):
+            merged_all.extend(g)
+            consumed_idx.append(i)
 
-    # elimina els grups consumits
-    for i in sorted(consumed, reverse=True):
+    for i in sorted(consumed_idx, reverse=True):
         lst.pop(i)
 
-    # afegeix source+target si no estaven en cap merge prèvia
-    if not new_set:
-        new_set = [t, s]
-    else:
-        new_set.extend([s, t])
+    merged_all.extend(desired)
 
-    # dedup preservant ordre
-    seen = set()
-    merged = []
-    for x in new_set:
-        if x not in seen:
-            seen.add(x)
-            merged.append(x)
+    final = []
+    for x in merged_all:
+        if x not in final:
+            final.append(x)
 
-    lst.append(merged)
+    lst.append(final)
     merges[group_field] = lst
     c.tab_merges = merges
     c.save(update_fields=["tab_merges"])
 
-    return JsonResponse({"ok": True, "merged": merged})
-
+    return JsonResponse({"ok": True, "merged": final})

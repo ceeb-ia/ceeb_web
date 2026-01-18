@@ -5,6 +5,21 @@
 
 {% block content %}
 <div class="container-fluid mt-4">
+  <style>
+    .copy-j1{
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      line-height: 1.2;
+      white-space: nowrap;
+    }
+
+    .copy-j1 input[type="checkbox"]{
+      margin: 0;              /* evita que el margin default desquadri */
+      transform: translateY(1px); /* micro-ajust vertical */
+    }
+
+  </style>
   <div class="card-surface">
 
     <!-- CAPÇALERA -->
@@ -29,11 +44,6 @@
         <a class="btn btn-sm btn-outline-secondary"
            href="{% url 'trampoli_config' competicio.id %}">
           Configuració
-        </a>
-
-        <a class="btn btn-sm btn-outline-primary"
-           href="{% url 'trampoli_aparells_list' competicio.id %}">
-          Aparells
         </a>
 
         <a class="btn btn-sm btn-info"
@@ -115,143 +125,172 @@
                       <div class="tab-pane fade {% if forloop.first %}show active{% endif %}"
                            id="pane-{{ g }}-app-{{ app.id }}-ex-{{ ex }}"
                            role="tabpanel">
+                              <div class="d-flex justify-content-end mb-2">
+                                <div class="copy-j1">
+                                  <input type="checkbox" id="copyJutge1-{{ g }}-{{ app.id }}-{{ ex }}">
+                                  <label class="small mb-0" for="copyJutge1-{{ g }}-{{ app.id }}-{{ ex }}">
+                                    Copiar notes del jutge 1 a la resta
+                                  </label>
+                                </div>
+                              </div>
 
-                        <table class="table table-bordered table-sm align-middle">
+
+                              <div class="table-scrollbar-top" style="overflow-x:auto; width:100%; height:16px; margin-bottom:2px;">
+                                <div style="width:2000px; height:1px;"></div>
+                              </div>
+                              <div class="table-responsive">      
+                              <table class="table table-bordered table-sm align-middle">
                           <thead class="table-light">
                             <tr>
-                              <th style="min-width:260px; text-align:center;">Nom</th>
+                              <th style="min-width:220px; text-align:center;">Nom</th>
 
-                              {% if app.te_execucio and app.mode_execucio == "salts" and cfg.mostrar_salts %}
+                              {% if app.te_execucio and app.mode_execucio == "salts" %}
                                 {% for _ in "x"|ljust:max_salts %}
                                   {% if forloop.counter <= app.nombre_elements %}
-                                    <th style="min-width:90px; text-align:center;">S{{ forloop.counter }}</th>
+                                    <th style="min-width:30px; text-align:center;">S{{ forloop.counter }}</th>
                                   {% endif %}
                                 {% endfor %}
                               {% endif %}
 
                               {% if app.te_execucio %}
-                                <th style="min-width:130px; text-align:center;">
+                                <th style="min-width:60px; text-align:center;">
                                   {% if app.mode_execucio == "manual" %}Execució (manual){% else %}Execució{% endif %}
                                 </th>
                               {% endif %}
 
-                              {% if app.te_dificultat and cfg.mostrar_dificultat %}<th style="min-width:80px; text-align:center;">Dificultat</th>{% endif %}
-                              {% if app.te_tof and cfg.mostrar_tof %}<th style="min-width:70px; text-align:center;">ToF</th>{% endif %}
-                              {% if app.te_hd and cfg.mostrar_hd %}<th style="min-width:70px; text-align:center;">HD</th>{% endif %}
-                              {% if app.te_penalitzacio and cfg.mostrar_penalitzacio %}<th style="min-width:90px; text-align:center;">Penalització</th>{% endif %}
-                              {% if cfg.mostrar_total %}<th style="min-width:120px; text-align:center;">Total</th>{% endif %}
+                              {% if app.te_dificultat %}<th style="min-width:80px; text-align:center;">Dificultat</th>{% endif %}
+                              {% if app.te_tof %}<th style="min-width:70px; text-align:center;">ToF</th>{% endif %}
+                              {% if app.te_hd %}<th style="min-width:70px; text-align:center;">HD</th>{% endif %}
+                              {% if app.te_penalitzacio %}<th style="min-width:90px; text-align:center;">Penalització</th>{% endif %}
+                              {% if True %}<th style="min-width:120px; text-align:center;">Total</th>{% endif %}
                             </tr>
                           </thead>
 
-                          <tbody>
-                            {% for r in inscripcions %}
-                              {% for _j in "x"|ljust:n_jutges %}
-                                <tr data-ins="{{ r.id }}"
-                                    data-ex="{{ ex }}"
-                                    data-app="{{ app.id }}"
-                                    data-jutge="{{ forloop.counter }}">
+                        <tbody>
+                          {% for r in inscripcions %}
+                            {% for _j in "x"|ljust:n_jutges %}
+                              <tr data-ins="{{ r.id }}"
+                                  data-ex="{{ ex }}"
+                                  data-app="{{ app.id }}"
+                                  data-jutge="{{ forloop.counter }}">
 
-                                  {% if forloop.first %}
-                                    <td rowspan="{{ n_jutges }}" class="fw-semibold">
-                                      {{ r.nom_i_cognoms }}
-                                      <div class="text-muted small">
-                                        {% if r.entitat %}{{ r.entitat }}{% endif %}
-                                        {% if r.categoria %} · {{ r.categoria }}{% endif %}
-                                        {% if r.subcategoria %} · {{ r.subcategoria }}{% endif %}
-                                      </div>
+                                {# NOM (1 cop amb rowspan) #}
+                                {% if forloop.first %}
+                                  <td rowspan="{{ n_jutges }}" class="fw-semibold">
+                                    {{ r.nom_i_cognoms }}
+                                    <div class="text-muted small">
+                                      {% if r.entitat %}{{ r.entitat }}{% endif %}
+                                      {% if r.categoria %} · {{ r.categoria }}{% endif %}
+                                      {% if r.subcategoria %} · {{ r.subcategoria }}{% endif %}
+                                    </div>
+                                  </td>
+                                {% endif %}
+
+                                {# SALTS (una cel·la per jutge i salt) #}
+                                {% if app.te_execucio and app.mode_execucio == "salts"%}
+                                  {% for _s in "x"|ljust:max_salts %}
+                                    {% if forloop.counter <= app.nombre_elements %}
+                                      <td>
+                                        <div class="d-flex align-items-center" style="gap:6px;">
+                                          <input type="number"
+                                                step="1" min="0" max="10"
+                                                class="form-control form-control-sm js-salt"
+                                                name="s_{{ r.id }}_{{ ex }}_{{ app.id }}_{{ forloop.parentloop.counter }}_{{ forloop.counter }}"
+                                                placeholder="0"
+                                                style="width:50px;">
+
+                                          <button type="button"
+                                                  class="btn btn-sm btn-outline-danger js-crash p-0"
+                                                  title="Crash"
+                                                  data-ins="{{ r.id }}"
+                                                  data-ex="{{ ex }}"
+                                                  data-app="{{ app.id }}"
+                                                  data-j="{{ forloop.parentloop.counter }}"
+                                                  data-s="{{ forloop.counter }}"
+                                                  style="width:22px;height:22px;">
+                                            💥
+                                          </button>
+                                        </div>
+
+                                        <input type="hidden"
+                                              name="crash_{{ r.id }}_{{ ex }}_{{ app.id }}_{{ forloop.parentloop.counter }}"
+                                              value="0">
+                                      </td>
+                                    {% endif %}
+                                  {% endfor %}
+                                {% endif %}
+
+                                {# EXECUCIÓ: salts = 1 cel·la amb rowspan; manual = 1 cel·la per jutge #}
+                                {% if app.te_execucio %}
+                                  {% if app.mode_execucio == "salts" %}
+                                    {% if forloop.first %}
+                                      <td rowspan="{{ n_jutges }}">
+                                        <input type="number"
+                                              class="form-control form-control-sm js-exec-total"
+                                              name="exec_total_{{ r.id }}_{{ ex }}_{{ app.id }}"
+                                              readonly>
+                                      </td>
+                                    {% endif %}
+                                  {% else %}
+                                    <td>
+                                      <input type="number"
+                                            class="form-control form-control-sm js-exec-manual"
+                                            name="exec_manual_{{ r.id }}_{{ ex }}_{{ app.id }}_{{ forloop.counter }}">
+                                    </td>
+                                  {% endif %}
+                                {% endif %}
+
+                                {# LA RESTA (rowspan) NOMÉS a la primera fila del jutge #}
+                                {% if forloop.first %}
+                                  {% if app.te_dificultat %}
+                                    <td rowspan="{{ n_jutges }}">
+                                      <input type="number"
+                                            class="form-control form-control-sm"
+                                            name="dif_{{ r.id }}_{{ ex }}_{{ app.id }}">
                                     </td>
                                   {% endif %}
 
-                                  {% if app.te_execucio and app.mode_execucio == "salts" and cfg.mostrar_salts %}
-                                    {% for _s in "x"|ljust:max_salts %}
-                                      {% if forloop.counter <= app.nombre_elements %}
-                                        <td>
-                                          <div class="d-flex align-items-center" style="gap:6px;">
-                                            <input type="number"
-                                                   step="1" min="0" max="10"
-                                                   class="form-control form-control-sm js-salt"
-                                                   name="s_{{ r.id }}_{{ ex }}_{{ app.id }}_{{ forloop.parentloop.counter }}_{{ forloop.counter }}"
-                                                   placeholder="0"
-                                                   style="width:72px;">
-
-                                            <button type="button"
-                                                    class="btn btn-sm btn-outline-danger js-crash p-0"
-                                                    title="Crash"
-                                                    data-ins="{{ r.id }}"
-                                                    data-ex="{{ ex }}"
-                                                    data-app="{{ app.id }}"
-                                                    data-j="{{ forloop.parentloop.counter }}"
-                                                    data-s="{{ forloop.counter }}"
-                                                    style="width:22px;height:22px;">
-                                              💥
-                                            </button>
-                                          </div>
-
-                                          <input type="hidden"
-                                                 name="crash_{{ r.id }}_{{ ex }}_{{ app.id }}_{{ forloop.parentloop.counter }}"
-                                                 value="0">
-                                        </td>
-                                      {% endif %}
-                                    {% endfor %}
+                                  {% if app.te_tof %}
+                                    <td rowspan="{{ n_jutges }}">
+                                      <input type="number"
+                                            class="form-control form-control-sm"
+                                            name="tof_{{ r.id }}_{{ ex }}_{{ app.id }}">
+                                    </td>
                                   {% endif %}
 
-                                  {% if forloop.first %}
-                                    {% if app.te_execucio %}
-                                      <td rowspan="{{ n_jutges }}">
-                                        <input type="number"
-                                               class="form-control form-control-sm js-exec-total"
-                                               name="exec_total_{{ r.id }}_{{ ex }}_{{ app.id }}"
-                                               {% if app.mode_execucio == "salts" %}readonly{% endif %}>
-                                      </td>
-                                    {% endif %}
-
-                                    {% if app.te_dificultat and cfg.mostrar_dificultat %}
-                                      <td rowspan="{{ n_jutges }}">
-                                        <input type="number"
-                                               class="form-control form-control-sm"
-                                               name="dif_{{ r.id }}_{{ ex }}_{{ app.id }}">
-                                      </td>
-                                    {% endif %}
-
-                                    {% if app.te_tof and cfg.mostrar_tof %}
-                                      <td rowspan="{{ n_jutges }}">
-                                        <input type="number"
-                                               class="form-control form-control-sm"
-                                               name="tof_{{ r.id }}_{{ ex }}_{{ app.id }}">
-                                      </td>
-                                    {% endif %}
-
-                                    {% if app.te_hd and cfg.mostrar_hd %}
-                                      <td rowspan="{{ n_jutges }}">
-                                        <input type="number"
-                                               class="form-control form-control-sm"
-                                               name="hd_{{ r.id }}_{{ ex }}_{{ app.id }}">
-                                      </td>
-                                    {% endif %}
-
-                                    {% if app.te_penalitzacio and cfg.mostrar_penalitzacio %}
-                                      <td rowspan="{{ n_jutges }}">
-                                        <input type="number"
-                                               class="form-control form-control-sm"
-                                               name="pen_{{ r.id }}_{{ ex }}_{{ app.id }}">
-                                      </td>
-                                    {% endif %}
-
-                                    {% if cfg.mostrar_total %}
-                                      <td rowspan="{{ n_jutges }}">
-                                        <input type="number"
-                                               class="form-control form-control-sm js-total"
-                                               name="total_{{ r.id }}_{{ ex }}_{{ app.id }}"
-                                               readonly>
-                                      </td>
-                                    {% endif %}
+                                  {% if app.te_hd %}
+                                    <td rowspan="{{ n_jutges }}">
+                                      <input type="number"
+                                            class="form-control form-control-sm"
+                                            name="hd_{{ r.id }}_{{ ex }}_{{ app.id }}">
+                                    </td>
                                   {% endif %}
 
-                                </tr>
-                              {% endfor %}
+                                  {% if app.te_penalitzacio %}
+                                    <td rowspan="{{ n_jutges }}">
+                                      <input type="number"
+                                            class="form-control form-control-sm"
+                                            name="pen_{{ r.id }}_{{ ex }}_{{ app.id }}">
+                                    </td>
+                                  {% endif %}
+
+                                  {% if True %}
+                                    <td rowspan="{{ n_jutges }}">
+                                      <input type="number"
+                                            class="form-control form-control-sm js-total"
+                                            name="total_{{ r.id }}_{{ ex }}_{{ app.id }}"
+                                            readonly>
+                                    </td>
+                                  {% endif %}
+                                {% endif %}
+
+                              </tr>
                             {% endfor %}
-                          </tbody>
+                          {% endfor %}
+                        </tbody>
+
                         </table>
+                        </div>
 
                       </div>
                     {% endfor %}
@@ -303,6 +342,131 @@
     return cookieValue;
   }
   const CSRF_TOKEN = getCookie("csrftoken");
+
+  /// -----------------------------
+  // Copiar notes del jutge 1 a la resta (salts + crash + manual)
+  // -----------------------------
+  document.addEventListener("DOMContentLoaded", () => {
+    const debounce = (fn, delay=200) => {
+      let t = null;
+      return (...args) => {
+        clearTimeout(t);
+        t = setTimeout(() => fn(...args), delay);
+      };
+    };
+
+    document.querySelectorAll('input[id^="copyJutge1-"]').forEach((chk) => {
+      const pane = chk.closest('.tab-pane[role="tabpanel"]');
+      if (!pane) return;
+
+      const storageKey = 'copyJutge1_' + chk.id;
+
+      function isManualForPane(){
+        // El pane que conté el checkbox és el pane de l'exercici.
+        // Pugem al pane de l'aparell (té data-mode-exec).
+        const appPane = chk.closest('.tab-pane[data-mode-exec]');
+        const mode = appPane ? (appPane.dataset.modeExec || "salts") : "salts";
+        return mode === "manual";
+      }
+
+      function copyAll() {
+        // Copiem per cada gimnasta (ins)
+        const seen = new Set();
+        pane.querySelectorAll('tr[data-ins][data-ex][data-app]').forEach((tr) => {
+          const ins = tr.dataset.ins;
+          if (seen.has(ins)) return; // només un cop per gimnasta
+          seen.add(ins);
+
+          const ex = tr.dataset.ex;
+          const app = tr.dataset.app;
+
+          if (isManualForPane()) {
+            // ---- MANUAL: copia exec_manual J1 -> resta ----
+            const j1 = pane.querySelector(`input[name="exec_manual_${ins}_${ex}_${app}_1"]`);
+            if (!j1) return;
+            for (let j = 2; j <= N_JUTGES; j++) {
+              const other = pane.querySelector(`input[name="exec_manual_${ins}_${ex}_${app}_${j}"]`);
+              if (other) other.value = j1.value;
+            }
+          } else {
+            // ---- SALTS: copia s_* J1 -> resta + crash ----
+            const N = getNElements(app);
+
+            for (let s = 1; s <= N; s++) {
+              const j1 = pane.querySelector(`input[name="s_${ins}_${ex}_${app}_1_${s}"]`);
+              if (!j1) continue;
+
+              for (let j = 2; j <= N_JUTGES; j++) {
+                const other = pane.querySelector(`input[name="s_${ins}_${ex}_${app}_${j}_${s}"]`);
+                if (other) other.value = j1.value;
+              }
+            }
+
+            // crash: replica estat del hidden + disable inputs
+            const crash1 = pane.querySelector(`input[name="crash_${ins}_${ex}_${app}_1"]`);
+            const c = crash1 ? (parseInt(crash1.value, 10) || 0) : 0;
+
+            for (let j = 2; j <= N_JUTGES; j++) {
+              if (c > 0) setCrash(ins, ex, app, j, c);
+              else clearCrash(ins, ex, app, j);
+              updateCrashButtonsVisual(ins, ex, app, j);
+            }
+          }
+
+          // guarda (un cop per ins/ex/app)
+          scheduleSave(ins, ex, app);
+        });
+      }
+
+      const copyAllDebounced = debounce(copyAll, 150);
+
+      function attach(){
+        // escoltem canvis del J1 (manual o salts)
+        if (isManualForPane()){
+          pane.querySelectorAll('input[name^="exec_manual_"][name$="_1"]').forEach((inp) => {
+            inp.addEventListener('input', copyAllDebounced);
+          });
+        } else {
+          pane.querySelectorAll('input[name*="_1_"]').forEach((inp) => {
+            // això agafa s_*_1_* i altres camps amb _1_ si n'hi haguessin
+            inp.addEventListener('input', copyAllDebounced);
+          });
+        }
+      }
+
+      function detach(){
+        if (isManualForPane()){
+          pane.querySelectorAll('input[name^="exec_manual_"][name$="_1"]').forEach((inp) => {
+            inp.removeEventListener('input', copyAllDebounced);
+          });
+        } else {
+          pane.querySelectorAll('input[name*="_1_"]').forEach((inp) => {
+            inp.removeEventListener('input', copyAllDebounced);
+          });
+        }
+      }
+
+      // restaura estat
+      const saved = localStorage.getItem(storageKey);
+      if (saved !== null) chk.checked = (saved === 'true');
+
+      if (chk.checked) {
+        copyAllDebounced();
+        attach();
+      }
+
+      chk.addEventListener('change', () => {
+        localStorage.setItem(storageKey, chk.checked ? 'true' : 'false');
+        if (chk.checked) {
+          copyAllDebounced();
+          attach();
+        } else {
+          detach();
+        }
+      });
+    });
+  });
+
 
   // -----------------------------
   // Config del template
@@ -384,15 +548,42 @@
     const j = parseInt(btn.dataset.j, 10);
     const s = parseInt(btn.dataset.s, 10);
 
+    // 🟢 Troba el "pane" de l'exercici actual (on hi ha el checkbox Copy Jutge1)
+    const pane = btn.closest('.tab-pane[role="tabpanel"]');
+
+    // ✅ Robust: el checkbox té id="copyJutge1-{{ g }}-{{ app.id }}-{{ ex }}"
+    // així que NO el busquem per id exacte; el busquem dins del pane actual.
+    const copyChk = pane ? pane.querySelector('input[id^="copyJutge1-"][type="checkbox"]') : null;
+    const shouldCopy = !!(copyChk && copyChk.checked);
+
+    // Llegeix crash actual del jutge que ha clicat
     const crashInp = qs(`input[name="crash_${insId}_${ex}_${appId}_${j}"]`);
     const current = crashInp ? (parseInt(crashInp.value, 10) || 0) : 0;
 
+    // Alterna crash (si ja era el mateix salt -> treu crash; si no -> posa crash)
     if (current === s) clearCrash(insId, ex, appId, j);
     else setCrash(insId, ex, appId, j, s);
 
     updateCrashButtonsVisual(insId, ex, appId, j);
+
+    // ✅ Si estem copiant del jutge 1, i el que s'ha clicat és Jutge 1,
+    // replica l'estat del crash als altres jutges.
+    if (shouldCopy && j === 1) {
+      const newCrash = qs(`input[name="crash_${insId}_${ex}_${appId}_1"]`);
+      const c = newCrash ? (parseInt(newCrash.value, 10) || 0) : 0;
+
+      for (let jj = 2; jj <= N_JUTGES; jj++) {
+        if (c > 0) setCrash(insId, ex, appId, jj, c);
+        else clearCrash(insId, ex, appId, jj);
+
+        updateCrashButtonsVisual(insId, ex, appId, jj);
+      }
+    }
+
+    // Guarda (un sol save pel trio ins/ex/app)
     scheduleSave(insId, ex, appId);
   });
+
 
   // -----------------------------
   // Prefill
@@ -416,30 +607,49 @@
       execOut.value = Number(v).toFixed(3);
     }
 
+    // execució (manual vs salts)
+    if (getModeExec(appId) === "manual") {
+      const arr = obj.execucio_manuals || [];
+      for (let j = 1; j <= N_JUTGES; j++) {
+        const inp = qs(`input[name="exec_manual_${insId}_${ex}_${appId}_${j}"]`);
+        if (inp) inp.value = (arr[j - 1] ?? "");
+      }
+    } else {
+      const execOut = qs(`input[name="exec_total_${insId}_${ex}_${appId}"]`);
+      if (execOut) {
+        const v = (obj.execucio_total ?? 0);
+        execOut.value = Number(v).toFixed(3);
+      }
+
+      // salts (només en mode salts)
+      (obj.notes_execucio || []).forEach((row, jIdx) => {
+        const j = jIdx + 1;
+        (row || []).forEach((val, sIdx) => {
+          const s = sIdx + 1;
+          const inp = qs(`input[name="s_${insId}_${ex}_${appId}_${j}_${s}"]`);
+          if (inp) inp.value = (val ?? "");
+        });
+      });
+
+      // crash (només en mode salts)
+      (obj.crash_execucio || []).forEach((c, jIdx) => {
+        const j = jIdx + 1;
+        const crashInp = qs(`input[name="crash_${insId}_${ex}_${appId}_${j}"]`);
+        if (crashInp) crashInp.value = String(c || 0);
+
+        if ((c || 0) > 0) setCrash(insId, ex, appId, j, c);
+        else clearCrash(insId, ex, appId, j);
+
+        updateCrashButtonsVisual(insId, ex, appId, j);
+      });
+    }
+
+
+
     const totalOut = qs(`input[name="total_${insId}_${ex}_${appId}"]`);
     if (totalOut) totalOut.value = Number(obj.total ?? 0).toFixed(3);
 
-    // salts
-    (obj.notes_execucio || []).forEach((row, jIdx) => {
-      const j = jIdx + 1;
-      (row || []).forEach((val, sIdx) => {
-        const s = sIdx + 1;
-        const inp = qs(`input[name="s_${insId}_${ex}_${appId}_${j}_${s}"]`);
-        if (inp) inp.value = (val ?? "");
-      });
-    });
-
-    // crash
-    (obj.crash_execucio || []).forEach((c, jIdx) => {
-      const j = jIdx + 1;
-      const crashInp = qs(`input[name="crash_${insId}_${ex}_${appId}_${j}"]`);
-      if (crashInp) crashInp.value = String(c || 0);
-
-      if ((c || 0) > 0) setCrash(insId, ex, appId, j, c);
-      else clearCrash(insId, ex, appId, j);
-
-      updateCrashButtonsVisual(insId, ex, appId, j);
-    });
+    
   }
 
   // -----------------------------
@@ -459,19 +669,24 @@
     const execInp = qs(`input[name="exec_total_${insId}_${ex}_${appId}"]`);
 
     if (MODE_EXEC === "manual") {
+      const exec_manuals = [];
+      for (let j = 1; j <= N_JUTGES; j++){
+        const inp = qs(`input[name="exec_manual_${insId}_${ex}_${appId}_${j}"]`);
+        exec_manuals.push(inp && inp.value !== "" ? num(inp.value) : 0);
+      }
+
       return {
         inscripcio_id: parseInt(insId, 10),
         exercici: parseInt(ex, 10),
         comp_aparell_id: parseInt(appId, 10),
-        execucio_manual: execInp ? execInp.value : "",
-        notes_execucio: [],
-        crash_execucio: [],
+        execucio_manuals: exec_manuals,   // NOU
         dificultat: dif ? dif.value : 0,
         tof: tof ? tof.value : 0,
         hd: hd ? hd.value : 0,
         penalitzacio: pen ? pen.value : 0,
       };
     }
+
 
     const notes = [];
     const crash = [];
@@ -554,6 +769,50 @@
       if (parts.length !== 3) return;
       const [insId, ex, appId] = parts;
       applySaved(insId, ex, appId, obj);
+    });
+  });
+
+  document.addEventListener("input", (ev) => {
+    const inp = ev.target.closest('input.js-exec-manual');
+    if (!inp) return;
+
+    const tr = inp.closest('tr[data-ins][data-ex][data-app]');
+    if (!tr) return;
+
+    const insId = tr.dataset.ins;
+    const ex = tr.dataset.ex;
+    const appId = tr.dataset.app;
+
+    // només si és jutge 1
+    const isJ1 = inp.name.endsWith("_1");
+    if (!isJ1) return;
+
+    // checkbox "copiar jutge1" dins del pane actual
+    const pane = inp.closest('.tab-pane[role="tabpanel"]');
+    const copyChk = pane ? pane.querySelector('input[id^="copyJutge1-"][type="checkbox"]') : null;
+    if (!(copyChk && copyChk.checked)) return;
+
+    for (let j = 2; j <= N_JUTGES; j++){
+      const other = qs(`input[name="exec_manual_${insId}_${ex}_${appId}_${j}"]`);
+      if (other) other.value = inp.value;
+    }
+
+    scheduleSave(insId, ex, appId);
+  });
+
+
+
+  // Sincronitza scroll horitzontal entre la barra superior i la taula
+  document.addEventListener("DOMContentLoaded", function() {
+    document.querySelectorAll('.table-scrollbar-top').forEach(function(topbar) {
+      let tableDiv = topbar.parentElement.querySelector('.table-responsive');
+      if (!tableDiv) return;
+      topbar.addEventListener('scroll', function() {
+        tableDiv.scrollLeft = topbar.scrollLeft;
+      });
+      tableDiv.addEventListener('scroll', function() {
+        topbar.scrollLeft = tableDiv.scrollLeft;
+      });
     });
   });
 </script>

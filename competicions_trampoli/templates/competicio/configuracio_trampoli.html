@@ -46,63 +46,46 @@
       </a>
     </div>
 
+    <!-- Llista d'aparells ja existents a la competició -->
+    <div class="mb-4">
+      <div class="fw-semibold mb-2">Aparells configurats</div>
+      {% with aparells=object.competicio.aparells_cfg.all %}
+        {% if aparells %}
+          <ul class="list-group">
+            {% for comp_aparell in aparells %}
+              <li class="list-group-item d-flex justify-content-between align-items-center">
+                <span>
+                  <strong>{{ comp_aparell.aparell.nom }}</strong>
+                  <span class="text-muted small"> ({{ comp_aparell.aparell.codi }})</span>
+                  — {{ comp_aparell.nombre_elements }} salts
+                  — Mode: {{ comp_aparell.get_mode_execucio_display }}
+                </span>
+                <a class="btn btn-sm btn-outline-secondary" href="{% url 'trampoli_aparell_update' object.competicio.id comp_aparell.id %}">Editar</a>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <div class="text-muted small">No hi ha aparells configurats encara.</div>
+        {% endif %}
+      {% endwith %}
+    </div>
+
     <form method="post" class="mt-3">
       {% csrf_token %}
 
       <!-- Bloc 1: Mode d’execució -->
+      {% if form.non_field_errors %}
+        <div class="alert alert-danger">
+          {{ form.non_field_errors }}
+        </div>
+      {% endif %}
+      {% if form.errors %}
+        <pre class="alert alert-warning" style="white-space: pre-wrap;">
+      {{ form.errors }}
+        </pre>
+      {% endif %}
       <div class="border rounded p-3 mb-3">
-        <div class="d-flex align-items-center justify-content-between mb-2">
-          <div class="fw-semibold">Mode d’execució</div>
-          <span class="badge text-bg-light">Important</span>
-        </div>
 
-        <div class="text-muted small mb-2">
-          Tria si vols introduir les notes per salts (S1..S11) o bé una execució global manual.
-        </div>
-
-        {% if form.mode_execucio %}
-          <div class="mb-0">
-            {{ form.mode_execucio.errors }}
-            {{ form.mode_execucio }}
-            {% if form.mode_execucio.help_text %}
-              <div class="form-text">{{ form.mode_execucio.help_text }}</div>
-            {% endif %}
-          </div>
-        {% else %}
-          <div class="text-muted small">
-            (Camp <code>mode_execucio</code> no disponible al formulari.)
-          </div>
-        {% endif %}
-      </div>
-
-      <!-- Bloc 2: Visibilitat de columnes -->
-      <div class="border rounded p-3 mb-3">
-        <div class="fw-semibold mb-2">Columnes visibles</div>
-        <div class="text-muted small mb-3">
-          Activa o desactiva les columnes que vols veure a la pantalla de notes.
-        </div>
-
-        <div class="row g-2">
-          {% for field in form %}
-            {% if field.name in "mostrar_salts mostrar_dificultat mostrar_tof mostrar_hd mostrar_penalitzacio mostrar_total" %}
-              <div class="col-12 col-md-6 col-lg-4">
-                <div class="form-check form-switch d-flex align-items-center gap-2">
-                  <input
-                    class="form-check-input"
-                    type="checkbox"
-                    id="{{ field.id_for_label }}"
-                    name="{{ field.name }}"
-                    {% if field.value %}checked{% endif %}
-                  >
-                  <label class="form-check-label mb-0" for="{{ field.id_for_label }}">
-                    {{ field.label }}
-                  </label>
-                </div>
-              </div>
-            {% endif %}
-          {% endfor %}
-        </div>
-      </div>
 
       <!-- Bloc 3: Altres paràmetres (si els tens al form) -->
       <div class="border rounded p-3 mb-3">

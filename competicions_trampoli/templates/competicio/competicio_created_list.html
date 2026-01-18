@@ -30,13 +30,19 @@
             <td class="fw-semibold">{{ c.nom }}</td>
             <td>{% if c.data %}{{ c.data|date:"d/m/Y" }}{% else %}-{% endif %}</td>
             <td class="text-end">
-              <a class="btn btn-sm btn-outline-primary" href="{% url 'inscripcions_list' c.id %}">Inscripcions</a>
-              <a class="btn btn-sm btn-outline-success" href="{% url 'import' c.id %}">Importar</a>
-              {% if c.te_notes %}
-                <a class="btn btn-sm btn-outline-dark" href="{% url 'notes_home' c.id %}">Notes</a>
-              {% endif %}
-              <a class="btn btn-sm btn-outline-danger" href="{% url 'delete' c.id %}">Eliminar</a>
-              {# quan el tinguis: <a ... href="{% url 'live' c.id %}">Directe</a> #}
+              <div class="d-flex justify-content-between align-items-center">
+                <div class="d-inline-flex gap-2">
+                  <a class="btn btn-sm btn-outline-primary" href="{% url 'inscripcions_list' c.id %}">Inscripcions</a>
+                  {% if c.te_notes %}
+                    <a class="btn btn-sm btn-outline-dark" href="{% url 'notes_home' c.id %}">Notes</a>
+                    {% if c.tipus == 'trampoli' %}
+                      <a class="btn btn-sm btn-outline-secondary" href="{% url 'trampoli_config' c.id %}">Configuració</a>
+                    {% endif %}
+                  {% endif %}
+                  {# quan el tinguis: <a ... href="{% url 'live' c.id %}">Directe</a> #}
+                </div>
+                <a class="btn btn-sm btn-outline-danger ms-2" href="{% url 'delete' c.id %}">Eliminar</a>
+              </div>
             </td>
           </tr>
           {% empty %}
