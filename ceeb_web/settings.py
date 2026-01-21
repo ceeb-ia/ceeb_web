@@ -14,6 +14,7 @@ INSTALLED_APPS = [
     'django_celery_results',  # Resultats de Celery
     'alumnat',
     'competicions_trampoli',
+    'designacions',
      # Example apps
 ]
 

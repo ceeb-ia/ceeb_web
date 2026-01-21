@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Geocodificació pendent{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+  <div class="card-surface">
+    <h2 class="mb-3">Adreces pendents de coordenades</h2>
+
+    <div class="table-responsive">
+      <table class="table table-striped table-bordered table-sm align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>Adreça</th>
+            <th>Estat</th>
+            <th>Lat</th>
+            <th>Lon</th>
+            <th>Desar</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for a in addresses %}
+          <tr>
+            <td style="min-width:420px;">{{ a.text }}</td>
+            <td><span class="badge text-bg-secondary">{{ a.geocode_status }}</span></td>
+
+            <td style="width:160px;">
+              <form method="post" action="{% url 'designacions_geocoding_update' a.id %}" class="d-flex gap-2">
+                {% csrf_token %}
+                <input class="form-control form-control-sm" name="lat" value="{{ a.lat|default_if_none:'' }}" placeholder="41.38">
+            </td>
+            <td style="width:160px;">
+                <input class="form-control form-control-sm" name="lon" value="{{ a.lon|default_if_none:'' }}" placeholder="2.17">
+            </td>
+            <td style="width:120px;">
+                <button class="btn btn-sm btn-primary" type="submit">Desar</button>
+              </form>
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="5" class="text-center text-muted">No hi ha adreces pendents.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
