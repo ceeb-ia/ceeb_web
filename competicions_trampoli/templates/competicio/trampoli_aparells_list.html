@@ -58,6 +58,11 @@
               <td class="text-right">
                 <a class="btn btn-sm btn-outline-secondary"
                    href="{% url 'trampoli_aparell_update' competicio.id ca.id %}">Editar</a>
+                <a class="btn btn-sm btn-outline-primary"
+                href="{% url 'scoring_schema_update' competicio.id ca.id %}">
+                Puntuació
+              </a>
+
               </td>
             </tr>
           {% empty %}

@@ -1,0 +1,1058 @@
+{% extends "base.html" %}
+{% block title %}Classificacions · {{ competicio.nom }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+  <div class="card-surface">
+
+    <!-- CAPÇALERA -->
+    <div class="d-flex justify-content-between align-items-start mb-3">
+      <div>
+        <h2 class="mb-1">Classificacions · {{ competicio.nom }}</h2>
+        <div class="text-muted small">
+          Defineix múltiples rànquings per competició (individual, per categoria, per entitat, etc.).
+        </div>
+      </div>
+
+      <div class="d-flex">
+        <a class="btn btn-sm btn-outline-secondary mr-2"
+           href="{% url 'inscripcions_list' competicio.id %}">
+          Inscripcions
+        </a>
+        <a class="btn btn-sm btn-outline-secondary mr-2"
+           href="{% url 'trampoli_config' competicio.id %}">
+          Configuració
+        </a>
+        <a class="btn btn-sm btn-outline-secondary"
+           href="{% url 'trampoli_notes_home' competicio.id %}">
+          Notes
+        </a>
+      </div>
+    </div>
+
+    <div class="row">
+      <!-- Llista classificacions -->
+      <div class="col-12 col-lg-4 mb-3">
+        <div class="border rounded p-3">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="font-weight-bold">Classificacions</div>
+            <button type="button" class="btn btn-sm btn-primary" id="btnAdd">+ Nova</button>
+          </div>
+
+          <div class="text-muted small mb-2">
+            Ordena i activa/desactiva el que vulguis mostrar.
+          </div>
+
+          <ul class="list-group" id="cfgList"></ul>
+
+          <div class="small text-muted mt-2">
+            * L’ordre de la llista és l’ordre de visualització.
+          </div>
+        </div>
+      </div>
+
+      <!-- Editor -->
+      <div class="col-12 col-lg-8 mb-3">
+        <div class="border rounded p-3">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="font-weight-bold">Editor</div>
+            <div class="d-flex">
+              <button type="button" class="btn btn-sm btn-outline-secondary mr-2" id="btnPreview" disabled>Previsualitzar</button>
+              <button type="button" class="btn btn-sm btn-success mr-2" id="btnSave" disabled>Desar</button>
+              <button type="button" class="btn btn-sm btn-outline-danger" id="btnDelete" disabled>Eliminar</button>
+            </div>
+          </div>
+
+      <div class="alert alert-info small mb-3">
+        <div class="font-weight-bold mb-1">ℹ️ Com funciona una classificació</div>
+
+        <div class="mb-2">
+          Una <strong>classificació</strong> defineix com es calcula i es mostra un rànquing dins la competició.
+          Pots crear-ne diverses (general, per categoria, per entitat…) i decidir quines es mostren.
+        </div>
+
+        <ul class="mb-2 pl-3">
+          <li>
+            <strong>Tipus</strong>:<br>
+            <span class="text-muted">
+              Individual classifica participants · Entitat classifica entitats sumant els seus participants.
+            </span>
+          </li>
+          <li>
+            <strong>Particions</strong>:<br>
+            <span class="text-muted">
+              Creen classificacions separades (per exemple, una per cada categoria).
+            </span>
+          </li>
+          <li>
+            <strong>Puntuació</strong>:<br>
+            <span class="text-muted">
+              Defineix quina nota s’utilitza i com es combina (suma, millor exercici, millors N…).
+            </span>
+          </li>
+          <li>
+            <strong>Aparells</strong>:<br>
+            <span class="text-muted">
+              Pots incloure tots els aparells o només alguns concrets.
+            </span>
+          </li>
+        </ul>
+
+        <div class="text-muted">
+          💡 <strong>Consell:</strong>
+          si cada exercici només té una nota, les opcions “Millor N” i “Millors N exercicis”
+          donen el mateix resultat.
+        </div>
+      </div>
+
+          <div id="editorEmpty" class="text-muted small">
+            Cap classificació seleccionada.
+          </div>
+
+          <div id="editorBody" style="display:none;">
+            <div class="form-row">
+              <div class="col-12 col-md-8 mb-3">
+                <label class="d-block font-weight-bold">Nom</label>
+                <input class="form-control" id="fNom" />
+              </div>
+
+              <div class="col-6 col-md-2 mb-3">
+                <label class="d-block font-weight-bold">Activa</label>
+                <div class="form-check mt-2">
+                  <input class="form-check-input" type="checkbox" id="fActiva">
+                  <label class="form-check-label" for="fActiva">Sí</label>
+                </div>
+              </div>
+
+              <div class="col-6 col-md-2 mb-3">
+                <label class="d-block font-weight-bold">Tipus</label>
+                <select class="form-control" id="fTipus">
+                  <option value="individual">Individual</option>
+                  <option value="entitat">Entitat</option>
+                </select>
+              </div>
+
+              <div class="col-12 mb-3">
+                <div class="font-weight-bold mb-1">Particions</div>
+                <div class="text-muted small mb-2">
+                  Si marques “categoria”, es generarà una classificació separada per cada categoria.
+                </div>
+
+                <div>
+                  <div class="form-check form-check-inline mr-3 mb-2">
+                    <input class="form-check-input" type="checkbox" id="pCategoria" value="categoria">
+                    <label class="form-check-label" for="pCategoria">Categoria</label>
+                  </div>
+
+                  <div class="form-check form-check-inline mr-3 mb-2">
+                    <input class="form-check-input" type="checkbox" id="pSubcategoria" value="subcategoria">
+                    <label class="form-check-label" for="pSubcategoria">Subcategoria</label>
+                  </div>
+
+                  <div class="form-check form-check-inline mr-3 mb-2">
+                    <input class="form-check-input" type="checkbox" id="pEntitat" value="entitat">
+                    <label class="form-check-label" for="pEntitat">Entitat</label>
+                  </div>
+
+                  <div class="form-check form-check-inline mr-3 mb-2">
+                    <input class="form-check-input" type="checkbox" id="pGrup" value="grup">
+                    <label class="form-check-label" for="pGrup">Grup</label>
+                  </div>
+                </div>
+              </div>
+
+              <div class="col-12">
+                <hr class="my-2">
+                <div class="font-weight-bold mb-2">Puntuació</div>
+              </div>
+
+              <div class="col-12 col-md-4 mb-3">
+                <label class="d-block font-weight-bold">Camp</label>
+                <select class="form-control" id="sCamp"></select>
+              </div>
+
+              <div class="col-12 col-md-4 mb-3">
+                <label class="d-block font-weight-bold">Agregació</label>
+                <select class="form-control" id="sAgregacio">
+                  <option value="sum">Suma</option>
+                  <option value="avg">Mitjana</option>
+                  <option value="max">Màxim</option>
+                  <option value="best_n">Millor N (suma dels millors)</option>
+                </select>
+              </div>
+
+              <div class="col-12 col-md-4 mb-3">
+                <label class="d-block font-weight-bold">N (si “Millor N”)</label>
+                <input class="form-control" id="iBestN" type="number" min="1" value="1">
+              </div>
+
+              <div class="col-12 col-md-6 mb-3">
+                <label class="d-block font-weight-bold">Exercicis</label>
+                <select class="form-control" id="sExercicisMode">
+                  <option value="tots">Tots (agregació global)</option>
+                  <option value="millor_1">Millor exercici</option>
+                  <option value="millor_n">Millors N exercicis</option>
+                </select>
+              </div>
+
+              <div class="col-12 col-md-6 mb-3">
+                <label class="d-block font-weight-bold">N exercicis (si “Millors N”)</label>
+                <input class="form-control" id="iExBestN" type="number" min="1" value="1">
+              </div>
+
+              <div class="col-12 mb-3">
+                <label class="d-block font-weight-bold">Aparells</label>
+
+                <div class="mb-2">
+                  <div class="form-check form-check-inline mr-3">
+                    <input class="form-check-input" type="radio" name="apMode" id="apTots" value="tots" checked>
+                    <label class="form-check-label" for="apTots">Tots</label>
+                  </div>
+                  <div class="form-check form-check-inline mr-3">
+                    <input class="form-check-input" type="radio" name="apMode" id="apSel" value="seleccionar">
+                    <label class="form-check-label" for="apSel">Seleccionar</label>
+                  </div>
+                </div>
+
+                <div class="border rounded p-2" id="apSelBox" style="display:none;">
+                  <div class="text-muted small mb-2">
+                    Marca els aparells que entraran al càlcul.
+                  </div>
+                  <div class="form-row" id="apChkList"></div>
+                </div>
+              </div>
+
+              <div class="col-12">
+                <hr class="my-2">
+                <div class="font-weight-bold mb-2">Presentació</div>
+              </div>
+
+              <div class="col-12 col-md-4 mb-3">
+                <label class="d-block font-weight-bold">Top N (0 = tots)</label>
+                <input class="form-control" id="iTopN" type="number" min="0" value="0">
+              </div>
+
+              <div class="col-12 col-md-4 mb-3">
+                <label class="d-block font-weight-bold">Mostrar empats</label>
+                <div class="form-check mt-2">
+                  <input class="form-check-input" type="checkbox" id="cEmpats" checked>
+                  <label class="form-check-label" for="cEmpats">Sí</label>
+                </div>
+              </div>
+
+              <div class="col-12">
+                <hr class="my-2">
+                <div class="font-weight-bold mb-2">Desempat</div>
+                <div class="text-muted small mb-2">
+                  Afegeix criteris en ordre. Només s’apliquen si hi ha empat als punts principals.
+                </div>
+
+                <div class="table-responsive mb-2">
+                  <table class="table table-sm mb-0">
+                    <thead>
+                      <tr>
+                        <th style="width:55%;">Camp</th>
+                        <th style="width:35%;">Ordre</th>
+                        <th style="width:10%;" class="text-right">Accions</th>
+                      </tr>
+                    </thead>
+                    <tbody id="tieBody"></tbody>
+                  </table>
+                </div>
+
+                <button type="button" class="btn btn-sm btn-outline-primary mb-3" id="btnTieAdd">
+                  + Afegir criteri
+                </button>
+
+                <details class="mb-3">
+                  <summary class="small text-muted">Opcions avançades (JSON)</summary>
+                  <div class="mt-2">
+                    <textarea class="form-control" id="tDesempat" rows="3"></textarea>
+                    <div class="form-text text-muted">
+                      Exemple: [{"camp":"execucio_total","ordre":"desc"},{"camp":"penalitzacio","ordre":"asc"}]
+                    </div>
+                  </div>
+                </details>
+              </div>
+
+              <div class="col-12">
+                <hr class="my-2">
+                <div class="font-weight-bold mb-2">Filtres</div>
+                <div class="text-muted small mb-2">
+                  Els filtres decideixen qui entra a la classificació. Les particions només divideixen els resultats.
+                </div>
+
+                <div class="form-row">
+                  <div class="col-12 col-md-6 mb-3">
+                    <label class="d-block font-weight-bold">Entitats</label>
+                    <select class="form-control" id="fEntitats" multiple size="6">
+                      {% for o in filter_choices.entitats %}
+                        <option value="{{ o.value }}">{{ o.label }}</option>
+                      {% endfor %}
+                    </select>
+                    <div class="form-text text-muted">Deixa-ho buit per incloure totes les entitats.</div>
+                  </div>
+
+                  <div class="col-12 col-md-6 mb-3">
+                    <label class="d-block font-weight-bold">Categories</label>
+                    <select class="form-control" id="fCategories" multiple size="6">
+                      {% for o in filter_choices.categories %}
+                        <option value="{{ o.value }}">{{ o.label }}</option>
+                      {% endfor %}
+                    </select>
+                    <div class="form-text text-muted">Deixa-ho buit per incloure totes les categories.</div>
+                  </div>
+
+                  <div class="col-12 col-md-6 mb-3">
+                    <label class="d-block font-weight-bold">Subcategories</label>
+                    <select class="form-control" id="fSubcategories" multiple size="6">
+                      {% for o in filter_choices.subcategories %}
+                        <option value="{{ o.value }}">{{ o.label }}</option>
+                      {% endfor %}
+                    </select>
+                    <div class="form-text text-muted">Opcional.</div>
+                  </div>
+
+                  <div class="col-12 col-md-6 mb-3">
+                    <label class="d-block font-weight-bold">Grups</label>
+                    <select class="form-control" id="fGrups" multiple size="6">
+                      {% for o in filter_choices.grups %}
+                        <option value="{{ o.value }}">{{ o.label }}</option>
+                      {% endfor %}
+                    </select>
+                    <div class="form-text text-muted">Opcional.</div>
+                  </div>
+                </div>
+
+                <details class="mb-3">
+                  <summary class="small text-muted">Opcions avançades (JSON)</summary>
+                  <div class="mt-2">
+                    <textarea class="form-control" id="tFiltres" rows="4"></textarea>
+                    <div class="form-text text-muted">
+                      Camps: entitats_in, categories_in, subcategories_in, grups_in.
+                    </div>
+                  </div>
+                </details>
+              </div>
+
+
+            <div class="mt-3">
+              <div class="font-weight-bold mb-2">Previsualització</div>
+              <div id="previewBox" class="border rounded p-2">
+                <div class="text-muted small">Fes clic a “Previsualitzar”.</div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+{{ cfgs|json_script:"cfgs-data" }}
+{{ aparells|json_script:"aparells-data" }}
+{{ score_fields|json_script:"score-fields-data" }}
+
+<script>
+  const CFGS = JSON.parse(document.getElementById("cfgs-data").textContent);
+  const APARELLS = JSON.parse(document.getElementById("aparells-data").textContent);
+  const SCORE_FIELDS = JSON.parse(document.getElementById("score-fields-data").textContent);
+
+  const DEFAULT_SCHEMA = {
+    particions: [],
+    filtres: { entitats_in: [], categories_in: [], subcategories_in: [], grups_in: [] },
+    puntuacio: {
+      camp: "total",
+      agregacio: "sum",
+      best_n: 1,
+      exercicis: { mode: "tots" },
+      exercicis_best_n: 1,
+      aparells: { mode: "tots", ids: [] }
+    },
+    desempat: [],
+    presentacio: { top_n: 0, mostrar_empats: true }
+  };
+
+  const els = {
+    list: document.getElementById("cfgList"),
+    btnAdd: document.getElementById("btnAdd"),
+    btnSave: document.getElementById("btnSave"),
+    btnDelete: document.getElementById("btnDelete"),
+    btnPreview: document.getElementById("btnPreview"),
+    editorEmpty: document.getElementById("editorEmpty"),
+    editorBody: document.getElementById("editorBody"),
+    previewBox: document.getElementById("previewBox"),
+
+    fNom: document.getElementById("fNom"),
+    fActiva: document.getElementById("fActiva"),
+    fTipus: document.getElementById("fTipus"),
+
+    pCategoria: document.getElementById("pCategoria"),
+    pSubcategoria: document.getElementById("pSubcategoria"),
+    pEntitat: document.getElementById("pEntitat"),
+    pGrup: document.getElementById("pGrup"),
+
+    sCamp: document.getElementById("sCamp"),
+    sAgregacio: document.getElementById("sAgregacio"),
+    iBestN: document.getElementById("iBestN"),
+    sExercicisMode: document.getElementById("sExercicisMode"),
+    iExBestN: document.getElementById("iExBestN"),
+
+    apTots: document.getElementById("apTots"),
+    apSel: document.getElementById("apSel"),
+    apSelBox: document.getElementById("apSelBox"),
+    apChkList: document.getElementById("apChkList"),
+
+    iTopN: document.getElementById("iTopN"),
+    cEmpats: document.getElementById("cEmpats"),
+
+    // UI DESAMPATS + JSON avançat
+    tieBody: document.getElementById("tieBody"),
+    btnTieAdd: document.getElementById("btnTieAdd"),
+    tDesempat: document.getElementById("tDesempat"),
+
+    // UI FILTRES + JSON avançat
+    fEntitats: document.getElementById("fEntitats"),
+    fCategories: document.getElementById("fCategories"),
+    fSubcategories: document.getElementById("fSubcategories"),
+    fGrups: document.getElementById("fGrups"),
+    tFiltres: document.getElementById("tFiltres"),
+  };
+
+  let state = {
+    cfgs: JSON.parse(JSON.stringify(CFGS || [])),
+    selectedId: null,
+  };
+
+  function getCookie(name) {
+    const v = document.cookie.split(";").map(x => x.trim());
+    for (const c of v) {
+      if (c.startsWith(name + "=")) return decodeURIComponent(c.substring(name.length + 1));
+    }
+    return "";
+  }
+
+  function esc(s) {
+    return String(s || "")
+      .split("&").join("&amp;")
+      .split("<").join("&lt;")
+      .split(">").join("&gt;")
+      .split('"').join("&quot;")
+      .split("'").join("&#039;");
+  }
+
+  function mergeSchema(schema) {
+    schema = schema || {};
+    return {
+      particions: schema.particions || DEFAULT_SCHEMA.particions,
+      filtres: Object.assign({}, DEFAULT_SCHEMA.filtres, (schema.filtres || {})),
+      puntuacio: Object.assign({}, DEFAULT_SCHEMA.puntuacio, (schema.puntuacio || {})),
+      desempat: schema.desempat || [],
+      presentacio: Object.assign({}, DEFAULT_SCHEMA.presentacio, (schema.presentacio || {})),
+    };
+  }
+
+  /* =========================
+     MULTISELECT HELPERS (FILTRES UI)
+     ========================= */
+  function getSelectedValues(sel) {
+    const out = [];
+    if (!sel) return out;
+    for (const opt of sel.options) if (opt.selected) out.push(opt.value);
+    return out;
+  }
+
+  function setSelectedValues(sel, values) {
+    if (!sel) return;
+    const set = new Set((values || []).map(v => String(v)));
+    for (const opt of sel.options) opt.selected = set.has(String(opt.value));
+  }
+
+  function coerceList(values) {
+    return (values || []).map(v => {
+      const s = String(v);
+      return (/^\d+$/.test(s)) ? parseInt(s, 10) : s;
+    });
+  }
+
+  /* =========================
+     DESEMPATS UI
+     ========================= */
+  function tieRowHTML(item) {
+    const camp = item.camp || "execucio_total";
+    const ordre = item.ordre || "desc";
+
+    const campOptions = Object.keys(SCORE_FIELDS).map(k =>
+      `<option value="${esc(k)}" ${k === camp ? "selected" : ""}>${esc(SCORE_FIELDS[k])}</option>`
+    ).join("");
+
+    return `
+      <tr>
+        <td>
+          <select class="form-control form-control-sm tie-camp">
+            ${campOptions}
+          </select>
+        </td>
+        <td>
+          <select class="form-control form-control-sm tie-ordre">
+            <option value="desc" ${ordre === "desc" ? "selected" : ""}>Més és millor (desc)</option>
+            <option value="asc" ${ordre === "asc" ? "selected" : ""}>Menys és millor (asc)</option>
+          </select>
+        </td>
+        <td class="text-right">
+          <button type="button" class="btn btn-sm btn-outline-secondary tie-up">↑</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary tie-down">↓</button>
+          <button type="button" class="btn btn-sm btn-outline-danger tie-del">✕</button>
+        </td>
+      </tr>
+    `;
+  }
+
+  function readTieUI() {
+    const out = [];
+    if (!els.tieBody) return out;
+    const rows = els.tieBody.querySelectorAll("tr");
+    rows.forEach(r => {
+      const camp = r.querySelector(".tie-camp")?.value;
+      const ordre = r.querySelector(".tie-ordre")?.value;
+      if (camp && ordre) out.push({ camp, ordre });
+    });
+    return out;
+  }
+
+  function renderTieUI(items) {
+    if (!els.tieBody) return;
+    els.tieBody.innerHTML = "";
+    const arr = (items && items.length) ? items : [];
+
+    arr.forEach((it, idx) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = tieRowHTML(it);
+      els.tieBody.appendChild(tr);
+
+      tr.querySelector(".tie-up").addEventListener("click", () => {
+        if (idx <= 0) return;
+        const cur = readTieUI();
+        const tmp = cur[idx - 1]; cur[idx - 1] = cur[idx]; cur[idx] = tmp;
+        renderTieUI(cur);
+        syncAdvancedFromUI();
+      });
+
+      tr.querySelector(".tie-down").addEventListener("click", () => {
+        const cur = readTieUI();
+        if (idx >= cur.length - 1) return;
+        const tmp = cur[idx + 1]; cur[idx + 1] = cur[idx]; cur[idx] = tmp;
+        renderTieUI(cur);
+        syncAdvancedFromUI();
+      });
+
+      tr.querySelector(".tie-del").addEventListener("click", () => {
+        const cur = readTieUI().filter((_, i) => i !== idx);
+        renderTieUI(cur);
+        syncAdvancedFromUI();
+      });
+
+      tr.querySelector(".tie-camp").addEventListener("change", syncAdvancedFromUI);
+      tr.querySelector(".tie-ordre").addEventListener("change", syncAdvancedFromUI);
+    });
+  }
+
+  /* =========================
+     SINCRONITZACIÓ UI -> JSON avançat
+     ========================= */
+  function syncAdvancedFromUI() {
+    // Desempat
+    if (els.tDesempat) {
+      const d = readTieUI();
+      els.tDesempat.value = JSON.stringify(d, null, 2);
+    }
+
+    // Filtres
+    if (els.tFiltres) {
+      const f = {
+        entitats_in: coerceList(getSelectedValues(els.fEntitats)),
+        categories_in: coerceList(getSelectedValues(els.fCategories)),
+        subcategories_in: coerceList(getSelectedValues(els.fSubcategories)),
+        grups_in: coerceList(getSelectedValues(els.fGrups)),
+      };
+      Object.keys(f).forEach(k => { if (!f[k].length) delete f[k]; });
+      els.tFiltres.value = JSON.stringify(f, null, 2);
+    }
+  }
+
+  /* =========================
+     SINCRONITZACIÓ schema -> UI (quan carreguem una cfg)
+     ========================= */
+  function syncUIFromSchema(schema) {
+    // Desempat UI
+    renderTieUI(schema.desempat || []);
+    if (els.tDesempat) els.tDesempat.value = JSON.stringify(schema.desempat || [], null, 2);
+
+    // Filtres UI
+    const filtres = schema.filtres || {};
+    setSelectedValues(els.fEntitats, (filtres.entitats_in || []).map(String));
+    setSelectedValues(els.fCategories, (filtres.categories_in || []).map(String));
+    setSelectedValues(els.fSubcategories, (filtres.subcategories_in || []).map(String));
+    setSelectedValues(els.fGrups, (filtres.grups_in || []).map(String));
+    if (els.tFiltres) els.tFiltres.value = JSON.stringify(schema.filtres || {}, null, 2);
+  }
+
+  /* =========================
+     JSON avançat -> UI (si algú edita a mà)
+     ========================= */
+  function bindAdvancedEditors() {
+    if (els.tDesempat) {
+      els.tDesempat.addEventListener("input", () => {
+        try {
+          const arr = JSON.parse(els.tDesempat.value || "[]");
+          renderTieUI(arr);
+        } catch (e) {}
+      });
+    }
+    if (els.tFiltres) {
+      els.tFiltres.addEventListener("input", () => {
+        try {
+          const f = JSON.parse(els.tFiltres.value || "{}");
+          setSelectedValues(els.fEntitats, (f.entitats_in || []).map(String));
+          setSelectedValues(els.fCategories, (f.categories_in || []).map(String));
+          setSelectedValues(els.fSubcategories, (f.subcategories_in || []).map(String));
+          setSelectedValues(els.fGrups, (f.grups_in || []).map(String));
+        } catch (e) {}
+      });
+    }
+  }
+
+  function renderScoreFields() {
+    els.sCamp.innerHTML = "";
+    Object.keys(SCORE_FIELDS).forEach(k => {
+      const opt = document.createElement("option");
+      opt.value = k;
+      opt.textContent = SCORE_FIELDS[k];
+      els.sCamp.appendChild(opt);
+    });
+  }
+
+  function renderAparells() {
+    els.apChkList.innerHTML = "";
+    (APARELLS || []).forEach(a => {
+      const col = document.createElement("div");
+      col.className = "col-6 col-md-4 col-lg-3 mb-2";
+      col.innerHTML = `
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="app_${a.id}" value="${a.id}">
+          <label class="form-check-label" for="app_${a.id}">
+            ${esc(a.nom)} <span class="text-muted">(${esc(a.codi)})</span>
+          </label>
+        </div>
+      `;
+      els.apChkList.appendChild(col);
+    });
+  }
+
+  function renderList() {
+    els.list.innerHTML = "";
+    const cfgs = [...state.cfgs].sort((a,b) => (a.ordre||0) - (b.ordre||0));
+
+    cfgs.forEach(cfg => {
+      const li = document.createElement("li");
+      li.className = "list-group-item d-flex justify-content-between align-items-center";
+      li.style.cursor = "pointer";
+      li.dataset.id = cfg.id;
+
+      const left = document.createElement("div");
+      left.className = "d-flex align-items-center";
+
+      const chk = document.createElement("input");
+      chk.type = "checkbox";
+      chk.className = "form-check-input mr-2";
+      chk.checked = !!cfg.activa;
+      chk.addEventListener("click", (e) => {
+        e.stopPropagation();
+        cfg.activa = chk.checked;
+        if (state.selectedId === cfg.id) els.fActiva.checked = cfg.activa;
+      });
+
+      const title = document.createElement("div");
+      title.innerHTML = `
+        <div class="font-weight-bold">${esc(cfg.nom || "Sense nom")}</div>
+        <div class="text-muted small">${esc(cfg.tipus || "individual")} · ordre ${cfg.ordre || 0}</div>
+      `;
+
+      left.appendChild(chk);
+      left.appendChild(title);
+
+      const right = document.createElement("div");
+      right.className = "d-flex";
+
+      const up = document.createElement("button");
+      up.type = "button";
+      up.className = "btn btn-sm btn-outline-secondary mr-1";
+      up.textContent = "↑";
+      up.addEventListener("click", (e) => {
+        e.stopPropagation();
+        move(cfg.id, -1);
+      });
+
+      const down = document.createElement("button");
+      down.type = "button";
+      down.className = "btn btn-sm btn-outline-secondary";
+      down.textContent = "↓";
+      down.addEventListener("click", (e) => {
+        e.stopPropagation();
+        move(cfg.id, +1);
+      });
+
+      right.appendChild(up);
+      right.appendChild(down);
+
+      li.appendChild(left);
+      li.appendChild(right);
+
+      li.addEventListener("click", () => selectCfg(cfg.id));
+      if (state.selectedId === cfg.id) li.classList.add("active");
+
+      els.list.appendChild(li);
+    });
+  }
+
+  function move(id, dir) {
+    const cfgs = [...state.cfgs].sort((a,b) => (a.ordre||0) - (b.ordre||0));
+    const idx = cfgs.findIndex(x => x.id === id);
+    if (idx < 0) return;
+    const j = idx + dir;
+    if (j < 0 || j >= cfgs.length) return;
+
+    const tmp = cfgs[idx].ordre;
+    cfgs[idx].ordre = cfgs[j].ordre;
+    cfgs[j].ordre = tmp;
+
+    cfgs.sort((a,b) => (a.ordre||0) - (b.ordre||0)).forEach((c,i) => c.ordre = i+1);
+    state.cfgs = cfgs;
+    renderList();
+    persistOrder();
+  }
+
+  async function persistOrder() {
+    const order = [...state.cfgs].sort((a,b) => a.ordre-b.ordre).map(x => x.id);
+    await fetch("{% url 'classificacio_reorder' competicio.id %}", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": getCookie("csrftoken"),
+      },
+      body: JSON.stringify({order})
+    });
+  }
+
+  function setPart(name, checked) {
+    const map = {
+      "categoria": els.pCategoria,
+      "subcategoria": els.pSubcategoria,
+      "entitat": els.pEntitat,
+      "grup": els.pGrup
+    };
+    if (map[name]) map[name].checked = !!checked;
+  }
+
+  function selectCfg(id) {
+    state.selectedId = id;
+    renderList();
+
+    const cfg = state.cfgs.find(x => x.id === id);
+    if (!cfg) return;
+
+    els.editorEmpty.style.display = "none";
+    els.editorBody.style.display = "";
+
+    els.btnSave.disabled = false;
+    els.btnDelete.disabled = false;
+    els.btnPreview.disabled = false;
+
+    els.fNom.value = cfg.nom || "";
+    els.fActiva.checked = !!cfg.activa;
+    els.fTipus.value = cfg.tipus || "individual";
+
+    const schema = mergeSchema(cfg.schema);
+
+    setPart("categoria", schema.particions.includes("categoria"));
+    setPart("subcategoria", schema.particions.includes("subcategoria"));
+    setPart("entitat", schema.particions.includes("entitat"));
+    setPart("grup", schema.particions.includes("grup"));
+
+    els.sCamp.value = schema.puntuacio.camp || "total";
+    els.sAgregacio.value = schema.puntuacio.agregacio || "sum";
+    els.iBestN.value = schema.puntuacio.best_n || 1;
+    els.sExercicisMode.value = (schema.puntuacio.exercicis || {}).mode || "tots";
+    els.iExBestN.value = schema.puntuacio.exercicis_best_n || 1;
+
+    const apMode = (schema.puntuacio.aparells || {}).mode || "tots";
+    els.apTots.checked = apMode === "tots";
+    els.apSel.checked = apMode === "seleccionar";
+    els.apSelBox.style.display = apMode === "seleccionar" ? "" : "none";
+
+    const ids = new Set(((schema.puntuacio.aparells || {}).ids || []).map(x => String(x)));
+    (APARELLS || []).forEach(a => {
+      const el = document.getElementById("app_" + a.id);
+      if (el) el.checked = ids.has(String(a.id));
+    });
+
+    els.iTopN.value = (schema.presentacio || {}).top_n != null ? schema.presentacio.top_n : 0;
+    els.cEmpats.checked = !!((schema.presentacio || {}).mostrar_empats);
+
+    // 🔥 AQUI: carreguem UI visual + JSON avançat
+    syncUIFromSchema(schema);
+
+    els.previewBox.innerHTML = '<div class="text-muted small">Fes clic a “Previsualitzar”.</div>';
+  }
+
+  function collectSchema() {
+    const parts = [];
+    if (els.pCategoria.checked) parts.push("categoria");
+    if (els.pSubcategoria.checked) parts.push("subcategoria");
+    if (els.pEntitat.checked) parts.push("entitat");
+    if (els.pGrup.checked) parts.push("grup");
+
+    // UI-first
+    let desempat = readTieUI();
+    let filtres = {
+      entitats_in: coerceList(getSelectedValues(els.fEntitats)),
+      categories_in: coerceList(getSelectedValues(els.fCategories)),
+      subcategories_in: coerceList(getSelectedValues(els.fSubcategories)),
+      grups_in: coerceList(getSelectedValues(els.fGrups)),
+    };
+    Object.keys(filtres).forEach(k => { if (!filtres[k].length) delete filtres[k]; });
+
+    // fallback si han editat JSON manualment
+    try { desempat = JSON.parse(els.tDesempat.value || "[]"); } catch(e) {}
+    try { filtres = JSON.parse(els.tFiltres.value || "{}"); } catch(e) {}
+
+    const apMode = els.apSel.checked ? "seleccionar" : "tots";
+    const apIds = [];
+    if (apMode === "seleccionar") {
+      (APARELLS || []).forEach(a => {
+        const el = document.getElementById("app_" + a.id);
+        if (el && el.checked) apIds.push(a.id);
+      });
+    }
+
+    return {
+      particions: parts,
+      filtres: filtres,
+      puntuacio: {
+        camp: els.sCamp.value,
+        agregacio: els.sAgregacio.value,
+        best_n: parseInt(els.iBestN.value || "1", 10),
+        exercicis: { mode: els.sExercicisMode.value },
+        exercicis_best_n: parseInt(els.iExBestN.value || "1", 10),
+        aparells: { mode: apMode, ids: apIds }
+      },
+      desempat: desempat,
+      presentacio: {
+        top_n: parseInt(els.iTopN.value || "0", 10),
+        mostrar_empats: !!els.cEmpats.checked
+      }
+    };
+  }
+
+  function currentCfg() {
+    return state.cfgs.find(x => x.id === state.selectedId);
+  }
+
+  els.btnAdd.addEventListener("click", () => {
+    const nextOrd = (state.cfgs.length ? Math.max(...state.cfgs.map(x => x.ordre||0)) : 0) + 1;
+    const tmpId = "tmp_" + Math.random().toString(16).slice(2);
+    state.cfgs.push({
+      id: tmpId,
+      nom: "Nova classificació",
+      activa: true,
+      ordre: nextOrd,
+      tipus: "individual",
+      schema: JSON.parse(JSON.stringify(DEFAULT_SCHEMA)),
+      _isTemp: true
+    });
+    renderList();
+    selectCfg(tmpId);
+  });
+
+  els.apTots.addEventListener("change", () => {
+    els.apSelBox.style.display = els.apSel.checked ? "" : "none";
+  });
+  els.apSel.addEventListener("change", () => {
+    els.apSelBox.style.display = els.apSel.checked ? "" : "none";
+  });
+
+  // sincronitza JSON avançat quan canviïn selects de filtres
+  ["change"].forEach(ev => {
+    if (els.fEntitats) els.fEntitats.addEventListener(ev, syncAdvancedFromUI);
+    if (els.fCategories) els.fCategories.addEventListener(ev, syncAdvancedFromUI);
+    if (els.fSubcategories) els.fSubcategories.addEventListener(ev, syncAdvancedFromUI);
+    if (els.fGrups) els.fGrups.addEventListener(ev, syncAdvancedFromUI);
+  });
+
+  // afegir criteri desempat
+  if (els.btnTieAdd) {
+    els.btnTieAdd.addEventListener("click", () => {
+      const cur = readTieUI();
+      cur.push({camp: "execucio_total", ordre: "desc"});
+      renderTieUI(cur);
+      syncAdvancedFromUI();
+    });
+  }
+
+  els.btnSave.addEventListener("click", async () => {
+    const cfg = currentCfg();
+    if (!cfg) return;
+
+    cfg.nom = els.fNom.value || "Classificació";
+    cfg.activa = !!els.fActiva.checked;
+    cfg.tipus = els.fTipus.value || "individual";
+    cfg.schema = collectSchema();
+
+    const payload = {
+      id: (cfg._isTemp ? null : cfg.id),
+      nom: cfg.nom,
+      activa: cfg.activa,
+      ordre: cfg.ordre,
+      tipus: cfg.tipus,
+      schema: cfg.schema
+    };
+
+    const res = await fetch("{% url 'classificacio_save' competicio.id %}", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": getCookie("csrftoken"),
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await res.json();
+    if (!data.ok) {
+      alert("No s'ha pogut desar.");
+      return;
+    }
+
+    if (cfg._isTemp) {
+      cfg.id = data.id;
+      delete cfg._isTemp;
+      state.selectedId = cfg.id;
+    }
+
+    renderList();
+  });
+
+  els.btnDelete.addEventListener("click", async () => {
+    const cfg = currentCfg();
+    if (!cfg) return;
+
+    if (!confirm("Eliminar aquesta classificació?")) return;
+
+    if (cfg._isTemp) {
+      state.cfgs = state.cfgs.filter(x => x.id !== cfg.id);
+      state.selectedId = null;
+      renderList();
+      els.editorEmpty.style.display = "";
+      els.editorBody.style.display = "none";
+      els.btnSave.disabled = true;
+      els.btnDelete.disabled = true;
+      els.btnPreview.disabled = true;
+      return;
+    }
+
+    const res = await fetch("{% url 'classificacio_delete' competicio.id 0 %}".replace("/0/", "/" + cfg.id + "/"), {
+      method: "POST",
+      headers: { "X-CSRFToken": getCookie("csrftoken") },
+    });
+    const data = await res.json();
+    if (!data.ok) {
+      alert("No s'ha pogut eliminar.");
+      return;
+    }
+
+    state.cfgs = state.cfgs.filter(x => x.id !== cfg.id);
+    state.selectedId = null;
+    renderList();
+
+    els.editorEmpty.style.display = "";
+    els.editorBody.style.display = "none";
+    els.btnSave.disabled = true;
+    els.btnDelete.disabled = true;
+    els.btnPreview.disabled = true;
+  });
+
+  els.btnPreview.addEventListener("click", async () => {
+    const cfg = currentCfg();
+    if (!cfg) return;
+
+    if (cfg._isTemp) {
+      alert("Desa primer la classificació per poder previsualitzar.");
+      return;
+    }
+
+    cfg.nom = els.fNom.value || cfg.nom;
+    cfg.activa = !!els.fActiva.checked;
+    cfg.tipus = els.fTipus.value || cfg.tipus;
+    cfg.schema = collectSchema();
+
+    const res = await fetch("{% url 'classificacio_preview' competicio.id 0 %}".replace("/0/", "/" + cfg.id + "/"), {
+      method: "POST",
+      headers: { "X-CSRFToken": getCookie("csrftoken") },
+    });
+    const data = await res.json();
+    if (!data.ok) {
+      els.previewBox.innerHTML = '<div class="text-danger small">Error en calcular la previsualització.</div>';
+      return;
+    }
+    renderPreview(data.data || []);
+  });
+
+  function renderPreview(parts) {
+    if (!parts.length) {
+      els.previewBox.innerHTML = '<div class="text-muted small">Sense resultats.</div>';
+      return;
+    }
+
+    let html = "";
+    parts.forEach(p => {
+      html += '<div class="mb-3">';
+      html += '<div class="font-weight-bold mb-1">' + esc(p.particio) + '</div>';
+      html += '<div class="table-responsive"><table class="table table-sm">';
+      html += '<thead><tr>'
+            + '<th style="width:70px;">Pos.</th>'
+            + '<th>Nom</th>'
+            + '<th style="width:120px;" class="text-right">Punts</th>'
+            + '</tr></thead><tbody>';
+
+      (p.rows || []).forEach(r => {
+        const nom = r.participant || r.entitat_nom || "";
+        const punts = (typeof r.punts === "number") ? r.punts.toFixed(3) : (r.punts || 0);
+        html += '<tr>'
+              + '<td>' + (r.posicio || "") + '</td>'
+              + '<td>' + esc(nom) + '</td>'
+              + '<td class="text-right">' + punts + '</td>'
+              + '</tr>';
+      });
+
+      html += '</tbody></table></div></div>';
+    });
+
+    els.previewBox.innerHTML = html;
+  }
+
+  // init
+  renderScoreFields();
+  renderAparells();
+
+  // inicialitza UI desempats/filtres
+  renderTieUI([]);
+  syncAdvancedFromUI();
+  bindAdvancedEditors();
+
+  state.cfgs.sort((a,b) => (a.ordre||0) - (b.ordre||0)).forEach((c,i) => c.ordre = i+1);
+  renderList();
+</script>
+
+
+{% endblock %}

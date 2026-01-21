@@ -5,15 +5,19 @@ from django.views.decorators.csrf import csrf_protect
 from django.http import JsonResponse, HttpResponseBadRequest
 from django.db import transaction
 from django.shortcuts import render, get_object_or_404
-from django.db.models import Q, Max, Min, Case, When, IntegerField
-
+from django.db.models import Q, Max, Min, Case, When, IntegerField, F
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl.utils import get_column_letter
+from django.http import HttpResponse
 from ceeb_web import models
 from .models import Competicio, Inscripcio
 from .models_trampoli import CompeticioAparell
 from .models_rotacions import RotacioFranja, RotacioAssignacio, RotacioEstacio
 from django.db import transaction
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from django.utils.dateparse import parse_time
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
 @require_POST
 @csrf_protect
@@ -208,11 +212,52 @@ def franja_create(request, pk):
 def franja_delete(request, pk, franja_id):
     competicio = get_object_or_404(Competicio, pk=pk)
     f = get_object_or_404(RotacioFranja, pk=franja_id, competicio=competicio)
+
+    day = datetime(2000, 1, 1).date()
+
     with transaction.atomic():
+        anchor_ord = f.ordre
+
+        # 🔑 Tanquem el forat: enganxem la cadena a l'hora d'inici de la franja eliminada
+        anchor_time = datetime.combine(day, f.hora_inici)
+
+        # 1) Esborrem assignacions i franja
         RotacioAssignacio.objects.filter(competicio=competicio, franja=f).delete()
         f.delete()
-    return JsonResponse({"ok": True})
 
+        # 2) Recalculem les franges de sota mantenint la durada original de cadascuna
+        below = list(
+            RotacioFranja.objects
+            .filter(competicio=competicio, ordre__gt=anchor_ord)
+            .order_by("ordre", "id")
+        )
+
+        prev_end = anchor_time
+        for fr in below:
+            s0 = datetime.combine(day, fr.hora_inici)
+            e0 = datetime.combine(day, fr.hora_fi)
+            if e0 <= s0:
+                raise ValueError("Hi ha una franja amb durada no positiva")
+
+            dur = e0 - s0
+            new_start = prev_end
+            new_end = new_start + dur
+
+            fr.hora_inici = new_start.time()
+            fr.hora_fi = new_end.time()
+            prev_end = new_end
+
+        if below:
+            RotacioFranja.objects.bulk_update(below, ["hora_inici", "hora_fi"], batch_size=200)
+
+        # 3) Reordenem 'ordre' perquè no quedin forats (recomanat)
+        rest = list(RotacioFranja.objects.filter(competicio=competicio).order_by("ordre", "id"))
+        for i, fr in enumerate(rest, start=1):
+            fr.ordre = i
+        if rest:
+            RotacioFranja.objects.bulk_update(rest, ["ordre"], batch_size=200)
+
+    return JsonResponse({"ok": True})
 
 @require_POST
 @csrf_protect
@@ -405,3 +450,272 @@ def rotacions_clear_all(request, pk):
         # opcional:
         RotacioFranja.objects.filter(competicio=competicio).delete()
     return JsonResponse({"ok": True})
+
+
+@require_POST
+@csrf_protect
+def franja_insert_after(request, pk, franja_id):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    fr_prev = get_object_or_404(RotacioFranja, pk=franja_id, competicio=competicio)
+
+    # Durada = durada de la franja anterior
+    day = datetime(2000, 1, 1).date()
+    prev_start = datetime.combine(day, fr_prev.hora_inici)
+    prev_end = datetime.combine(day, fr_prev.hora_fi)
+
+    if prev_end <= prev_start:
+        return HttpResponseBadRequest("La franja base té hores invàlides.")
+
+    delta = prev_end - prev_start  # timedelta
+    new_start = prev_end
+    new_end = new_start + delta
+
+    # (Opcional) títol personalitzat
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        payload = {}
+    titol = (payload.get("titol") or "").strip()
+
+    with transaction.atomic():
+        # 1) Apliquem un offset temporal gran per evitar col·lisions amb el unique (competicio, ordre)
+        qs = RotacioFranja.objects.filter(
+            competicio=competicio,
+            ordre__gt=fr_prev.ordre
+        )
+
+        OFFSET = 1000  # prou gran per sortir de la zona de valors reals
+        qs.update(ordre=F("ordre") + OFFSET)
+
+        # 2) Ara ja podem deixar-ho en el valor final (+1) sense col·lisions
+        qs.update(ordre=F("ordre") - OFFSET + 1)
+
+        # 3) Crear franja nova
+        f_new = RotacioFranja.objects.create(
+            competicio=competicio,
+            hora_inici=new_start.time(),
+            hora_fi=new_end.time(),
+            ordre=fr_prev.ordre + 1,
+            titol=titol or "",
+        )
+
+        # 4) Desplacem horaris de totes les franges que queden per sota (ara tenen ordre > fr_prev.ordre+1)
+        to_shift = list(
+            RotacioFranja.objects.filter(
+                competicio=competicio,
+                ordre__gt=f_new.ordre
+            ).order_by("ordre", "id")
+        )
+
+        for f in to_shift:
+            s = datetime.combine(day, f.hora_inici) + delta
+            e = datetime.combine(day, f.hora_fi) + delta
+            f.hora_inici = s.time()
+            f.hora_fi = e.time()
+
+        if to_shift:
+            RotacioFranja.objects.bulk_update(to_shift, ["hora_inici", "hora_fi"], batch_size=200)
+
+    return JsonResponse({"ok": True, "id": f_new.id})
+
+
+
+@require_POST
+@csrf_protect
+def franja_update_inline(request, pk, franja_id):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    fr = get_object_or_404(RotacioFranja, pk=franja_id, competicio=competicio)
+
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        return HttpResponseBadRequest("JSON invàlid")
+
+    titol = (payload.get("titol") or "").strip()
+    hora_inici = payload.get("hora_inici")
+    hora_fi = payload.get("hora_fi")
+
+    if not hora_inici or not hora_fi:
+        return HttpResponseBadRequest("Falten hores")
+
+    try:
+        # esperem "HH:MM" (input type="time")
+        hi = datetime.strptime(hora_inici, "%H:%M").time()
+        hf = datetime.strptime(hora_fi, "%H:%M").time()
+    except ValueError:
+        return HttpResponseBadRequest("Format d'hora incorrecte (HH:MM)")
+
+    day = datetime(2000, 1, 1).date()
+    d_hi = datetime.combine(day, hi)
+    d_hf = datetime.combine(day, hf)
+    if d_hf <= d_hi:
+        return HttpResponseBadRequest("L'hora de fi ha de ser posterior a l'hora d'inici")
+
+    with transaction.atomic():
+        # 1) Actualitza franja editada
+        fr.titol = titol
+        fr.hora_inici = hi
+        fr.hora_fi = hf
+        fr.save(update_fields=["titol", "hora_inici", "hora_fi"])
+
+        # 2) Reajusta totes les franges per sota perquè quedin encadenades
+        below = list(
+            RotacioFranja.objects.filter(
+                competicio=competicio,
+                ordre__gt=fr.ordre
+            ).order_by("ordre", "id")
+        )
+
+        prev_end = d_hf
+        for f in below:
+            # mantenim la durada original de cada franja
+            s0 = datetime.combine(day, f.hora_inici)
+            e0 = datetime.combine(day, f.hora_fi)
+            if e0 <= s0:
+                # si alguna té hores dolentes, parem per evitar fer més mal
+                raise ValueError("Hi ha una franja amb durada no positiva")
+
+            dur = e0 - s0
+            new_start = prev_end
+            new_end = new_start + dur
+
+            f.hora_inici = new_start.time()
+            f.hora_fi = new_end.time()
+            prev_end = new_end
+
+        if below:
+            RotacioFranja.objects.bulk_update(below, ["hora_inici", "hora_fi"], batch_size=200)
+
+    return JsonResponse({"ok": True})
+
+
+
+def franges_export_excel(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+
+    # --- Dades base ---
+    estacions = list(RotacioEstacio.objects.filter(competicio=competicio, actiu=True).order_by("ordre", "id"))
+    franges = list(RotacioFranja.objects.filter(competicio=competicio).order_by("ordre", "id"))
+
+    # assignacions: (franja_id, estacio_id) -> grup
+    assigns = RotacioAssignacio.objects.filter(competicio=competicio).values("franja_id", "estacio_id", "grup")
+    cell_group = {(a["franja_id"], a["estacio_id"]): a["grup"] for a in assigns}
+
+    # grup -> [noms inscripcions]
+    grups = sorted({g for g in cell_group.values() if g is not None})
+    ins_by_grup = {}
+    if grups:
+        qs = (
+            Inscripcio.objects
+            .filter(competicio=competicio, grup__in=grups)
+            .order_by("ordre_sortida", "id")
+        )
+        for ins in qs:
+            ins_by_grup.setdefault(ins.grup, []).append(getattr(ins, "nom_i_cognoms", None) or str(ins))
+
+    # --- Header (competició + seu) ---
+    titol_competicio = getattr(competicio, "nom", f"Competició {competicio.id}")
+    seu = getattr(competicio, "seu", "") or "—"
+    data_comp = getattr(competicio, "data", None)
+    data_txt = data_comp.strftime("%d/%m/%Y") if data_comp else ""
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Rotacions"
+
+    # --- Estils ---
+    center = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    center_no_wrap = Alignment(horizontal="center", vertical="center")
+    bold = Font(bold=True)
+
+    fill_title = PatternFill("solid", fgColor="1F4E79")    # blau fosc
+    fill_sub = PatternFill("solid", fgColor="D9E1F2")      # blau clar
+    fill_hdr = PatternFill("solid", fgColor="E9EEF7")      # capçalera taula
+    fill_zebra = PatternFill("solid", fgColor="F6F8FC")    # zebra suau
+
+    thin = Side(style="thin", color="9AA7B2")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    # Columnes: 1a col = "Franja", resta = estacions
+    total_cols = 1 + len(estacions)
+
+    # Títol
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=total_cols)
+    c = ws.cell(row=1, column=1, value=titol_competicio)
+    c.font = Font(bold=True, size=16, color="FFFFFF")
+    c.fill = fill_title
+    c.alignment = center_no_wrap
+
+    # Subcapçalera
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=total_cols)
+    c = ws.cell(row=2, column=1, value=f"Seu: {seu}    {data_txt}")
+    c.font = Font(bold=True)
+    c.fill = fill_sub
+    c.alignment = center_no_wrap
+
+    # línia en blanc
+    ws.append([])
+
+    # Capçalera de la matriu (fila 4)
+    header_row = ws.max_row + 1
+    ws.cell(row=header_row, column=1, value="Franja").font = bold
+    ws.cell(row=header_row, column=1).fill = fill_hdr
+    ws.cell(row=header_row, column=1).alignment = center_no_wrap
+    ws.cell(row=header_row, column=1).border = border
+
+    for j, e in enumerate(estacions, start=2):
+        cell = ws.cell(row=header_row, column=j, value=e.nom)
+        cell.font = bold
+        cell.fill = fill_hdr
+        cell.alignment = center_no_wrap
+        cell.border = border
+
+    # Files: una per franja
+    for i, f in enumerate(franges, start=1):
+        r = header_row + i
+
+        label = (f.titol.strip() or "Franja")
+        fr_txt = f"{label}\n{f.hora_inici.strftime('%H:%M')}–{f.hora_fi.strftime('%H:%M')}"
+
+        c0 = ws.cell(row=r, column=1, value=fr_txt)
+        c0.alignment = center
+        c0.border = border
+
+        # zebra a tota la fila (inclosa la 1a col)
+        if i % 2 == 0:
+            for col in range(1, total_cols + 1):
+                ws.cell(row=r, column=col).fill = fill_zebra
+
+        # cel·les per estació
+        for j, e in enumerate(estacions, start=2):
+            g = cell_group.get((f.id, e.id), None)
+            noms = ins_by_grup.get(g, []) if g is not None else []
+            txt = "\n".join(noms) if noms else ("—" if g is not None else "")
+
+            cell = ws.cell(row=r, column=j, value=txt)
+            cell.alignment = center
+            cell.border = border
+
+    # Amplades i alçades (perquè es vegi “maco”)
+    ws.column_dimensions[get_column_letter(1)].width = 22
+    for j in range(2, total_cols + 1):
+        ws.column_dimensions[get_column_letter(j)].width = 24
+
+    # Alçada mín. per veure llistes
+    for r in range(header_row + 1, header_row + 1 + len(franges)):
+        ws.row_dimensions[r].height = 60
+
+    ws.row_dimensions[1].height = 28
+    ws.row_dimensions[2].height = 20
+    ws.row_dimensions[header_row].height = 22
+
+    # Freeze panes: manté capçaleres visibles
+    ws.freeze_panes = ws["B" + str(header_row + 1)]  # bloqueja fila capçalera i col 1
+
+    # Response
+    response = HttpResponse(
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    response["Content-Disposition"] = f'attachment; filename="rotacions_{competicio.id}.xlsx"'
+    wb.save(response)
+    return response

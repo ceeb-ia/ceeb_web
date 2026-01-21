@@ -30,9 +30,10 @@
             <td class="fw-semibold">{{ c.nom }}</td>
             <td>{% if c.data %}{{ c.data|date:"d/m/Y" }}{% else %}-{% endif %}</td>
             <td class="text-end">
-              <div class="d-flex justify-content-between align-items-center">
-                <div class="d-inline-flex gap-2">
-                  <a class="btn btn-sm btn-outline-primary" href="{% url 'inscripcions_list' c.id %}">Inscripcions</a>
+              <div class="justify-content-between align-items-center">
+                <div class="d-inline gap-2">
+                  <a class="btn btn-sm btn-outline-success" href="{% url 'inscripcions_list' c.id %}">Inscripcions</a>
+                  <a class="btn btn-sm btn-outline-primary" href="{% url 'rotacions_planner' c.id %}">Rotacions</a>
                   {% if c.te_notes %}
                     <a class="btn btn-sm btn-outline-dark" href="{% url 'notes_home' c.id %}">Notes</a>
                     {% if c.tipus == 'trampoli' %}

@@ -18,7 +18,7 @@
     table.rot { border-collapse:separate; border-spacing:0; min-width:900px; }
     table.rot th, table.rot td { border:1px solid #e6e9f2; padding:10px; vertical-align:middle; text-align:center; }
     table.rot thead th { position:sticky; top:0; background:#fbfcff; z-index:2; }
-    table.rot tbody th { position:sticky; left:0; background:#fbfcff; z-index:1; text-align:left; min-width:210px; }
+    table.rot tbody th { position:sticky; left:0; background:#fbfcff; z-index:1; text-align:left; min-width:150px; width:150; }
 
     .cell { min-width:150px; height:56px; border-radius:10px; background:#ffffff; display:flex; align-items:center; justify-content:center; gap:8px; }
     .cell.is-over { outline:2px dashed #94a3b8; outline-offset:2px; background:#f8fafc; }
@@ -27,7 +27,52 @@
 
     .mini { font-size:.85rem; color:#6b7280; }
     .row-actions { display:flex; gap:8px; align-items:center; }
-  </style>
+    .modal { z-index: 2000 !important; }
+    .modal-backdrop { z-index: 1990 !important; }
+    .grid-wrap{ overflow-x:auto; overflow-y:visible; position:relative; }
+    .franja-head{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+    }
+
+    .franja-actions{
+      display: grid;
+      grid-template-columns: repeat(3, auto); /* màx. 3 per fila */
+      grid-auto-rows: auto;
+      gap: 4px;
+
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .12s ease;
+    }
+
+    /* força que els dos primers ocupin la primera fila */
+    .franja-actions > :nth-child(1),
+    .franja-actions > :nth-child(2){
+      grid-column: span 1;
+    }
+
+/* la resta baixen automàticament a la segona fila */
+
+
+    /* quan passes el ratolí per la cel·la/filera de la franja */
+    tr:hover .franja-actions,
+    th:hover .franja-actions{
+      opacity:1;
+      pointer-events:auto;
+    }
+
+    /* en pantalles tàctils: que sempre es vegin (no hi ha hover fiable) */
+    @media (max-width: 768px){
+      .franja-actions{
+        opacity:1;
+        pointer-events:auto;
+      }
+    }
+
+</style>
 
   <div class="card-surface mb-3" style="border-radius:14px; border:1px solid #e3e6ef; background:#fff; box-shadow:0 1px 2px rgba(0,0,0,.04);">
     <div class="d-flex justify-content-between align-items-start p-3 flex-wrap gap-3">
@@ -36,11 +81,14 @@
         <div class="text-muted small">Competició: <span class="fw-semibold">{{ competicio.nom }}</span></div>
         <div class="text-muted small">Arrossega grups a la graella i guarda el programa.</div>
       </div>
-      <div class="d-flex gap-2 flex-wrap">
-        <a href="{% url 'inscripcions_list' competicio.id %}" class="btn btn-sm btn-outline-secondary">Inscripcions</a>
-        <a href="{% url 'created' %}" class="btn btn-sm btn-outline-secondary">Tornar</a>
-        <button class="btn btn-sm btn-primary" id="btnSave">Guardar rotacions</button>
-       
+      <div class="gap-2 flex-wrap">
+        <a href="{% url 'inscripcions_list' competicio.id %}" class="btn btn-sm btn-outline-primary">Inscripcions</a>
+        <a href="{% url 'trampoli_config' competicio.id %}" class="btn btn-sm btn-outline-secondary">Configuració</a>
+        <a href="{% url 'rotacions_franges_export_excel' competicio.id %}"
+          class="btn btn-sm btn-outline-success">
+          📊 Exportar horari a Excel
+        </a>
+      </div>
       </div>
     </div>
   </div>
@@ -138,30 +186,33 @@
               {% for f in franges %}
                 <tr>
                   <th>
-                    <div class="d-flex justify-content-between align-items-center">
-                      <div>
+                    <div class="franja-head">
+                      <div class="franja-info">
                         <div class="fw-semibold">{{ f.titol|default:"Franja" }}</div>
                         <div class="mini">{{ f.hora_inici }} – {{ f.hora_fi }}</div>
                       </div>
-                      <div class="row-actions">
-                        <button class="btn btn-sm btn-outline-warning py-0 px-2 js-clear-franja"
-                            data-fr="{{ f.id }}"
-                            title="Netejar franja">
-                          🧹
-                        </button>
-                        <button class="btn btn-sm btn-outline-primary py-0 px-2 js-extrapolar"
-                            data-fr="{{ f.id }}"
-                            title="Extrapolar rotacions">
-                          ⇢
-                        </button>
-                        <button class="btn btn-sm btn-outline-danger py-0 px-2 js-del-fr"
-                                data-fr="{{ f.id }}"
-                                title="Eliminar franja">
-                            ×
-                        </button>
-                        </div>
 
+                      <div class="franja-actions">
+                        <button class="btn btn-sm btn-light py-0 px-2 js-edit-fr"
+                                data-url="{% url 'rotacions_franja_update_inline' competicio.id f.id %}"
+                                data-titol="{{ f.titol|default_if_none:''|escape }}"
+                                data-hi="{{ f.hora_inici|time:'H:i' }}"
+                                data-hf="{{ f.hora_fi|time:'H:i' }}"
+                                title="Editar">✏️</button>
+
+                        <button class="btn btn-sm btn-light py-0 px-2 js-insert-after"
+                                data-fr="{{ f.id }}" title="Inserir després">＋</button>
+                        <button class="btn btn-sm btn-light py-0 px-2 js-clear-franja"
+          data-fr="{{ f.id }}" title="Netejar franja">🧹</button>
+
+                        <button class="btn btn-sm btn-light py-0 px-2 js-extrapolar"
+                                data-fr="{{ f.id }}" title="Extrapolar">⇢</button>
+
+                        <button class="btn btn-sm btn-light py-0 px-2 text-danger js-del-fr"
+                                data-fr="{{ f.id }}" title="Eliminar">🗑</button>
+                      </div>
                     </div>
+
                   </th>
 
                   {% for a in estacions %}
@@ -188,190 +239,323 @@
     </div>
   </div>
 </div>
+<div class="modal fade" id="editFrModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Editar franja</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Tancar"></button>
+      </div>
+      <div class="modal-body" style="display:flex; flex-direction:column; gap:10px;">
+        <input type="text" class="form-control form-control-sm" id="editFrTitol" placeholder="Títol">
+        <div class="d-flex" style="gap:8px;">
+          <input type="time" class="form-control form-control-sm" id="editFrHi">
+          <input type="time" class="form-control form-control-sm" id="editFrHf">
+        </div>
+        <div class="mini text-muted">En desar, les franges següents s’ajustaran automàticament.</div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-sm btn-outline-secondary" data-dismiss="modal">Cancel·lar</button>
+        <button class="btn btn-sm btn-primary" id="btnEditFrSave">Desar</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <script id="grid-data" type="application/json">{{ grid_json|safe }}</script>
-
+<script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.1/dist/umd/popper.min.js"></script>
+<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
 <script>
-  // --- CSRF ---
-  function getCookie(name) {
-    let v = null;
-    if (document.cookie && document.cookie !== "") {
-      for (const c of document.cookie.split(";")) {
-        const x = c.trim();
-        if (x.substring(0, name.length + 1) === (name + "=")) {
-          v = decodeURIComponent(x.substring(name.length + 1));
-          break;
-        }
+(function($){
+  if (!window.jQuery) return;
+
+  function placeMenu($btn, $menu){
+    var r = $btn[0].getBoundingClientRect();
+    $menu.css({
+      position: 'fixed',
+      top: (r.bottom + 4) + 'px',
+      left: (Math.max(8, r.right - $menu.outerWidth())) + 'px',
+      zIndex: 3000,
+      display: 'block'
+    });
+  }
+
+  function cleanup($dd){
+    var $menu = $dd.data('__menu');
+    var $parent = $dd.data('__parent');
+    var $next = $dd.data('__next');
+    var $btn = $dd.data('__btn');
+
+    if ($menu && $menu.length){
+      $menu.removeClass('show').attr('style','');
+      if ($parent && $parent.length){
+        if ($next && $next.length) $next.before($menu);
+        else $parent.append($menu);
       }
     }
-    return v;
+    $dd.removeClass('show');
+    if ($btn && $btn.length) $btn.attr('aria-expanded','false');
+
+    // desactiva listeners globals
+    $(document).off('mousedown.__griddd keydown.__griddd');
+    $(window).off('scroll.__griddd resize.__griddd');
   }
 
-  const CSRF = getCookie("csrftoken");
+  // Quan s'obre: mou el menu a body i prepara "tancar"
+  $(document).on('show.bs.dropdown', '.grid-wrap .dropdown', function(){
+    var $dd = $(this);
+    var $btn = $dd.find('[data-toggle="dropdown"]').first();
+    var $menu = $dd.find('.dropdown-menu').first();
 
-  const SAVE_URL     = "{% url 'rotacions_save' competicio.id %}";
-  const ADD_FR_URL   = "{% url 'rotacions_franja_create' competicio.id %}";
-  const ADD_REST_URL = "{% url 'rotacions_estacio_descans_create' competicio.id %}";
-  const AUTO_FR_URL  = "{% url 'rotacions_franges_auto_create' competicio.id %}";
-  const REORDER_COLS_URL = "{% url 'rotacions_estacions_reorder' competicio.id %}";
-  const CLEAR_ALL_URL = "{% url 'rotacions_clear_all' competicio.id %}";
+    // guarda referències exactes
+    $dd.data('__btn', $btn);
+    $dd.data('__menu', $menu);
+    $dd.data('__parent', $menu.parent());
+    $dd.data('__next', $menu.next());
 
-  function extrapolarUrl(frId){
-    return "{% url 'rotacions_extrapolar' competicio.id 0 %}".replace("/0/extrapolar/", `/${frId}/extrapolar/`);
-    }
-    
-  function delEstacioUrl(id){
-    return "{% url 'rotacions_estacio_delete' competicio.id 0 %}".replace("/0/", `/${id}/`);
-  }
-  function delFrUrl(id){
-    return "{% url 'rotacions_franja_delete' competicio.id 0 %}".replace("/0/delete/", `/${id}/delete/`);
-  }
+    // mou a body
+    $menu.detach().appendTo(document.body);
 
-  // ✅ Declara postJSON ABANS d'usar-la
-  async function postJSON(url, body){
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-CSRFToken": CSRF
-      },
-      body: JSON.stringify(body),
+    // força estat "show" (perquè BS4 ho espera)
+    $dd.addClass('show');
+    $btn.attr('aria-expanded','true');
+    $menu.addClass('show');
+
+    placeMenu($btn, $menu);
+
+    // tanca si fas click fora, ESC, scroll o resize
+    $(document).on('mousedown.__griddd', function(e){
+      if ($(e.target).closest($menu).length) return;         // clic dins el menú
+      if ($(e.target).closest($btn).length) return;          // clic al toggle (BS4 ho gestiona)
+      cleanup($dd);
     });
-    if (!res.ok) throw new Error(await res.text());
-    return await res.json();
+
+    $(document).on('keydown.__griddd', function(e){
+      if (e.key === 'Escape') cleanup($dd);
+    });
+
+    $(window).on('scroll.__griddd resize.__griddd', function(){
+      cleanup($dd);
+    });
+  });
+
+  // Quan BS4 intenta tancar (p.ex. clic al toggle): reenganxa el menú i neteja
+  $(document).on('hide.bs.dropdown', '.grid-wrap .dropdown', function(){
+    cleanup($(this));
+  });
+
+})(window.jQuery);
+/* =========================
+   ROTACIONS PLANNER JS (BS4)
+   - Un sol DOMContentLoaded
+   - Un sol click handler global
+   - Un sol handler de "Desar" del modal
+   - No interfereix amb dropdowns BS4
+   ========================= */
+
+// --- CSRF ---
+function getCookie(name) {
+  let v = null;
+  if (document.cookie && document.cookie !== "") {
+    for (const c of document.cookie.split(";")) {
+      const x = c.trim();
+      if (x.substring(0, name.length + 1) === (name + "=")) {
+        v = decodeURIComponent(x.substring(name.length + 1));
+        break;
+      }
+    }
+  }
+  return v;
+}
+const CSRF = getCookie("csrftoken");
+
+// --- URLs ---
+const SAVE_URL         = "{% url 'rotacions_save' competicio.id %}";
+const ADD_FR_URL       = "{% url 'rotacions_franja_create' competicio.id %}";
+const ADD_REST_URL     = "{% url 'rotacions_estacio_descans_create' competicio.id %}";
+const AUTO_FR_URL      = "{% url 'rotacions_franges_auto_create' competicio.id %}";
+const REORDER_COLS_URL = "{% url 'rotacions_estacions_reorder' competicio.id %}";
+const CLEAR_ALL_URL    = "{% url 'rotacions_clear_all' competicio.id %}";
+const INSERT_AFTER_URL = "{% url 'rotacions_franja_insert_after' competicio.id 0 %}";
+const EXTRAPOLAR_URL0  = "{% url 'rotacions_extrapolar' competicio.id 0 %}";
+const DEL_ES_URL0      = "{% url 'rotacions_estacio_delete' competicio.id 0 %}";
+const DEL_FR_URL0      = "{% url 'rotacions_franja_delete' competicio.id 0 %}";
+
+function insertAfterUrl(frId){
+  return INSERT_AFTER_URL.replace("/0/", `/${frId}/`);
+}
+function extrapolarUrl(frId){
+  // ruta tipus: /<id>/extrapolar/
+  return EXTRAPOLAR_URL0.replace("/0/extrapolar/", `/${frId}/extrapolar/`);
+}
+function delEstacioUrl(id){
+  return DEL_ES_URL0.replace("/0/", `/${id}/`);
+}
+function delFrUrl(id){
+  return DEL_FR_URL0.replace("/0/delete/", `/${id}/delete/`);
+}
+
+// --- POST JSON ---
+async function postJSON(url, body){
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRFToken": CSRF
+    },
+    body: JSON.stringify(body || {}),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  const ct = res.headers.get("content-type") || "";
+  if (ct.includes("application/json")) return await res.json();
+  return null;
+}
+
+// --- UI helpers ---
+function pillFor(grup){
+  if (!grup) return `<span class="pill empty">—</span>`;
+  return `<span class="pill">G${grup}</span>`;
+}
+
+// --- Estat local ---
+let grid = {};
+try {
+  grid = JSON.parse(document.getElementById("grid-data")?.textContent || "{}");
+} catch(e){
+  grid = {};
+}
+
+// --- elements (poden no existir) ---
+const statusEl = document.getElementById("saveStatus");
+const autoStatusEl = document.getElementById("autoStatus");
+
+// --- Autosave ---
+async function autoSaveGrid() {
+  const cells = [];
+  for (const fr in grid) {
+    for (const es in grid[fr]) {
+      const g = grid[fr][es];
+      cells.push({
+        franja: parseInt(fr, 10),
+        estacio: parseInt(es, 10),
+        grup: (g == null ? "" : g),
+      });
+    }
   }
 
-  const statusEl = document.getElementById("saveStatus");
-  const autoStatusEl = document.getElementById("autoStatus");
-
-  function pillFor(grup){
-    if (!grup) return `<span class="pill empty">—</span>`;
-    return `<span class="pill">G${grup}</span>`;
-  }
-
-  // --- Estat local ---
-  let grid = {};
+  if (statusEl) statusEl.textContent = "Guardant…";
   try {
-    grid = JSON.parse(document.getElementById("grid-data").textContent || "{}");
-  } catch(e){
-    grid = {};
+    await postJSON(SAVE_URL, { cells });
+    if (statusEl) statusEl.textContent = "✅ Guardat.";
+  } catch (e) {
+    if (statusEl) statusEl.textContent = "❌ Error guardant: " + (e.message || e);
   }
+}
 
-  // --- Reorder columnes (drag & drop capçalera) ---
-    let dragColEstacioId = null;
+function renderAll() {
+  document.querySelectorAll(".js-cell").forEach((cell) => {
+    const fr = cell.dataset.franja;
+    const es = cell.dataset.estacio;
+    const g = (grid[fr] && grid[fr][es] != null) ? grid[fr][es] : null;
+    cell.innerHTML = pillFor(g);
+  });
+  // auto-save cada canvi
+  autoSaveGrid();
+}
 
-    function getColIndexByEstacioId(estacioId){
-    const headers = Array.from(document.querySelectorAll("table.rot thead th.js-col-h"));
-    return headers.findIndex(h => h.dataset.estacio === String(estacioId));
-    }
+// --- Column DnD (headers) ---
+let dragColEstacioId = null;
 
-    function moveColumn(fromIdx, toIdx){
-    if (fromIdx === toIdx || fromIdx < 0 || toIdx < 0) return;
+function getColIndexByEstacioId(estacioId){
+  const headers = Array.from(document.querySelectorAll("table.rot thead th.js-col-h"));
+  return headers.findIndex(h => h.dataset.estacio === String(estacioId));
+}
 
-    const table = document.querySelector("table.rot");
-    const rows = Array.from(table.rows); // inclou thead i tbody
+function moveColumn(fromIdx, toIdx){
+  if (fromIdx === toIdx || fromIdx < 0 || toIdx < 0) return;
+  const table = document.querySelector("table.rot");
+  if (!table) return;
 
-    rows.forEach((row) => {
-        const cells = Array.from(row.cells);
-        // row.cells[0] és la primera columna (Franja)
-        const a = cells[fromIdx + 1];
-        const b = cells[toIdx + 1];
-        if (!a || !b) return;
+  const rows = Array.from(table.rows);
+  rows.forEach((row) => {
+    const cells = Array.from(row.cells);
+    const a = cells[fromIdx + 1]; // +1 per saltar "Franja"
+    const b = cells[toIdx + 1];
+    if (!a || !b) return;
 
-        if (fromIdx < toIdx) {
-        // mou a després de b
-        b.insertAdjacentElement("afterend", a);
-        } else {
-        // mou a abans de b
-        b.insertAdjacentElement("beforebegin", a);
-        }
+    if (fromIdx < toIdx) b.insertAdjacentElement("afterend", a);
+    else b.insertAdjacentElement("beforebegin", a);
+  });
+}
+
+async function persistColumnOrder(){
+  const ids = Array.from(document.querySelectorAll("table.rot thead th.js-col-h"))
+    .map(th => parseInt(th.dataset.estacio, 10))
+    .filter(Boolean);
+
+  await postJSON(REORDER_COLS_URL, {order: ids});
+}
+
+function initColumnDnD(){
+  document.querySelectorAll("table.rot thead th.js-col-h").forEach((th) => {
+    th.addEventListener("dragstart", (ev) => {
+      dragColEstacioId = th.dataset.estacio;
+      ev.dataTransfer.effectAllowed = "move";
+      ev.dataTransfer.setData("text/plain", dragColEstacioId);
+      th.style.opacity = "0.6";
     });
-    }
 
-    async function persistColumnOrder(){
-    const ids = Array.from(document.querySelectorAll("table.rot thead th.js-col-h"))
-        .map(th => parseInt(th.dataset.estacio, 10))
-        .filter(Boolean);
-
-    await postJSON(REORDER_COLS_URL, {order: ids});
-    }
-
-    // drag handlers a headers
-    function initColumnDnD(){
-    document.querySelectorAll("table.rot thead th.js-col-h").forEach((th) => {
-        th.addEventListener("dragstart", (ev) => {
-        dragColEstacioId = th.dataset.estacio;
-        ev.dataTransfer.effectAllowed = "move";
-        // necessari per alguns navegadors
-        ev.dataTransfer.setData("text/plain", dragColEstacioId);
-        th.style.opacity = "0.6";
-        });
-
-        th.addEventListener("dragend", () => {
-        dragColEstacioId = null;
-        th.style.opacity = "";
-        });
-
-        th.addEventListener("dragover", (ev) => {
-        ev.preventDefault();
-        ev.dataTransfer.dropEffect = "move";
-        th.style.outline = "2px dashed #94a3b8";
-        th.style.outlineOffset = "2px";
-        });
-
-        th.addEventListener("dragleave", () => {
-        th.style.outline = "";
-        th.style.outlineOffset = "";
-        });
-
-        th.addEventListener("drop", async (ev) => {
-        ev.preventDefault();
-        th.style.outline = "";
-        th.style.outlineOffset = "";
-
-        const fromId = dragColEstacioId || ev.dataTransfer.getData("text/plain");
-        const toId = th.dataset.estacio;
-
-        if (!fromId || !toId || fromId === toId) return;
-
-        const fromIdx = getColIndexByEstacioId(fromId);
-        const toIdx = getColIndexByEstacioId(toId);
-
-        moveColumn(fromIdx, toIdx);
-
-        // guardem ordre al backend
-        statusEl.textContent = "Guardant ordre columnes…";
-        try {
-            await persistColumnOrder();
-            statusEl.textContent = "✅ Ordre columnes guardat.";
-        } catch(e){
-            statusEl.textContent = "❌ Error guardant ordre: " + (e.message || e);
-        }
-        });
+    th.addEventListener("dragend", () => {
+      dragColEstacioId = null;
+      th.style.opacity = "";
     });
-    }
 
-    initColumnDnD();
-
-
-
-  function renderAll(){
-    document.querySelectorAll(".js-cell").forEach((cell) => {
-      const fr = cell.dataset.franja;
-      const es = cell.dataset.estacio;
-      const g = (grid[fr] && grid[fr][es] != null) ? grid[fr][es] : null;
-      cell.innerHTML = pillFor(g);
+    th.addEventListener("dragover", (ev) => {
+      ev.preventDefault();
+      ev.dataTransfer.dropEffect = "move";
+      th.style.outline = "2px dashed #94a3b8";
+      th.style.outlineOffset = "2px";
     });
-  }
 
-  // --- Drag start ---
+    th.addEventListener("dragleave", () => {
+      th.style.outline = "";
+      th.style.outlineOffset = "";
+    });
+
+    th.addEventListener("drop", async (ev) => {
+      ev.preventDefault();
+      th.style.outline = "";
+      th.style.outlineOffset = "";
+
+      const fromId = dragColEstacioId || ev.dataTransfer.getData("text/plain");
+      const toId = th.dataset.estacio;
+      if (!fromId || !toId || fromId === toId) return;
+
+      const fromIdx = getColIndexByEstacioId(fromId);
+      const toIdx = getColIndexByEstacioId(toId);
+
+      moveColumn(fromIdx, toIdx);
+
+      if (statusEl) statusEl.textContent = "Guardant ordre columnes…";
+      try {
+        await persistColumnOrder();
+        if (statusEl) statusEl.textContent = "✅ Ordre columnes guardat.";
+      } catch(e){
+        if (statusEl) statusEl.textContent = "❌ Error guardant ordre: " + (e.message || e);
+      }
+    });
+  });
+}
+
+// --- Drag&Drop grups a cel·les ---
+function initCellDnD(){
   document.querySelectorAll(".chip[draggable='true']").forEach((chip) => {
     chip.addEventListener("dragstart", (ev) => {
       ev.dataTransfer.setData("text/plain", chip.dataset.grup ?? "");
     });
   });
 
-  // --- Drop targets ---
   document.querySelectorAll(".js-cell").forEach((cell) => {
     cell.addEventListener("dragover", (ev) => {
       ev.preventDefault();
@@ -391,159 +575,257 @@
       renderAll();
     });
   });
+}
 
- // --- Netejar tot el programa ---
-    document.getElementById("btnClearAll").addEventListener("click", async () => {
-    if (!confirm("Segur que vols netejar tot el programa? Aquesta acció no es pot desfer.")) return;
+// --- Modal edició franja (BS4) ---
+let editFrUrl = null;
 
-    statusEl.textContent = "Netejant programa…";
-    try {
-        // neteja a BD
+function initEditModalPlacement(){
+  const modalEl = document.getElementById("editFrModal");
+  if (modalEl && modalEl.parentElement !== document.body){
+    document.body.appendChild(modalEl);
+  }
+}
+
+// --- Init controls (botons fora de la taula) ---
+function initTopButtons(){
+  const btnClearAll = document.getElementById("btnClearAll");
+  if (btnClearAll) {
+    btnClearAll.addEventListener("click", async () => {
+      if (!confirm("Segur que vols netejar tot el programa? Aquesta acció no es pot desfer.")) return;
+
+      if (statusEl) statusEl.textContent = "Netejant programa…";
+      try {
         await postJSON(CLEAR_ALL_URL, {});
-        // neteja estat local i UI
         grid = {};
         renderAll();
-        statusEl.textContent = "✅ Programa netejat.";
-    } catch(e){
-        statusEl.textContent = "❌ Error netejant: " + (e.message || e);
-    }
-    });
-  // --- Guardar rotacions ---
-  document.getElementById("btnSave").addEventListener("click", async () => {
-    const cells = [];
-    for (const fr in grid){
-      for (const es in grid[fr]){
-        const g = grid[fr][es];
-        cells.push({
-          franja: parseInt(fr, 10),
-          estacio: parseInt(es, 10),
-          grup: (g == null ? "" : g),
-        });
+        if (statusEl) statusEl.textContent = "✅ Programa netejat.";
+        location.reload();
+      } catch(e){
+        if (statusEl) statusEl.textContent = "❌ Error netejant: " + (e.message || e);
       }
-    }
+    });
+  }
 
-    statusEl.textContent = "Guardant…";
-    try {
-      await postJSON(SAVE_URL, {cells});
-      statusEl.textContent = "✅ Guardat.";
-    } catch(e){
-      statusEl.textContent = "❌ Error guardant: " + (e.message || e);
-    }
-  });
+  const btnSave = document.getElementById("btnSave");
+  if (btnSave) {
+    btnSave.addEventListener("click", async () => {
+      const cells = [];
+      for (const fr in grid){
+        for (const es in grid[fr]){
+          const g = grid[fr][es];
+          cells.push({
+            franja: parseInt(fr, 10),
+            estacio: parseInt(es, 10),
+            grup: (g == null ? "" : g),
+          });
+        }
+      }
+      if (statusEl) statusEl.textContent = "Guardant…";
+      try {
+        await postJSON(SAVE_URL, {cells});
+        if (statusEl) statusEl.textContent = "✅ Guardat.";
+      } catch(e){
+        if (statusEl) statusEl.textContent = "❌ Error guardant: " + (e.message || e);
+      }
+    });
+  }
 
-  // --- Afegir franja manual ---
-  document.getElementById("btnAddFranja").addEventListener("click", async () => {
-    const hora_inici = document.getElementById("hi").value;
-    const hora_fi = document.getElementById("hf").value;
-    const titol = document.getElementById("ft").value;
-    try {
-      await postJSON(ADD_FR_URL, {hora_inici, hora_fi, titol});
-      location.reload();
-    } catch(e){
-      alert("Error creant franja: " + (e.message || e));
-    }
-  });
+  const btnAddFranja = document.getElementById("btnAddFranja");
+  if (btnAddFranja) {
+    btnAddFranja.addEventListener("click", async () => {
+      const hora_inici = document.getElementById("hi")?.value;
+      const hora_fi = document.getElementById("hf")?.value;
+      const titol = document.getElementById("ft")?.value;
+      try {
+        await postJSON(ADD_FR_URL, {hora_inici, hora_fi, titol});
+        location.reload();
+      } catch(e){
+        alert("Error creant franja: " + (e.message || e));
+      }
+    });
+  }
 
-  // --- Afegir descans ---
-  document.getElementById("btnAddDescans").addEventListener("click", async () => {
-    try {
-      await postJSON(ADD_REST_URL, {});
-      location.reload();
-    } catch(e){
-      alert("Error creant descans: " + (e.message || e));
-    }
-  });
+  const btnAddDescans = document.getElementById("btnAddDescans");
+  if (btnAddDescans) {
+    btnAddDescans.addEventListener("click", async () => {
+      try {
+        await postJSON(ADD_REST_URL, {});
+        location.reload();
+      } catch(e){
+        alert("Error creant descans: " + (e.message || e));
+      }
+    });
+  }
 
-  // --- Generar franges automàticament ---
-  document.getElementById("btnAutoFranges").addEventListener("click", async () => {
-    const hora_inici = document.getElementById("auto_hi").value;
-    const hora_fi = document.getElementById("auto_hf").value;
-    const interval_min = parseInt(document.getElementById("auto_int").value || "0", 10);
-    const titol_base = document.getElementById("auto_tb").value;
-    const clear_existing = document.getElementById("auto_clear").checked;
+  const btnAutoFranges = document.getElementById("btnAutoFranges");
+  if (btnAutoFranges) {
+    btnAutoFranges.addEventListener("click", async () => {
+      const hora_inici = document.getElementById("auto_hi")?.value;
+      const hora_fi = document.getElementById("auto_hf")?.value;
+      const interval_min = parseInt(document.getElementById("auto_int")?.value || "0", 10);
+      const titol_base = document.getElementById("auto_tb")?.value;
+      const clear_existing = !!document.getElementById("auto_clear")?.checked;
 
-    if (!hora_inici || !hora_fi || !interval_min || interval_min <= 0) {
-      autoStatusEl.textContent = "❌ Omple inici, fi i interval (>0).";
+      if (!hora_inici || !hora_fi || !interval_min || interval_min <= 0) {
+        if (autoStatusEl) autoStatusEl.textContent = "❌ Omple inici, fi i interval (>0).";
+        return;
+      }
+
+      if (autoStatusEl) autoStatusEl.textContent = "Generant…";
+      try {
+        const r = await postJSON(AUTO_FR_URL, {hora_inici, hora_fi, interval_min, titol_base, clear_existing});
+        if (autoStatusEl) autoStatusEl.textContent = `✅ Creat ${r && r.created != null ? r.created : ""} franges.`;
+        location.reload();
+      } catch (e) {
+        if (autoStatusEl) autoStatusEl.textContent = "❌ Error: " + (e.message || e);
+      }
+    });
+  }
+}
+
+// --- Click handler global (accions dins la taula) ---
+function initGlobalClickHandler(){
+  document.addEventListener("click", async (ev) => {
+    // deixa que Bootstrap 4 obri dropdowns
+    if (ev.target.closest('[data-toggle="dropdown"]')) return;
+
+    // EDITAR FRANJA (obre modal)
+    const editBtn = ev.target.closest(".js-edit-fr");
+    if (editBtn){
+      editFrUrl = editBtn.dataset.url;
+
+      const t = document.getElementById("editFrTitol");
+      const hi = document.getElementById("editFrHi");
+      const hf = document.getElementById("editFrHf");
+
+      if (t) t.value = editBtn.dataset.titol || "";
+      if (hi) hi.value = editBtn.dataset.hi || "";
+      if (hf) hf.value = editBtn.dataset.hf || "";
+
+      if (window.jQuery) {
+        window.jQuery("#editFrModal").modal("show");
+      } else {
+        alert("No hi ha jQuery carregat (Bootstrap 4 necessita jQuery).");
+      }
       return;
     }
 
-    autoStatusEl.textContent = "Generant…";
-    try {
-      const r = await postJSON(AUTO_FR_URL, {hora_inici, hora_fi, interval_min, titol_base, clear_existing});
-      autoStatusEl.textContent = `✅ Creat ${r.created} franges.`;
-      location.reload();
-    } catch (e) {
-      autoStatusEl.textContent = "❌ Error: " + (e.message || e);
-    }
-  });
+    // DESAR FRANJA (botó dins modal)
+    const saveModalBtn = ev.target.closest("#btnEditFrSave");
+    if (saveModalBtn){
+      const titol = document.getElementById("editFrTitol")?.value || "";
+      const hora_inici = document.getElementById("editFrHi")?.value || "";
+      const hora_fi = document.getElementById("editFrHf")?.value || "";
 
-  // --- Esborrar franja / estació ---
-  document.addEventListener("click", async (ev) => {
+      try{
+        await postJSON(editFrUrl, {titol, hora_inici, hora_fi});
+        if (window.jQuery) window.jQuery("#editFrModal").modal("hide");
+        location.reload();
+      } catch(e){
+        alert("Error guardant franja: " + (e.message || e));
+      }
+      return;
+    }
+
+    // NETEJAR FRANJA (cel·les a null)
     const clearBtn = ev.target.closest(".js-clear-franja");
     if (clearBtn && clearBtn.dataset.fr) {
       const frId = clearBtn.dataset.fr;
       if (!confirm("Netejar totes les caselles d'aquesta franja?")) return;
       if (!grid[frId]) grid[frId] = {};
-      for (const es of Object.keys(grid[frId])) {
-        grid[frId][es] = null;
-      }
+      for (const es of Object.keys(grid[frId])) grid[frId][es] = null;
       renderAll();
       return;
     }
 
-    const ex = ev.target.closest(".js-extrapolar")?.dataset?.fr;
+    // EXTRAPOLAR
+    const exBtn = ev.target.closest(".js-extrapolar");
+    const ex = exBtn?.dataset?.fr;
     if (ex){
-    const countStr = prompt("Quantes franges següents vols omplir?", "");
-    if (countStr === null) return;
+      const countStr = prompt("Quantes franges següents vols omplir?", "");
+      if (countStr === null) return;
+      const count = (countStr.trim() === "") ? null : parseInt(countStr, 10);
 
-    const count = (countStr.trim() === "") ? null : parseInt(countStr, 10);
+      if (statusEl) statusEl.textContent = "Guardant i extrapolant…";
 
-    statusEl.textContent = "Guardant i extrapolant…";
-
-    try {
-        // 1) AUTOSAVE (guarda l'estat actual del grid)
+      try {
+        // autosave abans
         const cells = [];
         for (const fr in grid){
-        for (const es in grid[fr]){
+          for (const es in grid[fr]){
             const g = grid[fr][es];
             cells.push({
-            franja: parseInt(fr, 10),
-            estacio: parseInt(es, 10),
-            grup: (g == null ? "" : g),
+              franja: parseInt(fr, 10),
+              estacio: parseInt(es, 10),
+              grup: (g == null ? "" : g),
             });
-        }
+          }
         }
         await postJSON(SAVE_URL, {cells});
 
-        // 2) EXTRAPOLA
         const r = await postJSON(extrapolarUrl(ex), {count});
-        statusEl.textContent = `✅ Extrapolat. Franges creades: ${r.created_franges}, cel·les omplertes: ${r.filled}.`;
+        if (statusEl) statusEl.textContent = `✅ Extrapolat. Franges creades: ${r?.created_franges ?? "?"}, cel·les omplertes: ${r?.filled ?? "?"}.`;
         location.reload();
-    } catch(e){
+      } catch(e){
         alert("Error extrapolant: " + (e.message || e));
-        statusEl.textContent = "❌ Error extrapolant: " + (e.message || e);
+        if (statusEl) statusEl.textContent = "❌ Error extrapolant: " + (e.message || e);
+      }
+      return;
     }
-    return;
+
+    // INSERT AFTER
+    const insBtn = ev.target.closest(".js-insert-after");
+    const ins = insBtn?.dataset?.fr;
+    if (ins){
+      try{
+        await postJSON(insertAfterUrl(ins), {});
+        location.reload();
+      } catch(e){
+        alert("Error inserint franja: " + (e.message || e));
+      }
+      return;
     }
-    const fr = ev.target.closest(".js-del-fr")?.dataset?.fr;
+
+    // DELETE FRANJA
+    const delFrBtn = ev.target.closest(".js-del-fr");
+    const fr = delFrBtn?.dataset?.fr;
     if (fr){
       if (!confirm("Eliminar franja?")) return;
       try {
         await postJSON(delFrUrl(fr), {});
         location.reload();
-      } catch(e){ alert(e.message || e); }
+      } catch(e){
+        alert(e.message || e);
+      }
+      return;
     }
 
-    const es = ev.target.closest(".js-del-es")?.dataset?.es;
+    // DELETE ESTACIÓ
+    const delEsBtn = ev.target.closest(".js-del-es");
+    const es = delEsBtn?.dataset?.es;
     if (es){
       if (!confirm("Eliminar estació?")) return;
       try {
         await postJSON(delEstacioUrl(es), {});
         location.reload();
-      } catch(e){ alert(e.message || e); }
+      } catch(e){
+        alert(e.message || e);
+      }
+      return;
     }
   });
+}
+
+// --- INIT ---
+document.addEventListener("DOMContentLoaded", () => {
+  initEditModalPlacement();
+  initColumnDnD();
+  initCellDnD();
+  initTopButtons();
+  initGlobalClickHandler();
 
   renderAll();
+});
 </script>
 {% endblock %}

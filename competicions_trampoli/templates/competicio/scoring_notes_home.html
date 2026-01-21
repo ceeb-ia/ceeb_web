@@ -1,0 +1,499 @@
+{% extends "base.html" %}
+{% block title %}Notes (configurable){% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+  <style>
+    .table-sticky thead th{ position: sticky; top: 0; z-index: 2; background: #f8f9fa; }
+    .th-center{ text-align:center; white-space:nowrap; }
+    .cell-center{ text-align:center; vertical-align:middle; }
+    .name-cell{ min-width:260px; }
+    .order-cell{ width:70px; }
+    .input-salt{ width:56px; padding: .15rem .25rem; text-align:center; }
+    .input-num{ width:110px; padding: .15rem .4rem; }
+    .readonly{ background:#eef1f4 !important; }
+    .mini-help{ color:#6c757d; font-size:.85rem; }
+
+    /* barra de scroll superior com al trampolí */
+    .table-scrollbar-top{ overflow-x:auto; width:100%; height:16px; margin-bottom:2px; }
+    .table-scrollbar-top > div{ height:1px; }
+  </style>
+
+  <div class="card-surface">
+    <!-- CAPÇALERA -->
+    <div class="d-flex justify-content-between align-items-start mb-3">
+      <div>
+        <h2 class="mb-1">Notes · Sistema configurable</h2>
+        <div class="text-muted small">Competició: <span class="fw-semibold">{{ competicio.nom }}</span></div>
+        <div class="text-muted small">Entrada i càlcul depenen del schema de cada aparell.</div>
+      </div>
+      <div class="d-flex gap-2">
+        <a class="btn btn-sm btn-outline-primary" href="{% url 'classificacions_live' competicio.id %}">Classificacions en viu</a>
+      </div>
+    </div>
+
+    {% if groups %}
+      <!-- PESTANYES DE GRUPS -->
+      <ul class="nav nav-tabs" role="tablist">
+        {% for g, rows in groups %}
+          <li class="nav-item" role="presentation">
+            <a class="nav-link {% if forloop.first %}active{% endif %}"
+               data-toggle="tab"
+               href="#pane-{{ g }}"
+               role="tab"
+               aria-controls="pane-{{ g }}"
+               aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
+              {% if g == 0 %}Sense grup{% else %}Grup {{ g }}{% endif %}
+              <span class="badge badge-light ml-1">{{ rows|length }}</span>
+            </a>
+          </li>
+        {% endfor %}
+      </ul>
+
+      <!-- CONTINGUT GRUP -->
+      <div class="tab-content pt-3">
+        {% for g, rows in groups %}
+          <div class="tab-pane fade {% if forloop.first %}show active{% endif %}"
+               id="pane-{{ g }}"
+               role="tabpanel">
+
+            <!-- SUB-PESTANYES D’APARELL (PILLS) -->
+            <ul class="nav nav-pills mb-3" role="tablist">
+              {% for app in aparells_cfg %}
+                <li class="nav-item" role="presentation">
+                  <a class="nav-link {% if forloop.first %}active{% endif %}"
+                     data-toggle="tab"
+                     href="#pane-{{ g }}-app-{{ app.id }}"
+                     role="tab"
+                     aria-controls="pane-{{ g }}-app-{{ app.id }}"
+                     aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
+                    {{ app.aparell.nom }}
+                  </a>
+                </li>
+              {% endfor %}
+            </ul>
+
+            <div class="tab-content">
+              {% for app in aparells_cfg %}
+                <div class="tab-pane fade {% if forloop.first %}show active{% endif %}"
+                     id="pane-{{ g }}-app-{{ app.id }}"
+                     role="tabpanel"
+                     data-comp-aparell-id="{{ app.id }}"
+                     data-group="{{ g }}">
+
+                  <!-- SUB-PESTANYES D’EXERCICI -->
+                  <ul class="nav nav-tabs mb-3" role="tablist">
+                    {% for ex in exercicis %}
+                      <li class="nav-item" role="presentation">
+                        <a class="nav-link {% if forloop.first %}active{% endif %}"
+                           data-toggle="tab"
+                           href="#pane-{{ g }}-app-{{ app.id }}-ex-{{ ex }}"
+                           role="tab"
+                           aria-controls="pane-{{ g }}-app-{{ app.id }}-ex-{{ ex }}"
+                           aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
+                          Exercici {{ ex }}
+                        </a>
+                      </li>
+                    {% endfor %}
+                  </ul>
+
+                  <div class="tab-content">
+                    {% for ex in exercicis %}
+                      <div class="tab-pane fade {% if forloop.first %}show active{% endif %}"
+                           id="pane-{{ g }}-app-{{ app.id }}-ex-{{ ex }}"
+                           role="tabpanel">
+
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                          <div class="mini-help">
+                            Grup {% if g == 0 %}Sense grup{% else %}{{ g }}{% endif %} ·
+                            {{ app.aparell.nom }} · Exercici {{ ex }}
+                          </div>
+                          <a class="btn btn-sm btn-outline-secondary"
+                             href="{% url 'scoring_schema_update' competicio.id app.id %}">
+                            Camps i funcions
+                          </a>
+                        </div>
+
+                        <!-- Scrollbar top sincronitzat -->
+                        <div class="table-scrollbar-top" data-scrollbar-top="1">
+                          <div data-scrollbar-inner="1"></div>
+                        </div>
+
+                        <div class="table-responsive table-sticky" data-scroll-wrap="1">
+                          <table class="table table-bordered table-sm align-middle"
+                                 data-scoring-table="1"
+                                 data-group="{{ g }}"
+                                 data-exercici="{{ ex }}"
+                                 data-comp-aparell-id="{{ app.id }}">
+                            <thead></thead>
+                            <tbody></tbody>
+                          </table>
+                        </div>
+
+                      </div>
+                    {% endfor %}
+                  </div>
+
+                </div>
+              {% endfor %}
+            </div>
+
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="text-muted">Encara no hi ha inscripcions en aquesta competició.</div>
+    {% endif %}
+  </div>
+</div>
+
+{{ schemas|json_script:"schemas-data" }}
+{{ scores|json_script:"scores-data" }}
+{{ inscripcions|json_script:"inscripcions-data" }}
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  // --- Dades JSON segures (json_script) ---
+  const SCHEMAS = JSON.parse(document.getElementById("schemas-data").textContent);
+  const SCORES  = JSON.parse(document.getElementById("scores-data").textContent);
+  const INS     = JSON.parse(document.getElementById("inscripcions-data").textContent);
+
+  const SAVE_URL = "{% url 'scoring_save' competicio.id %}";
+
+  // --- CSRF (BS4) ---
+  function getCookie(name){
+    let v=null;
+    if(document.cookie && document.cookie!==""){
+      const c=document.cookie.split(";");
+      for(let i=0;i<c.length;i++){
+        const ck=c[i].trim();
+        if(ck.substring(0,name.length+1)===(name+"=")){
+          v=decodeURIComponent(ck.substring(name.length+1));
+          break;
+        }
+      }
+    }
+    return v;
+  }
+  const CSRF_TOKEN = getCookie("csrftoken");
+
+  // --- Helpers ---
+  function keyFor(insId, ex, appId){ return `${insId}|${ex}|${appId}`; }
+  function getSchema(appId){ return SCHEMAS[String(appId)] || {}; }
+  function getScore(insId, ex, appId){
+    return SCORES[keyFor(insId, ex, appId)] || {inputs:{}, outputs:{}, total:0};
+  }
+  function setScore(insId, ex, appId, data){
+    SCORES[keyFor(insId, ex, appId)] = data;
+  }
+
+  function el(tag, attrs={}, children=[]){
+    const n=document.createElement(tag);
+    for(const [k,v] of Object.entries(attrs)){
+      if(k==="class") n.className=v;
+      else if(k==="text") n.textContent=v;
+      else n.setAttribute(k,v);
+    }
+    for(const c of children){
+      if(c===null||c===undefined) continue;
+      n.appendChild(typeof c==="string" ? document.createTextNode(c) : c);
+    }
+    return n;
+  }
+
+  function ensureMatrix(nJudges, nElements, val){
+    let m=Array.isArray(val)?val:[];
+    while(m.length<nJudges) m.push(Array(nElements).fill(0));
+    m=m.slice(0,nJudges);
+    for(let j=0;j<nJudges;j++){
+      let row=Array.isArray(m[j])?m[j]:[];
+      while(row.length<nElements) row.push(0);
+      m[j]=row.slice(0,nElements);
+    }
+    return m;
+  }
+  function ensureList(n, val){
+    let a=Array.isArray(val)?val:[];
+    while(a.length<n) a.push(0);
+    return a.slice(0,n);
+  }
+
+  async function saveEntry(insId, ex, appId, inputs){
+    const res = await fetch(SAVE_URL,{
+      method:"POST",
+      headers:{
+        "Content-Type":"application/json",
+        "X-CSRFToken": CSRF_TOKEN,
+      },
+      body: JSON.stringify({
+        inscripcio_id: insId,
+        exercici: ex,
+        comp_aparell_id: appId,
+        inputs: inputs,
+      })
+    });
+    const data = await res.json();
+    if(!data.ok) throw new Error(data.error || "Error guardant");
+    return data;
+  }
+
+  // Debounce per fila (evita moltes peticions mentre escrius)
+  const timers=new Map();
+  function scheduleSave(scoreKey, fn){
+    if(timers.has(scoreKey)) clearTimeout(timers.get(scoreKey));
+    timers.set(scoreKey, setTimeout(fn, 250));
+  }
+
+  // Actualitza outputs d'una fila principal sense re-renderitzar
+  function updateOutputs(scoreKey, resp){
+    const mainRow = document.querySelector(`tr[data-score-key="${CSS.escape(scoreKey)}"]`);
+    if(!mainRow) return;
+
+    if(resp.outputs){
+      for(const [code, value] of Object.entries(resp.outputs)){
+        const cell = mainRow.querySelector(`[data-out="${code}"]`);
+        if(cell) cell.textContent = (value===null||value===undefined) ? "" : String(value);
+      }
+    }
+
+    const totalCell = mainRow.querySelector(`[data-out="TOTAL"]`);
+    if(totalCell){
+      const v = (resp.outputs && resp.outputs.TOTAL !== undefined) ? resp.outputs.TOTAL : resp.total;
+      totalCell.textContent = (v===null||v===undefined) ? "" : String(v);
+    }
+  }
+
+  // Header segons schema.ui.columns; matrix -> expand per ítems + crash col
+  function buildHeader(table, schema){
+    const thead = table.querySelector("thead");
+    thead.innerHTML = "";
+
+    const tr1 = document.createElement("tr");
+    tr1.appendChild(el("th",{class:"th-center name-cell", text:"Nom"}));
+    tr1.appendChild(el("th",{class:"th-center order-cell", text:"#"}));
+
+    const cols = (schema.ui && Array.isArray(schema.ui.columns)) ? schema.ui.columns : [];
+    const fields = Array.isArray(schema.fields) ? schema.fields : [];
+    const byCode = {};
+    fields.forEach(f=>{ if(f && f.code) byCode[f.code]=f; });
+
+    cols.forEach(col=>{
+      const f = byCode[col];
+      if(f && f.type==="matrix" && f.items && f.items.count){
+        const n = Number(f.items.count || 0);
+        for(let i=1;i<=n;i++){
+          tr1.appendChild(el("th",{class:"th-center", text:`${(f.items.label_prefix||"S")}${i}`}));
+        }
+        if(f.crash && f.crash.enabled){
+          tr1.appendChild(el("th",{class:"th-center", text:"Crash"}));
+        }
+      }else{
+        tr1.appendChild(el("th",{class:"th-center", text:col}));
+      }
+    });
+
+    thead.appendChild(tr1);
+  }
+
+  function buildBody(table, schema, exercici, appId, group){
+    const tbody = table.querySelector("tbody");
+    tbody.innerHTML = "";
+
+    const cols = (schema.ui && Array.isArray(schema.ui.columns)) ? schema.ui.columns : [];
+    const fields = Array.isArray(schema.fields) ? schema.fields : [];
+    const byCode = {};
+    fields.forEach(f=>{ if(f && f.code) byCode[f.code]=f; });
+
+    const rows = INS.filter(x=>String(x.group)===String(group));
+
+    rows.forEach((ins, idx)=>{
+      const scoreKey = keyFor(ins.id, exercici, appId);
+      const s = getScore(ins.id, exercici, appId);
+      const inputs = s.inputs || {};
+
+      const tr = document.createElement("tr");
+      tr.dataset.scoreKey = scoreKey;
+
+      // Nom + info extra (si existeix)
+      const nameTd = document.createElement("td");
+      nameTd.className = "name-cell";
+      nameTd.innerHTML = `<div class="fw-semibold">${ins.name || ""}</div>` +
+        (ins.meta ? `<div class="text-muted small">${ins.meta}</div>` : "");
+      tr.appendChild(nameTd);
+
+      tr.appendChild(el("td",{class:"cell-center order-cell", text:String(idx+1)}));
+
+      cols.forEach(col=>{
+        const f = byCode[col];
+
+        // --- MATRIX (judge_x_item) ---
+        if(f && f.type==="matrix" && f.items && f.items.count){
+          const nJudges = Number((f.judges && f.judges.count) ? f.judges.count : 1);
+          const nElems  = Number(f.items.count || 0);
+          const crashKey = `${col}_crash`;
+
+          const mat = ensureMatrix(nJudges, nElems, inputs[col]);
+          const crash = ensureList(nElems, inputs[crashKey]);
+
+          // Per simplificar UI (com a Notes): editem només la fila del “jutge 1”
+          // Si vols per-judges com el trampolí, es pot estendre després.
+          for(let i=0;i<nElems;i++){
+            const td = el("td",{class:"cell-center"});
+            const inp = el("input",{class:"form-control form-control-sm input-salt", type:"number", step:"any"});
+            inp.value = (mat[0] && mat[0][i]!==undefined) ? mat[0][i] : 0;
+
+            inp.addEventListener("input", ()=>{
+              const nextMat = ensureMatrix(nJudges, nElems, inputs[col]);
+              nextMat[0][i] = Number(inp.value || 0);
+
+              const nextCrash = ensureList(nElems, inputs[crashKey]);
+              const nextInputs = { ...inputs, [col]: nextMat, [crashKey]: nextCrash };
+
+              setScore(ins.id, exercici, appId, {inputs: nextInputs, outputs: s.outputs || {}, total: s.total || 0});
+
+              scheduleSave(scoreKey, async ()=>{
+                try{
+                  const resp = await saveEntry(ins.id, exercici, appId, nextInputs);
+                  setScore(ins.id, exercici, appId, {inputs: nextInputs, outputs: resp.outputs, total: resp.total});
+                  updateOutputs(scoreKey, resp);
+                }catch(e){ console.error(e); }
+              });
+            });
+
+            td.appendChild(inp);
+            tr.appendChild(td);
+          }
+
+          if(f.crash && f.crash.enabled){
+            const tdC = el("td",{class:"cell-center"});
+            const btn = el("button",{class:"btn btn-sm btn-outline-danger p-0", type:"button", text:"💥"});
+            btn.style.width="28px"; btn.style.height="28px";
+            btn.title = "Marca crash (toggle tots)";
+            tdC.appendChild(btn);
+            tr.appendChild(tdC);
+
+            btn.addEventListener("click", ()=>{
+              const nextMat = ensureMatrix(nJudges, nElems, inputs[col]);
+              const nextCr  = ensureList(nElems, inputs[crashKey]);
+              const anyOn = nextCr.some(x=>Number(x)===1);
+              for(let i=0;i<nElems;i++) nextCr[i] = anyOn ? 0 : 1;
+
+              const nextInputs = { ...inputs, [col]: nextMat, [crashKey]: nextCr };
+              setScore(ins.id, exercici, appId, {inputs: nextInputs, outputs: s.outputs || {}, total: s.total || 0});
+
+              scheduleSave(scoreKey, async ()=>{
+                try{
+                  const resp = await saveEntry(ins.id, exercici, appId, nextInputs);
+                  setScore(ins.id, exercici, appId, {inputs: nextInputs, outputs: resp.outputs, total: resp.total});
+                  updateOutputs(scoreKey, resp);
+                }catch(e){ console.error(e); }
+              });
+            });
+          }
+          return;
+        }
+
+        // --- LIST (judge) ---
+        if(f && f.type==="list" && f.judges && f.judges.count){
+          const n = Number(f.judges.count || 0);
+          const arr = ensureList(n, inputs[col]);
+
+          // també simplificat: editem arr[0]
+          const td = el("td",{class:"cell-center"});
+          const inp = el("input",{class:"form-control form-control-sm input-num", type:"number", step:"any"});
+          inp.value = (arr[0]!==undefined) ? arr[0] : 0;
+
+          inp.addEventListener("input", ()=>{
+            const nextArr = ensureList(n, inputs[col]);
+            nextArr[0] = Number(inp.value || 0);
+            const nextInputs = { ...inputs, [col]: nextArr };
+
+            setScore(ins.id, exercici, appId, {inputs: nextInputs, outputs: s.outputs || {}, total: s.total || 0});
+
+            scheduleSave(scoreKey, async ()=>{
+              try{
+                const resp = await saveEntry(ins.id, exercici, appId, nextInputs);
+                setScore(ins.id, exercici, appId, {inputs: nextInputs, outputs: resp.outputs, total: resp.total});
+                updateOutputs(scoreKey, resp);
+              }catch(e){ console.error(e); }
+            });
+          });
+
+          td.appendChild(inp);
+          tr.appendChild(td);
+          return;
+        }
+
+        // --- NUMBER (entrada) o OUTPUT (computed) ---
+        const td = el("td",{class:"cell-center"});
+        const isField = !!(f && (f.type==="number" || f.type==="matrix" || f.type==="list"));
+
+        if(isField){
+          const inp = el("input",{class:"form-control form-control-sm input-num", type:"number", step:"any"});
+          inp.value = (inputs[col]!==undefined && inputs[col]!==null) ? inputs[col] : "";
+
+          inp.addEventListener("input", ()=>{
+            const nextInputs = { ...inputs, [col]: inp.value };
+            setScore(ins.id, exercici, appId, {inputs: nextInputs, outputs: s.outputs || {}, total: s.total || 0});
+
+            scheduleSave(scoreKey, async ()=>{
+              try{
+                const resp = await saveEntry(ins.id, exercici, appId, nextInputs);
+                setScore(ins.id, exercici, appId, {inputs: nextInputs, outputs: resp.outputs, total: resp.total});
+                updateOutputs(scoreKey, resp);
+              }catch(e){ console.error(e); }
+            });
+          });
+
+          td.appendChild(inp);
+        }else{
+          td.classList.add("readonly");
+          td.dataset.out = col;
+          td.textContent = (s.outputs && s.outputs[col]!==undefined) ? String(s.outputs[col]) : "";
+        }
+
+        tr.appendChild(td);
+      });
+
+      tbody.appendChild(tr);
+    });
+  }
+
+  function renderAll(){
+    document.querySelectorAll("table[data-scoring-table='1']").forEach(table=>{
+      const appId = table.getAttribute("data-comp-aparell-id");
+      const ex    = table.getAttribute("data-exercici");
+      const group = table.getAttribute("data-group");
+      const schema = getSchema(appId);
+
+      buildHeader(table, schema);
+      buildBody(table, schema, ex, appId, group);
+    });
+  }
+
+  // Scrollbar top sincronitzat amb el wrapper de taula
+  function syncScrollbars(){
+    document.querySelectorAll('[data-scroll-wrap="1"]').forEach((wrap)=>{
+      const topbar = wrap.parentElement.querySelector('[data-scrollbar-top="1"]');
+      const inner  = topbar ? topbar.querySelector('[data-scrollbar-inner="1"]') : null;
+      if(!topbar || !inner) return;
+
+      // amplada = scrollWidth real de la taula
+      const table = wrap.querySelector("table");
+      const w = table ? table.scrollWidth : 2000;
+      inner.style.width = w + "px";
+
+      topbar.addEventListener("scroll", ()=>{ wrap.scrollLeft = topbar.scrollLeft; });
+      wrap.addEventListener("scroll", ()=>{ topbar.scrollLeft = wrap.scrollLeft; });
+    });
+  }
+
+  document.addEventListener("DOMContentLoaded", ()=>{
+    renderAll();
+    syncScrollbars();
+    window.addEventListener("resize", syncScrollbars);
+  });
+</script>
+{% endblock %}

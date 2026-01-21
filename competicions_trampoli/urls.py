@@ -4,6 +4,15 @@ from .views_trampoli import TrampoliConfigUpdate, TrampoliNotesHome, trampoli_gu
 from .views import CompeticioCreateView, CompeticioDeleteView, CompeticioHomeView, CompeticioListView, InscripcionsImportExcelView, InscripcionsListView
 from competicions_trampoli import views, views_rotacions
 from .views_trampoli import AparellList, AparellCreate, AparellUpdate
+from .views_classificacions import (
+    ClassificacionsHome,
+    classificacio_save,
+    classificacio_delete,
+    classificacio_reorder,
+    classificacio_preview,)
+from .views_classificacions import ClassificacionsLive, classificacions_live_data
+from .views_scoring import ScoringNotesHome, ScoringSchemaUpdate, scoring_save
+
 
 
 urlpatterns = [
@@ -37,10 +46,20 @@ urlpatterns = [
     path("competicio/<int:pk>/rotacions/estacio/<int:estacio_id>/delete/",views_rotacions.estacio_delete,name="rotacions_estacio_delete",),
     path("competicio/<int:pk>/rotacions/franja/<int:franja_id>/extrapolar/", views_rotacions.rotacions_extrapolar, name="rotacions_extrapolar"),
     path("competicio/<int:pk>/rotacions/estacions/reorder/", views_rotacions.estacions_reorder, name="rotacions_estacions_reorder"),
-    path(
-    "competicio/<int:pk>/rotacions/clear_all/",
-    views_rotacions.rotacions_clear_all,
-    name="rotacions_clear_all",
-    ),
+    path("competicio/<int:pk>/rotacions/clear_all/",views_rotacions.rotacions_clear_all,name="rotacions_clear_all",),
+    path("competicio/<int:pk>/rotacions/franges/<int:franja_id>/insert_after/",views_rotacions.franja_insert_after, name="rotacions_franja_insert_after"),
+    path("competicio/<int:pk>/rotacions/franges/<int:franja_id>/update_inline/",views_rotacions.franja_update_inline,name="rotacions_franja_update_inline"),
+    path("competicio/<int:pk>/rotacions/franges/export_excel/",views_rotacions.franges_export_excel,name="rotacions_franges_export_excel"),
+    path("competicio/<int:pk>/classificacions/", ClassificacionsHome.as_view(), name="classificacions_home"),
+    path("competicio/<int:pk>/classificacions/save/", classificacio_save, name="classificacio_save"),
+    path("competicio/<int:pk>/classificacions/delete/<int:cid>/", classificacio_delete, name="classificacio_delete"),
+    path("competicio/<int:pk>/classificacions/reorder/", classificacio_reorder, name="classificacio_reorder"),
+    path("competicio/<int:pk>/classificacions/preview/<int:cid>/", classificacio_preview, name="classificacio_preview"),
+    path("competicio/<int:pk>/classificacions/live/", ClassificacionsLive.as_view(), name="classificacions_live"),
+    path("competicio/<int:pk>/classificacions/live/data/", classificacions_live_data, name="classificacions_live_data"),
+    path("competicio/<int:pk>/notes-v2/", ScoringNotesHome.as_view(), name="scoring_notes_home"),
+    path("competicio/<int:pk>/aparell/<int:ap_id>/schema/", ScoringSchemaUpdate.as_view(), name="scoring_schema_update"),
+    path("competicio/<int:pk>/scores/save/", scoring_save, name="scoring_save"),
+
 
 ]

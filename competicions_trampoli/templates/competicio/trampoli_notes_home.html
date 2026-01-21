@@ -45,6 +45,11 @@
            href="{% url 'trampoli_config' competicio.id %}">
           Configuració
         </a>
+        
+        <a class="btn btn-sm btn-outline-primary"
+          href="{% url 'classificacions_live' competicio.id %}">
+          Veure classificacions en viu
+        </a>
 
         <a class="btn btn-sm btn-info"
            href="{% url 'created' %}">

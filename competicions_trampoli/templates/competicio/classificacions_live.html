@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{% block title %}Classificacions en viu · {{ competicio.nom }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+  <div class="card-surface">
+
+    <!-- CAPÇALERA -->
+    <div class="d-flex justify-content-between align-items-start mb-3">
+      <div>
+        <h2 class="mb-1">Classificacions · {{ competicio.nom }}</h2>
+        <div class="text-muted small">
+          Vista en directe: s’actualitza automàticament quan es modifiquen notes o configuracions.
+        </div>
+        <div class="text-muted small">
+          Estat: <span id="liveStatus" class="fw-semibold">connectant…</span>
+          · Última actualització: <span id="liveStamp">—</span>
+        </div>
+      </div>
+
+      <div class="d-flex gap-2">
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'trampoli_notes_home' competicio.id %}">Notes</a>
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'classificacions_home' competicio.id %}">Configurar</a>
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'inscripcions_list' competicio.id %}">Inscripcions</a>
+      </div>
+    </div>
+
+    {% if cfgs %}
+      <!-- Tabs de classificacions -->
+      <ul class="nav nav-tabs" role="tablist" id="cfgTabs">
+        {% for c in cfgs %}
+          <li class="nav-item" role="presentation">
+            <a class="nav-link {% if forloop.first %}active{% endif %}"
+               data-toggle="tab"
+               href="#cfg-{{ c.id }}"
+               role="tab"
+               aria-controls="cfg-{{ c.id }}"
+               aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
+              {{ c.nom }}
+              <span class="badge badge-light ml-1" id="badge-{{ c.id }}">—</span>
+            </a>
+          </li>
+        {% endfor %}
+      </ul>
+
+      <div class="tab-content pt-3" id="cfgContent">
+        {% for c in cfgs %}
+          <div class="tab-pane fade {% if forloop.first %}show active{% endif %}"
+               id="cfg-{{ c.id }}"
+               role="tabpanel">
+            <div class="text-muted small">Carregant…</div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="alert alert-warning">
+        No hi ha cap classificació activa. Activa’n alguna des del configurador.
+      </div>
+    {% endif %}
+
+  </div>
+</div>
+{% endblock %}
+
+
+
+{% block extra_scripts %}
+{{ poll_ms|default:4000|json_script:"poll-ms" }}
+{{ competicio.id|json_script:"comp-id" }}
+
+<script>
+  const compId = JSON.parse(document.getElementById("comp-id").textContent);
+  const POLL_MS = JSON.parse(document.getElementById("poll-ms").textContent);
+
+  const DATA_URL = "{% url 'classificacions_live_data' 0 %}".replace("/0/", `/${compId}/`);
+
+  let lastStamp = null;
+  let timer = null;
+
+  const els = {
+    status: document.getElementById("liveStatus"),
+    stamp: document.getElementById("liveStamp"),
+  };
+
+  function esc(s){
+    return String(s ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  function formatPunts(v){
+    if (typeof v === "number") return v.toFixed(3);
+    const n = Number(v);
+    return Number.isFinite(n) ? n.toFixed(3) : "0.000";
+  }
+
+  function renderCfg(cfg){
+    const host = document.getElementById("cfg-" + cfg.id);
+    if (!host) return;
+
+    const parts = cfg.parts || [];
+    document.getElementById("badge-" + cfg.id).textContent = parts.length ? parts.length : "0";
+
+    if (!parts.length){
+      host.innerHTML = '<div class="text-muted small">Sense resultats.</div>';
+      return;
+    }
+
+    let html = "";
+    parts.forEach(p => {
+      // Mostra només la part després de l'últim '|', si existeix
+      let particioNom = p.particio;
+      if (typeof particioNom === 'string') {
+        if (particioNom.includes('|')) {
+          particioNom = particioNom.split('|').pop();
+        } else if (particioNom.includes(':')) {
+          particioNom = particioNom.split(':').pop();
+        }
+      }
+
+      html += '<div class="mb-3">';
+      html +=   '<div class="fw-semibold mb-1">' + esc(particioNom) + '</div>';
+      html +=   '<div class="table-responsive">';
+      html +=     '<table class="table table-sm">';
+      html +=       '<thead><tr>'
+                 +   '<th style="width:70px;">Pos.</th>'
+                 +   '<th>Nom</th>'
+                 +   '<th style="width:120px;" class="text-right">Punts</th>'
+                 + '</tr></thead><tbody>';
+
+      (p.rows || []).forEach(r => {
+        const nom = r.participant || r.entitat_nom || "";
+        html += '<tr>'
+             +    '<td>' + esc(r.posicio ?? "") + '</td>'
+             +    '<td>' + esc(nom) + '</td>'
+             +    '<td class="text-right">' + esc(formatPunts(r.punts)) + '</td>'
+             +  '</tr>';
+      });
+
+      html +=       '</tbody></table>';
+      html +=   '</div></div>';
+    });
+
+    host.innerHTML = html;
+  }
+
+  async function tick(){
+    try {
+      els.status.textContent = "actualitzant…";
+      const url = new URL(DATA_URL, window.location.origin);
+      if (lastStamp) url.searchParams.set("since", lastStamp);
+
+      const res = await fetch(url.toString(), { method: "GET" });
+      const data = await res.json();
+
+      if (!data.ok){
+        els.status.textContent = "error";
+        return;
+      }
+
+      // sempre actualitza stamp (encara que changed=false)
+      if (data.stamp){
+        lastStamp = data.stamp;
+        els.stamp.textContent = data.stamp;
+      }
+
+      if (data.changed === false){
+        els.status.textContent = "al dia";
+        return;
+      }
+
+      (data.cfgs || []).forEach(renderCfg);
+      els.status.textContent = "al dia";
+    } catch (e){
+      els.status.textContent = "sense connexió";
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded", async () => {
+    await tick();
+    timer = setInterval(tick, POLL_MS);
+
+    // si l’usuari canvia de pestanya, no cal fer res: renderitzem totes les cfgs quan arriben dades
+  });
+</script>
+{% endblock %}
