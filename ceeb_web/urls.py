@@ -30,5 +30,6 @@ urlpatterns = [
     path("calendar/events/<int:event_id>/delete/", views.CalendarEventDeleteView.as_view(), name="calendar_event_delete"),
     path("", include("competicions_trampoli.urls")),
     path('', include('marbella_informes.urls')),
+    path("", include("designacions.urls")),
 
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

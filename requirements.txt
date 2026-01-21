@@ -12,4 +12,13 @@ aiofiles==23.1.0
 python-dotenv==1.0.0
 pandas
 openpyxl
+asgiref==3.7.2
+geopy
+beautifulsoup4>=4.12.2
+lxml>=4.9.2
+html5lib>=1.1
+numpy
+scipy
+folium
+scikit-learn
 matplotlib

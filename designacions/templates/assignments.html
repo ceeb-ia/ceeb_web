@@ -1,0 +1,386 @@
+{% extends "base.html" %}
+{% block title %}Assignacions - Run {{ run.id }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+
+  <style>
+    .tutor-color{
+      width:10px;
+      height:18px;
+      border-radius:6px;
+      background: var(--tutor-color, #808080);
+      display:inline-block;
+      vertical-align: middle;
+    }
+    .tutor-title{
+      font-size: 1rem;           /* evita capsaleres gegants */
+      font-weight: 600;
+      line-height: 1.2;
+      margin: 0;
+    }
+    .tutor-sub{
+      font-size: .85rem;
+      color: #6c757d;
+    }
+    .card-header .btn{
+      text-decoration: none;
+      width: 100%;
+      text-align: left;
+      padding: .5rem .75rem;
+    }
+    .tab-pane { padding-top: 1rem; }
+      /* força que el “header clicable” ocupi tot */
+    #asgAccordion .card-header { padding: 0; }
+    #asgAccordion .card-header .btn{
+      width: 100% !important;
+      display: flex !important;
+      align-items: center;
+      justify-content: space-between;
+      text-align: left !important;
+      white-space: normal;
+    }
+
+    /* evita que el títol faci lletres gegants i trencaments estranys */
+    .tutor-title{ font-size: 1rem; font-weight: 600; line-height: 1.2; margin: 0; }
+    .tutor-sub{ font-size: .85rem; color: #6c757d; }
+
+    /* fa que el card ocupi tota l’amplada del contenidor */
+    #asgAccordion .card{ width: 100%; }
+    #asgAccordion { width: 100%; }
+    #asgAccordion .card { width: 100%; }
+    #asgAccordion .card-header { width: 100%; }
+
+    /* evita que el botó s’enculli per algun estil global */
+    #asgAccordion .card-header .btn.btn-link{
+      display: flex !important;
+      width: 100% !important;
+      flex: 1 1 100% !important;
+      margin: 0;
+    }
+
+  </style>
+
+  <div class="card-surface p-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <div>
+        <h2 class="mb-0">Assignacions (Run #{{ run.id }})</h2>
+        <div class="text-muted small">
+          {% if run.result_summary %}
+            Assignats: {{ run.result_summary.assigned|default:counts.assigned }},
+            Partits sense assignar: {{ run.result_summary.unassigned_matches|default:counts.unassigned_matches }}
+          {% endif %}
+        </div>
+      </div>
+
+      <div>
+        <form method="post" action="{% url 'designacions_export_excel' run.id %}" class="d-inline">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-sm btn-success">Exportar a Excel</button>
+        </form>
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'designacions_run_detail' run.id %}">
+          Tornar al seguiment
+        </a>
+      </div>
+    </div>
+
+    <!-- NAV TABS (BS4) -->
+    <ul class="nav nav-tabs" id="asgTabs" role="tablist">
+      <li class="nav-item">
+        <a class="nav-link active" id="t1-tab" data-toggle="tab" href="#t1" role="tab" aria-controls="t1" aria-selected="true">
+          Assignacions <span class="badge badge-secondary ml-1">{{ counts.assigned }}</span>
+        </a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" id="t2-tab" data-toggle="tab" href="#t2" role="tab" aria-controls="t2" aria-selected="false">
+          Partits sense assignar <span class="badge badge-secondary ml-1">{{ counts.unassigned_matches }}</span>
+        </a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" id="t3-tab" data-toggle="tab" href="#t3" role="tab" aria-controls="t3" aria-selected="false">
+          Tutors sense assignar <span class="badge badge-secondary ml-1">{{ counts.unassigned_referees }}</span>
+        </a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" id="t4-tab" data-toggle="tab" href="#t4" role="tab" aria-controls="t4" aria-selected="false">
+          Tutors sense nivell <span class="badge badge-secondary ml-1">{{ counts.needs_review_referees }}</span>
+        </a>
+      </li>
+      {% if counts.has_map %}
+      <li class="nav-item">
+        <a class="nav-link" id="t5-tab" data-toggle="tab" href="#t5" role="tab" aria-controls="t5" aria-selected="false">
+          Mapa
+        </a>
+      </li>
+      {% endif %}
+    </ul>
+
+    <div class="tab-content" id="asgTabsContent">
+
+      <!-- TAB 1 -->
+      <div class="tab-pane fade show active" id="t1" role="tabpanel" aria-labelledby="t1-tab">
+
+        <div class="form-row mb-3">
+          <div class="col-12 col-lg-6 mb-2 mb-lg-0">
+            <input id="searchTutor" class="form-control form-control-sm" placeholder="Cerca tutor (codi o nom)..." />
+          </div>
+          <div class="col-12 col-lg-6">
+            <input id="searchMatch" class="form-control form-control-sm" placeholder="Cerca partit (codi, club, pista)..." />
+          </div>
+        </div>
+
+        <!-- “Accordion” BS4 amb cards + collapse -->
+        <div id="asgAccordion" class="w-100">
+          {% for g in groups %}
+          <div class="card tutor-group mb-2 w-100"
+               data-tutor="{{ g.referee.code }} {{ g.referee.name|default:'' }}"
+               data-color="{{ g.color }}" style="width:100%">
+
+            <div class="card-header p-0" id="h{{ g.referee.id }}">
+              <button class="btn btn-link w-100 d-flex align-items-center"
+                      data-toggle="collapse" data-target="#c{{ g.referee.id }}"
+                      aria-expanded="true" aria-controls="c{{ g.referee.id }}">
+
+                <div class="d-flex align-items-center flex-grow-1">
+                  <span class="mr-2 tutor-color" style="--tutor-color: {{ g.color|default:'#808080' }};"></span>
+                  <div>
+                    <div class="tutor-title">
+                      <span class="font-weight-bold">{{ g.referee.code }}</span>
+                      <span class="text-muted">·</span>
+                      <span>{{ g.referee.name }}</span>
+                    </div>
+                    <div class="tutor-sub">
+                      {{ g.total }} partits
+                      {% if g.locked %} · <span class="text-warning font-weight-bold">{{ g.locked }} bloquejats</span>{% endif %}
+                    </div>
+                  </div>
+                </div>
+
+                <span class="badge badge-light">Obrir</span>
+              </button>
+            </div>
+
+            <div id="c{{ g.referee.id }}" class="collapse show" aria-labelledby="h{{ g.referee.id }}" data-parent="#asgAccordion">
+              <div class="card-body">
+
+                <div class="table-responsive">
+                  <table class="table table-striped table-bordered table-sm align-middle mb-0">
+                    <thead class="thead-light">
+                      <tr>
+                        <th>Codi</th>
+                        <th>Local</th>
+                        <th>Visitant</th>
+                        <th>Data</th>
+                        <th>Hora</th>
+                        <th>Pista</th>
+                        <th>Bloq.</th>
+                        <th>Nota</th>
+                        <th>Accions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for a in g.items %}
+                      <tr class="match-row"
+                          data-match="{{ a.match.code }} {{ a.match.club_local|default:'' }} {{ a.match.equip_local|default:'' }} {{ a.match.equip_visitant|default:'' }} {{ a.match.venue|default:'' }}">
+                        <td class="font-weight-bold">{{ a.match.code }}</td>
+                        <td>{{ a.match.equip_local|default:"-" }}</td>
+                        <td>{{ a.match.equip_visitant|default:"-" }}</td>
+                        <td>{% if a.match.date %}{{ a.match.date|date:"d/m/Y" }}{% else %}-{% endif %}</td>
+                        <td>{{ a.match.hour_raw|default:"-" }}</td>
+                        <td>{{ a.match.venue|default:"-" }}</td>
+
+                        <td class="text-center">
+                          {% if a.locked %}
+                            <span class="badge badge-warning">Sí</span>
+                          {% else %}
+                            <span class="badge badge-light">No</span>
+                          {% endif %}
+                        </td>
+
+                        <td style="min-width:240px;">
+                          <form method="post" action="{% url 'designacions_update_assignment' run.id a.id %}" class="form-inline">
+                            {% csrf_token %}
+                            <input type="hidden" name="referee_id" value="{{ g.referee.id }}">
+                            <input type="text" name="note" value="{{ a.note|default_if_none:'' }}" class="form-control form-control-sm w-100" />
+                        </td>
+
+                        <td style="min-width:220px;">
+                            <div class="d-flex align-items-center">
+                              <div class="form-check mr-2">
+                                <input class="form-check-input" type="checkbox" name="locked" id="lk{{ a.id }}" {% if a.locked %}checked{% endif %}>
+                                <label class="form-check-label small" for="lk{{ a.id }}">Bloquejar</label>
+                              </div>
+                              <button type="submit" class="btn btn-sm btn-primary">Desar</button>
+                            </div>
+                          </form>
+                        </td>
+                      </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+
+              </div>
+            </div>
+
+          </div>
+          {% empty %}
+            <div class="text-muted">No hi ha assignacions amb tutor.</div>
+          {% endfor %}
+        </div>
+
+      </div>
+
+      <!-- TAB 2 -->
+      <div class="tab-pane fade" id="t2" role="tabpanel" aria-labelledby="t2-tab">
+        <div class="table-responsive">
+          <table class="table table-striped table-bordered table-sm align-middle">
+            <thead class="thead-light">
+              <tr>
+                <th>Codi</th><th>Local</th><th>Visitant</th><th>Data</th><th>Hora</th><th>Pista</th>
+                <th>Assignar</th><th>Bloq.</th><th>Nota</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for a in unassigned_matches %}
+              <tr>
+                <td class="font-weight-bold">{{ a.match.code }}</td>
+                <td>{{ a.match.equip_local|default:"-" }}</td>
+                <td>{{ a.match.equip_visitant|default:"-" }}</td>
+                <td>{% if a.match.date %}{{ a.match.date|date:"d/m/Y" }}{% else %}-{% endif %}</td>
+                <td>{{ a.match.hour_raw|default:"-" }}</td>
+                <td>{{ a.match.venue|default:"-" }}</td>
+
+                <td style="min-width:260px;">
+                  <form method="post" action="{% url 'designacions_update_assignment' run.id a.id %}" class="form-inline">
+                    {% csrf_token %}
+                    <select name="referee_id" class="form-control form-control-sm w-100">
+                      <option value="">-- Sense assignar --</option>
+                      {% for r in referees %}
+                        <option value="{{ r.id }}">{{ r.name }} ({{ r.code }})</option>
+                      {% endfor %}
+                    </select>
+                </td>
+
+                <td class="text-center">
+                  <input type="checkbox" name="locked" {% if a.locked %}checked{% endif %}/>
+                </td>
+
+                <td style="min-width:220px;">
+                  <input type="text" name="note" value="{{ a.note|default_if_none:'' }}" class="form-control form-control-sm"/>
+                </td>
+
+                <td>
+                  <button type="submit" class="btn btn-sm btn-primary">Desar</button>
+                  </form>
+                </td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="10" class="text-center text-muted">No hi ha partits pendents</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- TAB 3 -->
+      <div class="tab-pane fade" id="t3" role="tabpanel" aria-labelledby="t3-tab">
+        <div class="table-responsive">
+          <table class="table table-striped table-bordered table-sm align-middle">
+            <thead class="thead-light"><tr><th>Codi</th><th>Nom</th><th>Nivell</th><th>Modalitat</th></tr></thead>
+            <tbody>
+              {% for r in unassigned_referees %}
+              <tr>
+                <td class="font-weight-bold">{{ r.code }}</td>
+                <td>{{ r.name }}</td>
+                <td>{{ r.level|default:"-" }}</td>
+                <td>{{ r.modality|default:"-" }}</td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="4" class="text-center text-muted">No hi ha tutors actius sense assignar</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- TAB 4 -->
+      <div class="tab-pane fade" id="t4" role="tabpanel" aria-labelledby="t4-tab">
+        <div class="table-responsive">
+          <table class="table table-striped table-bordered table-sm align-middle">
+            <thead class="thead-light"><tr><th>Codi</th><th>Nom</th><th>Assignacions al run</th></tr></thead>
+            <tbody>
+              {% for r in needs_review_referees %}
+              <tr>
+                <td class="font-weight-bold">{{ r.code }}</td>
+                <td>{{ r.name }}</td>
+                <td>{{ r.n }}</td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="3" class="text-center text-muted">No hi ha casos detectats</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- TAB 5 (Mapa) -->
+      {% if counts.has_map %}
+      <div class="tab-pane fade" id="t5" role="tabpanel" aria-labelledby="t5-tab">
+        <div class="border rounded p-2">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="font-weight-bold">Mapa d’assignacions</div>
+            <a class="btn btn-sm btn-outline-secondary" href="{% url 'designacions_run_map' run.id %}" target="_blank">
+              Obrir en una pestanya nova
+            </a>
+          </div>
+
+          <iframe
+            src="{% url 'designacions_run_map' run.id %}"
+            style="width:100%; height:75vh; border:0; border-radius:8px;"
+            title="Mapa assignacions"></iframe>
+        </div>
+      </div>
+      {% endif %}
+
+    </div>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function(){
+  var tutorInput = document.getElementById('searchTutor');
+  var matchInput = document.getElementById('searchMatch');
+
+  function normalize(s){ return (s || "").toLowerCase().trim(); }
+
+  function applyFilters(){
+    var tutorQ = normalize(tutorInput ? tutorInput.value : "");
+    var matchQ = normalize(matchInput ? matchInput.value : "");
+
+    var groups = document.querySelectorAll('.tutor-group');
+    groups.forEach(function(group){
+      var tutorText = normalize(group.getAttribute('data-tutor'));
+      var tutorOk = !tutorQ || tutorText.indexOf(tutorQ) !== -1;
+
+      var anyMatchOk = false;
+      group.querySelectorAll('.match-row').forEach(function(row){
+        var m = normalize(row.getAttribute('data-match'));
+        var ok = !matchQ || m.indexOf(matchQ) !== -1;
+        row.style.display = ok ? "" : "none";
+        if (ok) anyMatchOk = true;
+      });
+
+      var visible = tutorOk && (!matchQ || anyMatchOk);
+      group.style.display = visible ? "" : "none";
+    });
+  }
+
+  if (tutorInput) tutorInput.addEventListener('input', applyFilters);
+  if (matchInput) matchInput.addEventListener('input', applyFilters);
+})();
+</script>
+{% endblock %}

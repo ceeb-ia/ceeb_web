@@ -15,6 +15,7 @@ INSTALLED_APPS = [
     'alumnat',
     'competicions_trampoli',
     'marbella_informes', # L'app per informes anuals de Marbella
+    'designacions',
      # Example apps
 ]
 
