@@ -151,18 +151,19 @@
         </div>
       </div>
 
-      <div class="d-flex gap-2 flex-wrap">
+      <div class=" gap-2 flex-wrap">
         <a href="{% url 'import' competicio.id %}" class="btn btn-sm btn-success">+ Importar Excel</a>
         <a href="{% url 'inscripcio_add' competicio.id %}?next={{ request.get_full_path|urlencode }}"
            class="btn btn-sm btn-primary">+ Afegir inscripció</a>
-        <a href="{% url 'trampoli_config' competicio.id %}" class="btn btn-sm btn-outline-secondary">
+        <a href="{% url 'trampoli_config' competicio.id %}" class="btn btn-sm btn-outline-warning">
           Configuració competició
         </a>
         <a href="{% url 'created' %}" class="btn btn-sm btn-outline-secondary">Tornar a competicions</a>
       </div>
     </div>
     <div class="d-flex justify-content-between align-items-start mb-3"> 
-      <a href="{% url 'rotacions_planner' competicio.id %}" class="btn btn-sm btn-outline-primary">
+      <a href=""></a>
+      <a href="{% url 'rotacions_planner' competicio.id %}" class="btn btn-sm btn-outline-primary" target="_blank" rel="noopener">
         Rotacions
       </a>
 
@@ -172,7 +173,7 @@
     <form method="get" class="mb-3">
       <div class="d-flex justify-content-between align-items-center mb-2">
         <div class="text-muted small">Configuracions plegables · obre només el que necessitis.</div>
-        <div class="d-flex gap-2">
+        <div class="gap-2">
           <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleAllPanels(true)">Desplegar tot</button>
           <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleAllPanels(false)">Plegar tot</button>
         </div>

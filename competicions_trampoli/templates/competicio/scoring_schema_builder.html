@@ -1,0 +1,463 @@
+{% extends "base.html" %}
+{% block title %}Puntuació – {{ comp_aparell.aparell.nom }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+  <style>
+    .pill-help{ font-size:.85rem; color:#6c757d; }
+    .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+    .table td, .table th{ vertical-align:middle; }
+    .w-120{ width:120px; }
+    .w-140{ width:140px; }
+    .w-160{ width:160px; }
+    .w-200{ width:200px; }
+  </style>
+
+  <div class="card-surface">
+    <div class="d-flex justify-content-between align-items-start mb-3">
+      <div>
+        <h2 class="mb-1">Puntuació · {{ comp_aparell.aparell.nom }}</h2>
+        <div class="text-muted small">Competició: <strong>{{ competicio.nom }}</strong></div>
+        <div class="text-muted small">Configura camps i fórmules sense escriure JSON.</div>
+      </div>
+      <div class="d-flex gap-2">
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'scoring_notes_home' competicio.id %}">Tornar a notes</a>
+      </div>
+    </div>
+
+    <form method="post" id="schemaForm">
+      {% csrf_token %}
+
+      {% if form.errors %}
+        <pre class="alert alert-warning" style="white-space: pre-wrap;">{{ form.errors }}</pre>
+      {% endif %}
+
+      {# IMPORTANT: UN SOL camp schema_json al POST (hidden) #}
+      {{ form.schema_json }}
+
+      <ul class="nav nav-tabs" role="tablist">
+        <li class="nav-item">
+          <a class="nav-link active" data-toggle="tab" href="#tab-fields" role="tab">Camps</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" data-toggle="tab" href="#tab-formules" role="tab">Fórmules</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" data-toggle="tab" href="#tab-advanced" role="tab">Avançat (JSON)</a>
+        </li>
+      </ul>
+
+      <div class="tab-content pt-3">
+        <!-- CAMPS -->
+        <div class="tab-pane fade show active" id="tab-fields" role="tabpanel">
+          <div class="border rounded p-3">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <div>
+                <div class="font-weight-bold">Camps d’entrada</div>
+                <div class="pill-help">Defineix què omplirà el jurat: números, execució per salts, etc.</div>
+              </div>
+              <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddField">Afegir camp</button>
+            </div>
+
+            <div class="table-responsive">
+              <table class="table table-sm table-bordered" id="fieldsTable">
+                <thead class="thead-light">
+                  <tr>
+                    <th>Etiqueta</th>
+                    <th class="w-120">Code</th>
+                    <th class="w-120">Var</th>
+                    <th class="w-160">Tipus</th>
+
+                    <th class="w-120">Jutges</th>
+                    <th class="w-120">Ítems</th>
+                    <th class="w-120">Prefix</th>
+
+                    <th class="w-120">Vàlides</th>
+                    <th class="w-160">Criteri</th>
+
+                    <th class="w-120">Min</th>
+                    <th class="w-120">Max</th>
+                    <th class="w-120">Decimals</th>
+
+                    <th class="w-120">Crash</th>
+                    <th class="w-120"></th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+
+            <div class="pill-help">
+              Tipus recomanats:
+              <span class="mono">number</span> (DD/TOF/HD/P) ·
+              <span class="mono">matrix</span> (Execució S1..Sn per jutge)
+            </div>
+          </div>
+        </div>
+
+        <!-- FÒRMULES -->
+        <div class="tab-pane fade" id="tab-formules" role="tabpanel">
+          <div class="border rounded p-3">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <div>
+                <div class="font-weight-bold">Fórmules (camps calculats)</div>
+                <div class="pill-help">Exemples: <span class="mono">E_total</span>, <span class="mono">TOTAL</span>. Pots escriure <span class="mono">1 - x</span>.</div>
+              </div>
+              <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddComputed">Afegir fórmula</button>
+            </div>
+
+            <div class="mb-2">
+              <div class="pill-help">Inserir variable:</div>
+              <div id="varsChips" class="d-flex flex-wrap" style="gap:6px;"></div>
+            </div>
+
+            <div class="table-responsive">
+              <table class="table table-sm table-bordered" id="computedTable">
+                <thead class="thead-light">
+                  <tr>
+                    <th class="w-140">Code</th>
+                    <th class="w-120">Var</th>
+                    <th>Fórmula</th>
+                    <th class="w-120"></th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+
+            <div class="alert alert-secondary mb-0">
+              <div class="small">
+                Funcions disponibles: <span class="mono">exec_by_judge(E, crash, params)</span>, <span class="mono">select_sum(scores, n_valid, criteri)</span>, <span class="mono">sum</span>, <span class="mono">avg</span>, <span class="mono">min</span>, <span class="mono">max</span>.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- AVANÇAT JSON -->
+        <div class="tab-pane fade" id="tab-advanced" role="tabpanel">
+          <div class="border rounded p-3">
+            <div class="font-weight-bold mb-2">Avançat (JSON)</div>
+            <div class="pill-help mb-2">JSON generat automàticament pel builder (només lectura).</div>
+            <textarea id="advancedJson" class="form-control mono" rows="18" readonly></textarea>
+          </div>
+        </div>
+      </div>
+
+      <div class="d-flex gap-2 mt-3">
+        <button class="btn btn-primary" type="submit">Desar</button>
+        <a class="btn btn-outline-secondary" href="{% url 'scoring_notes_home' competicio.id %}">Cancel·lar</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# IMPORTANT: JSON vàlid i segur #}
+{{ schema_initial|json_script:"schema-initial" }}
+
+<script>
+  // --- Schema inicial (JSON vàlid gràcies a json_script) ---
+  let schema = {};
+  try {
+    schema = JSON.parse(document.getElementById("schema-initial").textContent || "{}");
+  } catch (e) {
+    schema = {};
+  }
+
+  // --- Helpers ---
+  function uid(){ return Math.random().toString(16).slice(2); }
+  function qs(sel){ return document.querySelector(sel); }
+
+  function fieldRow(data){
+    const tr = document.createElement("tr");
+    tr.dataset.id = uid();
+    tr.innerHTML = `
+      <td><input class="form-control form-control-sm" data-k="label" value="${data.label||""}"></td>
+      <td><input class="form-control form-control-sm mono" data-k="code" value="${data.code||""}"></td>
+      <td><input class="form-control form-control-sm mono" data-k="var" value="${data.var||""}"></td>
+
+      <td>
+        <select class="form-control form-control-sm" data-k="type">
+          <option value="number">number</option>
+          <option value="matrix">matrix (judge_x_item)</option>
+          <option value="list_judge">list (judge)</option>
+        </select>
+      </td>
+
+      <td><input class="form-control form-control-sm" data-k="judges_count" value="${data.judges_count ?? ""}" placeholder="ex: 3"></td>
+      <td><input class="form-control form-control-sm" data-k="items_count" value="${data.items_count ?? ""}" placeholder="ex: 11"></td>
+      <td><input class="form-control form-control-sm mono" data-k="items_prefix" value="${data.items_prefix ?? ""}" placeholder="S"></td>
+
+      <td><input class="form-control form-control-sm" data-k="valid_count" value="${data.valid_count ?? ""}" placeholder="ex: 2"></td>
+      <td>
+        <select class="form-control form-control-sm" data-k="valid_method">
+          <option value="">(cap)</option>
+          <option value="totes">Totes (millors k)</option>
+          <option value="eliminar_extrems">Eliminar extrems</option>
+          <option value="maximes">Màximes</option>
+          <option value="minimes">Mínimes</option>
+        </select>
+      </td>
+
+      <td><input class="form-control form-control-sm" data-k="min" value="${data.min ?? ""}"></td>
+      <td><input class="form-control form-control-sm" data-k="max" value="${data.max ?? ""}"></td>
+      <td><input class="form-control form-control-sm" data-k="decimals" value="${data.decimals ?? ""}"></td>
+
+      <td class="text-center">
+        <input type="checkbox" data-k="crash_enabled">
+      </td>
+
+      <td class="text-center">
+        <button type="button" class="btn btn-sm btn-outline-danger">Eliminar</button>
+      </td>
+    `;
+
+    const sel = tr.querySelector('select[data-k="type"]');
+    sel.value = data.type || "number";
+
+    const vm = tr.querySelector('select[data-k="valid_method"]');
+    vm.value = data.valid_method || "";
+
+    tr.querySelector('input[data-k="crash_enabled"]').checked = !!data.crash_enabled;
+
+    sel.addEventListener("change", ()=>{
+      if(sel.value === "matrix"){
+        if(!tr.querySelector('[data-k="judges_count"]').value) tr.querySelector('[data-k="judges_count"]').value = "3";
+        if(!tr.querySelector('[data-k="items_count"]').value) tr.querySelector('[data-k="items_count"]').value = "11";
+        tr.querySelector('input[data-k="crash_enabled"]').checked = true;
+      }
+      refreshVars();
+    });
+
+    tr.querySelector("button").addEventListener("click", ()=>{
+      tr.remove();
+      refreshVars();
+    });
+
+    tr.querySelectorAll("input,select").forEach(i=>{
+      i.addEventListener("input", refreshVars);
+      i.addEventListener("change", refreshVars);
+    });
+
+    return tr;
+  }
+
+  function computedRow(data){
+    const tr = document.createElement("tr");
+    tr.dataset.id = uid();
+    tr.innerHTML = `
+      <td><input class="form-control form-control-sm mono" data-k="code" value="${data.code||""}"></td>
+      <td><input class="form-control form-control-sm mono" data-k="var" value="${data.var||""}"></td>
+      <td><input class="form-control form-control-sm mono" data-k="formula" value="${data.formula||""}"></td>
+      <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger">Eliminar</button></td>
+    `;
+    tr.querySelector("button").addEventListener("click", ()=>{
+      tr.remove();
+      refreshVars();
+    });
+    tr.querySelectorAll("input").forEach(i=>{
+      i.addEventListener("input", refreshVars);
+    });
+    return tr;
+  }
+
+  function refreshVars(){
+    const vars = [];
+
+    document.querySelectorAll("#fieldsTable tbody tr").forEach(tr=>{
+      const code = tr.querySelector('[data-k="code"]').value.trim();
+      const vari = tr.querySelector('[data-k="var"]').value.trim();
+      if(code) vars.push(code);
+      if(vari) vars.push(vari);
+    });
+
+    document.querySelectorAll("#computedTable tbody tr").forEach(tr=>{
+      const code = tr.querySelector('[data-k="code"]').value.trim();
+      const vari = tr.querySelector('[data-k="var"]').value.trim();
+      if(code) vars.push(code);
+      if(vari) vars.push(vari);
+    });
+
+    const unique = Array.from(new Set(vars)).filter(Boolean);
+
+    const wrap = document.getElementById("varsChips");
+    wrap.innerHTML = "";
+    unique.forEach(v=>{
+      const b = document.createElement("button");
+      b.type="button";
+      b.className="btn btn-sm btn-outline-secondary mono";
+      b.textContent=v;
+      b.addEventListener("click", ()=>{
+        const active = document.activeElement;
+        if(active && active.matches('#computedTable input[data-k="formula"]')){
+          const start = active.selectionStart || active.value.length;
+          const end = active.selectionEnd || active.value.length;
+          const before = active.value.slice(0,start);
+          const after = active.value.slice(end);
+          active.value = before + v + after;
+          active.focus();
+          active.selectionStart = active.selectionEnd = start + v.length;
+          refreshVars();
+        }
+      });
+      wrap.appendChild(b);
+    });
+
+    const adv = qs("#advancedJson");
+    if (adv) adv.value = JSON.stringify(buildSchemaFromUI(), null, 2);
+  }
+
+  function buildSchemaFromUI(){
+    const fields = [];
+    document.querySelectorAll("#fieldsTable tbody tr").forEach(tr=>{
+      const label = tr.querySelector('[data-k="label"]').value.trim();
+      const code = tr.querySelector('[data-k="code"]').value.trim();
+      const vari = tr.querySelector('[data-k="var"]').value.trim();
+      const type = tr.querySelector('[data-k="type"]').value;
+
+      const minv = tr.querySelector('[data-k="min"]').value.trim();
+      const maxv = tr.querySelector('[data-k="max"]').value.trim();
+      const dec  = tr.querySelector('[data-k="decimals"]').value.trim();
+
+      const crashEnabled = !!tr.querySelector('[data-k="crash_enabled"]')?.checked;
+
+      if(!code) return;
+
+      if(type==="matrix"){
+        fields.push({
+          code,
+          label: label || code,
+          var: vari || undefined,
+          type: "matrix",
+          shape: "judge_x_item",
+          crash: { enabled: crashEnabled },
+          judges: { count: Number(tr.querySelector('[data-k="judges_count"]').value || 1) },
+          items: {
+            count: Number(tr.querySelector('[data-k="items_count"]').value || 0),
+            label_prefix: tr.querySelector('[data-k="items_prefix"]').value.trim() || undefined
+          },
+          valid: {
+            count: Number(tr.querySelector('[data-k="valid_count"]').value || 0) || undefined,
+            method: tr.querySelector('[data-k="valid_method"]').value || undefined
+          },
+          min: minv!=="" ? Number(minv) : undefined,
+          max: maxv!=="" ? Number(maxv) : undefined,
+          decimals: dec!=="" ? Number(dec) : undefined
+        });
+      }else if(type==="list_judge"){
+        fields.push({
+          code,
+          label: label || code,
+          var: vari || undefined,
+          type: "list",
+          shape: "judge",
+          judges: { count: Number(tr.querySelector('[data-k="judges_count"]').value || 1) },
+          valid: {
+            count: Number(tr.querySelector('[data-k="valid_count"]').value || 0) || undefined,
+            method: tr.querySelector('[data-k="valid_method"]').value || undefined
+          },
+          min: minv!=="" ? Number(minv) : undefined,
+          max: maxv!=="" ? Number(maxv) : undefined,
+          decimals: dec!=="" ? Number(dec) : undefined
+        });
+      }else{
+        fields.push({
+          code,
+          label: label || code,
+          var: vari || undefined,
+          type: "number",
+          min: minv!=="" ? Number(minv) : undefined,
+          max: maxv!=="" ? Number(maxv) : undefined,
+          decimals: dec!=="" ? Number(dec) : undefined
+        });
+      }
+    });
+
+    const computed = [];
+    document.querySelectorAll("#computedTable tbody tr").forEach(tr=>{
+      const code = tr.querySelector('[data-k="code"]').value.trim();
+      const vari = tr.querySelector('[data-k="var"]').value.trim();
+      const formula = tr.querySelector('[data-k="formula"]').value.trim();
+      if(!code) return;
+      computed.push({code, var: vari || undefined, formula});
+    });
+
+    const cols = [];
+    fields.forEach(f=>cols.push(f.code));
+    computed.forEach(c=>cols.push(c.code));
+
+    return {
+      fields: fields,
+      computed: computed,
+      ui: { columns: cols }
+    };
+  }
+
+  function init(){
+    const tbF = document.querySelector("#fieldsTable tbody");
+    const tbC = document.querySelector("#computedTable tbody");
+
+    (schema.fields || []).forEach(f=>{
+      tbF.appendChild(fieldRow({
+        label: f.label,
+        code: f.code,
+        var: f.var,
+        type: (f.type==="matrix") ? "matrix" : (f.type==="list" ? "list_judge" : "number"),
+        min: f.min,
+        max: f.max,
+        decimals: f.decimals,
+        judges_count: f.judges?.count,
+        items_count: f.items?.count,
+        items_prefix: f.items?.label_prefix,
+        valid_count: f.valid?.count,
+        valid_method: f.valid?.method,
+        crash_enabled: !!(f.crash?.enabled),
+      }));
+    });
+
+    (schema.computed || []).forEach(c=>{
+      tbC.appendChild(computedRow({code:c.code, var:c.var, formula:c.formula}));
+    });
+
+    if(!schema.fields || schema.fields.length===0){
+      tbF.appendChild(fieldRow({
+        label:"Execució", code:"E", var:"e", type:"matrix",
+        judges_count: 3, items_count: 11, items_prefix:"S",
+        valid_count: 2, valid_method:"eliminar_extrems",
+        min:0, max:10, decimals:0,
+        crash_enabled:true
+      }));
+      tbF.appendChild(fieldRow({label:"Dificultat", code:"DD", var:"x", type:"number", decimals:3}));
+      tbF.appendChild(fieldRow({label:"TOF", code:"TOF", var:"t", type:"number", decimals:3}));
+      tbF.appendChild(fieldRow({label:"HD", code:"HD", var:"h", type:"number", decimals:3}));
+      tbF.appendChild(fieldRow({label:"Penalització", code:"P", var:"p", type:"number", decimals:3}));
+
+      tbC.appendChild(computedRow({code:"E_j", var:"", formula:"exec_by_judge(E, crash('E'), field('E'))"}));
+      tbC.appendChild(computedRow({code:"E_total", var:"", formula:"select_sum(E_j, field('E')['valid']['count'], field('E')['valid']['method'])"}));
+      tbC.appendChild(computedRow({code:"TOTAL", var:"", formula:"E_total + x + t + h - p"}));
+    }
+
+    document.getElementById("btnAddField").addEventListener("click", ()=>{
+      tbF.appendChild(fieldRow({label:"", code:"", var:"", type:"number"}));
+      refreshVars();
+    });
+
+    document.getElementById("btnAddComputed").addEventListener("click", ()=>{
+      tbC.appendChild(computedRow({code:"", var:"", formula:""}));
+      refreshVars();
+    });
+
+    // Submit -> guarda el JSON generat al hidden real del form
+    document.getElementById("schemaForm").addEventListener("submit", ()=>{
+      const built = buildSchemaFromUI();
+      const hidden = document.querySelector('[name="schema_json"]');
+      if (hidden) hidden.value = JSON.stringify(built);
+      const adv = qs("#advancedJson");
+      if (adv) adv.value = JSON.stringify(built, null, 2);
+    });
+
+    refreshVars();
+  }
+
+  init();
+</script>
+{% endblock %}

@@ -2,6 +2,9 @@
 from django import forms
 from .models import Competicio, Inscripcio
 from .models_trampoli import Aparell, CompeticioAparell
+from django.core.exceptions import ValidationError
+from .models_scoring import ScoringSchema
+import json
 
 class CompeticioForm(forms.ModelForm):
     class Meta:
@@ -106,3 +109,37 @@ class AparellForm(forms.ModelForm):
         }
         labels = {"codi": "Codi", "nom": "Nom", "actiu": "Actiu"}
         help_texts = {"codi": "Ha de ser únic. Recomanat en majúscules (ex: TRAMP)."}
+
+
+
+
+class ScoringSchemaForm(forms.ModelForm):
+    """
+    Guardem el schema en un únic camp 'schema_json'.
+    El browser envia una cadena, nosaltres la parsejem a dict.
+    """
+    schema_json = forms.CharField(
+        required=False,
+        widget=forms.HiddenInput()
+    )
+
+    class Meta:
+        model = ScoringSchema
+        fields = ["schema_json"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance and self.instance.pk:
+            self.fields["schema_json"].initial = json.dumps(self.instance.schema or {}, ensure_ascii=False)
+
+    def clean_schema_json(self):
+        txt = (self.cleaned_data.get("schema_json") or "").strip()
+        if not txt:
+            return None
+        try:
+            data = json.loads(txt)
+        except Exception as e:
+            raise ValidationError(f"JSON invàlid: {e}")
+        if not isinstance(data, dict):
+            raise ValidationError("El JSON ha de ser un objecte (dict).")
+        return data
