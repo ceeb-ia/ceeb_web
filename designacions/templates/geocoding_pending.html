@@ -4,8 +4,17 @@
 {% block content %}
 <div class="container-fluid mt-4">
   <div class="card-surface">
-    <h2 class="mb-3">Adreces pendents de coordenades</h2>
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <div>
+        <h2 class="mb-0">Adreces pendents de coordenades</h2>
+        <div class="text-muted small">Adreces detectades prèviament però no localitzades.</div>
+      </div>
 
+      
+      <div>
+        <a class="btn btn-sm btn-primary" href="{% url 'designacions_runs_list' %}">Tornar a designacions</a>
+      </div>
+    </div>
     <div class="table-responsive">
       <table class="table table-striped table-bordered table-sm align-middle">
         <thead class="table-light">

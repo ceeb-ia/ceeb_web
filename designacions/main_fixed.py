@@ -19,6 +19,10 @@ from logs import _write_job, _read_job, push_log
 from asgiref.sync import async_to_sync
 from django.db import transaction
 from django.utils.dateparse import parse_date
+from .services.geocoding_db import geocodifica_adreces, addresses_to_df
+from .models import Address, AddressCluster
+from django.utils.dateparse import parse_date
+
 
 
 
@@ -397,15 +401,17 @@ def persist_assignacions_to_db(
                 asg.save(update_fields=["referee", "updated_at"])
 
 
-def main(path_disposicions: str, path_dades: str, task_id: str | None = None, run_id: int | None = None) -> dict:
-    """
-    Motor d'assignació.
+def main(path_disposicions: str, path_dades: str, task_id: str | None = None, run_id: int | None = None, config: dict | None = None) -> dict:
+    config = config or {}
 
-    Canvis vs la versió antiga:
-    - map_modalitat_nom surt de BD (DataFrame) i NO d'un CSV
-    - geocodificació surt de BD (Address) i NO d'un CSV
-    - clusterització es guarda a BD per RUN (AddressCluster)
-    """
+    cluster_eps_m = float(config.get("cluster_eps_m", 500))
+    cluster_min_samples = int(config.get("cluster_min_samples", 2))
+    max_partits_subgrup = int(config.get("max_partits_subgrup", 3))
+    gap_same_pitch_min = int(config.get("gap_same_pitch_min", 60))
+    gap_diff_pitch_min = int(config.get("gap_diff_pitch_min", 75))
+    modalitats_filter = config.get("modalitats") or []
+    date_from = config.get("date_from") or None
+    date_to = config.get("date_to") or None
 
     # --- Mapping modalitat/categoria (BD) ---
     # IMPORTANT: ha de retornar un DataFrame tipus map_modalitat_nom.csv amb columnes:
@@ -450,7 +456,7 @@ def main(path_disposicions: str, path_dades: str, task_id: str | None = None, ru
     categories_dispos = df_dispos['Categoria'].unique()
     if len(categories_dispos) > 1:
         if task_id:
-            async_to_sync(push_log)(task_id, f"S'hi han trobat múltiples llicències: {categories_dispos}. Introdueix només la del tutor.", 0)
+            async_to_sync(push_log)(task_id, f"S'hi han trobat múltiples llicències: {categories_dispos}. Introdueix només la del tutor.", 100)
         raise ValueError(f"S'hi han trobat múltiples llicències a dispos: {categories_dispos}")
 
     # IDs
@@ -466,13 +472,34 @@ def main(path_disposicions: str, path_dades: str, task_id: str | None = None, ru
             return
         dup_ids = df.loc[dup_mask, 'ID'].unique().tolist()
         if task_id:
-            async_to_sync(push_log)(task_id, f"IDs duplicats trobats a {name}: {dup_ids}", 0)
+            async_to_sync(push_log)(task_id, f"IDs duplicats trobats a {name}: {dup_ids}", 100)
         raise ValueError(f"IDs duplicats trobats a {name} - {dup_ids}")
 
     _report_duplicates(df_dispos, 'tutors')
     _report_duplicates(df_partits, 'partits')
 
     # ------------ Filtrat tutors / partits ------------
+    if date_from:
+        df_partits["Data"] = pd.to_datetime(df_partits["Data"], errors="coerce")
+        dfrom = pd.to_datetime(date_from, errors="coerce")
+        if pd.notna(dfrom):
+            df_partits = df_partits[df_partits["Data"] >= dfrom].copy()
+
+    if date_to:
+        df_partits["Data"] = pd.to_datetime(df_partits["Data"], errors="coerce")
+        dto = pd.to_datetime(date_to, errors="coerce")
+        if pd.notna(dto):
+            df_partits = df_partits[df_partits["Data"] <= dto].copy()
+
+    # disponibilitats també tenen "Data"
+    if date_from or date_to:
+        df_dispos["Data"] = pd.to_datetime(df_dispos["Data"], errors="coerce")
+        if date_from and pd.notna(pd.to_datetime(date_from, errors="coerce")):
+            df_dispos = df_dispos[df_dispos["Data"] >= pd.to_datetime(date_from)].copy()
+        if date_to and pd.notna(pd.to_datetime(date_to, errors="coerce")):
+            df_dispos = df_dispos[df_dispos["Data"] <= pd.to_datetime(date_to)].copy()
+
+
     codis_a_eliminar = ['TJ PROPI', 'TJ LEXIA', 'CEBLL', 'CEVOSABADELL', 'CELH', 'CEBN']
     df_dispos = df_dispos[~df_dispos['Codi Tutor de Joc'].isin(codis_a_eliminar)].copy()
 
@@ -486,7 +513,7 @@ def main(path_disposicions: str, path_dades: str, task_id: str | None = None, ru
     # Tutors sense nivell
     if df_dispos['Nivell'].isna().any():
         if task_id:
-            async_to_sync(push_log)(task_id, "S'han trobat tutors sense nivell (s'exclouran i es guardaran a revisió).", 0)
+            async_to_sync(push_log)(task_id, "S'han trobat tutors sense nivell (s'exclouran i es guardaran a revisió).", 42)
         df_revisio_sense_nivell = df_dispos[df_dispos['Nivell'].isna()].copy()
         df_dispos = df_dispos[~df_dispos['Nivell'].isna()].copy()
     else:
@@ -500,17 +527,25 @@ def main(path_disposicions: str, path_dades: str, task_id: str | None = None, ru
     # ------------ Adreces (geocodificació BD) + clusterització ------------
     df_partits['adreca'] = df_partits['Domicili'].astype(str) + ', ' + df_partits['Municipi'].astype(str)
 
-    from .services.geocoding_db import geocodifica_adreces, addresses_to_df
-    from .models import Address, AddressCluster
+    if task_id:
+        async_to_sync(push_log)(task_id, "Iniciant geocodificació d'adreces.", 45)
 
     adreces_uniques = df_partits["adreca"].unique().tolist()
-    addr_objs = geocodifica_adreces(adreces_uniques)  # respecte Nominatim intern
+    addr_objs = geocodifica_adreces(adreces_uniques, task_id=task_id)  # respecte Nominatim intern
     df_geocodificats = addresses_to_df(addr_objs)
+
+    if task_id:
+        async_to_sync(push_log)(task_id, "Geocodificació completada.", 57)
+        async_to_sync(push_log)(task_id, "Iniciant agrupació geogràfica d'adreces.", 58)
+
 
     domicilis_clusteritzats, _, _, _ = clusteritza_i_plota(
         df_geocodificats,
         lat_col="lat",
-        lon_col="lon"
+        lon_col="lon",
+        eps_metres=cluster_eps_m,
+        min_samples=cluster_min_samples,
+        max_punts_per_subcluster=max_partits_subgrup,  
     )
 
     # Guardem clusters per RUN (si run_id ve informat)
@@ -542,7 +577,7 @@ def main(path_disposicions: str, path_dades: str, task_id: str | None = None, ru
             discrepancies.append((adreca, unique_clusters.tolist()))
     if discrepancies:
         if task_id:
-            async_to_sync(push_log)(task_id, "S'han trobat discrepàncies de cluster per adreça (revisa log).", 0)
+            async_to_sync(push_log)(task_id, "S'han trobat discrepàncies de cluster per adreça (revisa log).", 100)
         raise ValueError(f"Discrepàncies de cluster per adreça: {discrepancies[:5]} ...")
 
     # ------------ Nivells partits ------------
@@ -553,7 +588,13 @@ def main(path_disposicions: str, path_dades: str, task_id: str | None = None, ru
     df_partits = df_partits.sort_values('Categoria').reset_index(drop=True)
 
     # ------------ Assignació per modalitats ------------
-    modalitats = df_partits['Modalitat'].unique()
+    modalitats = df_partits["Modalitat"].dropna().unique().tolist()
+
+    if modalitats_filter:
+        # només les que l’usuari ha escrit
+        modalitats = [m for m in modalitats if str(m).strip() in set(modalitats_filter)]
+        df_partits = df_partits[df_partits["Modalitat"].isin(modalitats)].copy()
+        df_dispos = df_dispos[df_dispos["Modalitat"].isin(modalitats)].copy()
 
     assigned_tutors = []
     assigned_partit_ids = set()
@@ -562,7 +603,7 @@ def main(path_disposicions: str, path_dades: str, task_id: str | None = None, ru
     for modalitat in modalitats:
         print(f"\nProcessant modalitat: {modalitat}")
         if task_id:
-            async_to_sync(push_log)(task_id, f"Processant modalitat: {modalitat}", 50)
+            async_to_sync(push_log)(task_id, f"Processant modalitat: {modalitat}", 60)
 
         # mapping DataFrame per modalitat
         map_modalitat = map_modalitat_nom.loc[map_modalitat_nom['Modalitat'] == modalitat].copy()
@@ -577,8 +618,9 @@ def main(path_disposicions: str, path_dades: str, task_id: str | None = None, ru
 
         # --- classificacions (actualment desactivades al teu codi original) ---
         for grup in grups:
+            percentatge = 60 +int((list(grups).index(grup) + 1) / len(grups) * (70-60))
             if task_id:
-                async_to_sync(push_log)(task_id, f"Consultant classificacions per grup: {grup}", 60)
+                async_to_sync(push_log)(task_id, f"Consultant classificacions per grup: {grup}", percentatge)
 
             df_partits_grup = df_partits_modalitat[df_partits_modalitat['Grup'] == grup].copy()
             if len(df_partits_grup['Grup'].unique()) != 1:
@@ -622,6 +664,8 @@ def main(path_disposicions: str, path_dades: str, task_id: str | None = None, ru
         df_dispos_modalitat['Hora Fi'] = _parse_times(df_dispos_modalitat['Hora Fi'])
 
         final_subgrups = []
+        if task_id:
+            async_to_sync(push_log)(task_id, "Creant subgrups de partits...", 75)
         for pista, group in df_partits_grouped:
             group_ordenado = group.sort_values(['Hora'], na_position='last').reset_index(drop=True)
             subgrups = []
@@ -646,11 +690,11 @@ def main(path_disposicions: str, path_dades: str, task_id: str | None = None, ru
                         ).total_seconds() / 60.0
 
                         if pista_joc != prev_pista_joc:
-                            if time_diff >= 75:
+                            if time_diff >= gap_diff_pitch_min:
                                 current_subgroup.append(row)
                                 used_rows.add(idx)
                         else:
-                            if time_diff >= 60:
+                            if time_diff >= gap_same_pitch_min:
                                 current_subgroup.append(row)
                                 used_rows.add(idx)
 
@@ -667,7 +711,7 @@ def main(path_disposicions: str, path_dades: str, task_id: str | None = None, ru
             final_subgrups.extend(subgrups)
 
         # --- fusió subgrups petits (igual que el teu codi) ---
-        MAX_PARTITS_SUBGRUP = 3
+        MAX_PARTITS_SUBGRUP = max_partits_subgrup
 
         def _fusionar_subgrups(subgrups: list) -> list:
             subgrups = sorted(subgrups, key=lambda sg: min(row['Hora'] for row in sg))
@@ -892,6 +936,10 @@ def main(path_disposicions: str, path_dades: str, task_id: str | None = None, ru
 
     if task_id:
         async_to_sync(push_log)(task_id, "Generant mapa d'assignacions.", 92)
+
+    if not out_map_abs:
+        raise RuntimeError("No s'ha pogut determinar el path del mapa (run_id absent).")
+
 
     out_map = mapa_assignacions_interactiu(
         df_partits_geo=df_partits_geo,

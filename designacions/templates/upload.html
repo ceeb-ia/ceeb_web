@@ -3,11 +3,14 @@
 {% block title %}Designacions{% endblock %}
 
 {% block content %}
-<div class="container-fluid mt-4">
-  <div class="card-surface">
+<div class="card-surface container-fluid mt-4">
     <div class="d-flex justify-content-between align-items-center mb-3">
       <h2>Designacions</h2>
+      <a class="btn btn-sm btn-outline-secondary" href="{% url 'designacions_runs_list' %}">
+        Històric de runs
+      </a>
     </div>
+
 
     <div id="status-message" class="alert" style="display:none;"></div>
 
@@ -18,11 +21,88 @@
         <label class="form-label">
           Selecciona l'arxiu de disponibilitats i el de partits (.xlsx)
         </label>
-        <input type="file" id="files" name="files" class="form-control" multiple accept=".xlsx">
+        <input type="file" id="filesInput" name="files" class="form-control" accept=".xlsx" multiple required>
+
         <div class="form-text text-muted">
           Puja exactament 2 fitxers: disponibilitats (tutors) i partits.
         </div>
       </div>
+
+      <div class="mb-3">
+        <a class="btn btn-sm btn-outline-secondary" data-toggle="collapse" href="#advancedParams" role="button" aria-expanded="true" aria-controls="advancedParams">
+          Paràmetres avançats
+        </a>
+      </div>
+
+      <div class="collapse w-100 show" id="advancedParams">
+        <div class="card w-100 show " style="max-width:100%">
+          <div class="card-body container-fluid ">
+
+          <div class="form-row row">
+            <div class="form-group col-md-4">
+              <label>Distància clústers (metres)</label>
+              <input type="number" step="1" min="50" name="cluster_eps_m" class="form-control form-control-sm"
+                    value="{{ defaults.cluster_eps_m }}">
+              <small class="form-text text-muted">DBSCAN eps (radi màxim per agrupar seus properes).</small>
+            </div>
+
+            <div class="form-group col-md-4">
+              <label>Min. punts per clúster</label>
+              <input type="number" step="1" min="1" name="cluster_min_samples" class="form-control form-control-sm"
+                    value="{{ defaults.cluster_min_samples }}">
+            </div>
+
+            <div class="form-group col-md-4">
+              <label>Màx. partits per subgrup</label>
+              <input type="number" step="1" min="1" name="max_partits_subgrup" class="form-control form-control-sm"
+                    value="{{ defaults.max_partits_subgrup }}">
+            </div>
+          </div>
+
+          <div class="form-row row">
+            <div class="form-group col-md-6">
+              <label>Llindar minuts (mateixa pista)</label>
+              <input type="number" step="1" min="0" name="gap_same_pitch_min" class="form-control form-control-sm"
+                    value="{{ defaults.gap_same_pitch_min }}">
+            </div>
+            <div class="form-group col-md-6">
+              <label>Llindar minuts (pista diferent)</label>
+              <input type="number" step="1" min="0" name="gap_diff_pitch_min" class="form-control form-control-sm"
+                    value="{{ defaults.gap_diff_pitch_min }}">
+            </div>
+          </div>
+
+          <div class="form-row row">
+            <div class="form-group col-md-6">
+              <label>Modalitats (selecció)</label>
+
+              <select id="modalitatsSelect" name="modalitats_select" class="form-control form-control-sm" multiple size="6" disabled>
+              </select>
+
+              <small class="form-text text-muted">
+                Selecciona els excels i es carregaran automàticament les modalitats del fitxer de partits.
+              </small>
+
+              <!-- Aquest hidden és el que realment enviem al backend -->
+              <input type="hidden" name="modalitats_csv" id="modalitatsCsv" value="">
+            </div>
+
+
+            <div class="form-group col-md-3">
+              <label>Data des de</label>
+              <input type="date" name="date_from" class="form-control form-control-sm" value="{{ defaults.date_from }}">
+            </div>
+
+            <div class="form-group col-md-3">
+              <label>Data fins a</label>
+              <input type="date" name="date_to" class="form-control form-control-sm" value="{{ defaults.date_to }}">
+            </div>
+          </div>
+
+          </div>
+        </div>
+      </div>
+
 
       <button type="submit" class="btn btn-primary btn-sm">
         Pujar i processar
@@ -58,6 +138,88 @@
 
 {% block extra_scripts %}
 <script>
+(function(){
+  function getCookie(name) {
+    var v = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
+    return v ? v.pop() : '';
+  }
+
+  var modalitatsSelect = document.getElementById('modalitatsSelect');
+  var modalitatsCsv = document.getElementById('modalitatsCsv');
+
+  // Canvia això segons el teu input:
+  var filesInput = document.getElementById('filesInput');      // cas input múltiple
+  var partitsFile = document.getElementById('partitsFile');    // cas input separat
+
+  function setSelectOptions(items) {
+    modalitatsSelect.innerHTML = "";
+    items.forEach(function(m){
+      var opt = document.createElement('option');
+      opt.value = m;
+      opt.textContent = m;
+      modalitatsSelect.appendChild(opt);
+    });
+    modalitatsSelect.disabled = items.length === 0;
+  }
+
+  function updateHiddenFromSelect(){
+    var selected = Array.from(modalitatsSelect.selectedOptions).map(o => o.value);
+    modalitatsCsv.value = selected.join(", ");
+  }
+
+  if (modalitatsSelect) modalitatsSelect.addEventListener('change', updateHiddenFromSelect);
+
+  async function fetchModalitats(file){
+    if (!file) return;
+
+    setSelectOptions([]);
+    modalitatsSelect.disabled = true;
+
+    var fd = new FormData();
+    fd.append("partits_file", file);
+
+    var resp = await fetch("{% url 'designacions_modalitats_preview' %}", {
+      method: "POST",
+      body: fd,
+      headers: {
+        "X-CSRFToken": getCookie("csrftoken")
+      },
+      credentials: "same-origin"
+    });
+
+    var data = await resp.json().catch(function(){ return {ok:false, error:"Resposta no vàlida"}; });
+
+    if (!data.ok) {
+      alert(data.error || "Error carregant modalitats");
+      return;
+    }
+
+    setSelectOptions(data.modalitats || []);
+    modalitatsSelect.disabled = false;
+
+    // per defecte: selecciona totes (si vols que sigui buit, treu aquest bloc)
+    Array.from(modalitatsSelect.options).forEach(o => o.selected = true);
+    updateHiddenFromSelect();
+  }
+
+  // Cas input múltiple (2 fitxers al mateix input)
+  if (filesInput) {
+    filesInput.addEventListener('change', function(){
+      var files = Array.from(filesInput.files || []);
+      // Intentem detectar el fitxer de partits: si no ho podem saber, agafem el primer
+      var f = files[0] || null;
+      fetchModalitats(f);
+    });
+  }
+
+  // Cas inputs separats
+  if (partitsFile) {
+    partitsFile.addEventListener('change', function(){
+      fetchModalitats(partitsFile.files[0] || null);
+    });
+  }
+})();
+
 (function(){
   const form = document.getElementById('designacions-form');
   const progressSection = document.getElementById('progress-section');

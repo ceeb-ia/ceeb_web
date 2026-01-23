@@ -18,7 +18,7 @@ class DesignationRun(models.Model):
 
     task_id = models.CharField(max_length=64, unique=True, db_index=True)
     map_path = models.CharField(max_length=500, null=True, blank=True)
-
+    params = models.JSONField(default=dict, blank=True)
     input_partits = models.FileField(upload_to="designacions/inputs/", null=True, blank=True)
     input_disponibilitats = models.FileField(upload_to="designacions/inputs/", null=True, blank=True)
 

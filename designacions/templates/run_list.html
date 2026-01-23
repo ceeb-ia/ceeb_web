@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+{% block title %}Històric de runs{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+  <div class="card-surface p-3">
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <div>
+        <h2 class="mb-0">Històric de designacions</h2>
+        <div class="text-muted small">Accedeix als runs per revisar, editar assignacions, exportar o obrir el mapa.</div>
+      </div>
+
+      
+      <div>
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'designacions_geocoding_pending' %}">Geolocalitzacions pendents</a>
+        <a class="btn btn-sm btn-primary" href="{% url 'designacions_upload' %}">Nou run</a>
+      </div>
+    </div>
+
+    <form method="get" class="form-row row mb-3">
+      <div class="col-12 col-lg-6 mb-2 mb-lg-0">
+        <input class="form-control form-control-sm" name="q" value="{{ q }}" placeholder="Cerca per ID, task_id o params..." />
+      </div>
+      <div class="col-8 col-lg-3">
+        <select class="form-control form-control-sm" name="status">
+          <option value="">-- Tots els estats --</option>
+          {% for k, label in status_choices %}
+            <option value="{{ k }}" {% if status == k %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-4 col-lg-3">
+        <button class="btn btn-sm btn-outline-secondary w-100" type="submit">Filtrar</button>
+      </div>
+    </form>
+
+    <div class="table-responsive">
+      <table class="table table-striped table-bordered table-sm align-middle mb-0">
+        <thead class="thead-light">
+          <tr>
+            <th>Run</th>
+            <th>Creat</th>
+            <th>Estat</th>
+            <th class="text-center">Partits</th>
+            <th class="text-center">Assignacions</th>
+            <th class="text-center">Assignats</th>
+            <th>Accions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for run in page_obj.object_list %}
+          <tr>
+            <td class="font-weight-bold">#{{ run.id }}</td>
+            <td>
+              {% if run.created_at %}{{ run.created_at|date:"d/m/Y H:i" }}{% else %}-{% endif %}
+            </td>
+            <td>
+              {% if run.status == "done" %}
+                <span class="badge badge-success">Done</span>
+              {% elif run.status == "failed" %}
+                <span class="badge badge-danger">Failed</span>
+              {% elif run.status == "processing" %}
+                <span class="badge badge-warning">Processing</span>
+              {% else %}
+                <span class="badge badge-secondary">{{ run.status }}</span>
+              {% endif %}
+            </td>
+            <td class="text-center">{{ run.n_matches|default:"-" }}</td>
+            <td class="text-center">{{ run.n_assignments|default:"-" }}</td>
+            <td class="text-center">{{ run.n_assigned|default:"-" }}</td>
+            <td style="min-width: 380px;">
+              <a class="btn btn-sm btn-outline-secondary" href="{% url 'designacions_run_detail' run.id %}">
+                Seguiment
+              </a>
+              <a class="btn btn-sm btn-outline-primary" href="{% url 'designacions_assignments' run.id %}">
+                Assignacions
+              </a>
+              {% if run.map_path %}
+                <a class="btn btn-sm btn-outline-secondary" target="_blank" href="{% url 'designacions_run_map' run.id %}">
+                  Mapa
+                </a>
+              {% else %}
+                <button class="btn btn-sm btn-outline-secondary" disabled>Mapa</button>
+              {% endif %}
+
+              <form method="post" action="{% url 'designacions_export_excel' run.id %}" class="d-inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm btn-success">Excel</button>
+              </form>
+
+              <button type="button"
+                      class="btn btn-sm btn-outline-danger"
+                      data-toggle="modal"
+                      data-target="#confirmDeleteRunModal"
+                      data-delete-url="{% url 'designacions_run_delete' run.id %}"
+                      data-run-id="{{ run.id }}">
+                Eliminar
+              </button>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="7" class="text-center text-muted">Encara no hi ha cap run.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- paginació -->
+    <div class="d-flex justify-content-between align-items-center mt-3">
+      <div class="text-muted small">
+        Pàgina {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}
+      </div>
+      <div>
+        {% if page_obj.has_previous %}
+          <a class="btn btn-sm btn-outline-secondary"
+             href="?q={{ q|urlencode }}&status={{ status|urlencode }}&page={{ page_obj.previous_page_number }}">Anterior</a>
+        {% endif %}
+        {% if page_obj.has_next %}
+          <a class="btn btn-sm btn-outline-secondary"
+             href="?q={{ q|urlencode }}&status={{ status|urlencode }}&page={{ page_obj.next_page_number }}">Següent</a>
+        {% endif %}
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- MODAL eliminar run -->
+<div class="modal fade" id="confirmDeleteRunModal" tabindex="-1" role="dialog" aria-labelledby="confirmDeleteRunTitle" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" role="document">
+    <div class="modal-content">
+      <form method="post" id="deleteRunForm">
+        {% csrf_token %}
+        <div class="modal-header">
+          <h5 class="modal-title" id="confirmDeleteRunTitle">Confirmar eliminació</h5>
+          <button type="button" class="close" data-dismiss="modal" aria-label="Tancar">
+            <span aria-hidden="true">&times;</span>
+          </button>
+        </div>
+        <div class="modal-body">
+          Vols eliminar el run <span class="font-weight-bold" id="deleteRunId">—</span>?
+          <div class="text-muted small mt-2">
+            També s’eliminaran partits i assignacions associades.
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-dismiss="modal">Cancel·lar</button>
+          <button type="submit" class="btn btn-sm btn-danger">Sí, eliminar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  $(function () {
+    var $m = $('#confirmDeleteRunModal');
+    if ($m.length) $m.appendTo('body');
+
+    $('#confirmDeleteRunModal').on('show.bs.modal', function (event) {
+      var button = $(event.relatedTarget);
+      var url = button.data('delete-url');
+      var runId = button.data('run-id');
+      $('#deleteRunForm').attr('action', url);
+      $('#deleteRunId').text('#' + (runId || '—'));
+    });
+  });
+</script>
+{% endblock %}

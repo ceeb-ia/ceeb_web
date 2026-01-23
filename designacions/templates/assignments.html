@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Assignacions - Run {{ run.id }}{% endblock %}
+{% load dict_extras %}
 
 {% block content %}
 <div class="container-fluid mt-4">
@@ -13,25 +14,11 @@
       display:inline-block;
       vertical-align: middle;
     }
-    .tutor-title{
-      font-size: 1rem;           /* evita capsaleres gegants */
-      font-weight: 600;
-      line-height: 1.2;
-      margin: 0;
-    }
-    .tutor-sub{
-      font-size: .85rem;
-      color: #6c757d;
-    }
-    .card-header .btn{
-      text-decoration: none;
-      width: 100%;
-      text-align: left;
-      padding: .5rem .75rem;
-    }
-    .tab-pane { padding-top: 1rem; }
-      /* força que el “header clicable” ocupi tot */
-    #asgAccordion .card-header { padding: 0; }
+    .tutor-title{ font-size: 1rem; font-weight: 600; line-height: 1.2; margin: 0; }
+    .tutor-sub{ font-size: .85rem; color: #6c757d; }
+
+    /* força que el “header clicable” ocupi tot */
+    #asgAccordion .card-header { padding: 0; width:100%; }
     #asgAccordion .card-header .btn{
       width: 100% !important;
       display: flex !important;
@@ -39,26 +26,28 @@
       justify-content: space-between;
       text-align: left !important;
       white-space: normal;
+      padding: .5rem .75rem;
+      text-decoration: none;
     }
-
-    /* evita que el títol faci lletres gegants i trencaments estranys */
-    .tutor-title{ font-size: 1rem; font-weight: 600; line-height: 1.2; margin: 0; }
-    .tutor-sub{ font-size: .85rem; color: #6c757d; }
-
-    /* fa que el card ocupi tota l’amplada del contenidor */
     #asgAccordion .card{ width: 100%; }
-    #asgAccordion { width: 100%; }
-    #asgAccordion .card { width: 100%; }
-    #asgAccordion .card-header { width: 100%; }
-
-    /* evita que el botó s’enculli per algun estil global */
     #asgAccordion .card-header .btn.btn-link{
       display: flex !important;
       width: 100% !important;
       flex: 1 1 100% !important;
       margin: 0;
     }
+    #asgAccordion .card.tutor-group {
+      max-width: 100% !important;
+      flex: 1 1 100% !important;
+    }
+    .tab-pane { padding-top: 1rem; }
 
+    .avail-raw{
+      max-width: 360px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
   </style>
 
   <div class="card-surface p-3">
@@ -78,6 +67,8 @@
           {% csrf_token %}
           <button type="submit" class="btn btn-sm btn-success">Exportar a Excel</button>
         </form>
+        <a class="btn btn-sm btn-primary" href="{% url 'designacions_runs_list' %}">Tornar a designacions</a>
+
         <a class="btn btn-sm btn-outline-secondary" href="{% url 'designacions_run_detail' run.id %}">
           Tornar al seguiment
         </a>
@@ -117,7 +108,7 @@
 
     <div class="tab-content" id="asgTabsContent">
 
-      <!-- TAB 1 -->
+      <!-- TAB 1: Assignacions agrupades -->
       <div class="tab-pane fade show active" id="t1" role="tabpanel" aria-labelledby="t1-tab">
 
         <div class="form-row mb-3">
@@ -125,16 +116,15 @@
             <input id="searchTutor" class="form-control form-control-sm" placeholder="Cerca tutor (codi o nom)..." />
           </div>
           <div class="col-12 col-lg-6">
-            <input id="searchMatch" class="form-control form-control-sm" placeholder="Cerca partit (codi, club, pista)..." />
+            <input id="searchMatch" class="form-control form-control-sm" placeholder="Cerca partit (codi, club, pista, categoria)..." />
           </div>
         </div>
 
-        <!-- “Accordion” BS4 amb cards + collapse -->
         <div id="asgAccordion" class="w-100">
           {% for g in groups %}
           <div class="card tutor-group mb-2 w-100"
                data-tutor="{{ g.referee.code }} {{ g.referee.name|default:'' }}"
-               data-color="{{ g.color }}" style="width:100%">
+               style="width:100%">
 
             <div class="card-header p-0" id="h{{ g.referee.id }}">
               <button class="btn btn-link w-100 d-flex align-items-center"
@@ -160,7 +150,7 @@
               </button>
             </div>
 
-            <div id="c{{ g.referee.id }}" class="collapse show" aria-labelledby="h{{ g.referee.id }}" data-parent="#asgAccordion">
+            <div id="c{{ g.referee.id }}" class="collapse show" aria-labelledby="h{{ g.referee.id }}">
               <div class="card-body">
 
                 <div class="table-responsive">
@@ -173,28 +163,40 @@
                         <th>Data</th>
                         <th>Hora</th>
                         <th>Pista</th>
-                        <th>Bloq.</th>
+                        <th>Categoria</th>
+                        <th>Nivell tutor</th>
+                        <th>Disponibilitat tutor</th>
                         <th>Nota</th>
                         <th>Accions</th>
                       </tr>
                     </thead>
                     <tbody>
                       {% for a in g.items %}
+                      {% with raw=availability_by_ref|get_item:g.referee.id %}
+                      
                       <tr class="match-row"
-                          data-match="{{ a.match.code }} {{ a.match.club_local|default:'' }} {{ a.match.equip_local|default:'' }} {{ a.match.equip_visitant|default:'' }} {{ a.match.venue|default:'' }}">
+                          data-match="{{ a.match.code }} {{ a.match.club_local|default:'' }} {{ a.match.equip_local|default:'' }} {{ a.match.equip_visitant|default:'' }} {{ a.match.venue|default:'' }} {{ a.match.category|default:'' }}">
                         <td class="font-weight-bold">{{ a.match.code }}</td>
                         <td>{{ a.match.equip_local|default:"-" }}</td>
                         <td>{{ a.match.equip_visitant|default:"-" }}</td>
                         <td>{% if a.match.date %}{{ a.match.date|date:"d/m/Y" }}{% else %}-{% endif %}</td>
                         <td>{{ a.match.hour_raw|default:"-" }}</td>
                         <td>{{ a.match.venue|default:"-" }}</td>
+                        <td class="text-center">{{ a.match.category|default:"-" }}</td>
+                        <td class="text-center">{{ g.referee.level|default:"-" }}</td>
 
                         <td class="text-center">
-                          {% if a.locked %}
-                            <span class="badge badge-warning">Sí</span>
-                          {% else %}
-                            <span class="badge badge-light">No</span>
-                          {% endif %}
+                          {% with hi=raw|get_item:"Hora Inici" hf=raw|get_item:"Hora Fi" %}
+                            {% if hi and hf %}
+                              {{ hi|slice:":5" }} – {{ hf|slice:":5" }}
+                            {% elif hi %}
+                              {{ hi|slice:":5" }} –
+                            {% elif hf %}
+                              – {{ hf|slice:":5" }}
+                            {% else %}
+                              -
+                            {% endif %}
+                          {% endwith %}
                         </td>
 
                         <td style="min-width:240px;">
@@ -204,17 +206,21 @@
                             <input type="text" name="note" value="{{ a.note|default_if_none:'' }}" class="form-control form-control-sm w-100" />
                         </td>
 
-                        <td style="min-width:220px;">
-                            <div class="d-flex align-items-center">
-                              <div class="form-check mr-2">
-                                <input class="form-check-input" type="checkbox" name="locked" id="lk{{ a.id }}" {% if a.locked %}checked{% endif %}>
-                                <label class="form-check-label small" for="lk{{ a.id }}">Bloquejar</label>
-                              </div>
-                              <button type="submit" class="btn btn-sm btn-primary">Desar</button>
-                            </div>
+                        <td style="min-width:260px;">
+                            <button type="submit" class="btn btn-sm btn-primary">Desar</button>
+
+                            <button type="button"
+                                    class="btn btn-sm btn-outline-danger ml-2"
+                                    data-toggle="modal"
+                                    data-target="#confirmUnassignModal"
+                                    data-unassign-url="{% url 'designacions_unassign_assignment' run.id a.id %}"
+                                    data-match-code="{{ a.match.code }}">
+                              Desassignar
+                            </button>
                           </form>
                         </td>
                       </tr>
+                      {% endwith %}
                       {% endfor %}
                     </tbody>
                   </table>
@@ -231,25 +237,41 @@
 
       </div>
 
-      <!-- TAB 2 -->
+      <!-- TAB 2: Partits sense assignar -->
       <div class="tab-pane fade" id="t2" role="tabpanel" aria-labelledby="t2-tab">
-        <div class="table-responsive">
+        <div class="form-row mb-3">
+          <div class="col-12">
+            <input id="searchUnassignedMatch" class="form-control form-control-sm" placeholder="Cerca partit (codi, club, pista, categoria)..." />
+          </div>
+        </div>
+
+        <div class="asg-table-scroll" style="overflow-x:auto;">
           <table class="table table-striped table-bordered table-sm align-middle">
             <thead class="thead-light">
               <tr>
-                <th>Codi</th><th>Local</th><th>Visitant</th><th>Data</th><th>Hora</th><th>Pista</th>
-                <th>Assignar</th><th>Bloq.</th><th>Nota</th><th></th>
+                <th class="sortable" data-col="0">Codi <span class="sort-icon"></span></th>
+                <th class="sortable" data-col="1">Local <span class="sort-icon"></span></th>
+                <th class="sortable" data-col="2">Visitant <span class="sort-icon"></span></th>
+                <th class="sortable" data-col="3">Data <span class="sort-icon"></span></th>
+                <th class="sortable" data-col="4">Hora <span class="sort-icon"></span></th>
+                <th class="sortable" data-col="5">Pista <span class="sort-icon"></span></th>
+                <th class="sortable" data-col="6">Categoria <span class="sort-icon"></span></th>
+                <th>Assignar</th>
+                <th>Nota</th>
+                <th>Accions</th>
               </tr>
             </thead>
             <tbody>
               {% for a in unassigned_matches %}
-              <tr>
+              <tr class="unassigned-match-row"
+                  data-match="{{ a.match.code }} {{ a.match.club_local|default:'' }} {{ a.match.equip_local|default:'' }} {{ a.match.equip_visitant|default:'' }} {{ a.match.venue|default:'' }} {{ a.match.category|default:'' }}">
                 <td class="font-weight-bold">{{ a.match.code }}</td>
                 <td>{{ a.match.equip_local|default:"-" }}</td>
                 <td>{{ a.match.equip_visitant|default:"-" }}</td>
                 <td>{% if a.match.date %}{{ a.match.date|date:"d/m/Y" }}{% else %}-{% endif %}</td>
                 <td>{{ a.match.hour_raw|default:"-" }}</td>
                 <td>{{ a.match.venue|default:"-" }}</td>
+                <td class="text-center">{{ a.match.category|default:"-" }}</td>
 
                 <td style="min-width:260px;">
                   <form method="post" action="{% url 'designacions_update_assignment' run.id a.id %}" class="form-inline">
@@ -260,10 +282,6 @@
                         <option value="{{ r.id }}">{{ r.name }} ({{ r.code }})</option>
                       {% endfor %}
                     </select>
-                </td>
-
-                <td class="text-center">
-                  <input type="checkbox" name="locked" {% if a.locked %}checked{% endif %}/>
                 </td>
 
                 <td style="min-width:220px;">
@@ -283,21 +301,51 @@
         </div>
       </div>
 
-      <!-- TAB 3 -->
+      <!-- TAB 3: Tutors sense assignar -->
       <div class="tab-pane fade" id="t3" role="tabpanel" aria-labelledby="t3-tab">
+        <div class="form-row mb-3">
+          <div class="col-12">
+            <input id="searchUnassignedTutor" class="form-control form-control-sm" placeholder="Cerca tutor (codi, nom, nivell, modalitat, disponibilitat)..." />
+          </div>
+        </div>
+
         <div class="table-responsive">
           <table class="table table-striped table-bordered table-sm align-middle">
-            <thead class="thead-light"><tr><th>Codi</th><th>Nom</th><th>Nivell</th><th>Modalitat</th></tr></thead>
+            <thead class="thead-light">
+              <tr>
+                <th>Codi</th>
+                <th>Nom</th>
+                <th>Disponibilitat</th>
+                <th>Nivell</th>
+                <th>Modalitat</th>
+              </tr>
+            </thead>
             <tbody>
               {% for r in unassigned_referees %}
-              <tr>
+              {% with raw=availability_by_ref|get_item:r.id %}
+              <tr class="unassigned-ref-row"
+                  data-referee="{{ r.code }} {{ r.name|default:'' }} {{ raw|default:'' }} {{ r.level|default:'' }} {{ r.modality|default:'' }}">
                 <td class="font-weight-bold">{{ r.code }}</td>
                 <td>{{ r.name }}</td>
+                <td class="text-center">
+                  {% with hi=raw|get_item:"Hora Inici" hf=raw|get_item:"Hora Fi" %}
+                    {% if hi and hf %}
+                      {{ hi|slice:":5" }} – {{ hf|slice:":5" }}
+                    {% elif hi %}
+                      {{ hi|slice:":5" }} –
+                    {% elif hf %}
+                      – {{ hf|slice:":5" }}
+                    {% else %}
+                      -
+                    {% endif %}
+                  {% endwith %}
+                </td>
                 <td>{{ r.level|default:"-" }}</td>
                 <td>{{ r.modality|default:"-" }}</td>
               </tr>
+              {% endwith %}
               {% empty %}
-              <tr><td colspan="4" class="text-center text-muted">No hi ha tutors actius sense assignar</td></tr>
+              <tr><td colspan="5" class="text-center text-muted">No hi ha tutors actius sense assignar</td></tr>
               {% endfor %}
             </tbody>
           </table>
@@ -344,43 +392,162 @@
       {% endif %}
 
     </div>
+  </div>
+</div>
 
+<!-- MODAL desassignar -->
+<div class="modal fade" id="confirmUnassignModal" tabindex="-1" role="dialog" aria-labelledby="confirmUnassignTitle" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" role="document">
+    <div class="modal-content">
+      <form method="post" id="unassignForm">
+        {% csrf_token %}
+        <div class="modal-header">
+          <h5 class="modal-title" id="confirmUnassignTitle">Confirmar desassignació</h5>
+          <button type="button" class="close" data-dismiss="modal" aria-label="Tancar">
+            <span aria-hidden="true">&times;</span>
+          </button>
+        </div>
+
+        <div class="modal-body">
+          Vols desassignar el partit <span class="font-weight-bold" id="unassignMatchCode">—</span>?
+          <div class="text-muted small mt-2">
+            El partit passarà a “Partits sense assignar” i es regenerarà el mapa.
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-dismiss="modal">Cancel·lar</button>
+          <button type="submit" class="btn btn-sm btn-danger">Sí, desassignar</button>
+        </div>
+      </form>
+    </div>
   </div>
 </div>
 {% endblock %}
 
 {% block extra_scripts %}
 <script>
-(function(){
-  var tutorInput = document.getElementById('searchTutor');
-  var matchInput = document.getElementById('searchMatch');
+  $(function () {
+    // Assegura que el modal penja del <body> (evita backdrop “bloquejant”)
+    var $m = $('#confirmUnassignModal');
+    if ($m.length) $m.appendTo('body');
 
-  function normalize(s){ return (s || "").toLowerCase().trim(); }
+    $('#confirmUnassignModal').on('show.bs.modal', function (event) {
+      var button = $(event.relatedTarget);
+      var url = button.data('unassign-url');
+      var code = button.data('match-code');
+      $('#unassignForm').attr('action', url);
+      $('#unassignMatchCode').text(code || '—');
+    });
+  });
 
-  function applyFilters(){
-    var tutorQ = normalize(tutorInput ? tutorInput.value : "");
-    var matchQ = normalize(matchInput ? matchInput.value : "");
+  // Cerca tutors, partits assignats, partits sense assignar i tutors sense assignar
+  (function(){
+    var tutorInput = document.getElementById('searchTutor');
+    var matchInput = document.getElementById('searchMatch');
+    var unassignedMatchInput = document.getElementById('searchUnassignedMatch');
+    var unassignedTutorInput = document.getElementById('searchUnassignedTutor');
 
-    var groups = document.querySelectorAll('.tutor-group');
-    groups.forEach(function(group){
-      var tutorText = normalize(group.getAttribute('data-tutor'));
-      var tutorOk = !tutorQ || tutorText.indexOf(tutorQ) !== -1;
+    function normalize(s){ return (s || "").toLowerCase().trim(); }
 
-      var anyMatchOk = false;
-      group.querySelectorAll('.match-row').forEach(function(row){
-        var m = normalize(row.getAttribute('data-match'));
-        var ok = !matchQ || m.indexOf(matchQ) !== -1;
-        row.style.display = ok ? "" : "none";
-        if (ok) anyMatchOk = true;
+    function applyFilters(){
+      var tutorQ = normalize(tutorInput ? tutorInput.value : "");
+      var matchQ = normalize(matchInput ? matchInput.value : "");
+      var unassignedMatchQ = normalize(unassignedMatchInput ? unassignedMatchInput.value : "");
+      var unassignedTutorQ = normalize(unassignedTutorInput ? unassignedTutorInput.value : "");
+
+      // tutors + assignats
+      document.querySelectorAll('.tutor-group').forEach(function(group){
+        var tutorText = normalize(group.getAttribute('data-tutor'));
+        var tutorOk = !tutorQ || tutorText.indexOf(tutorQ) !== -1;
+
+        var anyMatchOk = false;
+        group.querySelectorAll('.match-row').forEach(function(row){
+          var m = normalize(row.getAttribute('data-match'));
+          var ok = !matchQ || m.indexOf(matchQ) !== -1;
+          row.style.display = ok ? "" : "none";
+          if (ok) anyMatchOk = true;
+        });
+
+        group.style.display = (tutorOk && (!matchQ || anyMatchOk)) ? "" : "none";
       });
 
-      var visible = tutorOk && (!matchQ || anyMatchOk);
-      group.style.display = visible ? "" : "none";
-    });
-  }
+      // partits sense assignar
+      document.querySelectorAll('.unassigned-match-row').forEach(function(row){
+        var m = normalize(row.getAttribute('data-match'));
+        row.style.display = (!unassignedMatchQ || m.indexOf(unassignedMatchQ) !== -1) ? "" : "none";
+      });
 
-  if (tutorInput) tutorInput.addEventListener('input', applyFilters);
-  if (matchInput) matchInput.addEventListener('input', applyFilters);
-})();
+      // tutors sense assignar
+      document.querySelectorAll('.unassigned-ref-row').forEach(function(row){
+        var m = normalize(row.getAttribute('data-referee'));
+        row.style.display = (!unassignedTutorQ || m.indexOf(unassignedTutorQ) !== -1) ? "" : "none";
+      });
+    }
+
+    if (tutorInput) tutorInput.addEventListener('input', applyFilters);
+    if (matchInput) matchInput.addEventListener('input', applyFilters);
+    if (unassignedMatchInput) unassignedMatchInput.addEventListener('input', applyFilters);
+    if (unassignedTutorInput) unassignedTutorInput.addEventListener('input', applyFilters);
+
+    // --- Sorting (tab 2) ---
+    var sortState = {col: null, asc: true};
+    var table = document.querySelector('#t2 table');
+    if (table) {
+      var headers = table.querySelectorAll('th.sortable');
+      headers.forEach(function(th){
+        th.style.cursor = 'pointer';
+        th.addEventListener('click', function(){
+          var col = parseInt(th.getAttribute('data-col'));
+          var asc = !(sortState.col === col && sortState.asc);
+          sortState = {col: col, asc: asc};
+          sortTable(col, asc);
+          updateSortIcons(headers);
+        });
+      });
+
+      function sortTable(col, asc) {
+        var tbody = table.querySelector('tbody');
+        var rows = Array.from(tbody.querySelectorAll('tr.unassigned-match-row'));
+        rows.sort(function(a, b){
+          function cellText(row){
+            var cell = row.querySelectorAll('td')[col];
+            return cell ? cell.innerText.trim() : '';
+          }
+          var vA = cellText(a);
+          var vB = cellText(b);
+
+          if (col === 3) { // data dd/mm/yyyy
+            function parseDate(s){
+              var p = s.split('/');
+              if (p.length === 3) return new Date(p[2], p[1]-1, p[0]);
+              return new Date(s);
+            }
+            vA = parseDate(vA); vB = parseDate(vB);
+            return asc ? (vA - vB) : (vB - vA);
+          }
+
+          return asc ? vA.localeCompare(vB) : vB.localeCompare(vA);
+        });
+        rows.forEach(function(r){ tbody.appendChild(r); });
+      }
+
+      function updateSortIcons(headers) {
+        headers.forEach(function(th){
+          var icon = th.querySelector('.sort-icon');
+          if (!icon) return;
+          var col = parseInt(th.getAttribute('data-col'));
+          if (sortState.col === col) icon.innerHTML = sortState.asc ? '▲' : '▼';
+          else icon.innerHTML = '';
+        });
+      }
+    }
+  })();
 </script>
+
+<style>
+  th.sortable { user-select: none; }
+  .sort-icon { font-size: 0.8em; margin-left: 2px; }
+  .asg-table-scroll { width: 100%; overflow-x: auto; margin-bottom: 1rem; }
+</style>
 {% endblock %}

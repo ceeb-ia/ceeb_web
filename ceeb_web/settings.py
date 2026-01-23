@@ -80,6 +80,7 @@ USE_TZ = True
 MEDIA_URL = os.getenv('MEDIA_URL', '/media/')
 MEDIA_ROOT = os.getenv('MEDIA_ROOT', '/data/media')
 
+X_FRAME_OPTIONS = "SAMEORIGIN"
 
 STATIC_VERSION = "dev-1"
 STATIC_URL = '/static/'  # URL per accedir als fitxers estàtics
