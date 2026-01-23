@@ -12,7 +12,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import folium
 from sklearn.cluster import DBSCAN
-
+from asgiref.sync import async_to_sync
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -113,6 +113,7 @@ def clusteritza_i_plota(
     eps_metres: float = 500,
     min_samples: int = 2,
     columna_sortida: str = "cluster",
+    max_punts_per_subcluster: int = 3,
 ):
     """
     Afegeix una columna de clúster al df i dibuixa un scatter (lon vs lat).
@@ -149,7 +150,7 @@ def clusteritza_i_plota(
     out.loc[coords.index, columna_sortida] = labels
 
     # Ara trenquem els clúster ens subgrups més petits, de màxim 2 punts
-    max_punts_per_subcluster = 3
+
     grups_actuals = out[columna_sortida].dropna().unique()
     nou_label = out[columna_sortida].max() + 1
     for g in grups_actuals:
@@ -208,6 +209,8 @@ def clusteritza_i_plota(
             f" - {out.iloc[a]['adreca']}\n"
             f" - {out.iloc[b]['adreca']}\n"
         )
+    
+    
     mapa = mapa_clusters_interactiu(out, out_html="mapa_clusters.html")
     print("Mapa guardat a:", mapa)
 
@@ -339,7 +342,7 @@ def mapa_clusters_interactiu(
         fg.add_to(m)
 
     folium.LayerControl(collapsed=False).add_to(m)
-    m.save(out_html)
+    #m.save(out_html)
     return out_html
 
 
@@ -372,6 +375,11 @@ def geocode_amb_reintents_limitat(
             return None
         except (GeocoderTimedOut, GeocoderUnavailable):
             time.sleep(pausa * (i + 1))
+
+        except Exception as e:
+            # qualsevol altre error NO ha de matar el procés
+            print(f"[GEOCODING ERROR] {query}: {e}")
+            return None
     return None
 
 

@@ -7,15 +7,16 @@ from typing import Iterable
 
 import pandas as pd
 from geopy.geocoders import Nominatim
-
+from asgiref.sync import async_to_sync
 from designacions.models import Address
 from designacions.geolocate import geocode_address_amb_fallback, extreu_municipi
+from logs import push_log
 
 
 _geolocator = Nominatim(user_agent="designacions_ceeb")
 
 
-def geocodifica_adreces(adreces: Iterable[str], *, sleep_seconds: float = 2.0) -> list[Address]:
+def geocodifica_adreces(adreces: Iterable[str], *, sleep_seconds: float = 2.0, task_id=None) -> list[Address]:
     """
     Geocodifica una llista d'adreces utilitzant Address (BD) com a master.
 
@@ -35,7 +36,8 @@ def geocodifica_adreces(adreces: Iterable[str], *, sleep_seconds: float = 2.0) -
 
     out: list[Address] = []
 
-    for adreca in norm:
+    for counter, adreca in enumerate(norm):
+        percentage = 45 + int((counter + 1) / len(norm) * (55 - 45))
         municipi = extreu_municipi(adreca)
 
         addr, _ = Address.objects.get_or_create(
@@ -49,6 +51,8 @@ def geocodifica_adreces(adreces: Iterable[str], *, sleep_seconds: float = 2.0) -
             continue
 
         # Geocodifica
+        if task_id:
+            async_to_sync(push_log)(task_id, f"Geocodificant adreça: {adreca}", percentage)
         lat, lon, _query_used = geocode_address_amb_fallback(_geolocator, adreca)
 
         if lat is not None and lon is not None:

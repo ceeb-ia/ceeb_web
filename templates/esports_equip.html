@@ -32,9 +32,19 @@
             <div class="card-body">
                 <h3 class="card-title">Designacions</h3>
                 <p class="card-text">Realitza les designacions arbitrals.</p>
-                <a href="{% url 'designacions_upload' %}" class="btn btn-primary">Accedeix</a>
+                <a href="{% url 'designacions_runs_list' %}" class="btn btn-primary">Accedeix</a>
             </div>
         </div>
+
+        <div class="card">
+            <img src="{% static 'images/geocodificar.jpg' %}" class="card-img-top" alt="Geocodificar Adreces">
+            <div class="card-body">
+                <h3 class="card-title">Geocodificar Adreces Pendents</h3>
+                <p class="card-text">Realitza la geocodificació d'adreces per a les designacions arbitrals.</p>
+                <a href="{% url 'designacions_geocoding_pending' %}" class="btn btn-primary">Accedeix</a>
+            </div>
+        </div>
+
     </div>
 </div>
 </section>

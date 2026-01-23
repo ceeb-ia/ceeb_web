@@ -1,4 +1,5 @@
-# designacions_app/views.py
+# views.py
+from django.core.paginator import Paginator
 import os, uuid, json
 from pathlib import Path
 from redis import Redis
@@ -9,13 +10,46 @@ from django.core.files.base import ContentFile
 from django.http import JsonResponse, StreamingHttpResponse, HttpResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_http_methods, require_GET, require_POST
-
+from django.db.models import Count, Q
+from .services.colors import color_per_tutor
+from django.http import Http404, HttpResponse
 from .models import DesignationRun, Assignment, Referee
 from .tasks import process_designacions_run
 from .services.jobstore import write_job_sync, read_job_sync
 from .services.excel_export import export_run_to_excel
+from django.views.decorators.http import require_POST
+from .services.map_rebuild import rebuild_run_map
+from .models import Availability
+import pandas as pd
+
+
 
 REDIS_URL = os.getenv("REDIS_URL") or os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
+
+def _to_int(v, default):
+    try:
+        return int(str(v).strip())
+    except Exception:
+        return default
+
+def _to_float(v, default):
+    try:
+        return float(str(v).strip().replace(",", "."))
+    except Exception:
+        return default
+
+def _to_str_list_csv(v):
+    s = (v or "").strip()
+    if not s:
+        return []
+    # separa per comes / salts de línia
+    parts = []
+    for x in s.replace("\n", ",").split(","):
+        x = x.strip()
+        if x:
+            parts.append(x)
+    return parts
+
 
 def _temp_dir():
     d = os.path.join(settings.MEDIA_ROOT, "temp")
@@ -32,7 +66,18 @@ def _save_uploaded(f, prefix: str) -> str:
 @require_http_methods(["GET", "POST"])
 def upload_view(request):
     if request.method == "GET":
-        return render(request, "upload.html")
+        return render(request, "upload.html", {
+            "defaults": {
+                "cluster_eps_m": 500,
+                "cluster_min_samples": 2,
+                "max_partits_subgrup": 3,
+                "gap_same_pitch_min": 60,
+                "gap_diff_pitch_min": 75,
+                "modalitats_csv": "",
+                "date_from": "",
+                "date_to": "",
+            }
+        })
 
     files = request.FILES.getlist("files")
     if len(files) != 2:
@@ -40,22 +85,33 @@ def upload_view(request):
 
     task_id = uuid.uuid4().hex
 
-    # Guardem a disc (temp)
     path1 = _save_uploaded(files[0], task_id)
     path2 = _save_uploaded(files[1], task_id)
 
-    # Guardem també els originals a MEDIA per auditoria (opcional, però recomanat)
+    # --- PARAMS del run (venen del formulari) ---
+    params = {
+        "cluster_eps_m": _to_float(request.POST.get("cluster_eps_m"), 500),
+        "cluster_min_samples": _to_int(request.POST.get("cluster_min_samples"), 2),
+        "max_partits_subgrup": _to_int(request.POST.get("max_partits_subgrup"), 3),
+        "gap_same_pitch_min": _to_int(request.POST.get("gap_same_pitch_min"), 60),
+        "gap_diff_pitch_min": _to_int(request.POST.get("gap_diff_pitch_min"), 75),
+        "modalitats": _to_str_list_csv(request.POST.get("modalitats_csv")),
+        "date_from": (request.POST.get("date_from") or "").strip(),
+        "date_to": (request.POST.get("date_to") or "").strip(),
+    }
+
     run = DesignationRun.objects.create(
         task_id=task_id,
         status="queued",
         input_partits=files[0],
         input_disponibilitats=files[1],
+        params=params,
     )
 
     write_job_sync(task_id, {"status": "queued", "task_id": task_id})
 
-    # Arrenca celery (si l’ordre ve invertit, el teu motor ja ho tracta com a l’API)
-    process_designacions_run.delay(run.id, task_id, path1, path2)
+    # passa params a celery
+    process_designacions_run.delay(run.id, task_id, path1, path2, params)
 
     return redirect("designacions_run_detail", run_id=run.id)
 
@@ -65,16 +121,33 @@ def run_detail_view(request, run_id: int):
     return render(request, "run_detail.html", {"run": run})
 
 @require_GET
+@require_GET
 def task_status_view(request, task_id: str):
     job = read_job_sync(task_id) or {}
-    st = job.get("status") or "PENDING"
 
-    if st in ("done", "SUCCESS"):
-        return JsonResponse({"status": "SUCCESS"})
-    if st in ("failed", "FAILURE"):
-        return JsonResponse({"status": "FAILURE", "error": job.get("error")})
+    status = job.get("status") or "PENDING"
 
-    return JsonResponse({"status": st})
+    if status in ("done", "SUCCESS"):
+        return JsonResponse({
+            "status": "SUCCESS",
+            "progress": 100,
+            "message": job.get("message"),
+        })
+
+    if status in ("failed", "FAILURE"):
+        return JsonResponse({
+            "status": "FAILURE",
+            "progress": job.get("progress"),
+            "message": job.get("message"),
+            "error": job.get("error"),
+        })
+
+    return JsonResponse({
+        "status": status,
+        "progress": job.get("progress"),
+        "message": job.get("message"),
+        "error": job.get("error"),
+    })
 
 @require_GET
 def logs_stream_view(request, task_id: str):
@@ -100,9 +173,6 @@ def logs_stream_view(request, task_id: str):
     resp["X-Accel-Buffering"] = "no"
     return resp
 
-# designacions_app/views.py
-from django.db.models import Count, Q
-from .services.colors import color_per_tutor
 
 @require_GET
 def assignments_view(request, run_id: int):
@@ -166,6 +236,15 @@ def assignments_view(request, run_id: int):
     if current:
         groups.append(current)
 
+
+    avail_qs = (run.availabilities
+                .select_related("referee")
+                .all())
+
+    availability_by_ref = {a.referee_id: a.raw for a in avail_qs}
+
+
+
     # Comptadors per pestanyes
     counts = {
         "assigned": assigned_qs.count(),
@@ -178,6 +257,7 @@ def assignments_view(request, run_id: int):
     return render(request, "assignments.html", {
         "run": run,
         "groups": groups,
+        "availability_by_ref": availability_by_ref,
         "unassigned_matches": unassigned_matches,
         "unassigned_referees": unassigned_referees,
         "needs_review_referees": needs_review_referees,
@@ -250,8 +330,6 @@ def geocoding_update_view(request, address_id: int):
     return redirect("designacions_geocoding_pending")
 
 
-# designacions_app/views.py
-from django.http import Http404, HttpResponse
 
 @require_GET
 def run_map_view(request, run_id: int):
@@ -268,3 +346,116 @@ def run_map_view(request, run_id: int):
 
     # IMPORTANT: és HTML generat per folium. El servim tal qual.
     return HttpResponse(data, content_type="text/html; charset=utf-8")
+
+
+@require_POST
+def unassign_assignment_view(request, run_id: int, assignment_id: int):
+    run = get_object_or_404(DesignationRun, id=run_id)
+    a = get_object_or_404(Assignment, id=assignment_id, run=run)
+
+    # Desassignar
+    a.referee = None
+    a.locked = False  # recomanat: si el deixes locked=True, després no té sentit
+    a.save(update_fields=["referee", "locked", "updated_at"])
+
+    # Refés mapa
+    rebuild_run_map(run)
+
+    messages.success(request, f"Partit {a.match.code} desassignat i mapa actualitzat.")
+    return redirect("designacions_assignments", run_id=run.id)
+
+
+@require_POST
+def modalitats_preview_view(request):
+    """
+    Rep el fitxer de PARTITS i retorna modalitats úniques.
+    Espera un input file amb nom: 'partits_file'
+    """
+    f = request.FILES.get("partits_file")
+    if not f:
+        return JsonResponse({"ok": False, "error": "Falta el fitxer de partits."}, status=400)
+
+    try:
+        # pandas pot llegir directament l'UploadedFile
+        df = pd.read_excel(f, engine="openpyxl")
+    except Exception as e:
+        return JsonResponse({"ok": False, "error": f"No s'ha pogut llegir l'Excel: {e}"}, status=400)
+
+    if "Modalitat" not in df.columns:
+        return JsonResponse({"ok": False, "error": "La columna 'Modalitat' no existeix al fitxer de partits."}, status=400)
+
+    modalitats = (
+        df["Modalitat"]
+        .dropna()
+        .astype(str)
+        .map(lambda s: s.strip())
+        .loc[lambda s: s != ""]
+        .unique()
+        .tolist()
+    )
+    modalitats.sort()
+
+    return JsonResponse({"ok": True, "modalitats": modalitats})
+
+
+
+@require_GET
+def runs_list_view(request):
+    """
+    Llista d'històric de runs (designacions) amb cerca i filtre per estat.
+    """
+    q = (request.GET.get("q") or "").strip()
+    status = (request.GET.get("status") or "").strip()
+
+    qs = (
+        DesignationRun.objects
+        .annotate(
+            n_matches=Count("matches", distinct=True),
+            n_assignments=Count("assignments", distinct=True),
+            n_assigned=Count("assignments", filter=Q(assignments__referee__isnull=False), distinct=True),
+        )
+        .order_by("-created_at")
+    )
+
+    if status:
+        qs = qs.filter(status=status)
+
+    if q:
+        # Cerca flexible: id, task_id i text dins params
+        qs = qs.filter(
+            Q(task_id__icontains=q) |
+            Q(id__icontains=q) |
+            Q(params__icontains=q)
+        )
+
+    paginator = Paginator(qs, 20)  # 20 per pàgina
+    page_number = request.GET.get("page") or 1
+    page_obj = paginator.get_page(page_number)
+
+    return render(request, "run_list.html", {
+        "page_obj": page_obj,
+        "q": q,
+        "status": status,
+        "status_choices": DesignationRun.STATUS_CHOICES,
+    })
+
+
+@require_POST
+def run_delete_view(request, run_id: int):
+    """
+    (Opcional) Esborra un run i totes les dades relacionades (matches, assignments... via CASCADE).
+    """
+    run = get_object_or_404(DesignationRun, id=run_id)
+
+    # Esborrem també fitxers associats si existeixen
+    try:
+        if run.input_partits:
+            run.input_partits.delete(save=False)
+        if run.input_disponibilitats:
+            run.input_disponibilitats.delete(save=False)
+    except Exception:
+        pass
+
+    run.delete()
+    messages.success(request, f"Run #{run_id} eliminat.")
+    return redirect("designacions_runs_list")
