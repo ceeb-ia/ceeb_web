@@ -10,7 +10,7 @@ from django.views.decorators.http import require_POST
 from django.views.generic import TemplateView, UpdateView
 
 from .models import Competicio, Inscripcio
-from .models_trampoli import CompeticioAparell
+from .models_trampoli import Aparell, CompeticioAparell
 from .models_scoring import ScoringSchema, ScoreEntry
 from .forms import ScoringSchemaForm
 from .scoring_engine import ScoringEngine, ScoringError
@@ -139,17 +139,39 @@ class ScoringSchemaUpdate(UpdateView):
     template_name = "competicio/scoring_schema_builder.html"
 
     def dispatch(self, request, *args, **kwargs):
-        self.competicio = get_object_or_404(Competicio, pk=kwargs["pk"])
-        self.comp_aparell = get_object_or_404(
-            CompeticioAparell,
-            pk=kwargs["ap_id"],
-            competicio=self.competicio,
-        )
-        return super().dispatch(request, *args, **kwargs)
+            # per poder tornar on toca
+            self.next_url = request.GET.get("next")
+
+            self.competicio = None
+            self.comp_aparell = None
+            self.aparell = None
+
+            # MODE VELL (ve de: competicio/<pk>/aparell/<ap_id>/schema/)
+            if "ap_id" in kwargs:
+                self.competicio = get_object_or_404(Competicio, pk=kwargs["pk"])
+                self.comp_aparell = get_object_or_404(
+                    CompeticioAparell,
+                    pk=kwargs["ap_id"],
+                    competicio=self.competicio,
+                )
+                self.aparell = self.comp_aparell.aparell
+
+            # MODE NOU (ve de: trampoli/aparells/<pk>/puntuacio/)
+            else:
+                self.aparell = get_object_or_404(Aparell, pk=kwargs["pk"])
+
+            return super().dispatch(request, *args, **kwargs)
 
     def get_object(self):
-        obj, _ = ScoringSchema.objects.get_or_create(comp_aparell=self.comp_aparell, defaults={"schema": {}})
+        # Primer intentem schema GLOBAL (aparell=...)
+        obj = ScoringSchema.objects.filter(aparell=self.aparell).first()
+        if obj:
+            return obj
+
+        # Si no existeix, el creem global
+        obj = ScoringSchema.objects.create(aparell=self.aparell, schema={})
         return obj
+
 
     def form_valid(self, form):
         schema_json = form.cleaned_data.get("schema_json")
@@ -159,13 +181,28 @@ class ScoringSchemaUpdate(UpdateView):
         return redirect(self.get_success_url())
 
     def get_success_url(self):
-        return reverse("scoring_notes_home", kwargs={"pk": self.competicio.id})
+        # 1) si venies d'algun lloc, torna-hi
+        if self.next_url:
+            return self.next_url
 
+        # 2) si estàs en una competició, torna a notes-v2
+        if self.competicio:
+            return reverse("scoring_notes_home", kwargs={"pk": self.competicio.id})
+
+        # 3) si és global, torna a editar l'aparell (o a la llista)
+        return reverse("aparell_update", kwargs={"pk": self.aparell.id})
+    
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        ctx["competicio"] = self.competicio
-        ctx["comp_aparell"] = self.comp_aparell
         ctx["schema_initial"] = self.object.schema or {}
+        ctx["aparell"] = self.aparell
+
+        # només si vens del flux antic
+        if self.competicio:
+            ctx["competicio"] = self.competicio
+        if self.comp_aparell:
+            ctx["comp_aparell"] = self.comp_aparell
+
         return ctx
 
 

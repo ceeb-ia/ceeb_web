@@ -1,6 +1,6 @@
 from django.urls import path
 
-from .views_trampoli import TrampoliConfigUpdate, TrampoliNotesHome, trampoli_guardar_nota, TrampoliAparellList, TrampoliAparellCreate, TrampoliAparellUpdate
+from .views_trampoli import TrampoliConfigUpdate, TrampoliNotesHome, trampoli_guardar_nota, TrampoliAparellList, TrampoliAparellCreate
 from .views import CompeticioCreateView, CompeticioDeleteView, CompeticioHomeView, CompeticioListView, InscripcionsImportExcelView, InscripcionsListView
 from competicions_trampoli import views, views_rotacions
 from .views_trampoli import AparellList, AparellCreate, AparellUpdate
@@ -16,6 +16,12 @@ from .views_scoring import ScoringNotesHome, ScoringSchemaUpdate, scoring_save
 
 
 urlpatterns = [
+    path("trampoli/aparells/", AparellList.as_view(), name="aparells_list"),
+    path("trampoli/aparells/nou/", AparellCreate.as_view(), name="aparell_create"),
+    path("trampoli/aparells/<int:pk>/editar/", AparellUpdate.as_view(), name="aparell_update"),
+    path("trampoli/aparells/<int:pk>/puntuacio/", ScoringSchemaUpdate.as_view(), name="aparell_scoring_schema_update",),
+
+
     path("competicions/nova/", CompeticioCreateView.as_view(), name="create"),
     path("competicions/<int:pk>/importar/", InscripcionsImportExcelView.as_view(), name="import"),
     path("competicions/created/", CompeticioListView.as_view(), name="created"),   
@@ -32,11 +38,8 @@ urlpatterns = [
     path("competicio/<int:pk>/notes/trampoli/guardar/", trampoli_guardar_nota, name="trampoli_save"),
     path("competicio/<int:pk>/notes/trampoli/aparells/", TrampoliAparellList.as_view(), name="trampoli_aparells_list"),
     path("competicio/<int:pk>/notes/trampoli/aparells/nou/", TrampoliAparellCreate.as_view(), name="trampoli_aparell_create"),
-    path("competicio/<int:pk>/notes/trampoli/aparells/<int:ap_id>/editar/", TrampoliAparellUpdate.as_view(), name="trampoli_aparell_update"),
+    #path("competicio/<int:pk>/notes/trampoli/aparells/<int:ap_id>/editar/", TrampoliAparellUpdate.as_view(), name="trampoli_aparell_update"),
     path("competicio/<int:pk>/inscripcions/merge-tabs/", views.inscripcions_merge_tabs, name="inscripcions_merge_tabs"),
-    path("trampoli/aparells/", AparellList.as_view(), name="aparells_list"),
-    path("trampoli/aparells/nou/", AparellCreate.as_view(), name="aparell_create"),
-    path("trampoli/aparells/<int:pk>/editar/", AparellUpdate.as_view(), name="aparell_update"),
     path("competicio/<int:pk>/rotacions/", views_rotacions.rotacions_planner, name="rotacions_planner"),
     path("competicio/<int:pk>/rotacions/save/", views_rotacions.rotacions_save, name="rotacions_save"),
     path("competicio/<int:pk>/rotacions/franges/auto/",views_rotacions.franges_auto_create,name="rotacions_franges_auto_create",),

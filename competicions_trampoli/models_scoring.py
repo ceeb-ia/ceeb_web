@@ -4,7 +4,7 @@ from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
 
 from .models import Competicio, Inscripcio
-from .models_trampoli import CompeticioAparell
+from .models_trampoli import Aparell, CompeticioAparell
 
 
 class ScoringSchema(models.Model):
@@ -17,6 +17,15 @@ class ScoringSchema(models.Model):
         on_delete=models.CASCADE,
         related_name="scoring_schema",
     )
+
+    aparell = models.OneToOneField(
+        Aparell,
+        null=True, blank=True,
+        on_delete=models.CASCADE,
+        related_name="scoring_schema",
+    )
+
+
     schema = models.JSONField(default=dict, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 

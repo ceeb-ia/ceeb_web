@@ -65,24 +65,24 @@ services:
   # CERTIFICATS
   # ----------------------------------------------------------------------------------------------------------
 
-  # certificats:
-  #   build:
-  #     context: ../formacio
-  #     dockerfile: Dockerfile.dev
-  #   volumes:
-  #     - ../formacio:/app
-  #     - ../db_provisional:/data/media
-  #   environment:
-  #     MEDIA_ROOT: /data/media
+  certificats:
+    build:
+      context: ../formacio
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ../formacio:/app
+      - ../db_provisional:/data/media
+    environment:
+      MEDIA_ROOT: /data/media
 
-  #   expose:
-  #     - "8000"  # només per a la xarxa interna; si vols provar des del navegador, afegeix ports: ["8001:8000"]
-  #   command: ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
-  #   healthcheck:
-  #     test: ["CMD", "wget", "-qO-", "http://certificats:8000/health"]
-  #     interval: 5s
-  #     timeout: 2s
-  #     retries: 10
+    expose:
+      - "8000"  # només per a la xarxa interna; si vols provar des del navegador, afegeix ports: ["8001:8000"]
+    command: ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://certificats:8000/health"]
+      interval: 5s
+      timeout: 2s
+      retries: 10
 
 
   # ----------------------------------------------------------------------------------------------------------

@@ -79,7 +79,7 @@
                   — {{ comp_aparell.nombre_elements }} salts
                   — Mode: {{ comp_aparell.get_mode_execucio_display }}
                 </span>
-                <a class="btn btn-sm btn-outline-secondary" href="{% url 'trampoli_aparell_update' object.competicio.id comp_aparell.id %}">Editar</a>
+                <a class="btn btn-sm btn-outline-secondary" href="{% url 'aparell_update' pk=comp_aparell.aparell_id %}?next={{ request.get_full_path|urlencode }}">Editar</a>
               </li>
             {% endfor %}
           </ul>

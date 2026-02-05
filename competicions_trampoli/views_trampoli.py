@@ -481,28 +481,23 @@ class TrampoliAparellCreate(CreateView):
         return ctx
 
 
-class TrampoliAparellUpdate(UpdateView):
+'''class TrampoliAparellUpdate(UpdateView):
     template_name = "competicio/trampoli_aparell_form.html"
-    form_class = CompeticioAparellForm
+    form_class = AparellForm
 
     def dispatch(self, request, *args, **kwargs):
-        self.competicio = get_object_or_404(Competicio, pk=kwargs["pk"])
+        self.next_url = request.GET.get("next")
         return super().dispatch(request, *args, **kwargs)
 
     def get_object(self):
-        return get_object_or_404(
-            CompeticioAparell,
-            pk=self.kwargs["ap_id"],
-            competicio=self.competicio,
-        )
+        return get_object_or_404(Aparell, pk=self.kwargs["ap_id"])
 
     def get_success_url(self):
-        return reverse("trampoli_aparells_list", kwargs={"pk": self.kwargs["pk"]})
+        if self.next_url:
+            return self.next_url
+        return reverse("aparells_list")
+'''
 
-    def get_context_data(self, **kwargs):
-        ctx = super().get_context_data(**kwargs)
-        ctx["competicio"] = self.competicio
-        return ctx
 
 class AparellList(ListView):
     template_name = "competicio/aparells_list.html"
@@ -527,4 +522,7 @@ class AparellUpdate(UpdateView):
     model = Aparell
 
     def get_success_url(self):
-        return reverse("created")
+        next_url = self.request.GET.get("next")
+        if next_url:
+            return next_url
+        return reverse("aparells_list")

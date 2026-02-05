@@ -600,6 +600,20 @@ def main(path_disposicions: str, path_dades: str, task_id: str | None = None, ru
     assigned_partit_ids = set()
     assigned_tutor_ids = set()
 
+    def _get_team_position(equip: str, df_classificacions: pd.DataFrame, task_id) -> int:
+        equip_norm = _normalize_entity_name(equip)
+        for idx, row in df_classificacions.iterrows():
+            nom_equip = _normalize_entity_name(row.get('NomEquipMostrar', ''))
+            #print(f"Comparant equip '{equip_norm}' amb '{nom_equip}'")
+            if nom_equip == equip_norm:
+                return idx + 1  # posició 1-based
+            
+        print(f"Equip '{equip}' no trobat a la classificació.", df_classificacions)
+        if task_id:
+            async_to_sync(push_log)(task_id, f"Equip '{equip}' no trobat a la classificació, revisa que a JEEB no aparegui amb un nom diferent", 99)
+        return -1  # no trobat
+
+
     for modalitat in modalitats:
         print(f"\nProcessant modalitat: {modalitat}")
         if task_id:
@@ -642,20 +656,28 @@ def main(path_disposicions: str, path_dades: str, task_id: str | None = None, ru
                 # si no hi ha mapping, seguim sense posicions
                 continue
 
-            # root = asyncio.run(fetch_ceeb_async(str(p2["Id Categoria"].values[0]), p5))
             root = None  # mantenim com al teu codi actual
+            root = asyncio.run(fetch_ceeb_async(str(p2["Id Categoria"].values[0]), p5))
             if root is None:
                 continue
 
-            # parsed = parse_ceeb_xml(root)
-            # df_classificacions = xml_to_dataframe(parsed, grup=grup)
-            # ...
-            # pos_local / pos_visitant actualment desactivat al teu codi
+            parsed = parse_ceeb_xml(root)
+            df_classificacions = xml_to_dataframe(parsed, grup=grup)
+            OUTPUT_COLUMNS = ['NomEquipMostrar', 'isBaixa', 'PJ', 'PG', 'PE', 'PP', 'PUNTS', 'PUNTSBASE', 'PUNTSTOTALSAMBVALORS', 'PUNTSVALORS', 'PUNTSVALORSESPORTISTA', 'PUNTSVALORSTECNIC', 'PUNTSVALORSFAMILIAR', 'AVG', 'PF', 'PC', 'SANC', 'BONIF', 'NOPRESENTAT']
+            df_classificacions = df_classificacions[OUTPUT_COLUMNS] if not df_classificacions.empty else df_classificacions
+            # Ara, mirem els partits d'aquest grup i afegim la posició de cada equip segons la classificació
+            for idx, partit in df_partits_grup.iterrows():
+                #print(partit)
+                #print(f"\nProcessant partit ID {partit.get('ID', '')} del grup {grup}")
+                # Obtenim la posició de l'equip local
+                pos_local = _get_team_position(partit.get('Equip local', ''), df_classificacions, task_id)
+                pos_visitant = _get_team_position(partit.get('Equip visitant', ''), df_classificacions, task_id)
+                #print(f"Posició equip local '{partit.get('Equip local', '')}': {pos_local}, equip visitant '{partit.get('Equip visitant', '')}': {pos_visitant}")
+                pos_local = pos_visitant = -1  # Per defecte, no trobat
 
-            for _, partit in df_partits_grup.iterrows():
-                df_partits_modalitat.loc[df_partits_modalitat['ID'] == partit['ID'], 'Posició Equip Local'] = -1
-                df_partits_modalitat.loc[df_partits_modalitat['ID'] == partit['ID'], 'Posició Equip Visitant'] = -1
-
+                # Afegim al df dues columnes que indiquin la posicio
+                df_partits_modalitat.loc[df_partits_modalitat['ID'] == partit['ID'], 'Posició Equip Local'] = pos_local
+                df_partits_modalitat.loc[df_partits_modalitat['ID'] == partit['ID'], 'Posició Equip Visitant'] = pos_visitant
         # --- agrupació per pista / horari ---
         df_partits_grouped = df_partits_modalitat.groupby(['Pista joc'])
 

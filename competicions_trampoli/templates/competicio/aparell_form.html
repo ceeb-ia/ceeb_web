@@ -11,9 +11,6 @@
         <div class="text-muted small">Aquest aparell apareixerà al desplegable quan afegeixis aparells a una competició.</div>
       </div>
 
-      <div class="d-flex gap-2">
-        <a class="btn btn-sm btn-outline-secondary" href="{% url 'aparells_list' %}">Tornar</a>
-      </div>
     </div>
 
     <form method="post">
@@ -41,9 +38,9 @@
         </div>
       </div>
 
-      <div class="d-flex gap-2 mt-3">
+      <div class=" gap-2 mt-3">
         <button class="btn btn-primary" type="submit">Desar</button>
-        <a class="btn btn-outline-secondary" href="{% url 'aparells_list' %}">Cancel·lar</a>
+        <a class="btn btn-outline-secondary" href="{{ request.GET.next|default:'/' }}">Cancel·lar</a>
       </div>
     </form>
 

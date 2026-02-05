@@ -10,9 +10,13 @@
         <h2 class="mb-1">{% if object %}Editar{% else %}Afegir{% endif %} aparell</h2>
         <div class="text-muted small">{{ competicio.nom }}</div>
       </div>
-      <div class="d-flex gap-2">
+      <div class="gap-2">
         <a class="btn btn-sm btn-outline-secondary"
            href="{% url 'trampoli_aparells_list' competicio.id %}">Tornar</a>
+        <a class="btn btn-sm btn-outline-primary" href="{% url 'aparell_create' %}">
+                Crear aparell
+              </a>
+
       </div>
     </div>
 
@@ -25,9 +29,6 @@
           <div class="col-12 col-md-6">
             <div class="d-flex justify-content-between align-items-center">
               <label class="form-label mb-0">Aparell</label>
-              <a class="btn btn-sm btn-outline-primary" href="{% url 'aparell_create' %}">
-                Crear aparell
-              </a>
             </div>
             {{ form.aparell }}
 
@@ -71,7 +72,7 @@
       <div class="d-flex gap-2">
         <button class="btn btn-primary" type="submit">Desar</button>
         <a class="btn btn-outline-secondary"
-           href="{% url 'trampoli_aparells_list' competicio.id %}">Cancel·lar</a>
+           href="{{ request.GET.next|default:'/' }}">Cancel·lar</a>
       </div>
     </form>
 

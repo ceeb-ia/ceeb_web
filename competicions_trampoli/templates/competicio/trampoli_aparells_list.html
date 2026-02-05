@@ -11,7 +11,7 @@
         <div class="text-muted small">Selecciona i configura els aparells d’aquesta competició.</div>
       </div>
 
-      <div class="d-flex gap-2">
+      <div class=" gap-2">
         <a class="btn btn-sm btn-outline-secondary"
            href="{% url 'trampoli_config' competicio.id %}">Configuració</a>
         <a class="btn btn-sm btn-outline-primary"
@@ -57,12 +57,9 @@
               </td>
               <td class="text-right">
                 <a class="btn btn-sm btn-outline-secondary"
-                   href="{% url 'trampoli_aparell_update' competicio.id ca.id %}">Editar</a>
-                <a class="btn btn-sm btn-outline-primary"
-                href="{% url 'scoring_schema_update' competicio.id ca.id %}">
-                Puntuació
-              </a>
-
+                   href="{% url 'aparell_update' pk=ca.aparell_id %}?next={{ request.get_full_path|urlencode }}">Editar</a>
+                
+                   
               </td>
             </tr>
           {% empty %}
