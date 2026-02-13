@@ -70,24 +70,42 @@ class CompeticioAparellForm(forms.ModelForm):
         if not aparell or not self.competicio:
             return aparell
 
-        exists = CompeticioAparell.objects.filter(
+        qs = CompeticioAparell.objects.filter(
             competicio=self.competicio,
             aparell=aparell,
-        ).exists()
-        if exists:
+        )
+
+        # IMPORTANT: si estem editant, no comptis aquest mateix registre
+        if self.instance and self.instance.pk:
+            qs = qs.exclude(pk=self.instance.pk)
+
+        if qs.exists():
             raise ValidationError(
                 _("Aquest aparell ja esta afegit a la competicio."),
                 code="duplicate_aparell",
             )
         return aparell
+    
 
+    def clean_nombre_exercicis(self):
+           n = int(self.cleaned_data.get("nombre_exercicis") or 1)
+           if n < 1 or n > 5:
+               raise ValidationError(
+                   _("El nombre d'exercicis ha de ser entre 1 i 5."),
+                   code="invalid_nombre_exercicis",
+               )
+           return max(1, min(5, n))
+    
+    
     class Meta:
         model = CompeticioAparell
         fields = [
             "aparell",
+            "nombre_exercicis",
         ]
         widgets = {
             "aparell": forms.Select(attrs={"class": "form-select"}),
+            "nombre_exercicis": forms.NumberInput(attrs={"class": "form-control", "min": 1, "max": 10, "value": 1}),
         }
 
 

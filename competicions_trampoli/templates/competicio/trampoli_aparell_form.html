@@ -20,10 +20,17 @@
     <form method="post">
       {% csrf_token %}
 
+      {% if form.non_field_errors %}
+        <div class="alert alert-warning">
+          {{ form.non_field_errors }}
+        </div>
+      {% endif %}
+
       {% if form.errors %}
-      <div class="alert alert-warning">
-        Revisa el formulari. Si l'aparell ja esta a la competicio, no es pot afegir de nou.
-      </div>
+        <div class="alert alert-warning">
+          Revisa el formulari.
+          {{ form.errors|striptags }}
+        </div>
       {% endif %}
 
       <div class="border rounded p-3 mb-3">
@@ -47,6 +54,16 @@
                 style="display:none;"
               >Puntuacio</a>
             </div>
+            <div class="d-flex justify-content-between align-items-center">
+              <label class="form-label mb-0" for="{{ form.nombre_exercicis.id_for_label }}">Nombre d'Exercicis</label>
+            </div>
+            <span class="text-muted small">Selecciona el nombre d'exercicis o passades que els esportistes realitzaran en aquest aparell</span>
+            <div class="d-flex gap-2 align-items-start">
+              <div class="flex-grow-1">
+                {{ form.nombre_exercicis }}
+                {{ form.nombre_exercicis.errors }}
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -54,7 +71,7 @@
       <div class="gap-2">
         <button class="btn btn-primary" type="submit">Desar</button>
         <a class="btn btn-outline-secondary"
-           href="{% url 'trampoli_aparells_list' competicio.id %}">Cancelar</a>
+           href="{{ request.GET.next|default:request.META.HTTP_REFERER }}">Cancelar</a>
       </div>
     </form>
 

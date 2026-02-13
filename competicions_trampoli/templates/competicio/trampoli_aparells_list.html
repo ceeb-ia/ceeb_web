@@ -27,6 +27,7 @@
           <tr>
             <th style="width:240px;">Codi</th>
             <th>Aparell</th>
+            <th style="width:90px;">Exercicis</th>
             <th style="width:90px;">Actiu</th>
             <th style="width:120px;"></th>
           </tr>
@@ -36,6 +37,7 @@
             <tr>
               <td class="fw-semibold">{{ ca.aparell.codi }}</td>
               <td class="fw-semibold">{{ ca.aparell.nom }}</td>
+              <td class="text-center">{{ ca.nombre_exercicis }}</td>
               <td class="text-center">
                 {% if ca.actiu %}
                   <span class="badge badge-success">Sí</span>
@@ -45,7 +47,7 @@
               </td>
               <td class="text-right">
                 <a class="btn btn-sm btn-outline-secondary"
-                   href="{% url 'aparell_update' pk=ca.aparell_id %}?next={{ request.get_full_path|urlencode }}">Editar</a>
+                   href="{% url 'trampoli_aparell_edit' pk=competicio.id app_id=ca.id %}?next={{ request.get_full_path|urlencode }}">Editar</a>
                 
                    
               </td>

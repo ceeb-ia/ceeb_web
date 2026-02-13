@@ -82,7 +82,7 @@
                 </span>
                 <form method="post" action="{% url 'competicio_aparell_delete' object.competicio.id comp_aparell.id %}" style="display:inline;">
                   {% csrf_token %}
-                <a class="btn btn-sm btn-outline-secondary" href="{% url 'aparell_update' pk=comp_aparell.aparell_id %}?next={{ request.get_full_path|urlencode }}">Editar</a>
+                <a class="btn btn-sm btn-outline-secondary" href="{% url 'trampoli_aparell_edit' pk=object.competicio.id app_id=comp_aparell.id %}?next={{ request.get_full_path|urlencode }}">Editar</a>
                   <button type="submit" class="btn btn-sm btn-danger ms-2" onclick="return confirm('Segur que vols eliminar aquest aparell de la competició?');">Eliminar</button>
                 </form>
               </li>
@@ -94,59 +94,6 @@
       {% endwith %}
     </div>
 
-    <form method="post" class="mt-3">
-      {% csrf_token %}
-
-      <!-- Bloc 1: Mode d’execució -->
-      {% if form.non_field_errors %}
-        <div class="alert alert-danger">
-          {{ form.non_field_errors }}
-        </div>
-      {% endif %}
-      {% if form.errors %}
-        <pre class="alert alert-warning" style="white-space: pre-wrap;">
-      {{ form.errors }}
-        </pre>
-      {% endif %}
-      <div class="border rounded p-3 mb-3">
-
-
-      <!-- Bloc 3: Altres paràmetres (si els tens al form) -->
-      <!-- <div class="border rounded p-3 mb-3">
-        <div class="fw-semibold mb-2">Paràmetres</div>
-        <div class="text-muted small mb-3">
-          Ajustos generals de la competició.
-        </div>
-
-        <div class="row g-3">
-          {% for field in form %}
-            {% if field.name not in "mode_execucio mostrar_salts mostrar_dificultat mostrar_tof mostrar_hd mostrar_penalitzacio mostrar_total" %}
-              <div class="col-12 col-md-6 col-lg-4">
-                <label class="form-label" for="{{ field.id_for_label }}">
-                  {{ field.label }}
-                </label>
-                {{ field }}
-                {% if field.errors %}
-                  <div class="text-danger small mt-1">{{ field.errors }}</div>
-                {% endif %}
-                {% if field.help_text %}
-                  <div class="form-text">{{ field.help_text }}</div>
-                {% endif %}
-              </div>
-            {% endif %}
-          {% endfor %}
-        </div>
-      </div> -->
-
-      <!-- Accions -->
-      <div class=" gap-2">
-        <button class="btn btn-primary" type="submit">Desar</button>
-        <a class="btn btn-outline-secondary"
-           href="{% url 'trampoli_notes_home' object.competicio.id %}">
-          Cancel·lar
-        </a>
-      </div>
-    </form>
 
   </div>
 </div>

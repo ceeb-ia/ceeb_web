@@ -48,11 +48,6 @@ class ScoringNotesHome(TemplateView):
             group_keys = [0] + group_keys
         groups = [(g, grouped[g]) for g in group_keys]
 
-        # Exercicis
-        cfg = getattr(competicio, "cfg_trampoli", None)
-        n_ex = int(getattr(cfg, "nombre_exercicis", 1) or 1) if cfg else 1
-        n_ex = max(1, min(4, n_ex))
-        exercicis = list(range(1, n_ex + 1))
 
         # Aparells de la competició
         aparells_cfg = (
@@ -61,14 +56,32 @@ class ScoringNotesHome(TemplateView):
             .select_related("aparell")
             .order_by("ordre", "id")
         )
+        
+        def clamp_ex(n):
+            try:
+                n = int(n or 1)
+            except Exception:
+                n = 1
+            return max(1, min(4, n))
 
+
+        # Exercicis
+        exercicis_by_aparell = {}
+        max_ex = 1
+        for ca in aparells_cfg:
+            n = clamp_ex(getattr(ca, "nombre_exercicis", 1))
+            exercicis_by_aparell[str(ca.id)] = list(range(1, n + 1))
+            max_ex = max(max_ex, n)
+
+        exercicis = list(range(1, max_ex + 1))
+        
         # ─────────────────────────────
         # SCHEMAS (dict simple)
         # ─────────────────────────────
         schemas = {}
         for ca in aparells_cfg:
             ss, _ = ScoringSchema.objects.get_or_create(
-                comp_aparell=ca,
+                aparell=ca.aparell,
                 defaults={"schema": {}},
             )
             schemas[str(ca.id)] = ss.schema or {}
@@ -124,6 +137,7 @@ class ScoringNotesHome(TemplateView):
             "groups": groups,
             "aparells_cfg": aparells_cfg,
             "exercicis": exercicis,
+            "exercicis_by_aparell": exercicis_by_aparell,
 
             # per json_script
             "schemas": schemas,
@@ -139,36 +153,44 @@ class ScoringSchemaUpdate(UpdateView):
     template_name = "competicio/scoring_schema_builder.html"
 
     def dispatch(self, request, *args, **kwargs):
-            # per poder tornar on toca
-            self.next_url = request.GET.get("next")
+        # per poder tornar on toca
+        self.next_url = request.GET.get("next")
 
-            self.competicio = None
-            self.comp_aparell = None
-            self.aparell = None
+        self.competicio = None
+        self.comp_aparell = None
+        self.aparell = None
 
-            # MODE VELL (ve de: competicio/<pk>/aparell/<ap_id>/schema/)
-            if "ap_id" in kwargs:
-                self.competicio = get_object_or_404(Competicio, pk=kwargs["pk"])
-                self.comp_aparell = get_object_or_404(
-                    CompeticioAparell,
-                    pk=kwargs["ap_id"],
-                    competicio=self.competicio,
-                )
-                self.aparell = self.comp_aparell.aparell
+        # MODE VELL (ve de: competicio/<pk>/aparell/<ap_id>/schema/)
+        if "ap_id" in kwargs:
+            self.competicio = get_object_or_404(Competicio, pk=kwargs["pk"])
+            self.comp_aparell = get_object_or_404(
+                CompeticioAparell,
+                pk=kwargs["ap_id"],
+                competicio=self.competicio,
+            )
+            self.aparell = self.comp_aparell.aparell
 
-            # MODE NOU (ve de: trampoli/aparells/<pk>/puntuacio/)
-            else:
-                self.aparell = get_object_or_404(Aparell, pk=kwargs["pk"])
+        # MODE NOU (ve de: trampoli/aparells/<pk>/puntuacio/)
+        else:
+            self.aparell = get_object_or_404(Aparell, pk=kwargs["pk"])
 
-            return super().dispatch(request, *args, **kwargs)
+        return super().dispatch(request, *args, **kwargs)
 
     def get_object(self):
+        # si estem en mode competició (competicio/<pk>/aparell/<ap_id>/schema/)
+        if self.comp_aparell:
+            obj, _ = ScoringSchema.objects.get_or_create(
+                aparell=self.comp_aparell.aparell,
+                defaults={"schema": {}},
+            )
+            return obj
+
+        # si estem en mode global (trampoli/aparells/<pk>/puntuacio/)
         obj, _ = ScoringSchema.objects.get_or_create(
             aparell=self.aparell,
             defaults={"schema": {}},
         )
         return obj
-
 
     def form_valid(self, form):
         schema_json = form.cleaned_data.get("schema_json")
@@ -237,7 +259,7 @@ def scoring_save(request, pk):
     ins = get_object_or_404(Inscripcio, pk=ins_id, competicio=competicio)
     comp_aparell = get_object_or_404(CompeticioAparell, pk=comp_aparell_id, competicio=competicio, actiu=True)
 
-    ss, _ = ScoringSchema.objects.get_or_create(comp_aparell=comp_aparell, defaults={"schema": {}})
+    ss, _ = ScoringSchema.objects.get_or_create(aparell=comp_aparell.aparell, defaults={"schema": {}})
     schema = ss.schema or {}
 
     try:
@@ -248,10 +270,14 @@ def scoring_save(request, pk):
     except Exception:
         return JsonResponse({"ok": False, "error": "Error inesperat calculant."}, status=500)
 
+    max_ex = max(1, min(4, int(getattr(comp_aparell, "nombre_exercicis", 1) or 1)))
+    exercici = int(payload.get("exercici") or 1)
+    exercici = max(1, min(max_ex, exercici))
+
     entry, _ = ScoreEntry.objects.get_or_create(
         competicio=competicio,
         inscripcio=ins,
-        exercici=max(1, min(4, exercici)),
+        exercici=exercici,
         comp_aparell=comp_aparell,
     )
     entry.inputs = result.inputs

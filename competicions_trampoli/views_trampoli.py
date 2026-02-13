@@ -1,4 +1,5 @@
 from collections import defaultdict
+from types import SimpleNamespace
 from django.shortcuts import get_object_or_404
 from django.views.generic import TemplateView, UpdateView
 from django.urls import reverse
@@ -140,33 +141,18 @@ class TrampoliNotesHome(TemplateView):
 
 
 
-class TrampoliConfigUpdate(UpdateView):
-    model = TrampoliConfiguracio
-    fields = [
-        "nombre_jutges_execucio",
-        "nombre_notes_valides_execucio",   
-        "criteri_execucio",
-        "mostrar_salts",
-        "mostrar_dificultat",
-        "mostrar_tof",
-        "mostrar_hd",
-        "mostrar_penalitzacio",
-        "mostrar_total",
-        "nombre_exercicis",
-    ]
+class ConfiguracioCompeticio(TemplateView):
     template_name = "competicio/configuracio_trampoli.html"
 
-    def get_object(self):
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
         competicio = get_object_or_404(Competicio, pk=self.kwargs["pk"])
-        obj, _ = TrampoliConfiguracio.objects.get_or_create(
-            competicio=competicio
-        )
-        return obj
 
-    def get_success_url(self):
-        # Redirigeix a la vista de notes trampolí de la competició
-        return reverse('trampoli_notes_home', kwargs={'pk': self.kwargs['pk']})
+        # El teu template fa servir "object.competicio.nom" i "object.competicio.aparells_cfg..."
+        # així que li passem un objecte "fake" amb l'atribut competicio.
+        ctx["object"] = SimpleNamespace(competicio=competicio)
 
+        return ctx
 
 
 NUM_SALTS = 11
@@ -459,7 +445,7 @@ class TrampoliAparellList(ListView):
         return ctx
 
 
-class TrampoliAparellCreate(CreateView):
+class CompeticioAparellCreate(CreateView):
     template_name = "competicio/trampoli_aparell_form.html"
     form_class = CompeticioAparellForm
 
@@ -492,23 +478,33 @@ class TrampoliAparellCreate(CreateView):
         ctx["competicio"] = self.competicio
         return ctx
 
-
-'''class TrampoliAparellUpdate(UpdateView):
+class CompeticioAparellUpdate(UpdateView):
     template_name = "competicio/trampoli_aparell_form.html"
-    form_class = AparellForm
+    form_class = CompeticioAparellForm
+    model = CompeticioAparell
+    pk_url_kwarg = "app_id"
+
 
     def dispatch(self, request, *args, **kwargs):
-        self.next_url = request.GET.get("next")
+        self.competicio = get_object_or_404(Competicio, pk=kwargs["pk"])
         return super().dispatch(request, *args, **kwargs)
 
-    def get_object(self):
-        return get_object_or_404(Aparell, pk=self.kwargs["ap_id"])
+    def get_queryset(self):
+        # IMPORTANT: només permet editar aparells d'aquesta competició
+        return CompeticioAparell.objects.filter(competicio=self.competicio)
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["competicio"] = self.competicio
+        return kwargs
 
     def get_success_url(self):
-        if self.next_url:
-            return self.next_url
-        return reverse("aparells_list")
-'''
+        return reverse("trampoli_aparells_list", kwargs={"pk": self.kwargs["pk"]})
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["competicio"] = self.competicio
+        return ctx
 
 
 class AparellList(ListView):

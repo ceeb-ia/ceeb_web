@@ -21,6 +21,7 @@ class Aparell(models.Model):
 class CompeticioAparell(models.Model):
     competicio = models.ForeignKey(Competicio, on_delete=models.CASCADE, related_name="aparells_cfg")
     aparell = models.ForeignKey(Aparell, on_delete=models.PROTECT, related_name="competicio_cfg")
+    nombre_exercicis = models.PositiveSmallIntegerField(default=1, max_length=2, verbose_name="Nombre d'exercicis")
 
     #CREC QUE REDUNDANT A PARTIR D'AQUI; INUTIL JA
     ordre = models.PositiveSmallIntegerField(default=1)
@@ -46,6 +47,8 @@ class CompeticioAparell(models.Model):
             models.UniqueConstraint(fields=["competicio", "aparell"], name="uniq_competicio_aparell")
         ]
 
+
+# OBSOLETA
 class TrampoliConfiguracio(models.Model):
     competicio = models.OneToOneField(Competicio, on_delete=models.CASCADE, related_name="cfg_trampoli")
     nombre_jutges_execucio = models.PositiveSmallIntegerField(default=3)
@@ -95,6 +98,8 @@ class TrampoliConfiguracio(models.Model):
                     "nombre_notes_valides_execucio": "Ha de ser menor o igual al nombre de jutges d'execució."
                 })
 
+
+# CASI OBSOLETA, SUBSTITUIDA PER SCOREENTRY
 class TrampoliNota(models.Model):
     competicio = models.ForeignKey(Competicio, on_delete=models.CASCADE, related_name="notes_trampoli")
     inscripcio = models.ForeignKey(Inscripcio, on_delete=models.CASCADE, related_name="notes_trampoli")
