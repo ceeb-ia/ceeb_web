@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Configuració – Trampolí{% endblock %}
+{% block title %}Configuració – {{ object.competicio.nom }}{% endblock %}
 
 {% block content %}
 <div class="container-fluid mt-4">
@@ -9,7 +9,7 @@
     <!-- CAPÇALERA (mateix estil que Notes) -->
     <div class="d-flex justify-content-between align-items-start mb-3">
       <div>
-        <h2 class="mb-1">Configuració · Gimnàstica trampolí</h2>
+        <h2 class="mb-1">Configuració · {{ object.competicio.nom }}</h2>
         <div class="text-muted small">
           Competició: <span class="fw-semibold">{{ object.competicio.nom }}</span>
         </div>
@@ -24,12 +24,12 @@
           Inscripcions
         </a>
         <!-- NOU: accés a aparells -->
-        <a class="btn btn-sm btn-outline-secondary"
-           href="{% url 'trampoli_notes_home' object.competicio.id %}">
-          Tornar a notes
+        <a class="btn btn-sm btn-outline-primary"
+           href="{% url 'scoring_notes_home' object.competicio.id %}">
+          Notes
         </a>
         
-        <a class="btn btn-sm btn-outline-primary"
+        <a class="btn btn-sm btn-outline-success"
           href="{% url 'classificacions_live' object.competicio.id %}">
           Veure classificacions en viu
         </a>
@@ -76,8 +76,9 @@
                 <span>
                   <strong>{{ comp_aparell.aparell.nom }}</strong>
                   <span class="text-muted small"> ({{ comp_aparell.aparell.codi }})</span>
-                  — {{ comp_aparell.nombre_elements }} salts
-                  — Mode: {{ comp_aparell.get_mode_execucio_display }}
+                  {% for bloc in comp_aparell.aparell.scoring_schema.schema.fields %}
+                  <span class="small">- {{ bloc.code }}</span>
+                  {% endfor %}
                 </span>
                 <form method="post" action="{% url 'competicio_aparell_delete' object.competicio.id comp_aparell.id %}" style="display:inline;">
                   {% csrf_token %}

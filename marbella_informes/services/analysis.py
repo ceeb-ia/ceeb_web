@@ -214,6 +214,9 @@ def run_analysis(
     }
     plot_items: List[Dict[str, Any]] = []
 
+    cfg = report.config or {}
+    plot_defaults = cfg.get("plot_defaults") or {}
+    plot_overrides = cfg.get("plots") or {}
 
     # ----- CLIENTS -----
     if "clients" in dfs:
@@ -222,6 +225,8 @@ def run_analysis(
             dfs["clients"],
             plots_dir_abs=plots_dir_abs,
             year=report.any,
+            plot_defaults=plot_defaults,
+            #plot_overrides=plot_overrides,
         )
         kpis["clients"] = clients_kpis
         warnings += clients_warnings
@@ -241,6 +246,8 @@ def run_analysis(
             dfs["reserves"],
             plots_dir_abs=plots_dir_abs,
             year=report.any,
+            plot_defaults=plot_defaults,
+            #plot_overrides=plot_overrides,
         )
         kpis["reserves"] = reserves_kpis
         warnings += reserves_warnings
