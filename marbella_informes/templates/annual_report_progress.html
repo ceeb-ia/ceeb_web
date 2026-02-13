@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Progrés anàlisi{% endblock %}
+{% block content %}
+<div class="container-fluid mt-4">
+  <div class="card-surface">
+    <h3 class="mb-2">Anàlisi en curs</h3>
+    <div class="text-muted small mb-3">{{ object }}</div>
+
+    <div
+    id="bar"
+    class="progress-bar"
+    role="progressbar"
+    data-progress="{{ object.progress|default:0 }}"
+    aria-valuemin="0"
+    aria-valuemax="100"
+    >
+    <span id="pct">{{ object.progress }}%</span>
+    </div>
+
+
+    <div id="status" class="small text-muted">Estat: {{ object.status }}</div>
+    <div id="err" class="small text-danger mt-2" style="display:none;"></div>
+
+    <div class="mt-3">
+      <a class="btn btn-sm btn-outline-secondary" href="{% url 'annual_report_detail' object.pk %}">Tornar</a>
+    </div>
+  </div>
+</div>
+
+<script>
+
+document.addEventListener("DOMContentLoaded", function() {
+  const bar = document.getElementById("bar");
+  const progress = parseInt(bar.dataset.progress || 0);
+
+  bar.style.width = progress + "%";
+  bar.setAttribute("aria-valuenow", progress);
+});
+
+async function poll() {
+  const res = await fetch("{% url 'annual_report_progress_json' object.pk %}");
+  const data = await res.json();
+
+  document.getElementById("status").textContent = "Estat: " + data.status;
+  document.getElementById("bar").style.width = data.progress + "%";
+  document.getElementById("pct").textContent = data.progress + "%";
+
+  if (data.status === "error") {
+    const err = document.getElementById("err");
+    err.style.display = "block";
+    err.textContent = data.error || "Error desconegut.";
+    return;
+  }
+
+  if (data.status === "done") {
+    window.location.href = "{% url 'annual_report_detail' object.pk %}";
+    return;
+  }
+
+  setTimeout(poll, 1000);
+}
+poll();
+</script>
+{% endblock %}

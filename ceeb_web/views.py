@@ -39,6 +39,9 @@ def formacio_view(request):
 def esports_equip_view(request):
     return render(request, 'esports_equip.html')  # Renderitza la plantilla 'esports_equip.html'
 
+def marbella_view(request):
+    return render(request, 'marbella.html')  # Renderitza la plantilla 'marbella.html'
+
 def esports_individuals_view(request):
     return render(request, 'esports_individuals.html')  # Renderitza la plantilla 'esports_individuals.html'
 

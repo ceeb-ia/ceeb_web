@@ -1,0 +1,58 @@
+{# templates/annual_report_plot_edit.html #}
+{% extends "base.html" %}
+{% block title %}Editar gràfic{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+  <div class="card-surface">
+    <div class="d-flex justify-content-between align-items-start mb-3">
+      <div>
+        <h2 class="mb-1">Editar gràfic</h2>
+        <div class="text-muted small">
+          Informe: {{ report }} · Plot: <code>{{ plot_key }}</code>
+        </div>
+      </div>
+      <a href="{% url 'annual_report_detail' report.pk %}" class="btn btn-sm btn-outline-secondary">Tornar</a>
+    </div>
+
+    <form method="post">
+      {% csrf_token %}
+
+      <div class="form-check mb-3">
+        {{ form.enabled }}
+        <label class="form-check-label">{{ form.enabled.label }}</label>
+        {% if form.enabled.errors %}<div class="text-danger small">{{ form.enabled.errors }}</div>{% endif %}
+      </div>
+
+      <div class="mb-3">
+        <label class="small text-muted mb-1">{{ form.title.label }}</label>
+        {{ form.title }}
+        {% if form.title.errors %}<div class="text-danger small">{{ form.title.errors }}</div>{% endif %}
+      </div>
+
+      <div class="row">
+        <div class="col-md-3 mb-3">
+          <label class="small text-muted mb-1">{{ form.dpi.label }}</label>
+          {{ form.dpi }}
+          {% if form.dpi.errors %}<div class="text-danger small">{{ form.dpi.errors }}</div>{% endif %}
+        </div>
+        <div class="col-md-3 mb-3">
+          <div class="form-check mt-4">
+            {{ form.grid }}
+            <label class="form-check-label">{{ form.grid.label }}</label>
+          </div>
+          {% if form.grid.errors %}<div class="text-danger small">{{ form.grid.errors }}</div>{% endif %}
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn-primary btn-sm">Desar</button>
+    </form>
+
+    <hr class="my-3">
+    <div class="text-muted small">
+      Això guarda l’override a <code>report.config.plots["{{ plot_key }}"]</code>.
+      (Encara no regenera el PNG; ho farem al següent pas.)
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -9,6 +9,7 @@ from ceeb_web import views
 urlpatterns = [
     path('about/', views.about_view, name='about'),
     path('admin/', admin.site.urls),
+    path('marbella/', views.marbella_view, name='marbella'),
     path('esports_equip/', views.esports_equip_view, name='esports_equip'),
     path('esports_individuals/', views.esports_individuals_view, name='esports_individuals'),
     path('esports_individuals/llistats_provisionals/', views.llistats_provisionals_view, name='llistats_provisionals'),
@@ -28,5 +29,6 @@ urlpatterns = [
     path("calendar/events/<int:event_id>/update/", views.CalendarEventUpdateView.as_view(), name="calendar_event_update"),
     path("calendar/events/<int:event_id>/delete/", views.CalendarEventDeleteView.as_view(), name="calendar_event_delete"),
     path("", include("competicions_trampoli.urls")),
+    path('', include('marbella_informes.urls')),
 
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

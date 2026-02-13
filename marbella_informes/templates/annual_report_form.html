@@ -1,0 +1,368 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}{% if is_create %}Nou informe anual{% else %}Editar informe anual{% endif %}{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+  <style>
+    .panel { border: 1px solid #e3e6ef; border-radius: 12px; background: #fff; }
+    .panel-head { padding: 10px 14px; display:flex; justify-content:space-between; align-items:center; gap:12px; cursor:pointer; }
+    .panel-body { padding: 12px 14px; border-top: 1px solid #eef1f7; }
+    .panel-title { font-weight: 600; margin:0; }
+    .subtle { color:#6b7280; font-size:.85rem; }
+    .chev { transition: transform .15s ease; }
+    .panel-collapse.is-collapsed { display:none; }
+    .collapsed .chev { transform: rotate(-90deg); }
+    .chip { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border:1px solid #cfd6e6; border-radius:999px; background:#fff; }
+    .btn-row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+
+    .file-pill { display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border:1px solid #e5e7eb; border-radius:999px; background:#f9fafb; }
+    .file-pill .name { max-width: 420px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:inline-block; }
+  </style>
+
+  <div class="card-surface">
+    <!-- CAPÇALERA -->
+    <div class="d-flex justify-content-between align-items-start mb-3">
+      <div>
+        <h2 class="mb-1">{% if is_create %}Nou informe anual{% else %}Configuració i Excels{% endif %}</h2>
+        <div class="text-muted small">
+          Objectiu: adjuntar dades anuals i deixar-ho llest per l’anàlisi i la redacció automàtica.
+        </div>
+      </div>
+
+      <div class=" gap-2">
+        {% if not is_create %}
+          <a href="{% url 'annual_report_detail' object.pk %}" class="btn btn-sm btn-outline-secondary">Veure</a>
+        {% endif %}
+        <a href="{% url 'annual_report_list' %}" class="btn btn-sm btn-outline-secondary">Tornar</a>
+      </div>
+    </div>
+
+    {% if messages %}
+      <div class="mb-3">
+        {% for m in messages %}
+          <div class="alert alert-{{ m.tags }} mb-2">{{ m }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <form method="post" enctype="multipart/form-data">
+      {% csrf_token %}
+
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <div class="text-muted small">Panells plegables · obre només el que necessitis.</div>
+        <div class="d-flex gap-2">
+          <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleAllPanels(true)">Desplegar tot</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleAllPanels(false)">Plegar tot</button>
+        </div>
+      </div>
+
+      <div class="d-flex flex-column gap-2" id="report-panels">
+
+        <!-- DADES BÀSIQUES -->
+        <div class="panel">
+          <div class="panel-head" data-target="#panel-basic" aria-expanded="true">
+            <div>
+              <p class="panel-title mb-0">Dades bàsiques</p>
+              <div class="subtle">Instal·lació i any de l’informe.</div>
+            </div>
+            <span class="chev">▾</span>
+          </div>
+          <div id="panel-basic" class="panel-collapse">
+            <div class="panel-body">
+              <div class="form-row">
+                <div class="form-group col-md-6">
+                  <label class="small text-muted mb-1">Instal·lació</label>
+                  {{ form.instal_lacio_nom }}
+                  {% if form.instal_lacio_nom.errors %}<div class="text-danger small">{{ form.instal_lacio_nom.errors }}</div>{% endif %}
+                </div>
+                <div class="form-group col-md-2">
+                  <label class="small text-muted mb-1">Any</label>
+                  {{ form.any }}
+                  {% if form.any.errors %}<div class="text-danger small">{{ form.any.errors }}</div>{% endif %}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- EXCELS -->
+        <div class="panel">
+          <div class="panel-head collapsed" data-target="#panel-excels" aria-expanded="false">
+            <div>
+              <p class="panel-title mb-0">Excels (dades anuals)</p>
+              <div class="subtle">Adjunta tots els fitxers en una sola pantalla.</div>
+            </div>
+            <span class="chev">▾</span>
+          </div>
+          <div id="panel-excels" class="panel-collapse is-collapsed">
+            <div class="panel-body">
+
+              {% if is_create %}
+                <div class="alert alert-info mb-3">
+                  Primer crea l’informe (Desar). Després podràs adjuntar els Excels.
+                </div>
+              {% else %}
+                {{ formset.management_form }}
+
+                <div class="table-responsive">
+                  <table class="table table-sm table-bordered align-middle">
+                    <thead class="table-light">
+                      <tr>
+                        <th style="width:220px;">Tipus</th>
+                        <th>Fitxer</th>
+                        <th style="width:260px;">Notes</th>
+                        <th style="width:120px;">Accions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for f in formset.forms %}
+                        <tr>
+                          <td>
+                            {{ f.tipus }}
+                            {% if f.tipus.errors %}<div class="text-danger small">{{ f.tipus.errors }}</div>{% endif %}
+                          </td>
+                          <td>
+                            {% if f.instance.pk and f.instance.fitxer %}
+                              <div class="mb-2 file-pill">
+                                <span class="badge badge-light">Actual</span>
+                                <span class="name">{{ f.instance.fitxer.name }}</span>
+                              </div>
+                            {% endif %}
+                            {{ f.fitxer }}
+                            {% if f.fitxer.errors %}<div class="text-danger small">{{ f.fitxer.errors }}</div>{% endif %}
+                          </td>
+                          <td>
+                            {{ f.notes }}
+                            {% if f.notes.errors %}<div class="text-danger small">{{ f.notes.errors }}</div>{% endif %}
+                          </td>
+                          <td class="text-nowrap">
+                            {% if f.instance.pk %}
+                              <div class="form-check">
+                                {{ f.DELETE }}
+                                <label class="form-check-label small">Eliminar</label>
+                              </div>
+                            {% endif %}
+                            {{ f.id }}
+                          </td>
+                        </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div class="text-muted small">
+                  * Recomanat: mantén els noms de fulls i columnes estables; després validarem i farem “mapatge” automàtic.
+                </div>
+              {% endif %}
+
+            </div>
+          </div>
+        </div>
+
+        <!-- CONFIG (PLOTS) -->
+        <div class="panel">
+          <div class="panel-head collapsed" data-target="#panel-config" aria-expanded="false">
+            <div>
+              <p class="panel-title mb-0">Paràmetres generals de gràfics</p>
+              <div class="subtle">Aquests valors s’apliquen a tots els plots quan generem l’anàlisi.</div>
+            </div>
+            <span class="chev">▾</span>
+          </div>
+
+          <div id="panel-config" class="panel-collapse is-collapsed">
+            <div class="panel-body">
+
+              <div class="form-row">
+                <div class="form-group col-md-4">
+                  <label class="small text-muted mb-1">{{ form.plot_style.label }}</label>
+                  {{ form.plot_style }}
+                  {% if form.plot_style.errors %}<div class="text-danger small">{{ form.plot_style.errors }}</div>{% endif %}
+                </div>
+
+                <div class="form-group col-md-2">
+                  <label class="small text-muted mb-1">{{ form.plot_dpi.label }}</label>
+                  {{ form.plot_dpi }}
+                  {% if form.plot_dpi.errors %}<div class="text-danger small">{{ form.plot_dpi.errors }}</div>{% endif %}
+                </div>
+
+                <div class="form-group col-md-2">
+                  <div class="form-check mt-4">
+                    {{ form.plot_grid }}
+                    <label class="form-check-label">{{ form.plot_grid.label }}</label>
+                  </div>
+                  {% if form.plot_grid.errors %}<div class="text-danger small">{{ form.plot_grid.errors }}</div>{% endif %}
+                </div>
+
+                <div class="form-group col-md-2">
+                  <label class="small text-muted mb-1">{{ form.plot_grid_alpha.label }}</label>
+                  {{ form.plot_grid_alpha }}
+                  {% if form.plot_grid_alpha.errors %}<div class="text-danger small">{{ form.plot_grid_alpha.errors }}</div>{% endif %}
+                </div>
+              </div>
+
+              <hr class="my-3">
+
+              <div class="form-row">
+                <div class="form-group col-md-4">
+                  <label class="small text-muted mb-1">{{ form.plot_font_family.label }}</label>
+                  {{ form.plot_font_family }}
+                  {% if form.plot_font_family.errors %}<div class="text-danger small">{{ form.plot_font_family.errors }}</div>{% endif %}
+                </div>
+
+                <div class="form-group col-md-2">
+                  <label class="small text-muted mb-1">{{ form.plot_font_size.label }}</label>
+                  {{ form.plot_font_size }}
+                  {% if form.plot_font_size.errors %}<div class="text-danger small">{{ form.plot_font_size.errors }}</div>{% endif %}
+                </div>
+
+                <div class="form-group col-md-2">
+                  <label class="small text-muted mb-1">{{ form.plot_title_size.label }}</label>
+                  {{ form.plot_title_size }}
+                  {% if form.plot_title_size.errors %}<div class="text-danger small">{{ form.plot_title_size.errors }}</div>{% endif %}
+                </div>
+
+                <div class="form-group col-md-2">
+                  <label class="small text-muted mb-1">{{ form.plot_title_weight.label }}</label>
+                  {{ form.plot_title_weight }}
+                  {% if form.plot_title_weight.errors %}<div class="text-danger small">{{ form.plot_title_weight.errors }}</div>{% endif %}
+                </div>
+              </div>
+
+              <hr class="my-3">
+
+              <div class="form-row">
+                <div class="form-group col-md-3">
+                  <label class="small text-muted mb-1">Mida figura (línies) - ample</label>
+                  {{ form.figsize_line_w }}
+                  {% if form.figsize_line_w.errors %}<div class="text-danger small">{{ form.figsize_line_w.errors }}</div>{% endif %}
+                </div>
+                <div class="form-group col-md-3">
+                  <label class="small text-muted mb-1">Mida figura (línies) - alçada</label>
+                  {{ form.figsize_line_h }}
+                  {% if form.figsize_line_h.errors %}<div class="text-danger small">{{ form.figsize_line_h.errors }}</div>{% endif %}
+                </div>
+
+                <div class="form-group col-md-3">
+                  <label class="small text-muted mb-1">Mida figura (pastís) - ample</label>
+                  {{ form.figsize_pie_w }}
+                  {% if form.figsize_pie_w.errors %}<div class="text-danger small">{{ form.figsize_pie_w.errors }}</div>{% endif %}
+                </div>
+                <div class="form-group col-md-3">
+                  <label class="small text-muted mb-1">Mida figura (pastís) - alçada</label>
+                  {{ form.figsize_pie_h }}
+                  {% if form.figsize_pie_h.errors %}<div class="text-danger small">{{ form.figsize_pie_h.errors }}</div>{% endif %}
+                </div>
+              </div>
+
+              <div class="text-muted small">
+                Aquests paràmetres es guarden a <code>config.plot_defaults</code> i s’apliquen a tots els gràfics.
+              </div>
+
+            </div>
+          </div>
+        </div>
+
+
+        <!-- VISTA PRÈVIA (placeholder) -->
+        <div class="panel">
+          <div class="panel-head collapsed" data-target="#panel-preview" aria-expanded="false">
+            <div>
+              <p class="panel-title mb-0">Vista prèvia</p>
+              <div class="subtle">Resum del que tenim carregat (després hi posarem validacions i previews reals).</div>
+            </div>
+            <span class="chev">▾</span>
+          </div>
+          <div id="panel-preview" class="panel-collapse is-collapsed">
+            <div class="panel-body">
+              {% if is_create %}
+                <div class="text-muted small">Crea l’informe per veure la vista prèvia.</div>
+              {% else %}
+                <div class="chips">
+                  <span class="text-muted small fw-semibold">Fitxers:</span>
+                  {% for ds in object.datasets.all %}
+                    {% if ds.fitxer %}
+                      <span class="chip small">{{ ds.get_tipus_display }}</span>
+                    {% endif %}
+                  {% endfor %}
+                </div>
+
+                <hr class="my-3">
+
+                <div class="text-muted small">
+                  Proper pas: lectura del capçal (fulls/columnes), avisos, i pre-visualització (top 5 files) abans d’analitzar.
+                </div>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="d-flex justify-content-between align-items-center mt-3">
+        <div class="text-muted small">
+          {% if not is_create %}Última actualització: {{ object.updated_at|date:"d/m/Y H:i" }}{% endif %}
+        </div>
+        <div class="btn-row">
+          <button type="submit" name="action" value="save" class="btn btn-sm btn-primary">
+            Desar
+          </button>
+
+          {% if not is_create %}
+            <a href="{% url 'annual_report_detail' object.pk %}" class="btn btn-sm btn-outline-secondary">Veure</a>
+            <button type="submit"
+                      formaction="{% url 'annual_report_run_analysis' object.pk %}"
+                      class="btn btn-sm btn-success">
+                Generar anàlisi
+            </button>          
+  
+          {% endif %}
+        </div>
+      </div>
+
+    </form>
+
+  </div>
+</div>
+
+<script>
+  function setPanelOpen(headEl, open) {
+    const sel = headEl.getAttribute('data-target');
+    const panel = sel ? document.querySelector(sel) : null;
+    if (!panel) return;
+
+    if (open) {
+      panel.classList.remove('is-collapsed');
+      headEl.classList.remove('collapsed');
+      headEl.setAttribute('aria-expanded', 'true');
+    } else {
+      panel.classList.add('is-collapsed');
+      headEl.classList.add('collapsed');
+      headEl.setAttribute('aria-expanded', 'false');
+    }
+  }
+
+  function togglePanel(headEl) {
+    const sel = headEl.getAttribute('data-target');
+    const panel = sel ? document.querySelector(sel) : null;
+    if (!panel) return;
+    const isCollapsed = panel.classList.contains('is-collapsed');
+    setPanelOpen(headEl, isCollapsed);
+  }
+
+  function toggleAllPanels(open) {
+    document.querySelectorAll('.panel-head[data-target]').forEach(head => setPanelOpen(head, open));
+  }
+  window.toggleAllPanels = toggleAllPanels;
+
+  document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.panel-head[data-target]').forEach(head => {
+      head.addEventListener('click', (e) => {
+        if (e.target.closest('button, a, input, select, textarea, label')) return;
+        togglePanel(head);
+      });
+    });
+  });
+</script>
+{% endblock %}

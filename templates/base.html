@@ -52,9 +52,20 @@
                                             <li><a class="dropdown-item" href="{% url 'esports_equip' %}">Esports d'Equip</a></li>
                                             <li><a class="dropdown-item" href="{% url 'formacio' %}">Formació</a></li>
                                             <li><a class="dropdown-item" href="{% url 'esports_individuals' %}">Esports Individuals</a></li>
+
                                         </ul>
 
                                     </li>
+
+                                    <li class="nav-item dropdown">
+                                        <a class="nav-link dropdown-toggle" href="{% url 'marbella' %}" id="marbellaDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">Marbella</a>
+                                        <ul class="dropdown-menu" aria-labelledby="marbellaDropdown">
+                                            <li><a class="dropdown-item" href="{% url 'annual_report_list' %}">Informes</a></li>
+
+                                        </ul>
+
+                                    </li>
+                                    
                                     <li class="nav-item">
                                         <a class="nav-link" href="https://ceeb.playoffinformatica.com/PanellControl.php?accio=value_panellcontrol_view">PlayOff</a>
                                     </li>

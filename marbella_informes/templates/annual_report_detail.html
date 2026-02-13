@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}{{ object }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+  <div class="card-surface">
+    <div class="d-flex justify-content-between align-items-start mb-3">
+      <div>
+        <h2 class="mb-1">{{ object }}</h2>
+        <div class="text-muted small">Dades carregades i configuració guardada.</div>
+      </div>
+      <div class=" gap-2 ">
+        <a href="{% url 'annual_report_update' object.pk %}" class="btn btn-sm btn-primary">Editar</a>
+        <form action="{% url 'annual_report_run_analysis' object.pk %}" method="post" style="display:inline;">{% csrf_token %}
+        <button type="submit"
+                      formaction="{% url 'annual_report_run_analysis' object.pk %}"
+                      class="btn btn-sm btn-success">
+                Generar anàlisi
+            </button>     
+        </form>
+      </div>
+    </div>
+
+    <h6 class="text-muted">Excels</h6>
+    <div class="table-responsive">
+      <table class="table table-sm table-bordered">
+        <thead class="table-light">
+          <tr>
+            <th>Tipus</th>
+            <th>Fitxer</th>
+            <th>Notes</th>
+            <th>Pujat</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for ds in object.datasets.all %}
+            <tr>
+              <td>{{ ds.get_tipus_display }}</td>
+              <td>{% if ds.fitxer %}{{ ds.fitxer.name }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+              <td>{{ ds.notes|default:"" }}</td>
+              <td class="text-nowrap">{{ ds.uploaded_at|date:"d/m/Y H:i" }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <h6 class="text-muted mt-4">Config</h6>
+    <pre class="small bg-light p-2 rounded">{{ object.config|default:"{}" }}</pre>
+
+    <h6 class="text-muted mt-4">DEBUG analysis_result</h6>
+<pre class="small bg-light p-2 rounded">{{ analysis_result|default:"{}" }}</pre>
+
+
+    <h6 class="text-muted mt-4">Gràfics</h6>
+
+    {% if plots %}
+      <div class="row">
+        {% for p in plots %}
+          <div class="col-12 col-md-6 col-xl-4 mb-3">
+            <div class="card">
+              <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start">
+                  <div>
+                    <div class="fw-semibold">{{ p.title|default:p.key }}</div>
+                    <div class="text-muted small">{{ p.key }} · {{ p.kind|default:"image" }}</div>
+                  </div>
+
+                  <a class="btn btn-sm btn-outline-primary"
+                    href="{% url 'annual_report_plot_edit' object.pk p.key %}">
+                    Editar
+                  </a>
+                </div>
+
+                <a href="{{ p.url }}" target="_blank" rel="noopener">
+                  <img src="{{ p.url }}" class="img-fluid rounded border mt-2" alt="{{ p.title|default:p.key }}">
+                </a>
+
+                {# opcional: mostra params si et va bé per debug #}
+                {# <pre class="small bg-light p-2 rounded mt-2">{{ p.params|default:"{}" }}</pre> #}
+              </div>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="text-muted small">Encara no hi ha gràfics generats per aquest informe.</div>
+    {% endif %}
+
+
+
+  </div>
+</div>
+{% endblock %}

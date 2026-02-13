@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Esports d'Equip{% endblock %}
+
+{% block content %}
+<section class="about_section layout_padding">
+<div class="container">
+    <div class="card-container">
+        <!-- Card 1 -->
+        <div class="card">
+            <img src="{% static 'images/calendaritzacions.jpg' %}" class="card-img-top" alt="Informes">
+            <div class="card-body">
+                <h3 class="card-title">Informes Anuals</h3>
+                <p class="card-text">Realitza l'informe anual de la instal·lació.</p>
+                <a href="{% url 'annual_report_list' %}" class="btn btn-primary">Accedeix</a>
+            </div>
+        </div>
+
+    </div>
+</div>
+</section>
+{% endblock %}

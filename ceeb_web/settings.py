@@ -14,6 +14,7 @@ INSTALLED_APPS = [
     'django_celery_results',  # Resultats de Celery
     'alumnat',
     'competicions_trampoli',
+    'marbella_informes', # L'app per informes anuals de Marbella
      # Example apps
 ]
 
