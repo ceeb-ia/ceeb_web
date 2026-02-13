@@ -36,7 +36,17 @@
             <label class="form-check-label" for="{{ form.actiu.id_for_label }}">{{ form.actiu.label }}</label>
           </div>
         </div>
-      </div>
+
+        <div>
+
+        </div>
+
+      <div class=" gap-2 mt-3 col-12">
+        <a class="btn btn-outline-warning"
+          href="{% url 'aparell_scoring_schema_update' pk=object.id %}?next={{ request.get_full_path|urlencode }}">
+          Puntuació
+        </a>
+     </div>
 
       <div class=" gap-2 mt-3">
         <button class="btn btn-primary" type="submit">Desar</button>

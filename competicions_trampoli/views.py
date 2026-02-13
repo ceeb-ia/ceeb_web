@@ -6,6 +6,7 @@ from django.shortcuts import get_object_or_404
 from django.urls import reverse_lazy
 from django.views.generic import CreateView, FormView, ListView, TemplateView, DeleteView
 from django.shortcuts import redirect
+from django.db.models import Q
 from .forms import ImportInscripcionsExcelForm
 from .models import Competicio, Inscripcio
 from .forms import CompeticioForm
@@ -330,7 +331,12 @@ class InscripcionsListView(ListView):
         if entitat:
             qs = qs.filter(entitat__icontains=entitat)
         if q:
-            qs = qs.filter(nom_i_cognoms__icontains=q)
+            # Cerca per nom, DNI, o entitat
+            qs = qs.filter(
+                Q(nom_i_cognoms__icontains=q) |
+                Q(document__icontains=q) |
+                Q(entitat__icontains=q)
+            )
         if categoria:
             qs = qs.filter(categoria__iexact=categoria)
         if prova:

@@ -8,8 +8,9 @@ from .models_trampoli import TrampoliConfiguracio, TrampoliNota, CompeticioApare
 from django.http import JsonResponse
 from django.views.decorators.http import require_POST
 from django.db import transaction
+from django.db import IntegrityError
 import json
-from django.views.generic import ListView, CreateView
+from django.views.generic import ListView, CreateView, View
 from django import forms
 from django.shortcuts import redirect
 from competicions_trampoli.forms import CompeticioAparellForm, AparellForm
@@ -454,6 +455,7 @@ class TrampoliAparellList(ListView):
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         ctx["competicio"] = self.competicio
+        
         return ctx
 
 
@@ -465,10 +467,20 @@ class TrampoliAparellCreate(CreateView):
         self.competicio = get_object_or_404(Competicio, pk=kwargs["pk"])
         return super().dispatch(request, *args, **kwargs)
 
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["competicio"] = self.competicio
+        return kwargs
+
     def form_valid(self, form):
         obj = form.save(commit=False)
         obj.competicio = self.competicio
-        obj.save()
+        try:
+            obj.save()
+        except IntegrityError:
+            form.add_error("aparell", "Aquest aparell ja esta afegit a la competicio.")
+            return self.form_invalid(form)
+
         self.object = obj
         return redirect(self.get_success_url())
 
@@ -526,3 +538,10 @@ class AparellUpdate(UpdateView):
         if next_url:
             return next_url
         return reverse("aparells_list")
+    
+
+class CompeticioAparellDeleteView(View):
+    def post(self, request, pk, app_id):
+        comp_aparell = get_object_or_404(CompeticioAparell, pk=app_id, competicio_id=pk)
+        comp_aparell.delete()
+        return redirect(reverse('trampoli_config', kwargs={'pk': pk}))

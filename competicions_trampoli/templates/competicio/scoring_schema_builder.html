@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Puntuació – {{ comp_aparell.aparell.nom }}{% endblock %}
+{% block title %}Puntuació – {{ aparell.nom }}{% endblock %}
 
 {% block content %}
 <div class="container-fluid mt-4">
@@ -16,12 +16,11 @@
   <div class="card-surface">
     <div class="d-flex justify-content-between align-items-start mb-3">
       <div>
-        <h2 class="mb-1">Puntuació · {{ comp_aparell.aparell.nom }}</h2>
+        <h2 class="mb-1">Puntuació · {{ aparell.nom }}</h2>
+      {% if competicio %}
         <div class="text-muted small">Competició: <strong>{{ competicio.nom }}</strong></div>
-        <div class="text-muted small">Configura camps i fórmules sense escriure JSON.</div>
-      </div>
-      <div class="d-flex gap-2">
-        <a class="btn btn-sm btn-outline-secondary" href="{% url 'scoring_notes_home' competicio.id %}">Tornar a notes</a>
+      {% endif %}        
+      <div class="text-muted small">Configura camps i fórmules sense escriure JSON.</div>
       </div>
     </div>
 
@@ -66,11 +65,9 @@
                     <th>Etiqueta</th>
                     <th class="w-120">Code</th>
                     <th class="w-120">Var</th>
-                    <th class="w-160">Tipus</th>
 
                     <th class="w-120">Jutges</th>
                     <th class="w-120">Ítems</th>
-                    <th class="w-120">Prefix</th>
 
                     <th class="w-120">Vàlides</th>
                     <th class="w-160">Criteri</th>
@@ -87,34 +84,56 @@
               </table>
             </div>
 
-            <div class="pill-help">
-              Tipus recomanats:
-              <span class="mono">number</span> (DD/TOF/HD/P) ·
-              <span class="mono">matrix</span> (Execució S1..Sn per jutge)
-            </div>
           </div>
         </div>
 
         <!-- FÒRMULES -->
         <div class="tab-pane fade" id="tab-formules" role="tabpanel">
           <div class="border rounded p-3">
+
             <div class="d-flex justify-content-between align-items-center mb-2">
               <div>
                 <div class="font-weight-bold">Fórmules (camps calculats)</div>
-                <div class="pill-help">Exemples: <span class="mono">E_total</span>, <span class="mono">TOTAL</span>. Pots escriure <span class="mono">1 - x</span>.</div>
+                <div class="pill-help">
+                  Defineix resultats calculats a partir de camps d’entrada i d’altres fórmules.
+                  <strong>CODE</strong> és el nom del resultat (ex: <span class="mono">E_total</span>, <span class="mono">TOTAL</span>).
+                  <strong>Var</strong> (opcional) és un àlies curt (ex: <span class="mono">x</span>) per escriure fórmules més llegibles.
+                  Les fórmules s’avaluen <strong>de dalt a baix</strong> (si una depèn d’una altra, ha d’estar abans).
+                </div>
               </div>
               <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddComputed">Afegir fórmula</button>
             </div>
 
+            <div class="alert alert-light border mb-2">
+              <div class="small">
+                <div class="font-weight-bold mb-1">Com escriure una fórmula</div>
+                <ul class="mb-0 pl-3">
+                  <li>Fes servir <span class="mono">CODE</span> dels camps (inputs) i dels camps calculats (outputs).</li>
+                  <li>Si has definit <span class="mono">var</span>, també pots usar l’àlies curt (ex: <span class="mono">x</span> en lloc de <span class="mono">DD</span>).</li>
+                  <li>Per convertir llistes a un número final, usa <span class="mono">sum</span>/<span class="mono">avg</span>/<span class="mono">min</span>/<span class="mono">max</span> o <span class="mono">select_sum</span>.</li>
+                </ul>
+              </div>
+            </div>
+
             <div class="mb-2">
-              <div class="pill-help">Inserir variable:</div>
+              <div class="pill-help mb-1">
+                <strong>Inserir camps / àlies</strong>
+                <span class="text-muted">· CODE = nom del camp · var: = àlies curt</span>
+              </div>
+
+              <!-- Xips -->
               <div id="varsChips" class="d-flex flex-wrap" style="gap:6px;"></div>
+
+              <div class="pill-help mt-1">
+                Consell: fes clic sobre un xip per inserir-lo dins la cel·la de “Fórmula”.
+              </div>
             </div>
 
             <div class="table-responsive">
               <table class="table table-sm table-bordered" id="computedTable">
                 <thead class="thead-light">
                   <tr>
+                    <th>Etiqueta</th>
                     <th class="w-140">Code</th>
                     <th class="w-120">Var</th>
                     <th>Fórmula</th>
@@ -127,11 +146,16 @@
 
             <div class="alert alert-secondary mb-0">
               <div class="small">
-                Funcions disponibles: <span class="mono">exec_by_judge(E, crash, params)</span>, <span class="mono">select_sum(scores, n_valid, criteri)</span>, <span class="mono">sum</span>, <span class="mono">avg</span>, <span class="mono">min</span>, <span class="mono">max</span>.
+                Funcions disponibles:
+                <span class="mono">exec_by_judge(E, crash, params)</span>,
+                <span class="mono">select_sum(scores, n_valid, criteri)</span>,
+                <span class="mono">sum</span>, <span class="mono">avg</span>, <span class="mono">min</span>, <span class="mono">max</span>.
               </div>
             </div>
+
           </div>
         </div>
+
 
         <!-- AVANÇAT JSON -->
         <div class="tab-pane fade" id="tab-advanced" role="tabpanel">
@@ -143,9 +167,9 @@
         </div>
       </div>
 
-      <div class="d-flex gap-2 mt-3">
+      <div class=" gap-2 mt-3">
         <button class="btn btn-primary" type="submit">Desar</button>
-        <a class="btn btn-outline-secondary" href="{% url 'scoring_notes_home' competicio.id %}">Cancel·lar</a>
+        <a class="btn btn-outline-secondary" href="{{ next|default:request.META.HTTP_REFERER }}">Cancel·lar</a>
       </div>
     </form>
   </div>
@@ -175,17 +199,8 @@
       <td><input class="form-control form-control-sm mono" data-k="code" value="${data.code||""}"></td>
       <td><input class="form-control form-control-sm mono" data-k="var" value="${data.var||""}"></td>
 
-      <td>
-        <select class="form-control form-control-sm" data-k="type">
-          <option value="number">number</option>
-          <option value="matrix">matrix (judge_x_item)</option>
-          <option value="list_judge">list (judge)</option>
-        </select>
-      </td>
-
       <td><input class="form-control form-control-sm" data-k="judges_count" value="${data.judges_count ?? ""}" placeholder="ex: 3"></td>
       <td><input class="form-control form-control-sm" data-k="items_count" value="${data.items_count ?? ""}" placeholder="ex: 11"></td>
-      <td><input class="form-control form-control-sm mono" data-k="items_prefix" value="${data.items_prefix ?? ""}" placeholder="S"></td>
 
       <td><input class="form-control form-control-sm" data-k="valid_count" value="${data.valid_count ?? ""}" placeholder="ex: 2"></td>
       <td>
@@ -211,22 +226,11 @@
       </td>
     `;
 
-    const sel = tr.querySelector('select[data-k="type"]');
-    sel.value = data.type || "number";
-
     const vm = tr.querySelector('select[data-k="valid_method"]');
     vm.value = data.valid_method || "";
 
     tr.querySelector('input[data-k="crash_enabled"]').checked = !!data.crash_enabled;
 
-    sel.addEventListener("change", ()=>{
-      if(sel.value === "matrix"){
-        if(!tr.querySelector('[data-k="judges_count"]').value) tr.querySelector('[data-k="judges_count"]').value = "3";
-        if(!tr.querySelector('[data-k="items_count"]').value) tr.querySelector('[data-k="items_count"]').value = "11";
-        tr.querySelector('input[data-k="crash_enabled"]').checked = true;
-      }
-      refreshVars();
-    });
 
     tr.querySelector("button").addEventListener("click", ()=>{
       tr.remove();
@@ -245,6 +249,7 @@
     const tr = document.createElement("tr");
     tr.dataset.id = uid();
     tr.innerHTML = `
+      <td><input class="form-control form-control-sm" data-k="label" value="${data.label||""}" placeholder="Etiqueta"></td>
       <td><input class="form-control form-control-sm mono" data-k="code" value="${data.code||""}"></td>
       <td><input class="form-control form-control-sm mono" data-k="var" value="${data.var||""}"></td>
       <td><input class="form-control form-control-sm mono" data-k="formula" value="${data.formula||""}"></td>
@@ -261,47 +266,78 @@
   }
 
   function refreshVars(){
-    const vars = [];
+    // recollim tokens amb tipus (code/var) per poder-los etiquetar
+    const tokens = []; // {type:'code'|'var', value:'...'}
 
     document.querySelectorAll("#fieldsTable tbody tr").forEach(tr=>{
       const code = tr.querySelector('[data-k="code"]').value.trim();
       const vari = tr.querySelector('[data-k="var"]').value.trim();
-      if(code) vars.push(code);
-      if(vari) vars.push(vari);
+      if (code) tokens.push({type:"code", value:code});
+      if (vari) tokens.push({type:"var",  value:vari});
     });
 
     document.querySelectorAll("#computedTable tbody tr").forEach(tr=>{
       const code = tr.querySelector('[data-k="code"]').value.trim();
       const vari = tr.querySelector('[data-k="var"]').value.trim();
-      if(code) vars.push(code);
-      if(vari) vars.push(vari);
+      if (code) tokens.push({type:"code", value:code});
+      if (vari) tokens.push({type:"var",  value:vari});
     });
 
-    const unique = Array.from(new Set(vars)).filter(Boolean);
+    // unique per (type,value)
+    const seen = new Set();
+    const unique = [];
+    for (const t of tokens){
+      const k = `${t.type}:${t.value}`;
+      if (!t.value) continue;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      unique.push(t);
+    }
+
+    // Ordenació: primer codes, després vars; i alfabètic dins de cada grup
+    unique.sort((a,b)=>{
+      if (a.type !== b.type) return a.type === "code" ? -1 : 1;
+      return a.value.localeCompare(b.value);
+    });
 
     const wrap = document.getElementById("varsChips");
     wrap.innerHTML = "";
-    unique.forEach(v=>{
+
+    unique.forEach(t=>{
       const b = document.createElement("button");
-      b.type="button";
-      b.className="btn btn-sm btn-outline-secondary mono";
-      b.textContent=v;
+      b.type = "button";
+      b.className = "btn btn-sm btn-outline-secondary mono";
+
+      // Etiqueta visible per evitar confusió
+      const label = (t.type === "var") ? `var:${t.value}` : t.value;
+      b.textContent = label;
+
+      b.title = (t.type === "var")
+        ? "Àlies curt (var). Inserirà l’àlies a la fórmula."
+        : "Codi del camp/resultat. Inserirà el CODE a la fórmula.";
+
       b.addEventListener("click", ()=>{
         const active = document.activeElement;
         if(active && active.matches('#computedTable input[data-k="formula"]')){
+          const insertValue = (t.type === "var") ? t.value : t.value;
+
           const start = active.selectionStart || active.value.length;
           const end = active.selectionEnd || active.value.length;
           const before = active.value.slice(0,start);
           const after = active.value.slice(end);
-          active.value = before + v + after;
+
+          active.value = before + insertValue + after;
           active.focus();
-          active.selectionStart = active.selectionEnd = start + v.length;
+          active.selectionStart = active.selectionEnd = start + insertValue.length;
+
           refreshVars();
         }
       });
+
       wrap.appendChild(b);
     });
 
+    // actualitza avançat
     const adv = qs("#advancedJson");
     if (adv) adv.value = JSON.stringify(buildSchemaFromUI(), null, 2);
   }
@@ -312,7 +348,6 @@
       const label = tr.querySelector('[data-k="label"]').value.trim();
       const code = tr.querySelector('[data-k="code"]').value.trim();
       const vari = tr.querySelector('[data-k="var"]').value.trim();
-      const type = tr.querySelector('[data-k="type"]').value;
 
       const minv = tr.querySelector('[data-k="min"]').value.trim();
       const maxv = tr.querySelector('[data-k="max"]').value.trim();
@@ -322,63 +357,37 @@
 
       if(!code) return;
 
-      if(type==="matrix"){
-        fields.push({
-          code,
-          label: label || code,
-          var: vari || undefined,
-          type: "matrix",
-          shape: "judge_x_item",
-          crash: { enabled: crashEnabled },
-          judges: { count: Number(tr.querySelector('[data-k="judges_count"]').value || 1) },
-          items: {
-            count: Number(tr.querySelector('[data-k="items_count"]').value || 0),
-            label_prefix: tr.querySelector('[data-k="items_prefix"]').value.trim() || undefined
-          },
-          valid: {
-            count: Number(tr.querySelector('[data-k="valid_count"]').value || 0) || undefined,
-            method: tr.querySelector('[data-k="valid_method"]').value || undefined
-          },
-          min: minv!=="" ? Number(minv) : undefined,
-          max: maxv!=="" ? Number(maxv) : undefined,
-          decimals: dec!=="" ? Number(dec) : undefined
-        });
-      }else if(type==="list_judge"){
-        fields.push({
-          code,
-          label: label || code,
-          var: vari || undefined,
-          type: "list",
-          shape: "judge",
-          judges: { count: Number(tr.querySelector('[data-k="judges_count"]').value || 1) },
-          valid: {
-            count: Number(tr.querySelector('[data-k="valid_count"]').value || 0) || undefined,
-            method: tr.querySelector('[data-k="valid_method"]').value || undefined
-          },
-          min: minv!=="" ? Number(minv) : undefined,
-          max: maxv!=="" ? Number(maxv) : undefined,
-          decimals: dec!=="" ? Number(dec) : undefined
-        });
-      }else{
-        fields.push({
-          code,
-          label: label || code,
-          var: vari || undefined,
-          type: "number",
-          min: minv!=="" ? Number(minv) : undefined,
-          max: maxv!=="" ? Number(maxv) : undefined,
-          decimals: dec!=="" ? Number(dec) : undefined
-        });
-      }
+      fields.push({
+        code,
+        label: label || code,
+        var: vari || undefined,
+        type: "matrix",
+        shape: "judge_x_item",
+        crash: { enabled: crashEnabled },
+        judges: { count: Number(tr.querySelector('[data-k="judges_count"]').value || 1) },
+        items: {
+          count: Number(tr.querySelector('[data-k="items_count"]').value || 1),
+        },
+        valid: {
+          count: Number(tr.querySelector('[data-k="valid_count"]').value || 0) || undefined,
+          method: tr.querySelector('[data-k="valid_method"]').value || undefined
+        },
+        min: minv!=="" ? Number(minv) : undefined,
+        max: maxv!=="" ? Number(maxv) : undefined,
+        decimals: dec!=="" ? Number(dec) : undefined
+      });
+
     });
 
     const computed = [];
     document.querySelectorAll("#computedTable tbody tr").forEach(tr=>{
+      const label = tr.querySelector('[data-k="label"]').value.trim();
       const code = tr.querySelector('[data-k="code"]').value.trim();
       const vari = tr.querySelector('[data-k="var"]').value.trim();
       const formula = tr.querySelector('[data-k="formula"]').value.trim();
       if(!code) return;
-      computed.push({code, var: vari || undefined, formula});
+      computed.push({code, label: label || code, var: vari || undefined, formula});
+
     });
 
     const cols = [];
@@ -397,39 +406,45 @@
     const tbC = document.querySelector("#computedTable tbody");
 
     (schema.fields || []).forEach(f=>{
+      const isNumber = (f.type === "number");
+      const isList = (f.type === "list"); // si en tens antics
+
       tbF.appendChild(fieldRow({
         label: f.label,
         code: f.code,
         var: f.var,
-        type: (f.type==="matrix") ? "matrix" : (f.type==="list" ? "list_judge" : "number"),
         min: f.min,
         max: f.max,
         decimals: f.decimals,
-        judges_count: f.judges?.count,
-        items_count: f.items?.count,
-        items_prefix: f.items?.label_prefix,
-        valid_count: f.valid?.count,
-        valid_method: f.valid?.method,
-        crash_enabled: !!(f.crash?.enabled),
+
+        // si era number antic -> matrix 1x1
+        judges_count: isNumber ? 1 : (f.judges?.count ?? 1),
+        items_count: isNumber ? 1 : (f.items?.count ?? 1),
+
+        valid_count: isNumber ? 1 : (f.valid?.count),
+        valid_method: isNumber ? "totes" : (f.valid?.method),
+
+        crash_enabled: isNumber ? false : !!(f.crash?.enabled),
       }));
     });
 
     (schema.computed || []).forEach(c=>{
-      tbC.appendChild(computedRow({code:c.code, var:c.var, formula:c.formula}));
+      tbC.appendChild(computedRow({label:c.label, code:c.code, var:c.var, formula:c.formula}));
     });
 
     if(!schema.fields || schema.fields.length===0){
       tbF.appendChild(fieldRow({
         label:"Execució", code:"E", var:"e", type:"matrix",
-        judges_count: 3, items_count: 11, items_prefix:"S",
+        judges_count: 3, items_count: 11,
         valid_count: 2, valid_method:"eliminar_extrems",
         min:0, max:10, decimals:0,
         crash_enabled:true
       }));
-      tbF.appendChild(fieldRow({label:"Dificultat", code:"DD", var:"x", type:"number", decimals:3}));
-      tbF.appendChild(fieldRow({label:"TOF", code:"TOF", var:"t", type:"number", decimals:3}));
-      tbF.appendChild(fieldRow({label:"HD", code:"HD", var:"h", type:"number", decimals:3}));
-      tbF.appendChild(fieldRow({label:"Penalització", code:"P", var:"p", type:"number", decimals:3}));
+      tbF.appendChild(fieldRow({label:"Dificultat", code:"DD", var:"x", judges_count:1, items_count:1, decimals:3, crash_enabled:false, valid_count:1, valid_method:"totes"}));
+      tbF.appendChild(fieldRow({label:"TOF",        code:"TOF", var:"t", judges_count:1, items_count:1, decimals:3, crash_enabled:false, valid_count:1, valid_method:"totes"}));
+      tbF.appendChild(fieldRow({label:"HD",         code:"HD",  var:"h", judges_count:1, items_count:1, decimals:3, crash_enabled:false, valid_count:1, valid_method:"totes"}));
+      tbF.appendChild(fieldRow({label:"Penalització",code:"P",  var:"p", judges_count:1, items_count:1, decimals:3, crash_enabled:false, valid_count:1, valid_method:"totes"}));
+
 
       tbC.appendChild(computedRow({code:"E_j", var:"", formula:"exec_by_judge(E, crash('E'), field('E'))"}));
       tbC.appendChild(computedRow({code:"E_total", var:"", formula:"select_sum(E_j, field('E')['valid']['count'], field('E')['valid']['method'])"}));
@@ -437,7 +452,7 @@
     }
 
     document.getElementById("btnAddField").addEventListener("click", ()=>{
-      tbF.appendChild(fieldRow({label:"", code:"", var:"", type:"number"}));
+      tbF.appendChild(fieldRow({label:"", code:"", var:"", judges_count:1, items_count:1, valid_count:1, valid_method:"totes"}));
       refreshVars();
     });
 

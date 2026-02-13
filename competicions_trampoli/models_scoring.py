@@ -14,6 +14,7 @@ class ScoringSchema(models.Model):
     """
     comp_aparell = models.OneToOneField(
         CompeticioAparell,
+        null=True, blank=True,
         on_delete=models.CASCADE,
         related_name="scoring_schema",
     )
@@ -34,6 +35,9 @@ class ScoringSchema(models.Model):
         if not isinstance(self.schema, dict):
             raise ValidationError({"schema": _("El schema ha de ser un objecte JSON (dict).")})
 
+        # ✅ exactament un (global o competició)
+        if bool(self.comp_aparell) == bool(self.aparell):
+            raise ValidationError("Cal informar comp_aparell o aparell (però no tots dos).")
         # Validacions mínimes (la validació forta la fem també a l'engine)
         fields = self.schema.get("fields", [])
         computed = self.schema.get("computed", [])
@@ -54,7 +58,9 @@ class ScoringSchema(models.Model):
             raise ValidationError({"schema": _("Hi ha 'code' duplicats a fields/computed.")})
 
     def __str__(self):
-        return f"Schema {self.comp_aparell.competicio_id} / {self.comp_aparell.aparell.codi}"
+        if self.comp_aparell_id:
+            return f"Schema {self.comp_aparell.competicio_id} / {self.comp_aparell.aparell.codi}"
+        return f"Schema GLOBAL / {self.aparell.codi if self.aparell_id else '???'}"
 
 
 class ScoreEntry(models.Model):

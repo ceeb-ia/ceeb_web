@@ -162,11 +162,45 @@
       </div>
     </div>
     <div class="d-flex justify-content-between align-items-start mb-3"> 
-      <a href=""></a>
+      <a href="{% url 'scoring_notes_home' competicio.id %}" class="btn btn-sm btn-outline-primary">Notes</a>
       <a href="{% url 'rotacions_planner' competicio.id %}" class="btn btn-sm btn-outline-primary" target="_blank" rel="noopener">
         Rotacions
       </a>
 
+    </div>
+
+    <!-- BUSCADOR -->
+    <div class="mb-3">
+      <div class="input-group input-group-sm" style="max-width: 500px;">
+        <input type="text"
+               class="form-control form-control-sm buscador-inscripcions"
+               id="search-input"
+               placeholder="Cerca per nom, cognoms, DNI, entitat..."
+               value="{{ request.GET.q|default:'' }}"
+               autocomplete="off"
+               style="font-size: 0.95rem; padding: 0.25rem 0.5rem;">
+        <div class="input-group-append">
+          <button class="btn btn-primary btn-sm" type="button" id="search-btn" style="font-size: 0.95rem; padding: 0.25rem 0.75rem;">
+            <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+              <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/>
+            </svg>
+            Cerca
+          </button>
+          {% if request.GET.q %}
+          <button class="btn btn-outline-secondary btn-sm" type="button" id="clear-search-btn" title="Esborrar cerca" style="font-size: 0.95rem; padding: 0.25rem 0.75rem;">
+            <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+              <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8 2.146 2.854Z"/>
+            </svg>
+          </button>
+          {% endif %}
+        </div>
+      </div>
+      <div class="small text-muted mt-1">
+        Cerca en temps real per nom, cognoms, DNI o entitat
+        {% if request.GET.q %}
+          <span class="badge badge-primary ml-2">Filtrant: "{{ request.GET.q }}"</span>
+        {% endif %}
+      </div>
     </div>
 
     <!-- CONTROLS -->
@@ -897,6 +931,59 @@
     };
 
     console.log("Sortables inicialitzats:", document.querySelectorAll('tbody.sortable-body').length);
+
+    // ============================================
+    // BUSCADOR AMB CERCA EN TEMPS REAL
+    // ============================================
+    const searchInput = document.getElementById('search-input');
+    const searchBtn = document.getElementById('search-btn');
+    const clearSearchBtn = document.getElementById('clear-search-btn');
+
+    if (searchInput) {
+      // Funció per aplicar la cerca (recarrega amb paràmetre ?q=...)
+      function applySearch() {
+        const query = searchInput.value.trim();
+        const url = new URL(window.location.href);
+
+        if (query) {
+          url.searchParams.set('q', query);
+        } else {
+          url.searchParams.delete('q');
+        }
+
+        window.location.href = url.toString();
+      }
+
+      // Botó de cerca
+      if (searchBtn) {
+        searchBtn.addEventListener('click', applySearch);
+      }
+
+      // Enter al input de cerca
+      searchInput.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          applySearch();
+        }
+      });
+
+      // Botó per esborrar cerca
+      if (clearSearchBtn) {
+        clearSearchBtn.addEventListener('click', function() {
+          searchInput.value = '';
+          applySearch();
+        });
+      }
+
+      // Cerca en temps real (debounce de 500ms)
+      let searchTimeout = null;
+      searchInput.addEventListener('input', function() {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(function() {
+          applySearch();
+        }, 500);
+      });
+    }
   });
 </script>
 

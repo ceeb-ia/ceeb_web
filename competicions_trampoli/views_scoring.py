@@ -163,13 +163,10 @@ class ScoringSchemaUpdate(UpdateView):
             return super().dispatch(request, *args, **kwargs)
 
     def get_object(self):
-        # Primer intentem schema GLOBAL (aparell=...)
-        obj = ScoringSchema.objects.filter(aparell=self.aparell).first()
-        if obj:
-            return obj
-
-        # Si no existeix, el creem global
-        obj = ScoringSchema.objects.create(aparell=self.aparell, schema={})
+        obj, _ = ScoringSchema.objects.get_or_create(
+            aparell=self.aparell,
+            defaults={"schema": {}},
+        )
         return obj
 
 
@@ -197,6 +194,10 @@ class ScoringSchemaUpdate(UpdateView):
         ctx["schema_initial"] = self.object.schema or {}
         ctx["aparell"] = self.aparell
 
+        next_url = self.request.GET.get("next")
+        if next_url:
+            ctx["next"] = next_url
+
         # només si vens del flux antic
         if self.competicio:
             ctx["competicio"] = self.competicio
@@ -204,7 +205,6 @@ class ScoringSchemaUpdate(UpdateView):
             ctx["comp_aparell"] = self.comp_aparell
 
         return ctx
-
 
 @require_POST
 @transaction.atomic

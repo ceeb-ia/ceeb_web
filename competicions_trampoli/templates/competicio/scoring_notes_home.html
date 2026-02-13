@@ -17,6 +17,10 @@
     /* barra de scroll superior com al trampolí */
     .table-scrollbar-top{ overflow-x:auto; width:100%; height:16px; margin-bottom:2px; }
     .table-scrollbar-top > div{ height:1px; }
+    .th-draggable{ cursor: grab; user-select:none; }
+    .th-draggable.dragging{ opacity:.5; }
+    .th-drop-hint{ outline:2px dashed #adb5bd; outline-offset:-2px; }
+
   </style>
 
   <div class="card-surface">
@@ -27,8 +31,10 @@
         <div class="text-muted small">Competició: <span class="fw-semibold">{{ competicio.nom }}</span></div>
         <div class="text-muted small">Entrada i càlcul depenen del schema de cada aparell.</div>
       </div>
-      <div class="d-flex gap-2">
-        <a class="btn btn-sm btn-outline-primary" href="{% url 'classificacions_live' competicio.id %}">Classificacions en viu</a>
+      <div class=" gap-2">
+        <a class="btn btn-sm btn-outline-primary" href="{% url 'inscripcions_list' competicio.id %}">Inscripcions</a>
+        <a class="btn btn-sm btn-outline-success" href="{% url 'classificacions_live' competicio.id %}">Classificacions en viu</a>
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'trampoli_config' competicio.id %}">Configuració</a>
       </div>
     </div>
 
@@ -154,6 +160,29 @@
 {% endblock %}
 
 {% block extra_scripts %}
+
+<!-- AFEGEIX (o fusiona) AQUEST CSS DINS DEL <style> DEL TEMPLATE -->
+<style>
+  .table-sticky thead th{ position: sticky; top: 0; z-index: 2; background: #f8f9fa; }
+  .th-center{ text-align:center; white-space:nowrap; }
+  .cell-center{ text-align:center; vertical-align:middle; }
+  .name-cell{ min-width:260px; }
+  .order-cell{ width:70px; }
+  .input-salt{ width:56px; padding: .15rem .25rem; text-align:center; }
+  .input-num{ width:110px; padding: .15rem .4rem; }
+  .readonly{ background:#eef1f4 !important; }
+  .mini-help{ color:#6c757d; font-size:.85rem; }
+
+  /* barra de scroll superior com al trampolí */
+  .table-scrollbar-top{ overflow-x:auto; width:100%; height:16px; margin-bottom:2px; }
+  .table-scrollbar-top > div{ height:1px; }
+
+  /* DnD header */
+  .th-draggable{ cursor: grab; user-select:none; }
+  .th-draggable.dragging{ opacity:.5; }
+  .th-drop-hint{ outline:2px dashed #adb5bd; outline-offset:-2px; }
+</style>
+
 <script>
   // --- Dades JSON segures (json_script) ---
   const SCHEMAS = JSON.parse(document.getElementById("schemas-data").textContent);
@@ -179,7 +208,7 @@
   }
   const CSRF_TOKEN = getCookie("csrftoken");
 
-  // --- Helpers ---
+  // --- Helpers base ---
   function keyFor(insId, ex, appId){ return `${insId}|${ex}|${appId}`; }
   function getSchema(appId){ return SCHEMAS[String(appId)] || {}; }
   function getScore(insId, ex, appId){
@@ -220,6 +249,192 @@
     return a.slice(0,n);
   }
 
+  // --- Persistència ordre de columnes (per aparell) ---
+  function colsStorageKey(appId){ return `scoring_cols_v1:${String(appId)}`; }
+
+  function loadColsOrder(appId){
+    try{
+      const raw = localStorage.getItem(colsStorageKey(appId));
+      const arr = JSON.parse(raw || "null");
+      return Array.isArray(arr) ? arr : null;
+    }catch(e){ return null; }
+  }
+
+  function saveColsOrder(appId, cols){
+    try{ localStorage.setItem(colsStorageKey(appId), JSON.stringify(cols)); }catch(e){}
+  }
+
+  function applySavedOrder(appId, cols){
+    const saved = loadColsOrder(appId);
+    if(!saved) return cols;
+
+    const set = new Set(cols);
+    const out = [];
+    saved.forEach(c=>{ if(set.has(c)) out.push(c); });
+    cols.forEach(c=>{ if(!out.includes(c)) out.push(c); });
+    return out;
+  }
+
+  function hiddenColsStorageKey(appId){
+    return `scoring_hidden_cols_v1:${String(appId)}`;
+  }
+
+  function loadHiddenCols(appId){
+    try{
+      const raw = localStorage.getItem(hiddenColsStorageKey(appId));
+      const arr = JSON.parse(raw || "[]");
+      return new Set(Array.isArray(arr) ? arr : []);
+    }catch(e){
+      return new Set();
+    }
+  }
+
+  function saveHiddenCols(appId, hiddenSet){
+    try{
+      localStorage.setItem(hiddenColsStorageKey(appId), JSON.stringify(Array.from(hiddenSet)));
+    }catch(e){}
+  }
+
+  function applyVisibility(appId, cols){
+    const hidden = loadHiddenCols(appId);
+    return cols.filter(c => !hidden.has(c));
+  }
+
+  function ensureColumnsPanel(table, schema){
+    const appId = table.getAttribute("data-comp-aparell-id");
+    const panelId = `cols-panel-${appId}`;
+
+    // ja existeix?
+    let panel = table.closest('[data-scroll-wrap="1"]')?.parentElement?.querySelector(`#${CSS.escape(panelId)}`);
+    if(panel) return;
+
+    panel = document.createElement("div");
+    panel.id = panelId;
+    panel.className = "border rounded p-2 mb-2";
+    panel.style.display = "none";
+
+    const allCols = (schema.ui && Array.isArray(schema.ui.columns)) ? schema.ui.columns : [];
+    const hidden = loadHiddenCols(appId);
+
+    // labels (fields + computed)
+    const byCode = {};
+    (Array.isArray(schema.fields) ? schema.fields : []).forEach(f=>{ if(f?.code) byCode[f.code]=f; });
+
+    const byComp = {};
+    (Array.isArray(schema.computed) ? schema.computed : []).forEach(c=>{ if(c?.code) byComp[c.code]=c; });
+
+    panel.innerHTML = `
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <div class="font-weight-bold">Columnes visibles</div>
+
+        <div class="btn-group btn-group-sm" role="group">
+          <button type="button" class="btn btn-outline-secondary" data-cols-all="1">Mostrar-ho tot</button>
+          <button type="button" class="btn btn-outline-secondary" data-cols-none="1">Amagar-ho tot</button>
+          <button type="button" class="btn btn-outline-secondary" data-cols-close="1">Tancar</button>
+        </div>
+      </div>
+
+      <!-- wrap de checkboxes: sense gap, fem servir marges -->
+      <div class="d-flex flex-wrap" data-cols-wrap="1"></div>
+
+      <div class="text-muted small mt-2">
+        Nota: Amagar una columna només afecta la visualització; els càlculs es continuen fent.
+      </div>
+
+    `;
+
+    const wrap = panel.querySelector('[data-cols-wrap="1"]');
+
+    allCols.forEach(code=>{
+      const f = byCode[code];
+      const c = byComp[code];
+      const label = (f?.label) ? f.label : (c?.label ? c.label : code);
+
+      const id = `chk-${appId}-${code}`;
+      const checked = !hidden.has(code);
+
+      const item = document.createElement("div");
+      item.className = "custom-control custom-checkbox mr-3 mb-2";
+      item.innerHTML = `
+        <input class="custom-control-input" type="checkbox" id="${id}" ${checked ? "checked": ""}>
+        <label class="custom-control-label" for="${id}">${label}</label>
+      `;
+
+      item.querySelector("input").addEventListener("change", (e)=>{
+        const h = loadHiddenCols(appId);
+        if(e.target.checked) h.delete(code);
+        else h.add(code);
+        saveHiddenCols(appId, h);
+
+        // re-render taula
+        buildHeader(table, schema);
+        buildBody(table, schema, table.getAttribute("data-exercici"), appId, table.getAttribute("data-group"));
+        syncScrollbars();
+      });
+
+      wrap.appendChild(item);
+    });
+
+    panel.querySelector('[data-cols-close="1"]').addEventListener("click", ()=>{
+      panel.style.display = "none";
+    });
+
+    panel.querySelector('[data-cols-all="1"]').addEventListener("click", ()=>{
+      const h = new Set(); // cap oculta
+      saveHiddenCols(appId, h);
+      // marca checks
+      panel.querySelectorAll('input[type="checkbox"]').forEach(cb=>cb.checked=true);
+      buildHeader(table, schema);
+      buildBody(table, schema, table.getAttribute("data-exercici"), appId, table.getAttribute("data-group"));
+      syncScrollbars();
+    });
+
+    panel.querySelector('[data-cols-none="1"]').addEventListener("click", ()=>{
+      // amagar tot menys el primer field útil? (aquí ho amaguem tot)
+      const h = new Set(allCols);
+      saveHiddenCols(appId, h);
+      panel.querySelectorAll('input[type="checkbox"]').forEach(cb=>cb.checked=false);
+      buildHeader(table, schema);
+      buildBody(table, schema, table.getAttribute("data-exercici"), appId, table.getAttribute("data-group"));
+      syncScrollbars();
+    });
+
+    // Inserim el panell just a sobre de la scrollbar top
+    const container = table.closest('[data-scroll-wrap="1"]')?.parentElement;
+    const topbar = container?.querySelector('[data-scrollbar-top="1"]');
+    if(container && topbar){
+      container.insertBefore(panel, topbar);
+    }
+  }
+
+  function ensureColumnsButton(table, schema){
+    const appId = table.getAttribute("data-comp-aparell-id");
+    const btnId = `cols-btn-${appId}`;
+
+    const container = table.closest('[data-scroll-wrap="1"]')?.parentElement;
+    if(!container) return;
+
+    // evita duplicats
+    if(container.querySelector(`#${CSS.escape(btnId)}`)) return;
+
+    const btn = document.createElement("button");
+    btn.id = btnId;
+    btn.type = "button";
+    btn.className = "btn btn-sm btn-outline-secondary mb-2";
+    btn.textContent = "Columnes";
+
+    btn.addEventListener("click", ()=>{
+      ensureColumnsPanel(table, schema);
+      const panel = container.querySelector(`#${CSS.escape(`cols-panel-${appId}`)}`);
+      if(panel) panel.style.display = (panel.style.display === "none" ? "block" : "none");
+    });
+
+    // posa el botó abans del panell/scrollbar
+    container.insertBefore(btn, container.firstChild);
+  }
+
+
+  // --- Save ---
   async function saveEntry(insId, ex, appId, inputs){
     const res = await fetch(SAVE_URL,{
       method:"POST",
@@ -234,21 +449,28 @@
         inputs: inputs,
       })
     });
-    const data = await res.json();
+
+    const txt = await res.text();
+    if(!res.ok){
+      throw new Error(`HTTP ${res.status} guardant: ${txt}`);
+    }
+    const data = JSON.parse(txt);
     if(!data.ok) throw new Error(data.error || "Error guardant");
     return data;
   }
 
-  // Debounce per fila (evita moltes peticions mentre escrius)
+  // Debounce per gimnasta+aparell+exercici (evita moltes peticions mentre escrius)
   const timers=new Map();
   function scheduleSave(scoreKey, fn){
     if(timers.has(scoreKey)) clearTimeout(timers.get(scoreKey));
     timers.set(scoreKey, setTimeout(fn, 250));
   }
 
-  // Actualitza outputs d'una fila principal sense re-renderitzar
+  // Actualitza outputs: sempre a la fila del jutge 1 (és on hi ha els outputs)
   function updateOutputs(scoreKey, resp){
-    const mainRow = document.querySelector(`tr[data-score-key="${CSS.escape(scoreKey)}"]`);
+    const mainRow = document.querySelector(
+      `tr[data-score-key="${CSS.escape(scoreKey)}"][data-judge="1"]`
+    );
     if(!mainRow) return;
 
     if(resp.outputs){
@@ -265,199 +487,422 @@
     }
   }
 
-  // Header segons schema.ui.columns; matrix -> expand per ítems + crash col
+  // --- Crash helpers (UI) ---
+  function crashKeyFor(fieldCode){ return `__crash__${fieldCode}`; }
+
+  function applyCrashDisable(rowEl, fieldCode, judgeIdx, nElems, crashAt){
+    const cut = Number(crashAt || 0);
+    for(let i=1;i<=nElems;i++){
+      const inp = rowEl.querySelector(`input[data-field="${fieldCode}"][data-j="${judgeIdx}"][data-i="${i}"]`);
+      if(!inp) continue;
+      inp.disabled = (cut > 0 && i >= cut);
+    }
+    for(let i=1;i<=nElems;i++){
+      const btn = rowEl.querySelector(`button[data-crash-btn="1"][data-field="${fieldCode}"][data-j="${judgeIdx}"][data-i="${i}"]`);
+      const inp = rowEl.querySelector(`input[data-field="${fieldCode}"][data-j="${judgeIdx}"][data-i="${i}"]`);
+      if(btn && inp) btn.style.opacity = inp.disabled ? "0.35" : "1";
+    }
+  }
+
+  // --- Header segons schema.ui.columns; matrix -> expand per ítems ---
   function buildHeader(table, schema){
     const thead = table.querySelector("thead");
     thead.innerHTML = "";
 
     const tr1 = document.createElement("tr");
     tr1.appendChild(el("th",{class:"th-center name-cell", text:"Nom"}));
-    tr1.appendChild(el("th",{class:"th-center order-cell", text:"#"}));
 
-    const cols = (schema.ui && Array.isArray(schema.ui.columns)) ? schema.ui.columns : [];
+    ensureColumnsButton(table, schema);
+
+    // ✅ ordre guardat aplicat al HEADER
+    let cols = (schema.ui && Array.isArray(schema.ui.columns)) ? schema.ui.columns : [];
+    cols = applySavedOrder(table.getAttribute("data-comp-aparell-id"), cols);
+    cols = applyVisibility(table.getAttribute("data-comp-aparell-id"), cols);
+
     const fields = Array.isArray(schema.fields) ? schema.fields : [];
     const byCode = {};
     fields.forEach(f=>{ if(f && f.code) byCode[f.code]=f; });
 
+    const computed = Array.isArray(schema.computed) ? schema.computed : [];
+    const byCompCode = {};
+    computed.forEach(c=>{ if(c && c.code) byCompCode[c.code]=c; });
+
     cols.forEach(col=>{
       const f = byCode[col];
+      const c = byCompCode[col];
+      const label = (f && f.label) ? f.label : ((c && c.label) ? c.label : col);
+
+      // matrix: expand a col1..colN (draggable només el primer th del bloc i només si és field)
       if(f && f.type==="matrix" && f.items && f.items.count){
         const n = Number(f.items.count || 0);
         for(let i=1;i<=n;i++){
-          tr1.appendChild(el("th",{class:"th-center", text:`${(f.items.label_prefix||"S")}${i}`}));
+          const th = el("th",{class:"th-center", text:`${col}${i}`});
+          if(i===1){
+            th.classList.add("th-draggable");
+            th.draggable = true;
+            th.dataset.col = col;       // col base
+            th.dataset.block = String(n);
+          }
+          tr1.appendChild(th);
         }
-        if(f.crash && f.crash.enabled){
-          tr1.appendChild(el("th",{class:"th-center", text:"Crash"}));
-        }
-      }else{
-        tr1.appendChild(el("th",{class:"th-center", text:col}));
+        return;
       }
+
+      // ✅ columnes normals: draggable només si és FIELD (si és computed -> NO draggable)
+      const th = el("th",{class:"th-center", text:label});
+      th.classList.add("th-draggable");
+      th.draggable = true;
+      th.dataset.col = col;      
+      tr1.appendChild(th);
     });
 
     thead.appendChild(tr1);
+
+    // --- Drag & Drop column order (només per fields) ---
+    let dragCol = null;
+
+    function getDraggableThs(){
+      return Array.from(tr1.querySelectorAll("th.th-draggable"));
+    }
+
+    getDraggableThs().forEach(th=>{
+      th.addEventListener("dragstart", (e)=>{
+        dragCol = th.dataset.col;
+        th.classList.add("dragging");
+        e.dataTransfer.effectAllowed = "move";
+      });
+
+      th.addEventListener("dragend", ()=>{
+        th.classList.remove("dragging");
+        getDraggableThs().forEach(x=>x.classList.remove("th-drop-hint"));
+        dragCol = null;
+      });
+
+      th.addEventListener("dragover", (e)=>{
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        th.classList.add("th-drop-hint");
+      });
+
+      th.addEventListener("dragleave", ()=>{
+        th.classList.remove("th-drop-hint");
+      });
+
+      th.addEventListener("drop", (e)=>{
+        e.preventDefault();
+        th.classList.remove("th-drop-hint");
+
+        const targetCol = th.dataset.col;
+        if(!dragCol || !targetCol || dragCol === targetCol) return;
+
+        // Reordena a nivell de "col base" (schema.ui.columns)
+        const from = cols.indexOf(dragCol);
+        const to   = cols.indexOf(targetCol);
+        if(from < 0 || to < 0) return;
+
+        cols.splice(to, 0, cols.splice(from, 1)[0]);
+
+        const appId = table.getAttribute("data-comp-aparell-id");
+        saveColsOrder(appId, cols);
+
+        // re-render d’aquesta taula
+        buildHeader(table, schema);
+        buildBody(
+          table,
+          schema,
+          table.getAttribute("data-exercici"),
+          appId,
+          table.getAttribute("data-group")
+        );
+        syncScrollbars();
+      });
+    });
   }
 
   function buildBody(table, schema, exercici, appId, group){
     const tbody = table.querySelector("tbody");
     tbody.innerHTML = "";
 
-    const cols = (schema.ui && Array.isArray(schema.ui.columns)) ? schema.ui.columns : [];
+    // ✅ ordre guardat aplicat al BODY (perquè es mogui el contingut, no només el títol)
+    let cols = (schema.ui && Array.isArray(schema.ui.columns)) ? schema.ui.columns : [];
+    cols = applySavedOrder(table.getAttribute("data-comp-aparell-id"), cols);
+    cols = applyVisibility(table.getAttribute("data-comp-aparell-id"), cols);
+
     const fields = Array.isArray(schema.fields) ? schema.fields : [];
     const byCode = {};
     fields.forEach(f=>{ if(f && f.code) byCode[f.code]=f; });
+
+    const computed = Array.isArray(schema.computed) ? schema.computed : [];
+    const byCompCode = {};
+    computed.forEach(c=>{ if(c && c.code) byCompCode[c.code]=c; });
+
+    function judgesForField(f){
+      if(!f || !f.judges || f.judges.count == null) return 1;
+      const n = Number(f.judges.count || 1);
+      return (Number.isFinite(n) && n > 0) ? n : 1;
+    }
+    function crashEnabledForField(f){
+      return !!(f && f.crash && f.crash.enabled);
+    }
+
+    // màxim jutges només entre les columnes visibles (fields + computed no afecten)
+    let nJudgesTable = 1;
+    cols.forEach(col=>{
+      const f = byCode[col];
+      if(f) nJudgesTable = Math.max(nJudgesTable, judgesForField(f));
+    });
 
     const rows = INS.filter(x=>String(x.group)===String(group));
 
     rows.forEach((ins, idx)=>{
       const scoreKey = keyFor(ins.id, exercici, appId);
-      const s = getScore(ins.id, exercici, appId);
-      const inputs = s.inputs || {};
 
-      const tr = document.createElement("tr");
-      tr.dataset.scoreKey = scoreKey;
+      // Files de jutge realment necessàries segons les columnes visibles
+      const visibleJudgeRows = [];
+      for(let jj=1; jj<=nJudgesTable; jj++){
+        const ok = cols.some(col=>{
+          const f = byCode[col];
+          return f ? (judgesForField(f) >= jj) : false;
+        });
+        if(ok) visibleJudgeRows.push(jj);
+      }
+      if(visibleJudgeRows.length === 0) visibleJudgeRows.push(1);
 
-      // Nom + info extra (si existeix)
-      const nameTd = document.createElement("td");
-      nameTd.className = "name-cell";
-      nameTd.innerHTML = `<div class="fw-semibold">${ins.name || ""}</div>` +
-        (ins.meta ? `<div class="text-muted small">${ins.meta}</div>` : "");
-      tr.appendChild(nameTd);
+      for(const j of visibleJudgeRows){
+        const tr = document.createElement("tr");
+        tr.dataset.scoreKey = scoreKey;
+        tr.dataset.judge = String(j);
 
-      tr.appendChild(el("td",{class:"cell-center order-cell", text:String(idx+1)}));
+        // Nom només a la primera fila real
+        if(j === visibleJudgeRows[0]){
+          const nameTd = document.createElement("td");
+          nameTd.className = "name-cell";
+          nameTd.rowSpan = visibleJudgeRows.length;
+          nameTd.innerHTML =
+            `<div class="fw-semibold">${ins.name || ""}</div>` +
+            (ins.meta ? `<div class="text-muted small">${ins.meta}</div>` : "");
+          tr.appendChild(nameTd);
+        }
 
-      cols.forEach(col=>{
-        const f = byCode[col];
+        cols.forEach(col=>{
+          const f = byCode[col];
+          const c = byCompCode[col];
+          const isComputed = !!c;
 
-        // --- MATRIX (judge_x_item) ---
-        if(f && f.type==="matrix" && f.items && f.items.count){
-          const nJudges = Number((f.judges && f.judges.count) ? f.judges.count : 1);
-          const nElems  = Number(f.items.count || 0);
-          const crashKey = `${col}_crash`;
+          const s = getScore(ins.id, exercici, appId);
+          const inputs = (s.inputs || {});
 
-          const mat = ensureMatrix(nJudges, nElems, inputs[col]);
-          const crash = ensureList(nElems, inputs[crashKey]);
+          // ✅ computed: sempre readonly (no editable, sigui on sigui)
+          // i només a la primera fila de jutge (rowspan)
+          if(isComputed){
+            if(j !== visibleJudgeRows[0]) return;
 
-          // Per simplificar UI (com a Notes): editem només la fila del “jutge 1”
-          // Si vols per-judges com el trampolí, es pot estendre després.
-          for(let i=0;i<nElems;i++){
+            const td = el("td",{class:"cell-center readonly"});
+            td.rowSpan = visibleJudgeRows.length;
+            td.dataset.out = col;
+            td.textContent = (s.outputs && s.outputs[col]!==undefined) ? String(s.outputs[col]) : "";
+            tr.appendChild(td);
+            return;
+          }
+
+          // --- MATRIX (judge_x_item) ---
+          if(f && f.type==="matrix" && f.items && f.items.count){
+            const nJudges = judgesForField(f);
+            const nElems  = Number(f.items.count || 0);
+            const crashEnabled = crashEnabledForField(f);
+
+            const hasThisJudge = (j <= nJudges);
+
+            // Si aquest camp NO té aquest jutge: pinta cel·les buides
+            if(!hasThisJudge){
+              for(let i=1;i<=nElems;i++){
+                tr.appendChild(el("td",{class:"cell-center"})); // buit
+              }
+              return;
+            }
+
+            const mat = ensureMatrix(nJudges, nElems, inputs[col]);
+
+            // crash només si està habilitat
+            const ck = crashEnabled ? crashKeyFor(col) : null;
+            const crash = crashEnabled ? ensureList(nJudges, inputs[ck]) : null;
+
+            for(let i=1;i<=nElems;i++){
+              const td = el("td",{class:"cell-center"});
+              const wrap = el("div",{class:"d-flex align-items-center"});
+              wrap.style.gap = "6px";
+
+              const inp = el("input",{
+                class:"form-control form-control-sm input-salt",
+                type:"number",
+                step:"any",
+                "data-field": col,
+                "data-j": String(j),
+                "data-i": String(i)
+              });
+              inp.value = (mat[j-1] && mat[j-1][i-1]!==undefined) ? mat[j-1][i-1] : 0;
+
+              let btn = null;
+              if(crashEnabled){
+                btn = el("button",{
+                  class:"btn btn-sm btn-outline-danger p-0",
+                  type:"button",
+                  text:"💥",
+                  "data-crash-btn":"1",
+                  "data-field": col,
+                  "data-j": String(j),
+                  "data-i": String(i)
+                });
+                btn.style.width="22px";
+                btn.style.height="22px";
+                btn.title="Crash";
+              }
+
+              inp.addEventListener("input", ()=>{
+                const cur = getScore(ins.id, exercici, appId);
+                const curInputs = cur.inputs || {};
+
+                const nextMat = ensureMatrix(nJudges, nElems, curInputs[col]);
+                nextMat[j-1][i-1] = Number(inp.value || 0);
+
+                let nextInputs;
+                if(crashEnabled){
+                  const nextCrash = ensureList(nJudges, curInputs[ck]);
+                  nextInputs = { ...curInputs, [col]: nextMat, [ck]: nextCrash };
+                }else{
+                  nextInputs = { ...curInputs, [col]: nextMat };
+                }
+
+                setScore(ins.id, exercici, appId, {inputs: nextInputs, outputs: cur.outputs || {}, total: cur.total || 0});
+
+                scheduleSave(scoreKey, async ()=>{
+                  try{
+                    const resp = await saveEntry(ins.id, exercici, appId, nextInputs);
+                    setScore(ins.id, exercici, appId, {inputs: nextInputs, outputs: resp.outputs, total: resp.total});
+                    updateOutputs(scoreKey, resp);
+                  }catch(e){ console.error(e); alert(e.message); }
+                });
+              });
+
+              if(crashEnabled && btn){
+                btn.addEventListener("click", ()=>{
+                  const cur = getScore(ins.id, exercici, appId);
+                  const curInputs = cur.inputs || {};
+
+                  const nextMat = ensureMatrix(nJudges, nElems, curInputs[col]);
+                  const nextCrash = ensureList(nJudges, curInputs[ck]);
+
+                  const current = Number(nextCrash[j-1] || 0);
+                  const clicked = i; // 1..nElems
+                  nextCrash[j-1] = (current === clicked) ? 0 : clicked;
+
+                  const nextInputs = { ...curInputs, [col]: nextMat, [ck]: nextCrash };
+                  setScore(ins.id, exercici, appId, {inputs: nextInputs, outputs: cur.outputs || {}, total: cur.total || 0});
+
+                  applyCrashDisable(tr, col, j, nElems, nextCrash[j-1]);
+
+                  scheduleSave(scoreKey, async ()=>{
+                    try{
+                      const resp = await saveEntry(ins.id, exercici, appId, nextInputs);
+                      setScore(ins.id, exercici, appId, {inputs: nextInputs, outputs: resp.outputs, total: resp.total});
+                      updateOutputs(scoreKey, resp);
+                    }catch(e){ console.error(e); alert(e.message); }
+                  });
+                });
+
+                const crashAt = Number((crash && crash[j-1]) || 0);
+                setTimeout(()=>applyCrashDisable(tr, col, j, nElems, crashAt), 0);
+              }
+
+              wrap.appendChild(inp);
+              if(btn) wrap.appendChild(btn);
+              td.appendChild(wrap);
+              tr.appendChild(td);
+            }
+
+            return;
+          }
+
+          // --- LIST (judge) ---
+          if(f && f.type==="list" && f.judges && f.judges.count){
+            const n = judgesForField(f);
+            const hasThisJudge = (j <= n);
+
+            if(!hasThisJudge){
+              tr.appendChild(el("td",{class:"cell-center"})); // buit
+              return;
+            }
+
+            const arr = ensureList(n, inputs[col]);
             const td = el("td",{class:"cell-center"});
-            const inp = el("input",{class:"form-control form-control-sm input-salt", type:"number", step:"any"});
-            inp.value = (mat[0] && mat[0][i]!==undefined) ? mat[0][i] : 0;
+            const inp = el("input",{class:"form-control form-control-sm input-num", type:"number", step:"any"});
+            inp.value = (arr[j-1]!==undefined) ? arr[j-1] : 0;
 
             inp.addEventListener("input", ()=>{
-              const nextMat = ensureMatrix(nJudges, nElems, inputs[col]);
-              nextMat[0][i] = Number(inp.value || 0);
+              const cur = getScore(ins.id, exercici, appId);
+              const curInputs = cur.inputs || {};
 
-              const nextCrash = ensureList(nElems, inputs[crashKey]);
-              const nextInputs = { ...inputs, [col]: nextMat, [crashKey]: nextCrash };
+              const nextArr = ensureList(n, curInputs[col]);
+              nextArr[j-1] = Number(inp.value || 0);
 
-              setScore(ins.id, exercici, appId, {inputs: nextInputs, outputs: s.outputs || {}, total: s.total || 0});
+              const nextInputs = { ...curInputs, [col]: nextArr };
+              setScore(ins.id, exercici, appId, {inputs: nextInputs, outputs: cur.outputs || {}, total: cur.total || 0});
 
               scheduleSave(scoreKey, async ()=>{
                 try{
                   const resp = await saveEntry(ins.id, exercici, appId, nextInputs);
                   setScore(ins.id, exercici, appId, {inputs: nextInputs, outputs: resp.outputs, total: resp.total});
                   updateOutputs(scoreKey, resp);
-                }catch(e){ console.error(e); }
+                }catch(e){ console.error(e); alert(e.message); }
               });
             });
 
             td.appendChild(inp);
             tr.appendChild(td);
+            return;
           }
 
-          if(f.crash && f.crash.enabled){
-            const tdC = el("td",{class:"cell-center"});
-            const btn = el("button",{class:"btn btn-sm btn-outline-danger p-0", type:"button", text:"💥"});
-            btn.style.width="28px"; btn.style.height="28px";
-            btn.title = "Marca crash (toggle tots)";
-            tdC.appendChild(btn);
-            tr.appendChild(tdC);
+          // --- NUMBER d’entrada (rowspan) ---
+          // (si en tens algun; si no existeixen, aquest bloc gairebé no s’executa)
+          if(j !== visibleJudgeRows[0]) return;
 
-            btn.addEventListener("click", ()=>{
-              const nextMat = ensureMatrix(nJudges, nElems, inputs[col]);
-              const nextCr  = ensureList(nElems, inputs[crashKey]);
-              const anyOn = nextCr.some(x=>Number(x)===1);
-              for(let i=0;i<nElems;i++) nextCr[i] = anyOn ? 0 : 1;
+          if(f){
+            const td = el("td",{class:"cell-center"});
+            td.rowSpan = visibleJudgeRows.length;
 
-              const nextInputs = { ...inputs, [col]: nextMat, [crashKey]: nextCr };
-              setScore(ins.id, exercici, appId, {inputs: nextInputs, outputs: s.outputs || {}, total: s.total || 0});
+            const inp = el("input",{class:"form-control form-control-sm input-num", type:"number", step:"any"});
+            inp.value = (inputs[col]!==undefined && inputs[col]!==null) ? inputs[col] : "";
+
+            inp.addEventListener("input", ()=>{
+              const cur = getScore(ins.id, exercici, appId);
+              const curInputs = cur.inputs || {};
+              const v = (inp.value === "" ? 0 : Number(inp.value));
+              const nextInputs = { ...curInputs, [col]: v };
+
+              setScore(ins.id, exercici, appId, {inputs: nextInputs, outputs: cur.outputs || {}, total: cur.total || 0});
 
               scheduleSave(scoreKey, async ()=>{
                 try{
                   const resp = await saveEntry(ins.id, exercici, appId, nextInputs);
                   setScore(ins.id, exercici, appId, {inputs: nextInputs, outputs: resp.outputs, total: resp.total});
                   updateOutputs(scoreKey, resp);
-                }catch(e){ console.error(e); }
+                }catch(e){ console.error(e); alert(e.message); }
               });
             });
+
+            td.appendChild(inp);
+            tr.appendChild(td);
+          }else{
+            // ni field ni computed: millor buit readonly
+            const td = el("td",{class:"cell-center readonly"});
+            td.rowSpan = visibleJudgeRows.length;
+            td.textContent = "";
+            tr.appendChild(td);
           }
-          return;
-        }
+        });
 
-        // --- LIST (judge) ---
-        if(f && f.type==="list" && f.judges && f.judges.count){
-          const n = Number(f.judges.count || 0);
-          const arr = ensureList(n, inputs[col]);
-
-          // també simplificat: editem arr[0]
-          const td = el("td",{class:"cell-center"});
-          const inp = el("input",{class:"form-control form-control-sm input-num", type:"number", step:"any"});
-          inp.value = (arr[0]!==undefined) ? arr[0] : 0;
-
-          inp.addEventListener("input", ()=>{
-            const nextArr = ensureList(n, inputs[col]);
-            nextArr[0] = Number(inp.value || 0);
-            const nextInputs = { ...inputs, [col]: nextArr };
-
-            setScore(ins.id, exercici, appId, {inputs: nextInputs, outputs: s.outputs || {}, total: s.total || 0});
-
-            scheduleSave(scoreKey, async ()=>{
-              try{
-                const resp = await saveEntry(ins.id, exercici, appId, nextInputs);
-                setScore(ins.id, exercici, appId, {inputs: nextInputs, outputs: resp.outputs, total: resp.total});
-                updateOutputs(scoreKey, resp);
-              }catch(e){ console.error(e); }
-            });
-          });
-
-          td.appendChild(inp);
-          tr.appendChild(td);
-          return;
-        }
-
-        // --- NUMBER (entrada) o OUTPUT (computed) ---
-        const td = el("td",{class:"cell-center"});
-        const isField = !!(f && (f.type==="number" || f.type==="matrix" || f.type==="list"));
-
-        if(isField){
-          const inp = el("input",{class:"form-control form-control-sm input-num", type:"number", step:"any"});
-          inp.value = (inputs[col]!==undefined && inputs[col]!==null) ? inputs[col] : "";
-
-          inp.addEventListener("input", ()=>{
-            const nextInputs = { ...inputs, [col]: inp.value };
-            setScore(ins.id, exercici, appId, {inputs: nextInputs, outputs: s.outputs || {}, total: s.total || 0});
-
-            scheduleSave(scoreKey, async ()=>{
-              try{
-                const resp = await saveEntry(ins.id, exercici, appId, nextInputs);
-                setScore(ins.id, exercici, appId, {inputs: nextInputs, outputs: resp.outputs, total: resp.total});
-                updateOutputs(scoreKey, resp);
-              }catch(e){ console.error(e); }
-            });
-          });
-
-          td.appendChild(inp);
-        }else{
-          td.classList.add("readonly");
-          td.dataset.out = col;
-          td.textContent = (s.outputs && s.outputs[col]!==undefined) ? String(s.outputs[col]) : "";
-        }
-
-        tr.appendChild(td);
-      });
-
-      tbody.appendChild(tr);
+        tbody.appendChild(tr);
+      }
     });
   }
 
@@ -480,7 +925,6 @@
       const inner  = topbar ? topbar.querySelector('[data-scrollbar-inner="1"]') : null;
       if(!topbar || !inner) return;
 
-      // amplada = scrollWidth real de la taula
       const table = wrap.querySelector("table");
       const w = table ? table.scrollWidth : 2000;
       inner.style.width = w + "px";
@@ -496,4 +940,5 @@
     window.addEventListener("resize", syncScrollbars);
   });
 </script>
+
 {% endblock %}

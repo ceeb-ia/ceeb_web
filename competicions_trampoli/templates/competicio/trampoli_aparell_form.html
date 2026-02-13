@@ -1,5 +1,5 @@
-{% extends "base.html" %}
-{% block title %}Configurar aparell – {{ competicio.nom }}{% endblock %}
+﻿{% extends "base.html" %}
+{% block title %}Configurar aparell - {{ competicio.nom }}{% endblock %}
 
 {% block content %}
 <div class="container mt-4">
@@ -11,71 +11,81 @@
         <div class="text-muted small">{{ competicio.nom }}</div>
       </div>
       <div class="gap-2">
-        <a class="btn btn-sm btn-outline-secondary"
-           href="{% url 'trampoli_aparells_list' competicio.id %}">Tornar</a>
         <a class="btn btn-sm btn-outline-primary" href="{% url 'aparell_create' %}">
-                Crear aparell
-              </a>
-
+          Crear aparell
+        </a>
       </div>
     </div>
 
     <form method="post">
       {% csrf_token %}
 
+      {% if form.errors %}
+      <div class="alert alert-warning">
+        Revisa el formulari. Si l'aparell ja esta a la competicio, no es pot afegir de nou.
+      </div>
+      {% endif %}
+
       <div class="border rounded p-3 mb-3">
-        <div class="fw-semibold mb-2">Dades bàsiques</div>
+        <div class="fw-semibold mb-2">Dades basiques</div>
         <div class="row g-3">
-          <div class="col-12 col-md-6">
+          <div class="col-12 col-md-8">
             <div class="d-flex justify-content-between align-items-center">
-              <label class="form-label mb-0">Aparell</label>
+              <label class="form-label mb-0" for="{{ form.aparell.id_for_label }}">Aparell</label>
             </div>
-            {{ form.aparell }}
 
-            {{ form.aparell.errors }}
-          </div>
-          <div class="col-6 col-md-3">
-            <label class="form-label">Ordre</label>
-            {{ form.ordre }}
-            {{ form.ordre.errors }}
-          </div>
-          <div class="col-6 col-md-3">
-            <label class="form-label">Elements</label>
-            {{ form.nombre_elements }}
-            {{ form.nombre_elements.errors }}
-          </div>
-          <div class="col-12 col-md-6">
-            <label class="form-label">Mode d’execució</label>
-            {{ form.mode_execucio }}
-            {{ form.mode_execucio.errors }}
-          </div>
-          <div class="col-12 col-md-6 d-flex align-items-end">
-            <div class="form-check">
-              {{ form.actiu }}
-              <label class="form-check-label" for="{{ form.actiu.id_for_label }}">Actiu</label>
+            <div class="d-flex gap-2 align-items-start">
+              <div class="flex-grow-1">
+                {{ form.aparell }}
+                {{ form.aparell.errors }}
+              </div>
+              <a
+                id="puntuacio-link"
+                class="btn btn-outline-secondary"
+                data-url-template="{% url 'aparell_scoring_schema_update' pk=0 %}"
+                href="#"
+                style="display:none;"
+              >Puntuacio</a>
             </div>
           </div>
         </div>
       </div>
 
-      <div class="border rounded p-3 mb-3">
-        <div class="fw-semibold mb-2">Ítems de puntuació</div>
-        <div class="row">
-          <div class="col-12 col-md-4"><div class="form-check">{{ form.te_execucio }} <label class="form-check-label" for="{{ form.te_execucio.id_for_label }}">Execució</label></div></div>
-          <div class="col-12 col-md-4"><div class="form-check">{{ form.te_dificultat }} <label class="form-check-label" for="{{ form.te_dificultat.id_for_label }}">Dificultat</label></div></div>
-          <div class="col-12 col-md-4"><div class="form-check">{{ form.te_tof }} <label class="form-check-label" for="{{ form.te_tof.id_for_label }}">ToF</label></div></div>
-          <div class="col-12 col-md-4"><div class="form-check">{{ form.te_hd }} <label class="form-check-label" for="{{ form.te_hd.id_for_label }}">HD</label></div></div>
-          <div class="col-12 col-md-4"><div class="form-check">{{ form.te_penalitzacio }} <label class="form-check-label" for="{{ form.te_penalitzacio.id_for_label }}">Penalització</label></div></div>
-        </div>
-      </div>
-
-      <div class="d-flex gap-2">
+      <div class="gap-2">
         <button class="btn btn-primary" type="submit">Desar</button>
         <a class="btn btn-outline-secondary"
-           href="{{ request.GET.next|default:'/' }}">Cancel·lar</a>
+           href="{% url 'trampoli_aparells_list' competicio.id %}">Cancelar</a>
       </div>
     </form>
 
   </div>
 </div>
+
+<script>
+  (function () {
+    var select = document.getElementById('{{ form.aparell.id_for_label }}');
+    var link = document.getElementById('puntuacio-link');
+    if (!select || !link) return;
+
+    function updatePuntuacioLink() {
+      var aparellId = select.value;
+      if (!aparellId) {
+        link.style.display = 'none';
+        link.setAttribute('href', '#');
+        return;
+      }
+
+      var urlTemplate = link.getAttribute('data-url-template');
+      var href = urlTemplate.replace('/0/', '/' + aparellId + '/');
+      var nextUrl = window.location.pathname + window.location.search;
+      var sep = href.indexOf('?') === -1 ? '?' : '&';
+
+      link.setAttribute('href', href + sep + 'next=' + encodeURIComponent(nextUrl));
+      link.style.display = 'inline-block';
+    }
+
+    select.addEventListener('change', updatePuntuacioLink);
+    updatePuntuacioLink();
+  })();
+</script>
 {% endblock %}

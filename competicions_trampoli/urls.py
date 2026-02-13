@@ -3,7 +3,7 @@ from django.urls import path
 from .views_trampoli import TrampoliConfigUpdate, TrampoliNotesHome, trampoli_guardar_nota, TrampoliAparellList, TrampoliAparellCreate
 from .views import CompeticioCreateView, CompeticioDeleteView, CompeticioHomeView, CompeticioListView, InscripcionsImportExcelView, InscripcionsListView
 from competicions_trampoli import views, views_rotacions
-from .views_trampoli import AparellList, AparellCreate, AparellUpdate
+from .views_trampoli import AparellList, AparellCreate, AparellUpdate, CompeticioAparellDeleteView
 from .views_classificacions import (
     ClassificacionsHome,
     classificacio_save,
@@ -62,6 +62,9 @@ urlpatterns = [
     path("competicio/<int:pk>/classificacions/live/data/", classificacions_live_data, name="classificacions_live_data"),
     path("competicio/<int:pk>/notes-v2/", ScoringNotesHome.as_view(), name="scoring_notes_home"),
     path("competicio/<int:pk>/aparell/<int:ap_id>/schema/", ScoringSchemaUpdate.as_view(), name="scoring_schema_update"),
+
+    path("competicio/<int:pk>/aparells/<int:app_id>/eliminar/", CompeticioAparellDeleteView.as_view(), name="competicio_aparell_delete"),
+
     path("competicio/<int:pk>/scores/save/", scoring_save, name="scoring_save"),
 
 

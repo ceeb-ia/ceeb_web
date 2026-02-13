@@ -3,6 +3,7 @@ from django import forms
 from .models import Competicio, Inscripcio
 from .models_trampoli import Aparell, CompeticioAparell
 from django.core.exceptions import ValidationError
+from django.utils.translation import gettext_lazy as _
 from .models_scoring import ScoringSchema
 import json
 
@@ -60,40 +61,33 @@ class InscripcioForm(forms.ModelForm):
 
 
 class CompeticioAparellForm(forms.ModelForm):
+    def __init__(self, *args, **kwargs):
+        self.competicio = kwargs.pop("competicio", None)
+        super().__init__(*args, **kwargs)
+
+    def clean_aparell(self):
+        aparell = self.cleaned_data.get("aparell")
+        if not aparell or not self.competicio:
+            return aparell
+
+        exists = CompeticioAparell.objects.filter(
+            competicio=self.competicio,
+            aparell=aparell,
+        ).exists()
+        if exists:
+            raise ValidationError(
+                _("Aquest aparell ja esta afegit a la competicio."),
+                code="duplicate_aparell",
+            )
+        return aparell
+
     class Meta:
         model = CompeticioAparell
         fields = [
             "aparell",
-            "ordre",
-            "nombre_elements",
-            "mode_execucio",
-            "te_execucio",
-            "te_dificultat",
-            "te_tof",
-            "te_hd",
-            "te_penalitzacio",
-            "actiu",
         ]
         widgets = {
             "aparell": forms.Select(attrs={"class": "form-select"}),
-            "ordre": forms.NumberInput(attrs={"class": "form-control"}),
-            "nombre_elements": forms.NumberInput(attrs={"class": "form-control", "min": 1, "max": 30}),
-            "mode_execucio": forms.Select(attrs={"class": "form-select"}),
-            "te_execucio": forms.CheckboxInput(attrs={"class": "form-check-input"}),
-            "te_dificultat": forms.CheckboxInput(attrs={"class": "form-check-input"}),
-            "te_tof": forms.CheckboxInput(attrs={"class": "form-check-input"}),
-            "te_hd": forms.CheckboxInput(attrs={"class": "form-check-input"}),
-            "te_penalitzacio": forms.CheckboxInput(attrs={"class": "form-check-input"}),
-            "actiu": forms.CheckboxInput(attrs={"class": "form-check-input"}),
-        }
-        labels = {
-            "nombre_elements": "Nombre d’elements (salts)",
-            "te_execucio": "Execució",
-            "te_dificultat": "Dificultat",
-            "te_tof": "ToF",
-            "te_hd": "HD",
-            "te_penalitzacio": "Penalització",
-            "actiu": "Actiu",
         }
 
 

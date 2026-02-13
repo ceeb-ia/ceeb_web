@@ -79,7 +79,11 @@
                   — {{ comp_aparell.nombre_elements }} salts
                   — Mode: {{ comp_aparell.get_mode_execucio_display }}
                 </span>
+                <form method="post" action="{% url 'competicio_aparell_delete' object.competicio.id comp_aparell.id %}" style="display:inline;">
+                  {% csrf_token %}
                 <a class="btn btn-sm btn-outline-secondary" href="{% url 'aparell_update' pk=comp_aparell.aparell_id %}?next={{ request.get_full_path|urlencode }}">Editar</a>
+                  <button type="submit" class="btn btn-sm btn-danger ms-2" onclick="return confirm('Segur que vols eliminar aquest aparell de la competició?');">Eliminar</button>
+                </form>
               </li>
             {% endfor %}
           </ul>
@@ -107,7 +111,7 @@
 
 
       <!-- Bloc 3: Altres paràmetres (si els tens al form) -->
-      <div class="border rounded p-3 mb-3">
+      <!-- <div class="border rounded p-3 mb-3">
         <div class="fw-semibold mb-2">Paràmetres</div>
         <div class="text-muted small mb-3">
           Ajustos generals de la competició.
@@ -131,10 +135,10 @@
             {% endif %}
           {% endfor %}
         </div>
-      </div>
+      </div> -->
 
       <!-- Accions -->
-      <div class="d-flex gap-2">
+      <div class=" gap-2">
         <button class="btn btn-primary" type="submit">Desar</button>
         <a class="btn btn-outline-secondary"
            href="{% url 'trampoli_notes_home' object.competicio.id %}">
