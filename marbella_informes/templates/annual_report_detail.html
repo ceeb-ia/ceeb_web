@@ -11,6 +11,10 @@
       </div>
       <div class=" gap-2 ">
         <a href="{% url 'annual_report_update' object.pk %}" class="btn btn-sm btn-primary">Editar</a>
+        <form action="{% url 'annual_report_generate_report' object.pk %}" method="post" style="display:inline;">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-sm btn-warning">Generar Informe</button>
+        </form>
         <form action="{% url 'annual_report_run_analysis' object.pk %}" method="post" style="display:inline;">{% csrf_token %}
         <button type="submit"
                       formaction="{% url 'annual_report_run_analysis' object.pk %}"
@@ -86,6 +90,30 @@
     {% else %}
       <div class="text-muted small">Encara no hi ha gràfics generats per aquest informe.</div>
     {% endif %}
+
+    <h6 class="text-muted mt-4">Esborrany d’informe</h6>
+
+    {% if sections %}
+      {% for s in sections %}
+        <div class="card mb-3">
+          <div class="card-body">
+            <div class="fw-semibold">{{ s.title }}</div>
+            <div class="text-muted small">{{ s.key }} · {{ s.source }} · {{ s.updated_at|date:"d/m/Y H:i" }}</div>
+            <div class="mt-2" style="white-space:pre-line;">{{ s.content }}</div>
+          </div>
+        </div>
+      {% endfor %}
+    {% else %}
+      <div class="text-muted small">Encara no s’han generat seccions.</div>
+    {% endif %}
+
+    {% if report_file_url %}
+      <a class="btn btn-sm btn-outline-secondary mt-2" href="{{ report_file_url }}" target="_blank" rel="noopener">Descarregar PDF generat</a>
+    {% endif %}
+
+    <a class="btn btn-sm btn-outline-secondary mt-2" href="{% url 'annual_report_pdf' object.pk %}" target="_blank" rel="noopener">
+      Veure PDF (render en directe)
+    </a>
 
 
 

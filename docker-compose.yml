@@ -25,6 +25,8 @@ services:
       DESIGNACIONS_URL: "http://designacions:8000"
       MEDIA_ROOT: /data/media
       MEDIA_URL: /media/
+      OLLAMA_BASE_URL: "http://ollama:11434"
+      OLLAMA_MODEL: "llama3.1:8b"
       # Database connection info for Django (must match the `db` service)
       POSTGRES_USER: ceeb_user
       POSTGRES_PASSWORD: ceeb_password
@@ -154,6 +156,16 @@ services:
       start_period: 25s     # dona temps per arrencar
       retries: 10
 
+  ollama-pull:
+    image: curlimages/curl:8.6.0
+    depends_on:
+      ollama:
+        condition: service_healthy
+    command: >
+      sh -lc "curl -fsS http://ollama:11434/api/pull
+      -H 'Content-Type: application/json'
+      -d '{\"name\":\"llama3.1:8b\"}'"
+    restart: "no"
 
   # rag:
   #   build:
@@ -235,6 +247,9 @@ services:
       POSTGRES_DB: ceeb_db
       POSTGRES_HOST: db
       POSTGRES_PORT: 5432
+      OLLAMA_BASE_URL: "http://ollama:11434"
+      OLLAMA_MODEL: "llama3.1:8b"
+
     volumes:
       - .:/app
       - ../db_provisional:/data/media
@@ -256,6 +271,9 @@ services:
       POSTGRES_DB: ceeb_db
       POSTGRES_HOST: db
       POSTGRES_PORT: 5432
+      OLLAMA_BASE_URL: "http://ollama:11434"
+      OLLAMA_MODEL: "llama3.1:8b"
+
     volumes:
       - .:/app
       - ../db_provisional:/data/media

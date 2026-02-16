@@ -19,6 +19,14 @@
 
     .file-pill { display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border:1px solid #e5e7eb; border-radius:999px; background:#f9fafb; }
     .file-pill .name { max-width: 420px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:inline-block; }
+    .ocasionals-list {
+      max-height: 120px;      /* ajusta si vols */
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
   </style>
 
   <div class="card-surface">
@@ -82,6 +90,10 @@
                   {{ form.any }}
                   {% if form.any.errors %}<div class="text-danger small">{{ form.any.errors }}</div>{% endif %}
                 </div>
+              {% if formset.non_form_errors %}
+                <div class="alert alert-danger">{{ formset.non_form_errors }}</div>
+              {% endif %}
+
               </div>
             </div>
           </div>
@@ -106,6 +118,7 @@
               {% else %}
                 {{ formset.management_form }}
 
+
                 <div class="table-responsive">
                   <table class="table table-sm table-bordered align-middle">
                     <thead class="table-light">
@@ -117,7 +130,33 @@
                       </tr>
                     </thead>
                     <tbody>
+                      <tr>
+                        <td>
+                          <span class="small fw-semibold">Ocasionals</span>
+                          <div class="text-muted small">12 fitxers (Mes 1..12)</div>
+                        </td>
+                        <td>
+                          <input type="file" name="ocasionals_files" multiple accept=".xlsx" class="form-control form-control-sm">
+                          <div class="text-muted small">El mes es detecta amb la columna <b>Mes</b>.</div>
+                        </td>
+                        <td>
+                          <span class="text-muted small">S’assignen automàticament als mesos.</span>
+                        </td>
+                        <td class="text-nowrap">
+                          <div class="ocasionals-list">
+                          {% for ds in object.datasets.all %}
+                            {% if ds.tipus == "ocasionals" and ds.fitxer %}
+                              <div class="mb-1 file-pill">
+                                <span class="badge badge-light">Mes {{ ds.period|stringformat:"02d" }}</span>
+                              </div>
+                            {% endif %}
+                          {% endfor %}
+                        </div>
+                        </td>
+                      </tr>
+
                       {% for f in formset.forms %}
+                      {% if f.instance.tipus != "ocasionals" %}
                         <tr>
                           <td>
                             {{ f.tipus }}
@@ -147,6 +186,7 @@
                             {{ f.id }}
                           </td>
                         </tr>
+                        {% endif %}
                       {% endfor %}
                     </tbody>
                   </table>

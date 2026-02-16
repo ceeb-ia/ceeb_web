@@ -12,8 +12,8 @@ import matplotlib.pyplot as plt
 from django.conf import settings
 from django.db import transaction
 from .specs import SPECS
-
-from ..models import AnnualReport
+from .analysis_ocasionals import analyze_ocasionals
+from ..models import AnnualDataset, AnnualReport
 
 
 # ---------- Types ----------
@@ -52,32 +52,36 @@ def _default_run_dir(report_id: int) -> str:
 
 
 def _read_excel(path: str) -> pd.DataFrame:
-    # pots ajustar sheet_name si cal
+    if path.lower().endswith(".xls"):
+        return pd.read_excel(path, engine="xlrd")
     return pd.read_excel(path, engine="openpyxl")
 
 
 # ---------- Core steps ----------
 
-def load_datasets(report: AnnualReport) -> Tuple[Dict[str, pd.DataFrame], List[str]]:
-    """
-    Carrega tots els excels adjunts al report i retorna {tipus: df}.
-    També retorna warnings no-crítics.
-    """
-    dfs: Dict[str, pd.DataFrame] = {}
-    warnings: List[str] = []
+from collections import defaultdict
+
+def load_datasets(report: AnnualReport):
+    dfs_simple = {}
+    dfs_monthly = defaultdict(dict)  # tipus -> {month:int: df}
+    warnings = []
 
     for ds in report.datasets.all():
         if not ds.fitxer:
             continue
         try:
             df = _read_excel(ds.fitxer.path)
-            # normalitza columnes
             df.columns = [str(c).strip() for c in df.columns]
-            dfs[ds.tipus] = df
+
+            if ds.period:  # mensual
+                dfs_monthly[ds.tipus][int(ds.period)] = df
+            else:
+                dfs_simple[ds.tipus] = df
+
         except Exception as e:
             warnings.append(f"No s'ha pogut llegir '{ds.get_tipus_display()}': {e}")
 
-    return dfs, warnings
+    return dfs_simple, dict(dfs_monthly), warnings
 
 
 def validate_inputs(dfs: Dict[str, pd.DataFrame], required: Optional[List[str]] = None) -> List[str]:
@@ -197,14 +201,14 @@ def run_analysis(
     plots_dir_abs = os.path.join(run_dir_abs, "plots")
     _ensure_dir(plots_dir_abs)
 
-    dfs, warnings = load_datasets(report)
+    dfs_simple, dfs_monthly, warnings = load_datasets(report)
 
     _p(10, "validating")
     errors = []
-    if "reserves" in dfs:
-        errors += validate_dataset(dfs["reserves"], "reserves")
-    if "clients" in dfs:
-        warnings += validate_dataset(dfs["clients"], "clients")
+    if "reserves" in dfs_simple:
+        errors += validate_dataset(dfs_simple["reserves"], "reserves")
+    if "clients" in dfs_simple:
+        warnings += validate_dataset(dfs_simple["clients"], "clients")
     if errors:
         warnings += errors
 
@@ -219,10 +223,10 @@ def run_analysis(
     plot_overrides = cfg.get("plots") or {}
 
     # ----- CLIENTS -----
-    if "clients" in dfs:
+    if "clients" in dfs_simple:
         _p(25, "analyzing_clients")
         clients_kpis, clients_warnings, clients_plot_abs = analyze_clients(
-            dfs["clients"],
+            dfs_simple["clients"],
             plots_dir_abs=plots_dir_abs,
             year=report.any,
             plot_defaults=plot_defaults,
@@ -240,10 +244,10 @@ def run_analysis(
                 "source": "clients",
             })
     # ----- RESERVES -----
-    if "reserves" in dfs:
+    if "reserves" in dfs_simple:
         _p(55, "analyzing_reserves")
         reserves_kpis, reserves_warnings, reserves_plot_abs = analyze_reserves(
-            dfs["reserves"],
+            dfs_simple["reserves"],
             plots_dir_abs=plots_dir_abs,
             year=report.any,
             plot_defaults=plot_defaults,
@@ -260,6 +264,35 @@ def run_analysis(
                 "params": item.get("params") or {},
                 "source": "reserves",
             })
+
+        #---- OCASIONALS (mensual) -----
+    if AnnualDataset.DatasetType.OCASIONALS in dfs_monthly:
+        monthly = dfs_monthly[AnnualDataset.DatasetType.OCASIONALS]
+
+        missing = [m for m in range(1, 13) if m not in monthly]
+        if missing:
+            warnings.append(f"Ocasionals: falten mesos {missing}")
+
+        _p(70, "analyzing_ocasionals")
+        ocas_kpis, ocas_warn, ocas_plots = analyze_ocasionals(
+            monthly,  # <-- dict mes->df
+            plots_dir_abs=plots_dir_abs,
+            year=report.any,
+            plot_defaults=plot_defaults,
+        )
+        kpis["ocasionals"] = ocas_kpis
+        warnings += ocas_warn
+        for item in ocas_plots:
+            plot_items.append({
+                "key": item["key"],
+                "kind": item.get("kind", "image"),
+                "title": item.get("title") or item["key"],
+                "file": _media_rel(item["file_abs"]),
+                "params": item.get("params") or {},
+                "source": "ocasionals",
+            })
+
+    
     _p(90, "writing_artifacts")
     artifacts = write_artifacts(run_dir_abs, kpis, warnings, plot_items)
 

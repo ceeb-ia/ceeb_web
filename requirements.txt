@@ -22,3 +22,5 @@ scipy
 folium
 scikit-learn
 matplotlib
+xlrd
+weasyprint

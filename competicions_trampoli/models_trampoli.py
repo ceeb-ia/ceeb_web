@@ -21,7 +21,7 @@ class Aparell(models.Model):
 class CompeticioAparell(models.Model):
     competicio = models.ForeignKey(Competicio, on_delete=models.CASCADE, related_name="aparells_cfg")
     aparell = models.ForeignKey(Aparell, on_delete=models.PROTECT, related_name="competicio_cfg")
-    nombre_exercicis = models.PositiveSmallIntegerField(default=1, max_length=2, verbose_name="Nombre d'exercicis")
+    nombre_exercicis = models.PositiveSmallIntegerField(default=1, verbose_name="Nombre d'exercicis")
 
     #CREC QUE REDUNDANT A PARTIR D'AQUI; INUTIL JA
     ordre = models.PositiveSmallIntegerField(default=1)

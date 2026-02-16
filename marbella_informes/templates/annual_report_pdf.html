@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}PDF · {{ report }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+  <div class="card-surface p-4">
+    <div class="d-flex justify-content-between align-items-start">
+      <div>
+        <h1 class="mb-1">Informe anual</h1>
+        <div class="text-muted small">{{ report.instal_lacio_nom }} · {{ report.any }}</div>
+      </div>
+      <div class="text-muted small text-end">
+        Generat: {% if report.report_generated_at %}{{ report.report_generated_at|date:"d/m/Y H:i" }}{% else %}—{% endif %}
+      </div>
+    </div>
+
+    <hr class="my-3">
+
+    {% if sections %}
+      {% for s in sections %}
+        <div class="mb-4">
+          <h2 class="h5 mb-2">{{ s.title }}</h2>
+          <div class="text-muted small mb-2">{{ s.key }}</div>
+
+          <div style="white-space:pre-line;">{{ s.content }}</div>
+
+          {# Figures associades (si coincideixen keys al plot_map) #}
+          {% if plot_map %}
+            <div class="row mt-3">
+              {# Exemple simple: si el teu spec posa figures a context, després ho podem passar. #}
+            </div>
+          {% endif %}
+        </div>
+      {% endfor %}
+    {% else %}
+      <div class="text-muted">No hi ha seccions redactades.</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
