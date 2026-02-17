@@ -1,5 +1,5 @@
 from __future__ import annotations
-from datetime import timezone
+from django.utils import timezone
 
 from celery import shared_task
 from django.db import transaction

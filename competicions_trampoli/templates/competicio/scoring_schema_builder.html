@@ -11,6 +11,8 @@
     .w-140{ width:140px; }
     .w-160{ width:160px; }
     .w-200{ width:200px; }
+    .badge-soft{ background:#f1f3f5; border:1px solid #e9ecef; }
+    .d-none{ display:none !important; }
   </style>
 
   <div class="card-surface">
@@ -19,7 +21,7 @@
         <h2 class="mb-1">Puntuació · {{ aparell.nom }}</h2>
       {% if competicio %}
         <div class="text-muted small">Competició: <strong>{{ competicio.nom }}</strong></div>
-      {% endif %}        
+      {% endif %}
       <div class="text-muted small">Configura camps i fórmules sense escriure JSON.</div>
       </div>
     </div>
@@ -31,7 +33,6 @@
         <pre class="alert alert-warning" style="white-space: pre-wrap;">{{ form.errors }}</pre>
       {% endif %}
 
-      {# IMPORTANT: UN SOL camp schema_json al POST (hidden) #}
       {{ form.schema_json }}
 
       <ul class="nav nav-tabs" role="tablist">
@@ -53,7 +54,9 @@
             <div class="d-flex justify-content-between align-items-center mb-2">
               <div>
                 <div class="font-weight-bold">Camps d’entrada</div>
-                <div class="pill-help">Defineix què omplirà el jurat: números, execució per salts, etc.</div>
+                <div class="pill-help">
+                  Defineix què omplirà el jurat. Els criteris d’agregació/selecció ara es defineixen a <strong>Fórmules</strong>.
+                </div>
               </div>
               <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddField">Afegir camp</button>
             </div>
@@ -68,9 +71,6 @@
 
                     <th class="w-120">Jutges</th>
                     <th class="w-120">Ítems</th>
-
-                    <th class="w-120">Vàlides</th>
-                    <th class="w-160">Criteri</th>
 
                     <th class="w-120">Min</th>
                     <th class="w-120">Max</th>
@@ -95,10 +95,8 @@
               <div>
                 <div class="font-weight-bold">Fórmules (camps calculats)</div>
                 <div class="pill-help">
-                  Defineix resultats calculats a partir de camps d’entrada i d’altres fórmules.
-                  <strong>CODE</strong> és el nom del resultat (ex: <span class="mono">E_total</span>, <span class="mono">TOTAL</span>).
-                  <strong>Var</strong> (opcional) és un àlies curt (ex: <span class="mono">x</span>) per escriure fórmules més llegibles.
-                  Les fórmules s’avaluen <strong>de dalt a baix</strong> (si una depèn d’una altra, ha d’estar abans).
+                  Tria una <strong>funció</strong> (preset) o “Funció manual”.
+                  Les fórmules s’avaluen <strong>de dalt a baix</strong>.
                 </div>
               </div>
               <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddComputed">Afegir fórmula</button>
@@ -106,11 +104,11 @@
 
             <div class="alert alert-light border mb-2">
               <div class="small">
-                <div class="font-weight-bold mb-1">Com escriure una fórmula</div>
+                <div class="font-weight-bold mb-1">Ajuda</div>
                 <ul class="mb-0 pl-3">
-                  <li>Fes servir <span class="mono">CODE</span> dels camps (inputs) i dels camps calculats (outputs).</li>
-                  <li>Si has definit <span class="mono">var</span>, també pots usar l’àlies curt (ex: <span class="mono">x</span> en lloc de <span class="mono">DD</span>).</li>
-                  <li>Per convertir llistes a un número final, usa <span class="mono">sum</span>/<span class="mono">avg</span>/<span class="mono">min</span>/<span class="mono">max</span> o <span class="mono">select_sum</span>.</li>
+                  <li>Els xips de sota insereixen <span class="mono">CODE</span> o <span class="mono">var</span> a la fórmula manual.</li>
+                  <li><strong>Row/Col compute</strong>: només escrius el càlcul per ítem (<span class="mono">x</span> i <span class="mono">i</span>) i selecciones criteris amb desplegables.</li>
+                  <li>Funcions manuals disponibles: <span class="mono">sum</span>, <span class="mono">avg</span>, <span class="mono">min</span>, <span class="mono">max</span>, <span class="mono">med</span>, <span class="mono">best_n</span>, <span class="mono">row_custom_compute</span>, <span class="mono">exec_by_judge</span>, <span class="mono">select_sum</span>.</li>
                 </ul>
               </div>
             </div>
@@ -120,13 +118,8 @@
                 <strong>Inserir camps / àlies</strong>
                 <span class="text-muted">· CODE = nom del camp · var: = àlies curt</span>
               </div>
-
-              <!-- Xips -->
               <div id="varsChips" class="d-flex flex-wrap" style="gap:6px;"></div>
-
-              <div class="pill-help mt-1">
-                Consell: fes clic sobre un xip per inserir-lo dins la cel·la de “Fórmula”.
-              </div>
+              <div class="pill-help mt-1">Consell: fes clic sobre un xip per inserir-lo dins la cel·la de “Fórmula manual”.</div>
             </div>
 
             <div class="table-responsive">
@@ -136,7 +129,8 @@
                     <th>Etiqueta</th>
                     <th class="w-140">Code</th>
                     <th class="w-120">Var</th>
-                    <th>Fórmula</th>
+                    <th class="w-200">Funció</th>
+                    <th>Configuració / Fórmula</th>
                     <th class="w-120"></th>
                   </tr>
                 </thead>
@@ -144,18 +138,8 @@
               </table>
             </div>
 
-            <div class="alert alert-secondary mb-0">
-              <div class="small">
-                Funcions disponibles:
-                <span class="mono">exec_by_judge(E, crash, params)</span>,
-                <span class="mono">select_sum(scores, n_valid, criteri)</span>,
-                <span class="mono">sum</span>, <span class="mono">avg</span>, <span class="mono">min</span>, <span class="mono">max</span>.
-              </div>
-            </div>
-
           </div>
         </div>
-
 
         <!-- AVANÇAT JSON -->
         <div class="tab-pane fade" id="tab-advanced" role="tabpanel">
@@ -175,22 +159,58 @@
   </div>
 </div>
 
-{# IMPORTANT: JSON vàlid i segur #}
 {{ schema_initial|json_script:"schema-initial" }}
 
 <script>
-  // --- Schema inicial (JSON vàlid gràcies a json_script) ---
+  // --- Schema inicial ---
   let schema = {};
-  try {
-    schema = JSON.parse(document.getElementById("schema-initial").textContent || "{}");
-  } catch (e) {
-    schema = {};
-  }
+  try { schema = JSON.parse(document.getElementById("schema-initial").textContent || "{}"); }
+  catch (e) { schema = {}; }
 
   // --- Helpers ---
   function uid(){ return Math.random().toString(16).slice(2); }
   function qs(sel){ return document.querySelector(sel); }
 
+  // --- Select options ---
+  const PRESET_FUNCS = [
+    ["manual", "Funció manual (escriure fórmula)"],
+    ["row_compute", "Row/Col compute (guiada)"],
+    ["exec_trampoli", "Execució trampolí (E_j) (guiada)"],
+  ];
+
+  const ROW_SELECT_OPTIONS = [
+    ["all", "Tots"],
+    ["drop_extremes", "Eliminar extrems (min i max)"],
+    ["best_n", "Millors N"],
+    ["worst_n", "Pitjors N"],
+  ];
+
+  const AGG_OPTIONS = [
+    ["sum", "Suma"],
+    ["avg", "Mitjana"],
+    ["med", "Mediana"],
+    ["min", "Mínim"],
+    ["max", "Màxim"],
+  ];
+
+  function optionHTML(opts){
+    return opts.map(([v,l])=>`<option value="${v}">${l}</option>`).join("");
+  }
+
+  function allCodes(){
+    const codes = [];
+    document.querySelectorAll("#fieldsTable tbody tr").forEach(r=>{
+      const c = r.querySelector('[data-k="code"]').value.trim();
+      if(c) codes.push(c);
+    });
+    document.querySelectorAll("#computedTable tbody tr").forEach(r=>{
+      const c = r.querySelector('[data-k="code"]').value.trim();
+      if(c) codes.push(c);
+    });
+    return Array.from(new Set(codes));
+  }
+
+  // --- Fields row (sense criteris) ---
   function fieldRow(data){
     const tr = document.createElement("tr");
     tr.dataset.id = uid();
@@ -201,17 +221,6 @@
 
       <td><input class="form-control form-control-sm" data-k="judges_count" value="${data.judges_count ?? ""}" placeholder="ex: 3"></td>
       <td><input class="form-control form-control-sm" data-k="items_count" value="${data.items_count ?? ""}" placeholder="ex: 11"></td>
-
-      <td><input class="form-control form-control-sm" data-k="valid_count" value="${data.valid_count ?? ""}" placeholder="ex: 2"></td>
-      <td>
-        <select class="form-control form-control-sm" data-k="valid_method">
-          <option value="">(cap)</option>
-          <option value="totes">Totes (millors k)</option>
-          <option value="eliminar_extrems">Eliminar extrems</option>
-          <option value="maximes">Màximes</option>
-          <option value="minimes">Mínimes</option>
-        </select>
-      </td>
 
       <td><input class="form-control form-control-sm" data-k="min" value="${data.min ?? ""}"></td>
       <td><input class="form-control form-control-sm" data-k="max" value="${data.max ?? ""}"></td>
@@ -226,11 +235,7 @@
       </td>
     `;
 
-    const vm = tr.querySelector('select[data-k="valid_method"]');
-    vm.value = data.valid_method || "";
-
     tr.querySelector('input[data-k="crash_enabled"]').checked = !!data.crash_enabled;
-
 
     tr.querySelector("button").addEventListener("click", ()=>{
       tr.remove();
@@ -245,37 +250,260 @@
     return tr;
   }
 
+  // --- Computed row (preset dropdown + conditional UI) ---
   function computedRow(data){
     const tr = document.createElement("tr");
     tr.dataset.id = uid();
+
+    const preset = data.preset || data.builder?.preset || "manual";
+
     tr.innerHTML = `
       <td><input class="form-control form-control-sm" data-k="label" value="${data.label||""}" placeholder="Etiqueta"></td>
       <td><input class="form-control form-control-sm mono" data-k="code" value="${data.code||""}"></td>
       <td><input class="form-control form-control-sm mono" data-k="var" value="${data.var||""}"></td>
-      <td><input class="form-control form-control-sm mono" data-k="formula" value="${data.formula||""}"></td>
+
+      <td>
+        <select class="form-control form-control-sm" data-k="preset">
+          ${optionHTML(PRESET_FUNCS)}
+        </select>
+        <div class="pill-help mt-1">
+          <span class="badge badge-soft">Preset</span> genera la fórmula.
+        </div>
+      </td>
+
+      <td>
+        <!-- MANUAL -->
+        <div data-box="manual">
+          <input class="form-control form-control-sm mono" data-k="manual_formula" value="${data.formula||""}" placeholder="Ex: TOTAL = E_total + x - p">
+          <div class="pill-help mt-1">
+            Escriu una expressió. Pots usar <span class="mono">CODE</span> i <span class="mono">var</span>.
+          </div>
+        </div>
+
+        <!-- ROW_COMPUTE -->
+        <div data-box="row_compute" class="border rounded p-2 d-none">
+          <div class="row">
+            <div class="col-md-3 mb-2">
+              <label class="small text-muted mb-1">Camp font (matriu)</label>
+              <select class="form-control form-control-sm mono" data-k="rc_source"></select>
+            </div>
+
+            <div class="col-md-3 mb-2">
+              <label class="small text-muted mb-1">Càlcul per ítem</label>
+              <input class="form-control form-control-sm mono" data-k="rc_item_expr" placeholder="Ex: 1 - x">
+              <div class="pill-help mt-1">Usa <span class="mono">x</span>=valor, <span class="mono">i</span>=índex (1..N)</div>
+            </div>
+
+            <div class="col-md-3 mb-2">
+              <label class="small text-muted mb-1">Selecció ítems (fila)</label>
+              <select class="form-control form-control-sm" data-k="rc_row_select">${optionHTML(ROW_SELECT_OPTIONS)}</select>
+              <input class="form-control form-control-sm mt-1 d-none" data-k="rc_row_n" placeholder="N (si aplica)">
+            </div>
+
+            <div class="col-md-3 mb-2">
+              <label class="small text-muted mb-1">Agregació fila</label>
+              <select class="form-control form-control-sm" data-k="rc_row_agg">${optionHTML(AGG_OPTIONS)}</select>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="col-md-3 mb-2">
+              <label class="small text-muted mb-1">Selecció jutges</label>
+              <select class="form-control form-control-sm" data-k="rc_col_select">${optionHTML(ROW_SELECT_OPTIONS)}</select>
+              <input class="form-control form-control-sm mt-1 d-none" data-k="rc_col_n" placeholder="N (si aplica)">
+            </div>
+
+            <div class="col-md-3 mb-2">
+              <label class="small text-muted mb-1">Agregació final</label>
+              <select class="form-control form-control-sm" data-k="rc_col_agg">${optionHTML(AGG_OPTIONS)}</select>
+            </div>
+
+            <div class="col-md-3 mb-2">
+              <label class="small text-muted mb-1">Rang d’ítems</label>
+              <div class="d-flex" style="gap:6px;">
+                <input class="form-control form-control-sm" data-k="rc_start" placeholder="start" value="1">
+                <input class="form-control form-control-sm" data-k="rc_count" placeholder="count (opcional)">
+              </div>
+              <div class="pill-help mt-1">Per defecte: tots els ítems (respecta crash del camp)</div>
+            </div>
+
+            <div class="col-md-3 mb-2">
+              <label class="small text-muted mb-1">Preview fórmula</label>
+              <input class="form-control form-control-sm mono" data-k="rc_preview" readonly>
+            </div>
+          </div>
+        </div>
+
+        <!-- EXEC_TRAMPOLI (E_j) -->
+        <div data-box="exec_trampoli" class="border rounded p-2 d-none">
+          <div class="row">
+            <div class="col-md-4 mb-2">
+              <label class="small text-muted mb-1">Camp Execució (matriu)</label>
+              <select class="form-control form-control-sm mono" data-k="et_source"></select>
+              <div class="pill-help mt-1">Genera una llista “per jutge”.</div>
+            </div>
+            <div class="col-md-4 mb-2">
+              <label class="small text-muted mb-1">Crash del camp</label>
+              <input class="form-control form-control-sm mono" data-k="et_crash_code" placeholder="Ex: E" value="">
+              <div class="pill-help mt-1">Normalment és el mateix codi (Ex: <span class="mono">E</span>).</div>
+            </div>
+            <div class="col-md-4 mb-2">
+              <label class="small text-muted mb-1">Preview fórmula</label>
+              <input class="form-control form-control-sm mono" data-k="et_preview" readonly>
+            </div>
+          </div>
+        </div>
+
+        <!-- Fórmula real que es guarda -->
+        <input type="hidden" data-k="formula" value="${data.formula||""}">
+      </td>
+
       <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger">Eliminar</button></td>
     `;
+
+    // preset init
+    tr.querySelector('select[data-k="preset"]').value = preset;
+
+    // delete
     tr.querySelector("button").addEventListener("click", ()=>{
       tr.remove();
       refreshVars();
     });
-    tr.querySelectorAll("input").forEach(i=>{
+
+    // hydrate builder
+    const b = data.builder || {};
+    if (preset === "row_compute") {
+      tr.querySelector('[data-k="rc_item_expr"]').value = b.item_expr || "";
+      tr.querySelector('[data-k="rc_row_select"]').value = b.row_select || "all";
+      tr.querySelector('[data-k="rc_row_agg"]').value = b.row_agg || "sum";
+      tr.querySelector('[data-k="rc_col_select"]').value = b.col_select || "all";
+      tr.querySelector('[data-k="rc_col_agg"]').value = b.col_agg || "sum";
+      tr.querySelector('[data-k="rc_start"]').value = (b.start ?? 1) + "";
+      tr.querySelector('[data-k="rc_count"]').value = (b.count ?? "") + "";
+      if (b.row_select_n != null) tr.querySelector('[data-k="rc_row_n"]').value = b.row_select_n;
+      if (b.col_select_n != null) tr.querySelector('[data-k="rc_col_n"]').value = b.col_select_n;
+    }
+    if (preset === "exec_trampoli") {
+      tr.querySelector('[data-k="et_crash_code"]').value = (b.crash_code || "") + "";
+    }
+
+    // events
+    tr.querySelectorAll("input,select").forEach(i=>{
       i.addEventListener("input", refreshVars);
+      i.addEventListener("change", refreshVars);
     });
+
     return tr;
   }
 
-  function refreshVars(){
-    // recollim tokens amb tipus (code/var) per poder-los etiquetar
-    const tokens = []; // {type:'code'|'var', value:'...'}
+  function showIf(el, yes){
+    if(!el) return;
+    el.classList.toggle("d-none", !yes);
+  }
 
+  function needsN(method){
+    return (method === "best_n" || method === "worst_n");
+  }
+
+  function updateComputedRowUI(tr){
+    const preset = tr.querySelector('[data-k="preset"]').value;
+
+    const boxManual = tr.querySelector('[data-box="manual"]');
+    const boxRC     = tr.querySelector('[data-box="row_compute"]');
+    const boxET     = tr.querySelector('[data-box="exec_trampoli"]');
+
+    showIf(boxManual, preset === "manual");
+    showIf(boxRC,     preset === "row_compute");
+    showIf(boxET,     preset === "exec_trampoli");
+
+    // reomplir sources
+    const codes = allCodes();
+
+    // MANUAL
+    if(preset === "manual"){
+      const mf = tr.querySelector('[data-k="manual_formula"]').value.trim();
+      tr.querySelector('[data-k="formula"]').value = mf;
+      return;
+    }
+
+    // ROW_COMPUTE
+    if(preset === "row_compute"){
+      const sel = tr.querySelector('[data-k="rc_source"]');
+      const current = sel.value || "";
+      sel.innerHTML = codes.map(c=>`<option value="${c}">${c}</option>`).join("");
+      sel.value = (codes.includes(current) ? current : (codes[0] || ""));
+
+      const itemExpr = (tr.querySelector('[data-k="rc_item_expr"]').value.trim() || "x");
+
+      const rowSel = tr.querySelector('[data-k="rc_row_select"]').value;
+      const rowNEl = tr.querySelector('[data-k="rc_row_n"]');
+      showIf(rowNEl, needsN(rowSel));
+      const rowN = rowNEl.value.trim();
+
+      const rowAgg = tr.querySelector('[data-k="rc_row_agg"]').value;
+
+      const colSel = tr.querySelector('[data-k="rc_col_select"]').value;
+      const colNEl = tr.querySelector('[data-k="rc_col_n"]');
+      showIf(colNEl, needsN(colSel));
+      const colN = colNEl.value.trim();
+
+      const colAgg = tr.querySelector('[data-k="rc_col_agg"]').value;
+
+      const start = tr.querySelector('[data-k="rc_start"]').value.trim() || "1";
+      const count = tr.querySelector('[data-k="rc_count"]').value.trim();
+
+      const kwargs = [];
+      if(start && start !== "1") kwargs.push(`start=${Number(start)}`);
+      if(count !== "") kwargs.push(`count=${Number(count)}`);
+
+      if(rowSel && rowSel !== "all") kwargs.push(`row_select='${rowSel}'`);
+      if(needsN(rowSel) && rowN !== "") kwargs.push(`row_select_n=${Number(rowN)}`);
+      if(rowAgg && rowAgg !== "sum") kwargs.push(`row_agg='${rowAgg}'`);
+
+      if(colSel && colSel !== "all") kwargs.push(`col_select='${colSel}'`);
+      if(needsN(colSel) && colN !== "") kwargs.push(`col_select_n=${Number(colN)}`);
+      if(colAgg && colAgg !== "sum") kwargs.push(`col_agg='${colAgg}'`);
+
+      const source = sel.value || "";
+      const exprEsc = itemExpr.replace(/\\/g,"\\\\").replace(/'/g,"\\'");
+      const formula = `row_custom_compute('${source}','${exprEsc}'${kwargs.length ? ", " + kwargs.join(", ") : ""})`;
+
+      tr.querySelector('[data-k="formula"]').value = formula;
+      tr.querySelector('[data-k="rc_preview"]').value = formula;
+      return;
+    }
+
+    // EXEC_TRAMPOLI
+    if(preset === "exec_trampoli"){
+      const sel = tr.querySelector('[data-k="et_source"]');
+      const current = sel.value || "";
+      sel.innerHTML = codes.map(c=>`<option value="${c}">${c}</option>`).join("");
+      sel.value = (codes.includes(current) ? current : (codes[0] || ""));
+
+      const src = sel.value || "";
+      const crashCode = (tr.querySelector('[data-k="et_crash_code"]').value.trim() || src);
+
+      const formula = `exec_by_judge(${src}, crash('${crashCode}'), params)`;
+      tr.querySelector('[data-k="formula"]').value = formula;
+      tr.querySelector('[data-k="et_preview"]').value = formula;
+      return;
+    }
+  }
+
+  // --- Chips + vars ---
+  function refreshVars(){
+    // primer, actualitza UI de presets (això pot canviar codes disponibles)
+    document.querySelectorAll("#computedTable tbody tr").forEach(tr=>{
+      updateComputedRowUI(tr);
+    });
+
+    const tokens = []; // {type:'code'|'var', value:'...'}
     document.querySelectorAll("#fieldsTable tbody tr").forEach(tr=>{
       const code = tr.querySelector('[data-k="code"]').value.trim();
       const vari = tr.querySelector('[data-k="var"]').value.trim();
       if (code) tokens.push({type:"code", value:code});
       if (vari) tokens.push({type:"var",  value:vari});
     });
-
     document.querySelectorAll("#computedTable tbody tr").forEach(tr=>{
       const code = tr.querySelector('[data-k="code"]').value.trim();
       const vari = tr.querySelector('[data-k="var"]').value.trim();
@@ -283,7 +511,6 @@
       if (vari) tokens.push({type:"var",  value:vari});
     });
 
-    // unique per (type,value)
     const seen = new Set();
     const unique = [];
     for (const t of tokens){
@@ -293,8 +520,6 @@
       seen.add(k);
       unique.push(t);
     }
-
-    // Ordenació: primer codes, després vars; i alfabètic dins de cada grup
     unique.sort((a,b)=>{
       if (a.type !== b.type) return a.type === "code" ? -1 : 1;
       return a.value.localeCompare(b.value);
@@ -307,8 +532,6 @@
       const b = document.createElement("button");
       b.type = "button";
       b.className = "btn btn-sm btn-outline-secondary mono";
-
-      // Etiqueta visible per evitar confusió
       const label = (t.type === "var") ? `var:${t.value}` : t.value;
       b.textContent = label;
 
@@ -318,18 +541,13 @@
 
       b.addEventListener("click", ()=>{
         const active = document.activeElement;
-        if(active && active.matches('#computedTable input[data-k="formula"]')){
-          const insertValue = (t.type === "var") ? t.value : t.value;
-
+        if(active && active.matches('#computedTable input[data-k="manual_formula"]')){
+          const insertValue = t.value;
           const start = active.selectionStart || active.value.length;
           const end = active.selectionEnd || active.value.length;
-          const before = active.value.slice(0,start);
-          const after = active.value.slice(end);
-
-          active.value = before + insertValue + after;
+          active.value = active.value.slice(0,start) + insertValue + active.value.slice(end);
           active.focus();
           active.selectionStart = active.selectionEnd = start + insertValue.length;
-
           refreshVars();
         }
       });
@@ -337,7 +555,6 @@
       wrap.appendChild(b);
     });
 
-    // actualitza avançat
     const adv = qs("#advancedJson");
     if (adv) adv.value = JSON.stringify(buildSchemaFromUI(), null, 2);
   }
@@ -365,18 +582,11 @@
         shape: "judge_x_item",
         crash: { enabled: crashEnabled },
         judges: { count: Number(tr.querySelector('[data-k="judges_count"]').value || 1) },
-        items: {
-          count: Number(tr.querySelector('[data-k="items_count"]').value || 1),
-        },
-        valid: {
-          count: Number(tr.querySelector('[data-k="valid_count"]').value || 0) || undefined,
-          method: tr.querySelector('[data-k="valid_method"]').value || undefined
-        },
+        items:  { count: Number(tr.querySelector('[data-k="items_count"]').value || 1) },
         min: minv!=="" ? Number(minv) : undefined,
         max: maxv!=="" ? Number(maxv) : undefined,
         decimals: dec!=="" ? Number(dec) : undefined
       });
-
     });
 
     const computed = [];
@@ -384,31 +594,72 @@
       const label = tr.querySelector('[data-k="label"]').value.trim();
       const code = tr.querySelector('[data-k="code"]').value.trim();
       const vari = tr.querySelector('[data-k="var"]').value.trim();
+      const preset = tr.querySelector('[data-k="preset"]').value;
       const formula = tr.querySelector('[data-k="formula"]').value.trim();
-      if(!code) return;
-      computed.push({code, label: label || code, var: vari || undefined, formula});
 
+      if(!code) return;
+
+      const out = { code, label: label || code, var: vari || undefined, formula };
+
+      // guarda builder per rehidratar presets
+      if(preset === "row_compute"){
+        const src = tr.querySelector('[data-k="rc_source"]').value;
+        const item_expr = tr.querySelector('[data-k="rc_item_expr"]').value.trim() || "x";
+        const row_select = tr.querySelector('[data-k="rc_row_select"]').value;
+        const row_select_n = tr.querySelector('[data-k="rc_row_n"]').value.trim();
+        const row_agg = tr.querySelector('[data-k="rc_row_agg"]').value;
+
+        const col_select = tr.querySelector('[data-k="rc_col_select"]').value;
+        const col_select_n = tr.querySelector('[data-k="rc_col_n"]').value.trim();
+        const col_agg = tr.querySelector('[data-k="rc_col_agg"]').value;
+
+        const start = Number(tr.querySelector('[data-k="rc_start"]').value || 1);
+        const count = tr.querySelector('[data-k="rc_count"]').value.trim();
+
+        out.builder = {
+          preset: "row_compute",
+          source: src,
+          item_expr,
+          row_select,
+          row_select_n: row_select_n === "" ? undefined : Number(row_select_n),
+          row_agg,
+          col_select,
+          col_select_n: col_select_n === "" ? undefined : Number(col_select_n),
+          col_agg,
+          start,
+          count: count === "" ? undefined : Number(count),
+        };
+      }
+      else if(preset === "exec_trampoli"){
+        const src = tr.querySelector('[data-k="et_source"]').value;
+        const crash_code = tr.querySelector('[data-k="et_crash_code"]').value.trim() || src;
+        out.builder = {
+          preset: "exec_trampoli",
+          source: src,
+          crash_code
+        };
+      }
+      else {
+        // manual: no cal builder
+      }
+
+      computed.push(out);
     });
 
     const cols = [];
     fields.forEach(f=>cols.push(f.code));
     computed.forEach(c=>cols.push(c.code));
 
-    return {
-      fields: fields,
-      computed: computed,
-      ui: { columns: cols }
-    };
+    return { fields, computed, ui: { columns: cols } };
   }
 
   function init(){
     const tbF = document.querySelector("#fieldsTable tbody");
     const tbC = document.querySelector("#computedTable tbody");
 
+    // fields
     (schema.fields || []).forEach(f=>{
       const isNumber = (f.type === "number");
-      const isList = (f.type === "list"); // si en tens antics
-
       tbF.appendChild(fieldRow({
         label: f.label,
         code: f.code,
@@ -416,52 +667,82 @@
         min: f.min,
         max: f.max,
         decimals: f.decimals,
-
-        // si era number antic -> matrix 1x1
         judges_count: isNumber ? 1 : (f.judges?.count ?? 1),
         items_count: isNumber ? 1 : (f.items?.count ?? 1),
-
-        valid_count: isNumber ? 1 : (f.valid?.count),
-        valid_method: isNumber ? "totes" : (f.valid?.method),
-
         crash_enabled: isNumber ? false : !!(f.crash?.enabled),
       }));
     });
 
+    // computed
     (schema.computed || []).forEach(c=>{
-      tbC.appendChild(computedRow({label:c.label, code:c.code, var:c.var, formula:c.formula}));
+      tbC.appendChild(computedRow({
+        label: c.label,
+        code: c.code,
+        var: c.var,
+        formula: c.formula,
+        preset: c.builder?.preset || "manual",
+        builder: c.builder || undefined
+      }));
     });
 
+    // defaults
     if(!schema.fields || schema.fields.length===0){
       tbF.appendChild(fieldRow({
-        label:"Execució", code:"E", var:"e", type:"matrix",
+        label:"Execució", code:"E", var:"e",
         judges_count: 3, items_count: 11,
-        valid_count: 2, valid_method:"eliminar_extrems",
         min:0, max:10, decimals:0,
         crash_enabled:true
       }));
-      tbF.appendChild(fieldRow({label:"Dificultat", code:"DD", var:"x", judges_count:1, items_count:1, decimals:3, crash_enabled:false, valid_count:1, valid_method:"totes"}));
-      tbF.appendChild(fieldRow({label:"TOF",        code:"TOF", var:"t", judges_count:1, items_count:1, decimals:3, crash_enabled:false, valid_count:1, valid_method:"totes"}));
-      tbF.appendChild(fieldRow({label:"HD",         code:"HD",  var:"h", judges_count:1, items_count:1, decimals:3, crash_enabled:false, valid_count:1, valid_method:"totes"}));
-      tbF.appendChild(fieldRow({label:"Penalització",code:"P",  var:"p", judges_count:1, items_count:1, decimals:3, crash_enabled:false, valid_count:1, valid_method:"totes"}));
+      tbF.appendChild(fieldRow({label:"Dificultat", code:"DD", var:"x", judges_count:1, items_count:1, decimals:3, crash_enabled:false}));
+      tbF.appendChild(fieldRow({label:"TOF",        code:"TOF", var:"t", judges_count:1, items_count:1, decimals:3, crash_enabled:false}));
+      tbF.appendChild(fieldRow({label:"HD",         code:"HD",  var:"h", judges_count:1, items_count:1, decimals:3, crash_enabled:false}));
+      tbF.appendChild(fieldRow({label:"Penalització",code:"P",  var:"p", judges_count:1, items_count:1, decimals:3, crash_enabled:false}));
 
+      // E_j (preset trampolí)
+      tbC.appendChild(computedRow({
+        code:"E_j",
+        label:"Execució per jutge",
+        preset:"exec_trampoli",
+        builder:{ preset:"exec_trampoli", source:"E", crash_code:"E" },
+        formula:""
+      }));
 
-      tbC.appendChild(computedRow({code:"E_j", var:"", formula:"exec_by_judge(E, crash('E'), field('E'))"}));
-      tbC.appendChild(computedRow({code:"E_total", var:"", formula:"select_sum(E_j, field('E')['valid']['count'], field('E')['valid']['method'])"}));
-      tbC.appendChild(computedRow({code:"TOTAL", var:"", formula:"E_total + x + t + h - p"}));
+      // E_total (preset row_compute: selecció jutges i suma)
+      tbC.appendChild(computedRow({
+        code:"E_total",
+        label:"Execució total",
+        preset:"row_compute",
+        builder:{
+          preset:"row_compute",
+          source:"E",               // IMPORTANT: matriu original (respecta crash)
+          item_expr:"1 - x",        // exemple: converteix deducció -> punts
+          row_select:"all",
+          row_agg:"sum",            // suma per jutge fins al crash
+          col_select:"drop_extremes",
+          col_agg:"sum",
+          start:1
+        },
+        formula:""
+      }));
+
+      tbC.appendChild(computedRow({
+        code:"TOTAL",
+        label:"Total",
+        preset:"manual",
+        formula:"E_total + x + t + h - p"
+      }));
     }
 
     document.getElementById("btnAddField").addEventListener("click", ()=>{
-      tbF.appendChild(fieldRow({label:"", code:"", var:"", judges_count:1, items_count:1, valid_count:1, valid_method:"totes"}));
+      tbF.appendChild(fieldRow({label:"", code:"", var:"", judges_count:1, items_count:1}));
       refreshVars();
     });
 
     document.getElementById("btnAddComputed").addEventListener("click", ()=>{
-      tbC.appendChild(computedRow({code:"", var:"", formula:""}));
+      tbC.appendChild(computedRow({code:"", var:"", preset:"manual", formula:""}));
       refreshVars();
     });
 
-    // Submit -> guarda el JSON generat al hidden real del form
     document.getElementById("schemaForm").addEventListener("submit", ()=>{
       const built = buildSchemaFromUI();
       const hidden = document.querySelector('[name="schema_json"]');

@@ -197,31 +197,23 @@ class AnnualReportDetailView(DetailView):
     model = AnnualReport
     template_name = "annual_report_detail.html"
 
-
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        report = self.object  # el mateix que {{ object }} al template
+        report = self.object
 
         out = report.analysis_result or {}
-
-        # nova estructura: {"kpis":..., "artifacts": {"plots":[...]}}
-        artifacts = out.get("artifacts")
-
-        # compat amb estructura antiga: {"kpis": {"artifacts": {...}}}
-        if artifacts is None:
-            artifacts = (out.get("kpis") or {}).get("artifacts")
-
-        plots = (artifacts or {}).get("plots") or []
+        artifacts = out.get("artifacts") or (out.get("kpis") or {}).get("artifacts") or {}
+        plots = artifacts.get("plots") or []
 
         ctx["plots"] = [
-            {
-                **p,
-                "url": settings.MEDIA_URL.rstrip("/") + "/" + p["file"].lstrip("/")
-            }
+            {**p, "url": settings.MEDIA_URL.rstrip("/") + "/" + p["file"].lstrip("/")}
             for p in plots
             if isinstance(p, dict) and p.get("file")
         ]
         ctx["analysis_result"] = out
+
+        ctx["sections"] = report.sections.all().order_by("key")
+        ctx["report_file_url"] = report.report_file.url if report.report_file else None
         return ctx
 
 class AnnualReportListView(ListView):
@@ -362,18 +354,6 @@ class AnnualReportReportProgressJsonView(View):
             "file": r.report_file.url if r.report_file else None,
         })
 
-
-class AnnualReportDetailView(DetailView):
-    model = AnnualReport
-    template_name = "annual_report_detail.html"
-
-    def get_context_data(self, **kwargs):
-        ctx = super().get_context_data(**kwargs)
-        # views.py (dins AnnualReportDetailView.get_context_data)
-        report = self.object
-        ctx["sections"] = report.sections.all().order_by("key")
-        ctx["report_file_url"] = report.report_file.url if report.report_file else None
-        return ctx
 
 
 class AnnualReportReportProgressView(DetailView):

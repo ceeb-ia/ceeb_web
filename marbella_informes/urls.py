@@ -1,4 +1,6 @@
 from django.urls import path
+from django.conf.urls.static import static
+from ceeb_web import settings
 from .views import AnnualReportCreateView, AnnualReportPlotEditView, AnnualReportUpdateView, AnnualReportDetailView, AnnualReportListView
 from .views import AnnualReportRunAnalysisView, AnnualReportProgressView, AnnualReportProgressJsonView
 from .views import AnnualReportGenerateReportView, AnnualReportReportProgressView, AnnualReportReportProgressJsonView, AnnualReportPdfView
@@ -20,4 +22,4 @@ urlpatterns = [
     path("annual/<int:pk>/report-progress.json", AnnualReportReportProgressJsonView.as_view(), name="annual_report_report_progress_json"),
     path("annual/<int:pk>/report.pdf", AnnualReportPdfView.as_view(), name="annual_report_pdf"),
 
-]
+] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

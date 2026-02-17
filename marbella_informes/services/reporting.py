@@ -44,7 +44,7 @@ def _ollama_chat(
     messages: list[dict],
     *,
     temperature: float = 0.1,
-    timeout_s: int = 180,
+    timeout_s: int = 600,
 ) -> str:
     """
     Crida Ollama /api/chat (no streaming) i retorna text.
@@ -130,8 +130,8 @@ def build_specs() -> List[SectionSpec]:
                     kpi_block=KPIBlockSpec(path=("reserves",)),
                     figures=[
                         # Ajusta aquestes keys segons els teus plots reals
-                        FigureSpec(key="reserves.distribucio_hores_espais", label="Gràfic 1"),
-                        FigureSpec(key="reserves.mensual_2021_2024", label="Gràfic 2"),
+                        FigureSpec(key="reserves.reserves_pie_hores_per_espai", label="Gràfic 1"),
+                        FigureSpec(key="reserves.reserves_evolucio_hores", label="Gràfic 2"),
                     ],
                     # Taula tipo DOCX: “Entitats / Esports / Hores totals”
                     # IMPORTANT: si no tens “entitats” als KPIs, el context ho marcarà com “No disponible”
