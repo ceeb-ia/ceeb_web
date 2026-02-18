@@ -161,6 +161,53 @@ class ItemExprEval(ast.NodeVisitor):
         if isinstance(op, ast.Mod):  return left % right
         raise ScoringError("Operador no permès a expressió d'item.")
 
+
+class PostAggExprEval(ast.NodeVisitor):
+    """
+    Evaluador minimal per expressió post-agregació.
+    Permet: números, m, + - * / % i parèntesis.
+    """
+    def __init__(self, vars_ctx: Dict[str, Any]):
+        self.vars_ctx = vars_ctx
+
+    def visit(self, node):
+        if isinstance(node, ast.Expression):
+            return self.visit(node.body)
+
+        if isinstance(node, ast.Constant):
+            if isinstance(node.value, (int, float)):
+                return float(node.value)
+            raise ScoringError("Constant no permesa a post_agg_expr.")
+
+        if isinstance(node, ast.Name):
+            if node.id == "m":
+                return float(self.vars_ctx.get("m", 0.0))
+            raise ScoringError(f"Nom no permès a post_agg_expr: {node.id}")
+
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ALLOWED_ITEM_BINOPS):
+            left = self.visit(node.left)
+            right = self.visit(node.right)
+            return ItemExprEval({})._binop(node.op, left, right)
+
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, ALLOWED_ITEM_UNARYOPS):
+            val = self.visit(node.operand)
+            return +val if isinstance(node.op, ast.UAdd) else -val
+
+        raise ScoringError(f"post_agg_expr no permesa: {node.__class__.__name__}")
+
+def compile_post_agg_expr(expr: str):
+    if not isinstance(expr, str) or not expr.strip():
+        raise ScoringError("post_agg_expr buida.")
+    tree = ast.parse(expr, mode="eval")
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute):
+            raise ScoringError("Accés per atribut no permès a post_agg_expr.")
+        if isinstance(node, ast.Name) and not _is_safe_name(node.id):
+            raise ScoringError("Nom no permès a post_agg_expr.")
+    return tree
+
+
+
 def compile_item_expr(expr: str):
     if not isinstance(expr, str) or not expr.strip():
         raise ScoringError("Expressió d'item buida.")
@@ -366,7 +413,8 @@ class ScoringEngine:
               - "drop_extremes"  (treu min i max una sola vegada)
               - "best_n"
               - "worst_n"
-            n: només s’usa per best_n / worst_n (si None -> no retalla)
+            - "drop_extremes_until_n" (treu min+max fins quedar n)
+            n: només s’usa per best_n / worst_n / drop_extremes_until_n (si None -> no retalla)
             """
             xs = [to_float(x) for x in (vals or [])]
             if not xs:
@@ -383,6 +431,29 @@ class ScoringEngine:
                 s = sorted(xs)
                 return s[1:-1]
 
+            if m in ("drop_extremes_until_n", "drop_extremes_until_N".lower()):
+                if n is None:
+                    raise ScoringError("drop_extremes_until_n requereix n (row_select_n/col_select_n).")
+                try:
+                    k = int(n)
+                except Exception:
+                    raise ScoringError("n ha de ser un enter.")
+                k = max(0, min(k, len(xs)))
+                if k == 0:
+                    return []
+
+                s = sorted(xs)  # asc
+                # treu: max, min, max, min... fins quedar k
+                toggle = 0  # 0->max, 1->min
+                while len(s) > k:
+                    if toggle == 0:
+                        s.pop()     # max
+                    else:
+                        s.pop(0)    # min
+                    toggle = 1 - toggle
+                return s
+
+
             if m in ("best_n", "worst_n"):
                 if n is None:
                     return xs
@@ -395,6 +466,55 @@ class ScoringEngine:
                 return s[:k]
 
             raise ScoringError(f"Mètode selecció no permès: {method}")
+
+        def _select_idx(vals, method: str, n: int | None = None) -> List[int]:
+            """
+            Retorna els índexos seleccionats (sobre vals).
+            Important per desacoblar select_on (què decideix) de agg_on (què agreguem).
+            """
+            xs = [to_float(x) for x in (vals or [])]
+            if not xs:
+                return []
+
+            m = (method or "all").lower().strip()
+            idx = list(range(len(xs)))
+
+            if m == "all":
+                return idx
+
+            if m == "drop_extremes":
+                if len(xs) <= 2:
+                    return idx
+                # treu min i max una vegada
+                s = sorted(idx, key=lambda i: xs[i])  # asc
+                return s[1:-1]
+
+            if m == "drop_extremes_until_n":
+                if n is None:
+                    raise ScoringError("drop_extremes_until_n requereix n.")
+                k = max(0, min(int(n), len(xs)))
+                if k == 0:
+                    return []
+                s = sorted(idx, key=lambda i: xs[i])  # asc
+                toggle = 0  # 0->max, 1->min
+                while len(s) > k:
+                    if toggle == 0:
+                        s.pop()    # max
+                    else:
+                        s.pop(0)   # min
+                    toggle = 1 - toggle
+                return s
+
+            if m in ("best_n", "worst_n"):
+                if n is None:
+                    return idx
+                k = max(0, min(int(n), len(xs)))
+                s = sorted(idx, key=lambda i: xs[i], reverse=(m == "best_n"))
+                return s[:k]
+
+            raise ScoringError(f"Mètode selecció no permès: {method}")
+
+
 
         def _agg(vals, agg: str):
             """
@@ -437,6 +557,11 @@ class ScoringEngine:
             col_select_n: int | None = None,
             col_agg: str = "sum",
 
+            select_on: str = "expr",      # "expr" (default) | "raw"
+            post_agg_expr: str | None = None,
+
+            agg_on: str = "expr",         # "expr" | "raw"  (sobre què agreguem)
+            post_final_expr: str | None = None,
             # mode retorn
             return_mode: str = "final",  # "final" | "by_judge"
         ):
@@ -446,6 +571,7 @@ class ScoringEngine:
               2) aplica item_expr a cada ítem (x = valor, i = index 1..n)
               3) selecciona ítems (row_select) i agrega (row_agg) => valor per jutge
               4) selecciona jutges (col_select) i agrega (col_agg) => final
+              5) aplica post_agg_expr si està definit
             Respecta crash(field_code) si `source` és un CODE de camp i el camp té crash enabled.
             """
 
@@ -497,6 +623,40 @@ class ScoringEngine:
                 tree = compile_item_expr(key)
                 cache[key] = tree
 
+            post_tree = None
+            if post_agg_expr is not None and str(post_agg_expr).strip() != "":
+                p_cache = getattr(self, "_post_expr_ast_cache", None)
+                if p_cache is None:
+                    p_cache = {}
+                    self._post_expr_ast_cache = p_cache
+                p_key = str(post_agg_expr).strip()
+                post_tree = p_cache.get(p_key)
+                if post_tree is None:
+                    post_tree = compile_post_agg_expr(p_key)
+                    p_cache[p_key] = post_tree
+
+            final_post_tree = None
+            if post_final_expr is not None and str(post_final_expr).strip() != "":
+                p_cache = getattr(self, "_post_expr_ast_cache", None)
+                if p_cache is None:
+                    p_cache = {}
+                    self._post_expr_ast_cache = p_cache
+                p_key = str(post_final_expr).strip()
+                final_post_tree = p_cache.get(p_key)
+                if final_post_tree is None:
+                    final_post_tree = compile_post_agg_expr(p_key)
+                    p_cache[p_key] = final_post_tree
+
+            agg_mode = (agg_on or "expr").lower().strip()
+            if agg_mode not in ("expr", "raw"):
+                raise ScoringError("agg_on ha de ser 'expr' o 'raw'.")
+
+
+            sel_mode = (select_on or "expr").lower().strip()
+            if sel_mode not in ("expr", "raw"):
+                raise ScoringError("select_on ha de ser 'expr' o 'raw'.")
+
+
             # 5) rang d’ítems
             try:
                 start_i = int(start or 1)
@@ -531,22 +691,210 @@ class ScoringEngine:
                 end_idx = max_k if cnt is None else min(max_k, start_idx + cnt)
 
                 # aplica expr a cada ítem seleccionat pel rang
+                raw_xs = []
                 ys = []
                 for idx1, v in enumerate(row[start_idx:end_idx], start=start_i):
                     x = to_float(v)
+                    raw_xs.append(float(x))
                     y = ItemExprEval({"x": x, "i": float(idx1)}).visit(tree)
                     ys.append(float(y))
 
-                # selecció + agregació dins la fila
-                sel = _select(ys, row_select, row_select_n)
-                by_judge.append(_agg(sel, row_agg))
+                # 1) decideix selecció sobre raw o expr -> retorna índexos
+                base_for_select = raw_xs if sel_mode == "raw" else ys
+                idxs = _select_idx(base_for_select, row_select, row_select_n)
+
+                # 2) decideix sobre què agreguem (raw o expr) però només pels idxs seleccionats
+                base_for_agg = raw_xs if agg_mode == "raw" else ys
+                sel_vals = [base_for_agg[i] for i in idxs]
+                m = _agg(sel_vals, row_agg)
+
+                # post-proc opcional sobre m
+                if post_tree is not None:
+                    m = float(PostAggExprEval({"m": float(m)}).visit(post_tree))
+
+                by_judge.append(float(m))
 
             if (return_mode or "final").lower().strip() == "by_judge":
                 return by_judge
 
             # 7) selecció + agregació sobre jutges
             sel_j = _select(by_judge, col_select, col_select_n)
-            return _agg(sel_j, col_agg)
+            out = _agg(sel_j, col_agg)
+            if final_post_tree is not None:
+                out = float(PostAggExprEval({"m": float(out)}).visit(final_post_tree))
+            return out
+
+
+        def column_custom_compute(
+            source,
+            item_expr: str,
+            *,
+            # rang d’ítems (1-indexed)
+            start: int = 1,
+            count: int | None = None,
+
+            # PRIMER: selecció + agregació per COLUMNES (jutges dins un ítem)
+            col_select: str = "all",
+            col_select_n: int | None = None,
+            col_agg: str = "sum",
+
+            # DESPRÉS: selecció + agregació per FILES (ítems finals)
+            row_select: str = "all",
+            row_select_n: int | None = None,
+            row_agg: str = "sum",
+            select_on: str = "expr",      # "expr" | "raw"
+            post_agg_expr: str | None = None,
+            agg_on: str = "expr",         # "expr" | "raw"
+            post_final_expr: str | None = None,
+
+            return_mode: str = "final",  # "final" | "by_item"
+        ):
+            """
+            Column-first:
+              1) per ítem k: agafa valors dels jutges (respecta crash), aplica item_expr (x, i)
+                 -> col_select/col_agg => valor agregat per ítem
+              2) sobre el vector d’ítems agregats: row_select/row_agg => final
+            """
+
+            field_code = None
+            M = source
+
+            if isinstance(source, str):
+                if (self._latest_context or {}).get(source) is not None:
+                    field_code = source
+                    M = (self._latest_context or {}).get(source, [])
+                else:
+                    raise ScoringError(f"Camp desconegut a column_custom_compute: {source}")
+
+            rows = list(M or [])
+
+            # n_items
+            if field_code:
+                cfg = self._field_cfg(field_code)
+                items_cfg = cfg.get("items") if isinstance(cfg.get("items"), dict) else {}
+                try:
+                    n_items = int(items_cfg.get("count") or 0)
+                except Exception:
+                    n_items = 0
+                n_items = max(0, min(50, n_items))
+            else:
+                n_items = max((len(r) for r in rows if isinstance(r, list)), default=0)
+                n_items = max(0, min(50, int(n_items)))
+
+            # crash per jutge (si aplica)
+            cr = []
+            if field_code:
+                cr = crash(field_code) or []
+
+            # compila expr (cache)
+            cache = getattr(self, "_item_expr_ast_cache", None)
+            if cache is None:
+                cache = {}
+                self._item_expr_ast_cache = cache
+
+            key = str(item_expr or "").strip()
+            if not key:
+                raise ScoringError("item_expr buit a column_custom_compute.")
+            tree = cache.get(key)
+            if tree is None:
+                tree = compile_item_expr(key)
+                cache[key] = tree
+
+            post_tree = None
+            if post_agg_expr is not None and str(post_agg_expr).strip() != "":
+                p_cache = getattr(self, "_post_expr_ast_cache", None)
+                if p_cache is None:
+                    p_cache = {}
+                    self._post_expr_ast_cache = p_cache
+                p_key = str(post_agg_expr).strip()
+                post_tree = p_cache.get(p_key)
+                if post_tree is None:
+                    post_tree = compile_post_agg_expr(p_key)
+                    p_cache[p_key] = post_tree
+
+
+            final_post_tree = None
+            if post_final_expr is not None and str(post_final_expr).strip() != "":
+                p_cache = getattr(self, "_post_expr_ast_cache", None)
+                if p_cache is None:
+                    p_cache = {}
+                    self._post_expr_ast_cache = p_cache
+                p_key = str(post_final_expr).strip()
+                final_post_tree = p_cache.get(p_key)
+                if final_post_tree is None:
+                    final_post_tree = compile_post_agg_expr(p_key)
+                    p_cache[p_key] = final_post_tree
+
+            agg_mode = (agg_on or "expr").lower().strip()
+            if agg_mode not in ("expr", "raw"):
+                raise ScoringError("agg_on ha de ser 'expr' o 'raw'.")
+
+
+            sel_mode = (select_on or "expr").lower().strip()
+            if sel_mode not in ("expr", "raw"):
+                raise ScoringError("select_on ha de ser 'expr' o 'raw'.")
+
+            # rang d’ítems
+            try:
+                start_i = int(start or 1)
+            except Exception:
+                start_i = 1
+            if start_i < 1:
+                raise ScoringError("start ha de ser >= 1")
+
+            cnt = None
+            if count is not None:
+                try:
+                    cnt = int(count)
+                except Exception:
+                    raise ScoringError("count ha de ser un enter o null.")
+                cnt = max(0, cnt)
+
+            start_idx = start_i - 1
+            end_idx = n_items if cnt is None else min(n_items, start_idx + cnt)
+
+            # ---- 1) Agrega per ítem (columna) sobre jutges ----
+            by_item = []
+            for k in range(start_idx, end_idx):
+                raw_xs = []
+                vals_k = []
+                for j, row in enumerate(rows):
+                    row = list(row or [])
+                    row = (row + [0] * n_items)[:n_items]
+
+                    crash_at = int(cr[j]) if j < len(cr) else 0
+                    if crash_at and crash_at > 0 and k >= (crash_at - 1):
+                        continue  # aquest jutge no contribueix a l’ítem k
+
+                    x = to_float(row[k])
+                    i_val = float(k + 1)  # index d’ítem 1..N
+                    raw_xs.append(float(x))
+
+                    y = ItemExprEval({"x": x, "i": i_val}).visit(tree)
+                    vals_k.append(float(y))
+
+                base_for_select = raw_xs if sel_mode == "raw" else vals_k
+                idxs = _select_idx(base_for_select, col_select, col_select_n)
+
+                base_for_agg = raw_xs if agg_mode == "raw" else vals_k
+                sel_vals = [base_for_agg[i] for i in idxs]
+                m = _agg(sel_vals, col_agg)
+
+                if post_tree is not None:
+                    m = float(PostAggExprEval({"m": float(m)}).visit(post_tree))
+
+                by_item.append(float(m))
+
+            if (return_mode or "final").lower().strip() == "by_item":
+                return by_item
+
+            # ---- 2) Selecció + agregació final sobre ítems ----
+            sel_items = _select(by_item, row_select, row_select_n)
+            out = _agg(sel_items, row_agg)
+            if final_post_tree is not None:
+                out = float(PostAggExprEval({"m": float(out)}).visit(final_post_tree))
+            return out
+
 
 
         def items_reduce(field_code, item_expr, agg="sum", limit_items=None, start=1, count=None):
@@ -660,6 +1008,7 @@ class ScoringEngine:
             "crash": crash,
             "items_reduce": items_reduce,
             "row_custom_compute": row_custom_compute,
+            "column_custom_compute": column_custom_compute,
         }
 
     def validate_and_normalize_inputs(self, inputs: Dict[str, Any]) -> Dict[str, Any]:

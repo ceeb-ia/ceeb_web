@@ -13,6 +13,58 @@
     .w-200{ width:200px; }
     .badge-soft{ background:#f1f3f5; border:1px solid #e9ecef; }
     .d-none{ display:none !important; }
+
+    .help-card{
+      border:1px solid #dbeafe;
+      background:#eff6ff;
+      border-radius:.5rem;
+      padding:.75rem .9rem;
+    }
+    .step-card{
+      border:1px solid #e9ecef;
+      border-radius:.5rem;
+      padding:.75rem .9rem;
+      background:#fff;
+    }
+    .step-title{
+      font-weight:700;
+      margin-bottom:.25rem;
+      display:flex;
+      align-items:center;
+      gap:.5rem;
+    }
+    .step-badge{
+      font-size:.75rem;
+      background:#f8f9fa;
+      border:1px solid #e9ecef;
+      border-radius:999px;
+      padding:.1rem .5rem;
+      color:#495057;
+    }
+    .hint{
+      font-size:.85rem;
+      color:#6c757d;
+      margin-bottom:.5rem;
+    }
+    .microflow{
+      font-size:.85rem;
+      color:#495057;
+      background:#f8f9fa;
+      border:1px solid #e9ecef;
+      border-radius:.5rem;
+      padding:.5rem .6rem;
+      margin-top:.5rem;
+    }
+    .microflow .mono{ font-size:.82rem; }
+    details summary{ cursor:pointer; }
+    .card-surface input:not([type="checkbox"]):not([type="radio"]),
+    .card-surface select,
+    .card-surface textarea,
+    .card-surface .form-control {
+  width: 100%;
+}
+  .card-surface .form-check-input { width: auto; }
+
   </style>
 
   <div class="card-surface">
@@ -22,7 +74,7 @@
       {% if competicio %}
         <div class="text-muted small">Competició: <strong>{{ competicio.nom }}</strong></div>
       {% endif %}
-      <div class="text-muted small">Configura camps i fórmules sense escriure JSON.</div>
+        <div class="text-muted small">Configura camps i fórmules sense escriure JSON.</div>
       </div>
     </div>
 
@@ -55,7 +107,7 @@
               <div>
                 <div class="font-weight-bold">Camps d’entrada</div>
                 <div class="pill-help">
-                  Defineix què omplirà el jurat. Els criteris d’agregació/selecció ara es defineixen a <strong>Fórmules</strong>.
+                  Defineix què omplirà el jurat. Els criteris d’agregació/selecció es defineixen a <strong>Fórmules</strong>.
                 </div>
               </div>
               <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddField">Afegir camp</button>
@@ -95,31 +147,43 @@
               <div>
                 <div class="font-weight-bold">Fórmules (camps calculats)</div>
                 <div class="pill-help">
-                  Tria una <strong>funció</strong> (preset) o “Funció manual”.
+                  Tria una <strong>funció guiada</strong> (Row/Column compute) o una <strong>fórmula manual</strong>.
                   Les fórmules s’avaluen <strong>de dalt a baix</strong>.
                 </div>
               </div>
               <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddComputed">Afegir fórmula</button>
             </div>
 
-            <div class="alert alert-light border mb-2">
-              <div class="small">
-                <div class="font-weight-bold mb-1">Ajuda</div>
-                <ul class="mb-0 pl-3">
-                  <li>Els xips de sota insereixen <span class="mono">CODE</span> o <span class="mono">var</span> a la fórmula manual.</li>
-                  <li><strong>Row/Col compute</strong>: només escrius el càlcul per ítem (<span class="mono">x</span> i <span class="mono">i</span>) i selecciones criteris amb desplegables.</li>
-                  <li>Funcions manuals disponibles: <span class="mono">sum</span>, <span class="mono">avg</span>, <span class="mono">min</span>, <span class="mono">max</span>, <span class="mono">med</span>, <span class="mono">best_n</span>, <span class="mono">row_custom_compute</span>, <span class="mono">exec_by_judge</span>, <span class="mono">select_sum</span>.</li>
-                </ul>
-              </div>
-            </div>
+            <!-- AJUDA (inspirada en classificacions: clara, sense jerga) -->
+            <div class="help-card small mb-3">
+              <div class="font-weight-bold mb-1">ℹ️ Com funcionen les fórmules (explicació simple)</div>
 
-            <div class="mb-2">
-              <div class="pill-help mb-1">
-                <strong>Inserir camps / àlies</strong>
-                <span class="text-muted">· CODE = nom del camp · var: = àlies curt</span>
+              <div class="mb-2">
+                Una fórmula crea una <strong>nota final</strong> a partir dels camps d’entrada i/o altres fórmules.
+                Si no vols programar, usa <strong>Row compute</strong> o <strong>Column compute</strong>.
               </div>
-              <div id="varsChips" class="d-flex flex-wrap" style="gap:6px;"></div>
-              <div class="pill-help mt-1">Consell: fes clic sobre un xip per inserir-lo dins la cel·la de “Fórmula manual”.</div>
+
+              <ul class="pl-3 mb-2">
+                <li>
+                  <strong>Fórmula manual</strong>: escriu una expressió amb els codes (ex: <span class="mono">E_total + DD - P</span>).
+                </li>
+                <li>
+                  <strong>Row compute</strong> (row_custom_compute):<br>
+                  <span class="text-muted">
+                    primer calcula <em>dins de cada jutge</em> (sobre els ítems) i després combina <em>entre jutges</em>.
+                  </span>
+                </li>
+                <li>
+                  <strong>Column compute</strong> (column_custom_compute):<br>
+                  <span class="text-muted">
+                    primer calcula <em>dins de cada ítem/aspecte</em> (sobre els jutges) i després combina <em>entre ítems</em>.
+                  </span>
+                </li>
+              </ul>
+
+              <div class="text-muted">
+                💡 Consell: si dubtes, comença per <strong>Row compute</strong> (és el més habitual quan cada jutge té una “fila” d’ítems).
+              </div>
             </div>
 
             <div class="table-responsive">
@@ -151,7 +215,7 @@
         </div>
       </div>
 
-      <div class=" gap-2 mt-3">
+      <div class="gap-2 mt-3">
         <button class="btn btn-primary" type="submit">Desar</button>
         <a class="btn btn-outline-secondary" href="{{ next|default:request.META.HTTP_REFERER }}">Cancel·lar</a>
       </div>
@@ -171,16 +235,27 @@
   function uid(){ return Math.random().toString(16).slice(2); }
   function qs(sel){ return document.querySelector(sel); }
 
+  function showIf(el, yes){
+    if(!el) return;
+    el.classList.toggle("d-none", !yes);
+  }
+
+  function needsN(method){
+    return (method === "best_n" || method === "worst_n" || method === "drop_extremes_until_n");
+  }
+
   // --- Select options ---
   const PRESET_FUNCS = [
-    ["manual", "Funció manual (escriure fórmula)"],
-    ["row_compute", "Row/Col compute (guiada)"],
+    ["manual", "Fórmula manual (escriure expressió)"],
+    ["row_compute", "Row compute (guiada · per jutge → entre jutges)"],
+    ["column_compute", "Column compute (guiada · per ítem → entre ítems)"],
     ["exec_trampoli", "Execució trampolí (E_j) (guiada)"],
   ];
 
-  const ROW_SELECT_OPTIONS = [
-    ["all", "Tots"],
+  const SELECT_OPTIONS = [
+    ["all", "Tots (no seleccionar)"],
     ["drop_extremes", "Eliminar extrems (min i max)"],
+    ["drop_extremes_until_n", "Eliminar extrems alternant fins N"],
     ["best_n", "Millors N"],
     ["worst_n", "Pitjors N"],
   ];
@@ -191,6 +266,11 @@
     ["med", "Mediana"],
     ["min", "Mínim"],
     ["max", "Màxim"],
+  ];
+
+  const SELECT_ON_OPTIONS = [
+    ["expr", "Sobre el resultat calculat (item_expr)"],
+    ["raw",  "Sobre el valor original (x)"],
   ];
 
   function optionHTML(opts){
@@ -210,7 +290,9 @@
     return Array.from(new Set(codes));
   }
 
-  // --- Fields row (sense criteris) ---
+  /* =========================
+     CAMPS
+     ========================= */
   function fieldRow(data){
     const tr = document.createElement("tr");
     tr.dataset.id = uid();
@@ -239,23 +321,26 @@
 
     tr.querySelector("button").addEventListener("click", ()=>{
       tr.remove();
-      refreshVars();
+      refreshAll();
     });
 
     tr.querySelectorAll("input,select").forEach(i=>{
-      i.addEventListener("input", refreshVars);
-      i.addEventListener("change", refreshVars);
+      i.addEventListener("input", refreshAll);
+      i.addEventListener("change", refreshAll);
     });
 
     return tr;
   }
 
-  // --- Computed row (preset dropdown + conditional UI) ---
+  /* =========================
+     COMPUTED: UI “clar” per row_custom / column_custom
+     ========================= */
   function computedRow(data){
     const tr = document.createElement("tr");
     tr.dataset.id = uid();
 
     const preset = data.preset || data.builder?.preset || "manual";
+    const postId = "postEnabled_" + uid();
 
     tr.innerHTML = `
       <td><input class="form-control form-control-sm" data-k="label" value="${data.label||""}" placeholder="Etiqueta"></td>
@@ -267,71 +352,175 @@
           ${optionHTML(PRESET_FUNCS)}
         </select>
         <div class="pill-help mt-1">
-          <span class="badge badge-soft">Preset</span> genera la fórmula.
+          Tria una funció guiada o manual.
         </div>
       </td>
 
       <td>
         <!-- MANUAL -->
         <div data-box="manual">
-          <input class="form-control form-control-sm mono" data-k="manual_formula" value="${data.formula||""}" placeholder="Ex: TOTAL = E_total + x - p">
+          <input class="form-control form-control-sm mono" data-k="manual_formula"
+                 value="${data.formula||""}"
+                 placeholder="Ex: E_total + DD + TOF + HD - P">
           <div class="pill-help mt-1">
-            Escriu una expressió. Pots usar <span class="mono">CODE</span> i <span class="mono">var</span>.
+            Escriu una expressió amb els <strong>codes</strong> (ex: <span class="mono">E_total</span>, <span class="mono">DD</span>…).
           </div>
         </div>
 
-        <!-- ROW_COMPUTE -->
-        <div data-box="row_compute" class="border rounded p-2 d-none">
-          <div class="row">
-            <div class="col-md-3 mb-2">
-              <label class="small text-muted mb-1">Camp font (matriu)</label>
-              <select class="form-control form-control-sm mono" data-k="rc_source"></select>
-            </div>
+        <!-- ROW/COLUMN COMPUTE (mateixa UI, canvia el text i el mapping intern) -->
+        <div data-box="rc_compute" class="d-none">
 
-            <div class="col-md-3 mb-2">
-              <label class="small text-muted mb-1">Càlcul per ítem</label>
-              <input class="form-control form-control-sm mono" data-k="rc_item_expr" placeholder="Ex: 1 - x">
-              <div class="pill-help mt-1">Usa <span class="mono">x</span>=valor, <span class="mono">i</span>=índex (1..N)</div>
+          <!-- CONFIGURACIÓ GLOBAL (no és una fase) -->
+          <div class="step-card mb-2">
+            <div class="step-title">
+              <span class="step-badge">Global</span>
+              <span data-k="rc_global_title">Configuració global</span>
             </div>
+            <div class="hint" data-k="rc_global_help"></div>
 
-            <div class="col-md-3 mb-2">
-              <label class="small text-muted mb-1">Selecció ítems (fila)</label>
-              <select class="form-control form-control-sm" data-k="rc_row_select">${optionHTML(ROW_SELECT_OPTIONS)}</select>
-              <input class="form-control form-control-sm mt-1 d-none" data-k="rc_row_n" placeholder="N (si aplica)">
-            </div>
-
-            <div class="col-md-3 mb-2">
-              <label class="small text-muted mb-1">Agregació fila</label>
-              <select class="form-control form-control-sm" data-k="rc_row_agg">${optionHTML(AGG_OPTIONS)}</select>
-            </div>
-          </div>
-
-          <div class="row">
-            <div class="col-md-3 mb-2">
-              <label class="small text-muted mb-1">Selecció jutges</label>
-              <select class="form-control form-control-sm" data-k="rc_col_select">${optionHTML(ROW_SELECT_OPTIONS)}</select>
-              <input class="form-control form-control-sm mt-1 d-none" data-k="rc_col_n" placeholder="N (si aplica)">
-            </div>
-
-            <div class="col-md-3 mb-2">
-              <label class="small text-muted mb-1">Agregació final</label>
-              <select class="form-control form-control-sm" data-k="rc_col_agg">${optionHTML(AGG_OPTIONS)}</select>
-            </div>
-
-            <div class="col-md-3 mb-2">
-              <label class="small text-muted mb-1">Rang d’ítems</label>
-              <div class="d-flex" style="gap:6px;">
-                <input class="form-control form-control-sm" data-k="rc_start" placeholder="start" value="1">
-                <input class="form-control form-control-sm" data-k="rc_count" placeholder="count (opcional)">
+            <div class="row">
+              <div class="col-md-3 mb-2">
+                <label class="small text-muted mb-1">Camp font (matriu)</label>
+                <select class="form-control form-control-sm mono" data-k="rc_source"></select>
+                <div class="pill-help mt-1">Tria el camp que conté la matriu (jutges × ítems).</div>
               </div>
-              <div class="pill-help mt-1">Per defecte: tots els ítems (respecta crash del camp)</div>
+
+              <div class="col-md-4 mb-2">
+                <label class="small text-muted mb-1">Transformació per valor (item_expr)</label>
+                <input class="form-control form-control-sm mono" data-k="rc_item_expr" placeholder="Ex: x   o   1 - x">
+                <div class="pill-help mt-1">
+                  Es calcula <strong>sempre</strong> per cada valor abans de seleccionar/agregar.
+                  Variables: <span class="mono">x</span> (valor) i <span class="mono">i</span> (índex d’ítem 1..N).
+                </div>
+              </div>
+
+              <div class="col-md-3 mb-2">
+                <label class="small text-muted mb-1">Rang d’ítems</label>
+                <div class="d-flex" style="gap:6px;">
+                  <input class="form-control form-control-sm" data-k="rc_start" placeholder="start" value="1">
+                  <input class="form-control form-control-sm" data-k="rc_count" placeholder="count (opcional)">
+                </div>
+                <div class="pill-help mt-1">Si ho deixes buit, s’usen tots els ítems (i es respecta el crash si el camp el té).</div>
+              </div>
+
+              <div class="col-md-2 mb-2">
+                <label class="small text-muted mb-1">Preview</label>
+                <input class="form-control form-control-sm mono" data-k="rc_preview" readonly>
+              </div>
             </div>
 
-            <div class="col-md-3 mb-2">
-              <label class="small text-muted mb-1">Preview fórmula</label>
-              <input class="form-control form-control-sm mono" data-k="rc_preview" readonly>
+            <div class="microflow" data-k="rc_microflow"></div>
+          </div>
+
+          <!-- FASE INTERNA -->
+          <div class="step-card mb-2">
+            <div class="step-title">
+              <span class="step-badge">Fase interna</span>
+              <span data-k="rc_internal_title">—</span>
+            </div>
+            <div class="hint" data-k="rc_internal_help"></div>
+
+            <div class="row">
+              <div class="col-md-5 mb-2">
+                <label class="small text-muted mb-1" data-k="rc_internal_select_lbl">Selecció</label>
+                <select class="form-control form-control-sm" data-k="rc_internal_select">
+                  ${optionHTML(SELECT_OPTIONS)}
+                </select>
+                <input class="form-control form-control-sm mt-1 d-none" data-k="rc_internal_n" placeholder="N (si aplica)">
+                <div class="pill-help mt-1">Exemples: “Eliminar extrems” o “Millors N”.</div>
+              </div>
+
+              <div class="col-md-4 mb-2">
+                <label class="small text-muted mb-1">Agregació</label>
+                <select class="form-control form-control-sm" data-k="rc_internal_agg">
+                  ${optionHTML(AGG_OPTIONS)}
+                </select>
+                <div class="pill-help mt-1">Exemple: Mitjana, Suma, Mediana…</div>
+              </div>
+
+              <div class="col-md-3 mb-2">
+                <label class="small text-muted mb-1">Opcions</label>
+                <details>
+                  <summary class="small text-muted">Avançat (opcional)</summary>
+                  <div class="mt-2">
+                    <div class="pill-help mb-1">
+                      <strong>Sobre què decideixo i agrego?</strong><br>
+                      Normalment treballaràs sobre el resultat calculat (<span class="mono">item_expr</span>).
+                    </div>
+
+                    <label class="small text-muted mb-1">Selecciona segons</label>
+                    <select class="form-control form-control-sm" data-k="rc_internal_select_on">
+                      ${optionHTML(SELECT_ON_OPTIONS)}
+                    </select>
+
+                    <label class="small text-muted mb-1 mt-2">Agrega sobre</label>
+                    <select class="form-control form-control-sm" data-k="rc_internal_agg_on">
+                      ${optionHTML(SELECT_ON_OPTIONS)}
+                    </select>
+
+                    <div class="form-check mt-2">
+                      <input class="form-check-input" type="checkbox" data-k="rc_internal_post_enabled"  id="${postId}">
+                      <label class="form-check-label" for="${postId}">
+                        Transformar el resultat intern (post(m))
+                      </label>
+                    </div>
+
+                    <input class="form-control form-control-sm mono mt-2 d-none"
+                           data-k="rc_internal_post_expr"
+                           placeholder="Ex: 1 - m   (m = resultat intern)">
+
+                    <div class="pill-help mt-1 d-none" data-k="rc_internal_post_help">
+                      <span class="mono">m</span> és el resultat després de la selecció+agregació interna.
+                      Exemple típic: <span class="mono">1 - m</span> per invertir una escala 0..1.
+                    </div>
+                  </div>
+                </details>
+              </div>
             </div>
           </div>
+
+          <!-- FASE FINAL -->
+          <div class="step-card">
+            <div class="step-title">
+              <span class="step-badge">Fase final</span>
+              <span data-k="rc_final_title">—</span>
+            </div>
+            <div class="hint" data-k="rc_final_help"></div>
+
+            <div class="row">
+              <div class="col-md-5 mb-2">
+                <label class="small text-muted mb-1" data-k="rc_final_select_lbl">Selecció</label>
+                <select class="form-control form-control-sm" data-k="rc_final_select">
+                  ${optionHTML(SELECT_OPTIONS)}
+                </select>
+                <input class="form-control form-control-sm mt-1 d-none" data-k="rc_final_n" placeholder="N (si aplica)">
+                <div class="pill-help mt-1">Aquí combines els resultats de la fase interna.</div>
+              </div>
+
+              <div class="col-md-4 mb-2">
+                <label class="small text-muted mb-1">Agregació final</label>
+                <select class="form-control form-control-sm" data-k="rc_final_agg">
+                  ${optionHTML(AGG_OPTIONS)}
+                </select>
+              </div>
+
+              <div class="col-md-3 mb-2">
+                <label class="small text-muted mb-1">Opcions</label>
+                <details>
+                  <summary class="small text-muted">Avançat (opcional)</summary>
+                  <div class="mt-2">
+                    <label class="small text-muted mb-1">Transformació final (post_final_expr)</label>
+                    <input class="form-control form-control-sm mono" data-k="rc_post_final_expr"
+                           placeholder="Ex: m   o   1 - m   (m = resultat final)">
+                    <div class="pill-help mt-1">
+                      S’aplica al final de tot. <span class="mono">m</span> és el resultat final.
+                    </div>
+                  </div>
+                </details>
+              </div>
+            </div>
+          </div>
+
         </div>
 
         <!-- EXEC_TRAMPOLI (E_j) -->
@@ -367,114 +556,84 @@
     // delete
     tr.querySelector("button").addEventListener("click", ()=>{
       tr.remove();
-      refreshVars();
+      refreshAll();
     });
 
-    // hydrate builder
+    // hydrate builder (compat amb l’esquema anterior)
     const b = data.builder || {};
-    if (preset === "row_compute") {
+    if (preset === "row_compute" || preset === "column_compute") {
       tr.querySelector('[data-k="rc_item_expr"]').value = b.item_expr || "";
-      tr.querySelector('[data-k="rc_row_select"]').value = b.row_select || "all";
-      tr.querySelector('[data-k="rc_row_agg"]').value = b.row_agg || "sum";
-      tr.querySelector('[data-k="rc_col_select"]').value = b.col_select || "all";
-      tr.querySelector('[data-k="rc_col_agg"]').value = b.col_agg || "sum";
+
+      // mapping: intern/final depèn del preset
+      const internalSel = (preset === "row_compute") ? (b.row_select || "all") : (b.col_select || "all");
+      const internalAgg = (preset === "row_compute") ? (b.row_agg || "sum") : (b.col_agg || "sum");
+      const internalN   = (preset === "row_compute") ? (b.row_select_n) : (b.col_select_n);
+
+      const finalSel = (preset === "row_compute") ? (b.col_select || "all") : (b.row_select || "all");
+      const finalAgg = (preset === "row_compute") ? (b.col_agg || "sum") : (b.row_agg || "sum");
+      const finalN   = (preset === "row_compute") ? (b.col_select_n) : (b.row_select_n);
+
+      tr.querySelector('[data-k="rc_internal_select"]').value = internalSel;
+      tr.querySelector('[data-k="rc_internal_agg"]').value = internalAgg;
+      if (internalN != null) tr.querySelector('[data-k="rc_internal_n"]').value = internalN;
+
+      tr.querySelector('[data-k="rc_final_select"]').value = finalSel;
+      tr.querySelector('[data-k="rc_final_agg"]').value = finalAgg;
+      if (finalN != null) tr.querySelector('[data-k="rc_final_n"]').value = finalN;
+
       tr.querySelector('[data-k="rc_start"]').value = (b.start ?? 1) + "";
       tr.querySelector('[data-k="rc_count"]').value = (b.count ?? "") + "";
-      if (b.row_select_n != null) tr.querySelector('[data-k="rc_row_n"]').value = b.row_select_n;
-      if (b.col_select_n != null) tr.querySelector('[data-k="rc_col_n"]').value = b.col_select_n;
+
+      // avançat intern: (select_on / agg_on / post_agg_expr)
+      const internalSelectOn = (preset === "row_compute") ? (b.row_select_on || "expr") : (b.col_select_on || "expr");
+      const internalAggOn    = (preset === "row_compute") ? (b.row_agg_on || "expr") : (b.col_select_on || "expr"); // en el teu JS vell, column reutilitzava col_select_on com agg_on
+      const internalPostExpr = (preset === "row_compute") ? (b.row_post_agg_expr || "") : (b.col_post_agg_expr || "");
+
+      tr.querySelector('[data-k="rc_internal_select_on"]').value = internalSelectOn;
+      tr.querySelector('[data-k="rc_internal_agg_on"]').value = internalAggOn;
+
+      const postEnabled = !!internalPostExpr;
+      tr.querySelector('[data-k="rc_internal_post_enabled"]').checked = postEnabled;
+      tr.querySelector('[data-k="rc_internal_post_expr"]').value = internalPostExpr || "";
+
+      tr.querySelector('[data-k="rc_post_final_expr"]').value = (b.post_final_expr || "");
     }
+
     if (preset === "exec_trampoli") {
       tr.querySelector('[data-k="et_crash_code"]').value = (b.crash_code || "") + "";
     }
 
     // events
-    tr.querySelectorAll("input,select").forEach(i=>{
-      i.addEventListener("input", refreshVars);
-      i.addEventListener("change", refreshVars);
+    tr.querySelectorAll("input,select,details").forEach(i=>{
+      i.addEventListener("input", refreshAll);
+      i.addEventListener("change", refreshAll);
+      i.addEventListener("toggle", refreshAll);
     });
 
     return tr;
-  }
-
-  function showIf(el, yes){
-    if(!el) return;
-    el.classList.toggle("d-none", !yes);
-  }
-
-  function needsN(method){
-    return (method === "best_n" || method === "worst_n");
   }
 
   function updateComputedRowUI(tr){
     const preset = tr.querySelector('[data-k="preset"]').value;
 
     const boxManual = tr.querySelector('[data-box="manual"]');
-    const boxRC     = tr.querySelector('[data-box="row_compute"]');
+    const boxRC     = tr.querySelector('[data-box="rc_compute"]');
     const boxET     = tr.querySelector('[data-box="exec_trampoli"]');
 
     showIf(boxManual, preset === "manual");
-    showIf(boxRC,     preset === "row_compute");
-    showIf(boxET,     preset === "exec_trampoli");
+    showIf(boxRC, (preset === "row_compute" || preset === "column_compute"));
+    showIf(boxET, preset === "exec_trampoli");
 
-    // reomplir sources
-    const codes = allCodes();
-
-    // MANUAL
+    // MANUAL: només guardar el que s’escriu
     if(preset === "manual"){
       const mf = tr.querySelector('[data-k="manual_formula"]').value.trim();
       tr.querySelector('[data-k="formula"]').value = mf;
       return;
     }
 
-    // ROW_COMPUTE
-    if(preset === "row_compute"){
-      const sel = tr.querySelector('[data-k="rc_source"]');
-      const current = sel.value || "";
-      sel.innerHTML = codes.map(c=>`<option value="${c}">${c}</option>`).join("");
-      sel.value = (codes.includes(current) ? current : (codes[0] || ""));
-
-      const itemExpr = (tr.querySelector('[data-k="rc_item_expr"]').value.trim() || "x");
-
-      const rowSel = tr.querySelector('[data-k="rc_row_select"]').value;
-      const rowNEl = tr.querySelector('[data-k="rc_row_n"]');
-      showIf(rowNEl, needsN(rowSel));
-      const rowN = rowNEl.value.trim();
-
-      const rowAgg = tr.querySelector('[data-k="rc_row_agg"]').value;
-
-      const colSel = tr.querySelector('[data-k="rc_col_select"]').value;
-      const colNEl = tr.querySelector('[data-k="rc_col_n"]');
-      showIf(colNEl, needsN(colSel));
-      const colN = colNEl.value.trim();
-
-      const colAgg = tr.querySelector('[data-k="rc_col_agg"]').value;
-
-      const start = tr.querySelector('[data-k="rc_start"]').value.trim() || "1";
-      const count = tr.querySelector('[data-k="rc_count"]').value.trim();
-
-      const kwargs = [];
-      if(start && start !== "1") kwargs.push(`start=${Number(start)}`);
-      if(count !== "") kwargs.push(`count=${Number(count)}`);
-
-      if(rowSel && rowSel !== "all") kwargs.push(`row_select='${rowSel}'`);
-      if(needsN(rowSel) && rowN !== "") kwargs.push(`row_select_n=${Number(rowN)}`);
-      if(rowAgg && rowAgg !== "sum") kwargs.push(`row_agg='${rowAgg}'`);
-
-      if(colSel && colSel !== "all") kwargs.push(`col_select='${colSel}'`);
-      if(needsN(colSel) && colN !== "") kwargs.push(`col_select_n=${Number(colN)}`);
-      if(colAgg && colAgg !== "sum") kwargs.push(`col_agg='${colAgg}'`);
-
-      const source = sel.value || "";
-      const exprEsc = itemExpr.replace(/\\/g,"\\\\").replace(/'/g,"\\'");
-      const formula = `row_custom_compute('${source}','${exprEsc}'${kwargs.length ? ", " + kwargs.join(", ") : ""})`;
-
-      tr.querySelector('[data-k="formula"]').value = formula;
-      tr.querySelector('[data-k="rc_preview"]').value = formula;
-      return;
-    }
-
-    // EXEC_TRAMPOLI
+    // EXEC TRAMPOLI
     if(preset === "exec_trampoli"){
+      const codes = allCodes();
       const sel = tr.querySelector('[data-k="et_source"]');
       const current = sel.value || "";
       sel.innerHTML = codes.map(c=>`<option value="${c}">${c}</option>`).join("");
@@ -488,75 +647,140 @@
       tr.querySelector('[data-k="et_preview"]').value = formula;
       return;
     }
-  }
 
-  // --- Chips + vars ---
-  function refreshVars(){
-    // primer, actualitza UI de presets (això pot canviar codes disponibles)
-    document.querySelectorAll("#computedTable tbody tr").forEach(tr=>{
-      updateComputedRowUI(tr);
-    });
+    // ROW/COLUMN COMPUTE
+    if(preset === "row_compute" || preset === "column_compute"){
+      const codes = allCodes();
 
-    const tokens = []; // {type:'code'|'var', value:'...'}
-    document.querySelectorAll("#fieldsTable tbody tr").forEach(tr=>{
-      const code = tr.querySelector('[data-k="code"]').value.trim();
-      const vari = tr.querySelector('[data-k="var"]').value.trim();
-      if (code) tokens.push({type:"code", value:code});
-      if (vari) tokens.push({type:"var",  value:vari});
-    });
-    document.querySelectorAll("#computedTable tbody tr").forEach(tr=>{
-      const code = tr.querySelector('[data-k="code"]').value.trim();
-      const vari = tr.querySelector('[data-k="var"]').value.trim();
-      if (code) tokens.push({type:"code", value:code});
-      if (vari) tokens.push({type:"var",  value:vari});
-    });
+      // source select
+      const sel = tr.querySelector('[data-k="rc_source"]');
+      const current = sel.value || "";
+      sel.innerHTML = codes.map(c=>`<option value="${c}">${c}</option>`).join("");
+      sel.value = (codes.includes(current) ? current : (codes[0] || ""));
 
-    const seen = new Set();
-    const unique = [];
-    for (const t of tokens){
-      const k = `${t.type}:${t.value}`;
-      if (!t.value) continue;
-      if (seen.has(k)) continue;
-      seen.add(k);
-      unique.push(t);
+      // texts segons preset (per fer-ho mentalment fàcil)
+      const gTitle = tr.querySelector('[data-k="rc_global_title"]');
+      const gHelp  = tr.querySelector('[data-k="rc_global_help"]');
+      const iTitle = tr.querySelector('[data-k="rc_internal_title"]');
+      const iHelp  = tr.querySelector('[data-k="rc_internal_help"]');
+      const fTitle = tr.querySelector('[data-k="rc_final_title"]');
+      const fHelp  = tr.querySelector('[data-k="rc_final_help"]');
+      const flow   = tr.querySelector('[data-k="rc_microflow"]');
+
+      if (preset === "row_compute"){
+        gHelp.textContent = "Aquesta funció calcula primer dins de cada jutge (sobre els ítems) i després combina els jutges.";
+        iTitle.textContent = "Dins de cada jutge (ítems/aspectes)";
+        iHelp.textContent = "Aquí decideixes com seleccionar ítems i com agregar-los per obtenir 1 resultat per jutge.";
+        fTitle.textContent = "Entre jutges (resultat final)";
+        fHelp.textContent = "Aquí combines els resultats dels jutges per obtenir la nota final.";
+        flow.innerHTML = `
+          <div>Flux:</div>
+          <div class="mono">
+            per cada jutge → per cada ítem: y = item_expr(x,i)
+            → selecció ítems → agregació → (resultat per jutge)
+            → selecció jutges → agregació final
+          </div>`;
+      } else {
+        gHelp.textContent = "Aquesta funció calcula primer dins de cada ítem (sobre els jutges) i després combina els ítems.";
+        iTitle.textContent = "Dins de cada ítem/aspecte (jutges)";
+        iHelp.textContent = "Aquí decideixes com seleccionar jutges i com agregar-los per obtenir 1 resultat per ítem.";
+        fTitle.textContent = "Entre ítems/aspectes (resultat final)";
+        fHelp.textContent = "Aquí combines els resultats dels ítems per obtenir la nota final.";
+        flow.innerHTML = `
+          <div>Flux:</div>
+          <div class="mono">
+            per cada ítem → per cada jutge: y = item_expr(x,i)
+            → selecció jutges → agregació → (resultat per ítem)
+            → selecció ítems → agregació final
+          </div>`;
+      }
+
+      // valors UI
+      const itemExpr = (tr.querySelector('[data-k="rc_item_expr"]').value.trim() || "x");
+      const start = tr.querySelector('[data-k="rc_start"]').value.trim() || "1";
+      const count = tr.querySelector('[data-k="rc_count"]').value.trim();
+
+      const internalSel = tr.querySelector('[data-k="rc_internal_select"]').value;
+      const internalNEl = tr.querySelector('[data-k="rc_internal_n"]');
+      showIf(internalNEl, needsN(internalSel));
+      const internalN = internalNEl.value.trim();
+      const internalAgg = tr.querySelector('[data-k="rc_internal_agg"]').value;
+
+      const finalSel = tr.querySelector('[data-k="rc_final_select"]').value;
+      const finalNEl = tr.querySelector('[data-k="rc_final_n"]');
+      showIf(finalNEl, needsN(finalSel));
+      const finalN = finalNEl.value.trim();
+      const finalAgg = tr.querySelector('[data-k="rc_final_agg"]').value;
+
+      // avançat intern
+      const internalSelectOn = tr.querySelector('[data-k="rc_internal_select_on"]').value || "raw";
+      const internalAggOn    = tr.querySelector('[data-k="rc_internal_agg_on"]').value || "expr";
+
+      const postEnabled = !!tr.querySelector('[data-k="rc_internal_post_enabled"]').checked;
+      const postExprEl  = tr.querySelector('[data-k="rc_internal_post_expr"]');
+      const postHelpEl  = tr.querySelector('[data-k="rc_internal_post_help"]');
+
+      showIf(postExprEl, postEnabled);
+      showIf(postHelpEl, postEnabled);
+
+      const postExpr = (postExprEl?.value || "").trim();
+
+      // avançat final
+      const postFinalExpr = (tr.querySelector('[data-k="rc_post_final_expr"]').value || "").trim();
+
+      // construir kwargs (sempre mirem el que NO és default)
+      const kwargs = [];
+
+      if(start && start !== "1") kwargs.push(`start=${Number(start)}`);
+      if(count !== "") kwargs.push(`count=${Number(count)}`);
+
+      // mapping: intern/final → row_* / col_* segons preset
+      // Row compute:
+      //   intern => row_select/row_agg ; final => col_select/col_agg
+      // Column compute:
+      //   intern => col_select/col_agg ; final => row_select/row_agg
+      if (preset === "row_compute"){
+        if(internalSel && internalSel !== "all") kwargs.push(`row_select='${internalSel}'`);
+        if(needsN(internalSel) && internalN !== "") kwargs.push(`row_select_n=${Number(internalN)}`);
+        if(internalAgg && internalAgg !== "sum") kwargs.push(`row_agg='${internalAgg}'`);
+
+        if(finalSel && finalSel !== "all") kwargs.push(`col_select='${finalSel}'`);
+        if(needsN(finalSel) && finalN !== "") kwargs.push(`col_select_n=${Number(finalN)}`);
+        if(finalAgg && finalAgg !== "sum") kwargs.push(`col_agg='${finalAgg}'`);
+      } else {
+        if(internalSel && internalSel !== "all") kwargs.push(`col_select='${internalSel}'`);
+        if(needsN(internalSel) && internalN !== "") kwargs.push(`col_select_n=${Number(internalN)}`);
+        if(internalAgg && internalAgg !== "sum") kwargs.push(`col_agg='${internalAgg}'`);
+
+        if(finalSel && finalSel !== "all") kwargs.push(`row_select='${finalSel}'`);
+        if(needsN(finalSel) && finalN !== "") kwargs.push(`row_select_n=${Number(finalN)}`);
+        if(finalAgg && finalAgg !== "sum") kwargs.push(`row_agg='${finalAgg}'`);
+      }
+
+      // select_on / agg_on / post_agg_expr (apliquen a la FASE INTERNA)
+      if(internalAggOn !== "expr") kwargs.push(`agg_on='${internalAggOn}'`);
+      if(internalSelectOn !== "expr") kwargs.push(`select_on='${internalSelectOn}'`);
+
+      if(postEnabled && postExpr !== ""){
+        const pe = postExpr.replace(/\\/g,"\\\\").replace(/'/g,"\\'");
+        kwargs.push(`post_agg_expr='${pe}'`);
+      }
+
+      if(postFinalExpr !== ""){
+        const pfe = postFinalExpr.replace(/\\/g,"\\\\").replace(/'/g,"\\'");
+        kwargs.push(`post_final_expr='${pfe}'`);
+      }
+
+      // formula
+      const source = sel.value || "";
+      const exprEsc = itemExpr.replace(/\\/g,"\\\\").replace(/'/g,"\\'");
+      const fnName = (preset === "column_compute") ? "column_custom_compute" : "row_custom_compute";
+      const formula = `${fnName}('${source}','${exprEsc}'${kwargs.length ? ", " + kwargs.join(", ") : ""})`;
+
+      tr.querySelector('[data-k="formula"]').value = formula;
+      tr.querySelector('[data-k="rc_preview"]').value = formula;
+      return;
     }
-    unique.sort((a,b)=>{
-      if (a.type !== b.type) return a.type === "code" ? -1 : 1;
-      return a.value.localeCompare(b.value);
-    });
-
-    const wrap = document.getElementById("varsChips");
-    wrap.innerHTML = "";
-
-    unique.forEach(t=>{
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "btn btn-sm btn-outline-secondary mono";
-      const label = (t.type === "var") ? `var:${t.value}` : t.value;
-      b.textContent = label;
-
-      b.title = (t.type === "var")
-        ? "Àlies curt (var). Inserirà l’àlies a la fórmula."
-        : "Codi del camp/resultat. Inserirà el CODE a la fórmula.";
-
-      b.addEventListener("click", ()=>{
-        const active = document.activeElement;
-        if(active && active.matches('#computedTable input[data-k="manual_formula"]')){
-          const insertValue = t.value;
-          const start = active.selectionStart || active.value.length;
-          const end = active.selectionEnd || active.value.length;
-          active.value = active.value.slice(0,start) + insertValue + active.value.slice(end);
-          active.focus();
-          active.selectionStart = active.selectionEnd = start + insertValue.length;
-          refreshVars();
-        }
-      });
-
-      wrap.appendChild(b);
-    });
-
-    const adv = qs("#advancedJson");
-    if (adv) adv.value = JSON.stringify(buildSchemaFromUI(), null, 2);
   }
 
   function buildSchemaFromUI(){
@@ -601,46 +825,79 @@
 
       const out = { code, label: label || code, var: vari || undefined, formula };
 
-      // guarda builder per rehidratar presets
-      if(preset === "row_compute"){
+      // guardar builder per rehidratar presets (format antic/compat)
+      if(preset === "row_compute" || preset === "column_compute"){
         const src = tr.querySelector('[data-k="rc_source"]').value;
         const item_expr = tr.querySelector('[data-k="rc_item_expr"]').value.trim() || "x";
-        const row_select = tr.querySelector('[data-k="rc_row_select"]').value;
-        const row_select_n = tr.querySelector('[data-k="rc_row_n"]').value.trim();
-        const row_agg = tr.querySelector('[data-k="rc_row_agg"]').value;
 
-        const col_select = tr.querySelector('[data-k="rc_col_select"]').value;
-        const col_select_n = tr.querySelector('[data-k="rc_col_n"]').value.trim();
-        const col_agg = tr.querySelector('[data-k="rc_col_agg"]').value;
+        const internalSel = tr.querySelector('[data-k="rc_internal_select"]').value;
+        const internalN   = tr.querySelector('[data-k="rc_internal_n"]').value.trim();
+        const internalAgg = tr.querySelector('[data-k="rc_internal_agg"]').value;
+
+        const finalSel = tr.querySelector('[data-k="rc_final_select"]').value;
+        const finalN   = tr.querySelector('[data-k="rc_final_n"]').value.trim();
+        const finalAgg = tr.querySelector('[data-k="rc_final_agg"]').value;
 
         const start = Number(tr.querySelector('[data-k="rc_start"]').value || 1);
         const count = tr.querySelector('[data-k="rc_count"]').value.trim();
 
-        out.builder = {
-          preset: "row_compute",
+        const internalSelectOn = tr.querySelector('[data-k="rc_internal_select_on"]').value || "raw";
+        const internalAggOn    = tr.querySelector('[data-k="rc_internal_agg_on"]').value || "expr";
+        const postEnabled      = !!tr.querySelector('[data-k="rc_internal_post_enabled"]').checked;
+        const internalPostExpr = (tr.querySelector('[data-k="rc_internal_post_expr"]').value || "").trim();
+        const post_final_expr  = (tr.querySelector('[data-k="rc_post_final_expr"]').value || "").trim();
+
+        // map intern/final a row/col segons preset
+        const builder = {
+          preset: preset,
           source: src,
           item_expr,
-          row_select,
-          row_select_n: row_select_n === "" ? undefined : Number(row_select_n),
-          row_agg,
-          col_select,
-          col_select_n: col_select_n === "" ? undefined : Number(col_select_n),
-          col_agg,
           start,
           count: count === "" ? undefined : Number(count),
+          post_final_expr: post_final_expr || undefined,
         };
+
+        if (preset === "row_compute"){
+          builder.row_select = internalSel;
+          builder.row_select_n = internalN === "" ? undefined : Number(internalN);
+          builder.row_agg = internalAgg;
+
+          builder.col_select = finalSel;
+          builder.col_select_n = finalN === "" ? undefined : Number(finalN);
+          builder.col_agg = finalAgg;
+
+          builder.row_select_on = internalSelectOn;
+          builder.row_agg_on = internalAggOn;
+          builder.row_post_agg_expr = (postEnabled ? (internalPostExpr || undefined) : undefined);
+
+          // camps column_* no calen per row_compute, però els deixem com abans (no estrictament necessari)
+          builder.col_select_on = "expr";
+          builder.col_post_agg_expr = undefined;
+        } else {
+          builder.col_select = internalSel;
+          builder.col_select_n = internalN === "" ? undefined : Number(internalN);
+          builder.col_agg = internalAgg;
+
+          builder.row_select = finalSel;
+          builder.row_select_n = finalN === "" ? undefined : Number(finalN);
+          builder.row_agg = finalAgg;
+
+          builder.col_select_on = internalSelectOn;
+          // en el teu JS vell, column reutilitzava col_select_on com agg_on:
+          // ho mantenim guardant-lo així, i a l’hidratar el posem també a agg_on intern.
+          builder.col_post_agg_expr = (postEnabled ? (internalPostExpr || undefined) : undefined);
+
+          builder.row_select_on = "expr";
+          builder.row_agg_on = "expr";
+          builder.row_post_agg_expr = undefined;
+        }
+
+        out.builder = builder;
       }
       else if(preset === "exec_trampoli"){
         const src = tr.querySelector('[data-k="et_source"]').value;
         const crash_code = tr.querySelector('[data-k="et_crash_code"]').value.trim() || src;
-        out.builder = {
-          preset: "exec_trampoli",
-          source: src,
-          crash_code
-        };
-      }
-      else {
-        // manual: no cal builder
+        out.builder = { preset: "exec_trampoli", source: src, crash_code };
       }
 
       computed.push(out);
@@ -651,6 +908,17 @@
     computed.forEach(c=>cols.push(c.code));
 
     return { fields, computed, ui: { columns: cols } };
+  }
+
+  function refreshAll(){
+    // actualitza cada fila computed (això també recalcula la fórmula)
+    document.querySelectorAll("#computedTable tbody tr").forEach(tr=>{
+      updateComputedRowUI(tr);
+    });
+
+    // actualitza JSON avançat
+    const adv = qs("#advancedJson");
+    if (adv) adv.value = JSON.stringify(buildSchemaFromUI(), null, 2);
   }
 
   function init(){
@@ -685,7 +953,7 @@
       }));
     });
 
-    // defaults
+    // defaults si està buit
     if(!schema.fields || schema.fields.length===0){
       tbF.appendChild(fieldRow({
         label:"Execució", code:"E", var:"e",
@@ -707,17 +975,17 @@
         formula:""
       }));
 
-      // E_total (preset row_compute: selecció jutges i suma)
+      // E_total (row compute)
       tbC.appendChild(computedRow({
         code:"E_total",
         label:"Execució total",
         preset:"row_compute",
         builder:{
           preset:"row_compute",
-          source:"E",               // IMPORTANT: matriu original (respecta crash)
-          item_expr:"1 - x",        // exemple: converteix deducció -> punts
+          source:"E",
+          item_expr:"1 - x",
           row_select:"all",
-          row_agg:"sum",            // suma per jutge fins al crash
+          row_agg:"sum",
           col_select:"drop_extremes",
           col_agg:"sum",
           start:1
@@ -735,12 +1003,12 @@
 
     document.getElementById("btnAddField").addEventListener("click", ()=>{
       tbF.appendChild(fieldRow({label:"", code:"", var:"", judges_count:1, items_count:1}));
-      refreshVars();
+      refreshAll();
     });
 
     document.getElementById("btnAddComputed").addEventListener("click", ()=>{
       tbC.appendChild(computedRow({code:"", var:"", preset:"manual", formula:""}));
-      refreshVars();
+      refreshAll();
     });
 
     document.getElementById("schemaForm").addEventListener("submit", ()=>{
@@ -751,7 +1019,7 @@
       if (adv) adv.value = JSON.stringify(built, null, 2);
     });
 
-    refreshVars();
+    refreshAll();
   }
 
   init();
