@@ -1,7 +1,9 @@
 # views_scoring.py
 import json
+import logging
 from collections import defaultdict
 
+from django.contrib import messages
 from django.db import transaction
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect
@@ -14,6 +16,82 @@ from .models_trampoli import Aparell, CompeticioAparell
 from .models_scoring import ScoringSchema, ScoreEntry
 from .forms import ScoringSchemaForm
 from .scoring_engine import ScoringEngine, ScoringError
+
+
+logger = logging.getLogger(__name__)
+
+
+def _recalculate_scores_for_comp_aparell(competicio, comp_aparell, chunk_size: int = 200) -> dict:
+    """
+    Recalculate all ScoreEntry rows for one competition + comp_aparell using the current
+    global schema attached to the Aparell.
+    """
+    qs = (
+        ScoreEntry.objects
+        .filter(competicio=competicio, comp_aparell=comp_aparell)
+        .order_by("id")
+    )
+    summary = {
+        "total": qs.count(),
+        "updated": 0,
+        "failed": 0,
+        "errors_preview": [],
+    }
+
+    ss, _ = ScoringSchema.objects.get_or_create(
+        aparell=comp_aparell.aparell,
+        defaults={"schema": {}},
+    )
+
+    try:
+        engine = ScoringEngine(ss.schema or {})
+    except Exception as exc:
+        summary["engine_error"] = str(exc)
+        logger.exception(
+            "Schema recalc init failed for competicio=%s comp_aparell=%s: %s",
+            getattr(competicio, "id", None),
+            getattr(comp_aparell, "id", None),
+            exc,
+        )
+        return summary
+
+    for entry in qs.iterator(chunk_size=chunk_size):
+        raw_inputs = entry.inputs if isinstance(entry.inputs, dict) else {}
+        try:
+            result = engine.compute(raw_inputs)
+            entry.inputs = result.inputs
+            entry.outputs = result.outputs
+            entry.total = result.total
+            entry.save(update_fields=["inputs", "outputs", "total", "updated_at"])
+            summary["updated"] += 1
+        except ScoringError as exc:
+            summary["failed"] += 1
+            if len(summary["errors_preview"]) < 5:
+                summary["errors_preview"].append(f"{entry.id}: {exc}")
+            logger.warning(
+                "Schema recalc failed for ScoreEntry id=%s (domain): %s",
+                entry.id,
+                exc,
+            )
+        except Exception as exc:
+            summary["failed"] += 1
+            if len(summary["errors_preview"]) < 5:
+                summary["errors_preview"].append(f"{entry.id}: error inesperat")
+            logger.exception(
+                "Schema recalc failed for ScoreEntry id=%s (unexpected): %s",
+                entry.id,
+                exc,
+            )
+
+    logger.info(
+        "Schema recalc summary competicio=%s comp_aparell=%s total=%s updated=%s failed=%s",
+        getattr(competicio, "id", None),
+        getattr(comp_aparell, "id", None),
+        summary["total"],
+        summary["updated"],
+        summary["failed"],
+    )
+    return summary
 
 
 class ScoringNotesHome(TemplateView):
@@ -194,9 +272,38 @@ class ScoringSchemaUpdate(UpdateView):
 
     def form_valid(self, form):
         schema_json = form.cleaned_data.get("schema_json")
+        schema_changed = False
+
         if schema_json is not None:
+            previous_schema = self.object.schema if isinstance(self.object.schema, dict) else {}
+            schema_changed = previous_schema != schema_json
             self.object.schema = schema_json
             self.object.save()
+
+        # Auto recalc only in competition flow and only if schema really changed.
+        if schema_changed and self.competicio and self.comp_aparell:
+            summary = _recalculate_scores_for_comp_aparell(self.competicio, self.comp_aparell)
+            engine_error = summary.get("engine_error")
+
+            if engine_error:
+                messages.error(
+                    self.request,
+                    f"Schema desat, pero no s'han recalculat notes: {engine_error}",
+                )
+            elif summary["failed"] > 0:
+                preview = "; ".join(summary["errors_preview"])
+                extra = f" Errors: {preview}" if preview else ""
+                messages.warning(
+                    self.request,
+                    f"Schema desat. Recalculades {summary['updated']}/{summary['total']} notes"
+                    f" ({summary['failed']} fallades).{extra}",
+                )
+            else:
+                messages.success(
+                    self.request,
+                    f"Schema desat. Recalculades {summary['updated']}/{summary['total']} notes.",
+                )
+
         return redirect(self.get_success_url())
 
     def get_success_url(self):

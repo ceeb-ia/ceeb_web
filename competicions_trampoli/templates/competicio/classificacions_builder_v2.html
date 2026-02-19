@@ -1,0 +1,934 @@
+{# templates/competicio/classificacions_builder_v2.html #}
+{% extends "base.html" %}
+{% block title %}Classificacions · {{ competicio.nom }}{% endblock %}
+{% block content %}
+
+<style>
+  /* Override local: a style.css hi ha una regla global de .card a 1/3 d'amplada */
+  #classif-builder-v2 .card {
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+    flex: 0 0 auto;
+  }
+  #classif-builder-v2 .card .card-body {
+    display: block;
+  }
+</style>
+
+<div id="classif-builder-v2" class="container-fluid mt-4">
+  <div class="card-surface">
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <div>
+      <h3 class="mb-0">Classificacions</h3>
+      <div class="text-muted small">{{ competicio.nom }}</div>
+    </div>
+    <div class=" gap-2">
+      <button type="button" class="btn btn-sm btn-outline-primary" id="btnAdd">+ Afegir</button>
+      <button type="button" class="btn btn-sm btn-primary" id="btnSave">Guardar</button>
+      <button type="button" class="btn btn-sm btn-outline-danger" id="btnDelete">Eliminar</button>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="col-12 col-lg-4 mb-3">
+      <div class="card">
+        <div class="card-header font-weight-bold">Configuracions</div>
+        <div class="list-group list-group-flush" id="cfgList"></div>
+      </div>
+
+      <div class="small text-muted mt-2">
+        💡 Tip: crea una classificació per “General”, una per “Categoria”, etc.
+      </div>
+    </div>
+
+    <div class="col-12 col-lg-8">
+      <div id="editorEmpty" class="card">
+        <div class="card-body text-muted">
+          Selecciona una configuració a l’esquerra.
+        </div>
+      </div>
+
+      <div id="editorBody" class="card" style="display:none;">
+        <div class="card-body">
+
+          <div class="row">
+            <div class="col-12 col-md-7 mb-3">
+              <label class="font-weight-bold">Nom</label>
+              <input class="form-control" id="fNom" type="text">
+            </div>
+            <div class="col-6 col-md-3 mb-3">
+              <label class="font-weight-bold">Tipus</label>
+              <select class="form-control" id="fTipus">
+                <option value="individual">Individual</option>
+                <option value="entitat">Per entitat</option>
+              </select>
+            </div>
+            <div class="col-6 col-md-2 mb-3">
+              <label class="font-weight-bold d-block">Activa</label>
+              <div class="form-check mt-2">
+                <input class="form-check-input" type="checkbox" id="fActiva">
+                <label class="form-check-label" for="fActiva">Sí</label>
+              </div>
+            </div>
+          </div>
+
+          <hr class="my-2">
+
+          <div class="font-weight-bold mb-2">Particions</div>
+          <div class="text-muted small mb-2">
+            Divideix el resultat final (ex: per categoria/subcategoria). No és un filtre.
+          </div>
+
+          <div class="row mb-2">
+            <div class="col-6 col-md-3">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="pCategoria">
+                <label class="form-check-label" for="pCategoria">Categoria</label>
+              </div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="pSubcategoria">
+                <label class="form-check-label" for="pSubcategoria">Subcategoria</label>
+              </div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="pEntitat">
+                <label class="form-check-label" for="pEntitat">Entitat</label>
+              </div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="pGrup">
+                <label class="form-check-label" for="pGrup">Grup</label>
+              </div>
+            </div>
+          </div>
+
+          <hr class="my-2">
+
+          <div class="font-weight-bold mb-2">Aparells i camps</div>
+          <div class="text-muted small mb-2">
+            1) Selecciona els aparells. 2) Per cada aparell, indica els <strong>codes</strong> que vols sumar/mitjanar/...
+          </div>
+
+          <div class="row">
+            <div class="col-12 mb-2">
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="apMode" id="apTots" checked>
+                <label class="form-check-label" for="apTots">Tots</label>
+              </div>
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="apMode" id="apSel">
+                <label class="form-check-label" for="apSel">Seleccionar</label>
+              </div>
+            </div>
+
+            <div class="col-12" id="apSelBox" style="display:none;">
+              <div class="border rounded p-2 mb-3">
+                <div class="row" id="apChkList"></div>
+              </div>
+            </div>
+          </div>
+
+          <div id="perAppBox" class="mb-3"></div>
+
+          <div class="row">
+            <div class="col-12 col-md-4 mb-3">
+              <label class="font-weight-bold">Agregació camps (dins exercici)</label>
+              <select class="form-control" id="sAggCamps">
+                <option value="sum">Suma</option>
+                <option value="avg">Mitjana</option>
+                <option value="median">Mediana</option>
+                <option value="max">Màxim</option>
+                <option value="min">Mínim</option>
+              </select>
+              <div class="small text-muted mt-1">Quan selecciones diversos camps d’un mateix exercici.</div>
+            </div>
+
+            <div class="col-12 col-md-4 mb-3">
+              <label class="font-weight-bold">Selecció exercicis</label>
+              <select class="form-control" id="sExercicisMode">
+                <option value="tots">Tots</option>
+                <option value="millor_1">Millor 1</option>
+                <option value="millor_n">Millors N</option>
+              </select>
+              <div class="row mt-2">
+                <div class="col-6">
+                  <label class="small text-muted">N (si Millors N)</label>
+                  <input class="form-control" id="iExBestN" type="number" min="1" value="1">
+                </div>
+                <div class="col-6">
+                  <label class="small text-muted">Agregació exercicis</label>
+                  <select class="form-control" id="sAggExercicis">
+                    <option value="sum">Suma</option>
+                    <option value="avg">Mitjana</option>
+                    <option value="median">Mediana</option>
+                    <option value="max">Màxim</option>
+                    <option value="min">Mínim</option>
+                  </select>
+                </div>
+              </div>
+              <div class="small text-muted mt-1">
+                El nombre d’exercicis ve de <code>CompeticioAparell.nombre_exercicis</code>.
+              </div>
+            </div>
+
+            <div class="col-12 col-md-4 mb-3">
+              <label class="font-weight-bold">Agregació entre aparells</label>
+              <select class="form-control" id="sAggAparells">
+                <option value="sum">Suma</option>
+                <option value="avg">Mitjana</option>
+                <option value="median">Mediana</option>
+                <option value="max">Màxim</option>
+                <option value="min">Mínim</option>
+              </select>
+
+              <label class="font-weight-bold mt-2">Ordre principal</label>
+              <select class="form-control" id="sOrdre">
+                <option value="desc">Desc (més és millor)</option>
+                <option value="asc">Asc (menys és millor)</option>
+              </select>
+            </div>
+          </div>
+
+          <hr class="my-2">
+
+          <div class="font-weight-bold mb-2">Desempat</div>
+          <div class="text-muted small mb-2">
+            Afegeix criteris en ordre. Pots especificar un aparell concret o deixar-lo en “(Tots)”.
+            <br>Camp = code (ex: <code>execucio_total</code>, <code>E_total</code>, <code>total</code>...).
+          </div>
+
+          <div class="table-responsive mb-2">
+            <table class="table table-sm mb-0">
+              <thead>
+                <tr>
+                  <th style="width:35%;">Aparell</th>
+                  <th style="width:35%;">Camp (code)</th>
+                  <th style="width:20%;">Ordre</th>
+                  <th style="width:10%;" class="text-right">Accions</th>
+                </tr>
+              </thead>
+              <tbody id="tieBody"></tbody>
+            </table>
+          </div>
+
+          <button type="button" class="btn btn-sm btn-outline-primary mb-3" id="btnTieAdd">+ Afegir criteri</button>
+
+          <details class="mb-3">
+            <summary class="small text-muted">Opcions avançades (JSON)</summary>
+            <div class="mt-2">
+              <textarea class="form-control" id="tDesempat" rows="3"></textarea>
+              <div class="form-text text-muted">
+                Exemple: [{"aparell_id":12,"camp":"E_total","ordre":"desc"},{"camp":"penalitzacio","ordre":"asc"}]
+              </div>
+            </div>
+          </details>
+
+          <hr class="my-2">
+
+          <div class="font-weight-bold mb-2">Filtres</div>
+          <div class="text-muted small mb-2">Decideixen qui entra a la classificació.</div>
+
+          <div class="row">
+            <div class="col-12 col-md-6 mb-3">
+              <label class="font-weight-bold">Entitats</label>
+              <select class="form-control" id="fEntitats" multiple>
+                {% for o in filter_choices.entitats %}
+                  <option value="{{ o.value }}">{{ o.label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-12 col-md-6 mb-3">
+              <label class="font-weight-bold">Categories</label>
+              <select class="form-control" id="fCategories" multiple>
+                {% for o in filter_choices.categories %}
+                  <option value="{{ o.value }}">{{ o.label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-12 col-md-6 mb-3">
+              <label class="font-weight-bold">Subcategories</label>
+              <select class="form-control" id="fSubcategories" multiple>
+                {% for o in filter_choices.subcategories %}
+                  <option value="{{ o.value }}">{{ o.label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-12 col-md-6 mb-3">
+              <label class="font-weight-bold">Grups</label>
+              <select class="form-control" id="fGrups" multiple>
+                {% for o in filter_choices.grups %}
+                  <option value="{{ o.value }}">{{ o.label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+
+          <details class="mb-3">
+            <summary class="small text-muted">Filtres avançats (JSON)</summary>
+            <div class="mt-2">
+              <textarea class="form-control" id="tFiltres" rows="3"></textarea>
+              <div class="form-text text-muted">
+                Exemple: {"categories_in":[1,2],"grups_in":["A"]}
+              </div>
+            </div>
+          </details>
+
+          <hr class="my-2">
+
+          <div class="row">
+            <div class="col-12 col-md-4 mb-3">
+              <label class="font-weight-bold">Top N</label>
+              <input class="form-control" id="iTopN" type="number" min="0" value="0">
+            </div>
+            <div class="col-12 col-md-4 mb-3">
+              <label class="font-weight-bold d-block">Mostrar empats</label>
+              <div class="form-check mt-2">
+                <input class="form-check-input" type="checkbox" id="cEmpats" checked>
+                <label class="form-check-label" for="cEmpats">Sí</label>
+              </div>
+            </div>
+            <div class="col-12 col-md-4 mb-3 d-flex align-items-end justify-content-end">
+              <button type="button" class="btn btn-outline-secondary btn-sm" id="btnPreview">Previsualitzar</button>
+            </div>
+          </div>
+
+          <div class="border rounded p-2" id="previewBox">
+            <div class="text-muted small">Fes clic a “Previsualitzar”.</div>
+          </div>
+
+          <details class="mt-3">
+            <summary class="small text-muted">Schema complet (JSON)</summary>
+            <textarea class="form-control mt-2" id="advancedJson" rows="10"></textarea>
+          </details>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  </div>
+</div>
+
+{{ cfgs|json_script:"cfgs-data-v2" }}
+{{ aparells|json_script:"aparells-data-v2" }}
+{{ aparell_field_options|json_script:"aparell-field-options-data" }}
+
+<script>
+  // DATA del backend (mateix patró que ara)
+  const COMPETICIO_ID = {{ competicio.id|default:"null" }};
+  const CFGS = JSON.parse(document.getElementById("cfgs-data-v2").textContent);
+  const APARELLS = JSON.parse(document.getElementById("aparells-data-v2").textContent);
+  const APARELL_FIELD_OPTIONS = JSON.parse(
+    document.getElementById("aparell-field-options-data").textContent
+  );
+
+  // DEFAULT schema coherent amb backend nou
+  const DEFAULT_SCHEMA = {
+    particions: [],
+    filtres: {},
+    puntuacio: {
+      aparells: { mode:"tots", ids:[] },
+      camps_per_aparell: {},
+      agregacio_camps: "sum",
+      exercicis: { mode:"tots" },
+      exercicis_best_n: 1,
+      agregacio_exercicis: "sum",
+      agregacio_aparells: "sum",
+      ordre: "desc",
+
+      // legacy (per compat / si algú edita JSON a mà)
+      camp: "total",
+      agregacio: "sum",
+      best_n: 1
+    },
+    desempat: [],
+    presentacio: { top_n:0, mostrar_empats:true }
+  };
+
+  const els = {
+    list: document.getElementById("cfgList"),
+    btnAdd: document.getElementById("btnAdd"),
+    btnSave: document.getElementById("btnSave"),
+    btnDelete: document.getElementById("btnDelete"),
+    btnPreview: document.getElementById("btnPreview"),
+    editorEmpty: document.getElementById("editorEmpty"),
+    editorBody: document.getElementById("editorBody"),
+    previewBox: document.getElementById("previewBox"),
+
+    fNom: document.getElementById("fNom"),
+    fActiva: document.getElementById("fActiva"),
+    fTipus: document.getElementById("fTipus"),
+
+    pCategoria: document.getElementById("pCategoria"),
+    pSubcategoria: document.getElementById("pSubcategoria"),
+    pEntitat: document.getElementById("pEntitat"),
+    pGrup: document.getElementById("pGrup"),
+
+    apTots: document.getElementById("apTots"),
+    apSel: document.getElementById("apSel"),
+    apSelBox: document.getElementById("apSelBox"),
+    apChkList: document.getElementById("apChkList"),
+
+    perAppBox: document.getElementById("perAppBox"),
+
+    sAggCamps: document.getElementById("sAggCamps"),
+    sExercicisMode: document.getElementById("sExercicisMode"),
+    iExBestN: document.getElementById("iExBestN"),
+    sAggExercicis: document.getElementById("sAggExercicis"),
+    sAggAparells: document.getElementById("sAggAparells"),
+    sOrdre: document.getElementById("sOrdre"),
+
+    tieBody: document.getElementById("tieBody"),
+    btnTieAdd: document.getElementById("btnTieAdd"),
+    tDesempat: document.getElementById("tDesempat"),
+
+    fEntitats: document.getElementById("fEntitats"),
+    fCategories: document.getElementById("fCategories"),
+    fSubcategories: document.getElementById("fSubcategories"),
+    fGrups: document.getElementById("fGrups"),
+    tFiltres: document.getElementById("tFiltres"),
+
+    iTopN: document.getElementById("iTopN"),
+    cEmpats: document.getElementById("cEmpats"),
+
+    advancedJson: document.getElementById("advancedJson"),
+  };
+
+  let state = {
+    cfgs: JSON.parse(JSON.stringify(CFGS || [])),
+    selectedId: null,
+  };
+
+  function getCookie(name) {
+    const v = document.cookie.split(";").map(x => x.trim());
+    for (const c of v) {
+      if (c.startsWith(name + "=")) return decodeURIComponent(c.substring(name.length + 1));
+    }
+    return "";
+  }
+
+  function esc(s) {
+    return String(s || "")
+      .split("&").join("&amp;")
+      .split("<").join("&lt;")
+      .split(">").join("&gt;")
+      .split('"').join("&quot;")
+      .split("'").join("&#39;");
+  }
+
+  function currentCfg() {
+    return state.cfgs.find(x => x.id === state.selectedId);
+  }
+
+  function renderList() {
+    els.list.innerHTML = "";
+    const items = [...state.cfgs].sort((a,b) => (a.ordre||0)-(b.ordre||0));
+    items.forEach(cfg => {
+      const a = document.createElement("button");
+      a.type = "button";
+      a.className = "list-group-item list-group-item-action " + (cfg.id===state.selectedId ? "active":"");
+      a.innerHTML = `<div class="d-flex justify-content-between">
+        <div><div class="font-weight-bold">${esc(cfg.nom)}</div><div class="small opacity-75">${esc(cfg.tipus||"individual")}</div></div>
+        <div class="small">${cfg.activa ? "🟢" : "⚪"}</div>
+      </div>`;
+      a.addEventListener("click", () => selectCfg(cfg.id));
+      els.list.appendChild(a);
+    });
+  }
+
+  function buildAparellChecks() {
+    els.apChkList.innerHTML = "";
+    (APARELLS || []).forEach(a => {
+      const col = document.createElement("div");
+      col.className = "col-6 col-md-4 mb-1";
+      col.innerHTML = `
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="app_${a.id}">
+          <label class="form-check-label" for="app_${a.id}">${esc(a.nom)}</label>
+        </div>`;
+      els.apChkList.appendChild(col);
+    });
+  }
+
+  function selectedAparellIdsFromUI() {
+    const mode = els.apSel.checked ? "seleccionar" : "tots";
+    if (mode === "tots") return (APARELLS || []).map(a => a.id);
+    const out = [];
+    (APARELLS || []).forEach(a => {
+      const el = document.getElementById("app_" + a.id);
+      if (el && el.checked) out.push(a.id);
+    });
+    return out;
+  }
+
+  function perAppFieldsHTML(compAparellId, selectedCodes){
+    const opts = (APARELL_FIELD_OPTIONS[String(compAparellId)] || []);
+    const selected = new Set((selectedCodes || []).map(String));
+
+    return `
+      <label class="small text-muted mb-1">Camps (multi)</label>
+      <select class="form-control form-control-sm"
+              data-app-select="${esc(compAparellId)}"
+              multiple size="8">
+        ${opts.map(o => `
+          <option value="${esc(o.code)}" ${selected.has(String(o.code)) ? "selected" : ""}>
+            ${esc(o.label)} (${esc(o.code)})
+          </option>
+        `).join("")}
+      </select>
+    `;
+  }
+
+  function getUnionTieOptions(){
+    // unió de totes les options de tots els aparells (dedup per code)
+    const seen = new Set();
+    const out = [];
+    Object.values(APARELL_FIELD_OPTIONS || {}).forEach(list => {
+      (list || []).forEach(o => {
+        if (!o || !o.code) return;
+        const c = String(o.code);
+        if (seen.has(c)) return;
+        seen.add(c);
+        out.push({ code: c, label: o.label || c });
+      });
+    });
+    // fallback si no hi ha res
+    if (!out.length) out.push({ code:"total", label:"Total (ScoreEntry.total)" });
+    return out;
+  }
+
+  function getTieOptionsForApp(appVal){
+    if (!appVal || appVal === "all") return getUnionTieOptions();
+    return (APARELL_FIELD_OPTIONS[String(appVal)] || []).map(o => ({
+      code: String(o.code),
+      label: o.label || o.code
+    }));
+  }
+
+  function buildCampSelectHTML(appVal, selectedCamp){
+    const opts = getTieOptionsForApp(appVal);
+    const sel = String(selectedCamp || "");
+    return `
+      <select class="form-control form-control-sm" data-k="camp">
+        ${opts.map(o => `
+          <option value="${esc(o.code)}" ${sel === String(o.code) ? "selected":""}>
+            ${esc(o.label)} (${esc(o.code)})
+          </option>
+        `).join("")}
+      </select>
+    `;
+  }
+
+
+  function renderPerAppUI(schema) {
+    const appIds = selectedAparellIdsFromUI();
+    const m = (schema.puntuacio || {}).camps_per_aparell || {};
+    els.perAppBox.innerHTML = "";
+
+    appIds.forEach(id => {
+      const key = String(id);
+      const selectedCodes = ((schema.puntuacio||{}).camps_per_aparell||{})[key] || [];
+
+      const card = document.createElement("div");
+      card.className = "border rounded p-2 mb-2";
+      card.innerHTML = `
+        <div class="font-weight-bold mb-1">Aparell ${esc(key)}</div>
+        ${perAppFieldsHTML(key, selectedCodes)}
+      `;
+      els.perAppBox.appendChild(card);
+    });
+
+  }
+
+  function readTieUI() {
+    const out = [];
+    document.querySelectorAll("#tieBody tr").forEach(tr => {
+      const app = tr.querySelector('[data-k="app"]').value;
+      const camp = tr.querySelector('[data-k="camp"]').value;
+      const ordre = tr.querySelector('[data-k="ordre"]').value;
+      const obj = { camp: camp, ordre: ordre };
+      if (app && app !== "all") obj.aparell_id = Number(app);
+      out.push(obj);
+    });
+    return out;
+  }
+
+  function renderTieUI(list) {
+    els.tieBody.innerHTML = "";
+    (list || []).forEach((t, idx) => {
+      const tr = document.createElement("tr");
+      const appVal = (t.aparell_id == null) ? "all" : String(t.aparell_id);
+      const camp = t.camp || "total";
+      const ordre = (t.ordre || "desc").toLowerCase();
+
+      const appOpts = ['<option value="all">(Tots)</option>']
+        .concat((APARELLS||[]).map(a => `<option value="${a.id}">${esc(a.nom)}</option>`))
+        .join("");
+
+      tr.innerHTML = `
+        <td>
+          <select class="form-control form-control-sm" data-k="app">${appOpts}</select>
+        </td>
+        <td data-cell="camp"></td>
+        <td>
+          <select class="form-control form-control-sm" data-k="ordre">
+            <option value="desc">Desc</option>
+            <option value="asc">Asc</option>
+          </select>
+        </td>
+        <td class="text-right">
+          <button type="button" class="btn btn-sm btn-outline-danger" data-act="del">×</button>
+        </td>
+      `;
+
+      // set valors
+      const appSel = tr.querySelector('[data-k="app"]');
+      const ordSel = tr.querySelector('[data-k="ordre"]');
+      appSel.value = appVal;
+      ordSel.value = ordre;
+
+      // render camp select segons app seleccionat
+      const campCell = tr.querySelector('[data-cell="camp"]');
+      campCell.innerHTML = buildCampSelectHTML(appSel.value, camp);
+
+      // quan canvia l'aparell, repobla camps i manté camp si existeix
+      appSel.addEventListener("change", () => {
+        const currentCamp = tr.querySelector('[data-k="camp"]').value;
+        campCell.innerHTML = buildCampSelectHTML(appSel.value, currentCamp);
+        syncAdvancedFromUI();
+      });
+
+      // canvis al camp/ordre sincronitzen
+      tr.addEventListener("change", (e) => {
+        if (e.target && (e.target.matches('[data-k="camp"]') || e.target.matches('[data-k="ordre"]'))) {
+          syncAdvancedFromUI();
+        }
+      });
+
+      tr.querySelector('[data-act="del"]').addEventListener("click", () => {
+        const cur = readTieUI();
+        cur.splice(idx, 1);
+        renderTieUI(cur);
+        syncAdvancedFromUI();
+      });
+
+      els.tieBody.appendChild(tr);
+    });
+  }
+
+
+  function syncAdvancedFromUI() {
+    const cfg = currentCfg();
+    if (!cfg) return;
+
+    const parts = [];
+    if (els.pCategoria.checked) parts.push("categoria");
+    if (els.pSubcategoria.checked) parts.push("subcategoria");
+    if (els.pEntitat.checked) parts.push("entitat");
+    if (els.pGrup.checked) parts.push("grup");
+
+    // filtres UI
+    function selectedValues(sel){
+      if (!sel) return [];
+      return Array.from(sel.selectedOptions).map(o => o.value);
+    }
+    let filtres = {
+      entitats_in: selectedValues(els.fEntitats).map(x => isNaN(x) ? x : Number(x)),
+      categories_in: selectedValues(els.fCategories).map(x => isNaN(x) ? x : Number(x)),
+      subcategories_in: selectedValues(els.fSubcategories).map(x => isNaN(x) ? x : Number(x)),
+      grups_in: selectedValues(els.fGrups),
+    };
+    Object.keys(filtres).forEach(k => { if (!filtres[k].length) delete filtres[k]; });
+
+    // allow manual JSON override
+    try { filtres = JSON.parse(els.tFiltres.value || "{}"); } catch(e) {}
+
+    // aparells
+    const apMode = els.apSel.checked ? "seleccionar" : "tots";
+    const apIds = (apMode === "seleccionar") ? selectedAparellIdsFromUI() : [];
+
+    // camps per aparell des d'inputs
+    const camps_per_aparell = {};
+    document.querySelectorAll("[data-app-select]").forEach(sel => {
+      const id = sel.getAttribute("data-app-select");
+      const codes = Array.from(sel.selectedOptions).map(o => o.value);
+      if (codes.length) camps_per_aparell[String(id)] = codes;
+    });
+
+    // desempats
+    let desempat = readTieUI();
+    try { desempat = JSON.parse(els.tDesempat.value || "[]"); } catch(e) {}
+
+    const schema = {
+      particions: parts,
+      filtres: filtres,
+      puntuacio: {
+        aparells: { mode: apMode, ids: apIds },
+        camps_per_aparell: camps_per_aparell,
+        agregacio_camps: els.sAggCamps.value,
+        exercicis: { mode: els.sExercicisMode.value },
+        exercicis_best_n: Number(els.iExBestN.value || 1),
+        agregacio_exercicis: els.sAggExercicis.value,
+        agregacio_aparells: els.sAggAparells.value,
+        ordre: els.sOrdre.value,
+
+        // legacy (per compat)
+        camp: "total",
+        agregacio: "sum",
+        best_n: 1
+      },
+      desempat: desempat,
+      presentacio: {
+        top_n: Number(els.iTopN.value || 0),
+        mostrar_empats: !!els.cEmpats.checked
+      }
+    };
+
+    cfg.schema = schema;
+    els.advancedJson.value = JSON.stringify(schema, null, 2);
+  }
+
+  function syncUIFromSchema(schema) {
+    schema = schema || JSON.parse(JSON.stringify(DEFAULT_SCHEMA));
+
+    const parts = schema.particions || [];
+    els.pCategoria.checked = parts.includes("categoria");
+    els.pSubcategoria.checked = parts.includes("subcategoria");
+    els.pEntitat.checked = parts.includes("entitat");
+    els.pGrup.checked = parts.includes("grup");
+
+    // aparells
+    const apMode = ((schema.puntuacio||{}).aparells||{}).mode || "tots";
+    els.apTots.checked = apMode === "tots";
+    els.apSel.checked = apMode === "seleccionar";
+    els.apSelBox.style.display = apMode === "seleccionar" ? "" : "none";
+
+    const ids = new Set((((schema.puntuacio||{}).aparells||{}).ids || []).map(x => String(x)));
+    (APARELLS || []).forEach(a => {
+      const el = document.getElementById("app_" + a.id);
+      if (el) el.checked = ids.has(String(a.id));
+    });
+
+    els.sAggCamps.value = (schema.puntuacio||{}).agregacio_camps || "sum";
+    els.sExercicisMode.value = ((schema.puntuacio||{}).exercicis||{}).mode || "tots";
+    els.iExBestN.value = (schema.puntuacio||{}).exercicis_best_n || 1;
+    els.sAggExercicis.value = (schema.puntuacio||{}).agregacio_exercicis || "sum";
+    els.sAggAparells.value = (schema.puntuacio||{}).agregacio_aparells || "sum";
+    els.sOrdre.value = (schema.puntuacio||{}).ordre || "desc";
+
+    els.iTopN.value = (schema.presentacio||{}).top_n ?? 0;
+    els.cEmpats.checked = !!((schema.presentacio||{}).mostrar_empats);
+
+    // tie + filtres JSON
+    renderTieUI(schema.desempat || []);
+    els.tDesempat.value = JSON.stringify(schema.desempat || [], null, 2);
+    els.tFiltres.value = JSON.stringify(schema.filtres || {}, null, 2);
+
+    // per aparell UI
+    renderPerAppUI(schema);
+
+    els.advancedJson.value = JSON.stringify(schema, null, 2);
+  }
+
+  function selectCfg(id) {
+    state.selectedId = id;
+    renderList();
+
+    const cfg = currentCfg();
+    if (!cfg) return;
+
+    els.editorEmpty.style.display = "none";
+    els.editorBody.style.display = "";
+
+    els.fNom.value = cfg.nom || "";
+    els.fActiva.checked = !!cfg.activa;
+    els.fTipus.value = cfg.tipus || "individual";
+
+    const schema = cfg.schema || JSON.parse(JSON.stringify(DEFAULT_SCHEMA));
+    syncUIFromSchema(schema);
+
+    els.previewBox.innerHTML = '<div class="text-muted small">Fes clic a “Previsualitzar”.</div>';
+  }
+
+  // events: canvis que afecten schema
+  ["change","input"].forEach(ev => {
+    ["pCategoria","pSubcategoria","pEntitat","pGrup","sAggCamps","sExercicisMode","iExBestN","sAggExercicis","sAggAparells","sOrdre","iTopN","cEmpats"]
+      .forEach(id => document.getElementById(id).addEventListener(ev, syncAdvancedFromUI));
+
+    [els.fEntitats, els.fCategories, els.fSubcategories, els.fGrups].forEach(x => {
+      if (x) x.addEventListener("change", syncAdvancedFromUI);
+    });
+  });
+
+  els.apTots.addEventListener("change", () => {
+    els.apSelBox.style.display = els.apSel.checked ? "" : "none";
+    renderPerAppUI((currentCfg()||{}).schema || DEFAULT_SCHEMA);
+    syncAdvancedFromUI();
+  });
+  els.apSel.addEventListener("change", () => {
+    els.apSelBox.style.display = els.apSel.checked ? "" : "none";
+    renderPerAppUI((currentCfg()||{}).schema || DEFAULT_SCHEMA);
+    syncAdvancedFromUI();
+  });
+
+  // quan es marca/desmarca un aparell
+  document.addEventListener("change", (e) => {
+    if (e.target && e.target.id && e.target.id.startsWith("app_")) {
+      renderPerAppUI((currentCfg()||{}).schema || DEFAULT_SCHEMA);
+      syncAdvancedFromUI();
+    }
+  });
+
+  els.btnTieAdd.addEventListener("click", () => {
+    const cur = readTieUI();
+    cur.push({ camp:"total", ordre:"desc" });
+    renderTieUI(cur);
+    syncAdvancedFromUI();
+  });
+
+  els.btnAdd.addEventListener("click", () => {
+    const nextOrd = (state.cfgs.length ? Math.max(...state.cfgs.map(x => x.ordre||0)) : 0) + 1;
+    const tmpId = "tmp_" + Math.random().toString(16).slice(2);
+    state.cfgs.push({
+      id: tmpId,
+      nom: "Nova classificació",
+      activa: true,
+      ordre: nextOrd,
+      tipus: "individual",
+      schema: JSON.parse(JSON.stringify(DEFAULT_SCHEMA)),
+      _isTemp: true
+    });
+    renderList();
+    selectCfg(tmpId);
+  });
+
+  els.fNom.addEventListener("input", () => {
+    const cfg = currentCfg(); if (!cfg) return;
+    cfg.nom = els.fNom.value;
+    renderList();
+  });
+  els.fActiva.addEventListener("change", () => {
+    const cfg = currentCfg(); if (!cfg) return;
+    cfg.activa = !!els.fActiva.checked;
+    renderList();
+  });
+  els.fTipus.addEventListener("change", () => {
+    const cfg = currentCfg(); if (!cfg) return;
+    cfg.tipus = els.fTipus.value;
+    renderList();
+  });
+
+  // save/delete/preview: manté endpoints actuals
+  async function postJson(url, payload) {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": getCookie("csrftoken"),
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return await res.json();
+  }
+
+  els.btnSave.addEventListener("click", async () => {
+    const cfg = currentCfg();
+    if (!cfg) return;
+
+    syncAdvancedFromUI();
+
+    const payload = {
+      id: (String(cfg.id).startsWith("tmp_") ? null : cfg.id),
+      nom: cfg.nom,
+      activa: !!cfg.activa,
+      ordre: cfg.ordre || 1,
+      tipus: cfg.tipus || "individual",
+      schema: cfg.schema || DEFAULT_SCHEMA
+    };
+
+    try {
+      const out = await postJson("{% url 'classificacio_save' competicio.id %}", payload);
+      if (out && out.id) {
+        cfg.id = out.id;
+        cfg._isTemp = false;
+        renderList();
+      }
+    } catch (e) {
+      alert("Error guardant: " + e.message);
+    }
+  });
+
+  els.btnDelete.addEventListener("click", async () => {
+    const cfg = currentCfg();
+    if (!cfg) return;
+    if (!confirm("Eliminar aquesta configuració?")) return;
+
+    try {
+      if (String(cfg.id).startsWith("tmp_")) {
+        state.cfgs = state.cfgs.filter(x => x.id !== cfg.id);
+        state.selectedId = null;
+        renderList();
+        els.editorBody.style.display = "none";
+        els.editorEmpty.style.display = "";
+        return;
+      }
+      await postJson("{% url 'classificacio_delete' competicio.id 0 %}".replace("/0/", "/" + cfg.id + "/"), {});
+      state.cfgs = state.cfgs.filter(x => x.id !== cfg.id);
+      state.selectedId = null;
+      renderList();
+      els.editorBody.style.display = "none";
+      els.editorEmpty.style.display = "";
+    } catch (e) {
+      alert("Error eliminant: " + e.message);
+    }
+  });
+
+  els.btnPreview.addEventListener("click", async () => {
+    const cfg = currentCfg();
+    if (!cfg) return;
+
+    syncAdvancedFromUI();
+
+    try {
+      const cid = cfg.id;
+      if (String(cid).startsWith("tmp_")) {
+        els.previewBox.innerHTML = `<div class="text-muted small">Guarda abans de previsualitzar.</div>`;
+        return;
+      }
+      const res = await fetch("{% url 'classificacio_preview' competicio.id 0 %}".replace("/0/", "/" + cid + "/"), {
+        method:"POST",
+        headers:{ "X-CSRFToken": getCookie("csrftoken") }
+      });
+      const out = await res.json();
+      if (!out.ok) throw new Error("Preview KO");
+
+      const parts = out.data || [];
+      let html = "";
+      parts.forEach(p => {
+        html += `<div class="mb-2"><div class="font-weight-bold">${esc(p.particio)}</div>`;
+        html += `<div class="table-responsive"><table class="table table-sm table-bordered mb-0">
+          <thead><tr><th>#</th><th>Nom</th><th>Punts</th></tr></thead><tbody>`;
+        (p.rows||[]).slice(0, 20).forEach(r => {
+          html += `<tr><td>${esc(r.posicio)}</td><td>${esc(r.nom || r.entitat_nom || "")}</td><td>${esc(r.punts)}</td></tr>`;
+        });
+        html += `</tbody></table></div></div>`;
+      });
+
+      els.previewBox.innerHTML = html || `<div class="text-muted small">Sense dades.</div>`;
+    } catch (e) {
+      els.previewBox.innerHTML = `<div class="text-danger small">Error previsualitzant: ${esc(e.message)}</div>`;
+    }
+  });
+
+  // init
+  buildAparellChecks();
+  renderList();
+  if (state.cfgs.length) selectCfg(state.cfgs[0].id);
+</script>
+
+{% endblock %}

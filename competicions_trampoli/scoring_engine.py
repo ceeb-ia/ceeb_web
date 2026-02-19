@@ -675,6 +675,7 @@ class ScoringEngine:
 
             # 6) calcula per jutge
             by_judge = []
+            by_judge_has_data = []
 
             for j, row in enumerate(rows):
                 row = list(row or [])
@@ -706,21 +707,25 @@ class ScoringEngine:
                 # 2) decideix sobre què agreguem (raw o expr) però només pels idxs seleccionats
                 base_for_agg = raw_xs if agg_mode == "raw" else ys
                 sel_vals = [base_for_agg[i] for i in idxs]
+                has_data_internal = len(sel_vals) > 0
                 m = _agg(sel_vals, row_agg)
 
                 # post-proc opcional sobre m
-                if post_tree is not None:
+                if post_tree is not None and has_data_internal:
                     m = float(PostAggExprEval({"m": float(m)}).visit(post_tree))
 
                 by_judge.append(float(m))
+                by_judge_has_data.append(has_data_internal)
 
             if (return_mode or "final").lower().strip() == "by_judge":
                 return by_judge
 
             # 7) selecció + agregació sobre jutges
-            sel_j = _select(by_judge, col_select, col_select_n)
+            sel_j_idxs = _select_idx(by_judge, col_select, col_select_n)
+            sel_j = [by_judge[i] for i in sel_j_idxs]
+            has_data_final = any(by_judge_has_data[i] for i in sel_j_idxs) if sel_j_idxs else False
             out = _agg(sel_j, col_agg)
-            if final_post_tree is not None:
+            if final_post_tree is not None and has_data_final:
                 out = float(PostAggExprEval({"m": float(out)}).visit(final_post_tree))
             return out
 
@@ -855,6 +860,7 @@ class ScoringEngine:
 
             # ---- 1) Agrega per ítem (columna) sobre jutges ----
             by_item = []
+            by_item_has_data = []
             for k in range(start_idx, end_idx):
                 raw_xs = []
                 vals_k = []
@@ -878,20 +884,24 @@ class ScoringEngine:
 
                 base_for_agg = raw_xs if agg_mode == "raw" else vals_k
                 sel_vals = [base_for_agg[i] for i in idxs]
+                has_data_internal = len(sel_vals) > 0
                 m = _agg(sel_vals, col_agg)
 
-                if post_tree is not None:
+                if post_tree is not None and has_data_internal:
                     m = float(PostAggExprEval({"m": float(m)}).visit(post_tree))
 
                 by_item.append(float(m))
+                by_item_has_data.append(has_data_internal)
 
             if (return_mode or "final").lower().strip() == "by_item":
                 return by_item
 
             # ---- 2) Selecció + agregació final sobre ítems ----
-            sel_items = _select(by_item, row_select, row_select_n)
+            sel_item_idxs = _select_idx(by_item, row_select, row_select_n)
+            sel_items = [by_item[i] for i in sel_item_idxs]
+            has_data_final = any(by_item_has_data[i] for i in sel_item_idxs) if sel_item_idxs else False
             out = _agg(sel_items, row_agg)
-            if final_post_tree is not None:
+            if final_post_tree is not None and has_data_final:
                 out = float(PostAggExprEval({"m": float(out)}).visit(final_post_tree))
             return out
 

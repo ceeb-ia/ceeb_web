@@ -35,9 +35,16 @@ class ScoringSchema(models.Model):
         if not isinstance(self.schema, dict):
             raise ValidationError({"schema": _("El schema ha de ser un objecte JSON (dict).")})
 
-        # ✅ exactament un (global o competició)
-        if bool(self.comp_aparell) == bool(self.aparell):
-            raise ValidationError("Cal informar comp_aparell o aparell (però no tots dos).")
+        # Convivencia temporal: aparell es canonic i comp_aparell es opcional legacy.
+        if self.comp_aparell_id and not self.aparell_id:
+            self.aparell = self.comp_aparell.aparell
+
+        if not self.aparell_id:
+            raise ValidationError({"aparell": _("Cal informar l'aparell.")})
+
+        if self.comp_aparell_id and self.comp_aparell.aparell_id != self.aparell_id:
+            # En mode transitori prioritzem l'aparell global i descartem l'enllac legacy inconsistent.
+            self.comp_aparell = None
         # Validacions mínimes (la validació forta la fem també a l'engine)
         fields = self.schema.get("fields", [])
         computed = self.schema.get("computed", [])

@@ -5,7 +5,7 @@ from django.views.generic import TemplateView
 from django.http import JsonResponse, HttpResponseBadRequest
 from django.views.decorators.http import require_POST
 from django.db import transaction
-
+from .models_scoring import ScoreEntry, ScoringSchema  
 from .models import Competicio, Inscripcio
 from .models_trampoli import CompeticioAparell, Aparell
 from .models_classificacions import ClassificacioConfig
@@ -56,12 +56,12 @@ def classificacions_live_data(request, pk):
 
     # stamp = max(última nota, última cfg)
     last_note = (
-        TrampoliNota.objects
-        .filter(competicio=competicio)
-        .order_by("-updated_at")
-        .values_list("updated_at", flat=True)
-        .first()
-    )
+        ScoreEntry.objects
+            .filter(competicio=competicio)
+            .order_by("-updated_at")
+            .values_list("updated_at", flat=True)
+            .first()    
+        )
     last_cfg = (
         ClassificacioConfig.objects
         .filter(competicio=competicio)
@@ -109,7 +109,7 @@ def classificacions_live_data(request, pk):
 
 
 class ClassificacionsHome(TemplateView):
-    template_name = "competicio/classificacions_builder.html"
+    template_name = "competicio/classificacions_builder_v2.html"
 
     def get(self, request, *args, **kwargs):
         self.competicio = get_object_or_404(Competicio, pk=kwargs["pk"])
@@ -131,20 +131,48 @@ class ClassificacionsHome(TemplateView):
             CompeticioAparell.objects.create(
                 competicio=competicio,
                 aparell=a,
-                ordre=1,
-                nombre_elements=11,
-                te_execucio=True,
-                te_dificultat=True,
-                te_tof=True,
-                te_hd=True,
-                te_penalitzacio=True,
-                mode_execucio="salts",
-                actiu=True,
             )
             aparells_cfg = CompeticioAparell.objects.filter(
                 competicio=competicio,
                 actiu=True,
             ).select_related("aparell").order_by("ordre", "id")
+
+        aparell_ids = list(aparells_cfg.values_list("aparell_id", flat=True))
+
+        schemas_by_aparell = {
+            s.aparell_id: (s.schema or {})
+            for s in ScoringSchema.objects.filter(aparell_id__in=aparell_ids).only("aparell_id", "schema")
+        }
+
+        aparell_field_options = {}
+
+
+        for ca in aparells_cfg:
+            sch = schemas_by_aparell.get(ca.aparell_id, {}) or {}
+            opts = []
+
+            # Opcions "especials" (útil perquè ScoreEntry té .total i outputs també) :contentReference[oaicite:7]{index=7}
+            opts.append({"code": "total", "label": "Total (ScoreEntry.total)", "kind": "special"})
+            opts.append({"code": "TOTAL", "label": "TOTAL (outputs)", "kind": "special"})
+
+            for f in (sch.get("fields") or []):
+                if isinstance(f, dict) and f.get("code"):
+                    opts.append({"code": str(f["code"]), "label": str(f.get("label") or f["code"]), "kind": "field"})
+
+            for c in (sch.get("computed") or []):
+                if isinstance(c, dict) and c.get("code"):
+                    opts.append({"code": str(c["code"]), "label": str(c.get("label") or c["code"]), "kind": "computed"})
+
+            # dedup
+            seen = set()
+            dedup = []
+            for o in opts:
+                if o["code"] in seen:
+                    continue
+                seen.add(o["code"])
+                dedup.append(o)
+
+            aparell_field_options[str(ca.id)] = dedup
 
         cfgs = ClassificacioConfig.objects.filter(competicio=competicio).order_by("ordre", "id")
 
@@ -219,6 +247,10 @@ class ClassificacionsHome(TemplateView):
             "cfgs": cfg_payload,
             "aparells": aparell_payload,
             "score_fields": {k: v["label"] for k, v in ALLOWED_SCORE_FIELDS.items()},
+        })
+
+        ctx.update({
+            "aparell_field_options": aparell_field_options,
         })
 
         return ctx

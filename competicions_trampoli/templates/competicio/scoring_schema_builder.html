@@ -585,7 +585,7 @@
       tr.querySelector('[data-k="rc_count"]').value = (b.count ?? "") + "";
 
       // avançat intern: (select_on / agg_on / post_agg_expr)
-      const internalSelectOn = (preset === "row_compute") ? (b.row_select_on || "expr") : (b.col_select_on || "expr");
+      const internalSelectOn = (preset === "row_compute") ? (b.row_select_on || "raw") : (b.col_select_on || "raw");
       const internalAggOn    = (preset === "row_compute") ? (b.row_agg_on || "expr") : (b.col_select_on || "expr"); // en el teu JS vell, column reutilitzava col_select_on com agg_on
       const internalPostExpr = (preset === "row_compute") ? (b.row_post_agg_expr || "") : (b.col_post_agg_expr || "");
 
