@@ -264,11 +264,9 @@
               <div class="chips">
                 <span class="text-muted small fw-semibold">Agrupa per:</span>
                 {% for f in allowed_group_fields %}
-                  <label class="chip small mb-0">
-                    <input type="checkbox" name="group_by" value="{{ f }}"
-                           {% if f in selected_group_fields %}checked{% endif %}>
-                    {{ f|capfirst }}
-                  </label>
+                  <input type="checkbox" name="group_by" value="{{ f.code }}"
+                        {% if f.code in selected_group_fields %}checked{% endif %}>
+                  {{ f.label }}
                 {% endfor %}
               </div>
 

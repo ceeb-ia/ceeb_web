@@ -9,15 +9,13 @@ from .models_scoring import ScoreEntry, ScoringSchema
 from .models import Competicio, Inscripcio
 from .models_trampoli import CompeticioAparell, Aparell
 from .models_classificacions import ClassificacioConfig
-from .services.services_classificacions import compute_classificacio, DEFAULT_SCHEMA, ALLOWED_SCORE_FIELDS
+from .services.services_classificacions_2 import compute_classificacio, DEFAULT_SCHEMA
 from django.db import models
-from collections import OrderedDict
 # views_classificacions.py
 from django.utils.dateparse import parse_datetime
 from django.utils.timezone import is_aware
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
-from .models_trampoli import TrampoliNota
 
 
 class ClassificacionsLive(TemplateView):
@@ -152,8 +150,7 @@ class ClassificacionsHome(TemplateView):
             opts = []
 
             # Opcions "especials" (útil perquè ScoreEntry té .total i outputs també) :contentReference[oaicite:7]{index=7}
-            opts.append({"code": "total", "label": "Total (ScoreEntry.total)", "kind": "special"})
-            opts.append({"code": "TOTAL", "label": "TOTAL (outputs)", "kind": "special"})
+            opts.append({"code": "TOTAL", "label": "TOTAL", "kind": "special"})
 
             for f in (sch.get("fields") or []):
                 if isinstance(f, dict) and f.get("code"):
@@ -246,7 +243,6 @@ class ClassificacionsHome(TemplateView):
             "competicio": competicio,
             "cfgs": cfg_payload,
             "aparells": aparell_payload,
-            "score_fields": {k: v["label"] for k, v in ALLOWED_SCORE_FIELDS.items()},
         })
 
         ctx.update({
@@ -348,8 +344,22 @@ def _is_fk(model_cls, field_name: str) -> bool:
         return False
 
 def _distinct_values(qs, field_name: str):
-    # retorna llista de valors (strings) per camps no FK
-    return [v for v in qs.values_list(field_name, flat=True).distinct() if v not in (None, "",)]
+    vals = qs.values_list(field_name, flat=True).distinct()
+    out = []
+    seen = set()
+    for v in vals:
+        if v is None:
+            continue
+        label = str(v).strip()
+        if not label:
+            continue
+        key = " ".join(label.split()).casefold()   # treu dobles espais + case-insensitive
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(label)
+    return out
+
 
 def _distinct_fk(qs, field_name: str):
     # retorna llista d'objectes {id, label}

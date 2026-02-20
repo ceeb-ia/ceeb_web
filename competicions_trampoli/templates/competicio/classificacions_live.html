@@ -18,8 +18,8 @@
         </div>
       </div>
 
-      <div class="d-flex gap-2">
-        <a class="btn btn-sm btn-outline-secondary" href="{% url 'trampoli_notes_home' competicio.id %}">Notes</a>
+      <div class=" gap-2">
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'scoring_notes_home' competicio.id %}">Notes</a>
         <a class="btn btn-sm btn-outline-secondary" href="{% url 'classificacions_home' competicio.id %}">Configurar</a>
         <a class="btn btn-sm btn-outline-secondary" href="{% url 'inscripcions_list' competicio.id %}">Inscripcions</a>
       </div>
@@ -132,7 +132,7 @@
                  + '</tr></thead><tbody>';
 
       (p.rows || []).forEach(r => {
-        const nom = r.participant || r.entitat_nom || "";
+        const nom = r.participant || r.nom || r.entitat_nom || "";
         html += '<tr>'
              +    '<td>' + esc(r.posicio ?? "") + '</td>'
              +    '<td>' + esc(nom) + '</td>'

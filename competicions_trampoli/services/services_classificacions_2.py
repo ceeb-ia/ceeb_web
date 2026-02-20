@@ -2,8 +2,8 @@
 from collections import defaultdict
 from decimal import Decimal
 from django.db import models
-from .models import Inscripcio
-from .models_trampoli import TrampoliNota, CompeticioAparell
+from ..models import Inscripcio
+from ..models_trampoli import CompeticioAparell
 from ..models_scoring import ScoreEntry
 
 
@@ -158,28 +158,6 @@ def _partition_key(ins: Inscripcio, fields: list):
     return "|".join(parts) if parts else "global"
 
 
-def _get_note_field(note: TrampoliNota, field_code: str) -> float:
-    """
-    Lector tolerant:
-      - primer prova atribut (TrampoliNota.total, dificultat, execucio_total, etc.)
-      - després prova dicts típics (outputs / data), pensant en migració a ScoreEntry
-    """
-    code = (field_code or "").strip()
-    if not code:
-        return 0.0
-
-    if hasattr(note, code):
-        return _to_float(getattr(note, code, 0.0))
-
-    # futur: ScoreEntry / notes amb JSON
-    for attr in ("outputs", "data", "result", "valors"):
-        d = getattr(note, attr, None)
-        if isinstance(d, dict) and code in d:
-            return _to_float(d.get(code))
-
-    return 0.0
-
-
 def _pick_exercicis(vals, mode: str, best_n: int):
     """
     vals: llista de valors (1 per exercici) ja agregats per exercici
@@ -199,6 +177,80 @@ def _pick_exercicis(vals, mode: str, best_n: int):
 
     # fallback
     return xs
+
+def _pick_exercicis_tuples(ex_vals, mode: str, best_n: int, index=None, ids=None):
+    """
+    ex_vals: [(ex_idx, value), ...]
+    retorna: [values...]
+    """
+    xs = [(int(i), _to_float(v)) for (i, v) in (ex_vals or [])]
+    if not xs:
+        return []
+
+    m = (mode or "tots").lower().strip()
+
+    if m == "tots":
+        return [v for _, v in xs]
+
+    if m == "millor_1":
+        return [max([v for _, v in xs])]
+
+    if m == "millor_n":
+        n = max(1, int(best_n or 1))
+        return sorted([v for _, v in xs], reverse=True)[:n]
+
+    if m == "index":
+        try:
+            idx = int(index or 1)
+        except Exception:
+            idx = 1
+        for i, v in xs:
+            if i == idx:
+                return [v]
+        return []
+
+    if m == "llista":
+        wanted = set(int(x) for x in (ids or []) if str(x).strip())
+        return [v for i, v in xs if i in wanted]
+
+    return [v for _, v in xs]
+
+
+def _tie_key(crit: dict) -> str:
+    camp = (crit.get("camp") or "").strip()
+    if not camp:
+        return ""
+
+    scope = crit.get("scope") or {}
+    apps = scope.get("aparells") or {}
+    ex = scope.get("exercicis") or {}
+
+    # aparells
+    mode = (apps.get("mode") or "").lower().strip()
+    if mode == "seleccionar":
+        ids = apps.get("ids") or []
+        ids_norm = ",".join(str(int(x)) for x in ids) if ids else ""
+        apps_sig = f"apps[{ids_norm}]"
+    elif mode == "tots":
+        apps_sig = "apps[all]"
+    else:
+        # legacy
+        app_id = crit.get("aparell_id", None)
+        apps_sig = f"app[{app_id}]" if app_id not in (None, "", 0, "0") else "apps[inherit]"
+
+    # exercicis
+    ex_mode = (ex.get("mode") or "hereta").lower().strip()
+    ex_sig = ex_mode
+    if ex_mode == "millor_n":
+        ex_sig += f":{ex.get('best_n') or ''}"
+    elif ex_mode == "index":
+        ex_sig += f":{ex.get('index') or 1}"
+    elif ex_mode == "llista":
+        ex_ids = ex.get("ids") or []
+        ex_sig += ":" + ",".join(str(int(x)) for x in ex_ids)
+
+    # (si vols incloure agregacions del criteri, les pots afegir aquí també)
+    return f"{camp}|{apps_sig}|ex[{ex_sig}]"
 
 
 # -----------------------------
@@ -362,23 +414,85 @@ def compute_classificacio(competicio, cfg_obj):
     # IMPORTANT: per no duplicar molt codi, fem una funció que calcula "valor criteri" reutilitzant el mateix pipeline,
     # però substituint camps per la llista [camp].
     def calc_criterion_value(ins_id: int, crit: dict) -> float:
+        """
+        Calcula el valor d'un criteri de desempat per una inscripció concreta.
+
+        Suporta:
+        - compat antic:
+            {"camp":"E_total","ordre":"desc"}  -> tots els aparells, exercicis heretats
+            {"aparell_id": 12, "camp":"E_total","ordre":"desc"} -> un aparell, exercicis heretats
+        - nou (overrides):
+            {
+                "camp":"E_total",
+                "ordre":"desc",
+                "scope":{
+                "aparells":{"mode":"tots"|"seleccionar","ids":[12,13]},
+                "exercicis":{"mode":"hereta"|"tots"|"millor_1"|"millor_n"|"index"|"llista",
+                            "best_n":2, "index":1, "ids":[1,3]}
+                },
+                "agregacio_camps":"hereta"|"sum"|"avg"|"median"|"max"|"min",
+                "agregacio_exercicis":"hereta"|"sum"|"avg"|"median"|"max"|"min",
+                "agregacio_aparells":"hereta"|"sum"|"avg"|"median"|"max"|"min"
+            }
+        """
+
         camp = (crit.get("camp") or "").strip()
         if not camp:
             return 0.0
 
-        app_id = crit.get("aparell_id", None)
-        # legacy: si no hi ha aparell_id, fem el mateix criteri “sumant” sobre aparells disponibles,
-        # igual que el score global però substituint camps.
+        # -----------------------------
+        # Overrides (scope + agregacions)
+        # -----------------------------
+        scope = crit.get("scope") or {}
+        crit_apps = scope.get("aparells") or {}
+        crit_ex = scope.get("exercicis") or {}
+
+        def _inherit(v, fallback):
+            v = (v or "hereta")
+            return fallback if str(v).lower().strip() == "hereta" else str(v).lower().strip()
+
+        crit_agg_camps = _inherit(crit.get("agregacio_camps"), agg_camps)
+        crit_agg_exercicis = _inherit(crit.get("agregacio_exercicis"), agg_exercicis)
+        crit_agg_aparells = _inherit(crit.get("agregacio_aparells"), agg_aparells)
+
+        # exercicis: hereta o override
+        crit_ex_mode = (crit_ex.get("mode") or "hereta").lower().strip()
+        if crit_ex_mode == "hereta":
+            crit_ex_mode = exerc_mode
+        crit_best_n = int(crit_ex.get("best_n") or ex_best_n)
+        crit_ex_index = crit_ex.get("index", None)
+        crit_ex_ids = crit_ex.get("ids", None)
+
+        # -----------------------------
+        # Aparells objectiu del criteri
+        # -----------------------------
         target_apps = []
-        if app_id in (None, "", 0, "0"):
+        mode = (crit_apps.get("mode") or "").lower().strip()
+        ids = crit_apps.get("ids") or []
+
+        if mode == "seleccionar" and ids:
+            try:
+                target_apps = [int(x) for x in ids]
+            except Exception:
+                target_apps = []
+        elif mode == "tots":
             target_apps = [ca.id for ca in aparells]
         else:
-            try:
-                target_apps = [int(app_id)]
-            except Exception:
+            # compat: aparell_id antic
+            app_id = crit.get("aparell_id", None)
+            if app_id in (None, "", 0, "0"):
                 target_apps = [ca.id for ca in aparells]
+            else:
+                try:
+                    target_apps = [int(app_id)]
+                except Exception:
+                    target_apps = [ca.id for ca in aparells]
 
+        # -----------------------------
+        # Càlcul per aparell -> exercicis
+        # -----------------------------
         vals_apps = []
+
         for ta in target_apps:
             ca = next((x for x in aparells if x.id == ta), None)
             if not ca:
@@ -387,37 +501,43 @@ def compute_classificacio(competicio, cfg_obj):
             n_ex = int(getattr(ca, "nombre_exercicis", 1) or 1)
             n_ex = max(1, min(50, n_ex))
 
-            # notes d'aquest aparell
-            app_notes = notes_by_app.get(ta, [])
+            # ScoreEntries d'aquest aparell
+            app_scores = notes_by_app.get(ta, [])  # IMPORTANT: al teu codi és scores_by_app (no notes_by_app)
             by_ins_ex = defaultdict(dict)
-            for nt in app_notes:
-                ex_idx = int(getattr(nt, "exercici", 1) or 1)
+            for se in app_scores:
+                ex_idx = int(getattr(se, "exercici", 1) or 1)
                 if 1 <= ex_idx <= n_ex:
-                    by_ins_ex[nt.inscripcio_id][ex_idx] = nt
+                    by_ins_ex[se.inscripcio_id][ex_idx] = se
 
+            # (ex_idx, value) per poder seleccionar "index" o "llista"
             vals_ex = []
             for ex_idx in range(1, n_ex + 1):
-                nt = by_ins_ex.get(ins_id, {}).get(ex_idx)
-                if not nt:
+                se = by_ins_ex.get(ins_id, {}).get(ex_idx)
+                if not se:
                     continue
-                v_ex = _apply_simple_agg([_get_score_field(nt, camp)], agg_camps)
-                vals_ex.append(v_ex)
 
-            picked = _pick_exercicis(vals_ex, exerc_mode, ex_best_n)
-            val_app = _apply_simple_agg(picked, agg_exercicis)
+                # IMPORTANT: desempat llegeix ScoreEntry via _get_score_field
+                v_ex = _apply_simple_agg([_get_score_field(se, camp)], crit_agg_camps)
+                vals_ex.append((ex_idx, v_ex))
+
+            picked = _pick_exercicis_tuples(
+                vals_ex,
+                crit_ex_mode,
+                crit_best_n,
+                index=crit_ex_index,
+                ids=crit_ex_ids
+            )
+
+            val_app = _apply_simple_agg(picked, crit_agg_exercicis)
             vals_apps.append(val_app)
 
-        # si el criteri és “per aparell” (app_id fix) retorna directament aquest valor;
-        # si és “global” (sense app) el combinem com el score final
-        return float(_apply_simple_agg(vals_apps, agg_aparells))
-
+        return float(_apply_simple_agg(vals_apps, crit_agg_aparells))
+    
     # guardem tie values (amb clau estable per UI)
     for crit in desempat:
-        camp = (crit.get("camp") or "").strip()
-        if not camp:
+        key = _tie_key(crit)
+        if not key:
             continue
-        app_id = crit.get("aparell_id", None)
-        key = f"{camp}@{app_id}" if app_id not in (None, "", 0, "0") else camp
         for ins_id in per_ins.keys():
             per_ins[ins_id]["tie"][key] = calc_criterion_value(ins_id, crit)
 
@@ -426,10 +546,17 @@ def compute_classificacio(competicio, cfg_obj):
 
     for ins in ins_list:
         pkey = _partition_key(ins, part_fields)
+        participant = (
+            getattr(ins, "nom_complet", None)
+            or getattr(ins, "nom_i_cognoms", None)
+            or getattr(ins, "nom", None)
+            or str(ins)
+        )
 
         row = {
             "inscripcio_id": ins.id,
-            "nom": getattr(ins, "nom", None) or str(ins),
+            "nom": participant,
+            "participant": participant,
             "entitat_nom": _display_value(ins, "entitat"),
             "score": float(per_ins[ins.id]["score"]),
             "tie": per_ins[ins.id]["tie"],
@@ -508,14 +635,12 @@ def _rank_v2(rows, desempat, presentacio, ordre_principal="desc", entity_mode=Fa
     sort_keys = [("score", ordre_principal)]
 
     for t in desempat or []:
-        camp = (t.get("camp") or "").strip()
-        if not camp:
+        key = _tie_key(t)
+        if not key:
             continue
         ordre = (t.get("ordre") or "desc").lower().strip()
-        app_id = t.get("aparell_id", None)
-        key = f"{camp}@{app_id}" if app_id not in (None, "", 0, "0") else camp
         sort_keys.append((key, ordre))
-
+        
     def keyfunc(r):
         k = []
         for field, ordre in sort_keys:

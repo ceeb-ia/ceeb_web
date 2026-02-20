@@ -13,6 +13,7 @@ class Competicio(models.Model):
     group_by_default = models.JSONField(default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     tab_merges = models.JSONField(default=dict, blank=True)
+    inscripcions_schema = models.JSONField(default=dict, blank=True)
 
     def te_notes(self) -> bool:
             # per ara: totes tenen notes (o pots limitar-ho si vols)
@@ -39,6 +40,7 @@ class Inscripcio(models.Model):
     group_by_default = models.JSONField(default=list, blank=True)
     grup = models.PositiveIntegerField(null=True, blank=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    extra = models.JSONField(default=dict, blank=True)
 
     class Meta:
         ordering = ["categoria", "subcategoria", "entitat", "sexe", "data_naixement", "nom_i_cognoms"]
