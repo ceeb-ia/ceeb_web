@@ -368,10 +368,23 @@ def scoring_save(request, pk):
 
     ss, _ = ScoringSchema.objects.get_or_create(aparell=comp_aparell.aparell, defaults={"schema": {}})
     schema = ss.schema or {}
+    # --- FILTRA INPUTS DESCONeguts (evita "Nom desconegut: E_j") ---
+    allowed = set()
+    for f in (schema.get("fields") or []):
+        if isinstance(f, dict) and f.get("code"):
+            allowed.add(f["code"])
+            # també permet crash keys si les uses (__crash__X)
+            allowed.add(f"__crash__{f['code']}")
+
+    clean_inputs = {}
+    if isinstance(inputs, dict):
+        for k, v in inputs.items():
+            if k in allowed:
+                clean_inputs[k] = v
 
     try:
         engine = ScoringEngine(schema)
-        result = engine.compute(inputs if isinstance(inputs, dict) else {})
+        result = engine.compute(clean_inputs)
     except ScoringError as e:
         return JsonResponse({"ok": False, "error": str(e)}, status=400)
     except Exception:

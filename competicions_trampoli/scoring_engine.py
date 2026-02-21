@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import ast
 from dataclasses import dataclass
-from typing import Any, Dict, List, Tuple, Callable
+from typing import Any, Dict, List, Tuple, Callable, Set
 
 NUM_SALTS_DEFAULT = 11
 
@@ -343,6 +343,91 @@ class ScoringEngine:
 
         self._functions = self._build_functions()
 
+        # >>> nou: ordre topo dels computed
+        self._computed_order = self._build_computed_order()
+
+    def _build_aliases(self) -> Dict[str, str]:
+        aliases: Dict[str, str] = {}
+        if isinstance(self.params.get("aliases"), dict):
+            aliases.update({str(k): str(v) for k, v in self.params["aliases"].items()})
+
+        for f in self.fields:
+            if isinstance(f, dict) and f.get("var") and f.get("code"):
+                aliases[str(f["var"])] = str(f["code"])
+        for c in self.computed:
+            if isinstance(c, dict) and c.get("var") and c.get("code"):
+                aliases[str(c["var"])] = str(c["code"])
+        return aliases
+
+    def _extract_dep_codes(self, formula: str, aliases: Dict[str, str]) -> Set[str]:
+        """
+        Dependentcies només entre computed (codes).
+        """
+        if not isinstance(formula, str) or not formula.strip():
+            return set()
+        try:
+            tree = ast.parse(formula, mode="eval")
+        except SyntaxError as e:
+            raise ScoringError(f"Fórmula invàlida: {e.msg} (línia {e.lineno}, col {e.offset})")
+
+        deps: Set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute):
+                raise ScoringError("Accés per atribut no permès.")
+            if isinstance(node, ast.Name):
+                name = node.id
+                # resolució alias -> code
+                name = aliases.get(name, name)
+                if name in self.comp_codes:
+                    deps.add(name)
+        return deps
+
+    def _topo_sort_codes(self, codes: List[str], deps: Dict[str, Set[str]]) -> List[str]:
+        indeg = {c: 0 for c in codes}
+        rev = {c: set() for c in codes}
+
+        for c in codes:
+            for d in deps.get(c, set()):
+                if d == c:
+                    continue
+                indeg[c] += 1
+                if d in rev:
+                    rev[d].add(c)
+
+        q = [c for c in codes if indeg[c] == 0]
+        out: List[str] = []
+        while q:
+            cur = q.pop(0)
+            out.append(cur)
+            for nxt in rev.get(cur, set()):
+                indeg[nxt] -= 1
+                if indeg[nxt] == 0:
+                    q.append(nxt)
+
+        if len(out) != len(codes):
+            remaining = [c for c in codes if c not in out]
+            raise ScoringError(f"Cicle detectat entre computed: {', '.join(remaining)}")
+        return out
+
+    def _build_computed_order(self) -> List[Dict[str, Any]]:
+        aliases = self._build_aliases()
+        code_to_obj: Dict[str, Dict[str, Any]] = {}
+        for c in self.computed:
+            if isinstance(c, dict) and c.get("code"):
+                code_to_obj[str(c["code"])] = c
+
+        deps: Dict[str, Set[str]] = {code: set() for code in self.comp_codes}
+        for code in self.comp_codes:
+            cobj = code_to_obj.get(code, {})
+            formula = cobj.get("formula") or ""
+            dc = self._extract_dep_codes(str(formula), aliases)
+            # elimina auto-dep
+            deps[code] = {d for d in dc if d != code}
+
+        ordered_codes = self._topo_sort_codes([str(c) for c in self.comp_codes], deps)
+        return [code_to_obj[c] for c in ordered_codes if c in code_to_obj]
+    
+    
     def _field_cfg(self, code: str) -> dict:
         for f in self.fields:
             if isinstance(f, dict) and f.get("code") == code:
@@ -1110,7 +1195,6 @@ class ScoringEngine:
         norm_inputs = self.validate_and_normalize_inputs(inputs)
 
         context: Dict[str, Any] = {}
-        # exposa inputs i params
         context.update(norm_inputs)
         self._latest_context = context
         context["params"] = self.params
@@ -1119,11 +1203,9 @@ class ScoringEngine:
 
         # --- Aliases: permet 'x' com a variable curta ---
         aliases = {}
-        # 1) aliases globals
         if isinstance(self.params.get("aliases"), dict):
             aliases.update(self.params["aliases"])
 
-        # 2) aliases per field/computed via "var"
         for f in self.fields:
             if isinstance(f, dict) and f.get("var") and f.get("code"):
                 aliases[str(f["var"])] = str(f["code"])
@@ -1131,21 +1213,23 @@ class ScoringEngine:
             if isinstance(c, dict) and c.get("var") and c.get("code"):
                 aliases[str(c["var"])] = str(c["code"])
 
-        # Injecta variables curtes al context (si existeix el codi)
         for short, code in aliases.items():
             if short and code:
                 if code in context:
                     context[short] = context[code]
 
-        # computed: resolució seqüencial simple (si vols, després hi afegeixes topological sort)
-        for c in self.computed:
+        # >>> computed: ara en ordre topològic
+        for c in self._computed_order:
             if not isinstance(c, dict):
                 continue
             code = c.get("code")
             formula = c.get("formula")
             if not code or not formula:
                 continue
-            val = safe_eval(formula, {**context, **outputs}, self._functions)
+            try:
+                val = safe_eval(str(formula), {**context, **outputs}, self._functions)
+            except ScoringError as e:
+                raise ScoringError(f"Error a computed '{code}': {e}")
             outputs[code] = val
 
         total = to_float(outputs.get("TOTAL", outputs.get("total", 0)))

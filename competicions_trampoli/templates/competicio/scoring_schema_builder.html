@@ -82,7 +82,18 @@
       {% csrf_token %}
 
       {% if form.errors %}
+      {% if form.schema_json.errors %}
+        <div class="alert alert-danger">
+          <div class="fw-bold mb-2">Errors de validació de l’schema</div>
+          <ul class="mb-0">
+            {% for e in form.schema_json.errors %}
+              <li>{{ e }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% else %}
         <pre class="alert alert-warning" style="white-space: pre-wrap;">{{ form.errors }}</pre>
+      {% endif %}
       {% endif %}
 
       {{ form.schema_json }}

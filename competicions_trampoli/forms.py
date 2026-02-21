@@ -5,6 +5,7 @@ from .models_trampoli import Aparell, CompeticioAparell
 from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
 from .models_scoring import ScoringSchema
+from .services.scoring_schema_validation import validate_schema
 import json
 
 class CompeticioForm(forms.ModelForm):
@@ -148,10 +149,16 @@ class ScoringSchemaForm(forms.ModelForm):
         txt = (self.cleaned_data.get("schema_json") or "").strip()
         if not txt:
             return None
+
         try:
             data = json.loads(txt)
         except Exception as e:
             raise ValidationError(f"JSON invàlid: {e}")
+
         if not isinstance(data, dict):
             raise ValidationError("El JSON ha de ser un objecte (dict).")
+
+        # >>> VALIDACIÓ FORTA (noms, dependències, cicles, shapes, dry-run)
+        validate_schema(data)
+
         return data
