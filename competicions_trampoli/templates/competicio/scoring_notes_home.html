@@ -121,6 +121,10 @@
                               href="{% url 'scoring_schema_update' competicio.id app.id %}">
                               Camps i funcions
                             </a>
+                            <a class="btn btn-sm btn-outline-primary"
+                              href="{% url 'judges_qr_home' competicio.id %}?comp_aparell={{ app.id }}">
+                              Jurat / QRs
+                            </a>
                           </div>
 
                           <!-- Scrollbar top sincronitzat -->

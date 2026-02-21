@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ca">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Imprimir QRs · {{ competicio.nom }} · {{ comp_aparell.aparell.nom }}</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 18px; }
+    .grid { display:grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+    .card { border:1px solid #ddd; border-radius: 12px; padding: 12px; display:flex; gap: 12px; align-items:center; }
+    .meta { font-size: 13px; color:#444; }
+    .label { font-weight: 650; }
+    img { width: 150px; height: 150px; }
+    @media print {
+      body { margin: 0; }
+      .card { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <h2>QRs · {{ competicio.nom }} · {{ comp_aparell.aparell.nom }}</h2>
+  <div class="meta">Imprimeix i retalla (2 per fila).</div>
+  <hr/>
+
+  <div class="grid">
+    {% for t in tokens %}
+      <div class="card">
+        <img src="{% url 'judge_qr_png' t.id %}" alt="QR"/>
+        <div>
+          <div class="label">{{ t.label|default:"(sense etiqueta)" }}</div>
+          <div class="meta">{{ t.id }}</div>
+          <div class="meta" style="margin-top:6px;">
+            {% for p in t.permissions %}
+              <div>{{ p.field_code }} · J{{ p.judge_index }}{% if p.item_count %} · {{ p.item_start }}..{{ p.item_start|add:p.item_count|add:"-1" }}{% endif %}</div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+
+  <script>
+    // opcional: auto-print
+    // window.print();
+  </script>
+</body>
+</html>

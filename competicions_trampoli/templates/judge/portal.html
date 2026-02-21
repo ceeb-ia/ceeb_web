@@ -1,0 +1,342 @@
+{% extends "base.html" %}
+{% block title %}Jurat · {{ competicio.nom }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+  <style>
+    .judge-card{ border:1px solid #e9ecef; border-radius:.6rem; padding:.75rem .9rem; background:#fff; }
+    .judge-meta{ color:#6c757d; font-size:.85rem; }
+    .judge-pill{ font-size:.85rem; }
+    .input-salt{ width:76px; padding:.15rem .25rem; text-align:center; }
+    .status-ok{ color:#0a7; font-weight:600; }
+    .status-err{ color:#c22; font-weight:600; }
+    .sticky-top-lite{ position: sticky; top: 0; z-index: 5; background: #fff; padding-top: .5rem; }
+  </style>
+
+  <div class="card-surface">
+    <div class="d-flex justify-content-between align-items-start mb-3">
+      <div>
+        <h2 class="mb-1">Jurat · Entrada per QR</h2>
+        <div class="text-muted small">
+          Competició: <span class="fw-semibold">{{ competicio.nom }}</span> ·
+          Aparell: <span class="fw-semibold">{{ comp_aparell.aparell.nom }}</span> ·
+          Exercici {{ exercici }}
+        </div>
+        {% if token_obj.label %}
+          <div class="text-muted small">Token: <span class="fw-semibold">{{ token_obj.label }}</span></div>
+        {% endif %}
+      </div>
+      <div class="gap-2">
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'scoring_notes_home' competicio.id %}">Tornar a notes</a>
+      </div>
+    </div>
+
+    {% if permissions %}
+      <!-- Tabs de camps (un mateix QR pot tenir-ne varis) -->
+      <div class="sticky-top-lite">
+        <ul class="nav nav-pills mb-2" id="fieldTabs" role="tablist"></ul>
+
+        <div class="judge-meta mb-2">
+          Camps autoritzats:
+          <span id="permText"></span>
+        </div>
+      </div>
+
+      <div id="listWrap">
+        {% for ins in inscripcions %}
+          <div class="judge-card mb-2" data-ins-id="{{ ins.id }}">
+            <div class="d-flex justify-content-between align-items-center">
+              <div>
+                <div class="fw-semibold">{{ ins.nom_i_cognoms|default:"Inscripció" }}</div>
+                <div class="judge-meta">
+                  Grup {{ ins.grup }} · Ordre {{ ins.ordre_sortida }}
+                </div>
+              </div>
+              <div class="judge-meta" id="status-{{ ins.id }}"></div>
+            </div>
+
+            <div class="mt-2" id="editor-{{ ins.id }}"></div>
+
+            <div class="d-flex justify-content-end mt-2" style="gap:8px;">
+              <button type="button" class="btn btn-sm btn-outline-secondary" onclick="copyPrev('{{ ins.id }}')">Copia anterior</button>
+              <button type="button" class="btn btn-sm btn-primary" onclick="saveNow('{{ ins.id }}')">Desa</button>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="text-muted">Aquest QR no té permisos configurats.</div>
+    {% endif %}
+  </div>
+</div>
+
+{{ schema|json_script:"schema-data" }}
+{{ permissions|json_script:"perms-data" }}
+{{ scores_payload_json|json_script:"scores-data" }}
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  const SCHEMA = JSON.parse(document.getElementById("schema-data").textContent || "{}");
+  const PERMS  = JSON.parse(document.getElementById("perms-data").textContent || "[]");
+  const SCORES = JSON.parse(document.getElementById("scores-data").textContent || "{}");
+
+  const SAVE_URL = "{{ save_url }}";
+  const EXERCICI = {{ exercici }};
+
+  let activeFieldCode = (PERMS[0] && PERMS[0].field_code) ? PERMS[0].field_code : null;
+
+  function schemaField(code){
+    const fields = (SCHEMA && Array.isArray(SCHEMA.fields)) ? SCHEMA.fields : [];
+    return fields.find(f => f && f.code === code) || null;
+  }
+  function getEntry(insId){
+    return SCORES[String(insId)] || {inputs:{}, outputs:{}, total:0, updated_at:null};
+  }
+
+  function decimalsStep(dec){
+    const d = Number(dec ?? 0);
+    if(!Number.isFinite(d) || d <= 0) return "1";
+    return "0." + "0".repeat(Math.max(0, d-1)) + "1";
+  }
+
+  function setStatus(insId, kind, msg){
+    const el = document.getElementById(`status-${insId}`);
+    if(!el) return;
+    el.className = "judge-meta " + (kind === "ok" ? "status-ok" : kind === "err" ? "status-err" : "");
+    el.textContent = msg || "";
+  }
+
+  function uniqueFieldCodes(){
+    return [...new Set(PERMS.map(p => p.field_code))];
+  }
+
+  function firstPermForField(code){
+    // si algun dia vols alternar entre dos judge_index del mateix camp, aquí ho canviaríem
+    return PERMS.find(p => p.field_code === code) || null;
+  }
+
+  function buildTabs(){
+    const tabs = document.getElementById("fieldTabs");
+    if(!tabs) return;
+    tabs.innerHTML = "";
+
+    uniqueFieldCodes().forEach((code, idx) => {
+      const li = document.createElement("li");
+      li.className = "nav-item";
+      li.innerHTML = `
+        <a class="nav-link ${code===activeFieldCode ? "active" : ""}" href="#" data-code="${code}">
+          ${code}
+        </a>`;
+      li.querySelector("a").addEventListener("click", (e)=>{
+        e.preventDefault();
+        activeFieldCode = code;
+        buildTabs();
+        document.querySelectorAll("[data-ins-id]").forEach(card => renderEditor(card.getAttribute("data-ins-id")));
+      });
+      tabs.appendChild(li);
+    });
+  }
+
+  function buildPermText(){
+    const el = document.getElementById("permText");
+    if(!el) return;
+    const parts = PERMS.map(p => {
+      const range = p.item_count ? `(${p.item_start}..${p.item_start + p.item_count - 1})` : "";
+      return `${p.field_code} [J${p.judge_index}] ${range}`.trim();
+    });
+    el.textContent = parts.join(" · ");
+  }
+
+  function renderEditor(insId){
+    const wrap = document.getElementById(`editor-${insId}`);
+    wrap.innerHTML = "";
+
+    const code = activeFieldCode;
+    const perm = firstPermForField(code);
+    const f = schemaField(code);
+
+    if(!code || !perm || !f){
+      wrap.innerHTML = `<div class="text-muted small">No hi ha configuració per aquest camp.</div>`;
+      return;
+    }
+
+    const entry = getEntry(insId);
+    const inputs = (entry.inputs && typeof entry.inputs === "object") ? entry.inputs : {};
+    const existing = inputs[code];
+
+    const type = f.type || "number";
+    const step = decimalsStep(f.decimals);
+
+    // header petit
+    const head = document.createElement("div");
+    head.className = "judge-meta mb-1";
+    head.textContent = `${f.label || code} · Jutge ${perm.judge_index}`;
+    wrap.appendChild(head);
+
+    if(type === "number"){
+      const inp = document.createElement("input");
+      inp.className = "form-control form-control-sm";
+      inp.type = "number";
+      inp.step = step;
+      inp.value = (existing ?? "");
+      inp.dataset.kind = "number";
+      wrap.appendChild(inp);
+      inp.addEventListener("input", ()=> setStatus(insId, "", "Pendent de desar…"));
+      return;
+    }
+
+    if(type === "matrix"){
+      const nItems = Number(f.items?.count || 1);
+      const j = Math.max(1, Number(perm.judge_index || 1));
+
+      const start = Math.max(1, Number(perm.item_start || 1));
+      const count = perm.item_count ? Math.max(1, Number(perm.item_count)) : (nItems - start + 1);
+
+      // creem inputs per rang
+      const row = (Array.isArray(existing) && Array.isArray(existing[j-1])) ? existing[j-1] : [];
+      for(let k=0;k<count;k++){
+        const idx1 = start + k;
+        const idx0 = idx1 - 1;
+
+        const line = document.createElement("div");
+        line.className = "d-flex align-items-center mb-1";
+        line.style.gap = "8px";
+
+        const lab = document.createElement("div");
+        lab.className = "judge-meta";
+        lab.style.minWidth = "64px";
+        lab.textContent = `Ítem ${idx1}`;
+
+        const inp = document.createElement("input");
+        inp.className = "form-control form-control-sm input-salt";
+        inp.type = "number";
+        inp.step = step;
+        inp.value = (row[idx0] ?? "");
+        inp.dataset.kind = "matrix";
+        inp.dataset.itemIndex0 = String(idx0);
+
+        line.appendChild(lab);
+        line.appendChild(inp);
+        wrap.appendChild(line);
+
+        inp.addEventListener("input", ()=> setStatus(insId, "", "Pendent de desar…"));
+      }
+      return;
+    }
+
+    wrap.innerHTML = `<div class="text-muted small">Tipus no suportat al mòbil: ${type}</div>`;
+  }
+
+  function buildPatchFromEditor(insId){
+    const code = activeFieldCode;
+    const perm = firstPermForField(code);
+    const f = schemaField(code);
+    if(!code || !perm || !f) return null;
+
+    const type = f.type || "number";
+    const wrap = document.getElementById(`editor-${insId}`);
+    const entry = getEntry(insId);
+    const inputs = (entry.inputs && typeof entry.inputs === "object") ? entry.inputs : {};
+    const existing = inputs[code];
+
+    if(type === "number"){
+      const inp = wrap.querySelector('input[data-kind="number"]');
+      const v = (inp.value === "") ? null : Number(inp.value);
+      return {[code]: v};
+    }
+
+    if(type === "matrix"){
+      const nItems = Number(f.items?.count || 1);
+      const j = Math.max(1, Number(perm.judge_index || 1));
+
+      // IMPORTANT: nosaltres enviem una matriu on només omplim la fila j,
+      // perquè el servidor també imposarà permisos.
+      const mat = Array.isArray(existing) ? existing.map(r => Array.isArray(r) ? r.slice() : []) : [];
+      while(mat.length < j) mat.push([]);
+      while(mat[j-1].length < nItems) mat[j-1].push(null);
+
+      wrap.querySelectorAll('input[data-kind="matrix"]').forEach(inp=>{
+        const idx0 = Number(inp.dataset.itemIndex0);
+        mat[j-1][idx0] = (inp.value === "") ? null : Number(inp.value);
+      });
+
+      return {[code]: mat};
+    }
+
+    return null;
+  }
+
+  async function saveNow(insId){
+    const patch = buildPatchFromEditor(insId);
+    if(!patch) return;
+
+    setStatus(insId, "", "Desant…");
+
+    const res = await fetch(SAVE_URL, {
+      method:"POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({
+        inscripcio_id: Number(insId),
+        exercici: EXERCICI,
+        inputs_patch: patch
+      })
+    });
+
+    const data = await res.json().catch(()=> ({}));
+    if(!res.ok || !data.ok){
+      setStatus(insId, "err", data.error || "Error desant");
+      return;
+    }
+
+    SCORES[String(insId)] = {
+      inputs: data.inputs || {},
+      outputs: data.outputs || {},
+      total: data.total || 0,
+      updated_at: data.updated_at || null
+    };
+
+    setStatus(insId, "ok", "Desat ✓");
+  }
+
+  function copyPrev(insId){
+    const cards = Array.from(document.querySelectorAll("[data-ins-id]"));
+    const idx = cards.findIndex(c => c.getAttribute("data-ins-id") === String(insId));
+    if(idx <= 0) return;
+
+    const prevId = cards[idx-1].getAttribute("data-ins-id");
+    const code = activeFieldCode;
+    const prev = getEntry(prevId);
+    const v = prev.inputs ? prev.inputs[code] : null;
+
+    const perm = firstPermForField(code);
+    const f = schemaField(code);
+    const wrap = document.getElementById(`editor-${insId}`);
+    if(!perm || !f || !wrap) return;
+
+    if((f.type || "number") === "number"){
+      const inp = wrap.querySelector('input[data-kind="number"]');
+      inp.value = (v ?? "");
+      setStatus(insId, "", "Pendent de desar…");
+      return;
+    }
+
+    if((f.type || "number") === "matrix"){
+      const j = Math.max(1, Number(perm.judge_index || 1));
+      const row = (Array.isArray(v) && Array.isArray(v[j-1])) ? v[j-1] : [];
+      wrap.querySelectorAll('input[data-kind="matrix"]').forEach(inp=>{
+        const idx0 = Number(inp.dataset.itemIndex0);
+        inp.value = (row[idx0] ?? "");
+      });
+      setStatus(insId, "", "Pendent de desar…");
+      return;
+    }
+  }
+
+  // init
+  buildTabs();
+  buildPermText();
+  document.querySelectorAll("[data-ins-id]").forEach(card => renderEditor(card.getAttribute("data-ins-id")));
+</script>
+{% endblock %}

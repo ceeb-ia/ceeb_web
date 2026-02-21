@@ -15,7 +15,8 @@ from django.core.exceptions import ValidationError
 ALLOWED_FUNCTIONS: Set[str] = {
     "sum", "avg", "min", "max",
     "exec_by_judge", "select_sum", "best_n",
-    "float", "field", "crash",
+    "float", "field", "crash", "row_custom_compute",
+    "column_custom_compute"
 }
 
 RESERVED_NAMES: Set[str] = set(ALLOWED_FUNCTIONS) | {"params"}

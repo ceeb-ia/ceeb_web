@@ -4,6 +4,7 @@ from django.shortcuts import get_object_or_404
 from django.views.generic import TemplateView, UpdateView
 from django.urls import reverse
 from competicions_trampoli.forms import CompeticioAparellForm
+from competicions_trampoli.models_classificacions import ClassificacioConfig
 from .models import Competicio, Inscripcio
 from .models_trampoli import TrampoliConfiguracio, TrampoliNota, CompeticioAparell, Aparell
 from django.http import JsonResponse
@@ -89,6 +90,13 @@ class TrampoliNotesHome(TemplateView):
                 actiu=True,
             ).select_related("aparell").order_by("ordre", "id")
 
+        # --- Classificacions configurades a la competició (actius) ---
+        classificacions_cfg = ClassificacioConfig.objects.filter(
+            competicio=competicio,
+            activa=True,
+        ).select_related("schema")
+
+
         # màxim de salts per poder fer ljust al template
         max_salts = max([int(x.nombre_elements or 0) for x in aparells_cfg] + [0])
 
@@ -128,7 +136,8 @@ class TrampoliNotesHome(TemplateView):
             "competicio": competicio,
             "cfg": cfg,
             "groups": groups,
-            "aparells_cfg": aparells_cfg,     # NOU
+            "aparells_cfg": aparells_cfg,     
+            "classificacions_cfg": classificacions_cfg,
             "exercicis": exercicis,
             "n_exercicis": n_ex,
             "n_jutges": cfg.nombre_jutges_execucio,

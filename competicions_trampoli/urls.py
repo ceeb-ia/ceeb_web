@@ -2,7 +2,7 @@ from django.urls import path
 
 from .views_trampoli import ConfiguracioCompeticio, TrampoliNotesHome, trampoli_guardar_nota, TrampoliAparellList, CompeticioAparellCreate
 from .views import CompeticioCreateView, CompeticioDeleteView, CompeticioHomeView, CompeticioListView, InscripcionsImportExcelView, InscripcionsListView
-from competicions_trampoli import views, views_rotacions
+from competicions_trampoli import views, views_judge_admin, views_rotacions
 from .views_trampoli import AparellList, AparellCreate, AparellUpdate, CompeticioAparellDeleteView, CompeticioAparellUpdate
 from .views_classificacions import (
     ClassificacionsHome,
@@ -12,7 +12,7 @@ from .views_classificacions import (
     classificacio_preview,)
 from .views_classificacions import ClassificacionsLive, classificacions_live_data
 from .views_scoring import ScoringNotesHome, ScoringSchemaUpdate, scoring_save
-
+from . import views_judge
 
 
 urlpatterns = [
@@ -67,5 +67,13 @@ urlpatterns = [
 
     path("competicio/<int:pk>/scores/save/", scoring_save, name="scoring_save"),
 
+
+    path("scoring/<int:competicio_id>/judges-qr/", views_judge_admin.judges_qr_home, name="judges_qr_home"),
+    path("scoring/<int:competicio_id>/judges-qr/print/", views_judge_admin.judges_qr_print, name="judges_qr_print"),
+
+    path("judge/<uuid:token>/", views_judge.judge_portal, name="judge_portal"),
+    path("judge/<uuid:token>/qr.png", views_judge.judge_qr_png, name="judge_qr_png"),
+    path("judge/<uuid:token>/api/save/", views_judge.judge_save_partial, name="judge_save_partial"),
+ 
 
 ]
