@@ -77,6 +77,10 @@
 {% endblock %}
 
 {% block extra_scripts %}
+{% csrf_token %}
+<script>
+  const CSRF_TOKEN = "{{ csrf_token }}";
+</script>
 <script>
   const SCHEMA = JSON.parse(document.getElementById("schema-data").textContent || "{}");
   const PERMS  = JSON.parse(document.getElementById("perms-data").textContent || "[]");
@@ -275,8 +279,11 @@
     setStatus(insId, "", "Desant…");
 
     const res = await fetch(SAVE_URL, {
-      method:"POST",
-      headers: {"Content-Type":"application/json"},
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": CSRF_TOKEN
+      },
       body: JSON.stringify({
         inscripcio_id: Number(insId),
         exercici: EXERCICI,

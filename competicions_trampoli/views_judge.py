@@ -330,3 +330,4 @@ def judge_save_partial(request, token):
         "total": float(entry.total),
         "updated_at": entry.updated_at.isoformat(),
     })
+

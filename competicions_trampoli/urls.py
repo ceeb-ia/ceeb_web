@@ -13,6 +13,7 @@ from .views_classificacions import (
 from .views_classificacions import ClassificacionsLive, classificacions_live_data
 from .views_scoring import ScoringNotesHome, ScoringSchemaUpdate, scoring_save
 from . import views_judge
+from competicions_trampoli import views_scoring
 
 
 urlpatterns = [
@@ -66,8 +67,8 @@ urlpatterns = [
     path("competicio/<int:pk>/aparells/<int:app_id>/eliminar/", CompeticioAparellDeleteView.as_view(), name="competicio_aparell_delete"),
 
     path("competicio/<int:pk>/scores/save/", scoring_save, name="scoring_save"),
-
-
+    path("scoring/<int:pk>/save-partial/", views_scoring.scoring_save_partial, name="scoring_save_partial"),
+    path("scoring/<int:pk>/updates/", views_scoring.scoring_updates, name="scoring_updates"),
     path("scoring/<int:competicio_id>/judges-qr/", views_judge_admin.judges_qr_home, name="judges_qr_home"),
     path("scoring/<int:competicio_id>/judges-qr/print/", views_judge_admin.judges_qr_print, name="judges_qr_print"),
 

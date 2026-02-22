@@ -117,14 +117,16 @@
                               Grup {% if g == 0 %}Sense grup{% else %}{{ g }}{% endif %} ·
                               {{ app.aparell.nom }} · Exercici {{ ex }}
                             </div>
-                            <a class="btn btn-sm btn-outline-secondary"
-                              href="{% url 'scoring_schema_update' competicio.id app.id %}">
-                              Camps i funcions
-                            </a>
-                            <a class="btn btn-sm btn-outline-primary"
-                              href="{% url 'judges_qr_home' competicio.id %}?comp_aparell={{ app.id }}">
-                              Jurat / QRs
-                            </a>
+                            <div>
+                              <a class="btn btn-sm btn-outline-secondary"
+                                href="{% url 'scoring_schema_update' competicio.id app.id %}">
+                                Camps i funcions
+                              </a>
+                              <a class="btn btn-sm btn-outline-primary"
+                                href="{% url 'judges_qr_home' competicio.id %}?comp_aparell={{ app.id }}">
+                                Jurat / QRs
+                              </a>
+                            </div>
                           </div>
 
                           <!-- Scrollbar top sincronitzat -->
@@ -197,8 +199,8 @@
   const SCHEMAS = JSON.parse(document.getElementById("schemas-data").textContent);
   const SCORES  = JSON.parse(document.getElementById("scores-data").textContent);
   const INS     = JSON.parse(document.getElementById("inscripcions-data").textContent);
-
-  const SAVE_URL = "{% url 'scoring_save' competicio.id %}";
+  const UPDATES_URL = "{% url 'scoring_updates' competicio.id %}";
+  const SAVE_URL = "{% url 'scoring_save_partial' competicio.id %}";
 
   // --- CSRF (BS4) ---
   function getCookie(name){
@@ -307,6 +309,55 @@
   function applyVisibility(appId, cols){
     const hidden = loadHiddenCols(appId);
     return cols.filter(c => !hidden.has(c));
+  }
+
+  function getActiveContext(){
+    // tab pane visible (app + group)
+    const appPane = document.querySelector('.tab-pane.show.active[data-comp-aparell-id]');
+    if(!appPane) return null;
+
+    const appId = appPane.getAttribute("data-comp-aparell-id");
+    const group = appPane.getAttribute("data-group");
+
+    // dins d’aquest appPane, l’exercici actiu
+    const exPane = appPane.querySelector('.tab-pane.show.active[id*="-ex-"]');
+    if(!exPane) return {appId, group, exercici: null};
+
+    // l’exercici està a l’id: ...-ex-<n>
+    const m = exPane.id.match(/-ex-(\d+)$/);
+    const exercici = m ? m[1] : null;
+    return {appId, group, exercici};
+  }
+
+  function applyUpdate(u){
+    const scoreKey = keyFor(u.inscripcio_id, u.exercici, u.comp_aparell_id);
+
+    // actualitza el store local
+    setScore(u.inscripcio_id, u.exercici, u.comp_aparell_id, {
+      inputs: u.inputs || {},
+      outputs: u.outputs || {},
+      total: u.total || 0
+    });
+
+    // actualitza outputs visibles (ja tens updateOutputs)
+    updateOutputs(scoreKey, {outputs: u.outputs || {}, total: u.total});
+
+    // opcional: actualitzar inputs visibles si NO s’està editant aquella cel·la
+    const active = document.activeElement;
+    document.querySelectorAll(`tr[data-score-key="${CSS.escape(scoreKey)}"] input[data-field]`).forEach(inp=>{
+      if(active === inp) return; // no trepitgis mentre s’escriu
+
+      const field = inp.dataset.field;
+      const j = Number(inp.dataset.j);
+      const i = Number(inp.dataset.i);
+
+      const mat = (u.inputs && u.inputs[field]) ? u.inputs[field] : null;
+      const v = (Array.isArray(mat) && Array.isArray(mat[j-1])) ? mat[j-1][i-1] : null;
+
+      // només si ha canviat
+      const newVal = (v === null || v === undefined) ? "" : String(v);
+      if(inp.value !== newVal) inp.value = newVal;
+    });
   }
 
   function ensureColumnsPanel(table, schema){
@@ -444,7 +495,7 @@
 
 
   // --- Save ---
-  async function saveEntry(insId, ex, appId, inputs){
+  async function saveEntry(insId, ex, appId, inputsPatch){
     const res = await fetch(SAVE_URL,{
       method:"POST",
       headers:{
@@ -455,7 +506,7 @@
         inscripcio_id: insId,
         exercici: ex,
         comp_aparell_id: appId,
-        inputs: inputs,
+        inputs_patch: inputsPatch,
       })
     });
 
@@ -776,8 +827,10 @@
                 nextMat[j-1][i-1] = Number(inp.value || 0);
 
                 let nextInputs;
+                let nextCrash = null;
+
                 if(crashEnabled){
-                  const nextCrash = ensureList(nJudges, curInputs[ck]);
+                  nextCrash = ensureList(nJudges, curInputs[ck]);
                   nextInputs = { ...curInputs, [col]: nextMat, [ck]: nextCrash };
                 }else{
                   nextInputs = { ...curInputs, [col]: nextMat };
@@ -787,8 +840,9 @@
 
                 scheduleSave(scoreKey, async ()=>{
                   try{
-                    const resp = await saveEntry(ins.id, exercici, appId, nextInputs);
-                    setScore(ins.id, exercici, appId, {inputs: nextInputs, outputs: resp.outputs, total: resp.total});
+                    const inputsPatch = crashEnabled ? { [col]: nextMat, [ck]: nextCrash } : { [col]: nextMat };
+                    const resp = await saveEntry(ins.id, exercici, appId, inputsPatch);
+                    setScore(ins.id, exercici, appId, {inputs: resp.inputs, outputs: resp.outputs, total: resp.total});
                     updateOutputs(scoreKey, resp);
                   }catch(e){ console.error(e); alert(e.message); }
                 });
@@ -806,15 +860,21 @@
                   const clicked = i; // 1..nElems
                   nextCrash[j-1] = (current === clicked) ? 0 : clicked;
 
+                  // 1) actualitza estat local per UI (això ho pots mantenir)
                   const nextInputs = { ...curInputs, [col]: nextMat, [ck]: nextCrash };
                   setScore(ins.id, exercici, appId, {inputs: nextInputs, outputs: cur.outputs || {}, total: cur.total || 0});
 
                   applyCrashDisable(tr, col, j, nElems, nextCrash[j-1]);
 
+                  // 2) AQUI ÉS EL CANVI IMPORTANT: enviem PATCH, no nextInputs
+                  const inputsPatch = { [col]: nextMat, [ck]: nextCrash };
+
                   scheduleSave(scoreKey, async ()=>{
                     try{
-                      const resp = await saveEntry(ins.id, exercici, appId, nextInputs);
-                      setScore(ins.id, exercici, appId, {inputs: nextInputs, outputs: resp.outputs, total: resp.total});
+                      const resp = await saveEntry(ins.id, exercici, appId, inputsPatch);
+
+                      // 3) AQUI ÉS L’ALTRE CANVI IMPORTANT: després de desar, confia en el servidor
+                      setScore(ins.id, exercici, appId, {inputs: resp.inputs, outputs: resp.outputs, total: resp.total});
                       updateOutputs(scoreKey, resp);
                     }catch(e){ console.error(e); alert(e.message); }
                   });
@@ -939,15 +999,49 @@
       const w = table ? table.scrollWidth : 2000;
       inner.style.width = w + "px";
 
+      if(wrap.dataset.scrollBound === "1") return;
+      wrap.dataset.scrollBound = "1";
+
       topbar.addEventListener("scroll", ()=>{ wrap.scrollLeft = topbar.scrollLeft; });
       wrap.addEventListener("scroll", ()=>{ topbar.scrollLeft = wrap.scrollLeft; });
     });
+  }
+
+  let lastSince = new Date().toISOString();
+
+  async function pollUpdates(){
+    const ctx = getActiveContext();
+    if(!ctx){ setTimeout(pollUpdates, 1200); return; }
+
+    const url = new URL(UPDATES_URL, window.location.origin);
+    url.searchParams.set("since", lastSince);
+    url.searchParams.set("comp_aparell_id", ctx.appId);
+    if(ctx.exercici) url.searchParams.set("exercici", ctx.exercici);
+    if(ctx.group !== null) url.searchParams.set("group", ctx.group);
+
+    try{
+      const res = await fetch(url.toString(), {headers: {"Accept":"application/json"}});
+      const data = await res.json();
+      if(data.ok){
+        let maxTs = lastSince;
+        (data.updates || []).forEach(u=>{
+          applyUpdate(u);
+          if(u.updated_at && u.updated_at > maxTs) maxTs = u.updated_at;
+        });
+        lastSince = maxTs;
+      }
+    }catch(e){
+      console.warn("pollUpdates error", e);
+    }finally{
+      setTimeout(pollUpdates, 1200); // 1.2s
+    }
   }
 
   document.addEventListener("DOMContentLoaded", ()=>{
     renderAll();
     syncScrollbars();
     window.addEventListener("resize", syncScrollbars);
+    pollUpdates(); // START
   });
 </script>
 

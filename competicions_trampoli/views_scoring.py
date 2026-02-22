@@ -2,7 +2,8 @@
 import json
 import logging
 from collections import defaultdict
-
+from django.utils.dateparse import parse_datetime
+from django.views.decorators.http import require_GET
 from django.contrib import messages
 from django.db import transaction
 from django.http import JsonResponse
@@ -10,7 +11,7 @@ from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.views.decorators.http import require_POST
 from django.views.generic import TemplateView, UpdateView
-
+from django.utils import timezone
 from .models import Competicio, Inscripcio
 from .models_trampoli import Aparell, CompeticioAparell
 from .models_scoring import ScoringSchema, ScoreEntry
@@ -413,3 +414,140 @@ def scoring_save(request, pk):
         "outputs": entry.outputs,
         "total": float(entry.total),
     })
+
+
+@require_POST
+@transaction.atomic
+def scoring_save_partial(request, pk):
+    """
+    Igual que scoring_save, però:
+    - rep inputs_patch (no inputs complet)
+    - fa MERGE amb entry.inputs existent
+    - recalcula amb ScoringEngine
+    Payload:
+    {
+      "inscripcio_id": 10,
+      "exercici": 1,
+      "comp_aparell_id": 5,
+      "inputs_patch": {...}
+    }
+    """
+    competicio = get_object_or_404(Competicio, pk=pk)
+
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        return JsonResponse({"ok": False, "error": "JSON invàlid"}, status=400)
+
+    ins_id = payload.get("inscripcio_id")
+    comp_aparell_id = payload.get("comp_aparell_id")
+    exercici = int(payload.get("exercici") or 1)
+    patch = payload.get("inputs_patch", {})
+
+    if not ins_id or not comp_aparell_id:
+        return JsonResponse({"ok": False, "error": "Falten camps: inscripcio_id/comp_aparell_id"}, status=400)
+    if not isinstance(patch, dict):
+        return JsonResponse({"ok": False, "error": "inputs_patch ha de ser objecte JSON"}, status=400)
+
+    ins = get_object_or_404(Inscripcio, pk=ins_id, competicio=competicio)
+    comp_aparell = get_object_or_404(CompeticioAparell, pk=comp_aparell_id, competicio=competicio, actiu=True)
+
+    # clamp exercici com ja fas
+    max_ex = max(1, min(4, int(getattr(comp_aparell, "nombre_exercicis", 1) or 1)))
+    exercici = max(1, min(max_ex, exercici))
+
+    ss, _ = ScoringSchema.objects.get_or_create(aparell=comp_aparell.aparell, defaults={"schema": {}})
+    schema = ss.schema or {}
+
+    # allowed keys (igual que scoring_save)
+    allowed = set()
+    for f in (schema.get("fields") or []):
+        if isinstance(f, dict) and f.get("code"):
+            allowed.add(f["code"])
+            allowed.add(f"__crash__{f['code']}")
+
+    # entry existent (o crea)
+    entry, _ = ScoreEntry.objects.get_or_create(
+        competicio=competicio,
+        inscripcio=ins,
+        exercici=exercici,
+        comp_aparell=comp_aparell,
+        defaults={"inputs": {}, "outputs": {}, "total": 0},
+    )
+    current_inputs = entry.inputs if isinstance(entry.inputs, dict) else {}
+
+    # MERGE: només claus permeses
+    merged = dict(current_inputs)
+    for k, v in patch.items():
+        if k in allowed:
+            merged[k] = v
+
+    try:
+        engine = ScoringEngine(schema)
+        result = engine.compute(merged)
+    except ScoringError as e:
+        return JsonResponse({"ok": False, "error": str(e)}, status=400)
+    except Exception:
+        return JsonResponse({"ok": False, "error": "Error inesperat calculant."}, status=500)
+
+    entry.inputs = result.inputs
+    entry.outputs = result.outputs
+    entry.total = result.total
+    entry.save(update_fields=["inputs", "outputs", "total", "updated_at"])
+
+    return JsonResponse({
+        "ok": True,
+        "inscripcio_id": ins.id,
+        "exercici": entry.exercici,
+        "comp_aparell_id": comp_aparell.id,
+        "inputs": entry.inputs,     # útil per refrescar client
+        "outputs": entry.outputs,
+        "total": float(entry.total),
+        "updated_at": entry.updated_at.isoformat(),
+    })
+
+
+@require_GET
+def scoring_updates(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+
+    since = request.GET.get("since")
+    comp_aparell_id = request.GET.get("comp_aparell_id")
+    exercici = request.GET.get("exercici")
+    group = request.GET.get("group")  # opcional
+
+    dt = parse_datetime(since) if since else None
+    if dt is None:
+        # si no arriba since, no petem: retornem buit
+        return JsonResponse({"ok": True, "now": None, "updates": []})
+
+    qs = ScoreEntry.objects.filter(competicio=competicio, updated_at__gt=dt)
+
+    if comp_aparell_id:
+        qs = qs.filter(comp_aparell_id=comp_aparell_id)
+    if exercici:
+        try:
+            qs = qs.filter(exercici=int(exercici))
+        except Exception:
+            pass
+    if group is not None:
+        # filtra per grup via inscripcio
+        try:
+            qs = qs.filter(inscripcio__grup=int(group))
+        except Exception:
+            pass
+
+    updates = []
+    for s in qs.select_related("inscripcio")[:500]:
+        updates.append({
+            "inscripcio_id": s.inscripcio_id,
+            "exercici": s.exercici,
+            "comp_aparell_id": s.comp_aparell_id,
+            "inputs": s.inputs or {},
+            "outputs": s.outputs or {},
+            "total": float(s.total),
+            "updated_at": s.updated_at.isoformat(),
+        })
+
+    # “now” del servidor per anar avançant el cursor
+    return JsonResponse({"ok": True, "now": timezone.now().isoformat(), "updates": updates})
