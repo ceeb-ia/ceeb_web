@@ -33,7 +33,6 @@
     }
     .group-chip input { margin: 0; }
     .grouping-actions { display: flex; gap: 8px; align-items: center; }
-
     .chips {
       display: flex;
       flex-wrap: wrap;
@@ -83,31 +82,68 @@
       font-weight: 700;
       white-space: nowrap;
     }
+    /* Panels plegables */
+    .panel { border: 1px solid #e3e6ef; border-radius: 12px; background: #fff; }
+    .panel-head { padding: 10px 14px; display:flex; justify-content:space-between; align-items:center; gap:12px; cursor:pointer; }
+    .panel-body { padding: 12px 14px; border-top: 1px solid #eef1f7; }
+    .panel-title { font-weight: 600; margin:0; }
+    .subtle { color:#6b7280; font-size:.85rem; }
+    .btn-row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    .chev { transition: transform .15s ease; }
+    .panel-collapse.is-collapsed { display: none; }
+    .collapsed .chev { transform: rotate(-90deg); }
 
-    /* Panels UI (ja ho tens al teu base, aquí mantenim el mateix estil que tenies) */
-    .panel { border: 1px solid #e3e6ef; border-radius: 12px; overflow: hidden; background: #fff; }
-    .panel-head { display:flex; justify-content:space-between; align-items:center; gap:12px; padding: 12px 14px; cursor:pointer; }
-    .panel-head .panel-title { font-weight:700; }
-    .panel-head .subtle { color:#6b7280; font-size: 0.85rem; }
-    .panel-head .chev { transition: transform .2s ease; }
-    .panel-head:not(.collapsed) .chev { transform: rotate(180deg); }
-    .panel-collapse.is-collapsed { display:none; }
-    .panel-body { padding: 12px 14px; }
-    .btn-row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+    /* Selector de pestanyes (Crear X grups) */
+    .tab-select-card{
+      background:#f7f8fb;
+      border:1px solid #e3e6ef;
+      border-radius:10px;
+      padding:10px 12px;
+    }
+    .tab-select-grid{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 10px;
+      max-height: 220px;
+      overflow: auto;
+      padding-right: 6px;
+    }
+    .tab-select-item{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      background:#ffffff;
+      border:1px solid #e3e6ef;
+      border-radius:8px;
+      padding:6px 10px;
+      min-width:0;
+      width:100%;
+      box-sizing:border-box;
+    }
+    .tab-select-item input[type="checkbox"]{ margin:0; flex:0 0 auto; }
+    .tab-select-item .tab-label{
+      display:block;
+      flex:1 1 auto;
+      min-width:0;
+      max-width:100%;
+      overflow:hidden;
+      white-space:nowrap;
+      text-overflow:ellipsis;
+    }
+    .tab-select-item .badge{ margin-left:auto; flex:0 0 auto; }
 
-    /* Drag handles */
     .drag-handle, .col-drag-handle {
       cursor: grab;
       user-select: none;
       font-weight: 700;
       opacity: 0.65;
+      margin-right: 6px;
     }
     body.dragging, body.dragging * {
       user-select: none !important;
       cursor: grabbing !important;
     }
 
-    /* Bandes de color per grup (suau) */
     .group-band-0 { background-color: rgba(59,130,246,0.08) !important; }
     .group-band-1 { background-color: rgba(16,185,129,0.08) !important; }
     .group-band-2 { background-color: rgba(245,158,11,0.10) !important; }
@@ -118,27 +154,90 @@
     .group-band-7 { background-color: rgba(34,197,94,0.08) !important; }
   </style>
 
-  <div class="d-flex justify-content-between align-items-center mb-3">
-    <div>
-      <h3 class="mb-0">Inscripcions</h3>
-      <div class="text-muted small">Competició: <strong>{{ competicio.nom }}</strong></div>
+  <div class="card-surface">
+    <!-- CAPÇALERA -->
+    <div class="d-flex justify-content-between align-items-start mb-3">
+      <div>
+        <h2 class="mb-1">Inscripcions</h2>
+        <div class="text-muted small">
+          Competició: <span class="fw-semibold">{{ competicio.nom }}</span>
+        </div>
+        <div class="text-muted small">
+          Gestiona inscripcions, agrupacions i creació de grups.
+        </div>
+      </div>
+
+      <div class=" gap-2 flex-wrap">
+        <a href="{% url 'import' competicio.id %}" class="btn btn-sm btn-success">+ Importar Excel</a>
+        <a href="{% url 'inscripcio_add' competicio.id %}?next={{ request.get_full_path|urlencode }}"
+           class="btn btn-sm btn-primary">+ Afegir inscripció</a>
+        <a href="{% url 'trampoli_config' competicio.id %}" class="btn btn-sm btn-outline-warning">
+          Configuració competició
+        </a>
+        <a href="{% url 'created' %}" class="btn btn-sm btn-outline-secondary">Tornar a competicions</a>
+      </div>
+    </div>
+    <div class="d-flex justify-content-between align-items-start mb-3"> 
+      <a href="{% url 'scoring_notes_home' competicio.id %}" class="btn btn-sm btn-outline-primary">Notes</a>
+      <a href="{% url 'rotacions_planner' competicio.id %}" class="btn btn-sm btn-outline-primary" target="_blank" rel="noopener">
+        Rotacions
+      </a>
+
     </div>
 
-    <div class="d-flex align-items-center gap-2">
-      <a class="btn btn-sm btn-outline-secondary"
-         href="{% url 'inscripcions_list' competicio.id %}">
-        Netejar filtres
-      </a>
-      <a class="btn btn-sm btn-outline-primary" href="{% url 'inscripcio_create' competicio.id %}?next={{ request.get_full_path|urlencode }}">
-        + Nova inscripció
-      </a>
+    <!-- BUSCADOR -->
+    <div class="mb-3">
+      <div class="input-group input-group-sm" style="max-width: 500px;">
+        <input type="text"
+               class="form-control form-control-sm buscador-inscripcions"
+               id="search-input"
+               placeholder="Cerca per nom, cognoms, DNI, entitat..."
+               value="{{ request.GET.q|default:'' }}"
+               autocomplete="off"
+               style="font-size: 0.95rem; padding: 0.25rem 0.5rem;">
+        <div class="input-group-append">
+          <button class="btn btn-primary btn-sm" type="button" id="search-btn" style="font-size: 0.95rem; padding: 0.25rem 0.75rem;">
+            <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+              <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/>
+            </svg>
+            Cerca
+          </button>
+          {% if request.GET.q %}
+          <button class="btn btn-outline-secondary btn-sm" type="button" id="clear-search-btn" title="Esborrar cerca" style="font-size: 0.95rem; padding: 0.25rem 0.75rem;">
+            <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+              <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8 2.146 2.854Z"/>
+            </svg>
+          </button>
+          {% endif %}
+        </div>
+      </div>
+      <div class="small text-muted mt-1">
+        Cerca en temps real per nom, cognoms, DNI o entitat
+        {% if request.GET.q %}
+          <span class="badge badge-primary ml-2">Filtrant: "{{ request.GET.q }}"</span>
+        {% endif %}
+      </div>
     </div>
-  </div>
 
-  <form method="get" class="mb-3">
-    <input type="hidden" name="per_page" value="{{ request.GET.per_page|default:'all' }}">
+    <!-- CONTROLS -->
+    <form method="get" class="mb-3">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <div class="text-muted small">Configuracions plegables · obre només el que necessitis.</div>
+        <div class="gap-2">
+          <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleAllPanels(true)">Desplegar tot</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleAllPanels(false)">Plegar tot</button>
+        </div>
+      </div>
 
-    <div class="d-flex flex-column gap-2 mb-3" id="inscripcions-panels">
+      <!-- conserva estat -->
+      <input type="hidden" name="q" value="{{ request.GET.q|default:'' }}">
+      <input type="hidden" name="categoria" value="{{ request.GET.categoria|default:'' }}">
+      <input type="hidden" name="subcategoria" value="{{ request.GET.subcategoria|default:'' }}">
+      <input type="hidden" name="entitat" value="{{ request.GET.entitat|default:'' }}">
+      <!-- clau per no paginar quan no hi ha agrupació -->
+      <input type="hidden" name="per_page" value="{{ request.GET.per_page|default:'all' }}">
+
+      <div class="d-flex flex-column gap-2 mb-3" id="inscripcions-panels">
 
         <!-- AGRUPACIÓ -->
         <div class="panel">
@@ -182,16 +281,19 @@
                 <span class="text-muted small fw-semibold">Agrupa per:</span>
                 {% for f in allowed_group_fields %}
                   <label class="group-chip" title="{{ f.code }}">
-                    <input type="checkbox" name="group_by" value="{{ f.code }}" {% if f.code in selected_group_fields %}checked{% endif %}>
+                    <input type="checkbox" name="group_by" value="{{ f.code }}"
+                          {% if f.code in selected_group_fields %}checked{% endif %}>
                     <span>{{ f.label }}</span>
                     {% if f.kind == "extra" %}<span class="badge bg-light text-dark border">extra</span>{% endif %}
                   </label>
                 {% endfor %}
               </div>
 
-              <div class="text-muted small mt-2">
-                (Pots seleccionar múltiples camps. L’ordre es manté segons la selecció.)
-              </div>
+              {% if selected_group_fields %}
+                <div class="text-muted small mt-2">
+                  * Per fusionar pestanyes: mantén <b>SHIFT</b> i deixa anar una pestanya sobre una altra.
+                </div>
+              {% endif %}
             </div>
           </div>
         </div>
@@ -201,30 +303,29 @@
           <div class="panel-head collapsed" data-target="#panel-columnes" aria-expanded="false">
             <div>
               <p class="panel-title mb-0">Columnes</p>
-              <div class="subtle">Selecciona i reordena les columnes de la taula (drag&drop) i desa-ho.</div>
+              <div class="subtle">Selecciona i reordena les columnes de la taula (drag and drop).</div>
             </div>
             <div class="d-flex align-items-center gap-2">
               <span class="subtle d-none d-md-inline">Mostra/Oculta</span>
-              <span class="chev">▾</span>
+              <span class="chev">â–¾</span>
             </div>
           </div>
 
           <div id="panel-columnes" class="panel-collapse is-collapsed">
             <div class="panel-body">
               <div class="alert alert-info py-2 px-3 small mb-2">
-                Arrossega per canviar l’ordre. Marca/desmarca per mostrar/amagar.
+                Arrossega per canviar l'ordre. Marca/desmarca per mostrar o amagar.
               </div>
 
-              <ul id="cols-sortable" class="list-group mb-2" style="max-width: 520px;">
+              <ul id="cols-sortable" class="list-group mb-2" style="max-width: 620px;">
                 {% for col in available_table_columns %}
                   <li class="list-group-item d-flex align-items-center justify-content-between" data-col="{{ col.code }}">
                     <div class="d-flex align-items-center" style="gap:10px;">
-                      <span class="col-drag-handle" title="Arrossega">⋮⋮</span>
+                      <span class="col-drag-handle" title="Arrossega">&#8942;&#8942;</span>
                       <input type="checkbox"
                              class="form-check-input js-col-check"
                              data-col="{{ col.code }}"
-                             {% for s in selected_table_columns %}{% if s.code == col.code %}checked{% endif %}{% endfor %}
-                      >
+                             {% for s in selected_table_columns %}{% if s.code == col.code %}checked{% endif %}{% endfor %}>
                       <span>{{ col.label }}</span>
                       {% if col.kind == "extra" %}<span class="badge bg-light text-dark border">extra</span>{% endif %}
                     </div>
@@ -243,7 +344,7 @@
           <div class="panel-head collapsed" data-target="#panel-grups" aria-expanded="false">
             <div>
               <p class="panel-title mb-0">Grups</p>
-              <div class="subtle">Marca grups, crea grups independents, etc.</div>
+              <div class="subtle">Crea i esborra grups amb mida o nombre de grups.</div>
             </div>
             <div class="d-flex align-items-center gap-2">
               <span class="subtle d-none d-md-inline">Mostra/Oculta</span>
@@ -253,27 +354,66 @@
 
           <div id="panel-grups" class="panel-collapse is-collapsed">
             <div class="panel-body">
-              <div class="btn-row">
-                <button type="button" class="btn btn-sm btn-outline-primary" id="btn-assign-group">
-                  Assignar grup als marcats
-                </button>
-
-                <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-clear-marks">
-                  Netejar marques
-                </button>
-
-                <button type="submit" name="hide_headers" value="1" class="btn btn-sm btn-outline-dark">
-                  Amagar headers
-                </button>
-
-                <button type="submit" name="show_headers" value="1" class="btn btn-sm btn-outline-dark">
-                  Mostrar headers
+              <div class="btn-row mb-3">
+                <button type="submit" name="clear_groups" value="1" class="btn btn-sm btn-outline-secondary">
+                  Esborrar grups
                 </button>
               </div>
 
-              <div class="text-muted small mt-2">
-                (Marca els grups amb el checkbox del header de grup.)
+              <div class="d-flex align-items-center flex-wrap" style="gap:10px;">
+                <span class="text-muted small fw-semibold">Mode:</span>
+                <select name="group_mode" class="form-control form-control-sm" style="width:170px">
+                  {% with gm=request.GET.group_mode|default:"fixed" %}
+                    <option value="fixed" {% if gm == "fixed" %}selected{% endif %}>Mida fixa</option>
+                    <option value="balanced" {% if gm == "balanced" %}selected{% endif %}>Grups equilibrats</option>
+                  {% endwith %}
+                </select>
+
+                <span class="text-muted small fw-semibold">Mida:</span>
+                <input type="number" name="group_size" min="2" max="50"
+                       value="{{ request.GET.group_size|default:8 }}"
+                       class="form-control form-control-sm" style="width:90px">
+
+                <button type="submit" name="make_groups" value="1" class="btn btn-sm btn-outline-dark">
+                  Crear grups
+                </button>
               </div>
+
+              <hr class="my-3">
+
+              <div class="mb-2">
+                <div class="d-flex align-items-center flex-wrap" style="gap:10px;">
+                  <span class="text-muted small fw-semibold">Crear X grups:</span>
+                  <input type="number" name="group_count" min="1" max="200"
+                         value="{{ request.GET.group_count|default:4 }}"
+                         class="form-control form-control-sm" style="width:90px">
+
+                  <button type="submit" name="make_groups_count" value="1" class="btn btn-sm btn-outline-dark">
+                    Crear X grups
+                  </button>
+                </div>
+              </div>
+
+              {% if selected_group_fields and records_grouped %}
+                <div class="tab-select-card">
+                  <div class="d-flex justify-content-between align-items-center mb-2">
+                    <div class="fw-semibold">Aplica a pestanyes</div>
+                    <div class="text-muted small">Si no marques cap, s’aplica a totes</div>
+                  </div>
+
+                  <div class="tab-select-grid">
+                    {% for group_label, group_records, group_key in records_grouped %}
+                      <label class="tab-select-item">
+                        <input type="checkbox" name="tab_keys" value="{{ group_key }}">
+                        <span class="tab-label small" title="{{ group_label }}">{{ group_label }}</span>
+                        <span class="badge badge-light">{{ group_records|length }}</span>
+                      </label>
+                    {% endfor %}
+                  </div>
+                </div>
+              {% else %}
+                <div class="text-muted small">No hi ha agrupació activa: s’aplicarà a totes les inscripcions filtrades.</div>
+              {% endif %}
             </div>
           </div>
         </div>
@@ -283,14 +423,13 @@
           <div class="panel-head collapsed" data-target="#panel-altres" aria-expanded="false">
             <div>
               <p class="panel-title mb-0">Altres</p>
-              <div class="subtle">Export, ordenació i cerca.</div>
+              <div class="subtle">Ordena dins grups, defineix títols i exporta.</div>
             </div>
             <div class="d-flex align-items-center gap-2">
               <span class="subtle d-none d-md-inline">Mostra/Oculta</span>
               <span class="chev">▾</span>
             </div>
           </div>
-
           <div id="panel-altres" class="panel-collapse is-collapsed">
             <div class="panel-body">
               <div class="btn-row mb-3">
@@ -300,38 +439,131 @@
               </div>
 
               <div class="d-flex align-items-center flex-wrap" style="gap:8px;">
-                <span class="text-muted small fw-semibold">Cerca:</span>
-                <input id="search-input" type="text" class="form-control form-control-sm" style="width: 240px;"
-                       name="q" value="{{ request.GET.q|default:'' }}" placeholder="Nom, DNI, entitat…">
-                <button id="search-btn" type="button" class="btn btn-sm btn-outline-primary">Buscar</button>
-                <button id="clear-search-btn" type="button" class="btn btn-sm btn-outline-secondary">Esborrar</button>
+                <span class="text-muted small fw-semibold">Ordenació de les inscripcions:</span>
+
+                <select name="sort_key" class="form-control form-control-sm" style="width: 210px;">
+                  {% with sk=request.GET.sort_key|default:"nom" %}
+                    <option value="nom" {% if sk == "nom" %}selected{% endif %}>Nom (A-Z)</option>
+                    <option value="edat" {% if sk == "edat" %}selected{% endif %}>Edat / Data naixement</option>
+                    <option value="entitat" {% if sk == "entitat" %}selected{% endif %}>Entitat</option>
+                    <option value="categoria" {% if sk == "categoria" %}selected{% endif %}>Categoria</option>
+                    <option value="subcategoria" {% if sk == "subcategoria" %}selected{% endif %}>Subcategoria</option>
+                    <option value="sexe" {% if sk == "sexe" %}selected{% endif %}>Sexe</option>
+                    <option value="document" {% if sk == "document" %}selected{% endif %}>Document</option>
+                  {% endwith %}
+                </select>
+
+                <select name="sort_dir" class="form-control form-control-sm" style="width: 130px;">
+                  {% with sd=request.GET.sort_dir|default:"asc" %}
+                    <option value="asc" {% if sd == "asc" %}selected{% endif %}>Asc</option>
+                    <option value="desc" {% if sd == "desc" %}selected{% endif %}>Desc</option>
+                    <option value="arrow_asc" {% if sd == "arrow_asc" %}selected{% endif %}>Fletxa (asc)</option>
+                    <option value="arrow_desc" {% if sd == "arrow_desc" %}selected{% endif %}>Fletxa (desc)</option>
+                  {% endwith %}
+                </select>
+
+                <button class="btn btn-sm btn-outline-primary" name="sort_by_grouping" value="1">
+                  Ordena per agrupació
+                </button>
+                <button class="btn btn-sm btn-outline-secondary" name="sort_within_groups" value="1">
+                  Ordena dins de cada grup
+                </button>
               </div>
+
+              <hr class="my-3">
+
+              <div class="d-flex align-items-center flex-wrap" style="gap:10px;">
+                <span class="text-muted small fw-semibold">Columnes a l'Excel:</span>
+
+                {% for key, label in allowed_excel_columns %}
+                  <label class="form-check form-check-inline m-0">
+                    <input class="form-check-input" type="checkbox" name="excel_cols" value="{{ key }}"
+                          {% if key in excel_cols_selected %}checked{% endif %}>
+                    <span class="form-check-label">{{ label }}</span>
+                  </label>
+                {% endfor %}
+              </div>
+
 
             </div>
           </div>
         </div>
 
-    </div>
+      </div>
 
-    <!-- Tabs / Pestanyes -->
-    {% if records_grouped %}
-      <ul class="nav nav-tabs mb-3" id="tabs-root">
-        {% for t in tabs %}
-          <li class="nav-item" data-group-key="{{ t.key }}" data-group-label="{{ t.label }}" data-pane-id="pane-{{ forloop.counter0 }}">
-            <a class="nav-link {% if forloop.first %}active{% endif %}" data-toggle="tab" href="#pane-{{ forloop.counter0 }}">
-              {{ t.label }} <span class="badge badge-light">{{ t.count }}</span>
+      <!-- JS panels -->
+      <script>
+        function setPanelOpen(headEl, open) {
+          const sel = headEl.getAttribute('data-target');
+          const panel = sel ? document.querySelector(sel) : null;
+          if (!panel) return;
+
+          if (open) {
+            panel.classList.remove('is-collapsed');
+            headEl.classList.remove('collapsed');
+            headEl.setAttribute('aria-expanded', 'true');
+          } else {
+            panel.classList.add('is-collapsed');
+            headEl.classList.add('collapsed');
+            headEl.setAttribute('aria-expanded', 'false');
+          }
+        }
+
+        function togglePanel(headEl) {
+          const sel = headEl.getAttribute('data-target');
+          const panel = sel ? document.querySelector(sel) : null;
+          if (!panel) return;
+          const isCollapsed = panel.classList.contains('is-collapsed');
+          setPanelOpen(headEl, isCollapsed);
+        }
+
+        function toggleAllPanels(open) {
+          document.querySelectorAll('.panel-head[data-target]').forEach(head => setPanelOpen(head, open));
+        }
+        window.toggleAllPanels = toggleAllPanels;
+
+        document.addEventListener('DOMContentLoaded', () => {
+          document.querySelectorAll('.panel-head[data-target]').forEach(head => {
+            head.addEventListener('click', (e) => {
+              if (e.target.closest('button, a, input, select, textarea, label')) return;
+              togglePanel(head);
+            });
+          });
+        });
+      </script>
+    </form>
+
+    <!-- TAULA AMB PESTANYES -->
+    {% if selected_group_fields and records_grouped %}
+
+      <ul class="nav nav-tabs mt-3" role="tablist" id="tabs-root">
+        {% for group_label, group_records, group_key in records_grouped %}
+          <li class="nav-item" role="presentation"
+              data-pane-id="pane-{{ forloop.counter0 }}"
+              data-group-key="{{ group_key }}"
+              data-group-label="{{ group_label|escape }}">
+            <a class="nav-link {% if forloop.first %}active{% endif %}"
+               id="tab-{{ forloop.counter0 }}"
+               data-toggle="tab"
+               href="#pane-{{ forloop.counter0 }}"
+               role="tab"
+               aria-controls="pane-{{ forloop.counter0 }}"
+               aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
+              {{ group_label|default:"(Sense valor)" }}
+              <span class="badge badge-light ml-1">{{ group_records|length }}</span>
             </a>
           </li>
         {% endfor %}
       </ul>
 
-      <div class="tab-content">
+      <div class="tab-content pt-3" id="tabs-content">
         {% for group_label, group_records, group_key in records_grouped %}
-          <div class="tab-pane fade {% if forloop.first %}show active{% endif %}" id="pane-{{ forloop.counter0 }}">
-            <div class="d-flex justify-content-between align-items-center mb-2">
-              <div class="text-muted small">
-                Pestanya: <strong>{{ group_label }}</strong>
-              </div>
+          <div class="tab-pane fade {% if forloop.first %}show active{% endif %}"
+               id="pane-{{ forloop.counter0 }}"
+               role="tabpanel"
+               aria-labelledby="tab-{{ forloop.counter0 }}">
+
+            <div class="d-flex justify-content-end mb-2">
               <button type="button"
                       class="btn btn-sm btn-outline-dark js-independent-tab"
                       data-tab-key="{{ group_key }}">
@@ -345,7 +577,7 @@
                   <tr>
                     {% for col in selected_table_columns %}
                       <th>
-                        {% if forloop.first %}<span class="drag-handle me-2" title="Arrossega per moure">⋮⋮</span>{% endif %}
+                        {% if forloop.first %}<span class="drag-handle" title="Arrossega">&#8942;&#8942;</span>{% endif %}
                         {{ col.label }}
                       </th>
                     {% endfor %}
@@ -361,20 +593,17 @@
                           <td colspan="{{ table_colspan }}">
                             <div class="d-flex justify-content-between align-items-center">
                               <div class="d-flex align-items-center flex-wrap" style="gap:10px;">
-                                <span class="drag-handle me-2" title="Arrossega el bloc de grup">⋮⋮</span>
+                                <span class="drag-handle" title="Arrossega el bloc">&#8942;&#8942;</span>
                                 <input type="checkbox" class="js-mark-group" value="{{ r.grup|default:'' }}">
-
                                 {% with gkey=r.grup|stringformat:"s" %}
                                   <span class="font-weight-bold group-title">
                                     <span class="group-name-text" data-group="{{ r.grup }}">{{ group_names|get_item:gkey|default:"Grup "|add:gkey }}</span>
                                   </span>
-
-                                  <button type="button" class="btn btn-sm btn-outline-secondary js-edit-group-name" data-group="{{ r.grup }}">✏️</button>
-
+                                  <button type="button" class="btn btn-sm btn-outline-secondary js-edit-group-name" data-group="{{ r.grup }}">Editar nom</button>
                                   <span class="d-none js-group-name-editor" data-group="{{ r.grup }}">
-                                    <input type="text" class="form-control form-control-sm d-inline-block" style="width:240px;" placeholder="Nom del grup…" value="{{ group_names|get_item:gkey|default:'' }}">
+                                    <input type="text" class="form-control form-control-sm d-inline-block" style="width:240px;" placeholder="Nom del grup..." value="{{ group_names|get_item:gkey|default:'' }}">
                                     <button type="button" class="btn btn-sm btn-primary js-save-group-name" data-group="{{ r.grup }}">Desar</button>
-                                    <button type="button" class="btn btn-sm btn-light js-cancel-group-name" data-group="{{ r.grup }}">Cancel·lar</button>
+                                    <button type="button" class="btn btn-sm btn-light js-cancel-group-name" data-group="{{ r.grup }}">Cancelar</button>
                                   </span>
                                 {% endwith %}
                               </div>
@@ -387,22 +616,19 @@
                     <tr class="inscripcio-row" data-id="{{ r.id }}" data-group="{{ r.grup|default:'' }}">
                       {% for col in selected_table_columns %}
                         <td class="{% if col.code == 'nom_i_cognoms' %}font-weight-bold{% endif %} {% if col.code == '__actions__' %}text-nowrap{% endif %}">
-                          {% if forloop.first %}<span class="drag-handle me-2" title="Arrossega per moure">⋮⋮</span>{% endif %}
+                          {% if forloop.first %}<span class="drag-handle" title="Arrossega">&#8942;&#8942;</span>{% endif %}
 
                           {% if col.code == "__actions__" %}
                             <a class="btn btn-sm btn-outline-primary"
                                href="{% url 'inscripcio_edit' competicio.id r.id %}?next={{ request.get_full_path|urlencode }}">Editar</a>
                             <a class="btn btn-sm btn-outline-danger"
                                href="{% url 'inscripcio_delete' competicio.id r.id %}?next={{ request.get_full_path|urlencode }}">Eliminar</a>
-
                           {% elif col.kind == "extra" %}
                             {{ r.extra|get_item:col.code|default:"-" }}
-
                           {% elif col.code == "data_naixement" %}
                             {% with v=r|attr:col.code %}
                               {% if v %}{{ v|date:"d/m/Y" }}{% else %}-{% endif %}
                             {% endwith %}
-
                           {% else %}
                             {{ r|attr:col.code|default:"-" }}
                           {% endif %}
@@ -414,7 +640,6 @@
                 </tbody>
               </table>
             </div>
-
           </div>
         {% endfor %}
       </div>
@@ -427,7 +652,7 @@
             <tr>
               {% for col in selected_table_columns %}
                 <th>
-                  {% if forloop.first %}<span class="drag-handle me-2" title="Arrossega per moure">⋮⋮</span>{% endif %}
+                  {% if forloop.first %}<span class="drag-handle" title="Arrossega">&#8942;&#8942;</span>{% endif %}
                   {{ col.label }}
                 </th>
               {% endfor %}
@@ -437,30 +662,30 @@
           <tbody class="sortable-body" data-pane-id="__single__">
             {% for r in records %}
               <tr class="inscripcio-row" data-id="{{ r.id }}" data-group="{{ r.grup|default:'' }}">
-                      {% for col in selected_table_columns %}
-                        <td class="{% if col.code == 'nom_i_cognoms' %}font-weight-bold{% endif %} {% if col.code == '__actions__' %}text-nowrap{% endif %}">
-                          {% if forloop.first %}<span class="drag-handle me-2" title="Arrossega per moure">⋮⋮</span>{% endif %}
-
-                          {% if col.code == "__actions__" %}
-                            <a class="btn btn-sm btn-outline-primary"
-                               href="{% url 'inscripcio_edit' competicio.id r.id %}?next={{ request.get_full_path|urlencode }}">Editar</a>
-                            <a class="btn btn-sm btn-outline-danger"
-                               href="{% url 'inscripcio_delete' competicio.id r.id %}?next={{ request.get_full_path|urlencode }}">Eliminar</a>
-
-                          {% elif col.kind == "extra" %}
-                            {{ r.extra|get_item:col.code|default:"-" }}
-
-                          {% elif col.code == "data_naixement" %}
-                            {% with v=r|attr:col.code %}
-                              {% if v %}{{ v|date:"d/m/Y" }}{% else %}-{% endif %}
-                            {% endwith %}
-
-                          {% else %}
-                            {{ r|attr:col.code|default:"-" }}
-                          {% endif %}
-                        </td>
-                      {% endfor %}
-                    </tr>
+                {% for col in selected_table_columns %}
+                  <td class="{% if col.code == 'nom_i_cognoms' %}font-weight-bold{% endif %} {% if col.code == '__actions__' %}text-nowrap{% endif %}">
+                    {% if forloop.first %}<span class="drag-handle" title="Arrossega">&#8942;&#8942;</span>{% endif %}
+                    {% if col.code == "__actions__" %}
+                      <a class="btn btn-sm btn-outline-primary"
+                         href="{% url 'inscripcio_edit' competicio.id r.id %}?next={{ request.get_full_path|urlencode }}">
+                        Editar
+                      </a>
+                      <a class="btn btn-sm btn-outline-danger"
+                         href="{% url 'inscripcio_delete' competicio.id r.id %}?next={{ request.get_full_path|urlencode }}">
+                        Eliminar
+                      </a>
+                    {% elif col.kind == "extra" %}
+                      {{ r.extra|get_item:col.code|default:"-" }}
+                    {% elif col.code == "data_naixement" %}
+                      {% with v=r|attr:col.code %}
+                        {% if v %}{{ v|date:"d/m/Y" }}{% else %}-{% endif %}
+                      {% endwith %}
+                    {% else %}
+                      {{ r|attr:col.code|default:"-" }}
+                    {% endif %}
+                  </td>
+                {% endfor %}
+              </tr>
             {% empty %}
               <tr>
                 <td colspan="{{ table_colspan }}" class="text-center text-muted">No hi ha inscripcions per aquesta competició</td>
@@ -471,7 +696,7 @@
       </div>
     {% endif %}
 
-  </form>
+  </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
@@ -638,7 +863,7 @@
       });
 
       if (!cols.length) {
-        alert("Has de deixar com a mínim una columna seleccionada.");
+        alert("Has de deixar com a minim una columna seleccionada.");
         return;
       }
 
@@ -685,36 +910,6 @@
     } else {
       console.warn("jQuery no present: les pestanyes BS4 poden no funcionar.");
     }
-
-    // --- Panels: obrir/tancar ---
-    function setPanelOpen(headEl, open) {
-      const sel = headEl.getAttribute('data-target');
-      const panel = sel ? document.querySelector(sel) : null;
-      if (!panel) return;
-
-      const isCollapsed = panel.classList.contains('is-collapsed');
-      if (open && isCollapsed) {
-        panel.classList.remove('is-collapsed');
-        headEl.classList.remove('collapsed');
-        headEl.setAttribute('aria-expanded', 'true');
-      } else if (!open && !isCollapsed) {
-        panel.classList.add('is-collapsed');
-        headEl.classList.add('collapsed');
-        headEl.setAttribute('aria-expanded', 'false');
-      }
-    }
-
-    document.querySelectorAll('.panel-head').forEach(head => {
-      head.addEventListener('click', (e) => {
-        // evita toggle si cliques un botó dins el header (per si algun dia n'hi poses)
-        if (e.target.closest('button, a, input, select')) return;
-        const sel = head.getAttribute('data-target');
-        const panel = sel ? document.querySelector(sel) : null;
-        if (!panel) return;
-        const isCollapsed = panel.classList.contains('is-collapsed');
-        setPanelOpen(head, isCollapsed);
-      });
-    });
 
     // 1) Sortable de pestanyes
     const tabsRoot = document.getElementById('tabs-root');
@@ -822,7 +1017,6 @@
       });
     });
 
-    // 2) Sortable de columnes (configuració de vista)
     const colsList = document.getElementById('cols-sortable');
     if (colsList) {
       new Sortable(colsList, {
@@ -837,10 +1031,8 @@
       if (btnSaveCols) btnSaveCols.addEventListener('click', saveTableColumns);
     }
 
-    // 3) Bandes de color per grup
     applyGroupBands();
 
-    // 4) Editor inline de noms de grup
     document.addEventListener('click', async (e) => {
       const editBtn = e.target.closest('.js-edit-group-name');
       if (editBtn) {
@@ -903,7 +1095,7 @@
         url.searchParams.set('v1', btn.dataset.v1 || '__NULL__');
         if (btn.dataset.v2 !== undefined) url.searchParams.set('v2', btn.dataset.v2 || '__NULL__');
         if (btn.dataset.v3 !== undefined) url.searchParams.set('v3', btn.dataset.v3 || '__NULL__');
-      }
+      } 
 
       // Opció 1: AJAX
       try {
@@ -915,59 +1107,44 @@
           alert(`No s'ha pogut crear el grup (${resp.status}).\n${txt}`);
           return;
         }
+        const data = await resp.json();
+        if (!data.ok) {
+          alert('Resposta inesperada del servidor.');
+          return;
+        }
         window.location.reload();
       } catch (err) {
         console.error(err);
+        // Fallback: redirecció normal
         window.location.href = url.toString();
       }
     });
 
-    // --- Assignar grup als marcats ---
-    const btnAssign = document.getElementById('btn-assign-group');
-    const btnClearMarks = document.getElementById('btn-clear-marks');
+    console.log("Sortables inicialitzats:", document.querySelectorAll('tbody.sortable-body').length);
 
-    function getMarkedGroups() {
-      return Array.from(document.querySelectorAll('.js-mark-group:checked')).map(x => x.value).filter(Boolean);
-    }
-
-    if (btnAssign) {
-      btnAssign.addEventListener('click', async () => {
-        const marked = getMarkedGroups();
-        if (!marked.length) {
-          alert("No hi ha cap grup marcat.");
-          return;
-        }
-        const to = prompt("A quin número de grup vols assignar aquests grups? (ex: 3)");
-        if (!to) return;
-
-        const url = new URL(window.location.href);
-        url.searchParams.set('assign_groups', '1');
-        url.searchParams.set('to_group', to);
-        url.searchParams.set('from_groups', marked.join(','));
-
-        window.location.href = url.toString();
-      });
-    }
-
-    if (btnClearMarks) {
-      btnClearMarks.addEventListener('click', () => {
-        document.querySelectorAll('.js-mark-group').forEach(cb => cb.checked = false);
-      });
-    }
-
-    // --- Cerca (manté el teu comportament actual) ---
+    // ============================================
+    // BUSCADOR AMB CERCA EN TEMPS REAL
+    // ============================================
     const searchInput = document.getElementById('search-input');
     const searchBtn = document.getElementById('search-btn');
     const clearSearchBtn = document.getElementById('clear-search-btn');
 
-    function applySearch() {
-      const url = new URL(window.location.href);
-      if (searchInput && searchInput.value.trim()) url.searchParams.set('q', searchInput.value.trim());
-      else url.searchParams.delete('q');
-      window.location.href = url.toString();
-    }
-
     if (searchInput) {
+      // Funció per aplicar la cerca (recarrega amb paràmetre ?q=...)
+      function applySearch() {
+        const query = searchInput.value.trim();
+        const url = new URL(window.location.href);
+
+        if (query) {
+          url.searchParams.set('q', query);
+        } else {
+          url.searchParams.delete('q');
+        }
+
+        window.location.href = url.toString();
+      }
+
+      // Botó de cerca
       if (searchBtn) {
         searchBtn.addEventListener('click', applySearch);
       }
@@ -1000,4 +1177,7 @@
   });
 </script>
 
+
 {% endblock %}
+
+

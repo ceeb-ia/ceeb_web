@@ -16,7 +16,7 @@ ALLOWED_FUNCTIONS: Set[str] = {
     "sum", "avg", "min", "max",
     "exec_by_judge", "select_sum", "best_n",
     "float", "field", "crash", "row_custom_compute",
-    "column_custom_compute"
+    "column_custom_compute", "row_custom_agregation",
 }
 
 RESERVED_NAMES: Set[str] = set(ALLOWED_FUNCTIONS) | {"params"}
@@ -169,12 +169,41 @@ def fn_exec_by_judge(E: TMat, crash: TMat, params: Any) -> TMat:
         return TMat(Shape(E.shape.rows, 1), name="exec_by_judge")
     return TMat(Shape(E.shape.rows, 1), name="exec_by_judge")
 
-def fn_select_sum(scores: TMat, n_valid: TMat, criteri: TMat) -> TMat:
-    # scores: Jx1 (o 1xJ si vols); n_valid i criteri: 1x1
-    if not n_valid.shape.is_scalar():
-        raise ShapeError(f"select_sum(): n_valid ha de ser 1x1; has passat {n_valid.shape}.")
-    if not criteri.shape.is_scalar():
-        raise ShapeError(f"select_sum(): criteri ha de ser 1x1; has passat {criteri.shape}.")
+def fn_select_sum(
+    scores: TMat,
+    n_valid: Optional[TMat] = None,
+    criteri: Optional[TMat] = None,
+    *,
+    select: Optional[TMat] = None,
+    select_n: Optional[TMat] = None,
+    agg: Optional[TMat] = None,
+    post_agg_expr: Optional[TMat] = None,
+    **kwargs: Any,
+) -> TMat:
+    # scores: Jx1 (o 1xJ si vols)
+    # mode legacy: n_valid + criteri
+    # mode nou: select/select_n/agg/post_agg_expr
+    if (
+        scores.shape.rows is not None and
+        scores.shape.cols is not None and
+        scores.shape.rows > 1 and
+        scores.shape.cols > 1
+    ):
+        raise ShapeError(
+            f"select_sum(): scores ha de ser vector 1D (o Jx1); has passat {scores.shape}."
+        )
+
+    def _check_scalar(name: str, v: Optional[TMat]):
+        if v is not None and not v.shape.is_scalar():
+            raise ShapeError(f"select_sum(): {name} ha de ser 1x1; has passat {v.shape}.")
+
+    _check_scalar("n_valid", n_valid)
+    _check_scalar("criteri", criteri)
+    _check_scalar("select", select)
+    _check_scalar("select_n", select_n)
+    _check_scalar("agg", agg)
+    _check_scalar("post_agg_expr", post_agg_expr)
+
     # scores: acceptem qualsevol shape, però recomanem 1D
     return TMat(Shape(1, 1), name="select_sum")
 
@@ -196,6 +225,24 @@ def fn_crash(field_code: TMat) -> TMat:
         raise ShapeError(f"crash(): field_code ha de ser 1x1; has passat {field_code.shape}.")
     return TMat(Shape(None, 1), name="crash")
 
+def fn_row_custom_agregation(source: TMat, item_expr: TMat, **kwargs: Any) -> TMat:
+    if not item_expr.shape.is_scalar():
+        raise ShapeError(f"row_custom_agregation(): item_expr ha de ser 1x1; has passat {item_expr.shape}.")
+    return TMat(Shape(None, 1), name="row_custom_agregation")
+
+def fn_row_custom_compute(source: TMat, item_expr: TMat, **kwargs: Any) -> TMat:
+    # Runtime: per defecte retorna escalar ("final"). En validació fem aquesta
+    # aproximació conservadora i només comprovem que item_expr sigui escalar.
+    if not item_expr.shape.is_scalar():
+        raise ShapeError(f"row_custom_compute(): item_expr ha de ser 1x1; has passat {item_expr.shape}.")
+    return TMat(Shape(1, 1), name="row_custom_compute")
+
+def fn_column_custom_compute(source: TMat, item_expr: TMat, **kwargs: Any) -> TMat:
+    # Runtime: per defecte retorna escalar ("final"). Mateixa aproximació que row.
+    if not item_expr.shape.is_scalar():
+        raise ShapeError(f"column_custom_compute(): item_expr ha de ser 1x1; has passat {item_expr.shape}.")
+    return TMat(Shape(1, 1), name="column_custom_compute")
+
 
 SENTINEL_FUNCS = {
     "sum": fn_sum,
@@ -208,6 +255,9 @@ SENTINEL_FUNCS = {
     "best_n": fn_best_n,
     "field": fn_field,
     "crash": fn_crash,
+    "row_custom_compute": fn_row_custom_compute,
+    "column_custom_compute": fn_column_custom_compute,
+    "row_custom_agregation": fn_row_custom_agregation,
 }
 
 
@@ -261,8 +311,15 @@ class DryRunEval(ast.NodeVisitor):
             if fname not in SENTINEL_FUNCS:
                 raise ShapeError(f"Funció no permesa: {fname}")
             args = [self.visit(a) for a in node.args]
-            # ignorem kwargs per simplicitat (si ho necessites, ho afegim)
-            return SENTINEL_FUNCS[fname](*args)  # type: ignore[misc]
+            kwargs = {}
+            for kw in node.keywords:
+                if kw.arg is None:
+                    raise ShapeError("No es permet **kwargs a les fórmules.")
+                kwargs[kw.arg] = self.visit(kw.value)
+            try:
+                return SENTINEL_FUNCS[fname](*args, **kwargs)  # type: ignore[misc]
+            except TypeError as e:
+                raise ShapeError(f"{fname}(): crida invàlida: {e}")
 
         if isinstance(node, ast.Subscript):
             

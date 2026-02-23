@@ -14,6 +14,7 @@ class Competicio(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     tab_merges = models.JSONField(default=dict, blank=True)
     inscripcions_schema = models.JSONField(default=dict, blank=True)
+    inscripcions_view = models.JSONField(default=dict, blank=True)  # preferències UI (columnes, noms grups, etc.)
 
     def te_notes(self) -> bool:
             # per ara: totes tenen notes (o pots limitar-ho si vols)

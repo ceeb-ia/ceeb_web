@@ -11,6 +11,7 @@
     .status-ok{ color:#0a7; font-weight:600; }
     .status-err{ color:#c22; font-weight:600; }
     .sticky-top-lite{ position: sticky; top: 0; z-index: 5; background: #fff; padding-top: .5rem; }
+    .group-tab-count{ font-size:.75rem; }
   </style>
 
   <div class="card-surface">
@@ -42,27 +43,50 @@
         </div>
       </div>
 
+      {% regroup inscripcions by grup as inscripcions_per_grup %}
+
       <div id="listWrap">
-        {% for ins in inscripcions %}
-          <div class="judge-card mb-2" data-ins-id="{{ ins.id }}">
-            <div class="d-flex justify-content-between align-items-center">
-              <div>
-                <div class="fw-semibold">{{ ins.nom_i_cognoms|default:"Inscripció" }}</div>
-                <div class="judge-meta">
-                  Grup {{ ins.grup }} · Ordre {{ ins.ordre_sortida }}
+        <ul class="nav nav-tabs mb-3" id="groupTabs" role="tablist">
+          {% for bloc in inscripcions_per_grup %}
+            <li class="nav-item" role="presentation">
+              <button
+                type="button"
+                class="nav-link {% if forloop.first %}active{% endif %}"
+                data-group-target="group-{{ forloop.counter0 }}"
+              >
+                {% if bloc.grouper is None %}Sense grup{% else %}Grup {{ bloc.grouper }}{% endif %}
+                <span class="badge text-bg-light group-tab-count">{{ bloc.list|length }}</span>
+              </button>
+            </li>
+          {% endfor %}
+        </ul>
+
+        <div id="groupPanes">
+          {% for bloc in inscripcions_per_grup %}
+            <div class="group-pane {% if not forloop.first %}d-none{% endif %}" data-group-pane="group-{{ forloop.counter0 }}">
+              {% for ins in bloc.list %}
+                <div class="judge-card mb-2" data-ins-id="{{ ins.id }}">
+                  <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                      <div class="fw-semibold">{{ ins.nom_i_cognoms|default:"Inscripció" }}</div>
+                      <div class="judge-meta">
+                        {% if ins.grup is None %}Sense grup{% else %}Grup {{ ins.grup }}{% endif %} · Ordre {{ ins.ordre_sortida }}
+                      </div>
+                    </div>
+                    <div class="judge-meta" id="status-{{ ins.id }}"></div>
+                  </div>
+
+                  <div class="mt-2" id="editor-{{ ins.id }}"></div>
+
+                  <div class="d-flex justify-content-end mt-2" style="gap:8px;">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="copyPrev('{{ ins.id }}')">Copia anterior</button>
+                    <button type="button" class="btn btn-sm btn-primary" onclick="saveNow('{{ ins.id }}')">Desa</button>
+                  </div>
                 </div>
-              </div>
-              <div class="judge-meta" id="status-{{ ins.id }}"></div>
+              {% endfor %}
             </div>
-
-            <div class="mt-2" id="editor-{{ ins.id }}"></div>
-
-            <div class="d-flex justify-content-end mt-2" style="gap:8px;">
-              <button type="button" class="btn btn-sm btn-outline-secondary" onclick="copyPrev('{{ ins.id }}')">Copia anterior</button>
-              <button type="button" class="btn btn-sm btn-primary" onclick="saveNow('{{ ins.id }}')">Desa</button>
-            </div>
-          </div>
-        {% endfor %}
+          {% endfor %}
+        </div>
       </div>
     {% else %}
       <div class="text-muted">Aquest QR no té permisos configurats.</div>
@@ -308,7 +332,11 @@
   }
 
   function copyPrev(insId){
-    const cards = Array.from(document.querySelectorAll("[data-ins-id]"));
+    const currentCard = document.querySelector(`.judge-card[data-ins-id="${insId}"]`);
+    const pane = currentCard ? currentCard.closest("[data-group-pane]") : null;
+    const cards = pane
+      ? Array.from(pane.querySelectorAll("[data-ins-id]"))
+      : Array.from(document.querySelectorAll("[data-ins-id]"));
     const idx = cards.findIndex(c => c.getAttribute("data-ins-id") === String(insId));
     if(idx <= 0) return;
 
@@ -340,10 +368,25 @@
       return;
     }
   }
+  function initGroupTabs(){
+    const tabs = Array.from(document.querySelectorAll("[data-group-target]"));
+    if(!tabs.length) return;
 
+    tabs.forEach(btn => {
+      btn.addEventListener("click", () => {
+        const target = btn.dataset.groupTarget;
+        tabs.forEach(b => b.classList.toggle("active", b === btn));
+        document.querySelectorAll("[data-group-pane]").forEach(pane => {
+          pane.classList.toggle("d-none", pane.dataset.groupPane !== target);
+        });
+      });
+    });
+  }
   // init
   buildTabs();
   buildPermText();
+  initGroupTabs();
   document.querySelectorAll("[data-ins-id]").forEach(card => renderEditor(card.getAttribute("data-ins-id")));
 </script>
 {% endblock %}
+

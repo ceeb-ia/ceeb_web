@@ -137,11 +137,16 @@ def _plot_pie_hours_by_recurso(
     s = d.groupby("Recurso")["DuracionHoras"].sum().sort_values(ascending=False)
 
     pd = apply_plot_defaults(plot_defaults)
+    n_labels = int(len(s))
 
-    fig, ax = plt.subplots(figsize=_get_figsize(pd, "pie", (9, 7)))
+    # Si hi ha molts espais, fem la figura verticalment mes gran.
+    base_w, base_h = _get_figsize(pd, "pie", (9, 7))
+    estimated_per_side = int(np.ceil(n_labels / 2.0))
+    fig_h = max(base_h, 2.8 + 0.6 * estimated_per_side)
+    fig, ax = plt.subplots(figsize=(base_w, fig_h))
 
-    colors = plt.get_cmap("Pastel1").colors if len(s) <= 9 else plt.cm.tab20.colors
-    colors = colors[:len(s)]
+    cmap_name = "Pastel1" if n_labels <= 9 else "tab20"
+    colors = plt.get_cmap(cmap_name)(np.linspace(0, 1, n_labels))
 
     wedges, _ = ax.pie(
         s.values,
@@ -155,6 +160,10 @@ def _plot_pie_hours_by_recurso(
     ax.set_title("Percentatge d'hores reservades per espai", pad=18)
     ax.text(0, 0, f"{int(total)}\nhores", ha="center", va="center", fontsize=13, weight="bold")
 
+    def _short_label(lbl: str, max_len: int = 20) -> str:
+        txt = str(lbl).strip()
+        return txt if len(txt) <= max_len else (txt[: max_len - 3] + "...")
+
     # --- Preparem punts d'ancoratge i agrupem esquerra/dreta ---
     items_right = []
     items_left = []
@@ -166,17 +175,9 @@ def _plot_pie_hours_by_recurso(
         y = np.sin(ang)
 
         pct = (float(value) / total) * 100.0
-        txt = f"{label}\n{pct:.1f}%"
+        txt = f"{_short_label(label)} {pct:.1f}%"
 
-        item = dict(
-            i=i,
-            label=label,
-            value=value,
-            pct=pct,
-            txt=txt,
-            x=x,
-            y=y
-        )
+        item = dict(i=i, txt=txt, x=x, y=y)
 
         if x >= 0:
             items_right.append(item)
@@ -190,13 +191,19 @@ def _plot_pie_hours_by_recurso(
     ys_r = [it["y"] for it in items_right]
     ys_l = [it["y"] for it in items_left]
 
-    ys_r_adj = _spread_ys(ys_r, min_dy=0.10, y_min=-1.10, y_max=1.10) if ys_r else []
-    ys_l_adj = _spread_ys(ys_l, min_dy=0.10, y_min=-1.10, y_max=1.10) if ys_l else []
+    max_side = max(len(items_right), len(items_left), 1)
+    y_lim = max(1.25, 0.16 * max_side + 0.25)
+    min_dy = max(0.10, min(0.22, (2.0 * y_lim - 0.20) / max_side))
+
+    ys_r_adj = _spread_ys(ys_r, min_dy=min_dy, y_min=-y_lim, y_max=y_lim) if ys_r else []
+    ys_l_adj = _spread_ys(ys_l, min_dy=min_dy, y_min=-y_lim, y_max=y_lim) if ys_l else []
 
     # Paràmetres de posició etiqueta
-    x_text_right = 1.35
-    x_text_left = -1.35
+    x_text_right = 1.42 + min(0.35, 0.01 * max_side)
+    x_text_left = -x_text_right
     r_anchor = 0.82  # on enganxem la fletxa al donut
+    label_fontsize = 9 if n_labels <= 16 else 8
+    box_pad = 0.35 if n_labels <= 16 else 0.25
 
     def _draw(items, ys_adj, side):
         for it, y_txt in zip(items, ys_adj):
@@ -210,9 +217,9 @@ def _plot_pie_hours_by_recurso(
                 xytext=(x_text_right if side == "right" else x_text_left, y_txt),
                 ha="left" if side == "right" else "right",
                 va="center",
-                fontsize=9,
+                fontsize=label_fontsize,
                 bbox=dict(
-                    boxstyle="round,pad=0.35",
+                    boxstyle=f"round,pad={box_pad}",
                     fc="white",
                     ec=colors[i],
                     lw=1
@@ -229,8 +236,9 @@ def _plot_pie_hours_by_recurso(
     _draw(items_left, ys_l_adj, "left")
 
     # Dona aire a les etiquetes
-    ax.set_xlim(-1.65, 1.65)
-    ax.set_ylim(-1.25, 1.25)
+    x_lim = max(1.70, abs(x_text_right) + 0.35)
+    ax.set_xlim(-x_lim, x_lim)
+    ax.set_ylim(-y_lim - 0.15, y_lim + 0.15)
 
     plt.tight_layout()
     plt.savefig(out_png, dpi=_get_dpi(pd, 200), bbox_inches="tight")
@@ -350,11 +358,72 @@ def analyze_reserves(
         kpis["reserves_total_categories_uniques"] = int(cat_valid.nunique())
         kpis["reserves_categories_uniques"] = sorted(cat_valid.unique())
 
+    if "categoria" in df.columns and "NombreCompleto" in df.columns:
+        noms = df["NombreCompleto"].astype(str).str.strip()
+        nom_valid = noms.ne("") & noms.str.upper().ne("NAN")
+        entitats = noms[(df["categoria"] == "entitat") & nom_valid]
+        clients = noms[(df["categoria"] == "client") & nom_valid]
+        kpis["reserves_total_entitats_uniques"] = int(entitats.nunique())
+        kpis["reserves_total_clients_uniques"] = int(clients.nunique())
+
     if "Deporte" in df.columns:
         esport_valid = df["Deporte"].dropna().astype(str).str.strip()
         esport_valid = esport_valid[esport_valid != ""]
         kpis["reserves_total_esports_uniques"] = int(esport_valid.nunique())
         kpis["reserves_esports_uniques"] = sorted(esport_valid.unique())
+
+    # Distribució d'hores i registres per espai
+    if "Recurso" in df.columns and "DuracionHoras" in df.columns:
+        d_space = df.dropna(subset=["Recurso", "DuracionHoras"]).copy()
+        if not d_space.empty:
+            hores_per_espai = d_space.groupby("Recurso")["DuracionHoras"].sum().sort_values(ascending=False)
+            registres_per_espai = d_space.groupby("Recurso").size().sort_values(ascending=False)
+            total_hores_espais = float(hores_per_espai.sum())
+
+            kpis["reserves_total_espais_uniques"] = int(hores_per_espai.index.nunique())
+            kpis["reserves_hores_per_espai"] = {
+                str(espai): float(hores) for espai, hores in hores_per_espai.items()
+            }
+            kpis["reserves_registres_per_espai"] = {
+                str(espai): int(registres) for espai, registres in registres_per_espai.items()
+            }
+
+            if total_hores_espais > 0:
+                kpis["reserves_percentatge_hores_per_espai"] = {
+                    str(espai): float((hores / total_hores_espais) * 100.0)
+                    for espai, hores in hores_per_espai.items()
+                }
+            else:
+                kpis["reserves_percentatge_hores_per_espai"] = {
+                    str(espai): 0.0 for espai in hores_per_espai.index
+                }
+
+    # Evolució d'hores reservades per mes
+    if "FechaReserva" in df.columns and "DuracionHoras" in df.columns:
+        d_month = df.dropna(subset=["FechaReserva", "DuracionHoras"]).copy()
+        if not d_month.empty:
+            serie_mensual = d_month.set_index("FechaReserva")["DuracionHoras"].resample("MS").sum().sort_index()
+
+            if year is not None:
+                first_month = pd.Timestamp(year=year, month=1, day=1)
+                months_index = pd.date_range(start=first_month, periods=12, freq="MS")
+                serie_mensual = serie_mensual.reindex(months_index, fill_value=0.0)
+
+            kpis["reserves_hores_serie_mensual"] = {
+                str(idx.strftime("%Y-%m")): float(v) for idx, v in serie_mensual.items()
+            }
+
+            vals_mensuals = serie_mensual.astype(float).tolist()
+            if vals_mensuals:
+                kpis["reserves_hores_mitjana_mensual"] = float(np.mean(vals_mensuals))
+                kpis["reserves_hores_maxim_mensual"] = float(np.max(vals_mensuals))
+                kpis["reserves_hores_minim_mensual"] = float(np.min(vals_mensuals))
+                kpis["reserves_hores_mes_maxim"] = str(serie_mensual.idxmax().strftime("%Y-%m"))
+                kpis["reserves_hores_mes_minim"] = str(serie_mensual.idxmin().strftime("%Y-%m"))
+                if len(vals_mensuals) >= 2:
+                    kpis["reserves_hores_variacio_primer_ultim_mes"] = float(
+                        vals_mensuals[-1] - vals_mensuals[0]
+                    )
 
 
     # Generació de plots (ignora nulls per col objectiu)

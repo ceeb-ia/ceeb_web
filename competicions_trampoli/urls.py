@@ -14,6 +14,12 @@ from .views_classificacions import ClassificacionsLive, classificacions_live_dat
 from .views_scoring import ScoringNotesHome, ScoringSchemaUpdate, scoring_save
 from . import views_judge
 from competicions_trampoli import views_scoring
+# imports (a dalt de urls.py)
+from .inscripcions_list_new import (
+    InscripcionsListNewView,
+    inscripcions_save_table_columns as inscripcions_save_table_columns_new,
+    inscripcions_set_group_name as inscripcions_set_group_name_new,
+)
 
 
 urlpatterns = [
@@ -23,13 +29,19 @@ urlpatterns = [
     path("trampoli/aparells/<int:pk>/puntuacio/", ScoringSchemaUpdate.as_view(), name="aparell_scoring_schema_update",),
 
 
+
     path("competicions/nova/", CompeticioCreateView.as_view(), name="create"),
     path("competicions/<int:pk>/importar/", InscripcionsImportExcelView.as_view(), name="import"),
     path("competicions/created/", CompeticioListView.as_view(), name="created"),   
-    path("competicions/<int:pk>/inscripcions/", InscripcionsListView.as_view(), name="inscripcions_list"),
+    path("competicions/<int:pk>/inscripcions/", InscripcionsListNewView.as_view(), name="inscripcions_list"),
     path("competicions/<int:pk>/delete/", CompeticioDeleteView.as_view(), name="delete"),   
     path("competicions/", CompeticioHomeView.as_view(), name="competicions_home"),
     path("competicio/<int:pk>/inscripcions/reorder/", views.inscripcions_reorder, name="inscripcions_reorder"),
+
+
+    path("competicio/<int:pk>/inscripcions/save-table-columns/", inscripcions_save_table_columns_new, name="inscripcions_save_table_columns"),
+    path("competicio/<int:pk>/inscripcions/set-group-name/", inscripcions_set_group_name_new, name="inscripcions_set_group_name"),
+
     path("competicio/<int:pk>/inscripcio/<int:ins_id>/editar/", views.InscripcioUpdateView.as_view(), name="inscripcio_edit"),
     path("competicio/<int:pk>/inscripcio/<int:ins_id>/eliminar/", views.InscripcioDeleteView.as_view(), name="inscripcio_delete"),
     path("competicio/<int:pk>/inscripcio/nova/", views.InscripcioCreateView.as_view(), name="inscripcio_add"),

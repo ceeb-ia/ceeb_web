@@ -281,19 +281,68 @@ class SafeEval(ast.NodeVisitor):
         raise ScoringError(f"Expressió no permesa: {node.__class__.__name__}")
 
     def _binop(self, op, left, right):
-        l = left
-        r = right
-        if isinstance(op, ast.Add):
-            return l + r
-        if isinstance(op, ast.Sub):
-            return l - r
-        if isinstance(op, ast.Mult):
-            return l * r
-        if isinstance(op, ast.Div):
-            return l / r
-        if isinstance(op, ast.Mod):
-            return l % r
+        op_name = {
+            ast.Add: "+",
+            ast.Sub: "-",
+            ast.Mult: "*",
+            ast.Div: "/",
+            ast.Mod: "%",
+        }.get(type(op), "?")
+
+        l = self._coerce_scalar_operand(left, "esquerre", op_name)
+        r = self._coerce_scalar_operand(right, "dret", op_name)
+
+        try:
+            if isinstance(op, ast.Add):
+                return l + r
+            if isinstance(op, ast.Sub):
+                return l - r
+            if isinstance(op, ast.Mult):
+                return l * r
+            if isinstance(op, ast.Div):
+                return l / r
+            if isinstance(op, ast.Mod):
+                return l % r
+        except ZeroDivisionError:
+            raise ScoringError(f"Divisió/modul per zero a l'operació '{op_name}'.")
+        except Exception as e:
+            raise ScoringError(f"Error a operació '{op_name}': {e}")
+
         raise ScoringError("Operador no permès.")
+
+    def _coerce_scalar_operand(self, value: Any, side: str, op_name: str) -> float:
+        """
+        Permet operar escalarment si l'operand és:
+        - escalar numèric
+        - matriu/lista 1x1 (ex: [[x]]), que es descomprimeix a x
+        """
+        v = self._unwrap_matrix_1x1(value)
+        if isinstance(v, (int, float)):
+            return float(v)
+        raise ScoringError(
+            f"Operació '{op_name}' incompatible: operand {side} és {self._describe_value(value)}. "
+            "Només es permeten escalars numèrics o matrius 1x1. "
+            "Per matrius/listes usa indexació explícita (ex: x[0][0]) o una funció d'agregació."
+        )
+
+    def _unwrap_matrix_1x1(self, value: Any) -> Any:
+        if not isinstance(value, list):
+            return value
+        if len(value) != 1:
+            return value
+        row0 = value[0]
+        if not isinstance(row0, list) or len(row0) != 1:
+            return value
+        return row0[0]
+
+    def _describe_value(self, value: Any) -> str:
+        if isinstance(value, list):
+            if value and all(isinstance(r, list) for r in value):
+                rows = len(value)
+                cols = max((len(r) for r in value), default=0)
+                return f"matriu aproximada {rows}x{cols}"
+            return f"llista de mida {len(value)}"
+        return f"tipus {type(value).__name__}"
 
 
 def safe_eval(expr: str, context: Dict[str, Any], functions: Dict[str, Callable[..., Any]]) -> Any:
@@ -463,9 +512,64 @@ class ScoringEngine:
                 out.append(calc_execucio_jutge(row or [], crash_at, num_elements=n_elements))
             return out
 
-        def select_sum(scores, n_valid, criteri):
-            selected = select_exec_notes(scores or [], int(n_valid or 1), str(criteri or "totes"))
-            return float(sum(selected))
+        def select_sum(
+            scores,
+            n_valid=None,
+            criteri=None,
+            *,
+            select: str | None = None,
+            select_n: int | None = None,
+            agg: str = "sum",
+            post_agg_expr: str | None = None,
+        ):
+            """
+            Mode legacy:
+              select_sum(scores, n_valid, criteri)
+            Mode nou (row_custom_agregation-like sobre vector):
+              select_sum(scores, select='best_n', select_n=2, agg='sum')
+            """
+            xs = []
+            for x in (scores or []):
+                if isinstance(x, (list, tuple)):
+                    # admet "vector columna" Jx1 -> [[v1], [v2], ...]
+                    if len(x) == 1:
+                        xs.append(to_float(x[0]))
+                    else:
+                        raise ScoringError(
+                            "select_sum espera un vector 1D (o Jx1). "
+                            "Has passat una matriu amb files de mida > 1."
+                        )
+                else:
+                    xs.append(to_float(x))
+            if not xs:
+                return 0.0
+
+            sel = (select or "").lower().strip()
+            n_sel = select_n
+
+            # Compatibilitat amb select_sum antic.
+            # Si no es passa `select`, mantenim la semàntica original de criteri.
+            if not sel:
+                selected = select_exec_notes(xs, int(n_valid or 1), str(criteri or "totes"))
+                out = float(_agg(selected, agg))
+            else:
+                idxs = _select_idx(xs, sel, n_sel)
+                sel_vals = [xs[i] for i in idxs]
+                out = float(_agg(sel_vals, agg))
+
+            if post_agg_expr is not None and str(post_agg_expr).strip() != "":
+                p_cache = getattr(self, "_post_expr_ast_cache", None)
+                if p_cache is None:
+                    p_cache = {}
+                    self._post_expr_ast_cache = p_cache
+                p_key = str(post_agg_expr).strip()
+                p_tree = p_cache.get(p_key)
+                if p_tree is None:
+                    p_tree = compile_post_agg_expr(p_key)
+                    p_cache[p_key] = p_tree
+                out = float(PostAggExprEval({"m": float(out)}).visit(p_tree))
+
+            return out
 
         def best_n(scores, n):
             s = sorted([to_float(x) for x in (scores or [])], reverse=True)
@@ -490,67 +594,76 @@ class ScoringEngine:
                 return float(s[mid])
             return float((s[mid - 1] + s[mid]) / 2.0)
 
-        def _select(vals, method: str, n: int | None = None):
+
+        def row_custom_agregation(
+            source,
+            item_expr: str,
+            *,
+            # rang d’ítems dins cada fila (1-indexed)
+            start: int = 1,
+            count: int | None = None,
+
+            # selecció + agregació INTERNA (ítems dins el jutge)
+            row_select: str = "all",
+            row_select_n: int | None = None,
+            row_agg: str = "sum",
+
+            # sobre què fem selecció/agregació internament
+            select_on: str = "expr",      # "expr" | "raw"
+            agg_on: str = "expr",         # "expr" | "raw"
+
+            # transformació del resultat intern (m)
+            post_agg_expr: str | None = None,
+
+            # transformació final EXTRA (opcional) aplicada al vector retornat
+            # (per exemple per arrodonir o clamp, etc. usa 'm' com a variable)
+            post_final_expr: str | None = None,
+        ):
             """
-            vals: llista de floats
-            method:
-              - "all"
-              - "drop_extremes"  (treu min i max una sola vegada)
-              - "best_n"
-              - "worst_n"
-            - "drop_extremes_until_n" (treu min+max fins quedar n)
-            n: només s’usa per best_n / worst_n / drop_extremes_until_n (si None -> no retalla)
+            Igual que row_custom_compute, però només executa la fase interna:
+            - per cada jutge: item_expr -> selecció ítems -> agregació -> post_agg_expr
+            i retorna la llista [m_jutge1, m_jutge2, ...].
+
+            Respecta crash(field_code) quan `source` és un codi de camp amb crash enabled.
             """
-            xs = [to_float(x) for x in (vals or [])]
-            if not xs:
-                return []
 
-            m = (method or "all").lower().strip()
+            # reutilitza la implementació robusta que ja tens
+            by_judge = row_custom_compute(
+                source,
+                item_expr,
+                start=start,
+                count=count,
+                row_select=row_select,
+                row_select_n=row_select_n,
+                row_agg=row_agg,
+                select_on=select_on,
+                agg_on=agg_on,
+                post_agg_expr=post_agg_expr,
+                return_mode="by_judge",   # <- clau: NO fa fase final
+            )
 
-            if m == "all":
-                return xs
+            # post_final_expr: transformació extra sobre cada valor retornat
+            if post_final_expr is not None and str(post_final_expr).strip() != "":
+                p_cache = getattr(self, "_post_expr_ast_cache", None)
+                if p_cache is None:
+                    p_cache = {}
+                    self._post_expr_ast_cache = p_cache
 
-            if m == "drop_extremes":
-                if len(xs) <= 2:
-                    return xs
-                s = sorted(xs)
-                return s[1:-1]
+                p_key = str(post_final_expr).strip()
+                final_tree = p_cache.get(p_key)
+                if final_tree is None:
+                    final_tree = compile_post_agg_expr(p_key)
+                    p_cache[p_key] = final_tree
 
-            if m in ("drop_extremes_until_n", "drop_extremes_until_N".lower()):
-                if n is None:
-                    raise ScoringError("drop_extremes_until_n requereix n (row_select_n/col_select_n).")
-                try:
-                    k = int(n)
-                except Exception:
-                    raise ScoringError("n ha de ser un enter.")
-                k = max(0, min(k, len(xs)))
-                if k == 0:
-                    return []
+                out = []
+                for v in list(by_judge or []):
+                    vv = float(v)
+                    vv = float(PostAggExprEval({"m": vv}).visit(final_tree))
+                    out.append(vv)
+                return out
 
-                s = sorted(xs)  # asc
-                # treu: max, min, max, min... fins quedar k
-                toggle = 0  # 0->max, 1->min
-                while len(s) > k:
-                    if toggle == 0:
-                        s.pop()     # max
-                    else:
-                        s.pop(0)    # min
-                    toggle = 1 - toggle
-                return s
-
-
-            if m in ("best_n", "worst_n"):
-                if n is None:
-                    return xs
-                try:
-                    k = int(n)
-                except Exception:
-                    k = len(xs)
-                k = max(0, min(k, len(xs)))
-                s = sorted(xs, reverse=(m == "best_n"))
-                return s[:k]
-
-            raise ScoringError(f"Mètode selecció no permès: {method}")
+            return by_judge
+        
 
         def _select_idx(vals, method: str, n: int | None = None) -> List[int]:
             """
@@ -1104,6 +1217,7 @@ class ScoringEngine:
             "items_reduce": items_reduce,
             "row_custom_compute": row_custom_compute,
             "column_custom_compute": column_custom_compute,
+            "row_custom_agregation": row_custom_agregation,
         }
 
     def validate_and_normalize_inputs(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
