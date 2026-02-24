@@ -6,7 +6,7 @@ from django.http import JsonResponse, HttpResponseBadRequest
 from django.views.decorators.http import require_POST
 from django.db import transaction
 from .models_scoring import ScoreEntry, ScoringSchema  
-from .models import Competicio, Inscripcio
+from .models import Competicio, Inscripcio, Equip
 from .models_trampoli import CompeticioAparell, Aparell
 from .models_classificacions import ClassificacioConfig
 from .services.services_classificacions_2 import compute_classificacio, DEFAULT_SCHEMA
@@ -149,8 +149,6 @@ class ClassificacionsHome(TemplateView):
             sch = schemas_by_aparell.get(ca.aparell_id, {}) or {}
             opts = []
 
-            # Opcions "especials" (útil perquè ScoreEntry té .total i outputs també) :contentReference[oaicite:7]{index=7}
-            opts.append({"code": "TOTAL", "label": "TOTAL", "kind": "special"})
 
             for f in (sch.get("fields") or []):
                 if isinstance(f, dict) and f.get("code"):
@@ -239,10 +237,26 @@ class ClassificacionsHome(TemplateView):
                 "codi": ca.aparell.codi,
             })
 
+        equips_qs = (
+            Equip.objects
+            .filter(competicio=competicio)
+            .annotate(membres_count=models.Count("membres"))
+            .order_by("nom", "id")
+        )
+        equips_payload = []
+        for e in equips_qs:
+            equips_payload.append({
+                "id": e.id,
+                "nom": e.nom,
+                "origen": e.origen,
+                "membres_count": int(getattr(e, "membres_count", 0) or 0),
+            })
+
         ctx.update({
             "competicio": competicio,
             "cfgs": cfg_payload,
             "aparells": aparell_payload,
+            "equips": equips_payload,
         })
 
         ctx.update({
@@ -268,7 +282,7 @@ def classificacio_save(request, pk):
     tipus = (payload.get("tipus") or "individual").strip()
     schema = payload.get("schema") or {}
 
-    if tipus not in ("individual", "entitat"):
+    if tipus not in ("individual", "entitat", "equips"):
         tipus = "individual"
 
     if cid:

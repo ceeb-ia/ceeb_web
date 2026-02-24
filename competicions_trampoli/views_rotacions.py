@@ -19,6 +19,42 @@ from datetime import date, datetime, timedelta
 from django.utils.dateparse import parse_time
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
+def _normalize_grups(value):
+    if value is None:
+        return []
+
+    if isinstance(value, (list, tuple, set)):
+        raw_values = list(value)
+    else:
+        raw_values = [value]
+
+    out = []
+    seen = set()
+    for raw in raw_values:
+        if raw is None:
+            continue
+        if isinstance(raw, str):
+            raw = raw.strip()
+            if raw == "":
+                continue
+        try:
+            g = int(raw)
+        except Exception:
+            continue
+        if g <= 0:
+            continue
+        if g in seen:
+            continue
+        seen.add(g)
+        out.append(g)
+    return out
+
+def _assignacio_grups(assignacio):
+    gs = _normalize_grups(getattr(assignacio, "grups", None))
+    if gs:
+        return gs
+    return _normalize_grups(getattr(assignacio, "grup", None))
+
 @require_POST
 @csrf_protect
 def franges_auto_create(request, pk):
@@ -124,16 +160,30 @@ def rotacions_planner(request, pk):
         .select_related("franja", "estacio")
     )
 
-    grid = {}  # grid[franja_id][estacio_id] = grup
+    grid = {}  # grid[franja_id][estacio_id] = [grups]
     for a in assigns:
-        grid.setdefault(a.franja_id, {})[a.estacio_id] = a.grup
+        grid.setdefault(a.franja_id, {})[a.estacio_id] = _assignacio_grups(a)
+
+    view_cfg = competicio.inscripcions_view or {}
+    group_names = view_cfg.get("group_names") or {}
+    if not isinstance(group_names, dict):
+        group_names = {}
+
+    grups_display = []
+    group_labels_map = {}
+    for g in grups:
+        label = (group_names.get(str(g)) or "").strip() or f"G{g}"
+        grups_display.append({"id": g, "label": label})
+        group_labels_map[str(g)] = label
 
     ctx = {
         "competicio": competicio,
         "grups": grups,
+        "grups_display": grups_display,
         "estacions": estacions,
         "franges": franges,
         "grid_json": json.dumps(grid, ensure_ascii=False),
+        "group_labels_json": json.dumps(group_labels_map, ensure_ascii=False),
         "grups_json": json.dumps(grups, ensure_ascii=False),
     }
     return render(request, "competicio/rotacions_planner.html", ctx)
@@ -148,7 +198,9 @@ def rotacions_save(request, pk):
     except Exception:
         return HttpResponseBadRequest("JSON invàlid")
 
-    # Esperem: { "cells": [ {"franja":1,"estacio":2,"grup":3}, ... ] }
+    # Esperem:
+    # { "cells": [ {"franja":1,"estacio":2,"grups":[3,5]}, ... ] }
+    # Compat legacy: {"grup": 3}
     cells = payload.get("cells", [])
     if not isinstance(cells, list):
         return HttpResponseBadRequest("Format incorrecte")
@@ -158,22 +210,30 @@ def rotacions_save(request, pk):
 
     with transaction.atomic():
         for c in cells:
+            if not isinstance(c, dict):
+                continue
             try:
                 fr_id = int(c.get("franja"))
                 es_id = int(c.get("estacio"))
-                g = c.get("grup", None)
-                g = None if (g in ("", None)) else int(g)
             except Exception:
                 continue
 
             if fr_id not in franja_ids or es_id not in estacio_ids:
                 continue
 
+            if "grups" in c:
+                groups = _normalize_grups(c.get("grups"))
+            else:
+                groups = _normalize_grups(c.get("grup", None))
+
             RotacioAssignacio.objects.update_or_create(
                 competicio=competicio,
                 franja_id=fr_id,
                 estacio_id=es_id,
-                defaults={"grup": g},
+                defaults={
+                    "grups": groups,
+                    "grup": groups[0] if groups else None,  # compat temporal
+                },
             )
 
     return JsonResponse({"ok": True})
@@ -310,17 +370,16 @@ def rotacions_extrapolar(request, pk, franja_id):
         return JsonResponse({"ok": True, "created_franges": 0, "filled": 0})
 
     # 1) Llegim assignació de la franja base segons ordre d'estacions
-    base_map = {
-        a.estacio_id: a.grup
-        for a in RotacioAssignacio.objects.filter(competicio=competicio, franja=fr_base)
-    }
+    base_map = {}
+    for a in RotacioAssignacio.objects.filter(competicio=competicio, franja=fr_base):
+        base_map[a.estacio_id] = _assignacio_grups(a)
 
     base_groups = []
     for e in estacions:
-        base_groups.append(base_map.get(e.id, None))  # pot ser None
+        base_groups.append(base_map.get(e.id, []))
 
     # Si no hi ha cap grup definit, no té sentit extrapolar
-    if all(g is None for g in base_groups):
+    if all(len(gs) == 0 for gs in base_groups):
         return HttpResponseBadRequest("La franja base no té cap grup assignat.")
 
     # 2) Aconseguim/creem franges següents
@@ -389,14 +448,17 @@ def rotacions_extrapolar(request, pk, franja_id):
         n = len(estacions)
 
         for k, fr_t in enumerate(target_franges, start=1):
-            shifted = [base_groups[(i - k) % n] for i in range(n)]  # shift cap a la dreta
+            shifted = [list(base_groups[(i - k) % n]) for i in range(n)]  # shift cap a la dreta
 
-            for e, g in zip(estacions, shifted):
+            for e, gs in zip(estacions, shifted):
                 RotacioAssignacio.objects.update_or_create(
                     competicio=competicio,
                     franja=fr_t,
                     estacio=e,
-                    defaults={"grup": g},
+                    defaults={
+                        "grups": gs,
+                        "grup": gs[0] if gs else None,  # compat temporal
+                    },
                 )
                 filled_cells += 1
 
@@ -592,17 +654,25 @@ def franja_update_inline(request, pk, franja_id):
 
 def franges_export_excel(request, pk):
     competicio = get_object_or_404(Competicio, pk=pk)
+    mode = (request.GET.get("mode") or "participants").strip().lower()
+    if mode not in {"participants", "groups"}:
+        mode = "participants"
 
     # --- Dades base ---
     estacions = list(RotacioEstacio.objects.filter(competicio=competicio, actiu=True).order_by("ordre", "id"))
     franges = list(RotacioFranja.objects.filter(competicio=competicio).order_by("ordre", "id"))
 
-    # assignacions: (franja_id, estacio_id) -> grup
-    assigns = RotacioAssignacio.objects.filter(competicio=competicio).values("franja_id", "estacio_id", "grup")
-    cell_group = {(a["franja_id"], a["estacio_id"]): a["grup"] for a in assigns}
+    # assignacions: (franja_id, estacio_id) -> [grups]
+    assigns = RotacioAssignacio.objects.filter(competicio=competicio).values("franja_id", "estacio_id", "grup", "grups")
+    cell_groups = {}
+    for a in assigns:
+        gs = _normalize_grups(a.get("grups"))
+        if not gs:
+            gs = _normalize_grups(a.get("grup"))
+        cell_groups[(a["franja_id"], a["estacio_id"])] = gs
 
     # grup -> [noms inscripcions]
-    grups = sorted({g for g in cell_group.values() if g is not None})
+    grups = sorted({g for gs in cell_groups.values() for g in gs})
     ins_by_grup = {}
     if grups:
         qs = (
@@ -612,6 +682,15 @@ def franges_export_excel(request, pk):
         )
         for ins in qs:
             ins_by_grup.setdefault(ins.grup, []).append(getattr(ins, "nom_i_cognoms", None) or str(ins))
+
+    # grup -> etiqueta visible (nom de grup si existeix, si no "G<num>")
+    view_cfg = competicio.inscripcions_view or {}
+    group_names = view_cfg.get("group_names") or {}
+    if not isinstance(group_names, dict):
+        group_names = {}
+
+    def _group_label(g):
+        return (group_names.get(str(g)) or "").strip() or f"G{g}"
 
     # --- Header (competició + seu) ---
     titol_competicio = getattr(competicio, "nom", f"Competició {competicio.id}")
@@ -688,10 +767,29 @@ def franges_export_excel(request, pk):
 
         # cel·les per estació
         for j, e in enumerate(estacions, start=2):
-            g = cell_group.get((f.id, e.id), None)
-            noms = ins_by_grup.get(g, []) if g is not None else []
-            txt = "\n".join(noms) if noms else ("—" if g is not None else "")
-
+            gs = cell_groups.get((f.id, e.id), [])
+            if not gs:
+                txt = ""
+            elif mode == "groups":
+                labels = []
+                seen = set()
+                for g in gs:
+                    label_txt = _group_label(g)
+                    if label_txt in seen:
+                        continue
+                    seen.add(label_txt)
+                    labels.append(label_txt)
+                txt = "\n".join(labels) if labels else "-"
+            else:
+                noms = []
+                seen = set()
+                for g in gs:
+                    for nom in ins_by_grup.get(g, []):
+                        if nom in seen:
+                            continue
+                        seen.add(nom)
+                        noms.append(nom)
+                txt = "\n".join(noms) if noms else "—"
             cell = ws.cell(row=r, column=j, value=txt)
             cell.alignment = center
             cell.border = border
@@ -702,8 +800,9 @@ def franges_export_excel(request, pk):
         ws.column_dimensions[get_column_letter(j)].width = 24
 
     # Alçada mín. per veure llistes
+    row_height = 60 if mode == "participants" else 30
     for r in range(header_row + 1, header_row + 1 + len(franges)):
-        ws.row_dimensions[r].height = 60
+        ws.row_dimensions[r].height = row_height
 
     ws.row_dimensions[1].height = 28
     ws.row_dimensions[2].height = 20
@@ -716,6 +815,8 @@ def franges_export_excel(request, pk):
     response = HttpResponse(
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
-    response["Content-Disposition"] = f'attachment; filename="rotacions_{competicio.id}.xlsx"'
+    suffix = "participants" if mode == "participants" else "grups"
+    response["Content-Disposition"] = f'attachment; filename="rotacions_{competicio.id}_{suffix}.xlsx"'
     wb.save(response)
     return response
+

@@ -12,6 +12,7 @@ class ClassificacioConfig(models.Model):
     TIPUS_CHOICES = [
         ("individual", "Individual"),
         ("entitat", "Entitat"),
+        ("equips", "Equips"),
     ]
 
     competicio = models.ForeignKey(

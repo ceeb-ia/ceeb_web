@@ -1,7 +1,9 @@
 # services_classificacions.py
 from collections import defaultdict
+from datetime import date
 from decimal import Decimal
 from django.db import models
+from django.utils import timezone
 from ..models import Inscripcio
 from ..models_trampoli import CompeticioAparell
 from ..models_scoring import ScoreEntry
@@ -30,7 +32,7 @@ DEFAULT_SCHEMA = {
         # - "tots": suma/agrega tots els exercicis disponibles (fins nombre_exercicis)
         # - "millor_1": tria el millor exercici
         # - "millor_n": tria els N millors
-        "exercicis": {"mode": "tots"},
+        "exercicis": {"mode": "tots", "index": 1, "ids": []},
         "exercicis_best_n": 1,
 
         # aparells a incloure
@@ -63,6 +65,18 @@ DEFAULT_SCHEMA = {
     "desempat": [],
 
     "presentacio": {"top_n": 0, "mostrar_empats": True},
+
+    # Config additiva per tipus="equips"
+    "equips": {
+        "incloure_sense_equip": False,
+        "particions_manuals": [],  # [{key,label,equip_ids:[...]}]
+        "particio_edat": {
+            "activa": False,
+            "llindars": [],
+            "sense_data_label": "Sense edat",
+        },
+        "combinar_manual_i_edat": False,
+    },
 }
 
 
@@ -102,6 +116,11 @@ def _merge_schema(schema: dict) -> dict:
     out["puntuacio"] = {**DEFAULT_SCHEMA["puntuacio"], **(schema.get("puntuacio") or {})}
     out["presentacio"] = {**DEFAULT_SCHEMA["presentacio"], **(schema.get("presentacio") or {})}
     out["desempat"] = schema.get("desempat", DEFAULT_SCHEMA["desempat"]) or []
+    out["equips"] = {**DEFAULT_SCHEMA["equips"], **(schema.get("equips") or {})}
+    out["equips"]["particio_edat"] = {
+        **DEFAULT_SCHEMA["equips"]["particio_edat"],
+        **(((schema.get("equips") or {}).get("particio_edat")) or {}),
+    }
     return out
 
 
@@ -199,6 +218,20 @@ def _pick_exercicis_tuples(ex_vals, mode: str, best_n: int, index=None, ids=None
         n = max(1, int(best_n or 1))
         return sorted([v for _, v in xs], reverse=True)[:n]
 
+    if m == "primer":
+        first_idx = min(i for i, _ in xs)
+        for i, v in xs:
+            if i == first_idx:
+                return [v]
+        return []
+
+    if m == "ultim":
+        last_idx = max(i for i, _ in xs)
+        for i, v in xs:
+            if i == last_idx:
+                return [v]
+        return []
+
     if m == "index":
         try:
             idx = int(index or 1)
@@ -216,16 +249,98 @@ def _pick_exercicis_tuples(ex_vals, mode: str, best_n: int, index=None, ids=None
     return [v for _, v in xs]
 
 
+def _pick_participants(vals, mode: str, n: int):
+    xs = [_to_float(x) for x in (vals or [])]
+    if not xs:
+        return []
+
+    m = (mode or "tots").lower().strip()
+    if m in ("hereta", "tots"):
+        return xs
+    if m == "millor_1":
+        return [max(xs)]
+    if m == "millor_n":
+        k = max(1, int(n or 1))
+        return sorted(xs, reverse=True)[:k]
+    if m == "pitjor_1":
+        return [min(xs)]
+    if m == "pitjor_n":
+        k = max(1, int(n or 1))
+        return sorted(xs)[:k]
+    return xs
+
+
+def _years_old(birth_date, ref_date):
+    if not isinstance(birth_date, date) or not isinstance(ref_date, date):
+        return None
+    years = ref_date.year - birth_date.year
+    before_birthday = (ref_date.month, ref_date.day) < (birth_date.month, birth_date.day)
+    return years - 1 if before_birthday else years
+
+
+def _bucket_edat(age_max, llindars, sense_data_label):
+    if age_max is None:
+        txt = (sense_data_label or "Sense edat").strip() or "Sense edat"
+        return f"edat:{txt}"
+
+    ordered = sorted(set(int(x) for x in (llindars or [])))
+    if not ordered:
+        return f"edat:{age_max}"
+
+    for th in ordered:
+        if age_max <= th:
+            return f"edat:<={th}"
+    return f"edat:>{ordered[-1]}"
+
+
+def _resolve_particio_equip(manual_key, age_key, combine):
+    if combine:
+        if manual_key or age_key:
+            return f"{manual_key or 'manual:(cap)'}|{age_key or 'edat:(cap)'}"
+        return "global"
+    if manual_key:
+        return manual_key
+    if age_key:
+        return age_key
+    return "global"
+
+
+def _normalize_tie_camps(crit: dict):
+    raw = crit.get("camps", None)
+    out = []
+
+    if isinstance(raw, list):
+        out = [str(x).strip() for x in raw if str(x).strip()]
+    elif isinstance(raw, str):
+        txt = raw.strip()
+        if txt:
+            out = [x.strip() for x in txt.split(",") if x.strip()]
+
+    if not out:
+        legacy = (crit.get("camp") or "").strip()
+        if legacy:
+            out = [legacy]
+
+    dedup = []
+    seen = set()
+    for c in out:
+        if c in seen:
+            continue
+        seen.add(c)
+        dedup.append(c)
+    return dedup
+
+
 def _tie_key(crit: dict) -> str:
-    camp = (crit.get("camp") or "").strip()
-    if not camp:
+    camps = _normalize_tie_camps(crit)
+    if not camps:
         return ""
 
     scope = crit.get("scope") or {}
     apps = scope.get("aparells") or {}
     ex = scope.get("exercicis") or {}
+    parts = scope.get("participants") or {}
 
-    # aparells
     mode = (apps.get("mode") or "").lower().strip()
     if mode == "seleccionar":
         ids = apps.get("ids") or []
@@ -234,11 +349,9 @@ def _tie_key(crit: dict) -> str:
     elif mode == "tots":
         apps_sig = "apps[all]"
     else:
-        # legacy
         app_id = crit.get("aparell_id", None)
         apps_sig = f"app[{app_id}]" if app_id not in (None, "", 0, "0") else "apps[inherit]"
 
-    # exercicis
     ex_mode = (ex.get("mode") or "hereta").lower().strip()
     ex_sig = ex_mode
     if ex_mode == "millor_n":
@@ -249,13 +362,45 @@ def _tie_key(crit: dict) -> str:
         ex_ids = ex.get("ids") or []
         ex_sig += ":" + ",".join(str(int(x)) for x in ex_ids)
 
-    # (si vols incloure agregacions del criteri, les pots afegir aquí també)
-    return f"{camp}|{apps_sig}|ex[{ex_sig}]"
+    p_mode = (parts.get("mode") or "hereta").lower().strip()
+    p_sig = p_mode
+    if p_mode in ("millor_n", "pitjor_n"):
+        p_sig += f":{parts.get('n') or 1}"
+
+    camps_sig = ",".join(camps)
+    agg_c = (crit.get("agregacio_camps") or "hereta").lower().strip()
+    agg_e = (crit.get("agregacio_exercicis") or "hereta").lower().strip()
+    agg_a = (crit.get("agregacio_aparells") or "hereta").lower().strip()
+    p_agg = (crit.get("agregacio_participants") or "sum").lower().strip()
+    return (
+        f"camps[{camps_sig}]|{apps_sig}|ex[{ex_sig}]"
+        f"|agg_c[{agg_c}]|agg_e[{agg_e}]|agg_a[{agg_a}]"
+        f"|parts[{p_sig}]|parts_agg[{p_agg}]"
+    )
 
 
-# -----------------------------
-# CORE NOU
-# -----------------------------
+def _sanitize_desempat_for_tipus(desempat, tipus):
+    arr = desempat or []
+    out = []
+    tipus = (tipus or "individual").lower().strip()
+
+    for raw in arr:
+        if not isinstance(raw, dict):
+            continue
+
+        item = dict(raw)
+        if tipus != "equips":
+            scope = item.get("scope")
+            if isinstance(scope, dict):
+                scope2 = dict(scope)
+                scope2.pop("participants", None)
+                item["scope"] = scope2
+            item.pop("agregacio_participants", None)
+        out.append(item)
+
+    return out
+
+
 def compute_classificacio(competicio, cfg_obj):
     """
     Retorna:
@@ -271,15 +416,51 @@ def compute_classificacio(competicio, cfg_obj):
     punt = schema["puntuacio"] or {}
     desempat = schema["desempat"] or []
     presentacio = schema["presentacio"] or {}
-    tipus = getattr(cfg_obj, "tipus", "individual") or "individual"
+    equips_cfg = schema.get("equips") or {}
+    tipus = (getattr(cfg_obj, "tipus", "individual") or "individual").lower().strip()
+    desempat = _sanitize_desempat_for_tipus(desempat, tipus)
 
     # 1) PRETRACTAMENT
     ordre_principal = (punt.get("ordre") or "desc").lower().strip()
     if ordre_principal not in ("asc", "desc"):
         ordre_principal = "desc"
 
-    exerc_mode = ((punt.get("exercicis") or {}).get("mode") or "tots").lower().strip()
-    ex_best_n = int(punt.get("exercicis_best_n") or 1)
+    ex_cfg = punt.get("exercicis") or {}
+    exerc_mode = (ex_cfg.get("mode") or "tots").lower().strip()
+    if exerc_mode not in ("tots", "millor_1", "millor_n", "primer", "ultim", "index", "llista"):
+        exerc_mode = "tots"
+
+    try:
+        ex_best_n = int(punt.get("exercicis_best_n") or ex_cfg.get("best_n") or 1)
+    except Exception:
+        ex_best_n = 1
+    ex_best_n = max(1, ex_best_n)
+
+    try:
+        ex_index = int(ex_cfg.get("index") or 1)
+    except Exception:
+        ex_index = 1
+    ex_index = max(1, ex_index)
+
+    ex_ids_raw = ex_cfg.get("ids", [])
+    ex_ids = []
+    if isinstance(ex_ids_raw, str):
+        parts = [x.strip() for x in ex_ids_raw.split(",") if x.strip()]
+        for p in parts:
+            try:
+                iv = int(p)
+            except Exception:
+                continue
+            if iv > 0:
+                ex_ids.append(iv)
+    elif isinstance(ex_ids_raw, (list, tuple)):
+        for x in ex_ids_raw:
+            try:
+                iv = int(x)
+            except Exception:
+                continue
+            if iv > 0:
+                ex_ids.append(iv)
 
     agg_camps = (punt.get("agregacio_camps") or "sum").lower().strip()
     agg_exercicis = (punt.get("agregacio_exercicis") or "sum").lower().strip()
@@ -307,7 +488,7 @@ def compute_classificacio(competicio, cfg_obj):
         ins_qs = ins_qs.filter(grup__in=filtres["grups_in"])
 
     sr = []
-    for f in ("entitat", "categoria", "subcategoria"):
+    for f in ("entitat", "categoria", "subcategoria", "equip"):
         if _is_relational_field(Inscripcio, f):
             sr.append(f)
     if sr:
@@ -328,7 +509,7 @@ def compute_classificacio(competicio, cfg_obj):
     for n in notes:
         notes_by_app[n.comp_aparell_id].append(n)
 
-    # inscripcions que realment “competeixen” a cada aparell (tenen notes)
+    # inscripcions que realment �?ocompeteixen�?� a cada aparell (tenen notes)
     ins_ids_by_app = defaultdict(set)
     for app_id, lst in notes_by_app.items():
         for n in lst:
@@ -371,7 +552,7 @@ def compute_classificacio(competicio, cfg_obj):
             if ex_idx < 1:
                 ex_idx = 1
             if ex_idx > n_ex:
-                # si hi ha notes “extra”, les ignores per coherència amb configuració d'aparell
+                # si hi ha notes �?oextra�?�, les ignores per coherència amb configuració d'aparell
                 continue
             by_ins_ex[nt.inscripcio_id][ex_idx] = nt
 
@@ -391,10 +572,16 @@ def compute_classificacio(competicio, cfg_obj):
                 v_fields = [_get_score_field(nt, f) for f in fields]
 
                 v_ex = _apply_simple_agg(v_fields, agg_camps)  # agregació camps dins exercici
-                vals_ex.append(v_ex)
+                vals_ex.append((ex_idx, v_ex))
 
             # selecció d'exercicis (tots/millor_1/millor_n)
-            picked = _pick_exercicis(vals_ex, exerc_mode, ex_best_n)
+            picked = _pick_exercicis_tuples(
+                vals_ex,
+                exerc_mode,
+                ex_best_n,
+                index=ex_index,
+                ids=ex_ids,
+            )
 
             # agregació d'exercicis dins aparell
             score_app = _apply_simple_agg(picked, agg_exercicis)
@@ -409,7 +596,7 @@ def compute_classificacio(competicio, cfg_obj):
     # 7) TIE-BREAKS segons ordre del front
     # suport:
     #  - legacy: {"camp":"execucio_total","ordre":"desc"} -> suma (o avg) sobre aparells/exercicis segons el pipeline
-    #  - nou: {"aparell_id": X, "camp": "E_total", "ordre":"desc"} -> recalcula com “score d'aquell aparell però només amb aquell camp”
+    #  - nou: {"aparell_id": X, "camp": "E_total", "ordre":"desc"} -> recalcula com �?oscore d'aquell aparell però només amb aquell camp�?�
     #
     # IMPORTANT: per no duplicar molt codi, fem una funció que calcula "valor criteri" reutilitzant el mateix pipeline,
     # però substituint camps per la llista [camp].
@@ -424,10 +611,11 @@ def compute_classificacio(competicio, cfg_obj):
         - nou (overrides):
             {
                 "camp":"E_total",
+                "camps":["E_total","D_total"],
                 "ordre":"desc",
                 "scope":{
                 "aparells":{"mode":"tots"|"seleccionar","ids":[12,13]},
-                "exercicis":{"mode":"hereta"|"tots"|"millor_1"|"millor_n"|"index"|"llista",
+                "exercicis":{"mode":"hereta"|"tots"|"millor_1"|"millor_n"|"primer"|"ultim"|"index"|"llista",
                             "best_n":2, "index":1, "ids":[1,3]}
                 },
                 "agregacio_camps":"hereta"|"sum"|"avg"|"median"|"max"|"min",
@@ -436,8 +624,8 @@ def compute_classificacio(competicio, cfg_obj):
             }
         """
 
-        camp = (crit.get("camp") or "").strip()
-        if not camp:
+        camps = _normalize_tie_camps(crit)
+        if not camps:
             return 0.0
 
         # -----------------------------
@@ -517,7 +705,8 @@ def compute_classificacio(competicio, cfg_obj):
                     continue
 
                 # IMPORTANT: desempat llegeix ScoreEntry via _get_score_field
-                v_ex = _apply_simple_agg([_get_score_field(se, camp)], crit_agg_camps)
+                vals_fields = [_get_score_field(se, c) for c in camps]
+                v_ex = _apply_simple_agg(vals_fields, crit_agg_camps)
                 vals_ex.append((ex_idx, v_ex))
 
             picked = _pick_exercicis_tuples(
@@ -565,8 +754,120 @@ def compute_classificacio(competicio, cfg_obj):
         }
         per_particio[pkey].append(row)
 
-    # mode "entitat": mantenim comportament antic (suma per entitat)
     out = {}
+
+    if tipus == "equips":
+        include_sense_equip = bool(equips_cfg.get("incloure_sense_equip", False))
+        manual_defs = equips_cfg.get("particions_manuals") or []
+        age_cfg = equips_cfg.get("particio_edat") or {}
+        age_active = bool(age_cfg.get("activa", False))
+        age_label_empty = (age_cfg.get("sense_data_label") or "Sense edat").strip() or "Sense edat"
+        combine_manual_age = bool(equips_cfg.get("combinar_manual_i_edat", False))
+
+        llindars = []
+        for x in (age_cfg.get("llindars") or []):
+            try:
+                llindars.append(int(x))
+            except Exception:
+                continue
+
+        manual_map = {}
+        for idx, it in enumerate(manual_defs):
+            if not isinstance(it, dict):
+                continue
+            label = (
+                str(it.get("label") or it.get("key") or f"Particio {idx + 1}").strip()
+                or f"Particio {idx + 1}"
+            )
+            team_key = f"manual:{label}"
+            for raw_id in (it.get("equip_ids") or []):
+                try:
+                    eid = int(raw_id)
+                except Exception:
+                    continue
+                # primera assignacio guanya (evitem comportament no determinista)
+                if eid not in manual_map:
+                    manual_map[eid] = team_key
+
+        # agrupem participants per equip dins cada particio "base" existent
+        grouped = defaultdict(lambda: defaultdict(list))  # base_pkey -> equip_id_key -> [ins]
+        for ins in ins_list:
+            if ins.equip_id is None and not include_sense_equip:
+                continue
+            base_pkey = _partition_key(ins, part_fields)
+            team_id_key = ins.equip_id if ins.equip_id is not None else "__sense_equip__"
+            grouped[base_pkey][team_id_key].append(ins)
+
+        for base_pkey, teams in grouped.items():
+            for team_id_key, members in teams.items():
+                if not members:
+                    continue
+
+                # nom equip
+                if team_id_key == "__sense_equip__":
+                    equip_id = None
+                    equip_nom = "Sense equip"
+                else:
+                    equip_id = int(team_id_key)
+                    eq_obj = getattr(members[0], "equip", None)
+                    equip_nom = (getattr(eq_obj, "nom", None) or f"Equip {equip_id}").strip()
+
+                # particio manual / edat
+                manual_part = manual_map.get(equip_id) if equip_id is not None else None
+                age_part = None
+                if age_active:
+                    ref_date = getattr(competicio, "data", None) or timezone.localdate()
+                    ages = []
+                    for m in members:
+                        age = _years_old(getattr(m, "data_naixement", None), ref_date)
+                        if age is not None:
+                            ages.append(age)
+                    age_max = max(ages) if ages else None
+                    age_part = _bucket_edat(age_max, llindars, age_label_empty)
+
+                team_part = _resolve_particio_equip(manual_part, age_part, combine_manual_age)
+                if base_pkey != "global" and team_part != "global":
+                    final_pkey = f"{base_pkey}|{team_part}"
+                elif team_part != "global":
+                    final_pkey = team_part
+                else:
+                    final_pkey = base_pkey
+
+                team_score = sum([_to_float(per_ins[m.id]["score"]) for m in members])
+
+                team_tie = {}
+                for t in desempat or []:
+                    tkey = _tie_key(t)
+                    if not tkey:
+                        continue
+
+                    part_scope = ((t.get("scope") or {}).get("participants") or {})
+                    part_mode = (part_scope.get("mode") or "hereta").lower().strip()
+                    if part_mode == "hereta":
+                        part_mode = "tots"
+                    try:
+                        part_n = int(part_scope.get("n") or 1)
+                    except Exception:
+                        part_n = 1
+
+                    part_vals = [_to_float((per_ins[m.id].get("tie") or {}).get(tkey, 0.0)) for m in members]
+                    selected_vals = _pick_participants(part_vals, part_mode, part_n)
+                    agg_parts = (t.get("agregacio_participants") or "sum").lower().strip()
+                    team_tie[tkey] = float(_apply_simple_agg(selected_vals, agg_parts))
+
+                out.setdefault(final_pkey, []).append({
+                    "equip_id": equip_id,
+                    "nom": equip_nom,
+                    "participant": equip_nom,
+                    "score": float(team_score),
+                    "tie": team_tie,
+                    "participants": len(members),
+                })
+
+        for pkey, rows in out.items():
+            out[pkey] = _rank_v2(rows, desempat, presentacio, ordre_principal=ordre_principal, entity_mode=True)
+        return out
+
     if tipus == "entitat":
         for pkey, rows in per_particio.items():
             by_ent = defaultdict(list)
@@ -578,10 +879,10 @@ def compute_classificacio(competicio, cfg_obj):
                 ent_score = sum([_to_float(x["score"]) for x in items])
                 ent_tie = {}
                 for t in desempat or []:
-                    camp = (t.get("camp") or "").strip()
-                    app_id = t.get("aparell_id", None)
-                    k = f"{camp}@{app_id}" if app_id not in (None, "", 0, "0") else camp
-                    ent_tie[k] = sum([_to_float((x.get("tie") or {}).get(k, 0.0)) for x in items])
+                    tkey = _tie_key(t)
+                    if not tkey:
+                        continue
+                    ent_tie[tkey] = sum([_to_float((x.get("tie") or {}).get(tkey, 0.0)) for x in items])
 
                 ent_rows.append({
                     "entitat_nom": ent_nom,
@@ -591,13 +892,10 @@ def compute_classificacio(competicio, cfg_obj):
                 })
 
             out[pkey] = _rank_v2(ent_rows, desempat, presentacio, ordre_principal=ordre_principal, entity_mode=True)
-
         return out
 
-    # individual
     for pkey, rows in per_particio.items():
         out[pkey] = _rank_v2(rows, desempat, presentacio, ordre_principal=ordre_principal, entity_mode=False)
-
     return out
 
 
@@ -615,7 +913,7 @@ def _get_score_field(entry: ScoreEntry, code: str) -> float:
     if isinstance(out, dict) and code in out:
         return _to_float(out.get(code))
 
-    # fallback comú si el total també s’ha escrit a outputs
+    # fallback comú si el total també s�?Tha escrit a outputs
     if isinstance(out, dict):
         if code == "TOTAL" and "TOTAL" in out:
             return _to_float(out["TOTAL"])

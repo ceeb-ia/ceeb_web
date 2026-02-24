@@ -78,6 +78,7 @@
               <select class="form-control" id="fTipus">
                 <option value="individual">Individual</option>
                 <option value="entitat">Per entitat</option>
+                <option value="equips">Equips</option>
               </select>
             </div>
             <div class="col-6 col-md-2 mb-3">
@@ -119,6 +120,48 @@
               <div class="form-check">
                 <input class="form-check-input" type="checkbox" id="pGrup">
                 <label class="form-check-label" for="pGrup">Grup</label>
+              </div>
+            </div>
+          </div>
+
+          <div id="equipCfgBox" class="mb-3" style="display:none;">
+            <hr class="my-2">
+            <div class="font-weight-bold mb-2">Configuracio equips</div>
+            <div class="text-muted small mb-2">
+              Defineix particions manuals i/o per edat maxima de l'equip.
+            </div>
+
+            <div class="form-check mb-2">
+              <input class="form-check-input" type="checkbox" id="eqIncludeSenseEquip">
+              <label class="form-check-label" for="eqIncludeSenseEquip">Incloure participants sense equip</label>
+            </div>
+
+            <div class="border rounded p-2 mb-2">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <label class="m-0 small text-muted">Particions manuals</label>
+                <button type="button" class="btn btn-sm btn-outline-primary" id="btnEqManualAdd">+ Particio</button>
+              </div>
+              <div id="eqManualRows"></div>
+            </div>
+
+            <div class="border rounded p-2">
+              <div class="form-check mb-2">
+                <input class="form-check-input" type="checkbox" id="eqAgeActiva">
+                <label class="form-check-label" for="eqAgeActiva">Particio per edat maxima d'equip</label>
+              </div>
+              <div class="row">
+                <div class="col-12 col-md-6 mb-2">
+                  <label class="small text-muted mb-1">Llindars (coma)</label>
+                  <input class="form-control form-control-sm" id="eqAgeLlindars" type="text" placeholder="10,12,14">
+                </div>
+                <div class="col-12 col-md-6 mb-2">
+                  <label class="small text-muted mb-1">Etiqueta sense data</label>
+                  <input class="form-control form-control-sm" id="eqAgeSenseLabel" type="text" value="Sense edat">
+                </div>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="eqCombineManualAge">
+                <label class="form-check-label" for="eqCombineManualAge">Combinar particio manual + edat</label>
               </div>
             </div>
           </div>
@@ -170,13 +213,21 @@
                 <option value="tots">Tots</option>
                 <option value="millor_1">Millor 1</option>
                 <option value="millor_n">Millors N</option>
+                <option value="primer">Primer existent</option>
+                <option value="ultim">Ultim existent</option>
+                <option value="index">Exercici #</option>
+                <option value="llista">Exercicis (llista)</option>
               </select>
               <div class="row mt-2">
-                <div class="col-6">
+                <div class="col-4" id="exBestNBox">
                   <label class="small text-muted">N (si Millors N)</label>
                   <input class="form-control" id="iExBestN" type="number" min="1" value="1">
                 </div>
-                <div class="col-6">
+                <div class="col-4" id="exIndexBox" style="display:none;">
+                  <label class="small text-muted">Index (si Exercici #)</label>
+                  <input class="form-control" id="iExIndex" type="number" min="1" value="1">
+                </div>
+                <div class="col-12  mb-3">
                   <label class="small text-muted">Agregació exercicis</label>
                   <select class="form-control" id="sAggExercicis">
                     <option value="sum">Suma</option>
@@ -187,9 +238,11 @@
                   </select>
                 </div>
               </div>
-              <div class="small text-muted mt-1">
-                El nombre d’exercicis ve de <code>CompeticioAparell.nombre_exercicis</code>.
+              <div class="mt-2" id="exIdsBox" style="display:none;">
+                <label class="small text-muted">Llista d'indexos (si Exercicis llista)</label>
+                <input class="form-control" id="tExIds" type="text" placeholder="1,3,4">
               </div>
+              <div class="small text-muted mt-1" id="exModeHint"></div>
             </div>
 
             <div class="col-12 col-md-4 mb-3">
@@ -216,8 +269,8 @@
           <div class="text-muted small mb-2">
             Afegeix criteris en ordre. Per cada criteri pots definir:
               <strong>Aparells</strong> (hereta/tots/seleccionar),
-              <strong>Camp</strong> (dropdown),
-              i <strong>Exercicis</strong> (hereta/tots/millor_n/index/llista).
+              <strong>Camp(s)</strong> (multi),
+              i <strong>Exercicis</strong> (hereta/tots/millor_n/primer/ultim/index/llista).
             <br>Camp = code (ex: <code>execucio_total</code>, <code>E_total</code>, <code>total</code>...).
           </div>
 
@@ -226,8 +279,9 @@
               <thead>
                 <tr>
                   <th style="width:22%;">Aparells</th>
-                  <th style="width:28%;">Camp</th>
-                  <th style="width:28%;">Exercicis</th>
+                  <th style="width:22%;">Camp</th>
+                  <th style="width:24%;">Exercicis</th>
+                  <th id="tieParticipantsHead" style="width:20%;">Participants</th>
                   <th style="width:12%;">Ordre</th>
                   <th style="width:10%;" class="text-right">Accions</th>
                 </tr>
@@ -334,6 +388,7 @@
 
 {{ cfgs|json_script:"cfgs-data-v2" }}
 {{ aparells|json_script:"aparells-data-v2" }}
+{{ equips|json_script:"equips-data-v2" }}
 {{ aparell_field_options|json_script:"aparell-field-options-data" }}
 {{ competicio.id|default:None|json_script:"competicio-id" }}
 
@@ -343,6 +398,7 @@
 
   const CFGS = JSON.parse(document.getElementById("cfgs-data-v2").textContent);
   const APARELLS = JSON.parse(document.getElementById("aparells-data-v2").textContent);
+  const EQUIPS = JSON.parse(document.getElementById("equips-data-v2").textContent);
   const APARELL_FIELD_OPTIONS = JSON.parse(
     document.getElementById("aparell-field-options-data").textContent
   );
@@ -355,7 +411,7 @@
       aparells: { mode:"tots", ids:[] },
       camps_per_aparell: {},
       agregacio_camps: "sum",
-      exercicis: { mode:"tots" },
+      exercicis: { mode:"tots", index: 1, ids: [] },
       exercicis_best_n: 1,
       agregacio_exercicis: "sum",
       agregacio_aparells: "sum",
@@ -367,7 +423,13 @@
       best_n: 1
     },
     desempat: [],
-    presentacio: { top_n:0, mostrar_empats:true }
+    presentacio: { top_n:0, mostrar_empats:true },
+    equips: {
+      incloure_sense_equip: false,
+      particions_manuals: [],
+      particio_edat: { activa:false, llindars:[], sense_data_label:"Sense edat" },
+      combinar_manual_i_edat: false
+    }
   };
 
   const els = {
@@ -383,6 +445,14 @@
     fNom: document.getElementById("fNom"),
     fActiva: document.getElementById("fActiva"),
     fTipus: document.getElementById("fTipus"),
+    equipCfgBox: document.getElementById("equipCfgBox"),
+    eqIncludeSenseEquip: document.getElementById("eqIncludeSenseEquip"),
+    btnEqManualAdd: document.getElementById("btnEqManualAdd"),
+    eqManualRows: document.getElementById("eqManualRows"),
+    eqAgeActiva: document.getElementById("eqAgeActiva"),
+    eqAgeLlindars: document.getElementById("eqAgeLlindars"),
+    eqAgeSenseLabel: document.getElementById("eqAgeSenseLabel"),
+    eqCombineManualAge: document.getElementById("eqCombineManualAge"),
 
     pCategoria: document.getElementById("pCategoria"),
     pSubcategoria: document.getElementById("pSubcategoria"),
@@ -398,12 +468,19 @@
 
     sAggCamps: document.getElementById("sAggCamps"),
     sExercicisMode: document.getElementById("sExercicisMode"),
+    exBestNBox: document.getElementById("exBestNBox"),
+    exIndexBox: document.getElementById("exIndexBox"),
+    exIdsBox: document.getElementById("exIdsBox"),
+    exModeHint: document.getElementById("exModeHint"),
     iExBestN: document.getElementById("iExBestN"),
+    iExIndex: document.getElementById("iExIndex"),
+    tExIds: document.getElementById("tExIds"),
     sAggExercicis: document.getElementById("sAggExercicis"),
     sAggAparells: document.getElementById("sAggAparells"),
     sOrdre: document.getElementById("sOrdre"),
 
     tieBody: document.getElementById("tieBody"),
+    tieParticipantsHead: document.getElementById("tieParticipantsHead"),
     btnTieAdd: document.getElementById("btnTieAdd"),
     tDesempat: document.getElementById("tDesempat"),
 
@@ -422,6 +499,10 @@
   let state = {
     cfgs: JSON.parse(JSON.stringify(CFGS || [])),
     selectedId: null,
+  };
+  let advancedDirty = {
+    desempat: false,
+    filtres: false,
   };
 
   function getCookie(name) {
@@ -522,29 +603,6 @@
     return out;
   }
 
-  function getTieOptionsForApp(appVal){
-    if (!appVal || appVal === "all") return getUnionTieOptions();
-    return (APARELL_FIELD_OPTIONS[String(appVal)] || []).map(o => ({
-      code: String(o.code),
-      label: o.label || o.code
-    }));
-  }
-
-  function buildCampSelectHTML(appVal, selectedCamp){
-    const opts = getTieOptionsForApp(appVal);
-    const sel = String(selectedCamp || "");
-    return `
-      <select class="form-control form-control-sm" data-k="camp">
-        ${opts.map(o => `
-          <option value="${esc(o.code)}" ${sel === String(o.code) ? "selected":""}>
-            ${esc(o.label)} (${esc(o.code)})
-          </option>
-        `).join("")}
-      </select>
-    `;
-  }
-
-
   function getTieOptionsForAppIds(appIds){
     // appIds: array de comp_aparell_id seleccionats
     if (!appIds || !appIds.length) return getUnionTieOptions();
@@ -564,17 +622,33 @@
     return out;
   }
 
-  function buildCampSelectHTMLForApps(appIds, selectedCamp){
+  function buildCampSelectHTMLForApps(appIds, selectedCamps, selectedAgg){
     const opts = getTieOptionsForAppIds(appIds);
-    const sel = String(selectedCamp || "");
+    const selected = new Set((selectedCamps || []).map(x => String(x)));
+    const optsAll = [...opts];
+    selected.forEach(code => {
+      if (optsAll.some(o => String(o.code) === code)) return;
+      optsAll.push({ code, label: code });
+    });
+    const agg = String(selectedAgg || "hereta").toLowerCase();
     return `
-      <select class="form-control form-control-sm" data-k="camp">
-        ${opts.map(o => `
-          <option value="${esc(o.code)}" ${sel === String(o.code) ? "selected":""}>
-            ${esc(o.label)} (${esc(o.code)})
-          </option>
-        `).join("")}
-      </select>
+      <div class="d-flex flex-column gap-1">
+        <select class="form-control form-control-sm" data-k="camps" multiple size="6">
+          ${optsAll.map(o => `
+            <option value="${esc(o.code)}" ${selected.has(String(o.code)) ? "selected":""}>
+              ${esc(o.label)} (${esc(o.code)})
+            </option>
+          `).join("")}
+        </select>
+        <select class="form-control form-control-sm" data-k="agg_camps">
+          <option value="hereta" ${agg === "hereta" ? "selected" : ""}>Agregacio camps: Hereta</option>
+          <option value="sum" ${agg === "sum" ? "selected" : ""}>Agregacio camps: Suma</option>
+          <option value="avg" ${agg === "avg" ? "selected" : ""}>Agregacio camps: Mitjana</option>
+          <option value="median" ${agg === "median" ? "selected" : ""}>Agregacio camps: Mediana</option>
+          <option value="max" ${agg === "max" ? "selected" : ""}>Agregacio camps: Maxim</option>
+          <option value="min" ${agg === "min" ? "selected" : ""}>Agregacio camps: Minim</option>
+        </select>
+      </div>
     `;
   }
 
@@ -599,44 +673,397 @@
 
   }
 
+  function readMainExercicisFromUI() {
+    const mode = String(els.sExercicisMode?.value || "tots").toLowerCase().trim();
+    const bestN = Math.max(1, Number(els.iExBestN?.value || 1));
+    const index = Math.max(1, Number(els.iExIndex?.value || 1));
+    const idsRaw = String(els.tExIds?.value || "").trim();
+    const ids = idsRaw
+      ? idsRaw.split(",").map(x => Number(x.trim())).filter(v => !isNaN(v) && v > 0)
+      : [];
+
+    const cfg = { mode };
+    if (mode === "millor_n") cfg.best_n = bestN;
+    if (mode === "index") cfg.index = index;
+    if (mode === "llista") cfg.ids = ids;
+    return { cfg, bestN, index, ids };
+  }
+
+  function refreshMainExercicisUI() {
+    const m = String(els.sExercicisMode?.value || "tots").toLowerCase().trim();
+    if (els.exBestNBox) els.exBestNBox.style.display = (m === "millor_n") ? "" : "none";
+    if (els.exIndexBox) els.exIndexBox.style.display = (m === "index") ? "" : "none";
+    if (els.exIdsBox) els.exIdsBox.style.display = (m === "llista") ? "" : "none";
+
+    if (!els.exModeHint) return;
+    let txt = "";
+    if (m === "millor_n") txt = "Selecciona els N millors exercicis per aparell.";
+    else if (m === "primer") txt = "Agafa el primer exercici existent de cada aparell.";
+    else if (m === "ultim") txt = "Agafa l'ultim exercici existent de cada aparell.";
+    else if (m === "index") txt = "Agafa l'exercici # indicat de cada aparell.";
+    else if (m === "llista") txt = "Agafa la llista d'indexos indicada a cada aparell.";
+    els.exModeHint.textContent = txt;
+  }
+
+  function refreshTipusUI() {
+    const cfg = currentCfg();
+    const tipus = (cfg && cfg.tipus) || (els.fTipus && els.fTipus.value) || "individual";
+    const isEquips = (tipus === "equips");
+    if (els.equipCfgBox) {
+      els.equipCfgBox.style.display = isEquips ? "" : "none";
+    }
+    if (els.tieParticipantsHead) {
+      els.tieParticipantsHead.style.display = isEquips ? "" : "none";
+    }
+    document.querySelectorAll("#tieBody [data-cell='participants']").forEach(td => {
+      td.style.display = isEquips ? "" : "none";
+    });
+  }
+
+  function sanitizeDesempatForTipus(list, tipus) {
+    const arr = Array.isArray(list) ? list : [];
+    if (tipus === "equips") return arr;
+    return arr.map(item => {
+      if (!item || typeof item !== "object") return item;
+      const out = { ...item };
+      if (out.scope && typeof out.scope === "object") {
+        const scope = { ...out.scope };
+        delete scope.participants;
+        out.scope = scope;
+      }
+      delete out.agregacio_participants;
+      return out;
+    });
+  }
+
+  function currentTipus() {
+    const cfg = currentCfg();
+    return (cfg && cfg.tipus) || (els.fTipus && els.fTipus.value) || "individual";
+  }
+
+  function isTipusEquips() {
+    return currentTipus() === "equips";
+  }
+
+  function getParticipantsCellHTML() {
+    return `
+      <td data-cell="participants">
+        <div class="d-flex flex-column gap-1">
+          <select class="form-control form-control-sm" data-k="p_mode">
+            <option value="hereta">Hereta (tots)</option>
+            <option value="tots">Tots</option>
+            <option value="millor_1">Millor 1</option>
+            <option value="millor_n">Millors N</option>
+            <option value="pitjor_1">Pitjor 1</option>
+            <option value="pitjor_n">Pitjors N</option>
+          </select>
+          <input class="form-control form-control-sm" data-k="p_n" type="number" min="1" value="1" style="display:none;" placeholder="N participants">
+          <select class="form-control form-control-sm" data-k="p_agg">
+            <option value="sum">Suma</option>
+            <option value="avg">Mitjana</option>
+            <option value="median">Mediana</option>
+            <option value="max">Maxim</option>
+            <option value="min">Minim</option>
+          </select>
+        </div>
+      </td>
+    `;
+  }
+
+  function getParticipantsDefaults() {
+    return {
+      participants: { mode: "hereta" },
+      agregacio_participants: "sum",
+    };
+  }
+
+  function isParticipantsModeWithN(mode) {
+    return mode === "millor_n" || mode === "pitjor_n";
+  }
+
+  function normalizeTieCampsFromObj(t) {
+    const out = [];
+    const raw = t && t.camps;
+    if (Array.isArray(raw)) {
+      raw.forEach(x => {
+        const s = String(x || "").trim();
+        if (s) out.push(s);
+      });
+    } else if (typeof raw === "string") {
+      raw.split(",").forEach(x => {
+        const s = String(x || "").trim();
+        if (s) out.push(s);
+      });
+    }
+    if (!out.length) {
+      const legacy = String((t && t.camp) || "").trim();
+      if (legacy) out.push(legacy);
+    }
+    if (!out.length) out.push("total");
+
+    const dedup = [];
+    const seen = new Set();
+    out.forEach(c => {
+      if (seen.has(c)) return;
+      seen.add(c);
+      dedup.push(c);
+    });
+    return dedup;
+  }
+
+  function normalizeTieAggCampsFromObj(t) {
+    const v = String((t && t.agregacio_camps) || "hereta").toLowerCase().trim();
+    if (["hereta","sum","avg","median","max","min"].includes(v)) return v;
+    return "hereta";
+  }
+
+  function readTieCampsFromRow(tr) {
+    const campsSel = tr.querySelector('[data-k="camps"]');
+    const aggSel = tr.querySelector('[data-k="agg_camps"]');
+    const camps = Array.from(campsSel?.selectedOptions || []).map(o => String(o.value)).filter(Boolean);
+    const agg = String(aggSel?.value || "hereta").toLowerCase();
+    return {
+      camps: camps.length ? camps : ["total"],
+      agregacio_camps: ["hereta","sum","avg","median","max","min"].includes(agg) ? agg : "hereta",
+    };
+  }
+
+  function readParticipantsFromRow(tr) {
+    const pModeEl = tr.querySelector('[data-k="p_mode"]');
+    const pNEl = tr.querySelector('[data-k="p_n"]');
+    const pAggEl = tr.querySelector('[data-k="p_agg"]');
+    const pMode = pModeEl ? pModeEl.value : "hereta";
+    const pN = pNEl ? Number(pNEl.value || 1) : 1;
+    const pAgg = pAggEl ? pAggEl.value : "sum";
+    return { pMode, pN, pAgg };
+  }
+
+  function applyParticipantsToObj(obj, rowParticipants) {
+    const { pMode, pN, pAgg } = rowParticipants || {};
+    obj.scope.participants = { mode: pMode || "hereta" };
+    if (isParticipantsModeWithN(pMode)) obj.scope.participants.n = pN;
+    obj.agregacio_participants = pAgg || "sum";
+  }
+
+  function readTieObjFromRow(tr, includeParticipants) {
+    const campCfg = readTieCampsFromRow(tr);
+    const ordre = tr.querySelector('[data-k="ordre"]').value;
+
+    const appScope = tr.querySelector('[data-k="app_scope"]').value; // hereta|tots|app:<id>
+    const exMode = tr.querySelector('[data-k="ex_mode"]').value; // hereta|tots|millor_1|millor_n|primer|ultim|index|llista
+    const bestN = Number(tr.querySelector('[data-k="ex_best_n"]').value || 1);
+    const exIndex = Number(tr.querySelector('[data-k="ex_index"]').value || 1);
+    const exIdsRaw = (tr.querySelector('[data-k="ex_ids"]').value || "").trim();
+    const exIds = exIdsRaw
+      ? exIdsRaw.split(",").map(x => Number(x.trim())).filter(x => !isNaN(x) && x > 0)
+      : [];
+
+    const obj = {
+      camp: campCfg.camps[0] || "total", // compat legacy
+      camps: campCfg.camps,
+      agregacio_camps: campCfg.agregacio_camps,
+      ordre,
+    };
+    obj.scope = {
+      aparells: { mode: "hereta" },
+      exercicis: { mode: exMode },
+    };
+
+    if (appScope === "tots") {
+      obj.scope.aparells.mode = "tots";
+    } else if (appScope.startsWith("app:")) {
+      const id = Number(appScope.split(":")[1]);
+      if (!isNaN(id)) {
+        obj.scope.aparells.mode = "seleccionar";
+        obj.scope.aparells.ids = [id];
+      }
+    }
+
+    if (exMode === "millor_n") obj.scope.exercicis.best_n = bestN;
+    if (exMode === "index") obj.scope.exercicis.index = exIndex;
+    if (exMode === "llista") obj.scope.exercicis.ids = exIds;
+
+    if (includeParticipants) {
+      applyParticipantsToObj(obj, readParticipantsFromRow(tr));
+    }
+
+    return obj;
+  }
+
+  function setParticipantsUI(tr, pMode, pN, pAgg) {
+    const pModeSel = tr.querySelector('[data-k="p_mode"]');
+    const pNEl = tr.querySelector('[data-k="p_n"]');
+    const pAggSel = tr.querySelector('[data-k="p_agg"]');
+    if (pModeSel) pModeSel.value = pMode;
+    if (pNEl) pNEl.value = pN;
+    if (pAggSel) pAggSel.value = pAgg;
+  }
+
+  function refreshParticipantsControls(tr) {
+    const pModeSel = tr.querySelector('[data-k="p_mode"]');
+    const pNEl = tr.querySelector('[data-k="p_n"]');
+    if (!pModeSel || !pNEl) return;
+    const m = pModeSel.value;
+    pNEl.style.display = isParticipantsModeWithN(m) ? "" : "none";
+  }
+
+  function bindParticipantsListeners(tr) {
+    const pModeSel = tr.querySelector('[data-k="p_mode"]');
+    const pNEl = tr.querySelector('[data-k="p_n"]');
+    const pAggSel = tr.querySelector('[data-k="p_agg"]');
+    if (pModeSel) {
+      pModeSel.addEventListener("change", () => {
+        refreshParticipantsControls(tr);
+        syncAdvancedFromUI();
+      });
+    }
+    if (pNEl) pNEl.addEventListener("input", syncAdvancedFromUI);
+    if (pAggSel) pAggSel.addEventListener("change", syncAdvancedFromUI);
+  }
+
+  function normalizeParticipantsFromTie(t) {
+    const scope = t.scope || {};
+    const sParts = scope.participants || {};
+    let pMode = (sParts.mode || "hereta").toLowerCase().trim();
+    if (!["hereta","tots","millor_1","millor_n","pitjor_1","pitjor_n"].includes(pMode)) pMode = "hereta";
+    const pN = Number(sParts.n || 1);
+    const pAgg = (t.agregacio_participants || "sum").toLowerCase();
+    return { pMode, pN, pAgg };
+  }
+
+  function addDefaultTieCriterion(cur, includeParticipants) {
+    const item = {
+      camp: "total",
+      camps: ["total"],
+      agregacio_camps: "hereta",
+      ordre: "desc",
+      scope: {
+        aparells: { mode: "hereta" },
+        exercicis: { mode: "hereta" },
+      },
+    };
+    if (includeParticipants) {
+      const defaults = getParticipantsDefaults();
+      item.scope.participants = defaults.participants;
+      item.agregacio_participants = defaults.agregacio_participants;
+    }
+    cur.push(item);
+  }
+
+  function _equipsOptionsHTML(selectedIds) {
+    const selected = new Set((selectedIds || []).map(x => String(x)));
+    return (EQUIPS || []).map(e => `
+      <option value="${esc(e.id)}" ${selected.has(String(e.id)) ? "selected" : ""}>
+        ${esc(e.nom)} (${esc(e.membres_count || 0)})
+      </option>
+    `).join("");
+  }
+
+  function renderEquipManualRows(rows) {
+    if (!els.eqManualRows) return;
+    const data = Array.isArray(rows) ? rows : [];
+    els.eqManualRows.innerHTML = "";
+
+    if (!data.length) {
+      els.eqManualRows.innerHTML = `<div class="small text-muted">Cap particio manual definida.</div>`;
+      return;
+    }
+
+    data.forEach((r, idx) => {
+      const label = (r && (r.label || r.key) || "").toString();
+      const equipIds = Array.isArray(r && r.equip_ids) ? r.equip_ids : [];
+
+      const row = document.createElement("div");
+      row.className = "eq-manual-row border rounded p-2 mb-2";
+      row.innerHTML = `
+        <div class="row">
+          <div class="col-12 col-md-4 mb-2">
+            <label class="small text-muted mb-1">Etiqueta</label>
+            <input class="form-control form-control-sm" data-k="label" type="text" value="${esc(label)}" placeholder="Bloc A">
+          </div>
+          <div class="col-12 col-md-7 mb-2">
+            <label class="small text-muted mb-1">Equips</label>
+            <select class="form-control form-control-sm" data-k="equip_ids" multiple size="4">
+              ${_equipsOptionsHTML(equipIds)}
+            </select>
+          </div>
+          <div class="col-12 col-md-1 d-flex align-items-end mb-2">
+            <button type="button" class="btn btn-sm btn-outline-danger w-100" data-act="del">-</button>
+          </div>
+        </div>
+      `;
+
+      row.querySelector('[data-act="del"]').addEventListener("click", () => {
+        const cur = readEquipManualRows();
+        cur.splice(idx, 1);
+        renderEquipManualRows(cur);
+        syncAdvancedFromUI();
+      });
+
+      row.querySelectorAll('input,select').forEach(node => {
+        node.addEventListener("input", syncAdvancedFromUI);
+        node.addEventListener("change", syncAdvancedFromUI);
+      });
+
+      els.eqManualRows.appendChild(row);
+    });
+  }
+
+  function readEquipManualRows() {
+    const out = [];
+    document.querySelectorAll("#eqManualRows .eq-manual-row").forEach((row, idx) => {
+      const labelRaw = (row.querySelector('[data-k="label"]')?.value || "").trim();
+      const ids = Array.from(row.querySelector('[data-k="equip_ids"]')?.selectedOptions || [])
+        .map(o => Number(o.value))
+        .filter(v => !isNaN(v));
+      if (!labelRaw && !ids.length) return;
+      out.push({
+        key: `manual_${idx + 1}`,
+        label: labelRaw || `Particio ${idx + 1}`,
+        equip_ids: ids
+      });
+    });
+    return out;
+  }
+
+  function readEquipsSchemaUI() {
+    const llindars = (els.eqAgeLlindars?.value || "")
+      .split(",")
+      .map(x => Number(String(x).trim()))
+      .filter(v => !isNaN(v));
+
+    return {
+      incloure_sense_equip: !!(els.eqIncludeSenseEquip && els.eqIncludeSenseEquip.checked),
+      particions_manuals: readEquipManualRows(),
+      particio_edat: {
+        activa: !!(els.eqAgeActiva && els.eqAgeActiva.checked),
+        llindars: llindars,
+        sense_data_label: ((els.eqAgeSenseLabel?.value || "Sense edat").trim() || "Sense edat"),
+      },
+      combinar_manual_i_edat: !!(els.eqCombineManualAge && els.eqCombineManualAge.checked),
+    };
+  }
+
+  function syncEquipUIFromSchema(schema) {
+    const eq = schema || {};
+    const age = eq.particio_edat || {};
+
+    if (els.eqIncludeSenseEquip) els.eqIncludeSenseEquip.checked = !!eq.incloure_sense_equip;
+    if (els.eqAgeActiva) els.eqAgeActiva.checked = !!age.activa;
+    if (els.eqAgeLlindars) {
+      const vals = Array.isArray(age.llindars) ? age.llindars : [];
+      els.eqAgeLlindars.value = vals.join(",");
+    }
+    if (els.eqAgeSenseLabel) els.eqAgeSenseLabel.value = age.sense_data_label || "Sense edat";
+    if (els.eqCombineManualAge) els.eqCombineManualAge.checked = !!eq.combinar_manual_i_edat;
+    renderEquipManualRows(Array.isArray(eq.particions_manuals) ? eq.particions_manuals : []);
+  }
+
   function readTieUI() {
     const out = [];
+    const includeParticipants = isTipusEquips();
     document.querySelectorAll("#tieBody tr").forEach(tr => {
-      const camp = tr.querySelector('[data-k="camp"]').value;
-      const ordre = tr.querySelector('[data-k="ordre"]').value;
-
-      // --- scope.aparells (single-choice) ---
-      const appScope = tr.querySelector('[data-k="app_scope"]').value; // hereta|tots|app:<id>
-
-      // --- scope.exercicis ---
-      const exMode = tr.querySelector('[data-k="ex_mode"]').value; // hereta|tots|millor_1|millor_n|index|llista
-      const bestN = Number(tr.querySelector('[data-k="ex_best_n"]').value || 1);
-      const exIndex = Number(tr.querySelector('[data-k="ex_index"]').value || 1);
-      const exIdsRaw = (tr.querySelector('[data-k="ex_ids"]').value || "").trim();
-      const exIds = exIdsRaw
-        ? exIdsRaw.split(",").map(x => Number(x.trim())).filter(x => !isNaN(x) && x > 0)
-        : [];
-
-      const obj = { camp, ordre };
-
-      // Nou format (recomanat)
-      obj.scope = { aparells: { mode: "hereta" }, exercicis: { mode: exMode } };
-
-      if (appScope === "tots") {
-        obj.scope.aparells.mode = "tots";
-      } else if (appScope.startsWith("app:")) {
-        const id = Number(appScope.split(":")[1]);
-        if (!isNaN(id)) {
-          obj.scope.aparells.mode = "seleccionar";
-          obj.scope.aparells.ids = [id];
-        }
-      }
-
-      if (exMode === "millor_n") obj.scope.exercicis.best_n = bestN;
-      if (exMode === "index") obj.scope.exercicis.index = exIndex;
-      if (exMode === "llista") obj.scope.exercicis.ids = exIds;
-
-      out.push(obj);
+      out.push(readTieObjFromRow(tr, includeParticipants));
     });
     return out;
   }
@@ -653,7 +1080,6 @@
       const scope = t.scope || {};
       const sApps = scope.aparells || {};
       const sEx = scope.exercicis || {};
-
       // aparells (single-choice)
       let appMode = (sApps.mode || "").toLowerCase().trim();
       let appIds = Array.isArray(sApps.ids) ? sApps.ids.map(Number).filter(x => !isNaN(x)) : [];
@@ -671,14 +1097,20 @@
 
       // exercicis
       let exMode = (sEx.mode || "hereta").toLowerCase().trim();
-      if (!["hereta","tots","millor_1","millor_n","index","llista"].includes(exMode)) exMode = "hereta";
+      if (!["hereta","tots","millor_1","millor_n","primer","ultim","index","llista"].includes(exMode)) exMode = "hereta";
       const exBestN = Number(sEx.best_n || 1);
       const exIndex = Number(sEx.index || 1);
       const exIds = Array.isArray(sEx.ids) ? sEx.ids : [];
       const exIdsStr = exIds.length ? exIds.join(",") : "";
 
-      // camp/ordre
-      const camp = t.camp || "total";
+      const pNorm = normalizeParticipantsFromTie(t);
+      const pMode = pNorm.pMode;
+      const pN = pNorm.pN;
+      const pAgg = pNorm.pAgg;
+
+      // camp(s)/ordre
+      const tieCamps = normalizeTieCampsFromObj(t);
+      const tieAggCamps = normalizeTieAggCampsFromObj(t);
       const ordre = (t.ordre || "desc").toLowerCase();
 
       // options aparells single
@@ -704,6 +1136,8 @@
               <option value="tots">Tots</option>
               <option value="millor_1">Millor 1</option>
               <option value="millor_n">Millors N</option>
+              <option value="primer">Primer existent</option>
+              <option value="ultim">Ultim existent</option>
               <option value="index">Exercici #</option>
               <option value="llista">Exercicis (llista)</option>
             </select>
@@ -717,6 +1151,8 @@
             <div class="small text-muted" data-k="ex_hint" style="display:none;"></div>
           </div>
         </td>
+
+        ${getParticipantsCellHTML()}
 
         <td>
           <select class="form-control form-control-sm" data-k="ordre">
@@ -738,7 +1174,6 @@
       const exIndexEl = tr.querySelector('[data-k="ex_index"]');
       const exIdsEl = tr.querySelector('[data-k="ex_ids"]');
       const exHint = tr.querySelector('[data-k="ex_hint"]');
-
       const ordSel = tr.querySelector('[data-k="ordre"]');
 
       appScopeSel.value = appScope;
@@ -748,6 +1183,7 @@
       exBestNEl.value = exBestN;
       exIndexEl.value = exIndex;
       exIdsEl.value = exIdsStr;
+      setParticipantsUI(tr, pMode, pN, pAgg);
 
       function getCurrentAppIds() {
         const v = appScopeSel.value;
@@ -762,9 +1198,9 @@
 
       function refreshAppUI() {
         // Quan canvia l'scope d'aparell, refresca el dropdown de camp
-        const currentCamp = tr.querySelector('[data-k="camp"]')?.value || camp;
+        const curr = readTieCampsFromRow(tr);
         const campCell = tr.querySelector('[data-cell="camp"]');
-        campCell.innerHTML = buildCampSelectHTMLForApps(getCurrentAppIds(), currentCamp);
+        campCell.innerHTML = buildCampSelectHTMLForApps(getCurrentAppIds(), curr.camps, curr.agregacio_camps);
       }
 
       function refreshExUI() {
@@ -776,6 +1212,12 @@
         if (m === "millor_n") {
           exHint.style.display = "";
           exHint.textContent = "Tria els N millors exercicis (per aparell).";
+        } else if (m === "primer") {
+          exHint.style.display = "";
+          exHint.textContent = "Agafa el primer exercici existent de cada aparell.";
+        } else if (m === "ultim") {
+          exHint.style.display = "";
+          exHint.textContent = "Agafa l'ultim exercici existent de cada aparell.";
         } else if (m === "index") {
           exHint.style.display = "";
           exHint.textContent = "Fa servir només l'exercici # (1..N) de cada aparell.";
@@ -790,10 +1232,11 @@
 
       // Render inicial camp + controls
       const campCell = tr.querySelector('[data-cell="camp"]');
-      campCell.innerHTML = buildCampSelectHTMLForApps(getCurrentAppIds(), camp);
+      campCell.innerHTML = buildCampSelectHTMLForApps(getCurrentAppIds(), tieCamps, tieAggCamps);
 
       refreshAppUI();
       refreshExUI();
+      refreshParticipantsControls(tr);
 
       // listeners
       appScopeSel.addEventListener("change", () => { refreshAppUI(); syncAdvancedFromUI(); });
@@ -802,9 +1245,10 @@
       exBestNEl.addEventListener("input", syncAdvancedFromUI);
       exIndexEl.addEventListener("input", syncAdvancedFromUI);
       exIdsEl.addEventListener("input", syncAdvancedFromUI);
+      bindParticipantsListeners(tr);
 
       tr.addEventListener("change", (e) => {
-        if (e.target && e.target.matches('[data-k="camp"],[data-k="ordre"]')) {
+        if (e.target && e.target.matches('[data-k="camps"],[data-k="agg_camps"],[data-k="ordre"]')) {
           syncAdvancedFromUI();
         }
       });
@@ -818,9 +1262,11 @@
 
       els.tieBody.appendChild(tr);
     });
+    refreshTipusUI();
   }
 
-  function syncAdvancedFromUI() {
+  function syncAdvancedFromUI(opts = {}) {
+    const preferAdvanced = !!opts.preferAdvanced;
     const cfg = currentCfg();
     if (!cfg) return;
 
@@ -843,8 +1289,13 @@
     };
     Object.keys(filtres).forEach(k => { if (!filtres[k].length) delete filtres[k]; });
 
-    // allow manual JSON override
-    try { filtres = JSON.parse(els.tFiltres.value || "{}"); } catch(e) {}
+    let usedAdvancedFiltres = false;
+    if (preferAdvanced && advancedDirty.filtres) {
+      try {
+        filtres = JSON.parse(els.tFiltres.value || "{}");
+        usedAdvancedFiltres = true;
+      } catch(e) {}
+    }
 
     // aparells
     const apMode = els.apSel.checked ? "seleccionar" : "tots";
@@ -858,12 +1309,25 @@
       if (codes.length) camps_per_aparell[String(id)] = codes;
     });
 
+    const tipus = currentTipus();
+    const exCfg = readMainExercicisFromUI();
+
     // desempats
     let desempat = readTieUI();
-    const rawT = (els.tDesempat.value || "").trim();
-    if (rawT) {
-      try { desempat = JSON.parse(rawT); } catch(e) {}
+    let usedAdvancedDesempat = false;
+    if (preferAdvanced && advancedDirty.desempat) {
+      const rawT = (els.tDesempat.value || "").trim();
+      if (rawT) {
+        try {
+          desempat = JSON.parse(rawT);
+          usedAdvancedDesempat = true;
+        } catch(e) {}
+      } else {
+        usedAdvancedDesempat = true;
+      }
     }
+    desempat = sanitizeDesempatForTipus(desempat, tipus);
+    const equipsSchema = readEquipsSchemaUI();
 
     const schema = {
       particions: parts,
@@ -872,8 +1336,8 @@
         aparells: { mode: apMode, ids: apIds },
         camps_per_aparell: camps_per_aparell,
         agregacio_camps: els.sAggCamps.value,
-        exercicis: { mode: els.sExercicisMode.value },
-        exercicis_best_n: Number(els.iExBestN.value || 1),
+        exercicis: exCfg.cfg,
+        exercicis_best_n: exCfg.bestN,
         agregacio_exercicis: els.sAggExercicis.value,
         agregacio_aparells: els.sAggAparells.value,
         ordre: els.sOrdre.value,
@@ -887,10 +1351,19 @@
       presentacio: {
         top_n: Number(els.iTopN.value || 0),
         mostrar_empats: !!els.cEmpats.checked
-      }
+      },
+      equips: equipsSchema,
     };
 
     cfg.schema = schema;
+    if (usedAdvancedDesempat) advancedDirty.desempat = false;
+    if (usedAdvancedFiltres) advancedDirty.filtres = false;
+    if (!advancedDirty.desempat) {
+      els.tDesempat.value = JSON.stringify(desempat, null, 2);
+    }
+    if (!advancedDirty.filtres) {
+      els.tFiltres.value = JSON.stringify(filtres, null, 2);
+    }
     els.advancedJson.value = JSON.stringify(schema, null, 2);
   }
 
@@ -916,8 +1389,12 @@
     });
 
     els.sAggCamps.value = (schema.puntuacio||{}).agregacio_camps || "sum";
-    els.sExercicisMode.value = ((schema.puntuacio||{}).exercicis||{}).mode || "tots";
-    els.iExBestN.value = (schema.puntuacio||{}).exercicis_best_n || 1;
+    const pEx = ((schema.puntuacio||{}).exercicis || {});
+    els.sExercicisMode.value = pEx.mode || "tots";
+    els.iExBestN.value = (schema.puntuacio||{}).exercicis_best_n || pEx.best_n || 1;
+    els.iExIndex.value = pEx.index || 1;
+    els.tExIds.value = Array.isArray(pEx.ids) ? pEx.ids.join(",") : "";
+    refreshMainExercicisUI();
     els.sAggExercicis.value = (schema.puntuacio||{}).agregacio_exercicis || "sum";
     els.sAggAparells.value = (schema.puntuacio||{}).agregacio_aparells || "sum";
     els.sOrdre.value = (schema.puntuacio||{}).ordre || "desc";
@@ -929,6 +1406,10 @@
     renderTieUI(schema.desempat || []);
     els.tDesempat.value = JSON.stringify(schema.desempat || [], null, 2);
     els.tFiltres.value = JSON.stringify(schema.filtres || {}, null, 2);
+    advancedDirty.desempat = false;
+    advancedDirty.filtres = false;
+    syncEquipUIFromSchema(schema.equips || DEFAULT_SCHEMA.equips);
+    refreshTipusUI();
 
     // per aparell UI
     renderPerAppUI(schema);
@@ -958,13 +1439,37 @@
 
   // events: canvis que afecten schema
   ["change","input"].forEach(ev => {
-    ["pCategoria","pSubcategoria","pEntitat","pGrup","sAggCamps","sExercicisMode","iExBestN","sAggExercicis","sAggAparells","sOrdre","iTopN","cEmpats"]
+    ["pCategoria","pSubcategoria","pEntitat","pGrup","sAggCamps","sExercicisMode","iExBestN","iExIndex","tExIds","sAggExercicis","sAggAparells","sOrdre","iTopN","cEmpats","eqIncludeSenseEquip","eqAgeActiva","eqAgeLlindars","eqAgeSenseLabel","eqCombineManualAge"]
       .forEach(id => document.getElementById(id).addEventListener(ev, syncAdvancedFromUI));
 
     [els.fEntitats, els.fCategories, els.fSubcategories, els.fGrups].forEach(x => {
       if (x) x.addEventListener("change", syncAdvancedFromUI);
     });
   });
+
+  if (els.sExercicisMode) {
+    els.sExercicisMode.addEventListener("change", refreshMainExercicisUI);
+  }
+
+  if (els.tDesempat) {
+    els.tDesempat.addEventListener("input", () => {
+      advancedDirty.desempat = true;
+    });
+  }
+  if (els.tFiltres) {
+    els.tFiltres.addEventListener("input", () => {
+      advancedDirty.filtres = true;
+    });
+  }
+
+  if (els.btnEqManualAdd) {
+    els.btnEqManualAdd.addEventListener("click", () => {
+      const cur = readEquipManualRows();
+      cur.push({ key: `manual_${cur.length + 1}`, label: `Particio ${cur.length + 1}`, equip_ids: [] });
+      renderEquipManualRows(cur);
+      syncAdvancedFromUI();
+    });
+  }
 
   els.apTots.addEventListener("change", () => {
     els.apSelBox.style.display = els.apSel.checked ? "" : "none";
@@ -987,14 +1492,7 @@
 
   els.btnTieAdd.addEventListener("click", () => {
     const cur = readTieUI();
-    cur.push({
-      camp: "total",
-      ordre: "desc",
-      scope: {
-        aparells: { mode: "hereta" },
-        exercicis: { mode: "hereta" }
-      }
-    });
+    addDefaultTieCriterion(cur, isTipusEquips());
     renderTieUI(cur);
     syncAdvancedFromUI();
   });
@@ -1028,6 +1526,8 @@
   els.fTipus.addEventListener("change", () => {
     const cfg = currentCfg(); if (!cfg) return;
     cfg.tipus = els.fTipus.value;
+    refreshTipusUI();
+    syncAdvancedFromUI();
     renderList();
   });
 
@@ -1049,7 +1549,7 @@
     const cfg = currentCfg();
     if (!cfg) return;
 
-    syncAdvancedFromUI();
+    syncAdvancedFromUI({ preferAdvanced: true });
 
     const payload = {
       id: (String(cfg.id).startsWith("tmp_") ? null : cfg.id),
@@ -1111,7 +1611,7 @@
     const cfg = currentCfg();
     if (!cfg) return;
 
-    syncAdvancedFromUI();
+    syncAdvancedFromUI({ preferAdvanced: true });
 
     try {
       const cid = cfg.id;

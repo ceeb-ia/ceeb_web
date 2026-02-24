@@ -5,10 +5,15 @@
 {% block content %}
 <div class="container-fluid mt-4">
   <style>
-    .board { display:grid; grid-template-columns: 280px 1fr; gap:14px; }
-    .cardx { background:#fff; border:1px solid #e3e6ef; border-radius:14px; box-shadow:0 1px 2px rgba(0,0,0,.04); }
-    .cardx-h { padding:12px 14px; border-bottom:1px solid #eef1f7; display:flex; justify-content:space-between; align-items:center; gap:10px; }
-    .cardx-b { padding:12px 14px; }
+    .board { display:grid; grid-template-columns: 280px 1fr; gap:16px; align-items:start; }
+    .cardx { background:transparent; border:0; border-radius:0; box-shadow:none; min-width:0; }
+    .cardx-h { padding:0 0 10px; border-bottom:1px solid #eef1f7; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
+    .cardx-b { padding:0; }
+    .board > .cardx:first-child { padding-right:14px; border-right:1px solid #eef1f7; }
+    .header-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; justify-content:flex-end; max-width:100%; }
+    .header-actions .btn { white-space:normal; }
+    #btnClearAll { white-space:normal; max-width:100%; }
+    .cardx-h .mini { flex: 1 1 100%; }
 
     .chip { display:inline-flex; align-items:center; justify-content:center; padding:8px 10px; border-radius:999px; border:1px solid #cfd6e6; background:#f7f8fb; cursor:grab; user-select:none; font-weight:600; }
     .chip:active { cursor:grabbing; }
@@ -20,10 +25,11 @@
     table.rot thead th { position:sticky; top:0; background:#fbfcff; z-index:2; }
     table.rot tbody th { position:sticky; left:0; background:#fbfcff; z-index:1; text-align:left; min-width:150px; width:150; }
 
-    .cell { min-width:150px; height:56px; border-radius:10px; background:#ffffff; display:flex; align-items:center; justify-content:center; gap:8px; }
+    .cell { min-width:150px; min-height:56px; border-radius:10px; background:#ffffff; display:flex; align-items:center; justify-content:center; align-content:center; flex-wrap:wrap; gap:6px; padding:6px; }
     .cell.is-over { outline:2px dashed #94a3b8; outline-offset:2px; background:#f8fafc; }
     .pill { padding:8px 10px; border-radius:12px; background:#111827; color:#fff; font-weight:700; }
     .pill.empty { background:#e5e7eb; color:#111827; font-weight:600; }
+    .pill-rm { margin-left:6px; border:none; background:transparent; color:inherit; font-weight:700; cursor:pointer; line-height:1; }
 
     .mini { font-size:.85rem; color:#6b7280; }
     .row-actions { display:flex; gap:8px; align-items:center; }
@@ -66,6 +72,10 @@
 
     /* en pantalles tàctils: que sempre es vegin (no hi ha hover fiable) */
     @media (max-width: 768px){
+      .board { grid-template-columns: 1fr; gap: 14px; }
+      .board > .cardx:first-child { padding-right:0; border-right:0; border-bottom:1px solid #eef1f7; padding-bottom:12px; }
+      .header-actions { justify-content:flex-start; }
+      #btnClearAll { width:100%; }
       .franja-actions{
         opacity:1;
         pointer-events:auto;
@@ -74,26 +84,37 @@
 
 </style>
 
-  <div class="card-surface mb-3" style="border-radius:14px; border:1px solid #e3e6ef; background:#fff; box-shadow:0 1px 2px rgba(0,0,0,.04);">
-    <div class="d-flex justify-content-between align-items-start p-3 flex-wrap gap-3">
+  <div class="card-surface">
+    <div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-3">
       <div>
         <h2 class="mb-1">Rotacions</h2>
         <div class="text-muted small">Competició: <span class="fw-semibold">{{ competicio.nom }}</span></div>
         <div class="text-muted small">Arrossega grups a la graella i guarda el programa.</div>
       </div>
-      <div class="gap-2 flex-wrap">
+      <div class="header-actions">
+                <div class="dropdown d-inline-block">
+          <button type="button"
+                  class="btn btn-sm btn-outline-success dropdown-toggle js-export-dd-toggle"
+                  aria-haspopup="true"
+                  aria-expanded="false"
+                  id="exportExcelDropdown">
+            Excel
+          </button>
+          <div class="dropdown-menu dropdown-menu-right dropdown-menu-end" aria-labelledby="exportExcelDropdown">
+            <a class="dropdown-item" href="{% url 'rotacions_franges_export_excel' competicio.id %}?mode=participants">
+              Exportar participants
+            </a>
+            <a class="dropdown-item" href="{% url 'rotacions_franges_export_excel' competicio.id %}?mode=groups">
+              Exportar grups
+            </a>
+          </div>
         <a href="{% url 'inscripcions_list' competicio.id %}" class="btn btn-sm btn-outline-primary">Inscripcions</a>
         <a href="{% url 'trampoli_config' competicio.id %}" class="btn btn-sm btn-outline-secondary">Configuració</a>
-        <a href="{% url 'rotacions_franges_export_excel' competicio.id %}"
-          class="btn btn-sm btn-outline-success">
-          📊 Exportar horari a Excel
-        </a>
-      </div>
+        </div>
       </div>
     </div>
-  </div>
 
-  <div class="board">
+    <div class="board">
     <!-- Sidebar -->
     <div class="cardx">
       <div class="cardx-h">
@@ -101,13 +122,13 @@
           <div class="fw-semibold">Grups</div>
           <div class="mini">Drag & drop</div>
         </div>
-        <span class="badge badge-light">{{ grups|length }}</span>
+        <span class="badge badge-light">{{ grups_display|length }}</span>
       </div>
 
       <div class="cardx-b">
         <div class="d-flex flex-wrap" style="gap:10px;">
-          {% for g in grups %}
-            <div class="chip" draggable="true" data-grup="{{ g }}">G{{ g }}</div>
+          {% for g in grups_display %}
+            <div class="chip" draggable="true" data-grup="{{ g.id }}">{{ g.label }}</div>
           {% endfor %}
           <div class="chip chip-muted" draggable="true" data-grup="">(Buit)</div>
         </div>
@@ -239,6 +260,7 @@
     </div>
   </div>
 </div>
+</div>
 <div class="modal fade" id="editFrModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-sm">
     <div class="modal-content">
@@ -263,6 +285,7 @@
 </div>
 
 <script id="grid-data" type="application/json">{{ grid_json|safe }}</script>
+<script id="group-labels-data" type="application/json">{{ group_labels_json|safe }}</script>
 <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.1/dist/umd/popper.min.js"></script>
 <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
@@ -413,9 +436,55 @@ async function postJSON(url, body){
 }
 
 // --- UI helpers ---
-function pillFor(grup){
-  if (!grup) return `<span class="pill empty">—</span>`;
-  return `<span class="pill">G${grup}</span>`;
+const groupLabels = (() => {
+  try {
+    return JSON.parse(document.getElementById("group-labels-data")?.textContent || "{}");
+  } catch (e) {
+    return {};
+  }
+})();
+
+function escapeHtml(s){
+  return String(s ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function normalizeGroups(raw){
+  if (raw == null || raw === "") return [];
+  const arr = Array.isArray(raw) ? raw : [raw];
+  const out = [];
+  const seen = new Set();
+  for (const x of arr){
+    const n = parseInt(x, 10);
+    if (!Number.isFinite(n) || n <= 0 || seen.has(n)) continue;
+    seen.add(n);
+    out.push(n);
+  }
+  return out;
+}
+
+function cellHtml(fr, es, grups){
+  if (!grups.length) return '<span class="pill empty">—</span>';
+  return grups.map((g) => {
+    const label = escapeHtml(groupLabels[String(g)] || `G${g}`);
+    return `<span class="pill">${label}<button type="button" class="pill-rm js-pill-remove" data-franja="${fr}" data-estacio="${es}" data-grup="${g}" title="Eliminar grup">×</button></span>`;
+  }).join("");
+}
+
+function normalizeGridInPlace(){
+  for (const fr in grid){
+    if (!grid[fr] || typeof grid[fr] !== "object"){
+      grid[fr] = {};
+      continue;
+    }
+    for (const es in grid[fr]){
+      grid[fr][es] = normalizeGroups(grid[fr][es]);
+    }
+  }
 }
 
 // --- Estat local ---
@@ -425,6 +494,7 @@ try {
 } catch(e){
   grid = {};
 }
+normalizeGridInPlace();
 
 // --- elements (poden no existir) ---
 const statusEl = document.getElementById("saveStatus");
@@ -435,11 +505,11 @@ async function autoSaveGrid() {
   const cells = [];
   for (const fr in grid) {
     for (const es in grid[fr]) {
-      const g = grid[fr][es];
+      const gs = normalizeGroups(grid[fr][es]);
       cells.push({
         franja: parseInt(fr, 10),
         estacio: parseInt(es, 10),
-        grup: (g == null ? "" : g),
+        grups: gs,
       });
     }
   }
@@ -457,8 +527,10 @@ function renderAll() {
   document.querySelectorAll(".js-cell").forEach((cell) => {
     const fr = cell.dataset.franja;
     const es = cell.dataset.estacio;
-    const g = (grid[fr] && grid[fr][es] != null) ? grid[fr][es] : null;
-    cell.innerHTML = pillFor(g);
+    const gs = normalizeGroups(grid[fr] && grid[fr][es] != null ? grid[fr][es] : []);
+    if (!grid[fr]) grid[fr] = {};
+    grid[fr][es] = gs;
+    cell.innerHTML = cellHtml(fr, es, gs);
   });
   // auto-save cada canvi
   autoSaveGrid();
@@ -571,7 +643,14 @@ function initCellDnD(){
       const es = cell.dataset.estacio;
 
       if (!grid[fr]) grid[fr] = {};
-      grid[fr][es] = (grup === "" ? null : parseInt(grup, 10));
+      if (grup === "") {
+        grid[fr][es] = [];
+      } else {
+        const current = normalizeGroups(grid[fr][es]);
+        const g = parseInt(grup, 10);
+        if (Number.isFinite(g) && g > 0 && !current.includes(g)) current.push(g);
+        grid[fr][es] = current;
+      }
       renderAll();
     });
   });
@@ -613,11 +692,11 @@ function initTopButtons(){
       const cells = [];
       for (const fr in grid){
         for (const es in grid[fr]){
-          const g = grid[fr][es];
+          const gs = normalizeGroups(grid[fr][es]);
           cells.push({
             franja: parseInt(fr, 10),
             estacio: parseInt(es, 10),
-            grup: (g == null ? "" : g),
+            grups: gs,
           });
         }
       }
@@ -690,6 +769,18 @@ function initGlobalClickHandler(){
     // deixa que Bootstrap 4 obri dropdowns
     if (ev.target.closest('[data-toggle="dropdown"]')) return;
 
+    const removePillBtn = ev.target.closest(".js-pill-remove");
+    if (removePillBtn){
+      const fr = removePillBtn.dataset.franja;
+      const es = removePillBtn.dataset.estacio;
+      const g = parseInt(removePillBtn.dataset.grup, 10);
+      if (!fr || !es || !Number.isFinite(g)) return;
+      if (!grid[fr]) grid[fr] = {};
+      grid[fr][es] = normalizeGroups(grid[fr][es]).filter((x) => x !== g);
+      renderAll();
+      return;
+    }
+
     // EDITAR FRANJA (obre modal)
     const editBtn = ev.target.closest(".js-edit-fr");
     if (editBtn){
@@ -728,13 +819,13 @@ function initGlobalClickHandler(){
       return;
     }
 
-    // NETEJAR FRANJA (cel·les a null)
+    // NETEJAR FRANJA (cel·les a buides)
     const clearBtn = ev.target.closest(".js-clear-franja");
     if (clearBtn && clearBtn.dataset.fr) {
       const frId = clearBtn.dataset.fr;
       if (!confirm("Netejar totes les caselles d'aquesta franja?")) return;
       if (!grid[frId]) grid[frId] = {};
-      for (const es of Object.keys(grid[frId])) grid[frId][es] = null;
+      for (const es of Object.keys(grid[frId])) grid[frId][es] = [];
       renderAll();
       return;
     }
@@ -754,11 +845,11 @@ function initGlobalClickHandler(){
         const cells = [];
         for (const fr in grid){
           for (const es in grid[fr]){
-            const g = grid[fr][es];
+            const gs = normalizeGroups(grid[fr][es]);
             cells.push({
               franja: parseInt(fr, 10),
               estacio: parseInt(es, 10),
-              grup: (g == null ? "" : g),
+              grups: gs,
             });
           }
         }
@@ -819,6 +910,45 @@ function initGlobalClickHandler(){
 
 // --- INIT ---
 document.addEventListener("DOMContentLoaded", () => {
+  // Dropdown Excel (forçat manualment per evitar conflictes de versions Bootstrap)
+  const exportToggle = document.querySelector(".js-export-dd-toggle");
+  const exportWrap = exportToggle ? exportToggle.closest(".dropdown") : null;
+  const exportMenu = exportWrap ? exportWrap.querySelector(".dropdown-menu") : null;
+  if (exportToggle && exportMenu) {
+    exportToggle.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const isOpen = exportMenu.classList.contains("show");
+      exportMenu.classList.toggle("show", !isOpen);
+      exportWrap.classList.toggle("show", !isOpen);
+      exportToggle.setAttribute("aria-expanded", isOpen ? "false" : "true");
+    });
+
+    document.addEventListener("click", (ev) => {
+      if (!exportWrap.contains(ev.target)) {
+        exportMenu.classList.remove("show");
+        exportWrap.classList.remove("show");
+        exportToggle.setAttribute("aria-expanded", "false");
+      }
+    });
+
+    exportMenu.querySelectorAll("a.dropdown-item").forEach((a) => {
+      a.addEventListener("click", () => {
+        exportMenu.classList.remove("show");
+        exportWrap.classList.remove("show");
+        exportToggle.setAttribute("aria-expanded", "false");
+      });
+    });
+
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape") {
+        exportMenu.classList.remove("show");
+        exportWrap.classList.remove("show");
+        exportToggle.setAttribute("aria-expanded", "false");
+      }
+    });
+  }
+
   initEditModalPlacement();
   initColumnDnD();
   initCellDnD();

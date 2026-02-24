@@ -85,6 +85,8 @@ class RotacioAssignacio(models.Model):
 
     # grup = número de grup (com ja uses a Inscripcio.grup)
     grup = models.PositiveIntegerField(null=True, blank=True)
+    # Nova representacio: diversos grups a una mateixa cel-la
+    grups = models.JSONField(default=list, blank=True)
 
     class Meta:
         constraints = [
@@ -95,4 +97,7 @@ class RotacioAssignacio(models.Model):
         ]
 
     def __str__(self):
+        if isinstance(self.grups, list) and self.grups:
+            joined = ",".join(str(x) for x in self.grups)
+            return f"{self.competicio} | {self.franja} | {self.estacio} => G{joined}"
         return f"{self.competicio} | {self.franja} | {self.estacio} => G{self.grup or '-'}"
