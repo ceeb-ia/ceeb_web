@@ -2,11 +2,12 @@ import json
 
 from django.http import HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404
+from django.db.models import Count
 from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.http import require_POST
 
-from .models import Competicio
-from .views import InscripcionsListView
+from .models import Competicio, Equip
+from .views import InscripcionsListView, get_allowed_group_fields
 
 
 BUILTIN_TABLE_FIELDS = [
@@ -18,6 +19,7 @@ BUILTIN_TABLE_FIELDS = [
     {"code": "categoria", "label": "Categoria", "kind": "builtin"},
     {"code": "subcategoria", "label": "Subcategoria", "kind": "builtin"},
     {"code": "grup", "label": "Grup", "kind": "builtin"},
+    {"code": "equip", "label": "Equip", "kind": "builtin"},
     {"code": "ordre_sortida", "label": "Ordre", "kind": "builtin"},
 ]
 
@@ -72,6 +74,7 @@ def get_selected_table_columns(competicio, available_cols):
             "categoria",
             "subcategoria",
             "grup",
+            "equip",
             "ordre_sortida",
             "__actions__",
         ]
@@ -110,6 +113,20 @@ class InscripcionsListNewView(InscripcionsListView):
             ctx["group_names"] = {str(k): (v or "") for k, v in group_names.items()}
         else:
             ctx["group_names"] = {}
+
+        team_fields = get_allowed_group_fields(self.competicio)
+        team_field_codes = {f["code"] for f in team_fields}
+        default_team_fields = [c for c in ("entitat", "subcategoria", "sexe") if c in team_field_codes]
+        teams = (
+            Equip.objects.filter(competicio=self.competicio)
+            .annotate(membres_count=Count("membres"))
+            .order_by("nom", "id")
+        )
+        teams_list = list(teams)
+        ctx["team_partition_fields"] = team_fields
+        ctx["team_partition_default_fields"] = default_team_fields
+        ctx["equips_existing"] = teams_list
+        ctx["equip_name_map"] = {str(e.id): e.nom for e in teams_list}
 
         return ctx
 

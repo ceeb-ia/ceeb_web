@@ -44,7 +44,7 @@
       padding: 10px 12px;
     }
 
-    /* Files d’agrupació */
+    /* Files d'agrupació */
     tr.group-row { background-color: #f2f4f7; border-top: 2px solid #cbd5e1; }
     tr.group-row td { padding: 10px 12px; font-weight: 600; color: #1f2937; }
     tr.group-row > td {
@@ -139,6 +139,25 @@
       opacity: 0.65;
       margin-right: 6px;
     }
+    .control-col {
+      width: 54px;
+      min-width: 54px;
+      max-width: 54px;
+      padding: 4px 6px !important;
+      vertical-align: middle !important;
+      text-align: center;
+    }
+    .row-controls {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    .row-controls .drag-handle {
+      display: inline-block;
+      margin-right: 0;
+      line-height: 1;
+    }
     body.dragging, body.dragging * {
       user-select: none !important;
       cursor: grabbing !important;
@@ -152,6 +171,25 @@
     .group-band-5 { background-color: rgba(14,165,233,0.08) !important; }
     .group-band-6 { background-color: rgba(244,63,94,0.08) !important; }
     .group-band-7 { background-color: rgba(34,197,94,0.08) !important; }
+    .team-box {
+      background: #f7f8fb;
+      border: 1px solid #e3e6ef;
+      border-radius: 10px;
+      padding: 10px 12px;
+    }
+    .inscripcio-select {
+      margin: 0;
+      flex: 0 0 auto;
+    }
+    .equip-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid #d2d9ea;
+      background: #f8fbff;
+      font-size: 0.8rem;
+      line-height: 1.2;
+    }
   </style>
 
   <div class="card-surface">
@@ -171,7 +209,7 @@
         <a href="{% url 'import' competicio.id %}" class="btn btn-sm btn-success">+ Importar Excel</a>
         <a href="{% url 'inscripcio_add' competicio.id %}?next={{ request.get_full_path|urlencode }}"
            class="btn btn-sm btn-primary">+ Afegir inscripció</a>
-        <a href="{% url 'trampoli_config' competicio.id %}" class="btn btn-sm btn-outline-warning">
+        <a href="{% url 'trampoli_config' competicio.id %}" class="btn btn-sm btn-outline-primary">
           Configuració competició
         </a>
         <a href="{% url 'created' %}" class="btn btn-sm btn-outline-secondary">Tornar a competicions</a>
@@ -222,7 +260,7 @@
     <!-- CONTROLS -->
     <form method="get" class="mb-3">
       <div class="d-flex justify-content-between align-items-center mb-2">
-        <div class="text-muted small">Configuracions plegables · obre només el que necessitis.</div>
+        <div class="text-muted small">Configuracions plegables: obre només el que necessitis.</div>
         <div class="gap-2">
           <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleAllPanels(true)">Desplegar tot</button>
           <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleAllPanels(false)">Plegar tot</button>
@@ -244,11 +282,11 @@
           <div class="panel-head collapsed" data-target="#panel-agrupacio" aria-expanded="false">
             <div>
               <p class="panel-title mb-0">Agrupació</p>
-              <div class="subtle">Tria camps d’agrupació i aplica/treu l’agrupació.</div>
+              <div class="subtle">Tria camps d'agrupació i aplica/treu l'agrupació.</div>
             </div>
             <div class="d-flex align-items-center gap-2">
               <span class="subtle d-none d-md-inline">Mostra/Oculta</span>
-              <span class="chev">▾</span>
+              <span class="chev">&#9662;</span>
             </div>
           </div>
 
@@ -307,7 +345,7 @@
             </div>
             <div class="d-flex align-items-center gap-2">
               <span class="subtle d-none d-md-inline">Mostra/Oculta</span>
-              <span class="chev">â–¾</span>
+              <span class="chev">&#9662;</span>
             </div>
           </div>
 
@@ -348,7 +386,7 @@
             </div>
             <div class="d-flex align-items-center gap-2">
               <span class="subtle d-none d-md-inline">Mostra/Oculta</span>
-              <span class="chev">▾</span>
+              <span class="chev">&#9662;</span>
             </div>
           </div>
 
@@ -398,7 +436,7 @@
                 <div class="tab-select-card">
                   <div class="d-flex justify-content-between align-items-center mb-2">
                     <div class="fw-semibold">Aplica a pestanyes</div>
-                    <div class="text-muted small">Si no marques cap, s’aplica a totes</div>
+                    <div class="text-muted small">Si no marques cap, s'aplica a totes</div>
                   </div>
 
                   <div class="tab-select-grid">
@@ -412,11 +450,13 @@
                   </div>
                 </div>
               {% else %}
-                <div class="text-muted small">No hi ha agrupació activa: s’aplicarà a totes les inscripcions filtrades.</div>
+                <div class="text-muted small">No hi ha agrupació activa: s'aplicarà a totes les inscripcions filtrades.</div>
               {% endif %}
             </div>
           </div>
         </div>
+
+        {% include "competicio/_equips_panel.html" %}
 
         <!-- ALTRES -->
         <div class="panel">
@@ -427,7 +467,7 @@
             </div>
             <div class="d-flex align-items-center gap-2">
               <span class="subtle d-none d-md-inline">Mostra/Oculta</span>
-              <span class="chev">▾</span>
+              <span class="chev">&#9662;</span>
             </div>
           </div>
           <div id="panel-altres" class="panel-collapse is-collapsed">
@@ -442,14 +482,10 @@
                 <span class="text-muted small fw-semibold">Ordenació de les inscripcions:</span>
 
                 <select name="sort_key" class="form-control form-control-sm" style="width: 210px;">
-                  {% with sk=request.GET.sort_key|default:"nom" %}
-                    <option value="nom" {% if sk == "nom" %}selected{% endif %}>Nom (A-Z)</option>
-                    <option value="edat" {% if sk == "edat" %}selected{% endif %}>Edat / Data naixement</option>
-                    <option value="entitat" {% if sk == "entitat" %}selected{% endif %}>Entitat</option>
-                    <option value="categoria" {% if sk == "categoria" %}selected{% endif %}>Categoria</option>
-                    <option value="subcategoria" {% if sk == "subcategoria" %}selected{% endif %}>Subcategoria</option>
-                    <option value="sexe" {% if sk == "sexe" %}selected{% endif %}>Sexe</option>
-                    <option value="document" {% if sk == "document" %}selected{% endif %}>Document</option>
+                  {% with sk=sort_key_selected|default:"nom_i_cognoms" %}
+                    {% for f in sort_field_options %}
+                      <option value="{{ f.code }}" {% if sk == f.code %}selected{% endif %}>{{ f.label }}</option>
+                    {% endfor %}
                   {% endwith %}
                 </select>
 
@@ -506,6 +542,10 @@
             panel.classList.add('is-collapsed');
             headEl.classList.add('collapsed');
             headEl.setAttribute('aria-expanded', 'false');
+          }
+
+          if (typeof window.__saveInscripcionsUiState === 'function') {
+            window.__saveInscripcionsUiState();
           }
         }
 
@@ -575,9 +615,9 @@
               <table class="table table-striped table-bordered table-sm align-middle">
                 <thead class="table-light">
                   <tr>
+                    <th class="control-col"></th>
                     {% for col in selected_table_columns %}
                       <th>
-                        {% if forloop.first %}<span class="drag-handle" title="Arrossega">&#8942;&#8942;</span>{% endif %}
                         {{ col.label }}
                       </th>
                     {% endfor %}
@@ -590,14 +630,19 @@
                     {% ifchanged r.grup %}
                       {% if r.grup %}
                         <tr class="group-row group-grup" data-group-header="{{ r.grup|default:'' }}">
-                          <td colspan="{{ table_colspan }}">
+                          <td colspan="{{ table_colspan|add:'1' }}">
                             <div class="d-flex justify-content-between align-items-center">
                               <div class="d-flex align-items-center flex-wrap" style="gap:10px;">
                                 <span class="drag-handle" title="Arrossega el bloc">&#8942;&#8942;</span>
-                                <input type="checkbox" class="js-mark-group" value="{{ r.grup|default:'' }}">
                                 {% with gkey=r.grup|stringformat:"s" %}
                                   <span class="font-weight-bold group-title">
-                                    <span class="group-name-text" data-group="{{ r.grup }}">{{ group_names|get_item:gkey|default:"Grup "|add:gkey }}</span>
+                                    <span class="group-name-text" data-group="{{ r.grup }}">
+                                      {% if group_names|get_item:gkey %}
+                                        {{ group_names|get_item:gkey }}
+                                      {% else %}
+                                        Grup {{ gkey }}
+                                      {% endif %}
+                                    </span>
                                   </span>
                                   <button type="button" class="btn btn-sm btn-outline-secondary js-edit-group-name" data-group="{{ r.grup }}">Editar nom</button>
                                   <span class="d-none js-group-name-editor" data-group="{{ r.grup }}">
@@ -613,16 +658,28 @@
                       {% endif %}
                     {% endifchanged %}
 
-                    <tr class="inscripcio-row" data-id="{{ r.id }}" data-group="{{ r.grup|default:'' }}">
+                    <tr class="inscripcio-row" data-id="{{ r.id }}" data-group="{{ r.grup|default:'' }}" data-team="{{ r.equip_id|default:'' }}">
+                      <td class="control-col">
+                        <div class="row-controls">
+                          <input type="checkbox" class="inscripcio-select js-team-row-select" data-ins-id="{{ r.id }}">
+                          <span class="drag-handle" title="Arrossega">&#8942;</span>
+                        </div>
+                      </td>
                       {% for col in selected_table_columns %}
                         <td class="{% if col.code == 'nom_i_cognoms' %}font-weight-bold{% endif %} {% if col.code == '__actions__' %}text-nowrap{% endif %}">
-                          {% if forloop.first %}<span class="drag-handle" title="Arrossega">&#8942;&#8942;</span>{% endif %}
-
                           {% if col.code == "__actions__" %}
                             <a class="btn btn-sm btn-outline-primary"
                                href="{% url 'inscripcio_edit' competicio.id r.id %}?next={{ request.get_full_path|urlencode }}">Editar</a>
                             <a class="btn btn-sm btn-outline-danger"
                                href="{% url 'inscripcio_delete' competicio.id r.id %}?next={{ request.get_full_path|urlencode }}">Eliminar</a>
+                          {% elif col.code == "equip" %}
+                            {% if r.equip_id %}
+                              {% with ek=r.equip_id|stringformat:"s" %}
+                                <span class="equip-badge">{{ equip_name_map|get_item:ek|default:"Equip "|add:ek }}</span>
+                              {% endwith %}
+                            {% else %}
+                              -
+                            {% endif %}
                           {% elif col.kind == "extra" %}
                             {{ r.extra|get_item:col.code|default:"-" }}
                           {% elif col.code == "data_naixement" %}
@@ -650,9 +707,9 @@
         <table class="table table-striped table-bordered table-sm align-middle">
           <thead class="table-light">
             <tr>
+              <th class="control-col"></th>
               {% for col in selected_table_columns %}
                 <th>
-                  {% if forloop.first %}<span class="drag-handle" title="Arrossega">&#8942;&#8942;</span>{% endif %}
                   {{ col.label }}
                 </th>
               {% endfor %}
@@ -661,10 +718,45 @@
 
           <tbody class="sortable-body" data-pane-id="__single__">
             {% for r in records %}
-              <tr class="inscripcio-row" data-id="{{ r.id }}" data-group="{{ r.grup|default:'' }}">
+              {% ifchanged r.grup %}
+                {% if r.grup %}
+                  <tr class="group-row group-grup" data-group-header="{{ r.grup|default:'' }}">
+                    <td colspan="{{ table_colspan|add:'1' }}">
+                      <div class="d-flex justify-content-between align-items-center">
+                        <div class="d-flex align-items-center flex-wrap" style="gap:10px;">
+                          <span class="drag-handle" title="Arrossega el bloc">&#8942;&#8942;</span>
+                          {% with gkey=r.grup|stringformat:"s" %}
+                            <span class="font-weight-bold group-title">
+                              <span class="group-name-text" data-group="{{ r.grup }}">
+                                {% if group_names|get_item:gkey %}
+                                  {{ group_names|get_item:gkey }}
+                                {% else %}
+                                  Grup {{ gkey }}
+                                {% endif %}
+                              </span>
+                            </span>
+                            <button type="button" class="btn btn-sm btn-outline-secondary js-edit-group-name" data-group="{{ r.grup }}">Editar nom</button>
+                            <span class="d-none js-group-name-editor" data-group="{{ r.grup }}">
+                              <input type="text" class="form-control form-control-sm d-inline-block" style="width:240px;" placeholder="Nom del grup..." value="{{ group_names|get_item:gkey|default:'' }}">
+                              <button type="button" class="btn btn-sm btn-primary js-save-group-name" data-group="{{ r.grup }}">Desar</button>
+                              <button type="button" class="btn btn-sm btn-light js-cancel-group-name" data-group="{{ r.grup }}">Cancelar</button>
+                            </span>
+                          {% endwith %}
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                {% endif %}
+              {% endifchanged %}
+              <tr class="inscripcio-row" data-id="{{ r.id }}" data-group="{{ r.grup|default:'' }}" data-team="{{ r.equip_id|default:'' }}">
+                <td class="control-col">
+                  <div class="row-controls">
+                    <input type="checkbox" class="inscripcio-select js-team-row-select" data-ins-id="{{ r.id }}">
+                    <span class="drag-handle" title="Arrossega">&#8942;</span>
+                  </div>
+                </td>
                 {% for col in selected_table_columns %}
                   <td class="{% if col.code == 'nom_i_cognoms' %}font-weight-bold{% endif %} {% if col.code == '__actions__' %}text-nowrap{% endif %}">
-                    {% if forloop.first %}<span class="drag-handle" title="Arrossega">&#8942;&#8942;</span>{% endif %}
                     {% if col.code == "__actions__" %}
                       <a class="btn btn-sm btn-outline-primary"
                          href="{% url 'inscripcio_edit' competicio.id r.id %}?next={{ request.get_full_path|urlencode }}">
@@ -674,6 +766,14 @@
                          href="{% url 'inscripcio_delete' competicio.id r.id %}?next={{ request.get_full_path|urlencode }}">
                         Eliminar
                       </a>
+                    {% elif col.code == "equip" %}
+                      {% if r.equip_id %}
+                        {% with ek=r.equip_id|stringformat:"s" %}
+                          <span class="equip-badge">{{ equip_name_map|get_item:ek|default:"Equip "|add:ek }}</span>
+                        {% endwith %}
+                      {% else %}
+                        -
+                      {% endif %}
                     {% elif col.kind == "extra" %}
                       {{ r.extra|get_item:col.code|default:"-" }}
                     {% elif col.code == "data_naixement" %}
@@ -688,7 +788,7 @@
               </tr>
             {% empty %}
               <tr>
-                <td colspan="{{ table_colspan }}" class="text-center text-muted">No hi ha inscripcions per aquesta competició</td>
+                <td colspan="{{ table_colspan|add:'1' }}" class="text-center text-muted">No hi ha inscripcions per aquesta competició</td>
               </tr>
             {% endfor %}
           </tbody>
@@ -726,6 +826,130 @@
     const li = document.querySelector(`#tabs-root > li.nav-item[data-group-key="${CSS.escape(groupKey)}"]`);
     return (li && li.getAttribute('data-group-label')) ? li.getAttribute('data-group-label') : groupKey;
   }
+
+  const UI_STATE_MAX_AGE_MS = 45 * 60 * 1000;
+  let __uiStateRestoring = false;
+
+  function getUiStateKey() {
+    return `inscripcions_ui_state:{{ competicio.id }}:${window.location.pathname}`;
+  }
+
+  function getActiveTabKey() {
+    const activeLink = document.querySelector('#tabs-root a.nav-link.active');
+    const li = activeLink ? activeLink.closest('li.nav-item') : null;
+    return li ? (li.getAttribute('data-group-key') || null) : null;
+  }
+
+  function getOpenPanelTargets() {
+    const out = [];
+    document.querySelectorAll('.panel-head[data-target]').forEach(head => {
+      if (!head.classList.contains('collapsed')) {
+        const target = head.getAttribute('data-target');
+        if (target) out.push(target);
+      }
+    });
+    return out;
+  }
+
+  function captureUiState(extra) {
+    const base = {
+      savedAt: Date.now(),
+      activeTabKey: getActiveTabKey(),
+      openPanels: getOpenPanelTargets(),
+      scrollY: window.scrollY || window.pageYOffset || 0,
+    };
+    return Object.assign(base, (extra || {}));
+  }
+
+  function saveUiState(extra) {
+    if (__uiStateRestoring) return;
+    try {
+      sessionStorage.setItem(getUiStateKey(), JSON.stringify(captureUiState(extra)));
+    } catch (_err) {}
+  }
+
+  function manualActivateTab(li) {
+    if (!li) return;
+    const link = li.querySelector('a.nav-link');
+    if (!link) return;
+
+    document.querySelectorAll('#tabs-root a.nav-link').forEach(a => {
+      a.classList.remove('active');
+      a.setAttribute('aria-selected', 'false');
+    });
+    document.querySelectorAll('#tabs-content .tab-pane').forEach(p => {
+      p.classList.remove('show', 'active');
+    });
+
+    link.classList.add('active');
+    link.setAttribute('aria-selected', 'true');
+    const paneSel = link.getAttribute('href');
+    const pane = paneSel ? document.querySelector(paneSel) : null;
+    if (pane) pane.classList.add('show', 'active');
+  }
+
+  function restoreUiState() {
+    let state = null;
+    try {
+      state = JSON.parse(sessionStorage.getItem(getUiStateKey()) || 'null');
+    } catch (_err) {
+      state = null;
+    }
+    if (!state || typeof state !== 'object') return;
+
+    const savedAt = Number(state.savedAt || 0);
+    if (savedAt && (Date.now() - savedAt > UI_STATE_MAX_AGE_MS)) {
+      try { sessionStorage.removeItem(getUiStateKey()); } catch (_err) {}
+      return;
+    }
+
+    __uiStateRestoring = true;
+    try {
+      if (Array.isArray(state.openPanels)) {
+        document.querySelectorAll('.panel-head[data-target]').forEach(head => {
+          const target = head.getAttribute('data-target');
+          if (!target) return;
+          setPanelOpen(head, state.openPanels.includes(target));
+        });
+      }
+
+      if (state.activeTabKey) {
+        const li = document.querySelector(`#tabs-root > li.nav-item[data-group-key="${CSS.escape(state.activeTabKey)}"]`);
+        if (li) {
+          const link = li.querySelector('a[data-toggle="tab"]');
+          if (link && window.jQuery && typeof window.jQuery(link).tab === 'function') {
+            window.jQuery(link).tab('show');
+          } else {
+            manualActivateTab(li);
+          }
+        }
+      }
+    } finally {
+      __uiStateRestoring = false;
+    }
+
+    const y = Number(state.scrollY);
+    if (Number.isFinite(y) && y >= 0) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          window.scrollTo(0, y);
+        });
+      });
+    }
+  }
+
+  function reloadWithUiState(extra) {
+    saveUiState(extra);
+    window.location.reload();
+  }
+
+  function navigateWithUiState(url, extra) {
+    saveUiState(extra);
+    window.location.href = url;
+  }
+
+  window.__saveInscripcionsUiState = saveUiState;
+  window.addEventListener('beforeunload', () => saveUiState());
 
   function collectGlobalIds() {
     const ids = [];
@@ -813,10 +1037,24 @@
       return;
     }
 
-    window.location.reload();
+    reloadWithUiState();
   }
 
   document.addEventListener('DOMContentLoaded', function() {
+    restoreUiState();
+
+    const controlsForm = document.querySelector('form.mb-3');
+    if (controlsForm) {
+      controlsForm.addEventListener('submit', () => saveUiState());
+    }
+
+    document.querySelectorAll('a[href]').forEach(a => {
+      const href = a.getAttribute('href') || '';
+      if (!href || href.startsWith('#') || href.startsWith('javascript:')) return;
+      if (a.getAttribute('target') === '_blank' || a.hasAttribute('download')) return;
+      a.addEventListener('click', () => saveUiState());
+    });
+
     // DEBUG ràpid (mira la consola)
     console.log("Sortable present?", typeof Sortable !== "undefined");
 
@@ -832,20 +1070,28 @@
     }
 
     function applyGroupBands() {
+      const clearBandClasses = (el) => {
+        el.classList.remove(...Array.from(el.classList).filter(c => c.startsWith('group-band-')));
+      };
+      const bandFromGroup = (groupVal) => {
+        const gi = parseInt(groupVal, 10);
+        if (isNaN(gi)) return null;
+        return 'group-band-' + (gi % 8);
+      };
+
       document.querySelectorAll('tbody.sortable-body').forEach(tbody => {
-        let bandClass = null;
         Array.from(tbody.querySelectorAll('tr')).forEach(tr => {
+          clearBandClasses(tr);
+
           if (tr.classList.contains('group-row')) {
-            const currentGroup = tr.getAttribute('data-group-header') || null;
-            const gi = currentGroup ? (parseInt(currentGroup, 10) % 8) : 0;
-            bandClass = 'group-band-' + (isNaN(gi) ? 0 : gi);
-            tr.classList.remove(...Array.from(tr.classList).filter(c => c.startsWith('group-band-')));
-            tr.classList.add(bandClass);
+            const bandClass = bandFromGroup(tr.getAttribute('data-group-header'));
+            if (bandClass) tr.classList.add(bandClass);
             return;
           }
-          if (tr.classList.contains('inscripcio-row') && bandClass) {
-            tr.classList.remove(...Array.from(tr.classList).filter(c => c.startsWith('group-band-')));
-            tr.classList.add(bandClass);
+
+          if (tr.classList.contains('inscripcio-row')) {
+            const bandClass = bandFromGroup(tr.getAttribute('data-group'));
+            if (bandClass) tr.classList.add(bandClass);
           }
         });
       });
@@ -881,7 +1127,7 @@
         alert(`No s'ha pogut desar columnes (${resp.status}).\n${txt}`);
         return;
       }
-      window.location.reload();
+      reloadWithUiState();
     }
 
     async function setGroupName(group, name) {
@@ -901,11 +1147,78 @@
       return true;
     }
 
+    function getCurrentInscripcioFilters() {
+      const url = new URL(window.location.href);
+      return {
+        q: url.searchParams.get('q') || '',
+        categoria: url.searchParams.get('categoria') || '',
+        subcategoria: url.searchParams.get('subcategoria') || '',
+        entitat: url.searchParams.get('entitat') || ''
+      };
+    }
+
+    function getSelectedInscripcioIds() {
+      return Array.from(document.querySelectorAll('.js-team-row-select:checked'))
+        .map(el => el.getAttribute('data-ins-id'))
+        .filter(v => !!v);
+    }
+
+    function setVisibleInscripcioSelection(checked) {
+      document.querySelectorAll('.js-team-row-select').forEach(el => {
+        const row = el.closest('tr');
+        if (!row || row.classList.contains('d-none') || row.offsetParent === null) return;
+        el.checked = !!checked;
+      });
+    }
+
+    function getSelectedTeamFields() {
+      return Array.from(document.querySelectorAll('.js-team-field:checked'))
+        .map(el => el.value)
+        .filter(v => !!v);
+    }
+
+    async function postJson(url, payload) {
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': getCookie('csrftoken')
+        },
+        body: JSON.stringify(payload || {})
+      });
+      if (!resp.ok) {
+        const txt = await resp.text();
+        throw new Error(txt || `HTTP ${resp.status}`);
+      }
+      return await resp.json();
+    }
+
+    function renderTeamPreview(data) {
+      const box = document.getElementById('team-preview');
+      if (!box) return;
+      if (!data || !data.ok) {
+        box.innerHTML = '<span class="text-danger">No s\'ha pogut previsualitzar.</span>';
+        return;
+      }
+      if (!data.preview || !data.preview.length) {
+        box.innerHTML = '<span class="text-muted">No hi ha dades per crear equips.</span>';
+        return;
+      }
+      const items = data.preview.slice(0, 8).map(x => `${x.nom_suggerit} (${x.count})`);
+      const extra = data.preview.length > 8 ? `, ... +${data.preview.length - 8}` : '';
+      box.innerHTML =
+        `<span class="text-dark fw-semibold">${data.total_equips}</span> equips previstos ` +
+        `sobre <span class="text-dark fw-semibold">${data.total_inscripcions}</span> inscripcions.<br>` +
+        `<span>${items.join(' | ')}${extra}</span>`;
+    }
     // Tabs Bootstrap 4 (depèn de jQuery + bootstrap.js)
     if (window.jQuery) {
       window.jQuery('a[data-toggle="tab"]').on('click', function (e) {
         e.preventDefault();
         window.jQuery(this).tab('show');
+      });
+      window.jQuery('a[data-toggle="tab"]').on('shown.bs.tab', function () {
+        saveUiState();
       });
     } else {
       console.warn("jQuery no present: les pestanyes BS4 poden no funcionar.");
@@ -942,7 +1255,7 @@
 
           // Si no hi ha fusió, fem reorder normal
           const ok = await saveGlobalOrder(null);
-          if (ok) window.location.reload();
+          if (ok) reloadWithUiState();
         }
       });
     }
@@ -951,22 +1264,13 @@
       return tr && tr.classList.contains('group-row');
     }
 
-    function headerLevel(tr) {
-      if (!tr) return null;
-      if (tr.classList.contains('group-g1')) return 'g1';
-      if (tr.classList.contains('group-g2')) return 'g2';
-      if (tr.classList.contains('group-g3')) return 'g3';
-      return null;
-    }
-
-    // Bloc = header + tot fins abans del següent header del mateix nivell
+    // Bloc = header + tot fins abans del següent header de grup
     function getHeaderBlockRows(headerTr) {
-      const lvl = headerLevel(headerTr);
       const rows = [headerTr];
 
       let cur = headerTr.nextElementSibling;
       while (cur) {
-        if (isHeaderRow(cur) && lvl && cur.classList.contains('group-' + lvl)) break;
+        if (isHeaderRow(cur)) break;
         rows.push(cur);
         cur = cur.nextElementSibling;
       }
@@ -1012,7 +1316,7 @@
 
           const movedId = (item && item.classList.contains('inscripcio-row')) ? item.dataset.id : null;
           const ok = await saveGlobalOrder(movedId);
-          if (ok) window.location.reload();
+          if (ok) reloadWithUiState();
         }
       });
     });
@@ -1061,7 +1365,7 @@
         const name = input ? input.value.trim() : '';
 
         const ok = await setGroupName(g, name);
-        if (ok) window.location.reload();
+        if (ok) reloadWithUiState();
         return;
       }
     });
@@ -1112,11 +1416,222 @@
           alert('Resposta inesperada del servidor.');
           return;
         }
-        window.location.reload();
+        reloadWithUiState();
       } catch (err) {
         console.error(err);
         // Fallback: redirecció normal
-        window.location.href = url.toString();
+        navigateWithUiState(url.toString());
+      }
+    });
+
+    const btnTeamSelectVisible = document.getElementById('btn-team-select-visible');
+    if (btnTeamSelectVisible) {
+      btnTeamSelectVisible.addEventListener('click', () => setVisibleInscripcioSelection(true));
+    }
+
+    const btnTeamClearSelection = document.getElementById('btn-team-clear-selection');
+    if (btnTeamClearSelection) {
+      btnTeamClearSelection.addEventListener('click', () => setVisibleInscripcioSelection(false));
+    }
+
+    const btnTeamPreview = document.getElementById('btn-team-preview');
+    if (btnTeamPreview) {
+      btnTeamPreview.addEventListener('click', async () => {
+        const fields = getSelectedTeamFields();
+        if (!fields.length) {
+          alert("Selecciona com a mínim un camp de partició.");
+          return;
+        }
+        const selectedOnly = document.getElementById('team-auto-selected-only')?.checked;
+        const selectedIds = selectedOnly ? getSelectedInscripcioIds() : [];
+
+        try {
+          const data = await postJson("{% url 'inscripcions_equips_preview' competicio.id %}", {
+            fields: fields,
+            filters: getCurrentInscripcioFilters(),
+            selected_ids: selectedIds
+          });
+          renderTeamPreview(data);
+        } catch (err) {
+          alert(`No s'ha pogut previsualitzar equips.\\n${err.message || err}`);
+        }
+      });
+    }
+
+    const btnTeamAutoCreate = document.getElementById('btn-team-auto-create');
+    if (btnTeamAutoCreate) {
+      btnTeamAutoCreate.addEventListener('click', async () => {
+        const fields = getSelectedTeamFields();
+        if (!fields.length) {
+          alert("Selecciona com a mínim un camp de partició.");
+          return;
+        }
+        const selectedOnly = document.getElementById('team-auto-selected-only')?.checked;
+        const replaceExisting = document.getElementById('team-auto-replace')?.checked ?? true;
+        const selectedIds = selectedOnly ? getSelectedInscripcioIds() : [];
+
+        try {
+          const data = await postJson("{% url 'inscripcions_equips_auto_create' competicio.id %}", {
+            fields: fields,
+            replace_existing: replaceExisting,
+            filters: getCurrentInscripcioFilters(),
+            selected_ids: selectedIds
+          });
+          if (!data.ok) {
+            alert("No s'han pogut crear equips.");
+            return;
+          }
+          reloadWithUiState();
+        } catch (err) {
+          alert(`No s'han pogut crear equips.\\n${err.message || err}`);
+        }
+      });
+    }
+
+    const btnTeamCreateManual = document.getElementById('btn-team-create-manual');
+    if (btnTeamCreateManual) {
+      btnTeamCreateManual.addEventListener('click', async () => {
+        const name = (document.getElementById('team-new-name')?.value || '').trim();
+        if (!name) {
+          alert("Indica un nom per al nou equip.");
+          return;
+        }
+        const ids = getSelectedInscripcioIds();
+        try {
+          const data = await postJson("{% url 'inscripcions_equips_create_manual' competicio.id %}", {
+            name: name,
+            selected_ids: ids
+          });
+          if (!data.ok) {
+            alert("No s'ha pogut crear l'equip.");
+            return;
+          }
+          reloadWithUiState();
+        } catch (err) {
+          alert(`No s'ha pogut crear l'equip.\\n${err.message || err}`);
+        }
+      });
+    }
+
+    const btnTeamAssign = document.getElementById('btn-team-assign');
+    if (btnTeamAssign) {
+      btnTeamAssign.addEventListener('click', async () => {
+        const equipId = document.getElementById('team-existing-select')?.value || '';
+        const ids = getSelectedInscripcioIds();
+        if (!equipId) {
+          alert("Selecciona un equip.");
+          return;
+        }
+        if (!ids.length) {
+          alert("Selecciona com a mínim una inscripció.");
+          return;
+        }
+        try {
+          const data = await postJson("{% url 'inscripcions_equips_assign' competicio.id %}", {
+            equip_id: equipId,
+            inscripcio_ids: ids
+          });
+          if (!data.ok) {
+            alert("No s'han pogut assignar les inscripcions.");
+            return;
+          }
+          reloadWithUiState();
+        } catch (err) {
+          alert(`No s'han pogut assignar les inscripcions.\\n${err.message || err}`);
+        }
+      });
+    }
+
+    const btnTeamUnassign = document.getElementById('btn-team-unassign');
+    if (btnTeamUnassign) {
+      btnTeamUnassign.addEventListener('click', async () => {
+        const ids = getSelectedInscripcioIds();
+        if (!ids.length) {
+          alert("Selecciona com a mínim una inscripció.");
+          return;
+        }
+        try {
+          const data = await postJson("{% url 'inscripcions_equips_unassign' competicio.id %}", {
+            inscripcio_ids: ids
+          });
+          if (!data.ok) {
+            alert("No s'han pogut desassignar les inscripcions.");
+            return;
+          }
+          reloadWithUiState();
+        } catch (err) {
+          alert(`No s'han pogut desassignar les inscripcions.\\n${err.message || err}`);
+        }
+      });
+    }
+
+    const btnTeamDeleteAll = document.getElementById('btn-team-delete-all');
+    if (btnTeamDeleteAll) {
+      btnTeamDeleteAll.addEventListener('click', async () => {
+        const url = btnTeamDeleteAll.getAttribute('data-delete-all-url');
+        if (!url) {
+          alert("URL d'eliminacio massiva no disponible.");
+          return;
+        }
+        const ok = confirm("Vols eliminar tots els equips existents? Les inscripcions quedaran sense equip.");
+        if (!ok) return;
+        try {
+          const data = await postJson(url, {});
+          if (!data.ok) {
+            alert("No s'han pogut eliminar tots els equips.");
+            return;
+          }
+          reloadWithUiState();
+        } catch (err) {
+          alert(`No s'han pogut eliminar tots els equips.\\n${err.message || err}`);
+        }
+      });
+    }
+
+    document.addEventListener('click', async (e) => {
+      const renameBtn = e.target.closest('.js-team-rename');
+      if (renameBtn) {
+        const oldName = renameBtn.getAttribute('data-team-name') || '';
+        const renameUrl = renameBtn.getAttribute('data-rename-url');
+        const newName = prompt("Nou nom de l'equip:", oldName);
+        if (!newName || !newName.trim()) return;
+        if (!renameUrl) {
+          alert("URL de rename no disponible.");
+          return;
+        }
+        try {
+          const data = await postJson(renameUrl, { name: newName.trim() });
+          if (!data.ok) {
+            alert("No s'ha pogut renombrar l'equip.");
+            return;
+          }
+          reloadWithUiState();
+        } catch (err) {
+          alert(`No s'ha pogut renombrar l'equip.\\n${err.message || err}`);
+        }
+        return;
+      }
+
+      const deleteBtn = e.target.closest('.js-team-delete');
+      if (deleteBtn) {
+        const teamName = deleteBtn.getAttribute('data-team-name') || 'Equip';
+        const deleteUrl = deleteBtn.getAttribute('data-delete-url');
+        const ok = confirm(`Eliminar l'equip \"${teamName}\"?\\nLes inscripcions quedaran sense equip.`);
+        if (!ok) return;
+        if (!deleteUrl) {
+          alert("URL de delete no disponible.");
+          return;
+        }
+        try {
+          const data = await postJson(deleteUrl, {});
+          if (!data.ok) {
+            alert("No s'ha pogut eliminar l'equip.");
+            return;
+          }
+          reloadWithUiState();
+        } catch (err) {
+          alert(`No s'ha pogut eliminar l'equip.\\n${err.message || err}`);
+        }
       }
     });
 
@@ -1141,7 +1656,7 @@
           url.searchParams.delete('q');
         }
 
-        window.location.href = url.toString();
+        navigateWithUiState(url.toString());
       }
 
       // Botó de cerca
@@ -1179,5 +1694,3 @@
 
 
 {% endblock %}
-
-

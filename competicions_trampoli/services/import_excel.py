@@ -1,4 +1,6 @@
 # competicio/services/import_excel.py
+import hashlib
+import json
 import unicodedata
 from datetime import datetime, date
 from typing import Optional, Dict, Any, Set, Tuple, List
@@ -28,6 +30,55 @@ def _to_none(v):
     if isinstance(v, str) and not v.strip():
         return None
     return v
+
+
+def _clean_text(v) -> Optional[str]:
+    """
+    Neteja suau de text:
+    - trim
+    - col·lapsa espais múltiples
+    - None si queda buit
+    """
+    v = _to_none(v)
+    if v is None:
+        return None
+    txt = str(v).strip()
+    txt = " ".join(txt.split())
+    return txt or None
+
+
+def _norm_text_key(v) -> Optional[str]:
+    """
+    Clau normalitzada per comparar valors textuals:
+    - trim + col·lapsa espais
+    - sense accents
+    - case-insensitive (casefold)
+    """
+    txt = _clean_text(v)
+    if txt is None:
+        return None
+    txt = "".join(
+        c for c in unicodedata.normalize("NFKD", txt)
+        if not unicodedata.combining(c)
+    )
+    txt = txt.casefold()
+    return txt or None
+
+
+def _normalize_document(v) -> Optional[str]:
+    """
+    Normalització de document per evitar variants trivials:
+    - trim
+    - uppercase
+    - elimina espais i separadors comuns
+    """
+    txt = _clean_text(v)
+    if txt is None:
+        return None
+    txt = txt.upper()
+    for ch in (" ", "-", ".", "/"):
+        txt = txt.replace(ch, "")
+    return txt or None
 
 
 def _parse_date(value) -> Optional[date]:
@@ -65,13 +116,13 @@ BUILTIN = {
     },
     "nom_i_cognoms": {
         "label": "Nom i cognoms",
-        "syn": ["nom_i_cognoms", "nom_cognoms", "participant", "nom_complet", "nomcomplert", "nom_i_llinatges"],
+        "syn": ["nom_i_cognoms", "nom_cognoms", "participant", "nom_complet", "nomcomplert", "nom_i_llinatges", "nombre_y_apellidos","nombre_completo"],
         "setter": lambda defaults, v: defaults.__setitem__("nom_i_cognoms", str(v).strip() if _to_none(v) is not None else None),
     },
     # per si ve separat:
     "nom": {
         "label": "Nom",
-        "syn": ["nom", "name"],
+        "syn": ["nom", "nombre", "name"],
         "setter": None,  # es tracta a banda
     },
     "cognoms": {
@@ -81,7 +132,7 @@ BUILTIN = {
     },
     "entitat": {
         "label": "Entitat/Club",
-        "syn": ["entitat", "club", "equip", "team", "organitzacio", "organizacion"],
+        "syn": ["entitat", "club", "organitzacio", "organizacion"],
         "setter": lambda defaults, v: defaults.__setitem__("entitat", str(v).strip() if _to_none(v) is not None else None),
     },
     "categoria": {
@@ -137,16 +188,201 @@ def _build_syn_map(competicio: Competicio) -> Dict[str, List[str]]:
     return syn_map
 
 
+def _build_value_aliases(competicio: Competicio) -> Dict[str, Dict[str, str]]:
+    """
+    Llegeix aliases de valors des de:
+      competicio.inscripcions_schema["value_aliases"] = {
+        "categoria": {"prebenjami": "Prebenjamí", ...},
+        ...
+      }
+    Retorna mapa normalitzat per clau de comparació.
+    """
+    schema = competicio.inscripcions_schema or {}
+    raw = schema.get("value_aliases") or {}
+    out: Dict[str, Dict[str, str]] = {}
+    if not isinstance(raw, dict):
+        return out
+
+    for field, mapping in raw.items():
+        if not isinstance(mapping, dict):
+            continue
+        out[field] = {}
+        for raw_key, canonical in mapping.items():
+            nk = _norm_text_key(raw_key)
+            cv = _clean_text(canonical)
+            if nk and cv:
+                out[field][nk] = cv
+    return out
+
+
+def _build_existing_text_canon(
+    competicio: Competicio,
+    fields: Tuple[str, ...],
+) -> Dict[str, Dict[str, str]]:
+    """
+    Construeix un mapa de valors canònics ja existents a BD:
+      field -> norm_key -> valor guardat
+    """
+    out: Dict[str, Dict[str, str]] = {f: {} for f in fields}
+    qs = Inscripcio.objects.filter(competicio=competicio)
+    for field in fields:
+        for val in qs.values_list(field, flat=True).distinct():
+            cleaned = _clean_text(val)
+            nk = _norm_text_key(cleaned)
+            if not cleaned or not nk:
+                continue
+            out[field].setdefault(nk, cleaned)
+    return out
+
+
+def _canonicalize_text_field(
+    field: str,
+    value,
+    aliases: Dict[str, Dict[str, str]],
+    canon_map: Dict[str, Dict[str, str]],
+) -> Optional[str]:
+    """
+    Normalitza i canonicalitza un camp textual:
+    1) alias explícit de schema (value_aliases)
+    2) valor canònic ja existent (BD/fitxer actual)
+    3) valor net "tal qual"
+    """
+    cleaned = _clean_text(value)
+    if cleaned is None:
+        return None
+    nk = _norm_text_key(cleaned)
+    if nk is None:
+        return None
+
+    field_aliases = aliases.get(field, {})
+    if nk in field_aliases:
+        canonical = field_aliases[nk]
+    else:
+        canonical = canon_map.get(field, {}).get(nk, cleaned)
+
+    canon_map.setdefault(field, {})[nk] = canonical
+    return canonical
+
+
+def _get_modalitat_extra(extra: Dict[str, Any]) -> Optional[str]:
+    """
+    Recupera la modalitat des d'extra amb variants habituals de clau.
+    """
+    if not isinstance(extra, dict):
+        return None
+    for key in ("modalitat", "modalidad"):
+        v = _clean_text(extra.get(key))
+        if v:
+            return v
+    return None
+
+
+def _build_no_document_signature(defaults: Dict[str, Any], extra: Dict[str, Any]) -> Tuple[str, ...]:
+    """
+    Signatura estable per detectar coincidències quan no hi ha document.
+    """
+    data_naixement = defaults.get("data_naixement")
+    data_key = data_naixement.isoformat() if isinstance(data_naixement, date) else "__NULL__"
+    modalitat = _get_modalitat_extra(extra)
+
+    def text_key(v) -> str:
+        return _norm_text_key(v) or "__NULL__"
+
+    return (
+        text_key(defaults.get("nom_i_cognoms")),
+        text_key(defaults.get("entitat")),
+        text_key(defaults.get("categoria")),
+        text_key(defaults.get("subcategoria")),
+        text_key(defaults.get("sexe")),
+        data_key,
+        text_key(modalitat),
+    )
+
+
+def _normalize_for_dedupe(value):
+    """
+    Normalitza valors per generar una clau estable entre imports.
+    """
+    if value is None:
+        return "__NULL__"
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, str):
+        return _norm_text_key(value) or "__NULL__"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        if value.is_integer():
+            return str(int(value))
+        return format(value, "g")
+    if isinstance(value, list):
+        return [_normalize_for_dedupe(v) for v in value]
+    if isinstance(value, dict):
+        out = {}
+        for k in sorted(value.keys(), key=lambda x: str(x)):
+            out[str(k)] = _normalize_for_dedupe(value[k])
+        return out
+    return _norm_text_key(str(value)) or str(value)
+
+
+def _build_dedupe_key(defaults: Dict[str, Any], extra: Dict[str, Any]) -> str:
+    """
+    Hash estable de la fila per fer imports idempotents quan no hi ha document.
+    """
+    data_naixement = defaults.get("data_naixement")
+    payload = {
+        "nom_i_cognoms": _norm_text_key(defaults.get("nom_i_cognoms")) or "__NULL__",
+        "entitat": _norm_text_key(defaults.get("entitat")) or "__NULL__",
+        "categoria": _norm_text_key(defaults.get("categoria")) or "__NULL__",
+        "subcategoria": _norm_text_key(defaults.get("subcategoria")) or "__NULL__",
+        "sexe": _norm_text_key(defaults.get("sexe")) or "__NULL__",
+        "data_naixement": data_naixement.isoformat() if isinstance(data_naixement, date) else "__NULL__",
+        "document": _normalize_document(defaults.get("document")) or "__NULL__",
+        "modalitat": _norm_text_key(_get_modalitat_extra(extra)) or "__NULL__",
+        "extra": _normalize_for_dedupe(extra or {}),
+    }
+    raw = json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _can_match_no_document(defaults: Dict[str, Any], extra: Dict[str, Any]) -> bool:
+    """
+    Evita comparar només pel nom per reduir falsos positius.
+    """
+    if not _norm_text_key(defaults.get("nom_i_cognoms")):
+        return False
+
+    data_naixement = defaults.get("data_naixement")
+    has_context = any(
+        [
+            _norm_text_key(defaults.get("entitat")),
+            _norm_text_key(defaults.get("categoria")),
+            _norm_text_key(defaults.get("subcategoria")),
+            _norm_text_key(defaults.get("sexe")),
+            data_naixement.isoformat() if isinstance(data_naixement, date) else None,
+            _norm_text_key(_get_modalitat_extra(extra)),
+        ]
+    )
+    return bool(has_context)
+
+
 def importar_inscripcions_excel(fitxer, competicio: Competicio, sheet: str = "") -> Dict[str, Any]:
     """
     Importa inscripcions des d'Excel de forma adaptable:
     - Detecta headers (fila 1)
     - Mapeja camps built-in amb sinònims (configurable)
+    - Normalitza valors textuals per evitar duplicats trivials
+      (majúscules/minúscules, accents, espais)
     - Qualsevol columna no mapejada -> Inscripcio.extra[code_columna]
 
     Duplicats:
     - Si hi ha document: update_or_create(competicio, document)
-    - Si no: crea nou registre (no deduplicable fiable)
+    - Si no: intenta match per signatura "humana" i, si no és possible,
+      fa fallback a dedupe_key estable per evitar duplicats en reimports idèntics
     """
     wb = load_workbook(fitxer, data_only=True)
     ws = wb[sheet] if sheet and sheet in wb.sheetnames else wb.active
@@ -234,13 +470,55 @@ def importar_inscripcions_excel(fitxer, competicio: Competicio, sheet: str = "")
         **existing_schema,
         "columns": merged_cols,
         "synonyms": existing_schema.get("synonyms", {}),
+        "value_aliases": existing_schema.get("value_aliases", {}),
     }
     competicio.save(update_fields=["inscripcions_schema"])
+
+    text_norm_fields = ("categoria", "subcategoria", "sexe", "entitat")
+    value_aliases = _build_value_aliases(competicio)
+    text_canon_map = _build_existing_text_canon(competicio, text_norm_fields)
+
+    # Índex per matching quan no hi ha document (nom + context + modalitat)
+    existing_no_doc_index: Dict[Tuple[str, ...], List[int]] = {}
+    existing_no_doc_qs = Inscripcio.objects.filter(competicio=competicio).only(
+        "id",
+        "nom_i_cognoms",
+        "entitat",
+        "categoria",
+        "subcategoria",
+        "sexe",
+        "data_naixement",
+        "document",
+        "extra",
+    )
+    for ins in existing_no_doc_qs:
+        if _normalize_document(ins.document):
+            continue
+        defaults_existing = {
+            "nom_i_cognoms": ins.nom_i_cognoms,
+            "entitat": ins.entitat,
+            "categoria": ins.categoria,
+            "subcategoria": ins.subcategoria,
+            "sexe": ins.sexe,
+            "data_naixement": ins.data_naixement,
+        }
+        sig = _build_no_document_signature(defaults_existing, ins.extra or {})
+        existing_no_doc_index.setdefault(sig, []).append(ins.id)
+
+    # Índex tècnic per deduplicació estable entre imports
+    existing_dedupe_index: Dict[str, List[int]] = {}
+    existing_dedupe_qs = Inscripcio.objects.filter(competicio=competicio).only("id", "dedupe_key")
+    for ins in existing_dedupe_qs:
+        dk = _clean_text(getattr(ins, "dedupe_key", None))
+        if not dk:
+            continue
+        existing_dedupe_index.setdefault(dk, []).append(ins.id)
 
     # 6) import rows
     creats = 0
     actualitzats = 0
     ignorats = 0
+    ambiguos = 0
     errors = 0
     noms_competicio_excel: Set[str] = set()
 
@@ -311,14 +589,20 @@ def importar_inscripcions_excel(fitxer, competicio: Competicio, sheet: str = "")
             document = None
             if "document" in detected_builtin_col:
                 dv = _to_none(cell_value(r, detected_builtin_col["document"]))
-                document = str(dv).strip() if dv is not None else None
+                document = _normalize_document(dv)
 
-            # normalitzacions suaus
-            if defaults.get("sexe") is not None:
-                defaults["sexe"] = str(defaults["sexe"]).strip()
-            for k in ("categoria", "subcategoria", "entitat"):
-                if defaults.get(k) is not None:
-                    defaults[k] = str(defaults[k]).strip()
+            # normalització/canonicalització de valors textuals
+            for k in text_norm_fields:
+                defaults[k] = _canonicalize_text_field(
+                    field=k,
+                    value=defaults.get(k),
+                    aliases=value_aliases,
+                    canon_map=text_canon_map,
+                )
+            defaults["nom_i_cognoms"] = _clean_text(defaults.get("nom_i_cognoms"))
+            defaults["document"] = _normalize_document(defaults.get("document"))
+            dedupe_key = _build_dedupe_key(defaults, extra)
+            defaults["dedupe_key"] = dedupe_key
 
             if document:
                 obj, created = Inscripcio.objects.update_or_create(
@@ -330,14 +614,72 @@ def importar_inscripcions_excel(fitxer, competicio: Competicio, sheet: str = "")
                     creats += 1
                 else:
                     actualitzats += 1
+                dedupe_ids = existing_dedupe_index.setdefault(dedupe_key, [])
+                if obj.id not in dedupe_ids:
+                    dedupe_ids.append(obj.id)
             else:
                 defaults["document"] = defaults.get("document") or ""   # assegura string, però sense duplicar kwargs
-                Inscripcio.objects.create(
-                    competicio=competicio,
-                    extra=extra,
-                    **defaults,
-                )                
-                creats += 1
+                if _can_match_no_document(defaults, extra):
+                    sig = _build_no_document_signature(defaults, extra)
+                    candidates = existing_no_doc_index.get(sig, [])
+                else:
+                    sig = None
+                    candidates = []
+
+                dedupe_candidates = existing_dedupe_index.get(dedupe_key, [])
+                target_id = None
+
+                if len(candidates) == 1:
+                    target_id = candidates[0]
+                elif len(candidates) > 1:
+                    # Si hi ha ambigüitat "humana", només resolem amb dedupe tècnic unívoc
+                    if len(dedupe_candidates) == 1:
+                        target_id = dedupe_candidates[0]
+                    else:
+                        ambiguos += 1
+                        continue
+                else:
+                    # Sense match "humà", usem dedupe tècnic per garantir idempotència
+                    if len(dedupe_candidates) == 1:
+                        target_id = dedupe_candidates[0]
+                    elif len(dedupe_candidates) > 1:
+                        ambiguos += 1
+                        continue
+
+                if target_id is not None:
+                    updated = Inscripcio.objects.filter(
+                        competicio=competicio,
+                        id=target_id,
+                    ).update(extra=extra, **defaults)
+                    if updated:
+                        actualitzats += 1
+                        dedupe_ids = existing_dedupe_index.setdefault(dedupe_key, [])
+                        if target_id not in dedupe_ids:
+                            dedupe_ids.append(target_id)
+                        if sig is not None:
+                            sig_ids = existing_no_doc_index.setdefault(sig, [])
+                            if target_id not in sig_ids:
+                                sig_ids.append(target_id)
+                    else:
+                        obj = Inscripcio.objects.create(
+                            competicio=competicio,
+                            extra=extra,
+                            **defaults,
+                        )
+                        creats += 1
+                        if sig is not None:
+                            existing_no_doc_index.setdefault(sig, []).append(obj.id)
+                        existing_dedupe_index.setdefault(dedupe_key, []).append(obj.id)
+                else:
+                    obj = Inscripcio.objects.create(
+                        competicio=competicio,
+                        extra=extra,
+                        **defaults,
+                    )
+                    creats += 1
+                    if sig is not None:
+                        existing_no_doc_index.setdefault(sig, []).append(obj.id)
+                    existing_dedupe_index.setdefault(dedupe_key, []).append(obj.id)
 
         except Exception as e:
             errors += 1
@@ -349,6 +691,7 @@ def importar_inscripcions_excel(fitxer, competicio: Competicio, sheet: str = "")
         "creats": creats,
         "actualitzats": actualitzats,
         "ignorats": ignorats,
+        "ambiguos": ambiguos,
         "errors": errors,
         "noms_competicio_excel": sorted(noms_competicio_excel),
     }

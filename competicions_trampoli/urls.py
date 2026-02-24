@@ -20,6 +20,16 @@ from .inscripcions_list_new import (
     inscripcions_save_table_columns as inscripcions_save_table_columns_new,
     inscripcions_set_group_name as inscripcions_set_group_name_new,
 )
+from .views_equips import (
+    equips_assign,
+    equips_auto_create,
+    equips_create_manual,
+    equips_delete,
+    equips_delete_all,
+    equips_preview,
+    equips_rename,
+    equips_unassign,
+)
 
 
 urlpatterns = [
@@ -41,6 +51,14 @@ urlpatterns = [
 
     path("competicio/<int:pk>/inscripcions/save-table-columns/", inscripcions_save_table_columns_new, name="inscripcions_save_table_columns"),
     path("competicio/<int:pk>/inscripcions/set-group-name/", inscripcions_set_group_name_new, name="inscripcions_set_group_name"),
+    path("competicio/<int:pk>/inscripcions/equips/preview/", equips_preview, name="inscripcions_equips_preview"),
+    path("competicio/<int:pk>/inscripcions/equips/auto-create/", equips_auto_create, name="inscripcions_equips_auto_create"),
+    path("competicio/<int:pk>/inscripcions/equips/create/", equips_create_manual, name="inscripcions_equips_create_manual"),
+    path("competicio/<int:pk>/inscripcions/equips/assign/", equips_assign, name="inscripcions_equips_assign"),
+    path("competicio/<int:pk>/inscripcions/equips/unassign/", equips_unassign, name="inscripcions_equips_unassign"),
+    path("competicio/<int:pk>/inscripcions/equips/<int:equip_id>/rename/", equips_rename, name="inscripcions_equips_rename"),
+    path("competicio/<int:pk>/inscripcions/equips/<int:equip_id>/delete/", equips_delete, name="inscripcions_equips_delete"),
+    path("competicio/<int:pk>/inscripcions/equips/delete-all/", equips_delete_all, name="inscripcions_equips_delete_all"),
 
     path("competicio/<int:pk>/inscripcio/<int:ins_id>/editar/", views.InscripcioUpdateView.as_view(), name="inscripcio_edit"),
     path("competicio/<int:pk>/inscripcio/<int:ins_id>/eliminar/", views.InscripcioDeleteView.as_view(), name="inscripcio_delete"),

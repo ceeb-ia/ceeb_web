@@ -26,6 +26,42 @@ class Competicio(models.Model):
         return self.nom
 
 
+class Equip(models.Model):
+    class Origen(models.TextChoices):
+        MANUAL = "manual", "Manual"
+        AUTO = "auto", "Automatic"
+
+    competicio = models.ForeignKey(
+        Competicio,
+        on_delete=models.CASCADE,
+        related_name="equips",
+    )
+    nom = models.CharField(max_length=180)
+    origen = models.CharField(
+        max_length=20,
+        choices=Origen.choices,
+        default=Origen.MANUAL,
+    )
+    criteri = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["nom", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["competicio", "nom"],
+                name="uniq_equip_nom_per_competicio",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["competicio", "nom"]),
+        ]
+
+    def __str__(self):
+        return f"{self.nom} ({self.competicio})"
+
+
 class Inscripcio(models.Model):
     competicio = models.ForeignKey(Competicio, on_delete=models.CASCADE, related_name="inscripcions")
 
@@ -40,11 +76,27 @@ class Inscripcio(models.Model):
     ordre_sortida = models.PositiveIntegerField(null=True, blank=True, db_index=True)
     group_by_default = models.JSONField(default=list, blank=True)
     grup = models.PositiveIntegerField(null=True, blank=True, db_index=True)
+    equip = models.ForeignKey(
+        Equip,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        db_index=True,
+        related_name="membres",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     extra = models.JSONField(default=dict, blank=True)
+    dedupe_key = models.CharField(max_length=64, blank=True, null=True, db_index=True)
 
     class Meta:
         ordering = ["categoria", "subcategoria", "entitat", "sexe", "data_naixement", "nom_i_cognoms"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["competicio", "dedupe_key"],
+                condition=models.Q(dedupe_key__isnull=False) & ~models.Q(dedupe_key=""),
+                name="uniq_inscripcio_competicio_dedupe_key",
+            ),
+        ]
         indexes = [
             models.Index(fields=["competicio", "categoria", "subcategoria"]),
         ]

@@ -1,0 +1,145 @@
+<div class="panel">
+  <div class="panel-head collapsed" data-target="#panel-equips" aria-expanded="false">
+    <div>
+      <p class="panel-title mb-0">Fer Equips</p>
+      <div class="subtle">Crea equips automaticament per particio o assigna manualment.</div>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+      <span class="subtle d-none d-md-inline">Mostra/Oculta</span>
+      <span class="chev">&#9662;</span>
+    </div>
+  </div>
+
+  <div id="panel-equips" class="panel-collapse is-collapsed">
+    <div class="panel-body">
+      <div class="team-box mb-3">
+        <div class="fw-semibold mb-2">Automatic (particions)</div>
+        <div class="chips mb-2">
+          <span class="text-muted small fw-semibold">Particionar per:</span>
+          {% for f in team_partition_fields %}
+            <label class="group-chip" title="{{ f.code }}">
+              <input
+                type="checkbox"
+                class="js-team-field"
+                value="{{ f.code }}"
+                {% if f.code in team_partition_default_fields %}checked{% endif %}
+              >
+              <span>{{ f.label }}</span>
+              {% if f.kind == "extra" %}<span class="badge bg-light text-dark border">extra</span>{% endif %}
+            </label>
+          {% endfor %}
+        </div>
+
+        <div class="d-flex align-items-center flex-wrap" style="gap:10px;">
+          <label class="m-0 small">
+            <input type="checkbox" id="team-auto-selected-only">
+            Nomes inscripcions seleccionades
+          </label>
+          <label class="m-0 small">
+            <input type="checkbox" id="team-auto-replace" checked>
+            Reassignar equips existents
+          </label>
+          <button type="button" class="btn btn-sm btn-outline-info" id="btn-team-preview">Previsualitzar</button>
+          <button type="button" class="btn btn-sm btn-outline-dark" id="btn-team-auto-create">Crear equips automaticament</button>
+        </div>
+
+        <div id="team-preview" class="small text-muted mt-2"></div>
+      </div>
+
+      <hr class="my-3">
+
+      <div class="team-box mb-3">
+        <div class="fw-semibold mb-2">Manual</div>
+        <div class="d-flex align-items-center flex-wrap mb-2" style="gap:10px;">
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-team-select-visible">
+            Seleccionar visibles
+          </button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-team-clear-selection">
+            Treure seleccio
+          </button>
+        </div>
+
+        <div class="d-flex align-items-center flex-wrap mb-2" style="gap:10px;">
+          <input type="text" class="form-control form-control-sm" id="team-new-name" style="max-width:260px;" placeholder="Nom del nou equip...">
+          <button type="button" class="btn btn-sm btn-outline-primary" id="btn-team-create-manual">
+            Crear equip (i assignar seleccionades)
+          </button>
+        </div>
+
+        <div class="d-flex align-items-center flex-wrap" style="gap:10px;">
+          <select id="team-existing-select" class="form-control form-control-sm" style="max-width:260px;">
+            <option value="">-- Selecciona equip --</option>
+            {% for e in equips_existing %}
+              <option value="{{ e.id }}">{{ e.nom }} ({{ e.membres_count }})</option>
+            {% endfor %}
+          </select>
+          <button type="button" class="btn btn-sm btn-outline-dark" id="btn-team-assign">
+            Assignar seleccionades
+          </button>
+          <button type="button" class="btn btn-sm btn-outline-warning" id="btn-team-unassign">
+            Treure equip a seleccionades
+          </button>
+        </div>
+      </div>
+
+      <div class="team-box">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <div class="fw-semibold">Equips existents</div>
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-danger"
+            id="btn-team-delete-all"
+            data-delete-all-url="{% url 'inscripcions_equips_delete_all' competicio.id %}"
+          >
+            Eliminar tots els equips
+          </button>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Nom</th>
+                <th style="width:100px;">Origen</th>
+                <th style="width:100px;">Membres</th>
+                <th style="width:180px;">Accions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for e in equips_existing %}
+                <tr>
+                  <td>{{ e.nom }}</td>
+                  <td>{{ e.get_origen_display }}</td>
+                  <td>{{ e.membres_count }}</td>
+                  <td class="text-nowrap">
+                    <button
+                      type="button"
+                      class="btn btn-sm btn-outline-secondary js-team-rename"
+                      data-team-id="{{ e.id }}"
+                      data-team-name="{{ e.nom|escape }}"
+                      data-rename-url="{% url 'inscripcions_equips_rename' competicio.id e.id %}"
+                    >
+                      Renombrar
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-sm btn-outline-danger js-team-delete"
+                      data-team-id="{{ e.id }}"
+                      data-team-name="{{ e.nom|escape }}"
+                      data-delete-url="{% url 'inscripcions_equips_delete' competicio.id e.id %}"
+                    >
+                      Eliminar
+                    </button>
+                  </td>
+                </tr>
+              {% empty %}
+                <tr>
+                  <td colspan="4" class="text-muted text-center">No hi ha equips creats.</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

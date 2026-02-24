@@ -1,6 +1,7 @@
 import random
 from django.shortcuts import render
 import math
+from datetime import date, datetime
 from django.contrib import messages
 from django.shortcuts import get_object_or_404
 from django.urls import reverse_lazy
@@ -29,15 +30,41 @@ from collections import defaultdict
 from collections import OrderedDict
 
 
-ALLOWED_SORT_FIELDS = {
+BUILTIN_SORT_FIELDS = [
+    {"code": "nom_i_cognoms", "label": "Nom (A-Z)", "kind": "builtin"},
+    {"code": "data_naixement", "label": "Edat / Data naixement", "kind": "builtin"},
+    {"code": "document", "label": "Document", "kind": "builtin"},
+    {"code": "sexe", "label": "Sexe", "kind": "builtin"},
+    {"code": "entitat", "label": "Entitat", "kind": "builtin"},
+    {"code": "categoria", "label": "Categoria", "kind": "builtin"},
+    {"code": "subcategoria", "label": "Subcategoria", "kind": "builtin"},
+    {"code": "grup", "label": "Grup", "kind": "builtin"},
+]
+
+# Compatibilitat amb URLs antigues (?sort_key=nom|edat)
+LEGACY_SORT_KEY_MAP = {
     "nom": "nom_i_cognoms",
-    "edat": "data_naixement",        # per edat, ordenarem per data naixement
-    "document": "document",
-    "sexe": "sexe",
-    "entitat": "entitat",
-    "categoria": "categoria",
-    "subcategoria": "subcategoria",
-    "grup": "grup",
+    "edat": "data_naixement",
+}
+
+BUILTIN_EXCEL_FIELDS = [
+    {"code": "nom_i_cognoms", "label": "Nom i cognoms", "kind": "builtin"},
+    {"code": "document", "label": "DNI", "kind": "builtin"},
+    {"code": "sexe", "label": "Sexe", "kind": "builtin"},
+    {"code": "data_naixement", "label": "Data naixement", "kind": "builtin"},
+    {"code": "entitat", "label": "Entitat", "kind": "builtin"},
+    {"code": "categoria", "label": "Categoria", "kind": "builtin"},
+    {"code": "subcategoria", "label": "Subcategoria", "kind": "builtin"},
+    {"code": "grup", "label": "Grup", "kind": "builtin"},
+    {"code": "ordre_sortida", "label": "Ordre", "kind": "builtin"},
+]
+
+# Compatibilitat amb URLs antigues (?excel_cols=nom|dni|naixement|ordre)
+LEGACY_EXCEL_COL_MAP = {
+    "nom": "nom_i_cognoms",
+    "dni": "document",
+    "naixement": "data_naixement",
+    "ordre": "ordre_sortida",
 }
 
 # Camps built-in del model que volem permetre agrupar sempre
@@ -99,6 +126,109 @@ def get_allowed_group_fields(competicio):
                 seen.add(code)
 
     return out
+
+
+def get_available_sort_fields(competicio):
+    """
+    Camps ordenables: builtins + extras detectats a schema.columns.
+    """
+    out = []
+    seen = set()
+
+    for f in BUILTIN_SORT_FIELDS:
+        if f["code"] not in seen:
+            out.append(f)
+            seen.add(f["code"])
+
+    schema = competicio.inscripcions_schema or {}
+    cols = schema.get("columns") or []
+    if isinstance(cols, list):
+        for c in cols:
+            if not isinstance(c, dict):
+                continue
+            code = c.get("code")
+            if not code or code in seen:
+                continue
+            kind = c.get("kind") or "extra"
+            if kind != "extra":
+                continue
+            label = c.get("label") or code
+            out.append({"code": code, "label": label, "kind": "extra"})
+            seen.add(code)
+
+    return out
+
+
+def get_available_excel_columns(competicio):
+    """
+    Columnes exportables a Excel: builtins + extras detectats al schema.
+    """
+    out = []
+    seen = set()
+
+    for f in BUILTIN_EXCEL_FIELDS:
+        if f["code"] not in seen:
+            out.append(f)
+            seen.add(f["code"])
+
+    schema = competicio.inscripcions_schema or {}
+    cols = schema.get("columns") or []
+    if isinstance(cols, list):
+        for c in cols:
+            if not isinstance(c, dict):
+                continue
+            code = c.get("code")
+            if not code or code in seen:
+                continue
+            kind = c.get("kind") or "extra"
+            if kind != "extra":
+                continue
+            label = c.get("label") or code
+            out.append({"code": code, "label": label, "kind": "extra"})
+            seen.add(code)
+
+    return out
+
+
+def get_excel_export_value(obj, code):
+    v = get_inscripcio_value(obj, code)
+    if code == "data_naixement":
+        return v.strftime("%d/%m/%Y") if v else "-"
+    if v in (None, ""):
+        return "-"
+    if isinstance(v, (dict, list)):
+        return json.dumps(v, ensure_ascii=False)
+    return v
+
+
+def _sort_scalar(v):
+    if isinstance(v, (int, float)):
+        return (0, float(v))
+    if isinstance(v, (date, datetime)):
+        return (1, v.isoformat())
+    return (2, str(v).casefold())
+
+
+def sort_records_by_field(records, sort_code, descending=False):
+    """
+    Ordenació portable (builtins + extra JSON), amb buits al final.
+    """
+    filled = []
+    empty = []
+
+    for o in records:
+        v = get_inscripcio_value(o, sort_code)
+        if v in (None, ""):
+            empty.append(o)
+        else:
+            filled.append((o, v))
+
+    # tiebreak estable per id asc, independent de l'ordre asc/desc
+    filled.sort(key=lambda t: t[0].id)
+    filled.sort(key=lambda t: _sort_scalar(t[1]), reverse=descending)
+    empty.sort(key=lambda o: o.id)
+
+    return [o for (o, _v) in filled] + empty
 
 
 def _s(v):
@@ -339,7 +469,8 @@ class InscripcionsImportExcelView(FormView):
         messages.success(
             self.request,
             f"Importació OK. Full: {result['full']} | Creats: {result['creats']} | "
-            f"Actualitzats: {result['actualitzats']} | Ignorats: {result['ignorats']}"
+            f"Actualitzats: {result['actualitzats']} | Ignorats: {result['ignorats']} | "
+            f"Ambiguos: {result.get('ambiguos', 0)}"
         )
         return super().form_valid(form)
 
@@ -407,6 +538,15 @@ class InscripcionsListView(ListView):
     def get(self, request, *args, **kwargs):
         allowed = get_allowed_group_fields(self.competicio)
         allowed_codes = {f["code"] for f in allowed}
+        sort_fields = get_available_sort_fields(self.competicio)
+        sort_allowed_codes = {f["code"] for f in sort_fields}
+        default_sort_code = "nom_i_cognoms" if "nom_i_cognoms" in sort_allowed_codes else (next(iter(sort_allowed_codes), ""))
+
+        def resolve_sort_key(raw_key):
+            k = LEGACY_SORT_KEY_MAP.get((raw_key or "").strip(), (raw_key or "").strip())
+            if k in sort_allowed_codes:
+                return k
+            return default_sort_code
 
         def get_active_group_codes():
             selected = [g for g in request.GET.getlist("group_by") if g in allowed_codes]
@@ -438,28 +578,23 @@ class InscripcionsListView(ListView):
 
         # 0x) EXPORT EXCEL
         if request.GET.get("export_excel") == "1":
-            def fmt_date(d):
-                return d.strftime("%d/%m/%Y") if d else "-"
+            available_excel = get_available_excel_columns(self.competicio)
+            by_code = {c["code"]: c for c in available_excel}
 
-            ALL_COLUMNS = OrderedDict([
-                ("nom", ("Nom i cognoms", lambda o: o.nom_i_cognoms or "-")),
-                ("dni", ("DNI", lambda o: o.document or "-")),
-                ("sexe", ("Sexe", lambda o: o.sexe or "-")),
-                ("naixement", ("Data naixement", lambda o: fmt_date(o.data_naixement))),
-                ("entitat", ("Entitat", lambda o: o.entitat or "-")),
-                ("categoria", ("Categoria", lambda o: o.categoria or "-")),
-                ("subcategoria", ("Subcategoria", lambda o: o.subcategoria or "-")),
-                ("grup", ("Grup", lambda o: o.grup if o.grup is not None else "-")),
-                ("ordre", ("Ordre", lambda o: o.ordre_sortida if o.ordre_sortida is not None else "-")),
-            ])
+            selected_cols_raw = request.GET.getlist("excel_cols")
+            selected_codes = []
+            for raw in selected_cols_raw:
+                code = LEGACY_EXCEL_COL_MAP.get(raw, raw)
+                if code in by_code and code not in selected_codes:
+                    selected_codes.append(code)
 
-            selected_cols = request.GET.getlist("excel_cols")
-            if not selected_cols:
-                selected_cols = list(ALL_COLUMNS.keys())
-            selected_cols = [c for c in selected_cols if c in ALL_COLUMNS]
-            columns = [(ALL_COLUMNS[c][0], ALL_COLUMNS[c][1]) for c in selected_cols] or [
-                (ALL_COLUMNS["nom"][0], ALL_COLUMNS["nom"][1])
-            ]
+            if not selected_codes:
+                selected_codes = list(by_code.keys())
+
+            if not selected_codes and "nom_i_cognoms" in by_code:
+                selected_codes = ["nom_i_cognoms"]
+
+            columns = [(by_code[c]["label"], c) for c in selected_codes]
 
             group_codes = get_active_group_codes()
             grouping_sig = "|".join(group_codes) if group_codes else ""
@@ -482,8 +617,8 @@ class InscripcionsListView(ListView):
                     c.alignment = Alignment(vertical="center")
 
             def write_row(r, obj):
-                for col_i, (_, getter) in enumerate(columns, start=1):
-                    ws.cell(row=r, column=col_i, value=getter(obj))
+                for col_i, (_label, code) in enumerate(columns, start=1):
+                    ws.cell(row=r, column=col_i, value=get_excel_export_value(obj, code))
 
             qs_all = qs_base.annotate(
                 grup_null=Case(
@@ -711,18 +846,17 @@ class InscripcionsListView(ListView):
 
         # 0e) SORT BY GROUPING (sense crear grups)
         if request.GET.get("sort_by_grouping") == "1":
-            sort_key = request.GET.get("sort_key") or "nom"
+            sort_key = resolve_sort_key(request.GET.get("sort_key"))
             sort_dir = request.GET.get("sort_dir") or "asc"
             if sort_dir not in ("asc", "desc", "arrow_asc", "arrow_desc"):
                 sort_dir = "asc"
 
-            if sort_key not in ALLOWED_SORT_FIELDS:
+            if not sort_key:
                 messages.error(request, "Camp d'ordenació no vàlid.")
                 query = request.GET.copy()
                 query.pop("sort_by_grouping", None)
                 return redirect(f"{request.path}?{query.urlencode()}")
 
-            order_field = ALLOWED_SORT_FIELDS[sort_key]
             group_codes = get_active_group_codes()
             grouping_sig = "|".join(group_codes) if group_codes else ""
 
@@ -731,10 +865,14 @@ class InscripcionsListView(ListView):
 
             updates = []
             idx = 1
-            base_prefix = "-" if sort_dir in ("desc", "arrow_desc") else ""
+            descending = sort_dir in ("desc", "arrow_desc")
+            sort_builtin_fields = [sort_key] if hasattr(Inscripcio, sort_key) else []
 
             if not group_codes:
-                base_list = list(qs.order_by(f"{base_prefix}{order_field}", "id").only("id"))
+                base_records = list(
+                    qs.order_by("ordre_sortida", "id").only("id", "extra", *sort_builtin_fields)
+                )
+                base_list = sort_records_by_field(base_records, sort_key, descending=descending)
                 if sort_dir in ("arrow_asc", "arrow_desc"):
                     n = len(base_list)
                     pos = arrow_positions(n)
@@ -759,7 +897,10 @@ class InscripcionsListView(ListView):
                         merge_map[x] = t
 
                 builtin_fields = [c for c in group_codes if hasattr(Inscripcio, c)]
-                records = list(qs.order_by("ordre_sortida", "id").only("id", "extra", *builtin_fields))
+                records = list(
+                    qs.order_by("ordre_sortida", "id").only("id", "extra", *builtin_fields, *sort_builtin_fields)
+                )
+                id_to_record = {r.id: r for r in records}
 
                 tab_to_ids = OrderedDict()
                 for r in records:
@@ -769,8 +910,8 @@ class InscripcionsListView(ListView):
                     tab_to_ids.setdefault(tab_key, []).append(r.id)
 
                 for tab_key, tab_ids in tab_to_ids.items():
-                    tab_qs = qs.filter(id__in=tab_ids).order_by(f"{base_prefix}{order_field}", "id").only("id")
-                    base_list = list(tab_qs)
+                    tab_records = [id_to_record[i] for i in tab_ids if i in id_to_record]
+                    base_list = sort_records_by_field(tab_records, sort_key, descending=descending)
 
                     if sort_dir in ("arrow_asc", "arrow_desc"):
                         n = len(base_list)
@@ -803,19 +944,18 @@ class InscripcionsListView(ListView):
 
         # 0d) SORT WITHIN GROUPS
         if request.GET.get("sort_within_groups") == "1":
-            sort_key = request.GET.get("sort_key") or "nom"
+            sort_key = resolve_sort_key(request.GET.get("sort_key"))
             sort_dir = request.GET.get("sort_dir") or "asc"
             if sort_dir not in ("asc", "desc", "arrow_asc", "arrow_desc"):
                 sort_dir = "asc"
 
-            if sort_key not in ALLOWED_SORT_FIELDS:
+            if not sort_key:
                 messages.error(request, "Camp d'ordenació no vàlid.")
                 query = request.GET.copy()
                 for k in ("sort_within_groups", "sort_key", "sort_dir"):
                     query.pop(k, None)
                 return redirect(f"{request.path}?{query.urlencode()}")
 
-            order_field = ALLOWED_SORT_FIELDS[sort_key]
             qs = self.get_queryset_base_filtrada()
             save_undo_state(request, qs)
 
@@ -828,6 +968,8 @@ class InscripcionsListView(ListView):
 
             updates = []
             idx = 1
+            descending = sort_dir in ("desc", "arrow_desc")
+            sort_builtin_fields = [sort_key] if hasattr(Inscripcio, sort_key) else []
 
             group_nums = list(
                 qs.exclude(grup__isnull=True)
@@ -839,11 +981,12 @@ class InscripcionsListView(ListView):
             with transaction.atomic():
                 for g in group_nums:
                     group_qs = qs.filter(grup=g)
+                    group_records = list(
+                        group_qs.order_by("ordre_sortida", "id").only("id", "extra", *sort_builtin_fields)
+                    )
+                    base_list = sort_records_by_field(group_records, sort_key, descending=descending)
 
                     if sort_dir in ("arrow_asc", "arrow_desc"):
-                        base_prefix = "-" if sort_dir == "arrow_desc" else ""
-                        base_list = list(group_qs.order_by(f"{base_prefix}{order_field}", "id").only("id"))
-
                         n = len(base_list)
                         pos = arrow_positions(n)
                         placed = [None] * n
@@ -855,8 +998,6 @@ class InscripcionsListView(ListView):
                             updates.append(obj)
                             idx += 1
                     else:
-                        prefix = "-" if sort_dir == "desc" else ""
-                        base_list = list(group_qs.order_by(f"{prefix}{order_field}", "id").only("id"))
                         for obj in base_list:
                             obj.ordre_sortida = idx
                             updates.append(obj)
@@ -917,26 +1058,22 @@ class InscripcionsListView(ListView):
                 else:
                     selected_tabs = list(tab_to_ids.items())
 
-            # Assignació: per cada pestanya assignem k grups balancejats (sense interferir)
+            # Assignació: sobre la unió de pestanyes seleccionades
+            selected_ids = []
+            seen_ids = set()
             for _tab_key, ids in selected_tabs:
-                sub_qs = qs_base.filter(id__in=ids).order_by("ordre_sortida", "id")
+                for ins_id in ids:
+                    if ins_id not in seen_ids:
+                        seen_ids.add(ins_id)
+                        selected_ids.append(ins_id)
+
+            if selected_ids:
+                sub_qs = qs_base.filter(id__in=selected_ids).order_by("ordre_sortida", "id")
                 objs = list(sub_qs.only("id", "grup"))
-
-                n = len(objs)
-                if n == 0:
-                    continue
-
-                # Repartim en k grups: mida aproximada = ceil(n/k)
-                size = math.ceil(n / k)
-
-                # start a partir del max actual
-                max_grup = Inscripcio.objects.filter(competicio=self.competicio).aggregate(m=Max("grup"))["m"] or 0
-                start = max_grup
-
-                # balanced dins la pestanya
-                start = assign_groups_balanced(objs, size, start)
-
-                Inscripcio.objects.bulk_update(objs, ["grup"], batch_size=500)
+                if objs:
+                    max_grup = Inscripcio.objects.filter(competicio=self.competicio).aggregate(m=Max("grup"))["m"] or 0
+                    assign_groups_k(objs, k, max_grup)
+                    Inscripcio.objects.bulk_update(objs, ["grup"], batch_size=500)
 
             renumber_groups_for_competicio(self.competicio)
 
@@ -1105,6 +1242,14 @@ class InscripcionsListView(ListView):
         ctx["allowed_group_fields"] = allowed
         ctx["current_query"] = self.request.GET.urlencode()
         ctx["title_fields_selected"] = self.request.GET.getlist("title_fields")
+        sort_fields = get_available_sort_fields(self.competicio)
+        sort_codes = {f["code"] for f in sort_fields}
+        raw_sort_key = self.request.GET.get("sort_key") or "nom_i_cognoms"
+        sort_key_selected = LEGACY_SORT_KEY_MAP.get(raw_sort_key, raw_sort_key)
+        if sort_key_selected not in sort_codes:
+            sort_key_selected = "nom_i_cognoms" if "nom_i_cognoms" in sort_codes else (next(iter(sort_codes), ""))
+        ctx["sort_field_options"] = sort_fields
+        ctx["sort_key_selected"] = sort_key_selected
 
         selected = self.request.GET.getlist("group_by")
         if not selected:
@@ -1137,24 +1282,36 @@ class InscripcionsListView(ListView):
             for group_keys in merges:
                 if not group_keys:
                     continue
-                primary = group_keys[0]
+                t = tuple(group_keys)
                 for k in group_keys:
-                    merge_map[k] = primary
+                    merge_map[k] = t
 
             grouped_merged = OrderedDict()
             label_map_merged = {}
 
             for k, rows in grouped.items():
-                pk = merge_map.get(k, k)
-                grouped_merged.setdefault(pk, []).extend(rows)
-                if pk not in label_map_merged:
-                    label_map_merged[pk] = label_map.get(k, pk)
+                merged_tuple = merge_map.get(k)
+                if merged_tuple:
+                    tab_key = json.dumps(list(merged_tuple), ensure_ascii=False)
+                    grouped_merged.setdefault(tab_key, []).extend(rows)
+                    if tab_key not in label_map_merged:
+                        parts = []
+                        for sk in merged_tuple:
+                            p = label_map.get(sk, sk)
+                            if p not in parts:
+                                parts.append(p)
+                        label_map_merged[tab_key] = " + ".join(parts)
+                else:
+                    tab_key = k
+                    grouped_merged.setdefault(tab_key, []).extend(rows)
+                    if tab_key not in label_map_merged:
+                        label_map_merged[tab_key] = label_map.get(k, k)
 
 
             records_grouped = [
-                            (label_map_merged.get(k, k), rows, k)
-                            for k, rows in grouped_merged.items()
-                        ]
+                (label_map_merged.get(k, k), rows, k)
+                for k, rows in grouped_merged.items()
+            ]
             ctx["tabs"] = [
                 {"key": group_key, "label": group_label, "count": len(group_records)}
                 for (group_label, group_records, group_key) in records_grouped
@@ -1164,22 +1321,18 @@ class InscripcionsListView(ListView):
         else:
             ctx["records_grouped"] = None
 
-        ALL_EXCEL_COLUMNS = [
-            ("nom", "Nom i cognoms"),
-            ("dni", "DNI"),
-            ("sexe", "Sexe"),
-            ("naixement", "Data naixement"),
-            ("entitat", "Entitat"),
-            ("categoria", "Categoria"),
-            ("subcategoria", "Subcategoria"),
-            ("grup", "Grup"),
-            ("ordre", "Ordre"),
-        ]
-        ctx["allowed_excel_columns"] = ALL_EXCEL_COLUMNS
+        excel_cols = get_available_excel_columns(self.competicio)
+        excel_codes = {c["code"] for c in excel_cols}
+        ctx["allowed_excel_columns"] = [(c["code"], c["label"]) for c in excel_cols]
 
-        sel_cols = self.request.GET.getlist("excel_cols")
+        sel_cols_raw = self.request.GET.getlist("excel_cols")
+        sel_cols = []
+        for raw in sel_cols_raw:
+            code = LEGACY_EXCEL_COL_MAP.get(raw, raw)
+            if code in excel_codes and code not in sel_cols:
+                sel_cols.append(code)
         if not sel_cols:
-            sel_cols = [k for k, _ in ALL_EXCEL_COLUMNS]
+            sel_cols = [c["code"] for c in excel_cols]
         ctx["excel_cols_selected"] = sel_cols
 
         base = self.get_queryset_base_filtrada()
@@ -1407,3 +1560,4 @@ def inscripcions_merge_tabs(request, pk):
     c.save(update_fields=["tab_merges"])
 
     return JsonResponse({"ok": True, "merged": final})
+
