@@ -48,6 +48,50 @@ class CompeticioAparell(models.Model):
         ]
 
 
+class InscripcioAparellExclusio(models.Model):
+    """
+    Exclusió explícita d'una inscripció en un aparell concret de la competició.
+    Si no existeix registre, la inscripció s'assumeix admesa a l'aparell.
+    """
+    inscripcio = models.ForeignKey(
+        Inscripcio,
+        on_delete=models.CASCADE,
+        related_name="aparells_exclosos",
+    )
+    comp_aparell = models.ForeignKey(
+        CompeticioAparell,
+        on_delete=models.CASCADE,
+        related_name="inscripcions_excloses",
+    )
+    motiu = models.CharField(max_length=250, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["inscripcio", "comp_aparell"],
+                name="uniq_inscripcio_comp_aparell_exclusio",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["comp_aparell", "inscripcio"]),
+            models.Index(fields=["inscripcio", "comp_aparell"]),
+        ]
+
+    def clean(self):
+        super().clean()
+        ins_comp_id = getattr(self.inscripcio, "competicio_id", None)
+        app_comp_id = getattr(self.comp_aparell, "competicio_id", None)
+        if ins_comp_id and app_comp_id and ins_comp_id != app_comp_id:
+            raise ValidationError(
+                "La inscripcio i el comp_aparell han de pertanyer a la mateixa competicio."
+            )
+
+    def __str__(self):
+        return f"Exclusio inscripcio={self.inscripcio_id} comp_aparell={self.comp_aparell_id}"
+
+
 # OBSOLETA
 class TrampoliConfiguracio(models.Model):
     competicio = models.OneToOneField(Competicio, on_delete=models.CASCADE, related_name="cfg_trampoli")

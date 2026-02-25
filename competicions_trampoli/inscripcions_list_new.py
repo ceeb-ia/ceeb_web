@@ -2,11 +2,13 @@ import json
 
 from django.http import HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404
+from django.db import transaction
 from django.db.models import Count
 from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.http import require_POST
 
-from .models import Competicio, Equip
+from .models import Competicio, Equip, Inscripcio
+from .models_trampoli import CompeticioAparell, InscripcioAparellExclusio
 from .views import InscripcionsListView, get_allowed_group_fields
 
 
@@ -20,6 +22,7 @@ BUILTIN_TABLE_FIELDS = [
     {"code": "subcategoria", "label": "Subcategoria", "kind": "builtin"},
     {"code": "grup", "label": "Grup", "kind": "builtin"},
     {"code": "equip", "label": "Equip", "kind": "builtin"},
+    {"code": "__aparells__", "label": "Aparells", "kind": "ui"},
     {"code": "ordre_sortida", "label": "Ordre", "kind": "builtin"},
 ]
 
@@ -75,6 +78,7 @@ def get_selected_table_columns(competicio, available_cols):
             "subcategoria",
             "grup",
             "equip",
+            "__aparells__",
             "ordre_sortida",
             "__actions__",
         ]
@@ -127,6 +131,46 @@ class InscripcionsListNewView(InscripcionsListView):
         ctx["team_partition_default_fields"] = default_team_fields
         ctx["equips_existing"] = teams_list
         ctx["equip_name_map"] = {str(e.id): e.nom for e in teams_list}
+
+        # Pas 8 del pla: dades necessàries per a la columna "Aparells".
+        aparells_cfg = list(
+            CompeticioAparell.objects
+            .filter(competicio=self.competicio, actiu=True)
+            .select_related("aparell")
+            .order_by("ordre", "id")
+        )
+        active_app_ids = [a.id for a in aparells_cfg]
+        ctx["inscripcio_aparells_cfg"] = aparells_cfg
+        ctx["inscripcio_aparells_active_ids"] = active_app_ids
+
+        visible_ins_ids = set()
+        records_grouped = ctx.get("records_grouped")
+        if records_grouped:
+            for _label, rows, _group_key in records_grouped:
+                for r in rows:
+                    if getattr(r, "id", None):
+                        visible_ins_ids.add(r.id)
+        else:
+            for r in (ctx.get("records") or []):
+                if getattr(r, "id", None):
+                    visible_ins_ids.add(r.id)
+
+        excluded_map = {str(ins_id): [] for ins_id in visible_ins_ids}
+        if visible_ins_ids and active_app_ids:
+            excl_pairs = (
+                InscripcioAparellExclusio.objects
+                .filter(
+                    inscripcio_id__in=visible_ins_ids,
+                    comp_aparell_id__in=active_app_ids,
+                )
+                .values_list("inscripcio_id", "comp_aparell_id")
+            )
+            for ins_id, app_id in excl_pairs:
+                excluded_map.setdefault(str(ins_id), []).append(app_id)
+            for ins_id in excluded_map.keys():
+                excluded_map[ins_id].sort()
+
+        ctx["inscripcio_aparells_excluded_map"] = excluded_map
 
         return ctx
 
@@ -201,3 +245,80 @@ def inscripcions_set_group_name(request, pk):
     competicio.inscripcions_view = view_cfg
     competicio.save(update_fields=["inscripcions_view"])
     return JsonResponse({"ok": True, "group": group_int, "name": name})
+
+
+@require_POST
+@csrf_protect
+def inscripcions_set_aparells(request, pk):
+    """
+    Desa els aparells on competeix una inscripció.
+    Semàntica:
+    - selected_comp_aparell_ids = aparells actius on SI competeix
+    - la resta d'aparells actius queden exclosos (InscripcioAparellExclusio)
+    """
+    competicio = get_object_or_404(Competicio, pk=pk)
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        return HttpResponseBadRequest("JSON invalid")
+
+    inscripcio_id = payload.get("inscripcio_id")
+    selected_ids_raw = payload.get("selected_comp_aparell_ids") or []
+
+    try:
+        inscripcio_id = int(inscripcio_id)
+    except Exception:
+        return HttpResponseBadRequest("inscripcio_id invalid")
+
+    if not isinstance(selected_ids_raw, list):
+        return HttpResponseBadRequest("selected_comp_aparell_ids ha de ser una llista")
+
+    inscripcio = get_object_or_404(Inscripcio, pk=inscripcio_id, competicio=competicio)
+
+    active_ids = list(
+        CompeticioAparell.objects
+        .filter(competicio=competicio, actiu=True)
+        .values_list("id", flat=True)
+    )
+    active_set = set(active_ids)
+
+    selected_set = set()
+    for value in selected_ids_raw:
+        try:
+            v = int(value)
+        except Exception:
+            return HttpResponseBadRequest("selected_comp_aparell_ids conte valors invalids")
+        if v not in active_set:
+            return HttpResponseBadRequest("selected_comp_aparell_ids conte aparells no valids per la competicio")
+        selected_set.add(v)
+
+    excluded_ids = [app_id for app_id in active_ids if app_id not in selected_set]
+
+    with transaction.atomic():
+        # Reemplaça només exclusions dels aparells actius de la competició.
+        InscripcioAparellExclusio.objects.filter(
+            inscripcio=inscripcio,
+            comp_aparell_id__in=active_ids,
+        ).delete()
+
+        if excluded_ids:
+            InscripcioAparellExclusio.objects.bulk_create(
+                [
+                    InscripcioAparellExclusio(
+                        inscripcio_id=inscripcio.id,
+                        comp_aparell_id=app_id,
+                    )
+                    for app_id in excluded_ids
+                ]
+            )
+
+    selected_ids = [app_id for app_id in active_ids if app_id in selected_set]
+    return JsonResponse(
+        {
+            "ok": True,
+            "inscripcio_id": inscripcio.id,
+            "active_comp_aparell_ids": active_ids,
+            "selected_comp_aparell_ids": selected_ids,
+            "excluded_comp_aparell_ids": excluded_ids,
+        }
+    )

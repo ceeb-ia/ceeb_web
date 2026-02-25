@@ -6,6 +6,7 @@ from django.utils.dateparse import parse_datetime
 from django.views.decorators.http import require_GET
 from django.contrib import messages
 from django.db import transaction
+from django.db.models import Exists, OuterRef
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
@@ -13,13 +14,29 @@ from django.views.decorators.http import require_POST
 from django.views.generic import TemplateView, UpdateView
 from django.utils import timezone
 from .models import Competicio, Inscripcio
-from .models_trampoli import Aparell, CompeticioAparell
+from .models_trampoli import Aparell, CompeticioAparell, InscripcioAparellExclusio
+from .models_rotacions import RotacioAssignacio, RotacioFranja
 from .models_scoring import ScoringSchema, ScoreEntry
 from .forms import ScoringSchemaForm
 from .scoring_engine import ScoringEngine, ScoringError
+from .services.rotacions_ordering import (
+    ORDER_MODE_MAINTAIN,
+    assignacio_grups,
+    franja_index_map,
+    get_rotacions_order_modes,
+    order_pairs_for_mode,
+    unique_ordered,
+)
 
 
 logger = logging.getLogger(__name__)
+
+
+def _inscripcio_exclosa_en_aparell(inscripcio_id: int, comp_aparell_id: int) -> bool:
+    return InscripcioAparellExclusio.objects.filter(
+        inscripcio_id=inscripcio_id,
+        comp_aparell_id=comp_aparell_id,
+    ).exists()
 
 
 def _recalculate_scores_for_comp_aparell(competicio, comp_aparell, chunk_size: int = 200) -> dict:
@@ -109,6 +126,19 @@ class ScoringNotesHome(TemplateView):
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         competicio = self.competicio
+        franges = list(RotacioFranja.objects.filter(competicio=competicio).order_by("ordre", "id"))
+        franja_modes = get_rotacions_order_modes(competicio)
+        fr_idx_map = franja_index_map(franges)
+
+        franja_selected_id = None
+        fr_raw = self.request.GET.get("franja")
+        if fr_raw not in (None, ""):
+            try:
+                fr_int = int(fr_raw)
+            except Exception:
+                fr_int = None
+            if fr_int and any(f.id == fr_int for f in franges):
+                franja_selected_id = fr_int
 
         ins = (
             Inscripcio.objects
@@ -135,6 +165,20 @@ class ScoringNotesHome(TemplateView):
             .select_related("aparell")
             .order_by("ordre", "id")
         )
+        aparells_cfg = list(aparells_cfg)
+        active_app_ids = [ca.id for ca in aparells_cfg]
+        excluded_by_ins = defaultdict(set)
+        if active_app_ids:
+            excl_pairs = (
+                InscripcioAparellExclusio.objects
+                .filter(
+                    inscripcio__in=ins,
+                    comp_aparell_id__in=active_app_ids,
+                )
+                .values_list("inscripcio_id", "comp_aparell_id")
+            )
+            for ins_id, app_id in excl_pairs:
+                excluded_by_ins[ins_id].add(app_id)
         
         def clamp_ex(n):
             try:
@@ -174,6 +218,14 @@ class ScoringNotesHome(TemplateView):
             exercici__in=exercicis,
             comp_aparell__in=aparells_cfg,
         )
+        scores_qs = scores_qs.annotate(
+            _excluded=Exists(
+                InscripcioAparellExclusio.objects.filter(
+                    inscripcio_id=OuterRef("inscripcio_id"),
+                    comp_aparell_id=OuterRef("comp_aparell_id"),
+                )
+            )
+        ).filter(_excluded=False)
 
         scores = {}
         for s in scores_qs:
@@ -198,12 +250,17 @@ class ScoringNotesHome(TemplateView):
                     meta_parts.append(str(r.categoria))
                 if getattr(r, "subcategoria", None):
                     meta_parts.append(str(r.subcategoria))
+                allowed_app_ids = [
+                    app_id for app_id in active_app_ids
+                    if app_id not in excluded_by_ins.get(r.id, set())
+                ]
 
                 inscripcions.append({
                     "id": r.id,
                     "order": getattr(r, "ordre_sortida", "") or "",
                     "name": getattr(r, "nom_i_cognoms", "") or "",
                     "group": getattr(r, "grup", 0) or 0,
+                    "allowed_app_ids": allowed_app_ids,
                     "meta": " · ".join(meta_parts) if meta_parts else "",
                 })
 
@@ -211,12 +268,69 @@ class ScoringNotesHome(TemplateView):
         # ─────────────────────────────
         # CONTEXT FINAL
         # ─────────────────────────────
+        rotation_rank_map = {}
+        rotation_groups_by_app = {}
+        if franja_selected_id:
+            assigns = (
+                RotacioAssignacio.objects
+                .filter(
+                    competicio=competicio,
+                    franja_id=franja_selected_id,
+                    estacio__tipus="aparell",
+                    estacio__comp_aparell__isnull=False,
+                )
+                .select_related("estacio")
+            )
+            app_groups_map = {}
+            for a in assigns:
+                app_id = a.estacio.comp_aparell_id
+                groups_for_cell = assignacio_grups(a)
+                prev = app_groups_map.get(app_id, [])
+                app_groups_map[app_id] = unique_ordered(list(prev) + list(groups_for_cell))
+
+            rows_by_group = {}
+            for g, rows in groups:
+                key = 0 if g in (None, 0) else int(g)
+                rows_by_group[key] = list(rows)
+
+            rotate_steps = fr_idx_map.get(franja_selected_id, 0)
+            mode_for_franja = franja_modes.get(str(franja_selected_id), ORDER_MODE_MAINTAIN)
+
+            for app_id in active_app_ids:
+                app_key = str(app_id)
+                app_groups = app_groups_map.get(app_id, [])
+                rotation_groups_by_app[app_key] = app_groups
+                rank = 1
+                for g in app_groups:
+                    base_pairs = []
+                    for r in rows_by_group.get(g, []):
+                        if app_id in excluded_by_ins.get(r.id, set()):
+                            continue
+                        base_pairs.append((r.id, r))
+
+                    ordered = order_pairs_for_mode(
+                        base_pairs,
+                        mode_for_franja,
+                        rotate_steps=rotate_steps,
+                        seed_prefix=f"notes|{competicio.id}|{franja_selected_id}|{app_id}|{g}",
+                    )
+                    for ins_id, _r in ordered:
+                        key = f"{app_id}|{ins_id}"
+                        if key in rotation_rank_map:
+                            continue
+                        rotation_rank_map[key] = rank
+                        rank += 1
+
         ctx.update({
             "competicio": competicio,
             "groups": groups,
             "aparells_cfg": aparells_cfg,
             "exercicis": exercicis,
             "exercicis_by_aparell": exercicis_by_aparell,
+            "franges": franges,
+            "franja_selected_id": franja_selected_id,
+            "rotation_rank_map": rotation_rank_map,
+            "rotation_groups_by_app": rotation_groups_by_app,
 
             # per json_script
             "schemas": schemas,
@@ -366,6 +480,11 @@ def scoring_save(request, pk):
 
     ins = get_object_or_404(Inscripcio, pk=ins_id, competicio=competicio)
     comp_aparell = get_object_or_404(CompeticioAparell, pk=comp_aparell_id, competicio=competicio, actiu=True)
+    if _inscripcio_exclosa_en_aparell(ins.id, comp_aparell.id):
+        return JsonResponse(
+            {"ok": False, "error": "Aquesta inscripcio no competeix en aquest aparell."},
+            status=403,
+        )
 
     ss, _ = ScoringSchema.objects.get_or_create(aparell=comp_aparell.aparell, defaults={"schema": {}})
     schema = ss.schema or {}
@@ -451,6 +570,11 @@ def scoring_save_partial(request, pk):
 
     ins = get_object_or_404(Inscripcio, pk=ins_id, competicio=competicio)
     comp_aparell = get_object_or_404(CompeticioAparell, pk=comp_aparell_id, competicio=competicio, actiu=True)
+    if _inscripcio_exclosa_en_aparell(ins.id, comp_aparell.id):
+        return JsonResponse(
+            {"ok": False, "error": "Aquesta inscripcio no competeix en aquest aparell."},
+            status=403,
+        )
 
     # clamp exercici com ja fas
     max_ex = max(1, min(4, int(getattr(comp_aparell, "nombre_exercicis", 1) or 1)))
@@ -522,6 +646,14 @@ def scoring_updates(request, pk):
         return JsonResponse({"ok": True, "now": None, "updates": []})
 
     qs = ScoreEntry.objects.filter(competicio=competicio, updated_at__gt=dt)
+    qs = qs.annotate(
+        _excluded=Exists(
+            InscripcioAparellExclusio.objects.filter(
+                inscripcio_id=OuterRef("inscripcio_id"),
+                comp_aparell_id=OuterRef("comp_aparell_id"),
+            )
+        )
+    ).filter(_excluded=False)
 
     if comp_aparell_id:
         qs = qs.filter(comp_aparell_id=comp_aparell_id)

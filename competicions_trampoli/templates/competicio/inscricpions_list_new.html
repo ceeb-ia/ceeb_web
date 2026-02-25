@@ -190,6 +190,10 @@
       font-size: 0.8rem;
       line-height: 1.2;
     }
+    .aparells-select {
+      min-width: 180px;
+      max-width: 260px;
+    }
   </style>
 
   <div class="card-surface">
@@ -680,6 +684,24 @@
                             {% else %}
                               -
                             {% endif %}
+                          {% elif col.code == "__aparells__" %}
+                            {% with rid=r.id|stringformat:"s" %}
+                              {% with ex_ids=inscripcio_aparells_excluded_map|get_item:rid %}
+                                <select
+                                  class="form-control form-control-sm aparells-select js-aparells-select"
+                                  data-ins-id="{{ r.id }}"
+                                  multiple
+                                  size="3">
+                                  {% for app in inscripcio_aparells_cfg %}
+                                    <option value="{{ app.id }}" {% if app.id not in ex_ids %}selected{% endif %}>
+                                      {{ app.aparell.nom }}
+                                    </option>
+                                  {% empty %}
+                                    <option value="" disabled>(Sense aparells actius)</option>
+                                  {% endfor %}
+                                </select>
+                              {% endwith %}
+                            {% endwith %}
                           {% elif col.kind == "extra" %}
                             {{ r.extra|get_item:col.code|default:"-" }}
                           {% elif col.code == "data_naixement" %}
@@ -774,6 +796,24 @@
                       {% else %}
                         -
                       {% endif %}
+                    {% elif col.code == "__aparells__" %}
+                      {% with rid=r.id|stringformat:"s" %}
+                        {% with ex_ids=inscripcio_aparells_excluded_map|get_item:rid %}
+                          <select
+                            class="form-control form-control-sm aparells-select js-aparells-select"
+                            data-ins-id="{{ r.id }}"
+                            multiple
+                            size="3">
+                            {% for app in inscripcio_aparells_cfg %}
+                              <option value="{{ app.id }}" {% if app.id not in ex_ids %}selected{% endif %}>
+                                {{ app.aparell.nom }}
+                              </option>
+                            {% empty %}
+                              <option value="" disabled>(Sense aparells actius)</option>
+                            {% endfor %}
+                          </select>
+                        {% endwith %}
+                      {% endwith %}
                     {% elif col.kind == "extra" %}
                       {{ r.extra|get_item:col.code|default:"-" }}
                     {% elif col.code == "data_naixement" %}
@@ -1193,6 +1233,66 @@
       return await resp.json();
     }
 
+    function getSelectedAparellIds(selectEl) {
+      return Array.from(selectEl.options || [])
+        .filter(opt => opt.selected && opt.value !== '')
+        .map(opt => Number(opt.value))
+        .filter(v => Number.isFinite(v));
+    }
+
+    function applySelectedAparellIds(selectEl, ids) {
+      const wanted = new Set((ids || []).map(x => Number(x)).filter(v => Number.isFinite(v)));
+      Array.from(selectEl.options || []).forEach(opt => {
+        const v = Number(opt.value);
+        opt.selected = Number.isFinite(v) && wanted.has(v);
+      });
+    }
+
+    const setAparellsUrl = "{% url 'inscripcions_set_aparells' competicio.id %}";
+    const aparellsSaveTimers = new Map();
+
+    function scheduleSaveAparells(selectEl) {
+      const insId = Number(selectEl.getAttribute('data-ins-id'));
+      if (!Number.isFinite(insId)) return;
+
+      let prev = [];
+      try {
+        prev = JSON.parse(selectEl.dataset.prevSelection || "[]");
+      } catch (_err) {
+        prev = [];
+      }
+
+      const next = getSelectedAparellIds(selectEl);
+
+      if (aparellsSaveTimers.has(insId)) {
+        clearTimeout(aparellsSaveTimers.get(insId));
+      }
+
+      const timer = setTimeout(async () => {
+        try {
+          const data = await postJson(setAparellsUrl, {
+            inscripcio_id: insId,
+            selected_comp_aparell_ids: next
+          });
+
+          if (!data || !data.ok) {
+            throw new Error("Resposta no valida guardant aparells");
+          }
+
+          const saved = Array.isArray(data.selected_comp_aparell_ids)
+            ? data.selected_comp_aparell_ids
+            : next;
+          selectEl.dataset.prevSelection = JSON.stringify(saved);
+          applySelectedAparellIds(selectEl, saved);
+        } catch (err) {
+          applySelectedAparellIds(selectEl, prev);
+          alert(`No s'han pogut desar els aparells de la inscripcio.\\n${err.message || err}`);
+        }
+      }, 250);
+
+      aparellsSaveTimers.set(insId, timer);
+    }
+
     function renderTeamPreview(data) {
       const box = document.getElementById('team-preview');
       if (!box) return;
@@ -1223,6 +1323,11 @@
     } else {
       console.warn("jQuery no present: les pestanyes BS4 poden no funcionar.");
     }
+
+    document.querySelectorAll('.js-aparells-select').forEach(selectEl => {
+      selectEl.dataset.prevSelection = JSON.stringify(getSelectedAparellIds(selectEl));
+      selectEl.addEventListener('change', () => scheduleSaveAparells(selectEl));
+    });
 
     // 1) Sortable de pestanyes
     const tabsRoot = document.getElementById('tabs-root');

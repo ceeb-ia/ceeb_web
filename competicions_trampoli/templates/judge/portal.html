@@ -17,7 +17,8 @@
   <div class="card-surface">
     <div class="d-flex justify-content-between align-items-start mb-3">
       <div>
-        <h2 class="mb-1">Jurat · Entrada per QR</h2>
+        <h2 class="mb-1">{% if judge_kiosk %}Jurat{% else %}Jurat · Entrada per QR{% endif %}</h2>
+        {% if not judge_kiosk %}
         <div class="text-muted small">
           Competició: <span class="fw-semibold">{{ competicio.nom }}</span> ·
           Aparell: <span class="fw-semibold">{{ comp_aparell.aparell.nom }}</span> ·
@@ -26,10 +27,13 @@
         {% if token_obj.label %}
           <div class="text-muted small">Token: <span class="fw-semibold">{{ token_obj.label }}</span></div>
         {% endif %}
+        {% endif %}
       </div>
-      <div class="gap-2">
+      {% if not judge_kiosk %}
+      <div class="d-flex gap-2">
         <a class="btn btn-sm btn-outline-secondary" href="{% url 'scoring_notes_home' competicio.id %}">Tornar a notes</a>
       </div>
+      {% endif %}
     </div>
 
     {% if permissions %}
@@ -79,7 +83,9 @@
                   <div class="mt-2" id="editor-{{ ins.id }}"></div>
 
                   <div class="d-flex justify-content-end mt-2" style="gap:8px;">
+                    {% if not judge_kiosk %}
                     <button type="button" class="btn btn-sm btn-outline-secondary" onclick="copyPrev('{{ ins.id }}')">Copia anterior</button>
+                    {% endif %}
                     <button type="button" class="btn btn-sm btn-primary" onclick="saveNow('{{ ins.id }}')">Desa</button>
                   </div>
                 </div>

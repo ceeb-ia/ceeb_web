@@ -25,6 +25,103 @@
   .card-surface .form-check-input {
     width: auto;
   }
+  .judge-cell {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .preview-classif-table {
+    width: max-content;
+    min-width: 100%;
+    table-layout: auto;
+  }
+  .preview-classif-table th,
+  .preview-classif-table td {
+    vertical-align: top;
+  }
+  .judge-row {
+    display: flex;
+    gap: 0.4rem;
+    align-items: flex-start;
+    margin-bottom: 0.2rem;
+  }
+  .judge-row:last-child {
+    margin-bottom: 0;
+  }
+  .judge-label {
+    font-weight: 600;
+    min-width: 2.2rem;
+  }
+  .judge-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.2rem;
+  }
+  .judge-item {
+    display: inline-flex;
+    gap: 0.25rem;
+    border: 1px solid #dcdcdc;
+    border-radius: 4px;
+    padding: 0.05rem 0.35rem;
+    background: #fafafa;
+    font-size: 0.82rem;
+  }
+  .judge-item .idx {
+    color: #6c757d;
+    font-weight: 600;
+  }
+  .partition-card {
+    border: 1px solid #dde4ef;
+    border-radius: 10px;
+    background: #ffffff;
+    margin-bottom: 0.9rem;
+    overflow: hidden;
+    box-shadow: 0 1px 2px rgba(17, 24, 39, 0.06);
+  }
+  .partition-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.8rem;
+    padding: 0.55rem 0.7rem;
+    border-bottom: 1px solid #e6ecf5;
+    background: linear-gradient(135deg, #f8fbff 0%, #f5f8fc 100%);
+  }
+  .partition-title-wrap {
+    min-width: 0;
+  }
+  .partition-title {
+    font-weight: 700;
+    line-height: 1.2;
+  }
+  .partition-sub {
+    font-size: 0.72rem;
+    color: #667085;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .partition-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.9rem;
+    border-radius: 999px;
+    border: 1px solid #d3deed;
+    background: #ffffff;
+    color: #334155;
+    font-size: 0.75rem;
+    font-weight: 700;
+    line-height: 1;
+    padding: 0.2rem 0.45rem;
+    white-space: nowrap;
+  }
+  .partition-table {
+    margin-bottom: 0;
+  }
+  .part-idx-0 .partition-head { border-left: 4px solid #2f80ed; }
+  .part-idx-1 .partition-head { border-left: 4px solid #f2994a; }
+  .part-idx-2 .partition-head { border-left: 4px solid #27ae60; }
+  .part-idx-3 .partition-head { border-left: 4px solid #eb5757; }
+  .part-idx-4 .partition-head { border-left: 4px solid #56ccf2; }
 
 </style>
 
@@ -369,7 +466,15 @@
               <button type="button" class="btn btn-outline-secondary btn-sm" id="btnPreview">Previsualitzar</button>
             </div>
           </div>
-
+          <div class="font-weight-bold mb-2">Columnes de visualitzacio</div>
+          <div class="text-muted small mb-2">
+            Defineix les columnes que es mostraran a la live i a la previsualitzacio.
+          </div>
+          <div class="gap-2 mb-2">
+            <button type="button" class="btn btn-sm btn-outline-primary" id="btnColAddBuiltin">+ Builtin</button>
+            <button type="button" class="btn btn-sm btn-outline-primary" id="btnColAddRaw">+ Camp</button>
+          </div>
+          <div id="columnsBox" class="mb-3"></div>
           <div class="border rounded p-2" id="previewBox">
             <div class="text-muted small">Fes clic a “Previsualitzar”.</div>
           </div>
@@ -423,7 +528,15 @@
       best_n: 1
     },
     desempat: [],
-    presentacio: { top_n:0, mostrar_empats:true },
+    presentacio: {
+      top_n:0,
+      mostrar_empats:true,
+      columnes: [
+        { type:"builtin", key:"posicio", label:"#", align:"left" },
+        { type:"builtin", key:"participant", label:"Nom", align:"left" },
+        { type:"builtin", key:"punts", label:"Punts", align:"right", decimals:3 },
+      ],
+    },
     equips: {
       incloure_sense_equip: false,
       particions_manuals: [],
@@ -441,6 +554,9 @@
     editorEmpty: document.getElementById("editorEmpty"),
     editorBody: document.getElementById("editorBody"),
     previewBox: document.getElementById("previewBox"),
+    columnsBox: document.getElementById("columnsBox"),
+    btnColAddBuiltin: document.getElementById("btnColAddBuiltin"),
+    btnColAddRaw: document.getElementById("btnColAddRaw"),
 
     fNom: document.getElementById("fNom"),
     fActiva: document.getElementById("fActiva"),
@@ -598,8 +714,6 @@
         out.push({ code: c, label: o.label || c });
       });
     });
-    // fallback si no hi ha res
-    if (!out.length) out.push({ code:"total", label:"Total (ScoreEntry.total)" });
     return out;
   }
 
@@ -618,7 +732,6 @@
         out.push({ code: c, label: o.label || c });
       });
     });
-    if (!out.length) out.push({ code:"total", label:"Total (ScoreEntry.total)" });
     return out;
   }
 
@@ -799,8 +912,6 @@
       const legacy = String((t && t.camp) || "").trim();
       if (legacy) out.push(legacy);
     }
-    if (!out.length) out.push("total");
-
     const dedup = [];
     const seen = new Set();
     out.forEach(c => {
@@ -823,7 +934,7 @@
     const camps = Array.from(campsSel?.selectedOptions || []).map(o => String(o.value)).filter(Boolean);
     const agg = String(aggSel?.value || "hereta").toLowerCase();
     return {
-      camps: camps.length ? camps : ["total"],
+      camps: camps,
       agregacio_camps: ["hereta","sum","avg","median","max","min"].includes(agg) ? agg : "hereta",
     };
   }
@@ -859,7 +970,7 @@
       : [];
 
     const obj = {
-      camp: campCfg.camps[0] || "total", // compat legacy
+      camp: campCfg.camps[0] || "", // compat legacy
       camps: campCfg.camps,
       agregacio_camps: campCfg.agregacio_camps,
       ordre,
@@ -933,8 +1044,8 @@
 
   function addDefaultTieCriterion(cur, includeParticipants) {
     const item = {
-      camp: "total",
-      camps: ["total"],
+      camp: "",
+      camps: [],
       agregacio_camps: "hereta",
       ordre: "desc",
       scope: {
@@ -1265,6 +1376,452 @@
     refreshTipusUI();
   }
 
+  function defaultDisplayColumns() {
+    return [
+      { type:"builtin", key:"posicio", label:"#", align:"left" },
+      { type:"builtin", key:"participant", label:"Nom", align:"left" },
+      { type:"builtin", key:"punts", label:"Punts", align:"right", decimals:3 },
+    ];
+  }
+
+  function normalizeColumnsFromSchema(rawCols) {
+    const cols = Array.isArray(rawCols) ? rawCols : [];
+    if (!cols.length) return defaultDisplayColumns();
+    const out = [];
+    const seen = new Set();
+    let rawIdx = 1;
+
+    cols.forEach(c => {
+      if (!c || typeof c !== "object") return;
+      const type = String(c.type || "builtin").toLowerCase().trim();
+      if (type === "raw") {
+        const key = String(c.key || `raw_${rawIdx++}`).trim();
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        const src = (c.source && typeof c.source === "object") ? c.source : {};
+        const j = (src.jutges && typeof src.jutges === "object") ? src.jutges : {};
+        const ids = Array.isArray(j.ids) ? j.ids : [];
+        const judgeIds = [];
+        ids.forEach(v => {
+          const n = Number(v);
+          if (Number.isFinite(n) && n > 0 && !judgeIds.includes(n)) judgeIds.push(n);
+        });
+        out.push({
+          type: "raw",
+          key,
+          label: String(c.label || key),
+          align: String(c.align || "right"),
+          decimals: Number.isFinite(Number(c.decimals)) ? Number(c.decimals) : 3,
+          source: {
+            aparell_id: Number.isFinite(Number(src.aparell_id)) ? Number(src.aparell_id) : null,
+            exercici: Math.max(1, Number(src.exercici || 1) || 1),
+            camp: String(src.camp || ""),
+            jutges: { ids: judgeIds },
+          },
+        });
+        return;
+      }
+      if (type === "metric") {
+        // compat: converteix metric antic a raw simple.
+        const key = String(c.key || `raw_${rawIdx++}`).trim();
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        const crit = (c.criteri && typeof c.criteri === "object") ? c.criteri : {};
+        const camps = normalizeTieCampsFromObj(crit);
+        const camp = camps.length ? camps[0] : "";
+        const apps = ((crit.scope || {}).aparells || {});
+        let appId = null;
+        if (String(apps.mode || "").toLowerCase() === "seleccionar" && Array.isArray(apps.ids) && apps.ids.length) {
+          const x = Number(apps.ids[0]);
+          appId = Number.isFinite(x) ? x : null;
+        }
+        const ex = ((crit.scope || {}).exercicis || {});
+        let exIdx = 1;
+        if (String(ex.mode || "").toLowerCase() === "index") {
+          const x = Number(ex.index || 1);
+          exIdx = Number.isFinite(x) && x > 0 ? x : 1;
+        }
+        out.push({
+          type: "raw",
+          key,
+          label: String(c.label || camp),
+          align: String(c.align || "right"),
+          decimals: Number.isFinite(Number(c.decimals)) ? Number(c.decimals) : 3,
+          source: {
+            aparell_id: appId,
+            exercici: exIdx,
+            camp: camp,
+            jutges: { ids: [] },
+          },
+        });
+        return;
+      }
+
+      const key = String(c.key || "").trim();
+      if (!["posicio","participant","nom","entitat_nom","participants","punts"].includes(key)) return;
+      if (seen.has(key)) return;
+      seen.add(key);
+      const x = {
+        type: "builtin",
+        key,
+        label: String(c.label || key),
+        align: String(c.align || (key === "punts" ? "right" : "left")),
+      };
+      if (Number.isFinite(Number(c.decimals))) x.decimals = Number(c.decimals);
+      out.push(x);
+    });
+
+    return out.length ? out : defaultDisplayColumns();
+  }
+
+  function getAparellById(appId) {
+    const id = Number(appId);
+    if (!Number.isFinite(id)) return null;
+    return (APARELLS || []).find(a => Number(a.id) === id) || null;
+  }
+
+  function getFieldOptionsForApp(appId) {
+    return (APARELL_FIELD_OPTIONS[String(appId)] || []);
+  }
+
+  function _uniquePositiveInts(arr) {
+    const out = [];
+    (arr || []).forEach(x => {
+      const n = Number(x);
+      if (Number.isFinite(n) && n > 0 && !out.includes(n)) out.push(n);
+    });
+    return out;
+  }
+
+  function buildRawCampOptionsHTML(appId, selectedCamp) {
+    const opts = getFieldOptionsForApp(appId);
+    const camp = String(selectedCamp || "");
+    const has = opts.some(o => String(o.code) === camp);
+    const all = has || !camp ? opts : [...opts, { code: camp, label: camp, judges_count: 1, kind: "legacy" }];
+    return all.map(o => {
+      const jc = Number(o.judges_count || 1);
+      return `<option value="${esc(o.code)}" data-judges-count="${esc(jc)}" data-kind="${esc(o.kind || "")}" ${String(o.code) === camp ? "selected" : ""}>${esc(o.label)} (${esc(o.code)})</option>`;
+    }).join("");
+  }
+
+  function buildExerciciOptionsHTML(appId, selectedEx) {
+    const app = getAparellById(appId);
+    const n = Math.max(1, Number(app?.nombre_exercicis || 1) || 1);
+    const ex = Math.max(1, Number(selectedEx || 1) || 1);
+    let html = "";
+    for (let i = 1; i <= n; i++) {
+      html += `<option value="${i}" ${i === ex ? "selected" : ""}>${i}</option>`;
+    }
+    return html;
+  }
+
+  function refreshRawControls(row, keepJudgeIds) {
+    const appSel = row.querySelector('[data-k="app_id"]');
+    const campSel = row.querySelector('[data-k="camp"]');
+    const exSel = row.querySelector('[data-k="exercici"]');
+    const judgeWrap = row.querySelector('[data-k="judge_wrap"]');
+    const judgeSel = row.querySelector('[data-k="judge_ids"]');
+    if (!appSel || !campSel || !exSel || !judgeWrap || !judgeSel) return;
+
+    const appId = Number(appSel.value);
+    const prevCamp = String(campSel.value || "");
+    const prevEx = Number(exSel.value || 1);
+    const selectedJudgeIds = Array.isArray(keepJudgeIds)
+      ? _uniquePositiveInts(keepJudgeIds)
+      : _uniquePositiveInts(Array.from(judgeSel.selectedOptions || []).map(o => Number(o.value)));
+
+    campSel.innerHTML = buildRawCampOptionsHTML(appId, prevCamp);
+    if (!campSel.value) {
+      const first = campSel.querySelector("option");
+      campSel.value = first ? first.value : "";
+    }
+
+    exSel.innerHTML = buildExerciciOptionsHTML(appId, prevEx);
+    if (!exSel.value) exSel.value = "1";
+
+    const selectedCampOpt = campSel.options[campSel.selectedIndex];
+    const judgesCount = Number(selectedCampOpt?.dataset?.judgesCount || 1);
+    if (judgesCount > 1) {
+      judgeWrap.style.display = "";
+      judgeSel.innerHTML = "";
+      for (let j = 1; j <= judgesCount; j++) {
+        const opt = document.createElement("option");
+        opt.value = String(j);
+        opt.textContent = `J${j}`;
+        if (selectedJudgeIds.includes(j)) opt.selected = true;
+        judgeSel.appendChild(opt);
+      }
+    } else {
+      judgeWrap.style.display = "none";
+      judgeSel.innerHTML = "";
+    }
+  }
+
+  function renderColumnsUI(rawCols) {
+    if (!els.columnsBox) return;
+    const cols = normalizeColumnsFromSchema(rawCols);
+    els.columnsBox.innerHTML = "";
+
+    const builtins = [
+      ["posicio", "#"],
+      ["participant", "Nom"],
+      ["entitat_nom", "Entitat"],
+      ["participants", "Participants"],
+      ["punts", "Punts"],
+    ];
+
+    cols.forEach((col, idx) => {
+      const row = document.createElement("div");
+      row.className = "border rounded p-2 mb-2 col-row";
+      row.setAttribute("data-type", col.type || "builtin");
+
+      if ((col.type || "builtin") === "raw") {
+        const src = (col.source && typeof col.source === "object") ? col.source : {};
+        const appId = Number(src.aparell_id || ((APARELLS && APARELLS[0] && APARELLS[0].id) || 0));
+        const camp = String(src.camp || "");
+        const ex = Math.max(1, Number(src.exercici || 1) || 1);
+        const judgeIds = _uniquePositiveInts((((src.jutges || {}).ids) || []));
+
+        row.innerHTML = `
+          <div class="row">
+            <div class="col-12 col-md-2 mb-2">
+              <label class="small text-muted mb-1">Tipus</label>
+              <input class="form-control form-control-sm" value="Camp" disabled>
+            </div>
+            <div class="col-12 col-md-2 mb-2">
+              <label class="small text-muted mb-1">Key</label>
+              <input class="form-control form-control-sm" data-k="key" value="${esc(col.key || `raw_${idx+1}`)}">
+            </div>
+            <div class="col-12 col-md-3 mb-2">
+              <label class="small text-muted mb-1">Etiqueta</label>
+              <input class="form-control form-control-sm" data-k="label" value="${esc(col.label || "")}">
+            </div>
+            <div class="col-12 col-md-3 mb-2">
+              <label class="small text-muted mb-1">Aparell</label>
+              <select class="form-control form-control-sm" data-k="app_id">
+                ${(APARELLS || []).map(a => `<option value="${esc(a.id)}" ${Number(a.id) === Number(appId) ? "selected" : ""}>${esc(a.nom)}</option>`).join("")}
+              </select>
+            </div>
+            <div class="col-6 col-md-1 mb-2">
+              <label class="small text-muted mb-1">Dec</label>
+              <input class="form-control form-control-sm" data-k="decimals" type="number" min="0" max="6" value="${esc(col.decimals ?? 3)}">
+            </div>
+            <div class="col-6 col-md-1 mb-2">
+              <label class="small text-muted mb-1">Align</label>
+              <select class="form-control form-control-sm" data-k="align">
+                <option value="right" ${(col.align || "right") === "right" ? "selected" : ""}>R</option>
+                <option value="left" ${(col.align || "") === "left" ? "selected" : ""}>L</option>
+                <option value="center" ${(col.align || "") === "center" ? "selected" : ""}>C</option>
+              </select>
+            </div>
+          </div>
+          <div class="row">
+            <div class="col-12 col-md-5 mb-2">
+              <label class="small text-muted mb-1">Camp</label>
+              <select class="form-control form-control-sm" data-k="camp">
+                ${buildRawCampOptionsHTML(appId, camp)}
+              </select>
+            </div>
+            <div class="col-12 col-md-2 mb-2">
+              <label class="small text-muted mb-1">Exercici</label>
+              <select class="form-control form-control-sm" data-k="exercici">
+                ${buildExerciciOptionsHTML(appId, ex)}
+              </select>
+            </div>
+            <div class="col-12 col-md-2 mb-2" data-k="judge_wrap" style="display:none;">
+              <label class="small text-muted mb-1">Jutges</label>
+              <select class="form-control form-control-sm" data-k="judge_ids" multiple size="3">
+              </select>
+            </div>
+            <div class="col-12 col-md-3 mb-2 d-flex align-items-end justify-content-end gap-1">
+              <button type="button" class="btn btn-sm btn-outline-secondary" data-act="up">↑</button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" data-act="down">↓</button>
+              <button type="button" class="btn btn-sm btn-outline-danger" data-act="del">Eliminar</button>
+            </div>
+          </div>
+        `;
+        refreshRawControls(row, judgeIds);
+      } else {
+        const key = String(col.key || "participant");
+        row.innerHTML = `
+          <div class="row">
+            <div class="col-12 col-md-2 mb-2">
+              <label class="small text-muted mb-1">Tipus</label>
+              <input class="form-control form-control-sm" value="Builtin" disabled>
+            </div>
+            <div class="col-12 col-md-3 mb-2">
+              <label class="small text-muted mb-1">Camp</label>
+              <select class="form-control form-control-sm" data-k="key">
+                ${builtins.map(([k,l]) => `<option value="${k}" ${k===key ? "selected" : ""}>${l}</option>`).join("")}
+              </select>
+            </div>
+            <div class="col-12 col-md-3 mb-2">
+              <label class="small text-muted mb-1">Etiqueta</label>
+              <input class="form-control form-control-sm" data-k="label" value="${esc(col.label || "")}">
+            </div>
+            <div class="col-6 col-md-2 mb-2">
+              <label class="small text-muted mb-1">Align</label>
+              <select class="form-control form-control-sm" data-k="align">
+                <option value="left" ${(col.align || "left") === "left" ? "selected" : ""}>L</option>
+                <option value="right" ${(col.align || "") === "right" ? "selected" : ""}>R</option>
+                <option value="center" ${(col.align || "") === "center" ? "selected" : ""}>C</option>
+              </select>
+            </div>
+            <div class="col-6 col-md-1 mb-2">
+              <label class="small text-muted mb-1">Dec</label>
+              <input class="form-control form-control-sm" data-k="decimals" type="number" min="0" max="6" value="${esc(col.decimals ?? "")}">
+            </div>
+            <div class="col-12 col-md-1 mb-2 d-flex align-items-end justify-content-end gap-1">
+              <button type="button" class="btn btn-sm btn-outline-secondary" data-act="up">↑</button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" data-act="down">↓</button>
+              <button type="button" class="btn btn-sm btn-outline-danger" data-act="del">-</button>
+            </div>
+          </div>
+        `;
+      }
+
+      row.querySelectorAll("input,select").forEach(el => {
+        el.addEventListener("change", () => {
+          if (row.getAttribute("data-type") === "raw") {
+            if (el.matches('[data-k="app_id"]')) {
+              refreshRawControls(row, []);
+            } else if (el.matches('[data-k="camp"]')) {
+              refreshRawControls(row);
+            }
+          }
+          syncAdvancedFromUI();
+        });
+        el.addEventListener("input", syncAdvancedFromUI);
+      });
+
+      row.querySelector('[data-act="del"]').addEventListener("click", () => {
+        const cur = readColumnsUI();
+        cur.splice(idx, 1);
+        renderColumnsUI(cur);
+        syncAdvancedFromUI();
+      });
+      row.querySelector('[data-act="up"]').addEventListener("click", () => {
+        if (idx <= 0) return;
+        const cur = readColumnsUI();
+        const t = cur[idx - 1];
+        cur[idx - 1] = cur[idx];
+        cur[idx] = t;
+        renderColumnsUI(cur);
+        syncAdvancedFromUI();
+      });
+      row.querySelector('[data-act="down"]').addEventListener("click", () => {
+        const cur = readColumnsUI();
+        if (idx >= cur.length - 1) return;
+        const t = cur[idx + 1];
+        cur[idx + 1] = cur[idx];
+        cur[idx] = t;
+        renderColumnsUI(cur);
+        syncAdvancedFromUI();
+      });
+
+      els.columnsBox.appendChild(row);
+    });
+  }
+
+  function readColumnsUI() {
+    const out = [];
+    document.querySelectorAll("#columnsBox .col-row").forEach((row, idx) => {
+      const type = row.getAttribute("data-type") || "builtin";
+      const key = String(row.querySelector('[data-k="key"]')?.value || "").trim();
+      const label = String(row.querySelector('[data-k="label"]')?.value || "").trim();
+      const align = String(row.querySelector('[data-k="align"]')?.value || (type === "raw" ? "right" : "left")).trim();
+      const decRaw = String(row.querySelector('[data-k="decimals"]')?.value || "").trim();
+      const decimals = decRaw === "" ? null : Number(decRaw);
+
+      if (type === "raw") {
+        const appId = Number(row.querySelector('[data-k="app_id"]')?.value);
+        const ex = Math.max(1, Number(row.querySelector('[data-k="exercici"]')?.value || 1));
+        const camp = String(row.querySelector('[data-k="camp"]')?.value || "");
+        const judgeIds = _uniquePositiveInts(Array.from(row.querySelector('[data-k="judge_ids"]')?.selectedOptions || []).map(o => Number(o.value)));
+        out.push({
+          type: "raw",
+          key: key || `raw_${idx + 1}`,
+          label: label || key || `raw_${idx + 1}`,
+          align: ["left","right","center"].includes(align) ? align : "right",
+          decimals: Number.isFinite(decimals) ? Math.max(0, Math.min(6, decimals)) : 3,
+          source: {
+            aparell_id: Number.isFinite(appId) ? appId : null,
+            exercici: ex,
+            camp: camp,
+            jutges: { ids: judgeIds },
+          },
+        });
+      } else {
+        if (!["posicio","participant","nom","entitat_nom","participants","punts"].includes(key)) return;
+        const item = {
+          type: "builtin",
+          key,
+          label: label || key,
+          align: ["left","right","center"].includes(align) ? align : (key === "punts" ? "right" : "left"),
+        };
+        if (Number.isFinite(decimals)) item.decimals = Math.max(0, Math.min(6, decimals));
+        out.push(item);
+      }
+    });
+    return out.length ? out : defaultDisplayColumns();
+  }
+
+  function previewColClass(col){
+    const a = String((col && col.align) || "").toLowerCase();
+    if (a === "right") return "text-right";
+    if (a === "center") return "text-center";
+    return "";
+  }
+
+  function previewFallbackCellValue(row, key){
+    if (key === "participant" || key === "nom") return row.participant || row.nom || row.entitat_nom || "";
+    if (key === "punts") return row.punts;
+    if (key === "posicio") return row.posicio;
+    if (key === "entitat_nom") return row.entitat_nom || "";
+    if (key === "participants") return row.participants ?? "";
+    return row[key];
+  }
+
+  function previewFormatCellText(v, col){
+    if (v === null || v === undefined) return "";
+    const dec = Number.isInteger(col?.decimals) ? col.decimals : null;
+    if (typeof v === "number") return dec !== null ? v.toFixed(dec) : String(v);
+    if (dec !== null) {
+      const n = Number(v);
+      if (Number.isFinite(n)) return n.toFixed(dec);
+    }
+    return String(v);
+  }
+
+  function previewRenderJudgeRowsCell(v, col){
+    const rows = Array.isArray(v?.rows) ? v.rows : [];
+    if (!rows.length) return "";
+
+    let html = '<div class="judge-cell">';
+    rows.forEach(r => {
+      const judgeNum = Number(r?.judge);
+      const judgeLabel = Number.isFinite(judgeNum) && judgeNum > 0 ? `J${judgeNum}` : "J?";
+      const items = Array.isArray(r?.items) ? r.items : [];
+      html += '<div class="judge-row">';
+      html += '<span class="judge-label">' + esc(judgeLabel) + "</span>";
+      html += '<div class="judge-items">';
+      items.forEach((it, idx) => {
+        html += '<span class="judge-item"><span class="idx">' + esc(String(idx + 1)) + "</span>";
+        html += '<span class="val">' + esc(previewFormatCellText(it, col)) + "</span></span>";
+      });
+      html += "</div></div>";
+    });
+    html += "</div>";
+    return html;
+  }
+
+  function previewRenderCellHTML(v, col){
+    if (v && typeof v === "object" && v._kind === "judge_rows") {
+      return previewRenderJudgeRowsCell(v, col);
+    }
+    return esc(previewFormatCellText(v, col));
+  }
+
   function syncAdvancedFromUI(opts = {}) {
     const preferAdvanced = !!opts.preferAdvanced;
     const cfg = currentCfg();
@@ -1350,7 +1907,8 @@
       desempat: desempat,
       presentacio: {
         top_n: Number(els.iTopN.value || 0),
-        mostrar_empats: !!els.cEmpats.checked
+        mostrar_empats: !!els.cEmpats.checked,
+        columnes: readColumnsUI(),
       },
       equips: equipsSchema,
     };
@@ -1401,6 +1959,7 @@
 
     els.iTopN.value = (schema.presentacio||{}).top_n ?? 0;
     els.cEmpats.checked = !!((schema.presentacio||{}).mostrar_empats);
+    renderColumnsUI((schema.presentacio||{}).columnes || DEFAULT_SCHEMA.presentacio.columnes);
 
     // tie + filtres JSON
     renderTieUI(schema.desempat || []);
@@ -1496,6 +2055,56 @@
     renderTieUI(cur);
     syncAdvancedFromUI();
   });
+
+  if (els.btnColAddBuiltin) {
+    els.btnColAddBuiltin.addEventListener("click", () => {
+      const cur = readColumnsUI();
+      const candidates = [
+        { key: "posicio", label: "#" },
+        { key: "participant", label: "Nom" },
+        { key: "entitat_nom", label: "Entitat" },
+        { key: "participants", label: "Participants" },
+        { key: "punts", label: "Punts" },
+      ];
+      const used = new Set(
+        cur
+          .filter(x => x && String(x.type || "builtin") === "builtin")
+          .map(x => String(x.key || ""))
+      );
+      const next = candidates.find(c => !used.has(c.key));
+      if (!next) return;
+      cur.push({
+        type: "builtin",
+        key: next.key,
+        label: next.label,
+        align: next.key === "punts" ? "right" : "left",
+      });
+      renderColumnsUI(cur);
+      syncAdvancedFromUI();
+    });
+  }
+
+  if (els.btnColAddRaw) {
+    els.btnColAddRaw.addEventListener("click", () => {
+      const firstApp = (APARELLS && APARELLS[0]) ? APARELLS[0].id : null;
+      const cur = readColumnsUI();
+      cur.push({
+        type: "raw",
+        key: `raw_${cur.length + 1}`,
+        label: `Columna ${cur.length + 1}`,
+        align: "right",
+        decimals: 3,
+        source: {
+          aparell_id: firstApp,
+          exercici: 1,
+          camp: "",
+          jutges: { ids: [] },
+        },
+      });
+      renderColumnsUI(cur);
+      syncAdvancedFromUI();
+    });
+  }
 
   els.btnAdd.addEventListener("click", () => {
     const nextOrd = (state.cfgs.length ? Math.max(...state.cfgs.map(x => x.ordre||0)) : 0) + 1;
@@ -1626,16 +2235,45 @@
       const out = await res.json();
       if (!out.ok) throw new Error("Preview KO");
 
+      const columns = normalizeColumnsFromSchema(out.columns || ((cfg.schema||{}).presentacio||{}).columnes || []);
       const parts = out.data || [];
       let html = "";
-      parts.forEach(p => {
-        html += `<div class="mb-2"><div class="font-weight-bold">${esc(p.particio)}</div>`;
-        html += `<div class="table-responsive"><table class="table table-sm table-bordered mb-0">
-          <thead><tr><th>#</th><th>Nom</th><th>Punts</th></tr></thead><tbody>`;
-        (p.rows||[]).slice(0, 20).forEach(r => {
-          html += `<tr><td>${esc(r.posicio)}</td><td>${esc(r.nom || r.entitat_nom || "")}</td><td>${esc(r.punts)}</td></tr>`;
+      parts.forEach((p, pIdx) => {
+        let particioNom = p.particio;
+        if (typeof particioNom === "string") {
+          if (particioNom.includes("|")) {
+            particioNom = particioNom.split("|").pop();
+          } else if (particioNom.includes(":")) {
+            particioNom = particioNom.split(":").pop();
+          }
+        }
+
+        const rowCount = (p.rows || []).length;
+        html += `<section class="partition-card part-idx-${esc(String(pIdx % 5))}">`;
+        html += `<div class="partition-head">`;
+        html += `<div class="partition-title-wrap">`;
+        html += `<div class="partition-sub">Particio</div>`;
+        html += `<div class="partition-title">${esc(particioNom)}</div>`;
+        html += `</div>`;
+        html += `<span class="partition-badge">${esc(String(rowCount))}</span>`;
+        html += `</div>`;
+        html += `<div class="table-responsive"><table class="table table-sm table-bordered preview-classif-table partition-table"><thead><tr>`;
+        columns.forEach(col => {
+          html += `<th class="${esc(previewColClass(col))}">${esc(col.label || col.key || "")}</th>`;
         });
-        html += `</tbody></table></div></div>`;
+        html += `</tr></thead><tbody>`;
+        (p.rows||[]).slice(0, 20).forEach(r => {
+          const cells = r.cells || r.display || {};
+          html += `<tr>`;
+          columns.forEach(col => {
+            const raw = Object.prototype.hasOwnProperty.call(cells, col.key)
+              ? cells[col.key]
+              : previewFallbackCellValue(r, col.key);
+            html += `<td class="${esc(previewColClass(col))}">${previewRenderCellHTML(raw, col)}</td>`;
+          });
+          html += `</tr>`;
+        });
+        html += `</tbody></table></div></section>`;
       });
 
       els.previewBox.innerHTML = html || `<div class="text-muted small">Sense dades.</div>`;
@@ -1651,3 +2289,6 @@
 </script>
 
 {% endblock %}
+
+
+

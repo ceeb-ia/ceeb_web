@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}QR Públic · {{ competicio.nom }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+  <div class="card-surface">
+    <div class="d-flex justify-content-between align-items-start mb-3">
+      <div>
+        <h2 class="mb-1">QR Públic · Classificacions Live</h2>
+        <div class="text-muted small">Genera i revoca tokens per compartir la vista pública de classificacions.</div>
+      </div>
+      <div class="d-flex gap-2">
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'scoring_notes_home' competicio.id %}">Tornar a notes</a>
+        <a class="btn btn-sm btn-outline-primary" href="{% url 'public_live_qr_print' competicio.id %}" target="_blank">Imprimir QRs</a>
+      </div>
+    </div>
+
+    <div class="row g-3">
+      <div class="col-12 col-lg-5">
+        <div class="card-surface">
+          <h5 class="mb-2">Crear token públic</h5>
+          <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="create">
+            <div class="mb-2">
+              <label class="form-label small text-muted mb-1">Etiqueta</label>
+              <input class="form-control form-control-sm" type="text" name="label" maxlength="120" placeholder="Ex: Pantalla pública principal">
+            </div>
+            <div class="d-flex justify-content-end">
+              <button type="submit" class="btn btn-sm btn-primary">Crear token</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div class="col-12 col-lg-7">
+        <div class="card-surface">
+          <h5 class="mb-2">Tokens existents</h5>
+          {% if tokens %}
+            <div class="table-responsive">
+              <table class="table table-sm align-middle">
+                <thead>
+                  <tr class="text-muted small">
+                    <th>Etiqueta</th>
+                    <th>Enllaços</th>
+                    <th class="text-end">Accions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for t in tokens %}
+                    <tr>
+                      <td>
+                        <div class="fw-semibold">{{ t.label|default:"(sense etiqueta)" }}</div>
+                        <div class="text-muted small">{{ t.id }}</div>
+                        {% if t.revoked_at %}
+                          <div class="badge bg-danger">Revocat</div>
+                        {% elif not t.is_active %}
+                          <div class="badge bg-secondary">Inactiu</div>
+                        {% else %}
+                          <div class="badge bg-success">Actiu</div>
+                        {% endif %}
+                      </td>
+                      <td>
+                        <a class="btn btn-sm btn-outline-primary" href="{% url 'public_live_portal' t.id %}" target="_blank">Obrir</a>
+                        <a class="btn btn-sm btn-outline-secondary" href="{% url 'public_live_qr_png' t.id %}" target="_blank">QR</a>
+                      </td>
+                      <td class="text-end">
+                        {% if not t.revoked_at and t.is_active %}
+                          <form method="post" style="display:inline;">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="revoke">
+                            <input type="hidden" name="token_id" value="{{ t.id }}">
+                            <button class="btn btn-sm btn-outline-danger" type="submit">Revocar</button>
+                          </form>
+                        {% else %}
+                          <span class="text-muted small">—</span>
+                        {% endif %}
+                      </td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <div class="text-muted">Encara no hi ha tokens públics.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

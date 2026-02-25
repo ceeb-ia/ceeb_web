@@ -4,16 +4,31 @@ import qrcode
 
 from django.db import transaction
 from django.http import HttpResponse, JsonResponse
-from django.shortcuts import get_object_or_404, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods, require_POST
 
-from .models_judging import JudgeDeviceToken
+from .models_judging import JudgeDeviceToken, PublicLiveToken
 from .models import Inscripcio, Competicio
-from .models_trampoli import CompeticioAparell
+from .models_trampoli import CompeticioAparell, InscripcioAparellExclusio
+from .models_rotacions import RotacioAssignacio, RotacioFranja
 from .models_scoring import ScoringSchema, ScoreEntry
 from .scoring_engine import ScoringEngine, ScoringError
+from .services.rotacions_ordering import (
+    ORDER_MODE_MAINTAIN,
+    assignacio_grups,
+    franja_index_map,
+    get_rotacions_order_modes,
+    order_pairs_for_mode,
+)
 
+
+
+def _inscripcio_exclosa_en_aparell(inscripcio_id: int, comp_aparell_id: int) -> bool:
+    return InscripcioAparellExclusio.objects.filter(
+        inscripcio_id=inscripcio_id,
+        comp_aparell_id=comp_aparell_id,
+    ).exists()
 
 
 def _sanitize_patch_by_permissions(schema: dict, permissions: list, patch: dict) -> dict:
@@ -134,6 +149,27 @@ def judge_qr_png(request, token):
     return HttpResponse(buf.getvalue(), content_type="image/png")
 
 
+def public_live_qr_png(request, token):
+    tok = get_object_or_404(PublicLiveToken, pk=token)
+    url = request.build_absolute_uri(reverse("public_live_portal", kwargs={"token": str(tok.id)}))
+    img = qrcode.make(url)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return HttpResponse(buf.getvalue(), content_type="image/png")
+
+
+@require_http_methods(["GET"])
+def public_live_portal(request, token):
+    tok = get_object_or_404(PublicLiveToken, pk=token)
+    if not tok.is_valid():
+        return render(request, "judge/invalid_token.html", {"token": tok}, status=403)
+
+    tok.touch()
+
+    base_url = reverse("classificacions_live", kwargs={"pk": tok.competicio_id})
+    return redirect(f"{base_url}?public=1")
+
+
 @require_http_methods(["GET"])
 def judge_portal(request, token):
     tok = get_object_or_404(JudgeDeviceToken, pk=token)
@@ -153,17 +189,73 @@ def judge_portal(request, token):
 
     permissions = _normalize_permissions(tok.permissions)
 
-    # Llista d'inscripcions (mateix criteri que uses a notes home)
-    ins_qs = (
+    franges = list(RotacioFranja.objects.filter(competicio=competicio).order_by("ordre", "id"))
+    franja_modes = get_rotacions_order_modes(competicio)
+    fr_idx_map = franja_index_map(franges)
+
+    # Primera franja on cada grup passarà per aquest aparell.
+    # Si un grup surt a múltiples franges, preval la primera (ordre,id).
+    group_first_franja = {}
+    assigns = (
+        RotacioAssignacio.objects
+        .filter(
+            competicio=competicio,
+            estacio__tipus="aparell",
+            estacio__comp_aparell=comp_aparell,
+        )
+        .select_related("franja", "estacio")
+        .order_by("franja__ordre", "franja_id", "id")
+    )
+    for a in assigns:
+        fid = getattr(a, "franja_id", None)
+        if not fid:
+            continue
+        for g in assignacio_grups(a):
+            if g not in group_first_franja:
+                group_first_franja[g] = fid
+
+    # Llista d'inscripcions base (mateix criteri que notes home)
+    excluded_ins_ids = (
+        InscripcioAparellExclusio.objects
+        .filter(comp_aparell=comp_aparell)
+        .values_list("inscripcio_id", flat=True)
+    )
+    ins_base_qs = (
         Inscripcio.objects
         .filter(competicio=competicio)
+        .exclude(id__in=excluded_ins_ids)
         .order_by("grup", "ordre_sortida", "id")
     )
 
+    # Sempre mostrem tots els grups que competeixen en aquest aparell.
+    # L'ordre dins de cada grup es calcula segons la franja on el grup passarà per l'aparell.
+    ins_list = []
+    grouped = {}
+    for ins in ins_base_qs:
+        key = 0 if ins.grup in (None, 0) else int(ins.grup)
+        grouped.setdefault(key, []).append(ins)
+
+    for g, group_items in grouped.items():
+        base_pairs = [(ins.id, ins) for ins in group_items]
+        fid = group_first_franja.get(g)
+        mode_for_group = franja_modes.get(str(fid), ORDER_MODE_MAINTAIN) if fid else ORDER_MODE_MAINTAIN
+        rotate_steps = fr_idx_map.get(fid, 0) if fid else 0
+        seed_franja = fid if fid is not None else 0
+
+        ordered_pairs = order_pairs_for_mode(
+            base_pairs,
+            mode_for_group,
+            rotate_steps=rotate_steps,
+            seed_prefix=f"judge|{competicio.id}|{seed_franja}|{comp_aparell.id}|{g}",
+        )
+        ins_list.extend([ins for _ins_id, ins in ordered_pairs])
+
     # Prefetch entries existents (per mostrar valors actuals)
+    ins_ids = [ins.id for ins in ins_list]
     entries = ScoreEntry.objects.filter(
         competicio=competicio,
         comp_aparell=comp_aparell,
+        inscripcio_id__in=ins_ids,
     )
     entry_map = {}
     for e in entries:
@@ -179,7 +271,7 @@ def judge_portal(request, token):
         exercici_default = 1
     exercici_default = max(1, min(max_ex, exercici_default)) 
     scores_payload = {}
-    for ins in ins_qs:
+    for ins in ins_list:
         e = entry_map.get((ins.id, exercici_default))
         scores_payload[str(ins.id)] = {
             "inputs": (e.inputs if e and isinstance(e.inputs, dict) else {}),
@@ -193,9 +285,11 @@ def judge_portal(request, token):
         "token": str(tok.id),
         "competicio": competicio,
         "comp_aparell": comp_aparell,
+        "hide_base_chrome": True,
+        "judge_kiosk": True,
         "schema": schema,
         "permissions": permissions,
-        "inscripcions": ins_qs,
+        "inscripcions": ins_list,
         "scores_payload_json": json.dumps(scores_payload),
         "save_url": reverse("judge_save_partial", kwargs={"token": str(tok.id)}),
         "exercici": exercici_default,
@@ -283,6 +377,11 @@ def judge_save_partial(request, token):
     comp_aparell: CompeticioAparell = tok.comp_aparell
 
     ins = get_object_or_404(Inscripcio, pk=ins_id, competicio=competicio)
+    if _inscripcio_exclosa_en_aparell(ins.id, comp_aparell.id):
+        return JsonResponse(
+            {"ok": False, "error": "Aquesta inscripcio no competeix en aquest aparell."},
+            status=403,
+        )
 
     ss, _ = ScoringSchema.objects.get_or_create(aparell=comp_aparell.aparell, defaults={"schema": {}})
     schema = ss.schema or {}

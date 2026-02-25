@@ -40,3 +40,32 @@ class JudgeDeviceToken(models.Model):
 
     def __str__(self):
         return f"{self.competicio_id} / {self.comp_aparell_id} / {self.label or self.id}"
+
+
+class PublicLiveToken(models.Model):
+    """
+    Token per compartir Classificacions Live amb el públic (sense autenticació).
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    competicio = models.ForeignKey(
+        Competicio,
+        on_delete=models.CASCADE,
+        related_name="public_live_tokens",
+    )
+    label = models.CharField(max_length=120, blank=True, default="")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+
+    def is_valid(self) -> bool:
+        return self.is_active and self.revoked_at is None
+
+    def touch(self):
+        self.last_used_at = timezone.now()
+        self.save(update_fields=["last_used_at"])
+
+    def __str__(self):
+        return f"{self.competicio_id} / LIVE / {self.label or self.id}"

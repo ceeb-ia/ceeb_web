@@ -25,6 +25,7 @@
 </head>
 <body>
     <div class="background-container"></div>
+    {% if not hide_base_chrome %}
     <div class="hero_area">
         <!-- Header -->
         <header class="header_section">
@@ -78,8 +79,10 @@
         </header>
         <!-- End Header -->
     </div>
+    {% endif %}
     <!-- Contingut específic de cada pàgina -->
     <main>
+        {% if not hide_base_chrome %}
         <!-- Chatbot Section -->
         <!-- Botó flotant per obrir el xat -->
         <button id="chatbot-open" type="button" aria-label="Obrir xat" aria-expanded="false">💬</button>
@@ -140,21 +143,26 @@
 
         
         {% endif %}
+        {% endif %}
 
         {% block content %}
         {% endblock %}
         </main>
 
+    {% if not hide_base_chrome %}
     <!-- Footer -->
     <footer class="footer_section">
         <p>© 2025 <a href="https://ceeb.cat/">Web CEEB</a></p>
     </footer>
     <!-- End Footer -->
+    {% endif %}
 
     <!-- Scripts -->
     <script type="text/javascript" src="{% staticv 'js/jquery-3.4.1.min.js' %}"></script>
     <script type="text/javascript" src="{% staticv 'js/bootstrap.js' %}"></script>
     {% block extra_scripts %}{% endblock %}
+    {% if not hide_base_chrome %}
     <script src="{% staticv 'js/chatbot.js' %}" defer></script>
+    {% endif %}
 </body>
 </html>

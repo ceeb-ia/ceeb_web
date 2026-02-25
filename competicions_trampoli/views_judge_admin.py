@@ -8,7 +8,7 @@ from .forms_judge import JudgeTokenCreateForm, PermissionRowForm
 from .models import Competicio
 from .models_trampoli import CompeticioAparell
 from .models_scoring import ScoringSchema
-from .models_judging import JudgeDeviceToken
+from .models_judging import JudgeDeviceToken, PublicLiveToken
 
 
 def _schema_field_choices(schema: dict):
@@ -165,3 +165,55 @@ def judges_qr_print(request, competicio_id):
 
     ctx = {"competicio": competicio, "comp_aparell": comp_aparell, "tokens": tokens}
     return render(request, "judge/print_tokens.html", ctx)
+
+
+@require_http_methods(["GET", "POST"])
+def public_live_qr_home(request, competicio_id):
+    competicio = get_object_or_404(Competicio, pk=competicio_id)
+
+    if request.method == "POST":
+        action = (request.POST.get("action") or "").strip().lower()
+
+        if action == "revoke":
+            token_id = request.POST.get("token_id")
+            tok = get_object_or_404(PublicLiveToken, pk=token_id, competicio=competicio)
+            tok.revoked_at = timezone.now()
+            tok.is_active = False
+            tok.save(update_fields=["revoked_at", "is_active"])
+            return redirect(reverse("public_live_qr_home", kwargs={"competicio_id": competicio.id}))
+
+        if action == "create":
+            label = (request.POST.get("label") or "").strip()
+            PublicLiveToken.objects.create(
+                competicio=competicio,
+                label=label,
+                is_active=True,
+            )
+            return redirect(reverse("public_live_qr_home", kwargs={"competicio_id": competicio.id}))
+
+    tokens = (
+        PublicLiveToken.objects
+        .filter(competicio=competicio)
+        .order_by("-created_at")
+    )
+
+    ctx = {
+        "competicio": competicio,
+        "tokens": tokens,
+    }
+    return render(request, "judge/admin_public_live_tokens.html", ctx)
+
+
+@require_http_methods(["GET"])
+def public_live_qr_print(request, competicio_id):
+    competicio = get_object_or_404(Competicio, pk=competicio_id)
+    tokens = (
+        PublicLiveToken.objects
+        .filter(competicio=competicio, is_active=True, revoked_at__isnull=True)
+        .order_by("label", "created_at")
+    )
+    ctx = {
+        "competicio": competicio,
+        "tokens": tokens,
+    }
+    return render(request, "judge/print_public_live_tokens.html", ctx)

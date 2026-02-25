@@ -9,7 +9,7 @@ from .models_scoring import ScoreEntry, ScoringSchema
 from .models import Competicio, Inscripcio, Equip
 from .models_trampoli import CompeticioAparell, Aparell
 from .models_classificacions import ClassificacioConfig
-from .services.services_classificacions_2 import compute_classificacio, DEFAULT_SCHEMA
+from .services.services_classificacions_2 import compute_classificacio, DEFAULT_SCHEMA, get_display_columns
 from django.db import models
 # views_classificacions.py
 from django.utils.dateparse import parse_datetime
@@ -28,6 +28,8 @@ class ClassificacionsLive(TemplateView):
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         competicio = self.competicio
+        public_raw = (self.request.GET.get("public") or "").strip().lower()
+        is_public = public_raw in {"1", "true", "yes", "on"}
 
         cfgs = (
             ClassificacioConfig.objects
@@ -37,6 +39,8 @@ class ClassificacionsLive(TemplateView):
         ctx.update({
             "competicio": competicio,
             "cfgs": list(cfgs.values("id", "nom", "tipus", "ordre")),
+            "is_public": is_public,
+            "hide_base_chrome": is_public,
             # interval suggerit (ms) perquè el JS el pugui usar
             "poll_ms": 4000,
         })
@@ -94,6 +98,7 @@ def classificacions_live_data(request, pk):
             "id": cfg.id,
             "nom": cfg.nom,
             "tipus": cfg.tipus,
+            "columns": get_display_columns(cfg.schema or {}),
             "parts": parts,
         })
 
@@ -152,11 +157,34 @@ class ClassificacionsHome(TemplateView):
 
             for f in (sch.get("fields") or []):
                 if isinstance(f, dict) and f.get("code"):
-                    opts.append({"code": str(f["code"]), "label": str(f.get("label") or f["code"]), "kind": "field"})
+                    judges_count = 1
+                    j = f.get("judges")
+                    if isinstance(j, dict):
+                        try:
+                            judges_count = int(j.get("count") or 1)
+                        except Exception:
+                            judges_count = 1
+                    else:
+                        try:
+                            judges_count = int(f.get("judges_count") or 1)
+                        except Exception:
+                            judges_count = 1
+                    judges_count = max(1, judges_count)
+                    opts.append({
+                        "code": str(f["code"]),
+                        "label": str(f.get("label") or f["code"]),
+                        "kind": "field",
+                        "judges_count": judges_count,
+                    })
 
             for c in (sch.get("computed") or []):
                 if isinstance(c, dict) and c.get("code"):
-                    opts.append({"code": str(c["code"]), "label": str(c.get("label") or c["code"]), "kind": "computed"})
+                    opts.append({
+                        "code": str(c["code"]),
+                        "label": str(c.get("label") or c["code"]),
+                        "kind": "computed",
+                        "judges_count": 1,
+                    })
 
             # dedup
             seen = set()
@@ -235,6 +263,7 @@ class ClassificacionsHome(TemplateView):
                 "id": ca.id,
                 "nom": ca.aparell.nom,
                 "codi": ca.aparell.codi,
+                "nombre_exercicis": int(getattr(ca, "nombre_exercicis", 1) or 1),
             })
 
         equips_qs = (
@@ -347,7 +376,11 @@ def classificacio_preview(request, pk, cid):
     for k in sorted(data.keys()):
         out.append({"particio": k, "rows": data[k]})
 
-    return JsonResponse({"ok": True, "data": out})
+    return JsonResponse({
+        "ok": True,
+        "columns": get_display_columns(cfg.schema or {}),
+        "data": out,
+    })
 
 
 def _is_fk(model_cls, field_name: str) -> bool:
@@ -386,3 +419,7 @@ def _distinct_fk(qs, field_name: str):
         seen.add(_id)
         out.append({"value": _id, "label": nom or str(_id)})
     return out
+
+
+
+

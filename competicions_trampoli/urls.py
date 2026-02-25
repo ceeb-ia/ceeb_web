@@ -19,6 +19,7 @@ from .inscripcions_list_new import (
     InscripcionsListNewView,
     inscripcions_save_table_columns as inscripcions_save_table_columns_new,
     inscripcions_set_group_name as inscripcions_set_group_name_new,
+    inscripcions_set_aparells as inscripcions_set_aparells_new,
 )
 from .views_equips import (
     equips_assign,
@@ -51,6 +52,7 @@ urlpatterns = [
 
     path("competicio/<int:pk>/inscripcions/save-table-columns/", inscripcions_save_table_columns_new, name="inscripcions_save_table_columns"),
     path("competicio/<int:pk>/inscripcions/set-group-name/", inscripcions_set_group_name_new, name="inscripcions_set_group_name"),
+    path("competicio/<int:pk>/inscripcions/set-aparells/", inscripcions_set_aparells_new, name="inscripcions_set_aparells"),
     path("competicio/<int:pk>/inscripcions/equips/preview/", equips_preview, name="inscripcions_equips_preview"),
     path("competicio/<int:pk>/inscripcions/equips/auto-create/", equips_auto_create, name="inscripcions_equips_auto_create"),
     path("competicio/<int:pk>/inscripcions/equips/create/", equips_create_manual, name="inscripcions_equips_create_manual"),
@@ -83,6 +85,10 @@ urlpatterns = [
     path("competicio/<int:pk>/rotacions/clear_all/",views_rotacions.rotacions_clear_all,name="rotacions_clear_all",),
     path("competicio/<int:pk>/rotacions/franges/<int:franja_id>/insert_after/",views_rotacions.franja_insert_after, name="rotacions_franja_insert_after"),
     path("competicio/<int:pk>/rotacions/franges/<int:franja_id>/update_inline/",views_rotacions.franja_update_inline,name="rotacions_franja_update_inline"),
+    path("competicio/<int:pk>/rotacions/franges/<int:franja_id>/order_mode/",views_rotacions.franja_order_mode_set,name="rotacions_franja_order_mode_set"),
+    path("competicio/<int:pk>/rotacions/export-meta/save/", views_rotacions.rotacions_export_meta_save, name="rotacions_export_meta_save"),
+    path("competicio/<int:pk>/rotacions/export-meta/logo/upload/", views_rotacions.rotacions_export_logo_upload, name="rotacions_export_logo_upload"),
+    path("competicio/<int:pk>/rotacions/export-meta/logo/clear/", views_rotacions.rotacions_export_logo_clear, name="rotacions_export_logo_clear"),
     path("competicio/<int:pk>/rotacions/franges/export_excel/",views_rotacions.franges_export_excel,name="rotacions_franges_export_excel"),
     path("competicio/<int:pk>/classificacions/", ClassificacionsHome.as_view(), name="classificacions_home"),
     path("competicio/<int:pk>/classificacions/save/", classificacio_save, name="classificacio_save"),
@@ -101,10 +107,14 @@ urlpatterns = [
     path("scoring/<int:pk>/updates/", views_scoring.scoring_updates, name="scoring_updates"),
     path("scoring/<int:competicio_id>/judges-qr/", views_judge_admin.judges_qr_home, name="judges_qr_home"),
     path("scoring/<int:competicio_id>/judges-qr/print/", views_judge_admin.judges_qr_print, name="judges_qr_print"),
+    path("scoring/<int:competicio_id>/public-live-qr/", views_judge_admin.public_live_qr_home, name="public_live_qr_home"),
+    path("scoring/<int:competicio_id>/public-live-qr/print/", views_judge_admin.public_live_qr_print, name="public_live_qr_print"),
 
     path("judge/<uuid:token>/", views_judge.judge_portal, name="judge_portal"),
     path("judge/<uuid:token>/qr.png", views_judge.judge_qr_png, name="judge_qr_png"),
     path("judge/<uuid:token>/api/save/", views_judge.judge_save_partial, name="judge_save_partial"),
+    path("public/live/<uuid:token>/", views_judge.public_live_portal, name="public_live_portal"),
+    path("public/live/<uuid:token>/qr.png", views_judge.public_live_qr_png, name="public_live_qr_png"),
  
 
 ]

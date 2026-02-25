@@ -172,6 +172,29 @@
         <div class="d-flex" style="gap:8px; align-items:center;">
           <button class="btn btn-sm btn-outline-dark" id="btnAddDescans">+ Descans</button>
         </div>
+
+        <hr class="my-3">
+
+        <div class="fw-semibold mb-2">Dades export Excel</div>
+        <div class="d-flex flex-column" style="gap:8px;">
+          <input type="text" class="form-control form-control-sm" id="exportTitle" placeholder="Titol competicio">
+          <input type="text" class="form-control form-control-sm" id="exportVenue" placeholder="Seu">
+          <input type="date" class="form-control form-control-sm" id="exportDate">
+
+          <div class="d-flex" style="gap:8px; align-items:center; flex-wrap:wrap;">
+            <input type="file" class="form-control form-control-sm" id="exportLogoFile" accept="image/*" style="flex:1; min-width:170px;">
+            <button class="btn btn-sm btn-outline-primary" id="btnExportLogoUpload">Pujar logo</button>
+            <button class="btn btn-sm btn-outline-danger" id="btnExportLogoClear">Treure</button>
+          </div>
+
+          <div id="exportLogoPreviewWrap" class="mini text-muted" style="display:none;">
+            <div class="mb-1">Logo actual:</div>
+            <img id="exportLogoPreview" alt="Logo export" style="max-width:180px; max-height:72px; border:1px solid #e5e7eb; border-radius:6px; padding:2px; background:#fff;">
+          </div>
+
+          <button class="btn btn-sm btn-outline-success" id="btnExportMetaSave">Desar dades export</button>
+          <div class="mini" id="exportMetaStatus"></div>
+        </div>
       </div>
     </div>
 
@@ -211,6 +234,16 @@
                       <div class="franja-info">
                         <div class="fw-semibold">{{ f.titol|default:"Franja" }}</div>
                         <div class="mini">{{ f.hora_inici }} – {{ f.hora_fi }}</div>
+                        <div class="mini mt-1 d-flex align-items-center" style="gap:6px;">
+                          <span>Ordre:</span>
+                          <select class="form-control form-control-sm js-franja-order-mode"
+                                  data-fr="{{ f.id }}"
+                                  style="width:170px; height:30px; padding:2px 6px;">
+                            {% for opt in order_mode_options %}
+                              <option value="{{ opt.value }}">{{ opt.label }}</option>
+                            {% endfor %}
+                          </select>
+                        </div>
                       </div>
 
                       <div class="franja-actions">
@@ -286,6 +319,8 @@
 
 <script id="grid-data" type="application/json">{{ grid_json|safe }}</script>
 <script id="group-labels-data" type="application/json">{{ group_labels_json|safe }}</script>
+<script id="franja-order-modes-data" type="application/json">{{ franja_order_modes_json|safe }}</script>
+<script id="export-meta-data" type="application/json">{{ export_meta_json|safe }}</script>
 <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.1/dist/umd/popper.min.js"></script>
 <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
@@ -404,6 +439,10 @@ const INSERT_AFTER_URL = "{% url 'rotacions_franja_insert_after' competicio.id 0
 const EXTRAPOLAR_URL0  = "{% url 'rotacions_extrapolar' competicio.id 0 %}";
 const DEL_ES_URL0      = "{% url 'rotacions_estacio_delete' competicio.id 0 %}";
 const DEL_FR_URL0      = "{% url 'rotacions_franja_delete' competicio.id 0 %}";
+const FR_ORDER_MODE_URL0 = "{% url 'rotacions_franja_order_mode_set' competicio.id 0 %}";
+const EXPORT_META_SAVE_URL = "{% url 'rotacions_export_meta_save' competicio.id %}";
+const EXPORT_LOGO_UPLOAD_URL = "{% url 'rotacions_export_logo_upload' competicio.id %}";
+const EXPORT_LOGO_CLEAR_URL = "{% url 'rotacions_export_logo_clear' competicio.id %}";
 
 function insertAfterUrl(frId){
   return INSERT_AFTER_URL.replace("/0/", `/${frId}/`);
@@ -417,6 +456,9 @@ function delEstacioUrl(id){
 }
 function delFrUrl(id){
   return DEL_FR_URL0.replace("/0/delete/", `/${id}/delete/`);
+}
+function franjaOrderModeUrl(frId){
+  return FR_ORDER_MODE_URL0.replace("/0/order_mode/", `/${frId}/order_mode/`);
 }
 
 // --- POST JSON ---
@@ -435,10 +477,38 @@ async function postJSON(url, body){
   return null;
 }
 
+async function postFormData(url, formData){
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "X-CSRFToken": CSRF
+    },
+    body: formData,
+  });
+  if (!res.ok) throw new Error(await res.text());
+  const ct = res.headers.get("content-type") || "";
+  if (ct.includes("application/json")) return await res.json();
+  return null;
+}
+
 // --- UI helpers ---
 const groupLabels = (() => {
   try {
     return JSON.parse(document.getElementById("group-labels-data")?.textContent || "{}");
+  } catch (e) {
+    return {};
+  }
+})();
+const franjaOrderModes = (() => {
+  try {
+    return JSON.parse(document.getElementById("franja-order-modes-data")?.textContent || "{}");
+  } catch (e) {
+    return {};
+  }
+})();
+const exportMeta = (() => {
+  try {
+    return JSON.parse(document.getElementById("export-meta-data")?.textContent || "{}");
   } catch (e) {
     return {};
   }
@@ -499,6 +569,35 @@ normalizeGridInPlace();
 // --- elements (poden no existir) ---
 const statusEl = document.getElementById("saveStatus");
 const autoStatusEl = document.getElementById("autoStatus");
+const exportMetaStatusEl = document.getElementById("exportMetaStatus");
+
+function setExportMetaStatus(msg){
+  if (exportMetaStatusEl) exportMetaStatusEl.textContent = msg || "";
+}
+
+function renderExportLogoPreview(){
+  const wrap = document.getElementById("exportLogoPreviewWrap");
+  const img = document.getElementById("exportLogoPreview");
+  if (!wrap || !img) return;
+  const url = String(exportMeta.logo_url || "").trim();
+  if (!url){
+    wrap.style.display = "none";
+    img.removeAttribute("src");
+    return;
+  }
+  img.src = url;
+  wrap.style.display = "block";
+}
+
+function fillExportMetaInputs(){
+  const t = document.getElementById("exportTitle");
+  const v = document.getElementById("exportVenue");
+  const d = document.getElementById("exportDate");
+  if (t) t.value = String(exportMeta.title || "");
+  if (v) v.value = String(exportMeta.venue || "");
+  if (d) d.value = String(exportMeta.date || "");
+  renderExportLogoPreview();
+}
 
 // --- Autosave ---
 async function autoSaveGrid() {
@@ -763,6 +862,101 @@ function initTopButtons(){
   }
 }
 
+function initFranjaOrderModes(){
+  document.querySelectorAll(".js-franja-order-mode").forEach((sel) => {
+    const frId = sel.dataset.fr;
+    if(!frId) return;
+
+    const current = String(franjaOrderModes[String(frId)] || "maintain");
+    sel.value = current;
+
+    sel.addEventListener("change", async () => {
+      const next = String(sel.value || "maintain");
+      const prev = String(franjaOrderModes[String(frId)] || "maintain");
+      if (next === prev) return;
+
+      try{
+        const resp = await postJSON(franjaOrderModeUrl(frId), {mode: next});
+        franjaOrderModes[String(frId)] = String(resp?.mode || next);
+        if (statusEl) statusEl.textContent = "✅ Mode d'ordre de franja guardat.";
+      }catch(e){
+        sel.value = prev;
+        if (statusEl) statusEl.textContent = "❌ Error guardant mode de franja: " + (e.message || e);
+      }
+    });
+  });
+}
+
+function initExportMetaControls(){
+  fillExportMetaInputs();
+
+  const btnSave = document.getElementById("btnExportMetaSave");
+  if (btnSave){
+    btnSave.addEventListener("click", async () => {
+      const title = (document.getElementById("exportTitle")?.value || "").trim();
+      const venue = (document.getElementById("exportVenue")?.value || "").trim();
+      const date = (document.getElementById("exportDate")?.value || "").trim();
+      setExportMetaStatus("Desant dades export...");
+      try{
+        const resp = await postJSON(EXPORT_META_SAVE_URL, {title, venue, date});
+        const meta = resp?.meta || {};
+        exportMeta.title = String(meta.title || "");
+        exportMeta.venue = String(meta.venue || "");
+        exportMeta.date = String(meta.date || "");
+        exportMeta.logo_path = String(meta.logo_path || exportMeta.logo_path || "");
+        exportMeta.logo_url = String(meta.logo_url || exportMeta.logo_url || "");
+        fillExportMetaInputs();
+        setExportMetaStatus("Dades export guardades.");
+      }catch(e){
+        setExportMetaStatus("Error desant dades export: " + (e.message || e));
+      }
+    });
+  }
+
+  const btnUploadLogo = document.getElementById("btnExportLogoUpload");
+  if (btnUploadLogo){
+    btnUploadLogo.addEventListener("click", async () => {
+      const fileInput = document.getElementById("exportLogoFile");
+      const f = fileInput?.files?.[0];
+      if (!f){
+        setExportMetaStatus("Selecciona un fitxer d'imatge primer.");
+        return;
+      }
+      const fd = new FormData();
+      fd.append("logo", f);
+      setExportMetaStatus("Pujant logo...");
+      try{
+        const resp = await postFormData(EXPORT_LOGO_UPLOAD_URL, fd);
+        exportMeta.logo_path = String(resp?.logo_path || "");
+        exportMeta.logo_url = String(resp?.logo_url || "");
+        if (fileInput) fileInput.value = "";
+        renderExportLogoPreview();
+        setExportMetaStatus("Logo actualitzat.");
+      }catch(e){
+        setExportMetaStatus("Error pujant logo: " + (e.message || e));
+      }
+    });
+  }
+
+  const btnClearLogo = document.getElementById("btnExportLogoClear");
+  if (btnClearLogo){
+    btnClearLogo.addEventListener("click", async () => {
+      setExportMetaStatus("Eliminant logo...");
+      try{
+        await postJSON(EXPORT_LOGO_CLEAR_URL, {});
+        exportMeta.logo_path = "";
+        exportMeta.logo_url = "";
+        const fileInput = document.getElementById("exportLogoFile");
+        if (fileInput) fileInput.value = "";
+        renderExportLogoPreview();
+        setExportMetaStatus("Logo eliminat.");
+      }catch(e){
+        setExportMetaStatus("Error eliminant logo: " + (e.message || e));
+      }
+    });
+  }
+}
+
 // --- Click handler global (accions dins la taula) ---
 function initGlobalClickHandler(){
   document.addEventListener("click", async (ev) => {
@@ -953,6 +1147,8 @@ document.addEventListener("DOMContentLoaded", () => {
   initColumnDnD();
   initCellDnD();
   initTopButtons();
+  initFranjaOrderModes();
+  initExportMetaControls();
   initGlobalClickHandler();
 
   renderAll();

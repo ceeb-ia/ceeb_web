@@ -2,6 +2,105 @@
 {% block title %}Classificacions en viu · {{ competicio.nom }}{% endblock %}
 
 {% block content %}
+<style>
+  .judge-cell {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .live-classif-table {
+    width: max-content;
+    min-width: 100%;
+    table-layout: auto;
+  }
+  .live-classif-table th,
+  .live-classif-table td {
+    vertical-align: top;
+  }
+  .judge-row {
+    display: flex;
+    gap: 0.4rem;
+    align-items: flex-start;
+    margin-bottom: 0.2rem;
+  }
+  .judge-row:last-child {
+    margin-bottom: 0;
+  }
+  .judge-label {
+    font-weight: 600;
+    min-width: 2.2rem;
+  }
+  .judge-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.2rem;
+  }
+  .judge-item {
+    display: inline-flex;
+    gap: 0.25rem;
+    border: 1px solid #dcdcdc;
+    border-radius: 4px;
+    padding: 0.05rem 0.35rem;
+    background: #fafafa;
+    font-size: 0.82rem;
+  }
+  .judge-item .idx {
+    color: #6c757d;
+    font-weight: 600;
+  }
+  .partition-card {
+    border: 1px solid #dde4ef;
+    border-radius: 10px;
+    background: #ffffff;
+    margin-bottom: 0.9rem;
+    overflow: hidden;
+    box-shadow: 0 1px 2px rgba(17, 24, 39, 0.06);
+  }
+  .partition-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.8rem;
+    padding: 0.55rem 0.7rem;
+    border-bottom: 1px solid #e6ecf5;
+    background: linear-gradient(135deg, #f8fbff 0%, #f5f8fc 100%);
+  }
+  .partition-title-wrap {
+    min-width: 0;
+  }
+  .partition-title {
+    font-weight: 700;
+    line-height: 1.2;
+  }
+  .partition-sub {
+    font-size: 0.72rem;
+    color: #667085;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .partition-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.9rem;
+    border-radius: 999px;
+    border: 1px solid #d3deed;
+    background: #ffffff;
+    color: #334155;
+    font-size: 0.75rem;
+    font-weight: 700;
+    line-height: 1;
+    padding: 0.2rem 0.45rem;
+    white-space: nowrap;
+  }
+  .partition-table {
+    margin-bottom: 0;
+  }
+  .part-idx-0 .partition-head { border-left: 4px solid #2f80ed; }
+  .part-idx-1 .partition-head { border-left: 4px solid #f2994a; }
+  .part-idx-2 .partition-head { border-left: 4px solid #27ae60; }
+  .part-idx-3 .partition-head { border-left: 4px solid #eb5757; }
+  .part-idx-4 .partition-head { border-left: 4px solid #56ccf2; }
+</style>
 <div class="container-fluid mt-4">
   <div class="card-surface">
 
@@ -18,11 +117,13 @@
         </div>
       </div>
 
-      <div class=" gap-2">
-        <a class="btn btn-sm btn-outline-secondary" href="{% url 'scoring_notes_home' competicio.id %}">Notes</a>
-        <a class="btn btn-sm btn-outline-secondary" href="{% url 'classificacions_home' competicio.id %}">Configurar</a>
-        <a class="btn btn-sm btn-outline-secondary" href="{% url 'inscripcions_list' competicio.id %}">Inscripcions</a>
-      </div>
+      {% if not is_public %}
+        <div class=" gap-2">
+          <a class="btn btn-sm btn-outline-secondary" href="{% url 'scoring_notes_home' competicio.id %}">Notes</a>
+          <a class="btn btn-sm btn-outline-secondary" href="{% url 'classificacions_home' competicio.id %}">Configurar</a>
+          <a class="btn btn-sm btn-outline-secondary" href="{% url 'inscripcions_list' competicio.id %}">Inscripcions</a>
+        </div>
+      {% endif %}
     </div>
 
     {% if cfgs %}
@@ -91,10 +192,68 @@
       .replaceAll("'", "&#039;");
   }
 
-  function formatPunts(v){
-    if (typeof v === "number") return v.toFixed(3);
-    const n = Number(v);
-    return Number.isFinite(n) ? n.toFixed(3) : "0.000";
+  function defaultColumns(){
+    return [
+      { type: "builtin", key: "posicio", label: "Pos.", align: "left" },
+      { type: "builtin", key: "participant", label: "Nom", align: "left" },
+      { type: "builtin", key: "punts", label: "Punts", align: "right", decimals: 3 },
+    ];
+  }
+
+  function colClass(col){
+    const a = String((col && col.align) || "").toLowerCase();
+    if (a === "right") return "text-right";
+    if (a === "center") return "text-center";
+    return "";
+  }
+
+  function fallbackCellValue(row, key){
+    if (key === "participant" || key === "nom") return row.participant || row.nom || row.entitat_nom || "";
+    if (key === "punts") return row.punts;
+    if (key === "posicio") return row.posicio;
+    if (key === "entitat_nom") return row.entitat_nom || "";
+    if (key === "participants") return row.participants ?? "";
+    return row[key];
+  }
+
+  function formatCellText(v, col){
+    if (v === null || v === undefined) return "";
+    const dec = (col && Number.isInteger(col.decimals)) ? col.decimals : null;
+    if (typeof v === "number") return dec !== null ? v.toFixed(dec) : String(v);
+    if (dec !== null) {
+      const n = Number(v);
+      if (Number.isFinite(n)) return n.toFixed(dec);
+    }
+    return String(v);
+  }
+
+  function renderJudgeRowsCell(v, col){
+    const rows = Array.isArray(v?.rows) ? v.rows : [];
+    if (!rows.length) return "";
+
+    let html = '<div class="judge-cell">';
+    rows.forEach(r => {
+      const judgeNum = Number(r?.judge);
+      const judgeLabel = Number.isFinite(judgeNum) && judgeNum > 0 ? `J${judgeNum}` : "J?";
+      const items = Array.isArray(r?.items) ? r.items : [];
+      html += '<div class="judge-row">';
+      html += '<span class="judge-label">' + esc(judgeLabel) + "</span>";
+      html += '<div class="judge-items">';
+      items.forEach((it, idx) => {
+        html += '<span class="judge-item"><span class="idx">' + esc(String(idx + 1)) + "</span>";
+        html += '<span class="val">' + esc(formatCellText(it, col)) + "</span></span>";
+      });
+      html += "</div></div>";
+    });
+    html += "</div>";
+    return html;
+  }
+
+  function renderCellHTML(v, col){
+    if (v && typeof v === "object" && v._kind === "judge_rows") {
+      return renderJudgeRowsCell(v, col);
+    }
+    return esc(formatCellText(v, col));
   }
 
   function renderCfg(cfg){
@@ -102,6 +261,7 @@
     if (!host) return;
 
     const parts = cfg.parts || [];
+    const columns = (Array.isArray(cfg.columns) && cfg.columns.length) ? cfg.columns : defaultColumns();
     document.getElementById("badge-" + cfg.id).textContent = parts.length ? parts.length : "0";
 
     if (!parts.length){
@@ -110,7 +270,7 @@
     }
 
     let html = "";
-    parts.forEach(p => {
+    parts.forEach((p, pIdx) => {
       // Mostra només la part després de l'últim '|', si existeix
       let particioNom = p.particio;
       if (typeof particioNom === 'string') {
@@ -121,27 +281,37 @@
         }
       }
 
-      html += '<div class="mb-3">';
-      html +=   '<div class="fw-semibold mb-1">' + esc(particioNom) + '</div>';
+      const rowCount = (p.rows || []).length;
+      html += '<section class="partition-card part-idx-' + esc(String(pIdx % 5)) + '">';
+      html +=   '<div class="partition-head">';
+      html +=     '<div class="partition-title-wrap">';
+      html +=       '<div class="partition-sub">Particio</div>';
+      html +=       '<div class="partition-title">' + esc(particioNom) + '</div>';
+      html +=     '</div>';
+      html +=     '<span class="partition-badge">' + esc(String(rowCount)) + '</span>';
+      html +=   '</div>';
       html +=   '<div class="table-responsive">';
-      html +=     '<table class="table table-sm">';
-      html +=       '<thead><tr>'
-                 +   '<th style="width:70px;">Pos.</th>'
-                 +   '<th>Nom</th>'
-                 +   '<th style="width:120px;" class="text-right">Punts</th>'
-                 + '</tr></thead><tbody>';
+      html +=     '<table class="table table-sm live-classif-table partition-table">';
+      html +=       '<thead><tr>';
+      columns.forEach(col => {
+        html += '<th class="' + esc(colClass(col)) + '">' + esc(col.label || col.key || "") + '</th>';
+      });
+      html += '</tr></thead><tbody>';
 
       (p.rows || []).forEach(r => {
-        const nom = r.participant || r.nom || r.entitat_nom || "";
-        html += '<tr>'
-             +    '<td>' + esc(r.posicio ?? "") + '</td>'
-             +    '<td>' + esc(nom) + '</td>'
-             +    '<td class="text-right">' + esc(formatPunts(r.punts)) + '</td>'
-             +  '</tr>';
+        const cells = r.cells || r.display || {};
+        html += '<tr>';
+        columns.forEach(col => {
+          const raw = Object.prototype.hasOwnProperty.call(cells, col.key)
+            ? cells[col.key]
+            : fallbackCellValue(r, col.key);
+          html += '<td class="' + esc(colClass(col)) + '">' + renderCellHTML(raw, col) + '</td>';
+        });
+        html += '</tr>';
       });
 
       html +=       '</tbody></table>';
-      html +=   '</div></div>';
+      html +=   '</div></section>';
     });
 
     host.innerHTML = html;

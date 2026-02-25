@@ -1,4 +1,5 @@
 # services_classificacions.py
+import json
 from collections import defaultdict
 from datetime import date
 from decimal import Decimal
@@ -64,7 +65,15 @@ DEFAULT_SCHEMA = {
     # nou: {"aparell_id": 12, "camp":"E_total", "ordre":"desc"}
     "desempat": [],
 
-    "presentacio": {"top_n": 0, "mostrar_empats": True},
+    "presentacio": {
+        "top_n": 0,
+        "mostrar_empats": True,
+        "columnes": [
+            {"type": "builtin", "key": "posicio", "label": "#", "align": "left"},
+            {"type": "builtin", "key": "participant", "label": "Nom", "align": "left"},
+            {"type": "builtin", "key": "punts", "label": "Punts", "align": "right", "decimals": 3},
+        ],
+    },
 
     # Config additiva per tipus="equips"
     "equips": {
@@ -401,6 +410,190 @@ def _sanitize_desempat_for_tipus(desempat, tipus):
     return out
 
 
+def get_display_columns(schema_or_presentacio=None):
+    """
+    Retorna columnes normalitzades per a renderitzar live/preview.
+    Admet:
+      - schema complet (amb clau presentacio)
+      - objecte presentacio directament
+    """
+    if not isinstance(schema_or_presentacio, dict):
+        presentacio = {}
+    elif "presentacio" in schema_or_presentacio:
+        presentacio = schema_or_presentacio.get("presentacio") or {}
+    else:
+        presentacio = schema_or_presentacio or {}
+
+    raw_cols = presentacio.get("columnes")
+    cols = raw_cols if isinstance(raw_cols, list) else []
+
+    def _default():
+        return [
+            {"type": "builtin", "key": "posicio", "label": "#", "align": "left"},
+            {"type": "builtin", "key": "participant", "label": "Nom", "align": "left"},
+            {"type": "builtin", "key": "punts", "label": "Punts", "align": "right", "decimals": 3},
+        ]
+
+    if not cols:
+        return _default()
+
+    out = []
+    seen_keys = set()
+    metric_idx = 1
+    for item in cols:
+        if not isinstance(item, dict):
+            continue
+
+        ctype = str(item.get("type") or "builtin").strip().lower()
+        label = str(item.get("label") or "").strip()
+        align = str(item.get("align") or "").strip().lower()
+        if align not in ("left", "right", "center"):
+            align = "left" if ctype == "builtin" else "right"
+
+        decimals = item.get("decimals", None)
+        try:
+            decimals = int(decimals) if decimals is not None else None
+        except Exception:
+            decimals = None
+        if decimals is not None:
+            decimals = max(0, min(6, decimals))
+
+        if ctype == "raw":
+            key = str(item.get("key") or "").strip() or f"raw_{metric_idx}"
+            metric_idx += 1
+
+            source = item.get("source") if isinstance(item.get("source"), dict) else {}
+            app_id = source.get("aparell_id")
+            exercici = source.get("exercici", 1)
+            camp = str(source.get("camp") or "").strip()
+
+            if app_id in (None, "", 0, "0"):
+                app_id = item.get("aparell_id", item.get("app_id"))
+            try:
+                app_id = int(app_id)
+            except Exception:
+                app_id = None
+
+            try:
+                exercici = int(exercici)
+            except Exception:
+                exercici = 1
+            exercici = max(1, exercici)
+
+            if not camp:
+                camp = str(item.get("camp") or "").strip() or "total"
+
+            raw_jutges = source.get("jutges") if isinstance(source.get("jutges"), dict) else {}
+            ids = raw_jutges.get("ids")
+            if not isinstance(ids, list):
+                ids = source.get("jutges_ids")
+            if not isinstance(ids, list):
+                ids = []
+            jutges_ids = []
+            for x in ids:
+                try:
+                    j = int(x)
+                except Exception:
+                    continue
+                if j > 0 and j not in jutges_ids:
+                    jutges_ids.append(j)
+
+            if not label:
+                label = camp
+            if decimals is None:
+                decimals = 3
+            out_item = {
+                "type": "raw",
+                "key": key,
+                "label": label,
+                "align": align,
+                "decimals": decimals,
+                "source": {
+                    "aparell_id": app_id,
+                    "exercici": exercici,
+                    "camp": camp,
+                    "jutges": {"ids": jutges_ids},
+                },
+            }
+        elif ctype == "metric":
+            # compat retroactiva: converteix mètrica antiga a raw simple.
+            key = str(item.get("key") or "").strip() or f"raw_{metric_idx}"
+            metric_idx += 1
+            crit = item.get("criteri") if isinstance(item.get("criteri"), dict) else {}
+            camps = _normalize_tie_camps(crit)
+            camp = camps[0] if camps else "total"
+            scope = crit.get("scope") or {}
+            apps = scope.get("aparells") or {}
+            mode = (apps.get("mode") or "").lower().strip()
+            app_id = None
+            if mode == "seleccionar":
+                ids = apps.get("ids") or []
+                if ids:
+                    try:
+                        app_id = int(ids[0])
+                    except Exception:
+                        app_id = None
+            elif item.get("aparell_id") not in (None, "", 0, "0"):
+                try:
+                    app_id = int(item.get("aparell_id"))
+                except Exception:
+                    app_id = None
+            ex = (scope.get("exercicis") or {})
+            exercici = 1
+            if str(ex.get("mode") or "").lower().strip() == "index":
+                try:
+                    exercici = max(1, int(ex.get("index") or 1))
+                except Exception:
+                    exercici = 1
+            if not label:
+                label = camp
+            if decimals is None:
+                decimals = 3
+            out_item = {
+                "type": "raw",
+                "key": key,
+                "label": label,
+                "align": align,
+                "decimals": decimals,
+                "source": {
+                    "aparell_id": app_id,
+                    "exercici": exercici,
+                    "camp": camp,
+                    "jutges": {"ids": []},
+                },
+            }
+        else:
+            key = str(item.get("key") or "").strip()
+            if key not in ("posicio", "participant", "nom", "entitat_nom", "participants", "punts"):
+                continue
+            if not label:
+                label = {
+                    "posicio": "#",
+                    "participant": "Nom",
+                    "nom": "Nom",
+                    "entitat_nom": "Entitat",
+                    "participants": "Participants",
+                    "punts": "Punts",
+                }.get(key, key)
+            if decimals is None and key == "punts":
+                decimals = 3
+            out_item = {
+                "type": "builtin",
+                "key": key,
+                "label": label,
+                "align": align,
+            }
+            if decimals is not None:
+                out_item["decimals"] = decimals
+
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        out.append(out_item)
+
+    return out or _default()
+
+
 def compute_classificacio(competicio, cfg_obj):
     """
     Retorna:
@@ -416,6 +609,7 @@ def compute_classificacio(competicio, cfg_obj):
     punt = schema["puntuacio"] or {}
     desempat = schema["desempat"] or []
     presentacio = schema["presentacio"] or {}
+    display_columns = get_display_columns(schema)
     equips_cfg = schema.get("equips") or {}
     tipus = (getattr(cfg_obj, "tipus", "individual") or "individual").lower().strip()
     desempat = _sanitize_desempat_for_tipus(desempat, tipus)
@@ -506,8 +700,11 @@ def compute_classificacio(competicio, cfg_obj):
     notes = list(notes_qs)
 
     notes_by_app = defaultdict(list)  # app_id -> [notes...]
+    notes_by_key = {}
     for n in notes:
         notes_by_app[n.comp_aparell_id].append(n)
+        ex_idx = int(getattr(n, "exercici", 1) or 1)
+        notes_by_key[(n.inscripcio_id, n.comp_aparell_id, ex_idx)] = n
 
     # inscripcions que realment �?ocompeteixen�?� a cada aparell (tenen notes)
     ins_ids_by_app = defaultdict(set)
@@ -722,13 +919,206 @@ def compute_classificacio(competicio, cfg_obj):
 
         return float(_apply_simple_agg(vals_apps, crit_agg_aparells))
     
+    # capa reutilitzable: desempat + columnes mÃ¨triques
+    metric_cache = {}
+
+    def _metric_signature(crit: dict) -> str:
+        try:
+            return json.dumps(crit or {}, sort_keys=True, ensure_ascii=False)
+        except Exception:
+            return str(_tie_key(crit) or crit or "")
+
+    def calc_metric_value_for_ins(ins_id: int, crit: dict) -> float:
+        try:
+            iid = int(ins_id)
+        except Exception:
+            return 0.0
+        sig = _metric_signature(crit)
+        ck = (iid, sig)
+        if ck in metric_cache:
+            return metric_cache[ck]
+        val = float(calc_criterion_value(iid, crit or {}))
+        metric_cache[ck] = val
+        return val
+
+    def calc_metric_value_for_group(member_ids, crit: dict) -> float:
+        mids = []
+        for x in (member_ids or []):
+            try:
+                mids.append(int(x))
+            except Exception:
+                continue
+        if not mids:
+            return 0.0
+
+        part_scope = ((crit.get("scope") or {}).get("participants") or {})
+        part_mode = (part_scope.get("mode") or "tots").lower().strip()
+        if part_mode == "hereta":
+            part_mode = "tots"
+        try:
+            part_n = int(part_scope.get("n") or 1)
+        except Exception:
+            part_n = 1
+
+        vals = [calc_metric_value_for_ins(mid, crit) for mid in mids]
+        selected_vals = _pick_participants(vals, part_mode, part_n)
+        agg_parts = (crit.get("agregacio_participants") or "sum").lower().strip()
+        return float(_apply_simple_agg(selected_vals, agg_parts))
+
+    def _apply_decimals_if_numeric(v, decimals):
+        if decimals is None:
+            return v
+        try:
+            dv = int(decimals)
+        except Exception:
+            return v
+        if isinstance(v, (int, float, Decimal)):
+            return round(_to_float(v), max(0, min(6, dv)))
+        return v
+
+    def _value_from_entry(entry: ScoreEntry, camp: str):
+        c = str(camp or "").strip()
+        if not c:
+            return ""
+        if c.lower() == "total":
+            return _to_float(entry.total)
+
+        outs = entry.outputs or {}
+        if isinstance(outs, dict) and c in outs:
+            return outs.get(c)
+
+        ins = entry.inputs or {}
+        if isinstance(ins, dict) and c in ins:
+            return ins.get(c)
+
+        if isinstance(outs, dict):
+            if c == "TOTAL" and "TOTAL" in outs:
+                return outs.get("TOTAL")
+            if c == "total" and "total" in outs:
+                return outs.get("total")
+        return ""
+
+    def _normalize_judge_item(v):
+        if isinstance(v, Decimal):
+            return _to_float(v)
+        if isinstance(v, list):
+            out = []
+            for x in v:
+                if isinstance(x, Decimal):
+                    out.append(_to_float(x))
+                else:
+                    out.append(x)
+            return out
+        return v
+
+    def _apply_judge_selection(raw_value, judge_ids):
+        ids = []
+        for x in (judge_ids or []):
+            try:
+                j = int(x)
+            except Exception:
+                continue
+            if j > 0 and j not in ids:
+                ids.append(j)
+        if not isinstance(raw_value, list):
+            return raw_value
+        # Si no es selecciona jutge, mostrem totes les files de jutges.
+        if not ids:
+            ids = list(range(1, len(raw_value) + 1))
+
+        picked = []
+        for j in ids:
+            idx = j - 1
+            if 0 <= idx < len(raw_value):
+                picked.append((j, raw_value[idx]))
+
+        if not picked:
+            return ""
+        rows = []
+        for j, v in picked:
+            vv = _normalize_judge_item(v)
+            if isinstance(vv, list):
+                items = vv
+            else:
+                items = [vv]
+            rows.append({"judge": j, "items": items})
+
+        return {"_kind": "judge_rows", "rows": rows}
+
+    def _raw_col_value_for_ins(ins_id, col):
+        src = col.get("source") or {}
+        app_id = src.get("aparell_id")
+        ex_idx = src.get("exercici", 1)
+        camp = str(src.get("camp") or "total").strip() or "total"
+        try:
+            app_id = int(app_id)
+        except Exception:
+            return ""
+        try:
+            ex_idx = max(1, int(ex_idx))
+        except Exception:
+            ex_idx = 1
+
+        entry = notes_by_key.get((ins_id, app_id, ex_idx))
+        if not entry:
+            return ""
+        raw = _value_from_entry(entry, camp)
+        jcfg = src.get("jutges") if isinstance(src.get("jutges"), dict) else {}
+        jids = jcfg.get("ids") if isinstance(jcfg.get("ids"), list) else []
+        return _apply_judge_selection(raw, jids)
+
+    def _builtin_col_value(row: dict, key: str):
+        if key == "nom":
+            key = "participant"
+        if key == "participant":
+            return row.get("participant") or row.get("nom") or row.get("entitat_nom") or ""
+        if key == "punts":
+            return row.get("punts", 0.0)
+        if key == "posicio":
+            return row.get("posicio")
+        if key == "entitat_nom":
+            return row.get("entitat_nom") or ""
+        if key == "participants":
+            return row.get("participants", 0)
+        return row.get(key)
+
+    def _attach_display_cells(rows, entity_mode=False):
+        for row in rows:
+            cells = {}
+            member_ids = row.get("_member_ids") or []
+            for col in display_columns:
+                ctype = col.get("type")
+                ckey = col.get("key")
+                if not ckey:
+                    continue
+
+                if ctype == "raw":
+                    if entity_mode:
+                        if len(member_ids) == 1:
+                            val = _raw_col_value_for_ins(member_ids[0], col)
+                        else:
+                            val = ""
+                    else:
+                        val = _raw_col_value_for_ins(row.get("inscripcio_id"), col)
+                    val = _apply_decimals_if_numeric(val, col.get("decimals"))
+                else:
+                    val = _builtin_col_value(row, ckey)
+                    val = _apply_decimals_if_numeric(val, col.get("decimals"))
+
+                cells[ckey] = val
+
+            row["cells"] = cells
+            row["display"] = cells
+            row.pop("_member_ids", None)
+        return rows
+
     # guardem tie values (amb clau estable per UI)
     for crit in desempat:
         key = _tie_key(crit)
         if not key:
             continue
         for ins_id in per_ins.keys():
-            per_ins[ins_id]["tie"][key] = calc_criterion_value(ins_id, crit)
+            per_ins[ins_id]["tie"][key] = calc_metric_value_for_ins(ins_id, crit)
 
     # 8) PARTICIONS + output rows
     per_particio = defaultdict(list)
@@ -834,26 +1224,14 @@ def compute_classificacio(competicio, cfg_obj):
                     final_pkey = base_pkey
 
                 team_score = sum([_to_float(per_ins[m.id]["score"]) for m in members])
+                member_ids = [m.id for m in members]
 
                 team_tie = {}
                 for t in desempat or []:
                     tkey = _tie_key(t)
                     if not tkey:
                         continue
-
-                    part_scope = ((t.get("scope") or {}).get("participants") or {})
-                    part_mode = (part_scope.get("mode") or "hereta").lower().strip()
-                    if part_mode == "hereta":
-                        part_mode = "tots"
-                    try:
-                        part_n = int(part_scope.get("n") or 1)
-                    except Exception:
-                        part_n = 1
-
-                    part_vals = [_to_float((per_ins[m.id].get("tie") or {}).get(tkey, 0.0)) for m in members]
-                    selected_vals = _pick_participants(part_vals, part_mode, part_n)
-                    agg_parts = (t.get("agregacio_participants") or "sum").lower().strip()
-                    team_tie[tkey] = float(_apply_simple_agg(selected_vals, agg_parts))
+                    team_tie[tkey] = calc_metric_value_for_group(member_ids, t)
 
                 out.setdefault(final_pkey, []).append({
                     "equip_id": equip_id,
@@ -862,10 +1240,12 @@ def compute_classificacio(competicio, cfg_obj):
                     "score": float(team_score),
                     "tie": team_tie,
                     "participants": len(members),
+                    "_member_ids": member_ids,
                 })
 
         for pkey, rows in out.items():
-            out[pkey] = _rank_v2(rows, desempat, presentacio, ordre_principal=ordre_principal, entity_mode=True)
+            ranked = _rank_v2(rows, desempat, presentacio, ordre_principal=ordre_principal, entity_mode=True)
+            out[pkey] = _attach_display_cells(ranked, entity_mode=True)
         return out
 
     if tipus == "entitat":
@@ -889,13 +1269,16 @@ def compute_classificacio(competicio, cfg_obj):
                     "score": float(ent_score),
                     "tie": ent_tie,
                     "participants": len(items),
+                    "_member_ids": [x.get("inscripcio_id") for x in items if x.get("inscripcio_id") is not None],
                 })
 
-            out[pkey] = _rank_v2(ent_rows, desempat, presentacio, ordre_principal=ordre_principal, entity_mode=True)
+            ranked = _rank_v2(ent_rows, desempat, presentacio, ordre_principal=ordre_principal, entity_mode=True)
+            out[pkey] = _attach_display_cells(ranked, entity_mode=True)
         return out
 
     for pkey, rows in per_particio.items():
-        out[pkey] = _rank_v2(rows, desempat, presentacio, ordre_principal=ordre_principal, entity_mode=False)
+        ranked = _rank_v2(rows, desempat, presentacio, ordre_principal=ordre_principal, entity_mode=False)
+        out[pkey] = _attach_display_cells(ranked, entity_mode=False)
     return out
 
 

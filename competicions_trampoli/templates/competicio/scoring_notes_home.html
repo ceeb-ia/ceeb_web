@@ -27,13 +27,25 @@
     <!-- CAPÇALERA -->
     <div class="d-flex justify-content-between align-items-start mb-3">
       <div>
-        <h2 class="mb-1">Notes · Sistema configurable</h2>
+        <h2 class="mb-1">Notes · Panell Central d'Organització</h2>
         <div class="text-muted small">Competició: <span class="fw-semibold">{{ competicio.nom }}</span></div>
         <div class="text-muted small">Entrada i càlcul depenen del schema de cada aparell.</div>
+        <div class="mt-2 d-flex align-items-center" style="gap:8px;">
+          <label class="mini-help mb-0" for="franjaSelect">Franja</label>
+          <select id="franjaSelect" class="form-control form-control-sm" style="max-width:260px;">
+            <option value="">Sense franja (ordre base)</option>
+            {% for fr in franges %}
+              <option value="{{ fr.id }}" {% if franja_selected_id == fr.id %}selected{% endif %}>
+                {{ fr.titol|default:"Franja" }} ({{ fr.hora_inici|time:"H:i" }}-{{ fr.hora_fi|time:"H:i" }})
+              </option>
+            {% endfor %}
+          </select>
+        </div>
       </div>
       <div class=" gap-2">
         <a class="btn btn-sm btn-outline-primary" href="{% url 'inscripcions_list' competicio.id %}">Inscripcions</a>
         <a class="btn btn-sm btn-outline-success" href="{% url 'classificacions_live' competicio.id %}">Classificacions en viu</a>
+        <a class="btn btn-sm btn-outline-info" href="{% url 'public_live_qr_home' competicio.id %}">QR públic</a>
         <a class="btn btn-sm btn-outline-secondary" href="{% url 'trampoli_config' competicio.id %}">Configuració</a>
       </div>
     </div>
@@ -167,6 +179,8 @@
 {{ schemas|json_script:"schemas-data" }}
 {{ scores|json_script:"scores-data" }}
 {{ inscripcions|json_script:"inscripcions-data" }}
+{{ rotation_rank_map|json_script:"rotation-rank-data" }}
+{{ rotation_groups_by_app|json_script:"rotation-groups-data" }}
 
 {% endblock %}
 
@@ -199,6 +213,8 @@
   const SCHEMAS = JSON.parse(document.getElementById("schemas-data").textContent);
   const SCORES  = JSON.parse(document.getElementById("scores-data").textContent);
   const INS     = JSON.parse(document.getElementById("inscripcions-data").textContent);
+  const ROTATION_RANK = JSON.parse(document.getElementById("rotation-rank-data").textContent || "{}");
+  const ROTATION_GROUPS = JSON.parse(document.getElementById("rotation-groups-data").textContent || "{}");
   const UPDATES_URL = "{% url 'scoring_updates' competicio.id %}";
   const SAVE_URL = "{% url 'scoring_save_partial' competicio.id %}";
 
@@ -227,6 +243,25 @@
   }
   function setScore(insId, ex, appId, data){
     SCORES[keyFor(insId, ex, appId)] = data;
+  }
+  function inscripcioCompeteixAApp(ins, appId){
+    if(!ins || !Array.isArray(ins.allowed_app_ids)) return true;
+    return ins.allowed_app_ids.map(String).includes(String(appId));
+  }
+  function rotationRankFor(insId, appId){
+    const k = `${String(appId)}|${String(insId)}`;
+    const n = Number(ROTATION_RANK[k]);
+    return Number.isFinite(n) ? n : null;
+  }
+  function appHasRotationGroups(appId){
+    const arr = ROTATION_GROUPS[String(appId)];
+    return Array.isArray(arr) && arr.length > 0;
+  }
+  function inscripcioInRotationGroup(ins, appId){
+    const arr = ROTATION_GROUPS[String(appId)];
+    if(!Array.isArray(arr) || !arr.length) return true;
+    const g = Number(ins?.group || 0);
+    return arr.map(Number).includes(g);
   }
 
   function el(tag, attrs={}, children=[]){
@@ -713,7 +748,24 @@
       if(f) nJudgesTable = Math.max(nJudgesTable, judgesForField(f));
     });
 
-    const rows = INS.filter(x=>String(x.group)===String(group));
+    const rows = INS.filter(x => {
+      if(String(x.group)!==String(group)) return false;
+      if(!inscripcioCompeteixAApp(x, appId)) return false;
+      if(appHasRotationGroups(appId) && !inscripcioInRotationGroup(x, appId)) return false;
+      return true;
+    });
+    rows.sort((a, b) => {
+      const ra = rotationRankFor(a.id, appId);
+      const rb = rotationRankFor(b.id, appId);
+      if(ra !== null && rb !== null) return ra - rb;
+      if(ra !== null) return -1;
+      if(rb !== null) return 1;
+
+      const oa = Number(a.order || 0);
+      const ob = Number(b.order || 0);
+      if(oa !== ob) return oa - ob;
+      return Number(a.id || 0) - Number(b.id || 0);
+    });
 
     rows.forEach((ins, idx)=>{
       const scoreKey = keyFor(ins.id, exercici, appId);
@@ -1038,6 +1090,17 @@
   }
 
   document.addEventListener("DOMContentLoaded", ()=>{
+    const frSel = document.getElementById("franjaSelect");
+    if(frSel){
+      frSel.addEventListener("change", () => {
+        const url = new URL(window.location.href);
+        const v = String(frSel.value || "").trim();
+        if(v) url.searchParams.set("franja", v);
+        else url.searchParams.delete("franja");
+        window.location.href = url.toString();
+      });
+    }
+
     renderAll();
     syncScrollbars();
     window.addEventListener("resize", syncScrollbars);
