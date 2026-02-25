@@ -1,7 +1,11 @@
 import io
 import json
+import logging
+import mimetypes
 import qrcode
+import time
 
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -12,7 +16,7 @@ from .models_judging import JudgeDeviceToken, PublicLiveToken
 from .models import Inscripcio, Competicio
 from .models_trampoli import CompeticioAparell, InscripcioAparellExclusio
 from .models_rotacions import RotacioAssignacio, RotacioFranja
-from .models_scoring import ScoringSchema, ScoreEntry
+from .models_scoring import ScoreEntry, ScoreEntryVideo, ScoreEntryVideoEvent, ScoringSchema
 from .scoring_engine import ScoringEngine, ScoringError
 from .services.rotacions_ordering import (
     ORDER_MODE_MAINTAIN,
@@ -21,6 +25,8 @@ from .services.rotacions_ordering import (
     get_rotacions_order_modes,
     order_pairs_for_mode,
 )
+
+logger = logging.getLogger(__name__)
 
 
 
@@ -138,6 +144,96 @@ def _normalize_permissions(perms):
             "item_count": (None if p.get("item_count") in (None, "", "null") else int(p["item_count"])),
         })
     return out
+
+
+def _clamp_exercici_for_aparell(comp_aparell, exercici_raw):
+    try:
+        exercici = int(exercici_raw or 1)
+    except Exception:
+        exercici = 1
+    max_ex = max(1, int(getattr(comp_aparell, "nombre_exercicis", 1) or 1))
+    return max(1, min(max_ex, exercici))
+
+
+def _detect_uploaded_mime(uploaded_file):
+    content_type = (getattr(uploaded_file, "content_type", "") or "").split(";")[0].strip().lower()
+    if content_type:
+        return content_type
+
+    guessed, _enc = mimetypes.guess_type(getattr(uploaded_file, "name", ""))
+    return (guessed or "").strip().lower()
+
+
+def _serialize_video_record(video_record, request):
+    url = None
+    if video_record.video_file:
+        try:
+            media_url = video_record.video_file.url
+            url = request.build_absolute_uri(media_url)
+        except Exception:
+            url = None
+
+    return {
+        "id": video_record.id,
+        "status": video_record.status,
+        "duration_seconds": video_record.duration_seconds,
+        "file_size_bytes": int(video_record.file_size_bytes or 0),
+        "mime_type": video_record.mime_type or "",
+        "original_filename": video_record.original_filename or "",
+        "updated_at": video_record.updated_at.isoformat() if video_record.updated_at else None,
+        "url": url,
+    }
+
+
+def _request_meta(request):
+    return {
+        "ip": (request.META.get("HTTP_X_FORWARDED_FOR") or request.META.get("REMOTE_ADDR") or "").split(",")[0].strip(),
+        "user_agent": (request.META.get("HTTP_USER_AGENT") or "")[:250],
+    }
+
+
+def _log_video_event(level: str, event: str, **payload):
+    raw = {"event": event}
+    raw.update(payload)
+    msg = json.dumps(raw, ensure_ascii=True, sort_keys=True)
+    if level == "error":
+        logger.error(msg)
+    elif level == "warning":
+        logger.warning(msg)
+    else:
+        logger.info(msg)
+
+
+def _create_video_audit_event(
+    *,
+    action: str,
+    ok: bool,
+    http_status: int,
+    detail: str,
+    competicio,
+    comp_aparell,
+    inscripcio,
+    judge_token=None,
+    score_entry=None,
+    video=None,
+    payload=None,
+):
+    try:
+        ScoreEntryVideoEvent.objects.create(
+            action=action,
+            ok=bool(ok),
+            http_status=int(http_status or 0),
+            detail=(detail or "")[:255],
+            payload=payload or {},
+            competicio=competicio,
+            comp_aparell=comp_aparell,
+            inscripcio=inscripcio,
+            judge_token=judge_token,
+            score_entry=score_entry,
+            video=video,
+        )
+    except Exception:
+        logger.exception("Unable to persist ScoreEntryVideoEvent")
 
 
 def judge_qr_png(request, token):
@@ -292,9 +388,497 @@ def judge_portal(request, token):
         "inscripcions": ins_list,
         "scores_payload_json": json.dumps(scores_payload),
         "save_url": reverse("judge_save_partial", kwargs={"token": str(tok.id)}),
+        "video_status_url": reverse("judge_video_status", kwargs={"token": str(tok.id)}),
+        "video_upload_url": reverse("judge_video_upload", kwargs={"token": str(tok.id)}),
+        "video_delete_url": reverse("judge_video_delete", kwargs={"token": str(tok.id)}),
+        "video_max_duration_seconds": ScoreEntryVideo.VIDEO_MAX_DURATION_SECONDS,
+        "video_max_size_bytes": ScoreEntryVideo.VIDEO_MAX_SIZE_BYTES,
         "exercici": exercici_default,
     }
     return render(request, "judge/portal.html", ctx)
+
+
+@require_http_methods(["GET"])
+def judge_video_status(request, token):
+    started = time.monotonic()
+    req_meta = _request_meta(request)
+    tok = get_object_or_404(JudgeDeviceToken, pk=token)
+    if not tok.is_valid():
+        _log_video_event(
+            "warning",
+            "video_status_denied_token",
+            token=str(token),
+            latency_ms=int((time.monotonic() - started) * 1000),
+            **req_meta,
+        )
+        return JsonResponse({"ok": False, "error": "Token invàlid o revocat"}, status=403)
+    tok.touch()
+
+    ins_id = request.GET.get("inscripcio_id")
+    if not ins_id:
+        _log_video_event(
+            "warning",
+            "video_status_bad_request",
+            token=str(token),
+            reason="missing_inscripcio_id",
+            latency_ms=int((time.monotonic() - started) * 1000),
+            **req_meta,
+        )
+        return JsonResponse({"ok": False, "error": "Falta inscripcio_id"}, status=400)
+
+    exercici = _clamp_exercici_for_aparell(tok.comp_aparell, request.GET.get("exercici") or request.GET.get("ex"))
+    competicio = tok.competicio
+    comp_aparell = tok.comp_aparell
+
+    ins = get_object_or_404(Inscripcio, pk=ins_id, competicio=competicio)
+    if _inscripcio_exclosa_en_aparell(ins.id, comp_aparell.id):
+        _log_video_event(
+            "warning",
+            "video_status_denied_excluded",
+            token=str(token),
+            inscripcio_id=ins.id,
+            exercici=exercici,
+            comp_aparell_id=comp_aparell.id,
+            latency_ms=int((time.monotonic() - started) * 1000),
+            **req_meta,
+        )
+        return JsonResponse(
+            {"ok": False, "error": "Aquesta inscripcio no competeix en aquest aparell."},
+            status=403,
+        )
+
+    entry = (
+        ScoreEntry.objects
+        .filter(
+            competicio=competicio,
+            inscripcio=ins,
+            exercici=exercici,
+            comp_aparell=comp_aparell,
+        )
+        .first()
+    )
+    if not entry:
+        _log_video_event(
+            "info",
+            "video_status_empty",
+            token=str(token),
+            inscripcio_id=ins.id,
+            exercici=exercici,
+            comp_aparell_id=comp_aparell.id,
+            latency_ms=int((time.monotonic() - started) * 1000),
+            **req_meta,
+        )
+        return JsonResponse(
+            {"ok": True, "has_video": False, "inscripcio_id": ins.id, "exercici": exercici},
+        )
+
+    video = ScoreEntryVideo.objects.filter(score_entry=entry).first()
+    if not video or not video.video_file:
+        _log_video_event(
+            "info",
+            "video_status_no_file",
+            token=str(token),
+            inscripcio_id=ins.id,
+            exercici=exercici,
+            comp_aparell_id=comp_aparell.id,
+            score_entry_id=entry.id,
+            latency_ms=int((time.monotonic() - started) * 1000),
+            **req_meta,
+        )
+        return JsonResponse(
+            {
+                "ok": True,
+                "has_video": False,
+                "inscripcio_id": ins.id,
+                "exercici": exercici,
+                "score_entry_id": entry.id,
+            }
+        )
+
+    out = JsonResponse(
+        {
+            "ok": True,
+            "has_video": True,
+            "inscripcio_id": ins.id,
+            "exercici": exercici,
+            "score_entry_id": entry.id,
+            "video": _serialize_video_record(video, request),
+        }
+    )
+    _log_video_event(
+        "info",
+        "video_status_ok",
+        token=str(token),
+        inscripcio_id=ins.id,
+        exercici=exercici,
+        comp_aparell_id=comp_aparell.id,
+        score_entry_id=entry.id,
+        video_id=video.id,
+        latency_ms=int((time.monotonic() - started) * 1000),
+        **req_meta,
+    )
+    return out
+
+
+@require_POST
+@transaction.atomic
+def judge_video_upload(request, token):
+    started = time.monotonic()
+    req_meta = _request_meta(request)
+    tok = get_object_or_404(JudgeDeviceToken, pk=token)
+    if not tok.is_valid():
+        _log_video_event(
+            "warning",
+            "video_upload_denied_token",
+            token=str(token),
+            latency_ms=int((time.monotonic() - started) * 1000),
+            **req_meta,
+        )
+        return JsonResponse({"ok": False, "error": "Token invàlid o revocat"}, status=403)
+    tok.touch()
+
+    ins_id = request.POST.get("inscripcio_id")
+    if not ins_id:
+        _log_video_event(
+            "warning",
+            "video_upload_bad_request",
+            token=str(token),
+            reason="missing_inscripcio_id",
+            latency_ms=int((time.monotonic() - started) * 1000),
+            **req_meta,
+        )
+        return JsonResponse({"ok": False, "error": "Falta inscripcio_id"}, status=400)
+
+    exercici = _clamp_exercici_for_aparell(tok.comp_aparell, request.POST.get("exercici") or request.POST.get("ex"))
+    competicio = tok.competicio
+    comp_aparell = tok.comp_aparell
+
+    ins = get_object_or_404(Inscripcio, pk=ins_id, competicio=competicio)
+
+    def _reject(message, status_code, reason, score_entry=None, payload=None):
+        _log_video_event(
+            "warning",
+            "video_upload_rejected",
+            token=str(token),
+            inscripcio_id=ins.id,
+            exercici=exercici,
+            comp_aparell_id=comp_aparell.id,
+            score_entry_id=(score_entry.id if score_entry else None),
+            reason=reason,
+            http_status=status_code,
+            latency_ms=int((time.monotonic() - started) * 1000),
+            **req_meta,
+        )
+        _create_video_audit_event(
+            action=ScoreEntryVideoEvent.Action.UPLOAD_REJECTED,
+            ok=False,
+            http_status=status_code,
+            detail=message,
+            competicio=competicio,
+            comp_aparell=comp_aparell,
+            inscripcio=ins,
+            judge_token=tok,
+            score_entry=score_entry,
+            payload=payload or {"reason": reason},
+        )
+        return JsonResponse({"ok": False, "error": message}, status=status_code)
+
+    if _inscripcio_exclosa_en_aparell(ins.id, comp_aparell.id):
+        return _reject(
+            "Aquesta inscripcio no competeix en aquest aparell.",
+            403,
+            "inscripcio_excluded",
+            payload={"inscripcio_id": ins.id},
+        )
+
+    uploaded = request.FILES.get("video_file") or request.FILES.get("video")
+    if not uploaded:
+        return _reject("Falta el fitxer de video (video_file).", 400, "missing_file")
+
+    file_size = int(getattr(uploaded, "size", 0) or 0)
+    if file_size <= 0:
+        return _reject("Fitxer de video buit.", 400, "empty_file")
+    if file_size > ScoreEntryVideo.VIDEO_MAX_SIZE_BYTES:
+        return _reject(
+            f"El fitxer supera el limit de {ScoreEntryVideo.VIDEO_MAX_SIZE_BYTES} bytes.",
+            400,
+            "file_too_large",
+            payload={"size": file_size},
+        )
+
+    mime_type = (request.POST.get("mime_type") or _detect_uploaded_mime(uploaded)).strip().lower()
+    if not mime_type:
+        return _reject("No s'ha pogut detectar el tipus MIME del video.", 400, "missing_mime")
+    if mime_type not in ScoreEntryVideo.ALLOWED_MIME_TYPES:
+        return _reject(
+            f"Tipus MIME no permès: {mime_type}",
+            400,
+            "mime_not_allowed",
+            payload={"mime_type": mime_type},
+        )
+
+    duration_raw = request.POST.get("duration_seconds")
+    duration_seconds = None
+    if duration_raw not in (None, ""):
+        try:
+            duration_seconds = int(duration_raw)
+        except Exception:
+            return _reject("duration_seconds invalid.", 400, "invalid_duration")
+        if duration_seconds <= 0:
+            return _reject("duration_seconds ha de ser > 0.", 400, "invalid_duration_non_positive")
+        if duration_seconds > ScoreEntryVideo.VIDEO_MAX_DURATION_SECONDS:
+            return _reject(
+                (
+                    "La durada supera el limit "
+                    f"de {ScoreEntryVideo.VIDEO_MAX_DURATION_SECONDS} segons."
+                ),
+                400,
+                "duration_too_long",
+                payload={"duration_seconds": duration_seconds},
+            )
+
+    entry, _created = ScoreEntry.objects.get_or_create(
+        competicio=competicio,
+        inscripcio=ins,
+        exercici=exercici,
+        comp_aparell=comp_aparell,
+        defaults={"inputs": {}, "outputs": {}, "total": 0},
+    )
+
+    video, created_video = ScoreEntryVideo.objects.get_or_create(
+        score_entry=entry,
+        defaults={
+            "status": ScoreEntryVideo.Status.PENDING,
+            "file_size_bytes": 0,
+        },
+    )
+
+    previous_file_name = video.video_file.name if video.video_file else ""
+
+    video.video_file = uploaded
+    video.judge_token = tok
+    video.status = ScoreEntryVideo.Status.READY
+    video.duration_seconds = duration_seconds
+    video.file_size_bytes = file_size
+    video.mime_type = mime_type
+    video.original_filename = request.POST.get("original_filename") or (uploaded.name or "")
+    video.error_message = ""
+    try:
+        video.full_clean()
+        video.save()
+    except ValidationError as exc:
+        msg = str(exc)
+        return _reject(
+            msg,
+            400,
+            "validation_error",
+            score_entry=entry,
+            payload={"mime_type": mime_type, "size": file_size},
+        )
+    except Exception:
+        logger.exception("Unexpected error saving uploaded judge video")
+        return _reject(
+            "Error inesperat guardant el video.",
+            500,
+            "save_exception",
+            score_entry=entry,
+            payload={"mime_type": mime_type, "size": file_size},
+        )
+
+    if previous_file_name and previous_file_name != video.video_file.name:
+        try:
+            video.video_file.storage.delete(previous_file_name)
+        except Exception:
+            pass
+
+    action = ScoreEntryVideoEvent.Action.REPLACE if previous_file_name else ScoreEntryVideoEvent.Action.UPLOAD
+    _create_video_audit_event(
+        action=action,
+        ok=True,
+        http_status=200,
+        detail="video stored",
+        competicio=competicio,
+        comp_aparell=comp_aparell,
+        inscripcio=ins,
+        judge_token=tok,
+        score_entry=entry,
+        video=video,
+        payload={
+            "video_id": video.id,
+            "mime_type": mime_type,
+            "file_size_bytes": file_size,
+            "duration_seconds": duration_seconds,
+            "replaced_previous": bool(previous_file_name),
+        },
+    )
+    _log_video_event(
+        "info",
+        "video_upload_ok",
+        token=str(token),
+        inscripcio_id=ins.id,
+        exercici=exercici,
+        comp_aparell_id=comp_aparell.id,
+        score_entry_id=entry.id,
+        video_id=video.id,
+        action=action,
+        mime_type=mime_type,
+        file_size_bytes=file_size,
+        duration_seconds=duration_seconds,
+        latency_ms=int((time.monotonic() - started) * 1000),
+        **req_meta,
+    )
+
+    return JsonResponse(
+        {
+            "ok": True,
+            "created": created_video,
+            "inscripcio_id": ins.id,
+            "exercici": exercici,
+            "score_entry_id": entry.id,
+            "video": _serialize_video_record(video, request),
+        }
+    )
+
+
+@require_POST
+@transaction.atomic
+def judge_video_delete(request, token):
+    started = time.monotonic()
+    req_meta = _request_meta(request)
+    tok = get_object_or_404(JudgeDeviceToken, pk=token)
+    if not tok.is_valid():
+        _log_video_event(
+            "warning",
+            "video_delete_denied_token",
+            token=str(token),
+            latency_ms=int((time.monotonic() - started) * 1000),
+            **req_meta,
+        )
+        return JsonResponse({"ok": False, "error": "Token invàlid o revocat"}, status=403)
+    tok.touch()
+
+    ins_id = request.POST.get("inscripcio_id")
+    if not ins_id:
+        _log_video_event(
+            "warning",
+            "video_delete_bad_request",
+            token=str(token),
+            reason="missing_inscripcio_id",
+            latency_ms=int((time.monotonic() - started) * 1000),
+            **req_meta,
+        )
+        return JsonResponse({"ok": False, "error": "Falta inscripcio_id"}, status=400)
+
+    exercici = _clamp_exercici_for_aparell(tok.comp_aparell, request.POST.get("exercici") or request.POST.get("ex"))
+    competicio = tok.competicio
+    comp_aparell = tok.comp_aparell
+
+    ins = get_object_or_404(Inscripcio, pk=ins_id, competicio=competicio)
+    if _inscripcio_exclosa_en_aparell(ins.id, comp_aparell.id):
+        _log_video_event(
+            "warning",
+            "video_delete_denied_excluded",
+            token=str(token),
+            inscripcio_id=ins.id,
+            exercici=exercici,
+            comp_aparell_id=comp_aparell.id,
+            latency_ms=int((time.monotonic() - started) * 1000),
+            **req_meta,
+        )
+        return JsonResponse(
+            {"ok": False, "error": "Aquesta inscripcio no competeix en aquest aparell."},
+            status=403,
+        )
+
+    entry = (
+        ScoreEntry.objects
+        .filter(
+            competicio=competicio,
+            inscripcio=ins,
+            exercici=exercici,
+            comp_aparell=comp_aparell,
+        )
+        .first()
+    )
+    if not entry:
+        _log_video_event(
+            "info",
+            "video_delete_no_score",
+            token=str(token),
+            inscripcio_id=ins.id,
+            exercici=exercici,
+            comp_aparell_id=comp_aparell.id,
+            latency_ms=int((time.monotonic() - started) * 1000),
+            **req_meta,
+        )
+        return JsonResponse(
+            {"ok": True, "deleted": False, "inscripcio_id": ins.id, "exercici": exercici},
+        )
+
+    video = ScoreEntryVideo.objects.filter(score_entry=entry).first()
+    if not video:
+        _log_video_event(
+            "info",
+            "video_delete_no_video",
+            token=str(token),
+            inscripcio_id=ins.id,
+            exercici=exercici,
+            comp_aparell_id=comp_aparell.id,
+            score_entry_id=entry.id,
+            latency_ms=int((time.monotonic() - started) * 1000),
+            **req_meta,
+        )
+        return JsonResponse(
+            {
+                "ok": True,
+                "deleted": False,
+                "inscripcio_id": ins.id,
+                "exercici": exercici,
+                "score_entry_id": entry.id,
+            }
+        )
+
+    deleted_path = video.video_file.name if video.video_file else ""
+    _create_video_audit_event(
+        action=ScoreEntryVideoEvent.Action.DELETE,
+        ok=True,
+        http_status=200,
+        detail="video deleted",
+        competicio=competicio,
+        comp_aparell=comp_aparell,
+        inscripcio=ins,
+        judge_token=tok,
+        score_entry=entry,
+        video=video,
+        payload={"deleted_path": deleted_path},
+    )
+
+    if video.video_file:
+        video.video_file.delete(save=False)
+    video.delete()
+
+    _log_video_event(
+        "info",
+        "video_delete_ok",
+        token=str(token),
+        inscripcio_id=ins.id,
+        exercici=exercici,
+        comp_aparell_id=comp_aparell.id,
+        score_entry_id=entry.id,
+        deleted_path=deleted_path,
+        latency_ms=int((time.monotonic() - started) * 1000),
+        **req_meta,
+    )
+
+    return JsonResponse(
+        {
+            "ok": True,
+            "deleted": True,
+            "inscripcio_id": ins.id,
+            "exercici": exercici,
+            "score_entry_id": entry.id,
+        }
+    )
 
 def _apply_sanitized_patch(current_inputs: dict, sanitized_patch: dict, schema: dict) -> dict:
     out = dict(current_inputs or {})

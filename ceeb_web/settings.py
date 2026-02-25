@@ -3,6 +3,18 @@ import os
 from pathlib import Path
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_csv(name: str, default: str) -> list[str]:
+    raw = os.getenv(name, default)
+    return [x.strip() for x in str(raw).split(",") if x.strip()]
+
+
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -31,10 +43,10 @@ MIDDLEWARE = [
 ]
 
 # filepath: c:\Users\Extra\Desktop\ceeb_web\ceeb_web\settings.py
-SECRET_KEY = 'django-insecure-4x8z$1@#k2!3v&l^7%9m(0p)q*r&s+t=u'
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", 'django-insecure-4x8z$1@#k2!3v&l^7%9m(0p)q*r&s+t=u')
 ROOT_URLCONF = 'ceeb_web.urls'
 # filepath: c:\Users\Extra\Desktop\ceeb_web\ceeb_web\settings.py
-ALLOWED_HOSTS = ['localhost', '127.0.0.1']
+ALLOWED_HOSTS = _env_csv("ALLOWED_HOSTS", "localhost,127.0.0.1")
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -53,7 +65,7 @@ TEMPLATES = [
         },
     },
 ]
-DEBUG = True
+DEBUG = _env_bool("DEBUG", True)
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 DATABASES = {
@@ -90,6 +102,13 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
 DATA_UPLOAD_MAX_NUMBER_FILES = 500
+DATA_UPLOAD_MAX_NUMBER_FILES = int(os.getenv("DATA_UPLOAD_MAX_NUMBER_FILES", str(DATA_UPLOAD_MAX_NUMBER_FILES)))
+DATA_UPLOAD_MAX_MEMORY_SIZE = int(os.getenv("DATA_UPLOAD_MAX_MEMORY_SIZE", str(150 * 1024 * 1024)))
+FILE_UPLOAD_MAX_MEMORY_SIZE = int(os.getenv("FILE_UPLOAD_MAX_MEMORY_SIZE", str(10 * 1024 * 1024)))
+
+CSRF_TRUSTED_ORIGINS = _env_csv("CSRF_TRUSTED_ORIGINS", "")
+if _env_bool("USE_X_FORWARDED_PROTO", False):
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 CELERY_BROKER_URL = 'redis://redis:6379/0'  # URL del backend de missatgeria
 CELERY_ACCEPT_CONTENT = ['json']

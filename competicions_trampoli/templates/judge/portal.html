@@ -12,6 +12,10 @@
     .status-err{ color:#c22; font-weight:600; }
     .sticky-top-lite{ position: sticky; top: 0; z-index: 5; background: #fff; padding-top: .5rem; }
     .group-tab-count{ font-size:.75rem; }
+    .video-status.ok{ color:#0a7; font-weight:600; }
+    .video-status.err{ color:#c22; font-weight:600; }
+    .video-status.info{ color:#0f6cbf; font-weight:600; }
+    .judge-video-preview{ width: 240px; max-width: 100%; border-radius: .4rem; background:#000; }
   </style>
 
   <div class="card-surface">
@@ -81,6 +85,15 @@
                   </div>
 
                   <div class="mt-2" id="editor-{{ ins.id }}"></div>
+                  <div class="mt-2" id="video-panel-{{ ins.id }}" data-video-panel="1" data-ins-id="{{ ins.id }}">
+                    <div class="d-flex align-items-center flex-wrap" style="gap:8px;">
+                      <button type="button" class="btn btn-sm btn-outline-danger" id="video-rec-btn-{{ ins.id }}" onclick="toggleRecord('{{ ins.id }}')">Gravar</button>
+                      <button type="button" class="btn btn-sm btn-outline-primary" id="video-upload-btn-{{ ins.id }}" onclick="uploadRecorded('{{ ins.id }}')" disabled>Pujar</button>
+                      <button type="button" class="btn btn-sm btn-outline-secondary" id="video-delete-btn-{{ ins.id }}" onclick="deleteVideo('{{ ins.id }}')" disabled>Regravar</button>
+                      <span class="judge-meta video-status" id="video-status-{{ ins.id }}">Sense video</span>
+                    </div>
+                    <video id="video-preview-{{ ins.id }}" class="judge-video-preview mt-2" controls playsinline style="display:none;"></video>
+                  </div>
 
                   <div class="d-flex justify-content-end mt-2" style="gap:8px;">
                     {% if not judge_kiosk %}
@@ -117,9 +130,16 @@
   const SCORES = JSON.parse(document.getElementById("scores-data").textContent || "{}");
 
   const SAVE_URL = "{{ save_url }}";
+  const VIDEO_STATUS_URL = "{{ video_status_url }}";
+  const VIDEO_UPLOAD_URL = "{{ video_upload_url }}";
+  const VIDEO_DELETE_URL = "{{ video_delete_url }}";
+  const VIDEO_MAX_DURATION_SECONDS = Number("{{ video_max_duration_seconds|default:90 }}") || 90;
+  const VIDEO_MAX_SIZE_BYTES = Number("{{ video_max_size_bytes|default:125829120 }}") || (120 * 1024 * 1024);
   const EXERCICI = {{ exercici }};
 
   let activeFieldCode = (PERMS[0] && PERMS[0].field_code) ? PERMS[0].field_code : null;
+  let currentRecordingInsId = null;
+  const recordedVideoByIns = {};
 
   function schemaField(code){
     const fields = (SCHEMA && Array.isArray(SCHEMA.fields)) ? SCHEMA.fields : [];
@@ -140,6 +160,126 @@
     if(!el) return;
     el.className = "judge-meta " + (kind === "ok" ? "status-ok" : kind === "err" ? "status-err" : "");
     el.textContent = msg || "";
+  }
+
+  function canRecordVideo(){
+    return !!(window.MediaRecorder && navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  }
+
+  function getVideoEls(insId){
+    return {
+      recBtn: document.getElementById(`video-rec-btn-${insId}`),
+      uploadBtn: document.getElementById(`video-upload-btn-${insId}`),
+      deleteBtn: document.getElementById(`video-delete-btn-${insId}`),
+      status: document.getElementById(`video-status-${insId}`),
+      preview: document.getElementById(`video-preview-${insId}`),
+    };
+  }
+
+  function setVideoStatus(insId, kind, text){
+    const els = getVideoEls(insId);
+    if(!els.status) return;
+    const cls = kind === "ok" ? "ok" : kind === "err" ? "err" : kind === "info" ? "info" : "";
+    els.status.className = `judge-meta video-status ${cls}`.trim();
+    els.status.textContent = text || "";
+  }
+
+  function chooseRecorderMimeType(){
+    const candidates = [
+      "video/webm;codecs=vp9,opus",
+      "video/webm;codecs=vp8,opus",
+      "video/webm",
+      "video/mp4",
+    ];
+    for(const mt of candidates){
+      try{
+        if(window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(mt)){
+          return mt;
+        }
+      }catch(_e){}
+    }
+    return "";
+  }
+
+  function applyVideoUiState(insId, opts = {}){
+    const els = getVideoEls(insId);
+    if(!els.recBtn || !els.uploadBtn || !els.deleteBtn) return;
+
+    const isRecording = !!opts.isRecording;
+    const hasPending = !!opts.hasPending;
+    const hasStored = !!opts.hasStored;
+    const busy = !!opts.busy;
+    const supported = canRecordVideo();
+
+    els.recBtn.disabled = !supported || busy || (!!currentRecordingInsId && currentRecordingInsId !== String(insId));
+    els.recBtn.textContent = isRecording ? "Atura" : "Gravar";
+    els.recBtn.className = isRecording ? "btn btn-sm btn-danger" : "btn btn-sm btn-outline-danger";
+    els.uploadBtn.disabled = !supported || busy || !hasPending || isRecording;
+    els.deleteBtn.disabled = busy || isRecording || (!hasPending && !hasStored);
+  }
+
+  function clearPreviewUrl(insId){
+    const st = recordedVideoByIns[String(insId)];
+    if(st && st.localObjectUrl){
+      try{ URL.revokeObjectURL(st.localObjectUrl); }catch(_e){}
+      st.localObjectUrl = null;
+    }
+  }
+
+  function stopStream(stream){
+    if(!stream) return;
+    try{
+      stream.getTracks().forEach(t => t.stop());
+    }catch(_e){}
+  }
+
+  async function fetchVideoStatus(insId){
+    const url = new URL(VIDEO_STATUS_URL, window.location.origin);
+    url.searchParams.set("inscripcio_id", String(insId));
+    url.searchParams.set("exercici", String(EXERCICI));
+    const els = getVideoEls(insId);
+    if(!els.recBtn) return;
+
+    try{
+      const res = await fetch(url.toString(), { headers: { "Accept":"application/json" } });
+      const data = await res.json().catch(()=> ({}));
+      if(!res.ok || !data.ok){
+        throw new Error(data.error || "Error carregant estat de video");
+      }
+
+      const st = recordedVideoByIns[String(insId)] || {};
+      st.hasStored = !!data.has_video;
+      st.pendingBlob = st.pendingBlob || null;
+      st.busy = false;
+      recordedVideoByIns[String(insId)] = st;
+
+      if(data.has_video && data.video){
+        clearPreviewUrl(insId);
+        if(els.preview){
+          els.preview.src = data.video.url || "";
+          els.preview.style.display = data.video.url ? "" : "none";
+        }
+        setVideoStatus(insId, "ok", "Video vinculat");
+      } else {
+        if(!st.pendingBlob){
+          if(els.preview){
+            els.preview.removeAttribute("src");
+            els.preview.style.display = "none";
+          }
+          setVideoStatus(insId, "", "Sense video");
+        }
+      }
+
+      applyVideoUiState(insId, {
+        isRecording: false,
+        hasPending: !!st.pendingBlob,
+        hasStored: !!st.hasStored,
+        busy: false,
+      });
+    } catch(e){
+      setVideoStatus(insId, "err", e.message || "Error carregant video");
+      applyVideoUiState(insId, { busy: false });
+    }
   }
 
   function uniqueFieldCodes(){
@@ -374,6 +514,262 @@
       return;
     }
   }
+
+  async function toggleRecord(insId){
+    insId = String(insId);
+    const st = recordedVideoByIns[insId] || {};
+    recordedVideoByIns[insId] = st;
+
+    if(st.recorder && st.recorder.state === "recording"){
+      try{
+        st.recorder.stop();
+      }catch(_e){}
+      return;
+    }
+
+    if(!canRecordVideo()){
+      setVideoStatus(insId, "err", "Aquest dispositiu no suporta gravacio.");
+      applyVideoUiState(insId, { busy: false, hasPending: !!st.pendingBlob, hasStored: !!st.hasStored });
+      return;
+    }
+
+    if(currentRecordingInsId && currentRecordingInsId !== insId){
+      setVideoStatus(insId, "err", "Ja hi ha una gravacio activa en una altra fila.");
+      return;
+    }
+
+    try{
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" } },
+        audio: true,
+      });
+      const mimeType = chooseRecorderMimeType();
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      const chunks = [];
+      const startedAt = Date.now();
+
+      st.stream = stream;
+      st.recorder = recorder;
+      st.chunks = chunks;
+      st.startedAt = startedAt;
+      st.mimeType = mimeType || "";
+      st.busy = false;
+      clearPreviewUrl(insId);
+      if(st.pendingBlob) st.pendingBlob = null;
+
+      currentRecordingInsId = insId;
+      setVideoStatus(insId, "info", "Gravant...");
+      applyVideoUiState(insId, {
+        isRecording: true,
+        hasPending: false,
+        hasStored: !!st.hasStored,
+        busy: false,
+      });
+
+      st.autoStopTimer = window.setTimeout(() => {
+        try{
+          if(st.recorder && st.recorder.state === "recording") st.recorder.stop();
+        }catch(_e){}
+      }, VIDEO_MAX_DURATION_SECONDS * 1000);
+
+      recorder.ondataavailable = (evt) => {
+        if(evt && evt.data && evt.data.size > 0){
+          st.chunks.push(evt.data);
+        }
+      };
+
+      recorder.onerror = () => {
+        setVideoStatus(insId, "err", "Error de gravacio.");
+      };
+
+      recorder.onstop = async () => {
+        if(st.autoStopTimer){
+          clearTimeout(st.autoStopTimer);
+          st.autoStopTimer = null;
+        }
+
+        const elapsed = Math.max(1, Math.round((Date.now() - (st.startedAt || Date.now())) / 1000));
+        const blob = new Blob(st.chunks || [], { type: st.mimeType || "video/webm" });
+        stopStream(st.stream);
+        st.stream = null;
+        st.recorder = null;
+        st.chunks = [];
+        currentRecordingInsId = null;
+
+        if(!blob || blob.size <= 0){
+          setVideoStatus(insId, "err", "No s'ha pogut generar el video.");
+          applyVideoUiState(insId, { isRecording: false, hasPending: false, hasStored: !!st.hasStored, busy: false });
+          return;
+        }
+        if(blob.size > VIDEO_MAX_SIZE_BYTES){
+          setVideoStatus(insId, "err", "El video supera la mida maxima permesa.");
+          applyVideoUiState(insId, { isRecording: false, hasPending: false, hasStored: !!st.hasStored, busy: false });
+          return;
+        }
+
+        st.pendingBlob = blob;
+        st.pendingDuration = elapsed;
+        st.pendingMimeType = (blob.type || st.mimeType || "video/webm").split(";")[0].trim().toLowerCase();
+
+        const els = getVideoEls(insId);
+        clearPreviewUrl(insId);
+        st.localObjectUrl = URL.createObjectURL(blob);
+        if(els.preview){
+          els.preview.src = st.localObjectUrl;
+          els.preview.style.display = "";
+        }
+
+        setVideoStatus(insId, "info", "Pujant video...");
+        applyVideoUiState(insId, { isRecording: false, hasPending: true, hasStored: !!st.hasStored, busy: true });
+        await uploadRecorded(insId, { auto: true });
+      };
+
+      recorder.start();
+    } catch(e){
+      const stErr = recordedVideoByIns[insId] || {};
+      stopStream(stErr.stream);
+      stErr.stream = null;
+      stErr.recorder = null;
+      stErr.chunks = [];
+      currentRecordingInsId = null;
+      setVideoStatus(insId, "err", "No s'ha pogut obrir la camera.");
+      applyVideoUiState(insId, { isRecording: false, hasPending: !!stErr.pendingBlob, hasStored: !!stErr.hasStored, busy: false });
+    }
+  }
+
+  async function uploadRecorded(insId, opts = {}){
+    insId = String(insId);
+    const st = recordedVideoByIns[insId] || {};
+    const blob = st.pendingBlob;
+    if(!blob){
+      setVideoStatus(insId, "err", "No hi ha cap video pendent de pujar.");
+      applyVideoUiState(insId, { busy: false, hasPending: false, hasStored: !!st.hasStored, isRecording: false });
+      return;
+    }
+
+    st.busy = true;
+    applyVideoUiState(insId, { busy: true, hasPending: true, hasStored: !!st.hasStored, isRecording: false });
+
+    const ext = (st.pendingMimeType || "").includes("mp4") ? "mp4" : ((st.pendingMimeType || "").includes("quicktime") ? "mov" : "webm");
+    const filename = `ins_${insId}_ex_${EXERCICI}_${Date.now()}.${ext}`;
+    const fileObj = new File([blob], filename, { type: st.pendingMimeType || blob.type || "video/webm" });
+
+    const fd = new FormData();
+    fd.append("inscripcio_id", String(insId));
+    fd.append("exercici", String(EXERCICI));
+    if(st.pendingDuration) fd.append("duration_seconds", String(st.pendingDuration));
+    if(st.pendingMimeType) fd.append("mime_type", st.pendingMimeType);
+    fd.append("original_filename", filename);
+    fd.append("video_file", fileObj);
+
+    try{
+      const res = await fetch(VIDEO_UPLOAD_URL, {
+        method: "POST",
+        headers: {
+          "X-CSRFToken": CSRF_TOKEN,
+        },
+        body: fd,
+      });
+      const data = await res.json().catch(()=> ({}));
+      if(!res.ok || !data.ok){
+        throw new Error(data.error || "Error pujant video");
+      }
+
+      st.pendingBlob = null;
+      st.pendingDuration = null;
+      st.pendingMimeType = null;
+      st.hasStored = true;
+      st.busy = false;
+
+      const els = getVideoEls(insId);
+      clearPreviewUrl(insId);
+      if(els.preview && data.video && data.video.url){
+        els.preview.src = data.video.url;
+        els.preview.style.display = "";
+      }
+
+      setVideoStatus(insId, "ok", (opts && opts.auto) ? "Video vinculat" : "Video pujat");
+      applyVideoUiState(insId, { busy: false, hasPending: false, hasStored: true, isRecording: false });
+    } catch(e){
+      st.busy = false;
+      setVideoStatus(insId, "err", e.message || "Error pujant video");
+      applyVideoUiState(insId, { busy: false, hasPending: !!st.pendingBlob, hasStored: !!st.hasStored, isRecording: false });
+    }
+  }
+
+  async function deleteVideo(insId){
+    insId = String(insId);
+    const st = recordedVideoByIns[insId] || {};
+    recordedVideoByIns[insId] = st;
+
+    if(st.recorder && st.recorder.state === "recording"){
+      try{ st.recorder.stop(); }catch(_e){}
+    }
+
+    st.busy = true;
+    applyVideoUiState(insId, { busy: true, hasPending: !!st.pendingBlob, hasStored: !!st.hasStored, isRecording: false });
+
+    const fd = new FormData();
+    fd.append("inscripcio_id", String(insId));
+    fd.append("exercici", String(EXERCICI));
+
+    try{
+      const res = await fetch(VIDEO_DELETE_URL, {
+        method: "POST",
+        headers: { "X-CSRFToken": CSRF_TOKEN },
+        body: fd,
+      });
+      const data = await res.json().catch(()=> ({}));
+      if(!res.ok || !data.ok){
+        throw new Error(data.error || "Error eliminant video");
+      }
+
+      clearPreviewUrl(insId);
+      st.pendingBlob = null;
+      st.pendingDuration = null;
+      st.pendingMimeType = null;
+      st.hasStored = false;
+      st.busy = false;
+
+      const els = getVideoEls(insId);
+      if(els.preview){
+        els.preview.removeAttribute("src");
+        els.preview.style.display = "none";
+      }
+
+      setVideoStatus(insId, "", "Sense video");
+      applyVideoUiState(insId, { busy: false, hasPending: false, hasStored: false, isRecording: false });
+    } catch(e){
+      st.busy = false;
+      setVideoStatus(insId, "err", e.message || "Error eliminant video");
+      applyVideoUiState(insId, { busy: false, hasPending: !!st.pendingBlob, hasStored: !!st.hasStored, isRecording: false });
+    }
+  }
+
+  function initVideoUI(){
+    const cards = Array.from(document.querySelectorAll("[data-ins-id]"));
+    cards.forEach(card => {
+      const insId = String(card.getAttribute("data-ins-id"));
+      recordedVideoByIns[insId] = recordedVideoByIns[insId] || {
+        pendingBlob: null,
+        pendingDuration: null,
+        pendingMimeType: null,
+        hasStored: false,
+        busy: false,
+        stream: null,
+        recorder: null,
+        chunks: [],
+        localObjectUrl: null,
+      };
+      applyVideoUiState(insId, { busy: false, hasPending: false, hasStored: false, isRecording: false });
+      if(!canRecordVideo()){
+        setVideoStatus(insId, "err", "Camera no disponible en aquest navegador.");
+      } else {
+        fetchVideoStatus(insId);
+      }
+    });
+  }
+
   function initGroupTabs(){
     const tabs = Array.from(document.querySelectorAll("[data-group-target]"));
     if(!tabs.length) return;
@@ -392,6 +788,7 @@
   buildTabs();
   buildPermText();
   initGroupTabs();
+  initVideoUI();
   document.querySelectorAll("[data-ins-id]").forEach(card => renderEditor(card.getAttribute("data-ins-id")));
 </script>
 {% endblock %}

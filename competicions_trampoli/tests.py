@@ -2,13 +2,14 @@ import json
 from datetime import timedelta
 
 from django.core.exceptions import ValidationError
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
 from .models import Competicio, Inscripcio
 from .models_judging import JudgeDeviceToken, PublicLiveToken
-from .models_scoring import ScoreEntry
+from .models_scoring import ScoreEntry, ScoreEntryVideo, ScoreEntryVideoEvent
 from .models_trampoli import (
     Aparell,
     CompeticioAparell,
@@ -168,6 +169,9 @@ class ScoringAndJudgeExclusionFlowTests(_BaseTrampoliDataMixin, TestCase):
         body = portal_res.content.decode("utf-8")
         self.assertIn("Allowed", body)
         self.assertNotIn("Blocked", body)
+        self.assertIn(reverse("judge_video_upload", kwargs={"token": self.token.id}), body)
+        self.assertIn(reverse("judge_video_status", kwargs={"token": self.token.id}), body)
+        self.assertIn(reverse("judge_video_delete", kwargs={"token": self.token.id}), body)
 
         save_url = reverse("judge_save_partial", kwargs={"token": self.token.id})
         save_res = self.client.post(
@@ -213,6 +217,214 @@ class ScoringAndJudgeExclusionFlowTests(_BaseTrampoliDataMixin, TestCase):
 
         self.assertIn(self.ins_allowed.id, updated_ids)
         self.assertNotIn(self.ins_blocked.id, updated_ids)
+
+
+class JudgeVideoApiTests(_BaseTrampoliDataMixin, TestCase):
+    def setUp(self):
+        self.comp = self._create_competicio("Comp Video")
+        self.app = self._create_aparell("TRAMP_VIDEO", "Tramp Video")
+        self.comp_app = self._create_comp_aparell(self.comp, self.app, ordre=1, actiu=True)
+
+        self.ins_allowed = self._create_inscripcio(self.comp, "Allowed", ordre=1)
+        self.ins_blocked = self._create_inscripcio(self.comp, "Blocked", ordre=2)
+        InscripcioAparellExclusio.objects.create(
+            inscripcio=self.ins_blocked,
+            comp_aparell=self.comp_app,
+        )
+
+        self.token = JudgeDeviceToken.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            label="Judge Video",
+            permissions=[{"field_code": "E", "judge_index": 1}],
+            is_active=True,
+        )
+
+    def _sample_video(self, name="routine.mp4", size=1024):
+        return SimpleUploadedFile(name, b"\x00" * size, content_type="video/mp4")
+
+    def test_video_upload_creates_scoreentry_and_video(self):
+        upload_url = reverse("judge_video_upload", kwargs={"token": self.token.id})
+        r = self.client.post(
+            upload_url,
+            data={
+                "inscripcio_id": self.ins_allowed.id,
+                "exercici": 1,
+                "duration_seconds": 12,
+                "video_file": self._sample_video(),
+            },
+        )
+        self.assertEqual(r.status_code, 200)
+        payload = r.json()
+        self.assertTrue(payload.get("ok"))
+        self.assertTrue(payload.get("created"))
+
+        entry = ScoreEntry.objects.get(
+            competicio=self.comp,
+            inscripcio=self.ins_allowed,
+            exercici=1,
+            comp_aparell=self.comp_app,
+        )
+        video = ScoreEntryVideo.objects.get(score_entry=entry)
+        self.assertEqual(video.status, ScoreEntryVideo.Status.READY)
+        self.assertEqual(video.mime_type, "video/mp4")
+        self.assertEqual(video.duration_seconds, 12)
+        self.assertEqual(video.judge_token_id, self.token.id)
+        ev = ScoreEntryVideoEvent.objects.filter(
+            action=ScoreEntryVideoEvent.Action.UPLOAD,
+            score_entry=entry,
+            video=video,
+            ok=True,
+        ).first()
+        self.assertIsNotNone(ev)
+
+    def test_video_status_returns_false_when_absent(self):
+        status_url = reverse("judge_video_status", kwargs={"token": self.token.id})
+        r = self.client.get(status_url, {"inscripcio_id": self.ins_allowed.id, "exercici": 1})
+        self.assertEqual(r.status_code, 200)
+        payload = r.json()
+        self.assertTrue(payload.get("ok"))
+        self.assertFalse(payload.get("has_video"))
+
+    def test_video_upload_rejects_excluded_inscripcio(self):
+        upload_url = reverse("judge_video_upload", kwargs={"token": self.token.id})
+        r = self.client.post(
+            upload_url,
+            data={
+                "inscripcio_id": self.ins_blocked.id,
+                "exercici": 1,
+                "video_file": self._sample_video(),
+            },
+        )
+        self.assertEqual(r.status_code, 403)
+        self.assertTrue(
+            ScoreEntryVideoEvent.objects.filter(
+                action=ScoreEntryVideoEvent.Action.UPLOAD_REJECTED,
+                inscripcio=self.ins_blocked,
+                ok=False,
+            ).exists()
+        )
+
+    def test_video_upload_rejects_invalid_mime(self):
+        upload_url = reverse("judge_video_upload", kwargs={"token": self.token.id})
+        bad_file = SimpleUploadedFile("routine.txt", b"abc", content_type="text/plain")
+        r = self.client.post(
+            upload_url,
+            data={
+                "inscripcio_id": self.ins_allowed.id,
+                "exercici": 1,
+                "video_file": bad_file,
+            },
+        )
+        self.assertEqual(r.status_code, 400)
+        self.assertTrue(
+            ScoreEntryVideoEvent.objects.filter(
+                action=ScoreEntryVideoEvent.Action.UPLOAD_REJECTED,
+                inscripcio=self.ins_allowed,
+                ok=False,
+            ).exists()
+        )
+
+    def test_video_upload_rejects_file_too_large(self):
+        old_limit = ScoreEntryVideo.VIDEO_MAX_SIZE_BYTES
+        try:
+            ScoreEntryVideo.VIDEO_MAX_SIZE_BYTES = 100
+            upload_url = reverse("judge_video_upload", kwargs={"token": self.token.id})
+            r = self.client.post(
+                upload_url,
+                data={
+                    "inscripcio_id": self.ins_allowed.id,
+                    "exercici": 1,
+                    "video_file": self._sample_video(size=256),
+                },
+            )
+            self.assertEqual(r.status_code, 400)
+            self.assertTrue(
+                ScoreEntryVideoEvent.objects.filter(
+                    action=ScoreEntryVideoEvent.Action.UPLOAD_REJECTED,
+                    inscripcio=self.ins_allowed,
+                    ok=False,
+                ).exists()
+            )
+        finally:
+            ScoreEntryVideo.VIDEO_MAX_SIZE_BYTES = old_limit
+
+    def test_second_upload_creates_replace_event(self):
+        upload_url = reverse("judge_video_upload", kwargs={"token": self.token.id})
+        r1 = self.client.post(
+            upload_url,
+            data={
+                "inscripcio_id": self.ins_allowed.id,
+                "exercici": 1,
+                "video_file": self._sample_video(name="first.mp4", size=1024),
+            },
+        )
+        self.assertEqual(r1.status_code, 200)
+
+        r2 = self.client.post(
+            upload_url,
+            data={
+                "inscripcio_id": self.ins_allowed.id,
+                "exercici": 1,
+                "video_file": self._sample_video(name="second.mp4", size=1024),
+            },
+        )
+        self.assertEqual(r2.status_code, 200)
+
+        entry = ScoreEntry.objects.get(
+            competicio=self.comp,
+            inscripcio=self.ins_allowed,
+            exercici=1,
+            comp_aparell=self.comp_app,
+        )
+        self.assertTrue(
+            ScoreEntryVideoEvent.objects.filter(
+                action=ScoreEntryVideoEvent.Action.REPLACE,
+                score_entry=entry,
+                ok=True,
+            ).exists()
+        )
+
+    def test_video_delete_removes_existing_capture(self):
+        upload_url = reverse("judge_video_upload", kwargs={"token": self.token.id})
+        delete_url = reverse("judge_video_delete", kwargs={"token": self.token.id})
+
+        r_upload = self.client.post(
+            upload_url,
+            data={
+                "inscripcio_id": self.ins_allowed.id,
+                "exercici": 1,
+                "video_file": self._sample_video(),
+            },
+        )
+        self.assertEqual(r_upload.status_code, 200)
+
+        r_delete = self.client.post(
+            delete_url,
+            data={
+                "inscripcio_id": self.ins_allowed.id,
+                "exercici": 1,
+            },
+        )
+        self.assertEqual(r_delete.status_code, 200)
+        payload = r_delete.json()
+        self.assertTrue(payload.get("ok"))
+        self.assertTrue(payload.get("deleted"))
+
+        entry = ScoreEntry.objects.get(
+            competicio=self.comp,
+            inscripcio=self.ins_allowed,
+            exercici=1,
+            comp_aparell=self.comp_app,
+        )
+        self.assertFalse(ScoreEntryVideo.objects.filter(score_entry=entry).exists())
+        self.assertTrue(
+            ScoreEntryVideoEvent.objects.filter(
+                action=ScoreEntryVideoEvent.Action.DELETE,
+                score_entry=entry,
+                ok=True,
+            ).exists()
+        )
 
 
 class PublicLiveTokenViewsTests(_BaseTrampoliDataMixin, TestCase):
