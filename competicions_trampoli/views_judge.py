@@ -9,8 +9,10 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
-from django.urls import reverse
+from django.urls import NoReverseMatch, reverse
 from django.views.decorators.http import require_http_methods, require_POST
+from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 
 from .models_judging import JudgeDeviceToken, PublicLiveToken
 from .models import Inscripcio, Competicio
@@ -144,6 +146,23 @@ def _normalize_permissions(perms):
             "item_count": (None if p.get("item_count") in (None, "", "null") else int(p["item_count"])),
         })
     return out
+
+
+def _allowed_input_codes_from_permissions(permissions: list) -> set:
+    allowed_codes = set()
+    for p in permissions or []:
+        code = p.get("field_code")
+        if not code:
+            continue
+        allowed_codes.add(str(code))
+        allowed_codes.add(f"__crash__{code}")
+    return allowed_codes
+
+
+def _filter_inputs_for_allowed_codes(inputs: dict, allowed_codes: set) -> dict:
+    if not isinstance(inputs, dict):
+        return {}
+    return {k: v for k, v in inputs.items() if k in allowed_codes}
 
 
 def _clamp_exercici_for_aparell(comp_aparell, exercici_raw):
@@ -284,6 +303,7 @@ def judge_portal(request, token):
     schema = ss.schema or {}
 
     permissions = _normalize_permissions(tok.permissions)
+    allowed_input_codes = _allowed_input_codes_from_permissions(permissions)
 
     franges = list(RotacioFranja.objects.filter(competicio=competicio).order_by("ordre", "id"))
     franja_modes = get_rotacions_order_modes(competicio)
@@ -370,11 +390,24 @@ def judge_portal(request, token):
     for ins in ins_list:
         e = entry_map.get((ins.id, exercici_default))
         scores_payload[str(ins.id)] = {
-            "inputs": (e.inputs if e and isinstance(e.inputs, dict) else {}),
+            "inputs": (
+                _filter_inputs_for_allowed_codes(e.inputs, allowed_input_codes)
+                if e and isinstance(e.inputs, dict)
+                else {}
+            ),
             "outputs": (e.outputs if e and isinstance(e.outputs, dict) else {}),
             "total": (float(e.total) if e else 0.0),
             "updated_at": (e.updated_at.isoformat() if e else None),
         }
+
+    save_url = reverse("judge_save_partial", kwargs={"token": str(tok.id)})
+    try:
+        updates_url = reverse("judge_updates", kwargs={"token": str(tok.id)})
+    except NoReverseMatch:
+        try:
+            updates_url = reverse("competicions_trampoli:judge_updates", kwargs={"token": str(tok.id)})
+        except NoReverseMatch:
+            updates_url = save_url.replace("/api/save/", "/api/updates/")
 
     ctx = {
         "token_obj": tok,
@@ -386,8 +419,10 @@ def judge_portal(request, token):
         "schema": schema,
         "permissions": permissions,
         "inscripcions": ins_list,
-        "scores_payload_json": json.dumps(scores_payload),
-        "save_url": reverse("judge_save_partial", kwargs={"token": str(tok.id)}),
+        "scores_payload_json": scores_payload,
+        "save_url": save_url,
+        "updates_url": updates_url,
+        "updates_cursor_init": timezone.now().isoformat(),
         "video_status_url": reverse("judge_video_status", kwargs={"token": str(tok.id)}),
         "video_upload_url": reverse("judge_video_upload", kwargs={"token": str(tok.id)}),
         "video_delete_url": reverse("judge_video_delete", kwargs={"token": str(tok.id)}),
@@ -396,6 +431,56 @@ def judge_portal(request, token):
         "exercici": exercici_default,
     }
     return render(request, "judge/portal.html", ctx)
+
+
+@require_http_methods(["GET"])
+def judge_updates(request, token):
+    tok = get_object_or_404(JudgeDeviceToken, pk=token)
+    if not tok.is_valid():
+        return JsonResponse({"ok": False, "error": "Token invàlid o revocat"}, status=403)
+
+    since = request.GET.get("since")
+    dt = parse_datetime(since) if since else None
+    if dt is None:
+        return JsonResponse({"ok": True, "now": timezone.now().isoformat(), "updates": []})
+
+    competicio = tok.competicio
+    comp_aparell = tok.comp_aparell
+    exercici = _clamp_exercici_for_aparell(comp_aparell, request.GET.get("exercici") or request.GET.get("ex"))
+    permissions = _normalize_permissions(tok.permissions)
+    allowed_input_codes = _allowed_input_codes_from_permissions(permissions)
+
+    excluded_ins_ids = (
+        InscripcioAparellExclusio.objects
+        .filter(comp_aparell=comp_aparell)
+        .values_list("inscripcio_id", flat=True)
+    )
+
+    qs = (
+        ScoreEntry.objects
+        .filter(
+            competicio=competicio,
+            comp_aparell=comp_aparell,
+            exercici=exercici,
+            updated_at__gt=dt,
+        )
+        .exclude(inscripcio_id__in=excluded_ins_ids)
+        .order_by("updated_at", "id")
+    )
+
+    updates = []
+    for s in qs[:500]:
+        updates.append({
+            "inscripcio_id": s.inscripcio_id,
+            "exercici": s.exercici,
+            "comp_aparell_id": s.comp_aparell_id,
+            "inputs": _filter_inputs_for_allowed_codes(s.inputs, allowed_input_codes),
+            "outputs": s.outputs or {},
+            "total": float(s.total),
+            "updated_at": s.updated_at.isoformat(),
+        })
+
+    return JsonResponse({"ok": True, "now": timezone.now().isoformat(), "updates": updates})
 
 
 @require_http_methods(["GET"])
@@ -953,6 +1038,7 @@ def judge_save_partial(request, token):
     # Seguretat: només permetre editar camps que apareixen a permissions
     permissions = _normalize_permissions(tok.permissions)
     allowed_codes = {p["field_code"] for p in permissions}
+    allowed_input_codes = _allowed_input_codes_from_permissions(permissions)
     patch_codes = set(inputs_patch.keys())
     if not patch_codes.issubset(allowed_codes):
         return JsonResponse({"ok": False, "error": "Intentes editar un camp no autoritzat per aquest QR"}, status=403)
@@ -1008,7 +1094,7 @@ def judge_save_partial(request, token):
 
     return JsonResponse({
         "ok": True,
-        "inputs": entry.inputs or {},
+        "inputs": _filter_inputs_for_allowed_codes(entry.inputs, allowed_input_codes),
         "outputs": entry.outputs or {},
         "total": float(entry.total),
         "updated_at": entry.updated_at.isoformat(),

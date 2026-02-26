@@ -47,6 +47,55 @@ class ClassificacionsLive(TemplateView):
         return ctx
 
 
+class ClassificacionsLoopLive(TemplateView):
+    template_name = "competicio/classificacions_loop_live.html"
+
+    @staticmethod
+    def _parse_int_param(raw, default: int, min_value: int, max_value: int) -> int:
+        try:
+            value = int(raw)
+        except Exception:
+            value = default
+        return max(min_value, min(max_value, value))
+
+    def dispatch(self, request, *args, **kwargs):
+        self.competicio = get_object_or_404(Competicio, pk=kwargs["pk"])
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        competicio = self.competicio
+
+        public_raw = (self.request.GET.get("public") or "").strip().lower()
+        is_public = public_raw in {"1", "true", "yes", "on"}
+
+        cfgs = (
+            ClassificacioConfig.objects
+            .filter(competicio=competicio, activa=True)
+            .order_by("ordre", "id")
+        )
+
+        poll_ms = self._parse_int_param(self.request.GET.get("poll_ms"), 4000, 1000, 60000)
+        slide_ms = self._parse_int_param(self.request.GET.get("slide_ms"), 8000, 2000, 120000)
+        rows_per_page = self._parse_int_param(self.request.GET.get("rows"), 12, 3, 60)
+
+        transition = (self.request.GET.get("transition") or "fade").strip().lower()
+        if transition not in {"fade", "none"}:
+            transition = "fade"
+
+        ctx.update({
+            "competicio": competicio,
+            "cfgs": list(cfgs.values("id", "nom", "tipus", "ordre")),
+            "is_public": is_public,
+            "hide_base_chrome": is_public,
+            "poll_ms": poll_ms,
+            "slide_ms": slide_ms,
+            "rows_per_page": rows_per_page,
+            "transition": transition,
+        })
+        return ctx
+
+
 def classificacions_live_data(request, pk):
     """
     GET /competicio/<pk>/classificacions/live/data?since=<iso>
@@ -295,6 +344,136 @@ class ClassificacionsHome(TemplateView):
         return ctx
 
 
+def _safe_int(v, default=0):
+    try:
+        return int(v)
+    except Exception:
+        return default
+
+
+def _field_is_direct_scoreable(field_cfg: dict):
+    """
+    Regla robusta per camps d'input:
+    - number -> ok
+    - list judge -> només si 1 jutge (equivalent 1x1)
+    - matrix judge_x_* -> només 1 jutge i 1 item (1x1)
+    """
+    if not isinstance(field_cfg, dict):
+        return False, "config de camp no valida"
+
+    ftype = str(field_cfg.get("type") or "").strip().lower()
+    shape = str(field_cfg.get("shape") or "").strip().lower()
+
+    judges_cfg = field_cfg.get("judges") if isinstance(field_cfg.get("judges"), dict) else {}
+    items_cfg = field_cfg.get("items") if isinstance(field_cfg.get("items"), dict) else {}
+
+    n_judges = _safe_int(judges_cfg.get("count") or field_cfg.get("judges_count") or 1, 1)
+    n_judges = max(1, min(10, n_judges))
+    n_items = _safe_int(items_cfg.get("count") or 0, 0)
+    n_items = max(0, min(50, n_items))
+
+    if ftype == "number":
+        return True, ""
+
+    if ftype == "list" and shape == "judge":
+        if n_judges == 1:
+            return True, ""
+        return False, "camp tipus llista amb mes d'un jutge"
+
+    if ftype == "matrix" and shape in ("judge_x_item", "judge_x_element"):
+        if n_judges == 1 and n_items == 1:
+            return True, ""
+        return False, "camp tipus matriu; per puntuacio directa nomes s'admet 1x1"
+
+    return False, "tipus de camp no puntuable directament"
+
+
+def _validate_camps_per_aparell(competicio, schema: dict):
+    schema = schema or {}
+    punt = (schema.get("puntuacio") or {})
+    camps_per_aparell = punt.get("camps_per_aparell") or {}
+    if not camps_per_aparell:
+        return []
+    if not isinstance(camps_per_aparell, dict):
+        return ["puntuacio.camps_per_aparell ha de ser un objecte {app_id:[camps]}."]
+
+    active_apps = list(
+        CompeticioAparell.objects
+        .filter(competicio=competicio, actiu=True)
+        .select_related("aparell")
+    )
+    app_by_id = {ca.id: ca for ca in active_apps}
+    if not app_by_id:
+        return []
+
+    aparell_ids = [ca.aparell_id for ca in active_apps]
+    schemas_by_aparell = {
+        s.aparell_id: (s.schema or {})
+        for s in ScoringSchema.objects.filter(aparell_id__in=aparell_ids).only("aparell_id", "schema")
+    }
+
+    app_mode = ((punt.get("aparells") or {}).get("mode") or "tots").strip().lower()
+    app_ids_raw = ((punt.get("aparells") or {}).get("ids") or [])
+    selected_app_ids = set()
+    if app_mode == "seleccionar":
+        for x in app_ids_raw:
+            try:
+                selected_app_ids.add(int(x))
+            except Exception:
+                continue
+    else:
+        selected_app_ids = set(app_by_id.keys())
+
+    errors = []
+    for app_key, raw_codes in camps_per_aparell.items():
+        try:
+            app_id = int(app_key)
+        except Exception:
+            errors.append(f"app_id invalid a camps_per_aparell: {app_key}")
+            continue
+
+        if app_id not in app_by_id:
+            errors.append(f"aparell {app_id} no valid o no actiu a la competicio.")
+            continue
+        if app_id not in selected_app_ids:
+            continue
+
+        if isinstance(raw_codes, str):
+            codes = [x.strip() for x in raw_codes.split(",") if x and x.strip()]
+        elif isinstance(raw_codes, list):
+            codes = [str(x).strip() for x in raw_codes if str(x).strip()]
+        else:
+            errors.append(f"camps_per_aparell[{app_id}] ha de ser llista o string.")
+            continue
+
+        sch = schemas_by_aparell.get(app_by_id[app_id].aparell_id, {}) or {}
+        meta = {
+            "total": {"scoreable": True, "reason": ""},
+            "TOTAL": {"scoreable": True, "reason": ""},
+        }
+
+        for f in (sch.get("fields") or []):
+            if not isinstance(f, dict) or not f.get("code"):
+                continue
+            ok, reason = _field_is_direct_scoreable(f)
+            meta[str(f["code"])] = {"scoreable": ok, "reason": reason}
+
+        for c in (sch.get("computed") or []):
+            if not isinstance(c, dict) or not c.get("code"):
+                continue
+            meta[str(c["code"])] = {"scoreable": True, "reason": ""}
+
+        for code in codes:
+            info = meta.get(code)
+            if not info:
+                errors.append(f"aparell {app_id}: camp '{code}' no existeix al schema.")
+                continue
+            if not info.get("scoreable", False):
+                errors.append(f"aparell {app_id}: camp '{code}' no es puntuable directament ({info.get('reason')}).")
+
+    return errors
+
+
 @require_POST
 @transaction.atomic
 def classificacio_save(request, pk):
@@ -313,6 +492,17 @@ def classificacio_save(request, pk):
 
     if tipus not in ("individual", "entitat", "equips"):
         tipus = "individual"
+
+    validation_errors = _validate_camps_per_aparell(competicio, schema)
+    if validation_errors:
+        return JsonResponse(
+            {
+                "ok": False,
+                "error": "Configuracio de camps per aparell invalida.",
+                "errors": validation_errors,
+            },
+            status=400,
+        )
 
     if cid:
         obj = get_object_or_404(ClassificacioConfig, pk=cid, competicio=competicio)

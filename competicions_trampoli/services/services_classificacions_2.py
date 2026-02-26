@@ -1,5 +1,6 @@
 # services_classificacions.py
 import json
+import logging
 from collections import defaultdict
 from datetime import date
 from decimal import Decimal
@@ -8,6 +9,8 @@ from django.utils import timezone
 from ..models import Inscripcio
 from ..models_trampoli import CompeticioAparell
 from ..models_scoring import ScoreEntry
+
+logger = logging.getLogger(__name__)
 
 
 # -----------------------------
@@ -142,6 +145,72 @@ def _to_float(v):
         return float(v)
     except Exception:
         return 0.0
+
+
+def _try_strict_float(v):
+    if v is None or v == "":
+        return None
+    if isinstance(v, bool):
+        return float(v)
+    if isinstance(v, Decimal):
+        return float(v)
+    if isinstance(v, (int, float)):
+        return float(v)
+    if isinstance(v, str):
+        s = v.strip()
+        if not s:
+            return None
+        try:
+            return float(s)
+        except Exception:
+            return None
+    return None
+
+
+def _numeric_scalar_or_1x1(v):
+    """
+    Accepta escalar numèric o estructura 1x1 (p.ex. [[7.5]] o [7.5]).
+    Retorna float o None si no és puntuable com a escalar.
+    """
+    base = _try_strict_float(v)
+    if base is not None:
+        return base
+
+    if not isinstance(v, list) or len(v) != 1:
+        return None
+
+    inner = v[0]
+    if isinstance(inner, list):
+        if len(inner) != 1:
+            return None
+        return _try_strict_float(inner[0])
+
+    return _try_strict_float(inner)
+
+
+def _field_value_from_entry(entry: ScoreEntry, code: str):
+    c = (code or "").strip()
+    if not c:
+        return None
+
+    if c.lower() == "total":
+        return entry.total
+
+    out = entry.outputs or {}
+    if isinstance(out, dict) and c in out:
+        return out.get(c)
+
+    ins = entry.inputs or {}
+    if isinstance(ins, dict) and c in ins:
+        return ins.get(c)
+
+    if isinstance(out, dict):
+        if c == "TOTAL" and "TOTAL" in out:
+            return out.get("TOTAL")
+        if c == "total" and "total" in out:
+            return out.get("total")
+
+    return None
 
 
 def _median(vals):
@@ -977,26 +1046,13 @@ def compute_classificacio(competicio, cfg_obj):
         return v
 
     def _value_from_entry(entry: ScoreEntry, camp: str):
-        c = str(camp or "").strip()
-        if not c:
+        raw = _field_value_from_entry(entry, camp)
+        if raw is None:
             return ""
-        if c.lower() == "total":
-            return _to_float(entry.total)
-
-        outs = entry.outputs or {}
-        if isinstance(outs, dict) and c in outs:
-            return outs.get(c)
-
-        ins = entry.inputs or {}
-        if isinstance(ins, dict) and c in ins:
-            return ins.get(c)
-
-        if isinstance(outs, dict):
-            if c == "TOTAL" and "TOTAL" in outs:
-                return outs.get("TOTAL")
-            if c == "total" and "total" in outs:
-                return outs.get("total")
-        return ""
+        num = _numeric_scalar_or_1x1(raw)
+        if num is not None:
+            return num
+        return raw
 
     def _normalize_judge_item(v):
         if isinstance(v, Decimal):
@@ -1284,25 +1340,23 @@ def compute_classificacio(competicio, cfg_obj):
 
 
 def _get_score_field(entry: ScoreEntry, code: str) -> float:
-    code = (code or "").strip()
-    if not code:
+    raw = _field_value_from_entry(entry, code)
+    if raw is None:
         return 0.0
 
-    # "total" especial: columna total del model :contentReference[oaicite:11]{index=11}
-    if code.lower() == "total":
-        return _to_float(entry.total)
+    num = _numeric_scalar_or_1x1(raw)
+    if num is not None:
+        return num
 
-    out = entry.outputs or {}
-    if isinstance(out, dict) and code in out:
-        return _to_float(out.get(code))
-
-    # fallback comú si el total també s�?Tha escrit a outputs
-    if isinstance(out, dict):
-        if code == "TOTAL" and "TOTAL" in out:
-            return _to_float(out["TOTAL"])
-        if code == "total" and "total" in out:
-            return _to_float(out["total"])
-
+    logger.warning(
+        "Classificacio: camp no puntuable (escalar o 1x1). "
+        "entry_id=%s inscripcio_id=%s comp_aparell_id=%s camp=%s tipus=%s",
+        getattr(entry, "id", None),
+        getattr(entry, "inscripcio_id", None),
+        getattr(entry, "comp_aparell_id", None),
+        (code or "").strip(),
+        type(raw).__name__,
+    )
     return 0.0
 
 
@@ -1363,3 +1417,4 @@ def _rank_v2(rows, desempat, presentacio, ordre_principal="desc", entity_mode=Fa
             break
 
     return ranked
+

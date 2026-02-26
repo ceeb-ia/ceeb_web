@@ -472,6 +472,22 @@ class InscripcionsImportExcelView(FormView):
             f"Actualitzats: {result['actualitzats']} | Ignorats: {result['ignorats']} | "
             f"Ambiguos: {result.get('ambiguos', 0)}"
         )
+        warnings = result.get("warnings") or []
+        if warnings:
+            parts = []
+            for w in warnings:
+                code = str(w.get("code") or "").strip()
+                suggested = str(w.get("suggested_code") or "").strip()
+                if code and suggested:
+                    parts.append(f"{code} -> {suggested}")
+                elif code:
+                    parts.append(code)
+            if parts:
+                messages.warning(
+                    self.request,
+                    "Warning: s'han detectat columnes d'Excel que poden trepitjar camps preestablerts "
+                    f"({', '.join(parts)}). Renombra-les abans de tornar a importar.",
+                )
         return super().form_valid(form)
 
     def get_success_url(self):

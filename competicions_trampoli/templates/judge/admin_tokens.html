@@ -56,6 +56,11 @@
                 {{ token_form.non_field_errors }}
               </div>
             {% endif %}
+            {% if formset.non_form_errors %}
+              <div class="alert alert-danger py-2">
+                {{ formset.non_form_errors }}
+              </div>
+            {% endif %}
 
             <form method="post">
               {% csrf_token %}
@@ -64,10 +69,21 @@
               <div class="mb-2">
                 <label class="form-label small text-muted mb-1">Etiqueta</label>
                 {{ token_form.label }}
+                {% if token_form.label.errors %}
+                  <div class="text-danger small mt-1">{{ token_form.label.errors }}</div>
+                {% endif %}
               </div>
 
               <div class="mb-2">
-                <div class="text-muted small mb-1">Permisos (pots posar varis camps al mateix token):</div>
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                  <div class="text-muted small">Permisos (pots posar varis camps al mateix token):</div>
+                  <div class="d-flex align-items-center gap-2">
+                    <span class="text-muted small">
+                      <span id="permCounter">0/{{ max_permissions }}</span>
+                    </span>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="permAddBtn">Afegir camp</button>
+                  </div>
+                </div>
 
                 {{ formset.management_form }}
 
@@ -82,13 +98,33 @@
                         <th></th>
                       </tr>
                     </thead>
-                    <tbody id="permTbody">
+                    <tbody id="permTbody" data-max-permissions="{{ max_permissions }}">
                       {% for f in formset.forms %}
                       <tr class="perm-row">
-                        <td>{{ f.field_code }}</td>
-                        <td>{{ f.judge_index }}</td>
-                        <td>{{ f.item_start }}</td>
-                        <td>{{ f.item_count }}</td>
+                        <td>
+                          {{ f.field_code }}
+                          {% if f.field_code.errors %}
+                            <div class="text-danger small mt-1">{{ f.field_code.errors }}</div>
+                          {% endif %}
+                        </td>
+                        <td>
+                          {{ f.judge_index }}
+                          {% if f.judge_index.errors %}
+                            <div class="text-danger small mt-1">{{ f.judge_index.errors }}</div>
+                          {% endif %}
+                        </td>
+                        <td>
+                          {{ f.item_start }}
+                          {% if f.item_start.errors %}
+                            <div class="text-danger small mt-1">{{ f.item_start.errors }}</div>
+                          {% endif %}
+                        </td>
+                        <td>
+                          {{ f.item_count }}
+                          {% if f.item_count.errors %}
+                            <div class="text-danger small mt-1">{{ f.item_count.errors }}</div>
+                          {% endif %}
+                        </td>
                         <td class="text-end">
                           <div class="form-check">
                             {{ f.DELETE }}
@@ -96,13 +132,36 @@
                           </div>
                         </td>
                       </tr>
+                      {% if f.non_field_errors %}
+                      <tr>
+                        <td colspan="5" class="pt-0">
+                          <div class="text-danger small">{{ f.non_field_errors }}</div>
+                        </td>
+                      </tr>
+                      {% endif %}
                       {% endfor %}
                     </tbody>
                   </table>
                 </div>
 
+                <template id="permRowTemplate">
+                  <tr class="perm-row">
+                    <td>{{ formset.empty_form.field_code }}</td>
+                    <td>{{ formset.empty_form.judge_index }}</td>
+                    <td>{{ formset.empty_form.item_start }}</td>
+                    <td>{{ formset.empty_form.item_count }}</td>
+                    <td class="text-end">
+                      <div class="form-check">
+                        {{ formset.empty_form.DELETE }}
+                        <label class="form-check-label small text-muted">Eliminar</label>
+                      </div>
+                    </td>
+                  </tr>
+                </template>
+
                 <div class="text-muted small">
                   Notes: per camps tipus matrix (com E), Start/Count limita ítems. Per DD/TOF/HD/P (1 ítem) no cal.
+                  Màxim {{ max_permissions }} permisos per token.
                 </div>
               </div>
 
@@ -194,4 +253,37 @@
     {% endif %}
   </div>
 </div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  (function () {
+    const tbody = document.getElementById("permTbody");
+    const addBtn = document.getElementById("permAddBtn");
+    const counter = document.getElementById("permCounter");
+    const totalFormsInput = document.getElementById("id_form-TOTAL_FORMS");
+    const rowTemplate = document.getElementById("permRowTemplate");
+    if (!tbody || !addBtn || !counter || !totalFormsInput || !rowTemplate) return;
+
+    const maxPermissions = Number(tbody.dataset.maxPermissions || "10");
+
+    function refreshCounter() {
+      const total = Number(totalFormsInput.value || "0");
+      counter.textContent = `${total}/${maxPermissions}`;
+      addBtn.disabled = total >= maxPermissions;
+    }
+
+    addBtn.addEventListener("click", function () {
+      const total = Number(totalFormsInput.value || "0");
+      if (total >= maxPermissions) return;
+
+      const html = rowTemplate.innerHTML.replace(/__prefix__/g, String(total));
+      tbody.insertAdjacentHTML("beforeend", html);
+      totalFormsInput.value = String(total + 1);
+      refreshCounter();
+    });
+
+    refreshCounter();
+  })();
+</script>
 {% endblock %}

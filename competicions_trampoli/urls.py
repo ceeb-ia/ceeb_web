@@ -10,7 +10,7 @@ from .views_classificacions import (
     classificacio_delete,
     classificacio_reorder,
     classificacio_preview,)
-from .views_classificacions import ClassificacionsLive, classificacions_live_data
+from .views_classificacions import ClassificacionsLive, ClassificacionsLoopLive, classificacions_live_data
 from .views_scoring import ScoringNotesHome, ScoringSchemaUpdate, scoring_save
 from . import views_judge
 from competicions_trampoli import views_scoring
@@ -96,6 +96,7 @@ urlpatterns = [
     path("competicio/<int:pk>/classificacions/reorder/", classificacio_reorder, name="classificacio_reorder"),
     path("competicio/<int:pk>/classificacions/preview/<int:cid>/", classificacio_preview, name="classificacio_preview"),
     path("competicio/<int:pk>/classificacions/live/", ClassificacionsLive.as_view(), name="classificacions_live"),
+    path("competicio/<int:pk>/classificacions/loop/", ClassificacionsLoopLive.as_view(), name="classificacions_loop_live"),
     path("competicio/<int:pk>/classificacions/live/data/", classificacions_live_data, name="classificacions_live_data"),
     path("competicio/<int:pk>/notes-v2/", ScoringNotesHome.as_view(), name="scoring_notes_home"),
     path("competicio/<int:pk>/aparell/<int:ap_id>/schema/", ScoringSchemaUpdate.as_view(), name="scoring_schema_update"),
@@ -113,11 +114,12 @@ urlpatterns = [
     path("judge/<uuid:token>/", views_judge.judge_portal, name="judge_portal"),
     path("judge/<uuid:token>/qr.png", views_judge.judge_qr_png, name="judge_qr_png"),
     path("judge/<uuid:token>/api/save/", views_judge.judge_save_partial, name="judge_save_partial"),
+    path("judge/<uuid:token>/api/updates/", views_judge.judge_updates, name="judge_updates"),
     path("judge/<uuid:token>/api/video/status/", views_judge.judge_video_status, name="judge_video_status"),
     path("judge/<uuid:token>/api/video/upload/", views_judge.judge_video_upload, name="judge_video_upload"),
     path("judge/<uuid:token>/api/video/delete/", views_judge.judge_video_delete, name="judge_video_delete"),
     path("public/live/<uuid:token>/", views_judge.public_live_portal, name="public_live_portal"),
     path("public/live/<uuid:token>/qr.png", views_judge.public_live_qr_png, name="public_live_qr_png"),
- 
+
 
 ]

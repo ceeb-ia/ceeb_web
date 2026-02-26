@@ -9,12 +9,14 @@ from django.utils import timezone
 
 from .models import Competicio, Inscripcio
 from .models_judging import JudgeDeviceToken, PublicLiveToken
-from .models_scoring import ScoreEntry, ScoreEntryVideo, ScoreEntryVideoEvent
+from .models_classificacions import ClassificacioConfig
+from .models_scoring import ScoringSchema, ScoreEntry, ScoreEntryVideo, ScoreEntryVideoEvent
 from .models_trampoli import (
     Aparell,
     CompeticioAparell,
     InscripcioAparellExclusio,
 )
+from .services.services_classificacions_2 import compute_classificacio
 
 
 class _BaseTrampoliDataMixin:
@@ -217,6 +219,173 @@ class ScoringAndJudgeExclusionFlowTests(_BaseTrampoliDataMixin, TestCase):
 
         self.assertIn(self.ins_allowed.id, updated_ids)
         self.assertNotIn(self.ins_blocked.id, updated_ids)
+
+
+class ClassificacioMatrixScalarTests(_BaseTrampoliDataMixin, TestCase):
+    def setUp(self):
+        self.comp = self._create_competicio("Comp Classificacio")
+        self.app_a = self._create_aparell("APP_A", "Aparell A")
+        self.app_b = self._create_aparell("APP_B", "Aparell B")
+        self.comp_app_a = self._create_comp_aparell(self.comp, self.app_a, ordre=1, actiu=True)
+        self.comp_app_b = self._create_comp_aparell(self.comp, self.app_b, ordre=2, actiu=True)
+
+        self.ins_a = self._create_inscripcio(self.comp, "Participant A", ordre=1)
+        self.ins_b = self._create_inscripcio(self.comp, "Participant B", ordre=2)
+
+    def _base_cfg_schema(self):
+        return {
+            "particions": [],
+            "filtres": {},
+            "puntuacio": {
+                "aparells": {"mode": "tots", "ids": []},
+                "camps_per_aparell": {
+                    str(self.comp_app_a.id): ["X"],
+                    str(self.comp_app_b.id): ["Y"],
+                },
+                "agregacio_camps": "sum",
+                "exercicis": {"mode": "tots"},
+                "exercicis_best_n": 1,
+                "agregacio_exercicis": "sum",
+                "agregacio_aparells": "sum",
+                "ordre": "desc",
+                "camp": "total",
+                "agregacio": "sum",
+                "best_n": 1,
+            },
+            "desempat": [],
+            "presentacio": {"top_n": 0, "mostrar_empats": True},
+        }
+
+    def test_compute_classificacio_uses_input_matrix_1x1_as_scalar(self):
+        ScoringSchema.objects.create(
+            aparell=self.app_a,
+            schema={
+                "fields": [
+                    {"code": "X", "type": "matrix", "shape": "judge_x_item", "judges": {"count": 1}, "items": {"count": 1}}
+                ],
+                "computed": [],
+            },
+        )
+        ScoringSchema.objects.create(
+            aparell=self.app_b,
+            schema={
+                "fields": [
+                    {"code": "Y", "type": "matrix", "shape": "judge_x_item", "judges": {"count": 1}, "items": {"count": 1}}
+                ],
+                "computed": [],
+            },
+        )
+
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins_a,
+            exercici=1,
+            comp_aparell=self.comp_app_a,
+            inputs={"X": [[7.5]]},
+            outputs={},
+            total=0,
+        )
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins_b,
+            exercici=1,
+            comp_aparell=self.comp_app_b,
+            inputs={"Y": [[8.2]]},
+            outputs={},
+            total=0,
+        )
+
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Global A/B",
+            activa=True,
+            ordre=1,
+            tipus="individual",
+            schema=self._base_cfg_schema(),
+        )
+        out = compute_classificacio(self.comp, cfg)
+        rows = out.get("global", [])
+        points_by_name = {r["participant"]: r["punts"] for r in rows}
+
+        self.assertEqual(points_by_name.get("Participant A"), 7.5)
+        self.assertEqual(points_by_name.get("Participant B"), 8.2)
+
+    def test_compute_classificacio_keeps_zero_for_non_1x1_matrix(self):
+        ScoringSchema.objects.create(
+            aparell=self.app_a,
+            schema={
+                "fields": [
+                    {"code": "X", "type": "matrix", "shape": "judge_x_item", "judges": {"count": 1}, "items": {"count": 2}}
+                ],
+                "computed": [],
+            },
+        )
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins_a,
+            exercici=1,
+            comp_aparell=self.comp_app_a,
+            inputs={"X": [[7.0, 8.0]]},
+            outputs={},
+            total=0,
+        )
+
+        schema = self._base_cfg_schema()
+        schema["puntuacio"]["aparells"] = {"mode": "seleccionar", "ids": [self.comp_app_a.id]}
+        schema["puntuacio"]["camps_per_aparell"] = {str(self.comp_app_a.id): ["X"]}
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="No 1x1",
+            activa=True,
+            ordre=1,
+            tipus="individual",
+            schema=schema,
+        )
+        out = compute_classificacio(self.comp, cfg)
+        rows = out.get("global", [])
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["participant"], "Participant A")
+        self.assertEqual(rows[0]["punts"], 0.0)
+
+    def test_classificacio_save_rejects_non_1x1_matrix_field(self):
+        ScoringSchema.objects.create(
+            aparell=self.app_a,
+            schema={
+                "fields": [
+                    {"code": "X", "type": "matrix", "shape": "judge_x_item", "judges": {"count": 2}, "items": {"count": 1}}
+                ],
+                "computed": [],
+            },
+        )
+
+        payload = {
+            "nom": "Cfg invalida",
+            "activa": True,
+            "ordre": 1,
+            "tipus": "individual",
+            "schema": {
+                "particions": [],
+                "filtres": {},
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [self.comp_app_a.id]},
+                    "camps_per_aparell": {str(self.comp_app_a.id): ["X"]},
+                    "agregacio_camps": "sum",
+                    "exercicis": {"mode": "tots"},
+                    "exercicis_best_n": 1,
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "ordre": "desc",
+                },
+                "desempat": [],
+                "presentacio": {"top_n": 0, "mostrar_empats": True},
+            },
+        }
+        url = reverse("classificacio_save", kwargs={"pk": self.comp.id})
+        res = self.client.post(url, data=json.dumps(payload), content_type="application/json")
+        self.assertEqual(res.status_code, 400)
+        body = res.json()
+        self.assertFalse(body.get("ok"))
+        self.assertTrue(any("1x1" in e for e in body.get("errors", [])))
 
 
 class JudgeVideoApiTests(_BaseTrampoliDataMixin, TestCase):

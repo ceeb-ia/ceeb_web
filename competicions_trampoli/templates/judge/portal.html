@@ -41,10 +41,7 @@
     </div>
 
     {% if permissions %}
-      <!-- Tabs de camps (un mateix QR pot tenir-ne varis) -->
       <div class="sticky-top-lite">
-        <ul class="nav nav-pills mb-2" id="fieldTabs" role="tablist"></ul>
-
         <div class="judge-meta mb-2">
           Camps autoritzats:
           <span id="permText"></span>
@@ -116,6 +113,7 @@
 {{ schema|json_script:"schema-data" }}
 {{ permissions|json_script:"perms-data" }}
 {{ scores_payload_json|json_script:"scores-data" }}
+{{ updates_cursor_init|json_script:"updates-cursor-init" }}
 
 {% endblock %}
 
@@ -128,8 +126,10 @@
   const SCHEMA = JSON.parse(document.getElementById("schema-data").textContent || "{}");
   const PERMS  = JSON.parse(document.getElementById("perms-data").textContent || "[]");
   const SCORES = JSON.parse(document.getElementById("scores-data").textContent || "{}");
+  const UPDATES_CURSOR_INIT = JSON.parse(document.getElementById("updates-cursor-init").textContent || "null");
 
   const SAVE_URL = "{{ save_url }}";
+  const UPDATES_URL = "{{ updates_url }}";
   const VIDEO_STATUS_URL = "{{ video_status_url }}";
   const VIDEO_UPLOAD_URL = "{{ video_upload_url }}";
   const VIDEO_DELETE_URL = "{{ video_delete_url }}";
@@ -137,9 +137,11 @@
   const VIDEO_MAX_SIZE_BYTES = Number("{{ video_max_size_bytes|default:125829120 }}") || (120 * 1024 * 1024);
   const EXERCICI = {{ exercici }};
 
-  let activeFieldCode = (PERMS[0] && PERMS[0].field_code) ? PERMS[0].field_code : null;
   let currentRecordingInsId = null;
+  let lastSince = UPDATES_CURSOR_INIT || new Date().toISOString();
   const recordedVideoByIns = {};
+  const DRAFTS = {};
+  const DIRTY_BY_INS = {};
 
   function schemaField(code){
     const fields = (SCHEMA && Array.isArray(SCHEMA.fields)) ? SCHEMA.fields : [];
@@ -147,6 +149,79 @@
   }
   function getEntry(insId){
     return SCORES[String(insId)] || {inputs:{}, outputs:{}, total:0, updated_at:null};
+  }
+  function getServerInput(insId, code){
+    const entry = getEntry(insId);
+    const inputs = (entry.inputs && typeof entry.inputs === "object") ? entry.inputs : {};
+    return inputs[code];
+  }
+  function deepClone(v){
+    if(v === null || v === undefined) return v;
+    if(typeof v !== "object") return v;
+    try{ return JSON.parse(JSON.stringify(v)); }catch(_e){ return v; }
+  }
+  function getDraft(insId){
+    const key = String(insId);
+    if(!DRAFTS[key] || typeof DRAFTS[key] !== "object") DRAFTS[key] = {};
+    return DRAFTS[key];
+  }
+  function clearDraft(insId){
+    delete DRAFTS[String(insId)];
+  }
+  function getDirtySet(insId){
+    const key = String(insId);
+    if(!DIRTY_BY_INS[key]) DIRTY_BY_INS[key] = new Set();
+    return DIRTY_BY_INS[key];
+  }
+  function markDirty(insId, permKey){
+    getDirtySet(insId).add(String(permKey || ""));
+  }
+  function clearDirty(insId){
+    delete DIRTY_BY_INS[String(insId)];
+  }
+  function hasDirty(insId){
+    const set = DIRTY_BY_INS[String(insId)];
+    return !!(set && set.size);
+  }
+  function isEditingIns(insId){
+    const wrap = document.getElementById(`editor-${insId}`);
+    const ae = document.activeElement;
+    return !!(wrap && ae && wrap.contains(ae));
+  }
+  function effectiveInput(insId, code){
+    const draft = DRAFTS[String(insId)];
+    if(draft && Object.prototype.hasOwnProperty.call(draft, code)){
+      return draft[code];
+    }
+    return getServerInput(insId, code);
+  }
+  function normalizePerm(p){
+    return {
+      field_code: String(p && p.field_code ? p.field_code : ""),
+      judge_index: Math.max(1, Number((p && p.judge_index) || 1)),
+      item_start: Math.max(1, Number((p && p.item_start) || 1)),
+      item_count: (p && p.item_count != null && p.item_count !== "") ? Math.max(1, Number(p.item_count)) : null,
+    };
+  }
+  function permKey(p, idx){
+    const n = normalizePerm(p);
+    const c = (n.item_count == null) ? "all" : String(n.item_count);
+    return `${idx}|${n.field_code}|j${n.judge_index}|s${n.item_start}|c${c}`;
+  }
+  const PERM_DESCS = PERMS.map((p, idx) => {
+    const n = normalizePerm(p);
+    return {
+      ...n,
+      idx,
+      key: permKey(n, idx),
+      field: schemaField(n.field_code),
+    };
+  }).filter(p => !!p.field_code);
+  function updateDraftValue(insId, code, nextValue, perm){
+    const draft = getDraft(insId);
+    draft[code] = nextValue;
+    markDirty(insId, perm.key);
+    setStatus(insId, "", "Pendent de desar...");
   }
 
   function decimalsStep(dec){
@@ -158,7 +233,13 @@
   function setStatus(insId, kind, msg){
     const el = document.getElementById(`status-${insId}`);
     if(!el) return;
-    el.className = "judge-meta " + (kind === "ok" ? "status-ok" : kind === "err" ? "status-err" : "");
+    el.className = "judge-meta " + (
+      kind === "ok" ? "status-ok" : (
+        kind === "err" ? "status-err" : (
+          kind === "info" ? "text-info" : ""
+        )
+      )
+    );
     el.textContent = msg || "";
   }
 
@@ -282,171 +363,180 @@
     }
   }
 
-  function uniqueFieldCodes(){
-    return [...new Set(PERMS.map(p => p.field_code))];
-  }
-
-  function firstPermForField(code){
-    // si algun dia vols alternar entre dos judge_index del mateix camp, aquí ho canviaríem
-    return PERMS.find(p => p.field_code === code) || null;
-  }
-
-  function buildTabs(){
-    const tabs = document.getElementById("fieldTabs");
-    if(!tabs) return;
-    tabs.innerHTML = "";
-
-    uniqueFieldCodes().forEach((code, idx) => {
-      const li = document.createElement("li");
-      li.className = "nav-item";
-      li.innerHTML = `
-        <a class="nav-link ${code===activeFieldCode ? "active" : ""}" href="#" data-code="${code}">
-          ${code}
-        </a>`;
-      li.querySelector("a").addEventListener("click", (e)=>{
-        e.preventDefault();
-        activeFieldCode = code;
-        buildTabs();
-        document.querySelectorAll("[data-ins-id]").forEach(card => renderEditor(card.getAttribute("data-ins-id")));
-      });
-      tabs.appendChild(li);
-    });
-  }
-
   function buildPermText(){
     const el = document.getElementById("permText");
     if(!el) return;
-    const parts = PERMS.map(p => {
+    const parts = PERM_DESCS.map(p => {
       const range = p.item_count ? `(${p.item_start}..${p.item_start + p.item_count - 1})` : "";
       return `${p.field_code} [J${p.judge_index}] ${range}`.trim();
     });
     el.textContent = parts.join(" · ");
   }
 
-  function renderEditor(insId){
-    const wrap = document.getElementById(`editor-${insId}`);
-    wrap.innerHTML = "";
-
-    const code = activeFieldCode;
-    const perm = firstPermForField(code);
-    const f = schemaField(code);
-
-    if(!code || !perm || !f){
-      wrap.innerHTML = `<div class="text-muted small">No hi ha configuració per aquest camp.</div>`;
-      return;
-    }
-
-    const entry = getEntry(insId);
-    const inputs = (entry.inputs && typeof entry.inputs === "object") ? entry.inputs : {};
-    const existing = inputs[code];
-
-    const type = f.type || "number";
-    const step = decimalsStep(f.decimals);
-
-    // header petit
-    const head = document.createElement("div");
-    head.className = "judge-meta mb-1";
-    head.textContent = `${f.label || code} · Jutge ${perm.judge_index}`;
-    wrap.appendChild(head);
-
-    if(type === "number"){
-      const inp = document.createElement("input");
-      inp.className = "form-control form-control-sm";
-      inp.type = "number";
-      inp.step = step;
-      inp.value = (existing ?? "");
-      inp.dataset.kind = "number";
-      wrap.appendChild(inp);
-      inp.addEventListener("input", ()=> setStatus(insId, "", "Pendent de desar…"));
-      return;
-    }
-
-    if(type === "matrix"){
-      const nItems = Number(f.items?.count || 1);
-      const j = Math.max(1, Number(perm.judge_index || 1));
-
-      const start = Math.max(1, Number(perm.item_start || 1));
-      const count = perm.item_count ? Math.max(1, Number(perm.item_count)) : (nItems - start + 1);
-
-      // creem inputs per rang
-      const row = (Array.isArray(existing) && Array.isArray(existing[j-1])) ? existing[j-1] : [];
-      for(let k=0;k<count;k++){
-        const idx1 = start + k;
-        const idx0 = idx1 - 1;
-
-        const line = document.createElement("div");
-        line.className = "d-flex align-items-center mb-1";
-        line.style.gap = "8px";
-
-        const lab = document.createElement("div");
-        lab.className = "judge-meta";
-        lab.style.minWidth = "64px";
-        lab.textContent = `Ítem ${idx1}`;
-
-        const inp = document.createElement("input");
-        inp.className = "form-control form-control-sm input-salt";
-        inp.type = "number";
-        inp.step = step;
-        inp.value = (row[idx0] ?? "");
-        inp.dataset.kind = "matrix";
-        inp.dataset.itemIndex0 = String(idx0);
-
-        line.appendChild(lab);
-        line.appendChild(inp);
-        wrap.appendChild(line);
-
-        inp.addEventListener("input", ()=> setStatus(insId, "", "Pendent de desar…"));
-      }
-      return;
-    }
-
-    wrap.innerHTML = `<div class="text-muted small">Tipus no suportat al mòbil: ${type}</div>`;
+  function renderAllEditors(){
+    document.querySelectorAll("[data-ins-id]").forEach(card => renderEditor(card.getAttribute("data-ins-id")));
   }
 
-  function buildPatchFromEditor(insId){
-    const code = activeFieldCode;
-    const perm = firstPermForField(code);
-    const f = schemaField(code);
-    if(!code || !perm || !f) return null;
-
-    const type = f.type || "number";
-    const wrap = document.getElementById(`editor-${insId}`);
-    const entry = getEntry(insId);
-    const inputs = (entry.inputs && typeof entry.inputs === "object") ? entry.inputs : {};
-    const existing = inputs[code];
-
-    if(type === "number"){
-      const inp = wrap.querySelector('input[data-kind="number"]');
+  function renderPermNumber(lineWrap, insId, perm, field){
+    const value = effectiveInput(insId, perm.field_code);
+    const inp = document.createElement("input");
+    inp.className = "form-control form-control-sm";
+    inp.type = "number";
+    inp.step = decimalsStep(field.decimals);
+    inp.value = (value ?? "");
+    inp.dataset.kind = "number";
+    inp.dataset.permKey = perm.key;
+    inp.addEventListener("input", () => {
       const v = (inp.value === "") ? null : Number(inp.value);
-      return {[code]: v};
+      updateDraftValue(insId, perm.field_code, v, perm);
+    });
+    lineWrap.appendChild(inp);
+  }
+
+  function renderPermList(lineWrap, insId, perm, field){
+    const j = Math.max(1, Number(perm.judge_index || 1));
+    const nJudges = Math.max(1, Number((field.judges && field.judges.count) || 1));
+    const baseArr = Array.isArray(effectiveInput(insId, perm.field_code))
+      ? deepClone(effectiveInput(insId, perm.field_code))
+      : [];
+    while(baseArr.length < nJudges) baseArr.push(null);
+    const inp = document.createElement("input");
+    inp.className = "form-control form-control-sm input-salt";
+    inp.type = "number";
+    inp.step = decimalsStep(field.decimals);
+    inp.value = (baseArr[j-1] ?? "");
+    inp.dataset.kind = "list";
+    inp.dataset.permKey = perm.key;
+    inp.addEventListener("input", () => {
+      const next = Array.isArray(effectiveInput(insId, perm.field_code))
+        ? deepClone(effectiveInput(insId, perm.field_code))
+        : [];
+      while(next.length < nJudges) next.push(null);
+      next[j-1] = (inp.value === "") ? null : Number(inp.value);
+      updateDraftValue(insId, perm.field_code, next, perm);
+    });
+    lineWrap.appendChild(inp);
+  }
+
+  function renderPermMatrix(lineWrap, insId, perm, field){
+    const j = Math.max(1, Number(perm.judge_index || 1));
+    const nJudges = Math.max(1, Number((field.judges && field.judges.count) || 1));
+    const nItems = Math.max(1, Number((field.items && field.items.count) || 1));
+    const start = Math.max(1, Number(perm.item_start || 1));
+    const count = perm.item_count ? Math.max(1, Number(perm.item_count)) : (nItems - start + 1);
+
+    const mat = Array.isArray(effectiveInput(insId, perm.field_code))
+      ? deepClone(effectiveInput(insId, perm.field_code))
+      : [];
+    while(mat.length < nJudges) mat.push([]);
+    while((mat[j-1] || []).length < nItems){
+      mat[j-1] = Array.isArray(mat[j-1]) ? mat[j-1] : [];
+      mat[j-1].push(null);
     }
 
-    if(type === "matrix"){
-      const nItems = Number(f.items?.count || 1);
-      const j = Math.max(1, Number(perm.judge_index || 1));
+    const group = document.createElement("div");
+    for(let k=0; k<count; k++){
+      const idx1 = start + k;
+      const idx0 = idx1 - 1;
+      const row = document.createElement("div");
+      row.className = "d-flex align-items-center mb-1";
+      row.style.gap = "8px";
 
-      // IMPORTANT: nosaltres enviem una matriu on només omplim la fila j,
-      // perquè el servidor també imposarà permisos.
-      const mat = Array.isArray(existing) ? existing.map(r => Array.isArray(r) ? r.slice() : []) : [];
-      while(mat.length < j) mat.push([]);
-      while(mat[j-1].length < nItems) mat[j-1].push(null);
+      const lab = document.createElement("div");
+      lab.className = "judge-meta";
+      lab.style.minWidth = "64px";
+      lab.textContent = `Item ${idx1}`;
 
-      wrap.querySelectorAll('input[data-kind="matrix"]').forEach(inp=>{
-        const idx0 = Number(inp.dataset.itemIndex0);
-        mat[j-1][idx0] = (inp.value === "") ? null : Number(inp.value);
+      const inp = document.createElement("input");
+      inp.className = "form-control form-control-sm input-salt";
+      inp.type = "number";
+      inp.step = decimalsStep(field.decimals);
+      inp.value = (mat[j-1][idx0] ?? "");
+      inp.dataset.kind = "matrix";
+      inp.dataset.itemIndex0 = String(idx0);
+      inp.dataset.permKey = perm.key;
+      inp.addEventListener("input", () => {
+        const next = Array.isArray(effectiveInput(insId, perm.field_code))
+          ? deepClone(effectiveInput(insId, perm.field_code))
+          : [];
+        while(next.length < nJudges) next.push([]);
+        while((next[j-1] || []).length < nItems){
+          next[j-1] = Array.isArray(next[j-1]) ? next[j-1] : [];
+          next[j-1].push(null);
+        }
+        next[j-1][idx0] = (inp.value === "") ? null : Number(inp.value);
+        updateDraftValue(insId, perm.field_code, next, perm);
       });
 
-      return {[code]: mat};
+      row.appendChild(lab);
+      row.appendChild(inp);
+      group.appendChild(row);
+    }
+    lineWrap.appendChild(group);
+  }
+
+  function renderPermissionBlock(parent, insId, perm){
+    const field = perm.field;
+    const block = document.createElement("div");
+    block.className = "border rounded p-2 mb-2";
+
+    if(!field){
+      block.innerHTML = `<div class="text-muted small">Camp no disponible al schema: ${perm.field_code}</div>`;
+      parent.appendChild(block);
+      return;
     }
 
-    return null;
+    const range = perm.item_count ? ` (${perm.item_start}..${perm.item_start + perm.item_count - 1})` : "";
+    const head = document.createElement("div");
+    head.className = "judge-meta mb-1";
+    head.textContent = `${field.label || perm.field_code} [${perm.field_code}] · Jutge ${perm.judge_index}${range}`;
+    block.appendChild(head);
+
+    const type = field.type || "number";
+    if(type === "number"){
+      renderPermNumber(block, insId, perm, field);
+    } else if(type === "list"){
+      renderPermList(block, insId, perm, field);
+    } else if(type === "matrix"){
+      renderPermMatrix(block, insId, perm, field);
+    } else {
+      block.insertAdjacentHTML("beforeend", `<div class="text-muted small">Tipus no suportat: ${type}</div>`);
+    }
+
+    parent.appendChild(block);
+  }
+
+  function renderEditor(insId){
+    const wrap = document.getElementById(`editor-${insId}`);
+    if(!wrap) return;
+    wrap.innerHTML = "";
+    if(!PERM_DESCS.length){
+      wrap.innerHTML = `<div class="text-muted small">No hi ha configuracio de permisos.</div>`;
+      return;
+    }
+    PERM_DESCS.forEach(perm => renderPermissionBlock(wrap, String(insId), perm));
+  }
+
+  function buildPatchFromCard(insId){
+    const draft = DRAFTS[String(insId)];
+    if(!draft || typeof draft !== "object") return null;
+    const keys = Object.keys(draft);
+    if(!keys.length) return null;
+    const patch = {};
+    keys.forEach(code => {
+      patch[code] = deepClone(draft[code]);
+    });
+    return patch;
   }
 
   async function saveNow(insId){
-    const patch = buildPatchFromEditor(insId);
-    if(!patch) return;
+    const patch = buildPatchFromCard(insId);
+    if(!patch){
+      setStatus(insId, "info", "No hi ha canvis pendents");
+      return;
+    }
 
-    setStatus(insId, "", "Desant…");
+    setStatus(insId, "", "Desant...");
 
     const res = await fetch(SAVE_URL, {
       method: "POST",
@@ -467,14 +557,70 @@
       return;
     }
 
+    const prevEntry = getEntry(insId);
+    const prevInputs = (prevEntry.inputs && typeof prevEntry.inputs === "object") ? prevEntry.inputs : {};
+    const respInputs = (data.inputs && typeof data.inputs === "object") ? data.inputs : {};
+
     SCORES[String(insId)] = {
-      inputs: data.inputs || {},
+      inputs: {...prevInputs, ...respInputs},
       outputs: data.outputs || {},
       total: data.total || 0,
       updated_at: data.updated_at || null
     };
 
+    clearDraft(insId);
+    clearDirty(insId);
+    renderEditor(insId);
     setStatus(insId, "ok", "Desat ✓");
+  }
+
+  function applyIncomingUpdate(update){
+    if(!update || update.inscripcio_id == null) return;
+    const insId = String(update.inscripcio_id);
+    const baseEntry = getEntry(insId);
+    const mergedInputs = (baseEntry.inputs && typeof baseEntry.inputs === "object") ? {...baseEntry.inputs} : {};
+    const incomingInputs = (update.inputs && typeof update.inputs === "object") ? update.inputs : {};
+
+    Object.entries(incomingInputs).forEach(([code, val]) => {
+      mergedInputs[code] = val;
+    });
+
+    SCORES[insId] = {
+      inputs: mergedInputs,
+      outputs: (update.outputs && typeof update.outputs === "object") ? update.outputs : (baseEntry.outputs || {}),
+      total: Number.isFinite(Number(update.total)) ? Number(update.total) : Number(baseEntry.total || 0),
+      updated_at: update.updated_at || baseEntry.updated_at || null,
+    };
+
+    if(hasDirty(insId) || isEditingIns(insId)){
+      setStatus(insId, "info", "Canvi remot rebut (pendent de desar)");
+      return;
+    }
+
+    if(Object.keys(incomingInputs).length){
+      renderEditor(insId);
+      setStatus(insId, "", "Actualitzat");
+    }
+  }
+
+  async function pollUpdates(){
+    if(!UPDATES_URL) return;
+    const url = new URL(UPDATES_URL, window.location.origin);
+    if(lastSince) url.searchParams.set("since", lastSince);
+    url.searchParams.set("exercici", String(EXERCICI));
+
+    try{
+      const res = await fetch(url.toString(), {headers: {"Accept":"application/json"}});
+      const data = await res.json().catch(()=> ({}));
+      if(res.ok && data.ok){
+        (data.updates || []).forEach(applyIncomingUpdate);
+        if(data.now) lastSince = data.now;
+      }
+    } catch(_e){
+      // silenciem errors puntuals de xarxa
+    } finally {
+      setTimeout(pollUpdates, 1200);
+    }
   }
 
   function copyPrev(insId){
@@ -487,32 +633,61 @@
     if(idx <= 0) return;
 
     const prevId = cards[idx-1].getAttribute("data-ins-id");
-    const code = activeFieldCode;
-    const prev = getEntry(prevId);
-    const v = prev.inputs ? prev.inputs[code] : null;
+    const currentInsId = String(insId);
+    const sourceInsId = String(prevId);
 
-    const perm = firstPermForField(code);
-    const f = schemaField(code);
-    const wrap = document.getElementById(`editor-${insId}`);
-    if(!perm || !f || !wrap) return;
+    PERM_DESCS.forEach(perm => {
+      const field = perm.field;
+      if(!field) return;
+      const type = field.type || "number";
+      const code = perm.field_code;
+      const sourceVal = deepClone(effectiveInput(sourceInsId, code));
 
-    if((f.type || "number") === "number"){
-      const inp = wrap.querySelector('input[data-kind="number"]');
-      inp.value = (v ?? "");
-      setStatus(insId, "", "Pendent de desar…");
-      return;
-    }
+      if(type === "number"){
+        updateDraftValue(currentInsId, code, (sourceVal ?? null), perm);
+        return;
+      }
 
-    if((f.type || "number") === "matrix"){
-      const j = Math.max(1, Number(perm.judge_index || 1));
-      const row = (Array.isArray(v) && Array.isArray(v[j-1])) ? v[j-1] : [];
-      wrap.querySelectorAll('input[data-kind="matrix"]').forEach(inp=>{
-        const idx0 = Number(inp.dataset.itemIndex0);
-        inp.value = (row[idx0] ?? "");
-      });
-      setStatus(insId, "", "Pendent de desar…");
-      return;
-    }
+      if(type === "list"){
+        const j = Math.max(1, Number(perm.judge_index || 1));
+        const nJudges = Math.max(1, Number((field.judges && field.judges.count) || 1));
+        const target = Array.isArray(effectiveInput(currentInsId, code))
+          ? deepClone(effectiveInput(currentInsId, code))
+          : [];
+        while(target.length < nJudges) target.push(null);
+        const sourceArr = Array.isArray(sourceVal) ? sourceVal : [];
+        target[j-1] = (sourceArr[j-1] ?? null);
+        updateDraftValue(currentInsId, code, target, perm);
+        return;
+      }
+
+      if(type === "matrix"){
+        const j = Math.max(1, Number(perm.judge_index || 1));
+        const nJudges = Math.max(1, Number((field.judges && field.judges.count) || 1));
+        const nItems = Math.max(1, Number((field.items && field.items.count) || 1));
+        const start = Math.max(1, Number(perm.item_start || 1));
+        const count = perm.item_count ? Math.max(1, Number(perm.item_count)) : (nItems - start + 1);
+
+        const target = Array.isArray(effectiveInput(currentInsId, code))
+          ? deepClone(effectiveInput(currentInsId, code))
+          : [];
+        while(target.length < nJudges) target.push([]);
+        while((target[j-1] || []).length < nItems){
+          target[j-1] = Array.isArray(target[j-1]) ? target[j-1] : [];
+          target[j-1].push(null);
+        }
+
+        const sourceMat = Array.isArray(sourceVal) ? sourceVal : [];
+        const sourceRow = Array.isArray(sourceMat[j-1]) ? sourceMat[j-1] : [];
+        for(let k=0; k<count; k++){
+          const idx0 = start - 1 + k;
+          target[j-1][idx0] = (sourceRow[idx0] ?? null);
+        }
+        updateDraftValue(currentInsId, code, target, perm);
+      }
+    });
+
+    renderEditor(currentInsId);
   }
 
   async function toggleRecord(insId){
@@ -785,11 +960,12 @@
     });
   }
   // init
-  buildTabs();
   buildPermText();
   initGroupTabs();
   initVideoUI();
-  document.querySelectorAll("[data-ins-id]").forEach(card => renderEditor(card.getAttribute("data-ins-id")));
+  renderAllEditors();
+  pollUpdates();
 </script>
 {% endblock %}
+
 

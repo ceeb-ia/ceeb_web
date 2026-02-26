@@ -26,6 +26,13 @@
       Si el NIF ja existeix a la competició, es farà una actualització.
     </div>
 
+    <div class="alert alert-warning small mb-3">
+      <strong>Warning de noms conflictius:</strong> si una columna extra te el mateix nom que un camp preestablert
+      (per exemple <code>equip</code>, <code>grup</code>, <code>ordre_sortida</code>, <code>document</code>),
+      el valor es pot trepitjar en algunes vistes o exportacions.
+      Recomanacio: renombra aquestes columnes amb un prefix com <code>extra__equip</code>.
+    </div>
+
     <form method="post" enctype="multipart/form-data">
       {% csrf_token %}
 

@@ -269,6 +269,10 @@
           <div class="text-muted small mb-2">
             1) Selecciona els aparells. 2) Per cada aparell, indica els <strong>codes</strong> que vols sumar/mitjanar/...
           </div>
+          <div class="alert alert-warning py-2 px-3 small mb-2">
+            Per al càlcul de <strong>Punts</strong>, els camps d'entrada només es tracten com a escalar si són
+            escalar o matriu <strong>1x1</strong>. Matrius més grans no són puntuables directament.
+          </div>
 
           <div class="row">
             <div class="col-12 mb-2">
@@ -692,11 +696,17 @@
       <select class="form-control form-control-sm"
               data-app-select="${esc(compAparellId)}"
               multiple size="8">
-        ${opts.map(o => `
+        ${opts.map(o => {
+          const kind = String(o.kind || "");
+          const kindLabel = kind === "field" ? "input" : (kind === "computed" ? "computed" : (kind || "camp"));
+          const judgesCount = Number(o.judges_count || 1);
+          const judgesLabel = judgesCount > 1 ? `, ${judgesCount} jutges` : "";
+          return `
           <option value="${esc(o.code)}" ${selected.has(String(o.code)) ? "selected" : ""}>
-            ${esc(o.label)} (${esc(o.code)})
+            ${esc(o.label)} (${esc(o.code)}) · ${esc(kindLabel)}${esc(judgesLabel)}
           </option>
-        `).join("")}
+        `;
+        }).join("")}
       </select>
     `;
   }

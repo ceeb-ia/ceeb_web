@@ -1,0 +1,455 @@
+{% extends "base.html" %}
+{% block title %}Classificacions Loop - {{ competicio.nom }}{% endblock %}
+
+{% block content %}
+<style>
+  .loop-slide {
+    border: 1px solid #dde4ef;
+    border-radius: 10px;
+    background: #ffffff;
+    overflow: hidden;
+    box-shadow: 0 1px 2px rgba(17, 24, 39, 0.06);
+    transition: opacity 0.22s ease;
+    opacity: 1;
+  }
+  .loop-slide.is-fading {
+    opacity: 0.35;
+  }
+  .loop-slide-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.8rem;
+    padding: 0.65rem 0.8rem;
+    border-bottom: 1px solid #e6ecf5;
+    background: linear-gradient(135deg, #f8fbff 0%, #f5f8fc 100%);
+  }
+  .loop-cfg {
+    font-weight: 700;
+    line-height: 1.2;
+  }
+  .loop-part {
+    font-size: 0.92rem;
+    color: #4b5563;
+    margin-top: 0.15rem;
+  }
+  .loop-meta {
+    display: flex;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .live-classif-table {
+    width: max-content;
+    min-width: 100%;
+    table-layout: auto;
+    margin-bottom: 0;
+  }
+  .live-classif-table th,
+  .live-classif-table td {
+    vertical-align: top;
+  }
+  .judge-cell {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .judge-row {
+    display: flex;
+    gap: 0.4rem;
+    align-items: flex-start;
+    margin-bottom: 0.2rem;
+  }
+  .judge-row:last-child {
+    margin-bottom: 0;
+  }
+  .judge-label {
+    font-weight: 600;
+    min-width: 2.2rem;
+  }
+  .judge-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.2rem;
+  }
+  .judge-item {
+    display: inline-flex;
+    gap: 0.25rem;
+    border: 1px solid #dcdcdc;
+    border-radius: 4px;
+    padding: 0.05rem 0.35rem;
+    background: #fafafa;
+    font-size: 0.82rem;
+  }
+  .judge-item .idx {
+    color: #6c757d;
+    font-weight: 600;
+  }
+</style>
+
+<div class="container-fluid mt-4">
+  <div class="card-surface">
+    <div class="d-flex justify-content-between align-items-start mb-3">
+      <div>
+        <h2 class="mb-1">Classificacions - Mode Loop - {{ competicio.nom }}</h2>
+        <div class="text-muted small">
+          Rotacio automatica per classificacions i particions. Les dades s'actualitzen en viu.
+        </div>
+        <div class="text-muted small">
+          Estat: <span id="liveStatus" class="fw-semibold">connectant...</span>
+          - Ultima actualitzacio: <span id="liveStamp">-</span>
+        </div>
+      </div>
+
+      {% if not is_public %}
+        <div class="gap-2">
+          <a class="btn btn-sm btn-outline-secondary" href="{% url 'scoring_notes_home' competicio.id %}">Notes</a>
+          <a class="btn btn-sm btn-outline-secondary" href="{% url 'classificacions_live' competicio.id %}">Live tabs</a>
+          <a class="btn btn-sm btn-outline-secondary" href="{% url 'classificacions_home' competicio.id %}">Configurar</a>
+        </div>
+      {% endif %}
+    </div>
+
+    <div id="loopEmpty" class="alert alert-warning mb-0">Carregant classificacions...</div>
+
+    <section id="loopSlide" class="loop-slide d-none mt-2">
+      <div class="loop-slide-head">
+        <div>
+          <div id="loopCfgName" class="loop-cfg">-</div>
+          <div id="loopPartName" class="loop-part">-</div>
+        </div>
+        <div class="loop-meta">
+          <span id="loopPageBadge" class="badge badge-light">-</span>
+          <span id="loopRowsBadge" class="badge badge-light">-</span>
+        </div>
+      </div>
+      <div class="table-responsive" id="loopTableWrap"></div>
+    </section>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+{{ poll_ms|default:4000|json_script:"loop-poll-ms" }}
+{{ slide_ms|default:8000|json_script:"loop-slide-ms" }}
+{{ rows_per_page|default:12|json_script:"loop-rows-per-page" }}
+{{ transition|default:"fade"|json_script:"loop-transition" }}
+{{ competicio.id|json_script:"loop-comp-id" }}
+{{ cfgs|length|json_script:"loop-cfg-count" }}
+
+<script>
+  const compId = JSON.parse(document.getElementById("loop-comp-id").textContent);
+  const POLL_MS = JSON.parse(document.getElementById("loop-poll-ms").textContent);
+  const SLIDE_MS = JSON.parse(document.getElementById("loop-slide-ms").textContent);
+  const ROWS_PER_PAGE = JSON.parse(document.getElementById("loop-rows-per-page").textContent);
+  const TRANSITION = JSON.parse(document.getElementById("loop-transition").textContent || '"fade"');
+  const CFG_COUNT_INITIAL = JSON.parse(document.getElementById("loop-cfg-count").textContent || "0");
+
+  const DATA_URL = "{% url 'classificacions_live_data' 0 %}".replace("/0/", `/${compId}/`);
+
+  const els = {
+    status: document.getElementById("liveStatus"),
+    stamp: document.getElementById("liveStamp"),
+    empty: document.getElementById("loopEmpty"),
+    slide: document.getElementById("loopSlide"),
+    cfgName: document.getElementById("loopCfgName"),
+    partName: document.getElementById("loopPartName"),
+    pageBadge: document.getElementById("loopPageBadge"),
+    rowsBadge: document.getElementById("loopRowsBadge"),
+    tableWrap: document.getElementById("loopTableWrap"),
+  };
+
+  const state = {
+    lastStamp: null,
+    playlist: [],
+    cursor: 0,
+    pollTimer: null,
+    slideTimer: null,
+    liveBusy: false,
+  };
+
+  function esc(s){
+    return String(s ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  function setStatus(text){
+    if (els.status) els.status.textContent = text || "";
+  }
+
+  function setStamp(text){
+    if (els.stamp) els.stamp.textContent = text || "-";
+  }
+
+  function defaultColumns(){
+    return [
+      { type: "builtin", key: "posicio", label: "Pos.", align: "left" },
+      { type: "builtin", key: "participant", label: "Nom", align: "left" },
+      { type: "builtin", key: "punts", label: "Punts", align: "right", decimals: 3 },
+    ];
+  }
+
+  function colClass(col){
+    const a = String((col && col.align) || "").toLowerCase();
+    if (a === "right") return "text-right";
+    if (a === "center") return "text-center";
+    return "";
+  }
+
+  function fallbackCellValue(row, key){
+    if (key === "participant" || key === "nom") return row.participant || row.nom || row.entitat_nom || "";
+    if (key === "punts") return row.punts;
+    if (key === "posicio") return row.posicio;
+    if (key === "entitat_nom") return row.entitat_nom || "";
+    if (key === "participants") return row.participants ?? "";
+    return row[key];
+  }
+
+  function formatCellText(v, col){
+    if (v === null || v === undefined) return "";
+    const dec = (col && Number.isInteger(col.decimals)) ? col.decimals : null;
+    if (typeof v === "number") return dec !== null ? v.toFixed(dec) : String(v);
+    if (dec !== null) {
+      const n = Number(v);
+      if (Number.isFinite(n)) return n.toFixed(dec);
+    }
+    return String(v);
+  }
+
+  function renderJudgeRowsCell(v, col){
+    const rows = (v && Array.isArray(v.rows)) ? v.rows : [];
+    if (!rows.length) return "";
+
+    let html = '<div class="judge-cell">';
+    rows.forEach(r => {
+      const judgeNum = Number(r && r.judge);
+      const judgeLabel = Number.isFinite(judgeNum) && judgeNum > 0 ? `J${judgeNum}` : "J?";
+      const items = (r && Array.isArray(r.items)) ? r.items : [];
+      html += '<div class="judge-row">';
+      html += '<span class="judge-label">' + esc(judgeLabel) + "</span>";
+      html += '<div class="judge-items">';
+      items.forEach((it, idx) => {
+        html += '<span class="judge-item"><span class="idx">' + esc(String(idx + 1)) + "</span>";
+        html += '<span class="val">' + esc(formatCellText(it, col)) + "</span></span>";
+      });
+      html += "</div></div>";
+    });
+    html += "</div>";
+    return html;
+  }
+
+  function renderCellHTML(v, col){
+    if (v && typeof v === "object" && v._kind === "judge_rows") {
+      return renderJudgeRowsCell(v, col);
+    }
+    return esc(formatCellText(v, col));
+  }
+
+  function normalizePartitionLabel(raw){
+    let out = (raw === null || raw === undefined) ? "global" : String(raw);
+    if (out.includes("|")) out = out.split("|").pop();
+    else if (out.includes(":")) out = out.split(":").pop();
+    out = String(out || "").trim();
+    return out || "global";
+  }
+
+  function paginateRows(rows, pageSize){
+    const out = [];
+    if (!Array.isArray(rows) || !rows.length) return out;
+    for (let i = 0; i < rows.length; i += pageSize){
+      out.push(rows.slice(i, i + pageSize));
+    }
+    return out;
+  }
+
+  function buildPlaylist(cfgs){
+    const out = [];
+    (Array.isArray(cfgs) ? cfgs : []).forEach((cfg, cfgIdx) => {
+      const columns = (Array.isArray(cfg.columns) && cfg.columns.length) ? cfg.columns : defaultColumns();
+      const parts = (Array.isArray(cfg.parts) && cfg.parts.length) ? cfg.parts : [{particio: "global", rows: []}];
+      parts.forEach((p, partIdx) => {
+        const partKey = (p && p.particio !== undefined && p.particio !== null)
+          ? String(p.particio)
+          : `particio_${partIdx + 1}`;
+        const rows = (p && Array.isArray(p.rows)) ? p.rows : [];
+        let pages = paginateRows(rows, ROWS_PER_PAGE);
+        if (!pages.length) pages = [[]];
+        const pageTotal = pages.length;
+        pages.forEach((pageRows, pageIdx) => {
+          out.push({
+            key: `${cfg.id}|${partKey}|${pageIdx}`,
+            cfgId: cfg.id,
+            cfgNom: String(cfg.nom || `Classificacio ${cfgIdx + 1}`),
+            partKey,
+            partLabel: normalizePartitionLabel(partKey),
+            columns,
+            rows: pageRows,
+            pageIndex: pageIdx + 1,
+            pageTotal,
+          });
+        });
+      });
+    });
+    return out;
+  }
+
+  function renderTableHTML(item){
+    const columns = item.columns || defaultColumns();
+    const rows = Array.isArray(item.rows) ? item.rows : [];
+    if (!rows.length){
+      return '<div class="text-muted small p-3">Sense resultats en aquesta particio.</div>';
+    }
+
+    let html = '<table class="table table-sm live-classif-table">';
+    html += '<thead><tr>';
+    columns.forEach(col => {
+      html += '<th class="' + esc(colClass(col)) + '">' + esc(col.label || col.key || "") + "</th>";
+    });
+    html += "</tr></thead><tbody>";
+
+    rows.forEach(r => {
+      const cells = (r && (r.cells || r.display)) ? (r.cells || r.display) : {};
+      html += "<tr>";
+      columns.forEach(col => {
+        const hasCell = Object.prototype.hasOwnProperty.call(cells, col.key);
+        const raw = hasCell ? cells[col.key] : fallbackCellValue(r, col.key);
+        html += '<td class="' + esc(colClass(col)) + '">' + renderCellHTML(raw, col) + "</td>";
+      });
+      html += "</tr>";
+    });
+
+    html += "</tbody></table>";
+    return html;
+  }
+
+  function showEmpty(msg){
+    if (els.empty){
+      els.empty.textContent = msg || "Sense dades.";
+      els.empty.classList.remove("d-none");
+    }
+    if (els.slide) els.slide.classList.add("d-none");
+  }
+
+  function showSlide(item, animate){
+    if (!item){
+      showEmpty("Sense diapositives disponibles.");
+      return;
+    }
+
+    if (els.cfgName) els.cfgName.textContent = item.cfgNom;
+    if (els.partName) els.partName.textContent = `Particio: ${item.partLabel}`;
+    if (els.pageBadge) els.pageBadge.textContent = `Pagina ${item.pageIndex}/${item.pageTotal}`;
+    if (els.rowsBadge) {
+      const count = Array.isArray(item.rows) ? item.rows.length : 0;
+      els.rowsBadge.textContent = `${count} files`;
+    }
+    if (els.tableWrap) els.tableWrap.innerHTML = renderTableHTML(item);
+
+    if (els.empty) els.empty.classList.add("d-none");
+    if (els.slide) {
+      els.slide.classList.remove("d-none");
+      if (animate && TRANSITION === "fade"){
+        els.slide.classList.add("is-fading");
+        setTimeout(() => {
+          els.slide.classList.remove("is-fading");
+        }, 220);
+      }
+    }
+  }
+
+  function getCurrentSlideKey(){
+    if (!state.playlist.length) return null;
+    if (state.cursor < 0 || state.cursor >= state.playlist.length) return null;
+    return state.playlist[state.cursor].key;
+  }
+
+  function reconcileCursor(previousKey){
+    if (!state.playlist.length){
+      state.cursor = 0;
+      return;
+    }
+    if (previousKey){
+      const idx = state.playlist.findIndex(x => x.key === previousKey);
+      if (idx >= 0){
+        state.cursor = idx;
+        return;
+      }
+    }
+    state.cursor = state.cursor % state.playlist.length;
+  }
+
+  function applyPayload(cfgs){
+    const previousKey = getCurrentSlideKey();
+    state.playlist = buildPlaylist(cfgs);
+    reconcileCursor(previousKey);
+
+    if (!state.playlist.length){
+      showEmpty("No hi ha cap classificacio activa amb dades.");
+      return;
+    }
+    showSlide(state.playlist[state.cursor], false);
+  }
+
+  function nextSlide(){
+    if (!state.playlist.length) return;
+    state.cursor = (state.cursor + 1) % state.playlist.length;
+    showSlide(state.playlist[state.cursor], true);
+  }
+
+  async function tick(){
+    if (state.liveBusy) return;
+    state.liveBusy = true;
+
+    try{
+      setStatus("actualitzant...");
+      const url = new URL(DATA_URL, window.location.origin);
+      if (state.lastStamp) url.searchParams.set("since", state.lastStamp);
+
+      const res = await fetch(url.toString(), { method: "GET", headers: { "Accept": "application/json" } });
+      const data = await res.json();
+
+      if (!res.ok || !data.ok){
+        setStatus("error");
+        return;
+      }
+
+      if (data.stamp){
+        state.lastStamp = data.stamp;
+        setStamp(data.stamp);
+      }
+
+      if (data.changed === false){
+        setStatus("al dia");
+        return;
+      }
+
+      applyPayload(data.cfgs || []);
+      setStatus("al dia");
+    } catch (_e){
+      setStatus("sense connexio");
+    } finally{
+      state.liveBusy = false;
+    }
+  }
+
+  function startLoops(){
+    if (state.pollTimer) clearInterval(state.pollTimer);
+    if (state.slideTimer) clearInterval(state.slideTimer);
+    state.pollTimer = setInterval(tick, POLL_MS);
+    state.slideTimer = setInterval(nextSlide, SLIDE_MS);
+  }
+
+  document.addEventListener("DOMContentLoaded", async () => {
+    if (CFG_COUNT_INITIAL <= 0){
+      showEmpty("No hi ha cap classificacio activa. Quan n'hi hagi, apareixeran automaticament.");
+    } else {
+      showEmpty("Carregant classificacions...");
+    }
+    await tick();
+    startLoops();
+  });
+</script>
+{% endblock %}

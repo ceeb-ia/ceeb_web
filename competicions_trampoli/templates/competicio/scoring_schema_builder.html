@@ -298,6 +298,52 @@
     return opts.map(([v,l])=>`<option value="${v}">${l}</option>`).join("");
   }
 
+  function refillDynamicSelect(sel, codes, emptyLabel){
+    if(!sel) return;
+
+    const current = sel.value || "";
+    const wanted = (sel.dataset.initialValue || current || "").trim();
+    const hadInitial = !!sel.dataset.initialValue;
+
+    sel.innerHTML = "";
+
+    if(wanted && !codes.includes(wanted)){
+      const optPending = document.createElement("option");
+      optPending.value = "";
+      optPending.textContent = `(pendent: ${wanted} no disponible)`;
+      sel.appendChild(optPending);
+    }
+
+    if(codes.length){
+      codes.forEach(c=>{
+        const opt = document.createElement("option");
+        opt.value = c;
+        opt.textContent = c;
+        sel.appendChild(opt);
+      });
+
+      if(wanted && codes.includes(wanted)){
+        sel.value = wanted;
+        if(hadInitial){
+          delete sel.dataset.initialValue;
+        }
+      } else if(!wanted){
+        sel.value = codes[0];
+      } else {
+        sel.value = "";
+      }
+      return;
+    }
+
+    if(!(wanted && !codes.includes(wanted))){
+      const optEmpty = document.createElement("option");
+      optEmpty.value = "";
+      optEmpty.textContent = emptyLabel || "(cap camp disponible)";
+      sel.appendChild(optEmpty);
+    }
+    sel.value = "";
+  }
+
   function allCodes(){
     const codes = [];
     document.querySelectorAll("#fieldsTable tbody tr").forEach(r=>{
@@ -642,6 +688,7 @@
     const b = data.builder || {};
 
     if (preset === "row_agregation") {
+      tr.querySelector('[data-k="rc_source"]').dataset.initialValue = (b.source || "") + "";
       tr.querySelector('[data-k="rc_item_expr"]').value = b.item_expr || "";
 
       tr.querySelector('[data-k="rc_internal_select"]').value = (b.row_select || "all");
@@ -666,7 +713,7 @@
       tr.querySelector('[data-k="rc_post_final_expr"]').value = (b.post_final_expr || "");
     }
     else if (preset === "row_compute" || preset === "column_compute") {
-
+      tr.querySelector('[data-k="rc_source"]').dataset.initialValue = (b.source || "") + "";
       tr.querySelector('[data-k="rc_item_expr"]').value = b.item_expr || "";
 
       // mapping: intern/final depèn del preset
@@ -705,10 +752,11 @@
     }
 
     if (preset === "exec_trampoli") {
+      tr.querySelector('[data-k="et_source"]').dataset.initialValue = (b.source || "") + "";
       tr.querySelector('[data-k="et_crash_code"]').value = (b.crash_code || "") + "";
     }
     if (preset === "select_sum_guided") {
-      tr.querySelector('[data-k="ss_source"]').value = (b.source || "") + "";
+      tr.querySelector('[data-k="ss_source"]').dataset.initialValue = (b.source || "") + "";
       // Compat amb builder antic (n_valid/criteri)
       const legacyToSelect = {
         totes: "best_n",
@@ -727,6 +775,13 @@
       i.addEventListener("input", refreshAll);
       i.addEventListener("change", refreshAll);
       i.addEventListener("toggle", refreshAll);
+    });
+    ['[data-k="rc_source"]', '[data-k="et_source"]', '[data-k="ss_source"]'].forEach(selQ=>{
+      const sel = tr.querySelector(selQ);
+      if(!sel) return;
+      const clearInitial = ()=>{ delete sel.dataset.initialValue; };
+      sel.addEventListener("input", clearInitial);
+      sel.addEventListener("change", clearInitial);
     });
 
     return tr;
@@ -756,9 +811,7 @@
     if(preset === "exec_trampoli"){
       const codes = allCodes();
       const sel = tr.querySelector('[data-k="et_source"]');
-      const current = sel.value || "";
-      sel.innerHTML = codes.map(c=>`<option value="${c}">${c}</option>`).join("");
-      sel.value = (codes.includes(current) ? current : (codes[0] || ""));
+      refillDynamicSelect(sel, codes, "(cap camp disponible)");
 
       const src = sel.value || "";
       const crashCode = (tr.querySelector('[data-k="et_crash_code"]').value.trim() || src);
@@ -773,11 +826,7 @@
     if(preset === "select_sum_guided"){
       const codes = selectSumSourceCodes();
       const sel = tr.querySelector('[data-k="ss_source"]');
-      const current = sel.value || "";
-      sel.innerHTML = codes.length
-        ? codes.map(c=>`<option value="${c}">${c}</option>`).join("")
-        : `<option value="">(cap camp llista disponible)</option>`;
-      sel.value = (codes.includes(current) ? current : (codes[0] || ""));
+      refillDynamicSelect(sel, codes, "(cap camp llista disponible)");
 
       const selMethod = tr.querySelector('[data-k="ss_select"]').value || "best_n";
       const nEl = tr.querySelector('[data-k="ss_select_n"]');
@@ -823,9 +872,7 @@
       }
 // source select
       const sel = tr.querySelector('[data-k="rc_source"]');
-      const current = sel.value || "";
-      sel.innerHTML = codes.map(c=>`<option value="${c}">${c}</option>`).join("");
-      sel.value = (codes.includes(current) ? current : (codes[0] || ""));
+      refillDynamicSelect(sel, codes, "(cap camp disponible)");
 
       // texts segons preset (per fer-ho mentalment fàcil)
       const gTitle = tr.querySelector('[data-k="rc_global_title"]');

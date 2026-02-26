@@ -427,7 +427,17 @@ def importar_inscripcions_excel(fitxer, competicio: Competicio, sheet: str = "")
     # 4) construcció de schema columns (builtins + extras)
     # - builtins "útils" (els que existeixen realment al model Inscripcio)
     builtin_model_fields = {"nom_i_cognoms", "categoria", "subcategoria", "entitat", "document", "sexe", "data_naixement"}
+    reserved_model_codes: Set[str] = set()
+    for f in Inscripcio._meta.concrete_fields:
+        name = str(getattr(f, "name", "") or "").strip()
+        attname = str(getattr(f, "attname", "") or "").strip()
+        if name:
+            reserved_model_codes.add(name)
+        if attname:
+            reserved_model_codes.add(attname)
+
     columns_schema: List[Dict[str, Any]] = []
+    collision_warnings: List[Dict[str, str]] = []
 
     def add_col(code: str, label: str, kind: str):
         columns_schema.append({"code": code, "label": label, "kind": kind})
@@ -447,6 +457,14 @@ def importar_inscripcions_excel(fitxer, competicio: Competicio, sheet: str = "")
         # evita coses típiques que no vols guardar com extra (si vols, pots ampliar)
         if h_norm in ("nom_competicio", "nom_competició", "nom_competicio_"):
             continue
+        if h_norm in reserved_model_codes:
+            collision_warnings.append(
+                {
+                    "header": raw_label,
+                    "code": h_norm,
+                    "suggested_code": f"extra__{h_norm}",
+                }
+            )
         add_col(h_norm, raw_label, "extra")
 
     # 5) merge schema a competicio (preservant el que ja hi havia)
@@ -693,5 +711,6 @@ def importar_inscripcions_excel(fitxer, competicio: Competicio, sheet: str = "")
         "ignorats": ignorats,
         "ambiguos": ambiguos,
         "errors": errors,
+        "warnings": collision_warnings,
         "noms_competicio_excel": sorted(noms_competicio_excel),
     }

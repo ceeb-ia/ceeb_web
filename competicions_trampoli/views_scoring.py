@@ -336,6 +336,7 @@ class ScoringNotesHome(TemplateView):
             "schemas": schemas,
             "scores": scores,
             "inscripcions": inscripcions,
+            "updates_cursor_init": timezone.now().isoformat(),
         })
         return ctx
 

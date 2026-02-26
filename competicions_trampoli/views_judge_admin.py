@@ -10,6 +10,8 @@ from .models_trampoli import CompeticioAparell
 from .models_scoring import ScoringSchema
 from .models_judging import JudgeDeviceToken, PublicLiveToken
 
+MAX_TOKEN_PERMISSIONS = 10
+
 
 def _schema_field_choices(schema: dict):
     # [(code, "CODE — Label"), ...]
@@ -91,7 +93,13 @@ def judges_qr_home(request, competicio_id):
     field_choices = _schema_field_choices(schema)
     schema_by_code = _schema_field_by_code(schema)
 
-    PermissionFS = formset_factory(PermissionRowForm, extra=3, can_delete=True)
+    PermissionFS = formset_factory(
+        PermissionRowForm,
+        extra=3,
+        can_delete=True,
+        max_num=MAX_TOKEN_PERMISSIONS,
+        validate_max=True,
+    )
 
     if request.method == "POST":
         action = request.POST.get("action") or ""
@@ -107,7 +115,10 @@ def judges_qr_home(request, competicio_id):
         token_form = JudgeTokenCreateForm(request.POST)
         formset = PermissionFS(request.POST, form_kwargs={"field_choices": field_choices})
 
-        if token_form.is_valid() and formset.is_valid() and comp_aparell:
+        token_form_valid = token_form.is_valid()
+        formset_valid = formset.is_valid()
+
+        if token_form_valid and formset_valid and comp_aparell:
             perms = []
             for f in formset.cleaned_data:
                 if not f or f.get("DELETE"):
@@ -121,6 +132,12 @@ def judges_qr_home(request, competicio_id):
                     token_form.add_error(None, str(e))
                     break
 
+            if len(perms) > MAX_TOKEN_PERMISSIONS:
+                token_form.add_error(None, f"Maxim {MAX_TOKEN_PERMISSIONS} permisos per token.")
+
+            if not perms:
+                token_form.add_error(None, "Has d'afegir almenys un permis (camp + jutge) per crear el QR.")
+
             if not token_form.errors:
                 label = token_form.cleaned_data.get("label") or ""
                 JudgeDeviceToken.objects.create(
@@ -131,6 +148,8 @@ def judges_qr_home(request, competicio_id):
                     is_active=True,
                 )
                 return redirect(f"{reverse('judges_qr_home', kwargs={'competicio_id': competicio.id})}?comp_aparell={comp_aparell.id}")
+        elif token_form_valid and not formset_valid:
+            token_form.add_error(None, "Revisa els errors marcats a la taula de permisos.")
     else:
         token_form = JudgeTokenCreateForm()
         formset = PermissionFS(form_kwargs={"field_choices": field_choices})
@@ -149,6 +168,7 @@ def judges_qr_home(request, competicio_id):
         "tokens": tokens,
         "token_form": token_form,
         "formset": formset,
+        "max_permissions": MAX_TOKEN_PERMISSIONS,
     }
     return render(request, "judge/admin_tokens.html", ctx)
 
