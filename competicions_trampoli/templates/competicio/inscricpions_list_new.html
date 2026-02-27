@@ -194,6 +194,72 @@
       min-width: 180px;
       max-width: 260px;
     }
+    .th-col-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .th-col-label-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+    }
+    .col-sort-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 1px 7px;
+      border-radius: 999px;
+      border: 1px solid #b9c7e6;
+      background: #edf4ff;
+      color: #1f3f7a;
+      font-size: 0.72rem;
+      line-height: 1.25;
+      white-space: nowrap;
+    }
+    .col-sort-remove {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 16px;
+      height: 16px;
+      border: none;
+      border-radius: 999px;
+      background: rgba(10, 35, 83, 0.12);
+      color: #0f2f63;
+      font-weight: 700;
+      line-height: 1;
+      padding: 0;
+      cursor: pointer;
+    }
+    .col-sort-remove:hover {
+      background: rgba(10, 35, 83, 0.2);
+    }
+    .col-sort-pop {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+    }
+    .js-col-sort-toggle {
+      font-size: 1rem;
+      line-height: 1;
+      color: #6b7280 !important;
+      text-decoration: none !important;
+    }
+    .col-sort-menu {
+      position: absolute;
+      top: calc(100% + 4px);
+      right: 0;
+      z-index: 1200;
+      width: 230px;
+      background: #fff;
+      border: 1px solid #d9e0ef;
+      border-radius: 8px;
+      box-shadow: 0 8px 22px rgba(0, 0, 0, 0.12);
+      padding: 10px;
+    }
   </style>
 
   <div class="card-surface">
@@ -206,6 +272,12 @@
         </div>
         <div class="text-muted small">
           Gestiona inscripcions, agrupacions i creació de grups.
+        </div>
+        <div class="mt-2">
+          <span class="badge badge-info">Inscrits: {{ inscrits_filtered_count }}</span>
+          {% if inscrits_filtered_count != inscrits_total_count %}
+            <span class="text-muted small ml-1">de {{ inscrits_total_count }} totals</span>
+          {% endif %}
         </div>
       </div>
 
@@ -254,7 +326,11 @@
         </div>
       </div>
       <div class="small text-muted mt-1">
-        Cerca en temps real per nom, cognoms, DNI o entitat
+        Mostrant <span class="fw-semibold">{{ inscrits_filtered_count }}</span> participants
+        {% if inscrits_filtered_count != inscrits_total_count %}
+          <span>de {{ inscrits_total_count }}</span>
+        {% endif %}
+        - Cerca en temps real per nom, cognoms, DNI o entitat
         {% if request.GET.q %}
           <span class="badge badge-primary ml-2">Filtrant: "{{ request.GET.q }}"</span>
         {% endif %}
@@ -325,8 +401,7 @@
                   <label class="group-chip" title="{{ f.code }}">
                     <input type="checkbox" name="group_by" value="{{ f.code }}"
                           {% if f.code in selected_group_fields %}checked{% endif %}>
-                    <span>{{ f.label }}</span>
-                    {% if f.kind == "extra" %}<span class="badge bg-light text-dark border">extra</span>{% endif %}
+                    <span>{{ f.ui_label|default:f.label }}</span>
                   </label>
                 {% endfor %}
               </div>
@@ -368,8 +443,7 @@
                              class="form-check-input js-col-check"
                              data-col="{{ col.code }}"
                              {% for s in selected_table_columns %}{% if s.code == col.code %}checked{% endif %}{% endfor %}>
-                      <span>{{ col.label }}</span>
-                      {% if col.kind == "extra" %}<span class="badge bg-light text-dark border">extra</span>{% endif %}
+                      <span>{{ col.ui_label|default:col.label }}</span>
                     </div>
                     <code class="text-muted small">{{ col.code }}</code>
                   </li>
@@ -488,7 +562,7 @@
                 <select name="sort_key" class="form-control form-control-sm" style="width: 210px;">
                   {% with sk=sort_key_selected|default:"nom_i_cognoms" %}
                     {% for f in sort_field_options %}
-                      <option value="{{ f.code }}" {% if sk == f.code %}selected{% endif %}>{{ f.label }}</option>
+                      <option value="{{ f.code }}" {% if sk == f.code %}selected{% endif %}>{{ f.ui_label|default:f.label }}</option>
                     {% endfor %}
                   {% endwith %}
                 </select>
@@ -622,7 +696,70 @@
                     <th class="control-col"></th>
                     {% for col in selected_table_columns %}
                       <th>
-                        {{ col.label }}
+                        <div class="th-col-head">
+                          <div class="th-col-label-wrap">
+                            <span>{{ col.ui_label|default:col.label }}</span>
+                            {% with col_ind=column_sort_indicator_by_code|get_item:col.code %}
+                              {% if col_ind %}
+                                <span class="col-sort-indicator" title="{{ col_ind.title }}">
+                                  #{{ col_ind.priority }} {{ col_ind.symbol }} {{ col_ind.scope_short }}
+                                  <button
+                                    type="button"
+                                    class="col-sort-remove js-col-sort-remove"
+                                    data-sort-priority="{{ col_ind.remove_priority }}"
+                                    title="Eliminar aquest criteri d'ordenacio"
+                                    aria-label="Eliminar criteri d'ordenacio">
+                                    x
+                                  </button>
+                                </span>
+                              {% endif %}
+                            {% endwith %}
+                          </div>
+                          {% if col.code in sortable_table_column_codes %}
+                            <div class="col-sort-pop">
+                              <button
+                                type="button"
+                                class="btn btn-link btn-sm p-0 js-col-sort-toggle"
+                                data-col-sort-toggle
+                                title="Ordenar per aquesta columna">
+                                &#8942;
+                              </button>
+                              <div class="col-sort-menu d-none" data-col-sort-menu data-col-code="{{ col.code }}">
+                                <div class="small fw-semibold mb-2">{{ col.ui_label|default:col.label }}</div>
+
+                                <label class="small text-muted mb-1 d-block">Mode</label>
+                                <select class="form-control form-control-sm js-col-sort-dir mb-2">
+                                  <option value="asc">Asc</option>
+                                  <option value="desc">Desc</option>
+                                  <option value="arrow_asc">Fletxa (asc)</option>
+                                  <option value="arrow_desc">Fletxa (desc)</option>
+                                </select>
+
+                                <label class="small text-muted mb-1 d-block">Ambit</label>
+                                <select class="form-control form-control-sm js-col-sort-scope">
+                                  <option value="all">Totes les inscripcions</option>
+                                  <option value="tab">Dins de cada pestanya</option>
+                                  <option value="group">Nomes aquest grup numeric</option>
+                                </select>
+
+                                <div class="mt-2 d-none js-col-sort-group-wrap">
+                                  <label class="small text-muted mb-1 d-block">Grup numeric</label>
+                                  <select class="form-control form-control-sm js-col-sort-group"></select>
+                                </div>
+
+                                <div class="d-flex justify-content-between mt-2" style="gap:8px;">
+                                  <button
+                                    type="button"
+                                    class="btn btn-sm btn-outline-secondary js-col-sort-undo"
+                                    {% if not column_sort_has_stack %}disabled{% endif %}>
+                                    Desfer ultima
+                                  </button>
+                                  <button type="button" class="btn btn-sm btn-primary js-col-sort-apply">Aplicar</button>
+                                </div>
+                              </div>
+                            </div>
+                          {% endif %}
+                        </div>
                       </th>
                     {% endfor %}
                   </tr>
@@ -703,7 +840,7 @@
                               {% endwith %}
                             {% endwith %}
                           {% elif col.kind == "extra" %}
-                            {{ r.extra|get_item:col.code|default:"-" }}
+                            {{ r.extra|extra_item:col.code|default:"-" }}
                           {% elif col.code == "data_naixement" %}
                             {% with v=r|attr:col.code %}
                               {% if v %}{{ v|date:"d/m/Y" }}{% else %}-{% endif %}
@@ -732,7 +869,70 @@
               <th class="control-col"></th>
               {% for col in selected_table_columns %}
                 <th>
-                  {{ col.label }}
+                  <div class="th-col-head">
+                    <div class="th-col-label-wrap">
+                      <span>{{ col.ui_label|default:col.label }}</span>
+                      {% with col_ind=column_sort_indicator_by_code|get_item:col.code %}
+                        {% if col_ind %}
+                          <span class="col-sort-indicator" title="{{ col_ind.title }}">
+                            #{{ col_ind.priority }} {{ col_ind.symbol }} {{ col_ind.scope_short }}
+                            <button
+                              type="button"
+                              class="col-sort-remove js-col-sort-remove"
+                              data-sort-priority="{{ col_ind.remove_priority }}"
+                              title="Eliminar aquest criteri d'ordenacio"
+                              aria-label="Eliminar criteri d'ordenacio">
+                              x
+                            </button>
+                          </span>
+                        {% endif %}
+                      {% endwith %}
+                    </div>
+                    {% if col.code in sortable_table_column_codes %}
+                      <div class="col-sort-pop">
+                        <button
+                          type="button"
+                          class="btn btn-link btn-sm p-0 js-col-sort-toggle"
+                          data-col-sort-toggle
+                          title="Ordenar per aquesta columna">
+                          &#8942;
+                        </button>
+                        <div class="col-sort-menu d-none" data-col-sort-menu data-col-code="{{ col.code }}">
+                          <div class="small fw-semibold mb-2">{{ col.ui_label|default:col.label }}</div>
+
+                          <label class="small text-muted mb-1 d-block">Mode</label>
+                          <select class="form-control form-control-sm js-col-sort-dir mb-2">
+                            <option value="asc">Asc</option>
+                            <option value="desc">Desc</option>
+                            <option value="arrow_asc">Fletxa (asc)</option>
+                            <option value="arrow_desc">Fletxa (desc)</option>
+                          </select>
+
+                          <label class="small text-muted mb-1 d-block">Ambit</label>
+                          <select class="form-control form-control-sm js-col-sort-scope">
+                            <option value="all">Totes les inscripcions</option>
+                            <option value="tab">Dins de cada pestanya</option>
+                            <option value="group">Nomes aquest grup numeric</option>
+                          </select>
+
+                          <div class="mt-2 d-none js-col-sort-group-wrap">
+                            <label class="small text-muted mb-1 d-block">Grup numeric</label>
+                            <select class="form-control form-control-sm js-col-sort-group"></select>
+                          </div>
+
+                          <div class="d-flex justify-content-between mt-2" style="gap:8px;">
+                            <button
+                              type="button"
+                              class="btn btn-sm btn-outline-secondary js-col-sort-undo"
+                              {% if not column_sort_has_stack %}disabled{% endif %}>
+                              Desfer ultima
+                            </button>
+                            <button type="button" class="btn btn-sm btn-primary js-col-sort-apply">Aplicar</button>
+                          </div>
+                        </div>
+                      </div>
+                    {% endif %}
+                  </div>
                 </th>
               {% endfor %}
             </tr>
@@ -815,7 +1015,7 @@
                         {% endwith %}
                       {% endwith %}
                     {% elif col.kind == "extra" %}
-                      {{ r.extra|get_item:col.code|default:"-" }}
+                      {{ r.extra|extra_item:col.code|default:"-" }}
                     {% elif col.code == "data_naixement" %}
                       {% with v=r|attr:col.code %}
                         {% if v %}{{ v|date:"d/m/Y" }}{% else %}-{% endif %}
@@ -1233,6 +1433,222 @@
       return await resp.json();
     }
 
+    const sortApplyUrl = "{% url 'inscripcions_sort_apply' competicio.id %}";
+    const sortRemoveUrl = "{% url 'inscripcions_sort_remove' competicio.id %}";
+    const sortUndoUrl = "{% url 'inscripcions_sort_undo' competicio.id %}";
+
+    function getCurrentGroupByCodes() {
+      const url = new URL(window.location.href);
+      return url.searchParams.getAll('group_by');
+    }
+
+    function collectNumericGroups() {
+      const out = new Set();
+      document.querySelectorAll('tr.inscripcio-row[data-group]').forEach(tr => {
+        const g = Number(tr.getAttribute('data-group'));
+        if (Number.isFinite(g) && g > 0) out.add(g);
+      });
+      return Array.from(out).sort((a, b) => a - b);
+    }
+
+    function refreshColumnSortGroupOptions() {
+      const groups = collectNumericGroups();
+      document.querySelectorAll('[data-col-sort-menu]').forEach(menu => {
+        const sel = menu.querySelector('.js-col-sort-group');
+        if (!sel) return;
+
+        const prev = sel.value;
+        sel.innerHTML = '';
+        if (!groups.length) {
+          const opt = document.createElement('option');
+          opt.value = '';
+          opt.textContent = '(Sense grups)';
+          sel.appendChild(opt);
+          sel.disabled = true;
+          return;
+        }
+
+        groups.forEach(g => {
+          const opt = document.createElement('option');
+          opt.value = String(g);
+          opt.textContent = `Grup ${g}`;
+          sel.appendChild(opt);
+        });
+        sel.disabled = false;
+        if (groups.map(String).includes(prev)) sel.value = prev;
+      });
+    }
+
+    function syncColumnSortScopeUI(menu) {
+      if (!menu) return;
+      const scope = menu.querySelector('.js-col-sort-scope')?.value || 'all';
+      const wrap = menu.querySelector('.js-col-sort-group-wrap');
+      if (!wrap) return;
+      wrap.classList.toggle('d-none', scope !== 'group');
+    }
+
+    function closeColumnSortMenus(exceptMenu = null) {
+      document.querySelectorAll('[data-col-sort-menu]').forEach(menu => {
+        if (exceptMenu && menu === exceptMenu) return;
+        menu.classList.add('d-none');
+      });
+    }
+
+    async function applyColumnSort(menu) {
+      if (!menu) return;
+
+      const sortKey = menu.getAttribute('data-col-code') || '';
+      const sortDir = menu.querySelector('.js-col-sort-dir')?.value || 'asc';
+      const scope = menu.querySelector('.js-col-sort-scope')?.value || 'all';
+      const groupSel = menu.querySelector('.js-col-sort-group');
+
+      const payload = {
+        sort_key: sortKey,
+        sort_dir: sortDir,
+        scope: scope,
+        filters: getCurrentInscripcioFilters(),
+        group_by: getCurrentGroupByCodes(),
+      };
+
+      if (scope === 'group') {
+        const groupNum = Number(groupSel?.value || 0);
+        if (!Number.isFinite(groupNum) || groupNum <= 0) {
+          alert("Selecciona un grup numeric valid.");
+          return;
+        }
+        payload.group_num = groupNum;
+      }
+
+      try {
+        const data = await postJson(sortApplyUrl, payload);
+        if (!data || !data.ok) {
+          alert("No s'ha pogut aplicar l'ordenacio.");
+          return;
+        }
+        closeColumnSortMenus();
+        reloadWithUiState();
+      } catch (err) {
+        alert(`No s'ha pogut aplicar l'ordenacio.\n${err.message || err}`);
+      }
+    }
+
+    async function undoColumnSort() {
+      const payload = {
+        filters: getCurrentInscripcioFilters(),
+        group_by: getCurrentGroupByCodes(),
+      };
+
+      try {
+        const data = await postJson(sortUndoUrl, payload);
+        if (!data || !data.ok) {
+          alert("No s'ha pogut desfer l'ordenacio.");
+          return;
+        }
+        if (!(Number(data.restored) > 0)) {
+          alert("No hi ha cap ordenacio per desfer.");
+          return;
+        }
+        closeColumnSortMenus();
+        reloadWithUiState();
+      } catch (err) {
+        alert(`No s'ha pogut desfer l'ordenacio.\\n${err.message || err}`);
+      }
+    }
+
+    async function removeColumnSort(priority) {
+      const p = Number(priority || 0);
+      if (!Number.isFinite(p) || p <= 0) return;
+
+      const payload = {
+        priority: p,
+        filters: getCurrentInscripcioFilters(),
+        group_by: getCurrentGroupByCodes(),
+      };
+
+      try {
+        const data = await postJson(sortRemoveUrl, payload);
+        if (!data || !data.ok) {
+          alert("No s'ha pogut eliminar el criteri d'ordenacio.");
+          return;
+        }
+        closeColumnSortMenus();
+        reloadWithUiState();
+      } catch (err) {
+        alert(`No s'ha pogut eliminar el criteri d'ordenacio.\\n${err.message || err}`);
+      }
+    }
+
+    function initColumnSortMenus() {
+      refreshColumnSortGroupOptions();
+
+      document.querySelectorAll('[data-col-sort-menu]').forEach(menu => {
+        syncColumnSortScopeUI(menu);
+        const scopeSel = menu.querySelector('.js-col-sort-scope');
+        if (scopeSel) {
+          scopeSel.addEventListener('change', () => syncColumnSortScopeUI(menu));
+        }
+      });
+
+      document.querySelectorAll('[data-col-sort-toggle]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+
+          const wrap = btn.closest('.col-sort-pop');
+          const menu = wrap ? wrap.querySelector('[data-col-sort-menu]') : null;
+          if (!menu) return;
+
+          const opening = menu.classList.contains('d-none');
+          closeColumnSortMenus(menu);
+          if (opening) {
+            refreshColumnSortGroupOptions();
+            syncColumnSortScopeUI(menu);
+            menu.classList.remove('d-none');
+          } else {
+            menu.classList.add('d-none');
+          }
+        });
+      });
+
+      document.querySelectorAll('.js-col-sort-apply').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const menu = btn.closest('[data-col-sort-menu]');
+          await applyColumnSort(menu);
+        });
+      });
+
+      document.querySelectorAll('.js-col-sort-undo').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (btn.disabled) return;
+          await undoColumnSort();
+        });
+      });
+
+      document.querySelectorAll('.js-col-sort-remove').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const priority = Number(btn.getAttribute('data-sort-priority') || 0);
+          if (!Number.isFinite(priority) || priority <= 0) return;
+          await removeColumnSort(priority);
+        });
+      });
+
+      document.addEventListener('click', (e) => {
+        if (e.target.closest('[data-col-sort-menu]')) return;
+        if (e.target.closest('[data-col-sort-toggle]')) return;
+        closeColumnSortMenus();
+      });
+
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeColumnSortMenus();
+      });
+    }
+
     function getSelectedAparellIds(selectEl) {
       return Array.from(selectEl.options || [])
         .filter(opt => opt.selected && opt.value !== '')
@@ -1323,6 +1739,8 @@
     } else {
       console.warn("jQuery no present: les pestanyes BS4 poden no funcionar.");
     }
+
+    initColumnSortMenus();
 
     document.querySelectorAll('.js-aparells-select').forEach(selectEl => {
       selectEl.dataset.prevSelection = JSON.stringify(getSelectedAparellIds(selectEl));

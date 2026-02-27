@@ -129,6 +129,12 @@ class ScoringNotesHome(TemplateView):
         franges = list(RotacioFranja.objects.filter(competicio=competicio).order_by("ordre", "id"))
         franja_modes = get_rotacions_order_modes(competicio)
         fr_idx_map = franja_index_map(franges)
+        view_cfg = competicio.inscripcions_view or {}
+        raw_group_names = view_cfg.get("group_names") or {}
+        if isinstance(raw_group_names, dict):
+            group_names = {str(k): (v or "").strip() for k, v in raw_group_names.items()}
+        else:
+            group_names = {}
 
         franja_selected_id = None
         fr_raw = self.request.GET.get("franja")
@@ -152,9 +158,36 @@ class ScoringNotesHome(TemplateView):
         for r in ins:
             grouped[r.grup if r.grup is not None else 0].append(r)
 
-        group_keys = sorted([k for k in grouped.keys() if k != 0])
+        group_first_slot = {}
+        assigns_for_order = (
+            RotacioAssignacio.objects
+            .filter(competicio=competicio)
+            .select_related("franja")
+            .order_by("franja__ordre", "franja_id", "estacio__ordre", "id")
+        )
+        for a in assigns_for_order:
+            franja = getattr(a, "franja", None)
+            franja_order = getattr(franja, "ordre", 10**9)
+            fid = getattr(a, "franja_id", None) or 0
+            for g in assignacio_grups(a):
+                if g not in group_first_slot:
+                    group_first_slot[g] = (franja_order, fid)
+
+        numeric_group_keys = sorted([k for k in grouped.keys() if k != 0])
+        competing_group_keys = [g for g in numeric_group_keys if g in group_first_slot]
+        remaining_group_keys = [g for g in numeric_group_keys if g not in group_first_slot]
+        competing_group_keys.sort(key=lambda g: (group_first_slot[g][0], group_first_slot[g][1], g))
+
+        group_keys = competing_group_keys + remaining_group_keys
         if 0 in grouped:
-            group_keys = [0] + group_keys
+            group_keys.append(0)
+
+        group_labels_map = {"0": "Sense grup"}
+        for g in group_keys:
+            if g == 0:
+                continue
+            group_labels_map[str(g)] = (group_names.get(str(g)) or "").strip() or f"Grup {g}"
+
         groups = [(g, grouped[g]) for g in group_keys]
 
 
@@ -324,6 +357,7 @@ class ScoringNotesHome(TemplateView):
         ctx.update({
             "competicio": competicio,
             "groups": groups,
+            "group_labels_map": group_labels_map,
             "aparells_cfg": aparells_cfg,
             "exercicis": exercicis,
             "exercicis_by_aparell": exercicis_by_aparell,

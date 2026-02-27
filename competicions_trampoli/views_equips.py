@@ -24,9 +24,17 @@ def _pretty_val(v):
 
 
 def _ins_value(ins: Inscripcio, code: str):
+    extra = ins.extra or {}
+    if isinstance(extra, dict) and isinstance(code, str) and code.startswith("excel__"):
+        if code in extra:
+            return extra.get(code)
+        legacy_code = code[len("excel__"):]
+        if legacy_code in extra:
+            return extra.get(legacy_code)
     if hasattr(ins, code):
         return getattr(ins, code)
-    extra = ins.extra or {}
+    if isinstance(extra, dict) and code in extra:
+        return extra.get(code)
     return extra.get(code)
 
 

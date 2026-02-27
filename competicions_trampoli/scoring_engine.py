@@ -331,7 +331,9 @@ class SafeEval(ast.NodeVisitor):
         if len(value) != 1:
             return value
         row0 = value[0]
-        if not isinstance(row0, list) or len(row0) != 1:
+        if not isinstance(row0, list):
+            return row0
+        if len(row0) != 1:
             return value
         return row0[0]
 

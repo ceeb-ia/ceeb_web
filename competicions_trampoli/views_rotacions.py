@@ -46,6 +46,127 @@ def _assignacio_grups(assignacio):
     return assignacio_grups(assignacio)
 
 
+ROTACIONS_EXPORT_BUILTIN_FIELDS = [
+    {"code": "nom_i_cognoms", "label": "Nom i cognoms", "kind": "builtin"},
+    {"code": "document", "label": "DNI/Document", "kind": "builtin"},
+    {"code": "sexe", "label": "Sexe", "kind": "builtin"},
+    {"code": "data_naixement", "label": "Data naixement", "kind": "builtin"},
+    {"code": "entitat", "label": "Entitat", "kind": "builtin"},
+    {"code": "categoria", "label": "Categoria", "kind": "builtin"},
+    {"code": "subcategoria", "label": "Subcategoria", "kind": "builtin"},
+    {"code": "grup", "label": "Grup", "kind": "builtin"},
+    {"code": "ordre_sortida", "label": "Ordre", "kind": "builtin"},
+]
+
+
+def _reserved_inscripcio_codes():
+    out = set()
+    for f in Inscripcio._meta.concrete_fields:
+        name = str(getattr(f, "name", "") or "").strip()
+        attname = str(getattr(f, "attname", "") or "").strip()
+        if name:
+            out.add(name)
+        if attname:
+            out.add(attname)
+    return out
+
+
+def _normalize_schema_extra_code(code: str, reserved_codes):
+    code = (code or "").strip()
+    if not code:
+        return code
+    if code.startswith("excel__"):
+        return code
+    if code in reserved_codes:
+        return f"excel__{code}"
+    return code
+
+
+def _rotacions_available_participant_fields(competicio):
+    out = []
+    seen = set()
+    reserved = _reserved_inscripcio_codes()
+    schema = competicio.inscripcions_schema or {}
+    cols = schema.get("columns") or []
+    excel_codes = set()
+
+    if isinstance(cols, list):
+        for c in cols:
+            if not isinstance(c, dict):
+                continue
+            code = c.get("code")
+            if not code:
+                continue
+            kind = c.get("kind") or "extra"
+            if kind == "extra":
+                code = _normalize_schema_extra_code(code, reserved)
+            excel_codes.add(code)
+
+    for f in ROTACIONS_EXPORT_BUILTIN_FIELDS:
+        code = f["code"]
+        if code in seen:
+            continue
+        source = "excel" if code in excel_codes else "native"
+        out.append(
+            {
+                **f,
+                "source": source,
+                "ui_label": f'{f["label"]} ({"Excel" if source == "excel" else "Nativa"})',
+            }
+        )
+        seen.add(code)
+
+    if isinstance(cols, list):
+        for c in cols:
+            if not isinstance(c, dict):
+                continue
+            code = c.get("code")
+            if not code:
+                continue
+            kind = c.get("kind") or "extra"
+            if kind != "extra":
+                continue
+            code = _normalize_schema_extra_code(code, reserved)
+            if code in seen:
+                continue
+            label = c.get("label") or code
+            out.append(
+                {
+                    "code": code,
+                    "label": label,
+                    "kind": "extra",
+                    "source": "excel",
+                    "ui_label": f"{label} (Excel)",
+                }
+            )
+            seen.add(code)
+
+    return out
+
+
+def _normalize_export_participant_fields(competicio, raw_fields):
+    available = _rotacions_available_participant_fields(competicio)
+    allowed_codes = {f["code"] for f in available}
+    out = []
+    seen = set()
+
+    if isinstance(raw_fields, list):
+        for raw in raw_fields:
+            code = str(raw or "").strip()
+            if not code or code not in allowed_codes or code in seen:
+                continue
+            seen.add(code)
+            out.append(code)
+
+    if out:
+        return out
+    if "nom_i_cognoms" in allowed_codes:
+        return ["nom_i_cognoms"]
+    if available:
+        return [available[0]["code"]]
+    return []
+
+
 def _export_meta_defaults(competicio):
     data_default = ""
     if getattr(competicio, "data", None):
@@ -58,6 +179,7 @@ def _export_meta_defaults(competicio):
         "venue": (getattr(competicio, "seu", "") or ""),
         "date": data_default,
         "logo_path": "",
+        "participant_fields": ["nom_i_cognoms"],
     }
 
 
@@ -74,6 +196,10 @@ def _get_export_meta(competicio):
     date_val = str(raw.get("date", defaults["date"]) or "").strip()
     out["date"] = date_val
     out["logo_path"] = str(raw.get("logo_path", "") or "").strip()
+    out["participant_fields"] = _normalize_export_participant_fields(
+        competicio,
+        raw.get("participant_fields", defaults["participant_fields"]),
+    )
     return out
 
 
@@ -208,6 +334,7 @@ def rotacions_planner(request, pk):
     franja_modes = get_rotacions_order_modes(competicio)
     export_meta = _get_export_meta(competicio)
     export_meta["logo_url"] = _logo_url_from_path(export_meta.get("logo_path", ""))
+    export_participant_fields = _rotacions_available_participant_fields(competicio)
 
     assigns = (
         RotacioAssignacio.objects
@@ -245,6 +372,7 @@ def rotacions_planner(request, pk):
         "group_labels_json": json.dumps(group_labels_map, ensure_ascii=False),
         "franja_order_modes_json": json.dumps(franja_modes, ensure_ascii=False),
         "export_meta_json": json.dumps(export_meta, ensure_ascii=False),
+        "export_participant_fields_json": json.dumps(export_participant_fields, ensure_ascii=False),
         "grups_json": json.dumps(grups, ensure_ascii=False),
     }
     return render(request, "competicio/rotacions_planner.html", ctx)
@@ -743,11 +871,16 @@ def rotacions_export_meta_save(request, pk):
     if date_str:
         if parse_date(date_str) is None:
             return HttpResponseBadRequest("Data invalida. Format esperat: YYYY-MM-DD")
+    participant_fields = _normalize_export_participant_fields(
+        competicio,
+        payload.get("participant_fields"),
+    )
 
     current = _get_export_meta(competicio)
     current["title"] = title or _export_meta_defaults(competicio)["title"]
     current["venue"] = venue
     current["date"] = date_str
+    current["participant_fields"] = participant_fields
     _save_export_meta(competicio, current)
 
     return JsonResponse(
@@ -759,6 +892,7 @@ def rotacions_export_meta_save(request, pk):
                 "date": current["date"],
                 "logo_path": current.get("logo_path", ""),
                 "logo_url": _logo_url_from_path(current.get("logo_path", "")),
+                "participant_fields": current.get("participant_fields", []),
             },
         }
     )
@@ -865,13 +999,24 @@ def franges_export_excel(request, pk):
     if grups:
         qs = (
             Inscripcio.objects.filter(competicio=competicio, grup__in=grups)
+            .only(
+                "id",
+                "grup",
+                "nom_i_cognoms",
+                "document",
+                "sexe",
+                "data_naixement",
+                "entitat",
+                "categoria",
+                "subcategoria",
+                "ordre_sortida",
+                "extra",
+            )
             .order_by("ordre_sortida", "id")
         )
         ins_ids = []
         for ins in qs:
-            ins_by_grup.setdefault(ins.grup, []).append(
-                (ins.id, getattr(ins, "nom_i_cognoms", None) or str(ins))
-            )
+            ins_by_grup.setdefault(ins.grup, []).append(ins)
             ins_ids.append(ins.id)
 
         if ins_ids and comp_aparell_ids:
@@ -891,6 +1036,84 @@ def franges_export_excel(request, pk):
         return (group_names.get(str(g)) or "").strip() or f"G{g}"
 
     export_meta = _get_export_meta(competicio)
+    available_participant_fields = _rotacions_available_participant_fields(competicio)
+    participant_field_labels = {
+        f["code"]: str(f.get("label") or f.get("code") or "").strip()
+        for f in available_participant_fields
+    }
+    participant_fields = _normalize_export_participant_fields(
+        competicio,
+        export_meta.get("participant_fields"),
+    )
+
+    def _inscripcio_field_value(ins, code: str):
+        extra = getattr(ins, "extra", None) or {}
+        if isinstance(code, str) and code.startswith("excel__") and isinstance(extra, dict):
+            if code in extra:
+                return extra.get(code)
+            legacy_code = code[len("excel__"):]
+            if legacy_code in extra:
+                return extra.get(legacy_code)
+        if hasattr(ins, code):
+            return getattr(ins, code)
+        if isinstance(extra, dict):
+            return extra.get(code)
+        return None
+
+    def _format_field_value(value):
+        if value in (None, ""):
+            return "-"
+        if isinstance(value, datetime):
+            return value.strftime("%d/%m/%Y")
+        if isinstance(value, date):
+            return value.strftime("%d/%m/%Y")
+        if isinstance(value, (dict, list)):
+            return json.dumps(value, ensure_ascii=False)
+        return str(value)
+
+    def _fit_cell_text(value: str, width: int):
+        text = str(value or "")
+        if len(text) <= width:
+            return text.ljust(width)
+        if width <= 3:
+            return text[:width]
+        return (text[: width - 3] + "...")
+
+    def _render_participants_block(inscripcions):
+        if not inscripcions:
+            return "-"
+        if not participant_fields:
+            return "\n".join(
+                (_format_field_value(getattr(ins, "nom_i_cognoms", None)) or "-")
+                for ins in inscripcions
+            )
+
+        headers = [participant_field_labels.get(code, code) for code in participant_fields]
+        rows = []
+        for ins in inscripcions:
+            rows.append(
+                [
+                    _format_field_value(_inscripcio_field_value(ins, code))
+                    for code in participant_fields
+                ]
+            )
+
+        widths = []
+        for idx, header in enumerate(headers):
+            col_values = [row[idx] for row in rows]
+            col_width = max([len(header)] + [len(v) for v in col_values])
+            widths.append(min(24, max(6, col_width)))
+
+        lines = [
+            " | ".join(_fit_cell_text(headers[idx], widths[idx]) for idx in range(len(widths))),
+            "-+-".join("-" * widths[idx] for idx in range(len(widths))),
+        ]
+        for row in rows:
+            lines.append(
+                " | ".join(_fit_cell_text(row[idx], widths[idx]) for idx in range(len(widths)))
+            )
+        return "\n".join(lines)
+
     titol_competicio = str(export_meta.get("title", "") or "").strip() or getattr(
         competicio, "nom", f"Competicio {competicio.id}"
     )
@@ -910,8 +1133,10 @@ def franges_export_excel(request, pk):
     ws.title = "Rotacions"
 
     center = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    left_top = Alignment(horizontal="left", vertical="top", wrap_text=True)
     center_no_wrap = Alignment(horizontal="center", vertical="center")
     bold = Font(bold=True)
+    mono = Font(name="Consolas", size=10)
 
     fill_title = PatternFill("solid", fgColor="1F4E79")
     fill_sub = PatternFill("solid", fgColor="D9E1F2")
@@ -950,10 +1175,13 @@ def franges_export_excel(request, pk):
         cell.alignment = center_no_wrap
         cell.border = border
 
+    row_line_counts = {}
+
     for i, f in enumerate(franges, start=1):
         r = header_row + i
         label = (f.titol or "").strip() or "Franja"
         fr_txt = f"{label}\n{f.hora_inici.strftime('%H:%M')}-{f.hora_fi.strftime('%H:%M')}"
+        row_max_lines = fr_txt.count("\n") + 1
 
         c0 = ws.cell(row=r, column=1, value=fr_txt)
         c0.alignment = center
@@ -975,14 +1203,15 @@ def franges_export_excel(request, pk):
                 rotate_steps = franja_pos.get(f.id, 0)
                 comp_aparell_id = estacio_comp_aparell.get(e.id)
 
-                noms = []
+                ordered_inscripcions = []
                 seen_ins = set()
                 for g in gs:
                     base_pairs = []
-                    for ins_id, nom in ins_by_grup.get(g, []):
+                    for ins in ins_by_grup.get(g, []):
+                        ins_id = ins.id
                         if comp_aparell_id and (ins_id, comp_aparell_id) in excluded_pairs:
                             continue
-                        base_pairs.append((ins_id, nom))
+                        base_pairs.append((ins_id, ins))
 
                     ordered_pairs = order_pairs_for_mode(
                         base_pairs,
@@ -990,25 +1219,34 @@ def franges_export_excel(request, pk):
                         rotate_steps=rotate_steps,
                         seed_prefix=f"rot-export|{competicio.id}|{f.id}|{e.id}|{g}",
                     )
-                    for ins_id, nom in ordered_pairs:
+                    for ins_id, ins in ordered_pairs:
                         if ins_id in seen_ins:
                             continue
                         seen_ins.add(ins_id)
-                        noms.append(nom)
+                        ordered_inscripcions.append(ins)
 
-                txt = "\n".join(noms) if noms else "-"
+                txt = _render_participants_block(ordered_inscripcions)
+            row_max_lines = max(row_max_lines, (txt.count("\n") + 1) if txt else 1)
 
             cell = ws.cell(row=r, column=j, value=txt)
-            cell.alignment = center
+            if mode == "participants":
+                cell.alignment = left_top
+                cell.font = mono
+            else:
+                cell.alignment = center
             cell.border = border
+        row_line_counts[r] = row_max_lines
 
     ws.column_dimensions[get_column_letter(1)].width = 22
     for j in range(2, total_cols + 1):
-        ws.column_dimensions[get_column_letter(j)].width = 24
+        ws.column_dimensions[get_column_letter(j)].width = 36 if mode == "participants" else 24
 
-    row_height = 60 if mode == "participants" else 30
     for r in range(header_row + 1, header_row + 1 + len(franges)):
-        ws.row_dimensions[r].height = row_height
+        if mode == "participants":
+            lines = max(1, int(row_line_counts.get(r, 1)))
+            ws.row_dimensions[r].height = max(60, min(220, 13 * lines + 8))
+        else:
+            ws.row_dimensions[r].height = 30
 
     logo_added = False
     if logo_path:

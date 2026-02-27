@@ -41,3 +41,15 @@ def get_item(d, key):
     if not d:
         return None
     return d.get(key)
+
+
+@register.filter
+def extra_item(d, key):
+    if not isinstance(d, dict):
+        return None
+    if key in d:
+        return d.get(key)
+    if isinstance(key, str) and key.startswith("excel__"):
+        legacy_key = key[len("excel__"):]
+        return d.get(legacy_key)
+    return None

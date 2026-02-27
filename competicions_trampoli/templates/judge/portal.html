@@ -48,18 +48,16 @@
         </div>
       </div>
 
-      {% regroup inscripcions by grup as inscripcions_per_grup %}
-
       <div id="listWrap">
         <ul class="nav nav-tabs mb-3" id="groupTabs" role="tablist">
-          {% for bloc in inscripcions_per_grup %}
+          {% for bloc in group_blocks %}
             <li class="nav-item" role="presentation">
               <button
                 type="button"
                 class="nav-link {% if forloop.first %}active{% endif %}"
                 data-group-target="group-{{ forloop.counter0 }}"
               >
-                {% if bloc.grouper is None %}Sense grup{% else %}Grup {{ bloc.grouper }}{% endif %}
+                {{ bloc.label }}
                 <span class="badge text-bg-light group-tab-count">{{ bloc.list|length }}</span>
               </button>
             </li>
@@ -67,7 +65,7 @@
         </ul>
 
         <div id="groupPanes">
-          {% for bloc in inscripcions_per_grup %}
+          {% for bloc in group_blocks %}
             <div class="group-pane {% if not forloop.first %}d-none{% endif %}" data-group-pane="group-{{ forloop.counter0 }}">
               {% for ins in bloc.list %}
                 <div class="judge-card mb-2" data-ins-id="{{ ins.id }}">
@@ -75,7 +73,7 @@
                     <div>
                       <div class="fw-semibold">{{ ins.nom_i_cognoms|default:"Inscripció" }}</div>
                       <div class="judge-meta">
-                        {% if ins.grup is None %}Sense grup{% else %}Grup {{ ins.grup }}{% endif %} · Ordre {{ ins.ordre_sortida }}
+                        {{ bloc.label }} · Ordre {{ ins.ordre_sortida }}
                       </div>
                     </div>
                     <div class="judge-meta" id="status-{{ ins.id }}"></div>
@@ -967,5 +965,4 @@
   pollUpdates();
 </script>
 {% endblock %}
-
 

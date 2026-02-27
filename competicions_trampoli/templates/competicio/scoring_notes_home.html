@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load competicio_extras %}
 {% block title %}Notes {{ competicio.nom }}{% endblock %}
 
 {% block content %}
@@ -62,7 +63,9 @@
                role="tab"
                aria-controls="pane-{{ g }}"
                aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
-              {% if g == 0 %}Sense grup{% else %}Grup {{ g }}{% endif %}
+              {% with gkey=g|stringformat:"s" %}
+                {{ group_labels_map|get_item:gkey|default:"Sense grup" }}
+              {% endwith %}
               <span class="badge badge-light ml-1">{{ rows|length }}</span>
             </a>
           </li>
@@ -127,7 +130,9 @@
 
                           <div class="d-flex justify-content-between align-items-center mb-2">
                             <div class="mini-help">
-                              Grup {% if g == 0 %}Sense grup{% else %}{{ g }}{% endif %} ·
+                              {% with gkey=g|stringformat:"s" %}
+                                {{ group_labels_map|get_item:gkey|default:"Sense grup" }} ·
+                              {% endwith %}
                               {{ app.aparell.nom }} · Exercici {{ ex }}
                             </div>
                             <div>

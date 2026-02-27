@@ -10,6 +10,29 @@ from openpyxl import load_workbook
 from ..models import Inscripcio, Competicio
 
 
+def _reserved_inscripcio_codes() -> Set[str]:
+    out: Set[str] = set()
+    for f in Inscripcio._meta.concrete_fields:
+        name = str(getattr(f, "name", "") or "").strip()
+        attname = str(getattr(f, "attname", "") or "").strip()
+        if name:
+            out.add(name)
+        if attname:
+            out.add(attname)
+    return out
+
+
+def _normalize_extra_code(code: str, reserved_codes: Set[str]) -> str:
+    code = (code or "").strip()
+    if not code:
+        return code
+    if code.startswith("excel__"):
+        return code
+    if code in reserved_codes:
+        return f"excel__{code}"
+    return code
+
+
 def _norm_header(s: str) -> str:
     """
     Normalitza capçaleres: minúscules, sense accents, separadors -> underscore.
@@ -322,9 +345,15 @@ def _normalize_for_dedupe(value):
     if isinstance(value, list):
         return [_normalize_for_dedupe(v) for v in value]
     if isinstance(value, dict):
+        reserved = _reserved_inscripcio_codes()
         out = {}
         for k in sorted(value.keys(), key=lambda x: str(x)):
-            out[str(k)] = _normalize_for_dedupe(value[k])
+            key = str(k)
+            if key.startswith("excel__"):
+                maybe_legacy = key[len("excel__"):]
+                if maybe_legacy in reserved:
+                    key = maybe_legacy
+            out[key] = _normalize_for_dedupe(value[k])
         return out
     return _norm_text_key(str(value)) or str(value)
 
@@ -427,19 +456,17 @@ def importar_inscripcions_excel(fitxer, competicio: Competicio, sheet: str = "")
     # 4) construcció de schema columns (builtins + extras)
     # - builtins "útils" (els que existeixen realment al model Inscripcio)
     builtin_model_fields = {"nom_i_cognoms", "categoria", "subcategoria", "entitat", "document", "sexe", "data_naixement"}
-    reserved_model_codes: Set[str] = set()
-    for f in Inscripcio._meta.concrete_fields:
-        name = str(getattr(f, "name", "") or "").strip()
-        attname = str(getattr(f, "attname", "") or "").strip()
-        if name:
-            reserved_model_codes.add(name)
-        if attname:
-            reserved_model_codes.add(attname)
+    reserved_model_codes = _reserved_inscripcio_codes()
 
     columns_schema: List[Dict[str, Any]] = []
     collision_warnings: List[Dict[str, str]] = []
+    header_to_extra_code: Dict[str, str] = {}
+    used_schema_codes: Set[str] = set()
 
     def add_col(code: str, label: str, kind: str):
+        if code in used_schema_codes:
+            return
+        used_schema_codes.add(code)
         columns_schema.append({"code": code, "label": label, "kind": kind})
 
     # builtins detectats
@@ -457,15 +484,17 @@ def importar_inscripcions_excel(fitxer, competicio: Competicio, sheet: str = "")
         # evita coses típiques que no vols guardar com extra (si vols, pots ampliar)
         if h_norm in ("nom_competicio", "nom_competició", "nom_competicio_"):
             continue
-        if h_norm in reserved_model_codes:
+        extra_code = _normalize_extra_code(h_norm, reserved_model_codes)
+        header_to_extra_code[h_norm] = extra_code
+        if extra_code != h_norm:
             collision_warnings.append(
                 {
                     "header": raw_label,
                     "code": h_norm,
-                    "suggested_code": f"extra__{h_norm}",
+                    "remapped_code": extra_code,
                 }
             )
-        add_col(h_norm, raw_label, "extra")
+        add_col(extra_code, raw_label, "extra")
 
     # 5) merge schema a competicio (preservant el que ja hi havia)
     existing_schema = competicio.inscripcions_schema or {}
@@ -591,9 +620,7 @@ def importar_inscripcions_excel(fitxer, competicio: Competicio, sheet: str = "")
 
             # 6.3 extras
             extra: Dict[str, Any] = {}
-            for h_norm in headers.keys():
-                if h_norm in used_header_norms:
-                    continue
+            for h_norm, extra_code in header_to_extra_code.items():
                 v = ws.cell(row=r, column=headers[h_norm][1]).value
                 v = _to_none(v)
                 if v is None:
@@ -601,7 +628,7 @@ def importar_inscripcions_excel(fitxer, competicio: Competicio, sheet: str = "")
                 # guarda strings netes
                 if isinstance(v, str):
                     v = v.strip()
-                extra[h_norm] = v
+                extra[extra_code] = v
 
             # 6.4 document (si existeix)
             document = None

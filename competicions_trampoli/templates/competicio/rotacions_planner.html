@@ -5,11 +5,12 @@
 {% block content %}
 <div class="container-fluid mt-4">
   <style>
-    .board { display:grid; grid-template-columns: 280px 1fr; gap:16px; align-items:start; }
+    .board { display:grid; grid-template-columns: 280px minmax(0, 1fr) 320px; gap:16px; align-items:start; }
     .cardx { background:transparent; border:0; border-radius:0; box-shadow:none; min-width:0; }
     .cardx-h { padding:0 0 10px; border-bottom:1px solid #eef1f7; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
     .cardx-b { padding:0; }
-    .board > .cardx:first-child { padding-right:14px; border-right:1px solid #eef1f7; }
+    .cardx-left { padding-right:14px; border-right:1px solid #eef1f7; }
+    .cardx-right { padding-left:14px; border-left:1px solid #eef1f7; }
     .header-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; justify-content:flex-end; max-width:100%; }
     .header-actions .btn { white-space:normal; }
     #btnClearAll { white-space:normal; max-width:100%; }
@@ -32,6 +33,29 @@
     .pill-rm { margin-left:6px; border:none; background:transparent; color:inherit; font-weight:700; cursor:pointer; line-height:1; }
 
     .mini { font-size:.85rem; color:#6b7280; }
+    .export-fields-list { max-height: 240px; overflow: auto; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; }
+    .export-field-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 6px 8px;
+      border-bottom: 1px solid #eef1f7;
+      cursor: grab;
+      user-select: none;
+    }
+    .export-field-item:last-child { border-bottom: 0; }
+    .export-field-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .export-field-handle { opacity: .6; font-weight: 700; line-height: 1; }
+    .export-field-label {
+      display: inline-block;
+      min-width: 0;
+      max-width: 260px;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    .export-field-item.is-over { outline: 2px dashed #94a3b8; outline-offset: -2px; background: #f8fafc; }
     .row-actions { display:flex; gap:8px; align-items:center; }
     .modal { z-index: 2000 !important; }
     .modal-backdrop { z-index: 1990 !important; }
@@ -71,9 +95,10 @@
     }
 
     /* en pantalles tàctils: que sempre es vegin (no hi ha hover fiable) */
-    @media (max-width: 768px){
+    @media (max-width: 1200px){
       .board { grid-template-columns: 1fr; gap: 14px; }
-      .board > .cardx:first-child { padding-right:0; border-right:0; border-bottom:1px solid #eef1f7; padding-bottom:12px; }
+      .cardx-left { padding-right:0; border-right:0; border-bottom:1px solid #eef1f7; padding-bottom:12px; }
+      .cardx-right { padding-left:0; border-left:0; border-top:1px solid #eef1f7; padding-top:12px; }
       .header-actions { justify-content:flex-start; }
       #btnClearAll { width:100%; }
       .franja-actions{
@@ -92,31 +117,14 @@
         <div class="text-muted small">Arrossega grups a la graella i guarda el programa.</div>
       </div>
       <div class="header-actions">
-                <div class="dropdown d-inline-block">
-          <button type="button"
-                  class="btn btn-sm btn-outline-success dropdown-toggle js-export-dd-toggle"
-                  aria-haspopup="true"
-                  aria-expanded="false"
-                  id="exportExcelDropdown">
-            Excel
-          </button>
-          <div class="dropdown-menu dropdown-menu-right dropdown-menu-end" aria-labelledby="exportExcelDropdown">
-            <a class="dropdown-item" href="{% url 'rotacions_franges_export_excel' competicio.id %}?mode=participants">
-              Exportar participants
-            </a>
-            <a class="dropdown-item" href="{% url 'rotacions_franges_export_excel' competicio.id %}?mode=groups">
-              Exportar grups
-            </a>
-          </div>
         <a href="{% url 'inscripcions_list' competicio.id %}" class="btn btn-sm btn-outline-primary">Inscripcions</a>
+        <a class="btn btn-sm btn-primary" href="{% url 'notes_home' competicio.id %}">Notes</a>
         <a href="{% url 'trampoli_config' competicio.id %}" class="btn btn-sm btn-outline-secondary">Configuració</a>
         </div>
       </div>
-    </div>
-
     <div class="board">
     <!-- Sidebar -->
-    <div class="cardx">
+    <div class="cardx cardx-left">
       <div class="cardx-h">
         <div>
           <div class="fw-semibold">Grups</div>
@@ -172,34 +180,11 @@
         <div class="d-flex" style="gap:8px; align-items:center;">
           <button class="btn btn-sm btn-outline-dark" id="btnAddDescans">+ Descans</button>
         </div>
-
-        <hr class="my-3">
-
-        <div class="fw-semibold mb-2">Dades export Excel</div>
-        <div class="d-flex flex-column" style="gap:8px;">
-          <input type="text" class="form-control form-control-sm" id="exportTitle" placeholder="Titol competicio">
-          <input type="text" class="form-control form-control-sm" id="exportVenue" placeholder="Seu">
-          <input type="date" class="form-control form-control-sm" id="exportDate">
-
-          <div class="d-flex" style="gap:8px; align-items:center; flex-wrap:wrap;">
-            <input type="file" class="form-control form-control-sm" id="exportLogoFile" accept="image/*" style="flex:1; min-width:170px;">
-            <button class="btn btn-sm btn-outline-primary" id="btnExportLogoUpload">Pujar logo</button>
-            <button class="btn btn-sm btn-outline-danger" id="btnExportLogoClear">Treure</button>
-          </div>
-
-          <div id="exportLogoPreviewWrap" class="mini text-muted" style="display:none;">
-            <div class="mb-1">Logo actual:</div>
-            <img id="exportLogoPreview" alt="Logo export" style="max-width:180px; max-height:72px; border:1px solid #e5e7eb; border-radius:6px; padding:2px; background:#fff;">
-          </div>
-
-          <button class="btn btn-sm btn-outline-success" id="btnExportMetaSave">Desar dades export</button>
-          <div class="mini" id="exportMetaStatus"></div>
-        </div>
       </div>
     </div>
 
     <!-- Grid -->
-    <div class="cardx">
+    <div class="cardx cardx-main">
       <div class="cardx-h">
         <div class="fw-semibold">Programa (franges × estacions)</div>
             <div>
@@ -260,7 +245,7 @@
           data-fr="{{ f.id }}" title="Netejar franja">🧹</button>
 
                         <button class="btn btn-sm btn-light py-0 px-2 js-extrapolar"
-                                data-fr="{{ f.id }}" title="Extrapolar">⇢</button>
+                                data-fr="{{ f.id }}" title="Extrapolar">⇒</button>
 
                         <button class="btn btn-sm btn-light py-0 px-2 text-danger js-del-fr"
                                 data-fr="{{ f.id }}" title="Eliminar">🗑</button>
@@ -289,6 +274,63 @@
         </div>
 
         <div class="mini mt-2" id="saveStatus"></div>
+      </div>
+    </div>
+
+    <!-- Exportació -->
+    <div class="cardx cardx-right">
+      <div class="cardx-h">
+        <div>
+          <div class="fw-semibold">Exportació Excel</div>
+          <div class="mini">Configuració i descàrrega d'horari</div>
+        </div>
+      </div>
+
+      <div class="cardx-b">
+        <div class="dropdown d-inline-block">
+          <button type="button"
+                  class="btn btn-sm btn-outline-success dropdown-toggle js-export-dd-toggle"
+                  aria-haspopup="true"
+                  aria-expanded="false"
+                  id="exportExcelDropdown">
+            Excel
+          </button>
+          <div class="dropdown-menu dropdown-menu-right dropdown-menu-end" aria-labelledby="exportExcelDropdown">
+            <a class="dropdown-item" href="{% url 'rotacions_franges_export_excel' competicio.id %}?mode=participants">
+              Exportar participants
+            </a>
+            <a class="dropdown-item" href="{% url 'rotacions_franges_export_excel' competicio.id %}?mode=groups">
+              Exportar grups
+            </a>
+          </div>
+        </div>
+
+        <hr class="my-3">
+
+        <div class="fw-semibold mb-2">Dades export Excel</div>
+        <div class="d-flex flex-column" style="gap:8px;">
+          <input type="text" class="form-control form-control-sm" id="exportTitle" placeholder="Titol competicio">
+          <input type="text" class="form-control form-control-sm" id="exportVenue" placeholder="Seu">
+          <input type="date" class="form-control form-control-sm" id="exportDate">
+
+          <div class="mini fw-semibold">Camps de participants (arrossega per ordenar)</div>
+          <div id="exportFieldsList" class="export-fields-list"></div>
+          <div class="mini text-muted">Aquests camps es mostraran dins cada cel·la en mode "Exportar participants".</div>
+
+          <div class="d-flex" style="gap:8px; align-items:center; flex-wrap:wrap;">
+            <input type="file" class="form-control form-control-sm" id="exportLogoFile" accept="image/*" style="flex:1; min-width:170px;">
+            <button class="btn btn-sm btn-outline-primary" id="btnExportLogoUpload">Pujar logo</button>
+            <button class="btn btn-sm btn-outline-danger" id="btnExportLogoClear">Treure</button>
+          </div>
+
+          <div id="exportLogoPreviewWrap" class="mini text-muted" style="display:none;">
+            <div class="mb-1">Logo actual:</div>
+            <img id="exportLogoPreview" alt="Logo export" style="max-width:180px; max-height:72px; border:1px solid #e5e7eb; border-radius:6px; padding:2px; background:#fff;">
+          </div>
+
+          <button class="btn btn-sm btn-outline-success" id="btnExportMetaSave">Desar dades export</button>
+          <div class="mini" id="exportMetaStatus"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -321,6 +363,7 @@
 <script id="group-labels-data" type="application/json">{{ group_labels_json|safe }}</script>
 <script id="franja-order-modes-data" type="application/json">{{ franja_order_modes_json|safe }}</script>
 <script id="export-meta-data" type="application/json">{{ export_meta_json|safe }}</script>
+<script id="export-participant-fields-data" type="application/json">{{ export_participant_fields_json|safe }}</script>
 <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.1/dist/umd/popper.min.js"></script>
 <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
@@ -513,6 +556,13 @@ const exportMeta = (() => {
     return {};
   }
 })();
+const exportParticipantFields = (() => {
+  try {
+    return JSON.parse(document.getElementById("export-participant-fields-data")?.textContent || "[]");
+  } catch (e) {
+    return [];
+  }
+})();
 
 function escapeHtml(s){
   return String(s ?? "")
@@ -589,6 +639,109 @@ function renderExportLogoPreview(){
   wrap.style.display = "block";
 }
 
+function normalizeExportParticipantFieldSelection(raw){
+  const available = Array.isArray(exportParticipantFields) ? exportParticipantFields : [];
+  const valid = new Set(available.map((f) => String(f.code || "")));
+  const input = Array.isArray(raw) ? raw : [];
+  const out = [];
+  const seen = new Set();
+  input.forEach((x) => {
+    const code = String(x || "");
+    if (!code || !valid.has(code) || seen.has(code)) return;
+    seen.add(code);
+    out.push(code);
+  });
+  if (out.length) return out;
+  if (valid.has("nom_i_cognoms")) return ["nom_i_cognoms"];
+  const first = available[0]?.code;
+  return first ? [String(first)] : [];
+}
+
+function collectExportParticipantFieldsFromUI(){
+  const list = document.getElementById("exportFieldsList");
+  if (!list) return normalizeExportParticipantFieldSelection(exportMeta.participant_fields || []);
+  const selected = [];
+  list.querySelectorAll(".export-field-item").forEach((row) => {
+    const code = String(row.dataset.code || "");
+    const cb = row.querySelector(".js-export-field-check");
+    if (code && cb?.checked) selected.push(code);
+  });
+  return normalizeExportParticipantFieldSelection(selected);
+}
+
+function initExportParticipantFieldDnD(listEl){
+  if (!listEl) return;
+  let draggedEl = null;
+
+  listEl.querySelectorAll(".export-field-item").forEach((item) => {
+    item.addEventListener("dragstart", (ev) => {
+      draggedEl = item;
+      ev.dataTransfer.effectAllowed = "move";
+      ev.dataTransfer.setData("text/plain", item.dataset.code || "");
+      item.style.opacity = "0.55";
+    });
+    item.addEventListener("dragend", () => {
+      item.style.opacity = "";
+      listEl.querySelectorAll(".export-field-item.is-over").forEach((x) => x.classList.remove("is-over"));
+      draggedEl = null;
+    });
+    item.addEventListener("dragover", (ev) => {
+      ev.preventDefault();
+      item.classList.add("is-over");
+    });
+    item.addEventListener("dragleave", () => {
+      item.classList.remove("is-over");
+    });
+    item.addEventListener("drop", (ev) => {
+      ev.preventDefault();
+      item.classList.remove("is-over");
+      if (!draggedEl || draggedEl === item) return;
+      const rect = item.getBoundingClientRect();
+      const dropAfter = (ev.clientY - rect.top) > (rect.height / 2);
+      if (dropAfter) item.insertAdjacentElement("afterend", draggedEl);
+      else item.insertAdjacentElement("beforebegin", draggedEl);
+    });
+  });
+}
+
+function renderExportParticipantFieldsChooser(){
+  const wrap = document.getElementById("exportFieldsList");
+  if (!wrap) return;
+
+  const selected = normalizeExportParticipantFieldSelection(exportMeta.participant_fields || []);
+  exportMeta.participant_fields = selected;
+  const selectedSet = new Set(selected);
+  wrap.innerHTML = "";
+
+  const byCode = new Map((Array.isArray(exportParticipantFields) ? exportParticipantFields : []).map((f) => [String(f.code || ""), f]));
+  const orderedCodes = selected.slice();
+  (Array.isArray(exportParticipantFields) ? exportParticipantFields : []).forEach((f) => {
+    const code = String(f.code || "");
+    if (!code || orderedCodes.includes(code)) return;
+    orderedCodes.push(code);
+  });
+
+  orderedCodes.forEach((code) => {
+    const meta = byCode.get(code);
+    if (!meta) return;
+    const row = document.createElement("div");
+    row.className = "export-field-item";
+    row.draggable = true;
+    row.dataset.code = code;
+    row.innerHTML = `
+      <div class="export-field-left">
+        <span class="export-field-handle" title="Arrossega">&#8942;&#8942;</span>
+        <input type="checkbox" class="js-export-field-check" ${selectedSet.has(code) ? "checked" : ""}>
+        <span class="export-field-label" title="${escapeHtml(meta.ui_label || meta.label || code)}">${escapeHtml(meta.ui_label || meta.label || code)}</span>
+      </div>
+      <code class="mini">${escapeHtml(code)}</code>
+    `;
+    wrap.appendChild(row);
+  });
+
+  initExportParticipantFieldDnD(wrap);
+}
+
 function fillExportMetaInputs(){
   const t = document.getElementById("exportTitle");
   const v = document.getElementById("exportVenue");
@@ -596,6 +749,8 @@ function fillExportMetaInputs(){
   if (t) t.value = String(exportMeta.title || "");
   if (v) v.value = String(exportMeta.venue || "");
   if (d) d.value = String(exportMeta.date || "");
+  exportMeta.participant_fields = normalizeExportParticipantFieldSelection(exportMeta.participant_fields || []);
+  renderExportParticipantFieldsChooser();
   renderExportLogoPreview();
 }
 
@@ -613,7 +768,7 @@ async function autoSaveGrid() {
     }
   }
 
-  if (statusEl) statusEl.textContent = "Guardant…";
+  if (statusEl) statusEl.textContent = "Guardant...";
   try {
     await postJSON(SAVE_URL, { cells });
     if (statusEl) statusEl.textContent = "✅ Guardat.";
@@ -708,7 +863,7 @@ function initColumnDnD(){
 
       moveColumn(fromIdx, toIdx);
 
-      if (statusEl) statusEl.textContent = "Guardant ordre columnes…";
+      if (statusEl) statusEl.textContent = "Guardant ordre columnes...";
       try {
         await persistColumnOrder();
         if (statusEl) statusEl.textContent = "✅ Ordre columnes guardat.";
@@ -772,7 +927,7 @@ function initTopButtons(){
     btnClearAll.addEventListener("click", async () => {
       if (!confirm("Segur que vols netejar tot el programa? Aquesta acció no es pot desfer.")) return;
 
-      if (statusEl) statusEl.textContent = "Netejant programa…";
+      if (statusEl) statusEl.textContent = "Netejant programa...";
       try {
         await postJSON(CLEAR_ALL_URL, {});
         grid = {};
@@ -799,7 +954,7 @@ function initTopButtons(){
           });
         }
       }
-      if (statusEl) statusEl.textContent = "Guardant…";
+      if (statusEl) statusEl.textContent = "Guardant...";
       try {
         await postJSON(SAVE_URL, {cells});
         if (statusEl) statusEl.textContent = "✅ Guardat.";
@@ -850,7 +1005,7 @@ function initTopButtons(){
         return;
       }
 
-      if (autoStatusEl) autoStatusEl.textContent = "Generant…";
+      if (autoStatusEl) autoStatusEl.textContent = "Generant...";
       try {
         const r = await postJSON(AUTO_FR_URL, {hora_inici, hora_fi, interval_min, titol_base, clear_existing});
         if (autoStatusEl) autoStatusEl.textContent = `✅ Creat ${r && r.created != null ? r.created : ""} franges.`;
@@ -896,15 +1051,17 @@ function initExportMetaControls(){
       const title = (document.getElementById("exportTitle")?.value || "").trim();
       const venue = (document.getElementById("exportVenue")?.value || "").trim();
       const date = (document.getElementById("exportDate")?.value || "").trim();
+      const participant_fields = collectExportParticipantFieldsFromUI();
       setExportMetaStatus("Desant dades export...");
       try{
-        const resp = await postJSON(EXPORT_META_SAVE_URL, {title, venue, date});
+        const resp = await postJSON(EXPORT_META_SAVE_URL, {title, venue, date, participant_fields});
         const meta = resp?.meta || {};
         exportMeta.title = String(meta.title || "");
         exportMeta.venue = String(meta.venue || "");
         exportMeta.date = String(meta.date || "");
         exportMeta.logo_path = String(meta.logo_path || exportMeta.logo_path || "");
         exportMeta.logo_url = String(meta.logo_url || exportMeta.logo_url || "");
+        exportMeta.participant_fields = normalizeExportParticipantFieldSelection(meta.participant_fields || participant_fields);
         fillExportMetaInputs();
         setExportMetaStatus("Dades export guardades.");
       }catch(e){
@@ -1032,7 +1189,7 @@ function initGlobalClickHandler(){
       if (countStr === null) return;
       const count = (countStr.trim() === "") ? null : parseInt(countStr, 10);
 
-      if (statusEl) statusEl.textContent = "Guardant i extrapolant…";
+      if (statusEl) statusEl.textContent = "Guardant i extrapolant...";
 
       try {
         // autosave abans

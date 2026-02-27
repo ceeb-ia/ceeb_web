@@ -1,4 +1,5 @@
 import random
+import hashlib
 from django.shortcuts import render
 import math
 from datetime import date, datetime
@@ -77,6 +78,57 @@ BUILTIN_GROUP_FIELDS = [
     {"code": "document", "label": "Document", "kind": "builtin"},
 ]
 
+
+def _reserved_inscripcio_codes():
+    out = set()
+    for f in Inscripcio._meta.concrete_fields:
+        name = str(getattr(f, "name", "") or "").strip()
+        attname = str(getattr(f, "attname", "") or "").strip()
+        if name:
+            out.add(name)
+        if attname:
+            out.add(attname)
+    return out
+
+
+def _normalize_schema_extra_code(code: str, reserved_codes=None):
+    code = (code or "").strip()
+    if not code:
+        return code
+    if code.startswith("excel__"):
+        return code
+    if reserved_codes is None:
+        reserved_codes = _reserved_inscripcio_codes()
+    if code in reserved_codes:
+        return f"excel__{code}"
+    return code
+
+
+def _excel_schema_codes(competicio):
+    schema = competicio.inscripcions_schema or {}
+    cols = schema.get("columns") or []
+    if not isinstance(cols, list):
+        return set()
+    reserved = _reserved_inscripcio_codes()
+    out = set()
+    for c in cols:
+        if not isinstance(c, dict):
+            continue
+        code = c.get("code")
+        if not code:
+            continue
+        kind = c.get("kind") or "extra"
+        if kind == "extra":
+            code = _normalize_schema_extra_code(code, reserved)
+        out.add(code)
+    return out
+
+
+def _label_with_source(label: str, source: str):
+    suffix = "Excel" if source == "excel" else "Nativa"
+    return f"{label} ({suffix})"
+
+
 # Per mostrar/ordenar values
 def _s(v):
     return "(Sense valor)" if v in (None, "") else str(v)
@@ -90,9 +142,17 @@ def get_inscripcio_value(obj, code: str):
     - built-in: getattr
     - extra: obj.extra.get(code)
     """
+    extra = getattr(obj, "extra", None) or {}
+    if isinstance(extra, dict) and isinstance(code, str) and code.startswith("excel__"):
+        if code in extra:
+            return extra.get(code)
+        legacy_code = code[len("excel__"):]
+        if legacy_code in extra:
+            return extra.get(legacy_code)
     if hasattr(obj, code):
         return getattr(obj, code)
-    extra = getattr(obj, "extra", None) or {}
+    if isinstance(extra, dict) and code in extra:
+        return extra.get(code)
     return extra.get(code)
 
 def get_allowed_group_fields(competicio):
@@ -101,11 +161,20 @@ def get_allowed_group_fields(competicio):
     """
     out = []
     seen = set()
+    excel_codes = _excel_schema_codes(competicio)
+    reserved = _reserved_inscripcio_codes()
 
     # builtins sempre
     for f in BUILTIN_GROUP_FIELDS:
         if f["code"] not in seen:
-            out.append(f)
+            source = "excel" if f["code"] in excel_codes else "native"
+            out.append(
+                {
+                    **f,
+                    "source": source,
+                    "ui_label": _label_with_source(f["label"], source),
+                }
+            )
             seen.add(f["code"])
 
     schema = competicio.inscripcions_schema or {}
@@ -120,9 +189,18 @@ def get_allowed_group_fields(competicio):
             kind = c.get("kind") or "extra"
             if kind != "extra":
                 continue
+            code = _normalize_schema_extra_code(code, reserved)
             label = c.get("label") or code
             if code not in seen:
-                out.append({"code": code, "label": label, "kind": "extra"})
+                out.append(
+                    {
+                        "code": code,
+                        "label": label,
+                        "kind": "extra",
+                        "source": "excel",
+                        "ui_label": _label_with_source(label, "excel"),
+                    }
+                )
                 seen.add(code)
 
     return out
@@ -134,10 +212,19 @@ def get_available_sort_fields(competicio):
     """
     out = []
     seen = set()
+    excel_codes = _excel_schema_codes(competicio)
+    reserved = _reserved_inscripcio_codes()
 
     for f in BUILTIN_SORT_FIELDS:
         if f["code"] not in seen:
-            out.append(f)
+            source = "excel" if f["code"] in excel_codes else "native"
+            out.append(
+                {
+                    **f,
+                    "source": source,
+                    "ui_label": _label_with_source(f["label"], source),
+                }
+            )
             seen.add(f["code"])
 
     schema = competicio.inscripcions_schema or {}
@@ -152,8 +239,19 @@ def get_available_sort_fields(competicio):
             kind = c.get("kind") or "extra"
             if kind != "extra":
                 continue
+            code = _normalize_schema_extra_code(code, reserved)
+            if code in seen:
+                continue
             label = c.get("label") or code
-            out.append({"code": code, "label": label, "kind": "extra"})
+            out.append(
+                {
+                    "code": code,
+                    "label": label,
+                    "kind": "extra",
+                    "source": "excel",
+                    "ui_label": _label_with_source(label, "excel"),
+                }
+            )
             seen.add(code)
 
     return out
@@ -165,10 +263,19 @@ def get_available_excel_columns(competicio):
     """
     out = []
     seen = set()
+    excel_codes = _excel_schema_codes(competicio)
+    reserved = _reserved_inscripcio_codes()
 
     for f in BUILTIN_EXCEL_FIELDS:
         if f["code"] not in seen:
-            out.append(f)
+            source = "excel" if f["code"] in excel_codes else "native"
+            out.append(
+                {
+                    **f,
+                    "source": source,
+                    "ui_label": _label_with_source(f["label"], source),
+                }
+            )
             seen.add(f["code"])
 
     schema = competicio.inscripcions_schema or {}
@@ -183,8 +290,19 @@ def get_available_excel_columns(competicio):
             kind = c.get("kind") or "extra"
             if kind != "extra":
                 continue
+            code = _normalize_schema_extra_code(code, reserved)
+            if code in seen:
+                continue
             label = c.get("label") or code
-            out.append({"code": code, "label": label, "kind": "extra"})
+            out.append(
+                {
+                    "code": code,
+                    "label": label,
+                    "kind": "extra",
+                    "source": "excel",
+                    "ui_label": _label_with_source(label, "excel"),
+                }
+            )
             seen.add(code)
 
     return out
@@ -227,6 +345,27 @@ def sort_records_by_field(records, sort_code, descending=False):
     filled.sort(key=lambda t: t[0].id)
     filled.sort(key=lambda t: _sort_scalar(t[1]), reverse=descending)
     empty.sort(key=lambda o: o.id)
+
+    return [o for (o, _v) in filled] + empty
+
+
+def sort_records_by_field_stable(records, sort_code, descending=False):
+    """
+    Ordenacio estable (acumulativa): en empats conserva l'ordre d'entrada.
+    Els buits continuen al final, conservant ordre relatiu.
+    """
+    filled = []
+    empty = []
+
+    for o in records:
+        v = get_inscripcio_value(o, sort_code)
+        if v in (None, ""):
+            empty.append(o)
+        else:
+            filled.append((o, v))
+
+    # Python sort es estable: en valors iguals manté l'ordre previ.
+    filled.sort(key=lambda t: _sort_scalar(t[1]), reverse=descending)
 
     return [o for (o, _v) in filled] + empty
 
@@ -285,6 +424,7 @@ def shuffle_ordre_sortida(qs):
 
 
 UNDO_SESSION_KEY = "inscripcions_undo_state"
+INSCRIPCIONS_SORT_STACK_SESSION_KEY = "inscripcions_sort_stack_v1"
 
 def save_undo_state(request, qs):
     """
@@ -316,6 +456,288 @@ def restore_undo_state(request):
     del request.session[UNDO_SESSION_KEY]
     request.session.modified = True
     return len(data)
+
+
+def _normalize_sort_filters(raw_filters):
+    data = raw_filters if isinstance(raw_filters, dict) else {}
+    return {
+        "q": str(data.get("q") or "").strip(),
+        "categoria": str(data.get("categoria") or "").strip(),
+        "subcategoria": str(data.get("subcategoria") or "").strip(),
+        "entitat": str(data.get("entitat") or "").strip(),
+    }
+
+
+def _normalize_sort_group_by(raw_group_by, allowed_group_codes, fallback_group_by=None):
+    out = []
+    if isinstance(raw_group_by, list):
+        for value in raw_group_by:
+            if isinstance(value, str) and value in allowed_group_codes and value not in out:
+                out.append(value)
+    if out:
+        return out
+    fallback = fallback_group_by if isinstance(fallback_group_by, list) else []
+    return [g for g in fallback if g in allowed_group_codes]
+
+
+def build_inscripcions_sort_context_key(competicio_id, filters=None, group_by=None):
+    clean_filters = _normalize_sort_filters(filters)
+    clean_group_by = []
+    if isinstance(group_by, list):
+        for g in group_by:
+            if isinstance(g, str) and g not in clean_group_by:
+                clean_group_by.append(g)
+
+    parts = [
+        str(competicio_id),
+        clean_filters["q"],
+        clean_filters["categoria"],
+        clean_filters["subcategoria"],
+        clean_filters["entitat"],
+        "|".join(clean_group_by),
+    ]
+    return "||".join(parts)
+
+
+def compute_inscripcions_order_signature_from_ids(ids):
+    h = hashlib.sha1()
+    for ins_id in ids:
+        h.update(str(ins_id).encode("utf-8"))
+        h.update(b",")
+    return h.hexdigest()
+
+
+def compute_inscripcions_order_signature_for_queryset(qs):
+    ids = qs.values_list("id", flat=True)
+    return compute_inscripcions_order_signature_from_ids(ids)
+
+
+def _read_sort_stack_store(request):
+    raw = request.session.get(INSCRIPCIONS_SORT_STACK_SESSION_KEY)
+    if not isinstance(raw, dict):
+        return {}
+    return raw
+
+
+def _write_sort_stack_store(request, store):
+    request.session[INSCRIPCIONS_SORT_STACK_SESSION_KEY] = store
+    request.session.modified = True
+
+
+def get_inscripcions_sort_context_state(request, context_key):
+    if not context_key:
+        return {"stack": [], "order_sig": "", "base_ids": []}
+    store = _read_sort_stack_store(request)
+    state = store.get(context_key)
+    if not isinstance(state, dict):
+        return {"stack": [], "order_sig": "", "base_ids": []}
+    stack = state.get("stack")
+    if not isinstance(stack, list):
+        stack = []
+    order_sig = state.get("order_sig")
+    if not isinstance(order_sig, str):
+        order_sig = ""
+    base_ids = state.get("base_ids")
+    if not isinstance(base_ids, list):
+        base_ids = []
+    return {"stack": stack, "order_sig": order_sig, "base_ids": base_ids}
+
+
+def save_inscripcions_sort_context_state(request, context_key, stack=None, order_sig=None, base_ids=None):
+    if not context_key:
+        return
+    store = _read_sort_stack_store(request)
+    state = store.get(context_key)
+    if not isinstance(state, dict):
+        state = {}
+    if stack is not None:
+        state["stack"] = stack
+    if order_sig is not None:
+        state["order_sig"] = order_sig
+    if base_ids is not None:
+        state["base_ids"] = base_ids
+    if not state.get("stack"):
+        store.pop(context_key, None)
+    else:
+        store[context_key] = state
+    _write_sort_stack_store(request, store)
+
+
+def append_inscripcions_sort_stack_entry(request, context_key, entry, order_sig="", base_ids=None):
+    state = get_inscripcions_sort_context_state(request, context_key)
+    stack = list(state.get("stack") or [])
+    stack.append(entry)
+    # Evita creixements infinits en sessions llargues.
+    if len(stack) > 20:
+        stack = stack[-20:]
+    save_inscripcions_sort_context_state(
+        request,
+        context_key,
+        stack=stack,
+        order_sig=order_sig,
+        base_ids=base_ids if base_ids is not None else state.get("base_ids"),
+    )
+    return stack
+
+
+def pop_inscripcions_sort_stack_entry(request, context_key, order_sig=None):
+    state = get_inscripcions_sort_context_state(request, context_key)
+    stack = list(state.get("stack") or [])
+    popped = None
+    if stack:
+        popped = stack.pop()
+    save_inscripcions_sort_context_state(
+        request,
+        context_key,
+        stack=stack,
+        order_sig=order_sig if order_sig is not None else state.get("order_sig", ""),
+        base_ids=state.get("base_ids"),
+    )
+    return popped, stack
+
+
+def clear_inscripcions_sort_context_state(request, context_key):
+    save_inscripcions_sort_context_state(request, context_key, stack=[], order_sig="")
+
+
+def _build_inscripcions_filtered_qs(competicio, filters):
+    q = (filters.get("q") or "").strip()
+    categoria = (filters.get("categoria") or "").strip()
+    subcategoria = (filters.get("subcategoria") or "").strip()
+    entitat = (filters.get("entitat") or "").strip()
+
+    qs = Inscripcio.objects.filter(competicio=competicio)
+    if subcategoria:
+        qs = qs.filter(subcategoria__iexact=subcategoria)
+    if entitat:
+        qs = qs.filter(entitat__icontains=entitat)
+    if q:
+        qs = qs.filter(
+            Q(nom_i_cognoms__icontains=q) |
+            Q(document__icontains=q) |
+            Q(entitat__icontains=q)
+        )
+    if categoria:
+        qs = qs.filter(categoria__iexact=categoria)
+    return qs
+
+
+def _normalize_sort_criterion(raw, sort_codes, allowed_group_codes, fallback_group_by=None):
+    if not isinstance(raw, dict):
+        return None
+
+    c_sort_key_raw = str(raw.get("sort_key") or "").strip()
+    c_sort_key = LEGACY_SORT_KEY_MAP.get(c_sort_key_raw, c_sort_key_raw)
+    if c_sort_key not in sort_codes:
+        return None
+
+    c_sort_dir = str(raw.get("sort_dir") or "asc").strip()
+    if c_sort_dir not in ("asc", "desc", "arrow_asc", "arrow_desc"):
+        c_sort_dir = "asc"
+
+    c_scope = str(raw.get("scope") or "all").strip().lower()
+    if c_scope not in ("all", "tab", "group"):
+        c_scope = "all"
+
+    c_group_num = None
+    if c_scope == "group":
+        try:
+            c_group_num = int(raw.get("group_num"))
+        except Exception:
+            return None
+        if c_group_num <= 0:
+            return None
+
+    c_group_by = _normalize_sort_group_by(
+        raw.get("group_by"),
+        allowed_group_codes,
+        fallback_group_by=fallback_group_by or [],
+    )
+
+    return {
+        "sort_key": c_sort_key,
+        "sort_dir": c_sort_dir,
+        "scope": c_scope,
+        "group_num": c_group_num,
+        "group_by": c_group_by,
+    }
+
+
+def _apply_single_sort_criterion(ids_in_order, id_to_record, criterion, competicio):
+    seq_records = [id_to_record[i] for i in ids_in_order if i in id_to_record]
+    if not seq_records:
+        return list(ids_in_order)
+
+    c_sort_key = criterion["sort_key"]
+    c_sort_dir = criterion["sort_dir"]
+    c_scope = criterion["scope"]
+    c_group_num = criterion["group_num"]
+    c_group_by = list(criterion.get("group_by") or [])
+
+    c_desc = c_sort_dir in ("desc", "arrow_desc")
+    c_arrow = c_sort_dir in ("arrow_asc", "arrow_desc")
+
+    def _ordered_subset(subset_records):
+        ordered = sort_records_by_field_stable(subset_records, c_sort_key, descending=c_desc)
+        if not c_arrow:
+            return ordered
+        n = len(ordered)
+        pos = arrow_positions(n)
+        placed = [None] * n
+        for i, obj in enumerate(ordered):
+            placed[pos[i]] = obj
+        return placed
+
+    if c_scope == "all":
+        return [o.id for o in _ordered_subset(seq_records)]
+
+    if c_scope == "group":
+        ids_out = list(ids_in_order)
+        id_to_index = {rid: idx for idx, rid in enumerate(ids_out)}
+        target_records = [r for r in seq_records if int(r.grup or 0) == c_group_num]
+        target_idxs = [id_to_index[r.id] for r in target_records if r.id in id_to_index]
+        ordered_target = _ordered_subset(target_records)
+        for i, obj in zip(target_idxs, ordered_target):
+            ids_out[i] = obj.id
+        return ids_out
+
+    # c_scope == "tab"
+    if not c_group_by:
+        return [o.id for o in _ordered_subset(seq_records)]
+
+    grouping_sig = "|".join(c_group_by)
+    merges = (competicio.tab_merges or {}).get(grouping_sig, [])
+    merge_map = {}
+    for group_keys in merges:
+        t = tuple(group_keys)
+        for x in group_keys:
+            merge_map[x] = t
+
+    ids_out = list(ids_in_order)
+    id_to_index = {rid: idx for idx, rid in enumerate(ids_out)}
+    tab_to_records = OrderedDict()
+    for r in seq_records:
+        vals = [_norm_val(get_inscripcio_value(r, code)) for code in c_group_by]
+        simple = json.dumps(vals, ensure_ascii=False)
+        mid = merge_map.get(simple)
+        tab_key = json.dumps(list(mid), ensure_ascii=False) if mid else simple
+        tab_to_records.setdefault(tab_key, []).append(r)
+
+    for _tab_key, tab_records in tab_to_records.items():
+        tab_idxs = [id_to_index[r.id] for r in tab_records if r.id in id_to_index]
+        ordered_tab = _ordered_subset(tab_records)
+        for i, obj in zip(tab_idxs, ordered_tab):
+            ids_out[i] = obj.id
+
+    return ids_out
+
+
+def _apply_sort_stack(ids_base, id_to_record, stack, competicio):
+    final_ids = list(ids_base)
+    # Primer criteri = mes important, per tant s'aplica l'stack en ordre invers.
+    for criterion in reversed(stack):
+        final_ids = _apply_single_sort_criterion(final_ids, id_to_record, criterion, competicio)
+    return final_ids
 
 def assign_groups_balanced(objs, size, start_group_num):
     """
@@ -477,16 +899,16 @@ class InscripcionsImportExcelView(FormView):
             parts = []
             for w in warnings:
                 code = str(w.get("code") or "").strip()
-                suggested = str(w.get("suggested_code") or "").strip()
-                if code and suggested:
-                    parts.append(f"{code} -> {suggested}")
+                remapped = str(w.get("remapped_code") or w.get("suggested_code") or "").strip()
+                if code and remapped:
+                    parts.append(f"{code} -> {remapped}")
                 elif code:
                     parts.append(code)
             if parts:
                 messages.warning(
                     self.request,
-                    "Warning: s'han detectat columnes d'Excel que poden trepitjar camps preestablerts "
-                    f"({', '.join(parts)}). Renombra-les abans de tornar a importar.",
+                    "S'han detectat columnes d'Excel amb noms reservats i s'han remapejat automaticament "
+                    f"({', '.join(parts)}).",
                 )
         return super().form_valid(form)
 
@@ -580,11 +1002,25 @@ class InscripcionsListView(ListView):
                 return " · ".join("(Sense valor)" if v in (None, "", "__NULL__") else str(v) for v in vals)
             except Exception:
                 return simple_key
-
         # 0z) UNDO
         if request.GET.get("undo") == "1":
             restored = restore_undo_state(request)
+            active_group_by = get_active_group_codes()
+            active_filters = {
+                "q": request.GET.get("q") or "",
+                "categoria": request.GET.get("categoria") or "",
+                "subcategoria": request.GET.get("subcategoria") or "",
+                "entitat": request.GET.get("entitat") or "",
+            }
+            undo_context_key = build_inscripcions_sort_context_key(
+                self.competicio.id,
+                filters=active_filters,
+                group_by=active_group_by,
+            )
             if restored:
+                filtered_qs = self.get_queryset_base_filtrada().order_by("ordre_sortida", "id")
+                order_sig = compute_inscripcions_order_signature_for_queryset(filtered_qs)
+                pop_inscripcions_sort_stack_entry(request, undo_context_key, order_sig=order_sig)
                 messages.success(request, f"S'ha desfet l'última acció ({restored} inscripcions).")
             else:
                 messages.info(request, "No hi ha cap acció per desfer.")
@@ -1339,7 +1775,7 @@ class InscripcionsListView(ListView):
 
         excel_cols = get_available_excel_columns(self.competicio)
         excel_codes = {c["code"] for c in excel_cols}
-        ctx["allowed_excel_columns"] = [(c["code"], c["label"]) for c in excel_cols]
+        ctx["allowed_excel_columns"] = [(c["code"], c.get("ui_label") or c["label"]) for c in excel_cols]
 
         sel_cols_raw = self.request.GET.getlist("excel_cols")
         sel_cols = []
@@ -1424,6 +1860,351 @@ class InscripcioDeleteView(DeleteView):
         if nxt:
             return nxt
         return reverse("inscripcions_list", kwargs={"pk": self.kwargs["pk"]})
+
+
+@require_POST
+@csrf_protect
+def inscripcions_sort_apply(request, pk):
+    """
+    Ordenacio per columna amb ambits:
+      - all   : totes les inscripcions filtrades
+      - tab   : dins de cada pestanya (group_by/tab_merges actius)
+      - group : nomes un grup numeric (Inscripcio.grup)
+
+    IMPORTANT:
+      - Empats mantenen l'ordre previ (acumulacio real).
+      - S'aplica sobre el queryset filtrat actual.
+    """
+    competicio = get_object_or_404(Competicio, pk=pk)
+
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        return HttpResponseBadRequest("JSON invalid")
+
+    # --- camp i mode ---
+    sort_fields = get_available_sort_fields(competicio)
+    sort_codes = {f["code"] for f in sort_fields}
+
+    raw_sort_key = (payload.get("sort_key") or "").strip()
+    sort_key = LEGACY_SORT_KEY_MAP.get(raw_sort_key, raw_sort_key)
+    if sort_key not in sort_codes:
+        return HttpResponseBadRequest("sort_key invalid")
+
+    sort_dir = (payload.get("sort_dir") or "asc").strip()
+    if sort_dir not in ("asc", "desc", "arrow_asc", "arrow_desc"):
+        return HttpResponseBadRequest("sort_dir invalid")
+
+    scope = (payload.get("scope") or "all").strip().lower()
+    if scope not in ("all", "tab", "group"):
+        return HttpResponseBadRequest("scope invalid")
+
+    allowed_group_fields = get_allowed_group_fields(competicio)
+    allowed_group_codes = {f["code"] for f in allowed_group_fields}
+    selected_group_codes_context = _normalize_sort_group_by(
+        payload.get("group_by"),
+        allowed_group_codes,
+        fallback_group_by=competicio.group_by_default or [],
+    )
+
+    group_num = payload.get("group_num")
+    if scope == "group":
+        try:
+            group_num = int(group_num)
+        except Exception:
+            return HttpResponseBadRequest("group_num invalid")
+        if group_num <= 0:
+            return HttpResponseBadRequest("group_num invalid")
+
+    # --- mateix filtre base que la llista ---
+    filters = _normalize_sort_filters(payload.get("filters"))
+    context_key = build_inscripcions_sort_context_key(
+        competicio.id,
+        filters=filters,
+        group_by=selected_group_codes_context,
+    )
+    qs = _build_inscripcions_filtered_qs(competicio, filters)
+
+    # Undo coherent amb la resta d'accions de la pantalla.
+    save_undo_state(request, qs)
+
+    records = list(qs.order_by("ordre_sortida", "id"))
+    if not records:
+        return JsonResponse({"ok": True, "updated": 0, "total": 0, "scope": scope, "stack_count": 0})
+
+    id_to_record = {r.id: r for r in records}
+    current_ids = [r.id for r in records]
+    state = get_inscripcions_sort_context_state(request, context_key)
+    stack_existing_raw = state.get("stack") if isinstance(state.get("stack"), list) else []
+    saved_order_sig = str(state.get("order_sig") or "")
+    current_order_sig = compute_inscripcions_order_signature_from_ids(current_ids)
+
+    stack_existing = []
+    for it in stack_existing_raw:
+        normalized = _normalize_sort_criterion(
+            it,
+            sort_codes=sort_codes,
+            allowed_group_codes=allowed_group_codes,
+            fallback_group_by=selected_group_codes_context,
+        )
+        if normalized is not None:
+            stack_existing.append(normalized)
+
+    # Si hi ha divergencia d'ordre (canvis externs), reinicia stack.
+    if stack_existing and saved_order_sig and saved_order_sig != current_order_sig:
+        stack_existing = []
+
+    new_entry = _normalize_sort_criterion(
+        {
+            "sort_key": sort_key,
+            "sort_dir": sort_dir,
+            "scope": scope,
+            "group_num": group_num if scope == "group" else None,
+            "group_by": selected_group_codes_context,
+        },
+        sort_codes=sort_codes,
+        allowed_group_codes=allowed_group_codes,
+        fallback_group_by=selected_group_codes_context,
+    )
+    if new_entry is None:
+        return HttpResponseBadRequest("criteri invalid")
+
+    stack_full = stack_existing + [new_entry]
+    if len(stack_full) > 20:
+        stack_full = stack_full[-20:]
+
+    base_ids_state = state.get("base_ids") if isinstance(state.get("base_ids"), list) else []
+    valid_base = (
+        isinstance(base_ids_state, list)
+        and len(base_ids_state) == len(current_ids)
+        and set(base_ids_state) == set(current_ids)
+    )
+    if not valid_base or not stack_existing:
+        base_ids = list(current_ids)
+    else:
+        base_ids = list(base_ids_state)
+
+    final_ids = _apply_sort_stack(base_ids, id_to_record, stack_full, competicio)
+
+    updates = []
+    for idx, ins_id in enumerate(final_ids, start=1):
+        obj = id_to_record.get(ins_id)
+        if not obj:
+            continue
+        if obj.ordre_sortida != idx:
+            obj.ordre_sortida = idx
+            updates.append(obj)
+
+    if updates:
+        with transaction.atomic():
+            Inscripcio.objects.bulk_update(updates, ["ordre_sortida"], batch_size=500)
+
+    order_sig = compute_inscripcions_order_signature_from_ids(final_ids)
+    save_inscripcions_sort_context_state(
+        request,
+        context_key,
+        stack=stack_full,
+        order_sig=order_sig,
+        base_ids=base_ids,
+    )
+
+    return JsonResponse(
+        {
+            "ok": True,
+            "scope": scope,
+            "sort_key": sort_key,
+            "sort_dir": sort_dir,
+            "updated": len(updates),
+            "total": len(records),
+            "stack_count": len(stack_full),
+        }
+    )
+
+
+@require_POST
+@csrf_protect
+def inscripcions_sort_remove(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        payload = {}
+
+    try:
+        priority = int(payload.get("priority"))
+    except Exception:
+        return HttpResponseBadRequest("priority invalid")
+    if priority <= 0:
+        return HttpResponseBadRequest("priority invalid")
+
+    sort_fields = get_available_sort_fields(competicio)
+    sort_codes = {f["code"] for f in sort_fields}
+    allowed_group_fields = get_allowed_group_fields(competicio)
+    allowed_group_codes = {f["code"] for f in allowed_group_fields}
+
+    selected_group_codes_context = _normalize_sort_group_by(
+        payload.get("group_by"),
+        allowed_group_codes,
+        fallback_group_by=competicio.group_by_default or [],
+    )
+    filters = _normalize_sort_filters(payload.get("filters"))
+    context_key = build_inscripcions_sort_context_key(
+        competicio.id,
+        filters=filters,
+        group_by=selected_group_codes_context,
+    )
+
+    qs = _build_inscripcions_filtered_qs(competicio, filters)
+    records = list(qs.order_by("ordre_sortida", "id"))
+    if not records:
+        clear_inscripcions_sort_context_state(request, context_key)
+        return JsonResponse({"ok": True, "removed": False, "stack_count": 0})
+
+    id_to_record = {r.id: r for r in records}
+    current_ids = [r.id for r in records]
+
+    state = get_inscripcions_sort_context_state(request, context_key)
+    stack_raw = state.get("stack") if isinstance(state.get("stack"), list) else []
+    stack = []
+    for it in stack_raw:
+        norm = _normalize_sort_criterion(
+            it,
+            sort_codes=sort_codes,
+            allowed_group_codes=allowed_group_codes,
+            fallback_group_by=selected_group_codes_context,
+        )
+        if norm is not None:
+            stack.append(norm)
+
+    if not stack:
+        clear_inscripcions_sort_context_state(request, context_key)
+        return JsonResponse({"ok": True, "removed": False, "stack_count": 0})
+
+    if priority > len(stack):
+        return HttpResponseBadRequest("priority out of range")
+
+    save_undo_state(request, qs)
+
+    removed_idx = priority - 1
+    removed = stack.pop(removed_idx)
+
+    base_ids_state = state.get("base_ids") if isinstance(state.get("base_ids"), list) else []
+    valid_base = (
+        isinstance(base_ids_state, list)
+        and len(base_ids_state) == len(current_ids)
+        and set(base_ids_state) == set(current_ids)
+    )
+    base_ids = list(base_ids_state) if valid_base else list(current_ids)
+
+    if stack:
+        final_ids = _apply_sort_stack(base_ids, id_to_record, stack, competicio)
+    else:
+        final_ids = list(base_ids)
+
+    updates = []
+    for idx, ins_id in enumerate(final_ids, start=1):
+        obj = id_to_record.get(ins_id)
+        if not obj:
+            continue
+        if obj.ordre_sortida != idx:
+            obj.ordre_sortida = idx
+            updates.append(obj)
+
+    if updates:
+        with transaction.atomic():
+            Inscripcio.objects.bulk_update(updates, ["ordre_sortida"], batch_size=500)
+
+    if stack:
+        order_sig = compute_inscripcions_order_signature_from_ids(final_ids)
+        save_inscripcions_sort_context_state(
+            request,
+            context_key,
+            stack=stack,
+            order_sig=order_sig,
+            base_ids=base_ids,
+        )
+    else:
+        clear_inscripcions_sort_context_state(request, context_key)
+
+    return JsonResponse(
+        {
+            "ok": True,
+            "removed": True,
+            "removed_priority": priority,
+            "removed_sort_key": removed.get("sort_key"),
+            "stack_count": len(stack),
+            "updated": len(updates),
+        }
+    )
+
+
+@require_POST
+@csrf_protect
+def inscripcions_sort_undo(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        payload = {}
+
+    allowed_group_fields = get_allowed_group_fields(competicio)
+    allowed_group_codes = {f["code"] for f in allowed_group_fields}
+    selected_group_codes_context = _normalize_sort_group_by(
+        payload.get("group_by"),
+        allowed_group_codes,
+        fallback_group_by=competicio.group_by_default or [],
+    )
+    filters = _normalize_sort_filters(payload.get("filters"))
+    context_key = build_inscripcions_sort_context_key(
+        competicio.id,
+        filters=filters,
+        group_by=selected_group_codes_context,
+    )
+
+    q = filters["q"]
+    categoria = filters["categoria"]
+    subcategoria = filters["subcategoria"]
+    entitat = filters["entitat"]
+
+    qs = Inscripcio.objects.filter(competicio=competicio)
+    if subcategoria:
+        qs = qs.filter(subcategoria__iexact=subcategoria)
+    if entitat:
+        qs = qs.filter(entitat__icontains=entitat)
+    if q:
+        qs = qs.filter(
+            Q(nom_i_cognoms__icontains=q) |
+            Q(document__icontains=q) |
+            Q(entitat__icontains=q)
+        )
+    if categoria:
+        qs = qs.filter(categoria__iexact=categoria)
+
+    restored = restore_undo_state(request)
+    if not restored:
+        state = get_inscripcions_sort_context_state(request, context_key)
+        return JsonResponse(
+            {
+                "ok": True,
+                "restored": 0,
+                "stack_count": len(state.get("stack") or []),
+            }
+        )
+
+    refreshed_qs = qs.order_by("ordre_sortida", "id")
+    order_sig = compute_inscripcions_order_signature_for_queryset(refreshed_qs)
+    popped, stack = pop_inscripcions_sort_stack_entry(request, context_key, order_sig=order_sig)
+
+    return JsonResponse(
+        {
+            "ok": True,
+            "restored": restored,
+            "popped": bool(popped),
+            "stack_count": len(stack),
+        }
+    )
 
 
 @require_POST
@@ -1576,4 +2357,3 @@ def inscripcions_merge_tabs(request, pk):
     c.save(update_fields=["tab_merges"])
 
     return JsonResponse({"ok": True, "merged": final})
-

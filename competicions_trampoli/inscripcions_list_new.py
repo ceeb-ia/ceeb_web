@@ -9,7 +9,14 @@ from django.views.decorators.http import require_POST
 
 from .models import Competicio, Equip, Inscripcio
 from .models_trampoli import CompeticioAparell, InscripcioAparellExclusio
-from .views import InscripcionsListView, get_allowed_group_fields
+from .views import (
+    InscripcionsListView,
+    get_allowed_group_fields,
+    build_inscripcions_sort_context_key,
+    get_inscripcions_sort_context_state,
+    clear_inscripcions_sort_context_state,
+    compute_inscripcions_order_signature_for_queryset,
+)
 
 
 BUILTIN_TABLE_FIELDS = [
@@ -26,6 +33,36 @@ BUILTIN_TABLE_FIELDS = [
     {"code": "ordre_sortida", "label": "Ordre", "kind": "builtin"},
 ]
 
+SYSTEM_NATIVE_TABLE_CODES = {"grup", "equip", "ordre_sortida", "__aparells__", "__actions__"}
+
+
+def _reserved_inscripcio_codes():
+    out = set()
+    for f in Inscripcio._meta.concrete_fields:
+        name = str(getattr(f, "name", "") or "").strip()
+        attname = str(getattr(f, "attname", "") or "").strip()
+        if name:
+            out.add(name)
+        if attname:
+            out.add(attname)
+    return out
+
+
+def _normalize_schema_extra_code(code: str, reserved_codes):
+    code = (code or "").strip()
+    if not code:
+        return code
+    if code.startswith("excel__"):
+        return code
+    if code in reserved_codes:
+        return f"excel__{code}"
+    return code
+
+
+def _label_with_source(label: str, source: str):
+    suffix = "Excel" if source == "excel" else "Nativa"
+    return f"{label} ({suffix})"
+
 
 def get_available_table_columns(competicio):
     """
@@ -33,31 +70,68 @@ def get_available_table_columns(competicio):
     """
     out = []
     seen = set()
-
-    for field in BUILTIN_TABLE_FIELDS:
-        if field["code"] not in seen:
-            out.append(field)
-            seen.add(field["code"])
+    reserved = _reserved_inscripcio_codes()
 
     schema = competicio.inscripcions_schema or {}
     columns = schema.get("columns") or []
+    excel_codes = set()
     if isinstance(columns, list):
         for col in columns:
             if not isinstance(col, dict):
                 continue
             code = col.get("code")
-            if not code or code in seen:
+            if not code:
                 continue
+            kind = col.get("kind") or "extra"
+            if kind == "extra":
+                code = _normalize_schema_extra_code(code, reserved)
+            excel_codes.add(code)
+
+    for field in BUILTIN_TABLE_FIELDS:
+        if field["code"] not in seen:
+            source = "native" if field["code"] in SYSTEM_NATIVE_TABLE_CODES else ("excel" if field["code"] in excel_codes else "native")
+            out.append(
+                {
+                    **field,
+                    "source": source,
+                    "ui_label": _label_with_source(field["label"], source),
+                }
+            )
+            seen.add(field["code"])
+
+    if isinstance(columns, list):
+        for col in columns:
+            if not isinstance(col, dict):
+                continue
+            code = col.get("code")
+            if not code:
+                continue
+            kind = col.get("kind") or "extra"
+            if kind == "extra":
+                code = _normalize_schema_extra_code(code, reserved)
+            if code in seen:
+                continue
+            label = col.get("label") or code
             out.append(
                 {
                     "code": code,
-                    "label": col.get("label") or code,
-                    "kind": col.get("kind") or "extra",
+                    "label": label,
+                    "kind": kind,
+                    "source": "excel",
+                    "ui_label": _label_with_source(label, "excel"),
                 }
             )
             seen.add(code)
 
-    out.append({"code": "__actions__", "label": "Accions", "kind": "ui"})
+    out.append(
+        {
+            "code": "__actions__",
+            "label": "Accions",
+            "kind": "ui",
+            "source": "native",
+            "ui_label": _label_with_source("Accions", "native"),
+        }
+    )
     return out
 
 
@@ -101,6 +175,11 @@ class InscripcionsListNewView(InscripcionsListView):
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
+        filtered_qs = self.get_queryset_base_filtrada()
+        ctx["inscrits_filtered_count"] = filtered_qs.count()
+        ctx["inscrits_total_count"] = Inscripcio.objects.filter(
+            competicio=self.competicio
+        ).count()
 
         available_table_columns = get_available_table_columns(self.competicio)
         selected_table_columns = get_selected_table_columns(
@@ -110,6 +189,85 @@ class InscripcionsListNewView(InscripcionsListView):
         ctx["available_table_columns"] = available_table_columns
         ctx["selected_table_columns"] = selected_table_columns
         ctx["table_colspan"] = len(selected_table_columns) if selected_table_columns else 1
+        sort_options = ctx.get("sort_field_options") or []
+        ctx["sortable_table_column_codes"] = [
+            s.get("code")
+            for s in sort_options
+            if isinstance(s, dict) and s.get("code")
+        ]
+        sortable_codes = set(ctx["sortable_table_column_codes"])
+
+        active_group_by = list(ctx.get("selected_group_fields") or [])
+        active_filters = {
+            "q": self.request.GET.get("q") or "",
+            "categoria": self.request.GET.get("categoria") or "",
+            "subcategoria": self.request.GET.get("subcategoria") or "",
+            "entitat": self.request.GET.get("entitat") or "",
+        }
+        sort_context_key = build_inscripcions_sort_context_key(
+            self.competicio.id,
+            filters=active_filters,
+            group_by=active_group_by,
+        )
+        sort_state = get_inscripcions_sort_context_state(self.request, sort_context_key)
+        sort_stack = [
+            entry
+            for entry in (sort_state.get("stack") or [])
+            if isinstance(entry, dict) and entry.get("sort_key") in sortable_codes
+        ]
+
+        current_order_sig = compute_inscripcions_order_signature_for_queryset(
+            filtered_qs.order_by("ordre_sortida", "id")
+        )
+        saved_order_sig = sort_state.get("order_sig") or ""
+        if sort_stack and saved_order_sig and saved_order_sig != current_order_sig:
+            clear_inscripcions_sort_context_state(self.request, sort_context_key)
+            sort_stack = []
+            saved_order_sig = ""
+
+        dir_to_symbol = {
+            "asc": "↑",
+            "desc": "↓",
+            "arrow_asc": "↕↑",
+            "arrow_desc": "↕↓",
+        }
+        dir_to_label = {
+            "asc": "Ascendent",
+            "desc": "Descendent",
+            "arrow_asc": "Fletxa ascendent",
+            "arrow_desc": "Fletxa descendent",
+        }
+        indicator_by_code = {}
+        for priority, entry in enumerate(sort_stack, start=1):
+            sort_code = str(entry.get("sort_key") or "")
+            if not sort_code or sort_code in indicator_by_code:
+                continue
+            sort_dir = str(entry.get("sort_dir") or "asc")
+            scope = str(entry.get("scope") or "all")
+            scope_short = "T"
+            scope_label = "Totes les inscripcions"
+            if scope == "tab":
+                scope_short = "P"
+                scope_label = "Dins de cada pestanya"
+            elif scope == "group":
+                group_num = entry.get("group_num")
+                scope_short = f"G{group_num}" if group_num else "G"
+                scope_label = f"Nomes grup {group_num}" if group_num else "Nomes un grup numeric"
+
+            symbol = dir_to_symbol.get(sort_dir, "↑")
+            indicator_by_code[sort_code] = {
+                "priority": priority,
+                "remove_priority": priority,
+                "symbol": symbol,
+                "scope_short": scope_short,
+                "title": f"#{priority} - {dir_to_label.get(sort_dir, sort_dir)} - {scope_label}",
+            }
+
+        ctx["column_sort_context_key"] = sort_context_key
+        ctx["column_sort_stack"] = sort_stack
+        ctx["column_sort_has_stack"] = bool(sort_stack)
+        ctx["column_sort_stack_count"] = len(sort_stack)
+        ctx["column_sort_indicator_by_code"] = indicator_by_code
 
         view_cfg = self.competicio.inscripcions_view or {}
         group_names = view_cfg.get("group_names") or {}

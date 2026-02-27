@@ -24,8 +24,7 @@
                 value="{{ f.code }}"
                 {% if f.code in team_partition_default_fields %}checked{% endif %}
               >
-              <span>{{ f.label }}</span>
-              {% if f.kind == "extra" %}<span class="badge bg-light text-dark border">extra</span>{% endif %}
+              <span>{{ f.ui_label|default:f.label }}</span>
             </label>
           {% endfor %}
         </div>
