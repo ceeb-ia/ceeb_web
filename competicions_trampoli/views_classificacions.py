@@ -5,17 +5,80 @@ from django.views.generic import TemplateView
 from django.http import JsonResponse, HttpResponseBadRequest
 from django.views.decorators.http import require_POST
 from django.db import transaction
+from django.urls import reverse
 from .models_scoring import ScoreEntry, ScoringSchema  
 from .models import Competicio, Inscripcio, Equip
 from .models_trampoli import CompeticioAparell, Aparell
 from .models_classificacions import ClassificacioConfig
+from .models_judging import PublicLiveToken
 from .services.services_classificacions_2 import compute_classificacio, DEFAULT_SCHEMA, get_display_columns
 from django.db import models
 # views_classificacions.py
 from django.utils.dateparse import parse_datetime
 from django.utils.timezone import is_aware
 from django.utils import timezone
-from django.shortcuts import get_object_or_404
+
+
+def _active_cfg_values(competicio):
+    cfgs = (
+        ClassificacioConfig.objects
+        .filter(competicio=competicio, activa=True)
+        .order_by("ordre", "id")
+    )
+    return list(cfgs.values("id", "nom", "tipus", "ordre"))
+
+
+def _live_data_payload(competicio, since_raw=None):
+    last_note = (
+        ScoreEntry.objects
+        .filter(competicio=competicio)
+        .order_by("-updated_at")
+        .values_list("updated_at", flat=True)
+        .first()
+    )
+    last_cfg = (
+        ClassificacioConfig.objects
+        .filter(competicio=competicio)
+        .order_by("-updated_at")
+        .values_list("updated_at", flat=True)
+        .first()
+    )
+    stamp = max([d for d in [last_note, last_cfg] if d is not None], default=timezone.now())
+
+    if since_raw:
+        since_dt = parse_datetime(since_raw)
+        if since_dt and not is_aware(since_dt):
+            since_dt = timezone.make_aware(since_dt, timezone.get_current_timezone())
+        if since_dt and stamp <= since_dt:
+            return {"ok": True, "changed": False, "stamp": stamp.isoformat()}
+
+    cfgs = (
+        ClassificacioConfig.objects
+        .filter(competicio=competicio, activa=True)
+        .order_by("ordre", "id")
+    )
+
+    payload_cfgs = []
+    for cfg in cfgs:
+        data = compute_classificacio(competicio, cfg)
+        parts = []
+        for k in sorted(data.keys()):
+            parts.append({"particio": k, "rows": data[k]})
+        payload_cfgs.append({
+            "id": cfg.id,
+            "nom": cfg.nom,
+            "tipus": cfg.tipus,
+            "columns": get_display_columns(cfg.schema or {}),
+            "parts": parts,
+        })
+
+    return {
+        "ok": True,
+        "changed": True,
+        "stamp": stamp.isoformat(),
+        "competicio": {"id": competicio.id, "nom": competicio.nom},
+        "cfgs": payload_cfgs,
+    }
 
 
 class ClassificacionsLive(TemplateView):
@@ -140,6 +203,145 @@ def classificacions_live_data(request, pk):
     payload_cfgs = []
     for cfg in cfgs:
         data = compute_classificacio(competicio, cfg)  # {particio_key: [rows]}
+        parts = []
+        for k in sorted(data.keys()):
+            parts.append({"particio": k, "rows": data[k]})
+        payload_cfgs.append({
+            "id": cfg.id,
+            "nom": cfg.nom,
+            "tipus": cfg.tipus,
+            "columns": get_display_columns(cfg.schema or {}),
+            "parts": parts,
+        })
+
+    return JsonResponse({
+        "ok": True,
+        "changed": True,
+        "stamp": stamp.isoformat(),
+        "competicio": {"id": competicio.id, "nom": competicio.nom},
+        "cfgs": payload_cfgs,
+    })
+
+
+class PublicClassificacionsLive(TemplateView):
+    template_name = "competicio/classificacions_live.html"
+
+    def dispatch(self, request, *args, **kwargs):
+        self.token_obj = get_object_or_404(PublicLiveToken, pk=kwargs["token"])
+        if not self.token_obj.is_valid():
+            return JsonResponse({"ok": False, "error": "Token invalid o revocat"}, status=403)
+        self.token_obj.touch()
+        self.competicio = self.token_obj.competicio
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        cfgs = (
+            ClassificacioConfig.objects
+            .filter(competicio=self.competicio, activa=True)
+            .order_by("ordre", "id")
+        )
+        ctx.update({
+            "competicio": self.competicio,
+            "cfgs": list(cfgs.values("id", "nom", "tipus", "ordre")),
+            "is_public": True,
+            "hide_base_chrome": True,
+            "poll_ms": 4000,
+            "data_url": self.request.build_absolute_uri(
+                reverse("public_live_classificacions_data", kwargs={"token": self.token_obj.id})
+            ),
+        })
+        return ctx
+
+
+class PublicClassificacionsLoopLive(TemplateView):
+    template_name = "competicio/classificacions_loop_live.html"
+
+    @staticmethod
+    def _parse_int_param(raw, default: int, min_value: int, max_value: int) -> int:
+        try:
+            value = int(raw)
+        except Exception:
+            value = default
+        return max(min_value, min(max_value, value))
+
+    def dispatch(self, request, *args, **kwargs):
+        self.token_obj = get_object_or_404(PublicLiveToken, pk=kwargs["token"])
+        if not self.token_obj.is_valid():
+            return JsonResponse({"ok": False, "error": "Token invalid o revocat"}, status=403)
+        self.token_obj.touch()
+        self.competicio = self.token_obj.competicio
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        cfgs = (
+            ClassificacioConfig.objects
+            .filter(competicio=self.competicio, activa=True)
+            .order_by("ordre", "id")
+        )
+        poll_ms = self._parse_int_param(self.request.GET.get("poll_ms"), 4000, 1000, 60000)
+        slide_ms = self._parse_int_param(self.request.GET.get("slide_ms"), 8000, 2000, 120000)
+        rows_per_page = self._parse_int_param(self.request.GET.get("rows"), 12, 3, 60)
+        transition = (self.request.GET.get("transition") or "fade").strip().lower()
+        if transition not in {"fade", "none"}:
+            transition = "fade"
+
+        ctx.update({
+            "competicio": self.competicio,
+            "cfgs": list(cfgs.values("id", "nom", "tipus", "ordre")),
+            "is_public": True,
+            "hide_base_chrome": True,
+            "poll_ms": poll_ms,
+            "slide_ms": slide_ms,
+            "rows_per_page": rows_per_page,
+            "transition": transition,
+            "data_url": self.request.build_absolute_uri(
+                reverse("public_live_classificacions_data", kwargs={"token": self.token_obj.id})
+            ),
+        })
+        return ctx
+
+
+def public_classificacions_live_data(request, token):
+    token_obj = get_object_or_404(PublicLiveToken, pk=token)
+    if not token_obj.is_valid():
+        return JsonResponse({"ok": False, "error": "Token invalid o revocat"}, status=403)
+
+    competicio = token_obj.competicio
+    last_note = (
+        ScoreEntry.objects
+            .filter(competicio=competicio)
+            .order_by("-updated_at")
+            .values_list("updated_at", flat=True)
+            .first()
+        )
+    last_cfg = (
+        ClassificacioConfig.objects
+        .filter(competicio=competicio)
+        .order_by("-updated_at")
+        .values_list("updated_at", flat=True)
+        .first()
+    )
+    stamp = max([d for d in [last_note, last_cfg] if d is not None], default=timezone.now())
+
+    since_raw = request.GET.get("since")
+    if since_raw:
+        since_dt = parse_datetime(since_raw)
+        if since_dt and not is_aware(since_dt):
+            since_dt = timezone.make_aware(since_dt, timezone.get_current_timezone())
+        if since_dt and stamp <= since_dt:
+            return JsonResponse({"ok": True, "changed": False, "stamp": stamp.isoformat()})
+
+    cfgs = (
+        ClassificacioConfig.objects
+        .filter(competicio=competicio, activa=True)
+        .order_by("ordre", "id")
+    )
+
+    payload_cfgs = []
+    for cfg in cfgs:
+        data = compute_classificacio(competicio, cfg)
         parts = []
         for k in sorted(data.keys()):
             parts.append({"particio": k, "rows": data[k]})

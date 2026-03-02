@@ -100,6 +100,10 @@ STATICFILES_DIRS = [BASE_DIR / 'static']  # Ruta al directori 'static'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+LOGIN_URL = "/accounts/login/"
+LOGIN_REDIRECT_URL = "/"
+LOGOUT_REDIRECT_URL = "/accounts/login/"
+
 
 DATA_UPLOAD_MAX_NUMBER_FILES = 500
 DATA_UPLOAD_MAX_NUMBER_FILES = int(os.getenv("DATA_UPLOAD_MAX_NUMBER_FILES", str(DATA_UPLOAD_MAX_NUMBER_FILES)))

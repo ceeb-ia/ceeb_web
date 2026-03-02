@@ -7,6 +7,7 @@ from django.conf.urls.static import static
 from ceeb_web import views
 
 urlpatterns = [
+    path("accounts/", include("django.contrib.auth.urls")),
     path('about/', views.about_view, name='about'),
     path('admin/', admin.site.urls),
     path('marbella/', views.marbella_view, name='marbella'),

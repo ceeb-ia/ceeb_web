@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 
 class Competicio(models.Model):
@@ -24,6 +25,60 @@ class Competicio(models.Model):
 
     def __str__(self):
         return self.nom
+
+
+class CompeticioMembership(models.Model):
+    class Role(models.TextChoices):
+        OWNER = "owner", "Owner"
+        EDITOR = "editor", "Editor"
+        JUDGE_ADMIN = "judge_admin", "Judge Admin"
+        SCORING = "scoring", "Scoring"
+        ROTACIONS = "rotacions", "Rotacions"
+        CLASSIFICACIONS = "classificacions", "Classificacions"
+        READONLY = "readonly", "Readonly"
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="competicio_memberships",
+    )
+    competicio = models.ForeignKey(
+        Competicio,
+        on_delete=models.CASCADE,
+        related_name="memberships",
+    )
+    role = models.CharField(
+        max_length=30,
+        choices=Role.choices,
+        default=Role.READONLY,
+    )
+    is_active = models.BooleanField(default=True)
+    granted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="granted_competicio_memberships",
+    )
+    notes = models.CharField(max_length=255, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["competicio_id", "user_id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "competicio"],
+                name="uniq_competicio_membership_user_competicio",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["competicio", "role", "is_active"]),
+            models.Index(fields=["user", "is_active"]),
+        ]
+
+    def __str__(self):
+        return f"{self.user} / {self.competicio} / {self.role}"
 
 
 class Equip(models.Model):

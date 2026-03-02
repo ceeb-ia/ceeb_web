@@ -133,18 +133,18 @@
 {{ slide_ms|default:8000|json_script:"loop-slide-ms" }}
 {{ rows_per_page|default:12|json_script:"loop-rows-per-page" }}
 {{ transition|default:"fade"|json_script:"loop-transition" }}
-{{ competicio.id|json_script:"loop-comp-id" }}
+{{ data_url|default:""|json_script:"loop-data-url" }}
 {{ cfgs|length|json_script:"loop-cfg-count" }}
 
 <script>
-  const compId = JSON.parse(document.getElementById("loop-comp-id").textContent);
   const POLL_MS = JSON.parse(document.getElementById("loop-poll-ms").textContent);
   const SLIDE_MS = JSON.parse(document.getElementById("loop-slide-ms").textContent);
   const ROWS_PER_PAGE = JSON.parse(document.getElementById("loop-rows-per-page").textContent);
   const TRANSITION = JSON.parse(document.getElementById("loop-transition").textContent || '"fade"');
   const CFG_COUNT_INITIAL = JSON.parse(document.getElementById("loop-cfg-count").textContent || "0");
 
-  const DATA_URL = "{% url 'classificacions_live_data' 0 %}".replace("/0/", `/${compId}/`);
+  const DATA_URL = JSON.parse(document.getElementById("loop-data-url").textContent || '""')
+    || "{% url 'classificacions_live_data' competicio.id %}";
 
   const els = {
     status: document.getElementById("liveStatus"),

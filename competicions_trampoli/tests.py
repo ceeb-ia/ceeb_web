@@ -1,12 +1,17 @@
 import json
 from datetime import timedelta
 
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
+from ceeb_web.auth_groups import GLOBAL_AUTH_GROUPS
+
+from .access import user_has_competicio_capability
 from .models import Competicio, Inscripcio
 from .models_judging import JudgeDeviceToken, PublicLiveToken
 from .models_classificacions import ClassificacioConfig
@@ -16,6 +21,7 @@ from .models_trampoli import (
     CompeticioAparell,
     InscripcioAparellExclusio,
 )
+from .models import CompeticioMembership
 from .services.services_classificacions_2 import compute_classificacio
 
 
@@ -605,14 +611,13 @@ class PublicLiveTokenViewsTests(_BaseTrampoliDataMixin, TestCase):
             is_active=True,
         )
 
-    def test_public_live_portal_redirects_to_classificacions_live_public_mode(self):
+    def test_public_live_portal_renders_public_live_page(self):
         url = reverse("public_live_portal", kwargs={"token": self.token.id})
         res = self.client.get(url)
-        self.assertEqual(res.status_code, 302)
-        self.assertEqual(
-            res["Location"],
-            f"{reverse('classificacions_live', kwargs={'pk': self.comp.id})}?public=1",
-        )
+        self.assertEqual(res.status_code, 200)
+        body = res.content.decode("utf-8")
+        self.assertIn("Classificacions", body)
+        self.assertIn(reverse("public_live_classificacions_data", kwargs={"token": self.token.id}), body)
 
     def test_public_live_portal_rejects_revoked_token(self):
         self.token.is_active = False
@@ -628,3 +633,85 @@ class PublicLiveTokenViewsTests(_BaseTrampoliDataMixin, TestCase):
         res = self.client.get(url)
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res["Content-Type"], "image/png")
+
+    def test_public_live_data_requires_valid_token(self):
+        url = reverse("public_live_classificacions_data", kwargs={"token": self.token.id})
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(res.json().get("ok"))
+
+
+class CompetitionAccessControlTests(_BaseTrampoliDataMixin, TestCase):
+    def setUp(self):
+        self.comp = self._create_competicio("Comp Accessos")
+        self.app = self._create_aparell("TRAMP_ACCESS", "Tramp Access")
+        self.comp_app = self._create_comp_aparell(self.comp, self.app, ordre=1, actiu=True)
+
+        User = get_user_model()
+        self.judge_admin_user = User.objects.create_user(
+            username="judge_admin_user",
+            password="testpass123",
+            email="judge-admin@example.com",
+        )
+        self.readonly_user = User.objects.create_user(
+            username="readonly_user",
+            password="testpass123",
+            email="readonly@example.com",
+        )
+        self.manager_user = User.objects.create_user(
+            username="manager_user",
+            password="testpass123",
+            email="manager@example.com",
+        )
+
+        for group_name in GLOBAL_AUTH_GROUPS.keys():
+            Group.objects.get_or_create(name=group_name)
+
+        competitions_group = Group.objects.get(name="competicions_manager")
+        self.manager_user.groups.add(competitions_group)
+
+        CompeticioMembership.objects.create(
+            user=self.judge_admin_user,
+            competicio=self.comp,
+            role=CompeticioMembership.Role.JUDGE_ADMIN,
+            is_active=True,
+        )
+        CompeticioMembership.objects.create(
+            user=self.readonly_user,
+            competicio=self.comp,
+            role=CompeticioMembership.Role.READONLY,
+            is_active=True,
+        )
+
+    def test_judge_admin_membership_can_manage_qr_but_readonly_cannot(self):
+        url = reverse("judges_qr_home", kwargs={"competicio_id": self.comp.id})
+
+        self.client.force_login(self.judge_admin_user)
+        ok_res = self.client.get(url)
+        self.assertEqual(ok_res.status_code, 200)
+        self.client.logout()
+
+        self.client.force_login(self.readonly_user)
+        denied_res = self.client.get(url)
+        self.assertEqual(denied_res.status_code, 403)
+
+        self.assertTrue(
+            user_has_competicio_capability(
+                self.judge_admin_user,
+                self.comp,
+                "judge_tokens.manage",
+            )
+        )
+        self.assertFalse(
+            user_has_competicio_capability(
+                self.readonly_user,
+                self.comp,
+                "judge_tokens.manage",
+            )
+        )
+
+    def test_global_competitions_manager_can_access_global_competitions_pages(self):
+        url = reverse("competicions_home")
+        self.client.force_login(self.manager_user)
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, 200)

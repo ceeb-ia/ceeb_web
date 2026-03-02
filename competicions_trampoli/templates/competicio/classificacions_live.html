@@ -167,13 +167,12 @@
 
 {% block extra_scripts %}
 {{ poll_ms|default:4000|json_script:"poll-ms" }}
-{{ competicio.id|json_script:"comp-id" }}
+{{ data_url|default:""|json_script:"classificacions-live-data-url" }}
 
 <script>
-  const compId = JSON.parse(document.getElementById("comp-id").textContent);
   const POLL_MS = JSON.parse(document.getElementById("poll-ms").textContent);
-
-  const DATA_URL = "{% url 'classificacions_live_data' 0 %}".replace("/0/", `/${compId}/`);
+  const DATA_URL = JSON.parse(document.getElementById("classificacions-live-data-url").textContent || '""')
+    || "{% url 'classificacions_live_data' competicio.id %}";
 
   let lastStamp = null;
   let timer = null;
