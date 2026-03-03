@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 # -----------------------------
 DEFAULT_SCHEMA = {
     "particions": [],
+    "particions_custom": {},
     "filtres": {
         "entitats_in": [],
         "categories_in": [],
@@ -36,8 +37,16 @@ DEFAULT_SCHEMA = {
         # - "tots": suma/agrega tots els exercicis disponibles (fins nombre_exercicis)
         # - "millor_1": tria el millor exercici
         # - "millor_n": tria els N millors
+        # - "pitjor_1": tria el pitjor exercici
+        # - "pitjor_n": tria els N pitjors
         "exercicis": {"mode": "tots", "index": 1, "ids": []},
         "exercicis_best_n": 1,
+        # mode de seleccio d'exercicis:
+        # - per_aparell_global: regla global aplicada per aparell
+        # - per_aparell_override: regla configurable per aparell
+        # - global_pool: seleccio global amb tots els exercicis en un mateix sac
+        "mode_seleccio_exercicis": "per_aparell_global",
+        "exercicis_per_aparell": {},
 
         # aparells a incloure
         "aparells": {"mode": "tots", "ids": []},  # tots / seleccionar
@@ -123,7 +132,12 @@ def _display_value(ins, field_name: str) -> str:
 def _merge_schema(schema: dict) -> dict:
     out = {**DEFAULT_SCHEMA}
     schema = schema or {}
-    out["particions"] = schema.get("particions", DEFAULT_SCHEMA["particions"]) or []
+    raw_parts = schema.get("particions", DEFAULT_SCHEMA["particions"]) or []
+    if not isinstance(raw_parts, list):
+        raw_parts = []
+    out["particions"] = [str(x).strip() for x in raw_parts if str(x).strip()]
+    raw_custom = schema.get("particions_custom", DEFAULT_SCHEMA["particions_custom"]) or {}
+    out["particions_custom"] = raw_custom if isinstance(raw_custom, dict) else {}
     out["filtres"] = {**DEFAULT_SCHEMA["filtres"], **(schema.get("filtres") or {})}
     out["puntuacio"] = {**DEFAULT_SCHEMA["puntuacio"], **(schema.get("puntuacio") or {})}
     out["presentacio"] = {**DEFAULT_SCHEMA["presentacio"], **(schema.get("presentacio") or {})}
@@ -242,16 +256,128 @@ def _apply_simple_agg(vals, mode: str):
     return float(sum(vals))
 
 
-def _partition_key(ins: Inscripcio, fields: list):
+_MISSING = object()
+
+
+def _inscripcio_value_for_partition(ins: Inscripcio, field_code: str):
+    code = (field_code or "").strip()
+    if not code:
+        return None
+
+    extra = getattr(ins, "extra", None) or {}
+    if isinstance(extra, dict) and code.startswith("excel__"):
+        if code in extra:
+            return extra.get(code)
+        legacy_code = code[len("excel__") :]
+        if legacy_code in extra:
+            return extra.get(legacy_code)
+
+    val = getattr(ins, code, _MISSING)
+    if val is not _MISSING:
+        return val
+
+    if isinstance(extra, dict):
+        if code in extra:
+            return extra.get(code)
+        if code.startswith("excel__"):
+            legacy_code = code[len("excel__") :]
+            if legacy_code in extra:
+                return extra.get(legacy_code)
+    return None
+
+
+def _partition_value_display(value) -> str:
+    if value is None:
+        return ""
+    if hasattr(value, "_meta"):
+        return getattr(value, "nom", None) or str(value)
+    if isinstance(value, (list, dict)):
+        try:
+            return json.dumps(value, ensure_ascii=False, sort_keys=True)
+        except Exception:
+            return str(value)
+    return str(value)
+
+
+def _normalize_partition_token(value: str) -> str:
+    txt = str(value or "")
+    txt = " ".join(txt.split()).strip()
+    return txt.casefold()
+
+
+def _split_particio_custom_values(raw):
+    if isinstance(raw, list):
+        out = []
+        for item in raw:
+            txt = str(item or "").strip()
+            if txt:
+                out.append(txt)
+        return out
+    if isinstance(raw, str):
+        return [x.strip() for x in raw.split(",") if x.strip()]
+    return []
+
+
+def _build_particions_custom_index(raw_cfg):
+    out = {}
+    if not isinstance(raw_cfg, dict):
+        return out
+
+    for field_code, cfg in raw_cfg.items():
+        code = str(field_code or "").strip()
+        if not code or not isinstance(cfg, dict):
+            continue
+
+        mode = str(cfg.get("mode") or "raw").strip().lower()
+        fallback_label = str(cfg.get("fallback_label") or "").strip()
+        value_map = {}
+
+        for idx, grp in enumerate(cfg.get("grups") or []):
+            if not isinstance(grp, dict):
+                continue
+            grp_label = (
+                str(grp.get("label") or grp.get("key") or f"Grup {idx + 1}").strip()
+                or f"Grup {idx + 1}"
+            )
+            for raw_val in _split_particio_custom_values(grp.get("values")):
+                norm = _normalize_partition_token(raw_val)
+                if norm and norm not in value_map:
+                    value_map[norm] = grp_label
+
+        out[code] = {
+            "mode": "custom" if mode == "custom" else "raw",
+            "fallback_label": fallback_label,
+            "value_map": value_map,
+        }
+    return out
+
+
+def _resolve_partition_display(field_code: str, raw_display: str, custom_idx: dict) -> str:
+    cfg = (custom_idx or {}).get(field_code) or {}
+    if (cfg.get("mode") or "raw") != "custom":
+        return raw_display
+
+    norm = _normalize_partition_token(raw_display)
+    mapped = (cfg.get("value_map") or {}).get(norm)
+    if mapped is not None:
+        return mapped
+
+    fallback = str(cfg.get("fallback_label") or "").strip()
+    if fallback:
+        return fallback
+    return raw_display
+
+
+def _partition_key(ins: Inscripcio, fields: list, particions_custom_index=None):
     parts = []
     for f in fields or []:
         f = (f or "").strip()
         if not f:
             continue
-        if f in ("categoria", "subcategoria", "entitat", "grup"):
-            parts.append(f"{f}:{_display_value(ins, f)}")
-        else:
-            parts.append(f"{f}:{getattr(ins, f, '')}")
+        raw_value = _inscripcio_value_for_partition(ins, f)
+        display_value = _partition_value_display(raw_value)
+        resolved = _resolve_partition_display(f, display_value, particions_custom_index or {})
+        parts.append(f"{f}:{resolved}")
     return "|".join(parts) if parts else "global"
 
 
@@ -271,43 +397,66 @@ def _pick_exercicis(vals, mode: str, best_n: int):
     if m == "millor_n":
         n = max(1, int(best_n or 1))
         return sorted(xs, reverse=True)[:n]
+    if m == "pitjor_1":
+        return [min(xs)]
+    if m == "pitjor_n":
+        n = max(1, int(best_n or 1))
+        return sorted(xs)[:n]
 
     # fallback
     return xs
 
-def _pick_exercicis_tuples(ex_vals, mode: str, best_n: int, index=None, ids=None):
+def _pick_exercicis_rows(rows, mode: str, best_n: int, index=None, ids=None):
     """
-    ex_vals: [(ex_idx, value), ...]
-    retorna: [values...]
+    rows: [{"idx": int, "value": float, ...}, ...]
+    retorna les files seleccionades (mantenint metadades).
     """
-    xs = [(int(i), _to_float(v)) for (i, v) in (ex_vals or [])]
+    xs = []
+    for r in (rows or []):
+        if not isinstance(r, dict):
+            continue
+        try:
+            idx = int(r.get("idx"))
+        except Exception:
+            continue
+        item = dict(r)
+        item["idx"] = idx
+        item["value"] = _to_float(r.get("value"))
+        xs.append(item)
     if not xs:
         return []
 
     m = (mode or "tots").lower().strip()
 
     if m == "tots":
-        return [v for _, v in xs]
+        return xs
 
     if m == "millor_1":
-        return [max([v for _, v in xs])]
+        return sorted(xs, key=lambda r: (-_to_float(r.get("value")), r.get("idx", 0)))[:1]
 
     if m == "millor_n":
         n = max(1, int(best_n or 1))
-        return sorted([v for _, v in xs], reverse=True)[:n]
+        return sorted(xs, key=lambda r: (-_to_float(r.get("value")), r.get("idx", 0)))[:n]
+
+    if m == "pitjor_1":
+        return sorted(xs, key=lambda r: (_to_float(r.get("value")), r.get("idx", 0)))[:1]
+
+    if m == "pitjor_n":
+        n = max(1, int(best_n or 1))
+        return sorted(xs, key=lambda r: (_to_float(r.get("value")), r.get("idx", 0)))[:n]
 
     if m == "primer":
-        first_idx = min(i for i, _ in xs)
-        for i, v in xs:
-            if i == first_idx:
-                return [v]
+        first_idx = min(r.get("idx", 0) for r in xs)
+        for r in xs:
+            if r.get("idx") == first_idx:
+                return [r]
         return []
 
     if m == "ultim":
-        last_idx = max(i for i, _ in xs)
-        for i, v in xs:
-            if i == last_idx:
-                return [v]
+        last_idx = max(r.get("idx", 0) for r in xs)
+        for r in xs:
+            if r.get("idx") == last_idx:
+                return [r]
         return []
 
     if m == "index":
@@ -315,16 +464,93 @@ def _pick_exercicis_tuples(ex_vals, mode: str, best_n: int, index=None, ids=None
             idx = int(index or 1)
         except Exception:
             idx = 1
-        for i, v in xs:
-            if i == idx:
-                return [v]
+        for r in xs:
+            if r.get("idx") == idx:
+                return [r]
         return []
 
     if m == "llista":
-        wanted = set(int(x) for x in (ids or []) if str(x).strip())
-        return [v for i, v in xs if i in wanted]
+        wanted = set()
+        for x in (ids or []):
+            try:
+                iv = int(x)
+            except Exception:
+                continue
+            if iv > 0:
+                wanted.add(iv)
+        return [r for r in xs if r.get("idx") in wanted]
 
-    return [v for _, v in xs]
+    return xs
+
+
+def _pick_exercicis_tuples(ex_vals, mode: str, best_n: int, index=None, ids=None):
+    """
+    ex_vals: [(ex_idx, value), ...]
+    retorna: [values...]
+    """
+    rows = []
+    for item in (ex_vals or []):
+        if not isinstance(item, (list, tuple)) or len(item) < 2:
+            continue
+        try:
+            idx = int(item[0])
+        except Exception:
+            continue
+        rows.append({"idx": idx, "value": _to_float(item[1])})
+
+    picked = _pick_exercicis_rows(rows, mode, best_n, index=index, ids=ids)
+    return [_to_float(r.get("value")) for r in picked]
+
+
+def _normalize_exercicis_cfg(raw_cfg, fallback=None):
+    fb = fallback or {}
+    cfg = raw_cfg if isinstance(raw_cfg, dict) else {}
+
+    mode = str(cfg.get("mode") or fb.get("mode") or "tots").lower().strip()
+    allowed_modes = ("tots", "millor_1", "millor_n", "pitjor_1", "pitjor_n", "primer", "ultim", "index", "llista")
+    if mode not in allowed_modes:
+        mode = str(fb.get("mode") or "tots").lower().strip()
+        if mode not in allowed_modes:
+            mode = "tots"
+
+    try:
+        best_n = int(cfg.get("best_n", fb.get("best_n", 1)))
+    except Exception:
+        best_n = 1
+    best_n = max(1, best_n)
+
+    try:
+        index = int(cfg.get("index", fb.get("index", 1)))
+    except Exception:
+        index = 1
+    index = max(1, index)
+
+    ids_raw = cfg.get("ids", fb.get("ids", []))
+    ids = []
+    if isinstance(ids_raw, str):
+        parts = [x.strip() for x in ids_raw.split(",") if x.strip()]
+        for p in parts:
+            try:
+                iv = int(p)
+            except Exception:
+                continue
+            if iv > 0:
+                ids.append(iv)
+    elif isinstance(ids_raw, (list, tuple)):
+        for x in ids_raw:
+            try:
+                iv = int(x)
+            except Exception:
+                continue
+            if iv > 0:
+                ids.append(iv)
+
+    return {
+        "mode": mode,
+        "best_n": best_n,
+        "index": index,
+        "ids": ids,
+    }
 
 
 def _pick_participants(vals, mode: str, n: int):
@@ -432,13 +658,43 @@ def _tie_key(crit: dict) -> str:
 
     ex_mode = (ex.get("mode") or "hereta").lower().strip()
     ex_sig = ex_mode
-    if ex_mode == "millor_n":
+    if ex_mode in ("millor_n", "pitjor_n"):
         ex_sig += f":{ex.get('best_n') or ''}"
     elif ex_mode == "index":
         ex_sig += f":{ex.get('index') or 1}"
     elif ex_mode == "llista":
         ex_ids = ex.get("ids") or []
         ex_sig += ":" + ",".join(str(int(x)) for x in ex_ids)
+
+    ex_sel_mode = (
+        crit.get("mode_seleccio_exercicis")
+        or ex.get("mode_seleccio_exercicis")
+        or "hereta"
+    )
+    ex_sel_mode = str(ex_sel_mode).lower().strip()
+    if ex_sel_mode not in ("hereta", "per_aparell_global", "per_aparell_override", "global_pool"):
+        ex_sel_mode = "hereta"
+
+    ex_per_app = (
+        crit.get("exercicis_per_aparell")
+        or ex.get("exercicis_per_aparell")
+        or {}
+    )
+    ex_per_app_sig = ""
+    if isinstance(ex_per_app, dict) and ex_per_app:
+        chunks = []
+        for k in sorted(ex_per_app.keys(), key=lambda x: str(x)):
+            cfg = _normalize_exercicis_cfg(ex_per_app.get(k), fallback={"mode": "tots", "best_n": 1, "index": 1, "ids": []})
+            c = f"{k}:{cfg.get('mode')}"
+            if cfg.get("mode") in ("millor_n", "pitjor_n"):
+                c += f":n={cfg.get('best_n')}"
+            elif cfg.get("mode") == "index":
+                c += f":i={cfg.get('index')}"
+            elif cfg.get("mode") == "llista":
+                ids_txt = ",".join(str(int(x)) for x in (cfg.get("ids") or []))
+                c += f":ids={ids_txt}"
+            chunks.append(c)
+        ex_per_app_sig = ";".join(chunks)
 
     p_mode = (parts.get("mode") or "hereta").lower().strip()
     p_sig = p_mode
@@ -452,6 +708,7 @@ def _tie_key(crit: dict) -> str:
     p_agg = (crit.get("agregacio_participants") or "sum").lower().strip()
     return (
         f"camps[{camps_sig}]|{apps_sig}|ex[{ex_sig}]"
+        f"|ex_sel[{ex_sel_mode}]|ex_app[{ex_per_app_sig}]"
         f"|agg_c[{agg_c}]|agg_e[{agg_e}]|agg_a[{agg_a}]"
         f"|parts[{p_sig}]|parts_agg[{p_agg}]"
     )
@@ -674,6 +931,7 @@ def compute_classificacio(competicio, cfg_obj):
     """
     schema = _merge_schema(getattr(cfg_obj, "schema", {}) or {})
     part_fields = schema["particions"]
+    part_custom_idx = _build_particions_custom_index(schema.get("particions_custom") or {})
     filtres = schema["filtres"] or {}
     punt = schema["puntuacio"] or {}
     desempat = schema["desempat"] or []
@@ -689,41 +947,23 @@ def compute_classificacio(competicio, cfg_obj):
         ordre_principal = "desc"
 
     ex_cfg = punt.get("exercicis") or {}
-    exerc_mode = (ex_cfg.get("mode") or "tots").lower().strip()
-    if exerc_mode not in ("tots", "millor_1", "millor_n", "primer", "ultim", "index", "llista"):
-        exerc_mode = "tots"
-
-    try:
-        ex_best_n = int(punt.get("exercicis_best_n") or ex_cfg.get("best_n") or 1)
-    except Exception:
-        ex_best_n = 1
-    ex_best_n = max(1, ex_best_n)
-
-    try:
-        ex_index = int(ex_cfg.get("index") or 1)
-    except Exception:
-        ex_index = 1
-    ex_index = max(1, ex_index)
-
-    ex_ids_raw = ex_cfg.get("ids", [])
-    ex_ids = []
-    if isinstance(ex_ids_raw, str):
-        parts = [x.strip() for x in ex_ids_raw.split(",") if x.strip()]
-        for p in parts:
-            try:
-                iv = int(p)
-            except Exception:
-                continue
-            if iv > 0:
-                ex_ids.append(iv)
-    elif isinstance(ex_ids_raw, (list, tuple)):
-        for x in ex_ids_raw:
-            try:
-                iv = int(x)
-            except Exception:
-                continue
-            if iv > 0:
-                ex_ids.append(iv)
+    base_ex_cfg = _normalize_exercicis_cfg(
+        {
+            **(ex_cfg if isinstance(ex_cfg, dict) else {}),
+            "best_n": (punt.get("exercicis_best_n") or (ex_cfg.get("best_n") if isinstance(ex_cfg, dict) else 1) or 1),
+        },
+        fallback={"mode": "tots", "best_n": 1, "index": 1, "ids": []},
+    )
+    exerc_mode = base_ex_cfg["mode"]
+    ex_best_n = base_ex_cfg["best_n"]
+    ex_index = base_ex_cfg["index"]
+    ex_ids = base_ex_cfg["ids"]
+    mode_seleccio_exercicis = str(punt.get("mode_seleccio_exercicis") or "per_aparell_global").lower().strip()
+    if mode_seleccio_exercicis not in ("per_aparell_global", "per_aparell_override", "global_pool"):
+        mode_seleccio_exercicis = "per_aparell_global"
+    exercicis_per_aparell = punt.get("exercicis_per_aparell") or {}
+    if not isinstance(exercicis_per_aparell, dict):
+        exercicis_per_aparell = {}
 
     agg_camps = (punt.get("agregacio_camps") or "sum").lower().strip()
     agg_exercicis = (punt.get("agregacio_exercicis") or "sum").lower().strip()
@@ -797,11 +1037,13 @@ def compute_classificacio(competicio, cfg_obj):
         return [legacy_camp] if legacy_camp else ["total"]
 
     # 5) EXERCICIS per aparell segons CompeticioAparell.nombre_exercicis
-    #    i selecció d'exercicis (mode: tots/millor_1/millor_n)
-    # 6) AGREGACIONS + construcció de score final per inscripció
+    # 6) AGREGACIONS + construccio de score final per inscripcio
     per_ins = {}  # ins_id -> {"score":float, "by_app":{app_id:score_app}, "tie":{...}}
     for ins in ins_list:
         per_ins[ins.id] = {"score": 0.0, "by_app": {}, "tie": {}}
+
+    app_order = {ca.id: idx for idx, ca in enumerate(aparells, start=1)}
+    app_ex_vals_by_ins = defaultdict(dict)  # app_id -> ins_id -> [(ex_idx, value)]
 
     for ca in aparells:
         app_id = ca.id
@@ -818,7 +1060,7 @@ def compute_classificacio(competicio, cfg_obj):
             if ex_idx < 1:
                 ex_idx = 1
             if ex_idx > n_ex:
-                # si hi ha notes �?oextra�?�, les ignores per coherència amb configuració d'aparell
+                # si hi ha notes extra, les ignorem per coherencia amb configuracio d'aparell
                 continue
             by_ins_ex[nt.inscripcio_id][ex_idx] = nt
 
@@ -837,24 +1079,85 @@ def compute_classificacio(competicio, cfg_obj):
                     continue
                 v_fields = [_get_score_field(nt, f) for f in fields]
 
-                v_ex = _apply_simple_agg(v_fields, agg_camps)  # agregació camps dins exercici
+                v_ex = _apply_simple_agg(v_fields, agg_camps)  # agregacio camps dins exercici
                 vals_ex.append((ex_idx, v_ex))
 
-            # selecció d'exercicis (tots/millor_1/millor_n)
-            picked = _pick_exercicis_tuples(
-                vals_ex,
+            app_ex_vals_by_ins[app_id][ins_id] = vals_ex
+
+    def _resolve_ex_cfg_for_app(app_id: int):
+        if mode_seleccio_exercicis != "per_aparell_override":
+            return base_ex_cfg
+        raw = exercicis_per_aparell.get(str(app_id))
+        if raw is None:
+            raw = exercicis_per_aparell.get(app_id)
+        return _normalize_exercicis_cfg(raw, fallback=base_ex_cfg)
+
+    if mode_seleccio_exercicis == "global_pool":
+        for ins_id in list(ins_by_id.keys()):
+            pool_rows = []
+            for ca in aparells:
+                app_id = ca.id
+                vals_ex = app_ex_vals_by_ins.get(app_id, {}).get(ins_id, [])
+                for ex_idx, v_ex in vals_ex:
+                    pool_rows.append({
+                        "idx": 0,  # index global assignat despres d'ordenar
+                        "value": _to_float(v_ex),
+                        "app_id": app_id,
+                        "app_order": app_order.get(app_id, 0),
+                        "exercici": int(ex_idx),
+                    })
+
+            if not pool_rows:
+                continue
+
+            pool_rows = sorted(
+                pool_rows,
+                key=lambda r: (r.get("app_order", 0), r.get("exercici", 0), r.get("app_id", 0)),
+            )
+            for idx, row in enumerate(pool_rows, start=1):
+                row["idx"] = idx
+
+            picked_rows = _pick_exercicis_rows(
+                pool_rows,
                 exerc_mode,
                 ex_best_n,
                 index=ex_index,
                 ids=ex_ids,
             )
+            picked_by_app = defaultdict(list)
+            for row in picked_rows:
+                try:
+                    app_id = int(row.get("app_id"))
+                except Exception:
+                    continue
+                picked_by_app[app_id].append(_to_float(row.get("value")))
 
-            # agregació d'exercicis dins aparell
-            score_app = _apply_simple_agg(picked, agg_exercicis)
+            for ca in aparells:
+                app_id = ca.id
+                if ins_id not in ins_ids_by_app.get(app_id, set()):
+                    continue
+                score_app = _apply_simple_agg(picked_by_app.get(app_id, []), agg_exercicis)
+                per_ins[ins_id]["by_app"][app_id] = float(score_app)
+    else:
+        for ca in aparells:
+            app_id = ca.id
+            ex_cfg_app = _resolve_ex_cfg_for_app(app_id)
 
-            per_ins[ins_id]["by_app"][app_id] = float(score_app)
+            for ins_id in list(ins_by_id.keys()):
+                if ins_id not in ins_ids_by_app.get(app_id, set()):
+                    continue
+                vals_ex = app_ex_vals_by_ins.get(app_id, {}).get(ins_id, [])
+                picked = _pick_exercicis_tuples(
+                    vals_ex,
+                    ex_cfg_app["mode"],
+                    ex_cfg_app["best_n"],
+                    index=ex_cfg_app["index"],
+                    ids=ex_cfg_app["ids"],
+                )
+                score_app = _apply_simple_agg(picked, agg_exercicis)
+                per_ins[ins_id]["by_app"][app_id] = float(score_app)
 
-    # agregació final entre aparells
+    # agregacio final entre aparells
     for ins_id, obj in per_ins.items():
         app_vals = list((obj.get("by_app") or {}).values())
         obj["score"] = float(_apply_simple_agg(app_vals, agg_aparells))
@@ -881,7 +1184,7 @@ def compute_classificacio(competicio, cfg_obj):
                 "ordre":"desc",
                 "scope":{
                 "aparells":{"mode":"tots"|"seleccionar","ids":[12,13]},
-                "exercicis":{"mode":"hereta"|"tots"|"millor_1"|"millor_n"|"primer"|"ultim"|"index"|"llista",
+                "exercicis":{"mode":"hereta"|"tots"|"millor_1"|"millor_n"|"pitjor_1"|"pitjor_n"|"primer"|"ultim"|"index"|"llista",
                             "best_n":2, "index":1, "ids":[1,3]}
                 },
                 "agregacio_camps":"hereta"|"sum"|"avg"|"median"|"max"|"min",
@@ -913,9 +1216,40 @@ def compute_classificacio(competicio, cfg_obj):
         crit_ex_mode = (crit_ex.get("mode") or "hereta").lower().strip()
         if crit_ex_mode == "hereta":
             crit_ex_mode = exerc_mode
-        crit_best_n = int(crit_ex.get("best_n") or ex_best_n)
-        crit_ex_index = crit_ex.get("index", None)
-        crit_ex_ids = crit_ex.get("ids", None)
+
+        try:
+            crit_best_n = int(crit_ex.get("best_n") or ex_best_n)
+        except Exception:
+            crit_best_n = ex_best_n
+        crit_ex_index = crit_ex.get("index", ex_index)
+        crit_ex_ids = crit_ex.get("ids", ex_ids)
+
+        crit_ex_cfg_global = _normalize_exercicis_cfg(
+            {
+                "mode": crit_ex_mode,
+                "best_n": crit_best_n,
+                "index": crit_ex_index,
+                "ids": crit_ex_ids,
+            },
+            fallback=base_ex_cfg,
+        )
+
+        crit_mode_sel = (
+            crit.get("mode_seleccio_exercicis")
+            or crit_ex.get("mode_seleccio_exercicis")
+            or "hereta"
+        )
+        crit_mode_sel = _inherit(crit_mode_sel, mode_seleccio_exercicis)
+        if crit_mode_sel not in ("per_aparell_global", "per_aparell_override", "global_pool"):
+            crit_mode_sel = mode_seleccio_exercicis
+
+        crit_ex_per_app_raw = (
+            crit.get("exercicis_per_aparell")
+            or crit_ex.get("exercicis_per_aparell")
+            or {}
+        )
+        if not isinstance(crit_ex_per_app_raw, dict):
+            crit_ex_per_app_raw = {}
 
         # -----------------------------
         # Aparells objectiu del criteri
@@ -946,6 +1280,7 @@ def compute_classificacio(competicio, cfg_obj):
         # Càlcul per aparell -> exercicis
         # -----------------------------
         vals_apps = []
+        app_vals_ex = {}
 
         for ta in target_apps:
             ca = next((x for x in aparells if x.id == ta), None)
@@ -955,40 +1290,89 @@ def compute_classificacio(competicio, cfg_obj):
             n_ex = int(getattr(ca, "nombre_exercicis", 1) or 1)
             n_ex = max(1, min(50, n_ex))
 
-            # ScoreEntries d'aquest aparell
-            app_scores = notes_by_app.get(ta, [])  # IMPORTANT: al teu codi és scores_by_app (no notes_by_app)
+            app_scores = notes_by_app.get(ta, [])
             by_ins_ex = defaultdict(dict)
             for se in app_scores:
                 ex_idx = int(getattr(se, "exercici", 1) or 1)
                 if 1 <= ex_idx <= n_ex:
                     by_ins_ex[se.inscripcio_id][ex_idx] = se
 
-            # (ex_idx, value) per poder seleccionar "index" o "llista"
             vals_ex = []
             for ex_idx in range(1, n_ex + 1):
                 se = by_ins_ex.get(ins_id, {}).get(ex_idx)
                 if not se:
                     continue
-
-                # IMPORTANT: desempat llegeix ScoreEntry via _get_score_field
                 vals_fields = [_get_score_field(se, c) for c in camps]
                 v_ex = _apply_simple_agg(vals_fields, crit_agg_camps)
                 vals_ex.append((ex_idx, v_ex))
 
-            picked = _pick_exercicis_tuples(
-                vals_ex,
-                crit_ex_mode,
-                crit_best_n,
-                index=crit_ex_index,
-                ids=crit_ex_ids
-            )
+            app_vals_ex[ta] = vals_ex
 
-            val_app = _apply_simple_agg(picked, crit_agg_exercicis)
-            vals_apps.append(val_app)
+        def _resolve_tie_ex_cfg_for_app(app_id: int):
+            if crit_mode_sel != "per_aparell_override":
+                return crit_ex_cfg_global
+            raw = crit_ex_per_app_raw.get(str(app_id))
+            if raw is None:
+                raw = crit_ex_per_app_raw.get(app_id)
+            return _normalize_exercicis_cfg(raw, fallback=crit_ex_cfg_global)
+
+        if crit_mode_sel == "global_pool":
+            pool_rows = []
+            for ta in target_apps:
+                vals_ex = app_vals_ex.get(ta, [])
+                for ex_idx, v_ex in vals_ex:
+                    pool_rows.append(
+                        {
+                            "idx": 0,
+                            "value": _to_float(v_ex),
+                            "app_id": ta,
+                            "app_order": app_order.get(ta, 0),
+                            "exercici": int(ex_idx),
+                        }
+                    )
+
+            pool_rows = sorted(
+                pool_rows,
+                key=lambda r: (r.get("app_order", 0), r.get("exercici", 0), r.get("app_id", 0)),
+            )
+            for idx, row in enumerate(pool_rows, start=1):
+                row["idx"] = idx
+
+            picked_rows = _pick_exercicis_rows(
+                pool_rows,
+                crit_ex_cfg_global["mode"],
+                crit_ex_cfg_global["best_n"],
+                index=crit_ex_cfg_global["index"],
+                ids=crit_ex_cfg_global["ids"],
+            )
+            picked_by_app = defaultdict(list)
+            for row in picked_rows:
+                try:
+                    app_id = int(row.get("app_id"))
+                except Exception:
+                    continue
+                picked_by_app[app_id].append(_to_float(row.get("value")))
+
+            for ta in target_apps:
+                val_app = _apply_simple_agg(picked_by_app.get(ta, []), crit_agg_exercicis)
+                vals_apps.append(val_app)
+        else:
+            for ta in target_apps:
+                vals_ex = app_vals_ex.get(ta, [])
+                ex_cfg_app = _resolve_tie_ex_cfg_for_app(ta)
+                picked = _pick_exercicis_tuples(
+                    vals_ex,
+                    ex_cfg_app["mode"],
+                    ex_cfg_app["best_n"],
+                    index=ex_cfg_app["index"],
+                    ids=ex_cfg_app["ids"],
+                )
+                val_app = _apply_simple_agg(picked, crit_agg_exercicis)
+                vals_apps.append(val_app)
 
         return float(_apply_simple_agg(vals_apps, crit_agg_aparells))
     
-    # capa reutilitzable: desempat + columnes mÃ¨triques
+    # capa reutilitzable: desempat + columnes mètriques
     metric_cache = {}
 
     def _metric_signature(crit: dict) -> str:
@@ -1180,7 +1564,7 @@ def compute_classificacio(competicio, cfg_obj):
     per_particio = defaultdict(list)
 
     for ins in ins_list:
-        pkey = _partition_key(ins, part_fields)
+        pkey = _partition_key(ins, part_fields, part_custom_idx)
         participant = (
             getattr(ins, "nom_complet", None)
             or getattr(ins, "nom_i_cognoms", None)
@@ -1240,7 +1624,7 @@ def compute_classificacio(competicio, cfg_obj):
         for ins in ins_list:
             if ins.equip_id is None and not include_sense_equip:
                 continue
-            base_pkey = _partition_key(ins, part_fields)
+            base_pkey = _partition_key(ins, part_fields, part_custom_idx)
             team_id_key = ins.equip_id if ins.equip_id is not None else "__sense_equip__"
             grouped[base_pkey][team_id_key].append(ins)
 
@@ -1417,4 +1801,6 @@ def _rank_v2(rows, desempat, presentacio, ordre_principal="desc", entity_mode=Fa
             break
 
     return ranked
+
+
 

@@ -54,6 +54,7 @@ class PublicLiveToken(models.Model):
         related_name="public_live_tokens",
     )
     label = models.CharField(max_length=120, blank=True, default="")
+    can_view_media = models.BooleanField(default=False)
 
     created_at = models.DateTimeField(auto_now_add=True)
     last_used_at = models.DateTimeField(null=True, blank=True)

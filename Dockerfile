@@ -7,6 +7,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     gcc \
     libpq-dev \
+    ffmpeg \
     libcairo2 \
     libpango-1.0-0 \
     libpangoft2-1.0-0 \

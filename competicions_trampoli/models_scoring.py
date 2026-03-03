@@ -113,7 +113,7 @@ class ScoreEntryVideo(models.Model):
         FAILED = "failed", "Error"
 
     # Step 1 (functional scope) captured as constants for upcoming API/UI layers.
-    VIDEO_MAX_DURATION_SECONDS = 90
+    VIDEO_MAX_DURATION_SECONDS = 180
     VIDEO_MAX_SIZE_BYTES = 120 * 1024 * 1024
     ALLOWED_MIME_TYPES = (
         "video/mp4",

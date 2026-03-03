@@ -194,31 +194,11 @@
             Divideix el resultat final (ex: per categoria/subcategoria). No és un filtre.
           </div>
 
-          <div class="row mb-2">
-            <div class="col-6 col-md-3">
-              <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="pCategoria">
-                <label class="form-check-label" for="pCategoria">Categoria</label>
-              </div>
-            </div>
-            <div class="col-6 col-md-3">
-              <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="pSubcategoria">
-                <label class="form-check-label" for="pSubcategoria">Subcategoria</label>
-              </div>
-            </div>
-            <div class="col-6 col-md-3">
-              <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="pEntitat">
-                <label class="form-check-label" for="pEntitat">Entitat</label>
-              </div>
-            </div>
-            <div class="col-6 col-md-3">
-              <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="pGrup">
-                <label class="form-check-label" for="pGrup">Grup</label>
-              </div>
-            </div>
+          <div class="border rounded p-2 mb-2" id="particionsFieldsBox">
+            <div class="small text-muted">Sense camps de particio disponibles.</div>
+          </div>
+          <div class="border rounded p-2 mb-2" id="particionsCustomBox">
+            <div class="small text-muted">Selecciona almenys un camp de particio per configurar grups custom.</div>
           </div>
 
           <div id="equipCfgBox" class="mb-3" style="display:none;">
@@ -276,17 +256,10 @@
 
           <div class="row">
             <div class="col-12 mb-2">
-              <div class="form-check form-check-inline">
-                <input class="form-check-input" type="radio" name="apMode" id="apTots" checked>
-                <label class="form-check-label" for="apTots">Tots</label>
-              </div>
-              <div class="form-check form-check-inline">
-                <input class="form-check-input" type="radio" name="apMode" id="apSel">
-                <label class="form-check-label" for="apSel">Seleccionar</label>
-              </div>
+              <div class="small text-muted">Selecciona explicitament els aparells a incloure.</div>
             </div>
 
-            <div class="col-12" id="apSelBox" style="display:none;">
+            <div class="col-12" id="apSelBox">
               <div class="border rounded p-2 mb-3">
                 <div class="row" id="apChkList"></div>
               </div>
@@ -310,10 +283,17 @@
 
             <div class="col-12 col-md-4 mb-3">
               <label class="font-weight-bold">Selecció exercicis</label>
+              <select class="form-control mb-2" id="sModeSeleccioExercicis">
+                <option value="per_aparell_global">Per aparell (criteri global)</option>
+                <option value="per_aparell_override">Per aparell (override per aparell)</option>
+                <option value="global_pool">Sac global (tots els aparells)</option>
+              </select>
               <select class="form-control" id="sExercicisMode">
                 <option value="tots">Tots</option>
                 <option value="millor_1">Millor 1</option>
                 <option value="millor_n">Millors N</option>
+                <option value="pitjor_1">Pitjor 1</option>
+                <option value="pitjor_n">Pitjors N</option>
                 <option value="primer">Primer existent</option>
                 <option value="ultim">Ultim existent</option>
                 <option value="index">Exercici #</option>
@@ -321,7 +301,7 @@
               </select>
               <div class="row mt-2">
                 <div class="col-4" id="exBestNBox">
-                  <label class="small text-muted">N (si Millors N)</label>
+                  <label class="small text-muted">N (si Millors/Pitjors N)</label>
                   <input class="form-control" id="iExBestN" type="number" min="1" value="1">
                 </div>
                 <div class="col-4" id="exIndexBox" style="display:none;">
@@ -371,7 +351,7 @@
             Afegeix criteris en ordre. Per cada criteri pots definir:
               <strong>Aparells</strong> (hereta/tots/seleccionar),
               <strong>Camp(s)</strong> (multi),
-              i <strong>Exercicis</strong> (hereta/tots/millor_n/primer/ultim/index/llista).
+              i <strong>Exercicis</strong> (hereta/tots/millor_n/pitjor_n/primer/ultim/index/llista).
             <br>Camp = code (ex: <code>execucio_total</code>, <code>E_total</code>, <code>total</code>...).
           </div>
 
@@ -498,6 +478,8 @@
 {{ cfgs|json_script:"cfgs-data-v2" }}
 {{ aparells|json_script:"aparells-data-v2" }}
 {{ equips|json_script:"equips-data-v2" }}
+{{ particio_fields|json_script:"particio-fields-data-v2" }}
+{{ particio_value_choices|json_script:"particio-value-choices-data-v2" }}
 {{ aparell_field_options|json_script:"aparell-field-options-data" }}
 {{ competicio.id|default:None|json_script:"competicio-id" }}
 
@@ -508,6 +490,8 @@
   const CFGS = JSON.parse(document.getElementById("cfgs-data-v2").textContent);
   const APARELLS = JSON.parse(document.getElementById("aparells-data-v2").textContent);
   const EQUIPS = JSON.parse(document.getElementById("equips-data-v2").textContent);
+  const PARTICIO_FIELDS = JSON.parse(document.getElementById("particio-fields-data-v2").textContent);
+  const PARTICIO_VALUE_CHOICES = JSON.parse(document.getElementById("particio-value-choices-data-v2").textContent);
   const APARELL_FIELD_OPTIONS = JSON.parse(
     document.getElementById("aparell-field-options-data").textContent
   );
@@ -515,6 +499,7 @@
   // DEFAULT schema coherent amb backend nou
   const DEFAULT_SCHEMA = {
     particions: [],
+    particions_custom: {},
     filtres: {},
     puntuacio: {
       aparells: { mode:"tots", ids:[] },
@@ -522,6 +507,8 @@
       agregacio_camps: "sum",
       exercicis: { mode:"tots", index: 1, ids: [] },
       exercicis_best_n: 1,
+      mode_seleccio_exercicis: "per_aparell_global",
+      exercicis_per_aparell: {},
       agregacio_exercicis: "sum",
       agregacio_aparells: "sum",
       ordre: "desc",
@@ -574,19 +561,16 @@
     eqAgeSenseLabel: document.getElementById("eqAgeSenseLabel"),
     eqCombineManualAge: document.getElementById("eqCombineManualAge"),
 
-    pCategoria: document.getElementById("pCategoria"),
-    pSubcategoria: document.getElementById("pSubcategoria"),
-    pEntitat: document.getElementById("pEntitat"),
-    pGrup: document.getElementById("pGrup"),
+    particionsFieldsBox: document.getElementById("particionsFieldsBox"),
+    particionsCustomBox: document.getElementById("particionsCustomBox"),
 
-    apTots: document.getElementById("apTots"),
-    apSel: document.getElementById("apSel"),
     apSelBox: document.getElementById("apSelBox"),
     apChkList: document.getElementById("apChkList"),
 
     perAppBox: document.getElementById("perAppBox"),
 
     sAggCamps: document.getElementById("sAggCamps"),
+    sModeSeleccioExercicis: document.getElementById("sModeSeleccioExercicis"),
     sExercicisMode: document.getElementById("sExercicisMode"),
     exBestNBox: document.getElementById("exBestNBox"),
     exIndexBox: document.getElementById("exIndexBox"),
@@ -677,8 +661,6 @@
   }
 
   function selectedAparellIdsFromUI() {
-    const mode = els.apSel.checked ? "seleccionar" : "tots";
-    if (mode === "tots") return (APARELLS || []).map(a => a.id);
     const out = [];
     (APARELLS || []).forEach(a => {
       const el = document.getElementById("app_" + a.id);
@@ -748,16 +730,11 @@
   function buildCampSelectHTMLForApps(appIds, selectedCamps, selectedAgg){
     const opts = getTieOptionsForAppIds(appIds);
     const selected = new Set((selectedCamps || []).map(x => String(x)));
-    const optsAll = [...opts];
-    selected.forEach(code => {
-      if (optsAll.some(o => String(o.code) === code)) return;
-      optsAll.push({ code, label: code });
-    });
     const agg = String(selectedAgg || "hereta").toLowerCase();
     return `
       <div class="d-flex flex-column gap-1">
         <select class="form-control form-control-sm" data-k="camps" multiple size="6">
-          ${optsAll.map(o => `
+          ${opts.map(o => `
             <option value="${esc(o.code)}" ${selected.has(String(o.code)) ? "selected":""}>
               ${esc(o.label)} (${esc(o.code)})
             </option>
@@ -776,37 +753,135 @@
   }
 
 
+  function parsePositiveIds(raw){
+    const txt = String(raw || "").trim();
+    if (!txt) return [];
+    return txt.split(",")
+      .map(x => Number(String(x || "").trim()))
+      .filter(v => !isNaN(v) && v > 0);
+  }
+
+  function isBestNMode(mode){
+    return mode === "millor_n" || mode === "pitjor_n";
+  }
+
+  function getAparellById(appId){
+    return (APARELLS || []).find(a => String(a.id) === String(appId));
+  }
+
+  function getModeSeleccioExercicisFromUI(){
+    return String(els.sModeSeleccioExercicis?.value || "per_aparell_global").toLowerCase().trim();
+  }
+
+  function perAppExercicisHTML(compAparellId, exCfg){
+    const cfg = exCfg || {};
+    const mode = String(cfg.mode || "tots").toLowerCase().trim();
+    const bestN = Math.max(1, Number(cfg.best_n || 1));
+    const index = Math.max(1, Number(cfg.index || 1));
+    const ids = Array.isArray(cfg.ids) ? cfg.ids.join(",") : "";
+    return `
+      <div class="mt-2 border-top pt-2" data-app-ex-box="${esc(compAparellId)}">
+        <label class="small text-muted mb-1">Seleccio exercicis (override)</label>
+        <select class="form-control form-control-sm mb-1" data-app-ex-mode data-app-id="${esc(compAparellId)}">
+          <option value="tots" ${mode==="tots" ? "selected" : ""}>Tots</option>
+          <option value="millor_1" ${mode==="millor_1" ? "selected" : ""}>Millor 1</option>
+          <option value="millor_n" ${mode==="millor_n" ? "selected" : ""}>Millors N</option>
+          <option value="pitjor_1" ${mode==="pitjor_1" ? "selected" : ""}>Pitjor 1</option>
+          <option value="pitjor_n" ${mode==="pitjor_n" ? "selected" : ""}>Pitjors N</option>
+          <option value="primer" ${mode==="primer" ? "selected" : ""}>Primer existent</option>
+          <option value="ultim" ${mode==="ultim" ? "selected" : ""}>Ultim existent</option>
+          <option value="index" ${mode==="index" ? "selected" : ""}>Exercici #</option>
+          <option value="llista" ${mode==="llista" ? "selected" : ""}>Exercicis (llista)</option>
+        </select>
+        <input class="form-control form-control-sm mb-1"
+               data-app-ex-best-n data-app-id="${esc(compAparellId)}"
+               type="number" min="1" value="${esc(bestN)}" placeholder="N">
+        <input class="form-control form-control-sm mb-1"
+               data-app-ex-index data-app-id="${esc(compAparellId)}"
+               type="number" min="1" value="${esc(index)}" placeholder="Index">
+        <input class="form-control form-control-sm"
+               data-app-ex-ids data-app-id="${esc(compAparellId)}"
+               type="text" value="${esc(ids)}" placeholder="Llista (ex: 1,3,4)">
+      </div>
+    `;
+  }
+
+  function refreshPerAppExCardUI(card){
+    const modeSel = card.querySelector("[data-app-ex-mode]");
+    if (!modeSel) return;
+    const mode = String(modeSel.value || "tots").toLowerCase().trim();
+    const best = card.querySelector("[data-app-ex-best-n]");
+    const idx = card.querySelector("[data-app-ex-index]");
+    const ids = card.querySelector("[data-app-ex-ids]");
+    if (best) best.style.display = isBestNMode(mode) ? "" : "none";
+    if (idx) idx.style.display = (mode === "index") ? "" : "none";
+    if (ids) ids.style.display = (mode === "llista") ? "" : "none";
+  }
+
   function renderPerAppUI(schema) {
     const appIds = selectedAparellIdsFromUI();
-    const m = (schema.puntuacio || {}).camps_per_aparell || {};
+    const punt = (schema.puntuacio || {});
+    const modeSel = getModeSeleccioExercicisFromUI() || String(punt.mode_seleccio_exercicis || "per_aparell_global").toLowerCase().trim();
+    const showExOverride = modeSel === "per_aparell_override";
     els.perAppBox.innerHTML = "";
 
     appIds.forEach(id => {
       const key = String(id);
-      const selectedCodes = ((schema.puntuacio||{}).camps_per_aparell||{})[key] || [];
+      const selectedCodes = (punt.camps_per_aparell || {})[key] || [];
+      const perAppExCfg = (punt.exercicis_per_aparell || {})[key] || {};
+      const app = getAparellById(id);
+      const appName = app ? app.nom : `Aparell ${key}`;
 
       const card = document.createElement("div");
       card.className = "border rounded p-2 mb-2";
       card.innerHTML = `
-        <div class="font-weight-bold mb-1">Aparell ${esc(key)}</div>
+        <div class="font-weight-bold mb-1">${esc(appName)} (${esc(key)})</div>
         ${perAppFieldsHTML(key, selectedCodes)}
+        ${showExOverride ? perAppExercicisHTML(key, perAppExCfg) : ""}
       `;
       els.perAppBox.appendChild(card);
-    });
 
+      const exModeNode = card.querySelector("[data-app-ex-mode]");
+      if (exModeNode) {
+        refreshPerAppExCardUI(card);
+      }
+      card.querySelectorAll("[data-app-select], [data-app-ex-mode], [data-app-ex-best-n], [data-app-ex-index], [data-app-ex-ids]").forEach(node => {
+        node.addEventListener("change", () => {
+          if (node.matches("[data-app-ex-mode]")) refreshPerAppExCardUI(card);
+          syncAdvancedFromUI();
+        });
+        node.addEventListener("input", syncAdvancedFromUI);
+      });
+    });
+  }
+
+  function readPerAppExercicisFromUI() {
+    const map = {};
+    if (getModeSeleccioExercicisFromUI() !== "per_aparell_override") return map;
+    document.querySelectorAll("[data-app-ex-mode]").forEach(sel => {
+      const appId = String(sel.getAttribute("data-app-id") || "").trim();
+      if (!appId) return;
+      const mode = String(sel.value || "tots").toLowerCase().trim();
+      const bestNode = document.querySelector(`[data-app-ex-best-n][data-app-id="${appId}"]`);
+      const idxNode = document.querySelector(`[data-app-ex-index][data-app-id="${appId}"]`);
+      const idsNode = document.querySelector(`[data-app-ex-ids][data-app-id="${appId}"]`);
+      const cfg = { mode };
+      if (isBestNMode(mode)) cfg.best_n = Math.max(1, Number(bestNode?.value || 1));
+      if (mode === "index") cfg.index = Math.max(1, Number(idxNode?.value || 1));
+      if (mode === "llista") cfg.ids = parsePositiveIds(idsNode?.value || "");
+      map[appId] = cfg;
+    });
+    return map;
   }
 
   function readMainExercicisFromUI() {
     const mode = String(els.sExercicisMode?.value || "tots").toLowerCase().trim();
     const bestN = Math.max(1, Number(els.iExBestN?.value || 1));
     const index = Math.max(1, Number(els.iExIndex?.value || 1));
-    const idsRaw = String(els.tExIds?.value || "").trim();
-    const ids = idsRaw
-      ? idsRaw.split(",").map(x => Number(x.trim())).filter(v => !isNaN(v) && v > 0)
-      : [];
+    const ids = parsePositiveIds(els.tExIds?.value || "");
 
     const cfg = { mode };
-    if (mode === "millor_n") cfg.best_n = bestN;
+    if (isBestNMode(mode)) cfg.best_n = bestN;
     if (mode === "index") cfg.index = index;
     if (mode === "llista") cfg.ids = ids;
     return { cfg, bestN, index, ids };
@@ -814,17 +889,30 @@
 
   function refreshMainExercicisUI() {
     const m = String(els.sExercicisMode?.value || "tots").toLowerCase().trim();
-    if (els.exBestNBox) els.exBestNBox.style.display = (m === "millor_n") ? "" : "none";
-    if (els.exIndexBox) els.exIndexBox.style.display = (m === "index") ? "" : "none";
-    if (els.exIdsBox) els.exIdsBox.style.display = (m === "llista") ? "" : "none";
+    const modeSel = getModeSeleccioExercicisFromUI();
+    const isOverride = modeSel === "per_aparell_override";
+
+    if (els.sExercicisMode) els.sExercicisMode.style.display = isOverride ? "none" : "";
+    if (els.exBestNBox) els.exBestNBox.style.display = (!isOverride && isBestNMode(m)) ? "" : "none";
+    if (els.exIndexBox) els.exIndexBox.style.display = (!isOverride && (m === "index")) ? "" : "none";
+    if (els.exIdsBox) els.exIdsBox.style.display = (!isOverride && (m === "llista")) ? "" : "none";
 
     if (!els.exModeHint) return;
     let txt = "";
-    if (m === "millor_n") txt = "Selecciona els N millors exercicis per aparell.";
-    else if (m === "primer") txt = "Agafa el primer exercici existent de cada aparell.";
-    else if (m === "ultim") txt = "Agafa l'ultim exercici existent de cada aparell.";
-    else if (m === "index") txt = "Agafa l'exercici # indicat de cada aparell.";
-    else if (m === "llista") txt = "Agafa la llista d'indexos indicada a cada aparell.";
+    if (!isOverride) {
+      if (m === "millor_n") txt = "Selecciona els N millors exercicis.";
+      else if (m === "pitjor_n") txt = "Selecciona els N pitjors exercicis.";
+      else if (m === "pitjor_1") txt = "Agafa el pitjor exercici.";
+      else if (m === "primer") txt = "Agafa el primer exercici existent.";
+      else if (m === "ultim") txt = "Agafa l'ultim exercici existent.";
+      else if (m === "index") txt = "Agafa l'exercici # indicat.";
+      else if (m === "llista") txt = "Agafa la llista d'indexos indicada.";
+    }
+
+    if (modeSel === "per_aparell_override") txt += (txt ? " " : "") + "Amb overrides per aparell (criteri global ocult).";
+    else if (modeSel === "global_pool") txt += (txt ? " " : "") + "Aplicat al sac global de tots els aparells.";
+    else txt += (txt ? " " : "") + "Aplicat per separat a cada aparell.";
+
     els.exModeHint.textContent = txt;
   }
 
@@ -938,6 +1026,190 @@
     return "hereta";
   }
 
+  function normalizeTieModeSeleccioExercicis(rawMode){
+    const mode = String(rawMode || "hereta").toLowerCase().trim();
+    if (["hereta","per_aparell_global","per_aparell_override","global_pool"].includes(mode)) return mode;
+    return "hereta";
+  }
+
+  function normalizeTieExercicisCfg(rawCfg){
+    const cfg = (rawCfg && typeof rawCfg === "object" && !Array.isArray(rawCfg)) ? rawCfg : {};
+    const mode = String(cfg.mode || "tots").toLowerCase().trim();
+    const outMode = ["tots","millor_1","millor_n","pitjor_1","pitjor_n","primer","ultim","index","llista"].includes(mode) ? mode : "tots";
+    const out = { mode: outMode };
+    if (isBestNMode(outMode)) out.best_n = Math.max(1, Number(cfg.best_n || 1));
+    if (outMode === "index") out.index = Math.max(1, Number(cfg.index || 1));
+    if (outMode === "llista") {
+      const idsRaw = Array.isArray(cfg.ids) ? cfg.ids.join(",") : cfg.ids;
+      out.ids = parsePositiveIds(idsRaw || "");
+    }
+    return out;
+  }
+
+  function normalizeTieExercicisPerAparellMap(rawMap){
+    const out = {};
+    if (!rawMap || typeof rawMap !== "object" || Array.isArray(rawMap)) return out;
+    Object.entries(rawMap).forEach(([k, v]) => {
+      const appId = Number(k);
+      if (!Number.isFinite(appId) || appId <= 0) return;
+      out[String(appId)] = normalizeTieExercicisCfg(v);
+    });
+    return out;
+  }
+
+  function getTieInheritedAppIds(){
+    const ids = selectedAparellIdsFromUI();
+    if (ids.length) return ids;
+    return (APARELLS || []).map(a => a.id);
+  }
+
+  function getTieTargetAppIds(tr){
+    const appScope = String(tr.querySelector('[data-k="app_scope"]')?.value || "hereta");
+    if (appScope === "tots") return (APARELLS || []).map(a => a.id);
+    if (appScope.startsWith("app:")) {
+      const id = Number(appScope.split(":")[1]);
+      return Number.isFinite(id) ? [id] : [];
+    }
+    return getTieInheritedAppIds();
+  }
+
+  function tiePerAppExercicisHTML(compAparellId, exCfg){
+    const cfg = normalizeTieExercicisCfg(exCfg);
+    const mode = String(cfg.mode || "tots").toLowerCase().trim();
+    const bestN = Math.max(1, Number(cfg.best_n || 1));
+    const index = Math.max(1, Number(cfg.index || 1));
+    const ids = Array.isArray(cfg.ids) ? cfg.ids.join(",") : "";
+    const app = getAparellById(compAparellId);
+    const appName = app ? app.nom : `Aparell ${compAparellId}`;
+    return `
+      <div class="border rounded p-2 mt-2" data-k="tie_app_ex_card" data-app-id="${esc(compAparellId)}">
+        <div class="small font-weight-bold mb-1">${esc(appName)} (${esc(compAparellId)})</div>
+        <select class="form-control form-control-sm mb-1" data-k="tie_app_ex_mode" data-app-id="${esc(compAparellId)}">
+          <option value="tots" ${mode==="tots" ? "selected" : ""}>Tots</option>
+          <option value="millor_1" ${mode==="millor_1" ? "selected" : ""}>Millor 1</option>
+          <option value="millor_n" ${mode==="millor_n" ? "selected" : ""}>Millors N</option>
+          <option value="pitjor_1" ${mode==="pitjor_1" ? "selected" : ""}>Pitjor 1</option>
+          <option value="pitjor_n" ${mode==="pitjor_n" ? "selected" : ""}>Pitjors N</option>
+          <option value="primer" ${mode==="primer" ? "selected" : ""}>Primer existent</option>
+          <option value="ultim" ${mode==="ultim" ? "selected" : ""}>Ultim existent</option>
+          <option value="index" ${mode==="index" ? "selected" : ""}>Exercici #</option>
+          <option value="llista" ${mode==="llista" ? "selected" : ""}>Exercicis (llista)</option>
+        </select>
+        <input class="form-control form-control-sm mb-1"
+               data-k="tie_app_ex_best_n" data-app-id="${esc(compAparellId)}"
+               type="number" min="1" value="${esc(bestN)}" placeholder="N">
+        <input class="form-control form-control-sm mb-1"
+               data-k="tie_app_ex_index" data-app-id="${esc(compAparellId)}"
+               type="number" min="1" value="${esc(index)}" placeholder="Index">
+        <input class="form-control form-control-sm"
+               data-k="tie_app_ex_ids" data-app-id="${esc(compAparellId)}"
+               type="text" value="${esc(ids)}" placeholder="Llista (ex: 1,3,4)">
+      </div>
+    `;
+  }
+
+  function refreshTiePerAppExCardUI(card){
+    const modeSel = card.querySelector('[data-k="tie_app_ex_mode"]');
+    if (!modeSel) return;
+    const mode = String(modeSel.value || "tots").toLowerCase().trim();
+    const best = card.querySelector('[data-k="tie_app_ex_best_n"]');
+    const idx = card.querySelector('[data-k="tie_app_ex_index"]');
+    const ids = card.querySelector('[data-k="tie_app_ex_ids"]');
+    if (best) best.style.display = isBestNMode(mode) ? "" : "none";
+    if (idx) idx.style.display = (mode === "index") ? "" : "none";
+    if (ids) ids.style.display = (mode === "llista") ? "" : "none";
+  }
+
+  function readTiePerAppState(tr){
+    const stateNode = tr.querySelector('[data-k="ex_per_app_state"]');
+    if (!stateNode) return {};
+    try {
+      return normalizeTieExercicisPerAparellMap(JSON.parse(stateNode.value || "{}"));
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function writeTiePerAppState(tr, map){
+    const stateNode = tr.querySelector('[data-k="ex_per_app_state"]');
+    if (!stateNode) return;
+    try {
+      stateNode.value = JSON.stringify(normalizeTieExercicisPerAparellMap(map || {}));
+    } catch (_) {
+      stateNode.value = "{}";
+    }
+  }
+
+  function readTiePerAppExercicisFromRow(tr, fallbackMap){
+    const modeSel = normalizeTieModeSeleccioExercicis(tr.querySelector('[data-k="ex_sel_mode"]')?.value || "hereta");
+    const box = tr.querySelector('[data-k="ex_per_app_box"]');
+    let state = normalizeTieExercicisPerAparellMap(fallbackMap || readTiePerAppState(tr));
+    if (modeSel !== "per_aparell_override" || !box) {
+      writeTiePerAppState(tr, state);
+      return state;
+    }
+
+    const visibleIds = new Set(getTieTargetAppIds(tr).map(x => String(x)));
+    visibleIds.forEach(id => { delete state[id]; });
+
+    box.querySelectorAll('[data-k="tie_app_ex_mode"]').forEach(sel => {
+      const appId = String(sel.getAttribute("data-app-id") || "").trim();
+      if (!appId) return;
+      const mode = String(sel.value || "tots").toLowerCase().trim();
+      const bestNode = box.querySelector(`[data-k="tie_app_ex_best_n"][data-app-id="${appId}"]`);
+      const idxNode = box.querySelector(`[data-k="tie_app_ex_index"][data-app-id="${appId}"]`);
+      const idsNode = box.querySelector(`[data-k="tie_app_ex_ids"][data-app-id="${appId}"]`);
+      const cfg = { mode };
+      if (isBestNMode(mode)) cfg.best_n = Math.max(1, Number(bestNode?.value || 1));
+      if (mode === "index") cfg.index = Math.max(1, Number(idxNode?.value || 1));
+      if (mode === "llista") cfg.ids = parsePositiveIds(idsNode?.value || "");
+      state[appId] = cfg;
+    });
+
+    writeTiePerAppState(tr, state);
+    return state;
+  }
+
+  function renderTiePerAppExercicisUI(tr){
+    const modeSel = normalizeTieModeSeleccioExercicis(tr.querySelector('[data-k="ex_sel_mode"]')?.value || "hereta");
+    const box = tr.querySelector('[data-k="ex_per_app_box"]');
+    if (!box) return;
+    if (modeSel !== "per_aparell_override") {
+      box.style.display = "none";
+      box.innerHTML = "";
+      return;
+    }
+
+    const state = readTiePerAppExercicisFromRow(tr);
+    const appIds = getTieTargetAppIds(tr);
+    box.style.display = "";
+    if (!appIds.length) {
+      box.innerHTML = `<div class="small text-muted mt-1">Sense aparells disponibles per definir override.</div>`;
+      return;
+    }
+
+    box.innerHTML = appIds.map(appId => {
+      const key = String(appId);
+      return tiePerAppExercicisHTML(key, state[key] || {});
+    }).join("");
+
+    box.querySelectorAll('[data-k="tie_app_ex_card"]').forEach(card => refreshTiePerAppExCardUI(card));
+    box.querySelectorAll('[data-k="tie_app_ex_mode"], [data-k="tie_app_ex_best_n"], [data-k="tie_app_ex_index"], [data-k="tie_app_ex_ids"]').forEach(node => {
+      node.addEventListener("change", () => {
+        if (node.matches('[data-k="tie_app_ex_mode"]')) {
+          const card = node.closest('[data-k="tie_app_ex_card"]');
+          if (card) refreshTiePerAppExCardUI(card);
+        }
+        readTiePerAppExercicisFromRow(tr);
+        syncAdvancedFromUI();
+      });
+      node.addEventListener("input", () => {
+        readTiePerAppExercicisFromRow(tr);
+        syncAdvancedFromUI();
+      });
+    });
+  }
+
   function readTieCampsFromRow(tr) {
     const campsSel = tr.querySelector('[data-k="camps"]');
     const aggSel = tr.querySelector('[data-k="agg_camps"]');
@@ -970,14 +1242,13 @@
     const campCfg = readTieCampsFromRow(tr);
     const ordre = tr.querySelector('[data-k="ordre"]').value;
 
-    const appScope = tr.querySelector('[data-k="app_scope"]').value; // hereta|tots|app:<id>
-    const exMode = tr.querySelector('[data-k="ex_mode"]').value; // hereta|tots|millor_1|millor_n|primer|ultim|index|llista
+    const appScope = tr.querySelector('[data-k="app_scope"]').value; // hereta|app:<id>
+    const exSelMode = normalizeTieModeSeleccioExercicis(tr.querySelector('[data-k="ex_sel_mode"]')?.value || "hereta");
+    const exMode = tr.querySelector('[data-k="ex_mode"]').value; // hereta|tots|millor_1|millor_n|pitjor_1|pitjor_n|primer|ultim|index|llista
     const bestN = Number(tr.querySelector('[data-k="ex_best_n"]').value || 1);
     const exIndex = Number(tr.querySelector('[data-k="ex_index"]').value || 1);
-    const exIdsRaw = (tr.querySelector('[data-k="ex_ids"]').value || "").trim();
-    const exIds = exIdsRaw
-      ? exIdsRaw.split(",").map(x => Number(x.trim())).filter(x => !isNaN(x) && x > 0)
-      : [];
+    const exIds = parsePositiveIds(tr.querySelector('[data-k="ex_ids"]').value || "");
+    const exPerApp = readTiePerAppExercicisFromRow(tr);
 
     const obj = {
       camp: campCfg.camps[0] || "", // compat legacy
@@ -990,9 +1261,7 @@
       exercicis: { mode: exMode },
     };
 
-    if (appScope === "tots") {
-      obj.scope.aparells.mode = "tots";
-    } else if (appScope.startsWith("app:")) {
+    if (appScope.startsWith("app:")) {
       const id = Number(appScope.split(":")[1]);
       if (!isNaN(id)) {
         obj.scope.aparells.mode = "seleccionar";
@@ -1000,9 +1269,11 @@
       }
     }
 
-    if (exMode === "millor_n") obj.scope.exercicis.best_n = bestN;
+    if (exMode === "millor_n" || exMode === "pitjor_n") obj.scope.exercicis.best_n = bestN;
     if (exMode === "index") obj.scope.exercicis.index = exIndex;
     if (exMode === "llista") obj.scope.exercicis.ids = exIds;
+    if (exSelMode !== "hereta") obj.mode_seleccio_exercicis = exSelMode;
+    if (exSelMode === "per_aparell_override") obj.exercicis_per_aparell = exPerApp;
 
     if (includeParticipants) {
       applyParticipantsToObj(obj, readParticipantsFromRow(tr));
@@ -1211,18 +1482,23 @@
         appIds = [Number(t.aparell_id)];
       }
 
-      // map a appScope: hereta|tots|app:<id>
+      // map a appScope: hereta|app:<id>
       let appScope = "hereta";
-      if (appMode === "tots") appScope = "tots";
-      else if (appMode === "seleccionar" && appIds.length) appScope = `app:${appIds[0]}`;
+      if (appMode === "seleccionar" && appIds.length) appScope = `app:${appIds[0]}`;
 
       // exercicis
       let exMode = (sEx.mode || "hereta").toLowerCase().trim();
-      if (!["hereta","tots","millor_1","millor_n","primer","ultim","index","llista"].includes(exMode)) exMode = "hereta";
+      if (!["hereta","tots","millor_1","millor_n","pitjor_1","pitjor_n","primer","ultim","index","llista"].includes(exMode)) exMode = "hereta";
       const exBestN = Number(sEx.best_n || 1);
       const exIndex = Number(sEx.index || 1);
       const exIds = Array.isArray(sEx.ids) ? sEx.ids : [];
       const exIdsStr = exIds.length ? exIds.join(",") : "";
+      const exSelMode = normalizeTieModeSeleccioExercicis(
+        t.mode_seleccio_exercicis || sEx.mode_seleccio_exercicis || "hereta"
+      );
+      const exPerAppSeed = normalizeTieExercicisPerAparellMap(
+        t.exercicis_per_aparell || sEx.exercicis_per_aparell || {}
+      );
 
       const pNorm = normalizeParticipantsFromTie(t);
       const pMode = pNorm.pMode;
@@ -1237,7 +1513,6 @@
       // options aparells single
       const appScopeOpts = [
         '<option value="hereta">Hereta (puntuació)</option>',
-        '<option value="tots">Tots</option>',
         ...(APARELLS || []).map(a => `<option value="app:${a.id}">${esc(a.nom)}</option>`)
       ].join("");
 
@@ -1252,11 +1527,19 @@
 
         <td>
           <div class="d-flex flex-column gap-1">
+            <select class="form-control form-control-sm" data-k="ex_sel_mode">
+              <option value="hereta">Seleccio ex: Hereta (puntuacio)</option>
+              <option value="per_aparell_global">Seleccio ex: Per aparell (global)</option>
+              <option value="per_aparell_override">Seleccio ex: Per aparell (override)</option>
+              <option value="global_pool">Seleccio ex: Sac global</option>
+            </select>
             <select class="form-control form-control-sm" data-k="ex_mode">
               <option value="hereta">Hereta (puntuació)</option>
               <option value="tots">Tots</option>
               <option value="millor_1">Millor 1</option>
               <option value="millor_n">Millors N</option>
+              <option value="pitjor_1">Pitjor 1</option>
+              <option value="pitjor_n">Pitjors N</option>
               <option value="primer">Primer existent</option>
               <option value="ultim">Ultim existent</option>
               <option value="index">Exercici #</option>
@@ -1269,6 +1552,8 @@
             </div>
 
             <input class="form-control form-control-sm" data-k="ex_ids" type="text" style="display:none;" placeholder="ex: 1,3,4">
+            <input type="hidden" data-k="ex_per_app_state" value="{}">
+            <div data-k="ex_per_app_box" style="display:none;"></div>
             <div class="small text-muted" data-k="ex_hint" style="display:none;"></div>
           </div>
         </td>
@@ -1290,6 +1575,7 @@
       // set valors inicials
       const appScopeSel = tr.querySelector('[data-k="app_scope"]');
 
+      const exSelModeSel = tr.querySelector('[data-k="ex_sel_mode"]');
       const exModeSel = tr.querySelector('[data-k="ex_mode"]');
       const exBestNEl = tr.querySelector('[data-k="ex_best_n"]');
       const exIndexEl = tr.querySelector('[data-k="ex_index"]');
@@ -1300,10 +1586,12 @@
       appScopeSel.value = appScope;
       ordSel.value = ordre;
 
+      exSelModeSel.value = exSelMode;
       exModeSel.value = exMode;
       exBestNEl.value = exBestN;
       exIndexEl.value = exIndex;
       exIdsEl.value = exIdsStr;
+      writeTiePerAppState(tr, exPerAppSeed);
       setParticipantsUI(tr, pMode, pN, pAgg);
 
       function getCurrentAppIds() {
@@ -1314,7 +1602,7 @@
           return isNaN(id) ? [] : [id];
         }
         // hereta -> usem unió d'opcions
-        return (APARELLS || []).map(a => a.id);
+        return getTieInheritedAppIds();
       }
 
       function refreshAppUI() {
@@ -1325,32 +1613,51 @@
       }
 
       function refreshExUI() {
+        readTiePerAppExercicisFromRow(tr);
         const m = exModeSel.value;
-        exBestNEl.style.display = (m === "millor_n") ? "" : "none";
-        exIndexEl.style.display = (m === "index") ? "" : "none";
-        exIdsEl.style.display = (m === "llista") ? "" : "none";
+        const modeSel = normalizeTieModeSeleccioExercicis(exSelModeSel.value);
+        const isOverride = modeSel === "per_aparell_override";
+        exModeSel.style.display = isOverride ? "none" : "";
+        exBestNEl.style.display = (!isOverride && (m === "millor_n" || m === "pitjor_n")) ? "" : "none";
+        exIndexEl.style.display = (!isOverride && (m === "index")) ? "" : "none";
+        exIdsEl.style.display = (!isOverride && (m === "llista")) ? "" : "none";
+        renderTiePerAppExercicisUI(tr);
 
-        if (m === "millor_n") {
+        if (isOverride) {
           exHint.style.display = "";
-          exHint.textContent = "Tria els N millors exercicis (per aparell).";
+          exHint.textContent = "Override per aparell actiu (criteri global ocult).";
+        } else if (m === "millor_n") {
+          exHint.style.display = "";
+          exHint.textContent = "Tria els N millors exercicis.";
+        } else if (m === "pitjor_n") {
+          exHint.style.display = "";
+          exHint.textContent = "Tria els N pitjors exercicis.";
+        } else if (m === "pitjor_1") {
+          exHint.style.display = "";
+          exHint.textContent = "Agafa el pitjor exercici existent.";
         } else if (m === "primer") {
           exHint.style.display = "";
-          exHint.textContent = "Agafa el primer exercici existent de cada aparell.";
+          exHint.textContent = "Agafa el primer exercici existent.";
         } else if (m === "ultim") {
           exHint.style.display = "";
-          exHint.textContent = "Agafa l'ultim exercici existent de cada aparell.";
+          exHint.textContent = "Agafa l'ultim exercici existent.";
         } else if (m === "index") {
           exHint.style.display = "";
-          exHint.textContent = "Fa servir només l'exercici # (1..N) de cada aparell.";
+          exHint.textContent = "Fa servir nomes l'exercici # (1..N).";
         } else if (m === "llista") {
           exHint.style.display = "";
-          exHint.textContent = "Llista d'índexs: 1,3,4 (per aparell).";
+          exHint.textContent = "Llista d'indexs: 1,3,4.";
         } else {
           exHint.style.display = "none";
           exHint.textContent = "";
         }
-      }
 
+        if (!isOverride && exHint.style.display !== "none") {
+          if (modeSel === "per_aparell_override") exHint.textContent += " Override per aparell.";
+          else if (modeSel === "global_pool") exHint.textContent += " Aplicat al sac global.";
+          else exHint.textContent += " Aplicat per aparell.";
+        }
+      }
       // Render inicial camp + controls
       const campCell = tr.querySelector('[data-cell="camp"]');
       campCell.innerHTML = buildCampSelectHTMLForApps(getCurrentAppIds(), tieCamps, tieAggCamps);
@@ -1360,8 +1667,13 @@
       refreshParticipantsControls(tr);
 
       // listeners
-      appScopeSel.addEventListener("change", () => { refreshAppUI(); syncAdvancedFromUI(); });
+      appScopeSel.addEventListener("change", () => {
+        refreshAppUI();
+        refreshExUI();
+        syncAdvancedFromUI();
+      });
 
+      exSelModeSel.addEventListener("change", () => { refreshExUI(); syncAdvancedFromUI(); });
       exModeSel.addEventListener("change", () => { refreshExUI(); syncAdvancedFromUI(); });
       exBestNEl.addEventListener("input", syncAdvancedFromUI);
       exIndexEl.addEventListener("input", syncAdvancedFromUI);
@@ -1832,16 +2144,250 @@
     return esc(previewFormatCellText(v, col));
   }
 
+  function formatPartitionTitle(raw){
+    const source = (raw === null || raw === undefined) ? "global" : String(raw);
+    const parts = source
+      .split("|")
+      .map(part => {
+        const token = String(part || "").trim();
+        if (!token) return "";
+        const idx = token.indexOf(":");
+        return idx >= 0 ? token.slice(idx + 1).trim() : token;
+      })
+      .filter(Boolean);
+    return parts.length ? parts.join(" / ") : "global";
+  }
+
+  function normalizeParticioCodes(raw) {
+    if (!Array.isArray(raw)) return [];
+    const out = [];
+    const seen = new Set();
+    raw.forEach(item => {
+      const code = String(item || "").trim();
+      if (!code || seen.has(code)) return;
+      seen.add(code);
+      out.push(code);
+    });
+    return out;
+  }
+
+  function splitParticioCustomValues(raw) {
+    let vals = [];
+    if (Array.isArray(raw)) vals = raw.map(v => String(v || "").trim());
+    else if (typeof raw === "string") vals = raw.split(",").map(v => v.trim());
+    const out = [];
+    const seen = new Set();
+    vals.forEach(v => {
+      if (!v) return;
+      const key = v.replace(/\s+/g, " ").trim().toLowerCase();
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      out.push(v);
+    });
+    return out;
+  }
+
+  function normalizeParticionsCustom(raw) {
+    const out = {};
+    if (!raw || typeof raw !== "object") return out;
+    Object.entries(raw).forEach(([fieldCode, cfg]) => {
+      const code = String(fieldCode || "").trim();
+      if (!code || !cfg || typeof cfg !== "object") return;
+      const mode = String(cfg.mode || "raw").toLowerCase() === "custom" ? "custom" : "raw";
+      const fallback = String(cfg.fallback_label || "").trim();
+      const groups = [];
+      const rawGroups = Array.isArray(cfg.grups) ? cfg.grups : [];
+      rawGroups.forEach((g, idx) => {
+        if (!g || typeof g !== "object") return;
+        const label = String(g.label || g.key || `Grup ${idx + 1}`).trim() || `Grup ${idx + 1}`;
+        groups.push({
+          key: String(g.key || `grp_${idx + 1}`),
+          label: label,
+          values: splitParticioCustomValues(g.values),
+        });
+      });
+      out[code] = { mode: mode, fallback_label: fallback, grups: groups };
+    });
+    return out;
+  }
+
+  function partFieldMetaByCode(code) {
+    const all = Array.isArray(PARTICIO_FIELDS) ? PARTICIO_FIELDS : [];
+    const hit = all.find(x => String(x.code || "") === String(code || ""));
+    if (hit) return hit;
+    return { code: String(code || ""), label: String(code || ""), ui_label: String(code || "") };
+  }
+
+  function selectedParticioCodesFromUI() {
+    const out = [];
+    document.querySelectorAll("[data-part-code]").forEach(node => {
+      if (!node.checked) return;
+      const code = String(node.getAttribute("data-part-code") || "").trim();
+      if (code) out.push(code);
+    });
+    return normalizeParticioCodes(out);
+  }
+
+  function buildParticioFieldChecks() {
+    if (!els.particionsFieldsBox) return;
+    const fields = Array.isArray(PARTICIO_FIELDS) ? PARTICIO_FIELDS : [];
+    if (!fields.length) {
+      els.particionsFieldsBox.innerHTML = `<div class="small text-muted">Sense camps de particio disponibles.</div>`;
+      return;
+    }
+
+    let html = '<div class="row">';
+    fields.forEach((f, idx) => {
+      const code = String(f.code || "").trim();
+      if (!code) return;
+      const inputId = `particio_field_${idx}`;
+      const label = String(f.ui_label || f.label || code);
+      html += `
+        <div class="col-12 col-md-6 mb-1">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="${esc(inputId)}" data-part-code="${esc(code)}">
+            <label class="form-check-label" for="${esc(inputId)}">${esc(label)}</label>
+          </div>
+        </div>
+      `;
+    });
+    html += "</div>";
+    els.particionsFieldsBox.innerHTML = html;
+  }
+
+  function renderParticionsCustomUI(selectedCodes, customMapRaw) {
+    if (!els.particionsCustomBox) return;
+    const selected = normalizeParticioCodes(selectedCodes || []);
+    const customMap = normalizeParticionsCustom(customMapRaw || {});
+
+    if (!selected.length) {
+      els.particionsCustomBox.innerHTML = `<div class="small text-muted">Selecciona almenys un camp de particio per configurar grups custom.</div>`;
+      return;
+    }
+
+    let html = "";
+    selected.forEach((code, fieldIdx) => {
+      const meta = partFieldMetaByCode(code);
+      const cfg = customMap[code] || { mode: "raw", fallback_label: "", grups: [] };
+      const groups = Array.isArray(cfg.grups) ? cfg.grups : [];
+      const customEnabled = String(cfg.mode || "raw").toLowerCase() === "custom";
+      const modeId = `pc_mode_${fieldIdx}`;
+      const valsRaw = (PARTICIO_VALUE_CHOICES && Object.prototype.hasOwnProperty.call(PARTICIO_VALUE_CHOICES, code))
+        ? PARTICIO_VALUE_CHOICES[code]
+        : [];
+      const vals = Array.isArray(valsRaw) ? valsRaw.slice(0, 12) : [];
+      const valsHint = vals.length
+        ? `<div class="small text-muted mt-1">Valors detectats: ${esc(vals.join(", "))}</div>`
+        : `<div class="small text-muted mt-1">Sense valors detectats automaticament.</div>`;
+
+      html += `
+        <div class="border rounded p-2 mb-2" data-part-custom-field="${esc(code)}">
+          <div class="d-flex justify-content-between align-items-center">
+            <div class="font-weight-bold small">${esc(meta.ui_label || meta.label || code)}</div>
+            <div class="form-check m-0">
+              <input class="form-check-input" type="checkbox" id="${esc(modeId)}"
+                     data-part-custom="mode" ${customEnabled ? "checked" : ""}>
+              <label class="form-check-label small" for="${esc(modeId)}">Particio custom</label>
+            </div>
+          </div>
+          <div class="mt-2" data-part-custom="panel" style="display:${customEnabled ? "" : "none"};">
+            <div class="form-group mb-2">
+              <label class="small text-muted mb-1">Etiqueta per no assignats (opcional)</label>
+              <input class="form-control form-control-sm" type="text" data-part-custom="fallback"
+                     value="${esc(cfg.fallback_label || "")}" placeholder="Altres">
+            </div>
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <label class="small text-muted m-0">Grups</label>
+              <button type="button" class="btn btn-sm btn-outline-primary"
+                      data-part-custom-act="add-group" data-code="${esc(code)}">+ Grup</button>
+            </div>
+            <div data-part-custom="groups">
+      `;
+
+      if (!groups.length) {
+        html += `<div class="small text-muted mb-2">Cap grup definit.</div>`;
+      } else {
+        groups.forEach((g, idx) => {
+          const gLabel = String(g.label || g.key || `Grup ${idx + 1}`).trim() || `Grup ${idx + 1}`;
+          const gVals = splitParticioCustomValues(g.values).join(", ");
+          html += `
+            <div class="border rounded p-2 mb-2">
+              <div class="form-group mb-2">
+                <label class="small text-muted mb-1">Etiqueta grup</label>
+                <input class="form-control form-control-sm" type="text" data-part-custom-group="label"
+                       value="${esc(gLabel)}" placeholder="Base">
+              </div>
+              <div class="form-group mb-2">
+                <label class="small text-muted mb-1">Valors (separats per coma)</label>
+                <input class="form-control form-control-sm" type="text" data-part-custom-group="values"
+                       value="${esc(gVals)}" placeholder="ALEVI, PREBENJAMI">
+              </div>
+              <div class="text-right">
+                <button type="button" class="btn btn-sm btn-outline-danger"
+                        data-part-custom-act="del-group" data-code="${esc(code)}" data-idx="${esc(String(idx))}">Eliminar grup</button>
+              </div>
+            </div>
+          `;
+        });
+      }
+
+      html += `
+            </div>
+            ${valsHint}
+          </div>
+        </div>
+      `;
+    });
+
+    els.particionsCustomBox.innerHTML = html;
+  }
+
+  function readParticionsCustomUI(selectedCodes) {
+    const selected = normalizeParticioCodes(selectedCodes || selectedParticioCodesFromUI());
+    const selectedSet = new Set(selected);
+    const out = {};
+
+    document.querySelectorAll("[data-part-custom-field]").forEach(box => {
+      const code = String(box.getAttribute("data-part-custom-field") || "").trim();
+      if (!code || !selectedSet.has(code)) return;
+
+      const modeNode = box.querySelector('[data-part-custom="mode"]');
+      const mode = modeNode && modeNode.checked ? "custom" : "raw";
+      if (mode !== "custom") return;
+      const fallbackNode = box.querySelector('[data-part-custom="fallback"]');
+      const fallback = String((fallbackNode && fallbackNode.value) || "").trim();
+      const groups = [];
+      box.querySelectorAll('[data-part-custom="groups"] > .border').forEach((gBox, idx) => {
+        const labelNode = gBox.querySelector('[data-part-custom-group="label"]');
+        const valuesNode = gBox.querySelector('[data-part-custom-group="values"]');
+        const label = String((labelNode && labelNode.value) || "").trim() || `Grup ${idx + 1}`;
+        const valuesTxt = String((valuesNode && valuesNode.value) || "");
+        const values = splitParticioCustomValues(valuesTxt);
+        if (!values.length) return;
+        groups.push({
+          key: `grp_${idx + 1}`,
+          label: label,
+          values: values,
+        });
+      });
+
+      out[code] = {
+        mode: "custom",
+        fallback_label: fallback,
+        grups: groups,
+      };
+    });
+
+    return out;
+  }
+
   function syncAdvancedFromUI(opts = {}) {
     const preferAdvanced = !!opts.preferAdvanced;
     const cfg = currentCfg();
     if (!cfg) return;
 
-    const parts = [];
-    if (els.pCategoria.checked) parts.push("categoria");
-    if (els.pSubcategoria.checked) parts.push("subcategoria");
-    if (els.pEntitat.checked) parts.push("entitat");
-    if (els.pGrup.checked) parts.push("grup");
+    const parts = selectedParticioCodesFromUI();
+    const particionsCustom = readParticionsCustomUI(parts);
 
     // filtres UI
     function selectedValues(sel){
@@ -1864,9 +2410,9 @@
       } catch(e) {}
     }
 
-    // aparells
-    const apMode = els.apSel.checked ? "seleccionar" : "tots";
-    const apIds = (apMode === "seleccionar") ? selectedAparellIdsFromUI() : [];
+    // aparells (sempre seleccio explicita)
+    const apMode = "seleccionar";
+    const apIds = selectedAparellIdsFromUI();
 
     // camps per aparell des d'inputs
     const camps_per_aparell = {};
@@ -1878,6 +2424,8 @@
 
     const tipus = currentTipus();
     const exCfg = readMainExercicisFromUI();
+    const modeSeleccioExercicis = getModeSeleccioExercicisFromUI();
+    const exPerAppCfg = readPerAppExercicisFromUI();
 
     // desempats
     let desempat = readTieUI();
@@ -1898,6 +2446,7 @@
 
     const schema = {
       particions: parts,
+      particions_custom: particionsCustom,
       filtres: filtres,
       puntuacio: {
         aparells: { mode: apMode, ids: apIds },
@@ -1905,6 +2454,8 @@
         agregacio_camps: els.sAggCamps.value,
         exercicis: exCfg.cfg,
         exercicis_best_n: exCfg.bestN,
+        mode_seleccio_exercicis: modeSeleccioExercicis,
+        exercicis_per_aparell: exPerAppCfg,
         agregacio_exercicis: els.sAggExercicis.value,
         agregacio_aparells: els.sAggAparells.value,
         ordre: els.sOrdre.value,
@@ -1938,30 +2489,37 @@
   function syncUIFromSchema(schema) {
     schema = schema || JSON.parse(JSON.stringify(DEFAULT_SCHEMA));
 
-    const parts = schema.particions || [];
-    els.pCategoria.checked = parts.includes("categoria");
-    els.pSubcategoria.checked = parts.includes("subcategoria");
-    els.pEntitat.checked = parts.includes("entitat");
-    els.pGrup.checked = parts.includes("grup");
+    const parts = normalizeParticioCodes(schema.particions || []);
+    const partSet = new Set(parts);
+    document.querySelectorAll("[data-part-code]").forEach(node => {
+      const code = String(node.getAttribute("data-part-code") || "").trim();
+      node.checked = partSet.has(code);
+    });
+    renderParticionsCustomUI(parts, schema.particions_custom || {});
 
-    // aparells
-    const apMode = ((schema.puntuacio||{}).aparells||{}).mode || "tots";
-    els.apTots.checked = apMode === "tots";
-    els.apSel.checked = apMode === "seleccionar";
-    els.apSelBox.style.display = apMode === "seleccionar" ? "" : "none";
+    // aparells (sense mode "tots": normalitzem legacy a seleccio explicita)
+    const rawAparells = ((schema.puntuacio||{}).aparells||{});
+    const apMode = String(rawAparells.mode || "seleccionar").toLowerCase();
+    const idsLegacy = Array.isArray(rawAparells.ids) ? rawAparells.ids : [];
+    const idsNorm = (apMode === "tots")
+      ? (APARELLS || []).map(a => String(a.id))
+      : idsLegacy.map(x => String(x));
+    const ids = new Set(idsNorm);
 
-    const ids = new Set((((schema.puntuacio||{}).aparells||{}).ids || []).map(x => String(x)));
+    if (els.apSelBox) els.apSelBox.style.display = "";
     (APARELLS || []).forEach(a => {
       const el = document.getElementById("app_" + a.id);
       if (el) el.checked = ids.has(String(a.id));
     });
 
     els.sAggCamps.value = (schema.puntuacio||{}).agregacio_camps || "sum";
+    els.sModeSeleccioExercicis.value = (schema.puntuacio||{}).mode_seleccio_exercicis || "per_aparell_global";
     const pEx = ((schema.puntuacio||{}).exercicis || {});
     els.sExercicisMode.value = pEx.mode || "tots";
     els.iExBestN.value = (schema.puntuacio||{}).exercicis_best_n || pEx.best_n || 1;
     els.iExIndex.value = pEx.index || 1;
-    els.tExIds.value = Array.isArray(pEx.ids) ? pEx.ids.join(",") : "";
+    if (Array.isArray(pEx.ids)) els.tExIds.value = pEx.ids.join(",");
+    else els.tExIds.value = String(pEx.ids || "");
     refreshMainExercicisUI();
     els.sAggExercicis.value = (schema.puntuacio||{}).agregacio_exercicis || "sum";
     els.sAggAparells.value = (schema.puntuacio||{}).agregacio_aparells || "sum";
@@ -2008,7 +2566,7 @@
 
   // events: canvis que afecten schema
   ["change","input"].forEach(ev => {
-    ["pCategoria","pSubcategoria","pEntitat","pGrup","sAggCamps","sExercicisMode","iExBestN","iExIndex","tExIds","sAggExercicis","sAggAparells","sOrdre","iTopN","cEmpats","eqIncludeSenseEquip","eqAgeActiva","eqAgeLlindars","eqAgeSenseLabel","eqCombineManualAge"]
+    ["sAggCamps","sModeSeleccioExercicis","sExercicisMode","iExBestN","iExIndex","tExIds","sAggExercicis","sAggAparells","sOrdre","iTopN","cEmpats","eqIncludeSenseEquip","eqAgeActiva","eqAgeLlindars","eqAgeSenseLabel","eqCombineManualAge"]
       .forEach(id => document.getElementById(id).addEventListener(ev, syncAdvancedFromUI));
 
     [els.fEntitats, els.fCategories, els.fSubcategories, els.fGrups].forEach(x => {
@@ -2016,8 +2574,86 @@
     });
   });
 
+  if (els.particionsFieldsBox) {
+    els.particionsFieldsBox.addEventListener("change", (ev) => {
+      const node = ev.target;
+      if (!node || !node.matches("[data-part-code]")) return;
+      const cfg = currentCfg();
+      const schema = (cfg && cfg.schema) ? cfg.schema : DEFAULT_SCHEMA;
+      renderParticionsCustomUI(
+        selectedParticioCodesFromUI(),
+        normalizeParticionsCustom((schema || {}).particions_custom || {})
+      );
+      syncAdvancedFromUI();
+    });
+  }
+
+  if (els.particionsCustomBox) {
+    els.particionsCustomBox.addEventListener("change", (ev) => {
+      const node = ev.target;
+      if (!node) return;
+      if (node.matches('[data-part-custom="mode"]')) {
+        const box = node.closest("[data-part-custom-field]");
+        const panel = box ? box.querySelector('[data-part-custom="panel"]') : null;
+        if (panel) panel.style.display = node.checked ? "" : "none";
+      }
+      syncAdvancedFromUI();
+    });
+    els.particionsCustomBox.addEventListener("input", (ev) => {
+      const node = ev.target;
+      if (!node) return;
+      if (
+        node.matches('[data-part-custom="fallback"]') ||
+        node.matches('[data-part-custom-group="label"]') ||
+        node.matches('[data-part-custom-group="values"]')
+      ) {
+        syncAdvancedFromUI();
+      }
+    });
+    els.particionsCustomBox.addEventListener("click", (ev) => {
+      const btn = ev.target.closest("button[data-part-custom-act]");
+      if (!btn) return;
+      ev.preventDefault();
+      const act = String(btn.getAttribute("data-part-custom-act") || "");
+      const code = String(btn.getAttribute("data-code") || "").trim();
+      if (!code) return;
+
+      const selected = selectedParticioCodesFromUI();
+      const cur = normalizeParticionsCustom(readParticionsCustomUI(selected));
+      const item = cur[code] || { mode: "custom", fallback_label: "", grups: [] };
+      item.mode = "custom";
+      item.grups = Array.isArray(item.grups) ? item.grups : [];
+
+      if (act === "add-group") {
+        item.grups.push({
+          key: `grp_${item.grups.length + 1}`,
+          label: `Grup ${item.grups.length + 1}`,
+          values: [],
+        });
+      } else if (act === "del-group") {
+        const idx = Number(btn.getAttribute("data-idx"));
+        if (Number.isInteger(idx) && idx >= 0 && idx < item.grups.length) {
+          item.grups.splice(idx, 1);
+        }
+      } else {
+        return;
+      }
+
+      cur[code] = item;
+      renderParticionsCustomUI(selected, cur);
+      syncAdvancedFromUI();
+    });
+  }
+
   if (els.sExercicisMode) {
     els.sExercicisMode.addEventListener("change", refreshMainExercicisUI);
+  }
+  if (els.sModeSeleccioExercicis) {
+    els.sModeSeleccioExercicis.addEventListener("change", () => {
+      refreshMainExercicisUI();
+      renderPerAppUI((currentCfg()||{}).schema || DEFAULT_SCHEMA);
+      syncAdvancedFromUI();
+    });
   }
 
   if (els.tDesempat) {
@@ -2040,21 +2676,11 @@
     });
   }
 
-  els.apTots.addEventListener("change", () => {
-    els.apSelBox.style.display = els.apSel.checked ? "" : "none";
-    renderPerAppUI((currentCfg()||{}).schema || DEFAULT_SCHEMA);
-    syncAdvancedFromUI();
-  });
-  els.apSel.addEventListener("change", () => {
-    els.apSelBox.style.display = els.apSel.checked ? "" : "none";
-    renderPerAppUI((currentCfg()||{}).schema || DEFAULT_SCHEMA);
-    syncAdvancedFromUI();
-  });
-
   // quan es marca/desmarca un aparell
   document.addEventListener("change", (e) => {
     if (e.target && e.target.id && e.target.id.startsWith("app_")) {
       renderPerAppUI((currentCfg()||{}).schema || DEFAULT_SCHEMA);
+      renderTieUI(readTieUI());
       syncAdvancedFromUI();
     }
   });
@@ -2249,14 +2875,7 @@
       const parts = out.data || [];
       let html = "";
       parts.forEach((p, pIdx) => {
-        let particioNom = p.particio;
-        if (typeof particioNom === "string") {
-          if (particioNom.includes("|")) {
-            particioNom = particioNom.split("|").pop();
-          } else if (particioNom.includes(":")) {
-            particioNom = particioNom.split(":").pop();
-          }
-        }
+        const particioNom = formatPartitionTitle(p.particio);
 
         const rowCount = (p.rows || []).length;
         html += `<section class="partition-card part-idx-${esc(String(pIdx % 5))}">`;
@@ -2294,6 +2913,7 @@
 
   // init
   buildAparellChecks();
+  buildParticioFieldChecks();
   renderList();
   if (state.cfgs.length) selectCfg(state.cfgs[0].id);
 </script>

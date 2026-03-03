@@ -260,6 +260,67 @@
       box-shadow: 0 8px 22px rgba(0, 0, 0, 0.12);
       padding: 10px;
     }
+    .custom-sort-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 1px 6px;
+      border-radius: 999px;
+      border: 1px solid #b6c3de;
+      background: #f1f5ff;
+      color: #27457a;
+      font-size: 0.68rem;
+      line-height: 1.2;
+      white-space: nowrap;
+    }
+    .custom-sort-list {
+      max-height: 180px;
+      overflow: auto;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      padding: 6px;
+      background: #fafbff;
+      font-size: 0.8rem;
+    }
+    .custom-sort-editor {
+      border-top: 1px dashed #d7dfef;
+      padding-top: 8px;
+    }
+    .custom-sort-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid #e2e8f0;
+      background: #ffffff;
+      border-radius: 6px;
+      padding: 5px 7px;
+      margin-bottom: 6px;
+    }
+    .custom-sort-item:last-child {
+      margin-bottom: 0;
+    }
+    .custom-sort-item-handle {
+      cursor: grab;
+      user-select: none;
+      font-weight: 700;
+      color: #64748b;
+      line-height: 1;
+    }
+    .custom-sort-item-label {
+      flex: 1 1 auto;
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .custom-sort-item-count {
+      font-size: 0.72rem;
+      color: #334155;
+      background: #e8eefc;
+      border: 1px solid #c9d6f2;
+      border-radius: 999px;
+      padding: 1px 6px;
+      white-space: nowrap;
+    }
   </style>
 
   <div class="card-surface">
@@ -476,60 +537,179 @@
                 </button>
               </div>
 
-              <div class="d-flex align-items-center flex-wrap" style="gap:10px;">
-                <span class="text-muted small fw-semibold">Mode:</span>
-                <select name="group_mode" class="form-control form-control-sm" style="width:170px">
-                  {% with gm=request.GET.group_mode|default:"fixed" %}
-                    <option value="fixed" {% if gm == "fixed" %}selected{% endif %}>Mida fixa</option>
-                    <option value="balanced" {% if gm == "balanced" %}selected{% endif %}>Grups equilibrats</option>
-                  {% endwith %}
-                </select>
-
-                <span class="text-muted small fw-semibold">Mida:</span>
-                <input type="number" name="group_size" min="2" max="50"
-                       value="{{ request.GET.group_size|default:8 }}"
-                       class="form-control form-control-sm" style="width:90px">
-
-                <button type="submit" name="make_groups" value="1" class="btn btn-sm btn-outline-dark">
-                  Crear grups
-                </button>
+              <div class="d-flex align-items-center flex-wrap mb-3" style="gap:12px;">
+                <span class="text-muted small fw-semibold">Base de creacio:</span>
+                <label class="form-check form-check-inline m-0">
+                  <input class="form-check-input js-group-source" type="radio" name="group_source" value="tabs" checked>
+                  <span class="form-check-label">Pestanyes</span>
+                </label>
+                <label class="form-check form-check-inline m-0">
+                  <input class="form-check-input js-group-source" type="radio" name="group_source" value="sort">
+                  <span class="form-check-label">Ordenacions actives</span>
+                </label>
               </div>
 
-              <hr class="my-3">
-
-              <div class="mb-2">
-                <div class="d-flex align-items-center flex-wrap" style="gap:10px;">
-                  <span class="text-muted small fw-semibold">Crear X grups:</span>
-                  <input type="number" name="group_count" min="1" max="200"
-                         value="{{ request.GET.group_count|default:4 }}"
-                         class="form-control form-control-sm" style="width:90px">
-
-                  <button type="submit" name="make_groups_count" value="1" class="btn btn-sm btn-outline-dark">
-                    Crear X grups
-                  </button>
-                </div>
-              </div>
-
-              {% if selected_group_fields and records_grouped %}
+              <div id="group-source-tabs-wrap">
                 <div class="tab-select-card">
                   <div class="d-flex justify-content-between align-items-center mb-2">
-                    <div class="fw-semibold">Aplica a pestanyes</div>
-                    <div class="text-muted small">Si no marques cap, s'aplica a totes</div>
+                    <div class="fw-semibold">Crear grups per pestanyes</div>
+                    <div class="text-muted small">Mateix motor que ordenacions actives</div>
                   </div>
 
-                  <div class="tab-select-grid">
-                    {% for group_label, group_records, group_key in records_grouped %}
-                      <label class="tab-select-item">
-                        <input type="checkbox" name="tab_keys" value="{{ group_key }}">
-                        <span class="tab-label small" title="{{ group_label }}">{{ group_label }}</span>
-                        <span class="badge badge-light">{{ group_records|length }}</span>
-                      </label>
-                    {% endfor %}
+                  <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
+                    <span class="text-muted small fw-semibold">Fallback:</span>
+                    <select id="tabs-group-fallback" class="form-control form-control-sm" style="width:240px;">
+                      <option value="all_filtered" selected>Sense pestanyes: totes filtrades</option>
+                      <option value="strict">Estricte (error)</option>
+                      <option value="adjust_k">Ajustar k si cal</option>
+                      <option value="ignore_range">Ignorar forquilla si cal</option>
+                    </select>
+                  </div>
+
+                  {% if selected_group_fields and records_grouped %}
+                    <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
+                      <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-tabs-buckets-all">Seleccionar tots</button>
+                      <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-tabs-buckets-none">Netejar</button>
+                      <span class="text-muted small">{{ records_grouped|length }} pestanyes detectades</span>
+                    </div>
+
+                    <div class="tab-select-grid mb-3">
+                      {% for group_label, group_records, group_key in records_grouped %}
+                        <label class="tab-select-item">
+                          <input type="checkbox" class="js-tab-bucket-check" value="{{ group_key }}">
+                          <span class="tab-label small" title="{{ group_label }}">{{ group_label }}</span>
+                          <span class="badge badge-light">{{ group_records|length }}</span>
+                        </label>
+                      {% endfor %}
+                    </div>
+                  {% else %}
+                    <div class="text-muted small mb-2">
+                      No hi ha agrupacio activa per pestanyes: s'aplicara el fallback seleccionat.
+                    </div>
+                  {% endif %}
+
+                  <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
+                    <span class="text-muted small fw-semibold">Crear X grups:</span>
+                    <input id="tabs-group-count" type="number" min="1" max="200" value="4" class="form-control form-control-sm" style="width:90px;">
+                    <button type="button" class="btn btn-sm btn-outline-dark" id="btn-tabs-create-count">Crear X grups</button>
+                  </div>
+
+                  <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
+                    <span class="text-muted small fw-semibold">Mida:</span>
+                    <input id="tabs-group-size" type="number" min="2" max="200" value="8" class="form-control form-control-sm" style="width:90px;">
+                    <select id="tabs-group-size-mode" class="form-control form-control-sm" style="width:170px;">
+                      <option value="fixed">Mida fixa</option>
+                      <option value="balanced">Equilibrats</option>
+                    </select>
+                    <button type="button" class="btn btn-sm btn-outline-dark" id="btn-tabs-create-size">Crear per mida</button>
+                  </div>
+
+                  <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
+                    <span class="text-muted small fw-semibold">Forquilla:</span>
+                    <input id="tabs-group-min-size" type="number" min="1" max="200" value="5" class="form-control form-control-sm" style="width:82px;" title="Minim">
+                    <span class="small text-muted">a</span>
+                    <input id="tabs-group-max-size" type="number" min="1" max="200" value="8" class="form-control form-control-sm" style="width:82px;" title="Maxim">
+                    <button type="button" class="btn btn-sm btn-outline-dark" id="btn-tabs-create-range-balanced">Equilibrats min-max</button>
+                  </div>
+
+                  <div class="d-flex align-items-center flex-wrap" style="gap:8px;">
+                    <span class="text-muted small fw-semibold">X grups amb forquilla:</span>
+                    <input id="tabs-group-count-range" type="number" min="1" max="200" value="4" class="form-control form-control-sm" style="width:90px;">
+                    <button type="button" class="btn btn-sm btn-outline-dark" id="btn-tabs-create-count-range">Crear X amb min-max</button>
+                  </div>
+
+                  <div class="d-flex align-items-center flex-wrap mt-2" style="gap:8px;">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-tabs-create-per-bucket">
+                      1 grup per cada pestanya seleccionada
+                    </button>
                   </div>
                 </div>
-              {% else %}
-                <div class="text-muted small">No hi ha agrupació activa: s'aplicarà a totes les inscripcions filtrades.</div>
-              {% endif %}
+              </div>
+
+              <div id="group-source-sort-wrap" class="d-none">
+                <div class="tab-select-card">
+                  <div class="d-flex justify-content-between align-items-center mb-2">
+                    <div class="fw-semibold">Crear grups per ordenacio</div>
+                    <div class="text-muted small">Acumulatiu segons la prioritat activa</div>
+                  </div>
+
+                  <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
+                    <span class="text-muted small fw-semibold">Fallback:</span>
+                    <select id="sort-group-fallback" class="form-control form-control-sm" style="width:240px;">
+                      <option value="all_filtered" selected>Sense ordenacio: totes filtrades</option>
+                      <option value="strict">Estricte (error)</option>
+                      <option value="adjust_k">Ajustar k si cal</option>
+                      <option value="ignore_range">Ignorar forquilla si cal</option>
+                    </select>
+                  </div>
+
+                  {% if sort_partition_has_fields %}
+                    <div class="small mb-2">
+                      {% for f in sort_partition_fields %}
+                        <span class="badge badge-info mr-1">#{{ f.priority }} {{ f.label }}</span>
+                      {% endfor %}
+                    </div>
+                  {% else %}
+                    <div class="text-muted small mb-2">
+                      No hi ha criteris d'ordenacio actius: s'aplicara el fallback seleccionat.
+                    </div>
+                  {% endif %}
+
+                  <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-sort-buckets-all">Seleccionar tots</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-sort-buckets-none">Netejar</button>
+                    <span class="text-muted small">{{ sort_partition_bucket_count }} blocs detectats</span>
+                  </div>
+
+                  {% if sort_partition_buckets %}
+                    <div class="tab-select-grid mb-3">
+                      {% for b in sort_partition_buckets %}
+                        <label class="tab-select-item">
+                          <input type="checkbox" class="js-sort-bucket-check" value="{{ b.key }}">
+                          <span class="tab-label small" title="{{ b.label }}">{{ b.label }}</span>
+                          <span class="badge badge-light">{{ b.count }}</span>
+                        </label>
+                      {% endfor %}
+                    </div>
+                  {% endif %}
+
+                  <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
+                    <span class="text-muted small fw-semibold">Crear X grups:</span>
+                    <input id="sort-group-count" type="number" min="1" max="200" value="4" class="form-control form-control-sm" style="width:90px;">
+                    <button type="button" class="btn btn-sm btn-outline-dark" id="btn-sort-create-count">Crear X grups</button>
+                  </div>
+
+                  <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
+                    <span class="text-muted small fw-semibold">Mida:</span>
+                    <input id="sort-group-size" type="number" min="2" max="200" value="8" class="form-control form-control-sm" style="width:90px;">
+                    <select id="sort-group-size-mode" class="form-control form-control-sm" style="width:170px;">
+                      <option value="fixed">Mida fixa</option>
+                      <option value="balanced">Equilibrats</option>
+                    </select>
+                    <button type="button" class="btn btn-sm btn-outline-dark" id="btn-sort-create-size">Crear per mida</button>
+                  </div>
+
+                  <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
+                    <span class="text-muted small fw-semibold">Forquilla:</span>
+                    <input id="sort-group-min-size" type="number" min="1" max="200" value="5" class="form-control form-control-sm" style="width:82px;" title="Minim">
+                    <span class="small text-muted">a</span>
+                    <input id="sort-group-max-size" type="number" min="1" max="200" value="8" class="form-control form-control-sm" style="width:82px;" title="Maxim">
+                    <button type="button" class="btn btn-sm btn-outline-dark" id="btn-sort-create-range-balanced">Equilibrats min-max</button>
+                  </div>
+
+                  <div class="d-flex align-items-center flex-wrap" style="gap:8px;">
+                    <span class="text-muted small fw-semibold">X grups amb forquilla:</span>
+                    <input id="sort-group-count-range" type="number" min="1" max="200" value="4" class="form-control form-control-sm" style="width:90px;">
+                    <button type="button" class="btn btn-sm btn-outline-dark" id="btn-sort-create-count-range">Crear X amb min-max</button>
+                  </div>
+
+                  <div class="d-flex align-items-center flex-wrap mt-2" style="gap:8px;">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-make-groups-from-sort">
+                      1 grup per cada bloc detectat
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -541,7 +721,7 @@
           <div class="panel-head collapsed" data-target="#panel-altres" aria-expanded="false">
             <div>
               <p class="panel-title mb-0">Altres</p>
-              <div class="subtle">Ordena dins grups, defineix títols i exporta.</div>
+              <div class="subtle">Revisa ordenacions actives, exporta i gestiona columnes d'Excel.</div>
             </div>
             <div class="d-flex align-items-center gap-2">
               <span class="subtle d-none d-md-inline">Mostra/Oculta</span>
@@ -556,32 +736,51 @@
                 </button>
               </div>
 
-              <div class="d-flex align-items-center flex-wrap" style="gap:8px;">
-                <span class="text-muted small fw-semibold">Ordenació de les inscripcions:</span>
+              <div class="team-box mb-3">
+                <div class="d-flex justify-content-between align-items-center flex-wrap" style="gap:10px;">
+                  <div>
+                    <div class="fw-semibold">Ordenacions actives</div>
+                    <div class="text-muted small">{{ column_sort_stack_count }} criteris actius al context actual</div>
+                  </div>
+                  <div class="btn-row">
+                    <button type="button"
+                            class="btn btn-sm btn-outline-secondary js-col-sort-undo"
+                            {% if not column_sort_has_stack %}disabled{% endif %}>
+                      Desfer ultima
+                    </button>
+                    <button type="button"
+                            class="btn btn-sm btn-outline-secondary js-col-sort-clear"
+                            {% if not column_sort_has_stack %}disabled{% endif %}>
+                      Netejar ordenacions
+                    </button>
+                  </div>
+                </div>
 
-                <select name="sort_key" class="form-control form-control-sm" style="width: 210px;">
-                  {% with sk=sort_key_selected|default:"nom_i_cognoms" %}
-                    {% for f in sort_field_options %}
-                      <option value="{{ f.code }}" {% if sk == f.code %}selected{% endif %}>{{ f.ui_label|default:f.label }}</option>
+                {% if column_sort_entries %}
+                  <div class="mt-2">
+                    {% for s in column_sort_entries %}
+                      <div class="d-flex justify-content-between align-items-center border rounded px-2 py-1 mb-1" title="{{ s.title }}">
+                        <div class="small">
+                          <span class="font-weight-bold">#{{ s.priority }}</span>
+                          <span class="ml-1">{{ s.label }}</span>
+                          <span class="text-muted ml-1">({{ s.sort_dir_label }} · {{ s.scope_label }})</span>
+                          {% if s.custom_active %}
+                            <span class="custom-sort-badge ml-1">Custom</span>
+                          {% endif %}
+                        </div>
+                        <button type="button"
+                                class="btn btn-sm btn-outline-danger py-0 px-2 js-col-sort-remove"
+                                data-sort-priority="{{ s.remove_priority }}"
+                                title="Eliminar aquest criteri d'ordenacio"
+                                aria-label="Eliminar criteri d'ordenacio">
+                          Treure
+                        </button>
+                      </div>
                     {% endfor %}
-                  {% endwith %}
-                </select>
-
-                <select name="sort_dir" class="form-control form-control-sm" style="width: 130px;">
-                  {% with sd=request.GET.sort_dir|default:"asc" %}
-                    <option value="asc" {% if sd == "asc" %}selected{% endif %}>Asc</option>
-                    <option value="desc" {% if sd == "desc" %}selected{% endif %}>Desc</option>
-                    <option value="arrow_asc" {% if sd == "arrow_asc" %}selected{% endif %}>Fletxa (asc)</option>
-                    <option value="arrow_desc" {% if sd == "arrow_desc" %}selected{% endif %}>Fletxa (desc)</option>
-                  {% endwith %}
-                </select>
-
-                <button class="btn btn-sm btn-outline-primary" name="sort_by_grouping" value="1">
-                  Ordena per agrupació
-                </button>
-                <button class="btn btn-sm btn-outline-secondary" name="sort_within_groups" value="1">
-                  Ordena dins de cada grup
-                </button>
+                  </div>
+                {% else %}
+                  <div class="text-muted small mt-2">No hi ha criteris d'ordenacio actius.</div>
+                {% endif %}
               </div>
 
               <hr class="my-3">
@@ -699,6 +898,9 @@
                         <div class="th-col-head">
                           <div class="th-col-label-wrap">
                             <span>{{ col.ui_label|default:col.label }}</span>
+                            {% if custom_sort_enabled_by_code|get_item:col.code %}
+                              <span class="custom-sort-badge">Custom</span>
+                            {% endif %}
                             {% with col_ind=column_sort_indicator_by_code|get_item:col.code %}
                               {% if col_ind %}
                                 <span class="col-sort-indicator" title="{{ col_ind.title }}">
@@ -725,7 +927,7 @@
                                 &#8942;
                               </button>
                               <div class="col-sort-menu d-none" data-col-sort-menu data-col-code="{{ col.code }}">
-                                <div class="small fw-semibold mb-2">{{ col.ui_label|default:col.label }}</div>
+                                <div class="small fw-semibold mb-2 js-col-sort-title">{{ col.ui_label|default:col.label }}</div>
 
                                 <label class="small text-muted mb-1 d-block">Mode</label>
                                 <select class="form-control form-control-sm js-col-sort-dir mb-2">
@@ -733,6 +935,7 @@
                                   <option value="desc">Desc</option>
                                   <option value="arrow_asc">Fletxa (asc)</option>
                                   <option value="arrow_desc">Fletxa (desc)</option>
+                                  <option value="custom">Custom</option>
                                 </select>
 
                                 <label class="small text-muted mb-1 d-block">Ambit</label>
@@ -745,6 +948,21 @@
                                 <div class="mt-2 d-none js-col-sort-group-wrap">
                                   <label class="small text-muted mb-1 d-block">Grup numeric</label>
                                   <select class="form-control form-control-sm js-col-sort-group"></select>
+                                </div>
+
+                                <div class="mt-2">
+                                  <button type="button" class="btn btn-sm btn-outline-secondary w-100 js-col-sort-custom">Ordre custom</button>
+                                  <button type="button" class="btn btn-sm btn-outline-light w-100 mt-1 js-col-sort-custom-clear">Reset custom</button>
+                                  <div class="custom-sort-list mt-2 d-none js-col-sort-custom-preview"></div>
+                                  <div class="custom-sort-editor mt-2 d-none js-col-sort-custom-editor">
+                                    <div class="small text-muted mb-1">Arrossega els valors per definir l'ordre.</div>
+                                    <div class="custom-sort-list js-col-sort-custom-dnd"></div>
+                                    <div class="small text-warning mt-1 d-none js-col-sort-custom-stale"></div>
+                                    <div class="d-flex justify-content-between mt-2" style="gap:8px;">
+                                      <button type="button" class="btn btn-sm btn-outline-secondary js-col-sort-custom-cancel">Tancar</button>
+                                      <button type="button" class="btn btn-sm btn-success js-col-sort-custom-save">Desar ordre</button>
+                                    </div>
+                                  </div>
                                 </div>
 
                                 <div class="d-flex justify-content-between mt-2" style="gap:8px;">
@@ -872,6 +1090,9 @@
                   <div class="th-col-head">
                     <div class="th-col-label-wrap">
                       <span>{{ col.ui_label|default:col.label }}</span>
+                      {% if custom_sort_enabled_by_code|get_item:col.code %}
+                        <span class="custom-sort-badge">Custom</span>
+                      {% endif %}
                       {% with col_ind=column_sort_indicator_by_code|get_item:col.code %}
                         {% if col_ind %}
                           <span class="col-sort-indicator" title="{{ col_ind.title }}">
@@ -898,7 +1119,7 @@
                           &#8942;
                         </button>
                         <div class="col-sort-menu d-none" data-col-sort-menu data-col-code="{{ col.code }}">
-                          <div class="small fw-semibold mb-2">{{ col.ui_label|default:col.label }}</div>
+                          <div class="small fw-semibold mb-2 js-col-sort-title">{{ col.ui_label|default:col.label }}</div>
 
                           <label class="small text-muted mb-1 d-block">Mode</label>
                           <select class="form-control form-control-sm js-col-sort-dir mb-2">
@@ -906,6 +1127,7 @@
                             <option value="desc">Desc</option>
                             <option value="arrow_asc">Fletxa (asc)</option>
                             <option value="arrow_desc">Fletxa (desc)</option>
+                            <option value="custom">Custom</option>
                           </select>
 
                           <label class="small text-muted mb-1 d-block">Ambit</label>
@@ -918,6 +1140,21 @@
                           <div class="mt-2 d-none js-col-sort-group-wrap">
                             <label class="small text-muted mb-1 d-block">Grup numeric</label>
                             <select class="form-control form-control-sm js-col-sort-group"></select>
+                          </div>
+
+                          <div class="mt-2">
+                            <button type="button" class="btn btn-sm btn-outline-secondary w-100 js-col-sort-custom">Ordre custom</button>
+                            <button type="button" class="btn btn-sm btn-outline-light w-100 mt-1 js-col-sort-custom-clear">Reset custom</button>
+                            <div class="custom-sort-list mt-2 d-none js-col-sort-custom-preview"></div>
+                            <div class="custom-sort-editor mt-2 d-none js-col-sort-custom-editor">
+                              <div class="small text-muted mb-1">Arrossega els valors per definir l'ordre.</div>
+                              <div class="custom-sort-list js-col-sort-custom-dnd"></div>
+                              <div class="small text-warning mt-1 d-none js-col-sort-custom-stale"></div>
+                              <div class="d-flex justify-content-between mt-2" style="gap:8px;">
+                                <button type="button" class="btn btn-sm btn-outline-secondary js-col-sort-custom-cancel">Tancar</button>
+                                <button type="button" class="btn btn-sm btn-success js-col-sort-custom-save">Desar ordre</button>
+                              </div>
+                            </div>
                           </div>
 
                           <div class="d-flex justify-content-between mt-2" style="gap:8px;">
@@ -1097,6 +1334,7 @@
       activeTabKey: getActiveTabKey(),
       openPanels: getOpenPanelTargets(),
       scrollY: window.scrollY || window.pageYOffset || 0,
+      groupSource: document.querySelector('.js-group-source:checked')?.value || 'tabs',
     };
     return Object.assign(base, (extra || {}));
   }
@@ -1145,6 +1383,12 @@
 
     __uiStateRestoring = true;
     try {
+      const groupSource = String(state.groupSource || '');
+      if (groupSource === 'tabs' || groupSource === 'sort') {
+        const sourceEl = document.querySelector(`.js-group-source[value="${groupSource}"]`);
+        if (sourceEl) sourceEl.checked = true;
+      }
+
       if (Array.isArray(state.openPanels)) {
         document.querySelectorAll('.panel-head[data-target]').forEach(head => {
           const target = head.getAttribute('data-target');
@@ -1233,7 +1477,9 @@
       body: JSON.stringify({
         ids: ids,
         moved_id: movedId ? String(movedId) : null,
-        new_index: (newIndex >= 0 ? newIndex : null)
+        new_index: (newIndex >= 0 ? newIndex : null),
+        filters: getCurrentInscripcioFilters(),
+        group_by: getCurrentGroupByCodes()
       })
     });
 
@@ -1435,11 +1681,388 @@
 
     const sortApplyUrl = "{% url 'inscripcions_sort_apply' competicio.id %}";
     const sortRemoveUrl = "{% url 'inscripcions_sort_remove' competicio.id %}";
+    const sortClearUrl = "{% url 'inscripcions_sort_clear' competicio.id %}";
+    const sortCustomValuesUrl = "{% url 'inscripcions_sort_custom_values' competicio.id %}";
+    const sortCustomSaveUrl = "{% url 'inscripcions_sort_custom_save' competicio.id %}";
     const sortUndoUrl = "{% url 'inscripcions_sort_undo' competicio.id %}";
+    const groupsFromSortUrl = "{% url 'inscripcions_groups_from_sort' competicio.id %}";
 
     function getCurrentGroupByCodes() {
       const url = new URL(window.location.href);
       return url.searchParams.getAll('group_by');
+    }
+
+    function normalizeCustomOrderValues(rawValues) {
+      const out = [];
+      const seen = new Set();
+      (rawValues || []).forEach(v => {
+        const token = String(v || '').trim();
+        if (!token) return;
+        const key = token.toLowerCase();
+        if (seen.has(key)) return;
+        seen.add(key);
+        out.push(token);
+      });
+      return out;
+    }
+
+    function renderCustomSortPreview(menu, values) {
+      const preview = menu?.querySelector('.js-col-sort-custom-preview');
+      if (!preview) return;
+
+      const rows = Array.isArray(values) ? values : [];
+      if (!rows.length) {
+        preview.classList.add('d-none');
+        preview.innerHTML = '';
+        return;
+      }
+
+      preview.classList.remove('d-none');
+      preview.innerHTML = rows
+        .map((row, idx) => {
+          const label = String(row?.label || row?.value || '').trim() || '(Sense valor)';
+          const count = Number(row?.count || 0);
+          const suffix = count > 0 ? ` (${count})` : '';
+          return `${idx + 1}. ${label}${suffix}`;
+        })
+        .join('<br>');
+    }
+
+    function createCustomSortItemElement(row) {
+      const value = String(row?.value || '').trim();
+      const label = String(row?.label || value || '(Sense valor)').trim();
+      const count = Number(row?.count || 0);
+
+      const item = document.createElement('div');
+      item.className = 'custom-sort-item js-custom-sort-item';
+      item.setAttribute('data-value', value);
+
+      const handle = document.createElement('span');
+      handle.className = 'custom-sort-item-handle js-custom-sort-item-handle';
+      handle.innerHTML = '&#8942;&#8942;';
+      handle.title = 'Arrossega per reordenar';
+      item.appendChild(handle);
+
+      const labelEl = document.createElement('span');
+      labelEl.className = 'custom-sort-item-label';
+      labelEl.textContent = label || '(Sense valor)';
+      item.appendChild(labelEl);
+
+      const countEl = document.createElement('span');
+      countEl.className = 'custom-sort-item-count';
+      countEl.textContent = `${count}`;
+      item.appendChild(countEl);
+
+      return item;
+    }
+
+    function ensureCustomSortEditorSortable(menu) {
+      const list = menu?.querySelector('.js-col-sort-custom-dnd');
+      if (!list) return;
+      if (list.dataset.sortableInit === '1') return;
+      if (typeof Sortable === 'undefined') return;
+
+      Sortable.create(list, {
+        animation: 120,
+        handle: '.js-custom-sort-item-handle',
+        draggable: '.js-custom-sort-item',
+      });
+      list.dataset.sortableInit = '1';
+    }
+
+    function renderCustomSortEditor(menu, data) {
+      if (!menu) return;
+
+      const editor = menu.querySelector('.js-col-sort-custom-editor');
+      const list = menu.querySelector('.js-col-sort-custom-dnd');
+      const stale = menu.querySelector('.js-col-sort-custom-stale');
+      const saveBtn = menu.querySelector('.js-col-sort-custom-save');
+      if (!editor || !list || !stale || !saveBtn) return;
+
+      const rows = Array.isArray(data?.values) ? data.values : [];
+      const staleValues = Array.isArray(data?.stale_values) ? data.stale_values : [];
+
+      list.innerHTML = '';
+      rows.forEach(row => {
+        list.appendChild(createCustomSortItemElement(row));
+      });
+
+      if (!rows.length) {
+        const msg = document.createElement('div');
+        msg.className = 'small text-muted';
+        msg.textContent = 'No hi ha valors detectats amb el context actual.';
+        list.appendChild(msg);
+      }
+      saveBtn.disabled = rows.length === 0;
+
+      if (staleValues.length) {
+        stale.classList.remove('d-none');
+        stale.textContent = `${staleValues.length} valor(s) custom obsolet(s). En desar es netejaran automaticament.`;
+      } else {
+        stale.classList.add('d-none');
+        stale.textContent = '';
+      }
+
+      renderCustomSortPreview(menu, rows.filter(r => !!r?.in_custom));
+      editor.classList.remove('d-none');
+      ensureCustomSortEditorSortable(menu);
+    }
+
+    function collectCustomSortOrderFromEditor(menu) {
+      const list = menu?.querySelector('.js-col-sort-custom-dnd');
+      if (!list) return [];
+
+      return normalizeCustomOrderValues(
+        Array.from(list.querySelectorAll('.js-custom-sort-item'))
+          .map(el => el.getAttribute('data-value') || '')
+      );
+    }
+
+    function hideCustomSortEditor(menu) {
+      const editor = menu?.querySelector('.js-col-sort-custom-editor');
+      if (!editor) return;
+      editor.classList.add('d-none');
+    }
+
+    function toggleGroupsSourceView() {
+      const source = document.querySelector('.js-group-source:checked')?.value || 'tabs';
+      const tabsWrap = document.getElementById('group-source-tabs-wrap');
+      const sortWrap = document.getElementById('group-source-sort-wrap');
+      if (tabsWrap) tabsWrap.classList.toggle('d-none', source !== 'tabs');
+      if (sortWrap) sortWrap.classList.toggle('d-none', source !== 'sort');
+    }
+
+    function getSelectedSortBucketKeys() {
+      return Array.from(document.querySelectorAll('.js-sort-bucket-check:checked'))
+        .map(el => el.value)
+        .filter(v => !!v);
+    }
+
+    function getSelectedTabBucketKeys() {
+      return Array.from(document.querySelectorAll('.js-tab-bucket-check:checked'))
+        .map(el => el.value)
+        .filter(v => !!v);
+    }
+
+    function setSortBucketSelection(checked) {
+      document.querySelectorAll('.js-sort-bucket-check').forEach(el => {
+        el.checked = !!checked;
+      });
+    }
+
+    function setTabBucketSelection(checked) {
+      document.querySelectorAll('.js-tab-bucket-check').forEach(el => {
+        el.checked = !!checked;
+      });
+    }
+
+    function readIntInput(id, minValue = 1) {
+      const el = document.getElementById(id);
+      const n = Number(el?.value || 0);
+      if (!Number.isFinite(n) || n < minValue) return null;
+      return Math.trunc(n);
+    }
+
+    function getSortFallbackMode() {
+      return document.getElementById('sort-group-fallback')?.value || 'all_filtered';
+    }
+
+    function getTabsFallbackMode() {
+      return document.getElementById('tabs-group-fallback')?.value || 'all_filtered';
+    }
+
+    async function makeGroups(source, strategy, extraPayload = {}) {
+      const isTabs = source === 'tabs';
+      const payload = Object.assign(
+        {
+          source: source,
+          strategy: strategy,
+          fallback_mode: isTabs ? getTabsFallbackMode() : getSortFallbackMode(),
+          filters: getCurrentInscripcioFilters(),
+          group_by: getCurrentGroupByCodes(),
+          selected_keys: isTabs ? getSelectedTabBucketKeys() : getSelectedSortBucketKeys(),
+        },
+        extraPayload || {}
+      );
+
+      try {
+        const data = await postJson(groupsFromSortUrl, payload);
+        if (!data || !data.ok) {
+          alert("No s'han pogut crear grups amb aquesta configuracio.");
+          return false;
+        }
+        reloadWithUiState();
+        return true;
+      } catch (err) {
+        alert(`No s'han pogut crear grups.\\n${err.message || err}`);
+        return false;
+      }
+    }
+
+    function initGroupSourceControls() {
+      document.querySelectorAll('.js-group-source').forEach(el => {
+        el.addEventListener('change', () => {
+          toggleGroupsSourceView();
+          saveUiState();
+        });
+      });
+      toggleGroupsSourceView();
+
+      const btnAll = document.getElementById('btn-sort-buckets-all');
+      if (btnAll) {
+        btnAll.addEventListener('click', () => setSortBucketSelection(true));
+      }
+
+      const btnNone = document.getElementById('btn-sort-buckets-none');
+      if (btnNone) {
+        btnNone.addEventListener('click', () => setSortBucketSelection(false));
+      }
+
+      const btnTabsAll = document.getElementById('btn-tabs-buckets-all');
+      if (btnTabsAll) {
+        btnTabsAll.addEventListener('click', () => setTabBucketSelection(true));
+      }
+
+      const btnTabsNone = document.getElementById('btn-tabs-buckets-none');
+      if (btnTabsNone) {
+        btnTabsNone.addEventListener('click', () => setTabBucketSelection(false));
+      }
+
+      const btnTabsCreateCount = document.getElementById('btn-tabs-create-count');
+      if (btnTabsCreateCount) {
+        btnTabsCreateCount.addEventListener('click', async () => {
+          const k = readIntInput('tabs-group-count', 1);
+          if (!k) {
+            alert("Introdueix un nombre de grups valid.");
+            return;
+          }
+          await makeGroups('tabs', 'count', { group_count: k });
+        });
+      }
+
+      const btnTabsCreateSize = document.getElementById('btn-tabs-create-size');
+      if (btnTabsCreateSize) {
+        btnTabsCreateSize.addEventListener('click', async () => {
+          const size = readIntInput('tabs-group-size', 2);
+          if (!size) {
+            alert("Introdueix una mida valida (>=2).");
+            return;
+          }
+          const mode = document.getElementById('tabs-group-size-mode')?.value || 'fixed';
+          const strategy = mode === 'balanced' ? 'size_balanced' : 'size_fixed';
+          await makeGroups('tabs', strategy, { group_size: size });
+        });
+      }
+
+      const btnTabsCreateRangeBalanced = document.getElementById('btn-tabs-create-range-balanced');
+      if (btnTabsCreateRangeBalanced) {
+        btnTabsCreateRangeBalanced.addEventListener('click', async () => {
+          const minSize = readIntInput('tabs-group-min-size', 1);
+          const maxSize = readIntInput('tabs-group-max-size', 1);
+          if (!minSize || !maxSize || minSize > maxSize) {
+            alert("Forquilla invalida: comprova minim i maxim.");
+            return;
+          }
+          await makeGroups('tabs', 'range_balanced', { min_size: minSize, max_size: maxSize });
+        });
+      }
+
+      const btnTabsCreateCountRange = document.getElementById('btn-tabs-create-count-range');
+      if (btnTabsCreateCountRange) {
+        btnTabsCreateCountRange.addEventListener('click', async () => {
+          const minSize = readIntInput('tabs-group-min-size', 1);
+          const maxSize = readIntInput('tabs-group-max-size', 1);
+          const k = readIntInput('tabs-group-count-range', 1);
+          if (!minSize || !maxSize || minSize > maxSize) {
+            alert("Forquilla invalida: comprova minim i maxim.");
+            return;
+          }
+          if (!k) {
+            alert("Introdueix un nombre de grups valid.");
+            return;
+          }
+          await makeGroups('tabs', 'count_with_range', {
+            group_count: k,
+            min_size: minSize,
+            max_size: maxSize,
+          });
+        });
+      }
+
+      const btnTabsCreatePerBucket = document.getElementById('btn-tabs-create-per-bucket');
+      if (btnTabsCreatePerBucket) {
+        btnTabsCreatePerBucket.addEventListener('click', async () => {
+          await makeGroups('tabs', 'per_bucket');
+        });
+      }
+
+      const btnCreateCount = document.getElementById('btn-sort-create-count');
+      if (btnCreateCount) {
+        btnCreateCount.addEventListener('click', async () => {
+          const k = readIntInput('sort-group-count', 1);
+          if (!k) {
+            alert("Introdueix un nombre de grups valid.");
+            return;
+          }
+          await makeGroups('sort', 'count', { group_count: k });
+        });
+      }
+
+      const btnCreateSize = document.getElementById('btn-sort-create-size');
+      if (btnCreateSize) {
+        btnCreateSize.addEventListener('click', async () => {
+          const size = readIntInput('sort-group-size', 2);
+          if (!size) {
+            alert("Introdueix una mida valida (>=2).");
+            return;
+          }
+          const mode = document.getElementById('sort-group-size-mode')?.value || 'fixed';
+          const strategy = mode === 'balanced' ? 'size_balanced' : 'size_fixed';
+          await makeGroups('sort', strategy, { group_size: size });
+        });
+      }
+
+      const btnCreateRangeBalanced = document.getElementById('btn-sort-create-range-balanced');
+      if (btnCreateRangeBalanced) {
+        btnCreateRangeBalanced.addEventListener('click', async () => {
+          const minSize = readIntInput('sort-group-min-size', 1);
+          const maxSize = readIntInput('sort-group-max-size', 1);
+          if (!minSize || !maxSize || minSize > maxSize) {
+            alert("Forquilla invalida: comprova minim i maxim.");
+            return;
+          }
+          await makeGroups('sort', 'range_balanced', { min_size: minSize, max_size: maxSize });
+        });
+      }
+
+      const btnCreateCountRange = document.getElementById('btn-sort-create-count-range');
+      if (btnCreateCountRange) {
+        btnCreateCountRange.addEventListener('click', async () => {
+          const minSize = readIntInput('sort-group-min-size', 1);
+          const maxSize = readIntInput('sort-group-max-size', 1);
+          const k = readIntInput('sort-group-count-range', 1);
+          if (!minSize || !maxSize || minSize > maxSize) {
+            alert("Forquilla invalida: comprova minim i maxim.");
+            return;
+          }
+          if (!k) {
+            alert("Introdueix un nombre de grups valid.");
+            return;
+          }
+          await makeGroups('sort', 'count_with_range', {
+            group_count: k,
+            min_size: minSize,
+            max_size: maxSize,
+          });
+        });
+      }
+
+      const btnCreateBuckets = document.getElementById('btn-make-groups-from-sort');
+      if (btnCreateBuckets) {
+        btnCreateBuckets.addEventListener('click', async () => {
+          await makeGroups('sort', 'per_bucket');
+        });
+      }
     }
 
     function collectNumericGroups() {
@@ -1490,6 +2113,7 @@
     function closeColumnSortMenus(exceptMenu = null) {
       document.querySelectorAll('[data-col-sort-menu]').forEach(menu => {
         if (exceptMenu && menu === exceptMenu) return;
+        hideCustomSortEditor(menu);
         menu.classList.add('d-none');
       });
     }
@@ -1552,6 +2176,106 @@
         reloadWithUiState();
       } catch (err) {
         alert(`No s'ha pogut desfer l'ordenacio.\\n${err.message || err}`);
+      }
+    }
+
+    async function clearColumnSort() {
+      const payload = {
+        filters: getCurrentInscripcioFilters(),
+        group_by: getCurrentGroupByCodes(),
+      };
+
+      try {
+        const data = await postJson(sortClearUrl, payload);
+        if (!data || !data.ok) {
+          alert("No s'ha pogut netejar les ordenacions.");
+          return;
+        }
+        closeColumnSortMenus();
+        reloadWithUiState();
+      } catch (err) {
+        alert(`No s'ha pogut netejar les ordenacions.\n${err.message || err}`);
+      }
+    }
+
+    async function editColumnCustomSort(menu) {
+      if (!menu) return;
+      const sortKey = menu.getAttribute('data-col-code') || '';
+      if (!sortKey) return;
+
+      const editor = menu.querySelector('.js-col-sort-custom-editor');
+      if (editor && !editor.classList.contains('d-none')) {
+        hideCustomSortEditor(menu);
+        return;
+      }
+
+      const payload = {
+        sort_key: sortKey,
+        filters: getCurrentInscripcioFilters(),
+        group_by: getCurrentGroupByCodes(),
+      };
+
+      try {
+        const data = await postJson(sortCustomValuesUrl, payload);
+        if (!data || !data.ok) {
+          alert("No s'ha pogut carregar l'ordre custom.");
+          return;
+        }
+        renderCustomSortEditor(menu, data);
+      } catch (err) {
+        alert(`No s'ha pogut gestionar l'ordre custom.\n${err.message || err}`);
+      }
+    }
+
+    async function saveColumnCustomSort(menu) {
+      if (!menu) return;
+      const sortKey = menu.getAttribute('data-col-code') || '';
+      if (!sortKey) return;
+
+      const orderedValues = collectCustomSortOrderFromEditor(menu);
+
+      try {
+        const data = await postJson(sortCustomSaveUrl, {
+          sort_key: sortKey,
+          order: orderedValues,
+          filters: getCurrentInscripcioFilters(),
+          group_by: getCurrentGroupByCodes(),
+          preserve_missing_context: true,
+        });
+        if (!data || !data.ok) {
+          alert("No s'ha pogut desar l'ordre custom.");
+          return;
+        }
+        closeColumnSortMenus();
+        reloadWithUiState();
+      } catch (err) {
+        alert(`No s'ha pogut desar l'ordre custom.\n${err.message || err}`);
+      }
+    }
+
+    async function clearColumnCustomSort(menu) {
+      if (!menu) return;
+      const sortKey = menu.getAttribute('data-col-code') || '';
+      if (!sortKey) return;
+
+      const ok = confirm("Vols eliminar l'ordre custom d'aquesta columna?");
+      if (!ok) return;
+
+      try {
+        const data = await postJson(sortCustomSaveUrl, {
+          sort_key: sortKey,
+          clear: true,
+        });
+        if (!data || !data.ok) {
+          alert("No s'ha pogut eliminar l'ordre custom.");
+          return;
+        }
+        renderCustomSortPreview(menu, []);
+        hideCustomSortEditor(menu);
+        closeColumnSortMenus();
+        reloadWithUiState();
+      } catch (err) {
+        alert(`No s'ha pogut eliminar l'ordre custom.\n${err.message || err}`);
       }
     }
 
@@ -1628,6 +2352,48 @@
         });
       });
 
+      document.querySelectorAll('.js-col-sort-clear').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (btn.disabled) return;
+          await clearColumnSort();
+        });
+      });
+
+      document.querySelectorAll('.js-col-sort-custom').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const menu = btn.closest('[data-col-sort-menu]');
+          await editColumnCustomSort(menu);
+        });
+      });
+
+      document.querySelectorAll('.js-col-sort-custom-clear').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const menu = btn.closest('[data-col-sort-menu]');
+          await clearColumnCustomSort(menu);
+        });
+      });
+      document.querySelectorAll('.js-col-sort-custom-save').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const menu = btn.closest('[data-col-sort-menu]');
+          await saveColumnCustomSort(menu);
+        });
+      });
+      document.querySelectorAll('.js-col-sort-custom-cancel').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const menu = btn.closest('[data-col-sort-menu]');
+          hideCustomSortEditor(menu);
+        });
+      });
       document.querySelectorAll('.js-col-sort-remove').forEach(btn => {
         btn.addEventListener('click', async (e) => {
           e.preventDefault();
@@ -1741,6 +2507,7 @@
     }
 
     initColumnSortMenus();
+    initGroupSourceControls();
 
     document.querySelectorAll('.js-aparells-select').forEach(selectEl => {
       selectEl.dataset.prevSelection = JSON.stringify(getSelectedAparellIds(selectEl));
@@ -2217,3 +2984,5 @@
 
 
 {% endblock %}
+
+

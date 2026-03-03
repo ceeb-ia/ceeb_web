@@ -1,12 +1,17 @@
 import io
 import json
 import logging
+import math
 import mimetypes
+import os
 import qrcode
+import subprocess
+import tempfile
 import time
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import NoReverseMatch, reverse
@@ -31,12 +36,211 @@ from .services.rotacions_ordering import (
 logger = logging.getLogger(__name__)
 
 
+class VideoValidationError(Exception):
+    def __init__(self, message: str, reason: str = "video_validation_failed", payload=None):
+        super().__init__(message)
+        self.message = message
+        self.reason = reason
+        self.payload = payload or {}
+
+
+def _mime_from_probe(format_name: str, original_filename: str = "") -> str:
+    fmt = (format_name or "").strip().lower()
+    tokens = {x.strip() for x in fmt.split(",") if x.strip()}
+    ext = os.path.splitext((original_filename or "").lower())[1]
+
+    if "webm" in tokens or ext == ".webm":
+        return "video/webm"
+
+    has_mp4_family = bool(tokens.intersection({"mp4", "m4a", "3gp", "3g2", "mj2"}))
+    has_mov = "mov" in tokens
+    if ext == ".mov":
+        return "video/quicktime"
+    if has_mp4_family:
+        return "video/mp4"
+    if has_mov:
+        return "video/quicktime"
+
+    guessed, _ = mimetypes.guess_type(original_filename or "")
+    return (guessed or "").strip().lower()
+
+
+def _probe_uploaded_video_metadata(uploaded_file):
+    suffix = os.path.splitext(getattr(uploaded_file, "name", "") or "")[1]
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            temp_path = tmp.name
+            for chunk in uploaded_file.chunks():
+                tmp.write(chunk)
+
+        ffprobe_bin = getattr(settings, "JUDGE_VIDEO_FFPROBE_BIN", os.getenv("JUDGE_VIDEO_FFPROBE_BIN", "ffprobe"))
+        ffprobe_timeout = int(
+            getattr(
+                settings,
+                "JUDGE_VIDEO_FFPROBE_TIMEOUT_SECONDS",
+                os.getenv("JUDGE_VIDEO_FFPROBE_TIMEOUT_SECONDS", "15"),
+            )
+        )
+
+        cmd = [
+            ffprobe_bin,
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration,format_name:stream=codec_type,codec_name",
+            "-of",
+            "json",
+            temp_path,
+        ]
+
+        try:
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=max(1, ffprobe_timeout),
+                check=False,
+            )
+        except FileNotFoundError as exc:
+            raise VideoValidationError(
+                "La validacio de video no esta disponible al servidor (ffprobe).",
+                reason="ffprobe_missing",
+            ) from exc
+        except subprocess.TimeoutExpired as exc:
+            raise VideoValidationError(
+                "No s'ha pogut validar el video dins del temps limit.",
+                reason="ffprobe_timeout",
+            ) from exc
+
+        if proc.returncode != 0:
+            stderr = (proc.stderr or "").strip()
+            raise VideoValidationError(
+                "El fitxer no sembla un video valid.",
+                reason="ffprobe_failed",
+                payload={"stderr": stderr[:300]},
+            )
+
+        try:
+            parsed = json.loads(proc.stdout or "{}")
+        except Exception as exc:
+            raise VideoValidationError(
+                "No s'han pogut llegir metadades del video.",
+                reason="ffprobe_json_parse_failed",
+            ) from exc
+
+        streams = parsed.get("streams") or []
+        video_stream = next(
+            (s for s in streams if str((s or {}).get("codec_type", "")).lower() == "video"),
+            None,
+        )
+        if not video_stream:
+            raise VideoValidationError(
+                "El fitxer no conte cap pista de video valida.",
+                reason="no_video_stream",
+            )
+
+        fmt = parsed.get("format") or {}
+        duration_raw = fmt.get("duration")
+        try:
+            duration_float = float(duration_raw)
+        except Exception as exc:
+            raise VideoValidationError(
+                "No s'ha pogut calcular la durada real del video.",
+                reason="duration_missing",
+            ) from exc
+
+        if not math.isfinite(duration_float) or duration_float <= 0:
+            raise VideoValidationError(
+                "Durada de video invalida.",
+                reason="invalid_duration",
+                payload={"duration": duration_raw},
+            )
+
+        duration_seconds = int(math.ceil(duration_float))
+        if duration_seconds > ScoreEntryVideo.VIDEO_MAX_DURATION_SECONDS:
+            raise VideoValidationError(
+                (
+                    "La durada supera el limit "
+                    f"de {ScoreEntryVideo.VIDEO_MAX_DURATION_SECONDS} segons."
+                ),
+                reason="duration_too_long",
+                payload={"duration_seconds": duration_seconds},
+            )
+
+        format_name = str(fmt.get("format_name") or "").strip().lower()
+        mime_type = _mime_from_probe(format_name, getattr(uploaded_file, "name", "") or "")
+        if not mime_type:
+            raise VideoValidationError(
+                "No s'ha pogut identificar el tipus MIME real del video.",
+                reason="missing_mime_from_probe",
+                payload={"format_name": format_name},
+            )
+        if mime_type not in ScoreEntryVideo.ALLOWED_MIME_TYPES:
+            raise VideoValidationError(
+                f"Tipus MIME no permes: {mime_type}",
+                reason="mime_not_allowed",
+                payload={"mime_type": mime_type, "format_name": format_name},
+            )
+
+        return {
+            "duration_seconds": duration_seconds,
+            "mime_type": mime_type,
+            "format_name": format_name,
+            "video_codec": str((video_stream or {}).get("codec_name") or "").strip().lower(),
+        }
+    finally:
+        if temp_path:
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
+        try:
+            uploaded_file.seek(0)
+        except Exception:
+            pass
+
+
 
 def _inscripcio_exclosa_en_aparell(inscripcio_id: int, comp_aparell_id: int) -> bool:
     return InscripcioAparellExclusio.objects.filter(
         inscripcio_id=inscripcio_id,
         comp_aparell_id=comp_aparell_id,
     ).exists()
+
+
+def _get_or_create_scoreentry_locked(*, competicio, inscripcio, exercici, comp_aparell, defaults=None):
+    """
+    Get-or-create with row lock to avoid concurrent lost updates on score inputs.
+    Must be called inside transaction.atomic().
+    """
+    lookup = {
+        "competicio": competicio,
+        "inscripcio": inscripcio,
+        "exercici": exercici,
+        "comp_aparell": comp_aparell,
+    }
+    defaults = defaults or {}
+
+    entry = (
+        ScoreEntry.objects
+        .select_for_update()
+        .filter(**lookup)
+        .first()
+    )
+    if entry is not None:
+        return entry, False
+
+    try:
+        entry = ScoreEntry.objects.create(**lookup, **defaults)
+        return entry, True
+    except IntegrityError:
+        entry = (
+            ScoreEntry.objects
+            .select_for_update()
+            .get(**lookup)
+        )
+        return entry, False
 
 
 def _sanitize_patch_by_permissions(schema: dict, permissions: list, patch: dict) -> dict:
@@ -172,15 +376,6 @@ def _clamp_exercici_for_aparell(comp_aparell, exercici_raw):
         exercici = 1
     max_ex = max(1, int(getattr(comp_aparell, "nombre_exercicis", 1) or 1))
     return max(1, min(max_ex, exercici))
-
-
-def _detect_uploaded_mime(uploaded_file):
-    content_type = (getattr(uploaded_file, "content_type", "") or "").split(";")[0].strip().lower()
-    if content_type:
-        return content_type
-
-    guessed, _enc = mimetypes.guess_type(getattr(uploaded_file, "name", ""))
-    return (guessed or "").strip().lower()
 
 
 def _serialize_video_record(video_record, request):
@@ -725,38 +920,20 @@ def judge_video_upload(request, token):
             payload={"size": file_size},
         )
 
-    mime_type = (request.POST.get("mime_type") or _detect_uploaded_mime(uploaded)).strip().lower()
-    if not mime_type:
-        return _reject("No s'ha pogut detectar el tipus MIME del video.", 400, "missing_mime")
-    if mime_type not in ScoreEntryVideo.ALLOWED_MIME_TYPES:
+    try:
+        server_meta = _probe_uploaded_video_metadata(uploaded)
+    except VideoValidationError as exc:
         return _reject(
-            f"Tipus MIME no permès: {mime_type}",
+            exc.message,
             400,
-            "mime_not_allowed",
-            payload={"mime_type": mime_type},
+            exc.reason,
+            payload={"size": file_size, **(exc.payload or {})},
         )
 
-    duration_raw = request.POST.get("duration_seconds")
-    duration_seconds = None
-    if duration_raw not in (None, ""):
-        try:
-            duration_seconds = int(duration_raw)
-        except Exception:
-            return _reject("duration_seconds invalid.", 400, "invalid_duration")
-        if duration_seconds <= 0:
-            return _reject("duration_seconds ha de ser > 0.", 400, "invalid_duration_non_positive")
-        if duration_seconds > ScoreEntryVideo.VIDEO_MAX_DURATION_SECONDS:
-            return _reject(
-                (
-                    "La durada supera el limit "
-                    f"de {ScoreEntryVideo.VIDEO_MAX_DURATION_SECONDS} segons."
-                ),
-                400,
-                "duration_too_long",
-                payload={"duration_seconds": duration_seconds},
-            )
+    mime_type = server_meta["mime_type"]
+    duration_seconds = server_meta["duration_seconds"]
 
-    entry, _created = ScoreEntry.objects.get_or_create(
+    entry, _created = _get_or_create_scoreentry_locked(
         competicio=competicio,
         inscripcio=ins,
         exercici=exercici,
@@ -827,6 +1004,9 @@ def judge_video_upload(request, token):
             "mime_type": mime_type,
             "file_size_bytes": file_size,
             "duration_seconds": duration_seconds,
+            "format_name": server_meta.get("format_name", ""),
+            "video_codec": server_meta.get("video_codec", ""),
+            "server_validated": True,
             "replaced_previous": bool(previous_file_name),
         },
     )
@@ -1090,7 +1270,7 @@ def judge_save_partial(request, token):
     ss, _ = ScoringSchema.objects.get_or_create(aparell=comp_aparell.aparell, defaults={"schema": {}})
     schema = ss.schema or {}
 
-    entry, _ = ScoreEntry.objects.get_or_create(
+    entry, _ = _get_or_create_scoreentry_locked(
         competicio=competicio,
         inscripcio=ins,
         exercici=exercici,

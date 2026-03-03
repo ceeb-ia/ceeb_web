@@ -12,10 +12,11 @@ from .models_trampoli import CompeticioAparell, InscripcioAparellExclusio
 from .views import (
     InscripcionsListView,
     get_allowed_group_fields,
+    get_competicio_custom_sort_codes,
     build_inscripcions_sort_context_key,
-    get_inscripcions_sort_context_state,
-    clear_inscripcions_sort_context_state,
-    compute_inscripcions_order_signature_for_queryset,
+    reconcile_inscripcions_sort_context_state,
+    _extract_sort_partition_codes,
+    _build_sort_partition_buckets,
 )
 
 
@@ -196,6 +197,12 @@ class InscripcionsListNewView(InscripcionsListView):
             if isinstance(s, dict) and s.get("code")
         ]
         sortable_codes = set(ctx["sortable_table_column_codes"])
+        custom_sort_codes = set(
+            get_competicio_custom_sort_codes(
+                self.competicio,
+                allowed_sort_codes=sortable_codes,
+            )
+        )
 
         active_group_by = list(ctx.get("selected_group_fields") or [])
         active_filters = {
@@ -209,38 +216,48 @@ class InscripcionsListNewView(InscripcionsListView):
             filters=active_filters,
             group_by=active_group_by,
         )
-        sort_state = get_inscripcions_sort_context_state(self.request, sort_context_key)
+        current_ids = list(
+            filtered_qs.order_by("ordre_sortida", "id").values_list("id", flat=True)
+        )
+        sort_state = reconcile_inscripcions_sort_context_state(
+            self.request,
+            sort_context_key,
+            current_ids,
+        )
         sort_stack = [
             entry
             for entry in (sort_state.get("stack") or [])
             if isinstance(entry, dict) and entry.get("sort_key") in sortable_codes
         ]
 
-        current_order_sig = compute_inscripcions_order_signature_for_queryset(
-            filtered_qs.order_by("ordre_sortida", "id")
-        )
-        saved_order_sig = sort_state.get("order_sig") or ""
-        if sort_stack and saved_order_sig and saved_order_sig != current_order_sig:
-            clear_inscripcions_sort_context_state(self.request, sort_context_key)
-            sort_stack = []
-            saved_order_sig = ""
+        sort_label_by_code = {}
+        for s in sort_options:
+            if not isinstance(s, dict):
+                continue
+            code = s.get("code")
+            if not code:
+                continue
+            sort_label_by_code[code] = s.get("ui_label") or s.get("label") or code
 
         dir_to_symbol = {
             "asc": "↑",
             "desc": "↓",
             "arrow_asc": "↕↑",
             "arrow_desc": "↕↓",
+            "custom": "C",
         }
         dir_to_label = {
             "asc": "Ascendent",
             "desc": "Descendent",
             "arrow_asc": "Fletxa ascendent",
             "arrow_desc": "Fletxa descendent",
+            "custom": "Custom",
         }
-        indicator_by_code = {}
+
+        sort_entries = []
         for priority, entry in enumerate(sort_stack, start=1):
             sort_code = str(entry.get("sort_key") or "")
-            if not sort_code or sort_code in indicator_by_code:
+            if not sort_code:
                 continue
             sort_dir = str(entry.get("sort_dir") or "asc")
             scope = str(entry.get("scope") or "all")
@@ -255,19 +272,75 @@ class InscripcionsListNewView(InscripcionsListView):
                 scope_label = f"Nomes grup {group_num}" if group_num else "Nomes un grup numeric"
 
             symbol = dir_to_symbol.get(sort_dir, "↑")
+            sort_entries.append(
+                {
+                    "priority": priority,
+                    "remove_priority": priority,
+                    "code": sort_code,
+                    "label": sort_label_by_code.get(sort_code, sort_code),
+                    "symbol": symbol,
+                    "sort_dir": sort_dir,
+                    "sort_dir_label": dir_to_label.get(sort_dir, sort_dir),
+                    "scope": scope,
+                    "scope_short": scope_short,
+                    "scope_label": scope_label,
+                    "custom_active": sort_dir == "custom",
+                    "title": f"#{priority} - {dir_to_label.get(sort_dir, sort_dir)} - {scope_label}",
+                }
+            )
+
+        indicator_by_code = {}
+        for item in sort_entries:
+            sort_code = item["code"]
+            if sort_code in indicator_by_code:
+                continue
             indicator_by_code[sort_code] = {
-                "priority": priority,
-                "remove_priority": priority,
-                "symbol": symbol,
-                "scope_short": scope_short,
-                "title": f"#{priority} - {dir_to_label.get(sort_dir, sort_dir)} - {scope_label}",
+                "priority": item["priority"],
+                "remove_priority": item["remove_priority"],
+                "symbol": item["symbol"],
+                "scope_short": item["scope_short"],
+                "title": item["title"],
             }
 
         ctx["column_sort_context_key"] = sort_context_key
         ctx["column_sort_stack"] = sort_stack
         ctx["column_sort_has_stack"] = bool(sort_stack)
         ctx["column_sort_stack_count"] = len(sort_stack)
+        ctx["column_sort_entries"] = sort_entries
         ctx["column_sort_indicator_by_code"] = indicator_by_code
+        ctx["custom_sort_enabled_by_code"] = {code: True for code in custom_sort_codes}
+
+        partition_codes = _extract_sort_partition_codes(sort_stack)
+        partition_fields = []
+        for priority, code in enumerate(partition_codes, start=1):
+            partition_fields.append(
+                {
+                    "priority": priority,
+                    "code": code,
+                    "label": sort_label_by_code.get(code, code),
+                }
+            )
+
+        partition_buckets = []
+        if partition_codes:
+            partition_builtin_fields = [c for c in partition_codes if hasattr(Inscripcio, c)]
+            records_for_partition = list(
+                filtered_qs.order_by("ordre_sortida", "id").only("id", "extra", *partition_builtin_fields)
+            )
+            buckets_raw = _build_sort_partition_buckets(records_for_partition, partition_codes)
+            partition_buckets = [
+                {
+                    "key": b["key"],
+                    "label": b["label"],
+                    "count": b["count"],
+                }
+                for b in buckets_raw
+            ]
+
+        ctx["sort_partition_fields"] = partition_fields
+        ctx["sort_partition_has_fields"] = bool(partition_fields)
+        ctx["sort_partition_buckets"] = partition_buckets
+        ctx["sort_partition_bucket_count"] = len(partition_buckets)
 
         view_cfg = self.competicio.inscripcions_view or {}
         group_names = view_cfg.get("group_names") or {}

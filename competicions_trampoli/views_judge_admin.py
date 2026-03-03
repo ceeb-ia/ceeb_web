@@ -204,9 +204,16 @@ def public_live_qr_home(request, competicio_id):
 
         if action == "create":
             label = (request.POST.get("label") or "").strip()
+            can_view_media = str(request.POST.get("can_view_media") or "").strip().lower() in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }
             PublicLiveToken.objects.create(
                 competicio=competicio,
                 label=label,
+                can_view_media=can_view_media,
                 is_active=True,
             )
             return redirect(reverse("public_live_qr_home", kwargs={"competicio_id": competicio.id}))

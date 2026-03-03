@@ -5,10 +5,14 @@ This runbook covers production-oriented closing items after MVP implementation.
 ## 1) Persistence and Docker
 
 - Keep media on persistent volume (`MEDIA_ROOT=/data/media`).
+- Ensure `ffprobe` is available in runtime containers (installed via `ffmpeg` package).
 - Configure upload limits from environment:
   - `DATA_UPLOAD_MAX_MEMORY_SIZE`
   - `FILE_UPLOAD_MAX_MEMORY_SIZE`
   - `DATA_UPLOAD_MAX_NUMBER_FILES`
+- Configure server-side video validation:
+  - `JUDGE_VIDEO_FFPROBE_BIN` (default: `ffprobe`)
+  - `JUDGE_VIDEO_FFPROBE_TIMEOUT_SECONDS` (default: `15`)
 - Configure host/security from environment:
   - `ALLOWED_HOSTS`
   - `CSRF_TRUSTED_ORIGINS` (if using HTTPS domain)

@@ -5,7 +5,7 @@ from collections import defaultdict
 from django.utils.dateparse import parse_datetime
 from django.views.decorators.http import require_GET
 from django.contrib import messages
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Exists, OuterRef
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect
@@ -30,6 +30,41 @@ from .services.rotacions_ordering import (
 
 
 logger = logging.getLogger(__name__)
+
+
+def _get_or_create_scoreentry_locked(*, competicio, inscripcio, exercici, comp_aparell, defaults=None):
+    """
+    Get-or-create with row lock to prevent lost updates under concurrent writes.
+    Must be called inside transaction.atomic().
+    """
+    lookup = {
+        "competicio": competicio,
+        "inscripcio": inscripcio,
+        "exercici": exercici,
+        "comp_aparell": comp_aparell,
+    }
+    defaults = defaults or {}
+
+    entry = (
+        ScoreEntry.objects
+        .select_for_update()
+        .filter(**lookup)
+        .first()
+    )
+    if entry is not None:
+        return entry, False
+
+    try:
+        entry = ScoreEntry.objects.create(**lookup, **defaults)
+        return entry, True
+    except IntegrityError:
+        # Another concurrent request created the row first.
+        entry = (
+            ScoreEntry.objects
+            .select_for_update()
+            .get(**lookup)
+        )
+        return entry, False
 
 
 def _inscripcio_exclosa_en_aparell(inscripcio_id: int, comp_aparell_id: int) -> bool:
@@ -549,7 +584,7 @@ def scoring_save(request, pk):
     exercici = int(payload.get("exercici") or 1)
     exercici = max(1, min(max_ex, exercici))
 
-    entry, _ = ScoreEntry.objects.get_or_create(
+    entry, _ = _get_or_create_scoreentry_locked(
         competicio=competicio,
         inscripcio=ins,
         exercici=exercici,
@@ -626,7 +661,7 @@ def scoring_save_partial(request, pk):
             allowed.add(f"__crash__{f['code']}")
 
     # entry existent (o crea)
-    entry, _ = ScoreEntry.objects.get_or_create(
+    entry, _ = _get_or_create_scoreentry_locked(
         competicio=competicio,
         inscripcio=ins,
         exercici=exercici,

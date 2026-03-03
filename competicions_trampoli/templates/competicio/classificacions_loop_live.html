@@ -249,11 +249,17 @@
   }
 
   function normalizePartitionLabel(raw){
-    let out = (raw === null || raw === undefined) ? "global" : String(raw);
-    if (out.includes("|")) out = out.split("|").pop();
-    else if (out.includes(":")) out = out.split(":").pop();
-    out = String(out || "").trim();
-    return out || "global";
+    const source = (raw === null || raw === undefined) ? "global" : String(raw);
+    const parts = source
+      .split("|")
+      .map(part => {
+        const token = String(part || "").trim();
+        if (!token) return "";
+        const idx = token.indexOf(":");
+        return idx >= 0 ? token.slice(idx + 1).trim() : token;
+      })
+      .filter(Boolean);
+    return parts.length ? parts.join(" / ") : "global";
   }
 
   function paginateRows(rows, pageSize){

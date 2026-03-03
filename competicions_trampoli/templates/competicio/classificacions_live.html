@@ -119,6 +119,12 @@
 
       {% if not is_public %}
         <div class=" gap-2">
+          <a class="btn btn-sm btn-outline-success" href="{% url 'classificacions_live_export_excel' competicio.id %}">
+            Excel (tot)
+          </a>
+          <button type="button" class="btn btn-sm btn-outline-success" id="btnExportActiveCfg">
+            Excel (pestanya)
+          </button>
           <a class="btn btn-sm btn-outline-secondary" href="{% url 'scoring_notes_home' competicio.id %}">Notes</a>
           <a class="btn btn-sm btn-outline-secondary" href="{% url 'classificacions_home' competicio.id %}">Configurar</a>
           <a class="btn btn-sm btn-outline-secondary" href="{% url 'inscripcions_list' competicio.id %}">Inscripcions</a>
@@ -173,6 +179,7 @@
   const POLL_MS = JSON.parse(document.getElementById("poll-ms").textContent);
   const DATA_URL = JSON.parse(document.getElementById("classificacions-live-data-url").textContent || '""')
     || "{% url 'classificacions_live_data' competicio.id %}";
+  const EXPORT_URL = "{% url 'classificacions_live_export_excel' competicio.id %}";
 
   let lastStamp = null;
   let timer = null;
@@ -255,6 +262,20 @@
     return esc(formatCellText(v, col));
   }
 
+  function formatPartitionTitle(raw){
+    const source = (raw === null || raw === undefined) ? "global" : String(raw);
+    const parts = source
+      .split("|")
+      .map(part => {
+        const token = String(part || "").trim();
+        if (!token) return "";
+        const idx = token.indexOf(":");
+        return idx >= 0 ? token.slice(idx + 1).trim() : token;
+      })
+      .filter(Boolean);
+    return parts.length ? parts.join(" / ") : "global";
+  }
+
   function renderCfg(cfg){
     const host = document.getElementById("cfg-" + cfg.id);
     if (!host) return;
@@ -271,14 +292,7 @@
     let html = "";
     parts.forEach((p, pIdx) => {
       // Mostra només la part després de l'últim '|', si existeix
-      let particioNom = p.particio;
-      if (typeof particioNom === 'string') {
-        if (particioNom.includes('|')) {
-          particioNom = particioNom.split('|').pop();
-        } else if (particioNom.includes(':')) {
-          particioNom = particioNom.split(':').pop();
-        }
-      }
+      const particioNom = formatPartitionTitle(p.particio);
 
       const rowCount = (p.rows || []).length;
       html += '<section class="partition-card part-idx-' + esc(String(pIdx % 5)) + '">';
@@ -349,6 +363,22 @@
   }
 
   document.addEventListener("DOMContentLoaded", async () => {
+    const btnExportActive = document.getElementById("btnExportActiveCfg");
+    if (btnExportActive){
+      btnExportActive.addEventListener("click", () => {
+        const activeTab = document.querySelector("#cfgTabs .nav-link.active");
+        const href = activeTab ? String(activeTab.getAttribute("href") || "") : "";
+        const m = href.match(/^#cfg-(\d+)$/);
+        if (m && m[1]) {
+          const url = new URL(EXPORT_URL, window.location.origin);
+          url.searchParams.set("cfg_id", m[1]);
+          window.location.href = url.toString();
+          return;
+        }
+        window.location.href = EXPORT_URL;
+      });
+    }
+
     await tick();
     timer = setInterval(tick, POLL_MS);
 

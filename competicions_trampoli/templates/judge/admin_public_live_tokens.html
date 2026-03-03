@@ -1,13 +1,13 @@
 {% extends "base.html" %}
-{% block title %}QR Públic · {{ competicio.nom }}{% endblock %}
+{% block title %}QR Public · {{ competicio.nom }}{% endblock %}
 
 {% block content %}
 <div class="container-fluid mt-4">
   <div class="card-surface">
     <div class="d-flex justify-content-between align-items-start mb-3">
       <div>
-        <h2 class="mb-1">QR Públic · Classificacions Live</h2>
-        <div class="text-muted small">Genera i revoca tokens per compartir la vista pública de classificacions.</div>
+        <h2 class="mb-1">QR Public · Classificacions Live</h2>
+        <div class="text-muted small">Genera i revoca tokens per compartir la vista publica de classificacions.</div>
       </div>
       <div class="d-flex gap-2">
         <a class="btn btn-sm btn-outline-secondary" href="{% url 'scoring_notes_home' competicio.id %}">Tornar a notes</a>
@@ -18,13 +18,17 @@
     <div class="row g-3">
       <div class="col-12 col-lg-5">
         <div class="card-surface">
-          <h5 class="mb-2">Crear token públic</h5>
+          <h5 class="mb-2">Crear token public</h5>
           <form method="post">
             {% csrf_token %}
             <input type="hidden" name="action" value="create">
             <div class="mb-2">
               <label class="form-label small text-muted mb-1">Etiqueta</label>
-              <input class="form-control form-control-sm" type="text" name="label" maxlength="120" placeholder="Ex: Pantalla pública principal">
+              <input class="form-control form-control-sm" type="text" name="label" maxlength="120" placeholder="Ex: Pantalla publica principal">
+            </div>
+            <div class="form-check mb-2">
+              <input class="form-check-input" type="checkbox" id="can_view_media" name="can_view_media" value="1">
+              <label class="form-check-label small" for="can_view_media">Permetre media publica (videos/fitxers quan estiguin disponibles)</label>
             </div>
             <div class="d-flex justify-content-end">
               <button type="submit" class="btn btn-sm btn-primary">Crear token</button>
@@ -42,7 +46,8 @@
                 <thead>
                   <tr class="text-muted small">
                     <th>Etiqueta</th>
-                    <th>Enllaços</th>
+                    <th>Media</th>
+                    <th>Enllacos</th>
                     <th class="text-end">Accions</th>
                   </tr>
                 </thead>
@@ -61,6 +66,13 @@
                         {% endif %}
                       </td>
                       <td>
+                        {% if t.can_view_media %}
+                          <span class="badge bg-success">Permesa</span>
+                        {% else %}
+                          <span class="badge bg-secondary">No</span>
+                        {% endif %}
+                      </td>
+                      <td>
                         <a class="btn btn-sm btn-outline-primary" href="{% url 'public_live_portal' t.id %}" target="_blank">Obrir</a>
                         <a class="btn btn-sm btn-outline-primary" href="{% url 'public_live_loop' t.id %}" target="_blank">Loop</a>
                         <a class="btn btn-sm btn-outline-secondary" href="{% url 'public_live_qr_png' t.id %}" target="_blank">QR</a>
@@ -74,7 +86,7 @@
                             <button class="btn btn-sm btn-outline-danger" type="submit">Revocar</button>
                           </form>
                         {% else %}
-                          <span class="text-muted small">—</span>
+                          <span class="text-muted small">-</span>
                         {% endif %}
                       </td>
                     </tr>
@@ -83,7 +95,7 @@
               </table>
             </div>
           {% else %}
-            <div class="text-muted">Encara no hi ha tokens públics.</div>
+            <div class="text-muted">Encara no hi ha tokens publics.</div>
           {% endif %}
         </div>
       </div>
