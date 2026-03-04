@@ -45,6 +45,7 @@ MIDDLEWARE = [
 # filepath: c:\Users\Extra\Desktop\ceeb_web\ceeb_web\settings.py
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", 'django-insecure-4x8z$1@#k2!3v&l^7%9m(0p)q*r&s+t=u')
 ROOT_URLCONF = 'ceeb_web.urls'
+
 # filepath: c:\Users\Extra\Desktop\ceeb_web\ceeb_web\settings.py
 ALLOWED_HOSTS = _env_csv("ALLOWED_HOSTS", "localhost,127.0.0.1")
 

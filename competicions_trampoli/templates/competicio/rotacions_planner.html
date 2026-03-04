@@ -45,16 +45,19 @@
       user-select: none;
     }
     .export-field-item:last-child { border-bottom: 0; }
-    .export-field-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .export-field-left { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto; }
     .export-field-handle { opacity: .6; font-weight: 700; line-height: 1; }
+    #exportFieldsList .js-export-field-check { width: auto; margin: 0; flex: 0 0 auto; }
     .export-field-label {
       display: inline-block;
       min-width: 0;
-      max-width: 260px;
+      max-width: none;
       overflow: hidden;
       white-space: nowrap;
       text-overflow: ellipsis;
+      flex: 1 1 auto;
     }
+    .export-field-item code { margin-left: auto; white-space: nowrap; flex: 0 0 auto; }
     .export-field-item.is-over { outline: 2px dashed #94a3b8; outline-offset: -2px; background: #f8fafc; }
     .row-actions { display:flex; gap:8px; align-items:center; }
     .modal { z-index: 2000 !important; }

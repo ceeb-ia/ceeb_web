@@ -32,8 +32,19 @@
 
       {% if comp_aparell %}
       <div class="col-auto">
+        <label class="form-label small text-muted mb-1">Exercici</label>
+        <select class="form-select form-select-sm" name="ex" onchange="this.form.submit()">
+          {% for ex in exercicis %}
+            <option value="{{ ex }}" {% if ex == exercici %}selected{% endif %}>Exercici {{ ex }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
+
+      {% if comp_aparell %}
+      <div class="col-auto">
         <a class="btn btn-sm btn-outline-primary"
-           href="{% url 'judges_qr_print' competicio.id %}?comp_aparell={{ comp_aparell.id }}"
+           href="{% url 'judges_qr_print' competicio.id %}?comp_aparell={{ comp_aparell.id }}&ex={{ exercici }}"
            target="_blank">
           Imprimir QRs
         </a>
@@ -218,10 +229,10 @@
                         </td>
 
                         <td>
-                          <a class="btn btn-sm btn-outline-primary" href="{% url 'judge_portal' t.id %}" target="_blank">
+                          <a class="btn btn-sm btn-outline-primary" href="{% url 'judge_portal' t.id %}?ex={{ exercici }}" target="_blank">
                             Obrir
                           </a>
-                          <a class="btn btn-sm btn-outline-secondary" href="{% url 'judge_qr_png' t.id %}" target="_blank">
+                          <a class="btn btn-sm btn-outline-secondary" href="{% url 'judge_qr_png' t.id %}?ex={{ exercici }}" target="_blank">
                             QR
                           </a>
                         </td>

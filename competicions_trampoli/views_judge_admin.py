@@ -10,7 +10,7 @@ from .models_trampoli import CompeticioAparell
 from .models_scoring import ScoringSchema
 from .models_judging import JudgeDeviceToken, PublicLiveToken
 
-MAX_TOKEN_PERMISSIONS = 10
+MAX_TOKEN_PERMISSIONS = 15
 
 
 def _schema_field_choices(schema: dict):
@@ -85,6 +85,18 @@ def judges_qr_home(request, competicio_id):
     else:
         comp_aparell = comp_aparell_qs.first()
 
+    if comp_aparell:
+        max_ex = max(1, int(getattr(comp_aparell, "nombre_exercicis", 1) or 1))
+        exercicis = list(range(1, max_ex + 1))
+        try:
+            exercici = int(request.GET.get("ex") or 1)
+        except Exception:
+            exercici = 1
+        exercici = max(1, min(max_ex, exercici))
+    else:
+        exercicis = [1]
+        exercici = 1
+
     schema = {}
     if comp_aparell:
         ss, _ = ScoringSchema.objects.get_or_create(aparell=comp_aparell.aparell, defaults={"schema": {}})
@@ -109,7 +121,10 @@ def judges_qr_home(request, competicio_id):
             tok.revoked_at = timezone.now()
             tok.is_active = False
             tok.save(update_fields=["revoked_at", "is_active"])
-            return redirect(f"{reverse('judges_qr_home', kwargs={'competicio_id': competicio.id})}?comp_aparell={comp_aparell.id}")
+            return redirect(
+                f"{reverse('judges_qr_home', kwargs={'competicio_id': competicio.id})}"
+                f"?comp_aparell={comp_aparell.id}&ex={exercici}"
+            )
 
         # create token
         token_form = JudgeTokenCreateForm(request.POST)
@@ -147,7 +162,10 @@ def judges_qr_home(request, competicio_id):
                     permissions=perms,
                     is_active=True,
                 )
-                return redirect(f"{reverse('judges_qr_home', kwargs={'competicio_id': competicio.id})}?comp_aparell={comp_aparell.id}")
+                return redirect(
+                    f"{reverse('judges_qr_home', kwargs={'competicio_id': competicio.id})}"
+                    f"?comp_aparell={comp_aparell.id}&ex={exercici}"
+                )
         elif token_form_valid and not formset_valid:
             token_form.add_error(None, "Revisa els errors marcats a la taula de permisos.")
     else:
@@ -169,6 +187,8 @@ def judges_qr_home(request, competicio_id):
         "token_form": token_form,
         "formset": formset,
         "max_permissions": MAX_TOKEN_PERMISSIONS,
+        "exercicis": exercicis,
+        "exercici": exercici,
     }
     return render(request, "judge/admin_tokens.html", ctx)
 
@@ -178,12 +198,18 @@ def judges_qr_print(request, competicio_id):
     competicio = get_object_or_404(Competicio, pk=competicio_id)
     comp_aparell_id = request.GET.get("comp_aparell")
     comp_aparell = get_object_or_404(CompeticioAparell, pk=comp_aparell_id, competicio=competicio, actiu=True)
+    max_ex = max(1, int(getattr(comp_aparell, "nombre_exercicis", 1) or 1))
+    try:
+        exercici = int(request.GET.get("ex") or 1)
+    except Exception:
+        exercici = 1
+    exercici = max(1, min(max_ex, exercici))
 
     tokens = (JudgeDeviceToken.objects
               .filter(competicio=competicio, comp_aparell=comp_aparell, is_active=True, revoked_at__isnull=True)
               .order_by("label", "created_at"))
 
-    ctx = {"competicio": competicio, "comp_aparell": comp_aparell, "tokens": tokens}
+    ctx = {"competicio": competicio, "comp_aparell": comp_aparell, "tokens": tokens, "exercici": exercici}
     return render(request, "judge/print_tokens.html", ctx)
 
 

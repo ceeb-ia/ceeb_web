@@ -3343,17 +3343,21 @@ def inscripcions_reorder(request, pk):
       {
         "ids": [<id1>, <id2>, ...],   # ordre final després del drag
         "moved_id": <id>,            # el registre arrossegat
-        "new_index": <int>           # posició nova (0-based) dins ids
+        "new_index": <int>,          # posició nova (0-based) dins ids
+        "target_group": <int|null>   # grup inferit per header visual (opcional)
       }
 
     Guarda ordre_sortida = 1..N
-    I (NOU) només pel registre mogut: adopta el grup del registre immediatament superior.
+    I (NOU) només pel registre mogut:
+      - si arriba target_group, adopta aquest grup (header visual mana)
+      - si no, conserva el fallback històric (grup del registre immediatament superior)
     """
     try:
         payload = json.loads(request.body.decode("utf-8"))
         ids = payload.get("ids", [])
         moved_id = payload.get("moved_id", None)
         new_index = payload.get("new_index", None)
+        target_group = payload.get("target_group", None)
         raw_filters = payload.get("filters")
         raw_group_by = payload.get("group_by")
 
@@ -3379,6 +3383,16 @@ def inscripcions_reorder(request, pk):
         except Exception:
             return HttpResponseBadRequest("new_index invàlid")
 
+    if target_group in ("", None):
+        target_group = None
+    else:
+        try:
+            target_group = int(target_group)
+        except Exception:
+            return HttpResponseBadRequest("target_group invàlid")
+        if target_group <= 0:
+            return HttpResponseBadRequest("target_group invàlid")
+
     # Ens assegurem que només reordenem inscripcions d'aquesta competició
     qs = Inscripcio.objects.filter(competicio_id=pk, id__in=wanted)
     found = set(qs.values_list("id", flat=True))
@@ -3393,15 +3407,24 @@ def inscripcions_reorder(request, pk):
         for idx, ins_id in enumerate(wanted, start=1):
             Inscripcio.objects.filter(id=ins_id).update(ordre_sortida=idx)
 
-        # 2) (NOU) només el registre mogut adopta el grup del superior immediat
+        # 2) només el registre mogut pot canviar de grup:
+        #    - prioritat: header visual (target_group)
+        #    - fallback: registre immediatament superior
         if moved_id is not None and new_index is not None and moved_id in wanted:
-            if new_index > 0:
+            next_group = None
+            should_update_group = False
+            if target_group is not None:
+                next_group = target_group
+                should_update_group = True
+            elif new_index > 0:
                 prev_id = wanted[new_index - 1]
-                prev_group = id_to_group.get(prev_id)
+                next_group = id_to_group.get(prev_id)
+                should_update_group = True
 
+            if should_update_group:
                 # Mateixa nota: si NO vols que None esborri el grup, fes:
-                # if prev_group is not None:
-                Inscripcio.objects.filter(id=moved_id).update(grup=prev_group)
+                # if next_group is not None:
+                Inscripcio.objects.filter(id=moved_id).update(grup=next_group)
 
     # Rebase de l'stack d'ordenacio del context actual quan el conjunt coincideix.
     try:

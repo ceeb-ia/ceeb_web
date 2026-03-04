@@ -33,6 +33,106 @@
     }
     .group-chip input { margin: 0; }
     .grouping-actions { display: flex; gap: 8px; align-items: center; }
+    .cols-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 8px;
+    }
+    .cols-toolbar-left,
+    .cols-toolbar-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .cols-inline-sortable {
+      margin: 0;
+      padding: 0 2px 6px;
+      list-style: none;
+      display: flex;
+      flex-wrap: nowrap;
+      gap: 8px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      scrollbar-width: thin;
+    }
+    .cols-inline-item {
+      display: inline-flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      min-width: 230px;
+      max-width: 280px;
+      border: 1px solid #d8e1f1;
+      background: #ffffff;
+      border-radius: 10px;
+      padding: 6px 8px;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+    }
+    .cols-inline-main {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+    .cols-inline-toggle {
+      min-width: 0;
+      margin: 0;
+      flex: 1 1 auto;
+      padding-left: 1.35rem;
+    }
+    .cols-inline-toggle .custom-control-label {
+      display: block;
+      min-width: 0;
+      margin: 0;
+      line-height: 1.2;
+      cursor: pointer;
+      padding-top: 1px;
+      overflow: visible;
+    }
+    .cols-inline-toggle .custom-control-label::before,
+    .cols-inline-toggle .custom-control-label::after {
+      top: 0.08rem;
+    }
+    .cols-inline-toggle .custom-control-label::before {
+      border-color: #7b8fb6;
+      background-color: #ffffff;
+    }
+    .cols-inline-toggle .custom-control-input:checked ~ .custom-control-label::before {
+      background-color: #2d6cdf;
+      border-color: #2d6cdf;
+    }
+    .cols-inline-label {
+      display: block;
+      min-width: 0;
+      font-size: 0.84rem;
+    }
+    .cols-inline-label-text {
+      min-width: 0;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      display: block;
+    }
+    .cols-inline-code {
+      font-size: 0.7rem;
+      color: #6b7280;
+      border: 1px solid #dbe3f1;
+      border-radius: 999px;
+      padding: 1px 6px;
+      background: #f8fbff;
+      white-space: nowrap;
+      max-width: 92px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .cols-inline-item .custom-control-input {
+      cursor: pointer;
+    }
     .chips {
       display: flex;
       flex-wrap: wrap;
@@ -481,37 +581,50 @@
           <div class="panel-head collapsed" data-target="#panel-columnes" aria-expanded="false">
             <div>
               <p class="panel-title mb-0">Columnes</p>
-              <div class="subtle">Selecciona i reordena les columnes de la taula (drag and drop).</div>
+              <div class="subtle">Reordena en linia i marca/desmarca visibilitat.</div>
             </div>
             <div class="d-flex align-items-center gap-2">
-              <span class="subtle d-none d-md-inline">Mostra/Oculta</span>
+              <span class="badge badge-light border" id="cols-visible-count">-/-</span>
               <span class="chev">&#9662;</span>
             </div>
           </div>
 
           <div id="panel-columnes" class="panel-collapse is-collapsed">
             <div class="panel-body">
-              <div class="alert alert-info py-2 px-3 small mb-2">
-                Arrossega per canviar l'ordre. Marca/desmarca per mostrar o amagar.
+              <div class="cols-toolbar">
+                <div class="cols-toolbar-left">
+                  <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-cols-all">Tot</button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-cols-none">Cap</button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-cols-default">Per defecte</button>
+                </div>
+                <div class="cols-toolbar-right">
+                  <div class="small text-muted">Arrossega les targetes per canviar l'ordre.</div>
+                  <button type="button" class="btn btn-sm btn-primary" id="btn-save-cols">Desar columnes</button>
+                </div>
               </div>
 
-              <ul id="cols-sortable" class="list-group mb-2" style="max-width: 620px;">
+              <ul id="cols-sortable" class="cols-inline-sortable mb-2">
                 {% for col in available_table_columns %}
-                  <li class="list-group-item d-flex align-items-center justify-content-between" data-col="{{ col.code }}">
-                    <div class="d-flex align-items-center" style="gap:10px;">
+                  <li class="cols-inline-item" data-col="{{ col.code }}">
+                    <div class="cols-inline-main">
                       <span class="col-drag-handle" title="Arrossega">&#8942;&#8942;</span>
-                      <input type="checkbox"
-                             class="form-check-input js-col-check"
-                             data-col="{{ col.code }}"
-                             {% for s in selected_table_columns %}{% if s.code == col.code %}checked{% endif %}{% endfor %}>
-                      <span>{{ col.ui_label|default:col.label }}</span>
+                      <div class="custom-control custom-checkbox cols-inline-toggle">
+                        <input type="checkbox"
+                               class="custom-control-input js-col-check"
+                               id="col_check_{{ forloop.counter0 }}"
+                               data-col="{{ col.code }}"
+                               {% for s in selected_table_columns %}{% if s.code == col.code %}checked{% endif %}{% endfor %}>
+                        <label class="custom-control-label cols-inline-label"
+                               for="col_check_{{ forloop.counter0 }}"
+                               title="{{ col.ui_label|default:col.label }}">
+                          <span class="cols-inline-label-text">{{ col.ui_label|default:col.label }}</span>
+                        </label>
+                      </div>
                     </div>
-                    <code class="text-muted small">{{ col.code }}</code>
+                    <span class="cols-inline-code" title="{{ col.code }}">{{ col.code }}</span>
                   </li>
                 {% endfor %}
               </ul>
-
-              <button type="button" class="btn btn-sm btn-primary" id="btn-save-cols">Desar columnes</button>
             </div>
           </div>
         </div>
@@ -1462,7 +1575,7 @@
     return ids;
   }
 
-  async function saveGlobalOrder(movedId) {
+  async function saveGlobalOrder(movedId, targetGroup) {
     const ids = collectGlobalIds();
     if (!ids.length) return false;
 
@@ -1478,6 +1591,7 @@
         ids: ids,
         moved_id: movedId ? String(movedId) : null,
         new_index: (newIndex >= 0 ? newIndex : null),
+        target_group: (targetGroup !== undefined ? targetGroup : null),
         filters: getCurrentInscripcioFilters(),
         group_by: getCurrentGroupByCodes()
       })
@@ -1583,16 +1697,94 @@
       });
     }
 
+    function getColumnOrderItems(list) {
+      const root = list || document.getElementById('cols-sortable');
+      if (!root) return [];
+      return Array.from(root.querySelectorAll('li[data-col]'));
+    }
+
+    function collectVisibleTableColumns(list) {
+      const cols = [];
+      getColumnOrderItems(list).forEach(li => {
+        const code = String(li.getAttribute('data-col') || '').trim();
+        const cb = li.querySelector('input.js-col-check');
+        if (cb && cb.checked && code) cols.push(code);
+      });
+      return cols;
+    }
+
+    function updateColsVisibleCount() {
+      const badge = document.getElementById('cols-visible-count');
+      if (!badge) return;
+      const list = document.getElementById('cols-sortable');
+      const items = getColumnOrderItems(list);
+      const total = items.length;
+      const visible = collectVisibleTableColumns(list).length;
+      badge.textContent = `${visible}/${total}`;
+      badge.title = `${visible} visibles de ${total}`;
+    }
+
+    function setAllColumnsChecked(checked) {
+      const list = document.getElementById('cols-sortable');
+      getColumnOrderItems(list).forEach(li => {
+        const cb = li.querySelector('input.js-col-check');
+        if (cb) cb.checked = !!checked;
+      });
+      updateColsVisibleCount();
+    }
+
+    function applyDefaultColumnsPreset() {
+      const list = document.getElementById('cols-sortable');
+      if (!list) return;
+      const defaultCodes = [
+        'nom_i_cognoms',
+        'document',
+        'sexe',
+        'data_naixement',
+        'entitat',
+        'categoria',
+        'subcategoria',
+        'grup',
+        'equip',
+        '__aparells__',
+        'ordre_sortida',
+        '__actions__',
+      ];
+      const items = getColumnOrderItems(list);
+      const byCode = new Map();
+      items.forEach(li => {
+        const code = String(li.getAttribute('data-col') || '').trim();
+        if (code) byCode.set(code, li);
+      });
+
+      const ordered = [];
+      const defaultSet = new Set(defaultCodes);
+      defaultCodes.forEach(code => {
+        if (!byCode.has(code)) return;
+        ordered.push(byCode.get(code));
+      });
+
+      items.forEach(li => {
+        const code = String(li.getAttribute('data-col') || '').trim();
+        if (!defaultSet.has(code)) ordered.push(li);
+      });
+
+      const frag = document.createDocumentFragment();
+      ordered.forEach(li => {
+        const code = String(li.getAttribute('data-col') || '').trim();
+        const cb = li.querySelector('input.js-col-check');
+        if (cb) cb.checked = defaultSet.has(code);
+        frag.appendChild(li);
+      });
+      list.appendChild(frag);
+      updateColsVisibleCount();
+    }
+
     async function saveTableColumns() {
       const list = document.getElementById('cols-sortable');
       if (!list) return;
 
-      const cols = [];
-      Array.from(list.querySelectorAll('li.list-group-item')).forEach(li => {
-        const code = li.getAttribute('data-col');
-        const cb = li.querySelector('input.js-col-check');
-        if (cb && cb.checked && code) cols.push(code);
-      });
+      const cols = collectVisibleTableColumns(list);
 
       if (!cols.length) {
         alert("Has de deixar com a minim una columna seleccionada.");
@@ -2554,6 +2746,19 @@
       return tr && tr.classList.contains('group-row');
     }
 
+    function inferHeaderTargetGroupForRow(rowTr) {
+      if (!rowTr || !rowTr.classList || !rowTr.classList.contains('inscripcio-row')) return null;
+      let cur = rowTr.previousElementSibling;
+      while (cur) {
+        if (isHeaderRow(cur)) {
+          const raw = (cur.getAttribute('data-group-header') || '').trim();
+          return raw || null;
+        }
+        cur = cur.previousElementSibling;
+      }
+      return null;
+    }
+
     // Bloc = header + tot fins abans del següent header de grup
     function getHeaderBlockRows(headerTr) {
       const rows = [headerTr];
@@ -2605,7 +2810,8 @@
           }
 
           const movedId = (item && item.classList.contains('inscripcio-row')) ? item.dataset.id : null;
-          const ok = await saveGlobalOrder(movedId);
+          const targetGroup = movedId ? inferHeaderTargetGroupForRow(item) : null;
+          const ok = await saveGlobalOrder(movedId, targetGroup);
           if (ok) reloadWithUiState();
         }
       });
@@ -2615,14 +2821,39 @@
     if (colsList) {
       new Sortable(colsList, {
         animation: 150,
+        direction: 'horizontal',
+        swapThreshold: 0.65,
         handle: '.col-drag-handle',
-        draggable: 'li.list-group-item',
+        draggable: 'li[data-col]',
         onChoose: function() { setDragging(true); },
         onUnchoose: function() { setDragging(false); },
+        onEnd: function() { updateColsVisibleCount(); },
       });
 
       const btnSaveCols = document.getElementById('btn-save-cols');
       if (btnSaveCols) btnSaveCols.addEventListener('click', saveTableColumns);
+
+      const btnColsAll = document.getElementById('btn-cols-all');
+      if (btnColsAll) {
+        btnColsAll.addEventListener('click', () => setAllColumnsChecked(true));
+      }
+
+      const btnColsNone = document.getElementById('btn-cols-none');
+      if (btnColsNone) {
+        btnColsNone.addEventListener('click', () => setAllColumnsChecked(false));
+      }
+
+      const btnColsDefault = document.getElementById('btn-cols-default');
+      if (btnColsDefault) {
+        btnColsDefault.addEventListener('click', applyDefaultColumnsPreset);
+      }
+
+      colsList.addEventListener('change', (ev) => {
+        const node = ev.target;
+        if (!node || !node.matches('.js-col-check')) return;
+        updateColsVisibleCount();
+      });
+      updateColsVisibleCount();
     }
 
     applyGroupBands();

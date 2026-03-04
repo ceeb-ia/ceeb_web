@@ -1277,25 +1277,229 @@ def _computed_mode_hint(comp_cfg: dict) -> str:
         return preset
 
     formula = str(comp_cfg.get("formula") or "").strip().lower()
-    if formula.startswith("row_custom_compute("):
+    if re.match(r"^row_custom_compute\s*\(", formula):
         return "row_compute"
-    if formula.startswith("column_custom_compute("):
+    if re.match(r"^column_custom_compute\s*\(", formula):
         return "column_compute"
-    if formula.startswith("row_custom_agregation("):
+    if re.match(r"^row_custom_agregation\s*\(", formula):
         return "row_agregation"
-    if formula.startswith("exec_by_judge("):
+    if re.match(r"^exec_by_judge\s*\(", formula):
         return "exec_trampoli"
-    if formula.startswith("select_sum("):
+    if re.match(r"^select_sum\s*\(", formula):
         return "select_sum_guided"
     return ""
 
 
 def _formula_forces_vector_return(formula: str) -> bool:
-    txt = str(formula or "").strip().lower()
-    if not txt:
+    call_name, args_txt = _parse_formula_root_call(formula)
+    fn = str(call_name or "").strip().lower()
+    if fn not in {"row_custom_compute", "column_custom_compute"}:
         return False
-    return ("return_mode='by_judge'" in txt or 'return_mode="by_judge"' in txt or
-            "return_mode='by_item'" in txt or 'return_mode="by_item"' in txt)
+    rm = _extract_kwarg_str(args_txt, "return_mode").lower()
+    return rm in {"by_judge", "by_item"}
+
+
+def _parse_formula_root_call(formula: str):
+    txt = str(formula or "").strip()
+    if not txt:
+        return "", ""
+    m = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)\s*\((.*)\)\s*$", txt, flags=re.DOTALL)
+    if not m:
+        return "", ""
+    return str(m.group(1) or "").strip(), str(m.group(2) or "")
+
+
+def _extract_kwarg_int(args_txt: str, key: str):
+    txt = str(args_txt or "")
+    pat = rf"\b{re.escape(str(key))}\s*=\s*(-?\d+)\b"
+    m = re.search(pat, txt)
+    if not m:
+        return None
+    try:
+        return int(m.group(1))
+    except Exception:
+        return None
+
+
+def _extract_kwarg_str(args_txt: str, key: str):
+    txt = str(args_txt or "")
+    pat = rf"\b{re.escape(str(key))}\s*=\s*(?:(['\"])(.*?)\1|([A-Za-z_][A-Za-z0-9_]*))"
+    m = re.search(pat, txt, flags=re.DOTALL)
+    if not m:
+        return ""
+    return str(m.group(2) or m.group(3) or "").strip()
+
+
+def _extract_first_arg(args_txt: str):
+    txt = str(args_txt or "")
+    if not txt.strip():
+        return ""
+
+    depth = 0
+    quote = ""
+    escaped = False
+    for i, ch in enumerate(txt):
+        if quote:
+            if escaped:
+                escaped = False
+                continue
+            if ch == "\\":
+                escaped = True
+                continue
+            if ch == quote:
+                quote = ""
+            continue
+
+        if ch in {"'", '"'}:
+            quote = ch
+            continue
+        if ch in {"(", "[", "{"}:
+            depth += 1
+            continue
+        if ch in {")", "]", "}"}:
+            depth = max(0, depth - 1)
+            continue
+        if ch == "," and depth == 0:
+            return txt[:i].strip()
+    return txt.strip()
+
+
+def _extract_source_from_call(comp_cfg: dict, call_name: str, args_txt: str):
+    if isinstance(comp_cfg, dict):
+        b = comp_cfg.get("builder")
+        if isinstance(b, dict):
+            src = str(b.get("source") or "").strip()
+            if src:
+                return src
+
+    fn = str(call_name or "").strip().lower()
+    if fn not in {
+        "row_custom_compute", "column_custom_compute", "row_custom_agregation",
+        "exec_by_judge", "items_reduce", "crash",
+    }:
+        return ""
+
+    tok = _extract_first_arg(args_txt)
+    if not tok:
+        return ""
+
+    m = re.match(r"""^\s*field\s*\(\s*(?:'([^']+)'|"([^"]+)"|([A-Za-z_][A-Za-z0-9_]*))\s*\)\s*$""", tok)
+    if m:
+        return str(m.group(1) or m.group(2) or m.group(3) or "").strip()
+
+    m = re.match(r"""^\s*(?:'([^']+)'|"([^"]+)"|([A-Za-z_][A-Za-z0-9_]*))\s*$""", tok)
+    if not m:
+        return ""
+    return str(m.group(1) or m.group(2) or m.group(3) or "").strip()
+
+
+def _extract_best_n_value(args_txt: str):
+    n_kw = _extract_kwarg_int(args_txt, "n")
+    if n_kw is not None:
+        return n_kw
+    txt = str(args_txt or "")
+    # best_n(scores, 1)
+    m = re.match(r"""^\s*[^,]+,\s*(-?\d+)\b""", txt)
+    if not m:
+        return None
+    try:
+        return int(m.group(1))
+    except Exception:
+        return None
+
+
+def _schema_field_dims_map(schema_obj: dict):
+    out = {}
+    schema_obj = schema_obj or {}
+    for f in (schema_obj.get("fields") or []):
+        if not isinstance(f, dict) or not f.get("code"):
+            continue
+        code = str(f.get("code"))
+        sh = _field_shape(f)
+        out[code] = {"rows": sh.rows, "cols": sh.cols}
+    return out
+
+
+def _resolve_source_dims(source_code: str, inferred_shapes: dict, field_dims: dict):
+    src = str(source_code or "").strip()
+    if not src:
+        return {"rows": None, "cols": None}
+    info = inferred_shapes.get(src)
+    if isinstance(info, dict):
+        return {"rows": info.get("rows"), "cols": info.get("cols")}
+    info = field_dims.get(src)
+    if isinstance(info, dict):
+        return {"rows": info.get("rows"), "cols": info.get("cols")}
+    return {"rows": None, "cols": None}
+
+
+def _scoreable_from_conditional_vector(comp_cfg: dict, mode_hint: str, call_name: str, args_txt: str, inferred_shapes: dict, field_dims: dict, strict_unknown: bool):
+    mode = str(mode_hint or "").strip().lower()
+    fn = str(call_name or "").strip().lower()
+    args = str(args_txt or "")
+
+    source_code = _extract_source_from_call(comp_cfg, fn, args)
+    dims = _resolve_source_dims(source_code, inferred_shapes, field_dims)
+    src_rows = dims.get("rows")
+    src_cols = dims.get("cols")
+
+    # row/column compute only become vectors with explicit return_mode
+    if mode in {"row_compute", "column_compute"} or fn in {"row_custom_compute", "column_custom_compute"}:
+        is_row_compute = mode == "row_compute" or fn == "row_custom_compute"
+        is_col_compute = mode == "column_compute" or fn == "column_custom_compute"
+        rm = _extract_kwarg_str(args, "return_mode").lower()
+
+        if not _formula_forces_vector_return(comp_cfg.get("formula")) or rm in {"", "final"}:
+            return True, "", True
+
+        if is_row_compute:
+            if rm != "by_judge":
+                return True, "", True
+            if src_rows == 1:
+                return True, "return_mode by_judge amb 1 jutge (llista d'1)", True
+            if src_rows is None:
+                if strict_unknown:
+                    return False, "no es pot inferir longitud de vector by_judge", True
+                return True, "longitud by_judge no inferible (UI tolerant)", True
+            return False, f"return_mode by_judge amb {src_rows} jutges", True
+
+        if is_col_compute:
+            if rm != "by_item":
+                return True, "", True
+            # by_item: use cols and/or explicit count=1
+            cnt = _extract_kwarg_int(args, "count")
+            if cnt is not None and cnt == 1:
+                return True, "return_mode by_item amb count=1", True
+            if src_cols == 1:
+                return True, "return_mode by_item amb 1 item", True
+            if src_cols is None:
+                if strict_unknown:
+                    return False, "no es pot inferir longitud de vector by_item", True
+                return True, "longitud by_item no inferible (UI tolerant)", True
+            return False, f"return_mode by_item amb {src_cols} items", True
+
+    # Vector by judge families
+    if mode in {"row_agregation", "exec_trampoli"} or fn in {"row_custom_agregation", "exec_by_judge", "items_reduce", "crash"}:
+        if src_rows == 1:
+            return True, "vector per jutge de longitud 1", True
+        if src_rows is None:
+            if strict_unknown:
+                return False, "no es pot inferir longitud de vector per jutge", True
+            return True, "longitud per jutge no inferible (UI tolerant)", True
+        return False, f"vector per jutge de longitud {src_rows}", True
+
+    # best_n -> vector de mida n
+    if fn == "best_n":
+        n_val = _extract_best_n_value(args)
+        if n_val == 1:
+            return True, "best_n amb n=1", True
+        if n_val is None:
+            if strict_unknown:
+                return False, "best_n sense n constant no es pot garantir mida 1", True
+            return True, "best_n sense n constant (UI tolerant)", True
+        return False, f"best_n amb n={n_val}", True
+
+    return False, "", False
 
 
 def _build_scoreable_meta_for_schema(schema_obj: dict, strict_unknown=False):
@@ -1307,6 +1511,7 @@ def _build_scoreable_meta_for_schema(schema_obj: dict, strict_unknown=False):
 
     inferred_shapes = {}
     infer_error = ""
+    field_dims = _schema_field_dims_map(schema_obj)
     try:
         inferred_shapes = _infer_schema_code_shapes(schema_obj)
     except Exception as exc:
@@ -1331,19 +1536,19 @@ def _build_scoreable_meta_for_schema(schema_obj: dict, strict_unknown=False):
         code = str(c["code"])
         mode_hint = _computed_mode_hint(c)
         formula_txt = str(c.get("formula") or "")
+        call_name, call_args = _parse_formula_root_call(formula_txt)
 
-        if mode_hint in {"row_agregation", "exec_trampoli"}:
-            meta[code] = {
-                "scoreable": False,
-                "reason": f"computed no escalar per mode '{mode_hint}'",
-            }
-            continue
-
-        if mode_hint in {"row_compute", "column_compute"} and _formula_forces_vector_return(formula_txt):
-            meta[code] = {
-                "scoreable": False,
-                "reason": "computed amb return_mode vectorial (by_judge/by_item)",
-            }
+        cond_ok, cond_reason, cond_handled = _scoreable_from_conditional_vector(
+            c,
+            mode_hint,
+            call_name,
+            call_args,
+            inferred_shapes,
+            field_dims,
+            strict_unknown=bool(strict_unknown),
+        )
+        if cond_handled:
+            meta[code] = {"scoreable": bool(cond_ok), "reason": "" if cond_ok else cond_reason}
             continue
 
         shape_info = inferred_shapes.get(code)
@@ -1890,20 +2095,33 @@ def _particio_value_to_text(raw) -> str:
 def _collect_particio_value_choices(ins_list, field_codes, max_per_field=200):
     out = {}
     for code in field_codes:
-        unique = {}
+        unique_labels = {}
+        unique_counts = {}
         for ins in ins_list:
             txt = _particio_value_to_text(get_inscripcio_value(ins, code))
             if not txt:
                 continue
             key = " ".join(txt.split()).casefold()
-            if key in unique:
+            if key in unique_labels:
+                unique_counts[key] = int(unique_counts.get(key, 0) or 0) + 1
                 continue
-            unique[key] = txt
-            if len(unique) >= max_per_field:
-                break
-        values = list(unique.values())
-        values.sort(key=lambda x: x.casefold())
-        out[code] = values
+            if len(unique_labels) >= max_per_field:
+                continue
+            unique_labels[key] = txt
+            unique_counts[key] = 1
+
+        entries = []
+        for key, value in unique_labels.items():
+            entries.append(
+                {
+                    "value": value,
+                    "label": value,
+                    "count": int(unique_counts.get(key, 0) or 0),
+                }
+            )
+
+        entries.sort(key=lambda x: str(x.get("label") or "").casefold())
+        out[code] = entries
     return out
 
 

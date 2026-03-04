@@ -5,6 +5,7 @@
 <div class="container-fluid mt-4">
   <style>
     .judge-card{ border:1px solid #e9ecef; border-radius:.6rem; padding:.75rem .9rem; background:#fff; }
+    .judge-card.flash{ box-shadow: 0 0 0 2px rgba(13,110,253,.25); transition: box-shadow .2s ease; }
     .judge-meta{ color:#6c757d; font-size:.85rem; }
     .judge-pill{ font-size:.85rem; }
     .input-salt{ width:76px; padding:.15rem .25rem; text-align:center; }
@@ -16,6 +17,20 @@
     .video-status.err{ color:#c22; font-weight:600; }
     .video-status.info{ color:#0f6cbf; font-weight:600; }
     .judge-video-preview{ width: 240px; max-width: 100%; border-radius: .4rem; background:#000; }
+    .judge-nav-toggle{ position: fixed; right: 14px; bottom: 14px; z-index: 1040; }
+    .judge-nav-panel{ border:1px solid #e9ecef; border-radius:.6rem; background:#fff; padding:.6rem; max-height:360px; overflow:auto; }
+    .judge-nav-group-title{ font-size:.78rem; font-weight:700; color:#6c757d; margin-top:.45rem; margin-bottom:.3rem; text-transform:uppercase; letter-spacing:.02em; }
+    .judge-nav-link{ display:block; font-size:.9rem; color:#495057; text-decoration:none; padding:.15rem .25rem; border-radius:.35rem; }
+    .judge-nav-link:hover{ background:#f1f3f5; color:#212529; text-decoration:none; }
+    .judge-nav-link.is-saved{ color:#198754; font-weight:600; }
+    .judge-nav-link.is-active{ background:#e9f2ff; color:#0d6efd; }
+    .judge-nav-search{ margin-bottom:.45rem; }
+    .judge-nav-backdrop{ position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:1040; display:none; }
+    .judge-nav-backdrop.show{ display:block; }
+    .judge-nav-drawer{ position:fixed; top:0; right:0; width:min(88vw,360px); height:100vh; background:#fff; z-index:1050; transform:translateX(100%); transition:transform .2s ease; border-left:1px solid #e9ecef; display:flex; flex-direction:column; }
+    .judge-nav-drawer.show{ transform:translateX(0); }
+    .judge-nav-drawer-head{ padding:.8rem; border-bottom:1px solid #e9ecef; display:flex; align-items:center; justify-content:space-between; }
+    .judge-nav-drawer-body{ padding:.7rem; overflow:auto; }
   </style>
 
   <div class="card-surface">
@@ -416,12 +431,34 @@
     lineWrap.appendChild(inp);
   }
 
+  function crashEnabledForField(field){
+    return !!(field && field.crash && field.crash.enabled);
+  }
+
+  function applyCrashDisableInMatrix(groupEl, crashAt){
+    const cut = Number(crashAt || 0);
+    groupEl.querySelectorAll('[data-matrix-row="1"]').forEach((row) => {
+      const idx1 = Number(row.dataset.itemIndex || 0);
+      const disable = (cut > 0 && idx1 >= cut);
+      const inp = row.querySelector('input[data-kind="matrix"]');
+      if(inp) inp.disabled = disable;
+      const btn = row.querySelector('button[data-crash-btn="1"]');
+      if(btn) btn.style.opacity = disable ? "0.35" : "1";
+    });
+  }
+
   function renderPermMatrix(lineWrap, insId, perm, field){
     const j = Math.max(1, Number(perm.judge_index || 1));
     const nJudges = Math.max(1, Number((field.judges && field.judges.count) || 1));
     const nItems = Math.max(1, Number((field.items && field.items.count) || 1));
     const start = Math.max(1, Number(perm.item_start || 1));
     const count = perm.item_count ? Math.max(1, Number(perm.item_count)) : (nItems - start + 1);
+    const crashEnabled = crashEnabledForField(field);
+    const crashCode = `__crash__${perm.field_code}`;
+    const crashVals = crashEnabled && Array.isArray(effectiveInput(insId, crashCode))
+      ? deepClone(effectiveInput(insId, crashCode))
+      : [];
+    while(crashVals.length < nJudges) crashVals.push(0);
 
     const mat = Array.isArray(effectiveInput(insId, perm.field_code))
       ? deepClone(effectiveInput(insId, perm.field_code))
@@ -439,6 +476,8 @@
       const row = document.createElement("div");
       row.className = "d-flex align-items-center mb-1";
       row.style.gap = "8px";
+      row.dataset.matrixRow = "1";
+      row.dataset.itemIndex = String(idx1);
 
       const lab = document.createElement("div");
       lab.className = "judge-meta";
@@ -468,8 +507,30 @@
 
       row.appendChild(lab);
       row.appendChild(inp);
+      if(crashEnabled){
+        const btn = document.createElement("button");
+        btn.className = "btn btn-sm btn-outline-danger p-0";
+        btn.type = "button";
+        btn.textContent = "C";
+        btn.title = "Crash";
+        btn.style.width = "22px";
+        btn.style.height = "22px";
+        btn.dataset.crashBtn = "1";
+        btn.addEventListener("click", () => {
+          const nextCrash = Array.isArray(effectiveInput(insId, crashCode))
+            ? deepClone(effectiveInput(insId, crashCode))
+            : [];
+          while(nextCrash.length < nJudges) nextCrash.push(0);
+          const current = Number(nextCrash[j - 1] || 0);
+          nextCrash[j - 1] = (current === idx1) ? 0 : idx1;
+          updateDraftValue(insId, crashCode, nextCrash, perm);
+          applyCrashDisableInMatrix(group, nextCrash[j - 1]);
+        });
+        row.appendChild(btn);
+      }
       group.appendChild(row);
     }
+    applyCrashDisableInMatrix(group, Number(crashVals[j - 1] || 0));
     lineWrap.appendChild(group);
   }
 
@@ -965,4 +1026,3 @@
   pollUpdates();
 </script>
 {% endblock %}
-

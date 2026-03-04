@@ -123,6 +123,100 @@
   .part-idx-3 .partition-head { border-left: 4px solid #eb5757; }
   .part-idx-4 .partition-head { border-left: 4px solid #56ccf2; }
 
+  .part-custom-grid {
+    display: grid;
+    grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+    gap: 10px;
+  }
+  .part-custom-panel {
+    border: 1px solid #e3e9f4;
+    border-radius: 8px;
+    background: #f9fbff;
+    padding: 8px;
+  }
+  .part-custom-panel-title {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: #475467;
+    margin-bottom: 6px;
+    font-weight: 700;
+  }
+  .part-custom-list {
+    max-height: 220px;
+    overflow: auto;
+    border: 1px solid #dbe4f3;
+    border-radius: 8px;
+    background: #fff;
+    padding: 6px;
+  }
+  .part-custom-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid #dbe4f3;
+    background: #fff;
+    border-radius: 6px;
+    padding: 4px 7px;
+    margin-bottom: 6px;
+  }
+  .part-custom-item:last-child {
+    margin-bottom: 0;
+  }
+  .part-custom-item-handle {
+    cursor: grab;
+    user-select: none;
+    color: #64748b;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .part-custom-item-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 0.82rem;
+  }
+  .part-custom-item-count {
+    font-size: 0.72rem;
+    color: #334155;
+    background: #e8eefc;
+    border: 1px solid #c9d6f2;
+    border-radius: 999px;
+    padding: 0 6px;
+    white-space: nowrap;
+  }
+  .part-custom-empty {
+    font-size: 0.78rem;
+    color: #64748b;
+    border: 1px dashed #c9d6f2;
+    border-radius: 6px;
+    padding: 6px 8px;
+    background: #f8fbff;
+  }
+  .part-custom-group-card {
+    border: 1px solid #dbe4f3;
+    border-radius: 8px;
+    background: #fff;
+    padding: 8px;
+    margin-bottom: 8px;
+  }
+  .part-custom-group-card:last-child {
+    margin-bottom: 0;
+  }
+  .part-custom-group-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  @media (max-width: 991.98px) {
+    .part-custom-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
 </style>
 
 <div id="classif-builder-v2" class="container-fluid mt-4">
@@ -483,6 +577,7 @@
 {{ aparell_field_options|json_script:"aparell-field-options-data" }}
 {{ competicio.id|default:None|json_script:"competicio-id" }}
 
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
 <script>
   // DATA del backend (mateix patró que ara)
   const COMPETICIO_ID = JSON.parse(document.getElementById("competicio-id").textContent);
@@ -2171,6 +2266,10 @@
     return out;
   }
 
+  function particioValueKey(raw) {
+    return String(raw || "").replace(/\s+/g, " ").trim().toLowerCase();
+  }
+
   function splitParticioCustomValues(raw) {
     let vals = [];
     if (Array.isArray(raw)) vals = raw.map(v => String(v || "").trim());
@@ -2179,12 +2278,51 @@
     const seen = new Set();
     vals.forEach(v => {
       if (!v) return;
-      const key = v.replace(/\s+/g, " ").trim().toLowerCase();
+      const key = particioValueKey(v);
       if (!key || seen.has(key)) return;
       seen.add(key);
       out.push(v);
     });
     return out;
+  }
+
+  function normalizeParticioChoiceEntries(raw) {
+    const arr = Array.isArray(raw) ? raw : [];
+    const out = [];
+    const seen = new Set();
+    arr.forEach(item => {
+      let value = "";
+      let label = "";
+      let count = 0;
+
+      if (item && typeof item === "object" && !Array.isArray(item)) {
+        value = String(item.value ?? item.label ?? "").trim();
+        label = String(item.label ?? value).trim();
+        const n = Number(item.count ?? 0);
+        count = Number.isFinite(n) && n > 0 ? Math.trunc(n) : 0;
+      } else {
+        value = String(item || "").trim();
+        label = value;
+      }
+
+      if (!value) return;
+      const key = particioValueKey(value);
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      out.push({
+        value: value,
+        label: label || value,
+        count: count,
+      });
+    });
+    return out;
+  }
+
+  function getParticioChoiceEntriesForCode(code) {
+    const raw = (PARTICIO_VALUE_CHOICES && Object.prototype.hasOwnProperty.call(PARTICIO_VALUE_CHOICES, code))
+      ? PARTICIO_VALUE_CHOICES[code]
+      : [];
+    return normalizeParticioChoiceEntries(raw);
   }
 
   function normalizeParticionsCustom(raw) {
@@ -2255,6 +2393,75 @@
     els.particionsFieldsBox.innerHTML = html;
   }
 
+  function renderParticioCustomItem(entry) {
+    const value = String((entry && entry.value) || "").trim();
+    if (!value) return "";
+    const label = String((entry && entry.label) || value).trim() || value;
+    const count = Number((entry && entry.count) || 0);
+    const detected = entry ? entry.detected !== false : true;
+    const countHtml = count > 0 ? `<span class="part-custom-item-count">${esc(String(count))}</span>` : "";
+    const staleHtml = detected ? "" : `<span class="part-custom-item-count" title="Valor no detectat amb el context actual">?</span>`;
+    return `
+      <div class="part-custom-item js-part-custom-item" data-value="${esc(value)}">
+        <span class="part-custom-item-handle js-part-custom-item-handle" title="Arrossega per moure">&#8942;&#8942;</span>
+        <span class="part-custom-item-label" title="${esc(label)}">${esc(label)}</span>
+        ${countHtml}
+        ${staleHtml}
+      </div>
+    `;
+  }
+
+  function readParticioCustomValuesFromList(listNode) {
+    if (!listNode) return [];
+    return splitParticioCustomValues(
+      Array.from(listNode.querySelectorAll(".js-part-custom-item"))
+        .map(node => String(node.getAttribute("data-value") || "").trim())
+    );
+  }
+
+  function refreshParticioCustomDndEmptyState(listNode) {
+    if (!listNode) return;
+    const emptyNode = listNode.querySelector(".js-part-custom-empty");
+    if (!emptyNode) return;
+    const hasItems = !!listNode.querySelector(".js-part-custom-item");
+    emptyNode.style.display = hasItems ? "none" : "";
+  }
+
+  function refreshParticioCustomFieldDndState(fieldBox) {
+    if (!fieldBox) return;
+    fieldBox.querySelectorAll("[data-part-custom-dnd-list]").forEach(refreshParticioCustomDndEmptyState);
+  }
+
+  function initParticionsCustomSortables() {
+    if (!els.particionsCustomBox || typeof Sortable === "undefined") return;
+
+    els.particionsCustomBox.querySelectorAll("[data-part-custom-field]").forEach(fieldBox => {
+      const code = String(fieldBox.getAttribute("data-part-custom-field") || "").trim();
+      if (!code) return;
+      const groupName = `part_custom_${code}`;
+
+      fieldBox.querySelectorAll("[data-part-custom-dnd-list]").forEach(listNode => {
+        if (listNode.dataset.sortableInit === "1") return;
+        Sortable.create(listNode, {
+          group: {
+            name: groupName,
+            pull: true,
+            put: true,
+          },
+          animation: 120,
+          handle: ".js-part-custom-item-handle",
+          draggable: ".js-part-custom-item",
+          onEnd: () => {
+            refreshParticioCustomFieldDndState(fieldBox);
+            syncAdvancedFromUI();
+          },
+        });
+        listNode.dataset.sortableInit = "1";
+      });
+      refreshParticioCustomFieldDndState(fieldBox);
+    });
+  }
+
   function renderParticionsCustomUI(selectedCodes, customMapRaw) {
     if (!els.particionsCustomBox) return;
     const selected = normalizeParticioCodes(selectedCodes || []);
@@ -2272,13 +2479,43 @@
       const groups = Array.isArray(cfg.grups) ? cfg.grups : [];
       const customEnabled = String(cfg.mode || "raw").toLowerCase() === "custom";
       const modeId = `pc_mode_${fieldIdx}`;
-      const valsRaw = (PARTICIO_VALUE_CHOICES && Object.prototype.hasOwnProperty.call(PARTICIO_VALUE_CHOICES, code))
-        ? PARTICIO_VALUE_CHOICES[code]
-        : [];
-      const vals = Array.isArray(valsRaw) ? valsRaw.slice(0, 12) : [];
-      const valsHint = vals.length
-        ? `<div class="small text-muted mt-1">Valors detectats: ${esc(vals.join(", "))}</div>`
-        : `<div class="small text-muted mt-1">Sense valors detectats automaticament.</div>`;
+      const detectedValues = getParticioChoiceEntriesForCode(code);
+      const detectedByKey = new Map();
+      detectedValues.forEach(entry => {
+        const key = particioValueKey(entry.value);
+        if (key && !detectedByKey.has(key)) {
+          detectedByKey.set(key, entry);
+        }
+      });
+
+      const assignedKeys = new Set();
+      groups.forEach(g => {
+        splitParticioCustomValues(g.values).forEach(val => {
+          const key = particioValueKey(val);
+          if (key) assignedKeys.add(key);
+        });
+      });
+
+      const availableItemsHtml = detectedValues
+        .filter(entry => !assignedKeys.has(particioValueKey(entry.value)))
+        .map(renderParticioCustomItem)
+        .join("");
+
+      const staleAssignedCount = groups.reduce((acc, g) => {
+        let plus = 0;
+        splitParticioCustomValues(g.values).forEach(val => {
+          if (!detectedByKey.has(particioValueKey(val))) plus += 1;
+        });
+        return acc + plus;
+      }, 0);
+
+      const staleHint = staleAssignedCount > 0
+        ? `<div class="small text-warning mt-2">${esc(String(staleAssignedCount))} valor(s) ja no detectats mantenen assignacio.</div>`
+        : "";
+
+      const sortableWarning = (typeof Sortable === "undefined")
+        ? `<div class="small text-danger mt-2">No s'ha carregat el modul drag-and-drop (SortableJS).</div>`
+        : "";
 
       html += `
         <div class="border rounded p-2 mb-2" data-part-custom-field="${esc(code)}">
@@ -2294,14 +2531,24 @@
             <div class="form-group mb-2">
               <label class="small text-muted mb-1">Etiqueta per no assignats (opcional)</label>
               <input class="form-control form-control-sm" type="text" data-part-custom="fallback"
-                     value="${esc(cfg.fallback_label || "")}" placeholder="Altres">
+                      value="${esc(cfg.fallback_label || "")}" placeholder="Altres">
             </div>
-            <div class="d-flex justify-content-between align-items-center mb-2">
-              <label class="small text-muted m-0">Grups</label>
-              <button type="button" class="btn btn-sm btn-outline-primary"
-                      data-part-custom-act="add-group" data-code="${esc(code)}">+ Grup</button>
-            </div>
-            <div data-part-custom="groups">
+            <div class="part-custom-grid">
+              <div class="part-custom-panel">
+                <div class="part-custom-panel-title">Valors detectats</div>
+                <div class="part-custom-list" data-part-custom-dnd-list data-part-custom-dnd-kind="pool">
+                  ${availableItemsHtml}
+                  <div class="part-custom-empty js-part-custom-empty">Cap valor disponible.</div>
+                </div>
+                <div class="small text-muted mt-1">Arrossega valors cap als grups.</div>
+              </div>
+              <div>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <label class="small text-muted m-0">Grups</label>
+                  <button type="button" class="btn btn-sm btn-outline-primary"
+                          data-part-custom-act="add-group" data-code="${esc(code)}">+ Grup</button>
+                </div>
+                <div data-part-custom="groups">
       `;
 
       if (!groups.length) {
@@ -2309,22 +2556,33 @@
       } else {
         groups.forEach((g, idx) => {
           const gLabel = String(g.label || g.key || `Grup ${idx + 1}`).trim() || `Grup ${idx + 1}`;
-          const gVals = splitParticioCustomValues(g.values).join(", ");
+          const groupItemsHtml = splitParticioCustomValues(g.values)
+            .map(val => {
+              const detected = detectedByKey.get(particioValueKey(val));
+              return renderParticioCustomItem({
+                value: val,
+                label: detected ? detected.label : val,
+                count: detected ? detected.count : 0,
+                detected: !!detected,
+              });
+            })
+            .join("");
           html += `
-            <div class="border rounded p-2 mb-2">
+            <div class="part-custom-group-card" data-part-custom-group-box>
+              <div class="part-custom-group-head mb-2">
+                <div class="small text-muted">Grup ${esc(String(idx + 1))}</div>
+                <button type="button" class="btn btn-sm btn-outline-danger"
+                        data-part-custom-act="del-group" data-code="${esc(code)}" data-idx="${esc(String(idx))}">Eliminar grup</button>
+              </div>
               <div class="form-group mb-2">
                 <label class="small text-muted mb-1">Etiqueta grup</label>
                 <input class="form-control form-control-sm" type="text" data-part-custom-group="label"
                        value="${esc(gLabel)}" placeholder="Base">
               </div>
-              <div class="form-group mb-2">
-                <label class="small text-muted mb-1">Valors (separats per coma)</label>
-                <input class="form-control form-control-sm" type="text" data-part-custom-group="values"
-                       value="${esc(gVals)}" placeholder="ALEVI, PREBENJAMI">
-              </div>
-              <div class="text-right">
-                <button type="button" class="btn btn-sm btn-outline-danger"
-                        data-part-custom-act="del-group" data-code="${esc(code)}" data-idx="${esc(String(idx))}">Eliminar grup</button>
+              <div class="small text-muted mb-1">Valors del grup</div>
+              <div class="part-custom-list" data-part-custom-dnd-list data-part-custom-dnd-kind="group" data-part-custom-group-idx="${esc(String(idx))}">
+                ${groupItemsHtml}
+                <div class="part-custom-empty js-part-custom-empty">Arrossega valors aqui.</div>
               </div>
             </div>
           `;
@@ -2332,14 +2590,19 @@
       }
 
       html += `
+                </div>
+                ${staleHint}
+                ${sortableWarning}
+              </div>
             </div>
-            ${valsHint}
           </div>
         </div>
       `;
     });
 
     els.particionsCustomBox.innerHTML = html;
+    els.particionsCustomBox.querySelectorAll("[data-part-custom-field]").forEach(refreshParticioCustomFieldDndState);
+    initParticionsCustomSortables();
   }
 
   function readParticionsCustomUI(selectedCodes) {
@@ -2357,12 +2620,11 @@
       const fallbackNode = box.querySelector('[data-part-custom="fallback"]');
       const fallback = String((fallbackNode && fallbackNode.value) || "").trim();
       const groups = [];
-      box.querySelectorAll('[data-part-custom="groups"] > .border').forEach((gBox, idx) => {
+      box.querySelectorAll('[data-part-custom="groups"] > [data-part-custom-group-box]').forEach((gBox, idx) => {
         const labelNode = gBox.querySelector('[data-part-custom-group="label"]');
-        const valuesNode = gBox.querySelector('[data-part-custom-group="values"]');
+        const valuesNode = gBox.querySelector('[data-part-custom-dnd-list][data-part-custom-dnd-kind="group"]');
         const label = String((labelNode && labelNode.value) || "").trim() || `Grup ${idx + 1}`;
-        const valuesTxt = String((valuesNode && valuesNode.value) || "");
-        const values = splitParticioCustomValues(valuesTxt);
+        const values = readParticioCustomValuesFromList(valuesNode);
         if (!values.length) return;
         groups.push({
           key: `grp_${idx + 1}`,
@@ -2604,8 +2866,7 @@
       if (!node) return;
       if (
         node.matches('[data-part-custom="fallback"]') ||
-        node.matches('[data-part-custom-group="label"]') ||
-        node.matches('[data-part-custom-group="values"]')
+        node.matches('[data-part-custom-group="label"]')
       ) {
         syncAdvancedFromUI();
       }

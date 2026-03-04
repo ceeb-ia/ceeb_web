@@ -412,6 +412,30 @@
       const newVal = (v === null || v === undefined) ? "" : String(v);
       if(inp.value !== newVal) inp.value = newVal;
     });
+
+    // Reaplica visual de crash per updates remots (__crash__<field>)
+    document.querySelectorAll(`tr[data-score-key="${CSS.escape(scoreKey)}"]`).forEach((tr) => {
+      const judgeIdx = Number(tr.dataset.judge || 0);
+      if(!judgeIdx) return;
+
+      const elemsByField = {};
+      tr.querySelectorAll('button[data-crash-btn="1"][data-field][data-j][data-i]').forEach((btn) => {
+        const btnJudge = Number(btn.dataset.j || 0);
+        if(btnJudge !== judgeIdx) return;
+        const field = String(btn.dataset.field || "");
+        const i = Number(btn.dataset.i || 0);
+        if(!field || i <= 0) return;
+        elemsByField[field] = Math.max(Number(elemsByField[field] || 0), i);
+      });
+
+      Object.entries(elemsByField).forEach(([field, nElems]) => {
+        const ck = crashKeyFor(field);
+        const rawCrash = (u.inputs && Array.isArray(u.inputs[ck])) ? u.inputs[ck] : [];
+        const crashArr = ensureList(Math.max(judgeIdx, rawCrash.length || 0, 1), rawCrash);
+        const crashAt = Number(crashArr[judgeIdx - 1] || 0);
+        applyCrashDisable(tr, field, judgeIdx, Number(nElems || 0), crashAt);
+      });
+    });
   }
 
   function ensureColumnsPanel(table, schema){

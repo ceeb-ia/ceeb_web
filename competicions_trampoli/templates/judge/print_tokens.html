@@ -1,9 +1,9 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="ca">
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Imprimir QRs · {{ competicio.nom }} · {{ comp_aparell.aparell.nom }}</title>
+  <title>Imprimir QRs · {{ competicio.nom }} · {{ comp_aparell.aparell.nom }} · Ex {{ exercici }}</title>
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 18px; }
     .grid { display:grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
@@ -18,14 +18,14 @@
   </style>
 </head>
 <body>
-  <h2>QRs · {{ competicio.nom }} · {{ comp_aparell.aparell.nom }}</h2>
+  <h2>QRs · {{ competicio.nom }} · {{ comp_aparell.aparell.nom }} · Exercici {{ exercici }}</h2>
   <div class="meta">Imprimeix i retalla (2 per fila).</div>
   <hr/>
 
   <div class="grid">
     {% for t in tokens %}
       <div class="card">
-        <img src="{% url 'judge_qr_png' t.id %}" alt="QR"/>
+        <img src="{% url 'judge_qr_png' t.id %}?ex={{ exercici }}" alt="QR"/>
         <div>
           <div class="label">{{ t.label|default:"(sense etiqueta)" }}</div>
           <div class="meta">{{ t.id }}</div>
@@ -40,7 +40,7 @@
   </div>
 
   <script>
-    // opcional: auto-print
+    // optional: auto print
     // window.print();
   </script>
 </body>

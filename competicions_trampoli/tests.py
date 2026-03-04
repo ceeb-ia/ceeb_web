@@ -32,6 +32,7 @@ from .views import (
     get_competicio_custom_sort_rank_map,
     sort_records_by_field_stable,
 )
+from .views_classificacions import _build_scoreable_meta_for_schema
 from .services.services_classificacions_2 import compute_classificacio
 
 
@@ -378,6 +379,79 @@ class InscripcionsSortFlowTests(TestCase):
         self.comp.refresh_from_db()
         self.assertEqual(self.comp.inscripcions_view.get("group_names"), {"2": "Dos"})
 
+    def test_reorder_prefers_target_group_over_previous_row_group(self):
+        i1 = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="I1",
+            ordre_sortida=1,
+            grup=1,
+        )
+        i2 = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="I2",
+            ordre_sortida=2,
+            grup=1,
+        )
+        i3 = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="I3",
+            ordre_sortida=3,
+            grup=2,
+        )
+        i4 = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="I4",
+            ordre_sortida=4,
+            grup=2,
+        )
+
+        resp = self._post_json(
+            "inscripcions_reorder",
+            {
+                "ids": [i2.id, i1.id, i3.id, i4.id],
+                "moved_id": i1.id,
+                "new_index": 1,
+                "target_group": 2,
+                "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                "group_by": [],
+            },
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json().get("ok"))
+
+        i1.refresh_from_db()
+        self.assertEqual(i1.grup, 2)
+
+    def test_reorder_without_header_target_keeps_legacy_edge_behavior(self):
+        i1 = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="I1",
+            ordre_sortida=1,
+            grup=1,
+        )
+        i2 = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="I2",
+            ordre_sortida=2,
+            grup=2,
+        )
+
+        resp = self._post_json(
+            "inscripcions_reorder",
+            {
+                "ids": [i2.id, i1.id],
+                "moved_id": i2.id,
+                "new_index": 0,
+                "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                "group_by": [],
+            },
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json().get("ok"))
+
+        i2.refresh_from_db()
+        self.assertEqual(i2.grup, 2)
+
 
 class GroupNameSyncTests(TestCase):
     def test_renumber_remaps_group_labels_and_drops_stale(self):
@@ -503,6 +577,34 @@ class ScoringAndJudgeExclusionFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.comp = self._create_competicio("Comp Flux")
         self.app = self._create_aparell("TRAMP_FLOW", "Tramp Flow")
         self.comp_app = self._create_comp_aparell(self.comp, self.app, ordre=1, actiu=True)
+        ScoringSchema.objects.create(
+            aparell=self.app,
+            schema={
+                "fields": [
+                    {
+                        "label": "Execucio",
+                        "code": "E",
+                        "type": "matrix",
+                        "shape": "judge_x_item",
+                        "judges": {"count": 2},
+                        "items": {"count": 5},
+                        "decimals": 1,
+                        "crash": {"enabled": True},
+                    },
+                    {
+                        "label": "Altre",
+                        "code": "X",
+                        "type": "matrix",
+                        "shape": "judge_x_item",
+                        "judges": {"count": 2},
+                        "items": {"count": 5},
+                        "decimals": 1,
+                        "crash": {"enabled": True},
+                    },
+                ],
+                "computed": [],
+            },
+        )
 
         self.ins_allowed = self._create_inscripcio(self.comp, "Allowed", ordre=1)
         self.ins_blocked = self._create_inscripcio(self.comp, "Blocked", ordre=2)
@@ -554,6 +656,51 @@ class ScoringAndJudgeExclusionFlowTests(_BaseTrampoliDataMixin, TestCase):
                     "inscripcio_id": self.ins_blocked.id,
                     "exercici": 1,
                     "inputs_patch": {"E": 1},
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(save_res.status_code, 403)
+
+    def test_judge_save_partial_accepts_crash_for_authorized_field(self):
+        save_url = reverse("judge_save_partial", kwargs={"token": self.token.id})
+        save_res = self.client.post(
+            save_url,
+            data=json.dumps(
+                {
+                    "inscripcio_id": self.ins_allowed.id,
+                    "exercici": 1,
+                    "inputs_patch": {
+                        "E": [0.2, 0.3, 0.4, 0.5, 0.6],
+                        "__crash__E": [3, 2],
+                    },
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(save_res.status_code, 200)
+        payload = save_res.json()
+        self.assertTrue(payload.get("ok"))
+        self.assertEqual(payload.get("inputs", {}).get("__crash__E", [None])[0], 3)
+
+        entry = ScoreEntry.objects.get(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            inscripcio=self.ins_allowed,
+            exercici=1,
+        )
+        self.assertEqual(entry.inputs.get("__crash__E", [None, None])[0], 3)
+        self.assertEqual(entry.inputs.get("__crash__E", [None, None])[1], 0)
+
+    def test_judge_save_partial_rejects_crash_for_unauthorized_field(self):
+        save_url = reverse("judge_save_partial", kwargs={"token": self.token.id})
+        save_res = self.client.post(
+            save_url,
+            data=json.dumps(
+                {
+                    "inscripcio_id": self.ins_allowed.id,
+                    "exercici": 1,
+                    "inputs_patch": {"__crash__X": [2, 0]},
                 }
             ),
             content_type="application/json",
@@ -893,6 +1040,90 @@ class ClassificacioMatrixScalarTests(_BaseTrampoliDataMixin, TestCase):
         body = res.json()
         self.assertFalse(body.get("ok"))
         self.assertTrue(any("desempat[0]" in e and "X_copy" in e and "no es puntuable directament" in e for e in body.get("errors", [])))
+
+    def test_classificacio_save_accepts_row_compute_by_judge_when_single_judge(self):
+        schema_obj = {
+            "fields": [
+                {"code": "E", "type": "matrix", "shape": "judge_x_item", "judges": {"count": 1}, "items": {"count": 3}}
+            ],
+            "computed": [
+                {
+                    "code": "E_by_judge",
+                    "label": "E by judge",
+                    "formula": "row_custom_compute('E', '1 - x', return_mode='by_judge')",
+                },
+            ],
+        }
+        meta = _build_scoreable_meta_for_schema(schema_obj, strict_unknown=True)
+        self.assertTrue(meta.get("E_by_judge", {}).get("scoreable"))
+
+    def test_classificacio_save_rejects_row_compute_by_judge_when_multiple_judges(self):
+        schema_obj = {
+            "fields": [
+                {"code": "E", "type": "matrix", "shape": "judge_x_item", "judges": {"count": 2}, "items": {"count": 3}}
+            ],
+            "computed": [
+                {
+                    "code": "E_by_judge",
+                    "label": "E by judge",
+                    "formula": "row_custom_compute('E', '1 - x', return_mode='by_judge')",
+                },
+            ],
+        }
+        meta = _build_scoreable_meta_for_schema(schema_obj, strict_unknown=True)
+        self.assertFalse(meta.get("E_by_judge", {}).get("scoreable"))
+        self.assertIn("by_judge", str(meta.get("E_by_judge", {}).get("reason") or ""))
+
+    def test_classificacio_save_accepts_column_compute_by_item_when_count_is_one(self):
+        schema_obj = {
+            "fields": [
+                {"code": "E", "type": "matrix", "shape": "judge_x_item", "judges": {"count": 2}, "items": {"count": 4}}
+            ],
+            "computed": [
+                {
+                    "code": "E_by_item",
+                    "label": "E by item",
+                    "formula": "column_custom_compute('E', '1 - x', return_mode='by_item', count=1)",
+                },
+            ],
+        }
+        meta = _build_scoreable_meta_for_schema(schema_obj, strict_unknown=True)
+        self.assertTrue(meta.get("E_by_item", {}).get("scoreable"))
+
+    def test_classificacio_save_rejects_column_compute_by_item_when_multiple_items(self):
+        schema_obj = {
+            "fields": [
+                {"code": "E", "type": "matrix", "shape": "judge_x_item", "judges": {"count": 2}, "items": {"count": 4}}
+            ],
+            "computed": [
+                {
+                    "code": "E_by_item",
+                    "label": "E by item",
+                    "formula": "column_custom_compute('E', '1 - x', return_mode='by_item')",
+                },
+            ],
+        }
+        meta = _build_scoreable_meta_for_schema(schema_obj, strict_unknown=True)
+        self.assertFalse(meta.get("E_by_item", {}).get("scoreable"))
+        self.assertIn("by_item", str(meta.get("E_by_item", {}).get("reason") or ""))
+
+    def test_classificacio_save_tie_accepts_row_compute_by_judge_when_single_judge(self):
+        schema_obj = {
+            "fields": [
+                {"code": "E", "type": "matrix", "shape": "judge_x_item", "judges": {"count": 1}, "items": {"count": 3}}
+            ],
+            "computed": [
+                {
+                    "code": "E_by_judge",
+                    "label": "E by judge",
+                    "formula": "row_custom_compute('E', '1 - x', return_mode='by_judge')",
+                },
+            ],
+        }
+        strict_meta = _build_scoreable_meta_for_schema(schema_obj, strict_unknown=True)
+        ui_meta = _build_scoreable_meta_for_schema(schema_obj, strict_unknown=False)
+        self.assertTrue(strict_meta.get("E_by_judge", {}).get("scoreable"))
+        self.assertTrue(ui_meta.get("E_by_judge", {}).get("scoreable"))
 
     def test_classificacio_save_rejects_invalid_tie_exercicis_selection_mode(self):
         payload = {

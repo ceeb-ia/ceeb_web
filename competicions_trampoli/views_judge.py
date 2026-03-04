@@ -263,9 +263,12 @@ def _sanitize_patch_by_permissions(schema: dict, permissions: list, patch: dict)
     clean = {}
 
     for code, incoming_val in (patch or {}).items():
-        if code not in perms_by_code:
+        is_crash_key = isinstance(code, str) and code.startswith("__crash__")
+        base_code = code[len("__crash__"):] if is_crash_key else code
+
+        if base_code not in perms_by_code:
             continue
-        f = by_code.get(code)
+        f = by_code.get(base_code)
         if not f:
             continue
 
@@ -273,10 +276,26 @@ def _sanitize_patch_by_permissions(schema: dict, permissions: list, patch: dict)
 
         # per simplicitat: si hi ha més d'un permís pel mateix code,
         # aquí apliquem TOTS (unió). Normalment en tindràs 1.
-        perms = perms_by_code[code]
+        perms = perms_by_code[base_code]
+
+        if is_crash_key:
+            crash_cfg = f.get("crash") if isinstance(f.get("crash"), dict) else {}
+            if ftype != "matrix" or not crash_cfg.get("enabled"):
+                continue
+
+            sets = []
+            for p in perms:
+                j = max(1, int(p.get("judge_index") or 1))
+                if isinstance(incoming_val, list):
+                    v = incoming_val[j - 1] if len(incoming_val) >= j else None
+                else:
+                    v = incoming_val
+                sets.append((j - 1, v))
+            clean[code] = {"__set_list__": sets}
+            continue
 
         if ftype == "number":
-            clean[code] = incoming_val
+            clean[base_code] = incoming_val
             continue
 
         if ftype == "list":
@@ -292,7 +311,7 @@ def _sanitize_patch_by_permissions(schema: dict, permissions: list, patch: dict)
                 else:
                     v = incoming_val
                 sets.append((j-1, v))
-            clean[code] = {"__set_list__": sets}
+            clean[base_code] = {"__set_list__": sets}
             continue
 
         if ftype == "matrix":
@@ -323,7 +342,7 @@ def _sanitize_patch_by_permissions(schema: dict, permissions: list, patch: dict)
                     idx0 = idx1 - 1
                     v = row[idx0] if len(row) > idx0 else None
                     sets.append((j-1, idx0, v))
-            clean[code] = {"__set_matrix__": sets}
+            clean[base_code] = {"__set_matrix__": sets}
             continue
 
         # altres tipus: ignora
@@ -452,7 +471,12 @@ def _create_video_audit_event(
 
 def judge_qr_png(request, token):
     tok = get_object_or_404(JudgeDeviceToken, pk=token)
-    url = request.build_absolute_uri(reverse("judge_portal", kwargs={"token": str(tok.id)}))
+    portal_url = reverse("judge_portal", kwargs={"token": str(tok.id)})
+    req_ex = request.GET.get("ex")
+    if req_ex not in (None, ""):
+        ex = _clamp_exercici_for_aparell(tok.comp_aparell, req_ex)
+        portal_url = f"{portal_url}?ex={ex}"
+    url = request.build_absolute_uri(portal_url)
     img = qrcode.make(url)
     buf = io.BytesIO()
     img.save(buf, format="PNG")
@@ -608,12 +632,8 @@ def judge_portal(request, token):
     # Construïm un “snapshot” dels inputs rellevants per inscripció/exercici
     # Per simplicitat: assumim exercici=1 si al teu flux n’hi ha més, ho pots estendre.
     max_ex = max(1, int(getattr(comp_aparell, "nombre_exercicis", 1) or 1))
-    req_ex = request.GET.get("ex")
-    try:
-        exercici_default = int(req_ex or 1)
-    except Exception:
-        exercici_default = 1
-    exercici_default = max(1, min(max_ex, exercici_default)) 
+    exercicis = list(range(1, max_ex + 1))
+    exercici_default = _clamp_exercici_for_aparell(comp_aparell, request.GET.get("ex"))
     scores_payload = {}
     for ins in ins_list:
         e = entry_map.get((ins.id, exercici_default))
@@ -657,6 +677,7 @@ def judge_portal(request, token):
         "video_delete_url": reverse("judge_video_delete", kwargs={"token": str(tok.id)}),
         "video_max_duration_seconds": ScoreEntryVideo.VIDEO_MAX_DURATION_SECONDS,
         "video_max_size_bytes": ScoreEntryVideo.VIDEO_MAX_SIZE_BYTES,
+        "exercicis": exercicis,
         "exercici": exercici_default,
     }
     return render(request, "judge/portal.html", ctx)
@@ -1185,6 +1206,23 @@ def _apply_sanitized_patch(current_inputs: dict, sanitized_patch: dict, schema: 
     by_code = {f.get("code"): f for f in (schema.get("fields") or []) if isinstance(f, dict) and f.get("code")}
 
     for code, payload in sanitized_patch.items():
+        if isinstance(code, str) and code.startswith("__crash__"):
+            base_code = code[len("__crash__"):]
+            f = by_code.get(base_code, {})
+            crash_cfg = f.get("crash") if isinstance(f.get("crash"), dict) else {}
+            if (f.get("type") or "number") != "matrix" or not crash_cfg.get("enabled"):
+                continue
+            if isinstance(payload, dict) and "__set_list__" in payload:
+                cur = out.get(code)
+                cur = cur if isinstance(cur, list) else []
+                max_idx = max((i for i, _ in payload["__set_list__"]), default=-1)
+                while len(cur) <= max_idx:
+                    cur.append(0)
+                for i, v in payload["__set_list__"]:
+                    cur[i] = v
+                out[code] = cur
+            continue
+
         f = by_code.get(code, {})
         ftype = f.get("type") or "number"
 
@@ -1241,7 +1279,7 @@ def judge_save_partial(request, token):
         return JsonResponse({"ok": False, "error": "JSON invàlid"}, status=400)
 
     ins_id = payload.get("inscripcio_id")
-    exercici = int(payload.get("exercici") or 1)
+    exercici_raw = payload.get("exercici")
     inputs_patch = payload.get("inputs_patch", {})
 
     if not ins_id:
@@ -1253,12 +1291,15 @@ def judge_save_partial(request, token):
     permissions = _normalize_permissions(tok.permissions)
     allowed_codes = {p["field_code"] for p in permissions}
     allowed_input_codes = _allowed_input_codes_from_permissions(permissions)
+    allowed_patch_codes = set(allowed_codes)
+    allowed_patch_codes.update({f"__crash__{code}" for code in allowed_codes})
     patch_codes = set(inputs_patch.keys())
-    if not patch_codes.issubset(allowed_codes):
+    if not patch_codes.issubset(allowed_patch_codes):
         return JsonResponse({"ok": False, "error": "Intentes editar un camp no autoritzat per aquest QR"}, status=403)
 
     competicio: Competicio = tok.competicio
     comp_aparell: CompeticioAparell = tok.comp_aparell
+    exercici = _clamp_exercici_for_aparell(comp_aparell, exercici_raw)
 
     ins = get_object_or_404(Inscripcio, pk=ins_id, competicio=competicio)
     if _inscripcio_exclosa_en_aparell(ins.id, comp_aparell.id):
