@@ -41,7 +41,7 @@
 
         </div>
 
-            <div class=" gap-2 mt-3 col-12">
+            <div class="d-flex flex-wrap gap-2 mt-3 col-12">
         {% if object and object.pk %}
           <a class="btn btn-outline-warning"
             href="{% url 'aparell_scoring_schema_update' pk=object.pk %}?next={{ request.get_full_path|urlencode }}">
@@ -54,7 +54,7 @@
         {% endif %}
       </div>
 
-      <div class=" gap-2 mt-3">
+      <div class="d-flex flex-wrap gap-2 mt-3">
         <button class="btn btn-primary" type="submit">Desar</button>
         <a class="btn btn-outline-secondary" href="{{ request.GET.next|default:'/' }}">Cancel·lar</a>
       </div>

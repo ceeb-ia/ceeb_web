@@ -71,23 +71,24 @@
     }
 
     .franja-actions{
-      display: grid;
-      grid-template-columns: repeat(3, auto); /* màx. 3 per fila */
-      grid-auto-rows: auto;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
       gap: 4px;
 
       opacity: 0;
       pointer-events: none;
       transition: opacity .12s ease;
     }
-
-    /* força que els dos primers ocupin la primera fila */
-    .franja-actions > :nth-child(1),
-    .franja-actions > :nth-child(2){
-      grid-column: span 1;
+    .franja-btn{
+      width: 30px;
+      height: 28px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      line-height: 1;
     }
-
-/* la resta baixen automàticament a la segona fila */
 
 
     /* quan passes el ratolí per la cel·la/filera de la franja */
@@ -235,22 +236,22 @@
                       </div>
 
                       <div class="franja-actions">
-                        <button class="btn btn-sm btn-light py-0 px-2 js-edit-fr"
+                        <button class="btn btn-sm btn-light franja-btn js-edit-fr"
                                 data-url="{% url 'rotacions_franja_update_inline' competicio.id f.id %}"
                                 data-titol="{{ f.titol|default_if_none:''|escape }}"
                                 data-hi="{{ f.hora_inici|time:'H:i' }}"
                                 data-hf="{{ f.hora_fi|time:'H:i' }}"
                                 title="Editar">✏️</button>
 
-                        <button class="btn btn-sm btn-light py-0 px-2 js-insert-after"
+                        <button class="btn btn-sm btn-light franja-btn js-insert-after"
                                 data-fr="{{ f.id }}" title="Inserir després">＋</button>
-                        <button class="btn btn-sm btn-light py-0 px-2 js-clear-franja"
+                        <button class="btn btn-sm btn-light franja-btn js-clear-franja"
           data-fr="{{ f.id }}" title="Netejar franja">🧹</button>
 
-                        <button class="btn btn-sm btn-light py-0 px-2 js-extrapolar"
+                        <button class="btn btn-sm btn-light franja-btn js-extrapolar"
                                 data-fr="{{ f.id }}" title="Extrapolar">⇒</button>
 
-                        <button class="btn btn-sm btn-light py-0 px-2 text-danger js-del-fr"
+                        <button class="btn btn-sm btn-light text-danger franja-btn js-del-fr"
                                 data-fr="{{ f.id }}" title="Eliminar">🗑</button>
                       </div>
                     </div>

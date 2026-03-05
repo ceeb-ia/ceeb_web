@@ -10,7 +10,7 @@
         <h2 class="mb-1">{% if object %}Editar{% else %}Afegir{% endif %} aparell</h2>
         <div class="text-muted small">{{ competicio.nom }}</div>
       </div>
-      <div class="gap-2">
+      <div class="d-flex flex-wrap gap-2">
         <a class="btn btn-sm btn-outline-primary" href="{% url 'aparell_create' %}">
           Crear aparell
         </a>
@@ -68,7 +68,7 @@
         </div>
       </div>
 
-      <div class="gap-2">
+      <div class="d-flex flex-wrap gap-2">
         <button class="btn btn-primary" type="submit">Desar</button>
         <a class="btn btn-outline-secondary"
            href="{{ request.GET.next|default:request.META.HTTP_REFERER }}">Cancelar</a>

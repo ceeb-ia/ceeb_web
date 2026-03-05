@@ -6,7 +6,7 @@
 <div class="container-fluid mt-4">
 
   <div class="card-surface">
-    <div class="d-flex justify-content-between align-items-center mb-3">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
       <div>
         <h2 class="mb-0">Importar inscripcions</h2>
         <div class="text-muted small">
@@ -52,7 +52,7 @@
         
       </div>
 
-      <div class="justify-content-end gap-2 mt-4">
+      <div class="d-flex flex-wrap justify-content-end gap-2 mt-4">
         <a href="{% url 'inscripcions_list' competicio.id %}" class="btn btn-sm btn-outline-secondary">Cancel·la</a>
         <button type="submit" class="btn btn-sm btn-success">Importar</button>
       </div>

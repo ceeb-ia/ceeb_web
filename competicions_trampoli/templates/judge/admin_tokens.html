@@ -27,14 +27,14 @@
     }
   </style>
   <div class="card-surface">
-    <div class="d-flex justify-content-between align-items-start mb-3">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
       <div>
         <h2 class="mb-1">Jurat · QRs</h2>
         <div class="text-muted small">
           Gestiona tokens i permisos de puntuació (sense admin).
         </div>
       </div>
-      <div class="d-flex gap-2">
+      <div class="d-flex flex-wrap gap-2">
         <a class="btn btn-sm btn-outline-secondary" href="{% url 'scoring_notes_home' competicio.id %}">
           Tornar a notes
         </a>
@@ -120,7 +120,7 @@
               <div class="mb-2">
                 <div class="d-flex justify-content-between align-items-center mb-1">
                   <div class="text-muted small">Permisos (pots posar varis camps al mateix token):</div>
-                  <div class="d-flex align-items-center gap-2">
+                  <div class="d-flex align-items-center flex-wrap gap-2">
                     <span class="text-muted small">
                       <span id="permCounter">0/{{ max_permissions }}</span>
                     </span>
@@ -266,12 +266,14 @@
                         </td>
 
                         <td>
-                          <a class="btn btn-sm btn-outline-primary" href="{% url 'judge_portal' t.id %}" target="_blank">
-                            Obrir
-                          </a>
-                          <a class="btn btn-sm btn-outline-secondary" href="{% url 'judge_qr_png' t.id %}" target="_blank">
-                            QR
-                          </a>
+                          <div class="d-flex flex-wrap gap-1">
+                            <a class="btn btn-sm btn-outline-primary" href="{% url 'judge_portal' t.id %}" target="_blank">
+                              Obrir
+                            </a>
+                            <a class="btn btn-sm btn-outline-secondary" href="{% url 'judge_qr_png' t.id %}" target="_blank">
+                              QR
+                            </a>
+                          </div>
                         </td>
 
                         <td class="text-end">

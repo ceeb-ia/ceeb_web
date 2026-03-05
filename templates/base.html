@@ -37,8 +37,10 @@
                         </a>
                     </div>
                     <div class="col-lg-9 col-md-8 col-6 ">
-                        <nav class="navbar navbar-expand-lg custom_nav-container ">
-                        
+                        <nav class="navbar navbar-expand-lg custom_nav-container">
+                            <button class="navbar-toggler ml-auto" type="button" data-toggle="collapse" data-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Obrir menú">
+                                <span class="navbar-toggler-icon"></span>
+                            </button>
                             <div class="collapse navbar-collapse" id="navbarSupportedContent">
                                 <ul class="navbar-nav ml-auto">
                                     {% url 'competicions_home' as competicions_home_url %}
@@ -79,13 +81,13 @@
 
                                     {% if not IS_PROD %}
                                     <li class="nav-item dropdown">
-                                        <a class="nav-link dropdown-toggle" href="#" id="ComunicacioDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">Comunicacio</a>
+                                        <a class="nav-link dropdown-toggle" href="#" id="ComunicacioDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Comunicacio</a>
                                         <ul class="dropdown-menu" aria-labelledby="ComunicacioDropdown">
                                             <li><a class="dropdown-item" href="https://chatgpt.com/g/g-66kVOt7c9-comunicacio-ceeb-redaccio">Redaccio</a></li>
                                         </ul>
                                     </li>
                                     <li class="nav-item dropdown">
-                                        <a class="nav-link dropdown-toggle" href="#" id="esportsDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">Jocs Esportius Escolars</a>
+                                        <a class="nav-link dropdown-toggle" href="#" id="esportsDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Jocs Esportius Escolars</a>
                                         <ul class="dropdown-menu" aria-labelledby="esportsDropdown">
                                             <li><a class="dropdown-item" href="{% url 'esports_equip' %}">Esports d'Equip</a></li>
                                             <li><a class="dropdown-item" href="{% url 'formacio' %}">Formacio</a></li>
@@ -93,8 +95,9 @@
                                         </ul>
                                     </li>
                                     <li class="nav-item dropdown">
-                                        <a class="nav-link dropdown-toggle" href="{% url 'marbella' %}" id="marbellaDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">Marbella</a>
+                                        <a class="nav-link dropdown-toggle" href="#" id="marbellaDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Marbella</a>
                                         <ul class="dropdown-menu" aria-labelledby="marbellaDropdown">
+                                            <li><a class="dropdown-item" href="{% url 'marbella' %}">Inici Marbella</a></li>
                                             <li><a class="dropdown-item" href="{% url 'annual_report_list' %}">Informes</a></li>
                                         </ul>
                                     </li>
@@ -164,7 +167,7 @@
             left: 50%;
             transform: translateX(-50%);
             z-index: 99999; /* molt alt per sobre del fons/hero */
-            min-width: 300px;
+            min-width: min(300px, calc(100vw - 24px));
             max-width: 90vw;
             }
             #floating-messages .alert {

@@ -221,12 +221,12 @@
 
 <div id="classif-builder-v2" class="container-fluid mt-4">
   <div class="card-surface">
-  <div class="d-flex align-items-center justify-content-between mb-3">
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
     <div>
       <h3 class="mb-0">Classificacions</h3>
       <div class="text-muted small">{{ competicio.nom }}</div>
     </div>
-    <div class=" gap-2">
+    <div class="d-flex flex-wrap justify-content-end gap-2">
       <a class="btn btn-sm btn-outline-secondary" href="{% url 'trampoli_config' competicio.id %}">Configuració</a>
       <button type="button" class="btn btn-sm btn-outline-primary" id="btnAdd">+ Afegir</button>
       <button type="button" class="btn btn-sm btn-primary" id="btnSave">Guardar</button>
@@ -548,7 +548,7 @@
           <div class="text-muted small mb-2">
             Defineix les columnes que es mostraran a la live i a la previsualitzacio.
           </div>
-          <div class="gap-2 mb-2">
+          <div class="d-flex flex-wrap gap-2 mb-2">
             <button type="button" class="btn btn-sm btn-outline-primary" id="btnColAddBuiltin">+ Builtin</button>
             <button type="button" class="btn btn-sm btn-outline-primary" id="btnColAddRaw">+ Camp</button>
           </div>

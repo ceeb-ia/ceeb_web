@@ -5,75 +5,61 @@
 {% block content %}
 <div class="container-fluid mt-4">
 
-  <div class="card-surface">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <h2>Seguiment alumnat</h2>
-
-		<div class="header-controls">
-
-		<!-- FILA 1: cerca bàsica -->
-		<div class="d-flex align-items-center gap-2">
-			<form method="get" class="d-flex gap-2 align-items-center">
-			<input type="search" name="q" placeholder="Cerca per nom..."
-					value="{{ request.GET.q|default:'' }}"
-					class="form-control form-control-sm" />
-
-			<select name="per_page" class="form-select form-select-sm">
-				<option value="5" {% if request.GET.per_page == '5' %}selected{% endif %}>5</option>
-				<option value="10" {% if request.GET.per_page == '10' or not request.GET.per_page %}selected{% endif %}>10</option>
-				<option value="25" {% if request.GET.per_page == '25' %}selected{% endif %}>25</option>
-				<option value="50" {% if request.GET.per_page == '50' %}selected{% endif %}>50</option>
-			</select>
-
-			<button type="submit" class="btn btn-sm btn-secondary">Aplica</button>
-			</form>
-
-			<button type="button"
-					id="toggleAdvancedSearch"
-					class="btn btn-sm btn-outline-info">
-			Cerca avançada
-			</button>
-
-            <div class="d-flex flex-column">
-              <a href="{% url 'seguiment_create' %}" class="btn btn-primary mb-2">
-              + Afegir Alumne
-              </a>
-
-              <a href="{% url 'seguiment_import_excel' %}" class="btn btn-success">
-              + Actualitzar Notes
-              </a>
-            </div>
-		</div>
-
-		<!-- FILA 2: cerca avançada -->
-		<form method="get"
-				id="advancedSearchForm"
-				class="d-none gap-2 align-items-center mt-2">
-			<select name="camp" class="form-select form-select-sm">
-			<option value="document">DNI</option>
-			<option value="correu">Correu</option>
-			<option value="sexe">Sexe</option>
-			<option value="estat">Estat</option>
-			<option value="ropec">ROPEC</option>
-			<option value="bc">BC</option>
-			<option value="cj">CJ</option>
-			<option value="cg">CG</option>
-			<option value="pa">PA</option>
-			<option value="mdp">MDP</option>
-			</select>
-
-			<input type="search"
-				name="valor"
-				placeholder="Valor..."
-				class="form-control form-control-sm" />
-
-			<button type="submit" class="btn btn-sm btn-info">
-			Cercar
-			</button>
-		</form>
-
-		</div>
+    <div class="card-surface">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+      <h2 class="mb-0">Seguiment alumnat</h2>
+      <div class="d-flex flex-wrap gap-2">
+        <a href="{% url 'seguiment_create' %}" class="btn btn-sm btn-primary">+ Afegir Alumne</a>
+        <a href="{% url 'seguiment_import_excel' %}" class="btn btn-sm btn-success">+ Actualitzar Notes</a>
       </div>
+    </div>
+
+    <form method="get" class="d-flex flex-wrap align-items-end gap-2 mb-2">
+      <div class="flex-grow-1" style="min-width:220px; max-width:560px;">
+        <input
+          type="search"
+          name="q"
+          placeholder="Cerca per nom..."
+          value="{{ request.GET.q|default:'' }}"
+          class="form-control form-control-sm"
+        />
+      </div>
+
+      <select name="per_page" class="form-select form-select-sm" style="width:92px;">
+        <option value="5" {% if request.GET.per_page == '5' %}selected{% endif %}>5</option>
+        <option value="10" {% if request.GET.per_page == '10' or not request.GET.per_page %}selected{% endif %}>10</option>
+        <option value="25" {% if request.GET.per_page == '25' %}selected{% endif %}>25</option>
+        <option value="50" {% if request.GET.per_page == '50' %}selected{% endif %}>50</option>
+      </select>
+
+      <button type="submit" class="btn btn-sm btn-secondary">Aplica</button>
+      <button type="button" id="toggleAdvancedSearch" class="btn btn-sm btn-outline-info">Cerca avançada</button>
+    </form>
+
+    <form method="get" id="advancedSearchForm" class="d-none gap-2 align-items-end flex-wrap mb-1">
+      <select name="camp" class="form-select form-select-sm">
+        <option value="document">DNI</option>
+        <option value="correu">Correu</option>
+        <option value="sexe">Sexe</option>
+        <option value="estat">Estat</option>
+        <option value="ropec">ROPEC</option>
+        <option value="bc">BC</option>
+        <option value="cj">CJ</option>
+        <option value="cg">CG</option>
+        <option value="pa">PA</option>
+        <option value="mdp">MDP</option>
+      </select>
+
+      <input
+        type="search"
+        name="valor"
+        placeholder="Valor..."
+        class="form-control form-control-sm"
+        style="min-width:220px;"
+      />
+
+      <button type="submit" class="btn btn-sm btn-info">Cercar</button>
+    </form>
 
       {% if is_paginated %}
       <nav aria-label="Paginació" class="mt-3">
@@ -134,14 +120,16 @@
           <td>{{ r.ropec|default:"-" }}</td>
           <td>{{ r.estat|default:"-" }}</td>
           <td>
-            <a href="{% url 'seguiment_send_email' r.id %}"
-               class="btn btn-sm btn-outline-secondary">
-              Email
-            </a>
-            <a href="{% url 'seguiment_delete' r.id %}"
-               class="btn btn-sm btn-danger ms-1">
-              Eliminar
-            </a>
+            <div class="d-flex flex-wrap gap-1">
+              <a href="{% url 'seguiment_send_email' r.id %}"
+                 class="btn btn-sm btn-outline-secondary">
+                Email
+              </a>
+              <a href="{% url 'seguiment_delete' r.id %}"
+                 class="btn btn-sm btn-danger">
+                Eliminar
+              </a>
+            </div>
           </td>
         </tr>
         {% empty %}
@@ -197,8 +185,10 @@
               <td>${r.ropec}</td>
               <td>${r.estat}</td>
               <td>
-                <a class="btn btn-sm btn-outline-secondary" href="${r.edit_url}">Editar</a>
-                <a class="btn btn-sm btn-danger ms-1" href="/formacio/seguiment/${r.id}/eliminar/">Eliminar</a>
+                <div class="d-flex flex-wrap gap-1">
+                  <a class="btn btn-sm btn-outline-secondary" href="${r.edit_url}">Editar</a>
+                  <a class="btn btn-sm btn-danger" href="/formacio/seguiment/${r.id}/eliminar/">Eliminar</a>
+                </div>
               </td>
             `;
           tbody.appendChild(tr);

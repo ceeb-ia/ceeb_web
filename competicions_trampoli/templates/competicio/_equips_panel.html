@@ -109,25 +109,27 @@
                   <td>{{ e.nom }}</td>
                   <td>{{ e.get_origen_display }}</td>
                   <td>{{ e.membres_count }}</td>
-                  <td class="text-nowrap">
-                    <button
-                      type="button"
-                      class="btn btn-sm btn-outline-secondary js-team-rename"
-                      data-team-id="{{ e.id }}"
-                      data-team-name="{{ e.nom|escape }}"
-                      data-rename-url="{% url 'inscripcions_equips_rename' competicio.id e.id %}"
-                    >
-                      Renombrar
-                    </button>
-                    <button
-                      type="button"
-                      class="btn btn-sm btn-outline-danger js-team-delete"
-                      data-team-id="{{ e.id }}"
-                      data-team-name="{{ e.nom|escape }}"
-                      data-delete-url="{% url 'inscripcions_equips_delete' competicio.id e.id %}"
-                    >
-                      Eliminar
-                    </button>
+                  <td>
+                    <div class="d-flex flex-wrap gap-1">
+                      <button
+                        type="button"
+                        class="btn btn-sm btn-outline-secondary js-team-rename"
+                        data-team-id="{{ e.id }}"
+                        data-team-name="{{ e.nom|escape }}"
+                        data-rename-url="{% url 'inscripcions_equips_rename' competicio.id e.id %}"
+                      >
+                        Renombrar
+                      </button>
+                      <button
+                        type="button"
+                        class="btn btn-sm btn-outline-danger js-team-delete"
+                        data-team-id="{{ e.id }}"
+                        data-team-name="{{ e.nom|escape }}"
+                        data-delete-url="{% url 'inscripcions_equips_delete' competicio.id e.id %}"
+                      >
+                        Eliminar
+                      </button>
+                    </div>
                   </td>
                 </tr>
               {% empty %}
