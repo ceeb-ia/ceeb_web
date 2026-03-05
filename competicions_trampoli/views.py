@@ -3403,9 +3403,18 @@ def inscripcions_reorder(request, pk):
     id_to_group = dict(qs.values_list("id", "grup"))
 
     with transaction.atomic():
-        # 1) actualitza ordre_sortida
-        for idx, ins_id in enumerate(wanted, start=1):
-            Inscripcio.objects.filter(id=ins_id).update(ordre_sortida=idx)
+        # 1) actualitza ordre_sortida (bulk) per evitar N updates i timeouts en llistes grans
+        target_order_by_id = {ins_id: idx for idx, ins_id in enumerate(wanted, start=1)}
+        order_updates = []
+        for obj in qs.only("id", "ordre_sortida"):
+            next_ord = target_order_by_id.get(obj.id)
+            if next_ord is None:
+                continue
+            if obj.ordre_sortida != next_ord:
+                obj.ordre_sortida = next_ord
+                order_updates.append(obj)
+        if order_updates:
+            Inscripcio.objects.bulk_update(order_updates, ["ordre_sortida"], batch_size=500)
 
         # 2) només el registre mogut pot canviar de grup:
         #    - prioritat: header visual (target_group)

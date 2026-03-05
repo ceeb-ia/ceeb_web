@@ -3,6 +3,29 @@
 
 {% block content %}
 <div class="container-fluid mt-4">
+  <style>
+    .token-video-item {
+      background: #ffffff;
+      border: 1px solid #e3e6ef;
+      border-radius: 8px;
+      padding: 6px 10px;
+    }
+    .token-video-toggle {
+      margin: 0;
+      padding-left: 1.35rem;
+      min-height: 0;
+    }
+    .token-video-toggle .custom-control-label {
+      margin: 0;
+      line-height: 1.2;
+      cursor: pointer;
+      display: block;
+    }
+    .token-video-toggle .custom-control-label::before,
+    .token-video-toggle .custom-control-label::after {
+      top: 0.08rem;
+    }
+  </style>
   <div class="card-surface">
     <div class="d-flex justify-content-between align-items-start mb-3">
       <div>
@@ -32,19 +55,8 @@
 
       {% if comp_aparell %}
       <div class="col-auto">
-        <label class="form-label small text-muted mb-1">Exercici</label>
-        <select class="form-select form-select-sm" name="ex" onchange="this.form.submit()">
-          {% for ex in exercicis %}
-            <option value="{{ ex }}" {% if ex == exercici %}selected{% endif %}>Exercici {{ ex }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      {% endif %}
-
-      {% if comp_aparell %}
-      <div class="col-auto">
         <a class="btn btn-sm btn-outline-primary"
-           href="{% url 'judges_qr_print' competicio.id %}?comp_aparell={{ comp_aparell.id }}&ex={{ exercici }}"
+           href="{% url 'judges_qr_print' competicio.id %}?comp_aparell={{ comp_aparell.id }}"
            target="_blank">
           Imprimir QRs
         </a>
@@ -55,7 +67,6 @@
     {% if not comp_aparell %}
       <div class="text-muted">No hi ha aparells actius configurats.</div>
     {% else %}
-
       <div class="row g-3">
         <!-- Crear token -->
         <div class="col-12 col-lg-6">
@@ -82,6 +93,27 @@
                 {{ token_form.label }}
                 {% if token_form.label.errors %}
                   <div class="text-danger small mt-1">{{ token_form.label.errors }}</div>
+                {% endif %}
+              </div>
+
+              <div class="form-group mb-2">
+                <div class="token-video-item">
+                  <div class="custom-control custom-checkbox token-video-toggle">
+                    <input
+                      type="checkbox"
+                      class="custom-control-input"
+                      id="{{ token_form.can_record_video.id_for_label }}"
+                      name="{{ token_form.can_record_video.html_name }}"
+                      value="1"
+                      {% if token_form.can_record_video.value %}checked{% endif %}
+                    >
+                    <label class="custom-control-label small" for="{{ token_form.can_record_video.id_for_label }}">
+                      Permetre boto "Gravar" per aquest QR
+                    </label>
+                  </div>
+                </div>
+                {% if token_form.can_record_video.errors %}
+                  <div class="text-danger small mt-1">{{ token_form.can_record_video.errors }}</div>
                 {% endif %}
               </div>
 
@@ -212,6 +244,11 @@
                           {% else %}
                             <div class="badge bg-success">Actiu</div>
                           {% endif %}
+                          {% if t.can_record_video %}
+                            <div class="badge bg-info text-dark">Video ON</div>
+                          {% else %}
+                            <div class="badge bg-light text-dark">Video OFF</div>
+                          {% endif %}
                         </td>
 
                         <td class="text-muted small" style="min-width:220px;">
@@ -229,10 +266,10 @@
                         </td>
 
                         <td>
-                          <a class="btn btn-sm btn-outline-primary" href="{% url 'judge_portal' t.id %}?ex={{ exercici }}" target="_blank">
+                          <a class="btn btn-sm btn-outline-primary" href="{% url 'judge_portal' t.id %}" target="_blank">
                             Obrir
                           </a>
-                          <a class="btn btn-sm btn-outline-secondary" href="{% url 'judge_qr_png' t.id %}?ex={{ exercici }}" target="_blank">
+                          <a class="btn btn-sm btn-outline-secondary" href="{% url 'judge_qr_png' t.id %}" target="_blank">
                             QR
                           </a>
                         </td>

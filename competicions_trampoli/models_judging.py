@@ -24,6 +24,7 @@ class JudgeDeviceToken(models.Model):
     #   {"field_code":"D","judge_index":2}
     # ]
     permissions = models.JSONField(default=list, blank=True)
+    can_record_video = models.BooleanField(default=False)
 
     created_at = models.DateTimeField(auto_now_add=True)
     last_used_at = models.DateTimeField(null=True, blank=True)

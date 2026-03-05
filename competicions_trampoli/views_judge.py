@@ -397,6 +397,10 @@ def _clamp_exercici_for_aparell(comp_aparell, exercici_raw):
     return max(1, min(max_ex, exercici))
 
 
+def _judge_video_capture_enabled_for_token(tok) -> bool:
+    return bool(getattr(tok, "can_record_video", False))
+
+
 def _serialize_video_record(video_record, request):
     url = None
     if video_record.video_file:
@@ -514,6 +518,7 @@ def judge_portal(request, token):
 
     comp_aparell = tok.comp_aparell
     competicio = tok.competicio
+    video_capture_enabled = _judge_video_capture_enabled_for_token(tok)
 
     ss, _ = ScoringSchema.objects.get_or_create(
         aparell=comp_aparell.aparell,
@@ -672,9 +677,22 @@ def judge_portal(request, token):
         "save_url": save_url,
         "updates_url": updates_url,
         "updates_cursor_init": timezone.now().isoformat(),
-        "video_status_url": reverse("judge_video_status", kwargs={"token": str(tok.id)}),
-        "video_upload_url": reverse("judge_video_upload", kwargs={"token": str(tok.id)}),
-        "video_delete_url": reverse("judge_video_delete", kwargs={"token": str(tok.id)}),
+        "video_capture_enabled": video_capture_enabled,
+        "video_status_url": (
+            reverse("judge_video_status", kwargs={"token": str(tok.id)})
+            if video_capture_enabled
+            else ""
+        ),
+        "video_upload_url": (
+            reverse("judge_video_upload", kwargs={"token": str(tok.id)})
+            if video_capture_enabled
+            else ""
+        ),
+        "video_delete_url": (
+            reverse("judge_video_delete", kwargs={"token": str(tok.id)})
+            if video_capture_enabled
+            else ""
+        ),
         "video_max_duration_seconds": ScoreEntryVideo.VIDEO_MAX_DURATION_SECONDS,
         "video_max_size_bytes": ScoreEntryVideo.VIDEO_MAX_SIZE_BYTES,
         "exercicis": exercicis,
@@ -747,6 +765,22 @@ def judge_video_status(request, token):
             **req_meta,
         )
         return JsonResponse({"ok": False, "error": "Token invàlid o revocat"}, status=403)
+    if not _judge_video_capture_enabled_for_token(tok):
+        _log_video_event(
+            "warning",
+            "video_status_disabled_by_config",
+            token=str(token),
+            latency_ms=int((time.monotonic() - started) * 1000),
+            **req_meta,
+        )
+        return JsonResponse(
+            {
+                "ok": False,
+                "error": "La gravacio de video esta desactivada per aquest QR.",
+                "reason": "video_disabled",
+            },
+            status=403,
+        )
     tok.touch()
 
     ins_id = request.GET.get("inscripcio_id")
@@ -870,6 +904,22 @@ def judge_video_upload(request, token):
             **req_meta,
         )
         return JsonResponse({"ok": False, "error": "Token invàlid o revocat"}, status=403)
+    if not _judge_video_capture_enabled_for_token(tok):
+        _log_video_event(
+            "warning",
+            "video_upload_disabled_by_config",
+            token=str(token),
+            latency_ms=int((time.monotonic() - started) * 1000),
+            **req_meta,
+        )
+        return JsonResponse(
+            {
+                "ok": False,
+                "error": "La gravacio de video esta desactivada per aquest QR.",
+                "reason": "video_disabled",
+            },
+            status=403,
+        )
     tok.touch()
 
     ins_id = request.POST.get("inscripcio_id")
@@ -1075,6 +1125,22 @@ def judge_video_delete(request, token):
             **req_meta,
         )
         return JsonResponse({"ok": False, "error": "Token invàlid o revocat"}, status=403)
+    if not _judge_video_capture_enabled_for_token(tok):
+        _log_video_event(
+            "warning",
+            "video_delete_disabled_by_config",
+            token=str(token),
+            latency_ms=int((time.monotonic() - started) * 1000),
+            **req_meta,
+        )
+        return JsonResponse(
+            {
+                "ok": False,
+                "error": "La gravacio de video esta desactivada per aquest QR.",
+                "reason": "video_disabled",
+            },
+            status=403,
+        )
     tok.touch()
 
     ins_id = request.POST.get("inscripcio_id")

@@ -23,7 +23,7 @@
             .navbar-nav .dropdown-menu .dropdown-item { padding-left: 1rem; padding-right: 1rem; }
         </style>
 </head>
-<body>
+<body data-app-env="{{ APP_ENV|default:'dev' }}">
     <div class="background-container"></div>
     {% if not hide_base_chrome %}
     <div class="hero_area">
@@ -41,52 +41,67 @@
                         
                             <div class="collapse navbar-collapse" id="navbarSupportedContent">
                                 <ul class="navbar-nav ml-auto">
+                                    {% url 'competicions_home' as competicions_home_url %}
+                                    {% url 'login' as login_url %}
+                                    {% url 'logout' as logout_url %}
+
+
                                     {% if user.is_authenticated %}
-                                    {% if user.is_staff %}
-                                    <li class="nav-item">
-                                        <a class="nav-link" href="{% url 'admin:index' %}">Admin</a>
-                                    </li>
-                                    {% endif %}
-                                    <li class="nav-item">
-                                        <form method="post" action="{% url 'logout' %}" class="mb-0">
-                                            {% csrf_token %}
-                                            <button type="submit" class="nav-link btn btn-link p-0">Sortir</button>
-                                        </form>
-                                    </li>
+                                        {% if not IS_PROD and user.is_staff %}
+                                        <li class="nav-item">
+                                            <a class="nav-link" href="{% url 'admin:index' %}">Admin</a>
+                                        </li>
+                                        {% endif %}
+
+                                        {% if logout_url %}
+                                        <li class="nav-item">
+                                            <form method="post" action="{{ logout_url }}" class="mb-0">
+                                                {% csrf_token %}
+                                                <button type="submit" class="nav-link btn btn-link p-0">Sortir</button>
+                                            </form>
+                                        </li>
+                                        {% endif %}
+
+                                        {% if competicions_home_url and IS_PROD %}
+                                        <li class="nav-item">
+                                            <a class="nav-link" href="{{ competicions_home_url }}">Competicions</a>
+                                        </li>
+                                        {% endif %}
+
+
                                     {% else %}
-                                    <li class="nav-item">
-                                        <a class="nav-link" href="{% url 'login' %}">Entrar</a>
-                                    </li>
+                                        {% if login_url %}
+                                        <li class="nav-item">
+                                            <a class="nav-link" href="{{ login_url }}">Entrar</a>
+                                        </li>
+                                        {% endif %}
                                     {% endif %}
+
+                                    {% if not IS_PROD %}
                                     <li class="nav-item dropdown">
-                                        <a class="nav-link dropdown-toggle" href="#" id="ComunicacioDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">Comunicació</a>
+                                        <a class="nav-link dropdown-toggle" href="#" id="ComunicacioDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">Comunicacio</a>
                                         <ul class="dropdown-menu" aria-labelledby="ComunicacioDropdown">
-                                            <li><a class="dropdown-item" href="https://chatgpt.com/g/g-66kVOt7c9-comunicacio-ceeb-redaccio">Redacció</a></li>
+                                            <li><a class="dropdown-item" href="https://chatgpt.com/g/g-66kVOt7c9-comunicacio-ceeb-redaccio">Redaccio</a></li>
                                         </ul>
                                     </li>
                                     <li class="nav-item dropdown">
                                         <a class="nav-link dropdown-toggle" href="#" id="esportsDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">Jocs Esportius Escolars</a>
                                         <ul class="dropdown-menu" aria-labelledby="esportsDropdown">
                                             <li><a class="dropdown-item" href="{% url 'esports_equip' %}">Esports d'Equip</a></li>
-                                            <li><a class="dropdown-item" href="{% url 'formacio' %}">Formació</a></li>
+                                            <li><a class="dropdown-item" href="{% url 'formacio' %}">Formacio</a></li>
                                             <li><a class="dropdown-item" href="{% url 'esports_individuals' %}">Esports Individuals</a></li>
-
                                         </ul>
-
                                     </li>
-
                                     <li class="nav-item dropdown">
                                         <a class="nav-link dropdown-toggle" href="{% url 'marbella' %}" id="marbellaDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">Marbella</a>
                                         <ul class="dropdown-menu" aria-labelledby="marbellaDropdown">
                                             <li><a class="dropdown-item" href="{% url 'annual_report_list' %}">Informes</a></li>
-
                                         </ul>
-
                                     </li>
-                                    
                                     <li class="nav-item">
                                         <a class="nav-link" href="https://ceeb.playoffinformatica.com/PanellControl.php?accio=value_panellcontrol_view">PlayOff</a>
                                     </li>
+                                    {% endif %}
                                 </ul>
                             </div>
                         </nav>
@@ -97,27 +112,27 @@
         <!-- End Header -->
     </div>
     {% endif %}
-    <!-- Contingut específic de cada pàgina -->
+    <!-- Contingut espec&iacute;fic de cada p&agrave;gina -->
     <main>
         {% if not hide_base_chrome %}
         <!-- Chatbot Section -->
-        <!-- Botó flotant per obrir el xat -->
-        <button id="chatbot-open" type="button" aria-label="Obrir xat" aria-expanded="false">💬</button>
+        <!-- Bot&oacute; flotant per obrir el xat -->
+        <button id="chatbot-open" type="button" aria-label="Obrir xat" aria-expanded="false">&#128172;</button>
 
         <!-- Widget Chatbot -->
-        <section id="chatbot" role="dialog" aria-label="Assistència CEEB" class="minimized" aria-live="polite">
+        <section id="chatbot" role="dialog" aria-label="Assist&egrave;ncia CEEB" class="minimized" aria-live="polite">
         <div id="chatbot-header">
-            <h3>Assistència CEEB</h3>
+            <h3>Assist&egrave;ncia CEEB</h3>
             <div>
-                <button id="minimize-chatbot" type="button" title="Minimitza" aria-label="Minimitza">—</button>
-                <button id="close-chatbot" type="button" title="Tanca" aria-label="Tanca">×</button>    </div>
+                <button id="minimize-chatbot" type="button" title="Minimitza" aria-label="Minimitza">&mdash;</button>
+                <button id="close-chatbot" type="button" title="Tanca" aria-label="Tanca">&times;</button>    </div>
         </div>
 
         <div id="chatbot-messages"></div>
 
         <div id="chatbot-input">
             <div id="loading-spinner" class="hidden">Carregant...</div>
-            <input id="user-input" type="text" inputmode="text" autocomplete="off" placeholder="Escriu el teu missatge…" aria-label="Escriu el teu missatge" />
+            <input id="user-input" type="text" inputmode="text" autocomplete="off" placeholder="Escriu el teu missatge&hellip;" aria-label="Escriu el teu missatge" />
             <button id="send-message" type="button">Envia</button>
         </div>
         </section>
@@ -169,7 +184,7 @@
     {% if not hide_base_chrome %}
     <!-- Footer -->
     <footer class="footer_section">
-        <p>© 2025 <a href="https://ceeb.cat/">Web CEEB</a></p>
+        <p>&copy; 2025 <a href="https://ceeb.cat/">Web CEEB</a></p>
     </footer>
     <!-- End Footer -->
     {% endif %}

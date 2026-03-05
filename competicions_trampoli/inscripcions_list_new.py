@@ -9,6 +9,7 @@ from django.views.decorators.http import require_POST
 
 from .models import Competicio, Equip, Inscripcio
 from .models_trampoli import CompeticioAparell, InscripcioAparellExclusio
+from .access import user_has_competicio_capability
 from .views import (
     InscripcionsListView,
     get_allowed_group_fields,
@@ -176,6 +177,11 @@ class InscripcionsListNewView(InscripcionsListView):
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
+        ctx["can_edit_inscripcions"] = user_has_competicio_capability(
+            self.request.user,
+            self.competicio,
+            "inscripcions.edit",
+        )
         filtered_qs = self.get_queryset_base_filtrada()
         ctx["inscrits_filtered_count"] = filtered_qs.count()
         ctx["inscrits_total_count"] = Inscripcio.objects.filter(

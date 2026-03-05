@@ -12,6 +12,11 @@ class JudgeTokenCreateForm(forms.Form):
         },
         widget=forms.TextInput(attrs={"class": "form-control form-control-sm", "placeholder": "Ex: Jutge A / Taula 1"})
     )
+    can_record_video = forms.BooleanField(
+        required=False,
+        initial=False,
+        widget=forms.CheckboxInput(attrs={"class": "form-check-input"}),
+    )
 
 class PermissionRowForm(forms.Form):
     field_code = forms.ChoiceField(

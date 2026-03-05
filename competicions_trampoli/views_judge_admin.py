@@ -2,7 +2,7 @@ from django.forms import formset_factory
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
-from django.views.decorators.http import require_http_methods, require_POST
+from django.views.decorators.http import require_http_methods
 
 from .forms_judge import JudgeTokenCreateForm, PermissionRowForm
 from .models import Competicio
@@ -123,7 +123,7 @@ def judges_qr_home(request, competicio_id):
             tok.save(update_fields=["revoked_at", "is_active"])
             return redirect(
                 f"{reverse('judges_qr_home', kwargs={'competicio_id': competicio.id})}"
-                f"?comp_aparell={comp_aparell.id}&ex={exercici}"
+                f"?comp_aparell={comp_aparell.id}"
             )
 
         # create token
@@ -155,16 +155,18 @@ def judges_qr_home(request, competicio_id):
 
             if not token_form.errors:
                 label = token_form.cleaned_data.get("label") or ""
+                can_record_video = bool(token_form.cleaned_data.get("can_record_video"))
                 JudgeDeviceToken.objects.create(
                     competicio=competicio,
                     comp_aparell=comp_aparell,
                     label=label,
                     permissions=perms,
+                    can_record_video=can_record_video,
                     is_active=True,
                 )
                 return redirect(
                     f"{reverse('judges_qr_home', kwargs={'competicio_id': competicio.id})}"
-                    f"?comp_aparell={comp_aparell.id}&ex={exercici}"
+                    f"?comp_aparell={comp_aparell.id}"
                 )
         elif token_form_valid and not formset_valid:
             token_form.add_error(None, "Revisa els errors marcats a la taula de permisos.")

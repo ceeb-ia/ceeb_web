@@ -17,7 +17,6 @@ from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
 from openpyxl.drawing.image import Image as XLImage
 from django.http import HttpResponse
-from ceeb_web import models
 from .models import Competicio, Inscripcio
 from .models_trampoli import CompeticioAparell, InscripcioAparellExclusio
 from .models_rotacions import RotacioFranja, RotacioAssignacio, RotacioEstacio

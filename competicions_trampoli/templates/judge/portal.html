@@ -17,7 +17,32 @@
     .video-status.err{ color:#c22; font-weight:600; }
     .video-status.info{ color:#0f6cbf; font-weight:600; }
     .judge-video-preview{ width: 240px; max-width: 100%; border-radius: .4rem; background:#000; }
-    .judge-nav-toggle{ position: fixed; right: 14px; bottom: 14px; z-index: 1040; }
+    .judge-nav-toggle{
+      position: fixed;
+      top: calc(env(safe-area-inset-top, 0px) + 12px);
+      right: 12px;
+      z-index: 1030;
+      width: 34px;
+      height: 34px;
+      border-radius: 999px;
+      border: 1px solid #1f2937;
+      background: #1f2937;
+      color: #fff;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      line-height: 1;
+    }
+    .judge-nav-toggle:hover,
+    .judge-nav-toggle:focus{
+      background: #111827;
+      border-color: #111827;
+      color: #fff;
+    }
+    .judge-nav-toggle:focus{ outline: none; box-shadow: 0 0 0 .2rem rgba(17,24,39,.25); }
+    .judge-nav-toggle-icon{ display: inline-block; font-size: .95rem; transition: transform .18s ease; }
+    .judge-nav-toggle[aria-expanded="true"] .judge-nav-toggle-icon{ transform: rotate(180deg); }
     .judge-nav-panel{ border:1px solid #e9ecef; border-radius:.6rem; background:#fff; padding:.6rem; max-height:360px; overflow:auto; }
     .judge-nav-group-title{ font-size:.78rem; font-weight:700; color:#6c757d; margin-top:.45rem; margin-bottom:.3rem; text-transform:uppercase; letter-spacing:.02em; }
     .judge-nav-link{ display:block; font-size:.9rem; color:#495057; text-decoration:none; padding:.15rem .25rem; border-radius:.35rem; }
@@ -47,12 +72,34 @@
           <div class="text-muted small">Token: <span class="fw-semibold">{{ token_obj.label }}</span></div>
         {% endif %}
         {% endif %}
+        {% if exercicis|length > 1 %}
+          <div class="mt-2 d-flex flex-wrap" style="gap:6px;">
+            {% for ex in exercicis %}
+              <a class="btn btn-sm {% if ex == exercici %}btn-primary{% else %}btn-outline-primary{% endif %}" href="?ex={{ ex }}">
+                Exercici {{ ex }}
+              </a>
+            {% endfor %}
+          </div>
+        {% endif %}
       </div>
-      {% if not judge_kiosk %}
-      <div class="d-flex gap-2">
+      <div class="d-flex gap-2 align-items-center">
+        {% if not judge_kiosk %}
         <a class="btn btn-sm btn-outline-secondary" href="{% url 'scoring_notes_home' competicio.id %}">Tornar a notes</a>
+        {% endif %}
+        {% if permissions %}
+        <button
+          type="button"
+          class="judge-nav-toggle d-lg-none"
+          id="insNavToggle"
+          aria-label="Obrir navegacio d'inscripcions"
+          aria-controls="insNavDrawer"
+          aria-expanded="false"
+          title="Navegacio"
+        >
+          <span class="judge-nav-toggle-icon" aria-hidden="true">&#9662;</span>
+        </button>
+        {% endif %}
       </div>
-      {% endif %}
     </div>
 
     {% if permissions %}
@@ -64,6 +111,12 @@
       </div>
 
       <div id="listWrap">
+        <div class="judge-nav-panel d-none d-lg-block mb-3">
+          <div class="judge-meta mb-2">Navegacio per inscripcio</div>
+          <input type="text" class="form-control form-control-sm judge-nav-search" id="insNavSearchDesktop" placeholder="Cerca nom...">
+          <div id="insNavListDesktop"></div>
+        </div>
+
         <ul class="nav nav-tabs mb-3" id="groupTabs" role="tablist">
           {% for bloc in group_blocks %}
             <li class="nav-item" role="presentation">
@@ -81,9 +134,9 @@
 
         <div id="groupPanes">
           {% for bloc in group_blocks %}
-            <div class="group-pane {% if not forloop.first %}d-none{% endif %}" data-group-pane="group-{{ forloop.counter0 }}">
+            <div class="group-pane {% if not forloop.first %}d-none{% endif %}" data-group-pane="group-{{ forloop.counter0 }}" data-group-label="{{ bloc.label }}">
               {% for ins in bloc.list %}
-                <div class="judge-card mb-2" data-ins-id="{{ ins.id }}">
+                <div id="card-{{ ins.id }}" class="judge-card mb-2" data-ins-id="{{ ins.id }}" data-ins-name="{{ ins.nom_i_cognoms|default:'Inscripcio' }}">
                   <div class="d-flex justify-content-between align-items-center">
                     <div>
                       <div class="fw-semibold">{{ ins.nom_i_cognoms|default:"Inscripció" }}</div>
@@ -95,6 +148,7 @@
                   </div>
 
                   <div class="mt-2" id="editor-{{ ins.id }}"></div>
+                  {% if video_capture_enabled %}
                   <div class="mt-2" id="video-panel-{{ ins.id }}" data-video-panel="1" data-ins-id="{{ ins.id }}">
                     <div class="d-flex align-items-center flex-wrap" style="gap:8px;">
                       <button type="button" class="btn btn-sm btn-outline-danger" id="video-rec-btn-{{ ins.id }}" onclick="toggleRecord('{{ ins.id }}')">Gravar</button>
@@ -104,6 +158,11 @@
                     </div>
                     <video id="video-preview-{{ ins.id }}" class="judge-video-preview mt-2" controls playsinline style="display:none;"></video>
                   </div>
+                  {% else %}
+                  <div class="mt-2">
+                    <span class="judge-meta">Gravacio desactivada per aquest QR.</span>
+                  </div>
+                  {% endif %}
 
                   <div class="d-flex justify-content-end mt-2" style="gap:8px;">
                     {% if not judge_kiosk %}
@@ -117,6 +176,17 @@
           {% endfor %}
         </div>
       </div>
+      <div class="judge-nav-backdrop d-lg-none" id="insNavBackdrop"></div>
+      <aside class="judge-nav-drawer d-lg-none" id="insNavDrawer" aria-hidden="true">
+        <div class="judge-nav-drawer-head">
+          <div class="fw-semibold">Navegacio</div>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="insNavClose">Tancar</button>
+        </div>
+        <div class="judge-nav-drawer-body">
+          <input type="text" class="form-control form-control-sm judge-nav-search" id="insNavSearchMobile" placeholder="Cerca nom...">
+          <div id="insNavListMobile"></div>
+        </div>
+      </aside>
     {% else %}
       <div class="text-muted">Aquest QR no té permisos configurats.</div>
     {% endif %}
@@ -146,6 +216,7 @@
   const VIDEO_STATUS_URL = "{{ video_status_url }}";
   const VIDEO_UPLOAD_URL = "{{ video_upload_url }}";
   const VIDEO_DELETE_URL = "{{ video_delete_url }}";
+  const VIDEO_CAPTURE_ENABLED = {{ video_capture_enabled|yesno:"true,false" }};
   const VIDEO_MAX_DURATION_SECONDS = Number("{{ video_max_duration_seconds|default:90 }}") || 90;
   const VIDEO_MAX_SIZE_BYTES = Number("{{ video_max_size_bytes|default:125829120 }}") || (120 * 1024 * 1024);
   const EXERCICI = {{ exercici }};
@@ -230,6 +301,8 @@
       field: schemaField(n.field_code),
     };
   }).filter(p => !!p.field_code);
+  const PERM_FIELD_CODES = Array.from(new Set(PERM_DESCS.map(p => String(p.field_code || ""))).values()).filter(Boolean);
+  const NAV_LINKS_BY_INS = {};
   function updateDraftValue(insId, code, nextValue, perm){
     const draft = getDraft(insId);
     draft[code] = nextValue;
@@ -386,8 +459,175 @@
     el.textContent = parts.join(" · ");
   }
 
+  function hasAnySavedValue(v){
+    if(v === null || v === undefined || v === "") return false;
+    if(Array.isArray(v)) return v.some(hasAnySavedValue);
+    if(typeof v === "object") return Object.values(v).some(hasAnySavedValue);
+    return true;
+  }
+
+  function hasSavedScoreForIns(insId){
+    const entry = getEntry(insId);
+    const inputs = (entry.inputs && typeof entry.inputs === "object") ? entry.inputs : {};
+    return PERM_FIELD_CODES.some(code => hasAnySavedValue(inputs[code]));
+  }
+
+  function setActiveGroup(target){
+    if(!target) return;
+    const tabs = Array.from(document.querySelectorAll("[data-group-target]"));
+    tabs.forEach(b => b.classList.toggle("active", b.dataset.groupTarget === target));
+    document.querySelectorAll("[data-group-pane]").forEach(pane => {
+      pane.classList.toggle("d-none", pane.dataset.groupPane !== target);
+    });
+  }
+
+  function markActiveNav(insId){
+    document.querySelectorAll(".judge-nav-link.is-active").forEach(el => el.classList.remove("is-active"));
+    (NAV_LINKS_BY_INS[String(insId)] || []).forEach(el => el.classList.add("is-active"));
+  }
+
+  function focusInscripcioCard(insId){
+    const card = document.querySelector(`.judge-card[data-ins-id="${insId}"]`);
+    if(!card) return;
+    const pane = card.closest("[data-group-pane]");
+    if(pane) setActiveGroup(pane.dataset.groupPane);
+    markActiveNav(insId);
+    card.classList.add("flash");
+    card.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.setTimeout(() => card.classList.remove("flash"), 650);
+    closeMobileInsNav();
+  }
+
+  function collectInsNavRows(){
+    const rows = [];
+    document.querySelectorAll("[data-group-pane]").forEach((pane) => {
+      const gTarget = String(pane.dataset.groupPane || "");
+      const gLabel = String(pane.dataset.groupLabel || "");
+      pane.querySelectorAll(".judge-card[data-ins-id]").forEach((card) => {
+        rows.push({
+          insId: String(card.dataset.insId || ""),
+          name: String(card.dataset.insName || card.querySelector(".fw-semibold")?.textContent || "").trim(),
+          groupTarget: gTarget,
+          groupLabel: gLabel,
+        });
+      });
+    });
+    return rows;
+  }
+
+  function renderInsNavList(containerEl, searchText){
+    if(!containerEl) return;
+    const q = String(searchText || "").trim().toLowerCase();
+    const rows = collectInsNavRows().filter((row) => {
+      if(!q) return true;
+      return row.name.toLowerCase().includes(q);
+    });
+
+    containerEl.innerHTML = "";
+    const byGroup = new Map();
+    rows.forEach((row) => {
+      if(!byGroup.has(row.groupTarget)){
+        byGroup.set(row.groupTarget, { label: row.groupLabel || "Grup", items: [] });
+      }
+      byGroup.get(row.groupTarget).items.push(row);
+    });
+
+    byGroup.forEach((group) => {
+      const title = document.createElement("div");
+      title.className = "judge-nav-group-title";
+      title.textContent = group.label;
+      containerEl.appendChild(title);
+
+      group.items.forEach((row) => {
+        const a = document.createElement("a");
+        a.href = "#";
+        a.className = "judge-nav-link";
+        a.dataset.insId = row.insId;
+        a.textContent = row.name || `Inscripcio ${row.insId}`;
+        a.addEventListener("click", (evt) => {
+          evt.preventDefault();
+          focusInscripcioCard(row.insId);
+        });
+        if(!NAV_LINKS_BY_INS[row.insId]) NAV_LINKS_BY_INS[row.insId] = [];
+        NAV_LINKS_BY_INS[row.insId].push(a);
+        containerEl.appendChild(a);
+      });
+    });
+
+    refreshInsNavStatuses();
+  }
+
+  function refreshInsNavStatuses(){
+    document.querySelectorAll(".judge-nav-link.is-saved").forEach(el => el.classList.remove("is-saved"));
+    Object.keys(NAV_LINKS_BY_INS).forEach((insId) => {
+      const isSaved = hasSavedScoreForIns(insId);
+      (NAV_LINKS_BY_INS[insId] || []).forEach((linkEl) => {
+        linkEl.classList.toggle("is-saved", !!isSaved);
+      });
+    });
+  }
+
+  function openMobileInsNav(){
+    const drawer = document.getElementById("insNavDrawer");
+    const backdrop = document.getElementById("insNavBackdrop");
+    const openBtn = document.getElementById("insNavToggle");
+    if(!drawer || !backdrop) return;
+    drawer.classList.add("show");
+    backdrop.classList.add("show");
+    drawer.setAttribute("aria-hidden", "false");
+    if(openBtn) openBtn.setAttribute("aria-expanded", "true");
+  }
+
+  function closeMobileInsNav(){
+    const drawer = document.getElementById("insNavDrawer");
+    const backdrop = document.getElementById("insNavBackdrop");
+    const openBtn = document.getElementById("insNavToggle");
+    if(!drawer || !backdrop) return;
+    drawer.classList.remove("show");
+    backdrop.classList.remove("show");
+    drawer.setAttribute("aria-hidden", "true");
+    if(openBtn) openBtn.setAttribute("aria-expanded", "false");
+  }
+
+  function initInsNavigation(){
+    const desktopList = document.getElementById("insNavListDesktop");
+    const mobileList = document.getElementById("insNavListMobile");
+    const searchDesktop = document.getElementById("insNavSearchDesktop");
+    const searchMobile = document.getElementById("insNavSearchMobile");
+    const openBtn = document.getElementById("insNavToggle");
+    const closeBtn = document.getElementById("insNavClose");
+    const backdrop = document.getElementById("insNavBackdrop");
+
+    const renderAll = () => {
+      Object.keys(NAV_LINKS_BY_INS).forEach(k => delete NAV_LINKS_BY_INS[k]);
+      renderInsNavList(desktopList, searchDesktop ? searchDesktop.value : "");
+      Object.keys(NAV_LINKS_BY_INS).forEach(k => delete NAV_LINKS_BY_INS[k]);
+      renderInsNavList(mobileList, searchMobile ? searchMobile.value : "");
+      const desktopLinks = document.querySelectorAll("#insNavListDesktop .judge-nav-link");
+      desktopLinks.forEach((el) => {
+        const id = String(el.dataset.insId || "");
+        if(!NAV_LINKS_BY_INS[id]) NAV_LINKS_BY_INS[id] = [];
+        NAV_LINKS_BY_INS[id].push(el);
+      });
+      document.querySelectorAll("#insNavListMobile .judge-nav-link").forEach((el) => {
+        const id = String(el.dataset.insId || "");
+        if(!NAV_LINKS_BY_INS[id]) NAV_LINKS_BY_INS[id] = [];
+        NAV_LINKS_BY_INS[id].push(el);
+      });
+      refreshInsNavStatuses();
+    };
+
+    if(searchDesktop) searchDesktop.addEventListener("input", renderAll);
+    if(searchMobile) searchMobile.addEventListener("input", renderAll);
+    if(openBtn) openBtn.addEventListener("click", openMobileInsNav);
+    if(closeBtn) closeBtn.addEventListener("click", closeMobileInsNav);
+    if(backdrop) backdrop.addEventListener("click", closeMobileInsNav);
+
+    renderAll();
+  }
+
   function renderAllEditors(){
-    document.querySelectorAll("[data-ins-id]").forEach(card => renderEditor(card.getAttribute("data-ins-id")));
+    document.querySelectorAll(".judge-card[data-ins-id]").forEach(card => renderEditor(card.getAttribute("data-ins-id")));
   }
 
   function renderPermNumber(lineWrap, insId, perm, field){
@@ -630,6 +870,7 @@
     clearDraft(insId);
     clearDirty(insId);
     renderEditor(insId);
+    refreshInsNavStatuses();
     setStatus(insId, "ok", "Desat ✓");
   }
 
@@ -650,6 +891,7 @@
       total: Number.isFinite(Number(update.total)) ? Number(update.total) : Number(baseEntry.total || 0),
       updated_at: update.updated_at || baseEntry.updated_at || null,
     };
+    refreshInsNavStatuses();
 
     if(hasDirty(insId) || isEditingIns(insId)){
       setStatus(insId, "info", "Canvi remot rebut (pendent de desar)");
@@ -686,8 +928,8 @@
     const currentCard = document.querySelector(`.judge-card[data-ins-id="${insId}"]`);
     const pane = currentCard ? currentCard.closest("[data-group-pane]") : null;
     const cards = pane
-      ? Array.from(pane.querySelectorAll("[data-ins-id]"))
-      : Array.from(document.querySelectorAll("[data-ins-id]"));
+      ? Array.from(pane.querySelectorAll(".judge-card[data-ins-id]"))
+      : Array.from(document.querySelectorAll(".judge-card[data-ins-id]"));
     const idx = cards.findIndex(c => c.getAttribute("data-ins-id") === String(insId));
     if(idx <= 0) return;
 
@@ -981,7 +1223,7 @@
   }
 
   function initVideoUI(){
-    const cards = Array.from(document.querySelectorAll("[data-ins-id]"));
+    const cards = Array.from(document.querySelectorAll(".judge-card[data-ins-id]"));
     cards.forEach(card => {
       const insId = String(card.getAttribute("data-ins-id"));
       recordedVideoByIns[insId] = recordedVideoByIns[insId] || {
@@ -1010,18 +1252,17 @@
 
     tabs.forEach(btn => {
       btn.addEventListener("click", () => {
-        const target = btn.dataset.groupTarget;
-        tabs.forEach(b => b.classList.toggle("active", b === btn));
-        document.querySelectorAll("[data-group-pane]").forEach(pane => {
-          pane.classList.toggle("d-none", pane.dataset.groupPane !== target);
-        });
+        setActiveGroup(btn.dataset.groupTarget);
       });
     });
   }
   // init
   buildPermText();
   initGroupTabs();
-  initVideoUI();
+  initInsNavigation();
+  if(VIDEO_CAPTURE_ENABLED){
+    initVideoUI();
+  }
   renderAllEditors();
   pollUpdates();
 </script>

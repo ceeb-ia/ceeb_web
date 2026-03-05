@@ -1411,11 +1411,28 @@
     return !!document.querySelector('#tabs-root');
   }
 
+  function getCurrentInscripcioFilters() {
+    const url = new URL(window.location.href);
+    return {
+      q: url.searchParams.get('q') || '',
+      categoria: url.searchParams.get('categoria') || '',
+      subcategoria: url.searchParams.get('subcategoria') || '',
+      entitat: url.searchParams.get('entitat') || ''
+    };
+  }
+
+  function getCurrentGroupByCodes() {
+    const url = new URL(window.location.href);
+    return url.searchParams.getAll('group_by');
+  }
+
   function labelForKey(groupKey) {
     if (!groupKey) return '';
     const li = document.querySelector(`#tabs-root > li.nav-item[data-group-key="${CSS.escape(groupKey)}"]`);
     return (li && li.getAttribute('data-group-label')) ? li.getAttribute('data-group-label') : groupKey;
   }
+
+  const canEditInscripcions = true;
 
   const UI_STATE_MAX_AGE_MS = 45 * 60 * 1000;
   let __uiStateRestoring = false;
@@ -1581,29 +1598,36 @@
 
     const newIndex = (movedId ? ids.indexOf(String(movedId)) : -1);
 
-    const resp = await fetch("{% url 'inscripcions_reorder' competicio.id %}", {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRFToken': getCookie('csrftoken')
-      },
-      body: JSON.stringify({
-        ids: ids,
-        moved_id: movedId ? String(movedId) : null,
-        new_index: (newIndex >= 0 ? newIndex : null),
-        target_group: (targetGroup !== undefined ? targetGroup : null),
-        filters: getCurrentInscripcioFilters(),
-        group_by: getCurrentGroupByCodes()
-      })
-    });
+    try {
+      const resp = await fetch("{% url 'inscripcions_reorder' competicio.id %}", {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': getCookie('csrftoken')
+        },
+        body: JSON.stringify({
+          ids: ids,
+          moved_id: movedId ? String(movedId) : null,
+          new_index: (newIndex >= 0 ? newIndex : null),
+          target_group: (targetGroup !== undefined ? targetGroup : null),
+          filters: getCurrentInscripcioFilters(),
+          group_by: getCurrentGroupByCodes()
+        })
+      });
 
-    if (!resp.ok) {
-      const txt = await resp.text();
-      console.error("Error desant ordre:", resp.status, txt);
-      alert(`No s'ha pogut desar l'ordre (${resp.status}).\n${txt}`);
+      if (!resp.ok) {
+        const txt = await resp.text();
+        console.error("Error desant ordre:", resp.status, txt);
+        alert(`No s'ha pogut desar l'ordre (${resp.status}).\n${txt}`);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.error("Error de xarxa desant ordre:", err);
+      alert(`No s'ha pogut desar l'ordre.\n${err?.message || err}`);
       return false;
     }
-    return true;
   }
 
   async function mergeTabs(sourceKey, targetKey) {
@@ -1656,12 +1680,11 @@
     });
 
     // DEBUG ràpid (mira la consola)
-    console.log("Sortable present?", typeof Sortable !== "undefined");
-
-    // Si Sortable no ha carregat, parem aquí per evitar errors silenciosos
-    if (typeof Sortable === "undefined") {
+    const sortableAvailable = (typeof Sortable !== "undefined");
+    console.log("Sortable present?", sortableAvailable);
+    if (!sortableAvailable) {
+      // Sense Sortable es desactiva només drag/drop, però la resta de controls han de seguir funcionant.
       console.error("SortableJS NO està carregat. Revisa la CDN o CSP.");
-      return;
     }
 
     function setDragging(on) {
@@ -1825,16 +1848,6 @@
       return true;
     }
 
-    function getCurrentInscripcioFilters() {
-      const url = new URL(window.location.href);
-      return {
-        q: url.searchParams.get('q') || '',
-        categoria: url.searchParams.get('categoria') || '',
-        subcategoria: url.searchParams.get('subcategoria') || '',
-        entitat: url.searchParams.get('entitat') || ''
-      };
-    }
-
     function getSelectedInscripcioIds() {
       return Array.from(document.querySelectorAll('.js-team-row-select:checked'))
         .map(el => el.getAttribute('data-ins-id'))
@@ -1878,11 +1891,6 @@
     const sortCustomSaveUrl = "{% url 'inscripcions_sort_custom_save' competicio.id %}";
     const sortUndoUrl = "{% url 'inscripcions_sort_undo' competicio.id %}";
     const groupsFromSortUrl = "{% url 'inscripcions_groups_from_sort' competicio.id %}";
-
-    function getCurrentGroupByCodes() {
-      const url = new URL(window.location.href);
-      return url.searchParams.getAll('group_by');
-    }
 
     function normalizeCustomOrderValues(rawValues) {
       const out = [];
@@ -2698,8 +2706,16 @@
       console.warn("jQuery no present: les pestanyes BS4 poden no funcionar.");
     }
 
-    initColumnSortMenus();
-    initGroupSourceControls();
+    try {
+      initColumnSortMenus();
+    } catch (err) {
+      console.error("Error inicialitzant menús d'ordenació de columnes:", err);
+    }
+    try {
+      initGroupSourceControls();
+    } catch (err) {
+      console.error("Error inicialitzant controls de grups:", err);
+    }
 
     document.querySelectorAll('.js-aparells-select').forEach(selectEl => {
       selectEl.dataset.prevSelection = JSON.stringify(getSelectedAparellIds(selectEl));
@@ -2708,7 +2724,7 @@
 
     // 1) Sortable de pestanyes
     const tabsRoot = document.getElementById('tabs-root');
-    if (tabsRoot) {
+    if (tabsRoot && sortableAvailable) {
       new Sortable(tabsRoot, {
         animation: 150,
         draggable: 'li.nav-item',
@@ -2772,10 +2788,11 @@
       return rows;
     }
 
-    document.querySelectorAll('tbody.sortable-body').forEach(function(tbody) {
-      let draggedBlockRest = null;
+    if (sortableAvailable) {
+      document.querySelectorAll('tbody.sortable-body').forEach(function(tbody) {
+        let draggedBlockRest = null;
 
-      new Sortable(tbody, {
+        new Sortable(tbody, {
         animation: 150,
         draggable: 'tr.group-row, tr.inscripcio-row',
         handle: '.drag-handle',
@@ -2814,21 +2831,24 @@
           const ok = await saveGlobalOrder(movedId, targetGroup);
           if (ok) reloadWithUiState();
         }
+        });
       });
-    });
+    }
 
     const colsList = document.getElementById('cols-sortable');
     if (colsList) {
-      new Sortable(colsList, {
-        animation: 150,
-        direction: 'horizontal',
-        swapThreshold: 0.65,
-        handle: '.col-drag-handle',
-        draggable: 'li[data-col]',
-        onChoose: function() { setDragging(true); },
-        onUnchoose: function() { setDragging(false); },
-        onEnd: function() { updateColsVisibleCount(); },
-      });
+      if (sortableAvailable) {
+        new Sortable(colsList, {
+          animation: 150,
+          direction: 'horizontal',
+          swapThreshold: 0.65,
+          handle: '.col-drag-handle',
+          draggable: 'li[data-col]',
+          onChoose: function() { setDragging(true); },
+          onUnchoose: function() { setDragging(false); },
+          onEnd: function() { updateColsVisibleCount(); },
+        });
+      }
 
       const btnSaveCols = document.getElementById('btn-save-cols');
       if (btnSaveCols) btnSaveCols.addEventListener('click', saveTableColumns);

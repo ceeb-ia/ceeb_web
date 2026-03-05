@@ -577,6 +577,8 @@ class ScoringAndJudgeExclusionFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.comp = self._create_competicio("Comp Flux")
         self.app = self._create_aparell("TRAMP_FLOW", "Tramp Flow")
         self.comp_app = self._create_comp_aparell(self.comp, self.app, ordre=1, actiu=True)
+        self.comp_app.nombre_exercicis = 3
+        self.comp_app.save(update_fields=["nombre_exercicis"])
         ScoringSchema.objects.create(
             aparell=self.app,
             schema={
@@ -618,6 +620,7 @@ class ScoringAndJudgeExclusionFlowTests(_BaseTrampoliDataMixin, TestCase):
             comp_aparell=self.comp_app,
             label="Judge A",
             permissions=[{"field_code": "E", "judge_index": 1}],
+            can_record_video=True,
             is_active=True,
         )
 
@@ -661,6 +664,25 @@ class ScoringAndJudgeExclusionFlowTests(_BaseTrampoliDataMixin, TestCase):
             content_type="application/json",
         )
         self.assertEqual(save_res.status_code, 403)
+
+    def test_judge_portal_supports_ex_query_and_selector(self):
+        portal_url = reverse("judge_portal", kwargs={"token": self.token.id})
+        portal_res = self.client.get(portal_url, {"ex": 2})
+        self.assertEqual(portal_res.status_code, 200)
+        body = portal_res.content.decode("utf-8")
+        self.assertIn("const EXERCICI = 2;", body)
+        self.assertIn("href=\"?ex=1\"", body)
+        self.assertIn("href=\"?ex=3\"", body)
+
+    def test_judge_portal_hides_video_controls_when_video_disabled(self):
+        self.token.can_record_video = False
+        self.token.save(update_fields=["can_record_video"])
+        portal_url = reverse("judge_portal", kwargs={"token": self.token.id})
+        portal_res = self.client.get(portal_url, {"ex": 1})
+        self.assertEqual(portal_res.status_code, 200)
+        body = portal_res.content.decode("utf-8")
+        self.assertNotIn('id="video-rec-btn-', body)
+        self.assertIn("Gravacio desactivada per aquest QR.", body)
 
     def test_judge_save_partial_accepts_crash_for_authorized_field(self):
         save_url = reverse("judge_save_partial", kwargs={"token": self.token.id})
@@ -706,6 +728,38 @@ class ScoringAndJudgeExclusionFlowTests(_BaseTrampoliDataMixin, TestCase):
             content_type="application/json",
         )
         self.assertEqual(save_res.status_code, 403)
+
+    def test_judge_save_partial_clamps_exercici_to_aparell_max(self):
+        save_url = reverse("judge_save_partial", kwargs={"token": self.token.id})
+        save_res = self.client.post(
+            save_url,
+            data=json.dumps(
+                {
+                    "inscripcio_id": self.ins_allowed.id,
+                    "exercici": 99,
+                    "inputs_patch": {
+                        "E": [0.2, 0.3, 0.4, 0.5, 0.6],
+                    },
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(save_res.status_code, 200)
+        entry = ScoreEntry.objects.get(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            inscripcio=self.ins_allowed,
+            exercici=3,
+        )
+        self.assertIsNotNone(entry)
+        self.assertFalse(
+            ScoreEntry.objects.filter(
+                competicio=self.comp,
+                comp_aparell=self.comp_app,
+                inscripcio=self.ins_allowed,
+                exercici=99,
+            ).exists()
+        )
 
     def test_scoring_updates_omits_excluded_entries(self):
         ScoreEntry.objects.create(
@@ -1692,6 +1746,7 @@ class JudgeVideoApiTests(_BaseTrampoliDataMixin, TestCase):
             comp_aparell=self.comp_app,
             label="Judge Video",
             permissions=[{"field_code": "E", "judge_index": 1}],
+            can_record_video=True,
             is_active=True,
         )
         self._probe_patcher = patch(
@@ -1764,6 +1819,43 @@ class JudgeVideoApiTests(_BaseTrampoliDataMixin, TestCase):
         payload = r.json()
         self.assertTrue(payload.get("ok"))
         self.assertFalse(payload.get("has_video"))
+
+    def test_video_endpoints_return_403_when_token_video_disabled(self):
+        token_no_video = JudgeDeviceToken.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            label="Judge No Video",
+            permissions=[{"field_code": "E", "judge_index": 1}],
+            is_active=True,
+        )
+        status_url = reverse("judge_video_status", kwargs={"token": token_no_video.id})
+        upload_url = reverse("judge_video_upload", kwargs={"token": token_no_video.id})
+        delete_url = reverse("judge_video_delete", kwargs={"token": token_no_video.id})
+
+        status_res = self.client.get(status_url, {"inscripcio_id": self.ins_allowed.id, "exercici": 1})
+        self.assertEqual(status_res.status_code, 403)
+        self.assertEqual(status_res.json().get("reason"), "video_disabled")
+
+        upload_res = self.client.post(
+            upload_url,
+            data={
+                "inscripcio_id": self.ins_allowed.id,
+                "exercici": 1,
+                "video_file": self._sample_video(),
+            },
+        )
+        self.assertEqual(upload_res.status_code, 403)
+        self.assertEqual(upload_res.json().get("reason"), "video_disabled")
+
+        delete_res = self.client.post(
+            delete_url,
+            data={
+                "inscripcio_id": self.ins_allowed.id,
+                "exercici": 1,
+            },
+        )
+        self.assertEqual(delete_res.status_code, 403)
+        self.assertEqual(delete_res.json().get("reason"), "video_disabled")
 
     def test_video_upload_rejects_excluded_inscripcio(self):
         upload_url = reverse("judge_video_upload", kwargs={"token": self.token.id})

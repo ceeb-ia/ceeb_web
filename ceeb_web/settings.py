@@ -14,6 +14,14 @@ def _env_csv(name: str, default: str) -> list[str]:
     raw = os.getenv(name, default)
     return [x.strip() for x in str(raw).split(",") if x.strip()]
 
+APP_ENV = os.getenv("APP_ENV", "dev")
+DEFAULT_PROJECT_APPS = (
+    "ceeb_web,competicions_trampoli"
+    if APP_ENV == "prod"
+    else "ceeb_web,alumnat,competicions_trampoli,marbella_informes,designacions"
+)
+PROJECT_APPS = _env_csv("PROJECT_APPS", DEFAULT_PROJECT_APPS)
+
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -22,14 +30,8 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'ceeb_web',  # La teva aplicació principal
     'django_celery_results',  # Resultats de Celery
-    'alumnat',
-    'competicions_trampoli',
-    'marbella_informes', # L'app per informes anuals de Marbella
-    'designacions',
-     # Example apps
-]
+] + PROJECT_APPS
 
 
 MIDDLEWARE = [
@@ -44,8 +46,7 @@ MIDDLEWARE = [
 
 # filepath: c:\Users\Extra\Desktop\ceeb_web\ceeb_web\settings.py
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", 'django-insecure-4x8z$1@#k2!3v&l^7%9m(0p)q*r&s+t=u')
-ROOT_URLCONF = 'ceeb_web.urls'
-
+ROOT_URLCONF = "ceeb_web.urls_prod" if APP_ENV == "prod" else "ceeb_web.urls"
 # filepath: c:\Users\Extra\Desktop\ceeb_web\ceeb_web\settings.py
 ALLOWED_HOSTS = _env_csv("ALLOWED_HOSTS", "localhost,127.0.0.1")
 
@@ -62,6 +63,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'ceeb_web.context_processors.app_env',
             ],
         },
     },
@@ -96,8 +98,10 @@ MEDIA_ROOT = os.getenv('MEDIA_ROOT', '/data/media')
 X_FRAME_OPTIONS = "SAMEORIGIN"
 
 STATIC_VERSION = "dev-1"
-STATIC_URL = '/static/'  # URL per accedir als fitxers estàtics
+STATIC_URL = '/static/'  # URL per accedir als fitxers estÃ tics
 STATICFILES_DIRS = [BASE_DIR / 'static']  # Ruta al directori 'static'
+STATIC_ROOT = os.getenv("STATIC_ROOT", "/data/static")
+
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
@@ -133,7 +137,7 @@ CELERY_TASK_ROUTES = {
 worker_prefetch_multiplier = 1
 task_acks_late = True  # si vols ack al final de la tasca
 
-# Límits de temps útils (ara sí funcionen perquè no uses 'solo')
+# LÃ­mits de temps Ãºtils (ara sÃ­ funcionen perquÃ¨ no uses 'solo')
 # Allow longer-running tasks (e.g. calendar processing that can take 15-30 minutes)
 # Soft limit: worker will receive a SoftTimeLimitExceeded signal at this time
 # Hard limit: task will be force-terminated after this time
@@ -153,7 +157,7 @@ LOGGING = {
     },
     'root': {
         'handlers': ['console'],
-        'level': 'INFO',  # Mostra tots els missatges d'informació
+        'level': 'INFO',  # Mostra tots els missatges d'informaciÃ³
     },
     'loggers': {
         'django': {

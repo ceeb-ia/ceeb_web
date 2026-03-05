@@ -3,13 +3,36 @@
 
 {% block content %}
 <div class="container-fluid mt-4">
+  <style>
+    .token-media-item {
+      background: #ffffff;
+      border: 1px solid #e3e6ef;
+      border-radius: 8px;
+      padding: 6px 10px;
+    }
+    .token-media-toggle {
+      margin: 0;
+      padding-left: 1.35rem;
+      min-height: 0;
+    }
+    .token-media-toggle .custom-control-label {
+      margin: 0;
+      line-height: 1.2;
+      cursor: pointer;
+      display: block;
+    }
+    .token-media-toggle .custom-control-label::before,
+    .token-media-toggle .custom-control-label::after {
+      top: 0.08rem;
+    }
+  </style>
   <div class="card-surface">
     <div class="d-flex justify-content-between align-items-start mb-3">
       <div>
         <h2 class="mb-1">QR Public · Classificacions Live</h2>
         <div class="text-muted small">Genera i revoca tokens per compartir la vista publica de classificacions.</div>
       </div>
-      <div class="d-flex gap-2">
+      <div class="gap-2">
         <a class="btn btn-sm btn-outline-secondary" href="{% url 'scoring_notes_home' competicio.id %}">Tornar a notes</a>
         <a class="btn btn-sm btn-outline-primary" href="{% url 'public_live_qr_print' competicio.id %}" target="_blank">Imprimir QRs</a>
       </div>
@@ -26,9 +49,13 @@
               <label class="form-label small text-muted mb-1">Etiqueta</label>
               <input class="form-control form-control-sm" type="text" name="label" maxlength="120" placeholder="Ex: Pantalla publica principal">
             </div>
-            <div class="form-check mb-2">
-              <input class="form-check-input" type="checkbox" id="can_view_media" name="can_view_media" value="1">
-              <label class="form-check-label small" for="can_view_media">Permetre media publica (videos/fitxers quan estiguin disponibles)</label>
+            <div class="form-group mb-2">
+              <div class="token-media-item">
+                <div class="custom-control custom-checkbox token-media-toggle">
+                  <input class="custom-control-input" type="checkbox" id="can_view_media" name="can_view_media" value="1">
+                  <label class="custom-control-label small" for="can_view_media">Permetre media publica (videos/fitxers quan estiguin disponibles)</label>
+                </div>
+              </div>
             </div>
             <div class="d-flex justify-content-end">
               <button type="submit" class="btn btn-sm btn-primary">Crear token</button>
