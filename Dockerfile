@@ -21,6 +21,9 @@ RUN apt-get update && apt-get install -y \
 # Copy the requirements file
 COPY requirements.txt .
 
+# Upgrade packaging tooling (important for gunicorn/pkg_resources on some images)
+RUN python -m pip install --upgrade pip setuptools wheel
+
 # Install the dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
