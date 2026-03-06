@@ -1,7 +1,7 @@
 from django.contrib.auth.decorators import login_required
 from django.urls import path
 
-from competicions_trampoli import views, views_judge_admin, views_rotacions, views_scoring
+from competicions_trampoli import views, views_judge_admin, views_judge_messages, views_rotacions, views_scoring
 
 from .access import require_competicio_capability
 from .inscripcions_list_new import (
@@ -148,6 +148,42 @@ urlpatterns = [
     path("scoring/<int:competicio_id>/judges-qr/print/", competition_view(views_judge_admin.judges_qr_print, "judge_tokens.manage", competicio_kwarg="competicio_id"), name="judges_qr_print"),
     path("scoring/<int:competicio_id>/public-live-qr/", competition_view(views_judge_admin.public_live_qr_home, "public_live.manage", competicio_kwarg="competicio_id"), name="public_live_qr_home"),
     path("scoring/<int:competicio_id>/public-live-qr/print/", competition_view(views_judge_admin.public_live_qr_print, "public_live.manage", competicio_kwarg="competicio_id"), name="public_live_qr_print"),
+    path(
+        "scoring/<int:competicio_id>/judge-messages/",
+        competition_view(
+            views_judge_messages.judge_messages_hub,
+            "judge_messages.manage",
+            competicio_kwarg="competicio_id",
+        ),
+        name="judge_messages_hub",
+    ),
+    path(
+        "scoring/<int:competicio_id>/api/judge-messages/updates/",
+        competition_view(
+            views_judge_messages.judge_messages_updates_org,
+            "judge_messages.manage",
+            competicio_kwarg="competicio_id",
+        ),
+        name="judge_messages_updates_org",
+    ),
+    path(
+        "scoring/<int:competicio_id>/api/judge-messages/send/",
+        competition_view(
+            views_judge_messages.judge_messages_send_org,
+            "judge_messages.manage",
+            competicio_kwarg="competicio_id",
+        ),
+        name="judge_messages_send_org",
+    ),
+    path(
+        "scoring/<int:competicio_id>/api/judge-messages/status/",
+        competition_view(
+            views_judge_messages.judge_messages_set_status_org,
+            "judge_messages.manage",
+            competicio_kwarg="competicio_id",
+        ),
+        name="judge_messages_set_status_org",
+    ),
 
     # Aquestes rutes continuen obertes per disseny: jutges i public live funcionen amb token.
     path("competicio/<int:pk>/classificacions/live/", competition_view(ClassificacionsLive.as_view(), "classificacions.view"), name="classificacions_live"),
@@ -161,6 +197,9 @@ urlpatterns = [
     path("judge/<uuid:token>/api/video/status/", views_judge.judge_video_status, name="judge_video_status"),
     path("judge/<uuid:token>/api/video/upload/", views_judge.judge_video_upload, name="judge_video_upload"),
     path("judge/<uuid:token>/api/video/delete/", views_judge.judge_video_delete, name="judge_video_delete"),
+    path("judge/<uuid:token>/api/messages/request-support/", views_judge_messages.judge_request_support, name="judge_request_support"),
+    path("judge/<uuid:token>/api/messages/send/", views_judge_messages.judge_send_message, name="judge_send_message"),
+    path("judge/<uuid:token>/api/messages/updates/", views_judge_messages.judge_messages_updates, name="judge_messages_updates"),
     path("public/live/<uuid:token>/", PublicClassificacionsLive.as_view(), name="public_live_portal"),
     path("public/live/<uuid:token>/loop/", PublicClassificacionsLoopLive.as_view(), name="public_live_loop"),
     path("public/live/<uuid:token>/data/", public_classificacions_live_data, name="public_live_classificacions_data"),

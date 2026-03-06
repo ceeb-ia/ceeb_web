@@ -47,6 +47,7 @@
         <a class="btn btn-sm btn-outline-primary" href="{% url 'inscripcions_list' competicio.id %}">Inscripcions</a>
         <a class="btn btn-sm btn-outline-success" href="{% url 'classificacions_live' competicio.id %}">Classificacions en viu</a>
         <a class="btn btn-sm btn-outline-success" href="{% url 'classificacions_loop_live' competicio.id %}?public=1">Classificacions loop</a>
+        <a class="btn btn-sm btn-outline-warning" href="{% url 'judge_messages_hub' competicio.id %}">Suport jutges</a>
         <a class="btn btn-sm btn-outline-info" href="{% url 'public_live_qr_home' competicio.id %}">QR públic</a>
         <a class="btn btn-sm btn-outline-secondary" href="{% url 'trampoli_config' competicio.id %}">Configuració</a>
       </div>

@@ -25,11 +25,13 @@ COMPETICIO_ROLE_CAPABILITIES = {
         "classificacions.view",
         "classificacions.edit",
         "judge_tokens.manage",
+        "judge_messages.manage",
         "public_live.manage",
     },
     CompeticioMembership.Role.JUDGE_ADMIN: {
         "competition.view",
         "judge_tokens.manage",
+        "judge_messages.manage",
         "public_live.manage",
     },
     CompeticioMembership.Role.SCORING: {
@@ -37,6 +39,7 @@ COMPETICIO_ROLE_CAPABILITIES = {
         "inscripcions.view",
         "scoring.view",
         "scoring.edit",
+        "judge_messages.manage",
         "classificacions.view",
     },
     CompeticioMembership.Role.ROTACIONS: {

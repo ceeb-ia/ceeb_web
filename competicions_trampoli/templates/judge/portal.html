@@ -56,6 +56,73 @@
     .judge-nav-drawer.show{ transform:translateX(0); }
     .judge-nav-drawer-head{ padding:.8rem; border-bottom:1px solid #e9ecef; display:flex; align-items:center; justify-content:space-between; }
     .judge-nav-drawer-body{ padding:.7rem; overflow:auto; }
+    .judge-support-toggle{
+      position: fixed;
+      top: calc(env(safe-area-inset-top, 0px) + 12px);
+      left: 12px;
+      z-index: 1031;
+      width: 40px;
+      height: 40px;
+      border-radius: 999px;
+      border: 1px solid #7c2d12;
+      background: #9a3412;
+      color: #fff;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      line-height: 1;
+      font-size: .8rem;
+      font-weight: 700;
+    }
+    .judge-support-toggle:hover,
+    .judge-support-toggle:focus{
+      background: #7c2d12;
+      border-color: #7c2d12;
+      color: #fff;
+    }
+    .judge-support-toggle:focus{ outline:none; box-shadow: 0 0 0 .2rem rgba(154,52,18,.28); }
+    .judge-support-toggle-badge{
+      position: absolute;
+      top: -6px;
+      right: -5px;
+      min-width: 18px;
+      height: 18px;
+      border-radius: 999px;
+      background: #dc2626;
+      color: #fff;
+      font-size: .68rem;
+      line-height: 18px;
+      text-align: center;
+      padding: 0 4px;
+      font-weight: 700;
+    }
+    .judge-support-backdrop{ position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:1046; display:none; }
+    .judge-support-backdrop.show{ display:block; }
+    .judge-support-drawer{
+      position:fixed;
+      top:0;
+      left:0;
+      width:min(88vw,360px);
+      height:100vh;
+      background:#fff;
+      z-index:1056;
+      transform:translateX(-100%);
+      transition:transform .2s ease;
+      border-right:1px solid #e9ecef;
+      display:flex;
+      flex-direction:column;
+    }
+    .judge-support-drawer.show{ transform:translateX(0); }
+    .judge-support-drawer-head{ padding:.8rem; border-bottom:1px solid #e9ecef; display:flex; align-items:center; justify-content:space-between; }
+    .judge-support-drawer-body{ padding:.7rem; overflow:auto; }
+    .judge-support-thread{ max-height:220px; overflow:auto; border:1px solid #e9ecef; border-radius:.5rem; background:#fcfdff; padding:.5rem; }
+    .judge-support-empty{ color:#6c757d; font-size:.85rem; }
+    .judge-support-bubble{ max-width:85%; border-radius:.55rem; padding:.42rem .55rem; margin-bottom:.35rem; white-space:pre-wrap; word-break:break-word; }
+    .judge-support-bubble.judge{ background:#fff3cd; margin-right:auto; }
+    .judge-support-bubble.organization{ background:#d1e7dd; margin-left:auto; }
+    .judge-support-bubble.system{ background:#e9ecef; margin-left:auto; margin-right:auto; }
+    .judge-support-meta{ color:#6c757d; font-size:.72rem; margin-top:.1rem; display:block; }
   </style>
 
   <div class="card-surface">
@@ -97,6 +164,18 @@
           title="Navegacio"
         >
           <span class="judge-nav-toggle-icon" aria-hidden="true">&#9662;</span>
+        </button>
+        <button
+          type="button"
+          class="judge-support-toggle"
+          id="supportNavToggle"
+          aria-label="Obrir suport tecnic"
+          aria-controls="supportNavDrawer"
+          aria-expanded="false"
+          title="Suport"
+        >
+          SOS
+          <span id="supportUnreadBadge" class="judge-support-toggle-badge" style="display:none;"></span>
         </button>
         {% endif %}
       </div>
@@ -187,6 +266,25 @@
           <div id="insNavListMobile"></div>
         </div>
       </aside>
+      <div class="judge-support-backdrop" id="supportNavBackdrop"></div>
+      <aside class="judge-support-drawer" id="supportNavDrawer" aria-hidden="true">
+        <div class="judge-support-drawer-head">
+          <div class="fw-semibold">Suport tecnic</div>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="supportNavClose">Tancar</button>
+        </div>
+        <div class="judge-support-drawer-body">
+          <div class="d-flex justify-content-end mb-2">
+            <button type="button" class="btn btn-sm btn-warning" id="assistQuickBtn">Solicitar assistencia</button>
+          </div>
+          <div class="judge-meta mt-1 mb-2" id="assistQuickState"></div>
+          <div id="judgeSupportThread" class="judge-support-thread mb-2" style="display:none;"></div>
+          <div id="judgeSupportEmpty" class="judge-support-empty mb-2">Encara no hi ha missatges de suport.</div>
+          <div class="input-group input-group-sm">
+            <input id="judgeSupportInput" type="text" class="form-control" maxlength="500" placeholder="Missatge opcional a organitzacio">
+            <button type="button" class="btn btn-outline-primary" id="judgeSupportSendBtn">Enviar</button>
+          </div>
+        </div>
+      </aside>
     {% else %}
       <div class="text-muted">Aquest QR no té permisos configurats.</div>
     {% endif %}
@@ -216,14 +314,25 @@
   const VIDEO_STATUS_URL = "{{ video_status_url }}";
   const VIDEO_UPLOAD_URL = "{{ video_upload_url }}";
   const VIDEO_DELETE_URL = "{{ video_delete_url }}";
+  const JUDGE_REQUEST_SUPPORT_URL = "{% url 'judge_request_support' token_obj.id %}";
+  const JUDGE_SEND_MESSAGE_URL = "{% url 'judge_send_message' token_obj.id %}";
+  const JUDGE_MESSAGES_UPDATES_URL = "{% url 'judge_messages_updates' token_obj.id %}";
   const VIDEO_CAPTURE_ENABLED = {{ video_capture_enabled|yesno:"true,false" }};
   const VIDEO_MAX_DURATION_SECONDS = Number("{{ video_max_duration_seconds|default:90 }}") || 90;
   const VIDEO_MAX_SIZE_BYTES = Number("{{ video_max_size_bytes|default:125829120 }}") || (120 * 1024 * 1024);
+  const SUPPORT_DEFAULT_COOLDOWN_SECONDS = 30;
   const EXERCICI = {{ exercici }};
 
   let currentRecordingInsId = null;
   let lastSince = UPDATES_CURSOR_INIT || new Date().toISOString();
+  let supportSince = null;
+  let supportConversation = null;
+  let supportBusy = false;
+  let supportCooldownRemaining = 0;
+  let supportInitialLoaded = false;
+  let supportLocalUnread = 0;
   const recordedVideoByIns = {};
+  const supportMessages = [];
   const DRAFTS = {};
   const DIRTY_BY_INS = {};
 
@@ -327,6 +436,281 @@
       )
     );
     el.textContent = msg || "";
+  }
+
+  function supportEls(){
+    return {
+      toggleBtn: document.getElementById("supportNavToggle"),
+      badge: document.getElementById("supportUnreadBadge"),
+      drawer: document.getElementById("supportNavDrawer"),
+      backdrop: document.getElementById("supportNavBackdrop"),
+      closeBtn: document.getElementById("supportNavClose"),
+      quickBtn: document.getElementById("assistQuickBtn"),
+      quickState: document.getElementById("assistQuickState"),
+      thread: document.getElementById("judgeSupportThread"),
+      empty: document.getElementById("judgeSupportEmpty"),
+      input: document.getElementById("judgeSupportInput"),
+      sendBtn: document.getElementById("judgeSupportSendBtn"),
+    };
+  }
+
+  function escHtml(s){
+    return String(s || "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+  }
+
+  function formatSupportTime(v){
+    if(!v) return "";
+    const dt = new Date(v);
+    if(Number.isNaN(dt.getTime())) return "";
+    return dt.toLocaleTimeString([], {hour: "2-digit", minute: "2-digit", second: "2-digit"});
+  }
+
+  function isSupportNavOpen(){
+    const els = supportEls();
+    return !!(els.drawer && els.drawer.classList.contains("show"));
+  }
+
+  function updateSupportUnreadBadge(){
+    const els = supportEls();
+    if(!els.badge) return;
+    const count = Math.max(0, Number(supportLocalUnread || 0));
+    if(!count){
+      els.badge.style.display = "none";
+      els.badge.textContent = "";
+      return;
+    }
+    els.badge.style.display = "";
+    els.badge.textContent = count > 99 ? "99+" : String(count);
+  }
+
+  function openSupportNav(){
+    const els = supportEls();
+    if(!els.drawer || !els.backdrop) return;
+    if(typeof closeMobileInsNav === "function"){
+      closeMobileInsNav();
+    }
+    els.drawer.classList.add("show");
+    els.backdrop.classList.add("show");
+    els.drawer.setAttribute("aria-hidden", "false");
+    if(els.toggleBtn) els.toggleBtn.setAttribute("aria-expanded", "true");
+    supportLocalUnread = 0;
+    updateSupportUnreadBadge();
+    renderSupportThread();
+  }
+
+  function closeSupportNav(){
+    const els = supportEls();
+    if(!els.drawer || !els.backdrop) return;
+    els.drawer.classList.remove("show");
+    els.backdrop.classList.remove("show");
+    els.drawer.setAttribute("aria-hidden", "true");
+    if(els.toggleBtn) els.toggleBtn.setAttribute("aria-expanded", "false");
+  }
+
+  function toggleSupportNav(){
+    if(isSupportNavOpen()){
+      closeSupportNav();
+      return;
+    }
+    openSupportNav();
+  }
+
+  function refreshSupportButtons(){
+    const els = supportEls();
+    if(!els.quickBtn || !els.sendBtn) return;
+    const status = String((supportConversation && supportConversation.status) || "idle");
+    const hasCooldown = Number(supportCooldownRemaining || 0) > 0;
+    els.quickBtn.disabled = supportBusy || hasCooldown;
+    els.sendBtn.disabled = supportBusy;
+
+    if(status === "requested" && hasCooldown){
+      els.quickBtn.textContent = `Assistencia solicitada (${supportCooldownRemaining}s)`;
+    } else if(status === "requested"){
+      els.quickBtn.textContent = "Reavisar assistencia";
+    } else {
+      els.quickBtn.textContent = "Solicitar assistencia";
+    }
+
+    if(els.quickState){
+      if(status === "requested"){
+        els.quickState.textContent = "Estat: pendent d'atencio d'organitzacio.";
+      } else if(status === "ack"){
+        els.quickState.textContent = "Estat: organitzacio treballant en la incidencia.";
+      } else if(status === "resolved"){
+        els.quickState.textContent = "Estat: incidencia marcada com a resolta.";
+      } else {
+        els.quickState.textContent = "";
+      }
+    }
+  }
+
+  function mergeSupportMessages(rows){
+    const ids = new Set(supportMessages.map(m => String(m.id)));
+    (rows || []).forEach((row) => {
+      const key = String(row.id);
+      if(ids.has(key)) return;
+      ids.add(key);
+      supportMessages.push(row);
+    });
+    supportMessages.sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")));
+  }
+
+  function renderSupportThread(){
+    const els = supportEls();
+    if(!els.thread || !els.empty) return;
+    if(!supportMessages.length){
+      els.thread.style.display = "none";
+      els.empty.style.display = "";
+      refreshSupportButtons();
+      updateSupportUnreadBadge();
+      return;
+    }
+    els.empty.style.display = "none";
+    els.thread.style.display = "";
+    els.thread.innerHTML = supportMessages.map((m) => {
+      const klass = m.sender_type === "judge" ? "judge" : (m.sender_type === "organization" ? "organization" : "system");
+      return `
+        <div class="judge-support-bubble ${klass}">
+          <div>${escHtml(m.text || "")}</div>
+          <span class="judge-support-meta">${escHtml(m.sender_label || "")} · ${escHtml(formatSupportTime(m.created_at))}</span>
+        </div>
+      `;
+    }).join("");
+    els.thread.scrollTop = els.thread.scrollHeight;
+    refreshSupportButtons();
+    updateSupportUnreadBadge();
+  }
+
+  async function postSupport(url, body){
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "X-CSRFToken": CSRF_TOKEN,
+      },
+      body: JSON.stringify(body || {}),
+    });
+    const data = await res.json().catch(() => ({}));
+    if(!res.ok || !data.ok){
+      const err = new Error(data.error || "Error de servidor");
+      err.data = data || {};
+      throw err;
+    }
+    return data;
+  }
+
+  async function requestQuickSupport(){
+    supportBusy = true;
+    refreshSupportButtons();
+    try{
+      const data = await postSupport(JUDGE_REQUEST_SUPPORT_URL, {quick: true});
+      supportConversation = data.conversation || supportConversation;
+      supportCooldownRemaining = Number(data.retry_after_seconds || SUPPORT_DEFAULT_COOLDOWN_SECONDS);
+      mergeSupportMessages(data.message ? [data.message] : []);
+      renderSupportThread();
+    } catch(e){
+      const payload = e && e.data ? e.data : {};
+      if(payload && payload.reason === "cooldown"){
+        supportCooldownRemaining = Number(payload.retry_after_seconds || 0);
+      } else {
+        alert(e.message || e);
+      }
+    } finally {
+      supportBusy = false;
+      refreshSupportButtons();
+    }
+  }
+
+  async function sendSupportMessage(){
+    const els = supportEls();
+    if(!els.input) return;
+    const text = String(els.input.value || "").trim();
+    if(!text) return;
+    supportBusy = true;
+    refreshSupportButtons();
+    try{
+      const data = await postSupport(JUDGE_SEND_MESSAGE_URL, {text});
+      supportConversation = data.conversation || supportConversation;
+      mergeSupportMessages(data.message ? [data.message] : []);
+      els.input.value = "";
+      renderSupportThread();
+    } catch(e){
+      alert(e.message || e);
+    } finally {
+      supportBusy = false;
+      refreshSupportButtons();
+    }
+  }
+
+  function tickSupportCooldown(){
+    if(!supportCooldownRemaining || supportCooldownRemaining <= 0) return;
+    supportCooldownRemaining = Math.max(0, Number(supportCooldownRemaining) - 1);
+    refreshSupportButtons();
+  }
+
+  async function pollSupportMessages(){
+    const url = new URL(JUDGE_MESSAGES_UPDATES_URL, window.location.origin);
+    if(supportSince){
+      url.searchParams.set("since", supportSince);
+    }
+    try{
+      const res = await fetch(url.toString(), {headers: {"Accept":"application/json"}});
+      const data = await res.json().catch(() => ({}));
+      if(res.ok && data.ok){
+        supportConversation = data.conversation || supportConversation;
+        supportCooldownRemaining = Number(data.cooldown_remaining || 0);
+        const incoming = Array.isArray(data.messages) ? data.messages : [];
+        if(supportInitialLoaded && !isSupportNavOpen()){
+          const newUnread = incoming.filter((m) => m && m.sender_type !== "judge").length;
+          if(newUnread > 0){
+            supportLocalUnread = Number(supportLocalUnread || 0) + newUnread;
+          }
+        }
+        mergeSupportMessages(incoming);
+        supportInitialLoaded = true;
+        if(data.now) supportSince = data.now;
+        renderSupportThread();
+      }
+    } catch(_e){
+      // ignore transient poll failures
+    } finally {
+      window.setTimeout(pollSupportMessages, 1500);
+    }
+  }
+
+  function initSupportUi(){
+    const els = supportEls();
+    if(!els.quickBtn || !els.sendBtn || !els.toggleBtn || !els.drawer || !els.backdrop) return;
+    els.toggleBtn.addEventListener("click", toggleSupportNav);
+    if(els.closeBtn) els.closeBtn.addEventListener("click", closeSupportNav);
+    els.backdrop.addEventListener("click", closeSupportNav);
+    els.quickBtn.addEventListener("click", requestQuickSupport);
+    els.sendBtn.addEventListener("click", sendSupportMessage);
+    if(els.input){
+      els.input.addEventListener("keydown", (evt) => {
+        if(evt.key === "Enter"){
+          evt.preventDefault();
+          sendSupportMessage();
+        }
+      });
+    }
+    document.addEventListener("keydown", (evt) => {
+      if(evt.key === "Escape"){
+        closeSupportNav();
+      }
+    });
+    closeSupportNav();
+    refreshSupportButtons();
+    updateSupportUnreadBadge();
+    renderSupportThread();
+    window.setInterval(tickSupportCooldown, 1000);
+    pollSupportMessages();
   }
 
   function canRecordVideo(){
@@ -572,6 +956,9 @@
     const backdrop = document.getElementById("insNavBackdrop");
     const openBtn = document.getElementById("insNavToggle");
     if(!drawer || !backdrop) return;
+    if(typeof closeSupportNav === "function"){
+      closeSupportNav();
+    }
     drawer.classList.add("show");
     backdrop.classList.add("show");
     drawer.setAttribute("aria-hidden", "false");
@@ -1260,6 +1647,7 @@
   buildPermText();
   initGroupTabs();
   initInsNavigation();
+  initSupportUi();
   if(VIDEO_CAPTURE_ENABLED){
     initVideoUI();
   }

@@ -6,6 +6,7 @@ from competicions_trampoli.models_trampoli import CompeticioAparell
 
 from .models import Competicio, CompeticioMembership
 from .models_classificacions import ClassificacioTemplateGlobal
+from .models_judging import JudgeConversation, JudgeConversationMessage
 
 
 class CompeticioMembershipByCompeticioInline(admin.TabularInline):
@@ -51,6 +52,41 @@ class ClassificacioTemplateGlobalAdmin(admin.ModelAdmin):
     list_filter = ("tipus", "activa")
     search_fields = ("nom", "slug", "descripcio")
     readonly_fields = ("version", "uses_count", "last_used_at", "created_at", "updated_at")
+
+
+@admin.register(JudgeConversation)
+class JudgeConversationAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "competicio",
+        "comp_aparell",
+        "judge_token",
+        "status",
+        "priority",
+        "unread_for_org",
+        "unread_for_judge",
+        "last_message_at",
+    )
+    list_filter = ("status", "priority", "competicio")
+    search_fields = ("judge_token__label", "judge_token__id")
+    autocomplete_fields = ("competicio", "comp_aparell")
+    readonly_fields = ("created_at", "updated_at")
+
+
+@admin.register(JudgeConversationMessage)
+class JudgeConversationMessageAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "conversation",
+        "sender_type",
+        "message_type",
+        "sender_user",
+        "created_at",
+    )
+    list_filter = ("sender_type", "message_type", "competicio")
+    search_fields = ("text", "judge_token__label", "conversation__id")
+    autocomplete_fields = ("conversation", "competicio", "comp_aparell", "sender_user")
+    readonly_fields = ("created_at",)
 
 
 User = get_user_model()

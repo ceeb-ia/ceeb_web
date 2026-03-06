@@ -1,0 +1,409 @@
+{% extends "base.html" %}
+{% block title %}Suport Jutges · {{ competicio.nom }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+  <style>
+    .msg-card { border: 1px solid #e5e7eb; border-radius: .6rem; background: #fff; }
+    .msg-list { max-height: 62vh; overflow: auto; }
+    .msg-item { border-bottom: 1px solid #eef2f7; padding: .55rem .7rem; cursor: pointer; }
+    .msg-item:last-child { border-bottom: 0; }
+    .msg-item.active { background: #eef6ff; }
+    .msg-item.requested { border-left: 4px solid #f59e0b; padding-left: .45rem; }
+    .msg-item .title { font-weight: 600; }
+    .msg-muted { color: #6b7280; font-size: .84rem; }
+    .msg-thread { max-height: 54vh; overflow: auto; border: 1px solid #e5e7eb; border-radius: .6rem; background: #fcfdff; padding: .65rem; }
+    .bubble { max-width: 82%; border-radius: .6rem; padding: .48rem .62rem; margin-bottom: .45rem; white-space: pre-wrap; word-break: break-word; }
+    .bubble.judge { background: #fff7e6; margin-right: auto; }
+    .bubble.organization { background: #e9f7ef; margin-left: auto; }
+    .bubble.system { background: #f1f5f9; margin-left: auto; margin-right: auto; }
+    .bubble-meta { display: block; margin-top: .2rem; color: #6b7280; font-size: .73rem; }
+  </style>
+
+  <div class="card-surface">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+      <div>
+        <h2 class="mb-1">Suport Jutges</h2>
+        <div class="text-muted small">Competicio: <span class="fw-semibold">{{ competicio.nom }}</span></div>
+      </div>
+      <div class="d-flex flex-wrap gap-2">
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'scoring_notes_home' competicio.id %}">Tornar a notes</a>
+        <a class="btn btn-sm btn-outline-primary" href="{% url 'judges_qr_home' competicio.id %}">Jurat / QRs</a>
+      </div>
+    </div>
+
+    <div class="row g-3">
+      <div class="col-12 col-lg-4">
+        <div class="msg-card p-2 mb-3">
+          <div class="fw-semibold mb-2">Instruccio puntual</div>
+          <label for="newTokenSelect" class="msg-muted d-block mb-1">Destinatari (token)</label>
+          <select id="newTokenSelect" class="form-select form-select-sm mb-2"></select>
+          <label for="newInstructionInput" class="msg-muted d-block mb-1">Missatge</label>
+          <textarea id="newInstructionInput" class="form-control form-control-sm mb-2" rows="3" maxlength="500" placeholder="Escriu una instruccio..."></textarea>
+          <button class="btn btn-sm btn-primary w-100" id="sendInstructionBtn" type="button">Enviar instruccio</button>
+        </div>
+
+        <div class="msg-card">
+          <div class="d-flex justify-content-between align-items-center p-2 border-bottom">
+            <div class="fw-semibold">Converses</div>
+            <span id="convCounter" class="badge bg-light text-dark">0</span>
+          </div>
+          <div id="conversationList" class="msg-list"></div>
+        </div>
+      </div>
+
+      <div class="col-12 col-lg-8">
+        <div class="msg-card p-2">
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+            <div>
+              <div class="fw-semibold" id="activeConvTitle">Selecciona una conversa</div>
+              <div class="msg-muted" id="activeConvMeta"></div>
+            </div>
+            <div class="d-flex gap-2">
+              <button id="statusAckBtn" type="button" class="btn btn-sm btn-outline-warning" disabled>Acceptar</button>
+              <button id="statusResolvedBtn" type="button" class="btn btn-sm btn-outline-success" disabled>Marcar resolta</button>
+            </div>
+          </div>
+
+          <div id="threadEmpty" class="msg-muted mb-2">No hi ha missatges per mostrar.</div>
+          <div id="threadWrap" class="msg-thread mb-2" style="display:none;"></div>
+
+          <div class="input-group input-group-sm">
+            <input id="replyInput" type="text" class="form-control" maxlength="500" placeholder="Resposta a la conversa seleccionada">
+            <button id="replyBtn" type="button" class="btn btn-primary" disabled>Enviar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{{ updates_cursor_init|json_script:"judge-msg-updates-cursor-init" }}
+{{ tokens|json_script:"judge-msg-tokens" }}
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  const TOKENS = JSON.parse(document.getElementById("judge-msg-tokens").textContent || "[]");
+  const UPDATES_URL = "{% url 'judge_messages_updates_org' competicio.id %}";
+  const SEND_URL = "{% url 'judge_messages_send_org' competicio.id %}";
+  const STATUS_URL = "{% url 'judge_messages_set_status_org' competicio.id %}";
+
+  function getCookie(name){
+    let v = null;
+    if(document.cookie && document.cookie !== ""){
+      const c = document.cookie.split(";");
+      for(let i=0;i<c.length;i++){
+        const ck = c[i].trim();
+        if(ck.substring(0, name.length + 1) === (name + "=")){
+          v = decodeURIComponent(ck.substring(name.length + 1));
+          break;
+        }
+      }
+    }
+    return v;
+  }
+  const CSRF_TOKEN = getCookie("csrftoken");
+
+  const conversationsById = {};
+  const messagesByConversation = {};
+  let activeConversationId = "";
+  let lastSince = null;
+
+  const elConvList = document.getElementById("conversationList");
+  const elConvCounter = document.getElementById("convCounter");
+  const elTitle = document.getElementById("activeConvTitle");
+  const elMeta = document.getElementById("activeConvMeta");
+  const elThreadWrap = document.getElementById("threadWrap");
+  const elThreadEmpty = document.getElementById("threadEmpty");
+  const elReplyInput = document.getElementById("replyInput");
+  const elReplyBtn = document.getElementById("replyBtn");
+  const elStatusAckBtn = document.getElementById("statusAckBtn");
+  const elStatusResolvedBtn = document.getElementById("statusResolvedBtn");
+  const elTokenSelect = document.getElementById("newTokenSelect");
+  const elInstructionInput = document.getElementById("newInstructionInput");
+  const elSendInstructionBtn = document.getElementById("sendInstructionBtn");
+
+  function esc(s){
+    return String(s || "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll("\"", "&quot;")
+      .replaceAll("'", "&#39;");
+  }
+
+  function formatDate(v){
+    if(!v) return "";
+    const dt = new Date(v);
+    if(Number.isNaN(dt.getTime())) return "";
+    return dt.toLocaleTimeString([], {hour: "2-digit", minute: "2-digit", second: "2-digit"});
+  }
+
+  function populateTokenSelect(){
+    elTokenSelect.innerHTML = '<option value="">Selecciona token...</option>';
+    TOKENS.forEach((t) => {
+      const label = (t.label || "").trim() || String(t.id);
+      const app = (((t.comp_aparell || {}).aparell || {}).nom || "").trim();
+      const option = document.createElement("option");
+      option.value = String(t.id);
+      option.textContent = app ? `${label} · ${app}` : label;
+      elTokenSelect.appendChild(option);
+    });
+  }
+
+  function statusBadge(status){
+    if(status === "requested") return '<span class="badge bg-warning text-dark">REQUESTED</span>';
+    if(status === "ack") return '<span class="badge bg-info text-dark">ACK</span>';
+    if(status === "resolved") return '<span class="badge bg-success">RESOLVED</span>';
+    return '<span class="badge bg-secondary">IDLE</span>';
+  }
+
+  function sortedConversations(){
+    return Object.values(conversationsById).sort((a, b) => {
+      const rank = (x) => {
+        if(x.status === "requested") return 0;
+        if(x.status === "ack") return 1;
+        if(x.status === "idle") return 2;
+        return 3;
+      };
+      if(rank(a) !== rank(b)) return rank(a) - rank(b);
+      if((b.unread_for_org || 0) !== (a.unread_for_org || 0)) return (b.unread_for_org || 0) - (a.unread_for_org || 0);
+      return String(b.last_message_at || "").localeCompare(String(a.last_message_at || ""));
+    });
+  }
+
+  function renderConversationList(){
+    const rows = sortedConversations();
+    elConvCounter.textContent = String(rows.length);
+    if(!rows.length){
+      elConvList.innerHTML = '<div class="p-2 msg-muted">No hi ha converses encara.</div>';
+      return;
+    }
+    elConvList.innerHTML = rows.map((c) => {
+      const active = String(c.id) === String(activeConversationId);
+      const classes = ["msg-item"];
+      if(active) classes.push("active");
+      if(c.status === "requested") classes.push("requested");
+      const unread = Number(c.unread_for_org || 0);
+      return `
+        <div class="${classes.join(" ")}" data-conv-id="${esc(c.id)}">
+          <div class="d-flex justify-content-between align-items-start gap-2">
+            <div class="title">${esc(c.token_label || c.token_id || "Token")}</div>
+            <div>${statusBadge(c.status)}</div>
+          </div>
+          <div class="msg-muted">${esc(c.comp_aparell_label || "")}</div>
+          <div class="msg-muted">${esc(c.last_message_preview || "")}</div>
+          <div class="d-flex justify-content-between align-items-center mt-1">
+            <span class="msg-muted">${esc(formatDate(c.last_message_at))}</span>
+            ${unread ? `<span class="badge bg-danger">${unread}</span>` : ""}
+          </div>
+        </div>
+      `;
+    }).join("");
+    elConvList.querySelectorAll("[data-conv-id]").forEach((el) => {
+      el.addEventListener("click", () => {
+        activeConversationId = String(el.dataset.convId || "");
+        lastSince = null;
+        renderConversationList();
+        renderActiveConversation();
+        pollUpdates();
+      });
+    });
+  }
+
+  function mergeMessages(conversationId, incoming){
+    const key = String(conversationId || "");
+    if(!key) return;
+    if(!Array.isArray(messagesByConversation[key])) messagesByConversation[key] = [];
+    const current = messagesByConversation[key];
+    const ids = new Set(current.map((m) => String(m.id)));
+    (incoming || []).forEach((m) => {
+      const mk = String(m.id);
+      if(ids.has(mk)) return;
+      ids.add(mk);
+      current.push(m);
+    });
+    current.sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")));
+  }
+
+  function renderActiveConversation(){
+    const conv = conversationsById[String(activeConversationId)] || null;
+    if(!conv){
+      elTitle.textContent = "Selecciona una conversa";
+      elMeta.textContent = "";
+      elReplyBtn.disabled = true;
+      elStatusAckBtn.disabled = true;
+      elStatusResolvedBtn.disabled = true;
+      elThreadWrap.style.display = "none";
+      elThreadEmpty.style.display = "";
+      elThreadEmpty.textContent = "No hi ha missatges per mostrar.";
+      return;
+    }
+    elTitle.textContent = (conv.token_label || conv.token_id || "Token");
+    elMeta.textContent = `${conv.comp_aparell_label || ""} · ${conv.status || "idle"}`;
+    elReplyBtn.disabled = false;
+    elStatusAckBtn.disabled = false;
+    elStatusResolvedBtn.disabled = false;
+
+    const rows = messagesByConversation[String(activeConversationId)] || [];
+    if(!rows.length){
+      elThreadWrap.style.display = "none";
+      elThreadEmpty.style.display = "";
+      elThreadEmpty.textContent = "Aquesta conversa encara no te missatges.";
+      return;
+    }
+    elThreadEmpty.style.display = "none";
+    elThreadWrap.style.display = "";
+    elThreadWrap.innerHTML = rows.map((m) => {
+      const klass = m.sender_type === "judge" ? "judge" : (m.sender_type === "organization" ? "organization" : "system");
+      return `
+        <div class="bubble ${klass}">
+          <div>${esc(m.text || "")}</div>
+          <span class="bubble-meta">${esc(m.sender_label || "")} · ${esc(formatDate(m.created_at))}</span>
+        </div>
+      `;
+    }).join("");
+    elThreadWrap.scrollTop = elThreadWrap.scrollHeight;
+  }
+
+  async function postJson(url, body){
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "X-CSRFToken": CSRF_TOKEN,
+      },
+      body: JSON.stringify(body || {}),
+    });
+    const data = await res.json().catch(() => ({}));
+    if(!res.ok || !data.ok){
+      throw new Error(data.error || "Error de servidor");
+    }
+    return data;
+  }
+
+  async function sendReply(){
+    const convId = String(activeConversationId || "");
+    const text = String(elReplyInput.value || "").trim();
+    if(!convId || !text) return;
+    try{
+      const data = await postJson(SEND_URL, {
+        conversation_id: convId,
+        text,
+        message_type: "reply",
+      });
+      conversationsById[String(data.conversation.id)] = data.conversation;
+      mergeMessages(convId, [data.message]);
+      elReplyInput.value = "";
+      renderConversationList();
+      renderActiveConversation();
+    }catch(e){
+      alert(e.message || e);
+    }
+  }
+
+  async function sendInstruction(){
+    const tokenId = String(elTokenSelect.value || "").trim();
+    const text = String(elInstructionInput.value || "").trim();
+    if(!tokenId){
+      alert("Selecciona un token destinatari.");
+      return;
+    }
+    if(!text){
+      alert("Escriu una instruccio.");
+      return;
+    }
+    try{
+      const data = await postJson(SEND_URL, {
+        judge_token_id: tokenId,
+        text,
+        message_type: "instruction",
+      });
+      const cid = String(data.conversation.id);
+      conversationsById[cid] = data.conversation;
+      mergeMessages(cid, [data.message]);
+      activeConversationId = cid;
+      elInstructionInput.value = "";
+      renderConversationList();
+      renderActiveConversation();
+    }catch(e){
+      alert(e.message || e);
+    }
+  }
+
+  async function setStatus(status){
+    const convId = String(activeConversationId || "");
+    if(!convId) return;
+    try{
+      const data = await postJson(STATUS_URL, {
+        conversation_id: convId,
+        status,
+      });
+      conversationsById[convId] = data.conversation;
+      mergeMessages(convId, [data.message]);
+      renderConversationList();
+      renderActiveConversation();
+    }catch(e){
+      alert(e.message || e);
+    }
+  }
+
+  async function pollUpdates(){
+    const url = new URL(UPDATES_URL, window.location.origin);
+    if(lastSince){
+      url.searchParams.set("since", lastSince);
+    }
+    if(activeConversationId){
+      url.searchParams.set("conversation_id", activeConversationId);
+    }
+    try{
+      const res = await fetch(url.toString(), {headers: {"Accept": "application/json"}});
+      const data = await res.json().catch(() => ({}));
+      if(res.ok && data.ok){
+        (data.conversations || []).forEach((c) => {
+          conversationsById[String(c.id)] = c;
+        });
+        if(!activeConversationId){
+          const rows = sortedConversations();
+          if(rows.length){
+            activeConversationId = String(rows[0].id);
+          }
+        }
+        if(activeConversationId && Array.isArray(data.messages)){
+          mergeMessages(activeConversationId, data.messages);
+        }
+        if(data.now){
+          lastSince = data.now;
+        }
+        renderConversationList();
+        renderActiveConversation();
+      }
+    }catch(_e){
+      // ignore transient poll failures
+    }finally{
+      window.setTimeout(pollUpdates, 1200);
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    populateTokenSelect();
+    renderConversationList();
+    renderActiveConversation();
+
+    elReplyBtn.addEventListener("click", sendReply);
+    elReplyInput.addEventListener("keydown", (evt) => {
+      if(evt.key === "Enter"){
+        evt.preventDefault();
+        sendReply();
+      }
+    });
+    elSendInstructionBtn.addEventListener("click", sendInstruction);
+    elStatusAckBtn.addEventListener("click", () => setStatus("ack"));
+    elStatusResolvedBtn.addEventListener("click", () => setStatus("resolved"));
+
+    pollUpdates();
+  });
+</script>
+{% endblock %}

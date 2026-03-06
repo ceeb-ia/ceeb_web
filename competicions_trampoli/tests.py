@@ -17,7 +17,12 @@ from ceeb_web.auth_groups import GLOBAL_AUTH_GROUPS
 
 from .access import user_has_competicio_capability
 from .models import Competicio, Inscripcio
-from .models_judging import JudgeDeviceToken, PublicLiveToken
+from .models_judging import (
+    JudgeConversation,
+    JudgeConversationMessage,
+    JudgeDeviceToken,
+    PublicLiveToken,
+)
 from .models_classificacions import ClassificacioConfig, ClassificacioTemplateGlobal
 from .models_scoring import ScoringSchema, ScoreEntry, ScoreEntryVideo, ScoreEntryVideoEvent
 from .models_trampoli import (
@@ -2548,6 +2553,141 @@ class CompetitionAccessControlTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(res_without_media.status_code, 302)
         token_without_media = PublicLiveToken.objects.get(competicio=self.comp, label="Public B")
         self.assertFalse(token_without_media.can_view_media)
+
+
+class JudgeMessagingFlowTests(_BaseTrampoliDataMixin, TestCase):
+    def setUp(self):
+        self.comp = self._create_competicio("Comp Missatgeria")
+        self.app = self._create_aparell("TRAMP_MSG", "Trampoli Msg")
+        self.comp_app = self._create_comp_aparell(self.comp, self.app, ordre=1, actiu=True)
+
+        self.token = JudgeDeviceToken.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            label="Judge Msg A",
+            permissions=[{"field_code": "E", "judge_index": 1}],
+            is_active=True,
+        )
+
+        User = get_user_model()
+        self.manager_user = User.objects.create_user(
+            username="judge_msg_manager",
+            password="testpass123",
+            email="judge-msg-manager@example.com",
+        )
+        self.readonly_user = User.objects.create_user(
+            username="judge_msg_readonly",
+            password="testpass123",
+            email="judge-msg-readonly@example.com",
+        )
+        CompeticioMembership.objects.create(
+            user=self.manager_user,
+            competicio=self.comp,
+            role=CompeticioMembership.Role.JUDGE_ADMIN,
+            is_active=True,
+        )
+        CompeticioMembership.objects.create(
+            user=self.readonly_user,
+            competicio=self.comp,
+            role=CompeticioMembership.Role.READONLY,
+            is_active=True,
+        )
+
+    def test_quick_support_creates_requested_conversation_without_explicit_text(self):
+        url = reverse("judge_request_support", kwargs={"token": self.token.id})
+        res = self.client.post(
+            url,
+            data=json.dumps({}),
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 200)
+        payload = res.json()
+        self.assertTrue(payload.get("ok"))
+        self.assertTrue(payload.get("quick"))
+
+        conv = JudgeConversation.objects.get(judge_token=self.token)
+        self.assertEqual(conv.status, JudgeConversation.Status.REQUESTED)
+        self.assertGreaterEqual(conv.unread_for_org, 1)
+
+        msg = JudgeConversationMessage.objects.get(conversation=conv)
+        self.assertEqual(msg.message_type, JudgeConversationMessage.MessageType.SUPPORT_REQUEST_QUICK)
+        self.assertIn("assistencia", (msg.text or "").lower())
+
+    def test_quick_support_has_cooldown(self):
+        url = reverse("judge_request_support", kwargs={"token": self.token.id})
+        first = self.client.post(url, data=json.dumps({}), content_type="application/json")
+        self.assertEqual(first.status_code, 200)
+
+        second = self.client.post(url, data=json.dumps({}), content_type="application/json")
+        self.assertEqual(second.status_code, 429)
+        self.assertEqual(second.json().get("reason"), "cooldown")
+
+    def test_judge_updates_include_org_instruction(self):
+        request_url = reverse("judge_request_support", kwargs={"token": self.token.id})
+        self.client.post(request_url, data=json.dumps({}), content_type="application/json")
+
+        send_url = reverse("judge_messages_send_org", kwargs={"competicio_id": self.comp.id})
+        self.client.force_login(self.manager_user)
+        send_res = self.client.post(
+            send_url,
+            data=json.dumps(
+                {
+                    "judge_token_id": str(self.token.id),
+                    "message_type": "instruction",
+                    "text": "Reinicia tauleta i revisa connexio.",
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(send_res.status_code, 200)
+        self.client.logout()
+
+        updates_url = reverse("judge_messages_updates", kwargs={"token": self.token.id})
+        updates_res = self.client.get(updates_url)
+        self.assertEqual(updates_res.status_code, 200)
+        rows = updates_res.json().get("messages", [])
+        self.assertTrue(any("Reinicia tauleta" in (x.get("text") or "") for x in rows))
+
+    def test_org_hub_requires_judge_messages_capability(self):
+        hub_url = reverse("judge_messages_hub", kwargs={"competicio_id": self.comp.id})
+
+        self.client.force_login(self.manager_user)
+        ok_res = self.client.get(hub_url)
+        self.assertEqual(ok_res.status_code, 200)
+        self.client.logout()
+
+        self.client.force_login(self.readonly_user)
+        denied_res = self.client.get(hub_url)
+        self.assertEqual(denied_res.status_code, 403)
+
+    def test_org_can_open_conversation_by_token_and_mark_resolved(self):
+        send_url = reverse("judge_messages_send_org", kwargs={"competicio_id": self.comp.id})
+        self.client.force_login(self.manager_user)
+        send_res = self.client.post(
+            send_url,
+            data=json.dumps(
+                {
+                    "judge_token_id": str(self.token.id),
+                    "message_type": "instruction",
+                    "text": "Passa al mode offline.",
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(send_res.status_code, 200)
+        conv_id = send_res.json().get("conversation", {}).get("id")
+        self.assertTrue(conv_id)
+
+        status_url = reverse("judge_messages_set_status_org", kwargs={"competicio_id": self.comp.id})
+        status_res = self.client.post(
+            status_url,
+            data=json.dumps({"conversation_id": conv_id, "status": "resolved"}),
+            content_type="application/json",
+        )
+        self.assertEqual(status_res.status_code, 200)
+        conv = JudgeConversation.objects.get(pk=conv_id)
+        self.assertEqual(conv.status, JudgeConversation.Status.RESOLVED)
+        self.assertTrue(conv.resolved_at is not None)
 
 
 class AparellOwnershipIsolationTests(_BaseTrampoliDataMixin, TestCase):
