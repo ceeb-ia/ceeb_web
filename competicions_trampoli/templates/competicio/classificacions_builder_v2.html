@@ -236,7 +236,7 @@
 
   <div class="d-flex align-items-center flex-wrap gap-2 mb-3">
     <select id="templateSelect" class="form-control form-control-sm" style="max-width: 360px;">
-      <option value="">Plantilles globals...</option>
+      <option value="">Les meves plantilles...</option>
     </select>
     <button type="button" class="btn btn-sm btn-outline-secondary" id="btnTemplateRefresh">Recarregar</button>
     <button type="button" class="btn btn-sm btn-outline-info" id="btnTemplateCheck">Comprovar</button>
@@ -763,7 +763,7 @@
   function renderTemplateSelect() {
     if (!els.templateSelect) return;
     const current = selectedTemplateId();
-    els.templateSelect.innerHTML = `<option value="">Plantilles globals...</option>`;
+    els.templateSelect.innerHTML = `<option value="">Les meves plantilles...</option>`;
     (state.templates || []).forEach(tpl => {
       const req = tpl.requirements || {};
       const appsCount = Array.isArray(req.aparells_codis) ? req.aparells_codis.length : 0;
@@ -3172,21 +3172,21 @@
   async function checkSelectedTemplate() {
     const templateId = selectedTemplateId();
     if (!templateId) {
-      alert("Selecciona una plantilla.");
+      showAlert("Selecciona una plantilla.");
       return;
     }
     const out = await postJson(TEMPLATE_VALIDATE_URL, { template_id: templateId });
-    alert(summarizeTemplateValidation(out));
+    showAlert(summarizeTemplateValidation(out));
   }
 
   async function applySelectedTemplate() {
     const templateId = selectedTemplateId();
     if (!templateId) {
-      alert("Selecciona una plantilla.");
+      showAlert("Selecciona una plantilla.");
       return;
     }
     const defaultName = `${templateNameById(templateId)} (tpl)`;
-    const nom = prompt("Nom de la nova classificacio:", defaultName);
+    const nom = await showPrompt("Nom de la nova classificacio:", defaultName);
     if (nom === null) return;
     const nomFinal = String(nom || "").trim() || defaultName;
 
@@ -3208,7 +3208,7 @@
         const nextMode = details && details.next_fallback ? String(details.next_fallback) : "";
         const canTryNext = !!(details && details.can_try_next && nextMode);
         if (!canTryNext) throw err;
-        const accepted = confirm(buildFallbackWarning(details, nextMode));
+        const accepted = await showConfirm(buildFallbackWarning(details, nextMode));
         if (!accepted) return;
         mode = nextMode;
         ackWarning = true;
@@ -3222,29 +3222,29 @@
 
     const warns = Array.isArray(out.warnings) ? out.warnings : [];
     if (warns.length) {
-      alert(`Plantilla aplicada amb avisos:\n${warns.join("\n")}`);
+      showAlert(`Plantilla aplicada amb avisos:\n${warns.join("\n")}`);
     }
   }
 
   async function saveCurrentCfgAsTemplate() {
     const cfg = currentCfg();
     if (!cfg) {
-      alert("Selecciona una configuracio.");
+      showAlert("Selecciona una configuracio.");
       return;
     }
     if (String(cfg.id).startsWith("tmp_")) {
-      alert("Guarda primer la classificacio abans de crear la plantilla.");
+      showAlert("Guarda primer la classificacio abans de crear la plantilla.");
       return;
     }
 
-    const nomInput = prompt("Nom de la plantilla global:", String(cfg.nom || "Plantilla classificacio"));
+    const nomInput = await showPrompt("Nom de la plantilla:", String(cfg.nom || "Plantilla classificacio"));
     if (nomInput === null) return;
     const nom = String(nomInput || "").trim();
     if (!nom) {
-      alert("Cal informar un nom de plantilla.");
+      showAlert("Cal informar un nom de plantilla.");
       return;
     }
-    const descripcioInput = prompt("Descripcio (opcional):", "");
+    const descripcioInput = await showPrompt("Descripcio (opcional):", "");
     if (descripcioInput === null) return;
 
     const out = await postJson(TEMPLATE_SAVE_URL, {
@@ -3261,7 +3261,7 @@
 
     const warns = Array.isArray(out.warnings) ? out.warnings : [];
     if (warns.length) {
-      alert(`Plantilla desada amb avisos:\n${warns.join("\n")}`);
+      showAlert(`Plantilla desada amb avisos:\n${warns.join("\n")}`);
     }
   }
 
@@ -3270,7 +3270,7 @@
       try {
         await loadTemplateList();
       } catch (e) {
-        alert("Error carregant plantilles: " + e.message);
+        showAlert("Error carregant plantilles: " + e.message);
       }
     });
   }
@@ -3280,7 +3280,7 @@
       try {
         await checkSelectedTemplate();
       } catch (e) {
-        alert("Error comprovant plantilla: " + e.message);
+        showAlert("Error comprovant plantilla: " + e.message);
       }
     });
   }
@@ -3291,9 +3291,9 @@
         await applySelectedTemplate();
       } catch (e) {
         if (e && e.details) {
-          alert("Error aplicant plantilla:\n" + summarizeTemplateValidation(e.details));
+          showAlert("Error aplicant plantilla:\n" + summarizeTemplateValidation(e.details));
         } else {
-          alert("Error aplicant plantilla: " + e.message);
+          showAlert("Error aplicant plantilla: " + e.message);
         }
       }
     });
@@ -3304,7 +3304,7 @@
       try {
         await saveCurrentCfgAsTemplate();
       } catch (e) {
-        alert("Error desant plantilla: " + e.message);
+        showAlert("Error desant plantilla: " + e.message);
       }
     });
   }
@@ -3342,14 +3342,14 @@
     }, 2000);
     
     } catch (e) {
-      alert("Error guardant: " + e.message);
+      showAlert("Error guardant: " + e.message);
     }
   });
 
   els.btnDelete.addEventListener("click", async () => {
     const cfg = currentCfg();
     if (!cfg) return;
-    if (!confirm("Eliminar aquesta configuració?")) return;
+    if (!await showConfirm("Eliminar aquesta configuració?")) return;
 
     try {
       if (String(cfg.id).startsWith("tmp_")) {
@@ -3367,7 +3367,7 @@
       els.editorBody.style.display = "none";
       els.editorEmpty.style.display = "";
     } catch (e) {
-      alert("Error eliminant: " + e.message);
+      showAlert("Error eliminant: " + e.message);
     }
   });
 

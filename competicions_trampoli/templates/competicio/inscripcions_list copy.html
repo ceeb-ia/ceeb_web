@@ -551,7 +551,7 @@
     if (!resp.ok) {
       const txt = await resp.text();
       console.error("Error desant ordre:", resp.status, txt);
-      alert(`No s'ha pogut desar l'ordre (${resp.status}).\n${txt}`);
+      showAlert(`No s'ha pogut desar l'ordre (${resp.status}).\n${txt}`);
       return false;
     }
     return true;
@@ -563,7 +563,7 @@
     const sourceLabel = labelForKey(sourceKey);
     const targetLabel = labelForKey(targetKey);
 
-    const ok = confirm(
+    const ok = await showConfirm(
       `Vols fusionar:\n\n- ${sourceLabel}\namb\n- ${targetLabel}\n\n` +
       `Es mostrarà com: "${targetLabel} + ${sourceLabel}"`
     );
@@ -584,7 +584,7 @@
 
     if (!resp.ok) {
       const txt = await resp.text();
-      alert(`No s'ha pogut fusionar (${resp.status}).\n${txt}`);
+      showAlert(`No s'ha pogut fusionar (${resp.status}).\n${txt}`);
       return;
     }
 
@@ -638,7 +638,7 @@
       });
 
       if (!cols.length) {
-        alert("Has de deixar com a mínim una columna seleccionada.");
+        showAlert("Has de deixar com a mínim una columna seleccionada.");
         return;
       }
 
@@ -653,7 +653,7 @@
 
       if (!resp.ok) {
         const txt = await resp.text();
-        alert(`No s'ha pogut desar columnes (${resp.status}).\n${txt}`);
+        showAlert(`No s'ha pogut desar columnes (${resp.status}).\n${txt}`);
         return;
       }
       window.location.reload();
@@ -670,7 +670,7 @@
       });
       if (!resp.ok) {
         const txt = await resp.text();
-        alert(`No s'ha pogut desar el nom del grup (${resp.status}).\n${txt}`);
+        showAlert(`No s'ha pogut desar el nom del grup (${resp.status}).\n${txt}`);
         return false;
       }
       return true;
@@ -912,7 +912,7 @@
         });
         if (!resp.ok) {
           const txt = await resp.text();
-          alert(`No s'ha pogut crear el grup (${resp.status}).\n${txt}`);
+          showAlert(`No s'ha pogut crear el grup (${resp.status}).\n${txt}`);
           return;
         }
         window.location.reload();
@@ -934,10 +934,10 @@
       btnAssign.addEventListener('click', async () => {
         const marked = getMarkedGroups();
         if (!marked.length) {
-          alert("No hi ha cap grup marcat.");
+          showAlert("No hi ha cap grup marcat.");
           return;
         }
-        const to = prompt("A quin número de grup vols assignar aquests grups? (ex: 3)");
+        const to = await showPrompt("A quin número de grup vols assignar aquests grups? (ex: 3)");
         if (!to) return;
 
         const url = new URL(window.location.href);

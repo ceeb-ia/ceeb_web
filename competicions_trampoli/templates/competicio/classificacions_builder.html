@@ -930,7 +930,7 @@
 
     const data = await res.json();
     if (!data.ok) {
-      alert("No s'ha pogut desar.");
+      showAlert("No s'ha pogut desar.");
       return;
     }
 
@@ -947,7 +947,7 @@
     const cfg = currentCfg();
     if (!cfg) return;
 
-    if (!confirm("Eliminar aquesta classificació?")) return;
+    if (!await showConfirm("Eliminar aquesta classificació?")) return;
 
     if (cfg._isTemp) {
       state.cfgs = state.cfgs.filter(x => x.id !== cfg.id);
@@ -967,7 +967,7 @@
     });
     const data = await res.json();
     if (!data.ok) {
-      alert("No s'ha pogut eliminar.");
+      showAlert("No s'ha pogut eliminar.");
       return;
     }
 
@@ -987,7 +987,7 @@
     if (!cfg) return;
 
     if (cfg._isTemp) {
-      alert("Desa primer la classificació per poder previsualitzar.");
+      showAlert("Desa primer la classificació per poder previsualitzar.");
       return;
     }
 

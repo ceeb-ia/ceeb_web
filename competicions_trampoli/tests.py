@@ -1804,6 +1804,11 @@ class ClassificacioTemplateFlowTests(_BaseTrampoliDataMixin, TestCase):
             password="testpass123",
             email="tpl-editor@example.com",
         )
+        self.other_user = User.objects.create_user(
+            username="tpl_other_user",
+            password="testpass123",
+            email="tpl-other@example.com",
+        )
 
         CompeticioMembership.objects.create(
             user=self.editor_user,
@@ -1813,6 +1818,18 @@ class ClassificacioTemplateFlowTests(_BaseTrampoliDataMixin, TestCase):
         )
         CompeticioMembership.objects.create(
             user=self.editor_user,
+            competicio=self.comp_target,
+            role=CompeticioMembership.Role.EDITOR,
+            is_active=True,
+        )
+        CompeticioMembership.objects.create(
+            user=self.other_user,
+            competicio=self.comp_source,
+            role=CompeticioMembership.Role.EDITOR,
+            is_active=True,
+        )
+        CompeticioMembership.objects.create(
+            user=self.other_user,
             competicio=self.comp_target,
             role=CompeticioMembership.Role.EDITOR,
             is_active=True,
@@ -2001,6 +2018,70 @@ class ClassificacioTemplateFlowTests(_BaseTrampoliDataMixin, TestCase):
             (((cfg.get("schema") or {}).get("puntuacio") or {}).get("camps_per_aparell") or {}).get(str(self.target_app.id)),
             ["total"],
         )
+
+    def test_template_list_only_shows_owner_templates(self):
+        own = self._post_json_as(
+            self.editor_user,
+            "classificacio_template_save",
+            self.comp_source.id,
+            {"cfg_id": self.cfg_source.id, "nom": "TPL Owner"},
+        )
+        self.assertEqual(own.status_code, 200)
+        own_id = own.json().get("template", {}).get("id")
+        self.assertTrue(own_id)
+
+        foreign = self._post_json_as(
+            self.other_user,
+            "classificacio_template_save",
+            self.comp_source.id,
+            {"cfg_id": self.cfg_source.id, "nom": "TPL Foreign"},
+        )
+        self.assertEqual(foreign.status_code, 200)
+        foreign_id = foreign.json().get("template", {}).get("id")
+        self.assertTrue(foreign_id)
+
+        self.client.force_login(self.editor_user)
+        list_url = reverse("classificacio_template_list", kwargs={"pk": self.comp_source.id})
+        res = self.client.get(list_url)
+        self.assertEqual(res.status_code, 200)
+        ids = {int(t["id"]) for t in (res.json().get("templates") or [])}
+        self.assertIn(int(own_id), ids)
+        self.assertNotIn(int(foreign_id), ids)
+
+    def test_cannot_use_or_update_foreign_template_by_id(self):
+        foreign = self._post_json_as(
+            self.other_user,
+            "classificacio_template_save",
+            self.comp_source.id,
+            {"cfg_id": self.cfg_source.id, "nom": "TPL Foreign Locked"},
+        )
+        self.assertEqual(foreign.status_code, 200)
+        foreign_id = foreign.json().get("template", {}).get("id")
+        self.assertTrue(foreign_id)
+
+        validate_res = self._post_json_as(
+            self.editor_user,
+            "classificacio_template_validate",
+            self.comp_target.id,
+            {"template_id": foreign_id},
+        )
+        self.assertEqual(validate_res.status_code, 404)
+
+        apply_res = self._post_json_as(
+            self.editor_user,
+            "classificacio_template_apply",
+            self.comp_target.id,
+            {"template_id": foreign_id, "nom": "No hauria d'aplicar"},
+        )
+        self.assertEqual(apply_res.status_code, 404)
+
+        update_res = self._post_json_as(
+            self.editor_user,
+            "classificacio_template_save",
+            self.comp_source.id,
+            {"cfg_id": self.cfg_source.id, "template_id": foreign_id, "nom": "No hauria d'editar"},
+        )
+        self.assertEqual(update_res.status_code, 404)
 
 
 class JudgeVideoApiTests(_BaseTrampoliDataMixin, TestCase):

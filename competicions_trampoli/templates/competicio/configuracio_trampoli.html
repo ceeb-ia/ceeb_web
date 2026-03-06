@@ -65,6 +65,19 @@
       </a>
     </div>
 
+    <div class="alert alert-info d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <div>
+        <div class="fw-semibold">Rotacions</div>
+        <div class="small">
+          Configura diferents rotacions (general, per categoria, per entitat...), amb criteris i desempats.
+        </div>
+      </div>
+      <a class="btn btn-sm btn-primary"
+        href="{% url 'rotacions_planner' object.competicio.id %}">
+        Configurar rotacions
+      </a>
+    </div>
+
     <!-- Llista d'aparells ja existents a la competició -->
     <div class="mb-4">
       <div class="fw-semibold mb-2">Aparells configurats</div>
@@ -83,7 +96,13 @@
                 <form method="post" action="{% url 'competicio_aparell_delete' object.competicio.id comp_aparell.id %}" style="display:inline;">
                   {% csrf_token %}
                 <a class="btn btn-sm btn-outline-secondary" href="{% url 'trampoli_aparell_edit' pk=object.competicio.id app_id=comp_aparell.id %}?next={{ request.get_full_path|urlencode }}">Editar</a>
-                  <button type="submit" class="btn btn-sm btn-danger ms-2" onclick="return confirm('Segur que vols eliminar aquest aparell de la competició?');">Eliminar</button>
+                  <button
+                    type="submit"
+                    class="btn btn-sm btn-danger ms-2 js-confirm-submit"
+                    data-confirm-message="Segur que vols eliminar aquest aparell de la competició?"
+                  >
+                    Eliminar
+                  </button>
                 </form>
               </li>
             {% endfor %}
@@ -114,6 +133,24 @@
       {% endwith %}
     </div>
 
+
   </div>
 </div>
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    document.querySelectorAll(".js-confirm-submit").forEach((btn) => {
+      const form = btn.closest("form");
+      if (!form) return;
+      form.addEventListener("submit", async (ev) => {
+        if (form.dataset.confirmPassed === "1") return;
+        ev.preventDefault();
+        const message = btn.getAttribute("data-confirm-message") || "Segur que vols continuar?";
+        const accepted = await showConfirm(message);
+        if (!accepted) return;
+        form.dataset.confirmPassed = "1";
+        form.submit();
+      });
+    });
+  });
+</script>
 {% endblock %}

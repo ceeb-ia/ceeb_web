@@ -1619,13 +1619,13 @@
       if (!resp.ok) {
         const txt = await resp.text();
         console.error("Error desant ordre:", resp.status, txt);
-        alert(`No s'ha pogut desar l'ordre (${resp.status}).\n${txt}`);
+        showAlert(`No s'ha pogut desar l'ordre (${resp.status}).\n${txt}`);
         return false;
       }
       return true;
     } catch (err) {
       console.error("Error de xarxa desant ordre:", err);
-      alert(`No s'ha pogut desar l'ordre.\n${err?.message || err}`);
+      showAlert(`No s'ha pogut desar l'ordre.\n${err?.message || err}`);
       return false;
     }
   }
@@ -1636,7 +1636,7 @@
     const sourceLabel = labelForKey(sourceKey);
     const targetLabel = labelForKey(targetKey);
 
-    const ok = confirm(
+    const ok = await showConfirm(
       `Vols fusionar:\n\n- ${sourceLabel}\namb\n- ${targetLabel}\n\n` +
       `Es mostrarà com: "${targetLabel} + ${sourceLabel}"`
     );
@@ -1657,7 +1657,7 @@
 
     if (!resp.ok) {
       const txt = await resp.text();
-      alert(`No s'ha pogut fusionar (${resp.status}).\n${txt}`);
+      showAlert(`No s'ha pogut fusionar (${resp.status}).\n${txt}`);
       return;
     }
 
@@ -1810,7 +1810,7 @@
       const cols = collectVisibleTableColumns(list);
 
       if (!cols.length) {
-        alert("Has de deixar com a minim una columna seleccionada.");
+        showAlert("Has de deixar com a minim una columna seleccionada.");
         return;
       }
 
@@ -1825,7 +1825,7 @@
 
       if (!resp.ok) {
         const txt = await resp.text();
-        alert(`No s'ha pogut desar columnes (${resp.status}).\n${txt}`);
+        showAlert(`No s'ha pogut desar columnes (${resp.status}).\n${txt}`);
         return;
       }
       reloadWithUiState();
@@ -1842,7 +1842,7 @@
       });
       if (!resp.ok) {
         const txt = await resp.text();
-        alert(`No s'ha pogut desar el nom del grup (${resp.status}).\n${txt}`);
+        showAlert(`No s'ha pogut desar el nom del grup (${resp.status}).\n${txt}`);
         return false;
       }
       return true;
@@ -2088,13 +2088,13 @@
       try {
         const data = await postJson(groupsFromSortUrl, payload);
         if (!data || !data.ok) {
-          alert("No s'han pogut crear grups amb aquesta configuracio.");
+          showAlert("No s'han pogut crear grups amb aquesta configuracio.");
           return false;
         }
         reloadWithUiState();
         return true;
       } catch (err) {
-        alert(`No s'han pogut crear grups.\\n${err.message || err}`);
+        showAlert(`No s'han pogut crear grups.\\n${err.message || err}`);
         return false;
       }
     }
@@ -2133,7 +2133,7 @@
         btnTabsCreateCount.addEventListener('click', async () => {
           const k = readIntInput('tabs-group-count', 1);
           if (!k) {
-            alert("Introdueix un nombre de grups valid.");
+            showAlert("Introdueix un nombre de grups valid.");
             return;
           }
           await makeGroups('tabs', 'count', { group_count: k });
@@ -2145,7 +2145,7 @@
         btnTabsCreateSize.addEventListener('click', async () => {
           const size = readIntInput('tabs-group-size', 2);
           if (!size) {
-            alert("Introdueix una mida valida (>=2).");
+            showAlert("Introdueix una mida valida (>=2).");
             return;
           }
           const mode = document.getElementById('tabs-group-size-mode')?.value || 'fixed';
@@ -2160,7 +2160,7 @@
           const minSize = readIntInput('tabs-group-min-size', 1);
           const maxSize = readIntInput('tabs-group-max-size', 1);
           if (!minSize || !maxSize || minSize > maxSize) {
-            alert("Forquilla invalida: comprova minim i maxim.");
+            showAlert("Forquilla invalida: comprova minim i maxim.");
             return;
           }
           await makeGroups('tabs', 'range_balanced', { min_size: minSize, max_size: maxSize });
@@ -2174,11 +2174,11 @@
           const maxSize = readIntInput('tabs-group-max-size', 1);
           const k = readIntInput('tabs-group-count-range', 1);
           if (!minSize || !maxSize || minSize > maxSize) {
-            alert("Forquilla invalida: comprova minim i maxim.");
+            showAlert("Forquilla invalida: comprova minim i maxim.");
             return;
           }
           if (!k) {
-            alert("Introdueix un nombre de grups valid.");
+            showAlert("Introdueix un nombre de grups valid.");
             return;
           }
           await makeGroups('tabs', 'count_with_range', {
@@ -2201,7 +2201,7 @@
         btnCreateCount.addEventListener('click', async () => {
           const k = readIntInput('sort-group-count', 1);
           if (!k) {
-            alert("Introdueix un nombre de grups valid.");
+            showAlert("Introdueix un nombre de grups valid.");
             return;
           }
           await makeGroups('sort', 'count', { group_count: k });
@@ -2213,7 +2213,7 @@
         btnCreateSize.addEventListener('click', async () => {
           const size = readIntInput('sort-group-size', 2);
           if (!size) {
-            alert("Introdueix una mida valida (>=2).");
+            showAlert("Introdueix una mida valida (>=2).");
             return;
           }
           const mode = document.getElementById('sort-group-size-mode')?.value || 'fixed';
@@ -2228,7 +2228,7 @@
           const minSize = readIntInput('sort-group-min-size', 1);
           const maxSize = readIntInput('sort-group-max-size', 1);
           if (!minSize || !maxSize || minSize > maxSize) {
-            alert("Forquilla invalida: comprova minim i maxim.");
+            showAlert("Forquilla invalida: comprova minim i maxim.");
             return;
           }
           await makeGroups('sort', 'range_balanced', { min_size: minSize, max_size: maxSize });
@@ -2242,11 +2242,11 @@
           const maxSize = readIntInput('sort-group-max-size', 1);
           const k = readIntInput('sort-group-count-range', 1);
           if (!minSize || !maxSize || minSize > maxSize) {
-            alert("Forquilla invalida: comprova minim i maxim.");
+            showAlert("Forquilla invalida: comprova minim i maxim.");
             return;
           }
           if (!k) {
-            alert("Introdueix un nombre de grups valid.");
+            showAlert("Introdueix un nombre de grups valid.");
             return;
           }
           await makeGroups('sort', 'count_with_range', {
@@ -2337,7 +2337,7 @@
       if (scope === 'group') {
         const groupNum = Number(groupSel?.value || 0);
         if (!Number.isFinite(groupNum) || groupNum <= 0) {
-          alert("Selecciona un grup numeric valid.");
+          showAlert("Selecciona un grup numeric valid.");
           return;
         }
         payload.group_num = groupNum;
@@ -2346,13 +2346,13 @@
       try {
         const data = await postJson(sortApplyUrl, payload);
         if (!data || !data.ok) {
-          alert("No s'ha pogut aplicar l'ordenacio.");
+          showAlert("No s'ha pogut aplicar l'ordenacio.");
           return;
         }
         closeColumnSortMenus();
         reloadWithUiState();
       } catch (err) {
-        alert(`No s'ha pogut aplicar l'ordenacio.\n${err.message || err}`);
+        showAlert(`No s'ha pogut aplicar l'ordenacio.\n${err.message || err}`);
       }
     }
 
@@ -2365,17 +2365,17 @@
       try {
         const data = await postJson(sortUndoUrl, payload);
         if (!data || !data.ok) {
-          alert("No s'ha pogut desfer l'ordenacio.");
+          showAlert("No s'ha pogut desfer l'ordenacio.");
           return;
         }
         if (!(Number(data.restored) > 0)) {
-          alert("No hi ha cap ordenacio per desfer.");
+          showAlert("No hi ha cap ordenacio per desfer.");
           return;
         }
         closeColumnSortMenus();
         reloadWithUiState();
       } catch (err) {
-        alert(`No s'ha pogut desfer l'ordenacio.\\n${err.message || err}`);
+        showAlert(`No s'ha pogut desfer l'ordenacio.\\n${err.message || err}`);
       }
     }
 
@@ -2388,13 +2388,13 @@
       try {
         const data = await postJson(sortClearUrl, payload);
         if (!data || !data.ok) {
-          alert("No s'ha pogut netejar les ordenacions.");
+          showAlert("No s'ha pogut netejar les ordenacions.");
           return;
         }
         closeColumnSortMenus();
         reloadWithUiState();
       } catch (err) {
-        alert(`No s'ha pogut netejar les ordenacions.\n${err.message || err}`);
+        showAlert(`No s'ha pogut netejar les ordenacions.\n${err.message || err}`);
       }
     }
 
@@ -2418,12 +2418,12 @@
       try {
         const data = await postJson(sortCustomValuesUrl, payload);
         if (!data || !data.ok) {
-          alert("No s'ha pogut carregar l'ordre custom.");
+          showAlert("No s'ha pogut carregar l'ordre custom.");
           return;
         }
         renderCustomSortEditor(menu, data);
       } catch (err) {
-        alert(`No s'ha pogut gestionar l'ordre custom.\n${err.message || err}`);
+        showAlert(`No s'ha pogut gestionar l'ordre custom.\n${err.message || err}`);
       }
     }
 
@@ -2443,13 +2443,13 @@
           preserve_missing_context: true,
         });
         if (!data || !data.ok) {
-          alert("No s'ha pogut desar l'ordre custom.");
+          showAlert("No s'ha pogut desar l'ordre custom.");
           return;
         }
         closeColumnSortMenus();
         reloadWithUiState();
       } catch (err) {
-        alert(`No s'ha pogut desar l'ordre custom.\n${err.message || err}`);
+        showAlert(`No s'ha pogut desar l'ordre custom.\n${err.message || err}`);
       }
     }
 
@@ -2458,7 +2458,7 @@
       const sortKey = menu.getAttribute('data-col-code') || '';
       if (!sortKey) return;
 
-      const ok = confirm("Vols eliminar l'ordre custom d'aquesta columna?");
+      const ok = await showConfirm("Vols eliminar l'ordre custom d'aquesta columna?");
       if (!ok) return;
 
       try {
@@ -2467,7 +2467,7 @@
           clear: true,
         });
         if (!data || !data.ok) {
-          alert("No s'ha pogut eliminar l'ordre custom.");
+          showAlert("No s'ha pogut eliminar l'ordre custom.");
           return;
         }
         renderCustomSortPreview(menu, []);
@@ -2475,7 +2475,7 @@
         closeColumnSortMenus();
         reloadWithUiState();
       } catch (err) {
-        alert(`No s'ha pogut eliminar l'ordre custom.\n${err.message || err}`);
+        showAlert(`No s'ha pogut eliminar l'ordre custom.\n${err.message || err}`);
       }
     }
 
@@ -2492,13 +2492,13 @@
       try {
         const data = await postJson(sortRemoveUrl, payload);
         if (!data || !data.ok) {
-          alert("No s'ha pogut eliminar el criteri d'ordenacio.");
+          showAlert("No s'ha pogut eliminar el criteri d'ordenacio.");
           return;
         }
         closeColumnSortMenus();
         reloadWithUiState();
       } catch (err) {
-        alert(`No s'ha pogut eliminar el criteri d'ordenacio.\\n${err.message || err}`);
+        showAlert(`No s'ha pogut eliminar el criteri d'ordenacio.\\n${err.message || err}`);
       }
     }
 
@@ -2668,7 +2668,7 @@
           applySelectedAparellIds(selectEl, saved);
         } catch (err) {
           applySelectedAparellIds(selectEl, prev);
-          alert(`No s'han pogut desar els aparells de la inscripcio.\\n${err.message || err}`);
+          showAlert(`No s'han pogut desar els aparells de la inscripcio.\\n${err.message || err}`);
         }
       }, 250);
 
@@ -2949,12 +2949,12 @@
         });
         if (!resp.ok) {
           const txt = await resp.text();
-          alert(`No s'ha pogut crear el grup (${resp.status}).\n${txt}`);
+          showAlert(`No s'ha pogut crear el grup (${resp.status}).\n${txt}`);
           return;
         }
         const data = await resp.json();
         if (!data.ok) {
-          alert('Resposta inesperada del servidor.');
+          showAlert('Resposta inesperada del servidor.');
           return;
         }
         reloadWithUiState();
@@ -2980,7 +2980,7 @@
       btnTeamPreview.addEventListener('click', async () => {
         const fields = getSelectedTeamFields();
         if (!fields.length) {
-          alert("Selecciona com a mínim un camp de partició.");
+          showAlert("Selecciona com a mínim un camp de partició.");
           return;
         }
         const selectedOnly = document.getElementById('team-auto-selected-only')?.checked;
@@ -2994,7 +2994,7 @@
           });
           renderTeamPreview(data);
         } catch (err) {
-          alert(`No s'ha pogut previsualitzar equips.\\n${err.message || err}`);
+          showAlert(`No s'ha pogut previsualitzar equips.\\n${err.message || err}`);
         }
       });
     }
@@ -3004,7 +3004,7 @@
       btnTeamAutoCreate.addEventListener('click', async () => {
         const fields = getSelectedTeamFields();
         if (!fields.length) {
-          alert("Selecciona com a mínim un camp de partició.");
+          showAlert("Selecciona com a mínim un camp de partició.");
           return;
         }
         const selectedOnly = document.getElementById('team-auto-selected-only')?.checked;
@@ -3019,12 +3019,12 @@
             selected_ids: selectedIds
           });
           if (!data.ok) {
-            alert("No s'han pogut crear equips.");
+            showAlert("No s'han pogut crear equips.");
             return;
           }
           reloadWithUiState();
         } catch (err) {
-          alert(`No s'han pogut crear equips.\\n${err.message || err}`);
+          showAlert(`No s'han pogut crear equips.\\n${err.message || err}`);
         }
       });
     }
@@ -3034,7 +3034,7 @@
       btnTeamCreateManual.addEventListener('click', async () => {
         const name = (document.getElementById('team-new-name')?.value || '').trim();
         if (!name) {
-          alert("Indica un nom per al nou equip.");
+          showAlert("Indica un nom per al nou equip.");
           return;
         }
         const ids = getSelectedInscripcioIds();
@@ -3044,12 +3044,12 @@
             selected_ids: ids
           });
           if (!data.ok) {
-            alert("No s'ha pogut crear l'equip.");
+            showAlert("No s'ha pogut crear l'equip.");
             return;
           }
           reloadWithUiState();
         } catch (err) {
-          alert(`No s'ha pogut crear l'equip.\\n${err.message || err}`);
+          showAlert(`No s'ha pogut crear l'equip.\\n${err.message || err}`);
         }
       });
     }
@@ -3060,11 +3060,11 @@
         const equipId = document.getElementById('team-existing-select')?.value || '';
         const ids = getSelectedInscripcioIds();
         if (!equipId) {
-          alert("Selecciona un equip.");
+          showAlert("Selecciona un equip.");
           return;
         }
         if (!ids.length) {
-          alert("Selecciona com a mínim una inscripció.");
+          showAlert("Selecciona com a mínim una inscripció.");
           return;
         }
         try {
@@ -3073,12 +3073,12 @@
             inscripcio_ids: ids
           });
           if (!data.ok) {
-            alert("No s'han pogut assignar les inscripcions.");
+            showAlert("No s'han pogut assignar les inscripcions.");
             return;
           }
           reloadWithUiState();
         } catch (err) {
-          alert(`No s'han pogut assignar les inscripcions.\\n${err.message || err}`);
+          showAlert(`No s'han pogut assignar les inscripcions.\\n${err.message || err}`);
         }
       });
     }
@@ -3088,7 +3088,7 @@
       btnTeamUnassign.addEventListener('click', async () => {
         const ids = getSelectedInscripcioIds();
         if (!ids.length) {
-          alert("Selecciona com a mínim una inscripció.");
+          showAlert("Selecciona com a mínim una inscripció.");
           return;
         }
         try {
@@ -3096,12 +3096,12 @@
             inscripcio_ids: ids
           });
           if (!data.ok) {
-            alert("No s'han pogut desassignar les inscripcions.");
+            showAlert("No s'han pogut desassignar les inscripcions.");
             return;
           }
           reloadWithUiState();
         } catch (err) {
-          alert(`No s'han pogut desassignar les inscripcions.\\n${err.message || err}`);
+          showAlert(`No s'han pogut desassignar les inscripcions.\\n${err.message || err}`);
         }
       });
     }
@@ -3111,20 +3111,20 @@
       btnTeamDeleteAll.addEventListener('click', async () => {
         const url = btnTeamDeleteAll.getAttribute('data-delete-all-url');
         if (!url) {
-          alert("URL d'eliminacio massiva no disponible.");
+          showAlert("URL d'eliminacio massiva no disponible.");
           return;
         }
-        const ok = confirm("Vols eliminar tots els equips existents? Les inscripcions quedaran sense equip.");
+        const ok = await showConfirm("Vols eliminar tots els equips existents? Les inscripcions quedaran sense equip.");
         if (!ok) return;
         try {
           const data = await postJson(url, {});
           if (!data.ok) {
-            alert("No s'han pogut eliminar tots els equips.");
+            showAlert("No s'han pogut eliminar tots els equips.");
             return;
           }
           reloadWithUiState();
         } catch (err) {
-          alert(`No s'han pogut eliminar tots els equips.\\n${err.message || err}`);
+          showAlert(`No s'han pogut eliminar tots els equips.\\n${err.message || err}`);
         }
       });
     }
@@ -3134,21 +3134,21 @@
       if (renameBtn) {
         const oldName = renameBtn.getAttribute('data-team-name') || '';
         const renameUrl = renameBtn.getAttribute('data-rename-url');
-        const newName = prompt("Nou nom de l'equip:", oldName);
+        const newName = await showPrompt("Nou nom de l'equip:", oldName);
         if (!newName || !newName.trim()) return;
         if (!renameUrl) {
-          alert("URL de rename no disponible.");
+          showAlert("URL de rename no disponible.");
           return;
         }
         try {
           const data = await postJson(renameUrl, { name: newName.trim() });
           if (!data.ok) {
-            alert("No s'ha pogut renombrar l'equip.");
+            showAlert("No s'ha pogut renombrar l'equip.");
             return;
           }
           reloadWithUiState();
         } catch (err) {
-          alert(`No s'ha pogut renombrar l'equip.\\n${err.message || err}`);
+          showAlert(`No s'ha pogut renombrar l'equip.\\n${err.message || err}`);
         }
         return;
       }
@@ -3157,21 +3157,21 @@
       if (deleteBtn) {
         const teamName = deleteBtn.getAttribute('data-team-name') || 'Equip';
         const deleteUrl = deleteBtn.getAttribute('data-delete-url');
-        const ok = confirm(`Eliminar l'equip \"${teamName}\"?\\nLes inscripcions quedaran sense equip.`);
+        const ok = await showConfirm(`Eliminar l'equip \"${teamName}\"?\\nLes inscripcions quedaran sense equip.`);
         if (!ok) return;
         if (!deleteUrl) {
-          alert("URL de delete no disponible.");
+          showAlert("URL de delete no disponible.");
           return;
         }
         try {
           const data = await postJson(deleteUrl, {});
           if (!data.ok) {
-            alert("No s'ha pogut eliminar l'equip.");
+            showAlert("No s'ha pogut eliminar l'equip.");
             return;
           }
           reloadWithUiState();
         } catch (err) {
-          alert(`No s'ha pogut eliminar l'equip.\\n${err.message || err}`);
+          showAlert(`No s'ha pogut eliminar l'equip.\\n${err.message || err}`);
         }
       }
     });

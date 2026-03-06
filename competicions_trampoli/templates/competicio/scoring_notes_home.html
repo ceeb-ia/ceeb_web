@@ -939,7 +939,7 @@
                     const resp = await saveEntry(ins.id, exercici, appId, inputsPatch);
                     setScore(ins.id, exercici, appId, {inputs: resp.inputs, outputs: resp.outputs, total: resp.total});
                     updateOutputs(scoreKey, resp);
-                  }catch(e){ console.error(e); alert(e.message); }
+                  }catch(e){ console.error(e); showAlert(e.message); }
                 });
               });
 
@@ -971,7 +971,7 @@
                       // 3) AQUI ÉS L’ALTRE CANVI IMPORTANT: després de desar, confia en el servidor
                       setScore(ins.id, exercici, appId, {inputs: resp.inputs, outputs: resp.outputs, total: resp.total});
                       updateOutputs(scoreKey, resp);
-                    }catch(e){ console.error(e); alert(e.message); }
+                    }catch(e){ console.error(e); showAlert(e.message); }
                   });
                 });
 
@@ -1018,7 +1018,7 @@
                   const resp = await saveEntry(ins.id, exercici, appId, nextInputs);
                   setScore(ins.id, exercici, appId, {inputs: nextInputs, outputs: resp.outputs, total: resp.total});
                   updateOutputs(scoreKey, resp);
-                }catch(e){ console.error(e); alert(e.message); }
+                }catch(e){ console.error(e); showAlert(e.message); }
               });
             });
 
@@ -1051,7 +1051,7 @@
                   const resp = await saveEntry(ins.id, exercici, appId, nextInputs);
                   setScore(ins.id, exercici, appId, {inputs: nextInputs, outputs: resp.outputs, total: resp.total});
                   updateOutputs(scoreKey, resp);
-                }catch(e){ console.error(e); alert(e.message); }
+                }catch(e){ console.error(e); showAlert(e.message); }
               });
             });
 

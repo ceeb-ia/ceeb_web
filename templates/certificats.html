@@ -71,7 +71,7 @@
         // 2) Mantenir polling per saber quan acaba i obtenir el link final
         checkTaskStatus(data.task_id);
       } else {
-        alert('Error en iniciar el procés.');
+        showAlert('Error en iniciar el procés.');
       }
     })
     .catch(console.error);

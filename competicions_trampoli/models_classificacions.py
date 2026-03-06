@@ -71,7 +71,7 @@ class ClassificacioTemplateGlobal(models.Model):
     TIPUS_CHOICES = ClassificacioConfig.TIPUS_CHOICES
 
     nom = models.CharField(max_length=140)
-    slug = models.SlugField(max_length=180, unique=True)
+    slug = models.SlugField(max_length=180)
     descripcio = models.CharField(max_length=255, blank=True, default="")
     activa = models.BooleanField(default=True)
     tipus = models.CharField(max_length=20, choices=TIPUS_CHOICES, default="individual")
@@ -85,9 +85,7 @@ class ClassificacioTemplateGlobal(models.Model):
 
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
+        on_delete=models.PROTECT,
         related_name="classificacio_templates_created",
     )
     created_at = models.DateTimeField(default=timezone.now)
@@ -95,6 +93,16 @@ class ClassificacioTemplateGlobal(models.Model):
 
     class Meta:
         ordering = ["nom", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["created_by", "slug"],
+                name="uniq_classif_tpl_owner_slug",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["created_by", "nom"], name="classif_tpl_owner_nom_idx"),
+            models.Index(fields=["created_by", "activa"], name="classif_tpl_owner_actiu_idx"),
+        ]
 
     def __str__(self):
         return f"{self.nom} (v{self.version})"

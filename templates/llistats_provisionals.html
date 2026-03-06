@@ -66,9 +66,9 @@
         startLogStream(data.task_id);
         checkTaskStatus(data.task_id);
       } else if (data.error) {
-        alert(data.error);
+        showAlert(data.error);
       } else {
-        alert('Error en iniciar el procés.');
+        showAlert('Error en iniciar el procés.');
       }
     })
     .catch(console.error);

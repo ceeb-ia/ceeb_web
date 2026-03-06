@@ -1,16 +1,18 @@
 # views_classificacions.py
 import json
 import re
-from django.shortcuts import get_object_or_404
+from django.shortcuts import get_object_or_404, redirect
+from django.contrib import messages
 from django.views.generic import TemplateView
 from django.http import JsonResponse, HttpResponse, HttpResponseBadRequest
 from django.views.decorators.http import require_POST
 from django.db import transaction
 from django.urls import reverse
+from django.utils.http import urlencode
 from django.utils.text import slugify
 from .models_scoring import ScoreEntry, ScoringSchema  
 from .models import Competicio, Inscripcio, Equip
-from .models_trampoli import CompeticioAparell, Aparell
+from .models_trampoli import CompeticioAparell
 from .models_classificacions import ClassificacioConfig, ClassificacioTemplateGlobal
 from .models_judging import PublicLiveToken
 from .services.services_classificacions_2 import compute_classificacio, DEFAULT_SCHEMA, get_display_columns
@@ -740,6 +742,21 @@ class ClassificacionsHome(TemplateView):
 
     def get(self, request, *args, **kwargs):
         self.competicio = get_object_or_404(Competicio, pk=kwargs["pk"])
+        has_active_aparells = CompeticioAparell.objects.filter(
+            competicio=self.competicio,
+            actiu=True,
+        ).exists()
+        if (
+            not has_active_aparells
+            and user_has_competicio_capability(request.user, self.competicio, "classificacions.edit")
+        ):
+            messages.warning(
+                request,
+                "No pots crear classificacions sense aparells de competicio.",
+            )
+            create_url = reverse("trampoli_aparell_create", kwargs={"pk": self.competicio.id})
+            next_query = urlencode({"next": request.get_full_path()})
+            return redirect(f"{create_url}?{next_query}")
         return super().get(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
@@ -751,29 +768,6 @@ class ClassificacionsHome(TemplateView):
             competicio=competicio,
             actiu=True,
         ).select_related("aparell").order_by("ordre", "id")
-
-        # si no n'hi ha, crea'n un per defecte només si l'usuari pot editar classificacions
-        if (
-            not aparells_cfg.exists()
-            and user_has_competicio_capability(self.request.user, competicio, "classificacions.edit")
-        ):
-            a, _ = Aparell.objects.get_or_create(
-                codi="TRAMP",
-                created_by=self.request.user,
-                defaults={"nom": "Trampolí", "actiu": True},
-            )
-            CompeticioAparell.objects.get_or_create(
-                competicio=competicio,
-                aparell=a,
-                defaults={
-                    "ordre": 1,
-                    "actiu": True,
-                },
-            )
-            aparells_cfg = CompeticioAparell.objects.filter(
-                competicio=competicio,
-                actiu=True,
-            ).select_related("aparell").order_by("ordre", "id")
 
         aparell_ids = list(aparells_cfg.values_list("aparell_id", flat=True))
 
@@ -1995,11 +1989,11 @@ def _template_to_payload_row(obj):
     }
 
 
-def _next_template_slug(base_name: str, exclude_template_id=None):
+def _next_template_slug(base_name: str, owner_id: int, exclude_template_id=None):
     base = slugify(base_name or "") or "classificacio-template"
     slug = base
     idx = 2
-    qs = ClassificacioTemplateGlobal.objects.all()
+    qs = ClassificacioTemplateGlobal.objects.filter(created_by_id=owner_id)
     if exclude_template_id:
         qs = qs.exclude(id=exclude_template_id)
     existing = set(qs.values_list("slug", flat=True))
@@ -3056,7 +3050,7 @@ def classificacio_template_list(request, pk):
     can_manage = bool(user_has_competicio_capability(request.user, competicio, "classificacions.edit"))
     include_inactive = str(request.GET.get("all") or "").strip().lower() in {"1", "true", "yes", "on"}
 
-    qs = ClassificacioTemplateGlobal.objects.order_by("nom", "id")
+    qs = ClassificacioTemplateGlobal.objects.filter(created_by=request.user).order_by("nom", "id")
     if not (can_manage and include_inactive):
         qs = qs.filter(activa=True)
 
@@ -3068,6 +3062,7 @@ def classificacio_template_list(request, pk):
 @transaction.atomic
 def classificacio_template_save(request, pk):
     competicio = get_object_or_404(Competicio, pk=pk)
+    owner = request.user
 
     try:
         payload = json.loads(request.body.decode("utf-8"))
@@ -3098,23 +3093,23 @@ def classificacio_template_save(request, pk):
     }
 
     if template_id:
-        tpl = get_object_or_404(ClassificacioTemplateGlobal, pk=template_id)
+        tpl = get_object_or_404(ClassificacioTemplateGlobal, pk=template_id, created_by=owner)
         requested_slug = str(payload.get("slug") or tpl.slug or "").strip()
         if requested_slug:
             slug_candidate = slugify(requested_slug)
             if not slug_candidate:
-                slug_candidate = _next_template_slug(nom, exclude_template_id=tpl.id)
+                slug_candidate = _next_template_slug(nom, owner.id, exclude_template_id=tpl.id)
             exists = (
                 ClassificacioTemplateGlobal.objects
                 .exclude(id=tpl.id)
-                .filter(slug=slug_candidate)
+                .filter(created_by=owner, slug=slug_candidate)
                 .exists()
             )
             if exists:
                 return JsonResponse({"ok": False, "error": "Ja existeix una plantilla amb aquest slug."}, status=400)
             tpl.slug = slug_candidate
         else:
-            tpl.slug = _next_template_slug(nom, exclude_template_id=tpl.id)
+            tpl.slug = _next_template_slug(nom, owner.id, exclude_template_id=tpl.id)
 
         tpl.nom = nom
         tpl.descripcio = descripcio
@@ -3129,11 +3124,11 @@ def classificacio_template_save(request, pk):
         if requested_slug:
             slug_candidate = slugify(requested_slug)
             if not slug_candidate:
-                slug_candidate = _next_template_slug(nom)
-            if ClassificacioTemplateGlobal.objects.filter(slug=slug_candidate).exists():
+                slug_candidate = _next_template_slug(nom, owner.id)
+            if ClassificacioTemplateGlobal.objects.filter(created_by=owner, slug=slug_candidate).exists():
                 return JsonResponse({"ok": False, "error": "Ja existeix una plantilla amb aquest slug."}, status=400)
         else:
-            slug_candidate = _next_template_slug(nom)
+            slug_candidate = _next_template_slug(nom, owner.id)
 
         tpl = ClassificacioTemplateGlobal.objects.create(
             nom=nom,
@@ -3143,7 +3138,7 @@ def classificacio_template_save(request, pk):
             activa=activa,
             payload=payload_obj,
             requirements=requirements,
-            created_by=request.user if getattr(request.user, "is_authenticated", False) else None,
+            created_by=owner,
         )
 
     return JsonResponse(
@@ -3169,7 +3164,7 @@ def classificacio_template_validate(request, pk):
         return JsonResponse({"ok": False, "error": "Falta template_id."}, status=400)
     fallback_mode = _parse_fallback_mode(payload.get("fallback_mode"))
 
-    qs = ClassificacioTemplateGlobal.objects.filter(activa=True)
+    qs = ClassificacioTemplateGlobal.objects.filter(activa=True, created_by=request.user)
     tpl = get_object_or_404(qs, pk=template_id)
 
     result = _validate_template_for_competicio(competicio, tpl, fallback_mode=fallback_mode)
@@ -3207,7 +3202,7 @@ def classificacio_template_apply(request, pk):
             status=400,
         )
 
-    qs = ClassificacioTemplateGlobal.objects.filter(activa=True)
+    qs = ClassificacioTemplateGlobal.objects.filter(activa=True, created_by=request.user)
     tpl = get_object_or_404(qs, pk=template_id)
 
     validation = _validate_template_for_competicio(competicio, tpl, fallback_mode=fallback_mode)

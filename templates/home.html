@@ -235,7 +235,7 @@
         if (!res.ok) {
           info.revert(); // torna l’event al lloc original
           const data = await res.json().catch(() => ({}));
-          alert(data.error || "No s'ha pogut moure l'esdeveniment");
+          showAlert(data.error || "No s'ha pogut moure l'esdeveniment");
         }
       },
 
@@ -260,7 +260,7 @@
         if (!res.ok) {
           info.revert();
           const data = await res.json().catch(() => ({}));
-          alert(data.error || "No s'ha pogut canviar la durada");
+          showAlert(data.error || "No s'ha pogut canviar la durada");
         }
       },
 
@@ -341,14 +341,14 @@
         calendar.refetchEvents();
       } else {
         const data = await res.json().catch(() => ({}));
-        alert(data.error || "Error en desar l'esdeveniment");
+        showAlert(data.error || "Error en desar l'esdeveniment");
       }
     });
 
     // 🗑️ ELIMINAR
     document.getElementById("deleteEventBtn").addEventListener("click", async () => {
       if (!currentEventId) return;
-      if (!confirm("Vols eliminar aquest esdeveniment?")) return;
+      if (!await showConfirm("Vols eliminar aquest esdeveniment?")) return;
 
       const res = await fetch(`/calendar/events/${currentEventId}/delete/`, {
         method: "POST",
@@ -363,7 +363,7 @@
         modal.hide();
         calendar.refetchEvents();
       } else {
-        alert("No s'ha pogut eliminar l'esdeveniment.");
+        showAlert("No s'ha pogut eliminar l'esdeveniment.");
       }
     });
   });

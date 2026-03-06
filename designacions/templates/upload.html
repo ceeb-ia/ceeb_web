@@ -190,7 +190,7 @@
     var data = await resp.json().catch(function(){ return {ok:false, error:"Resposta no vàlida"}; });
 
     if (!data.ok) {
-      alert(data.error || "Error carregant modalitats");
+      showAlert(data.error || "Error carregant modalitats");
       return;
     }
 

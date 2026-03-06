@@ -929,7 +929,7 @@ function initTopButtons(){
   const btnClearAll = document.getElementById("btnClearAll");
   if (btnClearAll) {
     btnClearAll.addEventListener("click", async () => {
-      if (!confirm("Segur que vols netejar tot el programa? Aquesta acció no es pot desfer.")) return;
+      if (!await showConfirm("Segur que vols netejar tot el programa? Aquesta acció no es pot desfer.")) return;
 
       if (statusEl) statusEl.textContent = "Netejant programa...";
       try {
@@ -978,7 +978,7 @@ function initTopButtons(){
         await postJSON(ADD_FR_URL, {hora_inici, hora_fi, titol});
         location.reload();
       } catch(e){
-        alert("Error creant franja: " + (e.message || e));
+        showAlert("Error creant franja: " + (e.message || e));
       }
     });
   }
@@ -990,7 +990,7 @@ function initTopButtons(){
         await postJSON(ADD_REST_URL, {});
         location.reload();
       } catch(e){
-        alert("Error creant descans: " + (e.message || e));
+        showAlert("Error creant descans: " + (e.message || e));
       }
     });
   }
@@ -1152,7 +1152,7 @@ function initGlobalClickHandler(){
       if (window.jQuery) {
         window.jQuery("#editFrModal").modal("show");
       } else {
-        alert("No hi ha jQuery carregat (Bootstrap 4 necessita jQuery).");
+        showAlert("No hi ha jQuery carregat (Bootstrap 4 necessita jQuery).");
       }
       return;
     }
@@ -1169,7 +1169,7 @@ function initGlobalClickHandler(){
         if (window.jQuery) window.jQuery("#editFrModal").modal("hide");
         location.reload();
       } catch(e){
-        alert("Error guardant franja: " + (e.message || e));
+        showAlert("Error guardant franja: " + (e.message || e));
       }
       return;
     }
@@ -1178,7 +1178,7 @@ function initGlobalClickHandler(){
     const clearBtn = ev.target.closest(".js-clear-franja");
     if (clearBtn && clearBtn.dataset.fr) {
       const frId = clearBtn.dataset.fr;
-      if (!confirm("Netejar totes les caselles d'aquesta franja?")) return;
+      if (!await showConfirm("Netejar totes les caselles d'aquesta franja?")) return;
       if (!grid[frId]) grid[frId] = {};
       for (const es of Object.keys(grid[frId])) grid[frId][es] = [];
       renderAll();
@@ -1189,7 +1189,7 @@ function initGlobalClickHandler(){
     const exBtn = ev.target.closest(".js-extrapolar");
     const ex = exBtn?.dataset?.fr;
     if (ex){
-      const countStr = prompt("Quantes franges següents vols omplir?", "");
+      const countStr = await showPrompt("Quantes franges següents vols omplir?", "");
       if (countStr === null) return;
       const count = (countStr.trim() === "") ? null : parseInt(countStr, 10);
 
@@ -1214,7 +1214,7 @@ function initGlobalClickHandler(){
         if (statusEl) statusEl.textContent = `✅ Extrapolat. Franges creades: ${r?.created_franges ?? "?"}, cel·les omplertes: ${r?.filled ?? "?"}.`;
         location.reload();
       } catch(e){
-        alert("Error extrapolant: " + (e.message || e));
+        showAlert("Error extrapolant: " + (e.message || e));
         if (statusEl) statusEl.textContent = "❌ Error extrapolant: " + (e.message || e);
       }
       return;
@@ -1228,7 +1228,7 @@ function initGlobalClickHandler(){
         await postJSON(insertAfterUrl(ins), {});
         location.reload();
       } catch(e){
-        alert("Error inserint franja: " + (e.message || e));
+        showAlert("Error inserint franja: " + (e.message || e));
       }
       return;
     }
@@ -1237,12 +1237,12 @@ function initGlobalClickHandler(){
     const delFrBtn = ev.target.closest(".js-del-fr");
     const fr = delFrBtn?.dataset?.fr;
     if (fr){
-      if (!confirm("Eliminar franja?")) return;
+      if (!await showConfirm("Eliminar franja?")) return;
       try {
         await postJSON(delFrUrl(fr), {});
         location.reload();
       } catch(e){
-        alert(e.message || e);
+        showAlert(e.message || e);
       }
       return;
     }
@@ -1251,12 +1251,12 @@ function initGlobalClickHandler(){
     const delEsBtn = ev.target.closest(".js-del-es");
     const es = delEsBtn?.dataset?.es;
     if (es){
-      if (!confirm("Eliminar estació?")) return;
+      if (!await showConfirm("Eliminar estació?")) return;
       try {
         await postJSON(delEstacioUrl(es), {});
         location.reload();
       } catch(e){
-        alert(e.message || e);
+        showAlert(e.message || e);
       }
       return;
     }
