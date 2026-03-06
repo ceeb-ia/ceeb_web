@@ -64,12 +64,31 @@ class InscripcioForm(forms.ModelForm):
 class CompeticioAparellForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         self.competicio = kwargs.pop("competicio", None)
+        self.user = kwargs.pop("user", None)
         super().__init__(*args, **kwargs)
+        qs = Aparell.objects.filter(actiu=True)
+        if self.user and not getattr(self.user, "is_superuser", False):
+            if not self.user.groups.filter(name="platform_admin").exists():
+                qs = qs.filter(created_by=self.user)
+        self.fields["aparell"].queryset = qs.order_by("nom", "id")
 
     def clean_aparell(self):
         aparell = self.cleaned_data.get("aparell")
         if not aparell or not self.competicio:
             return aparell
+
+        is_platform_admin = bool(
+            self.user
+            and (
+                getattr(self.user, "is_superuser", False)
+                or self.user.groups.filter(name="platform_admin").exists()
+            )
+        )
+        if self.user and not is_platform_admin and aparell.created_by_id != self.user.id:
+            raise ValidationError(
+                _("No pots utilitzar aparells creats per un altre usuari."),
+                code="forbidden_aparell_owner",
+            )
 
         qs = CompeticioAparell.objects.filter(
             competicio=self.competicio,
@@ -112,6 +131,37 @@ class CompeticioAparellForm(forms.ModelForm):
 
 
 class AparellForm(forms.ModelForm):
+    def __init__(self, *args, **kwargs):
+        self.user = kwargs.pop("user", None)
+        super().__init__(*args, **kwargs)
+
+    def clean_codi(self):
+        codi = str(self.cleaned_data.get("codi") or "").strip().upper()
+        if not codi:
+            raise ValidationError(
+                _("Cal indicar un codi d'aparell."),
+                code="missing_codi",
+            )
+        return codi
+
+    def clean(self):
+        cleaned_data = super().clean()
+        codi = cleaned_data.get("codi")
+        if not codi or not self.user:
+            return cleaned_data
+        qs = Aparell.objects.filter(created_by=self.user, codi=codi)
+        if self.instance and self.instance.pk:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            self.add_error(
+                "codi",
+                ValidationError(
+                    _("Ja tens un aparell amb aquest codi."),
+                    code="duplicate_owner_codi",
+                ),
+            )
+        return cleaned_data
+
     class Meta:
         model = Aparell
         fields = ["codi", "nom", "actiu"]
@@ -121,7 +171,7 @@ class AparellForm(forms.ModelForm):
             "actiu": forms.CheckboxInput(attrs={"class": "form-check-input"}),
         }
         labels = {"codi": "Codi", "nom": "Nom", "actiu": "Actiu"}
-        help_texts = {"codi": "Ha de ser únic. Recomanat en majúscules (ex: TRAMP)."}
+        help_texts = {"codi": "Ha de ser unic per usuari. Recomanat en majuscules (ex: TRAMP)."}
 
 
 
@@ -162,3 +212,4 @@ class ScoringSchemaForm(forms.ModelForm):
         validate_schema(data)
 
         return data
+

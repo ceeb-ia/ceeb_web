@@ -17,6 +17,7 @@ from django import forms
 from django.shortcuts import redirect
 from competicions_trampoli.forms import CompeticioAparellForm, AparellForm
 from django.views.generic import ListView, CreateView, UpdateView
+from .access import user_has_competicio_capability
 
 
 
@@ -70,20 +71,29 @@ class TrampoliNotesHome(TemplateView):
         ).select_related("aparell").order_by("ordre", "id")
 
         # si no n'hi ha, crea'n un per defecte
-        if not aparells_cfg.exists():
-            a, _ = Aparell.objects.get_or_create(codi="TRAMP", defaults={"nom": "Trampolí"})
-            CompeticioAparell.objects.create(
+        if (
+            not aparells_cfg.exists()
+            and user_has_competicio_capability(self.request.user, competicio, "scoring.edit")
+        ):
+            a, _ = Aparell.objects.get_or_create(
+                codi="TRAMP",
+                created_by=self.request.user,
+                defaults={"nom": "Trampolí", "actiu": True},
+            )
+            CompeticioAparell.objects.get_or_create(
                 competicio=competicio,
                 aparell=a,
-                ordre=1,
-                nombre_elements=11,
-                te_execucio=True,
-                te_dificultat=True,
-                te_tof=True,
-                te_hd=True,
-                te_penalitzacio=True,
-                mode_execucio="salts",
-                actiu=True,
+                defaults={
+                    "ordre": 1,
+                    "nombre_elements": 11,
+                    "te_execucio": True,
+                    "te_dificultat": True,
+                    "te_tof": True,
+                    "te_hd": True,
+                    "te_penalitzacio": True,
+                    "mode_execucio": "salts",
+                    "actiu": True,
+                },
             )
             aparells_cfg = CompeticioAparell.objects.filter(
                 competicio=competicio,
@@ -465,6 +475,7 @@ class CompeticioAparellCreate(CreateView):
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
         kwargs["competicio"] = self.competicio
+        kwargs["user"] = self.request.user
         return kwargs
 
     def form_valid(self, form):
@@ -500,11 +511,15 @@ class CompeticioAparellUpdate(UpdateView):
 
     def get_queryset(self):
         # IMPORTANT: només permet editar aparells d'aquesta competició
-        return CompeticioAparell.objects.filter(competicio=self.competicio)
+        qs = CompeticioAparell.objects.filter(competicio=self.competicio)
+        if self.request.user.is_superuser or self.request.user.groups.filter(name="platform_admin").exists():
+            return qs
+        return qs.filter(aparell__created_by=self.request.user)
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
         kwargs["competicio"] = self.competicio
+        kwargs["user"] = self.request.user
         return kwargs
 
     def get_success_url(self):
@@ -521,12 +536,27 @@ class AparellList(ListView):
     context_object_name = "aparells"
 
     def get_queryset(self):
-        return Aparell.objects.all().order_by("nom")
+        qs = Aparell.objects.all().order_by("nom")
+        if self.request.user.is_superuser or self.request.user.groups.filter(name="platform_admin").exists():
+            return qs
+        return qs.filter(created_by=self.request.user)
 
 
 class AparellCreate(CreateView):
     template_name = "competicio/aparell_form.html"
     form_class = AparellForm
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["user"] = self.request.user
+        return kwargs
+
+    def form_valid(self, form):
+        obj = form.save(commit=False)
+        obj.created_by = self.request.user
+        obj.save()
+        self.object = obj
+        return redirect(self.get_success_url())
 
     def get_success_url(self):
         # Tornem al catàleg
@@ -538,6 +568,17 @@ class AparellUpdate(UpdateView):
     form_class = AparellForm
     model = Aparell
 
+    def get_queryset(self):
+        qs = Aparell.objects.all()
+        if self.request.user.is_superuser or self.request.user.groups.filter(name="platform_admin").exists():
+            return qs
+        return qs.filter(created_by=self.request.user)
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["user"] = self.request.user
+        return kwargs
+
     def get_success_url(self):
         next_url = self.request.GET.get("next")
         if next_url:
@@ -547,6 +588,9 @@ class AparellUpdate(UpdateView):
 
 class CompeticioAparellDeleteView(View):
     def post(self, request, pk, app_id):
-        comp_aparell = get_object_or_404(CompeticioAparell, pk=app_id, competicio_id=pk)
+        qs = CompeticioAparell.objects.filter(pk=app_id, competicio_id=pk)
+        if not (request.user.is_superuser or request.user.groups.filter(name="platform_admin").exists()):
+            qs = qs.filter(aparell__created_by=request.user)
+        comp_aparell = get_object_or_404(qs)
         comp_aparell.delete()
         return redirect(reverse('trampoli_config', kwargs={'pk': pk}))

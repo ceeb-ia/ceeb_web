@@ -1,4 +1,5 @@
 # models_trampoli.py
+from django.conf import settings
 from django.db import models
 from django.core.exceptions import ValidationError
 from .models import Competicio, Inscripcio
@@ -7,15 +8,34 @@ NUM_SALTS = 11  # S1..S11
 
 
 class Aparell(models.Model):
-    codi = models.CharField(max_length=20, unique=True)   # TRAMP, DMT, TUMB...
+    codi = models.CharField(max_length=20)   # TRAMP, DMT, TUMB...
     nom = models.CharField(max_length=60)                # "Trampolí", "DMT", ...
     actiu = models.BooleanField(default=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="aparells_creats",
+    )
 
     class Meta:
         ordering = ["nom"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["created_by", "codi"],
+                name="uniq_aparell_created_by_codi",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["created_by", "nom"], name="competicion_created_c5f6cf_idx"),
+            models.Index(fields=["created_by", "actiu"], name="competicion_created_0e666d_idx"),
+        ]
 
     def __str__(self):
         return self.nom
+
+    def save(self, *args, **kwargs):
+        self.codi = str(self.codi or "").strip().upper()
+        super().save(*args, **kwargs)
 
 
 class CompeticioAparell(models.Model):

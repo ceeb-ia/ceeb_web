@@ -10,6 +10,55 @@
       <h2 class="mb-0">Calendari</h2>
     </div>
 
+    <style>
+      #calendar {
+        min-height: 680px;
+      }
+
+      @media (max-width: 768px) {
+        #calendar {
+          min-height: 560px;
+        }
+
+        #calendar .fc .fc-toolbar.fc-header-toolbar {
+          margin-bottom: 0.75rem;
+          gap: 0.35rem;
+        }
+
+        #calendar .fc .fc-toolbar {
+          flex-wrap: wrap;
+          align-items: center;
+        }
+
+        #calendar .fc .fc-toolbar-chunk {
+          display: flex;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 0.35rem;
+        }
+
+        #calendar .fc .fc-toolbar-title {
+          font-size: 1rem;
+        }
+
+        #calendar .fc .fc-button {
+          padding: 0.2rem 0.45rem;
+          font-size: 0.75rem;
+        }
+
+        #calendar .fc .fc-col-header-cell-cushion,
+        #calendar .fc .fc-daygrid-day-number {
+          font-size: 0.75rem;
+          padding: 0.15rem;
+        }
+
+        #calendar .fc .fc-timegrid-axis-cushion,
+        #calendar .fc .fc-timegrid-slot-label-cushion {
+          font-size: 0.7rem;
+        }
+      }
+    </style>
+
     <div id="calendar"></div>
   </div>
 </div>
@@ -83,10 +132,46 @@
     document.body.appendChild(modalEl);
 
     const modal = new bootstrap.Modal(modalEl);
+    const isTouchDevice = window.matchMedia("(pointer: coarse)").matches || ('ontouchstart' in window);
+    const isNarrowScreen = () => window.matchMedia("(max-width: 768px)").matches;
+    const desktopToolbar = {
+      left: 'prev,next today',
+      center: 'title',
+      right: 'dayGridMonth,timeGridWeek,timeGridDay'
+    };
+    const mobileToolbar = {
+      left: 'prev,next',
+      center: 'title',
+      right: 'today dayGridMonth,timeGridDay'
+    };
     let clickTimer = null;
     let lastClickTs = 0;
     let lastClickDay = null;
     let selectionInfo = null;
+
+    function openCreateModal(startInput, endInput, useDefaultOneHourSlot) {
+      currentEventId = null;
+      selectionInfo = null;
+      document.getElementById("eventTitle").value = "";
+      document.getElementById("eventDescription").value = "";
+
+      let startDate = new Date(startInput);
+      let endDate = endInput ? new Date(endInput) : null;
+
+      if (useDefaultOneHourSlot) {
+        startDate.setHours(9, 0, 0, 0);
+        endDate = new Date(startDate);
+        endDate.setMinutes(endDate.getMinutes() + 60);
+      } else if (!endDate) {
+        endDate = new Date(startDate);
+        endDate.setMinutes(endDate.getMinutes() + 60);
+      }
+
+      document.getElementById("eventStart").value = toLocalDateTimeInputValue(startDate);
+      document.getElementById("eventEnd").value = endDate ? toLocalDateTimeInputValue(endDate) : "";
+      document.getElementById("deleteEventBtn").style.display = "none";
+      modal.show();
+    }
 
     const calendar = new FullCalendar.Calendar(calendarEl, {
       initialView: 'dayGridMonth',
@@ -106,52 +191,27 @@
       firstDay: 1,
       allDayText: 'Tot el dia',
 
-      headerToolbar: {
-        left: 'prev,next today',
-        center: 'title',
-        right: 'dayGridMonth,timeGridWeek,timeGridDay'
-      },
+      headerToolbar: isNarrowScreen() ? mobileToolbar : desktopToolbar,
 
-      weekNumbers: true,
-      navLinks: true,
+      weekNumbers: !isNarrowScreen(),
+      navLinks: !isTouchDevice,
+      longPressDelay: isTouchDevice ? 180 : 1000,
+      eventLongPressDelay: isTouchDevice ? 180 : 1000,
+      selectLongPressDelay: isTouchDevice ? 180 : 1000,
 
       events: "{% url 'calendar_events_json' %}",
 
-      // ✅ Clic al dia (Month) -> navegar (no crea event)
-      //dateClick: function(info) {
-      //  if (calendar.view.type === 'dayGridMonth') {
-      //    calendar.changeView('timeGridDay', info.date);
-      //  }
-      //},
+      dateClick: function(info) {
+        if (!isTouchDevice) return;
+        const useDefaultOneHourSlot = (calendar.view.type === "dayGridMonth" || info.allDay);
+        openCreateModal(info.date, null, useDefaultOneHourSlot);
+      },
 
-      // ✅ Clic al número de setmana -> setmana
-      //weekNumberClick: function(info) {
-      //  calendar.changeView('timeGridWeek', info.date);
-      //},
-
-      // ➕ Crear event (drag o clic segons vista)
+      // Create event (drag or long-press selection)
       select: function(info) {
-        currentEventId = null;
         selectionInfo = info;
-
-        document.getElementById("eventTitle").value = "";
-        document.getElementById("eventDescription").value = "";
-
-        let startDate = new Date(info.start);
-        let endDate = info.end ? new Date(info.end) : null;
-
-        if (calendar.view.type === "dayGridMonth" || info.allDay) {
-          startDate.setHours(9, 0, 0, 0);
-          endDate = new Date(startDate);
-          endDate.setMinutes(endDate.getMinutes() + 60);
-        }
-
-        document.getElementById("eventStart").value = toLocalDateTimeInputValue(startDate);
-        document.getElementById("eventEnd").value = endDate ? toLocalDateTimeInputValue(endDate) : "";
-
-        document.getElementById("deleteEventBtn").style.display = "none";
-
-        modal.show();
+        const useDefaultOneHourSlot = (calendar.view.type === "dayGridMonth" || info.allDay);
+        openCreateModal(info.start, info.end, useDefaultOneHourSlot);
       },
 
       eventDrop: async function(info) {
@@ -219,28 +279,36 @@
         document.getElementById("deleteEventBtn").style.display = "inline-block";
 
         modal.show();
+      },
+
+      windowResize: function() {
+        const narrow = isNarrowScreen();
+        calendar.setOption("headerToolbar", narrow ? mobileToolbar : desktopToolbar);
+        calendar.setOption("weekNumbers", !narrow);
       }
     });
 
     calendar.render();
 
     // ✅ Doble clic REAL (month -> week, week -> day)
-    calendarEl.addEventListener("dblclick", function (ev) {
-      const dayCell =
-        ev.target.closest(".fc-daygrid-day") ||
-        ev.target.closest(".fc-timegrid-col");
+    if (!isTouchDevice) {
+      calendarEl.addEventListener("dblclick", function (ev) {
+        const dayCell =
+          ev.target.closest(".fc-daygrid-day") ||
+          ev.target.closest(".fc-timegrid-col");
 
-      if (!dayCell) return;
+        if (!dayCell) return;
 
-      const dateStr = dayCell.getAttribute("data-date");
-      if (!dateStr) return;
+        const dateStr = dayCell.getAttribute("data-date");
+        if (!dateStr) return;
 
-      if (calendar.view.type === "dayGridMonth") {
-        calendar.changeView("timeGridWeek", dateStr);
-      } else if (calendar.view.type === "timeGridWeek") {
-        calendar.changeView("timeGridDay", dateStr);
-      }
-    });
+        if (calendar.view.type === "dayGridMonth") {
+          calendar.changeView("timeGridWeek", dateStr);
+        } else if (calendar.view.type === "timeGridWeek") {
+          calendar.changeView("timeGridDay", dateStr);
+        }
+      });
+    }
 
     // 💾 DESAR (crear o editar)
     document.getElementById("saveEventBtn").addEventListener("click", async () => {
@@ -301,5 +369,3 @@
   });
 </script>
 {% endblock %}
-
-

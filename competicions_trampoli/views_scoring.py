@@ -5,6 +5,7 @@ from collections import defaultdict
 from django.utils.dateparse import parse_datetime
 from django.views.decorators.http import require_GET
 from django.contrib import messages
+from django.core.exceptions import PermissionDenied
 from django.db import IntegrityError, transaction
 from django.db.models import Exists, OuterRef
 from django.http import JsonResponse
@@ -437,7 +438,15 @@ class ScoringSchemaUpdate(UpdateView):
         else:
             self.aparell = get_object_or_404(Aparell, pk=kwargs["pk"])
 
+        if not self._can_manage_aparell(self.aparell):
+            raise PermissionDenied("No tens permisos per editar aquest aparell.")
+
         return super().dispatch(request, *args, **kwargs)
+
+    def _can_manage_aparell(self, aparell: Aparell) -> bool:
+        if self.request.user.is_superuser or self.request.user.groups.filter(name="platform_admin").exists():
+            return True
+        return aparell.created_by_id == self.request.user.id
 
     def get_object(self):
         # si estem en mode competició (competicio/<pk>/aparell/<ap_id>/schema/)

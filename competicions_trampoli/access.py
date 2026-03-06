@@ -8,6 +8,7 @@ from .models import Competicio, CompeticioMembership
 
 
 GLOBAL_COMPETICIONS_GROUPS = ("platform_admin", "competicions_manager")
+GLOBAL_COMPETICIO_BYPASS_GROUPS = ("platform_admin",)
 
 COMPETICIO_ROLE_CAPABILITIES = {
     CompeticioMembership.Role.OWNER: {"*"},
@@ -69,7 +70,8 @@ def user_has_any_global_group(user, group_names) -> bool:
 
 
 def user_has_global_competicions_access(user) -> bool:
-    return user_has_any_global_group(user, GLOBAL_COMPETICIONS_GROUPS)
+    # Bypass global de permisos per competicio: nomes platform_admin.
+    return user_has_any_global_group(user, GLOBAL_COMPETICIO_BYPASS_GROUPS)
 
 
 def get_active_competicio_membership(user, competicio):

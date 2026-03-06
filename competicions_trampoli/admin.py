@@ -5,6 +5,7 @@ from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from competicions_trampoli.models_trampoli import CompeticioAparell
 
 from .models import Competicio, CompeticioMembership
+from .models_classificacions import ClassificacioTemplateGlobal
 
 
 class CompeticioMembershipByCompeticioInline(admin.TabularInline):
@@ -42,6 +43,14 @@ class CompeticioAparellAdmin(admin.ModelAdmin):
     list_display = ("competicio", "aparell", "ordre", "actiu")
     list_filter = ("actiu", "competicio")
     search_fields = ("competicio__nom", "aparell__nom", "aparell__codi")
+
+
+@admin.register(ClassificacioTemplateGlobal)
+class ClassificacioTemplateGlobalAdmin(admin.ModelAdmin):
+    list_display = ("nom", "slug", "tipus", "activa", "version", "uses_count", "updated_at")
+    list_filter = ("tipus", "activa")
+    search_fields = ("nom", "slug", "descripcio")
+    readonly_fields = ("version", "uses_count", "last_used_at", "created_at", "updated_at")
 
 
 User = get_user_model()

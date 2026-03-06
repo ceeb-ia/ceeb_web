@@ -3,7 +3,7 @@ from django.urls import path
 
 from competicions_trampoli import views, views_judge_admin, views_rotacions, views_scoring
 
-from .access import require_competicio_capability, require_global_groups
+from .access import require_competicio_capability
 from .inscripcions_list_new import (
     InscripcionsListNewView,
     inscripcions_save_table_columns as inscripcions_save_table_columns_new,
@@ -17,6 +17,10 @@ from .views_classificacions import (
     ClassificacionsLoopLive,
     PublicClassificacionsLive,
     PublicClassificacionsLoopLive,
+    classificacio_template_apply,
+    classificacio_template_list,
+    classificacio_template_save,
+    classificacio_template_validate,
     classificacio_delete,
     classificacio_preview,
     classificacio_reorder,
@@ -51,27 +55,25 @@ from .views_trampoli import (
 from . import views_judge
 
 
-def competitions_admin_view(view):
-    return login_required(
-        require_global_groups("platform_admin", "competicions_manager")(view)
-    )
-
-
 def competition_view(view, capability, competicio_kwarg="pk"):
     return login_required(
         require_competicio_capability(capability, competicio_kwarg=competicio_kwarg)(view)
     )
 
 
-urlpatterns = [
-    path("trampoli/aparells/", competitions_admin_view(AparellList.as_view()), name="aparells_list"),
-    path("trampoli/aparells/nou/", competitions_admin_view(AparellCreate.as_view()), name="aparell_create"),
-    path("trampoli/aparells/<int:pk>/editar/", competitions_admin_view(AparellUpdate.as_view()), name="aparell_update"),
-    path("trampoli/aparells/<int:pk>/puntuacio/", competitions_admin_view(ScoringSchemaUpdate.as_view()), name="aparell_scoring_schema_update"),
+def authenticated_view(view):
+    return login_required(view)
 
-    path("competicions/nova/", competitions_admin_view(CompeticioCreateView.as_view()), name="create"),
-    path("competicions/created/", competitions_admin_view(CompeticioListView.as_view()), name="created"),
-    path("competicions/", competitions_admin_view(CompeticioHomeView.as_view()), name="competicions_home"),
+
+urlpatterns = [
+    path("trampoli/aparells/", authenticated_view(AparellList.as_view()), name="aparells_list"),
+    path("trampoli/aparells/nou/", authenticated_view(AparellCreate.as_view()), name="aparell_create"),
+    path("trampoli/aparells/<int:pk>/editar/", authenticated_view(AparellUpdate.as_view()), name="aparell_update"),
+    path("trampoli/aparells/<int:pk>/puntuacio/", authenticated_view(ScoringSchemaUpdate.as_view()), name="aparell_scoring_schema_update"),
+
+    path("competicions/nova/", authenticated_view(CompeticioCreateView.as_view()), name="create"),
+    path("competicions/created/", authenticated_view(CompeticioListView.as_view()), name="created"),
+    path("competicions/", authenticated_view(CompeticioHomeView.as_view()), name="competicions_home"),
 
     path("competicions/<int:pk>/importar/", competition_view(InscripcionsImportExcelView.as_view(), "inscripcions.edit"), name="import"),
     path("competicions/<int:pk>/inscripcions/", competition_view(InscripcionsListNewView.as_view(), "inscripcions.view"), name="inscripcions_list"),
@@ -138,6 +140,10 @@ urlpatterns = [
     path("competicio/<int:pk>/classificacions/delete/<int:cid>/", competition_view(classificacio_delete, "classificacions.edit"), name="classificacio_delete"),
     path("competicio/<int:pk>/classificacions/reorder/", competition_view(classificacio_reorder, "classificacions.edit"), name="classificacio_reorder"),
     path("competicio/<int:pk>/classificacions/preview/<int:cid>/", competition_view(classificacio_preview, "classificacions.view"), name="classificacio_preview"),
+    path("competicio/<int:pk>/classificacions/templates/", competition_view(classificacio_template_list, "classificacions.view"), name="classificacio_template_list"),
+    path("competicio/<int:pk>/classificacions/templates/save/", competition_view(classificacio_template_save, "classificacions.edit"), name="classificacio_template_save"),
+    path("competicio/<int:pk>/classificacions/templates/validate/", competition_view(classificacio_template_validate, "classificacions.edit"), name="classificacio_template_validate"),
+    path("competicio/<int:pk>/classificacions/templates/apply/", competition_view(classificacio_template_apply, "classificacions.edit"), name="classificacio_template_apply"),
     path("scoring/<int:competicio_id>/judges-qr/", competition_view(views_judge_admin.judges_qr_home, "judge_tokens.manage", competicio_kwarg="competicio_id"), name="judges_qr_home"),
     path("scoring/<int:competicio_id>/judges-qr/print/", competition_view(views_judge_admin.judges_qr_print, "judge_tokens.manage", competicio_kwarg="competicio_id"), name="judges_qr_print"),
     path("scoring/<int:competicio_id>/public-live-qr/", competition_view(views_judge_admin.public_live_qr_home, "public_live.manage", competicio_kwarg="competicio_id"), name="public_live_qr_home"),

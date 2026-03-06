@@ -234,6 +234,18 @@
     </div>
   </div>
 
+  <div class="d-flex align-items-center flex-wrap gap-2 mb-3">
+    <select id="templateSelect" class="form-control form-control-sm" style="max-width: 360px;">
+      <option value="">Plantilles globals...</option>
+    </select>
+    <button type="button" class="btn btn-sm btn-outline-secondary" id="btnTemplateRefresh">Recarregar</button>
+    <button type="button" class="btn btn-sm btn-outline-info" id="btnTemplateCheck">Comprovar</button>
+    <button type="button" class="btn btn-sm btn-outline-success" id="btnTemplateApply">Aplicar</button>
+    {% if can_manage_global_templates %}
+      <button type="button" class="btn btn-sm btn-outline-primary" id="btnTemplateSave">Desar com plantilla</button>
+    {% endif %}
+  </div>
+
     <div id="saveMsg" class="alert alert-success py-2 px-3 mb-2" style="display:none;">
     ✔️ Guardat correctament
   </div>
@@ -576,6 +588,7 @@
 {{ particio_value_choices|json_script:"particio-value-choices-data-v2" }}
 {{ aparell_field_options|json_script:"aparell-field-options-data" }}
 {{ competicio.id|default:None|json_script:"competicio-id" }}
+{{ can_manage_global_templates|json_script:"can-manage-global-templates" }}
 
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
 <script>
@@ -590,6 +603,14 @@
   const APARELL_FIELD_OPTIONS = JSON.parse(
     document.getElementById("aparell-field-options-data").textContent
   );
+  const CAN_MANAGE_GLOBAL_TEMPLATES = JSON.parse(
+    document.getElementById("can-manage-global-templates").textContent
+  );
+
+  const TEMPLATE_LIST_URL = "{% url 'classificacio_template_list' competicio.id %}";
+  const TEMPLATE_SAVE_URL = "{% url 'classificacio_template_save' competicio.id %}";
+  const TEMPLATE_VALIDATE_URL = "{% url 'classificacio_template_validate' competicio.id %}";
+  const TEMPLATE_APPLY_URL = "{% url 'classificacio_template_apply' competicio.id %}";
 
   // DEFAULT schema coherent amb backend nou
   const DEFAULT_SCHEMA = {
@@ -636,6 +657,11 @@
     btnAdd: document.getElementById("btnAdd"),
     btnSave: document.getElementById("btnSave"),
     btnDelete: document.getElementById("btnDelete"),
+    templateSelect: document.getElementById("templateSelect"),
+    btnTemplateRefresh: document.getElementById("btnTemplateRefresh"),
+    btnTemplateCheck: document.getElementById("btnTemplateCheck"),
+    btnTemplateApply: document.getElementById("btnTemplateApply"),
+    btnTemplateSave: document.getElementById("btnTemplateSave"),
     btnPreview: document.getElementById("btnPreview"),
     editorEmpty: document.getElementById("editorEmpty"),
     editorBody: document.getElementById("editorBody"),
@@ -698,6 +724,7 @@
   let state = {
     cfgs: JSON.parse(JSON.stringify(CFGS || [])),
     selectedId: null,
+    templates: [],
   };
   let advancedDirty = {
     desempat: false,
@@ -723,6 +750,58 @@
 
   function currentCfg() {
     return state.cfgs.find(x => x.id === state.selectedId);
+  }
+
+  function selectedTemplateId() {
+    if (!els.templateSelect) return null;
+    const raw = String(els.templateSelect.value || "").trim();
+    if (!raw) return null;
+    const id = Number(raw);
+    return Number.isFinite(id) && id > 0 ? id : null;
+  }
+
+  function renderTemplateSelect() {
+    if (!els.templateSelect) return;
+    const current = selectedTemplateId();
+    els.templateSelect.innerHTML = `<option value="">Plantilles globals...</option>`;
+    (state.templates || []).forEach(tpl => {
+      const req = tpl.requirements || {};
+      const appsCount = Array.isArray(req.aparells_codis) ? req.aparells_codis.length : 0;
+      const partCount = Array.isArray(req.particions) ? req.particions.length : 0;
+      const option = document.createElement("option");
+      option.value = String(tpl.id);
+      option.textContent = `${tpl.nom} · ${tpl.tipus || "individual"} · Aparells: ${appsCount} · Particions: ${partCount}`;
+      els.templateSelect.appendChild(option);
+    });
+    if (current) els.templateSelect.value = String(current);
+  }
+
+  async function loadTemplateList() {
+    if (!els.templateSelect) return;
+    const url = CAN_MANAGE_GLOBAL_TEMPLATES ? `${TEMPLATE_LIST_URL}?all=1` : TEMPLATE_LIST_URL;
+    const res = await fetch(url, { headers: { "Accept": "application/json" } });
+    if (!res.ok) throw new Error(await res.text());
+    const out = await res.json();
+    state.templates = Array.isArray(out.templates) ? out.templates : [];
+    renderTemplateSelect();
+  }
+
+  function templateNameById(templateId) {
+    const tpl = (state.templates || []).find(x => Number(x.id) === Number(templateId));
+    return tpl ? String(tpl.nom || "") : `#${templateId}`;
+  }
+
+  function summarizeTemplateValidation(data) {
+    const blocking = Array.isArray(data.blocking_errors) ? data.blocking_errors : [];
+    const warnings = Array.isArray(data.warnings) ? data.warnings : [];
+    const map = data.mapping || {};
+    const pairs = Object.entries(map).map(([code, id]) => `${code}->${id}`);
+    const lines = [];
+    lines.push(`Compatible: ${data.compatible ? "SI" : "NO"}`);
+    if (pairs.length) lines.push(`Mapatge aparells: ${pairs.join(", ")}`);
+    if (blocking.length) lines.push(`Errors: ${blocking.join(" | ")}`);
+    if (warnings.length) lines.push(`Avisos: ${warnings.join(" | ")}`);
+    return lines.join("\n");
   }
 
   function renderList() {
@@ -3047,8 +3126,187 @@
       },
       body: JSON.stringify(payload),
     });
-    if (!res.ok) throw new Error(await res.text());
-    return await res.json();
+    const isJson = String(res.headers.get("content-type") || "").includes("application/json");
+    const body = isJson ? await res.json().catch(() => null) : await res.text();
+    if (!res.ok) {
+      const msg = isJson
+        ? String((body && (body.error || body.message)) || `HTTP ${res.status}`)
+        : String(body || `HTTP ${res.status}`);
+      const err = new Error(msg);
+      err.status = res.status;
+      err.details = isJson ? body : null;
+      err.raw = body;
+      throw err;
+    }
+    return body;
+  }
+
+  function fallbackModeLabel(mode) {
+    const m = String(mode || "strict").toLowerCase();
+    if (m === "assistit") return "assistit";
+    if (m === "force") return "force";
+    return "strict";
+  }
+
+  function buildFallbackWarning(details, nextMode) {
+    const blocking = Array.isArray(details?.blocking_errors) ? details.blocking_errors : [];
+    const warnings = Array.isArray(details?.warnings) ? details.warnings : [];
+    const phase = fallbackModeLabel(details?.phase);
+    const next = fallbackModeLabel(nextMode);
+    const lines = [];
+    lines.push(`No s'ha pogut aplicar la plantilla en mode ${phase}.`);
+    if (blocking.length) {
+      lines.push("Errors de compatibilitat:");
+      blocking.slice(0, 5).forEach((msg, idx) => lines.push(`${idx + 1}. ${msg}`));
+      if (blocking.length > 5) lines.push(`... i ${blocking.length - 5} errors mes.`);
+    }
+    if (warnings.length) {
+      lines.push("Avisos:");
+      warnings.slice(0, 5).forEach((msg, idx) => lines.push(`${idx + 1}. ${msg}`));
+      if (warnings.length > 5) lines.push(`... i ${warnings.length - 5} avisos mes.`);
+    }
+    lines.push(`Vols provar el fallback ${next}?`);
+    return lines.join("\n");
+  }
+
+  async function checkSelectedTemplate() {
+    const templateId = selectedTemplateId();
+    if (!templateId) {
+      alert("Selecciona una plantilla.");
+      return;
+    }
+    const out = await postJson(TEMPLATE_VALIDATE_URL, { template_id: templateId });
+    alert(summarizeTemplateValidation(out));
+  }
+
+  async function applySelectedTemplate() {
+    const templateId = selectedTemplateId();
+    if (!templateId) {
+      alert("Selecciona una plantilla.");
+      return;
+    }
+    const defaultName = `${templateNameById(templateId)} (tpl)`;
+    const nom = prompt("Nom de la nova classificacio:", defaultName);
+    if (nom === null) return;
+    const nomFinal = String(nom || "").trim() || defaultName;
+
+    let mode = "strict";
+    let ackWarning = false;
+    let out = null;
+    while (true) {
+      try {
+        out = await postJson(TEMPLATE_APPLY_URL, {
+          template_id: templateId,
+          nom: nomFinal,
+          activa: false,
+          fallback_mode: mode,
+          ack_warning: ackWarning,
+        });
+        break;
+      } catch (err) {
+        const details = err && err.details ? err.details : null;
+        const nextMode = details && details.next_fallback ? String(details.next_fallback) : "";
+        const canTryNext = !!(details && details.can_try_next && nextMode);
+        if (!canTryNext) throw err;
+        const accepted = confirm(buildFallbackWarning(details, nextMode));
+        if (!accepted) return;
+        mode = nextMode;
+        ackWarning = true;
+      }
+    }
+
+    if (!out || !out.cfg) throw new Error("Resposta no valida aplicant plantilla.");
+    state.cfgs.push(out.cfg);
+    renderList();
+    selectCfg(out.cfg.id);
+
+    const warns = Array.isArray(out.warnings) ? out.warnings : [];
+    if (warns.length) {
+      alert(`Plantilla aplicada amb avisos:\n${warns.join("\n")}`);
+    }
+  }
+
+  async function saveCurrentCfgAsTemplate() {
+    const cfg = currentCfg();
+    if (!cfg) {
+      alert("Selecciona una configuracio.");
+      return;
+    }
+    if (String(cfg.id).startsWith("tmp_")) {
+      alert("Guarda primer la classificacio abans de crear la plantilla.");
+      return;
+    }
+
+    const nomInput = prompt("Nom de la plantilla global:", String(cfg.nom || "Plantilla classificacio"));
+    if (nomInput === null) return;
+    const nom = String(nomInput || "").trim();
+    if (!nom) {
+      alert("Cal informar un nom de plantilla.");
+      return;
+    }
+    const descripcioInput = prompt("Descripcio (opcional):", "");
+    if (descripcioInput === null) return;
+
+    const out = await postJson(TEMPLATE_SAVE_URL, {
+      cfg_id: cfg.id,
+      nom: nom,
+      descripcio: String(descripcioInput || "").trim(),
+      activa: true,
+    });
+
+    await loadTemplateList();
+    if (els.templateSelect && out && out.template && out.template.id) {
+      els.templateSelect.value = String(out.template.id);
+    }
+
+    const warns = Array.isArray(out.warnings) ? out.warnings : [];
+    if (warns.length) {
+      alert(`Plantilla desada amb avisos:\n${warns.join("\n")}`);
+    }
+  }
+
+  if (els.btnTemplateRefresh) {
+    els.btnTemplateRefresh.addEventListener("click", async () => {
+      try {
+        await loadTemplateList();
+      } catch (e) {
+        alert("Error carregant plantilles: " + e.message);
+      }
+    });
+  }
+
+  if (els.btnTemplateCheck) {
+    els.btnTemplateCheck.addEventListener("click", async () => {
+      try {
+        await checkSelectedTemplate();
+      } catch (e) {
+        alert("Error comprovant plantilla: " + e.message);
+      }
+    });
+  }
+
+  if (els.btnTemplateApply) {
+    els.btnTemplateApply.addEventListener("click", async () => {
+      try {
+        await applySelectedTemplate();
+      } catch (e) {
+        if (e && e.details) {
+          alert("Error aplicant plantilla:\n" + summarizeTemplateValidation(e.details));
+        } else {
+          alert("Error aplicant plantilla: " + e.message);
+        }
+      }
+    });
+  }
+
+  if (els.btnTemplateSave) {
+    els.btnTemplateSave.addEventListener("click", async () => {
+      try {
+        await saveCurrentCfgAsTemplate();
+      } catch (e) {
+        alert("Error desant plantilla: " + e.message);
+      }
+    });
   }
 
   els.btnSave.addEventListener("click", async () => {
@@ -3177,6 +3435,9 @@
   buildParticioFieldChecks();
   renderList();
   if (state.cfgs.length) selectCfg(state.cfgs[0].id);
+  loadTemplateList().catch((e) => {
+    console.error("Error carregant plantilles:", e);
+  });
 </script>
 
 {% endblock %}

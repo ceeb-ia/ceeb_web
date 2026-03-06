@@ -73,8 +73,14 @@ class CompeticioMembership(models.Model):
             )
         ]
         indexes = [
-            models.Index(fields=["competicio", "role", "is_active"]),
-            models.Index(fields=["user", "is_active"]),
+            models.Index(
+                fields=["competicio", "role", "is_active"],
+                name="competicion_competi_043c1d_idx",
+            ),
+            models.Index(
+                fields=["user", "is_active"],
+                name="competicion_user_id_bf218f_idx",
+            ),
         ]
 
     def __str__(self):

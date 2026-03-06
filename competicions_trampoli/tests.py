@@ -18,7 +18,7 @@ from ceeb_web.auth_groups import GLOBAL_AUTH_GROUPS
 from .access import user_has_competicio_capability
 from .models import Competicio, Inscripcio
 from .models_judging import JudgeDeviceToken, PublicLiveToken
-from .models_classificacions import ClassificacioConfig
+from .models_classificacions import ClassificacioConfig, ClassificacioTemplateGlobal
 from .models_scoring import ScoringSchema, ScoreEntry, ScoreEntryVideo, ScoreEntryVideoEvent
 from .models_trampoli import (
     Aparell,
@@ -43,8 +43,22 @@ class _BaseTrampoliDataMixin:
             tipus=Competicio.Tipus.TRAMPOLI,
         )
 
-    def _create_aparell(self, codi, nom):
-        return Aparell.objects.create(codi=codi, nom=nom, actiu=True)
+    def _ensure_default_aparell_owner(self):
+        owner = getattr(self, "_default_aparell_owner", None)
+        if owner is not None:
+            return owner
+        User = get_user_model()
+        owner = User.objects.create_user(
+            username=f"ap_owner_{self.__class__.__name__.lower()}",
+            password="testpass123",
+            email=f"ap-owner-{self.__class__.__name__.lower()}@example.com",
+        )
+        self._default_aparell_owner = owner
+        return owner
+
+    def _create_aparell(self, codi, nom, owner=None):
+        owner = owner or getattr(self, "user", None) or self._ensure_default_aparell_owner()
+        return Aparell.objects.create(codi=codi, nom=nom, actiu=True, created_by=owner)
 
     def _create_comp_aparell(self, competicio, aparell, ordre=1, actiu=True):
         return CompeticioAparell.objects.create(
@@ -1728,6 +1742,267 @@ class ClassificacionsExportExcelTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(res.status_code, 400)
 
 
+class ClassificacioTemplateFlowTests(_BaseTrampoliDataMixin, TestCase):
+    def setUp(self):
+        self.comp_source = self._create_competicio("Comp Templates Source")
+        self.comp_target = self._create_competicio("Comp Templates Target")
+
+        self.app = self._create_aparell("TPL_APP", "Template App")
+        self.source_app = self._create_comp_aparell(self.comp_source, self.app, ordre=1, actiu=True)
+        self.target_app = self._create_comp_aparell(self.comp_target, self.app, ordre=1, actiu=True)
+
+        ScoringSchema.objects.create(
+            aparell=self.app,
+            schema={
+                "fields": [
+                    {"code": "E_total", "type": "number"},
+                ],
+                "computed": [],
+            },
+        )
+
+        self.cfg_source = ClassificacioConfig.objects.create(
+            competicio=self.comp_source,
+            nom="Cfg Source",
+            activa=True,
+            ordre=1,
+            tipus="individual",
+            schema={
+                "particions": ["categoria"],
+                "filtres": {},
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [self.source_app.id]},
+                    "camps_per_aparell": {str(self.source_app.id): ["E_total"]},
+                    "agregacio_camps": "sum",
+                    "exercicis": {"mode": "tots"},
+                    "exercicis_best_n": 1,
+                    "mode_seleccio_exercicis": "per_aparell_global",
+                    "exercicis_per_aparell": {},
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "ordre": "desc",
+                    "camp": "total",
+                    "agregacio": "sum",
+                    "best_n": 1,
+                },
+                "desempat": [],
+                "presentacio": {
+                    "top_n": 0,
+                    "mostrar_empats": True,
+                    "columnes": [
+                        {"type": "builtin", "key": "posicio", "label": "#", "align": "left"},
+                        {"type": "builtin", "key": "participant", "label": "Nom", "align": "left"},
+                        {"type": "builtin", "key": "punts", "label": "Punts", "align": "right", "decimals": 3},
+                    ],
+                },
+            },
+        )
+
+        User = get_user_model()
+        self.editor_user = User.objects.create_user(
+            username="tpl_editor_user",
+            password="testpass123",
+            email="tpl-editor@example.com",
+        )
+
+        CompeticioMembership.objects.create(
+            user=self.editor_user,
+            competicio=self.comp_source,
+            role=CompeticioMembership.Role.EDITOR,
+            is_active=True,
+        )
+        CompeticioMembership.objects.create(
+            user=self.editor_user,
+            competicio=self.comp_target,
+            role=CompeticioMembership.Role.EDITOR,
+            is_active=True,
+        )
+
+    def _post_json_as(self, user, url_name, comp_id, payload):
+        self.client.force_login(user)
+        url = reverse(url_name, kwargs={"pk": comp_id})
+        return self.client.post(url, data=json.dumps(payload), content_type="application/json")
+
+    def test_editor_with_classificacions_edit_can_save_global_template(self):
+        res = self._post_json_as(
+            self.editor_user,
+            "classificacio_template_save",
+            self.comp_source.id,
+            {"cfg_id": self.cfg_source.id, "nom": "TPL 1"},
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(res.json().get("ok"))
+
+    def test_global_template_can_be_saved_validated_and_applied(self):
+        save_res = self._post_json_as(
+            self.editor_user,
+            "classificacio_template_save",
+            self.comp_source.id,
+            {"cfg_id": self.cfg_source.id, "nom": "TPL Rapid"},
+        )
+        self.assertEqual(save_res.status_code, 200)
+        save_body = save_res.json()
+        self.assertTrue(save_body.get("ok"))
+        template_id = save_body.get("template", {}).get("id")
+        self.assertTrue(template_id)
+
+        tpl = ClassificacioTemplateGlobal.objects.get(pk=template_id)
+        tpl_schema = (tpl.payload or {}).get("schema") or {}
+        self.assertEqual(
+            ((tpl_schema.get("puntuacio") or {}).get("aparells") or {}).get("ids"),
+            [self.app.codi],
+        )
+
+        validate_res = self._post_json_as(
+            self.editor_user,
+            "classificacio_template_validate",
+            self.comp_target.id,
+            {"template_id": template_id},
+        )
+        self.assertEqual(validate_res.status_code, 200)
+        validate_body = validate_res.json()
+        self.assertTrue(validate_body.get("compatible"))
+
+        apply_res = self._post_json_as(
+            self.editor_user,
+            "classificacio_template_apply",
+            self.comp_target.id,
+            {"template_id": template_id, "nom": "Aplicada Target", "activa": False},
+        )
+        self.assertEqual(apply_res.status_code, 200)
+        apply_body = apply_res.json()
+        self.assertTrue(apply_body.get("ok"))
+        cfg = apply_body.get("cfg") or {}
+        self.assertEqual(cfg.get("nom"), "Aplicada Target")
+
+        punt = ((cfg.get("schema") or {}).get("puntuacio") or {})
+        self.assertEqual((punt.get("aparells") or {}).get("ids"), [self.target_app.id])
+        self.assertEqual((punt.get("camps_per_aparell") or {}).get(str(self.target_app.id)), ["E_total"])
+
+        tpl.refresh_from_db()
+        self.assertEqual(tpl.uses_count, 1)
+        self.assertIsNotNone(tpl.last_used_at)
+
+    def test_template_apply_requires_ack_for_non_strict_fallback(self):
+        save_res = self._post_json_as(
+            self.editor_user,
+            "classificacio_template_save",
+            self.comp_source.id,
+            {"cfg_id": self.cfg_source.id, "nom": "TPL Ack"},
+        )
+        self.assertEqual(save_res.status_code, 200)
+        template_id = save_res.json().get("template", {}).get("id")
+        self.assertTrue(template_id)
+
+        res = self._post_json_as(
+            self.editor_user,
+            "classificacio_template_apply",
+            self.comp_target.id,
+            {
+                "template_id": template_id,
+                "nom": "Aplicada sense ack",
+                "activa": False,
+                "fallback_mode": "assistit",
+            },
+        )
+        self.assertEqual(res.status_code, 400)
+        body = res.json()
+        self.assertFalse(body.get("ok"))
+        self.assertEqual(body.get("phase"), "assistit")
+        self.assertIn("confirmar", str(body.get("error", "")).lower())
+
+    def test_template_apply_fallback_chain_strict_assistit_force(self):
+        save_res = self._post_json_as(
+            self.editor_user,
+            "classificacio_template_save",
+            self.comp_source.id,
+            {"cfg_id": self.cfg_source.id, "nom": "TPL Fallback Chain"},
+        )
+        self.assertEqual(save_res.status_code, 200)
+        template_id = save_res.json().get("template", {}).get("id")
+        self.assertTrue(template_id)
+
+        tpl = ClassificacioTemplateGlobal.objects.get(pk=template_id)
+        payload = json.loads(json.dumps(tpl.payload or {}))
+        schema = payload.get("schema") or {}
+        schema["particions"] = ["categoria"]
+        schema["particions_custom"] = {
+            "categoria": {
+                "mode": "custom",
+                "grups": [
+                    {"label": "Bloc 1", "values": ["ALEVI"]},
+                    {"label": "Bloc 2", "values": ["ALEVI"]},
+                ],
+            }
+        }
+        payload["schema"] = schema
+        tpl.payload = payload
+        tpl.save(update_fields=["payload", "updated_at"])
+
+        strict_res = self._post_json_as(
+            self.editor_user,
+            "classificacio_template_apply",
+            self.comp_target.id,
+            {
+                "template_id": template_id,
+                "nom": "Aplicada strict",
+                "activa": False,
+                "fallback_mode": "strict",
+            },
+        )
+        self.assertEqual(strict_res.status_code, 400)
+        strict_body = strict_res.json()
+        self.assertFalse(strict_body.get("compatible"))
+        self.assertEqual(strict_body.get("phase"), "strict")
+        self.assertEqual(strict_body.get("next_fallback"), "assistit")
+        self.assertTrue(strict_body.get("can_try_next"))
+
+        assistit_res = self._post_json_as(
+            self.editor_user,
+            "classificacio_template_apply",
+            self.comp_target.id,
+            {
+                "template_id": template_id,
+                "nom": "Aplicada assistit",
+                "activa": False,
+                "fallback_mode": "assistit",
+                "ack_warning": True,
+            },
+        )
+        self.assertEqual(assistit_res.status_code, 400)
+        assistit_body = assistit_res.json()
+        self.assertFalse(assistit_body.get("compatible"))
+        self.assertEqual(assistit_body.get("phase"), "assistit")
+        self.assertEqual(assistit_body.get("next_fallback"), "force")
+        self.assertTrue(assistit_body.get("can_try_next"))
+
+        force_res = self._post_json_as(
+            self.editor_user,
+            "classificacio_template_apply",
+            self.comp_target.id,
+            {
+                "template_id": template_id,
+                "nom": "Aplicada force",
+                "activa": False,
+                "fallback_mode": "force",
+                "ack_warning": True,
+            },
+        )
+        self.assertEqual(force_res.status_code, 200)
+        force_body = force_res.json()
+        self.assertTrue(force_body.get("ok"))
+        cfg = force_body.get("cfg") or {}
+        self.assertEqual(cfg.get("nom"), "Aplicada force")
+        self.assertEqual(
+            (((cfg.get("schema") or {}).get("puntuacio") or {}).get("aparells") or {}).get("ids"),
+            [self.target_app.id],
+        )
+        self.assertEqual(
+            (((cfg.get("schema") or {}).get("puntuacio") or {}).get("camps_per_aparell") or {}).get(str(self.target_app.id)),
+            ["total"],
+        )
+
+
 class JudgeVideoApiTests(_BaseTrampoliDataMixin, TestCase):
     def setUp(self):
         self.comp = self._create_competicio("Comp Video")
@@ -2057,6 +2332,7 @@ class PublicLiveTokenViewsTests(_BaseTrampoliDataMixin, TestCase):
 class CompetitionAccessControlTests(_BaseTrampoliDataMixin, TestCase):
     def setUp(self):
         self.comp = self._create_competicio("Comp Accessos")
+        self.other_comp = self._create_competicio("Comp Privada")
         self.app = self._create_aparell("TRAMP_ACCESS", "Tramp Access")
         self.comp_app = self._create_comp_aparell(self.comp, self.app, ordre=1, actiu=True)
 
@@ -2129,6 +2405,42 @@ class CompetitionAccessControlTests(_BaseTrampoliDataMixin, TestCase):
         res = self.client.get(url)
         self.assertEqual(res.status_code, 200)
 
+    def test_created_list_shows_only_user_membership_competitions(self):
+        url = reverse("created")
+        self.client.force_login(self.readonly_user)
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, self.comp.nom)
+        self.assertNotContains(res, self.other_comp.nom)
+
+    def test_competicions_manager_group_without_membership_cannot_open_foreign_competition(self):
+        url = reverse("inscripcions_list", kwargs={"pk": self.other_comp.id})
+        self.client.force_login(self.manager_user)
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, 403)
+
+    def test_create_competition_assigns_owner_membership_to_creator(self):
+        url = reverse("create")
+        self.client.force_login(self.readonly_user)
+        res = self.client.post(
+            url,
+            data={
+                "nom": "Comp Creada Usuari",
+                "tipus": Competicio.Tipus.TRAMPOLI,
+                "data": "",
+            },
+        )
+        self.assertEqual(res.status_code, 302)
+
+        created_comp = Competicio.objects.get(nom="Comp Creada Usuari")
+        membership = CompeticioMembership.objects.get(
+            user=self.readonly_user,
+            competicio=created_comp,
+        )
+        self.assertEqual(membership.role, CompeticioMembership.Role.OWNER)
+        self.assertTrue(membership.is_active)
+        self.assertEqual(membership.granted_by_id, self.readonly_user.id)
+
     def test_public_live_token_creation_persists_media_permission(self):
         url = reverse("public_live_qr_home", kwargs={"competicio_id": self.comp.id})
         self.client.force_login(self.judge_admin_user)
@@ -2155,3 +2467,52 @@ class CompetitionAccessControlTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(res_without_media.status_code, 302)
         token_without_media = PublicLiveToken.objects.get(competicio=self.comp, label="Public B")
         self.assertFalse(token_without_media.can_view_media)
+
+
+class AparellOwnershipIsolationTests(_BaseTrampoliDataMixin, TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.user_a = User.objects.create_user(
+            username="ap_owner_a",
+            password="testpass123",
+            email="ap-owner-a@example.com",
+        )
+        self.user_b = User.objects.create_user(
+            username="ap_owner_b",
+            password="testpass123",
+            email="ap-owner-b@example.com",
+        )
+
+        self.comp = self._create_competicio("Comp Aparell Owners")
+        CompeticioMembership.objects.create(
+            user=self.user_a,
+            competicio=self.comp,
+            role=CompeticioMembership.Role.EDITOR,
+            is_active=True,
+        )
+
+    def test_two_users_can_create_same_aparell_code(self):
+        ap_a = self._create_aparell("TRA", "Aparell TRA A", owner=self.user_a)
+        ap_b = self._create_aparell("TRA", "Aparell TRA B", owner=self.user_b)
+        self.assertNotEqual(ap_a.id, ap_b.id)
+
+    def test_cannot_attach_foreign_aparell_to_competition(self):
+        self._create_aparell("TRA", "Aparell propi", owner=self.user_a)
+        foreign = self._create_aparell("TRA", "Aparell aliè", owner=self.user_b)
+
+        self.client.force_login(self.user_a)
+        url = reverse("trampoli_aparell_create", kwargs={"pk": self.comp.id})
+        res = self.client.post(url, data={"aparell": foreign.id, "nombre_exercicis": 1})
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("form", res.context)
+        self.assertIn("aparell", res.context["form"].errors)
+        self.assertFalse(
+            CompeticioAparell.objects.filter(competicio=self.comp, aparell=foreign).exists()
+        )
+
+    def test_cannot_edit_foreign_aparell_catalog_entry(self):
+        foreign = self._create_aparell("TRA", "Aparell aliè", owner=self.user_b)
+        self.client.force_login(self.user_a)
+        url = reverse("aparell_update", kwargs={"pk": foreign.id})
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, 404)

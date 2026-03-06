@@ -4,6 +4,7 @@
 {% block content %}
 <div class="container mt-4">
   <div class="card-surface">
+    {% url 'trampoli_aparells_list' pk=competicio.id as competicio_aparells_url %}
 
     <div class="d-flex justify-content-between align-items-start mb-3">
       <div>
@@ -71,7 +72,7 @@
       <div class="d-flex flex-wrap gap-2">
         <button class="btn btn-primary" type="submit">Desar</button>
         <a class="btn btn-outline-secondary"
-           href="{{ request.GET.next|default:request.META.HTTP_REFERER }}">Cancelar</a>
+           href="{{ request.GET.next|default:competicio_aparells_url }}">Cancelar</a>
       </div>
     </form>
 

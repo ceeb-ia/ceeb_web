@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Competicions{% endblock %}
-{% load static %}
+{% load static competicio_extras %}
 
 {% block content %}
 <div class="container-fluid mt-4">
@@ -26,24 +26,32 @@
         </thead>
         <tbody>
           {% for c in competicions %}
+          {% with a=comp_actions|get_item:c.id %}
           <tr>
             <td class="fw-semibold">{{ c.nom }}</td>
             <td>{% if c.data %}{{ c.data|date:"d/m/Y" }}{% else %}-{% endif %}</td>
             <td class="text-end">
               <div class="d-flex flex-wrap justify-content-end align-items-center gap-2">
+                {% if a and a.can_view_inscripcions %}
                 <a class="btn btn-sm btn-outline-success" href="{% url 'inscripcions_list' c.id %}">Inscripcions</a>
+                {% endif %}
+                {% if a and a.can_view_rotacions %}
                 <a class="btn btn-sm btn-outline-primary" href="{% url 'rotacions_planner' c.id %}">Rotacions</a>
-                {% if c.te_notes %}
+                {% endif %}
+                {% if c.te_notes and a and a.can_view_notes %}
                   <a class="btn btn-sm btn-outline-dark" href="{% url 'notes_home' c.id %}">Notes</a>
-                  {% if c.tipus == 'trampoli' %}
+                  {% if c.tipus == 'trampoli' and a.can_view_trampoli_config %}
                     <a class="btn btn-sm btn-outline-secondary" href="{% url 'trampoli_config' c.id %}">Configuració</a>
                   {% endif %}
                 {% endif %}
                 {# quan el tinguis: <a ... href="{% url 'live' c.id %}">Directe</a> #}
+                {% if a and a.can_delete_competicio %}
                 <a class="btn btn-sm btn-outline-danger" href="{% url 'delete' c.id %}">Eliminar</a>
+                {% endif %}
               </div>
             </td>
           </tr>
+          {% endwith %}
           {% empty %}
           <tr><td colspan="3" class="text-center text-muted">Encara no hi ha competicions</td></tr>
           {% endfor %}

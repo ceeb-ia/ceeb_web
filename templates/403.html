@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+
+{% block title %}403 | Acces no permes{% endblock %}
+
+{% block content %}
+<section class="container" style="padding: 64px 16px; min-height: 60vh; display: grid; place-items: center;">
+  <div style="max-width: 760px; width: 100%; background: #fff; border: 1px solid #e9ecef; border-radius: 12px; padding: 32px; box-shadow: 0 8px 24px rgba(0,0,0,.06); text-align: center;">
+    <p style="margin: 0; font-size: 14px; letter-spacing: .08em; color: #6c757d;">ERROR 403</p>
+    <h1 style="margin: 8px 0 12px; font-size: 32px;">No tens permisos per accedir a aquesta pagina</h1>
+    <p style="margin: 0 0 24px; color: #495057;">
+      Si creus que es un error, contacta amb un administrador.
+    </p>
+    <a href="{% url 'home' %}" class="btn btn-primary">Tornar a l'inici</a>
+  </div>
+</section>
+{% endblock %}
