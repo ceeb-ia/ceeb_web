@@ -39,7 +39,7 @@ DEFAULT_SCHEMA = {
         # - "millor_n": tria els N millors
         # - "pitjor_1": tria el pitjor exercici
         # - "pitjor_n": tria els N pitjors
-        "exercicis": {"mode": "tots", "index": 1, "ids": []},
+        "exercicis": {"mode": "tots", "index": 1, "ids": [], "max_per_participant": 0},
         "exercicis_best_n": 1,
         # mode de seleccio d'exercicis:
         # - per_aparell_global: regla global aplicada per aparell
@@ -406,7 +406,15 @@ def _pick_exercicis(vals, mode: str, best_n: int):
     # fallback
     return xs
 
-def _pick_exercicis_rows(rows, mode: str, best_n: int, index=None, ids=None):
+def _pick_exercicis_rows(
+    rows,
+    mode: str,
+    best_n: int,
+    index=None,
+    ids=None,
+    max_per_participant=0,
+    participant_key="inscripcio_id",
+):
     """
     rows: [{"idx": int, "value": float, ...}, ...]
     retorna les files seleccionades (mantenint metadades).
@@ -428,22 +436,56 @@ def _pick_exercicis_rows(rows, mode: str, best_n: int, index=None, ids=None):
 
     m = (mode or "tots").lower().strip()
 
+    try:
+        max_pp = int(max_per_participant or 0)
+    except Exception:
+        max_pp = 0
+    max_pp = max(0, max_pp)
+
+    def _participant_id_for_row(row):
+        pid = row.get(participant_key)
+        if pid in (None, ""):
+            return "__single__"
+        return str(pid)
+
+    def _take_with_cap(rows_iter, limit=None):
+        if max_pp <= 0:
+            if limit is None:
+                return list(rows_iter)
+            return list(rows_iter)[:limit]
+
+        counts = defaultdict(int)
+        out = []
+        for r in rows_iter:
+            pid = _participant_id_for_row(r)
+            if counts[pid] >= max_pp:
+                continue
+            counts[pid] += 1
+            out.append(r)
+            if limit is not None and len(out) >= limit:
+                break
+        return out
+
     if m == "tots":
-        return xs
+        return _take_with_cap(xs)
 
     if m == "millor_1":
-        return sorted(xs, key=lambda r: (-_to_float(r.get("value")), r.get("idx", 0)))[:1]
+        ordered = sorted(xs, key=lambda r: (-_to_float(r.get("value")), r.get("idx", 0)))
+        return _take_with_cap(ordered, limit=1)
 
     if m == "millor_n":
         n = max(1, int(best_n or 1))
-        return sorted(xs, key=lambda r: (-_to_float(r.get("value")), r.get("idx", 0)))[:n]
+        ordered = sorted(xs, key=lambda r: (-_to_float(r.get("value")), r.get("idx", 0)))
+        return _take_with_cap(ordered, limit=n)
 
     if m == "pitjor_1":
-        return sorted(xs, key=lambda r: (_to_float(r.get("value")), r.get("idx", 0)))[:1]
+        ordered = sorted(xs, key=lambda r: (_to_float(r.get("value")), r.get("idx", 0)))
+        return _take_with_cap(ordered, limit=1)
 
     if m == "pitjor_n":
         n = max(1, int(best_n or 1))
-        return sorted(xs, key=lambda r: (_to_float(r.get("value")), r.get("idx", 0)))[:n]
+        ordered = sorted(xs, key=lambda r: (_to_float(r.get("value")), r.get("idx", 0)))
+        return _take_with_cap(ordered, limit=n)
 
     if m == "primer":
         first_idx = min(r.get("idx", 0) for r in xs)
@@ -478,12 +520,20 @@ def _pick_exercicis_rows(rows, mode: str, best_n: int, index=None, ids=None):
                 continue
             if iv > 0:
                 wanted.add(iv)
-        return [r for r in xs if r.get("idx") in wanted]
+        return _take_with_cap([r for r in xs if r.get("idx") in wanted])
 
-    return xs
+    return _take_with_cap(xs)
 
 
-def _pick_exercicis_tuples(ex_vals, mode: str, best_n: int, index=None, ids=None):
+def _pick_exercicis_tuples(
+    ex_vals,
+    mode: str,
+    best_n: int,
+    index=None,
+    ids=None,
+    max_per_participant=0,
+    participant_key="inscripcio_id",
+):
     """
     ex_vals: [(ex_idx, value), ...]
     retorna: [values...]
@@ -498,7 +548,15 @@ def _pick_exercicis_tuples(ex_vals, mode: str, best_n: int, index=None, ids=None
             continue
         rows.append({"idx": idx, "value": _to_float(item[1])})
 
-    picked = _pick_exercicis_rows(rows, mode, best_n, index=index, ids=ids)
+    picked = _pick_exercicis_rows(
+        rows,
+        mode,
+        best_n,
+        index=index,
+        ids=ids,
+        max_per_participant=max_per_participant,
+        participant_key=participant_key,
+    )
     return [_to_float(r.get("value")) for r in picked]
 
 
@@ -525,6 +583,12 @@ def _normalize_exercicis_cfg(raw_cfg, fallback=None):
         index = 1
     index = max(1, index)
 
+    try:
+        max_per_participant = int(cfg.get("max_per_participant", fb.get("max_per_participant", 0)))
+    except Exception:
+        max_per_participant = 0
+    max_per_participant = max(0, max_per_participant)
+
     ids_raw = cfg.get("ids", fb.get("ids", []))
     ids = []
     if isinstance(ids_raw, str):
@@ -550,6 +614,7 @@ def _normalize_exercicis_cfg(raw_cfg, fallback=None):
         "best_n": best_n,
         "index": index,
         "ids": ids,
+        "max_per_participant": max_per_participant,
     }
 
 
@@ -665,6 +730,12 @@ def _tie_key(crit: dict) -> str:
     elif ex_mode == "llista":
         ex_ids = ex.get("ids") or []
         ex_sig += ":" + ",".join(str(int(x)) for x in ex_ids)
+    try:
+        ex_max_pp = int(ex.get("max_per_participant") or 0)
+    except Exception:
+        ex_max_pp = 0
+    if ex_max_pp > 0:
+        ex_sig += f":mpp={ex_max_pp}"
 
     ex_sel_mode = (
         crit.get("mode_seleccio_exercicis")
@@ -684,7 +755,10 @@ def _tie_key(crit: dict) -> str:
     if isinstance(ex_per_app, dict) and ex_per_app:
         chunks = []
         for k in sorted(ex_per_app.keys(), key=lambda x: str(x)):
-            cfg = _normalize_exercicis_cfg(ex_per_app.get(k), fallback={"mode": "tots", "best_n": 1, "index": 1, "ids": []})
+            cfg = _normalize_exercicis_cfg(
+                ex_per_app.get(k),
+                fallback={"mode": "tots", "best_n": 1, "index": 1, "ids": [], "max_per_participant": 0},
+            )
             c = f"{k}:{cfg.get('mode')}"
             if cfg.get("mode") in ("millor_n", "pitjor_n"):
                 c += f":n={cfg.get('best_n')}"
@@ -693,6 +767,8 @@ def _tie_key(crit: dict) -> str:
             elif cfg.get("mode") == "llista":
                 ids_txt = ",".join(str(int(x)) for x in (cfg.get("ids") or []))
                 c += f":ids={ids_txt}"
+            if int(cfg.get("max_per_participant") or 0) > 0:
+                c += f":mpp={int(cfg.get('max_per_participant') or 0)}"
             chunks.append(c)
         ex_per_app_sig = ";".join(chunks)
 
@@ -1105,6 +1181,7 @@ def compute_classificacio(competicio, cfg_obj):
                         "app_id": app_id,
                         "app_order": app_order.get(app_id, 0),
                         "exercici": int(ex_idx),
+                        "inscripcio_id": ins_id,
                     })
 
             if not pool_rows:
@@ -1123,6 +1200,8 @@ def compute_classificacio(competicio, cfg_obj):
                 ex_best_n,
                 index=ex_index,
                 ids=ex_ids,
+                max_per_participant=base_ex_cfg.get("max_per_participant", 0),
+                participant_key="inscripcio_id",
             )
             picked_by_app = defaultdict(list)
             for row in picked_rows:
@@ -1153,6 +1232,8 @@ def compute_classificacio(competicio, cfg_obj):
                     ex_cfg_app["best_n"],
                     index=ex_cfg_app["index"],
                     ids=ex_cfg_app["ids"],
+                    max_per_participant=ex_cfg_app.get("max_per_participant", 0),
+                    participant_key="inscripcio_id",
                 )
                 score_app = _apply_simple_agg(picked, agg_exercicis)
                 per_ins[ins_id]["by_app"][app_id] = float(score_app)
@@ -1223,6 +1304,13 @@ def compute_classificacio(competicio, cfg_obj):
             crit_best_n = ex_best_n
         crit_ex_index = crit_ex.get("index", ex_index)
         crit_ex_ids = crit_ex.get("ids", ex_ids)
+        try:
+            crit_ex_max_per_participant = int(
+                crit_ex.get("max_per_participant", base_ex_cfg.get("max_per_participant", 0))
+            )
+        except Exception:
+            crit_ex_max_per_participant = int(base_ex_cfg.get("max_per_participant", 0) or 0)
+        crit_ex_max_per_participant = max(0, crit_ex_max_per_participant)
 
         crit_ex_cfg_global = _normalize_exercicis_cfg(
             {
@@ -1230,6 +1318,7 @@ def compute_classificacio(competicio, cfg_obj):
                 "best_n": crit_best_n,
                 "index": crit_ex_index,
                 "ids": crit_ex_ids,
+                "max_per_participant": crit_ex_max_per_participant,
             },
             fallback=base_ex_cfg,
         )
@@ -1328,6 +1417,7 @@ def compute_classificacio(competicio, cfg_obj):
                             "app_id": ta,
                             "app_order": app_order.get(ta, 0),
                             "exercici": int(ex_idx),
+                            "inscripcio_id": ins_id,
                         }
                     )
 
@@ -1344,6 +1434,8 @@ def compute_classificacio(competicio, cfg_obj):
                 crit_ex_cfg_global["best_n"],
                 index=crit_ex_cfg_global["index"],
                 ids=crit_ex_cfg_global["ids"],
+                max_per_participant=crit_ex_cfg_global.get("max_per_participant", 0),
+                participant_key="inscripcio_id",
             )
             picked_by_app = defaultdict(list)
             for row in picked_rows:
@@ -1366,6 +1458,8 @@ def compute_classificacio(competicio, cfg_obj):
                     ex_cfg_app["best_n"],
                     index=ex_cfg_app["index"],
                     ids=ex_cfg_app["ids"],
+                    max_per_participant=ex_cfg_app.get("max_per_participant", 0),
+                    participant_key="inscripcio_id",
                 )
                 val_app = _apply_simple_agg(picked, crit_agg_exercicis)
                 vals_apps.append(val_app)

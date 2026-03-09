@@ -2686,6 +2686,14 @@ def _validate_exercicis_cfg_obj(cfg, prefix: str):
         if not ids:
             errors.append(f"{prefix}.ids ha de contenir almenys un index valid (>0).")
 
+    if "max_per_participant" in cfg:
+        try:
+            max_pp = int(cfg.get("max_per_participant"))
+        except Exception:
+            max_pp = -1
+        if max_pp < 0:
+            errors.append(f"{prefix}.max_per_participant ha de ser >= 0.")
+
     return errors
 
 

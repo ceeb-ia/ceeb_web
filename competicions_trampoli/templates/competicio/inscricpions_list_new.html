@@ -143,6 +143,65 @@
       border-radius: 12px;
       padding: 10px 12px;
     }
+    .search-bar-card {
+      background: #f7f8fb;
+      border: 1px solid #e3e6ef;
+      border-radius: 12px;
+      padding: 10px 12px;
+    }
+    .search-bar-main {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .search-input-wrap {
+      position: relative;
+      flex: 1 1 380px;
+      min-width: 240px;
+    }
+    .search-input-icon {
+      position: absolute;
+      left: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: #6b7280;
+      pointer-events: none;
+      line-height: 0;
+    }
+    .search-input {
+      border: 1px solid #d8e1f1;
+      border-radius: 10px;
+      padding-left: 34px;
+      background: #ffffff;
+    }
+    .search-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .search-bar-meta {
+      margin-top: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .search-meta-sep {
+      color: #9ca3af;
+    }
+    @media (max-width: 767.98px) {
+      .search-bar-main {
+        align-items: stretch;
+      }
+      .search-actions {
+        width: 100%;
+      }
+      .search-actions .btn {
+        flex: 1 1 auto;
+      }
+    }
 
     /* Files d'agrupació */
     tr.group-row { background-color: #f2f4f7; border-top: 2px solid #cbd5e1; }
@@ -461,39 +520,41 @@
     </div>
 
     <!-- BUSCADOR -->
-    <div class="mb-3">
-      <div class="input-group input-group-sm" style="max-width: 500px;">
-        <input type="text"
-               class="form-control form-control-sm buscador-inscripcions"
-               id="search-input"
-               placeholder="Cerca per nom, cognoms, DNI, entitat..."
-               value="{{ request.GET.q|default:'' }}"
-               autocomplete="off"
-               style="font-size: 0.95rem; padding: 0.25rem 0.5rem;">
-        <div class="input-group-append">
-          <button class="btn btn-primary btn-sm" type="button" id="search-btn" style="font-size: 0.95rem; padding: 0.25rem 0.75rem;">
+    <div class="mb-3 search-bar-card">
+      <div class="search-bar-main">
+        <div class="search-input-wrap">
+          <span class="search-input-icon" aria-hidden="true">
             <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
               <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/>
             </svg>
+          </span>
+          <input type="text"
+                 class="form-control form-control-sm buscador-inscripcions search-input"
+                 id="search-input"
+                 placeholder="Cerca per nom, cognoms, DNI, entitat..."
+                 value="{{ request.GET.q|default:'' }}"
+                 autocomplete="off">
+        </div>
+        <div class="search-actions">
+          <button class="btn btn-primary btn-sm" type="button" id="search-btn">
             Cerca
           </button>
           {% if request.GET.q %}
-          <button class="btn btn-outline-secondary btn-sm" type="button" id="clear-search-btn" title="Esborrar cerca" style="font-size: 0.95rem; padding: 0.25rem 0.75rem;">
-            <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-              <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8 2.146 2.854Z"/>
-            </svg>
+          <button class="btn btn-outline-secondary btn-sm" type="button" id="clear-search-btn" title="Esborrar cerca">
+            Netejar
           </button>
           {% endif %}
         </div>
       </div>
-      <div class="small text-muted mt-1">
-        Mostrant <span class="fw-semibold">{{ inscrits_filtered_count }}</span> participants
+      <div class="small text-muted search-bar-meta">
+        <span>Mostrant <span class="fw-semibold">{{ inscrits_filtered_count }}</span> participants</span>
         {% if inscrits_filtered_count != inscrits_total_count %}
           <span>de {{ inscrits_total_count }}</span>
         {% endif %}
-        - Cerca en temps real per nom, cognoms, DNI o entitat
+        <span class="search-meta-sep">-</span>
+        <span>Cerca en temps real per nom, cognoms, DNI o entitat</span>
         {% if request.GET.q %}
-          <span class="badge badge-primary ml-2">Filtrant: "{{ request.GET.q }}"</span>
+          <span class="badge badge-primary ml-1">Filtrant: "{{ request.GET.q }}"</span>
         {% endif %}
       </div>
     </div>
@@ -503,6 +564,19 @@
       <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
         <div class="text-muted small">Configuracions plegables: obre només el que necessitis.</div>
         <div class="d-flex flex-wrap gap-2">
+          <button type="button"
+                  class="btn btn-sm btn-outline-secondary"
+                  id="btn-history-undo"
+                  {% if not can_edit_inscripcions or not history_state.can_undo %}disabled{% endif %}>
+            Desfer
+          </button>
+          <button type="button"
+                  class="btn btn-sm btn-outline-secondary"
+                  id="btn-history-redo"
+                  {% if not can_edit_inscripcions or not history_state.can_redo %}disabled{% endif %}>
+            Refer
+          </button>
+          <span class="text-muted small align-self-center" id="history-stack-summary"></span>
           <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleAllPanels(true)">Desplegar tot</button>
           <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleAllPanels(false)">Plegar tot</button>
         </div>
@@ -549,11 +623,6 @@
                   </a>
                 {% endif %}
 
-                <button class="btn btn-sm btn-outline-warning"
-                        name="undo" value="1"
-                        {% if not request.session.inscripcions_undo_state %}disabled{% endif %}>
-                  Tirar enrere
-                </button>
               </div>
 
               <div class="chips">
@@ -857,11 +926,6 @@
                   </div>
                   <div class="btn-row">
                     <button type="button"
-                            class="btn btn-sm btn-outline-secondary js-col-sort-undo"
-                            {% if not column_sort_has_stack %}disabled{% endif %}>
-                      Desfer ultima
-                    </button>
-                    <button type="button"
                             class="btn btn-sm btn-outline-secondary js-col-sort-clear"
                             {% if not column_sort_has_stack %}disabled{% endif %}>
                       Netejar ordenacions
@@ -1078,13 +1142,7 @@
                                   </div>
                                 </div>
 
-                                <div class="d-flex justify-content-between mt-2" style="gap:8px;">
-                                  <button
-                                    type="button"
-                                    class="btn btn-sm btn-outline-secondary js-col-sort-undo"
-                                    {% if not column_sort_has_stack %}disabled{% endif %}>
-                                    Desfer ultima
-                                  </button>
+                                <div class="d-flex justify-content-end mt-2" style="gap:8px;">
                                   <button type="button" class="btn btn-sm btn-primary js-col-sort-apply">Aplicar</button>
                                 </div>
                               </div>
@@ -1270,13 +1328,7 @@
                             </div>
                           </div>
 
-                          <div class="d-flex justify-content-between mt-2" style="gap:8px;">
-                            <button
-                              type="button"
-                              class="btn btn-sm btn-outline-secondary js-col-sort-undo"
-                              {% if not column_sort_has_stack %}disabled{% endif %}>
-                              Desfer ultima
-                            </button>
+                          <div class="d-flex justify-content-end mt-2" style="gap:8px;">
                             <button type="button" class="btn btn-sm btn-primary js-col-sort-apply">Aplicar</button>
                           </div>
                         </div>
@@ -1432,7 +1484,15 @@
     return (li && li.getAttribute('data-group-label')) ? li.getAttribute('data-group-label') : groupKey;
   }
 
-  const canEditInscripcions = true;
+  const canEditInscripcions = {% if can_edit_inscripcions %}true{% else %}false{% endif %};
+  let inscripcionsHistoryState = {
+    can_undo: {% if history_state.can_undo %}true{% else %}false{% endif %},
+    can_redo: {% if history_state.can_redo %}true{% else %}false{% endif %},
+    undo_label: "{{ history_state.undo_label|default:''|escapejs }}",
+    redo_label: "{{ history_state.redo_label|default:''|escapejs }}",
+    undo_count: {{ history_state.undo_count|default:0 }},
+    redo_count: {{ history_state.redo_count|default:0 }}
+  };
 
   const UI_STATE_MAX_AGE_MS = 45 * 60 * 1000;
   let __uiStateRestoring = false;
@@ -1666,6 +1726,22 @@
 
   document.addEventListener('DOMContentLoaded', function() {
     restoreUiState();
+    applyHistoryState(inscripcionsHistoryState);
+
+    const btnHistoryUndo = document.getElementById('btn-history-undo');
+    if (btnHistoryUndo) {
+      btnHistoryUndo.addEventListener('click', async () => {
+        if (btnHistoryUndo.disabled) return;
+        await undoHistory();
+      });
+    }
+    const btnHistoryRedo = document.getElementById('btn-history-redo');
+    if (btnHistoryRedo) {
+      btnHistoryRedo.addEventListener('click', async () => {
+        if (btnHistoryRedo.disabled) return;
+        await redoHistory();
+      });
+    }
 
     const controlsForm = document.querySelector('form.mb-3');
     if (controlsForm) {
@@ -1868,6 +1944,76 @@
         .filter(v => !!v);
     }
 
+    function applyHistoryState(state) {
+      const next = (state && typeof state === 'object') ? state : {};
+      inscripcionsHistoryState = Object.assign(
+        {
+          can_undo: false,
+          can_redo: false,
+          undo_label: '',
+          redo_label: '',
+          undo_count: 0,
+          redo_count: 0,
+        },
+        next
+      );
+
+      const undoBtn = document.getElementById('btn-history-undo');
+      const redoBtn = document.getElementById('btn-history-redo');
+      const summary = document.getElementById('history-stack-summary');
+      if (undoBtn) {
+        undoBtn.disabled = (!canEditInscripcions) || (!inscripcionsHistoryState.can_undo);
+        undoBtn.title = inscripcionsHistoryState.undo_label
+          ? `Desfer: ${inscripcionsHistoryState.undo_label}`
+          : 'No hi ha canvis per desfer';
+      }
+      if (redoBtn) {
+        redoBtn.disabled = (!canEditInscripcions) || (!inscripcionsHistoryState.can_redo);
+        redoBtn.title = inscripcionsHistoryState.redo_label
+          ? `Refer: ${inscripcionsHistoryState.redo_label}`
+          : 'No hi ha canvis per refer';
+      }
+      if (summary) {
+        summary.textContent = `Desfer ${Number(inscripcionsHistoryState.undo_count || 0)} · Refer ${Number(inscripcionsHistoryState.redo_count || 0)}`;
+      }
+    }
+
+    async function undoHistory() {
+      try {
+        const data = await postJson(historyUndoUrl, {});
+        if (!data || !data.ok) {
+          showAlert("No s'ha pogut desfer l'ultim canvi.");
+          return;
+        }
+        if (!data.applied) {
+          applyHistoryState(data.history);
+          showAlert("No hi ha cap canvi per desfer.");
+          return;
+        }
+        reloadWithUiState();
+      } catch (err) {
+        showAlert(`No s'ha pogut desfer l'ultim canvi.\n${err.message || err}`);
+      }
+    }
+
+    async function redoHistory() {
+      try {
+        const data = await postJson(historyRedoUrl, {});
+        if (!data || !data.ok) {
+          showAlert("No s'ha pogut refer el canvi.");
+          return;
+        }
+        if (!data.applied) {
+          applyHistoryState(data.history);
+          showAlert("No hi ha cap canvi per refer.");
+          return;
+        }
+        reloadWithUiState();
+      } catch (err) {
+        showAlert(`No s'ha pogut refer el canvi.\n${err.message || err}`);
+      }
+    }
+
     async function postJson(url, payload) {
       const resp = await fetch(url, {
         method: 'POST',
@@ -1881,7 +2027,11 @@
         const txt = await resp.text();
         throw new Error(txt || `HTTP ${resp.status}`);
       }
-      return await resp.json();
+      const data = await resp.json();
+      if (data && typeof data === 'object' && data.history) {
+        applyHistoryState(data.history);
+      }
+      return data;
     }
 
     const sortApplyUrl = "{% url 'inscripcions_sort_apply' competicio.id %}";
@@ -1889,9 +2039,9 @@
     const sortClearUrl = "{% url 'inscripcions_sort_clear' competicio.id %}";
     const sortCustomValuesUrl = "{% url 'inscripcions_sort_custom_values' competicio.id %}";
     const sortCustomSaveUrl = "{% url 'inscripcions_sort_custom_save' competicio.id %}";
-    const sortUndoUrl = "{% url 'inscripcions_sort_undo' competicio.id %}";
+    const historyUndoUrl = "{% url 'inscripcions_history_undo' competicio.id %}";
+    const historyRedoUrl = "{% url 'inscripcions_history_redo' competicio.id %}";
     const groupsFromSortUrl = "{% url 'inscripcions_groups_from_sort' competicio.id %}";
-
     function normalizeCustomOrderValues(rawValues) {
       const out = [];
       const seen = new Set();
@@ -2356,29 +2506,6 @@
       }
     }
 
-    async function undoColumnSort() {
-      const payload = {
-        filters: getCurrentInscripcioFilters(),
-        group_by: getCurrentGroupByCodes(),
-      };
-
-      try {
-        const data = await postJson(sortUndoUrl, payload);
-        if (!data || !data.ok) {
-          showAlert("No s'ha pogut desfer l'ordenacio.");
-          return;
-        }
-        if (!(Number(data.restored) > 0)) {
-          showAlert("No hi ha cap ordenacio per desfer.");
-          return;
-        }
-        closeColumnSortMenus();
-        reloadWithUiState();
-      } catch (err) {
-        showAlert(`No s'ha pogut desfer l'ordenacio.\\n${err.message || err}`);
-      }
-    }
-
     async function clearColumnSort() {
       const payload = {
         filters: getCurrentInscripcioFilters(),
@@ -2540,15 +2667,6 @@
           e.stopPropagation();
           const menu = btn.closest('[data-col-sort-menu]');
           await applyColumnSort(menu);
-        });
-      });
-
-      document.querySelectorAll('.js-col-sort-undo').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          if (btn.disabled) return;
-          await undoColumnSort();
         });
       });
 

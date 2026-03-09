@@ -1070,48 +1070,36 @@ def franges_export_excel(request, pk):
             return json.dumps(value, ensure_ascii=False)
         return str(value)
 
-    def _fit_cell_text(value: str, width: int):
-        text = str(value or "")
-        if len(text) <= width:
-            return text.ljust(width)
-        if width <= 3:
-            return text[:width]
-        return (text[: width - 3] + "...")
+    def _ordered_inscripcions_for_cell(franja, estacio, groups):
+        if not groups:
+            return []
 
-    def _render_participants_block(inscripcions):
-        if not inscripcions:
-            return "-"
-        if not participant_fields:
-            return "\n".join(
-                (_format_field_value(getattr(ins, "nom_i_cognoms", None)) or "-")
-                for ins in inscripcions
+        mode_for_franja = franja_modes.get(str(franja.id), ORDER_MODE_MAINTAIN)
+        rotate_steps = franja_pos.get(franja.id, 0)
+        comp_aparell_id = estacio_comp_aparell.get(estacio.id)
+
+        ordered_inscripcions = []
+        seen_ins = set()
+        for g in groups:
+            base_pairs = []
+            for ins in ins_by_grup.get(g, []):
+                ins_id = ins.id
+                if comp_aparell_id and (ins_id, comp_aparell_id) in excluded_pairs:
+                    continue
+                base_pairs.append((ins_id, ins))
+
+            ordered_pairs = order_pairs_for_mode(
+                base_pairs,
+                mode_for_franja,
+                rotate_steps=rotate_steps,
+                seed_prefix=f"rot-export|{competicio.id}|{franja.id}|{estacio.id}|{g}",
             )
-
-        headers = [participant_field_labels.get(code, code) for code in participant_fields]
-        rows = []
-        for ins in inscripcions:
-            rows.append(
-                [
-                    _format_field_value(_inscripcio_field_value(ins, code))
-                    for code in participant_fields
-                ]
-            )
-
-        widths = []
-        for idx, header in enumerate(headers):
-            col_values = [row[idx] for row in rows]
-            col_width = max([len(header)] + [len(v) for v in col_values])
-            widths.append(min(24, max(6, col_width)))
-
-        lines = [
-            " | ".join(_fit_cell_text(headers[idx], widths[idx]) for idx in range(len(widths))),
-            "-+-".join("-" * widths[idx] for idx in range(len(widths))),
-        ]
-        for row in rows:
-            lines.append(
-                " | ".join(_fit_cell_text(row[idx], widths[idx]) for idx in range(len(widths)))
-            )
-        return "\n".join(lines)
+            for ins_id, ins in ordered_pairs:
+                if ins_id in seen_ins:
+                    continue
+                seen_ins.add(ins_id)
+                ordered_inscripcions.append(ins)
+        return ordered_inscripcions
 
     titol_competicio = str(export_meta.get("title", "") or "").strip() or getattr(
         competicio, "nom", f"Competicio {competicio.id}"
@@ -1132,10 +1120,9 @@ def franges_export_excel(request, pk):
     ws.title = "Rotacions"
 
     center = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    left_top = Alignment(horizontal="left", vertical="top", wrap_text=True)
+    left_center = Alignment(horizontal="left", vertical="center", wrap_text=False)
     center_no_wrap = Alignment(horizontal="center", vertical="center")
     bold = Font(bold=True)
-    mono = Font(name="Consolas", size=10)
 
     fill_title = PatternFill("solid", fgColor="1F4E79")
     fill_sub = PatternFill("solid", fgColor="D9E1F2")
@@ -1145,7 +1132,14 @@ def franges_export_excel(request, pk):
     thin = Side(style="thin", color="9AA7B2")
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
-    total_cols = 1 + len(estacions)
+    if mode == "participants":
+        if not participant_fields:
+            participant_fields = ["nom_i_cognoms"]
+            participant_field_labels.setdefault("nom_i_cognoms", "Nom i cognoms")
+        participant_cols_per_estacio = max(1, len(participant_fields))
+        total_cols = 1 + (len(estacions) * participant_cols_per_estacio)
+    else:
+        total_cols = 1 + len(estacions)
 
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=total_cols)
     c = ws.cell(row=1, column=1, value=titol_competicio)
@@ -1161,91 +1155,179 @@ def franges_export_excel(request, pk):
 
     ws.append([])
 
-    header_row = ws.max_row + 1
-    ws.cell(row=header_row, column=1, value="Franja").font = bold
-    ws.cell(row=header_row, column=1).fill = fill_hdr
-    ws.cell(row=header_row, column=1).alignment = center_no_wrap
-    ws.cell(row=header_row, column=1).border = border
+    ws.column_dimensions[get_column_letter(1)].width = 22
 
-    for j, e in enumerate(estacions, start=2):
-        cell = ws.cell(row=header_row, column=j, value=e.nom)
-        cell.font = bold
-        cell.fill = fill_hdr
-        cell.alignment = center_no_wrap
-        cell.border = border
+    if mode == "participants":
+        header_row_top = ws.max_row + 1
+        header_row_sub = header_row_top + 1
+        data_start_row = header_row_sub + 1
 
-    row_line_counts = {}
+        ws.merge_cells(
+            start_row=header_row_top,
+            start_column=1,
+            end_row=header_row_sub,
+            end_column=1,
+        )
+        franja_hdr = ws.cell(row=header_row_top, column=1, value="Franja")
+        franja_hdr.font = bold
+        franja_hdr.fill = fill_hdr
+        franja_hdr.alignment = center_no_wrap
+        franja_hdr.border = border
+        ws.cell(row=header_row_sub, column=1).fill = fill_hdr
+        ws.cell(row=header_row_sub, column=1).border = border
 
-    for i, f in enumerate(franges, start=1):
-        r = header_row + i
-        label = (f.titol or "").strip() or "Franja"
-        fr_txt = f"{label}\n{f.hora_inici.strftime('%H:%M')}-{f.hora_fi.strftime('%H:%M')}"
-        row_max_lines = fr_txt.count("\n") + 1
+        estacio_col_ranges = {}
+        col_cursor = 2
+        for e in estacions:
+            start_col = col_cursor
+            end_col = start_col + participant_cols_per_estacio - 1
+            estacio_col_ranges[e.id] = (start_col, end_col)
 
-        c0 = ws.cell(row=r, column=1, value=fr_txt)
-        c0.alignment = center
-        c0.border = border
+            ws.merge_cells(
+                start_row=header_row_top,
+                start_column=start_col,
+                end_row=header_row_top,
+                end_column=end_col,
+            )
+            e_cell = ws.cell(row=header_row_top, column=start_col, value=e.nom)
+            e_cell.font = bold
+            e_cell.fill = fill_hdr
+            e_cell.alignment = center_no_wrap
 
-        if i % 2 == 0:
-            for col in range(1, total_cols + 1):
-                ws.cell(row=r, column=col).fill = fill_zebra
+            for col in range(start_col, end_col + 1):
+                ws.cell(row=header_row_top, column=col).fill = fill_hdr
+                ws.cell(row=header_row_top, column=col).border = border
+
+            for idx, code in enumerate(participant_fields):
+                sub_col = start_col + idx
+                label = participant_field_labels.get(code, code)
+                sub = ws.cell(row=header_row_sub, column=sub_col, value=label)
+                sub.font = bold
+                sub.fill = fill_hdr
+                sub.alignment = center_no_wrap
+                sub.border = border
+
+            col_cursor = end_col + 1
+
+        field_width_map = {
+            "nom_i_cognoms": 24,
+            "sexe": 10,
+            "entitat": 20,
+            "categoria": 14,
+            "subcategoria": 14,
+            "document": 16,
+            "data_naixement": 14,
+            "grup": 8,
+            "ordre_sortida": 8,
+        }
+        for e in estacions:
+            start_col, _end_col = estacio_col_ranges[e.id]
+            for idx, code in enumerate(participant_fields):
+                width = field_width_map.get(code, 14)
+                ws.column_dimensions[get_column_letter(start_col + idx)].width = width
+
+        current_row = data_start_row
+        for i, f in enumerate(franges, start=1):
+            label = (f.titol or "").strip() or "Franja"
+            fr_txt = f"{label}\n{f.hora_inici.strftime('%H:%M')}-{f.hora_fi.strftime('%H:%M')}"
+
+            cell_participants = {}
+            max_participants = 0
+            for e in estacions:
+                gs = cell_groups.get((f.id, e.id), [])
+                ordered = _ordered_inscripcions_for_cell(f, e, gs)
+                cell_participants[e.id] = ordered
+                if len(ordered) > max_participants:
+                    max_participants = len(ordered)
+
+            block_rows = max(1, max_participants)
+            start_row = current_row
+            end_row = start_row + block_rows - 1
+
+            ws.merge_cells(
+                start_row=start_row,
+                start_column=1,
+                end_row=end_row,
+                end_column=1,
+            )
+            fr_cell = ws.cell(row=start_row, column=1, value=fr_txt)
+            fr_cell.alignment = center
+            fr_cell.border = border
+            for rr in range(start_row, end_row + 1):
+                c1 = ws.cell(row=rr, column=1)
+                c1.alignment = center
+                c1.border = border
+                ws.row_dimensions[rr].height = 22
+
+            if i % 2 == 0:
+                for rr in range(start_row, end_row + 1):
+                    for col in range(1, total_cols + 1):
+                        ws.cell(row=rr, column=col).fill = fill_zebra
+
+            for rr_offset in range(block_rows):
+                rr = start_row + rr_offset
+                for e in estacions:
+                    start_col, _end_col = estacio_col_ranges[e.id]
+                    ordered = cell_participants.get(e.id, [])
+                    current_ins = ordered[rr_offset] if rr_offset < len(ordered) else None
+                    for idx, code in enumerate(participant_fields):
+                        value = ""
+                        if current_ins is not None:
+                            value = _format_field_value(_inscripcio_field_value(current_ins, code))
+                        cell = ws.cell(row=rr, column=start_col + idx, value=value)
+                        cell.alignment = left_center
+                        cell.border = border
+
+            current_row = end_row + 1
+
+        ws.row_dimensions[header_row_top].height = 24
+        ws.row_dimensions[header_row_sub].height = 22
+        ws.freeze_panes = ws["B" + str(data_start_row)]
+    else:
+        header_row = ws.max_row + 1
+        ws.cell(row=header_row, column=1, value="Franja").font = bold
+        ws.cell(row=header_row, column=1).fill = fill_hdr
+        ws.cell(row=header_row, column=1).alignment = center_no_wrap
+        ws.cell(row=header_row, column=1).border = border
 
         for j, e in enumerate(estacions, start=2):
-            gs = cell_groups.get((f.id, e.id), [])
-            if not gs:
-                txt = ""
-            elif mode == "groups":
-                labels = unique_ordered(_group_label(g) for g in gs)
-                txt = "\n".join(labels) if labels else "-"
-            else:
-                mode_for_franja = franja_modes.get(str(f.id), ORDER_MODE_MAINTAIN)
-                rotate_steps = franja_pos.get(f.id, 0)
-                comp_aparell_id = estacio_comp_aparell.get(e.id)
-
-                ordered_inscripcions = []
-                seen_ins = set()
-                for g in gs:
-                    base_pairs = []
-                    for ins in ins_by_grup.get(g, []):
-                        ins_id = ins.id
-                        if comp_aparell_id and (ins_id, comp_aparell_id) in excluded_pairs:
-                            continue
-                        base_pairs.append((ins_id, ins))
-
-                    ordered_pairs = order_pairs_for_mode(
-                        base_pairs,
-                        mode_for_franja,
-                        rotate_steps=rotate_steps,
-                        seed_prefix=f"rot-export|{competicio.id}|{f.id}|{e.id}|{g}",
-                    )
-                    for ins_id, ins in ordered_pairs:
-                        if ins_id in seen_ins:
-                            continue
-                        seen_ins.add(ins_id)
-                        ordered_inscripcions.append(ins)
-
-                txt = _render_participants_block(ordered_inscripcions)
-            row_max_lines = max(row_max_lines, (txt.count("\n") + 1) if txt else 1)
-
-            cell = ws.cell(row=r, column=j, value=txt)
-            if mode == "participants":
-                cell.alignment = left_top
-                cell.font = mono
-            else:
-                cell.alignment = center
+            cell = ws.cell(row=header_row, column=j, value=e.nom)
+            cell.font = bold
+            cell.fill = fill_hdr
+            cell.alignment = center_no_wrap
             cell.border = border
-        row_line_counts[r] = row_max_lines
 
-    ws.column_dimensions[get_column_letter(1)].width = 22
-    for j in range(2, total_cols + 1):
-        ws.column_dimensions[get_column_letter(j)].width = 36 if mode == "participants" else 24
+        for i, f in enumerate(franges, start=1):
+            r = header_row + i
+            label = (f.titol or "").strip() or "Franja"
+            fr_txt = f"{label}\n{f.hora_inici.strftime('%H:%M')}-{f.hora_fi.strftime('%H:%M')}"
 
-    for r in range(header_row + 1, header_row + 1 + len(franges)):
-        if mode == "participants":
-            lines = max(1, int(row_line_counts.get(r, 1)))
-            ws.row_dimensions[r].height = max(60, min(220, 13 * lines + 8))
-        else:
+            c0 = ws.cell(row=r, column=1, value=fr_txt)
+            c0.alignment = center
+            c0.border = border
+
+            if i % 2 == 0:
+                for col in range(1, total_cols + 1):
+                    ws.cell(row=r, column=col).fill = fill_zebra
+
+            for j, e in enumerate(estacions, start=2):
+                gs = cell_groups.get((f.id, e.id), [])
+                if not gs:
+                    txt = ""
+                else:
+                    labels = unique_ordered(_group_label(g) for g in gs)
+                    txt = "\n".join(labels) if labels else "-"
+                cell = ws.cell(row=r, column=j, value=txt)
+                cell.alignment = center
+                cell.border = border
+
             ws.row_dimensions[r].height = 30
+
+        for j in range(2, total_cols + 1):
+            ws.column_dimensions[get_column_letter(j)].width = 24
+
+        ws.row_dimensions[header_row].height = 22
+        ws.freeze_panes = ws["B" + str(header_row + 1)]
 
     logo_added = False
     if logo_path:
@@ -1264,10 +1346,6 @@ def franges_export_excel(request, pk):
 
     ws.row_dimensions[1].height = 42 if logo_added else 28
     ws.row_dimensions[2].height = 20
-    ws.row_dimensions[header_row].height = 22
-
-    ws.freeze_panes = ws["B" + str(header_row + 1)]
-
     response = HttpResponse(
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
@@ -1277,4 +1355,3 @@ def franges_export_excel(request, pk):
     )
     wb.save(response)
     return response
-

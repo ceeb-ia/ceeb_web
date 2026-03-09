@@ -10,7 +10,12 @@ from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.http import require_POST
 
 from .models import Competicio, Equip, Inscripcio
-from .views import get_allowed_group_fields
+from .views import (
+    capture_inscripcions_history_snapshot,
+    get_allowed_group_fields,
+    record_inscripcions_history_entry,
+    with_inscripcions_history_payload,
+)
 
 
 def _norm_val(v):
@@ -191,8 +196,15 @@ def equips_auto_create(request, pk):
     builtin_fields = [f for f in fields if hasattr(Inscripcio, f)]
     records = list(qs.only("id", "extra", "equip_id", *builtin_fields).order_by("ordre_sortida", "id"))
     if not records:
-        return JsonResponse({"ok": True, "created": 0, "updated": 0, "equips": []})
+        return JsonResponse(
+            with_inscripcions_history_payload(
+                {"ok": True, "created": 0, "updated": 0, "equips": []},
+                request,
+                competicio.id,
+            )
+        )
 
+    before_snapshot = capture_inscripcions_history_snapshot(request, competicio)
     grouped = _partition_records(records, fields)
     team_by_key = {}
     created = 0
@@ -231,13 +243,25 @@ def equips_auto_create(request, pk):
     if updates:
         Inscripcio.objects.bulk_update(updates, ["equip"], batch_size=500)
 
+    record_inscripcions_history_entry(
+        request,
+        competicio,
+        action_type="equips_auto_create",
+        action_label="Crear equips automaticament",
+        before_snapshot=before_snapshot,
+        after_snapshot=capture_inscripcions_history_snapshot(request, competicio),
+    )
     return JsonResponse(
-        {
-            "ok": True,
-            "created": created,
-            "updated": len(updates),
-            "equips": _serialize_equips(competicio),
-        }
+        with_inscripcions_history_payload(
+            {
+                "ok": True,
+                "created": created,
+                "updated": len(updates),
+                "equips": _serialize_equips(competicio),
+            },
+            request,
+            competicio.id,
+        )
     )
 
 
@@ -254,6 +278,7 @@ def equips_create_manual(request, pk):
     if not nom:
         return HttpResponseBadRequest("name buit")
 
+    before_snapshot = capture_inscripcions_history_snapshot(request, competicio)
     equip, created = Equip.objects.get_or_create(
         competicio=competicio,
         nom=nom,
@@ -271,14 +296,26 @@ def equips_create_manual(request, pk):
             id__in=ids_clean,
         ).update(equip=equip)
 
+    record_inscripcions_history_entry(
+        request,
+        competicio,
+        action_type="equips_create_manual",
+        action_label="Crear equip manual",
+        before_snapshot=before_snapshot,
+        after_snapshot=capture_inscripcions_history_snapshot(request, competicio),
+    )
     return JsonResponse(
-        {
-            "ok": True,
-            "created": created,
-            "equip_id": equip.id,
-            "updated": updated,
-            "equips": _serialize_equips(competicio),
-        }
+        with_inscripcions_history_payload(
+            {
+                "ok": True,
+                "created": created,
+                "equip_id": equip.id,
+                "updated": updated,
+                "equips": _serialize_equips(competicio),
+            },
+            request,
+            competicio.id,
+        )
     )
 
 
@@ -303,8 +340,23 @@ def equips_assign(request, pk):
     if not ids_clean:
         return HttpResponseBadRequest("No hi ha inscripcions seleccionades")
 
+    before_snapshot = capture_inscripcions_history_snapshot(request, competicio)
     updated = Inscripcio.objects.filter(competicio=competicio, id__in=ids_clean).update(equip=equip)
-    return JsonResponse({"ok": True, "updated": updated})
+    record_inscripcions_history_entry(
+        request,
+        competicio,
+        action_type="equips_assign",
+        action_label="Assignar equip",
+        before_snapshot=before_snapshot,
+        after_snapshot=capture_inscripcions_history_snapshot(request, competicio),
+    )
+    return JsonResponse(
+        with_inscripcions_history_payload(
+            {"ok": True, "updated": updated},
+            request,
+            competicio.id,
+        )
+    )
 
 
 @require_POST
@@ -323,8 +375,23 @@ def equips_unassign(request, pk):
     if not ids_clean:
         return HttpResponseBadRequest("No hi ha inscripcions seleccionades")
 
+    before_snapshot = capture_inscripcions_history_snapshot(request, competicio)
     updated = Inscripcio.objects.filter(competicio=competicio, id__in=ids_clean).update(equip=None)
-    return JsonResponse({"ok": True, "updated": updated})
+    record_inscripcions_history_entry(
+        request,
+        competicio,
+        action_type="equips_unassign",
+        action_label="Treure equip",
+        before_snapshot=before_snapshot,
+        after_snapshot=capture_inscripcions_history_snapshot(request, competicio),
+    )
+    return JsonResponse(
+        with_inscripcions_history_payload(
+            {"ok": True, "updated": updated},
+            request,
+            competicio.id,
+        )
+    )
 
 
 @require_POST
@@ -345,9 +412,24 @@ def equips_rename(request, pk, equip_id):
     if exists:
         return HttpResponseBadRequest("Ja existeix un equip amb aquest nom")
 
+    before_snapshot = capture_inscripcions_history_snapshot(request, competicio)
     equip.nom = new_name
     equip.save(update_fields=["nom", "updated_at"])
-    return JsonResponse({"ok": True, "equip_id": equip.id, "name": equip.nom})
+    record_inscripcions_history_entry(
+        request,
+        competicio,
+        action_type="equips_rename",
+        action_label="Renombrar equip",
+        before_snapshot=before_snapshot,
+        after_snapshot=capture_inscripcions_history_snapshot(request, competicio),
+    )
+    return JsonResponse(
+        with_inscripcions_history_payload(
+            {"ok": True, "equip_id": equip.id, "name": equip.nom},
+            request,
+            competicio.id,
+        )
+    )
 
 
 @require_POST
@@ -356,8 +438,17 @@ def equips_rename(request, pk, equip_id):
 def equips_delete(request, pk, equip_id):
     competicio = get_object_or_404(Competicio, pk=pk)
     equip = get_object_or_404(Equip, pk=equip_id, competicio=competicio)
+    before_snapshot = capture_inscripcions_history_snapshot(request, competicio)
     equip.delete()
-    return JsonResponse({"ok": True})
+    record_inscripcions_history_entry(
+        request,
+        competicio,
+        action_type="equips_delete",
+        action_label="Eliminar equip",
+        before_snapshot=before_snapshot,
+        after_snapshot=capture_inscripcions_history_snapshot(request, competicio),
+    )
+    return JsonResponse(with_inscripcions_history_payload({"ok": True}, request, competicio.id))
 
 
 @require_POST
@@ -365,5 +456,20 @@ def equips_delete(request, pk, equip_id):
 @transaction.atomic
 def equips_delete_all(request, pk):
     competicio = get_object_or_404(Competicio, pk=pk)
+    before_snapshot = capture_inscripcions_history_snapshot(request, competicio)
     deleted_count, _ = Equip.objects.filter(competicio=competicio).delete()
-    return JsonResponse({"ok": True, "deleted": deleted_count})
+    record_inscripcions_history_entry(
+        request,
+        competicio,
+        action_type="equips_delete_all",
+        action_label="Eliminar tots els equips",
+        before_snapshot=before_snapshot,
+        after_snapshot=capture_inscripcions_history_snapshot(request, competicio),
+    )
+    return JsonResponse(
+        with_inscripcions_history_payload(
+            {"ok": True, "deleted": deleted_count},
+            request,
+            competicio.id,
+        )
+    )

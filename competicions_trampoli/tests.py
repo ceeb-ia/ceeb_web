@@ -31,6 +31,7 @@ from .models_trampoli import (
     InscripcioAparellExclusio,
 )
 from .models import CompeticioMembership
+from .scoring_engine import ScoringEngine
 from .views import (
     _split_custom_sort_tokens,
     renumber_groups_for_competicio,
@@ -80,6 +81,27 @@ class _BaseTrampoliDataMixin:
             ordre_sortida=ordre,
             grup=grup,
         )
+
+
+class ScoringEngineAliasResolutionTests(TestCase):
+    def test_computed_var_alias_can_be_used_before_definition_order(self):
+        schema = {
+            "fields": [
+                {"code": "A", "var": "a", "type": "number"},
+            ],
+            "computed": [
+                # Deliberadament abans que C1 per provar ordre topo + alias var.
+                {"code": "C2", "formula": "u + 2"},
+                {"code": "C1", "var": "u", "formula": "a + 1"},
+                {"code": "TOTAL", "formula": "C2"},
+            ],
+        }
+
+        result = ScoringEngine(schema).compute({"A": 3})
+
+        self.assertEqual(result.outputs.get("C1"), 4)
+        self.assertEqual(result.outputs.get("C2"), 6)
+        self.assertEqual(float(result.total), 6.0)
 
 
 class CustomSortOrderFallbackTests(TestCase):
@@ -176,6 +198,11 @@ class InscripcionsSortFlowTests(TestCase):
             data=json.dumps(payload),
             content_type="application/json",
         )
+
+    def _post_history(self, direction):
+        url_name = "inscripcions_history_undo" if direction == "undo" else "inscripcions_history_redo"
+        url = reverse(url_name, kwargs={"pk": self.comp.id})
+        return self.client.post(url, data="{}", content_type="application/json")
 
     def test_sort_apply_reapplying_existing_criterion_keeps_priority(self):
         i1 = Inscripcio.objects.create(
@@ -362,6 +389,145 @@ class InscripcionsSortFlowTests(TestCase):
             .values_list("id", flat=True)
         )
         self.assertEqual(after_custom_save_ids, [i3.id, i1.id, i2.id])
+
+    def test_history_undo_redo_restores_sort_apply(self):
+        i1 = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="I1",
+            entitat="B",
+            ordre_sortida=1,
+        )
+        i2 = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="I2",
+            entitat="A",
+            ordre_sortida=2,
+        )
+        base_payload = {
+            "scope": "all",
+            "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+            "group_by": [],
+        }
+
+        r_apply = self._post_json(
+            "inscripcions_sort_apply",
+            {**base_payload, "sort_key": "entitat", "sort_dir": "asc"},
+        )
+        self.assertEqual(r_apply.status_code, 200)
+        self.assertTrue(r_apply.json().get("ok"))
+
+        ordered_ids = list(
+            Inscripcio.objects.filter(competicio=self.comp)
+            .order_by("ordre_sortida", "id")
+            .values_list("id", flat=True)
+        )
+        self.assertEqual(ordered_ids, [i2.id, i1.id])
+
+        r_undo = self._post_history("undo")
+        self.assertEqual(r_undo.status_code, 200)
+        self.assertTrue(r_undo.json().get("ok"))
+        self.assertTrue(r_undo.json().get("applied"))
+
+        undone_ids = list(
+            Inscripcio.objects.filter(competicio=self.comp)
+            .order_by("ordre_sortida", "id")
+            .values_list("id", flat=True)
+        )
+        self.assertEqual(undone_ids, [i1.id, i2.id])
+
+        r_redo = self._post_history("redo")
+        self.assertEqual(r_redo.status_code, 200)
+        self.assertTrue(r_redo.json().get("ok"))
+        self.assertTrue(r_redo.json().get("applied"))
+
+        redone_ids = list(
+            Inscripcio.objects.filter(competicio=self.comp)
+            .order_by("ordre_sortida", "id")
+            .values_list("id", flat=True)
+        )
+        self.assertEqual(redone_ids, [i2.id, i1.id])
+
+    def test_history_new_action_clears_redo_branch(self):
+        i1 = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="I1",
+            entitat="B",
+            ordre_sortida=1,
+        )
+        i2 = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="I2",
+            entitat="A",
+            ordre_sortida=2,
+        )
+        base_payload = {
+            "scope": "all",
+            "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+            "group_by": [],
+        }
+        self._post_json(
+            "inscripcions_sort_apply",
+            {**base_payload, "sort_key": "entitat", "sort_dir": "asc"},
+        )
+        self._post_history("undo")
+
+        r_reorder = self._post_json(
+            "inscripcions_reorder",
+            {
+                "ids": [i2.id, i1.id],
+                "moved_id": i2.id,
+                "new_index": 0,
+                "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                "group_by": [],
+            },
+        )
+        self.assertEqual(r_reorder.status_code, 200)
+        self.assertTrue(r_reorder.json().get("ok"))
+        self.assertFalse(r_reorder.json().get("history", {}).get("can_redo"))
+
+        r_redo = self._post_history("redo")
+        self.assertEqual(r_redo.status_code, 200)
+        self.assertTrue(r_redo.json().get("ok"))
+        self.assertFalse(r_redo.json().get("applied"))
+
+    def test_sort_undo_compat_wrapper_uses_global_history(self):
+        i1 = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="I1",
+            entitat="B",
+            ordre_sortida=1,
+        )
+        i2 = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="I2",
+            entitat="A",
+            ordre_sortida=2,
+        )
+        base_payload = {
+            "scope": "all",
+            "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+            "group_by": [],
+        }
+        self._post_json(
+            "inscripcions_sort_apply",
+            {**base_payload, "sort_key": "entitat", "sort_dir": "asc"},
+        )
+
+        r_compat = self._post_json(
+            "inscripcions_sort_undo",
+            {"filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""}, "group_by": []},
+        )
+        self.assertEqual(r_compat.status_code, 200)
+        data = r_compat.json()
+        self.assertTrue(data.get("ok"))
+        self.assertEqual(data.get("restored"), 1)
+
+        ids_after = list(
+            Inscripcio.objects.filter(competicio=self.comp)
+            .order_by("ordre_sortida", "id")
+            .values_list("id", flat=True)
+        )
+        self.assertEqual(ids_after, [i1.id, i2.id])
 
     def test_reorder_cleans_orphan_group_labels(self):
         i1 = Inscripcio.objects.create(
@@ -1271,6 +1437,50 @@ class ClassificacioMatrixScalarTests(_BaseTrampoliDataMixin, TestCase):
         self.assertFalse(body.get("ok"))
         self.assertTrue(any("puntuacio.aparells.mode='tots'" in e for e in body.get("errors", [])))
 
+    def test_classificacio_save_rejects_negative_exercicis_max_per_participant(self):
+        User = get_user_model()
+        user = User.objects.create_user(
+            username="classif_max_pp_editor",
+            password="testpass123",
+            email="classif-max-pp-editor@example.com",
+        )
+        CompeticioMembership.objects.create(
+            user=user,
+            competicio=self.comp,
+            role=CompeticioMembership.Role.EDITOR,
+            is_active=True,
+        )
+        self.client.force_login(user)
+
+        payload = {
+            "nom": "Cfg max per participant invalid",
+            "activa": True,
+            "ordre": 1,
+            "tipus": "individual",
+            "schema": {
+                "particions": [],
+                "filtres": {},
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [self.comp_app_a.id]},
+                    "camps_per_aparell": {str(self.comp_app_a.id): ["total"]},
+                    "agregacio_camps": "sum",
+                    "exercicis": {"mode": "millor_n", "best_n": 2, "max_per_participant": -1},
+                    "exercicis_best_n": 2,
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "ordre": "desc",
+                },
+                "desempat": [],
+                "presentacio": {"top_n": 0, "mostrar_empats": True},
+            },
+        }
+        url = reverse("classificacio_save", kwargs={"pk": self.comp.id})
+        res = self.client.post(url, data=json.dumps(payload), content_type="application/json")
+        self.assertEqual(res.status_code, 400)
+        body = res.json()
+        self.assertFalse(body.get("ok"))
+        self.assertTrue(any("puntuacio.exercicis.max_per_participant" in e for e in body.get("errors", [])))
+
     def test_classificacio_save_rejects_tie_aparells_mode_tots(self):
         payload = {
             "nom": "Cfg tie tots invalid",
@@ -1435,6 +1645,152 @@ class ClassificacioMatrixScalarTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(len(rows), 2)
         self.assertEqual(rows[0]["participant"], "Participant A")
         self.assertEqual(rows[1]["participant"], "Participant B")
+
+    def test_compute_classificacio_main_exercicis_respects_max_per_participant(self):
+        self.comp_app_a.nombre_exercicis = 2
+        self.comp_app_a.save(update_fields=["nombre_exercicis"])
+
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins_a,
+            exercici=1,
+            comp_aparell=self.comp_app_a,
+            inputs={},
+            outputs={},
+            total=9.0,
+        )
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins_a,
+            exercici=2,
+            comp_aparell=self.comp_app_a,
+            inputs={},
+            outputs={},
+            total=8.0,
+        )
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins_b,
+            exercici=1,
+            comp_aparell=self.comp_app_a,
+            inputs={},
+            outputs={},
+            total=6.0,
+        )
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins_b,
+            exercici=2,
+            comp_aparell=self.comp_app_a,
+            inputs={},
+            outputs={},
+            total=5.0,
+        )
+
+        schema = self._base_cfg_schema()
+        schema["puntuacio"]["aparells"] = {"mode": "seleccionar", "ids": [self.comp_app_a.id]}
+        schema["puntuacio"]["camps_per_aparell"] = {str(self.comp_app_a.id): ["total"]}
+        schema["puntuacio"]["exercicis"] = {
+            "mode": "millor_n",
+            "best_n": 2,
+            "max_per_participant": 1,
+        }
+        schema["puntuacio"]["agregacio_camps"] = "sum"
+        schema["puntuacio"]["agregacio_exercicis"] = "sum"
+        schema["puntuacio"]["agregacio_aparells"] = "sum"
+
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Main max per participant",
+            activa=True,
+            ordre=1,
+            tipus="individual",
+            schema=schema,
+        )
+
+        out = compute_classificacio(self.comp, cfg)
+        rows = out.get("global", [])
+        self.assertEqual(len(rows), 2)
+        points_by_name = {r["participant"]: r["punts"] for r in rows}
+        self.assertEqual(points_by_name.get("Participant A"), 9.0)
+        self.assertEqual(points_by_name.get("Participant B"), 6.0)
+
+    def test_compute_classificacio_tie_exercicis_respects_max_per_participant(self):
+        self.comp_app_a.nombre_exercicis = 2
+        self.comp_app_a.save(update_fields=["nombre_exercicis"])
+
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins_a,
+            exercici=1,
+            comp_aparell=self.comp_app_a,
+            inputs={},
+            outputs={},
+            total=6.0,
+        )
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins_a,
+            exercici=2,
+            comp_aparell=self.comp_app_a,
+            inputs={},
+            outputs={},
+            total=4.0,
+        )
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins_b,
+            exercici=1,
+            comp_aparell=self.comp_app_a,
+            inputs={},
+            outputs={},
+            total=7.0,
+        )
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins_b,
+            exercici=2,
+            comp_aparell=self.comp_app_a,
+            inputs={},
+            outputs={},
+            total=3.0,
+        )
+
+        schema = self._base_cfg_schema()
+        schema["puntuacio"]["aparells"] = {"mode": "seleccionar", "ids": [self.comp_app_a.id]}
+        schema["puntuacio"]["camps_per_aparell"] = {str(self.comp_app_a.id): ["total"]}
+        schema["puntuacio"]["exercicis"] = {"mode": "tots"}
+        schema["puntuacio"]["agregacio_camps"] = "sum"
+        schema["puntuacio"]["agregacio_exercicis"] = "sum"
+        schema["puntuacio"]["agregacio_aparells"] = "sum"
+        schema["desempat"] = [
+            {
+                "camps": ["total"],
+                "ordre": "desc",
+                "scope": {
+                    "aparells": {"mode": "seleccionar", "ids": [self.comp_app_a.id]},
+                    "exercicis": {"mode": "millor_n", "best_n": 2, "max_per_participant": 1},
+                },
+                "agregacio_camps": "sum",
+                "agregacio_exercicis": "sum",
+                "agregacio_aparells": "sum",
+            }
+        ]
+
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Tie max per participant",
+            activa=True,
+            ordre=1,
+            tipus="individual",
+            schema=schema,
+        )
+
+        out = compute_classificacio(self.comp, cfg)
+        rows = out.get("global", [])
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["participant"], "Participant B")
+        self.assertEqual(rows[1]["participant"], "Participant A")
 
     def test_compute_classificacio_supports_custom_partition_groups_for_categoria(self):
         self.ins_a.categoria = "ALEVI"
@@ -2737,3 +3093,59 @@ class AparellOwnershipIsolationTests(_BaseTrampoliDataMixin, TestCase):
         url = reverse("aparell_update", kwargs={"pk": foreign.id})
         res = self.client.get(url)
         self.assertEqual(res.status_code, 404)
+
+    def test_can_delete_own_global_aparell_when_unused(self):
+        own = self._create_aparell("DEL", "Aparell eliminable", owner=self.user_a)
+        self.client.force_login(self.user_a)
+        url = reverse("aparell_delete", kwargs={"pk": own.id})
+        res = self.client.post(url)
+        self.assertEqual(res.status_code, 302)
+        self.assertEqual(res.url, reverse("aparells_list"))
+        self.assertFalse(Aparell.objects.filter(pk=own.id).exists())
+
+    def test_cannot_delete_own_global_aparell_when_used_in_competition(self):
+        own = self._create_aparell("USE", "Aparell en us", owner=self.user_a)
+        self._create_comp_aparell(self.comp, own, ordre=1, actiu=True)
+        self.client.force_login(self.user_a)
+        url = reverse("aparell_delete", kwargs={"pk": own.id})
+        res = self.client.post(url)
+        self.assertEqual(res.status_code, 302)
+        self.assertEqual(res.url, reverse("aparells_list"))
+        self.assertTrue(Aparell.objects.filter(pk=own.id).exists())
+
+    def test_cannot_delete_foreign_global_aparell(self):
+        foreign = self._create_aparell("ALI", "Aparell alie", owner=self.user_b)
+        self.client.force_login(self.user_a)
+        url = reverse("aparell_delete", kwargs={"pk": foreign.id})
+        res = self.client.post(url)
+        self.assertEqual(res.status_code, 404)
+        self.assertTrue(Aparell.objects.filter(pk=foreign.id).exists())
+
+    def test_superuser_sees_owner_in_global_aparell_catalog(self):
+        self._create_aparell("OWN1", "Aparell owner b", owner=self.user_b)
+        User = get_user_model()
+        admin = User.objects.create_superuser(
+            username="ap_owner_admin_global",
+            password="testpass123",
+            email="ap-owner-admin-global@example.com",
+        )
+        self.client.force_login(admin)
+        res = self.client.get(reverse("aparells_list"))
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, "Creat per")
+        self.assertContains(res, self.user_b.username)
+
+    def test_superuser_sees_owner_in_competicio_aparells_list(self):
+        app_b = self._create_aparell("OWN2", "Aparell owner b comp", owner=self.user_b)
+        self._create_comp_aparell(self.comp, app_b, ordre=1, actiu=True)
+        User = get_user_model()
+        admin = User.objects.create_superuser(
+            username="ap_owner_admin_comp",
+            password="testpass123",
+            email="ap-owner-admin-comp@example.com",
+        )
+        self.client.force_login(admin)
+        res = self.client.get(reverse("trampoli_aparells_list", kwargs={"pk": self.comp.id}))
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, "Creat per")
+        self.assertContains(res, self.user_b.username)

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Catàleg d’aparells{% endblock %}
+{% block title %}Gestio d'aparells globals{% endblock %}
 
 {% block content %}
 <div class="container mt-4">
@@ -7,12 +7,13 @@
 
     <div class="d-flex justify-content-between align-items-start mb-3">
       <div>
-        <h2 class="mb-1">Catàleg d’aparells</h2>
-        <div class="text-muted small">Gestiona els aparells disponibles per utilitzar a les competicions.</div>
+        <h2 class="mb-1">Gestio d'aparells globals</h2>
+        <div class="text-muted small">Crea, edita, configura puntuacio i elimina aparells reutilitzables a competicions.</div>
       </div>
 
       <div class="d-flex gap-2">
-        <a class="btn btn-sm btn-outline-primary" href="{% url 'aparell_create' %}">Crear aparell</a>
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'created' %}?next={{ request.get_full_path|urlencode }}">Competicions</a>
+        <a class="btn btn-sm btn-outline-primary" href="{% url 'aparell_create' %}?next={{ request.get_full_path|urlencode }}">Crear aparell</a>
       </div>
     </div>
 
@@ -22,8 +23,13 @@
           <tr>
             <th style="width:120px;">Codi</th>
             <th>Nom</th>
+            {% if show_owner %}
+            <th style="width:220px;">Creat per</th>
+            {% endif %}
             <th style="width:90px;">Actiu</th>
-            <th style="width:120px;"></th>
+            <th style="width:140px;">En competicions</th>
+            <th style="width:190px;">Schema puntuacio</th>
+            <th style="width:320px;"></th>
           </tr>
         </thead>
         <tbody>
@@ -31,15 +37,49 @@
             <tr>
               <td class="fw-semibold">{{ a.codi }}</td>
               <td>{{ a.nom }}</td>
+              {% if show_owner %}
+              <td>
+                {% firstof a.created_by.get_full_name a.created_by.username %}
+                <div class="text-muted small">{{ a.created_by.email }}</div>
+              </td>
+              {% endif %}
               <td class="text-center">
                 {% if a.actiu %}<span class="badge badge-success">Sí</span>{% else %}<span class="badge badge-secondary">No</span>{% endif %}
               </td>
+              <td class="text-center">
+                {% if a.competicio_usage_count %}
+                  <span class="badge badge-info">{{ a.competicio_usage_count }}</span>
+                {% else %}
+                  <span class="text-muted">0</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if a.has_scoring_schema %}
+                  <div class="small">Configurat</div>
+                  <div class="text-muted small">Actualitzat: {{ a.scoring_schema_updated_at|date:"d/m/Y H:i" }}</div>
+                {% else %}
+                  <span class="text-muted small">Sense schema</span>
+                {% endif %}
+              </td>
               <td class="text-right">
-                <a class="btn btn-sm btn-outline-secondary" href="{% url 'aparell_update' a.id %}">Editar</a>
+                <div class="d-inline-flex gap-2 flex-wrap justify-content-end">
+                  <a class="btn btn-sm btn-outline-secondary" href="{% url 'aparell_update' a.id %}?next={{ request.get_full_path|urlencode }}">Editar</a>
+                  <a class="btn btn-sm btn-outline-warning" href="{% url 'aparell_scoring_schema_update' a.id %}?next={{ request.get_full_path|urlencode }}">Puntuacio</a>
+                  {% if a.competicio_usage_count %}
+                    <button class="btn btn-sm btn-outline-danger" type="button" disabled title="Aparell en us a competicions">
+                      Eliminar
+                    </button>
+                  {% else %}
+                    <form method="post" action="{% url 'aparell_delete' a.id %}" class="d-inline" onsubmit="return confirm('Segur que vols eliminar aquest aparell global?');">
+                      {% csrf_token %}
+                      <button class="btn btn-sm btn-danger" type="submit">Eliminar</button>
+                    </form>
+                  {% endif %}
+                </div>
               </td>
             </tr>
           {% empty %}
-            <tr><td colspan="4" class="text-muted">Encara no hi ha aparells.</td></tr>
+            <tr><td colspan="{% if show_owner %}7{% else %}6{% endif %}" class="text-muted">Encara no hi ha aparells.</td></tr>
           {% endfor %}
         </tbody>
       </table>

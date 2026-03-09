@@ -42,6 +42,7 @@ from .views_equips import (
 from .views_scoring import ScoringNotesHome, ScoringSchemaUpdate, scoring_save
 from .views_trampoli import (
     AparellCreate,
+    AparellDeleteView,
     AparellList,
     AparellUpdate,
     CompeticioAparellCreate,
@@ -69,6 +70,7 @@ urlpatterns = [
     path("trampoli/aparells/", authenticated_view(AparellList.as_view()), name="aparells_list"),
     path("trampoli/aparells/nou/", authenticated_view(AparellCreate.as_view()), name="aparell_create"),
     path("trampoli/aparells/<int:pk>/editar/", authenticated_view(AparellUpdate.as_view()), name="aparell_update"),
+    path("trampoli/aparells/<int:pk>/eliminar/", authenticated_view(AparellDeleteView.as_view()), name="aparell_delete"),
     path("trampoli/aparells/<int:pk>/puntuacio/", authenticated_view(ScoringSchemaUpdate.as_view()), name="aparell_scoring_schema_update"),
 
     path("competicions/nova/", authenticated_view(CompeticioCreateView.as_view()), name="create"),
@@ -85,6 +87,8 @@ urlpatterns = [
     path("competicio/<int:pk>/inscripcions/sort-clear/", competition_view(views.inscripcions_sort_clear, "inscripcions.edit"), name="inscripcions_sort_clear"),
     path("competicio/<int:pk>/inscripcions/sort-custom/values/", competition_view(views.inscripcions_sort_custom_values, "inscripcions.edit"), name="inscripcions_sort_custom_values"),
     path("competicio/<int:pk>/inscripcions/sort-custom/save/", competition_view(views.inscripcions_sort_custom_save, "inscripcions.edit"), name="inscripcions_sort_custom_save"),
+    path("competicio/<int:pk>/inscripcions/history/undo/", competition_view(views.inscripcions_history_undo, "inscripcions.edit"), name="inscripcions_history_undo"),
+    path("competicio/<int:pk>/inscripcions/history/redo/", competition_view(views.inscripcions_history_redo, "inscripcions.edit"), name="inscripcions_history_redo"),
     path("competicio/<int:pk>/inscripcions/sort-undo/", competition_view(views.inscripcions_sort_undo, "inscripcions.edit"), name="inscripcions_sort_undo"),
     path("competicio/<int:pk>/inscripcions/groups-from-sort/", competition_view(views.inscripcions_groups_from_sort, "inscripcions.edit"), name="inscripcions_groups_from_sort"),
     path("competicio/<int:pk>/inscripcions/save-table-columns/", competition_view(inscripcions_save_table_columns_new, "inscripcions.edit"), name="inscripcions_save_table_columns"),

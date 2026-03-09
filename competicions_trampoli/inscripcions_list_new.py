@@ -18,6 +18,10 @@ from .views import (
     reconcile_inscripcions_sort_context_state,
     _extract_sort_partition_codes,
     _build_sort_partition_buckets,
+    capture_inscripcions_history_snapshot,
+    get_inscripcions_history_state,
+    record_inscripcions_history_entry,
+    with_inscripcions_history_payload,
 )
 
 
@@ -408,6 +412,7 @@ class InscripcionsListNewView(InscripcionsListView):
                 excluded_map[ins_id].sort()
 
         ctx["inscripcio_aparells_excluded_map"] = excluded_map
+        ctx["history_state"] = get_inscripcions_history_state(self.request, self.competicio.id)
 
         return ctx
 
@@ -441,11 +446,26 @@ def inscripcions_save_table_columns(request, pk):
     if not cleaned:
         return HttpResponseBadRequest("No hi ha cap columna valida")
 
+    before_snapshot = capture_inscripcions_history_snapshot(request, competicio)
     view_cfg = competicio.inscripcions_view or {}
     view_cfg["table_columns"] = cleaned
     competicio.inscripcions_view = view_cfg
     competicio.save(update_fields=["inscripcions_view"])
-    return JsonResponse({"ok": True, "table_columns": cleaned})
+    record_inscripcions_history_entry(
+        request,
+        competicio,
+        action_type="save_table_columns",
+        action_label="Desar columnes de taula",
+        before_snapshot=before_snapshot,
+        after_snapshot=capture_inscripcions_history_snapshot(request, competicio),
+    )
+    return JsonResponse(
+        with_inscripcions_history_payload(
+            {"ok": True, "table_columns": cleaned},
+            request,
+            competicio.id,
+        )
+    )
 
 
 @require_POST
@@ -467,6 +487,7 @@ def inscripcions_set_group_name(request, pk):
     except Exception:
         return HttpResponseBadRequest("group invalid")
 
+    before_snapshot = capture_inscripcions_history_snapshot(request, competicio)
     view_cfg = competicio.inscripcions_view or {}
     group_names = view_cfg.get("group_names")
     if not isinstance(group_names, dict):
@@ -481,7 +502,21 @@ def inscripcions_set_group_name(request, pk):
     view_cfg["group_names"] = group_names
     competicio.inscripcions_view = view_cfg
     competicio.save(update_fields=["inscripcions_view"])
-    return JsonResponse({"ok": True, "group": group_int, "name": name})
+    record_inscripcions_history_entry(
+        request,
+        competicio,
+        action_type="set_group_name",
+        action_label="Desar nom de grup",
+        before_snapshot=before_snapshot,
+        after_snapshot=capture_inscripcions_history_snapshot(request, competicio),
+    )
+    return JsonResponse(
+        with_inscripcions_history_payload(
+            {"ok": True, "group": group_int, "name": name},
+            request,
+            competicio.id,
+        )
+    )
 
 
 @require_POST
@@ -530,6 +565,7 @@ def inscripcions_set_aparells(request, pk):
         selected_set.add(v)
 
     excluded_ids = [app_id for app_id in active_ids if app_id not in selected_set]
+    before_snapshot = capture_inscripcions_history_snapshot(request, competicio)
 
     with transaction.atomic():
         # Reemplaça només exclusions dels aparells actius de la competició.
@@ -550,12 +586,24 @@ def inscripcions_set_aparells(request, pk):
             )
 
     selected_ids = [app_id for app_id in active_ids if app_id in selected_set]
+    record_inscripcions_history_entry(
+        request,
+        competicio,
+        action_type="set_aparells",
+        action_label="Desar aparells de la inscripcio",
+        before_snapshot=before_snapshot,
+        after_snapshot=capture_inscripcions_history_snapshot(request, competicio),
+    )
     return JsonResponse(
-        {
-            "ok": True,
-            "inscripcio_id": inscripcio.id,
-            "active_comp_aparell_ids": active_ids,
-            "selected_comp_aparell_ids": selected_ids,
-            "excluded_comp_aparell_ids": excluded_ids,
-        }
+        with_inscripcions_history_payload(
+            {
+                "ok": True,
+                "inscripcio_id": inscripcio.id,
+                "active_comp_aparell_ids": active_ids,
+                "selected_comp_aparell_ids": selected_ids,
+                "excluded_comp_aparell_ids": excluded_ids,
+            },
+            request,
+            competicio.id,
+        )
     )

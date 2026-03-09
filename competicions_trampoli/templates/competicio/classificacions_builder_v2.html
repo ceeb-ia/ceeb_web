@@ -414,6 +414,10 @@
                   <label class="small text-muted">Index (si Exercici #)</label>
                   <input class="form-control" id="iExIndex" type="number" min="1" value="1">
                 </div>
+                <div class="col-4" id="exMaxPerParticipantBox">
+                  <label class="small text-muted">Max N per participant</label>
+                  <input class="form-control" id="iExMaxPerParticipant" type="number" min="0" value="0">
+                </div>
                 <div class="col-12  mb-3">
                   <label class="small text-muted">Agregació exercicis</label>
                   <select class="form-control" id="sAggExercicis">
@@ -621,7 +625,7 @@
       aparells: { mode:"tots", ids:[] },
       camps_per_aparell: {},
       agregacio_camps: "sum",
-      exercicis: { mode:"tots", index: 1, ids: [] },
+      exercicis: { mode:"tots", index: 1, ids: [], max_per_participant: 0 },
       exercicis_best_n: 1,
       mode_seleccio_exercicis: "per_aparell_global",
       exercicis_per_aparell: {},
@@ -695,10 +699,12 @@
     sExercicisMode: document.getElementById("sExercicisMode"),
     exBestNBox: document.getElementById("exBestNBox"),
     exIndexBox: document.getElementById("exIndexBox"),
+    exMaxPerParticipantBox: document.getElementById("exMaxPerParticipantBox"),
     exIdsBox: document.getElementById("exIdsBox"),
     exModeHint: document.getElementById("exModeHint"),
     iExBestN: document.getElementById("iExBestN"),
     iExIndex: document.getElementById("iExIndex"),
+    iExMaxPerParticipant: document.getElementById("iExMaxPerParticipant"),
     tExIds: document.getElementById("tExIds"),
     sAggExercicis: document.getElementById("sAggExercicis"),
     sAggAparells: document.getElementById("sAggAparells"),
@@ -952,6 +958,7 @@
     const mode = String(cfg.mode || "tots").toLowerCase().trim();
     const bestN = Math.max(1, Number(cfg.best_n || 1));
     const index = Math.max(1, Number(cfg.index || 1));
+    const maxPerParticipant = Math.max(0, Number(cfg.max_per_participant || 0));
     const ids = Array.isArray(cfg.ids) ? cfg.ids.join(",") : "";
     return `
       <div class="mt-2 border-top pt-2" data-app-ex-box="${esc(compAparellId)}">
@@ -973,6 +980,9 @@
         <input class="form-control form-control-sm mb-1"
                data-app-ex-index data-app-id="${esc(compAparellId)}"
                type="number" min="1" value="${esc(index)}" placeholder="Index">
+        <input class="form-control form-control-sm mb-1"
+               data-app-ex-max-per-participant data-app-id="${esc(compAparellId)}"
+               type="number" min="0" value="${esc(maxPerParticipant)}" placeholder="Max N per participant (0 = sense limit)">
         <input class="form-control form-control-sm"
                data-app-ex-ids data-app-id="${esc(compAparellId)}"
                type="text" value="${esc(ids)}" placeholder="Llista (ex: 1,3,4)">
@@ -1019,7 +1029,7 @@
       if (exModeNode) {
         refreshPerAppExCardUI(card);
       }
-      card.querySelectorAll("[data-app-select], [data-app-ex-mode], [data-app-ex-best-n], [data-app-ex-index], [data-app-ex-ids]").forEach(node => {
+      card.querySelectorAll("[data-app-select], [data-app-ex-mode], [data-app-ex-best-n], [data-app-ex-index], [data-app-ex-max-per-participant], [data-app-ex-ids]").forEach(node => {
         node.addEventListener("change", () => {
           if (node.matches("[data-app-ex-mode]")) refreshPerAppExCardUI(card);
           syncAdvancedFromUI();
@@ -1038,10 +1048,13 @@
       const mode = String(sel.value || "tots").toLowerCase().trim();
       const bestNode = document.querySelector(`[data-app-ex-best-n][data-app-id="${appId}"]`);
       const idxNode = document.querySelector(`[data-app-ex-index][data-app-id="${appId}"]`);
+      const maxNode = document.querySelector(`[data-app-ex-max-per-participant][data-app-id="${appId}"]`);
       const idsNode = document.querySelector(`[data-app-ex-ids][data-app-id="${appId}"]`);
       const cfg = { mode };
       if (isBestNMode(mode)) cfg.best_n = Math.max(1, Number(bestNode?.value || 1));
       if (mode === "index") cfg.index = Math.max(1, Number(idxNode?.value || 1));
+      const maxPerParticipant = Math.max(0, Number(maxNode?.value || 0));
+      if (maxPerParticipant > 0) cfg.max_per_participant = maxPerParticipant;
       if (mode === "llista") cfg.ids = parsePositiveIds(idsNode?.value || "");
       map[appId] = cfg;
     });
@@ -1052,13 +1065,15 @@
     const mode = String(els.sExercicisMode?.value || "tots").toLowerCase().trim();
     const bestN = Math.max(1, Number(els.iExBestN?.value || 1));
     const index = Math.max(1, Number(els.iExIndex?.value || 1));
+    const maxPerParticipant = Math.max(0, Number(els.iExMaxPerParticipant?.value || 0));
     const ids = parsePositiveIds(els.tExIds?.value || "");
 
     const cfg = { mode };
     if (isBestNMode(mode)) cfg.best_n = bestN;
     if (mode === "index") cfg.index = index;
+    if (maxPerParticipant > 0) cfg.max_per_participant = maxPerParticipant;
     if (mode === "llista") cfg.ids = ids;
-    return { cfg, bestN, index, ids };
+    return { cfg, bestN, index, ids, maxPerParticipant };
   }
 
   function refreshMainExercicisUI() {
@@ -1069,6 +1084,7 @@
     if (els.sExercicisMode) els.sExercicisMode.style.display = isOverride ? "none" : "";
     if (els.exBestNBox) els.exBestNBox.style.display = (!isOverride && isBestNMode(m)) ? "" : "none";
     if (els.exIndexBox) els.exIndexBox.style.display = (!isOverride && (m === "index")) ? "" : "none";
+    if (els.exMaxPerParticipantBox) els.exMaxPerParticipantBox.style.display = isOverride ? "none" : "";
     if (els.exIdsBox) els.exIdsBox.style.display = (!isOverride && (m === "llista")) ? "" : "none";
 
     if (!els.exModeHint) return;
@@ -1213,6 +1229,8 @@
     const out = { mode: outMode };
     if (isBestNMode(outMode)) out.best_n = Math.max(1, Number(cfg.best_n || 1));
     if (outMode === "index") out.index = Math.max(1, Number(cfg.index || 1));
+    const maxPerParticipant = Math.max(0, Number(cfg.max_per_participant || 0));
+    if (maxPerParticipant > 0) out.max_per_participant = maxPerParticipant;
     if (outMode === "llista") {
       const idsRaw = Array.isArray(cfg.ids) ? cfg.ids.join(",") : cfg.ids;
       out.ids = parsePositiveIds(idsRaw || "");
@@ -1252,6 +1270,7 @@
     const mode = String(cfg.mode || "tots").toLowerCase().trim();
     const bestN = Math.max(1, Number(cfg.best_n || 1));
     const index = Math.max(1, Number(cfg.index || 1));
+    const maxPerParticipant = Math.max(0, Number(cfg.max_per_participant || 0));
     const ids = Array.isArray(cfg.ids) ? cfg.ids.join(",") : "";
     const app = getAparellById(compAparellId);
     const appName = app ? app.nom : `Aparell ${compAparellId}`;
@@ -1275,6 +1294,9 @@
         <input class="form-control form-control-sm mb-1"
                data-k="tie_app_ex_index" data-app-id="${esc(compAparellId)}"
                type="number" min="1" value="${esc(index)}" placeholder="Index">
+        <input class="form-control form-control-sm mb-1"
+               data-k="tie_app_ex_max_pp" data-app-id="${esc(compAparellId)}"
+               type="number" min="0" value="${esc(maxPerParticipant)}" placeholder="Max N per participant (0 = sense limit)">
         <input class="form-control form-control-sm"
                data-k="tie_app_ex_ids" data-app-id="${esc(compAparellId)}"
                type="text" value="${esc(ids)}" placeholder="Llista (ex: 1,3,4)">
@@ -1332,10 +1354,13 @@
       const mode = String(sel.value || "tots").toLowerCase().trim();
       const bestNode = box.querySelector(`[data-k="tie_app_ex_best_n"][data-app-id="${appId}"]`);
       const idxNode = box.querySelector(`[data-k="tie_app_ex_index"][data-app-id="${appId}"]`);
+      const maxNode = box.querySelector(`[data-k="tie_app_ex_max_pp"][data-app-id="${appId}"]`);
       const idsNode = box.querySelector(`[data-k="tie_app_ex_ids"][data-app-id="${appId}"]`);
       const cfg = { mode };
       if (isBestNMode(mode)) cfg.best_n = Math.max(1, Number(bestNode?.value || 1));
       if (mode === "index") cfg.index = Math.max(1, Number(idxNode?.value || 1));
+      const maxPerParticipant = Math.max(0, Number(maxNode?.value || 0));
+      if (maxPerParticipant > 0) cfg.max_per_participant = maxPerParticipant;
       if (mode === "llista") cfg.ids = parsePositiveIds(idsNode?.value || "");
       state[appId] = cfg;
     });
@@ -1368,7 +1393,7 @@
     }).join("");
 
     box.querySelectorAll('[data-k="tie_app_ex_card"]').forEach(card => refreshTiePerAppExCardUI(card));
-    box.querySelectorAll('[data-k="tie_app_ex_mode"], [data-k="tie_app_ex_best_n"], [data-k="tie_app_ex_index"], [data-k="tie_app_ex_ids"]').forEach(node => {
+    box.querySelectorAll('[data-k="tie_app_ex_mode"], [data-k="tie_app_ex_best_n"], [data-k="tie_app_ex_index"], [data-k="tie_app_ex_max_pp"], [data-k="tie_app_ex_ids"]').forEach(node => {
       node.addEventListener("change", () => {
         if (node.matches('[data-k="tie_app_ex_mode"]')) {
           const card = node.closest('[data-k="tie_app_ex_card"]');
@@ -1421,6 +1446,7 @@
     const exMode = tr.querySelector('[data-k="ex_mode"]').value; // hereta|tots|millor_1|millor_n|pitjor_1|pitjor_n|primer|ultim|index|llista
     const bestN = Number(tr.querySelector('[data-k="ex_best_n"]').value || 1);
     const exIndex = Number(tr.querySelector('[data-k="ex_index"]').value || 1);
+    const exMaxPP = Math.max(0, Number(tr.querySelector('[data-k="ex_max_pp"]')?.value || 0));
     const exIds = parsePositiveIds(tr.querySelector('[data-k="ex_ids"]').value || "");
     const exPerApp = readTiePerAppExercicisFromRow(tr);
 
@@ -1445,6 +1471,7 @@
 
     if (exMode === "millor_n" || exMode === "pitjor_n") obj.scope.exercicis.best_n = bestN;
     if (exMode === "index") obj.scope.exercicis.index = exIndex;
+    if (exMaxPP > 0) obj.scope.exercicis.max_per_participant = exMaxPP;
     if (exMode === "llista") obj.scope.exercicis.ids = exIds;
     if (exSelMode !== "hereta") obj.mode_seleccio_exercicis = exSelMode;
     if (exSelMode === "per_aparell_override") obj.exercicis_per_aparell = exPerApp;
@@ -1665,6 +1692,7 @@
       if (!["hereta","tots","millor_1","millor_n","pitjor_1","pitjor_n","primer","ultim","index","llista"].includes(exMode)) exMode = "hereta";
       const exBestN = Number(sEx.best_n || 1);
       const exIndex = Number(sEx.index || 1);
+      const exMaxPP = Math.max(0, Number(sEx.max_per_participant || 0));
       const exIds = Array.isArray(sEx.ids) ? sEx.ids : [];
       const exIdsStr = exIds.length ? exIds.join(",") : "";
       const exSelMode = normalizeTieModeSeleccioExercicis(
@@ -1724,6 +1752,7 @@
               <input class="form-control form-control-sm" data-k="ex_best_n" type="number" min="1" value="1" style="display:none;" placeholder="N">
               <input class="form-control form-control-sm" data-k="ex_index" type="number" min="1" value="1" style="display:none;" placeholder="Index">
             </div>
+            <input class="form-control form-control-sm" data-k="ex_max_pp" type="number" min="0" value="0" style="display:none;" placeholder="Max N per participant (0 = sense limit)">
 
             <input class="form-control form-control-sm" data-k="ex_ids" type="text" style="display:none;" placeholder="ex: 1,3,4">
             <input type="hidden" data-k="ex_per_app_state" value="{}">
@@ -1753,6 +1782,7 @@
       const exModeSel = tr.querySelector('[data-k="ex_mode"]');
       const exBestNEl = tr.querySelector('[data-k="ex_best_n"]');
       const exIndexEl = tr.querySelector('[data-k="ex_index"]');
+      const exMaxPPEl = tr.querySelector('[data-k="ex_max_pp"]');
       const exIdsEl = tr.querySelector('[data-k="ex_ids"]');
       const exHint = tr.querySelector('[data-k="ex_hint"]');
       const ordSel = tr.querySelector('[data-k="ordre"]');
@@ -1764,6 +1794,7 @@
       exModeSel.value = exMode;
       exBestNEl.value = exBestN;
       exIndexEl.value = exIndex;
+      exMaxPPEl.value = exMaxPP;
       exIdsEl.value = exIdsStr;
       writeTiePerAppState(tr, exPerAppSeed);
       setParticipantsUI(tr, pMode, pN, pAgg);
@@ -1794,6 +1825,7 @@
         exModeSel.style.display = isOverride ? "none" : "";
         exBestNEl.style.display = (!isOverride && (m === "millor_n" || m === "pitjor_n")) ? "" : "none";
         exIndexEl.style.display = (!isOverride && (m === "index")) ? "" : "none";
+        exMaxPPEl.style.display = isOverride ? "none" : "";
         exIdsEl.style.display = (!isOverride && (m === "llista")) ? "" : "none";
         renderTiePerAppExercicisUI(tr);
 
@@ -1851,6 +1883,7 @@
       exModeSel.addEventListener("change", () => { refreshExUI(); syncAdvancedFromUI(); });
       exBestNEl.addEventListener("input", syncAdvancedFromUI);
       exIndexEl.addEventListener("input", syncAdvancedFromUI);
+      exMaxPPEl.addEventListener("input", syncAdvancedFromUI);
       exIdsEl.addEventListener("input", syncAdvancedFromUI);
       bindParticipantsListeners(tr);
 
@@ -2859,6 +2892,7 @@
     els.sExercicisMode.value = pEx.mode || "tots";
     els.iExBestN.value = (schema.puntuacio||{}).exercicis_best_n || pEx.best_n || 1;
     els.iExIndex.value = pEx.index || 1;
+    els.iExMaxPerParticipant.value = pEx.max_per_participant || 0;
     if (Array.isArray(pEx.ids)) els.tExIds.value = pEx.ids.join(",");
     else els.tExIds.value = String(pEx.ids || "");
     refreshMainExercicisUI();
@@ -2907,7 +2941,7 @@
 
   // events: canvis que afecten schema
   ["change","input"].forEach(ev => {
-    ["sAggCamps","sModeSeleccioExercicis","sExercicisMode","iExBestN","iExIndex","tExIds","sAggExercicis","sAggAparells","sOrdre","iTopN","cEmpats","eqIncludeSenseEquip","eqAgeActiva","eqAgeLlindars","eqAgeSenseLabel","eqCombineManualAge"]
+    ["sAggCamps","sModeSeleccioExercicis","sExercicisMode","iExBestN","iExIndex","iExMaxPerParticipant","tExIds","sAggExercicis","sAggAparells","sOrdre","iTopN","cEmpats","eqIncludeSenseEquip","eqAgeActiva","eqAgeLlindars","eqAgeSenseLabel","eqCombineManualAge"]
       .forEach(id => document.getElementById(id).addEventListener(ev, syncAdvancedFromUI));
 
     [els.fEntitats, els.fCategories, els.fSubcategories, els.fGrups].forEach(x => {

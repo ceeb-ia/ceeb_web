@@ -12,7 +12,10 @@
         <div class="text-muted small">{{ competicio.nom }}</div>
       </div>
       <div class="d-flex flex-wrap gap-2">
-        <a class="btn btn-sm btn-outline-primary" href="{% url 'aparell_create' %}">
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'aparells_list' %}?next={{ request.get_full_path|urlencode }}">
+          Gestionar globals
+        </a>
+        <a class="btn btn-sm btn-outline-primary" href="{% url 'aparell_create' %}?next={{ request.get_full_path|urlencode }}">
           Crear aparell
         </a>
       </div>

@@ -14,6 +14,8 @@
       <div class="d-flex flex-wrap justify-content-end gap-2">
         <a class="btn btn-sm btn-outline-secondary"
            href="{% url 'trampoli_config' competicio.id %}">Configuració</a>
+        <a class="btn btn-sm btn-outline-secondary"
+           href="{% url 'aparells_list' %}?next={{ request.get_full_path|urlencode }}">Aparells globals</a>
         <a class="btn btn-sm btn-outline-primary"
            href="{% url 'trampoli_aparell_create' competicio.id %}">Afegir aparell</a>
         <a class="btn btn-sm btn-info"
@@ -27,6 +29,9 @@
           <tr>
             <th style="width:240px;">Codi</th>
             <th>Aparell</th>
+            {% if show_owner %}
+            <th style="width:220px;">Creat per</th>
+            {% endif %}
             <th style="width:90px;">Exercicis</th>
             <th style="width:90px;">Actiu</th>
             <th style="width:120px;"></th>
@@ -37,6 +42,12 @@
             <tr>
               <td class="fw-semibold">{{ ca.aparell.codi }}</td>
               <td class="fw-semibold">{{ ca.aparell.nom }}</td>
+              {% if show_owner %}
+                <td>
+                  {% firstof ca.aparell.created_by.get_full_name ca.aparell.created_by.username %}
+                  <div class="text-muted small">{{ ca.aparell.created_by.email }}</div>
+                </td>
+              {% endif %}
               <td class="text-center">{{ ca.nombre_exercicis }}</td>
               <td class="text-center">
                 {% if ca.actiu %}
@@ -53,7 +64,7 @@
               </td>
             </tr>
           {% empty %}
-            <tr><td colspan="7" class="text-muted">No hi ha aparells configurats.</td></tr>
+            <tr><td colspan="{% if show_owner %}6{% else %}5{% endif %}" class="text-muted">No hi ha aparells configurats.</td></tr>
           {% endfor %}
         </tbody>
       </table>

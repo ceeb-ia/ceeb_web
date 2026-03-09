@@ -1,5 +1,6 @@
 from collections import defaultdict
 from types import SimpleNamespace
+from django.contrib import messages
 from django.shortcuts import get_object_or_404
 from django.views.generic import TemplateView, UpdateView
 from django.urls import reverse
@@ -11,6 +12,8 @@ from django.http import JsonResponse
 from django.views.decorators.http import require_POST
 from django.db import transaction
 from django.db import IntegrityError
+from django.db.models import Count, Exists, OuterRef, Subquery
+from django.db.models.deletion import ProtectedError
 import json
 from django.views.generic import ListView, CreateView, View
 from django import forms
@@ -18,6 +21,7 @@ from django.shortcuts import redirect
 from competicions_trampoli.forms import CompeticioAparellForm, AparellForm
 from django.views.generic import ListView, CreateView, UpdateView
 from .access import user_has_competicio_capability
+from .models_scoring import ScoringSchema
 
 
 
@@ -453,14 +457,17 @@ class TrampoliAparellList(ListView):
         return (
             CompeticioAparell.objects
             .filter(competicio=self.competicio)
-            .select_related("aparell")
+            .select_related("aparell", "aparell__created_by")
             .order_by("ordre", "id")
         )
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         ctx["competicio"] = self.competicio
-        
+        ctx["show_owner"] = (
+            self.request.user.is_superuser
+            or self.request.user.groups.filter(name="platform_admin").exists()
+        )
         return ctx
 
 
@@ -536,10 +543,26 @@ class AparellList(ListView):
     context_object_name = "aparells"
 
     def get_queryset(self):
-        qs = Aparell.objects.all().order_by("nom")
+        schema_qs = ScoringSchema.objects.filter(aparell_id=OuterRef("pk"))
+        qs = (
+            Aparell.objects
+            .select_related("created_by")
+            .annotate(competicio_usage_count=Count("competicio_cfg", distinct=True))
+            .annotate(has_scoring_schema=Exists(schema_qs))
+            .annotate(scoring_schema_updated_at=Subquery(schema_qs.values("updated_at")[:1]))
+            .order_by("nom", "id")
+        )
         if self.request.user.is_superuser or self.request.user.groups.filter(name="platform_admin").exists():
             return qs
         return qs.filter(created_by=self.request.user)
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["show_owner"] = (
+            self.request.user.is_superuser
+            or self.request.user.groups.filter(name="platform_admin").exists()
+        )
+        return ctx
 
 
 class AparellCreate(CreateView):
@@ -559,7 +582,9 @@ class AparellCreate(CreateView):
         return redirect(self.get_success_url())
 
     def get_success_url(self):
-        # Tornem al catàleg
+        next_url = self.request.GET.get("next")
+        if next_url:
+            return next_url
         return reverse("aparells_list")
 
 
@@ -584,7 +609,35 @@ class AparellUpdate(UpdateView):
         if next_url:
             return next_url
         return reverse("aparells_list")
-    
+
+
+class AparellDeleteView(View):
+    def post(self, request, pk):
+        qs = Aparell.objects.all()
+        if not (request.user.is_superuser or request.user.groups.filter(name="platform_admin").exists()):
+            qs = qs.filter(created_by=request.user)
+        aparell = get_object_or_404(qs, pk=pk)
+
+        in_use_count = CompeticioAparell.objects.filter(aparell=aparell).count()
+        if in_use_count > 0:
+            messages.error(
+                request,
+                f"No pots eliminar '{aparell.nom}': esta en us a {in_use_count} competicio(ns).",
+            )
+            return redirect(reverse("aparells_list"))
+
+        try:
+            aparell.delete()
+        except ProtectedError:
+            messages.error(
+                request,
+                f"No pots eliminar '{aparell.nom}': hi ha dependències actives.",
+            )
+            return redirect(reverse("aparells_list"))
+
+        messages.success(request, f"Aparell '{aparell.nom}' eliminat.")
+        return redirect(reverse("aparells_list"))
+
 
 class CompeticioAparellDeleteView(View):
     def post(self, request, pk, app_id):

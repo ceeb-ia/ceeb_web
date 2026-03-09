@@ -1317,22 +1317,15 @@ class ScoringEngine:
 
         outputs: Dict[str, Any] = {}
 
-        # --- Aliases: permet 'x' com a variable curta ---
-        aliases = {}
-        if isinstance(self.params.get("aliases"), dict):
-            aliases.update(self.params["aliases"])
+        # --- Aliases: permet usar "var" tant en fields com en computed ---
+        aliases = self._build_aliases()
 
-        for f in self.fields:
-            if isinstance(f, dict) and f.get("var") and f.get("code"):
-                aliases[str(f["var"])] = str(f["code"])
-        for c in self.computed:
-            if isinstance(c, dict) and c.get("var") and c.get("code"):
-                aliases[str(c["var"])] = str(c["code"])
+        def apply_aliases(target: Dict[str, Any]) -> None:
+            for short, code in aliases.items():
+                if short and code and code in target:
+                    target[short] = target[code]
 
-        for short, code in aliases.items():
-            if short and code:
-                if code in context:
-                    context[short] = context[code]
+        apply_aliases(context)
 
         # >>> computed: ara en ordre topològic
         for c in self._computed_order:
@@ -1343,10 +1336,14 @@ class ScoringEngine:
             if not code or not formula:
                 continue
             try:
-                val = safe_eval(str(formula), {**context, **outputs}, self._functions)
+                eval_ctx = {**context, **outputs}
+                apply_aliases(eval_ctx)
+                val = safe_eval(str(formula), eval_ctx, self._functions)
             except ScoringError as e:
                 raise ScoringError(f"Error a computed '{code}': {e}")
             outputs[code] = val
+            context[code] = val
+            apply_aliases(context)
 
         total = to_float(outputs.get("TOTAL", outputs.get("total", 0)))
         return EngineResult(inputs=norm_inputs, outputs=outputs, total=total)

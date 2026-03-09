@@ -1,8 +1,10 @@
 {% extends "base.html" %}
+{% load static static_extras %}
 {% block title %}Puntuació – {{ aparell.nom }}{% endblock %}
 
 {% block content %}
 <div class="container-fluid mt-4">
+  <link rel="stylesheet" href="{% staticv 'css/scoring_schema_builder_help.css' %}">
   <style>
     .pill-help{ font-size:.85rem; color:#6c757d; }
     .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
@@ -76,6 +78,9 @@
       {% endif %}
         <div class="text-muted small">Configura camps i fórmules sense escriure JSON.</div>
       </div>
+      <div>
+        <button type="button" class="btn btn-sm btn-outline-info help-trigger" data-help-key="global_overview" aria-label="Obrir manual del builder">Ajuda</button>
+      </div>
     </div>
 
     <form method="post" id="schemaForm">
@@ -119,6 +124,7 @@
                 <div class="font-weight-bold">Camps d’entrada</div>
                 <div class="pill-help">
                   Defineix què omplirà el jurat. Els criteris d’agregació/selecció es defineixen a <strong>Fórmules</strong>.
+                  <button type="button" class="help-trigger help-trigger--inline ml-1" data-help-key="fields_overview" aria-label="Ajuda camps">?</button>
                 </div>
               </div>
               <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddField">Afegir camp</button>
@@ -128,18 +134,18 @@
               <table class="table table-sm table-bordered" id="fieldsTable">
                 <thead class="thead-light">
                   <tr>
-                    <th>Etiqueta</th>
-                    <th class="w-120">Code</th>
-                    <th class="w-120">Var</th>
+                    <th>Etiqueta <button type="button" class="help-trigger help-trigger--inline" data-help-key="field_label" aria-label="Ajuda etiqueta">?</button></th>
+                    <th class="w-120">Code <button type="button" class="help-trigger help-trigger--inline" data-help-key="field_code" aria-label="Ajuda code">?</button></th>
+                    <th class="w-120">Var <button type="button" class="help-trigger help-trigger--inline" data-help-key="field_var" aria-label="Ajuda var">?</button></th>
 
-                    <th class="w-120">Jutges</th>
-                    <th class="w-120">Ítems</th>
+                    <th class="w-120">Jutges <button type="button" class="help-trigger help-trigger--inline" data-help-key="field_judges_count" aria-label="Ajuda jutges">?</button></th>
+                    <th class="w-120">Ítems <button type="button" class="help-trigger help-trigger--inline" data-help-key="field_items_count" aria-label="Ajuda items">?</button></th>
 
-                    <th class="w-120">Min</th>
-                    <th class="w-120">Max</th>
-                    <th class="w-120">Decimals</th>
+                    <th class="w-120">Min <button type="button" class="help-trigger help-trigger--inline" data-help-key="field_min" aria-label="Ajuda minim">?</button></th>
+                    <th class="w-120">Max <button type="button" class="help-trigger help-trigger--inline" data-help-key="field_max" aria-label="Ajuda maxim">?</button></th>
+                    <th class="w-120">Decimals <button type="button" class="help-trigger help-trigger--inline" data-help-key="field_decimals" aria-label="Ajuda decimals">?</button></th>
 
-                    <th class="w-120">Crash</th>
+                    <th class="w-120">Crash <button type="button" class="help-trigger help-trigger--inline" data-help-key="field_crash" aria-label="Ajuda crash">?</button></th>
                     <th class="w-120"></th>
                   </tr>
                 </thead>
@@ -160,60 +166,28 @@
                 <div class="pill-help">
                   Tria una <strong>funció guiada</strong> (Row/Column compute) o una <strong>fórmula manual</strong>.
                   Les fórmules s’avaluen <strong>de dalt a baix</strong>.
+                  <button type="button" class="help-trigger help-trigger--inline ml-1" data-help-key="formules_overview" aria-label="Ajuda formules">?</button>
                 </div>
               </div>
               <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddComputed">Afegir fórmula</button>
             </div>
 
-            <!-- AJUDA (inspirada en classificacions: clara, sense jerga) -->
-            <div class="help-card small mb-3">
-              <div class="font-weight-bold mb-1">ℹ️ Com funcionen les fórmules (explicació simple)</div>
-
-              <div class="mb-2">
-                Una fórmula crea una <strong>nota final</strong> a partir dels camps d’entrada i/o altres fórmules.
-                Si no vols programar, usa <strong>Row compute</strong> o <strong>Column compute</strong>.
+            <div class="help-card small mb-3 d-flex justify-content-between align-items-center">
+              <div class="text-muted mb-0">
+                Ajuda contextual disponible a cada bloc amb el botó <strong>?</strong>.
               </div>
-
-              <ul class="pl-3 mb-2">
-                <li>
-                  <strong>Fórmula manual</strong>: escriu una expressió amb els codes (ex: <span class="mono">E_total + DD - P</span>).
-                </li>
-                <li>
-                  <strong>Row compute</strong> (row_custom_compute):<br>
-                  <span class="text-muted">
-                    primer calcula <em>dins de cada jutge</em> (sobre els ítems) i després combina <em>entre jutges</em>.
-                  </span>
-                </li>
-                <li>
-                  <strong>Column compute</strong> (column_custom_compute):<br>
-                  <span class="text-muted">
-                    primer calcula <em>dins de cada ítem/aspecte</em> (sobre els jutges) i després combina <em>entre ítems</em>.
-                  </span>
-                </li>
-                <li>
-                  <strong>Select sum</strong> (select_sum):<br>
-                  <span class="text-muted">
-                    per vectors 1D (llistes), selecciona jutges amb el mètode escollit i agrega el resultat.
-                    Exemple: <span class="mono">select_sum(E_j, select='best_n', select_n=2, agg='sum')</span>.
-                    També admet mode legacy: <span class="mono">select_sum(E_j, 2, 'maximes')</span>.
-                  </span>
-                </li>
-              </ul>
-
-              <div class="text-muted">
-                💡 Consell: si dubtes, comença per <strong>Row compute</strong> (és el més habitual quan cada jutge té una “fila” d’ítems).
-              </div>
+              <button type="button" class="btn btn-sm btn-outline-info help-trigger" data-help-key="global_overview" aria-label="Obrir manual del builder">Obrir manual</button>
             </div>
 
             <div class="table-responsive">
               <table class="table table-sm table-bordered" id="computedTable">
                 <thead class="thead-light">
                   <tr>
-                    <th>Etiqueta</th>
-                    <th class="w-140">Code</th>
-                    <th class="w-120">Var</th>
-                    <th class="w-200">Funció</th>
-                    <th>Configuració / Fórmula</th>
+                    <th>Etiqueta <button type="button" class="help-trigger help-trigger--inline" data-help-key="field_label" aria-label="Ajuda etiqueta formula">?</button></th>
+                    <th class="w-140">Code <button type="button" class="help-trigger help-trigger--inline" data-help-key="field_code" aria-label="Ajuda code formula">?</button></th>
+                    <th class="w-120">Var <button type="button" class="help-trigger help-trigger--inline" data-help-key="field_var" aria-label="Ajuda var formula">?</button></th>
+                    <th class="w-200">Funció <button type="button" class="help-trigger help-trigger--inline" data-help-key="formula_preset" aria-label="Ajuda funcio">?</button></th>
+                    <th>Configuració / Fórmula <button type="button" class="help-trigger help-trigger--inline" data-help-key="formula_config" aria-label="Ajuda configuracio formula">?</button></th>
                     <th class="w-120"></th>
                   </tr>
                 </thead>
@@ -227,7 +201,10 @@
         <!-- AVANÇAT JSON -->
         <div class="tab-pane fade" id="tab-advanced" role="tabpanel">
           <div class="border rounded p-3">
-            <div class="font-weight-bold mb-2">Avançat (JSON)</div>
+            <div class="font-weight-bold mb-2">
+              Avançat (JSON)
+              <button type="button" class="help-trigger help-trigger--inline" data-help-key="advanced_json" aria-label="Ajuda JSON avancat">?</button>
+            </div>
             <div class="pill-help mb-2">JSON generat automàticament pel builder (només lectura).</div>
             <textarea id="advancedJson" class="form-control mono" rows="18" readonly></textarea>
           </div>
@@ -242,7 +219,19 @@
   </div>
 </div>
 
+<div id="schemaHelpDrawer" class="schema-help-drawer" aria-hidden="true">
+  <div class="schema-help-backdrop" data-help-close></div>
+  <aside class="schema-help-panel" role="dialog" aria-modal="true" aria-labelledby="schemaHelpTitle">
+    <div class="schema-help-head">
+      <h5 id="schemaHelpTitle" class="mb-0">Ajuda</h5>
+      <button type="button" class="schema-help-close" data-help-close aria-label="Tancar ajuda">&times;</button>
+    </div>
+    <div id="schemaHelpBody" class="schema-help-body"></div>
+  </aside>
+</div>
+
 {{ schema_initial|json_script:"schema-initial" }}
+<script src="{% staticv 'js/scoring_schema_help.js' %}" defer></script>
 
 <script>
   // --- Schema inicial ---
@@ -265,12 +254,10 @@
 
   // --- Select options ---
   const PRESET_FUNCS = [
-    ["manual", "Fórmula manual (escriure expressió)"],
-    ["row_compute", "Row compute (guiada · per jutge → entre jutges)"],
-    ["row_agregation", "Row agregació (guiada · per jutge, sense fase final)"],
-    ["column_compute", "Column compute (guiada · per ítem → entre ítems)"],
-    ["exec_trampoli", "Execució trampolí (E_j) (guiada)"],
-    ["select_sum_guided", "Select sum (guiada · selecció de notes)"],
+    ["manual", "Expressio manual"],
+    ["row_compute", "Per items i despres per jutges (total final)"],
+    ["row_agregation", "Per items i resultat per jutge (sense total final)"],
+    ["column_compute", "Per jutges i despres per items (total final)"],
   ];
 
   const SELECT_OPTIONS = [
@@ -470,6 +457,7 @@
             <div class="step-title">
               <span class="step-badge">Global</span>
               <span data-k="rc_global_title">Configuració global</span>
+              <button type="button" class="help-trigger help-trigger--inline" data-help-key="formula_config" aria-label="Ajuda configuracio global">?</button>
             </div>
             <div class="hint" data-k="rc_global_help"></div>
 
@@ -512,6 +500,7 @@
             <div class="step-title">
               <span class="step-badge">Fase interna</span>
               <span data-k="rc_internal_title">—</span>
+              <button type="button" class="help-trigger help-trigger--inline" data-help-key="formula_config" aria-label="Ajuda fase interna">?</button>
             </div>
             <div class="hint" data-k="rc_internal_help"></div>
 
@@ -579,6 +568,7 @@
             <div class="step-title">
               <span class="step-badge" data-k="rc_final_badge">Fase final</span>
               <span data-k="rc_final_title">—</span>
+              <button type="button" class="help-trigger help-trigger--inline" data-help-key="formula_config" aria-label="Ajuda fase final">?</button>
             </div>
             <div class="hint" data-k="rc_final_help"></div>
 
@@ -672,14 +662,29 @@
         <input type="hidden" data-k="formula" value="${data.formula||""}">
       </td>
 
-      <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger">Eliminar</button></td>
+      <td class="text-center">
+        <button type="button" class="btn btn-sm btn-outline-danger" data-action="delete-computed-row">Eliminar</button>
+      </td>
     `;
 
-    // preset init
-    tr.querySelector('select[data-k="preset"]').value = preset;
+    // preset init (presets legacy ocults al dropdown, pero compatibles amb files existents)
+    const presetSelect = tr.querySelector('select[data-k="preset"]');
+    const legacyPresets = {
+      exec_trampoli: "Execucio trampoli (legacy)",
+      select_sum_guided: "Seleccio de notes (legacy)",
+    };
+    if (legacyPresets[preset] && !Array.from(presetSelect.options).some(o => o.value === preset)) {
+      const legacyOpt = document.createElement("option");
+      legacyOpt.value = preset;
+      legacyOpt.textContent = legacyPresets[preset];
+      legacyOpt.hidden = true;
+      presetSelect.appendChild(legacyOpt);
+    }
+    presetSelect.value = preset;
+    if (!presetSelect.value) presetSelect.value = "manual";
 
     // delete
-    tr.querySelector("button").addEventListener("click", ()=>{
+    tr.querySelector('[data-action="delete-computed-row"]').addEventListener("click", ()=>{
       tr.remove();
       refreshAll();
     });
