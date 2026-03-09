@@ -1,16 +1,24 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static static_extras %}
 {% block title %}Rotacions{% endblock %}
 
 {% block content %}
 <div class="container-fluid mt-4">
+  <link rel="stylesheet" href="{% staticv 'css/rotacions_planner_help.css' %}">
   <style>
     .board { display:grid; grid-template-columns: 280px minmax(0, 1fr) 320px; gap:16px; align-items:start; }
-    .cardx { background:transparent; border:0; border-radius:0; box-shadow:none; min-width:0; }
-    .cardx-h { padding:0 0 10px; border-bottom:1px solid #eef1f7; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
+    .cardx {
+      min-width:0;
+      background:#ffffff;
+      border:1px solid #e8edf5;
+      border-radius:14px;
+      box-shadow:0 6px 18px rgba(18,38,63,0.06);
+      padding:14px 14px 12px;
+    }
+    .cardx-h { padding:0 0 10px; border-bottom:1px solid #eef1f7; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
     .cardx-b { padding:0; }
-    .cardx-left { padding-right:14px; border-right:1px solid #eef1f7; }
-    .cardx-right { padding-left:14px; border-left:1px solid #eef1f7; }
+    .cardx-left { padding:14px 14px 12px; }
+    .cardx-right { padding:14px 14px 12px; }
     .header-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; justify-content:flex-end; max-width:100%; }
     .header-actions .btn { white-space:normal; }
     #btnClearAll { white-space:normal; max-width:100%; }
@@ -101,8 +109,8 @@
     /* en pantalles tàctils: que sempre es vegin (no hi ha hover fiable) */
     @media (max-width: 1200px){
       .board { grid-template-columns: 1fr; gap: 14px; }
-      .cardx-left { padding-right:0; border-right:0; border-bottom:1px solid #eef1f7; padding-bottom:12px; }
-      .cardx-right { padding-left:0; border-left:0; border-top:1px solid #eef1f7; padding-top:12px; }
+      .cardx-left { padding:14px 14px 12px; }
+      .cardx-right { padding:14px 14px 12px; }
       .header-actions { justify-content:flex-start; }
       #btnClearAll { width:100%; }
       .franja-actions{
@@ -121,6 +129,7 @@
         <div class="text-muted small">Arrossega grups a la graella i guarda el programa.</div>
       </div>
       <div class="header-actions">
+        <button type="button" class="btn btn-sm btn-outline-info rot-help-trigger" data-rot-help-key="global_overview" aria-label="Obrir manual de rotacions">Ajuda</button>
         <a href="{% url 'inscripcions_list' competicio.id %}" class="btn btn-sm btn-outline-primary">Inscripcions</a>
         <a class="btn btn-sm btn-primary" href="{% url 'notes_home' competicio.id %}">Notes</a>
         <a href="{% url 'trampoli_config' competicio.id %}" class="btn btn-sm btn-outline-secondary">Configuració</a>
@@ -131,7 +140,10 @@
     <div class="cardx cardx-left">
       <div class="cardx-h">
         <div>
-          <div class="fw-semibold">Grups</div>
+          <div class="fw-semibold d-flex align-items-center" style="gap:6px;">
+            <span>Grups</span>
+            <button type="button" class="rot-help-trigger rot-help-trigger--inline" data-rot-help-key="grups" aria-label="Ajuda grups">?</button>
+          </div>
           <div class="mini">Drag & drop</div>
         </div>
         <span class="badge badge-light">{{ grups_display|length }}</span>
@@ -147,7 +159,10 @@
 
         <hr class="my-3">
 
-        <div class="fw-semibold mb-2">Afegir franja</div>
+        <div class="fw-semibold mb-2 d-flex align-items-center" style="gap:6px;">
+          <span>Afegir franja</span>
+          <button type="button" class="rot-help-trigger rot-help-trigger--inline" data-rot-help-key="competicio_format" aria-label="Ajuda afegir franja">?</button>
+        </div>
         <div class="d-flex" style="gap:8px; align-items:center; flex-wrap:wrap;">
           <input type="time" class="form-control form-control-sm" id="hi" style="width:130px;">
           <input type="time" class="form-control form-control-sm" id="hf" style="width:130px;">
@@ -156,7 +171,10 @@
         </div>
         <hr class="my-3">
 
-        <div class="fw-semibold mb-2">Generar franges automàticament</div>
+        <div class="fw-semibold mb-2 d-flex align-items-center" style="gap:6px;">
+          <span>Generar franges automàticament</span>
+          <button type="button" class="rot-help-trigger rot-help-trigger--inline" data-rot-help-key="control_temps" aria-label="Ajuda franges automàtiques">?</button>
+        </div>
         <div class="d-flex flex-column" style="gap:8px;">
         <div class="d-flex" style="gap:8px; flex-wrap:wrap;">
             <input type="time" class="form-control form-control-sm" id="auto_hi" style="width:130px;" placeholder="Inici">
@@ -180,7 +198,10 @@
 
         <hr class="my-3">
 
-        <div class="fw-semibold mb-2">Afegir descans</div>
+        <div class="fw-semibold mb-2 d-flex align-items-center" style="gap:6px;">
+          <span>Afegir descans</span>
+          <button type="button" class="rot-help-trigger rot-help-trigger--inline" data-rot-help-key="incidencies" aria-label="Ajuda descans">?</button>
+        </div>
         <div class="d-flex" style="gap:8px; align-items:center;">
           <button class="btn btn-sm btn-outline-dark" id="btnAddDescans">+ Descans</button>
         </div>
@@ -190,9 +211,13 @@
     <!-- Grid -->
     <div class="cardx cardx-main">
       <div class="cardx-h">
-        <div class="fw-semibold">Programa (franges × estacions)</div>
-            <div>
+        <div class="fw-semibold d-flex align-items-center" style="gap:6px;">
+          <span>Programa (franges × estacions)</span>
+          <button type="button" class="rot-help-trigger rot-help-trigger--inline" data-rot-help-key="ordre_sortida" aria-label="Ajuda programa">?</button>
+        </div>
+            <div class="d-flex align-items-center" style="gap:6px;">
         <button class="btn btn-sm btn-outline-danger" id="btnClearAll" title="Netejar tot el programa">🧹 Netejar Programa</button>
+        <button type="button" class="rot-help-trigger rot-help-trigger--inline" data-rot-help-key="canvis_manuals" aria-label="Ajuda canvis manuals">?</button>
     </div>
 
         <div class="mini">Tip: arrossega “(Buit)” per esborrar una cel·la</div>
@@ -203,7 +228,10 @@
           <table class="rot">
             <thead>
               <tr>
-                <th>Franja</th>
+                <th>
+                  Franja
+                  <button type="button" class="rot-help-trigger rot-help-trigger--inline" data-rot-help-key="aparell_rotacio" aria-label="Ajuda franges i estacions">?</button>
+                </th>
                 {% for a in estacions %}
                   <th class="js-col-h" draggable="true" data-estacio="{{ a.id }}">
                     <div class="d-flex justify-content-between align-items-center" style="gap:10px;">
@@ -225,6 +253,7 @@
                         <div class="mini">{{ f.hora_inici }} – {{ f.hora_fi }}</div>
                         <div class="mini mt-1 d-flex align-items-center" style="gap:6px;">
                           <span>Ordre:</span>
+                          <button type="button" class="rot-help-trigger rot-help-trigger--inline" data-rot-help-key="franja_order_mode" aria-label="Ajuda mode ordre franja">?</button>
                           <select class="form-control form-control-sm js-franja-order-mode"
                                   data-fr="{{ f.id }}"
                                   style="width:170px; height:30px; padding:2px 6px;">
@@ -236,6 +265,7 @@
                       </div>
 
                       <div class="franja-actions">
+                        <button type="button" class="rot-help-trigger rot-help-trigger--inline franja-btn" data-rot-help-key="franja_actions" aria-label="Ajuda accions franja">?</button>
                         <button class="btn btn-sm btn-light franja-btn js-edit-fr"
                                 data-url="{% url 'rotacions_franja_update_inline' competicio.id f.id %}"
                                 data-titol="{{ f.titol|default_if_none:''|escape }}"
@@ -285,7 +315,10 @@
     <div class="cardx cardx-right">
       <div class="cardx-h">
         <div>
-          <div class="fw-semibold">Exportació Excel</div>
+          <div class="fw-semibold d-flex align-items-center" style="gap:6px;">
+            <span>Exportació Excel</span>
+            <button type="button" class="rot-help-trigger rot-help-trigger--inline" data-rot-help-key="publicar" aria-label="Ajuda exportació">?</button>
+          </div>
           <div class="mini">Configuració i descàrrega d'horari</div>
         </div>
       </div>
@@ -311,13 +344,19 @@
 
         <hr class="my-3">
 
-        <div class="fw-semibold mb-2">Dades export Excel</div>
+        <div class="fw-semibold mb-2 d-flex align-items-center" style="gap:6px;">
+          <span>Dades export Excel</span>
+          <button type="button" class="rot-help-trigger rot-help-trigger--inline" data-rot-help-key="validacio" aria-label="Ajuda validació">?</button>
+        </div>
         <div class="d-flex flex-column" style="gap:8px;">
           <input type="text" class="form-control form-control-sm" id="exportTitle" placeholder="Titol competicio">
           <input type="text" class="form-control form-control-sm" id="exportVenue" placeholder="Seu">
           <input type="date" class="form-control form-control-sm" id="exportDate">
 
-          <div class="mini fw-semibold">Camps de participants (arrossega per ordenar)</div>
+          <div class="mini fw-semibold d-flex align-items-center" style="gap:6px;">
+            <span>Camps de participants (arrossega per ordenar)</span>
+            <button type="button" class="rot-help-trigger rot-help-trigger--inline" data-rot-help-key="capcalera_grup" aria-label="Ajuda camps de participants">?</button>
+          </div>
           <div id="exportFieldsList" class="export-fields-list"></div>
           <div class="mini text-muted">Aquests camps es mostraran dins cada cel·la en mode "Exportar participants".</div>
 
@@ -337,8 +376,18 @@
         </div>
       </div>
     </div>
-  </div>
 </div>
+</div>
+</div>
+<div id="rotHelpDrawer" class="rot-help-drawer" aria-hidden="true">
+  <div class="rot-help-backdrop" data-rot-help-close></div>
+  <aside class="rot-help-panel" role="dialog" aria-modal="true" aria-labelledby="rotHelpTitle">
+    <div class="rot-help-head">
+      <h5 id="rotHelpTitle" class="mb-0">Ajuda</h5>
+      <button type="button" class="rot-help-close" data-rot-help-close aria-label="Tancar ajuda">&times;</button>
+    </div>
+    <div id="rotHelpBody" class="rot-help-body"></div>
+  </aside>
 </div>
 <div class="modal fade" id="editFrModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-sm">
@@ -368,6 +417,7 @@
 <script id="franja-order-modes-data" type="application/json">{{ franja_order_modes_json|safe }}</script>
 <script id="export-meta-data" type="application/json">{{ export_meta_json|safe }}</script>
 <script id="export-participant-fields-data" type="application/json">{{ export_participant_fields_json|safe }}</script>
+<script src="{% staticv 'js/rotacions_help.js' %}" defer></script>
 <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.1/dist/umd/popper.min.js"></script>
 <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>

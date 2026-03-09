@@ -7,17 +7,17 @@ from django.views.decorators.http import require_GET
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
 from django.db import IntegrityError, transaction
-from django.db.models import Exists, OuterRef
+from django.db.models import Count, Exists, OuterRef
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.views.decorators.http import require_POST
 from django.views.generic import TemplateView, UpdateView
 from django.utils import timezone
-from .models import Competicio, Inscripcio
+from .models import Competicio, Inscripcio, InscripcioMedia
 from .models_trampoli import Aparell, CompeticioAparell, InscripcioAparellExclusio
 from .models_rotacions import RotacioAssignacio, RotacioFranja
-from .models_scoring import ScoringSchema, ScoreEntry
+from .models_scoring import ScoringSchema, ScoreEntry, ScoreEntryVideo
 from .forms import ScoringSchemaForm
 from .scoring_engine import ScoringEngine, ScoringError
 from .services.rotacions_ordering import (
@@ -146,6 +146,84 @@ def _recalculate_scores_for_comp_aparell(competicio, comp_aparell, chunk_size: i
         summary["failed"],
     )
     return summary
+
+
+def _safe_file_url(file_field):
+    if not file_field:
+        return ""
+    try:
+        return file_field.url
+    except Exception:
+        return ""
+
+
+def _serialize_inscripcio_media_for_playback(item: InscripcioMedia) -> dict:
+    return {
+        "id": item.id,
+        "tipus": item.tipus,
+        "is_primary": bool(item.is_primary),
+        "original_filename": item.original_filename or "",
+        "mime_type": item.mime_type or "",
+        "url": _safe_file_url(item.fitxer),
+    }
+
+
+def _split_media_for_playback(items: list) -> dict:
+    grouped = {
+        InscripcioMedia.Tipus.AUDIO: [],
+        InscripcioMedia.Tipus.VIDEO: [],
+        InscripcioMedia.Tipus.IMAGE: [],
+        InscripcioMedia.Tipus.OTHER: [],
+    }
+    for item in items:
+        tipus = str(item.get("tipus") or "")
+        if tipus not in grouped:
+            tipus = InscripcioMedia.Tipus.OTHER
+        grouped[tipus].append(item)
+
+    def _pick_primary_and_others(arr):
+        primary = next((x for x in arr if x.get("is_primary")), None)
+        if primary is None:
+            return None, arr
+        others = [x for x in arr if x.get("id") != primary.get("id")]
+        return primary, others
+
+    audio_primary, audio_others = _pick_primary_and_others(grouped[InscripcioMedia.Tipus.AUDIO])
+    video_primary, video_others = _pick_primary_and_others(grouped[InscripcioMedia.Tipus.VIDEO])
+    image_primary, image_others = _pick_primary_and_others(grouped[InscripcioMedia.Tipus.IMAGE])
+
+    return {
+        "audio_primary": audio_primary,
+        "audio_others": audio_others,
+        "video_primary": video_primary,
+        "video_others": video_others,
+        "image_primary": image_primary,
+        "image_others": image_others,
+        "other_files": grouped[InscripcioMedia.Tipus.OTHER],
+    }
+
+
+def _serialize_judge_video_for_playback(video_obj):
+    if not video_obj or not video_obj.video_file:
+        return None
+    url = _safe_file_url(video_obj.video_file)
+    if not url:
+        return None
+    return {
+        "id": video_obj.id,
+        "original_filename": video_obj.original_filename or "",
+        "mime_type": video_obj.mime_type or "",
+        "url": url,
+        "status": video_obj.status,
+    }
+
+
+def _parse_positive_int(raw_value):
+    try:
+        n = int(raw_value)
+    except Exception:
+        return None
+    return n if n > 0 else None
 
 
 class ScoringNotesHome(TemplateView):
@@ -337,6 +415,49 @@ class ScoringNotesHome(TemplateView):
         # ─────────────────────────────
         # CONTEXT FINAL
         # ─────────────────────────────
+        inscripcio_ids = [int(x["id"]) for x in inscripcions]
+        media_counts_by_inscripcio = {
+            str(ins_id): {"audio": 0, "video": 0}
+            for ins_id in inscripcio_ids
+        }
+        if inscripcio_ids:
+            media_counts_rows = (
+                InscripcioMedia.objects
+                .filter(
+                    competicio=competicio,
+                    inscripcio_id__in=inscripcio_ids,
+                    tipus__in=[InscripcioMedia.Tipus.AUDIO, InscripcioMedia.Tipus.VIDEO],
+                )
+                .values("inscripcio_id", "tipus")
+                .annotate(total=Count("id"))
+            )
+            for row in media_counts_rows:
+                ins_id = str(row.get("inscripcio_id") or "")
+                bucket = media_counts_by_inscripcio.setdefault(ins_id, {"audio": 0, "video": 0})
+                tipus = str(row.get("tipus") or "")
+                if tipus in ("audio", "video"):
+                    bucket[tipus] = int(row.get("total") or 0)
+
+        judge_video_presence_by_key = {}
+        if inscripcio_ids and active_app_ids and exercicis:
+            judge_video_rows = (
+                ScoreEntryVideo.objects
+                .filter(
+                    score_entry__competicio=competicio,
+                    score_entry__inscripcio_id__in=inscripcio_ids,
+                    score_entry__comp_aparell_id__in=active_app_ids,
+                    score_entry__exercici__in=exercicis,
+                )
+                .exclude(video_file="")
+                .values_list(
+                    "score_entry__inscripcio_id",
+                    "score_entry__exercici",
+                    "score_entry__comp_aparell_id",
+                )
+            )
+            for ins_id, exercici_id, app_id in judge_video_rows:
+                judge_video_presence_by_key[f"{ins_id}|{exercici_id}|{app_id}"] = 1
+
         rotation_rank_map = {}
         rotation_groups_by_app = {}
         if franja_selected_id:
@@ -406,6 +527,8 @@ class ScoringNotesHome(TemplateView):
             "schemas": schemas,
             "scores": scores,
             "inscripcions": inscripcions,
+            "media_counts_by_inscripcio": media_counts_by_inscripcio,
+            "judge_video_presence_by_key": judge_video_presence_by_key,
             "updates_cursor_init": timezone.now().isoformat(),
         })
         return ctx
@@ -707,6 +830,70 @@ def scoring_save_partial(request, pk):
         "outputs": entry.outputs,
         "total": float(entry.total),
         "updated_at": entry.updated_at.isoformat(),
+    })
+
+
+@require_GET
+def scoring_media_context(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+
+    ins_id = _parse_positive_int(request.GET.get("inscripcio_id"))
+    if not ins_id:
+        return JsonResponse({"ok": False, "error": "Falta inscripcio_id valid."}, status=400)
+
+    inscripcio = get_object_or_404(Inscripcio, pk=ins_id, competicio=competicio)
+
+    comp_aparell_id = _parse_positive_int(request.GET.get("comp_aparell_id"))
+    exercici = _parse_positive_int(request.GET.get("exercici"))
+
+    if comp_aparell_id and not CompeticioAparell.objects.filter(pk=comp_aparell_id, competicio=competicio).exists():
+        return JsonResponse({"ok": False, "error": "comp_aparell_id invalid per aquesta competicio."}, status=400)
+
+    media_qs = (
+        InscripcioMedia.objects
+        .filter(competicio=competicio, inscripcio=inscripcio)
+        .order_by("tipus", "-is_primary", "-created_at", "id")
+    )
+    media_items = [_serialize_inscripcio_media_for_playback(m) for m in media_qs]
+    media_payload = _split_media_for_playback(media_items)
+
+    judge_video_payload = None
+    if comp_aparell_id and exercici:
+        score = (
+            ScoreEntry.objects
+            .filter(
+                competicio=competicio,
+                inscripcio=inscripcio,
+                comp_aparell_id=comp_aparell_id,
+                exercici=exercici,
+            )
+            .first()
+        )
+        if score:
+            video_obj = ScoreEntryVideo.objects.filter(score_entry=score).first()
+            judge_video_payload = _serialize_judge_video_for_playback(video_obj)
+
+    meta_parts = []
+    if getattr(inscripcio, "entitat", None):
+        meta_parts.append(str(inscripcio.entitat))
+    if getattr(inscripcio, "categoria", None):
+        meta_parts.append(str(inscripcio.categoria))
+    if getattr(inscripcio, "subcategoria", None):
+        meta_parts.append(str(inscripcio.subcategoria))
+
+    return JsonResponse({
+        "ok": True,
+        "inscripcio": {
+            "id": inscripcio.id,
+            "name": inscripcio.nom_i_cognoms or "",
+            "meta": " · ".join(meta_parts) if meta_parts else "",
+        },
+        "context": {
+            "comp_aparell_id": comp_aparell_id,
+            "exercici": exercici,
+        },
+        "media": media_payload,
+        "judge_video": judge_video_payload,
     })
 
 

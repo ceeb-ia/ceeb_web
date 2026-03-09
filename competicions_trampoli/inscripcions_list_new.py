@@ -1,4 +1,7 @@
 import json
+import mimetypes
+import os
+from decimal import Decimal
 
 from django.http import HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404
@@ -7,9 +10,14 @@ from django.db.models import Count
 from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.http import require_POST
 
-from .models import Competicio, Equip, Inscripcio
+from .models import Competicio, Equip, Inscripcio, InscripcioMedia
 from .models_trampoli import CompeticioAparell, InscripcioAparellExclusio
 from .access import user_has_competicio_capability
+from .services.media_matching import (
+    build_inscripcio_media_match_candidates,
+    match_media_files_to_inscripcions,
+    normalize_media_matching_config,
+)
 from .views import (
     InscripcionsListView,
     get_allowed_group_fields,
@@ -24,6 +32,22 @@ from .views import (
     with_inscripcions_history_payload,
 )
 
+MEDIA_MAX_SIZE_BYTES = 250 * 1024 * 1024
+MEDIA_ALLOWED_EXTENSIONS = {
+    ".mp3",
+    ".wav",
+    ".m4a",
+    ".aac",
+    ".ogg",
+    ".mp4",
+    ".mov",
+    ".m4v",
+    ".webm",
+    ".jpg",
+    ".jpeg",
+    ".png",
+}
+
 
 BUILTIN_TABLE_FIELDS = [
     {"code": "nom_i_cognoms", "label": "Nom i cognoms", "kind": "builtin"},
@@ -36,10 +60,11 @@ BUILTIN_TABLE_FIELDS = [
     {"code": "grup", "label": "Grup", "kind": "builtin"},
     {"code": "equip", "label": "Equip", "kind": "builtin"},
     {"code": "__aparells__", "label": "Aparells", "kind": "ui"},
+    {"code": "__media__", "label": "Media", "kind": "ui"},
     {"code": "ordre_sortida", "label": "Ordre", "kind": "builtin"},
 ]
 
-SYSTEM_NATIVE_TABLE_CODES = {"grup", "equip", "ordre_sortida", "__aparells__", "__actions__"}
+SYSTEM_NATIVE_TABLE_CODES = {"grup", "equip", "ordre_sortida", "__aparells__", "__media__", "__actions__"}
 
 
 def _reserved_inscripcio_codes():
@@ -68,6 +93,79 @@ def _normalize_schema_extra_code(code: str, reserved_codes):
 def _label_with_source(label: str, source: str):
     suffix = "Excel" if source == "excel" else "Nativa"
     return f"{label} ({suffix})"
+
+
+def _get_media_matching_config(competicio):
+    view_cfg = competicio.inscripcions_view or {}
+    raw_cfg = view_cfg.get("media_matching")
+    return normalize_media_matching_config(raw_cfg)
+
+
+def _guess_media_tipus(*, mime_type: str, filename: str) -> str:
+    mime_l = str(mime_type or "").strip().lower()
+    if mime_l.startswith("audio/"):
+        return InscripcioMedia.Tipus.AUDIO
+    if mime_l.startswith("video/"):
+        return InscripcioMedia.Tipus.VIDEO
+    if mime_l.startswith("image/"):
+        return InscripcioMedia.Tipus.IMAGE
+
+    ext = os.path.splitext(str(filename or ""))[1].lower()
+    if ext in {".mp3", ".wav", ".m4a", ".aac", ".ogg"}:
+        return InscripcioMedia.Tipus.AUDIO
+    if ext in {".mp4", ".mov", ".m4v", ".webm"}:
+        return InscripcioMedia.Tipus.VIDEO
+    if ext in {".jpg", ".jpeg", ".png"}:
+        return InscripcioMedia.Tipus.IMAGE
+    return InscripcioMedia.Tipus.OTHER
+
+
+def _validate_uploaded_media_file(uploaded):
+    if uploaded is None:
+        raise ValueError("Falta fitxer multimèdia.")
+
+    size = int(getattr(uploaded, "size", 0) or 0)
+    if size <= 0:
+        raise ValueError("Fitxer buit.")
+    if size > MEDIA_MAX_SIZE_BYTES:
+        raise ValueError(f"El fitxer supera el limit de {MEDIA_MAX_SIZE_BYTES} bytes.")
+
+    filename = str(getattr(uploaded, "name", "") or "").strip()
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in MEDIA_ALLOWED_EXTENSIONS:
+        raise ValueError("Extensio de fitxer no permesa.")
+
+    mime_type = str(getattr(uploaded, "content_type", "") or "").strip().lower()
+    if not mime_type:
+        mime_type = str(mimetypes.guess_type(filename)[0] or "").strip().lower()
+    return {
+        "filename": filename,
+        "size": size,
+        "mime_type": mime_type,
+        "tipus": _guess_media_tipus(mime_type=mime_type, filename=filename),
+    }
+
+
+def _serialize_media_item(item):
+    url = ""
+    try:
+        if item.fitxer:
+            url = item.fitxer.url
+    except Exception:
+        url = ""
+
+    return {
+        "id": item.id,
+        "inscripcio_id": item.inscripcio_id,
+        "tipus": item.tipus,
+        "mime_type": item.mime_type or "",
+        "original_filename": item.original_filename or "",
+        "file_size_bytes": int(item.file_size_bytes or 0),
+        "is_primary": bool(item.is_primary),
+        "source": item.source or "",
+        "match_score": float(item.match_score) if item.match_score is not None else None,
+        "url": url,
+    }
 
 
 def get_available_table_columns(competicio):
@@ -159,6 +257,7 @@ def get_selected_table_columns(competicio, available_cols):
             "grup",
             "equip",
             "__aparells__",
+            "__media__",
             "ordre_sortida",
             "__actions__",
         ]
@@ -412,6 +511,36 @@ class InscripcionsListNewView(InscripcionsListView):
                 excluded_map[ins_id].sort()
 
         ctx["inscripcio_aparells_excluded_map"] = excluded_map
+        media_map = {str(ins_id): [] for ins_id in visible_ins_ids}
+        if visible_ins_ids:
+            media_qs = (
+                InscripcioMedia.objects
+                .filter(competicio=self.competicio, inscripcio_id__in=visible_ins_ids)
+                .order_by("inscripcio_id", "-is_primary", "-created_at", "id")
+            )
+            for media in media_qs:
+                media_map.setdefault(str(media.inscripcio_id), []).append(_serialize_media_item(media))
+        ctx["inscripcio_media_map"] = media_map
+
+        all_ins_qs = (
+            Inscripcio.objects
+            .filter(competicio=self.competicio)
+            .order_by("ordre_sortida", "id")
+            .only("id", "nom_i_cognoms", "entitat", "subcategoria", "sexe")
+        )
+        media_match_options = []
+        for ins in all_ins_qs:
+            ent = str(getattr(ins, "entitat", "") or "").strip()
+            sub = str(getattr(ins, "subcategoria", "") or "").strip()
+            sexe = str(getattr(ins, "sexe", "") or "").strip()
+            extra = [x for x in [ent, sub, sexe] if x]
+            label = str(getattr(ins, "nom_i_cognoms", "") or "").strip()
+            if extra:
+                label = f"{label} ({' · '.join(extra)})"
+            media_match_options.append({"id": ins.id, "label": label})
+
+        ctx["media_match_inscripcions_options"] = media_match_options
+        ctx["media_matching_config"] = _get_media_matching_config(self.competicio)
         ctx["history_state"] = get_inscripcions_history_state(self.request, self.competicio.id)
 
         return ctx
@@ -602,6 +731,272 @@ def inscripcions_set_aparells(request, pk):
                 "active_comp_aparell_ids": active_ids,
                 "selected_comp_aparell_ids": selected_ids,
                 "excluded_comp_aparell_ids": excluded_ids,
+            },
+            request,
+            competicio.id,
+        )
+    )
+
+
+def _create_inscripcio_media_record(
+    *,
+    competicio,
+    inscripcio,
+    uploaded,
+    source: str,
+    match_score=None,
+    force_primary: bool = False,
+):
+    meta = _validate_uploaded_media_file(uploaded)
+    match_decimal = None
+    if match_score not in (None, ""):
+        try:
+            match_decimal = Decimal(str(match_score))
+        except Exception:
+            match_decimal = None
+
+    tipus = meta["tipus"]
+    with transaction.atomic():
+        existing_qs = InscripcioMedia.objects.filter(
+            competicio=competicio,
+            inscripcio=inscripcio,
+            tipus=tipus,
+        )
+        will_be_primary = bool(force_primary) or (not existing_qs.filter(is_primary=True).exists())
+        if will_be_primary:
+            existing_qs.update(is_primary=False)
+
+        item = InscripcioMedia.objects.create(
+            competicio=competicio,
+            inscripcio=inscripcio,
+            fitxer=uploaded,
+            tipus=tipus,
+            mime_type=meta["mime_type"],
+            original_filename=meta["filename"],
+            file_size_bytes=meta["size"],
+            is_primary=will_be_primary,
+            source=source,
+            match_score=match_decimal,
+        )
+    return item
+
+
+@require_POST
+@csrf_protect
+def inscripcions_media_upload(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    raw_ins_id = request.POST.get("inscripcio_id")
+    try:
+        inscripcio_id = int(raw_ins_id)
+    except Exception:
+        return HttpResponseBadRequest("inscripcio_id invalid")
+
+    inscripcio = get_object_or_404(Inscripcio, pk=inscripcio_id, competicio=competicio)
+    uploaded = request.FILES.get("media_file") or request.FILES.get("file")
+    set_primary = str(request.POST.get("set_primary") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+    try:
+        item = _create_inscripcio_media_record(
+            competicio=competicio,
+            inscripcio=inscripcio,
+            uploaded=uploaded,
+            source=InscripcioMedia.Source.MANUAL,
+            force_primary=set_primary,
+        )
+    except ValueError as exc:
+        return HttpResponseBadRequest(str(exc))
+
+    payload = {
+        "ok": True,
+        "item": _serialize_media_item(item),
+        "inscripcio_id": inscripcio.id,
+    }
+    return JsonResponse(with_inscripcions_history_payload(payload, request, competicio.id))
+
+
+@require_POST
+@csrf_protect
+def inscripcions_media_delete(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        return HttpResponseBadRequest("JSON invalid")
+
+    try:
+        media_id = int(payload.get("media_id"))
+    except Exception:
+        return HttpResponseBadRequest("media_id invalid")
+
+    item = get_object_or_404(InscripcioMedia, pk=media_id, competicio=competicio)
+    was_primary = bool(item.is_primary)
+    inscripcio_id = item.inscripcio_id
+    tipus = item.tipus
+    if item.fitxer:
+        item.fitxer.delete(save=False)
+    item.delete()
+
+    if was_primary:
+        next_item = (
+            InscripcioMedia.objects
+            .filter(competicio=competicio, inscripcio_id=inscripcio_id, tipus=tipus)
+            .order_by("-created_at", "id")
+            .first()
+        )
+        if next_item:
+            next_item.is_primary = True
+            next_item.save(update_fields=["is_primary"])
+
+    response = {
+        "ok": True,
+        "deleted_media_id": media_id,
+        "inscripcio_id": inscripcio_id,
+    }
+    return JsonResponse(with_inscripcions_history_payload(response, request, competicio.id))
+
+
+@require_POST
+@csrf_protect
+def inscripcions_media_set_primary(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        return HttpResponseBadRequest("JSON invalid")
+
+    try:
+        media_id = int(payload.get("media_id"))
+    except Exception:
+        return HttpResponseBadRequest("media_id invalid")
+
+    item = get_object_or_404(InscripcioMedia, pk=media_id, competicio=competicio)
+    with transaction.atomic():
+        InscripcioMedia.objects.filter(
+            competicio=competicio,
+            inscripcio_id=item.inscripcio_id,
+            tipus=item.tipus,
+        ).update(is_primary=False)
+        item.is_primary = True
+        item.save(update_fields=["is_primary"])
+
+    response = {
+        "ok": True,
+        "item": _serialize_media_item(item),
+    }
+    return JsonResponse(with_inscripcions_history_payload(response, request, competicio.id))
+
+
+@require_POST
+@csrf_protect
+def inscripcions_media_match_preview(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        return HttpResponseBadRequest("JSON invalid")
+
+    files = payload.get("files") or []
+    if not isinstance(files, list):
+        return HttpResponseBadRequest("files ha de ser una llista")
+    if len(files) > 3000:
+        return HttpResponseBadRequest("Massa fitxers al preview")
+
+    inscripcions = (
+        Inscripcio.objects
+        .filter(competicio=competicio)
+        .only("id", "nom_i_cognoms", "entitat", "subcategoria", "sexe")
+    )
+    candidates = build_inscripcio_media_match_candidates(inscripcions)
+    cfg = _get_media_matching_config(competicio)
+    rows = match_media_files_to_inscripcions(files, candidates, config=cfg, top_k=3)
+
+    auto_count = len([r for r in rows if r.get("status") == "auto"])
+    review_count = len([r for r in rows if r.get("status") == "review"])
+    unmatched_count = len([r for r in rows if r.get("status") == "unmatched"])
+    return JsonResponse(
+        {
+            "ok": True,
+            "rows": rows,
+            "counts": {
+                "total": len(rows),
+                "auto": auto_count,
+                "review": review_count,
+                "unmatched": unmatched_count,
+            },
+            "config": cfg,
+        }
+    )
+
+
+@require_POST
+@csrf_protect
+def inscripcions_media_match_apply(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    raw = request.POST.get("mapping_json") or "[]"
+    try:
+        mapping = json.loads(raw)
+    except Exception:
+        return HttpResponseBadRequest("mapping_json invalid")
+    if not isinstance(mapping, list):
+        return HttpResponseBadRequest("mapping_json ha de ser una llista")
+
+    key_to_row = {}
+    target_ids = set()
+    for row in mapping:
+        if not isinstance(row, dict):
+            continue
+        key = str(row.get("key") or "").strip()
+        if not key:
+            continue
+        try:
+            ins_id = int(row.get("inscripcio_id"))
+        except Exception:
+            continue
+        score = row.get("score")
+        key_to_row[key] = {"inscripcio_id": ins_id, "score": score}
+        target_ids.add(ins_id)
+
+    if not key_to_row:
+        return HttpResponseBadRequest("No hi ha assignacions valides")
+
+    inscripcions = {
+        ins.id: ins
+        for ins in Inscripcio.objects.filter(competicio=competicio, id__in=target_ids)
+    }
+
+    created = []
+    errors = []
+    for key, row in key_to_row.items():
+        uploaded = request.FILES.get(f"file_{key}")
+        if uploaded is None:
+            errors.append({"key": key, "error": "Fitxer no trobat al POST"})
+            continue
+
+        inscripcio = inscripcions.get(row["inscripcio_id"])
+        if inscripcio is None:
+            errors.append({"key": key, "error": "Inscripcio no valida"})
+            continue
+
+        try:
+            item = _create_inscripcio_media_record(
+                competicio=competicio,
+                inscripcio=inscripcio,
+                uploaded=uploaded,
+                source=InscripcioMedia.Source.ASSISTED,
+                match_score=row.get("score"),
+            )
+            created.append(_serialize_media_item(item))
+        except ValueError as exc:
+            errors.append({"key": key, "error": str(exc)})
+
+    return JsonResponse(
+        with_inscripcions_history_payload(
+            {
+                "ok": True,
+                "created_count": len(created),
+                "error_count": len(errors),
+                "created": created[:25],
+                "errors": errors[:25],
             },
             request,
             competicio.id,

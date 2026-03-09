@@ -6,6 +6,11 @@ from competicions_trampoli import views, views_judge_admin, views_judge_messages
 from .access import require_competicio_capability
 from .inscripcions_list_new import (
     InscripcionsListNewView,
+    inscripcions_media_delete,
+    inscripcions_media_match_apply,
+    inscripcions_media_match_preview,
+    inscripcions_media_set_primary,
+    inscripcions_media_upload,
     inscripcions_save_table_columns as inscripcions_save_table_columns_new,
     inscripcions_set_aparells as inscripcions_set_aparells_new,
     inscripcions_set_group_name as inscripcions_set_group_name_new,
@@ -39,7 +44,7 @@ from .views_equips import (
     equips_rename,
     equips_unassign,
 )
-from .views_scoring import ScoringNotesHome, ScoringSchemaUpdate, scoring_save
+from .views_scoring import ScoringNotesHome, ScoringSchemaUpdate, scoring_media_context, scoring_save
 from .views_trampoli import (
     AparellCreate,
     AparellDeleteView,
@@ -94,6 +99,11 @@ urlpatterns = [
     path("competicio/<int:pk>/inscripcions/save-table-columns/", competition_view(inscripcions_save_table_columns_new, "inscripcions.edit"), name="inscripcions_save_table_columns"),
     path("competicio/<int:pk>/inscripcions/set-group-name/", competition_view(inscripcions_set_group_name_new, "inscripcions.edit"), name="inscripcions_set_group_name"),
     path("competicio/<int:pk>/inscripcions/set-aparells/", competition_view(inscripcions_set_aparells_new, "inscripcions.edit"), name="inscripcions_set_aparells"),
+    path("competicio/<int:pk>/inscripcions/media/upload/", competition_view(inscripcions_media_upload, "inscripcions.edit"), name="inscripcions_media_upload"),
+    path("competicio/<int:pk>/inscripcions/media/delete/", competition_view(inscripcions_media_delete, "inscripcions.edit"), name="inscripcions_media_delete"),
+    path("competicio/<int:pk>/inscripcions/media/set-primary/", competition_view(inscripcions_media_set_primary, "inscripcions.edit"), name="inscripcions_media_set_primary"),
+    path("competicio/<int:pk>/inscripcions/media/match-preview/", competition_view(inscripcions_media_match_preview, "inscripcions.view"), name="inscripcions_media_match_preview"),
+    path("competicio/<int:pk>/inscripcions/media/match-apply/", competition_view(inscripcions_media_match_apply, "inscripcions.edit"), name="inscripcions_media_match_apply"),
     path("competicio/<int:pk>/inscripcions/equips/preview/", competition_view(equips_preview, "inscripcions.view"), name="inscripcions_equips_preview"),
     path("competicio/<int:pk>/inscripcions/equips/auto-create/", competition_view(equips_auto_create, "inscripcions.edit"), name="inscripcions_equips_auto_create"),
     path("competicio/<int:pk>/inscripcions/equips/create/", competition_view(equips_create_manual, "inscripcions.edit"), name="inscripcions_equips_create_manual"),
@@ -120,6 +130,7 @@ urlpatterns = [
     path("competicio/<int:pk>/scores/save/", competition_view(scoring_save, "scoring.edit"), name="scoring_save"),
     path("scoring/<int:pk>/save-partial/", competition_view(views_scoring.scoring_save_partial, "scoring.edit"), name="scoring_save_partial"),
     path("scoring/<int:pk>/updates/", competition_view(views_scoring.scoring_updates, "scoring.view"), name="scoring_updates"),
+    path("scoring/<int:pk>/media/context/", competition_view(scoring_media_context, "scoring.view"), name="scoring_media_context"),
 
     path("competicio/<int:pk>/rotacions/", competition_view(views_rotacions.rotacions_planner, "rotacions.view"), name="rotacions_planner"),
     path("competicio/<int:pk>/rotacions/save/", competition_view(views_rotacions.rotacions_save, "rotacions.edit"), name="rotacions_save"),

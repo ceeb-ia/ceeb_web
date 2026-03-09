@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 
 class Competicio(models.Model):
@@ -164,3 +165,67 @@ class Inscripcio(models.Model):
 
     def __str__(self):
         return f"{self.nom_i_cognoms} ({self.competicio})"
+
+
+class InscripcioMedia(models.Model):
+    class Tipus(models.TextChoices):
+        AUDIO = "audio", "Audio"
+        VIDEO = "video", "Video"
+        IMAGE = "image", "Imatge"
+        OTHER = "other", "Altre"
+
+    class Source(models.TextChoices):
+        MANUAL = "manual", "Manual"
+        ASSISTED = "assisted", "Assisted"
+
+    competicio = models.ForeignKey(
+        Competicio,
+        on_delete=models.CASCADE,
+        related_name="inscripcions_media",
+    )
+    inscripcio = models.ForeignKey(
+        Inscripcio,
+        on_delete=models.CASCADE,
+        related_name="media_files",
+    )
+    fitxer = models.FileField(upload_to="inscripcions/media/%Y/%m/%d/")
+    tipus = models.CharField(
+        max_length=20,
+        choices=Tipus.choices,
+        default=Tipus.OTHER,
+        db_index=True,
+    )
+    mime_type = models.CharField(max_length=120, blank=True, default="")
+    original_filename = models.CharField(max_length=255, blank=True, default="")
+    file_size_bytes = models.PositiveBigIntegerField(default=0)
+    is_primary = models.BooleanField(default=False)
+    source = models.CharField(
+        max_length=20,
+        choices=Source.choices,
+        default=Source.MANUAL,
+    )
+    match_score = models.DecimalField(max_digits=5, decimal_places=4, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["inscripcio_id", "-is_primary", "-created_at", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["inscripcio", "tipus"],
+                condition=models.Q(is_primary=True),
+                name="uniq_primary_media_per_inscripcio_tipus",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["competicio", "inscripcio"]),
+            models.Index(fields=["competicio", "tipus"]),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.inscripcio_id and self.competicio_id and self.inscripcio.competicio_id != self.competicio_id:
+            raise ValidationError("La media i la inscripcio han de pertanyer a la mateixa competicio.")
+
+    def __str__(self):
+        return f"Media ins={self.inscripcio_id} tipus={self.tipus} id={self.id}"

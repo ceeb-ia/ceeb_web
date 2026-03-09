@@ -353,6 +353,98 @@
       min-width: 180px;
       max-width: 260px;
     }
+    .media-cell {
+      min-width: 220px;
+      max-width: 360px;
+    }
+    .media-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-bottom: 4px;
+    }
+    .media-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      border: 1px solid #d8e1f1;
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: 0.72rem;
+      background: #f8fbff;
+      max-width: 100%;
+    }
+    .media-badge-primary {
+      border-color: #93c5fd;
+      background: #eff6ff;
+    }
+    .media-badge-name {
+      max-width: 140px;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    .media-icon-btn {
+      border: none;
+      background: transparent;
+      padding: 0;
+      line-height: 1;
+      color: #334155;
+      font-size: 0.82rem;
+      cursor: pointer;
+    }
+    .media-icon-btn:disabled {
+      opacity: 0.45;
+      cursor: default;
+    }
+    .media-upload-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 4px;
+    }
+    .media-upload-row .form-control {
+      min-width: 150px;
+      max-width: 240px;
+      font-size: 0.78rem;
+      height: calc(1.5em + .45rem + 2px);
+      padding-top: .15rem;
+      padding-bottom: .15rem;
+    }
+    .media-match-table-wrap {
+      max-height: 320px;
+      overflow: auto;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+    }
+    .media-match-table th,
+    .media-match-table td {
+      vertical-align: middle;
+      font-size: .82rem;
+    }
+    .media-match-status {
+      display: inline-block;
+      padding: 2px 7px;
+      border-radius: 999px;
+      font-size: .72rem;
+      border: 1px solid #d1d5db;
+      background: #f3f4f6;
+    }
+    .media-match-status.auto {
+      border-color: #86efac;
+      background: #dcfce7;
+      color: #166534;
+    }
+    .media-match-status.review {
+      border-color: #fde68a;
+      background: #fef3c7;
+      color: #92400e;
+    }
+    .media-match-status.unmatched {
+      border-color: #fecaca;
+      background: #fee2e2;
+      color: #991b1b;
+    }
     .th-col-head {
       display: flex;
       align-items: center;
@@ -898,6 +990,50 @@
 
         {% include "competicio/_equips_panel.html" %}
 
+        <!-- MEDIA -->
+        <div class="panel">
+          <div class="panel-head collapsed" data-target="#panel-media" aria-expanded="false">
+            <div>
+              <p class="panel-title mb-0">Fitxers multimèdia</p>
+              <div class="subtle">Pujada manual per inscripció i assignació assistida des d'una carpeta.</div>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+              <span class="subtle d-none d-md-inline">Mostra/Oculta</span>
+              <span class="chev">&#9662;</span>
+            </div>
+          </div>
+          <div id="panel-media" class="panel-collapse is-collapsed">
+            <div class="panel-body">
+              <div class="team-box mb-3">
+                <div class="fw-semibold">Assignació assistida des de carpeta</div>
+                <div class="text-muted small mb-2">
+                  Selecciona una carpeta local. El sistema farà match automàtic per nom, entitat, sexe i subcategoria.
+                </div>
+                <div class="d-flex align-items-center flex-wrap" style="gap:8px;">
+                  <input type="file" id="media-folder-input" class="form-control form-control-sm" webkitdirectory directory multiple>
+                  <button type="button" class="btn btn-sm btn-outline-primary" id="btn-media-match-preview">Previsualitzar match</button>
+                  <button type="button" class="btn btn-sm btn-primary" id="btn-media-match-apply" {% if not can_edit_inscripcions %}disabled{% endif %}>Aplicar assignacions</button>
+                </div>
+                <div class="small text-muted mt-2" id="media-match-summary">Cap fitxer carregat.</div>
+                <div class="media-match-table-wrap mt-2 d-none" id="media-match-table-wrap">
+                  <table class="table table-sm mb-0 media-match-table">
+                    <thead class="table-light">
+                      <tr>
+                        <th>Fitxer</th>
+                        <th>Estat</th>
+                        <th>Inscripció</th>
+                        <th>Score</th>
+                        <th>Detall</th>
+                      </tr>
+                    </thead>
+                    <tbody id="media-match-table-body"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- ALTRES -->
         <div class="panel">
           <div class="panel-head collapsed" data-target="#panel-altres" aria-expanded="false">
@@ -1228,6 +1364,41 @@
                                 </select>
                               {% endwith %}
                             {% endwith %}
+                          {% elif col.code == "__media__" %}
+                            {% with rid=r.id|stringformat:"s" %}
+                              {% with media_items=inscripcio_media_map|get_item:rid %}
+                                <div class="media-cell" data-ins-id="{{ r.id }}">
+                                  <div class="media-list js-media-list" data-ins-id="{{ r.id }}">
+                                    {% for m in media_items %}
+                                      <span class="media-badge {% if m.is_primary %}media-badge-primary{% endif %}" data-media-id="{{ m.id }}" data-media-ins-id="{{ r.id }}">
+                                        {% if m.url %}
+                                          <a class="media-badge-name" href="{{ m.url }}" target="_blank" rel="noopener noreferrer" title="{{ m.original_filename }}">{{ m.original_filename }}</a>
+                                        {% else %}
+                                          <span class="media-badge-name" title="{{ m.original_filename }}">{{ m.original_filename }}</span>
+                                        {% endif %}
+                                        <span class="text-muted">{{ m.tipus }}</span>
+                                        {% if can_edit_inscripcions %}
+                                          <button type="button" class="media-icon-btn js-media-set-primary" data-media-id="{{ m.id }}" title="Marcar com a principal">*</button>
+                                          <button type="button" class="media-icon-btn js-media-delete" data-media-id="{{ m.id }}" title="Eliminar fitxer">x</button>
+                                        {% endif %}
+                                      </span>
+                                    {% empty %}
+                                      <span class="small text-muted js-media-empty" data-ins-id="{{ r.id }}">Sense fitxers</span>
+                                    {% endfor %}
+                                  </div>
+                                  {% if can_edit_inscripcions %}
+                                    <div class="media-upload-row">
+                                      <input
+                                        type="file"
+                                        class="form-control form-control-sm js-media-upload-input"
+                                        data-ins-id="{{ r.id }}"
+                                        accept=".mp3,.wav,.m4a,.aac,.ogg,.mp4,.mov,.m4v,.webm,.jpg,.jpeg,.png">
+                                      <button type="button" class="btn btn-sm btn-outline-primary js-media-upload-btn" data-ins-id="{{ r.id }}">Pujar</button>
+                                    </div>
+                                  {% endif %}
+                                </div>
+                              {% endwith %}
+                            {% endwith %}
                           {% elif col.kind == "extra" %}
                             {{ r.extra|extra_item:col.code|default:"-" }}
                           {% elif col.code == "data_naixement" %}
@@ -1416,6 +1587,41 @@
                           </select>
                         {% endwith %}
                       {% endwith %}
+                    {% elif col.code == "__media__" %}
+                      {% with rid=r.id|stringformat:"s" %}
+                        {% with media_items=inscripcio_media_map|get_item:rid %}
+                          <div class="media-cell" data-ins-id="{{ r.id }}">
+                            <div class="media-list js-media-list" data-ins-id="{{ r.id }}">
+                              {% for m in media_items %}
+                                <span class="media-badge {% if m.is_primary %}media-badge-primary{% endif %}" data-media-id="{{ m.id }}" data-media-ins-id="{{ r.id }}">
+                                  {% if m.url %}
+                                    <a class="media-badge-name" href="{{ m.url }}" target="_blank" rel="noopener noreferrer" title="{{ m.original_filename }}">{{ m.original_filename }}</a>
+                                  {% else %}
+                                    <span class="media-badge-name" title="{{ m.original_filename }}">{{ m.original_filename }}</span>
+                                  {% endif %}
+                                  <span class="text-muted">{{ m.tipus }}</span>
+                                  {% if can_edit_inscripcions %}
+                                    <button type="button" class="media-icon-btn js-media-set-primary" data-media-id="{{ m.id }}" title="Marcar com a principal">*</button>
+                                    <button type="button" class="media-icon-btn js-media-delete" data-media-id="{{ m.id }}" title="Eliminar fitxer">x</button>
+                                  {% endif %}
+                                </span>
+                              {% empty %}
+                                <span class="small text-muted js-media-empty" data-ins-id="{{ r.id }}">Sense fitxers</span>
+                              {% endfor %}
+                            </div>
+                            {% if can_edit_inscripcions %}
+                              <div class="media-upload-row">
+                                <input
+                                  type="file"
+                                  class="form-control form-control-sm js-media-upload-input"
+                                  data-ins-id="{{ r.id }}"
+                                  accept=".mp3,.wav,.m4a,.aac,.ogg,.mp4,.mov,.m4v,.webm,.jpg,.jpeg,.png">
+                                <button type="button" class="btn btn-sm btn-outline-primary js-media-upload-btn" data-ins-id="{{ r.id }}">Pujar</button>
+                              </div>
+                            {% endif %}
+                          </div>
+                        {% endwith %}
+                      {% endwith %}
                     {% elif col.kind == "extra" %}
                       {{ r.extra|extra_item:col.code|default:"-" }}
                     {% elif col.code == "data_naixement" %}
@@ -1440,6 +1646,9 @@
 
   </div>
 </div>
+
+{{ media_match_inscripcions_options|json_script:"media-match-options-data" }}
+{{ media_matching_config|json_script:"media-matching-config-data" }}
 
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
 
@@ -1485,6 +1694,21 @@
   }
 
   const canEditInscripcions = {% if can_edit_inscripcions %}true{% else %}false{% endif %};
+  let mediaMatchOptions = [];
+  let mediaMatchingConfig = {};
+  try {
+    mediaMatchOptions = JSON.parse(document.getElementById('media-match-options-data')?.textContent || '[]');
+  } catch (_err) {
+    mediaMatchOptions = [];
+  }
+  try {
+    mediaMatchingConfig = JSON.parse(document.getElementById('media-matching-config-data')?.textContent || '{}');
+  } catch (_err) {
+    mediaMatchingConfig = {};
+  }
+  let mediaFolderSelection = [];
+  let mediaPreviewRows = [];
+
   let inscripcionsHistoryState = {
     can_undo: {% if history_state.can_undo %}true{% else %}false{% endif %},
     can_redo: {% if history_state.can_redo %}true{% else %}false{% endif %},
@@ -1846,6 +2070,7 @@
         'grup',
         'equip',
         '__aparells__',
+        '__media__',
         'ordre_sortida',
         '__actions__',
       ];
@@ -2042,6 +2267,11 @@
     const historyUndoUrl = "{% url 'inscripcions_history_undo' competicio.id %}";
     const historyRedoUrl = "{% url 'inscripcions_history_redo' competicio.id %}";
     const groupsFromSortUrl = "{% url 'inscripcions_groups_from_sort' competicio.id %}";
+    const mediaUploadUrl = "{% url 'inscripcions_media_upload' competicio.id %}";
+    const mediaDeleteUrl = "{% url 'inscripcions_media_delete' competicio.id %}";
+    const mediaSetPrimaryUrl = "{% url 'inscripcions_media_set_primary' competicio.id %}";
+    const mediaMatchPreviewUrl = "{% url 'inscripcions_media_match_preview' competicio.id %}";
+    const mediaMatchApplyUrl = "{% url 'inscripcions_media_match_apply' competicio.id %}";
     function normalizeCustomOrderValues(rawValues) {
       const out = [];
       const seen = new Set();
@@ -2793,6 +3023,235 @@
       aparellsSaveTimers.set(insId, timer);
     }
 
+    function formatBytes(num) {
+      const n = Number(num || 0);
+      if (!Number.isFinite(n) || n <= 0) return '0 B';
+      const units = ['B', 'KB', 'MB', 'GB'];
+      let value = n;
+      let idx = 0;
+      while (value >= 1024 && idx < units.length - 1) {
+        value /= 1024;
+        idx += 1;
+      }
+      const digits = idx === 0 ? 0 : 1;
+      return `${value.toFixed(digits)} ${units[idx]}`;
+    }
+
+    function buildMediaFolderSelection() {
+      const input = document.getElementById('media-folder-input');
+      const files = Array.from(input?.files || []);
+      mediaFolderSelection = files.map((file, idx) => ({
+        key: String(idx),
+        filename: String(file?.name || ''),
+        relative_path: String(file?.webkitRelativePath || file?.name || ''),
+        size: Number(file?.size || 0),
+        file: file,
+      }));
+      return mediaFolderSelection;
+    }
+
+    function renderMediaMatchSummary(txt) {
+      const summary = document.getElementById('media-match-summary');
+      if (!summary) return;
+      summary.textContent = txt || '';
+    }
+
+    function renderMediaMatchRows(rows, counts) {
+      const wrap = document.getElementById('media-match-table-wrap');
+      const tbody = document.getElementById('media-match-table-body');
+      if (!wrap || !tbody) return;
+      tbody.innerHTML = '';
+
+      const list = Array.isArray(rows) ? rows : [];
+      if (!list.length) {
+        wrap.classList.add('d-none');
+        renderMediaMatchSummary('No hi ha resultats de match.');
+        return;
+      }
+
+      wrap.classList.remove('d-none');
+      const statusLabel = {
+        auto: 'AUTO',
+        review: 'REVISAR',
+        unmatched: 'SENSE MATCH',
+      };
+
+      list.forEach(row => {
+        const tr = document.createElement('tr');
+
+        const tdFile = document.createElement('td');
+        tdFile.textContent = `${row.relative_path || row.filename || '-'} (${formatBytes(row.size)})`;
+        tr.appendChild(tdFile);
+
+        const tdStatus = document.createElement('td');
+        const badge = document.createElement('span');
+        const st = String(row.status || 'unmatched');
+        badge.className = `media-match-status ${st}`;
+        badge.textContent = statusLabel[st] || st.toUpperCase();
+        tdStatus.appendChild(badge);
+        tr.appendChild(tdStatus);
+
+        const tdSel = document.createElement('td');
+        const select = document.createElement('select');
+        select.className = 'form-control form-control-sm js-media-match-select';
+        select.setAttribute('data-key', String(row.key || ''));
+
+        const emptyOpt = document.createElement('option');
+        emptyOpt.value = '';
+        emptyOpt.textContent = '-- Sense assignar --';
+        select.appendChild(emptyOpt);
+
+        const topCandidates = Array.isArray(row.top_candidates) ? row.top_candidates : [];
+        const optionPool = topCandidates.length ? topCandidates : (Array.isArray(mediaMatchOptions) ? mediaMatchOptions.slice(0, 25) : []);
+        optionPool.forEach(c => {
+          const opt = document.createElement('option');
+          opt.value = String(c.inscripcio_id || '');
+          const sc = Number(c.score || 0);
+          opt.textContent = topCandidates.length
+            ? `${c.label || c.inscripcio_id} (${sc.toFixed(3)})`
+            : (c.label || c.inscripcio_id);
+          select.appendChild(opt);
+        });
+
+        if (row.suggested_inscripcio_id != null) {
+          select.value = String(row.suggested_inscripcio_id);
+        }
+        tdSel.appendChild(select);
+        tr.appendChild(tdSel);
+
+        const tdScore = document.createElement('td');
+        const scoreVal = Number(row.score || 0);
+        tdScore.textContent = `${scoreVal.toFixed(3)} (delta ${Number(row.margin || 0).toFixed(3)})`;
+        tr.appendChild(tdScore);
+
+        const tdReason = document.createElement('td');
+        tdReason.textContent = String(row.reason || '');
+        tr.appendChild(tdReason);
+
+        tbody.appendChild(tr);
+      });
+
+      const c = counts || {};
+      renderMediaMatchSummary(
+        `Fitxers: ${Number(c.total || list.length)} · AUTO: ${Number(c.auto || 0)} · REVISAR: ${Number(c.review || 0)} · SENSE MATCH: ${Number(c.unmatched || 0)}`
+      );
+    }
+
+    async function previewMediaFolderMatch() {
+      const entries = buildMediaFolderSelection();
+      if (!entries.length) {
+        showAlert("Selecciona primer una carpeta amb fitxers.");
+        return;
+      }
+      const payloadFiles = entries.map(x => ({
+        key: x.key,
+        filename: x.filename,
+        relative_path: x.relative_path,
+        size: x.size,
+      }));
+      try {
+        const data = await postJson(mediaMatchPreviewUrl, { files: payloadFiles });
+        if (!data || !data.ok) {
+          showAlert("No s'ha pogut previsualitzar el match de media.");
+          return;
+        }
+        mediaPreviewRows = Array.isArray(data.rows) ? data.rows : [];
+        renderMediaMatchRows(mediaPreviewRows, data.counts || {});
+      } catch (err) {
+        showAlert(`No s'ha pogut previsualitzar el match de media.\n${err.message || err}`);
+      }
+    }
+
+    async function applyMediaFolderMatch() {
+      if (!canEditInscripcions) return;
+      if (!Array.isArray(mediaPreviewRows) || !mediaPreviewRows.length) {
+        showAlert("Fes primer la previsualitzacio de match.");
+        return;
+      }
+      const fileByKey = new Map((mediaFolderSelection || []).map(x => [String(x.key), x.file]));
+      const fd = new FormData();
+      const mapping = [];
+
+      mediaPreviewRows.forEach(row => {
+        const key = String(row.key || '');
+        const select = document.querySelector(`.js-media-match-select[data-key="${CSS.escape(key)}"]`);
+        const selectedIns = Number(select?.value || 0);
+        const file = fileByKey.get(key);
+        if (!Number.isFinite(selectedIns) || selectedIns <= 0 || !file) return;
+        mapping.push({
+          key: key,
+          inscripcio_id: selectedIns,
+          score: Number(row.score || 0),
+        });
+        fd.append(`file_${key}`, file, file.name);
+      });
+
+      if (!mapping.length) {
+        showAlert("No hi ha cap assignacio seleccionada.");
+        return;
+      }
+
+      fd.append('mapping_json', JSON.stringify(mapping));
+      try {
+        const resp = await fetch(mediaMatchApplyUrl, {
+          method: 'POST',
+          headers: {
+            'X-CSRFToken': getCookie('csrftoken'),
+          },
+          body: fd,
+        });
+        if (!resp.ok) {
+          const txt = await resp.text();
+          throw new Error(txt || `HTTP ${resp.status}`);
+        }
+        const data = await resp.json();
+        if (!data || !data.ok) {
+          showAlert("No s'han pogut aplicar les assignacions.");
+          return;
+        }
+        const created = Number(data.created_count || 0);
+        const errs = Number(data.error_count || 0);
+        if (errs > 0) {
+          showAlert(`Assignacio completada parcialment.\nCreats: ${created}\nErrors: ${errs}`);
+        }
+        reloadWithUiState();
+      } catch (err) {
+        showAlert(`No s'han pogut aplicar les assignacions.\n${err.message || err}`);
+      }
+    }
+
+    async function uploadMediaForInscripcio(insId, inputEl) {
+      const f = inputEl?.files?.[0];
+      if (!f) {
+        showAlert("Selecciona un fitxer abans de pujar.");
+        return;
+      }
+      const fd = new FormData();
+      fd.append('inscripcio_id', String(insId));
+      fd.append('media_file', f, f.name);
+      try {
+        const resp = await fetch(mediaUploadUrl, {
+          method: 'POST',
+          headers: {
+            'X-CSRFToken': getCookie('csrftoken'),
+          },
+          body: fd,
+        });
+        if (!resp.ok) {
+          const txt = await resp.text();
+          throw new Error(txt || `HTTP ${resp.status}`);
+        }
+        const data = await resp.json();
+        if (!data || !data.ok) {
+          showAlert("No s'ha pogut pujar el fitxer.");
+          return;
+        }
+        reloadWithUiState();
+      } catch (err) {
+        showAlert(`No s'ha pogut pujar el fitxer.\n${err.message || err}`);
+      }
+    }
+
     function renderTeamPreview(data) {
       const box = document.getElementById('team-preview');
       if (!box) return;
@@ -2838,6 +3297,80 @@
     document.querySelectorAll('.js-aparells-select').forEach(selectEl => {
       selectEl.dataset.prevSelection = JSON.stringify(getSelectedAparellIds(selectEl));
       selectEl.addEventListener('change', () => scheduleSaveAparells(selectEl));
+    });
+
+    const mediaFolderInput = document.getElementById('media-folder-input');
+    if (mediaFolderInput) {
+      mediaFolderInput.addEventListener('change', () => {
+        const entries = buildMediaFolderSelection();
+        mediaPreviewRows = [];
+        renderMediaMatchRows([], {});
+        if (!entries.length) {
+          renderMediaMatchSummary('Cap fitxer carregat.');
+          return;
+        }
+        const autoMin = Number(mediaMatchingConfig?.thresholds?.auto_score_min || 0).toFixed(2);
+        renderMediaMatchSummary(`${entries.length} fitxers preparats per al match (AUTO >= ${autoMin}).`);
+      });
+    }
+
+    const btnMediaPreview = document.getElementById('btn-media-match-preview');
+    if (btnMediaPreview) {
+      btnMediaPreview.addEventListener('click', previewMediaFolderMatch);
+    }
+    const btnMediaApply = document.getElementById('btn-media-match-apply');
+    if (btnMediaApply) {
+      btnMediaApply.addEventListener('click', applyMediaFolderMatch);
+    }
+
+    document.addEventListener('click', async (e) => {
+      const uploadBtn = e.target.closest('.js-media-upload-btn');
+      if (uploadBtn) {
+        if (!canEditInscripcions) return;
+        const insId = Number(uploadBtn.getAttribute('data-ins-id'));
+        if (!Number.isFinite(insId) || insId <= 0) return;
+        const cell = uploadBtn.closest('.media-cell');
+        const input = cell ? cell.querySelector('.js-media-upload-input') : null;
+        await uploadMediaForInscripcio(insId, input);
+        return;
+      }
+
+      const deleteBtn = e.target.closest('.js-media-delete');
+      if (deleteBtn) {
+        if (!canEditInscripcions) return;
+        const mediaId = Number(deleteBtn.getAttribute('data-media-id'));
+        if (!Number.isFinite(mediaId) || mediaId <= 0) return;
+        const ok = await showConfirm("Eliminar aquest fitxer multimedia?");
+        if (!ok) return;
+        try {
+          const data = await postJson(mediaDeleteUrl, { media_id: mediaId });
+          if (!data || !data.ok) {
+            showAlert("No s'ha pogut eliminar el fitxer.");
+            return;
+          }
+          reloadWithUiState();
+        } catch (err) {
+          showAlert(`No s'ha pogut eliminar el fitxer.\n${err.message || err}`);
+        }
+        return;
+      }
+
+      const primaryBtn = e.target.closest('.js-media-set-primary');
+      if (primaryBtn) {
+        if (!canEditInscripcions) return;
+        const mediaId = Number(primaryBtn.getAttribute('data-media-id'));
+        if (!Number.isFinite(mediaId) || mediaId <= 0) return;
+        try {
+          const data = await postJson(mediaSetPrimaryUrl, { media_id: mediaId });
+          if (!data || !data.ok) {
+            showAlert("No s'ha pogut marcar com a principal.");
+            return;
+          }
+          reloadWithUiState();
+        } catch (err) {
+          showAlert(`No s'ha pogut marcar com a principal.\n${err.message || err}`);
+        }
+      }
     });
 
     // 1) Sortable de pestanyes

@@ -16,7 +16,7 @@ from openpyxl import load_workbook
 from ceeb_web.auth_groups import GLOBAL_AUTH_GROUPS
 
 from .access import user_has_competicio_capability
-from .models import Competicio, Inscripcio
+from .models import Competicio, Inscripcio, InscripcioMedia
 from .models_judging import (
     JudgeConversation,
     JudgeConversationMessage,
@@ -755,6 +755,327 @@ class InscripcionsSetAparellsViewTests(_BaseTrampoliDataMixin, TestCase):
             content_type="application/json",
         )
         self.assertEqual(r.status_code, 400)
+
+
+class InscripcionsMediaFlowTests(_BaseTrampoliDataMixin, TestCase):
+    def setUp(self):
+        self.comp = self._create_competicio("Comp Media")
+        self.ins = self._create_inscripcio(self.comp, "LUCIA POZO SANCHEZ")
+        self.ins.entitat = "Collegi Sagrat Cor Diputacio"
+        self.ins.subcategoria = "GEN"
+        self.ins.sexe = "F"
+        self.ins.save(update_fields=["entitat", "subcategoria", "sexe"])
+
+        self.ins_2 = self._create_inscripcio(self.comp, "MARTA LOPEZ", ordre=2, grup=1)
+        self.ins_2.entitat = "Club Prova"
+        self.ins_2.subcategoria = "GEN"
+        self.ins_2.sexe = "F"
+        self.ins_2.save(update_fields=["entitat", "subcategoria", "sexe"])
+
+        User = get_user_model()
+        self.user = User.objects.create_user(
+            username="media_editor_user",
+            password="testpass123",
+            email="media-editor@example.com",
+        )
+        CompeticioMembership.objects.create(
+            user=self.user,
+            competicio=self.comp,
+            role=CompeticioMembership.Role.EDITOR,
+            is_active=True,
+        )
+        self.client.force_login(self.user)
+
+    def _upload_media(self, inscripcio_id, filename="track.mp3", content_type="audio/mpeg"):
+        url = reverse("inscripcions_media_upload", kwargs={"pk": self.comp.id})
+        f = SimpleUploadedFile(filename, b"abc123", content_type=content_type)
+        return self.client.post(
+            url,
+            data={
+                "inscripcio_id": inscripcio_id,
+                "media_file": f,
+            },
+        )
+
+    def test_manual_upload_creates_primary_media(self):
+        res = self._upload_media(self.ins.id, filename="routine.mp3", content_type="audio/mpeg")
+        self.assertEqual(res.status_code, 200)
+        payload = res.json()
+        self.assertTrue(payload.get("ok"))
+        self.assertTrue(InscripcioMedia.objects.filter(inscripcio=self.ins).exists())
+        item = InscripcioMedia.objects.get(inscripcio=self.ins)
+        self.assertEqual(item.source, InscripcioMedia.Source.MANUAL)
+        self.assertEqual(item.tipus, InscripcioMedia.Tipus.AUDIO)
+        self.assertTrue(item.is_primary)
+
+    def test_set_primary_and_delete_promotes_next_item(self):
+        r1 = self._upload_media(self.ins.id, filename="first.mp3")
+        self.assertEqual(r1.status_code, 200)
+        r2 = self._upload_media(self.ins.id, filename="second.mp3")
+        self.assertEqual(r2.status_code, 200)
+
+        first = InscripcioMedia.objects.get(original_filename="first.mp3")
+        second = InscripcioMedia.objects.get(original_filename="second.mp3")
+        self.assertTrue(first.is_primary)
+        self.assertFalse(second.is_primary)
+
+        set_primary_url = reverse("inscripcions_media_set_primary", kwargs={"pk": self.comp.id})
+        set_res = self.client.post(
+            set_primary_url,
+            data=json.dumps({"media_id": second.id}),
+            content_type="application/json",
+        )
+        self.assertEqual(set_res.status_code, 200)
+
+        first.refresh_from_db()
+        second.refresh_from_db()
+        self.assertFalse(first.is_primary)
+        self.assertTrue(second.is_primary)
+
+        delete_url = reverse("inscripcions_media_delete", kwargs={"pk": self.comp.id})
+        del_res = self.client.post(
+            delete_url,
+            data=json.dumps({"media_id": second.id}),
+            content_type="application/json",
+        )
+        self.assertEqual(del_res.status_code, 200)
+
+        self.assertFalse(InscripcioMedia.objects.filter(id=second.id).exists())
+        first.refresh_from_db()
+        self.assertTrue(first.is_primary)
+
+    def test_assisted_preview_and_apply_creates_assisted_media(self):
+        preview_url = reverse("inscripcions_media_match_preview", kwargs={"pk": self.comp.id})
+        preview_res = self.client.post(
+            preview_url,
+            data=json.dumps(
+                {
+                    "files": [
+                        {
+                            "key": "0",
+                            "filename": "1 - -LUCIA POZO SANCHEZ-Collegi-Sagrat-Cor-Diputacio-GEN-F.mp3",
+                            "relative_path": "music/1 - -LUCIA POZO SANCHEZ-Collegi-Sagrat-Cor-Diputacio-GEN-F.mp3",
+                            "size": 1234,
+                        }
+                    ]
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(preview_res.status_code, 200)
+        rows = preview_res.json().get("rows", [])
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].get("suggested_inscripcio_id"), self.ins.id)
+
+        apply_url = reverse("inscripcions_media_match_apply", kwargs={"pk": self.comp.id})
+        media_file = SimpleUploadedFile(
+            "1 - -LUCIA POZO SANCHEZ-Collegi-Sagrat-Cor-Diputacio-GEN-F.mp3",
+            b"abc123",
+            content_type="audio/mpeg",
+        )
+        apply_res = self.client.post(
+            apply_url,
+            data={
+                "mapping_json": json.dumps(
+                    [
+                        {
+                            "key": "0",
+                            "inscripcio_id": self.ins.id,
+                            "score": rows[0].get("score"),
+                        }
+                    ]
+                ),
+                "file_0": media_file,
+            },
+        )
+        self.assertEqual(apply_res.status_code, 200)
+        payload = apply_res.json()
+        self.assertTrue(payload.get("ok"))
+        self.assertEqual(payload.get("created_count"), 1)
+
+        item = InscripcioMedia.objects.get(inscripcio=self.ins)
+        self.assertEqual(item.source, InscripcioMedia.Source.ASSISTED)
+
+
+class ScoringMediaPlaybackContextTests(_BaseTrampoliDataMixin, TestCase):
+    def setUp(self):
+        self.comp = self._create_competicio("Comp Media Notes")
+        self.ins = self._create_inscripcio(self.comp, "Participant Reproductor")
+
+        self.app = self._create_aparell("TRAMP_MEDIA", "Tramp Media")
+        self.comp_app = self._create_comp_aparell(self.comp, self.app, ordre=1, actiu=True)
+
+        User = get_user_model()
+        self.user = User.objects.create_user(
+            username="scoring_media_owner",
+            password="testpass123",
+            email="scoring-media-owner@example.com",
+        )
+        CompeticioMembership.objects.create(
+            user=self.user,
+            competicio=self.comp,
+            role=CompeticioMembership.Role.OWNER,
+            is_active=True,
+        )
+        self.client.force_login(self.user)
+
+    def test_media_context_orders_tracks_and_keeps_judge_video_separate(self):
+        InscripcioMedia.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins,
+            fitxer=SimpleUploadedFile("a-main.mp3", b"aaa", content_type="audio/mpeg"),
+            tipus=InscripcioMedia.Tipus.AUDIO,
+            mime_type="audio/mpeg",
+            original_filename="a-main.mp3",
+            file_size_bytes=3,
+            is_primary=True,
+        )
+        InscripcioMedia.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins,
+            fitxer=SimpleUploadedFile("a-alt.mp3", b"bbb", content_type="audio/mpeg"),
+            tipus=InscripcioMedia.Tipus.AUDIO,
+            mime_type="audio/mpeg",
+            original_filename="a-alt.mp3",
+            file_size_bytes=3,
+            is_primary=False,
+        )
+        InscripcioMedia.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins,
+            fitxer=SimpleUploadedFile("v-main.mp4", b"1111", content_type="video/mp4"),
+            tipus=InscripcioMedia.Tipus.VIDEO,
+            mime_type="video/mp4",
+            original_filename="v-main.mp4",
+            file_size_bytes=4,
+            is_primary=True,
+        )
+        InscripcioMedia.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins,
+            fitxer=SimpleUploadedFile("v-alt.mp4", b"2222", content_type="video/mp4"),
+            tipus=InscripcioMedia.Tipus.VIDEO,
+            mime_type="video/mp4",
+            original_filename="v-alt.mp4",
+            file_size_bytes=4,
+            is_primary=False,
+        )
+
+        entry = ScoreEntry.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins,
+            exercici=1,
+            comp_aparell=self.comp_app,
+            inputs={},
+            outputs={},
+            total=0,
+        )
+        ScoreEntryVideo.objects.create(
+            score_entry=entry,
+            video_file=SimpleUploadedFile("judge.mp4", b"3333", content_type="video/mp4"),
+            status=ScoreEntryVideo.Status.READY,
+            file_size_bytes=4,
+            mime_type="video/mp4",
+            original_filename="judge.mp4",
+        )
+
+        url = reverse("scoring_media_context", kwargs={"pk": self.comp.id})
+        res = self.client.get(
+            url,
+            {
+                "inscripcio_id": self.ins.id,
+                "comp_aparell_id": self.comp_app.id,
+                "exercici": 1,
+            },
+        )
+        self.assertEqual(res.status_code, 200)
+        payload = res.json()
+        self.assertTrue(payload.get("ok"))
+
+        media = payload.get("media", {})
+        self.assertEqual((media.get("audio_primary") or {}).get("original_filename"), "a-main.mp3")
+        self.assertEqual(
+            [x.get("original_filename") for x in media.get("audio_others", [])],
+            ["a-alt.mp3"],
+        )
+        self.assertEqual((media.get("video_primary") or {}).get("original_filename"), "v-main.mp4")
+        self.assertEqual(
+            [x.get("original_filename") for x in media.get("video_others", [])],
+            ["v-alt.mp4"],
+        )
+        self.assertEqual((payload.get("judge_video") or {}).get("original_filename"), "judge.mp4")
+
+    def test_media_context_rejects_foreign_comp_aparell(self):
+        other_comp = self._create_competicio("Comp Altre Media")
+        other_app = self._create_aparell("TRAMP_MEDIA_X", "Tramp Media X")
+        other_comp_app = self._create_comp_aparell(other_comp, other_app, ordre=1, actiu=True)
+
+        url = reverse("scoring_media_context", kwargs={"pk": self.comp.id})
+        res = self.client.get(
+            url,
+            {
+                "inscripcio_id": self.ins.id,
+                "comp_aparell_id": other_comp_app.id,
+                "exercici": 1,
+            },
+        )
+        self.assertEqual(res.status_code, 400)
+
+    def test_scoring_notes_home_context_includes_media_counts_and_judge_presence(self):
+        ins_without_media = self._create_inscripcio(self.comp, "Participant Sense Media", ordre=2, grup=1)
+
+        InscripcioMedia.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins,
+            fitxer=SimpleUploadedFile("ctx-audio.mp3", b"aaa", content_type="audio/mpeg"),
+            tipus=InscripcioMedia.Tipus.AUDIO,
+            mime_type="audio/mpeg",
+            original_filename="ctx-audio.mp3",
+            file_size_bytes=3,
+            is_primary=True,
+        )
+        InscripcioMedia.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins,
+            fitxer=SimpleUploadedFile("ctx-video.mp4", b"bbbb", content_type="video/mp4"),
+            tipus=InscripcioMedia.Tipus.VIDEO,
+            mime_type="video/mp4",
+            original_filename="ctx-video.mp4",
+            file_size_bytes=4,
+            is_primary=True,
+        )
+
+        entry = ScoreEntry.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins,
+            exercici=1,
+            comp_aparell=self.comp_app,
+            inputs={},
+            outputs={},
+            total=0,
+        )
+        ScoreEntryVideo.objects.create(
+            score_entry=entry,
+            video_file=SimpleUploadedFile("ctx-judge.mp4", b"cccc", content_type="video/mp4"),
+            status=ScoreEntryVideo.Status.READY,
+            file_size_bytes=4,
+            mime_type="video/mp4",
+            original_filename="ctx-judge.mp4",
+        )
+
+        url = reverse("scoring_notes_home", kwargs={"pk": self.comp.id})
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, 200)
+
+        media_counts = res.context["media_counts_by_inscripcio"]
+        self.assertEqual(media_counts[str(self.ins.id)]["audio"], 1)
+        self.assertEqual(media_counts[str(self.ins.id)]["video"], 1)
+        self.assertEqual(media_counts[str(ins_without_media.id)]["audio"], 0)
+        self.assertEqual(media_counts[str(ins_without_media.id)]["video"], 0)
+
+        judge_map = res.context["judge_video_presence_by_key"]
+        self.assertEqual(int(judge_map.get(f"{self.ins.id}|1|{self.comp_app.id}") or 0), 1)
+        self.assertEqual(int(judge_map.get(f"{ins_without_media.id}|1|{self.comp_app.id}") or 0), 0)
 
 
 class ScoringAndJudgeExclusionFlowTests(_BaseTrampoliDataMixin, TestCase):
