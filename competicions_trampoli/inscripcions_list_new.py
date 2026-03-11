@@ -295,6 +295,12 @@ class InscripcionsListNewView(InscripcionsListView):
         ctx["inscrits_total_count"] = Inscripcio.objects.filter(
             competicio=self.competicio
         ).count()
+        ctx["existing_groups_count"] = (
+            filtered_qs.exclude(grup__isnull=True)
+            .values("grup")
+            .distinct()
+            .count()
+        )
 
         available_table_columns = get_available_table_columns(self.competicio)
         selected_table_columns = get_selected_table_columns(

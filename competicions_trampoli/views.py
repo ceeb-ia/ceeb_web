@@ -1529,6 +1529,82 @@ def _assign_group_sizes_in_order(objs, sizes, start_group_num):
     return g
 
 
+def _build_group_creation_preview(objs, sizes, start_group_num, bucket_label_by_id=None):
+    bucket_label_by_id = bucket_label_by_id or {}
+    out = []
+    idx = 0
+    next_group_num = start_group_num
+
+    for sz in sizes:
+        if sz <= 0:
+            continue
+
+        members = list(objs[idx:idx + sz])
+        idx += sz
+        if not members:
+            continue
+
+        next_group_num += 1
+        source_counts = OrderedDict()
+        for obj in members:
+            source_label = str(bucket_label_by_id.get(obj.id) or "Sense bloc")
+            source_counts[source_label] = source_counts.get(source_label, 0) + 1
+
+        member_names = [str(getattr(obj, "nom_i_cognoms", "") or "").strip() for obj in members]
+        member_names = [name for name in member_names if name]
+
+        out.append(
+            {
+                "group_num": next_group_num,
+                "members_count": len(members),
+                "sources": [
+                    {"label": label, "count": count}
+                    for label, count in source_counts.items()
+                ],
+                "member_names_preview": member_names[:4],
+                "member_names_remaining": max(0, len(member_names) - 4),
+            }
+        )
+
+    return out
+
+
+def _build_existing_groups_preview(records, bucket_label_by_id=None):
+    bucket_label_by_id = bucket_label_by_id or {}
+    grouped = OrderedDict()
+    for record in records:
+        group_num = getattr(record, "grup", None)
+        if group_num is None:
+            continue
+        grouped.setdefault(group_num, []).append(record)
+
+    out = []
+    for group_num in sorted(grouped.keys()):
+        members = grouped.get(group_num) or []
+        source_counts = OrderedDict()
+        for obj in members:
+            source_label = str(bucket_label_by_id.get(obj.id) or "Sense bloc")
+            source_counts[source_label] = source_counts.get(source_label, 0) + 1
+
+        member_names = [str(getattr(obj, "nom_i_cognoms", "") or "").strip() for obj in members]
+        member_names = [name for name in member_names if name]
+
+        out.append(
+            {
+                "group_num": group_num,
+                "members_count": len(members),
+                "sources": [
+                    {"label": label, "count": count}
+                    for label, count in source_counts.items()
+                ],
+                "member_names_preview": member_names[:4],
+                "member_names_remaining": max(0, len(member_names) - 4),
+            }
+        )
+
+    return out
+
+
 def _range_k_bounds(n, min_size, max_size):
     if n <= 0 or min_size <= 0 or max_size <= 0 or min_size > max_size:
         return (1, 0)  # rang invalid
@@ -3538,6 +3614,7 @@ def inscripcions_groups_from_sort(request, pk):
     ):
         return HttpResponseBadRequest("strategy invalid")
 
+    preview_only = bool(payload.get("preview_only"))
     fallback_mode = _parse_fallback_mode(payload.get("fallback_mode"))
 
     allowed_group_fields = get_allowed_group_fields(competicio)
@@ -3579,6 +3656,7 @@ def inscripcions_groups_from_sort(request, pk):
             with_inscripcions_history_payload(
                 {
                     "ok": True,
+                    "preview_only": preview_only,
                     "updated": 0,
                     "groups_created": 0,
                     "buckets_total": 0,
@@ -3587,6 +3665,16 @@ def inscripcions_groups_from_sort(request, pk):
                     "source": source,
                     "strategy": strategy,
                     "used_fallback": False,
+                    "preview": {
+                        "groups_total": 0,
+                        "members_total": 0,
+                        "groups": [],
+                        "existing_groups_total": 0,
+                        "existing_members_total": 0,
+                        "existing_groups": [],
+                        "source": source,
+                        "strategy": strategy,
+                    } if preview_only else None,
                 },
                 request,
                 competicio.id,
@@ -3634,6 +3722,14 @@ def inscripcions_groups_from_sort(request, pk):
             used_fallback = True
             fallback_reason = "no_active_tabs_used_all_filtered"
 
+    bucket_label_by_id_all = {}
+    for bucket in buckets:
+        bucket_label = str(bucket.get("label") or "Sense bloc")
+        for ins_id in bucket.get("ids") or []:
+            bucket_label_by_id_all.setdefault(ins_id, bucket_label)
+    existing_groups_preview = _build_existing_groups_preview(records, bucket_label_by_id_all)
+    existing_members_total = sum(group["members_count"] for group in existing_groups_preview)
+
     bucket_by_key = {b["key"]: b for b in buckets}
     selected_keys_raw = payload.get("selected_keys")
     if not isinstance(selected_keys_raw, list):
@@ -3666,6 +3762,7 @@ def inscripcions_groups_from_sort(request, pk):
             with_inscripcions_history_payload(
                 {
                     "ok": True,
+                    "preview_only": preview_only,
                     "updated": 0,
                     "groups_created": 0,
                     "buckets_total": len(buckets),
@@ -3675,6 +3772,18 @@ def inscripcions_groups_from_sort(request, pk):
                     "strategy": strategy,
                     "used_fallback": used_fallback,
                     "fallback_reason": fallback_reason,
+                    "preview": {
+                        "groups_total": 0,
+                        "members_total": 0,
+                        "groups": [],
+                        "existing_groups_total": len(existing_groups_preview),
+                        "existing_members_total": existing_members_total,
+                        "existing_groups": existing_groups_preview,
+                        "source": source,
+                        "strategy": strategy,
+                        "used_fallback": used_fallback,
+                        "fallback_reason": fallback_reason,
+                    } if preview_only else None,
                 },
                 request,
                 competicio.id,
@@ -3689,10 +3798,21 @@ def inscripcions_groups_from_sort(request, pk):
             with_inscripcions_history_payload(
                 {
                     "ok": True,
+                    "preview_only": preview_only,
                     "updated": 0,
                     "groups_created": 0,
                     "source": source,
                     "strategy": strategy,
+                    "preview": {
+                        "groups_total": 0,
+                        "members_total": 0,
+                        "groups": [],
+                        "existing_groups_total": len(existing_groups_preview),
+                        "existing_members_total": existing_members_total,
+                        "existing_groups": existing_groups_preview,
+                        "source": source,
+                        "strategy": strategy,
+                    } if preview_only else None,
                 },
                 request,
                 competicio.id,
@@ -3768,6 +3888,7 @@ def inscripcions_groups_from_sort(request, pk):
             with_inscripcions_history_payload(
                 {
                     "ok": True,
+                    "preview_only": preview_only,
                     "updated": 0,
                     "groups_created": 0,
                     "buckets_total": len(buckets),
@@ -3777,6 +3898,71 @@ def inscripcions_groups_from_sort(request, pk):
                     "strategy": strategy_applied,
                     "used_fallback": used_fallback,
                     "fallback_reason": fallback_reason,
+                    "preview": {
+                        "groups_total": 0,
+                        "members_total": n,
+                        "groups": [],
+                        "existing_groups_total": len(existing_groups_preview),
+                        "existing_members_total": existing_members_total,
+                        "existing_groups": existing_groups_preview,
+                        "source": source,
+                        "strategy": strategy_applied,
+                        "used_fallback": used_fallback,
+                        "fallback_reason": fallback_reason,
+                    } if preview_only else None,
+                },
+                request,
+                competicio.id,
+            )
+        )
+
+    max_grup = (GrupCompeticio.objects.filter(competicio=competicio).aggregate(m=Max("display_num"))["m"] or 0)
+    bucket_label_by_id = {}
+    for bucket in buckets_to_apply:
+        bucket_label = str(bucket.get("label") or "Sense bloc")
+        for ins_id in bucket.get("ids") or []:
+            bucket_label_by_id.setdefault(ins_id, bucket_label)
+
+    preview_groups = _build_group_creation_preview(
+        objs,
+        sizes,
+        start_group_num=max_grup,
+        bucket_label_by_id=bucket_label_by_id,
+    )
+
+    if preview_only:
+        return JsonResponse(
+            with_inscripcions_history_payload(
+                {
+                    "ok": True,
+                    "preview_only": True,
+                    "updated": 0,
+                    "groups_created": len(preview_groups),
+                    "buckets_total": len(buckets),
+                    "buckets_applied": len(buckets_to_apply),
+                    "stack_used": partition_codes,
+                    "source": source,
+                    "strategy": strategy_applied,
+                    "used_fallback": used_fallback,
+                    "fallback_reason": fallback_reason,
+                    "size_min": min(sizes) if sizes else 0,
+                    "size_max": max(sizes) if sizes else 0,
+                    "preview": {
+                        "groups_total": len(preview_groups),
+                        "members_total": n,
+                        "groups": preview_groups,
+                        "existing_groups_total": len(existing_groups_preview),
+                        "existing_members_total": existing_members_total,
+                        "existing_groups": existing_groups_preview,
+                        "source": source,
+                        "strategy": strategy_applied,
+                        "used_fallback": used_fallback,
+                        "fallback_reason": fallback_reason,
+                        "buckets_total": len(buckets),
+                        "buckets_applied": len(buckets_to_apply),
+                        "size_min": min(sizes) if sizes else 0,
+                        "size_max": max(sizes) if sizes else 0,
+                    },
                 },
                 request,
                 competicio.id,
@@ -3785,7 +3971,6 @@ def inscripcions_groups_from_sort(request, pk):
 
     before_snapshot = capture_inscripcions_history_snapshot(request, competicio)
     updates = list(objs)
-    max_grup = (GrupCompeticio.objects.filter(competicio=competicio).aggregate(m=Max("display_num"))["m"] or 0)
 
     _assign_group_sizes_in_order(objs, sizes, max_grup)
 
