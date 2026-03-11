@@ -142,29 +142,20 @@
         {% if exercicis|length > 1 %}
           <div class="mt-2 d-flex flex-wrap" style="gap:6px;">
             {% for ex in exercicis %}
-              <a class="btn btn-sm {% if ex == exercici %}btn-primary{% else %}btn-outline-primary{% endif %}" href="?ex={{ ex }}{% if franja_selected_id %}&franja={{ franja_selected_id }}{% endif %}">
+              <a class="btn btn-sm {% if ex == exercici %}btn-primary{% else %}btn-outline-primary{% endif %}" href="?ex={{ ex }}{% if franja_override_id %}&franja={{ franja_override_id }}{% endif %}">
                 Exercici {{ ex }}
               </a>
             {% endfor %}
           </div>
         {% endif %}
-        {% if franges_for_aparell %}
-          <div class="mt-2 d-flex flex-wrap align-items-center" style="gap:8px;">
-            <label class="judge-meta mb-0" for="franjaSelect">Franja</label>
-            <select id="franjaSelect" class="form-select form-select-sm" style="width:auto; min-width:220px;">
-              {% for fr in franges_for_aparell %}
-                <option value="{{ fr.id }}" {% if franja_selected_id == fr.id %}selected{% endif %}>
-                  {{ fr.titol|default:"Franja" }} · {{ fr.hora_inici|time:"H:i" }}-{{ fr.hora_fi|time:"H:i" }}
-                </option>
-              {% endfor %}
-            </select>
-            {% if franja_selected %}
-              <span class="judge-meta">
-                Mostrant {{ franja_selected.titol|default:"Franja" }} · {{ franja_selected.hora_inici|time:"H:i" }}-{{ franja_selected.hora_fi|time:"H:i" }}
-              </span>
+        <div class="mt-2">
+          <div class="judge-meta">
+            Ordre segons la franja assignada a cada grup.
+            {% if franja_override %}
+              Override actiu: {{ franja_override.titol|default:"Franja" }} · {{ franja_override.hora_inici|time:"H:i" }}-{{ franja_override.hora_fi|time:"H:i" }}.
             {% endif %}
           </div>
-        {% endif %}
+        </div>
       </div>
       <div class="d-flex gap-2 align-items-center">
         {% if not judge_kiosk %}
@@ -253,7 +244,7 @@
                     <div>
                       <div class="fw-semibold">{{ ins.nom_i_cognoms|default:"Inscripció" }}</div>
                       <div class="judge-meta">
-                        {{ bloc.label }} · Ordre {{ ins.rotation_order_display|default_if_none:ins.ordre_sortida }}{% if ins.rotation_base_order_display %} · Base {{ ins.rotation_base_order_display }}{% endif %}
+                        {{ bloc.label }} · Ordre {{ ins.rotation_order_display|default_if_none:ins.ordre_sortida }}{% if ins.rotation_base_order_display %} · Base {{ ins.rotation_base_order_display }}{% endif %}{% if bloc.franja_label %} · {{ bloc.franja_label }}{% endif %}
                       </div>
                     </div>
                     <div class="judge-meta" id="status-{{ ins.id }}"></div>
@@ -294,7 +285,7 @@
                     <div>
                       <div class="fw-semibold">{{ ins.nom_i_cognoms|default:"Inscripció" }}</div>
                       <div class="judge-meta">
-                        Fora de programa · {{ bloc.label }} · Ordre {{ ins.rotation_order_display|default_if_none:ins.ordre_sortida }}{% if ins.rotation_base_order_display %} · Base {{ ins.rotation_base_order_display }}{% endif %}
+                        Fora de programa · {{ bloc.label }} · Ordre {{ ins.rotation_order_display|default_if_none:ins.ordre_sortida }}{% if ins.rotation_base_order_display %} · Base {{ ins.rotation_base_order_display }}{% endif %}{% if bloc.franja_label %} · {{ bloc.franja_label }}{% endif %}
                       </div>
                     </div>
                     <div class="judge-meta" id="status-{{ ins.id }}"></div>
@@ -328,7 +319,7 @@
             </div>
           {% endfor %}
           {% else %}
-            <div class="judge-meta mb-3">No hi ha cap grup programat en aquesta franja per aquest aparell.</div>
+            <div class="judge-meta mb-3">No hi ha cap grup programat per aquest aparell.</div>
           {% endif %}
         </div>
         {% if out_of_program_group_blocks %}
@@ -1723,20 +1714,9 @@
       });
     });
   }
-  function initFranjaSelector(){
-    const sel = document.getElementById("franjaSelect");
-    if(!sel) return;
-    sel.addEventListener("change", () => {
-      const url = new URL(window.location.href);
-      url.searchParams.set("franja", String(sel.value || ""));
-      url.searchParams.set("ex", String(EXERCICI));
-      window.location.href = url.toString();
-    });
-  }
   // init
   buildPermText();
   initGroupTabs();
-  initFranjaSelector();
   initInsNavigation();
   initSupportUi();
   if(VIDEO_CAPTURE_ENABLED){

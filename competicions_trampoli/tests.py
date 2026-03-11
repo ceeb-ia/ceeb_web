@@ -1810,13 +1810,28 @@ class RotationOrderingDisplayTests(_BaseTrampoliDataMixin, TestCase):
         )
         self.client.force_login(self.user)
 
-    def test_judge_portal_uses_selected_franja_rotation_order(self):
+    def _assign_group_to_app_franja(self, group, franja):
+        assignacio, _created = RotacioAssignacio.objects.get_or_create(
+            competicio=self.comp,
+            franja=franja,
+            estacio=self.estacio,
+        )
+        next_ordre = (
+            RotacioAssignacioGrup.objects
+            .filter(assignacio=assignacio)
+            .count() + 1
+        )
+        RotacioAssignacioGrup.objects.create(assignacio=assignacio, grup=group, ordre=next_ordre)
+        return assignacio
+
+    def test_judge_portal_uses_first_app_franja_order_by_default_and_allows_override(self):
         portal_url = reverse("judge_portal", kwargs={"token": self.token.id})
-        portal_res = self.client.get(portal_url, {"franja": self.franja_2.id})
+        portal_res = self.client.get(portal_url)
         self.assertEqual(portal_res.status_code, 200)
-        self.assertEqual(portal_res.context["franja_selected_id"], self.franja_2.id)
+        self.assertIsNone(portal_res.context["franja_override_id"])
 
         block = portal_res.context["group_blocks"][0]
+        self.assertEqual(block["franja_id"], self.franja_2.id)
         self.assertEqual(
             [ins.nom_i_cognoms for ins in block["list"]],
             ["Participant 1", "Participant 3", "Participant 2"],
@@ -1834,9 +1849,10 @@ class RotationOrderingDisplayTests(_BaseTrampoliDataMixin, TestCase):
 
         third_res = self.client.get(portal_url, {"franja": self.franja_3.id})
         self.assertEqual(third_res.status_code, 200)
-        self.assertEqual(third_res.context["franja_selected_id"], self.franja_3.id)
+        self.assertEqual(third_res.context["franja_override_id"], self.franja_3.id)
 
         third_block = third_res.context["group_blocks"][0]
+        self.assertEqual(third_block["franja_id"], self.franja_3.id)
         self.assertEqual(
             [ins.nom_i_cognoms for ins in third_block["list"]],
             ["Participant 3", "Participant 2", "Participant 1"],
@@ -1844,6 +1860,64 @@ class RotationOrderingDisplayTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(
             [ins.rotation_order_display for ins in third_block["list"]],
             [1, 2, 3],
+        )
+
+    def test_judge_portal_shows_all_programmed_groups_with_each_group_ordered_by_own_franja(self):
+        extra_1 = self._create_inscripcio(self.comp, "Participant 4", ordre=4, grup=2)
+        extra_2 = self._create_inscripcio(self.comp, "Participant 5", ordre=5, grup=2)
+        Inscripcio.objects.filter(pk=extra_1.pk).update(ordre_competicio=1)
+        Inscripcio.objects.filter(pk=extra_2.pk).update(ordre_competicio=2)
+        extra_1.refresh_from_db()
+        extra_2.refresh_from_db()
+        self._assign_group_to_app_franja(extra_1.grup_competicio, self.franja_3)
+
+        portal_url = reverse("judge_portal", kwargs={"token": self.token.id})
+        portal_res = self.client.get(portal_url)
+        self.assertEqual(portal_res.status_code, 200)
+
+        blocks = portal_res.context["group_blocks"]
+        self.assertEqual(
+            [block["key"] for block in blocks],
+            [self.ins_1.grup_competicio_id, extra_1.grup_competicio_id],
+        )
+        self.assertEqual(blocks[0]["franja_id"], self.franja_2.id)
+        self.assertEqual(
+            [ins.nom_i_cognoms for ins in blocks[0]["list"]],
+            ["Participant 1", "Participant 3", "Participant 2"],
+        )
+        self.assertEqual(blocks[1]["franja_id"], self.franja_3.id)
+        self.assertEqual(
+            [ins.nom_i_cognoms for ins in blocks[1]["list"]],
+            ["Participant 5", "Participant 4"],
+        )
+
+    def test_judge_portal_franja_override_only_affects_groups_present_in_that_franja(self):
+        extra_1 = self._create_inscripcio(self.comp, "Participant 6", ordre=6, grup=3)
+        extra_2 = self._create_inscripcio(self.comp, "Participant 7", ordre=7, grup=3)
+        Inscripcio.objects.filter(pk=extra_1.pk).update(ordre_competicio=1)
+        Inscripcio.objects.filter(pk=extra_2.pk).update(ordre_competicio=2)
+        extra_1.refresh_from_db()
+        extra_2.refresh_from_db()
+        self._assign_group_to_app_franja(extra_1.grup_competicio, self.franja_2)
+
+        portal_url = reverse("judge_portal", kwargs={"token": self.token.id})
+        portal_res = self.client.get(portal_url, {"franja": self.franja_3.id})
+        self.assertEqual(portal_res.status_code, 200)
+
+        blocks = portal_res.context["group_blocks"]
+        self.assertEqual(
+            [block["key"] for block in blocks],
+            [self.ins_1.grup_competicio_id, extra_1.grup_competicio_id],
+        )
+        self.assertEqual(blocks[0]["franja_id"], self.franja_3.id)
+        self.assertEqual(
+            [ins.nom_i_cognoms for ins in blocks[0]["list"]],
+            ["Participant 3", "Participant 2", "Participant 1"],
+        )
+        self.assertEqual(blocks[1]["franja_id"], self.franja_2.id)
+        self.assertEqual(
+            [ins.nom_i_cognoms for ins in blocks[1]["list"]],
+            ["Participant 7", "Participant 6"],
         )
 
     def test_out_of_program_visibility_toggle_controls_notes_and_judge_views(self):

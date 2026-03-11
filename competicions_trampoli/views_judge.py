@@ -548,8 +548,8 @@ def judge_portal(request, token):
 
     franja_modes = get_rotacions_order_modes(competicio)
 
-    # Franges programades per aquest aparell. El portal resol una franja activa
-    # i ordena els grups segons el pas real dins d'aquesta franja.
+    # Franges programades per aquest aparell. El portal mostra tots els grups
+    # visibles i resol l'ordre de cada grup segons la seva franja associada.
     group_maps = get_group_maps(competicio)
     groups_by_id = group_maps["by_id"]
     franges = list(
@@ -579,9 +579,9 @@ def judge_portal(request, token):
         for a in assigns
         if getattr(a, "franja_id", None)
     )
-    app_franges = [franges_by_id[fid] for fid in app_franja_ids if fid in franges_by_id]
     app_programmed_group_ids = []
     app_groups_by_franja = {}
+    group_first_app_franja_id = {}
     for a in assigns:
         fid = getattr(a, "franja_id", None)
         if not fid:
@@ -593,39 +593,17 @@ def judge_portal(request, token):
             list(app_groups_by_franja.get(fid, [])) + list(groups_for_assignacio)
         )
         app_programmed_group_ids = unique_ordered(list(app_programmed_group_ids) + list(groups_for_assignacio))
+        for group_id in groups_for_assignacio:
+            group_first_app_franja_id.setdefault(group_id, fid)
 
-    def _resolve_selected_franja():
-        raw = request.GET.get("franja")
-        if raw not in (None, ""):
-            try:
-                requested_id = int(raw)
-            except Exception:
-                requested_id = None
-            if requested_id in app_franja_ids:
-                return requested_id, "query"
-
-        if not app_franges:
-            return None, ""
-
-        now_time = timezone.localtime().time()
-        current = next(
-            (
-                fr.id for fr in app_franges
-                if fr.hora_inici <= now_time < fr.hora_fi
-            ),
-            None,
-        )
-        if current:
-            return current, "clock"
-
-        upcoming = [fr for fr in app_franges if fr.hora_inici > now_time]
-        if upcoming:
-            return upcoming[0].id, "upcoming"
-
-        return app_franges[-1].id, "latest"
-
-    franja_selected_id, franja_selection_source = _resolve_selected_franja()
-    franja_selected = franges_by_id.get(franja_selected_id) if franja_selected_id else None
+    raw_franja_override = request.GET.get("franja")
+    try:
+        franja_override_id = int(raw_franja_override) if raw_franja_override not in (None, "") else None
+    except Exception:
+        franja_override_id = None
+    if franja_override_id not in app_franja_ids:
+        franja_override_id = None
+    franja_override = franges_by_id.get(franja_override_id) if franja_override_id else None
 
     # Llista d'inscripcions base (mateix criteri que notes home)
     excluded_ins_ids = (
@@ -641,23 +619,31 @@ def judge_portal(request, token):
         .order_by("grup_competicio__display_num", "ordre_competicio", "ordre_sortida", "id")
     )
 
-    # Amb franja seleccionada, el portal mostra els grups programats en aquell
-    # pas i calcula la posicio efectiva dins de la rotacio.
+    # El portal mostra tots els grups programats de l'aparell i calcula la
+    # posicio efectiva segons la primera franja assignada a cada grup, amb
+    # suport d'override per query string quan arriba ?franja=...
     ins_list = []
     grouped = {}
     for ins in ins_base_qs:
         key = 0 if ins.grup_competicio_id in (None, 0) else int(ins.grup_competicio_id)
         grouped.setdefault(key, []).append(ins)
 
-    if franja_selected_id:
-        ordered_groups = [g for g in app_groups_by_franja.get(franja_selected_id, []) if g in grouped]
-    else:
-        ordered_groups = [g for g in app_programmed_group_ids if g in grouped]
+    ordered_groups = [g for g in app_programmed_group_ids if g in grouped]
     remaining_groups = sorted(g for g in grouped.keys() if g not in app_programmed_group_ids and g != 0)
     always_visible_group_ids = list(ordered_groups)
     if 0 in grouped and 0 not in always_visible_group_ids:
         always_visible_group_ids.append(0)
     show_out_of_program_groups = show_out_of_program_in_competition_views(competicio)
+
+    override_group_ids = set(app_groups_by_franja.get(franja_override_id, [])) if franja_override_id else set()
+
+    def resolve_group_franja_id(group_id):
+        default_fid = group_first_app_franja_id.get(group_id)
+        if not franja_override_id:
+            return default_fid
+        if group_id in override_group_ids:
+            return franja_override_id
+        return default_fid
 
     def group_label_for(group_id: int) -> str:
         if group_id in (None, 0):
@@ -667,7 +653,7 @@ def judge_portal(request, token):
     def build_group_block(group_id):
         group_items = grouped.get(group_id, [])
         base_pairs = [(ins.id, ins) for ins in group_items]
-        fid = franja_selected_id
+        fid = resolve_group_franja_id(group_id)
         mode_for_group = franja_modes.get(str(fid), ORDER_MODE_MAINTAIN) if fid else ORDER_MODE_MAINTAIN
         rotate_steps = effective_rotate_steps(
             mode_for_group,
@@ -689,6 +675,13 @@ def judge_portal(request, token):
         return {
             "key": group_id,
             "label": group_label_for(group_id),
+            "franja_id": fid,
+            "franja_label": (
+                f"{getattr(franges_by_id.get(fid), 'titol', None) or 'Franja'} · "
+                f"{franges_by_id[fid].hora_inici.strftime('%H:%M')}-{franges_by_id[fid].hora_fi.strftime('%H:%M')}"
+                if fid and fid in franges_by_id
+                else ""
+            ),
             "list": ordered_ins,
         }
 
@@ -756,10 +749,8 @@ def judge_portal(request, token):
         "group_blocks": programmed_group_blocks,
         "out_of_program_group_blocks": out_of_program_group_blocks,
         "show_out_of_program_in_competition_views": show_out_of_program_groups,
-        "franges_for_aparell": app_franges,
-        "franja_selected_id": franja_selected_id,
-        "franja_selected": franja_selected,
-        "franja_selection_source": franja_selection_source,
+        "franja_override_id": franja_override_id,
+        "franja_override": franja_override,
         "scores_payload_json": scores_payload,
         "save_url": save_url,
         "updates_url": updates_url,
