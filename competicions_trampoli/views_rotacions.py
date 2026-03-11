@@ -1060,7 +1060,7 @@ def franges_export_excel(request, pk):
         .prefetch_related("grup_links__grup")
         .order_by("franja__ordre", "franja_id", "estacio__ordre", "id")
     )
-    rotation_step_map = build_group_rotation_step_map(assigns)
+    rotation_step_map = build_group_rotation_step_map(assigns, franja_modes)
     cell_groups = {}
     for a in assigns:
         gs = _assignacio_grups(a)

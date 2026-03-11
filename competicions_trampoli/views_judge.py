@@ -556,7 +556,7 @@ def judge_portal(request, token):
         .prefetch_related("grup_links__grup")
         .order_by("franja__ordre", "franja_id", "estacio__ordre", "id")
     )
-    rotation_step_map = build_group_rotation_step_map(all_assigns)
+    rotation_step_map = build_group_rotation_step_map(all_assigns, franja_modes)
     assigns = [
         a for a in all_assigns
         if getattr(a, "estacio", None) is not None and getattr(a.estacio, "comp_aparell_id", None) == comp_aparell.id

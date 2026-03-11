@@ -474,7 +474,7 @@ class ScoringNotesHome(TemplateView):
                 .prefetch_related("grup_links__grup")
                 .order_by("franja__ordre", "franja_id", "estacio__ordre", "id")
             )
-            rotation_step_map = build_group_rotation_step_map(all_assigns)
+            rotation_step_map = build_group_rotation_step_map(all_assigns, franja_modes)
             assigns = [a for a in all_assigns if a.franja_id == franja_selected_id]
             app_groups_map = {}
             for a in assigns:

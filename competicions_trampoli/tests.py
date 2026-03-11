@@ -16,7 +16,7 @@ from openpyxl import load_workbook
 from ceeb_web.auth_groups import GLOBAL_AUTH_GROUPS
 
 from .access import user_has_competicio_capability
-from .models import Competicio, Inscripcio, InscripcioMedia
+from .models import Competicio, GrupCompeticio, Inscripcio, InscripcioMedia
 from .models_judging import (
     JudgeConversation,
     JudgeConversationMessage,
@@ -216,6 +216,18 @@ class InscripcionsSortFlowTests(TestCase):
         url_name = "inscripcions_history_undo" if direction == "undo" else "inscripcions_history_redo"
         url = reverse(url_name, kwargs={"pk": self.comp.id})
         return self.client.post(url, data="{}", content_type="application/json")
+
+    def _groups_payload(self, **overrides):
+        payload = {
+            "source": "sort",
+            "strategy": "count",
+            "group_count": 1,
+            "preview_only": True,
+            "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+            "group_by": [],
+        }
+        payload.update(overrides)
+        return payload
 
     def test_sort_apply_reapplying_existing_criterion_keeps_priority(self):
         i1 = Inscripcio.objects.create(
@@ -682,6 +694,122 @@ class InscripcionsSortFlowTests(TestCase):
         self.assertEqual(i2.ordre_sortida, 2)
         self.assertEqual(i2.ordre_competicio, 1)
         self.assertEqual(i1.ordre_competicio, 2)
+
+    def test_groups_preview_marks_existing_group_as_reduced_when_members_remain_outside_filter(self):
+        moving = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Visible",
+            entitat="Club A",
+            ordre_sortida=1,
+            grup=1,
+        )
+        staying = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Resta",
+            entitat="Club B",
+            ordre_sortida=2,
+            grup=1,
+        )
+
+        resp = self._post_json(
+            "inscripcions_groups_from_sort",
+            self._groups_payload(filters={"q": "", "categoria": "", "subcategoria": "", "entitat": "Club A"}),
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data.get("ok"))
+
+        preview = data.get("preview") or {}
+        existing_groups = preview.get("existing_groups") or []
+        self.assertEqual(len(existing_groups), 1)
+        existing = existing_groups[0]
+        self.assertEqual(existing.get("group_num"), 1)
+        self.assertEqual(existing.get("impact_kind"), "reduced")
+        self.assertEqual(existing.get("members_count"), 2)
+        self.assertEqual(existing.get("moving_members_count"), 1)
+        self.assertEqual(existing.get("remaining_members_count"), 1)
+        self.assertEqual(existing.get("moving_member_names_preview"), [moving.nom_i_cognoms])
+
+        source_map = {row.get("label"): row for row in existing.get("sources") or []}
+        self.assertEqual(source_map["Totes les inscripcions filtrades"]["moving_count"], 1)
+        self.assertEqual(source_map["Totes les inscripcions filtrades"]["remaining_count"], 0)
+        self.assertEqual(source_map["Fora del filtre actual"]["moving_count"], 0)
+        self.assertEqual(source_map["Fora del filtre actual"]["remaining_count"], 1)
+        self.assertEqual(source_map["Fora del filtre actual"]["count"], 1)
+        self.assertEqual(preview.get("existing_members_total"), 2)
+
+        self.assertEqual(staying.grup, 1)
+
+    def test_groups_preview_marks_existing_group_as_removed_when_all_members_move(self):
+        first = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Primer",
+            ordre_sortida=1,
+            grup=1,
+        )
+        second = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Segon",
+            ordre_sortida=2,
+            grup=1,
+        )
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Sense grup",
+            ordre_sortida=3,
+            grup=None,
+        )
+
+        resp = self._post_json(
+            "inscripcions_groups_from_sort",
+            self._groups_payload(),
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data.get("ok"))
+
+        preview = data.get("preview") or {}
+        existing_groups = preview.get("existing_groups") or []
+        self.assertEqual(len(existing_groups), 1)
+        existing = existing_groups[0]
+        self.assertEqual(existing.get("group_num"), 1)
+        self.assertEqual(existing.get("impact_kind"), "removed")
+        self.assertEqual(existing.get("members_count"), 2)
+        self.assertEqual(existing.get("moving_members_count"), 2)
+        self.assertEqual(existing.get("remaining_members_count"), 0)
+        self.assertEqual(existing.get("moving_member_names_preview"), [first.nom_i_cognoms, second.nom_i_cognoms])
+        self.assertEqual(preview.get("existing_groups_total"), 1)
+
+    def test_groups_apply_deactivates_group_that_becomes_empty(self):
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Primer",
+            ordre_sortida=1,
+            grup=1,
+        )
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Segon",
+            ordre_sortida=2,
+            grup=1,
+        )
+        renumber_groups_for_competicio(self.comp)
+        old_group = GrupCompeticio.objects.get(competicio=self.comp, display_num=1)
+        self.assertTrue(old_group.actiu)
+
+        resp = self._post_json(
+            "inscripcions_groups_from_sort",
+            self._groups_payload(preview_only=False),
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data.get("ok"))
+
+        old_group.refresh_from_db()
+        self.assertFalse(old_group.actiu)
+        self.assertTrue(
+            GrupCompeticio.objects.filter(competicio=self.comp, display_num=2, actiu=True).exists()
+        )
 
 
 class GroupNameSyncTests(TestCase):

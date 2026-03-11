@@ -662,12 +662,31 @@
       background:linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
       border-color:#d7e3f4;
     }
+    .group-preview-card.is-created{
+      background:linear-gradient(180deg, #f4fff7 0%, #eaf9ef 100%);
+      border-color:#9fd5ae;
+    }
+    .group-preview-card.is-reduced{
+      background:linear-gradient(180deg, #fffdf5 0%, #fff7db 100%);
+      border-color:#f2ce67;
+    }
+    .group-preview-card.is-removed{
+      background:linear-gradient(180deg, #fff6f6 0%, #ffe4e4 100%);
+      border-color:#f2a0a0;
+    }
     .group-preview-card-head{
       display:flex;
       align-items:flex-start;
       justify-content:space-between;
       gap:12px;
       margin-bottom:10px;
+    }
+    .group-preview-card-badges{
+      display:flex;
+      align-items:flex-end;
+      gap:6px;
+      flex-wrap:wrap;
+      justify-content:flex-end;
     }
     .group-preview-card-title{
       margin:0;
@@ -679,6 +698,21 @@
       margin:2px 0 0;
       font-size:.78rem;
       color:#64748b;
+    }
+    .group-preview-card-impact{
+      margin:6px 0 0;
+      font-size:.78rem;
+      font-weight:600;
+      color:#475569;
+    }
+    .group-preview-card-impact.is-reduced{
+      color:#9a6700;
+    }
+    .group-preview-card-impact.is-removed{
+      color:#b42318;
+    }
+    .group-preview-card-impact.is-created{
+      color:#166534;
     }
     .group-preview-sources{
       display:flex;
@@ -710,6 +744,14 @@
       border-radius:999px;
       padding:2px 8px;
     }
+    .group-preview-source-count.is-impact{
+      max-width:55%;
+      white-space:normal;
+      text-align:right;
+      line-height:1.25;
+      color:#334155;
+      background:#eef4fb;
+    }
     .group-preview-members{
       margin-top:10px;
       padding-top:10px;
@@ -719,6 +761,21 @@
     }
     .group-preview-members strong{
       color:#0f172a;
+    }
+    .group-preview-badge.is-created{
+      background:#dcfce7;
+      border-color:#86efac !important;
+      color:#166534;
+    }
+    .group-preview-badge.is-reduced{
+      background:#fef3c7;
+      border-color:#fcd34d !important;
+      color:#92400e;
+    }
+    .group-preview-badge.is-removed{
+      background:#fee2e2;
+      border-color:#fca5a5 !important;
+      color:#b91c1c;
     }
 
     .drag-handle, .col-drag-handle {
@@ -3556,9 +3613,12 @@
       }
     }
 
-    function createGroupPreviewBadge(text) {
+    function createGroupPreviewBadge(text, variant = 'neutral') {
       const badge = document.createElement('span');
-      badge.className = 'badge badge-light border';
+      badge.className = 'group-preview-badge badge badge-light border';
+      if (variant && variant !== 'neutral') {
+        badge.classList.add(`is-${variant}`);
+      }
       badge.textContent = text;
       return badge;
     }
@@ -3584,9 +3644,17 @@
 
     function createGroupPreviewCard(group, source, kind = 'planned') {
       const sourceUnitLabel = source === 'tabs' ? 'pestanya' : 'bloc';
+      const previewKind = String(group?.preview_kind || (kind === 'existing' ? 'existing' : 'created')).trim().toLowerCase();
+      const impactKind = String(group?.impact_kind || '').trim().toLowerCase();
       const card = document.createElement('div');
       card.className = 'group-preview-card';
-      if (kind === 'existing') {
+      if (previewKind === 'created') {
+        card.classList.add('is-created');
+      } else if (impactKind === 'removed') {
+        card.classList.add('is-removed');
+      } else if (impactKind === 'reduced') {
+        card.classList.add('is-reduced');
+      } else if (kind === 'existing') {
         card.classList.add('is-existing');
       }
 
@@ -3604,10 +3672,43 @@
       const sourceCount = Array.isArray(group?.sources) ? group.sources.length : 0;
       subtitle.textContent = `${sourceCount} ${sourceCount === 1 ? sourceUnitLabel : `${sourceUnitLabel}s`} implicats`;
       headText.appendChild(subtitle);
+
+      const movingMembersCount = Number(group?.moving_members_count || 0);
+      const remainingMembersCount = Number(group?.remaining_members_count || 0);
+      let impactText = '';
+      let impactVariant = '';
+      if (previewKind === 'created') {
+        impactText = `Creat amb ${Number(group?.members_count || 0)} integrants`;
+        impactVariant = 'created';
+      } else if (impactKind === 'removed') {
+        impactText = `Surten ${movingMembersCount}, el grup quedara buit`;
+        impactVariant = 'removed';
+      } else if (impactKind === 'reduced') {
+        impactText = `Surten ${movingMembersCount}, en queden ${remainingMembersCount}`;
+        impactVariant = 'reduced';
+      }
+      if (impactText) {
+        const impact = document.createElement('p');
+        impact.className = 'group-preview-card-impact';
+        if (impactVariant) {
+          impact.classList.add(`is-${impactVariant}`);
+        }
+        impact.textContent = impactText;
+        headText.appendChild(impact);
+      }
       head.appendChild(headText);
 
-      const countBadge = createGroupPreviewBadge(`${Number(group?.members_count || 0)} integrants`);
-      head.appendChild(countBadge);
+      const badges = document.createElement('div');
+      badges.className = 'group-preview-card-badges';
+      if (previewKind === 'created') {
+        badges.appendChild(createGroupPreviewBadge('Creat', 'created'));
+      } else if (impactKind === 'removed') {
+        badges.appendChild(createGroupPreviewBadge('Queda buit', 'removed'));
+      } else if (impactKind === 'reduced') {
+        badges.appendChild(createGroupPreviewBadge('Es redueix', 'reduced'));
+      }
+      badges.appendChild(createGroupPreviewBadge(`${Number(group?.members_count || 0)} integrants`));
+      head.appendChild(badges);
       card.appendChild(head);
 
       const sourcesWrap = document.createElement('div');
@@ -3625,7 +3726,15 @@
 
           const count = document.createElement('span');
           count.className = 'group-preview-source-count';
-          count.textContent = `${Number(sourceRow?.count || 0)}`;
+          const totalCount = Number(sourceRow?.count || 0);
+          const movingCount = Number(sourceRow?.moving_count || 0);
+          const remainingCount = Number(sourceRow?.remaining_count || 0);
+          if (movingCount > 0) {
+            count.classList.add('is-impact');
+            count.textContent = `${totalCount} totals · surten ${movingCount} · queden ${remainingCount}`;
+          } else {
+            count.textContent = `${totalCount}`;
+          }
           row.appendChild(count);
 
           sourcesWrap.appendChild(row);
@@ -3638,16 +3747,21 @@
       }
       card.appendChild(sourcesWrap);
 
+      const movingMemberNames = Array.isArray(group?.moving_member_names_preview) ? group.moving_member_names_preview.filter(Boolean) : [];
       const memberNames = Array.isArray(group?.member_names_preview) ? group.member_names_preview.filter(Boolean) : [];
-      if (memberNames.length) {
+      const namesToShow = movingMemberNames.length ? movingMemberNames : memberNames;
+      const namesRemaining = movingMemberNames.length
+        ? Number(group?.moving_member_names_remaining || 0)
+        : Number(group?.member_names_remaining || 0);
+      const namesLabel = movingMemberNames.length ? 'Surten:' : "Exemple d'integrants:";
+      if (namesToShow.length) {
         const members = document.createElement('div');
         members.className = 'group-preview-members';
-        const remaining = Number(group?.member_names_remaining || 0);
-        const suffix = remaining > 0 ? ` +${remaining} mes` : '';
+        const suffix = namesRemaining > 0 ? ` +${namesRemaining} mes` : '';
         const strong = document.createElement('strong');
-        strong.textContent = "Exemple d'integrants:";
+        strong.textContent = namesLabel;
         members.appendChild(strong);
-        members.appendChild(document.createTextNode(` ${memberNames.join(', ')}${suffix}`));
+        members.appendChild(document.createTextNode(` ${namesToShow.join(', ')}${suffix}`));
         card.appendChild(members);
       }
 
@@ -3687,6 +3801,15 @@
           els.summary.appendChild(createGroupPreviewBadge(`Mida ${Number(previewData.size_min || 0)}-${Number(previewData.size_max || 0)}`));
         }
         els.summary.appendChild(createGroupPreviewBadge(`${Number(previewData.buckets_applied || 0)} blocs origen`));
+        if (existingGroups.some(group => String(group?.impact_kind || '').trim().toLowerCase() === 'reduced')) {
+          els.summary.appendChild(createGroupPreviewBadge('Groc: es redueix', 'reduced'));
+        }
+        if (existingGroups.some(group => String(group?.impact_kind || '').trim().toLowerCase() === 'removed')) {
+          els.summary.appendChild(createGroupPreviewBadge('Vermell: queda buit', 'removed'));
+        }
+        if (groups.some(group => String(group?.preview_kind || '').trim().toLowerCase() === 'created')) {
+          els.summary.appendChild(createGroupPreviewBadge('Verd: grup nou', 'created'));
+        }
         if (previewData.used_fallback) {
           els.summary.appendChild(createGroupPreviewBadge('Amb fallback'));
         }

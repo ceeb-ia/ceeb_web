@@ -42,6 +42,7 @@ from .services.competition_groups import (
     get_group_maps,
     move_inscripcio_to_group,
     next_group_display_num,
+    normalize_positive_int,
     save_group_competition_order,
     sync_competicio_group_names_view,
 )
@@ -1555,6 +1556,8 @@ def _build_group_creation_preview(objs, sizes, start_group_num, bucket_label_by_
 
         out.append(
             {
+                "preview_kind": "created",
+                "impact_kind": "created",
                 "group_num": next_group_num,
                 "members_count": len(members),
                 "sources": [
@@ -1569,12 +1572,31 @@ def _build_group_creation_preview(objs, sizes, start_group_num, bucket_label_by_
     return out
 
 
-def _build_existing_groups_preview(records, bucket_label_by_id=None):
+def _build_existing_groups_preview(competicio, records, bucket_label_by_id=None, moving_ids=None):
     bucket_label_by_id = bucket_label_by_id or {}
-    grouped = OrderedDict()
+    moving_ids = set(moving_ids or [])
+    visible_group_nums = []
+    seen_group_nums = set()
     for record in records:
-        group_num = getattr(record, "grup", None)
-        if group_num is None:
+        group_num = normalize_positive_int(getattr(record, "grup", None))
+        if not group_num or group_num in seen_group_nums:
+            continue
+        seen_group_nums.add(group_num)
+        visible_group_nums.append(group_num)
+
+    if not visible_group_nums:
+        return []
+
+    grouped = OrderedDict((group_num, []) for group_num in sorted(visible_group_nums))
+    all_group_members = (
+        Inscripcio.objects
+        .filter(competicio=competicio, grup__in=visible_group_nums)
+        .order_by("grup", "ordre_sortida", "id")
+        .only("id", "grup", "nom_i_cognoms", "ordre_sortida")
+    )
+    for record in all_group_members:
+        group_num = normalize_positive_int(getattr(record, "grup", None))
+        if not group_num:
             continue
         grouped.setdefault(group_num, []).append(record)
 
@@ -1582,23 +1604,50 @@ def _build_existing_groups_preview(records, bucket_label_by_id=None):
     for group_num in sorted(grouped.keys()):
         members = grouped.get(group_num) or []
         source_counts = OrderedDict()
+        moving_members = []
         for obj in members:
-            source_label = str(bucket_label_by_id.get(obj.id) or "Sense bloc")
-            source_counts[source_label] = source_counts.get(source_label, 0) + 1
+            source_label = str(bucket_label_by_id.get(obj.id) or "Fora del filtre actual")
+            row = source_counts.get(source_label)
+            if row is None:
+                row = {
+                    "label": source_label,
+                    "count": 0,
+                    "moving_count": 0,
+                    "remaining_count": 0,
+                }
+                source_counts[source_label] = row
+            row["count"] += 1
+            if obj.id in moving_ids:
+                row["moving_count"] += 1
+                moving_members.append(obj)
+            else:
+                row["remaining_count"] += 1
 
         member_names = [str(getattr(obj, "nom_i_cognoms", "") or "").strip() for obj in members]
         member_names = [name for name in member_names if name]
+        moving_member_names = [str(getattr(obj, "nom_i_cognoms", "") or "").strip() for obj in moving_members]
+        moving_member_names = [name for name in moving_member_names if name]
+        moving_members_count = len(moving_members)
+        remaining_members_count = max(0, len(members) - moving_members_count)
+        impact_kind = "unchanged"
+        if moving_members_count > 0 and remaining_members_count <= 0:
+            impact_kind = "removed"
+        elif moving_members_count > 0:
+            impact_kind = "reduced"
 
         out.append(
             {
+                "preview_kind": "existing",
+                "impact_kind": impact_kind,
                 "group_num": group_num,
                 "members_count": len(members),
-                "sources": [
-                    {"label": label, "count": count}
-                    for label, count in source_counts.items()
-                ],
+                "moving_members_count": moving_members_count,
+                "remaining_members_count": remaining_members_count,
+                "sources": list(source_counts.values()),
                 "member_names_preview": member_names[:4],
                 "member_names_remaining": max(0, len(member_names) - 4),
+                "moving_member_names_preview": moving_member_names[:4],
+                "moving_member_names_remaining": max(0, len(moving_member_names) - 4),
             }
         )
 
@@ -3727,8 +3776,6 @@ def inscripcions_groups_from_sort(request, pk):
         bucket_label = str(bucket.get("label") or "Sense bloc")
         for ins_id in bucket.get("ids") or []:
             bucket_label_by_id_all.setdefault(ins_id, bucket_label)
-    existing_groups_preview = _build_existing_groups_preview(records, bucket_label_by_id_all)
-    existing_members_total = sum(group["members_count"] for group in existing_groups_preview)
 
     bucket_by_key = {b["key"]: b for b in buckets}
     selected_keys_raw = payload.get("selected_keys")
@@ -3756,6 +3803,14 @@ def inscripcions_groups_from_sort(request, pk):
                 continue
             seen_ids.add(ins_id)
             target_ids.append(ins_id)
+
+    existing_groups_preview = _build_existing_groups_preview(
+        competicio,
+        records,
+        bucket_label_by_id=bucket_label_by_id_all,
+        moving_ids=target_ids,
+    )
+    existing_members_total = sum(group["members_count"] for group in existing_groups_preview)
 
     if not target_ids:
         return JsonResponse(

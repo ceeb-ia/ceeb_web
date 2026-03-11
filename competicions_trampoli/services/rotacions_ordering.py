@@ -161,14 +161,17 @@ def assignacio_grups_from_values(grups_value, grup_value) -> List[int]:
     return normalize_positive_int_list(grup_value)
 
 
-def build_group_rotation_step_map(assignacions) -> Dict[Tuple[int, int], int]:
+def build_group_rotation_step_map(assignacions, franja_modes=None) -> Dict[Tuple[int, int], int]:
     """
     Returns a map keyed by (group_id, franja_id) -> 0-based rotation step for
     each distinct appearance of the group in franja order.
+
+    The step only advances for appearances whose franja order mode is rotate.
     """
     out: Dict[Tuple[int, int], int] = {}
     counters: Dict[int, int] = {}
     seen = set()
+    modes = franja_modes or {}
 
     for assignacio in list(assignacions or []):
         try:
@@ -193,7 +196,9 @@ def build_group_rotation_step_map(assignacions) -> Dict[Tuple[int, int], int]:
 
             step = counters.get(clean_group_id, 0)
             out[seen_key] = step
-            counters[clean_group_id] = step + 1
+            mode = sanitize_order_mode(modes.get(str(franja_id)))
+            if mode == ORDER_MODE_ROTATE:
+                counters[clean_group_id] = step + 1
 
     return out
 
