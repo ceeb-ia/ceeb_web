@@ -25,6 +25,7 @@ from .services.competition_groups import (
     get_inscripcio_competition_order,
     get_inscripcio_group_display_num,
     group_label,
+    show_out_of_program_in_competition_views,
 )
 from .services.rotacions_ordering import (
     ORDER_MODE_MAINTAIN,
@@ -299,11 +300,16 @@ class ScoringNotesHome(TemplateView):
         remaining_group_keys = [g for g in numeric_group_keys if g not in group_first_slot]
         competing_group_keys.sort(key=lambda g: (group_first_slot[g][0], group_first_slot[g][1], g))
 
-        group_keys = competing_group_keys + remaining_group_keys
+        program_group_keys = list(competing_group_keys)
+        out_of_program_group_keys = [g for g in remaining_group_keys if g != 0]
+        always_visible_group_keys = list(program_group_keys)
         if 0 in grouped:
-            group_keys.append(0)
+            always_visible_group_keys.append(0)
 
-        groups = [(g, grouped[g]) for g in group_keys]
+        programmed_groups = [(g, grouped[g]) for g in always_visible_group_keys]
+        out_of_program_groups = [(g, grouped[g]) for g in out_of_program_group_keys]
+        show_out_of_program_groups = show_out_of_program_in_competition_views(competicio)
+        visible_groups = programmed_groups + (out_of_program_groups if show_out_of_program_groups else [])
 
 
         # Aparells de la competició
@@ -389,7 +395,7 @@ class ScoringNotesHome(TemplateView):
         # ─────────────────────────────
         # inscripcions: llista plana per al JS
         inscripcions = []
-        for g, rows in groups:
+        for g, rows in visible_groups:
             for r in rows:
                 meta_parts = []
                 if getattr(r, "entitat", None):
@@ -520,7 +526,9 @@ class ScoringNotesHome(TemplateView):
 
         ctx.update({
             "competicio": competicio,
-            "groups": groups,
+            "groups": programmed_groups,
+            "out_of_program_groups": out_of_program_groups if show_out_of_program_groups else [],
+            "show_out_of_program_in_competition_views": show_out_of_program_groups,
             "group_labels_map": group_labels_map,
             "aparells_cfg": aparells_cfg,
             "exercicis": exercicis,

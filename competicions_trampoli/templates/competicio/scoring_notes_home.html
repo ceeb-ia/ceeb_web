@@ -113,7 +113,23 @@
       </div>
     </div>
 
-    {% if groups %}
+    {% if out_of_program_groups %}
+      <div class="alert alert-warning mt-3" role="alert">
+        <div class="fw-semibold">Fora de programa</div>
+        <div class="small mb-2">Aquests grups existeixen pero no tenen cap franja assignada dins el programa actual.</div>
+        <div class="d-flex flex-wrap" style="gap:8px;">
+          {% for g, rows in out_of_program_groups %}
+            {% with gkey=g|stringformat:"s" %}
+              <span class="badge badge-warning p-2">
+                {{ group_labels_map|get_item:gkey|default:"Sense grup" }} · {{ rows|length }}
+              </span>
+            {% endwith %}
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+
+    {% if groups or out_of_program_groups %}
       <!-- PESTANYES DE GRUPS -->
       <ul class="nav nav-tabs" role="tablist">
         {% for g, rows in groups %}
@@ -127,6 +143,22 @@
               {% with gkey=g|stringformat:"s" %}
                 {{ group_labels_map|get_item:gkey|default:"Sense grup" }}
               {% endwith %}
+              <span class="badge badge-light ml-1">{{ rows|length }}</span>
+            </a>
+          </li>
+        {% endfor %}
+        {% for g, rows in out_of_program_groups %}
+          <li class="nav-item" role="presentation">
+            <a class="nav-link {% if not groups and forloop.first %}active{% endif %}"
+               data-toggle="tab"
+               href="#off-pane-{{ g }}"
+               role="tab"
+               aria-controls="off-pane-{{ g }}"
+               aria-selected="{% if not groups and forloop.first %}true{% else %}false{% endif %}">
+              {% with gkey=g|stringformat:"s" %}
+                {{ group_labels_map|get_item:gkey|default:"Sense grup" }}
+              {% endwith %}
+              <span class="badge badge-warning ml-1">Fora</span>
               <span class="badge badge-light ml-1">{{ rows|length }}</span>
             </a>
           </li>
@@ -230,6 +262,102 @@
                   </div>
 
 
+                </div>
+              {% endfor %}
+            </div>
+
+          </div>
+        {% endfor %}
+        {% for g, rows in out_of_program_groups %}
+          <div class="tab-pane fade {% if not groups and forloop.first %}show active{% endif %}"
+               id="off-pane-{{ g }}"
+               role="tabpanel">
+
+            <ul class="nav nav-pills mb-3" role="tablist">
+              {% for app in aparells_cfg %}
+                <li class="nav-item" role="presentation">
+                  <a class="nav-link {% if forloop.first %}active{% endif %}"
+                     data-toggle="tab"
+                     href="#off-pane-{{ g }}-app-{{ app.id }}"
+                     role="tab"
+                     aria-controls="off-pane-{{ g }}-app-{{ app.id }}"
+                     aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
+                    {{ app.aparell.nom }}
+                  </a>
+                </li>
+              {% endfor %}
+            </ul>
+
+            <div class="tab-content">
+              {% for app in aparells_cfg %}
+                <div class="tab-pane fade {% if forloop.first %}show active{% endif %}"
+                     id="off-pane-{{ g }}-app-{{ app.id }}"
+                     role="tabpanel"
+                     data-comp-aparell-id="{{ app.id }}"
+                     data-group="{{ g }}">
+
+                  <ul class="nav nav-tabs mb-3" role="tablist">
+                    {% for ex in exercicis %}
+                    {% if ex <= app.nombre_exercicis %}
+                      <li class="nav-item" role="presentation">
+                        <a class="nav-link {% if forloop.first %}active{% endif %}"
+                           data-toggle="tab"
+                           href="#off-pane-{{ g }}-app-{{ app.id }}-ex-{{ ex }}"
+                           role="tab"
+                           aria-controls="off-pane-{{ g }}-app-{{ app.id }}-ex-{{ ex }}"
+                           aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
+                          Exercici {{ ex }}
+                        </a>
+                      </li>
+                    {% endif %}
+                    {% endfor %}
+                  </ul>
+
+                  <div class="tab-content">
+                    {% for ex in exercicis %}
+                      {% if ex <= app.nombre_exercicis %}
+                        <div class="tab-pane fade {% if ex == 1 %}show active{% endif %}"
+                            id="off-pane-{{ g }}-app-{{ app.id }}-ex-{{ ex }}"
+                            role="tabpanel">
+
+                          <div class="d-flex justify-content-between align-items-center mb-2">
+                            <div class="mini-help">
+                              {% with gkey=g|stringformat:"s" %}
+                                Fora de programa · {{ group_labels_map|get_item:gkey|default:"Sense grup" }} ·
+                              {% endwith %}
+                              {{ app.aparell.nom }} · Exercici {{ ex }}
+                            </div>
+                            <div>
+                              <a class="btn btn-sm btn-outline-secondary"
+                                href="{% url 'scoring_schema_update' competicio.id app.id %}">
+                                Camps i funcions
+                              </a>
+                              <a class="btn btn-sm btn-outline-primary"
+                                href="{% url 'judges_qr_home' competicio.id %}?comp_aparell={{ app.id }}">
+                                Jurat / QRs
+                              </a>
+                            </div>
+                          </div>
+
+                          <div class="table-scrollbar-top" data-scrollbar-top="1">
+                            <div data-scrollbar-inner="1"></div>
+                          </div>
+
+                          <div class="table-responsive table-sticky" data-scroll-wrap="1">
+                            <table class="table table-bordered table-sm align-middle"
+                                  data-scoring-table="1"
+                                  data-group="{{ g }}"
+                                  data-exercici="{{ ex }}"
+                                  data-comp-aparell-id="{{ app.id }}">
+                              <thead></thead>
+                              <tbody></tbody>
+                            </table>
+                          </div>
+
+                        </div>
+                      {% endif %}
+                    {% endfor %}
+                  </div>
                 </div>
               {% endfor %}
             </div>

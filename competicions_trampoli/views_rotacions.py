@@ -23,9 +23,14 @@ from .models_rotacions import RotacioFranja, RotacioAssignacio, RotacioAssignaci
 from .services.competition_groups import (
     get_competicio_groups,
     get_group_maps,
+    get_group_participant_counts,
+    get_out_of_program_group_ids,
+    get_programmed_group_ids,
     get_inscripcio_competition_order,
     get_inscripcio_group_display_num,
     group_label,
+    set_show_out_of_program_in_competition_views,
+    show_out_of_program_in_competition_views,
 )
 from .services.rotacions_ordering import (
     ORDER_MODE_MAINTAIN,
@@ -405,6 +410,19 @@ def rotacions_planner(request, pk):
         str(group.id): group_label(group)
         for group in groups
     }
+    group_participant_counts = get_group_participant_counts(competicio)
+    programmed_group_ids = get_programmed_group_ids(competicio)
+    out_of_program_group_ids = get_out_of_program_group_ids(competicio)
+    group_sidebar = [
+        {
+            "id": group.id,
+            "label": group_labels_map[str(group.id)],
+            "members_count": int(group_participant_counts.get(group.id, 0) or 0),
+            "is_programmed": group.id in programmed_group_ids,
+            "is_out_of_program": group.id in out_of_program_group_ids,
+        }
+        for group in groups
+    ]
     grups = [group.id for group in groups]
     grups_display = [{"id": group.id, "label": group_labels_map[str(group.id)]} for group in groups]
 
@@ -438,12 +456,30 @@ def rotacions_planner(request, pk):
         ],
         "grid_json": json.dumps(grid, ensure_ascii=False),
         "group_labels_json": json.dumps(group_labels_map, ensure_ascii=False),
+        "group_sidebar_json": json.dumps(group_sidebar, ensure_ascii=False),
         "franja_order_modes_json": json.dumps(franja_modes, ensure_ascii=False),
         "export_meta_json": json.dumps(export_meta, ensure_ascii=False),
         "export_participant_fields_json": json.dumps(export_participant_fields, ensure_ascii=False),
         "grups_json": json.dumps(grups, ensure_ascii=False),
+        "out_of_program_groups_count": sum(1 for item in group_sidebar if item["members_count"] > 0 and item["is_out_of_program"]),
+        "out_of_program_members_total": sum(item["members_count"] for item in group_sidebar if item["members_count"] > 0 and item["is_out_of_program"]),
+        "show_out_of_program_in_competition_views": show_out_of_program_in_competition_views(competicio),
     }
     return render(request, "competicio/rotacions_planner.html", ctx)
+
+
+@require_POST
+@csrf_protect
+def rotacions_out_of_program_visibility_save(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        payload = {}
+
+    value = bool(payload.get("value"))
+    saved_value = set_show_out_of_program_in_competition_views(competicio, value)
+    return JsonResponse({"ok": True, "value": saved_value})
 
 
 @require_POST

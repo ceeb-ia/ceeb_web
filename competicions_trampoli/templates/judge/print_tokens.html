@@ -25,7 +25,7 @@
   <div class="grid">
     {% for t in tokens %}
       <div class="card">
-        <img src="{% url 'judge_qr_png' t.id %}?ex={{ exercici }}" alt="QR"/>
+        <img src="{% url 'judge_qr_png' t.id %}?ex={{ exercici }}{% if franja_id %}&franja={{ franja_id }}{% endif %}" alt="QR"/>
         <div>
           <div class="label">{{ t.label|default:"(sense etiqueta)" }}</div>
           <div class="meta">{{ t.id }}</div>

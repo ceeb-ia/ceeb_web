@@ -811,6 +811,107 @@ class InscripcionsSortFlowTests(TestCase):
             GrupCompeticio.objects.filter(competicio=self.comp, display_num=2, actiu=True).exists()
         )
 
+    def test_groups_apply_with_rotations_keeps_programmed_group_when_members_remain(self):
+        first = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Primer",
+            entitat="Club A",
+            ordre_sortida=1,
+            grup=1,
+        )
+        second = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Segon",
+            entitat="Club B",
+            ordre_sortida=2,
+            grup=1,
+        )
+        group = first.grup_competicio
+        franja = RotacioFranja.objects.create(
+            competicio=self.comp,
+            hora_inici="09:00",
+            hora_fi="09:30",
+            ordre=1,
+            titol="Franja 1",
+        )
+        estacio = RotacioEstacio.objects.create(
+            competicio=self.comp,
+            tipus="descans",
+            ordre=1,
+            actiu=True,
+        )
+        assignacio = RotacioAssignacio.objects.create(
+            competicio=self.comp,
+            franja=franja,
+            estacio=estacio,
+        )
+        RotacioAssignacioGrup.objects.create(assignacio=assignacio, grup=group, ordre=1)
+
+        resp = self._post_json(
+            "inscripcions_groups_from_sort",
+            self._groups_payload(
+                preview_only=False,
+                filters={"q": "", "categoria": "", "subcategoria": "", "entitat": "Club A"},
+            ),
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data.get("ok"))
+
+        first.refresh_from_db()
+        second.refresh_from_db()
+        self.assertEqual(first.grup, 2)
+        self.assertEqual(second.grup, 1)
+        self.assertTrue(
+            GrupCompeticio.objects.filter(competicio=self.comp, display_num=2, actiu=True).exists()
+        )
+
+    def test_groups_apply_with_rotations_rejects_emptying_programmed_group(self):
+        first = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Primer",
+            ordre_sortida=1,
+            grup=1,
+        )
+        second = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Segon",
+            ordre_sortida=2,
+            grup=1,
+        )
+        group = first.grup_competicio
+        franja = RotacioFranja.objects.create(
+            competicio=self.comp,
+            hora_inici="09:00",
+            hora_fi="09:30",
+            ordre=1,
+            titol="Franja 1",
+        )
+        estacio = RotacioEstacio.objects.create(
+            competicio=self.comp,
+            tipus="descans",
+            ordre=1,
+            actiu=True,
+        )
+        assignacio = RotacioAssignacio.objects.create(
+            competicio=self.comp,
+            franja=franja,
+            estacio=estacio,
+        )
+        RotacioAssignacioGrup.objects.create(assignacio=assignacio, grup=group, ordre=1)
+
+        resp = self._post_json(
+            "inscripcions_groups_from_sort",
+            self._groups_payload(preview_only=False),
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("No es pot deixar buit un grup inclos al programa de rotacions", resp.content.decode("utf-8"))
+
+        first.refresh_from_db()
+        second.refresh_from_db()
+        self.assertEqual(first.grup, 1)
+        self.assertEqual(second.grup, 1)
+
 
 class GroupNameSyncTests(TestCase):
     def test_renumber_remaps_group_labels_and_drops_stale(self):
@@ -1486,6 +1587,126 @@ class ScoringAndJudgeExclusionFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertNotIn(self.ins_blocked.id, updated_ids)
 
 
+class ProgrammedGroupReconfigurationTests(_BaseTrampoliDataMixin, TestCase):
+    def setUp(self):
+        self.comp = self._create_competicio("Comp Programmed Group Reconfig")
+        self.comp.group_by_default = ["entitat"]
+        self.comp.save(update_fields=["group_by_default"])
+        User = get_user_model()
+        self.user = User.objects.create_user(
+            username="programmed_group_editor",
+            password="testpass123",
+            email="programmed-group-editor@example.com",
+        )
+        CompeticioMembership.objects.create(
+            user=self.user,
+            competicio=self.comp,
+            role=CompeticioMembership.Role.EDITOR,
+            is_active=True,
+        )
+        self.client.force_login(self.user)
+
+    def _attach_rotation_to_group(self, group):
+        franja = RotacioFranja.objects.create(
+            competicio=self.comp,
+            hora_inici="09:00",
+            hora_fi="09:30",
+            ordre=1,
+            titol="Franja 1",
+        )
+        estacio = RotacioEstacio.objects.create(
+            competicio=self.comp,
+            tipus="descans",
+            ordre=1,
+            actiu=True,
+        )
+        assignacio = RotacioAssignacio.objects.create(
+            competicio=self.comp,
+            franja=franja,
+            estacio=estacio,
+        )
+        RotacioAssignacioGrup.objects.create(assignacio=assignacio, grup=group, ordre=1)
+
+    def test_make_independent_group_with_rotations_creates_new_group_when_origin_keeps_members(self):
+        first = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="A1",
+            entitat="Club A",
+            ordre_sortida=1,
+            grup=1,
+        )
+        second = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="A2",
+            entitat="Club A",
+            ordre_sortida=2,
+            grup=1,
+        )
+        third = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="B1",
+            entitat="Club B",
+            ordre_sortida=3,
+            grup=1,
+        )
+        self._attach_rotation_to_group(first.grup_competicio)
+
+        url = reverse("inscripcions_list", kwargs={"pk": self.comp.id})
+        res = self.client.get(
+            url,
+            {
+                "make_independent_group": "1",
+                "lvl": "g1",
+                "v1": "Club A",
+            },
+            follow=True,
+        )
+        self.assertEqual(res.status_code, 200)
+
+        first.refresh_from_db()
+        second.refresh_from_db()
+        third.refresh_from_db()
+        self.assertEqual(first.grup, 2)
+        self.assertEqual(second.grup, 2)
+        self.assertEqual(third.grup, 1)
+        self.assertContains(res, "Creat el grup 2")
+
+    def test_make_independent_group_with_rotations_rejects_emptying_programmed_origin(self):
+        first = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="A1",
+            entitat="Club A",
+            ordre_sortida=1,
+            grup=1,
+        )
+        second = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="A2",
+            entitat="Club A",
+            ordre_sortida=2,
+            grup=1,
+        )
+        self._attach_rotation_to_group(first.grup_competicio)
+
+        url = reverse("inscripcions_list", kwargs={"pk": self.comp.id})
+        res = self.client.get(
+            url,
+            {
+                "make_independent_group": "1",
+                "lvl": "g1",
+                "v1": "Club A",
+            },
+            follow=True,
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, "No es pot deixar buit un grup inclos al programa de rotacions")
+
+        first.refresh_from_db()
+        second.refresh_from_db()
+        self.assertEqual(first.grup, 1)
+        self.assertEqual(second.grup, 1)
+
+
 class RotationOrderingDisplayTests(_BaseTrampoliDataMixin, TestCase):
     def setUp(self):
         self.comp = self._create_competicio("Comp Rotations Display")
@@ -1589,42 +1810,131 @@ class RotationOrderingDisplayTests(_BaseTrampoliDataMixin, TestCase):
         )
         self.client.force_login(self.user)
 
-    def test_rotation_shift_restarts_for_group_first_franja_and_advances_locally(self):
-        scoring_url = reverse("scoring_notes_home", kwargs={"pk": self.comp.id})
-
-        first_res = self.client.get(scoring_url, {"franja": self.franja_2.id})
-        self.assertEqual(first_res.status_code, 200)
-        first_rank_map = first_res.context["rotation_rank_map"]
-        self.assertEqual(first_rank_map[f"{self.comp_app.id}|{self.ins_3.id}"], 1)
-        self.assertEqual(first_rank_map[f"{self.comp_app.id}|{self.ins_2.id}"], 2)
-        self.assertEqual(first_rank_map[f"{self.comp_app.id}|{self.ins_1.id}"], 3)
-
-        second_res = self.client.get(scoring_url, {"franja": self.franja_3.id})
-        self.assertEqual(second_res.status_code, 200)
-        second_rank_map = second_res.context["rotation_rank_map"]
-        self.assertEqual(second_rank_map[f"{self.comp_app.id}|{self.ins_2.id}"], 1)
-        self.assertEqual(second_rank_map[f"{self.comp_app.id}|{self.ins_1.id}"], 2)
-        self.assertEqual(second_rank_map[f"{self.comp_app.id}|{self.ins_3.id}"], 3)
-
+    def test_judge_portal_uses_selected_franja_rotation_order(self):
         portal_url = reverse("judge_portal", kwargs={"token": self.token.id})
-        portal_res = self.client.get(portal_url)
+        portal_res = self.client.get(portal_url, {"franja": self.franja_2.id})
         self.assertEqual(portal_res.status_code, 200)
+        self.assertEqual(portal_res.context["franja_selected_id"], self.franja_2.id)
 
         block = portal_res.context["group_blocks"][0]
         self.assertEqual(
             [ins.nom_i_cognoms for ins in block["list"]],
-            ["Participant 3", "Participant 2", "Participant 1"],
+            ["Participant 1", "Participant 3", "Participant 2"],
         )
         self.assertEqual(
             [ins.rotation_order_display for ins in block["list"]],
-            [3, 1, 2],
+            [1, 2, 3],
         )
 
         body = portal_res.content.decode("utf-8")
-        self.assertIn("Participant 3", body)
-        self.assertIn("Ordre 3", body)
+        self.assertIn("Participant 1", body)
         self.assertIn("Ordre 1", body)
         self.assertIn("Ordre 2", body)
+        self.assertIn("Base 3", body)
+
+        third_res = self.client.get(portal_url, {"franja": self.franja_3.id})
+        self.assertEqual(third_res.status_code, 200)
+        self.assertEqual(third_res.context["franja_selected_id"], self.franja_3.id)
+
+        third_block = third_res.context["group_blocks"][0]
+        self.assertEqual(
+            [ins.nom_i_cognoms for ins in third_block["list"]],
+            ["Participant 3", "Participant 2", "Participant 1"],
+        )
+        self.assertEqual(
+            [ins.rotation_order_display for ins in third_block["list"]],
+            [1, 2, 3],
+        )
+
+    def test_out_of_program_visibility_toggle_controls_notes_and_judge_views(self):
+        extra_group = GrupCompeticio.objects.create(
+            competicio=self.comp,
+            display_num=2,
+            legacy_num=2,
+            nom="Fora Programa",
+            actiu=True,
+        )
+        extra_ins = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Participant Fora Programa",
+            ordre_sortida=4,
+            grup=2,
+            grup_competicio=extra_group,
+            ordre_competicio=1,
+        )
+        ungrouped_ins = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Participant Sense Grup",
+            ordre_sortida=5,
+            grup=0,
+            grup_competicio=None,
+            ordre_competicio=1,
+        )
+
+        scoring_url = reverse("scoring_notes_home", kwargs={"pk": self.comp.id})
+        scoring_res = self.client.get(scoring_url)
+        self.assertEqual(scoring_res.status_code, 200)
+        self.assertFalse(scoring_res.context["show_out_of_program_in_competition_views"])
+        self.assertEqual([g for g, _rows in scoring_res.context["groups"]], [self.ins_1.grup_competicio_id, 0])
+        self.assertEqual(scoring_res.context["out_of_program_groups"], [])
+        scoring_body = scoring_res.content.decode("utf-8")
+        self.assertIn("Sense grup", scoring_body)
+        self.assertNotIn("Fora Programa", scoring_body)
+
+        planner_url = reverse("rotacions_planner", kwargs={"pk": self.comp.id})
+        planner_res = self.client.get(planner_url)
+        self.assertEqual(planner_res.status_code, 200)
+        self.assertEqual(planner_res.context["out_of_program_groups_count"], 1)
+        self.assertEqual(planner_res.context["out_of_program_members_total"], 1)
+        self.assertFalse(planner_res.context["show_out_of_program_in_competition_views"])
+        planner_body = planner_res.content.decode("utf-8")
+        self.assertIn("Fora de programa", planner_body)
+        self.assertIn("Fora Programa", planner_body)
+
+        portal_url = reverse("judge_portal", kwargs={"token": self.token.id})
+        portal_res = self.client.get(portal_url)
+        self.assertEqual(portal_res.status_code, 200)
+        self.assertFalse(portal_res.context["show_out_of_program_in_competition_views"])
+        self.assertEqual([block["key"] for block in portal_res.context["group_blocks"]], [self.ins_1.grup_competicio_id, 0])
+        self.assertEqual(portal_res.context["out_of_program_group_blocks"], [])
+        portal_body = portal_res.content.decode("utf-8")
+        self.assertIn(ungrouped_ins.nom_i_cognoms, portal_body)
+        self.assertIn("Sense grup", portal_body)
+        self.assertNotIn(extra_ins.nom_i_cognoms, portal_body)
+
+        toggle_url = reverse("rotacions_out_of_program_visibility_save", kwargs={"pk": self.comp.id})
+        toggle_res = self.client.post(
+            toggle_url,
+            data=json.dumps({"value": True}),
+            content_type="application/json",
+        )
+        self.assertEqual(toggle_res.status_code, 200)
+        self.assertJSONEqual(
+            toggle_res.content.decode("utf-8"),
+            {"ok": True, "value": True},
+        )
+        self.comp.refresh_from_db()
+        self.assertTrue(
+            self.comp.inscripcions_view.get("show_out_of_program_in_competition_views")
+        )
+
+        scoring_res = self.client.get(scoring_url)
+        self.assertEqual(scoring_res.status_code, 200)
+        self.assertTrue(scoring_res.context["show_out_of_program_in_competition_views"])
+        self.assertEqual([g for g, _rows in scoring_res.context["groups"]], [self.ins_1.grup_competicio_id, 0])
+        self.assertEqual([g for g, _rows in scoring_res.context["out_of_program_groups"]], [extra_group.id])
+        scoring_body = scoring_res.content.decode("utf-8")
+        self.assertIn("Fora de programa", scoring_body)
+        self.assertIn("Fora Programa", scoring_body)
+
+        portal_res = self.client.get(portal_url)
+        self.assertEqual(portal_res.status_code, 200)
+        self.assertTrue(portal_res.context["show_out_of_program_in_competition_views"])
+        self.assertEqual([block["key"] for block in portal_res.context["group_blocks"]], [self.ins_1.grup_competicio_id, 0])
+        self.assertEqual([block["key"] for block in portal_res.context["out_of_program_group_blocks"]], [extra_group.id])
+        portal_body = portal_res.content.decode("utf-8")
+        self.assertIn("Fora de programa", portal_body)
+        self.assertIn(extra_ins.nom_i_cognoms, portal_body)
 
 
 class ClassificacioMatrixScalarTests(_BaseTrampoliDataMixin, TestCase):

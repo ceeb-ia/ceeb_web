@@ -143,6 +143,7 @@ urlpatterns = [
     path("competicio/<int:pk>/rotacions/franja/<int:franja_id>/extrapolar/", competition_view(views_rotacions.rotacions_extrapolar, "rotacions.edit"), name="rotacions_extrapolar"),
     path("competicio/<int:pk>/rotacions/estacions/reorder/", competition_view(views_rotacions.estacions_reorder, "rotacions.edit"), name="rotacions_estacions_reorder"),
     path("competicio/<int:pk>/rotacions/clear_all/", competition_view(views_rotacions.rotacions_clear_all, "rotacions.edit"), name="rotacions_clear_all"),
+    path("competicio/<int:pk>/rotacions/out-of-program-visibility/save/", competition_view(views_rotacions.rotacions_out_of_program_visibility_save, "rotacions.edit"), name="rotacions_out_of_program_visibility_save"),
     path("competicio/<int:pk>/rotacions/franges/<int:franja_id>/insert_after/", competition_view(views_rotacions.franja_insert_after, "rotacions.edit"), name="rotacions_franja_insert_after"),
     path("competicio/<int:pk>/rotacions/franges/<int:franja_id>/update_inline/", competition_view(views_rotacions.franja_update_inline, "rotacions.edit"), name="rotacions_franja_update_inline"),
     path("competicio/<int:pk>/rotacions/franges/<int:franja_id>/order_mode/", competition_view(views_rotacions.franja_order_mode_set, "rotacions.edit"), name="rotacions_franja_order_mode_set"),

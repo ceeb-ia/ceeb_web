@@ -200,6 +200,11 @@ def judges_qr_print(request, competicio_id):
     competicio = get_object_or_404(Competicio, pk=competicio_id)
     comp_aparell_id = request.GET.get("comp_aparell")
     comp_aparell = get_object_or_404(CompeticioAparell, pk=comp_aparell_id, competicio=competicio, actiu=True)
+    raw_franja = request.GET.get("franja")
+    try:
+        franja_id = int(raw_franja) if raw_franja not in (None, "") else None
+    except Exception:
+        franja_id = None
     max_ex = max(1, int(getattr(comp_aparell, "nombre_exercicis", 1) or 1))
     try:
         exercici = int(request.GET.get("ex") or 1)
@@ -211,7 +216,13 @@ def judges_qr_print(request, competicio_id):
               .filter(competicio=competicio, comp_aparell=comp_aparell, is_active=True, revoked_at__isnull=True)
               .order_by("label", "created_at"))
 
-    ctx = {"competicio": competicio, "comp_aparell": comp_aparell, "tokens": tokens, "exercici": exercici}
+    ctx = {
+        "competicio": competicio,
+        "comp_aparell": comp_aparell,
+        "tokens": tokens,
+        "exercici": exercici,
+        "franja_id": franja_id,
+    }
     return render(request, "judge/print_tokens.html", ctx)
 
 

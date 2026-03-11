@@ -142,10 +142,27 @@
         {% if exercicis|length > 1 %}
           <div class="mt-2 d-flex flex-wrap" style="gap:6px;">
             {% for ex in exercicis %}
-              <a class="btn btn-sm {% if ex == exercici %}btn-primary{% else %}btn-outline-primary{% endif %}" href="?ex={{ ex }}">
+              <a class="btn btn-sm {% if ex == exercici %}btn-primary{% else %}btn-outline-primary{% endif %}" href="?ex={{ ex }}{% if franja_selected_id %}&franja={{ franja_selected_id }}{% endif %}">
                 Exercici {{ ex }}
               </a>
             {% endfor %}
+          </div>
+        {% endif %}
+        {% if franges_for_aparell %}
+          <div class="mt-2 d-flex flex-wrap align-items-center" style="gap:8px;">
+            <label class="judge-meta mb-0" for="franjaSelect">Franja</label>
+            <select id="franjaSelect" class="form-select form-select-sm" style="width:auto; min-width:220px;">
+              {% for fr in franges_for_aparell %}
+                <option value="{{ fr.id }}" {% if franja_selected_id == fr.id %}selected{% endif %}>
+                  {{ fr.titol|default:"Franja" }} · {{ fr.hora_inici|time:"H:i" }}-{{ fr.hora_fi|time:"H:i" }}
+                </option>
+              {% endfor %}
+            </select>
+            {% if franja_selected %}
+              <span class="judge-meta">
+                Mostrant {{ franja_selected.titol|default:"Franja" }} · {{ franja_selected.hora_inici|time:"H:i" }}-{{ franja_selected.hora_fi|time:"H:i" }}
+              </span>
+            {% endif %}
           </div>
         {% endif %}
       </div>
@@ -196,22 +213,38 @@
           <div id="insNavListDesktop"></div>
         </div>
 
-        <ul class="nav nav-tabs mb-3" id="groupTabs" role="tablist">
-          {% for bloc in group_blocks %}
-            <li class="nav-item" role="presentation">
-              <button
-                type="button"
-                class="nav-link {% if forloop.first %}active{% endif %}"
-                data-group-target="group-{{ forloop.counter0 }}"
-              >
-                {{ bloc.label }}
-                <span class="badge text-bg-light group-tab-count">{{ bloc.list|length }}</span>
-              </button>
-            </li>
-          {% endfor %}
-        </ul>
+        {% if group_blocks or out_of_program_group_blocks %}
+          <ul class="nav nav-tabs mb-3" id="groupTabs" role="tablist">
+            {% for bloc in group_blocks %}
+              <li class="nav-item" role="presentation">
+                <button
+                  type="button"
+                  class="nav-link {% if forloop.first %}active{% endif %}"
+                  data-group-target="group-{{ forloop.counter0 }}"
+                >
+                  {{ bloc.label }}
+                  <span class="badge text-bg-light group-tab-count">{{ bloc.list|length }}</span>
+                </button>
+              </li>
+            {% endfor %}
+            {% for bloc in out_of_program_group_blocks %}
+              <li class="nav-item" role="presentation">
+                <button
+                  type="button"
+                  class="nav-link {% if not group_blocks and forloop.first %}active{% endif %}"
+                  data-group-target="off-group-{{ forloop.counter0 }}"
+                >
+                  {{ bloc.label }}
+                  <span class="badge text-bg-warning group-tab-count">Fora</span>
+                  <span class="badge text-bg-light group-tab-count">{{ bloc.list|length }}</span>
+                </button>
+              </li>
+            {% endfor %}
+          </ul>
+        {% endif %}
 
         <div id="groupPanes">
+          {% if group_blocks or out_of_program_group_blocks %}
           {% for bloc in group_blocks %}
             <div class="group-pane {% if not forloop.first %}d-none{% endif %}" data-group-pane="group-{{ forloop.counter0 }}" data-group-label="{{ bloc.label }}">
               {% for ins in bloc.list %}
@@ -220,7 +253,7 @@
                     <div>
                       <div class="fw-semibold">{{ ins.nom_i_cognoms|default:"Inscripció" }}</div>
                       <div class="judge-meta">
-                        {{ bloc.label }} · Ordre {{ ins.rotation_order_display|default_if_none:ins.ordre_sortida }}
+                        {{ bloc.label }} · Ordre {{ ins.rotation_order_display|default_if_none:ins.ordre_sortida }}{% if ins.rotation_base_order_display %} · Base {{ ins.rotation_base_order_display }}{% endif %}
                       </div>
                     </div>
                     <div class="judge-meta" id="status-{{ ins.id }}"></div>
@@ -253,7 +286,54 @@
               {% endfor %}
             </div>
           {% endfor %}
+          {% for bloc in out_of_program_group_blocks %}
+            <div class="group-pane {% if group_blocks or not forloop.first %}d-none{% endif %}" data-group-pane="off-group-{{ forloop.counter0 }}" data-group-label="{{ bloc.label }} (fora de programa)">
+              {% for ins in bloc.list %}
+                <div id="off-program-card-{{ ins.id }}" class="judge-card mb-2" data-ins-id="{{ ins.id }}" data-ins-name="{{ ins.nom_i_cognoms|default:'Inscripcio' }}">
+                  <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                      <div class="fw-semibold">{{ ins.nom_i_cognoms|default:"Inscripció" }}</div>
+                      <div class="judge-meta">
+                        Fora de programa · {{ bloc.label }} · Ordre {{ ins.rotation_order_display|default_if_none:ins.ordre_sortida }}{% if ins.rotation_base_order_display %} · Base {{ ins.rotation_base_order_display }}{% endif %}
+                      </div>
+                    </div>
+                    <div class="judge-meta" id="status-{{ ins.id }}"></div>
+                  </div>
+
+                  <div class="mt-2" id="editor-{{ ins.id }}"></div>
+                  {% if video_capture_enabled %}
+                  <div class="mt-2" id="video-panel-{{ ins.id }}" data-video-panel="1" data-ins-id="{{ ins.id }}">
+                    <div class="d-flex align-items-center flex-wrap" style="gap:8px;">
+                      <button type="button" class="btn btn-sm btn-outline-danger" id="video-rec-btn-{{ ins.id }}" onclick="toggleRecord('{{ ins.id }}')">Gravar</button>
+                      <button type="button" class="btn btn-sm btn-outline-primary" id="video-upload-btn-{{ ins.id }}" onclick="uploadRecorded('{{ ins.id }}')" disabled>Pujar</button>
+                      <button type="button" class="btn btn-sm btn-outline-secondary" id="video-delete-btn-{{ ins.id }}" onclick="deleteVideo('{{ ins.id }}')" disabled>Regravar</button>
+                      <span class="judge-meta video-status" id="video-status-{{ ins.id }}">Sense video</span>
+                    </div>
+                    <video id="video-preview-{{ ins.id }}" class="judge-video-preview mt-2" controls playsinline style="display:none;"></video>
+                  </div>
+                  {% else %}
+                  <div class="mt-2">
+                    <span class="judge-meta">Gravacio desactivada per aquest QR.</span>
+                  </div>
+                  {% endif %}
+
+                  <div class="d-flex justify-content-end mt-2" style="gap:8px;">
+                    {% if not judge_kiosk %}
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="copyPrev('{{ ins.id }}')">Copia anterior</button>
+                    {% endif %}
+                    <button type="button" class="btn btn-sm btn-primary" onclick="saveNow('{{ ins.id }}')">Desa</button>
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+          {% endfor %}
+          {% else %}
+            <div class="judge-meta mb-3">No hi ha cap grup programat en aquesta franja per aquest aparell.</div>
+          {% endif %}
         </div>
+        {% if out_of_program_group_blocks %}
+          <div class="judge-meta mb-3">Els grups fora de programa apareixen com a pestanyes marcades amb l'etiqueta "Fora".</div>
+        {% endif %}
       </div>
       <div class="judge-nav-backdrop d-lg-none" id="insNavBackdrop"></div>
       <aside class="judge-nav-drawer d-lg-none" id="insNavDrawer" aria-hidden="true">
@@ -1643,9 +1723,20 @@
       });
     });
   }
+  function initFranjaSelector(){
+    const sel = document.getElementById("franjaSelect");
+    if(!sel) return;
+    sel.addEventListener("change", () => {
+      const url = new URL(window.location.href);
+      url.searchParams.set("franja", String(sel.value || ""));
+      url.searchParams.set("ex", String(EXERCICI));
+      window.location.href = url.toString();
+    });
+  }
   // init
   buildPermText();
   initGroupTabs();
+  initFranjaSelector();
   initInsNavigation();
   initSupportUi();
   if(VIDEO_CAPTURE_ENABLED){

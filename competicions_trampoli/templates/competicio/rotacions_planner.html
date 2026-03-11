@@ -27,6 +27,103 @@
     .chip { display:inline-flex; align-items:center; justify-content:center; padding:8px 10px; border-radius:999px; border:1px solid #cfd6e6; background:#f7f8fb; cursor:grab; user-select:none; font-weight:600; }
     .chip:active { cursor:grabbing; }
     .chip-muted { background:#fff; font-weight:500; color:#6b7280; }
+    .planner-summary {
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      flex-wrap:wrap;
+      padding:12px 14px;
+      margin-bottom:14px;
+      border:1px solid #f3d6a4;
+      border-radius:12px;
+      background:linear-gradient(135deg, #fff8eb 0%, #fffdf8 100%);
+    }
+    .planner-summary.is-quiet {
+      border-color:#e5e7eb;
+      background:linear-gradient(135deg, #fbfcff 0%, #ffffff 100%);
+    }
+    .planner-summary-badges { display:flex; gap:8px; flex-wrap:wrap; }
+    .planner-summary-badge {
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      padding:6px 10px;
+      border-radius:999px;
+      background:#fff;
+      border:1px solid #e5e7eb;
+      font-size:.9rem;
+      font-weight:600;
+    }
+    .group-bucket { margin-bottom:14px; }
+    .group-bucket-head {
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:8px;
+      margin-bottom:8px;
+    }
+    .group-bucket-list { display:flex; flex-wrap:wrap; gap:10px; }
+    .group-bucket-empty {
+      padding:8px 10px;
+      border:1px dashed #d1d5db;
+      border-radius:10px;
+      color:#6b7280;
+      font-size:.85rem;
+      background:#fafafa;
+    }
+    .group-chip {
+      justify-content:space-between;
+      gap:8px;
+      min-width:0;
+      max-width:100%;
+    }
+    .group-chip-label {
+      min-width:0;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+    }
+    .group-chip-count {
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-width:24px;
+      height:24px;
+      padding:0 8px;
+      border-radius:999px;
+      background:#fff;
+      border:1px solid #dbe3f3;
+      color:#374151;
+      font-size:.8rem;
+      font-weight:700;
+    }
+    .visibility-toggle {
+      display:flex;
+      align-items:flex-start;
+      gap:10px;
+      padding:10px 12px;
+      border:1px solid #dbe3f3;
+      border-radius:12px;
+      background:#f8fbff;
+      margin-bottom:14px;
+    }
+    .visibility-toggle input {
+      margin-top:3px;
+      width:18px;
+      height:18px;
+      flex:0 0 auto;
+    }
+    .visibility-toggle-copy {
+      display:flex;
+      flex-direction:column;
+      gap:2px;
+      min-width:0;
+    }
+    .visibility-toggle-label {
+      font-weight:600;
+      color:#0f172a;
+    }
 
     .grid-wrap { overflow:auto; border-radius:12px; }
     table.rot { border-collapse:separate; border-spacing:0; min-width:900px; }
@@ -135,6 +232,22 @@
         <a href="{% url 'trampoli_config' competicio.id %}" class="btn btn-sm btn-outline-secondary">Configuració</a>
         </div>
       </div>
+    <div class="planner-summary {% if not out_of_program_groups_count %}is-quiet{% endif %}" id="out-of-program-summary">
+      <div>
+        <div class="fw-semibold">Fora de programa</div>
+        <div class="mini" id="out-of-program-summary-text">
+          {% if out_of_program_groups_count %}
+            Hi ha grups i inscripcions que existeixen pero no formen part de l'horari actual.
+          {% else %}
+            Tots els grups actuals estan situats dins el programa de rotacions.
+          {% endif %}
+        </div>
+      </div>
+      <div class="planner-summary-badges">
+        <span class="planner-summary-badge" id="out-of-program-groups-badge">{{ out_of_program_groups_count }} grups</span>
+        <span class="planner-summary-badge" id="out-of-program-members-badge">{{ out_of_program_members_total }} inscripcions</span>
+      </div>
+    </div>
     <div class="board">
     <!-- Sidebar -->
     <div class="cardx cardx-left">
@@ -150,11 +263,45 @@
       </div>
 
       <div class="cardx-b">
-        <div class="d-flex flex-wrap" style="gap:10px;">
-          {% for g in grups_display %}
-            <div class="chip" draggable="true" data-grup="{{ g.id }}">{{ g.label }}</div>
-          {% endfor %}
-          <div class="chip chip-muted" draggable="true" data-grup="">(Buit)</div>
+        <div class="group-bucket">
+          <div class="group-bucket-head">
+            <div class="fw-semibold">Programats</div>
+            <span class="badge badge-light" id="programmed-groups-count">0</span>
+          </div>
+          <div class="group-bucket-list" id="programmed-group-list"></div>
+        </div>
+        <label class="visibility-toggle" for="show-out-of-program-toggle">
+          <input
+            type="checkbox"
+            id="show-out-of-program-toggle"
+            {% if show_out_of_program_in_competition_views %}checked{% endif %}
+          >
+          <span class="visibility-toggle-copy">
+            <span class="visibility-toggle-label">Mostrar grups fora de programa a notes i jutges</span>
+            <span class="mini" id="show-out-of-program-toggle-status">
+              {% if show_out_of_program_in_competition_views %}
+                Aquests grups també es mostren a les vistes de competició.
+              {% else %}
+                Aquests grups només es mostren al planner de rotacions.
+              {% endif %}
+            </span>
+          </span>
+        </label>
+        <div class="group-bucket">
+          <div class="group-bucket-head">
+            <div class="fw-semibold">Fora de programa</div>
+            <span class="badge badge-warning" id="out-of-program-groups-count">{{ out_of_program_groups_count }}</span>
+          </div>
+          <div class="mini mb-2">Aquests grups existeixen pero encara no tenen cap franja o estacio assignada.</div>
+          <div class="group-bucket-list" id="out-of-program-group-list"></div>
+        </div>
+        <div class="group-bucket">
+          <div class="group-bucket-head">
+            <div class="fw-semibold">Utilitats</div>
+          </div>
+          <div class="group-bucket-list">
+            <div class="chip chip-muted" draggable="true" data-grup="">(Buit)</div>
+          </div>
         </div>
 
         <hr class="my-3">
@@ -414,6 +561,7 @@
 
 <script id="grid-data" type="application/json">{{ grid_json|safe }}</script>
 <script id="group-labels-data" type="application/json">{{ group_labels_json|safe }}</script>
+<script id="group-sidebar-data" type="application/json">{{ group_sidebar_json|safe }}</script>
 <script id="franja-order-modes-data" type="application/json">{{ franja_order_modes_json|safe }}</script>
 <script id="export-meta-data" type="application/json">{{ export_meta_json|safe }}</script>
 <script id="export-participant-fields-data" type="application/json">{{ export_participant_fields_json|safe }}</script>
@@ -532,6 +680,7 @@ const ADD_REST_URL     = "{% url 'rotacions_estacio_descans_create' competicio.i
 const AUTO_FR_URL      = "{% url 'rotacions_franges_auto_create' competicio.id %}";
 const REORDER_COLS_URL = "{% url 'rotacions_estacions_reorder' competicio.id %}";
 const CLEAR_ALL_URL    = "{% url 'rotacions_clear_all' competicio.id %}";
+const OUT_OF_PROGRAM_VISIBILITY_SAVE_URL = "{% url 'rotacions_out_of_program_visibility_save' competicio.id %}";
 const INSERT_AFTER_URL = "{% url 'rotacions_franja_insert_after' competicio.id 0 %}";
 const EXTRAPOLAR_URL0  = "{% url 'rotacions_extrapolar' competicio.id 0 %}";
 const DEL_ES_URL0      = "{% url 'rotacions_estacio_delete' competicio.id 0 %}";
@@ -594,6 +743,13 @@ const groupLabels = (() => {
     return JSON.parse(document.getElementById("group-labels-data")?.textContent || "{}");
   } catch (e) {
     return {};
+  }
+})();
+const groupSidebar = (() => {
+  try {
+    return JSON.parse(document.getElementById("group-sidebar-data")?.textContent || "[]");
+  } catch (e) {
+    return [];
   }
 })();
 const franjaOrderModes = (() => {
@@ -659,6 +815,70 @@ function normalizeGridInPlace(){
       grid[fr][es] = normalizeGroups(grid[fr][es]);
     }
   }
+}
+
+function collectAssignedGroupIds(){
+  const assigned = new Set();
+  for (const fr in grid){
+    for (const es in grid[fr] || {}){
+      normalizeGroups(grid[fr][es]).forEach((groupId) => assigned.add(groupId));
+    }
+  }
+  return assigned;
+}
+
+function groupChipHtml(item){
+  const label = escapeHtml(item?.label || `G${item?.id || "?"}`);
+  const members = Number(item?.members_count || 0);
+  return `
+    <div class="chip group-chip" draggable="true" data-grup="${item.id}" title="${label}">
+      <span class="group-chip-label">${label}</span>
+      <span class="group-chip-count">${members}</span>
+    </div>
+  `;
+}
+
+function renderGroupBuckets(){
+  const programmedWrap = document.getElementById("programmed-group-list");
+  const outWrap = document.getElementById("out-of-program-group-list");
+  const programmedCountEl = document.getElementById("programmed-groups-count");
+  const outCountEl = document.getElementById("out-of-program-groups-count");
+  const outGroupsBadge = document.getElementById("out-of-program-groups-badge");
+  const outMembersBadge = document.getElementById("out-of-program-members-badge");
+  const summary = document.getElementById("out-of-program-summary");
+  const summaryText = document.getElementById("out-of-program-summary-text");
+  if (!programmedWrap || !outWrap) return;
+
+  const assigned = collectAssignedGroupIds();
+  const programmed = [];
+  const outOfProgram = [];
+  (Array.isArray(groupSidebar) ? groupSidebar : []).forEach((item) => {
+    if (!item || !item.id) return;
+    if (assigned.has(Number(item.id))) programmed.push(item);
+    else outOfProgram.push(item);
+  });
+
+  programmedWrap.innerHTML = programmed.length
+    ? programmed.map(groupChipHtml).join("")
+    : '<div class="group-bucket-empty">Encara no hi ha grups col·locats al programa.</div>';
+  outWrap.innerHTML = outOfProgram.length
+    ? outOfProgram.map(groupChipHtml).join("")
+    : '<div class="group-bucket-empty">No hi ha grups fora de programa.</div>';
+
+  const outGroupCount = outOfProgram.filter((item) => Number(item?.members_count || 0) > 0).length;
+  const outMembersCount = outOfProgram.reduce((acc, item) => acc + (Number(item?.members_count || 0) || 0), 0);
+  if (programmedCountEl) programmedCountEl.textContent = String(programmed.length);
+  if (outCountEl) outCountEl.textContent = String(outGroupCount);
+  if (outGroupsBadge) outGroupsBadge.textContent = `${outGroupCount} grups`;
+  if (outMembersBadge) outMembersBadge.textContent = `${outMembersCount} inscripcions`;
+  if (summary) summary.classList.toggle("is-quiet", outGroupCount <= 0);
+  if (summaryText) {
+    summaryText.textContent = outGroupCount
+      ? "Aquests grups existeixen pero encara no formen part de l'horari actual."
+      : "Tots els grups actuals estan situats dins el programa de rotacions.";
+  }
+
+  initChipDnD();
 }
 
 // --- Estat local ---
@@ -840,6 +1060,7 @@ function renderAll() {
     grid[fr][es] = gs;
     cell.innerHTML = cellHtml(fr, es, gs);
   });
+  renderGroupBuckets();
   // auto-save cada canvi
   autoSaveGrid();
 }
@@ -929,13 +1150,15 @@ function initColumnDnD(){
 }
 
 // --- Drag&Drop grups a cel·les ---
-function initCellDnD(){
+function initChipDnD(){
   document.querySelectorAll(".chip[draggable='true']").forEach((chip) => {
     chip.addEventListener("dragstart", (ev) => {
       ev.dataTransfer.setData("text/plain", chip.dataset.grup ?? "");
     });
   });
+}
 
+function initCellDnD(){
   document.querySelectorAll(".js-cell").forEach((cell) => {
     cell.addEventListener("dragover", (ev) => {
       ev.preventDefault();
@@ -1069,6 +1292,45 @@ function initTopButtons(){
       }
     });
   }
+}
+
+function initOutOfProgramVisibilityToggle(){
+  const input = document.getElementById("show-out-of-program-toggle");
+  const status = document.getElementById("show-out-of-program-toggle-status");
+  if (!input) return;
+
+  input.addEventListener("change", async () => {
+    const value = !!input.checked;
+    input.disabled = true;
+    if (status) {
+      status.textContent = "Desant configuracio...";
+    }
+    try {
+      const resp = await postJSON(OUT_OF_PROGRAM_VISIBILITY_SAVE_URL, {value});
+      const saved = !!resp?.value;
+      input.checked = saved;
+      if (status) {
+        status.textContent = saved
+          ? "Aquests grups també es mostren a les vistes de competició."
+          : "Aquests grups només es mostren al planner de rotacions.";
+      }
+      if (statusEl) {
+        statusEl.textContent = "✅ Visibilitat de grups fora de programa guardada.";
+      }
+    } catch (e) {
+      input.checked = !value;
+      if (status) {
+        status.textContent = input.checked
+          ? "Aquests grups també es mostren a les vistes de competició."
+          : "Aquests grups només es mostren al planner de rotacions.";
+      }
+      if (statusEl) {
+        statusEl.textContent = "❌ Error desant visibilitat: " + (e.message || e);
+      }
+    } finally {
+      input.disabled = false;
+    }
+  });
 }
 
 function initFranjaOrderModes(){
@@ -1356,8 +1618,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
   initEditModalPlacement();
   initColumnDnD();
+  initChipDnD();
   initCellDnD();
   initTopButtons();
+  initOutOfProgramVisibilityToggle();
   initFranjaOrderModes();
   initExportMetaControls();
   initGlobalClickHandler();

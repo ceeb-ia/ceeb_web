@@ -40,6 +40,7 @@ from .services.competition_groups import (
     ensure_group_for_display_num,
     get_group_for_display_num,
     get_group_maps,
+    get_programmed_group_ids,
     move_inscripcio_to_group,
     next_group_display_num,
     normalize_positive_int,
@@ -1781,6 +1782,86 @@ def competicio_has_rotacions(competicio):
     return RotacioAssignacio.objects.filter(competicio=competicio).exists()
 
 
+def _resolve_group_id_for_inscripcio(inscripcio, groups_by_display_num):
+    group_id = getattr(inscripcio, "grup_competicio_id", None)
+    if group_id:
+        return int(group_id)
+    legacy_group_num = normalize_positive_int(getattr(inscripcio, "grup", None))
+    if not legacy_group_num:
+        return None
+    group = groups_by_display_num.get(legacy_group_num)
+    if not group:
+        return None
+    return int(group.id)
+
+
+def _programmed_groups_emptied_by_move(competicio, target_ids):
+    target_ids = {
+        int(ins_id)
+        for ins_id in (target_ids or [])
+        if normalize_positive_int(ins_id)
+    }
+    if not target_ids:
+        return []
+
+    programmed_group_ids = get_programmed_group_ids(competicio)
+    if not programmed_group_ids:
+        return []
+
+    group_maps = get_group_maps(competicio)
+    groups_by_display_num = group_maps["by_display_num"]
+    groups_by_id = group_maps["by_id"]
+    selected = list(
+        Inscripcio.objects
+        .filter(competicio=competicio, id__in=target_ids)
+        .select_related("grup_competicio")
+        .only("id", "grup", "grup_competicio")
+    )
+    moving_counts = defaultdict(int)
+    for inscripcio in selected:
+        group_id = _resolve_group_id_for_inscripcio(inscripcio, groups_by_display_num)
+        if group_id:
+            moving_counts[group_id] += 1
+    if not moving_counts:
+        return []
+
+    total_counts = defaultdict(int)
+    all_members = (
+        Inscripcio.objects
+        .filter(competicio=competicio)
+        .select_related("grup_competicio")
+        .only("id", "grup", "grup_competicio")
+    )
+    for inscripcio in all_members:
+        group_id = _resolve_group_id_for_inscripcio(inscripcio, groups_by_display_num)
+        if group_id:
+            total_counts[group_id] += 1
+
+    blocked = []
+    for group_id, moved_count in moving_counts.items():
+        if group_id not in programmed_group_ids:
+            continue
+        if moved_count >= total_counts.get(group_id, 0):
+            group = groups_by_id.get(group_id)
+            if group is not None:
+                blocked.append(group)
+    blocked.sort(key=lambda group: (group.display_num, group.id))
+    return blocked
+
+
+def _message_for_emptied_programmed_groups(groups):
+    if not groups:
+        return ""
+    labels = []
+    for group in groups:
+        label = str(getattr(group, "nom", "") or "").strip()
+        if not label:
+            label = f"Grup {getattr(group, 'display_num', '?')}"
+        labels.append(label)
+    joined = ", ".join(labels)
+    return f"No es pot deixar buit un grup inclos al programa de rotacions: {joined}."
+
+
 def sync_stable_groups_from_legacy(competicio):
     view_cfg = competicio.inscripcions_view or {}
     raw_group_names = view_cfg.get("group_names") or {}
@@ -2291,12 +2372,7 @@ class InscripcionsListView(ListView):
 
         # 0c) MAKE INDEPENDENT GROUP (subgrup o pestanya)
         if request.GET.get("make_independent_group") == "1":
-            if competicio_has_rotacions(self.competicio):
-                messages.error(request, "No es poden reconfigurar grups mentre hi ha rotacions actives.")
-                query = request.GET.copy()
-                for k in ("make_independent_group", "lvl", "v1", "v2", "v3"):
-                    query.pop(k, None)
-                return redirect(f"{request.path}?{query.urlencode()}")
+            has_rotacions = competicio_has_rotacions(self.competicio)
             lvl = request.GET.get("lvl")  # "g1","g2","g3"
 
             group_codes = get_active_group_codes()
@@ -2361,8 +2437,17 @@ class InscripcionsListView(ListView):
                     sub_qs = None
 
                 if sub_qs is not None:
+                    selected_ids = list(sub_qs.values_list("id", flat=True))
+                    if has_rotacions:
+                        blocked_groups = _programmed_groups_emptied_by_move(self.competicio, selected_ids)
+                        if blocked_groups:
+                            messages.error(request, _message_for_emptied_programmed_groups(blocked_groups))
+                            query = request.GET.copy()
+                            for k in ("make_independent_group", "lvl", "v1", "v2", "v3"):
+                                query.pop(k, None)
+                            return redirect(f"{request.path}?{query.urlencode()}")
                     existing_groups = list(sub_qs.exclude(grup__isnull=True).values_list("grup", flat=True).distinct())
-                    if existing_groups:
+                    if existing_groups and not has_rotacions:
                         new_group_num = min(existing_groups)
                         with transaction.atomic():
                             Inscripcio.objects.filter(competicio=self.competicio, grup=new_group_num).update(grup=None)
@@ -2405,9 +2490,19 @@ class InscripcionsListView(ListView):
             base_qs = self.get_queryset_base_filtrada()
             sub_qs = base_qs.filter(id__in=ids)
 
+            selected_ids = list(sub_qs.values_list("id", flat=True))
+            if has_rotacions:
+                blocked_groups = _programmed_groups_emptied_by_move(self.competicio, selected_ids)
+                if blocked_groups:
+                    messages.error(request, _message_for_emptied_programmed_groups(blocked_groups))
+                    query = request.GET.copy()
+                    for k in ("make_independent_group", "lvl", "v1", "v2", "v3"):
+                        query.pop(k, None)
+                    return redirect(f"{request.path}?{query.urlencode()}")
+
             before_snapshot = _capture_history_snapshot()
             existing_groups = list(sub_qs.exclude(grup__isnull=True).values_list("grup", flat=True).distinct())
-            if existing_groups:
+            if existing_groups and not has_rotacions:
                 new_group_num = min(existing_groups)
                 with transaction.atomic():
                     Inscripcio.objects.filter(competicio=self.competicio, grup=new_group_num).update(grup=None)
@@ -3640,8 +3735,7 @@ def inscripcions_sort_undo(request, pk):
 @csrf_protect
 def inscripcions_groups_from_sort(request, pk):
     competicio = get_object_or_404(Competicio, pk=pk)
-    if competicio_has_rotacions(competicio):
-        return HttpResponseBadRequest("No es poden reconfigurar grups mentre hi ha rotacions actives")
+    has_rotacions = competicio_has_rotacions(competicio)
 
     try:
         payload = json.loads(request.body.decode("utf-8"))
@@ -4023,6 +4117,23 @@ def inscripcions_groups_from_sort(request, pk):
                 competicio.id,
             )
         )
+
+    if has_rotacions:
+        group_maps = get_group_maps(competicio)
+        programmed_group_ids = get_programmed_group_ids(competicio)
+        blocked_groups = []
+        for row in existing_groups_preview:
+            if str(row.get("impact_kind") or "") != "removed":
+                continue
+            group_num = normalize_positive_int(row.get("group_num"))
+            if not group_num:
+                continue
+            group = group_maps["by_display_num"].get(group_num)
+            if group is None or group.id not in programmed_group_ids:
+                continue
+            blocked_groups.append(group)
+        if blocked_groups:
+            return HttpResponseBadRequest(_message_for_emptied_programmed_groups(blocked_groups))
 
     before_snapshot = capture_inscripcions_history_snapshot(request, competicio)
     updates = list(objs)

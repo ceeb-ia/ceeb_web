@@ -1,12 +1,13 @@
 from collections import defaultdict
 
 from django.db import transaction
-from django.db.models import Max
+from django.db.models import Count, Max
 
 from ..models import GrupCompeticio, Inscripcio
 
 
 UNASSIGNED_GROUP_KEY = 0
+SHOW_OUT_OF_PROGRAM_IN_COMPETITION_VIEWS_KEY = "show_out_of_program_in_competition_views"
 
 
 def normalize_positive_int(value):
@@ -55,6 +56,50 @@ def get_group_maps(competicio, include_inactive=True):
         "label_by_id": label_by_id,
         "name_map": name_map,
     }
+
+
+def get_group_participant_counts(competicio):
+    rows = (
+        Inscripcio.objects
+        .filter(competicio=competicio, grup_competicio_id__isnull=False)
+        .values("grup_competicio_id")
+        .annotate(total=Count("id"))
+    )
+    return {
+        int(row["grup_competicio_id"]): int(row["total"] or 0)
+        for row in rows
+        if row.get("grup_competicio_id")
+    }
+
+
+def get_programmed_group_ids(competicio):
+    from ..models_rotacions import RotacioAssignacioGrup
+
+    return set(
+        RotacioAssignacioGrup.objects
+        .filter(assignacio__competicio=competicio)
+        .values_list("grup_id", flat=True)
+    )
+
+
+def get_out_of_program_group_ids(competicio):
+    participant_group_ids = set(get_group_participant_counts(competicio).keys())
+    if not participant_group_ids:
+        return set()
+    return participant_group_ids - get_programmed_group_ids(competicio)
+
+
+def show_out_of_program_in_competition_views(competicio) -> bool:
+    view_cfg = competicio.inscripcions_view or {}
+    return bool(view_cfg.get(SHOW_OUT_OF_PROGRAM_IN_COMPETITION_VIEWS_KEY, False))
+
+
+def set_show_out_of_program_in_competition_views(competicio, value):
+    cfg = dict(competicio.inscripcions_view or {})
+    cfg[SHOW_OUT_OF_PROGRAM_IN_COMPETITION_VIEWS_KEY] = bool(value)
+    competicio.inscripcions_view = cfg
+    competicio.save(update_fields=["inscripcions_view"])
+    return bool(cfg[SHOW_OUT_OF_PROGRAM_IN_COMPETITION_VIEWS_KEY])
 
 
 def sync_competicio_group_names_view(competicio):

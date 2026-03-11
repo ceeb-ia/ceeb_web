@@ -29,6 +29,7 @@ from .services.competition_groups import (
     get_group_maps,
     get_inscripcio_competition_order,
     group_label,
+    show_out_of_program_in_competition_views,
 )
 from .services.rotacions_ordering import (
     ORDER_MODE_MAINTAIN,
@@ -37,6 +38,7 @@ from .services.rotacions_ordering import (
     effective_rotate_steps,
     get_rotacions_order_modes,
     order_pairs_for_mode,
+    unique_ordered,
 )
 
 logger = logging.getLogger(__name__)
@@ -486,6 +488,15 @@ def judge_qr_png(request, token):
     if req_ex not in (None, ""):
         ex = _clamp_exercici_for_aparell(tok.comp_aparell, req_ex)
         portal_url = f"{portal_url}?ex={ex}"
+    req_franja = request.GET.get("franja")
+    if req_franja not in (None, ""):
+        try:
+            franja_id = int(req_franja)
+        except Exception:
+            franja_id = None
+        if franja_id and RotacioFranja.objects.filter(competicio=tok.competicio, pk=franja_id).exists():
+            sep = "&" if "?" in portal_url else "?"
+            portal_url = f"{portal_url}{sep}franja={franja_id}"
     url = request.build_absolute_uri(portal_url)
     img = qrcode.make(url)
     buf = io.BytesIO()
@@ -537,14 +548,16 @@ def judge_portal(request, token):
 
     franja_modes = get_rotacions_order_modes(competicio)
 
-    # Primera franja on cada grup passarà per aquest aparell.
-    # Si un grup surt a múltiples franges, preval la primera (ordre,id).
-    # A més, guardem l'ordre real de pas dels grups per mostrar les pestanyes.
-    group_first_franja = {}
-    groups_competing_order = []
-    groups_competing_seen = set()
+    # Franges programades per aquest aparell. El portal resol una franja activa
+    # i ordena els grups segons el pas real dins d'aquesta franja.
     group_maps = get_group_maps(competicio)
     groups_by_id = group_maps["by_id"]
+    franges = list(
+        RotacioFranja.objects
+        .filter(competicio=competicio)
+        .order_by("ordre", "id")
+    )
+    franges_by_id = {fr.id: fr for fr in franges}
     all_assigns = list(
         RotacioAssignacio.objects
         .filter(
@@ -561,16 +574,58 @@ def judge_portal(request, token):
         a for a in all_assigns
         if getattr(a, "estacio", None) is not None and getattr(a.estacio, "comp_aparell_id", None) == comp_aparell.id
     ]
+    app_franja_ids = unique_ordered(
+        int(a.franja_id)
+        for a in assigns
+        if getattr(a, "franja_id", None)
+    )
+    app_franges = [franges_by_id[fid] for fid in app_franja_ids if fid in franges_by_id]
+    app_programmed_group_ids = []
+    app_groups_by_franja = {}
     for a in assigns:
         fid = getattr(a, "franja_id", None)
         if not fid:
             continue
-        for g in assignacio_grups(a):
-            if g not in groups_competing_seen:
-                groups_competing_seen.add(g)
-                groups_competing_order.append(g)
-            if g not in group_first_franja:
-                group_first_franja[g] = fid
+        groups_for_assignacio = assignacio_grups(a)
+        if not groups_for_assignacio:
+            continue
+        app_groups_by_franja[fid] = unique_ordered(
+            list(app_groups_by_franja.get(fid, [])) + list(groups_for_assignacio)
+        )
+        app_programmed_group_ids = unique_ordered(list(app_programmed_group_ids) + list(groups_for_assignacio))
+
+    def _resolve_selected_franja():
+        raw = request.GET.get("franja")
+        if raw not in (None, ""):
+            try:
+                requested_id = int(raw)
+            except Exception:
+                requested_id = None
+            if requested_id in app_franja_ids:
+                return requested_id, "query"
+
+        if not app_franges:
+            return None, ""
+
+        now_time = timezone.localtime().time()
+        current = next(
+            (
+                fr.id for fr in app_franges
+                if fr.hora_inici <= now_time < fr.hora_fi
+            ),
+            None,
+        )
+        if current:
+            return current, "clock"
+
+        upcoming = [fr for fr in app_franges if fr.hora_inici > now_time]
+        if upcoming:
+            return upcoming[0].id, "upcoming"
+
+        return app_franges[-1].id, "latest"
+
+    franja_selected_id, franja_selection_source = _resolve_selected_franja()
+    franja_selected = franges_by_id.get(franja_selected_id) if franja_selected_id else None
 
     # Llista d'inscripcions base (mateix criteri que notes home)
     excluded_ins_ids = (
@@ -586,33 +641,37 @@ def judge_portal(request, token):
         .order_by("grup_competicio__display_num", "ordre_competicio", "ordre_sortida", "id")
     )
 
-    # Sempre mostrem tots els grups que competeixen en aquest aparell.
-    # L'ordre dins de cada grup es calcula segons la franja on el grup passarà per l'aparell.
+    # Amb franja seleccionada, el portal mostra els grups programats en aquell
+    # pas i calcula la posicio efectiva dins de la rotacio.
     ins_list = []
     grouped = {}
     for ins in ins_base_qs:
         key = 0 if ins.grup_competicio_id in (None, 0) else int(ins.grup_competicio_id)
         grouped.setdefault(key, []).append(ins)
 
-    ordered_groups = [g for g in groups_competing_order if g in grouped]
-    remaining_groups = sorted(g for g in grouped.keys() if g not in ordered_groups and g != 0)
-    if 0 in grouped and 0 not in ordered_groups:
-        remaining_groups.append(0)
+    if franja_selected_id:
+        ordered_groups = [g for g in app_groups_by_franja.get(franja_selected_id, []) if g in grouped]
+    else:
+        ordered_groups = [g for g in app_programmed_group_ids if g in grouped]
+    remaining_groups = sorted(g for g in grouped.keys() if g not in app_programmed_group_ids and g != 0)
+    always_visible_group_ids = list(ordered_groups)
+    if 0 in grouped and 0 not in always_visible_group_ids:
+        always_visible_group_ids.append(0)
+    show_out_of_program_groups = show_out_of_program_in_competition_views(competicio)
 
     def group_label_for(group_id: int) -> str:
         if group_id in (None, 0):
             return "Sense grup"
         return group_label(groups_by_id.get(group_id))
 
-    group_blocks = []
-    for g in ordered_groups + remaining_groups:
-        group_items = grouped.get(g, [])
+    def build_group_block(group_id):
+        group_items = grouped.get(group_id, [])
         base_pairs = [(ins.id, ins) for ins in group_items]
-        fid = group_first_franja.get(g)
+        fid = franja_selected_id
         mode_for_group = franja_modes.get(str(fid), ORDER_MODE_MAINTAIN) if fid else ORDER_MODE_MAINTAIN
         rotate_steps = effective_rotate_steps(
             mode_for_group,
-            rotation_step_map.get((g, fid), 0) if fid else 0,
+            rotation_step_map.get((group_id, fid), 0) if fid else 0,
         )
         seed_franja = fid if fid is not None else 0
 
@@ -620,19 +679,30 @@ def judge_portal(request, token):
             base_pairs,
             mode_for_group,
             rotate_steps=rotate_steps,
-            seed_prefix=f"judge|{competicio.id}|{seed_franja}|{comp_aparell.id}|{g}",
+            seed_prefix=f"judge|{competicio.id}|{seed_franja}|{comp_aparell.id}|{group_id}",
         )
-        ordered_ins = [ins for _ins_id, ins in ordered_pairs]
-        for ins in ordered_ins:
-            ins.rotation_order_display = get_inscripcio_competition_order(ins)
-        group_blocks.append(
-            {
-                "key": g,
-                "label": group_label_for(g),
-                "list": ordered_ins,
-            }
-        )
-        ins_list.extend(ordered_ins)
+        ordered_ins = []
+        for rank, (_ins_id, ins) in enumerate(ordered_pairs, start=1):
+            ins.rotation_order_display = rank
+            ins.rotation_base_order_display = get_inscripcio_competition_order(ins)
+            ordered_ins.append(ins)
+        return {
+            "key": group_id,
+            "label": group_label_for(group_id),
+            "list": ordered_ins,
+        }
+
+    programmed_group_blocks = []
+    out_of_program_group_blocks = []
+    for g in always_visible_group_ids:
+        block = build_group_block(g)
+        programmed_group_blocks.append(block)
+        ins_list.extend(block["list"])
+    if show_out_of_program_groups:
+        for g in remaining_groups:
+            block = build_group_block(g)
+            out_of_program_group_blocks.append(block)
+            ins_list.extend(block["list"])
 
     # Prefetch entries existents (per mostrar valors actuals)
     ins_ids = [ins.id for ins in ins_list]
@@ -683,7 +753,13 @@ def judge_portal(request, token):
         "schema": schema,
         "permissions": permissions,
         "inscripcions": ins_list,
-        "group_blocks": group_blocks,
+        "group_blocks": programmed_group_blocks,
+        "out_of_program_group_blocks": out_of_program_group_blocks,
+        "show_out_of_program_in_competition_views": show_out_of_program_groups,
+        "franges_for_aparell": app_franges,
+        "franja_selected_id": franja_selected_id,
+        "franja_selected": franja_selected,
+        "franja_selection_source": franja_selection_source,
         "scores_payload_json": scores_payload,
         "save_url": save_url,
         "updates_url": updates_url,
