@@ -451,7 +451,41 @@
                 <option value="desc">Desc (més és millor)</option>
                 <option value="asc">Asc (menys és millor)</option>
               </select>
+
+              <label class="font-weight-bold mt-2">Resultat per aparell</label>
+              <select class="form-control" id="sModeResultatAparells">
+                <option value="score">Score normal</option>
+                <option value="victories">Victòries</option>
+              </select>
+              <div class="small text-muted mt-1">
+                En mode victòries, cada aparell compara participants entre si i després s’agrega el resultat entre aparells.
+              </div>
             </div>
+          </div>
+
+          <div id="victoryTieBox" style="display:none;">
+            <hr class="my-2">
+
+            <div class="font-weight-bold mb-2">Desempat intern de comparació</div>
+            <div class="text-muted small mb-2">
+              Només s’aplica en mode <strong>Victòries</strong>. Afegeix criteris, en ordre, per resoldre empats dins de cada duel d’un mateix aparell.
+            </div>
+
+            <div class="table-responsive mb-2">
+              <table class="table table-sm mb-0">
+                <thead>
+                  <tr>
+                    <th style="width:30%;">Camp</th>
+                    <th style="width:50%;">Exercicis</th>
+                    <th style="width:10%;">Ordre</th>
+                    <th style="width:10%;" class="text-right">Accions</th>
+                  </tr>
+                </thead>
+                <tbody id="victoryTieBody"></tbody>
+              </table>
+            </div>
+
+            <button type="button" class="btn btn-sm btn-outline-primary mb-3" id="btnVictoryTieAdd">+ Afegir criteri</button>
           </div>
 
           <hr class="my-2">
@@ -619,6 +653,7 @@
   // DEFAULT schema coherent amb backend nou
   const DEFAULT_SCHEMA = {
     particions: [],
+    particions_v2: [],
     particions_custom: {},
     filtres: {},
     puntuacio: {
@@ -631,6 +666,13 @@
       exercicis_per_aparell: {},
       agregacio_exercicis: "sum",
       agregacio_aparells: "sum",
+      mode_resultat_aparells: "score",
+      victories: {
+        punts_victoria: 1,
+        punts_empat: 0.5,
+        sense_nota_mode: "skip",
+        desempat_comparacio: [],
+      },
       ordre: "desc",
 
       // legacy (per compat / si algú edita JSON a mà)
@@ -708,8 +750,12 @@
     tExIds: document.getElementById("tExIds"),
     sAggExercicis: document.getElementById("sAggExercicis"),
     sAggAparells: document.getElementById("sAggAparells"),
+    sModeResultatAparells: document.getElementById("sModeResultatAparells"),
     sOrdre: document.getElementById("sOrdre"),
 
+    victoryTieBox: document.getElementById("victoryTieBox"),
+    victoryTieBody: document.getElementById("victoryTieBody"),
+    btnVictoryTieAdd: document.getElementById("btnVictoryTieAdd"),
     tieBody: document.getElementById("tieBody"),
     tieParticipantsHead: document.getElementById("tieParticipantsHead"),
     btnTieAdd: document.getElementById("btnTieAdd"),
@@ -1110,6 +1156,7 @@
     const cfg = currentCfg();
     const tipus = (cfg && cfg.tipus) || (els.fTipus && els.fTipus.value) || "individual";
     const isEquips = (tipus === "equips");
+    const isIndividual = (tipus === "individual");
     if (els.equipCfgBox) {
       els.equipCfgBox.style.display = isEquips ? "" : "none";
     }
@@ -1119,6 +1166,14 @@
     document.querySelectorAll("#tieBody [data-cell='participants']").forEach(td => {
       td.style.display = isEquips ? "" : "none";
     });
+    if (els.sModeResultatAparells) {
+      const victoryOpt = els.sModeResultatAparells.querySelector('option[value="victories"]');
+      if (victoryOpt) victoryOpt.disabled = !isIndividual;
+      if (!isIndividual && els.sModeResultatAparells.value === "victories") {
+        els.sModeResultatAparells.value = "score";
+      }
+    }
+    refreshVictoryTieVisibility();
   }
 
   function sanitizeDesempatForTipus(list, tipus) {
@@ -1144,6 +1199,19 @@
 
   function isTipusEquips() {
     return currentTipus() === "equips";
+  }
+
+  function currentModeResultatAparells() {
+    return String(els.sModeResultatAparells?.value || "score").toLowerCase().trim();
+  }
+
+  function isVictoriesModeActive() {
+    return currentTipus() === "individual" && currentModeResultatAparells() === "victories";
+  }
+
+  function refreshVictoryTieVisibility() {
+    if (!els.victoryTieBox) return;
+    els.victoryTieBox.style.display = isVictoriesModeActive() ? "" : "none";
   }
 
   function getParticipantsCellHTML() {
@@ -1481,6 +1549,185 @@
     }
 
     return obj;
+  }
+
+  function normalizeVictoryTieModeSeleccioExercicis(rawMode){
+    const mode = normalizeTieModeSeleccioExercicis(rawMode);
+    if (["hereta","per_aparell_global","global_pool"].includes(mode)) return mode;
+    return "hereta";
+  }
+
+  function readVictoryTieObjFromRow(tr) {
+    const campCfg = readTieCampsFromRow(tr);
+    const ordre = tr.querySelector('[data-k="ordre"]').value;
+    const exSelMode = normalizeVictoryTieModeSeleccioExercicis(tr.querySelector('[data-k="ex_sel_mode"]')?.value || "hereta");
+    const exMode = tr.querySelector('[data-k="ex_mode"]').value;
+    const bestN = Number(tr.querySelector('[data-k="ex_best_n"]').value || 1);
+    const exIndex = Number(tr.querySelector('[data-k="ex_index"]').value || 1);
+    const exMaxPP = Math.max(0, Number(tr.querySelector('[data-k="ex_max_pp"]')?.value || 0));
+    const exIds = parsePositiveIds(tr.querySelector('[data-k="ex_ids"]').value || "");
+
+    const obj = {
+      camp: campCfg.camps[0] || "",
+      camps: campCfg.camps,
+      agregacio_camps: campCfg.agregacio_camps,
+      ordre,
+      scope: {
+        exercicis: { mode: exMode },
+      },
+    };
+
+    if (exMode === "millor_n" || exMode === "pitjor_n") obj.scope.exercicis.best_n = bestN;
+    if (exMode === "index") obj.scope.exercicis.index = exIndex;
+    if (exMaxPP > 0) obj.scope.exercicis.max_per_participant = exMaxPP;
+    if (exMode === "llista") obj.scope.exercicis.ids = exIds;
+    if (exSelMode !== "hereta") obj.mode_seleccio_exercicis = exSelMode;
+    return obj;
+  }
+
+  function readVictoryTieUI() {
+    const out = [];
+    document.querySelectorAll("#victoryTieBody tr").forEach(tr => {
+      out.push(readVictoryTieObjFromRow(tr));
+    });
+    return out;
+  }
+
+  function renderVictoryTieUI(list) {
+    if (!els.victoryTieBody) return;
+    const rows = Array.isArray(list) ? list : [];
+    const appIds = getTieInheritedAppIds();
+    els.victoryTieBody.innerHTML = "";
+
+    rows.forEach((t, idx) => {
+      const tr = document.createElement("tr");
+      const scope = t && typeof t === "object" ? (t.scope || {}) : {};
+      const sEx = scope && typeof scope === "object" ? (scope.exercicis || {}) : {};
+      const tieCamps = normalizeTieCampsFromObj(t || {});
+      const tieAggCamps = normalizeTieAggCampsFromObj(t || {});
+      const ordre = String((t && t.ordre) || "desc").toLowerCase();
+      const exSelMode = normalizeVictoryTieModeSeleccioExercicis(
+        (t && (t.mode_seleccio_exercicis || (sEx && sEx.mode_seleccio_exercicis))) || "hereta"
+      );
+      let exMode = String((sEx && sEx.mode) || "hereta").toLowerCase().trim();
+      if (!["hereta","tots","millor_1","millor_n","pitjor_1","pitjor_n","primer","ultim","index","llista"].includes(exMode)) exMode = "hereta";
+      const exBestN = Math.max(1, Number((sEx && sEx.best_n) || 1));
+      const exIndex = Math.max(1, Number((sEx && sEx.index) || 1));
+      const exMaxPP = Math.max(0, Number((sEx && sEx.max_per_participant) || 0));
+      const exIds = Array.isArray(sEx && sEx.ids) ? sEx.ids : [];
+      const exIdsStr = exIds.length ? exIds.join(",") : "";
+
+      tr.innerHTML = `
+        <td data-cell="camp"></td>
+        <td>
+          <div class="d-flex flex-column gap-1">
+            <select class="form-control form-control-sm" data-k="ex_sel_mode">
+              <option value="hereta">Seleccio ex: Hereta (puntuacio)</option>
+              <option value="per_aparell_global">Seleccio ex: Per aparell (global)</option>
+              <option value="global_pool">Seleccio ex: Sac global</option>
+            </select>
+            <select class="form-control form-control-sm" data-k="ex_mode">
+              <option value="hereta">Hereta (puntuacio)</option>
+              <option value="tots">Tots</option>
+              <option value="millor_1">Millor 1</option>
+              <option value="millor_n">Millors N</option>
+              <option value="pitjor_1">Pitjor 1</option>
+              <option value="pitjor_n">Pitjors N</option>
+              <option value="primer">Primer existent</option>
+              <option value="ultim">Ultim existent</option>
+              <option value="index">Exercici #</option>
+              <option value="llista">Exercicis (llista)</option>
+            </select>
+            <div class="d-flex gap-1">
+              <input class="form-control form-control-sm" data-k="ex_best_n" type="number" min="1" value="1" style="display:none;" placeholder="N">
+              <input class="form-control form-control-sm" data-k="ex_index" type="number" min="1" value="1" style="display:none;" placeholder="Index">
+            </div>
+            <input class="form-control form-control-sm" data-k="ex_max_pp" type="number" min="0" value="0" style="display:none;" placeholder="Max N per participant (0 = sense limit)">
+            <input class="form-control form-control-sm" data-k="ex_ids" type="text" style="display:none;" placeholder="ex: 1,3,4">
+            <div class="small text-muted" data-k="ex_hint" style="display:none;"></div>
+          </div>
+        </td>
+        <td>
+          <select class="form-control form-control-sm" data-k="ordre">
+            <option value="desc">Desc</option>
+            <option value="asc">Asc</option>
+          </select>
+        </td>
+        <td class="text-right">
+          <button type="button" class="btn btn-sm btn-outline-danger" data-act="del">×</button>
+        </td>
+      `;
+
+      const campCell = tr.querySelector('[data-cell="camp"]');
+      const exSelModeSel = tr.querySelector('[data-k="ex_sel_mode"]');
+      const exModeSel = tr.querySelector('[data-k="ex_mode"]');
+      const exBestNEl = tr.querySelector('[data-k="ex_best_n"]');
+      const exIndexEl = tr.querySelector('[data-k="ex_index"]');
+      const exMaxPPEl = tr.querySelector('[data-k="ex_max_pp"]');
+      const exIdsEl = tr.querySelector('[data-k="ex_ids"]');
+      const exHint = tr.querySelector('[data-k="ex_hint"]');
+      const ordSel = tr.querySelector('[data-k="ordre"]');
+
+      campCell.innerHTML = buildCampSelectHTMLForApps(appIds, tieCamps, tieAggCamps);
+      exSelModeSel.value = exSelMode;
+      exModeSel.value = exMode;
+      exBestNEl.value = exBestN;
+      exIndexEl.value = exIndex;
+      exMaxPPEl.value = exMaxPP;
+      exIdsEl.value = exIdsStr;
+      ordSel.value = ordre;
+
+      function refreshExUI() {
+        const m = String(exModeSel.value || "hereta").toLowerCase().trim();
+        const modeSel = normalizeVictoryTieModeSeleccioExercicis(exSelModeSel.value);
+        exBestNEl.style.display = (m === "millor_n" || m === "pitjor_n") ? "" : "none";
+        exIndexEl.style.display = (m === "index") ? "" : "none";
+        exMaxPPEl.style.display = (m === "hereta") ? "none" : "";
+        exIdsEl.style.display = (m === "llista") ? "" : "none";
+
+        if (m === "millor_n") exHint.textContent = "Tria els N millors exercicis.";
+        else if (m === "pitjor_n") exHint.textContent = "Tria els N pitjors exercicis.";
+        else if (m === "pitjor_1") exHint.textContent = "Agafa el pitjor exercici existent.";
+        else if (m === "primer") exHint.textContent = "Agafa el primer exercici existent.";
+        else if (m === "ultim") exHint.textContent = "Agafa l'ultim exercici existent.";
+        else if (m === "index") exHint.textContent = "Fa servir nomes l'exercici # (1..N).";
+        else if (m === "llista") exHint.textContent = "Llista d'indexs: 1,3,4.";
+        else exHint.textContent = "";
+
+        if (exHint.textContent) {
+          if (modeSel === "global_pool") exHint.textContent += " Aplicat al sac global.";
+          else if (modeSel === "per_aparell_global") exHint.textContent += " Aplicat per aparell.";
+          exHint.style.display = "";
+        } else {
+          exHint.style.display = "none";
+        }
+      }
+
+      refreshExUI();
+
+      tr.addEventListener("change", (e) => {
+        if (e.target && e.target.matches('[data-k="camps"],[data-k="agg_camps"],[data-k="ordre"],[data-k="ex_sel_mode"],[data-k="ex_mode"],[data-k="ex_best_n"],[data-k="ex_index"],[data-k="ex_max_pp"],[data-k="ex_ids"]')) {
+          refreshExUI();
+          syncAdvancedFromUI();
+        }
+      });
+      tr.addEventListener("input", (e) => {
+        if (e.target && e.target.matches('[data-k="ex_best_n"],[data-k="ex_index"],[data-k="ex_max_pp"],[data-k="ex_ids"]')) {
+          syncAdvancedFromUI();
+        }
+      });
+
+      tr.querySelector('[data-act="del"]').addEventListener("click", () => {
+        const cur = readVictoryTieUI();
+        cur.splice(idx, 1);
+        renderVictoryTieUI(cur);
+        syncAdvancedFromUI();
+      });
+
+      els.victoryTieBody.appendChild(tr);
+    });
+
+    refreshVictoryTieVisibility();
   }
 
   function setParticipantsUI(tr, pMode, pN, pAgg) {
@@ -2378,6 +2625,63 @@
     return out;
   }
 
+  function normalizeParticioParentValues(raw) {
+    let vals = [];
+    if (Array.isArray(raw)) vals = raw.map(v => String(v || "").trim());
+    else if (typeof raw === "string") vals = raw.split(",").map(v => v.trim());
+    const out = [];
+    const seen = new Set();
+    vals.forEach(v => {
+      if (!v) return;
+      const key = particioValueKey(v);
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      out.push(v);
+    });
+    return out;
+  }
+
+  function normalizeParticioEntries(raw, fallbackCodes) {
+    const rawList = Array.isArray(raw) ? raw : [];
+    const fallback = Array.isArray(fallbackCodes) ? fallbackCodes : [];
+    const source = rawList.length ? rawList : fallback;
+    const out = [];
+    const seen = new Set();
+
+    source.forEach((item, idx) => {
+      let code = "";
+      let apply_mode = "all";
+      let parent_values = [];
+
+      if (item && typeof item === "object" && !Array.isArray(item)) {
+        code = String(item.code || "").trim();
+        apply_mode = String(item.apply_mode || "all").trim().toLowerCase();
+        parent_values = normalizeParticioParentValues(item.parent_values);
+      } else {
+        code = String(item || "").trim();
+      }
+
+      if (!code || seen.has(code)) return;
+      seen.add(code);
+
+      if (idx === 0) {
+        apply_mode = "all";
+        parent_values = [];
+      } else if (apply_mode !== "some_parents") {
+        apply_mode = "all";
+        parent_values = [];
+      }
+
+      out.push({ code, apply_mode, parent_values });
+    });
+
+    return out;
+  }
+
+  function particioCodesFromEntries(raw, fallbackCodes) {
+    return normalizeParticioEntries(raw, fallbackCodes).map(entry => entry.code);
+  }
+
   function particioValueKey(raw) {
     return String(raw || "").replace(/\s+/g, " ").trim().toLowerCase();
   }
@@ -2468,41 +2772,186 @@
     return { code: String(code || ""), label: String(code || ""), ui_label: String(code || "") };
   }
 
-  function selectedParticioCodesFromUI() {
-    const out = [];
-    document.querySelectorAll("[data-part-code]").forEach(node => {
-      if (!node.checked) return;
-      const code = String(node.getAttribute("data-part-code") || "").trim();
-      if (code) out.push(code);
-    });
-    return normalizeParticioCodes(out);
+  function resolveParticioDisplayValue(code, rawValue, customMapRaw) {
+    const display = String(rawValue || "").trim();
+    const customMap = normalizeParticionsCustom(customMapRaw || {});
+    const cfg = customMap[code] || { mode: "raw", fallback_label: "", grups: [] };
+    if (String(cfg.mode || "raw").toLowerCase() !== "custom") return display;
+
+    const key = particioValueKey(display);
+    for (const group of (Array.isArray(cfg.grups) ? cfg.grups : [])) {
+      const values = splitParticioCustomValues(group.values);
+      if (values.some(val => particioValueKey(val) === key)) {
+        return String(group.label || group.key || display).trim() || display;
+      }
+    }
+
+    const fallback = String(cfg.fallback_label || "").trim();
+    return fallback || display;
   }
 
-  function buildParticioFieldChecks() {
+  function getResolvedParentChoiceEntries(code, customMapRaw) {
+    const rawEntries = getParticioChoiceEntriesForCode(code);
+    const customMap = normalizeParticionsCustom(customMapRaw || {});
+    const cfg = customMap[code] || { mode: "raw", fallback_label: "", grups: [] };
+    if (String(cfg.mode || "raw").toLowerCase() !== "custom") {
+      return rawEntries;
+    }
+
+    const out = [];
+    const seen = new Set();
+    function pushEntry(value, count){
+      const txt = String(value || "").trim();
+      if (!txt) return;
+      const key = particioValueKey(txt);
+      if (!key) return;
+      const idx = out.findIndex(item => particioValueKey(item.value) === key);
+      if (idx >= 0) {
+        out[idx].count += Number(count || 0);
+        return;
+      }
+      if (seen.has(key)) return;
+      seen.add(key);
+      out.push({ value: txt, label: txt, count: Number(count || 0) });
+    }
+
+    rawEntries.forEach(entry => {
+      const resolved = resolveParticioDisplayValue(code, entry.value, customMap);
+      pushEntry(resolved, entry.count || 0);
+    });
+    (Array.isArray(cfg.grups) ? cfg.grups : []).forEach((group, idx) => {
+      pushEntry(String(group.label || group.key || `Grup ${idx + 1}`).trim(), 0);
+    });
+    if (cfg.fallback_label) pushEntry(cfg.fallback_label, 0);
+    return out;
+  }
+
+  function readParticioEntriesFromUI() {
+    const out = [];
+    document.querySelectorAll("[data-part-entry-row]").forEach((row, idx) => {
+      const code = String(row.getAttribute("data-code") || "").trim();
+      if (!code) return;
+      const modeNode = row.querySelector('[data-part-entry="apply_mode"]');
+      let apply_mode = (idx === 0) ? "all" : String((modeNode && modeNode.value) || "all").trim().toLowerCase();
+      if (apply_mode !== "some_parents") apply_mode = "all";
+
+      let parent_values = [];
+      if (idx > 0 && apply_mode === "some_parents") {
+        const valuesNode = row.querySelector('[data-part-entry="parent_values"]');
+        parent_values = valuesNode
+          ? Array.from(valuesNode.selectedOptions).map(opt => String(opt.value || "").trim())
+          : [];
+        parent_values = normalizeParticioParentValues(parent_values);
+      }
+
+      out.push({ code, apply_mode, parent_values });
+    });
+    return normalizeParticioEntries(out);
+  }
+
+  function selectedParticioCodesFromUI() {
+    return particioCodesFromEntries(readParticioEntriesFromUI());
+  }
+
+  function renderParticioStackUI(entriesRaw, customMapRaw) {
     if (!els.particionsFieldsBox) return;
     const fields = Array.isArray(PARTICIO_FIELDS) ? PARTICIO_FIELDS : [];
+    const entries = normalizeParticioEntries(entriesRaw || []);
     if (!fields.length) {
       els.particionsFieldsBox.innerHTML = `<div class="small text-muted">Sense camps de particio disponibles.</div>`;
       return;
     }
 
-    let html = '<div class="row">';
-    fields.forEach((f, idx) => {
-      const code = String(f.code || "").trim();
-      if (!code) return;
-      const inputId = `particio_field_${idx}`;
-      const label = String(f.ui_label || f.label || code);
+    const selected = new Set(entries.map(entry => entry.code));
+    const availableOptions = fields
+      .filter(f => {
+        const code = String(f.code || "").trim();
+        return code && !selected.has(code);
+      })
+      .map(f => {
+        const code = String(f.code || "").trim();
+        const label = String(f.ui_label || f.label || code);
+        return `<option value="${esc(code)}">${esc(label)}</option>`;
+      })
+      .join("");
+
+    let html = `
+      <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+        <select class="form-control form-control-sm w-auto" data-part-stack="available">
+          ${availableOptions || '<option value="">Tots els camps ja estan afegits</option>'}
+        </select>
+        <button type="button" class="btn btn-sm btn-outline-primary" data-part-stack-act="add" ${availableOptions ? "" : "disabled"}>+ Afegir nivell</button>
+      </div>
+      <div class="small text-muted mb-2">L'ordre defineix la jerarquia de particions. Cada nivell pot dependre del valor resolt del nivell anterior.</div>
+    `;
+
+    if (!entries.length) {
+      html += `<div class="small text-muted border rounded p-2">Cap particio definida. Si no n'afegeixes cap, la classificacio sera global.</div>`;
+      els.particionsFieldsBox.innerHTML = html;
+      return;
+    }
+
+    entries.forEach((entry, idx) => {
+      const code = String(entry.code || "").trim();
+      const meta = partFieldMetaByCode(code);
+      const label = String(meta.ui_label || meta.label || code);
+      const isFirst = idx === 0;
+      const parentCode = !isFirst ? String(entries[idx - 1].code || "").trim() : "";
+      const parentMeta = !isFirst ? partFieldMetaByCode(parentCode) : null;
+      const applyMode = !isFirst && entry.apply_mode === "some_parents" ? "some_parents" : "all";
+      const selectedParentValues = new Set(normalizeParticioParentValues(entry.parent_values).map(v => particioValueKey(v)));
+      const parentChoices = !isFirst ? getResolvedParentChoiceEntries(parentCode, customMapRaw || {}) : [];
+      const parentOptionsHtml = parentChoices.map(opt => {
+        const value = String(opt.value || "").trim();
+        const count = Number(opt.count || 0);
+        const selectedAttr = selectedParentValues.has(particioValueKey(value)) ? "selected" : "";
+        const suffix = count > 0 ? ` (${count})` : "";
+        return `<option value="${esc(value)}" ${selectedAttr}>${esc(String(opt.label || value) + suffix)}</option>`;
+      }).join("");
+      const parentHint = isFirst
+        ? "Nivell base de la jerarquia."
+        : `S'aplica despres de ${esc(String(parentMeta && (parentMeta.ui_label || parentMeta.label || parentCode) || parentCode))}.`;
+
       html += `
-        <div class="col-12 col-md-6 mb-1">
-          <div class="form-check">
-            <input class="form-check-input" type="checkbox" id="${esc(inputId)}" data-part-code="${esc(code)}">
-            <label class="form-check-label" for="${esc(inputId)}">${esc(label)}</label>
+        <div class="border rounded p-2 mb-2" data-part-entry-row data-code="${esc(code)}">
+          <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+            <div>
+              <div class="font-weight-bold small">${esc(String(idx + 1))}. ${esc(label)}</div>
+              <div class="small text-muted">${parentHint}</div>
+            </div>
+            <div class="btn-group btn-group-sm" role="group" aria-label="Ordre particio">
+              <button type="button" class="btn btn-outline-secondary" data-part-stack-act="up" data-idx="${esc(String(idx))}" ${idx === 0 ? "disabled" : ""}>Pujar</button>
+              <button type="button" class="btn btn-outline-secondary" data-part-stack-act="down" data-idx="${esc(String(idx))}" ${idx === entries.length - 1 ? "disabled" : ""}>Baixar</button>
+              <button type="button" class="btn btn-outline-danger" data-part-stack-act="remove" data-idx="${esc(String(idx))}">Eliminar</button>
+            </div>
           </div>
+          ${isFirst ? "" : `
+            <div class="row mt-2">
+              <div class="col-12 col-lg-4 mb-2">
+                <label class="small text-muted mb-1">Aplicacio</label>
+                <select class="form-control form-control-sm" data-part-entry="apply_mode">
+                  <option value="all" ${applyMode === "all" ? "selected" : ""}>Aplicar a totes les particions anteriors</option>
+                  <option value="some_parents" ${applyMode === "some_parents" ? "selected" : ""}>Aplicar nomes a alguns valors del pare</option>
+                </select>
+              </div>
+              <div class="col-12 col-lg-8 mb-2" data-part-entry-parent-wrap style="display:${applyMode === "some_parents" ? "" : "none"};">
+                <label class="small text-muted mb-1">Valors del pare</label>
+                <select class="form-control form-control-sm" data-part-entry="parent_values" multiple size="${Math.min(Math.max(parentChoices.length || 2, 2), 6)}">
+                  ${parentOptionsHtml}
+                </select>
+                <div class="small text-muted mt-1">Es compara contra el valor resolt del nivell anterior, incloent grups custom.</div>
+              </div>
+            </div>
+          `}
         </div>
       `;
     });
-    html += "</div>";
+
     els.particionsFieldsBox.innerHTML = html;
+  }
+
+  function buildParticioFieldChecks() {
+    renderParticioStackUI([], {});
   }
 
   function renderParticioCustomItem(entry) {
@@ -2760,7 +3209,8 @@
     const cfg = currentCfg();
     if (!cfg) return;
 
-    const parts = selectedParticioCodesFromUI();
+    const partEntries = readParticioEntriesFromUI();
+    const parts = particioCodesFromEntries(partEntries);
     const particionsCustom = readParticionsCustomUI(parts);
 
     // filtres UI
@@ -2800,6 +3250,8 @@
     const exCfg = readMainExercicisFromUI();
     const modeSeleccioExercicis = getModeSeleccioExercicisFromUI();
     const exPerAppCfg = readPerAppExercicisFromUI();
+    const modeResultatAparells = currentModeResultatAparells();
+    const victoriesCompareTie = readVictoryTieUI();
 
     // desempats
     let desempat = readTieUI();
@@ -2820,6 +3272,7 @@
 
     const schema = {
       particions: parts,
+      particions_v2: partEntries,
       particions_custom: particionsCustom,
       filtres: filtres,
       puntuacio: {
@@ -2832,6 +3285,13 @@
         exercicis_per_aparell: exPerAppCfg,
         agregacio_exercicis: els.sAggExercicis.value,
         agregacio_aparells: els.sAggAparells.value,
+        mode_resultat_aparells: modeResultatAparells,
+        victories: {
+          punts_victoria: 1,
+          punts_empat: 0.5,
+          sense_nota_mode: "skip",
+          desempat_comparacio: victoriesCompareTie,
+        },
         ordre: els.sOrdre.value,
 
         // legacy (per compat)
@@ -2863,12 +3323,9 @@
   function syncUIFromSchema(schema) {
     schema = schema || JSON.parse(JSON.stringify(DEFAULT_SCHEMA));
 
-    const parts = normalizeParticioCodes(schema.particions || []);
-    const partSet = new Set(parts);
-    document.querySelectorAll("[data-part-code]").forEach(node => {
-      const code = String(node.getAttribute("data-part-code") || "").trim();
-      node.checked = partSet.has(code);
-    });
+    const partEntries = normalizeParticioEntries(schema.particions_v2 || [], schema.particions || []);
+    const parts = particioCodesFromEntries(partEntries);
+    renderParticioStackUI(partEntries, schema.particions_custom || {});
     renderParticionsCustomUI(parts, schema.particions_custom || {});
 
     // aparells (sense mode "tots": normalitzem legacy a seleccio explicita)
@@ -2898,6 +3355,7 @@
     refreshMainExercicisUI();
     els.sAggExercicis.value = (schema.puntuacio||{}).agregacio_exercicis || "sum";
     els.sAggAparells.value = (schema.puntuacio||{}).agregacio_aparells || "sum";
+    els.sModeResultatAparells.value = (schema.puntuacio||{}).mode_resultat_aparells || "score";
     els.sOrdre.value = (schema.puntuacio||{}).ordre || "desc";
 
     els.iTopN.value = (schema.presentacio||{}).top_n ?? 0;
@@ -2905,6 +3363,8 @@
     renderColumnsUI((schema.presentacio||{}).columnes || DEFAULT_SCHEMA.presentacio.columnes);
 
     // tie + filtres JSON
+    const victoriesCfg = ((schema.puntuacio || {}).victories || {});
+    renderVictoryTieUI(victoriesCfg.desempat_comparacio || []);
     renderTieUI(schema.desempat || []);
     els.tDesempat.value = JSON.stringify(schema.desempat || [], null, 2);
     els.tFiltres.value = JSON.stringify(schema.filtres || {}, null, 2);
@@ -2941,7 +3401,7 @@
 
   // events: canvis que afecten schema
   ["change","input"].forEach(ev => {
-    ["sAggCamps","sModeSeleccioExercicis","sExercicisMode","iExBestN","iExIndex","iExMaxPerParticipant","tExIds","sAggExercicis","sAggAparells","sOrdre","iTopN","cEmpats","eqIncludeSenseEquip","eqAgeActiva","eqAgeLlindars","eqAgeSenseLabel","eqCombineManualAge"]
+    ["sAggCamps","sModeSeleccioExercicis","sExercicisMode","iExBestN","iExIndex","iExMaxPerParticipant","tExIds","sAggExercicis","sAggAparells","sModeResultatAparells","sOrdre","iTopN","cEmpats","eqIncludeSenseEquip","eqAgeActiva","eqAgeLlindars","eqAgeSenseLabel","eqCombineManualAge"]
       .forEach(id => document.getElementById(id).addEventListener(ev, syncAdvancedFromUI));
 
     [els.fEntitats, els.fCategories, els.fSubcategories, els.fGrups].forEach(x => {
@@ -2952,13 +3412,56 @@
   if (els.particionsFieldsBox) {
     els.particionsFieldsBox.addEventListener("change", (ev) => {
       const node = ev.target;
-      if (!node || !node.matches("[data-part-code]")) return;
-      const cfg = currentCfg();
-      const schema = (cfg && cfg.schema) ? cfg.schema : DEFAULT_SCHEMA;
+      if (!node) return;
+      if (node.matches('[data-part-entry="apply_mode"]')) {
+        const row = node.closest("[data-part-entry-row]");
+        const wrap = row ? row.querySelector("[data-part-entry-parent-wrap]") : null;
+        if (wrap) wrap.style.display = node.value === "some_parents" ? "" : "none";
+      }
+      const partEntries = readParticioEntriesFromUI();
+      const parts = particioCodesFromEntries(partEntries);
+      const custom = normalizeParticionsCustom(readParticionsCustomUI(parts));
       renderParticionsCustomUI(
-        selectedParticioCodesFromUI(),
-        normalizeParticionsCustom((schema || {}).particions_custom || {})
+        parts,
+        custom
       );
+      renderParticioStackUI(partEntries, custom);
+      syncAdvancedFromUI();
+    });
+    els.particionsFieldsBox.addEventListener("click", (ev) => {
+      const btn = ev.target.closest("button[data-part-stack-act]");
+      if (!btn) return;
+      ev.preventDefault();
+      const act = String(btn.getAttribute("data-part-stack-act") || "").trim();
+      const entries = normalizeParticioEntries(readParticioEntriesFromUI());
+      const parts = particioCodesFromEntries(entries);
+      const custom = normalizeParticionsCustom(readParticionsCustomUI(parts));
+
+      if (act === "add") {
+        const select = els.particionsFieldsBox.querySelector('[data-part-stack="available"]');
+        const code = String((select && select.value) || "").trim();
+        if (!code || entries.some(entry => entry.code === code)) return;
+        entries.push({ code, apply_mode: "all", parent_values: [] });
+      } else {
+        const idx = Number(btn.getAttribute("data-idx"));
+        if (!Number.isInteger(idx) || idx < 0 || idx >= entries.length) return;
+        if (act === "remove") {
+          entries.splice(idx, 1);
+        } else if (act === "up" && idx > 0) {
+          const tmp = entries[idx - 1];
+          entries[idx - 1] = entries[idx];
+          entries[idx] = tmp;
+        } else if (act === "down" && idx < entries.length - 1) {
+          const tmp = entries[idx + 1];
+          entries[idx + 1] = entries[idx];
+          entries[idx] = tmp;
+        } else {
+          return;
+        }
+      }
+
+      renderParticioStackUI(entries, custom);
+      renderParticionsCustomUI(particioCodesFromEntries(entries), custom);
       syncAdvancedFromUI();
     });
   }
@@ -2972,6 +3475,7 @@
         const panel = box ? box.querySelector('[data-part-custom="panel"]') : null;
         if (panel) panel.style.display = node.checked ? "" : "none";
       }
+      renderParticioStackUI(readParticioEntriesFromUI(), readParticionsCustomUI(selectedParticioCodesFromUI()));
       syncAdvancedFromUI();
     });
     els.particionsCustomBox.addEventListener("input", (ev) => {
@@ -2981,6 +3485,7 @@
         node.matches('[data-part-custom="fallback"]') ||
         node.matches('[data-part-custom-group="label"]')
       ) {
+        renderParticioStackUI(readParticioEntriesFromUI(), readParticionsCustomUI(selectedParticioCodesFromUI()));
         syncAdvancedFromUI();
       }
     });
@@ -3015,6 +3520,7 @@
 
       cur[code] = item;
       renderParticionsCustomUI(selected, cur);
+      renderParticioStackUI(readParticioEntriesFromUI(), cur);
       syncAdvancedFromUI();
     });
   }
@@ -3040,6 +3546,12 @@
       advancedDirty.filtres = true;
     });
   }
+  if (els.sModeResultatAparells) {
+    els.sModeResultatAparells.addEventListener("change", () => {
+      refreshVictoryTieVisibility();
+      syncAdvancedFromUI();
+    });
+  }
 
   if (els.btnEqManualAdd) {
     els.btnEqManualAdd.addEventListener("click", () => {
@@ -3055,6 +3567,7 @@
     if (e.target && e.target.id && e.target.id.startsWith("app_")) {
       renderPerAppUI((currentCfg()||{}).schema || DEFAULT_SCHEMA);
       renderTieUI(readTieUI());
+      renderVictoryTieUI(readVictoryTieUI());
       syncAdvancedFromUI();
     }
   });
@@ -3065,6 +3578,20 @@
     renderTieUI(cur);
     syncAdvancedFromUI();
   });
+  if (els.btnVictoryTieAdd) {
+    els.btnVictoryTieAdd.addEventListener("click", () => {
+      const cur = readVictoryTieUI();
+      cur.push({
+        camp: "",
+        camps: [],
+        agregacio_camps: "hereta",
+        ordre: "desc",
+        scope: { exercicis: { mode: "hereta" } },
+      });
+      renderVictoryTieUI(cur);
+      syncAdvancedFromUI();
+    });
+  }
 
   if (els.btnColAddBuiltin) {
     els.btnColAddBuiltin.addEventListener("click", () => {

@@ -25,10 +25,16 @@ from .models_trampoli import CompeticioAparell, InscripcioAparellExclusio
 from .models_rotacions import RotacioAssignacio, RotacioFranja
 from .models_scoring import ScoreEntry, ScoreEntryVideo, ScoreEntryVideoEvent, ScoringSchema
 from .scoring_engine import ScoringEngine, ScoringError
+from .services.competition_groups import (
+    get_group_maps,
+    get_inscripcio_competition_order,
+    group_label,
+)
 from .services.rotacions_ordering import (
     ORDER_MODE_MAINTAIN,
     assignacio_grups,
-    franja_index_map,
+    build_group_rotation_step_map,
+    effective_rotate_steps,
     get_rotacions_order_modes,
     order_pairs_for_mode,
 )
@@ -529,9 +535,7 @@ def judge_portal(request, token):
     permissions = _normalize_permissions(tok.permissions)
     allowed_input_codes = _allowed_input_codes_from_permissions(permissions)
 
-    franges = list(RotacioFranja.objects.filter(competicio=competicio).order_by("ordre", "id"))
     franja_modes = get_rotacions_order_modes(competicio)
-    fr_idx_map = franja_index_map(franges)
 
     # Primera franja on cada grup passarà per aquest aparell.
     # Si un grup surt a múltiples franges, preval la primera (ordre,id).
@@ -539,16 +543,24 @@ def judge_portal(request, token):
     group_first_franja = {}
     groups_competing_order = []
     groups_competing_seen = set()
-    assigns = (
+    group_maps = get_group_maps(competicio)
+    groups_by_id = group_maps["by_id"]
+    all_assigns = list(
         RotacioAssignacio.objects
         .filter(
             competicio=competicio,
             estacio__tipus="aparell",
-            estacio__comp_aparell=comp_aparell,
+            estacio__comp_aparell__isnull=False,
         )
         .select_related("franja", "estacio")
-        .order_by("franja__ordre", "franja_id", "id")
+        .prefetch_related("grup_links__grup")
+        .order_by("franja__ordre", "franja_id", "estacio__ordre", "id")
     )
+    rotation_step_map = build_group_rotation_step_map(all_assigns)
+    assigns = [
+        a for a in all_assigns
+        if getattr(a, "estacio", None) is not None and getattr(a.estacio, "comp_aparell_id", None) == comp_aparell.id
+    ]
     for a in assigns:
         fid = getattr(a, "franja_id", None)
         if not fid:
@@ -570,7 +582,8 @@ def judge_portal(request, token):
         Inscripcio.objects
         .filter(competicio=competicio)
         .exclude(id__in=excluded_ins_ids)
-        .order_by("grup", "ordre_sortida", "id")
+        .select_related("grup_competicio")
+        .order_by("grup_competicio__display_num", "ordre_competicio", "ordre_sortida", "id")
     )
 
     # Sempre mostrem tots els grups que competeixen en aquest aparell.
@@ -578,7 +591,7 @@ def judge_portal(request, token):
     ins_list = []
     grouped = {}
     for ins in ins_base_qs:
-        key = 0 if ins.grup in (None, 0) else int(ins.grup)
+        key = 0 if ins.grup_competicio_id in (None, 0) else int(ins.grup_competicio_id)
         grouped.setdefault(key, []).append(ins)
 
     ordered_groups = [g for g in groups_competing_order if g in grouped]
@@ -586,17 +599,10 @@ def judge_portal(request, token):
     if 0 in grouped and 0 not in ordered_groups:
         remaining_groups.append(0)
 
-    view_cfg = competicio.inscripcions_view or {}
-    raw_group_names = view_cfg.get("group_names") or {}
-    if isinstance(raw_group_names, dict):
-        group_names = {str(k): (v or "").strip() for k, v in raw_group_names.items()}
-    else:
-        group_names = {}
-
     def group_label_for(group_id: int) -> str:
         if group_id in (None, 0):
             return "Sense grup"
-        return (group_names.get(str(group_id)) or "").strip() or f"Grup {group_id}"
+        return group_label(groups_by_id.get(group_id))
 
     group_blocks = []
     for g in ordered_groups + remaining_groups:
@@ -604,7 +610,10 @@ def judge_portal(request, token):
         base_pairs = [(ins.id, ins) for ins in group_items]
         fid = group_first_franja.get(g)
         mode_for_group = franja_modes.get(str(fid), ORDER_MODE_MAINTAIN) if fid else ORDER_MODE_MAINTAIN
-        rotate_steps = fr_idx_map.get(fid, 0) if fid else 0
+        rotate_steps = effective_rotate_steps(
+            mode_for_group,
+            rotation_step_map.get((g, fid), 0) if fid else 0,
+        )
         seed_franja = fid if fid is not None else 0
 
         ordered_pairs = order_pairs_for_mode(
@@ -614,6 +623,8 @@ def judge_portal(request, token):
             seed_prefix=f"judge|{competicio.id}|{seed_franja}|{comp_aparell.id}|{g}",
         )
         ordered_ins = [ins for _ins_id, ins in ordered_pairs]
+        for ins in ordered_ins:
+            ins.rotation_order_display = get_inscripcio_competition_order(ins)
         group_blocks.append(
             {
                 "key": g,

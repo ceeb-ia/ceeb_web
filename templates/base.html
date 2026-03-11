@@ -120,6 +120,7 @@
         {% if not hide_base_chrome %}
         <!-- Chatbot Section -->
         <!-- Bot&oacute; flotant per obrir el xat -->
+        {% if IS_DEV %}
         <button id="chatbot-open" type="button" aria-label="Obrir xat" aria-expanded="false">&#128172;</button>
 
         <!-- Widget Chatbot -->
@@ -139,6 +140,7 @@
             <button id="send-message" type="button">Envia</button>
         </div>
         </section>
+        {% endif %}
         {% if messages %}
         <div id="floating-messages">
             {% for message in messages %}
@@ -197,7 +199,7 @@
     <script type="text/javascript" src="{% staticv 'js/bootstrap.js' %}"></script>
     <script type="text/javascript" src="{% staticv 'js/app_dialog.js' %}"></script>
     {% block extra_scripts %}{% endblock %}
-    {% if not hide_base_chrome %}
+    {% if not hide_base_chrome and IS_DEV %}
     <script src="{% staticv 'js/chatbot.js' %}" defer></script>
     {% endif %}
 </body>

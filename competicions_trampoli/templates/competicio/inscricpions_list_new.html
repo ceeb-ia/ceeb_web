@@ -241,16 +241,152 @@
       font-weight: 700;
       white-space: nowrap;
     }
-    /* Panels plegables */
-    .panel { border: 1px solid #e3e6ef; border-radius: 12px; background: #fff; }
-    .panel-head { padding: 10px 14px; display:flex; justify-content:space-between; align-items:center; gap:12px; cursor:pointer; }
-    .panel-body { padding: 12px 14px; border-top: 1px solid #eef1f7; }
     .panel-title { font-weight: 600; margin:0; }
     .subtle { color:#6b7280; font-size:.85rem; }
     .btn-row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-    .chev { transition: transform .15s ease; }
-    .panel-collapse.is-collapsed { display: none; }
-    .collapsed .chev { transform: rotate(-90deg); }
+    .inscripcions-actions-form {
+      float: right;
+      width: min(420px, 100%);
+      margin: 0 0 1rem 1.5rem;
+    }
+    .actions-shell {
+      border: 1px solid #dce4f2;
+      border-radius: 18px;
+      background:
+        linear-gradient(180deg, rgba(247, 250, 255, 0.98), rgba(255, 255, 255, 0.98));
+      box-shadow: 0 18px 42px rgba(15, 23, 42, 0.08);
+      overflow: hidden;
+    }
+    .actions-shell-inner {
+      position: sticky;
+      top: 84px;
+      max-height: calc(100vh - 108px);
+      overflow: auto;
+    }
+    .actions-shell-head {
+      padding: 14px 16px 12px;
+      border-bottom: 1px solid #e7edf7;
+      background: linear-gradient(135deg, #f8fbff 0%, #eef5ff 100%);
+    }
+    .actions-shell-headline {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+    .actions-shell-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #0f172a;
+      margin: 0;
+    }
+    .actions-shell-subtitle {
+      margin: 0;
+      color: #64748b;
+      font-size: 0.82rem;
+      line-height: 1.35;
+    }
+    .actions-history {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+    .actions-body {
+      display: grid;
+      grid-template-columns: 148px minmax(0, 1fr);
+      min-height: 420px;
+    }
+    .actions-nav {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 14px;
+      border-right: 1px solid #e7edf7;
+      background: #f7f9fc;
+    }
+    .actions-nav-btn {
+      width: 100%;
+      border: 1px solid transparent;
+      background: transparent;
+      border-radius: 12px;
+      padding: 10px 12px;
+      text-align: left;
+      transition: background .15s ease, border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+    }
+    .actions-nav-btn:hover {
+      background: #ffffff;
+      border-color: #d7e2f4;
+      transform: translateX(2px);
+    }
+    .actions-nav-btn.is-active {
+      background: #ffffff;
+      border-color: #bcd0ef;
+      box-shadow: 0 6px 20px rgba(45, 108, 223, 0.12);
+    }
+    .actions-nav-btn-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-weight: 600;
+      font-size: 0.9rem;
+      color: #0f172a;
+    }
+    .actions-nav-btn-meta {
+      display: block;
+      margin-top: 3px;
+      font-size: 0.74rem;
+      color: #64748b;
+      line-height: 1.3;
+    }
+    .actions-content {
+      padding: 14px;
+      min-width: 0;
+    }
+    .panel,
+    .action-panel {
+      display: none;
+      background: #ffffff;
+      border: 1px solid #e4eaf5;
+      border-radius: 14px;
+      min-width: 0;
+    }
+    .panel.is-active,
+    .action-panel.is-active {
+      display: block;
+    }
+    .panel-head,
+    .action-panel-header {
+      padding: 14px 16px 10px;
+      background: #fbfdff;
+      cursor: default;
+    }
+    .panel-body,
+    .action-panel-body {
+      padding: 14px 16px 16px;
+      min-width: 0;
+    }
+    .panel-collapse {
+      display: block;
+      border-top: 1px solid #eef2f8;
+    }
+    .panel-collapse.is-collapsed {
+      display: block;
+    }
+    .chev {
+      display: none;
+    }
+    .inscripcions-table-stage {
+      min-width: 0;
+    }
+    .inscripcions-table-stage::after {
+      content: "";
+      display: block;
+      clear: both;
+    }
 
     /* Selector de pestanyes (Crear X grups) */
     .tab-select-card{
@@ -572,6 +708,32 @@
       padding: 1px 6px;
       white-space: nowrap;
     }
+    @media (max-width: 1199.98px) {
+      .inscripcions-actions-form {
+        float: none;
+        width: 100%;
+        margin: 0 0 1rem 0;
+      }
+      .actions-shell-inner {
+        position: static;
+        max-height: none;
+        overflow: visible;
+      }
+    }
+    @media (max-width: 767.98px) {
+      .actions-body {
+        grid-template-columns: 1fr;
+      }
+      .actions-nav {
+        border-right: none;
+        border-bottom: 1px solid #e7edf7;
+        flex-direction: row;
+        overflow-x: auto;
+      }
+      .actions-nav-btn {
+        min-width: 170px;
+      }
+    }
   </style>
 
   <div class="card-surface">
@@ -652,10 +814,18 @@
     </div>
 
     <!-- CONTROLS -->
-    <form method="get" class="mb-3">
-      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
-        <div class="text-muted small">Configuracions plegables: obre només el que necessitis.</div>
-        <div class="d-flex flex-wrap gap-2">
+    <form method="get" class="mb-3 inscripcions-actions-form">
+      <div class="actions-shell">
+        <div class="actions-shell-inner">
+          <div class="actions-shell-head">
+            <div class="actions-shell-headline">
+              <div>
+                <p class="actions-shell-title">Accions</p>
+                <p class="actions-shell-subtitle">Agrupa, reorganitza i exporta sense menjar-te la zona central de la taula.</p>
+              </div>
+              <span class="badge badge-info">{{ inscrits_filtered_count }}</span>
+            </div>
+            <div class="actions-history">
           <button type="button"
                   class="btn btn-sm btn-outline-secondary"
                   id="btn-history-undo"
@@ -668,24 +838,68 @@
                   {% if not can_edit_inscripcions or not history_state.can_redo %}disabled{% endif %}>
             Refer
           </button>
-          <span class="text-muted small align-self-center" id="history-stack-summary"></span>
-          <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleAllPanels(true)">Desplegar tot</button>
-          <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleAllPanels(false)">Plegar tot</button>
-        </div>
-      </div>
+              <span class="text-muted small align-self-center" id="history-stack-summary"></span>
+            </div>
+          </div>
 
-      <!-- conserva estat -->
-      <input type="hidden" name="q" value="{{ request.GET.q|default:'' }}">
-      <input type="hidden" name="categoria" value="{{ request.GET.categoria|default:'' }}">
-      <input type="hidden" name="subcategoria" value="{{ request.GET.subcategoria|default:'' }}">
-      <input type="hidden" name="entitat" value="{{ request.GET.entitat|default:'' }}">
-      <!-- clau per no paginar quan no hi ha agrupació -->
-      <input type="hidden" name="per_page" value="{{ request.GET.per_page|default:'all' }}">
+          <!-- conserva estat -->
+          <input type="hidden" name="q" value="{{ request.GET.q|default:'' }}">
+          <input type="hidden" name="categoria" value="{{ request.GET.categoria|default:'' }}">
+          <input type="hidden" name="subcategoria" value="{{ request.GET.subcategoria|default:'' }}">
+          <input type="hidden" name="entitat" value="{{ request.GET.entitat|default:'' }}">
+          <!-- clau per no paginar quan no hi ha agrupació -->
+          <input type="hidden" name="per_page" value="{{ request.GET.per_page|default:'all' }}">
 
+          <div class="actions-body">
+            <nav class="actions-nav" id="inscripcions-panels-nav" aria-label="Seccions d'accions">
+              <button type="button" class="actions-nav-btn is-active" data-panel-target="agrupacio">
+                <span class="actions-nav-btn-title">
+                  <span>Agrupació</span>
+                  <span class="badge badge-light">{{ selected_group_fields|length }}</span>
+                </span>
+                <span class="actions-nav-btn-meta">Camps i pestanyes</span>
+              </button>
+              <button type="button" class="actions-nav-btn" data-panel-target="columnes">
+                <span class="actions-nav-btn-title">
+                  <span>Columnes</span>
+                  <span class="badge badge-light border" id="cols-visible-count">-/-</span>
+                </span>
+                <span class="actions-nav-btn-meta">Ordre i visibilitat</span>
+              </button>
+              <button type="button" class="actions-nav-btn" data-panel-target="grups">
+                <span class="actions-nav-btn-title">
+                  <span>Grups</span>
+                  <span class="badge badge-light">{% if selected_group_fields and records_grouped %}{{ records_grouped|length }}{% else %}0{% endif %}</span>
+                </span>
+                <span class="actions-nav-btn-meta">Crear i repartir</span>
+              </button>
+              <button type="button" class="actions-nav-btn" data-panel-target="equips">
+                <span class="actions-nav-btn-title">
+                  <span>Equips</span>
+                  <span class="badge badge-light">{{ equips_existing|length }}</span>
+                </span>
+                <span class="actions-nav-btn-meta">Automàtic i manual</span>
+              </button>
+              <button type="button" class="actions-nav-btn" data-panel-target="media">
+                <span class="actions-nav-btn-title">
+                  <span>Multimèdia</span>
+                </span>
+                <span class="actions-nav-btn-meta">Carpeta i assignació</span>
+              </button>
+              <button type="button" class="actions-nav-btn" data-panel-target="altres">
+                <span class="actions-nav-btn-title">
+                  <span>Altres</span>
+                  <span class="badge badge-light">{{ column_sort_stack_count }}</span>
+                </span>
+                <span class="actions-nav-btn-meta">Exportació i sort</span>
+              </button>
+            </nav>
+
+            <div class="actions-content">
       <div class="d-flex flex-column gap-2 mb-3" id="inscripcions-panels">
 
         <!-- AGRUPACIÓ -->
-        <div class="panel">
+        <div class="panel is-active" data-panel-key="agrupacio">
           <div class="panel-head collapsed" data-target="#panel-agrupacio" aria-expanded="false">
             <div>
               <p class="panel-title mb-0">Agrupació</p>
@@ -738,7 +952,7 @@
         </div>
 
         <!-- COLUMNES -->
-        <div class="panel">
+        <div class="panel" data-panel-key="columnes">
           <div class="panel-head collapsed" data-target="#panel-columnes" aria-expanded="false">
             <div>
               <p class="panel-title mb-0">Columnes</p>
@@ -791,7 +1005,7 @@
         </div>
 
         <!-- GRUPS -->
-        <div class="panel">
+        <div class="panel" data-panel-key="grups">
           <div class="panel-head collapsed" data-target="#panel-grups" aria-expanded="false">
             <div>
               <p class="panel-title mb-0">Grups</p>
@@ -991,7 +1205,7 @@
         {% include "competicio/_equips_panel.html" %}
 
         <!-- MEDIA -->
-        <div class="panel">
+        <div class="panel" data-panel-key="media">
           <div class="panel-head collapsed" data-target="#panel-media" aria-expanded="false">
             <div>
               <p class="panel-title mb-0">Fitxers multimèdia</p>
@@ -1035,7 +1249,7 @@
         </div>
 
         <!-- ALTRES -->
-        <div class="panel">
+        <div class="panel" data-panel-key="altres">
           <div class="panel-head collapsed" data-target="#panel-altres" aria-expanded="false">
             <div>
               <p class="panel-title mb-0">Altres</p>
@@ -1116,53 +1330,53 @@
         </div>
 
       </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <!-- JS panels -->
       <script>
-        function setPanelOpen(headEl, open) {
-          const sel = headEl.getAttribute('data-target');
-          const panel = sel ? document.querySelector(sel) : null;
-          if (!panel) return;
+        function getActiveActionsPanelKey() {
+          return document.querySelector('.actions-nav-btn.is-active')?.getAttribute('data-panel-target') || 'agrupacio';
+        }
 
-          if (open) {
-            panel.classList.remove('is-collapsed');
-            headEl.classList.remove('collapsed');
-            headEl.setAttribute('aria-expanded', 'true');
-          } else {
-            panel.classList.add('is-collapsed');
-            headEl.classList.add('collapsed');
-            headEl.setAttribute('aria-expanded', 'false');
+        function setActiveActionsPanel(panelKey, options = {}) {
+          const key = String(panelKey || '').trim() || 'agrupacio';
+          let matched = false;
+
+          document.querySelectorAll('.actions-nav-btn[data-panel-target]').forEach(btn => {
+            const isActive = btn.getAttribute('data-panel-target') === key;
+            btn.classList.toggle('is-active', isActive);
+            if (isActive) matched = true;
+          });
+
+          document.querySelectorAll('#inscripcions-panels > .panel[data-panel-key], #inscripcions-panels > .action-panel[data-panel-key]').forEach(panel => {
+            panel.classList.toggle('is-active', panel.getAttribute('data-panel-key') === key);
+          });
+
+          if (!matched && key !== 'agrupacio') {
+            setActiveActionsPanel('agrupacio', options);
+            return;
           }
 
-          if (typeof window.__saveInscripcionsUiState === 'function') {
+          if (!options.skipSave && typeof window.__saveInscripcionsUiState === 'function') {
             window.__saveInscripcionsUiState();
           }
         }
 
-        function togglePanel(headEl) {
-          const sel = headEl.getAttribute('data-target');
-          const panel = sel ? document.querySelector(sel) : null;
-          if (!panel) return;
-          const isCollapsed = panel.classList.contains('is-collapsed');
-          setPanelOpen(headEl, isCollapsed);
-        }
-
-        function toggleAllPanels(open) {
-          document.querySelectorAll('.panel-head[data-target]').forEach(head => setPanelOpen(head, open));
-        }
-        window.toggleAllPanels = toggleAllPanels;
-
         document.addEventListener('DOMContentLoaded', () => {
-          document.querySelectorAll('.panel-head[data-target]').forEach(head => {
-            head.addEventListener('click', (e) => {
-              if (e.target.closest('button, a, input, select, textarea, label')) return;
-              togglePanel(head);
+          document.querySelectorAll('.actions-nav-btn[data-panel-target]').forEach(btn => {
+            btn.addEventListener('click', () => {
+              setActiveActionsPanel(btn.getAttribute('data-panel-target'));
             });
           });
+          setActiveActionsPanel(getActiveActionsPanelKey(), { skipSave: true });
         });
       </script>
     </form>
 
+    <div class="inscripcions-table-stage">
     <!-- TAULA AMB PESTANYES -->
     {% if selected_group_fields and records_grouped %}
 
@@ -1299,7 +1513,6 @@
                           <td colspan="{{ table_colspan|add:'1' }}">
                             <div class="d-flex justify-content-between align-items-center">
                               <div class="d-flex align-items-center flex-wrap" style="gap:10px;">
-                                <span class="drag-handle" title="Arrossega el bloc">&#8942;&#8942;</span>
                                 {% with gkey=r.grup|stringformat:"s" %}
                                   <span class="font-weight-bold group-title">
                                     <span class="group-name-text" data-group="{{ r.grup }}">
@@ -1310,6 +1523,9 @@
                                       {% endif %}
                                     </span>
                                   </span>
+                                  <span class="badge badge-light js-group-count" data-group="{{ r.grup }}" title="Integrants visibles del grup">0</span>
+                                  <span class="badge badge-warning d-none js-group-order-dirty" data-group="{{ r.grup }}" title="L'ordre visual d'aquest grup no coincideix amb l'ordre de competició desat">Ordre no desat</span>
+                                  <button type="button" class="btn btn-sm btn-outline-primary js-save-group-order" data-group="{{ r.grup }}">Desar ordre competició</button>
                                   <button type="button" class="btn btn-sm btn-outline-secondary js-edit-group-name" data-group="{{ r.grup }}">Editar nom</button>
                                   <span class="d-none js-group-name-editor" data-group="{{ r.grup }}">
                                     <input type="text" class="form-control form-control-sm d-inline-block" style="width:240px;" placeholder="Nom del grup..." value="{{ group_names|get_item:gkey|default:'' }}">
@@ -1324,7 +1540,7 @@
                       {% endif %}
                     {% endifchanged %}
 
-                    <tr class="inscripcio-row" data-id="{{ r.id }}" data-group="{{ r.grup|default:'' }}" data-team="{{ r.equip_id|default:'' }}">
+                    <tr class="inscripcio-row" data-id="{{ r.id }}" data-group="{{ r.grup|default:'' }}" data-competition-order="{{ r.ordre_competicio|default:'' }}" data-team="{{ r.equip_id|default:'' }}">
                       <td class="control-col">
                         <div class="row-controls">
                           <input type="checkbox" class="inscripcio-select js-team-row-select" data-ins-id="{{ r.id }}">
@@ -1519,7 +1735,6 @@
                     <td colspan="{{ table_colspan|add:'1' }}">
                       <div class="d-flex justify-content-between align-items-center">
                         <div class="d-flex align-items-center flex-wrap" style="gap:10px;">
-                          <span class="drag-handle" title="Arrossega el bloc">&#8942;&#8942;</span>
                           {% with gkey=r.grup|stringformat:"s" %}
                             <span class="font-weight-bold group-title">
                               <span class="group-name-text" data-group="{{ r.grup }}">
@@ -1530,6 +1745,9 @@
                                 {% endif %}
                               </span>
                             </span>
+                            <span class="badge badge-light js-group-count" data-group="{{ r.grup }}" title="Integrants visibles del grup">0</span>
+                            <span class="badge badge-warning d-none js-group-order-dirty" data-group="{{ r.grup }}" title="L'ordre visual d'aquest grup no coincideix amb l'ordre de competició desat">Ordre no desat</span>
+                            <button type="button" class="btn btn-sm btn-outline-primary js-save-group-order" data-group="{{ r.grup }}">Desar ordre competició</button>
                             <button type="button" class="btn btn-sm btn-outline-secondary js-edit-group-name" data-group="{{ r.grup }}">Editar nom</button>
                             <span class="d-none js-group-name-editor" data-group="{{ r.grup }}">
                               <input type="text" class="form-control form-control-sm d-inline-block" style="width:240px;" placeholder="Nom del grup..." value="{{ group_names|get_item:gkey|default:'' }}">
@@ -1543,7 +1761,7 @@
                   </tr>
                 {% endif %}
               {% endifchanged %}
-              <tr class="inscripcio-row" data-id="{{ r.id }}" data-group="{{ r.grup|default:'' }}" data-team="{{ r.equip_id|default:'' }}">
+              <tr class="inscripcio-row" data-id="{{ r.id }}" data-group="{{ r.grup|default:'' }}" data-competition-order="{{ r.ordre_competicio|default:'' }}" data-team="{{ r.equip_id|default:'' }}">
                 <td class="control-col">
                   <div class="row-controls">
                     <input type="checkbox" class="inscripcio-select js-team-row-select" data-ins-id="{{ r.id }}">
@@ -1643,6 +1861,7 @@
         </table>
       </div>
     {% endif %}
+    </div>
 
   </div>
 </div>
@@ -1731,22 +1950,11 @@
     return li ? (li.getAttribute('data-group-key') || null) : null;
   }
 
-  function getOpenPanelTargets() {
-    const out = [];
-    document.querySelectorAll('.panel-head[data-target]').forEach(head => {
-      if (!head.classList.contains('collapsed')) {
-        const target = head.getAttribute('data-target');
-        if (target) out.push(target);
-      }
-    });
-    return out;
-  }
-
   function captureUiState(extra) {
     const base = {
       savedAt: Date.now(),
       activeTabKey: getActiveTabKey(),
-      openPanels: getOpenPanelTargets(),
+      activeActionsPanel: getActiveActionsPanelKey(),
       scrollY: window.scrollY || window.pageYOffset || 0,
       groupSource: document.querySelector('.js-group-source:checked')?.value || 'tabs',
     };
@@ -1803,12 +2011,9 @@
         if (sourceEl) sourceEl.checked = true;
       }
 
-      if (Array.isArray(state.openPanels)) {
-        document.querySelectorAll('.panel-head[data-target]').forEach(head => {
-          const target = head.getAttribute('data-target');
-          if (!target) return;
-          setPanelOpen(head, state.openPanels.includes(target));
-        });
+      const activeActionsPanel = String(state.activeActionsPanel || '');
+      if (activeActionsPanel) {
+        setActiveActionsPanel(activeActionsPanel, { skipSave: true });
       }
 
       if (state.activeTabKey) {
@@ -1876,6 +2081,79 @@
     return ids;
   }
 
+  function getCurrentReorderMode() {
+    return 'group_edit';
+  }
+
+  function collectIdsForGroup(groupNum) {
+    const key = String(groupNum || '').trim();
+    if (!key) return [];
+    const ids = [];
+    document.querySelectorAll(`tr.inscripcio-row[data-group="${CSS.escape(key)}"]`).forEach(tr => {
+      if (tr.dataset?.id) ids.push(String(tr.dataset.id));
+    });
+    return ids;
+  }
+
+  function rowsForGroup(groupNum) {
+    const key = String(groupNum || '').trim();
+    if (!key) return [];
+    return Array.from(document.querySelectorAll(`tr.inscripcio-row[data-group="${CSS.escape(key)}"]`));
+  }
+
+  function getSavedCompetitionOrderIdsForGroup(groupNum) {
+    return rowsForGroup(groupNum)
+      .slice()
+      .sort((a, b) => {
+        const orderA = parseInt(a.getAttribute('data-competition-order') || '', 10);
+        const orderB = parseInt(b.getAttribute('data-competition-order') || '', 10);
+        if (Number.isNaN(orderA) && Number.isNaN(orderB)) return 0;
+        if (Number.isNaN(orderA)) return 1;
+        if (Number.isNaN(orderB)) return -1;
+        if (orderA !== orderB) return orderA - orderB;
+        return (a.dataset.id || '').localeCompare(b.dataset.id || '');
+      })
+      .map(tr => String(tr.dataset.id || ''))
+      .filter(v => !!v);
+  }
+
+  function arraysEqual(a, b) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i += 1) {
+      if (a[i] !== b[i]) return false;
+    }
+    return true;
+  }
+
+  function refreshGroupHeaderIndicators() {
+    const groups = new Set();
+    document.querySelectorAll('tr.group-row[data-group-header]').forEach(tr => {
+      const key = String(tr.getAttribute('data-group-header') || '').trim();
+      if (key) groups.add(key);
+    });
+
+    groups.forEach(groupNum => {
+      const visibleIds = collectIdsForGroup(groupNum);
+      const savedIds = getSavedCompetitionOrderIdsForGroup(groupNum);
+      const isDirty = visibleIds.length > 0 && !arraysEqual(visibleIds, savedIds);
+
+      document.querySelectorAll(`.js-group-count[data-group="${CSS.escape(groupNum)}"]`).forEach(el => {
+        el.textContent = `${visibleIds.length} integrants`;
+      });
+      document.querySelectorAll(`.js-group-order-dirty[data-group="${CSS.escape(groupNum)}"]`).forEach(el => {
+        el.classList.toggle('d-none', !isDirty);
+      });
+    });
+  }
+
+  function syncCompetitionOrderAttrsForGroup(groupNum, ids) {
+    (ids || []).forEach((insId, index) => {
+      const row = document.querySelector(`tr.inscripcio-row[data-id="${CSS.escape(String(insId))}"]`);
+      if (!row) return;
+      row.setAttribute('data-competition-order', String(index + 1));
+    });
+  }
+
   async function saveGlobalOrder(movedId, targetGroup) {
     const ids = collectGlobalIds();
     if (!ids.length) return false;
@@ -1895,6 +2173,7 @@
           moved_id: movedId ? String(movedId) : null,
           new_index: (newIndex >= 0 ? newIndex : null),
           target_group: (targetGroup !== undefined ? targetGroup : null),
+          mode: getCurrentReorderMode(),
           filters: getCurrentInscripcioFilters(),
           group_by: getCurrentGroupByCodes()
         })
@@ -2267,11 +2546,34 @@
     const historyUndoUrl = "{% url 'inscripcions_history_undo' competicio.id %}";
     const historyRedoUrl = "{% url 'inscripcions_history_redo' competicio.id %}";
     const groupsFromSortUrl = "{% url 'inscripcions_groups_from_sort' competicio.id %}";
+    const saveGroupCompetitionOrderUrl = "{% url 'inscripcions_save_group_competition_order' competicio.id %}";
     const mediaUploadUrl = "{% url 'inscripcions_media_upload' competicio.id %}";
     const mediaDeleteUrl = "{% url 'inscripcions_media_delete' competicio.id %}";
     const mediaSetPrimaryUrl = "{% url 'inscripcions_media_set_primary' competicio.id %}";
     const mediaMatchPreviewUrl = "{% url 'inscripcions_media_match_preview' competicio.id %}";
     const mediaMatchApplyUrl = "{% url 'inscripcions_media_match_apply' competicio.id %}";
+
+    async function saveGroupCompetitionOrder(groupNum) {
+      const ids = collectIdsForGroup(groupNum);
+      if (!ids.length) {
+        showAlert("Aquest grup no te participants visibles.");
+        return false;
+      }
+      try {
+        await postJson(saveGroupCompetitionOrderUrl, {
+          group_num: groupNum,
+          ids: ids
+        });
+        syncCompetitionOrderAttrsForGroup(groupNum, ids);
+        refreshGroupHeaderIndicators();
+        showAlert("Ordre de competicio desat.");
+        return true;
+      } catch (err) {
+        showAlert(`No s'ha pogut desar l'ordre de competicio.\n${err.message || err}`);
+        return false;
+      }
+    }
+
     function normalizeCustomOrderValues(rawValues) {
       const out = [];
       const seen = new Set();
@@ -3445,7 +3747,7 @@
 
         new Sortable(tbody, {
         animation: 150,
-        draggable: 'tr.group-row, tr.inscripcio-row',
+        draggable: 'tr.inscripcio-row',
         handle: '.drag-handle',
         filter: 'button, a, .hidden-tab',
         preventOnFilter: true,
@@ -3456,26 +3758,11 @@
         onUnchoose: function() { setDragging(false); },
 
         onStart: function(evt) {
-          const item = evt.item;
-          if (isHeaderRow(item)) {
-            const block = getHeaderBlockRows(item);
-            draggedBlockRest = block.slice(1);
-          } else {
-            draggedBlockRest = null;
-          }
+          draggedBlockRest = null;
         },
 
         onEnd: async function(evt) {
           const item = evt.item;
-
-          // si s'arrossega un header, moure el bloc
-          if (isHeaderRow(item) && draggedBlockRest && draggedBlockRest.length) {
-            draggedBlockRest.forEach(r => r.parentNode && r.parentNode.removeChild(r));
-            const frag = document.createDocumentFragment();
-            draggedBlockRest.forEach(r => frag.appendChild(r));
-            item.parentNode.insertBefore(frag, item.nextElementSibling);
-            draggedBlockRest = null;
-          }
 
           const movedId = (item && item.classList.contains('inscripcio-row')) ? item.dataset.id : null;
           const targetGroup = movedId ? inferHeaderTargetGroupForRow(item) : null;
@@ -3528,8 +3815,16 @@
     }
 
     applyGroupBands();
+    refreshGroupHeaderIndicators();
 
     document.addEventListener('click', async (e) => {
+      const saveOrderBtn = e.target.closest('.js-save-group-order');
+      if (saveOrderBtn) {
+        const g = saveOrderBtn.getAttribute('data-group');
+        await saveGroupCompetitionOrder(g);
+        return;
+      }
+
       const editBtn = e.target.closest('.js-edit-group-name');
       if (editBtn) {
         const g = editBtn.getAttribute('data-group');

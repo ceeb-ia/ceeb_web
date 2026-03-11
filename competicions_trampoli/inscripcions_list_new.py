@@ -13,6 +13,11 @@ from django.views.decorators.http import require_POST
 from .models import Competicio, Equip, Inscripcio, InscripcioMedia
 from .models_trampoli import CompeticioAparell, InscripcioAparellExclusio
 from .access import user_has_competicio_capability
+from .services.competition_groups import (
+    get_group_for_display_num,
+    get_group_maps,
+    sync_competicio_group_names_view,
+)
 from .services.media_matching import (
     build_inscripcio_media_match_candidates,
     match_media_files_to_inscripcions,
@@ -451,12 +456,7 @@ class InscripcionsListNewView(InscripcionsListView):
         ctx["sort_partition_buckets"] = partition_buckets
         ctx["sort_partition_bucket_count"] = len(partition_buckets)
 
-        view_cfg = self.competicio.inscripcions_view or {}
-        group_names = view_cfg.get("group_names") or {}
-        if isinstance(group_names, dict):
-            ctx["group_names"] = {str(k): (v or "") for k, v in group_names.items()}
-        else:
-            ctx["group_names"] = {}
+        ctx["group_names"] = get_group_maps(self.competicio).get("name_map") or {}
 
         team_fields = get_allowed_group_fields(self.competicio)
         team_field_codes = {f["code"] for f in team_fields}
@@ -617,20 +617,14 @@ def inscripcions_set_group_name(request, pk):
         return HttpResponseBadRequest("group invalid")
 
     before_snapshot = capture_inscripcions_history_snapshot(request, competicio)
-    view_cfg = competicio.inscripcions_view or {}
-    group_names = view_cfg.get("group_names")
-    if not isinstance(group_names, dict):
-        group_names = {}
+    group = get_group_for_display_num(competicio, group_int)
+    if group is None:
+        return HttpResponseBadRequest("group invalid")
 
-    key = str(group_int)
-    if name:
-        group_names[key] = name
-    else:
-        group_names.pop(key, None)
-
-    view_cfg["group_names"] = group_names
-    competicio.inscripcions_view = view_cfg
-    competicio.save(update_fields=["inscripcions_view"])
+    if group.nom != name:
+        group.nom = name
+        group.save(update_fields=["nom"])
+    sync_competicio_group_names_view(competicio)
     record_inscripcions_history_entry(
         request,
         competicio,

@@ -24,6 +24,12 @@ from .models_judging import (
     PublicLiveToken,
 )
 from .models_classificacions import ClassificacioConfig, ClassificacioTemplateGlobal
+from .models_rotacions import (
+    RotacioAssignacio,
+    RotacioAssignacioGrup,
+    RotacioEstacio,
+    RotacioFranja,
+)
 from .models_scoring import ScoringSchema, ScoreEntry, ScoreEntryVideo, ScoreEntryVideoEvent
 from .models_trampoli import (
     Aparell,
@@ -38,7 +44,14 @@ from .views import (
     get_competicio_custom_sort_rank_map,
     sort_records_by_field_stable,
 )
-from .views_classificacions import _build_scoreable_meta_for_schema
+from .views_classificacions import (
+    _build_scoreable_meta_for_schema,
+    _normalize_particions_schema,
+    _schema_to_template_schema,
+    _template_schema_to_competicio_schema,
+    _validate_schema_for_competicio,
+    _validate_particions_schema,
+)
 from .services.services_classificacions_2 import compute_classificacio
 
 
@@ -559,10 +572,10 @@ class InscripcionsSortFlowTests(TestCase):
         self.assertTrue(resp.json().get("ok"))
 
         i1.refresh_from_db()
-        self.assertEqual(i1.grup, 2)
+        self.assertEqual(i1.grup, 1)
 
         self.comp.refresh_from_db()
-        self.assertEqual(self.comp.inscripcions_view.get("group_names"), {"2": "Dos"})
+        self.assertEqual(self.comp.inscripcions_view.get("group_names"), {"1": "Un", "2": "Dos"})
 
     def test_reorder_prefers_target_group_over_previous_row_group(self):
         i1 = Inscripcio.objects.create(
@@ -597,6 +610,7 @@ class InscripcionsSortFlowTests(TestCase):
                 "moved_id": i1.id,
                 "new_index": 1,
                 "target_group": 2,
+                "mode": "group_edit",
                 "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
                 "group_by": [],
             },
@@ -606,6 +620,7 @@ class InscripcionsSortFlowTests(TestCase):
 
         i1.refresh_from_db()
         self.assertEqual(i1.grup, 2)
+        self.assertEqual(i1.ordre_competicio, 3)
 
     def test_reorder_without_header_target_keeps_legacy_edge_behavior(self):
         i1 = Inscripcio.objects.create(
@@ -637,6 +652,37 @@ class InscripcionsSortFlowTests(TestCase):
         i2.refresh_from_db()
         self.assertEqual(i2.grup, 2)
 
+    def test_save_group_competition_order_updates_only_real_order(self):
+        i1 = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="I1",
+            ordre_sortida=1,
+            grup=1,
+        )
+        i2 = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="I2",
+            ordre_sortida=2,
+            grup=1,
+        )
+
+        resp = self._post_json(
+            "inscripcions_save_group_competition_order",
+            {
+                "group_num": 1,
+                "ids": [i2.id, i1.id],
+            },
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json().get("ok"))
+
+        i1.refresh_from_db()
+        i2.refresh_from_db()
+        self.assertEqual(i1.ordre_sortida, 1)
+        self.assertEqual(i2.ordre_sortida, 2)
+        self.assertEqual(i2.ordre_competicio, 1)
+        self.assertEqual(i1.ordre_competicio, 2)
+
 
 class GroupNameSyncTests(TestCase):
     def test_renumber_remaps_group_labels_and_drops_stale(self):
@@ -661,7 +707,7 @@ class GroupNameSyncTests(TestCase):
         renumber_groups_for_competicio(comp)
 
         comp.refresh_from_db()
-        self.assertEqual(comp.inscripcions_view.get("group_names"), {"1": "Beta", "2": "Gamma"})
+        self.assertEqual(comp.inscripcions_view.get("group_names"), {"2": "Beta", "4": "Gamma"})
 
     def test_renumber_without_groups_clears_group_labels(self):
         comp = Competicio.objects.create(
@@ -1129,6 +1175,19 @@ class ScoringAndJudgeExclusionFlowTests(_BaseTrampoliDataMixin, TestCase):
             can_record_video=True,
             is_active=True,
         )
+        User = get_user_model()
+        self.user = User.objects.create_user(
+            username="scoring_exclusion_owner",
+            password="testpass123",
+            email="scoring-exclusion-owner@example.com",
+        )
+        CompeticioMembership.objects.create(
+            user=self.user,
+            competicio=self.comp,
+            role=CompeticioMembership.Role.OWNER,
+            is_active=True,
+        )
+        self.client.force_login(self.user)
 
     def test_scoring_save_partial_returns_403_for_excluded_inscripcio(self):
         url = reverse("scoring_save_partial", kwargs={"pk": self.comp.id})
@@ -1299,6 +1358,147 @@ class ScoringAndJudgeExclusionFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertNotIn(self.ins_blocked.id, updated_ids)
 
 
+class RotationOrderingDisplayTests(_BaseTrampoliDataMixin, TestCase):
+    def setUp(self):
+        self.comp = self._create_competicio("Comp Rotations Display")
+        self.app_prior = self._create_aparell("ROT_PRIOR", "Rotation Prior")
+        self.app = self._create_aparell("ROT_APP", "Rotation App")
+        self.comp_app_prior = self._create_comp_aparell(self.comp, self.app_prior, ordre=1, actiu=True)
+        self.comp_app = self._create_comp_aparell(self.comp, self.app, ordre=1, actiu=True)
+
+        self.ins_1 = self._create_inscripcio(self.comp, "Participant 1", ordre=1, grup=1)
+        self.ins_2 = self._create_inscripcio(self.comp, "Participant 2", ordre=2, grup=1)
+        self.ins_3 = self._create_inscripcio(self.comp, "Participant 3", ordre=3, grup=1)
+
+        group = self.ins_1.grup_competicio
+        Inscripcio.objects.filter(pk=self.ins_1.pk).update(ordre_competicio=2)
+        Inscripcio.objects.filter(pk=self.ins_2.pk).update(ordre_competicio=1)
+        Inscripcio.objects.filter(pk=self.ins_3.pk).update(ordre_competicio=3)
+        self.ins_1.refresh_from_db()
+        self.ins_2.refresh_from_db()
+        self.ins_3.refresh_from_db()
+
+        self.franja_1 = RotacioFranja.objects.create(
+            competicio=self.comp,
+            hora_inici="09:00",
+            hora_fi="09:30",
+            ordre=1,
+            titol="Franja 1",
+        )
+        self.franja_2 = RotacioFranja.objects.create(
+            competicio=self.comp,
+            hora_inici="09:30",
+            hora_fi="10:00",
+            ordre=2,
+            titol="Franja 2",
+        )
+        self.franja_3 = RotacioFranja.objects.create(
+            competicio=self.comp,
+            hora_inici="10:00",
+            hora_fi="10:30",
+            ordre=3,
+            titol="Franja 3",
+        )
+        self.estacio_prior = RotacioEstacio.objects.create(
+            competicio=self.comp,
+            tipus="aparell",
+            comp_aparell=self.comp_app_prior,
+            ordre=1,
+            actiu=True,
+        )
+        self.estacio = RotacioEstacio.objects.create(
+            competicio=self.comp,
+            tipus="aparell",
+            comp_aparell=self.comp_app,
+            ordre=2,
+            actiu=True,
+        )
+        assignacio_0 = RotacioAssignacio.objects.create(
+            competicio=self.comp,
+            franja=self.franja_1,
+            estacio=self.estacio_prior,
+        )
+        RotacioAssignacioGrup.objects.create(assignacio=assignacio_0, grup=group, ordre=1)
+        assignacio = RotacioAssignacio.objects.create(
+            competicio=self.comp,
+            franja=self.franja_2,
+            estacio=self.estacio,
+        )
+        RotacioAssignacioGrup.objects.create(assignacio=assignacio, grup=group, ordre=1)
+        assignacio_2 = RotacioAssignacio.objects.create(
+            competicio=self.comp,
+            franja=self.franja_3,
+            estacio=self.estacio,
+        )
+        RotacioAssignacioGrup.objects.create(assignacio=assignacio_2, grup=group, ordre=1)
+
+        self.comp.inscripcions_view = {
+            "rotacions_order_modes": {
+                str(self.franja_2.id): "rotate",
+                str(self.franja_3.id): "rotate",
+            }
+        }
+        self.comp.save(update_fields=["inscripcions_view"])
+
+        self.token = JudgeDeviceToken.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            label="Judge Rotation",
+            permissions=[{"field_code": "E", "judge_index": 1}],
+            is_active=True,
+        )
+        User = get_user_model()
+        self.user = User.objects.create_user(
+            username="rotation_display_owner",
+            password="testpass123",
+            email="rotation-display-owner@example.com",
+        )
+        CompeticioMembership.objects.create(
+            user=self.user,
+            competicio=self.comp,
+            role=CompeticioMembership.Role.OWNER,
+            is_active=True,
+        )
+        self.client.force_login(self.user)
+
+    def test_rotation_shift_restarts_for_group_first_franja_and_advances_locally(self):
+        scoring_url = reverse("scoring_notes_home", kwargs={"pk": self.comp.id})
+
+        first_res = self.client.get(scoring_url, {"franja": self.franja_2.id})
+        self.assertEqual(first_res.status_code, 200)
+        first_rank_map = first_res.context["rotation_rank_map"]
+        self.assertEqual(first_rank_map[f"{self.comp_app.id}|{self.ins_3.id}"], 1)
+        self.assertEqual(first_rank_map[f"{self.comp_app.id}|{self.ins_2.id}"], 2)
+        self.assertEqual(first_rank_map[f"{self.comp_app.id}|{self.ins_1.id}"], 3)
+
+        second_res = self.client.get(scoring_url, {"franja": self.franja_3.id})
+        self.assertEqual(second_res.status_code, 200)
+        second_rank_map = second_res.context["rotation_rank_map"]
+        self.assertEqual(second_rank_map[f"{self.comp_app.id}|{self.ins_2.id}"], 1)
+        self.assertEqual(second_rank_map[f"{self.comp_app.id}|{self.ins_1.id}"], 2)
+        self.assertEqual(second_rank_map[f"{self.comp_app.id}|{self.ins_3.id}"], 3)
+
+        portal_url = reverse("judge_portal", kwargs={"token": self.token.id})
+        portal_res = self.client.get(portal_url)
+        self.assertEqual(portal_res.status_code, 200)
+
+        block = portal_res.context["group_blocks"][0]
+        self.assertEqual(
+            [ins.nom_i_cognoms for ins in block["list"]],
+            ["Participant 3", "Participant 2", "Participant 1"],
+        )
+        self.assertEqual(
+            [ins.rotation_order_display for ins in block["list"]],
+            [3, 1, 2],
+        )
+
+        body = portal_res.content.decode("utf-8")
+        self.assertIn("Participant 3", body)
+        self.assertIn("Ordre 3", body)
+        self.assertIn("Ordre 1", body)
+        self.assertIn("Ordre 2", body)
+
+
 class ClassificacioMatrixScalarTests(_BaseTrampoliDataMixin, TestCase):
     def setUp(self):
         self.comp = self._create_competicio("Comp Classificacio")
@@ -1338,6 +1538,20 @@ class ClassificacioMatrixScalarTests(_BaseTrampoliDataMixin, TestCase):
         schema = self._base_cfg_schema()
         schema["puntuacio"]["aparells"] = {"mode": "seleccionar", "ids": [self.comp_app_a.id]}
         schema["puntuacio"]["camps_per_aparell"] = {str(self.comp_app_a.id): ["total"]}
+        return schema
+
+    def _selected_total_schema(self, app_ids=None, mode_resultat="score"):
+        selected = list(app_ids or [self.comp_app_a.id, self.comp_app_b.id])
+        schema = self._base_cfg_schema()
+        schema["puntuacio"]["aparells"] = {"mode": "seleccionar", "ids": selected}
+        schema["puntuacio"]["camps_per_aparell"] = {str(app_id): ["total"] for app_id in selected}
+        schema["puntuacio"]["mode_resultat_aparells"] = mode_resultat
+        schema["puntuacio"]["victories"] = {
+            "punts_victoria": 1,
+            "punts_empat": 0.5,
+            "sense_nota_mode": "skip",
+            "desempat_comparacio": [],
+        }
         return schema
 
     def test_compute_classificacio_uses_input_matrix_1x1_as_scalar(self):
@@ -2216,6 +2430,102 @@ class ClassificacioMatrixScalarTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(list(out.keys()), ["nivell:Bloc 1"])
         self.assertEqual(len(out["nivell:Bloc 1"]), 2)
 
+    def test_compute_classificacio_supports_conditional_partition_on_parent_group(self):
+        ins_c = self._create_inscripcio(self.comp, "Participant C", ordre=3)
+
+        self.ins_a.categoria = "ALEVI"
+        self.ins_a.subcategoria = "N1"
+        self.ins_a.save(update_fields=["categoria", "subcategoria"])
+        self.ins_b.categoria = "PREBENJAMI"
+        self.ins_b.subcategoria = "N2"
+        self.ins_b.save(update_fields=["categoria", "subcategoria"])
+        ins_c.categoria = "INFANTIL"
+        ins_c.subcategoria = "N3"
+        ins_c.save(update_fields=["categoria", "subcategoria"])
+
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins_a,
+            exercici=1,
+            comp_aparell=self.comp_app_a,
+            inputs={},
+            outputs={},
+            total=9.0,
+        )
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins_b,
+            exercici=1,
+            comp_aparell=self.comp_app_a,
+            inputs={},
+            outputs={},
+            total=8.0,
+        )
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            inscripcio=ins_c,
+            exercici=1,
+            comp_aparell=self.comp_app_a,
+            inputs={},
+            outputs={},
+            total=7.0,
+        )
+
+        schema = self._valid_partition_schema()
+        schema["particions"] = ["categoria", "subcategoria"]
+        schema["particions_v2"] = [
+            {"code": "categoria", "apply_mode": "all"},
+            {"code": "subcategoria", "apply_mode": "some_parents", "parent_values": ["Base"]},
+        ]
+        schema["particions_custom"] = {
+            "categoria": {
+                "mode": "custom",
+                "grups": [
+                    {"key": "base", "label": "Base", "values": ["ALEVI", "PREBENJAMI"]},
+                    {"key": "grans", "label": "Grans", "values": ["INFANTIL"]},
+                ],
+            }
+        }
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Particio condicional",
+            activa=True,
+            ordre=1,
+            tipus="individual",
+            schema=schema,
+        )
+
+        out = compute_classificacio(self.comp, cfg)
+        self.assertEqual(
+            set(out.keys()),
+            {"categoria:Base|subcategoria:N1", "categoria:Base|subcategoria:N2", "categoria:Grans"},
+        )
+        self.assertEqual(out["categoria:Grans"][0]["participant"], "Participant C")
+
+    def test_normalize_particions_schema_populates_particions_v2_from_legacy_list(self):
+        schema = self._valid_partition_schema()
+        schema["particions"] = ["categoria", "subcategoria"]
+
+        normalized = _normalize_particions_schema(schema)
+        self.assertEqual(normalized.get("particions"), ["categoria", "subcategoria"])
+        self.assertEqual(
+            normalized.get("particions_v2"),
+            [
+                {"code": "categoria", "apply_mode": "all", "parent_values": []},
+                {"code": "subcategoria", "apply_mode": "all", "parent_values": []},
+            ],
+        )
+
+    def test_validate_particions_schema_rejects_conditional_partition_without_parent_values(self):
+        schema = self._valid_partition_schema()
+        schema["particions_v2"] = [
+            {"code": "categoria", "apply_mode": "all"},
+            {"code": "subcategoria", "apply_mode": "some_parents", "parent_values": []},
+        ]
+        normalized = _normalize_particions_schema(schema)
+        errors = _validate_particions_schema(self.comp, normalized)
+        self.assertTrue(any("parent_values" in e for e in errors))
+
     def test_classificacio_save_rejects_unknown_partition_field(self):
         payload = {
             "nom": "Cfg particio desconeguda",
@@ -2264,6 +2574,203 @@ class ClassificacioMatrixScalarTests(_BaseTrampoliDataMixin, TestCase):
         body = res.json()
         self.assertFalse(body.get("ok"))
         self.assertTrue(any("valor repetit entre grups" in e for e in body.get("errors", [])))
+
+    def test_compute_classificacio_victories_single_app_matches_order(self):
+        schema = self._selected_total_schema([self.comp_app_a.id], mode_resultat="victories")
+
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins_a,
+            exercici=1,
+            comp_aparell=self.comp_app_a,
+            inputs={},
+            outputs={},
+            total=9.0,
+        )
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins_b,
+            exercici=1,
+            comp_aparell=self.comp_app_a,
+            inputs={},
+            outputs={},
+            total=7.0,
+        )
+
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Victories 1 app",
+            activa=True,
+            ordre=1,
+            tipus="individual",
+            schema=schema,
+        )
+
+        rows = compute_classificacio(self.comp, cfg).get("global", [])
+        self.assertEqual([r["participant"] for r in rows], ["Participant A", "Participant B"])
+        self.assertEqual(rows[0]["by_app_base"][self.comp_app_a.id], 9.0)
+        self.assertEqual(rows[0]["by_app"][self.comp_app_a.id], 1.0)
+        self.assertEqual(rows[0]["punts"], 1.0)
+        self.assertEqual(rows[1]["by_app"][self.comp_app_a.id], 0.0)
+        self.assertEqual(rows[1]["punts"], 0.0)
+
+    def test_compute_classificacio_victories_multiple_apps_aggregates_after_duels(self):
+        ins_c = self._create_inscripcio(self.comp, "Participant C", ordre=3)
+        schema = self._selected_total_schema(
+            [self.comp_app_a.id, self.comp_app_b.id],
+            mode_resultat="victories",
+        )
+
+        scores = {
+            self.ins_a.id: {self.comp_app_a.id: 100.0, self.comp_app_b.id: 1.0},
+            self.ins_b.id: {self.comp_app_a.id: 60.0, self.comp_app_b.id: 60.0},
+            ins_c.id: {self.comp_app_a.id: 59.0, self.comp_app_b.id: 59.0},
+        }
+        for ins_id, per_app in scores.items():
+            ins = Inscripcio.objects.get(pk=ins_id)
+            for app_id, total in per_app.items():
+                comp_app = self.comp_app_a if app_id == self.comp_app_a.id else self.comp_app_b
+                ScoreEntry.objects.create(
+                    competicio=self.comp,
+                    inscripcio=ins,
+                    exercici=1,
+                    comp_aparell=comp_app,
+                    inputs={},
+                    outputs={},
+                    total=total,
+                )
+
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Victories 2 apps",
+            activa=True,
+            ordre=1,
+            tipus="individual",
+            schema=schema,
+        )
+
+        rows = compute_classificacio(self.comp, cfg).get("global", [])
+        self.assertEqual([r["participant"] for r in rows], ["Participant B", "Participant A", "Participant C"])
+        self.assertEqual(rows[0]["punts"], 3.0)
+        self.assertEqual(rows[1]["punts"], 2.0)
+        self.assertEqual(rows[2]["punts"], 1.0)
+
+    def test_compute_classificacio_victories_internal_tie_break_uses_compare_tie(self):
+        schema = self._selected_total_schema([self.comp_app_a.id], mode_resultat="victories")
+        schema["puntuacio"]["victories"]["desempat_comparacio"] = [
+            {
+                "camp": "E",
+                "camps": ["E"],
+                "agregacio_camps": "hereta",
+                "ordre": "desc",
+                "scope": {"exercicis": {"mode": "hereta"}},
+            }
+        ]
+
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins_a,
+            exercici=1,
+            comp_aparell=self.comp_app_a,
+            inputs={"E": 9.0},
+            outputs={},
+            total=10.0,
+        )
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins_b,
+            exercici=1,
+            comp_aparell=self.comp_app_a,
+            inputs={"E": 8.0},
+            outputs={},
+            total=10.0,
+        )
+
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Victories compare tie",
+            activa=True,
+            ordre=1,
+            tipus="individual",
+            schema=schema,
+        )
+
+        rows = compute_classificacio(self.comp, cfg).get("global", [])
+        self.assertEqual([r["participant"] for r in rows], ["Participant A", "Participant B"])
+        self.assertEqual(rows[0]["punts"], 1.0)
+        self.assertEqual(rows[1]["punts"], 0.0)
+
+    def test_compute_classificacio_victories_unresolved_tie_gives_half_points(self):
+        schema = self._selected_total_schema([self.comp_app_a.id], mode_resultat="victories")
+
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins_a,
+            exercici=1,
+            comp_aparell=self.comp_app_a,
+            inputs={},
+            outputs={},
+            total=10.0,
+        )
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins_b,
+            exercici=1,
+            comp_aparell=self.comp_app_a,
+            inputs={},
+            outputs={},
+            total=10.0,
+        )
+
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Victories tied",
+            activa=True,
+            ordre=1,
+            tipus="individual",
+            schema=schema,
+        )
+
+        rows = compute_classificacio(self.comp, cfg).get("global", [])
+        self.assertEqual(rows[0]["punts"], 0.5)
+        self.assertEqual(rows[1]["punts"], 0.5)
+        self.assertEqual(rows[0]["by_app"][self.comp_app_a.id], 0.5)
+        self.assertEqual(rows[1]["by_app"][self.comp_app_a.id], 0.5)
+
+    def test_classificacio_save_rejects_victories_for_non_individual(self):
+        schema = self._selected_total_schema([self.comp_app_a.id], mode_resultat="victories")
+        _, errors = _validate_schema_for_competicio(self.comp, schema, tipus="entitat")
+        self.assertTrue(any("mode_resultat_aparells='victories'" in e for e in errors))
+
+    def test_classificacio_save_rejects_victories_compare_tie_scope_aparells(self):
+        schema = self._selected_total_schema([self.comp_app_a.id], mode_resultat="victories")
+        schema["puntuacio"]["victories"]["desempat_comparacio"] = [
+            {
+                "camps": ["total"],
+                "ordre": "desc",
+                "scope": {
+                    "aparells": {"mode": "seleccionar", "ids": [self.comp_app_a.id]},
+                    "exercicis": {"mode": "hereta"},
+                },
+            }
+        ]
+        _, errors = _validate_schema_for_competicio(self.comp, schema, tipus="individual")
+        self.assertTrue(any("scope.aparells no esta permes" in e for e in errors))
+
+    def test_classificacio_save_rejects_victories_compare_tie_scope_participants(self):
+        schema = self._selected_total_schema([self.comp_app_a.id], mode_resultat="victories")
+        schema["puntuacio"]["victories"]["desempat_comparacio"] = [
+            {
+                "camps": ["total"],
+                "ordre": "desc",
+                "scope": {
+                    "participants": {"mode": "tots"},
+                    "exercicis": {"mode": "hereta"},
+                },
+            }
+        ]
+        _, errors = _validate_schema_for_competicio(self.comp, schema, tipus="individual")
+        self.assertTrue(any("scope.participants no esta permes" in e for e in errors))
 
 
 class ClassificacionsExportExcelTests(_BaseTrampoliDataMixin, TestCase):
@@ -2531,6 +3038,42 @@ class ClassificacioTemplateFlowTests(_BaseTrampoliDataMixin, TestCase):
         )
         self.assertEqual(res.status_code, 200)
         self.assertTrue(res.json().get("ok"))
+
+    def test_template_schema_helpers_preserve_victories_config(self):
+        schema = json.loads(json.dumps(self.cfg_source.schema or {}))
+        schema["puntuacio"]["mode_resultat_aparells"] = "victories"
+        schema["puntuacio"]["victories"] = {
+            "punts_victoria": 1,
+            "punts_empat": 0,
+            "sense_nota_mode": "skip",
+            "desempat_comparacio": [
+                {
+                    "camp": "E_total",
+                    "camps": ["E_total"],
+                    "agregacio_camps": "hereta",
+                    "ordre": "desc",
+                    "scope": {"exercicis": {"mode": "hereta"}},
+                }
+            ],
+        }
+
+        schema_tpl, warnings = _schema_to_template_schema(self.comp_source, schema)
+        self.assertFalse(warnings)
+        self.assertEqual(
+            ((schema_tpl.get("puntuacio") or {}).get("mode_resultat_aparells")),
+            "victories",
+        )
+
+        schema_local, mapping_warnings, mapping = _template_schema_to_competicio_schema(self.comp_target, schema_tpl)
+        self.assertFalse(mapping_warnings)
+        self.assertEqual(mapping.get(self.app.codi), self.target_app.id)
+        punt = (schema_local.get("puntuacio") or {})
+        self.assertEqual(punt.get("mode_resultat_aparells"), "victories")
+        self.assertEqual((punt.get("aparells") or {}).get("ids"), [self.target_app.id])
+        self.assertEqual(
+            ((((punt.get("victories") or {}).get("desempat_comparacio")) or [])[0] or {}).get("camps"),
+            ["E_total"],
+        )
 
     def test_global_template_can_be_saved_validated_and_applied(self):
         save_res = self._post_json_as(

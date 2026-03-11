@@ -122,7 +122,32 @@ def order_pairs_for_mode(
     return items
 
 
+def effective_rotate_steps(mode: str, base_step: int = 0) -> int:
+    clean_mode = sanitize_order_mode(mode)
+    step = int(base_step or 0)
+    if clean_mode == ORDER_MODE_ROTATE:
+        return step + 1
+    return step
+
+
 def assignacio_grups(assignacio) -> List[int]:
+    raw_links = getattr(assignacio, "grup_links", None)
+    if raw_links is not None:
+        if hasattr(raw_links, "all"):
+            raw_links = raw_links.all()
+        out = []
+        seen = set()
+        for link in raw_links:
+            try:
+                group_id = int(getattr(link, "grup_id", None))
+            except Exception:
+                continue
+            if group_id <= 0 or group_id in seen:
+                continue
+            seen.add(group_id)
+            out.append(group_id)
+        if out:
+            return out
     groups = normalize_positive_int_list(getattr(assignacio, "grups", None))
     if groups:
         return groups
@@ -134,6 +159,43 @@ def assignacio_grups_from_values(grups_value, grup_value) -> List[int]:
     if groups:
         return groups
     return normalize_positive_int_list(grup_value)
+
+
+def build_group_rotation_step_map(assignacions) -> Dict[Tuple[int, int], int]:
+    """
+    Returns a map keyed by (group_id, franja_id) -> 0-based rotation step for
+    each distinct appearance of the group in franja order.
+    """
+    out: Dict[Tuple[int, int], int] = {}
+    counters: Dict[int, int] = {}
+    seen = set()
+
+    for assignacio in list(assignacions or []):
+        try:
+            franja_id = int(getattr(assignacio, "franja_id", None) or 0)
+        except Exception:
+            franja_id = 0
+        if franja_id <= 0:
+            continue
+
+        for group_id in assignacio_grups(assignacio):
+            try:
+                clean_group_id = int(group_id)
+            except Exception:
+                continue
+            if clean_group_id <= 0:
+                continue
+
+            seen_key = (clean_group_id, franja_id)
+            if seen_key in seen:
+                continue
+            seen.add(seen_key)
+
+            step = counters.get(clean_group_id, 0)
+            out[seen_key] = step
+            counters[clean_group_id] = step + 1
+
+    return out
 
 
 def unique_ordered(values: Iterable[int]) -> List[int]:

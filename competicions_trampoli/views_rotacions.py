@@ -19,21 +19,28 @@ from openpyxl.drawing.image import Image as XLImage
 from django.http import HttpResponse
 from .models import Competicio, Inscripcio
 from .models_trampoli import CompeticioAparell, InscripcioAparellExclusio
-from .models_rotacions import RotacioFranja, RotacioAssignacio, RotacioEstacio
+from .models_rotacions import RotacioFranja, RotacioAssignacio, RotacioAssignacioGrup, RotacioEstacio
+from .services.competition_groups import (
+    get_competicio_groups,
+    get_group_maps,
+    get_inscripcio_competition_order,
+    get_inscripcio_group_display_num,
+    group_label,
+)
 from .services.rotacions_ordering import (
     ORDER_MODE_MAINTAIN,
     ORDER_MODE_CHOICES,
     ORDER_MODE_LABELS,
     assignacio_grups,
     assignacio_grups_from_values,
-    franja_index_map,
+    build_group_rotation_step_map,
+    effective_rotate_steps,
     get_rotacions_order_modes,
     normalize_positive_int_list,
     order_pairs_for_mode,
     set_rotacio_order_mode,
     unique_ordered,
 )
-from django.db import transaction
 from datetime import date, datetime, timedelta
 from django.utils.dateparse import parse_time
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -43,6 +50,75 @@ def _normalize_grups(value):
 
 def _assignacio_grups(assignacio):
     return assignacio_grups(assignacio)
+
+
+def _group_display_nums_for_ids(group_ids, groups_by_id):
+    out = []
+    for group_id in group_ids:
+        group = groups_by_id.get(group_id)
+        if not group:
+            continue
+        out.append(group.display_num)
+    return out
+
+
+def _sync_assignacio_groups(assignacio, group_ids, groups_by_id):
+    clean_ids = unique_ordered(_normalize_grups(group_ids))
+    desired = []
+    for idx, group_id in enumerate(clean_ids, start=1):
+        group = groups_by_id.get(group_id)
+        if not group:
+            continue
+        desired.append((group.id, idx))
+
+    existing = {
+        link.grup_id: link
+        for link in assignacio.grup_links.all()
+    }
+    keep_ids = set()
+    updates = []
+    creates = []
+    for group_id, order_idx in desired:
+        keep_ids.add(group_id)
+        link = existing.get(group_id)
+        if link is None:
+            creates.append(
+                RotacioAssignacioGrup(assignacio=assignacio, grup_id=group_id, ordre=order_idx)
+            )
+            continue
+        if link.ordre != order_idx:
+            link.ordre = order_idx
+            updates.append(link)
+
+    stale_ids = [gid for gid in existing.keys() if gid not in keep_ids]
+    if stale_ids:
+        RotacioAssignacioGrup.objects.filter(assignacio=assignacio, grup_id__in=stale_ids).delete()
+    if creates:
+        RotacioAssignacioGrup.objects.bulk_create(creates, batch_size=200)
+    if updates:
+        RotacioAssignacioGrup.objects.bulk_update(updates, ["ordre"], batch_size=200)
+
+    legacy_display_nums = _group_display_nums_for_ids([group_id for group_id, _idx in desired], groups_by_id)
+    assignacio.grups = legacy_display_nums
+    assignacio.grup = legacy_display_nums[0] if legacy_display_nums else None
+    assignacio.save(update_fields=["grups", "grup"])
+    return [group_id for group_id, _idx in desired]
+
+
+def _ordered_inscripcions_by_group_ids(competicio, group_ids):
+    clean_ids = unique_ordered(_normalize_grups(group_ids))
+    if not clean_ids:
+        return {}
+    qs = (
+        Inscripcio.objects
+        .filter(competicio=competicio, grup_competicio_id__in=clean_ids)
+        .select_related("grup_competicio")
+        .order_by("grup_competicio__display_num", "ordre_competicio", "ordre_sortida", "id")
+    )
+    grouped = {}
+    for ins in qs:
+        grouped.setdefault(ins.grup_competicio_id, []).append(ins)
+    return grouped
 
 
 ROTACIONS_EXPORT_BUILTIN_FIELDS = [
@@ -323,10 +399,14 @@ def rotacions_planner(request, pk):
 
     _sync_estacions_aparells(competicio)
 
-    grups = list(
-        Inscripcio.objects.filter(competicio=competicio, grup__isnull=False)
-        .order_by("grup").values_list("grup", flat=True).distinct()
-    )
+    group_maps = get_group_maps(competicio, include_inactive=False)
+    groups = group_maps["groups"]
+    group_labels_map = {
+        str(group.id): group_label(group)
+        for group in groups
+    }
+    grups = [group.id for group in groups]
+    grups_display = [{"id": group.id, "label": group_labels_map[str(group.id)]} for group in groups]
 
     estacions = list(RotacioEstacio.objects.filter(competicio=competicio, actiu=True).order_by("ordre", "id"))
     franges = list(RotacioFranja.objects.filter(competicio=competicio).order_by("ordre", "id"))
@@ -339,23 +419,12 @@ def rotacions_planner(request, pk):
         RotacioAssignacio.objects
         .filter(competicio=competicio)
         .select_related("franja", "estacio")
+        .prefetch_related("grup_links__grup")
     )
 
     grid = {}  # grid[franja_id][estacio_id] = [grups]
     for a in assigns:
         grid.setdefault(a.franja_id, {})[a.estacio_id] = _assignacio_grups(a)
-
-    view_cfg = competicio.inscripcions_view or {}
-    group_names = view_cfg.get("group_names") or {}
-    if not isinstance(group_names, dict):
-        group_names = {}
-
-    grups_display = []
-    group_labels_map = {}
-    for g in grups:
-        label = (group_names.get(str(g)) or "").strip() or f"G{g}"
-        grups_display.append({"id": g, "label": label})
-        group_labels_map[str(g)] = label
 
     ctx = {
         "competicio": competicio,
@@ -395,6 +464,7 @@ def rotacions_save(request, pk):
 
     franja_ids = set(RotacioFranja.objects.filter(competicio=competicio).values_list("id", flat=True))
     estacio_ids = set(RotacioEstacio.objects.filter(competicio=competicio).values_list("id", flat=True))
+    groups_by_id = get_group_maps(competicio)["by_id"]
 
     with transaction.atomic():
         for c in cells:
@@ -414,15 +484,16 @@ def rotacions_save(request, pk):
             else:
                 groups = _normalize_grups(c.get("grup", None))
 
-            RotacioAssignacio.objects.update_or_create(
+            assignacio, _created = RotacioAssignacio.objects.update_or_create(
                 competicio=competicio,
                 franja_id=fr_id,
                 estacio_id=es_id,
                 defaults={
-                    "grups": groups,
-                    "grup": groups[0] if groups else None,  # compat temporal
+                    "grups": [],
+                    "grup": None,
                 },
             )
+            _sync_assignacio_groups(assignacio, groups, groups_by_id)
 
     return JsonResponse({"ok": True})
 
@@ -559,7 +630,7 @@ def rotacions_extrapolar(request, pk, franja_id):
 
     # 1) Llegim assignació de la franja base segons ordre d'estacions
     base_map = {}
-    for a in RotacioAssignacio.objects.filter(competicio=competicio, franja=fr_base):
+    for a in RotacioAssignacio.objects.filter(competicio=competicio, franja=fr_base).prefetch_related("grup_links__grup"):
         base_map[a.estacio_id] = _assignacio_grups(a)
 
     base_groups = []
@@ -598,6 +669,7 @@ def rotacions_extrapolar(request, pk, franja_id):
 
     # Ens assegurem que existeixen idx_base+1 ... idx_base+count
     created = 0
+    groups_by_id = get_group_maps(competicio)["by_id"]
     with transaction.atomic():
         # refresquem per evitar desajustos
         franges = list(RotacioFranja.objects.filter(competicio=competicio).order_by("ordre", "id"))
@@ -639,15 +711,16 @@ def rotacions_extrapolar(request, pk, franja_id):
             shifted = [list(base_groups[(i - k) % n]) for i in range(n)]  # shift cap a la dreta
 
             for e, gs in zip(estacions, shifted):
-                RotacioAssignacio.objects.update_or_create(
+                assignacio, _created = RotacioAssignacio.objects.update_or_create(
                     competicio=competicio,
                     franja=fr_t,
                     estacio=e,
                     defaults={
-                        "grups": gs,
-                        "grup": gs[0] if gs else None,  # compat temporal
+                        "grups": [],
+                        "grup": None,
                     },
                 )
+                _sync_assignacio_groups(assignacio, gs, groups_by_id)
                 filled_cells += 1
 
     return JsonResponse({
@@ -976,15 +1049,22 @@ def franges_export_excel(request, pk):
     franges = list(RotacioFranja.objects.filter(competicio=competicio).order_by("ordre", "id"))
 
     franja_modes = get_rotacions_order_modes(competicio)
-    franja_pos = franja_index_map(franges)
 
-    assigns = RotacioAssignacio.objects.filter(competicio=competicio).values(
-        "franja_id", "estacio_id", "grup", "grups"
+    group_maps = get_group_maps(competicio)
+    groups_by_id = group_maps["by_id"]
+    group_labels_by_id = group_maps["label_by_id"]
+    assigns = list(
+        RotacioAssignacio.objects
+        .filter(competicio=competicio)
+        .select_related("franja", "estacio")
+        .prefetch_related("grup_links__grup")
+        .order_by("franja__ordre", "franja_id", "estacio__ordre", "id")
     )
+    rotation_step_map = build_group_rotation_step_map(assigns)
     cell_groups = {}
     for a in assigns:
-        gs = assignacio_grups_from_values(a.get("grups"), a.get("grup"))
-        cell_groups[(a["franja_id"], a["estacio_id"])] = gs
+        gs = _assignacio_grups(a)
+        cell_groups[(a.franja_id, a.estacio_id)] = gs
 
     estacio_comp_aparell = {
         e.id: (e.comp_aparell_id if getattr(e, "tipus", None) == "aparell" else None)
@@ -992,15 +1072,20 @@ def franges_export_excel(request, pk):
     }
     comp_aparell_ids = sorted({x for x in estacio_comp_aparell.values() if x})
 
-    grups = sorted({g for gs in cell_groups.values() for g in gs})
+    group_ids = sorted({g for gs in cell_groups.values() for g in gs})
     ins_by_grup = {}
     excluded_pairs = set()
-    if grups:
+    if group_ids:
         qs = (
-            Inscripcio.objects.filter(competicio=competicio, grup__in=grups)
+            Inscripcio.objects
+            .filter(competicio=competicio, grup_competicio_id__in=group_ids)
+            .select_related("grup_competicio")
             .only(
                 "id",
                 "grup",
+                "grup_competicio",
+                "ordre_competicio",
+                "ordre_sortida",
                 "nom_i_cognoms",
                 "document",
                 "sexe",
@@ -1008,14 +1093,13 @@ def franges_export_excel(request, pk):
                 "entitat",
                 "categoria",
                 "subcategoria",
-                "ordre_sortida",
                 "extra",
             )
-            .order_by("ordre_sortida", "id")
+            .order_by("grup_competicio__display_num", "ordre_competicio", "ordre_sortida", "id")
         )
         ins_ids = []
         for ins in qs:
-            ins_by_grup.setdefault(ins.grup, []).append(ins)
+            ins_by_grup.setdefault(ins.grup_competicio_id, []).append(ins)
             ins_ids.append(ins.id)
 
         if ins_ids and comp_aparell_ids:
@@ -1026,13 +1110,8 @@ def franges_export_excel(request, pk):
                 ).values_list("inscripcio_id", "comp_aparell_id")
             )
 
-    view_cfg = competicio.inscripcions_view or {}
-    group_names = view_cfg.get("group_names") or {}
-    if not isinstance(group_names, dict):
-        group_names = {}
-
     def _group_label(g):
-        return (group_names.get(str(g)) or "").strip() or f"G{g}"
+        return group_labels_by_id.get(g) or group_label(groups_by_id.get(g))
 
     export_meta = _get_export_meta(competicio)
     available_participant_fields = _rotacions_available_participant_fields(competicio)
@@ -1046,6 +1125,11 @@ def franges_export_excel(request, pk):
     )
 
     def _inscripcio_field_value(ins, code: str):
+        if code == "grup":
+            display_num = get_inscripcio_group_display_num(ins)
+            return display_num if display_num is not None else "-"
+        if code == "ordre_sortida":
+            return get_inscripcio_competition_order(ins)
         extra = getattr(ins, "extra", None) or {}
         if isinstance(code, str) and code.startswith("excel__") and isinstance(extra, dict):
             if code in extra:
@@ -1075,7 +1159,6 @@ def franges_export_excel(request, pk):
             return []
 
         mode_for_franja = franja_modes.get(str(franja.id), ORDER_MODE_MAINTAIN)
-        rotate_steps = franja_pos.get(franja.id, 0)
         comp_aparell_id = estacio_comp_aparell.get(estacio.id)
 
         ordered_inscripcions = []
@@ -1091,7 +1174,10 @@ def franges_export_excel(request, pk):
             ordered_pairs = order_pairs_for_mode(
                 base_pairs,
                 mode_for_franja,
-                rotate_steps=rotate_steps,
+                rotate_steps=effective_rotate_steps(
+                    mode_for_franja,
+                    rotation_step_map.get((g, franja.id), 0),
+                ),
                 seed_prefix=f"rot-export|{competicio.id}|{franja.id}|{estacio.id}|{g}",
             )
             for ins_id, ins in ordered_pairs:

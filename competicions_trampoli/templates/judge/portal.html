@@ -220,7 +220,7 @@
                     <div>
                       <div class="fw-semibold">{{ ins.nom_i_cognoms|default:"Inscripció" }}</div>
                       <div class="judge-meta">
-                        {{ bloc.label }} · Ordre {{ ins.ordre_sortida }}
+                        {{ bloc.label }} · Ordre {{ ins.rotation_order_display|default_if_none:ins.ordre_sortida }}
                       </div>
                     </div>
                     <div class="judge-meta" id="status-{{ ins.id }}"></div>

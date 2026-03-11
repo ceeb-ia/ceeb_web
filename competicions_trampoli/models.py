@@ -124,6 +124,35 @@ class Equip(models.Model):
         return f"{self.nom} ({self.competicio})"
 
 
+class GrupCompeticio(models.Model):
+    competicio = models.ForeignKey(
+        Competicio,
+        on_delete=models.CASCADE,
+        related_name="grups_competicio",
+    )
+    legacy_num = models.PositiveIntegerField(null=True, blank=True, db_index=True)
+    display_num = models.PositiveIntegerField(db_index=True)
+    nom = models.CharField(max_length=180, blank=True, default="")
+    actiu = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["display_num", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["competicio", "display_num"],
+                name="uniq_grup_competicio_display_num",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["competicio", "actiu", "display_num"]),
+        ]
+
+    def __str__(self):
+        label = self.nom.strip() or f"Grup {self.display_num}"
+        return f"{label} ({self.competicio})"
+
+
 class Inscripcio(models.Model):
     competicio = models.ForeignKey(Competicio, on_delete=models.CASCADE, related_name="inscripcions")
 
@@ -138,6 +167,14 @@ class Inscripcio(models.Model):
     ordre_sortida = models.PositiveIntegerField(null=True, blank=True, db_index=True)
     group_by_default = models.JSONField(default=list, blank=True)
     grup = models.PositiveIntegerField(null=True, blank=True, db_index=True)
+    grup_competicio = models.ForeignKey(
+        GrupCompeticio,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="inscripcions",
+    )
+    ordre_competicio = models.PositiveIntegerField(null=True, blank=True, db_index=True)
     equip = models.ForeignKey(
         Equip,
         on_delete=models.SET_NULL,
@@ -161,10 +198,50 @@ class Inscripcio(models.Model):
         ]
         indexes = [
             models.Index(fields=["competicio", "categoria", "subcategoria"]),
+            models.Index(fields=["competicio", "grup_competicio", "ordre_competicio"]),
         ]
 
     def __str__(self):
         return f"{self.nom_i_cognoms} ({self.competicio})"
+
+    def save(self, *args, **kwargs):
+        current_group = getattr(self, "grup_competicio", None)
+        if self.grup_competicio_id and self.grup:
+            display_num = getattr(current_group, "display_num", None)
+            if display_num and int(display_num) != int(self.grup):
+                from .services.competition_groups import ensure_group_for_display_num
+
+                remapped_group = ensure_group_for_display_num(self.competicio, self.grup)
+                if remapped_group is not None:
+                    self.grup_competicio = remapped_group
+                    current_group = remapped_group
+
+        if self.grup_competicio_id and not self.grup:
+            display_num = getattr(current_group, "display_num", None)
+            if display_num:
+                self.grup = display_num
+
+        if self.grup and not self.grup_competicio_id and self.competicio_id:
+            from .services.competition_groups import ensure_group_for_display_num
+
+            group = ensure_group_for_display_num(self.competicio, self.grup)
+            if group is not None:
+                self.grup_competicio = group
+
+        if self.grup_competicio_id and self.ordre_competicio is None:
+            max_order = (
+                Inscripcio.objects
+                .filter(competicio_id=self.competicio_id, grup_competicio_id=self.grup_competicio_id)
+                .exclude(pk=self.pk)
+                .aggregate(models.Max("ordre_competicio"))["ordre_competicio__max"]
+                or 0
+            )
+            self.ordre_competicio = max_order + 1
+
+        if not self.grup_competicio_id:
+            self.ordre_competicio = None
+
+        super().save(*args, **kwargs)
 
 
 class InscripcioMedia(models.Model):

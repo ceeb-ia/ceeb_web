@@ -11,7 +11,7 @@ from django.views.generic import CreateView, FormView, ListView, TemplateView, D
 from django.shortcuts import redirect
 from django.db.models import Q
 from .forms import ImportInscripcionsExcelForm
-from .models import Competicio, CompeticioMembership, Equip, Inscripcio
+from .models import Competicio, CompeticioMembership, Equip, GrupCompeticio, Inscripcio
 from .forms import CompeticioForm
 from .access import user_has_competicio_capability
 from .services.import_excel import importar_inscripcions_excel
@@ -33,6 +33,18 @@ from collections import defaultdict
 from collections import OrderedDict
 
 from .models_trampoli import InscripcioAparellExclusio
+from .models_rotacions import RotacioAssignacio
+from .services.competition_groups import (
+    assign_groups_by_display_num,
+    compact_competition_order_for_group,
+    ensure_group_for_display_num,
+    get_group_for_display_num,
+    get_group_maps,
+    move_inscripcio_to_group,
+    next_group_display_num,
+    save_group_competition_order,
+    sync_competicio_group_names_view,
+)
 
 
 BUILTIN_SORT_FIELDS = [
@@ -142,7 +154,7 @@ def _norm_val(v):
 
 def get_inscripcio_value(obj, code: str):
     """
-    Retorna valor per a un camp d'agrupaciÃ³.
+    Retorna valor per a un camp d'agrupació.
     - built-in: getattr
     - extra: obj.extra.get(code)
     """
@@ -472,7 +484,7 @@ def _sort_scalar(v):
 
 def sort_records_by_field(records, sort_code, descending=False):
     """
-    OrdenaciÃ³ portable (builtins + extra JSON), amb buits al final.
+    Ordenació portable (builtins + extra JSON), amb buits al final.
     """
     filled = []
     empty = []
@@ -515,7 +527,7 @@ def sort_records_by_field_stable(records, sort_code, descending=False, custom_ra
                     continue
             fallback_filled.append((o, v))
 
-    # Python sort es estable: en valors iguals mantÃ© l'ordre previ.
+    # Python sort es estable: en valors iguals manté l'ordre previ.
     custom_filled.sort(key=lambda t: t[1], reverse=descending)
     fallback_filled.sort(key=lambda t: _sort_scalar(t[1]), reverse=descending)
 
@@ -527,10 +539,10 @@ def _s(v):
 
 def arrow_positions(n: int) -> list[int]:
     """
-    Retorna la seqÃ¼Ã¨ncia de posicions "fletxa" per un grup de mida n.
+    Retorna la seqüència de posicions "fletxa" per un grup de mida n.
 
     Exemple n=8 -> [3,4,2,5,1,6,0,7]
-    (index del registre ordenat) -> (posiciÃ³ dins del grup)
+    (index del registre ordenat) -> (posició dins del grup)
     """
     if n <= 0:
         return []
@@ -575,8 +587,8 @@ def shuffle_ordre_sortida(qs):
 
 
 
-INSCRIPCIONS_SORT_STACK_SESSION_KEY = "inscripcions_sort_stack_v1"
-INSCRIPCIONS_HISTORY_SESSION_KEY = "inscripcions_history_v1"
+INSCRIPCIONS_SORT_STACK_SESSION_KEY = "inscripcions_sort_stack_v2"
+INSCRIPCIONS_HISTORY_SESSION_KEY = "inscripcions_history_v2"
 INSCRIPCIONS_HISTORY_DEPTH = 20
 
 def _normalize_sort_filters(raw_filters):
@@ -698,7 +710,20 @@ def capture_inscripcions_history_snapshot(request, competicio):
         Inscripcio.objects
         .filter(competicio=competicio)
         .order_by("id")
-        .values("id", "ordre_sortida", "grup", "equip_id")
+        .values(
+            "id",
+            "ordre_sortida",
+            "grup",
+            "grup_competicio_id",
+            "ordre_competicio",
+            "equip_id",
+        )
+    )
+    grups_rows = list(
+        GrupCompeticio.objects
+        .filter(competicio=competicio)
+        .order_by("display_num", "id")
+        .values("id", "legacy_num", "display_num", "nom", "actiu")
     )
     exclusions_rows = list(
         InscripcioAparellExclusio.objects
@@ -714,6 +739,7 @@ def capture_inscripcions_history_snapshot(request, competicio):
     )
     return {
         "inscripcions_fields": _json_clone(inscripcions_rows),
+        "grups_competicio": _json_clone(grups_rows),
         "competicio_fields": {
             "tab_merges": _json_clone(competicio.tab_merges or {}),
             "inscripcions_view": _json_clone(competicio.inscripcions_view or {}),
@@ -766,6 +792,8 @@ def _apply_inscripcions_fields_snapshot(competicio, inscripcions_fields):
         by_id[ins_id] = {
             "ordre_sortida": row.get("ordre_sortida"),
             "grup": row.get("grup"),
+            "grup_competicio_id": row.get("grup_competicio_id"),
+            "ordre_competicio": row.get("ordre_competicio"),
             "equip_id": row.get("equip_id"),
         }
 
@@ -774,21 +802,87 @@ def _apply_inscripcions_fields_snapshot(competicio, inscripcions_fields):
 
     updates = []
     qs = Inscripcio.objects.filter(competicio=competicio, id__in=list(by_id.keys()))
-    for obj in qs.only("id", "ordre_sortida", "grup", "equip"):
+    for obj in qs.only("id", "ordre_sortida", "grup", "grup_competicio", "ordre_competicio", "equip"):
         row = by_id.get(obj.id)
         if row is None:
             continue
         next_ord = row.get("ordre_sortida")
         next_grp = row.get("grup")
+        next_grup_competicio_id = row.get("grup_competicio_id")
+        next_ordre_competicio = row.get("ordre_competicio")
         next_equip = row.get("equip_id")
-        if obj.ordre_sortida != next_ord or obj.grup != next_grp or obj.equip_id != next_equip:
+        if (
+            obj.ordre_sortida != next_ord
+            or obj.grup != next_grp
+            or obj.grup_competicio_id != next_grup_competicio_id
+            or obj.ordre_competicio != next_ordre_competicio
+            or obj.equip_id != next_equip
+        ):
             obj.ordre_sortida = next_ord
             obj.grup = next_grp
+            obj.grup_competicio_id = next_grup_competicio_id
+            obj.ordre_competicio = next_ordre_competicio
             obj.equip_id = next_equip
             updates.append(obj)
 
     if updates:
-        Inscripcio.objects.bulk_update(updates, ["ordre_sortida", "grup", "equip"], batch_size=500)
+        Inscripcio.objects.bulk_update(
+            updates,
+            ["ordre_sortida", "grup", "grup_competicio", "ordre_competicio", "equip"],
+            batch_size=500,
+        )
+
+
+def _apply_grups_competicio_snapshot(competicio, grups_rows):
+    rows = grups_rows if isinstance(grups_rows, list) else []
+    normalized = []
+    seen_ids = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        try:
+            group_id = int(row.get("id"))
+            display_num = int(row.get("display_num"))
+        except Exception:
+            continue
+        if group_id <= 0 or display_num <= 0 or group_id in seen_ids:
+            continue
+        seen_ids.add(group_id)
+        normalized.append(
+            GrupCompeticio(
+                id=group_id,
+                competicio=competicio,
+                legacy_num=row.get("legacy_num"),
+                display_num=display_num,
+                nom=str(row.get("nom") or "").strip(),
+                actiu=bool(row.get("actiu", True)),
+            )
+        )
+
+    current_ids = set(
+        GrupCompeticio.objects.filter(competicio=competicio).values_list("id", flat=True)
+    )
+    target_ids = {obj.id for obj in normalized}
+    stale_ids = list(current_ids - target_ids)
+    if stale_ids:
+        Inscripcio.objects.filter(competicio=competicio, grup_competicio_id__in=stale_ids).update(
+            grup_competicio=None,
+            ordre_competicio=None,
+        )
+        GrupCompeticio.objects.filter(competicio=competicio, id__in=stale_ids).delete()
+
+    existing_ids = current_ids & target_ids
+    if existing_ids:
+        updates = [obj for obj in normalized if obj.id in existing_ids]
+        if updates:
+            GrupCompeticio.objects.bulk_update(
+                updates,
+                ["legacy_num", "display_num", "nom", "actiu"],
+                batch_size=200,
+            )
+    creates = [obj for obj in normalized if obj.id not in existing_ids]
+    if creates:
+        GrupCompeticio.objects.bulk_create(creates, batch_size=200)
 
 
 def _apply_aparells_exclusions_snapshot(competicio, exclusions):
@@ -840,10 +934,12 @@ def apply_inscripcions_history_snapshot(request, competicio, snapshot):
     snap = snapshot if isinstance(snapshot, dict) else {}
     with transaction.atomic():
         _apply_equips_state_snapshot(competicio, snap.get("equips_state"))
+        _apply_grups_competicio_snapshot(competicio, snap.get("grups_competicio"))
         _apply_inscripcions_fields_snapshot(competicio, snap.get("inscripcions_fields"))
         _apply_aparells_exclusions_snapshot(competicio, snap.get("aparells_exclusions"))
         _apply_competicio_fields_snapshot(competicio, snap.get("competicio_fields"))
 
+    sync_competicio_group_names_view(competicio)
     _restore_sort_stack_state_for_competicio(request, competicio.id, snap.get("sort_stack_state"))
 
 
@@ -1048,8 +1144,8 @@ def clear_inscripcions_sort_context_state(request, context_key):
 
 def reconcile_inscripcions_sort_context_state(request, context_key, current_ids):
     """
-    ReconciliaciÃ³ de l'stack d'ordenaciÃ³ per un context concret:
-      - si l'ordre canvia perÃ² el conjunt d'IDs Ã©s el mateix -> rebase (mantÃ© stack)
+    Reconciliació de l'stack d'ordenació per un context concret:
+      - si l'ordre canvia però el conjunt d'IDs és el mateix -> rebase (manté stack)
       - si el conjunt d'IDs canvia -> clear (stack no fiable)
     """
     state = get_inscripcions_sort_context_state(request, context_key)
@@ -1076,7 +1172,7 @@ def reconcile_inscripcions_sort_context_state(request, context_key, current_ids)
     )
 
     if same_set:
-        # Rebase: mantenim stack i actualitzem referÃ¨ncia base + signatura.
+        # Rebase: mantenim stack i actualitzem referència base + signatura.
         save_inscripcions_sort_context_state(
             request,
             context_key,
@@ -1331,7 +1427,7 @@ def _build_sort_partition_buckets(records, partition_codes):
             label_parts = [_s(v) for v in raw_vals]
             bucket = {
                 "key": bucket_key,
-                "label": " Â· ".join(label_parts) if label_parts else "(Sense valor)",
+                "label": " · ".join(label_parts) if label_parts else "(Sense valor)",
                 "count": 0,
                 "ids": [],
             }
@@ -1355,7 +1451,7 @@ def _build_tabs_partition_buckets(competicio, records, group_codes):
 
     def _simple_label_from_obj(obj):
         parts = [_s(get_inscripcio_value(obj, code)) for code in group_codes]
-        return " Â· ".join(parts) if parts else "(Sense valor)"
+        return " · ".join(parts) if parts else "(Sense valor)"
 
     simple_label_map = {}
     tab_to_ids = OrderedDict()
@@ -1497,8 +1593,8 @@ def _resolve_k_for_range(n, min_size, max_size, preferred_k=None, fallback_mode=
 def assign_groups_balanced(objs, size, start_group_num):
     """
     Reparteix objs en k grups, on k = ceil(n/size),
-    i distribueix mides perquÃ¨ difereixin com a mÃ xim 1.
-    Retorna el nou start_group_num (Ãºltim grup assignat).
+    i distribueix mides perquè difereixin com a màxim 1.
+    Retorna el nou start_group_num (últim grup assignat).
     """
     n = len(objs)
     if n == 0:
@@ -1546,95 +1642,103 @@ def _normalize_group_names_map(raw_group_names):
 
 
 def _sync_group_names_for_competicio(competicio, mapping=None):
-    """
-    Sincronitza inscripcions_view.group_names amb els grups vius.
-    - Si hi ha mapping (old->new), remapeja i elimina claus orfes.
-    - Si no hi ha mapping, elimina labels de grups que ja no existeixen.
-    """
-    original_view_cfg = competicio.inscripcions_view or {}
-    view_cfg = dict(original_view_cfg)
-
-    cleaned_current = _normalize_group_names_map(view_cfg.get("group_names"))
-
-    if mapping is None:
-        live_groups = set(
-            Inscripcio.objects.filter(competicio=competicio, grup__isnull=False)
-            .values_list("grup", flat=True)
-            .distinct()
-        )
-        cleaned_target = {
-            str(group_num): label
-            for group_num, label in cleaned_current.items()
-            if group_num in live_groups
-        }
-    else:
-        mapping_clean = {}
-        for old_group, new_group in dict(mapping).items():
-            try:
-                old_num = int(old_group)
-                new_num = int(new_group)
-            except Exception:
-                continue
-            if old_num <= 0 or new_num <= 0:
-                continue
-            mapping_clean[old_num] = new_num
-
-        cleaned_target = {}
-        for old_group, label in cleaned_current.items():
-            new_group = mapping_clean.get(old_group)
-            if new_group is None:
-                continue
-            new_key = str(new_group)
-            if new_key not in cleaned_target:
-                cleaned_target[new_key] = label
-
-    if cleaned_target:
-        view_cfg["group_names"] = cleaned_target
-    else:
-        view_cfg.pop("group_names", None)
-
-    if view_cfg != original_view_cfg:
-        competicio.inscripcions_view = view_cfg
-        competicio.save(update_fields=["inscripcions_view"])
+    sync_competicio_group_names_view(competicio)
 
 
 def renumber_groups_for_competicio(competicio):
     """
-    Re-numera grups consecutivament 1..N dins la competiciÃ³, evitant forats.
-    L'ordre de renumeraciÃ³ segueix la seva apariciÃ³ a la llista (min ordre_sortida).
+    Compatibilitat temporal: la numeracio visible dels grups ja no es recalcula automaticament.
     """
-    base = Inscripcio.objects.filter(competicio=competicio, grup__isnull=False)
+    _sync_group_names_for_competicio(competicio)
 
-    groups = list(
-        base.values("grup")
-            .annotate(min_ord=Min("ordre_sortida"))
-            .order_by("min_ord", "grup")
+
+def competicio_has_rotacions(competicio):
+    return RotacioAssignacio.objects.filter(competicio=competicio).exists()
+
+
+def sync_stable_groups_from_legacy(competicio):
+    view_cfg = competicio.inscripcions_view or {}
+    raw_group_names = view_cfg.get("group_names") or {}
+    group_names = raw_group_names if isinstance(raw_group_names, dict) else {}
+    live_display_nums = list(
+        Inscripcio.objects
+        .filter(competicio=competicio, grup__isnull=False)
+        .order_by("grup")
+        .values_list("grup", flat=True)
+        .distinct()
     )
-    if not groups:
-        _sync_group_names_for_competicio(competicio, mapping={})
-        return
+    live_display_nums = [int(num) for num in live_display_nums if isinstance(num, int) and num > 0]
 
-    mapping = {g["grup"]: i + 1 for i, g in enumerate(groups)}
+    group_maps = get_group_maps(competicio)
+    groups_by_display = group_maps["by_display_num"]
+    touched_group_ids = set()
+    updates = []
+    with transaction.atomic():
+        for display_num in live_display_nums:
+            group = groups_by_display.get(display_num)
+            name = str(group_names.get(str(display_num)) or "").strip()
+            if group is None:
+                group = ensure_group_for_display_num(competicio, display_num, name=name)
+                groups_by_display[display_num] = group
+            else:
+                fields = []
+                if not group.actiu:
+                    group.actiu = True
+                    fields.append("actiu")
+                if name != group.nom:
+                    group.nom = name
+                    fields.append("nom")
+                if fields:
+                    group.save(update_fields=fields)
+            touched_group_ids.add(group.id)
 
-    whens = [When(grup=old, then=new) for old, new in mapping.items()]
-    base.update(
-        grup=Case(
-            *whens,
-            default=None,
-            output_field=IntegerField(),
+        stale_groups = [
+            group for group in get_group_maps(competicio)["groups"]
+            if group.id not in touched_group_ids
+        ]
+        if stale_groups:
+            GrupCompeticio.objects.filter(id__in=[g.id for g in stale_groups]).update(actiu=False)
+
+        counters = defaultdict(int)
+        qs = (
+            Inscripcio.objects
+            .filter(competicio=competicio)
+            .order_by("grup", "ordre_sortida", "id")
+            .only("id", "grup", "grup_competicio", "ordre_competicio")
         )
-    )
-    _sync_group_names_for_competicio(competicio, mapping=mapping)
+        for inscripcio in qs:
+            display_num = getattr(inscripcio, "grup", None)
+            group = groups_by_display.get(display_num)
+            next_group_id = getattr(group, "id", None)
+            next_comp_order = None
+            if next_group_id:
+                counters[next_group_id] += 1
+                next_comp_order = counters[next_group_id]
+            if (
+                inscripcio.grup_competicio_id != next_group_id
+                or inscripcio.ordre_competicio != next_comp_order
+            ):
+                inscripcio.grup_competicio_id = next_group_id
+                inscripcio.ordre_competicio = next_comp_order
+                updates.append(inscripcio)
+        if updates:
+            Inscripcio.objects.bulk_update(
+                updates,
+                ["grup_competicio", "ordre_competicio"],
+                batch_size=500,
+            )
+
+    sync_competicio_group_names_view(competicio)
 
 def assign_groups_k(objs, k, start_group_num):
     """
-    Reparteix objs en k grups (k fix), equilibrant mides (difereixen com a mÃ xim 1).
+    Reparteix objs en k grups (k fix), equilibrant mides (difereixen com a màxim 1).
     """
     n = len(objs)
     if n == 0 or k <= 0:
         return start_group_num
 
-    k = min(k, n)  # no tÃ© sentit mÃ©s grups que persones
+    k = min(k, n)  # no té sentit més grups que persones
 
     base = n // k
     rem = n % k
@@ -1653,7 +1757,7 @@ def assign_groups_k(objs, k, start_group_num):
 # ------------------------------------------------------------------------------------------------
 #
 #
-#           CREACIÃ“ COMPETICIONS
+#           CREACIÓ COMPETICIONS
 #
 #
 # ------------------------------------------------------------------------------------------------
@@ -1790,7 +1894,7 @@ class InscripcionsImportExcelView(FormView):
         result = importar_inscripcions_excel(fitxer, self.competicio, sheet)
         messages.success(
             self.request,
-            f"ImportaciÃ³ OK. Full: {result['full']} | Creats: {result['creats']} | "
+            f"Importació OK. Full: {result['full']} | Creats: {result['creats']} | "
             f"Actualitzats: {result['actualitzats']} | Ignorats: {result['ignorats']} | "
             f"Ambiguos: {result.get('ambiguos', 0)}"
         )
@@ -1818,7 +1922,7 @@ class InscripcionsImportExcelView(FormView):
 
 def recalcular_ordre_sortida(qs, group_codes):
     """
-    Recalcula ordre_sortida segons camps d'agrupaciÃ³ (codes).
+    Recalcula ordre_sortida segons camps d'agrupació (codes).
     Compatible amb:
     - builtins (camps del model)
     - extras (JSON: Inscripcio.extra)
@@ -1899,7 +2003,7 @@ class InscripcionsListView(ListView):
         def pretty_label_from_simple_key(simple_key):
             try:
                 vals = json.loads(simple_key)
-                return " Â· ".join("(Sense valor)" if v in (None, "", "__NULL__") else str(v) for v in vals)
+                return " · ".join("(Sense valor)" if v in (None, "", "__NULL__") else str(v) for v in vals)
             except Exception:
                 return simple_key
 
@@ -1982,7 +2086,7 @@ class InscripcionsListView(ListView):
 
             def tab_label_for_obj(obj):
                 if not group_codes:
-                    return "Sense agrupaciÃ³"
+                    return "Sense agrupació"
                 simple = simple_key_for_obj(obj, group_codes)
                 mid = merge_map.get(simple)
                 if mid:
@@ -2000,7 +2104,7 @@ class InscripcionsListView(ListView):
                 if not objs:
                     return
                 tab_label = tab_label_for_obj(objs[0])
-                group_title = f"{tab_label} Â· Sense grup" if grp_num is None else f"{tab_label} Â· Grup {grp_num}"
+                group_title = f"{tab_label} · Sense grup" if grp_num is None else f"{tab_label} · Grup {grp_num}"
 
                 ws.cell(row=row, column=1, value=group_title).font = title_font
                 ws.cell(row=row, column=1).fill = group_fill
@@ -2044,11 +2148,16 @@ class InscripcionsListView(ListView):
 
         # 0) CLEAR GROUPS
         if request.GET.get("clear_groups") == "1":
+            if competicio_has_rotacions(self.competicio):
+                messages.error(request, "No es poden esborrar grups mentre hi ha rotacions actives.")
+                query = request.GET.copy()
+                query.pop("clear_groups", None)
+                return redirect(f"{request.path}?{query.urlencode()}")
             qs = self.get_queryset_base_filtrada()
             before_snapshot = _capture_history_snapshot()
             with transaction.atomic():
-                qs.update(grup=None)
-                renumber_groups_for_competicio(self.competicio)
+                qs.update(grup=None, grup_competicio=None, ordre_competicio=None)
+                GrupCompeticio.objects.filter(competicio=self.competicio).update(actiu=False)
             clear_inscripcions_sort_state_for_competicio(request, self.competicio.id)
             _record_history("clear_groups", "Esborrar grups", before_snapshot)
             query = request.GET.copy()
@@ -2057,11 +2166,17 @@ class InscripcionsListView(ListView):
 
         # 0c) MAKE INDEPENDENT GROUP (subgrup o pestanya)
         if request.GET.get("make_independent_group") == "1":
+            if competicio_has_rotacions(self.competicio):
+                messages.error(request, "No es poden reconfigurar grups mentre hi ha rotacions actives.")
+                query = request.GET.copy()
+                for k in ("make_independent_group", "lvl", "v1", "v2", "v3"):
+                    query.pop(k, None)
+                return redirect(f"{request.path}?{query.urlencode()}")
             lvl = request.GET.get("lvl")  # "g1","g2","g3"
 
             group_codes = get_active_group_codes()
             if not group_codes:
-                messages.error(request, "No hi ha agrupaciÃ³ activa per poder crear un grup independent.")
+                messages.error(request, "No hi ha agrupació activa per poder crear un grup independent.")
                 query = request.GET.copy()
                 for k in ("make_independent_group", "lvl", "v1", "v2", "v3"):
                     query.pop(k, None)
@@ -2073,7 +2188,7 @@ class InscripcionsListView(ListView):
 
             def build_filter_ids_from_vals(vals):
                 qs_base = self.get_queryset_base_filtrada()
-                # en memÃ²ria per suportar extra
+                # en memòria per suportar extra
                 builtin_fields = [c for c in group_codes if hasattr(Inscripcio, c)]
                 recs = list(qs_base.only("id", "extra", *builtin_fields))
                 ids = []
@@ -2087,7 +2202,7 @@ class InscripcionsListView(ListView):
                         ids.append(r.id)
                 return ids
 
-            # CAS: nivell g1 i v1 Ã©s una key JSON (simple o merged)
+            # CAS: nivell g1 i v1 és una key JSON (simple o merged)
             if lvl == "g1" and v1 and v1.strip().startswith("["):
                 try:
                     parsed = json.loads(v1)
@@ -2096,10 +2211,10 @@ class InscripcionsListView(ListView):
 
                 base_qs = self.get_queryset_base_filtrada()
 
-                # merged: llista de strings que sÃ³n JSON arrays
+                # merged: llista de strings que són JSON arrays
                 if isinstance(parsed, list) and parsed and all(isinstance(x, str) and x.strip().startswith("[") for x in parsed):
                     before_snapshot = _capture_history_snapshot()
-                    # IDs totals (uniÃ³ de totes les pestanyes simples)
+                    # IDs totals (unió de totes les pestanyes simples)
                     all_ids = []
                     for simple in parsed:
                         try:
@@ -2127,13 +2242,12 @@ class InscripcionsListView(ListView):
                         with transaction.atomic():
                             Inscripcio.objects.filter(competicio=self.competicio, grup=new_group_num).update(grup=None)
                             updated = sub_qs.update(grup=new_group_num)
-                            renumber_groups_for_competicio(self.competicio)
+                            sync_stable_groups_from_legacy(self.competicio)
                     else:
-                        max_grup = Inscripcio.objects.filter(competicio=self.competicio).aggregate(m=Max("grup"))["m"] or 0
-                        new_group_num = max_grup + 1
+                        new_group_num = next_group_display_num(self.competicio)
                         with transaction.atomic():
                             updated = sub_qs.update(grup=new_group_num)
-                            renumber_groups_for_competicio(self.competicio)
+                            sync_stable_groups_from_legacy(self.competicio)
 
                     _record_history("make_independent_group", "Fer grup independent", before_snapshot)
                     messages.success(request, f"Creat el grup {new_group_num} amb {updated} inscripcions del subgrup.")
@@ -2152,7 +2266,7 @@ class InscripcionsListView(ListView):
                         query.pop(k, None)
                     return redirect(f"{request.path}?{query.urlencode()}")
 
-            # CAS clÃ ssic: g1/g2/g3 amb v1/v2/v3 (valors normalitzats)
+            # CAS clàssic: g1/g2/g3 amb v1/v2/v3 (valors normalitzats)
             level = {"g1": 1, "g2": 2, "g3": 3}.get(lvl, 1)
             vals = []
             if level >= 1:
@@ -2173,13 +2287,12 @@ class InscripcionsListView(ListView):
                 with transaction.atomic():
                     Inscripcio.objects.filter(competicio=self.competicio, grup=new_group_num).update(grup=None)
                     updated = sub_qs.update(grup=new_group_num)
-                    renumber_groups_for_competicio(self.competicio)
+                    sync_stable_groups_from_legacy(self.competicio)
             else:
-                max_grup = Inscripcio.objects.filter(competicio=self.competicio).aggregate(m=Max("grup"))["m"] or 0
-                new_group_num = max_grup + 1
+                new_group_num = next_group_display_num(self.competicio)
                 with transaction.atomic():
                     updated = sub_qs.update(grup=new_group_num)
-                    renumber_groups_for_competicio(self.competicio)
+                    sync_stable_groups_from_legacy(self.competicio)
 
             _record_history("make_independent_group", "Fer grup independent", before_snapshot)
             messages.success(request, f"Creat el grup {new_group_num} amb {updated} inscripcions del subgrup.")
@@ -2199,12 +2312,18 @@ class InscripcionsListView(ListView):
             return redirect(f"{request.path}?{query.urlencode()}")
         # 0b) MAKE GROUPS COUNT (k grups per pestanya seleccionada)
         if request.GET.get("make_groups_count") == "1":
+            if competicio_has_rotacions(self.competicio):
+                messages.error(request, "No es poden reconfigurar grups mentre hi ha rotacions actives.")
+                query = request.GET.copy()
+                query.pop("make_groups_count", None)
+                query.pop("group_count", None)
+                return redirect(f"{request.path}?{query.urlencode()}")
             try:
                 k = int(request.GET.get("group_count") or 0)
             except ValueError:
                 k = 0
             if k < 1:
-                messages.error(request, "El nombre de grups ha de ser com a mÃ­nim 1.")
+                messages.error(request, "El nombre de grups ha de ser com a mínim 1.")
                 query = request.GET.copy()
                 query.pop("make_groups_count", None)
                 return redirect(f"{request.path}?{query.urlencode()}")
@@ -2215,7 +2334,7 @@ class InscripcionsListView(ListView):
             grouping_sig = "|".join(group_codes) if group_codes else ""
             tab_keys = request.GET.getlist("tab_keys")  # checkboxes de pestanyes
 
-            # Si no hi ha agrupaciÃ³ -> una sola "pestanya" virtual
+            # Si no hi ha agrupació -> una sola "pestanya" virtual
             if not group_codes:
                 selected_tabs = [("__ALL__", list(qs_base.values_list("id", flat=True)))]
             else:
@@ -2242,7 +2361,7 @@ class InscripcionsListView(ListView):
                 else:
                     selected_tabs = list(tab_to_ids.items())
 
-            # AssignaciÃ³: sobre la uniÃ³ de pestanyes seleccionades
+            # Assignació: sobre la unió de pestanyes seleccionades
             selected_ids = []
             seen_ids = set()
             for _tab_key, ids in selected_tabs:
@@ -2255,11 +2374,11 @@ class InscripcionsListView(ListView):
                 sub_qs = qs_base.filter(id__in=selected_ids).order_by("ordre_sortida", "id")
                 objs = list(sub_qs.only("id", "grup"))
                 if objs:
-                    max_grup = Inscripcio.objects.filter(competicio=self.competicio).aggregate(m=Max("grup"))["m"] or 0
+                    max_grup = (GrupCompeticio.objects.filter(competicio=self.competicio).aggregate(m=Max("display_num"))["m"] or 0)
                     assign_groups_k(objs, k, max_grup)
                     Inscripcio.objects.bulk_update(objs, ["grup"], batch_size=500)
 
-            renumber_groups_for_competicio(self.competicio)
+            sync_stable_groups_from_legacy(self.competicio)
             _record_history("make_groups_count", "Crear grups per nombre", before_snapshot)
 
             query = request.GET.copy()
@@ -2270,13 +2389,18 @@ class InscripcionsListView(ListView):
 
         # 0b) MAKE GROUPS SIZE (mida N)
         if request.GET.get("make_groups") == "1":
+            if competicio_has_rotacions(self.competicio):
+                messages.error(request, "No es poden reconfigurar grups mentre hi ha rotacions actives.")
+                query = request.GET.copy()
+                query.pop("make_groups", None)
+                return redirect(f"{request.path}?{query.urlencode()}")
             try:
                 size = int(request.GET.get("group_size") or 0)
             except ValueError:
                 size = 0
 
             if size < 2:
-                messages.error(request, "La mida del grup ha de ser com a mÃ­nim 2.")
+                messages.error(request, "La mida del grup ha de ser com a mínim 2.")
                 query = request.GET.copy()
                 query.pop("make_groups", None)
                 return redirect(f"{request.path}?{query.urlencode()}")
@@ -2333,7 +2457,7 @@ class InscripcionsListView(ListView):
 
             with transaction.atomic():
                 Inscripcio.objects.bulk_update(objs, ["grup"], batch_size=500)
-                renumber_groups_for_competicio(self.competicio)
+                sync_stable_groups_from_legacy(self.competicio)
             _record_history("make_groups_size", "Crear grups per mida", before_snapshot)
 
             query = request.GET.copy()
@@ -2360,8 +2484,8 @@ class InscripcionsListView(ListView):
 
             qs = self.get_queryset_base_filtrada()
             before_snapshot = _capture_history_snapshot()
-            # versiÃ³ portable (builtins+extra) -> si tu ja has substituÃ¯t la funciÃ³ global recalcular_ordre_sortida,
-            # aixÃ² ja funciona. Si no, fes-ho servir com a fallback:
+            # versió portable (builtins+extra) -> si tu ja has substituït la funció global recalcular_ordre_sortida,
+            # això ja funciona. Si no, fes-ho servir com a fallback:
             records = list(qs.order_by("ordre_sortida", "id"))
 
             def sort_key(o):
@@ -2374,8 +2498,6 @@ class InscripcionsListView(ListView):
                 for idx, obj in enumerate(records, start=1):
                     if obj.ordre_sortida != idx:
                         Inscripcio.objects.filter(id=obj.id).update(ordre_sortida=idx)
-
-            renumber_groups_for_competicio(self.competicio)
             _record_history("recalc_order", "Aplicar agrupacio", before_snapshot)
 
             query = request.GET.copy()
@@ -2392,7 +2514,7 @@ class InscripcionsListView(ListView):
             query.pop("shuffle_order", None)
             return redirect(f"{request.path}?{query.urlencode()}")
 
-        # 4) PersistÃ¨ncia group_by
+        # 4) Persistència group_by
         if "group_by" in request.GET:
             selected = [g for g in request.GET.getlist("group_by") if g in allowed_codes]
             if selected != (self.competicio.group_by_default or []):
@@ -2464,7 +2586,7 @@ class InscripcionsListView(ListView):
 
                 if key not in label_map:
                     parts = [pretty_val(get_inscripcio_value(r, code)) for code in selected]
-                    label_map[key] = " Â· ".join(parts)
+                    label_map[key] = " · ".join(parts)
 
             merges = (self.competicio.tab_merges or {}).get(grouping_sig, [])
             merge_map = {}
@@ -2537,7 +2659,7 @@ class InscripcioUpdateView(UpdateView):
     template_name = "competicio/inscripcio_form.html"
 
     def get_queryset(self):
-        # Seguretat: nomÃ©s permet editar inscripcions de la competiciÃ³ del pk
+        # Seguretat: només permet editar inscripcions de la competició del pk
         return Inscripcio.objects.filter(competicio_id=self.kwargs["pk"])
 
     def get_context_data(self, **kwargs):
@@ -2551,6 +2673,39 @@ class InscripcioUpdateView(UpdateView):
         if nxt:
             return nxt
         return reverse("inscripcions_list", kwargs={"pk": self.kwargs["pk"]})
+
+    def form_valid(self, form):
+        old_group = None
+        if self.object and self.object.pk:
+            old_group = (
+                Inscripcio.objects
+                .select_related("grup_competicio")
+                .filter(pk=self.object.pk)
+                .first()
+            )
+        response = super().form_valid(form)
+        current = self.object
+        new_group = get_group_for_display_num(current.competicio, current.grup)
+        if current.grup and new_group is None:
+            new_group = ensure_group_for_display_num(current.competicio, current.grup)
+        if new_group is not None:
+            if old_group and old_group.grup_competicio_id == new_group.id:
+                Inscripcio.objects.filter(pk=current.pk).update(
+                    grup_competicio=new_group,
+                    grup=new_group.display_num,
+                )
+            else:
+                move_inscripcio_to_group(current, new_group)
+        else:
+            previous_group = old_group.grup_competicio if old_group else None
+            Inscripcio.objects.filter(pk=current.pk).update(
+                grup=None,
+                grup_competicio=None,
+                ordre_competicio=None,
+            )
+            compact_competition_order_for_group(previous_group)
+        sync_competicio_group_names_view(current.competicio)
+        return response
 
 
 class InscripcioCreateView(CreateView):
@@ -2575,7 +2730,14 @@ class InscripcioCreateView(CreateView):
         if not form.instance.ordre_sortida:
             max_ord = Inscripcio.objects.filter(competicio=self.competicio).aggregate(m=Max("ordre_sortida"))["m"] or 0
             form.instance.ordre_sortida = max_ord + 1
-        return super().form_valid(form)
+        response = super().form_valid(form)
+        group = get_group_for_display_num(self.competicio, self.object.grup)
+        if self.object.grup and group is None:
+            group = ensure_group_for_display_num(self.competicio, self.object.grup)
+        if group is not None:
+            move_inscripcio_to_group(self.object, group)
+        sync_competicio_group_names_view(self.competicio)
+        return response
 
     def get_success_url(self):
         nxt = self.request.GET.get("next")
@@ -2597,6 +2759,14 @@ class InscripcioDeleteView(DeleteView):
         if nxt:
             return nxt
         return reverse("inscripcions_list", kwargs={"pk": self.kwargs["pk"]})
+
+    def delete(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        old_group = getattr(self.object, "grup_competicio", None)
+        response = super().delete(request, *args, **kwargs)
+        compact_competition_order_for_group(old_group)
+        sync_competicio_group_names_view(get_object_or_404(Competicio, pk=self.kwargs["pk"]))
+        return response
 
 
 @require_POST
@@ -3345,6 +3515,8 @@ def inscripcions_sort_undo(request, pk):
 @csrf_protect
 def inscripcions_groups_from_sort(request, pk):
     competicio = get_object_or_404(Competicio, pk=pk)
+    if competicio_has_rotacions(competicio):
+        return HttpResponseBadRequest("No es poden reconfigurar grups mentre hi ha rotacions actives")
 
     try:
         payload = json.loads(request.body.decode("utf-8"))
@@ -3613,14 +3785,14 @@ def inscripcions_groups_from_sort(request, pk):
 
     before_snapshot = capture_inscripcions_history_snapshot(request, competicio)
     updates = list(objs)
-    max_grup = Inscripcio.objects.filter(competicio=competicio).aggregate(m=Max("grup"))["m"] or 0
+    max_grup = (GrupCompeticio.objects.filter(competicio=competicio).aggregate(m=Max("display_num"))["m"] or 0)
 
     _assign_group_sizes_in_order(objs, sizes, max_grup)
 
     with transaction.atomic():
         qs.filter(id__in=target_ids).update(grup=None)
         Inscripcio.objects.bulk_update(updates, ["grup"], batch_size=500)
-        renumber_groups_for_competicio(competicio)
+        sync_stable_groups_from_legacy(competicio)
 
     record_inscripcions_history_entry(
         request,
@@ -3659,16 +3831,16 @@ def inscripcions_reorder(request, pk):
     """
     Rep:
       {
-        "ids": [<id1>, <id2>, ...],   # ordre final desprÃ©s del drag
+        "ids": [<id1>, <id2>, ...],   # ordre final després del drag
         "moved_id": <id>,            # el registre arrossegat
-        "new_index": <int>,          # posiciÃ³ nova (0-based) dins ids
+        "new_index": <int>,          # posició nova (0-based) dins ids
         "target_group": <int|null>   # grup inferit per header visual (opcional)
       }
 
     Guarda ordre_sortida = 1..N
-    I (NOU) nomÃ©s pel registre mogut:
+    I (NOU) només pel registre mogut:
       - si arriba target_group, adopta aquest grup (header visual mana)
-      - si no, conserva el fallback histÃ²ric (grup del registre immediatament superior)
+      - si no, conserva el fallback històric (grup del registre immediatament superior)
     """
     try:
         payload = json.loads(request.body.decode("utf-8"))
@@ -3676,31 +3848,34 @@ def inscripcions_reorder(request, pk):
         moved_id = payload.get("moved_id", None)
         new_index = payload.get("new_index", None)
         target_group = payload.get("target_group", None)
+        reorder_mode = str(payload.get("mode") or "visual").strip().lower()
         raw_filters = payload.get("filters")
         raw_group_by = payload.get("group_by")
 
         if not isinstance(ids, list) or not ids:
-            return HttpResponseBadRequest("Payload invÃ lid")
+            return HttpResponseBadRequest("Payload invàlid")
     except Exception:
-        return HttpResponseBadRequest("JSON invÃ lid")
+        return HttpResponseBadRequest("JSON invàlid")
 
     wanted = [int(x) for x in ids if str(x).isdigit()]
     if not wanted:
         return HttpResponseBadRequest("IDs buits")
+    if reorder_mode not in ("visual", "group_edit"):
+        return HttpResponseBadRequest("mode invàlid")
     competicio = get_object_or_404(Competicio, pk=pk)
 
-    # ValidaciÃ³ moved_id / new_index (opcional perÃ² recomanada)
+    # Validació moved_id / new_index (opcional però recomanada)
     if moved_id is not None:
         try:
             moved_id = int(moved_id)
         except Exception:
-            return HttpResponseBadRequest("moved_id invÃ lid")
+            return HttpResponseBadRequest("moved_id invàlid")
 
     if new_index is not None:
         try:
             new_index = int(new_index)
         except Exception:
-            return HttpResponseBadRequest("new_index invÃ lid")
+            return HttpResponseBadRequest("new_index invàlid")
 
     if target_group in ("", None):
         target_group = None
@@ -3708,19 +3883,21 @@ def inscripcions_reorder(request, pk):
         try:
             target_group = int(target_group)
         except Exception:
-            return HttpResponseBadRequest("target_group invÃ lid")
+            return HttpResponseBadRequest("target_group invàlid")
         if target_group <= 0:
-            return HttpResponseBadRequest("target_group invÃ lid")
+            return HttpResponseBadRequest("target_group invàlid")
 
-    # Ens assegurem que nomÃ©s reordenem inscripcions d'aquesta competiciÃ³
+    # Ens assegurem que només reordenem inscripcions d'aquesta competició
     qs = Inscripcio.objects.filter(competicio=competicio, id__in=wanted)
     found = set(qs.values_list("id", flat=True))
     if set(wanted) != found:
-        return HttpResponseBadRequest("IDs no vÃ lids per aquesta competiciÃ³")
+        return HttpResponseBadRequest("IDs no vàlids per aquesta competició")
 
     # Diccionari id->grup (estat actual abans de canviar)
     id_to_group = dict(qs.values_list("id", "grup"))
     before_snapshot = capture_inscripcions_history_snapshot(request, competicio)
+    group_maps = get_group_maps(competicio)
+    groups_by_display = group_maps["by_display_num"]
 
     with transaction.atomic():
         # 1) actualitza ordre_sortida (bulk) per evitar N updates i timeouts en llistes grans
@@ -3736,10 +3913,8 @@ def inscripcions_reorder(request, pk):
         if order_updates:
             Inscripcio.objects.bulk_update(order_updates, ["ordre_sortida"], batch_size=500)
 
-        # 2) nomÃ©s el registre mogut pot canviar de grup:
-        #    - prioritat: header visual (target_group)
-        #    - fallback: registre immediatament superior
-        if moved_id is not None and new_index is not None and moved_id in wanted:
+        # 2) en mode explicit de grups, el registre mogut pot canviar de grup.
+        if reorder_mode == "group_edit" and moved_id is not None and new_index is not None and moved_id in wanted:
             next_group = None
             should_update_group = False
             if target_group is not None:
@@ -3751,9 +3926,22 @@ def inscripcions_reorder(request, pk):
                 should_update_group = True
 
             if should_update_group:
-                # Mateixa nota: si NO vols que None esborri el grup, fes:
-                # if next_group is not None:
-                Inscripcio.objects.filter(id=moved_id).update(grup=next_group)
+                target_group_obj = groups_by_display.get(next_group)
+                moved = (
+                    Inscripcio.objects
+                    .select_related("grup_competicio")
+                    .get(id=moved_id, competicio=competicio)
+                )
+                if target_group_obj is not None:
+                    move_inscripcio_to_group(moved, target_group_obj)
+                else:
+                    old_group = moved.grup_competicio
+                    Inscripcio.objects.filter(id=moved_id).update(
+                        grup=None,
+                        grup_competicio=None,
+                        ordre_competicio=None,
+                    )
+                    compact_competition_order_for_group(old_group)
 
     # Rebase de l'stack d'ordenacio del context actual quan el conjunt coincideix.
     _sync_group_names_for_competicio(competicio)
@@ -3782,13 +3970,61 @@ def inscripcions_reorder(request, pk):
     record_inscripcions_history_entry(
         request,
         competicio,
-        action_type="reorder",
-        action_label="Reordenar inscripcions",
+        action_type="reorder" if reorder_mode == "visual" else "move_group_member",
+        action_label="Reordenar inscripcions" if reorder_mode == "visual" else "Editar contingut de grups",
         before_snapshot=before_snapshot,
         after_snapshot=capture_inscripcions_history_snapshot(request, competicio),
     )
 
     return JsonResponse(with_inscripcions_history_payload({"ok": True}, request, competicio.id))
+
+
+@require_POST
+@csrf_protect
+def inscripcions_save_group_competition_order(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        return HttpResponseBadRequest("JSON invàlid")
+
+    try:
+        group_num = int(payload.get("group_num"))
+    except Exception:
+        return HttpResponseBadRequest("group_num invàlid")
+    ordered_ids = payload.get("ids")
+    if not isinstance(ordered_ids, list) or not ordered_ids:
+        return HttpResponseBadRequest("ids invàlids")
+
+    group = get_group_for_display_num(competicio, group_num)
+    if group is None:
+        return HttpResponseBadRequest("group_num invàlid")
+
+    before_snapshot = capture_inscripcions_history_snapshot(request, competicio)
+    try:
+        updated = save_group_competition_order(group, ordered_ids)
+    except ValueError as exc:
+        return HttpResponseBadRequest(str(exc))
+
+    record_inscripcions_history_entry(
+        request,
+        competicio,
+        action_type="set_group_competition_order",
+        action_label="Desar ordre de competicio",
+        before_snapshot=before_snapshot,
+        after_snapshot=capture_inscripcions_history_snapshot(request, competicio),
+    )
+    return JsonResponse(
+        with_inscripcions_history_payload(
+            {
+                "ok": True,
+                "group_num": group_num,
+                "updated": updated,
+            },
+            request,
+            competicio.id,
+        )
+    )
 
 
 @require_POST
@@ -3803,12 +4039,12 @@ def inscripcions_merge_tabs(request, pk):
         source_key = payload.get("source_key")
         target_key = payload.get("target_key")
     except Exception:
-        return HttpResponseBadRequest("JSON invÃ lid")
+        return HttpResponseBadRequest("JSON invàlid")
 
     if not group_field:
         return HttpResponseBadRequest("group_field buit")
     if not source_key or not target_key or source_key == target_key:
-        return HttpResponseBadRequest("claus invÃ lides")
+        return HttpResponseBadRequest("claus invàlides")
 
     merges = c.tab_merges or {}
     lst = merges.get(group_field, [])
@@ -3816,15 +4052,15 @@ def inscripcions_merge_tabs(request, pk):
     def normalize_key_to_simple_list(k: str) -> list[str]:
         """
         Retorna SEMPRE una llista de 'simple keys' (strings JSON del tipus ["A","B"...]).
-        - Si k Ã©s simple: retorna [k]
-        - Si k Ã©s merged: retorna [sub1, sub2, ...] on cada subX Ã©s un string JSON d'una clau simple
+        - Si k és simple: retorna [k]
+        - Si k és merged: retorna [sub1, sub2, ...] on cada subX és un string JSON d'una clau simple
         """
         try:
             v = json.loads(k)
         except Exception:
             return [k]
 
-        # merged: ['["..."]','["..."]', ...]  (cada element Ã©s un JSON de llista)
+        # merged: ['["..."]','["..."]', ...]  (cada element és un JSON de llista)
         if (
             isinstance(v, list) and v
             and all(isinstance(x, str) for x in v)
@@ -3852,7 +4088,7 @@ def inscripcions_merge_tabs(request, pk):
     consumed_idx = []
     merged_all = []
     for i, g in enumerate(lst):
-        # g Ã©s una llista de simple keys
+        # g és una llista de simple keys
         if any(x in g for x in desired):
             merged_all.extend(g)
             consumed_idx.append(i)

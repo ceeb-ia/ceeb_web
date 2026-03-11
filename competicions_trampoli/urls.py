@@ -87,6 +87,7 @@ urlpatterns = [
     path("competicions/<int:pk>/delete/", competition_view(CompeticioDeleteView.as_view(), "competition.delete"), name="delete"),
 
     path("competicio/<int:pk>/inscripcions/reorder/", competition_view(views.inscripcions_reorder, "inscripcions.edit"), name="inscripcions_reorder"),
+    path("competicio/<int:pk>/inscripcions/save-group-competition-order/", competition_view(views.inscripcions_save_group_competition_order, "inscripcions.edit"), name="inscripcions_save_group_competition_order"),
     path("competicio/<int:pk>/inscripcions/sort-apply/", competition_view(views.inscripcions_sort_apply, "inscripcions.edit"), name="inscripcions_sort_apply"),
     path("competicio/<int:pk>/inscripcions/sort-remove/", competition_view(views.inscripcions_sort_remove, "inscripcions.edit"), name="inscripcions_sort_remove"),
     path("competicio/<int:pk>/inscripcions/sort-clear/", competition_view(views.inscripcions_sort_clear, "inscripcions.edit"), name="inscripcions_sort_clear"),

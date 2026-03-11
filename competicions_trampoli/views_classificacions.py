@@ -15,7 +15,13 @@ from .models import Competicio, Inscripcio, Equip
 from .models_trampoli import CompeticioAparell
 from .models_classificacions import ClassificacioConfig, ClassificacioTemplateGlobal
 from .models_judging import PublicLiveToken
-from .services.services_classificacions_2 import compute_classificacio, DEFAULT_SCHEMA, get_display_columns
+from .services.services_classificacions_2 import (
+    compute_classificacio,
+    DEFAULT_SCHEMA,
+    get_display_columns,
+    normalize_particions_v2_entries,
+    particio_codes_from_entries,
+)
 from .views import get_allowed_group_fields, get_inscripcio_value
 from .access import user_has_competicio_capability
 from .services.scoring_schema_validation import (
@@ -983,6 +989,10 @@ def _normalize_particio_codes(raw):
     return out
 
 
+def _normalize_particions_v2(raw, fallback_codes=None):
+    return normalize_particions_v2_entries(raw, fallback_codes=fallback_codes)
+
+
 def _split_particio_custom_values(raw):
     if isinstance(raw, list):
         values = [str(x or "").strip() for x in raw]
@@ -1050,7 +1060,12 @@ def _normalize_particions_schema(schema):
     if not isinstance(schema, dict):
         return {}
     out = dict(schema)
-    out["particions"] = _normalize_particio_codes(schema.get("particions") or [])
+    part_entries = _normalize_particions_v2(
+        schema.get("particions_v2") or [],
+        fallback_codes=schema.get("particions") or [],
+    )
+    out["particions_v2"] = part_entries
+    out["particions"] = particio_codes_from_entries(part_entries)
     out["particions_custom"] = _normalize_particions_custom(schema.get("particions_custom") or {})
     return out
 
@@ -1178,20 +1193,9 @@ def _schema_to_template_schema(competicio, schema_local):
             out[code] = raw_value
         return out
 
-    punt["camps_per_aparell"] = map_keys_to_codes(punt.get("camps_per_aparell") or {}, "camps_per_aparell")
-    punt["exercicis_per_aparell"] = map_keys_to_codes(
-        punt.get("exercicis_per_aparell") or {},
-        "exercicis_per_aparell",
-    )
-
-    desempat = schema.get("desempat") or []
-    if not isinstance(desempat, list):
-        desempat = []
-    des_out = []
-    for idx, tie in enumerate(desempat):
+    def map_tie_item_to_codes(tie, prefix):
         if not isinstance(tie, dict):
-            des_out.append(tie)
-            continue
+            return tie
         item = dict(tie)
 
         raw_legacy_app = item.get("aparell_id")
@@ -1200,7 +1204,7 @@ def _schema_to_template_schema(competicio, schema_local):
             if code:
                 item["aparell_codi"] = code
             else:
-                warnings.append(f"desempat[{idx}].aparell_id no exportat: {raw_legacy_app}")
+                warnings.append(f"{prefix}.aparell_id no exportat: {raw_legacy_app}")
             item.pop("aparell_id", None)
 
         scope = item.get("scope") or {}
@@ -1214,7 +1218,7 @@ def _schema_to_template_schema(competicio, schema_local):
                 for raw in ids_scope if isinstance(ids_scope, list) else []:
                     code = _resolve_app_code_for_template(raw, by_id_all, by_code_all)
                     if not code:
-                        warnings.append(f"desempat[{idx}].scope.aparells.ids no exportat: {raw}")
+                        warnings.append(f"{prefix}.scope.aparells.ids no exportat: {raw}")
                         continue
                     if code in seen_scope:
                         continue
@@ -1227,10 +1231,32 @@ def _schema_to_template_schema(competicio, schema_local):
 
         item["exercicis_per_aparell"] = map_keys_to_codes(
             item.get("exercicis_per_aparell") or {},
-            f"desempat[{idx}].exercicis_per_aparell",
+            f"{prefix}.exercicis_per_aparell",
         )
+        return item
 
-        des_out.append(item)
+    punt["camps_per_aparell"] = map_keys_to_codes(punt.get("camps_per_aparell") or {}, "camps_per_aparell")
+    punt["exercicis_per_aparell"] = map_keys_to_codes(
+        punt.get("exercicis_per_aparell") or {},
+        "exercicis_per_aparell",
+    )
+    victories = punt.get("victories") or {}
+    if isinstance(victories, dict):
+        victories_out = dict(victories)
+        compare_ties = victories_out.get("desempat_comparacio") or []
+        if isinstance(compare_ties, list):
+            victories_out["desempat_comparacio"] = [
+                map_tie_item_to_codes(tie, f"puntuacio.victories.desempat_comparacio[{idx}]")
+                for idx, tie in enumerate(compare_ties)
+            ]
+        punt["victories"] = victories_out
+
+    desempat = schema.get("desempat") or []
+    if not isinstance(desempat, list):
+        desempat = []
+    des_out = []
+    for idx, tie in enumerate(desempat):
+        des_out.append(map_tie_item_to_codes(tie, f"desempat[{idx}]"))
     schema["desempat"] = des_out
 
     presentacio = schema.get("presentacio") or {}
@@ -1350,20 +1376,9 @@ def _template_schema_to_competicio_schema(competicio, schema_tpl):
             out[str(app_id)] = raw_value
         return out
 
-    punt["camps_per_aparell"] = map_keys_to_ids(punt.get("camps_per_aparell") or {}, "camps_per_aparell")
-    punt["exercicis_per_aparell"] = map_keys_to_ids(
-        punt.get("exercicis_per_aparell") or {},
-        "exercicis_per_aparell",
-    )
-
-    desempat = schema.get("desempat") or []
-    if not isinstance(desempat, list):
-        desempat = []
-    des_out = []
-    for idx, tie in enumerate(desempat):
+    def map_tie_item_to_ids(tie, prefix):
         if not isinstance(tie, dict):
-            des_out.append(tie)
-            continue
+            return tie
         item = dict(tie)
 
         raw_code = item.get("aparell_codi")
@@ -1372,7 +1387,7 @@ def _template_schema_to_competicio_schema(competicio, schema_tpl):
             if app_id:
                 item["aparell_id"] = app_id
             else:
-                warnings.append(f"desempat[{idx}].aparell_codi no disponible: {raw_code}")
+                warnings.append(f"{prefix}.aparell_codi no disponible: {raw_code}")
         item.pop("aparell_codi", None)
 
         scope = item.get("scope") or {}
@@ -1386,7 +1401,7 @@ def _template_schema_to_competicio_schema(competicio, schema_tpl):
                 for raw in ids_scope if isinstance(ids_scope, list) else []:
                     app_id = _resolve_app_id_for_competicio(raw, by_id_active, by_code_active)
                     if not app_id:
-                        warnings.append(f"desempat[{idx}].scope.aparells.ids no disponible: {raw}")
+                        warnings.append(f"{prefix}.scope.aparells.ids no disponible: {raw}")
                         continue
                     if app_id in seen_scope:
                         continue
@@ -1399,10 +1414,32 @@ def _template_schema_to_competicio_schema(competicio, schema_tpl):
 
         item["exercicis_per_aparell"] = map_keys_to_ids(
             item.get("exercicis_per_aparell") or {},
-            f"desempat[{idx}].exercicis_per_aparell",
+            f"{prefix}.exercicis_per_aparell",
         )
+        return item
 
-        des_out.append(item)
+    punt["camps_per_aparell"] = map_keys_to_ids(punt.get("camps_per_aparell") or {}, "camps_per_aparell")
+    punt["exercicis_per_aparell"] = map_keys_to_ids(
+        punt.get("exercicis_per_aparell") or {},
+        "exercicis_per_aparell",
+    )
+    victories = punt.get("victories") or {}
+    if isinstance(victories, dict):
+        victories_out = dict(victories)
+        compare_ties = victories_out.get("desempat_comparacio") or []
+        if isinstance(compare_ties, list):
+            victories_out["desempat_comparacio"] = [
+                map_tie_item_to_ids(tie, f"puntuacio.victories.desempat_comparacio[{idx}]")
+                for idx, tie in enumerate(compare_ties)
+            ]
+        punt["victories"] = victories_out
+
+    desempat = schema.get("desempat") or []
+    if not isinstance(desempat, list):
+        desempat = []
+    des_out = []
+    for idx, tie in enumerate(desempat):
+        des_out.append(map_tie_item_to_ids(tie, f"desempat[{idx}]"))
     schema["desempat"] = des_out
 
     presentacio = schema.get("presentacio") or {}
@@ -1504,6 +1541,30 @@ def _collect_required_app_codes_from_template(schema_tpl):
             if code:
                 out.add(code)
 
+        victories = punt.get("victories") or {}
+        compare_ties = victories.get("desempat_comparacio") or [] if isinstance(victories, dict) else []
+        if isinstance(compare_ties, list):
+            for tie in compare_ties:
+                if not isinstance(tie, dict):
+                    continue
+                code = _canon_app_code(tie.get("aparell_codi"))
+                if code:
+                    out.add(code)
+                scope = tie.get("scope") or {}
+                if isinstance(scope, dict):
+                    apps = scope.get("aparells") or {}
+                    if isinstance(apps, dict):
+                        for raw in (apps.get("ids") or []):
+                            code = _canon_app_code(raw)
+                            if code:
+                                out.add(code)
+                raw_map = tie.get("exercicis_per_aparell") or {}
+                if isinstance(raw_map, dict):
+                    for raw_key in raw_map.keys():
+                        code = _canon_app_code(raw_key)
+                        if code:
+                            out.add(code)
+
     desempat = schema.get("desempat") or []
     if isinstance(desempat, list):
         for tie in desempat:
@@ -1554,9 +1615,13 @@ def _build_template_requirements(schema_tpl):
     if not isinstance(punt, dict):
         punt = {}
 
+    part_entries = _normalize_particions_v2(
+        schema.get("particions_v2") or [],
+        fallback_codes=schema.get("particions") or [],
+    )
     req = {
         "aparells_codis": sorted(_collect_required_app_codes_from_template(schema)),
-        "particions": [str(x).strip() for x in (schema.get("particions") or []) if str(x).strip()],
+        "particions": particio_codes_from_entries(part_entries),
         "camps_per_aparell": {},
         "desempat_camps": [],
     }
@@ -1578,6 +1643,15 @@ def _build_template_requirements(schema_tpl):
     desempat = schema.get("desempat") or []
     if isinstance(desempat, list):
         for tie in desempat:
+            if not isinstance(tie, dict):
+                continue
+            for code in _normalize_tie_camps_for_validation(tie):
+                if code:
+                    tie_codes.add(str(code).strip())
+    victories = punt.get("victories") or {}
+    compare_ties = victories.get("desempat_comparacio") or [] if isinstance(victories, dict) else []
+    if isinstance(compare_ties, list):
+        for tie in compare_ties:
             if not isinstance(tie, dict):
                 continue
             for code in _normalize_tie_camps_for_validation(tie):
@@ -1622,7 +1696,7 @@ def _scoreable_codes_by_app_id(competicio):
     return out
 
 
-def _validate_schema_for_competicio(competicio, schema_local):
+def _validate_schema_for_competicio(competicio, schema_local, tipus="individual"):
     schema_local = _normalize_particions_schema(schema_local or {})
     errors = []
     errors.extend(_validate_particions_schema(competicio, schema_local))
@@ -1631,6 +1705,7 @@ def _validate_schema_for_competicio(competicio, schema_local):
     errors.extend(_validate_tie_camps_per_aparell(competicio, schema_local))
     errors.extend(_validate_exercicis_selection(competicio, schema_local))
     errors.extend(_validate_tie_exercicis_selection(competicio, schema_local))
+    errors.extend(_validate_victories_schema(competicio, schema_local, tipus=tipus))
     return schema_local, errors
 
 
@@ -1727,13 +1802,22 @@ def _autofix_schema_for_competicio(competicio, schema_local, mode: str):
         for item in get_allowed_group_fields(competicio)
         if str(item.get("code") or "").strip()
     }
-    parts_in = _normalize_particio_codes(schema.get("particions") or [])
-    parts_out = [code for code in parts_in if code in allowed_particio_codes]
-    for code in parts_in:
-        if code not in parts_out:
+    part_entries_in = _normalize_particions_v2(
+        schema.get("particions_v2") or [],
+        fallback_codes=schema.get("particions") or [],
+    )
+    part_entries_out = []
+    parts_out = []
+    for entry in part_entries_in:
+        code = str(entry.get("code") or "").strip()
+        if code in allowed_particio_codes:
+            part_entries_out.append(entry)
+            parts_out.append(code)
+        else:
             dropped.append(f"particions: {code}")
             warnings.append(f"Assistit/FORCE: s'ha eliminat la particio no compatible '{code}'.")
     schema["particions"] = parts_out
+    schema["particions_v2"] = part_entries_out
 
     custom_in = _normalize_particions_custom(schema.get("particions_custom") or {})
     custom_out = {}
@@ -1892,6 +1976,13 @@ def _build_force_minimal_schema(competicio, schema_local):
     punt["agregacio_camps"] = "sum"
     punt["agregacio_exercicis"] = "sum"
     punt["agregacio_aparells"] = "sum"
+    punt["mode_resultat_aparells"] = "score"
+    punt["victories"] = {
+        "punts_victoria": 1,
+        "punts_empat": 0.5,
+        "sense_nota_mode": "skip",
+        "desempat_comparacio": [],
+    }
     punt["ordre"] = "desc"
     punt["camp"] = "total"
     punt["agregacio"] = "sum"
@@ -1899,6 +1990,7 @@ def _build_force_minimal_schema(competicio, schema_local):
     schema["puntuacio"] = punt
 
     schema["particions"] = []
+    schema["particions_v2"] = []
     schema["particions_custom"] = {}
     schema["desempat"] = []
 
@@ -1932,7 +2024,8 @@ def _validate_template_for_competicio(competicio, template_obj, fallback_mode="s
             else:
                 warnings.append(msg)
 
-    schema_local, strict_errors = _validate_schema_for_competicio(competicio, schema_local)
+    tpl_tipus = str(getattr(template_obj, "tipus", "individual") or "individual").strip().lower()
+    schema_local, strict_errors = _validate_schema_for_competicio(competicio, schema_local, tipus=tpl_tipus)
     blocking.extend(strict_errors)
 
     if fallback_mode in {"assistit", "force"}:
@@ -1943,11 +2036,11 @@ def _validate_template_for_competicio(competicio, template_obj, fallback_mode="s
         )
         warnings.extend(autofix_warnings)
         dropped.extend(autofix_dropped)
-        schema_local, blocking = _validate_schema_for_competicio(competicio, schema_local)
+        schema_local, blocking = _validate_schema_for_competicio(competicio, schema_local, tipus=tpl_tipus)
 
     if fallback_mode == "force" and blocking:
         forced_schema = _build_force_minimal_schema(competicio, schema_local)
-        forced_schema, force_errors = _validate_schema_for_competicio(competicio, forced_schema)
+        forced_schema, force_errors = _validate_schema_for_competicio(competicio, forced_schema, tipus=tpl_tipus)
         if len(force_errors) <= len(blocking):
             schema_local = forced_schema
             dropped.append("FORCE: aplicat schema minim per garantir compatibilitat.")
@@ -2024,10 +2117,27 @@ def _validate_particions_schema(competicio, schema: dict):
     allowed_fields = get_allowed_group_fields(competicio)
     allowed_codes = {str(f.get("code") or "").strip() for f in allowed_fields if str(f.get("code") or "").strip()}
 
-    parts = _normalize_particio_codes(schema.get("particions") or [])
-    for code in parts:
+    part_entries = _normalize_particions_v2(
+        schema.get("particions_v2") or [],
+        fallback_codes=schema.get("particions") or [],
+    )
+    parts = particio_codes_from_entries(part_entries)
+    for idx, entry in enumerate(part_entries):
+        code = str(entry.get("code") or "").strip()
         if code not in allowed_codes:
             errors.append(f"particions: camp no permès per aquesta competicio: '{code}'")
+        apply_mode = str(entry.get("apply_mode") or "all").strip().lower()
+        if idx == 0:
+            if apply_mode != "all":
+                errors.append("particions_v2[0].apply_mode ha de ser 'all'.")
+        elif apply_mode not in {"all", "some_parents"}:
+            errors.append(f"particions_v2[{idx}].apply_mode invalid: {apply_mode}")
+        if idx == 0 and entry.get("parent_values"):
+            errors.append("particions_v2[0].parent_values no s'admet al primer nivell.")
+        if idx > 0 and apply_mode == "some_parents":
+            values = _split_particio_custom_values(entry.get("parent_values"))
+            if not values:
+                errors.append(f"particions_v2[{idx}].parent_values ha de tenir almenys un valor.")
 
     custom_map = _normalize_particions_custom(schema.get("particions_custom") or {})
     for code, cfg in custom_map.items():
@@ -2948,6 +3058,129 @@ def _validate_tie_exercicis_selection(competicio, schema: dict):
     return errors
 
 
+def _validate_victories_schema(competicio, schema: dict, tipus="individual"):
+    schema = schema or {}
+    punt = (schema.get("puntuacio") or {})
+    if not isinstance(punt, dict):
+        punt = {}
+
+    errors = []
+    mode_resultat = str(punt.get("mode_resultat_aparells") or "score").strip().lower()
+    if mode_resultat not in {"score", "victories"}:
+        errors.append(f"puntuacio.mode_resultat_aparells invalid: {mode_resultat}")
+        mode_resultat = "score"
+
+    victories = punt.get("victories") or {}
+    if punt.get("victories") is not None and not isinstance(punt.get("victories"), dict):
+        errors.append("puntuacio.victories ha de ser un objecte.")
+        victories = {}
+
+    for key in ("punts_victoria", "punts_empat"):
+        raw = victories.get(key, 1 if key == "punts_victoria" else 0.5)
+        try:
+            float(raw)
+        except Exception:
+            errors.append(f"puntuacio.victories.{key} ha de ser numeric.")
+
+    sense_nota_mode = str(victories.get("sense_nota_mode") or "skip").strip().lower()
+    if sense_nota_mode not in {"skip"}:
+        errors.append(f"puntuacio.victories.sense_nota_mode invalid: {sense_nota_mode}")
+
+    if mode_resultat == "victories" and str(tipus or "individual").strip().lower() != "individual":
+        errors.append("puntuacio.mode_resultat_aparells='victories' nomes s'admet per tipus='individual'.")
+
+    compare_ties = victories.get("desempat_comparacio") or []
+    if victories.get("desempat_comparacio") is not None and not isinstance(victories.get("desempat_comparacio"), list):
+        errors.append("puntuacio.victories.desempat_comparacio ha de ser una llista.")
+        return errors
+
+    active_apps = list(
+        CompeticioAparell.objects
+        .filter(competicio=competicio, actiu=True)
+        .select_related("aparell")
+    )
+    app_by_id = {ca.id: ca for ca in active_apps}
+    schemas_by_aparell = {
+        s.aparell_id: (s.schema or {})
+        for s in ScoringSchema.objects.filter(aparell_id__in=[ca.aparell_id for ca in active_apps]).only("aparell_id", "schema")
+    }
+    _, selected_ids_main = _get_active_and_selected_app_ids(competicio, punt)
+    meta_cache = {}
+
+    for idx, tie in enumerate(compare_ties):
+        prefix = f"puntuacio.victories.desempat_comparacio[{idx}]"
+        if not isinstance(tie, dict):
+            errors.append(f"{prefix} ha de ser un objecte.")
+            continue
+
+        if tie.get("aparell_id") not in (None, "", 0, "0"):
+            errors.append(f"{prefix}.aparell_id no esta permes al desempat intern de victories.")
+
+        scope = tie.get("scope") or {}
+        if tie.get("scope") is not None and not isinstance(tie.get("scope"), dict):
+            errors.append(f"{prefix}.scope ha de ser un objecte.")
+            scope = {}
+        if not isinstance(scope, dict):
+            scope = {}
+
+        if scope.get("aparells") is not None:
+            errors.append(f"{prefix}.scope.aparells no esta permes; s'usa sempre l'aparell comparat.")
+        if scope.get("participants") is not None:
+            errors.append(f"{prefix}.scope.participants no esta permes al desempat intern de victories.")
+
+        ex_scope = scope.get("exercicis") or {}
+        if scope.get("exercicis") is not None and not isinstance(scope.get("exercicis"), dict):
+            errors.append(f"{prefix}.scope.exercicis ha de ser un objecte.")
+            ex_scope = {}
+        if not isinstance(ex_scope, dict):
+            ex_scope = {}
+
+        ex_mode = str(ex_scope.get("mode") or "hereta").strip().lower()
+        if ex_mode != "hereta":
+            errors.extend(_validate_exercicis_cfg_obj(ex_scope, f"{prefix}.scope.exercicis"))
+
+        mode_sel_raw = (
+            tie.get("mode_seleccio_exercicis")
+            or ex_scope.get("mode_seleccio_exercicis")
+            or "hereta"
+        )
+        mode_sel = str(mode_sel_raw).strip().lower()
+        allowed_sel = {"hereta", "per_aparell_global", "global_pool"}
+        if mode_sel not in allowed_sel:
+            errors.append(f"{prefix}.mode_seleccio_exercicis invalid: {mode_sel}")
+
+        raw_map = tie.get("exercicis_per_aparell")
+        if raw_map is None:
+            raw_map = ex_scope.get("exercicis_per_aparell")
+        if raw_map not in (None, {}, []):
+            errors.append(f"{prefix}.exercicis_per_aparell no esta permes al desempat intern de victories.")
+
+        camps = _normalize_tie_camps_for_validation(tie)
+        if not camps:
+            continue
+
+        for app_id in sorted(selected_ids_main):
+            if app_id not in app_by_id:
+                errors.append(f"{prefix}: aparell {app_id} no valid o no actiu.")
+                continue
+            if app_id not in meta_cache:
+                sch = schemas_by_aparell.get(app_by_id[app_id].aparell_id, {}) or {}
+                meta_cache[app_id] = _build_scoreable_meta_for_schema(sch, strict_unknown=True)
+            meta = meta_cache[app_id]
+            for code in camps:
+                info = meta.get(code)
+                if not info:
+                    errors.append(f"{prefix}: aparell {app_id}: camp '{code}' no existeix al schema.")
+                    continue
+                if not info.get("scoreable", False):
+                    errors.append(
+                        f"{prefix}: aparell {app_id}: camp '{code}' no es puntuable directament "
+                        f"({info.get('reason')})."
+                    )
+
+    return errors
+
+
 @require_POST
 @transaction.atomic
 def classificacio_save(request, pk):
@@ -2967,13 +3200,7 @@ def classificacio_save(request, pk):
     if tipus not in ("individual", "entitat", "equips"):
         tipus = "individual"
 
-    validation_errors = []
-    validation_errors.extend(_validate_particions_schema(competicio, schema))
-    validation_errors.extend(_validate_no_tots_mode(schema))
-    validation_errors.extend(_validate_camps_per_aparell(competicio, schema))
-    validation_errors.extend(_validate_tie_camps_per_aparell(competicio, schema))
-    validation_errors.extend(_validate_exercicis_selection(competicio, schema))
-    validation_errors.extend(_validate_tie_exercicis_selection(competicio, schema))
+    _, validation_errors = _validate_schema_for_competicio(competicio, schema, tipus=tipus)
     if validation_errors:
         return JsonResponse(
             {
@@ -3075,7 +3302,7 @@ def classificacio_template_save(request, pk):
     try:
         payload = json.loads(request.body.decode("utf-8"))
     except Exception:
-        return HttpResponseBadRequest("JSON invÃ lid")
+        return HttpResponseBadRequest("JSON invàlid")
 
     cfg_id = payload.get("cfg_id")
     if not cfg_id:
@@ -3165,7 +3392,7 @@ def classificacio_template_validate(request, pk):
     try:
         payload = json.loads(request.body.decode("utf-8"))
     except Exception:
-        return HttpResponseBadRequest("JSON invÃ lid")
+        return HttpResponseBadRequest("JSON invàlid")
 
     template_id = payload.get("template_id")
     if not template_id:
@@ -3193,7 +3420,7 @@ def classificacio_template_apply(request, pk):
     try:
         payload = json.loads(request.body.decode("utf-8"))
     except Exception:
-        return HttpResponseBadRequest("JSON invÃ lid")
+        return HttpResponseBadRequest("JSON invàlid")
 
     template_id = payload.get("template_id")
     if not template_id:
@@ -3218,7 +3445,7 @@ def classificacio_template_apply(request, pk):
         return JsonResponse(
             {
                 "ok": False,
-                "error": "La plantilla no Ã©s compatible amb la competicio actual.",
+                "error": "La plantilla no és compatible amb la competicio actual.",
                 **validation,
             },
             status=400,

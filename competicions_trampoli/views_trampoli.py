@@ -50,7 +50,7 @@ class TrampoliNotesHome(TemplateView):
         ins = (
             Inscripcio.objects
             .filter(competicio=competicio)
-            .order_by("grup", "ordre_sortida", "id")
+            .order_by("grup", "ordre_competicio", "ordre_sortida", "id")
         )
 
         # --- grups ---

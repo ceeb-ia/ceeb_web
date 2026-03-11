@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 # -----------------------------
 DEFAULT_SCHEMA = {
     "particions": [],
+    "particions_v2": [],
     "particions_custom": {},
     "filtres": {
         "entitats_in": [],
@@ -67,6 +68,17 @@ DEFAULT_SCHEMA = {
         # agregació FINAL entre aparells
         # sum/avg/median/max/min
         "agregacio_aparells": "sum",
+
+        # resultat comparable per aparell:
+        # - score: usa directament el valor agregat per aparell
+        # - victories: compara participants dins de cada aparell i suma victories
+        "mode_resultat_aparells": "score",
+        "victories": {
+            "punts_victoria": 1,
+            "punts_empat": 0.5,
+            "sense_nota_mode": "skip",
+            "desempat_comparacio": [],
+        },
 
         # ordre principal del ranking
         "ordre": "desc",  # desc = més punts millor
@@ -133,13 +145,18 @@ def _merge_schema(schema: dict) -> dict:
     out = {**DEFAULT_SCHEMA}
     schema = schema or {}
     raw_parts = schema.get("particions", DEFAULT_SCHEMA["particions"]) or []
-    if not isinstance(raw_parts, list):
-        raw_parts = []
-    out["particions"] = [str(x).strip() for x in raw_parts if str(x).strip()]
+    raw_parts_v2 = schema.get("particions_v2", DEFAULT_SCHEMA["particions_v2"]) or []
+    part_entries = normalize_particions_v2_entries(raw_parts_v2, fallback_codes=raw_parts)
+    out["particions_v2"] = part_entries
+    out["particions"] = particio_codes_from_entries(part_entries)
     raw_custom = schema.get("particions_custom", DEFAULT_SCHEMA["particions_custom"]) or {}
     out["particions_custom"] = raw_custom if isinstance(raw_custom, dict) else {}
     out["filtres"] = {**DEFAULT_SCHEMA["filtres"], **(schema.get("filtres") or {})}
     out["puntuacio"] = {**DEFAULT_SCHEMA["puntuacio"], **(schema.get("puntuacio") or {})}
+    out["puntuacio"]["victories"] = {
+        **DEFAULT_SCHEMA["puntuacio"]["victories"],
+        **((((schema.get("puntuacio") or {}).get("victories")) or {}) if isinstance(schema.get("puntuacio"), dict) else {}),
+    }
     out["presentacio"] = {**DEFAULT_SCHEMA["presentacio"], **(schema.get("presentacio") or {})}
     out["desempat"] = schema.get("desempat", DEFAULT_SCHEMA["desempat"]) or []
     out["equips"] = {**DEFAULT_SCHEMA["equips"], **(schema.get("equips") or {})}
@@ -318,6 +335,79 @@ def _split_particio_custom_values(raw):
     return []
 
 
+def _normalize_partition_parent_values(raw):
+    if isinstance(raw, list):
+        values = [str(x or "").strip() for x in raw]
+    elif isinstance(raw, str):
+        values = [x.strip() for x in raw.split(",")]
+    else:
+        values = []
+
+    out = []
+    seen = set()
+    for txt in values:
+        if not txt:
+            continue
+        key = _normalize_partition_token(txt)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(txt)
+    return out
+
+
+def normalize_particions_v2_entries(raw, fallback_codes=None):
+    raw_list = raw if isinstance(raw, list) else []
+    fallback = fallback_codes if isinstance(fallback_codes, list) else []
+    source = raw_list if raw_list else fallback
+
+    out = []
+    seen = set()
+    for idx, item in enumerate(source):
+        if isinstance(item, dict):
+            code = str(item.get("code") or "").strip()
+            apply_mode = str(item.get("apply_mode") or "all").strip().lower()
+            parent_values = _normalize_partition_parent_values(item.get("parent_values"))
+        else:
+            code = str(item or "").strip()
+            apply_mode = "all"
+            parent_values = []
+
+        if not code or code in seen:
+            continue
+        seen.add(code)
+
+        if idx == 0:
+            apply_mode = "all"
+            parent_values = []
+        elif apply_mode not in {"all", "some_parents"}:
+            apply_mode = "all"
+
+        if apply_mode != "some_parents":
+            parent_values = []
+
+        out.append(
+            {
+                "code": code,
+                "apply_mode": apply_mode,
+                "parent_values": parent_values,
+            }
+        )
+
+    return out
+
+
+def particio_codes_from_entries(entries):
+    out = []
+    for entry in entries if isinstance(entries, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        code = str(entry.get("code") or "").strip()
+        if code:
+            out.append(code)
+    return out
+
+
 def _build_particions_custom_index(raw_cfg):
     out = {}
     if not isinstance(raw_cfg, dict):
@@ -378,6 +468,40 @@ def _partition_key(ins: Inscripcio, fields: list, particions_custom_index=None):
         display_value = _partition_value_display(raw_value)
         resolved = _resolve_partition_display(f, display_value, particions_custom_index or {})
         parts.append(f"{f}:{resolved}")
+    return "|".join(parts) if parts else "global"
+
+
+def _partition_key_from_entries(ins: Inscripcio, entries: list, particions_custom_index=None):
+    part_entries = normalize_particions_v2_entries(entries)
+    if not part_entries:
+        return "global"
+
+    parts = []
+    parent_resolved = None
+    for idx, entry in enumerate(part_entries):
+        code = str((entry or {}).get("code") or "").strip()
+        if not code:
+            continue
+
+        if idx > 0:
+            if parent_resolved is None:
+                break
+            apply_mode = str((entry or {}).get("apply_mode") or "all").strip().lower()
+            if apply_mode == "some_parents":
+                allowed = {
+                    _normalize_partition_token(val)
+                    for val in _normalize_partition_parent_values((entry or {}).get("parent_values"))
+                }
+                if not allowed or _normalize_partition_token(parent_resolved) not in allowed:
+                    parent_resolved = None
+                    break
+
+        raw_value = _inscripcio_value_for_partition(ins, code)
+        display_value = _partition_value_display(raw_value)
+        resolved = _resolve_partition_display(code, display_value, particions_custom_index or {})
+        parts.append(f"{code}:{resolved}")
+        parent_resolved = resolved
+
     return "|".join(parts) if parts else "global"
 
 
@@ -812,6 +936,152 @@ def _sanitize_desempat_for_tipus(desempat, tipus):
     return out
 
 
+def _normalize_mode_resultat_aparells(raw_mode) -> str:
+    mode = str(raw_mode or "score").lower().strip()
+    if mode not in {"score", "victories"}:
+        return "score"
+    return mode
+
+
+def _sanitize_victories_compare_ties(compare_ties):
+    out = []
+    for raw in (compare_ties or []):
+        if not isinstance(raw, dict):
+            continue
+        item = dict(raw)
+        item.pop("aparell_id", None)
+        item.pop("agregacio_participants", None)
+
+        scope = item.get("scope") or {}
+        scope_out = {}
+        if isinstance(scope, dict):
+            ex_scope = scope.get("exercicis")
+            if isinstance(ex_scope, dict):
+                scope_out["exercicis"] = dict(ex_scope)
+        item["scope"] = scope_out
+        out.append(item)
+    return out
+
+
+def _normalize_victories_cfg(raw_cfg):
+    cfg = raw_cfg if isinstance(raw_cfg, dict) else {}
+    try:
+        punts_victoria = float(cfg.get("punts_victoria", 1))
+    except Exception:
+        punts_victoria = 1.0
+    try:
+        punts_empat = float(cfg.get("punts_empat", 0.5))
+    except Exception:
+        punts_empat = 0.5
+    sense_nota_mode = str(cfg.get("sense_nota_mode") or "skip").lower().strip()
+    if sense_nota_mode not in {"skip"}:
+        sense_nota_mode = "skip"
+
+    return {
+        "punts_victoria": punts_victoria,
+        "punts_empat": punts_empat,
+        "sense_nota_mode": sense_nota_mode,
+        "desempat_comparacio": _sanitize_victories_compare_ties(cfg.get("desempat_comparacio") or []),
+    }
+
+
+def _apply_victories_per_app_to_rows(
+    rows,
+    app_ids,
+    ordre_principal,
+    agg_aparells,
+    victories_cfg,
+    metric_value_getter,
+):
+    rows = rows or []
+    app_ids = [int(x) for x in (app_ids or [])]
+    if not rows or not app_ids:
+        for row in rows:
+            row["by_app"] = {}
+            row["score"] = 0.0
+        return rows
+
+    punts_victoria = _to_float(victories_cfg.get("punts_victoria", 1.0))
+    punts_empat = _to_float(victories_cfg.get("punts_empat", 0.5))
+    compare_ties = victories_cfg.get("desempat_comparacio") or []
+
+    for row in rows:
+        row["by_app"] = {}
+
+    def _row_base_for_app(row, app_id):
+        by_app_base = row.get("by_app_base") or {}
+        if app_id in by_app_base:
+            return _to_float(by_app_base.get(app_id))
+        return _to_float(by_app_base.get(str(app_id)))
+
+    def _row_has_app(row, app_id):
+        by_app_base = row.get("by_app_base") or {}
+        return app_id in by_app_base or str(app_id) in by_app_base
+
+    for app_id in app_ids:
+        entries = []
+        for row in rows:
+            ins_id = row.get("inscripcio_id")
+            if ins_id in (None, ""):
+                continue
+            if not _row_has_app(row, app_id):
+                continue
+
+            compare_vals = []
+            for crit in compare_ties:
+                compare_vals.append(_to_float(metric_value_getter(ins_id, crit, [app_id])))
+
+            entries.append(
+                {
+                    "row": row,
+                    "base": _row_base_for_app(row, app_id),
+                    "compare_vals": compare_vals,
+                }
+            )
+
+        if not entries:
+            continue
+
+        def _sort_key(entry):
+            key = [(-entry["base"]) if ordre_principal == "desc" else entry["base"]]
+            for idx, crit in enumerate(compare_ties):
+                ordre = str((crit or {}).get("ordre") or "desc").lower().strip()
+                val = _to_float(entry["compare_vals"][idx])
+                key.append(-val if ordre == "desc" else val)
+            return tuple(key)
+
+        entries_sorted = sorted(entries, key=_sort_key)
+
+        groups = []
+        last_key = None
+        current = []
+        for entry in entries_sorted:
+            cur_key = _sort_key(entry)
+            if last_key is None or cur_key == last_key:
+                current.append(entry)
+            else:
+                groups.append(current)
+                current = [entry]
+            last_key = cur_key
+        if current:
+            groups.append(current)
+
+        total = len(entries_sorted)
+        seen = 0
+        for group in groups:
+            group_size = len(group)
+            worse_count = total - seen - group_size
+            pts = float((punts_victoria * worse_count) + (punts_empat * max(0, group_size - 1)))
+            for entry in group:
+                entry["row"]["by_app"][app_id] = pts
+            seen += group_size
+
+    for row in rows:
+        row["score"] = float(_apply_simple_agg(list((row.get("by_app") or {}).values()), agg_aparells))
+
+    return rows
+
+
 def get_display_columns(schema_or_presentacio=None):
     """
     Retorna columnes normalitzades per a renderitzar live/preview.
@@ -1006,7 +1276,9 @@ def compute_classificacio(competicio, cfg_obj):
       - posicio/punts els posa _rank()
     """
     schema = _merge_schema(getattr(cfg_obj, "schema", {}) or {})
-    part_fields = schema["particions"]
+    part_entries = schema.get("particions_v2") or normalize_particions_v2_entries(
+        schema.get("particions") or []
+    )
     part_custom_idx = _build_particions_custom_index(schema.get("particions_custom") or {})
     filtres = schema["filtres"] or {}
     punt = schema["puntuacio"] or {}
@@ -1016,6 +1288,10 @@ def compute_classificacio(competicio, cfg_obj):
     equips_cfg = schema.get("equips") or {}
     tipus = (getattr(cfg_obj, "tipus", "individual") or "individual").lower().strip()
     desempat = _sanitize_desempat_for_tipus(desempat, tipus)
+    mode_resultat_aparells = _normalize_mode_resultat_aparells(punt.get("mode_resultat_aparells"))
+    victories_cfg = _normalize_victories_cfg((punt.get("victories") or {}))
+    if tipus != "individual" and mode_resultat_aparells == "victories":
+        mode_resultat_aparells = "score"
 
     # 1) PRETRACTAMENT
     ordre_principal = (punt.get("ordre") or "desc").lower().strip()
@@ -1091,7 +1367,7 @@ def compute_classificacio(competicio, cfg_obj):
         ex_idx = int(getattr(n, "exercici", 1) or 1)
         notes_by_key[(n.inscripcio_id, n.comp_aparell_id, ex_idx)] = n
 
-    # inscripcions que realment �?ocompeteixen�?� a cada aparell (tenen notes)
+    # inscripcions que realment "competeixen" a cada aparell (tenen notes)
     ins_ids_by_app = defaultdict(set)
     for app_id, lst in notes_by_app.items():
         for n in lst:
@@ -1114,9 +1390,9 @@ def compute_classificacio(competicio, cfg_obj):
 
     # 5) EXERCICIS per aparell segons CompeticioAparell.nombre_exercicis
     # 6) AGREGACIONS + construccio de score final per inscripcio
-    per_ins = {}  # ins_id -> {"score":float, "by_app":{app_id:score_app}, "tie":{...}}
+    per_ins = {}  # ins_id -> {"score":float, "by_app_base":{}, "by_app":{}, "tie":{...}}
     for ins in ins_list:
-        per_ins[ins.id] = {"score": 0.0, "by_app": {}, "tie": {}}
+        per_ins[ins.id] = {"score": 0.0, "by_app_base": {}, "by_app": {}, "tie": {}}
 
     app_order = {ca.id: idx for idx, ca in enumerate(aparells, start=1)}
     app_ex_vals_by_ins = defaultdict(dict)  # app_id -> ins_id -> [(ex_idx, value)]
@@ -1216,7 +1492,7 @@ def compute_classificacio(competicio, cfg_obj):
                 if ins_id not in ins_ids_by_app.get(app_id, set()):
                     continue
                 score_app = _apply_simple_agg(picked_by_app.get(app_id, []), agg_exercicis)
-                per_ins[ins_id]["by_app"][app_id] = float(score_app)
+                per_ins[ins_id]["by_app_base"][app_id] = float(score_app)
     else:
         for ca in aparells:
             app_id = ca.id
@@ -1236,21 +1512,26 @@ def compute_classificacio(competicio, cfg_obj):
                     participant_key="inscripcio_id",
                 )
                 score_app = _apply_simple_agg(picked, agg_exercicis)
-                per_ins[ins_id]["by_app"][app_id] = float(score_app)
+                per_ins[ins_id]["by_app_base"][app_id] = float(score_app)
 
     # agregacio final entre aparells
     for ins_id, obj in per_ins.items():
-        app_vals = list((obj.get("by_app") or {}).values())
-        obj["score"] = float(_apply_simple_agg(app_vals, agg_aparells))
+        obj["by_app"] = dict(obj.get("by_app_base") or {})
+        if mode_resultat_aparells == "score":
+            app_vals = list((obj.get("by_app") or {}).values())
+            obj["score"] = float(_apply_simple_agg(app_vals, agg_aparells))
+        else:
+            obj["by_app"] = {}
+            obj["score"] = 0.0
 
     # 7) TIE-BREAKS segons ordre del front
     # suport:
     #  - legacy: {"camp":"execucio_total","ordre":"desc"} -> suma (o avg) sobre aparells/exercicis segons el pipeline
-    #  - nou: {"aparell_id": X, "camp": "E_total", "ordre":"desc"} -> recalcula com �?oscore d'aquell aparell però només amb aquell camp�?�
+    #  - nou: {"aparell_id": X, "camp": "E_total", "ordre":"desc"} -> recalcula com "score d'aquell aparell però només amb aquell camp"
     #
     # IMPORTANT: per no duplicar molt codi, fem una funció que calcula "valor criteri" reutilitzant el mateix pipeline,
     # però substituint camps per la llista [camp].
-    def calc_criterion_value(ins_id: int, crit: dict) -> float:
+    def calc_criterion_value(ins_id: int, crit: dict, forced_app_ids=None) -> float:
         """
         Calcula el valor d'un criteri de desempat per una inscripció concreta.
 
@@ -1344,26 +1625,34 @@ def compute_classificacio(competicio, cfg_obj):
         # Aparells objectiu del criteri
         # -----------------------------
         target_apps = []
-        mode = (crit_apps.get("mode") or "").lower().strip()
-        ids = crit_apps.get("ids") or []
-
-        if mode == "seleccionar" and ids:
-            try:
-                target_apps = [int(x) for x in ids]
-            except Exception:
-                target_apps = []
-        elif mode == "tots":
-            target_apps = [ca.id for ca in aparells]
+        if forced_app_ids is not None:
+            for raw_app_id in (forced_app_ids or []):
+                try:
+                    app_id = int(raw_app_id)
+                except Exception:
+                    continue
+                target_apps.append(app_id)
         else:
-            # compat: aparell_id antic
-            app_id = crit.get("aparell_id", None)
-            if app_id in (None, "", 0, "0"):
+            mode = (crit_apps.get("mode") or "").lower().strip()
+            ids = crit_apps.get("ids") or []
+
+            if mode == "seleccionar" and ids:
+                try:
+                    target_apps = [int(x) for x in ids]
+                except Exception:
+                    target_apps = []
+            elif mode == "tots":
                 target_apps = [ca.id for ca in aparells]
             else:
-                try:
-                    target_apps = [int(app_id)]
-                except Exception:
+                # compat: aparell_id antic
+                app_id = crit.get("aparell_id", None)
+                if app_id in (None, "", 0, "0"):
                     target_apps = [ca.id for ca in aparells]
+                else:
+                    try:
+                        target_apps = [int(app_id)]
+                    except Exception:
+                        target_apps = [ca.id for ca in aparells]
 
         # -----------------------------
         # Càlcul per aparell -> exercicis
@@ -1469,22 +1758,25 @@ def compute_classificacio(competicio, cfg_obj):
     # capa reutilitzable: desempat + columnes mètriques
     metric_cache = {}
 
-    def _metric_signature(crit: dict) -> str:
+    def _metric_signature(crit: dict, forced_app_ids=None) -> str:
         try:
-            return json.dumps(crit or {}, sort_keys=True, ensure_ascii=False)
+            payload = {"crit": crit or {}}
+            if forced_app_ids is not None:
+                payload["forced_app_ids"] = [int(x) for x in (forced_app_ids or [])]
+            return json.dumps(payload, sort_keys=True, ensure_ascii=False)
         except Exception:
             return str(_tie_key(crit) or crit or "")
 
-    def calc_metric_value_for_ins(ins_id: int, crit: dict) -> float:
+    def calc_metric_value_for_ins(ins_id: int, crit: dict, forced_app_ids=None) -> float:
         try:
             iid = int(ins_id)
         except Exception:
             return 0.0
-        sig = _metric_signature(crit)
+        sig = _metric_signature(crit, forced_app_ids=forced_app_ids)
         ck = (iid, sig)
         if ck in metric_cache:
             return metric_cache[ck]
-        val = float(calc_criterion_value(iid, crit or {}))
+        val = float(calc_criterion_value(iid, crit or {}, forced_app_ids=forced_app_ids))
         metric_cache[ck] = val
         return val
 
@@ -1658,7 +1950,7 @@ def compute_classificacio(competicio, cfg_obj):
     per_particio = defaultdict(list)
 
     for ins in ins_list:
-        pkey = _partition_key(ins, part_fields, part_custom_idx)
+        pkey = _partition_key_from_entries(ins, part_entries, part_custom_idx)
         participant = (
             getattr(ins, "nom_complet", None)
             or getattr(ins, "nom_i_cognoms", None)
@@ -1674,9 +1966,22 @@ def compute_classificacio(competicio, cfg_obj):
             "score": float(per_ins[ins.id]["score"]),
             "tie": per_ins[ins.id]["tie"],
             # extra útil pel front (si vols mostrar detalls)
-            "by_app": per_ins[ins.id]["by_app"],
+            "by_app": dict(per_ins[ins.id]["by_app"]),
+            "by_app_base": dict(per_ins[ins.id]["by_app_base"]),
         }
         per_particio[pkey].append(row)
+
+    if tipus == "individual" and mode_resultat_aparells == "victories":
+        target_app_ids = [ca.id for ca in aparells]
+        for pkey, rows in per_particio.items():
+            _apply_victories_per_app_to_rows(
+                rows,
+                app_ids=target_app_ids,
+                ordre_principal=ordre_principal,
+                agg_aparells=agg_aparells,
+                victories_cfg=victories_cfg,
+                metric_value_getter=calc_metric_value_for_ins,
+            )
 
     out = {}
 
@@ -1718,7 +2023,7 @@ def compute_classificacio(competicio, cfg_obj):
         for ins in ins_list:
             if ins.equip_id is None and not include_sense_equip:
                 continue
-            base_pkey = _partition_key(ins, part_fields, part_custom_idx)
+            base_pkey = _partition_key_from_entries(ins, part_entries, part_custom_idx)
             team_id_key = ins.equip_id if ins.equip_id is not None else "__sense_equip__"
             grouped[base_pkey][team_id_key].append(ins)
 

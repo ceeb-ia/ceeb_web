@@ -98,7 +98,7 @@ MEDIA_ROOT = os.getenv('MEDIA_ROOT', '/data/media')
 X_FRAME_OPTIONS = "SAMEORIGIN"
 
 STATIC_VERSION = "dev-1"
-STATIC_URL = '/static/'  # URL per accedir als fitxers estÃ tics
+STATIC_URL = '/static/'  # URL per accedir als fitxers estàtics
 STATICFILES_DIRS = [BASE_DIR / 'static']  # Ruta al directori 'static'
 STATIC_ROOT = os.getenv("STATIC_ROOT", "/data/static")
 
@@ -137,7 +137,7 @@ CELERY_TASK_ROUTES = {
 worker_prefetch_multiplier = 1
 task_acks_late = True  # si vols ack al final de la tasca
 
-# LÃ­mits de temps Ãºtils (ara sÃ­ funcionen perquÃ¨ no uses 'solo')
+# Límits de temps útils (ara sí funcionen perquè no uses 'solo')
 # Allow longer-running tasks (e.g. calendar processing that can take 15-30 minutes)
 # Soft limit: worker will receive a SoftTimeLimitExceeded signal at this time
 # Hard limit: task will be force-terminated after this time
@@ -157,7 +157,7 @@ LOGGING = {
     },
     'root': {
         'handlers': ['console'],
-        'level': 'INFO',  # Mostra tots els missatges d'informaciÃ³
+        'level': 'INFO',  # Mostra tots els missatges d'informació
     },
     'loggers': {
         'django': {

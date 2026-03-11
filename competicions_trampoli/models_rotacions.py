@@ -1,6 +1,6 @@
 from django.db import models
 from django.core.exceptions import ValidationError
-from .models import Competicio  # el teu model base
+from .models import Competicio, GrupCompeticio  # el teu model base
 from .models_trampoli import CompeticioAparell  # el que m'has adjuntat
 from django.db.models import Q
 
@@ -101,3 +101,32 @@ class RotacioAssignacio(models.Model):
             joined = ",".join(str(x) for x in self.grups)
             return f"{self.competicio} | {self.franja} | {self.estacio} => G{joined}"
         return f"{self.competicio} | {self.franja} | {self.estacio} => G{self.grup or '-'}"
+
+
+class RotacioAssignacioGrup(models.Model):
+    assignacio = models.ForeignKey(
+        RotacioAssignacio,
+        on_delete=models.CASCADE,
+        related_name="grup_links",
+    )
+    grup = models.ForeignKey(
+        GrupCompeticio,
+        on_delete=models.CASCADE,
+        related_name="rotacio_links",
+    )
+    ordre = models.PositiveIntegerField(default=1, db_index=True)
+
+    class Meta:
+        ordering = ["ordre", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["assignacio", "grup"],
+                name="uniq_rot_assignacio_grup_link",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["grup", "ordre"]),
+        ]
+
+    def __str__(self):
+        return f"{self.assignacio} -> {self.grup}"

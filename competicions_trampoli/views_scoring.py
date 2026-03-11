@@ -20,10 +20,17 @@ from .models_rotacions import RotacioAssignacio, RotacioFranja
 from .models_scoring import ScoringSchema, ScoreEntry, ScoreEntryVideo
 from .forms import ScoringSchemaForm
 from .scoring_engine import ScoringEngine, ScoringError
+from .services.competition_groups import (
+    get_group_maps,
+    get_inscripcio_competition_order,
+    get_inscripcio_group_display_num,
+    group_label,
+)
 from .services.rotacions_ordering import (
     ORDER_MODE_MAINTAIN,
     assignacio_grups,
-    franja_index_map,
+    build_group_rotation_step_map,
+    effective_rotate_steps,
     get_rotacions_order_modes,
     order_pairs_for_mode,
     unique_ordered,
@@ -242,13 +249,11 @@ class ScoringNotesHome(TemplateView):
         competicio = self.competicio
         franges = list(RotacioFranja.objects.filter(competicio=competicio).order_by("ordre", "id"))
         franja_modes = get_rotacions_order_modes(competicio)
-        fr_idx_map = franja_index_map(franges)
-        view_cfg = competicio.inscripcions_view or {}
-        raw_group_names = view_cfg.get("group_names") or {}
-        if isinstance(raw_group_names, dict):
-            group_names = {str(k): (v or "").strip() for k, v in raw_group_names.items()}
-        else:
-            group_names = {}
+        group_maps = get_group_maps(competicio)
+        groups_by_id = group_maps["by_id"]
+        group_labels_map = {"0": "Sense grup"}
+        for group in group_maps["groups"]:
+            group_labels_map[str(group.id)] = group_label(group)
 
         franja_selected_id = None
         fr_raw = self.request.GET.get("franja")
@@ -263,20 +268,22 @@ class ScoringNotesHome(TemplateView):
         ins = (
             Inscripcio.objects
             .filter(competicio=competicio)
-            .order_by("grup", "ordre_sortida", "id")
+            .select_related("grup_competicio")
+            .order_by("grup_competicio__display_num", "ordre_competicio", "ordre_sortida", "id")
         )
 
         # Agrupació (igual que ja fas servir)
         from collections import defaultdict
         grouped = defaultdict(list)
         for r in ins:
-            grouped[r.grup if r.grup is not None else 0].append(r)
+            grouped[r.grup_competicio_id if r.grup_competicio_id is not None else 0].append(r)
 
         group_first_slot = {}
         assigns_for_order = (
             RotacioAssignacio.objects
             .filter(competicio=competicio)
             .select_related("franja")
+            .prefetch_related("grup_links__grup")
             .order_by("franja__ordre", "franja_id", "estacio__ordre", "id")
         )
         for a in assigns_for_order:
@@ -295,12 +302,6 @@ class ScoringNotesHome(TemplateView):
         group_keys = competing_group_keys + remaining_group_keys
         if 0 in grouped:
             group_keys.append(0)
-
-        group_labels_map = {"0": "Sense grup"}
-        for g in group_keys:
-            if g == 0:
-                continue
-            group_labels_map[str(g)] = (group_names.get(str(g)) or "").strip() or f"Grup {g}"
 
         groups = [(g, grouped[g]) for g in group_keys]
 
@@ -404,9 +405,10 @@ class ScoringNotesHome(TemplateView):
 
                 inscripcions.append({
                     "id": r.id,
-                    "order": getattr(r, "ordre_sortida", "") or "",
+                    "order": get_inscripcio_competition_order(r) or "",
                     "name": getattr(r, "nom_i_cognoms", "") or "",
-                    "group": getattr(r, "grup", 0) or 0,
+                    "group": getattr(r, "grup_competicio_id", 0) or 0,
+                    "group_display_num": get_inscripcio_group_display_num(r) or "",
                     "allowed_app_ids": allowed_app_ids,
                     "meta": " · ".join(meta_parts) if meta_parts else "",
                 })
@@ -461,16 +463,19 @@ class ScoringNotesHome(TemplateView):
         rotation_rank_map = {}
         rotation_groups_by_app = {}
         if franja_selected_id:
-            assigns = (
+            all_assigns = list(
                 RotacioAssignacio.objects
                 .filter(
                     competicio=competicio,
-                    franja_id=franja_selected_id,
                     estacio__tipus="aparell",
                     estacio__comp_aparell__isnull=False,
                 )
-                .select_related("estacio")
+                .select_related("franja", "estacio")
+                .prefetch_related("grup_links__grup")
+                .order_by("franja__ordre", "franja_id", "estacio__ordre", "id")
             )
+            rotation_step_map = build_group_rotation_step_map(all_assigns)
+            assigns = [a for a in all_assigns if a.franja_id == franja_selected_id]
             app_groups_map = {}
             for a in assigns:
                 app_id = a.estacio.comp_aparell_id
@@ -483,7 +488,6 @@ class ScoringNotesHome(TemplateView):
                 key = 0 if g in (None, 0) else int(g)
                 rows_by_group[key] = list(rows)
 
-            rotate_steps = fr_idx_map.get(franja_selected_id, 0)
             mode_for_franja = franja_modes.get(str(franja_selected_id), ORDER_MODE_MAINTAIN)
 
             for app_id in active_app_ids:
@@ -501,7 +505,10 @@ class ScoringNotesHome(TemplateView):
                     ordered = order_pairs_for_mode(
                         base_pairs,
                         mode_for_franja,
-                        rotate_steps=rotate_steps,
+                        rotate_steps=effective_rotate_steps(
+                            mode_for_franja,
+                            rotation_step_map.get((g, franja_selected_id), 0),
+                        ),
                         seed_prefix=f"notes|{competicio.id}|{franja_selected_id}|{app_id}|{g}",
                     )
                     for ins_id, _r in ordered:

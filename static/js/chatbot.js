@@ -12,6 +12,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const sendBtn = document.getElementById("send-message");
   const loadingSpinner = document.getElementById("loading-spinner");
 
+  if (!widget || !openBtn || !minimizeBtn || !closeBtn || !messagesBox || !input || !sendBtn || !loadingSpinner) {
+    return;
+  }
+
   // CLAUS LOCALSTORAGE
   const KEY_VISIBLE = "ceeb_chat_visible";      // true | false
   const KEY_HISTORY = "ceeb_chat_history";      // array missatges
