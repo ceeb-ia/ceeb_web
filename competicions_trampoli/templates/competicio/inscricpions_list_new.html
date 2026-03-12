@@ -3667,6 +3667,14 @@
       title.textContent = `Grup ${group?.group_num || '?'}`;
       headText.appendChild(title);
 
+      const suggestedName = String(group?.suggested_name || '').trim();
+      if (previewKind === 'created' && suggestedName) {
+        const suggested = document.createElement('p');
+        suggested.className = 'group-preview-card-subtitle';
+        suggested.textContent = `Nom suggerit: ${suggestedName}`;
+        headText.appendChild(suggested);
+      }
+
       const subtitle = document.createElement('p');
       subtitle.className = 'group-preview-card-subtitle';
       const sourceCount = Array.isArray(group?.sources) ? group.sources.length : 0;

@@ -1531,6 +1531,70 @@ def _assign_group_sizes_in_order(objs, sizes, start_group_num):
     return g
 
 
+GROUP_NAME_SUGGESTION_IGNORED_LABELS = {
+    "",
+    "Sense bloc",
+    "Totes les inscripcions filtrades",
+    "(Sense valor)",
+}
+
+
+def _clean_group_suggestion_label(raw_label):
+    label = str(raw_label or "").strip()
+    if not label or label in GROUP_NAME_SUGGESTION_IGNORED_LABELS:
+        return ""
+    return label
+
+
+def _build_group_suggested_name(sources):
+    ranked = []
+    for idx, row in enumerate(sources or []):
+        if not isinstance(row, dict):
+            continue
+        label = _clean_group_suggestion_label(row.get("label"))
+        if not label:
+            continue
+        try:
+            count = int(row.get("count") or 0)
+        except Exception:
+            count = 0
+        ranked.append((label, max(0, count), idx))
+
+    if not ranked:
+        return ""
+
+    ranked.sort(key=lambda item: (-item[1], item[2], item[0].casefold()))
+    ordered_labels = []
+    seen = set()
+    for label, _count, _idx in ranked:
+        key = label.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        ordered_labels.append(label)
+    return " + ".join(ordered_labels)
+
+
+def _apply_group_suggested_names(preview_groups):
+    out = list(preview_groups or [])
+    grouped_indexes = OrderedDict()
+
+    for idx, row in enumerate(out):
+        suggested_name = _build_group_suggested_name(row.get("sources"))
+        row["suggested_name"] = suggested_name
+        if not suggested_name:
+            continue
+        grouped_indexes.setdefault(suggested_name.casefold(), []).append((idx, suggested_name))
+
+    for entries in grouped_indexes.values():
+        if len(entries) <= 1:
+            continue
+        for order_idx, (group_idx, base_name) in enumerate(entries, start=1):
+            out[group_idx]["suggested_name"] = f"{base_name} ({order_idx})"
+
+    return out
+
+
 def _build_group_creation_preview(objs, sizes, start_group_num, bucket_label_by_id=None):
     bucket_label_by_id = bucket_label_by_id or {}
     out = []
@@ -1570,7 +1634,7 @@ def _build_group_creation_preview(objs, sizes, start_group_num, bucket_label_by_
             }
         )
 
-    return out
+    return _apply_group_suggested_names(out)
 
 
 def _build_existing_groups_preview(competicio, records, bucket_label_by_id=None, moving_ids=None):
@@ -1769,6 +1833,40 @@ def _normalize_group_names_map(raw_group_names):
 
 def _sync_group_names_for_competicio(competicio, mapping=None):
     sync_competicio_group_names_view(competicio)
+
+
+def _persist_group_suggested_names(competicio, preview_groups):
+    suggested_by_display_num = {}
+    for row in preview_groups or []:
+        group_num = normalize_positive_int(row.get("group_num"))
+        suggested_name = str(row.get("suggested_name") or "").strip()
+        if not group_num or not suggested_name:
+            continue
+        suggested_by_display_num[group_num] = suggested_name
+
+    if not suggested_by_display_num:
+        sync_competicio_group_names_view(competicio)
+        return 0
+
+    groups = list(
+        GrupCompeticio.objects.filter(
+            competicio=competicio,
+            display_num__in=list(suggested_by_display_num.keys()),
+        )
+    )
+    updates = []
+    for group in groups:
+        suggested_name = suggested_by_display_num.get(group.display_num, "")
+        if not suggested_name or group.nom == suggested_name:
+            continue
+        group.nom = suggested_name
+        updates.append(group)
+
+    if updates:
+        GrupCompeticio.objects.bulk_update(updates, ["nom"], batch_size=200)
+
+    sync_competicio_group_names_view(competicio)
+    return len(updates)
 
 
 def renumber_groups_for_competicio(competicio):
@@ -2872,20 +2970,53 @@ class InscripcionsListView(ListView):
 
         return ctx
 
-class InscripcioUpdateView(UpdateView):
-    model = Inscripcio
-    pk_url_kwarg = "ins_id"
+class InscripcioFormViewMixin:
     form_class = InscripcioForm
     template_name = "competicio/inscripcio_form.html"
 
-    def get_queryset(self):
-        # Seguretat: només permet editar inscripcions de la competició del pk
-        return Inscripcio.objects.filter(competicio_id=self.kwargs["pk"])
+    def dispatch(self, request, *args, **kwargs):
+        self.competicio = get_object_or_404(Competicio, pk=kwargs["pk"])
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["competicio"] = self.competicio
+        return kwargs
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        ctx["competicio"] = get_object_or_404(Competicio, pk=self.kwargs["pk"])
-        ctx["next"] = self.request.GET.get("next", "")
+        next_url = self.request.GET.get("next", "")
+        ctx["competicio"] = self.competicio
+        ctx["next"] = next_url
+        ctx["cancel_url"] = (
+            next_url
+            or self.request.META.get("HTTP_REFERER")
+            or reverse("inscripcions_list", kwargs={"pk": self.kwargs["pk"]})
+        )
+        form = ctx.get("form")
+        ctx["form_basic_fields"] = []
+        ctx["form_extra_fields"] = []
+        ctx["show_altres_fields"] = {}
+        ctx["full_width_basic_field_names"] = []
+        ctx["altres_wrapper_field_names"] = []
+        if form is not None:
+            ctx["form_basic_fields"] = [
+                form[name]
+                for name in getattr(form, "basic_field_names", [])
+                if name in form.fields
+            ]
+            ctx["form_extra_fields"] = [
+                form[name]
+                for name in getattr(form, "extra_field_names", [])
+                if name in form.fields
+            ]
+            ctx["show_altres_fields"] = dict(getattr(form, "show_altres_fields", {}) or {})
+            ctx["full_width_basic_field_names"] = list(
+                getattr(form, "full_width_basic_field_names", []) or []
+            )
+            ctx["altres_wrapper_field_names"] = list(
+                getattr(form, "other_wrapper_field_names", []) or []
+            )
         return ctx
 
     def get_success_url(self):
@@ -2893,6 +3024,15 @@ class InscripcioUpdateView(UpdateView):
         if nxt:
             return nxt
         return reverse("inscripcions_list", kwargs={"pk": self.kwargs["pk"]})
+
+
+class InscripcioUpdateView(InscripcioFormViewMixin, UpdateView):
+    model = Inscripcio
+    pk_url_kwarg = "ins_id"
+
+    def get_queryset(self):
+        # Seguretat: només permet editar inscripcions de la competició del pk
+        return Inscripcio.objects.filter(competicio_id=self.competicio.id)
 
     def form_valid(self, form):
         old_group = None
@@ -2928,20 +3068,8 @@ class InscripcioUpdateView(UpdateView):
         return response
 
 
-class InscripcioCreateView(CreateView):
+class InscripcioCreateView(InscripcioFormViewMixin, CreateView):
     model = Inscripcio
-    form_class = InscripcioForm
-    template_name = "competicio/inscripcio_form.html"
-
-    def dispatch(self, request, *args, **kwargs):
-        self.competicio = get_object_or_404(Competicio, pk=kwargs["pk"])
-        return super().dispatch(request, *args, **kwargs)
-
-    def get_context_data(self, **kwargs):
-        ctx = super().get_context_data(**kwargs)
-        ctx["competicio"] = self.competicio
-        ctx["next"] = self.request.GET.get("next", "")
-        return ctx
 
     def form_valid(self, form):
         # Assign the competition before saving
@@ -2958,13 +3086,6 @@ class InscripcioCreateView(CreateView):
             move_inscripcio_to_group(self.object, group)
         sync_competicio_group_names_view(self.competicio)
         return response
-
-    def get_success_url(self):
-        nxt = self.request.GET.get("next")
-        if nxt:
-            return nxt
-        return reverse("inscripcions_list", kwargs={"pk": self.kwargs["pk"]})
-
 
 class InscripcioDeleteView(DeleteView):
     model = Inscripcio
@@ -4144,6 +4265,7 @@ def inscripcions_groups_from_sort(request, pk):
         qs.filter(id__in=target_ids).update(grup=None)
         Inscripcio.objects.bulk_update(updates, ["grup"], batch_size=500)
         sync_stable_groups_from_legacy(competicio)
+        _persist_group_suggested_names(competicio, preview_groups)
 
     record_inscripcions_history_entry(
         request,

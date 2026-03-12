@@ -16,7 +16,7 @@ from openpyxl import load_workbook
 from ceeb_web.auth_groups import GLOBAL_AUTH_GROUPS
 
 from .access import user_has_competicio_capability
-from .models import Competicio, GrupCompeticio, Inscripcio, InscripcioMedia
+from .models import Competicio, Equip, GrupCompeticio, Inscripcio, InscripcioMedia
 from .models_judging import (
     JudgeConversation,
     JudgeConversationMessage,
@@ -780,6 +780,210 @@ class InscripcionsSortFlowTests(TestCase):
         self.assertEqual(existing.get("moving_member_names_preview"), [first.nom_i_cognoms, second.nom_i_cognoms])
         self.assertEqual(preview.get("existing_groups_total"), 1)
 
+    def test_groups_preview_suggests_name_from_single_sort_bucket(self):
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="A1",
+            entitat="Club A",
+            ordre_sortida=1,
+            grup=None,
+        )
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="A2",
+            entitat="Club A",
+            ordre_sortida=2,
+            grup=None,
+        )
+
+        sort_payload = {
+            "scope": "all",
+            "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+            "group_by": [],
+            "sort_key": "entitat",
+            "sort_dir": "asc",
+        }
+        sort_resp = self._post_json("inscripcions_sort_apply", sort_payload)
+        self.assertEqual(sort_resp.status_code, 200)
+        self.assertTrue(sort_resp.json().get("ok"))
+
+        resp = self._post_json(
+            "inscripcions_groups_from_sort",
+            self._groups_payload(source="sort", strategy="per_bucket"),
+        )
+        self.assertEqual(resp.status_code, 200)
+
+        groups = (resp.json().get("preview") or {}).get("groups") or []
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0].get("suggested_name"), "Club A")
+
+    def test_groups_preview_suggests_name_from_single_tab_bucket(self):
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="A1",
+            categoria="Alevi",
+            ordre_sortida=1,
+            grup=None,
+        )
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="A2",
+            categoria="Alevi",
+            ordre_sortida=2,
+            grup=None,
+        )
+
+        resp = self._post_json(
+            "inscripcions_groups_from_sort",
+            self._groups_payload(source="tabs", strategy="per_bucket", group_by=["categoria"]),
+        )
+        self.assertEqual(resp.status_code, 200)
+
+        groups = (resp.json().get("preview") or {}).get("groups") or []
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0].get("suggested_name"), "Alevi")
+
+    def test_groups_preview_builds_composed_name_from_weighted_sources(self):
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="A1",
+            entitat="Club A",
+            ordre_sortida=1,
+            grup=None,
+        )
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="A2",
+            entitat="Club A",
+            ordre_sortida=2,
+            grup=None,
+        )
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="B1",
+            entitat="Club B",
+            ordre_sortida=3,
+            grup=None,
+        )
+
+        resp = self._post_json(
+            "inscripcions_groups_from_sort",
+            self._groups_payload(
+                source="tabs",
+                strategy="count",
+                group_count=1,
+                group_by=["entitat"],
+            ),
+        )
+        self.assertEqual(resp.status_code, 200)
+
+        groups = (resp.json().get("preview") or {}).get("groups") or []
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0].get("suggested_name"), "Club A + Club B")
+
+    def test_groups_preview_disambiguates_duplicate_suggested_names(self):
+        for idx in range(1, 5):
+            Inscripcio.objects.create(
+                competicio=self.comp,
+                nom_i_cognoms=f"A{idx}",
+                entitat="Club A",
+                ordre_sortida=idx,
+                grup=None,
+            )
+
+        resp = self._post_json(
+            "inscripcions_groups_from_sort",
+            self._groups_payload(
+                source="tabs",
+                strategy="count",
+                group_count=2,
+                group_by=["entitat"],
+            ),
+        )
+        self.assertEqual(resp.status_code, 200)
+
+        groups = (resp.json().get("preview") or {}).get("groups") or []
+        self.assertEqual(
+            [group.get("suggested_name") for group in groups],
+            ["Club A (1)", "Club A (2)"],
+        )
+
+    def test_groups_preview_ignores_generic_fallback_labels(self):
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Sense Nom 1",
+            ordre_sortida=1,
+            grup=None,
+        )
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Sense Nom 2",
+            ordre_sortida=2,
+            grup=None,
+        )
+
+        resp = self._post_json("inscripcions_groups_from_sort", self._groups_payload())
+        self.assertEqual(resp.status_code, 200)
+
+        groups = (resp.json().get("preview") or {}).get("groups") or []
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0].get("suggested_name"), "")
+
+    def test_groups_apply_persists_suggested_name_without_overwriting_existing_manual_names(self):
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Manual",
+            entitat="Club X",
+            ordre_sortida=1,
+            grup=1,
+        )
+        renumber_groups_for_competicio(self.comp)
+        existing_group = GrupCompeticio.objects.get(competicio=self.comp, display_num=1)
+        existing_group.nom = "Manual"
+        existing_group.save(update_fields=["nom"])
+        self.comp.inscripcions_view = {"group_names": {"1": "Manual"}}
+        self.comp.save(update_fields=["inscripcions_view"])
+
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Nou 1",
+            entitat="Club A",
+            ordre_sortida=2,
+            grup=None,
+        )
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Nou 2",
+            entitat="Club A",
+            ordre_sortida=3,
+            grup=None,
+        )
+
+        resp = self._post_json(
+            "inscripcions_groups_from_sort",
+            self._groups_payload(
+                source="tabs",
+                strategy="per_bucket",
+                preview_only=False,
+                group_by=["entitat"],
+                filters={"q": "", "categoria": "", "subcategoria": "", "entitat": "Club A"},
+            ),
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json().get("ok"))
+
+        existing_group.refresh_from_db()
+        self.assertEqual(existing_group.nom, "Manual")
+
+        new_group = GrupCompeticio.objects.get(competicio=self.comp, display_num=2)
+        self.assertEqual(new_group.nom, "Club A")
+
+        self.comp.refresh_from_db()
+        self.assertEqual(
+            self.comp.inscripcions_view.get("group_names"),
+            {"1": "Manual", "2": "Club A"},
+        )
+
     def test_groups_apply_deactivates_group_that_becomes_empty(self):
         Inscripcio.objects.create(
             competicio=self.comp,
@@ -949,6 +1153,322 @@ class GroupNameSyncTests(TestCase):
 
         comp.refresh_from_db()
         self.assertNotIn("group_names", comp.inscripcions_view or {})
+
+
+class InscripcioManualFormViewTests(_BaseTrampoliDataMixin, TestCase):
+    def setUp(self):
+        self.comp = self._create_competicio("Comp manual form")
+        self.other_comp = self._create_competicio("Comp altre")
+        User = get_user_model()
+        self.user = User.objects.create_user(
+            username="manual_form_editor",
+            password="testpass123",
+            email="manual-form@example.com",
+        )
+        CompeticioMembership.objects.create(
+            user=self.user,
+            competicio=self.comp,
+            role=CompeticioMembership.Role.EDITOR,
+            is_active=True,
+        )
+        self.client.force_login(self.user)
+
+    def _add_url(self):
+        return reverse("inscripcio_add", kwargs={"pk": self.comp.id})
+
+    def _edit_url(self, inscripcio):
+        return reverse("inscripcio_edit", kwargs={"pk": self.comp.id, "ins_id": inscripcio.id})
+
+    def test_create_form_uses_schema_fields_and_competition_scoped_choices(self):
+        self.comp.inscripcions_schema = {
+            "columns": [
+                {"code": "categoria", "label": "Categoria", "kind": "builtin"},
+                {"code": "subcategoria", "label": "Subcategoria", "kind": "builtin"},
+                {"code": "modalitat", "label": "Modalitat", "kind": "extra"},
+            ],
+            "value_aliases": {
+                "entitat": {"club a": "Club A"},
+                "categoria": {"open": "Open"},
+                "subcategoria": {"nivell 4": "Nivell 4"},
+            },
+        }
+        self.comp.save(update_fields=["inscripcions_schema"])
+
+        GrupCompeticio.objects.create(
+            competicio=self.comp,
+            legacy_num=1,
+            display_num=1,
+            nom="Matinal",
+            actiu=True,
+        )
+        GrupCompeticio.objects.create(
+            competicio=self.comp,
+            legacy_num=2,
+            display_num=2,
+            nom="",
+            actiu=True,
+        )
+        equip = Equip.objects.create(competicio=self.comp, nom="Equip A")
+        Equip.objects.create(competicio=self.other_comp, nom="Equip Extern")
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="A",
+            entitat="club a",
+            categoria="open",
+            subcategoria="nivell 4",
+            equip=equip,
+        )
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="B",
+            entitat="Club B",
+            categoria="Base",
+            subcategoria="Nivell 3",
+        )
+        Inscripcio.objects.create(
+            competicio=self.other_comp,
+            nom_i_cognoms="C",
+            entitat="Club Extern",
+            categoria="Externa",
+            subcategoria="Externa",
+        )
+
+        response = self.client.get(self._add_url())
+        self.assertEqual(response.status_code, 200)
+
+        form = response.context["form"]
+        self.assertNotIn("categoria", form.fields)
+        self.assertNotIn("subcategoria", form.fields)
+        self.assertNotIn("document", form.fields)
+        self.assertIn("grup_competicio_choice", form.fields)
+        self.assertIn("entitat_choice", form.fields)
+        self.assertIn("entitat_altres", form.fields)
+        self.assertIn("categoria_choice", form.fields)
+        self.assertIn("categoria_altres", form.fields)
+        self.assertIn("subcategoria_choice", form.fields)
+        self.assertIn("subcategoria_altres", form.fields)
+        self.assertIn("equip_choice", form.fields)
+        self.assertIn("equip_altres", form.fields)
+        self.assertIn("extra__modalitat", form.fields)
+
+        group_choices = dict(form.fields["grup_competicio_choice"].choices)
+        self.assertEqual(group_choices[""], "Sense grup")
+        self.assertIn("Matinal", group_choices.values())
+        self.assertIn("Grup 2", group_choices.values())
+
+        entity_choices = dict(form.fields["entitat_choice"].choices)
+        self.assertIn("Club A", entity_choices)
+        self.assertIn("Club B", entity_choices)
+        self.assertIn("__other__", entity_choices)
+        self.assertNotIn("club a", entity_choices)
+        self.assertNotIn("Club Extern", entity_choices)
+
+        categoria_choices = dict(form.fields["categoria_choice"].choices)
+        self.assertIn("Open", categoria_choices)
+        self.assertIn("Base", categoria_choices)
+        self.assertNotIn("open", categoria_choices)
+        self.assertNotIn("Externa", categoria_choices)
+
+        subcategoria_choices = dict(form.fields["subcategoria_choice"].choices)
+        self.assertIn("Nivell 4", subcategoria_choices)
+        self.assertIn("Nivell 3", subcategoria_choices)
+        self.assertNotIn("nivell 4", subcategoria_choices)
+        self.assertNotIn("Externa", subcategoria_choices)
+
+        equip_choices = dict(form.fields["equip_choice"].choices)
+        self.assertEqual(equip_choices[str(equip.id)], "Equip A")
+        self.assertIn("__other__", equip_choices)
+        self.assertNotIn("Equip Extern", equip_choices.values())
+
+        self.assertEqual(response.context["show_altres_fields"], {
+            "entitat_altres": False,
+            "categoria_altres": False,
+            "subcategoria_altres": False,
+            "equip_altres": False,
+        })
+
+    def test_create_form_saves_group_text_other_equip_other_and_extra_fields(self):
+        self.comp.inscripcions_schema = {
+            "columns": [
+                {"code": "categoria", "label": "Categoria", "kind": "builtin"},
+                {"code": "subcategoria", "label": "Subcategoria", "kind": "builtin"},
+                {"code": "modalitat", "label": "Modalitat", "kind": "extra"},
+            ]
+        }
+        self.comp.save(update_fields=["inscripcions_schema"])
+        group = GrupCompeticio.objects.create(
+            competicio=self.comp,
+            legacy_num=4,
+            display_num=4,
+            nom="Tarda",
+            actiu=True,
+        )
+
+        response = self.client.post(
+            self._add_url(),
+            data={
+                "nom_i_cognoms": "Nova gimnasta",
+                "entitat_choice": "__other__",
+                "entitat_altres": "Club Nou",
+                "categoria_choice": "__other__",
+                "categoria_altres": "Open",
+                "subcategoria_choice": "__other__",
+                "subcategoria_altres": "Nivell 4",
+                "grup_competicio_choice": str(group.id),
+                "equip_choice": "__other__",
+                "equip_altres": "Equip Nou",
+                "extra__modalitat": "Sincronitzada",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+
+        inscripcio = Inscripcio.objects.get(competicio=self.comp, nom_i_cognoms="Nova gimnasta")
+        self.assertEqual(inscripcio.entitat, "Club Nou")
+        self.assertEqual(inscripcio.categoria, "Open")
+        self.assertEqual(inscripcio.subcategoria, "Nivell 4")
+        self.assertEqual(inscripcio.grup_competicio_id, group.id)
+        self.assertEqual(inscripcio.grup, 4)
+        self.assertEqual(inscripcio.ordre_sortida, 1)
+        self.assertEqual(inscripcio.ordre_competicio, 1)
+        self.assertIsNotNone(inscripcio.equip_id)
+        self.assertEqual(inscripcio.equip.nom, "Equip Nou")
+        self.assertEqual(inscripcio.equip.origen, Equip.Origen.MANUAL)
+        self.assertEqual(inscripcio.equip.criteri, {})
+        self.assertEqual(inscripcio.extra, {"modalitat": "Sincronitzada"})
+
+    def test_create_form_requires_other_values_when_other_is_selected(self):
+        response = self.client.post(
+            self._add_url(),
+            data={
+                "nom_i_cognoms": "Sense valors",
+                "entitat_choice": "__other__",
+                "entitat_altres": "",
+                "categoria_choice": "__other__",
+                "categoria_altres": "",
+                "subcategoria_choice": "__other__",
+                "subcategoria_altres": "",
+                "grup_competicio_choice": "",
+                "equip_choice": "__other__",
+                "equip_altres": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFormError(response.context["form"], "entitat_altres", "Cal indicar l'entitat si tries Altres.")
+        self.assertFormError(response.context["form"], "categoria_altres", "Cal indicar la categoria si tries Altres.")
+        self.assertFormError(response.context["form"], "subcategoria_altres", "Cal indicar la subcategoria si tries Altres.")
+        self.assertFormError(response.context["form"], "equip_altres", "Cal indicar l'equip si tries Altres.")
+        self.assertEqual(response.context["show_altres_fields"], {
+            "entitat_altres": True,
+            "categoria_altres": True,
+            "subcategoria_altres": True,
+            "equip_altres": True,
+        })
+        self.assertFalse(Inscripcio.objects.filter(competicio=self.comp, nom_i_cognoms="Sense valors").exists())
+
+    def test_create_form_reuses_existing_team_when_other_is_selected(self):
+        existing = Equip.objects.create(competicio=self.comp, nom="Equip Reutilitzat")
+
+        response = self.client.post(
+            self._add_url(),
+            data={
+                "nom_i_cognoms": "Amb equip existent",
+                "entitat_choice": "",
+                "categoria_choice": "",
+                "subcategoria_choice": "",
+                "grup_competicio_choice": "",
+                "equip_choice": "__other__",
+                "equip_altres": "Equip Reutilitzat",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        inscripcio = Inscripcio.objects.get(competicio=self.comp, nom_i_cognoms="Amb equip existent")
+        self.assertEqual(inscripcio.equip_id, existing.id)
+        self.assertEqual(Equip.objects.filter(competicio=self.comp, nom="Equip Reutilitzat").count(), 1)
+
+    def test_edit_form_keeps_inactive_group_available_and_can_clear_it(self):
+        self.comp.inscripcions_schema = {
+            "columns": [
+                {"code": "modalitat", "label": "Modalitat", "kind": "extra"},
+            ]
+        }
+        self.comp.save(update_fields=["inscripcions_schema"])
+
+        inactive_group = GrupCompeticio.objects.create(
+            competicio=self.comp,
+            legacy_num=7,
+            display_num=7,
+            nom="Grup ocult",
+            actiu=False,
+        )
+        equip = Equip.objects.create(competicio=self.comp, nom="Equip Fix")
+        inscripcio = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Edita'm",
+            entitat="Club A",
+            categoria="Open",
+            subcategoria="Nivell 4",
+            grup=7,
+            grup_competicio=inactive_group,
+            equip=equip,
+            ordre_sortida=1,
+            ordre_competicio=1,
+            extra={"modalitat": "Dobles"},
+        )
+
+        response = self.client.get(self._edit_url(inscripcio))
+        self.assertEqual(response.status_code, 200)
+        form = response.context["form"]
+        self.assertIn((str(inactive_group.id), "Grup ocult"), form.fields["grup_competicio_choice"].choices)
+        self.assertEqual(form["extra__modalitat"].value(), "Dobles")
+        self.assertEqual(form["entitat_choice"].value(), "Club A")
+        self.assertEqual(form["categoria_choice"].value(), "Open")
+        self.assertEqual(form["subcategoria_choice"].value(), "Nivell 4")
+        self.assertEqual(form["equip_choice"].value(), str(equip.id))
+
+        response = self.client.post(
+            self._edit_url(inscripcio),
+            data={
+                "nom_i_cognoms": "Edita'm",
+                "entitat_choice": "Club A",
+                "categoria_choice": "Open",
+                "subcategoria_choice": "Nivell 4",
+                "grup_competicio_choice": "",
+                "equip_choice": str(equip.id),
+                "extra__modalitat": "Dobles",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        inscripcio.refresh_from_db()
+        self.assertEqual(inscripcio.entitat, "Club A")
+        self.assertIsNone(inscripcio.grup_competicio_id)
+        self.assertIsNone(inscripcio.grup)
+        self.assertIsNone(inscripcio.ordre_competicio)
+        self.assertEqual(inscripcio.equip_id, equip.id)
+
+    def test_form_fallback_without_schema_only_uses_basic_fields(self):
+        response = self.client.get(self._add_url())
+        self.assertEqual(response.status_code, 200)
+
+        form = response.context["form"]
+        self.assertEqual(
+            set(form.fields.keys()),
+            {
+                "nom_i_cognoms",
+                "entitat_choice",
+                "entitat_altres",
+                "categoria_choice",
+                "categoria_altres",
+                "subcategoria_choice",
+                "subcategoria_altres",
+                "grup_competicio_choice",
+                "equip_choice",
+                "equip_altres",
+            },
+        )
 
 
 class InscripcioAparellExclusioModelTests(_BaseTrampoliDataMixin, TestCase):

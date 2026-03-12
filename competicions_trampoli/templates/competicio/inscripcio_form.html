@@ -1,24 +1,66 @@
 {% extends "base.html" %}
+{% load competicio_extras %}
 {% block content %}
 <div class="container mt-4">
-
   <div class="card-surface">
     <div class="d-flex justify-content-between align-items-center mb-3">
-      <h2 class="mb-0">{% if object %}Editar inscripció{% else %}Afegir inscripció{% endif %}</h2>
+      <h2 class="mb-0">{% if object %}Editar inscripcio{% else %}Afegir inscripcio{% endif %}</h2>
     </div>
 
     <form method="post" novalidate>
       {% csrf_token %}
+      {% for hidden in form.hidden_fields %}
+        {{ hidden }}
+      {% endfor %}
 
       {% if form.non_field_errors %}
-        <div class="mb-2 text-danger">{{ form.non_field_errors }}</div>
+        <div class="alert alert-danger py-2 mb-3">
+          {% for error in form.non_field_errors %}
+            <div>{{ error }}</div>
+          {% endfor %}
+        </div>
       {% endif %}
 
-      <div class="row">
-        <div class="col-12 mb-3">
-          {{ form.as_p }}
+      <div class="mb-4">
+        <h3 class="h6 mb-3">Dades basiques</h3>
+        <div class="row g-3">
+          {% for field in form_basic_fields %}
+            <div
+              class="{% if field.name in full_width_basic_field_names %}col-12{% else %}col-md-6{% endif %}"
+              {% if field.name in altres_wrapper_field_names %}id="{{ field.name }}-wrapper"{% if not show_altres_fields|get_item:field.name %} style="display:none;"{% endif %}{% endif %}
+            >
+              <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+              {{ field }}
+              {% if field.help_text %}
+                <div class="form-text">{{ field.help_text }}</div>
+              {% endif %}
+              {% for error in field.errors %}
+                <div class="text-danger small mt-1">{{ error }}</div>
+              {% endfor %}
+            </div>
+          {% endfor %}
         </div>
       </div>
+
+      {% if form_extra_fields %}
+        <div class="mb-4">
+          <h3 class="h6 mb-3">Camps addicionals</h3>
+          <div class="row g-3">
+            {% for field in form_extra_fields %}
+              <div class="col-md-6">
+                <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                {{ field }}
+                {% if field.help_text %}
+                  <div class="form-text">{{ field.help_text }}</div>
+                {% endif %}
+                {% for error in field.errors %}
+                  <div class="text-danger small mt-1">{{ error }}</div>
+                {% endfor %}
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      {% endif %}
 
       {% if next %}
         <input type="hidden" name="next" value="{{ next }}">
@@ -26,11 +68,25 @@
 
       <div class="form-actions mt-3">
         <button type="submit" class="btn btn-primary">Desar</button>
-        <a class="btn btn-secondary" href="{{ next|default:request.META.HTTP_REFERER }}">Cancel·lar</a>
+        <a class="btn btn-secondary" href="{{ cancel_url }}">Cancelar</a>
       </div>
-
     </form>
   </div>
-
 </div>
+
+<script>
+  (function() {
+    document.querySelectorAll('select[data-other-target]').forEach(function(select) {
+      const wrapper = document.getElementById(select.dataset.otherTarget);
+      if (!wrapper) return;
+
+      function syncOtherWrapper() {
+        wrapper.style.display = select.value === '__other__' ? '' : 'none';
+      }
+
+      select.addEventListener('change', syncOtherWrapper);
+      syncOtherWrapper();
+    });
+  })();
+</script>
 {% endblock %}
