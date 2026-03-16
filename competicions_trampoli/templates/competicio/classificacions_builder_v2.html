@@ -1,9 +1,13 @@
 {# templates/competicio/classificacions_builder_v2.html #}
 {% extends "base.html" %}
-{% block title %}Classificacions · {{ competicio.nom }}{% endblock %}
+{% load static_extras %}
+{% block title %}{{ builder_title|default:"Classificacions" }}{% if builder_subtitle %} - {{ builder_subtitle }}{% elif competicio %} - {{ competicio.nom }}{% endif %}{% endblock %}
 {% block content %}
 
+<link rel="stylesheet" href="{% staticv 'css/classificacions_builder_help.css' %}">
+
 <style>
+  /* builder modes: competition + global templates */
   /* Override local: a style.css hi ha una regla global de .card a 1/3 d'amplada */
   #classif-builder-v2 .card {
     width: 100%;
@@ -24,6 +28,251 @@
   /* reforç per BS4 form-check */
   .card-surface .form-check-input {
     width: auto;
+  }
+  #classif-builder-v2 {
+    --builder-surface: #ffffff;
+    --builder-border: #e3e7ef;
+    --builder-border-strong: #d4dbe8;
+    --builder-muted: #667085;
+    --builder-subtle: #f6f8fb;
+    --builder-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+  }
+  .builder-editor-body {
+    padding: 1rem;
+  }
+  .builder-shell {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1rem;
+  }
+  .builder-nav-card {
+    border: 1px solid var(--builder-border);
+    border-radius: 16px;
+    background: linear-gradient(180deg, #fbfcfe 0%, #f6f8fb 100%);
+    box-shadow: 0 4px 10px rgba(15, 23, 42, 0.04);
+    padding: 0.9rem;
+  }
+  .builder-nav-eyebrow {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #64748b;
+    margin-bottom: 0.25rem;
+  }
+  .builder-nav-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #0f172a;
+    margin-bottom: 0.8rem;
+  }
+  .builder-nav-links {
+    display: flex;
+    gap: 0.55rem;
+    overflow-x: auto;
+    padding-bottom: 0.15rem;
+  }
+  .builder-nav-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    min-width: max-content;
+    padding: 0.55rem 0.8rem;
+    border: 1px solid #d9dfeb;
+    border-radius: 999px;
+    background: #fff;
+    color: #334155;
+    font-size: 0.88rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: background-color .15s ease, border-color .15s ease, box-shadow .15s ease, color .15s ease;
+  }
+  .builder-nav-link:hover,
+  .builder-nav-link:focus {
+    text-decoration: none;
+    color: #0f172a;
+    border-color: #b8c5dd;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+  }
+  .builder-nav-link.is-active {
+    color: #0f172a;
+    background: #edf3ff;
+    border-color: #bdd0ff;
+    box-shadow: 0 3px 12px rgba(47, 128, 237, 0.14);
+  }
+  .builder-nav-index {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.9rem;
+    height: 1.9rem;
+    border-radius: 999px;
+    background: #eef2f7;
+    color: #475467;
+    font-size: 0.74rem;
+    font-weight: 700;
+    flex: 0 0 auto;
+  }
+  .builder-nav-link.is-active .builder-nav-index {
+    background: #2f80ed;
+    color: #fff;
+  }
+  .builder-main {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  .builder-section {
+    --section-accent: #2f80ed;
+    --section-tint: #f8fbff;
+    border: 1px solid var(--builder-border);
+    border-radius: 18px;
+    background: var(--builder-surface);
+    box-shadow: var(--builder-shadow);
+    scroll-margin-top: 5rem;
+    overflow: hidden;
+  }
+  .builder-section--meta { --section-accent: #2563eb; --section-tint: #f7faff; }
+  .builder-section--particions { --section-accent: #0f766e; --section-tint: #f4fbfa; }
+  .builder-section--puntuacio { --section-accent: #b45309; --section-tint: #fff9f1; }
+  .builder-section--desempat { --section-accent: #7c3aed; --section-tint: #faf7ff; }
+  .builder-section--filtres { --section-accent: #c2410c; --section-tint: #fff7f2; }
+  .builder-section--presentacio { --section-accent: #1d4ed8; --section-tint: #f5f8ff; }
+  .builder-section__header {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.1rem 0.95rem 1.25rem;
+    background: linear-gradient(180deg, var(--section-tint) 0%, #ffffff 100%);
+    border-bottom: 1px solid var(--builder-border);
+  }
+  .builder-section__header::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 5px;
+    background: var(--section-accent);
+  }
+  .builder-section__eyebrow {
+    display: inline-flex;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--section-accent);
+    margin-bottom: 0.25rem;
+  }
+  .builder-section__title {
+    margin: 0;
+    font-size: 1.08rem;
+    font-weight: 700;
+    color: #0f172a;
+  }
+  .builder-section__desc {
+    margin: 0.3rem 0 0;
+    color: var(--builder-muted);
+    font-size: 0.9rem;
+    line-height: 1.45;
+  }
+  .builder-section__body {
+    padding: 1rem 1.1rem 1.15rem;
+  }
+  .builder-section__stack {
+    display: flex;
+    flex-direction: column;
+    gap: 0.95rem;
+  }
+  .builder-subsection {
+    border: 1px solid var(--builder-border);
+    border-radius: 14px;
+    background: #fff;
+    padding: 0.95rem 1rem;
+  }
+  .builder-subsection--muted {
+    background: var(--builder-subtle);
+  }
+  .builder-subsection--highlight {
+    border-color: #ead9b9;
+    background: #fffaf2;
+  }
+  .builder-subsection__head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.8rem;
+    margin-bottom: 0.75rem;
+  }
+  .builder-subsection__title {
+    margin: 0;
+    font-size: 0.94rem;
+    font-weight: 700;
+    color: #1e293b;
+  }
+  .builder-subsection__desc {
+    margin: 0.2rem 0 0;
+    font-size: 0.84rem;
+    color: var(--builder-muted);
+    line-height: 1.4;
+  }
+  .builder-inline-note {
+    display: inline-flex;
+    align-items: center;
+    min-height: 1.9rem;
+    padding: 0.2rem 0.65rem;
+    border-radius: 999px;
+    background: #eef2ff;
+    color: #4338ca;
+    font-size: 0.78rem;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .builder-table-shell {
+    border: 1px solid var(--builder-border);
+    border-radius: 12px;
+    background: #fff;
+    overflow: hidden;
+  }
+  .builder-table-shell .table {
+    margin-bottom: 0;
+  }
+  .builder-advanced {
+    border: 1px dashed var(--builder-border-strong);
+    border-radius: 12px;
+    background: #fcfdff;
+    padding: 0.85rem 0.95rem;
+  }
+  .builder-advanced summary {
+    cursor: pointer;
+    outline: none;
+    font-weight: 600;
+  }
+  .builder-preview-shell {
+    border: 1px solid #d8e3f6;
+    border-radius: 14px;
+    background: linear-gradient(180deg, #fbfdff 0%, #f5f9ff 100%);
+    padding: 0.8rem;
+  }
+  .builder-help-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.28rem 0.55rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.85);
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    color: #475467;
+    font-size: 0.75rem;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .builder-meta-grid .form-check {
+    min-height: 2.4rem;
+    display: flex;
+    align-items: center;
   }
   .judge-cell {
     min-width: 0;
@@ -212,8 +461,48 @@
     gap: 8px;
   }
   @media (max-width: 991.98px) {
+    .builder-editor-body {
+      padding: 0.9rem;
+    }
+    .builder-nav {
+      position: sticky;
+      top: 0.5rem;
+      z-index: 3;
+    }
     .part-custom-grid {
       grid-template-columns: 1fr;
+    }
+  }
+  @media (min-width: 992px) {
+    .builder-shell {
+      grid-template-columns: minmax(210px, 240px) minmax(0, 1fr);
+      align-items: start;
+    }
+    .builder-nav {
+      position: sticky;
+      top: 1rem;
+    }
+    .builder-nav-links {
+      display: flex;
+      flex-direction: column;
+      overflow: visible;
+      padding-bottom: 0;
+    }
+    .builder-nav-link {
+      width: 100%;
+      border-radius: 14px;
+      min-width: 0;
+    }
+  }
+  @media (max-width: 767.98px) {
+    .builder-section__header,
+    .builder-section__body,
+    .builder-subsection {
+      padding-left: 0.9rem;
+      padding-right: 0.9rem;
+    }
+    .builder-subsection__head {
+      flex-direction: column;
     }
   }
 
@@ -223,17 +512,21 @@
   <div class="card-surface">
   <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
     <div>
-      <h3 class="mb-0">Classificacions</h3>
-      <div class="text-muted small">{{ competicio.nom }}</div>
+      <h3 class="mb-0">{{ builder_title|default:"Classificacions" }}</h3>
+      <div class="text-muted small">{% if builder_subtitle %}{{ builder_subtitle }}{% elif competicio %}{{ competicio.nom }}{% endif %}</div>
     </div>
     <div class="d-flex flex-wrap justify-content-end gap-2">
-      <a class="btn btn-sm btn-outline-secondary" href="{% url 'trampoli_config' competicio.id %}">Configuració</a>
+      <a class="btn btn-sm btn-outline-secondary" href="{{ builder_home_url|default:'#' }}">{{ builder_home_label|default:'Configuració' }}</a>
+      {% if global_templates_url %}
+        <a class="btn btn-sm btn-outline-secondary" href="{{ global_templates_url }}">Plantilles globals</a>
+      {% endif %}
       <button type="button" class="btn btn-sm btn-outline-primary" id="btnAdd">+ Afegir</button>
       <button type="button" class="btn btn-sm btn-primary" id="btnSave">Guardar</button>
       <button type="button" class="btn btn-sm btn-outline-danger" id="btnDelete">Eliminar</button>
     </div>
   </div>
 
+  {% if builder_enable_template_library|default:True %}
   <div class="d-flex align-items-center flex-wrap gap-2 mb-3">
     <select id="templateSelect" class="form-control form-control-sm" style="max-width: 360px;">
       <option value="">Les meves plantilles...</option>
@@ -245,9 +538,10 @@
       <button type="button" class="btn btn-sm btn-outline-primary" id="btnTemplateSave">Desar com plantilla</button>
     {% endif %}
   </div>
+  {% endif %}
 
     <div id="saveMsg" class="alert alert-success py-2 px-3 mb-2" style="display:none;">
-    ✔️ Guardat correctament
+    Guardat correctament
   </div>
   <div class="row">
     <div class="col-12 col-lg-4 mb-3">
@@ -257,30 +551,69 @@
       </div>
 
       <div class="small text-muted mt-2">
-        💡 Tip: crea una classificació per “General”, una per “Categoria”, etc.
+        Tip: crea una classificació per "General", una per "Categoria", etc.
       </div>
     </div>
 
     <div class="col-12 col-lg-8">
       <div id="editorEmpty" class="card">
         <div class="card-body text-muted">
-          Selecciona una configuració a l’esquerra.
+          Selecciona una configuració a l'esquerra.
         </div>
       </div>
 
       <div id="editorBody" class="card" style="display:none;">
-        <div class="card-body">
+        <div class="card-body builder-editor-body">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <div class="small text-muted">
+              Manual contextual del builder amb exemples i advertiments d'ús.
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-info classif-help-trigger" data-help-key="global_overview" aria-label="Obrir manual del builder de classificacions">Ajuda</button>
+          </div>
+          <div class="builder-shell">
+            <aside class="builder-nav" aria-label="Navegació interna del builder">
+              <div class="builder-nav-card">
+                <div class="builder-nav-eyebrow">Editor</div>
+                <div class="builder-nav-title">Blocs de configuració</div>
+                <div class="builder-nav-links">
+                  <a class="builder-nav-link" data-builder-nav-link href="#section-meta"><span class="builder-nav-index">01</span><span>Metadades</span></a>
+                  <a class="builder-nav-link" data-builder-nav-link href="#section-particions"><span class="builder-nav-index">02</span><span>Particions</span></a>
+                  <a class="builder-nav-link" data-builder-nav-link href="#section-puntuacio"><span class="builder-nav-index">03</span><span>Puntuació</span></a>
+                  <a class="builder-nav-link" data-builder-nav-link href="#section-desempat"><span class="builder-nav-index">04</span><span>Desempat</span></a>
+                  <a class="builder-nav-link" data-builder-nav-link href="#section-filtres"><span class="builder-nav-index">05</span><span>Filtres</span></a>
+                  <a class="builder-nav-link" data-builder-nav-link href="#section-presentacio"><span class="builder-nav-index">06</span><span>Presentació</span></a>
+                </div>
+              </div>
+            </aside>
+
+            <div class="builder-main">
+              <section id="section-meta" class="builder-section builder-section--meta" data-builder-section>
+                <div class="builder-section__header">
+                  <div>
+                    <div class="builder-section__eyebrow">Base</div>
+                    <h4 class="builder-section__title">Metadades <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="meta_overview" aria-label="Ajuda metadades">?</button></h4>
+                    <p class="builder-section__desc">Nom, tipus i estat general de la classificació abans d'entrar en la lògica.</p>
+                  </div>
+                  <div class="builder-help-badge">Primer pas</div>
+                </div>
+                <div class="builder-section__body">
+                  <div class="builder-subsection builder-subsection--muted">
 
           <div class="row">
-            <div class="col-12 col-md-7 mb-3">
+            <div class="col-12 col-md-6 mb-3">
               <label class="font-weight-bold">Nom</label>
               <input class="form-control" id="fNom" type="text">
             </div>
+            {% if is_global_builder %}
+            <div class="col-12 col-md-3 mb-3">
+              <label class="font-weight-bold">Slug</label>
+              <input class="form-control" id="fSlug" type="text">
+            </div>
+            {% endif %}
             <div class="col-6 col-md-3 mb-3">
-              <label class="font-weight-bold">Tipus</label>
+              <label class="font-weight-bold">Tipus <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="field_tipus" aria-label="Ajuda tipus">?</button></label>
               <select class="form-control" id="fTipus">
                 <option value="individual">Individual</option>
-                <option value="entitat">Per entitat</option>
                 <option value="equips">Equips</option>
               </select>
             </div>
@@ -293,36 +626,54 @@
             </div>
           </div>
 
-          <hr class="my-2">
+                  </div>
+                </div>
+              </section>
 
-          <div class="font-weight-bold mb-2">Particions</div>
-          <div class="text-muted small mb-2">
-            Divideix el resultat final (ex: per categoria/subcategoria). No és un filtre.
-          </div>
+              <section id="section-particions" class="builder-section builder-section--particions" data-builder-section>
+                <div class="builder-section__header">
+                  <div>
+                    <div class="builder-section__eyebrow">Estructura</div>
+                    <h4 class="builder-section__title">Particions <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="particions_overview" aria-label="Ajuda particions">?</button></h4>
+                    <p class="builder-section__desc">Divideixen el resultat final en blocs visibles. No són un filtre d'entrada.</p>
+                  </div>
+                  <div class="builder-help-badge">Jerarquia</div>
+                </div>
+                <div class="builder-section__body">
+                  <div class="builder-section__stack">
+                    <div class="builder-subsection">
+                      <div class="builder-subsection__head">
+                        <div>
+                          <p class="builder-subsection__title">Camps de partició</p>
+                          <p class="builder-subsection__desc">Selecciona i ordena els camps que separen la classificació en subgrups.</p>
+                        </div>
+                      </div>
 
           <div class="border rounded p-2 mb-2" id="particionsFieldsBox">
-            <div class="small text-muted">Sense camps de particio disponibles.</div>
+            <div class="small text-muted">Sense camps de partició disponibles.</div>
           </div>
           <div class="border rounded p-2 mb-2" id="particionsCustomBox">
-            <div class="small text-muted">Selecciona almenys un camp de particio per configurar grups custom.</div>
+            <div class="small text-muted">Selecciona almenys un camp de partició per configurar grups custom.</div>
           </div>
 
-          <div id="equipCfgBox" class="mb-3" style="display:none;">
-            <hr class="my-2">
-            <div class="font-weight-bold mb-2">Configuracio equips</div>
-            <div class="text-muted small mb-2">
-              Defineix particions manuals i/o per edat maxima de l'equip.
+          <div id="equipCfgBox" class="builder-subsection builder-subsection--muted" style="display:none;">
+            <div class="builder-subsection__head">
+              <div>
+                <p class="builder-subsection__title">Configuració d'equips <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="equips_overview" aria-label="Ajuda configuració d'equips">?</button></p>
+                <p class="builder-subsection__desc">Particions manuals i per edat màxima quan la classificació treballa per equips.</p>
+              </div>
+              <div class="builder-inline-note">Només equips</div>
             </div>
 
             <div class="form-check mb-2">
               <input class="form-check-input" type="checkbox" id="eqIncludeSenseEquip">
-              <label class="form-check-label" for="eqIncludeSenseEquip">Incloure participants sense equip</label>
+              <label class="form-check-label" for="eqIncludeSenseEquip">Incloure participants sense equip <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="eq_include_sense_equip" aria-label="Ajuda incloure participants sense equip">?</button></label>
             </div>
 
             <div class="border rounded p-2 mb-2">
               <div class="d-flex justify-content-between align-items-center mb-2">
-                <label class="m-0 small text-muted">Particions manuals</label>
-                <button type="button" class="btn btn-sm btn-outline-primary" id="btnEqManualAdd">+ Particio</button>
+                <label class="m-0 small text-muted">Particions manuals <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="eq_manual_particions" aria-label="Ajuda particions manuals d'equips">?</button></label>
+                <button type="button" class="btn btn-sm btn-outline-primary" id="btnEqManualAdd">+ Partició</button>
               </div>
               <div id="eqManualRows"></div>
             </div>
@@ -330,7 +681,7 @@
             <div class="border rounded p-2">
               <div class="form-check mb-2">
                 <input class="form-check-input" type="checkbox" id="eqAgeActiva">
-                <label class="form-check-label" for="eqAgeActiva">Particio per edat maxima d'equip</label>
+                <label class="form-check-label" for="eqAgeActiva">Partició per edat màxima d'equip <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="eq_age_particio" aria-label="Ajuda partició per edat màxima">?</button></label>
               </div>
               <div class="row">
                 <div class="col-12 col-md-6 mb-2">
@@ -344,25 +695,39 @@
               </div>
               <div class="form-check">
                 <input class="form-check-input" type="checkbox" id="eqCombineManualAge">
-                <label class="form-check-label" for="eqCombineManualAge">Combinar particio manual + edat</label>
+                <label class="form-check-label" for="eqCombineManualAge">Combinar partició manual + edat</label>
               </div>
             </div>
           </div>
 
-          <hr class="my-2">
 
-          <div class="font-weight-bold mb-2">Aparells i camps</div>
-          <div class="text-muted small mb-2">
-            1) Selecciona els aparells. 2) Per cada aparell, indica els <strong>codes</strong> que vols sumar/mitjanar/...
-          </div>
-          <div class="alert alert-warning py-2 px-3 small mb-2">
-            Per al càlcul de <strong>Punts</strong>, els camps d'entrada només es tracten com a escalar si són
-            escalar o matriu <strong>1x1</strong>. Matrius més grans no són puntuables directament.
-          </div>
+              </section>
+
+              <section id="section-puntuacio" class="builder-section builder-section--puntuacio" data-builder-section>
+                <div class="builder-section__header">
+                  <div>
+                    <div class="builder-section__eyebrow">Lògica</div>
+                    <h4 class="builder-section__title">Puntuació <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="puntuacio_overview" aria-label="Ajuda puntuació">?</button></h4>
+                    <p class="builder-section__desc">Tria aparells, camps, exercicis i agregacions. Aquest bloc defineix com es calcula el resultat numèric.</p>
+                  </div>
+                  <div class="builder-help-badge">Bloc central</div>
+                </div>
+                <div class="builder-section__body">
+                  <div class="builder-section__stack">
+                    <div class="builder-subsection">
+                      <div class="builder-subsection__head">
+                        <div>
+                          <p class="builder-subsection__title">Aparells inclosos i camps <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="apps_selected" aria-label="Ajuda aparells inclosos i camps">?</button></p>
+                          <p class="builder-subsection__desc">Selecciona els aparells i defineix els camps que entren al càlcul.</p>
+                        </div>
+                      </div>
+                      <div class="alert alert-warning py-2 px-3 small mb-3">
+                        Per al càlcul de <strong>Punts</strong>, els camps d'entrada només es tracten com a escalar si són escalar o matriu <strong>1x1</strong>. Matrius més grans no són puntuables directament.
+                      </div>
 
           <div class="row">
             <div class="col-12 mb-2">
-              <div class="small text-muted">Selecciona explicitament els aparells a incloure.</div>
+              <div class="small text-muted">Selecciona explícitament els aparells a incloure.</div>
             </div>
 
             <div class="col-12" id="apSelBox">
@@ -376,7 +741,7 @@
 
           <div class="row">
             <div class="col-12 col-md-4 mb-3">
-              <label class="font-weight-bold">Agregació camps (dins exercici)</label>
+              <label class="font-weight-bold">Agregació camps (dins exercici) <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="agregacio_camps" aria-label="Ajuda agregació de camps">?</button></label>
               <select class="form-control" id="sAggCamps">
                 <option value="sum">Suma</option>
                 <option value="avg">Mitjana</option>
@@ -384,16 +749,17 @@
                 <option value="max">Màxim</option>
                 <option value="min">Mínim</option>
               </select>
-              <div class="small text-muted mt-1">Quan selecciones diversos camps d’un mateix exercici.</div>
+              <div class="small text-muted mt-1">Quan selecciones diversos camps d'un mateix exercici.</div>
             </div>
 
             <div class="col-12 col-md-4 mb-3">
-              <label class="font-weight-bold">Selecció exercicis</label>
+              <label class="font-weight-bold">Selecció exercicis <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="seleccio_exercicis" aria-label="Ajuda selecció d'exercicis">?</button></label>
               <select class="form-control mb-2" id="sModeSeleccioExercicis">
                 <option value="per_aparell_global">Per aparell (criteri global)</option>
                 <option value="per_aparell_override">Per aparell (override per aparell)</option>
                 <option value="global_pool">Sac global (tots els aparells)</option>
               </select>
+              <label class="small text-muted mb-1">Mode d'exercicis <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="mode_exercicis" aria-label="Ajuda mode d'exercicis">?</button></label>
               <select class="form-control" id="sExercicisMode">
                 <option value="tots">Tots</option>
                 <option value="millor_1">Millor 1</option>
@@ -401,25 +767,25 @@
                 <option value="pitjor_1">Pitjor 1</option>
                 <option value="pitjor_n">Pitjors N</option>
                 <option value="primer">Primer existent</option>
-                <option value="ultim">Ultim existent</option>
+                <option value="ultim">Últim existent</option>
                 <option value="index">Exercici #</option>
                 <option value="llista">Exercicis (llista)</option>
               </select>
               <div class="row mt-2">
                 <div class="col-4" id="exBestNBox">
-                  <label class="small text-muted">N (si Millors/Pitjors N)</label>
+                  <label class="small text-muted">N (si Millors/Pitjors N) <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="exercise_mode_details" aria-label="Ajuda opcions avançades dels exercicis">?</button></label>
                   <input class="form-control" id="iExBestN" type="number" min="1" value="1">
                 </div>
                 <div class="col-4" id="exIndexBox" style="display:none;">
-                  <label class="small text-muted">Index (si Exercici #)</label>
+                  <label class="small text-muted">Índex (si Exercici #) <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="exercise_mode_details" aria-label="Ajuda índex d'exercici">?</button></label>
                   <input class="form-control" id="iExIndex" type="number" min="1" value="1">
                 </div>
                 <div class="col-4" id="exMaxPerParticipantBox">
-                  <label class="small text-muted">Max N per participant</label>
+                  <label class="small text-muted">Max N per participant <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="exercise_mode_details" aria-label="Ajuda màxim per participant">?</button></label>
                   <input class="form-control" id="iExMaxPerParticipant" type="number" min="0" value="0">
                 </div>
                 <div class="col-12  mb-3">
-                  <label class="small text-muted">Agregació exercicis</label>
+                  <label class="small text-muted">Agregació exercicis <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="agregacio_exercicis" aria-label="Ajuda agregació d'exercicis">?</button></label>
                   <select class="form-control" id="sAggExercicis">
                     <option value="sum">Suma</option>
                     <option value="avg">Mitjana</option>
@@ -430,14 +796,14 @@
                 </div>
               </div>
               <div class="mt-2" id="exIdsBox" style="display:none;">
-                <label class="small text-muted">Llista d'indexos (si Exercicis llista)</label>
+                <label class="small text-muted">Llista d'índexs (si Exercicis llista) <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="exercise_mode_details" aria-label="Ajuda llista d'índexs">?</button></label>
                 <input class="form-control" id="tExIds" type="text" placeholder="1,3,4">
               </div>
               <div class="small text-muted mt-1" id="exModeHint"></div>
             </div>
 
             <div class="col-12 col-md-4 mb-3">
-              <label class="font-weight-bold">Agregació entre aparells</label>
+              <label class="font-weight-bold">Agregació entre aparells <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="agregacio_aparells" aria-label="Ajuda agregació entre aparells">?</button></label>
               <select class="form-control" id="sAggAparells">
                 <option value="sum">Suma</option>
                 <option value="avg">Mitjana</option>
@@ -446,38 +812,94 @@
                 <option value="min">Mínim</option>
               </select>
 
-              <label class="font-weight-bold mt-2">Ordre principal</label>
+              <label class="font-weight-bold mt-2">Ordre principal <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="ordre_principal" aria-label="Ajuda ordre principal">?</button></label>
               <select class="form-control" id="sOrdre">
                 <option value="desc">Desc (més és millor)</option>
                 <option value="asc">Asc (menys és millor)</option>
               </select>
 
-              <label class="font-weight-bold mt-2">Resultat per aparell</label>
+              <label class="font-weight-bold mt-2">Resultat per aparell <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="resultat_per_aparell" aria-label="Ajuda resultat per aparell">?</button></label>
               <select class="form-control" id="sModeResultatAparells">
-                <option value="score">Score normal</option>
+                <option value="score">Puntuació normal</option>
                 <option value="victories">Victòries</option>
               </select>
               <div class="small text-muted mt-1">
-                En mode victòries, cada aparell compara participants entre si i després s’agrega el resultat entre aparells.
+                En mode victòries, cada aparell compara participants entre si i després s'agrega el resultat entre aparells.
               </div>
             </div>
           </div>
 
-          <div id="victoryTieBox" style="display:none;">
-            <hr class="my-2">
 
-            <div class="font-weight-bold mb-2">Desempat intern de comparació</div>
-            <div class="text-muted small mb-2">
-              Només s’aplica en mode <strong>Victòries</strong>. Afegeix criteris, en ordre, per resoldre empats dins de cada duel d’un mateix aparell.
-            </div>
+                    <div id="victoryConfigBox" class="builder-subsection builder-subsection--highlight" style="display:none;">
+                      <div class="builder-subsection__head">
+                        <div>
+                          <p class="builder-subsection__title">Configuració de victòries <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="victories_overview" aria-label="Ajuda configuració de victòries">?</button></p>
+                          <p class="builder-subsection__desc">Només s'aplica en mode <strong>Victòries</strong>. Defineix si els duels es calculen sobre camps o exercicis agregats o separats.</p>
+                        </div>
+                        <div class="builder-inline-note">Només Victòries</div>
+                      </div>
+                      <div class="row">
+                        <div class="col-12 col-md-6 mb-3">
+                          <label class="font-weight-bold">Càlcul sobre camps <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="victory_mode_camps" aria-label="Ajuda càlcul sobre camps">?</button></label>
+                          <select class="form-control" id="sVictoryModeCamps">
+                            <option value="agregat">Agregant camps</option>
+                            <option value="separat">Per camps separats</option>
+                          </select>
+                        </div>
+                        <div class="col-12 col-md-6 mb-3">
+                          <label class="font-weight-bold">Càlcul sobre exercicis <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="victory_mode_exercicis" aria-label="Ajuda càlcul sobre exercicis">?</button></label>
+                          <select class="form-control" id="sVictoryModeExercicis">
+                            <option value="agregat">Agregant exercicis</option>
+                            <option value="separat">Per exercicis separats</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div class="row">
+                        <div class="col-12 col-md-6 mb-3" id="victoryFieldSelectionModeWrap" style="display:none;">
+                          <label class="font-weight-bold">Selecció d'exercicis amb camps separats <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="victory_field_selection" aria-label="Ajuda selecció d'exercicis amb camps separats">?</button></label>
+                          <select class="form-control" id="sVictoryFieldSelectionMode">
+                            <option value="per_camp">Selecció independent per camp</option>
+                            <option value="global">Selecció global agregada</option>
+                          </select>
+                        </div>
+                        <div class="col-12 col-md-6 mb-3" id="victoryAggCampsWrap" style="display:none;">
+                          <label class="font-weight-bold">Agregació de victòries entre camps <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="victory_agg_camps" aria-label="Ajuda agregació de victòries entre camps">?</button></label>
+                          <select class="form-control" id="sVictoryAggCamps">
+                            <option value="sum">Suma</option>
+                            <option value="avg">Mitjana</option>
+                            <option value="median">Mediana</option>
+                            <option value="max">Màxim</option>
+                            <option value="min">Mínim</option>
+                          </select>
+                        </div>
+                        <div class="col-12 col-md-6 mb-3" id="victoryAggExercicisWrap" style="display:none;">
+                          <label class="font-weight-bold">Agregació de victòries entre exercicis <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="victory_agg_exercicis" aria-label="Ajuda agregació de victòries entre exercicis">?</button></label>
+                          <select class="form-control" id="sVictoryAggExercicis">
+                            <option value="sum">Suma</option>
+                            <option value="avg">Mitjana</option>
+                            <option value="median">Mediana</option>
+                            <option value="max">Màxim</option>
+                            <option value="min">Mínim</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
 
-            <div class="table-responsive mb-2">
+                    <div id="victoryTieBox" class="builder-subsection builder-subsection--muted" style="display:none;">
+                      <div class="builder-subsection__head">
+                        <div>
+                          <p class="builder-subsection__title">Desempat intern de comparació <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="victory_internal_tie" aria-label="Ajuda desempat intern de victòries">?</button></p>
+                          <p class="builder-subsection__desc">Només s'aplica en mode <strong>Victòries</strong>. Resol empats dins de cada duel d'un mateix aparell.</p>
+                        </div>
+                        <div class="builder-inline-note">Depèn de Victòries</div>
+                      </div>
+            <div class="builder-table-shell table-responsive mb-2">
               <table class="table table-sm mb-0">
                 <thead>
                   <tr>
-                    <th style="width:30%;">Camp</th>
-                    <th style="width:50%;">Exercicis</th>
-                    <th style="width:10%;">Ordre</th>
+                    <th style="width:30%;">Camp <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="victory_internal_tie" aria-label="Ajuda camp de desempat intern">?</button></th>
+                    <th style="width:50%;">Exercicis <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="victory_internal_tie" aria-label="Ajuda exercicis de desempat intern">?</button></th>
+                    <th style="width:10%;">Ordre <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="victory_internal_tie" aria-label="Ajuda ordre de desempat intern">?</button></th>
                     <th style="width:10%;" class="text-right">Accions</th>
                   </tr>
                 </thead>
@@ -488,26 +910,39 @@
             <button type="button" class="btn btn-sm btn-outline-primary mb-3" id="btnVictoryTieAdd">+ Afegir criteri</button>
           </div>
 
-          <hr class="my-2">
 
-          <div class="font-weight-bold mb-2">Desempat</div>
-          <div class="text-muted small mb-2">
-            Afegeix criteris en ordre. Per cada criteri pots definir:
-              <strong>Aparells</strong> (hereta/tots/seleccionar),
-              <strong>Camp(s)</strong> (multi),
-              i <strong>Exercicis</strong> (hereta/tots/millor_n/pitjor_n/primer/ultim/index/llista).
-            <br>Camp = code (ex: <code>execucio_total</code>, <code>E_total</code>, <code>total</code>...).
-          </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
 
-          <div class="table-responsive mb-2">
+              <section id="section-desempat" class="builder-section builder-section--desempat" data-builder-section>
+                <div class="builder-section__header">
+                  <div>
+                    <div class="builder-section__eyebrow">Ordre</div>
+                    <h4 class="builder-section__title">Desempat <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="desempat_overview" aria-label="Ajuda desempat">?</button></h4>
+                    <p class="builder-section__desc">Criteris addicionals per resoldre empats a la classificació final, en l'ordre exacte en què s'han d'aplicar.</p>
+                  </div>
+                  <div class="builder-help-badge">Després de punts</div>
+                </div>
+                <div class="builder-section__body">
+                  <div class="builder-section__stack">
+                    <div class="builder-subsection">
+                      <div class="builder-subsection__head">
+                        <div>
+                          <p class="builder-subsection__title">Criteris de desempat</p>
+                          <p class="builder-subsection__desc">Cada criteri pot definir <strong>Aparells</strong>, <strong>Camp(s)</strong> i <strong>Exercicis</strong> en l'ordre exacte d'aplicació.</p>
+                        </div>
+                      </div>
+          <div class="builder-table-shell table-responsive mb-2">
             <table class="table table-sm mb-0">
               <thead>
                 <tr>
-                  <th style="width:22%;">Aparells</th>
-                  <th style="width:22%;">Camp</th>
-                  <th style="width:24%;">Exercicis</th>
-                  <th id="tieParticipantsHead" style="width:20%;">Participants</th>
-                  <th style="width:12%;">Ordre</th>
+                  <th style="width:22%;">Aparells <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="desempat_aparells" aria-label="Ajuda aparells de desempat">?</button></th>
+                  <th style="width:22%;">Camp <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="desempat_camps" aria-label="Ajuda camps de desempat">?</button></th>
+                  <th style="width:24%;">Exercicis <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="desempat_exercicis" aria-label="Ajuda exercicis de desempat">?</button></th>
+                  <th id="tieParticipantsHead" style="width:20%;">Participants <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="desempat_participants" aria-label="Ajuda participants de desempat">?</button></th>
+                  <th style="width:12%;">Ordre <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="desempat_ordre" aria-label="Ajuda ordre de desempat">?</button></th>
                   <th style="width:10%;" class="text-right">Accions</th>
                 </tr>
               </thead>
@@ -517,7 +952,7 @@
 
           <button type="button" class="btn btn-sm btn-outline-primary mb-3" id="btnTieAdd">+ Afegir criteri</button>
 
-          <details class="mb-3">
+          <details class="builder-advanced">
             <summary class="small text-muted">Opcions avançades (JSON)</summary>
             <div class="mt-2">
               <textarea class="form-control" id="tDesempat" rows="3"></textarea>
@@ -527,91 +962,149 @@
             </div>
           </details>
 
-          <hr class="my-2">
 
-          <div class="font-weight-bold mb-2">Filtres</div>
-          <div class="text-muted small mb-2">Decideixen qui entra a la classificació.</div>
-          <div class="row">
-            <div class="col-12 col-md-6 mb-3">
-              <label class="font-weight-bold">Entitats</label>
-              <select class="form-control" id="fEntitats" multiple>
-                {% for o in filter_choices.entitats %}
-                  <option value="{{ o.value }}">{{ o.label }}</option>
-                {% endfor %}
-              </select>
-            </div>
-            <div class="col-12 col-md-6 mb-3">
-              <label class="font-weight-bold">Categories</label>
-              <select class="form-control" id="fCategories" multiple>
-                {% for o in filter_choices.categories %}
-                  <option value="{{ o.value }}">{{ o.label }}</option>
-                {% endfor %}
-              </select>
-            </div>
-            <div class="col-12 col-md-6 mb-3">
-              <label class="font-weight-bold">Subcategories</label>
-              <select class="form-control" id="fSubcategories" multiple>
-                {% for o in filter_choices.subcategories %}
-                  <option value="{{ o.value }}">{{ o.label }}</option>
-                {% endfor %}
-              </select>
-            </div>
-            <div class="col-12 col-md-6 mb-3">
-              <label class="font-weight-bold">Grups</label>
-              <select class="form-control" id="fGrups" multiple>
-                {% for o in filter_choices.grups %}
-                  <option value="{{ o.value }}">{{ o.label }}</option>
-                {% endfor %}
-              </select>
-            </div>
-          </div>
+                  </div>
+                </div>
+              </section>
 
-          <details class="mb-3">
-            <summary class="small text-muted">Filtres avançats (JSON)</summary>
-            <div class="mt-2">
-              <textarea class="form-control" id="tFiltres" rows="3"></textarea>
-              <div class="form-text text-muted">
-                Exemple: {"categories_in":[1,2],"grups_in":["A"]}
-              </div>
-            </div>
-          </details>
+              <section id="section-filtres" class="builder-section builder-section--filtres" data-builder-section>
+                <div class="builder-section__header">
+                  <div>
+                    <div class="builder-section__eyebrow">Entrada</div>
+                    <h4 class="builder-section__title">Filtres <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="filtres_overview" aria-label="Ajuda filtres">?</button></h4>
+                    <p class="builder-section__desc">Decideixen qui entra a la classificació abans de calcular resultats o mostrar particions.</p>
+                  </div>
+                  <div class="builder-help-badge">Abans del càlcul</div>
+                </div>
+                <div class="builder-section__body">
+                  <div class="builder-section__stack">
+                    <div class="builder-subsection">
+                      <div class="builder-subsection__head">
+                        <div>
+                          <p class="builder-subsection__title">Filtres simples</p>
+                          <p class="builder-subsection__desc">Combina entitats, categories, subcategories i grups per limitar la mostra de participants.</p>
+                        </div>
+                      </div>
+                      <div class="row">
+                        <div class="col-12 col-md-6 mb-3">
+                          <label class="font-weight-bold">Entitats</label>
+                          <select class="form-control" id="fEntitats" multiple>
+                            {% for o in filter_choices.entitats %}
+                              <option value="{{ o.value }}">{{ o.label }}</option>
+                            {% endfor %}
+                          </select>
+                        </div>
+                        <div class="col-12 col-md-6 mb-3">
+                          <label class="font-weight-bold">Categories</label>
+                          <select class="form-control" id="fCategories" multiple>
+                            {% for o in filter_choices.categories %}
+                              <option value="{{ o.value }}">{{ o.label }}</option>
+                            {% endfor %}
+                          </select>
+                        </div>
+                        <div class="col-12 col-md-6 mb-3">
+                          <label class="font-weight-bold">Subcategories</label>
+                          <select class="form-control" id="fSubcategories" multiple>
+                            {% for o in filter_choices.subcategories %}
+                              <option value="{{ o.value }}">{{ o.label }}</option>
+                            {% endfor %}
+                          </select>
+                        </div>
+                        <div class="col-12 col-md-6 mb-3">
+                          <label class="font-weight-bold">Grups</label>
+                          <select class="form-control" id="fGrups" multiple>
+                            {% for o in filter_choices.grups %}
+                              <option value="{{ o.value }}">{{ o.label }}</option>
+                            {% endfor %}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
 
-          <hr class="my-2">
+                    <details class="builder-advanced">
+                      <summary class="small text-muted">Filtres avançats (JSON)</summary>
+                      <div class="mt-2">
+                        <textarea class="form-control" id="tFiltres" rows="3"></textarea>
+                        <div class="form-text text-muted">
+                          Exemple: {"categories_in":[1,2],"grups_in":["A"]}
+                        </div>
+                      </div>
+                    </details>
+                  </div>
+                </div>
+              </section>
 
+              <section id="section-presentacio" class="builder-section builder-section--presentacio" data-builder-section>
+                <div class="builder-section__header">
+                  <div>
+                    <div class="builder-section__eyebrow">Sortida</div>
+                    <h4 class="builder-section__title">Presentació <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="presentacio_overview" aria-label="Ajuda presentació">?</button></h4>
+                    <p class="builder-section__desc">Configura el top visible, els empats, les columnes i la previsualització final de la classificació.</p>
+                  </div>
+                  <div class="builder-help-badge">Visualització</div>
+                </div>
+                <div class="builder-section__body">
+                  <div class="builder-section__stack">
+                    <div class="builder-subsection builder-subsection--muted">
+                      <div class="builder-subsection__head">
+                        <div>
+                          <p class="builder-subsection__title">Regles de sortida</p>
+                          <p class="builder-subsection__desc">Ajustos globals sobre quants resultats es mostren i com es tracten els empats.</p>
+                        </div>
+                      </div>
           <div class="row">
             <div class="col-12 col-md-4 mb-3">
-              <label class="font-weight-bold">Top N</label>
+              <label class="font-weight-bold">Top N <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="top_n" aria-label="Ajuda top N">?</button></label>
               <input class="form-control" id="iTopN" type="number" min="0" value="0">
             </div>
             <div class="col-12 col-md-4 mb-3">
-              <label class="font-weight-bold d-block">Mostrar empats</label>
+              <label class="font-weight-bold d-block">Mostrar empats <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="mostrar_empats" aria-label="Ajuda mostrar empats">?</button></label>
               <div class="form-check mt-2">
                 <input class="form-check-input" type="checkbox" id="cEmpats" checked>
                 <label class="form-check-label" for="cEmpats">Sí</label>
               </div>
             </div>
+            {% if builder_can_preview|default:True %}
             <div class="col-12 col-md-4 mb-3 d-flex align-items-end justify-content-end">
-              <button type="button" class="btn btn-outline-secondary btn-sm" id="btnPreview">Previsualitzar</button>
+              <div class="d-flex align-items-center gap-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnPreview">Previsualitzar</button>
+                <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="preview_help" aria-label="Ajuda previsualització">?</button>
+              </div>
+            </div>
+            {% endif %}
+          </div>
+                    </div>
+
+                    <div class="builder-subsection">
+                      <div class="builder-subsection__head">
+                        <div>
+                          <p class="builder-subsection__title">Columnes i previsualització</p>
+                          <p class="builder-subsection__desc">Defineix les columnes que es mostraran a la live i valida la sortida amb una previsualització.</p>
+                        </div>
+                      </div>
+                      <div class="d-flex flex-wrap gap-2 mb-2">
+                        <button type="button" class="btn btn-sm btn-outline-primary" id="btnColAddBuiltin">+ Builtin</button>
+                        <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="columns_builtin" aria-label="Ajuda columnes builtin">?</button>
+                        <button type="button" class="btn btn-sm btn-outline-primary" id="btnColAddRaw">+ Camp</button>
+                        <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="columns_raw" aria-label="Ajuda columnes raw">?</button>
+                      </div>
+                      <div id="columnsBox" class="mb-3"></div>
+                      <div class="builder-preview-shell">
+                        <div class="border rounded p-2" id="previewBox">
+                          <div class="text-muted small">Fes clic a "Previsualitzar".</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <details class="builder-advanced">
+                      <summary class="small text-muted">Schema complet (JSON) <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="advanced_json" aria-label="Ajuda schema complet JSON">?</button></summary>
+                      <textarea class="form-control mt-2" id="advancedJson" rows="10"></textarea>
+                    </details>
+                  </div>
+                </div>
+              </section>
             </div>
           </div>
-          <div class="font-weight-bold mb-2">Columnes de visualitzacio</div>
-          <div class="text-muted small mb-2">
-            Defineix les columnes que es mostraran a la live i a la previsualitzacio.
-          </div>
-          <div class="d-flex flex-wrap gap-2 mb-2">
-            <button type="button" class="btn btn-sm btn-outline-primary" id="btnColAddBuiltin">+ Builtin</button>
-            <button type="button" class="btn btn-sm btn-outline-primary" id="btnColAddRaw">+ Camp</button>
-          </div>
-          <div id="columnsBox" class="mb-3"></div>
-          <div class="border rounded p-2" id="previewBox">
-            <div class="text-muted small">Fes clic a “Previsualitzar”.</div>
-          </div>
-
-          <details class="mt-3">
-            <summary class="small text-muted">Schema complet (JSON)</summary>
-            <textarea class="form-control mt-2" id="advancedJson" rows="10"></textarea>
-          </details>
-
         </div>
       </div>
     </div>
@@ -625,30 +1118,56 @@
 {{ particio_fields|json_script:"particio-fields-data-v2" }}
 {{ particio_value_choices|json_script:"particio-value-choices-data-v2" }}
 {{ aparell_field_options|json_script:"aparell-field-options-data" }}
-{{ competicio.id|default:None|json_script:"competicio-id" }}
-{{ can_manage_global_templates|json_script:"can-manage-global-templates" }}
+{% if competicio %}
+{{ competicio.id|json_script:"competicio-id" }}
+{% else %}
+{{ None|json_script:"competicio-id" }}
+{% endif %}
+{{ builder_mode|default:"competition"|json_script:"builder-mode" }}
+{{ builder_save_url|default:""|json_script:"builder-save-url" }}
+{{ builder_delete_url_pattern|default:""|json_script:"builder-delete-url-pattern" }}
+{{ builder_preview_url_pattern|default:""|json_script:"builder-preview-url-pattern" }}
+{{ builder_enable_template_library|default:True|json_script:"builder-enable-template-library" }}
+{{ builder_can_preview|default:True|json_script:"builder-can-preview" }}
+{{ builder_selected_id|default:None|json_script:"builder-selected-id" }}
+{{ builder_auto_add_new|default:False|json_script:"builder-auto-add-new" }}
+{{ can_manage_global_templates|default:False|json_script:"can-manage-global-templates" }}
 
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
 <script>
+  function parseJsonScript(id, fallbackValue) {
+    const node = document.getElementById(id);
+    if (!node) return fallbackValue;
+    try {
+      return JSON.parse(node.textContent);
+    } catch (_err) {
+      return fallbackValue;
+    }
+  }
+
   // DATA del backend (mateix patró que ara)
-  const COMPETICIO_ID = JSON.parse(document.getElementById("competicio-id").textContent);
+  const COMPETICIO_ID = parseJsonScript("competicio-id", null);
 
-  const CFGS = JSON.parse(document.getElementById("cfgs-data-v2").textContent);
-  const APARELLS = JSON.parse(document.getElementById("aparells-data-v2").textContent);
-  const EQUIPS = JSON.parse(document.getElementById("equips-data-v2").textContent);
-  const PARTICIO_FIELDS = JSON.parse(document.getElementById("particio-fields-data-v2").textContent);
-  const PARTICIO_VALUE_CHOICES = JSON.parse(document.getElementById("particio-value-choices-data-v2").textContent);
-  const APARELL_FIELD_OPTIONS = JSON.parse(
-    document.getElementById("aparell-field-options-data").textContent
-  );
-  const CAN_MANAGE_GLOBAL_TEMPLATES = JSON.parse(
-    document.getElementById("can-manage-global-templates").textContent
-  );
+  const CFGS = parseJsonScript("cfgs-data-v2", []);
+  const APARELLS = parseJsonScript("aparells-data-v2", []);
+  const EQUIPS = parseJsonScript("equips-data-v2", []);
+  const PARTICIO_FIELDS = parseJsonScript("particio-fields-data-v2", []);
+  const PARTICIO_VALUE_CHOICES = parseJsonScript("particio-value-choices-data-v2", {});
+  const APARELL_FIELD_OPTIONS = parseJsonScript("aparell-field-options-data", {});
+  const CAN_MANAGE_GLOBAL_TEMPLATES = parseJsonScript("can-manage-global-templates", false);
+  const BUILDER_MODE = parseJsonScript("builder-mode", "competition");
+  const SAVE_URL = parseJsonScript("builder-save-url", "");
+  const DELETE_URL_PATTERN = parseJsonScript("builder-delete-url-pattern", "");
+  const PREVIEW_URL_PATTERN = parseJsonScript("builder-preview-url-pattern", "");
+  const TEMPLATE_LIBRARY_ENABLED = parseJsonScript("builder-enable-template-library", true);
+  const CAN_PREVIEW = parseJsonScript("builder-can-preview", true);
+  const INITIAL_SELECTED_ID = parseJsonScript("builder-selected-id", null);
+  const AUTO_ADD_NEW = parseJsonScript("builder-auto-add-new", false);
 
-  const TEMPLATE_LIST_URL = "{% url 'classificacio_template_list' competicio.id %}";
-  const TEMPLATE_SAVE_URL = "{% url 'classificacio_template_save' competicio.id %}";
-  const TEMPLATE_VALIDATE_URL = "{% url 'classificacio_template_validate' competicio.id %}";
-  const TEMPLATE_APPLY_URL = "{% url 'classificacio_template_apply' competicio.id %}";
+  const TEMPLATE_LIST_URL = "{% if competicio %}{% url 'classificacio_template_list' competicio.id %}{% endif %}";
+  const TEMPLATE_SAVE_URL = "{% if competicio %}{% url 'classificacio_template_save' competicio.id %}{% endif %}";
+  const TEMPLATE_VALIDATE_URL = "{% if competicio %}{% url 'classificacio_template_validate' competicio.id %}{% endif %}";
+  const TEMPLATE_APPLY_URL = "{% if competicio %}{% url 'classificacio_template_apply' competicio.id %}{% endif %}";
 
   // DEFAULT schema coherent amb backend nou
   const DEFAULT_SCHEMA = {
@@ -671,6 +1190,11 @@
         punts_victoria: 1,
         punts_empat: 0.5,
         sense_nota_mode: "skip",
+        mode_camps: "agregat",
+        mode_exercicis: "agregat",
+        mode_seleccio_exercicis_camps_separats: "per_camp",
+        agregacio_victories_camps: "sum",
+        agregacio_victories_exercicis: "sum",
         desempat_comparacio: [],
       },
       ordre: "desc",
@@ -717,6 +1241,7 @@
     btnColAddRaw: document.getElementById("btnColAddRaw"),
 
     fNom: document.getElementById("fNom"),
+    fSlug: document.getElementById("fSlug"),
     fActiva: document.getElementById("fActiva"),
     fTipus: document.getElementById("fTipus"),
     equipCfgBox: document.getElementById("equipCfgBox"),
@@ -753,6 +1278,15 @@
     sModeResultatAparells: document.getElementById("sModeResultatAparells"),
     sOrdre: document.getElementById("sOrdre"),
 
+    victoryConfigBox: document.getElementById("victoryConfigBox"),
+    sVictoryModeCamps: document.getElementById("sVictoryModeCamps"),
+    sVictoryModeExercicis: document.getElementById("sVictoryModeExercicis"),
+    sVictoryFieldSelectionMode: document.getElementById("sVictoryFieldSelectionMode"),
+    sVictoryAggCamps: document.getElementById("sVictoryAggCamps"),
+    sVictoryAggExercicis: document.getElementById("sVictoryAggExercicis"),
+    victoryFieldSelectionModeWrap: document.getElementById("victoryFieldSelectionModeWrap"),
+    victoryAggCampsWrap: document.getElementById("victoryAggCampsWrap"),
+    victoryAggExercicisWrap: document.getElementById("victoryAggExercicisWrap"),
     victoryTieBox: document.getElementById("victoryTieBox"),
     victoryTieBody: document.getElementById("victoryTieBody"),
     btnVictoryTieAdd: document.getElementById("btnVictoryTieAdd"),
@@ -782,6 +1316,42 @@
     desempat: false,
     filtres: false,
   };
+  let builderNavBound = false;
+
+  function setActiveBuilderNav(sectionId) {
+    document.querySelectorAll("[data-builder-nav-link]").forEach((link) => {
+      const target = String(link.getAttribute("href") || "").replace(/^#/, "");
+      link.classList.toggle("is-active", !!sectionId && target === sectionId);
+    });
+  }
+
+  function updateBuilderNavFromScroll() {
+    const sections = Array.from(document.querySelectorAll("[data-builder-section]"));
+    if (!sections.length) return;
+
+    const threshold = window.scrollY + 180;
+    let activeId = sections[0].id;
+    sections.forEach((section) => {
+      if (section.offsetTop <= threshold) activeId = section.id;
+    });
+    setActiveBuilderNav(activeId);
+  }
+
+  function initBuilderSectionNav() {
+    if (builderNavBound) return;
+    builderNavBound = true;
+
+    document.querySelectorAll("[data-builder-nav-link]").forEach((link) => {
+      link.addEventListener("click", () => {
+        const targetId = String(link.getAttribute("href") || "").replace(/^#/, "");
+        setActiveBuilderNav(targetId);
+      });
+    });
+
+    window.addEventListener("scroll", updateBuilderNavFromScroll, { passive: true });
+    window.addEventListener("resize", updateBuilderNavFromScroll);
+    updateBuilderNavFromScroll();
+  }
 
   function getCookie(name) {
     const v = document.cookie.split(";").map(x => x.trim());
@@ -804,6 +1374,35 @@
     return state.cfgs.find(x => x.id === state.selectedId);
   }
 
+  function ensureLegacyTipusOption(value) {
+    if (!els.fTipus) return;
+    const legacyValue = "entitat";
+    let legacyOpt = els.fTipus.querySelector(`option[value="${legacyValue}"]`);
+    if (String(value || "").trim() === legacyValue) {
+      if (!legacyOpt) {
+        legacyOpt = document.createElement("option");
+        legacyOpt.value = legacyValue;
+        legacyOpt.textContent = "Per entitat (legacy)";
+        legacyOpt.hidden = true;
+        els.fTipus.appendChild(legacyOpt);
+      }
+      legacyOpt.hidden = true;
+      legacyOpt.disabled = false;
+      return;
+    }
+    if (legacyOpt) {
+      legacyOpt.remove();
+    }
+  }
+
+  function setTipusValue(value) {
+    const normalized = String(value || "individual").trim() || "individual";
+    ensureLegacyTipusOption(normalized);
+    if (els.fTipus) {
+      els.fTipus.value = normalized;
+    }
+  }
+
   function selectedTemplateId() {
     if (!els.templateSelect) return null;
     const raw = String(els.templateSelect.value || "").trim();
@@ -822,7 +1421,7 @@
       const partCount = Array.isArray(req.particions) ? req.particions.length : 0;
       const option = document.createElement("option");
       option.value = String(tpl.id);
-      option.textContent = `${tpl.nom} · ${tpl.tipus || "individual"} · Aparells: ${appsCount} · Particions: ${partCount}`;
+      option.textContent = `${tpl.nom} - ${tpl.tipus || "individual"} - Aparells: ${appsCount} - Particions: ${partCount}`;
       els.templateSelect.appendChild(option);
     });
     if (current) els.templateSelect.value = String(current);
@@ -830,6 +1429,7 @@
 
   async function loadTemplateList() {
     if (!els.templateSelect) return;
+    if (!TEMPLATE_LIST_URL) return;
     const url = CAN_MANAGE_GLOBAL_TEMPLATES ? `${TEMPLATE_LIST_URL}?all=1` : TEMPLATE_LIST_URL;
     const res = await fetch(url, { headers: { "Accept": "application/json" } });
     if (!res.ok) throw new Error(await res.text());
@@ -863,9 +1463,12 @@
       const a = document.createElement("button");
       a.type = "button";
       a.className = "list-group-item list-group-item-action " + (cfg.id===state.selectedId ? "active":"");
+      const metaLine = BUILDER_MODE === "global" && cfg.slug
+        ? `${esc(cfg.tipus||"individual")} - ${esc(cfg.slug)}`
+        : esc(cfg.tipus||"individual");
       a.innerHTML = `<div class="d-flex justify-content-between">
-        <div><div class="font-weight-bold">${esc(cfg.nom)}</div><div class="small opacity-75">${esc(cfg.tipus||"individual")}</div></div>
-        <div class="small">${cfg.activa ? "🟢" : "⚪"}</div>
+        <div><div class="font-weight-bold">${esc(cfg.nom)}</div><div class="small opacity-75">${metaLine}</div></div>
+        <div class="small">${cfg.activa ? "Activa" : "Inactiva"}</div>
       </div>`;
       a.addEventListener("click", () => selectCfg(cfg.id));
       els.list.appendChild(a);
@@ -911,7 +1514,7 @@
           const judgesLabel = judgesCount > 1 ? `, ${judgesCount} jutges` : "";
           return `
           <option value="${esc(o.code)}" ${selected.has(String(o.code)) ? "selected" : ""}>
-            ${esc(o.label)} (${esc(o.code)}) · ${esc(kindLabel)}${esc(judgesLabel)}
+            ${esc(o.label)} (${esc(o.code)}) - ${esc(kindLabel)}${esc(judgesLabel)}
           </option>
         `;
         }).join("")}
@@ -920,7 +1523,7 @@
   }
 
   function getUnionTieOptions(){
-    // unió de totes les options de tots els aparells (dedup per code)
+    // unió de totes les opcions de tots els aparells (dedup per code)
     const seen = new Set();
     const out = [];
     Object.values(APARELL_FIELD_OPTIONS || {}).forEach(list => {
@@ -967,12 +1570,12 @@
           `).join("")}
         </select>
         <select class="form-control form-control-sm" data-k="agg_camps">
-          <option value="hereta" ${agg === "hereta" ? "selected" : ""}>Agregacio camps: Hereta</option>
-          <option value="sum" ${agg === "sum" ? "selected" : ""}>Agregacio camps: Suma</option>
-          <option value="avg" ${agg === "avg" ? "selected" : ""}>Agregacio camps: Mitjana</option>
-          <option value="median" ${agg === "median" ? "selected" : ""}>Agregacio camps: Mediana</option>
-          <option value="max" ${agg === "max" ? "selected" : ""}>Agregacio camps: Maxim</option>
-          <option value="min" ${agg === "min" ? "selected" : ""}>Agregacio camps: Minim</option>
+          <option value="hereta" ${agg === "hereta" ? "selected" : ""}>Agregació camps: Hereta</option>
+          <option value="sum" ${agg === "sum" ? "selected" : ""}>Agregació camps: Suma</option>
+          <option value="avg" ${agg === "avg" ? "selected" : ""}>Agregació camps: Mitjana</option>
+          <option value="median" ${agg === "median" ? "selected" : ""}>Agregació camps: Mediana</option>
+          <option value="max" ${agg === "max" ? "selected" : ""}>Agregació camps: Màxim</option>
+          <option value="min" ${agg === "min" ? "selected" : ""}>Agregació camps: Mínim</option>
         </select>
       </div>
     `;
@@ -1008,7 +1611,7 @@
     const ids = Array.isArray(cfg.ids) ? cfg.ids.join(",") : "";
     return `
       <div class="mt-2 border-top pt-2" data-app-ex-box="${esc(compAparellId)}">
-        <label class="small text-muted mb-1">Seleccio exercicis (override)</label>
+        <label class="small text-muted mb-1">Selecció exercicis (override)</label>
         <select class="form-control form-control-sm mb-1" data-app-ex-mode data-app-id="${esc(compAparellId)}">
           <option value="tots" ${mode==="tots" ? "selected" : ""}>Tots</option>
           <option value="millor_1" ${mode==="millor_1" ? "selected" : ""}>Millor 1</option>
@@ -1016,7 +1619,7 @@
           <option value="pitjor_1" ${mode==="pitjor_1" ? "selected" : ""}>Pitjor 1</option>
           <option value="pitjor_n" ${mode==="pitjor_n" ? "selected" : ""}>Pitjors N</option>
           <option value="primer" ${mode==="primer" ? "selected" : ""}>Primer existent</option>
-          <option value="ultim" ${mode==="ultim" ? "selected" : ""}>Ultim existent</option>
+          <option value="ultim" ${mode==="ultim" ? "selected" : ""}>Últim existent</option>
           <option value="index" ${mode==="index" ? "selected" : ""}>Exercici #</option>
           <option value="llista" ${mode==="llista" ? "selected" : ""}>Exercicis (llista)</option>
         </select>
@@ -1025,7 +1628,7 @@
                type="number" min="1" value="${esc(bestN)}" placeholder="N">
         <input class="form-control form-control-sm mb-1"
                data-app-ex-index data-app-id="${esc(compAparellId)}"
-               type="number" min="1" value="${esc(index)}" placeholder="Index">
+               type="number" min="1" value="${esc(index)}" placeholder="Índex">
         <input class="form-control form-control-sm mb-1"
                data-app-ex-max-per-participant data-app-id="${esc(compAparellId)}"
                type="number" min="0" value="${esc(maxPerParticipant)}" placeholder="Max N per participant (0 = sense limit)">
@@ -1140,9 +1743,9 @@
       else if (m === "pitjor_n") txt = "Selecciona els N pitjors exercicis.";
       else if (m === "pitjor_1") txt = "Agafa el pitjor exercici.";
       else if (m === "primer") txt = "Agafa el primer exercici existent.";
-      else if (m === "ultim") txt = "Agafa l'ultim exercici existent.";
+      else if (m === "ultim") txt = "Agafa l'últim exercici existent.";
       else if (m === "index") txt = "Agafa l'exercici # indicat.";
-      else if (m === "llista") txt = "Agafa la llista d'indexos indicada.";
+      else if (m === "llista") txt = "Agafa la llista d'índexs indicada.";
     }
 
     if (modeSel === "per_aparell_override") txt += (txt ? " " : "") + "Amb overrides per aparell (criteri global ocult).";
@@ -1210,8 +1813,22 @@
   }
 
   function refreshVictoryTieVisibility() {
-    if (!els.victoryTieBox) return;
-    els.victoryTieBox.style.display = isVictoriesModeActive() ? "" : "none";
+    const active = isVictoriesModeActive();
+    if (els.victoryConfigBox) els.victoryConfigBox.style.display = active ? "" : "none";
+    if (els.victoryTieBox) els.victoryTieBox.style.display = active ? "" : "none";
+
+    const campsSeparats = active && String(els.sVictoryModeCamps?.value || "agregat").toLowerCase() === "separat";
+    const exercicisSeparats = active && String(els.sVictoryModeExercicis?.value || "agregat").toLowerCase() === "separat";
+
+    if (els.victoryFieldSelectionModeWrap) {
+      els.victoryFieldSelectionModeWrap.style.display = campsSeparats ? "" : "none";
+    }
+    if (els.victoryAggCampsWrap) {
+      els.victoryAggCampsWrap.style.display = campsSeparats ? "" : "none";
+    }
+    if (els.victoryAggExercicisWrap) {
+      els.victoryAggExercicisWrap.style.display = exercicisSeparats ? "" : "none";
+    }
   }
 
   function getParticipantsCellHTML() {
@@ -1231,8 +1848,8 @@
             <option value="sum">Suma</option>
             <option value="avg">Mitjana</option>
             <option value="median">Mediana</option>
-            <option value="max">Maxim</option>
-            <option value="min">Minim</option>
+            <option value="max">Màxim</option>
+            <option value="min">Mínim</option>
           </select>
         </div>
       </td>
@@ -1352,7 +1969,7 @@
           <option value="pitjor_1" ${mode==="pitjor_1" ? "selected" : ""}>Pitjor 1</option>
           <option value="pitjor_n" ${mode==="pitjor_n" ? "selected" : ""}>Pitjors N</option>
           <option value="primer" ${mode==="primer" ? "selected" : ""}>Primer existent</option>
-          <option value="ultim" ${mode==="ultim" ? "selected" : ""}>Ultim existent</option>
+          <option value="ultim" ${mode==="ultim" ? "selected" : ""}>Últim existent</option>
           <option value="index" ${mode==="index" ? "selected" : ""}>Exercici #</option>
           <option value="llista" ${mode==="llista" ? "selected" : ""}>Exercicis (llista)</option>
         </select>
@@ -1361,7 +1978,7 @@
                type="number" min="1" value="${esc(bestN)}" placeholder="N">
         <input class="form-control form-control-sm mb-1"
                data-k="tie_app_ex_index" data-app-id="${esc(compAparellId)}"
-               type="number" min="1" value="${esc(index)}" placeholder="Index">
+               type="number" min="1" value="${esc(index)}" placeholder="Índex">
         <input class="form-control form-control-sm mb-1"
                data-k="tie_app_ex_max_pp" data-app-id="${esc(compAparellId)}"
                type="number" min="0" value="${esc(maxPerParticipant)}" placeholder="Max N per participant (0 = sense limit)">
@@ -1622,25 +2239,25 @@
         <td>
           <div class="d-flex flex-column gap-1">
             <select class="form-control form-control-sm" data-k="ex_sel_mode">
-              <option value="hereta">Seleccio ex: Hereta (puntuacio)</option>
-              <option value="per_aparell_global">Seleccio ex: Per aparell (global)</option>
-              <option value="global_pool">Seleccio ex: Sac global</option>
+              <option value="hereta">Selecció ex: Hereta (puntuació)</option>
+              <option value="per_aparell_global">Selecció ex: Per aparell (global)</option>
+              <option value="global_pool">Selecció ex: Sac global</option>
             </select>
             <select class="form-control form-control-sm" data-k="ex_mode">
-              <option value="hereta">Hereta (puntuacio)</option>
+              <option value="hereta">Hereta (puntuació)</option>
               <option value="tots">Tots</option>
               <option value="millor_1">Millor 1</option>
               <option value="millor_n">Millors N</option>
               <option value="pitjor_1">Pitjor 1</option>
               <option value="pitjor_n">Pitjors N</option>
               <option value="primer">Primer existent</option>
-              <option value="ultim">Ultim existent</option>
+              <option value="ultim">Últim existent</option>
               <option value="index">Exercici #</option>
               <option value="llista">Exercicis (llista)</option>
             </select>
             <div class="d-flex gap-1">
               <input class="form-control form-control-sm" data-k="ex_best_n" type="number" min="1" value="1" style="display:none;" placeholder="N">
-              <input class="form-control form-control-sm" data-k="ex_index" type="number" min="1" value="1" style="display:none;" placeholder="Index">
+              <input class="form-control form-control-sm" data-k="ex_index" type="number" min="1" value="1" style="display:none;" placeholder="Índex">
             </div>
             <input class="form-control form-control-sm" data-k="ex_max_pp" type="number" min="0" value="0" style="display:none;" placeholder="Max N per participant (0 = sense limit)">
             <input class="form-control form-control-sm" data-k="ex_ids" type="text" style="display:none;" placeholder="ex: 1,3,4">
@@ -1689,9 +2306,9 @@
         else if (m === "pitjor_n") exHint.textContent = "Tria els N pitjors exercicis.";
         else if (m === "pitjor_1") exHint.textContent = "Agafa el pitjor exercici existent.";
         else if (m === "primer") exHint.textContent = "Agafa el primer exercici existent.";
-        else if (m === "ultim") exHint.textContent = "Agafa l'ultim exercici existent.";
-        else if (m === "index") exHint.textContent = "Fa servir nomes l'exercici # (1..N).";
-        else if (m === "llista") exHint.textContent = "Llista d'indexs: 1,3,4.";
+        else if (m === "ultim") exHint.textContent = "Agafa l'últim exercici existent.";
+        else if (m === "index") exHint.textContent = "Fa servir només l'exercici # (1..N).";
+        else if (m === "llista") exHint.textContent = "Llista d'índexs: 1,3,4.";
         else exHint.textContent = "";
 
         if (exHint.textContent) {
@@ -1805,7 +2422,7 @@
     els.eqManualRows.innerHTML = "";
 
     if (!data.length) {
-      els.eqManualRows.innerHTML = `<div class="small text-muted">Cap particio manual definida.</div>`;
+      els.eqManualRows.innerHTML = `<div class="small text-muted">Cap partició manual definida.</div>`;
       return;
     }
 
@@ -1977,10 +2594,10 @@
         <td>
           <div class="d-flex flex-column gap-1">
             <select class="form-control form-control-sm" data-k="ex_sel_mode">
-              <option value="hereta">Seleccio ex: Hereta (puntuacio)</option>
-              <option value="per_aparell_global">Seleccio ex: Per aparell (global)</option>
-              <option value="per_aparell_override">Seleccio ex: Per aparell (override)</option>
-              <option value="global_pool">Seleccio ex: Sac global</option>
+              <option value="hereta">Selecció ex: Hereta (puntuació)</option>
+              <option value="per_aparell_global">Selecció ex: Per aparell (global)</option>
+              <option value="per_aparell_override">Selecció ex: Per aparell (override)</option>
+              <option value="global_pool">Selecció ex: Sac global</option>
             </select>
             <select class="form-control form-control-sm" data-k="ex_mode">
               <option value="hereta">Hereta (puntuació)</option>
@@ -1990,14 +2607,14 @@
               <option value="pitjor_1">Pitjor 1</option>
               <option value="pitjor_n">Pitjors N</option>
               <option value="primer">Primer existent</option>
-              <option value="ultim">Ultim existent</option>
+              <option value="ultim">Últim existent</option>
               <option value="index">Exercici #</option>
               <option value="llista">Exercicis (llista)</option>
             </select>
 
             <div class="d-flex gap-1">
               <input class="form-control form-control-sm" data-k="ex_best_n" type="number" min="1" value="1" style="display:none;" placeholder="N">
-              <input class="form-control form-control-sm" data-k="ex_index" type="number" min="1" value="1" style="display:none;" placeholder="Index">
+              <input class="form-control form-control-sm" data-k="ex_index" type="number" min="1" value="1" style="display:none;" placeholder="Índex">
             </div>
             <input class="form-control form-control-sm" data-k="ex_max_pp" type="number" min="0" value="0" style="display:none;" placeholder="Max N per participant (0 = sense limit)">
 
@@ -2053,7 +2670,7 @@
           const id = Number(v.split(":")[1]);
           return isNaN(id) ? [] : [id];
         }
-        // hereta -> usem unió d'opcions
+        // hereta -> usem unio d'opcions
         return getTieInheritedAppIds();
       }
 
@@ -2093,13 +2710,13 @@
           exHint.textContent = "Agafa el primer exercici existent.";
         } else if (m === "ultim") {
           exHint.style.display = "";
-          exHint.textContent = "Agafa l'ultim exercici existent.";
+          exHint.textContent = "Agafa l'últim exercici existent.";
         } else if (m === "index") {
           exHint.style.display = "";
-          exHint.textContent = "Fa servir nomes l'exercici # (1..N).";
+          exHint.textContent = "Fa servir només l'exercici # (1..N).";
         } else if (m === "llista") {
           exHint.style.display = "";
-          exHint.textContent = "Llista d'indexs: 1,3,4.";
+          exHint.textContent = "Llista d'índexs: 1,3,4.";
         } else {
           exHint.style.display = "none";
           exHint.textContent = "";
@@ -2858,7 +3475,7 @@
     const fields = Array.isArray(PARTICIO_FIELDS) ? PARTICIO_FIELDS : [];
     const entries = normalizeParticioEntries(entriesRaw || []);
     if (!fields.length) {
-      els.particionsFieldsBox.innerHTML = `<div class="small text-muted">Sense camps de particio disponibles.</div>`;
+      els.particionsFieldsBox.innerHTML = `<div class="small text-muted">Sense camps de partició disponibles.</div>`;
       return;
     }
 
@@ -2886,7 +3503,7 @@
     `;
 
     if (!entries.length) {
-      html += `<div class="small text-muted border rounded p-2">Cap particio definida. Si no n'afegeixes cap, la classificacio sera global.</div>`;
+      html += `<div class="small text-muted border rounded p-2">Cap partició definida. Si no n'afegeixes cap, la classificació serà global.</div>`;
       els.particionsFieldsBox.innerHTML = html;
       return;
     }
@@ -2910,7 +3527,7 @@
       }).join("");
       const parentHint = isFirst
         ? "Nivell base de la jerarquia."
-        : `S'aplica despres de ${esc(String(parentMeta && (parentMeta.ui_label || parentMeta.label || parentCode) || parentCode))}.`;
+        : `S'aplica després de ${esc(String(parentMeta && (parentMeta.ui_label || parentMeta.label || parentCode) || parentCode))}.`;
 
       html += `
         <div class="border rounded p-2 mb-2" data-part-entry-row data-code="${esc(code)}">
@@ -2919,7 +3536,7 @@
               <div class="font-weight-bold small">${esc(String(idx + 1))}. ${esc(label)}</div>
               <div class="small text-muted">${parentHint}</div>
             </div>
-            <div class="btn-group btn-group-sm" role="group" aria-label="Ordre particio">
+            <div class="btn-group btn-group-sm" role="group" aria-label="Ordre partició">
               <button type="button" class="btn btn-outline-secondary" data-part-stack-act="up" data-idx="${esc(String(idx))}" ${idx === 0 ? "disabled" : ""}>Pujar</button>
               <button type="button" class="btn btn-outline-secondary" data-part-stack-act="down" data-idx="${esc(String(idx))}" ${idx === entries.length - 1 ? "disabled" : ""}>Baixar</button>
               <button type="button" class="btn btn-outline-danger" data-part-stack-act="remove" data-idx="${esc(String(idx))}">Eliminar</button>
@@ -2928,10 +3545,10 @@
           ${isFirst ? "" : `
             <div class="row mt-2">
               <div class="col-12 col-lg-4 mb-2">
-                <label class="small text-muted mb-1">Aplicacio</label>
+                <label class="small text-muted mb-1">Aplicació</label>
                 <select class="form-control form-control-sm" data-part-entry="apply_mode">
                   <option value="all" ${applyMode === "all" ? "selected" : ""}>Aplicar a totes les particions anteriors</option>
-                  <option value="some_parents" ${applyMode === "some_parents" ? "selected" : ""}>Aplicar nomes a alguns valors del pare</option>
+                  <option value="some_parents" ${applyMode === "some_parents" ? "selected" : ""}>Aplicar només a alguns valors del pare</option>
                 </select>
               </div>
               <div class="col-12 col-lg-8 mb-2" data-part-entry-parent-wrap style="display:${applyMode === "some_parents" ? "" : "none"};">
@@ -3029,7 +3646,7 @@
     const customMap = normalizeParticionsCustom(customMapRaw || {});
 
     if (!selected.length) {
-      els.particionsCustomBox.innerHTML = `<div class="small text-muted">Selecciona almenys un camp de particio per configurar grups custom.</div>`;
+      els.particionsCustomBox.innerHTML = `<div class="small text-muted">Selecciona almenys un camp de partició per configurar grups custom.</div>`;
       return;
     }
 
@@ -3071,7 +3688,7 @@
       }, 0);
 
       const staleHint = staleAssignedCount > 0
-        ? `<div class="small text-warning mt-2">${esc(String(staleAssignedCount))} valor(s) ja no detectats mantenen assignacio.</div>`
+        ? `<div class="small text-warning mt-2">${esc(String(staleAssignedCount))} valor(s) ja no detectats mantenen assignació.</div>`
         : "";
 
       const sortableWarning = (typeof Sortable === "undefined")
@@ -3290,6 +3907,11 @@
           punts_victoria: 1,
           punts_empat: 0.5,
           sense_nota_mode: "skip",
+          mode_camps: String(els.sVictoryModeCamps?.value || "agregat"),
+          mode_exercicis: String(els.sVictoryModeExercicis?.value || "agregat"),
+          mode_seleccio_exercicis_camps_separats: String(els.sVictoryFieldSelectionMode?.value || "per_camp"),
+          agregacio_victories_camps: String(els.sVictoryAggCamps?.value || "sum"),
+          agregacio_victories_exercicis: String(els.sVictoryAggExercicis?.value || "sum"),
           desempat_comparacio: victoriesCompareTie,
         },
         ordre: els.sOrdre.value,
@@ -3364,6 +3986,21 @@
 
     // tie + filtres JSON
     const victoriesCfg = ((schema.puntuacio || {}).victories || {});
+    if (els.sVictoryModeCamps) {
+      els.sVictoryModeCamps.value = victoriesCfg.mode_camps || "agregat";
+    }
+    if (els.sVictoryModeExercicis) {
+      els.sVictoryModeExercicis.value = victoriesCfg.mode_exercicis || "agregat";
+    }
+    if (els.sVictoryFieldSelectionMode) {
+      els.sVictoryFieldSelectionMode.value = victoriesCfg.mode_seleccio_exercicis_camps_separats || "per_camp";
+    }
+    if (els.sVictoryAggCamps) {
+      els.sVictoryAggCamps.value = victoriesCfg.agregacio_victories_camps || "sum";
+    }
+    if (els.sVictoryAggExercicis) {
+      els.sVictoryAggExercicis.value = victoriesCfg.agregacio_victories_exercicis || "sum";
+    }
     renderVictoryTieUI(victoriesCfg.desempat_comparacio || []);
     renderTieUI(schema.desempat || []);
     els.tDesempat.value = JSON.stringify(schema.desempat || [], null, 2);
@@ -3382,6 +4019,7 @@
   function selectCfg(id) {
     state.selectedId = id;
     renderList();
+    setActiveBuilderNav("section-meta");
 
     const cfg = currentCfg();
     if (!cfg) return;
@@ -3390,19 +4028,28 @@
     els.editorBody.style.display = "";
 
     els.fNom.value = cfg.nom || "";
+    if (els.fSlug) els.fSlug.value = cfg.slug || "";
     els.fActiva.checked = !!cfg.activa;
-    els.fTipus.value = cfg.tipus || "individual";
+    setTipusValue(cfg.tipus || "individual");
 
     const schema = cfg.schema || JSON.parse(JSON.stringify(DEFAULT_SCHEMA));
     syncUIFromSchema(schema);
 
-    els.previewBox.innerHTML = '<div class="text-muted small">Fes clic a “Previsualitzar”.</div>';
+    if (els.previewBox) {
+      els.previewBox.innerHTML = CAN_PREVIEW
+        ? '<div class="text-muted small">Fes clic a "Previsualitzar".</div>'
+        : '<div class="text-muted small">La previsualització només està disponible dins d\'una competició.</div>';
+    }
+    requestAnimationFrame(updateBuilderNavFromScroll);
   }
 
   // events: canvis que afecten schema
   ["change","input"].forEach(ev => {
-    ["sAggCamps","sModeSeleccioExercicis","sExercicisMode","iExBestN","iExIndex","iExMaxPerParticipant","tExIds","sAggExercicis","sAggAparells","sModeResultatAparells","sOrdre","iTopN","cEmpats","eqIncludeSenseEquip","eqAgeActiva","eqAgeLlindars","eqAgeSenseLabel","eqCombineManualAge"]
-      .forEach(id => document.getElementById(id).addEventListener(ev, syncAdvancedFromUI));
+    ["sAggCamps","sModeSeleccioExercicis","sExercicisMode","iExBestN","iExIndex","iExMaxPerParticipant","tExIds","sAggExercicis","sAggAparells","sModeResultatAparells","sOrdre","iTopN","cEmpats","eqIncludeSenseEquip","eqAgeActiva","eqAgeLlindars","eqAgeSenseLabel","eqCombineManualAge","sVictoryModeCamps","sVictoryModeExercicis","sVictoryFieldSelectionMode","sVictoryAggCamps","sVictoryAggExercicis"]
+      .forEach(id => {
+        const node = document.getElementById(id);
+        if (node) node.addEventListener(ev, syncAdvancedFromUI);
+      });
 
     [els.fEntitats, els.fCategories, els.fSubcategories, els.fGrups].forEach(x => {
       if (x) x.addEventListener("change", syncAdvancedFromUI);
@@ -3552,11 +4199,23 @@
       syncAdvancedFromUI();
     });
   }
+  if (els.sVictoryModeCamps) {
+    els.sVictoryModeCamps.addEventListener("change", () => {
+      refreshVictoryTieVisibility();
+      syncAdvancedFromUI();
+    });
+  }
+  if (els.sVictoryModeExercicis) {
+    els.sVictoryModeExercicis.addEventListener("change", () => {
+      refreshVictoryTieVisibility();
+      syncAdvancedFromUI();
+    });
+  }
 
   if (els.btnEqManualAdd) {
     els.btnEqManualAdd.addEventListener("click", () => {
       const cur = readEquipManualRows();
-      cur.push({ key: `manual_${cur.length + 1}`, label: `Particio ${cur.length + 1}`, equip_ids: [] });
+      cur.push({ key: `manual_${cur.length + 1}`, label: `Partició ${cur.length + 1}`, equip_ids: [] });
       renderEquipManualRows(cur);
       syncAdvancedFromUI();
     });
@@ -3646,9 +4305,11 @@
   els.btnAdd.addEventListener("click", () => {
     const nextOrd = (state.cfgs.length ? Math.max(...state.cfgs.map(x => x.ordre||0)) : 0) + 1;
     const tmpId = "tmp_" + Math.random().toString(16).slice(2);
+    const defaultName = BUILDER_MODE === "global" ? "Nova plantilla" : "Nova classificació";
     state.cfgs.push({
       id: tmpId,
-      nom: "Nova classificació",
+      nom: defaultName,
+      slug: "",
       activa: true,
       ordre: nextOrd,
       tipus: "individual",
@@ -3664,6 +4325,13 @@
     cfg.nom = els.fNom.value;
     renderList();
   });
+  if (els.fSlug) {
+    els.fSlug.addEventListener("input", () => {
+      const cfg = currentCfg(); if (!cfg) return;
+      cfg.slug = els.fSlug.value;
+      renderList();
+    });
+  }
   els.fActiva.addEventListener("change", () => {
     const cfg = currentCfg(); if (!cfg) return;
     cfg.activa = !!els.fActiva.checked;
@@ -3671,6 +4339,7 @@
   });
   els.fTipus.addEventListener("change", () => {
     const cfg = currentCfg(); if (!cfg) return;
+    ensureLegacyTipusOption(els.fTipus.value);
     cfg.tipus = els.fTipus.value;
     refreshTipusUI();
     syncAdvancedFromUI();
@@ -3719,12 +4388,12 @@
     if (blocking.length) {
       lines.push("Errors de compatibilitat:");
       blocking.slice(0, 5).forEach((msg, idx) => lines.push(`${idx + 1}. ${msg}`));
-      if (blocking.length > 5) lines.push(`... i ${blocking.length - 5} errors mes.`);
+      if (blocking.length > 5) lines.push(`... i ${blocking.length - 5} errors més.`);
     }
     if (warnings.length) {
       lines.push("Avisos:");
       warnings.slice(0, 5).forEach((msg, idx) => lines.push(`${idx + 1}. ${msg}`));
-      if (warnings.length > 5) lines.push(`... i ${warnings.length - 5} avisos mes.`);
+      if (warnings.length > 5) lines.push(`... i ${warnings.length - 5} avisos més.`);
     }
     lines.push(`Vols provar el fallback ${next}?`);
     return lines.join("\n");
@@ -3747,7 +4416,7 @@
       return;
     }
     const defaultName = `${templateNameById(templateId)} (tpl)`;
-    const nom = await showPrompt("Nom de la nova classificacio:", defaultName);
+    const nom = await showPrompt("Nom de la nova classificació:", defaultName);
     if (nom === null) return;
     const nomFinal = String(nom || "").trim() || defaultName;
 
@@ -3776,7 +4445,7 @@
       }
     }
 
-    if (!out || !out.cfg) throw new Error("Resposta no valida aplicant plantilla.");
+    if (!out || !out.cfg) throw new Error("Resposta no vàlida aplicant plantilla.");
     state.cfgs.push(out.cfg);
     renderList();
     selectCfg(out.cfg.id);
@@ -3790,22 +4459,22 @@
   async function saveCurrentCfgAsTemplate() {
     const cfg = currentCfg();
     if (!cfg) {
-      showAlert("Selecciona una configuracio.");
+      showAlert("Selecciona una configuració.");
       return;
     }
     if (String(cfg.id).startsWith("tmp_")) {
-      showAlert("Guarda primer la classificacio abans de crear la plantilla.");
+      showAlert("Guarda primer la classificació abans de crear la plantilla.");
       return;
     }
 
-    const nomInput = await showPrompt("Nom de la plantilla:", String(cfg.nom || "Plantilla classificacio"));
+    const nomInput = await showPrompt("Nom de la plantilla:", String(cfg.nom || "Plantilla classificació"));
     if (nomInput === null) return;
     const nom = String(nomInput || "").trim();
     if (!nom) {
       showAlert("Cal informar un nom de plantilla.");
       return;
     }
-    const descripcioInput = await showPrompt("Descripcio (opcional):", "");
+    const descripcioInput = await showPrompt("Descripció (opcional):", "");
     if (descripcioInput === null) return;
 
     const out = await postJson(TEMPLATE_SAVE_URL, {
@@ -3879,6 +4548,7 @@
     const payload = {
       id: (String(cfg.id).startsWith("tmp_") ? null : cfg.id),
       nom: cfg.nom,
+      slug: cfg.slug || "",
       activa: !!cfg.activa,
       ordre: cfg.ordre || 1,
       tipus: cfg.tipus || "individual",
@@ -3886,16 +4556,24 @@
     };
 
     try {
-      const out = await postJson("{% url 'classificacio_save' competicio.id %}", payload);
-      if (out && out.id) {
-        cfg.id = out.id;
+      const out = await postJson(SAVE_URL, payload);
+      const savedId = out && (out.id || (out.cfg && out.cfg.id));
+      if (savedId) {
+        cfg.id = savedId;
+        if (out.cfg && typeof out.cfg === "object") {
+          cfg.slug = String(out.cfg.slug || cfg.slug || "");
+          cfg.nom = String(out.cfg.nom || cfg.nom || "");
+          cfg.activa = !!out.cfg.activa;
+          cfg.tipus = String(out.cfg.tipus || cfg.tipus || "individual");
+          cfg.schema = out.cfg.schema || cfg.schema || DEFAULT_SCHEMA;
+        }
         cfg._isTemp = false;
         renderList();
       }
-     // ✅ MISSATGE D'ÈXIT
+     // MISSATGE D'ÈXIT
     const msg = document.getElementById("saveMsg");
     msg.style.display = "";
-    msg.textContent = "✔️ Guardat correctament";
+    msg.textContent = "Guardat correctament";
 
     // s'amaga sol al cap de 2 segons
     setTimeout(() => {
@@ -3921,7 +4599,7 @@
         els.editorEmpty.style.display = "";
         return;
       }
-      await postJson("{% url 'classificacio_delete' competicio.id 0 %}".replace("/0/", "/" + cfg.id + "/"), {});
+      await postJson(DELETE_URL_PATTERN.replace("/0/", "/" + cfg.id + "/"), {});
       state.cfgs = state.cfgs.filter(x => x.id !== cfg.id);
       state.selectedId = null;
       renderList();
@@ -3932,6 +4610,7 @@
     }
   });
 
+  if (els.btnPreview && CAN_PREVIEW) {
   els.btnPreview.addEventListener("click", async () => {
     const cfg = currentCfg();
     if (!cfg) return;
@@ -3944,7 +4623,7 @@
         els.previewBox.innerHTML = `<div class="text-muted small">Guarda abans de previsualitzar.</div>`;
         return;
       }
-      const res = await fetch("{% url 'classificacio_preview' competicio.id 0 %}".replace("/0/", "/" + cid + "/"), {
+      const res = await fetch(PREVIEW_URL_PATTERN.replace("/0/", "/" + cid + "/"), {
         method:"POST",
         headers:{ "X-CSRFToken": getCookie("csrftoken") }
       });
@@ -3990,18 +4669,39 @@
       els.previewBox.innerHTML = `<div class="text-danger small">Error previsualitzant: ${esc(e.message)}</div>`;
     }
   });
+  }
 
   // init
+  initBuilderSectionNav();
   buildAparellChecks();
   buildParticioFieldChecks();
   renderList();
-  if (state.cfgs.length) selectCfg(state.cfgs[0].id);
-  loadTemplateList().catch((e) => {
-    console.error("Error carregant plantilles:", e);
-  });
+  if (INITIAL_SELECTED_ID) selectCfg(INITIAL_SELECTED_ID);
+  else if (state.cfgs.length) selectCfg(state.cfgs[0].id);
+  else if (AUTO_ADD_NEW) els.btnAdd.click();
+  if (TEMPLATE_LIBRARY_ENABLED) {
+    loadTemplateList().catch((e) => {
+      console.error("Error carregant plantilles:", e);
+    });
+  }
 </script>
 
+<div id="classifHelpDrawer" class="classif-help-drawer" aria-hidden="true">
+  <div class="classif-help-backdrop" data-help-close></div>
+  <aside class="classif-help-panel" role="dialog" aria-modal="true" aria-labelledby="classifHelpTitle">
+    <div class="classif-help-head">
+      <h5 id="classifHelpTitle" class="mb-0">Ajuda</h5>
+      <button type="button" class="classif-help-close" data-help-close aria-label="Tancar ajuda">&times;</button>
+    </div>
+    <div id="classifHelpBody" class="classif-help-body"></div>
+  </aside>
+</div>
+
+<script src="{% staticv 'js/classificacions_builder_help.js' %}" defer></script>
+
 {% endblock %}
+
+
 
 
 

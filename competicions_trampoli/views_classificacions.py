@@ -22,6 +22,20 @@ from .services.services_classificacions_2 import (
     normalize_particions_v2_entries,
     particio_codes_from_entries,
 )
+from .services.classificacio_templates import (
+    build_template_requirements as build_template_requirements_shared,
+    canon_app_code as canon_app_code_shared,
+    collect_required_app_codes_from_template as collect_required_app_codes_from_template_shared,
+    extract_template_schema as extract_template_schema_shared,
+    get_comp_aparell_maps as get_comp_aparell_maps_shared,
+    json_clone as json_clone_shared,
+    normalize_particions_custom as normalize_particions_custom_shared,
+    normalize_particions_schema as normalize_particions_schema_shared,
+    resolve_app_code_for_template as resolve_app_code_for_template_shared,
+    resolve_app_id as resolve_app_id_shared,
+    schema_to_template_schema as schema_to_template_schema_shared,
+    template_schema_to_competicio_schema as template_schema_to_competicio_schema_shared,
+)
 from .views import get_allowed_group_fields, get_inscripcio_value
 from .access import user_has_competicio_capability
 from .services.scoring_schema_validation import (
@@ -959,6 +973,20 @@ class ClassificacionsHome(TemplateView):
             "can_manage_global_templates": bool(
                 user_has_competicio_capability(self.request.user, competicio, "classificacions.edit")
             ),
+            "builder_mode": "competition",
+            "builder_title": "Classificacions",
+            "builder_subtitle": competicio.nom,
+            "builder_home_label": "Configuracio",
+            "builder_home_url": reverse("trampoli_config", kwargs={"pk": competicio.id}),
+            "builder_save_url": reverse("classificacio_save", kwargs={"pk": competicio.id}),
+            "builder_delete_url_pattern": reverse("classificacio_delete", kwargs={"pk": competicio.id, "cid": 0}),
+            "builder_preview_url_pattern": reverse("classificacio_preview", kwargs={"pk": competicio.id, "cid": 0}),
+            "builder_enable_template_library": True,
+            "builder_can_preview": True,
+            "builder_selected_id": None,
+            "builder_auto_add_new": False,
+            "is_global_builder": False,
+            "global_templates_url": reverse("classificacio_template_global_list"),
         })
 
         ctx.update({
@@ -1981,6 +2009,11 @@ def _build_force_minimal_schema(competicio, schema_local):
         "punts_victoria": 1,
         "punts_empat": 0.5,
         "sense_nota_mode": "skip",
+        "mode_camps": "agregat",
+        "mode_exercicis": "agregat",
+        "mode_seleccio_exercicis_camps_separats": "per_camp",
+        "agregacio_victories_camps": "sum",
+        "agregacio_victories_exercicis": "sum",
         "desempat_comparacio": [],
     }
     punt["ordre"] = "desc"
@@ -2007,11 +2040,11 @@ def _build_force_minimal_schema(competicio, schema_local):
 
 def _validate_template_for_competicio(competicio, template_obj, fallback_mode="strict"):
     fallback_mode = _parse_fallback_mode(fallback_mode)
-    schema_tpl = _extract_template_schema(getattr(template_obj, "payload", {}) or {})
-    schema_local, mapping_warnings, mapping = _template_schema_to_competicio_schema(competicio, schema_tpl)
+    schema_tpl = extract_template_schema_shared(getattr(template_obj, "payload", {}) or {})
+    schema_local, mapping_warnings, mapping = template_schema_to_competicio_schema_shared(competicio, schema_tpl)
 
-    required_codes = _collect_required_app_codes_from_template(schema_tpl)
-    _, _by_id_active, by_code_active = _get_comp_aparell_maps(competicio, active_only=True)
+    required_codes = collect_required_app_codes_from_template_shared(schema_tpl)
+    _, _by_id_active, by_code_active = get_comp_aparell_maps_shared(competicio, active_only=True)
 
     blocking = []
     warnings = list(mapping_warnings or [])
@@ -2064,10 +2097,10 @@ def _validate_template_for_competicio(competicio, template_obj, fallback_mode="s
 
 def _template_to_payload_row(obj):
     payload = getattr(obj, "payload", {}) or {}
-    schema = _extract_template_schema(payload)
+    schema = extract_template_schema_shared(payload)
     req = getattr(obj, "requirements", {}) or {}
     if not isinstance(req, dict) or not req:
-        req = _build_template_requirements(schema)
+        req = build_template_requirements_shared(schema)
     return {
         "id": obj.id,
         "nom": obj.nom,
@@ -2807,6 +2840,35 @@ def _validate_exercicis_cfg_obj(cfg, prefix: str):
     return errors
 
 
+def _validate_victories_granular_options(victories, prefix: str):
+    errors = []
+    if not isinstance(victories, dict):
+        return errors
+
+    mode_camps = str(victories.get("mode_camps") or "agregat").strip().lower()
+    if mode_camps not in {"agregat", "separat"}:
+        errors.append(f"{prefix}.mode_camps invalid: {mode_camps}")
+
+    mode_exercicis = str(victories.get("mode_exercicis") or "agregat").strip().lower()
+    if mode_exercicis not in {"agregat", "separat"}:
+        errors.append(f"{prefix}.mode_exercicis invalid: {mode_exercicis}")
+
+    mode_sel = str(
+        victories.get("mode_seleccio_exercicis_camps_separats") or "per_camp"
+    ).strip().lower()
+    if mode_sel not in {"per_camp", "global"}:
+        errors.append(
+            f"{prefix}.mode_seleccio_exercicis_camps_separats invalid: {mode_sel}"
+        )
+
+    for key in ("agregacio_victories_camps", "agregacio_victories_exercicis"):
+        raw = str(victories.get(key) or "sum").strip().lower()
+        if raw not in {"sum", "avg", "median", "max", "min"}:
+            errors.append(f"{prefix}.{key} invalid: {raw}")
+
+    return errors
+
+
 def _get_active_and_selected_app_ids(competicio, punt: dict):
     active_app_ids = set(
         CompeticioAparell.objects.filter(competicio=competicio, actiu=True).values_list("id", flat=True)
@@ -3088,6 +3150,8 @@ def _validate_victories_schema(competicio, schema: dict, tipus="individual"):
 
     if mode_resultat == "victories" and str(tipus or "individual").strip().lower() != "individual":
         errors.append("puntuacio.mode_resultat_aparells='victories' nomes s'admet per tipus='individual'.")
+    if mode_resultat == "victories":
+        errors.extend(_validate_victories_granular_options(victories, "puntuacio.victories"))
 
     compare_ties = victories.get("desempat_comparacio") or []
     if victories.get("desempat_comparacio") is not None and not isinstance(victories.get("desempat_comparacio"), list):
@@ -3315,8 +3379,8 @@ def classificacio_template_save(request, pk):
     descripcio = str(payload.get("descripcio") or "").strip()
     activa = bool(payload.get("activa", True))
 
-    schema_tpl, export_warnings = _schema_to_template_schema(competicio, cfg.schema or {})
-    requirements = _build_template_requirements(schema_tpl)
+    schema_tpl, export_warnings = schema_to_template_schema_shared(competicio, cfg.schema or {})
+    requirements = build_template_requirements_shared(schema_tpl)
     payload_obj = {
         "schema": schema_tpl,
         "source": {

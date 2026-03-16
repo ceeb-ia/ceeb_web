@@ -77,6 +77,11 @@ DEFAULT_SCHEMA = {
             "punts_victoria": 1,
             "punts_empat": 0.5,
             "sense_nota_mode": "skip",
+            "mode_camps": "agregat",
+            "mode_exercicis": "agregat",
+            "mode_seleccio_exercicis_camps_separats": "per_camp",
+            "agregacio_victories_camps": "sum",
+            "agregacio_victories_exercicis": "sum",
             "desempat_comparacio": [],
         },
 
@@ -977,12 +982,140 @@ def _normalize_victories_cfg(raw_cfg):
     if sense_nota_mode not in {"skip"}:
         sense_nota_mode = "skip"
 
+    mode_camps = str(cfg.get("mode_camps") or "agregat").lower().strip()
+    if mode_camps not in {"agregat", "separat"}:
+        mode_camps = "agregat"
+
+    mode_exercicis = str(cfg.get("mode_exercicis") or "agregat").lower().strip()
+    if mode_exercicis not in {"agregat", "separat"}:
+        mode_exercicis = "agregat"
+
+    mode_sel_camps_sep = str(
+        cfg.get("mode_seleccio_exercicis_camps_separats") or "per_camp"
+    ).lower().strip()
+    if mode_sel_camps_sep not in {"per_camp", "global"}:
+        mode_sel_camps_sep = "per_camp"
+
+    agg_victories_camps = str(cfg.get("agregacio_victories_camps") or "sum").lower().strip()
+    if agg_victories_camps not in {"sum", "avg", "median", "max", "min"}:
+        agg_victories_camps = "sum"
+
+    agg_victories_exercicis = str(cfg.get("agregacio_victories_exercicis") or "sum").lower().strip()
+    if agg_victories_exercicis not in {"sum", "avg", "median", "max", "min"}:
+        agg_victories_exercicis = "sum"
+
     return {
         "punts_victoria": punts_victoria,
         "punts_empat": punts_empat,
         "sense_nota_mode": sense_nota_mode,
+        "mode_camps": mode_camps,
+        "mode_exercicis": mode_exercicis,
+        "mode_seleccio_exercicis_camps_separats": mode_sel_camps_sep,
+        "agregacio_victories_camps": agg_victories_camps,
+        "agregacio_victories_exercicis": agg_victories_exercicis,
         "desempat_comparacio": _sanitize_victories_compare_ties(cfg.get("desempat_comparacio") or []),
     }
+
+
+def _row_base_for_app(row, app_id):
+    by_app_base = row.get("by_app_base") or {}
+    if app_id in by_app_base:
+        return _to_float(by_app_base.get(app_id))
+    return _to_float(by_app_base.get(str(app_id)))
+
+
+def _row_has_app(row, app_id):
+    by_app_base = row.get("by_app_base") or {}
+    return app_id in by_app_base or str(app_id) in by_app_base
+
+
+def _compute_victory_points_for_entries(
+    entries,
+    ordre_principal,
+    victories_cfg,
+    metric_value_getter,
+    *,
+    forced_app_ids=None,
+    forced_exercici_ids=None,
+    forced_camps=None,
+):
+    punts_victoria = _to_float(victories_cfg.get("punts_victoria", 1.0))
+    punts_empat = _to_float(victories_cfg.get("punts_empat", 0.5))
+    compare_ties = victories_cfg.get("desempat_comparacio") or []
+    entries = entries or []
+    if not entries:
+        return {}
+
+    entries_enriched = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        row = entry.get("row") or {}
+        ins_id = row.get("inscripcio_id")
+        if ins_id in (None, ""):
+            continue
+        compare_vals = []
+        for crit in compare_ties:
+            compare_vals.append(
+                _to_float(
+                    metric_value_getter(
+                        ins_id,
+                        crit,
+                        forced_app_ids=forced_app_ids,
+                        forced_exercici_ids=forced_exercici_ids,
+                        forced_camps=forced_camps,
+                    )
+                )
+            )
+        entries_enriched.append(
+            {
+                "row": row,
+                "base": _to_float(entry.get("base")),
+                "compare_vals": compare_vals,
+            }
+        )
+
+    if not entries_enriched:
+        return {}
+
+    def _sort_key(entry):
+        key = [(-entry["base"]) if ordre_principal == "desc" else entry["base"]]
+        for idx, crit in enumerate(compare_ties):
+            ordre = str((crit or {}).get("ordre") or "desc").lower().strip()
+            val = _to_float(entry["compare_vals"][idx])
+            key.append(-val if ordre == "desc" else val)
+        return tuple(key)
+
+    entries_sorted = sorted(entries_enriched, key=_sort_key)
+    groups = []
+    last_key = None
+    current = []
+    for entry in entries_sorted:
+        cur_key = _sort_key(entry)
+        if last_key is None or cur_key == last_key:
+            current.append(entry)
+        else:
+            groups.append(current)
+            current = [entry]
+        last_key = cur_key
+    if current:
+        groups.append(current)
+
+    points = {}
+    total = len(entries_sorted)
+    seen = 0
+    for group in groups:
+        group_size = len(group)
+        worse_count = total - seen - group_size
+        pts = float((punts_victoria * worse_count) + (punts_empat * max(0, group_size - 1)))
+        for entry in group:
+            ins_id = entry["row"].get("inscripcio_id")
+            if ins_id in (None, ""):
+                continue
+            points[ins_id] = pts
+        seen += group_size
+
+    return points
 
 
 def _apply_victories_per_app_to_rows(
@@ -1001,22 +1134,8 @@ def _apply_victories_per_app_to_rows(
             row["score"] = 0.0
         return rows
 
-    punts_victoria = _to_float(victories_cfg.get("punts_victoria", 1.0))
-    punts_empat = _to_float(victories_cfg.get("punts_empat", 0.5))
-    compare_ties = victories_cfg.get("desempat_comparacio") or []
-
     for row in rows:
         row["by_app"] = {}
-
-    def _row_base_for_app(row, app_id):
-        by_app_base = row.get("by_app_base") or {}
-        if app_id in by_app_base:
-            return _to_float(by_app_base.get(app_id))
-        return _to_float(by_app_base.get(str(app_id)))
-
-    def _row_has_app(row, app_id):
-        by_app_base = row.get("by_app_base") or {}
-        return app_id in by_app_base or str(app_id) in by_app_base
 
     for app_id in app_ids:
         entries = []
@@ -1026,55 +1145,19 @@ def _apply_victories_per_app_to_rows(
                 continue
             if not _row_has_app(row, app_id):
                 continue
+            entries.append({"row": row, "base": _row_base_for_app(row, app_id)})
 
-            compare_vals = []
-            for crit in compare_ties:
-                compare_vals.append(_to_float(metric_value_getter(ins_id, crit, [app_id])))
-
-            entries.append(
-                {
-                    "row": row,
-                    "base": _row_base_for_app(row, app_id),
-                    "compare_vals": compare_vals,
-                }
-            )
-
-        if not entries:
-            continue
-
-        def _sort_key(entry):
-            key = [(-entry["base"]) if ordre_principal == "desc" else entry["base"]]
-            for idx, crit in enumerate(compare_ties):
-                ordre = str((crit or {}).get("ordre") or "desc").lower().strip()
-                val = _to_float(entry["compare_vals"][idx])
-                key.append(-val if ordre == "desc" else val)
-            return tuple(key)
-
-        entries_sorted = sorted(entries, key=_sort_key)
-
-        groups = []
-        last_key = None
-        current = []
-        for entry in entries_sorted:
-            cur_key = _sort_key(entry)
-            if last_key is None or cur_key == last_key:
-                current.append(entry)
-            else:
-                groups.append(current)
-                current = [entry]
-            last_key = cur_key
-        if current:
-            groups.append(current)
-
-        total = len(entries_sorted)
-        seen = 0
-        for group in groups:
-            group_size = len(group)
-            worse_count = total - seen - group_size
-            pts = float((punts_victoria * worse_count) + (punts_empat * max(0, group_size - 1)))
-            for entry in group:
-                entry["row"]["by_app"][app_id] = pts
-            seen += group_size
+        points = _compute_victory_points_for_entries(
+            entries,
+            ordre_principal,
+            victories_cfg,
+            metric_value_getter,
+            forced_app_ids=[app_id],
+        )
+        for row in rows:
+            ins_id = row.get("inscripcio_id")
+            if ins_id in points:
+                row["by_app"][app_id] = points[ins_id]
 
     for row in rows:
         row["score"] = float(_apply_simple_agg(list((row.get("by_app") or {}).values()), agg_aparells))
@@ -1395,7 +1478,8 @@ def compute_classificacio(competicio, cfg_obj):
         per_ins[ins.id] = {"score": 0.0, "by_app_base": {}, "by_app": {}, "tie": {}}
 
     app_order = {ca.id: idx for idx, ca in enumerate(aparells, start=1)}
-    app_ex_vals_by_ins = defaultdict(dict)  # app_id -> ins_id -> [(ex_idx, value)]
+    app_fields_by_app = {}
+    app_ex_rows_by_ins = defaultdict(dict)  # app_id -> ins_id -> [row]
 
     for ca in aparells:
         app_id = ca.id
@@ -1417,6 +1501,7 @@ def compute_classificacio(competicio, cfg_obj):
             by_ins_ex[nt.inscripcio_id][ex_idx] = nt
 
         fields = camps_for_app(app_id)
+        app_fields_by_app[app_id] = list(fields)
 
         # calculem valor per exercici (agregant camps)
         for ins_id in list(ins_by_id.keys()):
@@ -1425,16 +1510,29 @@ def compute_classificacio(competicio, cfg_obj):
                 continue
 
             vals_ex = []
+            vals_rows = []
             for ex_idx in range(1, n_ex + 1):
                 nt = by_ins_ex.get(ins_id, {}).get(ex_idx)
                 if not nt:
                     continue
-                v_fields = [_get_score_field(nt, f) for f in fields]
+                fields_map = {f: _get_score_field(nt, f) for f in fields}
+                v_fields = [fields_map.get(f, 0.0) for f in fields]
 
                 v_ex = _apply_simple_agg(v_fields, agg_camps)  # agregacio camps dins exercici
                 vals_ex.append((ex_idx, v_ex))
+                vals_rows.append(
+                    {
+                        "idx": int(ex_idx),
+                        "value": _to_float(v_ex),
+                        "app_id": app_id,
+                        "app_order": app_order.get(app_id, 0),
+                        "exercici": int(ex_idx),
+                        "inscripcio_id": ins_id,
+                        "by_camp": fields_map,
+                    }
+                )
 
-            app_ex_vals_by_ins[app_id][ins_id] = vals_ex
+            app_ex_rows_by_ins[app_id][ins_id] = vals_rows
 
     def _resolve_ex_cfg_for_app(app_id: int):
         if mode_seleccio_exercicis != "per_aparell_override":
@@ -1444,66 +1542,58 @@ def compute_classificacio(competicio, cfg_obj):
             raw = exercicis_per_aparell.get(app_id)
         return _normalize_exercicis_cfg(raw, fallback=base_ex_cfg)
 
-    if mode_seleccio_exercicis == "global_pool":
-        for ins_id in list(ins_by_id.keys()):
+    def _copy_ex_row_with_value(row, value):
+        item = dict(row or {})
+        item["value"] = _to_float(value)
+        item["by_camp"] = dict((row or {}).get("by_camp") or {})
+        return item
+
+    selected_rows_agg_cache = {}
+    selected_rows_field_cache = {}
+
+    def _get_selected_rows_agg_for_ins(ins_id: int):
+        if ins_id in selected_rows_agg_cache:
+            return selected_rows_agg_cache[ins_id]
+
+        picked_by_app = defaultdict(list)
+        if mode_seleccio_exercicis == "global_pool":
             pool_rows = []
             for ca in aparells:
                 app_id = ca.id
-                vals_ex = app_ex_vals_by_ins.get(app_id, {}).get(ins_id, [])
-                for ex_idx, v_ex in vals_ex:
-                    pool_rows.append({
-                        "idx": 0,  # index global assignat despres d'ordenar
-                        "value": _to_float(v_ex),
-                        "app_id": app_id,
-                        "app_order": app_order.get(app_id, 0),
-                        "exercici": int(ex_idx),
-                        "inscripcio_id": ins_id,
-                    })
+                for row in app_ex_rows_by_ins.get(app_id, {}).get(ins_id, []):
+                    item = _copy_ex_row_with_value(row, row.get("value"))
+                    item["idx"] = 0
+                    pool_rows.append(item)
 
-            if not pool_rows:
-                continue
-
-            pool_rows = sorted(
-                pool_rows,
-                key=lambda r: (r.get("app_order", 0), r.get("exercici", 0), r.get("app_id", 0)),
-            )
-            for idx, row in enumerate(pool_rows, start=1):
-                row["idx"] = idx
-
-            picked_rows = _pick_exercicis_rows(
-                pool_rows,
-                exerc_mode,
-                ex_best_n,
-                index=ex_index,
-                ids=ex_ids,
-                max_per_participant=base_ex_cfg.get("max_per_participant", 0),
-                participant_key="inscripcio_id",
-            )
-            picked_by_app = defaultdict(list)
-            for row in picked_rows:
-                try:
-                    app_id = int(row.get("app_id"))
-                except Exception:
-                    continue
-                picked_by_app[app_id].append(_to_float(row.get("value")))
-
+            if pool_rows:
+                pool_rows = sorted(
+                    pool_rows,
+                    key=lambda r: (r.get("app_order", 0), r.get("exercici", 0), r.get("app_id", 0)),
+                )
+                for idx, row in enumerate(pool_rows, start=1):
+                    row["idx"] = idx
+                picked_rows = _pick_exercicis_rows(
+                    pool_rows,
+                    exerc_mode,
+                    ex_best_n,
+                    index=ex_index,
+                    ids=ex_ids,
+                    max_per_participant=base_ex_cfg.get("max_per_participant", 0),
+                    participant_key="inscripcio_id",
+                )
+                for row in picked_rows:
+                    try:
+                        app_id = int(row.get("app_id"))
+                    except Exception:
+                        continue
+                    picked_by_app[app_id].append(_copy_ex_row_with_value(row, row.get("value")))
+        else:
             for ca in aparells:
                 app_id = ca.id
-                if ins_id not in ins_ids_by_app.get(app_id, set()):
-                    continue
-                score_app = _apply_simple_agg(picked_by_app.get(app_id, []), agg_exercicis)
-                per_ins[ins_id]["by_app_base"][app_id] = float(score_app)
-    else:
-        for ca in aparells:
-            app_id = ca.id
-            ex_cfg_app = _resolve_ex_cfg_for_app(app_id)
-
-            for ins_id in list(ins_by_id.keys()):
-                if ins_id not in ins_ids_by_app.get(app_id, set()):
-                    continue
-                vals_ex = app_ex_vals_by_ins.get(app_id, {}).get(ins_id, [])
-                picked = _pick_exercicis_tuples(
-                    vals_ex,
+                rows_ex = app_ex_rows_by_ins.get(app_id, {}).get(ins_id, [])
+                ex_cfg_app = _resolve_ex_cfg_for_app(app_id)
+                picked = _pick_exercicis_rows(
+                    rows_ex,
                     ex_cfg_app["mode"],
                     ex_cfg_app["best_n"],
                     index=ex_cfg_app["index"],
@@ -1511,8 +1601,91 @@ def compute_classificacio(competicio, cfg_obj):
                     max_per_participant=ex_cfg_app.get("max_per_participant", 0),
                     participant_key="inscripcio_id",
                 )
-                score_app = _apply_simple_agg(picked, agg_exercicis)
-                per_ins[ins_id]["by_app_base"][app_id] = float(score_app)
+                picked_by_app[app_id] = [
+                    _copy_ex_row_with_value(row, row.get("value"))
+                    for row in picked
+                ]
+
+        selected_rows_agg_cache[ins_id] = dict(picked_by_app)
+        return selected_rows_agg_cache[ins_id]
+
+    def _get_selected_rows_for_field(ins_id: int, field_code: str):
+        cache_key = (ins_id, str(field_code or ""))
+        if cache_key in selected_rows_field_cache:
+            return selected_rows_field_cache[cache_key]
+
+        picked_by_app = defaultdict(list)
+        if mode_seleccio_exercicis == "global_pool":
+            pool_rows = []
+            for ca in aparells:
+                app_id = ca.id
+                for row in app_ex_rows_by_ins.get(app_id, {}).get(ins_id, []):
+                    item = _copy_ex_row_with_value(
+                        row,
+                        ((row.get("by_camp") or {}).get(field_code)),
+                    )
+                    item["idx"] = 0
+                    pool_rows.append(item)
+            if pool_rows:
+                pool_rows = sorted(
+                    pool_rows,
+                    key=lambda r: (r.get("app_order", 0), r.get("exercici", 0), r.get("app_id", 0)),
+                )
+                for idx, row in enumerate(pool_rows, start=1):
+                    row["idx"] = idx
+                picked_rows = _pick_exercicis_rows(
+                    pool_rows,
+                    exerc_mode,
+                    ex_best_n,
+                    index=ex_index,
+                    ids=ex_ids,
+                    max_per_participant=base_ex_cfg.get("max_per_participant", 0),
+                    participant_key="inscripcio_id",
+                )
+                for row in picked_rows:
+                    try:
+                        app_id = int(row.get("app_id"))
+                    except Exception:
+                        continue
+                    picked_by_app[app_id].append(
+                        _copy_ex_row_with_value(row, row.get("value"))
+                    )
+        else:
+            for ca in aparells:
+                app_id = ca.id
+                rows_ex = [
+                    _copy_ex_row_with_value(row, ((row.get("by_camp") or {}).get(field_code)))
+                    for row in app_ex_rows_by_ins.get(app_id, {}).get(ins_id, [])
+                ]
+                ex_cfg_app = _resolve_ex_cfg_for_app(app_id)
+                picked = _pick_exercicis_rows(
+                    rows_ex,
+                    ex_cfg_app["mode"],
+                    ex_cfg_app["best_n"],
+                    index=ex_cfg_app["index"],
+                    ids=ex_cfg_app["ids"],
+                    max_per_participant=ex_cfg_app.get("max_per_participant", 0),
+                    participant_key="inscripcio_id",
+                )
+                picked_by_app[app_id] = [
+                    _copy_ex_row_with_value(row, row.get("value"))
+                    for row in picked
+                ]
+
+        selected_rows_field_cache[cache_key] = dict(picked_by_app)
+        return selected_rows_field_cache[cache_key]
+
+    for ins_id, obj in per_ins.items():
+        selected_rows_by_app = _get_selected_rows_agg_for_ins(ins_id)
+        for ca in aparells:
+            app_id = ca.id
+            if ins_id not in ins_ids_by_app.get(app_id, set()):
+                continue
+            score_app = _apply_simple_agg(
+                [_to_float(row.get("value")) for row in selected_rows_by_app.get(app_id, [])],
+                agg_exercicis,
+            )
+            obj["by_app_base"][app_id] = float(score_app)
 
     # agregacio final entre aparells
     for ins_id, obj in per_ins.items():
@@ -1531,7 +1704,13 @@ def compute_classificacio(competicio, cfg_obj):
     #
     # IMPORTANT: per no duplicar molt codi, fem una funció que calcula "valor criteri" reutilitzant el mateix pipeline,
     # però substituint camps per la llista [camp].
-    def calc_criterion_value(ins_id: int, crit: dict, forced_app_ids=None) -> float:
+    def calc_criterion_value(
+        ins_id: int,
+        crit: dict,
+        forced_app_ids=None,
+        forced_exercici_ids=None,
+        forced_camps=None,
+    ) -> float:
         """
         Calcula el valor d'un criteri de desempat per una inscripció concreta.
 
@@ -1555,7 +1734,10 @@ def compute_classificacio(competicio, cfg_obj):
             }
         """
 
-        camps = _normalize_tie_camps(crit)
+        if forced_camps is not None:
+            camps = [str(x).strip() for x in (forced_camps or []) if str(x).strip()]
+        else:
+            camps = _normalize_tie_camps(crit)
         if not camps:
             return 0.0
 
@@ -1659,6 +1841,14 @@ def compute_classificacio(competicio, cfg_obj):
         # -----------------------------
         vals_apps = []
         app_vals_ex = {}
+        forced_exercicis_set = None
+        if forced_exercici_ids is not None:
+            forced_exercicis_set = set()
+            for raw_ex in (forced_exercici_ids or []):
+                try:
+                    forced_exercicis_set.add(int(raw_ex))
+                except Exception:
+                    continue
 
         for ta in target_apps:
             ca = next((x for x in aparells if x.id == ta), None)
@@ -1677,6 +1867,8 @@ def compute_classificacio(competicio, cfg_obj):
 
             vals_ex = []
             for ex_idx in range(1, n_ex + 1):
+                if forced_exercicis_set is not None and ex_idx not in forced_exercicis_set:
+                    continue
                 se = by_ins_ex.get(ins_id, {}).get(ex_idx)
                 if not se:
                     continue
@@ -1694,7 +1886,12 @@ def compute_classificacio(competicio, cfg_obj):
                 raw = crit_ex_per_app_raw.get(app_id)
             return _normalize_exercicis_cfg(raw, fallback=crit_ex_cfg_global)
 
-        if crit_mode_sel == "global_pool":
+        if forced_exercicis_set is not None:
+            for ta in target_apps:
+                vals_ex = app_vals_ex.get(ta, [])
+                val_app = _apply_simple_agg([_to_float(v_ex) for _, v_ex in vals_ex], crit_agg_exercicis)
+                vals_apps.append(val_app)
+        elif crit_mode_sel == "global_pool":
             pool_rows = []
             for ta in target_apps:
                 vals_ex = app_vals_ex.get(ta, [])
@@ -1758,25 +1955,48 @@ def compute_classificacio(competicio, cfg_obj):
     # capa reutilitzable: desempat + columnes mètriques
     metric_cache = {}
 
-    def _metric_signature(crit: dict, forced_app_ids=None) -> str:
+    def _metric_signature(crit: dict, forced_app_ids=None, forced_exercici_ids=None, forced_camps=None) -> str:
         try:
             payload = {"crit": crit or {}}
             if forced_app_ids is not None:
                 payload["forced_app_ids"] = [int(x) for x in (forced_app_ids or [])]
+            if forced_exercici_ids is not None:
+                payload["forced_exercici_ids"] = [int(x) for x in (forced_exercici_ids or [])]
+            if forced_camps is not None:
+                payload["forced_camps"] = [str(x).strip() for x in (forced_camps or []) if str(x).strip()]
             return json.dumps(payload, sort_keys=True, ensure_ascii=False)
         except Exception:
             return str(_tie_key(crit) or crit or "")
 
-    def calc_metric_value_for_ins(ins_id: int, crit: dict, forced_app_ids=None) -> float:
+    def calc_metric_value_for_ins(
+        ins_id: int,
+        crit: dict,
+        forced_app_ids=None,
+        forced_exercici_ids=None,
+        forced_camps=None,
+    ) -> float:
         try:
             iid = int(ins_id)
         except Exception:
             return 0.0
-        sig = _metric_signature(crit, forced_app_ids=forced_app_ids)
+        sig = _metric_signature(
+            crit,
+            forced_app_ids=forced_app_ids,
+            forced_exercici_ids=forced_exercici_ids,
+            forced_camps=forced_camps,
+        )
         ck = (iid, sig)
         if ck in metric_cache:
             return metric_cache[ck]
-        val = float(calc_criterion_value(iid, crit or {}, forced_app_ids=forced_app_ids))
+        val = float(
+            calc_criterion_value(
+                iid,
+                crit or {},
+                forced_app_ids=forced_app_ids,
+                forced_exercici_ids=forced_exercici_ids,
+                forced_camps=forced_camps,
+            )
+        )
         metric_cache[ck] = val
         return val
 
@@ -1973,15 +2193,190 @@ def compute_classificacio(competicio, cfg_obj):
 
     if tipus == "individual" and mode_resultat_aparells == "victories":
         target_app_ids = [ca.id for ca in aparells]
-        for pkey, rows in per_particio.items():
-            _apply_victories_per_app_to_rows(
-                rows,
-                app_ids=target_app_ids,
-                ordre_principal=ordre_principal,
-                agg_aparells=agg_aparells,
-                victories_cfg=victories_cfg,
-                metric_value_getter=calc_metric_value_for_ins,
-            )
+        mode_vict_camps = str(victories_cfg.get("mode_camps") or "agregat").lower().strip()
+        mode_vict_exercicis = str(victories_cfg.get("mode_exercicis") or "agregat").lower().strip()
+        camps_sep_ex_selection = str(
+            victories_cfg.get("mode_seleccio_exercicis_camps_separats") or "per_camp"
+        ).lower().strip()
+        agg_victories_camps = str(victories_cfg.get("agregacio_victories_camps") or "sum").lower().strip()
+        agg_victories_exercicis = str(
+            victories_cfg.get("agregacio_victories_exercicis") or "sum"
+        ).lower().strip()
+
+        def _selected_field_rows_for_app(ins_id: int, app_id: int, field_code: str):
+            if camps_sep_ex_selection == "per_camp":
+                return _get_selected_rows_for_field(ins_id, field_code).get(app_id, [])
+            return [
+                _copy_ex_row_with_value(row, ((row.get("by_camp") or {}).get(field_code)))
+                for row in (_get_selected_rows_agg_for_ins(ins_id).get(app_id, []) or [])
+            ]
+
+        for _pkey, rows in per_particio.items():
+            for row in rows:
+                row["by_app"] = {}
+
+            if mode_vict_camps == "agregat" and mode_vict_exercicis == "agregat":
+                _apply_victories_per_app_to_rows(
+                    rows,
+                    app_ids=target_app_ids,
+                    ordre_principal=ordre_principal,
+                    agg_aparells=agg_aparells,
+                    victories_cfg=victories_cfg,
+                    metric_value_getter=calc_metric_value_for_ins,
+                )
+                continue
+
+            for app_id in target_app_ids:
+                if app_id not in app_fields_by_app:
+                    continue
+
+                points_by_ins = defaultdict(list)
+                points_by_ins_ex = defaultdict(lambda: defaultdict(list))
+
+                if mode_vict_camps == "separat" and mode_vict_exercicis == "agregat":
+                    for field_code in app_fields_by_app.get(app_id, []):
+                        entries = []
+                        for row in rows:
+                            ins_id = row.get("inscripcio_id")
+                            if ins_id in (None, ""):
+                                continue
+                            selected_rows = _selected_field_rows_for_app(ins_id, app_id, field_code)
+                            if not selected_rows:
+                                continue
+                            base_val = _apply_simple_agg(
+                                [_to_float(item.get("value")) for item in selected_rows],
+                                agg_exercicis,
+                            )
+                            entries.append({"row": row, "base": base_val})
+
+                        unit_points = _compute_victory_points_for_entries(
+                            entries,
+                            ordre_principal,
+                            victories_cfg,
+                            calc_metric_value_for_ins,
+                            forced_app_ids=[app_id],
+                            forced_camps=[field_code],
+                        )
+                        for ins_id, pts in unit_points.items():
+                            points_by_ins[ins_id].append(pts)
+
+                    for row in rows:
+                        ins_id = row.get("inscripcio_id")
+                        if ins_id in (None, ""):
+                            continue
+                        row["by_app"][app_id] = float(
+                            _apply_simple_agg(points_by_ins.get(ins_id, []), agg_victories_camps)
+                        )
+                    continue
+
+                if mode_vict_camps == "agregat" and mode_vict_exercicis == "separat":
+                    all_exercicis = set()
+                    ex_rows_by_ins = {}
+                    for row in rows:
+                        ins_id = row.get("inscripcio_id")
+                        if ins_id in (None, ""):
+                            continue
+                        selected_rows = _get_selected_rows_agg_for_ins(ins_id).get(app_id, [])
+                        ex_map = {}
+                        for item in selected_rows:
+                            try:
+                                ex_idx = int(item.get("exercici"))
+                            except Exception:
+                                continue
+                            ex_map[ex_idx] = _to_float(item.get("value"))
+                            all_exercicis.add(ex_idx)
+                        ex_rows_by_ins[ins_id] = ex_map
+
+                    for ex_idx in sorted(all_exercicis):
+                        entries = []
+                        for row in rows:
+                            ins_id = row.get("inscripcio_id")
+                            if ins_id in (None, ""):
+                                continue
+                            if ex_idx not in (ex_rows_by_ins.get(ins_id) or {}):
+                                continue
+                            entries.append({"row": row, "base": ex_rows_by_ins[ins_id][ex_idx]})
+
+                        unit_points = _compute_victory_points_for_entries(
+                            entries,
+                            ordre_principal,
+                            victories_cfg,
+                            calc_metric_value_for_ins,
+                            forced_app_ids=[app_id],
+                            forced_exercici_ids=[ex_idx],
+                        )
+                        for ins_id, pts in unit_points.items():
+                            points_by_ins[ins_id].append(pts)
+
+                    for row in rows:
+                        ins_id = row.get("inscripcio_id")
+                        if ins_id in (None, ""):
+                            continue
+                        row["by_app"][app_id] = float(
+                            _apply_simple_agg(points_by_ins.get(ins_id, []), agg_victories_exercicis)
+                        )
+                    continue
+
+                if mode_vict_camps == "separat" and mode_vict_exercicis == "separat":
+                    all_exercicis = set()
+                    for field_code in app_fields_by_app.get(app_id, []):
+                        ex_rows_by_ins = {}
+                        for row in rows:
+                            ins_id = row.get("inscripcio_id")
+                            if ins_id in (None, ""):
+                                continue
+                            selected_rows = _selected_field_rows_for_app(ins_id, app_id, field_code)
+                            ex_map = {}
+                            for item in selected_rows:
+                                try:
+                                    ex_idx = int(item.get("exercici"))
+                                except Exception:
+                                    continue
+                                ex_map[ex_idx] = _to_float(item.get("value"))
+                                all_exercicis.add(ex_idx)
+                            ex_rows_by_ins[ins_id] = ex_map
+
+                        for ex_idx in sorted(all_exercicis):
+                            entries = []
+                            for row in rows:
+                                ins_id = row.get("inscripcio_id")
+                                if ins_id in (None, ""):
+                                    continue
+                                if ex_idx not in (ex_rows_by_ins.get(ins_id) or {}):
+                                    continue
+                                entries.append({"row": row, "base": ex_rows_by_ins[ins_id][ex_idx]})
+
+                            unit_points = _compute_victory_points_for_entries(
+                                entries,
+                                ordre_principal,
+                                victories_cfg,
+                                calc_metric_value_for_ins,
+                                forced_app_ids=[app_id],
+                                forced_exercici_ids=[ex_idx],
+                                forced_camps=[field_code],
+                            )
+                            for ins_id, pts in unit_points.items():
+                                points_by_ins_ex[ins_id][ex_idx].append(pts)
+
+                    for row in rows:
+                        ins_id = row.get("inscripcio_id")
+                        if ins_id in (None, ""):
+                            continue
+                        ex_totals = []
+                        for ex_idx in sorted((points_by_ins_ex.get(ins_id) or {}).keys()):
+                            ex_totals.append(
+                                _apply_simple_agg(
+                                    (points_by_ins_ex.get(ins_id) or {}).get(ex_idx, []),
+                                    agg_victories_camps,
+                                )
+                            )
+                        row["by_app"][app_id] = float(
+                            _apply_simple_agg(ex_totals, agg_victories_exercicis)
+                        )
+                    continue
+
+            for row in rows:
+                row["score"] = float(_apply_simple_agg(list((row.get("by_app") or {}).values()), agg_aparells))
 
     out = {}
 

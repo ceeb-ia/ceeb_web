@@ -34,6 +34,12 @@ from .views_classificacions import (
     classificacions_live_data,
     public_classificacions_live_data,
 )
+from .views_classificacio_templates import (
+    ClassificacioTemplateGlobalBuilder,
+    ClassificacioTemplateGlobalDeleteView,
+    ClassificacioTemplateGlobalList,
+    classificacio_template_global_save,
+)
 from .views_equips import (
     equips_assign,
     equips_auto_create,
@@ -77,6 +83,11 @@ urlpatterns = [
     path("trampoli/aparells/<int:pk>/editar/", authenticated_view(AparellUpdate.as_view()), name="aparell_update"),
     path("trampoli/aparells/<int:pk>/eliminar/", authenticated_view(AparellDeleteView.as_view()), name="aparell_delete"),
     path("trampoli/aparells/<int:pk>/puntuacio/", authenticated_view(ScoringSchemaUpdate.as_view()), name="aparell_scoring_schema_update"),
+    path("trampoli/classificacio-templates/", authenticated_view(ClassificacioTemplateGlobalList.as_view()), name="classificacio_template_global_list"),
+    path("trampoli/classificacio-templates/nou/", authenticated_view(ClassificacioTemplateGlobalBuilder.as_view()), name="classificacio_template_global_create"),
+    path("trampoli/classificacio-templates/<int:pk>/editar/", authenticated_view(ClassificacioTemplateGlobalBuilder.as_view()), name="classificacio_template_global_update"),
+    path("trampoli/classificacio-templates/save/", authenticated_view(classificacio_template_global_save), name="classificacio_template_global_save"),
+    path("trampoli/classificacio-templates/<int:pk>/eliminar/", authenticated_view(ClassificacioTemplateGlobalDeleteView.as_view()), name="classificacio_template_global_delete"),
 
     path("competicions/nova/", authenticated_view(CompeticioCreateView.as_view()), name="create"),
     path("competicions/created/", authenticated_view(CompeticioListView.as_view()), name="created"),

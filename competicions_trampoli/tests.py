@@ -52,7 +52,7 @@ from .views_classificacions import (
     _validate_schema_for_competicio,
     _validate_particions_schema,
 )
-from .services.services_classificacions_2 import compute_classificacio
+from .services.services_classificacions_2 import DEFAULT_SCHEMA, compute_classificacio
 
 
 class _BaseTrampoliDataMixin:
@@ -2582,6 +2582,11 @@ class ClassificacioMatrixScalarTests(_BaseTrampoliDataMixin, TestCase):
             "punts_victoria": 1,
             "punts_empat": 0.5,
             "sense_nota_mode": "skip",
+            "mode_camps": "agregat",
+            "mode_exercicis": "agregat",
+            "mode_seleccio_exercicis_camps_separats": "per_camp",
+            "agregacio_victories_camps": "sum",
+            "agregacio_victories_exercicis": "sum",
             "desempat_comparacio": [],
         }
         return schema
@@ -3769,6 +3774,267 @@ class ClassificacioMatrixScalarTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(rows[0]["by_app"][self.comp_app_a.id], 0.5)
         self.assertEqual(rows[1]["by_app"][self.comp_app_a.id], 0.5)
 
+    def test_compute_classificacio_victories_separated_fields_aggregate_per_app(self):
+        schema = self._selected_total_schema([self.comp_app_a.id], mode_resultat="victories")
+        schema["puntuacio"]["camps_per_aparell"] = {str(self.comp_app_a.id): ["E", "D"]}
+        schema["puntuacio"]["victories"]["mode_camps"] = "separat"
+        schema["puntuacio"]["victories"]["agregacio_victories_camps"] = "sum"
+
+        for exercici, e_val, d_val in ((1, 10.0, 1.0), (2, 10.0, 1.0)):
+            ScoreEntry.objects.create(
+                competicio=self.comp,
+                inscripcio=self.ins_a,
+                exercici=exercici,
+                comp_aparell=self.comp_app_a,
+                inputs={"E": e_val, "D": d_val},
+                outputs={},
+                total=e_val + d_val,
+            )
+            ScoreEntry.objects.create(
+                competicio=self.comp,
+                inscripcio=self.ins_b,
+                exercici=exercici,
+                comp_aparell=self.comp_app_a,
+                inputs={"E": 8.0, "D": 8.0},
+                outputs={},
+                total=16.0,
+            )
+
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Victories fields separated",
+            activa=True,
+            ordre=1,
+            tipus="individual",
+            schema=schema,
+        )
+
+        rows = compute_classificacio(self.comp, cfg).get("global", [])
+        by_name = {row["participant"]: row["by_app"][self.comp_app_a.id] for row in rows}
+        self.assertEqual(by_name.get("Participant A"), 1.0)
+        self.assertEqual(by_name.get("Participant B"), 1.0)
+
+    def test_compute_classificacio_victories_separated_exercises_aggregate_per_app(self):
+        self.comp_app_a.nombre_exercicis = 2
+        self.comp_app_a.save(update_fields=["nombre_exercicis"])
+        schema = self._selected_total_schema([self.comp_app_a.id], mode_resultat="victories")
+        schema["puntuacio"]["victories"]["mode_exercicis"] = "separat"
+        schema["puntuacio"]["victories"]["agregacio_victories_exercicis"] = "sum"
+
+        for exercici, total_a, total_b in ((1, 10.0, 9.0), (2, 1.0, 2.0)):
+            ScoreEntry.objects.create(
+                competicio=self.comp,
+                inscripcio=self.ins_a,
+                exercici=exercici,
+                comp_aparell=self.comp_app_a,
+                inputs={},
+                outputs={},
+                total=total_a,
+            )
+            ScoreEntry.objects.create(
+                competicio=self.comp,
+                inscripcio=self.ins_b,
+                exercici=exercici,
+                comp_aparell=self.comp_app_a,
+                inputs={},
+                outputs={},
+                total=total_b,
+            )
+
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Victories exercises separated",
+            activa=True,
+            ordre=1,
+            tipus="individual",
+            schema=schema,
+        )
+
+        rows = compute_classificacio(self.comp, cfg).get("global", [])
+        by_name = {row["participant"]: row["by_app"][self.comp_app_a.id] for row in rows}
+        self.assertEqual(by_name.get("Participant A"), 1.0)
+        self.assertEqual(by_name.get("Participant B"), 1.0)
+
+    def test_compute_classificacio_victories_separated_fields_and_exercises_use_intermediate_aggregation(self):
+        self.comp_app_a.nombre_exercicis = 2
+        self.comp_app_a.save(update_fields=["nombre_exercicis"])
+        schema = self._selected_total_schema([self.comp_app_a.id], mode_resultat="victories")
+        schema["puntuacio"]["camps_per_aparell"] = {str(self.comp_app_a.id): ["E", "D"]}
+        schema["puntuacio"]["victories"]["mode_camps"] = "separat"
+        schema["puntuacio"]["victories"]["mode_exercicis"] = "separat"
+        schema["puntuacio"]["victories"]["agregacio_victories_camps"] = "avg"
+        schema["puntuacio"]["victories"]["agregacio_victories_exercicis"] = "sum"
+
+        per_ex = {
+            1: {"a": {"E": 10.0, "D": 1.0}, "b": {"E": 9.0, "D": 9.0}},
+            2: {"a": {"E": 8.0, "D": 1.0}, "b": {"E": 7.0, "D": 9.0}},
+        }
+        for exercici, vals in per_ex.items():
+            ScoreEntry.objects.create(
+                competicio=self.comp,
+                inscripcio=self.ins_a,
+                exercici=exercici,
+                comp_aparell=self.comp_app_a,
+                inputs=vals["a"],
+                outputs={},
+                total=sum(vals["a"].values()),
+            )
+            ScoreEntry.objects.create(
+                competicio=self.comp,
+                inscripcio=self.ins_b,
+                exercici=exercici,
+                comp_aparell=self.comp_app_a,
+                inputs=vals["b"],
+                outputs={},
+                total=sum(vals["b"].values()),
+            )
+
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Victories separated all levels",
+            activa=True,
+            ordre=1,
+            tipus="individual",
+            schema=schema,
+        )
+
+        rows = compute_classificacio(self.comp, cfg).get("global", [])
+        by_name = {row["participant"]: row["by_app"][self.comp_app_a.id] for row in rows}
+        self.assertEqual(by_name.get("Participant A"), 1.0)
+        self.assertEqual(by_name.get("Participant B"), 1.0)
+
+    def test_compute_classificacio_victories_separated_fields_supports_global_or_per_field_exercise_selection(self):
+        self.comp_app_a.nombre_exercicis = 2
+        self.comp_app_a.save(update_fields=["nombre_exercicis"])
+        schema = self._selected_total_schema([self.comp_app_a.id], mode_resultat="victories")
+        schema["puntuacio"]["camps_per_aparell"] = {str(self.comp_app_a.id): ["E", "D"]}
+        schema["puntuacio"]["exercicis"] = {"mode": "millor_1"}
+        schema["puntuacio"]["victories"]["mode_camps"] = "separat"
+        schema["puntuacio"]["victories"]["agregacio_victories_camps"] = "sum"
+
+        for exercici, vals_a, vals_b in (
+            (1, {"E": 10.0, "D": 1.0}, {"E": 9.0, "D": 9.0}),
+            (2, {"E": 1.0, "D": 10.0}, {"E": 8.0, "D": 8.0}),
+        ):
+            ScoreEntry.objects.create(
+                competicio=self.comp,
+                inscripcio=self.ins_a,
+                exercici=exercici,
+                comp_aparell=self.comp_app_a,
+                inputs=vals_a,
+                outputs={},
+                total=sum(vals_a.values()),
+            )
+            ScoreEntry.objects.create(
+                competicio=self.comp,
+                inscripcio=self.ins_b,
+                exercici=exercici,
+                comp_aparell=self.comp_app_a,
+                inputs=vals_b,
+                outputs={},
+                total=sum(vals_b.values()),
+            )
+
+        schema_global = json.loads(json.dumps(schema))
+        schema_global["puntuacio"]["victories"]["mode_seleccio_exercicis_camps_separats"] = "global"
+        cfg_global = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Victories fields global select",
+            activa=True,
+            ordre=1,
+            tipus="individual",
+            schema=schema_global,
+        )
+        global_rows = compute_classificacio(self.comp, cfg_global).get("global", [])
+        global_points = {row["participant"]: row["by_app"][self.comp_app_a.id] for row in global_rows}
+
+        schema_per_field = json.loads(json.dumps(schema))
+        schema_per_field["puntuacio"]["victories"]["mode_seleccio_exercicis_camps_separats"] = "per_camp"
+        cfg_per_field = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Victories fields per field select",
+            activa=True,
+            ordre=2,
+            tipus="individual",
+            schema=schema_per_field,
+        )
+        per_field_rows = compute_classificacio(self.comp, cfg_per_field).get("global", [])
+        per_field_points = {row["participant"]: row["by_app"][self.comp_app_a.id] for row in per_field_rows}
+
+        self.assertEqual(global_points.get("Participant A"), 1.0)
+        self.assertEqual(global_points.get("Participant B"), 1.0)
+        self.assertEqual(per_field_points.get("Participant A"), 2.0)
+        self.assertEqual(per_field_points.get("Participant B"), 0.0)
+
+    def test_compute_classificacio_victories_internal_tie_break_respects_separated_exercise_unit(self):
+        self.comp_app_a.nombre_exercicis = 2
+        self.comp_app_a.save(update_fields=["nombre_exercicis"])
+        schema = self._selected_total_schema([self.comp_app_a.id], mode_resultat="victories")
+        schema["puntuacio"]["victories"]["mode_exercicis"] = "separat"
+        schema["puntuacio"]["victories"]["desempat_comparacio"] = [
+            {
+                "camp": "E",
+                "camps": ["E"],
+                "agregacio_camps": "hereta",
+                "ordre": "desc",
+                "scope": {"exercicis": {"mode": "hereta"}},
+            }
+        ]
+
+        for exercici, e_a, e_b in ((1, 9.0, 8.0), (2, 1.0, 9.0)):
+            ScoreEntry.objects.create(
+                competicio=self.comp,
+                inscripcio=self.ins_a,
+                exercici=exercici,
+                comp_aparell=self.comp_app_a,
+                inputs={"E": e_a},
+                outputs={},
+                total=10.0,
+            )
+            ScoreEntry.objects.create(
+                competicio=self.comp,
+                inscripcio=self.ins_b,
+                exercici=exercici,
+                comp_aparell=self.comp_app_a,
+                inputs={"E": e_b},
+                outputs={},
+                total=10.0,
+            )
+
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Victories tie per exercise",
+            activa=True,
+            ordre=1,
+            tipus="individual",
+            schema=schema,
+        )
+
+        rows = compute_classificacio(self.comp, cfg).get("global", [])
+        by_name = {row["participant"]: row["by_app"][self.comp_app_a.id] for row in rows}
+        self.assertEqual(by_name.get("Participant A"), 1.0)
+        self.assertEqual(by_name.get("Participant B"), 1.0)
+
+    def test_classificacio_save_rejects_invalid_victories_granular_modes(self):
+        schema = self._selected_total_schema([self.comp_app_a.id], mode_resultat="victories")
+        schema["puntuacio"]["victories"]["mode_camps"] = "invalid"
+        schema["puntuacio"]["victories"]["mode_exercicis"] = "broken"
+        schema["puntuacio"]["victories"]["mode_seleccio_exercicis_camps_separats"] = "oops"
+        _, errors = _validate_schema_for_competicio(self.comp, schema, tipus="individual")
+        self.assertTrue(any("mode_camps invalid" in e for e in errors))
+        self.assertTrue(any("mode_exercicis invalid" in e for e in errors))
+        self.assertTrue(any("mode_seleccio_exercicis_camps_separats invalid" in e for e in errors))
+
+    def test_classificacio_save_ignores_invalid_victories_granular_modes_in_score_mode(self):
+        schema = self._selected_total_schema([self.comp_app_a.id], mode_resultat="score")
+        schema["puntuacio"]["victories"]["mode_camps"] = "invalid"
+        schema["puntuacio"]["victories"]["mode_exercicis"] = "broken"
+        schema["puntuacio"]["victories"]["mode_seleccio_exercicis_camps_separats"] = "oops"
+        _, errors = _validate_schema_for_competicio(self.comp, schema, tipus="individual")
+        self.assertFalse(any("mode_camps invalid" in e for e in errors))
+        self.assertFalse(any("mode_exercicis invalid" in e for e in errors))
+        self.assertFalse(any("mode_seleccio_exercicis_camps_separats invalid" in e for e in errors))
+
     def test_classificacio_save_rejects_victories_for_non_individual(self):
         schema = self._selected_total_schema([self.comp_app_a.id], mode_resultat="victories")
         _, errors = _validate_schema_for_competicio(self.comp, schema, tipus="entitat")
@@ -4078,6 +4344,11 @@ class ClassificacioTemplateFlowTests(_BaseTrampoliDataMixin, TestCase):
             "punts_victoria": 1,
             "punts_empat": 0,
             "sense_nota_mode": "skip",
+            "mode_camps": "separat",
+            "mode_exercicis": "separat",
+            "mode_seleccio_exercicis_camps_separats": "global",
+            "agregacio_victories_camps": "avg",
+            "agregacio_victories_exercicis": "max",
             "desempat_comparacio": [
                 {
                     "camp": "E_total",
@@ -4102,6 +4373,12 @@ class ClassificacioTemplateFlowTests(_BaseTrampoliDataMixin, TestCase):
         punt = (schema_local.get("puntuacio") or {})
         self.assertEqual(punt.get("mode_resultat_aparells"), "victories")
         self.assertEqual((punt.get("aparells") or {}).get("ids"), [self.target_app.id])
+        self.assertEqual((punt.get("victories") or {}).get("mode_camps"), "separat")
+        self.assertEqual((punt.get("victories") or {}).get("mode_exercicis"), "separat")
+        self.assertEqual(
+            (punt.get("victories") or {}).get("mode_seleccio_exercicis_camps_separats"),
+            "global",
+        )
         self.assertEqual(
             ((((punt.get("victories") or {}).get("desempat_comparacio")) or [])[0] or {}).get("camps"),
             ["E_total"],
@@ -4339,6 +4616,346 @@ class ClassificacioTemplateFlowTests(_BaseTrampoliDataMixin, TestCase):
             {"cfg_id": self.cfg_source.id, "template_id": foreign_id, "nom": "No hauria d'editar"},
         )
         self.assertEqual(update_res.status_code, 404)
+
+    def test_classificacions_home_renders_builder_json_contract(self):
+        self.client.force_login(self.editor_user)
+        url = reverse("classificacions_home", kwargs={"pk": self.comp_source.id})
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, 'id="can-manage-global-templates"')
+        self.assertContains(res, 'id="builder-save-url"')
+        self.assertContains(res, 'id="builder-delete-url-pattern"')
+        self.assertContains(res, 'id="builder-preview-url-pattern"')
+        self.assertContains(res, 'id="builder-enable-template-library"')
+        self.assertContains(res, 'id="builder-can-preview"')
+        self.assertContains(res, 'id="victoryConfigBox"')
+        self.assertContains(res, 'id="sVictoryModeCamps"')
+        self.assertContains(res, 'id="sVictoryModeExercicis"')
+        self.assertContains(res, 'id="classifHelpDrawer"')
+        self.assertContains(res, "classificacions_builder_help.css")
+        self.assertContains(res, "classificacions_builder_help.js")
+        self.assertContains(res, 'data-help-key="global_overview"')
+        self.assertContains(res, 'data-help-key="victories_overview"')
+        self.assertNotContains(res, '<option value="entitat">Per entitat</option>', html=True)
+
+
+class GlobalClassificacioTemplateManagementTests(_BaseTrampoliDataMixin, TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.user = User.objects.create_user(
+            username="global_tpl_owner",
+            password="testpass123",
+            email="global-tpl-owner@example.com",
+        )
+        self.other_user = User.objects.create_user(
+            username="global_tpl_other",
+            password="testpass123",
+            email="global-tpl-other@example.com",
+        )
+        self.admin_user = User.objects.create_superuser(
+            username="global_tpl_admin",
+            password="testpass123",
+            email="global-tpl-admin@example.com",
+        )
+        self.app = self._create_aparell("TRAMP_GLOB", "Tramp Global", owner=self.user)
+        ScoringSchema.objects.create(
+            aparell=self.app,
+            schema={
+                "fields": [
+                    {"code": "E", "label": "Execucio", "type": "number"},
+                ],
+                "computed": [
+                    {"code": "TOTAL", "formula": "E"},
+                ],
+            },
+        )
+        self.comp = self._create_competicio("Comp Global Templates")
+        self.comp_app = self._create_comp_aparell(self.comp, self.app, ordre=1, actiu=True)
+        CompeticioMembership.objects.create(
+            user=self.user,
+            competicio=self.comp,
+            role=CompeticioMembership.Role.EDITOR,
+            is_active=True,
+        )
+
+    def _build_global_schema_payload(self, app_id):
+        schema = json.loads(json.dumps(DEFAULT_SCHEMA))
+        schema["puntuacio"]["aparells"] = {"mode": "seleccionar", "ids": [app_id]}
+        schema["puntuacio"]["camps_per_aparell"] = {str(app_id): ["total"]}
+        schema["presentacio"]["columnes"] = [
+            {"type": "builtin", "key": "posicio", "label": "#", "align": "left"},
+            {"type": "builtin", "key": "participant", "label": "Nom", "align": "left"},
+            {"type": "builtin", "key": "punts", "label": "Punts", "align": "right", "decimals": 3},
+        ]
+        return schema
+
+    def test_owner_can_create_list_and_delete_global_template(self):
+        self.client.force_login(self.user)
+        save_url = reverse("classificacio_template_global_save")
+        payload = {
+            "nom": "Plantilla Global 1",
+            "slug": "plantilla-global-1",
+            "activa": True,
+            "tipus": "individual",
+            "schema": self._build_global_schema_payload(self.app.id),
+        }
+        res = self.client.post(save_url, data=json.dumps(payload), content_type="application/json")
+        self.assertEqual(res.status_code, 200)
+        body = res.json()
+        self.assertTrue(body.get("ok"))
+        cfg = body.get("cfg") or {}
+        tpl = ClassificacioTemplateGlobal.objects.get(pk=cfg.get("id"))
+        self.assertEqual(((tpl.payload or {}).get("schema") or {}).get("puntuacio", {}).get("aparells", {}).get("ids"), [self.app.codi])
+        self.assertEqual(tpl.slug, "plantilla-global-1")
+
+        list_url = reverse("classificacio_template_global_list")
+        list_res = self.client.get(list_url)
+        self.assertEqual(list_res.status_code, 200)
+        self.assertContains(list_res, "Plantilla Global 1")
+
+        delete_url = reverse("classificacio_template_global_delete", kwargs={"pk": tpl.id})
+        delete_res = self.client.post(
+            delete_url,
+            data=json.dumps({}),
+            content_type="application/json",
+            HTTP_ACCEPT="application/json",
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        self.assertEqual(delete_res.status_code, 200)
+        self.assertFalse(ClassificacioTemplateGlobal.objects.filter(pk=tpl.id).exists())
+
+    def test_owner_list_hides_foreign_templates_and_admin_sees_both(self):
+        own_tpl = ClassificacioTemplateGlobal.objects.create(
+            nom="Tpl Own",
+            slug="tpl-own",
+            tipus="individual",
+            activa=True,
+            payload={"schema": {}},
+            requirements={},
+            created_by=self.user,
+        )
+        foreign_tpl = ClassificacioTemplateGlobal.objects.create(
+            nom="Tpl Foreign",
+            slug="tpl-foreign",
+            tipus="individual",
+            activa=True,
+            payload={"schema": {}},
+            requirements={},
+            created_by=self.other_user,
+        )
+
+        list_url = reverse("classificacio_template_global_list")
+
+        self.client.force_login(self.user)
+        owner_res = self.client.get(list_url)
+        self.assertContains(owner_res, own_tpl.nom)
+        self.assertNotContains(owner_res, foreign_tpl.nom)
+
+        self.client.force_login(self.admin_user)
+        admin_res = self.client.get(list_url)
+        self.assertContains(admin_res, own_tpl.nom)
+        self.assertContains(admin_res, foreign_tpl.nom)
+
+    def test_foreign_user_cannot_delete_template(self):
+        tpl = ClassificacioTemplateGlobal.objects.create(
+            nom="Tpl Locked",
+            slug="tpl-locked",
+            tipus="individual",
+            activa=True,
+            payload={"schema": {}},
+            requirements={},
+            created_by=self.user,
+        )
+        self.client.force_login(self.other_user)
+        delete_url = reverse("classificacio_template_global_delete", kwargs={"pk": tpl.id})
+        res = self.client.post(delete_url, data=json.dumps({}), content_type="application/json", HTTP_ACCEPT="application/json")
+        self.assertEqual(res.status_code, 404)
+
+    def test_owner_can_update_global_template_and_version_increments(self):
+        tpl = ClassificacioTemplateGlobal.objects.create(
+            nom="Tpl Editable",
+            slug="tpl-editable",
+            tipus="individual",
+            activa=True,
+            payload={"schema": {"puntuacio": {"aparells": {"mode": "seleccionar", "ids": [self.app.codi]}}}},
+            requirements={},
+            created_by=self.user,
+        )
+        self.client.force_login(self.user)
+        save_url = reverse("classificacio_template_global_save")
+        payload = {
+            "id": tpl.id,
+            "nom": "Tpl Editable V2",
+            "slug": "tpl-editable-v2",
+            "activa": False,
+            "tipus": "individual",
+            "schema": self._build_global_schema_payload(self.app.id),
+        }
+        res = self.client.post(save_url, data=json.dumps(payload), content_type="application/json")
+        self.assertEqual(res.status_code, 200)
+        tpl.refresh_from_db()
+        self.assertEqual(tpl.nom, "Tpl Editable V2")
+        self.assertEqual(tpl.slug, "tpl-editable-v2")
+        self.assertFalse(tpl.activa)
+        self.assertEqual(tpl.version, 2)
+
+    def test_global_validation_rejects_invalid_fields(self):
+        self.client.force_login(self.user)
+        save_url = reverse("classificacio_template_global_save")
+        schema = self._build_global_schema_payload(self.app.id)
+        schema["particions_v2"] = [{"code": "custom_excel", "apply_mode": "all", "parent_values": []}]
+        schema["particions"] = ["custom_excel"]
+        schema["puntuacio"]["camps_per_aparell"] = {str(self.app.id): ["NOT_SCOREABLE"]}
+        res = self.client.post(
+            save_url,
+            data=json.dumps(
+                {
+                    "nom": "Tpl Invalid",
+                    "slug": "tpl-invalid",
+                    "activa": True,
+                    "tipus": "individual",
+                    "schema": schema,
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 400)
+        body = res.json()
+        self.assertFalse(body.get("ok"))
+        self.assertTrue(any("camp no permes" in err for err in body.get("errors", [])))
+        self.assertTrue(any("no es puntuable" in err for err in body.get("errors", [])))
+
+    def test_global_edit_preserves_legacy_extra_fields(self):
+        legacy_schema = {
+            "particions": ["custom_excel"],
+            "particions_v2": [{"code": "custom_excel", "apply_mode": "all", "parent_values": []}],
+            "particions_custom": {
+                "custom_excel": {
+                    "mode": "custom",
+                    "fallback_label": "Altres",
+                    "grups": [{"key": "grp_1", "label": "Bloc X", "values": ["A"]}],
+                }
+            },
+            "filtres": {"custom_excel_in": ["A"]},
+            "puntuacio": {
+                "aparells": {"mode": "seleccionar", "ids": [self.app.codi]},
+                "camps_per_aparell": {self.app.codi: ["total"]},
+            },
+            "presentacio": {
+                "columnes": [
+                    {"type": "builtin", "key": "posicio", "label": "#", "align": "left"},
+                    {"type": "builtin", "key": "participant", "label": "Nom", "align": "left"},
+                    {"type": "builtin", "key": "punts", "label": "Punts", "align": "right", "decimals": 3},
+                ]
+            },
+        }
+        tpl = ClassificacioTemplateGlobal.objects.create(
+            nom="Tpl Legacy",
+            slug="tpl-legacy",
+            tipus="individual",
+            activa=True,
+            payload={"schema": legacy_schema},
+            requirements={},
+            created_by=self.user,
+        )
+        self.client.force_login(self.user)
+        res = self.client.post(
+            reverse("classificacio_template_global_save"),
+            data=json.dumps(
+                {
+                    "id": tpl.id,
+                    "nom": "Tpl Legacy Updated",
+                    "slug": "tpl-legacy-updated",
+                    "activa": True,
+                    "tipus": "individual",
+                    "schema": self._build_global_schema_payload(self.app.id),
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 200)
+        tpl.refresh_from_db()
+        saved_schema = (tpl.payload or {}).get("schema") or {}
+        self.assertEqual(saved_schema.get("filtres", {}).get("custom_excel_in"), ["A"])
+        self.assertIn("custom_excel", saved_schema.get("particions", []))
+        self.assertIn("custom_excel", saved_schema.get("particions_custom", {}))
+
+    def test_global_template_appears_in_competition_template_list(self):
+        tpl = ClassificacioTemplateGlobal.objects.create(
+            nom="Tpl For Competition",
+            slug="tpl-for-competition",
+            tipus="individual",
+            activa=True,
+            payload={"schema": {"puntuacio": {"aparells": {"mode": "seleccionar", "ids": [self.app.codi]}}}},
+            requirements={},
+            created_by=self.user,
+        )
+        self.client.force_login(self.user)
+        url = reverse("classificacio_template_list", kwargs={"pk": self.comp.id})
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, 200)
+        ids = {int(item["id"]) for item in (res.json().get("templates") or [])}
+        self.assertIn(tpl.id, ids)
+
+    def test_global_builder_create_renders_builder_json_contract(self):
+        self.client.force_login(self.user)
+        url = reverse("classificacio_template_global_create")
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, 'id="can-manage-global-templates"')
+        self.assertContains(res, 'id="builder-save-url"')
+        self.assertContains(res, 'id="builder-delete-url-pattern"')
+        self.assertContains(res, 'id="builder-preview-url-pattern"')
+        self.assertContains(res, 'id="builder-enable-template-library"')
+        self.assertContains(res, 'id="builder-can-preview"')
+        self.assertContains(res, 'id="builder-selected-id"')
+        self.assertContains(res, 'id="builder-auto-add-new"')
+        self.assertContains(res, 'id="victoryConfigBox"')
+        self.assertContains(res, 'id="sVictoryModeCamps"')
+        self.assertContains(res, 'id="sVictoryModeExercicis"')
+        self.assertContains(res, 'id="classifHelpDrawer"')
+        self.assertContains(res, "classificacions_builder_help.css")
+        self.assertContains(res, "classificacions_builder_help.js")
+        self.assertContains(res, 'data-help-key="global_overview"')
+        self.assertContains(res, 'data-help-key="desempat_overview"')
+        self.assertNotContains(res, '<option value="entitat">Per entitat</option>', html=True)
+
+    def test_admin_global_builder_edit_is_scoped_to_template_owner_catalog(self):
+        own_tpl = ClassificacioTemplateGlobal.objects.create(
+            nom="Tpl Owner Scope",
+            slug="tpl-owner-scope",
+            tipus="individual",
+            activa=True,
+            payload={"schema": {}},
+            requirements={},
+            created_by=self.user,
+        )
+        foreign_app = self._create_aparell("TRAMP_OTHER", "Tramp Other", owner=self.other_user)
+        ScoringSchema.objects.create(
+            aparell=foreign_app,
+            schema={
+                "fields": [{"code": "E", "label": "Execucio", "type": "number"}],
+                "computed": [{"code": "TOTAL", "formula": "E"}],
+            },
+        )
+        foreign_tpl = ClassificacioTemplateGlobal.objects.create(
+            nom="Tpl Foreign Scope",
+            slug="tpl-foreign-scope",
+            tipus="individual",
+            activa=True,
+            payload={"schema": {"puntuacio": {"aparells": {"mode": "seleccionar", "ids": [foreign_app.codi]}}}},
+            requirements={},
+            created_by=self.other_user,
+        )
+
+        self.client.force_login(self.admin_user)
+        url = reverse("classificacio_template_global_update", kwargs={"pk": foreign_tpl.id})
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, foreign_tpl.nom)
+        self.assertNotContains(res, own_tpl.nom)
+        self.assertContains(res, foreign_app.nom)
+        self.assertNotContains(res, self.app.nom)
 
 
 class JudgeVideoApiTests(_BaseTrampoliDataMixin, TestCase):

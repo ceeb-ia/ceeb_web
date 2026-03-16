@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Plantilles de classificacio{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+  <div class="card-surface">
+    <div class="d-flex justify-content-between align-items-start mb-3">
+      <div>
+        <h2 class="mb-1">Plantilles de classificacio</h2>
+        <div class="text-muted small">Crea, edita i elimina plantilles globals reutilitzables de classificacions.</div>
+      </div>
+      <div class="d-flex gap-2">
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'created' %}">Competicions</a>
+        <a class="btn btn-sm btn-outline-primary" href="{% url 'classificacio_template_global_create' %}">Crear plantilla</a>
+      </div>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-sm table-bordered align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>Nom</th>
+            <th style="width:180px;">Slug</th>
+            <th style="width:120px;">Tipus</th>
+            {% if show_owner %}
+            <th style="width:220px;">Creat per</th>
+            {% endif %}
+            <th style="width:90px;">Activa</th>
+            <th style="width:90px;">Usos</th>
+            <th style="width:170px;">Actualitzada</th>
+            <th style="width:220px;"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for tpl in templates %}
+            <tr>
+              <td class="fw-semibold">{{ tpl.nom }}</td>
+              <td><code>{{ tpl.slug }}</code></td>
+              <td>{{ tpl.get_tipus_display }}</td>
+              {% if show_owner %}
+              <td>
+                {% firstof tpl.created_by.get_full_name tpl.created_by.username %}
+                <div class="text-muted small">{{ tpl.created_by.email }}</div>
+              </td>
+              {% endif %}
+              <td class="text-center">
+                {% if tpl.activa %}<span class="badge badge-success">Si</span>{% else %}<span class="badge badge-secondary">No</span>{% endif %}
+              </td>
+              <td class="text-center">{{ tpl.uses_count|default:0 }}</td>
+              <td class="small text-muted">{{ tpl.updated_at|date:"d/m/Y H:i" }}</td>
+              <td class="text-right">
+                <div class="d-inline-flex gap-2 flex-wrap justify-content-end">
+                  <a class="btn btn-sm btn-outline-secondary" href="{% url 'classificacio_template_global_update' tpl.id %}">Editar</a>
+                  <form method="post" action="{% url 'classificacio_template_global_delete' tpl.id %}" class="d-inline" onsubmit="return confirm('Segur que vols eliminar aquesta plantilla?');">
+                    {% csrf_token %}
+                    <button class="btn btn-sm btn-danger" type="submit">Eliminar</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="{% if show_owner %}8{% else %}7{% endif %}" class="text-muted">Encara no hi ha plantilles globals.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

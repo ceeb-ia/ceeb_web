@@ -1,0 +1,111 @@
+.classif-help-trigger.classif-help-trigger--inline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.2rem;
+  height: 1.2rem;
+  margin-left: 0.35rem;
+  border: 1px solid #9db7e5;
+  border-radius: 999px;
+  background: #eef4ff;
+  color: #1f4ea3;
+  font-size: 0.72rem;
+  line-height: 1;
+  padding: 0;
+  vertical-align: middle;
+}
+
+.classif-help-trigger.classif-help-trigger--inline:hover,
+.classif-help-trigger.classif-help-trigger--inline:focus {
+  background: #dfeaff;
+  color: #143875;
+  outline: none;
+}
+
+.classif-help-drawer {
+  position: fixed;
+  inset: 0;
+  z-index: 100100;
+  display: none;
+}
+
+.classif-help-drawer.is-open {
+  display: block;
+}
+
+.classif-help-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(18, 32, 61, 0.45);
+}
+
+.classif-help-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: min(560px, 100%);
+  height: 100%;
+  background: #ffffff;
+  box-shadow: -8px 0 28px rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+}
+
+.classif-help-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.9rem 1rem;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.classif-help-close {
+  border: 0;
+  background: transparent;
+  color: #495057;
+  font-size: 1.4rem;
+  line-height: 1;
+  padding: 0;
+}
+
+.classif-help-body {
+  padding: 1rem;
+  overflow-y: auto;
+  color: #343a40;
+  font-size: 0.95rem;
+}
+
+.classif-help-body h6 {
+  margin-top: 1rem;
+  margin-bottom: 0.35rem;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.classif-help-body p {
+  margin-bottom: 0.55rem;
+}
+
+.classif-help-body ul,
+.classif-help-body ol {
+  margin-bottom: 0.8rem;
+  padding-left: 1.15rem;
+}
+
+.classif-help-body li {
+  margin-bottom: 0.3rem;
+}
+
+.classif-help-body .help-key {
+  display: inline-block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  background: #f6f8fb;
+  border: 1px solid #e6ebf3;
+  border-radius: 0.35rem;
+  padding: 0.08rem 0.35rem;
+  font-size: 0.82rem;
+}
+
+body.classif-help-open {
+  overflow: hidden;
+}

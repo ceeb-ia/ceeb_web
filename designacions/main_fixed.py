@@ -14,7 +14,7 @@ from folium.plugins import MarkerCluster
 from folium.features import DivIcon
 from scipy.optimize import linear_sum_assignment
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time as dt_time
 from logs import _write_job, _read_job, push_log
 from asgiref.sync import async_to_sync
 from django.db import transaction
@@ -44,6 +44,207 @@ def _parse_times(s):
             pass
     # fallback: infer per element (pandas infers mixed formats)
     return pd.to_datetime(s, errors="coerce").dt.time
+
+
+def _normalize_date_value(value):
+    parsed = pd.to_datetime(value, errors="coerce")
+    if pd.isna(parsed):
+        return pd.NaT
+    return pd.Timestamp(parsed).normalize()
+
+
+def _normalize_date_series(series):
+    return pd.to_datetime(series, errors="coerce").dt.normalize()
+
+
+def _date_token(value) -> str:
+    normalized = _normalize_date_value(value)
+    if pd.isna(normalized):
+        return ""
+    return normalized.strftime("%Y-%m-%d")
+
+
+def _combine_date_time(date_value, time_value):
+    normalized_date = _normalize_date_value(date_value)
+    if pd.isna(normalized_date):
+        return pd.NaT
+    if time_value in (None, "") or pd.isna(time_value):
+        return pd.NaT
+    if isinstance(time_value, pd.Timestamp):
+        parsed_time = time_value.time()
+    elif isinstance(time_value, datetime):
+        parsed_time = time_value.time()
+    elif isinstance(time_value, dt_time):
+        parsed_time = time_value
+    else:
+        parsed = pd.to_datetime(time_value, format="%H:%M:%S", errors="coerce")
+        if pd.isna(parsed):
+            parsed = pd.to_datetime(time_value, format="%H:%M", errors="coerce")
+        if pd.isna(parsed):
+            parsed = pd.to_datetime(time_value, errors="coerce")
+        if pd.isna(parsed):
+            return pd.NaT
+        parsed_time = parsed.time()
+    return pd.Timestamp(datetime.combine(normalized_date.date(), parsed_time))
+
+
+def _build_tutor_working_id(row) -> str:
+    key = "|".join(
+        [
+            _normalize_entity_name(row.get("Codi Tutor de Joc", "")),
+            _normalize_entity_name(row.get("Modalitat", "")),
+            _normalize_entity_name(row.get("Nivell", "")),
+            _date_token(row.get("Data")),
+        ]
+    )
+    return hashlib.sha1(key.encode("utf-8")).hexdigest()[:10].upper()
+
+
+def _subgroup_date_key(subgrup):
+    for row in subgrup:
+        normalized = _normalize_date_value(row.get("Data"))
+        if not pd.isna(normalized):
+            return normalized
+    return pd.NaT
+
+
+def _subgroup_first_datetime(subgrup):
+    datetimes = [row.get("__match_datetime") for row in subgrup if not pd.isna(row.get("__match_datetime"))]
+    if not datetimes:
+        return pd.NaT
+    return min(datetimes)
+
+
+def _subgroup_last_datetime(subgrup):
+    datetimes = [row.get("__match_datetime") for row in subgrup if not pd.isna(row.get("__match_datetime"))]
+    if not datetimes:
+        return pd.NaT
+    return max(datetimes)
+
+
+def _build_daily_subgroups(df_partits_modalitat: pd.DataFrame, gap_same_pitch_min: int, gap_diff_pitch_min: int, max_partits_subgrup: int) -> list:
+    if df_partits_modalitat.empty:
+        return []
+
+    working = df_partits_modalitat.copy()
+    if "Data" in working.columns:
+        working["Data"] = _normalize_date_series(working["Data"])
+    working["__match_datetime"] = working.apply(
+        lambda row: _combine_date_time(row.get("Data"), row.get("Hora")),
+        axis=1,
+    )
+    working["__day_key"] = working["Data"]
+
+    final_subgrups = []
+    for _, group in working.groupby("__day_key", dropna=False):
+        group_ordered = group.sort_values(["__match_datetime", "Pista joc"], na_position="last").reset_index(drop=True)
+        valid_rows = group_ordered[group_ordered["__match_datetime"].notna()].reset_index(drop=True)
+        invalid_rows = group_ordered[group_ordered["__match_datetime"].isna()]
+
+        subgrups = []
+        used_rows = set()
+
+        while len(used_rows) < len(valid_rows):
+            current_subgroup = []
+            previous_dt = None
+            prev_pista_joc = None
+            for idx, row in valid_rows.iterrows():
+                if idx in used_rows:
+                    continue
+                current_dt = row["__match_datetime"]
+                pista_joc = row["Pista joc"]
+                if previous_dt is None:
+                    current_subgroup.append(row)
+                    used_rows.add(idx)
+                else:
+                    time_diff = (current_dt - previous_dt).total_seconds() / 60.0
+                    required_gap = gap_diff_pitch_min if pista_joc != prev_pista_joc else gap_same_pitch_min
+                    if time_diff >= required_gap:
+                        current_subgroup.append(row)
+                        used_rows.add(idx)
+
+                previous_dt = current_dt
+                prev_pista_joc = pista_joc
+
+            if current_subgroup:
+                subgrups.append(current_subgroup)
+
+        for _, row in invalid_rows.iterrows():
+            subgrups.append([row])
+
+        ordered_subgrups = sorted(
+            subgrups,
+            key=lambda sg: _subgroup_first_datetime(sg) if not pd.isna(_subgroup_first_datetime(sg)) else pd.Timestamp.max,
+        )
+        fused = []
+        used = set()
+        for i, current_sg in enumerate(ordered_subgrups):
+            if i in used:
+                continue
+            merged_sg = list(current_sg)
+            if len(merged_sg) < max_partits_subgrup:
+                for j in range(i + 1, len(ordered_subgrups)):
+                    if j in used:
+                        continue
+                    next_sg = ordered_subgrups[j]
+                    if len(merged_sg) + len(next_sg) > max_partits_subgrup:
+                        continue
+
+                    pista_actual = merged_sg[0].get("Pista joc")
+                    pista_seguent = next_sg[0].get("Pista joc")
+                    cluster_actual = merged_sg[0].get("cluster")
+                    cluster_seguent = next_sg[0].get("cluster")
+                    if (
+                        pista_actual == pista_seguent
+                        or pd.isna(cluster_actual)
+                        or pd.isna(cluster_seguent)
+                        or cluster_actual == -1
+                        or cluster_seguent == -1
+                        or cluster_actual != cluster_seguent
+                    ):
+                        continue
+
+                    hora_darrer = _subgroup_last_datetime(merged_sg)
+                    hora_primer = _subgroup_first_datetime(next_sg)
+                    if pd.isna(hora_darrer) or pd.isna(hora_primer):
+                        continue
+
+                    time_diff = (hora_primer - hora_darrer).total_seconds() / 60.0
+                    if time_diff >= gap_diff_pitch_min:
+                        merged_sg.extend(next_sg)
+                        used.add(j)
+                        break
+
+            fused.append(
+                sorted(
+                    merged_sg,
+                    key=lambda row: row.get("__match_datetime") if not pd.isna(row.get("__match_datetime")) else pd.Timestamp.max,
+                )
+            )
+
+        final_subgrups.extend(fused)
+
+    return final_subgrups
+
+
+def _availability_penalty_for_subgroup(tutor_row, subgrup, availability_end_buffer_min: int = 60, penalty: float = 1e6) -> float:
+    dispo_date = _normalize_date_value(tutor_row.get("Data"))
+    subgrup_date = _subgroup_date_key(subgrup)
+    if pd.isna(dispo_date) or pd.isna(subgrup_date) or dispo_date != subgrup_date:
+        return penalty
+
+    sub_inici_dt = _subgroup_first_datetime(subgrup)
+    sub_final_dt = _subgroup_last_datetime(subgrup)
+    dispo_inici_dt = _combine_date_time(dispo_date, tutor_row.get("Hora Inici"))
+    dispo_final_dt = _combine_date_time(dispo_date, tutor_row.get("Hora Fi"))
+
+    if pd.isna(sub_inici_dt) or pd.isna(sub_final_dt) or pd.isna(dispo_inici_dt) or pd.isna(dispo_final_dt):
+        return penalty
+
+    dispo_final_adj = dispo_final_dt - timedelta(minutes=availability_end_buffer_min)
+    if dispo_inici_dt > sub_inici_dt or dispo_final_adj < sub_final_dt:
+        return penalty
+    return 0.0
 
 
 def _color_per_tutor(tutor_codi) -> str:
@@ -409,6 +610,7 @@ def main(path_disposicions: str, path_dades: str, task_id: str | None = None, ru
     max_partits_subgrup = int(config.get("max_partits_subgrup", 3))
     gap_same_pitch_min = int(config.get("gap_same_pitch_min", 60))
     gap_diff_pitch_min = int(config.get("gap_diff_pitch_min", 75))
+    availability_end_buffer_min = int(config.get("availability_end_buffer_min", 60))
     modalitats_filter = config.get("modalitats") or []
     date_from = config.get("date_from") or None
     date_to = config.get("date_to") or None
@@ -429,6 +631,8 @@ def main(path_disposicions: str, path_dades: str, task_id: str | None = None, ru
     # Fem shuffle per evitar biaixos en assignacions
     df_dispos = df_dispos.sample(frac=1, random_state=42).reset_index(drop=True)
     df_partits = df_partits.sample(frac=1, random_state=42).reset_index(drop=True)
+    df_dispos["Data"] = _normalize_date_series(df_dispos["Data"])
+    df_partits["Data"] = _normalize_date_series(df_partits["Data"])
 
     print("\nColumnes partits:", df_partits.columns)
     print("\nColumnes disponibilitats tutors:", df_dispos.columns)
@@ -441,13 +645,15 @@ def main(path_disposicions: str, path_dades: str, task_id: str | None = None, ru
             lliga = _normalize_entity_name(row.get('Nom', ''))
             cat = _normalize_entity_name(row.get('Nivell', ''))
             mod = _normalize_entity_name(row.get('Modalitat', ''))
+            day = _date_token(row.get("Data"))
         else:
             nom = _normalize_entity_name(row.get('Codi', ''))
             lliga = _normalize_entity_name(row.get('Codi Extern Local', ''))
             cat = _normalize_entity_name(row.get('Lliga', ''))
             mod = _normalize_entity_name(row.get('Categoria', ''))
+            day = ""
 
-        key = f"{nom}|{lliga}|{cat}|{mod}"
+        key = f"{nom}|{lliga}|{cat}|{mod}|{day}"
         return hashlib.sha1(key.encode('utf-8')).hexdigest()[:10].upper()
 
     # Ens quedem només amb llicència tutor
@@ -480,24 +686,21 @@ def main(path_disposicions: str, path_dades: str, task_id: str | None = None, ru
 
     # ------------ Filtrat tutors / partits ------------
     if date_from:
-        df_partits["Data"] = pd.to_datetime(df_partits["Data"], errors="coerce")
-        dfrom = pd.to_datetime(date_from, errors="coerce")
+        dfrom = _normalize_date_value(date_from)
         if pd.notna(dfrom):
             df_partits = df_partits[df_partits["Data"] >= dfrom].copy()
 
     if date_to:
-        df_partits["Data"] = pd.to_datetime(df_partits["Data"], errors="coerce")
-        dto = pd.to_datetime(date_to, errors="coerce")
+        dto = _normalize_date_value(date_to)
         if pd.notna(dto):
             df_partits = df_partits[df_partits["Data"] <= dto].copy()
 
     # disponibilitats també tenen "Data"
     if date_from or date_to:
-        df_dispos["Data"] = pd.to_datetime(df_dispos["Data"], errors="coerce")
-        if date_from and pd.notna(pd.to_datetime(date_from, errors="coerce")):
-            df_dispos = df_dispos[df_dispos["Data"] >= pd.to_datetime(date_from)].copy()
-        if date_to and pd.notna(pd.to_datetime(date_to, errors="coerce")):
-            df_dispos = df_dispos[df_dispos["Data"] <= pd.to_datetime(date_to)].copy()
+        if date_from and pd.notna(_normalize_date_value(date_from)):
+            df_dispos = df_dispos[df_dispos["Data"] >= _normalize_date_value(date_from)].copy()
+        if date_to and pd.notna(_normalize_date_value(date_to)):
+            df_dispos = df_dispos[df_dispos["Data"] <= _normalize_date_value(date_to)].copy()
 
 
     codis_a_eliminar = ['TJ PROPI', 'TJ LEXIA', 'CEBLL', 'CEVOSABADELL', 'CELH', 'CEBN']
@@ -673,116 +876,28 @@ def main(path_disposicions: str, path_dades: str, task_id: str | None = None, ru
                 pos_local = _get_team_position(partit.get('Equip local', ''), df_classificacions, task_id)
                 pos_visitant = _get_team_position(partit.get('Equip visitant', ''), df_classificacions, task_id)
                 #print(f"Posició equip local '{partit.get('Equip local', '')}': {pos_local}, equip visitant '{partit.get('Equip visitant', '')}': {pos_visitant}")
-                pos_local = pos_visitant = -1  # Per defecte, no trobat
 
                 # Afegim al df dues columnes que indiquin la posicio
                 df_partits_modalitat.loc[df_partits_modalitat['ID'] == partit['ID'], 'Posició Equip Local'] = pos_local
                 df_partits_modalitat.loc[df_partits_modalitat['ID'] == partit['ID'], 'Posició Equip Visitant'] = pos_visitant
-        # --- agrupació per pista / horari ---
-        df_partits_grouped = df_partits_modalitat.groupby(['Pista joc'])
-
         df_partits_modalitat['Hora'] = _parse_times(df_partits_modalitat['Hora'])
         df_dispos_modalitat['Hora Inici'] = _parse_times(df_dispos_modalitat['Hora Inici'])
         df_dispos_modalitat['Hora Fi'] = _parse_times(df_dispos_modalitat['Hora Fi'])
+        df_partits_modalitat["Data"] = _normalize_date_series(df_partits_modalitat["Data"])
+        df_dispos_modalitat["Data"] = _normalize_date_series(df_dispos_modalitat["Data"])
+        df_partits_modalitat["__match_datetime"] = df_partits_modalitat.apply(
+            lambda row: _combine_date_time(row.get("Data"), row.get("Hora")),
+            axis=1,
+        )
 
-        final_subgrups = []
         if task_id:
             async_to_sync(push_log)(task_id, "Creant subgrups de partits...", 75)
-        for pista, group in df_partits_grouped:
-            group_ordenado = group.sort_values(['Hora'], na_position='last').reset_index(drop=True)
-            subgrups = []
-            used_rows = set()
-
-            def _crear_subgrups(group_sorted: pd.DataFrame, used_rows: set):
-                current_subgroup = []
-                previous_time = None
-                prev_pista_joc = None
-                for idx, row in group_sorted.iterrows():
-                    if idx in used_rows:
-                        continue
-                    current_time = row['Hora']
-                    pista_joc = row['Pista joc']
-                    if previous_time is None:
-                        current_subgroup.append(row)
-                        used_rows.add(idx)
-                    else:
-                        time_diff = (
-                            pd.Timestamp.combine(pd.Timestamp.today(), current_time) -
-                            pd.Timestamp.combine(pd.Timestamp.today(), previous_time)
-                        ).total_seconds() / 60.0
-
-                        if pista_joc != prev_pista_joc:
-                            if time_diff >= gap_diff_pitch_min:
-                                current_subgroup.append(row)
-                                used_rows.add(idx)
-                        else:
-                            if time_diff >= gap_same_pitch_min:
-                                current_subgroup.append(row)
-                                used_rows.add(idx)
-
-                    previous_time = current_time
-                    prev_pista_joc = pista_joc
-
-                return current_subgroup
-
-            while len(used_rows) < len(group_ordenado):
-                sg = _crear_subgrups(group_ordenado, used_rows)
-                if sg:
-                    subgrups.append(sg)
-
-            final_subgrups.extend(subgrups)
-
-        # --- fusió subgrups petits (igual que el teu codi) ---
-        MAX_PARTITS_SUBGRUP = max_partits_subgrup
-
-        def _fusionar_subgrups(subgrups: list) -> list:
-            subgrups = sorted(subgrups, key=lambda sg: min(row['Hora'] for row in sg))
-            fused = []
-            used = set()
-            skip_next = False
-
-            for i in range(len(subgrups)):
-                if skip_next:
-                    skip_next = False
-                    fused.append(subgrups[i])
-                    used.add(i)
-                    continue
-
-                current_sg = subgrups[i]
-                if len(current_sg) < MAX_PARTITS_SUBGRUP and i + 1 < len(subgrups):
-                    for j in range(i + 1, len(subgrups)):
-                        next_sg = subgrups[j]
-                        if len(next_sg) + len(current_sg) > MAX_PARTITS_SUBGRUP:
-                            continue
-
-                        pista_actual = current_sg[0]['Pista joc']
-                        pista_seguent = next_sg[0]['Pista joc']
-                        cluster_actual = current_sg[0]['cluster']
-                        cluster_seguent = next_sg[0]['cluster']
-
-                        if pd.isna(cluster_actual) or pd.isna(cluster_seguent) or cluster_actual == -1 or cluster_seguent == -1:
-                            continue
-
-                        if pista_actual != pista_seguent and cluster_actual == cluster_seguent and j not in used:
-                            hora_darrer = max(row['Hora'] for row in current_sg)
-                            hora_primer = min(row['Hora'] for row in next_sg)
-                            time_diff = (
-                                pd.Timestamp.combine(pd.Timestamp.today(), hora_primer) -
-                                pd.Timestamp.combine(pd.Timestamp.today(), hora_darrer)
-                            ).total_seconds() / 60.0
-                            if time_diff >= 75:
-                                current_sg.extend(next_sg)
-                                used.add(j)
-                                skip_next = True
-                                break
-
-                    fused.append(current_sg)
-                else:
-                    fused.append(current_sg)
-
-            return fused
-
-        final_subgrups = _fusionar_subgrups(final_subgrups)
+        final_subgrups = _build_daily_subgroups(
+            df_partits_modalitat,
+            gap_same_pitch_min=gap_same_pitch_min,
+            gap_diff_pitch_min=gap_diff_pitch_min,
+            max_partits_subgrup=max_partits_subgrup,
+        )
 
         # --- nivell subgrup ---
         def _subgrup_nivel(subgrup):
@@ -868,15 +983,12 @@ def main(path_disposicions: str, path_dades: str, task_id: str | None = None, ru
                 except ValueError:
                     raise ValueError(f"Nivell tutor ({tutor_nivel}) o subgrup ({subgrup_nivel}) no reconegut.")
 
-                # disponibilitat
-                dispo_inici = row['Hora Inici']
-                dispo_final = row['Hora Fi']
-                sub_inici = min(r['Hora'] for r in subgrup)
-                sub_final = max(r['Hora'] for r in subgrup)
-
-                dispo_final_adj = (datetime.combine(datetime.today(), dispo_final) - timedelta(hours=1)).time()
-                if dispo_inici > sub_inici or dispo_final_adj < sub_final:
-                    cost += 1e6
+                cost += _availability_penalty_for_subgroup(
+                    row,
+                    subgrup,
+                    availability_end_buffer_min=availability_end_buffer_min,
+                    penalty=1e6,
+                )
 
                 C[i, j] = cost
 
@@ -905,13 +1017,13 @@ def main(path_disposicions: str, path_dades: str, task_id: str | None = None, ru
             observacions = tutor_row.get('Observacions', '')
 
             subgrup = final_subgrups[subgrup_idx]
-            assigned_tutor_ids.add(tutor_id)
-
+            tutor_was_assigned = False
             for partit in subgrup:
                 if C[tutor_idx, subgrup_idx] >= 1e5:
                     continue
 
                 assigned_partit_ids.add(partit['ID'])
+                tutor_was_assigned = True
                 assigned_tutors.append({
                     'ID': partit.get('ID', ''),
                     'Data Partit': partit.get('Data', ''),
@@ -931,6 +1043,8 @@ def main(path_disposicions: str, path_dades: str, task_id: str | None = None, ru
                     'Tutor Hora Fi': tutor_hora_fi,
                     'Observacions': observacions
                 })
+            if tutor_was_assigned:
+                assigned_tutor_ids.add(tutor_id)
 
     df_assignacions = pd.DataFrame(assigned_tutors)
     if not df_assignacions.empty:
@@ -981,6 +1095,11 @@ def main(path_disposicions: str, path_dades: str, task_id: str | None = None, ru
     all_tutor_ids = set(df_dispos['ID'])
     unassigned_tutor_ids = all_tutor_ids - assigned_tutor_ids
     df_unassigned_tutors = df_dispos[df_dispos['ID'].isin(unassigned_tutor_ids)] if unassigned_tutor_ids else pd.DataFrame()
+    unassigned_tutor_codes = (
+        df_unassigned_tutors["Codi Tutor de Joc"].astype(str).str.strip().replace("", pd.NA).dropna().unique().tolist()
+        if not df_unassigned_tutors.empty and "Codi Tutor de Joc" in df_unassigned_tutors.columns
+        else []
+    )
 
     if task_id:
         async_to_sync(push_log)(task_id, "Procés del motor finalitzat.", 96)
@@ -989,7 +1108,7 @@ def main(path_disposicions: str, path_dades: str, task_id: str | None = None, ru
     return {
         "assigned": int(len(df_assignacions)) if df_assignacions is not None else 0,
         "unassigned_matches": int(len(df_unassigned)) if df_unassigned is not None else 0,
-        "unassigned_referees": int(len(df_unassigned_tutors)) if df_unassigned_tutors is not None else 0,
+        "unassigned_referees": int(len(unassigned_tutor_codes)),
         "needs_review_referees": int(len(df_revisio_sense_nivell)) if df_revisio_sense_nivell is not None else 0,
         "map_path": map_rel_path,   # relatiu a MEDIA_ROOT
     }
