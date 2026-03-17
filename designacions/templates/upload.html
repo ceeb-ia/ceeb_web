@@ -76,6 +76,15 @@
             <div class="form-group col-md-6">
               <label>Modalitats (selecció)</label>
 
+              <div class="mb-3">
+                <label>Fase classificacions</label>
+                <select name="fase" class="form-control form-control-sm">
+                  <option value="FS1" {% if defaults.fase == "FS1" %}selected{% endif %}>1a Fase</option>
+                  <option value="FS2" {% if defaults.fase == "FS2" %}selected{% endif %}>2a Fase</option>
+                </select>
+                <small class="form-text text-muted">Determina la fase usada a la consulta de classificacions del CEEB.</small>
+              </div>
+
               <select id="modalitatsSelect" name="modalitats_select" class="form-control form-control-sm" multiple size="6" disabled>
               </select>
 

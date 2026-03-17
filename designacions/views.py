@@ -51,6 +51,11 @@ def _to_str_list_csv(v):
     return parts
 
 
+def _to_fase(v, default="FS1"):
+    value = (v or default).strip().upper()
+    return value if value in {"FS1", "FS2"} else default
+
+
 def _temp_dir():
     d = os.path.join(settings.MEDIA_ROOT, "temp")
     os.makedirs(d, exist_ok=True)
@@ -76,6 +81,7 @@ def upload_view(request):
                 "modalitats_csv": "",
                 "date_from": "",
                 "date_to": "",
+                "fase": "FS1",
             }
         })
 
@@ -98,6 +104,7 @@ def upload_view(request):
         "modalitats": _to_str_list_csv(request.POST.get("modalitats_csv")),
         "date_from": (request.POST.get("date_from") or "").strip(),
         "date_to": (request.POST.get("date_to") or "").strip(),
+        "fase": _to_fase(request.POST.get("fase"), "FS1"),
     }
 
     run = DesignationRun.objects.create(

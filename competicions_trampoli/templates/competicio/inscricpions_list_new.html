@@ -998,6 +998,34 @@
       box-shadow: 0 8px 22px rgba(0, 0, 0, 0.12);
       padding: 10px;
     }
+    .group-actions-pop {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+    }
+    .js-group-actions-toggle {
+      font-size: 1rem;
+      line-height: 1;
+      color: #6b7280 !important;
+      text-decoration: none !important;
+    }
+    .group-actions-menu {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      right: auto;
+      z-index: 1210;
+      width: 228px;
+      background: #fff;
+      border: 1px solid #d9e0ef;
+      border-radius: 8px;
+      box-shadow: 0 8px 22px rgba(0, 0, 0, 0.12);
+      padding: 10px;
+    }
+    .group-actions-menu .btn {
+      justify-content: flex-start;
+      text-align: left;
+    }
     .custom-sort-badge {
       display: inline-flex;
       align-items: center;
@@ -1058,6 +1086,390 @@
       border-radius: 999px;
       padding: 1px 6px;
       white-space: nowrap;
+    }
+    .custom-sort-modal-backdrop{
+      position:fixed;
+      inset:0;
+      background:rgba(15, 23, 42, 0.48);
+      opacity:0;
+      visibility:hidden;
+      pointer-events:none;
+      transition:opacity .2s ease, visibility .2s ease;
+      z-index:4010;
+    }
+    .custom-sort-modal-backdrop.is-visible{
+      opacity:1;
+      visibility:visible;
+      pointer-events:auto;
+    }
+    .custom-sort-modal{
+      position:fixed;
+      top:calc(var(--actions-drawer-top) + 16px);
+      right:32px;
+      bottom:28px;
+      left:max(32px, calc(100vw - 980px));
+      display:none;
+      flex-direction:column;
+      background:#ffffff;
+      border:1px solid #cfd9ec;
+      border-radius:20px;
+      box-shadow:0 28px 80px rgba(15, 23, 42, 0.36);
+      z-index:4015;
+      overflow:hidden;
+    }
+    .custom-sort-modal.is-visible{
+      display:flex;
+    }
+    .custom-sort-modal-head{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:16px;
+      padding:18px 22px 16px;
+      border-bottom:1px solid #e5ebf5;
+      background:linear-gradient(135deg, #f8fbff 0%, #eef5ff 100%);
+      flex:0 0 auto;
+    }
+    .custom-sort-modal-title{
+      margin:0;
+      font-size:1.08rem;
+      font-weight:700;
+      color:#0f172a;
+    }
+    .custom-sort-modal-subtitle{
+      margin:4px 0 0;
+      color:#64748b;
+      font-size:.84rem;
+      line-height:1.45;
+    }
+    .custom-sort-modal-body{
+      flex:1 1 auto;
+      min-height:0;
+      overflow:auto;
+      padding:18px 22px;
+      background:#f4f7fb;
+    }
+    .custom-sort-modal-panel{
+      display:flex;
+      flex-direction:column;
+      min-height:100%;
+      background:#ffffff;
+      border:1px solid #d9e3f3;
+      border-radius:18px;
+      overflow:hidden;
+    }
+    .custom-sort-modal-toolbar{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:12px;
+      padding:14px 16px 12px;
+      border-bottom:1px solid #edf2fa;
+      background:#fbfdff;
+      flex:0 0 auto;
+    }
+    .custom-sort-modal-toolbar-title{
+      font-size:.88rem;
+      font-weight:600;
+      color:#0f172a;
+    }
+    .custom-sort-modal-toolbar-copy{
+      margin:3px 0 0;
+      font-size:.78rem;
+      color:#64748b;
+      line-height:1.4;
+    }
+    .custom-sort-modal-status{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      padding:10px 16px;
+      border-bottom:1px solid #edf2fa;
+      background:#f8fbff;
+      flex:0 0 auto;
+    }
+    .custom-sort-modal-stale{
+      font-size:.8rem;
+      color:#9a3412;
+    }
+    .custom-sort-modal-list-wrap{
+      flex:1 1 auto;
+      min-height:0;
+      padding:16px;
+      background:linear-gradient(180deg, #f8fbff 0%, #f3f7fd 100%);
+    }
+    .custom-sort-modal-list{
+      height:100%;
+      min-height:360px;
+      max-height:none;
+      padding:12px;
+      background:#ffffff;
+      border-color:#d7e1f2;
+      border-radius:14px;
+    }
+    .custom-sort-modal-list .custom-sort-item{
+      padding:9px 11px;
+      margin-bottom:8px;
+      border-radius:10px;
+    }
+    .custom-sort-modal-list .custom-sort-item-label{
+      white-space:normal;
+      overflow:visible;
+      text-overflow:clip;
+      line-height:1.35;
+    }
+    .custom-sort-modal-empty{
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      min-height:220px;
+      color:#64748b;
+      font-size:.9rem;
+      text-align:center;
+      padding:18px;
+    }
+    .custom-sort-modal-foot{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      padding:14px 16px 16px;
+      border-top:1px solid #edf2fa;
+      background:#fbfdff;
+      flex:0 0 auto;
+    }
+    .custom-sort-modal-actions{
+      display:flex;
+      justify-content:flex-end;
+      gap:10px;
+      flex-wrap:wrap;
+      margin-left:auto;
+    }
+    body.custom-sort-modal-open{
+      overflow:hidden;
+    }
+    .group-competition-modal-backdrop{
+      position:fixed;
+      inset:0;
+      background:rgba(15, 23, 42, 0.44);
+      opacity:0;
+      visibility:hidden;
+      pointer-events:none;
+      transition:opacity .2s ease, visibility .2s ease;
+      z-index:4020;
+    }
+    .group-competition-modal-backdrop.is-visible{
+      opacity:1;
+      visibility:visible;
+      pointer-events:auto;
+    }
+    .group-competition-modal{
+      position:fixed;
+      top:calc(var(--actions-drawer-top) + 28px);
+      right:32px;
+      width:min(520px, calc(100vw - 48px));
+      max-height:calc(100vh - var(--actions-drawer-top) - 56px);
+      display:none;
+      flex-direction:column;
+      background:#ffffff;
+      border:1px solid #cfd9ec;
+      border-radius:18px;
+      box-shadow:0 24px 70px rgba(15, 23, 42, 0.34);
+      z-index:4025;
+      overflow:hidden;
+    }
+    .group-competition-modal.is-visible{
+      display:flex;
+    }
+    .group-competition-modal-head{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:14px;
+      padding:16px 18px 14px;
+      border-bottom:1px solid #e5ebf5;
+      background:linear-gradient(135deg, #f9fbff 0%, #eef5ff 100%);
+      flex:0 0 auto;
+    }
+    .group-competition-modal-title{
+      margin:0;
+      font-size:1rem;
+      font-weight:700;
+      color:#0f172a;
+    }
+    .group-competition-modal-subtitle{
+      margin:4px 0 0;
+      font-size:.82rem;
+      color:#64748b;
+      line-height:1.45;
+    }
+    .group-competition-modal-body{
+      flex:1 1 auto;
+      min-height:0;
+      overflow:auto;
+      padding:16px 18px;
+      background:#f4f7fb;
+    }
+    .group-competition-modal-panel{
+      display:flex;
+      flex-direction:column;
+      min-height:100%;
+      background:#ffffff;
+      border:1px solid #d9e3f3;
+      border-radius:16px;
+      overflow:hidden;
+    }
+    .group-competition-modal-status{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:10px;
+      padding:12px 14px;
+      border-bottom:1px solid #edf2fa;
+      background:#fbfdff;
+      flex:0 0 auto;
+    }
+    .group-competition-modal-count{
+      font-size:.82rem;
+      color:#475569;
+    }
+    .group-competition-modal-warning{
+      font-size:.78rem;
+      color:#9a3412;
+      text-align:right;
+      max-width:48%;
+    }
+    .group-competition-modal-list-wrap{
+      flex:1 1 auto;
+      min-height:0;
+      padding:14px;
+      background:linear-gradient(180deg, #f8fbff 0%, #f3f7fd 100%);
+    }
+    .group-competition-modal-list{
+      max-height:420px;
+      min-height:240px;
+      overflow:auto;
+      border:1px solid #d7e1f2;
+      border-radius:14px;
+      padding:10px;
+      background:#ffffff;
+    }
+    .group-competition-modal-empty{
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      min-height:180px;
+      text-align:center;
+      color:#64748b;
+      font-size:.88rem;
+      padding:18px;
+    }
+    .group-competition-order-item{
+      display:flex;
+      align-items:flex-start;
+      gap:10px;
+      padding:9px 10px;
+      margin-bottom:8px;
+      border:1px solid #e2e8f0;
+      border-radius:10px;
+      background:#ffffff;
+    }
+    .group-competition-order-item:last-child{
+      margin-bottom:0;
+    }
+    .group-competition-order-item-order{
+      flex:0 0 auto;
+      min-width:28px;
+      height:28px;
+      border-radius:999px;
+      background:#e8eefc;
+      border:1px solid #c9d6f2;
+      color:#1e3a8a;
+      font-size:.76rem;
+      font-weight:700;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+    }
+    .group-competition-order-item-main{
+      flex:1 1 auto;
+      min-width:0;
+    }
+    .group-competition-order-item-label{
+      font-size:.88rem;
+      font-weight:600;
+      color:#0f172a;
+      line-height:1.35;
+      word-break:break-word;
+    }
+    .group-competition-order-item-meta{
+      margin-top:3px;
+      font-size:.76rem;
+      color:#64748b;
+      line-height:1.35;
+    }
+    .group-competition-order-item-state{
+      flex:0 0 auto;
+      display:flex;
+      align-items:center;
+      gap:6px;
+      flex-wrap:wrap;
+      justify-content:flex-end;
+      max-width:42%;
+    }
+    .group-competition-order-item-badge{
+      display:inline-flex;
+      align-items:center;
+      padding:2px 8px;
+      border-radius:999px;
+      border:1px solid #d6deef;
+      background:#f8fbff;
+      color:#334155;
+      font-size:.72rem;
+      line-height:1.2;
+      white-space:nowrap;
+    }
+    .group-competition-order-item-badge.is-visible{
+      border-color:#93c5fd;
+      background:#eff6ff;
+      color:#1d4ed8;
+    }
+    .group-competition-order-item-badge.is-hidden{
+      border-color:#d6deef;
+      background:#f8fafc;
+      color:#64748b;
+    }
+    .group-competition-order-item-handle{
+      cursor:grab;
+      user-select:none;
+      font-weight:700;
+      color:#64748b;
+      line-height:1;
+      padding-top:4px;
+    }
+    .group-competition-modal-list.is-readonly .group-competition-order-item-handle{
+      display:none;
+    }
+    .group-competition-modal-foot{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      padding:13px 14px 14px;
+      border-top:1px solid #edf2fa;
+      background:#fbfdff;
+      flex:0 0 auto;
+    }
+    .group-competition-modal-actions{
+      display:flex;
+      justify-content:flex-end;
+      gap:10px;
+      flex-wrap:wrap;
+      margin-left:auto;
+    }
+    body.group-competition-modal-open{
+      overflow:hidden;
     }
     .excel-cols-grid {
       display: grid;
@@ -1161,6 +1573,19 @@
       .inscripcions-page-shell.is-drawer-open .inscripcions-drawer-toggle {
         right: calc(var(--actions-drawer-width) + 24px);
       }
+      .custom-sort-modal{
+        top:calc(var(--actions-drawer-top) + 12px);
+        right:16px;
+        bottom:16px;
+        left:16px;
+      }
+      .group-competition-modal{
+        top:calc(var(--actions-drawer-top) + 12px);
+        right:16px;
+        left:16px;
+        width:auto;
+        max-height:calc(100vh - var(--actions-drawer-top) - 24px);
+      }
     }
     @media (max-width: 767.98px) {
       .inscripcions-page-shell {
@@ -1172,6 +1597,68 @@
         right:12px;
         bottom:12px;
         left:12px;
+      }
+      .custom-sort-modal{
+        top:calc(var(--actions-drawer-top) + 8px);
+        right:10px;
+        bottom:10px;
+        left:10px;
+        border-radius:16px;
+      }
+      .group-competition-modal{
+        top:calc(var(--actions-drawer-top) + 8px);
+        right:10px;
+        left:10px;
+        width:auto;
+        max-height:calc(100vh - var(--actions-drawer-top) - 18px);
+        border-radius:16px;
+      }
+      .custom-sort-modal-head,
+      .custom-sort-modal-body{
+        padding-left:14px;
+        padding-right:14px;
+      }
+      .group-competition-modal-head,
+      .group-competition-modal-body{
+        padding-left:14px;
+        padding-right:14px;
+      }
+      .custom-sort-modal-toolbar,
+      .custom-sort-modal-status,
+      .custom-sort-modal-foot{
+        padding-left:12px;
+        padding-right:12px;
+      }
+      .group-competition-modal-status,
+      .group-competition-modal-foot{
+        padding-left:12px;
+        padding-right:12px;
+      }
+      .custom-sort-modal-list-wrap{
+        padding:12px;
+      }
+      .group-competition-modal-list-wrap{
+        padding:12px;
+      }
+      .custom-sort-modal-foot{
+        flex-direction:column;
+        align-items:stretch;
+      }
+      .group-competition-modal-foot{
+        flex-direction:column;
+        align-items:stretch;
+      }
+      .custom-sort-modal-actions{
+        width:100%;
+      }
+      .group-competition-modal-actions{
+        width:100%;
+      }
+      .custom-sort-modal-actions .btn{
+        flex:1 1 auto;
+      }
+      .group-competition-modal-actions .btn{
+        flex:1 1 auto;
       }
       .actions-body {
         grid-template-columns: 1fr;
@@ -1287,6 +1774,69 @@
         <button type="button" class="btn btn-sm btn-outline-secondary" id="group-buckets-modal-close">Tancar</button>
       </div>
       <div class="group-buckets-modal-body" id="group-buckets-modal-body"></div>
+    </div>
+    <div class="custom-sort-modal-backdrop" id="custom-sort-modal-backdrop" aria-hidden="true"></div>
+    <div class="custom-sort-modal" id="custom-sort-modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="custom-sort-modal-title" tabindex="-1">
+      <div class="custom-sort-modal-head">
+        <div>
+          <p class="custom-sort-modal-title mb-0" id="custom-sort-modal-title">Ordre custom</p>
+          <p class="custom-sort-modal-subtitle" id="custom-sort-modal-subtitle">Reordena els valors detectats i desa l'ordre per al context actual.</p>
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="custom-sort-modal-close">Tancar</button>
+      </div>
+      <div class="custom-sort-modal-body">
+        <div class="custom-sort-modal-panel">
+          <div class="custom-sort-modal-toolbar">
+            <div>
+              <div class="custom-sort-modal-toolbar-title">Arrossega per reordenar</div>
+              <p class="custom-sort-modal-toolbar-copy mb-0">Aquest ordre es desa per aquesta columna amb els filtres i agrupacions actuals.</p>
+            </div>
+          </div>
+          <div class="custom-sort-modal-status">
+            <div class="small text-muted" id="custom-sort-modal-count">0 valors detectats</div>
+            <div class="custom-sort-modal-stale d-none" id="custom-sort-modal-stale"></div>
+          </div>
+          <div class="custom-sort-modal-list-wrap">
+            <div class="custom-sort-list custom-sort-modal-list" id="custom-sort-modal-dnd"></div>
+          </div>
+          <div class="custom-sort-modal-foot">
+            <div class="small text-muted">Els canvis només s'apliquen quan prems "Desar ordre".</div>
+            <div class="custom-sort-modal-actions">
+              <button type="button" class="btn btn-sm btn-outline-light" id="custom-sort-modal-reset">Reset custom</button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="custom-sort-modal-cancel">Tancar</button>
+              <button type="button" class="btn btn-sm btn-success" id="custom-sort-modal-save">Desar ordre</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="group-competition-modal-backdrop" id="group-competition-modal-backdrop" aria-hidden="true"></div>
+    <div class="group-competition-modal" id="group-competition-modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="group-competition-modal-title" tabindex="-1">
+      <div class="group-competition-modal-head">
+        <div>
+          <p class="group-competition-modal-title mb-0" id="group-competition-modal-title">Ordre de competició</p>
+          <p class="group-competition-modal-subtitle" id="group-competition-modal-subtitle">Consulta l'ordre guardat del grup i, si tens permisos, edita'l sense tocar l'ordre visual de la taula.</p>
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="group-competition-modal-close">Tancar</button>
+      </div>
+      <div class="group-competition-modal-body">
+        <div class="group-competition-modal-panel">
+          <div class="group-competition-modal-status">
+            <div class="group-competition-modal-count" id="group-competition-modal-count">0 participants</div>
+            <div class="group-competition-modal-warning d-none" id="group-competition-modal-warning"></div>
+          </div>
+          <div class="group-competition-modal-list-wrap">
+            <div class="group-competition-modal-list" id="group-competition-modal-list"></div>
+          </div>
+          <div class="group-competition-modal-foot">
+            <div class="small text-muted" id="group-competition-modal-footnote">Aquest ordre és el que queda guardat com a ordre de competició del grup.</div>
+            <div class="group-competition-modal-actions">
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="group-competition-modal-cancel">Tancar</button>
+              <button type="button" class="btn btn-sm btn-success" id="group-competition-modal-save">Desar ordre</button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
     <button type="button"
             class="btn btn-sm btn-primary inscripcions-drawer-toggle"
@@ -2048,10 +2598,14 @@
 
                                 <label class="small text-muted mb-1 d-block">Ambit</label>
                                 <select class="form-control form-control-sm js-col-sort-scope">
-                                  <option value="all">Totes les inscripcions</option>
-                                  <option value="tab">Dins de cada pestanya</option>
-                                  <option value="group">Nomes aquest grup numeric</option>
+                                  <option value="all">Totes les inscripcions filtrades</option>
+                                  <option value="tab">Dins de cada pestanya activa</option>
+                                  <option value="all_groups">Dins de cada grup numeric complet</option>
+                                  <option value="group">Nomes un grup numeric concret</option>
                                 </select>
+                                <div class="small text-muted mt-2 js-col-sort-scope-help">
+                                  Pot canviar l'ordre de les pestanyes actives.
+                                </div>
 
                                 <div class="mt-2 d-none js-col-sort-group-wrap">
                                   <label class="small text-muted mb-1 d-block">Grup numeric</label>
@@ -2062,15 +2616,6 @@
                                   <button type="button" class="btn btn-sm btn-outline-secondary w-100 js-col-sort-custom">Ordre custom</button>
                                   <button type="button" class="btn btn-sm btn-outline-light w-100 mt-1 js-col-sort-custom-clear">Reset custom</button>
                                   <div class="custom-sort-list mt-2 d-none js-col-sort-custom-preview"></div>
-                                  <div class="custom-sort-editor mt-2 d-none js-col-sort-custom-editor">
-                                    <div class="small text-muted mb-1">Arrossega els valors per definir l'ordre.</div>
-                                    <div class="custom-sort-list js-col-sort-custom-dnd"></div>
-                                    <div class="small text-warning mt-1 d-none js-col-sort-custom-stale"></div>
-                                    <div class="d-flex justify-content-between mt-2" style="gap:8px;">
-                                      <button type="button" class="btn btn-sm btn-outline-secondary js-col-sort-custom-cancel">Tancar</button>
-                                      <button type="button" class="btn btn-sm btn-success js-col-sort-custom-save">Desar ordre</button>
-                                    </div>
-                                  </div>
                                 </div>
 
                                 <div class="d-flex justify-content-end mt-2" style="gap:8px;">
@@ -2090,7 +2635,7 @@
 
                     {% ifchanged r.grup %}
                       {% if r.grup %}
-                        <tr class="group-row group-grup" data-group-header="{{ r.grup|default:'' }}">
+                        <tr class="group-row group-grup" data-group-header="{{ r.grup|default:'' }}" data-pane-id="pane-{{ forloop.parentloop.counter0 }}">
                           <td colspan="{{ table_colspan|add:'1' }}">
                             <div class="d-flex justify-content-between align-items-center">
                               <div class="d-flex align-items-center flex-wrap" style="gap:10px;">
@@ -2106,8 +2651,23 @@
                                   </span>
                                   <span class="badge badge-light js-group-count" data-group="{{ r.grup }}" title="Integrants visibles del grup">0</span>
                                   <span class="badge badge-warning d-none js-group-order-dirty" data-group="{{ r.grup }}" title="L'ordre visual d'aquest grup no coincideix amb l'ordre de competició desat">Ordre no desat</span>
-                                  <button type="button" class="btn btn-sm btn-outline-primary js-save-group-order" data-group="{{ r.grup }}">Desar ordre competició</button>
-                                  <button type="button" class="btn btn-sm btn-outline-secondary js-edit-group-name" data-group="{{ r.grup }}">Editar nom</button>
+                                  <div class="group-actions-pop">
+                                    <button
+                                      type="button"
+                                      class="btn btn-link btn-sm p-0 js-group-actions-toggle"
+                                      data-group-actions-toggle
+                                      data-group="{{ r.grup }}"
+                                      title="Accions del grup"
+                                      aria-label="Accions del grup">
+                                      &#8942;
+                                    </button>
+                                    <div class="group-actions-menu d-none" data-group-actions-menu data-group="{{ r.grup }}">
+                                      <button type="button" class="btn btn-sm btn-outline-info w-100 js-view-group-order" data-group="{{ r.grup }}">Veure ordre competició</button>
+                                      <button type="button" class="btn btn-sm btn-outline-dark w-100 mt-1 js-show-group-real-order" data-group="{{ r.grup }}">Mostrar ordre real</button>
+                                      <button type="button" class="btn btn-sm btn-outline-primary w-100 mt-1 js-save-group-order" data-group="{{ r.grup }}" {% if not can_edit_inscripcions %}disabled{% endif %}>Desar ordre competició</button>
+                                      <button type="button" class="btn btn-sm btn-outline-secondary w-100 mt-1 js-edit-group-name" data-group="{{ r.grup }}" {% if not can_edit_inscripcions %}disabled{% endif %}>Editar nom</button>
+                                    </div>
+                                  </div>
                                   <span class="d-none js-group-name-editor" data-group="{{ r.grup }}">
                                     <input type="text" class="form-control form-control-sm d-inline-block" style="width:240px;" placeholder="Nom del grup..." value="{{ group_names|get_item:gkey|default:'' }}">
                                     <button type="button" class="btn btn-sm btn-primary js-save-group-name" data-group="{{ r.grup }}">Desar</button>
@@ -2143,6 +2703,20 @@
                             {% else %}
                               -
                             {% endif %}
+                          {% elif col.code == "grup" %}
+                            {% if r.grup %}
+                              {% with gkey=r.grup|stringformat:"s" %}
+                                {% if group_names|get_item:gkey %}
+                                  {{ group_names|get_item:gkey }}
+                                {% else %}
+                                  Grup {{ gkey }}
+                                {% endif %}
+                              {% endwith %}
+                            {% else %}
+                              -
+                            {% endif %}
+                          {% elif col.code == "ordre_sortida" %}
+                            <span class="js-ordre-sortida-cell" data-ins-id="{{ r.id }}">{{ r.ordre_sortida|default:"-" }}</span>
                           {% elif col.code == "__aparells__" %}
                             {% with rid=r.id|stringformat:"s" %}
                               {% with ex_ids=inscripcio_aparells_excluded_map|get_item:rid %}
@@ -2271,10 +2845,14 @@
 
                           <label class="small text-muted mb-1 d-block">Ambit</label>
                           <select class="form-control form-control-sm js-col-sort-scope">
-                            <option value="all">Totes les inscripcions</option>
-                            <option value="tab">Dins de cada pestanya</option>
-                            <option value="group">Nomes aquest grup numeric</option>
+                            <option value="all">Totes les inscripcions filtrades</option>
+                            <option value="tab">Dins de cada pestanya activa</option>
+                            <option value="all_groups">Dins de cada grup numeric complet</option>
+                            <option value="group">Nomes un grup numeric concret</option>
                           </select>
+                          <div class="small text-muted mt-2 js-col-sort-scope-help">
+                            Pot canviar l'ordre de les pestanyes actives.
+                          </div>
 
                           <div class="mt-2 d-none js-col-sort-group-wrap">
                             <label class="small text-muted mb-1 d-block">Grup numeric</label>
@@ -2285,15 +2863,6 @@
                             <button type="button" class="btn btn-sm btn-outline-secondary w-100 js-col-sort-custom">Ordre custom</button>
                             <button type="button" class="btn btn-sm btn-outline-light w-100 mt-1 js-col-sort-custom-clear">Reset custom</button>
                             <div class="custom-sort-list mt-2 d-none js-col-sort-custom-preview"></div>
-                            <div class="custom-sort-editor mt-2 d-none js-col-sort-custom-editor">
-                              <div class="small text-muted mb-1">Arrossega els valors per definir l'ordre.</div>
-                              <div class="custom-sort-list js-col-sort-custom-dnd"></div>
-                              <div class="small text-warning mt-1 d-none js-col-sort-custom-stale"></div>
-                              <div class="d-flex justify-content-between mt-2" style="gap:8px;">
-                                <button type="button" class="btn btn-sm btn-outline-secondary js-col-sort-custom-cancel">Tancar</button>
-                                <button type="button" class="btn btn-sm btn-success js-col-sort-custom-save">Desar ordre</button>
-                              </div>
-                            </div>
                           </div>
 
                           <div class="d-flex justify-content-end mt-2" style="gap:8px;">
@@ -2312,7 +2881,7 @@
             {% for r in records %}
               {% ifchanged r.grup %}
                 {% if r.grup %}
-                  <tr class="group-row group-grup" data-group-header="{{ r.grup|default:'' }}">
+                  <tr class="group-row group-grup" data-group-header="{{ r.grup|default:'' }}" data-pane-id="__single__">
                     <td colspan="{{ table_colspan|add:'1' }}">
                       <div class="d-flex justify-content-between align-items-center">
                         <div class="d-flex align-items-center flex-wrap" style="gap:10px;">
@@ -2328,8 +2897,23 @@
                             </span>
                             <span class="badge badge-light js-group-count" data-group="{{ r.grup }}" title="Integrants visibles del grup">0</span>
                             <span class="badge badge-warning d-none js-group-order-dirty" data-group="{{ r.grup }}" title="L'ordre visual d'aquest grup no coincideix amb l'ordre de competició desat">Ordre no desat</span>
-                            <button type="button" class="btn btn-sm btn-outline-primary js-save-group-order" data-group="{{ r.grup }}">Desar ordre competició</button>
-                            <button type="button" class="btn btn-sm btn-outline-secondary js-edit-group-name" data-group="{{ r.grup }}">Editar nom</button>
+                            <div class="group-actions-pop">
+                              <button
+                                type="button"
+                                class="btn btn-link btn-sm p-0 js-group-actions-toggle"
+                                data-group-actions-toggle
+                                data-group="{{ r.grup }}"
+                                title="Accions del grup"
+                                aria-label="Accions del grup">
+                                &#8942;
+                              </button>
+                              <div class="group-actions-menu d-none" data-group-actions-menu data-group="{{ r.grup }}">
+                                <button type="button" class="btn btn-sm btn-outline-info w-100 js-view-group-order" data-group="{{ r.grup }}">Veure ordre competició</button>
+                                <button type="button" class="btn btn-sm btn-outline-dark w-100 mt-1 js-show-group-real-order" data-group="{{ r.grup }}">Mostrar ordre real</button>
+                                <button type="button" class="btn btn-sm btn-outline-primary w-100 mt-1 js-save-group-order" data-group="{{ r.grup }}" {% if not can_edit_inscripcions %}disabled{% endif %}>Desar ordre competició</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary w-100 mt-1 js-edit-group-name" data-group="{{ r.grup }}" {% if not can_edit_inscripcions %}disabled{% endif %}>Editar nom</button>
+                              </div>
+                            </div>
                             <span class="d-none js-group-name-editor" data-group="{{ r.grup }}">
                               <input type="text" class="form-control form-control-sm d-inline-block" style="width:240px;" placeholder="Nom del grup..." value="{{ group_names|get_item:gkey|default:'' }}">
                               <button type="button" class="btn btn-sm btn-primary js-save-group-name" data-group="{{ r.grup }}">Desar</button>
@@ -2368,6 +2952,20 @@
                       {% else %}
                         -
                       {% endif %}
+                    {% elif col.code == "grup" %}
+                      {% if r.grup %}
+                        {% with gkey=r.grup|stringformat:"s" %}
+                          {% if group_names|get_item:gkey %}
+                            {{ group_names|get_item:gkey }}
+                          {% else %}
+                            Grup {{ gkey }}
+                          {% endif %}
+                        {% endwith %}
+                      {% else %}
+                        -
+                      {% endif %}
+                    {% elif col.code == "ordre_sortida" %}
+                      <span class="js-ordre-sortida-cell" data-ins-id="{{ r.id }}">{{ r.ordre_sortida|default:"-" }}</span>
                     {% elif col.code == "__aparells__" %}
                       {% with rid=r.id|stringformat:"s" %}
                         {% with ex_ids=inscripcio_aparells_excluded_map|get_item:rid %}
@@ -2495,6 +3093,8 @@
   }
 
   const canEditInscripcions = {% if can_edit_inscripcions %}true{% else %}false{% endif %};
+  const saveGroupCompetitionOrderUrl = "{% url 'inscripcions_save_group_competition_order' competicio.id %}";
+  const groupCompetitionOrderPreviewUrl = "{% url 'inscripcions_group_competition_order_preview' competicio.id %}";
   let mediaMatchOptions = [];
   let mediaMatchingConfig = {};
   try {
@@ -2814,24 +3414,78 @@
     return 'group_edit';
   }
 
-  function collectIdsForGroup(groupNum) {
+  function rowsForGroup(groupNum, options = {}) {
     const key = String(groupNum || '').trim();
     if (!key) return [];
+    const opts = options || {};
+    return Array.from(document.querySelectorAll(`tr.inscripcio-row[data-group="${CSS.escape(key)}"]`))
+      .filter(tr => !opts.visibleOnly || tr.offsetParent !== null);
+  }
+
+  function collectIdsForGroup(groupNum) {
     const ids = [];
-    document.querySelectorAll(`tr.inscripcio-row[data-group="${CSS.escape(key)}"]`).forEach(tr => {
+    rowsForGroup(groupNum, { visibleOnly: true }).forEach(tr => {
       if (tr.dataset?.id) ids.push(String(tr.dataset.id));
     });
     return ids;
   }
 
-  function rowsForGroup(groupNum) {
-    const key = String(groupNum || '').trim();
-    if (!key) return [];
-    return Array.from(document.querySelectorAll(`tr.inscripcio-row[data-group="${CSS.escape(key)}"]`));
+  function refreshDisplayedOrdreSortida() {
+    const ids = collectGlobalIds();
+    if (!ids.length) return;
+    ids.forEach((insId, index) => {
+      const nextValue = String(index + 1);
+      document.querySelectorAll(`.js-ordre-sortida-cell[data-ins-id="${CSS.escape(String(insId))}"]`).forEach(el => {
+        el.textContent = nextValue;
+      });
+      document.querySelectorAll(`tr.inscripcio-row[data-id="${CSS.escape(String(insId))}"]`).forEach(row => {
+        row.setAttribute('data-ordre-sortida', nextValue);
+      });
+    });
   }
 
-  function getSavedCompetitionOrderIdsForGroup(groupNum) {
-    return rowsForGroup(groupNum)
+  function getGroupHeaderContext(headerRow) {
+    if (!headerRow || !headerRow.classList || !headerRow.classList.contains('group-row')) return null;
+    const groupNum = String(headerRow.getAttribute('data-group-header') || '').trim();
+    const container = headerRow.closest('tbody.sortable-body');
+    if (!groupNum || !container) return null;
+    return {
+      headerRow: headerRow,
+      groupNum: groupNum,
+      container: container,
+      paneId: String(container.getAttribute('data-pane-id') || headerRow.getAttribute('data-pane-id') || '').trim(),
+    };
+  }
+
+  function rowsForGroupInContainer(groupNum, container, options = {}) {
+    const key = String(groupNum || '').trim();
+    if (!key || !container) return [];
+    const opts = options || {};
+    return Array.from(container.querySelectorAll(`tr.inscripcio-row[data-group="${CSS.escape(key)}"]`))
+      .filter(tr => !opts.visibleOnly || tr.offsetParent !== null);
+  }
+
+  function collectIdsForGroupInContainer(groupNum, container, options = {}) {
+    const ids = [];
+    rowsForGroupInContainer(groupNum, container, options).forEach(tr => {
+      if (tr.dataset?.id) ids.push(String(tr.dataset.id));
+    });
+    return ids;
+  }
+
+  function closeGroupActionMenus(exceptMenu = null) {
+    document.querySelectorAll('[data-group-actions-menu]').forEach(menu => {
+      if (exceptMenu && menu === exceptMenu) return;
+      menu.classList.add('d-none');
+    });
+  }
+
+  function isAnyGroupActionMenuOpen() {
+    return Array.from(document.querySelectorAll('[data-group-actions-menu]')).some(menu => !menu.classList.contains('d-none'));
+  }
+
+  function getSavedCompetitionOrderIdsForGroup(groupNum, options = {}) {
+    return rowsForGroup(groupNum, options)
       .slice()
       .sort((a, b) => {
         const orderA = parseInt(a.getAttribute('data-competition-order') || '', 10);
@@ -2846,6 +3500,76 @@
       .filter(v => !!v);
   }
 
+  function getSavedCompetitionOrderIdsForGroupInContainer(groupNum, container, options = {}) {
+    return rowsForGroupInContainer(groupNum, container, options)
+      .slice()
+      .sort((a, b) => {
+        const orderA = parseInt(a.getAttribute('data-competition-order') || '', 10);
+        const orderB = parseInt(b.getAttribute('data-competition-order') || '', 10);
+        if (Number.isNaN(orderA) && Number.isNaN(orderB)) return 0;
+        if (Number.isNaN(orderA)) return 1;
+        if (Number.isNaN(orderB)) return -1;
+        if (orderA !== orderB) return orderA - orderB;
+        return (a.dataset.id || '').localeCompare(b.dataset.id || '');
+      })
+      .map(tr => String(tr.dataset.id || ''))
+      .filter(v => !!v);
+  }
+
+  function getContainersForGroup(groupNum) {
+    const key = String(groupNum || '').trim();
+    if (!key) return [];
+    const seen = new Set();
+    const containers = [];
+    document.querySelectorAll(`tr.inscripcio-row[data-group="${CSS.escape(key)}"]`).forEach(row => {
+      const container = row.closest('tbody.sortable-body');
+      if (!container || seen.has(container)) return;
+      seen.add(container);
+      containers.push(container);
+    });
+    return containers;
+  }
+
+  function reorderGroupRowsInContainer(groupNum, container, orderMap, options = {}) {
+    const key = String(groupNum || '').trim();
+    if (!key || !container || !(orderMap instanceof Map) || orderMap.size === 0) return false;
+    const rows = rowsForGroupInContainer(key, container, options);
+    if (rows.length < 2) return false;
+
+    const sortedRows = rows.slice().sort((a, b) => {
+      const idxA = orderMap.get(String(a.dataset.id || ''));
+      const idxB = orderMap.get(String(b.dataset.id || ''));
+      if (idxA == null && idxB == null) {
+        return (a.dataset.id || '').localeCompare(b.dataset.id || '');
+      }
+      if (idxA == null) return 1;
+      if (idxB == null) return -1;
+      if (idxA !== idxB) return idxA - idxB;
+      return (a.dataset.id || '').localeCompare(b.dataset.id || '');
+    });
+
+    if (arraysEqual(
+      rows.map(row => String(row.dataset.id || '')),
+      sortedRows.map(row => String(row.dataset.id || ''))
+    )) {
+      return false;
+    }
+
+    const paneId = String(container.getAttribute('data-pane-id') || 'local').trim() || 'local';
+    const placeholders = rows.map(row => {
+      const marker = document.createComment(`group-order-slot-${key}-${paneId}`);
+      row.parentNode.insertBefore(marker, row);
+      row.remove();
+      return marker;
+    });
+
+    placeholders.forEach((marker, index) => {
+      marker.parentNode.insertBefore(sortedRows[index], marker);
+      marker.remove();
+    });
+    return true;
+  }
+
   function arraysEqual(a, b) {
     if (a.length !== b.length) return false;
     for (let i = 0; i < a.length; i += 1) {
@@ -2855,24 +3579,126 @@
   }
 
   function refreshGroupHeaderIndicators() {
-    const groups = new Set();
     document.querySelectorAll('tr.group-row[data-group-header]').forEach(tr => {
-      const key = String(tr.getAttribute('data-group-header') || '').trim();
-      if (key) groups.add(key);
-    });
+      const ctx = getGroupHeaderContext(tr);
+      if (!ctx) return;
 
-    groups.forEach(groupNum => {
-      const visibleIds = collectIdsForGroup(groupNum);
-      const savedIds = getSavedCompetitionOrderIdsForGroup(groupNum);
+      const visibleIds = collectIdsForGroupInContainer(ctx.groupNum, ctx.container, { visibleOnly: true });
+      const savedIds = getSavedCompetitionOrderIdsForGroupInContainer(ctx.groupNum, ctx.container, { visibleOnly: true });
       const isDirty = visibleIds.length > 0 && !arraysEqual(visibleIds, savedIds);
 
-      document.querySelectorAll(`.js-group-count[data-group="${CSS.escape(groupNum)}"]`).forEach(el => {
-        el.textContent = `${visibleIds.length} integrants`;
-      });
-      document.querySelectorAll(`.js-group-order-dirty[data-group="${CSS.escape(groupNum)}"]`).forEach(el => {
-        el.classList.toggle('d-none', !isDirty);
-      });
+      const countEl = tr.querySelector('.js-group-count');
+      const dirtyEl = tr.querySelector('.js-group-order-dirty');
+      if (countEl) countEl.textContent = `${visibleIds.length} integrants`;
+      if (dirtyEl) dirtyEl.classList.toggle('d-none', !isDirty);
     });
+  }
+
+  function applyHistoryState(state) {
+    const next = (state && typeof state === 'object') ? state : {};
+    inscripcionsHistoryState = Object.assign(
+      {
+        can_undo: false,
+        can_redo: false,
+        undo_label: '',
+        redo_label: '',
+        undo_count: 0,
+        redo_count: 0,
+      },
+      next
+    );
+
+    const undoBtn = document.getElementById('btn-history-undo');
+    const redoBtn = document.getElementById('btn-history-redo');
+    const summary = document.getElementById('history-stack-summary');
+    if (undoBtn) {
+      undoBtn.disabled = (!canEditInscripcions) || (!inscripcionsHistoryState.can_undo);
+      undoBtn.title = inscripcionsHistoryState.undo_label
+        ? `Desfer: ${inscripcionsHistoryState.undo_label}`
+        : 'No hi ha canvis per desfer';
+    }
+    if (redoBtn) {
+      redoBtn.disabled = (!canEditInscripcions) || (!inscripcionsHistoryState.can_redo);
+      redoBtn.title = inscripcionsHistoryState.redo_label
+        ? `Refer: ${inscripcionsHistoryState.redo_label}`
+        : 'No hi ha canvis per refer';
+    }
+    if (summary) {
+      summary.textContent = `Desfer ${Number(inscripcionsHistoryState.undo_count || 0)} · Refer ${Number(inscripcionsHistoryState.redo_count || 0)}`;
+    }
+  }
+
+  async function postJson(url, payload) {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCookie('csrftoken')
+      },
+      body: JSON.stringify(payload || {})
+    });
+    if (!resp.ok) {
+      const txt = await resp.text();
+      throw new Error(txt || `HTTP ${resp.status}`);
+    }
+    const data = await resp.json();
+    if (data && typeof data === 'object' && data.history) {
+      applyHistoryState(data.history);
+    }
+    return data;
+  }
+
+  async function fetchGroupCompetitionOrderPreview(groupNum) {
+    return postJson(groupCompetitionOrderPreviewUrl, {
+      group_num: String(groupNum || '').trim(),
+    });
+  }
+
+  async function showSavedCompetitionOrderForGroup(headerRowOrContext) {
+    const ctx = (headerRowOrContext && headerRowOrContext.headerRow)
+      ? headerRowOrContext
+      : getGroupHeaderContext(headerRowOrContext);
+    if (!ctx) return false;
+    const key = ctx.groupNum;
+
+    let data = null;
+    try {
+      data = await fetchGroupCompetitionOrderPreview(key);
+    } catch (err) {
+      showAlert(`No s'ha pogut carregar l'ordre real del grup.\n${err.message || err}`);
+      return false;
+    }
+
+    const orderedIds = Array.isArray(data?.rows)
+      ? data.rows.map(row => String(row?.id || '').trim()).filter(v => !!v)
+      : [];
+    if (!orderedIds.length) {
+      refreshGroupHeaderIndicators();
+      return false;
+    }
+
+    const orderMap = new Map();
+    orderedIds.forEach((id, index) => orderMap.set(String(id), index + 1));
+    syncCompetitionOrderAttrsForGroup(key, orderedIds);
+
+    let changed = false;
+    getContainersForGroup(key).forEach(container => {
+      if (reorderGroupRowsInContainer(key, container, orderMap)) {
+        changed = true;
+      }
+    });
+
+    if (changed) applyGroupBands();
+    if (changed && canEditInscripcions && !!data?.can_edit) {
+      const persisted = await saveGlobalOrder(null, null);
+      if (!persisted) {
+        refreshGroupHeaderIndicators();
+        return false;
+      }
+      showAlert("Ordre real aplicat i desat.");
+    }
+    refreshGroupHeaderIndicators();
+    return changed;
   }
 
   function syncCompetitionOrderAttrsForGroup(groupNum, ids) {
@@ -2914,6 +3740,7 @@
         showAlert(`No s'ha pogut desar l'ordre (${resp.status}).\n${txt}`);
         return false;
       }
+      refreshDisplayedOrdreSortida();
       return true;
     } catch (err) {
       console.error("Error de xarxa desant ordre:", err);
@@ -3007,8 +3834,31 @@
     if (groupBucketsModalClose) {
       groupBucketsModalClose.addEventListener('click', () => setExpandedGroupCard(''));
     }
+    const groupCompetitionModalEls = getGroupCompetitionModalElements();
+    if (groupCompetitionModalEls.backdrop) {
+      groupCompetitionModalEls.backdrop.addEventListener('click', () => closeGroupCompetitionOrderModal());
+    }
+    if (groupCompetitionModalEls.close) {
+      groupCompetitionModalEls.close.addEventListener('click', () => closeGroupCompetitionOrderModal());
+    }
+    if (groupCompetitionModalEls.cancel) {
+      groupCompetitionModalEls.cancel.addEventListener('click', () => closeGroupCompetitionOrderModal());
+    }
+    if (groupCompetitionModalEls.save) {
+      groupCompetitionModalEls.save.addEventListener('click', async () => {
+        await saveGroupCompetitionOrderFromModal();
+      });
+    }
     document.addEventListener('keydown', (ev) => {
       if (ev.key !== 'Escape') return;
+      if (isGroupCompetitionModalOpen()) {
+        closeGroupCompetitionOrderModal();
+        return;
+      }
+      if (isAnyGroupActionMenuOpen()) {
+        closeGroupActionMenus();
+        return;
+      }
       if (getExpandedGroupCardId()) {
         setExpandedGroupCard('');
         return;
@@ -3023,6 +3873,11 @@
       if (!href || href.startsWith('#') || href.startsWith('javascript:')) return;
       if (a.getAttribute('target') === '_blank' || a.hasAttribute('download')) return;
       a.addEventListener('click', () => saveUiState());
+    });
+    document.querySelectorAll('#tabs-root a.nav-link').forEach(link => {
+      link.addEventListener('click', () => {
+        window.setTimeout(() => refreshGroupHeaderIndicators(), 0);
+      });
     });
 
     // DEBUG ràpid (mira la consola)
@@ -3312,8 +4167,21 @@
     const sortCustomSaveUrl = "{% url 'inscripcions_sort_custom_save' competicio.id %}";
     const historyUndoUrl = "{% url 'inscripcions_history_undo' competicio.id %}";
     const historyRedoUrl = "{% url 'inscripcions_history_redo' competicio.id %}";
+    const customSortModalState = {
+      sortKey: '',
+      uiLabel: '',
+      menu: null,
+      trigger: null,
+    };
+    const groupCompetitionModalState = {
+      groupNum: '',
+      groupLabel: '',
+      trigger: null,
+      canEdit: false,
+    };
     const groupsFromSortUrl = "{% url 'inscripcions_groups_from_sort' competicio.id %}";
     const saveGroupCompetitionOrderUrl = "{% url 'inscripcions_save_group_competition_order' competicio.id %}";
+    const groupCompetitionOrderPreviewUrl = "{% url 'inscripcions_group_competition_order_preview' competicio.id %}";
     const mediaUploadUrl = "{% url 'inscripcions_media_upload' competicio.id %}";
     const mediaDeleteUrl = "{% url 'inscripcions_media_delete' competicio.id %}";
     const mediaSetPrimaryUrl = "{% url 'inscripcions_media_set_primary' competicio.id %}";
@@ -3333,6 +4201,286 @@
         });
         syncCompetitionOrderAttrsForGroup(groupNum, ids);
         refreshGroupHeaderIndicators();
+        showAlert("Ordre de competicio desat.");
+        return true;
+      } catch (err) {
+        showAlert(`No s'ha pogut desar l'ordre de competicio.\n${err.message || err}`);
+        return false;
+      }
+    }
+
+    function getGroupCompetitionModalElements() {
+      return {
+        backdrop: document.getElementById('group-competition-modal-backdrop'),
+        modal: document.getElementById('group-competition-modal'),
+        title: document.getElementById('group-competition-modal-title'),
+        subtitle: document.getElementById('group-competition-modal-subtitle'),
+        count: document.getElementById('group-competition-modal-count'),
+        warning: document.getElementById('group-competition-modal-warning'),
+        list: document.getElementById('group-competition-modal-list'),
+        footnote: document.getElementById('group-competition-modal-footnote'),
+        close: document.getElementById('group-competition-modal-close'),
+        cancel: document.getElementById('group-competition-modal-cancel'),
+        save: document.getElementById('group-competition-modal-save'),
+      };
+    }
+
+    function isGroupCompetitionModalOpen() {
+      return document.body.classList.contains('group-competition-modal-open');
+    }
+
+    function closeGroupCompetitionOrderModal(options = {}) {
+      const opts = options || {};
+      const els = getGroupCompetitionModalElements();
+      if (els.backdrop) {
+        els.backdrop.classList.remove('is-visible');
+        els.backdrop.setAttribute('aria-hidden', 'true');
+      }
+      if (els.modal) {
+        els.modal.classList.remove('is-visible');
+        els.modal.setAttribute('aria-hidden', 'true');
+      }
+      document.body.classList.remove('group-competition-modal-open');
+
+      const trigger = groupCompetitionModalState.trigger;
+      groupCompetitionModalState.groupNum = '';
+      groupCompetitionModalState.groupLabel = '';
+      groupCompetitionModalState.trigger = null;
+      groupCompetitionModalState.canEdit = false;
+
+      if (opts.restoreFocus !== false && trigger && typeof trigger.focus === 'function') {
+        window.setTimeout(() => trigger.focus(), 0);
+      }
+    }
+
+    function showGroupCompetitionOrderLoading(groupNum) {
+      const els = getGroupCompetitionModalElements();
+      if (!els.modal || !els.list || !els.title || !els.subtitle || !els.count || !els.warning || !els.save) return;
+
+      const fallbackLabel = `Grup ${groupNum || '?'}`;
+      els.title.textContent = `Ordre de competicio · ${groupCompetitionModalState.groupLabel || fallbackLabel}`;
+      els.subtitle.textContent = "Carregant l'ordre guardat del grup complet...";
+      els.count.textContent = 'Carregant participants...';
+      els.warning.classList.add('d-none');
+      els.warning.textContent = '';
+      els.list.classList.remove('is-readonly');
+      els.list.innerHTML = '<div class="group-competition-modal-empty">Carregant ordre guardat...</div>';
+      els.save.disabled = true;
+      els.save.classList.add('d-none');
+      if (els.footnote) {
+        els.footnote.textContent = "Aquest ordre es guarda independentment de l'ordre visual actual de la taula.";
+      }
+
+      if (els.backdrop) {
+        els.backdrop.classList.add('is-visible');
+        els.backdrop.setAttribute('aria-hidden', 'false');
+      }
+      if (els.modal) {
+        els.modal.classList.add('is-visible');
+        els.modal.setAttribute('aria-hidden', 'false');
+      }
+      document.body.classList.add('group-competition-modal-open');
+
+      const focusTarget = els.close || els.cancel || els.modal;
+      if (focusTarget && typeof focusTarget.focus === 'function') {
+        window.setTimeout(() => focusTarget.focus(), 0);
+      }
+    }
+
+    function refreshGroupCompetitionOrderModalNumbering() {
+      const list = getGroupCompetitionModalElements().list;
+      if (!list) return;
+      Array.from(list.querySelectorAll('.js-group-competition-order-item')).forEach((item, index) => {
+        const orderEl = item.querySelector('.group-competition-order-item-order');
+        if (orderEl) {
+          orderEl.textContent = String(index + 1);
+        }
+      });
+    }
+
+    function ensureGroupCompetitionModalSortable() {
+      if (!groupCompetitionModalState.canEdit || typeof Sortable === 'undefined') return;
+      const list = getGroupCompetitionModalElements().list;
+      if (!list || list.dataset.sortableInit === '1') return;
+
+      Sortable.create(list, {
+        animation: 120,
+        handle: '.js-group-competition-order-item-handle',
+        draggable: '.js-group-competition-order-item',
+        onEnd: function() {
+          refreshGroupCompetitionOrderModalNumbering();
+        },
+      });
+      list.dataset.sortableInit = '1';
+    }
+
+    function createGroupCompetitionOrderItem(row, options = {}) {
+      const opts = options || {};
+      const item = document.createElement('div');
+      item.className = 'group-competition-order-item js-group-competition-order-item';
+      item.setAttribute('data-id', String(row?.id || ''));
+
+      const orderEl = document.createElement('div');
+      orderEl.className = 'group-competition-order-item-order';
+      orderEl.textContent = String(opts.order || row?.saved_order || '?');
+      item.appendChild(orderEl);
+
+      if (opts.canEdit) {
+        const handle = document.createElement('span');
+        handle.className = 'group-competition-order-item-handle js-group-competition-order-item-handle';
+        handle.innerHTML = '&#8942;&#8942;';
+        handle.title = 'Arrossega per reordenar';
+        item.appendChild(handle);
+      }
+
+      const main = document.createElement('div');
+      main.className = 'group-competition-order-item-main';
+
+      const label = document.createElement('div');
+      label.className = 'group-competition-order-item-label';
+      label.textContent = String(row?.label || `Inscripcio ${row?.id || ''}`);
+      main.appendChild(label);
+
+      if (row?.secondary_label) {
+        const meta = document.createElement('div');
+        meta.className = 'group-competition-order-item-meta';
+        meta.textContent = String(row.secondary_label);
+        main.appendChild(meta);
+      }
+      item.appendChild(main);
+
+      const state = document.createElement('div');
+      state.className = 'group-competition-order-item-state';
+
+      const visibilityBadge = document.createElement('span');
+      visibilityBadge.className = `group-competition-order-item-badge ${opts.isVisible ? 'is-visible' : 'is-hidden'}`;
+      visibilityBadge.textContent = opts.isVisible
+        ? `Visible${opts.visibleOrder ? ` #${opts.visibleOrder}` : ''}`
+        : 'Fora del filtre actual';
+      state.appendChild(visibilityBadge);
+
+      item.appendChild(state);
+      return item;
+    }
+
+    function renderGroupCompetitionOrderModal(data) {
+      const els = getGroupCompetitionModalElements();
+      if (!els.modal || !els.list || !els.title || !els.subtitle || !els.count || !els.warning || !els.save) return;
+
+      const rows = Array.isArray(data?.rows) ? data.rows : [];
+      const groupLabel = String(data?.group_label || groupCompetitionModalState.groupLabel || `Grup ${groupCompetitionModalState.groupNum || '?'}`);
+      const visibleIds = collectIdsForGroup(groupCompetitionModalState.groupNum);
+      const visibleOrderById = new Map();
+      visibleIds.forEach((insId, index) => visibleOrderById.set(String(insId), index + 1));
+      const savedVisibleIds = rows
+        .map(row => String(row?.id || ''))
+        .filter(insId => visibleOrderById.has(insId));
+      const hiddenCount = rows.length - savedVisibleIds.length;
+      const isDirty = visibleIds.length > 0 && !arraysEqual(visibleIds, savedVisibleIds);
+      const canEdit = canEditInscripcions && !!data?.can_edit;
+
+      groupCompetitionModalState.groupLabel = groupLabel;
+      groupCompetitionModalState.canEdit = canEdit;
+
+      els.title.textContent = `Ordre de competicio · ${groupLabel}`;
+      els.subtitle.textContent = "Aquesta llista reflecteix l'ordre guardat real del grup complet, encara que la taula ara es mostri amb una altra ordenacio.";
+      els.count.textContent = `${rows.length} participants totals · ${savedVisibleIds.length} visibles al context actual`;
+      if (isDirty) {
+        els.warning.classList.remove('d-none');
+        els.warning.textContent = `L'ordre visual actual dels visibles no coincideix amb l'ordre guardat.${hiddenCount > 0 ? ` ${hiddenCount} participant(s) queden fora del filtre actual.` : ''}`;
+      } else if (hiddenCount > 0) {
+        els.warning.classList.remove('d-none');
+        els.warning.textContent = `${hiddenCount} participant(s) del grup no son visibles al context actual.`;
+      } else {
+        els.warning.classList.add('d-none');
+        els.warning.textContent = '';
+      }
+
+      if (els.footnote) {
+        els.footnote.textContent = canEdit
+          ? "Arrossega per canviar l'ordre guardat del grup. La taula principal no es reordena automaticament."
+          : "Mode lectura: pots consultar l'ordre guardat, pero no modificar-lo amb els permisos actuals.";
+      }
+
+      els.list.classList.toggle('is-readonly', !canEdit);
+      els.list.innerHTML = '';
+      if (!rows.length) {
+        els.list.innerHTML = '<div class="group-competition-modal-empty">Aquest grup no te participants guardats.</div>';
+      } else {
+        rows.forEach((row, index) => {
+          els.list.appendChild(
+            createGroupCompetitionOrderItem(row, {
+              order: index + 1,
+              canEdit: canEdit,
+              isVisible: visibleOrderById.has(String(row?.id || '')),
+              visibleOrder: visibleOrderById.get(String(row?.id || '')) || null,
+            })
+          );
+        });
+        refreshGroupCompetitionOrderModalNumbering();
+      }
+
+      els.save.disabled = !canEdit || rows.length === 0;
+      els.save.classList.toggle('d-none', !canEdit);
+      ensureGroupCompetitionModalSortable();
+    }
+
+    function collectGroupCompetitionOrderFromModal() {
+      const list = getGroupCompetitionModalElements().list;
+      if (!list) return [];
+      return Array.from(list.querySelectorAll('.js-group-competition-order-item'))
+        .map(el => String(el.getAttribute('data-id') || '').trim())
+        .filter(v => !!v);
+    }
+
+    async function openGroupCompetitionOrderModal(groupNum, trigger = null) {
+      const cleanGroup = String(groupNum || '').trim();
+      if (!cleanGroup) return;
+      if (typeof setExpandedGroupCard === 'function') setExpandedGroupCard('');
+      if (typeof closeColumnSortMenus === 'function') closeColumnSortMenus();
+      if (typeof closeColumnCustomSortModal === 'function' && isCustomSortModalOpen()) {
+        closeColumnCustomSortModal({ restoreFocus: false });
+      }
+      groupCompetitionModalState.groupNum = cleanGroup;
+      groupCompetitionModalState.groupLabel = '';
+      groupCompetitionModalState.trigger = trigger || document.activeElement;
+      showGroupCompetitionOrderLoading(cleanGroup);
+
+      try {
+        const data = await postJson(groupCompetitionOrderPreviewUrl, {
+          group_num: cleanGroup,
+        });
+        if (!data || !data.ok) {
+          closeGroupCompetitionOrderModal();
+          showAlert("No s'ha pogut carregar l'ordre de competicio guardat.");
+          return;
+        }
+        if (groupCompetitionModalState.groupNum !== cleanGroup) return;
+        renderGroupCompetitionOrderModal(data);
+      } catch (err) {
+        closeGroupCompetitionOrderModal();
+        showAlert(`No s'ha pogut carregar l'ordre de competicio guardat.\n${err.message || err}`);
+      }
+    }
+
+    async function saveGroupCompetitionOrderFromModal() {
+      const groupNum = groupCompetitionModalState.groupNum;
+      if (!groupNum || !groupCompetitionModalState.canEdit) return false;
+
+      const ids = collectGroupCompetitionOrderFromModal();
+      if (!ids.length) {
+        showAlert("Aquest grup no te participants per desar.");
+        return false;
+      }
+
+      try {
+        await postJson(saveGroupCompetitionOrderUrl, {
+          group_num: groupNum,
+          ids: ids,
+        });
+        syncCompetitionOrderAttrsForGroup(groupNum, ids);
+        refreshGroupHeaderIndicators();
+        closeGroupCompetitionOrderModal({ restoreFocus: false });
         showAlert("Ordre de competicio desat.");
         return true;
       } catch (err) {
@@ -3405,8 +4553,28 @@
       return item;
     }
 
-    function ensureCustomSortEditorSortable(menu) {
-      const list = menu?.querySelector('.js-col-sort-custom-dnd');
+    function getCustomSortModalElements() {
+      return {
+        backdrop: document.getElementById('custom-sort-modal-backdrop'),
+        modal: document.getElementById('custom-sort-modal'),
+        title: document.getElementById('custom-sort-modal-title'),
+        subtitle: document.getElementById('custom-sort-modal-subtitle'),
+        count: document.getElementById('custom-sort-modal-count'),
+        stale: document.getElementById('custom-sort-modal-stale'),
+        list: document.getElementById('custom-sort-modal-dnd'),
+        close: document.getElementById('custom-sort-modal-close'),
+        cancel: document.getElementById('custom-sort-modal-cancel'),
+        reset: document.getElementById('custom-sort-modal-reset'),
+        save: document.getElementById('custom-sort-modal-save'),
+      };
+    }
+
+    function isCustomSortModalOpen() {
+      return document.body.classList.contains('custom-sort-modal-open');
+    }
+
+    function ensureCustomSortModalSortable() {
+      const list = getCustomSortModalElements().list;
       if (!list) return;
       if (list.dataset.sortableInit === '1') return;
       if (typeof Sortable === 'undefined') return;
@@ -3419,46 +4587,44 @@
       list.dataset.sortableInit = '1';
     }
 
-    function renderCustomSortEditor(menu, data) {
-      if (!menu) return;
-
-      const editor = menu.querySelector('.js-col-sort-custom-editor');
-      const list = menu.querySelector('.js-col-sort-custom-dnd');
-      const stale = menu.querySelector('.js-col-sort-custom-stale');
-      const saveBtn = menu.querySelector('.js-col-sort-custom-save');
-      if (!editor || !list || !stale || !saveBtn) return;
-
+    function renderCustomSortModal(data) {
+      const els = getCustomSortModalElements();
+      if (!els.modal || !els.list || !els.stale || !els.save || !els.reset) return;
       const rows = Array.isArray(data?.values) ? data.values : [];
       const staleValues = Array.isArray(data?.stale_values) ? data.stale_values : [];
+      const uiLabel = String(customSortModalState.uiLabel || '').trim() || 'Ordre custom';
 
-      list.innerHTML = '';
+      els.title.textContent = uiLabel;
+      els.subtitle.textContent = `Reordena els valors detectats i desa l'ordre per a la columna ${uiLabel} amb els filtres i agrupacions actuals.`;
+      els.count.textContent = `${rows.length} valor(s) detectat(s)`;
+      els.list.innerHTML = '';
       rows.forEach(row => {
-        list.appendChild(createCustomSortItemElement(row));
+        els.list.appendChild(createCustomSortItemElement(row));
       });
 
       if (!rows.length) {
         const msg = document.createElement('div');
-        msg.className = 'small text-muted';
+        msg.className = 'custom-sort-modal-empty';
         msg.textContent = 'No hi ha valors detectats amb el context actual.';
-        list.appendChild(msg);
+        els.list.appendChild(msg);
       }
-      saveBtn.disabled = rows.length === 0;
+      els.save.disabled = rows.length === 0;
+      els.reset.disabled = !customSortModalState.sortKey;
 
       if (staleValues.length) {
-        stale.classList.remove('d-none');
-        stale.textContent = `${staleValues.length} valor(s) custom obsolet(s). En desar es netejaran automaticament.`;
+        els.stale.classList.remove('d-none');
+        els.stale.textContent = `${staleValues.length} valor(s) custom obsolet(s). En desar es netejaran automaticament.`;
       } else {
-        stale.classList.add('d-none');
-        stale.textContent = '';
+        els.stale.classList.add('d-none');
+        els.stale.textContent = '';
       }
 
-      renderCustomSortPreview(menu, rows.filter(r => !!r?.in_custom));
-      editor.classList.remove('d-none');
-      ensureCustomSortEditorSortable(menu);
+      renderCustomSortPreview(customSortModalState.menu, rows.filter(r => !!r?.in_custom));
+      ensureCustomSortModalSortable();
     }
 
-    function collectCustomSortOrderFromEditor(menu) {
-      const list = menu?.querySelector('.js-col-sort-custom-dnd');
+    function collectCustomSortOrderFromModal() {
+      const list = getCustomSortModalElements().list;
       if (!list) return [];
 
       return normalizeCustomOrderValues(
@@ -3467,10 +4633,66 @@
       );
     }
 
-    function hideCustomSortEditor(menu) {
-      const editor = menu?.querySelector('.js-col-sort-custom-editor');
-      if (!editor) return;
-      editor.classList.add('d-none');
+    function closeColumnCustomSortModal(options = {}) {
+      const opts = options || {};
+      const els = getCustomSortModalElements();
+      if (els.backdrop) {
+        els.backdrop.classList.remove('is-visible');
+        els.backdrop.setAttribute('aria-hidden', 'true');
+      }
+      if (els.modal) {
+        els.modal.classList.remove('is-visible');
+        els.modal.setAttribute('aria-hidden', 'true');
+      }
+      document.body.classList.remove('custom-sort-modal-open');
+
+      const trigger = customSortModalState.trigger;
+      customSortModalState.sortKey = '';
+      customSortModalState.uiLabel = '';
+      customSortModalState.menu = null;
+      customSortModalState.trigger = null;
+
+      if (opts.restoreFocus !== false && trigger && typeof trigger.focus === 'function') {
+        window.setTimeout(() => trigger.focus(), 0);
+      }
+    }
+
+    function showColumnCustomSortLoading(menu, uiLabel) {
+      const els = getCustomSortModalElements();
+      if (!els.modal || !els.list || !els.count || !els.stale || !els.save || !els.reset) return;
+
+      els.title.textContent = uiLabel || 'Ordre custom';
+      els.subtitle.textContent = `Carregant valors per a la columna ${uiLabel || 'seleccionada'}...`;
+      els.count.textContent = 'Carregant valors...';
+      els.stale.classList.add('d-none');
+      els.stale.textContent = '';
+      els.list.innerHTML = '';
+
+      const msg = document.createElement('div');
+      msg.className = 'custom-sort-modal-empty';
+      msg.textContent = 'Carregant valors...';
+      els.list.appendChild(msg);
+
+      els.save.disabled = true;
+      els.reset.disabled = !menu;
+      if (els.backdrop) {
+        els.backdrop.classList.add('is-visible');
+        els.backdrop.setAttribute('aria-hidden', 'false');
+      }
+      if (els.modal) {
+        els.modal.classList.add('is-visible');
+        els.modal.setAttribute('aria-hidden', 'false');
+      }
+      document.body.classList.add('custom-sort-modal-open');
+
+      const focusTarget = els.close || els.cancel || els.modal;
+      if (focusTarget && typeof focusTarget.focus === 'function') {
+        window.setTimeout(() => focusTarget.focus(), 0);
+      }
+    }
+
+    function hideCustomSortEditor() {
+      return;
     }
 
     function toggleGroupsSourceView() {
@@ -4283,14 +5505,24 @@
       if (!menu) return;
       const scope = menu.querySelector('.js-col-sort-scope')?.value || 'all';
       const wrap = menu.querySelector('.js-col-sort-group-wrap');
-      if (!wrap) return;
-      wrap.classList.toggle('d-none', scope !== 'group');
+      const help = menu.querySelector('.js-col-sort-scope-help');
+      if (wrap) {
+        wrap.classList.toggle('d-none', scope !== 'group');
+      }
+      if (!help) return;
+
+      const helpByScope = {
+        all: "Pot canviar l'ordre de les pestanyes actives.",
+        tab: "Ordena nomes dins de cada pestanya activa; no en canvia l'ordre.",
+        all_groups: "Ordena cada grup numeric complet, incloent membres fora del filtre actual.",
+        group: "Ordena el grup numeric complet seleccionat, incloent membres fora del filtre actual.",
+      };
+      help.textContent = helpByScope[scope] || helpByScope.all;
     }
 
     function closeColumnSortMenus(exceptMenu = null) {
       document.querySelectorAll('[data-col-sort-menu]').forEach(menu => {
         if (exceptMenu && menu === exceptMenu) return;
-        hideCustomSortEditor(menu);
         menu.classList.add('d-none');
       });
     }
@@ -4352,16 +5584,11 @@
       }
     }
 
-    async function editColumnCustomSort(menu) {
+    async function editColumnCustomSort(menu, trigger = null) {
       if (!menu) return;
       const sortKey = menu.getAttribute('data-col-code') || '';
       if (!sortKey) return;
-
-      const editor = menu.querySelector('.js-col-sort-custom-editor');
-      if (editor && !editor.classList.contains('d-none')) {
-        hideCustomSortEditor(menu);
-        return;
-      }
+      const uiLabel = String(menu.querySelector('.js-col-sort-title')?.textContent || '').trim() || 'Ordre custom';
 
       const payload = {
         sort_key: sortKey,
@@ -4370,23 +5597,33 @@
       };
 
       try {
+        customSortModalState.sortKey = sortKey;
+        customSortModalState.uiLabel = uiLabel;
+        customSortModalState.menu = menu;
+        customSortModalState.trigger = trigger || document.activeElement;
+        closeColumnSortMenus();
+        showColumnCustomSortLoading(menu, uiLabel);
+
         const data = await postJson(sortCustomValuesUrl, payload);
         if (!data || !data.ok) {
+          closeColumnCustomSortModal();
           showAlert("No s'ha pogut carregar l'ordre custom.");
           return;
         }
-        renderCustomSortEditor(menu, data);
+
+        if (customSortModalState.sortKey !== sortKey) return;
+        renderCustomSortModal(data);
       } catch (err) {
+        closeColumnCustomSortModal();
         showAlert(`No s'ha pogut gestionar l'ordre custom.\n${err.message || err}`);
       }
     }
 
-    async function saveColumnCustomSort(menu) {
-      if (!menu) return;
-      const sortKey = menu.getAttribute('data-col-code') || '';
+    async function saveColumnCustomSortFromModal() {
+      const sortKey = customSortModalState.sortKey;
       if (!sortKey) return;
 
-      const orderedValues = collectCustomSortOrderFromEditor(menu);
+      const orderedValues = collectCustomSortOrderFromModal();
 
       try {
         const data = await postJson(sortCustomSaveUrl, {
@@ -4400,6 +5637,7 @@
           showAlert("No s'ha pogut desar l'ordre custom.");
           return;
         }
+        closeColumnCustomSortModal({ restoreFocus: false });
         closeColumnSortMenus();
         reloadWithUiState();
       } catch (err) {
@@ -4425,7 +5663,32 @@
           return;
         }
         renderCustomSortPreview(menu, []);
-        hideCustomSortEditor(menu);
+        closeColumnSortMenus();
+        reloadWithUiState();
+      } catch (err) {
+        showAlert(`No s'ha pogut eliminar l'ordre custom.\n${err.message || err}`);
+      }
+    }
+
+    async function clearColumnCustomSortFromModal() {
+      const menu = customSortModalState.menu;
+      const sortKey = customSortModalState.sortKey;
+      if (!sortKey) return;
+
+      const ok = await showConfirm("Vols eliminar l'ordre custom d'aquesta columna?");
+      if (!ok) return;
+
+      try {
+        const data = await postJson(sortCustomSaveUrl, {
+          sort_key: sortKey,
+          clear: true,
+        });
+        if (!data || !data.ok) {
+          showAlert("No s'ha pogut eliminar l'ordre custom.");
+          return;
+        }
+        renderCustomSortPreview(menu, []);
+        closeColumnCustomSortModal({ restoreFocus: false });
         closeColumnSortMenus();
         reloadWithUiState();
       } catch (err) {
@@ -4511,7 +5774,7 @@
           e.preventDefault();
           e.stopPropagation();
           const menu = btn.closest('[data-col-sort-menu]');
-          await editColumnCustomSort(menu);
+          await editColumnCustomSort(menu, btn);
         });
       });
 
@@ -4521,22 +5784,6 @@
           e.stopPropagation();
           const menu = btn.closest('[data-col-sort-menu]');
           await clearColumnCustomSort(menu);
-        });
-      });
-      document.querySelectorAll('.js-col-sort-custom-save').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          const menu = btn.closest('[data-col-sort-menu]');
-          await saveColumnCustomSort(menu);
-        });
-      });
-      document.querySelectorAll('.js-col-sort-custom-cancel').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          const menu = btn.closest('[data-col-sort-menu]');
-          hideCustomSortEditor(menu);
         });
       });
       document.querySelectorAll('.js-col-sort-remove').forEach(btn => {
@@ -4550,13 +5797,43 @@
       });
 
       document.addEventListener('click', (e) => {
+        if (isCustomSortModalOpen() && (e.target.closest('#custom-sort-modal') || e.target.closest('#custom-sort-modal-backdrop'))) {
+          return;
+        }
         if (e.target.closest('[data-col-sort-menu]')) return;
         if (e.target.closest('[data-col-sort-toggle]')) return;
         closeColumnSortMenus();
       });
 
+      const customSortEls = getCustomSortModalElements();
+      if (customSortEls.backdrop) {
+        customSortEls.backdrop.addEventListener('click', () => closeColumnCustomSortModal());
+      }
+      if (customSortEls.close) {
+        customSortEls.close.addEventListener('click', () => closeColumnCustomSortModal());
+      }
+      if (customSortEls.cancel) {
+        customSortEls.cancel.addEventListener('click', () => closeColumnCustomSortModal());
+      }
+      if (customSortEls.reset) {
+        customSortEls.reset.addEventListener('click', async () => {
+          await clearColumnCustomSortFromModal();
+        });
+      }
+      if (customSortEls.save) {
+        customSortEls.save.addEventListener('click', async () => {
+          await saveColumnCustomSortFromModal();
+        });
+      }
+
       document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') closeColumnSortMenus();
+        if (e.key !== 'Escape') return;
+        if (isCustomSortModalOpen()) {
+          e.preventDefault();
+          closeColumnCustomSortModal();
+          return;
+        }
+        closeColumnSortMenus();
       });
     }
 
@@ -5113,8 +6390,43 @@
     refreshGroupHeaderIndicators();
 
     document.addEventListener('click', async (e) => {
+      const groupActionsToggle = e.target.closest('[data-group-actions-toggle]');
+      if (groupActionsToggle) {
+        e.preventDefault();
+        e.stopPropagation();
+        const wrap = groupActionsToggle.closest('.group-actions-pop');
+        const menu = wrap ? wrap.querySelector('[data-group-actions-menu]') : null;
+        if (!menu) return;
+        const opening = menu.classList.contains('d-none');
+        closeGroupActionMenus(menu);
+        if (opening) {
+          menu.classList.remove('d-none');
+        } else {
+          menu.classList.add('d-none');
+        }
+        return;
+      }
+
+      const previewOrderBtn = e.target.closest('.js-view-group-order');
+      if (previewOrderBtn) {
+        closeGroupActionMenus();
+        const g = previewOrderBtn.getAttribute('data-group');
+        await openGroupCompetitionOrderModal(g, previewOrderBtn);
+        return;
+      }
+
+      const showRealOrderBtn = e.target.closest('.js-show-group-real-order');
+      if (showRealOrderBtn) {
+        closeGroupActionMenus();
+        const headerRow = showRealOrderBtn.closest('tr.group-row');
+        await showSavedCompetitionOrderForGroup(headerRow);
+        return;
+      }
+
       const saveOrderBtn = e.target.closest('.js-save-group-order');
       if (saveOrderBtn) {
+        closeGroupActionMenus();
+        if (saveOrderBtn.disabled) return;
         const g = saveOrderBtn.getAttribute('data-group');
         await saveGroupCompetitionOrder(g);
         return;
@@ -5122,10 +6434,11 @@
 
       const editBtn = e.target.closest('.js-edit-group-name');
       if (editBtn) {
+        closeGroupActionMenus();
+        if (editBtn.disabled) return;
         const g = editBtn.getAttribute('data-group');
         const editor = document.querySelector(`.js-group-name-editor[data-group="${CSS.escape(g)}"]`);
         if (editor) editor.classList.remove('d-none');
-        editBtn.classList.add('d-none');
         return;
       }
 
@@ -5133,9 +6446,7 @@
       if (cancelBtn) {
         const g = cancelBtn.getAttribute('data-group');
         const editor = document.querySelector(`.js-group-name-editor[data-group="${CSS.escape(g)}"]`);
-        const edit = document.querySelector(`.js-edit-group-name[data-group="${CSS.escape(g)}"]`);
         if (editor) editor.classList.add('d-none');
-        if (edit) edit.classList.remove('d-none');
         return;
       }
 
@@ -5150,6 +6461,9 @@
         if (ok) reloadWithUiState();
         return;
       }
+
+      if (e.target.closest('[data-group-actions-menu]')) return;
+      closeGroupActionMenus();
     });
 
     // --- Fer grup independent (headers g2/g3 i pestanya sencera) ---

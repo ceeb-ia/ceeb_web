@@ -22,6 +22,7 @@ from .services.services_classificacions_2 import (
     normalize_particions_v2_entries,
     particio_codes_from_entries,
 )
+from .live_cache import get_live_payload_cached, mark_live_dirty
 from .services.classificacio_templates import (
     build_template_requirements as build_template_requirements_shared,
     canon_app_code as canon_app_code_shared,
@@ -544,7 +545,7 @@ class ClassificacionsLoopLive(TemplateView):
         return ctx
 
 
-def classificacions_live_data(request, pk):
+def _classificacions_live_data_uncached_legacy(request, pk):
     """
     GET /competicio/<pk>/classificacions/live/data?since=<iso>
     Retorna:
@@ -690,7 +691,7 @@ class PublicClassificacionsLoopLive(TemplateView):
         return ctx
 
 
-def public_classificacions_live_data(request, token):
+def _public_classificacions_live_data_uncached_legacy(request, token):
     token_obj = get_object_or_404(PublicLiveToken, pk=token)
     if not token_obj.is_valid():
         return JsonResponse({"ok": False, "error": "Token invalid o revocat"}, status=403)
@@ -755,6 +756,42 @@ def public_classificacions_live_data(request, token):
         "permissions": {"can_view_media": bool(token_obj.can_view_media)},
         "cfgs": payload_cfgs,
     })
+
+
+def classificacions_live_data(request, pk):
+    """
+    GET /competicio/<pk>/classificacions/live/data?since=<iso>
+    Retorna:
+      - changed: False si no hi ha canvis des de `since`
+      - changed: True + dades si hi ha canvis
+    """
+    competicio = get_object_or_404(Competicio, pk=pk)
+    payload, source = get_live_payload_cached(
+        competicio,
+        compute_payload=_live_data_payload,
+        since_raw=request.GET.get("since"),
+    )
+    response = JsonResponse(payload)
+    response["X-Live-Cache"] = source
+    return response
+
+
+def public_classificacions_live_data(request, token):
+    token_obj = get_object_or_404(PublicLiveToken, pk=token)
+    if not token_obj.is_valid():
+        return JsonResponse({"ok": False, "error": "Token invalid o revocat"}, status=403)
+
+    competicio = token_obj.competicio
+    payload, source = get_live_payload_cached(
+        competicio,
+        compute_payload=_live_data_payload,
+        since_raw=request.GET.get("since"),
+    )
+    payload = dict(payload)
+    payload["permissions"] = {"can_view_media": bool(token_obj.can_view_media)}
+    response = JsonResponse(payload)
+    response["X-Live-Cache"] = source
+    return response
 
 
 class ClassificacionsHome(TemplateView):
@@ -3319,6 +3356,7 @@ def classificacio_reorder(request, pk):
     for idx, cid in enumerate(order, start=1):
         ClassificacioConfig.objects.filter(competicio=competicio, id=cid).update(ordre=idx)
 
+    transaction.on_commit(lambda comp_id=competicio.id: mark_live_dirty(comp_id))
     return JsonResponse({"ok": True})
 
 

@@ -1,4 +1,5 @@
 import json
+import re
 from io import BytesIO
 from datetime import timedelta
 from types import SimpleNamespace
@@ -15,6 +16,7 @@ from openpyxl import load_workbook
 
 from ceeb_web.auth_groups import GLOBAL_AUTH_GROUPS
 
+from . import live_cache
 from .access import user_has_competicio_capability
 from .models import Competicio, Equip, GrupCompeticio, Inscripcio, InscripcioMedia
 from .models_judging import (
@@ -196,10 +198,21 @@ class InscripcionsSortFlowTests(TestCase):
             password="testpass123",
             email="sort-editor@example.com",
         )
+        self.readonly_user = User.objects.create_user(
+            username="sort_readonly_user",
+            password="testpass123",
+            email="sort-readonly@example.com",
+        )
         CompeticioMembership.objects.create(
             user=self.user,
             competicio=self.comp,
             role=CompeticioMembership.Role.EDITOR,
+            is_active=True,
+        )
+        CompeticioMembership.objects.create(
+            user=self.readonly_user,
+            competicio=self.comp,
+            role=CompeticioMembership.Role.READONLY,
             is_active=True,
         )
         self.client.force_login(self.user)
@@ -228,6 +241,386 @@ class InscripcionsSortFlowTests(TestCase):
         }
         payload.update(overrides)
         return payload
+
+    def test_inscripcions_list_group_column_uses_group_label_with_fallbacks(self):
+        named_group = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Participant Final",
+            grup=2,
+            ordre_sortida=1,
+        )
+        fallback_group = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Participant Grup 3",
+            grup=3,
+            ordre_sortida=2,
+        )
+        no_group = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Participant Sense Grup",
+            ordre_sortida=3,
+        )
+
+        group = GrupCompeticio.objects.get(competicio=self.comp, display_num=2)
+        group.nom = "Final"
+        group.save(update_fields=["nom"])
+
+        self.comp.inscripcions_view = {
+            "table_columns": ["nom_i_cognoms", "grup"],
+        }
+        self.comp.save(update_fields=["inscripcions_view"])
+
+        response = self.client.get(reverse("inscripcions_list", kwargs={"pk": self.comp.id}))
+        self.assertEqual(response.status_code, 200)
+
+        body = response.content.decode("utf-8")
+        self.assertRegex(
+            body,
+            re.compile(
+                r"Participant Final.*?<td class=\"[^\"]*\">\s*Final\s*</td>",
+                re.S,
+            ),
+        )
+        self.assertRegex(
+            body,
+            re.compile(
+                r"Participant Grup 3.*?<td class=\"[^\"]*\">\s*Grup 3\s*</td>",
+                re.S,
+            ),
+        )
+        self.assertRegex(
+            body,
+            re.compile(
+                r"Participant Sense Grup.*?<td class=\"[^\"]*\">\s*-\s*</td>",
+                re.S,
+            ),
+        )
+
+    def test_inscripcions_list_renders_explicit_sort_scope_labels(self):
+        response = self.client.get(reverse("inscripcions_list", kwargs={"pk": self.comp.id}))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Totes les inscripcions filtrades")
+        self.assertContains(response, "Dins de cada pestanya activa")
+        self.assertContains(response, "Dins de cada grup numeric complet")
+        self.assertContains(response, "Nomes un grup numeric concret")
+        self.assertContains(response, "incloent membres fora del filtre actual")
+
+    def test_sort_apply_tab_preserves_tab_block_order(self):
+        beta_1 = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="David",
+            categoria="Beta",
+            ordre_sortida=1,
+        )
+        beta_2 = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Carla",
+            categoria="Beta",
+            ordre_sortida=2,
+        )
+        alpha_1 = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Biel",
+            categoria="Alpha",
+            ordre_sortida=3,
+        )
+        alpha_2 = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Anna",
+            categoria="Alpha",
+            ordre_sortida=4,
+        )
+
+        response = self._post_json(
+            "inscripcions_sort_apply",
+            {
+                "sort_key": "nom_i_cognoms",
+                "sort_dir": "asc",
+                "scope": "tab",
+                "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                "group_by": ["categoria"],
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json().get("ok"))
+
+        actual_ids = list(
+            Inscripcio.objects.filter(competicio=self.comp)
+            .order_by("ordre_sortida", "id")
+            .values_list("id", flat=True)
+        )
+        self.assertEqual(actual_ids, [beta_2.id, beta_1.id, alpha_2.id, alpha_1.id])
+
+    def test_sort_apply_all_can_reorder_tab_blocks(self):
+        beta_1 = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="David",
+            categoria="Beta",
+            ordre_sortida=1,
+        )
+        beta_2 = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Carla",
+            categoria="Beta",
+            ordre_sortida=2,
+        )
+        alpha_1 = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Biel",
+            categoria="Alpha",
+            ordre_sortida=3,
+        )
+        alpha_2 = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Anna",
+            categoria="Alpha",
+            ordre_sortida=4,
+        )
+
+        response = self._post_json(
+            "inscripcions_sort_apply",
+            {
+                "sort_key": "nom_i_cognoms",
+                "sort_dir": "asc",
+                "scope": "all",
+                "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                "group_by": ["categoria"],
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json().get("ok"))
+
+        actual_ids = list(
+            Inscripcio.objects.filter(competicio=self.comp)
+            .order_by("ordre_sortida", "id")
+            .values_list("id", flat=True)
+        )
+        self.assertEqual(actual_ids, [alpha_2.id, alpha_1.id, beta_2.id, beta_1.id])
+
+    def test_sort_apply_group_reorders_full_group_even_outside_filter(self):
+        visible = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Zulu",
+            entitat="Club A",
+            ordre_sortida=1,
+            grup=1,
+        )
+        hidden = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Alpha",
+            entitat="Club B",
+            ordre_sortida=2,
+            grup=1,
+        )
+        other = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Resta",
+            ordre_sortida=3,
+            grup=2,
+        )
+
+        response = self._post_json(
+            "inscripcions_sort_apply",
+            {
+                "sort_key": "nom_i_cognoms",
+                "sort_dir": "asc",
+                "scope": "group",
+                "group_num": 1,
+                "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": "Club A"},
+                "group_by": [],
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json().get("ok"))
+
+        visible.refresh_from_db()
+        hidden.refresh_from_db()
+        other.refresh_from_db()
+        self.assertEqual(hidden.ordre_sortida, 1)
+        self.assertEqual(visible.ordre_sortida, 2)
+        self.assertEqual(other.ordre_sortida, 3)
+
+    def test_sort_apply_all_groups_reorders_full_visible_groups_only(self):
+        g1_visible = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Zulu",
+            entitat="Club A",
+            ordre_sortida=1,
+            grup=1,
+        )
+        g1_hidden = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Alpha",
+            entitat="Club B",
+            ordre_sortida=2,
+            grup=1,
+        )
+        g2_visible = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Yara",
+            entitat="Club A",
+            ordre_sortida=3,
+            grup=2,
+        )
+        g2_hidden = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Beta",
+            entitat="Club B",
+            ordre_sortida=4,
+            grup=2,
+        )
+        g3_first = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Omega",
+            entitat="Club C",
+            ordre_sortida=5,
+            grup=3,
+        )
+        g3_second = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Gamma",
+            entitat="Club D",
+            ordre_sortida=6,
+            grup=3,
+        )
+
+        response = self._post_json(
+            "inscripcions_sort_apply",
+            {
+                "sort_key": "nom_i_cognoms",
+                "sort_dir": "asc",
+                "scope": "all_groups",
+                "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": "Club A"},
+                "group_by": [],
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json().get("ok"))
+
+        g1_visible.refresh_from_db()
+        g1_hidden.refresh_from_db()
+        g2_visible.refresh_from_db()
+        g2_hidden.refresh_from_db()
+        g3_first.refresh_from_db()
+        g3_second.refresh_from_db()
+
+        self.assertEqual(g1_hidden.ordre_sortida, 1)
+        self.assertEqual(g1_visible.ordre_sortida, 2)
+        self.assertEqual(g2_hidden.ordre_sortida, 3)
+        self.assertEqual(g2_visible.ordre_sortida, 4)
+        self.assertEqual(g3_first.ordre_sortida, 5)
+        self.assertEqual(g3_second.ordre_sortida, 6)
+
+    def test_group_competition_order_preview_returns_saved_order_for_full_group(self):
+        first = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Participant 1",
+            entitat="Club A",
+            grup=2,
+            ordre_sortida=1,
+        )
+        second = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Participant 2",
+            entitat="Club B",
+            grup=2,
+            ordre_sortida=2,
+        )
+        third = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Participant 3",
+            entitat="Club C",
+            grup=2,
+            ordre_sortida=3,
+        )
+        group = GrupCompeticio.objects.get(competicio=self.comp, display_num=2)
+        group.nom = "Final"
+        group.save(update_fields=["nom"])
+        Inscripcio.objects.filter(pk=first.pk).update(ordre_competicio=2)
+        Inscripcio.objects.filter(pk=second.pk).update(ordre_competicio=1)
+        Inscripcio.objects.filter(pk=third.pk).update(ordre_competicio=3)
+
+        response = self._post_json(
+            "inscripcions_group_competition_order_preview",
+            {"group_num": 2},
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data.get("ok"))
+        self.assertEqual(data.get("group_label"), "Final")
+        self.assertEqual(data.get("total_count"), 3)
+        self.assertTrue(data.get("can_edit"))
+        self.assertEqual(
+            data.get("rows"),
+            [
+                {
+                    "id": second.id,
+                    "label": "Participant 2",
+                    "secondary_label": "Club B",
+                    "saved_order": 1,
+                },
+                {
+                    "id": first.id,
+                    "label": "Participant 1",
+                    "secondary_label": "Club A",
+                    "saved_order": 2,
+                },
+                {
+                    "id": third.id,
+                    "label": "Participant 3",
+                    "secondary_label": "Club C",
+                    "saved_order": 3,
+                },
+            ],
+        )
+
+    def test_group_competition_order_preview_falls_back_to_group_number_when_unnamed(self):
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Sense nom de grup",
+            grup=3,
+            ordre_sortida=1,
+        )
+
+        response = self._post_json(
+            "inscripcions_group_competition_order_preview",
+            {"group_num": 3},
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data.get("ok"))
+        self.assertEqual(data.get("group_label"), "Grup 3")
+
+    def test_group_competition_order_preview_allows_readonly_and_save_remains_protected(self):
+        first = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Readonly 1",
+            grup=1,
+            ordre_sortida=1,
+        )
+        second = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Readonly 2",
+            grup=1,
+            ordre_sortida=2,
+        )
+
+        self.client.force_login(self.readonly_user)
+
+        preview_res = self._post_json(
+            "inscripcions_group_competition_order_preview",
+            {"group_num": 1},
+        )
+        self.assertEqual(preview_res.status_code, 200)
+        self.assertFalse(preview_res.json().get("can_edit"))
+
+        save_url = reverse("inscripcions_save_group_competition_order", kwargs={"pk": self.comp.id})
+        save_res = self.client.post(
+            save_url,
+            data=json.dumps({"group_num": 1, "ids": [second.id, first.id]}),
+            content_type="application/json",
+        )
+        self.assertEqual(save_res.status_code, 403)
 
     def test_sort_apply_reapplying_existing_criterion_keeps_priority(self):
         i1 = Inscripcio.objects.create(
@@ -414,6 +807,243 @@ class InscripcionsSortFlowTests(TestCase):
             .values_list("id", flat=True)
         )
         self.assertEqual(after_custom_save_ids, [i3.id, i1.id, i2.id])
+
+    def test_custom_sort_values_for_group_use_named_labels(self):
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="G1",
+            grup=2,
+            ordre_sortida=1,
+        )
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="G2",
+            grup=2,
+            ordre_sortida=2,
+        )
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="G3",
+            grup=3,
+            ordre_sortida=3,
+        )
+        group = GrupCompeticio.objects.get(competicio=self.comp, display_num=2)
+        group.nom = "Final"
+        group.save(update_fields=["nom"])
+
+        response = self._post_json(
+            "inscripcions_sort_custom_values",
+            {
+                "sort_key": "grup",
+                "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                "group_by": [],
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data.get("ok"))
+
+        values_by_token = {str(item["value"]): item for item in data.get("values", [])}
+        self.assertEqual(values_by_token["2"]["label"], "Final")
+        self.assertEqual(values_by_token["2"]["count"], 2)
+        self.assertEqual(values_by_token["3"]["label"], "Grup 3")
+
+    def test_custom_sort_values_for_equip_use_team_names_and_skip_empty(self):
+        equip = Equip.objects.create(competicio=self.comp, nom="Equip Alpha")
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="E1",
+            equip=equip,
+            ordre_sortida=1,
+        )
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="E2",
+            equip=equip,
+            ordre_sortida=2,
+        )
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Sense equip",
+            ordre_sortida=3,
+        )
+
+        response = self._post_json(
+            "inscripcions_sort_custom_values",
+            {
+                "sort_key": "equip",
+                "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                "group_by": [],
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data.get("ok"))
+        self.assertEqual(
+            data.get("values"),
+            [
+                {
+                    "value": str(equip.id),
+                    "label": "Equip Alpha",
+                    "count": 2,
+                    "detected": True,
+                    "in_custom": False,
+                }
+            ],
+        )
+
+    def test_equip_sort_apply_uses_team_name_for_fallback(self):
+        equip_beta = Equip.objects.create(competicio=self.comp, nom="Beta")
+        equip_alpha = Equip.objects.create(competicio=self.comp, nom="Alpha")
+        ins_beta = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Beta 1",
+            equip=equip_beta,
+            ordre_sortida=1,
+        )
+        ins_alpha = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Alpha 1",
+            equip=equip_alpha,
+            ordre_sortida=2,
+        )
+
+        response = self._post_json(
+            "inscripcions_sort_apply",
+            {
+                "sort_key": "equip",
+                "sort_dir": "asc",
+                "scope": "all",
+                "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                "group_by": [],
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json().get("ok"))
+
+        actual_ids = list(
+            Inscripcio.objects.filter(competicio=self.comp)
+            .order_by("ordre_sortida", "id")
+            .values_list("id", flat=True)
+        )
+        self.assertEqual(actual_ids, [ins_alpha.id, ins_beta.id])
+
+    def test_equip_custom_sort_save_reapplies_active_stack_immediately(self):
+        equip_alpha = Equip.objects.create(competicio=self.comp, nom="Alpha")
+        equip_beta = Equip.objects.create(competicio=self.comp, nom="Beta")
+        ins_alpha = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Alpha 1",
+            equip=equip_alpha,
+            ordre_sortida=1,
+        )
+        ins_beta = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Beta 1",
+            equip=equip_beta,
+            ordre_sortida=2,
+        )
+
+        base_payload = {
+            "scope": "all",
+            "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+            "group_by": [],
+        }
+
+        r_apply = self._post_json(
+            "inscripcions_sort_apply",
+            {**base_payload, "sort_key": "equip", "sort_dir": "custom"},
+        )
+        self.assertEqual(r_apply.status_code, 200)
+        self.assertTrue(r_apply.json().get("ok"))
+
+        r_custom = self._post_json(
+            "inscripcions_sort_custom_save",
+            {
+                "sort_key": "equip",
+                "order": [str(equip_beta.id), str(equip_alpha.id)],
+                "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                "group_by": [],
+                "preserve_missing_context": True,
+            },
+        )
+        self.assertEqual(r_custom.status_code, 200)
+        data = r_custom.json()
+        self.assertTrue(data.get("ok"))
+        self.assertTrue(data.get("reapplied"))
+        self.assertEqual(data.get("stack_count"), 1)
+
+        actual_ids = list(
+            Inscripcio.objects.filter(competicio=self.comp)
+            .order_by("ordre_sortida", "id")
+            .values_list("id", flat=True)
+        )
+        self.assertEqual(actual_ids, [ins_beta.id, ins_alpha.id])
+
+    def test_equip_custom_order_survives_team_rename(self):
+        equip_alpha = Equip.objects.create(competicio=self.comp, nom="Alpha")
+        equip_beta = Equip.objects.create(competicio=self.comp, nom="Beta")
+        ins_alpha = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Alpha 1",
+            equip=equip_alpha,
+            ordre_sortida=1,
+        )
+        ins_beta = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Beta 1",
+            equip=equip_beta,
+            ordre_sortida=2,
+        )
+
+        base_payload = {
+            "scope": "all",
+            "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+            "group_by": [],
+        }
+
+        self._post_json(
+            "inscripcions_sort_apply",
+            {**base_payload, "sort_key": "equip", "sort_dir": "custom"},
+        )
+        save_resp = self._post_json(
+            "inscripcions_sort_custom_save",
+            {
+                "sort_key": "equip",
+                "order": [str(equip_beta.id), str(equip_alpha.id)],
+                "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                "group_by": [],
+                "preserve_missing_context": True,
+            },
+        )
+        self.assertEqual(save_resp.status_code, 200)
+        self.assertTrue(save_resp.json().get("ok"))
+
+        equip_alpha.nom = "Alfa"
+        equip_alpha.save(update_fields=["nom"])
+        equip_beta.nom = "Zeta"
+        equip_beta.save(update_fields=["nom"])
+
+        asc_resp = self._post_json(
+            "inscripcions_sort_apply",
+            {**base_payload, "sort_key": "equip", "sort_dir": "asc"},
+        )
+        self.assertEqual(asc_resp.status_code, 200)
+        self.assertTrue(asc_resp.json().get("ok"))
+
+        custom_resp = self._post_json(
+            "inscripcions_sort_apply",
+            {**base_payload, "sort_key": "equip", "sort_dir": "custom"},
+        )
+        self.assertEqual(custom_resp.status_code, 200)
+        self.assertTrue(custom_resp.json().get("ok"))
+
+        actual_ids = list(
+            Inscripcio.objects.filter(competicio=self.comp)
+            .order_by("ordre_sortida", "id")
+            .values_list("id", flat=True)
+        )
+        self.assertEqual(actual_ids, [ins_beta.id, ins_alpha.id])
 
     def test_history_undo_redo_restores_sort_apply(self):
         i1 = Inscripcio.objects.create(
@@ -1985,8 +2615,8 @@ class ScoringAndJudgeExclusionFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(portal_res.status_code, 200)
         body = portal_res.content.decode("utf-8")
         self.assertIn("const EXERCICI = 2;", body)
-        self.assertIn("href=\"?ex=1\"", body)
-        self.assertIn("href=\"?ex=3\"", body)
+        self.assertIn('href="?ex=1"', body)
+        self.assertIn('href="?ex=3"', body)
 
     def test_judge_portal_hides_video_controls_when_video_disabled(self):
         self.token.can_record_video = False
@@ -2440,6 +3070,66 @@ class RotationOrderingDisplayTests(_BaseTrampoliDataMixin, TestCase):
             ["Participant 7", "Participant 6"],
         )
 
+    def test_judge_portal_uses_group_query_for_active_group(self):
+        extra_1 = self._create_inscripcio(self.comp, "Participant 4", ordre=4, grup=2)
+        extra_2 = self._create_inscripcio(self.comp, "Participant 5", ordre=5, grup=2)
+        Inscripcio.objects.filter(pk=extra_1.pk).update(ordre_competicio=1)
+        Inscripcio.objects.filter(pk=extra_2.pk).update(ordre_competicio=2)
+        extra_1.refresh_from_db()
+        self._assign_group_to_app_franja(extra_1.grup_competicio, self.franja_3)
+
+        portal_url = reverse("judge_portal", kwargs={"token": self.token.id})
+        portal_res = self.client.get(portal_url, {"group": extra_1.grup_competicio_id})
+        self.assertEqual(portal_res.status_code, 200)
+        self.assertEqual(portal_res.context["active_group_key"], extra_1.grup_competicio_id)
+
+        body = portal_res.content.decode("utf-8")
+        self.assertRegex(
+            body,
+            rf'class="nav-link active"\s+data-group-target="group-{extra_1.grup_competicio_id}"',
+        )
+        self.assertRegex(
+            body,
+            rf'class="group-pane\s*"\s+data-group-pane="group-{extra_1.grup_competicio_id}"',
+        )
+
+    def test_judge_portal_invalid_group_query_falls_back_to_first_visible_group(self):
+        extra_1 = self._create_inscripcio(self.comp, "Participant 4", ordre=4, grup=2)
+        extra_2 = self._create_inscripcio(self.comp, "Participant 5", ordre=5, grup=2)
+        Inscripcio.objects.filter(pk=extra_1.pk).update(ordre_competicio=1)
+        Inscripcio.objects.filter(pk=extra_2.pk).update(ordre_competicio=2)
+        extra_1.refresh_from_db()
+        self._assign_group_to_app_franja(extra_1.grup_competicio, self.franja_3)
+
+        portal_url = reverse("judge_portal", kwargs={"token": self.token.id})
+        portal_res = self.client.get(portal_url, {"group": 999999})
+        self.assertEqual(portal_res.status_code, 200)
+        self.assertEqual(portal_res.context["active_group_key"], portal_res.context["group_blocks"][0]["key"])
+
+    def test_judge_portal_preserves_group_when_rendering_exercise_links_with_franja(self):
+        self.comp_app.nombre_exercicis = 3
+        self.comp_app.save(update_fields=["nombre_exercicis"])
+        portal_url = reverse("judge_portal", kwargs={"token": self.token.id})
+        portal_res = self.client.get(
+            portal_url,
+            {
+                "ex": 2,
+                "group": self.ins_1.grup_competicio_id,
+                "franja": self.franja_3.id,
+            },
+        )
+        self.assertEqual(portal_res.status_code, 200)
+
+        body = portal_res.content.decode("utf-8")
+        self.assertIn(
+            f'href="?ex=1&group={self.ins_1.grup_competicio_id}&franja={self.franja_3.id}"',
+            body,
+        )
+        self.assertIn(
+            f'href="?ex=3&group={self.ins_1.grup_competicio_id}&franja={self.franja_3.id}"',
+            body,
+        )
+
     def test_out_of_program_visibility_toggle_controls_notes_and_judge_views(self):
         extra_group = GrupCompeticio.objects.create(
             competicio=self.comp,
@@ -2495,6 +3185,10 @@ class RotationOrderingDisplayTests(_BaseTrampoliDataMixin, TestCase):
         self.assertIn(ungrouped_ins.nom_i_cognoms, portal_body)
         self.assertIn("Sense grup", portal_body)
         self.assertNotIn(extra_ins.nom_i_cognoms, portal_body)
+
+        grouped_portal_res = self.client.get(portal_url, {"group": 0})
+        self.assertEqual(grouped_portal_res.status_code, 200)
+        self.assertEqual(grouped_portal_res.context["active_group_key"], 0)
 
         toggle_url = reverse("rotacions_out_of_program_visibility_save", kwargs={"pk": self.comp.id})
         toggle_res = self.client.post(
@@ -5282,6 +5976,327 @@ class PublicLiveTokenViewsTests(_BaseTrampoliDataMixin, TestCase):
             res.json().get("permissions", {}).get("can_view_media"),
             True,
         )
+
+
+class LiveClassificacionsRedisCacheTests(_BaseTrampoliDataMixin, TestCase):
+    class FakeRedis:
+        def __init__(self):
+            self.store = {}
+
+        def get(self, key):
+            return self.store.get(key)
+
+        def set(self, key, value, nx=False, ex=None):
+            if nx and key in self.store:
+                return False
+            self.store[key] = value
+            return True
+
+        def delete(self, key):
+            self.store.pop(key, None)
+            return 1
+
+    def setUp(self):
+        self.comp = self._create_competicio("Comp Live Cache")
+        self.app = self._create_aparell("TRAMP_LIVE_CACHE", "Tramp Live Cache")
+        self.comp_app = self._create_comp_aparell(self.comp, self.app, ordre=1, actiu=True)
+        self.ins = self._create_inscripcio(self.comp, "Participant Cache", ordre=1)
+        self.cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="General",
+            activa=True,
+            ordre=1,
+            tipus="individual",
+            schema=self._schema(),
+        )
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins,
+            exercici=1,
+            comp_aparell=self.comp_app,
+            inputs={},
+            outputs={},
+            total=9.8,
+        )
+        self.token = PublicLiveToken.objects.create(
+            competicio=self.comp,
+            label="Pantalla cache",
+            is_active=True,
+        )
+        User = get_user_model()
+        self.user = User.objects.create_user(
+            username="live_cache_user",
+            password="testpass123",
+            email="live-cache@example.com",
+        )
+        self.editor_user = User.objects.create_user(
+            username="live_cache_editor",
+            password="testpass123",
+            email="live-cache-editor@example.com",
+        )
+        CompeticioMembership.objects.create(
+            user=self.user,
+            competicio=self.comp,
+            role=CompeticioMembership.Role.READONLY,
+            is_active=True,
+        )
+        CompeticioMembership.objects.create(
+            user=self.editor_user,
+            competicio=self.comp,
+            role=CompeticioMembership.Role.CLASSIFICACIONS,
+            is_active=True,
+        )
+
+    def _schema(self):
+        return {
+            "filtres": {},
+            "puntuacio": {
+                "aparells": {"mode": "seleccionar", "ids": [self.comp_app.id]},
+                "camps_per_aparell": {str(self.comp_app.id): ["total"]},
+                "agregacio_camps": "sum",
+                "exercicis": {"mode": "tots"},
+                "exercicis_best_n": 1,
+                "agregacio_exercicis": "sum",
+                "agregacio_aparells": "sum",
+                "ordre": "desc",
+                "camp": "total",
+                "agregacio": "sum",
+                "best_n": 1,
+            },
+            "desempat": [],
+            "presentacio": {
+                "columnes": [
+                    {"type": "builtin", "key": "participant", "label": "Nom", "align": "left"},
+                    {"type": "builtin", "key": "punts", "label": "Punts", "align": "right", "decimals": 3},
+                ],
+            },
+        }
+
+    def _public_url(self):
+        return reverse("public_live_classificacions_data", kwargs={"token": self.token.id})
+
+    def _internal_url(self):
+        return reverse("classificacions_live_data", kwargs={"pk": self.comp.id})
+
+    def _reorder_url(self):
+        return reverse("classificacio_reorder", kwargs={"pk": self.comp.id})
+
+    def _snapshot_payload(self):
+        return {
+            "ok": True,
+            "changed": True,
+            "stamp": timezone.now().isoformat(),
+            "competicio": {"id": self.comp.id, "nom": self.comp.nom},
+            "cfgs": [
+                {
+                    "id": self.cfg.id,
+                    "nom": self.cfg.nom,
+                    "tipus": self.cfg.tipus,
+                    "columns": [
+                        {"type": "builtin", "key": "participant", "label": "Nom", "align": "left"},
+                        {"type": "builtin", "key": "punts", "label": "Punts", "align": "right", "decimals": 3},
+                    ],
+                    "parts": [
+                        {
+                            "particio": "global",
+                            "rows": [{"participant": "Participant Cache", "punts": 9.8, "posicio": 1}],
+                        }
+                    ],
+                }
+            ],
+        }
+
+    def _snapshot_blob(self, generated_at=None):
+        payload = self._snapshot_payload()
+        payload["generated_at"] = (generated_at or timezone.now()).isoformat()
+        return json.dumps(payload)
+
+    def test_first_get_computes_and_second_get_uses_cache(self):
+        fake_redis = self.FakeRedis()
+        compute_result = {
+            "global": [{"participant": "Participant Cache", "punts": 9.8, "posicio": 1}]
+        }
+        cache_key = live_cache.live_cache_key(self.comp.id)
+        with patch("competicions_trampoli.live_cache._live_redis_client", return_value=fake_redis):
+            with patch("competicions_trampoli.views_classificacions.compute_classificacio", return_value=compute_result) as mocked_compute:
+                res_1 = self.client.get(self._public_url())
+                res_2 = self.client.get(self._public_url())
+
+        self.assertEqual(res_1.status_code, 200)
+        self.assertEqual(res_2.status_code, 200)
+        self.assertEqual(mocked_compute.call_count, 1)
+        self.assertIn(cache_key, fake_redis.store)
+        self.assertEqual(res_1["X-Live-Cache"], "miss")
+        self.assertEqual(res_2["X-Live-Cache"], "hit")
+        self.assertEqual(
+            res_2.json().get("cfgs", [])[0].get("parts", [])[0].get("rows", [])[0].get("participant"),
+            "Participant Cache",
+        )
+
+    def test_public_and_internal_live_share_same_snapshot(self):
+        fake_redis = self.FakeRedis()
+        compute_result = {
+            "global": [{"participant": "Participant Cache", "punts": 9.8, "posicio": 1}]
+        }
+        self.client.force_login(self.user)
+        with patch("competicions_trampoli.live_cache._live_redis_client", return_value=fake_redis):
+            with patch("competicions_trampoli.views_classificacions.compute_classificacio", return_value=compute_result) as mocked_compute:
+                public_res = self.client.get(self._public_url())
+                internal_res = self.client.get(self._internal_url())
+
+        self.assertEqual(public_res.status_code, 200)
+        self.assertEqual(internal_res.status_code, 200)
+        self.assertEqual(mocked_compute.call_count, 1)
+        self.assertEqual(public_res["X-Live-Cache"], "miss")
+        self.assertEqual(internal_res["X-Live-Cache"], "hit")
+        self.assertIn("permissions", public_res.json())
+        self.assertNotIn("permissions", internal_res.json())
+
+    def test_since_is_served_from_cached_stamp_without_recompute(self):
+        fake_redis = self.FakeRedis()
+        compute_result = {
+            "global": [{"participant": "Participant Cache", "punts": 9.8, "posicio": 1}]
+        }
+        with patch("competicions_trampoli.live_cache._live_redis_client", return_value=fake_redis):
+            with patch("competicions_trampoli.views_classificacions.compute_classificacio", return_value=compute_result) as mocked_compute:
+                first_res = self.client.get(self._public_url())
+                stamp = first_res.json()["stamp"]
+                second_res = self.client.get(self._public_url(), {"since": stamp})
+
+        self.assertEqual(first_res.status_code, 200)
+        self.assertEqual(second_res.status_code, 200)
+        self.assertEqual(mocked_compute.call_count, 1)
+        self.assertFalse(second_res.json()["changed"])
+        self.assertEqual(second_res.json()["stamp"], stamp)
+        self.assertEqual(second_res.json().get("permissions", {}).get("can_view_media"), False)
+
+    def test_lock_contention_waits_for_snapshot_without_recompute(self):
+        fake_redis = self.FakeRedis()
+        fake_redis.set(live_cache.live_lock_key(self.comp.id), "busy")
+        waited_snapshot = json.loads(self._snapshot_blob())
+        with patch("competicions_trampoli.live_cache._live_redis_client", return_value=fake_redis):
+            with patch("competicions_trampoli.live_cache._wait_for_live_snapshot", return_value=waited_snapshot):
+                with patch("competicions_trampoli.views_classificacions.compute_classificacio") as mocked_compute:
+                    res = self.client.get(self._public_url())
+
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res["X-Live-Cache"], "wait-hit")
+        mocked_compute.assert_not_called()
+
+    def test_stale_snapshot_is_served_when_refresh_lock_is_busy(self):
+        fake_redis = self.FakeRedis()
+        fake_redis.set(
+            live_cache.live_cache_key(self.comp.id),
+            self._snapshot_blob(generated_at=timezone.now() - timedelta(seconds=10)),
+        )
+        fake_redis.set(live_cache.live_lock_key(self.comp.id), "busy")
+        with patch("competicions_trampoli.live_cache._live_redis_client", return_value=fake_redis):
+            with patch("competicions_trampoli.views_classificacions.compute_classificacio") as mocked_compute:
+                res = self.client.get(self._public_url())
+
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res["X-Live-Cache"], "stale")
+        mocked_compute.assert_not_called()
+
+    def test_redis_failure_falls_back_to_direct_compute(self):
+        compute_result = {
+            "global": [{"participant": "Participant Cache", "punts": 9.8, "posicio": 1}]
+        }
+        with patch(
+            "competicions_trampoli.live_cache._live_redis_client",
+            side_effect=RuntimeError("redis down"),
+        ):
+            with patch("competicions_trampoli.views_classificacions.compute_classificacio", return_value=compute_result) as mocked_compute:
+                res = self.client.get(self._public_url())
+
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res["X-Live-Cache"], "fallback")
+        self.assertEqual(mocked_compute.call_count, 1)
+
+    def test_fresh_snapshot_with_dirty_forces_refresh_and_clears_dirty(self):
+        fake_redis = self.FakeRedis()
+        fake_redis.set(live_cache.live_cache_key(self.comp.id), self._snapshot_blob())
+        dirty_key = live_cache.live_dirty_key(self.comp.id)
+        fake_redis.set(dirty_key, "dirty-1")
+        compute_result = {
+            "global": [{"participant": "Participant Cache", "punts": 9.8, "posicio": 1}]
+        }
+        with patch("competicions_trampoli.live_cache._live_redis_client", return_value=fake_redis):
+            with patch("competicions_trampoli.views_classificacions.compute_classificacio", return_value=compute_result) as mocked_compute:
+                res = self.client.get(self._public_url())
+
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res["X-Live-Cache"], "refresh")
+        self.assertEqual(mocked_compute.call_count, 1)
+        self.assertNotIn(dirty_key, fake_redis.store)
+
+    def test_dirty_marker_changed_during_refresh_is_preserved(self):
+        fake_redis = self.FakeRedis()
+        fake_redis.set(live_cache.live_cache_key(self.comp.id), self._snapshot_blob())
+        dirty_key = live_cache.live_dirty_key(self.comp.id)
+        fake_redis.set(dirty_key, "dirty-1")
+
+        def compute_payload(competicio, since_raw=None):
+            fake_redis.set(dirty_key, "dirty-2")
+            return self._snapshot_payload()
+
+        with patch("competicions_trampoli.live_cache._live_redis_client", return_value=fake_redis):
+            payload, source = live_cache.get_live_payload_cached(
+                self.comp,
+                compute_payload=compute_payload,
+                since_raw=None,
+            )
+
+        self.assertEqual(source, "refresh")
+        self.assertTrue(payload.get("ok"))
+        self.assertEqual(fake_redis.get(dirty_key), "dirty-2")
+
+    def test_scoreentry_signal_marks_dirty_after_commit(self):
+        fake_redis = self.FakeRedis()
+        with patch("competicions_trampoli.live_cache._live_redis_client", return_value=fake_redis):
+            with self.captureOnCommitCallbacks(execute=True):
+                ScoreEntry.objects.create(
+                    competicio=self.comp,
+                    inscripcio=self.ins,
+                    exercici=2,
+                    comp_aparell=self.comp_app,
+                    inputs={},
+                    outputs={},
+                    total=8.4,
+                )
+
+        self.assertIsNotNone(fake_redis.get(live_cache.live_dirty_key(self.comp.id)))
+
+    def test_classificacioconfig_signal_marks_dirty_after_commit(self):
+        fake_redis = self.FakeRedis()
+        with patch("competicions_trampoli.live_cache._live_redis_client", return_value=fake_redis):
+            with self.captureOnCommitCallbacks(execute=True):
+                self.cfg.nom = "General Dirty"
+                self.cfg.save(update_fields=["nom"])
+
+        self.assertIsNotNone(fake_redis.get(live_cache.live_dirty_key(self.comp.id)))
+
+    def test_classificacio_reorder_marks_dirty_after_bulk_update(self):
+        fake_redis = self.FakeRedis()
+        cfg_2 = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Segona",
+            activa=True,
+            ordre=2,
+            tipus="individual",
+            schema=self._schema(),
+        )
+        self.client.force_login(self.editor_user)
+        with patch("competicions_trampoli.live_cache._live_redis_client", return_value=fake_redis):
+            with self.captureOnCommitCallbacks(execute=True):
+                res = self.client.post(
+                    self._reorder_url(),
+                    data=json.dumps({"order": [cfg_2.id, self.cfg.id]}),
+                    content_type="application/json",
+                )
+
+        self.assertEqual(res.status_code, 200)
+        self.assertIsNotNone(fake_redis.get(live_cache.live_dirty_key(self.comp.id)))
 
 
 class CompetitionAccessControlTests(_BaseTrampoliDataMixin, TestCase):

@@ -58,6 +58,7 @@ BUILTIN_SORT_FIELDS = [
     {"code": "categoria", "label": "Categoria", "kind": "builtin"},
     {"code": "subcategoria", "label": "Subcategoria", "kind": "builtin"},
     {"code": "grup", "label": "Grup", "kind": "builtin"},
+    {"code": "equip", "label": "Equip", "kind": "builtin"},
 ]
 
 # Compatibilitat amb URLs antigues (?sort_key=nom|edat)
@@ -484,6 +485,109 @@ def _sort_scalar(v):
     return (2, str(v).casefold())
 
 
+def _build_sort_field_runtime_context(records, sort_code):
+    code = str(sort_code or "").strip()
+    if code != "grup":
+        return {}
+
+    competicio_id = None
+    for obj in records or []:
+        competicio_id = getattr(obj, "competicio_id", None)
+        if competicio_id:
+            break
+    if not competicio_id:
+        return {}
+    return {"group_maps": get_group_maps(competicio_id)}
+
+
+def _resolve_sort_field_runtime(obj, sort_code, context=None):
+    code = str(sort_code or "").strip()
+    ctx = context if isinstance(context, dict) else {}
+    raw_value = get_inscripcio_value(obj, code)
+
+    if code == "grup":
+        group = getattr(obj, "grup_competicio", None)
+        display_num = normalize_positive_int(getattr(obj, "grup", None))
+        if not display_num and group is not None:
+            display_num = normalize_positive_int(getattr(group, "display_num", None))
+        if group is None and display_num:
+            group = ((ctx.get("group_maps") or {}).get("by_display_num") or {}).get(display_num)
+
+        token = str(display_num) if display_num else ""
+        group_name = str(getattr(group, "nom", "") or "").strip() if group is not None else ""
+        label = group_name or (f"Grup {display_num}" if display_num else "")
+        return {
+            "raw_value": display_num,
+            "token": token,
+            "label": label,
+            "sort_scalar": _sort_scalar(display_num if display_num is not None else ""),
+        }
+
+    if code == "equip":
+        equip_id = getattr(obj, "equip_id", None)
+        equip = getattr(obj, "equip", None)
+        equip_name = str(getattr(equip, "nom", "") or "").strip() if equip is not None else ""
+        token = str(equip_id) if equip_id else ""
+        label = equip_name or (f"Equip {equip_id}" if equip_id else "")
+        return {
+            "raw_value": equip_name,
+            "token": token,
+            "label": label,
+            "sort_scalar": _sort_scalar(equip_name),
+        }
+
+    token = _normalize_custom_sort_token(raw_value)
+    return {
+        "raw_value": raw_value,
+        "token": token,
+        "label": _s(raw_value) if token else "",
+        "sort_scalar": _sort_scalar(raw_value),
+    }
+
+
+def _build_sort_records_queryset(qs, sort_codes=None):
+    codes = []
+    seen_codes = set()
+    for raw_code in sort_codes or []:
+        code = str(raw_code or "").strip()
+        if not code or code in seen_codes:
+            continue
+        seen_codes.add(code)
+        codes.append(code)
+
+    select_related_fields = []
+    only_fields = ["id", "competicio_id", "extra", "ordre_sortida"]
+
+    for code in codes:
+        if code == "grup":
+            select_related_fields.append("grup_competicio")
+            only_fields.extend([
+                "grup",
+                "grup_competicio_id",
+                "grup_competicio__display_num",
+                "grup_competicio__nom",
+            ])
+            continue
+        if code == "equip":
+            select_related_fields.append("equip")
+            only_fields.extend([
+                "equip_id",
+                "equip__nom",
+            ])
+            continue
+        if hasattr(Inscripcio, code):
+            only_fields.append(code)
+
+    qs_out = qs
+    if select_related_fields:
+        dedup_related = list(dict.fromkeys(select_related_fields))
+        qs_out = qs_out.select_related(*dedup_related)
+    if only_fields:
+        dedup_only = list(dict.fromkeys(only_fields))
+        qs_out = qs_out.only(*dedup_only)
+    return qs_out.order_by("ordre_sortida", "id")
+
+
 def sort_records_by_field(records, sort_code, descending=False):
     """
     Ordenació portable (builtins + extra JSON), amb buits al final.
@@ -516,22 +620,24 @@ def sort_records_by_field_stable(records, sort_code, descending=False, custom_ra
     custom_filled = []
     fallback_filled = []
     empty = []
+    context = _build_sort_field_runtime_context(records, sort_code)
 
     for o in records:
-        v = get_inscripcio_value(o, sort_code)
-        if v in (None, ""):
+        runtime = _resolve_sort_field_runtime(o, sort_code, context=context)
+        token = runtime.get("token") or ""
+        if not token:
             empty.append(o)
         else:
             if custom_enabled:
-                key = _custom_sort_token_key(_normalize_custom_sort_token(v))
+                key = _custom_sort_token_key(token)
                 if key in custom_map:
                     custom_filled.append((o, custom_map[key]))
                     continue
-            fallback_filled.append((o, v))
+            fallback_filled.append((o, runtime.get("sort_scalar")))
 
     # Python sort es estable: en valors iguals manté l'ordre previ.
     custom_filled.sort(key=lambda t: t[1], reverse=descending)
-    fallback_filled.sort(key=lambda t: _sort_scalar(t[1]), reverse=descending)
+    fallback_filled.sort(key=lambda t: t[1], reverse=descending)
 
     return [o for (o, _rank) in custom_filled] + [o for (o, _v) in fallback_filled] + empty
 
@@ -1070,11 +1176,11 @@ def clear_inscripcions_sort_state_for_competicio(request, competicio_id):
 
 def get_inscripcions_sort_context_state(request, context_key):
     if not context_key:
-        return {"stack": [], "order_sig": "", "base_ids": []}
+        return {"stack": [], "order_sig": "", "base_ids": [], "context_ids": []}
     store = _read_sort_stack_store(request)
     state = store.get(context_key)
     if not isinstance(state, dict):
-        return {"stack": [], "order_sig": "", "base_ids": []}
+        return {"stack": [], "order_sig": "", "base_ids": [], "context_ids": []}
     stack = state.get("stack")
     if not isinstance(stack, list):
         stack = []
@@ -1084,10 +1190,13 @@ def get_inscripcions_sort_context_state(request, context_key):
     base_ids = state.get("base_ids")
     if not isinstance(base_ids, list):
         base_ids = []
-    return {"stack": stack, "order_sig": order_sig, "base_ids": base_ids}
+    context_ids = state.get("context_ids")
+    if not isinstance(context_ids, list):
+        context_ids = []
+    return {"stack": stack, "order_sig": order_sig, "base_ids": base_ids, "context_ids": context_ids}
 
 
-def save_inscripcions_sort_context_state(request, context_key, stack=None, order_sig=None, base_ids=None):
+def save_inscripcions_sort_context_state(request, context_key, stack=None, order_sig=None, base_ids=None, context_ids=None):
     if not context_key:
         return
     store = _read_sort_stack_store(request)
@@ -1100,6 +1209,8 @@ def save_inscripcions_sort_context_state(request, context_key, stack=None, order
         state["order_sig"] = order_sig
     if base_ids is not None:
         state["base_ids"] = base_ids
+    if context_ids is not None:
+        state["context_ids"] = context_ids
     if not state.get("stack"):
         store.pop(context_key, None)
     else:
@@ -1144,7 +1255,7 @@ def clear_inscripcions_sort_context_state(request, context_key):
     save_inscripcions_sort_context_state(request, context_key, stack=[], order_sig="")
 
 
-def reconcile_inscripcions_sort_context_state(request, context_key, current_ids):
+def reconcile_inscripcions_sort_context_state(request, context_key, current_ids, current_base_ids=None):
     """
     Reconciliació de l'stack d'ordenació per un context concret:
       - si l'ordre canvia però el conjunt d'IDs és el mateix -> rebase (manté stack)
@@ -1153,11 +1264,15 @@ def reconcile_inscripcions_sort_context_state(request, context_key, current_ids)
     state = get_inscripcions_sort_context_state(request, context_key)
     stack = state.get("stack") if isinstance(state.get("stack"), list) else []
     if not stack:
-        return {"stack": [], "order_sig": "", "base_ids": []}
+        return {"stack": [], "order_sig": "", "base_ids": [], "context_ids": []}
 
     current_ids_list = list(current_ids or [])
-    current_sig = compute_inscripcions_order_signature_from_ids(current_ids_list)
+    current_base_ids_list = list(current_base_ids or current_ids_list)
+    current_sig = compute_inscripcions_order_signature_from_ids(current_base_ids_list)
     saved_sig = str(state.get("order_sig") or "")
+    context_ids_state = state.get("context_ids") if isinstance(state.get("context_ids"), list) else []
+    if not context_ids_state:
+        context_ids_state = state.get("base_ids") if isinstance(state.get("base_ids"), list) else []
 
     # Si no hi ha signatura guardada o ja coincideix, no cal tocar res.
     if (not saved_sig) or saved_sig == current_sig:
@@ -1165,12 +1280,12 @@ def reconcile_inscripcions_sort_context_state(request, context_key, current_ids)
             "stack": stack,
             "order_sig": saved_sig if saved_sig else current_sig,
             "base_ids": state.get("base_ids") if isinstance(state.get("base_ids"), list) else [],
+            "context_ids": context_ids_state,
         }
 
-    base_ids_state = state.get("base_ids") if isinstance(state.get("base_ids"), list) else []
     same_set = (
-        len(base_ids_state) == len(current_ids_list)
-        and set(base_ids_state) == set(current_ids_list)
+        len(context_ids_state) == len(current_ids_list)
+        and set(context_ids_state) == set(current_ids_list)
     )
 
     if same_set:
@@ -1180,13 +1295,19 @@ def reconcile_inscripcions_sort_context_state(request, context_key, current_ids)
             context_key,
             stack=stack,
             order_sig=current_sig,
-            base_ids=current_ids_list,
+            base_ids=current_base_ids_list,
+            context_ids=current_ids_list,
         )
-        return {"stack": stack, "order_sig": current_sig, "base_ids": current_ids_list}
+        return {
+            "stack": stack,
+            "order_sig": current_sig,
+            "base_ids": current_base_ids_list,
+            "context_ids": current_ids_list,
+        }
 
     # Context realment diferent: neteja.
     clear_inscripcions_sort_context_state(request, context_key)
-    return {"stack": [], "order_sig": "", "base_ids": []}
+    return {"stack": [], "order_sig": "", "base_ids": [], "context_ids": []}
 
 
 def _build_inscripcions_filtered_qs(competicio, filters):
@@ -1213,9 +1334,10 @@ def _build_inscripcions_filtered_qs(competicio, filters):
 
 def _collect_sort_field_value_stats(records, sort_code):
     out = OrderedDict()
+    context = _build_sort_field_runtime_context(records, sort_code)
     for obj in records:
-        raw_value = get_inscripcio_value(obj, sort_code)
-        token = _normalize_custom_sort_token(raw_value)
+        runtime = _resolve_sort_field_runtime(obj, sort_code, context=context)
+        token = runtime.get("token") or ""
         if not token:
             continue
         key = _custom_sort_token_key(token)
@@ -1225,9 +1347,9 @@ def _collect_sort_field_value_stats(records, sort_code):
         if row is None:
             row = {
                 "token": token,
-                "label": _s(raw_value),
+                "label": runtime.get("label") or token,
                 "count": 0,
-                "sort_scalar": _sort_scalar(raw_value),
+                "sort_scalar": runtime.get("sort_scalar"),
             }
             out[key] = row
         row["count"] += 1
@@ -1248,7 +1370,7 @@ def _normalize_sort_criterion(raw, sort_codes, allowed_group_codes, fallback_gro
         c_sort_dir = "asc"
 
     c_scope = str(raw.get("scope") or "all").strip().lower()
-    if c_scope not in ("all", "tab", "group"):
+    if c_scope not in ("all", "tab", "all_groups", "group"):
         c_scope = "all"
 
     c_group_num = None
@@ -1280,7 +1402,7 @@ def _sort_criterion_identity(entry):
         return ("", "all", None)
     sort_key = str(entry.get("sort_key") or "").strip()
     scope = str(entry.get("scope") or "all").strip().lower()
-    if scope not in ("all", "tab", "group"):
+    if scope not in ("all", "tab", "all_groups", "group"):
         scope = "all"
     group_num = None
     if scope == "group":
@@ -1317,7 +1439,92 @@ def _upsert_sort_stack_entry_preserving_priority(stack, new_entry):
     return out
 
 
-def _apply_single_sort_criterion(ids_in_order, id_to_record, criterion, competicio):
+def _normalize_positive_group_num(value):
+    try:
+        group_num = int(value)
+    except Exception:
+        return None
+    return group_num if group_num > 0 else None
+
+
+def _collect_visible_group_nums(records):
+    out = []
+    seen = set()
+    for record in records or []:
+        group_num = _normalize_positive_group_num(getattr(record, "grup", None))
+        if group_num is None or group_num in seen:
+            continue
+        seen.add(group_num)
+        out.append(group_num)
+    return out
+
+
+def _stack_requires_full_groups(stack):
+    for criterion in stack or []:
+        scope = str((criterion or {}).get("scope") or "all").strip().lower()
+        if scope in ("group", "all_groups"):
+            return True
+    return False
+
+
+def _collect_stack_target_group_nums(stack, visible_group_nums):
+    target_group_nums = set()
+    visible_group_set = set(visible_group_nums or [])
+    for criterion in stack or []:
+        scope = str((criterion or {}).get("scope") or "all").strip().lower()
+        if scope == "all_groups":
+            target_group_nums.update(visible_group_set)
+            continue
+        if scope == "group":
+            group_num = _normalize_positive_group_num((criterion or {}).get("group_num"))
+            if group_num is not None:
+                target_group_nums.add(group_num)
+    return target_group_nums
+
+
+def _build_sort_application_runtime(competicio, visible_records, sort_codes, stack):
+    visible_records = list(visible_records or [])
+    visible_ids = [record.id for record in visible_records]
+    visible_id_set = set(visible_ids)
+    visible_group_nums = _collect_visible_group_nums(visible_records)
+
+    sort_codes = [str(code or "").strip() for code in (sort_codes or []) if str(code or "").strip()]
+    if "grup" not in sort_codes:
+        sort_codes = sort_codes + ["grup"]
+
+    record_by_id = {record.id: record for record in visible_records}
+    application_ids = list(visible_ids)
+
+    if _stack_requires_full_groups(stack):
+        target_group_nums = _collect_stack_target_group_nums(stack, visible_group_nums)
+        if target_group_nums:
+            group_records = list(
+                _build_sort_records_queryset(
+                    Inscripcio.objects.filter(competicio=competicio, grup__in=sorted(target_group_nums)),
+                    sort_codes,
+                )
+            )
+            for record in group_records:
+                record_by_id[record.id] = record
+
+            global_ids = list(
+                Inscripcio.objects
+                .filter(competicio=competicio)
+                .order_by("ordre_sortida", "id")
+                .values_list("id", flat=True)
+            )
+            application_ids = [ins_id for ins_id in global_ids if ins_id in record_by_id]
+
+    return {
+        "records": [record_by_id[ins_id] for ins_id in application_ids if ins_id in record_by_id],
+        "id_to_record": record_by_id,
+        "application_ids": application_ids,
+        "visible_ids": visible_id_set,
+        "visible_group_nums": visible_group_nums,
+    }
+
+
+def _apply_single_sort_criterion(ids_in_order, id_to_record, criterion, competicio, runtime=None):
     seq_records = [id_to_record[i] for i in ids_in_order if i in id_to_record]
     if not seq_records:
         return list(ids_in_order)
@@ -1327,6 +1534,14 @@ def _apply_single_sort_criterion(ids_in_order, id_to_record, criterion, competic
     c_scope = criterion["scope"]
     c_group_num = criterion["group_num"]
     c_group_by = list(criterion.get("group_by") or [])
+    runtime = runtime if isinstance(runtime, dict) else {}
+    visible_ids = runtime.get("visible_ids")
+    if not isinstance(visible_ids, set):
+        visible_ids = set(ids_in_order)
+    visible_group_nums = runtime.get("visible_group_nums")
+    if not isinstance(visible_group_nums, list):
+        visible_group_nums = _collect_visible_group_nums(seq_records)
+    visible_group_set = set(visible_group_nums)
 
     c_desc = c_sort_dir in ("desc", "arrow_desc")
     c_arrow = c_sort_dir in ("arrow_asc", "arrow_desc")
@@ -1349,22 +1564,47 @@ def _apply_single_sort_criterion(ids_in_order, id_to_record, criterion, competic
             placed[pos[i]] = obj
         return placed
 
-    if c_scope == "all":
-        return [o.id for o in _ordered_subset(seq_records)]
-
-    if c_scope == "group":
-        ids_out = list(ids_in_order)
+    def _replace_subset(ids_base, subset_records):
+        ids_out = list(ids_base)
         id_to_index = {rid: idx for idx, rid in enumerate(ids_out)}
-        target_records = [r for r in seq_records if int(r.grup or 0) == c_group_num]
-        target_idxs = [id_to_index[r.id] for r in target_records if r.id in id_to_index]
-        ordered_target = _ordered_subset(target_records)
-        for i, obj in zip(target_idxs, ordered_target):
-            ids_out[i] = obj.id
+        target_idxs = [id_to_index[r.id] for r in subset_records if r.id in id_to_index]
+        ordered_target = _ordered_subset(subset_records)
+        for idx, obj in zip(target_idxs, ordered_target):
+            ids_out[idx] = obj.id
         return ids_out
 
+    if c_scope == "all":
+        target_records = [r for r in seq_records if r.id in visible_ids]
+        return _replace_subset(ids_in_order, target_records)
+
+    if c_scope == "all_groups":
+        ids_out = list(ids_in_order)
+        id_to_index = {rid: idx for idx, rid in enumerate(ids_out)}
+        group_to_records = OrderedDict()
+        for record in seq_records:
+            group_num = _normalize_positive_group_num(getattr(record, "grup", None))
+            if group_num is None or group_num not in visible_group_set:
+                continue
+            group_to_records.setdefault(group_num, []).append(record)
+
+        for group_records in group_to_records.values():
+            target_idxs = [id_to_index[r.id] for r in group_records if r.id in id_to_index]
+            ordered_target = _ordered_subset(group_records)
+            for idx, obj in zip(target_idxs, ordered_target):
+                ids_out[idx] = obj.id
+        return ids_out
+
+    if c_scope == "group":
+        target_records = [
+            r for r in seq_records
+            if _normalize_positive_group_num(getattr(r, "grup", None)) == c_group_num
+        ]
+        return _replace_subset(ids_in_order, target_records)
+
     # c_scope == "tab"
+    visible_seq_records = [r for r in seq_records if r.id in visible_ids]
     if not c_group_by:
-        return [o.id for o in _ordered_subset(seq_records)]
+        return _replace_subset(ids_in_order, visible_seq_records)
 
     grouping_sig = "|".join(c_group_by)
     merges = (competicio.tab_merges or {}).get(grouping_sig, [])
@@ -1377,7 +1617,7 @@ def _apply_single_sort_criterion(ids_in_order, id_to_record, criterion, competic
     ids_out = list(ids_in_order)
     id_to_index = {rid: idx for idx, rid in enumerate(ids_out)}
     tab_to_records = OrderedDict()
-    for r in seq_records:
+    for r in visible_seq_records:
         vals = [_norm_val(get_inscripcio_value(r, code)) for code in c_group_by]
         simple = json.dumps(vals, ensure_ascii=False)
         mid = merge_map.get(simple)
@@ -1393,11 +1633,11 @@ def _apply_single_sort_criterion(ids_in_order, id_to_record, criterion, competic
     return ids_out
 
 
-def _apply_sort_stack(ids_base, id_to_record, stack, competicio):
+def _apply_sort_stack(ids_base, id_to_record, stack, competicio, runtime=None):
     final_ids = list(ids_base)
     # Primer criteri = mes important, per tant s'aplica l'stack en ordre invers.
     for criterion in reversed(stack):
-        final_ids = _apply_single_sort_criterion(final_ids, id_to_record, criterion, competicio)
+        final_ids = _apply_single_sort_criterion(final_ids, id_to_record, criterion, competicio, runtime=runtime)
     return final_ids
 
 
@@ -3115,9 +3355,10 @@ class InscripcioDeleteView(DeleteView):
 def inscripcions_sort_apply(request, pk):
     """
     Ordenacio per columna amb ambits:
-      - all   : totes les inscripcions filtrades
-      - tab   : dins de cada pestanya (group_by/tab_merges actius)
-      - group : nomes un grup numeric (Inscripcio.grup)
+      - all        : totes les inscripcions filtrades
+      - tab        : dins de cada pestanya (group_by/tab_merges actius)
+      - all_groups : dins de cada grup numeric complet visible al context
+      - group      : nomes un grup numeric complet (Inscripcio.grup)
 
     IMPORTANT:
       - Empats mantenen l'ordre previ (acumulacio real).
@@ -3144,7 +3385,7 @@ def inscripcions_sort_apply(request, pk):
         return HttpResponseBadRequest("sort_dir invalid")
 
     scope = (payload.get("scope") or "all").strip().lower()
-    if scope not in ("all", "tab", "group"):
+    if scope not in ("all", "tab", "all_groups", "group"):
         return HttpResponseBadRequest("scope invalid")
 
     allowed_group_fields = get_allowed_group_fields(competicio)
@@ -3170,26 +3411,10 @@ def inscripcions_sort_apply(request, pk):
         filters=filters,
         group_by=selected_group_codes_context,
     )
-    qs = _build_inscripcions_filtered_qs(competicio, filters)
-
-    records = list(qs.order_by("ordre_sortida", "id"))
-    if not records:
-        return JsonResponse(
-            with_inscripcions_history_payload(
-                {"ok": True, "updated": 0, "total": 0, "scope": scope, "stack_count": 0},
-                request,
-                competicio.id,
-            )
-        )
-
-    id_to_record = {r.id: r for r in records}
-    current_ids = [r.id for r in records]
-
-    state = reconcile_inscripcions_sort_context_state(request, context_key, current_ids)
-    stack_existing_raw = state.get("stack") if isinstance(state.get("stack"), list) else []
-
-    stack_existing = []
-    for it in stack_existing_raw:
+    pre_state = get_inscripcions_sort_context_state(request, context_key)
+    pre_stack_raw = pre_state.get("stack") if isinstance(pre_state.get("stack"), list) else []
+    pre_stack = []
+    for it in pre_stack_raw:
         normalized = _normalize_sort_criterion(
             it,
             sort_codes=sort_codes,
@@ -3197,7 +3422,7 @@ def inscripcions_sort_apply(request, pk):
             fallback_group_by=selected_group_codes_context,
         )
         if normalized is not None:
-            stack_existing.append(normalized)
+            pre_stack.append(normalized)
 
     new_entry = _normalize_sort_criterion(
         {
@@ -3214,24 +3439,61 @@ def inscripcions_sort_apply(request, pk):
     if new_entry is None:
         return HttpResponseBadRequest("criteri invalid")
 
+    qs = _build_inscripcions_filtered_qs(competicio, filters)
+    record_sort_codes = [new_entry.get("sort_key")] + [entry.get("sort_key") for entry in pre_stack]
+    records = list(_build_sort_records_queryset(qs, record_sort_codes + ["grup"]))
+    if not records:
+        return JsonResponse(
+            with_inscripcions_history_payload(
+                {"ok": True, "updated": 0, "total": 0, "scope": scope, "stack_count": 0},
+                request,
+                competicio.id,
+            )
+        )
+
+    current_ids = [r.id for r in records]
+    pre_runtime = _build_sort_application_runtime(competicio, records, record_sort_codes, pre_stack)
+
+    state = reconcile_inscripcions_sort_context_state(
+        request,
+        context_key,
+        current_ids,
+        current_base_ids=pre_runtime["application_ids"],
+    )
+    stack_existing_raw = state.get("stack") if isinstance(state.get("stack"), list) else []
+
+    stack_existing = []
+    for it in stack_existing_raw:
+        normalized = _normalize_sort_criterion(
+            it,
+            sort_codes=sort_codes,
+            allowed_group_codes=allowed_group_codes,
+            fallback_group_by=selected_group_codes_context,
+        )
+        if normalized is not None:
+            stack_existing.append(normalized)
+
     before_snapshot = capture_inscripcions_history_snapshot(request, competicio)
 
     stack_full = _upsert_sort_stack_entry_preserving_priority(stack_existing, new_entry)
     if len(stack_full) > 20:
         stack_full = stack_full[-20:]
 
+    runtime = _build_sort_application_runtime(competicio, records, record_sort_codes, stack_full)
+    id_to_record = runtime["id_to_record"]
+    application_ids = runtime["application_ids"]
     base_ids_state = state.get("base_ids") if isinstance(state.get("base_ids"), list) else []
     valid_base = (
         isinstance(base_ids_state, list)
-        and len(base_ids_state) == len(current_ids)
-        and set(base_ids_state) == set(current_ids)
+        and len(base_ids_state) == len(application_ids)
+        and set(base_ids_state) == set(application_ids)
     )
     if not valid_base or not stack_existing:
-        base_ids = list(current_ids)
+        base_ids = list(application_ids)
     else:
         base_ids = list(base_ids_state)
 
-    final_ids = _apply_sort_stack(base_ids, id_to_record, stack_full, competicio)
+    final_ids = _apply_sort_stack(base_ids, id_to_record, stack_full, competicio, runtime=runtime)
 
     updates = []
     for idx, ins_id in enumerate(final_ids, start=1):
@@ -3253,6 +3515,7 @@ def inscripcions_sort_apply(request, pk):
         stack=stack_full,
         order_sig=order_sig,
         base_ids=base_ids,
+        context_ids=current_ids,
     )
 
     record_inscripcions_history_entry(
@@ -3272,7 +3535,7 @@ def inscripcions_sort_apply(request, pk):
                 "sort_key": sort_key,
                 "sort_dir": sort_dir,
                 "updated": len(updates),
-                "total": len(records),
+                "total": len(runtime["records"]),
                 "stack_count": len(stack_full),
             },
             request,
@@ -3315,21 +3578,6 @@ def inscripcions_sort_remove(request, pk):
         group_by=selected_group_codes_context,
     )
 
-    qs = _build_inscripcions_filtered_qs(competicio, filters)
-    records = list(qs.order_by("ordre_sortida", "id"))
-    if not records:
-        clear_inscripcions_sort_context_state(request, context_key)
-        return JsonResponse(
-            with_inscripcions_history_payload(
-                {"ok": True, "removed": False, "stack_count": 0},
-                request,
-                competicio.id,
-            )
-        )
-
-    id_to_record = {r.id: r for r in records}
-    current_ids = [r.id for r in records]
-
     state = get_inscripcions_sort_context_state(request, context_key)
     stack_raw = state.get("stack") if isinstance(state.get("stack"), list) else []
     stack = []
@@ -3353,6 +3601,24 @@ def inscripcions_sort_remove(request, pk):
             )
         )
 
+    qs = _build_inscripcions_filtered_qs(competicio, filters)
+    record_sort_codes = [entry.get("sort_key") for entry in stack]
+    records = list(_build_sort_records_queryset(qs, record_sort_codes + ["grup"]))
+    if not records:
+        clear_inscripcions_sort_context_state(request, context_key)
+        return JsonResponse(
+            with_inscripcions_history_payload(
+                {"ok": True, "removed": False, "stack_count": 0},
+                request,
+                competicio.id,
+            )
+        )
+
+    current_ids = [r.id for r in records]
+    runtime = _build_sort_application_runtime(competicio, records, record_sort_codes, stack)
+    id_to_record = runtime["id_to_record"]
+    application_ids = runtime["application_ids"]
+
     if priority > len(stack):
         return HttpResponseBadRequest("priority out of range")
 
@@ -3364,13 +3630,13 @@ def inscripcions_sort_remove(request, pk):
     base_ids_state = state.get("base_ids") if isinstance(state.get("base_ids"), list) else []
     valid_base = (
         isinstance(base_ids_state, list)
-        and len(base_ids_state) == len(current_ids)
-        and set(base_ids_state) == set(current_ids)
+        and len(base_ids_state) == len(application_ids)
+        and set(base_ids_state) == set(application_ids)
     )
-    base_ids = list(base_ids_state) if valid_base else list(current_ids)
+    base_ids = list(base_ids_state) if valid_base else list(application_ids)
 
     if stack:
-        final_ids = _apply_sort_stack(base_ids, id_to_record, stack, competicio)
+        final_ids = _apply_sort_stack(base_ids, id_to_record, stack, competicio, runtime=runtime)
     else:
         final_ids = list(base_ids)
 
@@ -3395,6 +3661,7 @@ def inscripcions_sort_remove(request, pk):
             stack=stack,
             order_sig=order_sig,
             base_ids=base_ids,
+            context_ids=current_ids,
         )
     else:
         clear_inscripcions_sort_context_state(request, context_key)
@@ -3537,16 +3804,11 @@ def inscripcions_sort_custom_values(request, pk):
     filters = _normalize_sort_filters(payload.get("filters"))
 
     qs_context = _build_inscripcions_filtered_qs(competicio, filters)
-    builtin_fields = [sort_key] if hasattr(Inscripcio, sort_key) else []
-    context_records = list(
-        qs_context.order_by("ordre_sortida", "id").only("id", "extra", *builtin_fields)
-    )
+    context_records = list(_build_sort_records_queryset(qs_context, [sort_key]))
     context_stats = _collect_sort_field_value_stats(context_records, sort_key)
 
     qs_global = Inscripcio.objects.filter(competicio=competicio)
-    global_records = list(
-        qs_global.order_by("ordre_sortida", "id").only("id", "extra", *builtin_fields)
-    )
+    global_records = list(_build_sort_records_queryset(qs_global, [sort_key]))
     global_stats = _collect_sort_field_value_stats(global_records, sort_key)
 
     custom_order_raw = get_competicio_custom_sort_order_values(
@@ -3647,11 +3909,8 @@ def inscripcions_sort_custom_save(request, pk):
     )
     preserve_missing_context = bool(payload.get("preserve_missing_context", True))
 
-    builtin_fields = [sort_key] if hasattr(Inscripcio, sort_key) else []
     context_qs = _build_inscripcions_filtered_qs(competicio, filters)
-    context_records = list(
-        context_qs.order_by("ordre_sortida", "id").only("id", "extra", *builtin_fields)
-    )
+    context_records = list(_build_sort_records_queryset(context_qs, [sort_key]))
     context_stats = _collect_sort_field_value_stats(context_records, sort_key)
     current_ids = [r.id for r in context_records]
     state = reconcile_inscripcions_sort_context_state(request, context_key, current_ids)
@@ -3668,9 +3927,7 @@ def inscripcions_sort_custom_save(request, pk):
             stack.append(norm)
 
     global_qs = Inscripcio.objects.filter(competicio=competicio)
-    global_records = list(
-        global_qs.order_by("ordre_sortida", "id").only("id", "extra", *builtin_fields)
-    )
+    global_records = list(_build_sort_records_queryset(global_qs, [sort_key]))
     global_stats = _collect_sort_field_value_stats(global_records, sort_key)
     global_keys = set(global_stats.keys())
 
@@ -3725,14 +3982,21 @@ def inscripcions_sort_custom_save(request, pk):
         entry.get("sort_key") == sort_key and str(entry.get("sort_dir") or "") == "custom"
         for entry in stack
     ):
-        id_to_record = {r.id: r for r in context_records}
+        runtime = _build_sort_application_runtime(
+            competicio,
+            context_records,
+            [entry.get("sort_key") for entry in stack] + [sort_key],
+            stack,
+        )
+        id_to_record = runtime["id_to_record"]
+        application_ids = runtime["application_ids"]
         base_ids_state = state.get("base_ids") if isinstance(state.get("base_ids"), list) else []
         valid_base = (
-            len(base_ids_state) == len(current_ids)
-            and set(base_ids_state) == set(current_ids)
+            len(base_ids_state) == len(application_ids)
+            and set(base_ids_state) == set(application_ids)
         )
-        base_ids = list(base_ids_state) if valid_base else list(current_ids)
-        final_ids = _apply_sort_stack(base_ids, id_to_record, stack, competicio)
+        base_ids = list(base_ids_state) if valid_base else list(application_ids)
+        final_ids = _apply_sort_stack(base_ids, id_to_record, stack, competicio, runtime=runtime)
 
         updates = []
         for idx, ins_id in enumerate(final_ids, start=1):
@@ -3754,6 +4018,7 @@ def inscripcions_sort_custom_save(request, pk):
             stack=stack,
             order_sig=order_sig,
             base_ids=base_ids,
+            context_ids=current_ids,
         )
         reapplied = True
         reapplied_updated = len(updates)

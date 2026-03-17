@@ -6,6 +6,7 @@ from competicions_trampoli import views, views_judge_admin, views_judge_messages
 from .access import require_competicio_capability
 from .inscripcions_list_new import (
     InscripcionsListNewView,
+    inscripcions_group_competition_order_preview,
     inscripcions_media_delete,
     inscripcions_media_match_apply,
     inscripcions_media_match_preview,
@@ -99,6 +100,7 @@ urlpatterns = [
 
     path("competicio/<int:pk>/inscripcions/reorder/", competition_view(views.inscripcions_reorder, "inscripcions.edit"), name="inscripcions_reorder"),
     path("competicio/<int:pk>/inscripcions/save-group-competition-order/", competition_view(views.inscripcions_save_group_competition_order, "inscripcions.edit"), name="inscripcions_save_group_competition_order"),
+    path("competicio/<int:pk>/inscripcions/group-competition-order/preview/", competition_view(inscripcions_group_competition_order_preview, "inscripcions.view"), name="inscripcions_group_competition_order_preview"),
     path("competicio/<int:pk>/inscripcions/sort-apply/", competition_view(views.inscripcions_sort_apply, "inscripcions.edit"), name="inscripcions_sort_apply"),
     path("competicio/<int:pk>/inscripcions/sort-remove/", competition_view(views.inscripcions_sort_remove, "inscripcions.edit"), name="inscripcions_sort_remove"),
     path("competicio/<int:pk>/inscripcions/sort-clear/", competition_view(views.inscripcions_sort_clear, "inscripcions.edit"), name="inscripcions_sort_clear"),

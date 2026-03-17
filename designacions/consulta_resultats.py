@@ -63,8 +63,13 @@ CEEB_AUTH_USER = "competi"
 CEEB_AUTH_PASS = "a252c08e6ca437ee4e6d9eabe79d49b3"
 
 
-async def fetch_ceeb_async(p2: str, p5: str, timeout: float = 15.0, verify: bool = False):
-    url = f"https://ceeb.playoffinformatica.com/serveisLliga.php?p1=lliga&type=xml&p2={p2}&p3=24&p4=FS1&p5={p5}"
+async def fetch_ceeb_async(p2: str, p5: str, timeout: float = 15.0, verify: bool = False, fase: str = "FS1") -> ET.Element | None:
+
+    if fase not in {"FS1", "FS2"}:
+        print(f"Fase no vàlida: {fase}. Ha de ser FS1 o FS2.")
+        return None
+
+    url = f"https://ceeb.playoffinformatica.com/serveisLliga.php?p1=lliga&type=xml&p2={p2}&p3=24&p4={fase}&p5={p5}"
 
     async with httpx.AsyncClient(timeout=timeout, verify=verify, auth=(CEEB_AUTH_USER, CEEB_AUTH_PASS)) as client:
         try:

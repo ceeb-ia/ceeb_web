@@ -697,6 +697,20 @@ def judge_portal(request, token):
             out_of_program_group_blocks.append(block)
             ins_list.extend(block["list"])
 
+    visible_group_keys = [block["key"] for block in programmed_group_blocks]
+    visible_group_keys.extend(block["key"] for block in out_of_program_group_blocks)
+    raw_group = request.GET.get("group")
+    try:
+        requested_group_key = int(raw_group) if raw_group not in (None, "") else None
+    except Exception:
+        requested_group_key = None
+    if requested_group_key in visible_group_keys:
+        active_group_key = requested_group_key
+    elif visible_group_keys:
+        active_group_key = visible_group_keys[0]
+    else:
+        active_group_key = None
+
     # Prefetch entries existents (per mostrar valors actuals)
     ins_ids = [ins.id for ins in ins_list]
     entries = ScoreEntry.objects.filter(
@@ -748,6 +762,7 @@ def judge_portal(request, token):
         "inscripcions": ins_list,
         "group_blocks": programmed_group_blocks,
         "out_of_program_group_blocks": out_of_program_group_blocks,
+        "active_group_key": active_group_key,
         "show_out_of_program_in_competition_views": show_out_of_program_groups,
         "franja_override_id": franja_override_id,
         "franja_override": franja_override,

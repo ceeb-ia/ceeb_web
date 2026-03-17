@@ -614,6 +614,9 @@ def main(path_disposicions: str, path_dades: str, task_id: str | None = None, ru
     modalitats_filter = config.get("modalitats") or []
     date_from = config.get("date_from") or None
     date_to = config.get("date_to") or None
+    fase = str(config.get("fase", "FS1") or "FS1").strip().upper()
+    if fase not in {"FS1", "FS2"}:
+        fase = "FS1"
 
     # --- Mapping modalitat/categoria (BD) ---
     # IMPORTANT: ha de retornar un DataFrame tipus map_modalitat_nom.csv amb columnes:
@@ -860,7 +863,7 @@ def main(path_disposicions: str, path_dades: str, task_id: str | None = None, ru
                 continue
 
             root = None  # mantenim com al teu codi actual
-            root = asyncio.run(fetch_ceeb_async(str(p2["Id Categoria"].values[0]), p5))
+            root = asyncio.run(fetch_ceeb_async(str(p2["Id Categoria"].values[0]), p5, fase=fase))
             if root is None:
                 continue
 

@@ -381,15 +381,22 @@ class InscripcionsListNewView(InscripcionsListView):
                 continue
             sort_dir = str(entry.get("sort_dir") or "asc")
             scope = str(entry.get("scope") or "all")
-            scope_short = "T"
-            scope_label = "Totes les inscripcions"
+            scope_short = "TF"
+            scope_label = "Totes les inscripcions filtrades"
             if scope == "tab":
                 scope_short = "P"
-                scope_label = "Dins de cada pestanya"
+                scope_label = "Dins de cada pestanya activa"
+            elif scope == "all_groups":
+                scope_short = "TG"
+                scope_label = "Dins de cada grup numeric complet"
             elif scope == "group":
                 group_num = entry.get("group_num")
                 scope_short = f"G{group_num}" if group_num else "G"
-                scope_label = f"Nomes grup {group_num}" if group_num else "Nomes un grup numeric"
+                scope_label = (
+                    f"Nomes grup numeric {group_num} complet"
+                    if group_num else
+                    "Nomes un grup numeric concret"
+                )
 
             symbol = dir_to_symbol.get(sort_dir, "↑")
             sort_entries.append(
@@ -645,6 +652,65 @@ def inscripcions_set_group_name(request, pk):
             request,
             competicio.id,
         )
+    )
+
+
+@require_POST
+@csrf_protect
+def inscripcions_group_competition_order_preview(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        return HttpResponseBadRequest("JSON invalid")
+
+    try:
+        group_num = int(payload.get("group_num"))
+    except Exception:
+        return HttpResponseBadRequest("group_num invalid")
+    if group_num <= 0:
+        return HttpResponseBadRequest("group_num invalid")
+
+    group = get_group_for_display_num(competicio, group_num)
+    if group is None:
+        return HttpResponseBadRequest("group_num invalid")
+
+    rows = []
+    group_rows = (
+        Inscripcio.objects
+        .filter(competicio=competicio, grup_competicio=group)
+        .order_by("ordre_competicio", "ordre_sortida", "id")
+        .only("id", "nom_i_cognoms", "entitat", "ordre_competicio", "ordre_sortida")
+    )
+    for idx, inscripcio in enumerate(group_rows, start=1):
+        label = str(getattr(inscripcio, "nom_i_cognoms", "") or "").strip() or f"Inscripcio {inscripcio.id}"
+        secondary = str(getattr(inscripcio, "entitat", "") or "").strip()
+        saved_order = getattr(inscripcio, "ordre_competicio", None)
+        rows.append(
+            {
+                "id": inscripcio.id,
+                "label": label,
+                "secondary_label": secondary,
+                "saved_order": int(saved_order) if saved_order is not None else idx,
+            }
+        )
+
+    group_label = str(getattr(group, "nom", "") or "").strip() or f"Grup {group.display_num}"
+    return JsonResponse(
+        {
+            "ok": True,
+            "group_num": group_num,
+            "group_label": group_label,
+            "total_count": len(rows),
+            "can_edit": bool(
+                user_has_competicio_capability(
+                    request.user,
+                    competicio,
+                    "inscripcions.edit",
+                )
+            ),
+            "rows": rows,
+        }
     )
 
 

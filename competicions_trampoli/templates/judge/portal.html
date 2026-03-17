@@ -142,7 +142,11 @@
         {% if exercicis|length > 1 %}
           <div class="mt-2 d-flex flex-wrap" style="gap:6px;">
             {% for ex in exercicis %}
-              <a class="btn btn-sm {% if ex == exercici %}btn-primary{% else %}btn-outline-primary{% endif %}" href="?ex={{ ex }}{% if franja_override_id %}&franja={{ franja_override_id }}{% endif %}">
+              <a
+                class="btn btn-sm {% if ex == exercici %}btn-primary{% else %}btn-outline-primary{% endif %}"
+                data-exercise-link="{{ ex }}"
+                href="?ex={{ ex }}{% if active_group_key != None %}&group={{ active_group_key }}{% endif %}{% if franja_override_id %}&franja={{ franja_override_id }}{% endif %}"
+              >
                 Exercici {{ ex }}
               </a>
             {% endfor %}
@@ -210,8 +214,8 @@
               <li class="nav-item" role="presentation">
                 <button
                   type="button"
-                  class="nav-link {% if forloop.first %}active{% endif %}"
-                  data-group-target="group-{{ forloop.counter0 }}"
+                  class="nav-link {% if bloc.key == active_group_key %}active{% endif %}"
+                  data-group-target="group-{{ bloc.key }}"
                 >
                   {{ bloc.label }}
                   <span class="badge text-bg-light group-tab-count">{{ bloc.list|length }}</span>
@@ -222,8 +226,8 @@
               <li class="nav-item" role="presentation">
                 <button
                   type="button"
-                  class="nav-link {% if not group_blocks and forloop.first %}active{% endif %}"
-                  data-group-target="off-group-{{ forloop.counter0 }}"
+                  class="nav-link {% if bloc.key == active_group_key %}active{% endif %}"
+                  data-group-target="group-{{ bloc.key }}"
                 >
                   {{ bloc.label }}
                   <span class="badge text-bg-warning group-tab-count">Fora</span>
@@ -237,7 +241,7 @@
         <div id="groupPanes">
           {% if group_blocks or out_of_program_group_blocks %}
           {% for bloc in group_blocks %}
-            <div class="group-pane {% if not forloop.first %}d-none{% endif %}" data-group-pane="group-{{ forloop.counter0 }}" data-group-label="{{ bloc.label }}">
+            <div class="group-pane {% if bloc.key != active_group_key %}d-none{% endif %}" data-group-pane="group-{{ bloc.key }}" data-group-label="{{ bloc.label }}">
               {% for ins in bloc.list %}
                 <div id="card-{{ ins.id }}" class="judge-card mb-2" data-ins-id="{{ ins.id }}" data-ins-name="{{ ins.nom_i_cognoms|default:'Inscripcio' }}">
                   <div class="d-flex justify-content-between align-items-center">
@@ -278,7 +282,7 @@
             </div>
           {% endfor %}
           {% for bloc in out_of_program_group_blocks %}
-            <div class="group-pane {% if group_blocks or not forloop.first %}d-none{% endif %}" data-group-pane="off-group-{{ forloop.counter0 }}" data-group-label="{{ bloc.label }} (fora de programa)">
+            <div class="group-pane {% if bloc.key != active_group_key %}d-none{% endif %}" data-group-pane="group-{{ bloc.key }}" data-group-label="{{ bloc.label }} (fora de programa)">
               {% for ins in bloc.list %}
                 <div id="off-program-card-{{ ins.id }}" class="judge-card mb-2" data-ins-id="{{ ins.id }}" data-ins-name="{{ ins.nom_i_cognoms|default:'Inscripcio' }}">
                   <div class="d-flex justify-content-between align-items-center">
@@ -927,6 +931,40 @@
     return PERM_FIELD_CODES.some(code => hasAnySavedValue(inputs[code]));
   }
 
+  function currentGroupTarget(){
+    const activeTab = document.querySelector("[data-group-target].active");
+    return activeTab ? String(activeTab.dataset.groupTarget || "") : "";
+  }
+
+  function updateGroupInUrl(target){
+    const url = new URL(window.location.href);
+    const match = String(target || "").match(/^group-(-?\d+)$/);
+    if(match){
+      url.searchParams.set("group", match[1]);
+    } else {
+      url.searchParams.delete("group");
+    }
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  }
+
+  function buildExerciseHref(exerciciValue, groupTarget){
+    const url = new URL(window.location.href);
+    url.searchParams.set("ex", String(exerciciValue));
+    const match = String(groupTarget || "").match(/^group-(-?\d+)$/);
+    if(match){
+      url.searchParams.set("group", match[1]);
+    } else {
+      url.searchParams.delete("group");
+    }
+    return `${url.pathname}${url.search}${url.hash}`;
+  }
+
+  function refreshExerciseLinks(groupTarget){
+    document.querySelectorAll("[data-exercise-link]").forEach((link) => {
+      link.setAttribute("href", buildExerciseHref(link.dataset.exerciseLink, groupTarget));
+    });
+  }
+
   function setActiveGroup(target){
     if(!target) return;
     const tabs = Array.from(document.querySelectorAll("[data-group-target]"));
@@ -934,6 +972,8 @@
     document.querySelectorAll("[data-group-pane]").forEach(pane => {
       pane.classList.toggle("d-none", pane.dataset.groupPane !== target);
     });
+    updateGroupInUrl(target);
+    refreshExerciseLinks(target);
   }
 
   function markActiveNav(insId){
@@ -1717,6 +1757,7 @@
   // init
   buildPermText();
   initGroupTabs();
+  refreshExerciseLinks(currentGroupTarget());
   initInsNavigation();
   initSupportUi();
   if(VIDEO_CAPTURE_ENABLED){
