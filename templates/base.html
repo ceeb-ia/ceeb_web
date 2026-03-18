@@ -1,4 +1,4 @@
-{% load static static_extras %}
+{% load static static_extras competicio_extras %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -23,7 +23,7 @@
             .navbar-nav .dropdown-menu .dropdown-item { padding-left: 1rem; padding-right: 1rem; }
         </style>
 </head>
-<body data-app-env="{{ APP_ENV|default:'dev' }}">
+<body data-app-env="{{ APP_ENV|default:'dev' }}" style="--ceeb-page-background-image: url('{% competicio_background_url %}');">
     <div class="background-container"></div>
     {% if not hide_base_chrome %}
     <div class="hero_area">

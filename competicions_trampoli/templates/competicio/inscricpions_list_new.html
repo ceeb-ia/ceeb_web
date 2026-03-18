@@ -2600,7 +2600,7 @@
                                 <select class="form-control form-control-sm js-col-sort-scope">
                                   <option value="all">Totes les inscripcions filtrades</option>
                                   <option value="tab">Dins de cada pestanya activa</option>
-                                  <option value="all_groups">Dins de cada grup numeric complet</option>
+                                  <option value="all_groups">Dins de cada grup</option>
                                   <option value="group">Nomes un grup numeric concret</option>
                                 </select>
                                 <div class="small text-muted mt-2 js-col-sort-scope-help">
@@ -2663,7 +2663,6 @@
                                     </button>
                                     <div class="group-actions-menu d-none" data-group-actions-menu data-group="{{ r.grup }}">
                                       <button type="button" class="btn btn-sm btn-outline-info w-100 js-view-group-order" data-group="{{ r.grup }}">Veure ordre competició</button>
-                                      <button type="button" class="btn btn-sm btn-outline-dark w-100 mt-1 js-show-group-real-order" data-group="{{ r.grup }}">Mostrar ordre real</button>
                                       <button type="button" class="btn btn-sm btn-outline-primary w-100 mt-1 js-save-group-order" data-group="{{ r.grup }}" {% if not can_edit_inscripcions %}disabled{% endif %}>Desar ordre competició</button>
                                       <button type="button" class="btn btn-sm btn-outline-secondary w-100 mt-1 js-edit-group-name" data-group="{{ r.grup }}" {% if not can_edit_inscripcions %}disabled{% endif %}>Editar nom</button>
                                     </div>
@@ -2847,7 +2846,7 @@
                           <select class="form-control form-control-sm js-col-sort-scope">
                             <option value="all">Totes les inscripcions filtrades</option>
                             <option value="tab">Dins de cada pestanya activa</option>
-                            <option value="all_groups">Dins de cada grup numeric complet</option>
+                            <option value="all_groups">Dins de cada grup</option>
                             <option value="group">Nomes un grup numeric concret</option>
                           </select>
                           <div class="small text-muted mt-2 js-col-sort-scope-help">
@@ -2909,7 +2908,6 @@
                               </button>
                               <div class="group-actions-menu d-none" data-group-actions-menu data-group="{{ r.grup }}">
                                 <button type="button" class="btn btn-sm btn-outline-info w-100 js-view-group-order" data-group="{{ r.grup }}">Veure ordre competició</button>
-                                <button type="button" class="btn btn-sm btn-outline-dark w-100 mt-1 js-show-group-real-order" data-group="{{ r.grup }}">Mostrar ordre real</button>
                                 <button type="button" class="btn btn-sm btn-outline-primary w-100 mt-1 js-save-group-order" data-group="{{ r.grup }}" {% if not can_edit_inscripcions %}disabled{% endif %}>Desar ordre competició</button>
                                 <button type="button" class="btn btn-sm btn-outline-secondary w-100 mt-1 js-edit-group-name" data-group="{{ r.grup }}" {% if not can_edit_inscripcions %}disabled{% endif %}>Editar nom</button>
                               </div>
@@ -4387,7 +4385,7 @@
       els.count.textContent = `${rows.length} participants totals · ${savedVisibleIds.length} visibles al context actual`;
       if (isDirty) {
         els.warning.classList.remove('d-none');
-        els.warning.textContent = `L'ordre visual actual dels visibles no coincideix amb l'ordre guardat.${hiddenCount > 0 ? ` ${hiddenCount} participant(s) queden fora del filtre actual.` : ''}`;
+        els.warning.textContent = `L'ordre visual actual dels visibles no coincideix amb l'ordre guardat de competició.${hiddenCount > 0 ? ` ${hiddenCount} participant(s) queden fora del filtre actual.` : ''}`;
       } else if (hiddenCount > 0) {
         els.warning.classList.remove('d-none');
         els.warning.textContent = `${hiddenCount} participant(s) del grup no son visibles al context actual.`;

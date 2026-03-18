@@ -9,7 +9,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase
+from django.test import RequestFactory, TestCase
 from django.urls import reverse
 from django.utils import timezone
 from openpyxl import load_workbook
@@ -55,6 +55,10 @@ from .views_classificacions import (
     _validate_particions_schema,
 )
 from .services.services_classificacions_2 import DEFAULT_SCHEMA, compute_classificacio
+from .templatetags.competicio_extras import (
+    DEFAULT_COMPETITION_BACKGROUND,
+    get_competicio_background_url_from_request,
+)
 
 
 class _BaseTrampoliDataMixin:
@@ -95,6 +99,103 @@ class _BaseTrampoliDataMixin:
             nom_i_cognoms=nom,
             ordre_sortida=ordre,
             grup=grup,
+        )
+
+
+class CompeticioBackgroundTemplateTagTests(TestCase):
+    def setUp(self):
+        self.factory = RequestFactory()
+
+    def _request_with_kwargs(self, kwargs, path="/competicio/1/inscripcions/"):
+        request = self.factory.get(path)
+        request.resolver_match = SimpleNamespace(kwargs=kwargs)
+        return request
+
+    def test_returns_mapped_background_for_existing_type_image(self):
+        comp = Competicio.objects.create(
+            nom="Comp fons natacio",
+            tipus=Competicio.Tipus.NATACIO,
+        )
+
+        result = get_competicio_background_url_from_request(
+            self._request_with_kwargs({"pk": comp.id})
+        )
+
+        self.assertTrue(result.endswith("/static/images/natacio.jpg"))
+
+    def test_falls_back_to_default_when_mapped_image_file_is_missing(self):
+        comp = Competicio.objects.create(
+            nom="Comp fons artistica",
+            tipus=Competicio.Tipus.ARTISTICA,
+        )
+
+        result = get_competicio_background_url_from_request(
+            self._request_with_kwargs({"pk": comp.id})
+        )
+
+        self.assertTrue(result.endswith(f"/static/{DEFAULT_COMPETITION_BACKGROUND}"))
+
+    def test_falls_back_to_default_when_no_active_competicio_exists(self):
+        result = get_competicio_background_url_from_request(
+            self._request_with_kwargs({}, path="/competicions/created/")
+        )
+
+        self.assertTrue(result.endswith(f"/static/{DEFAULT_COMPETITION_BACKGROUND}"))
+
+    def test_falls_back_to_default_for_non_competition_route_even_with_pk(self):
+        comp = Competicio.objects.create(
+            nom="Comp no relacionada",
+            tipus=Competicio.Tipus.NATACIO,
+        )
+
+        result = get_competicio_background_url_from_request(
+            self._request_with_kwargs({"pk": comp.id}, path="/altres/modul/1/")
+        )
+
+        self.assertTrue(result.endswith(f"/static/{DEFAULT_COMPETITION_BACKGROUND}"))
+
+    def test_base_template_injects_competicio_background_for_competition_route(self):
+        comp = Competicio.objects.create(
+            nom="Comp render natacio",
+            tipus=Competicio.Tipus.NATACIO,
+        )
+        User = get_user_model()
+        user = User.objects.create_user(
+            username="bg_route_user",
+            password="testpass123",
+            email="bg-route@example.com",
+        )
+        CompeticioMembership.objects.create(
+            user=user,
+            competicio=comp,
+            role=CompeticioMembership.Role.OWNER,
+            is_active=True,
+        )
+        self.client.force_login(user)
+
+        response = self.client.get(reverse("inscripcions_list", kwargs={"pk": comp.id}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            "--ceeb-page-background-image: url('/static/images/natacio.jpg');",
+        )
+
+    def test_base_template_uses_default_background_outside_competition_routes(self):
+        User = get_user_model()
+        user = User.objects.create_user(
+            username="bg_default_user",
+            password="testpass123",
+            email="bg-default@example.com",
+        )
+        self.client.force_login(user)
+
+        response = self.client.get(reverse("created"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            f"--ceeb-page-background-image: url('/static/{DEFAULT_COMPETITION_BACKGROUND}');",
         )
 
 
@@ -304,6 +405,21 @@ class InscripcionsSortFlowTests(TestCase):
         self.assertContains(response, "Dins de cada grup numeric complet")
         self.assertContains(response, "Nomes un grup numeric concret")
         self.assertContains(response, "incloent membres fora del filtre actual")
+
+    def test_inscripcions_list_hides_show_real_order_button_but_keeps_other_group_actions(self):
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Participant Grup 1",
+            grup=1,
+            ordre_sortida=1,
+        )
+
+        response = self.client.get(reverse("inscripcions_list", kwargs={"pk": self.comp.id}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "Mostrar ordre real")
+        self.assertContains(response, "Veure ordre competició")
+        self.assertContains(response, "Desar ordre competició")
 
     def test_sort_apply_tab_preserves_tab_block_order(self):
         beta_1 = Inscripcio.objects.create(

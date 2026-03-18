@@ -12,7 +12,10 @@ body {
   position: fixed;
   inset: 0; /* top:0; right:0; bottom:0; left:0 */
   z-index: -1; /* Situa el fons darrere de tot el contingut */
-  background: url("../images/fondo.jpg") no-repeat center center/cover;
+  background-image: var(--ceeb-page-background-image, url("../images/fondo.jpg"));
+  background-repeat: no-repeat;
+  background-position: center center;
+  background-size: cover;
   pointer-events: none; /* No intercepta clics */
   opacity: 1;
   animation: fadeIn 1s ease-in-out;
