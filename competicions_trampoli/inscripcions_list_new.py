@@ -349,6 +349,9 @@ class InscripcionsListNewView(InscripcionsListView):
             for entry in (sort_state.get("stack") or [])
             if isinstance(entry, dict) and entry.get("sort_key") in sortable_codes
         ]
+        competition_order_tail_active = bool(sort_stack) and bool(
+            sort_state.get("competition_order_tail")
+        )
 
         sort_label_by_code = {}
         for s in sort_options:
@@ -433,6 +436,11 @@ class InscripcionsListNewView(InscripcionsListView):
         ctx["column_sort_stack"] = sort_stack
         ctx["column_sort_has_stack"] = bool(sort_stack)
         ctx["column_sort_stack_count"] = len(sort_stack)
+        ctx["column_sort_effective_count"] = len(sort_stack) + (
+            1 if competition_order_tail_active else 0
+        )
+        ctx["column_sort_competition_tail_active"] = competition_order_tail_active
+        ctx["column_sort_competition_tail_priority"] = len(sort_stack) + 1
         ctx["column_sort_entries"] = sort_entries
         ctx["column_sort_indicator_by_code"] = indicator_by_code
         ctx["custom_sort_enabled_by_code"] = {code: True for code in custom_sort_codes}

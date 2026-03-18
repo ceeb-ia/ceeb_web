@@ -1763,6 +1763,28 @@
       </div>
     </div>
 
+    <div class="mb-3 border rounded px-3 py-2 bg-white">
+      <div class="d-flex justify-content-between align-items-center flex-wrap" style="gap:10px;">
+        <label class="mb-0 d-flex align-items-center" for="competition-order-tail-toggle" title="Aplica l'ordre de competició com a criteri final sobre les ordenacions actives">
+          <input type="checkbox"
+                 id="competition-order-tail-toggle"
+                 class="mr-2"
+                 {% if column_sort_competition_tail_active %}checked{% endif %}
+                 {% if not can_edit_inscripcions or not column_sort_has_stack %}disabled{% endif %}>
+          <span class="fw-semibold">Ordre de competició</span>
+        </label>
+        <div class="small text-muted">
+          S'afegeix com a últim criteri de les ordenacions actives i persisteix el resultat a l'ordre de sortida.
+          {% if not column_sort_has_stack %}
+            Activa primer almenys una ordenacio.
+          {% endif %}
+        </div>
+        {% if column_sort_competition_tail_active %}
+          <span class="badge badge-info">Criteri final actiu</span>
+        {% endif %}
+      </div>
+    </div>
+
     <div class="inscripcions-backdrop" id="inscripcions-drawer-backdrop" aria-hidden="true"></div>
     <div class="group-buckets-backdrop" id="group-buckets-backdrop" aria-hidden="true"></div>
     <div class="group-buckets-modal" id="group-buckets-modal" aria-hidden="true">
@@ -1926,7 +1948,7 @@
               <button type="button" class="actions-nav-btn" data-panel-target="altres">
                 <span class="actions-nav-btn-title">
                   <span>Altres</span>
-                  <span class="badge badge-light">{{ column_sort_stack_count }}</span>
+                  <span class="badge badge-light">{{ column_sort_effective_count }}</span>
                 </span>
                 <span class="actions-nav-btn-meta">Exportació i sort</span>
               </button>
@@ -2401,7 +2423,7 @@
                 <div class="d-flex justify-content-between align-items-center flex-wrap" style="gap:10px;">
                   <div>
                     <div class="fw-semibold">Ordenacions actives</div>
-                    <div class="text-muted small">{{ column_sort_stack_count }} criteris actius al context actual</div>
+                    <div class="text-muted small">{{ column_sort_effective_count }} criteris actius al context actual</div>
                   </div>
                   <div class="btn-row">
                     <button type="button"
@@ -2433,6 +2455,16 @@
                         </button>
                       </div>
                     {% endfor %}
+                    {% if column_sort_competition_tail_active %}
+                      <div class="d-flex justify-content-between align-items-center border rounded px-2 py-1 mb-1" title="S'aplica al final de les ordenacions actives dins de cada grup numeric">
+                        <div class="small">
+                          <span class="font-weight-bold">#{{ column_sort_competition_tail_priority }}</span>
+                          <span class="ml-1">Ordre de competició</span>
+                          <span class="text-muted ml-1">(Ascendent · Criteri final per grup)</span>
+                        </div>
+                        <span class="badge badge-info">Actiu</span>
+                      </div>
+                    {% endif %}
                   </div>
                 {% else %}
                   <div class="text-muted small mt-2">No hi ha criteris d'ordenacio actius.</div>
@@ -2506,6 +2538,13 @@
       </script>
     </form>
       </aside>
+
+    {% if column_sort_competition_tail_active %}
+      <div class="alert alert-info py-2 px-3 mb-3" role="status">
+        <strong>Ordre de competició actiu.</strong>
+        Les ordenacions actuals s'han recalculat afegint aquest criteri com a menys prioritari dins de cada grup numeric.
+      </div>
+    {% endif %}
 
     <div class="inscripcions-table-stage">
     <!-- TAULA AMB PESTANYES -->
@@ -4161,6 +4200,7 @@
     const sortApplyUrl = "{% url 'inscripcions_sort_apply' competicio.id %}";
     const sortRemoveUrl = "{% url 'inscripcions_sort_remove' competicio.id %}";
     const sortClearUrl = "{% url 'inscripcions_sort_clear' competicio.id %}";
+    const sortCompetitionTailUrl = "{% url 'inscripcions_sort_competition_tail_toggle' competicio.id %}";
     const sortCustomValuesUrl = "{% url 'inscripcions_sort_custom_values' competicio.id %}";
     const sortCustomSaveUrl = "{% url 'inscripcions_sort_custom_save' competicio.id %}";
     const historyUndoUrl = "{% url 'inscripcions_history_undo' competicio.id %}";
@@ -5582,6 +5622,33 @@
       }
     }
 
+    async function toggleCompetitionOrderTail(enabled, input = null) {
+      const payload = {
+        enabled: !!enabled,
+        filters: getCurrentInscripcioFilters(),
+        group_by: getCurrentGroupByCodes(),
+      };
+
+      try {
+        const data = await postJson(sortCompetitionTailUrl, payload);
+        if (!data || !data.ok) {
+          if (input) input.checked = !enabled;
+          showAlert("No s'ha pogut aplicar l'ordre de competicio.");
+          return;
+        }
+        if (enabled && data.reason === 'no_stack') {
+          if (input) input.checked = false;
+          showAlert("Activa primer almenys una ordenacio abans d'aplicar l'ordre de competicio.");
+          return;
+        }
+        closeColumnSortMenus();
+        reloadWithUiState();
+      } catch (err) {
+        if (input) input.checked = !enabled;
+        showAlert(`No s'ha pogut aplicar l'ordre de competicio.\n${err.message || err}`);
+      }
+    }
+
     async function editColumnCustomSort(menu, trigger = null) {
       if (!menu) return;
       const sortKey = menu.getAttribute('data-col-code') || '';
@@ -5793,6 +5860,17 @@
           await removeColumnSort(priority);
         });
       });
+
+      const competitionOrderTailToggle = document.getElementById('competition-order-tail-toggle');
+      if (competitionOrderTailToggle) {
+        competitionOrderTailToggle.addEventListener('change', async () => {
+          if (competitionOrderTailToggle.disabled) return;
+          await toggleCompetitionOrderTail(
+            competitionOrderTailToggle.checked,
+            competitionOrderTailToggle,
+          );
+        });
+      }
 
       document.addEventListener('click', (e) => {
         if (isCustomSortModalOpen() && (e.target.closest('#custom-sort-modal') || e.target.closest('#custom-sort-modal-backdrop'))) {
@@ -6788,5 +6866,3 @@
 
 
 {% endblock %}
-
-

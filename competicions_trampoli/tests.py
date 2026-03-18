@@ -331,6 +331,15 @@ class InscripcionsSortFlowTests(TestCase):
         url = reverse(url_name, kwargs={"pk": self.comp.id})
         return self.client.post(url, data="{}", content_type="application/json")
 
+    def _toggle_competition_tail(self, enabled, **overrides):
+        payload = {
+            "enabled": enabled,
+            "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+            "group_by": [],
+        }
+        payload.update(overrides)
+        return self._post_json("inscripcions_sort_competition_tail_toggle", payload)
+
     def _groups_payload(self, **overrides):
         payload = {
             "source": "sort",
@@ -402,7 +411,7 @@ class InscripcionsSortFlowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Totes les inscripcions filtrades")
         self.assertContains(response, "Dins de cada pestanya activa")
-        self.assertContains(response, "Dins de cada grup numeric complet")
+        self.assertContains(response, "Dins de cada grup")
         self.assertContains(response, "Nomes un grup numeric concret")
         self.assertContains(response, "incloent membres fora del filtre actual")
 
@@ -420,6 +429,44 @@ class InscripcionsSortFlowTests(TestCase):
         self.assertNotContains(response, "Mostrar ordre real")
         self.assertContains(response, "Veure ordre competició")
         self.assertContains(response, "Desar ordre competició")
+
+    def test_inscripcions_list_renders_competition_order_tail_toggle_state(self):
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Alpha",
+            grup=1,
+            ordre_sortida=1,
+            ordre_competicio=2,
+        )
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Beta",
+            grup=1,
+            ordre_sortida=2,
+            ordre_competicio=1,
+        )
+
+        apply_resp = self._post_json(
+            "inscripcions_sort_apply",
+            {
+                "sort_key": "nom_i_cognoms",
+                "sort_dir": "asc",
+                "scope": "all_groups",
+                "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                "group_by": [],
+            },
+        )
+        self.assertEqual(apply_resp.status_code, 200)
+        self.assertTrue(apply_resp.json().get("ok"))
+
+        toggle_resp = self._toggle_competition_tail(True)
+        self.assertEqual(toggle_resp.status_code, 200)
+        self.assertTrue(toggle_resp.json().get("ok"))
+
+        response = self.client.get(reverse("inscripcions_list", kwargs={"pk": self.comp.id}))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Ordre de competici")
+        self.assertContains(response, "Criteri final actiu")
 
     def test_sort_apply_tab_preserves_tab_block_order(self):
         beta_1 = Inscripcio.objects.create(
@@ -860,6 +907,384 @@ class InscripcionsSortFlowTests(TestCase):
             .values_list("id", flat=True)
         )
         self.assertEqual(actual_ids, [i2.id, i1.id, i3.id])
+
+    def test_competition_order_tail_toggle_requires_active_stack(self):
+        first = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Alpha",
+            grup=1,
+            ordre_sortida=1,
+            ordre_competicio=2,
+        )
+        second = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Beta",
+            grup=1,
+            ordre_sortida=2,
+            ordre_competicio=1,
+        )
+
+        response = self._toggle_competition_tail(True)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data.get("ok"))
+        self.assertFalse(data.get("applied"))
+        self.assertEqual(data.get("reason"), "no_stack")
+        self.assertFalse(data.get("competition_order_tail"))
+
+        actual_ids = list(
+            Inscripcio.objects.filter(competicio=self.comp)
+            .order_by("ordre_sortida", "id")
+            .values_list("id", flat=True)
+        )
+        self.assertEqual(actual_ids, [first.id, second.id])
+
+    def test_competition_order_tail_is_less_prioritary_than_active_stack(self):
+        g1_first = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Alpha",
+            grup=1,
+            ordre_sortida=1,
+            ordre_competicio=2,
+        )
+        g1_second = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Beta",
+            grup=1,
+            ordre_sortida=2,
+            ordre_competicio=1,
+        )
+        g2_first = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Charlie",
+            grup=2,
+            ordre_sortida=3,
+            ordre_competicio=2,
+        )
+        g2_second = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Delta",
+            grup=2,
+            ordre_sortida=4,
+            ordre_competicio=1,
+        )
+
+        apply_resp = self._post_json(
+            "inscripcions_sort_apply",
+            {
+                "sort_key": "nom_i_cognoms",
+                "sort_dir": "asc",
+                "scope": "all_groups",
+                "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                "group_by": [],
+            },
+        )
+        self.assertEqual(apply_resp.status_code, 200)
+        self.assertTrue(apply_resp.json().get("ok"))
+
+        toggle_resp = self._toggle_competition_tail(True)
+        self.assertEqual(toggle_resp.status_code, 200)
+        data = toggle_resp.json()
+        self.assertTrue(data.get("ok"))
+        self.assertTrue(data.get("applied"))
+        self.assertTrue(data.get("competition_order_tail"))
+
+        actual_ids = list(
+            Inscripcio.objects.filter(competicio=self.comp)
+            .order_by("ordre_sortida", "id")
+            .values_list("id", flat=True)
+        )
+        self.assertEqual(actual_ids, [g1_first.id, g1_second.id, g2_first.id, g2_second.id])
+
+    def test_competition_order_tail_toggle_applies_and_persists_to_ordre_sortida(self):
+        g1_first = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Alpha",
+            categoria="Mateixa",
+            grup=1,
+            ordre_sortida=1,
+            ordre_competicio=2,
+        )
+        g1_second = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Beta",
+            categoria="Mateixa",
+            grup=1,
+            ordre_sortida=2,
+            ordre_competicio=1,
+        )
+        g2_first = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Charlie",
+            categoria="Mateixa",
+            grup=2,
+            ordre_sortida=3,
+            ordre_competicio=2,
+        )
+        g2_second = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Delta",
+            categoria="Mateixa",
+            grup=2,
+            ordre_sortida=4,
+            ordre_competicio=1,
+        )
+
+        apply_resp = self._post_json(
+            "inscripcions_sort_apply",
+            {
+                "sort_key": "categoria",
+                "sort_dir": "asc",
+                "scope": "all_groups",
+                "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                "group_by": [],
+            },
+        )
+        self.assertEqual(apply_resp.status_code, 200)
+        self.assertTrue(apply_resp.json().get("ok"))
+
+        toggle_resp = self._toggle_competition_tail(True)
+        self.assertEqual(toggle_resp.status_code, 200)
+        data = toggle_resp.json()
+        self.assertTrue(data.get("ok"))
+        self.assertTrue(data.get("applied"))
+        self.assertTrue(data.get("competition_order_tail"))
+
+        actual_ids = list(
+            Inscripcio.objects.filter(competicio=self.comp)
+            .order_by("ordre_sortida", "id")
+            .values_list("id", flat=True)
+        )
+        self.assertEqual(actual_ids, [g1_second.id, g1_first.id, g2_second.id, g2_first.id])
+
+    def test_competition_order_tail_toggle_disable_restores_stack_only_order(self):
+        g1_first = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Alpha",
+            categoria="Mateixa",
+            grup=1,
+            ordre_sortida=1,
+            ordre_competicio=2,
+        )
+        g1_second = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Beta",
+            categoria="Mateixa",
+            grup=1,
+            ordre_sortida=2,
+            ordre_competicio=1,
+        )
+        g2_first = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Charlie",
+            categoria="Mateixa",
+            grup=2,
+            ordre_sortida=3,
+            ordre_competicio=2,
+        )
+        g2_second = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Delta",
+            categoria="Mateixa",
+            grup=2,
+            ordre_sortida=4,
+            ordre_competicio=1,
+        )
+
+        apply_resp = self._post_json(
+            "inscripcions_sort_apply",
+            {
+                "sort_key": "categoria",
+                "sort_dir": "asc",
+                "scope": "all_groups",
+                "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                "group_by": [],
+            },
+        )
+        self.assertEqual(apply_resp.status_code, 200)
+        self.assertTrue(apply_resp.json().get("ok"))
+
+        toggle_on_resp = self._toggle_competition_tail(True)
+        self.assertEqual(toggle_on_resp.status_code, 200)
+        self.assertTrue(toggle_on_resp.json().get("competition_order_tail"))
+
+        disable_resp = self._toggle_competition_tail(False)
+        self.assertEqual(disable_resp.status_code, 200)
+        data = disable_resp.json()
+        self.assertTrue(data.get("ok"))
+        self.assertFalse(data.get("competition_order_tail"))
+
+        actual_ids = list(
+            Inscripcio.objects.filter(competicio=self.comp)
+            .order_by("ordre_sortida", "id")
+            .values_list("id", flat=True)
+        )
+        self.assertEqual(actual_ids, [g1_first.id, g1_second.id, g2_first.id, g2_second.id])
+
+    def test_competition_order_tail_places_missing_saved_order_last_and_stable(self):
+        first_missing = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Alpha",
+            categoria="Mateixa",
+            grup=1,
+            ordre_sortida=1,
+        )
+        second_with = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Beta",
+            categoria="Mateixa",
+            grup=1,
+            ordre_sortida=2,
+            ordre_competicio=2,
+        )
+        third_with = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Charlie",
+            categoria="Mateixa",
+            grup=1,
+            ordre_sortida=3,
+            ordre_competicio=1,
+        )
+        second_missing = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Delta",
+            categoria="Mateixa",
+            grup=1,
+            ordre_sortida=4,
+        )
+        Inscripcio.objects.filter(pk__in=[first_missing.pk, second_missing.pk]).update(
+            ordre_competicio=None
+        )
+
+        apply_resp = self._post_json(
+            "inscripcions_sort_apply",
+            {
+                "sort_key": "categoria",
+                "sort_dir": "asc",
+                "scope": "all_groups",
+                "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                "group_by": [],
+            },
+        )
+        self.assertEqual(apply_resp.status_code, 200)
+        self.assertTrue(apply_resp.json().get("ok"))
+
+        toggle_resp = self._toggle_competition_tail(True)
+        self.assertEqual(toggle_resp.status_code, 200)
+        self.assertTrue(toggle_resp.json().get("competition_order_tail"))
+
+        actual_ids = list(
+            Inscripcio.objects.filter(competicio=self.comp)
+            .order_by("ordre_sortida", "id")
+            .values_list("id", flat=True)
+        )
+        self.assertEqual(
+            actual_ids,
+            [third_with.id, second_with.id, first_missing.id, second_missing.id],
+        )
+
+    def test_sort_clear_resets_competition_order_tail_flag(self):
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Alpha",
+            categoria="Mateixa",
+            grup=1,
+            ordre_sortida=1,
+            ordre_competicio=2,
+        )
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Beta",
+            categoria="Mateixa",
+            grup=1,
+            ordre_sortida=2,
+            ordre_competicio=1,
+        )
+
+        apply_resp = self._post_json(
+            "inscripcions_sort_apply",
+            {
+                "sort_key": "categoria",
+                "sort_dir": "asc",
+                "scope": "all_groups",
+                "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                "group_by": [],
+            },
+        )
+        self.assertEqual(apply_resp.status_code, 200)
+        self.assertTrue(apply_resp.json().get("ok"))
+        self.assertTrue(self._toggle_competition_tail(True).json().get("competition_order_tail"))
+
+        clear_resp = self._post_json(
+            "inscripcions_sort_clear",
+            {
+                "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                "group_by": [],
+            },
+        )
+        self.assertEqual(clear_resp.status_code, 200)
+        data = clear_resp.json()
+        self.assertTrue(data.get("ok"))
+        self.assertTrue(data.get("cleared"))
+        self.assertFalse(data.get("competition_order_tail"))
+
+    def test_competition_order_tail_applies_independently_per_group(self):
+        g1_first = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Anna",
+            categoria="Mateixa",
+            grup=1,
+            ordre_sortida=1,
+            ordre_competicio=2,
+        )
+        g2_first = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Biel",
+            categoria="Mateixa",
+            grup=2,
+            ordre_sortida=2,
+            ordre_competicio=2,
+        )
+        g1_second = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Carla",
+            categoria="Mateixa",
+            grup=1,
+            ordre_sortida=3,
+            ordre_competicio=1,
+        )
+        g2_second = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="David",
+            categoria="Mateixa",
+            grup=2,
+            ordre_sortida=4,
+            ordre_competicio=1,
+        )
+
+        apply_resp = self._post_json(
+            "inscripcions_sort_apply",
+            {
+                "sort_key": "categoria",
+                "sort_dir": "asc",
+                "scope": "all",
+                "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                "group_by": [],
+            },
+        )
+        self.assertEqual(apply_resp.status_code, 200)
+        self.assertTrue(apply_resp.json().get("ok"))
+
+        toggle_resp = self._toggle_competition_tail(True)
+        self.assertEqual(toggle_resp.status_code, 200)
+        self.assertTrue(toggle_resp.json().get("competition_order_tail"))
+
+        actual_ids = list(
+            Inscripcio.objects.filter(competicio=self.comp)
+            .order_by("ordre_sortida", "id")
+            .values_list("id", flat=True)
+        )
+        self.assertEqual(actual_ids, [g1_second.id, g2_second.id, g1_first.id, g2_first.id])
 
     def test_custom_sort_save_does_not_reapply_if_mode_is_not_custom(self):
         i1 = Inscripcio.objects.create(

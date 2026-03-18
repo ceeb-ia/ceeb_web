@@ -545,7 +545,7 @@ def _resolve_sort_field_runtime(obj, sort_code, context=None):
     }
 
 
-def _build_sort_records_queryset(qs, sort_codes=None):
+def _build_sort_records_queryset(qs, sort_codes=None, include_competition_order=False):
     codes = []
     seen_codes = set()
     for raw_code in sort_codes or []:
@@ -557,6 +557,8 @@ def _build_sort_records_queryset(qs, sort_codes=None):
 
     select_related_fields = []
     only_fields = ["id", "competicio_id", "extra", "ordre_sortida"]
+    if include_competition_order:
+        only_fields.extend(["grup", "ordre_competicio"])
 
     for code in codes:
         if code == "grup":
@@ -1176,11 +1178,23 @@ def clear_inscripcions_sort_state_for_competicio(request, competicio_id):
 
 def get_inscripcions_sort_context_state(request, context_key):
     if not context_key:
-        return {"stack": [], "order_sig": "", "base_ids": [], "context_ids": []}
+        return {
+            "stack": [],
+            "order_sig": "",
+            "base_ids": [],
+            "context_ids": [],
+            "competition_order_tail": False,
+        }
     store = _read_sort_stack_store(request)
     state = store.get(context_key)
     if not isinstance(state, dict):
-        return {"stack": [], "order_sig": "", "base_ids": [], "context_ids": []}
+        return {
+            "stack": [],
+            "order_sig": "",
+            "base_ids": [],
+            "context_ids": [],
+            "competition_order_tail": False,
+        }
     stack = state.get("stack")
     if not isinstance(stack, list):
         stack = []
@@ -1193,10 +1207,25 @@ def get_inscripcions_sort_context_state(request, context_key):
     context_ids = state.get("context_ids")
     if not isinstance(context_ids, list):
         context_ids = []
-    return {"stack": stack, "order_sig": order_sig, "base_ids": base_ids, "context_ids": context_ids}
+    competition_order_tail = bool(state.get("competition_order_tail"))
+    return {
+        "stack": stack,
+        "order_sig": order_sig,
+        "base_ids": base_ids,
+        "context_ids": context_ids,
+        "competition_order_tail": competition_order_tail,
+    }
 
 
-def save_inscripcions_sort_context_state(request, context_key, stack=None, order_sig=None, base_ids=None, context_ids=None):
+def save_inscripcions_sort_context_state(
+    request,
+    context_key,
+    stack=None,
+    order_sig=None,
+    base_ids=None,
+    context_ids=None,
+    competition_order_tail=None,
+):
     if not context_key:
         return
     store = _read_sort_stack_store(request)
@@ -1211,6 +1240,8 @@ def save_inscripcions_sort_context_state(request, context_key, stack=None, order
         state["base_ids"] = base_ids
     if context_ids is not None:
         state["context_ids"] = context_ids
+    if competition_order_tail is not None:
+        state["competition_order_tail"] = bool(competition_order_tail)
     if not state.get("stack"):
         store.pop(context_key, None)
     else:
@@ -1264,7 +1295,13 @@ def reconcile_inscripcions_sort_context_state(request, context_key, current_ids,
     state = get_inscripcions_sort_context_state(request, context_key)
     stack = state.get("stack") if isinstance(state.get("stack"), list) else []
     if not stack:
-        return {"stack": [], "order_sig": "", "base_ids": [], "context_ids": []}
+        return {
+            "stack": [],
+            "order_sig": "",
+            "base_ids": [],
+            "context_ids": [],
+            "competition_order_tail": False,
+        }
 
     current_ids_list = list(current_ids or [])
     current_base_ids_list = list(current_base_ids or current_ids_list)
@@ -1281,6 +1318,7 @@ def reconcile_inscripcions_sort_context_state(request, context_key, current_ids,
             "order_sig": saved_sig if saved_sig else current_sig,
             "base_ids": state.get("base_ids") if isinstance(state.get("base_ids"), list) else [],
             "context_ids": context_ids_state,
+            "competition_order_tail": bool(state.get("competition_order_tail")),
         }
 
     same_set = (
@@ -1297,17 +1335,25 @@ def reconcile_inscripcions_sort_context_state(request, context_key, current_ids,
             order_sig=current_sig,
             base_ids=current_base_ids_list,
             context_ids=current_ids_list,
+            competition_order_tail=state.get("competition_order_tail"),
         )
         return {
             "stack": stack,
             "order_sig": current_sig,
             "base_ids": current_base_ids_list,
             "context_ids": current_ids_list,
+            "competition_order_tail": bool(state.get("competition_order_tail")),
         }
 
     # Context realment diferent: neteja.
     clear_inscripcions_sort_context_state(request, context_key)
-    return {"stack": [], "order_sig": "", "base_ids": [], "context_ids": []}
+    return {
+        "stack": [],
+        "order_sig": "",
+        "base_ids": [],
+        "context_ids": [],
+        "competition_order_tail": False,
+    }
 
 
 def _build_inscripcions_filtered_qs(competicio, filters):
@@ -1482,7 +1528,13 @@ def _collect_stack_target_group_nums(stack, visible_group_nums):
     return target_group_nums
 
 
-def _build_sort_application_runtime(competicio, visible_records, sort_codes, stack):
+def _build_sort_application_runtime(
+    competicio,
+    visible_records,
+    sort_codes,
+    stack,
+    include_competition_order=False,
+):
     visible_records = list(visible_records or [])
     visible_ids = [record.id for record in visible_records]
     visible_id_set = set(visible_ids)
@@ -1502,6 +1554,7 @@ def _build_sort_application_runtime(competicio, visible_records, sort_codes, sta
                 _build_sort_records_queryset(
                     Inscripcio.objects.filter(competicio=competicio, grup__in=sorted(target_group_nums)),
                     sort_codes,
+                    include_competition_order=include_competition_order,
                 )
             )
             for record in group_records:
@@ -1639,6 +1692,79 @@ def _apply_sort_stack(ids_base, id_to_record, stack, competicio, runtime=None):
     for criterion in reversed(stack):
         final_ids = _apply_single_sort_criterion(final_ids, id_to_record, criterion, competicio, runtime=runtime)
     return final_ids
+
+
+def _competition_order_group_num(record):
+    group_num = _normalize_positive_group_num(getattr(record, "grup", None))
+    if group_num is not None:
+        return group_num
+    group = getattr(record, "grup_competicio", None)
+    return normalize_positive_int(getattr(group, "display_num", None))
+
+
+def _apply_competition_order_tail(ids_in_order, id_to_record, runtime=None):
+    seq_records = [id_to_record[i] for i in ids_in_order if i in id_to_record]
+    if not seq_records:
+        return list(ids_in_order)
+
+    ids_out = list(ids_in_order)
+    id_to_index = {rid: idx for idx, rid in enumerate(ids_out)}
+    group_to_records = OrderedDict()
+    for record in seq_records:
+        group_num = _competition_order_group_num(record)
+        if group_num is None:
+            continue
+        group_to_records.setdefault(group_num, []).append(record)
+
+    for group_records in group_to_records.values():
+        with_comp_order = []
+        without_comp_order = []
+        for pos, record in enumerate(group_records):
+            comp_order = normalize_positive_int(getattr(record, "ordre_competicio", None))
+            if comp_order is None:
+                without_comp_order.append(record)
+            else:
+                with_comp_order.append((comp_order, pos, record))
+
+        with_comp_order.sort(key=lambda item: (item[0], item[1]))
+        ordered_records = [record for _comp_order, _pos, record in with_comp_order] + without_comp_order
+        target_idxs = [id_to_index[record.id] for record in group_records if record.id in id_to_index]
+        for idx, record in zip(target_idxs, ordered_records):
+            ids_out[idx] = record.id
+
+    return ids_out
+
+
+def _apply_sort_pipeline(ids_base, id_to_record, stack, competicio, runtime=None, competition_order_tail=False):
+    final_ids = list(ids_base)
+    if competition_order_tail:
+        final_ids = _apply_competition_order_tail(final_ids, id_to_record, runtime=runtime)
+    final_ids = _apply_sort_stack(final_ids, id_to_record, stack, competicio, runtime=runtime)
+    return final_ids
+
+
+def _persist_inscripcions_order_from_ids(id_to_record, final_ids):
+    updates = []
+    for idx, ins_id in enumerate(final_ids, start=1):
+        obj = id_to_record.get(ins_id)
+        if not obj:
+            continue
+        if obj.ordre_sortida != idx:
+            obj.ordre_sortida = idx
+            updates.append(obj)
+    if updates:
+        with transaction.atomic():
+            Inscripcio.objects.bulk_update(updates, ["ordre_sortida"], batch_size=500)
+    return len(updates)
+
+
+def _normalize_competition_order_tail_flag(raw_value):
+    if isinstance(raw_value, bool):
+        return raw_value
+    if isinstance(raw_value, (int, float)):
+        return bool(raw_value)
+    token = str(raw_value or "").strip().lower()
+    return token in {"1", "true", "yes", "on"}
 
 
 def _extract_sort_partition_codes(stack):
@@ -3445,7 +3571,14 @@ def inscripcions_sort_apply(request, pk):
     if not records:
         return JsonResponse(
             with_inscripcions_history_payload(
-                {"ok": True, "updated": 0, "total": 0, "scope": scope, "stack_count": 0},
+                {
+                    "ok": True,
+                    "updated": 0,
+                    "total": 0,
+                    "scope": scope,
+                    "stack_count": 0,
+                    "competition_order_tail": False,
+                },
                 request,
                 competicio.id,
             )
@@ -3460,6 +3593,7 @@ def inscripcions_sort_apply(request, pk):
         current_ids,
         current_base_ids=pre_runtime["application_ids"],
     )
+    competition_order_tail_active = bool(state.get("competition_order_tail"))
     stack_existing_raw = state.get("stack") if isinstance(state.get("stack"), list) else []
 
     stack_existing = []
@@ -3479,7 +3613,13 @@ def inscripcions_sort_apply(request, pk):
     if len(stack_full) > 20:
         stack_full = stack_full[-20:]
 
-    runtime = _build_sort_application_runtime(competicio, records, record_sort_codes, stack_full)
+    runtime = _build_sort_application_runtime(
+        competicio,
+        records,
+        [entry.get("sort_key") for entry in stack_full],
+        stack_full,
+        include_competition_order=competition_order_tail_active,
+    )
     id_to_record = runtime["id_to_record"]
     application_ids = runtime["application_ids"]
     base_ids_state = state.get("base_ids") if isinstance(state.get("base_ids"), list) else []
@@ -3493,20 +3633,16 @@ def inscripcions_sort_apply(request, pk):
     else:
         base_ids = list(base_ids_state)
 
-    final_ids = _apply_sort_stack(base_ids, id_to_record, stack_full, competicio, runtime=runtime)
+    final_ids = _apply_sort_pipeline(
+        base_ids,
+        id_to_record,
+        stack_full,
+        competicio,
+        runtime=runtime,
+        competition_order_tail=competition_order_tail_active,
+    )
 
-    updates = []
-    for idx, ins_id in enumerate(final_ids, start=1):
-        obj = id_to_record.get(ins_id)
-        if not obj:
-            continue
-        if obj.ordre_sortida != idx:
-            obj.ordre_sortida = idx
-            updates.append(obj)
-
-    if updates:
-        with transaction.atomic():
-            Inscripcio.objects.bulk_update(updates, ["ordre_sortida"], batch_size=500)
+    updated_count = _persist_inscripcions_order_from_ids(id_to_record, final_ids)
 
     order_sig = compute_inscripcions_order_signature_from_ids(final_ids)
     save_inscripcions_sort_context_state(
@@ -3516,6 +3652,7 @@ def inscripcions_sort_apply(request, pk):
         order_sig=order_sig,
         base_ids=base_ids,
         context_ids=current_ids,
+        competition_order_tail=competition_order_tail_active,
     )
 
     record_inscripcions_history_entry(
@@ -3534,9 +3671,10 @@ def inscripcions_sort_apply(request, pk):
                 "scope": scope,
                 "sort_key": sort_key,
                 "sort_dir": sort_dir,
-                "updated": len(updates),
+                "updated": updated_count,
                 "total": len(runtime["records"]),
                 "stack_count": len(stack_full),
+                "competition_order_tail": competition_order_tail_active,
             },
             request,
             competicio.id,
@@ -3595,7 +3733,12 @@ def inscripcions_sort_remove(request, pk):
         clear_inscripcions_sort_context_state(request, context_key)
         return JsonResponse(
             with_inscripcions_history_payload(
-                {"ok": True, "removed": False, "stack_count": 0},
+                {
+                    "ok": True,
+                    "removed": False,
+                    "stack_count": 0,
+                    "competition_order_tail": False,
+                },
                 request,
                 competicio.id,
             )
@@ -3603,19 +3746,37 @@ def inscripcions_sort_remove(request, pk):
 
     qs = _build_inscripcions_filtered_qs(competicio, filters)
     record_sort_codes = [entry.get("sort_key") for entry in stack]
-    records = list(_build_sort_records_queryset(qs, record_sort_codes + ["grup"]))
+    competition_order_tail_active = bool(state.get("competition_order_tail"))
+    records = list(
+        _build_sort_records_queryset(
+            qs,
+            record_sort_codes + ["grup"],
+            include_competition_order=competition_order_tail_active,
+        )
+    )
     if not records:
         clear_inscripcions_sort_context_state(request, context_key)
         return JsonResponse(
             with_inscripcions_history_payload(
-                {"ok": True, "removed": False, "stack_count": 0},
+                {
+                    "ok": True,
+                    "removed": False,
+                    "stack_count": 0,
+                    "competition_order_tail": False,
+                },
                 request,
                 competicio.id,
             )
         )
 
     current_ids = [r.id for r in records]
-    runtime = _build_sort_application_runtime(competicio, records, record_sort_codes, stack)
+    runtime = _build_sort_application_runtime(
+        competicio,
+        records,
+        record_sort_codes,
+        stack,
+        include_competition_order=competition_order_tail_active,
+    )
     id_to_record = runtime["id_to_record"]
     application_ids = runtime["application_ids"]
 
@@ -3636,22 +3797,18 @@ def inscripcions_sort_remove(request, pk):
     base_ids = list(base_ids_state) if valid_base else list(application_ids)
 
     if stack:
-        final_ids = _apply_sort_stack(base_ids, id_to_record, stack, competicio, runtime=runtime)
+        final_ids = _apply_sort_pipeline(
+            base_ids,
+            id_to_record,
+            stack,
+            competicio,
+            runtime=runtime,
+            competition_order_tail=competition_order_tail_active,
+        )
     else:
         final_ids = list(base_ids)
 
-    updates = []
-    for idx, ins_id in enumerate(final_ids, start=1):
-        obj = id_to_record.get(ins_id)
-        if not obj:
-            continue
-        if obj.ordre_sortida != idx:
-            obj.ordre_sortida = idx
-            updates.append(obj)
-
-    if updates:
-        with transaction.atomic():
-            Inscripcio.objects.bulk_update(updates, ["ordre_sortida"], batch_size=500)
+    updated_count = _persist_inscripcions_order_from_ids(id_to_record, final_ids)
 
     if stack:
         order_sig = compute_inscripcions_order_signature_from_ids(final_ids)
@@ -3662,6 +3819,7 @@ def inscripcions_sort_remove(request, pk):
             order_sig=order_sig,
             base_ids=base_ids,
             context_ids=current_ids,
+            competition_order_tail=competition_order_tail_active,
         )
     else:
         clear_inscripcions_sort_context_state(request, context_key)
@@ -3683,7 +3841,8 @@ def inscripcions_sort_remove(request, pk):
                 "removed_priority": priority,
                 "removed_sort_key": removed.get("sort_key"),
                 "stack_count": len(stack),
-                "updated": len(updates),
+                "updated": updated_count,
+                "competition_order_tail": bool(stack) and competition_order_tail_active,
             },
             request,
             competicio.id,
@@ -3739,7 +3898,12 @@ def inscripcions_sort_clear(request, pk):
         clear_inscripcions_sort_context_state(request, context_key)
         return JsonResponse(
             with_inscripcions_history_payload(
-                {"ok": True, "cleared": False, "stack_count": 0},
+                {
+                    "ok": True,
+                    "cleared": False,
+                    "stack_count": 0,
+                    "competition_order_tail": False,
+                },
                 request,
                 competicio.id,
             )
@@ -3764,6 +3928,160 @@ def inscripcions_sort_clear(request, pk):
                 "ok": True,
                 "cleared": True,
                 "stack_count": 0,
+                "competition_order_tail": False,
+            },
+            request,
+            competicio.id,
+        )
+    )
+
+
+@require_POST
+@csrf_protect
+def inscripcions_sort_competition_tail_toggle(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        payload = {}
+
+    enabled = _normalize_competition_order_tail_flag(payload.get("enabled"))
+    sort_fields = get_available_sort_fields(competicio)
+    sort_codes = {f["code"] for f in sort_fields}
+    allowed_group_fields = get_allowed_group_fields(competicio)
+    allowed_group_codes = {f["code"] for f in allowed_group_fields}
+
+    selected_group_codes_context = _normalize_sort_group_by(
+        payload.get("group_by"),
+        allowed_group_codes,
+        fallback_group_by=competicio.group_by_default or [],
+    )
+    filters = _normalize_sort_filters(payload.get("filters"))
+    context_key = build_inscripcions_sort_context_key(
+        competicio.id,
+        filters=filters,
+        group_by=selected_group_codes_context,
+    )
+
+    qs = _build_inscripcions_filtered_qs(competicio, filters)
+    current_ids = list(qs.order_by("ordre_sortida", "id").values_list("id", flat=True))
+    state = reconcile_inscripcions_sort_context_state(request, context_key, current_ids)
+    stack_raw = state.get("stack") if isinstance(state.get("stack"), list) else []
+    stack = []
+    for it in stack_raw:
+        norm = _normalize_sort_criterion(
+            it,
+            sort_codes=sort_codes,
+            allowed_group_codes=allowed_group_codes,
+            fallback_group_by=selected_group_codes_context,
+        )
+        if norm is not None:
+            stack.append(norm)
+
+    if not stack:
+        clear_inscripcions_sort_context_state(request, context_key)
+        return JsonResponse(
+            with_inscripcions_history_payload(
+                {
+                    "ok": True,
+                    "applied": False,
+                    "updated": 0,
+                    "stack_count": 0,
+                    "competition_order_tail": False,
+                    "reason": "no_stack",
+                },
+                request,
+                competicio.id,
+            )
+        )
+
+    records = list(
+        _build_sort_records_queryset(
+            qs,
+            [entry.get("sort_key") for entry in stack] + ["grup"],
+            include_competition_order=True,
+        )
+    )
+
+    before_snapshot = capture_inscripcions_history_snapshot(request, competicio)
+
+    if not records:
+        save_inscripcions_sort_context_state(
+            request,
+            context_key,
+            stack=stack,
+            order_sig="",
+            base_ids=[],
+            context_ids=[],
+            competition_order_tail=enabled,
+        )
+        return JsonResponse(
+            with_inscripcions_history_payload(
+                {
+                    "ok": True,
+                    "applied": True,
+                    "updated": 0,
+                    "stack_count": len(stack),
+                    "competition_order_tail": enabled,
+                },
+                request,
+                competicio.id,
+            )
+        )
+
+    runtime = _build_sort_application_runtime(
+        competicio,
+        records,
+        [entry.get("sort_key") for entry in stack],
+        stack,
+        include_competition_order=True,
+    )
+    id_to_record = runtime["id_to_record"]
+    application_ids = runtime["application_ids"]
+    base_ids_state = state.get("base_ids") if isinstance(state.get("base_ids"), list) else []
+    valid_base = (
+        len(base_ids_state) == len(application_ids)
+        and set(base_ids_state) == set(application_ids)
+    )
+    base_ids = list(base_ids_state) if valid_base else list(application_ids)
+    final_ids = _apply_sort_pipeline(
+        base_ids,
+        id_to_record,
+        stack,
+        competicio,
+        runtime=runtime,
+        competition_order_tail=enabled,
+    )
+    updated_count = _persist_inscripcions_order_from_ids(id_to_record, final_ids)
+    order_sig = compute_inscripcions_order_signature_from_ids(final_ids)
+    save_inscripcions_sort_context_state(
+        request,
+        context_key,
+        stack=stack,
+        order_sig=order_sig,
+        base_ids=base_ids,
+        context_ids=current_ids,
+        competition_order_tail=enabled,
+    )
+
+    record_inscripcions_history_entry(
+        request,
+        competicio,
+        action_type="sort_competition_tail_toggle",
+        action_label="Activar ordre de competicio" if enabled else "Desactivar ordre de competicio",
+        before_snapshot=before_snapshot,
+        after_snapshot=capture_inscripcions_history_snapshot(request, competicio),
+    )
+
+    return JsonResponse(
+        with_inscripcions_history_payload(
+            {
+                "ok": True,
+                "applied": True,
+                "updated": updated_count,
+                "stack_count": len(stack),
+                "competition_order_tail": enabled,
             },
             request,
             competicio.id,
@@ -3925,6 +4243,7 @@ def inscripcions_sort_custom_save(request, pk):
         )
         if norm is not None:
             stack.append(norm)
+    competition_order_tail_active = bool(stack) and bool(state.get("competition_order_tail"))
 
     global_qs = Inscripcio.objects.filter(competicio=competicio)
     global_records = list(_build_sort_records_queryset(global_qs, [sort_key]))
@@ -3987,6 +4306,7 @@ def inscripcions_sort_custom_save(request, pk):
             context_records,
             [entry.get("sort_key") for entry in stack] + [sort_key],
             stack,
+            include_competition_order=competition_order_tail_active,
         )
         id_to_record = runtime["id_to_record"]
         application_ids = runtime["application_ids"]
@@ -3996,20 +4316,15 @@ def inscripcions_sort_custom_save(request, pk):
             and set(base_ids_state) == set(application_ids)
         )
         base_ids = list(base_ids_state) if valid_base else list(application_ids)
-        final_ids = _apply_sort_stack(base_ids, id_to_record, stack, competicio, runtime=runtime)
-
-        updates = []
-        for idx, ins_id in enumerate(final_ids, start=1):
-            obj = id_to_record.get(ins_id)
-            if not obj:
-                continue
-            if obj.ordre_sortida != idx:
-                obj.ordre_sortida = idx
-                updates.append(obj)
-
-        if updates:
-            with transaction.atomic():
-                Inscripcio.objects.bulk_update(updates, ["ordre_sortida"], batch_size=500)
+        final_ids = _apply_sort_pipeline(
+            base_ids,
+            id_to_record,
+            stack,
+            competicio,
+            runtime=runtime,
+            competition_order_tail=competition_order_tail_active,
+        )
+        reapplied_updated = _persist_inscripcions_order_from_ids(id_to_record, final_ids)
 
         order_sig = compute_inscripcions_order_signature_from_ids(final_ids)
         save_inscripcions_sort_context_state(
@@ -4019,9 +4334,9 @@ def inscripcions_sort_custom_save(request, pk):
             order_sig=order_sig,
             base_ids=base_ids,
             context_ids=current_ids,
+            competition_order_tail=competition_order_tail_active,
         )
         reapplied = True
-        reapplied_updated = len(updates)
 
     record_inscripcions_history_entry(
         request,
@@ -4045,6 +4360,7 @@ def inscripcions_sort_custom_save(request, pk):
                 "reapplied": reapplied,
                 "reapplied_updated": reapplied_updated,
                 "stack_count": len(stack),
+                "competition_order_tail": competition_order_tail_active,
             },
             request,
             competicio.id,
