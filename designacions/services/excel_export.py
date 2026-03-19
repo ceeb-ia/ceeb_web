@@ -125,8 +125,9 @@ def _availability_lookup_by_ref_and_date(run):
 
 def _ordered_referees(run):
     return (
-        Referee.objects.filter(active=True)
-        .annotate(n=Count("assignments", filter=Q(assignments__run=run)))
+        Referee.objects.filter(active=True, availabilities__run=run)
+        .annotate(n=Count("assignments", filter=Q(assignments__run=run), distinct=True))
+        .distinct()
         .order_by("name", "code")
     )
 
@@ -186,7 +187,7 @@ def export_run_to_excel(run, output_path: str):
     needs_review_referees = [
         ref
         for ref in referees_with_counts
-        if (ref.n or 0) > 0 and not (ref.level or "").strip()
+        if not (ref.level or "").strip()
     ]
     availability_by_ref_and_date = _availability_lookup_by_ref_and_date(run)
 

@@ -8,6 +8,12 @@ class DesignationRun(models.Model):
         ("done", "Done"),
         ("failed", "Failed"),
     ]
+    MAP_STATUS_CHOICES = [
+        ("ready", "Ready"),
+        ("queued", "Queued"),
+        ("processing", "Processing"),
+        ("failed", "Failed"),
+    ]
     created_at = models.DateTimeField(auto_now_add=True)
     started_at = models.DateTimeField(null=True, blank=True)
     finished_at = models.DateTimeField(null=True, blank=True)
@@ -18,6 +24,7 @@ class DesignationRun(models.Model):
 
     task_id = models.CharField(max_length=64, unique=True, db_index=True)
     map_path = models.CharField(max_length=500, null=True, blank=True)
+    map_status = models.CharField(max_length=20, choices=MAP_STATUS_CHOICES, default="ready")
     params = models.JSONField(default=dict, blank=True)
     input_partits = models.FileField(upload_to="designacions/inputs/", null=True, blank=True)
     input_disponibilitats = models.FileField(upload_to="designacions/inputs/", null=True, blank=True)

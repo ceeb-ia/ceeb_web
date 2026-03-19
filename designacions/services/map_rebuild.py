@@ -20,10 +20,23 @@ def rebuild_run_map(run) -> str | None:
         return None
 
     # df_partits_geo: el mapa espera lat/lon + adreca + Codi + altres camps opcionals
-    rows_p = []
+    address_texts = set()
+    match_addresses = {}
     for m in matches:
         adreca = f"{(m.domicile or '').strip()}, {(m.municipality or '').strip()}".strip().strip(",")
-        addr = Address.objects.filter(text=adreca).first() if adreca else None
+        match_addresses[m.id] = adreca
+        if adreca:
+            address_texts.add(adreca)
+
+    addresses_by_text = {
+        address.text: address
+        for address in Address.objects.filter(text__in=address_texts)
+    }
+
+    rows_p = []
+    for m in matches:
+        adreca = match_addresses.get(m.id, "")
+        addr = addresses_by_text.get(adreca) if adreca else None
 
         rows_p.append({
             "Codi": m.code,

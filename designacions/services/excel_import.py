@@ -6,6 +6,8 @@ from ..models import Referee, Match, Availability, Assignment
 import datetime as dt
 import json
 
+from .run_scope import load_scoped_run_data
+
 def _read_xlsx(path: str) -> pd.DataFrame:
     return pd.read_excel(path, engine="openpyxl")
 
@@ -60,9 +62,25 @@ def row_to_json_safe_dict(row):
 
 
 @transaction.atomic
-def import_excels_to_db(run, path_disponibilitats: str, path_partits: str):
-    df_disp = _read_xlsx(path_disponibilitats)
-    df_partits = _read_xlsx(path_partits)
+def import_excels_to_db(
+    run,
+    path_disponibilitats: str | None = None,
+    path_partits: str | None = None,
+    *,
+    df_disp: pd.DataFrame | None = None,
+    df_partits: pd.DataFrame | None = None,
+):
+    if df_disp is None or df_partits is None:
+        if not path_disponibilitats or not path_partits:
+            raise ValueError("Cal indicar paths o dataframes per importar el run.")
+        df_disp, df_partits = load_scoped_run_data(
+            path_disponibilitats,
+            path_partits,
+            params=getattr(run, "params", None) or {},
+        )
+    else:
+        df_disp = df_disp.copy()
+        df_partits = df_partits.copy()
 
     # --- Referees + Availability (dispos_tutors_23_01.xlsx)
     # Columnes reals: "Codi Tutor de Joc", "Nom", "Cognoms", "Nif/Nie", "Nivell", "Modalitat", "Mitjà de Transport", etc.

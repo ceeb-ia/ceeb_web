@@ -6,6 +6,7 @@ from pandas.api.types import CategoricalDtype
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from .services.modalitat_map import load_modalitat_map_df
+from .services.run_scope import EXCLUDED_MATCH_GROUPS, EXCLUDED_REFEREE_CODES, load_scoped_run_data
 from .consulta_resultats import fetch_ceeb_async, parse_ceeb_xml, xml_to_dataframe
 from .geolocate import clusteritza_i_plota, geocodificar
 import numpy as np
@@ -21,7 +22,6 @@ from django.db import transaction
 from django.utils.dateparse import parse_date
 from .services.geocoding_db import geocodifica_adreces, addresses_to_df
 from .models import Address, AddressCluster
-from django.utils.dateparse import parse_date
 
 
 
@@ -259,6 +259,182 @@ def _availability_penalty_for_subgroup(tutor_row, subgrup, availability_end_buff
     if dispo_inici_dt > sub_inici_dt or dispo_final_adj < sub_final_dt:
         return penalty
     return 0.0
+
+
+def _subgrup_profile(subgrup, nivel_dtype_partits):
+    niveles = []
+    posicions = []
+    for row in subgrup:
+        categoria = row["Categoria"]
+        if pd.isna(categoria):
+            continue
+        niveles.append(categoria)
+        pos_local = row.get("Posició Equip Local", None)
+        pos_visitant = row.get("Posició Equip Visitant", None)
+        if pos_local is not None and not pd.isna(pos_local) and pos_visitant is not None and not pd.isna(pos_visitant):
+            posicions.append((pos_local, pos_visitant))
+
+    if not niveles:
+        raise ValueError("No hi ha categories vàlides al subgrup.")
+
+    suma_posicions_prev = 19
+    if posicions:
+        suma_posicions_prev = min(p[0] + p[1] for p in posicions)
+
+    pistes_joc = set(r["Pista joc"] for r in subgrup)
+    clusters_pistes = set(r["cluster"] for r in subgrup)
+    multiple_pistes = len(pistes_joc) > 1
+
+    niveles = pd.Series(niveles, dtype=nivel_dtype_partits)
+    return niveles.min(), suma_posicions_prev, multiple_pistes, clusters_pistes
+
+
+def _compute_subgroup_cost(
+    tutor_row,
+    subgrup,
+    *,
+    tutor_nivel_order,
+    partits_nivel_order,
+    nivel_dtype_partits,
+    availability_end_buffer_min,
+):
+    tutor_codi = tutor_row["Codi Tutor de Joc"]
+    tutor_nivel = tutor_row["Nivell"]
+    tutor_modalitat = tutor_row["Modalitat"]
+    subgrup_modalitat = subgrup[0]["Modalitat"]
+    if tutor_modalitat != subgrup_modalitat:
+        raise ValueError(f"Modalitat tutor ({tutor_modalitat}) != modalitat subgrup ({subgrup_modalitat})")
+
+    subgrup_nivel, suma_posicions, multiple_pistes, clusters_pistes = _subgrup_profile(subgrup, nivel_dtype_partits)
+
+    try:
+        tutor_idx = tutor_nivel_order.index(tutor_nivel)
+        part_idx = partits_nivel_order.index(subgrup_nivel)
+
+        n_t = len(tutor_nivel_order)
+        m_p = len(partits_nivel_order)
+
+        map_tutor = tutor_idx / (n_t - 1) if n_t > 1 else 0
+        map_partit = part_idx / (m_p - 1) if m_p > 1 else 0
+        map_posicions = (suma_posicions - 3) / (19 - 3)
+
+        nombre_partits_subgrup = len(subgrup)
+
+        mitja_transport = tutor_row.get("Mitjà de Transport", "")
+        if pd.isna(mitja_transport):
+            mitja_transport = ""
+        if any(x in mitja_transport.lower() for x in ["moto", "cotxe", "patinet elèctric", "bicicleta"]):
+            scale_vehicle = 0
+        else:
+            scale_vehicle = 1000
+
+        dist = abs(map_tutor - map_partit)
+        dist_classif = abs(map_posicions - map_tutor)
+
+        cost = dist * 1000 + dist_classif * 500 + (1 / max(nombre_partits_subgrup, 1)) * 100
+        if multiple_pistes:
+            cost += scale_vehicle
+
+        if "5413" in str(tutor_codi):
+            favorits = {"12", "13", "9", "6", "10", "15"}
+            if any(str(c) in favorits for c in clusters_pistes):
+                cost *= 0.2
+
+    except ValueError:
+        raise ValueError(f"Nivell tutor ({tutor_nivel}) o subgrup ({subgrup_nivel}) no reconegut.")
+
+    cost += _availability_penalty_for_subgroup(
+        tutor_row,
+        subgrup,
+        availability_end_buffer_min=availability_end_buffer_min,
+        penalty=1e6,
+    )
+    return cost
+
+
+def _build_subgroup_cost_matrix(
+    referee_rows,
+    subgroups,
+    subgroup_cost_fn,
+):
+    if len(referee_rows) == 0 or len(subgroups) == 0:
+        return np.zeros((len(referee_rows), len(subgroups)))
+
+    cost_matrix = np.zeros((len(referee_rows), len(subgroups)))
+    for i, (_, row) in enumerate(referee_rows.iterrows()):
+        for j, subgrup in enumerate(subgroups):
+            cost_matrix[i, j] = subgroup_cost_fn(row, subgrup)
+    return cost_matrix
+
+
+def _solve_assignment_pairs(cost_matrix, *, threshold: float = 1e5):
+    if cost_matrix.size == 0 or 0 in cost_matrix.shape:
+        return []
+
+    row_ind, col_ind = linear_sum_assignment(cost_matrix)
+    return [
+        (row_idx, col_idx)
+        for row_idx, col_idx in zip(row_ind, col_ind)
+        if cost_matrix[row_idx, col_idx] < threshold
+    ]
+
+
+def _segment_failed_subgroup(
+    subgrup,
+    candidate_referees,
+    subgroup_cost_fn,
+    *,
+    threshold: float = 1e5,
+):
+    ordered = sorted(
+        list(subgrup),
+        key=lambda row: row.get("__match_datetime") if not pd.isna(row.get("__match_datetime")) else pd.Timestamp.max,
+    )
+    if len(ordered) <= 1:
+        return [ordered]
+    if candidate_referees.empty:
+        return [[row] for row in ordered]
+
+    n = len(ordered)
+    split_points = []
+    for split_idx in (n - 1, 1):
+        if 0 < split_idx < n and split_idx not in split_points:
+            split_points.append(split_idx)
+
+    fallback_candidates = []
+    for split_idx in split_points:
+        direct_segments = [ordered[:split_idx], ordered[split_idx:]]
+        direct_cost_matrix = _build_subgroup_cost_matrix(candidate_referees, direct_segments, subgroup_cost_fn)
+        if len(_solve_assignment_pairs(direct_cost_matrix, threshold=threshold)) == len(direct_segments):
+            return direct_segments
+
+        recursive_segments = []
+        for segment in direct_segments:
+            recursive_segments.extend(
+                _segment_failed_subgroup(segment, candidate_referees, subgroup_cost_fn, threshold=threshold)
+            )
+        recursive_cost_matrix = _build_subgroup_cost_matrix(candidate_referees, recursive_segments, subgroup_cost_fn)
+        if len(_solve_assignment_pairs(recursive_cost_matrix, threshold=threshold)) == len(recursive_segments):
+            return recursive_segments
+        fallback_candidates.append(recursive_segments)
+
+    return min(fallback_candidates, key=len) if fallback_candidates else [[row] for row in ordered]
+
+
+def _run_rescue_assignment(candidate_referees, failed_subgroups, subgroup_cost_fn, *, threshold: float = 1e5):
+    rescue_segments = []
+    for subgrup in failed_subgroups:
+        rescue_segments.extend(
+            _segment_failed_subgroup(subgrup, candidate_referees, subgroup_cost_fn, threshold=threshold)
+        )
+
+    rescue_cost_matrix = _build_subgroup_cost_matrix(candidate_referees, rescue_segments, subgroup_cost_fn)
+    assignment_pairs = _solve_assignment_pairs(rescue_cost_matrix, threshold=threshold)
+    return {
+        "segments": rescue_segments,
+        "cost_matrix": rescue_cost_matrix,
+        "pairs": assignment_pairs,
+    }
 
 
 def _color_per_tutor(tutor_codi) -> str:
@@ -616,7 +792,16 @@ def persist_assignacions_to_db(
                 asg.save(update_fields=["referee", "updated_at"])
 
 
-def main(path_disposicions: str, path_dades: str, task_id: str | None = None, run_id: int | None = None, config: dict | None = None) -> dict:
+def main(
+    path_disposicions: str,
+    path_dades: str,
+    task_id: str | None = None,
+    run_id: int | None = None,
+    config: dict | None = None,
+    *,
+    df_dispos: pd.DataFrame | None = None,
+    df_partits: pd.DataFrame | None = None,
+) -> dict:
     config = config or {}
 
     cluster_eps_m = float(config.get("cluster_eps_m", 500))
@@ -642,14 +827,19 @@ def main(path_disposicions: str, path_dades: str, task_id: str | None = None, ru
     file_abspath_partits = os.path.abspath(path_dades)
     results_abspath = os.path.abspath(RESULTS_DIR)
 
-    df_dispos = read_excel_file(file_abspath_dispo)
-    df_partits = read_excel_file(file_abspath_partits)
+    if df_dispos is None or df_partits is None:
+        df_dispos, df_partits = load_scoped_run_data(file_abspath_dispo, file_abspath_partits, config)
+    else:
+        df_dispos = df_dispos.copy()
+        df_partits = df_partits.copy()
 
     # Fem shuffle per evitar biaixos en assignacions
     df_dispos = df_dispos.sample(frac=1, random_state=42).reset_index(drop=True)
     df_partits = df_partits.sample(frac=1, random_state=42).reset_index(drop=True)
-    df_dispos["Data"] = _normalize_date_series(df_dispos["Data"])
-    df_partits["Data"] = _normalize_date_series(df_partits["Data"])
+    if "Data" in df_dispos.columns:
+        df_dispos["Data"] = _normalize_date_series(df_dispos["Data"])
+    if "Data" in df_partits.columns:
+        df_partits["Data"] = _normalize_date_series(df_partits["Data"])
 
     print("\nColumnes partits:", df_partits.columns)
     print("\nColumnes disponibilitats tutors:", df_dispos.columns)
@@ -672,9 +862,6 @@ def main(path_disposicions: str, path_dades: str, task_id: str | None = None, ru
 
         key = f"{nom}|{lliga}|{cat}|{mod}|{day}"
         return hashlib.sha1(key.encode('utf-8')).hexdigest()[:10].upper()
-
-    # Ens quedem només amb llicència tutor
-    df_dispos = df_dispos[df_dispos['Categoria'] == "TUTOR/TUTORA DE JOC"].copy()
 
     categories_dispos = df_dispos['Categoria'].unique()
     if len(categories_dispos) > 1:
@@ -701,34 +888,9 @@ def main(path_disposicions: str, path_dades: str, task_id: str | None = None, ru
     _report_duplicates(df_dispos, 'tutors')
     _report_duplicates(df_partits, 'partits')
 
-    # ------------ Filtrat tutors / partits ------------
-    if date_from:
-        dfrom = _normalize_date_value(date_from)
-        if pd.notna(dfrom):
-            df_partits = df_partits[df_partits["Data"] >= dfrom].copy()
-
-    if date_to:
-        dto = _normalize_date_value(date_to)
-        if pd.notna(dto):
-            df_partits = df_partits[df_partits["Data"] <= dto].copy()
-
-    # disponibilitats també tenen "Data"
-    if date_from or date_to:
-        if date_from and pd.notna(_normalize_date_value(date_from)):
-            df_dispos = df_dispos[df_dispos["Data"] >= _normalize_date_value(date_from)].copy()
-        if date_to and pd.notna(_normalize_date_value(date_to)):
-            df_dispos = df_dispos[df_dispos["Data"] <= _normalize_date_value(date_to)].copy()
-
-
-    codis_a_eliminar = ['TJ PROPI', 'TJ LEXIA', 'CEBLL', 'CEVOSABADELL', 'CELH', 'CEBN']
-    df_dispos = df_dispos[~df_dispos['Codi Tutor de Joc'].isin(codis_a_eliminar)].copy()
-
-    grups_a_eliminar = ['FUTBOL 5 SENSE BARRERES JUVENIL MIXT GRUP 06 1a FASE CEEB', 'AMISTÓS FUTBOL 5']
-    df_partits = df_partits[~df_partits['Grup'].isin(grups_a_eliminar)].copy()
-
     if task_id:
-        async_to_sync(push_log)(task_id, f"Eliminant codis tutor no vàlids: {codis_a_eliminar}", 40)
-        async_to_sync(push_log)(task_id, f"Eliminant grups partit no vàlids: {grups_a_eliminar}", 40)
+        async_to_sync(push_log)(task_id, f"Eliminant codis tutor no vàlids: {EXCLUDED_REFEREE_CODES}", 40)
+        async_to_sync(push_log)(task_id, f"Eliminant grups partit no vàlids: {EXCLUDED_MATCH_GROUPS}", 40)
 
     # Tutors sense nivell
     if df_dispos['Nivell'].isna().any():
@@ -738,6 +900,22 @@ def main(path_disposicions: str, path_dades: str, task_id: str | None = None, ru
         df_dispos = df_dispos[~df_dispos['Nivell'].isna()].copy()
     else:
         df_revisio_sense_nivell = pd.DataFrame()
+
+    if df_partits.empty:
+        if task_id:
+            async_to_sync(push_log)(task_id, "No hi ha partits dins del filtre seleccionat.", 96)
+        return {
+            "assigned": 0,
+            "unassigned_matches": 0,
+            "unassigned_referees": 0,
+            "needs_review_referees": int(
+                df_revisio_sense_nivell["Codi Tutor de Joc"].astype(str).str.strip().replace("", pd.NA).dropna().nunique()
+            ) if not df_revisio_sense_nivell.empty else 0,
+            "rescue_failed_subgroups": 0,
+            "rescue_segments_generated": 0,
+            "rescue_matches_recovered": 0,
+            "map_path": None,
+        }
 
     tutor_nivel_order = ['NIVELLA1', 'NIVELLB1', 'NIVELLC1', 'NIVELLD1', 'D']
     nivel_dtype = CategoricalDtype(categories=tutor_nivel_order, ordered=True)
@@ -788,6 +966,11 @@ def main(path_disposicions: str, path_dades: str, task_id: str | None = None, ru
     # Enllacem cluster al df_partits
     df_localitzats = pd.merge(df_partits, domicilis_clusteritzats, on='adreca', how='inner')
     df_partits = pd.merge(df_partits, df_localitzats[['ID', 'cluster']], on='ID', how='left')
+    df_partits_geo = df_partits.merge(
+        domicilis_clusteritzats[["adreca", "lat", "lon"]],
+        on="adreca",
+        how="left"
+    )
 
     # Validació: una adreça no pot tenir múltiples clusters
     discrepancies = []
@@ -810,15 +993,12 @@ def main(path_disposicions: str, path_dades: str, task_id: str | None = None, ru
     # ------------ Assignació per modalitats ------------
     modalitats = df_partits["Modalitat"].dropna().unique().tolist()
 
-    if modalitats_filter:
-        # només les que l’usuari ha escrit
-        modalitats = [m for m in modalitats if str(m).strip() in set(modalitats_filter)]
-        df_partits = df_partits[df_partits["Modalitat"].isin(modalitats)].copy()
-        df_dispos = df_dispos[df_dispos["Modalitat"].isin(modalitats)].copy()
-
     assigned_tutors = []
     assigned_partit_ids = set()
     assigned_tutor_ids = set()
+    rescue_failed_subgroups_count = 0
+    rescue_segments_generated_count = 0
+    rescue_matches_recovered_count = 0
 
     def _get_team_position(equip: str, df_classificacions: pd.DataFrame, task_id) -> int:
         equip_norm = _normalize_entity_name(equip)
@@ -916,110 +1096,26 @@ def main(path_disposicions: str, path_dades: str, task_id: str | None = None, ru
             max_partits_subgrup=max_partits_subgrup,
         )
 
-        # --- nivell subgrup ---
-        def _subgrup_nivel(subgrup):
-            niveles = []
-            posicions = []
-            for row in subgrup:
-                categoria = row['Categoria']
-                if pd.isna(categoria):
-                    continue
-                niveles.append(categoria)
-                pos_local = row.get('Posició Equip Local', None)
-                pos_visitant = row.get('Posició Equip Visitant', None)
-                if pos_local is not None and not pd.isna(pos_local) and pos_visitant is not None and not pd.isna(pos_visitant):
-                    posicions.append((pos_local, pos_visitant))
-
-            if not niveles:
-                raise ValueError(f"No hi ha categories vàlides al subgrup.")
-
-            suma_posicions_prev = 19
-            if posicions:
-                suma_posicions_prev = min(p[0] + p[1] for p in posicions)
-
-            pistes_joc = set(r['Pista joc'] for r in subgrup)
-            clusters_pistes = set(r['cluster'] for r in subgrup)
-            multiple_pistes = len(pistes_joc) > 1
-
-            niveles = pd.Series(niveles, dtype=nivel_dtype_partits)
-            return niveles.min(), suma_posicions_prev, multiple_pistes, clusters_pistes
-
         # --- matriu costos ---
-        C = np.zeros((len(df_dispos_modalitat), len(final_subgrups)))
+        subgroup_cost_fn = lambda tutor_row, subgrup: _compute_subgroup_cost(
+            tutor_row,
+            subgrup,
+            tutor_nivel_order=tutor_nivel_order,
+            partits_nivel_order=partits_nivel_order,
+            nivel_dtype_partits=nivel_dtype_partits,
+            availability_end_buffer_min=availability_end_buffer_min,
+        )
+        C = _build_subgroup_cost_matrix(df_dispos_modalitat, final_subgrups, subgroup_cost_fn)
 
         if task_id:
             async_to_sync(push_log)(task_id, "Assignant tutors...", 80)
 
-        for i, (_, row) in enumerate(df_dispos_modalitat.iterrows()):
-            tutor_codi = row['Codi Tutor de Joc']
-            tutor_nivel = row['Nivell']
-            tutor_modalitat = row['Modalitat']
-
-            for j, subgrup in enumerate(final_subgrups):
-                cost = 0
-                subgrup_modalitat = subgrup[0]['Modalitat']
-                if tutor_modalitat != subgrup_modalitat:
-                    raise ValueError(f"Modalitat tutor ({tutor_modalitat}) != modalitat subgrup ({subgrup_modalitat})")
-
-                subgrup_nivel, suma_posicions, multiple_pistes, clusters_pistes = _subgrup_nivel(subgrup)
-
-                try:
-                    tutor_idx = tutor_nivel_order.index(tutor_nivel)
-                    part_idx = partits_nivel_order.index(subgrup_nivel)
-
-                    n_t = len(tutor_nivel_order)
-                    m_p = len(partits_nivel_order)
-
-                    map_tutor = tutor_idx / (n_t - 1) if n_t > 1 else 0
-                    map_partit = part_idx / (m_p - 1) if m_p > 1 else 0
-                    map_posicions = (suma_posicions - 3) / (19 - 3)
-
-                    nombre_partits_subgrup = len(subgrup)
-
-                    mitja_transport = row.get('Mitjà de Transport', '')
-                    if pd.isna(mitja_transport):
-                        mitja_transport = ''
-                    if any(x in mitja_transport.lower() for x in ['moto', 'cotxe', 'patinet elèctric', 'bicicleta']):
-                        scale_vehicle = 0
-                    else:
-                        scale_vehicle = 1000
-
-                    dist = abs(map_tutor - map_partit)
-                    dist_classif = abs(map_posicions - map_tutor)
-
-                    cost = dist * 1000 + dist_classif * 500 + (1 / max(nombre_partits_subgrup, 1)) * 100
-                    if multiple_pistes:
-                        cost += scale_vehicle
-
-                    # preferències hardcoded del teu codi
-                    if "5413" in str(tutor_codi):
-                        favorits = {"12", "13", "9", "6", "10", "15"}
-                        if any(str(c) in favorits for c in clusters_pistes):
-                            cost *= 0.2
-
-                except ValueError:
-                    raise ValueError(f"Nivell tutor ({tutor_nivel}) o subgrup ({subgrup_nivel}) no reconegut.")
-
-                cost += _availability_penalty_for_subgroup(
-                    row,
-                    subgrup,
-                    availability_end_buffer_min=availability_end_buffer_min,
-                    penalty=1e6,
-                )
-
-                C[i, j] = cost
-
-        row_ind, col_ind = linear_sum_assignment(C)
+        assigned_pairs = _solve_assignment_pairs(C)
+        row_ind = np.array([pair[0] for pair in assigned_pairs], dtype=int)
+        col_ind = np.array([pair[1] for pair in assigned_pairs], dtype=int)
 
         if task_id:
             async_to_sync(push_log)(task_id, "Tutors assignats.", 85)
-
-        # df_partits_geo per mapa
-        df_partits_geo = df_partits.merge(
-            domicilis_clusteritzats[["adreca", "lat", "lon"]],
-            on="adreca",
-            how="left"
-        )
 
         # construir assignacions
         for tutor_idx, subgrup_idx in zip(row_ind, col_ind):
@@ -1065,6 +1161,65 @@ def main(path_disposicions: str, path_dades: str, task_id: str | None = None, ru
                 })
             if tutor_was_assigned:
                 assigned_tutor_ids.add(tutor_id)
+
+        covered_subgroup_indexes = set(col_ind.tolist())
+        failed_subgroups = [
+            final_subgrups[idx]
+            for idx in range(len(final_subgrups))
+            if idx not in covered_subgroup_indexes
+        ]
+        rescue_failed_subgroups_count += len(failed_subgroups)
+
+        idle_referees = (
+            df_dispos_modalitat[~df_dispos_modalitat["ID"].isin(assigned_tutor_ids)]
+            .copy()
+            .reset_index(drop=True)
+        )
+        rescue_result = _run_rescue_assignment(idle_referees, failed_subgroups, subgroup_cost_fn)
+        rescue_segments = rescue_result["segments"]
+        rescue_segments_generated_count += len(rescue_segments)
+
+        for tutor_idx, segment_idx in rescue_result["pairs"]:
+            tutor_row = idle_referees.iloc[tutor_idx]
+            tutor_id = tutor_row["ID"]
+            tutor_codi = tutor_row["Codi Tutor de Joc"]
+            tutor_nom = tutor_row.get("Nom", "")
+            tutor_cognoms = tutor_row.get("Cognoms", "")
+            tutor_nivell = tutor_row.get("Nivell", "")
+            tutor_hora_inici = tutor_row.get("Hora Inici", "")
+            tutor_hora_fi = tutor_row.get("Hora Fi", "")
+            observacions = tutor_row.get("Observacions", "")
+
+            segment = rescue_segments[segment_idx]
+            tutor_was_assigned = False
+            for partit in segment:
+                assigned_partit_ids.add(partit["ID"])
+                tutor_was_assigned = True
+                assigned_tutors.append({
+                    "ID": partit.get("ID", ""),
+                    "Data Partit": partit.get("Data", ""),
+                    "Partit Hora": partit.get("Hora", ""),
+                    "Codi Partit": partit.get("Codi", ""),
+                    "Pista": partit.get("Pista joc", ""),
+                    "Club Visitant": partit.get("Equip visitant", ""),
+                    "Categoria": partit.get("Categoria", ""),
+                    "Modalitat": partit.get("Modalitat", ""),
+                    "Club Local": partit.get("Club Local", ""),
+                    "Classificació Equips": (
+                        f"Pos Local: {_safe_position_int(partit.get('Posició Equip Local', -1))}, "
+                        f"Pos Visitant: {_safe_position_int(partit.get('Posició Equip Visitant', -1))}"
+                    ),
+                    "Tutor Codi": tutor_codi,
+                    "Tutor Nom": tutor_nom,
+                    "Tutor Cognoms": tutor_cognoms,
+                    "Tutor Nivell": tutor_nivell,
+                    "Tutor Hora Inici": tutor_hora_inici,
+                    "Tutor Hora Fi": tutor_hora_fi,
+                    "Observacions": observacions
+                })
+            if tutor_was_assigned:
+                assigned_tutor_ids.add(tutor_id)
+                rescue_matches_recovered_count += len(segment)
 
     df_assignacions = pd.DataFrame(assigned_tutors)
     if not df_assignacions.empty:
@@ -1129,7 +1284,12 @@ def main(path_disposicions: str, path_dades: str, task_id: str | None = None, ru
         "assigned": int(len(df_assignacions)) if df_assignacions is not None else 0,
         "unassigned_matches": int(len(df_unassigned)) if df_unassigned is not None else 0,
         "unassigned_referees": int(len(unassigned_tutor_codes)),
-        "needs_review_referees": int(len(df_revisio_sense_nivell)) if df_revisio_sense_nivell is not None else 0,
+        "needs_review_referees": int(
+            df_revisio_sense_nivell["Codi Tutor de Joc"].astype(str).str.strip().replace("", pd.NA).dropna().nunique()
+        ) if df_revisio_sense_nivell is not None and not df_revisio_sense_nivell.empty else 0,
+        "rescue_failed_subgroups": int(rescue_failed_subgroups_count),
+        "rescue_segments_generated": int(rescue_segments_generated_count),
+        "rescue_matches_recovered": int(rescue_matches_recovered_count),
         "map_path": map_rel_path,   # relatiu a MEDIA_ROOT
     }
 

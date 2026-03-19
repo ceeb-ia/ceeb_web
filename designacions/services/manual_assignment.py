@@ -52,6 +52,10 @@ def _normalize_text(value) -> str:
     return str(value or "").strip()
 
 
+def _normalized_modality(value) -> str:
+    return _normalize_text(value).lower()
+
+
 def _parse_date_value(value):
     if value in (None, ""):
         return None
@@ -196,6 +200,38 @@ def build_cluster_by_match_id(run):
     }
 
 
+def build_referee_options_by_assignment(run, assignments, referees_with_counts=None):
+    referees_with_counts = list(referees_with_counts or get_run_referees_with_counts(run))
+    by_modality = defaultdict(list)
+    for referee in referees_with_counts:
+        by_modality[_normalized_modality(referee.modality)].append(referee)
+
+    options = {}
+    for assignment in assignments:
+        match_modality = _normalized_modality(assignment.match.modality)
+        options[assignment.id] = by_modality.get(match_modality, []) if match_modality else referees_with_counts
+    return options
+
+
+def build_manual_assignment_context(run, referees_with_counts=None):
+    referees_with_counts = list(referees_with_counts or get_run_referees_with_counts(run))
+    availability_lookup = build_availability_lookup_by_ref_and_date(run)
+    assignments_by_referee = build_assigned_by_referee(run)
+    cluster_by_match_id = build_cluster_by_match_id(run)
+    referees_by_assignment = build_referee_options_by_assignment(
+        run,
+        run.assignments.select_related("match").all(),
+        referees_with_counts=referees_with_counts,
+    )
+    return {
+        "referees_with_counts": referees_with_counts,
+        "availability_lookup": availability_lookup,
+        "assignments_by_referee": assignments_by_referee,
+        "cluster_by_match_id": cluster_by_match_id,
+        "referees_by_assignment": referees_by_assignment,
+    }
+
+
 def _availability_covers_match(raw: dict | None, match, availability_end_buffer_min: int) -> bool:
     if not isinstance(raw, dict):
         return False
@@ -333,6 +369,9 @@ def diagnose_assignment_for_referee(
     if cost is None:
         reason_codes.append("missing_cost_inputs")
 
+    n_assignments_in_run = len(assignments_by_referee.get(referee.id, []))
+    effective_cost = (cost + (n_assignments_in_run * 50)) if cost is not None else None
+
     warning_messages = [WARNING_MESSAGES[code] for code in warning_codes if code in WARNING_MESSAGES]
     reason_messages = [REASON_MESSAGES[code] for code in reason_codes if code in REASON_MESSAGES]
 
@@ -347,20 +386,23 @@ def diagnose_assignment_for_referee(
         "reason_codes": reason_codes,
         "reason_messages": reason_messages,
         "cost": cost,
+        "n_assignments_in_run": n_assignments_in_run,
+        "effective_cost": effective_cost,
         "is_suggested": False,
     }
 
 
-def build_top_proposals_for_assignments(run, assignments, *, limit: int = 3):
-    availability_lookup = build_availability_lookup_by_ref_and_date(run)
-    assignments_by_referee = build_assigned_by_referee(run)
-    cluster_by_match_id = build_cluster_by_match_id(run)
-    candidate_referees = [ref for ref in get_run_referees_with_counts(run) if (ref.n or 0) == 0]
+def build_top_proposals_for_assignments(run, assignments, *, limit: int = 3, context=None):
+    context = context or build_manual_assignment_context(run)
+    availability_lookup = context["availability_lookup"]
+    assignments_by_referee = context["assignments_by_referee"]
+    cluster_by_match_id = context["cluster_by_match_id"]
+    referees_by_assignment = context["referees_by_assignment"]
 
     proposals = {}
     for assignment in assignments:
         ranked = []
-        for referee in candidate_referees:
+        for referee in referees_by_assignment.get(assignment.id, []):
             diagnosis = diagnose_assignment_for_referee(
                 run,
                 assignment,
@@ -372,10 +414,61 @@ def build_top_proposals_for_assignments(run, assignments, *, limit: int = 3):
             if diagnosis["is_valid"] and diagnosis["cost"] is not None:
                 ranked.append(diagnosis)
 
-        ranked.sort(key=lambda item: (item["cost"], item["referee"].code, item["referee"].name))
+        ranked.sort(
+            key=lambda item: (
+                item["effective_cost"],
+                item["cost"],
+                item["n_assignments_in_run"],
+                item["referee"].code,
+                item["referee"].name,
+            )
+        )
         top_ranked = ranked[:limit]
         for idx, diagnosis in enumerate(top_ranked, start=1):
             diagnosis["rank"] = idx
             diagnosis["is_suggested"] = True
         proposals[assignment.id] = top_ranked
     return proposals
+
+
+def availability_label(raw: dict | None) -> str:
+    if not isinstance(raw, dict):
+        return "-"
+
+    availability_date = _parse_date_value(raw.get("Data"))
+    start = _parse_time_value(raw.get("Hora Inici"))
+    end = _parse_time_value(raw.get("Hora Fi"))
+
+    parts = []
+    if availability_date is not None:
+        parts.append(availability_date.strftime("%d/%m/%Y"))
+    if start and end:
+        parts.append(f"{start.strftime('%H:%M')} - {end.strftime('%H:%M')}")
+    elif start:
+        parts.append(f"des de {start.strftime('%H:%M')}")
+    elif end:
+        parts.append(f"fins {end.strftime('%H:%M')}")
+    return " ".join(parts).strip() or "-"
+
+
+def serialize_proposal(diagnosis: dict) -> dict:
+    referee = diagnosis["referee"]
+    return {
+        "rank": diagnosis.get("rank"),
+        "referee_id": referee.id,
+        "code": referee.code,
+        "name": referee.name,
+        "level": referee.level or "",
+        "availability_label": availability_label(diagnosis.get("availability")),
+        "cost": diagnosis.get("cost"),
+        "effective_cost": diagnosis.get("effective_cost"),
+    }
+
+
+def serialize_referee_option(referee: Referee) -> dict:
+    return {
+        "id": referee.id,
+        "code": referee.code,
+        "name": referee.name,
+        "level": referee.level or "",
+    }

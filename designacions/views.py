@@ -1,33 +1,31 @@
 # views.py
 from django.core.paginator import Paginator
 import os, uuid, json
-from pathlib import Path
 from redis import Redis
 from django.contrib import messages
 from .models import Address
 from django.conf import settings
-from django.core.files.base import ContentFile
 from django.http import JsonResponse, StreamingHttpResponse, HttpResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_http_methods, require_GET, require_POST
 from django.db.models import Count, Q
 from .services.colors import color_per_tutor
-from django.http import Http404, HttpResponse
+from django.http import Http404
 from .models import DesignationRun, Assignment, Referee
-from .tasks import process_designacions_run
+from .tasks import process_designacions_run, rebuild_run_map_task
 from .services.jobstore import write_job_sync, read_job_sync
 from .services.excel_export import export_run_to_excel
-from django.views.decorators.http import require_POST
-from .services.map_rebuild import rebuild_run_map
-from .models import Availability
 import pandas as pd
 from .services.manual_assignment import (
     build_assignment_availability_by_assignment,
     build_availability_display_by_ref,
     build_availability_lookup_by_ref_and_date,
+    build_manual_assignment_context,
     build_top_proposals_for_assignments,
     diagnose_assignment_for_referee,
     get_run_referees_with_counts,
+    serialize_proposal,
+    serialize_referee_option,
 )
 
 
@@ -75,6 +73,122 @@ def _save_uploaded(f, prefix: str) -> str:
         for chunk in f.chunks():
             dest.write(chunk)
     return out_path
+
+
+def _build_counts(run, referees_with_counts=None):
+    referees_with_counts = list(referees_with_counts or get_run_referees_with_counts(run))
+    assigned = run.assignments.filter(referee__isnull=False).count()
+    unassigned_matches = run.assignments.filter(referee__isnull=True).count()
+    unassigned_referees = sum(1 for referee in referees_with_counts if (referee.n or 0) == 0)
+    needs_review_referees = sum(1 for referee in referees_with_counts if not (referee.level or "").strip())
+    return {
+        "assigned": assigned,
+        "unassigned_matches": unassigned_matches,
+        "unassigned_referees": unassigned_referees,
+        "needs_review_referees": needs_review_referees,
+        "has_map": bool(run.map_path),
+    }
+
+
+def _queue_map_rebuild(run):
+    run.map_status = "queued"
+    run.save(update_fields=["map_status"])
+    rebuild_run_map_task.delay(run.id)
+
+
+def _assignment_json_payload(run, assignment, message, counts, map_queued):
+    return {
+        "ok": True,
+        "assignment_id": assignment.id,
+        "row_state": "assigned" if assignment.referee_id else "unassigned",
+        "referee": (
+            {
+                "id": assignment.referee.id,
+                "code": assignment.referee.code,
+                "name": assignment.referee.name,
+                "level": assignment.referee.level or "",
+            }
+            if assignment.referee_id
+            else None
+        ),
+        "warning": {
+            "active": bool(assignment.manual_override_warning),
+            "text": assignment.manual_override_reason or "",
+        },
+        "note": assignment.note or "",
+        "locked": assignment.locked,
+        "counts": counts,
+        "message": message,
+        "map_status": run.map_status,
+        "map_queued": map_queued,
+        "match_code": assignment.match.code,
+    }
+
+
+def _apply_assignment_update(run, assignment, referee_id_raw, note, locked):
+    previous_referee_id = assignment.referee_id
+    referee_lookup = {referee.id: referee for referee in get_run_referees_with_counts(run)}
+    context = build_manual_assignment_context(run, referees_with_counts=referee_lookup.values())
+
+    if referee_id_raw not in (None, ""):
+        try:
+            referee_pk = int(referee_id_raw)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Tutor no valid.") from exc
+
+        referee = referee_lookup.get(referee_pk)
+        if referee is None:
+            raise ValueError("Aquest tutor no forma part del run actual.")
+
+        compatible_referees = {
+            item.id
+            for item in context["referees_by_assignment"].get(assignment.id, [])
+        }
+        if referee.id not in compatible_referees:
+            raise ValueError("Aquest tutor no és compatible amb la modalitat del partit.")
+
+        diagnosis = diagnose_assignment_for_referee(
+            run,
+            assignment,
+            referee,
+            availability_lookup=context["availability_lookup"],
+            assignments_by_referee=context["assignments_by_referee"],
+            cluster_by_match_id=context["cluster_by_match_id"],
+        )
+        assignment.referee = referee
+        assignment.manual_override_warning = not diagnosis["is_valid"]
+        assignment.manual_override_reason = diagnosis["warning_text"]
+        if diagnosis["is_valid"]:
+            message = f"Assignacio de {assignment.match.code} guardada."
+        else:
+            message = f"Assignacio de {assignment.match.code} guardada amb warning: {diagnosis['warning_text']}"
+    else:
+        assignment.referee = None
+        assignment.locked = False
+        assignment.manual_override_warning = False
+        assignment.manual_override_reason = ""
+        if previous_referee_id is not None:
+            message = f"Partit {assignment.match.code} desassignat."
+        else:
+            message = f"Partit {assignment.match.code} continua sense assignar."
+
+    if assignment.referee_id:
+        assignment.locked = locked
+    assignment.note = note
+    assignment.save()
+
+    map_queued = previous_referee_id != assignment.referee_id
+    if map_queued:
+        _queue_map_rebuild(run)
+        run.refresh_from_db(fields=["map_status", "map_path"])
+
+    counts = _build_counts(run)
+    return {
+        "assignment": assignment,
+        "message": message,
+        "counts": counts,
+        "map_queued": map_queued,
+    }
 
 @require_http_methods(["GET", "POST"])
 def upload_view(request):
@@ -224,11 +338,11 @@ def assignments_view(request, run_id: int):
 
     unassigned_referees = [r for r in referees_with_counts if (r.n or 0) == 0]
 
-    # Tutors “sense nivell” (si Referee.level buit)
+    # Tutors “sense nivell” dins l'scope del run
     needs_review_referees = [
         referee
         for referee in referees_with_counts
-        if (referee.n or 0) > 0 and not (referee.level or "").strip()
+        if not (referee.level or "").strip()
     ]
 
     # Agrupació per tutor (accordion)
@@ -262,15 +376,7 @@ def assignments_view(request, run_id: int):
     availability_lookup = build_availability_lookup_by_ref_and_date(run)
     availability_by_assignment = build_assignment_availability_by_assignment(assigned_qs, availability_lookup)
     availability_display_by_ref = build_availability_display_by_ref(run)
-    eligible_proposals_by_assignment = build_top_proposals_for_assignments(run, unassigned_matches)
-
-    counts = {
-        "assigned": len(assigned_qs),
-        "unassigned_matches": len(unassigned_matches),
-        "unassigned_referees": len(unassigned_referees),
-        "needs_review_referees": len(needs_review_referees),
-        "has_map": bool(run.map_path),
-    }
+    counts = _build_counts(run, referees_with_counts=referees_with_counts)
 
     return render(request, "assignments.html", {
         "run": run,
@@ -282,31 +388,106 @@ def assignments_view(request, run_id: int):
         "unassigned_referees": unassigned_referees,
         "needs_review_referees": needs_review_referees,
         "referees": referees,
-        "eligible_proposals_by_assignment": eligible_proposals_by_assignment,
         "counts": counts,
     })
+
+@require_GET
+def manual_assignment_options_view(request, run_id: int, assignment_id: int):
+    run = get_object_or_404(DesignationRun, id=run_id)
+    assignment = get_object_or_404(
+        Assignment.objects.select_related("match", "referee"),
+        id=assignment_id,
+        run=run,
+    )
+    query = (request.GET.get("q") or "").strip().lower()
+
+    context = build_manual_assignment_context(run)
+    compatible_referees = context["referees_by_assignment"].get(assignment.id, [])
+    if query:
+        compatible_referees = [
+            referee
+            for referee in compatible_referees
+            if query in (referee.code or "").lower()
+        ]
+
+    proposals = build_top_proposals_for_assignments(run, [assignment], context=context).get(assignment.id, [])
+    return JsonResponse({
+        "ok": True,
+        "assignment_id": assignment.id,
+        "top_proposals": [serialize_proposal(item) for item in proposals],
+        "compatible_referees": [serialize_referee_option(referee) for referee in compatible_referees],
+    })
+
+
+@require_POST
+def update_assignment_async_view(request, run_id: int, assignment_id: int):
+    run = get_object_or_404(DesignationRun, id=run_id)
+    assignment = get_object_or_404(
+        Assignment.objects.select_related("match", "referee"),
+        id=assignment_id,
+        run=run,
+    )
+
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({"ok": False, "message": "Payload JSON no valid."}, status=400)
+
+    referee_id = payload.get("referee_id")
+    note = str(payload.get("note") or "").strip()
+    locked = bool(payload.get("locked", assignment.locked))
+
+    try:
+        result = _apply_assignment_update(run, assignment, referee_id, note, locked)
+    except ValueError as exc:
+        return JsonResponse({"ok": False, "message": str(exc)}, status=400)
+
+    return JsonResponse(
+        _assignment_json_payload(
+            run,
+            result["assignment"],
+            result["message"],
+            result["counts"],
+            result["map_queued"],
+        )
+    )
+
 
 @require_POST
 def update_assignment_view(request, run_id: int, assignment_id: int):
     run = get_object_or_404(DesignationRun, id=run_id)
-    a = get_object_or_404(Assignment, id=assignment_id, run=run)
+    assignment = get_object_or_404(
+        Assignment.objects.select_related("match", "referee"),
+        id=assignment_id,
+        run=run,
+    )
 
     ref_id = request.POST.get("referee_id", "").strip()
-    locked = a.locked if "locked" not in request.POST else request.POST.get("locked") == "on"
+    locked = assignment.locked if "locked" not in request.POST else request.POST.get("locked") == "on"
     note = request.POST.get("note", "").strip()
-    previous_referee_id = a.referee_id
 
-    if ref_id:
-        try:
-            ref_pk = int(ref_id)
-        except (TypeError, ValueError):
-            messages.error(request, "Tutor no valid.")
-            return redirect("designacions_assignments", run_id=run.id)
+    try:
+        result = _apply_assignment_update(run, assignment, ref_id, note, locked)
+    except ValueError as exc:
+        messages.error(request, str(exc))
+        return redirect("designacions_assignments", run_id=run.id)
 
-        referee_lookup = {referee.id: referee for referee in get_run_referees_with_counts(run)}
-        referee = referee_lookup.get(ref_pk)
-        if referee is None:
-            messages.error(request, "Aquest tutor no forma part del run actual.")
+    if result["assignment"].manual_override_warning:
+        messages.warning(request, result["message"])
+    else:
+        messages.success(request, result["message"])
+    if result["map_queued"]:
+        messages.info(request, "El mapa s'actualitzara en segon pla.")
+
+    return redirect("designacions_assignments", run_id=run.id)
+
+    """
+        compatible_referees = {
+            item.id
+            for item in build_referee_options_by_assignment(run, [a], referees_with_counts=referee_lookup.values()).get(a.id, [])
+        }
+        if referee.id not in compatible_referees:
+            messages.error(request, "Aquest tutor no és compatible amb la modalitat del partit.")
             return redirect("designacions_assignments", run_id=run.id)
 
         diagnosis = diagnose_assignment_for_referee(run, a, referee)
@@ -335,6 +516,8 @@ def update_assignment_view(request, run_id: int, assignment_id: int):
         rebuild_run_map(run)
 
     return redirect("designacions_assignments", run_id=run.id)
+
+    """
 
 @require_POST
 def export_excel_view(request, run_id: int):
@@ -402,10 +585,18 @@ def run_map_view(request, run_id: int):
 @require_POST
 def unassign_assignment_view(request, run_id: int, assignment_id: int):
     run = get_object_or_404(DesignationRun, id=run_id)
-    a = get_object_or_404(Assignment, id=assignment_id, run=run)
+    assignment = get_object_or_404(
+        Assignment.objects.select_related("match", "referee"),
+        id=assignment_id,
+        run=run,
+    )
 
     # Desassignar
-    a.referee = None
+    result = _apply_assignment_update(run, assignment, "", assignment.note or "", False)
+    messages.success(request, result["message"])
+    if result["map_queued"]:
+        messages.info(request, "El mapa s'actualitzara en segon pla.")
+    return redirect("designacions_assignments", run_id=run.id)
     a.locked = False  # recomanat: si el deixes locked=True, després no té sentit
     a.manual_override_warning = False
     a.manual_override_reason = ""

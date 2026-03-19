@@ -1,3 +1,4 @@
+import json
 import os
 import tempfile
 from datetime import date, time
@@ -9,10 +10,19 @@ from django.urls import reverse
 from openpyxl import load_workbook
 
 from .models import Assignment, Availability, DesignationRun, Match, Referee
-from .main_fixed import _availability_penalty_for_subgroup, _build_daily_subgroups, _build_tutor_working_id, _safe_position_int
+from .main_fixed import (
+    _availability_penalty_for_subgroup,
+    _build_daily_subgroups,
+    _build_tutor_working_id,
+    _run_rescue_assignment,
+    _safe_position_int,
+    _segment_failed_subgroup,
+)
 from .consulta_resultats import xml_to_dataframe
 from .services.excel_export import export_run_to_excel
 from .services.manual_assignment import build_top_proposals_for_assignments, diagnose_assignment_for_referee
+from .services.run_scope import load_scoped_run_data
+from .tasks import rebuild_run_map_task
 
 
 class DesignacionsDateAwareHelpersTests(SimpleTestCase):
@@ -109,6 +119,192 @@ class DesignacionsDateAwareHelpersTests(SimpleTestCase):
         self.assertEqual(_safe_position_int(pd.NA), -1)
         self.assertEqual(_safe_position_int(None), -1)
 
+    def test_load_scoped_run_data_filters_by_modalitat_and_dates(self):
+        df_disp = pd.DataFrame(
+            [
+                {
+                    "Codi Tutor de Joc": "5001 F5",
+                    "Nom": "Tutor F5",
+                    "Categoria": "TUTOR/TUTORA DE JOC",
+                    "Modalitat": "Futbol Sala",
+                    "Nivell": "NIVELLA1",
+                    "Data": "2026-02-24",
+                },
+                {
+                    "Codi Tutor de Joc": "5002 BQ",
+                    "Nom": "Tutor BQ",
+                    "Categoria": "TUTOR/TUTORA DE JOC",
+                    "Modalitat": "Basquet",
+                    "Nivell": "NIVELLA1",
+                    "Data": "2026-02-24",
+                },
+                {
+                    "Codi Tutor de Joc": "5004 F5",
+                    "Nom": "Tutor Sense Nivell",
+                    "Categoria": "TUTOR/TUTORA DE JOC",
+                    "Modalitat": "Futbol Sala",
+                    "Nivell": None,
+                    "Data": "2026-02-24",
+                },
+                {
+                    "Codi Tutor de Joc": "5003 F5",
+                    "Nom": "Tutor Fora Rang",
+                    "Categoria": "TUTOR/TUTORA DE JOC",
+                    "Modalitat": "Futbol Sala",
+                    "Nivell": "NIVELLA1",
+                    "Data": "2026-02-25",
+                },
+            ]
+        )
+        df_partits = pd.DataFrame(
+            [
+                {
+                    "Codi": "M-F5",
+                    "Modalitat": "Futbol Sala",
+                    "Data": "2026-02-24",
+                    "Grup": "GRUP 01",
+                },
+                {
+                    "Codi": "M-BQ",
+                    "Modalitat": "Basquet",
+                    "Data": "2026-02-24",
+                    "Grup": "GRUP 01",
+                },
+                {
+                    "Codi": "M-F5-LATE",
+                    "Modalitat": "Futbol Sala",
+                    "Data": "2026-02-25",
+                    "Grup": "GRUP 01",
+                },
+            ]
+        )
+
+        with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as disp_tmp:
+            disp_path = disp_tmp.name
+        with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as partits_tmp:
+            partits_path = partits_tmp.name
+        self.addCleanup(lambda: os.path.exists(disp_path) and os.unlink(disp_path))
+        self.addCleanup(lambda: os.path.exists(partits_path) and os.unlink(partits_path))
+
+        df_disp.to_excel(disp_path, index=False)
+        df_partits.to_excel(partits_path, index=False)
+
+        scoped_disp, scoped_partits = load_scoped_run_data(
+            disp_path,
+            partits_path,
+            params={
+                "modalitats": ["Futbol Sala"],
+                "date_from": "2026-02-24",
+                "date_to": "2026-02-24",
+            },
+        )
+
+        self.assertEqual(scoped_partits["Codi"].tolist(), ["M-F5"])
+        self.assertEqual(scoped_disp["Codi Tutor de Joc"].tolist(), ["5001 F5", "5004 F5"])
+
+    def test_segment_failed_subgroup_prefers_contiguous_two_plus_one_split(self):
+        subgrup = [
+            {
+                "ID": "M1",
+                "Data": "2026-02-24",
+                "__match_datetime": pd.Timestamp("2026-02-24 18:00:00"),
+            },
+            {
+                "ID": "M2",
+                "Data": "2026-02-24",
+                "__match_datetime": pd.Timestamp("2026-02-24 19:00:00"),
+            },
+            {
+                "ID": "M3",
+                "Data": "2026-02-24",
+                "__match_datetime": pd.Timestamp("2026-02-24 20:00:00"),
+            },
+        ]
+        candidate_referees = pd.DataFrame([{"ID": "R1"}, {"ID": "R2"}])
+
+        def subgroup_cost_fn(referee_row, segment):
+            key = (referee_row["ID"], tuple(item["ID"] for item in segment))
+            viable = {
+                ("R1", ("M1", "M2")): 10,
+                ("R2", ("M3",)): 10,
+            }
+            return viable.get(key, 1e6)
+
+        segments = _segment_failed_subgroup(subgrup, candidate_referees, subgroup_cost_fn)
+
+        self.assertEqual([[item["ID"] for item in segment] for segment in segments], [["M1", "M2"], ["M3"]])
+
+    def test_run_rescue_assignment_splits_pair_into_individuals_and_recovers_one(self):
+        failed_subgroups = [[
+            {
+                "ID": "M1",
+                "Data": "2026-02-24",
+                "__match_datetime": pd.Timestamp("2026-02-24 18:00:00"),
+            },
+            {
+                "ID": "M2",
+                "Data": "2026-02-24",
+                "__match_datetime": pd.Timestamp("2026-02-24 19:00:00"),
+            },
+        ]]
+        candidate_referees = pd.DataFrame([{"ID": "R1"}])
+
+        def subgroup_cost_fn(referee_row, segment):
+            key = (referee_row["ID"], tuple(item["ID"] for item in segment))
+            viable = {
+                ("R1", ("M2",)): 10,
+            }
+            return viable.get(key, 1e6)
+
+        rescue = _run_rescue_assignment(candidate_referees, failed_subgroups, subgroup_cost_fn)
+
+        self.assertEqual([[item["ID"] for item in segment] for segment in rescue["segments"]], [["M1"], ["M2"]])
+        self.assertEqual(len(rescue["pairs"]), 1)
+        _, segment_idx = rescue["pairs"][0]
+        self.assertEqual([item["ID"] for item in rescue["segments"][segment_idx]], ["M2"])
+
+    def test_run_rescue_assignment_without_idle_referees_returns_no_pairs(self):
+        failed_subgroups = [[
+            {
+                "ID": "M1",
+                "Data": "2026-02-24",
+                "__match_datetime": pd.Timestamp("2026-02-24 18:00:00"),
+            }
+        ]]
+        candidate_referees = pd.DataFrame(columns=["ID"])
+
+        rescue = _run_rescue_assignment(candidate_referees, failed_subgroups, lambda *_args, **_kwargs: 1e6)
+
+        self.assertEqual(len(rescue["segments"]), 1)
+        self.assertEqual(len(rescue["pairs"]), 0)
+
+    def test_run_rescue_assignment_keeps_one_segment_per_tutor(self):
+        failed_subgroups = [[
+            {
+                "ID": "M1",
+                "Data": "2026-02-24",
+                "__match_datetime": pd.Timestamp("2026-02-24 18:00:00"),
+            },
+            {
+                "ID": "M2",
+                "Data": "2026-02-24",
+                "__match_datetime": pd.Timestamp("2026-02-24 19:00:00"),
+            },
+        ]]
+        candidate_referees = pd.DataFrame([{"ID": "R1"}])
+
+        def subgroup_cost_fn(referee_row, segment):
+            key = (referee_row["ID"], tuple(item["ID"] for item in segment))
+            viable = {
+                ("R1", ("M1",)): 10,
+                ("R1", ("M2",)): 15,
+            }
+            return viable.get(key, 1e6)
+
+        rescue = _run_rescue_assignment(candidate_referees, failed_subgroups, subgroup_cost_fn)
+
+        self.assertEqual(len(rescue["pairs"]), 1)
+
 
 class DesignacionsExcelExportTests(TestCase):
     def setUp(self):
@@ -153,6 +349,11 @@ class DesignacionsExcelExportTests(TestCase):
             run=self.run,
             referee=self.ref_blank_level,
             raw={"Data": "2026-02-24"},
+        )
+        Availability.objects.create(
+            run=self.run,
+            referee=self.ref_unassigned,
+            raw={"Data": "2026-02-26", "Hora Inici": "19:00:00", "Hora Fi": "22:00:00"},
         )
 
         match_blank_level = Match.objects.create(
@@ -434,32 +635,61 @@ class DesignacionsManualAssignmentsTests(TestCase):
         self.assertFalse(diagnosis["is_valid"])
         self.assertIn("time_conflict_diff_pitch", diagnosis["warning_reasons"])
 
-    def test_top_proposals_only_use_unassigned_tutors_and_limit_to_three(self):
+    def test_top_proposals_include_compatible_assigned_tutors_with_soft_penalty(self):
         proposals = build_top_proposals_for_assignments(self.run, [self.target_assignment])
 
         proposal_codes = [item["referee"].code for item in proposals[self.target_assignment.id]]
-        self.assertEqual(proposal_codes, ["5001 F5", "5006 F5", "5007 F5"])
+        self.assertEqual(proposal_codes, ["5001 F5", "5006 F5", "5005 F5"])
         self.assertNotIn("5002 F5", proposal_codes)
         self.assertNotIn("5004 F5", proposal_codes)
+        self.assertNotIn("5003 F5", proposal_codes)
         self.assertEqual(len(proposal_codes), 3)
+        self.assertGreater(proposals[self.target_assignment.id][2]["effective_cost"], proposals[self.target_assignment.id][1]["effective_cost"])
 
-    def test_assignments_view_exposes_top_proposals_and_date_specific_availability(self):
+    def test_assignments_view_renders_placeholders_for_manual_loading(self):
         response = self.client.get(reverse("designacions_assignments", args=[self.run.id]))
 
         self.assertEqual(response.status_code, 200)
-        proposals = response.context["eligible_proposals_by_assignment"][self.target_assignment.id]
-        self.assertEqual([item["referee"].code for item in proposals], ["5001 F5", "5006 F5", "5007 F5"])
+        self.assertNotIn("eligible_proposals_by_assignment", response.context)
+        self.assertNotIn("referee_options_by_assignment", response.context)
         self.assertEqual(
             response.context["availability_by_assignment"][self.display_assignment.id]["Hora Inici"],
             "18:00:00",
         )
         content = response.content.decode("utf-8")
         self.assertIn("Millors Propostes", content)
-        self.assertIn("5001 F5", content)
-        self.assertIn("5008 F5", content)
+        self.assertIn("Carrega les propostes en obrir el selector.", content)
+        self.assertIn("data-manual-options-url", content)
+        self.assertIn("data-update-async-url", content)
 
-    @patch("designacions.views.rebuild_run_map")
-    def test_invalid_manual_assignment_is_saved_with_warning(self, rebuild_map_mock):
+    def test_manual_assignment_options_view_returns_top_proposals_and_compatible_referees(self):
+        response = self.client.get(
+            reverse("designacions_manual_assignment_options", args=[self.run.id, self.target_assignment.id])
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(
+            [item["code"] for item in payload["top_proposals"]],
+            ["5001 F5", "5006 F5", "5005 F5"],
+        )
+        self.assertEqual(
+            [item["code"] for item in payload["compatible_referees"]],
+            ["5001 F5", "5002 F5", "5004 F5", "5005 F5", "5006 F5", "5007 F5", "5008 F5"],
+        )
+
+    def test_manual_assignment_options_view_filters_compatible_referees_by_query(self):
+        response = self.client.get(
+            reverse("designacions_manual_assignment_options", args=[self.run.id, self.target_assignment.id]),
+            {"q": "5006"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual([item["code"] for item in payload["compatible_referees"]], ["5006 F5"])
+
+    @patch("designacions.views.rebuild_run_map_task.delay")
+    def test_invalid_manual_assignment_for_other_modality_is_rejected(self, rebuild_map_delay_mock):
         response = self.client.post(
             reverse("designacions_update_assignment", args=[self.run.id, self.target_assignment.id]),
             {"referee_id": str(self.ref_modality.id), "note": "Override"},
@@ -468,13 +698,13 @@ class DesignacionsManualAssignmentsTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.target_assignment.refresh_from_db()
-        self.assertEqual(self.target_assignment.referee_id, self.ref_modality.id)
-        self.assertTrue(self.target_assignment.manual_override_warning)
-        self.assertIn("Modalitat", self.target_assignment.manual_override_reason)
-        rebuild_map_mock.assert_called_once_with(self.run)
+        self.assertIsNone(self.target_assignment.referee_id)
+        self.assertFalse(self.target_assignment.manual_override_warning)
+        self.assertEqual(self.target_assignment.manual_override_reason, "")
+        rebuild_map_delay_mock.assert_not_called()
 
-    @patch("designacions.views.rebuild_run_map")
-    def test_valid_manual_assignment_clears_previous_warning(self, rebuild_map_mock):
+    @patch("designacions.views.rebuild_run_map_task.delay")
+    def test_valid_manual_assignment_clears_previous_warning(self, rebuild_map_delay_mock):
         self.target_assignment.referee = self.ref_modality
         self.target_assignment.manual_override_warning = True
         self.target_assignment.manual_override_reason = "Modalitat diferent de la del partit."
@@ -491,4 +721,93 @@ class DesignacionsManualAssignmentsTests(TestCase):
         self.assertEqual(self.target_assignment.referee_id, self.ref_best.id)
         self.assertFalse(self.target_assignment.manual_override_warning)
         self.assertEqual(self.target_assignment.manual_override_reason, "")
-        rebuild_map_mock.assert_called_once_with(self.run)
+        self.run.refresh_from_db()
+        self.assertEqual(self.run.map_status, "queued")
+        rebuild_map_delay_mock.assert_called_once_with(self.run.id)
+
+    @patch("designacions.views.rebuild_run_map_task.delay")
+    def test_update_assignment_async_returns_json_and_queues_map(self, rebuild_map_delay_mock):
+        response = self.client.post(
+            reverse("designacions_update_assignment_async", args=[self.run.id, self.target_assignment.id]),
+            data=json.dumps({"referee_id": self.ref_best.id, "note": "Async ok", "locked": False}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.target_assignment.refresh_from_db()
+        self.run.refresh_from_db()
+        self.assertEqual(self.target_assignment.referee_id, self.ref_best.id)
+        self.assertEqual(payload["row_state"], "assigned")
+        self.assertFalse(payload["warning"]["active"])
+        self.assertEqual(payload["counts"]["assigned"], 4)
+        self.assertEqual(self.run.map_status, "queued")
+        rebuild_map_delay_mock.assert_called_once_with(self.run.id)
+
+    @patch("designacions.views.rebuild_run_map_task.delay")
+    def test_update_assignment_async_returns_warning_payload_when_candidate_is_allowed_but_costly(self, rebuild_map_delay_mock):
+        warning_ref = self._create_referee("5010 F5", "Tutor Warning", "NIVELLA1")
+        self._add_availability(warning_ref, "2026-03-02", "18:00:00", "22:00:00")
+
+        response = self.client.post(
+            reverse("designacions_update_assignment_async", args=[self.run.id, self.target_assignment.id]),
+            data=json.dumps({"referee_id": warning_ref.id, "note": "Warning", "locked": False}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.target_assignment.refresh_from_db()
+        self.assertEqual(self.target_assignment.referee_id, warning_ref.id)
+        self.assertTrue(payload["warning"]["active"])
+        self.assertIn("Sense disponibilitat registrada", payload["warning"]["text"])
+        rebuild_map_delay_mock.assert_called_once_with(self.run.id)
+
+    @patch("designacions.views.rebuild_run_map_task.delay")
+    def test_update_assignment_async_rejects_incompatible_referee(self, rebuild_map_delay_mock):
+        response = self.client.post(
+            reverse("designacions_update_assignment_async", args=[self.run.id, self.target_assignment.id]),
+            data=json.dumps({"referee_id": self.ref_modality.id, "note": "Invalid", "locked": False}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.target_assignment.refresh_from_db()
+        self.assertIsNone(self.target_assignment.referee_id)
+        rebuild_map_delay_mock.assert_not_called()
+
+    @patch("designacions.views.rebuild_run_map_task.delay")
+    def test_update_assignment_async_can_unassign(self, rebuild_map_delay_mock):
+        self.target_assignment.referee = self.ref_best
+        self.target_assignment.manual_override_warning = True
+        self.target_assignment.manual_override_reason = "Old warning"
+        self.target_assignment.locked = True
+        self.target_assignment.save(update_fields=["referee", "manual_override_warning", "manual_override_reason", "locked", "updated_at"])
+
+        response = self.client.post(
+            reverse("designacions_update_assignment_async", args=[self.run.id, self.target_assignment.id]),
+            data=json.dumps({"referee_id": None, "note": "Sense assignar", "locked": False}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.target_assignment.refresh_from_db()
+        self.assertIsNone(self.target_assignment.referee_id)
+        self.assertFalse(self.target_assignment.locked)
+        self.assertFalse(self.target_assignment.manual_override_warning)
+        self.assertEqual(self.target_assignment.manual_override_reason, "")
+        self.assertEqual(payload["row_state"], "unassigned")
+        rebuild_map_delay_mock.assert_called_once_with(self.run.id)
+
+    @patch("designacions.tasks.rebuild_run_map", return_value="designacions/maps/run_test.html")
+    def test_rebuild_run_map_task_updates_map_status(self, rebuild_run_map_mock):
+        self.run.map_status = "queued"
+        self.run.save(update_fields=["map_status"])
+
+        result = rebuild_run_map_task.run(self.run.id)
+
+        self.run.refresh_from_db()
+        self.assertEqual(self.run.map_status, "ready")
+        self.assertEqual(result["run_id"], self.run.id)
+        rebuild_run_map_mock.assert_called_once()
