@@ -87,7 +87,16 @@ class Assignment(models.Model):
     referee = models.ForeignKey(Referee, on_delete=models.SET_NULL, null=True, blank=True, related_name="assignments")
     locked = models.BooleanField(default=False)
     note = models.CharField(max_length=255, null=True, blank=True)
+    manual_override_warning = models.BooleanField(default=False)
+    manual_override_reason = models.TextField(blank=True, default="")
     updated_at = models.DateTimeField(auto_now=True)
+
+    def save(self, *args, **kwargs):
+        if self.manual_override_warning is None:
+            self.manual_override_warning = False
+        if self.manual_override_reason is None:
+            self.manual_override_reason = ""
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.match.code} -> {self.referee_id}"

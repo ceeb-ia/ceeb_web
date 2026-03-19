@@ -88,6 +88,20 @@ def _combine_date_time(date_value, time_value):
     return pd.Timestamp(datetime.combine(normalized_date.date(), parsed_time))
 
 
+def _safe_position_int(value, default: int = -1) -> int:
+    try:
+        if pd.isna(value):
+            return default
+    except Exception:
+        pass
+    if value in (None, ""):
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def _build_tutor_working_id(row) -> str:
     key = "|".join(
         [
@@ -1037,7 +1051,10 @@ def main(path_disposicions: str, path_dades: str, task_id: str | None = None, ru
                     'Categoria': partit.get('Categoria', ''),
                     'Modalitat': partit.get('Modalitat', ''),
                     'Club Local': partit.get('Club Local', ''),
-                    'Classificació Equips': f"Pos Local: {int(partit.get('Posició Equip Local', -1))}, Pos Visitant: {int(partit.get('Posició Equip Visitant', -1))}",
+                    'Classificació Equips': (
+                        f"Pos Local: {_safe_position_int(partit.get('Posició Equip Local', -1))}, "
+                        f"Pos Visitant: {_safe_position_int(partit.get('Posició Equip Visitant', -1))}"
+                    ),
                     'Tutor Codi': tutor_codi,
                     'Tutor Nom': tutor_nom,
                     'Tutor Cognoms': tutor_cognoms,

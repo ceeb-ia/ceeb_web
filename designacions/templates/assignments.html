@@ -48,6 +48,28 @@
       overflow: hidden;
       text-overflow: ellipsis;
     }
+    .proposal-item{
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: .35rem .5rem;
+      background: #f8fafc;
+      margin-bottom: .35rem;
+      line-height: 1.25;
+    }
+    .proposal-rank{
+      font-weight: 700;
+      color: #0f4c81;
+      margin-right: .4rem;
+    }
+    .warning-box{
+      border: 1px solid #f2c94c;
+      background: #fff8db;
+      color: #7a5200;
+      border-radius: 8px;
+      padding: .35rem .5rem;
+      font-size: .85rem;
+      line-height: 1.3;
+    }
   </style>
 
   <div class="card-surface p-3">
@@ -55,10 +77,7 @@
       <div>
         <h2 class="mb-0">Assignacions (Run #{{ run.id }})</h2>
         <div class="text-muted small">
-          {% if run.result_summary %}
-            Assignats: {{ run.result_summary.assigned|default:counts.assigned }},
-            Partits sense assignar: {{ run.result_summary.unassigned_matches|default:counts.unassigned_matches }}
-          {% endif %}
+          Assignats: {{ counts.assigned }}, Partits sense assignar: {{ counts.unassigned_matches }}
         </div>
       </div>
 
@@ -167,14 +186,15 @@
                         <th>Nivell tutor</th>
                         <th>Disponibilitat tutor</th>
                         <th>Nota</th>
+                        <th>Warning</th>
                         <th>Accions</th>
                       </tr>
                     </thead>
                     <tbody>
                       {% for a in g.items %}
-                      {% with raw=availability_by_ref|get_item:g.referee.id %}
-                      
-                      <tr class="match-row"
+                      {% with raw=availability_by_assignment|get_item:a.id %}
+                       
+                      <tr class="match-row{% if a.manual_override_warning %} table-warning{% endif %}"
                           data-match="{{ a.match.code }} {{ a.match.club_local|default:'' }} {{ a.match.equip_local|default:'' }} {{ a.match.equip_visitant|default:'' }} {{ a.match.venue|default:'' }} {{ a.match.category|default:'' }}">
                         <td class="font-weight-bold">{{ a.match.code }}</td>
                         <td>{{ a.match.equip_local|default:"-" }}</td>
@@ -204,6 +224,14 @@
                             {% csrf_token %}
                             <input type="hidden" name="referee_id" value="{{ g.referee.id }}">
                             <input type="text" name="note" value="{{ a.note|default_if_none:'' }}" class="form-control form-control-sm w-100" />
+                        </td>
+
+                        <td style="min-width:240px;">
+                          {% if a.manual_override_warning %}
+                            <div class="warning-box">{{ a.manual_override_reason }}</div>
+                          {% else %}
+                            <span class="text-muted small">Sense warning</span>
+                          {% endif %}
                         </td>
 
                         <td style="min-width:260px;">
@@ -256,13 +284,15 @@
                 <th class="sortable" data-col="4">Hora <span class="sort-icon"></span></th>
                 <th class="sortable" data-col="5">Pista <span class="sort-icon"></span></th>
                 <th class="sortable" data-col="6">Categoria <span class="sort-icon"></span></th>
-                <th>Assignar</th>
+                <th>Millors Propostes</th>
+                <th>Assignacio manual</th>
                 <th>Nota</th>
                 <th>Accions</th>
               </tr>
             </thead>
             <tbody>
               {% for a in unassigned_matches %}
+              {% with proposals=eligible_proposals_by_assignment|get_item:a.id %}
               <tr class="unassigned-match-row"
                   data-match="{{ a.match.code }} {{ a.match.club_local|default:'' }} {{ a.match.equip_local|default:'' }} {{ a.match.equip_visitant|default:'' }} {{ a.match.venue|default:'' }} {{ a.match.category|default:'' }}">
                 <td class="font-weight-bold">{{ a.match.code }}</td>
@@ -273,13 +303,26 @@
                 <td>{{ a.match.venue|default:"-" }}</td>
                 <td class="text-center">{{ a.match.category|default:"-" }}</td>
 
+                <td style="min-width:280px;">
+                  {% if proposals %}
+                    {% for proposal in proposals %}
+                      <div class="proposal-item">
+                        <div><span class="proposal-rank">#{{ proposal.rank }}</span>{{ proposal.referee.code }} · {{ proposal.referee.name }}</div>
+                        <div class="text-muted small">Cost {{ proposal.cost|floatformat:0 }}</div>
+                      </div>
+                    {% endfor %}
+                  {% else %}
+                    <span class="text-muted small">Sense propostes valides</span>
+                  {% endif %}
+                </td>
+
                 <td style="min-width:260px;">
                   <form method="post" action="{% url 'designacions_update_assignment' run.id a.id %}" class="form-inline">
                     {% csrf_token %}
                     <select name="referee_id" class="form-control form-control-sm w-100">
                       <option value="">-- Sense assignar --</option>
                       {% for r in referees %}
-                        <option value="{{ r.id }}">{{ r.name }} ({{ r.code }})</option>
+                        <option value="{{ r.id }}">{{ r.code }} · {{ r.name }}</option>
                       {% endfor %}
                     </select>
                 </td>
@@ -293,8 +336,9 @@
                   </form>
                 </td>
               </tr>
+              {% endwith %}
               {% empty %}
-              <tr><td colspan="10" class="text-center text-muted">No hi ha partits pendents</td></tr>
+              <tr><td colspan="11" class="text-center text-muted">No hi ha partits pendents</td></tr>
               {% endfor %}
             </tbody>
           </table>

@@ -142,16 +142,18 @@ def parse_ceeb_xml(root):
 # ---------------------------------------------------------------------------
 
 def xml_to_dataframe(parsed, grup=None) -> pd.DataFrame:
+    nou_parsed = parsed
     if grup is not None:
         # Ens quedem amb el grup indicat
+        nou_parsed = {"grups": []}
         for g in parsed.get("grups", []):
             #print("Revisant grup:", g.get("info", {}).get("nomGrup"))
             if g.get("info", {}).get("nomGrup") == grup:
                 nou_parsed = {"grups": [g]}
                 #print("Grup seleccionat:", grup)
-    
+
     if not nou_parsed.get("grups", []):
-        raise ValueError("No s'ha trobat el grup especificat.")
+        return pd.DataFrame()
     frames = []
 
     for grup in nou_parsed.get("grups", []):
