@@ -4,13 +4,16 @@ from dataclasses import dataclass
 from datetime import date, datetime, time
 from functools import lru_cache
 
-from django.db.models import Count, Q
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-from ..models import Referee
 from .colors import color_per_tutor
+from .manual_assignment import (
+    build_run_mobility_summary,
+    build_run_scoped_referee_summaries,
+    get_run_referees_with_counts,
+)
 
 
 @dataclass(frozen=True)
@@ -122,16 +125,6 @@ def _availability_lookup_by_ref_and_date(run):
             lookup[key] = raw
     return lookup
 
-
-def _ordered_referees(run):
-    return (
-        Referee.objects.filter(active=True, availabilities__run=run)
-        .annotate(n=Count("assignments", filter=Q(assignments__run=run), distinct=True))
-        .distinct()
-        .order_by("name", "code")
-    )
-
-
 def _write_sheet(ws, columns: list[ColumnSpec], rows: list[dict]):
     for col_idx, spec in enumerate(columns, start=1):
         cell = ws.cell(row=1, column=col_idx, value=spec.header)
@@ -182,14 +175,17 @@ def export_run_to_excel(run, output_path: str):
         .filter(referee__isnull=True)
         .order_by("match__date", "match__hour_raw", "match__code")
     )
-    referees_with_counts = list(_ordered_referees(run))
-    unassigned_referees = [ref for ref in referees_with_counts if (ref.n or 0) == 0]
+    referees_with_counts = list(get_run_referees_with_counts(run))
+    referee_summaries = build_run_scoped_referee_summaries(run, referees_with_counts=referees_with_counts)
+    referee_summary_by_id = {summary.id: summary for summary in referee_summaries}
+    unassigned_referees = [ref for ref in referee_summaries if (ref.n or 0) == 0]
     needs_review_referees = [
         ref
-        for ref in referees_with_counts
+        for ref in referee_summaries
         if not (ref.level or "").strip()
     ]
     availability_by_ref_and_date = _availability_lookup_by_ref_and_date(run)
+    mobility_summary = build_run_mobility_summary(run)
 
     assigned_columns = [
         ColumnSpec("Tutor Codi", "tutor_code", 14, "center"),
@@ -212,6 +208,7 @@ def export_run_to_excel(run, output_path: str):
     group_index = 0
     for assignment in assigned_qs:
         referee = assignment.referee
+        referee_summary = referee_summary_by_id.get(referee.id, referee)
         match = assignment.match
         if referee.id != current_referee_id:
             current_referee_id = referee.id
@@ -224,7 +221,7 @@ def export_run_to_excel(run, output_path: str):
             {
                 "tutor_code": referee.code or "",
                 "tutor_name": referee.name or "",
-                "tutor_level": referee.level or "",
+                "tutor_level": referee_summary.level or "",
                 "tutor_start": _availability_time(
                     availability_by_ref_and_date.get((referee.id, match.date)),
                     "Hora Inici",
@@ -308,6 +305,40 @@ def export_run_to_excel(run, output_path: str):
         for referee in needs_review_referees
     ]
 
+    mobility_columns = [
+        ColumnSpec("Tipus", "type", 12, "center"),
+        ColumnSpec("Tutor Codi", "tutor_code", 14, "center"),
+        ColumnSpec("Tutor", "tutor_name", 24),
+        ColumnSpec("Motiu", "message", 44, wrap=True),
+        ColumnSpec("Clusters", "clusters", 18, wrap=True),
+        ColumnSpec("Partits", "match_codes", 28, wrap=True),
+        ColumnSpec("Override manual", "manual_override", 18, "center"),
+    ]
+    mobility_rows = [
+        {
+            "type": "warning",
+            "tutor_code": item.get("referee_code") or "",
+            "tutor_name": item.get("referee_name") or "",
+            "message": item.get("message") or "",
+            "clusters": ", ".join(item.get("clusters") or []),
+            "match_codes": ", ".join(item.get("match_codes") or []),
+            "manual_override": "No",
+        }
+        for item in mobility_summary.get("mobility_warnings", [])
+    ]
+    mobility_rows.extend(
+        {
+            "type": "error",
+            "tutor_code": item.get("referee_code") or "",
+            "tutor_name": item.get("referee_name") or "",
+            "message": item.get("message") or "",
+            "clusters": ", ".join(item.get("clusters") or []),
+            "match_codes": ", ".join(item.get("match_codes") or []),
+            "manual_override": "Si" if item.get("manual_override") else "No",
+        }
+        for item in mobility_summary.get("mobility_errors", [])
+    )
+
     wb = Workbook()
     ws_assigned = wb.active
     ws_assigned.title = "Assignacions"
@@ -321,6 +352,9 @@ def export_run_to_excel(run, output_path: str):
 
     ws_needs_review = wb.create_sheet("Tutors sense nivell")
     _write_sheet(ws_needs_review, needs_review_columns, needs_review_rows)
+
+    ws_mobility = wb.create_sheet("Validacions mobilitat")
+    _write_sheet(ws_mobility, mobility_columns, mobility_rows)
 
     wb.save(output_path)
     return output_path

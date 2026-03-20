@@ -61,6 +61,22 @@
       color: #0f4c81;
       margin-right: .4rem;
     }
+    .proposal-rank--1{
+      background: #fff4bf;
+      border-color: #f2c94c;
+      font-weight: 700;
+    }
+    .proposal-rank--1 .proposal-rank{ color: #8a6100; }
+    .proposal-rank--2{
+      background: #f4f6f8;
+      border-color: #c7ced6;
+    }
+    .proposal-rank--2 .proposal-rank{ color: #5f6b76; }
+    .proposal-rank--3{
+      background: #fcf0e8;
+      border-color: #d7a07b;
+    }
+    .proposal-rank--3 .proposal-rank{ color: #8a4d22; }
     .warning-box{
       border: 1px solid #f2c94c;
       background: #fff8db;
@@ -69,6 +85,43 @@
       padding: .35rem .5rem;
       font-size: .85rem;
       line-height: 1.3;
+    }
+    .quality-badge{
+      display:inline-block;
+      border-radius:999px;
+      padding:.1rem .45rem;
+      font-size:.72rem;
+      font-weight:700;
+      border:1px solid transparent;
+      text-transform:uppercase;
+      letter-spacing:.02em;
+    }
+    .quality-badge--recommended{ background:#e6f8eb; border-color:#9ed7ae; color:#146c2e; }
+    .quality-badge--acceptable{ background:#eef4ff; border-color:#b6c9f3; color:#224f97; }
+    .quality-badge--forced_by_constraints{ background:#fff4e5; border-color:#efc28b; color:#8a5400; }
+    .quality-badge--suspicious{ background:#fdecec; border-color:#e4a0a0; color:#9d1f1f; }
+    .quality-badge--manual_override{ background:#fff8db; border-color:#f2c94c; color:#7a5200; }
+    .explanation-box{
+      border: 1px solid #d8dee6;
+      border-radius: 8px;
+      background: #fbfcfe;
+      padding: .45rem .55rem;
+      line-height: 1.3;
+    }
+    .explanation-summary{
+      font-size: .83rem;
+      color: #374151;
+    }
+    .explanation-alternatives{
+      margin-top: .4rem;
+      font-size: .78rem;
+    }
+    .proposal-meta{
+      display:flex;
+      flex-wrap:wrap;
+      gap:.35rem;
+      align-items:center;
+      margin-bottom:.2rem;
     }
   </style>
 
@@ -79,7 +132,9 @@
         <h2 class="mb-0">Assignacions (Run #{{ run.id }})</h2>
         <div class="text-muted small" id="assignmentCountsSummary">
           Assignats: <span id="countAssigned">{{ counts.assigned }}</span>,
-          Partits sense assignar: <span id="countUnassignedMatches">{{ counts.unassigned_matches }}</span>
+          Partits sense assignar: <span id="countUnassignedMatches">{{ counts.unassigned_matches }}</span>,
+          Warnings mobilitat: <span id="countMobilityWarnings">{{ counts.mobility_warnings }}</span>,
+          Errors mobilitat: <span id="countMobilityErrors">{{ counts.mobility_errors }}</span>
         </div>
         <div class="small mt-1 {% if run.map_status == 'ready' %}text-muted{% elif run.map_status == 'failed' %}text-danger{% else %}text-warning{% endif %}" id="mapStatusSummary">
           Estat del mapa: <span id="mapStatusLabel">{{ run.map_status }}</span>
@@ -98,6 +153,21 @@
         </a>
       </div>
     </div>
+
+    {% if mobility_summary.mobility_error_count %}
+    <div class="alert alert-danger mb-3" id="mobilityErrorBanner">
+      S'han detectat {{ mobility_summary.mobility_error_count }} errors de mobilitat a les assignacions finals.
+    </div>
+    {% else %}
+    <div class="alert alert-danger mb-3 d-none" id="mobilityErrorBanner"></div>
+    {% endif %}
+    {% if mobility_summary.mobility_warning_count %}
+    <div class="alert alert-warning mb-3" id="mobilityWarningBanner">
+      Hi ha {{ mobility_summary.mobility_warning_count }} tutors atenent diferents clusters de forma valida.
+    </div>
+    {% else %}
+    <div class="alert alert-warning mb-3 d-none" id="mobilityWarningBanner"></div>
+    {% endif %}
 
     <!-- NAV TABS (BS4) -->
     <ul class="nav nav-tabs" id="asgTabs" role="tablist">
@@ -165,6 +235,8 @@
                     </div>
                     <div class="tutor-sub">
                       {{ g.total }} partits
+                      {% if g.mobility_warning_count %} <span class="badge badge-warning ml-1">{{ g.mobility_warning_count }} cluster</span>{% endif %}
+                      {% if g.mobility_error_count %} <span class="badge badge-danger ml-1">{{ g.mobility_error_count }} error mobilitat</span>{% endif %}
                       {% if g.locked %} · <span class="text-warning font-weight-bold">{{ g.locked }} bloquejats</span>{% endif %}
                     </div>
                   </div>
@@ -192,17 +264,26 @@
                         <th>Disponibilitat tutor</th>
                         <th>Nota</th>
                         <th>Warning</th>
+                        <th>Explicacio</th>
                         <th>Accions</th>
                       </tr>
                     </thead>
                     <tbody>
                       {% for a in g.items %}
-                      {% with raw=availability_by_assignment|get_item:a.id %}
+                      {% with raw=availability_by_assignment|get_item:a.id mobility_errors=mobility_error_assignment_ids|get_item:a.id mobility_warnings=mobility_warning_assignment_ids|get_item:a.id %}
                        
-                      <tr class="match-row assigned-match-row{% if a.manual_override_warning %} table-warning{% endif %}"
+                      <tr class="match-row assigned-match-row{% if a.manual_override_warning %} table-warning{% endif %}{% if mobility_errors %} table-danger{% endif %}"
                           data-assignment-id="{{ a.id }}"
+                          data-assignment-explanation-url="{% url 'designacions_assignment_explanation' run.id a.id %}"
                           data-match="{{ a.match.code }} {{ a.match.club_local|default:'' }} {{ a.match.equip_local|default:'' }} {{ a.match.equip_visitant|default:'' }} {{ a.match.venue|default:'' }} {{ a.match.category|default:'' }}">
-                        <td class="font-weight-bold">{{ a.match.code }}</td>
+                        <td class="font-weight-bold">
+                          {{ a.match.code }}
+                          {% if mobility_errors %}
+                            <span class="badge badge-danger ml-1">Mobilitat</span>
+                          {% elif mobility_warnings %}
+                            <span class="badge badge-warning ml-1">Cluster</span>
+                          {% endif %}
+                        </td>
                         <td>{{ a.match.equip_local|default:"-" }}</td>
                         <td>{{ a.match.equip_visitant|default:"-" }}</td>
                         <td>{% if a.match.date %}{{ a.match.date|date:"d/m/Y" }}{% else %}-{% endif %}</td>
@@ -238,9 +319,24 @@
                         <td style="min-width:240px;" class="assignment-warning-cell">
                           {% if a.manual_override_warning %}
                             <div class="warning-box">{{ a.manual_override_reason }}</div>
+                          {% elif mobility_errors %}
+                            {% with first_error=mobility_errors|first %}
+                              <div class="warning-box">{{ first_error|get_item:"message" }}</div>
+                            {% endwith %}
+                          {% elif mobility_warnings %}
+                            {% with first_warning=mobility_warnings|first %}
+                              <div class="warning-box">{{ first_warning|get_item:"message" }}</div>
+                            {% endwith %}
                           {% else %}
                             <span class="text-muted small">Sense warning</span>
                           {% endif %}
+                        </td>
+
+                        <td style="min-width:320px;" class="assignment-explanation-cell">
+                          <button type="button" class="btn btn-sm btn-outline-secondary assignment-explain-btn">Veure</button>
+                          <div class="assignment-explanation-details d-none mt-2">
+                            <span class="text-muted small">Carrega l'explicacio sota demanda.</span>
+                          </div>
                         </td>
 
                         <td style="min-width:260px;">
@@ -284,7 +380,8 @@
         </div>
 
         <div class="asg-table-scroll" style="overflow-x:auto;">
-          <table class="table table-striped table-bordered table-sm align-middle">
+          <table class="table table-striped table-bordered table-sm align-middle"
+                 data-manual-suggestions-bulk-url="{% url 'designacions_manual_assignment_suggestions_bulk' run.id %}">
             <thead class="thead-light">
               <tr>
                 <th class="sortable" data-col="0">Codi <span class="sort-icon"></span></th>
@@ -305,6 +402,9 @@
               <tr class="unassigned-match-row"
                   data-assignment-id="{{ a.id }}"
                   data-manual-options-url="{% url 'designacions_manual_assignment_options' run.id a.id %}"
+                  data-suggestions-state="idle"
+                  data-rank1-referee-id=""
+                  data-last-suggestions-revision="0"
                   data-match="{{ a.match.code }} {{ a.match.club_local|default:'' }} {{ a.match.equip_local|default:'' }} {{ a.match.equip_visitant|default:'' }} {{ a.match.venue|default:'' }} {{ a.match.category|default:'' }}">
                 <td class="font-weight-bold">{{ a.match.code }}</td>
                 <td>{{ a.match.equip_local|default:"-" }}</td>
@@ -700,7 +800,9 @@
         countUnassignedMatches: counts.unassigned_matches,
         countUnassignedMatchesBadge: counts.unassigned_matches,
         countUnassignedRefereesBadge: counts.unassigned_referees,
-        countNeedsReviewBadge: counts.needs_review_referees
+        countNeedsReviewBadge: counts.needs_review_referees,
+        countMobilityWarnings: counts.mobility_warnings,
+        countMobilityErrors: counts.mobility_errors
       };
       Object.keys(mappings).forEach(function(id){
         var el = document.getElementById(id);
@@ -716,6 +818,24 @@
       if (notice) notice.style.display = status === 'ready' ? 'none' : '';
     }
 
+    function updateMobilitySummary(summary){
+      if (!summary) return;
+
+      var errorBanner = document.getElementById('mobilityErrorBanner');
+      if (errorBanner) {
+        var errorCount = summary.mobility_error_count || 0;
+        errorBanner.textContent = "S'han detectat " + errorCount + " errors de mobilitat a les assignacions finals.";
+        errorBanner.classList.toggle('d-none', !errorCount);
+      }
+
+      var warningBanner = document.getElementById('mobilityWarningBanner');
+      if (warningBanner) {
+        var warningCount = summary.mobility_warning_count || 0;
+        warningBanner.textContent = 'Hi ha ' + warningCount + ' tutors atenent diferents clusters de forma valida.';
+        warningBanner.classList.toggle('d-none', !warningCount);
+      }
+    }
+
     function renderWarningCell(row, warning){
       var cell = row ? row.querySelector('.assignment-warning-cell') : null;
       if (!cell) return;
@@ -729,19 +849,126 @@
       }
     }
 
+    var suggestionTable = document.querySelector('#t2 table[data-manual-suggestions-bulk-url]');
+    var suggestionBulkUrl = suggestionTable ? suggestionTable.getAttribute('data-manual-suggestions-bulk-url') : '';
+    var suggestionQueue = [];
+    var queuedSuggestionIds = {};
+    var inflightSuggestionIds = {};
+    var suggestionRequestsInFlight = 0;
+    var suggestionRevision = 0;
+    var SUGGESTION_BATCH_SIZE = 10;
+    var SUGGESTION_MAX_CONCURRENCY = 2;
+
+    function escapeHtml(value){
+      return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function findUnassignedRowByAssignmentId(assignmentId){
+      return document.querySelector('tr.unassigned-match-row[data-assignment-id="' + assignmentId + '"]');
+    }
+
+    function getSuggestionRevision(row){
+      return parseInt((row && row.dataset.lastSuggestionsRevision) || '0', 10) || 0;
+    }
+
+    function markRowSuggestionsState(row, state){
+      if (!row) return;
+      row.dataset.suggestionsState = state;
+    }
+
+    function qualityLabelText(label){
+      var labels = {
+        recommended: 'Recomanada',
+        acceptable: 'Acceptable',
+        forced_by_constraints: 'Forcada',
+        suspicious: 'Sospitosa',
+        manual_override: 'Manual'
+      };
+      return labels[label] || label || '';
+    }
+
+    function levelFitText(levelFit){
+      var labels = {
+        ideal: 'Encaix ideal',
+        slightly_underleveled: 'Lleugerament per sota',
+        slightly_overleveled: 'Lleugerament per sobre',
+        clearly_underleveled: 'Clarament per sota',
+        clearly_overleveled: 'Clarament per sobre',
+        unscorable: 'No puntuable'
+      };
+      return labels[levelFit] || levelFit || '';
+    }
+
+    function renderQualityBadge(label){
+      if (!label) return '';
+      return '<span class="quality-badge quality-badge--' + escapeHtml(label) + '">' + escapeHtml(qualityLabelText(label)) + '</span>';
+    }
+
+    function renderAssignmentExplanation(row, payload){
+      var cell = row ? row.querySelector('.assignment-explanation-cell') : null;
+      if (!cell || !payload || !payload.explanation) return;
+
+      var details = cell.querySelector('.assignment-explanation-details');
+      if (!details) return;
+
+      var explanation = payload.explanation;
+      var alternatives = payload.better_alternatives || [];
+      var alternativesHtml = '';
+      if (alternatives.length) {
+        alternativesHtml = '<div class="explanation-alternatives"><div class="font-weight-bold mb-1">Alternatives millors</div>' +
+          alternatives.map(function(item){
+            return '<div class="mb-1">' +
+              renderQualityBadge(item.quality_label) +
+              ' <span class="font-weight-bold">' + escapeHtml(item.code) + '</span>' +
+              ' <span class="text-muted">' + escapeHtml(item.name) + '</span>' +
+              '<div class="text-muted small">' + escapeHtml(item.selection_reason_summary || '') + '</div>' +
+            '</div>';
+          }).join('') +
+        '</div>';
+      }
+
+      details.innerHTML = '' +
+        '<div class="explanation-box">' +
+          '<div class="proposal-meta">' +
+            renderQualityBadge(explanation.quality_label) +
+            '<span class="text-muted small">' + escapeHtml(levelFitText(explanation.level_fit)) + '</span>' +
+          '</div>' +
+          '<div class="explanation-summary">' + escapeHtml(explanation.selection_reason_summary || '') + '</div>' +
+          alternativesHtml +
+        '</div>';
+      details.classList.remove('d-none');
+      row.dataset.explanationLoaded = '1';
+      var button = cell.querySelector('.assignment-explain-btn');
+      if (button) button.textContent = 'Amagar';
+    }
+
     function renderProposals(row, proposals){
       var cell = row ? row.querySelector('.manual-proposals-cell') : null;
       if (!cell) return;
-      if (!proposals || !proposals.length) {
+      if (!Array.isArray(proposals)) {
+        cell.innerHTML = '<span class="text-muted small">Carrega les propostes en obrir el selector.</span>';
+        return;
+      }
+      if (!proposals.length) {
         cell.innerHTML = '<span class="text-muted small">Sense propostes valides</span>';
         return;
       }
       cell.innerHTML = proposals.map(function(proposal){
         return '' +
-          '<div class="proposal-item">' +
-            '<div><span class="proposal-rank">#' + proposal.rank + '</span>' + proposal.code + ' · ' + proposal.name + '</div>' +
-            '<div class="text-muted small">Disponibilitat ' + (proposal.availability_label || '-') + '</div>' +
-            '<div class="text-muted small">Nivell ' + (proposal.level || '-') + '</div>' +
+          '<div class="proposal-item' + (proposal.rank ? (' proposal-rank--' + proposal.rank) : '') + '">' +
+            '<div><span class="proposal-rank">#' + escapeHtml(proposal.rank || '') + '</span>' + escapeHtml(proposal.code) + ' · ' + escapeHtml(proposal.name) + '</div>' +
+            '<div class="proposal-meta">' +
+              renderQualityBadge(proposal.quality_label) +
+              '<span class="text-muted small">' + escapeHtml(levelFitText(proposal.level_fit)) + '</span>' +
+            '</div>' +
+            '<div class="text-muted small">Disponibilitat ' + escapeHtml(proposal.availability_label || '-') + '</div>' +
+            '<div class="text-muted small">Nivell ' + escapeHtml(proposal.level || '-') + '</div>' +
+            '<div class="text-muted small">' + escapeHtml(proposal.selection_reason_summary || '') + '</div>' +
           '</div>';
       }).join('');
     }
@@ -757,6 +984,221 @@
       select.innerHTML = options.join('');
     }
 
+    function loadAssignmentExplanation(row){
+      if (!row) return Promise.resolve();
+      var url = row.getAttribute('data-assignment-explanation-url');
+      var cell = row.querySelector('.assignment-explanation-cell');
+      if (!url || !cell) return Promise.resolve();
+
+      var details = cell.querySelector('.assignment-explanation-details');
+      if (!details) return Promise.resolve();
+
+      if (row.dataset.explanationLoaded === '1') {
+        details.classList.toggle('d-none');
+        var existingButton = cell.querySelector('.assignment-explain-btn');
+        if (existingButton) {
+          existingButton.textContent = details.classList.contains('d-none') ? 'Veure' : 'Amagar';
+        }
+        return Promise.resolve();
+      }
+
+      if (row.dataset.explanationLoading === '1') {
+        return Promise.resolve();
+      }
+
+      row.dataset.explanationLoading = '1';
+      details.classList.remove('d-none');
+      details.innerHTML = '<span class="text-muted small">Carregant explicacio...</span>';
+
+      return fetch(url, {
+        headers: {'X-Requested-With': 'XMLHttpRequest'}
+      })
+        .then(function(response){
+          return response.json().then(function(data){
+            if (!response.ok) throw data;
+            return data;
+          });
+        })
+        .then(function(payload){
+          renderAssignmentExplanation(row, payload);
+        })
+        .catch(function(error){
+          details.innerHTML = '<span class="text-danger small">' + escapeHtml((error && error.message) || "No s'ha pogut carregar l'explicacio.") + '</span>';
+        })
+        .finally(function(){
+          delete row.dataset.explanationLoading;
+        });
+    }
+
+    function clearSuggestionQueue(){
+      suggestionQueue = [];
+      queuedSuggestionIds = {};
+    }
+
+    function enqueueSuggestionRows(rows, options){
+      options = options || {};
+      var revision = options.revision || 0;
+      var prepend = !!options.prepend;
+      var idsToAdd = [];
+
+      (rows || []).forEach(function(row){
+        if (!row || !row.isConnected) return;
+        var assignmentId = row.getAttribute('data-assignment-id');
+        if (!assignmentId) return;
+
+        if (revision) {
+          row.dataset.lastSuggestionsRevision = String(revision);
+        }
+
+        markRowSuggestionsState(row, 'stale');
+        if (queuedSuggestionIds[assignmentId] || inflightSuggestionIds[assignmentId]) {
+          return;
+        }
+        queuedSuggestionIds[assignmentId] = true;
+        idsToAdd.push(assignmentId);
+      });
+
+      if (!idsToAdd.length) return;
+      suggestionQueue = prepend ? idsToAdd.concat(suggestionQueue) : suggestionQueue.concat(idsToAdd);
+      pumpSuggestionQueue();
+    }
+
+    function applySuggestionResponseItem(row, item, revision){
+      if (!row) return;
+      if (getSuggestionRevision(row) !== revision) {
+        enqueueSuggestionRows([row], {revision: getSuggestionRevision(row), prepend: true});
+        return;
+      }
+      row.dataset.rank1RefereeId = item && item.rank_1_referee_id ? String(item.rank_1_referee_id) : '';
+      renderProposals(row, item && item.status === 'ok' ? (item.top_proposals || []) : []);
+      markRowSuggestionsState(row, 'loaded');
+    }
+
+    function fetchSuggestionBatch(batchIds, revision){
+      if (!suggestionBulkUrl || !batchIds.length) return;
+
+      suggestionRequestsInFlight += 1;
+      batchIds.forEach(function(assignmentId){
+        var row = findUnassignedRowByAssignmentId(assignmentId);
+        if (!row) return;
+        delete queuedSuggestionIds[assignmentId];
+        inflightSuggestionIds[assignmentId] = true;
+        markRowSuggestionsState(row, 'loading');
+      });
+
+      fetch(suggestionBulkUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': getCsrfToken(document.querySelector('.js-assignment-form')),
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: JSON.stringify({
+          assignment_ids: batchIds.map(function(id){ return parseInt(id, 10); }),
+          limit: 3
+        })
+      })
+        .then(function(response){
+          return response.json().then(function(data){
+            if (!response.ok) throw data;
+            return data;
+          });
+        })
+        .then(function(payload){
+          var itemsByAssignmentId = {};
+          ((payload && payload.items) || []).forEach(function(item){
+            itemsByAssignmentId[String(item.assignment_id)] = item;
+          });
+
+          batchIds.forEach(function(assignmentId){
+            delete inflightSuggestionIds[assignmentId];
+            applySuggestionResponseItem(
+              findUnassignedRowByAssignmentId(assignmentId),
+              itemsByAssignmentId[String(assignmentId)] || {
+                assignment_id: parseInt(assignmentId, 10),
+                top_proposals: [],
+                rank_1_referee_id: null,
+                status: 'missing_assignment'
+              },
+              revision
+            );
+          });
+        })
+        .catch(function(){
+          batchIds.forEach(function(assignmentId){
+            delete inflightSuggestionIds[assignmentId];
+            var row = findUnassignedRowByAssignmentId(assignmentId);
+            if (row) markRowSuggestionsState(row, 'stale');
+          });
+          showAlert("No s'han pogut carregar les suggerencies manuals.", 'warning');
+        })
+        .finally(function(){
+          suggestionRequestsInFlight -= 1;
+          pumpSuggestionQueue();
+        });
+    }
+
+    function pumpSuggestionQueue(){
+      if (!suggestionBulkUrl) return;
+      while (suggestionRequestsInFlight < SUGGESTION_MAX_CONCURRENCY && suggestionQueue.length) {
+        var batchIds = [];
+        var batchRevision = null;
+
+        while (suggestionQueue.length && batchIds.length < SUGGESTION_BATCH_SIZE) {
+          var assignmentId = suggestionQueue.shift();
+          var row = findUnassignedRowByAssignmentId(assignmentId);
+          if (!row) {
+            delete queuedSuggestionIds[assignmentId];
+            continue;
+          }
+
+          var rowRevision = getSuggestionRevision(row);
+          if (batchRevision === null) {
+            batchRevision = rowRevision;
+          }
+          if (rowRevision !== batchRevision && batchIds.length) {
+            suggestionQueue.unshift(assignmentId);
+            break;
+          }
+          batchIds.push(assignmentId);
+        }
+
+        if (!batchIds.length) {
+          break;
+        }
+        fetchSuggestionBatch(batchIds, batchRevision || suggestionRevision);
+      }
+    }
+
+    function scheduleInitialSuggestionPreload(){
+      if (!suggestionBulkUrl) return;
+      suggestionRevision += 1;
+      enqueueSuggestionRows(Array.from(document.querySelectorAll('tr.unassigned-match-row')), {
+        revision: suggestionRevision
+      });
+    }
+
+    function markAllUnassignedRowsStaleAndRefresh(prioritizedRefereeId){
+      if (!suggestionBulkUrl) return;
+      suggestionRevision += 1;
+      clearSuggestionQueue();
+
+      var rows = Array.from(document.querySelectorAll('tr.unassigned-match-row'));
+      var prioritizedRows = [];
+      var remainingRows = [];
+
+      rows.forEach(function(row){
+        if (prioritizedRefereeId && row.dataset.rank1RefereeId === String(prioritizedRefereeId)) {
+          prioritizedRows.push(row);
+        } else {
+          remainingRows.push(row);
+        }
+      });
+
+      enqueueSuggestionRows(prioritizedRows, {revision: suggestionRevision});
+      enqueueSuggestionRows(remainingRows, {revision: suggestionRevision});
+    }
+
     function loadManualOptions(row, query){
       if (!row) return Promise.resolve();
       var url = row.getAttribute('data-manual-options-url');
@@ -768,9 +1210,16 @@
       return fetch(url + (params.toString() ? ('?' + params.toString()) : ''), {
         headers: {'X-Requested-With': 'XMLHttpRequest'}
       })
-        .then(function(response){ return response.json(); })
+        .then(function(response){
+          return response.json().then(function(data){
+            if (!response.ok) throw data;
+            return data;
+          });
+        })
         .then(function(payload){
           renderProposals(row, payload.top_proposals);
+          row.dataset.rank1RefereeId = payload.top_proposals && payload.top_proposals.length ? String(payload.top_proposals[0].referee_id) : '';
+          markRowSuggestionsState(row, 'loaded');
           renderRefereeOptions(row.querySelector('select[name="referee_id"]'), payload.compatible_referees);
           row.dataset.optionsLoaded = '1';
         })
@@ -808,6 +1257,7 @@
           showAlert(data.message || 'Canvi guardat.', data.warning && data.warning.active ? 'warning' : 'success');
           updateCounts(data.counts);
           updateMapStatus(data.map_status);
+          updateMobilitySummary(data.mobility_summary);
 
           var row = form.closest('tr');
           if (!row) return;
@@ -815,10 +1265,16 @@
 
           if (data.row_state === 'assigned' && row.classList.contains('unassigned-match-row')) {
             row.remove();
+            if (data.refresh_suggestions) {
+              markAllUnassignedRowsStaleAndRefresh(data.assigned_referee_id);
+            }
             return;
           }
           if (data.row_state === 'unassigned' && row.classList.contains('assigned-match-row')) {
             row.remove();
+          }
+          if (data.refresh_suggestions) {
+            markAllUnassignedRowsStaleAndRefresh(data.assigned_referee_id);
           }
         })
         .catch(function(error){
@@ -857,6 +1313,12 @@
       }
     });
 
+    document.querySelectorAll('.assignment-explain-btn').forEach(function(button){
+      button.addEventListener('click', function(){
+        loadAssignmentExplanation(button.closest('tr.assigned-match-row'));
+      });
+    });
+
     $(function () {
       var $m = $('#confirmUnassignModal');
       if ($m.length) $m.appendTo('body');
@@ -893,13 +1355,22 @@
             updateMapStatus(data.map_status);
             var row = document.querySelector('tr[data-assignment-id="' + data.assignment_id + '"]');
             if (row) row.remove();
+            if (data.refresh_suggestions) {
+              markAllUnassignedRowsStaleAndRefresh(data.assigned_referee_id);
+            }
             $('#confirmUnassignModal').modal('hide');
           })
           .catch(function(error){
             showAlert((error && error.message) || "No s'ha pogut desassignar el partit.", 'danger');
           });
       });
+
+      $('a[data-toggle="tab"][href="#t2"]').on('shown.bs.tab', function () {
+        pumpSuggestionQueue();
+      });
     });
+
+    scheduleInitialSuggestionPreload();
 
     var tutorInput = document.getElementById('searchTutor');
     var matchInput = document.getElementById('searchMatch');
@@ -956,6 +1427,9 @@
           sortState = {col: col, asc: asc};
           sortTable(col, asc);
           updateSortIcons(headers);
+          if (suggestionBulkUrl) {
+            pumpSuggestionQueue();
+          }
         });
       });
 

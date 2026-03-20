@@ -1,18 +1,24 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import date, datetime, time, timedelta
+from collections import Counter
+from dataclasses import dataclass
+from datetime import date, datetime, time
 
 from django.db.models import Count, Q
 import pandas as pd
 
-from ..main_fixed import _combine_date_time
 from ..models import Address, AddressCluster, Assignment, Referee
-
-
-DEFAULT_AVAILABILITY_END_BUFFER_MIN = 60
-DEFAULT_GAP_SAME_PITCH_MIN = 60
-DEFAULT_GAP_DIFF_PITCH_MIN = 75
+from .assignment_feasibility import (
+    DEFAULT_AVAILABILITY_END_BUFFER_MIN,
+    DEFAULT_GAP_DIFF_CLUSTER_MIN,
+    DEFAULT_GAP_DIFF_PITCH_MIN,
+    DEFAULT_GAP_SAME_PITCH_MIN,
+    availability_covers_descriptors,
+    build_match_descriptor,
+    combine_date_time,
+    inspect_mobility_transitions,
+)
 
 TUTOR_LEVEL_ORDER = ["NIVELLA1", "NIVELLB1", "NIVELLC1", "NIVELLD1", "D"]
 MATCH_LEVEL_ORDER = [
@@ -33,8 +39,10 @@ MATCH_LEVEL_ORDER = [
 WARNING_MESSAGES = {
     "modality_mismatch": "Modalitat diferent de la del partit.",
     "outside_availability_window": "Fora de la franja de disponibilitat del tutor.",
-    "time_conflict_same_pitch": "Conflicte horari amb un altre partit a la mateixa pista.",
-    "time_conflict_diff_pitch": "Conflicte horari amb un altre partit en una altra pista.",
+    "same_cluster_gap_violation": "Gap insuficient per atendre dos partits dins del mateix cluster.",
+    "cross_cluster_gap_violation": "Gap insuficient per canviar de cluster.",
+    "cross_cluster_without_vehicle": "Canvi de cluster no permes per a un tutor sense vehicle.",
+    "missing_cluster_for_mobility_validation": "Falta cluster per validar la mobilitat del tutor.",
     "missing_availability_for_day": "Sense disponibilitat registrada per al dia del partit.",
     "missing_match_datetime": "No es pot validar l'horari del partit.",
 }
@@ -46,6 +54,19 @@ REASON_MESSAGES = {
 
 _FAVORITE_TUTOR_CODE_FRAGMENT = "5413"
 _FAVORITE_CLUSTER_IDS = {"12", "13", "9", "6", "10", "15"}
+LOAD_BALANCING_PENALTY_PER_ASSIGNMENT = 50
+
+
+@dataclass(frozen=True)
+class RunScopedRefereeSummary:
+    referee: Referee
+    id: int
+    code: str
+    name: str
+    level: str
+    modality: str
+    transport: str
+    n: int
 
 
 def _normalize_text(value) -> str:
@@ -54,6 +75,69 @@ def _normalize_text(value) -> str:
 
 def _normalized_modality(value) -> str:
     return _normalize_text(value).lower()
+
+
+def _referee_instance(referee_like):
+    return getattr(referee_like, "referee", referee_like)
+
+
+def _referee_field(referee_like, field: str, default=""):
+    value = getattr(referee_like, field, None)
+    if value not in (None, ""):
+        return value
+    return getattr(_referee_instance(referee_like), field, default)
+
+
+def _ordered_run_availability_rows(run):
+    rows = []
+    for availability in run.availabilities.select_related("referee").all():
+        raw = availability.raw or {}
+        availability_date = _parse_date_value(raw.get("Data"))
+        start = _parse_time_value(raw.get("Hora Inici"))
+        rows.append((availability.referee_id, availability_date or date.max, start or time.max, availability.id, raw))
+    rows.sort(key=lambda item: (item[0], item[1], item[2], item[3]))
+    grouped = defaultdict(list)
+    for referee_id, _availability_date, _start, _availability_id, raw in rows:
+        grouped[referee_id].append(raw)
+    return grouped
+
+
+def _resolve_run_scoped_field(raw_rows: list[dict], key: str | tuple[str, ...], fallback: str = "") -> str:
+    if not raw_rows:
+        return _normalize_text(fallback)
+
+    keys = (key,) if isinstance(key, str) else key
+    present_entries = []
+    for index, raw in enumerate(raw_rows):
+        for candidate in keys:
+            if candidate in raw:
+                present_entries.append((_normalize_text(raw.get(candidate)), index))
+                break
+
+    if not present_entries:
+        if any("transport" in _normalize_text(candidate).lower() for candidate in keys):
+            for index, raw in enumerate(raw_rows):
+                for raw_key, raw_value in raw.items():
+                    normalized_key = _normalize_text(raw_key).lower()
+                    if "mitj" in normalized_key and "transport" in normalized_key:
+                        present_entries.append((_normalize_text(raw_value), index))
+                        break
+        if not present_entries:
+            return _normalize_text(fallback)
+
+    non_empty_values = [value for value, _index in present_entries if value]
+    if not non_empty_values:
+        return ""
+
+    counts = Counter(non_empty_values)
+    first_indexes = {}
+    for value, index in present_entries:
+        if value and value not in first_indexes:
+            first_indexes[value] = index
+    max_count = max(counts.values())
+    candidates = [value for value, count in counts.items() if count == max_count]
+    candidates.sort(key=lambda value: (first_indexes.get(value, float("inf")), value))
+    return candidates[0]
 
 
 def _parse_date_value(value):
@@ -96,7 +180,7 @@ def _parse_time_value(value):
 
 
 def _match_datetime(match):
-    return _combine_date_time(match.date, match.hour_raw)
+    return combine_date_time(match.date, match.hour_raw)
 
 
 def _config_int(run, key: str, default: int) -> int:
@@ -114,6 +198,59 @@ def get_run_referees_with_counts(run):
         .distinct()
         .order_by("code", "name")
     )
+
+
+def _build_run_scoped_referee_summaries_legacy(run, referees_with_counts=None):
+    return build_run_scoped_referee_summaries(run, referees_with_counts=referees_with_counts)
+
+    referees_with_counts = list(referees_with_counts or get_run_referees_with_counts(run))
+    availability_rows_by_ref = _ordered_run_availability_rows(run)
+    summaries = []
+    for referee in referees_with_counts:
+        raw_rows = availability_rows_by_ref.get(referee.id, [])
+        summaries.append(
+            RunScopedRefereeSummary(
+                referee=referee,
+                id=referee.id,
+                code=referee.code or "",
+                name=referee.name or "",
+                level=_resolve_run_scoped_field(raw_rows, "Nivell", fallback=referee.level or ""),
+                modality=_resolve_run_scoped_field(raw_rows, "Modalitat", fallback=referee.modality or ""),
+                transport=_resolve_run_scoped_field(raw_rows, "Mitjà de Transport", fallback=referee.transport or ""),
+                n=referee.n or 0,
+            )
+        )
+    return summaries
+
+
+def build_run_scoped_referee_summaries(run, referees_with_counts=None):
+    referees_with_counts = list(referees_with_counts or get_run_referees_with_counts(run))
+    availability_rows_by_ref = _ordered_run_availability_rows(run)
+    summaries = []
+    for referee in referees_with_counts:
+        raw_rows = availability_rows_by_ref.get(referee.id, [])
+        summaries.append(
+            RunScopedRefereeSummary(
+                referee=referee,
+                id=referee.id,
+                code=referee.code or "",
+                name=referee.name or "",
+                level=_resolve_run_scoped_field(raw_rows, "Nivell", fallback=referee.level or ""),
+                modality=_resolve_run_scoped_field(raw_rows, "Modalitat", fallback=referee.modality or ""),
+                transport=_resolve_run_scoped_field(
+                    raw_rows,
+                    ("Mitjà de Transport", "MitjÃ  de Transport"),
+                    fallback=referee.transport or "",
+                ),
+                n=referee.n or 0,
+            )
+        )
+    return summaries
+
+
+def build_run_scoped_referee_summary_by_id(run, referees_with_counts=None):
+    summaries = build_run_scoped_referee_summaries(run, referees_with_counts=referees_with_counts)
+    return {summary.id: summary for summary in summaries}
 
 
 def build_availability_lookup_by_ref_and_date(run):
@@ -201,7 +338,7 @@ def build_cluster_by_match_id(run):
 
 
 def build_referee_options_by_assignment(run, assignments, referees_with_counts=None):
-    referees_with_counts = list(referees_with_counts or get_run_referees_with_counts(run))
+    referees_with_counts = list(referees_with_counts or build_run_scoped_referee_summaries(run))
     by_modality = defaultdict(list)
     for referee in referees_with_counts:
         by_modality[_normalized_modality(referee.modality)].append(referee)
@@ -215,16 +352,19 @@ def build_referee_options_by_assignment(run, assignments, referees_with_counts=N
 
 def build_manual_assignment_context(run, referees_with_counts=None):
     referees_with_counts = list(referees_with_counts or get_run_referees_with_counts(run))
+    referee_summaries = build_run_scoped_referee_summaries(run, referees_with_counts=referees_with_counts)
     availability_lookup = build_availability_lookup_by_ref_and_date(run)
     assignments_by_referee = build_assigned_by_referee(run)
     cluster_by_match_id = build_cluster_by_match_id(run)
     referees_by_assignment = build_referee_options_by_assignment(
         run,
         run.assignments.select_related("match").all(),
-        referees_with_counts=referees_with_counts,
+        referees_with_counts=referee_summaries,
     )
     return {
         "referees_with_counts": referees_with_counts,
+        "referee_summaries": referee_summaries,
+        "referee_summaries_by_id": {summary.id: summary for summary in referee_summaries},
         "availability_lookup": availability_lookup,
         "assignments_by_referee": assignments_by_referee,
         "cluster_by_match_id": cluster_by_match_id,
@@ -233,79 +373,129 @@ def build_manual_assignment_context(run, referees_with_counts=None):
 
 
 def _availability_covers_match(raw: dict | None, match, availability_end_buffer_min: int) -> bool:
-    if not isinstance(raw, dict):
-        return False
-    match_dt = _match_datetime(match)
-    if match_dt is None or pd.isna(match_dt):
-        return False
-
-    start = _parse_time_value(raw.get("Hora Inici"))
-    end = _parse_time_value(raw.get("Hora Fi"))
-    availability_date = _parse_date_value(raw.get("Data"))
-    if availability_date is None or availability_date != match.date or not start or not end:
-        return False
-
-    start_dt = datetime.combine(availability_date, start)
-    end_dt = datetime.combine(availability_date, end)
-    buffered_end_dt = end_dt - timedelta(minutes=availability_end_buffer_min)
-    return start_dt <= match_dt.to_pydatetime() <= buffered_end_dt
+    descriptor = build_match_descriptor(
+        identifier=match.id,
+        date_value=match.date,
+        time_value=match.hour_raw,
+        venue=match.venue,
+        modality=match.modality,
+        category=match.category,
+    )
+    return availability_covers_descriptors(raw, [descriptor], availability_end_buffer_min)
 
 
-def _same_pitch(match, other_match) -> bool:
-    return _normalize_text(match.venue).lower() == _normalize_text(other_match.venue).lower()
+def _build_assignment_descriptor(assignment, cluster_by_match_id):
+    match = assignment.match
+    return build_match_descriptor(
+        identifier=assignment.id,
+        date_value=match.date,
+        time_value=match.hour_raw,
+        venue=match.venue,
+        modality=match.modality,
+        category=match.category,
+        cluster_id=cluster_by_match_id.get(match.id),
+    )
 
 
-def _detect_time_conflicts(
+def _detect_mobility_conflicts(
     assignment,
-    referee_id: int,
+    referee,
     assignments_by_referee,
+    cluster_by_match_id,
     gap_same_pitch_min: int,
     gap_diff_pitch_min: int,
+    gap_diff_cluster_min: int,
 ):
-    match = assignment.match
-    match_dt = _match_datetime(match)
-    if match_dt is None or pd.isna(match_dt):
-        return []
-
-    warnings = []
-    for other_assignment in assignments_by_referee.get(referee_id, []):
+    match_descriptor = _build_assignment_descriptor(assignment, cluster_by_match_id)
+    existing_descriptors = []
+    for other_assignment in assignments_by_referee.get(referee.id, []):
         if other_assignment.id == assignment.id:
             continue
-        other_match = other_assignment.match
-        if match.date != other_match.date:
-            continue
-        other_dt = _match_datetime(other_match)
-        if other_dt is None or pd.isna(other_dt):
-            continue
-
-        minutes = abs((match_dt.to_pydatetime() - other_dt.to_pydatetime()).total_seconds()) / 60.0
-        same_pitch = _same_pitch(match, other_match)
-        required_gap = gap_same_pitch_min if same_pitch else gap_diff_pitch_min
-        if minutes < required_gap:
-            warnings.append("time_conflict_same_pitch" if same_pitch else "time_conflict_diff_pitch")
-    return warnings
+        existing_descriptors.append(_build_assignment_descriptor(other_assignment, cluster_by_match_id))
+    return inspect_mobility_transitions(
+        [match_descriptor],
+        existing_descriptors,
+        transport=_referee_field(referee, "transport"),
+        gap_same_pitch_min=gap_same_pitch_min,
+        gap_diff_pitch_min=gap_diff_pitch_min,
+        gap_diff_cluster_min=gap_diff_cluster_min,
+    )
 
 
-def _compute_cost(match, referee, match_cluster_id):
-    tutor_level = _normalize_text(referee.level).upper()
+def classify_level_fit(match, referee) -> dict:
+    tutor_level = _normalize_text(_referee_field(referee, "level")).upper()
     match_category = _normalize_text(match.category).upper()
     if tutor_level not in TUTOR_LEVEL_ORDER or match_category not in MATCH_LEVEL_ORDER:
-        return None
+        return {
+            "label": "unscorable",
+            "tutor_level": tutor_level,
+            "match_category": match_category,
+            "tutor_index": None,
+            "expected_tutor_index": None,
+            "band_delta": None,
+        }
 
     tutor_idx = TUTOR_LEVEL_ORDER.index(tutor_level)
     match_idx = MATCH_LEVEL_ORDER.index(match_category)
     map_tutor = tutor_idx / (len(TUTOR_LEVEL_ORDER) - 1) if len(TUTOR_LEVEL_ORDER) > 1 else 0
     map_match = match_idx / (len(MATCH_LEVEL_ORDER) - 1) if len(MATCH_LEVEL_ORDER) > 1 else 0
+    expected_tutor_idx = int(round(map_match * (len(TUTOR_LEVEL_ORDER) - 1)))
+    band_delta = tutor_idx - expected_tutor_idx
+
+    if band_delta == 0:
+        label = "ideal"
+    elif band_delta == 1:
+        label = "slightly_underleveled"
+    elif band_delta == -1:
+        label = "slightly_overleveled"
+    elif band_delta >= 2:
+        label = "clearly_underleveled"
+    else:
+        label = "clearly_overleveled"
+
+    return {
+        "label": label,
+        "tutor_level": tutor_level,
+        "match_category": match_category,
+        "tutor_index": tutor_idx,
+        "expected_tutor_index": expected_tutor_idx,
+        "band_delta": band_delta,
+        "normalized_tutor_position": map_tutor,
+        "normalized_match_position": map_match,
+    }
+
+
+def compute_cost_breakdown(match, referee, match_cluster_id) -> dict:
+    level_fit = classify_level_fit(match, referee)
+    if level_fit["label"] == "unscorable":
+        return {
+            "base_level_cost": None,
+            "cluster_adjustment": None,
+            "cost": None,
+        }
+
+    map_tutor = level_fit["normalized_tutor_position"]
+    map_match = level_fit["normalized_match_position"]
     map_positions = (19 - 3) / (19 - 3)
 
     distance = abs(map_tutor - map_match)
     distance_classification = abs(map_positions - map_tutor)
-    cost = distance * 1000 + distance_classification * 500 + 100
+    base_level_cost = float(distance * 1000 + distance_classification * 500 + 100)
+    cost = base_level_cost
 
-    if _FAVORITE_TUTOR_CODE_FRAGMENT in _normalize_text(referee.code) and match_cluster_id is not None:
+    if _FAVORITE_TUTOR_CODE_FRAGMENT in _normalize_text(_referee_field(referee, "code")) and match_cluster_id is not None:
         if str(match_cluster_id) in _FAVORITE_CLUSTER_IDS:
             cost *= 0.2
-    return float(cost)
+    final_cost = float(cost)
+    return {
+        "base_level_cost": base_level_cost,
+        "cluster_adjustment": float(final_cost - base_level_cost),
+        "cost": final_cost,
+    }
+
+
+def _compute_cost(match, referee, match_cluster_id):
+    return compute_cost_breakdown(match, referee, match_cluster_id)["cost"]
 
 
 def diagnose_assignment_for_referee(
@@ -323,6 +513,7 @@ def diagnose_assignment_for_referee(
 
     gap_same_pitch_min = _config_int(run, "gap_same_pitch_min", DEFAULT_GAP_SAME_PITCH_MIN)
     gap_diff_pitch_min = _config_int(run, "gap_diff_pitch_min", DEFAULT_GAP_DIFF_PITCH_MIN)
+    gap_diff_cluster_min = _config_int(run, "gap_diff_cluster_min", DEFAULT_GAP_DIFF_CLUSTER_MIN)
     availability_end_buffer_min = _config_int(
         run,
         "availability_end_buffer_min",
@@ -337,7 +528,7 @@ def diagnose_assignment_for_referee(
     match_dt = _match_datetime(match)
     has_match_datetime = match_dt is not None and not pd.isna(match_dt)
 
-    referee_modality = _normalize_text(referee.modality).lower()
+    referee_modality = _normalize_text(_referee_field(referee, "modality")).lower()
     match_modality = _normalize_text(match.modality).lower()
     if referee_modality and match_modality and referee_modality != match_modality:
         warning_codes.append("modality_mismatch")
@@ -349,15 +540,16 @@ def diagnose_assignment_for_referee(
     elif not _availability_covers_match(availability, match, availability_end_buffer_min):
         warning_codes.append("outside_availability_window")
 
-    warning_codes.extend(
-        _detect_time_conflicts(
-            assignment,
-            referee.id,
-            assignments_by_referee,
-            gap_same_pitch_min=gap_same_pitch_min,
-            gap_diff_pitch_min=gap_diff_pitch_min,
-        )
+    mobility_issues = _detect_mobility_conflicts(
+        assignment,
+        referee,
+        assignments_by_referee,
+        cluster_by_match_id,
+        gap_same_pitch_min=gap_same_pitch_min,
+        gap_diff_pitch_min=gap_diff_pitch_min,
+        gap_diff_cluster_min=gap_diff_cluster_min,
     )
+    warning_codes.extend(issue.reason_code for issue in mobility_issues)
 
     seen_warning_codes = set()
     for code in warning_codes:
@@ -370,7 +562,7 @@ def diagnose_assignment_for_referee(
         reason_codes.append("missing_cost_inputs")
 
     n_assignments_in_run = len(assignments_by_referee.get(referee.id, []))
-    effective_cost = (cost + (n_assignments_in_run * 50)) if cost is not None else None
+    effective_cost = (cost + (n_assignments_in_run * LOAD_BALANCING_PENALTY_PER_ASSIGNMENT)) if cost is not None else None
 
     warning_messages = [WARNING_MESSAGES[code] for code in warning_codes if code in WARNING_MESSAGES]
     reason_messages = [REASON_MESSAGES[code] for code in reason_codes if code in REASON_MESSAGES]
@@ -389,7 +581,133 @@ def diagnose_assignment_for_referee(
         "n_assignments_in_run": n_assignments_in_run,
         "effective_cost": effective_cost,
         "is_suggested": False,
+        "mobility_issues": mobility_issues,
     }
+
+
+def build_run_mobility_summary(run, *, context=None):
+    context = context or build_manual_assignment_context(run)
+    assignments_by_referee = context["assignments_by_referee"]
+    cluster_by_match_id = context["cluster_by_match_id"]
+    referee_summary_by_id = context["referee_summaries_by_id"]
+
+    gap_same_pitch_min = _config_int(run, "gap_same_pitch_min", DEFAULT_GAP_SAME_PITCH_MIN)
+    gap_diff_pitch_min = _config_int(run, "gap_diff_pitch_min", DEFAULT_GAP_DIFF_PITCH_MIN)
+    gap_diff_cluster_min = _config_int(run, "gap_diff_cluster_min", DEFAULT_GAP_DIFF_CLUSTER_MIN)
+
+    warnings = []
+    errors = []
+    warning_assignment_ids = defaultdict(list)
+    error_assignment_ids = defaultdict(list)
+    warning_counts_by_referee = Counter()
+    error_counts_by_referee = Counter()
+
+    for referee_id, assignments in assignments_by_referee.items():
+        if not assignments:
+            continue
+
+        descriptors = [_build_assignment_descriptor(assignment, cluster_by_match_id) for assignment in assignments]
+        descriptors_by_id = {str(descriptor.identifier): descriptor for descriptor in descriptors}
+        referee = referee_summary_by_id.get(referee_id)
+        issues = inspect_mobility_transitions(
+            descriptors,
+            transport=_referee_field(referee, "transport"),
+            gap_same_pitch_min=gap_same_pitch_min,
+            gap_diff_pitch_min=gap_diff_pitch_min,
+            gap_diff_cluster_min=gap_diff_cluster_min,
+            candidate_identifiers=[],
+        )
+
+        assignment_by_id = {str(assignment.id): assignment for assignment in assignments}
+        valid_clusters = sorted(
+            {
+                descriptor.cluster_id
+                for descriptor in descriptors
+                if descriptor.cluster_id is not None
+            }
+        )
+        sorted_match_codes = [
+            assignment.match.code
+            for assignment in sorted(
+                assignments,
+                key=lambda item: (item.match.date or date.max, item.match.hour_raw or "", item.match.code or ""),
+            )
+        ]
+
+        if len(valid_clusters) > 1 and not issues:
+            warning = {
+                "referee_id": referee_id,
+                "referee_code": _referee_field(referee, "code"),
+                "referee_name": _referee_field(referee, "name"),
+                "clusters": valid_clusters,
+                "match_codes": sorted_match_codes,
+                "message": f"Aten partits de clusters diferents de forma valida ({', '.join(valid_clusters)}).",
+            }
+            warnings.append(warning)
+            warning_counts_by_referee[referee_id] += 1
+            for assignment in assignments:
+                warning_assignment_ids[assignment.id].append(warning)
+
+        for issue in issues:
+            left_assignment = assignment_by_id.get(str(issue.left_identifier))
+            right_assignment = assignment_by_id.get(str(issue.right_identifier))
+            error = {
+                "referee_id": referee_id,
+                "referee_code": _referee_field(referee, "code"),
+                "referee_name": _referee_field(referee, "name"),
+                "reason_code": issue.reason_code,
+                "message": WARNING_MESSAGES.get(issue.reason_code, issue.reason_code),
+                "clusters": [cluster for cluster in [issue.left_cluster_id, issue.right_cluster_id] if cluster is not None],
+                "match_codes": [
+                    left_assignment.match.code if left_assignment else str(issue.left_identifier),
+                    right_assignment.match.code if right_assignment else str(issue.right_identifier),
+                ],
+                "assignment_ids": [
+                    left_assignment.id if left_assignment else None,
+                    right_assignment.id if right_assignment else None,
+                ],
+                "manual_override": bool(
+                    (left_assignment and left_assignment.manual_override_warning)
+                    or (right_assignment and right_assignment.manual_override_warning)
+                ),
+                "required_gap_min": issue.required_gap_min,
+                "actual_gap_min": issue.actual_gap_min,
+                "same_pitch": issue.same_pitch,
+            }
+            errors.append(error)
+            error_counts_by_referee[referee_id] += 1
+            if left_assignment is not None:
+                error_assignment_ids[left_assignment.id].append(error)
+            if right_assignment is not None:
+                error_assignment_ids[right_assignment.id].append(error)
+
+    return {
+        "mobility_warning_count": len(warnings),
+        "mobility_error_count": len(errors),
+        "mobility_warnings": warnings,
+        "mobility_errors": errors,
+        "warning_assignment_ids": dict(warning_assignment_ids),
+        "error_assignment_ids": dict(error_assignment_ids),
+        "warning_counts_by_referee": dict(warning_counts_by_referee),
+        "error_counts_by_referee": dict(error_counts_by_referee),
+    }
+
+
+def update_run_mobility_summary(run, *, context=None, save: bool = True):
+    summary = build_run_mobility_summary(run, context=context)
+    merged = dict(getattr(run, "result_summary", None) or {})
+    merged.update(
+        {
+            "mobility_warning_count": summary["mobility_warning_count"],
+            "mobility_error_count": summary["mobility_error_count"],
+            "mobility_warnings": summary["mobility_warnings"],
+            "mobility_errors": summary["mobility_errors"],
+        }
+    )
+    run.result_summary = merged
+    if save and getattr(run, "pk", None):
+        run.save(update_fields=["result_summary"])
+    return summary
 
 
 def build_top_proposals_for_assignments(run, assignments, *, limit: int = 3, context=None):
@@ -419,8 +737,8 @@ def build_top_proposals_for_assignments(run, assignments, *, limit: int = 3, con
                 item["effective_cost"],
                 item["cost"],
                 item["n_assignments_in_run"],
-                item["referee"].code,
-                item["referee"].name,
+                _referee_field(item["referee"], "code"),
+                _referee_field(item["referee"], "name"),
             )
         )
         top_ranked = ranked[:limit]
@@ -456,19 +774,22 @@ def serialize_proposal(diagnosis: dict) -> dict:
     return {
         "rank": diagnosis.get("rank"),
         "referee_id": referee.id,
-        "code": referee.code,
-        "name": referee.name,
-        "level": referee.level or "",
+        "code": _referee_field(referee, "code"),
+        "name": _referee_field(referee, "name"),
+        "level": _referee_field(referee, "level") or "",
         "availability_label": availability_label(diagnosis.get("availability")),
         "cost": diagnosis.get("cost"),
         "effective_cost": diagnosis.get("effective_cost"),
+        "level_fit": diagnosis.get("level_fit"),
+        "quality_label": diagnosis.get("quality_label"),
+        "selection_reason_summary": diagnosis.get("selection_reason_summary", ""),
     }
 
 
 def serialize_referee_option(referee: Referee) -> dict:
     return {
         "id": referee.id,
-        "code": referee.code,
-        "name": referee.name,
-        "level": referee.level or "",
+        "code": _referee_field(referee, "code"),
+        "name": _referee_field(referee, "name"),
+        "level": _referee_field(referee, "level") or "",
     }

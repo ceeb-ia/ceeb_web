@@ -60,15 +60,21 @@
           </div>
 
           <div class="form-row row">
-            <div class="form-group col-md-6">
+            <div class="form-group col-md-4">
               <label>Llindar minuts (mateixa pista)</label>
               <input type="number" step="1" min="0" name="gap_same_pitch_min" class="form-control form-control-sm"
                     value="{{ defaults.gap_same_pitch_min }}">
             </div>
-            <div class="form-group col-md-6">
+            <div class="form-group col-md-4">
               <label>Llindar minuts (pista diferent)</label>
               <input type="number" step="1" min="0" name="gap_diff_pitch_min" class="form-control form-control-sm"
                     value="{{ defaults.gap_diff_pitch_min }}">
+            </div>
+            <div class="form-group col-md-4">
+              <label>Llindar minuts (canvi de cluster)</label>
+              <input type="number" step="1" min="0" name="gap_diff_cluster_min" class="form-control form-control-sm"
+                    value="{{ defaults.gap_diff_cluster_min }}">
+              <small class="form-text text-muted">S'aplica nomes a tutors amb vehicle quan canvien de cluster.</small>
             </div>
           </div>
 
@@ -251,6 +257,12 @@
     logsTbody.appendChild(tr);
   }
 
+  function normalizeProgress(progress){
+    if (typeof progress !== 'number') return null;
+    const base = typeof lastProgress === 'number' ? lastProgress : 0;
+    return Math.max(base, Math.min(100, Math.max(0, progress)));
+  }
+
   function startLogStream(taskId){
     if (es) es.close();
     es = new EventSource(`/designacions/logs/${taskId}/stream`);
@@ -259,8 +271,9 @@
         const payload = JSON.parse(e.data); // {message, progress}
         if (payload.message) appendLog(payload.message);
         if (typeof payload.progress === 'number') {
-          lastProgress = payload.progress;
-          pctSpan.textContent = `${payload.progress}%`;
+          const normalizedProgress = normalizeProgress(payload.progress);
+          lastProgress = normalizedProgress;
+          pctSpan.textContent = `${normalizedProgress}%`;
         }
       } catch(err) {
         appendLog(e.data);
@@ -274,6 +287,11 @@
   async function pollStatus(taskId, runId){
     const r = await fetch(`/designacions/task-status/${taskId}/`);
     const data = await r.json();
+    if (typeof data.progress === 'number') {
+      const normalizedProgress = normalizeProgress(data.progress);
+      lastProgress = normalizedProgress;
+      pctSpan.textContent = `${normalizedProgress}%`;
+    }
 
     if (data.status === 'SUCCESS') {
       statusBadge.className = 'badge text-bg-success';

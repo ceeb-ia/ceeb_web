@@ -15,17 +15,25 @@ from .models import DesignationRun, Assignment, Referee
 from .tasks import process_designacions_run, rebuild_run_map_task
 from .services.jobstore import write_job_sync, read_job_sync
 from .services.excel_export import export_run_to_excel
+from .services.assignment_explainer import (
+    explain_candidate_for_assignment,
+    explain_current_assignment,
+)
 import pandas as pd
 from .services.manual_assignment import (
     build_assignment_availability_by_assignment,
     build_availability_display_by_ref,
     build_availability_lookup_by_ref_and_date,
+    build_run_mobility_summary,
     build_manual_assignment_context,
+    build_run_scoped_referee_summaries,
+    build_run_scoped_referee_summary_by_id,
     build_top_proposals_for_assignments,
     diagnose_assignment_for_referee,
     get_run_referees_with_counts,
     serialize_proposal,
     serialize_referee_option,
+    update_run_mobility_summary,
 )
 
 
@@ -76,16 +84,19 @@ def _save_uploaded(f, prefix: str) -> str:
 
 
 def _build_counts(run, referees_with_counts=None):
-    referees_with_counts = list(referees_with_counts or get_run_referees_with_counts(run))
+    referees_with_counts = list(referees_with_counts or build_run_scoped_referee_summaries(run))
     assigned = run.assignments.filter(referee__isnull=False).count()
     unassigned_matches = run.assignments.filter(referee__isnull=True).count()
     unassigned_referees = sum(1 for referee in referees_with_counts if (referee.n or 0) == 0)
     needs_review_referees = sum(1 for referee in referees_with_counts if not (referee.level or "").strip())
+    result_summary = getattr(run, "result_summary", None) or {}
     return {
         "assigned": assigned,
         "unassigned_matches": unassigned_matches,
         "unassigned_referees": unassigned_referees,
         "needs_review_referees": needs_review_referees,
+        "mobility_warnings": int(result_summary.get("mobility_warning_count", 0) or 0),
+        "mobility_errors": int(result_summary.get("mobility_error_count", 0) or 0),
         "has_map": bool(run.map_path),
     }
 
@@ -96,7 +107,9 @@ def _queue_map_rebuild(run):
     rebuild_run_map_task.delay(run.id)
 
 
-def _assignment_json_payload(run, assignment, message, counts, map_queued):
+def _assignment_json_payload(run, assignment, message, counts, map_queued, referee_summary_by_id=None, mobility_summary=None):
+    referee_summary_by_id = referee_summary_by_id or build_run_scoped_referee_summary_by_id(run)
+    referee_summary = referee_summary_by_id.get(assignment.referee_id) if assignment.referee_id else None
     return {
         "ok": True,
         "assignment_id": assignment.id,
@@ -106,7 +119,7 @@ def _assignment_json_payload(run, assignment, message, counts, map_queued):
                 "id": assignment.referee.id,
                 "code": assignment.referee.code,
                 "name": assignment.referee.name,
-                "level": assignment.referee.level or "",
+                "level": referee_summary.level if referee_summary else (assignment.referee.level or ""),
             }
             if assignment.referee_id
             else None
@@ -122,7 +135,81 @@ def _assignment_json_payload(run, assignment, message, counts, map_queued):
         "map_status": run.map_status,
         "map_queued": map_queued,
         "match_code": assignment.match.code,
+        "assigned_referee_id": assignment.referee_id,
+        "assigned_referee_code": assignment.referee.code if assignment.referee_id else "",
+        "refresh_suggestions": True,
+        "mobility_summary": mobility_summary or {},
     }
+
+
+def _parse_assignment_ids(raw_assignment_ids):
+    if not isinstance(raw_assignment_ids, list):
+        raise ValueError("assignment_ids ha de ser una llista.")
+
+    assignment_ids = []
+    seen = set()
+    for item in raw_assignment_ids:
+        try:
+            assignment_id = int(item)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("assignment_ids ha de contenir nomes IDs numerics.") from exc
+        if assignment_id in seen:
+            continue
+        seen.add(assignment_id)
+        assignment_ids.append(assignment_id)
+    return assignment_ids
+
+
+def _build_manual_suggestions_bulk_items(run, assignment_ids, *, limit: int = 3):
+    ordered_ids = sorted(assignment_ids)
+    assignments = {
+        assignment.id: assignment
+        for assignment in run.assignments.select_related("match", "referee").filter(id__in=ordered_ids)
+    }
+    context = build_manual_assignment_context(run)
+    proposals_by_assignment = build_top_proposals_for_assignments(
+        run,
+        assignments.values(),
+        limit=limit,
+        context=context,
+    )
+
+    items = []
+    for assignment_id in ordered_ids:
+        assignment = assignments.get(assignment_id)
+        if assignment is None:
+            items.append({
+                "assignment_id": assignment_id,
+                "top_proposals": [],
+                "rank_1_referee_id": None,
+                "status": "missing_assignment",
+            })
+            continue
+
+        top_proposals = [
+            _serialize_explained_proposal(run, assignment, item, context)
+            for item in proposals_by_assignment.get(assignment_id, [])
+        ]
+        items.append({
+            "assignment_id": assignment_id,
+            "top_proposals": top_proposals,
+            "rank_1_referee_id": top_proposals[0]["referee_id"] if top_proposals else None,
+            "status": "ok",
+        })
+    return items
+
+
+def _serialize_explained_proposal(run, assignment, diagnosis, context):
+    serialized = serialize_proposal(diagnosis)
+    explanation = explain_candidate_for_assignment(run, assignment, diagnosis["referee"], context=context)
+    serialized.update(
+        {
+            "level_fit": explanation["level_fit"],
+            "quality_label": explanation["quality_label"],
+            "selection_reason_summary": explanation["selection_reason_summary"],
+        }
+    )
+    return serialized
 
 
 def _apply_assignment_update(run, assignment, referee_id_raw, note, locked):
@@ -147,10 +234,11 @@ def _apply_assignment_update(run, assignment, referee_id_raw, note, locked):
         if referee.id not in compatible_referees:
             raise ValueError("Aquest tutor no és compatible amb la modalitat del partit.")
 
+        referee_summary = context["referee_summaries_by_id"].get(referee.id, referee)
         diagnosis = diagnose_assignment_for_referee(
             run,
             assignment,
-            referee,
+            referee_summary,
             availability_lookup=context["availability_lookup"],
             assignments_by_referee=context["assignments_by_referee"],
             cluster_by_match_id=context["cluster_by_match_id"],
@@ -182,12 +270,17 @@ def _apply_assignment_update(run, assignment, referee_id_raw, note, locked):
         _queue_map_rebuild(run)
         run.refresh_from_db(fields=["map_status", "map_path"])
 
-    counts = _build_counts(run)
+    updated_context = build_manual_assignment_context(run)
+    update_run_mobility_summary(run, context=updated_context)
+    referee_summaries = build_run_scoped_referee_summaries(run)
+    counts = _build_counts(run, referees_with_counts=referee_summaries)
     return {
         "assignment": assignment,
         "message": message,
         "counts": counts,
         "map_queued": map_queued,
+        "referee_summary_by_id": {summary.id: summary for summary in referee_summaries},
+        "mobility_summary": build_run_mobility_summary(run, context=updated_context),
     }
 
 @require_http_methods(["GET", "POST"])
@@ -200,6 +293,7 @@ def upload_view(request):
                 "max_partits_subgrup": 3,
                 "gap_same_pitch_min": 60,
                 "gap_diff_pitch_min": 75,
+                "gap_diff_cluster_min": 100,
                 "modalitats_csv": "",
                 "date_from": "",
                 "date_to": "",
@@ -223,6 +317,7 @@ def upload_view(request):
         "max_partits_subgrup": _to_int(request.POST.get("max_partits_subgrup"), 3),
         "gap_same_pitch_min": _to_int(request.POST.get("gap_same_pitch_min"), 60),
         "gap_diff_pitch_min": _to_int(request.POST.get("gap_diff_pitch_min"), 75),
+        "gap_diff_cluster_min": _to_int(request.POST.get("gap_diff_cluster_min"), 100),
         "modalitats": _to_str_list_csv(request.POST.get("modalitats_csv")),
         "date_from": (request.POST.get("date_from") or "").strip(),
         "date_to": (request.POST.get("date_to") or "").strip(),
@@ -247,20 +342,50 @@ def upload_view(request):
 @require_GET
 def run_detail_view(request, run_id: int):
     run = get_object_or_404(DesignationRun, id=run_id)
-    return render(request, "run_detail.html", {"run": run})
+    mobility_summary = build_run_mobility_summary(run) if run.status == "done" else {
+        "mobility_warning_count": 0,
+        "mobility_error_count": 0,
+        "mobility_warnings": [],
+        "mobility_errors": [],
+    }
+    return render(request, "run_detail.html", {"run": run, "mobility_summary": mobility_summary})
+
+def _serialize_terminal_run_status(run, job: dict | None = None):
+    job = job or {}
+    if run.status == "done":
+        return {
+            "status": "SUCCESS",
+            "progress": 100,
+            "message": job.get("message") or "Procés finalitzat.",
+            "error": job.get("error"),
+        }
+    if run.status == "failed":
+        return {
+            "status": "FAILURE",
+            "progress": job.get("progress"),
+            "message": job.get("message"),
+            "error": job.get("error") or run.error,
+        }
+    return None
 
 @require_GET
 @require_GET
 def task_status_view(request, task_id: str):
     job = read_job_sync(task_id) or {}
+    run = DesignationRun.objects.filter(task_id=task_id).only("status", "error").first()
+    status = job.get("status")
 
-    status = job.get("status") or "PENDING"
+    terminal_from_run = _serialize_terminal_run_status(run, job) if run else None
+    if terminal_from_run and status not in ("done", "SUCCESS", "failed", "FAILURE"):
+        return JsonResponse(terminal_from_run)
+
+    status = status or (run.status if run else "PENDING")
 
     if status in ("done", "SUCCESS"):
         return JsonResponse({
             "status": "SUCCESS",
             "progress": 100,
-            "message": job.get("message"),
+            "message": job.get("message") or (terminal_from_run or {}).get("message"),
         })
 
     if status in ("failed", "FAILURE"):
@@ -268,7 +393,7 @@ def task_status_view(request, task_id: str):
             "status": "FAILURE",
             "progress": job.get("progress"),
             "message": job.get("message"),
-            "error": job.get("error"),
+            "error": job.get("error") or (run.error if run else None),
         })
 
     return JsonResponse({
@@ -334,14 +459,16 @@ def assignments_view(request, run_id: int):
 
     # Llista de tutors actius (per desplegable d’edició)
     referees_with_counts = list(get_run_referees_with_counts(run))
-    referees = referees_with_counts
+    referee_summaries = build_run_scoped_referee_summaries(run, referees_with_counts=referees_with_counts)
+    referee_summary_by_id = {summary.id: summary for summary in referee_summaries}
+    referees = referee_summaries
 
-    unassigned_referees = [r for r in referees_with_counts if (r.n or 0) == 0]
+    unassigned_referees = [r for r in referee_summaries if (r.n or 0) == 0]
 
     # Tutors “sense nivell” dins l'scope del run
     needs_review_referees = [
         referee
-        for referee in referees_with_counts
+        for referee in referee_summaries
         if not (referee.level or "").strip()
     ]
 
@@ -357,8 +484,9 @@ def assignments_view(request, run_id: int):
             if current:
                 groups.append(current)
             current_key = key
+            display_referee = referee_summary_by_id.get(r.id, r) if r else None
             current = {
-                "referee": r,
+                "referee": display_referee,
                 "color": color_per_tutor(r.code if r else None),
                 "items": [],
                 "total": 0,
@@ -376,7 +504,17 @@ def assignments_view(request, run_id: int):
     availability_lookup = build_availability_lookup_by_ref_and_date(run)
     availability_by_assignment = build_assignment_availability_by_assignment(assigned_qs, availability_lookup)
     availability_display_by_ref = build_availability_display_by_ref(run)
-    counts = _build_counts(run, referees_with_counts=referees_with_counts)
+    mobility_summary = build_run_mobility_summary(run)
+    mobility_warning_assignment_ids = mobility_summary["warning_assignment_ids"]
+    mobility_error_assignment_ids = mobility_summary["error_assignment_ids"]
+    mobility_warning_counts_by_referee = mobility_summary["warning_counts_by_referee"]
+    mobility_error_counts_by_referee = mobility_summary["error_counts_by_referee"]
+    counts = _build_counts(run, referees_with_counts=referee_summaries)
+
+    for group in groups:
+        referee_id = group["referee"].id if group.get("referee") else None
+        group["mobility_warning_count"] = int(mobility_warning_counts_by_referee.get(referee_id, 0))
+        group["mobility_error_count"] = int(mobility_error_counts_by_referee.get(referee_id, 0))
 
     return render(request, "assignments.html", {
         "run": run,
@@ -389,6 +527,9 @@ def assignments_view(request, run_id: int):
         "needs_review_referees": needs_review_referees,
         "referees": referees,
         "counts": counts,
+        "mobility_summary": mobility_summary,
+        "mobility_warning_assignment_ids": mobility_warning_assignment_ids,
+        "mobility_error_assignment_ids": mobility_error_assignment_ids,
     })
 
 @require_GET
@@ -411,12 +552,66 @@ def manual_assignment_options_view(request, run_id: int, assignment_id: int):
         ]
 
     proposals = build_top_proposals_for_assignments(run, [assignment], context=context).get(assignment.id, [])
+    compatible_referee_payload = []
+    for referee in compatible_referees:
+        diagnosis = diagnose_assignment_for_referee(
+            run,
+            assignment,
+            referee,
+            availability_lookup=context["availability_lookup"],
+            assignments_by_referee=context["assignments_by_referee"],
+            cluster_by_match_id=context["cluster_by_match_id"],
+        )
+        item = serialize_referee_option(referee)
+        item.update(
+            {
+                "is_valid": bool(diagnosis["is_valid"]),
+                "warning_text": diagnosis["warning_text"],
+            }
+        )
+        compatible_referee_payload.append(item)
     return JsonResponse({
         "ok": True,
         "assignment_id": assignment.id,
-        "top_proposals": [serialize_proposal(item) for item in proposals],
-        "compatible_referees": [serialize_referee_option(referee) for referee in compatible_referees],
+        "top_proposals": [_serialize_explained_proposal(run, assignment, item, context) for item in proposals],
+        "compatible_referees": compatible_referee_payload,
     })
+
+
+@require_POST
+def manual_assignment_suggestions_bulk_view(request, run_id: int):
+    run = get_object_or_404(DesignationRun, id=run_id)
+
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({"ok": False, "message": "Payload JSON no valid."}, status=400)
+
+    try:
+        assignment_ids = _parse_assignment_ids(payload.get("assignment_ids", []))
+        limit = max(1, min(int(payload.get("limit", 3)), 3))
+    except (TypeError, ValueError) as exc:
+        return JsonResponse({"ok": False, "message": str(exc)}, status=400)
+
+    return JsonResponse({
+        "ok": True,
+        "items": _build_manual_suggestions_bulk_items(run, assignment_ids, limit=limit),
+    })
+
+
+@require_GET
+def assignment_explanation_view(request, run_id: int, assignment_id: int):
+    run = get_object_or_404(DesignationRun, id=run_id)
+    assignment = get_object_or_404(
+        Assignment.objects.select_related("match", "referee"),
+        id=assignment_id,
+        run=run,
+    )
+    if not assignment.referee_id:
+        return JsonResponse({"ok": False, "message": "L'assignacio no te tutor assignat."}, status=400)
+
+    explanation = explain_current_assignment(run, assignment, context=build_manual_assignment_context(run))
+    return JsonResponse({"ok": True, **explanation})
 
 
 @require_POST
@@ -449,6 +644,8 @@ def update_assignment_async_view(request, run_id: int, assignment_id: int):
             result["message"],
             result["counts"],
             result["map_queued"],
+            result["referee_summary_by_id"],
+            result["mobility_summary"],
         )
     )
 
