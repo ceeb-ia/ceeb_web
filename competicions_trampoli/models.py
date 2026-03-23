@@ -124,6 +124,34 @@ class Equip(models.Model):
         return f"{self.nom} ({self.competicio})"
 
 
+class EquipContext(models.Model):
+    competicio = models.ForeignKey(
+        Competicio,
+        on_delete=models.CASCADE,
+        related_name="equip_contexts",
+    )
+    code = models.SlugField(max_length=80)
+    nom = models.CharField(max_length=180)
+    description = models.CharField(max_length=255, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["nom", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["competicio", "code"],
+                name="uniq_equip_context_code_per_competicio",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["competicio", "code"]),
+        ]
+
+    def __str__(self):
+        return f"{self.nom} ({self.competicio})"
+
+
 class GrupCompeticio(models.Model):
     competicio = models.ForeignKey(
         Competicio,
@@ -242,6 +270,69 @@ class Inscripcio(models.Model):
             self.ordre_competicio = None
 
         super().save(*args, **kwargs)
+
+
+class InscripcioEquipAssignacio(models.Model):
+    class Origen(models.TextChoices):
+        MANUAL = "manual", "Manual"
+        AUTO = "auto", "Automatic"
+
+    competicio = models.ForeignKey(
+        Competicio,
+        on_delete=models.CASCADE,
+        related_name="equip_assignacions",
+    )
+    context = models.ForeignKey(
+        EquipContext,
+        on_delete=models.CASCADE,
+        related_name="assignacions",
+    )
+    inscripcio = models.ForeignKey(
+        Inscripcio,
+        on_delete=models.CASCADE,
+        related_name="equip_assignacions",
+    )
+    equip = models.ForeignKey(
+        Equip,
+        on_delete=models.CASCADE,
+        related_name="assignacions_contextuals",
+    )
+    origen = models.CharField(
+        max_length=20,
+        choices=Origen.choices,
+        default=Origen.MANUAL,
+    )
+    criteri = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["context_id", "inscripcio_id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["context", "inscripcio"],
+                name="uniq_equip_assignacio_context_inscripcio",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["competicio", "context"]),
+            models.Index(fields=["competicio", "inscripcio"]),
+        ]
+
+    def clean(self):
+        errors = {}
+        competicio_id = self.competicio_id
+        if self.context_id and self.context.competicio_id != competicio_id:
+            errors["context"] = "El context no pertany a la mateixa competicio."
+        if self.inscripcio_id and self.inscripcio.competicio_id != competicio_id:
+            errors["inscripcio"] = "La inscripcio no pertany a la mateixa competicio."
+        if self.equip_id and self.equip.competicio_id != competicio_id:
+            errors["equip"] = "L'equip no pertany a la mateixa competicio."
+        if errors:
+            raise ValidationError(errors)
+
+    def __str__(self):
+        return f"{self.context_id} / {self.inscripcio_id} / {self.equip_id}"
 
 
 class InscripcioMedia(models.Model):

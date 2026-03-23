@@ -665,6 +665,11 @@
               <div class="builder-inline-note">Només equips</div>
             </div>
 
+            <div class="mb-3">
+              <label class="small text-muted mb-1">Font d'equips</label>
+              <select class="form-control form-control-sm" id="eqAssignmentContext"></select>
+            </div>
+
             <div class="form-check mb-2">
               <input class="form-check-input" type="checkbox" id="eqIncludeSenseEquip">
               <label class="form-check-label" for="eqIncludeSenseEquip">Incloure participants sense equip <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="eq_include_sense_equip" aria-label="Ajuda incloure participants sense equip">?</button></label>
@@ -1115,6 +1120,7 @@
 {{ cfgs|json_script:"cfgs-data-v2" }}
 {{ aparells|json_script:"aparells-data-v2" }}
 {{ equips|json_script:"equips-data-v2" }}
+{{ equip_contexts|json_script:"equip-contexts-data-v2" }}
 {{ particio_fields|json_script:"particio-fields-data-v2" }}
 {{ particio_value_choices|json_script:"particio-value-choices-data-v2" }}
 {{ aparell_field_options|json_script:"aparell-field-options-data" }}
@@ -1151,6 +1157,7 @@
   const CFGS = parseJsonScript("cfgs-data-v2", []);
   const APARELLS = parseJsonScript("aparells-data-v2", []);
   const EQUIPS = parseJsonScript("equips-data-v2", []);
+  const EQUIP_CONTEXTS = parseJsonScript("equip-contexts-data-v2", []);
   const PARTICIO_FIELDS = parseJsonScript("particio-fields-data-v2", []);
   const PARTICIO_VALUE_CHOICES = parseJsonScript("particio-value-choices-data-v2", {});
   const APARELL_FIELD_OPTIONS = parseJsonScript("aparell-field-options-data", {});
@@ -1215,6 +1222,7 @@
       ],
     },
     equips: {
+      assignment_source: { mode:"native", context_code:"", fallback:"native" },
       incloure_sense_equip: false,
       particions_manuals: [],
       particio_edat: { activa:false, llindars:[], sense_data_label:"Sense edat" },
@@ -1245,6 +1253,7 @@
     fActiva: document.getElementById("fActiva"),
     fTipus: document.getElementById("fTipus"),
     equipCfgBox: document.getElementById("equipCfgBox"),
+    eqAssignmentContext: document.getElementById("eqAssignmentContext"),
     eqIncludeSenseEquip: document.getElementById("eqIncludeSenseEquip"),
     btnEqManualAdd: document.getElementById("btnEqManualAdd"),
     eqManualRows: document.getElementById("eqManualRows"),
@@ -2094,17 +2103,13 @@
     }
   }
 
-  function readTiePerAppExercicisFromRow(tr, fallbackMap){
-    const modeSel = normalizeTieModeSeleccioExercicis(tr.querySelector('[data-k="ex_sel_mode"]')?.value || "hereta");
+  function collectVisibleTiePerAppOverrides(tr, fallbackMap){
     const box = tr.querySelector('[data-k="ex_per_app_box"]');
     let state = normalizeTieExercicisPerAparellMap(fallbackMap || readTiePerAppState(tr));
-    if (modeSel !== "per_aparell_override" || !box) {
+    if (!box) {
       writeTiePerAppState(tr, state);
       return state;
     }
-
-    const visibleIds = new Set(getTieTargetAppIds(tr).map(x => String(x)));
-    visibleIds.forEach(id => { delete state[id]; });
 
     box.querySelectorAll('[data-k="tie_app_ex_mode"]').forEach(sel => {
       const appId = String(sel.getAttribute("data-app-id") || "").trim();
@@ -2127,6 +2132,17 @@
     return state;
   }
 
+  function readTiePerAppExercicisFromRow(tr, fallbackMap){
+    const modeSel = normalizeTieModeSeleccioExercicis(tr.querySelector('[data-k="ex_sel_mode"]')?.value || "hereta");
+    let state = normalizeTieExercicisPerAparellMap(fallbackMap || readTiePerAppState(tr));
+    if (modeSel === "per_aparell_override") {
+      state = collectVisibleTiePerAppOverrides(tr, state);
+    } else {
+      writeTiePerAppState(tr, state);
+    }
+    return state;
+  }
+
   function renderTiePerAppExercicisUI(tr){
     const modeSel = normalizeTieModeSeleccioExercicis(tr.querySelector('[data-k="ex_sel_mode"]')?.value || "hereta");
     const box = tr.querySelector('[data-k="ex_per_app_box"]');
@@ -2137,8 +2153,8 @@
       return;
     }
 
-    const state = readTiePerAppExercicisFromRow(tr);
-    const appIds = _uniquePositiveInts([...getTieTargetAppIds(tr), ...Object.keys(state || {})]);
+    const state = collectVisibleTiePerAppOverrides(tr);
+    const appIds = _uniquePositiveInts(getTieTargetAppIds(tr));
     box.style.display = "";
     if (!appIds.length) {
       box.innerHTML = `<div class="small text-muted mt-1">Sense aparells disponibles per definir override.</div>`;
@@ -2157,11 +2173,11 @@
           const card = node.closest('[data-k="tie_app_ex_card"]');
           if (card) refreshTiePerAppExCardUI(card);
         }
-        readTiePerAppExercicisFromRow(tr);
+        collectVisibleTiePerAppOverrides(tr);
         syncAdvancedFromUI();
       });
       node.addEventListener("input", () => {
-        readTiePerAppExercicisFromRow(tr);
+        collectVisibleTiePerAppOverrides(tr);
         syncAdvancedFromUI();
       });
     });
@@ -2490,6 +2506,16 @@
     `).join("");
   }
 
+  function renderEquipContextOptions(selectedCode) {
+    if (!els.eqAssignmentContext) return;
+    const target = String(selectedCode || "native");
+    els.eqAssignmentContext.innerHTML = (EQUIP_CONTEXTS || []).map(ctx => {
+      const code = String(ctx.code || "native");
+      const label = String(ctx.nom || code);
+      return `<option value="${esc(code)}" ${code === target ? "selected" : ""}>${esc(label)}</option>`;
+    }).join("");
+  }
+
   function renderEquipManualRows(rows) {
     if (!els.eqManualRows) return;
     const data = Array.isArray(rows) ? rows : [];
@@ -2562,8 +2588,13 @@
       .split(",")
       .map(x => Number(String(x).trim()))
       .filter(v => !isNaN(v));
+    const selectedContextCode = String(els.eqAssignmentContext?.value || "native").trim() || "native";
+    const assignmentSource = selectedContextCode === "native"
+      ? { mode: "native", context_code: "", fallback: "native" }
+      : { mode: "context", context_code: selectedContextCode, fallback: "native" };
 
     return {
+      assignment_source: assignmentSource,
       incloure_sense_equip: !!(els.eqIncludeSenseEquip && els.eqIncludeSenseEquip.checked),
       particions_manuals: readEquipManualRows(),
       particio_edat: {
@@ -2578,7 +2609,12 @@
   function syncEquipUIFromSchema(schema) {
     const eq = schema || {};
     const age = eq.particio_edat || {};
+    const assignmentSource = eq.assignment_source || {};
+    const selectedContextCode = String((assignmentSource.mode || "native")).toLowerCase() === "context"
+      ? (String(assignmentSource.context_code || "").trim() || "native")
+      : "native";
 
+    renderEquipContextOptions(selectedContextCode);
     if (els.eqIncludeSenseEquip) els.eqIncludeSenseEquip.checked = !!eq.incloure_sense_equip;
     if (els.eqAgeActiva) els.eqAgeActiva.checked = !!age.activa;
     if (els.eqAgeLlindars) {
@@ -2758,7 +2794,7 @@
       }
 
       function refreshExUI() {
-        readTiePerAppExercicisFromRow(tr);
+        collectVisibleTiePerAppOverrides(tr);
         const m = exModeSel.value;
         const modeSel = normalizeTieModeSeleccioExercicis(exSelModeSel.value);
         const isOverride = modeSel === "per_aparell_override";
@@ -3438,6 +3474,9 @@
     schema.equips = schema.equips && typeof schema.equips === "object" && !Array.isArray(schema.equips)
       ? schema.equips
       : fallback.equips;
+    schema.equips.assignment_source = schema.equips.assignment_source && typeof schema.equips.assignment_source === "object" && !Array.isArray(schema.equips.assignment_source)
+      ? schema.equips.assignment_source
+      : fallback.equips.assignment_source;
 
     return schema;
   }
@@ -4396,7 +4435,7 @@
 
   // events: canvis que afecten schema
   ["change","input"].forEach(ev => {
-    ["sAggCamps","sModeSeleccioExercicis","sExercicisMode","iExBestN","iExIndex","iExMaxPerParticipant","tExIds","sAggExercicis","sAggAparells","sModeResultatAparells","sOrdre","iTopN","cEmpats","eqIncludeSenseEquip","eqAgeActiva","eqAgeLlindars","eqAgeSenseLabel","eqCombineManualAge","sVictoryModeCamps","sVictoryModeExercicis","sVictoryFieldSelectionMode","sVictoryAggCamps","sVictoryAggExercicis"]
+    ["sAggCamps","sModeSeleccioExercicis","sExercicisMode","iExBestN","iExIndex","iExMaxPerParticipant","tExIds","sAggExercicis","sAggAparells","sModeResultatAparells","sOrdre","iTopN","cEmpats","eqAssignmentContext","eqIncludeSenseEquip","eqAgeActiva","eqAgeLlindars","eqAgeSenseLabel","eqCombineManualAge","sVictoryModeCamps","sVictoryModeExercicis","sVictoryFieldSelectionMode","sVictoryAggCamps","sVictoryAggExercicis"]
       .forEach(id => {
         const node = document.getElementById(id);
         if (node) node.addEventListener(ev, syncAdvancedFromUI);

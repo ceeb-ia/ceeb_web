@@ -11,7 +11,15 @@ from django.views.generic import CreateView, FormView, ListView, TemplateView, D
 from django.shortcuts import redirect
 from django.db.models import Q
 from .forms import ImportInscripcionsExcelForm
-from .models import Competicio, CompeticioMembership, Equip, GrupCompeticio, Inscripcio
+from .models import (
+    Competicio,
+    CompeticioMembership,
+    Equip,
+    EquipContext,
+    GrupCompeticio,
+    Inscripcio,
+    InscripcioEquipAssignacio,
+)
 from .forms import CompeticioForm
 from .access import user_has_competicio_capability
 from .services.import_excel import importar_inscripcions_excel
@@ -40,6 +48,7 @@ from .services.competition_groups import (
     ensure_group_for_display_num,
     get_group_for_display_num,
     get_group_maps,
+    group_label,
     get_programmed_group_ids,
     move_inscripcio_to_group,
     next_group_display_num,
@@ -847,6 +856,18 @@ def capture_inscripcions_history_snapshot(request, competicio):
         .order_by("id")
         .values("id", "nom", "origen", "criteri")
     )
+    equip_context_rows = list(
+        EquipContext.objects
+        .filter(competicio=competicio)
+        .order_by("id")
+        .values("id", "code", "nom", "description")
+    )
+    equip_assignacio_rows = list(
+        InscripcioEquipAssignacio.objects
+        .filter(competicio=competicio)
+        .order_by("context_id", "inscripcio_id")
+        .values("context_id", "inscripcio_id", "equip_id", "origen", "criteri")
+    )
     return {
         "inscripcions_fields": _json_clone(inscripcions_rows),
         "grups_competicio": _json_clone(grups_rows),
@@ -856,6 +877,8 @@ def capture_inscripcions_history_snapshot(request, competicio):
         },
         "aparells_exclusions": _json_clone(exclusions_rows),
         "equips_state": _json_clone(equips_rows),
+        "equip_contexts_state": _json_clone(equip_context_rows),
+        "equip_assignacions_state": _json_clone(equip_assignacio_rows),
         "sort_stack_state": _capture_sort_stack_state_for_competicio(request, competicio.id),
     }
 
@@ -887,6 +910,85 @@ def _apply_equips_state_snapshot(competicio, equips_state):
     Equip.objects.filter(competicio=competicio).delete()
     if normalized:
         Equip.objects.bulk_create(normalized)
+
+
+def _apply_equip_contexts_state_snapshot(competicio, equip_contexts_state):
+    rows = equip_contexts_state if isinstance(equip_contexts_state, list) else []
+    normalized = []
+    seen_ids = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        try:
+            ctx_id = int(row.get("id"))
+        except Exception:
+            continue
+        if ctx_id <= 0 or ctx_id in seen_ids:
+            continue
+        code = str(row.get("code") or "").strip()
+        if not code:
+            continue
+        seen_ids.add(ctx_id)
+        normalized.append(
+            EquipContext(
+                id=ctx_id,
+                competicio=competicio,
+                code=code,
+                nom=str(row.get("nom") or "").strip(),
+                description=str(row.get("description") or "").strip(),
+            )
+        )
+
+    EquipContext.objects.filter(competicio=competicio).delete()
+    if normalized:
+        EquipContext.objects.bulk_create(normalized)
+
+
+def _apply_equip_assignacions_state_snapshot(competicio, equip_assignacions_state):
+    rows = equip_assignacions_state if isinstance(equip_assignacions_state, list) else []
+    normalized = []
+    seen_keys = set()
+    valid_context_ids = set(
+        EquipContext.objects.filter(competicio=competicio).values_list("id", flat=True)
+    )
+    valid_ins_ids = set(
+        Inscripcio.objects.filter(competicio=competicio).values_list("id", flat=True)
+    )
+    valid_equip_ids = set(
+        Equip.objects.filter(competicio=competicio).values_list("id", flat=True)
+    )
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        try:
+            context_id = int(row.get("context_id"))
+            inscripcio_id = int(row.get("inscripcio_id"))
+            equip_id = int(row.get("equip_id"))
+        except Exception:
+            continue
+        key = (context_id, inscripcio_id)
+        if (
+            key in seen_keys
+            or context_id not in valid_context_ids
+            or inscripcio_id not in valid_ins_ids
+            or equip_id not in valid_equip_ids
+        ):
+            continue
+        seen_keys.add(key)
+        normalized.append(
+            InscripcioEquipAssignacio(
+                competicio=competicio,
+                context_id=context_id,
+                inscripcio_id=inscripcio_id,
+                equip_id=equip_id,
+                origen=str(row.get("origen") or InscripcioEquipAssignacio.Origen.MANUAL).strip() or InscripcioEquipAssignacio.Origen.MANUAL,
+                criteri=_json_clone(row.get("criteri") or {}),
+            )
+        )
+
+    InscripcioEquipAssignacio.objects.filter(competicio=competicio).delete()
+    if normalized:
+        InscripcioEquipAssignacio.objects.bulk_create(normalized, batch_size=500)
 
 
 def _apply_inscripcions_fields_snapshot(competicio, inscripcions_fields):
@@ -1044,8 +1146,10 @@ def apply_inscripcions_history_snapshot(request, competicio, snapshot):
     snap = snapshot if isinstance(snapshot, dict) else {}
     with transaction.atomic():
         _apply_equips_state_snapshot(competicio, snap.get("equips_state"))
+        _apply_equip_contexts_state_snapshot(competicio, snap.get("equip_contexts_state"))
         _apply_grups_competicio_snapshot(competicio, snap.get("grups_competicio"))
         _apply_inscripcions_fields_snapshot(competicio, snap.get("inscripcions_fields"))
+        _apply_equip_assignacions_state_snapshot(competicio, snap.get("equip_assignacions_state"))
         _apply_aparells_exclusions_snapshot(competicio, snap.get("aparells_exclusions"))
         _apply_competicio_fields_snapshot(competicio, snap.get("competicio_fields"))
 
@@ -1822,14 +1926,19 @@ def _build_tabs_partition_buckets(competicio, records, group_codes):
         return " · ".join(parts) if parts else "(Sense valor)"
 
     simple_label_map = {}
+    simple_values_by_id = {}
+    for r in records:
+        vals = [_norm_val(get_inscripcio_value(r, code)) for code in group_codes]
+        simple = json.dumps(vals, ensure_ascii=False)
+        simple_values_by_id[r.id] = simple
+        if simple not in simple_label_map:
+            simple_label_map[simple] = _simple_label_from_obj(r)
+
     tab_to_ids = OrderedDict()
     tab_label_map = {}
 
     for r in records:
-        vals = [_norm_val(get_inscripcio_value(r, code)) for code in group_codes]
-        simple = json.dumps(vals, ensure_ascii=False)
-        if simple not in simple_label_map:
-            simple_label_map[simple] = _simple_label_from_obj(r)
+        simple = simple_values_by_id.get(r.id, "")
 
         merged_tuple = merge_map.get(simple)
         tab_key = json.dumps(list(merged_tuple), ensure_ascii=False) if merged_tuple else simple
@@ -1913,31 +2022,80 @@ def _clean_group_suggestion_label(raw_label):
 
 
 def _build_group_suggested_name(sources):
-    ranked = []
+    ranked_by_label = OrderedDict()
     for idx, row in enumerate(sources or []):
         if not isinstance(row, dict):
-            continue
-        label = _clean_group_suggestion_label(row.get("label"))
-        if not label:
             continue
         try:
             count = int(row.get("count") or 0)
         except Exception:
             count = 0
-        ranked.append((label, max(0, count), idx))
+        count = max(0, count)
 
-    if not ranked:
+        labels_by_kind = row.get("labels_by_kind")
+        emitted = False
+        if isinstance(labels_by_kind, dict):
+            for kind_priority, kind in enumerate(("tabs", "sort", "")):
+                raw_labels = labels_by_kind.get(kind) or []
+                if not isinstance(raw_labels, list):
+                    continue
+                for label_order, raw_label in enumerate(raw_labels):
+                    label = _clean_group_suggestion_label(raw_label)
+                    if not label:
+                        continue
+                    emitted = True
+                    key = label.casefold()
+                    meta = ranked_by_label.get(key)
+                    if meta is None:
+                        ranked_by_label[key] = {
+                            "label": label,
+                            "count": count,
+                            "kind_priority": kind_priority,
+                            "row_idx": idx,
+                            "label_order": label_order,
+                        }
+                        continue
+                    meta["count"] += count
+                    meta["kind_priority"] = min(meta["kind_priority"], kind_priority)
+                    if (idx, label_order) < (meta["row_idx"], meta["label_order"]):
+                        meta["row_idx"] = idx
+                        meta["label_order"] = label_order
+
+        if emitted:
+            continue
+
+        label = _clean_group_suggestion_label(row.get("label"))
+        if not label:
+            continue
+        key = label.casefold()
+        meta = ranked_by_label.get(key)
+        if meta is None:
+            ranked_by_label[key] = {
+                "label": label,
+                "count": count,
+                "kind_priority": 99,
+                "row_idx": idx,
+                "label_order": 0,
+            }
+            continue
+        meta["count"] += count
+        if idx < meta["row_idx"]:
+            meta["row_idx"] = idx
+
+    if not ranked_by_label:
         return ""
 
-    ranked.sort(key=lambda item: (-item[1], item[2], item[0].casefold()))
-    ordered_labels = []
-    seen = set()
-    for label, _count, _idx in ranked:
-        key = label.casefold()
-        if key in seen:
-            continue
-        seen.add(key)
-        ordered_labels.append(label)
+    ranked = list(ranked_by_label.values())
+    ranked.sort(
+        key=lambda item: (
+            item["kind_priority"],
+            -item["count"],
+            item["row_idx"],
+            item["label_order"],
+            item["label"].casefold(),
+        )
+    )
+    ordered_labels = [item["label"] for item in ranked]
     return " + ".join(ordered_labels)
 
 
@@ -1961,8 +2119,247 @@ def _apply_group_suggested_names(preview_groups):
     return out
 
 
-def _build_group_creation_preview(objs, sizes, start_group_num, bucket_label_by_id=None):
-    bucket_label_by_id = bucket_label_by_id or {}
+def _normalize_bucket_source_entries(raw_sources):
+    if isinstance(raw_sources, dict):
+        raw_sources = [raw_sources]
+    out = []
+    seen = set()
+    for row in raw_sources or []:
+        if not isinstance(row, dict):
+            continue
+        kind = str(row.get("kind") or "").strip().lower()
+        key = str(row.get("key") or "").strip()
+        label = str(row.get("label") or "").strip()
+        if not label:
+            continue
+        ident = (kind, key, label)
+        if ident in seen:
+            continue
+        seen.add(ident)
+        out.append(
+            {
+                "kind": kind,
+                "key": key,
+                "label": label,
+            }
+        )
+    return out
+
+
+def _bucket_labels_by_kind(sources):
+    labels_by_kind = OrderedDict()
+    for source in _normalize_bucket_source_entries(sources):
+        kind = source["kind"]
+        label = str(source.get("label") or "").strip()
+        if not label:
+            continue
+        labels = labels_by_kind.setdefault(kind, [])
+        if label not in labels:
+            labels.append(label)
+    return labels_by_kind
+
+
+def _bucket_source_signature(sources):
+    normalized = _normalize_bucket_source_entries(sources)
+    return tuple((row["kind"], row["key"], row["label"]) for row in normalized)
+
+
+def _build_bucket_source_label(sources):
+    labels = []
+    for source in _normalize_bucket_source_entries(sources):
+        label = str(source.get("label") or "").strip()
+        if label and label not in labels:
+            labels.append(label)
+    return " / ".join(labels) if labels else "Sense bloc"
+
+
+def _build_bucket_source_kinds(sources):
+    kinds = []
+    for source in _normalize_bucket_source_entries(sources):
+        kind = str(source.get("kind") or "").strip().lower()
+        if kind and kind not in kinds:
+            kinds.append(kind)
+    return kinds
+
+
+def _build_bucket_sources_by_id(buckets):
+    out = {}
+    for bucket in buckets or []:
+        sources = _normalize_bucket_source_entries(bucket.get("sources"))
+        for ins_id in bucket.get("ids") or []:
+            out[ins_id] = list(sources)
+    return out
+
+
+def _build_partition_signature_set(buckets):
+    return {
+        tuple(sorted(int(ins_id) for ins_id in (bucket.get("ids") or [])))
+        for bucket in (buckets or [])
+        if bucket.get("ids")
+    }
+
+
+def _partitions_are_equivalent(buckets_a, buckets_b):
+    return _build_partition_signature_set(buckets_a) == _build_partition_signature_set(buckets_b)
+
+
+def _decorate_buckets_with_sources(buckets, kind):
+    out = []
+    for bucket in buckets or []:
+        label = str(bucket.get("label") or "Sense bloc")
+        key = str(bucket.get("key") or "")
+        out.append(
+            {
+                **bucket,
+                "label": label,
+                "sources": [
+                    {
+                        "kind": kind,
+                        "key": key or label,
+                        "label": label,
+                    }
+                ],
+            }
+        )
+    return out
+
+
+def _build_combined_partition_buckets(records, layers):
+    buckets = OrderedDict()
+    for record in records or []:
+        raw_sources = []
+        for layer in layers or []:
+            source_row = layer.get("by_id", {}).get(record.id)
+            if not isinstance(source_row, dict):
+                continue
+            raw_sources.append(
+                {
+                    "kind": str(source_row.get("kind") or "").strip().lower(),
+                    "key": str(source_row.get("key") or "").strip(),
+                    "label": str(source_row.get("label") or "").strip(),
+                }
+            )
+
+        sources = _normalize_bucket_source_entries(raw_sources)
+        if not sources:
+            continue
+
+        bucket_key = json.dumps(
+            [{"kind": row["kind"], "key": row["key"]} for row in sources],
+            ensure_ascii=False,
+        )
+        bucket = buckets.get(bucket_key)
+        if bucket is None:
+            bucket = {
+                "key": bucket_key,
+                "label": _build_bucket_source_label(sources),
+                "count": 0,
+                "ids": [],
+                "sources": sources,
+            }
+            buckets[bucket_key] = bucket
+        bucket["count"] += 1
+        bucket["ids"].append(record.id)
+    return list(buckets.values())
+
+
+def _resolve_group_creation_buckets(
+    competicio,
+    records,
+    *,
+    group_codes=None,
+    partition_codes=None,
+    fallback_mode="all_filtered",
+):
+    group_codes = list(group_codes or [])
+    partition_codes = list(partition_codes or [])
+
+    tabs_buckets = _build_tabs_partition_buckets(competicio, records, group_codes) if group_codes else []
+    sort_buckets = _build_sort_partition_buckets(records, partition_codes) if partition_codes else []
+
+    tabs_buckets = _decorate_buckets_with_sources(tabs_buckets, "tabs")
+    sort_buckets = _decorate_buckets_with_sources(sort_buckets, "sort")
+
+    if tabs_buckets and sort_buckets and _partitions_are_equivalent(tabs_buckets, sort_buckets):
+        sort_buckets = []
+
+    layers_used = []
+    if tabs_buckets:
+        layers_used.append("tabs")
+    if sort_buckets:
+        layers_used.append("sort")
+
+    if not layers_used:
+        if fallback_mode == "strict":
+            return {
+                "ok": False,
+                "error": "No hi ha criteris resolubles per construir blocs d'origen",
+                "buckets": [],
+                "layers_used": [],
+                "used_fallback": False,
+                "fallback_reason": "no_resolvable_criteria",
+            }
+        return {
+            "ok": True,
+            "buckets": [
+                {
+                    "key": "__ALL_FILTERED__",
+                    "label": "Totes les inscripcions filtrades",
+                    "count": len(records),
+                    "ids": [r.id for r in records],
+                    "sources": [
+                        {
+                            "kind": "fallback",
+                            "key": "__ALL_FILTERED__",
+                            "label": "Totes les inscripcions filtrades",
+                        }
+                    ],
+                }
+            ],
+            "layers_used": [],
+            "used_fallback": True,
+            "fallback_reason": "no_resolvable_criteria_used_all_filtered",
+        }
+
+    if len(layers_used) == 1:
+        buckets = tabs_buckets if tabs_buckets else sort_buckets
+    else:
+        layers = []
+        if tabs_buckets:
+            layers.append(
+                {
+                    "kind": "tabs",
+                    "by_id": {
+                        ins_id: bucket["sources"][0]
+                        for bucket in tabs_buckets
+                        for ins_id in (bucket.get("ids") or [])
+                    },
+                }
+            )
+        if sort_buckets:
+            layers.append(
+                {
+                    "kind": "sort",
+                    "by_id": {
+                        ins_id: bucket["sources"][0]
+                        for bucket in sort_buckets
+                        for ins_id in (bucket.get("ids") or [])
+                    },
+                }
+            )
+        buckets = _build_combined_partition_buckets(records, layers)
+
+    return {
+        "ok": True,
+        "buckets": buckets,
+        "layers_used": layers_used,
+        "used_fallback": False,
+        "fallback_reason": "",
+    }
+
+
+def _build_group_creation_preview(objs, sizes, start_group_num, bucket_sources_by_id=None):
+    bucket_sources_by_id = bucket_sources_by_id or {}
     out = []
     idx = 0
     next_group_num = start_group_num
@@ -1979,8 +2376,18 @@ def _build_group_creation_preview(objs, sizes, start_group_num, bucket_label_by_
         next_group_num += 1
         source_counts = OrderedDict()
         for obj in members:
-            source_label = str(bucket_label_by_id.get(obj.id) or "Sense bloc")
-            source_counts[source_label] = source_counts.get(source_label, 0) + 1
+            sources = bucket_sources_by_id.get(obj.id) or []
+            source_key = _bucket_source_signature(sources)
+            row = source_counts.get(source_key)
+            if row is None:
+                row = {
+                    "label": _build_bucket_source_label(sources),
+                    "count": 0,
+                    "kinds": _build_bucket_source_kinds(sources),
+                    "labels_by_kind": dict(_bucket_labels_by_kind(sources)),
+                }
+                source_counts[source_key] = row
+            row["count"] += 1
 
         member_names = [str(getattr(obj, "nom_i_cognoms", "") or "").strip() for obj in members]
         member_names = [name for name in member_names if name]
@@ -1991,10 +2398,7 @@ def _build_group_creation_preview(objs, sizes, start_group_num, bucket_label_by_
                 "impact_kind": "created",
                 "group_num": next_group_num,
                 "members_count": len(members),
-                "sources": [
-                    {"label": label, "count": count}
-                    for label, count in source_counts.items()
-                ],
+                "sources": list(source_counts.values()),
                 "member_names_preview": member_names[:4],
                 "member_names_remaining": max(0, len(member_names) - 4),
             }
@@ -2003,9 +2407,10 @@ def _build_group_creation_preview(objs, sizes, start_group_num, bucket_label_by_
     return _apply_group_suggested_names(out)
 
 
-def _build_existing_groups_preview(competicio, records, bucket_label_by_id=None, moving_ids=None):
-    bucket_label_by_id = bucket_label_by_id or {}
+def _build_existing_groups_preview(competicio, records, bucket_sources_by_id=None, moving_ids=None):
+    bucket_sources_by_id = bucket_sources_by_id or {}
     moving_ids = set(moving_ids or [])
+    groups_by_display_num = (get_group_maps(competicio).get("by_display_num") or {})
     visible_group_nums = []
     seen_group_nums = set()
     for record in records:
@@ -2034,19 +2439,26 @@ def _build_existing_groups_preview(competicio, records, bucket_label_by_id=None,
     out = []
     for group_num in sorted(grouped.keys()):
         members = grouped.get(group_num) or []
+        group_obj = groups_by_display_num.get(group_num)
         source_counts = OrderedDict()
         moving_members = []
         for obj in members:
-            source_label = str(bucket_label_by_id.get(obj.id) or "Fora del filtre actual")
-            row = source_counts.get(source_label)
+            sources = bucket_sources_by_id.get(obj.id) or []
+            source_key = _bucket_source_signature(sources)
+            row = source_counts.get(source_key)
             if row is None:
                 row = {
-                    "label": source_label,
+                    "label": (
+                        _build_bucket_source_label(sources)
+                        if sources else "Fora del filtre actual"
+                    ),
                     "count": 0,
                     "moving_count": 0,
                     "remaining_count": 0,
+                    "kinds": _build_bucket_source_kinds(sources),
+                    "labels_by_kind": dict(_bucket_labels_by_kind(sources)),
                 }
-                source_counts[source_label] = row
+                source_counts[source_key] = row
             row["count"] += 1
             if obj.id in moving_ids:
                 row["moving_count"] += 1
@@ -2071,6 +2483,7 @@ def _build_existing_groups_preview(competicio, records, bucket_label_by_id=None,
                 "preview_kind": "existing",
                 "impact_kind": impact_kind,
                 "group_num": group_num,
+                "group_label": group_label(group_obj),
                 "members_count": len(members),
                 "moving_members_count": moving_members_count,
                 "remaining_members_count": remaining_members_count,
@@ -4444,10 +4857,6 @@ def inscripcions_groups_from_sort(request, pk):
     except Exception:
         payload = {}
 
-    source = str(payload.get("source") or "sort").strip().lower()
-    if source not in ("sort", "tabs"):
-        return HttpResponseBadRequest("source invalid")
-
     strategy = str(payload.get("strategy") or "per_bucket").strip().lower()
     if strategy not in (
         "per_bucket",
@@ -4507,7 +4916,9 @@ def inscripcions_groups_from_sort(request, pk):
                     "buckets_total": 0,
                     "buckets_applied": 0,
                     "stack_used": partition_codes,
-                    "source": source,
+                    "resolution_mode": "auto",
+                    "layers_used": [],
+                    "effective_bucket_count": 0,
                     "strategy": strategy,
                     "used_fallback": False,
                     "preview": {
@@ -4517,7 +4928,9 @@ def inscripcions_groups_from_sort(request, pk):
                         "existing_groups_total": 0,
                         "existing_members_total": 0,
                         "existing_groups": [],
-                        "source": source,
+                        "resolution_mode": "auto",
+                        "layers_used": [],
+                        "effective_bucket_count": 0,
                         "strategy": strategy,
                     } if preview_only else None,
                 },
@@ -4526,60 +4939,30 @@ def inscripcions_groups_from_sort(request, pk):
             )
         )
 
-    used_fallback = False
-    fallback_reason = ""
+    resolution = _resolve_group_creation_buckets(
+        competicio,
+        records,
+        group_codes=selected_group_codes_context,
+        partition_codes=partition_codes,
+        fallback_mode=fallback_mode,
+    )
+    if not resolution.get("ok"):
+        return HttpResponseBadRequest(
+            resolution.get("error") or "No hi ha criteris resolubles per construir blocs d'origen"
+        )
 
-    buckets = []
-    if source == "sort":
-        if partition_codes:
-            buckets = _build_sort_partition_buckets(records, partition_codes)
-        else:
-            if fallback_mode == "strict":
-                return HttpResponseBadRequest("No hi ha criteris d'ordenacio actius")
-            buckets = [
-                {
-                    "key": "__ALL_FILTERED__",
-                    "label": "Totes les inscripcions filtrades",
-                    "count": len(records),
-                    "ids": [r.id for r in records],
-                }
-            ]
-            used_fallback = True
-            fallback_reason = "no_active_sort_used_all_filtered"
-    else:
-        if selected_group_codes_context:
-            buckets = _build_tabs_partition_buckets(
-                competicio,
-                records,
-                selected_group_codes_context,
-            )
-        else:
-            if fallback_mode == "strict":
-                return HttpResponseBadRequest("No hi ha agrupacio per pestanyes activa")
-            buckets = [
-                {
-                    "key": "__ALL_FILTERED__",
-                    "label": "Totes les inscripcions filtrades",
-                    "count": len(records),
-                    "ids": [r.id for r in records],
-                }
-            ]
-            used_fallback = True
-            fallback_reason = "no_active_tabs_used_all_filtered"
-
-    bucket_label_by_id_all = {}
-    for bucket in buckets:
-        bucket_label = str(bucket.get("label") or "Sense bloc")
-        for ins_id in bucket.get("ids") or []:
-            bucket_label_by_id_all.setdefault(ins_id, bucket_label)
+    buckets = list(resolution.get("buckets") or [])
+    layers_used = list(resolution.get("layers_used") or [])
+    used_fallback = bool(resolution.get("used_fallback"))
+    fallback_reason = str(resolution.get("fallback_reason") or "")
+    bucket_sources_by_id_all = _build_bucket_sources_by_id(buckets)
 
     bucket_by_key = {b["key"]: b for b in buckets}
     selected_keys_raw = payload.get("selected_keys")
     if not isinstance(selected_keys_raw, list):
-        if source == "sort":
-            selected_keys_raw = payload.get("selected_bucket_keys")
-        else:
-            selected_keys_raw = payload.get("selected_tab_keys")
+        selected_keys_raw = payload.get("selected_bucket_keys")
+    if not isinstance(selected_keys_raw, list):
+        selected_keys_raw = payload.get("selected_tab_keys")
     selected_keys = []
     if isinstance(selected_keys_raw, list):
         for value in selected_keys_raw:
@@ -4603,7 +4986,7 @@ def inscripcions_groups_from_sort(request, pk):
     existing_groups_preview = _build_existing_groups_preview(
         competicio,
         records,
-        bucket_label_by_id=bucket_label_by_id_all,
+        bucket_sources_by_id=bucket_sources_by_id_all,
         moving_ids=target_ids,
     )
     existing_members_total = sum(group["members_count"] for group in existing_groups_preview)
@@ -4619,7 +5002,9 @@ def inscripcions_groups_from_sort(request, pk):
                     "buckets_total": len(buckets),
                     "buckets_applied": len(buckets_to_apply),
                     "stack_used": partition_codes,
-                    "source": source,
+                    "resolution_mode": "auto",
+                    "layers_used": layers_used,
+                    "effective_bucket_count": len(buckets),
                     "strategy": strategy,
                     "used_fallback": used_fallback,
                     "fallback_reason": fallback_reason,
@@ -4630,7 +5015,9 @@ def inscripcions_groups_from_sort(request, pk):
                         "existing_groups_total": len(existing_groups_preview),
                         "existing_members_total": existing_members_total,
                         "existing_groups": existing_groups_preview,
-                        "source": source,
+                        "resolution_mode": "auto",
+                        "layers_used": layers_used,
+                        "effective_bucket_count": len(buckets),
                         "strategy": strategy,
                         "used_fallback": used_fallback,
                         "fallback_reason": fallback_reason,
@@ -4652,7 +5039,9 @@ def inscripcions_groups_from_sort(request, pk):
                     "preview_only": preview_only,
                     "updated": 0,
                     "groups_created": 0,
-                    "source": source,
+                    "resolution_mode": "auto",
+                    "layers_used": layers_used,
+                    "effective_bucket_count": len(buckets),
                     "strategy": strategy,
                     "preview": {
                         "groups_total": 0,
@@ -4661,7 +5050,9 @@ def inscripcions_groups_from_sort(request, pk):
                         "existing_groups_total": len(existing_groups_preview),
                         "existing_members_total": existing_members_total,
                         "existing_groups": existing_groups_preview,
-                        "source": source,
+                        "resolution_mode": "auto",
+                        "layers_used": layers_used,
+                        "effective_bucket_count": len(buckets),
                         "strategy": strategy,
                     } if preview_only else None,
                 },
@@ -4745,7 +5136,9 @@ def inscripcions_groups_from_sort(request, pk):
                     "buckets_total": len(buckets),
                     "buckets_applied": len(buckets_to_apply),
                     "stack_used": partition_codes,
-                    "source": source,
+                    "resolution_mode": "auto",
+                    "layers_used": layers_used,
+                    "effective_bucket_count": len(buckets),
                     "strategy": strategy_applied,
                     "used_fallback": used_fallback,
                     "fallback_reason": fallback_reason,
@@ -4756,7 +5149,9 @@ def inscripcions_groups_from_sort(request, pk):
                         "existing_groups_total": len(existing_groups_preview),
                         "existing_members_total": existing_members_total,
                         "existing_groups": existing_groups_preview,
-                        "source": source,
+                        "resolution_mode": "auto",
+                        "layers_used": layers_used,
+                        "effective_bucket_count": len(buckets),
                         "strategy": strategy_applied,
                         "used_fallback": used_fallback,
                         "fallback_reason": fallback_reason,
@@ -4768,17 +5163,13 @@ def inscripcions_groups_from_sort(request, pk):
         )
 
     max_grup = (GrupCompeticio.objects.filter(competicio=competicio).aggregate(m=Max("display_num"))["m"] or 0)
-    bucket_label_by_id = {}
-    for bucket in buckets_to_apply:
-        bucket_label = str(bucket.get("label") or "Sense bloc")
-        for ins_id in bucket.get("ids") or []:
-            bucket_label_by_id.setdefault(ins_id, bucket_label)
+    bucket_sources_by_id = _build_bucket_sources_by_id(buckets_to_apply)
 
     preview_groups = _build_group_creation_preview(
         objs,
         sizes,
         start_group_num=max_grup,
-        bucket_label_by_id=bucket_label_by_id,
+        bucket_sources_by_id=bucket_sources_by_id,
     )
 
     if preview_only:
@@ -4792,7 +5183,9 @@ def inscripcions_groups_from_sort(request, pk):
                     "buckets_total": len(buckets),
                     "buckets_applied": len(buckets_to_apply),
                     "stack_used": partition_codes,
-                    "source": source,
+                    "resolution_mode": "auto",
+                    "layers_used": layers_used,
+                    "effective_bucket_count": len(buckets),
                     "strategy": strategy_applied,
                     "used_fallback": used_fallback,
                     "fallback_reason": fallback_reason,
@@ -4805,7 +5198,9 @@ def inscripcions_groups_from_sort(request, pk):
                         "existing_groups_total": len(existing_groups_preview),
                         "existing_members_total": existing_members_total,
                         "existing_groups": existing_groups_preview,
-                        "source": source,
+                        "resolution_mode": "auto",
+                        "layers_used": layers_used,
+                        "effective_bucket_count": len(buckets),
                         "strategy": strategy_applied,
                         "used_fallback": used_fallback,
                         "fallback_reason": fallback_reason,
@@ -4866,7 +5261,9 @@ def inscripcions_groups_from_sort(request, pk):
                 "buckets_total": len(buckets),
                 "buckets_applied": len(buckets_to_apply),
                 "stack_used": partition_codes,
-                "source": source,
+                "resolution_mode": "auto",
+                "layers_used": layers_used,
+                "effective_bucket_count": len(buckets),
                 "strategy": strategy_applied,
                 "used_fallback": used_fallback,
                 "fallback_reason": fallback_reason,

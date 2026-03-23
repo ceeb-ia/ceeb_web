@@ -42,6 +42,9 @@ from .views_classificacio_templates import (
     classificacio_template_global_save,
 )
 from .views_equips import (
+    equip_context_create,
+    equip_context_delete,
+    equip_context_rename,
     equips_assign,
     equips_auto_create,
     equips_create_manual,
@@ -124,6 +127,9 @@ urlpatterns = [
     path("competicio/<int:pk>/inscripcions/equips/create/", competition_view(equips_create_manual, "inscripcions.edit"), name="inscripcions_equips_create_manual"),
     path("competicio/<int:pk>/inscripcions/equips/assign/", competition_view(equips_assign, "inscripcions.edit"), name="inscripcions_equips_assign"),
     path("competicio/<int:pk>/inscripcions/equips/unassign/", competition_view(equips_unassign, "inscripcions.edit"), name="inscripcions_equips_unassign"),
+    path("competicio/<int:pk>/inscripcions/equips/contexts/create/", competition_view(equip_context_create, "inscripcions.edit"), name="inscripcions_equip_context_create"),
+    path("competicio/<int:pk>/inscripcions/equips/contexts/<slug:context_code>/rename/", competition_view(equip_context_rename, "inscripcions.edit"), name="inscripcions_equip_context_rename"),
+    path("competicio/<int:pk>/inscripcions/equips/contexts/<slug:context_code>/delete/", competition_view(equip_context_delete, "inscripcions.edit"), name="inscripcions_equip_context_delete"),
     path("competicio/<int:pk>/inscripcions/equips/<int:equip_id>/rename/", competition_view(equips_rename, "inscripcions.edit"), name="inscripcions_equips_rename"),
     path("competicio/<int:pk>/inscripcions/equips/<int:equip_id>/delete/", competition_view(equips_delete, "inscripcions.edit"), name="inscripcions_equips_delete"),
     path("competicio/<int:pk>/inscripcions/equips/delete-all/", competition_view(equips_delete_all, "inscripcions.edit"), name="inscripcions_equips_delete_all"),

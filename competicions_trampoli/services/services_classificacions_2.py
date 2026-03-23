@@ -7,6 +7,12 @@ from decimal import Decimal
 from django.db import models
 from django.utils import timezone
 from ..models import Inscripcio
+from .equip_contexts import (
+    NATIVE_EQUIP_CONTEXT_CODE,
+    get_contextual_assignment_map,
+    normalize_equip_context_code,
+    resolve_inscripcio_equip,
+)
 from ..models_trampoli import CompeticioAparell
 from ..models_scoring import ScoreEntry
 
@@ -106,6 +112,11 @@ DEFAULT_SCHEMA = {
 
     # Config additiva per tipus="equips"
     "equips": {
+        "assignment_source": {
+            "mode": "native",
+            "context_code": "",
+            "fallback": "native",
+        },
         "incloure_sense_equip": False,
         "particions_manuals": [],  # [{key,label,equip_ids:[...]}]
         "particio_edat": {
@@ -165,11 +176,33 @@ def _merge_schema(schema: dict) -> dict:
     out["presentacio"] = {**DEFAULT_SCHEMA["presentacio"], **(schema.get("presentacio") or {})}
     out["desempat"] = schema.get("desempat", DEFAULT_SCHEMA["desempat"]) or []
     out["equips"] = {**DEFAULT_SCHEMA["equips"], **(schema.get("equips") or {})}
+    out["equips"]["assignment_source"] = {
+        **DEFAULT_SCHEMA["equips"]["assignment_source"],
+        **(((schema.get("equips") or {}).get("assignment_source")) or {}),
+    }
     out["equips"]["particio_edat"] = {
         **DEFAULT_SCHEMA["equips"]["particio_edat"],
         **(((schema.get("equips") or {}).get("particio_edat")) or {}),
     }
     return out
+
+
+def _normalize_equip_assignment_source(raw_cfg):
+    cfg = raw_cfg if isinstance(raw_cfg, dict) else {}
+    mode = str(cfg.get("mode") or "native").strip().lower()
+    if mode not in {"native", "context"}:
+        mode = "native"
+    context_code = normalize_equip_context_code(cfg.get("context_code"))
+    if mode == "native":
+        context_code = NATIVE_EQUIP_CONTEXT_CODE
+    fallback = str(cfg.get("fallback") or NATIVE_EQUIP_CONTEXT_CODE).strip().lower()
+    if fallback != NATIVE_EQUIP_CONTEXT_CODE:
+        fallback = NATIVE_EQUIP_CONTEXT_CODE
+    return {
+        "mode": mode,
+        "context_code": context_code,
+        "fallback": fallback,
+    }
 
 
 def _to_float(v):
@@ -1369,6 +1402,7 @@ def compute_classificacio(competicio, cfg_obj):
     presentacio = schema["presentacio"] or {}
     display_columns = get_display_columns(schema)
     equips_cfg = schema.get("equips") or {}
+    assignment_source = _normalize_equip_assignment_source((equips_cfg or {}).get("assignment_source"))
     tipus = (getattr(cfg_obj, "tipus", "individual") or "individual").lower().strip()
     desempat = _sanitize_desempat_for_tipus(desempat, tipus)
     mode_resultat_aparells = _normalize_mode_resultat_aparells(punt.get("mode_resultat_aparells"))
@@ -1434,6 +1468,13 @@ def compute_classificacio(competicio, cfg_obj):
 
     ins_list = list(ins_qs)
     ins_by_id = {i.id: i for i in ins_list}
+    team_assignment_map = {}
+    if tipus == "equips" and assignment_source.get("mode") == "context":
+        team_assignment_map = get_contextual_assignment_map(
+            competicio,
+            ins_list,
+            assignment_source.get("context_code"),
+        )
 
     # notes per tots els aparells seleccionats (una query)
     notes_qs = (
@@ -2416,11 +2457,17 @@ def compute_classificacio(competicio, cfg_obj):
         # agrupem participants per equip dins cada particio "base" existent
         grouped = defaultdict(lambda: defaultdict(list))  # base_pkey -> equip_id_key -> [ins]
         for ins in ins_list:
-            if ins.equip_id is None and not include_sense_equip:
+            resolved_equip = resolve_inscripcio_equip(
+                ins,
+                context_code=assignment_source.get("context_code"),
+                fallback=assignment_source.get("fallback"),
+                assignment_map=team_assignment_map,
+            )
+            if resolved_equip is None and not include_sense_equip:
                 continue
             base_pkey = _partition_key_from_entries(ins, part_entries, part_custom_idx)
-            team_id_key = ins.equip_id if ins.equip_id is not None else "__sense_equip__"
-            grouped[base_pkey][team_id_key].append(ins)
+            team_id_key = resolved_equip.id if resolved_equip is not None else "__sense_equip__"
+            grouped[base_pkey][team_id_key].append((ins, resolved_equip))
 
         for base_pkey, teams in grouped.items():
             for team_id_key, members in teams.items():
@@ -2433,7 +2480,7 @@ def compute_classificacio(competicio, cfg_obj):
                     equip_nom = "Sense equip"
                 else:
                     equip_id = int(team_id_key)
-                    eq_obj = getattr(members[0], "equip", None)
+                    eq_obj = members[0][1]
                     equip_nom = (getattr(eq_obj, "nom", None) or f"Equip {equip_id}").strip()
 
                 # particio manual / edat
@@ -2442,7 +2489,7 @@ def compute_classificacio(competicio, cfg_obj):
                 if age_active:
                     ref_date = getattr(competicio, "data", None) or timezone.localdate()
                     ages = []
-                    for m in members:
+                    for m, _resolved_equip in members:
                         age = _years_old(getattr(m, "data_naixement", None), ref_date)
                         if age is not None:
                             ages.append(age)
@@ -2457,8 +2504,8 @@ def compute_classificacio(competicio, cfg_obj):
                 else:
                     final_pkey = base_pkey
 
-                team_score = sum([_to_float(per_ins[m.id]["score"]) for m in members])
-                member_ids = [m.id for m in members]
+                team_score = sum([_to_float(per_ins[m.id]["score"]) for m, _resolved_equip in members])
+                member_ids = [m.id for m, _resolved_equip in members]
 
                 team_tie = {}
                 for t in desempat or []:

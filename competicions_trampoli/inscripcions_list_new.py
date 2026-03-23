@@ -18,6 +18,12 @@ from .services.competition_groups import (
     get_group_maps,
     sync_competicio_group_names_view,
 )
+from .services.equip_contexts import (
+    NATIVE_EQUIP_CONTEXT_CODE,
+    get_equip_context_payload,
+    get_equips_for_context,
+    normalize_equip_context_code,
+)
 from .services.media_matching import (
     build_inscripcio_media_match_candidates,
     match_media_files_to_inscripcions,
@@ -31,6 +37,7 @@ from .views import (
     reconcile_inscripcions_sort_context_state,
     _extract_sort_partition_codes,
     _build_sort_partition_buckets,
+    _resolve_group_creation_buckets,
     capture_inscripcions_history_snapshot,
     get_inscripcions_history_state,
     record_inscripcions_history_entry,
@@ -477,21 +484,85 @@ class InscripcionsListNewView(InscripcionsListView):
         ctx["sort_partition_buckets"] = partition_buckets
         ctx["sort_partition_bucket_count"] = len(partition_buckets)
 
+        group_field_options = get_allowed_group_fields(self.competicio)
+        group_field_label_by_code = {
+            f["code"]: f.get("ui_label") or f.get("label") or f["code"]
+            for f in group_field_options
+            if isinstance(f, dict) and f.get("code")
+        }
+        ctx["group_creation_group_fields"] = [
+            {
+                "code": code,
+                "label": group_field_label_by_code.get(code, code),
+            }
+            for code in active_group_by
+        ]
+        group_resolution_codes = list(dict.fromkeys(list(active_group_by) + list(partition_codes)))
+        group_resolution_builtin_fields = [
+            code for code in group_resolution_codes if hasattr(Inscripcio, code)
+        ]
+        records_for_group_resolution = list(
+            filtered_qs.order_by("ordre_sortida", "id").only(
+                "id",
+                "extra",
+                *group_resolution_builtin_fields,
+            )
+        )
+        auto_group_resolution = _resolve_group_creation_buckets(
+            self.competicio,
+            records_for_group_resolution,
+            group_codes=active_group_by,
+            partition_codes=partition_codes,
+            fallback_mode="all_filtered",
+        )
+        auto_group_buckets_raw = (
+            auto_group_resolution.get("buckets") if auto_group_resolution.get("ok") else []
+        ) or []
+        auto_group_layers_used = list(auto_group_resolution.get("layers_used") or [])
+        if auto_group_layers_used == ["tabs", "sort"]:
+            auto_group_resolution_label = "Agrupacions x ordenacions"
+        elif auto_group_layers_used == ["tabs"]:
+            auto_group_resolution_label = "Agrupacions actives"
+        elif auto_group_layers_used == ["sort"]:
+            auto_group_resolution_label = "Ordenacions segmentadores"
+        else:
+            auto_group_resolution_label = "Fallback sobre les filtrades"
+        ctx["group_creation_resolution_mode"] = "auto"
+        ctx["group_creation_resolution_layers_used"] = auto_group_layers_used
+        ctx["group_creation_resolution_label"] = auto_group_resolution_label
+        ctx["group_creation_has_resolvable_criteria"] = bool(auto_group_layers_used)
+        ctx["group_creation_auto_buckets"] = [
+            {
+                "key": bucket.get("key"),
+                "label": bucket.get("label"),
+                "count": bucket.get("count"),
+                "sources": bucket.get("sources") or [],
+                "kinds": [
+                    str(source.get("kind") or "").strip().lower()
+                    for source in (bucket.get("sources") or [])
+                    if str(source.get("kind") or "").strip()
+                ],
+            }
+            for bucket in auto_group_buckets_raw
+        ]
+        ctx["group_creation_auto_bucket_count"] = len(ctx["group_creation_auto_buckets"])
+
         ctx["group_names"] = get_group_maps(self.competicio).get("name_map") or {}
 
-        team_fields = get_allowed_group_fields(self.competicio)
+        team_context_code = normalize_equip_context_code(self.request.GET.get("team_context"))
+        valid_team_context_codes = {item["code"] for item in get_equip_context_payload(self.competicio)}
+        if team_context_code not in valid_team_context_codes:
+            team_context_code = NATIVE_EQUIP_CONTEXT_CODE
+        team_fields = group_field_options
         team_field_codes = {f["code"] for f in team_fields}
         default_team_fields = [c for c in ("entitat", "subcategoria", "sexe") if c in team_field_codes]
-        teams = (
-            Equip.objects.filter(competicio=self.competicio)
-            .annotate(membres_count=Count("membres"))
-            .order_by("nom", "id")
-        )
-        teams_list = list(teams)
+        teams_list = list(get_equips_for_context(self.competicio, team_context_code))
         ctx["team_partition_fields"] = team_fields
         ctx["team_partition_default_fields"] = default_team_fields
         ctx["equips_existing"] = teams_list
         ctx["equip_name_map"] = {str(e.id): e.nom for e in teams_list}
+        ctx["team_contexts"] = get_equip_context_payload(self.competicio)
+        ctx["team_context_selected_code"] = team_context_code
 
         # Pas 8 del pla: dades necessàries per a la columna "Aparells".
         aparells_cfg = list(

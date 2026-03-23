@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
+from django.contrib.sessions.backends.db import SessionStore
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import RequestFactory, TestCase
@@ -18,7 +19,15 @@ from ceeb_web.auth_groups import GLOBAL_AUTH_GROUPS
 
 from . import live_cache
 from .access import user_has_competicio_capability
-from .models import Competicio, Equip, GrupCompeticio, Inscripcio, InscripcioMedia
+from .models import (
+    Competicio,
+    Equip,
+    EquipContext,
+    GrupCompeticio,
+    Inscripcio,
+    InscripcioEquipAssignacio,
+    InscripcioMedia,
+)
 from .models_judging import (
     JudgeConversation,
     JudgeConversationMessage,
@@ -41,7 +50,9 @@ from .models_trampoli import (
 from .models import CompeticioMembership
 from .scoring_engine import ScoringEngine
 from .views import (
+    apply_inscripcions_history_snapshot,
     _split_custom_sort_tokens,
+    capture_inscripcions_history_snapshot,
     renumber_groups_for_competicio,
     get_competicio_custom_sort_rank_map,
     sort_records_by_field_stable,
@@ -342,7 +353,7 @@ class InscripcionsSortFlowTests(TestCase):
 
     def _groups_payload(self, **overrides):
         payload = {
-            "source": "sort",
+            "resolution_mode": "auto",
             "strategy": "count",
             "group_count": 1,
             "preview_only": True,
@@ -467,6 +478,17 @@ class InscripcionsSortFlowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Ordre de competici")
         self.assertContains(response, "Criteri final actiu")
+
+    def test_inscripcions_list_renders_unified_groups_panel(self):
+        response = self.client.get(reverse("inscripcions_list", kwargs={"pk": self.comp.id}))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Crear grups amb resolucio automatica")
+        self.assertContains(response, "Divisions actives:")
+        self.assertContains(response, "Ordenacions detectades:")
+        self.assertContains(response, "Resolucio final:")
+        self.assertNotContains(response, "Base de creacio:")
+        self.assertNotContains(response, "Crear grups per pestanyes")
+        self.assertNotContains(response, "Crear grups per ordenacio")
 
     def test_sort_apply_tab_preserves_tab_block_order(self):
         beta_1 = Inscripcio.objects.create(
@@ -1951,6 +1973,29 @@ class InscripcionsSortFlowTests(TestCase):
         self.assertEqual(existing.get("moving_member_names_preview"), [first.nom_i_cognoms, second.nom_i_cognoms])
         self.assertEqual(preview.get("existing_groups_total"), 1)
 
+    def test_groups_preview_existing_group_exposes_existing_name_label(self):
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Primer",
+            ordre_sortida=1,
+            grup=1,
+        )
+        renumber_groups_for_competicio(self.comp)
+        group = GrupCompeticio.objects.get(competicio=self.comp, display_num=1)
+        group.nom = "Final"
+        group.save(update_fields=["nom"])
+
+        resp = self._post_json(
+            "inscripcions_groups_from_sort",
+            self._groups_payload(),
+        )
+        self.assertEqual(resp.status_code, 200)
+
+        preview = resp.json().get("preview") or {}
+        existing_groups = preview.get("existing_groups") or []
+        self.assertEqual(len(existing_groups), 1)
+        self.assertEqual(existing_groups[0].get("group_label"), "Final")
+
     def test_groups_preview_suggests_name_from_single_sort_bucket(self):
         Inscripcio.objects.create(
             competicio=self.comp,
@@ -1980,7 +2025,7 @@ class InscripcionsSortFlowTests(TestCase):
 
         resp = self._post_json(
             "inscripcions_groups_from_sort",
-            self._groups_payload(source="sort", strategy="per_bucket"),
+            self._groups_payload(strategy="per_bucket"),
         )
         self.assertEqual(resp.status_code, 200)
 
@@ -2006,13 +2051,382 @@ class InscripcionsSortFlowTests(TestCase):
 
         resp = self._post_json(
             "inscripcions_groups_from_sort",
-            self._groups_payload(source="tabs", strategy="per_bucket", group_by=["categoria"]),
+            self._groups_payload(strategy="per_bucket", group_by=["categoria"]),
         )
         self.assertEqual(resp.status_code, 200)
 
         groups = (resp.json().get("preview") or {}).get("groups") or []
         self.assertEqual(len(groups), 1)
         self.assertEqual(groups[0].get("suggested_name"), "Alevi")
+
+    def test_groups_preview_auto_resolution_combines_group_by_and_sort(self):
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Alevi A",
+            categoria="Alevi",
+            entitat="Club A",
+            ordre_sortida=1,
+            grup=None,
+        )
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Alevi B",
+            categoria="Alevi",
+            entitat="Club B",
+            ordre_sortida=2,
+            grup=None,
+        )
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Infantil A",
+            categoria="Infantil",
+            entitat="Club A",
+            ordre_sortida=3,
+            grup=None,
+        )
+
+        sort_resp = self._post_json(
+            "inscripcions_sort_apply",
+            {
+                "scope": "all",
+                "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                "group_by": ["categoria"],
+                "sort_key": "entitat",
+                "sort_dir": "asc",
+            },
+        )
+        self.assertEqual(sort_resp.status_code, 200)
+        self.assertTrue(sort_resp.json().get("ok"))
+
+        resp = self._post_json(
+            "inscripcions_groups_from_sort",
+            self._groups_payload(strategy="per_bucket", group_by=["categoria"]),
+        )
+        self.assertEqual(resp.status_code, 200)
+
+        data = resp.json()
+        self.assertEqual(data.get("resolution_mode"), "auto")
+        self.assertEqual(data.get("layers_used"), ["tabs", "sort"])
+        self.assertEqual(data.get("effective_bucket_count"), 3)
+
+        preview = data.get("preview") or {}
+        groups = preview.get("groups") or []
+        self.assertEqual(len(groups), 3)
+        self.assertEqual(preview.get("layers_used"), ["tabs", "sort"])
+        self.assertEqual(preview.get("effective_bucket_count"), 3)
+        self.assertEqual(
+            [group.get("suggested_name") for group in groups],
+            ["Alevi + Club A", "Infantil + Club A", "Alevi + Club B"],
+        )
+
+    def test_groups_preview_auto_resolution_uses_tabs_only_without_sort(self):
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Alevi 1",
+            categoria="Alevi",
+            ordre_sortida=1,
+            grup=None,
+        )
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Alevi 2",
+            categoria="Alevi",
+            ordre_sortida=2,
+            grup=None,
+        )
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Infantil 1",
+            categoria="Infantil",
+            ordre_sortida=3,
+            grup=None,
+        )
+
+        resp = self._post_json(
+            "inscripcions_groups_from_sort",
+            self._groups_payload(strategy="per_bucket", group_by=["categoria"]),
+        )
+        self.assertEqual(resp.status_code, 200)
+
+        data = resp.json()
+        self.assertEqual(data.get("layers_used"), ["tabs"])
+        self.assertEqual(data.get("effective_bucket_count"), 2)
+        groups = (data.get("preview") or {}).get("groups") or []
+        self.assertEqual([group.get("suggested_name") for group in groups], ["Alevi", "Infantil"])
+
+    def test_groups_preview_auto_resolution_uses_sort_only_without_group_by(self):
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Club A 1",
+            entitat="Club A",
+            ordre_sortida=1,
+            grup=None,
+        )
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Club A 2",
+            entitat="Club A",
+            ordre_sortida=2,
+            grup=None,
+        )
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Club B 1",
+            entitat="Club B",
+            ordre_sortida=3,
+            grup=None,
+        )
+
+        sort_resp = self._post_json(
+            "inscripcions_sort_apply",
+            {
+                "scope": "all",
+                "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                "group_by": [],
+                "sort_key": "entitat",
+                "sort_dir": "asc",
+            },
+        )
+        self.assertEqual(sort_resp.status_code, 200)
+        self.assertTrue(sort_resp.json().get("ok"))
+
+        resp = self._post_json(
+            "inscripcions_groups_from_sort",
+            self._groups_payload(strategy="per_bucket"),
+        )
+        self.assertEqual(resp.status_code, 200)
+
+        data = resp.json()
+        self.assertEqual(data.get("layers_used"), ["sort"])
+        self.assertEqual(data.get("effective_bucket_count"), 2)
+        groups = (data.get("preview") or {}).get("groups") or []
+        self.assertEqual([group.get("suggested_name") for group in groups], ["Club A", "Club B"])
+
+    def test_groups_preview_auto_resolution_deduplicates_redundant_sort_partition(self):
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Alevi 1",
+            categoria="Alevi",
+            ordre_sortida=1,
+            grup=None,
+        )
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Infantil 1",
+            categoria="Infantil",
+            ordre_sortida=2,
+            grup=None,
+        )
+
+        sort_resp = self._post_json(
+            "inscripcions_sort_apply",
+            {
+                "scope": "all",
+                "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                "group_by": ["categoria"],
+                "sort_key": "categoria",
+                "sort_dir": "asc",
+            },
+        )
+        self.assertEqual(sort_resp.status_code, 200)
+        self.assertTrue(sort_resp.json().get("ok"))
+
+        resp = self._post_json(
+            "inscripcions_groups_from_sort",
+            self._groups_payload(strategy="per_bucket", group_by=["categoria"]),
+        )
+        self.assertEqual(resp.status_code, 200)
+
+        data = resp.json()
+        self.assertEqual(data.get("layers_used"), ["tabs"])
+        self.assertEqual(data.get("effective_bucket_count"), 2)
+
+    def test_groups_preview_selected_keys_accept_combined_bucket_key(self):
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Alevi A",
+            categoria="Alevi",
+            entitat="Club A",
+            ordre_sortida=1,
+            grup=None,
+        )
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Alevi B",
+            categoria="Alevi",
+            entitat="Club B",
+            ordre_sortida=2,
+            grup=None,
+        )
+
+        sort_resp = self._post_json(
+            "inscripcions_sort_apply",
+            {
+                "scope": "all",
+                "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                "group_by": ["categoria"],
+                "sort_key": "entitat",
+                "sort_dir": "asc",
+            },
+        )
+        self.assertEqual(sort_resp.status_code, 200)
+        self.assertTrue(sort_resp.json().get("ok"))
+
+        tab_key = json.dumps(["Alevi"], ensure_ascii=False)
+        sort_key = json.dumps(["Club A"], ensure_ascii=False)
+        combined_key = json.dumps(
+            [
+                {"kind": "tabs", "key": tab_key},
+                {"kind": "sort", "key": sort_key},
+            ],
+            ensure_ascii=False,
+        )
+
+        resp = self._post_json(
+            "inscripcions_groups_from_sort",
+            self._groups_payload(
+                strategy="per_bucket",
+                group_by=["categoria"],
+                selected_keys=[combined_key],
+            ),
+        )
+        self.assertEqual(resp.status_code, 200)
+
+        data = resp.json()
+        self.assertEqual(data.get("buckets_applied"), 1)
+        preview = data.get("preview") or {}
+        self.assertEqual(preview.get("members_total"), 1)
+        groups = preview.get("groups") or []
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0].get("suggested_name"), "Alevi + Club A")
+
+    def test_groups_preview_tab_merges_apply_before_combining_with_sort(self):
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Alevi A",
+            categoria="Alevi",
+            entitat="Club A",
+            ordre_sortida=1,
+            grup=None,
+        )
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Infantil A",
+            categoria="Infantil",
+            entitat="Club A",
+            ordre_sortida=2,
+            grup=None,
+        )
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Alevi B",
+            categoria="Alevi",
+            entitat="Club B",
+            ordre_sortida=3,
+            grup=None,
+        )
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Infantil B",
+            categoria="Infantil",
+            entitat="Club B",
+            ordre_sortida=4,
+            grup=None,
+        )
+        self.comp.tab_merges = {
+            "categoria": [[json.dumps(["Alevi"], ensure_ascii=False), json.dumps(["Infantil"], ensure_ascii=False)]]
+        }
+        self.comp.save(update_fields=["tab_merges"])
+
+        sort_resp = self._post_json(
+            "inscripcions_sort_apply",
+            {
+                "scope": "all",
+                "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                "group_by": ["categoria"],
+                "sort_key": "entitat",
+                "sort_dir": "asc",
+            },
+        )
+        self.assertEqual(sort_resp.status_code, 200)
+        self.assertTrue(sort_resp.json().get("ok"))
+
+        resp = self._post_json(
+            "inscripcions_groups_from_sort",
+            self._groups_payload(strategy="per_bucket", group_by=["categoria"]),
+        )
+        self.assertEqual(resp.status_code, 200)
+
+        data = resp.json()
+        self.assertEqual(data.get("layers_used"), ["tabs", "sort"])
+        self.assertEqual(data.get("effective_bucket_count"), 2)
+        groups = (data.get("preview") or {}).get("groups") or []
+        self.assertEqual(
+            [group.get("suggested_name") for group in groups],
+            ["Alevi + Infantil + Club A", "Alevi + Infantil + Club B"],
+        )
+
+    def test_groups_preview_existing_groups_use_combined_sources(self):
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Alevi A",
+            categoria="Alevi",
+            entitat="Club A",
+            ordre_sortida=1,
+            grup=1,
+        )
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Alevi B",
+            categoria="Alevi",
+            entitat="Club B",
+            ordre_sortida=2,
+            grup=1,
+        )
+
+        sort_resp = self._post_json(
+            "inscripcions_sort_apply",
+            {
+                "scope": "all",
+                "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                "group_by": ["categoria"],
+                "sort_key": "entitat",
+                "sort_dir": "asc",
+            },
+        )
+        self.assertEqual(sort_resp.status_code, 200)
+        self.assertTrue(sort_resp.json().get("ok"))
+
+        tab_key = json.dumps(["Alevi"], ensure_ascii=False)
+        sort_key = json.dumps(["Club A"], ensure_ascii=False)
+        combined_key = json.dumps(
+            [
+                {"kind": "tabs", "key": tab_key},
+                {"kind": "sort", "key": sort_key},
+            ],
+            ensure_ascii=False,
+        )
+
+        resp = self._post_json(
+            "inscripcions_groups_from_sort",
+            self._groups_payload(
+                strategy="per_bucket",
+                group_by=["categoria"],
+                selected_keys=[combined_key],
+            ),
+        )
+        self.assertEqual(resp.status_code, 200)
+
+        preview = resp.json().get("preview") or {}
+        existing_groups = preview.get("existing_groups") or []
+        self.assertEqual(len(existing_groups), 1)
+        existing = existing_groups[0]
+        self.assertEqual(existing.get("impact_kind"), "reduced")
+        source_map = {row.get("label"): row for row in existing.get("sources") or []}
+        self.assertEqual(source_map["Alevi / Club A"]["moving_count"], 1)
+        self.assertEqual(source_map["Alevi / Club A"]["remaining_count"], 0)
+        self.assertEqual(source_map["Alevi / Club B"]["moving_count"], 0)
+        self.assertEqual(source_map["Alevi / Club B"]["remaining_count"], 1)
 
     def test_groups_preview_builds_composed_name_from_weighted_sources(self):
         Inscripcio.objects.create(
@@ -3164,8 +3578,66 @@ class ScoringAndJudgeExclusionFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertIn(f'id="editor-inner-{self.ins_allowed.id}-1"', body)
         self.assertIn(f'id="editor-inner-{self.ins_allowed.id}-2"', body)
         self.assertIn(f'id="editor-inner-{self.ins_allowed.id}-3"', body)
+        self.assertIn("function getExerciseVisualState(insId, exercici)", body)
+        self.assertIn("function getInsVisualState(insId)", body)
+        self.assertIn("judge-nav-status", body)
+        self.assertIn("judge-nav-ex-chip", body)
+        self.assertIn(".judge-nav-link.is-complete", body)
+        self.assertIn(".judge-nav-link.is-partial", body)
+        self.assertNotIn(".judge-nav-link.is-saved", body)
         self.assertNotIn('href="?ex=1"', body)
         self.assertNotIn('href="?ex=3"', body)
+
+    def test_judge_portal_renders_keyboard_navigation_helpers_for_score_inputs(self):
+        portal_url = reverse("judge_portal", kwargs={"token": self.token.id})
+        portal_res = self.client.get(portal_url, {"ex": 1})
+        self.assertEqual(portal_res.status_code, 200)
+
+        body = portal_res.content.decode("utf-8")
+        self.assertIn("function getEditableInputs(insId, exercici)", body)
+        self.assertIn("function focusNextEditableInput(currentInput)", body)
+        self.assertIn("function focusPrevEditableInput(currentInput)", body)
+        self.assertIn("function selectInputContents(input)", body)
+        self.assertIn("function bindScoreInputNavigation(input, insId, exercici)", body)
+        self.assertIn('input.dataset.insId = String(insId);', body)
+        self.assertIn('input.dataset.exercici = exerciseKey(exercici);', body)
+        self.assertIn('input.dataset.navScope = "score-input";', body)
+        self.assertIn('input.addEventListener("keydown", (evt) => {', body)
+        self.assertIn('if(evt.key !== "Enter" && evt.key !== "Tab") return;', body)
+        self.assertIn('if(evt.key === "Tab" && evt.shiftKey){', body)
+        self.assertIn("focusNextEditableInput(input);", body)
+        self.assertIn("focusPrevEditableInput(input);", body)
+        self.assertIn(".filter((input) => !input.disabled);", body)
+        self.assertIn('[data-exercise-panel="1"][data-ins-id="${String(insId)}"][data-exercici="${exerciseKey(exercici)}"]', body)
+        self.assertIn("selectInputContents(input);", body)
+        self.assertIn("bindScoreInputNavigation(inp, insId, exercici);", body)
+        self.assertNotIn("value.length", body)
+
+    def test_judge_portal_nav_visual_status_uses_per_exercise_semantics(self):
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins_allowed,
+            exercici=1,
+            comp_aparell=self.comp_app,
+            inputs={"E": [0.2, 0.3, 0.4, 0.5, 0.6]},
+            outputs={},
+            total=1,
+        )
+        portal_url = reverse("judge_portal", kwargs={"token": self.token.id})
+        portal_res = self.client.get(portal_url)
+        self.assertEqual(portal_res.status_code, 200)
+
+        payload = portal_res.context["scores_payload_json"][str(self.ins_allowed.id)]
+        self.assertEqual(payload["exercises"]["1"]["inputs"]["E"], [0.2, 0.3, 0.4, 0.5, 0.6])
+        self.assertEqual(payload["exercises"]["2"]["inputs"], {})
+        self.assertEqual(payload["exercises"]["3"]["inputs"], {})
+
+        body = portal_res.content.decode("utf-8")
+        self.assertIn('data-nav-status="1"', body)
+        self.assertIn('data-nav-ex-chip="1"', body)
+        self.assertIn("Complet", body)
+        self.assertIn("Parcial", body)
+        self.assertIn("Pendent", body)
 
     def test_judge_portal_hides_video_controls_when_video_disabled(self):
         self.token.can_record_video = False
@@ -7546,3 +8018,164 @@ class AparellOwnershipIsolationTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(res.status_code, 200)
         self.assertContains(res, "Creat per")
         self.assertContains(res, self.user_b.username)
+
+
+class EquipContextFlowTests(_BaseTrampoliDataMixin, TestCase):
+    def setUp(self):
+        self.comp = self._create_competicio("Comp Equip Context")
+        self.native_team = Equip.objects.create(competicio=self.comp, nom="Equip Natiu")
+        self.custom_team = Equip.objects.create(competicio=self.comp, nom="Equip Context")
+        self.ins = self._create_inscripcio(self.comp, "Participant Context", ordre=1)
+        self.ins.equip = self.native_team
+        self.ins.save(update_fields=["equip"])
+
+        User = get_user_model()
+        self.user = User.objects.create_user(
+            username="equip_context_user",
+            password="testpass123",
+            email="equip-context@example.com",
+        )
+        CompeticioMembership.objects.create(
+            user=self.user,
+            competicio=self.comp,
+            role=CompeticioMembership.Role.OWNER,
+            is_active=True,
+        )
+        self.client.force_login(self.user)
+
+    def test_custom_context_assignment_does_not_modify_native_team(self):
+        create_res = self.client.post(
+            reverse("inscripcions_equip_context_create", kwargs={"pk": self.comp.id}),
+            data=json.dumps({"name": "Finals"}),
+            content_type="application/json",
+        )
+        self.assertEqual(create_res.status_code, 200)
+        context_code = create_res.json()["context"]["code"]
+
+        assign_res = self.client.post(
+            reverse("inscripcions_equips_assign", kwargs={"pk": self.comp.id}),
+            data=json.dumps(
+                {
+                    "context_code": context_code,
+                    "equip_id": self.custom_team.id,
+                    "inscripcio_ids": [self.ins.id],
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(assign_res.status_code, 200)
+
+        self.ins.refresh_from_db()
+        self.assertEqual(self.ins.equip_id, self.native_team.id)
+        assignacio = InscripcioEquipAssignacio.objects.get(inscripcio=self.ins)
+        self.assertEqual(assignacio.context.code, context_code)
+        self.assertEqual(assignacio.equip_id, self.custom_team.id)
+
+
+class EquipContextClassificacioTests(_BaseTrampoliDataMixin, TestCase):
+    def setUp(self):
+        self.comp = self._create_competicio("Comp Classif Context")
+        self.app = self._create_aparell("CTX", "Aparell Context")
+        self.comp_app = self._create_comp_aparell(self.comp, self.app, ordre=1, actiu=True)
+
+        self.team_native = Equip.objects.create(competicio=self.comp, nom="Equip Base")
+        self.team_context = Equip.objects.create(competicio=self.comp, nom="Equip Finals")
+        self.ctx = EquipContext.objects.create(competicio=self.comp, code="finals", nom="Finals")
+
+        self.ins_a = self._create_inscripcio(self.comp, "Participant A", ordre=1)
+        self.ins_b = self._create_inscripcio(self.comp, "Participant B", ordre=2)
+        self.ins_a.equip = self.team_native
+        self.ins_b.equip = self.team_native
+        self.ins_a.save(update_fields=["equip"])
+        self.ins_b.save(update_fields=["equip"])
+
+        InscripcioEquipAssignacio.objects.create(
+            competicio=self.comp,
+            context=self.ctx,
+            inscripcio=self.ins_a,
+            equip=self.team_context,
+        )
+
+        for ins, total in ((self.ins_a, 9.5), (self.ins_b, 8.0)):
+            ScoreEntry.objects.create(
+                competicio=self.comp,
+                inscripcio=ins,
+                exercici=1,
+                comp_aparell=self.comp_app,
+                inputs={},
+                outputs={},
+                total=total,
+            )
+
+    def test_compute_classificacio_uses_context_and_fallback_to_native(self):
+        schema = {
+            "puntuacio": {
+                "aparells": {"mode": "seleccionar", "ids": [self.comp_app.id]},
+                "camps_per_aparell": {str(self.comp_app.id): ["total"]},
+                "agregacio_camps": "sum",
+                "exercicis": {"mode": "tots"},
+                "agregacio_exercicis": "sum",
+                "agregacio_aparells": "sum",
+                "ordre": "desc",
+            },
+            "equips": {
+                "assignment_source": {"mode": "context", "context_code": "finals", "fallback": "native"},
+                "incloure_sense_equip": False,
+            },
+        }
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Per context",
+            activa=True,
+            ordre=1,
+            tipus="equips",
+            schema=schema,
+        )
+
+        rows = compute_classificacio(self.comp, cfg).get("global", [])
+        by_name = {row["participant"]: row for row in rows}
+        self.assertIn("Equip Finals", by_name)
+        self.assertIn("Equip Base", by_name)
+        self.assertEqual(by_name["Equip Finals"]["participants"], 1)
+        self.assertEqual(by_name["Equip Base"]["participants"], 1)
+
+
+class EquipContextHistorySnapshotTests(_BaseTrampoliDataMixin, TestCase):
+    def setUp(self):
+        self.comp = self._create_competicio("Comp Snapshot Context")
+        self.team_native = Equip.objects.create(competicio=self.comp, nom="Equip Base")
+        self.team_context = Equip.objects.create(competicio=self.comp, nom="Equip Alt")
+        self.ctx = EquipContext.objects.create(competicio=self.comp, code="ctx-alt", nom="Context Alt")
+        self.ins = self._create_inscripcio(self.comp, "Participant Snapshot", ordre=1)
+        self.ins.equip = self.team_native
+        self.ins.save(update_fields=["equip"])
+        InscripcioEquipAssignacio.objects.create(
+            competicio=self.comp,
+            context=self.ctx,
+            inscripcio=self.ins,
+            equip=self.team_context,
+        )
+
+    def test_snapshot_restores_contexts_and_assignacions(self):
+        rf = RequestFactory()
+        request = rf.get("/")
+        request.session = SessionStore()
+
+        snap = capture_inscripcions_history_snapshot(request, self.comp)
+        EquipContext.objects.filter(pk=self.ctx.id).delete()
+        self.ins.equip = None
+        self.ins.save(update_fields=["equip"])
+
+        apply_inscripcions_history_snapshot(request, self.comp, snap)
+
+        self.ins.refresh_from_db()
+        self.assertEqual(self.ins.equip_id, self.team_native.id)
+        self.assertTrue(EquipContext.objects.filter(competicio=self.comp, code="ctx-alt").exists())
+        self.assertTrue(
+            InscripcioEquipAssignacio.objects.filter(
+                competicio=self.comp,
+                context__code="ctx-alt",
+                inscripcio=self.ins,
+                equip=self.team_context,
+            ).exists()
+        )

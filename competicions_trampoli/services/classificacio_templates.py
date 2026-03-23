@@ -2,7 +2,8 @@ import json
 
 from django.utils.text import slugify
 
-from ..models import Equip
+from ..models import Equip, EquipContext
+from .equip_contexts import NATIVE_EQUIP_CONTEXT_CODE, normalize_equip_context_code
 from ..models_classificacions import ClassificacioTemplateGlobal
 from ..models_scoring import ScoringSchema
 from ..models_trampoli import Aparell, CompeticioAparell
@@ -36,6 +37,24 @@ def json_clone(value):
         return json.loads(json.dumps(value, ensure_ascii=False))
     except Exception:
         return {}
+
+
+def _normalize_assignment_source(raw_cfg):
+    cfg = raw_cfg if isinstance(raw_cfg, dict) else {}
+    mode = str(cfg.get("mode") or "native").strip().lower()
+    if mode not in {"native", "context"}:
+        mode = "native"
+    context_code = normalize_equip_context_code(cfg.get("context_code"))
+    if mode == "native":
+        context_code = NATIVE_EQUIP_CONTEXT_CODE
+    fallback = str(cfg.get("fallback") or NATIVE_EQUIP_CONTEXT_CODE).strip().lower()
+    if fallback != NATIVE_EQUIP_CONTEXT_CODE:
+        fallback = NATIVE_EQUIP_CONTEXT_CODE
+    return {
+        "mode": mode,
+        "context_code": context_code,
+        "fallback": fallback,
+    }
 
 
 def canon_app_code(raw) -> str:
@@ -370,6 +389,10 @@ def schema_to_template_schema(competicio, schema_local):
 
     equips_cfg = schema.get("equips") or {}
     if isinstance(equips_cfg, dict):
+        assignment_source = _normalize_assignment_source(equips_cfg.get("assignment_source"))
+        if assignment_source.get("mode") == "native":
+            assignment_source["context_code"] = ""
+        equips_cfg["assignment_source"] = assignment_source
         manual = equips_cfg.get("particions_manuals") or []
         if isinstance(manual, list):
             team_name_by_id = {
@@ -550,6 +573,25 @@ def template_schema_to_competicio_schema(competicio, schema_tpl):
 
     equips_cfg = schema.get("equips") or {}
     if isinstance(equips_cfg, dict):
+        assignment_source = _normalize_assignment_source(equips_cfg.get("assignment_source"))
+        if assignment_source.get("mode") == "context":
+            valid_codes = set(
+                EquipContext.objects
+                .filter(competicio=competicio)
+                .values_list("code", flat=True)
+            )
+            if assignment_source.get("context_code") not in valid_codes:
+                warnings.append(
+                    f"equips.assignment_source.context_code '{assignment_source.get('context_code')}' no trobat a la competicio; s'aplica mode native"
+                )
+                assignment_source = {
+                    "mode": "native",
+                    "context_code": "",
+                    "fallback": NATIVE_EQUIP_CONTEXT_CODE,
+                }
+        else:
+            assignment_source["context_code"] = ""
+        equips_cfg["assignment_source"] = assignment_source
         manual = equips_cfg.get("particions_manuals") or []
         if isinstance(manual, list):
             teams = list(Equip.objects.filter(competicio=competicio).only("id", "nom"))

@@ -8,6 +8,23 @@
 
   <div class="action-panel-body">
     <div class="team-box mb-3">
+      <div class="fw-semibold mb-2">Context d'equips</div>
+      <div class="d-flex align-items-center flex-wrap mb-2" style="gap:10px;">
+        <select id="team-context-select" class="form-control form-control-sm" style="max-width:260px;">
+          {% for ctx in team_contexts %}
+            <option value="{{ ctx.code }}" {% if ctx.code == team_context_selected_code %}selected{% endif %}>{{ ctx.nom }}</option>
+          {% endfor %}
+        </select>
+        <button type="button" class="btn btn-sm btn-outline-primary" id="btn-team-context-create">Nou context</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-team-context-rename">Renombrar context</button>
+        <button type="button" class="btn btn-sm btn-outline-danger" id="btn-team-context-delete">Eliminar context</button>
+      </div>
+      <div class="small text-muted">
+        El context <strong>{{ team_context_selected_code }}</strong> determina on s'assignen els equips. El context natiu correspon al camp equip de la inscripcio.
+      </div>
+    </div>
+
+    <div class="team-box mb-3">
       <div class="fw-semibold mb-2">Automatic (particions)</div>
       <div class="chips mb-2">
         <span class="text-muted small fw-semibold">Particionar per:</span>

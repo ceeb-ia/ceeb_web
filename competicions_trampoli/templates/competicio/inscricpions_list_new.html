@@ -430,6 +430,41 @@
     .inscripcions-page-shell:not(.is-drawer-open) .inscripcions-drawer-toggle-label-closed {
       display: inline;
     }
+    .inscripcions-back-to-top {
+      --inscripcions-back-to-top-bottom: 20px;
+      position: fixed;
+      right: 18px;
+      bottom: var(--inscripcions-back-to-top-bottom);
+      z-index: 1046;
+      width: 44px;
+      height: 44px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      padding: 0;
+      font-size: 1.1rem;
+      line-height: 1;
+      box-shadow: 0 12px 26px rgba(15, 23, 42, 0.18);
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transform: translateY(8px);
+      transition: opacity .2s ease, visibility .2s ease, transform .2s ease, right .22s ease;
+    }
+    .inscripcions-back-to-top.is-visible {
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+      transform: translateY(0);
+    }
+    .inscripcions-page-shell.is-drawer-open .inscripcions-back-to-top {
+      right: calc(var(--actions-drawer-width) + 34px);
+    }
+    .inscripcions-back-to-top:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 16px 30px rgba(15, 23, 42, 0.22);
+    }
     .panel,
     .action-panel {
       display: none;
@@ -1573,6 +1608,13 @@
       .inscripcions-page-shell.is-drawer-open .inscripcions-drawer-toggle {
         right: calc(var(--actions-drawer-width) + 24px);
       }
+      .inscripcions-back-to-top {
+        right: 12px;
+        --inscripcions-back-to-top-bottom: 16px;
+      }
+      .inscripcions-page-shell.is-drawer-open .inscripcions-back-to-top {
+        right: calc(var(--actions-drawer-width) + 24px);
+      }
       .custom-sort-modal{
         top:calc(var(--actions-drawer-top) + 12px);
         right:16px;
@@ -1679,6 +1721,11 @@
       .inscripcions-page-shell.is-drawer-open .inscripcions-drawer-toggle {
         right: 12px;
       }
+      .inscripcions-back-to-top,
+      .inscripcions-page-shell.is-drawer-open .inscripcions-back-to-top {
+        right: 12px;
+        --inscripcions-back-to-top-bottom: 12px;
+      }
       .tab-select-grid,
       .excel-cols-grid {
         grid-template-columns: 1fr;
@@ -1695,7 +1742,7 @@
           Competició: <span class="fw-semibold">{{ competicio.nom }}</span>
         </div>
         <div class="text-muted small">
-          Gestiona inscripcions, agrupacions i creació de grups.
+          Gestiona inscripcions, divisions i creació de grups.
         </div>
         <div class="mt-2">
           <span class="badge badge-info">Inscrits: {{ inscrits_filtered_count }}</span>
@@ -1811,7 +1858,7 @@
           <div class="custom-sort-modal-toolbar">
             <div>
               <div class="custom-sort-modal-toolbar-title">Arrossega per reordenar</div>
-              <p class="custom-sort-modal-toolbar-copy mb-0">Aquest ordre es desa per aquesta columna amb els filtres i agrupacions actuals.</p>
+              <p class="custom-sort-modal-toolbar-copy mb-0">Aquest ordre es desa per aquesta columna amb els filtres i divisions actuals.</p>
             </div>
           </div>
           <div class="custom-sort-modal-status">
@@ -1869,6 +1916,13 @@
       <span class="inscripcions-drawer-toggle-label-open">Amagar accions</span>
       <span class="inscripcions-drawer-toggle-label-closed">Mostrar accions</span>
     </button>
+    <button type="button"
+            class="btn btn-sm btn-primary inscripcions-back-to-top"
+            id="inscripcions-back-to-top"
+            aria-label="Tornar a l'inici"
+            title="Tornar a dalt">
+      <span aria-hidden="true">&uarr;</span>
+    </button>
 
     <div class="inscripcions-workspace">
       <aside class="inscripcions-sidebar">
@@ -1880,7 +1934,7 @@
             <div class="actions-shell-headline">
               <div>
                 <p class="actions-shell-title">Accions</p>
-                <p class="actions-shell-subtitle">Agrupa, reorganitza i exporta sense menjar-te la zona central de la taula.</p>
+                <p class="actions-shell-subtitle">Divideix, reorganitza i exporta sense menjar-te la zona central de la taula.</p>
               </div>
               <span class="badge badge-info">{{ inscrits_filtered_count }}</span>
             </div>
@@ -1913,7 +1967,7 @@
             <nav class="actions-nav" id="inscripcions-panels-nav" aria-label="Seccions d'accions">
               <button type="button" class="actions-nav-btn is-active" data-panel-target="agrupacio">
                 <span class="actions-nav-btn-title">
-                  <span>Agrupació</span>
+                  <span>Divisions</span>
                   <span class="badge badge-light">{{ selected_group_fields|length }}</span>
                 </span>
                 <span class="actions-nav-btn-meta">Camps i pestanyes</span>
@@ -1961,8 +2015,8 @@
         <div class="panel is-active" data-panel-key="agrupacio">
           <div class="panel-head collapsed" data-target="#panel-agrupacio" aria-expanded="false">
             <div>
-              <p class="panel-title mb-0">Agrupació</p>
-              <div class="subtle">Tria camps d'agrupació i aplica/treu l'agrupació.</div>
+              <p class="panel-title mb-0">Divisions</p>
+              <div class="subtle">Divideix les inscripcions en conjunts més petits per a una millor visualització.</div>
             </div>
             <div class="d-flex align-items-center gap-2">
               <span class="subtle d-none d-md-inline">Mostra/Oculta</span>
@@ -1974,7 +2028,7 @@
             <div class="panel-body">
               <div class="btn-row mb-2">
                 <button type="submit" name="recalc_order" value="1" class="btn btn-sm btn-outline-primary">
-                  Aplicar agrupació
+                  Aplicar divisió
                 </button>
 
                 <button type="submit" name="shuffle_order" value="1" class="btn btn-sm btn-outline-warning">
@@ -1984,14 +2038,14 @@
                 {% if selected_group_fields %}
                   <a class="btn btn-sm btn-outline-secondary"
                      href="?clear_group=1&q={{ request.GET.q|urlencode }}&categoria={{ request.GET.categoria|urlencode }}&subcategoria={{ request.GET.subcategoria|urlencode }}&entitat={{ request.GET.entitat|urlencode }}">
-                    Treure agrupació
+                    Treure divisió
                   </a>
                 {% endif %}
 
               </div>
 
               <div class="chips">
-                <span class="text-muted small fw-semibold">Agrupa per:</span>
+                <span class="text-muted small fw-semibold">Divideix per:</span>
                 {% for f in allowed_group_fields %}
                   <label class="group-chip" title="{{ f.code }}">
                     <input type="checkbox" name="group_by" value="{{ f.code }}"
@@ -2084,267 +2138,165 @@
                 </button>
               </div>
 
-              <div class="d-flex align-items-center flex-wrap mb-3" style="gap:12px;">
-                <span class="text-muted small fw-semibold">Base de creacio:</span>
-                <label class="form-check form-check-inline m-0">
-                  <input class="form-check-input js-group-source" type="radio" name="group_source" value="tabs" checked>
-                  <span class="form-check-label">Pestanyes</span>
-                </label>
-                <label class="form-check form-check-inline m-0">
-                  <input class="form-check-input js-group-source" type="radio" name="group_source" value="sort">
-                  <span class="form-check-label">Ordenacions actives</span>
-                </label>
-              </div>
-
-              <div id="group-source-tabs-wrap">
-                <div class="tab-select-card" id="tabs-group-card" data-expand-card="tabs-group-card">
-                  <div class="tab-select-card-head">
-                    <div>
-                      <div class="fw-semibold">Crear grups per pestanyes</div>
-                      <div class="text-muted small">Mateix motor que ordenacions actives</div>
-                    </div>
-                    <div class="tab-select-card-tools">
-                      <button type="button"
-                              class="btn btn-sm btn-outline-primary tab-select-expand-btn js-expand-tab-select"
-                              data-expand-target="tabs-group-card"
-                              data-label-collapsed="Expandir"
-                              data-label-expanded="Tancar vista amplia"
-                              aria-expanded="false">
-                        Expandir
-                      </button>
-                    </div>
+              <div class="tab-select-card" id="groups-auto-card" data-expand-card="groups-auto-card">
+                <div class="tab-select-card-head">
+                  <div>
+                    <div class="fw-semibold">Crear grups amb resolucio automatica</div>
+                    <div class="text-muted small">Combina divisions i ordenacions actives al llistat per suggerir grups.</div>
                   </div>
-
-                  <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
-                    <span class="text-muted small fw-semibold">Fallback:</span>
-                    <select id="tabs-group-fallback" class="form-control form-control-sm" style="width:240px;">
-                      <option value="all_filtered" selected>Sense pestanyes: totes filtrades</option>
-                      <option value="strict">Estricte (error)</option>
-                      <option value="adjust_k">Ajustar k si cal</option>
-                      <option value="ignore_range">Ignorar forquilla si cal</option>
-                    </select>
-                  </div>
-
-                  {% if selected_group_fields and records_grouped %}
-                    <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
-                      <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-tabs-buckets-all">Seleccionar tots</button>
-                      <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-tabs-buckets-none">Netejar</button>
-                      <span class="text-muted small">{{ records_grouped|length }} pestanyes detectades</span>
-                    </div>
-
-                    <div class="tab-select-grid mb-3">
-                      {% for group_label, group_records, group_key in records_grouped %}
-                        <label class="tab-select-item">
-                          <input type="checkbox" class="js-tab-bucket-check" value="{{ group_key }}">
-                          <span class="tab-label small" title="{{ group_label }}">{{ group_label }}</span>
-                          <span class="badge badge-light">{{ group_records|length }}</span>
-                        </label>
-                      {% endfor %}
-                    </div>
-                  {% else %}
-                    <div class="text-muted small mb-2">
-                      No hi ha agrupacio activa per pestanyes: s'aplicara el fallback seleccionat.
-                    </div>
-                  {% endif %}
-
-                  <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
-                    <span class="text-muted small fw-semibold">Crear X grups:</span>
-                    <input id="tabs-group-count" type="number" min="1" max="200" value="4" class="form-control form-control-sm" style="width:90px;">
-                    <button type="button" class="btn btn-sm btn-outline-dark" id="btn-tabs-create-count">Crear X grups</button>
-                    <button type="button" class="btn btn-sm btn-outline-primary" id="btn-tabs-preview-count">Previsualitzar</button>
-                  </div>
-
-                  <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
-                    <span class="text-muted small fw-semibold">Mida:</span>
-                    <input id="tabs-group-size" type="number" min="2" max="200" value="8" class="form-control form-control-sm" style="width:90px;">
-                    <select id="tabs-group-size-mode" class="form-control form-control-sm" style="width:170px;">
-                      <option value="fixed">Mida fixa</option>
-                      <option value="balanced">Equilibrats</option>
-                    </select>
-                    <button type="button" class="btn btn-sm btn-outline-dark" id="btn-tabs-create-size">Crear per mida</button>
-                    <button type="button" class="btn btn-sm btn-outline-primary" id="btn-tabs-preview-size">Previsualitzar</button>
-                  </div>
-
-                  <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
-                    <span class="text-muted small fw-semibold">Forquilla:</span>
-                    <input id="tabs-group-min-size" type="number" min="1" max="200" value="5" class="form-control form-control-sm" style="width:82px;" title="Minim">
-                    <span class="small text-muted">a</span>
-                    <input id="tabs-group-max-size" type="number" min="1" max="200" value="8" class="form-control form-control-sm" style="width:82px;" title="Maxim">
-                    <button type="button" class="btn btn-sm btn-outline-dark" id="btn-tabs-create-range-balanced">Equilibrats min-max</button>
-                    <button type="button" class="btn btn-sm btn-outline-primary" id="btn-tabs-preview-range-balanced">Previsualitzar</button>
-                  </div>
-
-                  <div class="d-flex align-items-center flex-wrap" style="gap:8px;">
-                    <span class="text-muted small fw-semibold">X grups amb forquilla:</span>
-                    <input id="tabs-group-count-range" type="number" min="1" max="200" value="4" class="form-control form-control-sm" style="width:90px;">
-                    <button type="button" class="btn btn-sm btn-outline-dark" id="btn-tabs-create-count-range">Crear X amb min-max</button>
-                    <button type="button" class="btn btn-sm btn-outline-primary" id="btn-tabs-preview-count-range">Previsualitzar</button>
-                  </div>
-
-                  <div class="d-flex align-items-center flex-wrap mt-2" style="gap:8px;">
-                    <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-tabs-create-per-bucket">
-                      1 grup per cada pestanya seleccionada
+                  <div class="tab-select-card-tools">
+                    <button type="button"
+                            class="btn btn-sm btn-outline-primary tab-select-expand-btn js-expand-tab-select"
+                            data-expand-target="groups-auto-card"
+                            data-label-collapsed="Expandir"
+                            data-label-expanded="Tancar vista amplia"
+                            aria-expanded="false">
+                      Expandir
                     </button>
-                    <button type="button" class="btn btn-sm btn-outline-primary" id="btn-tabs-preview-per-bucket">Previsualitzar</button>
-                  </div>
-
-                  <div class="group-preview-panel" id="tabs-group-preview" data-group-preview="tabs" data-has-preview="0">
-                    <div class="group-preview-toolbar">
-                      <div>
-                        <div class="fw-semibold">Previsualitzacio dels grups</div>
-                        <div class="group-preview-status" id="tabs-group-preview-status">
-                          Encara no s'ha calculat cap previsualitzacio amb aquesta configuracio.
-                        </div>
-                      </div>
-                      <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="btn-tabs-preview-clear">Netejar</button>
-                    </div>
-                    <div class="group-preview-summary d-none" id="tabs-group-preview-summary"></div>
-                    <div class="group-preview-sections">
-                      <div class="group-preview-section d-none" id="tabs-group-preview-existing-wrap">
-                        <div class="group-preview-section-head">
-                          <div class="fw-semibold">Grups existents</div>
-                          <div class="group-preview-section-meta" id="tabs-group-preview-existing-meta"></div>
-                        </div>
-                        <div class="group-preview-list" id="tabs-group-preview-existing-list"></div>
-                      </div>
-                      <div class="group-preview-section d-none" id="tabs-group-preview-planned-wrap">
-                        <div class="group-preview-section-head">
-                          <div class="fw-semibold">Grups nous previstos</div>
-                          <div class="group-preview-section-meta" id="tabs-group-preview-planned-meta"></div>
-                        </div>
-                        <div class="group-preview-list" id="tabs-group-preview-list"></div>
-                      </div>
-                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div id="group-source-sort-wrap" class="d-none">
-                <div class="tab-select-card" id="sort-group-card" data-expand-card="sort-group-card">
-                  <div class="tab-select-card-head">
-                    <div>
-                      <div class="fw-semibold">Crear grups per ordenacio</div>
-                      <div class="text-muted small">Acumulatiu segons la prioritat activa</div>
-                    </div>
-                    <div class="tab-select-card-tools">
-                      <button type="button"
-                              class="btn btn-sm btn-outline-primary tab-select-expand-btn js-expand-tab-select"
-                              data-expand-target="sort-group-card"
-                              data-label-collapsed="Expandir"
-                              data-label-expanded="Tancar vista amplia"
-                              aria-expanded="false">
-                        Expandir
-                      </button>
-                    </div>
-                  </div>
-
-                  <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
-                    <span class="text-muted small fw-semibold">Fallback:</span>
-                    <select id="sort-group-fallback" class="form-control form-control-sm" style="width:240px;">
-                      <option value="all_filtered" selected>Sense ordenacio: totes filtrades</option>
-                      <option value="strict">Estricte (error)</option>
-                      <option value="adjust_k">Ajustar k si cal</option>
-                      <option value="ignore_range">Ignorar forquilla si cal</option>
-                    </select>
-                  </div>
-
-                  {% if sort_partition_has_fields %}
-                    <div class="small mb-2">
-                      {% for f in sort_partition_fields %}
-                        <span class="badge badge-info mr-1">#{{ f.priority }} {{ f.label }}</span>
-                      {% endfor %}
-                    </div>
+                <div class="small mb-2">
+                  <span class="text-muted fw-semibold mr-2">Divisions actives:</span>
+                  {% if group_creation_group_fields %}
+                    {% for field in group_creation_group_fields %}
+                      <span class="badge badge-info mr-1">{{ field.label }}</span>
+                    {% endfor %}
                   {% else %}
-                    <div class="text-muted small mb-2">
-                      No hi ha criteris d'ordenacio actius: s'aplicara el fallback seleccionat.
-                    </div>
+                    <span class="text-muted">cap</span>
                   {% endif %}
+                </div>
 
-                  <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
-                    <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-sort-buckets-all">Seleccionar tots</button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-sort-buckets-none">Netejar</button>
-                    <span class="text-muted small">{{ sort_partition_bucket_count }} blocs detectats</span>
-                  </div>
-
-                  {% if sort_partition_buckets %}
-                    <div class="tab-select-grid mb-3">
-                      {% for b in sort_partition_buckets %}
-                        <label class="tab-select-item">
-                          <input type="checkbox" class="js-sort-bucket-check" value="{{ b.key }}">
-                          <span class="tab-label small" title="{{ b.label }}">{{ b.label }}</span>
-                          <span class="badge badge-light">{{ b.count }}</span>
-                        </label>
-                      {% endfor %}
-                    </div>
+                <div class="small mb-2">
+                  <span class="text-muted fw-semibold mr-2">Ordenacions detectades:</span>
+                  {% if sort_partition_fields %}
+                    {% for f in sort_partition_fields %}
+                      <span class="badge badge-primary mr-1">#{{ f.priority }} {{ f.label }}</span>
+                    {% endfor %}
+                  {% else %}
+                    <span class="text-muted">cap</span>
                   {% endif %}
+                </div>
 
-                  <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
-                    <span class="text-muted small fw-semibold">Crear X grups:</span>
-                    <input id="sort-group-count" type="number" min="1" max="200" value="4" class="form-control form-control-sm" style="width:90px;">
-                    <button type="button" class="btn btn-sm btn-outline-dark" id="btn-sort-create-count">Crear X grups</button>
-                    <button type="button" class="btn btn-sm btn-outline-primary" id="btn-sort-preview-count">Previsualitzar</button>
+                <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
+                  <span class="text-muted small fw-semibold">Resolucio final:</span>
+                  <span class="badge badge-light border">{{ group_creation_resolution_label }}</span>
+                  {% if group_creation_resolution_layers_used %}
+                    {% for layer in group_creation_resolution_layers_used %}
+                      <span class="badge badge-light border">
+                        {% if layer == 'tabs' %}Divisió{% elif layer == 'sort' %}Ordenació{% else %}{{ layer }}{% endif %}
+                      </span>
+                    {% endfor %}
+                  {% else %}
+                    <span class="text-muted small">Sense criteris resolubles: el fallback treballara sobre totes les filtrades.</span>
+                  {% endif %}
+                </div>
+
+                <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
+                  <span class="text-muted small fw-semibold">Fallback:</span>
+                  <select id="groups-fallback" class="form-control form-control-sm" style="width:280px;">
+                    <option value="all_filtered" selected>Sense criteris resolubles: totes filtrades</option>
+                    <option value="strict">Estricte (error)</option>
+                    <option value="adjust_k">Ajustar k si cal</option>
+                    <option value="ignore_range">Ignorar forquilla si cal</option>
+                  </select>
+                </div>
+
+                <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
+                  <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-groups-buckets-all">Seleccionar tots</button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-groups-buckets-none">Netejar</button>
+                  <span class="text-muted small">{{ group_creation_auto_bucket_count }} blocs origen resolts</span>
+                </div>
+
+                {% if group_creation_auto_buckets %}
+                  <div class="tab-select-grid mb-3">
+                    {% for bucket in group_creation_auto_buckets %}
+                      <label class="tab-select-item">
+                        <input type="checkbox" class="js-group-bucket-check" value="{{ bucket.key }}">
+                        <span class="tab-label small" title="{{ bucket.label }}">{{ bucket.label }}</span>
+                        {% if bucket.kinds %}
+                          {% for kind in bucket.kinds %}
+                            <span class="badge badge-light border">
+                              {% if kind == 'tabs' %}Divisió{% elif kind == 'sort' %}Ordenació{% else %}{{ kind }}{% endif %}
+                            </span>
+                          {% endfor %}
+                        {% endif %}
+                        <span class="badge badge-light">{{ bucket.count }}</span>
+                      </label>
+                    {% endfor %}
                   </div>
-
-                  <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
-                    <span class="text-muted small fw-semibold">Mida:</span>
-                    <input id="sort-group-size" type="number" min="2" max="200" value="8" class="form-control form-control-sm" style="width:90px;">
-                    <select id="sort-group-size-mode" class="form-control form-control-sm" style="width:170px;">
-                      <option value="fixed">Mida fixa</option>
-                      <option value="balanced">Equilibrats</option>
-                    </select>
-                    <button type="button" class="btn btn-sm btn-outline-dark" id="btn-sort-create-size">Crear per mida</button>
-                    <button type="button" class="btn btn-sm btn-outline-primary" id="btn-sort-preview-size">Previsualitzar</button>
+                {% else %}
+                  <div class="text-muted small mb-3">
+                    No s'han detectat blocs resolts per al context actual.
                   </div>
+                {% endif %}
 
-                  <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
-                    <span class="text-muted small fw-semibold">Forquilla:</span>
-                    <input id="sort-group-min-size" type="number" min="1" max="200" value="5" class="form-control form-control-sm" style="width:82px;" title="Minim">
-                    <span class="small text-muted">a</span>
-                    <input id="sort-group-max-size" type="number" min="1" max="200" value="8" class="form-control form-control-sm" style="width:82px;" title="Maxim">
-                    <button type="button" class="btn btn-sm btn-outline-dark" id="btn-sort-create-range-balanced">Equilibrats min-max</button>
-                    <button type="button" class="btn btn-sm btn-outline-primary" id="btn-sort-preview-range-balanced">Previsualitzar</button>
-                  </div>
+                <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
+                  <span class="text-muted small fw-semibold">Crear X grups:</span>
+                  <input id="groups-group-count" type="number" min="1" max="200" value="4" class="form-control form-control-sm" style="width:90px;">
+                  <button type="button" class="btn btn-sm btn-outline-dark" id="btn-groups-create-count">Crear X grups</button>
+                  <button type="button" class="btn btn-sm btn-outline-primary" id="btn-groups-preview-count">Previsualitzar</button>
+                </div>
 
-                  <div class="d-flex align-items-center flex-wrap" style="gap:8px;">
-                    <span class="text-muted small fw-semibold">X grups amb forquilla:</span>
-                    <input id="sort-group-count-range" type="number" min="1" max="200" value="4" class="form-control form-control-sm" style="width:90px;">
-                    <button type="button" class="btn btn-sm btn-outline-dark" id="btn-sort-create-count-range">Crear X amb min-max</button>
-                    <button type="button" class="btn btn-sm btn-outline-primary" id="btn-sort-preview-count-range">Previsualitzar</button>
-                  </div>
+                <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
+                  <span class="text-muted small fw-semibold">Mida:</span>
+                  <input id="groups-group-size" type="number" min="2" max="200" value="8" class="form-control form-control-sm" style="width:90px;">
+                  <select id="groups-group-size-mode" class="form-control form-control-sm" style="width:170px;">
+                    <option value="fixed">Mida fixa</option>
+                    <option value="balanced">Equilibrats</option>
+                  </select>
+                  <button type="button" class="btn btn-sm btn-outline-dark" id="btn-groups-create-size">Crear per mida</button>
+                  <button type="button" class="btn btn-sm btn-outline-primary" id="btn-groups-preview-size">Previsualitzar</button>
+                </div>
 
-                  <div class="d-flex align-items-center flex-wrap mt-2" style="gap:8px;">
-                    <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-make-groups-from-sort">
-                      1 grup per cada bloc detectat
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-primary" id="btn-sort-preview-per-bucket">Previsualitzar</button>
-                  </div>
+                <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
+                  <span class="text-muted small fw-semibold">Forquilla:</span>
+                  <input id="groups-group-min-size" type="number" min="1" max="200" value="5" class="form-control form-control-sm" style="width:82px;" title="Minim">
+                  <span class="small text-muted">a</span>
+                  <input id="groups-group-max-size" type="number" min="1" max="200" value="8" class="form-control form-control-sm" style="width:82px;" title="Maxim">
+                  <button type="button" class="btn btn-sm btn-outline-dark" id="btn-groups-create-range-balanced">Equilibrats min-max</button>
+                  <button type="button" class="btn btn-sm btn-outline-primary" id="btn-groups-preview-range-balanced">Previsualitzar</button>
+                </div>
 
-                  <div class="group-preview-panel" id="sort-group-preview" data-group-preview="sort" data-has-preview="0">
-                    <div class="group-preview-toolbar">
-                      <div>
-                        <div class="fw-semibold">Previsualitzacio dels grups</div>
-                        <div class="group-preview-status" id="sort-group-preview-status">
-                          Encara no s'ha calculat cap previsualitzacio amb aquesta configuracio.
-                        </div>
+                <div class="d-flex align-items-center flex-wrap" style="gap:8px;">
+                  <span class="text-muted small fw-semibold">X grups amb forquilla:</span>
+                  <input id="groups-group-count-range" type="number" min="1" max="200" value="4" class="form-control form-control-sm" style="width:90px;">
+                  <button type="button" class="btn btn-sm btn-outline-dark" id="btn-groups-create-count-range">Crear X amb min-max</button>
+                  <button type="button" class="btn btn-sm btn-outline-primary" id="btn-groups-preview-count-range">Previsualitzar</button>
+                </div>
+
+                <div class="d-flex align-items-center flex-wrap mt-2" style="gap:8px;">
+                  <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-groups-create-per-bucket">
+                    1 grup per cada bloc resolt
+                  </button>
+                  <button type="button" class="btn btn-sm btn-outline-primary" id="btn-groups-preview-per-bucket">Previsualitzar</button>
+                </div>
+
+                <div class="group-preview-panel" id="groups-preview" data-has-preview="0">
+                  <div class="group-preview-toolbar">
+                    <div>
+                      <div class="fw-semibold">Previsualitzacio dels grups</div>
+                      <div class="group-preview-status" id="groups-preview-status">
+                        Encara no s'ha calculat cap previsualitzacio amb aquesta configuracio.
                       </div>
-                      <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="btn-sort-preview-clear">Netejar</button>
                     </div>
-                    <div class="group-preview-summary d-none" id="sort-group-preview-summary"></div>
-                    <div class="group-preview-sections">
-                      <div class="group-preview-section d-none" id="sort-group-preview-existing-wrap">
-                        <div class="group-preview-section-head">
-                          <div class="fw-semibold">Grups existents</div>
-                          <div class="group-preview-section-meta" id="sort-group-preview-existing-meta"></div>
-                        </div>
-                        <div class="group-preview-list" id="sort-group-preview-existing-list"></div>
+                    <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="btn-groups-preview-clear">Netejar</button>
+                  </div>
+                  <div class="group-preview-summary d-none" id="groups-preview-summary"></div>
+                  <div class="group-preview-sections">
+                    <div class="group-preview-section d-none" id="groups-preview-existing-wrap">
+                      <div class="group-preview-section-head">
+                        <div class="fw-semibold">Grups existents</div>
+                        <div class="group-preview-section-meta" id="groups-preview-existing-meta"></div>
                       </div>
-                      <div class="group-preview-section d-none" id="sort-group-preview-planned-wrap">
-                        <div class="group-preview-section-head">
-                          <div class="fw-semibold">Grups nous previstos</div>
-                          <div class="group-preview-section-meta" id="sort-group-preview-planned-meta"></div>
-                        </div>
-                        <div class="group-preview-list" id="sort-group-preview-list"></div>
+                      <div class="group-preview-list" id="groups-preview-existing-list"></div>
+                    </div>
+                    <div class="group-preview-section d-none" id="groups-preview-planned-wrap">
+                      <div class="group-preview-section-head">
+                        <div class="fw-semibold">Grups nous previstos</div>
+                        <div class="group-preview-section-meta" id="groups-preview-planned-meta"></div>
                       </div>
+                      <div class="group-preview-list" id="groups-preview-list"></div>
                     </div>
                   </div>
                 </div>
@@ -3263,6 +3215,7 @@
     if (!options.skipSave) {
       saveUiState();
     }
+    syncBackToTopButtonPosition();
   }
 
   function toggleExpandedGroupCard(cardId, options = {}) {
@@ -3290,10 +3243,48 @@
     if (!options.skipSave) {
       saveUiState();
     }
+    syncBackToTopButtonPosition();
   }
 
   function toggleActionsDrawer(options = {}) {
     setActionsDrawerOpen(!isActionsDrawerOpen(), options);
+  }
+
+  function syncBackToTopButton() {
+    const btn = document.getElementById('inscripcions-back-to-top');
+    if (!btn) return;
+    const isVisible = (window.scrollY || window.pageYOffset || 0) > 280;
+    btn.classList.toggle('is-visible', isVisible);
+    syncBackToTopButtonPosition();
+  }
+
+  function syncBackToTopButtonPosition() {
+    const btn = document.getElementById('inscripcions-back-to-top');
+    if (!btn) return;
+
+    btn.style.bottom = '';
+
+    const chatBtn = document.getElementById('chatbot-open');
+    if (!chatBtn) return;
+
+    const chatStyle = window.getComputedStyle(chatBtn);
+    if (
+      chatStyle.display === 'none' ||
+      chatStyle.visibility === 'hidden' ||
+      chatBtn.classList.contains('minimized')
+    ) {
+      return;
+    }
+
+    const chatRect = chatBtn.getBoundingClientRect();
+    if (chatRect.width <= 0 || chatRect.height <= 0) return;
+
+    const btnRect = btn.getBoundingClientRect();
+    const overlapsHorizontally = btnRect.right > (chatRect.left - 8) && btnRect.left < (chatRect.right + 8);
+    if (!overlapsHorizontally) return;
+
+    const bottomOffset = Math.max(0, window.innerHeight - chatRect.top) + 12;
+    btn.style.bottom = `${bottomOffset}px`;
   }
 
   function captureUiState(extra) {
@@ -3305,7 +3296,6 @@
       actionsDrawerScrollTop: getActionsDrawerScrollTop(),
       expandedGroupCardId: getExpandedGroupCardId(),
       scrollY: window.scrollY || window.pageYOffset || 0,
-      groupSource: document.querySelector('.js-group-source:checked')?.value || 'tabs',
     };
     return Object.assign(base, (extra || {}));
   }
@@ -3354,12 +3344,6 @@
 
     __uiStateRestoring = true;
     try {
-      const groupSource = String(state.groupSource || '');
-      if (groupSource === 'tabs' || groupSource === 'sort') {
-        const sourceEl = document.querySelector(`.js-group-source[value="${groupSource}"]`);
-        if (sourceEl) sourceEl.checked = true;
-      }
-
       const activeActionsPanel = String(state.activeActionsPanel || '');
       if (activeActionsPanel) {
         setActiveActionsPanel(activeActionsPanel, { skipSave: true });
@@ -3852,6 +3836,28 @@
     if (drawerBackdrop) {
       drawerBackdrop.addEventListener('click', () => setActionsDrawerOpen(false));
     }
+    const backToTopBtn = document.getElementById('inscripcions-back-to-top');
+    if (backToTopBtn) {
+      backToTopBtn.addEventListener('click', () => {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      });
+      window.addEventListener('scroll', syncBackToTopButton, { passive: true });
+      window.addEventListener('resize', syncBackToTopButtonPosition);
+      const chatbotOpenBtn = document.getElementById('chatbot-open');
+      if (chatbotOpenBtn && window.MutationObserver) {
+        const chatbotObserver = new MutationObserver(() => syncBackToTopButtonPosition());
+        chatbotObserver.observe(chatbotOpenBtn, {
+          attributes: true,
+          attributeFilter: ['class', 'style'],
+        });
+      }
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          syncBackToTopButton();
+          syncBackToTopButtonPosition();
+        });
+      });
+    }
     const drawerInner = getActionsDrawerInner();
     if (drawerInner) {
       drawerInner.addEventListener('scroll', () => saveUiState(), { passive: true });
@@ -4091,6 +4097,10 @@
       return Array.from(document.querySelectorAll('.js-team-row-select:checked'))
         .map(el => el.getAttribute('data-ins-id'))
         .filter(v => !!v);
+    }
+
+    function getSelectedTeamContextCode() {
+      return (document.getElementById('team-context-select')?.value || 'native').trim() || 'native';
     }
 
     function setVisibleInscripcioSelection(checked) {
@@ -4733,39 +4743,14 @@
       return;
     }
 
-    function toggleGroupsSourceView() {
-      const source = document.querySelector('.js-group-source:checked')?.value || 'tabs';
-      const tabsWrap = document.getElementById('group-source-tabs-wrap');
-      const sortWrap = document.getElementById('group-source-sort-wrap');
-      if (tabsWrap) tabsWrap.classList.toggle('d-none', source !== 'tabs');
-      if (sortWrap) sortWrap.classList.toggle('d-none', source !== 'sort');
-      const expandedId = getExpandedGroupCardId();
-      if ((source !== 'tabs' && expandedId === 'tabs-group-card') || (source !== 'sort' && expandedId === 'sort-group-card')) {
-        setExpandedGroupCard('', { skipSave: true });
-      }
-      refreshExpandButtons();
-    }
-
-    function getSelectedSortBucketKeys() {
-      return Array.from(document.querySelectorAll('.js-sort-bucket-check:checked'))
+    function getSelectedGroupBucketKeys() {
+      return Array.from(document.querySelectorAll('.js-group-bucket-check:checked'))
         .map(el => el.value)
         .filter(v => !!v);
     }
 
-    function getSelectedTabBucketKeys() {
-      return Array.from(document.querySelectorAll('.js-tab-bucket-check:checked'))
-        .map(el => el.value)
-        .filter(v => !!v);
-    }
-
-    function setSortBucketSelection(checked) {
-      document.querySelectorAll('.js-sort-bucket-check').forEach(el => {
-        el.checked = !!checked;
-      });
-    }
-
-    function setTabBucketSelection(checked) {
-      document.querySelectorAll('.js-tab-bucket-check').forEach(el => {
+    function setGroupBucketSelection(checked) {
+      document.querySelectorAll('.js-group-bucket-check').forEach(el => {
         el.checked = !!checked;
       });
     }
@@ -4777,53 +4762,48 @@
       return Math.trunc(n);
     }
 
-    function getSortFallbackMode() {
-      return document.getElementById('sort-group-fallback')?.value || 'all_filtered';
+    function getGroupsFallbackMode() {
+      return document.getElementById('groups-fallback')?.value || 'all_filtered';
     }
 
-    function getTabsFallbackMode() {
-      return document.getElementById('tabs-group-fallback')?.value || 'all_filtered';
-    }
-
-    function buildGroupsPayload(source, strategy, extraPayload = {}) {
-      const isTabs = source === 'tabs';
+    function buildGroupsPayload(strategy, extraPayload = {}) {
       return Object.assign(
         {
-          source: source,
+          resolution_mode: 'auto',
           strategy: strategy,
-          fallback_mode: isTabs ? getTabsFallbackMode() : getSortFallbackMode(),
+          fallback_mode: getGroupsFallbackMode(),
           filters: getCurrentInscripcioFilters(),
           group_by: getCurrentGroupByCodes(),
-          selected_keys: isTabs ? getSelectedTabBucketKeys() : getSelectedSortBucketKeys(),
+          selected_keys: getSelectedGroupBucketKeys(),
         },
         extraPayload || {}
       );
     }
 
-    function getGroupPreviewElements(source) {
+    function getGroupPreviewElements() {
       return {
-        root: document.getElementById(`${source}-group-preview`),
-        status: document.getElementById(`${source}-group-preview-status`),
-        summary: document.getElementById(`${source}-group-preview-summary`),
-        existingWrap: document.getElementById(`${source}-group-preview-existing-wrap`),
-        existingMeta: document.getElementById(`${source}-group-preview-existing-meta`),
-        existingList: document.getElementById(`${source}-group-preview-existing-list`),
-        plannedWrap: document.getElementById(`${source}-group-preview-planned-wrap`),
-        plannedMeta: document.getElementById(`${source}-group-preview-planned-meta`),
-        list: document.getElementById(`${source}-group-preview-list`),
-        clear: document.getElementById(`btn-${source}-preview-clear`),
+        root: document.getElementById('groups-preview'),
+        status: document.getElementById('groups-preview-status'),
+        summary: document.getElementById('groups-preview-summary'),
+        existingWrap: document.getElementById('groups-preview-existing-wrap'),
+        existingMeta: document.getElementById('groups-preview-existing-meta'),
+        existingList: document.getElementById('groups-preview-existing-list'),
+        plannedWrap: document.getElementById('groups-preview-planned-wrap'),
+        plannedMeta: document.getElementById('groups-preview-planned-meta'),
+        list: document.getElementById('groups-preview-list'),
+        clear: document.getElementById('btn-groups-preview-clear'),
       };
     }
 
-    function setGroupPreviewStatus(source, message, variant = 'muted') {
-      const status = getGroupPreviewElements(source).status;
+    function setGroupPreviewStatus(message, variant = 'muted') {
+      const status = getGroupPreviewElements().status;
       if (!status) return;
       status.textContent = message || '';
       status.style.color = variant === 'warning' ? '#b45309' : (variant === 'info' ? '#1d4ed8' : '#64748b');
     }
 
-    function clearGroupPreview(source, statusText) {
-      const els = getGroupPreviewElements(source);
+    function clearGroupPreview(statusText) {
+      const els = getGroupPreviewElements();
       if (!els.root) return;
       els.root.dataset.hasPreview = '0';
       if (els.summary) {
@@ -4852,24 +4832,23 @@
         els.clear.classList.add('d-none');
       }
       setGroupPreviewStatus(
-        source,
         statusText || "Encara no s'ha calculat cap previsualitzacio amb aquesta configuracio.",
         'muted'
       );
     }
 
-    function markGroupPreviewDirty(source) {
-      const els = getGroupPreviewElements(source);
+    function markGroupPreviewDirty() {
+      const els = getGroupPreviewElements();
       if (!els.root || els.root.dataset.hasPreview !== '1') return;
-      setGroupPreviewStatus(source, 'La configuracio ha canviat. Torna a previsualitzar per actualitzar el resultat.', 'warning');
+      setGroupPreviewStatus('La configuracio ha canviat. Torna a previsualitzar per actualitzar el resultat.', 'warning');
     }
 
-    function setGroupPreviewLoading(source, loading) {
-      const els = getGroupPreviewElements(source);
+    function setGroupPreviewLoading(loading) {
+      const els = getGroupPreviewElements();
       if (!els.root) return;
       els.root.dataset.loading = loading ? '1' : '0';
       if (loading) {
-        setGroupPreviewStatus(source, 'Calculant la previsualitzacio dels grups...', 'info');
+        setGroupPreviewStatus('Calculant la previsualitzacio dels grups...', 'info');
       }
     }
 
@@ -4902,8 +4881,7 @@
       }
     }
 
-    function createGroupPreviewCard(group, source, kind = 'planned') {
-      const sourceUnitLabel = source === 'tabs' ? 'pestanya' : 'bloc';
+    function createGroupPreviewCard(group, kind = 'planned') {
       const previewKind = String(group?.preview_kind || (kind === 'existing' ? 'existing' : 'created')).trim().toLowerCase();
       const impactKind = String(group?.impact_kind || '').trim().toLowerCase();
       const card = document.createElement('div');
@@ -4924,21 +4902,22 @@
       const headText = document.createElement('div');
       const title = document.createElement('p');
       title.className = 'group-preview-card-title';
-      title.textContent = `Grup ${group?.group_num || '?'}`;
+      const preferredGroupName = String(group?.group_label || group?.suggested_name || '').trim();
+      title.textContent = preferredGroupName || `Grup ${group?.group_num || '?'}`;
       headText.appendChild(title);
 
-      const suggestedName = String(group?.suggested_name || '').trim();
-      if (previewKind === 'created' && suggestedName) {
-        const suggested = document.createElement('p');
-        suggested.className = 'group-preview-card-subtitle';
-        suggested.textContent = `Nom suggerit: ${suggestedName}`;
-        headText.appendChild(suggested);
+      const groupNum = String(group?.group_num || '').trim();
+      if (groupNum && preferredGroupName) {
+        const groupRef = document.createElement('p');
+        groupRef.className = 'group-preview-card-subtitle';
+        groupRef.textContent = `Grup ${groupNum}`;
+        headText.appendChild(groupRef);
       }
 
       const subtitle = document.createElement('p');
       subtitle.className = 'group-preview-card-subtitle';
       const sourceCount = Array.isArray(group?.sources) ? group.sources.length : 0;
-      subtitle.textContent = `${sourceCount} ${sourceCount === 1 ? sourceUnitLabel : `${sourceUnitLabel}s`} implicats`;
+      subtitle.textContent = `${sourceCount} ${sourceCount === 1 ? 'bloc origen implicat' : 'blocs origen implicats'}`;
       headText.appendChild(subtitle);
 
       const movingMembersCount = Number(group?.moving_members_count || 0);
@@ -4975,6 +4954,19 @@
       } else if (impactKind === 'reduced') {
         badges.appendChild(createGroupPreviewBadge('Es redueix', 'reduced'));
       }
+      const sourceKinds = new Set();
+      (Array.isArray(group?.sources) ? group.sources : []).forEach(sourceRow => {
+        (Array.isArray(sourceRow?.kinds) ? sourceRow.kinds : []).forEach(kindName => {
+          if (kindName) sourceKinds.add(String(kindName));
+        });
+      });
+      if (sourceKinds.has('tabs') && sourceKinds.has('sort')) {
+        badges.appendChild(createGroupPreviewBadge('Combinat'));
+      } else if (sourceKinds.has('tabs')) {
+        badges.appendChild(createGroupPreviewBadge('Agrupacio'));
+      } else if (sourceKinds.has('sort')) {
+        badges.appendChild(createGroupPreviewBadge('Ordenacio'));
+      }
       badges.appendChild(createGroupPreviewBadge(`${Number(group?.members_count || 0)} integrants`));
       head.appendChild(badges);
       card.appendChild(head);
@@ -4999,7 +4991,7 @@
           const remainingCount = Number(sourceRow?.remaining_count || 0);
           if (movingCount > 0) {
             count.classList.add('is-impact');
-            count.textContent = `${totalCount} totals · surten ${movingCount} · queden ${remainingCount}`;
+            count.textContent = `${totalCount} totals | surten ${movingCount} | queden ${remainingCount}`;
           } else {
             count.textContent = `${totalCount}`;
           }
@@ -5036,12 +5028,12 @@
       return card;
     }
 
-    function renderGroupPreviewSection(wrap, meta, list, groups, source, kind) {
+    function renderGroupPreviewSection(wrap, meta, list, groups, kind) {
       if (!wrap || !list) return;
       const rows = Array.isArray(groups) ? groups : [];
       list.innerHTML = '';
       rows.forEach(group => {
-        list.appendChild(createGroupPreviewCard(group, source, kind));
+        list.appendChild(createGroupPreviewCard(group, kind));
       });
       wrap.classList.toggle('d-none', rows.length === 0);
       if (meta) {
@@ -5050,8 +5042,8 @@
       }
     }
 
-    function renderGroupPreview(source, preview, strategy) {
-      const els = getGroupPreviewElements(source);
+    function renderGroupPreview(preview, strategy) {
+      const els = getGroupPreviewElements();
       if (!els.root) return;
 
       const previewData = preview && typeof preview === 'object' ? preview : {};
@@ -5069,6 +5061,17 @@
           els.summary.appendChild(createGroupPreviewBadge(`Mida ${Number(previewData.size_min || 0)}-${Number(previewData.size_max || 0)}`));
         }
         els.summary.appendChild(createGroupPreviewBadge(`${Number(previewData.buckets_applied || 0)} blocs origen`));
+        if (Number(previewData.effective_bucket_count || 0) > 0) {
+          els.summary.appendChild(createGroupPreviewBadge(`${Number(previewData.effective_bucket_count || 0)} blocs resolts`));
+        }
+        const layersUsed = Array.isArray(previewData.layers_used) ? previewData.layers_used : [];
+        if (layersUsed.includes('tabs') && layersUsed.includes('sort')) {
+          els.summary.appendChild(createGroupPreviewBadge('Resolucio combinada'));
+        } else if (layersUsed.includes('tabs')) {
+          els.summary.appendChild(createGroupPreviewBadge('Agrupacions'));
+        } else if (layersUsed.includes('sort')) {
+          els.summary.appendChild(createGroupPreviewBadge('Ordenacions'));
+        }
         if (existingGroups.some(group => String(group?.impact_kind || '').trim().toLowerCase() === 'reduced')) {
           els.summary.appendChild(createGroupPreviewBadge('Groc: es redueix', 'reduced'));
         }
@@ -5084,8 +5087,8 @@
         els.summary.classList.remove('d-none');
       }
 
-      renderGroupPreviewSection(els.existingWrap, els.existingMeta, els.existingList, existingGroups, source, 'existing');
-      renderGroupPreviewSection(els.plannedWrap, els.plannedMeta, els.list, groups, source, 'planned');
+      renderGroupPreviewSection(els.existingWrap, els.existingMeta, els.existingList, existingGroups, 'existing');
+      renderGroupPreviewSection(els.plannedWrap, els.plannedMeta, els.list, groups, 'planned');
 
       if (els.clear) {
         els.clear.classList.remove('d-none');
@@ -5094,28 +5097,28 @@
       const baseMessage = groups.length
         ? `Previsualitzacio calculada amb l'estrategia "${describeGroupStrategy(strategy)}".`
         : 'No es generen grups nous amb aquesta configuracio.';
-      const fallbackMessage = previewData.used_fallback ? ' S ha aplicat un fallback per resoldre la particio.' : '';
-      setGroupPreviewStatus(source, `${baseMessage}${fallbackMessage}`, groups.length ? 'info' : 'muted');
+      const fallbackMessage = previewData.used_fallback ? " S'ha aplicat un fallback per resoldre la particio." : '';
+      setGroupPreviewStatus(`${baseMessage}${fallbackMessage}`, groups.length ? 'info' : 'muted');
     }
 
-    async function previewGroups(source, strategy, extraPayload = {}) {
-      const payload = buildGroupsPayload(source, strategy, Object.assign({}, extraPayload || {}, { preview_only: true }));
-      setGroupPreviewLoading(source, true);
+    async function previewGroups(strategy, extraPayload = {}) {
+      const payload = buildGroupsPayload(strategy, Object.assign({}, extraPayload || {}, { preview_only: true }));
+      setGroupPreviewLoading(true);
       try {
         const data = await postJson(groupsFromSortUrl, payload);
-        renderGroupPreview(source, data?.preview || {}, data?.strategy || strategy);
+        renderGroupPreview(data?.preview || {}, data?.strategy || strategy);
         return true;
       } catch (err) {
-        clearGroupPreview(source, 'No s ha pogut calcular la previsualitzacio amb aquesta configuracio.');
+        clearGroupPreview("No s'ha pogut calcular la previsualitzacio amb aquesta configuracio.");
         showAlert(`No s'ha pogut calcular la previsualitzacio.\n${err.message || err}`);
         return false;
       } finally {
-        setGroupPreviewLoading(source, false);
+        setGroupPreviewLoading(false);
       }
     }
 
-    async function makeGroups(source, strategy, extraPayload = {}) {
-      const payload = buildGroupsPayload(source, strategy, extraPayload);
+    async function makeGroups(strategy, extraPayload = {}) {
+      const payload = buildGroupsPayload(strategy, extraPayload);
 
       try {
         const data = await postJson(groupsFromSortUrl, payload);
@@ -5131,275 +5134,115 @@
       }
     }
 
-    function bindPreviewDirtyHandlers(source, selectors, eventName) {
+    function bindPreviewDirtyHandlers(selectors, eventName) {
       selectors.forEach(selector => {
         document.querySelectorAll(selector).forEach(el => {
-          el.addEventListener(eventName, () => markGroupPreviewDirty(source));
+          el.addEventListener(eventName, () => markGroupPreviewDirty());
         });
       });
     }
 
-    function initGroupSourceControls() {
-      document.querySelectorAll('.js-group-source').forEach(el => {
-        el.addEventListener('change', () => {
-          toggleGroupsSourceView();
-          saveUiState();
-        });
-      });
-      toggleGroupsSourceView();
-
-      const btnAll = document.getElementById('btn-sort-buckets-all');
+    function initGroupsPanel() {
+      const btnAll = document.getElementById('btn-groups-buckets-all');
       if (btnAll) {
         btnAll.addEventListener('click', () => {
-          setSortBucketSelection(true);
-          markGroupPreviewDirty('sort');
+          setGroupBucketSelection(true);
+          markGroupPreviewDirty();
         });
       }
 
-      const btnNone = document.getElementById('btn-sort-buckets-none');
+      const btnNone = document.getElementById('btn-groups-buckets-none');
       if (btnNone) {
         btnNone.addEventListener('click', () => {
-          setSortBucketSelection(false);
-          markGroupPreviewDirty('sort');
+          setGroupBucketSelection(false);
+          markGroupPreviewDirty();
         });
       }
 
-      const btnTabsAll = document.getElementById('btn-tabs-buckets-all');
-      if (btnTabsAll) {
-        btnTabsAll.addEventListener('click', () => {
-          setTabBucketSelection(true);
-          markGroupPreviewDirty('tabs');
-        });
-      }
-
-      const btnTabsNone = document.getElementById('btn-tabs-buckets-none');
-      if (btnTabsNone) {
-        btnTabsNone.addEventListener('click', () => {
-          setTabBucketSelection(false);
-          markGroupPreviewDirty('tabs');
-        });
-      }
-
-      const btnTabsCreateCount = document.getElementById('btn-tabs-create-count');
-      if (btnTabsCreateCount) {
-        btnTabsCreateCount.addEventListener('click', async () => {
-          const k = readIntInput('tabs-group-count', 1);
-          if (!k) {
-            showAlert("Introdueix un nombre de grups valid.");
-            return;
-          }
-          await makeGroups('tabs', 'count', { group_count: k });
-        });
-      }
-
-      const btnTabsPreviewCount = document.getElementById('btn-tabs-preview-count');
-      if (btnTabsPreviewCount) {
-        btnTabsPreviewCount.addEventListener('click', async () => {
-          const k = readIntInput('tabs-group-count', 1);
-          if (!k) {
-            showAlert("Introdueix un nombre de grups valid.");
-            return;
-          }
-          await previewGroups('tabs', 'count', { group_count: k });
-        });
-      }
-
-      const btnTabsCreateSize = document.getElementById('btn-tabs-create-size');
-      if (btnTabsCreateSize) {
-        btnTabsCreateSize.addEventListener('click', async () => {
-          const size = readIntInput('tabs-group-size', 2);
-          if (!size) {
-            showAlert("Introdueix una mida valida (>=2).");
-            return;
-          }
-          const mode = document.getElementById('tabs-group-size-mode')?.value || 'fixed';
-          const strategy = mode === 'balanced' ? 'size_balanced' : 'size_fixed';
-          await makeGroups('tabs', strategy, { group_size: size });
-        });
-      }
-
-      const btnTabsPreviewSize = document.getElementById('btn-tabs-preview-size');
-      if (btnTabsPreviewSize) {
-        btnTabsPreviewSize.addEventListener('click', async () => {
-          const size = readIntInput('tabs-group-size', 2);
-          if (!size) {
-            showAlert("Introdueix una mida valida (>=2).");
-            return;
-          }
-          const mode = document.getElementById('tabs-group-size-mode')?.value || 'fixed';
-          const strategy = mode === 'balanced' ? 'size_balanced' : 'size_fixed';
-          await previewGroups('tabs', strategy, { group_size: size });
-        });
-      }
-
-      const btnTabsCreateRangeBalanced = document.getElementById('btn-tabs-create-range-balanced');
-      if (btnTabsCreateRangeBalanced) {
-        btnTabsCreateRangeBalanced.addEventListener('click', async () => {
-          const minSize = readIntInput('tabs-group-min-size', 1);
-          const maxSize = readIntInput('tabs-group-max-size', 1);
-          if (!minSize || !maxSize || minSize > maxSize) {
-            showAlert("Forquilla invalida: comprova minim i maxim.");
-            return;
-          }
-          await makeGroups('tabs', 'range_balanced', { min_size: minSize, max_size: maxSize });
-        });
-      }
-
-      const btnTabsPreviewRangeBalanced = document.getElementById('btn-tabs-preview-range-balanced');
-      if (btnTabsPreviewRangeBalanced) {
-        btnTabsPreviewRangeBalanced.addEventListener('click', async () => {
-          const minSize = readIntInput('tabs-group-min-size', 1);
-          const maxSize = readIntInput('tabs-group-max-size', 1);
-          if (!minSize || !maxSize || minSize > maxSize) {
-            showAlert("Forquilla invalida: comprova minim i maxim.");
-            return;
-          }
-          await previewGroups('tabs', 'range_balanced', { min_size: minSize, max_size: maxSize });
-        });
-      }
-
-      const btnTabsCreateCountRange = document.getElementById('btn-tabs-create-count-range');
-      if (btnTabsCreateCountRange) {
-        btnTabsCreateCountRange.addEventListener('click', async () => {
-          const minSize = readIntInput('tabs-group-min-size', 1);
-          const maxSize = readIntInput('tabs-group-max-size', 1);
-          const k = readIntInput('tabs-group-count-range', 1);
-          if (!minSize || !maxSize || minSize > maxSize) {
-            showAlert("Forquilla invalida: comprova minim i maxim.");
-            return;
-          }
-          if (!k) {
-            showAlert("Introdueix un nombre de grups valid.");
-            return;
-          }
-          await makeGroups('tabs', 'count_with_range', {
-            group_count: k,
-            min_size: minSize,
-            max_size: maxSize,
-          });
-        });
-      }
-
-      const btnTabsPreviewCountRange = document.getElementById('btn-tabs-preview-count-range');
-      if (btnTabsPreviewCountRange) {
-        btnTabsPreviewCountRange.addEventListener('click', async () => {
-          const minSize = readIntInput('tabs-group-min-size', 1);
-          const maxSize = readIntInput('tabs-group-max-size', 1);
-          const k = readIntInput('tabs-group-count-range', 1);
-          if (!minSize || !maxSize || minSize > maxSize) {
-            showAlert("Forquilla invalida: comprova minim i maxim.");
-            return;
-          }
-          if (!k) {
-            showAlert("Introdueix un nombre de grups valid.");
-            return;
-          }
-          await previewGroups('tabs', 'count_with_range', {
-            group_count: k,
-            min_size: minSize,
-            max_size: maxSize,
-          });
-        });
-      }
-
-      const btnTabsCreatePerBucket = document.getElementById('btn-tabs-create-per-bucket');
-      if (btnTabsCreatePerBucket) {
-        btnTabsCreatePerBucket.addEventListener('click', async () => {
-          await makeGroups('tabs', 'per_bucket');
-        });
-      }
-
-      const btnTabsPreviewPerBucket = document.getElementById('btn-tabs-preview-per-bucket');
-      if (btnTabsPreviewPerBucket) {
-        btnTabsPreviewPerBucket.addEventListener('click', async () => {
-          await previewGroups('tabs', 'per_bucket');
-        });
-      }
-
-      const btnCreateCount = document.getElementById('btn-sort-create-count');
+      const btnCreateCount = document.getElementById('btn-groups-create-count');
       if (btnCreateCount) {
         btnCreateCount.addEventListener('click', async () => {
-          const k = readIntInput('sort-group-count', 1);
+          const k = readIntInput('groups-group-count', 1);
           if (!k) {
             showAlert("Introdueix un nombre de grups valid.");
             return;
           }
-          await makeGroups('sort', 'count', { group_count: k });
+          await makeGroups('count', { group_count: k });
         });
       }
 
-      const btnSortPreviewCount = document.getElementById('btn-sort-preview-count');
-      if (btnSortPreviewCount) {
-        btnSortPreviewCount.addEventListener('click', async () => {
-          const k = readIntInput('sort-group-count', 1);
+      const btnPreviewCount = document.getElementById('btn-groups-preview-count');
+      if (btnPreviewCount) {
+        btnPreviewCount.addEventListener('click', async () => {
+          const k = readIntInput('groups-group-count', 1);
           if (!k) {
             showAlert("Introdueix un nombre de grups valid.");
             return;
           }
-          await previewGroups('sort', 'count', { group_count: k });
+          await previewGroups('count', { group_count: k });
         });
       }
 
-      const btnCreateSize = document.getElementById('btn-sort-create-size');
+      const btnCreateSize = document.getElementById('btn-groups-create-size');
       if (btnCreateSize) {
         btnCreateSize.addEventListener('click', async () => {
-          const size = readIntInput('sort-group-size', 2);
+          const size = readIntInput('groups-group-size', 2);
           if (!size) {
             showAlert("Introdueix una mida valida (>=2).");
             return;
           }
-          const mode = document.getElementById('sort-group-size-mode')?.value || 'fixed';
+          const mode = document.getElementById('groups-group-size-mode')?.value || 'fixed';
           const strategy = mode === 'balanced' ? 'size_balanced' : 'size_fixed';
-          await makeGroups('sort', strategy, { group_size: size });
+          await makeGroups(strategy, { group_size: size });
         });
       }
 
-      const btnSortPreviewSize = document.getElementById('btn-sort-preview-size');
-      if (btnSortPreviewSize) {
-        btnSortPreviewSize.addEventListener('click', async () => {
-          const size = readIntInput('sort-group-size', 2);
+      const btnPreviewSize = document.getElementById('btn-groups-preview-size');
+      if (btnPreviewSize) {
+        btnPreviewSize.addEventListener('click', async () => {
+          const size = readIntInput('groups-group-size', 2);
           if (!size) {
             showAlert("Introdueix una mida valida (>=2).");
             return;
           }
-          const mode = document.getElementById('sort-group-size-mode')?.value || 'fixed';
+          const mode = document.getElementById('groups-group-size-mode')?.value || 'fixed';
           const strategy = mode === 'balanced' ? 'size_balanced' : 'size_fixed';
-          await previewGroups('sort', strategy, { group_size: size });
+          await previewGroups(strategy, { group_size: size });
         });
       }
 
-      const btnCreateRangeBalanced = document.getElementById('btn-sort-create-range-balanced');
+      const btnCreateRangeBalanced = document.getElementById('btn-groups-create-range-balanced');
       if (btnCreateRangeBalanced) {
         btnCreateRangeBalanced.addEventListener('click', async () => {
-          const minSize = readIntInput('sort-group-min-size', 1);
-          const maxSize = readIntInput('sort-group-max-size', 1);
+          const minSize = readIntInput('groups-group-min-size', 1);
+          const maxSize = readIntInput('groups-group-max-size', 1);
           if (!minSize || !maxSize || minSize > maxSize) {
             showAlert("Forquilla invalida: comprova minim i maxim.");
             return;
           }
-          await makeGroups('sort', 'range_balanced', { min_size: minSize, max_size: maxSize });
+          await makeGroups('range_balanced', { min_size: minSize, max_size: maxSize });
         });
       }
 
-      const btnSortPreviewRangeBalanced = document.getElementById('btn-sort-preview-range-balanced');
-      if (btnSortPreviewRangeBalanced) {
-        btnSortPreviewRangeBalanced.addEventListener('click', async () => {
-          const minSize = readIntInput('sort-group-min-size', 1);
-          const maxSize = readIntInput('sort-group-max-size', 1);
+      const btnPreviewRangeBalanced = document.getElementById('btn-groups-preview-range-balanced');
+      if (btnPreviewRangeBalanced) {
+        btnPreviewRangeBalanced.addEventListener('click', async () => {
+          const minSize = readIntInput('groups-group-min-size', 1);
+          const maxSize = readIntInput('groups-group-max-size', 1);
           if (!minSize || !maxSize || minSize > maxSize) {
             showAlert("Forquilla invalida: comprova minim i maxim.");
             return;
           }
-          await previewGroups('sort', 'range_balanced', { min_size: minSize, max_size: maxSize });
+          await previewGroups('range_balanced', { min_size: minSize, max_size: maxSize });
         });
       }
 
-      const btnCreateCountRange = document.getElementById('btn-sort-create-count-range');
+      const btnCreateCountRange = document.getElementById('btn-groups-create-count-range');
       if (btnCreateCountRange) {
         btnCreateCountRange.addEventListener('click', async () => {
-          const minSize = readIntInput('sort-group-min-size', 1);
-          const maxSize = readIntInput('sort-group-max-size', 1);
-          const k = readIntInput('sort-group-count-range', 1);
+          const minSize = readIntInput('groups-group-min-size', 1);
+          const maxSize = readIntInput('groups-group-max-size', 1);
+          const k = readIntInput('groups-group-count-range', 1);
           if (!minSize || !maxSize || minSize > maxSize) {
             showAlert("Forquilla invalida: comprova minim i maxim.");
             return;
@@ -5408,7 +5251,7 @@
             showAlert("Introdueix un nombre de grups valid.");
             return;
           }
-          await makeGroups('sort', 'count_with_range', {
+          await makeGroups('count_with_range', {
             group_count: k,
             min_size: minSize,
             max_size: maxSize,
@@ -5416,12 +5259,12 @@
         });
       }
 
-      const btnSortPreviewCountRange = document.getElementById('btn-sort-preview-count-range');
-      if (btnSortPreviewCountRange) {
-        btnSortPreviewCountRange.addEventListener('click', async () => {
-          const minSize = readIntInput('sort-group-min-size', 1);
-          const maxSize = readIntInput('sort-group-max-size', 1);
-          const k = readIntInput('sort-group-count-range', 1);
+      const btnPreviewCountRange = document.getElementById('btn-groups-preview-count-range');
+      if (btnPreviewCountRange) {
+        btnPreviewCountRange.addEventListener('click', async () => {
+          const minSize = readIntInput('groups-group-min-size', 1);
+          const maxSize = readIntInput('groups-group-max-size', 1);
+          const k = readIntInput('groups-group-count-range', 1);
           if (!minSize || !maxSize || minSize > maxSize) {
             showAlert("Forquilla invalida: comprova minim i maxim.");
             return;
@@ -5430,7 +5273,7 @@
             showAlert("Introdueix un nombre de grups valid.");
             return;
           }
-          await previewGroups('sort', 'count_with_range', {
+          await previewGroups('count_with_range', {
             group_count: k,
             min_size: minSize,
             max_size: maxSize,
@@ -5438,68 +5281,44 @@
         });
       }
 
-      const btnCreateBuckets = document.getElementById('btn-make-groups-from-sort');
-      if (btnCreateBuckets) {
-        btnCreateBuckets.addEventListener('click', async () => {
-          await makeGroups('sort', 'per_bucket');
+      const btnCreatePerBucket = document.getElementById('btn-groups-create-per-bucket');
+      if (btnCreatePerBucket) {
+        btnCreatePerBucket.addEventListener('click', async () => {
+          await makeGroups('per_bucket');
         });
       }
 
-      const btnSortPreviewBuckets = document.getElementById('btn-sort-preview-per-bucket');
-      if (btnSortPreviewBuckets) {
-        btnSortPreviewBuckets.addEventListener('click', async () => {
-          await previewGroups('sort', 'per_bucket');
+      const btnPreviewPerBucket = document.getElementById('btn-groups-preview-per-bucket');
+      if (btnPreviewPerBucket) {
+        btnPreviewPerBucket.addEventListener('click', async () => {
+          await previewGroups('per_bucket');
         });
       }
 
-      const btnTabsPreviewClear = document.getElementById('btn-tabs-preview-clear');
-      if (btnTabsPreviewClear) {
-        btnTabsPreviewClear.addEventListener('click', () => clearGroupPreview('tabs'));
+      const btnPreviewClear = document.getElementById('btn-groups-preview-clear');
+      if (btnPreviewClear) {
+        btnPreviewClear.addEventListener('click', () => clearGroupPreview());
       }
 
-      const btnSortPreviewClear = document.getElementById('btn-sort-preview-clear');
-      if (btnSortPreviewClear) {
-        btnSortPreviewClear.addEventListener('click', () => clearGroupPreview('sort'));
-      }
-
-      bindPreviewDirtyHandlers('tabs', [
-        '#tabs-group-fallback',
-        '#tabs-group-count',
-        '#tabs-group-size',
-        '#tabs-group-size-mode',
-        '#tabs-group-min-size',
-        '#tabs-group-max-size',
-        '#tabs-group-count-range',
-        '.js-tab-bucket-check',
+      bindPreviewDirtyHandlers([
+        '#groups-fallback',
+        '#groups-group-count',
+        '#groups-group-size',
+        '#groups-group-size-mode',
+        '#groups-group-min-size',
+        '#groups-group-max-size',
+        '#groups-group-count-range',
+        '.js-group-bucket-check',
       ], 'change');
-      bindPreviewDirtyHandlers('tabs', [
-        '#tabs-group-count',
-        '#tabs-group-size',
-        '#tabs-group-min-size',
-        '#tabs-group-max-size',
-        '#tabs-group-count-range',
+      bindPreviewDirtyHandlers([
+        '#groups-group-count',
+        '#groups-group-size',
+        '#groups-group-min-size',
+        '#groups-group-max-size',
+        '#groups-group-count-range',
       ], 'input');
 
-      bindPreviewDirtyHandlers('sort', [
-        '#sort-group-fallback',
-        '#sort-group-count',
-        '#sort-group-size',
-        '#sort-group-size-mode',
-        '#sort-group-min-size',
-        '#sort-group-max-size',
-        '#sort-group-count-range',
-        '.js-sort-bucket-check',
-      ], 'change');
-      bindPreviewDirtyHandlers('sort', [
-        '#sort-group-count',
-        '#sort-group-size',
-        '#sort-group-min-size',
-        '#sort-group-max-size',
-        '#sort-group-count-range',
-      ], 'input');
-
-      clearGroupPreview('tabs');
-      clearGroupPreview('sort');
+      clearGroupPreview();
     }
 
     function collectNumericGroups() {
@@ -6239,7 +6058,7 @@
       console.error("Error inicialitzant menús d'ordenació de columnes:", err);
     }
     try {
-      initGroupSourceControls();
+      initGroupsPanel();
     } catch (err) {
       console.error("Error inicialitzant controls de grups:", err);
     }
@@ -6601,6 +6420,99 @@
       btnTeamSelectVisible.addEventListener('click', () => setVisibleInscripcioSelection(true));
     }
 
+    const teamContextSelect = document.getElementById('team-context-select');
+    if (teamContextSelect) {
+      teamContextSelect.addEventListener('change', () => {
+        const nextUrl = new URL(window.location.href);
+        const code = getSelectedTeamContextCode();
+        if (code === 'native') {
+          nextUrl.searchParams.delete('team_context');
+        } else {
+          nextUrl.searchParams.set('team_context', code);
+        }
+        navigateWithUiState(nextUrl.toString());
+      });
+    }
+
+    const btnTeamContextCreate = document.getElementById('btn-team-context-create');
+    if (btnTeamContextCreate) {
+      btnTeamContextCreate.addEventListener('click', async () => {
+        const name = await showPrompt("Nom del nou context d'equips:", "");
+        if (!name || !name.trim()) return;
+        try {
+          const data = await postJson("{% url 'inscripcions_equip_context_create' competicio.id %}", {
+            name: name.trim()
+          });
+          if (!data.ok) {
+            showAlert("No s'ha pogut crear el context.");
+            return;
+          }
+          const code = data.context?.code || 'native';
+          const nextUrl = new URL(window.location.href);
+          if (code === 'native') {
+            nextUrl.searchParams.delete('team_context');
+          } else {
+            nextUrl.searchParams.set('team_context', code);
+          }
+          navigateWithUiState(nextUrl.toString());
+        } catch (err) {
+          showAlert(`No s'ha pogut crear el context.\\n${err.message || err}`);
+        }
+      });
+    }
+
+    const btnTeamContextRename = document.getElementById('btn-team-context-rename');
+    if (btnTeamContextRename) {
+      btnTeamContextRename.addEventListener('click', async () => {
+        const contextCode = getSelectedTeamContextCode();
+        if (contextCode === 'native') {
+          showAlert("El context natiu no es pot renombrar.");
+          return;
+        }
+        const currentLabel = teamContextSelect?.selectedOptions?.[0]?.textContent || contextCode;
+        const name = await showPrompt("Nou nom del context d'equips:", currentLabel);
+        if (!name || !name.trim()) return;
+        const renameUrl = "{% url 'inscripcions_equip_context_rename' competicio.id '__context__' %}".replace('__context__', encodeURIComponent(contextCode));
+        try {
+          const data = await postJson(renameUrl, { name: name.trim() });
+          if (!data.ok) {
+            showAlert("No s'ha pogut renombrar el context.");
+            return;
+          }
+          reloadWithUiState();
+        } catch (err) {
+          showAlert(`No s'ha pogut renombrar el context.\\n${err.message || err}`);
+        }
+      });
+    }
+
+    const btnTeamContextDelete = document.getElementById('btn-team-context-delete');
+    if (btnTeamContextDelete) {
+      btnTeamContextDelete.addEventListener('click', async () => {
+        const contextCode = getSelectedTeamContextCode();
+        if (contextCode === 'native') {
+          showAlert("El context natiu no es pot eliminar.");
+          return;
+        }
+        const contextLabel = teamContextSelect?.selectedOptions?.[0]?.textContent || contextCode;
+        const ok = await showConfirm(`Eliminar el context \"${contextLabel}\"? S'esborraran les seves assignacions.`);
+        if (!ok) return;
+        const deleteUrl = "{% url 'inscripcions_equip_context_delete' competicio.id '__context__' %}".replace('__context__', encodeURIComponent(contextCode));
+        try {
+          const data = await postJson(deleteUrl, {});
+          if (!data.ok) {
+            showAlert("No s'ha pogut eliminar el context.");
+            return;
+          }
+          const nextUrl = new URL(window.location.href);
+          nextUrl.searchParams.delete('team_context');
+          navigateWithUiState(nextUrl.toString());
+        } catch (err) {
+          showAlert(`No s'ha pogut eliminar el context.\\n${err.message || err}`);
+        }
+      });
+    }
+
     const btnTeamClearSelection = document.getElementById('btn-team-clear-selection');
     if (btnTeamClearSelection) {
       btnTeamClearSelection.addEventListener('click', () => setVisibleInscripcioSelection(false));
@@ -6619,6 +6531,7 @@
 
         try {
           const data = await postJson("{% url 'inscripcions_equips_preview' competicio.id %}", {
+            context_code: getSelectedTeamContextCode(),
             fields: fields,
             filters: getCurrentInscripcioFilters(),
             selected_ids: selectedIds
@@ -6644,6 +6557,7 @@
 
         try {
           const data = await postJson("{% url 'inscripcions_equips_auto_create' competicio.id %}", {
+            context_code: getSelectedTeamContextCode(),
             fields: fields,
             replace_existing: replaceExisting,
             filters: getCurrentInscripcioFilters(),
@@ -6671,6 +6585,7 @@
         const ids = getSelectedInscripcioIds();
         try {
           const data = await postJson("{% url 'inscripcions_equips_create_manual' competicio.id %}", {
+            context_code: getSelectedTeamContextCode(),
             name: name,
             selected_ids: ids
           });
@@ -6700,6 +6615,7 @@
         }
         try {
           const data = await postJson("{% url 'inscripcions_equips_assign' competicio.id %}", {
+            context_code: getSelectedTeamContextCode(),
             equip_id: equipId,
             inscripcio_ids: ids
           });
@@ -6724,6 +6640,7 @@
         }
         try {
           const data = await postJson("{% url 'inscripcions_equips_unassign' competicio.id %}", {
+            context_code: getSelectedTeamContextCode(),
             inscripcio_ids: ids
           });
           if (!data.ok) {
@@ -6745,10 +6662,14 @@
           showAlert("URL d'eliminacio massiva no disponible.");
           return;
         }
-        const ok = await showConfirm("Vols eliminar tots els equips existents? Les inscripcions quedaran sense equip.");
+        const contextCode = getSelectedTeamContextCode();
+        const message = contextCode === 'native'
+          ? "Vols eliminar tots els equips existents? Les inscripcions quedaran sense equip."
+          : "Vols eliminar totes les assignacions d'equip d'aquest context?";
+        const ok = await showConfirm(message);
         if (!ok) return;
         try {
-          const data = await postJson(url, {});
+          const data = await postJson(url, { context_code: contextCode });
           if (!data.ok) {
             showAlert("No s'han pogut eliminar tots els equips.");
             return;
@@ -6772,7 +6693,7 @@
           return;
         }
         try {
-          const data = await postJson(renameUrl, { name: newName.trim() });
+          const data = await postJson(renameUrl, { name: newName.trim(), context_code: getSelectedTeamContextCode() });
           if (!data.ok) {
             showAlert("No s'ha pogut renombrar l'equip.");
             return;
@@ -6788,14 +6709,18 @@
       if (deleteBtn) {
         const teamName = deleteBtn.getAttribute('data-team-name') || 'Equip';
         const deleteUrl = deleteBtn.getAttribute('data-delete-url');
-        const ok = await showConfirm(`Eliminar l'equip \"${teamName}\"?\\nLes inscripcions quedaran sense equip.`);
+        const contextCode = getSelectedTeamContextCode();
+        const message = contextCode === 'native'
+          ? `Eliminar l'equip \"${teamName}\"?\\nLes inscripcions quedaran sense equip.`
+          : `Treure l'equip \"${teamName}\" del context actual?`;
+        const ok = await showConfirm(message);
         if (!ok) return;
         if (!deleteUrl) {
           showAlert("URL de delete no disponible.");
           return;
         }
         try {
-          const data = await postJson(deleteUrl, {});
+          const data = await postJson(deleteUrl, { context_code: contextCode });
           if (!data.ok) {
             showAlert("No s'ha pogut eliminar l'equip.");
             return;

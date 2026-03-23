@@ -11,7 +11,7 @@ from django.urls import reverse
 from django.utils.http import urlencode
 from django.utils.text import slugify
 from .models_scoring import ScoreEntry, ScoringSchema  
-from .models import Competicio, Inscripcio, Equip
+from .models import Competicio, Inscripcio, Equip, EquipContext
 from .models_trampoli import CompeticioAparell
 from .models_classificacions import ClassificacioConfig, ClassificacioTemplateGlobal
 from .models_judging import PublicLiveToken
@@ -36,6 +36,11 @@ from .services.classificacio_templates import (
     resolve_app_id as resolve_app_id_shared,
     schema_to_template_schema as schema_to_template_schema_shared,
     template_schema_to_competicio_schema as template_schema_to_competicio_schema_shared,
+)
+from .services.equip_contexts import (
+    NATIVE_EQUIP_CONTEXT_CODE,
+    get_equip_context_payload,
+    normalize_equip_context_code,
 )
 from .views import get_allowed_group_fields, get_inscripcio_value
 from .access import user_has_competicio_capability
@@ -1007,6 +1012,7 @@ class ClassificacionsHome(TemplateView):
             "cfgs": cfg_payload,
             "aparells": aparell_payload,
             "equips": equips_payload,
+            "equip_contexts": get_equip_context_payload(competicio),
             "can_manage_global_templates": bool(
                 user_has_competicio_capability(self.request.user, competicio, "classificacions.edit")
             ),
@@ -1978,6 +1984,20 @@ def _sanitize_schema_for_builder(competicio, schema_local, tipus="individual"):
 def _validate_schema_for_competicio(competicio, schema_local, tipus="individual"):
     schema_local = _normalize_particions_schema(schema_local or {})
     errors = []
+    equips_cfg = schema_local.get("equips") or {}
+    assignment_source = equips_cfg.get("assignment_source") or {}
+    mode = str(assignment_source.get("mode") or "native").strip().lower()
+    if mode not in {"native", "context"}:
+        errors.append(f"equips.assignment_source.mode invalid: {mode}")
+    if mode == "context":
+        context_code = normalize_equip_context_code(assignment_source.get("context_code"))
+        if context_code == NATIVE_EQUIP_CONTEXT_CODE:
+            errors.append("equips.assignment_source.context_code invalid per mode='context'.")
+        elif not EquipContext.objects.filter(competicio=competicio, code=context_code).exists():
+            errors.append(f"equips.assignment_source.context_code no existeix: {context_code}")
+    fallback = str(assignment_source.get("fallback") or NATIVE_EQUIP_CONTEXT_CODE).strip().lower()
+    if fallback != NATIVE_EQUIP_CONTEXT_CODE:
+        errors.append(f"equips.assignment_source.fallback invalid: {fallback}")
     errors.extend(_validate_particions_schema(competicio, schema_local))
     errors.extend(_validate_no_tots_mode(schema_local))
     errors.extend(_validate_camps_per_aparell(competicio, schema_local))

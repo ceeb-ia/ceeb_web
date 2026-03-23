@@ -44,11 +44,101 @@
     .judge-nav-toggle-icon{ display: inline-block; font-size: .95rem; transition: transform .18s ease; }
     .judge-nav-toggle[aria-expanded="true"] .judge-nav-toggle-icon{ transform: rotate(180deg); }
     .judge-nav-panel{ border:1px solid #e9ecef; border-radius:.6rem; background:#fff; padding:.6rem; max-height:360px; overflow:auto; }
-    .judge-nav-group-title{ font-size:.78rem; font-weight:700; color:#6c757d; margin-top:.45rem; margin-bottom:.3rem; text-transform:uppercase; letter-spacing:.02em; }
-    .judge-nav-link{ display:block; font-size:.9rem; color:#495057; text-decoration:none; padding:.15rem .25rem; border-radius:.35rem; }
-    .judge-nav-link:hover{ background:#f1f3f5; color:#212529; text-decoration:none; }
-    .judge-nav-link.is-saved{ color:#198754; font-weight:600; }
-    .judge-nav-link.is-active{ background:#e9f2ff; color:#0d6efd; }
+    .judge-nav-group-title{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:.6rem;
+      margin-top:.7rem;
+      margin-bottom:.4rem;
+      padding:.45rem .55rem;
+      border:1px solid #dbe7ff;
+      border-radius:.6rem;
+      background:linear-gradient(135deg, #eef4ff 0%, #f8fbff 100%);
+      color:#1e3a8a;
+      font-size:.82rem;
+      font-weight:800;
+      text-transform:uppercase;
+      letter-spacing:.04em;
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.7);
+    }
+    .judge-nav-group-title:first-child{ margin-top:0; }
+    .judge-nav-group-name{
+      min-width:0;
+      flex:1;
+      display:flex;
+      align-items:center;
+      gap:.45rem;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+    }
+    .judge-nav-group-name::before{
+      content:"";
+      width:.5rem;
+      height:.5rem;
+      border-radius:999px;
+      background:#2563eb;
+      box-shadow:0 0 0 4px rgba(37,99,235,.12);
+      flex:0 0 auto;
+    }
+    .judge-nav-group-count{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-width:1.8rem;
+      padding:.08rem .45rem;
+      border-radius:999px;
+      background:#dbeafe;
+      color:#1d4ed8;
+      font-size:.72rem;
+      font-weight:800;
+      line-height:1.2;
+      border:1px solid #bfdbfe;
+      flex:0 0 auto;
+    }
+    .judge-nav-link{ display:block; font-size:.9rem; color:#495057; text-decoration:none; padding:.4rem .45rem; border-radius:.45rem; border:1px solid transparent; }
+    .judge-nav-link:hover{ background:#f8fafc; color:#212529; text-decoration:none; }
+    .judge-nav-link.is-complete{ background:#ecfdf3; border-color:#a7f3d0; color:#166534; }
+    .judge-nav-link.is-partial{ background:#fff7ed; border-color:#fed7aa; color:#9a3412; }
+    .judge-nav-link.is-empty{ background:#fff; border-color:#e5e7eb; color:#475569; }
+    .judge-nav-link.is-active{ box-shadow: inset 0 0 0 2px rgba(13,110,253,.22); }
+    .judge-nav-link-main{ display:flex; align-items:center; justify-content:space-between; gap:.5rem; }
+    .judge-nav-label{ min-width:0; flex:1; font-weight:600; color:inherit; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .judge-nav-status{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      border-radius:999px;
+      padding:.05rem .5rem;
+      font-size:.72rem;
+      font-weight:700;
+      white-space:nowrap;
+      border:1px solid #d0d7e2;
+      background:#fff;
+      color:#64748b;
+    }
+    .judge-nav-status.is-complete{ background:#dcfce7; border-color:#86efac; color:#166534; }
+    .judge-nav-status.is-partial{ background:#ffedd5; border-color:#fdba74; color:#9a3412; }
+    .judge-nav-status.is-empty{ background:#f8fafc; border-color:#e2e8f0; color:#64748b; }
+    .judge-nav-ex-row{ display:flex; flex-wrap:wrap; gap:.3rem; margin-top:.35rem; }
+    .judge-nav-ex-chip{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-width:1.75rem;
+      border-radius:999px;
+      border:1px solid #d0d7e2;
+      background:#fff;
+      color:#64748b;
+      padding:.02rem .42rem;
+      font-size:.7rem;
+      font-weight:700;
+      line-height:1.25;
+    }
+    .judge-nav-ex-chip.is-empty{ background:#fff; border-color:#d0d7e2; color:#64748b; }
+    .judge-nav-ex-chip.is-dirty{ background:#fff8e1; border-color:#f0ad4e; color:#9a6700; }
+    .judge-nav-ex-chip.is-saved{ background:#ecfdf3; border-color:#8ad0a2; color:#157347; }
     .judge-nav-search{ margin-bottom:.45rem; }
     .judge-nav-backdrop{ position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:1040; display:none; }
     .judge-nav-backdrop.show{ display:block; }
@@ -135,13 +225,19 @@
       transition:background-color .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease;
     }
     .judge-exercise-chip:hover{ background:#f8fafc; }
-    .judge-exercise-chip.is-open{
+    .judge-exercise-chip.is-open{ box-shadow:0 0 0 2px rgba(13,110,253,.16); }
+    .judge-exercise-chip.is-open.is-empty{
       background:#e8f1ff;
       border-color:#8ab4ff;
       color:#0d6efd;
-      box-shadow:0 0 0 1px rgba(13,110,253,.08);
+    }
+    .judge-exercise-chip.is-empty{
+      border-color:#d0d7e2;
+      background:#fff;
+      color:#334155;
     }
     .judge-exercise-chip.is-saved{
+      background:#ecfdf3;
       border-color:#8ad0a2;
       color:#157347;
     }
@@ -564,6 +660,69 @@
     const wrap = document.getElementById(`editor-inner-${insId}-${exercici}`);
     const ae = document.activeElement;
     return !!(wrap && ae && wrap.contains(ae));
+  }
+  function getEditableInputs(insId, exercici){
+    const panel = document.querySelector(`[data-exercise-panel="1"][data-ins-id="${String(insId)}"][data-exercici="${exerciseKey(exercici)}"]`);
+    if(!panel) return [];
+    return Array.from(panel.querySelectorAll('input[data-nav-scope="score-input"][data-ins-id][data-exercici]'))
+      .filter((input) => !input.disabled);
+  }
+  function selectInputContents(input){
+    if(!input) return;
+    try{
+      input.select();
+    } catch(_e){
+      // ignore unsupported selection APIs
+    }
+  }
+  function focusEditableInput(input){
+    if(!input) return;
+    input.focus();
+    selectInputContents(input);
+  }
+  function focusNextEditableInput(currentInput){
+    if(!currentInput) return;
+    const inputs = getEditableInputs(currentInput.dataset.insId || "", currentInput.dataset.exercici || "");
+    if(!inputs.length){
+      focusEditableInput(currentInput);
+      return;
+    }
+    const idx = inputs.indexOf(currentInput);
+    const target = (idx === -1)
+      ? inputs[0]
+      : inputs[Math.min(idx + 1, inputs.length - 1)];
+    focusEditableInput(target || currentInput);
+  }
+  function focusPrevEditableInput(currentInput){
+    if(!currentInput) return;
+    const inputs = getEditableInputs(currentInput.dataset.insId || "", currentInput.dataset.exercici || "");
+    if(!inputs.length){
+      focusEditableInput(currentInput);
+      return;
+    }
+    const idx = inputs.indexOf(currentInput);
+    const target = (idx === -1)
+      ? inputs[0]
+      : inputs[Math.max(idx - 1, 0)];
+    focusEditableInput(target || currentInput);
+  }
+  function bindScoreInputNavigation(input, insId, exercici){
+    if(!input) return;
+    input.dataset.insId = String(insId);
+    input.dataset.exercici = exerciseKey(exercici);
+    input.dataset.navScope = "score-input";
+    input.addEventListener("focus", () => {
+      selectInputContents(input);
+    });
+    input.addEventListener("keydown", (evt) => {
+      if(evt.key !== "Enter" && evt.key !== "Tab") return;
+      evt.preventDefault();
+      if(evt.key === "Tab" && evt.shiftKey){
+        focusPrevEditableInput(input);
+        return;
+      }
+      focusNextEditableInput(input);
+    });
   }
   function effectiveInput(insId, exercici, code){
     const draft = DRAFTS[entryKey(insId, exercici)];
@@ -1069,6 +1228,28 @@
     return allExerciseKeys().some((exercici) => hasSavedScoreForEntry(insId, exercici));
   }
 
+  function getExerciseVisualState(insId, exercici){
+    const normalizedExercise = exerciseKey(exercici);
+    if(hasDirty(insId, normalizedExercise)) return "dirty";
+    if(hasSavedScoreForEntry(insId, normalizedExercise)) return "saved";
+    return "empty";
+  }
+
+  function getInsVisualState(insId){
+    const exercises = visibleExercisesForIns(insId);
+    if(!exercises.length) return "empty";
+    let hasAnyProgress = false;
+    let allSaved = true;
+    exercises.forEach((exercici) => {
+      const state = getExerciseVisualState(insId, exercici);
+      if(state !== "empty") hasAnyProgress = true;
+      if(state !== "saved") allSaved = false;
+    });
+    if(allSaved) return "complete";
+    if(hasAnyProgress) return "partial";
+    return "empty";
+  }
+
   function isExerciseOpen(insId, exercici){
     const panel = document.querySelector(`[data-exercise-panel="1"][data-ins-id="${insId}"][data-exercici="${exercici}"]`);
     return !!(panel && !panel.classList.contains("d-none"));
@@ -1079,9 +1260,11 @@
     if(!card) return;
     card.querySelectorAll('[data-exercise-chip="1"]').forEach((chip) => {
       const exercici = exerciseKey(chip.dataset.exercici || "");
+      const visualState = getExerciseVisualState(insId, exercici);
       chip.classList.toggle("is-open", isExerciseOpen(insId, exercici));
-      chip.classList.toggle("is-saved", hasSavedScoreForEntry(insId, exercici));
-      chip.classList.toggle("is-dirty", hasDirty(insId, exercici));
+      chip.classList.toggle("is-empty", visualState === "empty");
+      chip.classList.toggle("is-saved", visualState === "saved");
+      chip.classList.toggle("is-dirty", visualState === "dirty");
       chip.classList.toggle("has-video", !!getVideoState(insId, exercici).hasStored);
     });
   }
@@ -1241,15 +1424,29 @@
     byGroup.forEach((group) => {
       const title = document.createElement("div");
       title.className = "judge-nav-group-title";
-      title.textContent = group.label;
+      title.innerHTML = `
+        <span class="judge-nav-group-name">${escHtml(group.label)}</span>
+        <span class="judge-nav-group-count">${group.items.length}</span>
+      `;
       containerEl.appendChild(title);
 
       group.items.forEach((row) => {
+        const exerciseKeys = visibleExercisesForIns(row.insId);
         const a = document.createElement("a");
         a.href = "#";
-        a.className = "judge-nav-link";
+        a.className = "judge-nav-link is-empty";
         a.dataset.insId = row.insId;
-        a.textContent = row.name || `Inscripcio ${row.insId}`;
+        a.innerHTML = `
+          <span class="judge-nav-link-main">
+            <span class="judge-nav-label">${escHtml(row.name || `Inscripcio ${row.insId}`)}</span>
+            <span class="judge-nav-status is-empty" data-nav-status="1" data-ins-id="${escHtml(row.insId)}">Pendent</span>
+          </span>
+          <span class="judge-nav-ex-row">
+            ${exerciseKeys.map((exercici) => (
+              `<span class="judge-nav-ex-chip is-empty" data-nav-ex-chip="1" data-ins-id="${escHtml(row.insId)}" data-exercici="${escHtml(exercici)}">${escHtml(`Ex${exercici}`)}</span>`
+            )).join("")}
+          </span>
+        `;
         a.addEventListener("click", (evt) => {
           evt.preventDefault();
           focusInscripcioCard(row.insId);
@@ -1264,11 +1461,30 @@
   }
 
   function refreshInsNavStatuses(){
-    document.querySelectorAll(".judge-nav-link.is-saved").forEach(el => el.classList.remove("is-saved"));
+    document.querySelectorAll(".judge-nav-link.is-complete, .judge-nav-link.is-partial, .judge-nav-link.is-empty").forEach((el) => {
+      el.classList.remove("is-complete", "is-partial", "is-empty");
+    });
     Object.keys(NAV_LINKS_BY_INS).forEach((insId) => {
-      const isSaved = hasSavedScoreForIns(insId);
+      const visualState = getInsVisualState(insId);
+      const statusText = visualState === "complete" ? "Complet" : (visualState === "partial" ? "Parcial" : "Pendent");
       (NAV_LINKS_BY_INS[insId] || []).forEach((linkEl) => {
-        linkEl.classList.toggle("is-saved", !!isSaved);
+        linkEl.classList.toggle("is-complete", visualState === "complete");
+        linkEl.classList.toggle("is-partial", visualState === "partial");
+        linkEl.classList.toggle("is-empty", visualState === "empty");
+        const statusEl = linkEl.querySelector('[data-nav-status="1"]');
+        if(statusEl){
+          statusEl.textContent = statusText;
+          statusEl.classList.toggle("is-complete", visualState === "complete");
+          statusEl.classList.toggle("is-partial", visualState === "partial");
+          statusEl.classList.toggle("is-empty", visualState === "empty");
+        }
+        linkEl.querySelectorAll('[data-nav-ex-chip="1"]').forEach((chipEl) => {
+          const exercici = exerciseKey(chipEl.dataset.exercici || "");
+          const exerciseState = getExerciseVisualState(insId, exercici);
+          chipEl.classList.toggle("is-empty", exerciseState === "empty");
+          chipEl.classList.toggle("is-dirty", exerciseState === "dirty");
+          chipEl.classList.toggle("is-saved", exerciseState === "saved");
+        });
       });
     });
   }
@@ -1354,6 +1570,7 @@
       const v = (inp.value === "") ? null : Number(inp.value);
       updateDraftValue(insId, exercici, perm.field_code, v, perm);
     });
+    bindScoreInputNavigation(inp, insId, exercici);
     lineWrap.appendChild(inp);
   }
 
@@ -1379,6 +1596,7 @@
       next[j-1] = (inp.value === "") ? null : Number(inp.value);
       updateDraftValue(insId, exercici, perm.field_code, next, perm);
     });
+    bindScoreInputNavigation(inp, insId, exercici);
     lineWrap.appendChild(inp);
   }
 
@@ -1455,6 +1673,7 @@
         next[j-1][idx0] = (inp.value === "") ? null : Number(inp.value);
         updateDraftValue(insId, exercici, perm.field_code, next, perm);
       });
+      bindScoreInputNavigation(inp, insId, exercici);
 
       row.appendChild(lab);
       row.appendChild(inp);

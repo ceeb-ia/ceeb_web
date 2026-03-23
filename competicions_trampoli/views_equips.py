@@ -6,10 +6,22 @@ from django.db import transaction
 from django.db.models import Count, Q
 from django.http import HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404
+from django.utils.text import slugify
 from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.http import require_POST
 
-from .models import Competicio, Equip, Inscripcio
+from .live_cache import mark_live_dirty
+from .models import Competicio, Equip, EquipContext, Inscripcio, InscripcioEquipAssignacio
+from .services.equip_contexts import (
+    NATIVE_EQUIP_CONTEXT_CODE,
+    build_unique_equip_context_code,
+    get_contextual_assignment_map,
+    get_custom_equip_context,
+    get_equip_context_payload,
+    get_equips_for_context,
+    is_native_equip_context,
+    normalize_equip_context_code,
+)
 from .views import (
     capture_inscripcions_history_snapshot,
     get_allowed_group_fields,
@@ -48,6 +60,45 @@ def _parse_payload(request):
         return json.loads(request.body.decode("utf-8"))
     except Exception:
         return None
+
+
+def _payload_context_code(payload) -> str:
+    if not isinstance(payload, dict):
+        return NATIVE_EQUIP_CONTEXT_CODE
+    return normalize_equip_context_code(payload.get("context_code"))
+
+
+def _mark_live_dirty_on_commit(competicio_id):
+    if not competicio_id:
+        return
+    transaction.on_commit(lambda cid=int(competicio_id): mark_live_dirty(cid))
+
+
+def _serialize_equips(competicio: Competicio, context_code=NATIVE_EQUIP_CONTEXT_CODE):
+    equips = get_equips_for_context(competicio, context_code)
+    return [
+        {
+            "id": e.id,
+            "nom": e.nom,
+            "origen": e.origen,
+            "membres": int(getattr(e, "membres_count", 0) or 0),
+        }
+        for e in equips
+    ]
+
+
+def _serialize_contexts(competicio: Competicio):
+    return get_equip_context_payload(competicio)
+
+
+def _get_context_or_400(competicio: Competicio, context_code: str):
+    code = normalize_equip_context_code(context_code)
+    if is_native_equip_context(code):
+        return code, None, None
+    ctx = get_custom_equip_context(competicio, code)
+    if ctx is None:
+        return code, None, HttpResponseBadRequest("context_code invalid")
+    return code, ctx, None
 
 
 def _filter_inscripcions(competicio: Competicio, filters: Optional[dict]):
@@ -105,23 +156,6 @@ def _build_team_name(fields, vals_pretty):
     return " | ".join(parts) if parts else "Equip automatic"
 
 
-def _serialize_equips(competicio: Competicio):
-    qs = (
-        Equip.objects.filter(competicio=competicio)
-        .annotate(membres_count=Count("membres"))
-        .order_by("nom", "id")
-    )
-    return [
-        {
-            "id": e.id,
-            "nom": e.nom,
-            "origen": e.origen,
-            "membres": e.membres_count,
-        }
-        for e in qs
-    ]
-
-
 @require_POST
 @csrf_protect
 def equips_preview(request, pk):
@@ -133,6 +167,10 @@ def equips_preview(request, pk):
     fields = _validated_partition_fields(competicio, payload.get("fields"))
     if not fields:
         return HttpResponseBadRequest("No hi ha camps de particio valids")
+    context_code = _payload_context_code(payload)
+    _code, _ctx, err = _get_context_or_400(competicio, context_code)
+    if err is not None:
+        return err
 
     filters = payload.get("filters") or {}
     selected_ids = payload.get("selected_ids") or []
@@ -161,6 +199,7 @@ def equips_preview(request, pk):
     return JsonResponse(
         {
             "ok": True,
+            "context_code": context_code,
             "fields": fields,
             "total_inscripcions": len(records),
             "total_equips": len(preview),
@@ -181,6 +220,10 @@ def equips_auto_create(request, pk):
     fields = _validated_partition_fields(competicio, payload.get("fields"))
     if not fields:
         return HttpResponseBadRequest("No hi ha camps de particio valids")
+    context_code = _payload_context_code(payload)
+    context_code, context_obj, err = _get_context_or_400(competicio, context_code)
+    if err is not None:
+        return err
 
     replace_existing = bool(payload.get("replace_existing", True))
     filters = payload.get("filters") or {}
@@ -194,11 +237,14 @@ def equips_auto_create(request, pk):
         qs = qs.filter(id__in=ids_clean)
 
     builtin_fields = [f for f in fields if hasattr(Inscripcio, f)]
-    records = list(qs.only("id", "extra", "equip_id", *builtin_fields).order_by("ordre_sortida", "id"))
+    only_fields = ["id", "extra", *builtin_fields]
+    if is_native_equip_context(context_code):
+        only_fields.append("equip_id")
+    records = list(qs.only(*only_fields).order_by("ordre_sortida", "id"))
     if not records:
         return JsonResponse(
             with_inscripcions_history_payload(
-                {"ok": True, "created": 0, "updated": 0, "equips": []},
+                {"ok": True, "created": 0, "updated": 0, "equips": [], "contexts": _serialize_contexts(competicio)},
                 request,
                 competicio.id,
             )
@@ -208,6 +254,7 @@ def equips_auto_create(request, pk):
     grouped = _partition_records(records, fields)
     team_by_key = {}
     created = 0
+    existing_assignments = get_contextual_assignment_map(competicio, records, context_code)
 
     for g in grouped.values():
         name = _build_team_name(fields, g["vals_pretty"])
@@ -228,20 +275,66 @@ def equips_auto_create(request, pk):
             created += 1
         team_by_key[json.dumps(g["vals_norm"], ensure_ascii=False)] = equip.id
 
-    updates = []
-    for ins in records:
-        vals_norm = [_norm_val(_ins_value(ins, f)) for f in fields]
-        key = json.dumps(vals_norm, ensure_ascii=False)
-        new_team_id = team_by_key.get(key)
-        if not new_team_id:
-            continue
-        if replace_existing or ins.equip_id in (None, new_team_id):
-            if ins.equip_id != new_team_id:
-                ins.equip_id = new_team_id
-                updates.append(ins)
+    updated = 0
+    if is_native_equip_context(context_code):
+        updates = []
+        for ins in records:
+            vals_norm = [_norm_val(_ins_value(ins, f)) for f in fields]
+            key = json.dumps(vals_norm, ensure_ascii=False)
+            new_team_id = team_by_key.get(key)
+            if not new_team_id:
+                continue
+            if replace_existing or getattr(ins, "equip_id", None) in (None, new_team_id):
+                if getattr(ins, "equip_id", None) != new_team_id:
+                    ins.equip_id = new_team_id
+                    updates.append(ins)
 
-    if updates:
-        Inscripcio.objects.bulk_update(updates, ["equip"], batch_size=500)
+        if updates:
+            Inscripcio.objects.bulk_update(updates, ["equip"], batch_size=500)
+        updated = len(updates)
+    else:
+        creates = []
+        updates = []
+        for ins in records:
+            vals_norm = [_norm_val(_ins_value(ins, f)) for f in fields]
+            key = json.dumps(vals_norm, ensure_ascii=False)
+            new_team_id = team_by_key.get(key)
+            if not new_team_id:
+                continue
+
+            current_row = existing_assignments.get(ins.id)
+            current_team_id = getattr(current_row, "equip_id", None)
+            if not replace_existing and current_team_id not in (None, new_team_id):
+                continue
+            if current_team_id == new_team_id:
+                continue
+
+            criteri = {
+                "mode": "partition",
+                "fields": fields,
+                "values": vals_norm,
+            }
+            if current_row is None:
+                creates.append(
+                    InscripcioEquipAssignacio(
+                        competicio=competicio,
+                        context=context_obj,
+                        inscripcio=ins,
+                        equip_id=new_team_id,
+                        origen=InscripcioEquipAssignacio.Origen.AUTO,
+                        criteri=criteri,
+                    )
+                )
+            else:
+                current_row.equip_id = new_team_id
+                current_row.origen = InscripcioEquipAssignacio.Origen.AUTO
+                current_row.criteri = criteri
+                updates.append(current_row)
+        if creates:
+            InscripcioEquipAssignacio.objects.bulk_create(creates, batch_size=500)
+        if updates:
+            InscripcioEquipAssignacio.objects.bulk_update(updates, ["equip", "origen", "criteri", "updated_at"], batch_size=500)
+        updated = len(creates) + len(updates)
 
     record_inscripcions_history_entry(
         request,
@@ -251,13 +344,16 @@ def equips_auto_create(request, pk):
         before_snapshot=before_snapshot,
         after_snapshot=capture_inscripcions_history_snapshot(request, competicio),
     )
+    _mark_live_dirty_on_commit(competicio.id)
     return JsonResponse(
         with_inscripcions_history_payload(
             {
                 "ok": True,
+                "context_code": context_code,
                 "created": created,
-                "updated": len(updates),
-                "equips": _serialize_equips(competicio),
+                "updated": updated,
+                "equips": _serialize_equips(competicio, context_code),
+                "contexts": _serialize_contexts(competicio),
             },
             request,
             competicio.id,
@@ -277,6 +373,10 @@ def equips_create_manual(request, pk):
     nom = (payload.get("name") or "").strip()
     if not nom:
         return HttpResponseBadRequest("name buit")
+    context_code = _payload_context_code(payload)
+    context_code, context_obj, err = _get_context_or_400(competicio, context_code)
+    if err is not None:
+        return err
 
     before_snapshot = capture_inscripcions_history_snapshot(request, competicio)
     equip, created = Equip.objects.get_or_create(
@@ -291,10 +391,39 @@ def equips_create_manual(request, pk):
     ids_clean = [int(x) for x in selected_ids if str(x).isdigit()]
     updated = 0
     if ids_clean:
-        updated = Inscripcio.objects.filter(
-            competicio=competicio,
-            id__in=ids_clean,
-        ).update(equip=equip)
+        if is_native_equip_context(context_code):
+            updated = Inscripcio.objects.filter(
+                competicio=competicio,
+                id__in=ids_clean,
+            ).update(equip=equip)
+        else:
+            ins_qs = list(Inscripcio.objects.filter(competicio=competicio, id__in=ids_clean).only("id"))
+            existing_assignments = get_contextual_assignment_map(competicio, ids_clean, context_code)
+            creates = []
+            updates = []
+            for ins in ins_qs:
+                current_row = existing_assignments.get(ins.id)
+                if current_row is None:
+                    creates.append(
+                        InscripcioEquipAssignacio(
+                            competicio=competicio,
+                            context=context_obj,
+                            inscripcio=ins,
+                            equip=equip,
+                            origen=InscripcioEquipAssignacio.Origen.MANUAL,
+                            criteri={},
+                        )
+                    )
+                elif current_row.equip_id != equip.id or current_row.origen != InscripcioEquipAssignacio.Origen.MANUAL:
+                    current_row.equip = equip
+                    current_row.origen = InscripcioEquipAssignacio.Origen.MANUAL
+                    current_row.criteri = {}
+                    updates.append(current_row)
+            if creates:
+                InscripcioEquipAssignacio.objects.bulk_create(creates, batch_size=500)
+            if updates:
+                InscripcioEquipAssignacio.objects.bulk_update(updates, ["equip", "origen", "criteri", "updated_at"], batch_size=500)
+            updated = len(creates) + len(updates)
 
     record_inscripcions_history_entry(
         request,
@@ -304,14 +433,17 @@ def equips_create_manual(request, pk):
         before_snapshot=before_snapshot,
         after_snapshot=capture_inscripcions_history_snapshot(request, competicio),
     )
+    _mark_live_dirty_on_commit(competicio.id)
     return JsonResponse(
         with_inscripcions_history_payload(
             {
                 "ok": True,
+                "context_code": context_code,
                 "created": created,
                 "equip_id": equip.id,
                 "updated": updated,
-                "equips": _serialize_equips(competicio),
+                "equips": _serialize_equips(competicio, context_code),
+                "contexts": _serialize_contexts(competicio),
             },
             request,
             competicio.id,
@@ -331,6 +463,10 @@ def equips_assign(request, pk):
     equip_id = payload.get("equip_id")
     if not str(equip_id).isdigit():
         return HttpResponseBadRequest("equip_id invalid")
+    context_code = _payload_context_code(payload)
+    context_code, context_obj, err = _get_context_or_400(competicio, context_code)
+    if err is not None:
+        return err
 
     equip = get_object_or_404(Equip, pk=int(equip_id), competicio=competicio)
     ids = payload.get("inscripcio_ids") or []
@@ -341,7 +477,36 @@ def equips_assign(request, pk):
         return HttpResponseBadRequest("No hi ha inscripcions seleccionades")
 
     before_snapshot = capture_inscripcions_history_snapshot(request, competicio)
-    updated = Inscripcio.objects.filter(competicio=competicio, id__in=ids_clean).update(equip=equip)
+    if is_native_equip_context(context_code):
+        updated = Inscripcio.objects.filter(competicio=competicio, id__in=ids_clean).update(equip=equip)
+    else:
+        ins_qs = list(Inscripcio.objects.filter(competicio=competicio, id__in=ids_clean).only("id"))
+        existing_assignments = get_contextual_assignment_map(competicio, ids_clean, context_code)
+        creates = []
+        updates = []
+        for ins in ins_qs:
+            current_row = existing_assignments.get(ins.id)
+            if current_row is None:
+                creates.append(
+                    InscripcioEquipAssignacio(
+                        competicio=competicio,
+                        context=context_obj,
+                        inscripcio=ins,
+                        equip=equip,
+                        origen=InscripcioEquipAssignacio.Origen.MANUAL,
+                        criteri={},
+                    )
+                )
+            elif current_row.equip_id != equip.id or current_row.origen != InscripcioEquipAssignacio.Origen.MANUAL:
+                current_row.equip = equip
+                current_row.origen = InscripcioEquipAssignacio.Origen.MANUAL
+                current_row.criteri = {}
+                updates.append(current_row)
+        if creates:
+            InscripcioEquipAssignacio.objects.bulk_create(creates, batch_size=500)
+        if updates:
+            InscripcioEquipAssignacio.objects.bulk_update(updates, ["equip", "origen", "criteri", "updated_at"], batch_size=500)
+        updated = len(creates) + len(updates)
     record_inscripcions_history_entry(
         request,
         competicio,
@@ -350,9 +515,10 @@ def equips_assign(request, pk):
         before_snapshot=before_snapshot,
         after_snapshot=capture_inscripcions_history_snapshot(request, competicio),
     )
+    _mark_live_dirty_on_commit(competicio.id)
     return JsonResponse(
         with_inscripcions_history_payload(
-            {"ok": True, "updated": updated},
+            {"ok": True, "updated": updated, "context_code": context_code},
             request,
             competicio.id,
         )
@@ -374,9 +540,20 @@ def equips_unassign(request, pk):
     ids_clean = [int(x) for x in ids if str(x).isdigit()]
     if not ids_clean:
         return HttpResponseBadRequest("No hi ha inscripcions seleccionades")
+    context_code = _payload_context_code(payload)
+    context_code, context_obj, err = _get_context_or_400(competicio, context_code)
+    if err is not None:
+        return err
 
     before_snapshot = capture_inscripcions_history_snapshot(request, competicio)
-    updated = Inscripcio.objects.filter(competicio=competicio, id__in=ids_clean).update(equip=None)
+    if is_native_equip_context(context_code):
+        updated = Inscripcio.objects.filter(competicio=competicio, id__in=ids_clean).update(equip=None)
+    else:
+        updated, _deleted = InscripcioEquipAssignacio.objects.filter(
+            competicio=competicio,
+            context=context_obj,
+            inscripcio_id__in=ids_clean,
+        ).delete()
     record_inscripcions_history_entry(
         request,
         competicio,
@@ -385,9 +562,10 @@ def equips_unassign(request, pk):
         before_snapshot=before_snapshot,
         after_snapshot=capture_inscripcions_history_snapshot(request, competicio),
     )
+    _mark_live_dirty_on_commit(competicio.id)
     return JsonResponse(
         with_inscripcions_history_payload(
-            {"ok": True, "updated": updated},
+            {"ok": True, "updated": updated, "context_code": context_code},
             request,
             competicio.id,
         )
@@ -407,6 +585,10 @@ def equips_rename(request, pk, equip_id):
     new_name = (payload.get("name") or "").strip()
     if not new_name:
         return HttpResponseBadRequest("name buit")
+    context_code = _payload_context_code(payload)
+    _code, _ctx, err = _get_context_or_400(competicio, context_code)
+    if err is not None:
+        return err
 
     exists = Equip.objects.filter(competicio=competicio, nom=new_name).exclude(pk=equip.id).exists()
     if exists:
@@ -423,9 +605,10 @@ def equips_rename(request, pk, equip_id):
         before_snapshot=before_snapshot,
         after_snapshot=capture_inscripcions_history_snapshot(request, competicio),
     )
+    _mark_live_dirty_on_commit(competicio.id)
     return JsonResponse(
         with_inscripcions_history_payload(
-            {"ok": True, "equip_id": equip.id, "name": equip.nom},
+            {"ok": True, "equip_id": equip.id, "name": equip.nom, "context_code": context_code},
             request,
             competicio.id,
         )
@@ -438,8 +621,20 @@ def equips_rename(request, pk, equip_id):
 def equips_delete(request, pk, equip_id):
     competicio = get_object_or_404(Competicio, pk=pk)
     equip = get_object_or_404(Equip, pk=equip_id, competicio=competicio)
+    payload = _parse_payload(request) or {}
+    context_code = _payload_context_code(payload)
+    context_code, context_obj, err = _get_context_or_400(competicio, context_code)
+    if err is not None:
+        return err
     before_snapshot = capture_inscripcions_history_snapshot(request, competicio)
-    equip.delete()
+    if is_native_equip_context(context_code):
+        equip.delete()
+    else:
+        InscripcioEquipAssignacio.objects.filter(
+            competicio=competicio,
+            context=context_obj,
+            equip=equip,
+        ).delete()
     record_inscripcions_history_entry(
         request,
         competicio,
@@ -448,7 +643,14 @@ def equips_delete(request, pk, equip_id):
         before_snapshot=before_snapshot,
         after_snapshot=capture_inscripcions_history_snapshot(request, competicio),
     )
-    return JsonResponse(with_inscripcions_history_payload({"ok": True}, request, competicio.id))
+    _mark_live_dirty_on_commit(competicio.id)
+    return JsonResponse(
+        with_inscripcions_history_payload(
+            {"ok": True, "context_code": context_code},
+            request,
+            competicio.id,
+        )
+    )
 
 
 @require_POST
@@ -456,8 +658,19 @@ def equips_delete(request, pk, equip_id):
 @transaction.atomic
 def equips_delete_all(request, pk):
     competicio = get_object_or_404(Competicio, pk=pk)
+    payload = _parse_payload(request) or {}
+    context_code = _payload_context_code(payload)
+    context_code, context_obj, err = _get_context_or_400(competicio, context_code)
+    if err is not None:
+        return err
     before_snapshot = capture_inscripcions_history_snapshot(request, competicio)
-    deleted_count, _ = Equip.objects.filter(competicio=competicio).delete()
+    if is_native_equip_context(context_code):
+        deleted_count, _ = Equip.objects.filter(competicio=competicio).delete()
+    else:
+        deleted_count, _ = InscripcioEquipAssignacio.objects.filter(
+            competicio=competicio,
+            context=context_obj,
+        ).delete()
     record_inscripcions_history_entry(
         request,
         competicio,
@@ -466,9 +679,125 @@ def equips_delete_all(request, pk):
         before_snapshot=before_snapshot,
         after_snapshot=capture_inscripcions_history_snapshot(request, competicio),
     )
+    _mark_live_dirty_on_commit(competicio.id)
     return JsonResponse(
         with_inscripcions_history_payload(
-            {"ok": True, "deleted": deleted_count},
+            {"ok": True, "deleted": deleted_count, "context_code": context_code},
+            request,
+            competicio.id,
+        )
+    )
+
+
+@require_POST
+@csrf_protect
+@transaction.atomic
+def equip_context_create(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    payload = _parse_payload(request)
+    if payload is None:
+        return HttpResponseBadRequest("JSON invalid")
+
+    nom = str(payload.get("name") or "").strip()
+    if not nom:
+        return HttpResponseBadRequest("name buit")
+
+    code = str(payload.get("code") or "").strip()
+    if code:
+        code = slugify(code)
+        if not code or code == NATIVE_EQUIP_CONTEXT_CODE:
+            return HttpResponseBadRequest("code invalid")
+        if EquipContext.objects.filter(competicio=competicio, code=code).exists():
+            return HttpResponseBadRequest("Ja existeix un context amb aquest codi")
+    else:
+        code = build_unique_equip_context_code(competicio, nom)
+
+    before_snapshot = capture_inscripcions_history_snapshot(request, competicio)
+    ctx = EquipContext.objects.create(
+        competicio=competicio,
+        code=code,
+        nom=nom,
+        description=str(payload.get("description") or "").strip(),
+    )
+    record_inscripcions_history_entry(
+        request,
+        competicio,
+        action_type="equip_context_create",
+        action_label="Crear context d'equips",
+        before_snapshot=before_snapshot,
+        after_snapshot=capture_inscripcions_history_snapshot(request, competicio),
+    )
+    _mark_live_dirty_on_commit(competicio.id)
+    return JsonResponse(
+        with_inscripcions_history_payload(
+            {"ok": True, "context": {"code": ctx.code, "nom": ctx.nom}, "contexts": _serialize_contexts(competicio)},
+            request,
+            competicio.id,
+        )
+    )
+
+
+@require_POST
+@csrf_protect
+@transaction.atomic
+def equip_context_rename(request, pk, context_code):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    ctx = get_custom_equip_context(competicio, context_code)
+    if ctx is None:
+        return HttpResponseBadRequest("context_code invalid")
+    payload = _parse_payload(request)
+    if payload is None:
+        return HttpResponseBadRequest("JSON invalid")
+
+    nom = str(payload.get("name") or "").strip()
+    if not nom:
+        return HttpResponseBadRequest("name buit")
+
+    before_snapshot = capture_inscripcions_history_snapshot(request, competicio)
+    ctx.nom = nom
+    ctx.description = str(payload.get("description") or ctx.description or "").strip()
+    ctx.save(update_fields=["nom", "description", "updated_at"])
+    record_inscripcions_history_entry(
+        request,
+        competicio,
+        action_type="equip_context_rename",
+        action_label="Renombrar context d'equips",
+        before_snapshot=before_snapshot,
+        after_snapshot=capture_inscripcions_history_snapshot(request, competicio),
+    )
+    _mark_live_dirty_on_commit(competicio.id)
+    return JsonResponse(
+        with_inscripcions_history_payload(
+            {"ok": True, "context": {"code": ctx.code, "nom": ctx.nom}, "contexts": _serialize_contexts(competicio)},
+            request,
+            competicio.id,
+        )
+    )
+
+
+@require_POST
+@csrf_protect
+@transaction.atomic
+def equip_context_delete(request, pk, context_code):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    ctx = get_custom_equip_context(competicio, context_code)
+    if ctx is None:
+        return HttpResponseBadRequest("context_code invalid")
+
+    before_snapshot = capture_inscripcions_history_snapshot(request, competicio)
+    ctx.delete()
+    record_inscripcions_history_entry(
+        request,
+        competicio,
+        action_type="equip_context_delete",
+        action_label="Eliminar context d'equips",
+        before_snapshot=before_snapshot,
+        after_snapshot=capture_inscripcions_history_snapshot(request, competicio),
+    )
+    _mark_live_dirty_on_commit(competicio.id)
+    return JsonResponse(
+        with_inscripcions_history_payload(
+            {"ok": True, "contexts": _serialize_contexts(competicio)},
             request,
             competicio.id,
         )
