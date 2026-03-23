@@ -1761,6 +1761,220 @@ def _scoreable_codes_by_app_id(competicio):
     return out
 
 
+def _sanitize_schema_for_builder(competicio, schema_local, tipus="individual"):
+    schema = _normalize_particions_schema(_json_clone(schema_local or {}))
+    active_apps, by_id, _ = _get_comp_aparell_maps(competicio, active_only=True)
+    active_ids = [int(ca.id) for ca in active_apps]
+    active_set = set(active_ids)
+    scoreable_by_app = _scoreable_codes_by_app_id(competicio)
+
+    punt = schema.get("puntuacio") or {}
+    if not isinstance(punt, dict):
+        punt = {}
+    schema["puntuacio"] = punt
+    punt.pop("camp", None)
+    punt.pop("agregacio", None)
+    punt.pop("best_n", None)
+
+    apps_cfg = punt.get("aparells") or {}
+    if not isinstance(apps_cfg, dict):
+        apps_cfg = {}
+    ids_in = apps_cfg.get("ids") or []
+    selected_ids = []
+    seen_ids = set()
+    for raw in ids_in if isinstance(ids_in, list) else []:
+        try:
+            app_id = int(raw)
+        except Exception:
+            continue
+        if app_id in active_set and app_id not in seen_ids:
+            seen_ids.add(app_id)
+            selected_ids.append(app_id)
+    selected_set = set(selected_ids)
+    apps_cfg["mode"] = "seleccionar"
+    apps_cfg["ids"] = selected_ids
+    punt["aparells"] = apps_cfg
+
+    def _normalize_codes(raw_codes):
+        if isinstance(raw_codes, str):
+            return [x.strip() for x in raw_codes.split(",") if x and x.strip()]
+        if isinstance(raw_codes, list):
+            return [str(x).strip() for x in raw_codes if str(x).strip()]
+        return []
+
+    def _sanitize_codes_for_app(app_id: int, raw_codes):
+        allowed = scoreable_by_app.get(int(app_id), set())
+        kept = []
+        seen = set()
+        for code in _normalize_codes(raw_codes):
+            if code in allowed and code not in seen:
+                seen.add(code)
+                kept.append(code)
+        return kept
+
+    camps_in = punt.get("camps_per_aparell") or {}
+    camps_out = {}
+    for app_id in selected_ids:
+        raw_codes = None
+        if isinstance(camps_in, dict):
+            raw_codes = camps_in.get(str(app_id))
+            if raw_codes is None:
+                raw_codes = camps_in.get(app_id)
+        kept = _sanitize_codes_for_app(app_id, raw_codes)
+        if kept:
+            camps_out[str(app_id)] = kept
+    punt["camps_per_aparell"] = camps_out
+
+    ex_per_app_in = punt.get("exercicis_per_aparell") or {}
+    ex_per_app_out = {}
+    if isinstance(ex_per_app_in, dict):
+        for raw_key, cfg in ex_per_app_in.items():
+            try:
+                app_id = int(raw_key)
+            except Exception:
+                continue
+            if app_id in active_set and app_id in selected_set:
+                ex_per_app_out[str(app_id)] = cfg
+    punt["exercicis_per_aparell"] = ex_per_app_out
+
+    def _sanitize_tie_item(raw_tie, *, selected_main_ids, allow_app_scope: bool, allow_participants: bool):
+        if not isinstance(raw_tie, dict):
+            return None
+
+        item = _json_clone(raw_tie)
+        item.pop("camp", None)
+        item.pop("aparell_id", None)
+
+        scope = item.get("scope") or {}
+        if not isinstance(scope, dict):
+            scope = {}
+
+        if allow_app_scope:
+            app_scope = scope.get("aparells") or {}
+            if not isinstance(app_scope, dict):
+                app_scope = {}
+            app_mode = str(app_scope.get("mode") or "hereta").strip().lower()
+            if app_mode == "seleccionar":
+                target_ids = [x for x in _parse_positive_int_list(app_scope.get("ids")) if x in active_set]
+                if not target_ids:
+                    return None
+                scope["aparells"] = {"mode": "seleccionar", "ids": target_ids}
+            else:
+                target_ids = [x for x in selected_main_ids if x in active_set]
+                if not target_ids:
+                    return None
+                scope["aparells"] = {"mode": "hereta"}
+        else:
+            scope.pop("aparells", None)
+            target_ids = [x for x in selected_main_ids if x in active_set]
+            if not target_ids:
+                return None
+
+        if not allow_participants:
+            scope.pop("participants", None)
+
+        valid_camps = []
+        seen_camps = set()
+        for code in _normalize_tie_camps_for_validation(item):
+            if not code or code in seen_camps:
+                continue
+            if all(code in scoreable_by_app.get(app_id, set()) for app_id in target_ids):
+                seen_camps.add(code)
+                valid_camps.append(code)
+        if not valid_camps:
+            return None
+
+        item["camps"] = valid_camps
+        item["scope"] = scope
+
+        ex_map_in = item.get("exercicis_per_aparell") or {}
+        ex_map_out = {}
+        if isinstance(ex_map_in, dict):
+            for raw_key, cfg in ex_map_in.items():
+                try:
+                    app_id = int(raw_key)
+                except Exception:
+                    continue
+                if app_id in target_ids:
+                    ex_map_out[str(app_id)] = cfg
+        if ex_map_out:
+            item["exercicis_per_aparell"] = ex_map_out
+        else:
+            item.pop("exercicis_per_aparell", None)
+
+        return item
+
+    des_in = schema.get("desempat") or []
+    des_out = []
+    if isinstance(des_in, list):
+        for tie in des_in:
+            item = _sanitize_tie_item(
+                tie,
+                selected_main_ids=selected_ids,
+                allow_app_scope=True,
+                allow_participants=(tipus == "equips"),
+            )
+            if item:
+                des_out.append(item)
+    schema["desempat"] = des_out
+
+    victories = punt.get("victories") or {}
+    if isinstance(victories, dict):
+        victories_out = dict(victories)
+        compare_ties = victories_out.get("desempat_comparacio") or []
+        compare_out = []
+        if isinstance(compare_ties, list):
+            for tie in compare_ties:
+                item = _sanitize_tie_item(
+                    tie,
+                    selected_main_ids=selected_ids,
+                    allow_app_scope=False,
+                    allow_participants=False,
+                )
+                if item:
+                    compare_out.append(item)
+        victories_out["desempat_comparacio"] = compare_out
+        punt["victories"] = victories_out
+
+    presentacio = schema.get("presentacio") or {}
+    if not isinstance(presentacio, dict):
+        presentacio = {}
+    cols_in = presentacio.get("columnes") or []
+    cols_out = []
+    if isinstance(cols_in, list):
+        for col in cols_in:
+            if not isinstance(col, dict):
+                cols_out.append(col)
+                continue
+            item = _json_clone(col)
+            ctype = str(item.get("type") or "builtin").strip().lower()
+            if ctype != "raw":
+                cols_out.append(item)
+                continue
+            src = item.get("source") if isinstance(item.get("source"), dict) else {}
+            src = dict(src)
+            try:
+                app_id = int(src.get("aparell_id"))
+            except Exception:
+                app_id = None
+            camp = str(src.get("camp") or "").strip()
+            if (
+                app_id in active_set
+                and app_id in selected_set
+                and camp in scoreable_by_app.get(app_id, set())
+            ):
+                src["aparell_id"] = app_id
+                src.pop("aparell_codi", None)
+                item["source"] = src
+                item.pop("aparell_id", None)
+                item.pop("aparell_codi", None)
+                cols_out.append(item)
+    presentacio["columnes"] = cols_out
+    schema["presentacio"] = presentacio
+
+    return schema
+
+
 def _validate_schema_for_competicio(competicio, schema_local, tipus="individual"):
     schema_local = _normalize_particions_schema(schema_local or {})
     errors = []
@@ -1768,6 +1982,7 @@ def _validate_schema_for_competicio(competicio, schema_local, tipus="individual"
     errors.extend(_validate_no_tots_mode(schema_local))
     errors.extend(_validate_camps_per_aparell(competicio, schema_local))
     errors.extend(_validate_tie_camps_per_aparell(competicio, schema_local))
+    errors.extend(_validate_presentacio_columns(competicio, schema_local))
     errors.extend(_validate_exercicis_selection(competicio, schema_local))
     errors.extend(_validate_tie_exercicis_selection(competicio, schema_local))
     errors.extend(_validate_victories_schema(competicio, schema_local, tipus=tipus))
@@ -2735,10 +2950,9 @@ def _build_scoreable_meta_for_schema(schema_obj: dict, strict_unknown=False):
 def _validate_camps_per_aparell(competicio, schema: dict):
     schema = schema or {}
     punt = (schema.get("puntuacio") or {})
-    camps_per_aparell = punt.get("camps_per_aparell") or {}
-    if not camps_per_aparell:
-        return []
-    if not isinstance(camps_per_aparell, dict):
+    raw_camps_per_aparell = punt.get("camps_per_aparell")
+    camps_per_aparell = raw_camps_per_aparell if isinstance(raw_camps_per_aparell, dict) else {}
+    if raw_camps_per_aparell not in (None, {}) and not isinstance(raw_camps_per_aparell, dict):
         return ["puntuacio.camps_per_aparell ha de ser un objecte {app_id:[camps]}."]
 
     active_apps = list(
@@ -2769,6 +2983,11 @@ def _validate_camps_per_aparell(competicio, schema: dict):
         selected_app_ids = set(app_by_id.keys())
 
     errors = []
+    valid_selected_ids = {app_id for app_id in selected_app_ids if app_id in app_by_id}
+    if valid_selected_ids and not camps_per_aparell:
+        return ["puntuacio.camps_per_aparell ha de definir almenys un camp real per a cada aparell seleccionat."]
+
+    present_app_ids = set()
     for app_key, raw_codes in camps_per_aparell.items():
         try:
             app_id = int(app_key)
@@ -2781,6 +3000,7 @@ def _validate_camps_per_aparell(competicio, schema: dict):
             continue
         if app_id not in selected_app_ids:
             continue
+        present_app_ids.add(app_id)
 
         if isinstance(raw_codes, str):
             codes = [x.strip() for x in raw_codes.split(",") if x and x.strip()]
@@ -2788,6 +3008,9 @@ def _validate_camps_per_aparell(competicio, schema: dict):
             codes = [str(x).strip() for x in raw_codes if str(x).strip()]
         else:
             errors.append(f"camps_per_aparell[{app_id}] ha de ser llista o string.")
+            continue
+        if not codes:
+            errors.append(f"puntuacio.camps_per_aparell[{app_id}] ha de definir almenys un camp real.")
             continue
 
         sch = schemas_by_aparell.get(app_by_id[app_id].aparell_id, {}) or {}
@@ -2800,6 +3023,78 @@ def _validate_camps_per_aparell(competicio, schema: dict):
                 continue
             if not info.get("scoreable", False):
                 errors.append(f"aparell {app_id}: camp '{code}' no es puntuable directament ({info.get('reason')}).")
+
+    for app_id in sorted(valid_selected_ids - present_app_ids):
+        errors.append(f"puntuacio.camps_per_aparell[{app_id}] ha de definir almenys un camp real.")
+
+    return errors
+
+
+def _validate_presentacio_columns(competicio, schema: dict):
+    schema = schema or {}
+    punt = schema.get("puntuacio") or {}
+    presentacio = schema.get("presentacio") or {}
+    if not isinstance(presentacio, dict):
+        presentacio = {}
+    cols = presentacio.get("columnes") or []
+    if not isinstance(cols, list):
+        return ["presentacio.columnes ha de ser una llista."]
+
+    active_apps = list(
+        CompeticioAparell.objects
+        .filter(competicio=competicio, actiu=True)
+        .select_related("aparell")
+    )
+    app_by_id = {ca.id: ca for ca in active_apps}
+    if not app_by_id:
+        return []
+
+    _, selected_ids = _get_active_and_selected_app_ids(competicio, punt)
+    schemas_by_aparell = {
+        s.aparell_id: (s.schema or {})
+        for s in ScoringSchema.objects.filter(aparell_id__in=[ca.aparell_id for ca in active_apps]).only("aparell_id", "schema")
+    }
+    meta_cache = {}
+    errors = []
+
+    for idx, col in enumerate(cols):
+        if not isinstance(col, dict):
+            continue
+        if str(col.get("type") or "builtin").strip().lower() != "raw":
+            continue
+
+        src = col.get("source") if isinstance(col.get("source"), dict) else {}
+        try:
+            app_id = int(src.get("aparell_id"))
+        except Exception:
+            errors.append(f"presentacio.columnes[{idx}] raw: aparell invalid.")
+            continue
+        if app_id not in app_by_id:
+            errors.append(f"presentacio.columnes[{idx}] raw: aparell {app_id} no valid o no actiu.")
+            continue
+        if selected_ids and app_id not in selected_ids:
+            errors.append(f"presentacio.columnes[{idx}] raw: aparell {app_id} no esta seleccionat a puntuacio.")
+            continue
+
+        camp = str(src.get("camp") or "").strip()
+        if not camp:
+            errors.append(f"presentacio.columnes[{idx}] raw: camp obligatori.")
+            continue
+
+        if app_id not in meta_cache:
+            sch = schemas_by_aparell.get(app_by_id[app_id].aparell_id, {}) or {}
+            meta_cache[app_id] = _build_scoreable_meta_for_schema(sch, strict_unknown=True)
+        info = meta_cache[app_id].get(camp)
+        if not info:
+            errors.append(
+                f"presentacio.columnes[{idx}] raw: camp '{camp}' no existeix al schema de l'aparell {app_id}."
+            )
+            continue
+        if not info.get("scoreable", False):
+            errors.append(
+                f"presentacio.columnes[{idx}] raw: camp '{camp}' no es puntuable directament "
+                f"({info.get('reason')})."
+            )
 
     return errors
 
@@ -3364,6 +3659,21 @@ def classificacio_reorder(request, pk):
 def classificacio_preview(request, pk, cid):
     competicio = get_object_or_404(Competicio, pk=pk)
     cfg = get_object_or_404(ClassificacioConfig, pk=cid, competicio=competicio)
+
+    _, validation_errors = _validate_schema_for_competicio(
+        competicio,
+        cfg.schema or {},
+        tipus=cfg.tipus,
+    )
+    if validation_errors:
+        return JsonResponse(
+            {
+                "ok": False,
+                "error": "Configuracio de classificacio invalida per previsualitzar.",
+                "errors": validation_errors,
+            },
+            status=400,
+        )
 
     data = compute_classificacio(competicio, cfg)
 

@@ -1475,14 +1475,45 @@
     });
   }
 
-  function buildAparellChecks() {
-    els.apChkList.innerHTML = "";
+  function getSchemaReferencedAppIds(schema) {
+    const punt = schema && typeof schema === "object" && !Array.isArray(schema) ? (schema.puntuacio || {}) : {};
+    const out = [];
+    const pushMany = rawIds => {
+      _uniquePositiveInts(rawIds).forEach(id => {
+        if (!out.includes(id)) out.push(id);
+      });
+    };
+    pushMany(((punt.aparells || {}).ids) || []);
+    pushMany(Object.keys((punt.camps_per_aparell && typeof punt.camps_per_aparell === "object") ? punt.camps_per_aparell : {}));
+    pushMany(Object.keys((punt.exercicis_per_aparell && typeof punt.exercicis_per_aparell === "object") ? punt.exercicis_per_aparell : {}));
+    return out;
+  }
+
+  function getAppChoices(extraIds) {
+    const seen = new Set();
+    const out = [];
     (APARELLS || []).forEach(a => {
+      const id = Number(a && a.id);
+      if (!Number.isFinite(id) || seen.has(String(id))) return;
+      seen.add(String(id));
+      out.push({ id, nom: String(a.nom || `Aparell ${id}`), stale: false });
+    });
+    _uniquePositiveInts(extraIds).forEach(id => {
+      if (seen.has(String(id))) return;
+      seen.add(String(id));
+      out.push({ id, nom: `Aparell ${id} (no disponible)`, stale: true });
+    });
+    return out;
+  }
+
+  function buildAparellChecks(extraIds) {
+    els.apChkList.innerHTML = "";
+    getAppChoices(extraIds).forEach(a => {
       const col = document.createElement("div");
       col.className = "col-6 col-md-4 mb-1";
       col.innerHTML = `
         <div class="form-check">
-          <input class="form-check-input" type="checkbox" id="app_${a.id}">
+          <input class="form-check-input" type="checkbox" id="app_${a.id}" value="${esc(a.id)}">
           <label class="form-check-label" for="app_${a.id}">${esc(a.nom)}</label>
         </div>`;
       els.apChkList.appendChild(col);
@@ -1491,15 +1522,42 @@
 
   function selectedAparellIdsFromUI() {
     const out = [];
-    (APARELLS || []).forEach(a => {
-      const el = document.getElementById("app_" + a.id);
-      if (el && el.checked) out.push(a.id);
+    (els.apChkList?.querySelectorAll('input.form-check-input[type="checkbox"]') || []).forEach(el => {
+      if (!el || !el.checked) return;
+      const appId = Number(el.value || String(el.id || "").replace(/^app_/, ""));
+      if (Number.isFinite(appId) && appId > 0 && !out.includes(appId)) out.push(appId);
+    });
+    return out;
+  }
+
+  function extendOptionsWithSelectedValues(options, selectedValues, labelBuilder) {
+    const out = [];
+    const seen = new Set();
+    (options || []).forEach(item => {
+      const code = String((item && (item.code ?? item.value)) || "").trim();
+      if (!code || seen.has(code)) return;
+      seen.add(code);
+      out.push({ ...item, code });
+    });
+    (selectedValues || []).forEach(value => {
+      const code = String(value || "").trim();
+      if (!code || seen.has(code)) return;
+      seen.add(code);
+      out.push({
+        code,
+        label: typeof labelBuilder === "function" ? labelBuilder(code) : `${code} (no disponible)`,
+        stale: true,
+      });
     });
     return out;
   }
 
   function perAppFieldsHTML(compAparellId, selectedCodes){
-    const opts = (APARELL_FIELD_OPTIONS[String(compAparellId)] || []);
+    const opts = extendOptionsWithSelectedValues(
+      APARELL_FIELD_OPTIONS[String(compAparellId)] || [],
+      selectedCodes,
+      code => `${code} (camp no disponible)`
+    );
     const selected = new Set((selectedCodes || []).map(String));
 
     return `
@@ -1512,9 +1570,12 @@
           const kindLabel = kind === "field" ? "input" : (kind === "computed" ? "computed" : (kind || "camp"));
           const judgesCount = Number(o.judges_count || 1);
           const judgesLabel = judgesCount > 1 ? `, ${judgesCount} jutges` : "";
+          const label = o.stale
+            ? `${o.label || o.code} - legacy`
+            : `${o.label} (${o.code}) - ${kindLabel}${judgesLabel}`;
           return `
           <option value="${esc(o.code)}" ${selected.has(String(o.code)) ? "selected" : ""}>
-            ${esc(o.label)} (${esc(o.code)}) - ${esc(kindLabel)}${esc(judgesLabel)}
+            ${esc(label)}
           </option>
         `;
         }).join("")}
@@ -1538,26 +1599,34 @@
     return out;
   }
 
-  function getTieOptionsForAppIds(appIds){
-    // appIds: array de comp_aparell_id seleccionats
-    if (!appIds || !appIds.length) return getUnionTieOptions();
+  function getTieOptionsForAppIds(appIds, selectedCamps){
+    const ids = _uniquePositiveInts(appIds);
+    if (!ids.length) {
+      return extendOptionsWithSelectedValues([], selectedCamps, code => `${code} (camp no disponible)`);
+    }
 
-    const seen = new Set();
-    const out = [];
-    appIds.forEach(id => {
-      (APARELL_FIELD_OPTIONS[String(id)] || []).forEach(o => {
+    let common = null;
+    ids.forEach(id => {
+      const opts = getFieldOptionsForApp(id);
+      const byCode = new Map();
+      (opts || []).forEach(o => {
         if (!o || !o.code) return;
-        const c = String(o.code);
-        if (seen.has(c)) return;
-        seen.add(c);
-        out.push({ code: c, label: o.label || c });
+        const code = String(o.code);
+        if (!byCode.has(code)) byCode.set(code, { code, label: o.label || code });
+      });
+      if (common === null) {
+        common = new Map(byCode);
+        return;
+      }
+      Array.from(common.keys()).forEach(code => {
+        if (!byCode.has(code)) common.delete(code);
       });
     });
-    return out;
+    return extendOptionsWithSelectedValues(common ? Array.from(common.values()) : [], selectedCamps, code => `${code} (camp no disponible)`);
   }
 
   function buildCampSelectHTMLForApps(appIds, selectedCamps, selectedAgg){
-    const opts = getTieOptionsForAppIds(appIds);
+    const opts = getTieOptionsForAppIds(appIds, selectedCamps);
     const selected = new Set((selectedCamps || []).map(x => String(x)));
     const agg = String(selectedAgg || "hereta").toLowerCase();
     return `
@@ -1565,7 +1634,7 @@
         <select class="form-control form-control-sm" data-k="camps" multiple size="6">
           ${opts.map(o => `
             <option value="${esc(o.code)}" ${selected.has(String(o.code)) ? "selected":""}>
-              ${esc(o.label)} (${esc(o.code)})
+              ${esc(o.stale ? `${o.label} - legacy` : `${o.label} (${o.code})`)}
             </option>
           `).join("")}
         </select>
@@ -1652,8 +1721,12 @@
   }
 
   function renderPerAppUI(schema) {
-    const appIds = selectedAparellIdsFromUI();
     const punt = (schema.puntuacio || {});
+    const appIds = _uniquePositiveInts([
+      ...selectedAparellIdsFromUI(),
+      ...Object.keys((punt.camps_per_aparell && typeof punt.camps_per_aparell === "object") ? punt.camps_per_aparell : {}),
+      ...Object.keys((punt.exercicis_per_aparell && typeof punt.exercicis_per_aparell === "object") ? punt.exercicis_per_aparell : {}),
+    ]);
     const modeSel = getModeSeleccioExercicisFromUI() || String(punt.mode_seleccio_exercicis || "per_aparell_global").toLowerCase().trim();
     const showExOverride = modeSel === "per_aparell_override";
     els.perAppBox.innerHTML = "";
@@ -2065,7 +2138,7 @@
     }
 
     const state = readTiePerAppExercicisFromRow(tr);
-    const appIds = getTieTargetAppIds(tr);
+    const appIds = _uniquePositiveInts([...getTieTargetAppIds(tr), ...Object.keys(state || {})]);
     box.style.display = "";
     if (!appIds.length) {
       box.innerHTML = `<div class="small text-muted mt-1">Sense aparells disponibles per definir override.</div>`;
@@ -2136,7 +2209,6 @@
     const exPerApp = readTiePerAppExercicisFromRow(tr);
 
     const obj = {
-      camp: campCfg.camps[0] || "", // compat legacy
       camps: campCfg.camps,
       agregacio_camps: campCfg.agregacio_camps,
       ordre,
@@ -2185,7 +2257,6 @@
     const exIds = parsePositiveIds(tr.querySelector('[data-k="ex_ids"]').value || "");
 
     const obj = {
-      camp: campCfg.camps[0] || "",
       camps: campCfg.camps,
       agregacio_camps: campCfg.agregacio_camps,
       ordre,
@@ -2202,10 +2273,11 @@
     return obj;
   }
 
-  function readVictoryTieUI() {
+  function readVictoryTieUI(includeInvalid) {
     const out = [];
     document.querySelectorAll("#victoryTieBody tr").forEach(tr => {
-      out.push(readVictoryTieObjFromRow(tr));
+      const item = readVictoryTieObjFromRow(tr);
+      if (includeInvalid || (item.camps || []).length) out.push(item);
     });
     return out;
   }
@@ -2286,12 +2358,15 @@
       const ordSel = tr.querySelector('[data-k="ordre"]');
 
       campCell.innerHTML = buildCampSelectHTMLForApps(appIds, tieCamps, tieAggCamps);
+      ensureSelectOption(exSelModeSel, exSelMode, value => `${value} (legacy)`);
       exSelModeSel.value = exSelMode;
+      ensureSelectOption(exModeSel, exMode, value => `${value} (legacy)`);
       exModeSel.value = exMode;
       exBestNEl.value = exBestN;
       exIndexEl.value = exIndex;
       exMaxPPEl.value = exMaxPP;
       exIdsEl.value = exIdsStr;
+      ensureSelectOption(ordSel, ordre, value => `${value} (legacy)`);
       ordSel.value = ordre;
 
       function refreshExUI() {
@@ -2335,7 +2410,7 @@
       });
 
       tr.querySelector('[data-act="del"]').addEventListener("click", () => {
-        const cur = readVictoryTieUI();
+        const cur = readVictoryTieUI(true);
         cur.splice(idx, 1);
         renderVictoryTieUI(cur);
         syncAdvancedFromUI();
@@ -2390,7 +2465,6 @@
 
   function addDefaultTieCriterion(cur, includeParticipants) {
     const item = {
-      camp: "",
       camps: [],
       agregacio_camps: "hereta",
       ordre: "desc",
@@ -2516,11 +2590,12 @@
     renderEquipManualRows(Array.isArray(eq.particions_manuals) ? eq.particions_manuals : []);
   }
 
-  function readTieUI() {
+  function readTieUI(includeInvalid) {
     const out = [];
     const includeParticipants = isTipusEquips();
     document.querySelectorAll("#tieBody tr").forEach(tr => {
-      out.push(readTieObjFromRow(tr, includeParticipants));
+      const item = readTieObjFromRow(tr, includeParticipants);
+      if (includeInvalid || (item.camps || []).length) out.push(item);
     });
     return out;
   }
@@ -2577,10 +2652,7 @@
       const ordre = (t.ordre || "desc").toLowerCase();
 
       // options aparells single
-      const appScopeOpts = [
-        '<option value="hereta">Hereta (puntuació)</option>',
-        ...(APARELLS || []).map(a => `<option value="app:${a.id}">${esc(a.nom)}</option>`)
-      ].join("");
+      const appScopeOpts = buildTieAppScopeOptionsHTML(appScope);
 
       tr.innerHTML = `
         <td>
@@ -2651,10 +2723,14 @@
       const exHint = tr.querySelector('[data-k="ex_hint"]');
       const ordSel = tr.querySelector('[data-k="ordre"]');
 
+      ensureSelectOption(appScopeSel, appScope, value => value.startsWith("app:") ? `${value.replace(/^app:/, "Aparell ")} (no disponible)` : `${value} (legacy)`);
       appScopeSel.value = appScope;
+      ensureSelectOption(ordSel, ordre, value => `${value} (legacy)`);
       ordSel.value = ordre;
 
+      ensureSelectOption(exSelModeSel, exSelMode, value => `${value} (legacy)`);
       exSelModeSel.value = exSelMode;
+      ensureSelectOption(exModeSel, exMode, value => `${value} (legacy)`);
       exModeSel.value = exMode;
       exBestNEl.value = exBestN;
       exIndexEl.value = exIndex;
@@ -2758,7 +2834,7 @@
       });
 
       tr.querySelector('[data-act="del"]').addEventListener("click", () => {
-        const cur = readTieUI();
+        const cur = readTieUI(true);
         cur.splice(idx, 1);
         renderTieUI(cur);
         syncAdvancedFromUI();
@@ -2877,6 +2953,33 @@
     return (APARELL_FIELD_OPTIONS[String(appId)] || []);
   }
 
+  function getActiveAppIds() {
+    return _uniquePositiveInts((APARELLS || []).map(a => a.id));
+  }
+
+  function sanitizeAppIds(appIds) {
+    const active = new Set(getActiveAppIds().map(x => String(x)));
+    const out = [];
+    _uniquePositiveInts(appIds).forEach(appId => {
+      if (active.has(String(appId))) out.push(appId);
+    });
+    return out;
+  }
+
+  function getRealFieldCodesForApp(appId) {
+    return new Set(
+      getFieldOptionsForApp(appId)
+        .map(o => String(o && o.code || "").trim())
+        .filter(Boolean)
+    );
+  }
+
+  function isRealFieldForApp(appId, code) {
+    const camp = String(code || "").trim();
+    if (!camp) return false;
+    return getRealFieldCodesForApp(appId).has(camp);
+  }
+
   function _uniquePositiveInts(arr) {
     const out = [];
     (arr || []).forEach(x => {
@@ -2886,14 +2989,36 @@
     return out;
   }
 
+  function buildRawAppOptionsHTML(selectedAppId) {
+    return getAppChoices(Number.isFinite(Number(selectedAppId)) ? [selectedAppId] : []).map(app => `
+      <option value="${esc(app.id)}" ${Number(app.id) === Number(selectedAppId) ? "selected" : ""}>${esc(app.nom)}</option>
+    `).join("");
+  }
+
+  function buildTieAppScopeOptionsHTML(selectedScope) {
+    let selectedAppId = null;
+    const scope = String(selectedScope || "hereta");
+    if (scope.startsWith("app:")) {
+      const parsed = Number(scope.split(":")[1]);
+      if (Number.isFinite(parsed) && parsed > 0) selectedAppId = parsed;
+    }
+    return [
+      '<option value="hereta">Hereta (puntuació)</option>',
+      ...getAppChoices(selectedAppId ? [selectedAppId] : []).map(app => `<option value="app:${esc(app.id)}">${esc(app.nom)}</option>`),
+    ].join("");
+  }
+
   function buildRawCampOptionsHTML(appId, selectedCamp) {
-    const opts = getFieldOptionsForApp(appId);
-    const camp = String(selectedCamp || "");
-    const has = opts.some(o => String(o.code) === camp);
-    const all = has || !camp ? opts : [...opts, { code: camp, label: camp, judges_count: 1, kind: "legacy" }];
-    return all.map(o => {
+    const opts = extendOptionsWithSelectedValues(
+      getFieldOptionsForApp(appId),
+      selectedCamp ? [selectedCamp] : [],
+      code => `${code} (camp no disponible)`
+    );
+    const camp = String(selectedCamp || "").trim();
+    return opts.map(o => {
       const jc = Number(o.judges_count || 1);
-      return `<option value="${esc(o.code)}" data-judges-count="${esc(jc)}" data-kind="${esc(o.kind || "")}" ${String(o.code) === camp ? "selected" : ""}>${esc(o.label)} (${esc(o.code)})</option>`;
+      const label = o.stale ? `${o.label} - legacy` : `${o.label} (${o.code})`;
+      return `<option value="${esc(o.code)}" data-judges-count="${esc(jc)}" data-kind="${esc(o.kind || "")}" ${String(o.code) === camp ? "selected" : ""}>${esc(label)}</option>`;
     }).join("");
   }
 
@@ -2992,7 +3117,7 @@
             <div class="col-12 col-md-3 mb-2">
               <label class="small text-muted mb-1">Aparell</label>
               <select class="form-control form-control-sm" data-k="app_id">
-                ${(APARELLS || []).map(a => `<option value="${esc(a.id)}" ${Number(a.id) === Number(appId) ? "selected" : ""}>${esc(a.nom)}</option>`).join("")}
+                ${buildRawAppOptionsHTML(appId)}
               </select>
             </div>
             <div class="col-6 col-md-1 mb-2">
@@ -3088,14 +3213,14 @@
       });
 
       row.querySelector('[data-act="del"]').addEventListener("click", () => {
-        const cur = readColumnsUI();
+        const cur = readColumnsUI(true);
         cur.splice(idx, 1);
         renderColumnsUI(cur);
         syncAdvancedFromUI();
       });
       row.querySelector('[data-act="up"]').addEventListener("click", () => {
         if (idx <= 0) return;
-        const cur = readColumnsUI();
+        const cur = readColumnsUI(true);
         const t = cur[idx - 1];
         cur[idx - 1] = cur[idx];
         cur[idx] = t;
@@ -3103,7 +3228,7 @@
         syncAdvancedFromUI();
       });
       row.querySelector('[data-act="down"]').addEventListener("click", () => {
-        const cur = readColumnsUI();
+        const cur = readColumnsUI(true);
         if (idx >= cur.length - 1) return;
         const t = cur[idx + 1];
         cur[idx + 1] = cur[idx];
@@ -3116,7 +3241,7 @@
     });
   }
 
-  function readColumnsUI() {
+  function readColumnsUI(includeInvalid) {
     const out = [];
     document.querySelectorAll("#columnsBox .col-row").forEach((row, idx) => {
       const type = row.getAttribute("data-type") || "builtin";
@@ -3129,8 +3254,9 @@
       if (type === "raw") {
         const appId = Number(row.querySelector('[data-k="app_id"]')?.value);
         const ex = Math.max(1, Number(row.querySelector('[data-k="exercici"]')?.value || 1));
-        const camp = String(row.querySelector('[data-k="camp"]')?.value || "");
+        const camp = String(row.querySelector('[data-k="camp"]')?.value || "").trim();
         const judgeIds = _uniquePositiveInts(Array.from(row.querySelector('[data-k="judge_ids"]')?.selectedOptions || []).map(o => Number(o.value)));
+        if (!includeInvalid && (!Number.isFinite(appId) || !getAparellById(appId) || !camp || !isRealFieldForApp(appId, camp))) return;
         out.push({
           type: "raw",
           key: key || `raw_${idx + 1}`,
@@ -3157,6 +3283,163 @@
       }
     });
     return out.length ? out : defaultDisplayColumns();
+  }
+
+  function sanitizeMainCampsPerAparell(rawMap, selectedAppIds) {
+    const out = {};
+    const selected = sanitizeAppIds(selectedAppIds);
+    selected.forEach(appId => {
+      const rawCodes = rawMap && typeof rawMap === "object" ? (rawMap[String(appId)] ?? rawMap[appId]) : [];
+      const seen = new Set();
+      const kept = [];
+      const list = Array.isArray(rawCodes) ? rawCodes : (typeof rawCodes === "string" ? rawCodes.split(",") : []);
+      list.forEach(code => {
+        const camp = String(code || "").trim();
+        if (!camp || seen.has(camp) || !isRealFieldForApp(appId, camp)) return;
+        seen.add(camp);
+        kept.push(camp);
+      });
+      if (kept.length) out[String(appId)] = kept;
+    });
+    return out;
+  }
+
+  function sanitizeTieItemForUI(rawTie, selectedMainIds, allowAppScope, allowParticipants) {
+    if (!rawTie || typeof rawTie !== "object" || Array.isArray(rawTie)) return null;
+    const item = JSON.parse(JSON.stringify(rawTie));
+    delete item.camp;
+    delete item.aparell_id;
+
+    const scope = item.scope && typeof item.scope === "object" && !Array.isArray(item.scope) ? item.scope : {};
+    const exScope = scope.exercicis && typeof scope.exercicis === "object" && !Array.isArray(scope.exercicis) ? scope.exercicis : {};
+    const normalizedScope = { exercicis: normalizeTieExercicisCfg(exScope) };
+    const inheritedIds = sanitizeAppIds(selectedMainIds);
+
+    let targetIds = inheritedIds.slice();
+    if (allowAppScope) {
+      const appScope = scope.aparells && typeof scope.aparells === "object" && !Array.isArray(scope.aparells) ? scope.aparells : {};
+      const mode = String(appScope.mode || "hereta").toLowerCase().trim();
+      if (mode === "seleccionar") {
+        targetIds = sanitizeAppIds(appScope.ids || []);
+        if (!targetIds.length) return null;
+        normalizedScope.aparells = { mode: "seleccionar", ids: targetIds };
+      } else {
+        if (!targetIds.length) return null;
+        normalizedScope.aparells = { mode: "hereta" };
+      }
+    } else if (!targetIds.length) {
+      return null;
+    }
+
+    const validCamps = [];
+    const seenCamps = new Set();
+    normalizeTieCampsFromObj(item).forEach(code => {
+      const camp = String(code || "").trim();
+      if (!camp || seenCamps.has(camp)) return;
+      if (!targetIds.every(appId => isRealFieldForApp(appId, camp))) return;
+      seenCamps.add(camp);
+      validCamps.push(camp);
+    });
+    if (!validCamps.length) return null;
+
+    item.camps = validCamps;
+    item.agregacio_camps = normalizeTieAggCampsFromObj(item);
+    item.ordre = String(item.ordre || "desc").toLowerCase() === "asc" ? "asc" : "desc";
+    item.scope = normalizedScope;
+
+    const exSelMode = normalizeTieModeSeleccioExercicis(item.mode_seleccio_exercicis || exScope.mode_seleccio_exercicis || "hereta");
+    if (exSelMode !== "hereta") item.mode_seleccio_exercicis = exSelMode;
+    else delete item.mode_seleccio_exercicis;
+
+    const exPerAppSource = item.exercicis_per_aparell || exScope.exercicis_per_aparell || {};
+    const exPerAppMap = normalizeTieExercicisPerAparellMap(exPerAppSource);
+    if (exSelMode === "per_aparell_override") {
+      const filteredMap = {};
+      targetIds.forEach(appId => {
+        const key = String(appId);
+        if (exPerAppMap[key]) filteredMap[key] = exPerAppMap[key];
+      });
+      if (Object.keys(filteredMap).length) item.exercicis_per_aparell = filteredMap;
+      else delete item.exercicis_per_aparell;
+    } else {
+      delete item.exercicis_per_aparell;
+    }
+
+    if (!allowParticipants) {
+      delete item.agregacio_participants;
+    } else {
+      const parts = normalizeParticipantsFromTie(item);
+      item.scope.participants = { mode: parts.pMode };
+      if (isParticipantsModeWithN(parts.pMode)) item.scope.participants.n = parts.pN;
+      item.agregacio_participants = parts.pAgg;
+    }
+
+    return item;
+  }
+
+  function sanitizeRawColumnsForUI(rawCols, selectedMainIds) {
+    const cols = normalizeColumnsFromSchema(rawCols);
+    const selectedSet = new Set(sanitizeAppIds(selectedMainIds).map(x => String(x)));
+    const out = [];
+    cols.forEach(col => {
+      if (!col || typeof col !== "object") return;
+      if (String(col.type || "builtin").toLowerCase() !== "raw") {
+        out.push(col);
+        return;
+      }
+      const src = col.source && typeof col.source === "object" && !Array.isArray(col.source) ? col.source : {};
+      const appId = Number(src.aparell_id);
+      const camp = String(src.camp || "").trim();
+      if (!Number.isFinite(appId) || !getAparellById(appId)) return;
+      if (selectedSet.size && !selectedSet.has(String(appId))) return;
+      if (!camp || !isRealFieldForApp(appId, camp)) return;
+      out.push(col);
+    });
+    return out.length ? out : defaultDisplayColumns();
+  }
+
+  function normalizeForHydration(rawSchema) {
+    const fallback = JSON.parse(JSON.stringify(DEFAULT_SCHEMA));
+    const schema = rawSchema && typeof rawSchema === "object" && !Array.isArray(rawSchema)
+      ? JSON.parse(JSON.stringify(rawSchema))
+      : fallback;
+    const punt = schema.puntuacio && typeof schema.puntuacio === "object" && !Array.isArray(schema.puntuacio) ? schema.puntuacio : {};
+    schema.puntuacio = punt;
+
+    const rawApps = punt.aparells && typeof punt.aparells === "object" && !Array.isArray(punt.aparells) ? punt.aparells : {};
+    punt.aparells = {
+      ...rawApps,
+      ids: Array.isArray(rawApps.ids) ? rawApps.ids.slice() : [],
+    };
+    if (!punt.camps_per_aparell || typeof punt.camps_per_aparell !== "object" || Array.isArray(punt.camps_per_aparell)) {
+      punt.camps_per_aparell = {};
+    }
+    punt.exercicis = punt.exercicis && typeof punt.exercicis === "object" && !Array.isArray(punt.exercicis)
+      ? punt.exercicis
+      : {};
+    if (!punt.exercicis_per_aparell || typeof punt.exercicis_per_aparell !== "object" || Array.isArray(punt.exercicis_per_aparell)) {
+      punt.exercicis_per_aparell = {};
+    }
+
+    const victories = punt.victories && typeof punt.victories === "object" && !Array.isArray(punt.victories) ? punt.victories : {};
+    victories.desempat_comparacio = Array.isArray(victories.desempat_comparacio) ? victories.desempat_comparacio : [];
+    punt.victories = victories;
+    schema.filtres = schema.filtres && typeof schema.filtres === "object" && !Array.isArray(schema.filtres) ? schema.filtres : {};
+    schema.desempat = Array.isArray(schema.desempat) ? schema.desempat : [];
+
+    const presentacio = schema.presentacio && typeof schema.presentacio === "object" && !Array.isArray(schema.presentacio) ? schema.presentacio : {};
+    presentacio.columnes = Array.isArray(presentacio.columnes) ? presentacio.columnes : fallback.presentacio.columnes;
+    schema.presentacio = presentacio;
+    schema.particions = Array.isArray(schema.particions) ? schema.particions : [];
+    schema.particions_v2 = Array.isArray(schema.particions_v2) ? schema.particions_v2 : [];
+    schema.particions_custom = schema.particions_custom && typeof schema.particions_custom === "object" && !Array.isArray(schema.particions_custom)
+      ? schema.particions_custom
+      : {};
+    schema.equips = schema.equips && typeof schema.equips === "object" && !Array.isArray(schema.equips)
+      ? schema.equips
+      : fallback.equips;
+
+    return schema;
   }
 
   function previewColClass(col){
@@ -3821,6 +4104,46 @@
     return out;
   }
 
+  function ensureSelectOption(selectEl, rawValue, labelBuilder) {
+    if (!selectEl) return;
+    const value = String(rawValue ?? "").trim();
+    if (!value) return;
+    const existing = Array.from(selectEl.options || []).find(opt => String(opt.value || "").trim() === value);
+    if (existing) return;
+    const opt = document.createElement("option");
+    opt.value = value;
+    opt.textContent = typeof labelBuilder === "function" ? labelBuilder(value) : `${value} (legacy)`;
+    opt.dataset.injected = "1";
+    selectEl.appendChild(opt);
+  }
+
+  function clearInjectedSelectOptions(selectEl) {
+    if (!selectEl) return;
+    Array.from(selectEl.options || []).forEach(opt => {
+      if (opt?.dataset?.injected === "1") opt.remove();
+    });
+  }
+
+  function ensureMultiSelectOptions(selectEl, rawValues, labelBuilder) {
+    if (!selectEl) return;
+    const wanted = new Set(
+      (Array.isArray(rawValues) ? rawValues : [])
+        .map(value => String(value ?? "").trim())
+        .filter(Boolean)
+    );
+    Array.from(selectEl.options || []).forEach(opt => {
+      if (opt?.dataset?.injected === "1") opt.remove();
+    });
+    wanted.forEach(value => ensureSelectOption(selectEl, value, labelBuilder));
+    Array.from(selectEl.options || []).forEach(opt => {
+      opt.selected = wanted.has(String(opt.value || "").trim());
+    });
+  }
+
+  function applyMultiSelectValues(selectEl, rawValues) {
+    ensureMultiSelectOptions(selectEl, rawValues, value => `${value} (no disponible)`);
+  }
+
   function syncAdvancedFromUI(opts = {}) {
     const preferAdvanced = !!opts.preferAdvanced;
     const cfg = currentCfg();
@@ -3868,10 +4191,10 @@
     const modeSeleccioExercicis = getModeSeleccioExercicisFromUI();
     const exPerAppCfg = readPerAppExercicisFromUI();
     const modeResultatAparells = currentModeResultatAparells();
-    const victoriesCompareTie = readVictoryTieUI();
+    const victoriesCompareTie = readVictoryTieUI(true);
 
     // desempats
-    let desempat = readTieUI();
+    let desempat = readTieUI(true);
     let usedAdvancedDesempat = false;
     if (preferAdvanced && advancedDirty.desempat) {
       const rawT = (els.tDesempat.value || "").trim();
@@ -3915,17 +4238,12 @@
           desempat_comparacio: victoriesCompareTie,
         },
         ordre: els.sOrdre.value,
-
-        // legacy (per compat)
-        camp: "total",
-        agregacio: "sum",
-        best_n: 1
       },
       desempat: desempat,
       presentacio: {
         top_n: Number(els.iTopN.value || 0),
         mostrar_empats: !!els.cEmpats.checked,
-        columnes: readColumnsUI(),
+        columnes: readColumnsUI(true),
       },
       equips: equipsSchema,
     };
@@ -3943,7 +4261,7 @@
   }
 
   function syncUIFromSchema(schema) {
-    schema = schema || JSON.parse(JSON.stringify(DEFAULT_SCHEMA));
+    schema = normalizeForHydration(schema || DEFAULT_SCHEMA);
 
     const partEntries = normalizeParticioEntries(schema.particions_v2 || [], schema.particions || []);
     const parts = particioCodesFromEntries(partEntries);
@@ -3954,20 +4272,40 @@
     const rawAparells = ((schema.puntuacio||{}).aparells||{});
     const apMode = String(rawAparells.mode || "seleccionar").toLowerCase();
     const idsLegacy = Array.isArray(rawAparells.ids) ? rawAparells.ids : [];
-    const idsNorm = (apMode === "tots")
-      ? (APARELLS || []).map(a => String(a.id))
-      : idsLegacy.map(x => String(x));
+    const idsBase = (apMode === "tots")
+      ? (APARELLS || []).map(a => a.id)
+      : idsLegacy;
+    const idsNorm = _uniquePositiveInts([...idsBase, ...getSchemaReferencedAppIds(schema)]).map(x => String(x));
     const ids = new Set(idsNorm);
 
     if (els.apSelBox) els.apSelBox.style.display = "";
-    (APARELLS || []).forEach(a => {
+    buildAparellChecks([...ids]);
+    getAppChoices([...ids]).forEach(a => {
       const el = document.getElementById("app_" + a.id);
       if (el) el.checked = ids.has(String(a.id));
     });
 
+    [
+      els.sAggCamps,
+      els.sModeSeleccioExercicis,
+      els.sExercicisMode,
+      els.sAggExercicis,
+      els.sAggAparells,
+      els.sModeResultatAparells,
+      els.sOrdre,
+      els.sVictoryModeCamps,
+      els.sVictoryModeExercicis,
+      els.sVictoryFieldSelectionMode,
+      els.sVictoryAggCamps,
+      els.sVictoryAggExercicis,
+    ].forEach(clearInjectedSelectOptions);
+
+    ensureSelectOption(els.sAggCamps, (schema.puntuacio||{}).agregacio_camps, value => `${value} (legacy)`);
     els.sAggCamps.value = (schema.puntuacio||{}).agregacio_camps || "sum";
+    ensureSelectOption(els.sModeSeleccioExercicis, (schema.puntuacio||{}).mode_seleccio_exercicis, value => `${value} (legacy)`);
     els.sModeSeleccioExercicis.value = (schema.puntuacio||{}).mode_seleccio_exercicis || "per_aparell_global";
     const pEx = ((schema.puntuacio||{}).exercicis || {});
+    ensureSelectOption(els.sExercicisMode, pEx.mode, value => `${value} (legacy)`);
     els.sExercicisMode.value = pEx.mode || "tots";
     els.iExBestN.value = (schema.puntuacio||{}).exercicis_best_n || pEx.best_n || 1;
     els.iExIndex.value = pEx.index || 1;
@@ -3975,9 +4313,13 @@
     if (Array.isArray(pEx.ids)) els.tExIds.value = pEx.ids.join(",");
     else els.tExIds.value = String(pEx.ids || "");
     refreshMainExercicisUI();
+    ensureSelectOption(els.sAggExercicis, (schema.puntuacio||{}).agregacio_exercicis, value => `${value} (legacy)`);
     els.sAggExercicis.value = (schema.puntuacio||{}).agregacio_exercicis || "sum";
+    ensureSelectOption(els.sAggAparells, (schema.puntuacio||{}).agregacio_aparells, value => `${value} (legacy)`);
     els.sAggAparells.value = (schema.puntuacio||{}).agregacio_aparells || "sum";
+    ensureSelectOption(els.sModeResultatAparells, (schema.puntuacio||{}).mode_resultat_aparells, value => `${value} (legacy)`);
     els.sModeResultatAparells.value = (schema.puntuacio||{}).mode_resultat_aparells || "score";
+    ensureSelectOption(els.sOrdre, (schema.puntuacio||{}).ordre, value => `${value} (legacy)`);
     els.sOrdre.value = (schema.puntuacio||{}).ordre || "desc";
 
     els.iTopN.value = (schema.presentacio||{}).top_n ?? 0;
@@ -3987,22 +4329,31 @@
     // tie + filtres JSON
     const victoriesCfg = ((schema.puntuacio || {}).victories || {});
     if (els.sVictoryModeCamps) {
+      ensureSelectOption(els.sVictoryModeCamps, victoriesCfg.mode_camps, value => `${value} (legacy)`);
       els.sVictoryModeCamps.value = victoriesCfg.mode_camps || "agregat";
     }
     if (els.sVictoryModeExercicis) {
+      ensureSelectOption(els.sVictoryModeExercicis, victoriesCfg.mode_exercicis, value => `${value} (legacy)`);
       els.sVictoryModeExercicis.value = victoriesCfg.mode_exercicis || "agregat";
     }
     if (els.sVictoryFieldSelectionMode) {
+      ensureSelectOption(els.sVictoryFieldSelectionMode, victoriesCfg.mode_seleccio_exercicis_camps_separats, value => `${value} (legacy)`);
       els.sVictoryFieldSelectionMode.value = victoriesCfg.mode_seleccio_exercicis_camps_separats || "per_camp";
     }
     if (els.sVictoryAggCamps) {
+      ensureSelectOption(els.sVictoryAggCamps, victoriesCfg.agregacio_victories_camps, value => `${value} (legacy)`);
       els.sVictoryAggCamps.value = victoriesCfg.agregacio_victories_camps || "sum";
     }
     if (els.sVictoryAggExercicis) {
+      ensureSelectOption(els.sVictoryAggExercicis, victoriesCfg.agregacio_victories_exercicis, value => `${value} (legacy)`);
       els.sVictoryAggExercicis.value = victoriesCfg.agregacio_victories_exercicis || "sum";
     }
     renderVictoryTieUI(victoriesCfg.desempat_comparacio || []);
     renderTieUI(schema.desempat || []);
+    applyMultiSelectValues(els.fEntitats, (schema.filtres || {}).entitats_in || []);
+    applyMultiSelectValues(els.fCategories, (schema.filtres || {}).categories_in || []);
+    applyMultiSelectValues(els.fSubcategories, (schema.filtres || {}).subcategories_in || []);
+    applyMultiSelectValues(els.fGrups, (schema.filtres || {}).grups_in || []);
     els.tDesempat.value = JSON.stringify(schema.desempat || [], null, 2);
     els.tFiltres.value = JSON.stringify(schema.filtres || {}, null, 2);
     advancedDirty.desempat = false;
@@ -4225,23 +4576,22 @@
   document.addEventListener("change", (e) => {
     if (e.target && e.target.id && e.target.id.startsWith("app_")) {
       renderPerAppUI((currentCfg()||{}).schema || DEFAULT_SCHEMA);
-      renderTieUI(readTieUI());
-      renderVictoryTieUI(readVictoryTieUI());
+      renderTieUI(readTieUI(true));
+      renderVictoryTieUI(readVictoryTieUI(true));
       syncAdvancedFromUI();
     }
   });
 
   els.btnTieAdd.addEventListener("click", () => {
-    const cur = readTieUI();
+    const cur = readTieUI(true);
     addDefaultTieCriterion(cur, isTipusEquips());
     renderTieUI(cur);
     syncAdvancedFromUI();
   });
   if (els.btnVictoryTieAdd) {
     els.btnVictoryTieAdd.addEventListener("click", () => {
-      const cur = readVictoryTieUI();
+      const cur = readVictoryTieUI(true);
       cur.push({
-        camp: "",
         camps: [],
         agregacio_camps: "hereta",
         ordre: "desc",
@@ -4254,7 +4604,7 @@
 
   if (els.btnColAddBuiltin) {
     els.btnColAddBuiltin.addEventListener("click", () => {
-      const cur = readColumnsUI();
+      const cur = readColumnsUI(true);
       const candidates = [
         { key: "posicio", label: "#" },
         { key: "participant", label: "Nom" },
@@ -4283,7 +4633,7 @@
   if (els.btnColAddRaw) {
     els.btnColAddRaw.addEventListener("click", () => {
       const firstApp = (APARELLS && APARELLS[0]) ? APARELLS[0].id : null;
-      const cur = readColumnsUI();
+      const cur = readColumnsUI(true);
       cur.push({
         type: "raw",
         key: `raw_${cur.length + 1}`,
@@ -4628,7 +4978,20 @@
         headers:{ "X-CSRFToken": getCookie("csrftoken") }
       });
       const out = await res.json();
-      if (!out.ok) throw new Error("Preview KO");
+      if (!res.ok || !out.ok) {
+        const error = String(out?.error || "Preview KO");
+        const details = Array.isArray(out?.errors) ? out.errors : [];
+        let html = `<div class="text-danger small">${esc(error)}</div>`;
+        if (details.length) {
+          html += `<ul class="small text-danger mb-0 mt-2">`;
+          details.forEach(msg => {
+            html += `<li>${esc(String(msg))}</li>`;
+          });
+          html += `</ul>`;
+        }
+        els.previewBox.innerHTML = html;
+        return;
+      }
 
       const columns = normalizeColumnsFromSchema(out.columns || ((cfg.schema||{}).presentacio||{}).columnes || []);
       const parts = out.data || [];

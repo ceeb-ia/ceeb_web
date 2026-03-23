@@ -490,7 +490,7 @@ class ScoringNotesHome(TemplateView):
                 app_groups_map[app_id] = unique_ordered(list(prev) + list(groups_for_cell))
 
             rows_by_group = {}
-            for g, rows in groups:
+            for g, rows in programmed_groups:
                 key = 0 if g in (None, 0) else int(g)
                 rows_by_group[key] = list(rows)
 

@@ -3150,14 +3150,22 @@ class ScoringAndJudgeExclusionFlowTests(_BaseTrampoliDataMixin, TestCase):
         )
         self.assertEqual(save_res.status_code, 403)
 
-    def test_judge_portal_supports_ex_query_and_selector(self):
+    def test_judge_portal_supports_ex_query_and_multiex_payload(self):
         portal_url = reverse("judge_portal", kwargs={"token": self.token.id})
         portal_res = self.client.get(portal_url, {"ex": 2})
         self.assertEqual(portal_res.status_code, 200)
+
+        payload = portal_res.context["scores_payload_json"][str(self.ins_allowed.id)]
+        self.assertEqual(sorted(payload["exercises"].keys()), ["1", "2", "3"])
+
         body = portal_res.content.decode("utf-8")
-        self.assertIn("const EXERCICI = 2;", body)
-        self.assertIn('href="?ex=1"', body)
-        self.assertIn('href="?ex=3"', body)
+        self.assertIn("const EXERCICI_HINT = 2;", body)
+        self.assertIn('data-exercise-chip="1"', body)
+        self.assertIn(f'id="editor-inner-{self.ins_allowed.id}-1"', body)
+        self.assertIn(f'id="editor-inner-{self.ins_allowed.id}-2"', body)
+        self.assertIn(f'id="editor-inner-{self.ins_allowed.id}-3"', body)
+        self.assertNotIn('href="?ex=1"', body)
+        self.assertNotIn('href="?ex=3"', body)
 
     def test_judge_portal_hides_video_controls_when_video_disabled(self):
         self.token.can_record_video = False
@@ -3276,6 +3284,45 @@ class ScoringAndJudgeExclusionFlowTests(_BaseTrampoliDataMixin, TestCase):
 
         self.assertIn(self.ins_allowed.id, updated_ids)
         self.assertNotIn(self.ins_blocked.id, updated_ids)
+
+    def test_judge_updates_accept_multiple_exercicis(self):
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins_allowed,
+            exercici=1,
+            comp_aparell=self.comp_app,
+            inputs={"E": [0.2, 0, 0, 0, 0]},
+            outputs={},
+            total=1,
+        )
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins_allowed,
+            exercici=2,
+            comp_aparell=self.comp_app,
+            inputs={"E": [0.4, 0, 0, 0, 0]},
+            outputs={},
+            total=2,
+        )
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins_blocked,
+            exercici=2,
+            comp_aparell=self.comp_app,
+            inputs={"E": [0.6, 0, 0, 0, 0]},
+            outputs={},
+            total=3,
+        )
+
+        since = (timezone.now() - timedelta(minutes=10)).isoformat()
+        url = reverse("judge_updates", kwargs={"token": self.token.id})
+        res = self.client.get(url, {"since": since, "exercici": [1, 2]})
+
+        self.assertEqual(res.status_code, 200)
+        payload = res.json()
+        updates = payload.get("updates", [])
+        self.assertEqual({u["exercici"] for u in updates}, {1, 2})
+        self.assertEqual({u["inscripcio_id"] for u in updates}, {self.ins_allowed.id})
 
 
 class ProgrammedGroupReconfigurationTests(_BaseTrampoliDataMixin, TestCase):
@@ -3647,7 +3694,7 @@ class RotationOrderingDisplayTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(portal_res.status_code, 200)
         self.assertEqual(portal_res.context["active_group_key"], portal_res.context["group_blocks"][0]["key"])
 
-    def test_judge_portal_preserves_group_when_rendering_exercise_links_with_franja(self):
+    def test_judge_portal_preserves_group_and_initial_exercise_with_franja(self):
         self.comp_app.nombre_exercicis = 3
         self.comp_app.save(update_fields=["nombre_exercicis"])
         portal_url = reverse("judge_portal", kwargs={"token": self.token.id})
@@ -3660,16 +3707,38 @@ class RotationOrderingDisplayTests(_BaseTrampoliDataMixin, TestCase):
             },
         )
         self.assertEqual(portal_res.status_code, 200)
+        self.assertEqual(portal_res.context["active_group_key"], self.ins_1.grup_competicio_id)
+        self.assertEqual(portal_res.context["franja_override_id"], self.franja_3.id)
 
         body = portal_res.content.decode("utf-8")
-        self.assertIn(
-            f'href="?ex=1&group={self.ins_1.grup_competicio_id}&franja={self.franja_3.id}"',
-            body,
+        self.assertIn("const EXERCICI_HINT = 2;", body)
+        self.assertIn('data-exercise-chip="1"', body)
+        self.assertNotIn("data-exercise-link", body)
+
+    def test_scoring_notes_home_supports_franja_selection_for_programmed_groups(self):
+        scoring_url = reverse("scoring_notes_home", kwargs={"pk": self.comp.id})
+
+        default_res = self.client.get(scoring_url)
+        self.assertEqual(default_res.status_code, 200)
+        default_body = default_res.content.decode("utf-8")
+        self.assertNotIn('id="franjaSelect"', default_body)
+        self.assertNotIn(">Franja</label>", default_body)
+        self.assertIsNone(default_res.context["franja_selected_id"])
+
+        scoring_res = self.client.get(scoring_url, {"franja": self.franja_3.id})
+        self.assertEqual(scoring_res.status_code, 200)
+        self.assertEqual(scoring_res.context["franja_selected_id"], self.franja_3.id)
+
+        app_key = str(self.comp_app.id)
+        self.assertEqual(
+            scoring_res.context["rotation_groups_by_app"].get(app_key),
+            [self.ins_1.grup_competicio_id],
         )
-        self.assertIn(
-            f'href="?ex=3&group={self.ins_1.grup_competicio_id}&franja={self.franja_3.id}"',
-            body,
-        )
+
+        rank_map = scoring_res.context["rotation_rank_map"]
+        self.assertEqual(rank_map.get(f"{self.comp_app.id}|{self.ins_3.id}"), 1)
+        self.assertEqual(rank_map.get(f"{self.comp_app.id}|{self.ins_2.id}"), 2)
+        self.assertEqual(rank_map.get(f"{self.comp_app.id}|{self.ins_1.id}"), 3)
 
     def test_out_of_program_visibility_toggle_controls_notes_and_judge_views(self):
         extra_group = GrupCompeticio.objects.create(
@@ -4086,6 +4155,147 @@ class ClassificacioMatrixScalarTests(_BaseTrampoliDataMixin, TestCase):
         body = res.json()
         self.assertFalse(body.get("ok"))
         self.assertTrue(any("desempat[0]" in e and "X_copy" in e and "no es puntuable directament" in e for e in body.get("errors", [])))
+
+    def test_classificacio_save_requires_real_camps_for_selected_apps(self):
+        payload = {
+            "nom": "Cfg sense camps reals",
+            "activa": True,
+            "ordre": 1,
+            "tipus": "individual",
+            "schema": {
+                "particions": [],
+                "filtres": {},
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [self.comp_app_a.id]},
+                    "camps_per_aparell": {},
+                    "agregacio_camps": "sum",
+                    "exercicis": {"mode": "tots"},
+                    "exercicis_best_n": 1,
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "ordre": "desc",
+                },
+                "desempat": [],
+                "presentacio": {"top_n": 0, "mostrar_empats": True},
+            },
+        }
+        url = reverse("classificacio_save", kwargs={"pk": self.comp.id})
+        res = self.client.post(url, data=json.dumps(payload), content_type="application/json")
+        self.assertEqual(res.status_code, 400)
+        body = res.json()
+        self.assertFalse(body.get("ok"))
+        self.assertTrue(any("camps_per_aparell" in e and "camp real" in e for e in body.get("errors", [])))
+
+    def test_classificacio_save_rejects_invalid_raw_column_field(self):
+        ScoringSchema.objects.create(
+            aparell=self.app_a,
+            schema={
+                "fields": [
+                    {"code": "E_total", "label": "Execucio", "type": "number"},
+                ],
+                "computed": [],
+            },
+        )
+
+        payload = {
+            "nom": "Cfg raw invalid",
+            "activa": True,
+            "ordre": 1,
+            "tipus": "individual",
+            "schema": {
+                "particions": [],
+                "filtres": {},
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [self.comp_app_a.id]},
+                    "camps_per_aparell": {str(self.comp_app_a.id): ["E_total"]},
+                    "agregacio_camps": "sum",
+                    "exercicis": {"mode": "tots"},
+                    "exercicis_best_n": 1,
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "ordre": "desc",
+                },
+                "desempat": [],
+                "presentacio": {
+                    "top_n": 0,
+                    "mostrar_empats": True,
+                    "columnes": [
+                        {
+                            "type": "raw",
+                            "key": "raw_exec",
+                            "label": "Exec",
+                            "align": "right",
+                            "decimals": 3,
+                            "source": {
+                                "aparell_id": self.comp_app_a.id,
+                                "exercici": 1,
+                                "camp": "EX",
+                                "jutges": {"ids": []},
+                            },
+                        }
+                    ],
+                },
+            },
+        }
+        url = reverse("classificacio_save", kwargs={"pk": self.comp.id})
+        res = self.client.post(url, data=json.dumps(payload), content_type="application/json")
+        self.assertEqual(res.status_code, 400)
+        body = res.json()
+        self.assertFalse(body.get("ok"))
+        self.assertTrue(any("presentacio.columnes[0]" in e and "'EX'" in e for e in body.get("errors", [])))
+
+    def test_classificacio_save_keeps_tie_schema_canonical_without_legacy_camp(self):
+        ScoringSchema.objects.create(
+            aparell=self.app_a,
+            schema={
+                "fields": [
+                    {"code": "E_total", "label": "Execucio", "type": "number"},
+                ],
+                "computed": [],
+            },
+        )
+
+        payload = {
+            "nom": "Cfg canonical tie",
+            "activa": True,
+            "ordre": 1,
+            "tipus": "individual",
+            "schema": {
+                "particions": [],
+                "filtres": {},
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [self.comp_app_a.id]},
+                    "camps_per_aparell": {str(self.comp_app_a.id): ["E_total"]},
+                    "agregacio_camps": "sum",
+                    "exercicis": {"mode": "tots"},
+                    "exercicis_best_n": 1,
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "ordre": "desc",
+                },
+                "desempat": [
+                    {
+                        "camps": ["E_total"],
+                        "agregacio_camps": "hereta",
+                        "ordre": "desc",
+                        "scope": {
+                            "aparells": {"mode": "hereta"},
+                            "exercicis": {"mode": "hereta"},
+                        },
+                    }
+                ],
+                "presentacio": {"top_n": 0, "mostrar_empats": True},
+            },
+        }
+        url = reverse("classificacio_save", kwargs={"pk": self.comp.id})
+        res = self.client.post(url, data=json.dumps(payload), content_type="application/json")
+        self.assertEqual(res.status_code, 200)
+        cfg = ClassificacioConfig.objects.get(pk=res.json()["id"])
+        self.assertNotIn("camp", cfg.schema.get("puntuacio") or {})
+        self.assertNotIn("agregacio", cfg.schema.get("puntuacio") or {})
+        self.assertNotIn("best_n", cfg.schema.get("puntuacio") or {})
+        self.assertEqual((cfg.schema.get("desempat") or [])[0].get("camps"), ["E_total"])
+        self.assertNotIn("camp", (cfg.schema.get("desempat") or [])[0])
 
     def test_classificacio_save_accepts_row_compute_by_judge_when_single_judge(self):
         schema_obj = {
@@ -5872,6 +6082,124 @@ class ClassificacioTemplateFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertContains(res, 'data-help-key="global_overview"')
         self.assertContains(res, 'data-help-key="victories_overview"')
         self.assertNotContains(res, '<option value="entitat">Per entitat</option>', html=True)
+
+    def test_classificacions_home_sanitizes_legacy_field_refs_for_builder(self):
+        schema = json.loads(json.dumps(self.cfg_source.schema or {}))
+        schema["puntuacio"]["camps_per_aparell"] = {
+            str(self.source_app.id): ["E_total", "ex"],
+        }
+        schema["desempat"] = [
+            {
+                "camp": "ex",
+                "camps": ["ex"],
+                "agregacio_camps": "hereta",
+                "ordre": "desc",
+                "scope": {
+                    "aparells": {"mode": "hereta"},
+                    "exercicis": {"mode": "hereta"},
+                },
+            },
+            {
+                "camp": "E_total",
+                "camps": ["E_total"],
+                "agregacio_camps": "hereta",
+                "ordre": "desc",
+                "scope": {
+                    "aparells": {"mode": "hereta"},
+                    "exercicis": {"mode": "hereta"},
+                },
+            },
+        ]
+        schema["puntuacio"]["victories"] = {
+            "punts_victoria": 1,
+            "punts_empat": 0.5,
+            "sense_nota_mode": "skip",
+            "mode_camps": "agregat",
+            "mode_exercicis": "agregat",
+            "mode_seleccio_exercicis_camps_separats": "per_camp",
+            "agregacio_victories_camps": "sum",
+            "agregacio_victories_exercicis": "sum",
+            "desempat_comparacio": [
+                {
+                    "camp": "ex",
+                    "camps": ["ex"],
+                    "agregacio_camps": "hereta",
+                    "ordre": "desc",
+                    "scope": {"exercicis": {"mode": "hereta"}},
+                },
+                {
+                    "camp": "E_total",
+                    "camps": ["E_total"],
+                    "agregacio_camps": "hereta",
+                    "ordre": "desc",
+                    "scope": {"exercicis": {"mode": "hereta"}},
+                },
+            ],
+        }
+        schema["presentacio"]["columnes"] = [
+            {"type": "builtin", "key": "participant", "label": "Nom", "align": "left"},
+            {
+                "type": "raw",
+                "key": "raw_valid",
+                "label": "Valid",
+                "align": "right",
+                "decimals": 3,
+                "source": {
+                    "aparell_id": self.source_app.id,
+                    "exercici": 1,
+                    "camp": "E_total",
+                    "jutges": {"ids": []},
+                },
+            },
+            {
+                "type": "raw",
+                "key": "raw_legacy",
+                "label": "Legacy",
+                "align": "right",
+                "decimals": 3,
+                "source": {
+                    "aparell_id": self.source_app.id,
+                    "exercici": 1,
+                    "camp": "ex",
+                    "jutges": {"ids": []},
+                },
+            },
+        ]
+        self.cfg_source.schema = schema
+        self.cfg_source.save(update_fields=["schema"])
+
+        self.client.force_login(self.editor_user)
+        url = reverse("classificacions_home", kwargs={"pk": self.comp_source.id})
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, 200)
+
+        cfg_payload = next(cfg for cfg in res.context["cfgs"] if cfg["id"] == self.cfg_source.id)
+        sanitized = cfg_payload["schema"]
+        punt = sanitized.get("puntuacio") or {}
+        self.assertNotIn("camp", punt)
+        self.assertNotIn("agregacio", punt)
+        self.assertNotIn("best_n", punt)
+        self.assertEqual((punt.get("camps_per_aparell") or {}).get(str(self.source_app.id)), ["E_total"])
+
+        desempat = sanitized.get("desempat") or []
+        self.assertEqual(len(desempat), 1)
+        self.assertEqual(desempat[0].get("camps"), ["E_total"])
+        self.assertNotIn("camp", desempat[0])
+
+        compare = (((punt.get("victories") or {}).get("desempat_comparacio")) or [])
+        self.assertEqual(len(compare), 1)
+        self.assertEqual(compare[0].get("camps"), ["E_total"])
+        self.assertNotIn("camp", compare[0])
+
+        raw_columns = [c for c in ((sanitized.get("presentacio") or {}).get("columnes") or []) if c.get("type") == "raw"]
+        self.assertEqual(len(raw_columns), 1)
+        self.assertEqual((((raw_columns[0].get("source") or {}).get("camp"))), "E_total")
+
+        self.cfg_source.refresh_from_db()
+        original = self.cfg_source.schema or {}
+        self.assertEqual((original.get("puntuacio") or {}).get("camps_per_aparell", {}).get(str(self.source_app.id)), ["E_total", "ex"])
+        self.assertEqual(len(original.get("desempat") or []), 2)
+        self.assertEqual(len((((original.get("puntuacio") or {}).get("victories") or {}).get("desempat_comparacio")) or []), 2)
 
 
 class GlobalClassificacioTemplateManagementTests(_BaseTrampoliDataMixin, TestCase):

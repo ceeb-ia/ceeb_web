@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>500 | Error intern del servidor</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --page-bg: #f4f6f8;
+      --card-bg: #ffffff;
+      --text: #1f2933;
+      --muted: #52606d;
+      --border: #d9e2ec;
+      --accent: #0b69a3;
+      --accent-hover: #084c79;
+      --shadow: 0 14px 40px rgba(15, 23, 42, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      font-family: Arial, sans-serif;
+      background:
+        radial-gradient(circle at top, rgba(11, 105, 163, 0.08), transparent 36%),
+        var(--page-bg);
+      color: var(--text);
+    }
+
+    .card {
+      width: min(100%, 720px);
+      padding: 40px 32px;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: var(--card-bg);
+      box-shadow: var(--shadow);
+      text-align: center;
+    }
+
+    .eyebrow {
+      margin: 0 0 10px;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+    }
+
+    h1 {
+      margin: 0 0 14px;
+      font-size: clamp(30px, 4vw, 40px);
+      line-height: 1.1;
+    }
+
+    p {
+      margin: 0 auto;
+      max-width: 520px;
+      font-size: 18px;
+      line-height: 1.6;
+      color: var(--muted);
+    }
+
+    .actions {
+      margin-top: 28px;
+    }
+
+    .button {
+      display: inline-block;
+      padding: 12px 22px;
+      border-radius: 999px;
+      background: var(--accent);
+      color: #ffffff;
+      text-decoration: none;
+      font-weight: 700;
+    }
+
+    .button:hover,
+    .button:focus {
+      background: var(--accent-hover);
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <p class="eyebrow">ERROR 500</p>
+    <h1>S'ha produït un error intern</h1>
+    <p>
+      La pàgina no s'ha pogut carregar correctament. Torna-ho a provar d'aquí una estona o torna a l'inici.
+    </p>
+    <div class="actions">
+      <a class="button" href="/">Tornar a l'inici</a>
+    </div>
+  </main>
+</body>
+</html>

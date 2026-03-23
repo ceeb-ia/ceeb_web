@@ -696,6 +696,12 @@ def judge_portal(request, token):
             block = build_group_block(g)
             out_of_program_group_blocks.append(block)
             ins_list.extend(block["list"])
+    if not programmed_group_blocks and not out_of_program_group_blocks and grouped:
+        fallback_group_ids = sorted(grouped.keys(), key=lambda group_id: (group_id == 0, group_id))
+        for g in fallback_group_ids:
+            block = build_group_block(g)
+            programmed_group_blocks.append(block)
+            ins_list.extend(block["list"])
 
     visible_group_keys = [block["key"] for block in programmed_group_blocks]
     visible_group_keys.extend(block["key"] for block in out_of_program_group_blocks)
@@ -729,16 +735,21 @@ def judge_portal(request, token):
     exercici_default = _clamp_exercici_for_aparell(comp_aparell, request.GET.get("ex"))
     scores_payload = {}
     for ins in ins_list:
-        e = entry_map.get((ins.id, exercici_default))
+        exercise_map = {}
+        for ex in exercicis:
+            e = entry_map.get((ins.id, ex))
+            exercise_map[str(ex)] = {
+                "inputs": (
+                    _filter_inputs_for_allowed_codes(e.inputs, allowed_input_codes)
+                    if e and isinstance(e.inputs, dict)
+                    else {}
+                ),
+                "outputs": (e.outputs if e and isinstance(e.outputs, dict) else {}),
+                "total": (float(e.total) if e else 0.0),
+                "updated_at": (e.updated_at.isoformat() if e else None),
+            }
         scores_payload[str(ins.id)] = {
-            "inputs": (
-                _filter_inputs_for_allowed_codes(e.inputs, allowed_input_codes)
-                if e and isinstance(e.inputs, dict)
-                else {}
-            ),
-            "outputs": (e.outputs if e and isinstance(e.outputs, dict) else {}),
-            "total": (float(e.total) if e else 0.0),
-            "updated_at": (e.updated_at.isoformat() if e else None),
+            "exercises": exercise_map,
         }
 
     save_url = reverse("judge_save_partial", kwargs={"token": str(tok.id)})
@@ -807,7 +818,17 @@ def judge_updates(request, token):
 
     competicio = tok.competicio
     comp_aparell = tok.comp_aparell
-    exercici = _clamp_exercici_for_aparell(comp_aparell, request.GET.get("exercici") or request.GET.get("ex"))
+    raw_exercicis = request.GET.getlist("exercici")
+    if not raw_exercicis:
+        single_exercici = request.GET.get("exercici") or request.GET.get("ex")
+        raw_exercicis = [single_exercici] if single_exercici not in (None, "") else []
+    if raw_exercicis:
+        exercicis = unique_ordered(
+            _clamp_exercici_for_aparell(comp_aparell, raw_exercici)
+            for raw_exercici in raw_exercicis
+        )
+    else:
+        exercicis = [_clamp_exercici_for_aparell(comp_aparell, request.GET.get("exercici") or request.GET.get("ex"))]
     permissions = _normalize_permissions(tok.permissions)
     allowed_input_codes = _allowed_input_codes_from_permissions(permissions)
 
@@ -822,7 +843,7 @@ def judge_updates(request, token):
         .filter(
             competicio=competicio,
             comp_aparell=comp_aparell,
-            exercici=exercici,
+            exercici__in=exercicis,
             updated_at__gt=dt,
         )
         .exclude(inscripcio_id__in=excluded_ins_ids)

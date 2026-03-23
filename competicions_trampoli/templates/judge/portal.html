@@ -123,6 +123,62 @@
     .judge-support-bubble.organization{ background:#d1e7dd; margin-left:auto; }
     .judge-support-bubble.system{ background:#e9ecef; margin-left:auto; margin-right:auto; }
     .judge-support-meta{ color:#6c757d; font-size:.72rem; margin-top:.1rem; display:block; }
+    .judge-exercise-chip-row{ display:flex; flex-wrap:wrap; gap:.45rem; margin-top:.7rem; }
+    .judge-exercise-chip{
+      border:1px solid #d0d7e2;
+      background:#fff;
+      color:#334155;
+      border-radius:999px;
+      padding:.25rem .7rem;
+      font-size:.82rem;
+      font-weight:600;
+      transition:background-color .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease;
+    }
+    .judge-exercise-chip:hover{ background:#f8fafc; }
+    .judge-exercise-chip.is-open{
+      background:#e8f1ff;
+      border-color:#8ab4ff;
+      color:#0d6efd;
+      box-shadow:0 0 0 1px rgba(13,110,253,.08);
+    }
+    .judge-exercise-chip.is-saved{
+      border-color:#8ad0a2;
+      color:#157347;
+    }
+    .judge-exercise-chip.is-dirty{
+      border-color:#f0ad4e;
+      color:#9a6700;
+      background:#fff8e1;
+    }
+    .judge-exercise-chip.has-video::after{
+      content:"";
+      display:inline-block;
+      width:.45rem;
+      height:.45rem;
+      border-radius:999px;
+      background:#0d6efd;
+      margin-left:.4rem;
+      vertical-align:middle;
+    }
+    .judge-exercise-panel{
+      border:1px solid #e5e7eb;
+      border-radius:.6rem;
+      background:#fbfcfe;
+      padding:.75rem;
+      margin-top:.75rem;
+    }
+    .judge-exercise-panel.d-none{ display:none !important; }
+    .judge-exercise-panel-head{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:.75rem;
+      margin-bottom:.65rem;
+    }
+    .judge-exercise-panel-title{ font-weight:700; color:#0f172a; }
+    .judge-exercise-panel-subtitle{ color:#6c757d; font-size:.8rem; margin-top:.1rem; }
+    .judge-exercise-actions{ display:flex; justify-content:flex-end; gap:.5rem; margin-top:.75rem; }
+    .judge-video-disabled{ margin-top:.5rem; }
   </style>
 
   <div class="card-surface">
@@ -133,28 +189,17 @@
         <div class="text-muted small">
           Competició: <span class="fw-semibold">{{ competicio.nom }}</span> ·
           Aparell: <span class="fw-semibold">{{ comp_aparell.aparell.nom }}</span> ·
-          Exercici {{ exercici }}
         </div>
         {% if token_obj.label %}
           <div class="text-muted small">Token: <span class="fw-semibold">{{ token_obj.label }}</span></div>
         {% endif %}
         {% endif %}
-        {% if exercicis|length > 1 %}
-          <div class="mt-2 d-flex flex-wrap" style="gap:6px;">
-            {% for ex in exercicis %}
-              <a
-                class="btn btn-sm {% if ex == exercici %}btn-primary{% else %}btn-outline-primary{% endif %}"
-                data-exercise-link="{{ ex }}"
-                href="?ex={{ ex }}{% if active_group_key != None %}&group={{ active_group_key }}{% endif %}{% if franja_override_id %}&franja={{ franja_override_id }}{% endif %}"
-              >
-                Exercici {{ ex }}
-              </a>
-            {% endfor %}
-          </div>
-        {% endif %}
         <div class="mt-2">
           <div class="judge-meta">
             Ordre segons la franja assignada a cada grup.
+            {% if exercicis|length > 1 %}
+              Exercici inicial obert: {{ exercici }}.
+            {% endif %}
             {% if franja_override %}
               Override actiu: {{ franja_override.titol|default:"Franja" }} · {{ franja_override.hora_inici|time:"H:i" }}-{{ franja_override.hora_fi|time:"H:i" }}.
             {% endif %}
@@ -250,32 +295,49 @@
                       <div class="judge-meta">
                         {{ bloc.label }} · Ordre {{ ins.rotation_order_display|default_if_none:ins.ordre_sortida }}{% if ins.rotation_base_order_display %} · Base {{ ins.rotation_base_order_display }}{% endif %}{% if bloc.franja_label %} · {{ bloc.franja_label }}{% endif %}
                       </div>
+                      <div class="judge-exercise-chip-row">
+                        {% for ex in exercicis %}
+                        <button type="button" class="judge-exercise-chip" data-exercise-chip="1" data-ins-id="{{ ins.id }}" data-exercici="{{ ex }}">Ex{{ ex }}</button>
+                        {% endfor %}
+                      </div>
                     </div>
-                    <div class="judge-meta" id="status-{{ ins.id }}"></div>
+                    <div class="judge-meta d-none" id="status-{{ ins.id }}"></div>
                   </div>
 
-                  <div class="mt-2" id="editor-{{ ins.id }}"></div>
-                  {% if video_capture_enabled %}
-                  <div class="mt-2" id="video-panel-{{ ins.id }}" data-video-panel="1" data-ins-id="{{ ins.id }}">
-                    <div class="d-flex align-items-center flex-wrap" style="gap:8px;">
-                      <button type="button" class="btn btn-sm btn-outline-danger" id="video-rec-btn-{{ ins.id }}" onclick="toggleRecord('{{ ins.id }}')">Gravar</button>
-                      <button type="button" class="btn btn-sm btn-outline-primary" id="video-upload-btn-{{ ins.id }}" onclick="uploadRecorded('{{ ins.id }}')" disabled>Pujar</button>
-                      <button type="button" class="btn btn-sm btn-outline-secondary" id="video-delete-btn-{{ ins.id }}" onclick="deleteVideo('{{ ins.id }}')" disabled>Regravar</button>
-                      <span class="judge-meta video-status" id="video-status-{{ ins.id }}">Sense video</span>
-                    </div>
-                    <video id="video-preview-{{ ins.id }}" class="judge-video-preview mt-2" controls playsinline style="display:none;"></video>
-                  </div>
-                  {% else %}
-                  <div class="mt-2">
-                    <span class="judge-meta">Gravacio desactivada per aquest QR.</span>
-                  </div>
-                  {% endif %}
-
-                  <div class="d-flex justify-content-end mt-2" style="gap:8px;">
-                    {% if not judge_kiosk %}
-                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="copyPrev('{{ ins.id }}')">Copia anterior</button>
-                    {% endif %}
-                    <button type="button" class="btn btn-sm btn-primary" onclick="saveNow('{{ ins.id }}')">Desa</button>
+                  <div class="mt-2" id="editor-{{ ins.id }}" data-exercise-host="1" data-ins-id="{{ ins.id }}">
+                    {% for ex in exercicis %}
+                    <section class="judge-exercise-panel{% if ex != exercici %} d-none{% endif %}" data-exercise-panel="1" data-ins-id="{{ ins.id }}" data-exercici="{{ ex }}">
+                      <div class="judge-exercise-panel-head">
+                        <div>
+                          <div class="judge-exercise-panel-title">Exercici {{ ex }}</div>
+                          <div class="judge-exercise-panel-subtitle">Puntuacio i video agrupats en aquest exercici.</div>
+                        </div>
+                        <div class="judge-meta" id="status-{{ ins.id }}-{{ ex }}"></div>
+                      </div>
+                      <div id="editor-inner-{{ ins.id }}-{{ ex }}"></div>
+                      {% if video_capture_enabled %}
+                      <div class="mt-2" id="video-panel-{{ ins.id }}-{{ ex }}" data-video-panel-inner="1" data-ins-id="{{ ins.id }}" data-exercici="{{ ex }}">
+                        <div class="d-flex align-items-center flex-wrap" style="gap:8px;">
+                          <button type="button" class="btn btn-sm btn-outline-danger" id="video-rec-btn-{{ ins.id }}-{{ ex }}" onclick="toggleRecord('{{ ins.id }}', '{{ ex }}')">Gravar</button>
+                          <button type="button" class="btn btn-sm btn-outline-primary" id="video-upload-btn-{{ ins.id }}-{{ ex }}" onclick="uploadRecorded('{{ ins.id }}', '{{ ex }}')" disabled>Pujar</button>
+                          <button type="button" class="btn btn-sm btn-outline-secondary" id="video-delete-btn-{{ ins.id }}-{{ ex }}" onclick="deleteVideo('{{ ins.id }}', '{{ ex }}')" disabled>Regravar</button>
+                          <span class="judge-meta video-status" id="video-status-{{ ins.id }}-{{ ex }}">Sense video</span>
+                        </div>
+                        <video id="video-preview-{{ ins.id }}-{{ ex }}" class="judge-video-preview mt-2" controls playsinline style="display:none;"></video>
+                      </div>
+                      {% else %}
+                      <div class="judge-video-disabled">
+                        <span class="judge-meta">Gravacio desactivada per aquest QR.</span>
+                      </div>
+                      {% endif %}
+                      <div class="judge-exercise-actions">
+                        {% if not judge_kiosk %}
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="copyPrev('{{ ins.id }}', '{{ ex }}')">Copia anterior</button>
+                        {% endif %}
+                        <button type="button" class="btn btn-sm btn-primary" onclick="saveNow('{{ ins.id }}', '{{ ex }}')">Desa</button>
+                      </div>
+                    </section>
+                    {% endfor %}
                   </div>
                 </div>
               {% endfor %}
@@ -291,32 +353,49 @@
                       <div class="judge-meta">
                         Fora de programa · {{ bloc.label }} · Ordre {{ ins.rotation_order_display|default_if_none:ins.ordre_sortida }}{% if ins.rotation_base_order_display %} · Base {{ ins.rotation_base_order_display }}{% endif %}{% if bloc.franja_label %} · {{ bloc.franja_label }}{% endif %}
                       </div>
+                      <div class="judge-exercise-chip-row">
+                        {% for ex in exercicis %}
+                        <button type="button" class="judge-exercise-chip" data-exercise-chip="1" data-ins-id="{{ ins.id }}" data-exercici="{{ ex }}">Ex{{ ex }}</button>
+                        {% endfor %}
+                      </div>
                     </div>
-                    <div class="judge-meta" id="status-{{ ins.id }}"></div>
+                    <div class="judge-meta d-none" id="status-{{ ins.id }}"></div>
                   </div>
 
-                  <div class="mt-2" id="editor-{{ ins.id }}"></div>
-                  {% if video_capture_enabled %}
-                  <div class="mt-2" id="video-panel-{{ ins.id }}" data-video-panel="1" data-ins-id="{{ ins.id }}">
-                    <div class="d-flex align-items-center flex-wrap" style="gap:8px;">
-                      <button type="button" class="btn btn-sm btn-outline-danger" id="video-rec-btn-{{ ins.id }}" onclick="toggleRecord('{{ ins.id }}')">Gravar</button>
-                      <button type="button" class="btn btn-sm btn-outline-primary" id="video-upload-btn-{{ ins.id }}" onclick="uploadRecorded('{{ ins.id }}')" disabled>Pujar</button>
-                      <button type="button" class="btn btn-sm btn-outline-secondary" id="video-delete-btn-{{ ins.id }}" onclick="deleteVideo('{{ ins.id }}')" disabled>Regravar</button>
-                      <span class="judge-meta video-status" id="video-status-{{ ins.id }}">Sense video</span>
-                    </div>
-                    <video id="video-preview-{{ ins.id }}" class="judge-video-preview mt-2" controls playsinline style="display:none;"></video>
-                  </div>
-                  {% else %}
-                  <div class="mt-2">
-                    <span class="judge-meta">Gravacio desactivada per aquest QR.</span>
-                  </div>
-                  {% endif %}
-
-                  <div class="d-flex justify-content-end mt-2" style="gap:8px;">
-                    {% if not judge_kiosk %}
-                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="copyPrev('{{ ins.id }}')">Copia anterior</button>
-                    {% endif %}
-                    <button type="button" class="btn btn-sm btn-primary" onclick="saveNow('{{ ins.id }}')">Desa</button>
+                  <div class="mt-2" id="editor-{{ ins.id }}" data-exercise-host="1" data-ins-id="{{ ins.id }}">
+                    {% for ex in exercicis %}
+                    <section class="judge-exercise-panel{% if ex != exercici %} d-none{% endif %}" data-exercise-panel="1" data-ins-id="{{ ins.id }}" data-exercici="{{ ex }}">
+                      <div class="judge-exercise-panel-head">
+                        <div>
+                          <div class="judge-exercise-panel-title">Exercici {{ ex }}</div>
+                          <div class="judge-exercise-panel-subtitle">Puntuacio i video agrupats en aquest exercici.</div>
+                        </div>
+                        <div class="judge-meta" id="status-{{ ins.id }}-{{ ex }}"></div>
+                      </div>
+                      <div id="editor-inner-{{ ins.id }}-{{ ex }}"></div>
+                      {% if video_capture_enabled %}
+                      <div class="mt-2" id="video-panel-{{ ins.id }}-{{ ex }}" data-video-panel-inner="1" data-ins-id="{{ ins.id }}" data-exercici="{{ ex }}">
+                        <div class="d-flex align-items-center flex-wrap" style="gap:8px;">
+                          <button type="button" class="btn btn-sm btn-outline-danger" id="video-rec-btn-{{ ins.id }}-{{ ex }}" onclick="toggleRecord('{{ ins.id }}', '{{ ex }}')">Gravar</button>
+                          <button type="button" class="btn btn-sm btn-outline-primary" id="video-upload-btn-{{ ins.id }}-{{ ex }}" onclick="uploadRecorded('{{ ins.id }}', '{{ ex }}')" disabled>Pujar</button>
+                          <button type="button" class="btn btn-sm btn-outline-secondary" id="video-delete-btn-{{ ins.id }}-{{ ex }}" onclick="deleteVideo('{{ ins.id }}', '{{ ex }}')" disabled>Regravar</button>
+                          <span class="judge-meta video-status" id="video-status-{{ ins.id }}-{{ ex }}">Sense video</span>
+                        </div>
+                        <video id="video-preview-{{ ins.id }}-{{ ex }}" class="judge-video-preview mt-2" controls playsinline style="display:none;"></video>
+                      </div>
+                      {% else %}
+                      <div class="judge-video-disabled">
+                        <span class="judge-meta">Gravacio desactivada per aquest QR.</span>
+                      </div>
+                      {% endif %}
+                      <div class="judge-exercise-actions">
+                        {% if not judge_kiosk %}
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="copyPrev('{{ ins.id }}', '{{ ex }}')">Copia anterior</button>
+                        {% endif %}
+                        <button type="button" class="btn btn-sm btn-primary" onclick="saveNow('{{ ins.id }}', '{{ ex }}')">Desa</button>
+                      </div>
+                    </section>
+                    {% endfor %}
                   </div>
                 </div>
               {% endfor %}
@@ -396,9 +475,10 @@
   const VIDEO_MAX_DURATION_SECONDS = Number("{{ video_max_duration_seconds|default:90 }}") || 90;
   const VIDEO_MAX_SIZE_BYTES = Number("{{ video_max_size_bytes|default:125829120 }}") || (120 * 1024 * 1024);
   const SUPPORT_DEFAULT_COOLDOWN_SECONDS = 30;
-  const EXERCICI = {{ exercici }};
+  const EXERCISES = {{ exercicis|safe }};
+  const EXERCICI_HINT = {{ exercici }};
 
-  let currentRecordingInsId = null;
+  let currentRecordingEntryKey = null;
   let lastSince = UPDATES_CURSOR_INIT || new Date().toISOString();
   let supportSince = null;
   let supportConversation = null;
@@ -406,20 +486,49 @@
   let supportCooldownRemaining = 0;
   let supportInitialLoaded = false;
   let supportLocalUnread = 0;
-  const recordedVideoByIns = {};
+  const recordedVideoByEntry = {};
   const supportMessages = [];
   const DRAFTS = {};
-  const DIRTY_BY_INS = {};
+  const DIRTY_BY_ENTRY = {};
 
   function schemaField(code){
     const fields = (SCHEMA && Array.isArray(SCHEMA.fields)) ? SCHEMA.fields : [];
     return fields.find(f => f && f.code === code) || null;
   }
-  function getEntry(insId){
-    return SCORES[String(insId)] || {inputs:{}, outputs:{}, total:0, updated_at:null};
+  function entryKey(insId, exercici){
+    return `${String(insId)}:${String(exercici)}`;
   }
-  function getServerInput(insId, code){
-    const entry = getEntry(insId);
+  function exerciseKey(exercici){
+    return String(exercici);
+  }
+  function allExerciseKeys(){
+    return Array.isArray(EXERCISES) ? EXERCISES.map((ex) => exerciseKey(ex)) : [];
+  }
+  function getInsScoreBox(insId){
+    const key = String(insId);
+    if(!SCORES[key] || typeof SCORES[key] !== "object") SCORES[key] = {};
+    if(!SCORES[key].exercises || typeof SCORES[key].exercises !== "object") SCORES[key].exercises = {};
+    return SCORES[key];
+  }
+  function getEntry(insId, exercici){
+    const box = getInsScoreBox(insId);
+    const key = exerciseKey(exercici);
+    if(!box.exercises[key] || typeof box.exercises[key] !== "object"){
+      box.exercises[key] = {inputs:{}, outputs:{}, total:0, updated_at:null};
+    }
+    return box.exercises[key];
+  }
+  function setEntry(insId, exercici, nextEntry){
+    const box = getInsScoreBox(insId);
+    box.exercises[exerciseKey(exercici)] = {
+      inputs: (nextEntry && typeof nextEntry.inputs === "object") ? nextEntry.inputs : {},
+      outputs: (nextEntry && typeof nextEntry.outputs === "object") ? nextEntry.outputs : {},
+      total: Number.isFinite(Number(nextEntry && nextEntry.total)) ? Number(nextEntry.total) : 0,
+      updated_at: (nextEntry && nextEntry.updated_at) || null,
+    };
+  }
+  function getServerInput(insId, exercici, code){
+    const entry = getEntry(insId, exercici);
     const inputs = (entry.inputs && typeof entry.inputs === "object") ? entry.inputs : {};
     return inputs[code];
   }
@@ -428,40 +537,40 @@
     if(typeof v !== "object") return v;
     try{ return JSON.parse(JSON.stringify(v)); }catch(_e){ return v; }
   }
-  function getDraft(insId){
-    const key = String(insId);
+  function getDraft(insId, exercici){
+    const key = entryKey(insId, exercici);
     if(!DRAFTS[key] || typeof DRAFTS[key] !== "object") DRAFTS[key] = {};
     return DRAFTS[key];
   }
-  function clearDraft(insId){
-    delete DRAFTS[String(insId)];
+  function clearDraft(insId, exercici){
+    delete DRAFTS[entryKey(insId, exercici)];
   }
-  function getDirtySet(insId){
-    const key = String(insId);
-    if(!DIRTY_BY_INS[key]) DIRTY_BY_INS[key] = new Set();
-    return DIRTY_BY_INS[key];
+  function getDirtySet(insId, exercici){
+    const key = entryKey(insId, exercici);
+    if(!DIRTY_BY_ENTRY[key]) DIRTY_BY_ENTRY[key] = new Set();
+    return DIRTY_BY_ENTRY[key];
   }
-  function markDirty(insId, permKey){
-    getDirtySet(insId).add(String(permKey || ""));
+  function markDirty(insId, exercici, permKey){
+    getDirtySet(insId, exercici).add(String(permKey || ""));
   }
-  function clearDirty(insId){
-    delete DIRTY_BY_INS[String(insId)];
+  function clearDirty(insId, exercici){
+    delete DIRTY_BY_ENTRY[entryKey(insId, exercici)];
   }
-  function hasDirty(insId){
-    const set = DIRTY_BY_INS[String(insId)];
+  function hasDirty(insId, exercici){
+    const set = DIRTY_BY_ENTRY[entryKey(insId, exercici)];
     return !!(set && set.size);
   }
-  function isEditingIns(insId){
-    const wrap = document.getElementById(`editor-${insId}`);
+  function isEditingEntry(insId, exercici){
+    const wrap = document.getElementById(`editor-inner-${insId}-${exercici}`);
     const ae = document.activeElement;
     return !!(wrap && ae && wrap.contains(ae));
   }
-  function effectiveInput(insId, code){
-    const draft = DRAFTS[String(insId)];
+  function effectiveInput(insId, exercici, code){
+    const draft = DRAFTS[entryKey(insId, exercici)];
     if(draft && Object.prototype.hasOwnProperty.call(draft, code)){
       return draft[code];
     }
-    return getServerInput(insId, code);
+    return getServerInput(insId, exercici, code);
   }
   function normalizePerm(p){
     return {
@@ -487,11 +596,30 @@
   }).filter(p => !!p.field_code);
   const PERM_FIELD_CODES = Array.from(new Set(PERM_DESCS.map(p => String(p.field_code || ""))).values()).filter(Boolean);
   const NAV_LINKS_BY_INS = {};
-  function updateDraftValue(insId, code, nextValue, perm){
-    const draft = getDraft(insId);
+  function getVideoState(insId, exercici){
+    const key = entryKey(insId, exercici);
+    if(!recordedVideoByEntry[key]){
+      recordedVideoByEntry[key] = {
+        pendingBlob: null,
+        pendingDuration: null,
+        pendingMimeType: null,
+        hasStored: false,
+        loaded: false,
+        busy: false,
+        stream: null,
+        recorder: null,
+        chunks: [],
+        localObjectUrl: null,
+      };
+    }
+    return recordedVideoByEntry[key];
+  }
+  function updateDraftValue(insId, exercici, code, nextValue, perm){
+    const draft = getDraft(insId, exercici);
     draft[code] = nextValue;
-    markDirty(insId, perm.key);
-    setStatus(insId, "", "Pendent de desar...");
+    markDirty(insId, exercici, perm.key);
+    setStatus(insId, exercici, "", "Pendent de desar...");
+    refreshExerciseChipStates(insId);
   }
 
   function decimalsStep(dec){
@@ -500,8 +628,8 @@
     return "0." + "0".repeat(Math.max(0, d-1)) + "1";
   }
 
-  function setStatus(insId, kind, msg){
-    const el = document.getElementById(`status-${insId}`);
+  function setStatus(insId, exercici, kind, msg){
+    const el = document.getElementById(`status-${insId}-${exercici}`);
     if(!el) return;
     el.className = "judge-meta " + (
       kind === "ok" ? "status-ok" : (
@@ -792,18 +920,18 @@
     return !!(window.MediaRecorder && navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
   }
 
-  function getVideoEls(insId){
+  function getVideoEls(insId, exercici){
     return {
-      recBtn: document.getElementById(`video-rec-btn-${insId}`),
-      uploadBtn: document.getElementById(`video-upload-btn-${insId}`),
-      deleteBtn: document.getElementById(`video-delete-btn-${insId}`),
-      status: document.getElementById(`video-status-${insId}`),
-      preview: document.getElementById(`video-preview-${insId}`),
+      recBtn: document.getElementById(`video-rec-btn-${insId}-${exercici}`),
+      uploadBtn: document.getElementById(`video-upload-btn-${insId}-${exercici}`),
+      deleteBtn: document.getElementById(`video-delete-btn-${insId}-${exercici}`),
+      status: document.getElementById(`video-status-${insId}-${exercici}`),
+      preview: document.getElementById(`video-preview-${insId}-${exercici}`),
     };
   }
 
-  function setVideoStatus(insId, kind, text){
-    const els = getVideoEls(insId);
+  function setVideoStatus(insId, exercici, kind, text){
+    const els = getVideoEls(insId, exercici);
     if(!els.status) return;
     const cls = kind === "ok" ? "ok" : kind === "err" ? "err" : kind === "info" ? "info" : "";
     els.status.className = `judge-meta video-status ${cls}`.trim();
@@ -827,26 +955,31 @@
     return "";
   }
 
-  function applyVideoUiState(insId, opts = {}){
-    const els = getVideoEls(insId);
+  function applyVideoUiState(insId, exercici, opts = {}){
+    const els = getVideoEls(insId, exercici);
     if(!els.recBtn || !els.uploadBtn || !els.deleteBtn) return;
 
+    const st = getVideoState(insId, exercici);
     const isRecording = !!opts.isRecording;
     const hasPending = !!opts.hasPending;
     const hasStored = !!opts.hasStored;
     const busy = !!opts.busy;
     const supported = canRecordVideo();
+    const key = entryKey(insId, exercici);
 
-    els.recBtn.disabled = !supported || busy || (!!currentRecordingInsId && currentRecordingInsId !== String(insId));
+    els.recBtn.disabled = !supported || busy || (!!currentRecordingEntryKey && currentRecordingEntryKey !== key);
     els.recBtn.textContent = isRecording ? "Atura" : "Gravar";
     els.recBtn.className = isRecording ? "btn btn-sm btn-danger" : "btn btn-sm btn-outline-danger";
     els.uploadBtn.disabled = !supported || busy || !hasPending || isRecording;
     els.deleteBtn.disabled = busy || isRecording || (!hasPending && !hasStored);
+    st.busy = busy;
+    st.hasStored = hasStored;
+    refreshExerciseChipStates(insId);
   }
 
-  function clearPreviewUrl(insId){
-    const st = recordedVideoByIns[String(insId)];
-    if(st && st.localObjectUrl){
+  function clearPreviewUrl(insId, exercici){
+    const st = getVideoState(insId, exercici);
+    if(st.localObjectUrl){
       try{ URL.revokeObjectURL(st.localObjectUrl); }catch(_e){}
       st.localObjectUrl = null;
     }
@@ -859,11 +992,13 @@
     }catch(_e){}
   }
 
-  async function fetchVideoStatus(insId){
+  async function fetchVideoStatus(insId, exercici, opts = {}){
+    const st = getVideoState(insId, exercici);
+    if(st.loaded && !opts.force) return;
     const url = new URL(VIDEO_STATUS_URL, window.location.origin);
     url.searchParams.set("inscripcio_id", String(insId));
-    url.searchParams.set("exercici", String(EXERCICI));
-    const els = getVideoEls(insId);
+    url.searchParams.set("exercici", String(exercici));
+    const els = getVideoEls(insId, exercici);
     if(!els.recBtn) return;
 
     try{
@@ -873,38 +1008,37 @@
         throw new Error(data.error || "Error carregant estat de video");
       }
 
-      const st = recordedVideoByIns[String(insId)] || {};
+      st.loaded = true;
       st.hasStored = !!data.has_video;
       st.pendingBlob = st.pendingBlob || null;
       st.busy = false;
-      recordedVideoByIns[String(insId)] = st;
 
       if(data.has_video && data.video){
-        clearPreviewUrl(insId);
+        clearPreviewUrl(insId, exercici);
         if(els.preview){
           els.preview.src = data.video.url || "";
           els.preview.style.display = data.video.url ? "" : "none";
         }
-        setVideoStatus(insId, "ok", "Video vinculat");
+        setVideoStatus(insId, exercici, "ok", "Video vinculat");
       } else {
         if(!st.pendingBlob){
           if(els.preview){
             els.preview.removeAttribute("src");
             els.preview.style.display = "none";
           }
-          setVideoStatus(insId, "", "Sense video");
+          setVideoStatus(insId, exercici, "", "Sense video");
         }
       }
 
-      applyVideoUiState(insId, {
+      applyVideoUiState(insId, exercici, {
         isRecording: false,
         hasPending: !!st.pendingBlob,
         hasStored: !!st.hasStored,
         busy: false,
       });
     } catch(e){
-      setVideoStatus(insId, "err", e.message || "Error carregant video");
-      applyVideoUiState(insId, { busy: false });
+      setVideoStatus(insId, exercici, "err", e.message || "Error carregant video");
+      applyVideoUiState(insId, exercici, { busy: false, hasPending: !!st.pendingBlob, hasStored: !!st.hasStored });
     }
   }
 
@@ -925,10 +1059,105 @@
     return true;
   }
 
-  function hasSavedScoreForIns(insId){
-    const entry = getEntry(insId);
+  function hasSavedScoreForEntry(insId, exercici){
+    const entry = getEntry(insId, exercici);
     const inputs = (entry.inputs && typeof entry.inputs === "object") ? entry.inputs : {};
     return PERM_FIELD_CODES.some(code => hasAnySavedValue(inputs[code]));
+  }
+
+  function hasSavedScoreForIns(insId){
+    return allExerciseKeys().some((exercici) => hasSavedScoreForEntry(insId, exercici));
+  }
+
+  function isExerciseOpen(insId, exercici){
+    const panel = document.querySelector(`[data-exercise-panel="1"][data-ins-id="${insId}"][data-exercici="${exercici}"]`);
+    return !!(panel && !panel.classList.contains("d-none"));
+  }
+
+  function refreshExerciseChipStates(insId){
+    const card = document.querySelector(`.judge-card[data-ins-id="${insId}"]`);
+    if(!card) return;
+    card.querySelectorAll('[data-exercise-chip="1"]').forEach((chip) => {
+      const exercici = exerciseKey(chip.dataset.exercici || "");
+      chip.classList.toggle("is-open", isExerciseOpen(insId, exercici));
+      chip.classList.toggle("is-saved", hasSavedScoreForEntry(insId, exercici));
+      chip.classList.toggle("is-dirty", hasDirty(insId, exercici));
+      chip.classList.toggle("has-video", !!getVideoState(insId, exercici).hasStored);
+    });
+  }
+
+  function visibleExercisesForIns(insId){
+    return Array.from(document.querySelectorAll(`[data-exercise-panel="1"][data-ins-id="${insId}"]`))
+      .map((panel) => exerciseKey(panel.dataset.exercici || ""))
+      .filter(Boolean);
+  }
+
+  function selectInitialExerciseForIns(insId){
+    const visibleExercises = visibleExercisesForIns(insId);
+    if(!visibleExercises.length){
+      return exerciseKey(EXERCICI_HINT || EXERCISES[0] || 1);
+    }
+    const hinted = exerciseKey(EXERCICI_HINT);
+    if(visibleExercises.includes(hinted)){
+      return hinted;
+    }
+    const pending = visibleExercises.find((exercici) => !hasSavedScoreForEntry(insId, exercici));
+    return pending || visibleExercises[0];
+  }
+
+  function openExercisePanel(insId, exercici, opts = {}){
+    insId = String(insId);
+    exercici = exerciseKey(exercici);
+    const panels = Array.from(document.querySelectorAll(`[data-exercise-panel="1"][data-ins-id="${insId}"]`));
+    if(!panels.length) return;
+
+    let resolvedExercise = exercici;
+    if(!panels.some((panel) => exerciseKey(panel.dataset.exercici || "") === resolvedExercise)){
+      resolvedExercise = exerciseKey(panels[0].dataset.exercici || "");
+    }
+
+    panels.forEach((panel) => {
+      const panelExercise = exerciseKey(panel.dataset.exercici || "");
+      panel.classList.toggle("d-none", panelExercise !== resolvedExercise);
+    });
+
+    renderEditor(insId, resolvedExercise);
+    refreshExerciseChipStates(insId);
+
+    if(VIDEO_CAPTURE_ENABLED && !opts.skipVideo){
+      const videoState = getVideoState(insId, resolvedExercise);
+      if(!canRecordVideo()){
+        setVideoStatus(insId, resolvedExercise, "err", "Camera no disponible en aquest navegador.");
+        applyVideoUiState(insId, resolvedExercise, {
+          busy: false,
+          hasPending: !!videoState.pendingBlob,
+          hasStored: !!videoState.hasStored,
+          isRecording: false,
+        });
+      } else {
+        fetchVideoStatus(insId, resolvedExercise, opts.forceVideo ? { force: true } : {});
+      }
+    }
+  }
+
+  function initExercisePanels(){
+    document.querySelectorAll('[data-exercise-host="1"][data-ins-id]').forEach((host) => {
+      const insId = String(host.dataset.insId || "");
+      const card = host.closest(`.judge-card[data-ins-id="${insId}"]`);
+      (card || host).querySelectorAll('[data-exercise-chip="1"]').forEach((chip) => {
+        chip.addEventListener("click", () => {
+          openExercisePanel(insId, chip.dataset.exercici || EXERCISES[0]);
+        });
+      });
+      openExercisePanel(insId, selectInitialExerciseForIns(insId), { skipVideo: true });
+    });
+  }
+
+  function loadVisibleExerciseVideos(){
+    if(!VIDEO_CAPTURE_ENABLED) return;
+    document.querySelectorAll('[data-group-pane]:not(.d-none) [data-exercise-panel="1"]:not(.d-none)[data-ins-id][data-exercici]').forEach((panel) => {
+      openExercisePanel(panel.dataset.insId || "", panel.dataset.exercici || "", { forceVideo: false });
+    });
   }
 
   function currentGroupTarget(){
@@ -947,24 +1176,6 @@
     window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
   }
 
-  function buildExerciseHref(exerciciValue, groupTarget){
-    const url = new URL(window.location.href);
-    url.searchParams.set("ex", String(exerciciValue));
-    const match = String(groupTarget || "").match(/^group-(-?\d+)$/);
-    if(match){
-      url.searchParams.set("group", match[1]);
-    } else {
-      url.searchParams.delete("group");
-    }
-    return `${url.pathname}${url.search}${url.hash}`;
-  }
-
-  function refreshExerciseLinks(groupTarget){
-    document.querySelectorAll("[data-exercise-link]").forEach((link) => {
-      link.setAttribute("href", buildExerciseHref(link.dataset.exerciseLink, groupTarget));
-    });
-  }
-
   function setActiveGroup(target){
     if(!target) return;
     const tabs = Array.from(document.querySelectorAll("[data-group-target]"));
@@ -973,7 +1184,7 @@
       pane.classList.toggle("d-none", pane.dataset.groupPane !== target);
     });
     updateGroupInUrl(target);
-    refreshExerciseLinks(target);
+    loadVisibleExerciseVideos();
   }
 
   function markActiveNav(insId){
@@ -1125,11 +1336,13 @@
   }
 
   function renderAllEditors(){
-    document.querySelectorAll(".judge-card[data-ins-id]").forEach(card => renderEditor(card.getAttribute("data-ins-id")));
+    document.querySelectorAll('[data-exercise-panel="1"]').forEach((panel) => {
+      renderEditor(panel.dataset.insId || "", panel.dataset.exercici || "");
+    });
   }
 
-  function renderPermNumber(lineWrap, insId, perm, field){
-    const value = effectiveInput(insId, perm.field_code);
+  function renderPermNumber(lineWrap, insId, exercici, perm, field){
+    const value = effectiveInput(insId, exercici, perm.field_code);
     const inp = document.createElement("input");
     inp.className = "form-control form-control-sm";
     inp.type = "number";
@@ -1139,16 +1352,16 @@
     inp.dataset.permKey = perm.key;
     inp.addEventListener("input", () => {
       const v = (inp.value === "") ? null : Number(inp.value);
-      updateDraftValue(insId, perm.field_code, v, perm);
+      updateDraftValue(insId, exercici, perm.field_code, v, perm);
     });
     lineWrap.appendChild(inp);
   }
 
-  function renderPermList(lineWrap, insId, perm, field){
+  function renderPermList(lineWrap, insId, exercici, perm, field){
     const j = Math.max(1, Number(perm.judge_index || 1));
     const nJudges = Math.max(1, Number((field.judges && field.judges.count) || 1));
-    const baseArr = Array.isArray(effectiveInput(insId, perm.field_code))
-      ? deepClone(effectiveInput(insId, perm.field_code))
+    const baseArr = Array.isArray(effectiveInput(insId, exercici, perm.field_code))
+      ? deepClone(effectiveInput(insId, exercici, perm.field_code))
       : [];
     while(baseArr.length < nJudges) baseArr.push(null);
     const inp = document.createElement("input");
@@ -1159,12 +1372,12 @@
     inp.dataset.kind = "list";
     inp.dataset.permKey = perm.key;
     inp.addEventListener("input", () => {
-      const next = Array.isArray(effectiveInput(insId, perm.field_code))
-        ? deepClone(effectiveInput(insId, perm.field_code))
+      const next = Array.isArray(effectiveInput(insId, exercici, perm.field_code))
+        ? deepClone(effectiveInput(insId, exercici, perm.field_code))
         : [];
       while(next.length < nJudges) next.push(null);
       next[j-1] = (inp.value === "") ? null : Number(inp.value);
-      updateDraftValue(insId, perm.field_code, next, perm);
+      updateDraftValue(insId, exercici, perm.field_code, next, perm);
     });
     lineWrap.appendChild(inp);
   }
@@ -1185,7 +1398,7 @@
     });
   }
 
-  function renderPermMatrix(lineWrap, insId, perm, field){
+  function renderPermMatrix(lineWrap, insId, exercici, perm, field){
     const j = Math.max(1, Number(perm.judge_index || 1));
     const nJudges = Math.max(1, Number((field.judges && field.judges.count) || 1));
     const nItems = Math.max(1, Number((field.items && field.items.count) || 1));
@@ -1193,13 +1406,13 @@
     const count = perm.item_count ? Math.max(1, Number(perm.item_count)) : (nItems - start + 1);
     const crashEnabled = crashEnabledForField(field);
     const crashCode = `__crash__${perm.field_code}`;
-    const crashVals = crashEnabled && Array.isArray(effectiveInput(insId, crashCode))
-      ? deepClone(effectiveInput(insId, crashCode))
+    const crashVals = crashEnabled && Array.isArray(effectiveInput(insId, exercici, crashCode))
+      ? deepClone(effectiveInput(insId, exercici, crashCode))
       : [];
     while(crashVals.length < nJudges) crashVals.push(0);
 
-    const mat = Array.isArray(effectiveInput(insId, perm.field_code))
-      ? deepClone(effectiveInput(insId, perm.field_code))
+    const mat = Array.isArray(effectiveInput(insId, exercici, perm.field_code))
+      ? deepClone(effectiveInput(insId, exercici, perm.field_code))
       : [];
     while(mat.length < nJudges) mat.push([]);
     while((mat[j-1] || []).length < nItems){
@@ -1231,8 +1444,8 @@
       inp.dataset.itemIndex0 = String(idx0);
       inp.dataset.permKey = perm.key;
       inp.addEventListener("input", () => {
-        const next = Array.isArray(effectiveInput(insId, perm.field_code))
-          ? deepClone(effectiveInput(insId, perm.field_code))
+        const next = Array.isArray(effectiveInput(insId, exercici, perm.field_code))
+          ? deepClone(effectiveInput(insId, exercici, perm.field_code))
           : [];
         while(next.length < nJudges) next.push([]);
         while((next[j-1] || []).length < nItems){
@@ -1240,7 +1453,7 @@
           next[j-1].push(null);
         }
         next[j-1][idx0] = (inp.value === "") ? null : Number(inp.value);
-        updateDraftValue(insId, perm.field_code, next, perm);
+        updateDraftValue(insId, exercici, perm.field_code, next, perm);
       });
 
       row.appendChild(lab);
@@ -1255,13 +1468,13 @@
         btn.style.height = "22px";
         btn.dataset.crashBtn = "1";
         btn.addEventListener("click", () => {
-          const nextCrash = Array.isArray(effectiveInput(insId, crashCode))
-            ? deepClone(effectiveInput(insId, crashCode))
+          const nextCrash = Array.isArray(effectiveInput(insId, exercici, crashCode))
+            ? deepClone(effectiveInput(insId, exercici, crashCode))
             : [];
           while(nextCrash.length < nJudges) nextCrash.push(0);
           const current = Number(nextCrash[j - 1] || 0);
           nextCrash[j - 1] = (current === idx1) ? 0 : idx1;
-          updateDraftValue(insId, crashCode, nextCrash, perm);
+          updateDraftValue(insId, exercici, crashCode, nextCrash, perm);
           applyCrashDisableInMatrix(group, nextCrash[j - 1]);
         });
         row.appendChild(btn);
@@ -1272,7 +1485,7 @@
     lineWrap.appendChild(group);
   }
 
-  function renderPermissionBlock(parent, insId, perm){
+  function renderPermissionBlock(parent, insId, exercici, perm){
     const field = perm.field;
     const block = document.createElement("div");
     block.className = "border rounded p-2 mb-2";
@@ -1291,11 +1504,11 @@
 
     const type = field.type || "number";
     if(type === "number"){
-      renderPermNumber(block, insId, perm, field);
+      renderPermNumber(block, insId, exercici, perm, field);
     } else if(type === "list"){
-      renderPermList(block, insId, perm, field);
+      renderPermList(block, insId, exercici, perm, field);
     } else if(type === "matrix"){
-      renderPermMatrix(block, insId, perm, field);
+      renderPermMatrix(block, insId, exercici, perm, field);
     } else {
       block.insertAdjacentHTML("beforeend", `<div class="text-muted small">Tipus no suportat: ${type}</div>`);
     }
@@ -1303,19 +1516,19 @@
     parent.appendChild(block);
   }
 
-  function renderEditor(insId){
-    const wrap = document.getElementById(`editor-${insId}`);
+  function renderEditor(insId, exercici){
+    const wrap = document.getElementById(`editor-inner-${insId}-${exercici}`);
     if(!wrap) return;
     wrap.innerHTML = "";
     if(!PERM_DESCS.length){
       wrap.innerHTML = `<div class="text-muted small">No hi ha configuracio de permisos.</div>`;
       return;
     }
-    PERM_DESCS.forEach(perm => renderPermissionBlock(wrap, String(insId), perm));
+    PERM_DESCS.forEach(perm => renderPermissionBlock(wrap, String(insId), exerciseKey(exercici), perm));
   }
 
-  function buildPatchFromCard(insId){
-    const draft = DRAFTS[String(insId)];
+  function buildPatchFromCard(insId, exercici){
+    const draft = DRAFTS[entryKey(insId, exercici)];
     if(!draft || typeof draft !== "object") return null;
     const keys = Object.keys(draft);
     if(!keys.length) return null;
@@ -1326,14 +1539,15 @@
     return patch;
   }
 
-  async function saveNow(insId){
-    const patch = buildPatchFromCard(insId);
+  async function saveNow(insId, exercici){
+    exercici = exerciseKey(exercici);
+    const patch = buildPatchFromCard(insId, exercici);
     if(!patch){
-      setStatus(insId, "info", "No hi ha canvis pendents");
+      setStatus(insId, exercici, "info", "No hi ha canvis pendents");
       return;
     }
 
-    setStatus(insId, "", "Desant...");
+    setStatus(insId, exercici, "", "Desant...");
 
     const res = await fetch(SAVE_URL, {
       method: "POST",
@@ -1343,39 +1557,41 @@
       },
       body: JSON.stringify({
         inscripcio_id: Number(insId),
-        exercici: EXERCICI,
+        exercici: Number(exercici),
         inputs_patch: patch
       })
     });
 
     const data = await res.json().catch(()=> ({}));
     if(!res.ok || !data.ok){
-      setStatus(insId, "err", data.error || "Error desant");
+      setStatus(insId, exercici, "err", data.error || "Error desant");
       return;
     }
 
-    const prevEntry = getEntry(insId);
+    const prevEntry = getEntry(insId, exercici);
     const prevInputs = (prevEntry.inputs && typeof prevEntry.inputs === "object") ? prevEntry.inputs : {};
     const respInputs = (data.inputs && typeof data.inputs === "object") ? data.inputs : {};
 
-    SCORES[String(insId)] = {
+    setEntry(insId, exercici, {
       inputs: {...prevInputs, ...respInputs},
       outputs: data.outputs || {},
       total: data.total || 0,
       updated_at: data.updated_at || null
-    };
+    });
 
-    clearDraft(insId);
-    clearDirty(insId);
-    renderEditor(insId);
+    clearDraft(insId, exercici);
+    clearDirty(insId, exercici);
+    renderEditor(insId, exercici);
     refreshInsNavStatuses();
-    setStatus(insId, "ok", "Desat ✓");
+    refreshExerciseChipStates(insId);
+    setStatus(insId, exercici, "ok", "Desat ✓");
   }
 
   function applyIncomingUpdate(update){
-    if(!update || update.inscripcio_id == null) return;
+    if(!update || update.inscripcio_id == null || update.exercici == null) return;
     const insId = String(update.inscripcio_id);
-    const baseEntry = getEntry(insId);
+    const exercici = exerciseKey(update.exercici);
+    const baseEntry = getEntry(insId, exercici);
     const mergedInputs = (baseEntry.inputs && typeof baseEntry.inputs === "object") ? {...baseEntry.inputs} : {};
     const incomingInputs = (update.inputs && typeof update.inputs === "object") ? update.inputs : {};
 
@@ -1383,22 +1599,23 @@
       mergedInputs[code] = val;
     });
 
-    SCORES[insId] = {
+    setEntry(insId, exercici, {
       inputs: mergedInputs,
       outputs: (update.outputs && typeof update.outputs === "object") ? update.outputs : (baseEntry.outputs || {}),
       total: Number.isFinite(Number(update.total)) ? Number(update.total) : Number(baseEntry.total || 0),
       updated_at: update.updated_at || baseEntry.updated_at || null,
-    };
+    });
     refreshInsNavStatuses();
+    refreshExerciseChipStates(insId);
 
-    if(hasDirty(insId) || isEditingIns(insId)){
-      setStatus(insId, "info", "Canvi remot rebut (pendent de desar)");
+    if(hasDirty(insId, exercici) || isEditingEntry(insId, exercici)){
+      setStatus(insId, exercici, "info", "Canvi remot rebut (pendent de desar)");
       return;
     }
 
     if(Object.keys(incomingInputs).length){
-      renderEditor(insId);
-      setStatus(insId, "", "Actualitzat");
+      renderEditor(insId, exercici);
+      setStatus(insId, exercici, "", "Actualitzat");
     }
   }
 
@@ -1406,7 +1623,7 @@
     if(!UPDATES_URL) return;
     const url = new URL(UPDATES_URL, window.location.origin);
     if(lastSince) url.searchParams.set("since", lastSince);
-    url.searchParams.set("exercici", String(EXERCICI));
+    allExerciseKeys().forEach((exercici) => url.searchParams.append("exercici", String(exercici)));
 
     try{
       const res = await fetch(url.toString(), {headers: {"Accept":"application/json"}});
@@ -1422,7 +1639,8 @@
     }
   }
 
-  function copyPrev(insId){
+  function copyPrev(insId, exercici){
+    exercici = exerciseKey(exercici);
     const currentCard = document.querySelector(`.judge-card[data-ins-id="${insId}"]`);
     const pane = currentCard ? currentCard.closest("[data-group-pane]") : null;
     const cards = pane
@@ -1440,23 +1658,23 @@
       if(!field) return;
       const type = field.type || "number";
       const code = perm.field_code;
-      const sourceVal = deepClone(effectiveInput(sourceInsId, code));
+      const sourceVal = deepClone(effectiveInput(sourceInsId, exercici, code));
 
       if(type === "number"){
-        updateDraftValue(currentInsId, code, (sourceVal ?? null), perm);
+        updateDraftValue(currentInsId, exercici, code, (sourceVal ?? null), perm);
         return;
       }
 
       if(type === "list"){
         const j = Math.max(1, Number(perm.judge_index || 1));
         const nJudges = Math.max(1, Number((field.judges && field.judges.count) || 1));
-        const target = Array.isArray(effectiveInput(currentInsId, code))
-          ? deepClone(effectiveInput(currentInsId, code))
+        const target = Array.isArray(effectiveInput(currentInsId, exercici, code))
+          ? deepClone(effectiveInput(currentInsId, exercici, code))
           : [];
         while(target.length < nJudges) target.push(null);
         const sourceArr = Array.isArray(sourceVal) ? sourceVal : [];
         target[j-1] = (sourceArr[j-1] ?? null);
-        updateDraftValue(currentInsId, code, target, perm);
+        updateDraftValue(currentInsId, exercici, code, target, perm);
         return;
       }
 
@@ -1467,8 +1685,8 @@
         const start = Math.max(1, Number(perm.item_start || 1));
         const count = perm.item_count ? Math.max(1, Number(perm.item_count)) : (nItems - start + 1);
 
-        const target = Array.isArray(effectiveInput(currentInsId, code))
-          ? deepClone(effectiveInput(currentInsId, code))
+        const target = Array.isArray(effectiveInput(currentInsId, exercici, code))
+          ? deepClone(effectiveInput(currentInsId, exercici, code))
           : [];
         while(target.length < nJudges) target.push([]);
         while((target[j-1] || []).length < nItems){
@@ -1482,17 +1700,19 @@
           const idx0 = start - 1 + k;
           target[j-1][idx0] = (sourceRow[idx0] ?? null);
         }
-        updateDraftValue(currentInsId, code, target, perm);
+        updateDraftValue(currentInsId, exercici, code, target, perm);
       }
     });
 
-    renderEditor(currentInsId);
+    renderEditor(currentInsId, exercici);
+    refreshExerciseChipStates(currentInsId);
   }
 
-  async function toggleRecord(insId){
+  async function toggleRecord(insId, exercici){
     insId = String(insId);
-    const st = recordedVideoByIns[insId] || {};
-    recordedVideoByIns[insId] = st;
+    exercici = exerciseKey(exercici);
+    const st = getVideoState(insId, exercici);
+    const key = entryKey(insId, exercici);
 
     if(st.recorder && st.recorder.state === "recording"){
       try{
@@ -1502,13 +1722,13 @@
     }
 
     if(!canRecordVideo()){
-      setVideoStatus(insId, "err", "Aquest dispositiu no suporta gravacio.");
-      applyVideoUiState(insId, { busy: false, hasPending: !!st.pendingBlob, hasStored: !!st.hasStored });
+      setVideoStatus(insId, exercici, "err", "Aquest dispositiu no suporta gravacio.");
+      applyVideoUiState(insId, exercici, { busy: false, hasPending: !!st.pendingBlob, hasStored: !!st.hasStored });
       return;
     }
 
-    if(currentRecordingInsId && currentRecordingInsId !== insId){
-      setVideoStatus(insId, "err", "Ja hi ha una gravacio activa en una altra fila.");
+    if(currentRecordingEntryKey && currentRecordingEntryKey !== key){
+      setVideoStatus(insId, exercici, "err", "Ja hi ha una gravacio activa en una altra fila.");
       return;
     }
 
@@ -1528,12 +1748,12 @@
       st.startedAt = startedAt;
       st.mimeType = mimeType || "";
       st.busy = false;
-      clearPreviewUrl(insId);
+      clearPreviewUrl(insId, exercici);
       if(st.pendingBlob) st.pendingBlob = null;
 
-      currentRecordingInsId = insId;
-      setVideoStatus(insId, "info", "Gravant...");
-      applyVideoUiState(insId, {
+      currentRecordingEntryKey = key;
+      setVideoStatus(insId, exercici, "info", "Gravant...");
+      applyVideoUiState(insId, exercici, {
         isRecording: true,
         hasPending: false,
         hasStored: !!st.hasStored,
@@ -1553,7 +1773,7 @@
       };
 
       recorder.onerror = () => {
-        setVideoStatus(insId, "err", "Error de gravacio.");
+        setVideoStatus(insId, exercici, "err", "Error de gravacio.");
       };
 
       recorder.onstop = async () => {
@@ -1568,16 +1788,16 @@
         st.stream = null;
         st.recorder = null;
         st.chunks = [];
-        currentRecordingInsId = null;
+        currentRecordingEntryKey = null;
 
         if(!blob || blob.size <= 0){
-          setVideoStatus(insId, "err", "No s'ha pogut generar el video.");
-          applyVideoUiState(insId, { isRecording: false, hasPending: false, hasStored: !!st.hasStored, busy: false });
+          setVideoStatus(insId, exercici, "err", "No s'ha pogut generar el video.");
+          applyVideoUiState(insId, exercici, { isRecording: false, hasPending: false, hasStored: !!st.hasStored, busy: false });
           return;
         }
         if(blob.size > VIDEO_MAX_SIZE_BYTES){
-          setVideoStatus(insId, "err", "El video supera la mida maxima permesa.");
-          applyVideoUiState(insId, { isRecording: false, hasPending: false, hasStored: !!st.hasStored, busy: false });
+          setVideoStatus(insId, exercici, "err", "El video supera la mida maxima permesa.");
+          applyVideoUiState(insId, exercici, { isRecording: false, hasPending: false, hasStored: !!st.hasStored, busy: false });
           return;
         }
 
@@ -1585,52 +1805,52 @@
         st.pendingDuration = elapsed;
         st.pendingMimeType = (blob.type || st.mimeType || "video/webm").split(";")[0].trim().toLowerCase();
 
-        const els = getVideoEls(insId);
-        clearPreviewUrl(insId);
+        const els = getVideoEls(insId, exercici);
+        clearPreviewUrl(insId, exercici);
         st.localObjectUrl = URL.createObjectURL(blob);
         if(els.preview){
           els.preview.src = st.localObjectUrl;
           els.preview.style.display = "";
         }
 
-        setVideoStatus(insId, "info", "Pujant video...");
-        applyVideoUiState(insId, { isRecording: false, hasPending: true, hasStored: !!st.hasStored, busy: true });
-        await uploadRecorded(insId, { auto: true });
+        setVideoStatus(insId, exercici, "info", "Pujant video...");
+        applyVideoUiState(insId, exercici, { isRecording: false, hasPending: true, hasStored: !!st.hasStored, busy: true });
+        await uploadRecorded(insId, exercici, { auto: true });
       };
 
       recorder.start();
     } catch(e){
-      const stErr = recordedVideoByIns[insId] || {};
-      stopStream(stErr.stream);
-      stErr.stream = null;
-      stErr.recorder = null;
-      stErr.chunks = [];
-      currentRecordingInsId = null;
-      setVideoStatus(insId, "err", "No s'ha pogut obrir la camera.");
-      applyVideoUiState(insId, { isRecording: false, hasPending: !!stErr.pendingBlob, hasStored: !!stErr.hasStored, busy: false });
+      stopStream(st.stream);
+      st.stream = null;
+      st.recorder = null;
+      st.chunks = [];
+      currentRecordingEntryKey = null;
+      setVideoStatus(insId, exercici, "err", "No s'ha pogut obrir la camera.");
+      applyVideoUiState(insId, exercici, { isRecording: false, hasPending: !!st.pendingBlob, hasStored: !!st.hasStored, busy: false });
     }
   }
 
-  async function uploadRecorded(insId, opts = {}){
+  async function uploadRecorded(insId, exercici, opts = {}){
     insId = String(insId);
-    const st = recordedVideoByIns[insId] || {};
+    exercici = exerciseKey(exercici);
+    const st = getVideoState(insId, exercici);
     const blob = st.pendingBlob;
     if(!blob){
-      setVideoStatus(insId, "err", "No hi ha cap video pendent de pujar.");
-      applyVideoUiState(insId, { busy: false, hasPending: false, hasStored: !!st.hasStored, isRecording: false });
+      setVideoStatus(insId, exercici, "err", "No hi ha cap video pendent de pujar.");
+      applyVideoUiState(insId, exercici, { busy: false, hasPending: false, hasStored: !!st.hasStored, isRecording: false });
       return;
     }
 
     st.busy = true;
-    applyVideoUiState(insId, { busy: true, hasPending: true, hasStored: !!st.hasStored, isRecording: false });
+    applyVideoUiState(insId, exercici, { busy: true, hasPending: true, hasStored: !!st.hasStored, isRecording: false });
 
     const ext = (st.pendingMimeType || "").includes("mp4") ? "mp4" : ((st.pendingMimeType || "").includes("quicktime") ? "mov" : "webm");
-    const filename = `ins_${insId}_ex_${EXERCICI}_${Date.now()}.${ext}`;
+    const filename = `ins_${insId}_ex_${exercici}_${Date.now()}.${ext}`;
     const fileObj = new File([blob], filename, { type: st.pendingMimeType || blob.type || "video/webm" });
 
     const fd = new FormData();
     fd.append("inscripcio_id", String(insId));
-    fd.append("exercici", String(EXERCICI));
+    fd.append("exercici", String(exercici));
     if(st.pendingDuration) fd.append("duration_seconds", String(st.pendingDuration));
     if(st.pendingMimeType) fd.append("mime_type", st.pendingMimeType);
     fd.append("original_filename", filename);
@@ -1653,39 +1873,40 @@
       st.pendingDuration = null;
       st.pendingMimeType = null;
       st.hasStored = true;
+      st.loaded = true;
       st.busy = false;
 
-      const els = getVideoEls(insId);
-      clearPreviewUrl(insId);
+      const els = getVideoEls(insId, exercici);
+      clearPreviewUrl(insId, exercici);
       if(els.preview && data.video && data.video.url){
         els.preview.src = data.video.url;
         els.preview.style.display = "";
       }
 
-      setVideoStatus(insId, "ok", (opts && opts.auto) ? "Video vinculat" : "Video pujat");
-      applyVideoUiState(insId, { busy: false, hasPending: false, hasStored: true, isRecording: false });
+      setVideoStatus(insId, exercici, "ok", (opts && opts.auto) ? "Video vinculat" : "Video pujat");
+      applyVideoUiState(insId, exercici, { busy: false, hasPending: false, hasStored: true, isRecording: false });
     } catch(e){
       st.busy = false;
-      setVideoStatus(insId, "err", e.message || "Error pujant video");
-      applyVideoUiState(insId, { busy: false, hasPending: !!st.pendingBlob, hasStored: !!st.hasStored, isRecording: false });
+      setVideoStatus(insId, exercici, "err", e.message || "Error pujant video");
+      applyVideoUiState(insId, exercici, { busy: false, hasPending: !!st.pendingBlob, hasStored: !!st.hasStored, isRecording: false });
     }
   }
 
-  async function deleteVideo(insId){
+  async function deleteVideo(insId, exercici){
     insId = String(insId);
-    const st = recordedVideoByIns[insId] || {};
-    recordedVideoByIns[insId] = st;
+    exercici = exerciseKey(exercici);
+    const st = getVideoState(insId, exercici);
 
     if(st.recorder && st.recorder.state === "recording"){
       try{ st.recorder.stop(); }catch(_e){}
     }
 
     st.busy = true;
-    applyVideoUiState(insId, { busy: true, hasPending: !!st.pendingBlob, hasStored: !!st.hasStored, isRecording: false });
+    applyVideoUiState(insId, exercici, { busy: true, hasPending: !!st.pendingBlob, hasStored: !!st.hasStored, isRecording: false });
 
     const fd = new FormData();
     fd.append("inscripcio_id", String(insId));
-    fd.append("exercici", String(EXERCICI));
+    fd.append("exercici", String(exercici));
 
     try{
       const res = await fetch(VIDEO_DELETE_URL, {
@@ -1698,49 +1919,40 @@
         throw new Error(data.error || "Error eliminant video");
       }
 
-      clearPreviewUrl(insId);
+      clearPreviewUrl(insId, exercici);
       st.pendingBlob = null;
       st.pendingDuration = null;
       st.pendingMimeType = null;
       st.hasStored = false;
+      st.loaded = true;
       st.busy = false;
 
-      const els = getVideoEls(insId);
+      const els = getVideoEls(insId, exercici);
       if(els.preview){
         els.preview.removeAttribute("src");
         els.preview.style.display = "none";
       }
 
-      setVideoStatus(insId, "", "Sense video");
-      applyVideoUiState(insId, { busy: false, hasPending: false, hasStored: false, isRecording: false });
+      setVideoStatus(insId, exercici, "", "Sense video");
+      applyVideoUiState(insId, exercici, { busy: false, hasPending: false, hasStored: false, isRecording: false });
     } catch(e){
       st.busy = false;
-      setVideoStatus(insId, "err", e.message || "Error eliminant video");
-      applyVideoUiState(insId, { busy: false, hasPending: !!st.pendingBlob, hasStored: !!st.hasStored, isRecording: false });
+      setVideoStatus(insId, exercici, "err", e.message || "Error eliminant video");
+      applyVideoUiState(insId, exercici, { busy: false, hasPending: !!st.pendingBlob, hasStored: !!st.hasStored, isRecording: false });
     }
   }
 
   function initVideoUI(){
-    const cards = Array.from(document.querySelectorAll(".judge-card[data-ins-id]"));
-    cards.forEach(card => {
-      const insId = String(card.getAttribute("data-ins-id"));
-      recordedVideoByIns[insId] = recordedVideoByIns[insId] || {
-        pendingBlob: null,
-        pendingDuration: null,
-        pendingMimeType: null,
-        hasStored: false,
+    document.querySelectorAll('[data-exercise-panel="1"][data-ins-id][data-exercici]').forEach((panel) => {
+      const insId = String(panel.dataset.insId || "");
+      const exercici = exerciseKey(panel.dataset.exercici || "");
+      const st = getVideoState(insId, exercici);
+      applyVideoUiState(insId, exercici, {
         busy: false,
-        stream: null,
-        recorder: null,
-        chunks: [],
-        localObjectUrl: null,
-      };
-      applyVideoUiState(insId, { busy: false, hasPending: false, hasStored: false, isRecording: false });
-      if(!canRecordVideo()){
-        setVideoStatus(insId, "err", "Camera no disponible en aquest navegador.");
-      } else {
-        fetchVideoStatus(insId);
-      }
+        hasPending: !!st.pendingBlob,
+        hasStored: !!st.hasStored,
+        isRecording: false,
+      });
     });
   }
 
@@ -1756,14 +1968,15 @@
   }
   // init
   buildPermText();
+  renderAllEditors();
   initGroupTabs();
-  refreshExerciseLinks(currentGroupTarget());
   initInsNavigation();
   initSupportUi();
   if(VIDEO_CAPTURE_ENABLED){
     initVideoUI();
   }
-  renderAllEditors();
+  initExercisePanels();
+  loadVisibleExerciseVideos();
   pollUpdates();
 </script>
 {% endblock %}

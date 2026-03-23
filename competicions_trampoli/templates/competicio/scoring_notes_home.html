@@ -91,17 +91,6 @@
         <h2 class="mb-1">Notes · Panell Central d'Organització</h2>
         <div class="text-muted small">Competició: <span class="fw-semibold">{{ competicio.nom }}</span></div>
         <div class="text-muted small">Entrada i càlcul depenen del schema de cada aparell.</div>
-        <div class="mt-2 d-flex align-items-center" style="gap:8px;">
-          <label class="mini-help mb-0" for="franjaSelect">Franja</label>
-          <select id="franjaSelect" class="form-control form-control-sm" style="max-width:260px;">
-            <option value="">Sense franja (ordre base)</option>
-            {% for fr in franges %}
-              <option value="{{ fr.id }}" {% if franja_selected_id == fr.id %}selected{% endif %}>
-                {{ fr.titol|default:"Franja" }} ({{ fr.hora_inici|time:"H:i" }}-{{ fr.hora_fi|time:"H:i" }})
-              </option>
-            {% endfor %}
-          </select>
-        </div>
       </div>
       <div class="d-flex flex-wrap justify-content-end gap-2">
         <a class="btn btn-sm btn-outline-primary" href="{% url 'inscripcions_list' competicio.id %}">Inscripcions</a>
@@ -1676,17 +1665,6 @@
   }
 
   document.addEventListener("DOMContentLoaded", ()=>{
-    const frSel = document.getElementById("franjaSelect");
-    if(frSel){
-      frSel.addEventListener("change", () => {
-        const url = new URL(window.location.href);
-        const v = String(frSel.value || "").trim();
-        if(v) url.searchParams.set("franja", v);
-        else url.searchParams.delete("franja");
-        window.location.href = url.toString();
-      });
-    }
-
     document.addEventListener("click", (ev)=>{
       const closeBtn = ev.target.closest("#media-drawer-close");
       if(closeBtn){
