@@ -705,6 +705,10 @@
       background:linear-gradient(180deg, #fffdf5 0%, #fff7db 100%);
       border-color:#f2ce67;
     }
+    .group-preview-card.is-incoming{
+      background:linear-gradient(180deg, #f4faff 0%, #e8f3ff 100%);
+      border-color:#93c5fd;
+    }
     .group-preview-card.is-removed{
       background:linear-gradient(180deg, #fff6f6 0%, #ffe4e4 100%);
       border-color:#f2a0a0;
@@ -807,10 +811,289 @@
       border-color:#fcd34d !important;
       color:#92400e;
     }
+    .group-preview-badge.is-incoming{
+      background:#dbeafe;
+      border-color:#93c5fd !important;
+      color:#1d4ed8;
+    }
     .group-preview-badge.is-removed{
       background:#fee2e2;
       border-color:#fca5a5 !important;
       color:#b91c1c;
+    }
+    .team-workbench-card{
+      display:flex;
+      flex-direction:column;
+      gap:14px;
+    }
+    .team-compact-summary{
+      display:flex;
+      justify-content:space-between;
+      align-items:flex-start;
+      gap:12px;
+      flex-wrap:wrap;
+      padding:12px 14px;
+      border:1px solid #e2e8f0;
+      border-radius:14px;
+      background:linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+    }
+    .team-compact-summary-copy{
+      max-width:560px;
+      font-size:.83rem;
+      color:#475569;
+    }
+    .team-compact-summary-metrics{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      justify-content:flex-end;
+    }
+    .team-workspace-shell{
+      display:none;
+      flex-direction:column;
+      gap:14px;
+    }
+    .group-buckets-modal-body .team-workspace-shell{
+      display:flex;
+    }
+    .group-buckets-modal-body .team-compact-summary{
+      display:none;
+    }
+    .team-workspace-header{
+      position:sticky;
+      top:0;
+      z-index:2;
+      display:flex;
+      justify-content:space-between;
+      align-items:flex-start;
+      gap:16px;
+      flex-wrap:wrap;
+      padding:14px;
+      border:1px solid #dbe5f2;
+      border-radius:16px;
+      background:linear-gradient(180deg, #ffffff 0%, #f6f9ff 100%);
+      box-shadow:0 10px 24px rgba(15,23,42,.05);
+    }
+    .team-workspace-context{
+      flex:1 1 420px;
+      min-width:280px;
+    }
+    .team-workspace-context-head{
+      display:flex;
+      justify-content:space-between;
+      align-items:flex-start;
+      gap:12px;
+      flex-wrap:wrap;
+      margin-bottom:6px;
+    }
+    .team-workspace-eyebrow{
+      font-size:.73rem;
+      font-weight:700;
+      letter-spacing:.04em;
+      color:#64748b;
+      text-transform:uppercase;
+    }
+    .team-workspace-title{
+      font-size:1.05rem;
+      font-weight:700;
+      color:#0f172a;
+    }
+    .team-context-metrics{
+      display:grid;
+      grid-template-columns:repeat(2, minmax(120px, 1fr));
+      gap:10px;
+      min-width:280px;
+    }
+    .team-context-metric{
+      padding:10px 12px;
+      border:1px solid #dde7f3;
+      border-radius:12px;
+      background:#fff;
+    }
+    .team-context-metric-label{
+      display:block;
+      font-size:.76rem;
+      color:#64748b;
+      margin-bottom:3px;
+    }
+    .team-context-metric-value{
+      font-size:1rem;
+      color:#0f172a;
+    }
+    .team-workspace-grid{
+      display:grid;
+      grid-template-columns:minmax(300px, 1.15fr) minmax(280px, .95fr) minmax(320px, 1fr);
+      gap:14px;
+      align-items:start;
+    }
+    .team-workspace-pane{
+      min-width:0;
+    }
+    .team-pane-card{
+      display:flex;
+      flex-direction:column;
+      gap:12px;
+      padding:12px 13px;
+      border:1px solid #dbe5f2;
+      border-radius:16px;
+      background:#ffffff;
+      box-shadow:0 10px 24px rgba(15, 23, 42, 0.05);
+    }
+    .team-pane-head{
+      display:flex;
+      justify-content:space-between;
+      align-items:flex-start;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+    .team-filters-grid{
+      display:grid;
+      grid-template-columns:repeat(2, minmax(0, 1fr));
+      gap:10px;
+    }
+    .team-selection-toolbar{
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      padding:11px 12px;
+      border:1px solid #e2e8f0;
+      border-radius:12px;
+      background:#f8fbff;
+    }
+    .team-selection-summary{
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+      font-size:.82rem;
+    }
+    .team-candidates-status,
+    .team-context-teams-status{
+      margin-top:-4px;
+    }
+    .team-candidates-list{
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+      max-height:56vh;
+      overflow:auto;
+      padding-right:4px;
+    }
+    .team-candidate-row{
+      display:flex;
+      align-items:flex-start;
+      gap:10px;
+      padding:10px 11px;
+      border:1px solid #e2e8f0;
+      border-radius:12px;
+      background:#fbfdff;
+    }
+    .team-candidate-row.is-selected{
+      border-color:#93c5fd;
+      background:#eff6ff;
+    }
+    .team-candidate-main{
+      min-width:0;
+      flex:1 1 auto;
+    }
+    .team-candidate-title{
+      margin:0;
+      font-size:.88rem;
+      font-weight:700;
+      color:#0f172a;
+    }
+    .team-candidate-meta{
+      margin-top:3px;
+      font-size:.77rem;
+      color:#64748b;
+    }
+    .team-candidate-teams{
+      display:flex;
+      flex-wrap:wrap;
+      gap:6px;
+      margin-top:8px;
+    }
+    .team-candidates-footer{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+    }
+    .team-action-tabs{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+    }
+    .js-team-action-tab.is-active{
+      background:#0f172a;
+      color:#fff;
+      border-color:#0f172a;
+    }
+    .team-action-panel{
+      display:flex;
+      flex-direction:column;
+      gap:12px;
+    }
+    .team-scope-box,
+    .team-manual-banner{
+      padding:11px 12px;
+      border:1px solid #e2e8f0;
+      border-radius:12px;
+      background:#f8fbff;
+    }
+    .team-scope-option{
+      display:flex;
+      align-items:flex-start;
+      gap:8px;
+      font-size:.82rem;
+      margin:0 0 8px;
+    }
+    .team-scope-option:last-child{
+      margin-bottom:0;
+    }
+    .team-action-note{
+      font-size:.8rem;
+      color:#475569;
+      padding:9px 10px;
+      border-left:3px solid #93c5fd;
+      background:#eff6ff;
+      border-radius:8px;
+    }
+    .team-inline-options{
+      row-gap:8px;
+    }
+    .team-preview-panel{
+      min-height:120px;
+    }
+    .team-preview-selection{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      margin-bottom:12px;
+    }
+    .team-context-teams-list,
+    .team-context-zero-members-list{
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+    }
+    .team-context-team-card{
+      display:flex;
+      justify-content:space-between;
+      align-items:flex-start;
+      gap:10px;
+      padding:10px 11px;
+      border:1px solid #e2e8f0;
+      border-radius:12px;
+      background:#fbfdff;
+    }
+    .team-context-team-card.is-empty{
+      background:#f8fafc;
+      border-style:dashed;
+    }
+    .team-context-team-meta{
+      font-size:.78rem;
+      color:#64748b;
+      margin-top:4px;
     }
 
     .drag-handle, .col-drag-handle {
@@ -852,12 +1135,6 @@
     .group-band-5 { background-color: rgba(14,165,233,0.08) !important; }
     .group-band-6 { background-color: rgba(244,63,94,0.08) !important; }
     .group-band-7 { background-color: rgba(34,197,94,0.08) !important; }
-    .team-box {
-      background: #f7f8fb;
-      border: 1px solid #e3e6ef;
-      border-radius: 10px;
-      padding: 10px 12px;
-    }
     .inscripcio-select {
       margin: 0;
       flex: 0 0 auto;
@@ -1702,6 +1979,19 @@
       .group-competition-modal-actions .btn{
         flex:1 1 auto;
       }
+      .team-workspace-grid{
+        grid-template-columns:1fr;
+      }
+      .team-context-metrics{
+        grid-template-columns:1fr 1fr;
+        width:100%;
+      }
+      .team-filters-grid{
+        grid-template-columns:1fr;
+      }
+      .team-candidates-list{
+        max-height:34vh;
+      }
       .actions-body {
         grid-template-columns: 1fr;
       }
@@ -1837,8 +2127,8 @@
     <div class="group-buckets-modal" id="group-buckets-modal" aria-hidden="true">
       <div class="group-buckets-modal-head">
         <div>
-          <p class="group-buckets-modal-title mb-0" id="group-buckets-modal-title">Seleccio ampliada</p>
-          <p class="group-buckets-modal-subtitle" id="group-buckets-modal-subtitle">Treballa amb les pestanyes o blocs detectats en una vista ampla.</p>
+          <p class="group-buckets-modal-title mb-0" id="group-buckets-modal-title">Vista ampliada</p>
+          <p class="group-buckets-modal-subtitle" id="group-buckets-modal-subtitle">Treballa amb el bloc seleccionat en una vista ampla.</p>
         </div>
         <button type="button" class="btn btn-sm btn-outline-secondary" id="group-buckets-modal-close">Tancar</button>
       </div>
@@ -3179,7 +3469,8 @@
     const modal = document.getElementById('group-buckets-modal');
     const modalBody = document.getElementById('group-buckets-modal-body');
     const modalTitle = document.getElementById('group-buckets-modal-title');
-    if (!backdrop || !modal || !modalBody || !modalTitle) return;
+    const modalSubtitle = document.getElementById('group-buckets-modal-subtitle');
+    if (!backdrop || !modal || !modalBody || !modalTitle || !modalSubtitle) return;
 
     restoreExpandedGroupCardToOrigin();
 
@@ -3204,11 +3495,19 @@
     modal.setAttribute('aria-hidden', activeCard ? 'false' : 'true');
     modal.setAttribute('data-active-card-id', activeCard ? cardId : '');
     if (activeCard) {
-      const titleText = activeCard.querySelector('.fw-semibold')?.textContent?.trim() || 'Seleccio ampliada';
+      const titleText =
+        (activeCard.getAttribute('data-expand-title') || '').trim() ||
+        activeCard.querySelector('.fw-semibold')?.textContent?.trim() ||
+        'Vista ampliada';
+      const subtitleText =
+        (activeCard.getAttribute('data-expand-subtitle') || '').trim() ||
+        "Treballa amb el bloc seleccionat en una vista ampla.";
       modalTitle.textContent = titleText;
+      modalSubtitle.textContent = subtitleText;
       document.body.classList.add('group-buckets-modal-open');
     } else {
-      modalTitle.textContent = 'Seleccio ampliada';
+      modalTitle.textContent = 'Vista ampliada';
+      modalSubtitle.textContent = "Treballa amb el bloc seleccionat en una vista ampla.";
       document.body.classList.remove('group-buckets-modal-open');
     }
     refreshExpandButtons();
@@ -4100,15 +4399,25 @@
     }
 
     function getSelectedTeamContextCode() {
-      return (document.getElementById('team-context-select')?.value || 'native').trim() || 'native';
+      return (
+        document.getElementById('team-workspace-context-select')?.value ||
+        document.getElementById('team-context-select')?.value ||
+        'native'
+      ).trim() || 'native';
     }
 
     function setVisibleInscripcioSelection(checked) {
+      let changed = false;
       document.querySelectorAll('.js-team-row-select').forEach(el => {
         const row = el.closest('tr');
         if (!row || row.classList.contains('d-none') || row.offsetParent === null) return;
-        el.checked = !!checked;
+        const nextChecked = !!checked;
+        if (el.checked !== nextChecked) {
+          el.checked = nextChecked;
+          changed = true;
+        }
       });
+      if (changed) markTeamPreviewDirty();
     }
 
     function getSelectedTeamFields() {
@@ -6021,23 +6330,333 @@
       }
     }
 
+    function getTeamPreviewElements() {
+      return {
+        root: document.getElementById('team-preview'),
+        status: document.getElementById('team-preview-status'),
+        selection: document.getElementById('team-preview-selection-summary'),
+        summary: document.getElementById('team-preview-summary'),
+        existingWrap: document.getElementById('team-preview-existing-wrap'),
+        existingMeta: document.getElementById('team-preview-existing-meta'),
+        existingList: document.getElementById('team-preview-existing-list'),
+        plannedWrap: document.getElementById('team-preview-planned-wrap'),
+        plannedMeta: document.getElementById('team-preview-planned-meta'),
+        plannedList: document.getElementById('team-preview-list'),
+        clear: document.getElementById('btn-team-preview-clear'),
+      };
+    }
+
+    function setTeamPreviewStatus(message, variant = 'muted') {
+      const status = getTeamPreviewElements().status;
+      if (!status) return;
+      status.textContent = message || '';
+      status.style.color = variant === 'warning' ? '#b45309' : (variant === 'info' ? '#1d4ed8' : '#64748b');
+    }
+
+    function clearTeamPreview(statusText) {
+      const els = getTeamPreviewElements();
+      if (!els.root) return;
+      els.root.dataset.hasPreview = '0';
+      els.root.dataset.dirty = '0';
+      els.root.dataset.loading = '0';
+      if (els.selection) {
+        els.selection.innerHTML = '';
+        els.selection.classList.add('d-none');
+      }
+      if (els.summary) {
+        els.summary.innerHTML = '';
+        els.summary.classList.add('d-none');
+      }
+      if (els.existingList) {
+        els.existingList.innerHTML = '';
+      }
+      if (els.existingWrap) {
+        els.existingWrap.classList.add('d-none');
+      }
+      if (els.existingMeta) {
+        els.existingMeta.textContent = '';
+      }
+      if (els.plannedList) {
+        els.plannedList.innerHTML = '';
+      }
+      if (els.plannedWrap) {
+        els.plannedWrap.classList.add('d-none');
+      }
+      if (els.plannedMeta) {
+        els.plannedMeta.textContent = '';
+      }
+      if (els.clear) {
+        els.clear.classList.add('d-none');
+      }
+      setTeamPreviewStatus(
+        statusText || "Encara no s'ha calculat cap previsualitzacio amb aquesta configuracio.",
+        'muted'
+      );
+    }
+
+    function markTeamPreviewDirty() {
+      const els = getTeamPreviewElements();
+      if (!els.root || els.root.dataset.hasPreview !== '1') return;
+      els.root.dataset.dirty = '1';
+      setTeamPreviewStatus('La configuracio ha canviat. Torna a previsualitzar per actualitzar el resultat.', 'warning');
+    }
+
+    function setTeamPreviewLoading(loading) {
+      const els = getTeamPreviewElements();
+      if (!els.root) return;
+      els.root.dataset.loading = loading ? '1' : '0';
+      if (loading) {
+        setTeamPreviewStatus('Calculant la previsualitzacio dels equips...', 'info');
+      }
+    }
+
+    function createTeamPreviewCard(team, kind = 'planned') {
+      const card = document.createElement('div');
+      card.className = 'group-preview-card';
+
+      if (kind === 'existing') {
+        const impactKind = String(team?.impact_kind || '').trim().toLowerCase();
+        if (impactKind === 'removed') {
+          card.classList.add('is-removed');
+        } else if (impactKind === 'reduced') {
+          card.classList.add('is-reduced');
+        } else if (impactKind === 'incoming') {
+          card.classList.add('is-incoming');
+        } else {
+          card.classList.add('is-existing');
+        }
+      } else if (team?.will_create) {
+        card.classList.add('is-created');
+      } else if (team?.will_reassign) {
+        card.classList.add('is-reduced');
+      } else {
+        card.classList.add('is-existing');
+      }
+
+      const head = document.createElement('div');
+      head.className = 'group-preview-card-head';
+
+      const textWrap = document.createElement('div');
+      const title = document.createElement('p');
+      title.className = 'group-preview-card-title';
+      title.textContent = String(team?.team_name || team?.nom_suggerit || 'Equip');
+      textWrap.appendChild(title);
+
+      const subtitle = document.createElement('p');
+      subtitle.className = 'group-preview-card-subtitle';
+      if (kind === 'existing') {
+        const currentMembers = Number(team?.current_members_context || 0);
+        subtitle.textContent = `${currentMembers} integrants actuals al context`;
+      } else {
+        const values = Array.isArray(team?.values) ? team.values.filter(Boolean) : [];
+        subtitle.textContent = values.length ? `Particio: ${values.join(' · ')}` : 'Sense valors de particio';
+      }
+      textWrap.appendChild(subtitle);
+
+      const impact = document.createElement('p');
+      impact.className = 'group-preview-card-impact';
+      if (kind === 'existing') {
+        const impactKind = String(team?.impact_kind || '').trim().toLowerCase();
+        if (impactKind === 'removed') {
+          impact.classList.add('is-removed');
+          impact.textContent = `Perdra ${Number(team?.outgoing_count || 0)} i quedara buit`;
+        } else if (impactKind === 'reduced') {
+          impact.classList.add('is-reduced');
+          impact.textContent = `Perdra ${Number(team?.outgoing_count || 0)} i en quedaran ${Number(team?.remaining_members_context || 0)}`;
+        } else if (impactKind === 'incoming') {
+          impact.classList.add('is-created');
+          impact.textContent = `Rebra ${Number(team?.incoming_count || 0)} participants`;
+        } else {
+          impact.textContent = `Mantindra ${Number(team?.keep_count || 0)} participants afectats`;
+        }
+      } else if (team?.will_create) {
+        impact.classList.add('is-created');
+        impact.textContent = `Es creara amb ${Number(team?.count || 0)} integrants`;
+      } else if (Number(team?.current_other_count || 0) > 0 && Number(team?.skipped_reassign_count || 0) > 0) {
+        impact.classList.add('is-reduced');
+        impact.textContent = `Hi ha ${Number(team?.skipped_reassign_count || 0)} membres amb equip diferent que no es reassignaran`;
+      } else if (team?.will_reassign) {
+        impact.classList.add('is-reduced');
+        impact.textContent = `Reassignara ${Number(team?.current_other_count || 0)} participants`;
+      } else if (team?.will_keep) {
+        impact.textContent = `Mantindra ${Number(team?.current_same_count || 0)} participants ja alineats`;
+      } else {
+        impact.textContent = `Assignara ${Number(team?.current_none_count || 0)} participants sense equip`;
+      }
+      textWrap.appendChild(impact);
+      head.appendChild(textWrap);
+
+      const badges = document.createElement('div');
+      badges.className = 'group-preview-card-badges';
+      if (kind === 'existing') {
+        const impactKind = String(team?.impact_kind || '').trim().toLowerCase();
+        if (impactKind === 'removed') {
+          badges.appendChild(createGroupPreviewBadge('Queda buit', 'removed'));
+        } else if (impactKind === 'reduced') {
+          badges.appendChild(createGroupPreviewBadge('Es redueix', 'reduced'));
+        } else if (impactKind === 'incoming') {
+          badges.appendChild(createGroupPreviewBadge('Rep membres', 'incoming'));
+        } else {
+          badges.appendChild(createGroupPreviewBadge('Es manté'));
+        }
+        if (Number(team?.incoming_count || 0) > 0) {
+          badges.appendChild(createGroupPreviewBadge(`+${Number(team?.incoming_count || 0)} entren`, 'incoming'));
+        }
+        if (Number(team?.outgoing_count || 0) > 0) {
+          badges.appendChild(createGroupPreviewBadge(`-${Number(team?.outgoing_count || 0)} surten`, team?.impact_kind === 'removed' ? 'removed' : 'reduced'));
+        }
+      } else {
+        badges.appendChild(createGroupPreviewBadge(`${Number(team?.count || 0)} integrants`));
+        if (team?.will_create) {
+          badges.appendChild(createGroupPreviewBadge('Equip nou', 'created'));
+        } else {
+          badges.appendChild(createGroupPreviewBadge(`Existeix: ${String(team?.existing_team_name || team?.nom_suggerit || '')}`));
+        }
+        if (team?.will_reassign) {
+          badges.appendChild(createGroupPreviewBadge(`Reassigna ${Number(team?.current_other_count || 0)}`, 'reduced'));
+        }
+        if (team?.will_keep) {
+          badges.appendChild(createGroupPreviewBadge(`Ja hi son ${Number(team?.current_same_count || 0)}`));
+        }
+      }
+      head.appendChild(badges);
+      card.appendChild(head);
+
+      const sourcesWrap = document.createElement('div');
+      sourcesWrap.className = 'group-preview-sources';
+
+      const primaryRow = document.createElement('div');
+      primaryRow.className = 'group-preview-source-row';
+      const primaryLabel = document.createElement('div');
+      primaryLabel.className = 'group-preview-source-label';
+      if (kind === 'existing') {
+        primaryLabel.textContent = 'Afectacio al context actual';
+      } else {
+        primaryLabel.textContent = 'Impacte previst sobre la particio';
+      }
+      primaryRow.appendChild(primaryLabel);
+      const primaryCount = document.createElement('span');
+      primaryCount.className = 'group-preview-source-count is-impact';
+      if (kind === 'existing') {
+        primaryCount.textContent =
+          `Entren ${Number(team?.incoming_count || 0)} | Surten ${Number(team?.outgoing_count || 0)} | Es queden ${Number(team?.keep_count || 0)}`;
+      } else {
+        primaryCount.textContent =
+          `Sense equip ${Number(team?.current_none_count || 0)} | Mateix equip ${Number(team?.current_same_count || 0)} | Altres equips ${Number(team?.current_other_count || 0)}`;
+      }
+      primaryRow.appendChild(primaryCount);
+      sourcesWrap.appendChild(primaryRow);
+
+      if (kind !== 'existing' && Number(team?.skipped_reassign_count || 0) > 0) {
+        const blockedRow = document.createElement('div');
+        blockedRow.className = 'group-preview-source-row';
+        const blockedLabel = document.createElement('div');
+        blockedLabel.className = 'group-preview-source-label';
+        blockedLabel.textContent = 'Participants mantinguts al seu equip actual';
+        blockedRow.appendChild(blockedLabel);
+        const blockedCount = document.createElement('span');
+        blockedCount.className = 'group-preview-source-count is-impact';
+        blockedCount.textContent = `${Number(team?.skipped_reassign_count || 0)} no es mouran`;
+        blockedRow.appendChild(blockedCount);
+        sourcesWrap.appendChild(blockedRow);
+      }
+      card.appendChild(sourcesWrap);
+
+      const sampleNames = Array.isArray(team?.member_samples) ? team.member_samples.filter(Boolean) : [];
+      const sampleRemaining = Number(team?.member_samples_remaining || 0);
+      if (sampleNames.length) {
+        const members = document.createElement('div');
+        members.className = 'group-preview-members';
+        const suffix = sampleRemaining > 0 ? ` +${sampleRemaining} mes` : '';
+        const strong = document.createElement('strong');
+        strong.textContent = "Mostra d'integrants:";
+        members.appendChild(strong);
+        members.appendChild(document.createTextNode(` ${sampleNames.join(', ')}${suffix}`));
+        card.appendChild(members);
+      }
+
+      return card;
+    }
+
+    function renderTeamPreviewSection(wrap, meta, list, rows, kind) {
+      if (!wrap || !list) return;
+      const items = Array.isArray(rows) ? rows : [];
+      list.innerHTML = '';
+      items.forEach(item => list.appendChild(createTeamPreviewCard(item, kind)));
+      wrap.classList.toggle('d-none', items.length === 0);
+      if (meta) {
+        const peopleCount = items.reduce((acc, row) => acc + Number(row?.count || row?.incoming_count || row?.current_members_context || 0), 0);
+        meta.textContent = items.length ? `${items.length} equips · ${peopleCount} registres destacats` : '';
+      }
+    }
+
     function renderTeamPreview(data) {
-      const box = document.getElementById('team-preview');
-      if (!box) return;
+      const els = getTeamPreviewElements();
+      if (!els.root) return;
       if (!data || !data.ok) {
-        box.innerHTML = '<span class="text-danger">No s\'ha pogut previsualitzar.</span>';
+        clearTeamPreview("No s'ha pogut calcular la previsualitzacio.");
         return;
       }
-      if (!data.preview || !data.preview.length) {
-        box.innerHTML = '<span class="text-muted">No hi ha dades per crear equips.</span>';
-        return;
+
+      const plannedTeams = Array.isArray(data.preview) ? data.preview : [];
+      const existingSummary = data.existing_summary && typeof data.existing_summary === 'object' ? data.existing_summary : {};
+      const affectedTeams = Array.isArray(existingSummary.affected_teams) ? existingSummary.affected_teams : [];
+      const selectionSummary = data.selection_summary && typeof data.selection_summary === 'object' ? data.selection_summary : {};
+
+      els.root.dataset.hasPreview = '1';
+      els.root.dataset.dirty = '0';
+
+      if (els.selection) {
+        els.selection.innerHTML = '';
+        els.selection.appendChild(createGroupPreviewBadge(selectionSummary.label || `${Number(data.total_inscripcions || 0)} registrades`));
+        if (selectionSummary.filters_active) {
+          els.selection.appendChild(createGroupPreviewBadge('Amb filtres actius'));
+        }
+        if (selectionSummary.mode === 'selected') {
+          els.selection.appendChild(createGroupPreviewBadge('Nomes seleccionades'));
+        } else if (selectionSummary.mode === 'filtered') {
+          els.selection.appendChild(createGroupPreviewBadge('Subset filtrat'));
+        } else {
+          els.selection.appendChild(createGroupPreviewBadge('Totes les visibles'));
+        }
+        els.selection.appendChild(
+          createGroupPreviewBadge(
+            selectionSummary.replace_existing ? 'Reassignant equips existents' : 'Respectant equips existents',
+            selectionSummary.replace_existing ? 'reduced' : 'incoming'
+          )
+        );
+        els.selection.classList.remove('d-none');
       }
-      const items = data.preview.slice(0, 8).map(x => `${x.nom_suggerit} (${x.count})`);
-      const extra = data.preview.length > 8 ? `, ... +${data.preview.length - 8}` : '';
-      box.innerHTML =
-        `<span class="text-dark fw-semibold">${data.total_equips}</span> equips previstos ` +
-        `sobre <span class="text-dark fw-semibold">${data.total_inscripcions}</span> inscripcions.<br>` +
-        `<span>${items.join(' | ')}${extra}</span>`;
+
+      if (els.summary) {
+        els.summary.innerHTML = '';
+        els.summary.appendChild(createGroupPreviewBadge(`${Number(data.total_equips || plannedTeams.length || 0)} equips previstos`));
+        els.summary.appendChild(createGroupPreviewBadge(`${Number(data.total_inscripcions || 0)} inscripcions afectades`));
+        els.summary.appendChild(createGroupPreviewBadge(`${Number(existingSummary.teams_with_members || 0)} equips actuals amb membres`));
+        els.summary.appendChild(createGroupPreviewBadge(`${Number(existingSummary.assigned_total || 0)} assignacions actuals`));
+        if (plannedTeams.some(team => !!team?.will_create)) {
+          els.summary.appendChild(createGroupPreviewBadge('Es crearan equips nous', 'created'));
+        }
+        if (plannedTeams.some(team => !!team?.will_reassign)) {
+          els.summary.appendChild(createGroupPreviewBadge('Hi ha reassignacions', 'reduced'));
+        }
+        if (affectedTeams.some(team => String(team?.impact_kind || '').trim().toLowerCase() === 'removed')) {
+          els.summary.appendChild(createGroupPreviewBadge('Alguns equips poden quedar buits', 'removed'));
+        }
+        els.summary.classList.remove('d-none');
+      }
+
+      renderTeamPreviewSection(els.existingWrap, els.existingMeta, els.existingList, affectedTeams, 'existing');
+      renderTeamPreviewSection(els.plannedWrap, els.plannedMeta, els.plannedList, plannedTeams, 'planned');
+
+      if (els.clear) {
+        els.clear.classList.remove('d-none');
+      }
+
+      const message = plannedTeams.length
+        ? `Previsualitzacio calculada per al context "${String(data.context_code || 'native')}".`
+        : 'No es generen equips amb aquesta configuracio.';
+      setTeamPreviewStatus(message, plannedTeams.length ? 'info' : 'muted');
     }
     // Tabs Bootstrap 4 (depèn de jQuery + bootstrap.js)
     if (window.jQuery) {
@@ -6518,14 +7137,56 @@
       btnTeamClearSelection.addEventListener('click', () => setVisibleInscripcioSelection(false));
     }
 
+    async function requestTeamPreview() {
+      const fields = getSelectedTeamFields();
+      if (!fields.length) {
+        showAlert("Selecciona com a minim un camp de particio.");
+        return null;
+      }
+      const selectedOnly = document.getElementById('team-auto-selected-only')?.checked;
+      const selectedIds = selectedOnly ? getSelectedInscripcioIds() : [];
+      const replaceExisting = document.getElementById('team-auto-replace')?.checked ?? true;
+
+      setTeamPreviewLoading(true);
+      try {
+        const data = await postJson("{% url 'inscripcions_equips_preview' competicio.id %}", {
+          context_code: getSelectedTeamContextCode(),
+          fields: fields,
+          replace_existing: replaceExisting,
+          filters: getCurrentInscripcioFilters(),
+          selected_ids: selectedIds
+        });
+        renderTeamPreview(data);
+        return data;
+      } catch (err) {
+        clearTeamPreview("No s'ha pogut calcular la previsualitzacio amb aquesta configuracio.");
+        showAlert(`No s'ha pogut previsualitzar equips.\n${err.message || err}`);
+        return null;
+      } finally {
+        setTeamPreviewLoading(false);
+      }
+    }
+
+    async function ensureFreshTeamPreviewIfNeeded() {
+      const root = document.getElementById('team-preview');
+      if (!root) return true;
+      if (root.dataset.hasPreview === '1' && root.dataset.dirty === '1') {
+        return !!(await requestTeamPreview());
+      }
+      return true;
+    }
+
     const btnTeamPreview = document.getElementById('btn-team-preview');
     if (btnTeamPreview) {
       btnTeamPreview.addEventListener('click', async () => {
-        const fields = getSelectedTeamFields();
-        if (!fields.length) {
+        await requestTeamPreview();
+        if (false) {
           showAlert("Selecciona com a mínim un camp de partició.");
           return;
         }
+        return;
+        const previewReady = await ensureFreshTeamPreviewIfNeeded();
+        if (!previewReady) return;
         const selectedOnly = document.getElementById('team-auto-selected-only')?.checked;
         const selectedIds = selectedOnly ? getSelectedInscripcioIds() : [];
 
@@ -6551,6 +7212,8 @@
           showAlert("Selecciona com a mínim un camp de partició.");
           return;
         }
+        const previewReady = await ensureFreshTeamPreviewIfNeeded();
+        if (!previewReady) return;
         const selectedOnly = document.getElementById('team-auto-selected-only')?.checked;
         const replaceExisting = document.getElementById('team-auto-replace')?.checked ?? true;
         const selectedIds = selectedOnly ? getSelectedInscripcioIds() : [];
@@ -6573,6 +7236,21 @@
         }
       });
     }
+
+    const btnTeamPreviewClear = document.getElementById('btn-team-preview-clear');
+    if (btnTeamPreviewClear) {
+      btnTeamPreviewClear.addEventListener('click', () => clearTeamPreview());
+    }
+
+    document.querySelectorAll('.js-team-field, #team-auto-selected-only, #team-auto-replace').forEach(el => {
+      el.addEventListener('change', () => markTeamPreviewDirty());
+    });
+    document.addEventListener('change', (e) => {
+      if (e.target && e.target.closest('.js-team-row-select')) {
+        markTeamPreviewDirty();
+      }
+    });
+    clearTeamPreview();
 
     const btnTeamCreateManual = document.getElementById('btn-team-create-manual');
     if (btnTeamCreateManual) {
@@ -6731,6 +7409,8 @@
         }
       }
     });
+
+    {% include "competicio/_team_workspace_script.html" %}
 
     console.log("Sortables inicialitzats:", document.querySelectorAll('tbody.sortable-body').length);
 

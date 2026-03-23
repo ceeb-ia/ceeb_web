@@ -1,5 +1,5 @@
 import json
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from typing import Optional
 
 from django.db import transaction
@@ -17,10 +17,12 @@ from .services.equip_contexts import (
     build_unique_equip_context_code,
     get_contextual_assignment_map,
     get_custom_equip_context,
+    get_equip_context_summary,
     get_equip_context_payload,
     get_equips_for_context,
     is_native_equip_context,
     normalize_equip_context_code,
+    resolve_inscripcio_equip,
 )
 from .views import (
     capture_inscripcions_history_snapshot,
@@ -156,6 +158,196 @@ def _build_team_name(fields, vals_pretty):
     return " | ".join(parts) if parts else "Equip automatic"
 
 
+def _append_preview_sample(container, value, limit=4):
+    if not value:
+        return
+    items = container.setdefault("items", [])
+    if len(items) < limit:
+        items.append(str(value))
+    container["extra"] = int(container.get("extra") or 0) + 1
+
+
+def _finalize_preview_sample(container):
+    if not isinstance(container, dict):
+        return [], 0
+    items = [str(x).strip() for x in (container.get("items") or []) if str(x).strip()]
+    total = int(container.get("extra") or 0)
+    remaining = max(0, total - len(items))
+    return items, remaining
+
+
+def _filters_are_active(filters):
+    if not isinstance(filters, dict):
+        return False
+    return any(str(filters.get(key) or "").strip() for key in ("q", "categoria", "subcategoria", "entitat"))
+
+
+def _build_preview_selection_summary(records_count, filters, selected_ids, replace_existing):
+    selected_count = len(selected_ids or [])
+    filters_active = _filters_are_active(filters)
+    if selected_count:
+        mode = "selected"
+        label = f"{records_count} seleccionades"
+    elif filters_active:
+        mode = "filtered"
+        label = f"{records_count} filtrades"
+    else:
+        mode = "all"
+        label = f"{records_count} totals"
+    return {
+        "mode": mode,
+        "label": label,
+        "selected_count": selected_count,
+        "filters_active": filters_active,
+        "replace_existing": bool(replace_existing),
+    }
+
+
+def _normalize_workspace_filters(filters):
+    data = filters if isinstance(filters, dict) else {}
+    return {
+        "q": str(data.get("q") or "").strip(),
+        "categoria": str(data.get("categoria") or "").strip(),
+        "subcategoria": str(data.get("subcategoria") or "").strip(),
+        "entitat": str(data.get("entitat") or "").strip(),
+        "assignment_state": str(data.get("assignment_state") or "all").strip().lower() or "all",
+        "equip_id": str(data.get("equip_id") or "").strip(),
+    }
+
+
+def _serialize_workspace_candidate(ins, context_code, current_team=None):
+    native_team = getattr(ins, "equip", None)
+    current_team_id = getattr(current_team, "id", None)
+    native_team_id = getattr(native_team, "id", None)
+    return {
+        "id": int(ins.id),
+        "nom": str(getattr(ins, "nom_i_cognoms", "") or "").strip(),
+        "document": str(getattr(ins, "document", "") or "").strip(),
+        "entitat": str(getattr(ins, "entitat", "") or "").strip(),
+        "categoria": str(getattr(ins, "categoria", "") or "").strip(),
+        "subcategoria": str(getattr(ins, "subcategoria", "") or "").strip(),
+        "current_team_id": current_team_id,
+        "current_team_name": str(getattr(current_team, "nom", "") or "").strip(),
+        "native_team_id": native_team_id,
+        "native_team_name": str(getattr(native_team, "nom", "") or "").strip(),
+        "has_team_in_context": bool(current_team_id),
+        "show_native_team_hint": not is_native_equip_context(context_code),
+    }
+
+
+def _build_workspace_filter_options(records, context_code, assignment_map, teams):
+    categories = sorted({str(getattr(ins, "categoria", "") or "").strip() for ins in records if str(getattr(ins, "categoria", "") or "").strip()})
+    subcategories = sorted({str(getattr(ins, "subcategoria", "") or "").strip() for ins in records if str(getattr(ins, "subcategoria", "") or "").strip()})
+    entitats = sorted({str(getattr(ins, "entitat", "") or "").strip() for ins in records if str(getattr(ins, "entitat", "") or "").strip()})
+    return {
+        "categories": categories,
+        "subcategories": subcategories,
+        "entitats": entitats,
+        "teams": [
+            {
+                "id": int(e.id),
+                "name": str(e.nom or "").strip(),
+                "members": int(getattr(e, "membres_count", 0) or 0),
+            }
+            for e in teams
+        ],
+        "assignment_states": [
+            {"id": "all", "label": "Totes"},
+            {"id": "unassigned", "label": "Sense equip en aquest context"},
+            {"id": "assigned", "label": "Amb equip en aquest context"},
+        ],
+    }
+
+
+def _build_workspace_payload(competicio, context_code, filters=None, page=1, page_size=40):
+    filters = _normalize_workspace_filters(filters)
+    page = max(1, int(page or 1))
+    page_size = max(10, min(200, int(page_size or 40)))
+    qs = (
+        _filter_inscripcions(competicio, filters)
+        .select_related("equip")
+        .only("id", "nom_i_cognoms", "document", "entitat", "categoria", "subcategoria", "equip_id", "ordre_sortida")
+        .order_by("ordre_sortida", "id")
+    )
+    records = list(qs)
+    teams = list(get_equips_for_context(competicio, context_code))
+    assignment_map = get_contextual_assignment_map(competicio, records, context_code)
+
+    equip_id_filter = None
+    if str(filters.get("equip_id") or "").isdigit():
+        equip_id_filter = int(filters["equip_id"])
+    assignment_state = str(filters.get("assignment_state") or "all").strip().lower()
+
+    filtered_candidates = []
+    for ins in records:
+        current_team = resolve_inscripcio_equip(
+            ins,
+            context_code=context_code,
+            fallback=None,
+            assignment_map=assignment_map,
+        )
+        current_team_id = getattr(current_team, "id", None)
+        if assignment_state == "assigned" and current_team_id is None:
+            continue
+        if assignment_state == "unassigned" and current_team_id is not None:
+            continue
+        if equip_id_filter and current_team_id != equip_id_filter:
+            continue
+        filtered_candidates.append(_serialize_workspace_candidate(ins, context_code, current_team=current_team))
+
+    total_filtered = len(filtered_candidates)
+    start = (page - 1) * page_size
+    end = start + page_size
+    page_rows = filtered_candidates[start:end]
+    summary = get_equip_context_summary(competicio, context_code)
+
+    return {
+        "ok": True,
+        "context_code": context_code,
+        "context": next((item for item in get_equip_context_payload(competicio) if item["code"] == context_code), {
+            "code": context_code,
+            "nom": "Context",
+            "description": "",
+            "is_native": is_native_equip_context(context_code),
+        }),
+        "summary": {
+            **summary,
+            "filtered_count": total_filtered,
+            "page_count": len(page_rows),
+        },
+        "filters": filters,
+        "filter_options": _build_workspace_filter_options(records, context_code, assignment_map, teams),
+        "candidates": {
+            "items": page_rows,
+            "total": total_filtered,
+            "page": page,
+            "page_size": page_size,
+            "has_more": end < total_filtered,
+        },
+        "teams": _serialize_equips(competicio, context_code),
+        "contexts": _serialize_contexts(competicio),
+    }
+
+
+@require_POST
+@csrf_protect
+def equips_workspace(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    payload = _parse_payload(request)
+    if payload is None:
+        return HttpResponseBadRequest("JSON invalid")
+
+    context_code = _payload_context_code(payload)
+    context_code, _ctx, err = _get_context_or_400(competicio, context_code)
+    if err is not None:
+        return err
+
+    filters = payload.get("filters") or {}
+    page = payload.get("page") or 1
+    page_size = payload.get("page_size") or 40
+    return JsonResponse(_build_workspace_payload(competicio, context_code, filters=filters, page=page, page_size=page_size))
+
+
 @require_POST
 @csrf_protect
 def equips_preview(request, pk):
@@ -176,25 +368,190 @@ def equips_preview(request, pk):
     selected_ids = payload.get("selected_ids") or []
     if not isinstance(selected_ids, list):
         selected_ids = []
+    replace_existing = bool(payload.get("replace_existing", True))
 
     qs = _filter_inscripcions(competicio, filters)
+    ids_clean = []
     if selected_ids:
         ids_clean = [int(x) for x in selected_ids if str(x).isdigit()]
         qs = qs.filter(id__in=ids_clean)
 
     builtin_fields = [f for f in fields if hasattr(Inscripcio, f)]
-    records = list(qs.only("id", "extra", *builtin_fields).order_by("ordre_sortida", "id"))
+    only_fields = ["id", "extra", "nom_i_cognoms", *builtin_fields]
+    if is_native_equip_context(context_code):
+        only_fields.append("equip_id")
+    records = list(qs.only(*only_fields).order_by("ordre_sortida", "id"))
     grouped = _partition_records(records, fields)
+    record_map = OrderedDict((ins.id, ins) for ins in records)
+    existing_assignments = get_contextual_assignment_map(competicio, records, context_code)
+    existing_teams = list(get_equips_for_context(competicio, context_code))
+    existing_team_by_id = {e.id: e for e in existing_teams}
+    existing_team_by_name = {str(e.nom or "").strip(): e for e in existing_teams}
+    source_impact = defaultdict(
+        lambda: {
+            "team_id": None,
+            "team_name": "",
+            "current_members_context": 0,
+            "outgoing_count": 0,
+            "incoming_count": 0,
+            "keep_count": 0,
+            "sample": {"items": [], "extra": 0},
+        }
+    )
+    target_impact = defaultdict(
+        lambda: {
+            "team_id": None,
+            "team_name": "",
+            "current_members_context": 0,
+            "outgoing_count": 0,
+            "incoming_count": 0,
+            "keep_count": 0,
+            "sample": {"items": [], "extra": 0},
+        }
+    )
 
     preview = []
     for item in grouped.values():
+        target_name = _build_team_name(fields, item["vals_pretty"])
+        target_team = existing_team_by_name.get(target_name)
+        target_team_id = getattr(target_team, "id", None)
+        member_sample = {"items": [], "extra": 0}
+        current_same_count = 0
+        current_other_count = 0
+        current_none_count = 0
+        skipped_reassign_count = 0
+
+        for ins_id in item["ids"]:
+            ins = record_map.get(ins_id)
+            if ins is None:
+                continue
+            current_team = resolve_inscripcio_equip(
+                ins,
+                context_code=context_code,
+                fallback=None,
+                assignment_map=existing_assignments,
+            )
+            current_team_id = getattr(current_team, "id", None)
+            if current_team_id is None:
+                current_none_count += 1
+            elif target_team_id and current_team_id == target_team_id:
+                current_same_count += 1
+            else:
+                current_other_count += 1
+                if not replace_existing and current_team_id is not None:
+                    skipped_reassign_count += 1
+
+            _append_preview_sample(member_sample, getattr(ins, "nom_i_cognoms", ""))
+
+            if target_team_id:
+                target_entry = target_impact[target_team_id]
+                target_entry["team_id"] = target_team_id
+                target_entry["team_name"] = str(target_team.nom or "").strip()
+                target_entry["current_members_context"] = int(getattr(target_team, "membres_count", 0) or 0)
+                if current_team_id == target_team_id:
+                    target_entry["keep_count"] += 1
+                    _append_preview_sample(target_entry["sample"], getattr(ins, "nom_i_cognoms", ""))
+                elif current_team_id is None or replace_existing:
+                    target_entry["incoming_count"] += 1
+                    _append_preview_sample(target_entry["sample"], getattr(ins, "nom_i_cognoms", ""))
+
+            if replace_existing and current_team_id and current_team_id != target_team_id:
+                source_team = current_team or existing_team_by_id.get(current_team_id)
+                if source_team is not None:
+                    source_entry = source_impact[current_team_id]
+                    source_entry["team_id"] = current_team_id
+                    source_entry["team_name"] = str(getattr(source_team, "nom", "") or "").strip()
+                    source_entry["current_members_context"] = int(getattr(source_team, "membres_count", 0) or 0)
+                    source_entry["outgoing_count"] += 1
+                    _append_preview_sample(source_entry["sample"], getattr(ins, "nom_i_cognoms", ""))
+
+        member_samples, member_samples_remaining = _finalize_preview_sample(member_sample)
         preview.append(
             {
-                "nom_suggerit": _build_team_name(fields, item["vals_pretty"]),
+                "nom_suggerit": target_name,
                 "count": len(item["ids"]),
                 "values": item["vals_pretty"],
+                "member_samples": member_samples,
+                "member_samples_remaining": member_samples_remaining,
+                "existing_team_id": target_team_id,
+                "existing_team_name": str(target_team.nom or "").strip() if target_team else "",
+                "will_create": target_team is None,
+                "will_reassign": bool(replace_existing and current_other_count > 0),
+                "will_keep": bool(current_same_count > 0),
+                "current_same_count": current_same_count,
+                "current_other_count": current_other_count,
+                "current_none_count": current_none_count,
+                "skipped_reassign_count": skipped_reassign_count,
             }
         )
+
+    def _serialize_impact_rows(rows_dict):
+        rows = []
+        for row in rows_dict.values():
+            sample_items, sample_remaining = _finalize_preview_sample(row.get("sample"))
+            current_members_context = int(row.get("current_members_context") or 0)
+            outgoing_count = int(row.get("outgoing_count") or 0)
+            incoming_count = int(row.get("incoming_count") or 0)
+            keep_count = int(row.get("keep_count") or 0)
+            remaining_members = max(0, current_members_context - outgoing_count)
+            impact_kind = "existing"
+            if outgoing_count > 0 and remaining_members == 0:
+                impact_kind = "removed"
+            elif outgoing_count > 0:
+                impact_kind = "reduced"
+            elif incoming_count > 0:
+                impact_kind = "incoming"
+            rows.append(
+                {
+                    "team_id": row.get("team_id"),
+                    "team_name": row.get("team_name") or "Equip",
+                    "current_members_context": current_members_context,
+                    "remaining_members_context": remaining_members,
+                    "outgoing_count": outgoing_count,
+                    "incoming_count": incoming_count,
+                    "keep_count": keep_count,
+                    "impact_kind": impact_kind,
+                    "member_samples": sample_items,
+                    "member_samples_remaining": sample_remaining,
+                }
+            )
+        rows.sort(
+            key=lambda item: (
+                str(item.get("impact_kind") or ""),
+                str(item.get("team_name") or "").lower(),
+                int(item.get("team_id") or 0),
+            )
+        )
+        return rows
+
+    affected_teams = _serialize_impact_rows(source_impact)
+    affected_by_target = _serialize_impact_rows(target_impact)
+    seen_team_ids = {int(row.get("team_id") or 0) for row in affected_teams if row.get("team_id")}
+    for row in affected_by_target:
+        team_id = int(row.get("team_id") or 0)
+        if team_id and team_id in seen_team_ids:
+            for source_row in affected_teams:
+                if int(source_row.get("team_id") or 0) != team_id:
+                    continue
+                source_row["incoming_count"] = int(source_row.get("incoming_count") or 0) + int(row.get("incoming_count") or 0)
+                source_row["keep_count"] = int(source_row.get("keep_count") or 0) + int(row.get("keep_count") or 0)
+                existing_samples = list(source_row.get("member_samples") or [])
+                for sample_name in row.get("member_samples") or []:
+                    if sample_name not in existing_samples and len(existing_samples) < 4:
+                        existing_samples.append(sample_name)
+                source_row["member_samples"] = existing_samples
+                source_row["member_samples_remaining"] = max(
+                    0,
+                    int(source_row.get("member_samples_remaining") or 0) + int(row.get("member_samples_remaining") or 0),
+                )
+                if source_row.get("impact_kind") not in ("removed", "reduced"):
+                    source_row["impact_kind"] = "incoming" if int(source_row.get("incoming_count") or 0) > 0 else "existing"
+                break
+        else:
+            affected_teams.append(row)
+
+    assigned_total = sum(int(getattr(e, "membres_count", 0) or 0) for e in existing_teams)
+    teams_with_members = sum(1 for e in existing_teams if int(getattr(e, "membres_count", 0) or 0) > 0)
 
     return JsonResponse(
         {
@@ -203,6 +560,18 @@ def equips_preview(request, pk):
             "fields": fields,
             "total_inscripcions": len(records),
             "total_equips": len(preview),
+            "selection_summary": _build_preview_selection_summary(
+                len(records),
+                filters,
+                ids_clean,
+                replace_existing,
+            ),
+            "existing_summary": {
+                "teams_total": len(existing_teams),
+                "teams_with_members": teams_with_members,
+                "assigned_total": assigned_total,
+                "affected_teams": affected_teams,
+            },
             "preview": preview,
         }
     )

@@ -8072,6 +8072,168 @@ class EquipContextFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(assignacio.equip_id, self.custom_team.id)
 
 
+class EquipPreviewUiTests(_BaseTrampoliDataMixin, TestCase):
+    def setUp(self):
+        self.comp = self._create_competicio("Comp Team Preview UI")
+        self.team_existing = Equip.objects.create(competicio=self.comp, nom="Club A")
+        self.team_other = Equip.objects.create(competicio=self.comp, nom="Alt Equip")
+        self.ctx = EquipContext.objects.create(competicio=self.comp, code="finals", nom="Finals")
+
+        self.ins_keep = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Anna Keep",
+            entitat="Club A",
+            ordre_sortida=1,
+            equip=self.team_existing,
+        )
+        self.ins_move = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Berta Move",
+            entitat="Club A",
+            ordre_sortida=2,
+            equip=self.team_other,
+        )
+        self.ins_new = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Carla New",
+            entitat="Club C",
+            ordre_sortida=3,
+        )
+        self.ins_ctx = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Dina Context",
+            entitat="Club A",
+            ordre_sortida=4,
+            equip=self.team_other,
+        )
+        InscripcioEquipAssignacio.objects.create(
+            competicio=self.comp,
+            context=self.ctx,
+            inscripcio=self.ins_ctx,
+            equip=self.team_existing,
+        )
+
+        User = get_user_model()
+        self.user = User.objects.create_user(
+            username="equip_preview_user",
+            password="testpass123",
+            email="equip-preview@example.com",
+        )
+        CompeticioMembership.objects.create(
+            user=self.user,
+            competicio=self.comp,
+            role=CompeticioMembership.Role.OWNER,
+            is_active=True,
+        )
+        self.client.force_login(self.user)
+
+    def test_inscripcions_list_renders_expandable_team_workbench(self):
+        response = self.client.get(reverse("inscripcions_list", kwargs={"pk": self.comp.id}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="teams-main-card"')
+        self.assertContains(response, 'data-expand-target="teams-main-card"')
+        self.assertContains(response, 'id="team-workspace-shell"')
+        self.assertContains(response, 'id="team-filter-q"')
+        self.assertContains(response, 'id="btn-team-workspace-preview"')
+        self.assertContains(response, 'id="team-preview-status"')
+        self.assertContains(response, 'id="team-preview-existing-list"')
+        self.assertContains(response, 'id="team-preview-list"')
+        self.assertContains(response, "Flux complet d'equips")
+
+    def test_equips_workspace_returns_context_summary_candidates_and_filters(self):
+        response = self.client.post(
+            reverse("inscripcions_equips_workspace", kwargs={"pk": self.comp.id}),
+            data=json.dumps(
+                {
+                    "context_code": "finals",
+                    "filters": {
+                        "q": "",
+                        "categoria": "",
+                        "subcategoria": "",
+                        "entitat": "Club A",
+                        "assignment_state": "assigned",
+                        "equip_id": str(self.team_existing.id),
+                    },
+                    "page": 1,
+                    "page_size": 25,
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload.get("ok"))
+        self.assertEqual(payload.get("context_code"), "finals")
+        self.assertEqual(payload.get("context", {}).get("nom"), "Finals")
+        self.assertEqual(payload.get("summary", {}).get("assigned_count"), 1)
+        self.assertEqual(payload.get("summary", {}).get("filtered_count"), 1)
+        self.assertEqual(payload.get("candidates", {}).get("total"), 1)
+        self.assertEqual(payload.get("candidates", {}).get("items", [])[0].get("nom"), "Dina Context")
+        self.assertEqual(payload.get("candidates", {}).get("items", [])[0].get("current_team_name"), "Club A")
+        self.assertTrue(any(row.get("name") == "Club A" for row in (payload.get("filter_options", {}).get("teams") or [])))
+        self.assertTrue(any(ctx.get("code") == "finals" for ctx in (payload.get("contexts") or [])))
+
+    def test_equips_preview_returns_rich_contract_for_native_context(self):
+        response = self.client.post(
+            reverse("inscripcions_equips_preview", kwargs={"pk": self.comp.id}),
+            data=json.dumps(
+                {
+                    "context_code": "native",
+                    "fields": ["entitat"],
+                    "replace_existing": True,
+                    "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                    "selected_ids": [],
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload.get("ok"))
+        self.assertIn("selection_summary", payload)
+        self.assertIn("existing_summary", payload)
+        by_name = {row["nom_suggerit"]: row for row in (payload.get("preview") or [])}
+        self.assertIn("Club A", by_name)
+        self.assertIn("Club C", by_name)
+        self.assertEqual(by_name["Club A"]["existing_team_name"], "Club A")
+        self.assertTrue(by_name["Club A"]["will_keep"])
+        self.assertTrue(by_name["Club A"]["will_reassign"])
+        self.assertFalse(by_name["Club A"]["will_create"])
+        self.assertEqual(by_name["Club C"]["member_samples"], ["Carla New"])
+        self.assertTrue(by_name["Club C"]["will_create"])
+        self.assertEqual(payload["selection_summary"]["mode"], "all")
+        affected_names = {row["team_name"] for row in payload["existing_summary"]["affected_teams"]}
+        self.assertIn("Alt Equip", affected_names)
+
+    def test_equips_preview_supports_custom_context_and_selected_summary(self):
+        response = self.client.post(
+            reverse("inscripcions_equips_preview", kwargs={"pk": self.comp.id}),
+            data=json.dumps(
+                {
+                    "context_code": "finals",
+                    "fields": ["entitat"],
+                    "replace_existing": False,
+                    "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                    "selected_ids": [self.ins_ctx.id],
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload.get("ok"))
+        self.assertEqual(payload["selection_summary"]["mode"], "selected")
+        self.assertFalse(payload["selection_summary"]["replace_existing"])
+        self.assertEqual(payload["total_inscripcions"], 1)
+        self.assertEqual(payload["preview"][0]["existing_team_name"], "Club A")
+        self.assertTrue(payload["preview"][0]["will_keep"])
+        self.assertFalse(payload["preview"][0]["will_create"])
+
+
 class EquipContextClassificacioTests(_BaseTrampoliDataMixin, TestCase):
     def setUp(self):
         self.comp = self._create_competicio("Comp Classif Context")

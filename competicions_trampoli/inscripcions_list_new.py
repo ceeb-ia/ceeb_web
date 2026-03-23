@@ -20,6 +20,7 @@ from .services.competition_groups import (
 )
 from .services.equip_contexts import (
     NATIVE_EQUIP_CONTEXT_CODE,
+    get_equip_context_summary,
     get_equip_context_payload,
     get_equips_for_context,
     normalize_equip_context_code,
@@ -563,6 +564,7 @@ class InscripcionsListNewView(InscripcionsListView):
         ctx["equip_name_map"] = {str(e.id): e.nom for e in teams_list}
         ctx["team_contexts"] = get_equip_context_payload(self.competicio)
         ctx["team_context_selected_code"] = team_context_code
+        ctx["team_context_summary"] = get_equip_context_summary(self.competicio, team_context_code)
 
         # Pas 8 del pla: dades necessàries per a la columna "Aparells".
         aparells_cfg = list(

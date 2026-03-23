@@ -53,6 +53,7 @@ from .views_equips import (
     equips_preview,
     equips_rename,
     equips_unassign,
+    equips_workspace,
 )
 from .views_scoring import ScoringNotesHome, ScoringSchemaUpdate, scoring_media_context, scoring_save
 from .views_trampoli import (
@@ -123,6 +124,7 @@ urlpatterns = [
     path("competicio/<int:pk>/inscripcions/media/match-preview/", competition_view(inscripcions_media_match_preview, "inscripcions.view"), name="inscripcions_media_match_preview"),
     path("competicio/<int:pk>/inscripcions/media/match-apply/", competition_view(inscripcions_media_match_apply, "inscripcions.edit"), name="inscripcions_media_match_apply"),
     path("competicio/<int:pk>/inscripcions/equips/preview/", competition_view(equips_preview, "inscripcions.view"), name="inscripcions_equips_preview"),
+    path("competicio/<int:pk>/inscripcions/equips/workspace/", competition_view(equips_workspace, "inscripcions.view"), name="inscripcions_equips_workspace"),
     path("competicio/<int:pk>/inscripcions/equips/auto-create/", competition_view(equips_auto_create, "inscripcions.edit"), name="inscripcions_equips_auto_create"),
     path("competicio/<int:pk>/inscripcions/equips/create/", competition_view(equips_create_manual, "inscripcions.edit"), name="inscripcions_equips_create_manual"),
     path("competicio/<int:pk>/inscripcions/equips/assign/", competition_view(equips_assign, "inscripcions.edit"), name="inscripcions_equips_assign"),

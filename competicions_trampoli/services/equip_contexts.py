@@ -3,7 +3,7 @@ from collections import OrderedDict
 from django.db.models import Count
 from django.utils.text import slugify
 
-from ..models import Equip, EquipContext, InscripcioEquipAssignacio
+from ..models import Equip, EquipContext, Inscripcio, InscripcioEquipAssignacio
 
 
 NATIVE_EQUIP_CONTEXT_CODE = "native"
@@ -136,3 +136,30 @@ def get_equips_for_context(competicio, context_code):
     for equip in equips:
         equip.membres_count = counts.get(equip.id, 0)
     return equips
+
+
+def get_equip_context_summary(competicio, context_code):
+    code = normalize_equip_context_code(context_code)
+    total_inscripcions = Inscripcio.objects.filter(competicio=competicio).count()
+    equips = list(get_equips_for_context(competicio, code))
+    teams_total = len(equips)
+    teams_with_members = sum(1 for equip in equips if int(getattr(equip, "membres_count", 0) or 0) > 0)
+
+    if code == NATIVE_EQUIP_CONTEXT_CODE:
+        assigned_count = Inscripcio.objects.filter(competicio=competicio).exclude(equip__isnull=True).count()
+    else:
+        ctx = get_custom_equip_context(competicio, code)
+        if ctx is None:
+            assigned_count = 0
+        else:
+            assigned_count = InscripcioEquipAssignacio.objects.filter(competicio=competicio, context=ctx).count()
+
+    assigned_count = int(assigned_count or 0)
+    return {
+        "context_code": code,
+        "teams_total": teams_total,
+        "teams_with_members": teams_with_members,
+        "assigned_count": assigned_count,
+        "unassigned_count": max(0, int(total_inscripcions or 0) - assigned_count),
+        "total_inscripcions": int(total_inscripcions or 0),
+    }

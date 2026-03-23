@@ -2,155 +2,332 @@
   <div class="action-panel-header">
     <div>
       <p class="panel-title mb-0">Fer Equips</p>
-      <div class="subtle">Crea equips automaticament per particio o assigna manualment.</div>
+      <div class="subtle">Gestiona equips per context amb un workspace propi de seleccio, accio i resultat.</div>
     </div>
   </div>
 
   <div class="action-panel-body">
-    <div class="team-box mb-3">
-      <div class="fw-semibold mb-2">Context d'equips</div>
-      <div class="d-flex align-items-center flex-wrap mb-2" style="gap:10px;">
-        <select id="team-context-select" class="form-control form-control-sm" style="max-width:260px;">
-          {% for ctx in team_contexts %}
-            <option value="{{ ctx.code }}" {% if ctx.code == team_context_selected_code %}selected{% endif %}>{{ ctx.nom }}</option>
-          {% endfor %}
-        </select>
-        <button type="button" class="btn btn-sm btn-outline-primary" id="btn-team-context-create">Nou context</button>
-        <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-team-context-rename">Renombrar context</button>
-        <button type="button" class="btn btn-sm btn-outline-danger" id="btn-team-context-delete">Eliminar context</button>
-      </div>
-      <div class="small text-muted">
-        El context <strong>{{ team_context_selected_code }}</strong> determina on s'assignen els equips. El context natiu correspon al camp equip de la inscripcio.
-      </div>
-    </div>
-
-    <div class="team-box mb-3">
-      <div class="fw-semibold mb-2">Automatic (particions)</div>
-      <div class="chips mb-2">
-        <span class="text-muted small fw-semibold">Particionar per:</span>
-        {% for f in team_partition_fields %}
-          <label class="group-chip" title="{{ f.code }}">
-            <input
-              type="checkbox"
-              class="js-team-field"
-              value="{{ f.code }}"
-              {% if f.code in team_partition_default_fields %}checked{% endif %}
-            >
-            <span>{{ f.ui_label|default:f.label }}</span>
-          </label>
-        {% endfor %}
-      </div>
-
-      <div class="d-flex align-items-center flex-wrap" style="gap:10px;">
-        <label class="m-0 small">
-          <input type="checkbox" id="team-auto-selected-only">
-          Nomes inscripcions seleccionades
-        </label>
-        <label class="m-0 small">
-          <input type="checkbox" id="team-auto-replace" checked>
-          Reassignar equips existents
-        </label>
-        <button type="button" class="btn btn-sm btn-outline-info" id="btn-team-preview">Previsualitzar</button>
-        <button type="button" class="btn btn-sm btn-outline-dark" id="btn-team-auto-create">Crear equips automaticament</button>
+    <div
+      class="tab-select-card team-workbench-card"
+      id="teams-main-card"
+      data-expand-card="teams-main-card"
+      data-expand-title="Gestor d'equips"
+      data-expand-subtitle="Context, subconjunt d'inscripcions, accions i resultat en un mateix workspace."
+    >
+      <div class="tab-select-card-head">
+        <div>
+          <div class="fw-semibold">Gestor d'equips</div>
+          <div class="small text-muted">
+            Context actiu:
+            <strong id="team-context-title-inline">
+              {% for ctx in team_contexts %}
+                {% if ctx.code == team_context_selected_code %}{{ ctx.nom }}{% endif %}
+              {% endfor %}
+            </strong>
+          </div>
+        </div>
+        <div class="tab-select-card-tools">
+          <span class="badge badge-light border" id="team-context-badge-inline">Context {{ team_context_selected_code }}</span>
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-primary tab-select-expand-btn js-expand-tab-select"
+            data-expand-target="teams-main-card"
+            data-label-collapsed="Obrir gestor d'equips"
+            data-label-expanded="Tancar vista ampla"
+            aria-expanded="false"
+          >
+            Obrir gestor d'equips
+          </button>
+        </div>
       </div>
 
-      <div id="team-preview" class="small text-muted mt-2"></div>
-    </div>
-
-    <hr class="my-3">
-
-    <div class="team-box mb-3">
-      <div class="fw-semibold mb-2">Manual</div>
-      <div class="d-flex align-items-center flex-wrap mb-2" style="gap:10px;">
-        <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-team-select-visible">
-          Seleccionar visibles
-        </button>
-        <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-team-clear-selection">
-          Treure seleccio
-        </button>
+      <div class="team-compact-summary">
+        <div class="team-compact-summary-copy">
+          Flux complet d'equips: filtra inscripcions per context, prepara seleccions propies i aplica accions manuals o automatiques sense dependre del llistat principal.
+        </div>
+        <div class="team-compact-summary-metrics" id="team-compact-summary-metrics">
+          <span class="group-preview-badge badge badge-light border">{{ team_context_summary.teams_with_members }} equips actius</span>
+          <span class="group-preview-badge badge badge-light border">{{ team_context_summary.assigned_count }} amb equip</span>
+          <span class="group-preview-badge badge badge-light border">{{ team_context_summary.unassigned_count }} sense equip</span>
+        </div>
       </div>
 
-      <div class="d-flex align-items-center flex-wrap mb-2" style="gap:10px;">
-        <input type="text" class="form-control form-control-sm" id="team-new-name" style="max-width:260px;" placeholder="Nom del nou equip...">
-        <button type="button" class="btn btn-sm btn-outline-primary" id="btn-team-create-manual">
-          Crear equip (i assignar seleccionades)
-        </button>
-      </div>
+      <div class="team-workspace-shell" id="team-workspace-shell">
+        <div class="team-workspace-header" id="team-workspace-header">
+          <div class="team-workspace-context">
+            <div class="team-workspace-context-head">
+              <div>
+                <div class="team-workspace-eyebrow">Context actiu</div>
+                <div class="team-workspace-title" id="team-context-title">
+                  {% for ctx in team_contexts %}
+                    {% if ctx.code == team_context_selected_code %}{{ ctx.nom }}{% endif %}
+                  {% endfor %}
+                </div>
+              </div>
+              <span class="badge badge-light border" id="team-context-badge">Context {{ team_context_selected_code }}</span>
+            </div>
+            <div class="small text-muted" id="team-context-description">Totes les accions d'aquest modal s'apliquen nomes a aquest context.</div>
+            <div class="d-flex align-items-center flex-wrap mt-2" style="gap:10px;">
+              <select id="team-workspace-context-select" class="form-control form-control-sm" style="max-width:260px;">
+                {% for ctx in team_contexts %}
+                  <option value="{{ ctx.code }}" {% if ctx.code == team_context_selected_code %}selected{% endif %}>{{ ctx.nom }}</option>
+                {% endfor %}
+              </select>
+              <button type="button" class="btn btn-sm btn-outline-primary" id="btn-team-workspace-context-create">Nou context</button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-team-workspace-context-rename">Renombrar context</button>
+              <button type="button" class="btn btn-sm btn-outline-danger" id="btn-team-workspace-context-delete">Eliminar context</button>
+            </div>
+          </div>
+          <div class="team-context-metrics" id="team-context-metrics">
+            <div class="team-context-metric">
+              <span class="team-context-metric-label">Equips actius</span>
+              <strong class="team-context-metric-value" id="team-summary-teams-with-members">{{ team_context_summary.teams_with_members }}</strong>
+            </div>
+            <div class="team-context-metric">
+              <span class="team-context-metric-label">Amb equip</span>
+              <strong class="team-context-metric-value" id="team-summary-assigned">{{ team_context_summary.assigned_count }}</strong>
+            </div>
+            <div class="team-context-metric">
+              <span class="team-context-metric-label">Sense equip</span>
+              <strong class="team-context-metric-value" id="team-summary-unassigned">{{ team_context_summary.unassigned_count }}</strong>
+            </div>
+            <div class="team-context-metric">
+              <span class="team-context-metric-label">Total inscripcions</span>
+              <strong class="team-context-metric-value" id="team-summary-total">{{ team_context_summary.total_inscripcions }}</strong>
+            </div>
+          </div>
+        </div>
 
-      <div class="d-flex align-items-center flex-wrap" style="gap:10px;">
-        <select id="team-existing-select" class="form-control form-control-sm" style="max-width:260px;">
-          <option value="">-- Selecciona equip --</option>
-          {% for e in equips_existing %}
-            <option value="{{ e.id }}">{{ e.nom }} ({{ e.membres_count }})</option>
-          {% endfor %}
-        </select>
-        <button type="button" class="btn btn-sm btn-outline-dark" id="btn-team-assign">
-          Assignar seleccionades
-        </button>
-        <button type="button" class="btn btn-sm btn-outline-warning" id="btn-team-unassign">
-          Treure equip a seleccionades
-        </button>
-      </div>
-    </div>
+        <div class="team-workspace-grid">
+          <section class="team-workspace-pane team-workspace-pane-left">
+            <div class="team-pane-card">
+              <div class="team-pane-head">
+                <div>
+                  <div class="fw-semibold">Subconjunt d'inscripcions</div>
+                  <div class="small text-muted">Filtra i construeix la seleccio sobre la qual treballaran l'automatic i el manual.</div>
+                </div>
+                <span class="badge badge-light border" id="team-candidates-count-badge">0 candidates</span>
+              </div>
 
-    <div class="team-box">
-      <div class="d-flex justify-content-between align-items-center mb-2">
-        <div class="fw-semibold">Equips existents</div>
-        <button
-          type="button"
-          class="btn btn-sm btn-outline-danger"
-          id="btn-team-delete-all"
-          data-delete-all-url="{% url 'inscripcions_equips_delete_all' competicio.id %}"
-        >
-          Eliminar tots els equips
-        </button>
-      </div>
-      <div class="table-responsive">
-        <table class="table table-sm table-bordered align-middle mb-0">
-          <thead class="table-light">
-            <tr>
-              <th>Nom</th>
-              <th style="width:100px;">Origen</th>
-              <th style="width:100px;">Membres</th>
-              <th style="width:180px;">Accions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for e in equips_existing %}
-              <tr>
-                <td>{{ e.nom }}</td>
-                <td>{{ e.get_origen_display }}</td>
-                <td>{{ e.membres_count }}</td>
-                <td>
-                  <div class="d-flex flex-wrap gap-1">
-                    <button
-                      type="button"
-                      class="btn btn-sm btn-outline-secondary js-team-rename"
-                      data-team-id="{{ e.id }}"
-                      data-team-name="{{ e.nom|escape }}"
-                      data-rename-url="{% url 'inscripcions_equips_rename' competicio.id e.id %}"
-                    >
-                      Renombrar
-                    </button>
-                    <button
-                      type="button"
-                      class="btn btn-sm btn-outline-danger js-team-delete"
-                      data-team-id="{{ e.id }}"
-                      data-team-name="{{ e.nom|escape }}"
-                      data-delete-url="{% url 'inscripcions_equips_delete' competicio.id e.id %}"
-                    >
-                      Eliminar
-                    </button>
+              <div class="team-filters-grid">
+                <div>
+                  <label class="small text-muted mb-1 d-block" for="team-filter-q">Cerca</label>
+                  <input type="text" class="form-control form-control-sm" id="team-filter-q" placeholder="Nom, document o entitat...">
+                </div>
+                <div>
+                  <label class="small text-muted mb-1 d-block" for="team-filter-categoria">Categoria</label>
+                  <select id="team-filter-categoria" class="form-control form-control-sm">
+                    <option value="">Totes</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="small text-muted mb-1 d-block" for="team-filter-subcategoria">Subcategoria</label>
+                  <select id="team-filter-subcategoria" class="form-control form-control-sm">
+                    <option value="">Totes</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="small text-muted mb-1 d-block" for="team-filter-entitat">Entitat</label>
+                  <select id="team-filter-entitat" class="form-control form-control-sm">
+                    <option value="">Totes</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="small text-muted mb-1 d-block" for="team-filter-assignment-state">Estat al context</label>
+                  <select id="team-filter-assignment-state" class="form-control form-control-sm">
+                    <option value="all">Totes</option>
+                    <option value="unassigned">Sense equip en aquest context</option>
+                    <option value="assigned">Amb equip en aquest context</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="small text-muted mb-1 d-block" for="team-filter-equip-id">Equip actual al context</label>
+                  <select id="team-filter-equip-id" class="form-control form-control-sm">
+                    <option value="">Qualsevol</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="team-selection-toolbar">
+                <div class="team-selection-summary">
+                  <strong id="team-selection-count">0 seleccionades</strong>
+                  <span class="text-muted" id="team-selection-mode-label">Treballant sobre totes les candidates filtrades</span>
+                </div>
+                <div class="d-flex flex-wrap" style="gap:8px;">
+                  <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-team-workspace-select-visible">Seleccionar visibles</button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-team-workspace-add-visible">Afegir visibles</button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-team-workspace-remove-visible">Treure visibles</button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-team-import-selection">Importar seleccio del llistat</button>
+                  <button type="button" class="btn btn-sm btn-outline-danger" id="btn-team-workspace-clear-selection">Netejar seleccio</button>
+                </div>
+              </div>
+
+              <div class="team-candidates-status small text-muted" id="team-candidates-status">Carregant candidates...</div>
+              <div class="team-candidates-list" id="team-candidates-list"></div>
+              <div class="team-candidates-footer">
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-team-candidates-prev">Anterior</button>
+                <span class="small text-muted" id="team-candidates-page-label">Pagina 1</span>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-team-candidates-next">Seguent</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="team-workspace-pane team-workspace-pane-center">
+            <div class="team-pane-card">
+              <div class="team-pane-head">
+                <div>
+                  <div class="fw-semibold">Accions</div>
+                  <div class="small text-muted">Automatic i manual comparteixen el mateix subconjunt definit a l'esquerra.</div>
+                </div>
+              </div>
+
+              <div class="team-action-tabs">
+                <button type="button" class="btn btn-sm btn-dark js-team-action-tab is-active" data-team-action-tab="auto">Automatic</button>
+                <button type="button" class="btn btn-sm btn-outline-dark js-team-action-tab" data-team-action-tab="manual">Manual</button>
+              </div>
+
+              <div class="team-action-panel" id="team-action-panel-auto" data-team-action-panel="auto">
+                <div class="team-scope-box">
+                  <div class="fw-semibold small mb-2">Abast</div>
+                  <label class="team-scope-option">
+                    <input type="radio" name="team-selection-mode" value="filtered" checked>
+                    <span>Treballar sobre totes les candidates filtrades</span>
+                  </label>
+                  <label class="team-scope-option">
+                    <input type="radio" name="team-selection-mode" value="selected">
+                    <span>Treballar nomes sobre la seleccio del modal</span>
+                  </label>
+                </div>
+
+                <div class="fw-semibold mb-2">Particionar per</div>
+                <div class="chips mb-2">
+                  {% for f in team_partition_fields %}
+                    <label class="group-chip" title="{{ f.code }}">
+                      <input
+                        type="checkbox"
+                        class="js-team-field"
+                        value="{{ f.code }}"
+                        {% if f.code in team_partition_default_fields %}checked{% endif %}
+                      >
+                      <span>{{ f.ui_label|default:f.label }}</span>
+                    </label>
+                  {% endfor %}
+                </div>
+
+                <div class="d-flex align-items-center flex-wrap team-inline-options" style="gap:10px;">
+                  <label class="m-0 small">
+                    <input type="checkbox" id="team-auto-replace" checked>
+                    Reassignar equips existents
+                  </label>
+                </div>
+
+                <div class="team-action-note" id="team-auto-scope-note">Treballara sobre totes les candidates filtrades del workspace.</div>
+
+                <div class="d-flex flex-wrap mt-3" style="gap:10px;">
+                  <button type="button" class="btn btn-sm btn-outline-info" id="btn-team-workspace-preview">Previsualitzar</button>
+                  <button type="button" class="btn btn-sm btn-outline-dark" id="btn-team-workspace-auto-create">Crear equips automaticament</button>
+                </div>
+              </div>
+
+              <div class="team-action-panel d-none" id="team-action-panel-manual" data-team-action-panel="manual">
+                <div class="team-manual-banner">
+                  Aquestes accions s'aplicaran al context <strong id="team-manual-context-name">
+                    {% for ctx in team_contexts %}
+                      {% if ctx.code == team_context_selected_code %}{{ ctx.nom }}{% endif %}
+                    {% endfor %}
+                  </strong>.
+                </div>
+
+                <div class="team-action-note" id="team-manual-scope-note">S'aplicara a 0 inscripcions seleccionades en aquest context.</div>
+
+                <div class="d-flex align-items-center flex-wrap mb-2" style="gap:10px;">
+                  <input type="text" class="form-control form-control-sm" id="team-workspace-new-name" style="max-width:260px;" placeholder="Nom del nou equip...">
+                  <button type="button" class="btn btn-sm btn-outline-primary" id="btn-team-workspace-create-manual">
+                    Crear equip nou i assignar seleccio
+                  </button>
+                </div>
+
+                <div class="d-flex align-items-center flex-wrap" style="gap:10px;">
+                  <select id="team-workspace-existing-select" class="form-control form-control-sm" style="max-width:320px;">
+                    <option value="">-- Selecciona equip --</option>
+                    {% for e in equips_existing %}
+                      <option value="{{ e.id }}">{{ e.nom }} ({{ e.membres_count }})</option>
+                    {% endfor %}
+                  </select>
+                  <button type="button" class="btn btn-sm btn-outline-dark" id="btn-team-workspace-assign">
+                    Assignar seleccio a aquest equip
+                  </button>
+                  <button type="button" class="btn btn-sm btn-outline-warning" id="btn-team-workspace-unassign">
+                    Treure equip de la seleccio
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="team-workspace-pane team-workspace-pane-right">
+            <div class="team-pane-card">
+              <div class="team-pane-head">
+                <div>
+                  <div class="fw-semibold">Resultat previst</div>
+                  <div class="small text-muted">Revisa l'impacte abans d'aplicar canvis.</div>
+                </div>
+              </div>
+
+              <div class="group-preview-panel team-preview-panel" id="team-preview" data-has-preview="0" data-dirty="0">
+                <div class="group-preview-toolbar">
+                  <div>
+                    <div class="group-preview-status" id="team-preview-status">
+                      Encara no s'ha calculat cap previsualitzacio amb aquesta configuracio.
+                    </div>
                   </div>
-                </td>
-              </tr>
-            {% empty %}
-              <tr>
-                <td colspan="4" class="text-muted text-center">No hi ha equips creats.</td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+                  <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="btn-team-preview-clear">Netejar</button>
+                </div>
+                <div class="team-preview-selection d-none" id="team-preview-selection-summary"></div>
+                <div class="group-preview-summary d-none" id="team-preview-summary"></div>
+                <div class="group-preview-sections">
+                  <div class="group-preview-section d-none" id="team-preview-existing-wrap">
+                    <div class="group-preview-section-head">
+                      <div class="fw-semibold">Equips existents afectats</div>
+                      <div class="group-preview-section-meta" id="team-preview-existing-meta"></div>
+                    </div>
+                    <div class="group-preview-list" id="team-preview-existing-list"></div>
+                  </div>
+                  <div class="group-preview-section d-none" id="team-preview-planned-wrap">
+                    <div class="group-preview-section-head">
+                      <div class="fw-semibold">Equips previstos</div>
+                      <div class="group-preview-section-meta" id="team-preview-planned-meta"></div>
+                    </div>
+                    <div class="group-preview-list" id="team-preview-list"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="team-pane-card">
+              <div class="team-pane-head">
+                <div>
+                  <div class="fw-semibold">Equips del context</div>
+                  <div class="small text-muted">Manteniment i lectura del context actual, separat de la seleccio.</div>
+                </div>
+                <button
+                  type="button"
+                  class="btn btn-sm btn-outline-danger"
+                  id="btn-team-workspace-delete-all"
+                  data-delete-all-url="{% url 'inscripcions_equips_delete_all' competicio.id %}"
+                >
+                  Eliminar tots
+                </button>
+              </div>
+              <div class="team-context-teams-status small text-muted" id="team-context-teams-status">Sense dades encara.</div>
+              <div class="team-context-teams-list" id="team-context-teams-list"></div>
+              <div class="team-context-empty-list d-none" id="team-context-zero-members-wrap">
+                <div class="small text-muted mb-2">Sense membres en aquest context</div>
+                <div class="team-context-zero-members-list" id="team-context-zero-members-list"></div>
+              </div>
+            </div>
+          </section>
+        </div>
       </div>
     </div>
   </div>
