@@ -864,15 +864,38 @@
       top:0;
       z-index:2;
       display:flex;
-      justify-content:space-between;
-      align-items:flex-start;
-      gap:16px;
-      flex-wrap:wrap;
+      flex-direction:column;
+      gap:12px;
       padding:14px;
       border:1px solid #dbe5f2;
       border-radius:16px;
       background:linear-gradient(180deg, #ffffff 0%, #f6f9ff 100%);
       box-shadow:0 10px 24px rgba(15,23,42,.05);
+    }
+    .team-workspace-header-bar{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:14px;
+      flex-wrap:wrap;
+    }
+    .team-workspace-header-main{
+      display:flex;
+      align-items:flex-start;
+      gap:12px;
+      min-width:0;
+      flex:1 1 auto;
+    }
+    .team-workspace-header-tools{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      flex-wrap:wrap;
+      justify-content:flex-end;
+    }
+    .team-workspace-title-wrap{
+      min-width:0;
+      flex:1 1 auto;
     }
     .team-workspace-context{
       flex:1 1 420px;
@@ -903,6 +926,21 @@
       grid-template-columns:repeat(2, minmax(120px, 1fr));
       gap:10px;
       min-width:280px;
+    }
+    .team-context-inline-metrics{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      justify-content:flex-end;
+    }
+    .team-workspace-context-details{
+      display:flex;
+      justify-content:space-between;
+      align-items:flex-start;
+      gap:16px;
+      flex-wrap:wrap;
+      padding-top:4px;
+      border-top:1px solid #e2e8f0;
     }
     .team-context-metric{
       padding:10px 12px;
@@ -1150,6 +1188,12 @@
       gap:8px;
       justify-content:flex-end;
     }
+    .team-context-team-drop-surface{
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+      min-height:56px;
+    }
     .team-context-team-drop-hint{
       font-size:.77rem;
       color:#475569;
@@ -1171,6 +1215,9 @@
       flex-direction:column;
       gap:8px;
       min-height:44px;
+    }
+    .team-workspace-shell.is-team-dragging .team-context-member-list{
+      pointer-events:none;
     }
     .team-context-member-row{
       display:flex;
@@ -1211,6 +1258,13 @@
     }
     .team-workspace-shell.is-board-mode .team-context-team-body{
       margin-top:4px;
+    }
+    .team-context-member-pager{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:10px;
+      padding-top:4px;
     }
 
     .drag-handle, .col-drag-handle {

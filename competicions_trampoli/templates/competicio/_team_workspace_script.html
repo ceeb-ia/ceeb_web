@@ -19,9 +19,11 @@ if (teamWorkspaceShell) {
     selectedIds: new Set(),
     candidatePage: 1,
     candidatePageSize: 40,
+    memberPageSize: 5,
     activeActionTab: 'auto',
     expandedTeamIds: new Set(),
-    boardMode: true,
+    teamMemberPages: {},
+    boardMode: false,
     dragBusy: false,
     sortables: [],
     lastWorkspace: null,
@@ -57,6 +59,7 @@ if (teamWorkspaceShell) {
     state.sortables = [];
     clearDragTargets();
     document.body.classList.remove('dragging');
+    teamWorkspaceShell.classList.remove('is-team-dragging');
   }
 
   function clearDragTargets() {
@@ -67,7 +70,7 @@ if (teamWorkspaceShell) {
 
   function markDragTarget(target) {
     clearDragTargets();
-    const node = target?.closest?.('.team-context-drop-target');
+    const node = target?.closest?.('.team-context-team-card') || target?.closest?.('.team-context-drop-target');
     if (node) node.classList.add('is-drag-target');
   }
 
@@ -79,6 +82,27 @@ if (teamWorkspaceShell) {
     btn.classList.toggle('btn-outline-primary', !state.boardMode);
     btn.setAttribute('aria-pressed', state.boardMode ? 'true' : 'false');
     btn.textContent = state.boardMode ? 'Mode tauler actiu' : 'Activar mode tauler';
+  }
+
+  function setContextDetailsOpen(isOpen) {
+    const details = document.getElementById('team-workspace-context-details');
+    const toggle = document.getElementById('btn-team-workspace-context-toggle');
+    if (details) details.classList.toggle('d-none', !isOpen);
+    if (toggle) {
+      toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      toggle.textContent = isOpen ? 'Amagar detalls' : 'Detalls';
+    }
+  }
+
+  function getTeamMemberPage(teamId, totalMembers) {
+    const totalPages = Math.max(1, Math.ceil(Number(totalMembers || 0) / Number(state.memberPageSize || 10)));
+    const current = Number(state.teamMemberPages[teamId] || 1);
+    return Math.min(Math.max(current, 1), totalPages);
+  }
+
+  function setTeamMemberPage(teamId, nextPage, totalMembers) {
+    const totalPages = Math.max(1, Math.ceil(Number(totalMembers || 0) / Number(state.memberPageSize || 10)));
+    state.teamMemberPages[teamId] = Math.min(Math.max(Number(nextPage || 1), 1), totalPages);
   }
 
   function setFiltersToDom(filters) {
@@ -375,12 +399,16 @@ if (teamWorkspaceShell) {
 
     const card = (team, isEmpty) => {
       const teamId = String(team?.id || '').trim();
-      const expanded = isEmpty || state.expandedTeamIds.has(teamId);
+      const expanded = state.expandedTeamIds.has(teamId);
       const members = Array.isArray(team?.members) ? team.members : [];
+      const currentPage = getTeamMemberPage(teamId, members.length);
+      const pageSize = Number(state.memberPageSize || 10);
+      const startIndex = (currentPage - 1) * pageSize;
+      const visibleMembers = members.slice(startIndex, startIndex + pageSize);
+      const totalPages = Math.max(1, Math.ceil(members.length / pageSize));
       const wrap = document.createElement('div');
       wrap.className = `team-context-team-card team-context-drop-target${isEmpty ? ' is-empty' : ''}${expanded ? ' is-expanded' : ''}`;
       wrap.dataset.teamId = teamId;
-      wrap.dataset.dropKind = 'team';
 
       const head = document.createElement('div');
       head.className = 'team-context-team-head';
@@ -430,12 +458,17 @@ if (teamWorkspaceShell) {
       head.appendChild(actions);
       wrap.appendChild(head);
 
+      const dropSurface = document.createElement('div');
+      dropSurface.className = 'team-context-team-drop-surface';
+      dropSurface.dataset.teamId = teamId;
+      dropSurface.dataset.dropKind = 'team';
       const dropHint = document.createElement('div');
       dropHint.className = 'team-context-team-drop-hint';
       dropHint.textContent = editable()
         ? "Deixa aqui una inscripcio per afegir-la a aquest equip. No cal desplegar-lo."
         : 'Aquest equip es mostra en mode lectura.';
-      wrap.appendChild(dropHint);
+      dropSurface.appendChild(dropHint);
+      wrap.appendChild(dropSurface);
 
       const body = document.createElement('div');
       body.className = `team-context-team-body${expanded ? '' : ' d-none'}`;
@@ -444,7 +477,7 @@ if (teamWorkspaceShell) {
       membersList.dataset.teamId = teamId;
       membersList.dataset.memberSource = '1';
       if (members.length) {
-        members.forEach((member) => membersList.appendChild(teamMemberRow(member)));
+        visibleMembers.forEach((member) => membersList.appendChild(teamMemberRow(member)));
       } else {
         const placeholder = document.createElement('div');
         placeholder.className = 'team-context-drop-placeholder';
@@ -454,6 +487,45 @@ if (teamWorkspaceShell) {
         membersList.appendChild(placeholder);
       }
       body.appendChild(membersList);
+      if (members.length > pageSize) {
+        const pager = document.createElement('div');
+        pager.className = 'team-context-member-pager';
+        const summary = document.createElement('div');
+        summary.className = 'small text-muted';
+        summary.textContent = `Mostrant ${startIndex + 1}-${Math.min(startIndex + visibleMembers.length, members.length)} de ${members.length}`;
+        pager.appendChild(summary);
+        const controls = document.createElement('div');
+        controls.className = 'd-flex align-items-center';
+        controls.style.gap = '8px';
+        const prevBtn = document.createElement('button');
+        prevBtn.type = 'button';
+        prevBtn.className = 'btn btn-sm btn-outline-secondary';
+        prevBtn.textContent = 'Anterior';
+        prevBtn.disabled = currentPage <= 1;
+        prevBtn.addEventListener('click', () => {
+          setTeamMemberPage(teamId, currentPage - 1, members.length);
+          renderTeams(state.lastWorkspace);
+          setupDnd();
+        });
+        controls.appendChild(prevBtn);
+        const label = document.createElement('span');
+        label.className = 'small text-muted';
+        label.textContent = `Pagina ${currentPage} de ${totalPages}`;
+        controls.appendChild(label);
+        const nextBtn = document.createElement('button');
+        nextBtn.type = 'button';
+        nextBtn.className = 'btn btn-sm btn-outline-secondary';
+        nextBtn.textContent = 'Seguent';
+        nextBtn.disabled = currentPage >= totalPages;
+        nextBtn.addEventListener('click', () => {
+          setTeamMemberPage(teamId, currentPage + 1, members.length);
+          renderTeams(state.lastWorkspace);
+          setupDnd();
+        });
+        controls.appendChild(nextBtn);
+        pager.appendChild(controls);
+        body.appendChild(pager);
+      }
       wrap.appendChild(body);
       return wrap;
     };
@@ -561,10 +633,12 @@ if (teamWorkspaceShell) {
     const groupName = 'team-workspace-members';
     const onChoose = () => {
       document.body.classList.add('dragging');
+      teamWorkspaceShell.classList.add('is-team-dragging');
       clearDragTargets();
     };
     const onEnd = () => {
       document.body.classList.remove('dragging');
+      teamWorkspaceShell.classList.remove('is-team-dragging');
       clearDragTargets();
     };
 
@@ -582,6 +656,7 @@ if (teamWorkspaceShell) {
       }
       clearDragTargets();
       document.body.classList.remove('dragging');
+      teamWorkspaceShell.classList.remove('is-team-dragging');
 
       if (!inscripcioId || state.dragBusy) {
         await refreshWorkspace();
@@ -607,6 +682,10 @@ if (teamWorkspaceShell) {
         group: { name: groupName, pull: 'clone', put: false },
         sort: false,
         animation: 120,
+        forceFallback: true,
+        fallbackOnBody: true,
+        fallbackTolerance: 4,
+        removeCloneOnHide: true,
         draggable: '.team-candidate-row',
         handle: '.team-candidate-drag-handle',
         filter: 'input,a,select,textarea',
@@ -618,34 +697,37 @@ if (teamWorkspaceShell) {
 
     document.querySelectorAll('.team-context-member-list[data-member-source="1"]').forEach((source) => {
       state.sortables.push(Sortable.create(source, {
-        group: { name: groupName, pull: 'clone', put: true },
+        group: { name: groupName, pull: 'clone', put: false },
         sort: false,
         animation: 120,
+        forceFallback: true,
+        fallbackOnBody: true,
+        fallbackTolerance: 4,
+        removeCloneOnHide: true,
         draggable: '.team-context-member-row',
         handle: '.team-member-drag-handle',
         filter: 'button.js-team-member-unassign,input,a,select,textarea',
         preventOnFilter: false,
         onChoose,
-        onMove: (event) => {
-          markDragTarget(source.closest('.team-context-team-card'));
-          return true;
-        },
-        onAdd,
         onEnd,
       }));
     });
 
-    document.querySelectorAll('.team-context-team-card,#team-context-unassigned-dropzone').forEach((target) => {
+    document.querySelectorAll('.team-context-team-drop-surface,#team-context-unassigned-dropzone').forEach((target) => {
       state.sortables.push(Sortable.create(target, {
         group: { name: groupName, pull: false, put: true },
         sort: false,
         animation: 140,
+        forceFallback: true,
+        fallbackOnBody: true,
+        fallbackTolerance: 4,
+        removeCloneOnHide: true,
         draggable: '.team-context-member-row, .team-candidate-row',
         handle: '.team-member-drag-handle, .team-candidate-drag-handle',
         filter: 'button.js-team-member-unassign,input,a,select,textarea,.js-team-rename,.js-team-delete',
         preventOnFilter: false,
         onMove: (event) => {
-          markDragTarget(event?.to || target);
+          markDragTarget(target);
           return true;
         },
         onAdd,
@@ -711,9 +793,19 @@ if (teamWorkspaceShell) {
       state.contextCode = getSelectedTeamContextCode();
       state.selectedIds = new Set();
       state.expandedTeamIds = new Set();
+      state.teamMemberPages = {};
       state.candidatePage = 1;
+      setContextDetailsOpen(false);
       clearTeamPreview();
       await refreshWorkspace({ resetPage: true, clearSelection: true });
+    });
+  }
+
+  const contextToggle = document.getElementById('btn-team-workspace-context-toggle');
+  if (contextToggle) {
+    contextToggle.addEventListener('click', () => {
+      const details = document.getElementById('team-workspace-context-details');
+      setContextDetailsOpen(!!details?.classList.contains('d-none'));
     });
   }
 
@@ -728,6 +820,8 @@ if (teamWorkspaceShell) {
         state.contextCode = String(data.context?.code || 'native');
         state.selectedIds = new Set();
         state.expandedTeamIds = new Set();
+        state.teamMemberPages = {};
+        setContextDetailsOpen(true);
         clearTeamPreview();
         await refreshWorkspace({ resetPage: true, clearSelection: true });
       } catch (err) {
@@ -770,6 +864,8 @@ if (teamWorkspaceShell) {
         state.contextCode = 'native';
         state.selectedIds = new Set();
         state.expandedTeamIds = new Set();
+        state.teamMemberPages = {};
+        setContextDetailsOpen(false);
         clearTeamPreview();
         await refreshWorkspace({ resetPage: true, clearSelection: true });
       } catch (err) {
@@ -951,6 +1047,7 @@ if (teamWorkspaceShell) {
         if (!data.ok) return showAlert("No s'han pogut eliminar tots els equips.");
         state.selectedIds = new Set();
         state.expandedTeamIds = new Set();
+        state.teamMemberPages = {};
         resetPreview();
         await refreshWorkspace({ clearSelection: true });
       } catch (err) {
@@ -963,6 +1060,7 @@ if (teamWorkspaceShell) {
   if (previewClear) previewClear.addEventListener('click', () => clearTeamPreview());
 
   applyWorkspaceMode();
+  setContextDetailsOpen(false);
   setFiltersToDom(state.filters);
   clearTeamPreview();
   refreshWorkspace({ resetPage: true, clearSelection: true });
