@@ -86,6 +86,13 @@
     <form method="post" id="schemaForm">
       {% csrf_token %}
 
+      {% if schema_builder_config.participant_mode == "team_context" %}
+      <div class="alert alert-info">
+        Aquest aparell puntua per equips del context <strong>{{ schema_builder_config.team_context_name|default:"(sense context)" }}</strong>.
+        Camps amb abast <strong>Membre</strong> es replicaran per {{ schema_builder_config.expected_team_size|default:"?" }} slots i les fórmules han d'usar codis expandits com <code>E__m1</code>, <code>E__m2</code>.
+      </div>
+      {% endif %}
+
       {% if form.errors %}
       {% if form.schema_json.errors %}
         <div class="alert alert-danger">
@@ -137,6 +144,7 @@
                     <th>Etiqueta <button type="button" class="help-trigger help-trigger--inline" data-help-key="field_label" aria-label="Ajuda etiqueta">?</button></th>
                     <th class="w-120">Code <button type="button" class="help-trigger help-trigger--inline" data-help-key="field_code" aria-label="Ajuda code">?</button></th>
                     <th class="w-120">Var <button type="button" class="help-trigger help-trigger--inline" data-help-key="field_var" aria-label="Ajuda var">?</button></th>
+                    <th class="w-120">Abast</th>
 
                     <th class="w-120">Jutges <button type="button" class="help-trigger help-trigger--inline" data-help-key="field_judges_count" aria-label="Ajuda jutges">?</button></th>
                     <th class="w-120">Ítems <button type="button" class="help-trigger help-trigger--inline" data-help-key="field_items_count" aria-label="Ajuda items">?</button></th>
@@ -231,6 +239,7 @@
 </div>
 
 {{ schema_initial|json_script:"schema-initial" }}
+{{ schema_builder_config|json_script:"schema-builder-config" }}
 <script src="{% staticv 'js/scoring_schema_help.js' %}" defer></script>
 
 <script>
@@ -238,6 +247,9 @@
   let schema = {};
   try { schema = JSON.parse(document.getElementById("schema-initial").textContent || "{}"); }
   catch (e) { schema = {}; }
+  let BUILDER_CONFIG = {};
+  try { BUILDER_CONFIG = JSON.parse(document.getElementById("schema-builder-config").textContent || "{}"); }
+  catch (e) { BUILDER_CONFIG = {}; }
 
   // --- Helpers ---
   function uid(){ return Math.random().toString(16).slice(2); }
@@ -335,7 +347,17 @@
     const codes = [];
     document.querySelectorAll("#fieldsTable tbody tr").forEach(r=>{
       const c = r.querySelector('[data-k="code"]').value.trim();
+      const v = r.querySelector('[data-k="var"]')?.value.trim();
+      const scope = r.querySelector('[data-k="scope"]')?.value || "shared";
       if(c) codes.push(c);
+      if(v) codes.push(v);
+      if(scope === "member" && String(BUILDER_CONFIG.participant_mode) === "team_context"){
+        const expected = Math.max(2, Number(BUILDER_CONFIG.expected_team_size || 2));
+        for(let idx=1; idx<=expected; idx++){
+          if(c) codes.push(`${c}__m${idx}`);
+          if(v) codes.push(`${v}_m${idx}`);
+        }
+      }
     });
     document.querySelectorAll("#computedTable tbody tr").forEach(r=>{
       const c = r.querySelector('[data-k="code"]').value.trim();
@@ -382,6 +404,12 @@
       <td><input class="form-control form-control-sm" data-k="label" value="${data.label||""}"></td>
       <td><input class="form-control form-control-sm mono" data-k="code" value="${data.code||""}"></td>
       <td><input class="form-control form-control-sm mono" data-k="var" value="${data.var||""}"></td>
+      <td>
+        <select class="form-control form-control-sm" data-k="scope">
+          <option value="shared">Compartit</option>
+          <option value="member">Membre</option>
+        </select>
+      </td>
 
       <td><input class="form-control form-control-sm" data-k="judges_count" value="${data.judges_count ?? ""}" placeholder="ex: 3"></td>
       <td><input class="form-control form-control-sm" data-k="items_count" value="${data.items_count ?? ""}" placeholder="ex: 11"></td>
@@ -400,6 +428,11 @@
     `;
 
     tr.querySelector('input[data-k="crash_enabled"]').checked = !!data.crash_enabled;
+    tr.querySelector('[data-k="scope"]').value = data.scope || "shared";
+    if(String(BUILDER_CONFIG.participant_mode) !== "team_context"){
+      tr.querySelector('[data-k="scope"]').value = "shared";
+      tr.querySelector('[data-k="scope"]').disabled = true;
+    }
 
     tr.querySelector("button").addEventListener("click", ()=>{
       tr.remove();
@@ -1028,6 +1061,7 @@
       const label = tr.querySelector('[data-k="label"]').value.trim();
       const code = tr.querySelector('[data-k="code"]').value.trim();
       const vari = tr.querySelector('[data-k="var"]').value.trim();
+      const scope = tr.querySelector('[data-k="scope"]').value || "shared";
 
       const minv = tr.querySelector('[data-k="min"]').value.trim();
       const maxv = tr.querySelector('[data-k="max"]').value.trim();
@@ -1041,6 +1075,7 @@
         code,
         label: label || code,
         var: vari || undefined,
+        scope,
         type: "matrix",
         shape: "judge_x_item",
         crash: { enabled: crashEnabled },
@@ -1167,7 +1202,14 @@
     fields.forEach(f=>cols.push(f.code));
     computed.forEach(c=>cols.push(c.code));
 
-    return { fields, computed, ui: { columns: cols } };
+    const meta = {
+      subject_mode: String(BUILDER_CONFIG.participant_mode) === "team_context" ? "team_context" : "individual",
+      expected_team_size: String(BUILDER_CONFIG.participant_mode) === "team_context"
+        ? Number(BUILDER_CONFIG.expected_team_size || 2)
+        : undefined,
+    };
+
+    return { meta, fields, computed, ui: { columns: cols } };
   }
 
   function refreshAll(){
@@ -1192,6 +1234,7 @@
         label: f.label,
         code: f.code,
         var: f.var,
+        scope: f.scope || "shared",
         min: f.min,
         max: f.max,
         decimals: f.decimals,

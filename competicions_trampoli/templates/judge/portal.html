@@ -344,8 +344,8 @@
 
       <div id="listWrap">
         <div class="judge-nav-panel d-none d-lg-block mb-3">
-          <div class="judge-meta mb-2">Navegacio per inscripcio</div>
-          <input type="text" class="form-control form-control-sm judge-nav-search" id="insNavSearchDesktop" placeholder="Cerca nom...">
+          <div class="judge-meta mb-2">Navegacio per {% if team_subject_mode %}equip{% else %}inscripcio{% endif %}</div>
+          <input type="text" class="form-control form-control-sm judge-nav-search" id="insNavSearchDesktop" placeholder="Cerca subjecte...">
           <div id="insNavListDesktop"></div>
         </div>
 
@@ -384,13 +384,20 @@
           {% for bloc in group_blocks %}
             <div class="group-pane {% if bloc.key != active_group_key %}d-none{% endif %}" data-group-pane="group-{{ bloc.key }}" data-group-label="{{ bloc.label }}">
               {% for ins in bloc.list %}
-                <div id="card-{{ ins.id }}" class="judge-card mb-2" data-ins-id="{{ ins.id }}" data-ins-name="{{ ins.nom_i_cognoms|default:'Inscripcio' }}">
+                <div id="card-{{ ins.id }}" class="judge-card mb-2" data-ins-id="{{ ins.id }}" data-subject-kind="{{ ins.subject_kind|default:'inscripcio' }}" data-ins-name="{{ ins.name|default:'Inscripcio' }}">
                   <div class="d-flex justify-content-between align-items-center">
                     <div>
                       <div class="fw-semibold">{{ ins.nom_i_cognoms|default:"Inscripció" }}</div>
                       <div class="judge-meta">
                         {{ bloc.label }} · Ordre {{ ins.rotation_order_display|default_if_none:ins.ordre_sortida }}{% if ins.rotation_base_order_display %} · Base {{ ins.rotation_base_order_display }}{% endif %}{% if bloc.franja_label %} · {{ bloc.franja_label }}{% endif %}
                       </div>
+                      {% if team_subject_mode and ins.members %}
+                      <div class="judge-meta">
+                        {% for member in ins.members %}
+                          {% if not forloop.first %} · {% endif %}M{{ forloop.counter }} {{ member.name }}
+                        {% endfor %}
+                      </div>
+                      {% endif %}
                       <div class="judge-exercise-chip-row">
                         {% for ex in exercicis %}
                         <button type="button" class="judge-exercise-chip" data-exercise-chip="1" data-ins-id="{{ ins.id }}" data-exercici="{{ ex }}">Ex{{ ex }}</button>
@@ -573,6 +580,7 @@
   const SUPPORT_DEFAULT_COOLDOWN_SECONDS = 30;
   const EXERCISES = {{ exercicis|safe }};
   const EXERCICI_HINT = {{ exercici }};
+  const TEAM_SUBJECT_MODE = {{ team_subject_mode|yesno:"true,false" }};
 
   let currentRecordingEntryKey = null;
   let lastSince = UPDATES_CURSOR_INIT || new Date().toISOString();
@@ -605,6 +613,12 @@
     if(!SCORES[key] || typeof SCORES[key] !== "object") SCORES[key] = {};
     if(!SCORES[key].exercises || typeof SCORES[key].exercises !== "object") SCORES[key].exercises = {};
     return SCORES[key];
+  }
+  function subjectForId(insId){
+    return SUBJECTS_BY_ID[String(insId)] || {
+      subject_kind: TEAM_SUBJECT_MODE ? "equip" : "inscripcio",
+      subject_id: Number(insId),
+    };
   }
   function getEntry(insId, exercici){
     const box = getInsScoreBox(insId);
@@ -734,6 +748,9 @@
   function normalizePerm(p){
     return {
       field_code: String(p && p.field_code ? p.field_code : ""),
+      runtime_field_code: String((p && (p.runtime_field_code || p.field_code)) || ""),
+      scope: String((p && p.scope) || "shared"),
+      member_slot: (p && p.member_slot != null && p.member_slot !== "") ? Math.max(1, Number(p.member_slot)) : null,
       judge_index: Math.max(1, Number((p && p.judge_index) || 1)),
       item_start: Math.max(1, Number((p && p.item_start) || 1)),
       item_count: (p && p.item_count != null && p.item_count !== "") ? Math.max(1, Number(p.item_count)) : null,
@@ -742,7 +759,8 @@
   function permKey(p, idx){
     const n = normalizePerm(p);
     const c = (n.item_count == null) ? "all" : String(n.item_count);
-    return `${idx}|${n.field_code}|j${n.judge_index}|s${n.item_start}|c${c}`;
+    const slot = n.scope === "member" ? `|m${n.member_slot}` : "|shared";
+    return `${idx}|${n.runtime_field_code}|j${n.judge_index}|s${n.item_start}|c${c}${slot}`;
   }
   const PERM_DESCS = PERMS.map((p, idx) => {
     const n = normalizePerm(p);
@@ -750,10 +768,10 @@
       ...n,
       idx,
       key: permKey(n, idx),
-      field: schemaField(n.field_code),
+      field: schemaField(n.runtime_field_code),
     };
   }).filter(p => !!p.field_code);
-  const PERM_FIELD_CODES = Array.from(new Set(PERM_DESCS.map(p => String(p.field_code || ""))).values()).filter(Boolean);
+  const PERM_FIELD_CODES = Array.from(new Set(PERM_DESCS.map(p => String(p.runtime_field_code || ""))).values()).filter(Boolean);
   const NAV_LINKS_BY_INS = {};
   function getVideoState(insId, exercici){
     const key = entryKey(insId, exercici);
@@ -1155,7 +1173,12 @@
     const st = getVideoState(insId, exercici);
     if(st.loaded && !opts.force) return;
     const url = new URL(VIDEO_STATUS_URL, window.location.origin);
-    url.searchParams.set("inscripcio_id", String(insId));
+    const subject = subjectForId(insId);
+    if(subject.subject_kind === "inscripcio"){
+      url.searchParams.set("inscripcio_id", String(subject.subject_id || insId));
+    }
+    url.searchParams.set("subject_kind", String(subject.subject_kind || (TEAM_SUBJECT_MODE ? "equip" : "inscripcio")));
+    url.searchParams.set("subject_id", String(subject.subject_id || insId));
     url.searchParams.set("exercici", String(exercici));
     const els = getVideoEls(insId, exercici);
     if(!els.recBtn) return;
@@ -1206,7 +1229,8 @@
     if(!el) return;
     const parts = PERM_DESCS.map(p => {
       const range = p.item_count ? `(${p.item_start}..${p.item_start + p.item_count - 1})` : "";
-      return `${p.field_code} [J${p.judge_index}] ${range}`.trim();
+      const scope = p.scope === "member" ? `M${p.member_slot}` : "Compartit";
+      return `${p.field_code} [${scope}] [J${p.judge_index}] ${range}`.trim();
     });
     el.textContent = parts.join(" · ");
   }
@@ -1558,7 +1582,7 @@
   }
 
   function renderPermNumber(lineWrap, insId, exercici, perm, field){
-    const value = effectiveInput(insId, exercici, perm.field_code);
+    const value = effectiveInput(insId, exercici, perm.runtime_field_code);
     const inp = document.createElement("input");
     inp.className = "form-control form-control-sm";
     inp.type = "number";
@@ -1568,7 +1592,7 @@
     inp.dataset.permKey = perm.key;
     inp.addEventListener("input", () => {
       const v = (inp.value === "") ? null : Number(inp.value);
-      updateDraftValue(insId, exercici, perm.field_code, v, perm);
+      updateDraftValue(insId, exercici, perm.runtime_field_code, v, perm);
     });
     bindScoreInputNavigation(inp, insId, exercici);
     lineWrap.appendChild(inp);
@@ -1577,8 +1601,8 @@
   function renderPermList(lineWrap, insId, exercici, perm, field){
     const j = Math.max(1, Number(perm.judge_index || 1));
     const nJudges = Math.max(1, Number((field.judges && field.judges.count) || 1));
-    const baseArr = Array.isArray(effectiveInput(insId, exercici, perm.field_code))
-      ? deepClone(effectiveInput(insId, exercici, perm.field_code))
+    const baseArr = Array.isArray(effectiveInput(insId, exercici, perm.runtime_field_code))
+      ? deepClone(effectiveInput(insId, exercici, perm.runtime_field_code))
       : [];
     while(baseArr.length < nJudges) baseArr.push(null);
     const inp = document.createElement("input");
@@ -1589,12 +1613,12 @@
     inp.dataset.kind = "list";
     inp.dataset.permKey = perm.key;
     inp.addEventListener("input", () => {
-      const next = Array.isArray(effectiveInput(insId, exercici, perm.field_code))
-        ? deepClone(effectiveInput(insId, exercici, perm.field_code))
+      const next = Array.isArray(effectiveInput(insId, exercici, perm.runtime_field_code))
+        ? deepClone(effectiveInput(insId, exercici, perm.runtime_field_code))
         : [];
       while(next.length < nJudges) next.push(null);
       next[j-1] = (inp.value === "") ? null : Number(inp.value);
-      updateDraftValue(insId, exercici, perm.field_code, next, perm);
+      updateDraftValue(insId, exercici, perm.runtime_field_code, next, perm);
     });
     bindScoreInputNavigation(inp, insId, exercici);
     lineWrap.appendChild(inp);
@@ -1623,14 +1647,14 @@
     const start = Math.max(1, Number(perm.item_start || 1));
     const count = perm.item_count ? Math.max(1, Number(perm.item_count)) : (nItems - start + 1);
     const crashEnabled = crashEnabledForField(field);
-    const crashCode = `__crash__${perm.field_code}`;
+    const crashCode = `__crash__${perm.runtime_field_code}`;
     const crashVals = crashEnabled && Array.isArray(effectiveInput(insId, exercici, crashCode))
       ? deepClone(effectiveInput(insId, exercici, crashCode))
       : [];
     while(crashVals.length < nJudges) crashVals.push(0);
 
-    const mat = Array.isArray(effectiveInput(insId, exercici, perm.field_code))
-      ? deepClone(effectiveInput(insId, exercici, perm.field_code))
+    const mat = Array.isArray(effectiveInput(insId, exercici, perm.runtime_field_code))
+      ? deepClone(effectiveInput(insId, exercici, perm.runtime_field_code))
       : [];
     while(mat.length < nJudges) mat.push([]);
     while((mat[j-1] || []).length < nItems){
@@ -1662,8 +1686,8 @@
       inp.dataset.itemIndex0 = String(idx0);
       inp.dataset.permKey = perm.key;
       inp.addEventListener("input", () => {
-        const next = Array.isArray(effectiveInput(insId, exercici, perm.field_code))
-          ? deepClone(effectiveInput(insId, exercici, perm.field_code))
+        const next = Array.isArray(effectiveInput(insId, exercici, perm.runtime_field_code))
+          ? deepClone(effectiveInput(insId, exercici, perm.runtime_field_code))
           : [];
         while(next.length < nJudges) next.push([]);
         while((next[j-1] || []).length < nItems){
@@ -1671,7 +1695,7 @@
           next[j-1].push(null);
         }
         next[j-1][idx0] = (inp.value === "") ? null : Number(inp.value);
-        updateDraftValue(insId, exercici, perm.field_code, next, perm);
+        updateDraftValue(insId, exercici, perm.runtime_field_code, next, perm);
       });
       bindScoreInputNavigation(inp, insId, exercici);
 
@@ -1718,7 +1742,7 @@
     const range = perm.item_count ? ` (${perm.item_start}..${perm.item_start + perm.item_count - 1})` : "";
     const head = document.createElement("div");
     head.className = "judge-meta mb-1";
-    head.textContent = `${field.label || perm.field_code} [${perm.field_code}] · Jutge ${perm.judge_index}${range}`;
+    head.textContent = `${field.label || perm.runtime_field_code} [${perm.field_code}] · Jutge ${perm.judge_index}${range}`;
     block.appendChild(head);
 
     const type = field.type || "number";
@@ -1774,11 +1798,16 @@
         "Content-Type": "application/json",
         "X-CSRFToken": CSRF_TOKEN
       },
-      body: JSON.stringify({
-        inscripcio_id: Number(insId),
-        exercici: Number(exercici),
-        inputs_patch: patch
-      })
+      body: JSON.stringify((() => {
+        const subject = subjectForId(insId);
+        return {
+          inscripcio_id: subject.subject_kind === "inscripcio" ? Number(subject.subject_id || insId) : undefined,
+          subject_kind: subject.subject_kind || (TEAM_SUBJECT_MODE ? "equip" : "inscripcio"),
+          subject_id: Number(subject.subject_id || insId),
+          exercici: Number(exercici),
+          inputs_patch: patch
+        };
+      })())
     });
 
     const data = await res.json().catch(()=> ({}));
@@ -1807,8 +1836,8 @@
   }
 
   function applyIncomingUpdate(update){
-    if(!update || update.inscripcio_id == null || update.exercici == null) return;
-    const insId = String(update.inscripcio_id);
+    if(!update || (update.subject_id == null && update.inscripcio_id == null) || update.exercici == null) return;
+    const insId = String(update.subject_id != null ? update.subject_id : update.inscripcio_id);
     const exercici = exerciseKey(update.exercici);
     const baseEntry = getEntry(insId, exercici);
     const mergedInputs = (baseEntry.inputs && typeof baseEntry.inputs === "object") ? {...baseEntry.inputs} : {};
@@ -1876,7 +1905,7 @@
       const field = perm.field;
       if(!field) return;
       const type = field.type || "number";
-      const code = perm.field_code;
+      const code = perm.runtime_field_code;
       const sourceVal = deepClone(effectiveInput(sourceInsId, exercici, code));
 
       if(type === "number"){
@@ -2064,11 +2093,16 @@
     applyVideoUiState(insId, exercici, { busy: true, hasPending: true, hasStored: !!st.hasStored, isRecording: false });
 
     const ext = (st.pendingMimeType || "").includes("mp4") ? "mp4" : ((st.pendingMimeType || "").includes("quicktime") ? "mov" : "webm");
-    const filename = `ins_${insId}_ex_${exercici}_${Date.now()}.${ext}`;
+    const subject = subjectForId(insId);
+    const filename = `${subject.subject_kind === "equip" ? "equip" : "ins"}_${insId}_ex_${exercici}_${Date.now()}.${ext}`;
     const fileObj = new File([blob], filename, { type: st.pendingMimeType || blob.type || "video/webm" });
 
     const fd = new FormData();
-    fd.append("inscripcio_id", String(insId));
+    if(subject.subject_kind === "inscripcio"){
+      fd.append("inscripcio_id", String(subject.subject_id || insId));
+    }
+    fd.append("subject_kind", String(subject.subject_kind || (TEAM_SUBJECT_MODE ? "equip" : "inscripcio")));
+    fd.append("subject_id", String(subject.subject_id || insId));
     fd.append("exercici", String(exercici));
     if(st.pendingDuration) fd.append("duration_seconds", String(st.pendingDuration));
     if(st.pendingMimeType) fd.append("mime_type", st.pendingMimeType);
@@ -2123,8 +2157,13 @@
     st.busy = true;
     applyVideoUiState(insId, exercici, { busy: true, hasPending: !!st.pendingBlob, hasStored: !!st.hasStored, isRecording: false });
 
+    const subject = subjectForId(insId);
     const fd = new FormData();
-    fd.append("inscripcio_id", String(insId));
+    if(subject.subject_kind === "inscripcio"){
+      fd.append("inscripcio_id", String(subject.subject_id || insId));
+    }
+    fd.append("subject_kind", String(subject.subject_kind || (TEAM_SUBJECT_MODE ? "equip" : "inscripcio")));
+    fd.append("subject_id", String(subject.subject_id || insId));
     fd.append("exercici", String(exercici));
 
     try{

@@ -14,7 +14,8 @@ from .equip_contexts import (
     resolve_inscripcio_equip,
 )
 from ..models_trampoli import CompeticioAparell
-from ..models_scoring import ScoreEntry
+from ..models_scoring import ScoreEntry, TeamScoreEntry
+from .team_scoring import is_team_context_app
 
 logger = logging.getLogger(__name__)
 
@@ -1483,6 +1484,15 @@ def compute_classificacio(competicio, cfg_obj):
       .select_related("inscripcio", "comp_aparell")
     )
     notes = list(notes_qs)
+    team_notes = []
+    if tipus == "equips":
+        team_apps = [ca for ca in aparells if is_team_context_app(ca)]
+        if team_apps:
+            team_notes = list(
+                TeamScoreEntry.objects
+                .filter(competicio=competicio, comp_aparell__in=team_apps)
+                .select_related("equip", "comp_aparell")
+            )
 
     notes_by_app = defaultdict(list)  # app_id -> [notes...]
     notes_by_key = {}
@@ -1496,6 +1506,11 @@ def compute_classificacio(competicio, cfg_obj):
     for app_id, lst in notes_by_app.items():
         for n in lst:
             ins_ids_by_app[app_id].add(n.inscripcio_id)
+    team_notes_by_app = defaultdict(list)
+    team_ids_by_app = defaultdict(set)
+    for n in team_notes:
+        team_notes_by_app[n.comp_aparell_id].append(n)
+        team_ids_by_app[n.comp_aparell_id].add(n.equip_id)
 
     # 4) CAMPS per aparell (lliures)
     camps_per_aparell = punt.get("camps_per_aparell") or {}
@@ -1521,11 +1536,48 @@ def compute_classificacio(competicio, cfg_obj):
     app_order = {ca.id: idx for idx, ca in enumerate(aparells, start=1)}
     app_fields_by_app = {}
     app_ex_rows_by_ins = defaultdict(dict)  # app_id -> ins_id -> [row]
+    team_app_ex_rows_by_equip = defaultdict(dict)  # app_id -> equip_id -> [row]
 
     for ca in aparells:
         app_id = ca.id
         n_ex = int(getattr(ca, "nombre_exercicis", 1) or 1)
         n_ex = max(1, min(50, n_ex))
+        fields = camps_for_app(app_id)
+        app_fields_by_app[app_id] = list(fields)
+
+        if tipus == "equips" and is_team_context_app(ca):
+            app_notes = team_notes_by_app.get(app_id, [])
+            by_team_ex = defaultdict(dict)
+            for nt in app_notes:
+                ex_idx = int(getattr(nt, "exercici", 1) or 1)
+                if ex_idx < 1:
+                    ex_idx = 1
+                if ex_idx > n_ex:
+                    continue
+                by_team_ex[nt.equip_id][ex_idx] = nt
+
+            for equip_id in list(by_team_ex.keys()):
+                vals_rows = []
+                for ex_idx in range(1, n_ex + 1):
+                    nt = by_team_ex.get(equip_id, {}).get(ex_idx)
+                    if not nt:
+                        continue
+                    fields_map = {f: _get_score_field(nt, f) for f in fields}
+                    v_fields = [fields_map.get(f, 0.0) for f in fields]
+                    v_ex = _apply_simple_agg(v_fields, agg_camps)
+                    vals_rows.append(
+                        {
+                            "idx": int(ex_idx),
+                            "value": _to_float(v_ex),
+                            "app_id": app_id,
+                            "app_order": app_order.get(app_id, 0),
+                            "exercici": int(ex_idx),
+                            "equip_id": int(equip_id),
+                            "by_camp": fields_map,
+                        }
+                    )
+                team_app_ex_rows_by_equip[app_id][equip_id] = vals_rows
+            continue
 
         # notes d'aquest aparell
         app_notes = notes_by_app.get(app_id, [])
@@ -1540,9 +1592,6 @@ def compute_classificacio(competicio, cfg_obj):
                 # si hi ha notes extra, les ignorem per coherencia amb configuracio d'aparell
                 continue
             by_ins_ex[nt.inscripcio_id][ex_idx] = nt
-
-        fields = camps_for_app(app_id)
-        app_fields_by_app[app_id] = list(fields)
 
         # calculem valor per exercici (agregant camps)
         for ins_id in list(ins_by_id.keys()):
@@ -1591,6 +1640,8 @@ def compute_classificacio(competicio, cfg_obj):
 
     selected_rows_agg_cache = {}
     selected_rows_field_cache = {}
+    selected_team_rows_agg_cache = {}
+    selected_team_rows_field_cache = {}
 
     def _get_selected_rows_agg_for_ins(ins_id: int):
         if ins_id in selected_rows_agg_cache:
@@ -1649,6 +1700,68 @@ def compute_classificacio(competicio, cfg_obj):
 
         selected_rows_agg_cache[ins_id] = dict(picked_by_app)
         return selected_rows_agg_cache[ins_id]
+
+    def _get_selected_rows_agg_for_team(equip_id: int):
+        if equip_id in selected_team_rows_agg_cache:
+            return selected_team_rows_agg_cache[equip_id]
+
+        picked_by_app = defaultdict(list)
+        if mode_seleccio_exercicis == "global_pool":
+            pool_rows = []
+            for ca in aparells:
+                app_id = ca.id
+                if not is_team_context_app(ca):
+                    continue
+                for row in team_app_ex_rows_by_equip.get(app_id, {}).get(equip_id, []):
+                    item = _copy_ex_row_with_value(row, row.get("value"))
+                    item["idx"] = 0
+                    pool_rows.append(item)
+
+            if pool_rows:
+                pool_rows = sorted(
+                    pool_rows,
+                    key=lambda r: (r.get("app_order", 0), r.get("exercici", 0), r.get("app_id", 0)),
+                )
+                for idx, row in enumerate(pool_rows, start=1):
+                    row["idx"] = idx
+                picked_rows = _pick_exercicis_rows(
+                    pool_rows,
+                    exerc_mode,
+                    ex_best_n,
+                    index=ex_index,
+                    ids=ex_ids,
+                    max_per_participant=base_ex_cfg.get("max_per_participant", 0),
+                    participant_key="equip_id",
+                )
+                for row in picked_rows:
+                    try:
+                        app_id = int(row.get("app_id"))
+                    except Exception:
+                        continue
+                    picked_by_app[app_id].append(_copy_ex_row_with_value(row, row.get("value")))
+        else:
+            for ca in aparells:
+                app_id = ca.id
+                if not is_team_context_app(ca):
+                    continue
+                rows_ex = team_app_ex_rows_by_equip.get(app_id, {}).get(equip_id, [])
+                ex_cfg_app = _resolve_ex_cfg_for_app(app_id)
+                picked = _pick_exercicis_rows(
+                    rows_ex,
+                    ex_cfg_app["mode"],
+                    ex_cfg_app["best_n"],
+                    index=ex_cfg_app["index"],
+                    ids=ex_cfg_app["ids"],
+                    max_per_participant=ex_cfg_app.get("max_per_participant", 0),
+                    participant_key="equip_id",
+                )
+                picked_by_app[app_id] = [
+                    _copy_ex_row_with_value(row, row.get("value"))
+                    for row in picked
+                ]
+
+        selected_team_rows_agg_cache[equip_id] = dict(picked_by_app)
+        return selected_team_rows_agg_cache[equip_id]
 
     def _get_selected_rows_for_field(ins_id: int, field_code: str):
         cache_key = (ins_id, str(field_code or ""))
@@ -1715,6 +1828,110 @@ def compute_classificacio(competicio, cfg_obj):
 
         selected_rows_field_cache[cache_key] = dict(picked_by_app)
         return selected_rows_field_cache[cache_key]
+
+    def _get_selected_team_rows_for_field(equip_id: int, field_code: str):
+        cache_key = (equip_id, str(field_code or ""))
+        if cache_key in selected_team_rows_field_cache:
+            return selected_team_rows_field_cache[cache_key]
+
+        picked_by_app = defaultdict(list)
+        if mode_seleccio_exercicis == "global_pool":
+            pool_rows = []
+            for ca in aparells:
+                app_id = ca.id
+                if not is_team_context_app(ca):
+                    continue
+                n_ex = int(getattr(ca, "nombre_exercicis", 1) or 1)
+                n_ex = max(1, min(50, n_ex))
+                by_team_ex = defaultdict(dict)
+                for nt in team_notes_by_app.get(app_id, []):
+                    ex_idx = int(getattr(nt, "exercici", 1) or 1)
+                    if 1 <= ex_idx <= n_ex:
+                        by_team_ex[nt.equip_id][ex_idx] = nt
+                for ex_idx in range(1, n_ex + 1):
+                    nt = by_team_ex.get(equip_id, {}).get(ex_idx)
+                    if not nt:
+                        continue
+                    item = {
+                        "idx": 0,
+                        "value": _to_float(_get_score_field(nt, field_code)),
+                        "app_id": app_id,
+                        "app_order": app_order.get(app_id, 0),
+                        "exercici": int(ex_idx),
+                        "equip_id": equip_id,
+                        "by_camp": {field_code: _get_score_field(nt, field_code)},
+                    }
+                    item["idx"] = 0
+                    pool_rows.append(item)
+            if pool_rows:
+                pool_rows = sorted(
+                    pool_rows,
+                    key=lambda r: (r.get("app_order", 0), r.get("exercici", 0), r.get("app_id", 0)),
+                )
+                for idx, row in enumerate(pool_rows, start=1):
+                    row["idx"] = idx
+                picked_rows = _pick_exercicis_rows(
+                    pool_rows,
+                    exerc_mode,
+                    ex_best_n,
+                    index=ex_index,
+                    ids=ex_ids,
+                    max_per_participant=base_ex_cfg.get("max_per_participant", 0),
+                    participant_key="equip_id",
+                )
+                for row in picked_rows:
+                    try:
+                        app_id = int(row.get("app_id"))
+                    except Exception:
+                        continue
+                    picked_by_app[app_id].append(
+                        _copy_ex_row_with_value(row, row.get("value"))
+                    )
+        else:
+            for ca in aparells:
+                app_id = ca.id
+                if not is_team_context_app(ca):
+                    continue
+                n_ex = int(getattr(ca, "nombre_exercicis", 1) or 1)
+                n_ex = max(1, min(50, n_ex))
+                by_team_ex = defaultdict(dict)
+                for nt in team_notes_by_app.get(app_id, []):
+                    ex_idx = int(getattr(nt, "exercici", 1) or 1)
+                    if 1 <= ex_idx <= n_ex:
+                        by_team_ex[nt.equip_id][ex_idx] = nt
+                rows_ex = []
+                for ex_idx in range(1, n_ex + 1):
+                    nt = by_team_ex.get(equip_id, {}).get(ex_idx)
+                    if not nt:
+                        continue
+                    rows_ex.append(
+                        {
+                            "idx": int(ex_idx),
+                            "value": _to_float(_get_score_field(nt, field_code)),
+                            "app_id": app_id,
+                            "app_order": app_order.get(app_id, 0),
+                            "exercici": int(ex_idx),
+                            "equip_id": equip_id,
+                            "by_camp": {field_code: _get_score_field(nt, field_code)},
+                        }
+                    )
+                ex_cfg_app = _resolve_ex_cfg_for_app(app_id)
+                picked = _pick_exercicis_rows(
+                    rows_ex,
+                    ex_cfg_app["mode"],
+                    ex_cfg_app["best_n"],
+                    index=ex_cfg_app["index"],
+                    ids=ex_cfg_app["ids"],
+                    max_per_participant=ex_cfg_app.get("max_per_participant", 0),
+                    participant_key="equip_id",
+                )
+                picked_by_app[app_id] = [
+                    _copy_ex_row_with_value(row, row.get("value"))
+                    for row in picked
+                ]
+
+        selected_team_rows_field_cache[cache_key] = dict(picked_by_app)
+        return selected_team_rows_field_cache[cache_key]
 
     for ins_id, obj in per_ins.items():
         selected_rows_by_app = _get_selected_rows_agg_for_ins(ins_id)
@@ -2060,9 +2277,81 @@ def compute_classificacio(competicio, cfg_obj):
         except Exception:
             part_n = 1
 
-        vals = [calc_metric_value_for_ins(mid, crit) for mid in mids]
-        selected_vals = _pick_participants(vals, part_mode, part_n)
         agg_parts = (crit.get("agregacio_participants") or "sum").lower().strip()
+        team_context_app_ids = {int(ca.id) for ca in aparells if is_team_context_app(ca)}
+        if not team_context_app_ids:
+            vals = [calc_metric_value_for_ins(mid, crit) for mid in mids]
+            selected_vals = _pick_participants(vals, part_mode, part_n)
+            return float(_apply_simple_agg(selected_vals, agg_parts))
+
+        equip_id = None
+        for team_id_key, members in teams.items():
+            if team_id_key == "__sense_equip__":
+                continue
+            current_member_ids = [m.id for m, _resolved_equip in members]
+            if any(mid in current_member_ids for mid in mids):
+                try:
+                    equip_id = int(team_id_key)
+                except Exception:
+                    equip_id = None
+                break
+
+        scope = crit.get("scope") or {}
+        app_scope = scope.get("aparells") or {}
+        forced_app_ids = None
+        app_scope_mode = str(app_scope.get("mode") or "").lower().strip()
+        if app_scope_mode == "seleccionar":
+            forced_app_ids = []
+            for raw_app_id in (app_scope.get("ids") or []):
+                try:
+                    forced_app_ids.append(int(raw_app_id))
+                except Exception:
+                    continue
+        elif crit.get("aparell_id") not in (None, "", 0, "0"):
+            try:
+                forced_app_ids = [int(crit.get("aparell_id"))]
+            except Exception:
+                forced_app_ids = None
+
+        candidate_app_ids = forced_app_ids or [int(ca.id) for ca in aparells]
+        tie_camps = _normalize_tie_camps(crit)
+        team_vals = []
+        member_vals = []
+
+        for app_id in candidate_app_ids:
+            if app_id in team_context_app_ids and equip_id is not None:
+                if tie_camps:
+                    selected_rows = _get_selected_team_rows_for_field(equip_id, tie_camps[0]).get(app_id, [])
+                else:
+                    selected_rows = _get_selected_rows_agg_for_team(equip_id).get(app_id, [])
+                if selected_rows:
+                    team_vals.append(
+                        _apply_simple_agg([_to_float(row.get("value")) for row in selected_rows], agg_exercicis)
+                    )
+                continue
+
+            if app_id in team_context_app_ids:
+                continue
+
+            for mid in mids:
+                member_vals.append(
+                    calc_metric_value_for_ins(
+                        mid,
+                        crit,
+                        forced_app_ids=[app_id],
+                    )
+                )
+
+        if team_vals:
+            team_score = float(_apply_simple_agg(team_vals, agg_aparells))
+            if not member_vals:
+                return team_score
+            selected_vals = _pick_participants(member_vals, part_mode, part_n)
+            member_score = float(_apply_simple_agg(selected_vals, agg_parts))
+            return float(_apply_simple_agg([team_score, member_score], agg_aparells))
+
+        vals = member_vals or [calc_metric_value_for_ins(mid, crit) for mid in mids]
+        selected_vals = _pick_participants(vals, part_mode, part_n)
         return float(_apply_simple_agg(selected_vals, agg_parts))
 
     def _apply_decimals_if_numeric(v, decimals):
@@ -2504,8 +2793,36 @@ def compute_classificacio(competicio, cfg_obj):
                 else:
                     final_pkey = base_pkey
 
-                team_score = sum([_to_float(per_ins[m.id]["score"]) for m, _resolved_equip in members])
                 member_ids = [m.id for m, _resolved_equip in members]
+                team_by_app = {}
+                for ca in aparells:
+                    app_id = ca.id
+                    if is_team_context_app(ca):
+                        if equip_id is None:
+                            continue
+                        selected_rows = _get_selected_rows_agg_for_team(int(equip_id)).get(app_id, [])
+                        if not selected_rows:
+                            continue
+                        team_by_app[app_id] = float(
+                            _apply_simple_agg(
+                                [_to_float(row.get("value")) for row in selected_rows],
+                                agg_exercicis,
+                            )
+                        )
+                        continue
+
+                    app_total = 0.0
+                    found_any = False
+                    for m, _resolved_equip in members:
+                        by_app_base = per_ins.get(m.id, {}).get("by_app_base") or {}
+                        if app_id not in by_app_base:
+                            continue
+                        found_any = True
+                        app_total += _to_float(by_app_base.get(app_id))
+                    if found_any:
+                        team_by_app[app_id] = float(app_total)
+
+                team_score = float(_apply_simple_agg(list(team_by_app.values()), agg_aparells))
 
                 team_tie = {}
                 for t in desempat or []:

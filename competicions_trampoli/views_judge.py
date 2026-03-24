@@ -20,11 +20,32 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from .models_judging import JudgeDeviceToken, PublicLiveToken
-from .models import Inscripcio, Competicio
+from .models import Competicio, Equip, Inscripcio
 from .models_trampoli import CompeticioAparell, InscripcioAparellExclusio
 from .models_rotacions import RotacioAssignacio, RotacioFranja
-from .models_scoring import ScoreEntry, ScoreEntryVideo, ScoreEntryVideoEvent, ScoringSchema
+from .models_scoring import (
+    ScoreEntry,
+    ScoreEntryVideo,
+    ScoreEntryVideoEvent,
+    ScoringSchema,
+    TeamScoreEntry,
+    TeamScoreEntryVideo,
+    TeamScoreEntryVideoEvent,
+)
 from .scoring_engine import ScoringEngine, ScoringError
+from .services.scoring_subjects import (
+    get_or_create_subject_entry_locked,
+    resolve_scoring_subject,
+    serialize_subject_payload,
+    subject_entry_model,
+    subject_video_models,
+)
+from .services.team_scoring import (
+    build_team_subjects_for_comp_aparell,
+    is_team_context_app,
+    permission_runtime_code,
+    runtime_schema_for_comp_aparell,
+)
 from .services.competition_groups import (
     get_group_maps,
     get_inscripcio_competition_order,
@@ -208,49 +229,6 @@ def _probe_uploaded_video_metadata(uploaded_file):
         except Exception:
             pass
 
-
-
-def _inscripcio_exclosa_en_aparell(inscripcio_id: int, comp_aparell_id: int) -> bool:
-    return InscripcioAparellExclusio.objects.filter(
-        inscripcio_id=inscripcio_id,
-        comp_aparell_id=comp_aparell_id,
-    ).exists()
-
-
-def _get_or_create_scoreentry_locked(*, competicio, inscripcio, exercici, comp_aparell, defaults=None):
-    """
-    Get-or-create with row lock to avoid concurrent lost updates on score inputs.
-    Must be called inside transaction.atomic().
-    """
-    lookup = {
-        "competicio": competicio,
-        "inscripcio": inscripcio,
-        "exercici": exercici,
-        "comp_aparell": comp_aparell,
-    }
-    defaults = defaults or {}
-
-    entry = (
-        ScoreEntry.objects
-        .select_for_update()
-        .filter(**lookup)
-        .first()
-    )
-    if entry is not None:
-        return entry, False
-
-    try:
-        entry = ScoreEntry.objects.create(**lookup, **defaults)
-        return entry, True
-    except IntegrityError:
-        entry = (
-            ScoreEntry.objects
-            .select_for_update()
-            .get(**lookup)
-        )
-        return entry, False
-
-
 def _sanitize_patch_by_permissions(schema: dict, permissions: list, patch: dict) -> dict:
     """
     Retorna un patch limitat a:
@@ -266,7 +244,10 @@ def _sanitize_patch_by_permissions(schema: dict, permissions: list, patch: dict)
 
     perms_by_code = {}
     for p in permissions:
-        perms_by_code.setdefault(p["field_code"], []).append(p)
+        runtime_code = str(p.get("runtime_field_code") or p.get("field_code") or "").strip()
+        if not runtime_code:
+            continue
+        perms_by_code.setdefault(runtime_code, []).append(p)
 
     clean = {}
 
@@ -370,8 +351,18 @@ def _normalize_permissions(perms):
         code = p.get("field_code")
         if not code:
             continue
+        scope = str(p.get("scope") or "shared").strip().lower() or "shared"
+        member_slot = p.get("member_slot")
+        runtime_field_code = str(p.get("runtime_field_code") or code)
         out.append({
             "field_code": str(code),
+            "runtime_field_code": runtime_field_code,
+            "scope": scope,
+            "member_slot": (
+                None
+                if member_slot in (None, "", "null")
+                else int(member_slot)
+            ),
             "judge_index": int(p.get("judge_index") or 1),
             "item_start": int(p.get("item_start") or 1),
             "item_count": (None if p.get("item_count") in (None, "", "null") else int(p["item_count"])),
@@ -382,7 +373,7 @@ def _normalize_permissions(perms):
 def _allowed_input_codes_from_permissions(permissions: list) -> set:
     allowed_codes = set()
     for p in permissions or []:
-        code = p.get("field_code")
+        code = p.get("runtime_field_code") or p.get("field_code")
         if not code:
             continue
         allowed_codes.add(str(code))
@@ -457,25 +448,33 @@ def _create_video_audit_event(
     detail: str,
     competicio,
     comp_aparell,
-    inscripcio,
+    subject,
     judge_token=None,
     score_entry=None,
     video=None,
     payload=None,
 ):
     try:
-        ScoreEntryVideoEvent.objects.create(
-            action=action,
-            ok=bool(ok),
-            http_status=int(http_status or 0),
-            detail=(detail or "")[:255],
-            payload=payload or {},
-            competicio=competicio,
-            comp_aparell=comp_aparell,
-            inscripcio=inscripcio,
-            judge_token=judge_token,
-            score_entry=score_entry,
-            video=video,
+        _video_model, event_model = subject_video_models(comp_aparell)
+        create_kwargs = {
+            "action": action,
+            "ok": bool(ok),
+            "http_status": int(http_status or 0),
+            "detail": (detail or "")[:255],
+            "payload": payload or {},
+            "competicio": competicio,
+            "comp_aparell": comp_aparell,
+            "judge_token": judge_token,
+            "video": video,
+        }
+        if str(subject.get("subject_kind")) == "equip":
+            create_kwargs["equip"] = subject["equip"]
+            create_kwargs["team_score_entry"] = score_entry
+        else:
+            create_kwargs["inscripcio"] = subject["inscripcio"]
+            create_kwargs["score_entry"] = score_entry
+        event_model.objects.create(
+            **create_kwargs
         )
     except Exception:
         logger.exception("Unable to persist ScoreEntryVideoEvent")
@@ -541,9 +540,16 @@ def judge_portal(request, token):
         aparell=comp_aparell.aparell,
         defaults={"schema": {}},
     )
-    schema = ss.schema or {}
+    schema = runtime_schema_for_comp_aparell(ss.schema or {}, comp_aparell)
 
     permissions = _normalize_permissions(tok.permissions)
+    for perm in permissions:
+        perm["runtime_field_code"] = str(
+            perm.get("runtime_field_code")
+            or permission_runtime_code(perm, comp_aparell)
+            or perm.get("field_code")
+            or ""
+        )
     allowed_input_codes = _allowed_input_codes_from_permissions(permissions)
 
     franja_modes = get_rotacions_order_modes(competicio)
@@ -605,28 +611,52 @@ def judge_portal(request, token):
         franja_override_id = None
     franja_override = franges_by_id.get(franja_override_id) if franja_override_id else None
 
-    # Llista d'inscripcions base (mateix criteri que notes home)
-    excluded_ins_ids = (
-        InscripcioAparellExclusio.objects
-        .filter(comp_aparell=comp_aparell)
-        .values_list("inscripcio_id", flat=True)
-    )
-    ins_base_qs = (
-        Inscripcio.objects
-        .filter(competicio=competicio)
-        .exclude(id__in=excluded_ins_ids)
-        .select_related("grup_competicio")
-        .order_by("grup_competicio__display_num", "ordre_competicio", "ordre_sortida", "id")
-    )
+    team_subject_mode = is_team_context_app(comp_aparell)
+    if team_subject_mode:
+        raw_subjects, _issues = build_team_subjects_for_comp_aparell(competicio, comp_aparell)
+        base_subjects = [
+            dict(item)
+            for item in raw_subjects
+            if int(comp_aparell.id) in (item.get("allowed_app_ids") or [])
+        ]
+        for item in base_subjects:
+            item.setdefault("nom_i_cognoms", item.get("name") or "")
+            item.setdefault("ordre_sortida", item.get("order") or "")
+    else:
+        excluded_ins_ids = set(
+            InscripcioAparellExclusio.objects
+            .filter(comp_aparell=comp_aparell)
+            .values_list("inscripcio_id", flat=True)
+        )
+        ins_base_qs = (
+            Inscripcio.objects
+            .filter(competicio=competicio)
+            .exclude(id__in=excluded_ins_ids)
+            .select_related("grup_competicio")
+            .order_by("grup_competicio__display_num", "ordre_competicio", "ordre_sortida", "id")
+        )
+        base_subjects = []
+        for ins in ins_base_qs:
+            base_subjects.append({
+                "id": int(ins.id),
+                "subject_id": int(ins.id),
+                "subject_kind": "inscripcio",
+                "name": getattr(ins, "nom_i_cognoms", "") or "",
+                "nom_i_cognoms": getattr(ins, "nom_i_cognoms", "") or "",
+                "order": get_inscripcio_competition_order(ins) or "",
+                "ordre_sortida": getattr(ins, "ordre_sortida", None),
+                "group": 0 if ins.grup_competicio_id in (None, 0) else int(ins.grup_competicio_id),
+                "meta": "",
+            })
 
     # El portal mostra tots els grups programats de l'aparell i calcula la
     # posicio efectiva segons la primera franja assignada a cada grup, amb
     # suport d'override per query string quan arriba ?franja=...
-    ins_list = []
+    subject_list = []
     grouped = {}
-    for ins in ins_base_qs:
-        key = 0 if ins.grup_competicio_id in (None, 0) else int(ins.grup_competicio_id)
-        grouped.setdefault(key, []).append(ins)
+    for subject in base_subjects:
+        key = 0 if subject.get("group") in (None, 0) else int(subject.get("group") or 0)
+        grouped.setdefault(key, []).append(subject)
 
     ordered_groups = [g for g in app_programmed_group_ids if g in grouped]
     remaining_groups = sorted(g for g in grouped.keys() if g not in app_programmed_group_ids and g != 0)
@@ -652,7 +682,7 @@ def judge_portal(request, token):
 
     def build_group_block(group_id):
         group_items = grouped.get(group_id, [])
-        base_pairs = [(ins.id, ins) for ins in group_items]
+        base_pairs = [(item["subject_id"], item) for item in group_items]
         fid = resolve_group_franja_id(group_id)
         mode_for_group = franja_modes.get(str(fid), ORDER_MODE_MAINTAIN) if fid else ORDER_MODE_MAINTAIN
         rotate_steps = effective_rotate_steps(
@@ -667,11 +697,12 @@ def judge_portal(request, token):
             rotate_steps=rotate_steps,
             seed_prefix=f"judge|{competicio.id}|{seed_franja}|{comp_aparell.id}|{group_id}",
         )
-        ordered_ins = []
-        for rank, (_ins_id, ins) in enumerate(ordered_pairs, start=1):
-            ins.rotation_order_display = rank
-            ins.rotation_base_order_display = get_inscripcio_competition_order(ins)
-            ordered_ins.append(ins)
+        ordered_subjects = []
+        for rank, (_subject_id, subject) in enumerate(ordered_pairs, start=1):
+            item = dict(subject)
+            item["rotation_order_display"] = rank
+            item["rotation_base_order_display"] = subject.get("order") or ""
+            ordered_subjects.append(item)
         return {
             "key": group_id,
             "label": group_label_for(group_id),
@@ -682,7 +713,7 @@ def judge_portal(request, token):
                 if fid and fid in franges_by_id
                 else ""
             ),
-            "list": ordered_ins,
+            "list": ordered_subjects,
         }
 
     programmed_group_blocks = []
@@ -690,18 +721,18 @@ def judge_portal(request, token):
     for g in always_visible_group_ids:
         block = build_group_block(g)
         programmed_group_blocks.append(block)
-        ins_list.extend(block["list"])
+        subject_list.extend(block["list"])
     if show_out_of_program_groups:
         for g in remaining_groups:
             block = build_group_block(g)
             out_of_program_group_blocks.append(block)
-            ins_list.extend(block["list"])
+            subject_list.extend(block["list"])
     if not programmed_group_blocks and not out_of_program_group_blocks and grouped:
         fallback_group_ids = sorted(grouped.keys(), key=lambda group_id: (group_id == 0, group_id))
         for g in fallback_group_ids:
             block = build_group_block(g)
             programmed_group_blocks.append(block)
-            ins_list.extend(block["list"])
+            subject_list.extend(block["list"])
 
     visible_group_keys = [block["key"] for block in programmed_group_blocks]
     visible_group_keys.extend(block["key"] for block in out_of_program_group_blocks)
@@ -718,15 +749,21 @@ def judge_portal(request, token):
         active_group_key = None
 
     # Prefetch entries existents (per mostrar valors actuals)
-    ins_ids = [ins.id for ins in ins_list]
-    entries = ScoreEntry.objects.filter(
-        competicio=competicio,
-        comp_aparell=comp_aparell,
-        inscripcio_id__in=ins_ids,
-    )
+    subject_ids = [int(item["subject_id"]) for item in subject_list]
+    entry_model = subject_entry_model(comp_aparell)
+    entry_filters = {
+        "competicio": competicio,
+        "comp_aparell": comp_aparell,
+    }
+    if team_subject_mode:
+        entry_filters["equip_id__in"] = subject_ids
+    else:
+        entry_filters["inscripcio_id__in"] = subject_ids
+    entries = entry_model.objects.filter(**entry_filters)
     entry_map = {}
     for e in entries:
-        entry_map[(e.inscripcio_id, e.exercici)] = e
+        owner_id = int(e.equip_id if team_subject_mode else e.inscripcio_id)
+        entry_map[(owner_id, e.exercici)] = e
 
     # Construïm un “snapshot” dels inputs rellevants per inscripció/exercici
     # Per simplicitat: assumim exercici=1 si al teu flux n’hi ha més, ho pots estendre.
@@ -734,10 +771,10 @@ def judge_portal(request, token):
     exercicis = list(range(1, max_ex + 1))
     exercici_default = _clamp_exercici_for_aparell(comp_aparell, request.GET.get("ex"))
     scores_payload = {}
-    for ins in ins_list:
+    for item in subject_list:
         exercise_map = {}
         for ex in exercicis:
-            e = entry_map.get((ins.id, ex))
+            e = entry_map.get((int(item["subject_id"]), ex))
             exercise_map[str(ex)] = {
                 "inputs": (
                     _filter_inputs_for_allowed_codes(e.inputs, allowed_input_codes)
@@ -748,7 +785,7 @@ def judge_portal(request, token):
                 "total": (float(e.total) if e else 0.0),
                 "updated_at": (e.updated_at.isoformat() if e else None),
             }
-        scores_payload[str(ins.id)] = {
+        scores_payload[str(item["subject_id"])] = {
             "exercises": exercise_map,
         }
 
@@ -770,7 +807,7 @@ def judge_portal(request, token):
         "judge_kiosk": True,
         "schema": schema,
         "permissions": permissions,
-        "inscripcions": ins_list,
+        "inscripcions": subject_list,
         "group_blocks": programmed_group_blocks,
         "out_of_program_group_blocks": out_of_program_group_blocks,
         "active_group_key": active_group_key,
@@ -801,6 +838,7 @@ def judge_portal(request, token):
         "video_max_size_bytes": ScoreEntryVideo.VIDEO_MAX_SIZE_BYTES,
         "exercicis": exercicis,
         "exercici": exercici_default,
+        "team_subject_mode": team_subject_mode,
     }
     return render(request, "judge/portal.html", ctx)
 
@@ -830,30 +868,57 @@ def judge_updates(request, token):
     else:
         exercicis = [_clamp_exercici_for_aparell(comp_aparell, request.GET.get("exercici") or request.GET.get("ex"))]
     permissions = _normalize_permissions(tok.permissions)
+    for perm in permissions:
+        perm["runtime_field_code"] = str(
+            perm.get("runtime_field_code")
+            or permission_runtime_code(perm, comp_aparell)
+            or perm.get("field_code")
+            or ""
+        )
     allowed_input_codes = _allowed_input_codes_from_permissions(permissions)
 
-    excluded_ins_ids = (
-        InscripcioAparellExclusio.objects
-        .filter(comp_aparell=comp_aparell)
-        .values_list("inscripcio_id", flat=True)
-    )
-
-    qs = (
-        ScoreEntry.objects
-        .filter(
-            competicio=competicio,
-            comp_aparell=comp_aparell,
-            exercici__in=exercicis,
-            updated_at__gt=dt,
+    if is_team_context_app(comp_aparell):
+        allowed_team_ids = [
+            int(item["subject_id"])
+            for item in build_team_subjects_for_comp_aparell(competicio, comp_aparell)[0]
+            if int(comp_aparell.id) in (item.get("allowed_app_ids") or [])
+        ]
+        qs = (
+            TeamScoreEntry.objects
+            .filter(
+                competicio=competicio,
+                comp_aparell=comp_aparell,
+                exercici__in=exercicis,
+                updated_at__gt=dt,
+                equip_id__in=allowed_team_ids,
+            )
+            .order_by("updated_at", "id")
         )
-        .exclude(inscripcio_id__in=excluded_ins_ids)
-        .order_by("updated_at", "id")
-    )
+    else:
+        excluded_ins_ids = (
+            InscripcioAparellExclusio.objects
+            .filter(comp_aparell=comp_aparell)
+            .values_list("inscripcio_id", flat=True)
+        )
+
+        qs = (
+            ScoreEntry.objects
+            .filter(
+                competicio=competicio,
+                comp_aparell=comp_aparell,
+                exercici__in=exercicis,
+                updated_at__gt=dt,
+            )
+            .exclude(inscripcio_id__in=excluded_ins_ids)
+            .order_by("updated_at", "id")
+        )
 
     updates = []
     for s in qs[:500]:
+        subject_kind = "equip" if is_team_context_app(comp_aparell) else "inscripcio"
+        subject_id = s.equip_id if subject_kind == "equip" else s.inscripcio_id
         updates.append({
-            "inscripcio_id": s.inscripcio_id,
+            **serialize_subject_payload(subject_kind, subject_id),
             "exercici": s.exercici,
             "comp_aparell_id": s.comp_aparell_id,
             "inputs": _filter_inputs_for_allowed_codes(s.inputs, allowed_input_codes),
@@ -897,47 +962,66 @@ def judge_video_status(request, token):
         )
     tok.touch()
 
-    ins_id = request.GET.get("inscripcio_id")
-    if not ins_id:
+    subject_payload = {
+        "subject_kind": request.GET.get("subject_kind"),
+        "subject_id": request.GET.get("subject_id"),
+        "inscripcio_id": request.GET.get("inscripcio_id"),
+    }
+    if not subject_payload.get("subject_id") and not subject_payload.get("inscripcio_id"):
         _log_video_event(
             "warning",
             "video_status_bad_request",
             token=str(token),
-            reason="missing_inscripcio_id",
+            reason="missing_subject_id",
             latency_ms=int((time.monotonic() - started) * 1000),
             **req_meta,
         )
-        return JsonResponse({"ok": False, "error": "Falta inscripcio_id"}, status=400)
+        return JsonResponse({"ok": False, "error": "Falta subject_id/inscripcio_id"}, status=400)
 
     exercici = _clamp_exercici_for_aparell(tok.comp_aparell, request.GET.get("exercici") or request.GET.get("ex"))
     competicio = tok.competicio
     comp_aparell = tok.comp_aparell
 
-    ins = get_object_or_404(Inscripcio, pk=ins_id, competicio=competicio)
-    if _inscripcio_exclosa_en_aparell(ins.id, comp_aparell.id):
+    team_ids = None
+    if is_team_context_app(comp_aparell):
+        team_ids = [
+            int(item["subject_id"])
+            for item in build_team_subjects_for_comp_aparell(competicio, comp_aparell)[0]
+            if int(comp_aparell.id) in (item.get("allowed_app_ids") or [])
+        ]
+    subject, error_response = resolve_scoring_subject(
+        competicio,
+        comp_aparell,
+        subject_payload,
+        eligible_team_ids=team_ids,
+    )
+    if error_response is not None:
         _log_video_event(
             "warning",
-            "video_status_denied_excluded",
+            "video_status_denied_subject",
             token=str(token),
-            inscripcio_id=ins.id,
+            subject_kind=subject_payload.get("subject_kind") or ("equip" if is_team_context_app(comp_aparell) else "inscripcio"),
+            subject_id=subject_payload.get("subject_id") or subject_payload.get("inscripcio_id"),
             exercici=exercici,
             comp_aparell_id=comp_aparell.id,
             latency_ms=int((time.monotonic() - started) * 1000),
             **req_meta,
         )
-        return JsonResponse(
-            {"ok": False, "error": "Aquesta inscripcio no competeix en aquest aparell."},
-            status=403,
-        )
+        return error_response
+
+    entry_filters = {
+        "competicio": competicio,
+        "exercici": exercici,
+        "comp_aparell": comp_aparell,
+    }
+    if subject["subject_kind"] == "equip":
+        entry_filters["equip"] = subject["equip"]
+    else:
+        entry_filters["inscripcio"] = subject["inscripcio"]
 
     entry = (
-        ScoreEntry.objects
-        .filter(
-            competicio=competicio,
-            inscripcio=ins,
-            exercici=exercici,
-            comp_aparell=comp_aparell,
-        )
+        subject_entry_model(comp_aparell).objects
+        .filter(**entry_filters)
         .first()
     )
     if not entry:
@@ -945,23 +1029,28 @@ def judge_video_status(request, token):
             "info",
             "video_status_empty",
             token=str(token),
-            inscripcio_id=ins.id,
+            **serialize_subject_payload(subject["subject_kind"], subject["subject_id"]),
             exercici=exercici,
             comp_aparell_id=comp_aparell.id,
             latency_ms=int((time.monotonic() - started) * 1000),
             **req_meta,
         )
-        return JsonResponse(
-            {"ok": True, "has_video": False, "inscripcio_id": ins.id, "exercici": exercici},
-        )
+        return JsonResponse({
+            "ok": True,
+            "has_video": False,
+            **serialize_subject_payload(subject["subject_kind"], subject["subject_id"]),
+            "exercici": exercici,
+        })
 
-    video = ScoreEntryVideo.objects.filter(score_entry=entry).first()
+    video_model, _event_model = subject_video_models(comp_aparell)
+    video_lookup = {"team_score_entry": entry} if subject["subject_kind"] == "equip" else {"score_entry": entry}
+    video = video_model.objects.filter(**video_lookup).first()
     if not video or not video.video_file:
         _log_video_event(
             "info",
             "video_status_no_file",
             token=str(token),
-            inscripcio_id=ins.id,
+            **serialize_subject_payload(subject["subject_kind"], subject["subject_id"]),
             exercici=exercici,
             comp_aparell_id=comp_aparell.id,
             score_entry_id=entry.id,
@@ -972,7 +1061,7 @@ def judge_video_status(request, token):
             {
                 "ok": True,
                 "has_video": False,
-                "inscripcio_id": ins.id,
+                **serialize_subject_payload(subject["subject_kind"], subject["subject_id"]),
                 "exercici": exercici,
                 "score_entry_id": entry.id,
             }
@@ -982,7 +1071,7 @@ def judge_video_status(request, token):
         {
             "ok": True,
             "has_video": True,
-            "inscripcio_id": ins.id,
+            **serialize_subject_payload(subject["subject_kind"], subject["subject_id"]),
             "exercici": exercici,
             "score_entry_id": entry.id,
             "video": _serialize_video_record(video, request),
@@ -992,7 +1081,7 @@ def judge_video_status(request, token):
         "info",
         "video_status_ok",
         token=str(token),
-        inscripcio_id=ins.id,
+        **serialize_subject_payload(subject["subject_kind"], subject["subject_id"]),
         exercici=exercici,
         comp_aparell_id=comp_aparell.id,
         score_entry_id=entry.id,
@@ -1036,30 +1125,91 @@ def judge_video_upload(request, token):
         )
     tok.touch()
 
-    ins_id = request.POST.get("inscripcio_id")
-    if not ins_id:
+    subject_payload = {
+        "subject_kind": request.POST.get("subject_kind"),
+        "subject_id": request.POST.get("subject_id"),
+        "inscripcio_id": request.POST.get("inscripcio_id"),
+    }
+    if not subject_payload.get("subject_id") and not subject_payload.get("inscripcio_id"):
         _log_video_event(
             "warning",
             "video_upload_bad_request",
             token=str(token),
-            reason="missing_inscripcio_id",
+            reason="missing_subject_id",
             latency_ms=int((time.monotonic() - started) * 1000),
             **req_meta,
         )
-        return JsonResponse({"ok": False, "error": "Falta inscripcio_id"}, status=400)
+        return JsonResponse({"ok": False, "error": "Falta subject_id/inscripcio_id"}, status=400)
 
     exercici = _clamp_exercici_for_aparell(tok.comp_aparell, request.POST.get("exercici") or request.POST.get("ex"))
     competicio = tok.competicio
     comp_aparell = tok.comp_aparell
 
-    ins = get_object_or_404(Inscripcio, pk=ins_id, competicio=competicio)
+    team_ids = None
+    if is_team_context_app(comp_aparell):
+        team_ids = [
+            int(item["subject_id"])
+            for item in build_team_subjects_for_comp_aparell(competicio, comp_aparell)[0]
+            if int(comp_aparell.id) in (item.get("allowed_app_ids") or [])
+        ]
+    subject, error_response = resolve_scoring_subject(
+        competicio,
+        comp_aparell,
+        subject_payload,
+        eligible_team_ids=team_ids,
+    )
+    if error_response is not None:
+        rejected_subject = None
+        if is_team_context_app(comp_aparell):
+            equip_id = subject_payload.get("subject_id")
+            equip = Equip.objects.filter(pk=equip_id, competicio=competicio).first() if equip_id else None
+            if equip is not None:
+                rejected_subject = {
+                    "subject_kind": "equip",
+                    "subject_id": int(equip.id),
+                    "equip": equip,
+                }
+        else:
+            ins_id = subject_payload.get("subject_id") or subject_payload.get("inscripcio_id")
+            ins = Inscripcio.objects.filter(pk=ins_id, competicio=competicio).first() if ins_id else None
+            if ins is not None:
+                rejected_subject = {
+                    "subject_kind": "inscripcio",
+                    "subject_id": int(ins.id),
+                    "inscripcio": ins,
+                }
+        if rejected_subject is not None:
+            _log_video_event(
+                "warning",
+                "video_upload_rejected",
+                token=str(token),
+                **serialize_subject_payload(rejected_subject["subject_kind"], rejected_subject["subject_id"]),
+                exercici=exercici,
+                comp_aparell_id=comp_aparell.id,
+                reason="subject_not_allowed",
+                http_status=getattr(error_response, "status_code", 403),
+                latency_ms=int((time.monotonic() - started) * 1000),
+                **req_meta,
+            )
+            _create_video_audit_event(
+                action=ScoreEntryVideoEvent.Action.UPLOAD_REJECTED,
+                ok=False,
+                http_status=getattr(error_response, "status_code", 403),
+                detail="subject not allowed",
+                competicio=competicio,
+                comp_aparell=comp_aparell,
+                subject=rejected_subject,
+                judge_token=tok,
+                payload={"reason": "subject_not_allowed"},
+            )
+        return error_response
 
     def _reject(message, status_code, reason, score_entry=None, payload=None):
         _log_video_event(
             "warning",
             "video_upload_rejected",
             token=str(token),
-            inscripcio_id=ins.id,
+            **serialize_subject_payload(subject["subject_kind"], subject["subject_id"]),
             exercici=exercici,
             comp_aparell_id=comp_aparell.id,
             score_entry_id=(score_entry.id if score_entry else None),
@@ -1075,20 +1225,12 @@ def judge_video_upload(request, token):
             detail=message,
             competicio=competicio,
             comp_aparell=comp_aparell,
-            inscripcio=ins,
+            subject=subject,
             judge_token=tok,
             score_entry=score_entry,
             payload=payload or {"reason": reason},
         )
         return JsonResponse({"ok": False, "error": message}, status=status_code)
-
-    if _inscripcio_exclosa_en_aparell(ins.id, comp_aparell.id):
-        return _reject(
-            "Aquesta inscripcio no competeix en aquest aparell.",
-            403,
-            "inscripcio_excluded",
-            payload={"inscripcio_id": ins.id},
-        )
 
     uploaded = request.FILES.get("video_file") or request.FILES.get("video")
     if not uploaded:
@@ -1118,18 +1260,20 @@ def judge_video_upload(request, token):
     mime_type = server_meta["mime_type"]
     duration_seconds = server_meta["duration_seconds"]
 
-    entry, _created = _get_or_create_scoreentry_locked(
+    entry, _created = get_or_create_subject_entry_locked(
         competicio=competicio,
-        inscripcio=ins,
-        exercici=exercici,
         comp_aparell=comp_aparell,
+        exercici=exercici,
+        subject=subject,
         defaults={"inputs": {}, "outputs": {}, "total": 0},
     )
 
-    video, created_video = ScoreEntryVideo.objects.get_or_create(
-        score_entry=entry,
+    video_model, event_model = subject_video_models(comp_aparell)
+    video_lookup = {"team_score_entry": entry} if subject["subject_kind"] == "equip" else {"score_entry": entry}
+    video, created_video = video_model.objects.get_or_create(
+        **video_lookup,
         defaults={
-            "status": ScoreEntryVideo.Status.PENDING,
+            "status": video_model.Status.PENDING,
             "file_size_bytes": 0,
         },
     )
@@ -1138,7 +1282,7 @@ def judge_video_upload(request, token):
 
     video.video_file = uploaded
     video.judge_token = tok
-    video.status = ScoreEntryVideo.Status.READY
+    video.status = video_model.Status.READY
     video.duration_seconds = duration_seconds
     video.file_size_bytes = file_size
     video.mime_type = mime_type
@@ -1180,7 +1324,7 @@ def judge_video_upload(request, token):
         detail="video stored",
         competicio=competicio,
         comp_aparell=comp_aparell,
-        inscripcio=ins,
+        subject=subject,
         judge_token=tok,
         score_entry=entry,
         video=video,
@@ -1199,7 +1343,7 @@ def judge_video_upload(request, token):
         "info",
         "video_upload_ok",
         token=str(token),
-        inscripcio_id=ins.id,
+        **serialize_subject_payload(subject["subject_kind"], subject["subject_id"]),
         exercici=exercici,
         comp_aparell_id=comp_aparell.id,
         score_entry_id=entry.id,
@@ -1216,7 +1360,7 @@ def judge_video_upload(request, token):
         {
             "ok": True,
             "created": created_video,
-            "inscripcio_id": ins.id,
+            **serialize_subject_payload(subject["subject_kind"], subject["subject_id"]),
             "exercici": exercici,
             "score_entry_id": entry.id,
             "video": _serialize_video_record(video, request),
@@ -1257,46 +1401,62 @@ def judge_video_delete(request, token):
         )
     tok.touch()
 
-    ins_id = request.POST.get("inscripcio_id")
-    if not ins_id:
+    subject_payload = {
+        "subject_kind": request.POST.get("subject_kind"),
+        "subject_id": request.POST.get("subject_id"),
+        "inscripcio_id": request.POST.get("inscripcio_id"),
+    }
+    if not subject_payload.get("subject_id") and not subject_payload.get("inscripcio_id"):
         _log_video_event(
             "warning",
             "video_delete_bad_request",
             token=str(token),
-            reason="missing_inscripcio_id",
+            reason="missing_subject_id",
             latency_ms=int((time.monotonic() - started) * 1000),
             **req_meta,
         )
-        return JsonResponse({"ok": False, "error": "Falta inscripcio_id"}, status=400)
+        return JsonResponse({"ok": False, "error": "Falta subject_id/inscripcio_id"}, status=400)
 
     exercici = _clamp_exercici_for_aparell(tok.comp_aparell, request.POST.get("exercici") or request.POST.get("ex"))
     competicio = tok.competicio
     comp_aparell = tok.comp_aparell
 
-    ins = get_object_or_404(Inscripcio, pk=ins_id, competicio=competicio)
-    if _inscripcio_exclosa_en_aparell(ins.id, comp_aparell.id):
+    team_ids = None
+    if is_team_context_app(comp_aparell):
+        team_ids = [
+            int(item["subject_id"])
+            for item in build_team_subjects_for_comp_aparell(competicio, comp_aparell)[0]
+            if int(comp_aparell.id) in (item.get("allowed_app_ids") or [])
+        ]
+    subject, error_response = resolve_scoring_subject(
+        competicio,
+        comp_aparell,
+        subject_payload,
+        eligible_team_ids=team_ids,
+    )
+    if error_response is not None:
         _log_video_event(
             "warning",
-            "video_delete_denied_excluded",
+            "video_delete_denied_subject",
             token=str(token),
-            inscripcio_id=ins.id,
+            **serialize_subject_payload(
+                str(subject_payload.get("subject_kind") or ("equip" if is_team_context_app(comp_aparell) else "inscripcio")),
+                int(subject_payload.get("subject_id") or subject_payload.get("inscripcio_id") or 0),
+            ),
             exercici=exercici,
             comp_aparell_id=comp_aparell.id,
             latency_ms=int((time.monotonic() - started) * 1000),
             **req_meta,
         )
-        return JsonResponse(
-            {"ok": False, "error": "Aquesta inscripcio no competeix en aquest aparell."},
-            status=403,
-        )
+        return error_response
 
     entry = (
-        ScoreEntry.objects
+        subject_entry_model(comp_aparell).objects
         .filter(
             competicio=competicio,
-            inscripcio=ins,
             exercici=exercici,
             comp_aparell=comp_aparell,
+            **({"equip": subject["equip"]} if subject["subject_kind"] == "equip" else {"inscripcio": subject["inscripcio"]}),
         )
         .first()
     )
@@ -1305,23 +1465,31 @@ def judge_video_delete(request, token):
             "info",
             "video_delete_no_score",
             token=str(token),
-            inscripcio_id=ins.id,
+            **serialize_subject_payload(subject["subject_kind"], subject["subject_id"]),
             exercici=exercici,
             comp_aparell_id=comp_aparell.id,
             latency_ms=int((time.monotonic() - started) * 1000),
             **req_meta,
         )
         return JsonResponse(
-            {"ok": True, "deleted": False, "inscripcio_id": ins.id, "exercici": exercici},
+            {
+                "ok": True,
+                "deleted": False,
+                **serialize_subject_payload(subject["subject_kind"], subject["subject_id"]),
+                "exercici": exercici,
+            },
         )
 
-    video = ScoreEntryVideo.objects.filter(score_entry=entry).first()
+    video_model, _event_model = subject_video_models(comp_aparell)
+    video = video_model.objects.filter(
+        **({"team_score_entry": entry} if subject["subject_kind"] == "equip" else {"score_entry": entry})
+    ).first()
     if not video:
         _log_video_event(
             "info",
             "video_delete_no_video",
             token=str(token),
-            inscripcio_id=ins.id,
+            **serialize_subject_payload(subject["subject_kind"], subject["subject_id"]),
             exercici=exercici,
             comp_aparell_id=comp_aparell.id,
             score_entry_id=entry.id,
@@ -1332,7 +1500,7 @@ def judge_video_delete(request, token):
             {
                 "ok": True,
                 "deleted": False,
-                "inscripcio_id": ins.id,
+                **serialize_subject_payload(subject["subject_kind"], subject["subject_id"]),
                 "exercici": exercici,
                 "score_entry_id": entry.id,
             }
@@ -1346,7 +1514,7 @@ def judge_video_delete(request, token):
         detail="video deleted",
         competicio=competicio,
         comp_aparell=comp_aparell,
-        inscripcio=ins,
+        subject=subject,
         judge_token=tok,
         score_entry=entry,
         video=video,
@@ -1361,7 +1529,7 @@ def judge_video_delete(request, token):
         "info",
         "video_delete_ok",
         token=str(token),
-        inscripcio_id=ins.id,
+        **serialize_subject_payload(subject["subject_kind"], subject["subject_id"]),
         exercici=exercici,
         comp_aparell_id=comp_aparell.id,
         score_entry_id=entry.id,
@@ -1374,7 +1542,7 @@ def judge_video_delete(request, token):
         {
             "ok": True,
             "deleted": True,
-            "inscripcio_id": ins.id,
+            **serialize_subject_payload(subject["subject_kind"], subject["subject_id"]),
             "exercici": exercici,
             "score_entry_id": entry.id,
         }
@@ -1458,18 +1626,32 @@ def judge_save_partial(request, token):
     except Exception:
         return JsonResponse({"ok": False, "error": "JSON invàlid"}, status=400)
 
-    ins_id = payload.get("inscripcio_id")
+    subject_payload = {
+        "subject_kind": payload.get("subject_kind"),
+        "subject_id": payload.get("subject_id"),
+        "inscripcio_id": payload.get("inscripcio_id"),
+    }
     exercici_raw = payload.get("exercici")
     inputs_patch = payload.get("inputs_patch", {})
+    competicio: Competicio = tok.competicio
+    comp_aparell: CompeticioAparell = tok.comp_aparell
+    exercici = _clamp_exercici_for_aparell(comp_aparell, exercici_raw)
 
-    if not ins_id:
-        return JsonResponse({"ok": False, "error": "Falta inscripcio_id"}, status=400)
+    if not subject_payload.get("subject_id") and not subject_payload.get("inscripcio_id"):
+        return JsonResponse({"ok": False, "error": "Falta subject_id/inscripcio_id"}, status=400)
     if not isinstance(inputs_patch, dict):
         return JsonResponse({"ok": False, "error": "inputs_patch ha de ser objecte JSON"}, status=400)
 
     # Seguretat: només permetre editar camps que apareixen a permissions
     permissions = _normalize_permissions(tok.permissions)
-    allowed_codes = {p["field_code"] for p in permissions}
+    for perm in permissions:
+        perm["runtime_field_code"] = str(
+            perm.get("runtime_field_code")
+            or permission_runtime_code(perm, comp_aparell)
+            or perm.get("field_code")
+            or ""
+        )
+    allowed_codes = {p["runtime_field_code"] for p in permissions}
     allowed_input_codes = _allowed_input_codes_from_permissions(permissions)
     allowed_patch_codes = set(allowed_codes)
     allowed_patch_codes.update({f"__crash__{code}" for code in allowed_codes})
@@ -1477,25 +1659,30 @@ def judge_save_partial(request, token):
     if not patch_codes.issubset(allowed_patch_codes):
         return JsonResponse({"ok": False, "error": "Intentes editar un camp no autoritzat per aquest QR"}, status=403)
 
-    competicio: Competicio = tok.competicio
-    comp_aparell: CompeticioAparell = tok.comp_aparell
-    exercici = _clamp_exercici_for_aparell(comp_aparell, exercici_raw)
-
-    ins = get_object_or_404(Inscripcio, pk=ins_id, competicio=competicio)
-    if _inscripcio_exclosa_en_aparell(ins.id, comp_aparell.id):
-        return JsonResponse(
-            {"ok": False, "error": "Aquesta inscripcio no competeix en aquest aparell."},
-            status=403,
-        )
+    team_ids = None
+    if is_team_context_app(comp_aparell):
+        team_ids = [
+            int(item["subject_id"])
+            for item in build_team_subjects_for_comp_aparell(competicio, comp_aparell)[0]
+            if int(comp_aparell.id) in (item.get("allowed_app_ids") or [])
+        ]
+    subject, error_response = resolve_scoring_subject(
+        competicio,
+        comp_aparell,
+        subject_payload,
+        eligible_team_ids=team_ids,
+    )
+    if error_response is not None:
+        return error_response
 
     ss, _ = ScoringSchema.objects.get_or_create(aparell=comp_aparell.aparell, defaults={"schema": {}})
-    schema = ss.schema or {}
+    schema = runtime_schema_for_comp_aparell(ss.schema or {}, comp_aparell)
 
-    entry, _ = _get_or_create_scoreentry_locked(
+    entry, _ = get_or_create_subject_entry_locked(
         competicio=competicio,
-        inscripcio=ins,
-        exercici=exercici,
         comp_aparell=comp_aparell,
+        exercici=exercici,
+        subject=subject,
         defaults={"inputs": {}, "outputs": {}, "total": 0},
     )
 
@@ -1529,6 +1716,7 @@ def judge_save_partial(request, token):
 
     return JsonResponse({
         "ok": True,
+        **serialize_subject_payload(subject["subject_kind"], subject["subject_id"]),
         "inputs": _filter_inputs_for_allowed_codes(entry.inputs, allowed_input_codes),
         "outputs": entry.outputs or {},
         "total": float(entry.total),

@@ -17,9 +17,24 @@ from django.utils import timezone
 from .models import Competicio, Inscripcio, InscripcioMedia
 from .models_trampoli import Aparell, CompeticioAparell, InscripcioAparellExclusio
 from .models_rotacions import RotacioAssignacio, RotacioFranja
-from .models_scoring import ScoringSchema, ScoreEntry, ScoreEntryVideo
+from .models import Equip
+from .models_scoring import ScoringSchema, ScoreEntry, ScoreEntryVideo, TeamScoreEntry, TeamScoreEntryVideo
 from .forms import ScoringSchemaForm
 from .scoring_engine import ScoringEngine, ScoringError
+from .services.scoring_subjects import (
+    get_or_create_subject_entry_locked,
+    inscripcio_exclosa_en_aparell,
+    resolve_scoring_subject,
+    score_store_key,
+    serialize_subject_payload,
+    subject_entry_model,
+)
+from .services.team_scoring import (
+    build_team_subjects_for_comp_aparell,
+    eligible_team_ids_for_comp_aparell,
+    is_team_context_app,
+    runtime_schema_for_comp_aparell,
+)
 from .services.competition_groups import (
     get_group_maps,
     get_inscripcio_competition_order,
@@ -76,11 +91,43 @@ def _get_or_create_scoreentry_locked(*, competicio, inscripcio, exercici, comp_a
         return entry, False
 
 
-def _inscripcio_exclosa_en_aparell(inscripcio_id: int, comp_aparell_id: int) -> bool:
-    return InscripcioAparellExclusio.objects.filter(
-        inscripcio_id=inscripcio_id,
-        comp_aparell_id=comp_aparell_id,
-    ).exists()
+def _get_or_create_teamscoreentry_locked(*, competicio, equip, exercici, comp_aparell, defaults=None):
+    lookup = {
+        "competicio": competicio,
+        "equip": equip,
+        "exercici": exercici,
+        "comp_aparell": comp_aparell,
+    }
+    defaults = defaults or {}
+    entry = (
+        TeamScoreEntry.objects
+        .select_for_update()
+        .filter(**lookup)
+        .first()
+    )
+    if entry is not None:
+        return entry, False
+
+    try:
+        entry = TeamScoreEntry.objects.create(**lookup, **defaults)
+        return entry, True
+    except IntegrityError:
+        entry = (
+            TeamScoreEntry.objects
+            .select_for_update()
+            .get(**lookup)
+        )
+        return entry, False
+
+
+def _allowed_input_codes_for_schema(schema: dict, comp_aparell=None) -> set:
+    runtime_schema = runtime_schema_for_comp_aparell(schema or {}, comp_aparell)
+    allowed = set()
+    for f in (runtime_schema.get("fields") or []):
+        if isinstance(f, dict) and f.get("code"):
+            allowed.add(f["code"])
+            allowed.add(f"__crash__{f['code']}")
+    return allowed
 
 
 def _recalculate_scores_for_comp_aparell(competicio, comp_aparell, chunk_size: int = 200) -> dict:
@@ -88,8 +135,9 @@ def _recalculate_scores_for_comp_aparell(competicio, comp_aparell, chunk_size: i
     Recalculate all ScoreEntry rows for one competition + comp_aparell using the current
     global schema attached to the Aparell.
     """
+    entry_model = subject_entry_model(comp_aparell)
     qs = (
-        ScoreEntry.objects
+        entry_model.objects
         .filter(competicio=competicio, comp_aparell=comp_aparell)
         .order_by("id")
     )
@@ -106,7 +154,7 @@ def _recalculate_scores_for_comp_aparell(competicio, comp_aparell, chunk_size: i
     )
 
     try:
-        engine = ScoringEngine(ss.schema or {})
+        engine = ScoringEngine(runtime_schema_for_comp_aparell(ss.schema or {}, comp_aparell))
     except Exception as exc:
         summary["engine_error"] = str(exc)
         logger.exception(
@@ -234,6 +282,18 @@ def _parse_positive_int(raw_value):
     return n if n > 0 else None
 
 
+def _eligible_team_subject_map(competicio, comp_aparell):
+    if not is_team_context_app(comp_aparell):
+        return {}
+    out = {}
+    subjects, _issues = build_team_subjects_for_comp_aparell(competicio, comp_aparell)
+    for subject in subjects:
+        if int(comp_aparell.id) not in (subject.get("allowed_app_ids") or []):
+            continue
+        out[int(subject["subject_id"])] = subject
+    return out
+
+
 class ScoringNotesHome(TemplateView):
     """
     Pantalla de notes dinàmica basada en schema.
@@ -321,6 +381,7 @@ class ScoringNotesHome(TemplateView):
         )
         aparells_cfg = list(aparells_cfg)
         active_app_ids = [ca.id for ca in aparells_cfg]
+        team_app_ids = {ca.id for ca in aparells_cfg if is_team_context_app(ca)}
         excluded_by_ins = defaultdict(set)
         if active_app_ids:
             excl_pairs = (
@@ -361,7 +422,7 @@ class ScoringNotesHome(TemplateView):
                 aparell=ca.aparell,
                 defaults={"schema": {}},
             )
-            schemas[str(ca.id)] = ss.schema or {}
+            schemas[str(ca.id)] = runtime_schema_for_comp_aparell(ss.schema or {}, ca)
 
         # ─────────────────────────────
         # SCORES (dict clau -> dades)
@@ -370,7 +431,7 @@ class ScoringNotesHome(TemplateView):
             competicio=competicio,
             inscripcio__in=ins,
             exercici__in=exercicis,
-            comp_aparell__in=aparells_cfg,
+            comp_aparell__in=[ca for ca in aparells_cfg if not is_team_context_app(ca)],
         )
         scores_qs = scores_qs.annotate(
             _excluded=Exists(
@@ -383,12 +444,44 @@ class ScoringNotesHome(TemplateView):
 
         scores = {}
         for s in scores_qs:
-            key = f"{s.inscripcio_id}|{s.exercici}|{s.comp_aparell_id}"
+            key = score_store_key("inscripcio", s.inscripcio_id, s.exercici, s.comp_aparell_id)
             scores[key] = {
                 "inputs": s.inputs or {},
                 "outputs": s.outputs or {},
                 "total": float(s.total),
             }
+
+        team_subjects = []
+        team_issues_by_app = {}
+        eligible_team_ids_by_app = {}
+        for ca in aparells_cfg:
+            if not is_team_context_app(ca):
+                continue
+            app_subjects, issues = build_team_subjects_for_comp_aparell(competicio, ca)
+            team_subjects.extend(app_subjects)
+            team_issues_by_app[str(ca.id)] = issues
+            eligible_team_ids_by_app[int(ca.id)] = [
+                int(subject["subject_id"])
+                for subject in app_subjects
+                if int(ca.id) in (subject.get("allowed_app_ids") or [])
+            ]
+
+        team_score_app_ids = [app_id for app_id, ids in eligible_team_ids_by_app.items() if ids]
+        team_score_team_ids = [team_id for ids in eligible_team_ids_by_app.values() for team_id in ids]
+        if team_score_app_ids and team_score_team_ids:
+            team_scores_qs = TeamScoreEntry.objects.filter(
+                competicio=competicio,
+                comp_aparell_id__in=team_score_app_ids,
+                equip_id__in=team_score_team_ids,
+                exercici__in=exercicis,
+            )
+            for s in team_scores_qs:
+                key = score_store_key("equip", s.equip_id, s.exercici, s.comp_aparell_id)
+                scores[key] = {
+                    "inputs": s.inputs or {},
+                    "outputs": s.outputs or {},
+                    "total": float(s.total),
+                }
 
         # ─────────────────────────────
         # INSCRIPCIONS (llista plana per JS)
@@ -406,11 +499,13 @@ class ScoringNotesHome(TemplateView):
                     meta_parts.append(str(r.subcategoria))
                 allowed_app_ids = [
                     app_id for app_id in active_app_ids
-                    if app_id not in excluded_by_ins.get(r.id, set())
+                    if app_id not in excluded_by_ins.get(r.id, set()) and app_id not in team_app_ids
                 ]
 
                 inscripcions.append({
                     "id": r.id,
+                    "subject_id": r.id,
+                    "subject_kind": "inscripcio",
                     "order": get_inscripcio_competition_order(r) or "",
                     "name": getattr(r, "nom_i_cognoms", "") or "",
                     "group": getattr(r, "grup_competicio_id", 0) or 0,
@@ -418,12 +513,13 @@ class ScoringNotesHome(TemplateView):
                     "allowed_app_ids": allowed_app_ids,
                     "meta": " · ".join(meta_parts) if meta_parts else "",
                 })
+        inscripcions.extend(team_subjects)
 
 
         # ─────────────────────────────
         # CONTEXT FINAL
         # ─────────────────────────────
-        inscripcio_ids = [int(x["id"]) for x in inscripcions]
+        inscripcio_ids = [int(x["subject_id"]) for x in inscripcions if x.get("subject_kind") == "inscripcio"]
         media_counts_by_inscripcio = {
             str(ins_id): {"audio": 0, "video": 0}
             for ins_id in inscripcio_ids
@@ -464,7 +560,25 @@ class ScoringNotesHome(TemplateView):
                 )
             )
             for ins_id, exercici_id, app_id in judge_video_rows:
-                judge_video_presence_by_key[f"{ins_id}|{exercici_id}|{app_id}"] = 1
+                judge_video_presence_by_key[score_store_key("inscripcio", ins_id, exercici_id, app_id)] = 1
+        if team_score_team_ids and team_score_app_ids and exercicis:
+            team_judge_video_rows = (
+                TeamScoreEntryVideo.objects
+                .filter(
+                    team_score_entry__competicio=competicio,
+                    team_score_entry__equip_id__in=team_score_team_ids,
+                    team_score_entry__comp_aparell_id__in=team_score_app_ids,
+                    team_score_entry__exercici__in=exercicis,
+                )
+                .exclude(video_file="")
+                .values_list(
+                    "team_score_entry__equip_id",
+                    "team_score_entry__exercici",
+                    "team_score_entry__comp_aparell_id",
+                )
+            )
+            for equip_id, exercici_id, app_id in team_judge_video_rows:
+                judge_video_presence_by_key[score_store_key("equip", equip_id, exercici_id, app_id)] = 1
 
         rotation_rank_map = {}
         rotation_groups_by_app = {}
@@ -489,11 +603,6 @@ class ScoringNotesHome(TemplateView):
                 prev = app_groups_map.get(app_id, [])
                 app_groups_map[app_id] = unique_ordered(list(prev) + list(groups_for_cell))
 
-            rows_by_group = {}
-            for g, rows in programmed_groups:
-                key = 0 if g in (None, 0) else int(g)
-                rows_by_group[key] = list(rows)
-
             mode_for_franja = franja_modes.get(str(franja_selected_id), ORDER_MODE_MAINTAIN)
 
             for app_id in active_app_ids:
@@ -501,9 +610,24 @@ class ScoringNotesHome(TemplateView):
                 app_groups = app_groups_map.get(app_id, [])
                 rotation_groups_by_app[app_key] = app_groups
                 rank = 1
+                subject_rows_by_group = {}
+                if app_id in team_app_ids:
+                    for subject in team_subjects:
+                        key = 0 if subject.get("group") in (None, 0) else int(subject.get("group") or 0)
+                        if key not in app_groups:
+                            continue
+                        if app_id in (subject.get("allowed_app_ids") or []) or subject.get("invalid_reasons"):
+                            subject_rows_by_group.setdefault(key, []).append(subject)
+                else:
+                    for g, rows in programmed_groups:
+                        key = 0 if g in (None, 0) else int(g)
+                        subject_rows_by_group[key] = list(rows)
                 for g in app_groups:
                     base_pairs = []
-                    for r in rows_by_group.get(g, []):
+                    for r in subject_rows_by_group.get(g, []):
+                        if app_id in team_app_ids:
+                            base_pairs.append((r["id"], r))
+                            continue
                         if app_id in excluded_by_ins.get(r.id, set()):
                             continue
                         base_pairs.append((r.id, r))
@@ -517,8 +641,8 @@ class ScoringNotesHome(TemplateView):
                         ),
                         seed_prefix=f"notes|{competicio.id}|{franja_selected_id}|{app_id}|{g}",
                     )
-                    for ins_id, _r in ordered:
-                        key = f"{app_id}|{ins_id}"
+                    for subject_id, _r in ordered:
+                        key = f"{app_id}|{subject_id}"
                         if key in rotation_rank_map:
                             continue
                         rotation_rank_map[key] = rank
@@ -544,6 +668,7 @@ class ScoringNotesHome(TemplateView):
             "inscripcions": inscripcions,
             "media_counts_by_inscripcio": media_counts_by_inscripcio,
             "judge_video_presence_by_key": judge_video_presence_by_key,
+            "team_issues_by_app": team_issues_by_app,
             "updates_cursor_init": timezone.now().isoformat(),
         })
         return ctx
@@ -601,6 +726,11 @@ class ScoringSchemaUpdate(UpdateView):
             defaults={"schema": {}},
         )
         return obj
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["comp_aparell"] = self.comp_aparell
+        return kwargs
 
     def form_valid(self, form):
         schema_json = form.cleaned_data.get("schema_json")
@@ -664,6 +794,21 @@ class ScoringSchemaUpdate(UpdateView):
             ctx["competicio"] = self.competicio
         if self.comp_aparell:
             ctx["comp_aparell"] = self.comp_aparell
+            ctx["schema_builder_config"] = {
+                "participant_mode": self.comp_aparell.participant_mode,
+                "team_scoring_mode": self.comp_aparell.team_scoring_mode,
+                "expected_team_size": self.comp_aparell.expected_team_size,
+                "team_context_name": getattr(self.comp_aparell.team_context, "nom", ""),
+                "team_context_code": getattr(self.comp_aparell.team_context, "code", ""),
+            }
+        else:
+            ctx["schema_builder_config"] = {
+                "participant_mode": "individual",
+                "team_scoring_mode": "",
+                "expected_team_size": None,
+                "team_context_name": "",
+                "team_context_code": "",
+            }
 
         return ctx
 
@@ -687,29 +832,70 @@ def scoring_save(request, pk):
     except Exception:
         return JsonResponse({"ok": False, "error": "JSON invàlid"}, status=400)
 
-    ins_id = payload.get("inscripcio_id")
     comp_aparell_id = payload.get("comp_aparell_id")
     exercici = int(payload.get("exercici") or 1)
     inputs = payload.get("inputs", {})
 
-    if not ins_id or not comp_aparell_id:
-        return JsonResponse({"ok": False, "error": "Falten camps: inscripcio_id/comp_aparell_id"}, status=400)
+    if not comp_aparell_id:
+        return JsonResponse({"ok": False, "error": "Falta comp_aparell_id"}, status=400)
 
-    ins = get_object_or_404(Inscripcio, pk=ins_id, competicio=competicio)
     comp_aparell = get_object_or_404(CompeticioAparell, pk=comp_aparell_id, competicio=competicio, actiu=True)
-    if _inscripcio_exclosa_en_aparell(ins.id, comp_aparell.id):
-        return JsonResponse(
-            {"ok": False, "error": "Aquesta inscripcio no competeix en aquest aparell."},
-            status=403,
-        )
+    subject, error_response = resolve_scoring_subject(
+        competicio,
+        comp_aparell,
+        payload,
+        eligible_team_ids=eligible_team_ids_for_comp_aparell(competicio, comp_aparell) if is_team_context_app(comp_aparell) else None,
+    )
+    if error_response is not None:
+        return error_response
 
     ss, _ = ScoringSchema.objects.get_or_create(aparell=comp_aparell.aparell, defaults={"schema": {}})
-    schema = ss.schema or {}
+    schema = runtime_schema_for_comp_aparell(ss.schema or {}, comp_aparell)
+    allowed = _allowed_input_codes_for_schema(ss.schema or {}, comp_aparell)
+
+    clean_inputs = {}
+    if isinstance(inputs, dict):
+        for k, v in inputs.items():
+            if k in allowed:
+                clean_inputs[k] = v
+
+    try:
+        engine = ScoringEngine(schema)
+        result = engine.compute(clean_inputs)
+    except ScoringError as e:
+        return JsonResponse({"ok": False, "error": str(e)}, status=400)
+    except Exception:
+        return JsonResponse({"ok": False, "error": "Error inesperat calculant."}, status=500)
+
+    max_ex = max(1, min(4, int(getattr(comp_aparell, "nombre_exercicis", 1) or 1)))
+    exercici = max(1, min(max_ex, exercici))
+
+    entry, _ = get_or_create_subject_entry_locked(
+        competicio=competicio,
+        comp_aparell=comp_aparell,
+        exercici=exercici,
+        subject=subject,
+    )
+    entry.inputs = result.inputs
+    entry.outputs = result.outputs
+    entry.total = result.total
+    entry.save()
+
+    response = {
+        "ok": True,
+        "exercici": entry.exercici,
+        "comp_aparell_id": comp_aparell.id,
+        "outputs": entry.outputs,
+        "total": float(entry.total),
+    }
+    response.update(serialize_subject_payload(subject["subject_kind"], subject["subject_id"]))
+    return JsonResponse(response)
+
+    ss, _ = ScoringSchema.objects.get_or_create(aparell=comp_aparell.aparell, defaults={"schema": {}})
+    schema = runtime_schema_for_comp_aparell(ss.schema or {}, comp_aparell)
     # --- FILTRA INPUTS DESCONeguts (evita "Nom desconegut: E_j") ---
-    allowed = set()
-    for f in (schema.get("fields") or []):
-        if isinstance(f, dict) and f.get("code"):
-            allowed.add(f["code"])
+    allowed = _allowed_input_codes_for_schema(ss.schema or {}, comp_aparell)
+    if False:
             # també permet crash keys si les uses (__crash__X)
             allowed.add(f"__crash__{f['code']}")
 
@@ -775,23 +961,70 @@ def scoring_save_partial(request, pk):
     except Exception:
         return JsonResponse({"ok": False, "error": "JSON invàlid"}, status=400)
 
-    ins_id = payload.get("inscripcio_id")
     comp_aparell_id = payload.get("comp_aparell_id")
     exercici = int(payload.get("exercici") or 1)
     patch = payload.get("inputs_patch", {})
 
-    if not ins_id or not comp_aparell_id:
-        return JsonResponse({"ok": False, "error": "Falten camps: inscripcio_id/comp_aparell_id"}, status=400)
+    if not comp_aparell_id:
+        return JsonResponse({"ok": False, "error": "Falta comp_aparell_id"}, status=400)
     if not isinstance(patch, dict):
         return JsonResponse({"ok": False, "error": "inputs_patch ha de ser objecte JSON"}, status=400)
 
-    ins = get_object_or_404(Inscripcio, pk=ins_id, competicio=competicio)
     comp_aparell = get_object_or_404(CompeticioAparell, pk=comp_aparell_id, competicio=competicio, actiu=True)
-    if _inscripcio_exclosa_en_aparell(ins.id, comp_aparell.id):
-        return JsonResponse(
-            {"ok": False, "error": "Aquesta inscripcio no competeix en aquest aparell."},
-            status=403,
-        )
+    subject, error_response = resolve_scoring_subject(
+        competicio,
+        comp_aparell,
+        payload,
+        eligible_team_ids=eligible_team_ids_for_comp_aparell(competicio, comp_aparell) if is_team_context_app(comp_aparell) else None,
+    )
+    if error_response is not None:
+        return error_response
+
+    max_ex = max(1, min(4, int(getattr(comp_aparell, "nombre_exercicis", 1) or 1)))
+    exercici = max(1, min(max_ex, exercici))
+
+    ss, _ = ScoringSchema.objects.get_or_create(aparell=comp_aparell.aparell, defaults={"schema": {}})
+    schema = runtime_schema_for_comp_aparell(ss.schema or {}, comp_aparell)
+    allowed = _allowed_input_codes_for_schema(ss.schema or {}, comp_aparell)
+
+    entry, _ = get_or_create_subject_entry_locked(
+        competicio=competicio,
+        comp_aparell=comp_aparell,
+        exercici=exercici,
+        subject=subject,
+        defaults={"inputs": {}, "outputs": {}, "total": 0},
+    )
+    current_inputs = entry.inputs if isinstance(entry.inputs, dict) else {}
+
+    merged = dict(current_inputs)
+    for k, v in patch.items():
+        if k in allowed:
+            merged[k] = v
+
+    try:
+        engine = ScoringEngine(schema)
+        result = engine.compute(merged)
+    except ScoringError as e:
+        return JsonResponse({"ok": False, "error": str(e)}, status=400)
+    except Exception:
+        return JsonResponse({"ok": False, "error": "Error inesperat calculant."}, status=500)
+
+    entry.inputs = result.inputs
+    entry.outputs = result.outputs
+    entry.total = result.total
+    entry.save(update_fields=["inputs", "outputs", "total", "updated_at"])
+
+    response = {
+        "ok": True,
+        "exercici": entry.exercici,
+        "comp_aparell_id": comp_aparell.id,
+        "inputs": entry.inputs,
+        "outputs": entry.outputs,
+        "total": float(entry.total),
+        "updated_at": entry.updated_at.isoformat(),
+    }
+    response.update(serialize_subject_payload(subject["subject_kind"], subject["subject_id"]))
+    return JsonResponse(response)
 
     # clamp exercici com ja fas
     max_ex = max(1, min(4, int(getattr(comp_aparell, "nombre_exercicis", 1) or 1)))
@@ -801,7 +1034,7 @@ def scoring_save_partial(request, pk):
     schema = ss.schema or {}
 
     # allowed keys (igual que scoring_save)
-    allowed = set()
+    allowed = _allowed_input_codes_for_schema(ss.schema or {}, comp_aparell)
     for f in (schema.get("fields") or []):
         if isinstance(f, dict) and f.get("code"):
             allowed.add(f["code"])
@@ -852,17 +1085,83 @@ def scoring_save_partial(request, pk):
 def scoring_media_context(request, pk):
     competicio = get_object_or_404(Competicio, pk=pk)
 
+    subject_kind = str(request.GET.get("subject_kind") or "").strip().lower()
+    subject_id = _parse_positive_int(request.GET.get("subject_id"))
     ins_id = _parse_positive_int(request.GET.get("inscripcio_id"))
-    if not ins_id:
-        return JsonResponse({"ok": False, "error": "Falta inscripcio_id valid."}, status=400)
-
-    inscripcio = get_object_or_404(Inscripcio, pk=ins_id, competicio=competicio)
-
     comp_aparell_id = _parse_positive_int(request.GET.get("comp_aparell_id"))
     exercici = _parse_positive_int(request.GET.get("exercici"))
 
-    if comp_aparell_id and not CompeticioAparell.objects.filter(pk=comp_aparell_id, competicio=competicio).exists():
+    comp_aparell = None
+    if comp_aparell_id:
+        comp_aparell = (
+            CompeticioAparell.objects
+            .filter(pk=comp_aparell_id, competicio=competicio)
+            .select_related("team_context")
+            .first()
+        )
+    if comp_aparell_id and comp_aparell is None:
         return JsonResponse({"ok": False, "error": "comp_aparell_id invalid per aquesta competicio."}, status=400)
+
+    if comp_aparell and is_team_context_app(comp_aparell):
+        eligible_subjects = _eligible_team_subject_map(competicio, comp_aparell)
+        subject, error_response = resolve_scoring_subject(
+            competicio,
+            comp_aparell,
+            {
+                "subject_kind": subject_kind,
+                "subject_id": subject_id,
+                "inscripcio_id": ins_id,
+            },
+            eligible_team_ids=eligible_subjects.keys(),
+        )
+        if error_response is not None:
+            return error_response
+        equip = subject["equip"]
+        team_subject = eligible_subjects.get(int(equip.id), {})
+        judge_video_payload = None
+        if exercici:
+            score = (
+                TeamScoreEntry.objects
+                .filter(
+                    competicio=competicio,
+                    equip=equip,
+                    comp_aparell=comp_aparell,
+                    exercici=exercici,
+                )
+                .first()
+            )
+            if score:
+                video_obj = TeamScoreEntryVideo.objects.filter(team_score_entry=score).first()
+                judge_video_payload = _serialize_judge_video_for_playback(video_obj)
+
+        return JsonResponse({
+            "ok": True,
+            "subject": {
+                "kind": "equip",
+                "id": equip.id,
+                "name": equip.nom or f"Equip {equip.id}",
+                "meta": " · ".join(
+                    subject.get("members_text", "")
+                    for subject in build_team_subjects_for_comp_aparell(competicio, comp_aparell)[0]
+                    if int(subject.get("subject_id") or 0) == int(equip.id)
+                    and subject.get("members_text")
+                ),
+            },
+            "context": {
+                "comp_aparell_id": comp_aparell_id,
+                "exercici": exercici,
+            },
+            "media": _split_media_for_playback([]),
+            "judge_video": judge_video_payload,
+        })
+
+    ins_id = subject_id or ins_id
+    if subject_kind and subject_kind != "inscripcio":
+        return JsonResponse({"ok": False, "error": "Aquest context nomes accepta subject_kind=inscripcio."}, status=400)
+    if not ins_id:
+        return JsonResponse({"ok": False, "error": "Falta subject_id/inscripcio_id valid."}, status=400)
+
+    inscripcio = get_object_or_404(Inscripcio, pk=ins_id, competicio=competicio)
 
     media_qs = (
         InscripcioMedia.objects
@@ -898,7 +1197,8 @@ def scoring_media_context(request, pk):
 
     return JsonResponse({
         "ok": True,
-        "inscripcio": {
+        "subject": {
+            "kind": "inscripcio",
             "id": inscripcio.id,
             "name": inscripcio.nom_i_cognoms or "",
             "meta": " · ".join(meta_parts) if meta_parts else "",
@@ -926,41 +1226,73 @@ def scoring_updates(request, pk):
         # si no arriba since, no petem: retornem buit
         return JsonResponse({"ok": True, "now": None, "updates": []})
 
-    qs = ScoreEntry.objects.filter(competicio=competicio, updated_at__gt=dt)
-    qs = qs.annotate(
-        _excluded=Exists(
-            InscripcioAparellExclusio.objects.filter(
-                inscripcio_id=OuterRef("inscripcio_id"),
-                comp_aparell_id=OuterRef("comp_aparell_id"),
-            )
-        )
-    ).filter(_excluded=False)
-
-    if comp_aparell_id:
-        qs = qs.filter(comp_aparell_id=comp_aparell_id)
-    if exercici:
-        try:
-            qs = qs.filter(exercici=int(exercici))
-        except Exception:
-            pass
-    if group is not None:
-        # filtra per grup via inscripcio
-        try:
-            qs = qs.filter(inscripcio__grup=int(group))
-        except Exception:
-            pass
-
     updates = []
-    for s in qs.select_related("inscripcio")[:500]:
-        updates.append({
-            "inscripcio_id": s.inscripcio_id,
-            "exercici": s.exercici,
-            "comp_aparell_id": s.comp_aparell_id,
-            "inputs": s.inputs or {},
-            "outputs": s.outputs or {},
-            "total": float(s.total),
-            "updated_at": s.updated_at.isoformat(),
-        })
+    team_app = None
+    if comp_aparell_id:
+        team_app = CompeticioAparell.objects.filter(pk=comp_aparell_id, competicio=competicio).first()
+
+    if team_app and is_team_context_app(team_app):
+        allowed_team_ids = list(_eligible_team_subject_map(competicio, team_app).keys())
+        qs = TeamScoreEntry.objects.filter(
+            competicio=competicio,
+            comp_aparell=team_app,
+            updated_at__gt=dt,
+            equip_id__in=allowed_team_ids,
+        )
+        if exercici:
+            try:
+                qs = qs.filter(exercici=int(exercici))
+            except Exception:
+                pass
+        if group is not None:
+            try:
+                qs = qs.filter(equip__membres__grup_competicio_id=int(group)).distinct()
+            except Exception:
+                pass
+        for s in qs.select_related("equip")[:500]:
+            updates.append({
+                **serialize_subject_payload("equip", s.equip_id),
+                "exercici": s.exercici,
+                "comp_aparell_id": s.comp_aparell_id,
+                "inputs": s.inputs or {},
+                "outputs": s.outputs or {},
+                "total": float(s.total),
+                "updated_at": s.updated_at.isoformat(),
+            })
+    else:
+        qs = ScoreEntry.objects.filter(competicio=competicio, updated_at__gt=dt)
+        qs = qs.annotate(
+            _excluded=Exists(
+                InscripcioAparellExclusio.objects.filter(
+                    inscripcio_id=OuterRef("inscripcio_id"),
+                    comp_aparell_id=OuterRef("comp_aparell_id"),
+                )
+            )
+        ).filter(_excluded=False)
+
+        if comp_aparell_id:
+            qs = qs.filter(comp_aparell_id=comp_aparell_id)
+        if exercici:
+            try:
+                qs = qs.filter(exercici=int(exercici))
+            except Exception:
+                pass
+        if group is not None:
+            try:
+                qs = qs.filter(inscripcio__grup_competicio_id=int(group))
+            except Exception:
+                pass
+
+        for s in qs.select_related("inscripcio")[:500]:
+            updates.append({
+                **serialize_subject_payload("inscripcio", s.inscripcio_id),
+                "exercici": s.exercici,
+                "comp_aparell_id": s.comp_aparell_id,
+                "inputs": s.inputs or {},
+                "outputs": s.outputs or {},
+                "total": float(s.total),
+                "updated_at": s.updated_at.isoformat(),
+            })
 
     # “now” del servidor per anar avançant el cursor
     return JsonResponse({"ok": True, "now": timezone.now().isoformat(), "updates": updates})

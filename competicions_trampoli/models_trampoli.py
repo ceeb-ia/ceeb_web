@@ -2,7 +2,7 @@
 from django.conf import settings
 from django.db import models
 from django.core.exceptions import ValidationError
-from .models import Competicio, Inscripcio
+from .models import Competicio, EquipContext, Inscripcio
 
 NUM_SALTS = 11  # S1..S11
 
@@ -39,6 +39,15 @@ class Aparell(models.Model):
 
 
 class CompeticioAparell(models.Model):
+    class ParticipantMode(models.TextChoices):
+        INDIVIDUAL = "individual", "Individual"
+        TEAM_CONTEXT = "team_context", "Equips d'un context"
+
+    class TeamScoringMode(models.TextChoices):
+        MEMBERS_PLUS_SHARED = "members_plus_shared", "Membres + compartides"
+        MEMBERS_ONLY = "members_only", "Nomes membres"
+        SHARED_ONLY = "shared_only", "Nomes compartides"
+
     competicio = models.ForeignKey(Competicio, on_delete=models.CASCADE, related_name="aparells_cfg")
     aparell = models.ForeignKey(Aparell, on_delete=models.PROTECT, related_name="competicio_cfg")
     nombre_exercicis = models.PositiveSmallIntegerField(default=1, verbose_name="Nombre d'exercicis")
@@ -59,6 +68,25 @@ class CompeticioAparell(models.Model):
     MODE_EXECUCIO_CHOICES = [("salts", "Per elements"), ("manual", "Execució global manual")]
     mode_execucio = models.CharField(max_length=10, choices=MODE_EXECUCIO_CHOICES, default="salts")
 
+    participant_mode = models.CharField(
+        max_length=20,
+        choices=ParticipantMode.choices,
+        default=ParticipantMode.INDIVIDUAL,
+    )
+    team_context = models.ForeignKey(
+        EquipContext,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="aparells_cfg",
+    )
+    expected_team_size = models.PositiveSmallIntegerField(null=True, blank=True)
+    team_scoring_mode = models.CharField(
+        max_length=24,
+        choices=TeamScoringMode.choices,
+        blank=True,
+        default="",
+    )
     actiu = models.BooleanField(default=True)
 
     class Meta:
@@ -66,6 +94,39 @@ class CompeticioAparell(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["competicio", "aparell"], name="uniq_competicio_aparell")
         ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+
+        if self.team_context_id and self.team_context.competicio_id != self.competicio_id:
+            errors["team_context"] = "El context d'equips ha de pertanyer a la mateixa competicio."
+
+        if self.participant_mode == self.ParticipantMode.TEAM_CONTEXT:
+            if not self.team_context_id:
+                errors["team_context"] = "Cal seleccionar un context d'equips."
+            if self.expected_team_size in (None, ""):
+                errors["expected_team_size"] = "Cal indicar la mida esperada de l'equip."
+            else:
+                try:
+                    expected = int(self.expected_team_size)
+                except Exception:
+                    expected = 0
+                if expected < 2:
+                    errors["expected_team_size"] = "La mida esperada de l'equip ha de ser 2 o superior."
+            if not str(self.team_scoring_mode or "").strip():
+                errors["team_scoring_mode"] = "Cal indicar el mode de puntuacio per equips."
+        else:
+            self.team_context = None
+            self.expected_team_size = None
+            self.team_scoring_mode = ""
+
+        if errors:
+            raise ValidationError(errors)
+
+    @property
+    def is_team_context_mode(self) -> bool:
+        return self.participant_mode == self.ParticipantMode.TEAM_CONTEXT
 
 
 class InscripcioAparellExclusio(models.Model):

@@ -228,6 +228,16 @@
                               </a>
                             </div>
                           </div>
+                          {% with appkey=app.id|stringformat:"s" %}
+                          {% if team_issues_by_app|get_item:appkey %}
+                          <div class="alert alert-warning py-2 small">
+                            <div class="fw-semibold">Incidencies d'equips</div>
+                            {% for issue in team_issues_by_app|get_item:appkey %}
+                            <div>{{ issue.team_label }}: {{ issue.reasons|join:", " }}</div>
+                            {% endfor %}
+                          </div>
+                          {% endif %}
+                          {% endwith %}
 
                           <!-- Scrollbar top sincronitzat -->
                           <div class="table-scrollbar-top" data-scrollbar-top="1">
@@ -327,6 +337,16 @@
                               </a>
                             </div>
                           </div>
+                          {% with appkey=app.id|stringformat:"s" %}
+                          {% if team_issues_by_app|get_item:appkey %}
+                          <div class="alert alert-warning py-2 small">
+                            <div class="fw-semibold">Incidencies d'equips</div>
+                            {% for issue in team_issues_by_app|get_item:appkey %}
+                            <div>{{ issue.team_label }}: {{ issue.reasons|join:", " }}</div>
+                            {% endfor %}
+                          </div>
+                          {% endif %}
+                          {% endwith %}
 
                           <div class="table-scrollbar-top" data-scrollbar-top="1">
                             <div data-scrollbar-inner="1"></div>
@@ -363,7 +383,7 @@
     <div class="media-drawer-head">
       <div>
         <div class="playback-title mb-0">Reproduccio multimedia</div>
-        <div class="playback-subtitle mb-0" id="media-drawer-current">Selecciona una inscripcio per carregar pistes.</div>
+        <div class="playback-subtitle mb-0" id="media-drawer-current">Selecciona un subjecte per carregar pistes.</div>
       </div>
       <button type="button" class="btn btn-sm btn-outline-secondary" id="media-drawer-close">Tancar</button>
     </div>
@@ -433,6 +453,7 @@
   const SCHEMAS = JSON.parse(document.getElementById("schemas-data").textContent);
   const SCORES  = JSON.parse(document.getElementById("scores-data").textContent);
   const INS     = JSON.parse(document.getElementById("inscripcions-data").textContent);
+  const SUBJECTS_BY_ID = Object.fromEntries((INS || []).map((item) => [String(item.id), item]));
   const MEDIA_COUNTS_BY_INS = JSON.parse(document.getElementById("media-counts-data").textContent || "{}");
   const JUDGE_VIDEO_PRESENCE_BY_KEY = JSON.parse(document.getElementById("judge-video-presence-data").textContent || "{}");
   const ROTATION_RANK = JSON.parse(document.getElementById("rotation-rank-data").textContent || "{}");
@@ -460,7 +481,19 @@
   const CSRF_TOKEN = getCookie("csrftoken");
 
   // --- Helpers base ---
-  function keyFor(insId, ex, appId){ return `${insId}|${ex}|${appId}`; }
+  function subjectStoreIdForSubject(subject, fallbackId){
+    const kind = String((subject && subject.subject_kind) || "inscripcio");
+    const sid = String((subject && subject.subject_id) || fallbackId || "");
+    return `${kind}:${sid}`;
+  }
+  function subjectStoreIdForId(insId){
+    const subject = SUBJECTS_BY_ID[String(insId)] || {};
+    return subjectStoreIdForSubject(subject, insId);
+  }
+  function keyFor(insId, ex, appId){ return `${subjectStoreIdForId(insId)}|${ex}|${appId}`; }
+  function keyForSubject(subjectKind, subjectId, ex, appId){
+    return `${String(subjectKind)}:${String(subjectId)}|${ex}|${appId}`;
+  }
   function getSchema(appId){ return SCHEMAS[String(appId)] || {}; }
   const COMPUTED_MAX_DECIMALS = 3;
   function formatComputedValue(v, maxDecimals = COMPUTED_MAX_DECIMALS){
@@ -660,7 +693,7 @@
     const payload = PLAYBACK_STATE.payload;
     if(!payload || !payload.ok){
       if(subtitle){
-        subtitle.textContent = PLAYBACK_STATE.error || "Selecciona una inscripcio per carregar pistes.";
+        subtitle.textContent = PLAYBACK_STATE.error || "Selecciona un subjecte per carregar pistes.";
       }
       if(emptyBox){
         emptyBox.style.display = "";
@@ -676,14 +709,14 @@
       return;
     }
 
-    const ins = payload.inscripcio || {};
+    const ins = payload.subject || payload.inscripcio || {};
     const ctx = payload.context || {};
     const sep = " \u00B7 ";
     const metaTxt = (ins.meta ? `${sep}${ins.meta}` : "");
     const appTxt = (ctx.comp_aparell_id ? `${sep}Aparell ${ctx.comp_aparell_id}` : "");
     const exTxt = (ctx.exercici ? `${sep}Exercici ${ctx.exercici}` : "");
     if(subtitle){
-      subtitle.textContent = `${ins.name || "Inscripcio"}${metaTxt}${appTxt}${exTxt}`;
+      subtitle.textContent = `${ins.name || "Subjecte"}${metaTxt}${appTxt}${exTxt}`;
     }
 
     const tracksData = buildPlaybackTracks(payload);
@@ -761,7 +794,12 @@
     highlightPlaybackRows();
 
     const url = new URL(MEDIA_CONTEXT_URL, window.location.origin);
-    url.searchParams.set("inscripcio_id", String(insId));
+    const subject = SUBJECTS_BY_ID[String(insId)] || {};
+    if((subject.subject_kind || "inscripcio") === "inscripcio"){
+      url.searchParams.set("inscripcio_id", String(subject.subject_id || insId));
+    }
+    url.searchParams.set("subject_kind", String(subject.subject_kind || "inscripcio"));
+    url.searchParams.set("subject_id", String(subject.subject_id || insId));
     if(exercici) url.searchParams.set("exercici", String(exercici));
     if(appId) url.searchParams.set("comp_aparell_id", String(appId));
 
@@ -898,14 +936,15 @@
   }
 
   function applyUpdate(u){
-    const scoreKey = keyFor(u.inscripcio_id, u.exercici, u.comp_aparell_id);
+    const subjectId = (u.subject_kind === "inscripcio") ? (u.inscripcio_id || u.subject_id) : u.subject_id;
+    const scoreKey = keyForSubject(u.subject_kind || "inscripcio", subjectId, u.exercici, u.comp_aparell_id);
 
     // actualitza el store local
-    setScore(u.inscripcio_id, u.exercici, u.comp_aparell_id, {
+    SCORES[scoreKey] = {
       inputs: u.inputs || {},
       outputs: u.outputs || {},
       total: u.total || 0
-    });
+    };
 
     // actualitza outputs visibles (ja tens updateOutputs)
     updateOutputs(scoreKey, {outputs: u.outputs || {}, total: u.total});
@@ -1088,6 +1127,7 @@
 
   // --- Save ---
   async function saveEntry(insId, ex, appId, inputsPatch){
+    const subject = SUBJECTS_BY_ID[String(insId)] || {};
     const res = await fetch(SAVE_URL,{
       method:"POST",
       headers:{
@@ -1095,7 +1135,9 @@
         "X-CSRFToken": CSRF_TOKEN,
       },
       body: JSON.stringify({
-        inscripcio_id: insId,
+        inscripcio_id: subject.subject_kind === "inscripcio" ? subject.subject_id : undefined,
+        subject_kind: subject.subject_kind || "inscripcio",
+        subject_id: subject.subject_id || insId,
         exercici: ex,
         comp_aparell_id: appId,
         inputs_patch: inputsPatch,
@@ -1142,6 +1184,33 @@
   // --- Crash helpers (UI) ---
   function crashKeyFor(fieldCode){ return `__crash__${fieldCode}`; }
 
+  function isTeamSchema(schema){
+    return String((((schema || {}).meta || {}).subject_mode) || "individual") === "team_context";
+  }
+  function isBlockedSubjectForApp(subject, appId){
+    if(!subject || !Array.isArray(subject.invalid_reasons) || !subject.invalid_reasons.length) return false;
+    return String(subject.subject_kind || "") === "equip";
+  }
+  function memberLinesForSubject(subject){
+    if(!subject || !Array.isArray(subject.members)) return [];
+    return subject.members.map((m, idx) => `Membre ${idx + 1}: ${m && m.name ? m.name : ""}`);
+  }
+  function visibleRowsForAppGroup(group, appId, schema){
+    const teamMode = isTeamSchema(schema);
+    return INS.filter(x => {
+      if(String(x.group)!==String(group)) return false;
+      if(teamMode){
+        if(String(x.subject_kind || "") !== "equip") return false;
+        if(appHasRotationGroups(appId) && !inscripcioInRotationGroup(x, appId)) return false;
+        if(inscripcioCompeteixAApp(x, appId)) return true;
+        return isBlockedSubjectForApp(x, appId);
+      }
+      if(!inscripcioCompeteixAApp(x, appId)) return false;
+      if(appHasRotationGroups(appId) && !inscripcioInRotationGroup(x, appId)) return false;
+      return true;
+    });
+  }
+
   function applyCrashDisable(rowEl, fieldCode, judgeIdx, nElems, crashAt){
     const cut = Number(crashAt || 0);
     for(let i=1;i<=nElems;i++){
@@ -1162,6 +1231,7 @@
     const thead = table.querySelector("thead");
     thead.innerHTML = "";
 
+    const teamMode = isTeamSchema(schema);
     const tr1 = document.createElement("tr");
     tr1.appendChild(el("th",{class:"th-center name-cell", text:"Nom"}));
 
@@ -1179,6 +1249,41 @@
     const computed = Array.isArray(schema.computed) ? schema.computed : [];
     const byCompCode = {};
     computed.forEach(c=>{ if(c && c.code) byCompCode[c.code]=c; });
+
+    if(teamMode){
+      const groupRow = document.createElement("tr");
+      groupRow.appendChild(el("th",{class:"th-center name-cell", text:"Subjecte"}));
+      let activeKey = "";
+      let activeCount = 0;
+      function flushGroup(){
+        if(!activeCount) return;
+        groupRow.appendChild(el("th",{class:"th-center", colspan:String(activeCount), text:activeKey}));
+      }
+      cols.forEach(col => {
+        const f = byCode[col];
+        const c = byCompCode[col];
+        let groupLabel = "Resultat";
+        let span = 1;
+        if(f){
+          if(f.type==="matrix" && f.items && f.items.count){
+            span = Number(f.items.count || 0);
+          }
+          groupLabel = (String(f.scope || "shared") === "member")
+            ? `Membre ${Number(f.member_slot || 1)}`
+            : "Compartit";
+        } else if(c){
+          groupLabel = "Resultat";
+        }
+        if(groupLabel !== activeKey){
+          flushGroup();
+          activeKey = groupLabel;
+          activeCount = 0;
+        }
+        activeCount += span;
+      });
+      flushGroup();
+      thead.appendChild(groupRow);
+    }
 
     cols.forEach(col=>{
       const f = byCode[col];
@@ -1305,12 +1410,7 @@
       if(f) nJudgesTable = Math.max(nJudgesTable, judgesForField(f));
     });
 
-    const rows = INS.filter(x => {
-      if(String(x.group)!==String(group)) return false;
-      if(!inscripcioCompeteixAApp(x, appId)) return false;
-      if(appHasRotationGroups(appId) && !inscripcioInRotationGroup(x, appId)) return false;
-      return true;
-    });
+    const rows = visibleRowsForAppGroup(group, appId, schema);
     rows.sort((a, b) => {
       const ra = rotationRankFor(a.id, appId);
       const rb = rotationRankFor(b.id, appId);
@@ -1326,6 +1426,7 @@
 
     rows.forEach((ins, idx)=>{
       const scoreKey = keyFor(ins.id, exercici, appId);
+      const blockedRow = isBlockedSubjectForApp(ins, appId) && !inscripcioCompeteixAApp(ins, appId);
 
       // Files de jutge realment necessàries segons les columnes visibles
       const visibleJudgeRows = [];
@@ -1345,6 +1446,7 @@
         tr.dataset.insId = String(ins.id);
         tr.dataset.exercici = String(exercici);
         tr.dataset.compAparellId = String(appId);
+        if(blockedRow) tr.classList.add("table-warning");
 
         // Nom només a la primera fila real
         if(j === visibleJudgeRows[0]){
@@ -1360,8 +1462,16 @@
           nameBtn.dataset.exercici = String(exercici);
           nameBtn.dataset.compAparellId = String(appId);
           nameTd.appendChild(nameBtn);
+          if(String(ins.subject_kind || "") === "equip"){
+            memberLinesForSubject(ins).forEach(line => {
+              nameTd.appendChild(el("div",{class:"small", text:line}));
+            });
+          }
           if(ins.meta){
             nameTd.appendChild(el("div",{class:"text-muted small", text:ins.meta}));
+          }
+          if(blockedRow){
+            nameTd.appendChild(el("div",{class:"text-danger small", text:(ins.invalid_reasons || []).join(" ")}));
           }
           const mediaBadge = el("button",{
             type:"button",
@@ -1431,6 +1541,7 @@
                 "data-j": String(j),
                 "data-i": String(i)
               });
+              inp.disabled = blockedRow;
               inp.value = (mat[j-1] && mat[j-1][i-1]!==undefined) ? mat[j-1][i-1] : 0;
 
               let btn = null;
@@ -1447,9 +1558,11 @@
                 btn.style.width="22px";
                 btn.style.height="22px";
                 btn.title="Crash";
+                btn.disabled = blockedRow;
               }
 
               inp.addEventListener("input", ()=>{
+                if(blockedRow) return;
                 const cur = getScore(ins.id, exercici, appId);
                 const curInputs = cur.inputs || {};
 
@@ -1480,6 +1593,7 @@
 
               if(crashEnabled && btn){
                 btn.addEventListener("click", ()=>{
+                  if(blockedRow) return;
                   const cur = getScore(ins.id, exercici, appId);
                   const curInputs = cur.inputs || {};
 
@@ -1536,9 +1650,11 @@
             const arr = ensureList(n, inputs[col]);
             const td = el("td",{class:"cell-center"});
             const inp = el("input",{class:"form-control form-control-sm input-num", type:"number", step:"any"});
+            inp.disabled = blockedRow;
             inp.value = (arr[j-1]!==undefined) ? arr[j-1] : 0;
 
             inp.addEventListener("input", ()=>{
+              if(blockedRow) return;
               const cur = getScore(ins.id, exercici, appId);
               const curInputs = cur.inputs || {};
 
@@ -1571,9 +1687,11 @@
             td.rowSpan = visibleJudgeRows.length;
 
             const inp = el("input",{class:"form-control form-control-sm input-num", type:"number", step:"any"});
+            inp.disabled = blockedRow;
             inp.value = (inputs[col]!==undefined && inputs[col]!==null) ? inputs[col] : "";
 
             inp.addEventListener("input", ()=>{
+              if(blockedRow) return;
               const cur = getScore(ins.id, exercici, appId);
               const curInputs = cur.inputs || {};
               const v = (inp.value === "" ? 0 : Number(inp.value));

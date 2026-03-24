@@ -37,6 +37,7 @@ from .services.classificacio_templates import (
     schema_to_template_schema as schema_to_template_schema_shared,
     template_schema_to_competicio_schema as template_schema_to_competicio_schema_shared,
 )
+from .services.team_scoring import is_team_context_app
 from .services.equip_contexts import (
     NATIVE_EQUIP_CONTEXT_CODE,
     get_equip_context_payload,
@@ -990,6 +991,8 @@ class ClassificacionsHome(TemplateView):
                 "nom": ca.aparell.nom,
                 "codi": ca.aparell.codi,
                 "nombre_exercicis": int(getattr(ca, "nombre_exercicis", 1) or 1),
+                "participant_mode": str(getattr(ca, "participant_mode", "") or "individual"),
+                "team_context_code": normalize_equip_context_code(getattr(getattr(ca, "team_context", None), "code", "")),
             })
 
         equips_qs = (
@@ -1749,11 +1752,11 @@ def _next_fallback_mode(mode: str):
     return None
 
 
-def _scoreable_codes_by_app_id(competicio):
+def _scoreable_codes_by_app_id(competicio, *, tipus=None, assignment_context_code=None):
     active_apps = list(
         CompeticioAparell.objects
         .filter(competicio=competicio, actiu=True)
-        .select_related("aparell")
+        .select_related("aparell", "team_context")
     )
     schemas_by_aparell = {
         s.aparell_id: (s.schema or {})
@@ -1761,6 +1764,13 @@ def _scoreable_codes_by_app_id(competicio):
     }
     out = {}
     for ca in active_apps:
+        if tipus == "individual" and is_team_context_app(ca):
+            continue
+        if tipus == "equips" and is_team_context_app(ca):
+            expected_context = normalize_equip_context_code(getattr(getattr(ca, "team_context", None), "code", ""))
+            actual_context = normalize_equip_context_code(assignment_context_code)
+            if actual_context and actual_context != expected_context:
+                continue
         sch = schemas_by_aparell.get(ca.aparell_id, {}) or {}
         meta = _build_scoreable_meta_for_schema(sch, strict_unknown=True)
         out[int(ca.id)] = {code for code, info in (meta or {}).items() if (info or {}).get("scoreable")}
@@ -1772,7 +1782,12 @@ def _sanitize_schema_for_builder(competicio, schema_local, tipus="individual"):
     active_apps, by_id, _ = _get_comp_aparell_maps(competicio, active_only=True)
     active_ids = [int(ca.id) for ca in active_apps]
     active_set = set(active_ids)
-    scoreable_by_app = _scoreable_codes_by_app_id(competicio)
+    assignment_source = ((schema.get("equips") or {}).get("assignment_source") or {})
+    scoreable_by_app = _scoreable_codes_by_app_id(
+        competicio,
+        tipus=tipus,
+        assignment_context_code=assignment_source.get("context_code"),
+    )
 
     punt = schema.get("puntuacio") or {}
     if not isinstance(punt, dict):
@@ -1998,6 +2013,32 @@ def _validate_schema_for_competicio(competicio, schema_local, tipus="individual"
     fallback = str(assignment_source.get("fallback") or NATIVE_EQUIP_CONTEXT_CODE).strip().lower()
     if fallback != NATIVE_EQUIP_CONTEXT_CODE:
         errors.append(f"equips.assignment_source.fallback invalid: {fallback}")
+    selected_app_ids = []
+    apps_cfg = ((schema_local.get("puntuacio") or {}).get("aparells") or {})
+    for raw in (apps_cfg.get("ids") or []):
+        try:
+            selected_app_ids.append(int(raw))
+        except Exception:
+            continue
+    if selected_app_ids:
+        selected_apps = {
+            ca.id: ca
+            for ca in CompeticioAparell.objects.filter(competicio=competicio, id__in=selected_app_ids).select_related("team_context")
+        }
+        for app_id in selected_app_ids:
+            ca = selected_apps.get(app_id)
+            if ca is None:
+                continue
+            if is_team_context_app(ca):
+                if tipus != "equips":
+                    errors.append(f"puntuacio.aparells.ids: l'aparell {app_id} es team_context i no es valid per classificacions individuals.")
+                    continue
+                expected_context = normalize_equip_context_code(getattr(getattr(ca, "team_context", None), "code", ""))
+                actual_context = normalize_equip_context_code(assignment_source.get("context_code"))
+                if actual_context != expected_context:
+                    errors.append(
+                        f"puntuacio.aparells.ids: l'aparell {app_id} requereix context {expected_context}, pero la classificacio usa {actual_context}."
+                    )
     errors.extend(_validate_particions_schema(competicio, schema_local))
     errors.extend(_validate_no_tots_mode(schema_local))
     errors.extend(_validate_camps_per_aparell(competicio, schema_local))
@@ -2009,7 +2050,7 @@ def _validate_schema_for_competicio(competicio, schema_local, tipus="individual"
     return schema_local, errors
 
 
-def _autofix_schema_for_competicio(competicio, schema_local, mode: str):
+def _autofix_schema_for_competicio(competicio, schema_local, mode: str, tipus=None):
     mode = _parse_fallback_mode(mode)
     schema = _normalize_particions_schema(_json_clone(schema_local or {}))
     warnings = []
@@ -2021,7 +2062,12 @@ def _autofix_schema_for_competicio(competicio, schema_local, mode: str):
     active_apps, by_id, _ = _get_comp_aparell_maps(competicio, active_only=True)
     active_ids = [int(ca.id) for ca in active_apps]
     active_set = set(active_ids)
-    scoreable_by_app = _scoreable_codes_by_app_id(competicio)
+    assignment_source = ((schema.get("equips") or {}).get("assignment_source") or {})
+    scoreable_by_app = _scoreable_codes_by_app_id(
+        competicio,
+        tipus=tipus,
+        assignment_context_code=assignment_source.get("context_code"),
+    )
 
     punt = schema.get("puntuacio") or {}
     if not isinstance(punt, dict):
@@ -2338,6 +2384,7 @@ def _validate_template_for_competicio(competicio, template_obj, fallback_mode="s
             competicio,
             schema_local,
             mode=fallback_mode,
+            tipus=tpl_tipus,
         )
         warnings.extend(autofix_warnings)
         dropped.extend(autofix_dropped)

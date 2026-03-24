@@ -19,6 +19,7 @@ from ceeb_web.auth_groups import GLOBAL_AUTH_GROUPS
 
 from . import live_cache
 from .access import user_has_competicio_capability
+from .forms import CompeticioAparellForm
 from .models import (
     Competicio,
     Equip,
@@ -41,7 +42,15 @@ from .models_rotacions import (
     RotacioEstacio,
     RotacioFranja,
 )
-from .models_scoring import ScoringSchema, ScoreEntry, ScoreEntryVideo, ScoreEntryVideoEvent
+from .models_scoring import (
+    ScoringSchema,
+    ScoreEntry,
+    ScoreEntryVideo,
+    ScoreEntryVideoEvent,
+    TeamScoreEntry,
+    TeamScoreEntryVideo,
+    TeamScoreEntryVideoEvent,
+)
 from .models_trampoli import (
     Aparell,
     CompeticioAparell,
@@ -60,6 +69,7 @@ from .views import (
 from .views_classificacions import (
     _build_scoreable_meta_for_schema,
     _normalize_particions_schema,
+    _scoreable_codes_by_app_id,
     _schema_to_template_schema,
     _template_schema_to_competicio_schema,
     _validate_schema_for_competicio,
@@ -8503,3 +8513,517 @@ class EquipContextHistorySnapshotTests(_BaseTrampoliDataMixin, TestCase):
                 equip=self.team_context,
             ).exists()
         )
+
+
+class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
+    def setUp(self):
+        self.comp = self._create_competicio("Comp team scoring")
+        User = get_user_model()
+        self.user = User.objects.create_user(
+            username="team_context_scoring_owner",
+            password="testpass123",
+            email="team-context-scoring-owner@example.com",
+        )
+        CompeticioMembership.objects.create(
+            user=self.user,
+            competicio=self.comp,
+            role=CompeticioMembership.Role.OWNER,
+            is_active=True,
+        )
+        self.client.force_login(self.user)
+        self.app = self._create_aparell("SYNC", "Sincronitzat")
+        self.comp_app = self._create_comp_aparell(self.comp, self.app, ordre=1)
+        self.ctx = EquipContext.objects.create(
+            competicio=self.comp,
+            code="parelles",
+            nom="Parelles",
+        )
+        self.other_ctx = EquipContext.objects.create(
+            competicio=self.comp,
+            code="altre",
+            nom="Altre",
+        )
+        self.equip = Equip.objects.create(competicio=self.comp, nom="Parella 1")
+        self.ins1 = self._create_inscripcio(self.comp, "Maria", ordre=1, grup=1)
+        self.ins2 = self._create_inscripcio(self.comp, "Laia", ordre=2, grup=1)
+        InscripcioEquipAssignacio.objects.create(
+            competicio=self.comp,
+            context=self.ctx,
+            inscripcio=self.ins1,
+            equip=self.equip,
+        )
+        InscripcioEquipAssignacio.objects.create(
+            competicio=self.comp,
+            context=self.ctx,
+            inscripcio=self.ins2,
+            equip=self.equip,
+        )
+        self.comp_app.participant_mode = CompeticioAparell.ParticipantMode.TEAM_CONTEXT
+        self.comp_app.team_context = self.ctx
+        self.comp_app.expected_team_size = 2
+        self.comp_app.team_scoring_mode = CompeticioAparell.TeamScoringMode.MEMBERS_PLUS_SHARED
+        self.comp_app.save()
+
+    def _create_team_with_members(self, team_name, member_names, *, context=None, start_order=10):
+        context = context or self.ctx
+        equip = Equip.objects.create(competicio=self.comp, nom=team_name)
+        members = []
+        for idx, name in enumerate(member_names, start=0):
+            ins = self._create_inscripcio(self.comp, name, ordre=start_order + idx, grup=1)
+            InscripcioEquipAssignacio.objects.create(
+                competicio=self.comp,
+                context=context,
+                inscripcio=ins,
+                equip=equip,
+            )
+            members.append(ins)
+        return equip, members
+
+    def test_scoring_schema_full_clean_accepts_member_scope_for_team_context(self):
+        schema = ScoringSchema(
+            aparell=self.app,
+            schema={
+                "meta": {"subject_mode": "team_context", "expected_team_size": 2},
+                "fields": [
+                    {"code": "SYNC", "label": "Sincronisme", "type": "number", "scope": "shared"},
+                    {"code": "E", "label": "Exec", "type": "number", "scope": "member"},
+                ],
+                "computed": [
+                    {"code": "TOTAL", "label": "Total", "formula": "SYNC + E__m1 + E__m2"},
+                ],
+            },
+        )
+        schema.comp_aparell = self.comp_app
+        schema.full_clean()
+
+    def test_scoring_save_partial_creates_team_score_entry(self):
+        ScoringSchema.objects.create(
+            aparell=self.app,
+            schema={
+                "meta": {"subject_mode": "team_context", "expected_team_size": 2},
+                "fields": [
+                    {"code": "SYNC", "label": "Sincronisme", "type": "number", "scope": "shared"},
+                    {"code": "E", "label": "Exec", "type": "number", "scope": "member"},
+                ],
+                "computed": [
+                    {"code": "TOTAL", "label": "Total", "formula": "SYNC + E__m1 + E__m2"},
+                ],
+            },
+        )
+
+        response = self.client.post(
+            reverse("scoring_save_partial", kwargs={"pk": self.comp.id}),
+            data=json.dumps(
+                {
+                    "comp_aparell_id": self.comp_app.id,
+                    "subject_kind": "equip",
+                    "subject_id": self.equip.id,
+                    "exercici": 1,
+                    "inputs_patch": {
+                        "SYNC": 7.5,
+                        "E__m1": 8.1,
+                        "E__m2": 8.2,
+                    },
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["subject_kind"], "equip")
+        self.assertEqual(payload["subject_id"], self.equip.id)
+
+        entry = TeamScoreEntry.objects.get(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            equip=self.equip,
+            exercici=1,
+        )
+        self.assertEqual(float(entry.total), 23.8)
+        self.assertEqual(entry.inputs["E__m1"], 8.1)
+        self.assertEqual(entry.inputs["E__m2"], 8.2)
+
+    def test_judge_save_partial_uses_team_subject_and_runtime_member_permission(self):
+        ScoringSchema.objects.create(
+            aparell=self.app,
+            schema={
+                "meta": {"subject_mode": "team_context", "expected_team_size": 2},
+                "fields": [
+                    {"code": "SYNC", "label": "Sincronisme", "type": "number", "scope": "shared"},
+                    {"code": "E", "label": "Exec", "type": "number", "scope": "member"},
+                ],
+                "computed": [
+                    {"code": "TOTAL", "label": "Total", "formula": "SYNC + E__m1 + E__m2"},
+                ],
+            },
+        )
+        token = JudgeDeviceToken.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            label="Team Judge",
+            permissions=[
+                {"field_code": "SYNC", "runtime_field_code": "SYNC", "scope": "shared", "judge_index": 1},
+                {"field_code": "E", "runtime_field_code": "E__m2", "scope": "member", "member_slot": 2, "judge_index": 1},
+            ],
+            is_active=True,
+        )
+
+        response = self.client.post(
+            reverse("judge_save_partial", kwargs={"token": token.id}),
+            data=json.dumps(
+                {
+                    "subject_kind": "equip",
+                    "subject_id": self.equip.id,
+                    "exercici": 1,
+                    "inputs_patch": {"SYNC": 6.4, "E__m2": 7.1},
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["subject_kind"], "equip")
+        self.assertEqual(payload["subject_id"], self.equip.id)
+
+        entry = TeamScoreEntry.objects.get(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            equip=self.equip,
+            exercici=1,
+        )
+        self.assertEqual(entry.inputs["SYNC"], 6.4)
+        self.assertEqual(entry.inputs["E__m2"], 7.1)
+        self.assertEqual(entry.inputs["E__m1"], 0.0)
+
+    def test_scoring_media_context_accepts_team_subject(self):
+        response = self.client.get(
+            reverse("scoring_media_context", kwargs={"pk": self.comp.id}),
+            {
+                "comp_aparell_id": self.comp_app.id,
+                "subject_kind": "equip",
+                "subject_id": self.equip.id,
+                "exercici": 1,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["subject"]["kind"], "equip")
+        self.assertEqual(payload["subject"]["id"], self.equip.id)
+
+    def test_judge_video_endpoints_support_team_subjects(self):
+        token = JudgeDeviceToken.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            label="Team Video",
+            permissions=[{"field_code": "SYNC", "scope": "shared", "judge_index": 1}],
+            can_record_video=True,
+            is_active=True,
+        )
+        probe_data = {
+            "duration_seconds": 9,
+            "mime_type": "video/mp4",
+            "format_name": "mp4",
+            "video_codec": "h264",
+        }
+
+        with patch("competicions_trampoli.views_judge._probe_uploaded_video_metadata", return_value=probe_data):
+            upload_res = self.client.post(
+                reverse("judge_video_upload", kwargs={"token": token.id}),
+                data={
+                    "subject_kind": "equip",
+                    "subject_id": self.equip.id,
+                    "exercici": 1,
+                    "video_file": SimpleUploadedFile("team.mp4", b"\x00" * 1024, content_type="video/mp4"),
+                },
+            )
+
+        self.assertEqual(upload_res.status_code, 200)
+        upload_payload = upload_res.json()
+        self.assertTrue(upload_payload["ok"])
+        self.assertEqual(upload_payload["subject_kind"], "equip")
+        self.assertEqual(upload_payload["subject_id"], self.equip.id)
+
+        entry = TeamScoreEntry.objects.get(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            equip=self.equip,
+            exercici=1,
+        )
+        self.assertTrue(TeamScoreEntryVideo.objects.filter(team_score_entry=entry).exists())
+        self.assertTrue(
+            TeamScoreEntryVideoEvent.objects.filter(
+                team_score_entry=entry,
+                action=TeamScoreEntryVideoEvent.Action.UPLOAD,
+                ok=True,
+            ).exists()
+        )
+
+        status_res = self.client.get(
+            reverse("judge_video_status", kwargs={"token": token.id}),
+            {"subject_kind": "equip", "subject_id": self.equip.id, "exercici": 1},
+        )
+        self.assertEqual(status_res.status_code, 200)
+        self.assertTrue(status_res.json()["has_video"])
+
+        delete_res = self.client.post(
+            reverse("judge_video_delete", kwargs={"token": token.id}),
+            {"subject_kind": "equip", "subject_id": self.equip.id, "exercici": 1},
+        )
+        self.assertEqual(delete_res.status_code, 200)
+        self.assertTrue(delete_res.json()["deleted"])
+        self.assertFalse(TeamScoreEntryVideo.objects.filter(team_score_entry=entry).exists())
+
+    def test_compute_classificacio_uses_team_score_entry_for_team_context_app(self):
+        ScoringSchema.objects.create(
+            aparell=self.app,
+            schema={
+                "meta": {"subject_mode": "team_context", "expected_team_size": 2},
+                "fields": [{"code": "TOTAL", "label": "Total", "type": "number", "scope": "shared"}],
+                "computed": [],
+            },
+        )
+        TeamScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            equip=self.equip,
+            exercici=1,
+            inputs={"TOTAL": 30},
+            outputs={},
+            total=30,
+        )
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            inscripcio=self.ins1,
+            exercici=1,
+            inputs={},
+            outputs={},
+            total=2,
+        )
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            inscripcio=self.ins2,
+            exercici=1,
+            inputs={},
+            outputs={},
+            total=3,
+        )
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Team direct",
+            activa=True,
+            ordre=1,
+            tipus="equips",
+            schema={
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [self.comp_app.id]},
+                    "camps_per_aparell": {str(self.comp_app.id): ["total"]},
+                    "agregacio_camps": "sum",
+                    "exercicis": {"mode": "tots"},
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "ordre": "desc",
+                },
+                "equips": {
+                    "assignment_source": {"mode": "context", "context_code": "parelles", "fallback": "native"},
+                    "incloure_sense_equip": False,
+                },
+            },
+        )
+
+        rows = compute_classificacio(self.comp, cfg).get("global", [])
+        self.assertEqual(rows[0]["participant"], "Parella 1")
+        self.assertEqual(rows[0]["score"], 30.0)
+
+    def test_classificacio_validation_rejects_context_mismatch_for_team_context_app(self):
+        schema, errors = _validate_schema_for_competicio(
+            self.comp,
+            {
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [self.comp_app.id]},
+                    "camps_per_aparell": {str(self.comp_app.id): ["total"]},
+                },
+                "equips": {
+                    "assignment_source": {"mode": "context", "context_code": "altre", "fallback": "native"},
+                },
+            },
+            tipus="equips",
+        )
+
+        self.assertEqual(schema["equips"]["assignment_source"]["context_code"], "altre")
+        self.assertTrue(any("requereix context parelles" in err for err in errors))
+
+    def test_competicio_aparell_form_rejects_foreign_context_and_invalid_team_settings(self):
+        other_comp = self._create_competicio("Comp externa")
+        foreign_ctx = EquipContext.objects.create(competicio=other_comp, code="fora", nom="Fora")
+        form = CompeticioAparellForm(
+            data={
+                "aparell": self.app.id,
+                "ordre": 1,
+                "actiu": "on",
+                "nombre_exercicis": 1,
+                "participant_mode": CompeticioAparell.ParticipantMode.TEAM_CONTEXT,
+                "team_context": foreign_ctx.id,
+                "expected_team_size": 1,
+                "team_scoring_mode": "",
+            },
+            instance=self.comp_app,
+            competicio=self.comp,
+        )
+        self.assertFalse(form.is_valid())
+        self.assertIn("team_context", form.errors)
+        self.assertIn("expected_team_size", form.errors)
+        self.assertIn("team_scoring_mode", form.errors)
+
+    def test_scoring_updates_omits_ineligible_team_entries(self):
+        invalid_team, _members = self._create_team_with_members("Parella incompleta", ["Berta"], start_order=20)
+        TeamScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            equip=self.equip,
+            exercici=1,
+            inputs={"SYNC": 5},
+            outputs={},
+            total=5,
+        )
+        TeamScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            equip=invalid_team,
+            exercici=1,
+            inputs={"SYNC": 9},
+            outputs={},
+            total=9,
+        )
+
+        res = self.client.get(
+            reverse("scoring_updates", kwargs={"pk": self.comp.id}),
+            {
+                "since": (timezone.now() - timedelta(minutes=10)).isoformat(),
+                "comp_aparell_id": self.comp_app.id,
+            },
+        )
+        self.assertEqual(res.status_code, 200)
+        updates = res.json().get("updates", [])
+        self.assertEqual({u["subject_id"] for u in updates}, {self.equip.id})
+
+    def test_scoring_media_context_rejects_ineligible_team_subject(self):
+        invalid_team, _members = self._create_team_with_members("Parella incompleta", ["Berta"], start_order=20)
+        res = self.client.get(
+            reverse("scoring_media_context", kwargs={"pk": self.comp.id}),
+            {
+                "comp_aparell_id": self.comp_app.id,
+                "subject_kind": "equip",
+                "subject_id": invalid_team.id,
+                "exercici": 1,
+            },
+        )
+        self.assertEqual(res.status_code, 403)
+
+    def test_scoring_notes_home_exposes_canonical_score_keys_and_invalid_teams(self):
+        invalid_team, _members = self._create_team_with_members("Parella incompleta", ["Berta"], start_order=20)
+        TeamScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            equip=self.equip,
+            exercici=1,
+            inputs={"SYNC": 5},
+            outputs={},
+            total=5,
+        )
+        response = self.client.get(reverse("scoring_notes_home", kwargs={"pk": self.comp.id}))
+        self.assertEqual(response.status_code, 200)
+        scores = response.context["scores"]
+        self.assertIn(f"equip:{self.equip.id}|1|{self.comp_app.id}", scores)
+        subjects = {str(item["id"]): item for item in response.context["inscripcions"]}
+        self.assertIn(f"equip:{invalid_team.id}", subjects)
+        self.assertTrue(subjects[f"equip:{invalid_team.id}"]["invalid_reasons"])
+
+    def test_compute_classificacio_team_tie_break_uses_team_score_entries(self):
+        equip2, members2 = self._create_team_with_members("Parella 2", ["Nora", "Marta"], start_order=30)
+        TeamScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            equip=self.equip,
+            exercici=1,
+            inputs={"TOTAL": 30},
+            outputs={"SYNC": 9},
+            total=30,
+        )
+        TeamScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            equip=equip2,
+            exercici=1,
+            inputs={"TOTAL": 30},
+            outputs={"SYNC": 8},
+            total=30,
+        )
+        for ins, raw_total in [(self.ins1, 1), (self.ins2, 1), (members2[0], 50), (members2[1], 50)]:
+            ScoreEntry.objects.create(
+                competicio=self.comp,
+                comp_aparell=self.comp_app,
+                inscripcio=ins,
+                exercici=1,
+                inputs={},
+                outputs={"SYNC": raw_total},
+                total=raw_total,
+            )
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Team tiebreak",
+            activa=True,
+            ordre=1,
+            tipus="equips",
+            schema={
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [self.comp_app.id]},
+                    "camps_per_aparell": {str(self.comp_app.id): ["total"]},
+                    "agregacio_camps": "sum",
+                    "exercicis": {"mode": "tots"},
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "ordre": "desc",
+                },
+                "desempat": [
+                    {
+                        "camp": "SYNC",
+                        "ordre": "desc",
+                        "scope": {"aparells": {"mode": "seleccionar", "ids": [self.comp_app.id]}},
+                    }
+                ],
+                "equips": {
+                    "assignment_source": {"mode": "context", "context_code": "parelles", "fallback": "native"},
+                    "incloure_sense_equip": False,
+                },
+            },
+        )
+        rows = compute_classificacio(self.comp, cfg).get("global", [])
+        self.assertEqual([row["participant"] for row in rows[:2]], ["Parella 1", "Parella 2"])
+
+    def test_scoreable_codes_filter_team_apps_by_tipus_and_context(self):
+        individual_app = self._create_aparell("IND", "Individual")
+        individual_comp_app = self._create_comp_aparell(self.comp, individual_app, ordre=2)
+        ScoringSchema.objects.create(
+            aparell=individual_app,
+            schema={"fields": [{"code": "TOTAL", "type": "number"}], "computed": []},
+        )
+        ScoringSchema.objects.create(
+            aparell=self.app,
+            schema={"fields": [{"code": "TOTAL", "type": "number"}], "computed": []},
+        )
+        individual_scoreables = _scoreable_codes_by_app_id(self.comp, tipus="individual")
+        self.assertIn(individual_comp_app.id, individual_scoreables)
+        self.assertNotIn(self.comp_app.id, individual_scoreables)
+
+        team_scoreables = _scoreable_codes_by_app_id(
+            self.comp,
+            tipus="equips",
+            assignment_context_code="altre",
+        )
+        self.assertNotIn(self.comp_app.id, team_scoreables)

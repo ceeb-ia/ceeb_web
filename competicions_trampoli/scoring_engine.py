@@ -5,6 +5,8 @@ import ast
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple, Callable, Set
 
+from .services.team_scoring import runtime_schema_for_comp_aparell
+
 NUM_SALTS_DEFAULT = 11
 
 
@@ -383,11 +385,12 @@ class ScoringEngine:
     def __init__(self, schema: Dict[str, Any]):
         if not isinstance(schema, dict):
             raise ScoringError("Schema invàlid (no és dict).")
-        self.schema = schema
-        self.params = schema.get("params", {}) if isinstance(schema.get("params", {}), dict) else {}
+        runtime_schema = runtime_schema_for_comp_aparell(schema, None)
+        self.schema = runtime_schema
+        self.params = runtime_schema.get("params", {}) if isinstance(runtime_schema.get("params", {}), dict) else {}
 
-        self.fields = schema.get("fields", []) if isinstance(schema.get("fields", []), list) else []
-        self.computed = schema.get("computed", []) if isinstance(schema.get("computed", []), list) else []
+        self.fields = runtime_schema.get("fields", []) if isinstance(runtime_schema.get("fields", []), list) else []
+        self.computed = runtime_schema.get("computed", []) if isinstance(runtime_schema.get("computed", []), list) else []
 
         self.field_codes = [f.get("code") for f in self.fields if isinstance(f, dict) and f.get("code")]
         self.comp_codes = [c.get("code") for c in self.computed if isinstance(c, dict) and c.get("code")]

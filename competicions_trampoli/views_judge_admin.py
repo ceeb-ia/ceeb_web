@@ -9,6 +9,12 @@ from .models import Competicio
 from .models_trampoli import CompeticioAparell
 from .models_scoring import ScoringSchema
 from .models_judging import JudgeDeviceToken, PublicLiveToken
+from .services.team_scoring import (
+    build_permission_label,
+    is_team_context_app,
+    permission_runtime_code,
+    runtime_schema_for_comp_aparell,
+)
 
 MAX_TOKEN_PERMISSIONS = 15
 
@@ -36,6 +42,23 @@ def _validate_permission_row(schema_by_code: dict, row: dict):
     f = schema_by_code.get(code)
     if not f:
         raise ValueError("Camp no existeix al schema")
+    scope = str(row.get("scope") or "shared").strip().lower() or "shared"
+    member_slot = row.get("member_slot")
+
+    field_scope = str((f.get("scope") or "shared")).strip().lower() or "shared"
+    if scope not in {"shared", "member"}:
+        raise ValueError(f"{code}: scope invalid.")
+    if scope == "member":
+        if field_scope != "member":
+            raise ValueError(f"{code}: aquest camp no admet abast de membre.")
+        try:
+            member_slot = int(member_slot or 0)
+        except Exception:
+            member_slot = 0
+        if member_slot < 1:
+            raise ValueError(f"{code}: cal indicar member_slot.")
+    elif field_scope == "member":
+        raise ValueError(f"{code}: cal crear el permis com a membre.")
 
     # limit judges.count
     max_j = int(((f.get("judges") or {}).get("count")) or 1)
@@ -66,6 +89,8 @@ def _validate_permission_row(schema_by_code: dict, row: dict):
 
     return {
         "field_code": code,
+        "scope": scope,
+        "member_slot": member_slot if scope == "member" else None,
         "judge_index": j,
         "item_start": item_start,
         "item_count": item_count,
@@ -98,9 +123,11 @@ def judges_qr_home(request, competicio_id):
         exercici = 1
 
     schema = {}
+    runtime_schema = {}
     if comp_aparell:
         ss, _ = ScoringSchema.objects.get_or_create(aparell=comp_aparell.aparell, defaults={"schema": {}})
         schema = ss.schema or {}
+        runtime_schema = runtime_schema_for_comp_aparell(schema, comp_aparell)
 
     field_choices = _schema_field_choices(schema)
     schema_by_code = _schema_field_by_code(schema)
@@ -141,7 +168,15 @@ def judges_qr_home(request, competicio_id):
                 if not f.get("field_code"):
                     continue
                 try:
-                    perms.append(_validate_permission_row(schema_by_code, f))
+                    perm = _validate_permission_row(schema_by_code, f)
+                    if is_team_context_app(comp_aparell):
+                        max_members = int(getattr(comp_aparell, "expected_team_size", 0) or 0)
+                        if perm["scope"] == "member" and int(perm["member_slot"] or 0) > max_members:
+                            raise ValueError(
+                                f"{perm['field_code']}: member_slot fora de rang (1..{max_members})."
+                            )
+                    perm["runtime_field_code"] = permission_runtime_code(perm, comp_aparell)
+                    perms.append(perm)
                 except ValueError as e:
                     # re-render amb error “global”
                     token_form.add_error(None, str(e))
@@ -185,12 +220,16 @@ def judges_qr_home(request, competicio_id):
         "comp_aparell": comp_aparell,
         "comp_aparell_qs": comp_aparell_qs,
         "schema": schema,
+        "runtime_schema": runtime_schema,
         "tokens": tokens,
         "token_form": token_form,
         "formset": formset,
         "max_permissions": MAX_TOKEN_PERMISSIONS,
         "exercicis": exercicis,
         "exercici": exercici,
+        "is_team_context_mode": bool(comp_aparell and is_team_context_app(comp_aparell)),
+        "expected_team_size": int(getattr(comp_aparell, "expected_team_size", 0) or 0) if comp_aparell else 0,
+        "permission_label_builder": build_permission_label,
     }
     return render(request, "judge/admin_tokens.html", ctx)
 

@@ -7,6 +7,12 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from django.core.exceptions import ValidationError
 
+from .team_scoring import (
+    MEMBER_CODE_SUFFIX_RE,
+    expected_team_size_for_schema,
+    expand_team_scoped_schema,
+    subject_mode_for_schema,
+)
 
 # =========================
 # Config / helpers
@@ -524,6 +530,205 @@ def validate_schema(schema: Dict[str, Any]) -> None:
     # si ja hi ha errors greus, parem aviat
     if errors:
         raise ValidationError(errors)
+
+
+def validate_schema(schema: Dict[str, Any], *, comp_aparell=None) -> None:
+    errors: List[str] = []
+
+    if not isinstance(schema, dict):
+        raise ValidationError("Schema: ha de ser un objecte (dict).")
+
+    subject_mode = subject_mode_for_schema(schema, comp_aparell)
+    expected_team_size = expected_team_size_for_schema(schema, comp_aparell) if subject_mode == "team_context" else None
+    team_scoring_mode = str(getattr(comp_aparell, "team_scoring_mode", "") or "").strip().lower()
+
+    params = schema.get("params", {})
+    if params is None:
+        params = {}
+    if not isinstance(params, dict):
+        errors.append("Schema.params ha de ser un dict.")
+
+    meta = schema.get("meta")
+    if meta is not None and not isinstance(meta, dict):
+        errors.append("Schema.meta ha de ser un dict.")
+        meta = {}
+    meta = meta or {}
+
+    fields = schema.get("fields", [])
+    computed = schema.get("computed", [])
+    if not isinstance(fields, list):
+        errors.append("Schema.fields ha de ser una llista.")
+        fields = []
+    if not isinstance(computed, list):
+        errors.append("Schema.computed ha de ser una llista.")
+        computed = []
+
+    if subject_mode == "team_context":
+        try:
+            meta_team_size = int(meta.get("expected_team_size"))
+        except Exception:
+            meta_team_size = expected_team_size
+        if meta_team_size != expected_team_size:
+            errors.append(
+                f"Schema.meta.expected_team_size ha de coincidir amb la configuracio de l'aparell ({expected_team_size})."
+            )
+
+    field_codes: List[str] = []
+    comp_codes: List[str] = []
+    seen_codes: Set[str] = set()
+    seen_vars: Set[str] = set()
+    member_base_codes: Set[str] = set()
+    member_base_vars: Set[str] = set()
+
+    def check_symbol(kind: str, idx: int, obj: Dict[str, Any]) -> None:
+        loc = fmt_loc(kind, idx, obj.get("code"))
+        code = obj.get("code")
+        var = obj.get("var")
+
+        if not code or not isinstance(code, str):
+            errors.append(f"{loc}: falta 'code' (string).")
+            return
+        if MEMBER_CODE_SUFFIX_RE.search(code):
+            errors.append(f"{loc}: el sufix '__mN' esta reservat per camps de membre.")
+        if not is_identifier(code):
+            errors.append(f"{loc}: 'code' no es un identificador Python valid: {code!r}")
+        if code in RESERVED_NAMES:
+            errors.append(f"{loc}: 'code' reservat/no permes: {code!r}")
+        if code in seen_codes:
+            errors.append(f"{loc}: 'code' duplicat: {code!r}")
+        seen_codes.add(code)
+
+        if var:
+            if not isinstance(var, str) or not is_identifier(var):
+                errors.append(f"{loc}: 'var' no es un identificador valid: {var!r}")
+            else:
+                if var in RESERVED_NAMES:
+                    errors.append(f"{loc}: 'var' reservat/no permes: {var!r}")
+                if var in seen_vars:
+                    errors.append(f"{loc}: 'var' duplicat: {var!r}")
+                seen_vars.add(var)
+
+    for i, f in enumerate(fields):
+        if not isinstance(f, dict):
+            errors.append(f"fields[{i}] ha de ser un objecte (dict).")
+            continue
+        scope = str(f.get("scope") or "shared").strip().lower() or "shared"
+        if scope not in {"shared", "member"}:
+            errors.append(f"fields[{i}]: scope invalid: {scope!r}")
+        elif scope == "member":
+            if subject_mode != "team_context":
+                errors.append(f"fields[{i}]: scope='member' nomes es valid en mode team_context.")
+            member_base_codes.add(str(f.get("code") or ""))
+            if f.get("var"):
+                member_base_vars.add(str(f.get("var")))
+        if team_scoring_mode == "shared_only" and scope == "member":
+            errors.append(f"fields[{i}]: aquest aparell nomes admet camps compartits.")
+        if team_scoring_mode == "members_only" and subject_mode == "team_context" and scope != "member":
+            errors.append(f"fields[{i}]: aquest aparell nomes admet camps de membre.")
+        check_symbol("fields", i, f)
+        if isinstance(f.get("code"), str):
+            field_codes.append(f["code"])
+
+    for i, c in enumerate(computed):
+        if not isinstance(c, dict):
+            errors.append(f"computed[{i}] ha de ser un objecte (dict).")
+            continue
+        check_symbol("computed", i, c)
+        if isinstance(c.get("code"), str):
+            comp_codes.append(c["code"])
+
+    if errors:
+        raise ValidationError(errors)
+
+    runtime_schema = expand_team_scoped_schema(schema, comp_aparell=comp_aparell)
+    runtime_fields = runtime_schema.get("fields", []) if isinstance(runtime_schema.get("fields"), list) else []
+    runtime_computed = runtime_schema.get("computed", []) if isinstance(runtime_schema.get("computed"), list) else []
+    runtime_params = runtime_schema.get("params", {}) if isinstance(runtime_schema.get("params"), dict) else {}
+    runtime_field_codes = [f.get("code") for f in runtime_fields if isinstance(f, dict) and f.get("code")]
+    runtime_comp_codes = [c.get("code") for c in runtime_computed if isinstance(c, dict) and c.get("code")]
+
+    aliases = _build_alias_map(runtime_fields, runtime_computed, runtime_params)
+    all_codes = set(runtime_field_codes) | set(runtime_comp_codes)
+    for short, code in aliases.items():
+        if short in RESERVED_NAMES:
+            errors.append(f"Alias '{short}' es un nom reservat.")
+        if code not in all_codes:
+            errors.append(f"Alias '{short}' apunta a un code inexistent: {code!r}")
+
+    if errors:
+        raise ValidationError(errors)
+
+    allowed_names = set(runtime_field_codes) | set(runtime_comp_codes) | set(aliases.keys()) | RESERVED_NAMES | ALLOWED_FUNCTIONS
+    comp_deps: Dict[str, Set[str]] = {cc: set() for cc in runtime_comp_codes}
+
+    for i, c in enumerate(runtime_computed):
+        code = str(c.get("code"))
+        loc = fmt_loc("computed", i, code)
+        formula = c.get("formula")
+        if not formula or not isinstance(formula, str):
+            errors.append(f"{loc}: falta 'formula' (string).")
+            continue
+
+        tree = _ast_parse(formula, loc)
+        try:
+            names = _extract_names(tree)
+        except ValidationError as ve:
+            errors.append(f"{loc}: {ve.message}")
+            continue
+
+        invalid_member_refs = sorted((names & member_base_codes) | (names & member_base_vars))
+        if invalid_member_refs:
+            errors.append(
+                f"{loc}: els camps de membre s'han de referenciar amb slot explicit (__mN o _mN): {', '.join(invalid_member_refs)}"
+            )
+
+        resolved = {_resolve_name(n, aliases) for n in names}
+        unknown = [n for n in names if n not in allowed_names]
+        if unknown:
+            errors.append(f"{loc}: variables no declarades: {', '.join(sorted(set(unknown)))}")
+        for r in resolved:
+            if r in comp_deps and r != code:
+                comp_deps[code].add(r)
+
+    if errors:
+        raise ValidationError(errors)
+
+    order = _topo_sort(runtime_comp_codes, comp_deps)
+
+    ctx: Dict[str, TMat] = {}
+    for f in runtime_fields:
+        code = str(f.get("code"))
+        ctx[code] = TMat(_field_shape(f), name=code)
+
+    ctx["params"] = TMat(Shape(1, 1), name="params")
+
+    for short, code in aliases.items():
+        if code in ctx:
+            ctx[short] = ctx[code]
+
+    for code in order:
+        cobj = next((x for x in runtime_computed if isinstance(x, dict) and x.get("code") == code), None)
+        if not cobj:
+            continue
+        formula = str(cobj.get("formula") or "")
+        loc = f"computed({code})"
+        tree = _ast_parse(formula, loc)
+        try:
+            val = DryRunEval(ctx).visit(tree)
+        except ShapeError as e:
+            errors.append(f"{loc}: incoherencia de shape: {e}")
+            continue
+        except ValidationError as ve:
+            errors.append(f"{loc}: {ve.message}")
+            continue
+        ctx[code] = val
+        var = cobj.get("var")
+        if isinstance(var, str) and var in aliases:
+            ctx[var] = val
+
+    if errors:
+        raise ValidationError(errors)
+    return
 
     aliases = _build_alias_map(fields, computed, params if isinstance(params, dict) else {})
     # valida aliases: no apuntin a res inexistent

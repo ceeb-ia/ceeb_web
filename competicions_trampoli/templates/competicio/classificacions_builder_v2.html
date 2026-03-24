@@ -1599,9 +1599,15 @@
   function getAppChoices(extraIds) {
     const seen = new Set();
     const out = [];
+    const tipus = currentTipus();
+    const selectedContextCode = String(els.eqAssignmentContext?.value || "native").trim() || "native";
     (APARELLS || []).forEach(a => {
       const id = Number(a && a.id);
       if (!Number.isFinite(id) || seen.has(String(id))) return;
+      const participantMode = String((a && a.participant_mode) || "individual");
+      const teamContextCode = String((a && a.team_context_code) || "").trim();
+      if (tipus === "individual" && participantMode === "team_context") return;
+      if (tipus === "equips" && participantMode === "team_context" && selectedContextCode !== "native" && teamContextCode && teamContextCode !== selectedContextCode) return;
       seen.add(String(id));
       out.push({ id, nom: String(a.nom || `Aparell ${id}`), stale: false });
     });
@@ -1624,6 +1630,16 @@
           <label class="form-check-label" for="app_${a.id}">${esc(a.nom)}</label>
         </div>`;
       els.apChkList.appendChild(col);
+    });
+  }
+
+  function rebuildAparellChecksPreservingSelection(extraIds){
+    const selected = selectedAparellIdsFromUI();
+    const merged = [...selected, ...(Array.isArray(extraIds) ? extraIds : [])];
+    buildAparellChecks(merged);
+    const allowed = new Set(getAppChoices(merged).map(a => String(a.id)));
+    (els.apChkList?.querySelectorAll('input.form-check-input[type="checkbox"]') || []).forEach(el => {
+      el.checked = allowed.has(String(el.value)) && merged.map(String).includes(String(el.value));
     });
   }
 
@@ -1957,6 +1973,7 @@
       }
     }
     refreshVictoryTieVisibility();
+    rebuildAparellChecksPreservingSelection(getSchemaReferencedAppIds(cfg && cfg.schema ? cfg.schema : {}));
   }
 
   function sanitizeDesempatForTipus(list, tipus) {
@@ -4832,6 +4849,11 @@
     syncAdvancedFromUI();
     renderList();
   });
+  if (els.eqAssignmentContext) {
+    els.eqAssignmentContext.addEventListener("change", () => {
+      rebuildAparellChecksPreservingSelection(getSchemaReferencedAppIds((currentCfg() || {}).schema || {}));
+    });
+  }
 
   // save/delete/preview: manté endpoints actuals
   async function postJson(url, payload) {

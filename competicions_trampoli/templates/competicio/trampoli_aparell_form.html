@@ -72,6 +72,36 @@
         </div>
       </div>
 
+      <div class="border rounded p-3 mb-3">
+        <div class="fw-semibold mb-2">Participacio i puntuacio</div>
+        <div class="row g-3">
+          <div class="col-12 col-md-6">
+            <label class="form-label" for="{{ form.participant_mode.id_for_label }}">Mode de participacio</label>
+            {{ form.participant_mode }}
+            {{ form.participant_mode.errors }}
+            <div class="text-muted small mt-1">Defineix si competeixen inscripcions individuals o equips d'un context de la competicio.</div>
+          </div>
+        </div>
+        <div id="team-context-config" class="row g-3 mt-1" style="display:none;">
+          <div class="col-12 col-md-6">
+            <label class="form-label" for="{{ form.team_context.id_for_label }}">Context d'equips</label>
+            {{ form.team_context }}
+            {{ form.team_context.errors }}
+          </div>
+          <div class="col-12 col-md-3">
+            <label class="form-label" for="{{ form.expected_team_size.id_for_label }}">Mida esperada</label>
+            {{ form.expected_team_size }}
+            {{ form.expected_team_size.errors }}
+          </div>
+          <div class="col-12 col-md-6">
+            <label class="form-label" for="{{ form.team_scoring_mode.id_for_label }}">Mode de camps</label>
+            {{ form.team_scoring_mode }}
+            {{ form.team_scoring_mode.errors }}
+            <div class="text-muted small mt-1">Marca si aquest aparell admet camps per membre, camps compartits o una combinacio dels dos.</div>
+          </div>
+        </div>
+      </div>
+
       <div class="d-flex flex-wrap gap-2">
         <button class="btn btn-primary" type="submit">Desar</button>
         <a class="btn btn-outline-secondary"
@@ -86,6 +116,8 @@
   (function () {
     var select = document.getElementById('{{ form.aparell.id_for_label }}');
     var link = document.getElementById('puntuacio-link');
+    var participantMode = document.getElementById('{{ form.participant_mode.id_for_label }}');
+    var teamConfig = document.getElementById('team-context-config');
     if (!select || !link) return;
 
     function updatePuntuacioLink() {
@@ -107,6 +139,16 @@
 
     select.addEventListener('change', updatePuntuacioLink);
     updatePuntuacioLink();
+
+    function updateParticipantConfig() {
+      if (!participantMode || !teamConfig) return;
+      teamConfig.style.display = participantMode.value === 'team_context' ? '' : 'none';
+    }
+
+    if (participantMode) {
+      participantMode.addEventListener('change', updateParticipantConfig);
+      updateParticipantConfig();
+    }
   })();
 </script>
 {% endblock %}

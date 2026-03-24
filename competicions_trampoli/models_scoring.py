@@ -3,8 +3,9 @@ from django.db import models
 from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
 
-from .models import Competicio, Inscripcio
+from .models import Competicio, Equip, Inscripcio
 from .models_trampoli import Aparell, CompeticioAparell
+from .services.scoring_schema_validation import validate_schema
 
 
 class ScoringSchema(models.Model):
@@ -63,6 +64,10 @@ class ScoringSchema(models.Model):
                 codes.append(c["code"])
         if len(codes) != len(set(codes)):
             raise ValidationError({"schema": _("Hi ha 'code' duplicats a fields/computed.")})
+        try:
+            validate_schema(self.schema, comp_aparell=self.comp_aparell)
+        except ValidationError as exc:
+            raise ValidationError({"schema": exc.messages})
 
     def __str__(self):
         if self.comp_aparell_id:
@@ -98,6 +103,50 @@ class ScoreEntry(models.Model):
 
     def __str__(self):
         return f"ScoreEntry ins={self.inscripcio_id} ex={self.exercici} app={self.comp_aparell_id}"
+
+
+class TeamScoreEntry(models.Model):
+    """
+    Entrada de puntuacio per equips/context:
+    una fila per (equip, exercici, aparell en competicio).
+    """
+    competicio = models.ForeignKey(Competicio, on_delete=models.CASCADE, related_name="team_scores")
+    equip = models.ForeignKey(Equip, on_delete=models.CASCADE, related_name="team_scores")
+    exercici = models.PositiveSmallIntegerField(default=1)
+    comp_aparell = models.ForeignKey(CompeticioAparell, on_delete=models.CASCADE, related_name="team_scores")
+
+    inputs = models.JSONField(default=dict, blank=True)
+    outputs = models.JSONField(default=dict, blank=True)
+    total = models.DecimalField(max_digits=10, decimal_places=3, default=0)
+
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["competicio", "equip", "exercici", "comp_aparell"],
+                name="uniq_teamscoreentry_per_exercici_aparell",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["competicio", "comp_aparell", "exercici"]),
+            models.Index(fields=["competicio", "equip"]),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        if self.equip_id and self.equip.competicio_id != self.competicio_id:
+            errors["equip"] = _("L'equip no pertany a la mateixa competicio.")
+        if self.comp_aparell_id and self.comp_aparell.competicio_id != self.competicio_id:
+            errors["comp_aparell"] = _("L'aparell no pertany a la mateixa competicio.")
+        if self.comp_aparell_id and getattr(self.comp_aparell, "participant_mode", "") != "team_context":
+            errors["comp_aparell"] = _("Aquest aparell no esta configurat per puntuacio per equips/context.")
+        if errors:
+            raise ValidationError(errors)
+
+    def __str__(self):
+        return f"TeamScoreEntry equip={self.equip_id} ex={self.exercici} app={self.comp_aparell_id}"
 
 
 class ScoreEntryVideo(models.Model):
@@ -246,3 +295,124 @@ class ScoreEntryVideoEvent(models.Model):
             f"ScoreEntryVideoEvent action={self.action} "
             f"score={self.score_entry_id or '-'} ok={self.ok} status={self.http_status}"
         )
+
+
+class TeamScoreEntryVideo(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pendent"
+        READY = "ready", "Disponible"
+        FAILED = "failed", "Error"
+
+    VIDEO_MAX_DURATION_SECONDS = ScoreEntryVideo.VIDEO_MAX_DURATION_SECONDS
+    VIDEO_MAX_SIZE_BYTES = ScoreEntryVideo.VIDEO_MAX_SIZE_BYTES
+    ALLOWED_MIME_TYPES = ScoreEntryVideo.ALLOWED_MIME_TYPES
+
+    team_score_entry = models.OneToOneField(
+        TeamScoreEntry,
+        on_delete=models.CASCADE,
+        related_name="video_capture",
+    )
+    video_file = models.FileField(upload_to="trampoli/team_score_videos/%Y/%m/%d/")
+    judge_token = models.ForeignKey(
+        "competicions_trampoli.JudgeDeviceToken",
+        on_delete=models.SET_NULL,
+        related_name="team_score_videos",
+        null=True,
+        blank=True,
+    )
+
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    duration_seconds = models.PositiveIntegerField(null=True, blank=True)
+    file_size_bytes = models.PositiveBigIntegerField(default=0)
+    mime_type = models.CharField(max_length=100, blank=True, default="")
+    original_filename = models.CharField(max_length=255, blank=True, default="")
+    error_message = models.CharField(max_length=300, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["status", "created_at"]),
+            models.Index(fields=["judge_token", "created_at"]),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.duration_seconds and self.duration_seconds > self.VIDEO_MAX_DURATION_SECONDS:
+            raise ValidationError(
+                {"duration_seconds": _("La durada supera el maxim configurat per l'MVP.")}
+            )
+        if self.file_size_bytes and self.file_size_bytes > self.VIDEO_MAX_SIZE_BYTES:
+            raise ValidationError(
+                {"file_size_bytes": _("La mida supera el maxim configurat per l'MVP.")}
+            )
+        if self.mime_type and self.mime_type not in self.ALLOWED_MIME_TYPES:
+            raise ValidationError({"mime_type": _("Tipus MIME de video no permès.")})
+        if self.judge_token_id and self.team_score_entry_id:
+            if self.judge_token.competicio_id != self.team_score_entry.competicio_id:
+                raise ValidationError(
+                    {"judge_token": _("El token no pertany a la mateixa competicio del score.")}
+                )
+            if self.judge_token.comp_aparell_id != self.team_score_entry.comp_aparell_id:
+                raise ValidationError(
+                    {"judge_token": _("El token no pertany al mateix aparell del score.")}
+                )
+
+
+class TeamScoreEntryVideoEvent(models.Model):
+    class Action(models.TextChoices):
+        UPLOAD = "upload", "Upload"
+        REPLACE = "replace", "Replace"
+        DELETE = "delete", "Delete"
+        UPLOAD_REJECTED = "upload_rejected", "Upload Rejected"
+
+    team_score_entry = models.ForeignKey(
+        TeamScoreEntry,
+        on_delete=models.SET_NULL,
+        related_name="video_events",
+        null=True,
+        blank=True,
+    )
+    video = models.ForeignKey(
+        TeamScoreEntryVideo,
+        on_delete=models.SET_NULL,
+        related_name="events",
+        null=True,
+        blank=True,
+    )
+    competicio = models.ForeignKey(
+        Competicio,
+        on_delete=models.CASCADE,
+        related_name="team_score_video_events",
+    )
+    equip = models.ForeignKey(
+        Equip,
+        on_delete=models.CASCADE,
+        related_name="team_score_video_events",
+    )
+    comp_aparell = models.ForeignKey(
+        CompeticioAparell,
+        on_delete=models.CASCADE,
+        related_name="team_score_video_events",
+    )
+    judge_token = models.ForeignKey(
+        "competicions_trampoli.JudgeDeviceToken",
+        on_delete=models.SET_NULL,
+        related_name="team_score_video_events",
+        null=True,
+        blank=True,
+    )
+    action = models.CharField(max_length=30, choices=Action.choices)
+    ok = models.BooleanField(default=True)
+    http_status = models.PositiveSmallIntegerField(default=200)
+    detail = models.CharField(max_length=255, blank=True, default="")
+    payload = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["competicio", "created_at"]),
+            models.Index(fields=["action", "created_at"]),
+            models.Index(fields=["judge_token", "created_at"]),
+            models.Index(fields=["team_score_entry", "created_at"]),
+        ]
