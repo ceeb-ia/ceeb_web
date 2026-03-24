@@ -138,6 +138,78 @@ def get_equips_for_context(competicio, context_code):
     return equips
 
 
+def get_team_members_payload_for_context(competicio, context_code):
+    code = normalize_equip_context_code(context_code)
+    grouped = OrderedDict()
+
+    def _append_member(team_id, inscripcio):
+        if not team_id or inscripcio is None:
+            return
+        members = grouped.setdefault(int(team_id), [])
+        native_team = getattr(inscripcio, "equip", None)
+        members.append(
+            {
+                "id": int(getattr(inscripcio, "id", 0) or 0),
+                "nom": str(getattr(inscripcio, "nom_i_cognoms", "") or "").strip(),
+                "document": str(getattr(inscripcio, "document", "") or "").strip(),
+                "entitat": str(getattr(inscripcio, "entitat", "") or "").strip(),
+                "categoria": str(getattr(inscripcio, "categoria", "") or "").strip(),
+                "subcategoria": str(getattr(inscripcio, "subcategoria", "") or "").strip(),
+                "native_team_name": str(getattr(native_team, "nom", "") or "").strip(),
+            }
+        )
+
+    if code == NATIVE_EQUIP_CONTEXT_CODE:
+        rows = (
+            Inscripcio.objects
+            .filter(competicio=competicio)
+            .exclude(equip__isnull=True)
+            .select_related("equip")
+            .only(
+                "id",
+                "nom_i_cognoms",
+                "document",
+                "entitat",
+                "categoria",
+                "subcategoria",
+                "equip_id",
+                "ordre_sortida",
+                "equip__nom",
+            )
+            .order_by("ordre_sortida", "id")
+        )
+        for inscripcio in rows:
+            _append_member(getattr(inscripcio, "equip_id", None), inscripcio)
+        return grouped
+
+    ctx = get_custom_equip_context(competicio, code)
+    if ctx is None:
+        return grouped
+
+    rows = (
+        InscripcioEquipAssignacio.objects
+        .filter(competicio=competicio, context=ctx)
+        .select_related("equip", "inscripcio__equip")
+        .only(
+            "equip_id",
+            "inscripcio_id",
+            "inscripcio__id",
+            "inscripcio__nom_i_cognoms",
+            "inscripcio__document",
+            "inscripcio__entitat",
+            "inscripcio__categoria",
+            "inscripcio__subcategoria",
+            "inscripcio__ordre_sortida",
+            "inscripcio__equip_id",
+            "inscripcio__equip__nom",
+        )
+        .order_by("inscripcio__ordre_sortida", "inscripcio_id")
+    )
+    for row in rows:
+        _append_member(getattr(row, "equip_id", None), getattr(row, "inscripcio", None))
+    return grouped
+
+
 def get_equip_context_summary(competicio, context_code):
     code = normalize_equip_context_code(context_code)
     total_inscripcions = Inscripcio.objects.filter(competicio=competicio).count()

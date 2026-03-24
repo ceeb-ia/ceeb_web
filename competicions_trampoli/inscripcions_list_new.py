@@ -549,6 +549,17 @@ class InscripcionsListNewView(InscripcionsListView):
         ctx["group_creation_auto_bucket_count"] = len(ctx["group_creation_auto_buckets"])
 
         ctx["group_names"] = get_group_maps(self.competicio).get("name_map") or {}
+        ctx["group_member_totals"] = {
+            str(row["grup"]): int(row["total"] or 0)
+            for row in (
+                Inscripcio.objects
+                .filter(competicio=self.competicio)
+                .exclude(grup__isnull=True)
+                .values("grup")
+                .annotate(total=Count("id"))
+            )
+            if row.get("grup") is not None
+        }
 
         team_context_code = normalize_equip_context_code(self.request.GET.get("team_context"))
         valid_team_context_codes = {item["code"] for item in get_equip_context_payload(self.competicio)}

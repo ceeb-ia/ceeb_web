@@ -6549,6 +6549,7 @@ class ClassificacioTemplateFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertContains(res, 'id="sVictoryModeCamps"')
         self.assertContains(res, 'id="sVictoryModeExercicis"')
         self.assertContains(res, 'id="classifHelpDrawer"')
+        self.assertContains(res, 'id="classif-builder-back-to-top"')
         self.assertContains(res, "classificacions_builder_help.css")
         self.assertContains(res, "classificacions_builder_help.js")
         self.assertContains(res, 'data-help-key="global_overview"')
@@ -6949,6 +6950,7 @@ class GlobalClassificacioTemplateManagementTests(_BaseTrampoliDataMixin, TestCas
         self.assertContains(res, 'id="sVictoryModeCamps"')
         self.assertContains(res, 'id="sVictoryModeExercicis"')
         self.assertContains(res, 'id="classifHelpDrawer"')
+        self.assertContains(res, 'id="classif-builder-back-to-top"')
         self.assertContains(res, "classificacions_builder_help.css")
         self.assertContains(res, "classificacions_builder_help.js")
         self.assertContains(res, 'data-help-key="global_overview"')
@@ -8134,11 +8136,13 @@ class EquipPreviewUiTests(_BaseTrampoliDataMixin, TestCase):
         self.assertContains(response, 'id="teams-main-card"')
         self.assertContains(response, 'data-expand-target="teams-main-card"')
         self.assertContains(response, 'id="team-workspace-shell"')
+        self.assertContains(response, 'id="btn-team-workspace-board-mode"')
         self.assertContains(response, 'id="team-filter-q"')
         self.assertContains(response, 'id="btn-team-workspace-preview"')
         self.assertContains(response, 'id="team-preview-status"')
         self.assertContains(response, 'id="team-preview-existing-list"')
         self.assertContains(response, 'id="team-preview-list"')
+        self.assertContains(response, 'id="team-context-unassigned-dropzone"')
         self.assertContains(response, "Flux complet d'equips")
 
     def test_equips_workspace_returns_context_summary_candidates_and_filters(self):
@@ -8174,6 +8178,164 @@ class EquipPreviewUiTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(payload.get("candidates", {}).get("items", [])[0].get("current_team_name"), "Club A")
         self.assertTrue(any(row.get("name") == "Club A" for row in (payload.get("filter_options", {}).get("teams") or [])))
         self.assertTrue(any(ctx.get("code") == "finals" for ctx in (payload.get("contexts") or [])))
+        teams_by_name = {row.get("nom"): row for row in (payload.get("teams") or [])}
+        self.assertEqual([m.get("nom") for m in teams_by_name["Club A"]["members"]], ["Dina Context"])
+        self.assertEqual(teams_by_name["Club A"]["members"][0]["native_team_name"], "Alt Equip")
+
+    def test_equips_workspace_team_members_ignore_candidate_filters_and_keep_stable_order(self):
+        ins_early = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Aina Context",
+            entitat="Club Z",
+            ordre_sortida=0,
+            equip=self.team_other,
+        )
+        InscripcioEquipAssignacio.objects.create(
+            competicio=self.comp,
+            context=self.ctx,
+            inscripcio=ins_early,
+            equip=self.team_existing,
+        )
+
+        response = self.client.post(
+            reverse("inscripcions_equips_workspace", kwargs={"pk": self.comp.id}),
+            data=json.dumps(
+                {
+                    "context_code": "finals",
+                    "filters": {
+                        "q": "",
+                        "categoria": "",
+                        "subcategoria": "",
+                        "entitat": "Club C",
+                        "assignment_state": "all",
+                        "equip_id": "",
+                    },
+                    "page": 1,
+                    "page_size": 25,
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload.get("candidates", {}).get("total"), 1)
+        self.assertEqual(payload.get("candidates", {}).get("items", [])[0].get("nom"), "Carla New")
+        teams_by_name = {row.get("nom"): row for row in (payload.get("teams") or [])}
+        self.assertEqual(
+            [m.get("nom") for m in teams_by_name["Club A"]["members"]],
+            ["Aina Context", "Dina Context"],
+        )
+
+    def test_equips_workspace_returns_native_team_members_ordered(self):
+        self.ins_ctx.equip = self.team_existing
+        self.ins_ctx.save(update_fields=["equip"])
+
+        response = self.client.post(
+            reverse("inscripcions_equips_workspace", kwargs={"pk": self.comp.id}),
+            data=json.dumps(
+                {
+                    "context_code": "native",
+                    "filters": {
+                        "q": "",
+                        "categoria": "",
+                        "subcategoria": "",
+                        "entitat": "",
+                        "assignment_state": "all",
+                        "equip_id": "",
+                    },
+                    "page": 1,
+                    "page_size": 25,
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        teams_by_name = {row.get("nom"): row for row in (payload.get("teams") or [])}
+        self.assertEqual(
+            [m.get("nom") for m in teams_by_name["Club A"]["members"]],
+            ["Anna Keep", "Dina Context"],
+        )
+
+    def test_equips_workspace_members_refresh_after_assign_and_unassign(self):
+        assign_response = self.client.post(
+            reverse("inscripcions_equips_assign", kwargs={"pk": self.comp.id}),
+            data=json.dumps(
+                {
+                    "context_code": "finals",
+                    "equip_id": self.team_existing.id,
+                    "inscripcio_ids": [self.ins_new.id],
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(assign_response.status_code, 200)
+
+        workspace_after_assign = self.client.post(
+            reverse("inscripcions_equips_workspace", kwargs={"pk": self.comp.id}),
+            data=json.dumps(
+                {
+                    "context_code": "finals",
+                    "filters": {
+                        "q": "",
+                        "categoria": "",
+                        "subcategoria": "",
+                        "entitat": "",
+                        "assignment_state": "all",
+                        "equip_id": "",
+                    },
+                    "page": 1,
+                    "page_size": 25,
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(workspace_after_assign.status_code, 200)
+        teams_by_name = {row.get("nom"): row for row in (workspace_after_assign.json().get("teams") or [])}
+        self.assertEqual(
+            [m.get("nom") for m in teams_by_name["Club A"]["members"]],
+            ["Carla New", "Dina Context"],
+        )
+
+        unassign_response = self.client.post(
+            reverse("inscripcions_equips_unassign", kwargs={"pk": self.comp.id}),
+            data=json.dumps(
+                {
+                    "context_code": "finals",
+                    "inscripcio_ids": [self.ins_new.id],
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(unassign_response.status_code, 200)
+
+        workspace_after_unassign = self.client.post(
+            reverse("inscripcions_equips_workspace", kwargs={"pk": self.comp.id}),
+            data=json.dumps(
+                {
+                    "context_code": "finals",
+                    "filters": {
+                        "q": "",
+                        "categoria": "",
+                        "subcategoria": "",
+                        "entitat": "",
+                        "assignment_state": "all",
+                        "equip_id": "",
+                    },
+                    "page": 1,
+                    "page_size": 25,
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(workspace_after_unassign.status_code, 200)
+        teams_by_name = {row.get("nom"): row for row in (workspace_after_unassign.json().get("teams") or [])}
+        self.assertEqual(
+            [m.get("nom") for m in teams_by_name["Club A"]["members"]],
+            ["Dina Context"],
+        )
 
     def test_equips_preview_returns_rich_contract_for_native_context(self):
         response = self.client.post(

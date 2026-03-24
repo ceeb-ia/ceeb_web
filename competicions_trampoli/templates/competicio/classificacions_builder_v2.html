@@ -117,6 +117,40 @@
     background: #2f80ed;
     color: #fff;
   }
+  .classif-builder-back-to-top {
+    --classif-builder-back-to-top-bottom: 20px;
+    position: fixed;
+    right: 18px;
+    bottom: var(--classif-builder-back-to-top-bottom);
+    z-index: 1046;
+    width: 44px;
+    height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 999px;
+    background: #0f6ecf;
+    color: #fff;
+    font-size: 1.15rem;
+    line-height: 1;
+    box-shadow: 0 12px 26px rgba(15, 23, 42, 0.18);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateY(8px);
+    transition: opacity .2s ease, visibility .2s ease, transform .2s ease;
+  }
+  .classif-builder-back-to-top.is-visible {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: translateY(0);
+  }
+  .classif-builder-back-to-top:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 16px 30px rgba(15, 23, 42, 0.22);
+  }
   .builder-main {
     display: flex;
     flex-direction: column;
@@ -495,6 +529,10 @@
     }
   }
   @media (max-width: 767.98px) {
+    .classif-builder-back-to-top {
+      right: 12px;
+      --classif-builder-back-to-top-bottom: 12px;
+    }
     .builder-section__header,
     .builder-section__body,
     .builder-subsection {
@@ -1115,6 +1153,13 @@
     </div>
   </div>
   </div>
+  <button type="button"
+          class="btn btn-sm btn-primary classif-builder-back-to-top"
+          id="classif-builder-back-to-top"
+          aria-label="Tornar a l'inici"
+          title="Tornar a dalt">
+    <span aria-hidden="true">&uarr;</span>
+  </button>
 </div>
 
 {{ cfgs|json_script:"cfgs-data-v2" }}
@@ -1235,6 +1280,7 @@
     btnAdd: document.getElementById("btnAdd"),
     btnSave: document.getElementById("btnSave"),
     btnDelete: document.getElementById("btnDelete"),
+    backToTop: document.getElementById("classif-builder-back-to-top"),
     templateSelect: document.getElementById("templateSelect"),
     btnTemplateRefresh: document.getElementById("btnTemplateRefresh"),
     btnTemplateCheck: document.getElementById("btnTemplateCheck"),
@@ -1336,7 +1382,10 @@
 
   function updateBuilderNavFromScroll() {
     const sections = Array.from(document.querySelectorAll("[data-builder-section]"));
-    if (!sections.length) return;
+    if (!sections.length) {
+      syncBuilderBackToTopButton();
+      return;
+    }
 
     const threshold = window.scrollY + 180;
     let activeId = sections[0].id;
@@ -1344,6 +1393,42 @@
       if (section.offsetTop <= threshold) activeId = section.id;
     });
     setActiveBuilderNav(activeId);
+    syncBuilderBackToTopButton();
+  }
+
+  function syncBuilderBackToTopButton() {
+    if (!els.backToTop) return;
+    const isVisible = (window.scrollY || window.pageYOffset || 0) > 280;
+    els.backToTop.classList.toggle("is-visible", isVisible);
+    syncBuilderBackToTopButtonPosition();
+  }
+
+  function syncBuilderBackToTopButtonPosition() {
+    if (!els.backToTop) return;
+
+    els.backToTop.style.bottom = "";
+
+    const chatBtn = document.getElementById("chatbot-open");
+    if (!chatBtn) return;
+
+    const chatStyle = window.getComputedStyle(chatBtn);
+    if (
+      chatStyle.display === "none" ||
+      chatStyle.visibility === "hidden" ||
+      chatBtn.classList.contains("minimized")
+    ) {
+      return;
+    }
+
+    const chatRect = chatBtn.getBoundingClientRect();
+    if (chatRect.width <= 0 || chatRect.height <= 0) return;
+
+    const btnRect = els.backToTop.getBoundingClientRect();
+    const overlapsHorizontally = btnRect.right > (chatRect.left - 8) && btnRect.left < (chatRect.right + 8);
+    if (!overlapsHorizontally) return;
+
+    const bottomOffset = Math.max(0, window.innerHeight - chatRect.top) + 12;
+    els.backToTop.style.bottom = `${bottomOffset}px`;
   }
 
   function initBuilderSectionNav() {
@@ -1359,6 +1444,19 @@
 
     window.addEventListener("scroll", updateBuilderNavFromScroll, { passive: true });
     window.addEventListener("resize", updateBuilderNavFromScroll);
+    if (els.backToTop) {
+      els.backToTop.addEventListener("click", () => {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      });
+      const chatbotOpenBtn = document.getElementById("chatbot-open");
+      if (chatbotOpenBtn && window.MutationObserver) {
+        const chatbotObserver = new MutationObserver(() => syncBuilderBackToTopButtonPosition());
+        chatbotObserver.observe(chatbotOpenBtn, {
+          attributes: true,
+          attributeFilter: ["class", "style"],
+        });
+      }
+    }
     updateBuilderNavFromScroll();
   }
 

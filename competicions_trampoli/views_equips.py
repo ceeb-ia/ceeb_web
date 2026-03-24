@@ -20,6 +20,7 @@ from .services.equip_contexts import (
     get_equip_context_summary,
     get_equip_context_payload,
     get_equips_for_context,
+    get_team_members_payload_for_context,
     is_native_equip_context,
     normalize_equip_context_code,
     resolve_inscripcio_equip,
@@ -76,14 +77,20 @@ def _mark_live_dirty_on_commit(competicio_id):
     transaction.on_commit(lambda cid=int(competicio_id): mark_live_dirty(cid))
 
 
-def _serialize_equips(competicio: Competicio, context_code=NATIVE_EQUIP_CONTEXT_CODE):
+def _serialize_equips(
+    competicio: Competicio,
+    context_code=NATIVE_EQUIP_CONTEXT_CODE,
+    members_by_team_id=None,
+):
     equips = get_equips_for_context(competicio, context_code)
+    members_map = members_by_team_id if isinstance(members_by_team_id, dict) else {}
     return [
         {
             "id": e.id,
             "nom": e.nom,
             "origen": e.origen,
             "membres": int(getattr(e, "membres_count", 0) or 0),
+            "members": list(members_map.get(int(e.id), []) or []),
         }
         for e in equips
     ]
@@ -271,6 +278,7 @@ def _build_workspace_payload(competicio, context_code, filters=None, page=1, pag
     )
     records = list(qs)
     teams = list(get_equips_for_context(competicio, context_code))
+    team_members = get_team_members_payload_for_context(competicio, context_code)
     assignment_map = get_contextual_assignment_map(competicio, records, context_code)
 
     equip_id_filter = None
@@ -324,7 +332,7 @@ def _build_workspace_payload(competicio, context_code, filters=None, page=1, pag
             "page_size": page_size,
             "has_more": end < total_filtered,
         },
-        "teams": _serialize_equips(competicio, context_code),
+        "teams": _serialize_equips(competicio, context_code, members_by_team_id=team_members),
         "contexts": _serialize_contexts(competicio),
     }
 

@@ -52,7 +52,7 @@
         </div>
       </div>
 
-      <div class="team-workspace-shell" id="team-workspace-shell">
+      <div class="team-workspace-shell is-board-mode" id="team-workspace-shell">
         <div class="team-workspace-header" id="team-workspace-header">
           <div class="team-workspace-context">
             <div class="team-workspace-context-head">
@@ -308,18 +308,24 @@
               <div class="team-pane-head">
                 <div>
                   <div class="fw-semibold">Equips del context</div>
-                  <div class="small text-muted">Manteniment i lectura del context actual, separat de la seleccio.</div>
+                  <div class="small text-muted">Manteniment i lectura del context actual, separat de la seleccio. Les targetes accepten drops encara que estiguin plegades.</div>
                 </div>
-                <button
-                  type="button"
-                  class="btn btn-sm btn-outline-danger"
-                  id="btn-team-workspace-delete-all"
-                  data-delete-all-url="{% url 'inscripcions_equips_delete_all' competicio.id %}"
-                >
-                  Eliminar tots
-                </button>
+                <div class="d-flex align-items-center flex-wrap" style="gap:8px;">
+                  <button type="button" class="btn btn-sm btn-outline-primary" id="btn-team-workspace-board-mode" aria-pressed="true">
+                    Mode tauler
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-outline-danger"
+                    id="btn-team-workspace-delete-all"
+                    data-delete-all-url="{% url 'inscripcions_equips_delete_all' competicio.id %}"
+                  >
+                    Eliminar tots
+                  </button>
+                </div>
               </div>
               <div class="team-context-teams-status small text-muted" id="team-context-teams-status">Sense dades encara.</div>
+              <div class="team-context-unassigned-dropzone" id="team-context-unassigned-dropzone"></div>
               <div class="team-context-teams-list" id="team-context-teams-list"></div>
               <div class="team-context-empty-list d-none" id="team-context-zero-members-wrap">
                 <div class="small text-muted mb-2">Sense membres en aquest context</div>

@@ -1,61 +1,99 @@
 const teamWorkspaceShell = document.getElementById('team-workspace-shell');
 if (teamWorkspaceShell) {
-  const teamWorkspaceUrl = "{% url 'inscripcions_equips_workspace' competicio.id %}";
-  const teamWorkspacePreviewUrl = "{% url 'inscripcions_equips_preview' competicio.id %}";
-  const teamWorkspaceAutoCreateUrl = "{% url 'inscripcions_equips_auto_create' competicio.id %}";
-  const teamWorkspaceCreateManualUrl = "{% url 'inscripcions_equips_create_manual' competicio.id %}";
-  const teamWorkspaceAssignUrl = "{% url 'inscripcions_equips_assign' competicio.id %}";
-  const teamWorkspaceUnassignUrl = "{% url 'inscripcions_equips_unassign' competicio.id %}";
-  const teamWorkspaceContextCreateUrl = "{% url 'inscripcions_equip_context_create' competicio.id %}";
-  const teamWorkspaceContextRenameUrlTemplate = "{% url 'inscripcions_equip_context_rename' competicio.id '__context__' %}";
-  const teamWorkspaceContextDeleteUrlTemplate = "{% url 'inscripcions_equip_context_delete' competicio.id '__context__' %}";
-  const teamWorkspaceRenameUrlTemplate = "{% url 'inscripcions_equips_rename' competicio.id 999999 %}";
-  const teamWorkspaceDeleteUrlTemplate = "{% url 'inscripcions_equips_delete' competicio.id 999999 %}";
-  const teamWorkspaceState = {
+  const workspaceUrl = "{% url 'inscripcions_equips_workspace' competicio.id %}";
+  const previewUrl = "{% url 'inscripcions_equips_preview' competicio.id %}";
+  const autoCreateUrl = "{% url 'inscripcions_equips_auto_create' competicio.id %}";
+  const createManualUrl = "{% url 'inscripcions_equips_create_manual' competicio.id %}";
+  const assignUrl = "{% url 'inscripcions_equips_assign' competicio.id %}";
+  const unassignUrl = "{% url 'inscripcions_equips_unassign' competicio.id %}";
+  const ctxCreateUrl = "{% url 'inscripcions_equip_context_create' competicio.id %}";
+  const ctxRenameUrlTpl = "{% url 'inscripcions_equip_context_rename' competicio.id '__context__' %}";
+  const ctxDeleteUrlTpl = "{% url 'inscripcions_equip_context_delete' competicio.id '__context__' %}";
+  const renameUrlTpl = "{% url 'inscripcions_equips_rename' competicio.id 999999 %}";
+  const deleteUrlTpl = "{% url 'inscripcions_equips_delete' competicio.id 999999 %}";
+
+  const state = {
     contextCode: getSelectedTeamContextCode(),
-    filters: Object.assign(
-      {
-        assignment_state: 'all',
-        equip_id: '',
-      },
-      getCurrentInscripcioFilters()
-    ),
+    filters: Object.assign({ assignment_state: 'all', equip_id: '' }, getCurrentInscripcioFilters()),
     selectionMode: 'filtered',
     selectedIds: new Set(),
     candidatePage: 1,
     candidatePageSize: 40,
     activeActionTab: 'auto',
+    expandedTeamIds: new Set(),
+    boardMode: true,
+    dragBusy: false,
+    sortables: [],
     lastWorkspace: null,
-    filterInputTimer: null,
+    filterTimer: null,
   };
 
-  function getTeamWorkspaceSelectedIds() {
-    return Array.from(teamWorkspaceState.selectedIds).filter(v => !!v);
+  const editable = () => typeof canEditInscripcions !== 'undefined' && !!canEditInscripcions;
+  const ids = () => Array.from(state.selectedIds).filter(Boolean);
+  const scopeIds = () => (state.selectionMode === 'selected' ? ids() : []);
+  const setText = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = String(value);
+  };
+  const dirtyPreview = () => markTeamPreviewDirty();
+  const resetPreview = () => clearTeamPreview("Canvis aplicats. Torna a previsualitzar per revisar l'estat actual.");
+  const actionUrl = (tpl, id) => String(tpl || '').replace('999999', String(id || '0'));
+  const postAssign = (equipId, inscripcioIds) => postJson(assignUrl, {
+    context_code: state.contextCode,
+    equip_id: equipId,
+    inscripcio_ids: (inscripcioIds || []).map(String).filter(Boolean),
+  });
+  const postUnassign = (inscripcioIds) => postJson(unassignUrl, {
+    context_code: state.contextCode,
+    inscripcio_ids: (inscripcioIds || []).map(String).filter(Boolean),
+  });
+
+  function destroySortables() {
+    (state.sortables || []).forEach((sortable) => {
+      try {
+        sortable?.destroy?.();
+      } catch (_) {}
+    });
+    state.sortables = [];
+    clearDragTargets();
+    document.body.classList.remove('dragging');
   }
 
-  function getTeamWorkspaceScopeSelectedIds() {
-    return teamWorkspaceState.selectionMode === 'selected'
-      ? getTeamWorkspaceSelectedIds()
-      : [];
+  function clearDragTargets() {
+    document
+      .querySelectorAll('.team-context-drop-target.is-drag-target')
+      .forEach((node) => node.classList.remove('is-drag-target'));
   }
 
-  function setTeamWorkspaceFiltersToDom(filters) {
+  function markDragTarget(target) {
+    clearDragTargets();
+    const node = target?.closest?.('.team-context-drop-target');
+    if (node) node.classList.add('is-drag-target');
+  }
+
+  function applyWorkspaceMode() {
+    teamWorkspaceShell.classList.toggle('is-board-mode', !!state.boardMode);
+    const btn = document.getElementById('btn-team-workspace-board-mode');
+    if (!btn) return;
+    btn.classList.toggle('btn-primary', !!state.boardMode);
+    btn.classList.toggle('btn-outline-primary', !state.boardMode);
+    btn.setAttribute('aria-pressed', state.boardMode ? 'true' : 'false');
+    btn.textContent = state.boardMode ? 'Mode tauler actiu' : 'Activar mode tauler';
+  }
+
+  function setFiltersToDom(filters) {
     const data = filters || {};
-    const qInput = document.getElementById('team-filter-q');
-    const categoriaSelect = document.getElementById('team-filter-categoria');
-    const subcategoriaSelect = document.getElementById('team-filter-subcategoria');
-    const entitatSelect = document.getElementById('team-filter-entitat');
-    const assignmentStateSelect = document.getElementById('team-filter-assignment-state');
-    const equipSelect = document.getElementById('team-filter-equip-id');
-    if (qInput) qInput.value = String(data.q || '');
-    if (categoriaSelect) categoriaSelect.value = String(data.categoria || '');
-    if (subcategoriaSelect) subcategoriaSelect.value = String(data.subcategoria || '');
-    if (entitatSelect) entitatSelect.value = String(data.entitat || '');
-    if (assignmentStateSelect) assignmentStateSelect.value = String(data.assignment_state || 'all');
-    if (equipSelect) equipSelect.value = String(data.equip_id || '');
+    ['q', 'categoria', 'subcategoria', 'entitat'].forEach((key) => {
+      const el = document.getElementById(`team-filter-${key}`);
+      if (el) el.value = String(data[key] || '');
+    });
+    const assignmentState = document.getElementById('team-filter-assignment-state');
+    if (assignmentState) assignmentState.value = String(data.assignment_state || 'all');
+    const equipId = document.getElementById('team-filter-equip-id');
+    if (equipId) equipId.value = String(data.equip_id || '');
   }
 
-  function readTeamWorkspaceFiltersFromDom() {
+  function readFilters() {
     return {
       q: String(document.getElementById('team-filter-q')?.value || '').trim(),
       categoria: String(document.getElementById('team-filter-categoria')?.value || '').trim(),
@@ -66,398 +104,436 @@ if (teamWorkspaceShell) {
     };
   }
 
-  function updateTeamWorkspaceSelectOptions(selectEl, items, selectedValue, emptyLabel, mapItem) {
+  function fillSelect(selectEl, items, selectedValue, emptyLabel, mapItem) {
     if (!selectEl) return;
-    const currentValue = String(selectedValue ?? '');
-    const fragment = document.createDocumentFragment();
-    const firstOption = document.createElement('option');
-    firstOption.value = '';
-    firstOption.textContent = emptyLabel || 'Totes';
-    fragment.appendChild(firstOption);
-    (items || []).forEach(item => {
-      const option = document.createElement('option');
+    const current = String(selectedValue ?? '');
+    const frag = document.createDocumentFragment();
+    const first = document.createElement('option');
+    first.value = '';
+    first.textContent = emptyLabel || 'Totes';
+    frag.appendChild(first);
+    (items || []).forEach((item) => {
       const mapped = typeof mapItem === 'function' ? mapItem(item) : { value: item, label: item };
+      const option = document.createElement('option');
       option.value = String(mapped?.value ?? '');
       option.textContent = String(mapped?.label ?? '');
-      fragment.appendChild(option);
+      frag.appendChild(option);
     });
     selectEl.innerHTML = '';
-    selectEl.appendChild(fragment);
-    const allowed = new Set(Array.from(selectEl.options).map(opt => String(opt.value)));
-    selectEl.value = allowed.has(currentValue) ? currentValue : '';
+    selectEl.appendChild(frag);
+    const allowed = new Set(Array.from(selectEl.options).map((option) => String(option.value)));
+    selectEl.value = allowed.has(current) ? current : '';
   }
 
-  function updateTeamWorkspaceContextOptions(contexts, selectedCode) {
-    const selectEl = document.getElementById('team-workspace-context-select');
-    if (!selectEl) return;
-    const fragment = document.createDocumentFragment();
-    (contexts || []).forEach(ctx => {
-      const option = document.createElement('option');
-      option.value = String(ctx?.code || 'native');
-      option.textContent = String(ctx?.nom || ctx?.code || 'Context');
-      fragment.appendChild(option);
-    });
-    selectEl.innerHTML = '';
-    selectEl.appendChild(fragment);
-    selectEl.value = String(selectedCode || 'native');
-  }
-
-  function updateTeamWorkspaceContextLabels(context, summary) {
-    const ctx = context || {};
-    const totals = summary || {};
-    const ctxName = String(ctx.nom || ctx.code || 'Context');
-    const badgeText = ctx.is_native ? 'Context natiu' : `Context ${String(ctx.code || '').trim()}`;
-    const description = String(ctx.description || '').trim()
-      || "Totes les accions d'aquest modal s'apliquen nomes a aquest context.";
-
-    const setText = (id, value) => {
-      const el = document.getElementById(id);
-      if (el) el.textContent = String(value);
-    };
-
-    setText('team-context-title', ctxName);
-    setText('team-context-title-inline', ctxName);
-    setText('team-context-badge', badgeText);
-    setText('team-context-badge-inline', badgeText);
-    setText('team-context-description', description);
-    setText('team-manual-context-name', ctxName);
-    setText('team-summary-teams-with-members', Number(totals.teams_with_members || 0));
-    setText('team-summary-assigned', Number(totals.assigned_count || 0));
-    setText('team-summary-unassigned', Number(totals.unassigned_count || 0));
-    setText('team-summary-total', Number(totals.total_inscripcions || 0));
-
-    const metricsWrap = document.getElementById('team-compact-summary-metrics');
-    if (metricsWrap) {
-      metricsWrap.innerHTML = '';
-      metricsWrap.appendChild(createGroupPreviewBadge(`${Number(totals.teams_with_members || 0)} equips actius`));
-      metricsWrap.appendChild(createGroupPreviewBadge(`${Number(totals.assigned_count || 0)} amb equip`));
-      metricsWrap.appendChild(createGroupPreviewBadge(`${Number(totals.unassigned_count || 0)} sense equip`));
+  function renderContextMeta(context, summary, contexts) {
+    fillSelect(document.getElementById('team-workspace-context-select'), contexts || [], state.contextCode, '', (item) => ({
+      value: item?.code,
+      label: item?.nom || item?.code || 'Context',
+    }));
+    const name = String(context?.nom || context?.code || 'Context');
+    setText('team-context-title', name);
+    setText('team-context-title-inline', name);
+    setText('team-context-badge', context?.is_native ? 'Context natiu' : `Context ${context?.code || ''}`);
+    setText('team-context-badge-inline', context?.is_native ? 'Context natiu' : `Context ${context?.code || ''}`);
+    setText('team-context-description', String(context?.description || '').trim() || "Totes les accions d'aquest modal s'apliquen nomes a aquest context.");
+    setText('team-manual-context-name', name);
+    setText('team-summary-teams-with-members', Number(summary?.teams_with_members || 0));
+    setText('team-summary-assigned', Number(summary?.assigned_count || 0));
+    setText('team-summary-unassigned', Number(summary?.unassigned_count || 0));
+    setText('team-summary-total', Number(summary?.total_inscripcions || 0));
+    const metrics = document.getElementById('team-compact-summary-metrics');
+    if (metrics) {
+      metrics.innerHTML = '';
+      metrics.appendChild(createGroupPreviewBadge(`${Number(summary?.teams_with_members || 0)} equips actius`));
+      metrics.appendChild(createGroupPreviewBadge(`${Number(summary?.assigned_count || 0)} amb equip`));
+      metrics.appendChild(createGroupPreviewBadge(`${Number(summary?.unassigned_count || 0)} sense equip`));
     }
-
     const renameBtn = document.getElementById('btn-team-workspace-context-rename');
     const deleteBtn = document.getElementById('btn-team-workspace-context-delete');
-    if (renameBtn) renameBtn.disabled = !!ctx.is_native;
-    if (deleteBtn) deleteBtn.disabled = !!ctx.is_native;
+    if (renameBtn) renameBtn.disabled = !!context?.is_native;
+    if (deleteBtn) deleteBtn.disabled = !!context?.is_native;
   }
 
-  function setTeamWorkspaceActionTab(tabKey) {
-    const active = tabKey === 'manual' ? 'manual' : 'auto';
-    teamWorkspaceState.activeActionTab = active;
-    document.querySelectorAll('.js-team-action-tab').forEach(btn => {
-      const isActive = btn.getAttribute('data-team-action-tab') === active;
-      btn.classList.toggle('is-active', isActive);
-      btn.classList.toggle('btn-dark', isActive);
-      btn.classList.toggle('btn-outline-dark', !isActive);
+  function setActionTab(tab) {
+    state.activeActionTab = tab === 'manual' ? 'manual' : 'auto';
+    document.querySelectorAll('.js-team-action-tab').forEach((btn) => {
+      const active = btn.getAttribute('data-team-action-tab') === state.activeActionTab;
+      btn.classList.toggle('is-active', active);
+      btn.classList.toggle('btn-dark', active);
+      btn.classList.toggle('btn-outline-dark', !active);
     });
-    document.querySelectorAll('[data-team-action-panel]').forEach(panel => {
-      panel.classList.toggle('d-none', panel.getAttribute('data-team-action-panel') !== active);
+    document.querySelectorAll('[data-team-action-panel]').forEach((panel) => {
+      panel.classList.toggle('d-none', panel.getAttribute('data-team-action-panel') !== state.activeActionTab);
     });
   }
 
-  function getVisibleTeamWorkspaceCandidateIds() {
-    return ((teamWorkspaceState.lastWorkspace?.candidates?.items) || [])
-      .map(item => String(item?.id || '').trim())
-      .filter(v => !!v);
+  function updateSelectionSummary() {
+    const selectedCount = ids().length;
+    const filteredCount = Number(state.lastWorkspace?.summary?.filtered_count || 0);
+    setText('team-selection-count', `${selectedCount} seleccionades`);
+    setText('team-selection-mode-label', state.selectionMode === 'selected'
+      ? `Treballant sobre la seleccio del modal (${selectedCount})`
+      : `Treballant sobre totes les candidates filtrades (${filteredCount})`);
+    setText('team-auto-scope-note', state.selectionMode === 'selected'
+      ? `Treballara nomes sobre ${selectedCount} inscripcions seleccionades al modal.`
+      : `Treballara sobre ${filteredCount} candidates filtrades del workspace.`);
+    setText('team-manual-scope-note', `S'aplicara a ${selectedCount} inscripcions seleccionades en aquest context.`);
   }
 
-  function updateTeamWorkspaceSelectionSummary() {
-    const selectedCount = getTeamWorkspaceSelectedIds().length;
-    const filteredCount = Number(teamWorkspaceState.lastWorkspace?.summary?.filtered_count || 0);
-    const countEl = document.getElementById('team-selection-count');
-    const modeEl = document.getElementById('team-selection-mode-label');
-    const autoNoteEl = document.getElementById('team-auto-scope-note');
-    const manualNoteEl = document.getElementById('team-manual-scope-note');
-    if (countEl) countEl.textContent = `${selectedCount} seleccionades`;
-    if (modeEl) {
-      modeEl.textContent = teamWorkspaceState.selectionMode === 'selected'
-        ? `Treballant sobre la seleccio del modal (${selectedCount})`
-        : `Treballant sobre totes les candidates filtrades (${filteredCount})`;
+  function candidateRow(item) {
+    const id = String(item?.id || '').trim();
+    const row = document.createElement('div');
+    row.className = `team-candidate-row${state.selectedIds.has(id) ? ' is-selected' : ''}${editable() ? ' can-drag' : ''}`;
+    row.dataset.candidateId = id;
+    row.dataset.inscripcioId = id;
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.className = 'js-team-workspace-candidate-check';
+    checkbox.value = id;
+    checkbox.checked = state.selectedIds.has(id);
+    checkbox.addEventListener('click', (event) => event.stopPropagation());
+    row.appendChild(checkbox);
+
+    const main = document.createElement('div');
+    main.className = 'team-candidate-main';
+    const head = document.createElement('div');
+    head.className = 'd-flex align-items-start justify-content-between';
+    head.style.gap = '10px';
+    const title = document.createElement('div');
+    title.className = 'team-candidate-title';
+    title.textContent = String(item?.nom || `Inscripcio ${id}`);
+    head.appendChild(title);
+
+    if (editable()) {
+      const handle = document.createElement('button');
+      handle.type = 'button';
+      handle.className = 'btn btn-sm btn-outline-secondary team-candidate-drag-handle';
+      handle.textContent = 'Moure';
+      handle.title = "Arrossega aquesta inscripcio cap a un equip o cap a Sense equip";
+      handle.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      });
+      head.appendChild(handle);
     }
-    if (autoNoteEl) {
-      autoNoteEl.textContent = teamWorkspaceState.selectionMode === 'selected'
-        ? `Treballara nomes sobre ${selectedCount} inscripcions seleccionades al modal.`
-        : `Treballara sobre ${filteredCount} candidates filtrades del workspace.`;
+    main.appendChild(head);
+
+    const meta = document.createElement('div');
+    meta.className = 'team-candidate-meta';
+    meta.textContent = [item?.entitat, [item?.categoria, item?.subcategoria].filter(Boolean).join(' / '), item?.document ? `Doc ${item.document}` : '']
+      .filter(Boolean)
+      .join(' | ') || 'Sense metadades';
+    main.appendChild(meta);
+
+    const badges = document.createElement('div');
+    badges.className = 'team-candidate-teams';
+    badges.appendChild(createGroupPreviewBadge(item?.current_team_name ? `Context: ${item.current_team_name}` : 'Context: sense equip', item?.current_team_name ? '' : 'incoming'));
+    if (item?.show_native_team_hint) {
+      badges.appendChild(createGroupPreviewBadge(item?.native_team_name ? `Natiu: ${item.native_team_name}` : 'Natiu: sense equip'));
     }
-    if (manualNoteEl) {
-      manualNoteEl.textContent = `S'aplicara a ${selectedCount} inscripcions seleccionades en aquest context.`;
-    }
+    main.appendChild(badges);
+    row.appendChild(main);
+    return row;
   }
 
-  function renderTeamWorkspaceCandidates(workspace) {
-    const listEl = document.getElementById('team-candidates-list');
-    const statusEl = document.getElementById('team-candidates-status');
-    const countBadge = document.getElementById('team-candidates-count-badge');
+  function renderCandidates(workspace) {
+    const list = document.getElementById('team-candidates-list');
+    const status = document.getElementById('team-candidates-status');
+    const count = document.getElementById('team-candidates-count-badge');
     const pageLabel = document.getElementById('team-candidates-page-label');
-    const prevBtn = document.getElementById('btn-team-candidates-prev');
-    const nextBtn = document.getElementById('btn-team-candidates-next');
-    if (!listEl) return;
+    const prev = document.getElementById('btn-team-candidates-prev');
+    const next = document.getElementById('btn-team-candidates-next');
+    if (!list) return;
 
-    const candidates = Array.isArray(workspace?.candidates?.items) ? workspace.candidates.items : [];
+    const items = Array.isArray(workspace?.candidates?.items) ? workspace.candidates.items : [];
     const total = Number(workspace?.candidates?.total || 0);
     const page = Number(workspace?.candidates?.page || 1);
-    const pageSize = Number(workspace?.candidates?.page_size || teamWorkspaceState.candidatePageSize || 40);
+    const pageSize = Number(workspace?.candidates?.page_size || state.candidatePageSize || 40);
     const pageCount = total > 0 ? Math.ceil(total / pageSize) : 1;
 
-    if (statusEl) {
-      statusEl.textContent = total
-        ? `${total} candidates segons els filtres del workspace.`
-        : "Cap inscripcio candidata amb aquests filtres.";
-    }
-    if (countBadge) countBadge.textContent = `${total} candidates`;
+    if (status) status.textContent = total ? `${total} candidates segons els filtres del workspace.` : "Cap inscripcio candidata amb aquests filtres.";
+    if (count) count.textContent = `${total} candidates`;
     if (pageLabel) pageLabel.textContent = `Pagina ${page} de ${pageCount}`;
-    if (prevBtn) prevBtn.disabled = page <= 1;
-    if (nextBtn) nextBtn.disabled = !workspace?.candidates?.has_more;
+    if (prev) prev.disabled = page <= 1;
+    if (next) next.disabled = !workspace?.candidates?.has_more;
 
-    listEl.innerHTML = '';
-    candidates.forEach(item => {
-      const itemId = String(item?.id || '').trim();
-      const selected = teamWorkspaceState.selectedIds.has(itemId);
-      const row = document.createElement('label');
-      row.className = `team-candidate-row${selected ? ' is-selected' : ''}`;
-      row.setAttribute('data-candidate-id', itemId);
-
-      const checkbox = document.createElement('input');
-      checkbox.type = 'checkbox';
-      checkbox.className = 'js-team-workspace-candidate-check';
-      checkbox.value = itemId;
-      checkbox.checked = selected;
-      checkbox.addEventListener('click', ev => ev.stopPropagation());
-      row.appendChild(checkbox);
-
-      const main = document.createElement('div');
-      main.className = 'team-candidate-main';
-
-      const title = document.createElement('div');
-      title.className = 'team-candidate-title';
-      title.textContent = String(item?.nom || `Inscripcio ${itemId}`);
-      main.appendChild(title);
-
-      const meta = document.createElement('div');
-      meta.className = 'team-candidate-meta';
-      const metaBits = [
-        item?.entitat,
-        item?.categoria,
-        item?.subcategoria,
-        item?.document ? `Doc ${item.document}` : '',
-      ].filter(Boolean);
-      meta.textContent = metaBits.join(' · ') || 'Sense metadades';
-      main.appendChild(meta);
-
-      const teams = document.createElement('div');
-      teams.className = 'team-candidate-teams';
-      teams.appendChild(
-        createGroupPreviewBadge(
-          item?.current_team_name ? `Context: ${item.current_team_name}` : 'Context: sense equip',
-          item?.current_team_name ? '' : 'incoming'
-        )
-      );
-      if (item?.show_native_team_hint) {
-        teams.appendChild(
-          createGroupPreviewBadge(
-            item?.native_team_name ? `Natiu: ${item.native_team_name}` : 'Natiu: sense equip'
-          )
-        );
-      }
-      main.appendChild(teams);
-      row.appendChild(main);
-      listEl.appendChild(row);
-    });
+    list.innerHTML = '';
+    list.id = 'team-candidates-list';
+    list.setAttribute('data-team-candidate-source', '1');
+    items.forEach((item) => list.appendChild(candidateRow(item)));
   }
 
-  function buildTeamWorkspaceActionUrl(template, teamId) {
-    return String(template || '').replace('999999', String(teamId || '0'));
+  function teamMemberRow(member) {
+    const id = String(member?.id || '').trim();
+    const row = document.createElement('div');
+    row.className = `team-context-member-row${editable() ? ' can-drag' : ''}`;
+    row.dataset.inscripcioId = id;
+
+    const main = document.createElement('div');
+    main.className = 'team-context-member-main';
+    const title = document.createElement('div');
+    title.className = 'team-context-member-title';
+    title.textContent = String(member?.nom || `Inscripcio ${id}`);
+    main.appendChild(title);
+
+    const meta = document.createElement('div');
+    meta.className = 'team-context-member-meta';
+    meta.textContent = [member?.entitat, member?.categoria, member?.subcategoria, member?.document ? `Doc ${member.document}` : '']
+      .filter(Boolean)
+      .join(' | ') || 'Sense metadades';
+    main.appendChild(meta);
+
+    if (state.contextCode !== 'native') {
+      const hint = document.createElement('div');
+      hint.className = 'team-context-member-native';
+      hint.textContent = member?.native_team_name ? `Equip natiu: ${member.native_team_name}` : 'Equip natiu: sense equip';
+      main.appendChild(hint);
+    }
+
+    row.appendChild(main);
+    if (editable()) {
+      const drag = document.createElement('button');
+      drag.type = 'button';
+      drag.className = 'btn btn-sm btn-outline-secondary team-member-drag-handle';
+      drag.textContent = 'Moure';
+      drag.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      });
+      row.appendChild(drag);
+
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'btn btn-sm btn-outline-warning js-team-member-unassign';
+      remove.dataset.inscripcioId = id;
+      remove.textContent = 'Treure';
+      remove.addEventListener('click', async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!id || state.dragBusy) return;
+        try {
+          state.dragBusy = true;
+          await postUnassign([id]);
+          resetPreview();
+          await refreshWorkspace();
+        } catch (err) {
+          showAlert(`No s'ha pogut treure la inscripcio de l'equip.\n${err.message || err}`);
+          await refreshWorkspace();
+        } finally {
+          state.dragBusy = false;
+        }
+      });
+      row.appendChild(remove);
+    }
+    return row;
   }
 
-  function renderTeamWorkspaceTeams(workspace) {
-    const listEl = document.getElementById('team-context-teams-list');
-    const statusEl = document.getElementById('team-context-teams-status');
+  function renderUnassigned(workspace) {
+    const root = document.getElementById('team-context-unassigned-dropzone');
+    if (!root) return;
+    root.innerHTML = '';
+    root.classList.add('team-context-drop-target');
+    root.dataset.dropKind = 'unassigned';
+
+    const title = document.createElement('div');
+    title.className = 'fw-semibold';
+    title.textContent = 'Sense equip';
+    root.appendChild(title);
+
+    const meta = document.createElement('div');
+    meta.className = 'small text-muted';
+    meta.textContent = `${Number(workspace?.summary?.unassigned_count || 0)} inscripcions estan sense equip en aquest context.`;
+    root.appendChild(meta);
+
+    const placeholder = document.createElement('div');
+    placeholder.className = 'team-context-drop-placeholder';
+    placeholder.textContent = editable()
+      ? "Deixa aqui una inscripcio per deixar-la sense equip en aquest context."
+      : 'Vista de nomes lectura del context actual.';
+    root.appendChild(placeholder);
+  }
+
+  function renderTeams(workspace) {
+    const list = document.getElementById('team-context-teams-list');
+    const status = document.getElementById('team-context-teams-status');
     const zeroWrap = document.getElementById('team-context-zero-members-wrap');
     const zeroList = document.getElementById('team-context-zero-members-list');
     const existingSelect = document.getElementById('team-workspace-existing-select');
-    if (!listEl || !zeroWrap || !zeroList) return;
+    if (!list || !zeroWrap || !zeroList) return;
 
     const teams = Array.isArray(workspace?.teams) ? workspace.teams : [];
-    const activeTeams = teams.filter(team => Number(team?.membres || 0) > 0);
-    const emptyTeams = teams.filter(team => Number(team?.membres || 0) <= 0);
+    const active = teams.filter((team) => Array.isArray(team?.members) && team.members.length > 0);
+    const empty = teams.filter((team) => !Array.isArray(team?.members) || team.members.length === 0);
 
-    if (statusEl) {
-      statusEl.textContent = teams.length
-        ? `${activeTeams.length} equips amb membres i ${emptyTeams.length} sense membres en aquest context.`
-        : "Encara no hi ha equips disponibles per a aquest context.";
+    renderUnassigned(workspace);
+    if (status) {
+      status.textContent = teams.length
+        ? `${active.length} equips amb membres i ${empty.length} sense membres en aquest context.`
+        : 'Encara no hi ha equips disponibles per a aquest context.';
     }
 
-    const renderCard = (team, isEmpty) => {
-      const card = document.createElement('div');
-      card.className = `team-context-team-card${isEmpty ? ' is-empty' : ''}`;
+    const card = (team, isEmpty) => {
+      const teamId = String(team?.id || '').trim();
+      const expanded = isEmpty || state.expandedTeamIds.has(teamId);
+      const members = Array.isArray(team?.members) ? team.members : [];
+      const wrap = document.createElement('div');
+      wrap.className = `team-context-team-card team-context-drop-target${isEmpty ? ' is-empty' : ''}${expanded ? ' is-expanded' : ''}`;
+      wrap.dataset.teamId = teamId;
+      wrap.dataset.dropKind = 'team';
 
+      const head = document.createElement('div');
+      head.className = 'team-context-team-head';
+      const titleWrap = document.createElement('div');
+      titleWrap.className = 'team-context-team-title-wrap';
       const title = document.createElement('div');
       title.className = 'fw-semibold';
       title.textContent = String(team?.nom || 'Equip');
-      card.appendChild(title);
-
+      titleWrap.appendChild(title);
       const meta = document.createElement('div');
       meta.className = 'team-context-team-meta';
       meta.textContent = `${Number(team?.membres || 0)} membres en aquest context`;
-      card.appendChild(meta);
+      titleWrap.appendChild(meta);
+      head.appendChild(titleWrap);
 
       const actions = document.createElement('div');
-      actions.className = 'd-flex flex-wrap mt-2';
-      actions.style.gap = '8px';
+      actions.className = 'team-context-team-actions';
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.className = 'btn btn-sm btn-outline-dark';
+      toggle.textContent = expanded ? 'Plegar' : 'Veure participants';
+      toggle.addEventListener('click', () => {
+        if (expanded) state.expandedTeamIds.delete(teamId);
+        else state.expandedTeamIds.add(teamId);
+        renderTeams(state.lastWorkspace);
+        setupDnd();
+      });
+      actions.appendChild(toggle);
 
-      const renameBtn = document.createElement('button');
-      renameBtn.type = 'button';
-      renameBtn.className = 'btn btn-sm btn-outline-secondary js-team-rename';
-      renameBtn.setAttribute('data-team-name', String(team?.nom || ''));
-      renameBtn.setAttribute('data-rename-url', buildTeamWorkspaceActionUrl(teamWorkspaceRenameUrlTemplate, team?.id));
-      renameBtn.textContent = 'Renombrar';
-      actions.appendChild(renameBtn);
+      if (editable()) {
+        const rename = document.createElement('button');
+        rename.type = 'button';
+        rename.className = 'btn btn-sm btn-outline-secondary js-team-rename';
+        rename.dataset.teamName = String(team?.nom || '');
+        rename.dataset.renameUrl = actionUrl(renameUrlTpl, team?.id);
+        rename.textContent = 'Renombrar';
+        actions.appendChild(rename);
 
-      const deleteBtn = document.createElement('button');
-      deleteBtn.type = 'button';
-      deleteBtn.className = 'btn btn-sm btn-outline-danger js-team-delete';
-      deleteBtn.setAttribute('data-team-name', String(team?.nom || ''));
-      deleteBtn.setAttribute('data-delete-url', buildTeamWorkspaceActionUrl(teamWorkspaceDeleteUrlTemplate, team?.id));
-      deleteBtn.textContent = isEmpty ? 'Eliminar equip' : 'Treure del context';
-      actions.appendChild(deleteBtn);
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'btn btn-sm btn-outline-danger js-team-delete';
+        remove.dataset.teamName = String(team?.nom || '');
+        remove.dataset.deleteUrl = actionUrl(deleteUrlTpl, team?.id);
+        remove.textContent = isEmpty ? 'Eliminar equip' : 'Treure del context';
+        actions.appendChild(remove);
+      }
+      head.appendChild(actions);
+      wrap.appendChild(head);
 
-      card.appendChild(actions);
-      return card;
+      const dropHint = document.createElement('div');
+      dropHint.className = 'team-context-team-drop-hint';
+      dropHint.textContent = editable()
+        ? "Deixa aqui una inscripcio per afegir-la a aquest equip. No cal desplegar-lo."
+        : 'Aquest equip es mostra en mode lectura.';
+      wrap.appendChild(dropHint);
+
+      const body = document.createElement('div');
+      body.className = `team-context-team-body${expanded ? '' : ' d-none'}`;
+      const membersList = document.createElement('div');
+      membersList.className = 'team-context-member-list';
+      membersList.dataset.teamId = teamId;
+      membersList.dataset.memberSource = '1';
+      if (members.length) {
+        members.forEach((member) => membersList.appendChild(teamMemberRow(member)));
+      } else {
+        const placeholder = document.createElement('div');
+        placeholder.className = 'team-context-drop-placeholder';
+        placeholder.textContent = editable()
+          ? "Aquest equip es buit. Pots deixar-hi una inscripcio directament sobre la targeta."
+          : 'Aquest equip no te membres en aquest context.';
+        membersList.appendChild(placeholder);
+      }
+      body.appendChild(membersList);
+      wrap.appendChild(body);
+      return wrap;
     };
 
-    listEl.innerHTML = '';
-    activeTeams.forEach(team => listEl.appendChild(renderCard(team, false)));
-
+    list.innerHTML = '';
+    active.forEach((team) => list.appendChild(card(team, false)));
     zeroList.innerHTML = '';
-    emptyTeams.forEach(team => zeroList.appendChild(renderCard(team, true)));
-    zeroWrap.classList.toggle('d-none', emptyTeams.length === 0);
-
-    if (existingSelect) {
-      updateTeamWorkspaceSelectOptions(
-        existingSelect,
-        teams,
-        existingSelect.value,
-        '-- Selecciona equip --',
-        item => ({
-          value: item?.id,
-          label: `${String(item?.nom || 'Equip')} (${Number(item?.membres || 0)})`,
-        })
-      );
-    }
+    empty.forEach((team) => zeroList.appendChild(card(team, true)));
+    zeroWrap.classList.toggle('d-none', empty.length === 0);
+    fillSelect(existingSelect, teams, existingSelect?.value, '-- Selecciona equip --', (item) => ({
+      value: item?.id,
+      label: `${item?.nom || 'Equip'} (${Number(item?.membres || 0)})`,
+    }));
   }
 
-  function updateTeamWorkspaceFilterOptions(workspace) {
+  function renderFilterOptions(workspace) {
     const options = workspace?.filter_options || {};
-    updateTeamWorkspaceSelectOptions(
-      document.getElementById('team-filter-categoria'),
-      options.categories || [],
-      teamWorkspaceState.filters.categoria,
-      'Totes'
-    );
-    updateTeamWorkspaceSelectOptions(
-      document.getElementById('team-filter-subcategoria'),
-      options.subcategories || [],
-      teamWorkspaceState.filters.subcategoria,
-      'Totes'
-    );
-    updateTeamWorkspaceSelectOptions(
-      document.getElementById('team-filter-entitat'),
-      options.entitats || [],
-      teamWorkspaceState.filters.entitat,
-      'Totes'
-    );
-    const assignmentStateSelect = document.getElementById('team-filter-assignment-state');
-    if (assignmentStateSelect) assignmentStateSelect.value = String(teamWorkspaceState.filters.assignment_state || 'all');
-    updateTeamWorkspaceSelectOptions(
-      document.getElementById('team-filter-equip-id'),
-      options.teams || [],
-      teamWorkspaceState.filters.equip_id,
-      'Qualsevol',
-      item => ({
-        value: item?.id,
-        label: `${String(item?.name || 'Equip')} (${Number(item?.members || 0)})`,
-      })
-    );
-    setTeamWorkspaceFiltersToDom(teamWorkspaceState.filters);
+    fillSelect(document.getElementById('team-filter-categoria'), options.categories || [], state.filters.categoria, 'Totes');
+    fillSelect(document.getElementById('team-filter-subcategoria'), options.subcategories || [], state.filters.subcategoria, 'Totes');
+    fillSelect(document.getElementById('team-filter-entitat'), options.entitats || [], state.filters.entitat, 'Totes');
+    fillSelect(document.getElementById('team-filter-equip-id'), options.teams || [], state.filters.equip_id, 'Qualsevol', (item) => ({
+      value: item?.id,
+      label: `${item?.name || 'Equip'} (${Number(item?.members || 0)})`,
+    }));
+    setFiltersToDom(state.filters);
   }
 
-  function renderTeamWorkspace(workspace) {
+  function renderWorkspace(workspace) {
     if (!workspace || !workspace.ok) return;
-    teamWorkspaceState.lastWorkspace = workspace;
-    teamWorkspaceState.contextCode = String(workspace.context_code || 'native');
-    updateTeamWorkspaceContextOptions(workspace.contexts || [], teamWorkspaceState.contextCode);
-    updateTeamWorkspaceContextLabels(workspace.context, workspace.summary);
-    updateTeamWorkspaceFilterOptions(workspace);
-    renderTeamWorkspaceCandidates(workspace);
-    renderTeamWorkspaceTeams(workspace);
-    updateTeamWorkspaceSelectionSummary();
+    state.lastWorkspace = workspace;
+    state.contextCode = String(workspace.context_code || 'native');
+    applyWorkspaceMode();
+    renderContextMeta(workspace.context, workspace.summary, workspace.contexts || []);
+    renderFilterOptions(workspace);
+    renderCandidates(workspace);
+    renderTeams(workspace);
+    updateSelectionSummary();
+    setupDnd();
   }
 
-  async function refreshTeamWorkspace(options = {}) {
-    if (options.resetPage) teamWorkspaceState.candidatePage = 1;
-    if (options.clearSelection) teamWorkspaceState.selectedIds = new Set();
-
-    const statusEl = document.getElementById('team-candidates-status');
-    if (statusEl) statusEl.textContent = 'Carregant candidates...';
-
+  async function refreshWorkspace(opts = {}) {
+    if (opts.resetPage) state.candidatePage = 1;
+    if (opts.clearSelection) state.selectedIds = new Set();
+    destroySortables();
+    const status = document.getElementById('team-candidates-status');
+    if (status) status.textContent = 'Carregant candidates...';
     try {
-      const data = await postJson(teamWorkspaceUrl, {
-        context_code: teamWorkspaceState.contextCode,
-        filters: teamWorkspaceState.filters,
-        page: teamWorkspaceState.candidatePage,
-        page_size: teamWorkspaceState.candidatePageSize,
+      const data = await postJson(workspaceUrl, {
+        context_code: state.contextCode,
+        filters: state.filters,
+        page: state.candidatePage,
+        page_size: state.candidatePageSize,
       });
-      renderTeamWorkspace(data);
+      renderWorkspace(data);
       return data;
     } catch (err) {
-      if (statusEl) statusEl.textContent = "No s'han pogut carregar les candidates del workspace.";
+      if (status) status.textContent = "No s'han pogut carregar les candidates del workspace.";
       showAlert(`No s'ha pogut carregar el workspace d'equips.\n${err.message || err}`);
       return null;
     }
   }
 
-  function replaceTeamWorkspaceSelection(ids) {
-    teamWorkspaceState.selectedIds = new Set((ids || []).map(id => String(id || '').trim()).filter(Boolean));
-    renderTeamWorkspaceCandidates(teamWorkspaceState.lastWorkspace);
-    updateTeamWorkspaceSelectionSummary();
-    markTeamPreviewDirty();
-  }
-
-  function addTeamWorkspaceSelection(ids) {
-    (ids || []).forEach(id => {
-      const value = String(id || '').trim();
-      if (value) teamWorkspaceState.selectedIds.add(value);
-    });
-    renderTeamWorkspaceCandidates(teamWorkspaceState.lastWorkspace);
-    updateTeamWorkspaceSelectionSummary();
-    markTeamPreviewDirty();
-  }
-
-  function removeTeamWorkspaceSelection(ids) {
-    (ids || []).forEach(id => teamWorkspaceState.selectedIds.delete(String(id || '').trim()));
-    renderTeamWorkspaceCandidates(teamWorkspaceState.lastWorkspace);
-    updateTeamWorkspaceSelectionSummary();
-    markTeamPreviewDirty();
-  }
-
-  async function requestTeamWorkspacePreview() {
+  async function requestPreview() {
     const fields = getSelectedTeamFields();
     if (!fields.length) {
-      showAlert("Selecciona com a minim un camp de particio.");
+      showAlert('Selecciona com a minim un camp de particio.');
       return null;
     }
-    if (teamWorkspaceState.selectionMode === 'selected' && !getTeamWorkspaceSelectedIds().length) {
-      showAlert("Selecciona com a minim una inscripcio dins del workspace.");
+    if (state.selectionMode === 'selected' && !ids().length) {
+      showAlert('Selecciona com a minim una inscripcio dins del workspace.');
       return null;
     }
-
     setTeamPreviewLoading(true);
     try {
-      const data = await postJson(teamWorkspacePreviewUrl, {
-        context_code: teamWorkspaceState.contextCode,
-        fields: fields,
+      const data = await postJson(previewUrl, {
+        context_code: state.contextCode,
+        fields,
         replace_existing: document.getElementById('team-auto-replace')?.checked ?? true,
-        filters: teamWorkspaceState.filters,
-        selected_ids: getTeamWorkspaceScopeSelectedIds(),
+        filters: state.filters,
+        selected_ids: scopeIds(),
       });
       renderTeamPreview(data);
       return data;
@@ -470,369 +546,424 @@ if (teamWorkspaceShell) {
     }
   }
 
-  async function ensureFreshTeamWorkspacePreviewIfNeeded() {
+  async function ensureFreshPreview() {
     const root = document.getElementById('team-preview');
-    if (!root) return true;
-    if (root.dataset.hasPreview === '1' && root.dataset.dirty === '1') {
-      return !!(await requestTeamWorkspacePreview());
+    if (root && root.dataset.hasPreview === '1' && root.dataset.dirty === '1') {
+      return !!(await requestPreview());
     }
     return true;
   }
 
-  document.querySelectorAll('.js-team-field, #team-auto-replace').forEach(el => {
-    el.addEventListener('change', () => markTeamPreviewDirty());
+  function setupDnd() {
+    destroySortables();
+    if (!editable() || typeof Sortable === 'undefined') return;
+
+    const groupName = 'team-workspace-members';
+    const onChoose = () => {
+      document.body.classList.add('dragging');
+      clearDragTargets();
+    };
+    const onEnd = () => {
+      document.body.classList.remove('dragging');
+      clearDragTargets();
+    };
+
+    const onAdd = async (event) => {
+      const item = event?.item;
+      const target = event?.to;
+      const inscripcioId = String(item?.dataset?.inscripcioId || '').trim();
+      const kind = String(target?.dataset?.dropKind || '').trim();
+      const teamId = String(target?.dataset?.teamId || '').trim();
+
+      if (item && item.parentNode === target) {
+        try {
+          item.remove();
+        } catch (_) {}
+      }
+      clearDragTargets();
+      document.body.classList.remove('dragging');
+
+      if (!inscripcioId || state.dragBusy) {
+        await refreshWorkspace();
+        return;
+      }
+      try {
+        state.dragBusy = true;
+        if (kind === 'unassigned') await postUnassign([inscripcioId]);
+        else if (kind === 'team' && teamId) await postAssign(teamId, [inscripcioId]);
+        resetPreview();
+        await refreshWorkspace();
+      } catch (err) {
+        showAlert(`No s'ha pogut moure la inscripcio entre equips.\n${err.message || err}`);
+        await refreshWorkspace();
+      } finally {
+        state.dragBusy = false;
+      }
+    };
+
+    const candidateSource = document.getElementById('team-candidates-list');
+    if (candidateSource) {
+      state.sortables.push(Sortable.create(candidateSource, {
+        group: { name: groupName, pull: 'clone', put: false },
+        sort: false,
+        animation: 120,
+        draggable: '.team-candidate-row',
+        handle: '.team-candidate-drag-handle',
+        filter: 'input,a,select,textarea',
+        preventOnFilter: false,
+        onChoose,
+        onEnd,
+      }));
+    }
+
+    document.querySelectorAll('.team-context-member-list[data-member-source="1"]').forEach((source) => {
+      state.sortables.push(Sortable.create(source, {
+        group: { name: groupName, pull: 'clone', put: true },
+        sort: false,
+        animation: 120,
+        draggable: '.team-context-member-row',
+        handle: '.team-member-drag-handle',
+        filter: 'button.js-team-member-unassign,input,a,select,textarea',
+        preventOnFilter: false,
+        onChoose,
+        onMove: (event) => {
+          markDragTarget(source.closest('.team-context-team-card'));
+          return true;
+        },
+        onAdd,
+        onEnd,
+      }));
+    });
+
+    document.querySelectorAll('.team-context-team-card,#team-context-unassigned-dropzone').forEach((target) => {
+      state.sortables.push(Sortable.create(target, {
+        group: { name: groupName, pull: false, put: true },
+        sort: false,
+        animation: 140,
+        draggable: '.team-context-member-row, .team-candidate-row',
+        handle: '.team-member-drag-handle, .team-candidate-drag-handle',
+        filter: 'button.js-team-member-unassign,input,a,select,textarea,.js-team-rename,.js-team-delete',
+        preventOnFilter: false,
+        onMove: (event) => {
+          markDragTarget(event?.to || target);
+          return true;
+        },
+        onAdd,
+        onEnd,
+      }));
+    });
+  }
+
+  document.querySelectorAll('.js-team-field,#team-auto-replace').forEach((el) => {
+    el.addEventListener('change', dirtyPreview);
   });
 
-  document.querySelectorAll('input[name="team-selection-mode"]').forEach(radio => {
-    radio.checked = radio.value === teamWorkspaceState.selectionMode;
+  document.querySelectorAll('input[name="team-selection-mode"]').forEach((radio) => {
+    radio.checked = radio.value === state.selectionMode;
     radio.addEventListener('change', () => {
       if (!radio.checked) return;
-      teamWorkspaceState.selectionMode = radio.value === 'selected' ? 'selected' : 'filtered';
-      updateTeamWorkspaceSelectionSummary();
-      markTeamPreviewDirty();
+      state.selectionMode = radio.value === 'selected' ? 'selected' : 'filtered';
+      updateSelectionSummary();
+      dirtyPreview();
     });
   });
 
-  document.querySelectorAll('.js-team-action-tab').forEach(btn => {
-    btn.addEventListener('click', () => setTeamWorkspaceActionTab(btn.getAttribute('data-team-action-tab') || 'auto'));
+  document.querySelectorAll('.js-team-action-tab').forEach((btn) => {
+    btn.addEventListener('click', () => setActionTab(btn.getAttribute('data-team-action-tab') || 'auto'));
   });
-  setTeamWorkspaceActionTab(teamWorkspaceState.activeActionTab);
+  setActionTab(state.activeActionTab);
 
-  const teamFilterQ = document.getElementById('team-filter-q');
-  if (teamFilterQ) {
-    teamFilterQ.value = teamWorkspaceState.filters.q || '';
-    teamFilterQ.addEventListener('input', () => {
-      if (teamWorkspaceState.filterInputTimer) {
-        window.clearTimeout(teamWorkspaceState.filterInputTimer);
-      }
-      teamWorkspaceState.filterInputTimer = window.setTimeout(() => {
-        teamWorkspaceState.filters = readTeamWorkspaceFiltersFromDom();
-        markTeamPreviewDirty();
-        refreshTeamWorkspace({ resetPage: true });
+  const boardModeBtn = document.getElementById('btn-team-workspace-board-mode');
+  if (boardModeBtn) {
+    boardModeBtn.addEventListener('click', () => {
+      state.boardMode = !state.boardMode;
+      applyWorkspaceMode();
+    });
+  }
+
+  const filterQ = document.getElementById('team-filter-q');
+  if (filterQ) {
+    filterQ.value = state.filters.q || '';
+    filterQ.addEventListener('input', () => {
+      if (state.filterTimer) clearTimeout(state.filterTimer);
+      state.filterTimer = setTimeout(() => {
+        state.filters = readFilters();
+        dirtyPreview();
+        refreshWorkspace({ resetPage: true });
       }, 220);
     });
   }
 
-  ['team-filter-categoria', 'team-filter-subcategoria', 'team-filter-entitat', 'team-filter-assignment-state', 'team-filter-equip-id'].forEach(id => {
+  ['team-filter-categoria', 'team-filter-subcategoria', 'team-filter-entitat', 'team-filter-assignment-state', 'team-filter-equip-id'].forEach((id) => {
     const el = document.getElementById(id);
-    if (!el) return;
-    el.addEventListener('change', () => {
-      teamWorkspaceState.filters = readTeamWorkspaceFiltersFromDom();
-      markTeamPreviewDirty();
-      refreshTeamWorkspace({ resetPage: true });
-    });
+    if (el) {
+      el.addEventListener('change', () => {
+        state.filters = readFilters();
+        dirtyPreview();
+        refreshWorkspace({ resetPage: true });
+      });
+    }
   });
 
-  const teamContextSelect = document.getElementById('team-workspace-context-select');
-  if (teamContextSelect) {
-    teamContextSelect.addEventListener('change', async () => {
-      teamWorkspaceState.contextCode = getSelectedTeamContextCode();
-      teamWorkspaceState.selectedIds = new Set();
-      teamWorkspaceState.candidatePage = 1;
+  const contextSelect = document.getElementById('team-workspace-context-select');
+  if (contextSelect) {
+    contextSelect.addEventListener('change', async () => {
+      state.contextCode = getSelectedTeamContextCode();
+      state.selectedIds = new Set();
+      state.expandedTeamIds = new Set();
+      state.candidatePage = 1;
       clearTeamPreview();
-      await refreshTeamWorkspace({ resetPage: true, clearSelection: true });
+      await refreshWorkspace({ resetPage: true, clearSelection: true });
     });
   }
 
-  const btnTeamContextCreate = document.getElementById('btn-team-workspace-context-create');
-  if (btnTeamContextCreate) {
-    btnTeamContextCreate.addEventListener('click', async () => {
-      const name = await showPrompt("Nom del nou context d'equips:", "");
+  const contextCreate = document.getElementById('btn-team-workspace-context-create');
+  if (contextCreate) {
+    contextCreate.addEventListener('click', async () => {
+      const name = await showPrompt("Nom del nou context d'equips:", '');
       if (!name || !name.trim()) return;
       try {
-        const data = await postJson(teamWorkspaceContextCreateUrl, { name: name.trim() });
-        if (!data.ok) {
-          showAlert("No s'ha pogut crear el context.");
-          return;
-        }
-        teamWorkspaceState.contextCode = String(data.context?.code || 'native');
-        teamWorkspaceState.selectedIds = new Set();
+        const data = await postJson(ctxCreateUrl, { name: name.trim() });
+        if (!data.ok) return showAlert("No s'ha pogut crear el context.");
+        state.contextCode = String(data.context?.code || 'native');
+        state.selectedIds = new Set();
+        state.expandedTeamIds = new Set();
         clearTeamPreview();
-        await refreshTeamWorkspace({ resetPage: true, clearSelection: true });
+        await refreshWorkspace({ resetPage: true, clearSelection: true });
       } catch (err) {
         showAlert(`No s'ha pogut crear el context.\n${err.message || err}`);
       }
     });
   }
 
-  const btnTeamContextRename = document.getElementById('btn-team-workspace-context-rename');
-  if (btnTeamContextRename) {
-    btnTeamContextRename.addEventListener('click', async () => {
-      const contextCode = teamWorkspaceState.contextCode;
-      if (contextCode === 'native') {
-        showAlert("El context natiu no es pot renombrar.");
-        return;
-      }
-      const currentLabel = teamContextSelect?.selectedOptions?.[0]?.textContent || contextCode;
-      const name = await showPrompt("Nou nom del context d'equips:", currentLabel);
+  const contextRename = document.getElementById('btn-team-workspace-context-rename');
+  if (contextRename) {
+    contextRename.addEventListener('click', async () => {
+      const code = state.contextCode;
+      if (code === 'native') return showAlert('El context natiu no es pot renombrar.');
+      const current = contextSelect?.selectedOptions?.[0]?.textContent || code;
+      const name = await showPrompt("Nou nom del context d'equips:", current);
       if (!name || !name.trim()) return;
       try {
-        const renameUrl = teamWorkspaceContextRenameUrlTemplate.replace('__context__', encodeURIComponent(contextCode));
-        const data = await postJson(renameUrl, { name: name.trim() });
-        if (!data.ok) {
-          showAlert("No s'ha pogut renombrar el context.");
-          return;
-        }
-        await refreshTeamWorkspace();
+        const data = await postJson(ctxRenameUrlTpl.replace('__context__', encodeURIComponent(code)), {
+          name: name.trim(),
+        });
+        if (!data.ok) return showAlert("No s'ha pogut renombrar el context.");
+        await refreshWorkspace();
       } catch (err) {
         showAlert(`No s'ha pogut renombrar el context.\n${err.message || err}`);
       }
     });
   }
 
-  const btnTeamContextDelete = document.getElementById('btn-team-workspace-context-delete');
-  if (btnTeamContextDelete) {
-    btnTeamContextDelete.addEventListener('click', async () => {
-      const contextCode = teamWorkspaceState.contextCode;
-      if (contextCode === 'native') {
-        showAlert("El context natiu no es pot eliminar.");
-        return;
-      }
-      const contextLabel = teamContextSelect?.selectedOptions?.[0]?.textContent || contextCode;
-      const ok = await showConfirm(`Eliminar el context "${contextLabel}"? S'esborraran les seves assignacions.`);
+  const contextDelete = document.getElementById('btn-team-workspace-context-delete');
+  if (contextDelete) {
+    contextDelete.addEventListener('click', async () => {
+      const code = state.contextCode;
+      if (code === 'native') return showAlert('El context natiu no es pot eliminar.');
+      const label = contextSelect?.selectedOptions?.[0]?.textContent || code;
+      const ok = await showConfirm(`Eliminar el context "${label}"? S'esborraran les seves assignacions.`);
       if (!ok) return;
       try {
-        const deleteUrl = teamWorkspaceContextDeleteUrlTemplate.replace('__context__', encodeURIComponent(contextCode));
-        const data = await postJson(deleteUrl, {});
-        if (!data.ok) {
-          showAlert("No s'ha pogut eliminar el context.");
-          return;
-        }
-        teamWorkspaceState.contextCode = 'native';
-        teamWorkspaceState.selectedIds = new Set();
+        const data = await postJson(ctxDeleteUrlTpl.replace('__context__', encodeURIComponent(code)), {});
+        if (!data.ok) return showAlert("No s'ha pogut eliminar el context.");
+        state.contextCode = 'native';
+        state.selectedIds = new Set();
+        state.expandedTeamIds = new Set();
         clearTeamPreview();
-        await refreshTeamWorkspace({ resetPage: true, clearSelection: true });
+        await refreshWorkspace({ resetPage: true, clearSelection: true });
       } catch (err) {
         showAlert(`No s'ha pogut eliminar el context.\n${err.message || err}`);
       }
     });
   }
 
-  const btnSelectVisible = document.getElementById('btn-team-workspace-select-visible');
-  if (btnSelectVisible) {
-    btnSelectVisible.addEventListener('click', () => replaceTeamWorkspaceSelection(getVisibleTeamWorkspaceCandidateIds()));
-  }
-  const btnAddVisible = document.getElementById('btn-team-workspace-add-visible');
-  if (btnAddVisible) {
-    btnAddVisible.addEventListener('click', () => addTeamWorkspaceSelection(getVisibleTeamWorkspaceCandidateIds()));
-  }
-  const btnRemoveVisible = document.getElementById('btn-team-workspace-remove-visible');
-  if (btnRemoveVisible) {
-    btnRemoveVisible.addEventListener('click', () => removeTeamWorkspaceSelection(getVisibleTeamWorkspaceCandidateIds()));
-  }
-  const btnImportSelection = document.getElementById('btn-team-import-selection');
-  if (btnImportSelection) {
-    btnImportSelection.addEventListener('click', () => addTeamWorkspaceSelection(getSelectedInscripcioIds()));
-  }
-  const btnClearSelection = document.getElementById('btn-team-workspace-clear-selection');
-  if (btnClearSelection) {
-    btnClearSelection.addEventListener('click', () => replaceTeamWorkspaceSelection([]));
-  }
+  [
+    ['btn-team-workspace-select-visible', () => {
+      state.selectedIds = new Set(((state.lastWorkspace?.candidates?.items) || []).map((item) => String(item?.id || '')).filter(Boolean));
+      renderCandidates(state.lastWorkspace);
+      updateSelectionSummary();
+      dirtyPreview();
+    }],
+    ['btn-team-workspace-add-visible', () => {
+      ((state.lastWorkspace?.candidates?.items) || []).forEach((item) => state.selectedIds.add(String(item?.id || '')));
+      renderCandidates(state.lastWorkspace);
+      updateSelectionSummary();
+      dirtyPreview();
+    }],
+    ['btn-team-workspace-remove-visible', () => {
+      ((state.lastWorkspace?.candidates?.items) || []).forEach((item) => state.selectedIds.delete(String(item?.id || '')));
+      renderCandidates(state.lastWorkspace);
+      updateSelectionSummary();
+      dirtyPreview();
+    }],
+    ['btn-team-import-selection', () => {
+      (getSelectedInscripcioIds() || []).forEach((item) => state.selectedIds.add(String(item || '')));
+      renderCandidates(state.lastWorkspace);
+      updateSelectionSummary();
+      dirtyPreview();
+    }],
+    ['btn-team-workspace-clear-selection', () => {
+      state.selectedIds = new Set();
+      renderCandidates(state.lastWorkspace);
+      updateSelectionSummary();
+      dirtyPreview();
+    }],
+  ].forEach(([id, fn]) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('click', fn);
+  });
 
-  const btnCandidatesPrev = document.getElementById('btn-team-candidates-prev');
-  if (btnCandidatesPrev) {
-    btnCandidatesPrev.addEventListener('click', async () => {
-      if (teamWorkspaceState.candidatePage <= 1) return;
-      teamWorkspaceState.candidatePage -= 1;
-      await refreshTeamWorkspace();
+  const prev = document.getElementById('btn-team-candidates-prev');
+  if (prev) {
+    prev.addEventListener('click', async () => {
+      if (state.candidatePage <= 1) return;
+      state.candidatePage -= 1;
+      await refreshWorkspace();
     });
   }
-  const btnCandidatesNext = document.getElementById('btn-team-candidates-next');
-  if (btnCandidatesNext) {
-    btnCandidatesNext.addEventListener('click', async () => {
-      if (!teamWorkspaceState.lastWorkspace?.candidates?.has_more) return;
-      teamWorkspaceState.candidatePage += 1;
-      await refreshTeamWorkspace();
+
+  const next = document.getElementById('btn-team-candidates-next');
+  if (next) {
+    next.addEventListener('click', async () => {
+      if (!state.lastWorkspace?.candidates?.has_more) return;
+      state.candidatePage += 1;
+      await refreshWorkspace();
     });
   }
 
-  const teamCandidatesList = document.getElementById('team-candidates-list');
-  if (teamCandidatesList) {
-    teamCandidatesList.addEventListener('change', ev => {
-      const input = ev.target.closest('.js-team-workspace-candidate-check');
+  const candidateList = document.getElementById('team-candidates-list');
+  if (candidateList) {
+    candidateList.addEventListener('change', (event) => {
+      const input = event.target.closest('.js-team-workspace-candidate-check');
       if (!input) return;
       const id = String(input.value || '').trim();
       if (!id) return;
-      if (input.checked) teamWorkspaceState.selectedIds.add(id);
-      else teamWorkspaceState.selectedIds.delete(id);
-      renderTeamWorkspaceCandidates(teamWorkspaceState.lastWorkspace);
-      updateTeamWorkspaceSelectionSummary();
-      markTeamPreviewDirty();
+      if (input.checked) state.selectedIds.add(id);
+      else state.selectedIds.delete(id);
+      renderCandidates(state.lastWorkspace);
+      updateSelectionSummary();
+      dirtyPreview();
     });
-    teamCandidatesList.addEventListener('click', ev => {
-      const row = ev.target.closest('.team-candidate-row');
-      if (!row) return;
+    candidateList.addEventListener('click', (event) => {
+      const row = event.target.closest('.team-candidate-row');
+      if (!row || event.target.closest('.team-candidate-drag-handle')) return;
       const checkbox = row.querySelector('.js-team-workspace-candidate-check');
-      if (!checkbox || ev.target === checkbox) return;
+      if (!checkbox || event.target === checkbox) return;
       checkbox.checked = !checkbox.checked;
       checkbox.dispatchEvent(new Event('change', { bubbles: true }));
     });
   }
 
-  const btnTeamPreview = document.getElementById('btn-team-workspace-preview');
-  if (btnTeamPreview) {
-    btnTeamPreview.addEventListener('click', async () => {
-      await requestTeamWorkspacePreview();
-    });
-  }
+  const previewBtn = document.getElementById('btn-team-workspace-preview');
+  if (previewBtn) previewBtn.addEventListener('click', async () => { await requestPreview(); });
 
-  const btnTeamAutoCreate = document.getElementById('btn-team-workspace-auto-create');
-  if (btnTeamAutoCreate) {
-    btnTeamAutoCreate.addEventListener('click', async () => {
+  const autoBtn = document.getElementById('btn-team-workspace-auto-create');
+  if (autoBtn) {
+    autoBtn.addEventListener('click', async () => {
       const fields = getSelectedTeamFields();
-      if (!fields.length) {
-        showAlert("Selecciona com a minim un camp de particio.");
-        return;
-      }
-      if (teamWorkspaceState.selectionMode === 'selected' && !getTeamWorkspaceSelectedIds().length) {
-        showAlert("Selecciona com a minim una inscripcio dins del workspace.");
-        return;
-      }
-      const previewReady = await ensureFreshTeamWorkspacePreviewIfNeeded();
-      if (!previewReady) return;
+      if (!fields.length) return showAlert('Selecciona com a minim un camp de particio.');
+      if (state.selectionMode === 'selected' && !ids().length) return showAlert('Selecciona com a minim una inscripcio dins del workspace.');
+      if (!(await ensureFreshPreview())) return;
       try {
-        const data = await postJson(teamWorkspaceAutoCreateUrl, {
-          context_code: teamWorkspaceState.contextCode,
-          fields: fields,
+        const data = await postJson(autoCreateUrl, {
+          context_code: state.contextCode,
+          fields,
           replace_existing: document.getElementById('team-auto-replace')?.checked ?? true,
-          filters: teamWorkspaceState.filters,
-          selected_ids: getTeamWorkspaceScopeSelectedIds(),
+          filters: state.filters,
+          selected_ids: scopeIds(),
         });
-        if (!data.ok) {
-          showAlert("No s'han pogut crear equips.");
-          return;
-        }
-        clearTeamPreview("Canvis aplicats. Torna a previsualitzar per revisar l'estat actual.");
-        await refreshTeamWorkspace();
+        if (!data.ok) return showAlert("No s'han pogut crear equips.");
+        resetPreview();
+        await refreshWorkspace();
       } catch (err) {
         showAlert(`No s'han pogut crear equips.\n${err.message || err}`);
       }
     });
   }
 
-  const btnTeamCreateManual = document.getElementById('btn-team-workspace-create-manual');
-  if (btnTeamCreateManual) {
-    btnTeamCreateManual.addEventListener('click', async () => {
+  const createManual = document.getElementById('btn-team-workspace-create-manual');
+  if (createManual) {
+    createManual.addEventListener('click', async () => {
       const name = String(document.getElementById('team-workspace-new-name')?.value || '').trim();
-      const ids = getTeamWorkspaceSelectedIds();
-      if (!name) {
-        showAlert("Indica un nom per al nou equip.");
-        return;
-      }
-      if (!ids.length) {
-        showAlert("Selecciona com a minim una inscripcio dins del workspace.");
-        return;
-      }
+      if (!name) return showAlert('Indica un nom per al nou equip.');
+      if (!ids().length) return showAlert('Selecciona com a minim una inscripcio dins del workspace.');
       try {
-        const data = await postJson(teamWorkspaceCreateManualUrl, {
-          context_code: teamWorkspaceState.contextCode,
-          name: name,
-          selected_ids: ids,
+        const data = await postJson(createManualUrl, {
+          context_code: state.contextCode,
+          name,
+          selected_ids: ids(),
         });
-        if (!data.ok) {
-          showAlert("No s'ha pogut crear l'equip.");
-          return;
-        }
+        if (!data.ok) return showAlert("No s'ha pogut crear l'equip.");
         const input = document.getElementById('team-workspace-new-name');
         if (input) input.value = '';
-        clearTeamPreview("Canvis aplicats. Torna a previsualitzar per revisar l'estat actual.");
-        await refreshTeamWorkspace();
+        resetPreview();
+        await refreshWorkspace();
       } catch (err) {
         showAlert(`No s'ha pogut crear l'equip.\n${err.message || err}`);
       }
     });
   }
 
-  const btnTeamAssign = document.getElementById('btn-team-workspace-assign');
-  if (btnTeamAssign) {
-    btnTeamAssign.addEventListener('click', async () => {
+  const assignBtn = document.getElementById('btn-team-workspace-assign');
+  if (assignBtn) {
+    assignBtn.addEventListener('click', async () => {
       const equipId = String(document.getElementById('team-workspace-existing-select')?.value || '').trim();
-      const ids = getTeamWorkspaceSelectedIds();
-      if (!equipId) {
-        showAlert("Selecciona un equip.");
-        return;
-      }
-      if (!ids.length) {
-        showAlert("Selecciona com a minim una inscripcio dins del workspace.");
-        return;
-      }
+      if (!equipId) return showAlert('Selecciona un equip.');
+      if (!ids().length) return showAlert('Selecciona com a minim una inscripcio dins del workspace.');
       try {
-        const data = await postJson(teamWorkspaceAssignUrl, {
-          context_code: teamWorkspaceState.contextCode,
-          equip_id: equipId,
-          inscripcio_ids: ids,
-        });
-        if (!data.ok) {
-          showAlert("No s'han pogut assignar les inscripcions.");
-          return;
-        }
-        clearTeamPreview("Canvis aplicats. Torna a previsualitzar per revisar l'estat actual.");
-        await refreshTeamWorkspace();
+        const data = await postAssign(equipId, ids());
+        if (!data.ok) return showAlert("No s'han pogut assignar les inscripcions.");
+        resetPreview();
+        await refreshWorkspace();
       } catch (err) {
         showAlert(`No s'han pogut assignar les inscripcions.\n${err.message || err}`);
       }
     });
   }
 
-  const btnTeamUnassign = document.getElementById('btn-team-workspace-unassign');
-  if (btnTeamUnassign) {
-    btnTeamUnassign.addEventListener('click', async () => {
-      const ids = getTeamWorkspaceSelectedIds();
-      if (!ids.length) {
-        showAlert("Selecciona com a minim una inscripcio dins del workspace.");
-        return;
-      }
+  const unassignBtn = document.getElementById('btn-team-workspace-unassign');
+  if (unassignBtn) {
+    unassignBtn.addEventListener('click', async () => {
+      if (!ids().length) return showAlert('Selecciona com a minim una inscripcio dins del workspace.');
       try {
-        const data = await postJson(teamWorkspaceUnassignUrl, {
-          context_code: teamWorkspaceState.contextCode,
-          inscripcio_ids: ids,
-        });
-        if (!data.ok) {
-          showAlert("No s'han pogut desassignar les inscripcions.");
-          return;
-        }
-        clearTeamPreview("Canvis aplicats. Torna a previsualitzar per revisar l'estat actual.");
-        await refreshTeamWorkspace();
+        const data = await postUnassign(ids());
+        if (!data.ok) return showAlert("No s'han pogut desassignar les inscripcions.");
+        resetPreview();
+        await refreshWorkspace();
       } catch (err) {
         showAlert(`No s'han pogut desassignar les inscripcions.\n${err.message || err}`);
       }
     });
   }
 
-  const btnTeamDeleteAll = document.getElementById('btn-team-workspace-delete-all');
-  if (btnTeamDeleteAll) {
-    btnTeamDeleteAll.addEventListener('click', async () => {
-      const url = btnTeamDeleteAll.getAttribute('data-delete-all-url');
-      if (!url) {
-        showAlert("URL d'eliminacio massiva no disponible.");
-        return;
-      }
-      const message = teamWorkspaceState.contextCode === 'native'
-        ? "Vols eliminar tots els equips existents? Les inscripcions quedaran sense equip."
+  const deleteAll = document.getElementById('btn-team-workspace-delete-all');
+  if (deleteAll) {
+    deleteAll.addEventListener('click', async () => {
+      const url = deleteAll.getAttribute('data-delete-all-url');
+      if (!url) return showAlert("URL d'eliminacio massiva no disponible.");
+      const message = state.contextCode === 'native'
+        ? 'Vols eliminar tots els equips existents? Les inscripcions quedaran sense equip.'
         : "Vols eliminar totes les assignacions d'equip d'aquest context?";
-      const ok = await showConfirm(message);
-      if (!ok) return;
+      if (!(await showConfirm(message))) return;
       try {
-        const data = await postJson(url, { context_code: teamWorkspaceState.contextCode });
-        if (!data.ok) {
-          showAlert("No s'han pogut eliminar tots els equips.");
-          return;
-        }
-        teamWorkspaceState.selectedIds = new Set();
-        clearTeamPreview("Canvis aplicats. Torna a previsualitzar per revisar l'estat actual.");
-        await refreshTeamWorkspace({ clearSelection: true });
+        const data = await postJson(url, { context_code: state.contextCode });
+        if (!data.ok) return showAlert("No s'han pogut eliminar tots els equips.");
+        state.selectedIds = new Set();
+        state.expandedTeamIds = new Set();
+        resetPreview();
+        await refreshWorkspace({ clearSelection: true });
       } catch (err) {
         showAlert(`No s'han pogut eliminar tots els equips.\n${err.message || err}`);
       }
     });
   }
 
-  const btnTeamPreviewClear = document.getElementById('btn-team-preview-clear');
-  if (btnTeamPreviewClear) {
-    btnTeamPreviewClear.addEventListener('click', () => clearTeamPreview());
-  }
+  const previewClear = document.getElementById('btn-team-preview-clear');
+  if (previewClear) previewClear.addEventListener('click', () => clearTeamPreview());
 
-  setTeamWorkspaceFiltersToDom(teamWorkspaceState.filters);
+  applyWorkspaceMode();
+  setFiltersToDom(state.filters);
   clearTeamPreview();
-  refreshTeamWorkspace({ resetPage: true, clearSelection: true });
+  refreshWorkspace({ resetPage: true, clearSelection: true });
 }

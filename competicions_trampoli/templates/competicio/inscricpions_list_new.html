@@ -926,6 +926,9 @@
       gap:14px;
       align-items:start;
     }
+    .team-workspace-shell.is-board-mode .team-workspace-grid{
+      grid-template-columns:minmax(260px, .88fr) minmax(240px, .82fr) minmax(520px, 1.65fr);
+    }
     .team-workspace-pane{
       min-width:0;
     }
@@ -1076,6 +1079,12 @@
       flex-direction:column;
       gap:8px;
     }
+    .team-workspace-shell.is-board-mode .team-context-teams-list,
+    .team-workspace-shell.is-board-mode .team-context-zero-members-list{
+      display:grid;
+      grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));
+      gap:12px;
+    }
     .team-context-team-card{
       display:flex;
       justify-content:space-between;
@@ -1090,9 +1099,117 @@
       background:#f8fafc;
       border-style:dashed;
     }
+    .team-workspace-shell.is-board-mode .team-context-team-card{
+      min-height:150px;
+      padding:12px 12px 10px;
+      background:linear-gradient(180deg, #fbfdff 0%, #f8fbff 100%);
+      box-shadow:0 10px 20px rgba(15,23,42,.04);
+    }
     .team-context-team-meta{
       font-size:.78rem;
       color:#64748b;
+      margin-top:4px;
+    }
+    .team-context-unassigned-dropzone{
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+      padding:12px;
+      border:1px dashed #cbd5e1;
+      border-radius:12px;
+      background:#f8fafc;
+      color:#334155;
+    }
+    .team-workspace-shell.is-board-mode .team-context-unassigned-dropzone{
+      min-height:112px;
+      padding:14px;
+      background:linear-gradient(180deg, #fff 0%, #f8fafc 100%);
+    }
+    .team-context-drop-target.is-drag-target,
+    .team-context-member-list.is-drag-target{
+      border-color:#2563eb !important;
+      background:#eff6ff !important;
+      box-shadow:0 0 0 2px rgba(37,99,235,.12) inset;
+    }
+    .team-context-team-card{
+      flex-direction:column;
+    }
+    .team-context-team-head{
+      display:flex;
+      justify-content:space-between;
+      align-items:flex-start;
+      gap:10px;
+    }
+    .team-context-team-title-wrap{
+      min-width:0;
+      flex:1 1 auto;
+    }
+    .team-context-team-actions{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      justify-content:flex-end;
+    }
+    .team-context-team-drop-hint{
+      font-size:.77rem;
+      color:#475569;
+      padding:8px 10px;
+      border:1px dashed #d6deeb;
+      border-radius:10px;
+      background:#fff;
+    }
+    .team-context-team-body{
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+      margin-top:8px;
+      padding-top:8px;
+      border-top:1px solid #e2e8f0;
+    }
+    .team-context-member-list{
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+      min-height:44px;
+    }
+    .team-context-member-row{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:10px;
+      padding:9px 10px;
+      border:1px solid #e2e8f0;
+      border-radius:10px;
+      background:#fff;
+    }
+    .team-context-member-main{
+      min-width:0;
+      flex:1 1 auto;
+    }
+    .team-context-member-title{
+      font-size:.84rem;
+      font-weight:700;
+      color:#0f172a;
+    }
+    .team-context-member-meta,
+    .team-context-member-native{
+      font-size:.76rem;
+      color:#64748b;
+      margin-top:2px;
+    }
+    .team-context-drop-placeholder{
+      padding:8px 10px;
+      border:1px dashed #cbd5e1;
+      border-radius:10px;
+      font-size:.77rem;
+      color:#64748b;
+      background:#fff;
+    }
+    .team-candidate-row.can-drag,
+    .team-context-member-row.can-drag{
+      cursor:grab;
+    }
+    .team-workspace-shell.is-board-mode .team-context-team-body{
       margin-top:4px;
     }
 
@@ -2930,7 +3047,7 @@
                                       {% endif %}
                                     </span>
                                   </span>
-                                  <span class="badge badge-light js-group-count" data-group="{{ r.grup }}" title="Integrants visibles del grup">0</span>
+                                  <span class="badge badge-light js-group-count" data-group="{{ r.grup }}" data-group-total="{{ group_member_totals|get_item:gkey|default:0 }}" title="Integrants totals del grup">{{ group_member_totals|get_item:gkey|default:0 }} integrants</span>
                                   <span class="badge badge-warning d-none js-group-order-dirty" data-group="{{ r.grup }}" title="L'ordre visual d'aquest grup no coincideix amb l'ordre de competició desat">Ordre no desat</span>
                                   <div class="group-actions-pop">
                                     <button
@@ -3175,7 +3292,7 @@
                                 {% endif %}
                               </span>
                             </span>
-                            <span class="badge badge-light js-group-count" data-group="{{ r.grup }}" title="Integrants visibles del grup">0</span>
+                            <span class="badge badge-light js-group-count" data-group="{{ r.grup }}" data-group-total="{{ group_member_totals|get_item:gkey|default:0 }}" title="Integrants totals del grup">{{ group_member_totals|get_item:gkey|default:0 }} integrants</span>
                             <span class="badge badge-warning d-none js-group-order-dirty" data-group="{{ r.grup }}" title="L'ordre visual d'aquest grup no coincideix amb l'ordre de competició desat">Ordre no desat</span>
                             <div class="group-actions-pop">
                               <button
@@ -3665,6 +3782,7 @@
             window.jQuery(link).tab('show');
           } else {
             manualActivateTab(li);
+            scheduleRefreshGroupHeaderIndicators();
           }
         }
       }
@@ -3783,6 +3901,14 @@
     const opts = options || {};
     return Array.from(container.querySelectorAll(`tr.inscripcio-row[data-group="${CSS.escape(key)}"]`))
       .filter(tr => !opts.visibleOnly || tr.offsetParent !== null);
+  }
+
+  function scheduleRefreshGroupHeaderIndicators() {
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        refreshGroupHeaderIndicators();
+      });
+    });
   }
 
   function collectIdsForGroupInContainer(groupNum, container, options = {}) {
@@ -3909,7 +4035,10 @@
 
       const countEl = tr.querySelector('.js-group-count');
       const dirtyEl = tr.querySelector('.js-group-order-dirty');
-      if (countEl) countEl.textContent = `${visibleIds.length} integrants`;
+      if (countEl) {
+        const groupTotal = Number(countEl.getAttribute('data-group-total') || 0);
+        countEl.textContent = `${groupTotal} integrants`;
+      }
       if (dirtyEl) dirtyEl.classList.toggle('d-none', !isDirty);
     });
   }
@@ -4218,7 +4347,7 @@
     });
     document.querySelectorAll('#tabs-root a.nav-link').forEach(link => {
       link.addEventListener('click', () => {
-        window.setTimeout(() => refreshGroupHeaderIndicators(), 0);
+        scheduleRefreshGroupHeaderIndicators();
       });
     });
 
@@ -6666,6 +6795,7 @@
       });
       window.jQuery('a[data-toggle="tab"]').on('shown.bs.tab', function () {
         saveUiState();
+        scheduleRefreshGroupHeaderIndicators();
       });
     } else {
       console.warn("jQuery no present: les pestanyes BS4 poden no funcionar.");
@@ -6901,7 +7031,7 @@
     }
 
     applyGroupBands();
-    refreshGroupHeaderIndicators();
+    scheduleRefreshGroupHeaderIndicators();
 
     document.addEventListener('click', async (e) => {
       const groupActionsToggle = e.target.closest('[data-group-actions-toggle]');
