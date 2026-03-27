@@ -578,6 +578,34 @@ class ScoringEngine:
 
             return out
 
+        def member_treatment(
+            source,
+            *,
+            select: str = "all",
+            n: int | None = None,
+            agg: str = "sum",
+            select_n: int | None = None,
+        ):
+            xs = []
+            for value in (source or []):
+                if isinstance(value, (list, tuple)):
+                    if len(value) == 1:
+                        xs.append(to_float(value[0]))
+                    else:
+                        raise ScoringError(
+                            "member_treatment espera una serie escalar per membre (o vectors 1x1)."
+                        )
+                else:
+                    xs.append(to_float(value))
+            if not xs:
+                return 0.0
+
+            sel = (select or "all").lower().strip() or "all"
+            chosen_n = select_n if select_n is not None else n
+            idxs = _select_idx(xs, sel, chosen_n)
+            selected = [xs[i] for i in idxs]
+            return float(_agg(selected, agg))
+
         def best_n(scores, n):
             s = sorted([to_float(x) for x in (scores or [])], reverse=True)
             return s[: max(0, int(n or 0))]
@@ -739,10 +767,12 @@ class ScoringEngine:
                 return float(min(xs))
             if a == "max":
                 return float(max(xs))
+            if a == "count":
+                return float(len(xs))
             if a in ("med", "median"):
                 return float(_median(xs))
 
-            raise ScoringError(f"Aggregator no permès: {agg}. Usa: sum|avg|min|max|med")
+            raise ScoringError(f"Aggregator no permès: {agg}. Usa: sum|avg|min|max|med|count")
 
         def row_custom_compute(
             source,
@@ -1214,11 +1244,12 @@ class ScoringEngine:
             "avg": _avg,
             "min": _min,
             "max": _max,
-            "members_sum": _sum,
-            "members_avg": _avg,
-            "members_min": _min,
-            "members_max": _max,
-            "members_count": _count,
+            "member_treatment": member_treatment,
+            "members_sum": lambda x: member_treatment(x, select="all", agg="sum"),
+            "members_avg": lambda x: member_treatment(x, select="all", agg="avg"),
+            "members_min": lambda x: member_treatment(x, select="all", agg="min"),
+            "members_max": lambda x: member_treatment(x, select="all", agg="max"),
+            "members_count": lambda x: member_treatment(x, select="all", agg="count"),
             "med": _median,
             "exec_by_judge": exec_by_judge,
             "select_sum": select_sum,

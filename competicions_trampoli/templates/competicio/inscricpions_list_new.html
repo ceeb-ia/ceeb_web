@@ -2578,193 +2578,7 @@
           </div>
         </div>
 
-        <!-- GRUPS -->
-        <div class="panel" data-panel-key="grups">
-          <div class="panel-head collapsed" data-target="#panel-grups" aria-expanded="false">
-            <div>
-              <p class="panel-title mb-0">Grups</p>
-              <div class="subtle">Crea i esborra grups amb mida o nombre de grups.</div>
-            </div>
-            <div class="d-flex align-items-center gap-2">
-              <span class="subtle d-none d-md-inline">Mostra/Oculta</span>
-              <span class="chev">&#9662;</span>
-            </div>
-          </div>
-
-          <div id="panel-grups" class="panel-collapse is-collapsed">
-            <div class="panel-body">
-              <div class="btn-row mb-3">
-                <button type="submit" name="clear_groups" value="1" class="btn btn-sm btn-outline-secondary">
-                  Esborrar grups
-                </button>
-              </div>
-
-              <div class="tab-select-card" id="groups-auto-card" data-expand-card="groups-auto-card">
-                <div class="tab-select-card-head">
-                  <div>
-                    <div class="fw-semibold">Crear grups amb resolucio automatica</div>
-                    <div class="text-muted small">Combina divisions i ordenacions actives al llistat per suggerir grups.</div>
-                  </div>
-                  <div class="tab-select-card-tools">
-                    <button type="button"
-                            class="btn btn-sm btn-outline-primary tab-select-expand-btn js-expand-tab-select"
-                            data-expand-target="groups-auto-card"
-                            data-label-collapsed="Expandir"
-                            data-label-expanded="Tancar vista amplia"
-                            aria-expanded="false">
-                      Expandir
-                    </button>
-                  </div>
-                </div>
-
-                <div class="small mb-2">
-                  <span class="text-muted fw-semibold mr-2">Divisions actives:</span>
-                  {% if group_creation_group_fields %}
-                    {% for field in group_creation_group_fields %}
-                      <span class="badge badge-info mr-1">{{ field.label }}</span>
-                    {% endfor %}
-                  {% else %}
-                    <span class="text-muted">cap</span>
-                  {% endif %}
-                </div>
-
-                <div class="small mb-2">
-                  <span class="text-muted fw-semibold mr-2">Ordenacions detectades:</span>
-                  {% if sort_partition_fields %}
-                    {% for f in sort_partition_fields %}
-                      <span class="badge badge-primary mr-1">#{{ f.priority }} {{ f.label }}</span>
-                    {% endfor %}
-                  {% else %}
-                    <span class="text-muted">cap</span>
-                  {% endif %}
-                </div>
-
-                <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
-                  <span class="text-muted small fw-semibold">Resolucio final:</span>
-                  <span class="badge badge-light border">{{ group_creation_resolution_label }}</span>
-                  {% if group_creation_resolution_layers_used %}
-                    {% for layer in group_creation_resolution_layers_used %}
-                      <span class="badge badge-light border">
-                        {% if layer == 'tabs' %}Divisió{% elif layer == 'sort' %}Ordenació{% else %}{{ layer }}{% endif %}
-                      </span>
-                    {% endfor %}
-                  {% else %}
-                    <span class="text-muted small">Sense criteris resolubles: el fallback treballara sobre totes les filtrades.</span>
-                  {% endif %}
-                </div>
-
-                <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
-                  <span class="text-muted small fw-semibold">Fallback:</span>
-                  <select id="groups-fallback" class="form-control form-control-sm" style="width:280px;">
-                    <option value="all_filtered" selected>Sense criteris resolubles: totes filtrades</option>
-                    <option value="strict">Estricte (error)</option>
-                    <option value="adjust_k">Ajustar k si cal</option>
-                    <option value="ignore_range">Ignorar forquilla si cal</option>
-                  </select>
-                </div>
-
-                <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
-                  <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-groups-buckets-all">Seleccionar tots</button>
-                  <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-groups-buckets-none">Netejar</button>
-                  <span class="text-muted small">{{ group_creation_auto_bucket_count }} blocs origen resolts</span>
-                </div>
-
-                {% if group_creation_auto_buckets %}
-                  <div class="tab-select-grid mb-3">
-                    {% for bucket in group_creation_auto_buckets %}
-                      <label class="tab-select-item">
-                        <input type="checkbox" class="js-group-bucket-check" value="{{ bucket.key }}">
-                        <span class="tab-label small" title="{{ bucket.label }}">{{ bucket.label }}</span>
-                        {% if bucket.kinds %}
-                          {% for kind in bucket.kinds %}
-                            <span class="badge badge-light border">
-                              {% if kind == 'tabs' %}Divisió{% elif kind == 'sort' %}Ordenació{% else %}{{ kind }}{% endif %}
-                            </span>
-                          {% endfor %}
-                        {% endif %}
-                        <span class="badge badge-light">{{ bucket.count }}</span>
-                      </label>
-                    {% endfor %}
-                  </div>
-                {% else %}
-                  <div class="text-muted small mb-3">
-                    No s'han detectat blocs resolts per al context actual.
-                  </div>
-                {% endif %}
-
-                <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
-                  <span class="text-muted small fw-semibold">Crear X grups:</span>
-                  <input id="groups-group-count" type="number" min="1" max="200" value="4" class="form-control form-control-sm" style="width:90px;">
-                  <button type="button" class="btn btn-sm btn-outline-dark" id="btn-groups-create-count">Crear X grups</button>
-                  <button type="button" class="btn btn-sm btn-outline-primary" id="btn-groups-preview-count">Previsualitzar</button>
-                </div>
-
-                <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
-                  <span class="text-muted small fw-semibold">Mida:</span>
-                  <input id="groups-group-size" type="number" min="2" max="200" value="8" class="form-control form-control-sm" style="width:90px;">
-                  <select id="groups-group-size-mode" class="form-control form-control-sm" style="width:170px;">
-                    <option value="fixed">Mida fixa</option>
-                    <option value="balanced">Equilibrats</option>
-                  </select>
-                  <button type="button" class="btn btn-sm btn-outline-dark" id="btn-groups-create-size">Crear per mida</button>
-                  <button type="button" class="btn btn-sm btn-outline-primary" id="btn-groups-preview-size">Previsualitzar</button>
-                </div>
-
-                <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
-                  <span class="text-muted small fw-semibold">Forquilla:</span>
-                  <input id="groups-group-min-size" type="number" min="1" max="200" value="5" class="form-control form-control-sm" style="width:82px;" title="Minim">
-                  <span class="small text-muted">a</span>
-                  <input id="groups-group-max-size" type="number" min="1" max="200" value="8" class="form-control form-control-sm" style="width:82px;" title="Maxim">
-                  <button type="button" class="btn btn-sm btn-outline-dark" id="btn-groups-create-range-balanced">Equilibrats min-max</button>
-                  <button type="button" class="btn btn-sm btn-outline-primary" id="btn-groups-preview-range-balanced">Previsualitzar</button>
-                </div>
-
-                <div class="d-flex align-items-center flex-wrap" style="gap:8px;">
-                  <span class="text-muted small fw-semibold">X grups amb forquilla:</span>
-                  <input id="groups-group-count-range" type="number" min="1" max="200" value="4" class="form-control form-control-sm" style="width:90px;">
-                  <button type="button" class="btn btn-sm btn-outline-dark" id="btn-groups-create-count-range">Crear X amb min-max</button>
-                  <button type="button" class="btn btn-sm btn-outline-primary" id="btn-groups-preview-count-range">Previsualitzar</button>
-                </div>
-
-                <div class="d-flex align-items-center flex-wrap mt-2" style="gap:8px;">
-                  <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-groups-create-per-bucket">
-                    1 grup per cada bloc resolt
-                  </button>
-                  <button type="button" class="btn btn-sm btn-outline-primary" id="btn-groups-preview-per-bucket">Previsualitzar</button>
-                </div>
-
-                <div class="group-preview-panel" id="groups-preview" data-has-preview="0">
-                  <div class="group-preview-toolbar">
-                    <div>
-                      <div class="fw-semibold">Previsualitzacio dels grups</div>
-                      <div class="group-preview-status" id="groups-preview-status">
-                        Encara no s'ha calculat cap previsualitzacio amb aquesta configuracio.
-                      </div>
-                    </div>
-                    <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="btn-groups-preview-clear">Netejar</button>
-                  </div>
-                  <div class="group-preview-summary d-none" id="groups-preview-summary"></div>
-                  <div class="group-preview-sections">
-                    <div class="group-preview-section d-none" id="groups-preview-existing-wrap">
-                      <div class="group-preview-section-head">
-                        <div class="fw-semibold">Grups existents</div>
-                        <div class="group-preview-section-meta" id="groups-preview-existing-meta"></div>
-                      </div>
-                      <div class="group-preview-list" id="groups-preview-existing-list"></div>
-                    </div>
-                    <div class="group-preview-section d-none" id="groups-preview-planned-wrap">
-                      <div class="group-preview-section-head">
-                        <div class="fw-semibold">Grups nous previstos</div>
-                        <div class="group-preview-section-meta" id="groups-preview-planned-meta"></div>
-                      </div>
-                      <div class="group-preview-list" id="groups-preview-list"></div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        {% include "competicio/_groups_panel.html" %}
 
         {% include "competicio/_equips_panel.html" %}
 
@@ -3132,7 +2946,18 @@
                       {% endif %}
                     {% endifchanged %}
 
-                    <tr class="inscripcio-row" data-id="{{ r.id }}" data-group="{{ r.grup|default:'' }}" data-competition-order="{{ r.ordre_competicio|default:'' }}" data-team="{{ r.equip_id|default:'' }}">
+                    <tr class="inscripcio-row"
+                        data-id="{{ r.id }}"
+                        data-name="{{ r.nom_i_cognoms|default:''|escape }}"
+                        data-document="{{ r.document|default:''|escape }}"
+                        data-entitat="{{ r.entitat|default:''|escape }}"
+                        data-categoria="{{ r.categoria|default:''|escape }}"
+                        data-subcategoria="{{ r.subcategoria|default:''|escape }}"
+                        data-sexe="{{ r.sexe|default:''|escape }}"
+                        data-group="{{ r.grup|default:'' }}"
+                        data-group-name="{% with gkey=r.grup|stringformat:'s' %}{{ group_names|get_item:gkey|default:''|escape }}{% endwith %}"
+                        data-competition-order="{{ r.ordre_competicio|default:'' }}"
+                        data-team="{{ r.equip_id|default:'' }}">
                       <td class="control-col">
                         <div class="row-controls">
                           <input type="checkbox" class="inscripcio-select js-team-row-select" data-ins-id="{{ r.id }}">
@@ -3376,7 +3201,18 @@
                   </tr>
                 {% endif %}
               {% endifchanged %}
-              <tr class="inscripcio-row" data-id="{{ r.id }}" data-group="{{ r.grup|default:'' }}" data-competition-order="{{ r.ordre_competicio|default:'' }}" data-team="{{ r.equip_id|default:'' }}">
+              <tr class="inscripcio-row"
+                        data-id="{{ r.id }}"
+                        data-name="{{ r.nom_i_cognoms|default:''|escape }}"
+                        data-document="{{ r.document|default:''|escape }}"
+                        data-entitat="{{ r.entitat|default:''|escape }}"
+                        data-categoria="{{ r.categoria|default:''|escape }}"
+                        data-subcategoria="{{ r.subcategoria|default:''|escape }}"
+                        data-sexe="{{ r.sexe|default:''|escape }}"
+                        data-group="{{ r.grup|default:'' }}"
+                        data-group-name="{% with gkey=r.grup|stringformat:'s' %}{{ group_names|get_item:gkey|default:''|escape }}{% endwith %}"
+                        data-competition-order="{{ r.ordre_competicio|default:'' }}"
+                        data-team="{{ r.equip_id|default:'' }}">
                 <td class="control-col">
                   <div class="row-controls">
                     <input type="checkbox" class="inscripcio-select js-team-row-select" data-ins-id="{{ r.id }}">
@@ -7432,6 +7268,9 @@
     document.addEventListener('change', (e) => {
       if (e.target && e.target.closest('.js-team-row-select')) {
         markTeamPreviewDirty();
+        if (window.__groupsWorkspaceApi && typeof window.__groupsWorkspaceApi.setExternalSelection === 'function') {
+          window.__groupsWorkspaceApi.setExternalSelection(getSelectedInscripcioIds());
+        }
       }
     });
     clearTeamPreview();
@@ -7595,6 +7434,7 @@
     });
 
     {% include "competicio/_team_workspace_script.html" %}
+    {% include "competicio/_groups_workspace_script.html" %}
 
     console.log("Sortables inicialitzats:", document.querySelectorAll('tbody.sortable-body').length);
 
@@ -7652,6 +7492,4 @@
     }
   });
 </script>
-
-
 {% endblock %}

@@ -1,0 +1,456 @@
+<section class="action-panel" id="panel-grups" data-panel-key="grups">
+  <div class="action-panel-header">
+    <div>
+      <p class="panel-title mb-0">Gestor de grups</p>
+      <div class="subtle">Mode compacte per a accions rapides i workspace propi per a seleccio, resum i revisio.</div>
+    </div>
+  </div>
+
+  <div class="action-panel-body">
+    <div
+      class="tab-select-card team-workbench-card"
+      id="groups-main-card"
+      data-expand-card="groups-main-card"
+      data-expand-title="Gestor de grups"
+      data-expand-subtitle="Seleccio, creacio, modificacio i vista rapida dels grups existents en un sol workspace."
+    >
+      <div class="tab-select-card-head">
+        <div>
+          <div class="fw-semibold">Gestor de grups</div>
+          <div class="small text-muted">Flux manual prioritari amb una capa automatica accessible des del mateix espai.</div>
+        </div>
+        <div class="tab-select-card-tools">
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-primary tab-select-expand-btn js-expand-tab-select"
+            data-expand-target="groups-main-card"
+            data-label-collapsed="Obrir gestor de grups"
+            data-label-expanded="Tancar vista ampla"
+            aria-expanded="false"
+          >
+            Obrir gestor de grups
+          </button>
+        </div>
+      </div>
+
+      <div class="team-compact-summary">
+        <div class="team-compact-summary-copy">
+          Crea grups amb seleccio explicita, assigna o treu inscripcions i revisa l'estat dels grups existents abans d'aplicar canvis.
+        </div>
+        <div class="team-compact-summary-metrics" id="groups-compact-summary-metrics">
+          <span class="group-preview-badge badge badge-light border">{{ existing_groups_count|default:0 }} grups</span>
+          <span class="group-preview-badge badge badge-light border">{{ group_member_totals|length }} amb participants</span>
+          <span class="group-preview-badge badge badge-light border">Carregant resum...</span>
+        </div>
+      </div>
+
+      <div class="team-compact-summary mt-3" id="groups-compact-actions">
+        <div class="team-compact-summary-copy">
+          <div class="fw-semibold mb-2">Accions rapides</div>
+          <div class="small text-muted">L'abast es comparteix amb el workspace: seleccio actual o filtrades.</div>
+        </div>
+        <div class="d-flex flex-column" style="gap:10px; min-width:min(100%, 460px);">
+          <div class="d-flex flex-wrap align-items-center" style="gap:8px;">
+            <label class="small text-muted mb-0" for="groups-compact-scope">Abast</label>
+            <select id="groups-compact-scope" class="form-control form-control-sm" style="width:170px;">
+              <option value="selected">Seleccio actual</option>
+              <option value="filtered">Visibles filtrades</option>
+            </select>
+            <label class="small text-muted mb-0" for="groups-compact-target-group">Grup desti</label>
+            <select id="groups-compact-target-group" class="form-control form-control-sm" style="width:min(100%, 260px); min-width:220px;">
+              <option value="">Carregant grups...</option>
+            </select>
+          </div>
+          <div class="d-flex flex-wrap" style="gap:8px;">
+            <button type="button" class="btn btn-sm btn-outline-dark" data-group-action="create">Crear grup nou amb seleccio</button>
+            <button type="button" class="btn btn-sm btn-outline-primary" data-group-action="assign">Assignar seleccio</button>
+            <button type="button" class="btn btn-sm btn-outline-warning" data-group-action="unassign">Treure seleccio</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-group-action="open-workspace">Obrir workspace</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="team-compact-summary mt-3">
+        <div class="team-compact-summary-copy">
+          <div class="fw-semibold mb-2">Grups en vista rapida</div>
+          <div class="small text-muted" id="groups-compact-list-note">Mostrant els primers grups carregats des del workspace.</div>
+        </div>
+        <div class="team-compact-summary-metrics" id="groups-compact-list"></div>
+      </div>
+
+      <div class="team-workspace-shell" id="groups-workspace-shell">
+        <div class="team-workspace-header">
+          <div class="team-workspace-header-bar">
+            <div class="team-workspace-header-main">
+              <span class="badge badge-light border" id="groups-workspace-badge">Grups</span>
+              <div class="team-workspace-title-wrap">
+                <div class="team-workspace-title" id="groups-workspace-title">Gestor de grups</div>
+                <div class="small text-muted" id="groups-workspace-description">Carregant dades del workspace...</div>
+              </div>
+            </div>
+            <div class="team-workspace-header-tools">
+              <div class="team-context-inline-metrics" id="groups-workspace-metrics">
+                <span class="group-preview-badge badge badge-light border"><strong id="groups-summary-total">0</strong> totals</span>
+                <span class="group-preview-badge badge badge-light border"><strong id="groups-summary-with-members">0</strong> amb membres</span>
+                <span class="group-preview-badge badge badge-light border"><strong id="groups-summary-empty">0</strong> buits</span>
+                <span class="group-preview-badge badge badge-light border"><strong id="groups-summary-assigned">0</strong> assignades</span>
+                <span class="group-preview-badge badge badge-light border"><strong id="groups-summary-unassigned">0</strong> sense grup</span>
+                <span class="group-preview-badge badge badge-light border"><strong id="groups-summary-programmed">0</strong> programades</span>
+                <span class="group-preview-badge badge badge-light border"><strong id="groups-summary-out-of-program">0</strong> fora de programa</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="team-workspace-grid">
+          <section class="team-workspace-pane team-workspace-pane-left">
+            <div class="team-pane-card">
+              <div class="team-pane-head">
+                <div>
+                  <div class="fw-semibold">Subconjunt d'inscripcions</div>
+                  <div class="small text-muted">Filtra les inscripcions visibles i construeix la seleccio amb la qual treballaran les accions de grup.</div>
+                </div>
+                <span class="badge badge-light border" id="groups-candidates-count-badge">0 candidates</span>
+              </div>
+
+              <div class="team-filters-grid">
+                <div>
+                  <label class="small text-muted mb-1 d-block" for="groups-filter-q">Cerca</label>
+                  <input type="text" class="form-control form-control-sm" id="groups-filter-q" placeholder="Nom, document o entitat...">
+                </div>
+                <div>
+                  <label class="small text-muted mb-1 d-block" for="groups-filter-categoria">Categoria</label>
+                  <select id="groups-filter-categoria" class="form-control form-control-sm">
+                    <option value="">Totes</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="small text-muted mb-1 d-block" for="groups-filter-subcategoria">Subcategoria</label>
+                  <select id="groups-filter-subcategoria" class="form-control form-control-sm">
+                    <option value="">Totes</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="small text-muted mb-1 d-block" for="groups-filter-entitat">Entitat</label>
+                  <select id="groups-filter-entitat" class="form-control form-control-sm">
+                    <option value="">Totes</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="small text-muted mb-1 d-block" for="groups-filter-group-state">Estat de grup</label>
+                  <select id="groups-filter-group-state" class="form-control form-control-sm">
+                    <option value="all">Totes</option>
+                    <option value="assigned">Amb grup</option>
+                    <option value="unassigned">Sense grup</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="small text-muted mb-1 d-block" for="groups-filter-group-id">Grup actual</label>
+                  <select id="groups-filter-group-id" class="form-control form-control-sm">
+                    <option value="">Qualsevol</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="team-selection-toolbar">
+                <div class="team-selection-summary">
+                  <strong id="groups-selection-count">0 seleccionades</strong>
+                  <span class="text-muted" id="groups-selection-mode-label">Treballant sobre totes les candidates filtrades del workspace</span>
+                </div>
+                <div class="d-flex flex-wrap" style="gap:8px;">
+                  <button type="button" class="btn btn-sm btn-outline-secondary" data-group-action="select-visible">Seleccionar visibles</button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" data-group-action="add-visible">Afegir visibles</button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" data-group-action="remove-visible">Treure visibles</button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" data-group-action="import-selection">Importar seleccio del llistat</button>
+                  <button type="button" class="btn btn-sm btn-outline-danger" data-group-action="clear-selection">Netejar seleccio</button>
+                </div>
+              </div>
+
+              <div class="team-candidates-status small text-muted" id="groups-candidates-status">Carregant candidates...</div>
+              <div class="team-candidates-list" id="groups-candidates-list"></div>
+              <div class="team-candidates-footer">
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-groups-candidates-prev">Anterior</button>
+                <span class="small text-muted" id="groups-candidates-page-label">Pagina 1</span>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-groups-candidates-next">Seguent</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="team-workspace-pane team-workspace-pane-center">
+            <div class="team-pane-card">
+              <div class="team-pane-head">
+                <div>
+                  <div class="fw-semibold">Accions</div>
+                  <div class="small text-muted">El manual treballa sobre la seleccio actual o sobre les filtrades, i l'automatic queda separat com a mode avancat.</div>
+                </div>
+              </div>
+
+              <div class="team-action-tabs">
+                <button type="button" class="btn btn-sm btn-dark js-groups-action-tab is-active" data-groups-action-tab="manual">Manual</button>
+                <button type="button" class="btn btn-sm btn-outline-dark js-groups-action-tab" data-groups-action-tab="auto">Automatic</button>
+              </div>
+
+              <div class="team-action-panel" id="groups-action-panel-manual" data-groups-action-panel="manual">
+                <div class="team-scope-box">
+                  <div class="fw-semibold small mb-2">Abast</div>
+                  <label class="team-scope-option">
+                    <input type="radio" name="groups-selection-mode" value="selected" checked>
+                    <span>Treballar nomes sobre la seleccio</span>
+                  </label>
+                  <label class="team-scope-option">
+                    <input type="radio" name="groups-selection-mode" value="filtered">
+                    <span>Treballar sobre totes les candidates filtrades</span>
+                  </label>
+                </div>
+
+                <div class="team-manual-banner">
+                  <div class="fw-semibold small mb-1">Grup desti i nom opcional</div>
+                  <div class="d-flex flex-wrap" style="gap:8px;">
+                    <select id="groups-workspace-target-group" class="form-control form-control-sm" style="min-width:220px; max-width:320px;">
+                      <option value="">Carregant grups...</option>
+                    </select>
+                    <input id="groups-workspace-name" type="text" class="form-control form-control-sm" style="min-width:200px; max-width:260px;" placeholder="Nom nou del grup">
+                  </div>
+                </div>
+
+                <div class="team-action-note" id="groups-manual-scope-note">S'aplicara sobre les inscripcions seleccionades o filtrades segons l'abast.</div>
+
+                <div class="d-flex flex-wrap mt-2" style="gap:10px;">
+                  <button type="button" class="btn btn-sm btn-outline-dark" data-group-action="preview-create">Previsualitzar creacio</button>
+                  <button type="button" class="btn btn-sm btn-primary" data-group-action="create">Crear grup nou</button>
+                  <button type="button" class="btn btn-sm btn-outline-primary" data-group-action="assign">Assignar a grup</button>
+                  <button type="button" class="btn btn-sm btn-outline-warning" data-group-action="unassign">Treure del grup</button>
+                  <button type="button" class="btn btn-sm btn-outline-danger" data-group-action="delete">Desactivar grup buit</button>
+                </div>
+
+                <div class="team-action-note mt-2">
+                  L'ordre de competicio continua sent una accio separada des de cada grup. El workspace nomes prepara seleccio, resum i resultats.
+                </div>
+              </div>
+
+              <div class="team-action-panel d-none" id="groups-action-panel-auto" data-groups-action-panel="auto">
+                <div class="team-manual-banner">
+                  <div class="fw-semibold">Creacio automatica</div>
+                  <div class="small text-muted">La configuracio actual reutilitza el motor existent i es previsualitza abans d'aplicar canvis.</div>
+                </div>
+
+                <div class="small mb-2">
+                  <span class="text-muted fw-semibold mr-2">Divisions actives:</span>
+                  {% if group_creation_group_fields %}
+                    {% for field in group_creation_group_fields %}
+                      <span class="badge badge-info mr-1">{{ field.label }}</span>
+                    {% endfor %}
+                  {% else %}
+                    <span class="text-muted">cap</span>
+                  {% endif %}
+                </div>
+
+                <div class="small mb-2">
+                  <span class="text-muted fw-semibold mr-2">Ordenacions detectades:</span>
+                  {% if sort_partition_fields %}
+                    {% for f in sort_partition_fields %}
+                      <span class="badge badge-primary mr-1">#{{ f.priority }} {{ f.label }}</span>
+                    {% endfor %}
+                  {% else %}
+                    <span class="text-muted">cap</span>
+                  {% endif %}
+                </div>
+
+                <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
+                  <span class="text-muted small fw-semibold">Resolucio final:</span>
+                  <span class="badge badge-light border">{{ group_creation_resolution_label }}</span>
+                  {% if group_creation_resolution_layers_used %}
+                    {% for layer in group_creation_resolution_layers_used %}
+                      <span class="badge badge-light border">
+                        {% if layer == 'tabs' %}Divisio{% elif layer == 'sort' %}Ordenacio{% else %}{{ layer }}{% endif %}
+                      </span>
+                    {% endfor %}
+                  {% else %}
+                    <span class="text-muted small">Sense criteris resolubles: el fallback treballara sobre totes les filtrades.</span>
+                  {% endif %}
+                </div>
+
+                <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
+                  <span class="text-muted small fw-semibold">Fallback:</span>
+                  <select id="groups-fallback" class="form-control form-control-sm" style="width:280px;">
+                    <option value="all_filtered" selected>Sense criteris resolubles: totes filtrades</option>
+                    <option value="strict">Estricte (error)</option>
+                    <option value="adjust_k">Ajustar k si cal</option>
+                    <option value="ignore_range">Ignorar forquilla si cal</option>
+                  </select>
+                </div>
+
+                <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
+                  <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-groups-buckets-all">Seleccionar tots</button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-groups-buckets-none">Netejar</button>
+                  <span class="text-muted small">{{ group_creation_auto_bucket_count }} blocs origen resolts</span>
+                </div>
+
+                {% if group_creation_auto_buckets %}
+                  <div class="tab-select-grid mb-3">
+                    {% for bucket in group_creation_auto_buckets %}
+                      <label class="tab-select-item">
+                        <input type="checkbox" class="js-group-bucket-check" value="{{ bucket.key }}">
+                        <span class="tab-label small" title="{{ bucket.label }}">{{ bucket.label }}</span>
+                        {% if bucket.kinds %}
+                          {% for kind in bucket.kinds %}
+                            <span class="badge badge-light border">
+                              {% if kind == 'tabs' %}Divisio{% elif kind == 'sort' %}Ordenacio{% else %}{{ kind }}{% endif %}
+                            </span>
+                          {% endfor %}
+                        {% endif %}
+                        <span class="badge badge-light">{{ bucket.count }}</span>
+                      </label>
+                    {% endfor %}
+                  </div>
+                {% else %}
+                  <div class="text-muted small mb-3">
+                    No s'han detectat blocs resolts per al context actual.
+                  </div>
+                {% endif %}
+
+                <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
+                  <span class="text-muted small fw-semibold">Crear X grups:</span>
+                  <input id="groups-group-count" type="number" min="1" max="200" value="4" class="form-control form-control-sm" style="width:90px;">
+                  <button type="button" class="btn btn-sm btn-outline-dark" id="btn-groups-create-count">Crear X grups</button>
+                  <button type="button" class="btn btn-sm btn-outline-primary" id="btn-groups-preview-count">Previsualitzar</button>
+                </div>
+
+                <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
+                  <span class="text-muted small fw-semibold">Mida:</span>
+                  <input id="groups-group-size" type="number" min="2" max="200" value="8" class="form-control form-control-sm" style="width:90px;">
+                  <select id="groups-group-size-mode" class="form-control form-control-sm" style="width:170px;">
+                    <option value="fixed">Mida fixa</option>
+                    <option value="balanced">Equilibrats</option>
+                  </select>
+                  <button type="button" class="btn btn-sm btn-outline-dark" id="btn-groups-create-size">Crear per mida</button>
+                  <button type="button" class="btn btn-sm btn-outline-primary" id="btn-groups-preview-size">Previsualitzar</button>
+                </div>
+
+                <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
+                  <span class="text-muted small fw-semibold">Forquilla:</span>
+                  <input id="groups-group-min-size" type="number" min="1" max="200" value="5" class="form-control form-control-sm" style="width:82px;" title="Minim">
+                  <span class="small text-muted">a</span>
+                  <input id="groups-group-max-size" type="number" min="1" max="200" value="8" class="form-control form-control-sm" style="width:82px;" title="Maxim">
+                  <button type="button" class="btn btn-sm btn-outline-dark" id="btn-groups-create-range-balanced">Equilibrats min-max</button>
+                  <button type="button" class="btn btn-sm btn-outline-primary" id="btn-groups-preview-range-balanced">Previsualitzar</button>
+                </div>
+
+                <div class="d-flex align-items-center flex-wrap" style="gap:8px;">
+                  <span class="text-muted small fw-semibold">X grups amb forquilla:</span>
+                  <input id="groups-group-count-range" type="number" min="1" max="200" value="4" class="form-control form-control-sm" style="width:90px;">
+                  <button type="button" class="btn btn-sm btn-outline-dark" id="btn-groups-create-count-range">Crear X amb min-max</button>
+                  <button type="button" class="btn btn-sm btn-outline-primary" id="btn-groups-preview-count-range">Previsualitzar</button>
+                </div>
+
+                <div class="d-flex align-items-center flex-wrap mt-2" style="gap:8px;">
+                  <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-groups-create-per-bucket">1 grup per cada bloc resolt</button>
+                  <button type="button" class="btn btn-sm btn-outline-primary" id="btn-groups-preview-per-bucket">Previsualitzar</button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="team-workspace-pane team-workspace-pane-right">
+            <div class="team-pane-card">
+              <div class="team-pane-head">
+                <div>
+                  <div class="fw-semibold">Grups existents</div>
+                  <div class="small text-muted">Resum visual rapid amb accions immediates per grup.</div>
+                </div>
+                <span class="badge badge-light border" id="groups-existing-count-badge">0 grups</span>
+              </div>
+
+              <div class="team-context-teams-list" id="groups-active-list"></div>
+              <div class="team-context-zero-members-wrap mt-2" id="groups-empty-wrap">
+                <div class="team-pane-head mb-2">
+                  <div>
+                    <div class="fw-semibold">Grups buits</div>
+                    <div class="small text-muted">Es poden desactivar si no tenen cap participant.</div>
+                  </div>
+                </div>
+                <div class="team-context-zero-members-list" id="groups-empty-list"></div>
+              </div>
+            </div>
+
+            <div class="team-pane-card mt-3" id="groups-detail-panel">
+              <div class="team-pane-head">
+                <div>
+                  <div class="fw-semibold">Detall del grup</div>
+                  <div class="small text-muted" id="groups-detail-meta">Selecciona un grup per veure'n membres i accions.</div>
+                </div>
+                <span class="badge badge-light border d-none" id="groups-detail-status-badge"></span>
+              </div>
+              <div id="groups-detail-empty" class="small text-muted">
+                Encara no hi ha cap grup seleccionat.
+              </div>
+              <div class="d-none" id="groups-detail-content">
+                <div class="d-flex flex-wrap align-items-center mb-2" style="gap:8px;">
+                  <span class="badge badge-light border" id="groups-detail-members-count">0 membres</span>
+                  <span class="badge badge-light border" id="groups-detail-programmed-badge">No programat</span>
+                  <span class="badge badge-light border" id="groups-detail-delete-badge">No es pot desactivar</span>
+                </div>
+                <div class="d-flex flex-wrap mb-2" style="gap:8px;">
+                  <button type="button" class="btn btn-sm btn-outline-primary" id="groups-detail-select-btn" data-group-action="detail-select">Assignar seleccio a aquest grup</button>
+                  <button type="button" class="btn btn-sm btn-outline-info js-view-group-order" id="groups-detail-order-btn" data-group="">Veure ordre competicio</button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" id="groups-detail-rename-btn" data-group-rename="">Editar nom</button>
+                  <button type="button" class="btn btn-sm btn-outline-danger" id="groups-detail-delete-btn" data-group-action="delete">Desactivar grup buit</button>
+                </div>
+                <div class="d-none mb-2" id="groups-detail-name-editor">
+                  <div class="d-flex flex-wrap align-items-center" style="gap:8px;">
+                    <input
+                      type="text"
+                      class="form-control form-control-sm"
+                      id="groups-detail-name-input"
+                      style="min-width:220px; max-width:320px;"
+                      placeholder="Nom del grup">
+                    <button type="button" class="btn btn-sm btn-primary js-save-group-name">Desar</button>
+                    <button type="button" class="btn btn-sm btn-light js-cancel-group-name">Cancelar</button>
+                  </div>
+                </div>
+                <div class="small text-muted mb-2" id="groups-detail-summary"></div>
+                <div class="team-context-member-list" id="groups-detail-members" style="max-height:360px; overflow:auto;"></div>
+              </div>
+            </div>
+
+            <div class="team-pane-card mt-3">
+              <div class="team-pane-head">
+                <div>
+                  <div class="fw-semibold">Previsualitzacio d'impacte</div>
+                  <div class="small text-muted">Es reutilitza abans d'aplicar canvis manuals o automatics.</div>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="btn-groups-preview-clear">Netejar</button>
+              </div>
+              <div class="group-preview-panel" id="groups-preview" data-has-preview="0">
+                <div class="group-preview-toolbar">
+                  <div>
+                    <div class="group-preview-status" id="groups-preview-status">
+                      Encara no s'ha calculat cap previsualitzacio amb aquesta configuracio.
+                    </div>
+                  </div>
+                </div>
+                <div class="group-preview-summary d-none" id="groups-preview-summary"></div>
+                <div class="group-preview-sections">
+                  <div class="group-preview-section d-none" id="groups-preview-existing-wrap">
+                    <div class="group-preview-section-head">
+                      <div class="fw-semibold">Grups existents</div>
+                      <div class="group-preview-section-meta" id="groups-preview-existing-meta"></div>
+                    </div>
+                    <div class="group-preview-list" id="groups-preview-existing-list"></div>
+                  </div>
+                  <div class="group-preview-section d-none" id="groups-preview-planned-wrap">
+                    <div class="group-preview-section-head">
+                      <div class="fw-semibold">Grups nous previstos</div>
+                      <div class="group-preview-section-meta" id="groups-preview-planned-meta"></div>
+                    </div>
+                    <div class="group-preview-list" id="groups-preview-list"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>

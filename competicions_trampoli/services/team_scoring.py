@@ -27,7 +27,31 @@ TEAM_MEMBER_KEYS_HELPERS = {
     "members_min",
     "members_max",
     "members_count",
+    "member_treatment",
 }
+TEAM_MEMBER_AGG_HELPERS = set(TEAM_MEMBER_KEYS_HELPERS)
+TEAM_MEMBER_PRESERVING_CALLS = {
+    "row_custom_compute",
+    "column_custom_compute",
+    "row_custom_agregation",
+    "exec_by_judge",
+    "select_sum",
+    "best_n",
+    "sum",
+    "avg",
+    "min",
+    "max",
+    "float",
+}
+KIND_MEMBER_SCALAR = "member_scalar"
+KIND_MEMBER_LIST = "member_list"
+KIND_MEMBER_MATRIX = "member_matrix"
+KIND_SHARED_SCALAR = "shared_scalar"
+KIND_SHARED_LIST = "shared_list"
+KIND_SHARED_MATRIX = "shared_matrix"
+SCALAR_KINDS = {KIND_MEMBER_SCALAR, KIND_SHARED_SCALAR}
+MEMBER_KINDS = {KIND_MEMBER_SCALAR, KIND_MEMBER_LIST, KIND_MEMBER_MATRIX}
+SHARED_KINDS = {KIND_SHARED_SCALAR, KIND_SHARED_LIST, KIND_SHARED_MATRIX}
 
 
 def is_team_context_app(comp_aparell: Optional[CompeticioAparell]) -> bool:
@@ -83,27 +107,179 @@ def team_member_payloads_for_subject(subject: TeamCompetitiveSubject) -> List[Di
     return out
 
 
-def _replace_member_helper_calls(expr: str, replacements: Dict[str, List[str]]) -> str:
-    if not isinstance(expr, str) or not expr.strip():
-        return expr
-    tree = ast.parse(expr, mode="eval")
+def _kind_is_member(kind: str) -> bool:
+    return kind in MEMBER_KINDS
 
+
+def _kind_is_scalar(kind: str) -> bool:
+    return kind in SCALAR_KINDS
+
+
+def _kind_for_scope(scope: str, suffix: str) -> str:
+    return f"{'member' if scope == 'member' else 'shared'}_{suffix}"
+
+
+def _field_kind(field: Dict[str, Any]) -> str:
+    scope = str(field.get("scope") or "member").strip().lower() or "member"
+    ftype = str(field.get("type") or "number").strip().lower() or "number"
+    if ftype == "number":
+        suffix = "scalar"
+    elif ftype == "list":
+        suffix = "list"
+    else:
+        suffix = "matrix"
+    return _kind_for_scope(scope, suffix)
+
+
+def _resolve_kind_from_name(name: str, kind_env: Dict[str, str]) -> str:
+    return str(kind_env.get(str(name), KIND_SHARED_SCALAR))
+
+
+def _resolve_kind_from_node(node: ast.AST, kind_env: Dict[str, str]) -> str:
+    if isinstance(node, ast.Name):
+        return _resolve_kind_from_name(node.id, kind_env)
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return _resolve_kind_from_name(str(node.value), kind_env)
+    return KIND_SHARED_SCALAR
+
+
+def _binop_kind(left_kind: str, right_kind: str) -> str:
+    if _kind_is_scalar(left_kind) and _kind_is_scalar(right_kind):
+        if _kind_is_member(left_kind) or _kind_is_member(right_kind):
+            return KIND_MEMBER_SCALAR
+        return KIND_SHARED_SCALAR
+    if left_kind == right_kind:
+        return left_kind
+    if _kind_is_member(left_kind) and right_kind in SHARED_KINDS:
+        return left_kind
+    if _kind_is_member(right_kind) and left_kind in SHARED_KINDS:
+        return right_kind
+    return KIND_SHARED_SCALAR
+
+
+def infer_team_expr_kind(node: ast.AST, kind_env: Dict[str, str]) -> str:
+    if isinstance(node, ast.Expression):
+        return infer_team_expr_kind(node.body, kind_env)
+    if isinstance(node, ast.Name):
+        return _resolve_kind_from_name(node.id, kind_env)
+    if isinstance(node, ast.Constant):
+        if isinstance(node.value, str):
+            return _resolve_kind_from_name(str(node.value), kind_env)
+        return KIND_SHARED_SCALAR
+    if isinstance(node, (ast.List, ast.Tuple)):
+        kinds = [infer_team_expr_kind(elt, kind_env) for elt in node.elts]
+        if any(_kind_is_member(kind) for kind in kinds):
+            return KIND_MEMBER_LIST
+        return KIND_SHARED_LIST
+    if isinstance(node, ast.UnaryOp):
+        return infer_team_expr_kind(node.operand, kind_env)
+    if isinstance(node, ast.Subscript):
+        base_kind = infer_team_expr_kind(node.value, kind_env)
+        if base_kind == KIND_MEMBER_MATRIX:
+            return KIND_MEMBER_LIST
+        if base_kind == KIND_SHARED_MATRIX:
+            return KIND_SHARED_LIST
+        if base_kind == KIND_MEMBER_LIST:
+            return KIND_MEMBER_SCALAR
+        if base_kind == KIND_SHARED_LIST:
+            return KIND_SHARED_SCALAR
+        return base_kind
+    if isinstance(node, ast.BinOp):
+        return _binop_kind(
+            infer_team_expr_kind(node.left, kind_env),
+            infer_team_expr_kind(node.right, kind_env),
+        )
+    if isinstance(node, ast.Call):
+        fn_name = node.func.id if isinstance(node.func, ast.Name) else ""
+        args = list(node.args or [])
+        if fn_name == "field" and args and isinstance(args[0], ast.Constant) and isinstance(args[0].value, str):
+            return _resolve_kind_from_name(str(args[0].value), kind_env)
+        if fn_name == "crash":
+            src_kind = _resolve_kind_from_node(args[0], kind_env) if args else KIND_SHARED_LIST
+            return KIND_MEMBER_LIST if _kind_is_member(src_kind) else KIND_SHARED_LIST
+        if fn_name in TEAM_MEMBER_AGG_HELPERS:
+            return KIND_SHARED_SCALAR
+        if fn_name in {"row_custom_compute", "column_custom_compute", "select_sum"}:
+            src_kind = _resolve_kind_from_node(args[0], kind_env) if args else KIND_SHARED_SCALAR
+            return KIND_MEMBER_SCALAR if _kind_is_member(src_kind) else KIND_SHARED_SCALAR
+        if fn_name in {"row_custom_agregation", "exec_by_judge", "best_n"}:
+            src_kind = _resolve_kind_from_node(args[0], kind_env) if args else KIND_SHARED_LIST
+            return KIND_MEMBER_LIST if _kind_is_member(src_kind) else KIND_SHARED_LIST
+        if fn_name in {"sum", "avg", "min", "max"}:
+            src_kind = infer_team_expr_kind(args[0], kind_env) if args else KIND_SHARED_SCALAR
+            return KIND_MEMBER_SCALAR if _kind_is_member(src_kind) else KIND_SHARED_SCALAR
+        if fn_name == "float":
+            src_kind = infer_team_expr_kind(args[0], kind_env) if args else KIND_SHARED_SCALAR
+            return KIND_MEMBER_SCALAR if src_kind == KIND_MEMBER_SCALAR else KIND_SHARED_SCALAR
+        if fn_name in TEAM_MEMBER_PRESERVING_CALLS:
+            src_kind = _resolve_kind_from_node(args[0], kind_env) if args else KIND_SHARED_SCALAR
+            return KIND_MEMBER_SCALAR if _kind_is_member(src_kind) else KIND_SHARED_SCALAR
+        return KIND_SHARED_SCALAR
+    return KIND_SHARED_SCALAR
+
+
+def _slotify_member_expr(
+    node: ast.AST,
+    slot: int,
+    *,
+    name_replacements: Dict[str, List[str]],
+    string_replacements: Dict[str, List[str]],
+) -> ast.AST:
     class Transformer(ast.NodeTransformer):
-        def visit_Call(self, node):
-            node = self.generic_visit(node)
-            if not isinstance(node.func, ast.Name) or node.func.id not in TEAM_MEMBER_KEYS_HELPERS:
-                return node
-            if len(node.args) != 1 or not isinstance(node.args[0], ast.Name):
-                return node
-            base = node.args[0].id
-            runtime_names = replacements.get(base) or []
-            list_elts = [ast.Name(id=name, ctx=ast.Load()) for name in runtime_names]
-            node.args = [ast.List(elts=list_elts, ctx=ast.Load())]
-            return node
+        def visit_Name(self, inner_node):
+            runtime_names = name_replacements.get(str(inner_node.id)) or []
+            if slot - 1 < len(runtime_names):
+                return ast.copy_location(ast.Name(id=runtime_names[slot - 1], ctx=ast.Load()), inner_node)
+            return inner_node
 
-    tree = Transformer().visit(tree)
-    ast.fix_missing_locations(tree)
-    return ast.unparse(tree)
+        def visit_Constant(self, inner_node):
+            if isinstance(inner_node.value, str):
+                runtime_codes = string_replacements.get(str(inner_node.value)) or []
+                if slot - 1 < len(runtime_codes):
+                    return ast.copy_location(ast.Constant(value=runtime_codes[slot - 1]), inner_node)
+            return inner_node
+
+    cloned = copy.deepcopy(node)
+    cloned = Transformer().visit(cloned)
+    ast.fix_missing_locations(cloned)
+    return cloned
+
+
+def _expand_member_aggregate_calls(
+    node: ast.AST,
+    *,
+    kind_env: Dict[str, str],
+    name_replacements: Dict[str, List[str]],
+    string_replacements: Dict[str, List[str]],
+    member_count: int,
+) -> ast.AST:
+    class Transformer(ast.NodeTransformer):
+        def visit_Call(self, inner_node):
+            inner_node = self.generic_visit(inner_node)
+            fn_name = inner_node.func.id if isinstance(inner_node.func, ast.Name) else ""
+            if fn_name not in TEAM_MEMBER_AGG_HELPERS or not inner_node.args:
+                return inner_node
+            source_expr = inner_node.args[0]
+            if infer_team_expr_kind(source_expr, kind_env) != KIND_MEMBER_SCALAR:
+                return inner_node
+            inner_node.args[0] = ast.List(
+                elts=[
+                    _slotify_member_expr(
+                        source_expr,
+                        slot,
+                        name_replacements=name_replacements,
+                        string_replacements=string_replacements,
+                    )
+                    for slot in range(1, max(0, int(member_count or 0)) + 1)
+                ],
+                ctx=ast.Load(),
+            )
+            return inner_node
+
+    cloned = copy.deepcopy(node)
+    cloned = Transformer().visit(cloned)
+    ast.fix_missing_locations(cloned)
+    return cloned
 
 
 def expand_team_schema_for_member_count(schema: dict, member_count: int) -> dict:
@@ -116,8 +292,9 @@ def expand_team_schema_for_member_count(schema: dict, member_count: int) -> dict
     columns = ui.get("columns") if isinstance(ui.get("columns"), list) else []
 
     member_count = max(0, int(member_count or 0))
-    replacements: Dict[str, List[str]] = {}
-    var_replacements: Dict[str, List[str]] = {}
+    name_replacements: Dict[str, List[str]] = {}
+    string_replacements: Dict[str, List[str]] = {}
+    kind_env: Dict[str, str] = {}
     new_fields: List[Dict[str, Any]] = []
     field_by_code = {
         str(field.get("code") or ""): field
@@ -131,51 +308,111 @@ def expand_team_schema_for_member_count(schema: dict, member_count: int) -> dict
         scope = str(field.get("scope") or "member").strip().lower() or "member"
         code = str(field.get("code") or "").strip()
         base_var = str(field.get("var") or "").strip()
+        kind_env[code] = _field_kind(field)
+        if base_var:
+            kind_env[base_var] = kind_env[code]
         if scope != "member":
             field["scope"] = "shared"
             new_fields.append(field)
             continue
 
-        replacements[code] = []
+        name_replacements[code] = []
+        string_replacements[code] = []
         if base_var:
-            var_replacements[base_var] = []
+            name_replacements[base_var] = []
         for member_slot in range(1, member_count + 1):
             cloned = copy.deepcopy(field)
             cloned["scope"] = "member"
             cloned["member_slot"] = member_slot
             cloned["base_code"] = code
             cloned["code"] = member_runtime_code(code, member_slot)
-            replacements[code].append(cloned["code"])
+            name_replacements[code].append(cloned["code"])
+            string_replacements[code].append(cloned["code"])
             if base_var:
                 cloned["base_var"] = base_var
                 cloned["var"] = member_runtime_var(base_var, member_slot)
-                var_replacements[base_var].append(cloned["var"])
+                name_replacements[base_var].append(cloned["var"])
             label = str(cloned.get("label") or code or "").strip()
             cloned["label"] = f"{label} · Individual {member_slot}".strip()
             new_fields.append(cloned)
 
     expanded["fields"] = new_fields
 
+    expanded_cols: List[str] = []
     if columns:
-        expanded_cols: List[str] = []
         for col in columns:
             field = field_by_code.get(str(col))
             if field and str(field.get("scope") or "member").strip().lower() == "member":
-                expanded_cols.extend(replacements.get(str(col), []))
+                expanded_cols.extend(name_replacements.get(str(col), []))
             else:
                 expanded_cols.append(col)
-        ui["columns"] = expanded_cols
-        expanded["ui"] = ui
 
-    merge_replacements = {}
-    merge_replacements.update(replacements)
-    merge_replacements.update(var_replacements)
+    new_computed: List[Dict[str, Any]] = []
     for comp in computed:
         if not isinstance(comp, dict):
             continue
-        formula = comp.get("formula")
-        if isinstance(formula, str) and formula.strip():
-            comp["formula"] = _replace_member_helper_calls(formula, merge_replacements)
+        code = str(comp.get("code") or "").strip()
+        base_var = str(comp.get("var") or "").strip()
+        formula = str(comp.get("formula") or "").strip()
+        expr = ast.parse(formula, mode="eval").body if formula else ast.Constant(value=0)
+        kind = infer_team_expr_kind(expr, kind_env)
+
+        if kind in MEMBER_KINDS:
+            name_replacements[code] = []
+            string_replacements[code] = []
+            if base_var:
+                name_replacements[base_var] = []
+            for member_slot in range(1, member_count + 1):
+                cloned = copy.deepcopy(comp)
+                cloned["member_slot"] = member_slot
+                cloned["base_code"] = code
+                cloned["code"] = member_runtime_code(code, member_slot)
+                name_replacements[code].append(cloned["code"])
+                string_replacements[code].append(cloned["code"])
+                if base_var:
+                    cloned["base_var"] = base_var
+                    cloned["var"] = member_runtime_var(base_var, member_slot)
+                    name_replacements[base_var].append(cloned["var"])
+                if formula:
+                    cloned["formula"] = ast.unparse(
+                        _slotify_member_expr(
+                            expr,
+                            member_slot,
+                            name_replacements=name_replacements,
+                            string_replacements=string_replacements,
+                        )
+                    )
+                new_computed.append(cloned)
+            if columns:
+                expanded_cols.extend(name_replacements.get(code, []))
+        else:
+            cloned = copy.deepcopy(comp)
+            if formula:
+                cloned["formula"] = ast.unparse(
+                    _expand_member_aggregate_calls(
+                        expr,
+                        kind_env=kind_env,
+                        name_replacements=name_replacements,
+                        string_replacements=string_replacements,
+                        member_count=member_count,
+                    )
+                )
+            new_computed.append(cloned)
+            if columns:
+                expanded_cols.append(code)
+
+        kind_env[code] = kind
+        if base_var:
+            kind_env[base_var] = kind
+
+    expanded["computed"] = new_computed
+    if columns:
+        seen_cols: List[str] = []
+        for col in expanded_cols:
+            if col not in seen_cols:
+                seen_cols.append(col)
+        ui["columns"] = seen_cols
+        expanded["ui"] = ui
 
     meta = expanded.get("meta") if isinstance(expanded.get("meta"), dict) else {}
     meta["subject_mode"] = "team"

@@ -89,7 +89,8 @@
       {% if schema_builder_config.is_team_unit %}
       <div class="alert alert-info">
         Aquest aparell global competeix per equips.
-        Els camps amb abast <strong>Individual</strong> es recullen per cada membre real de la unitat competitiva i les fórmules han d'usar helpers com <code>members_sum(E)</code> o <code>members_avg(E)</code>.
+        Els camps amb abast <strong>Individual</strong> es recullen per cada membre real de la unitat competitiva.
+        Primer redueix cada membre si cal amb funcions com <code>row_custom_compute(...)</code> i després agrega entre membres amb <code>member_treatment(...)</code> o amb els helpers ràpids <code>members_sum(...)</code> i <code>members_avg(...)</code>.
       </div>
       {% endif %}
 
@@ -267,10 +268,13 @@
   // --- Select options ---
   const PRESET_FUNCS = [
     ["manual", "Expressió manual"],
-    ["row_compute", "Items i després jutges (total final)"],
-    ["row_agregation", "Items i resultat per jutge (nota per jutge)"],
-    ["column_compute", "Jutges i després items (total final)"],
+    ["row_compute", "Per jutge i després entre jutges (total final)"],
+    ["row_agregation", "Resultat per jutge (nota per jutge)"],
+    ["column_compute", "Per ítems i després entre items (total final)"],
   ];
+  if (BUILDER_CONFIG.is_team_unit) {
+    PRESET_FUNCS.push(["member_treatment_guided", "Entre membres (selecció + agregació)"]);
+  }
 
   const SELECT_OPTIONS = [
     ["all", "Tots (no seleccionar)"],
@@ -387,6 +391,33 @@
     return Array.from(new Set(codes));
   }
 
+  function memberTreatmentSourceCodes(){
+    const codes = [];
+
+    document.querySelectorAll("#fieldsTable tbody tr").forEach(r=>{
+      const c = r.querySelector('[data-k="code"]').value.trim();
+      if(!c) return;
+      const scope = r.querySelector('[data-k="scope"]')?.value || "member";
+      if(scope !== "member") return;
+      const judges = Number(r.querySelector('[data-k="judges_count"]')?.value || 1);
+      const items = Number(r.querySelector('[data-k="items_count"]')?.value || 1);
+      if(Number.isFinite(judges) && Number.isFinite(items) && judges === 1 && items === 1){
+        codes.push(c);
+      }
+    });
+
+    document.querySelectorAll("#computedTable tbody tr").forEach(r=>{
+      const c = r.querySelector('[data-k="code"]')?.value.trim();
+      if(!c) return;
+      const preset = r.querySelector('[data-k="preset"]')?.value || "";
+      if(preset === "row_compute" || preset === "column_compute"){
+        codes.push(c);
+      }
+    });
+
+    return Array.from(new Set(codes));
+  }
+
   /* =========================
      CAMPS
      ========================= */
@@ -471,7 +502,7 @@
                  value="${data.formula||""}"
                  placeholder="Ex: E_total + DD + TOF + HD - P">
           <div class="pill-help mt-1">
-            Escriu una expressió amb els <strong>codes</strong> (ex: <span class="mono">E_total</span>, <span class="mono">DD</span>…).
+            Escriu una expressió amb els <strong>codes</strong> o <strong>vars</strong>(ex: <span class="mono">E_total</span>, <span class="mono">DD</span>…).
           </div>
         </div>
 
@@ -509,7 +540,7 @@
                   <input class="form-control form-control-sm" data-k="rc_start" placeholder="start" value="1">
                   <input class="form-control form-control-sm" data-k="rc_count" placeholder="count (opcional)">
                 </div>
-                <div class="pill-help mt-1">Si ho deixes buit, s’usen tots els ítems (i es respecta el crash si el camp el té).</div>
+                <div class="pill-help mt-1">Ítem d'origen -> nombre d'ítems als que s'aplica. Si ho deixes buit, s’usen tots els ítems (i es respecta el crash si el camp el té).</div>
               </div>
 
               <div class="col-md-2 mb-2">
@@ -684,6 +715,42 @@
           </div>
         </div>
 
+        <div data-box="member_treatment" class="border rounded p-2 d-none">
+          <div class="row">
+            <div class="col-md-4 mb-2">
+              <label class="small text-muted mb-1">Font individual escalar</label>
+              <select class="form-control form-control-sm mono" data-k="mt_source"></select>
+              <div class="pill-help mt-1">
+                Només mostra camps individuals 1x1 i computeds que normalment retornen un escalar per membre.
+                Si el camp encara és nxm, redueix-lo abans amb <span class="mono">row_custom_compute(...)</span>.
+              </div>
+            </div>
+            <div class="col-md-3 mb-2">
+              <label class="small text-muted mb-1">Selecció entre membres</label>
+              <select class="form-control form-control-sm" data-k="mt_select">
+                <option value="all">Tots</option>
+                <option value="best_n">Millors N</option>
+                <option value="worst_n">Pitjors N</option>
+              </select>
+              <input class="form-control form-control-sm mt-1 d-none" data-k="mt_n" placeholder="N (si aplica)">
+            </div>
+            <div class="col-md-3 mb-2">
+              <label class="small text-muted mb-1">Agregació</label>
+              <select class="form-control form-control-sm" data-k="mt_agg">
+                <option value="sum">Suma</option>
+                <option value="avg">Mitjana</option>
+                <option value="min">Mínim</option>
+                <option value="max">Màxim</option>
+                <option value="count">Comptar</option>
+              </select>
+            </div>
+            <div class="col-md-2 mb-2">
+              <label class="small text-muted mb-1">Preview fórmula</label>
+              <input class="form-control form-control-sm mono" data-k="mt_preview" readonly>
+            </div>
+          </div>
+        </div>
+
         <!-- Fórmula real que es guarda -->
         <input type="hidden" data-k="formula" value="${data.formula||""}">
       </td>
@@ -800,6 +867,12 @@
       tr.querySelector('[data-k="ss_select_n"]').value = (b.select_n ?? b.n_valid ?? 1) + "";
       tr.querySelector('[data-k="ss_agg"]').value = (b.agg || "sum");
     }
+    if (preset === "member_treatment_guided") {
+      tr.querySelector('[data-k="mt_source"]').dataset.initialValue = (b.source || "") + "";
+      tr.querySelector('[data-k="mt_select"]').value = (b.select || "all");
+      tr.querySelector('[data-k="mt_n"]').value = (b.n ?? 1) + "";
+      tr.querySelector('[data-k="mt_agg"]').value = (b.agg || "sum");
+    }
 
     // events
     tr.querySelectorAll("input,select,details").forEach(i=>{
@@ -807,7 +880,7 @@
       i.addEventListener("change", refreshAll);
       i.addEventListener("toggle", refreshAll);
     });
-    ['[data-k="rc_source"]', '[data-k="et_source"]', '[data-k="ss_source"]'].forEach(selQ=>{
+    ['[data-k="rc_source"]', '[data-k="et_source"]', '[data-k="ss_source"]', '[data-k="mt_source"]'].forEach(selQ=>{
       const sel = tr.querySelector(selQ);
       if(!sel) return;
       const clearInitial = ()=>{ delete sel.dataset.initialValue; };
@@ -825,11 +898,13 @@
     const boxRC     = tr.querySelector('[data-box="rc_compute"]');
     const boxET     = tr.querySelector('[data-box="exec_trampoli"]');
     const boxSS     = tr.querySelector('[data-box="select_sum"]');
+    const boxMT     = tr.querySelector('[data-box="member_treatment"]');
 
     showIf(boxManual, preset === "manual");
     showIf(boxRC, (preset === "row_compute" || preset === "row_agregation" || preset === "column_compute"));
     showIf(boxET, preset === "exec_trampoli");
     showIf(boxSS, preset === "select_sum_guided");
+    showIf(boxMT, preset === "member_treatment_guided");
 
     // MANUAL: només guardar el que s’escriu
     if(preset === "manual"){
@@ -881,6 +956,34 @@
       return;
     }
 
+    if(preset === "member_treatment_guided"){
+      const codes = memberTreatmentSourceCodes();
+      const sel = tr.querySelector('[data-k="mt_source"]');
+      refillDynamicSelect(sel, codes, "(cap font individual escalar disponible)");
+
+      const select = tr.querySelector('[data-k="mt_select"]').value || "all";
+      const nEl = tr.querySelector('[data-k="mt_n"]');
+      const needsMemberN = (select === "best_n" || select === "worst_n");
+      showIf(nEl, needsMemberN);
+      const nRaw = (nEl.value || "").trim();
+      const agg = tr.querySelector('[data-k="mt_agg"]').value || "sum";
+      const source = sel.value || "";
+
+      const kwargs = [];
+      if(select && select !== "all") kwargs.push(`select='${select}'`);
+      if(needsMemberN && nRaw !== ""){
+        let nSafe = Number(nRaw || 1);
+        if(!Number.isFinite(nSafe) || nSafe < 1) nSafe = 1;
+        kwargs.push(`n=${Math.floor(nSafe)}`);
+      }
+      if(agg && agg !== "sum") kwargs.push(`agg='${agg}'`);
+
+      const formula = source ? `member_treatment(${source}${kwargs.length ? ", " + kwargs.join(", ") : ""})` : "";
+      tr.querySelector('[data-k="formula"]').value = formula;
+      tr.querySelector('[data-k="mt_preview"]').value = formula || "Redueix primer un camp individual fins a escalar.";
+      return;
+    }
+
     // ROW/COLUMN COMPUTE
     if(preset === "row_compute" || preset === "row_agregation" || preset === "column_compute"){
       const codes = allCodes();
@@ -923,9 +1026,9 @@
         flow.innerHTML = `
           <div>Flux:</div>
           <div class="mono">
-            per cada jutge → per cada ítem: y = item_expr(x,i)
-            → selecció ítems → agregació → (resultat per jutge)
-            → selecció jutges → agregació final
+            Tractament per cada jutge individualment → després tractament entre jutges: 
+            1) selecció ítems per jutge → agregació entre ítems → (resultat per jutge)\n
+            2) selecció jutges → agregació final entre jutges
           </div>`;
 
       } else if (preset === "row_agregation"){
@@ -937,9 +1040,9 @@
         flow.innerHTML = `
           <div>Flux:</div>
           <div class="mono">
-            per cada jutge → per cada ítem: y = item_expr(x,i)
-            → selecció ítems → agregació → m_jutge
-            → (opcional) post_final_expr(m_jutge)
+            Tractament per cada jutge individualment:
+            selecció ítems → agregació → m_jutge
+            → (opcional) transformació final al valor
           </div>`;
       } else {
         gHelp.textContent = "Aquesta funció calcula primer dins de cada ítem (sobre els jutges) i després combina els ítems.";
@@ -950,9 +1053,9 @@
         flow.innerHTML = `
           <div>Flux:</div>
           <div class="mono">
-            per cada ítem → per cada jutge: y = item_expr(x,i)
-            → selecció jutges → agregació → (resultat per ítem)
-            → selecció ítems → agregació final
+            Tractament per cada ítem entre jutges → després tractament entre tots els conjunts de ítems:
+            1) selecció de ítems entre jutges → agregació → (resultat per ítem)
+            2) selecció ítems → agregació final
           </div>`;
       }
 
@@ -1186,6 +1289,16 @@
         select_n = Math.floor(select_n);
         const agg = tr.querySelector('[data-k="ss_agg"]').value || "sum";
         out.builder = { preset: "select_sum_guided", source: src, select, select_n, agg };
+      }
+      else if(preset === "member_treatment_guided"){
+        const src = tr.querySelector('[data-k="mt_source"]').value;
+        const select = tr.querySelector('[data-k="mt_select"]').value || "all";
+        const nRaw = (tr.querySelector('[data-k="mt_n"]').value || "").trim();
+        let n = Number(nRaw || 1);
+        if(!Number.isFinite(n) || n < 1) n = 1;
+        n = Math.floor(n);
+        const agg = tr.querySelector('[data-k="mt_agg"]').value || "sum";
+        out.builder = { preset: "member_treatment_guided", source: src, select, n, agg };
       }
 
       computed.push(out);

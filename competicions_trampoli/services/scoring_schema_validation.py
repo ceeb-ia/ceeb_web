@@ -6,7 +6,13 @@ from typing import Any, Dict, List, Set
 
 from django.core.exceptions import ValidationError
 
-from .team_scoring import MEMBER_CODE_SUFFIX_RE, TEAM_MEMBER_KEYS_HELPERS, runtime_schema_for_subject
+from .team_scoring import (
+    KIND_MEMBER_SCALAR,
+    MEMBER_CODE_SUFFIX_RE,
+    TEAM_MEMBER_KEYS_HELPERS,
+    infer_team_expr_kind,
+    runtime_schema_for_subject,
+)
 
 ALLOWED_FUNCTIONS: Set[str] = {
     "sum", "avg", "min", "max",
@@ -184,6 +190,37 @@ def _build_aliases(fields: List[Dict[str, Any]], computed: List[Dict[str, Any]],
     return aliases
 
 
+def _field_kind(field: Dict[str, Any], *, is_team: bool) -> str:
+    scope = str(field.get("scope") or "member").strip().lower() or "member"
+    ftype = str(field.get("type") or "number").strip().lower() or "number"
+    prefix = "member" if (is_team and scope == "member") else "shared"
+    if ftype == "number":
+        return f"{prefix}_scalar"
+    if ftype == "list":
+        return f"{prefix}_list"
+    return f"{prefix}_matrix"
+
+
+def _validate_member_helper_calls(tree: ast.AST, kind_env: Dict[str, str], *, is_team: bool, loc: str, errors: List[str]) -> None:
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
+            continue
+        fn_name = node.func.id
+        if fn_name not in TEAM_MEMBER_KEYS_HELPERS:
+            continue
+        if not is_team:
+            errors.append(f"{loc}: {fn_name} nomes es permes en aparells globals d'equip.")
+            continue
+        if not node.args:
+            errors.append(f"{loc}: {fn_name} requereix una font member_scalar.")
+            continue
+        arg_kind = infer_team_expr_kind(node.args[0], kind_env)
+        if arg_kind != KIND_MEMBER_SCALAR:
+            errors.append(
+                f"{loc}: {fn_name} nomes admet fonts member_scalar; rebut {arg_kind}."
+            )
+
+
 def validate_schema(schema: Dict[str, Any], *, aparell=None) -> None:
     errors: List[str] = []
     if not isinstance(schema, dict):
@@ -210,8 +247,6 @@ def validate_schema(schema: Dict[str, Any], *, aparell=None) -> None:
     field_codes: Set[str] = set()
     computed_codes: Set[str] = set()
     seen_vars: Set[str] = set()
-    member_base_codes: Set[str] = set()
-    member_base_vars: Set[str] = set()
 
     for idx, field in enumerate(fields):
         if not isinstance(field, dict):
@@ -245,11 +280,6 @@ def validate_schema(schema: Dict[str, Any], *, aparell=None) -> None:
             errors.append(f"{loc}: scope invalid: {scope!r}.")
         elif not is_team and scope == "shared":
             errors.append(f"{loc}: un aparell global individual no pot declarar camps compartits.")
-        if scope == "member":
-            member_base_codes.add(code)
-            if var:
-                member_base_vars.add(var)
-
     for idx, comp in enumerate(computed):
         if not isinstance(comp, dict):
             errors.append(f"computed[{idx}] ha de ser un objecte (dict).")
@@ -291,12 +321,48 @@ def validate_schema(schema: Dict[str, Any], *, aparell=None) -> None:
         if isinstance(item, dict) and item.get("code")
     }
     aliases = _build_aliases(runtime_fields, runtime_computed, runtime_params)
-    allowed_names = runtime_codes | set(aliases.keys()) | RESERVED_NAMES | ALLOWED_FUNCTIONS
+    logical_aliases = _build_aliases(fields, computed, params)
+    logical_names = field_codes | computed_codes | set(logical_aliases.keys())
+    allowed_names = runtime_codes | logical_names | set(aliases.keys()) | RESERVED_NAMES | ALLOWED_FUNCTIONS
+    kind_env: Dict[str, str] = {}
+    for field in fields:
+        if not isinstance(field, dict) or not field.get("code"):
+            continue
+        code = str(field.get("code") or "").strip()
+        kind = _field_kind(field, is_team=is_team)
+        kind_env[code] = kind
+        var = str(field.get("var") or "").strip()
+        if var:
+            kind_env[var] = kind
 
+    comp_deps: Dict[str, Set[str]] = {}
+    comp_codes_list: List[str] = []
+    comp_lookup: Dict[str, Dict[str, Any]] = {}
+    comp_index: Dict[str, int] = {}
     for idx, comp in enumerate(computed):
-        if not isinstance(comp, dict):
+        if not isinstance(comp, dict) or not comp.get("code"):
             continue
         code = str(comp.get("code") or "").strip()
+        formula = str(comp.get("formula") or "").strip()
+        comp_codes_list.append(code)
+        comp_lookup[code] = comp
+        comp_index[code] = idx
+        if not formula:
+            comp_deps[code] = set()
+            continue
+        tree = _parse_formula(formula, _fmt_loc("computed", idx, code))
+        try:
+            names = _extract_names(tree)
+        except ValidationError:
+            names = set()
+        resolved = {logical_aliases.get(name, name) for name in names}
+        comp_deps[code] = {name for name in resolved if name in computed_codes}
+
+    ordered_codes = _topo_sort(comp_codes_list, comp_deps)
+
+    for code in ordered_codes:
+        comp = comp_lookup.get(code) or {}
+        idx = comp_index.get(code)
         formula = str(comp.get("formula") or "").strip()
         loc = _fmt_loc("computed", idx, code)
         tree = _parse_formula(formula, loc)
@@ -306,19 +372,19 @@ def validate_schema(schema: Dict[str, Any], *, aparell=None) -> None:
             errors.append(f"{loc}: {exc.message}")
             continue
 
-        invalid_member_refs = sorted((names & member_base_codes) | (names & member_base_vars))
-        if invalid_member_refs and is_team:
-            uses_member_helper = any(
-                f"{helper}(" in formula
-                for helper in TEAM_MEMBER_KEYS_HELPERS
-            )
-            if not uses_member_helper:
-                errors.append(
-                    f"{loc}: els camps individuals d'un aparell d'equip s'han de consumir via helpers members_*: {', '.join(invalid_member_refs)}"
-                )
+        runtime_member_refs = sorted(name for name in names if MEMBER_CODE_SUFFIX_RE.search(str(name)))
+        if runtime_member_refs:
+            errors.append(f"{loc}: no es permet referenciar sufixos runtime __mN: {', '.join(runtime_member_refs)}")
+        _validate_member_helper_calls(tree, kind_env, is_team=is_team, loc=loc, errors=errors)
         unknown = sorted(name for name in names if name not in allowed_names)
         if unknown:
             errors.append(f"{loc}: variables no declarades: {', '.join(unknown)}")
+
+        kind = infer_team_expr_kind(tree.body, kind_env)
+        kind_env[code] = kind
+        var = str(comp.get("var") or "").strip()
+        if var:
+            kind_env[var] = kind
 
     if errors:
         raise ValidationError(errors)

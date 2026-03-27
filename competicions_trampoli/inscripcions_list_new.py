@@ -2,6 +2,7 @@ import json
 import mimetypes
 import os
 from decimal import Decimal
+from collections import defaultdict
 
 from django.http import HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404
@@ -14,9 +15,23 @@ from .models import Competicio, Equip, Inscripcio, InscripcioMedia
 from .models_trampoli import CompeticioAparell, InscripcioAparellExclusio
 from .access import user_has_competicio_capability
 from .services.competition_groups import (
+    clear_inscripcions_group,
+    get_competicio_groups,
+    get_group_card_payload,
+    get_group_detail_payload,
     get_group_for_display_num,
     get_group_maps,
+    get_group_member_preview,
+    get_group_summary_counts,
+    get_programmed_group_ids,
+    get_programmed_groups_emptied_by_ids,
+    move_inscripcions_to_group,
+    next_group_display_num,
+    normalize_inscripcio_ids,
+    safe_deactivate_empty_group,
     sync_competicio_group_names_view,
+    ensure_group_for_display_num,
+    group_label,
 )
 from .services.equip_contexts import (
     NATIVE_EQUIP_CONTEXT_CODE,
@@ -32,6 +47,8 @@ from .services.media_matching import (
 )
 from .views import (
     InscripcionsListView,
+    _build_inscripcions_filtered_qs,
+    _message_for_emptied_programmed_groups,
     get_allowed_group_fields,
     get_competicio_custom_sort_codes,
     build_inscripcions_sort_context_key,
@@ -40,6 +57,7 @@ from .views import (
     _build_sort_partition_buckets,
     _resolve_group_creation_buckets,
     capture_inscripcions_history_snapshot,
+    competicio_has_rotacions,
     get_inscripcions_history_state,
     record_inscripcions_history_entry,
     with_inscripcions_history_payload,
@@ -741,6 +759,662 @@ def inscripcions_set_group_name(request, pk):
     return JsonResponse(
         with_inscripcions_history_payload(
             {"ok": True, "group": group_int, "name": name},
+            request,
+            competicio.id,
+        )
+    )
+
+
+def _normalize_group_workspace_filters(raw_filters):
+    filters = raw_filters if isinstance(raw_filters, dict) else {}
+    out = {
+        "q": str(filters.get("q") or "").strip(),
+        "categoria": str(filters.get("categoria") or "").strip(),
+        "subcategoria": str(filters.get("subcategoria") or "").strip(),
+        "entitat": str(filters.get("entitat") or "").strip(),
+        "group_state": str(filters.get("group_state") or "all").strip().lower(),
+        "group_id": None,
+        "group_num": None,
+    }
+    if out["group_state"] not in {"all", "assigned", "unassigned"}:
+        out["group_state"] = "all"
+    try:
+        group_id = int(filters.get("group_id"))
+    except Exception:
+        group_id = None
+    try:
+        group_num = int(filters.get("group_num"))
+    except Exception:
+        group_num = None
+    out["group_id"] = group_id if group_id and group_id > 0 else None
+    out["group_num"] = group_num if group_num and group_num > 0 else None
+    return out
+
+
+def _resolve_group_workspace_target_ids(competicio, payload):
+    scope = str(payload.get("scope") or "selected").strip().lower()
+    filters = _normalize_group_workspace_filters(payload.get("filters"))
+    selected_ids = normalize_inscripcio_ids(payload.get("selected_ids") or payload.get("ids") or [])
+
+    if scope == "filtered":
+        qs = _build_inscripcions_filtered_qs(competicio, filters)
+        group_id = filters.get("group_id")
+        group_num = filters.get("group_num")
+        if group_id:
+            qs = qs.filter(grup_competicio_id=group_id)
+        elif group_num:
+            qs = qs.filter(grup=group_num)
+        if filters["group_state"] == "assigned":
+            qs = qs.filter(grup_competicio__isnull=False)
+        elif filters["group_state"] == "unassigned":
+            qs = qs.filter(grup_competicio__isnull=True)
+        target_ids = list(qs.order_by("ordre_sortida", "id").values_list("id", flat=True))
+    else:
+        target_ids = selected_ids
+
+    return {
+        "scope": scope,
+        "filters": filters,
+        "selected_ids": selected_ids,
+        "target_ids": normalize_inscripcio_ids(target_ids),
+    }
+
+
+def _resolve_group_workspace_group(competicio, payload, include_inactive=True):
+    group_id = None
+    raw_group_id = payload.get("group_id")
+    raw_group_num = payload.get("group_num")
+    if str(raw_group_id or "").strip().isdigit():
+        group_id = int(raw_group_id)
+
+    group_maps = get_group_maps(competicio, include_inactive=include_inactive)
+    group = None
+    if group_id:
+        group = group_maps["by_id"].get(group_id)
+    if group is None and str(raw_group_num or "").strip().isdigit():
+        group = get_group_for_display_num(competicio, int(raw_group_num))
+    return group
+
+
+def _serialize_group_workspace_candidate(ins, selected_ids=None):
+    group = getattr(ins, "grup_competicio", None)
+    selected_ids = set(selected_ids or [])
+    group_label_value = group_label(group) if group is not None else "Sense grup"
+    return {
+        "id": ins.id,
+        "label": str(getattr(ins, "nom_i_cognoms", "") or "").strip() or f"Inscripcio {ins.id}",
+        "secondary_label": str(getattr(ins, "entitat", "") or "").strip(),
+        "group_id": getattr(ins, "grup_competicio_id", None),
+        "group_num": int(group.display_num) if group is not None and getattr(group, "display_num", None) else getattr(ins, "grup", None),
+        "group_label": group_label_value,
+        "group_state": "unassigned" if group is None else ("assigned" if not getattr(group, "actiu", True) else "assigned"),
+        "ordre_competicio": int(ins.ordre_competicio) if getattr(ins, "ordre_competicio", None) is not None else None,
+        "ordre_sortida": int(ins.ordre_sortida) if getattr(ins, "ordre_sortida", None) is not None else None,
+        "is_selected": ins.id in selected_ids,
+    }
+
+
+def _build_group_workspace_filter_options(records, groups):
+    categories = sorted({
+        str(getattr(ins, "categoria", "") or "").strip()
+        for ins in records
+        if str(getattr(ins, "categoria", "") or "").strip()
+    })
+    subcategories = sorted({
+        str(getattr(ins, "subcategoria", "") or "").strip()
+        for ins in records
+        if str(getattr(ins, "subcategoria", "") or "").strip()
+    })
+    entitats = sorted({
+        str(getattr(ins, "entitat", "") or "").strip()
+        for ins in records
+        if str(getattr(ins, "entitat", "") or "").strip()
+    })
+    return {
+        "categories": categories,
+        "subcategories": subcategories,
+        "entitats": entitats,
+        "group_states": [
+            {"id": "all", "label": "Totes"},
+            {"id": "assigned", "label": "Amb grup"},
+            {"id": "unassigned", "label": "Sense grup"},
+        ],
+        "groups": [
+            {
+                "id": int(group.id),
+                "display_num": int(group.display_num),
+                "label": group_label(group),
+            }
+            for group in groups
+        ],
+    }
+
+
+def _build_group_workspace_selection_summary(competicio, selected_ids):
+    selected_ids = normalize_inscripcio_ids(selected_ids)
+    if not selected_ids:
+        return {
+            "count": 0,
+            "assigned_count": 0,
+            "unassigned_count": 0,
+            "group_count": 0,
+            "group_ids": [],
+            "group_labels": [],
+            "member_names_preview": [],
+        }
+
+    rows = list(
+        Inscripcio.objects
+        .filter(competicio=competicio, id__in=selected_ids)
+        .select_related("grup_competicio")
+        .order_by("ordre_sortida", "id")
+        .only("id", "nom_i_cognoms", "grup_competicio_id", "grup", "ordre_sortida")
+    )
+    group_ids = []
+    group_labels = []
+    seen_group_ids = set()
+    member_names = []
+    assigned_count = 0
+    for ins in rows:
+        group = getattr(ins, "grup_competicio", None)
+        if group is not None:
+            assigned_count += 1
+            if group.id not in seen_group_ids:
+                seen_group_ids.add(group.id)
+                group_ids.append(group.id)
+                group_labels.append(group_label(group))
+        member_name = str(getattr(ins, "nom_i_cognoms", "") or "").strip()
+        if member_name:
+            member_names.append(member_name)
+
+    return {
+        "count": len(rows),
+        "assigned_count": assigned_count,
+        "unassigned_count": max(0, len(rows) - assigned_count),
+        "group_count": len(group_ids),
+        "group_ids": group_ids,
+        "group_labels": group_labels,
+        "member_names_preview": member_names[:5],
+        "member_names_remaining": max(0, len(member_names) - min(len(member_names), 5)),
+    }
+
+
+def _build_group_workspace_payload(competicio, payload):
+    selection = _resolve_group_workspace_target_ids(competicio, payload)
+    filters = selection["filters"]
+    selected_ids = selection["selected_ids"]
+    target_ids = selection["target_ids"]
+    page = 1
+    page_size = 40
+    try:
+        page = int(payload.get("page") or 1)
+    except Exception:
+        page = 1
+    try:
+        page_size = int(payload.get("page_size") or 40)
+    except Exception:
+        page_size = 40
+    page = max(1, page)
+    page_size = max(1, min(200, page_size))
+
+    candidates_qs = _build_inscripcions_filtered_qs(competicio, filters)
+    if filters["group_state"] == "assigned":
+        candidates_qs = candidates_qs.filter(grup_competicio__isnull=False)
+    elif filters["group_state"] == "unassigned":
+        candidates_qs = candidates_qs.filter(grup_competicio__isnull=True)
+    if filters.get("group_id"):
+        candidates_qs = candidates_qs.filter(grup_competicio_id=filters["group_id"])
+    elif filters.get("group_num"):
+        candidates_qs = candidates_qs.filter(grup=filters["group_num"])
+
+    candidate_records = list(
+        candidates_qs
+        .select_related("grup_competicio")
+        .order_by("ordre_sortida", "id")
+        .only(
+            "id",
+            "nom_i_cognoms",
+            "entitat",
+            "categoria",
+            "subcategoria",
+            "grup",
+            "grup_competicio_id",
+            "ordre_competicio",
+            "ordre_sortida",
+        )
+    )
+    total_candidates = len(candidate_records)
+    start = (page - 1) * page_size
+    stop = start + page_size
+    page_rows = candidate_records[start:stop]
+
+    summary = get_group_summary_counts(competicio, include_inactive=False)
+    groups = list(get_competicio_groups(competicio, include_inactive=False))
+    group_cards = []
+    for group in groups:
+        group_cards.append(
+            get_group_card_payload(
+                group,
+                members_count=None,
+                member_limit=5,
+            )
+        )
+
+    return {
+        "summary": summary,
+        "rotacions_active": bool(competicio_has_rotacions(competicio)),
+        "selection": _build_group_workspace_selection_summary(competicio, selected_ids),
+        "filters": filters,
+        "filter_options": _build_group_workspace_filter_options(candidate_records, groups),
+        "scope": selection["scope"],
+        "selected_ids": selected_ids,
+        "target_ids": target_ids,
+        "paging": {
+            "page": page,
+            "page_size": page_size,
+            "total": total_candidates,
+            "pages": max(1, (total_candidates + page_size - 1) // page_size) if total_candidates else 1,
+        },
+        "candidates": [_serialize_group_workspace_candidate(ins, selected_ids=selected_ids) for ins in page_rows],
+        "groups": group_cards,
+    }
+
+
+def _get_programmed_groups_warned_by_ids(competicio, inscripcio_ids, exclude_group_id=None):
+    clean_ids = normalize_inscripcio_ids(inscripcio_ids)
+    if not clean_ids:
+        return []
+
+    programmed_group_ids = set(get_programmed_group_ids(competicio) or [])
+    if not programmed_group_ids:
+        return []
+
+    blocked_groups = get_programmed_groups_emptied_by_ids(
+        competicio,
+        clean_ids,
+        exclude_group_id=exclude_group_id,
+    )
+    blocked_ids = {int(group.id) for group in blocked_groups}
+    touched_group_ids = {
+        int(group_id)
+        for group_id in (
+            Inscripcio.objects
+            .filter(competicio=competicio, id__in=clean_ids)
+            .values_list("grup_competicio_id", flat=True)
+        )
+        if group_id and int(group_id) in programmed_group_ids and int(group_id) not in blocked_ids
+    }
+    if exclude_group_id:
+        touched_group_ids.discard(int(exclude_group_id))
+    if not touched_group_ids:
+        return []
+
+    groups_by_id = get_group_maps(competicio, include_inactive=True)["by_id"]
+    return [
+        groups_by_id[group_id]
+        for group_id in sorted(touched_group_ids)
+        if group_id in groups_by_id
+    ]
+
+
+def _group_workspace_action_preview(competicio, payload):
+    action = str(payload.get("action") or "create").strip().lower()
+    scope_bundle = _resolve_group_workspace_target_ids(competicio, payload)
+    filters = scope_bundle["filters"]
+    selected_ids = scope_bundle["selected_ids"]
+    target_ids = scope_bundle["target_ids"]
+    records = list(
+        Inscripcio.objects
+        .filter(competicio=competicio, id__in=target_ids)
+        .select_related("grup_competicio")
+        .order_by("ordre_sortida", "id")
+        .only("id", "nom_i_cognoms", "entitat", "grup", "grup_competicio_id", "ordre_sortida", "ordre_competicio")
+    )
+    selection_summary = _build_group_workspace_selection_summary(competicio, selected_ids or target_ids)
+    summary = get_group_summary_counts(competicio, include_inactive=False)
+    blocked_groups = []
+    moving_records = list(records)
+    if action in {"create", "assign", "unassign"}:
+        if action == "assign":
+            group = _resolve_group_workspace_group(competicio, payload, include_inactive=True)
+            moving_records = [
+                ins for ins in records
+                if getattr(ins, "grup_competicio_id", None) != getattr(group, "id", None)
+            ] if group is not None else list(records)
+            blocked_groups = get_programmed_groups_emptied_by_ids(
+                competicio,
+                [ins.id for ins in moving_records],
+                exclude_group_id=getattr(group, "id", None),
+            )
+        else:
+            blocked_groups = get_programmed_groups_emptied_by_ids(competicio, target_ids)
+    warning_groups = []
+    if action in {"create", "assign", "unassign"}:
+        warning_groups = _get_programmed_groups_warned_by_ids(
+            competicio,
+            [ins.id for ins in moving_records] if action == "assign" else target_ids,
+            exclude_group_id=getattr(_resolve_group_workspace_group(competicio, payload, include_inactive=True), "id", None) if action == "assign" else None,
+        )
+
+    existing_groups_preview = []
+    if records:
+        from .views import _build_existing_groups_preview
+
+        existing_groups_preview = _build_existing_groups_preview(
+            competicio,
+            records,
+            moving_ids=[ins.id for ins in moving_records] if action == "assign" else target_ids,
+        )
+
+    preview = {
+        "action": action,
+        "scope": scope_bundle["scope"],
+        "selection": selection_summary,
+        "summary": summary,
+        "rotacions_active": bool(competicio_has_rotacions(competicio)),
+        "blocked": bool(blocked_groups),
+        "blocked_groups": [get_group_card_payload(group, member_limit=5) for group in blocked_groups],
+        "warning_groups": [get_group_card_payload(group, member_limit=5) for group in warning_groups],
+        "existing_groups": existing_groups_preview,
+        "planned_groups": [],
+        "target_ids_count": len(moving_records if action == "assign" else target_ids),
+        "target_member_names_preview": [
+            str(getattr(ins, "nom_i_cognoms", "") or "").strip()
+            for ins in (moving_records if action == "assign" else records)[:5]
+            if str(getattr(ins, "nom_i_cognoms", "") or "").strip()
+        ],
+    }
+
+    if action == "create":
+        next_group_num = next_group_display_num(competicio)
+        preview["planned_groups"] = [
+            {
+                "preview_kind": "created",
+                "impact_kind": "created",
+                "group_num": next_group_num,
+                "label": f"Grup {next_group_num}",
+                "members_count": len(target_ids),
+                "member_names_preview": preview["target_member_names_preview"],
+                "member_names_remaining": max(0, len(target_ids) - len(preview["target_member_names_preview"])),
+            }
+        ]
+    elif action == "assign":
+        group = _resolve_group_workspace_group(competicio, payload, include_inactive=True)
+        if group is not None:
+            group_count = int(
+                Inscripcio.objects.filter(grup_competicio=group).count()
+            )
+            preview["planned_groups"] = [
+                {
+                    "preview_kind": "existing",
+                    "impact_kind": "updated",
+                    "group_num": group.display_num,
+                    "group_id": group.id,
+                    "label": group_label(group),
+                    "members_count": group_count + len(moving_records),
+                    "member_names_preview": get_group_member_preview(group, limit=5),
+                    "member_names_remaining": max(0, group_count + len(moving_records) - 5),
+                }
+            ]
+            preview["target_group"] = get_group_detail_payload(group, member_limit=5)
+    elif action == "unassign":
+        preview["planned_groups"] = []
+    elif action == "delete":
+        group = _resolve_group_workspace_group(competicio, payload, include_inactive=True)
+        preview["target_group"] = get_group_detail_payload(group, member_limit=5) if group is not None else None
+        preview["can_delete"] = bool(preview["target_group"] and preview["target_group"].get("can_delete"))
+
+    return preview
+
+
+@require_POST
+@csrf_protect
+def groups_workspace(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        payload = {}
+    workspace = _build_group_workspace_payload(competicio, payload)
+    return JsonResponse(
+        with_inscripcions_history_payload(
+            {"ok": True, "workspace": workspace, **workspace},
+            request,
+            competicio.id,
+        )
+    )
+
+
+@require_POST
+@csrf_protect
+def groups_detail(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        payload = {}
+    group = _resolve_group_workspace_group(competicio, payload, include_inactive=True)
+    if group is None:
+        return HttpResponseBadRequest("group invalid")
+    detail = get_group_detail_payload(group, member_limit=50)
+    return JsonResponse(
+        with_inscripcions_history_payload(
+            {"ok": True, "group": detail, "members": detail.get("members") or []},
+            request,
+            competicio.id,
+        )
+    )
+
+
+@require_POST
+@csrf_protect
+def groups_preview(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        payload = {}
+    preview = _group_workspace_action_preview(competicio, payload)
+    return JsonResponse(
+        with_inscripcions_history_payload(
+            {"ok": True, "preview": preview},
+            request,
+            competicio.id,
+        )
+    )
+
+
+@require_POST
+@csrf_protect
+def groups_create(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        payload = {}
+
+    resolved = _resolve_group_workspace_target_ids(competicio, payload)
+    target_ids = resolved["target_ids"]
+    name = str(payload.get("name") or "").strip()
+
+    blocked_groups = get_programmed_groups_emptied_by_ids(competicio, target_ids)
+    if blocked_groups:
+        return HttpResponseBadRequest(_message_for_emptied_programmed_groups(blocked_groups))
+    warning_groups = _get_programmed_groups_warned_by_ids(competicio, target_ids)
+
+    before_snapshot = capture_inscripcions_history_snapshot(request, competicio)
+    group = ensure_group_for_display_num(competicio, next_group_display_num(competicio), name=name)
+    result = {"updated": 0, "moved_ids": [], "skipped_ids": [], "compacted_group_ids": []}
+    if target_ids:
+        result = move_inscripcions_to_group(group, target_ids)
+    if name and group.nom != name:
+        group.nom = name
+        group.save(update_fields=["nom"])
+    sync_competicio_group_names_view(competicio)
+    record_inscripcions_history_entry(
+        request,
+        competicio,
+        action_type="groups_create_manual",
+        action_label="Crear grup manual",
+        before_snapshot=before_snapshot,
+        after_snapshot=capture_inscripcions_history_snapshot(request, competicio),
+    )
+    return JsonResponse(
+        with_inscripcions_history_payload(
+            {
+                "ok": True,
+                "created": True,
+                "updated": int(result.get("updated") or 0),
+                "moved_ids": list(result.get("moved_ids") or []),
+                "skipped_ids": list(result.get("skipped_ids") or []),
+                "group": get_group_detail_payload(group, member_limit=5),
+                "selection": _build_group_workspace_selection_summary(competicio, target_ids),
+                "warnings": [group_label(row) for row in warning_groups],
+                "notice": (
+                    f"S'ha modificat un grup programat: {', '.join(group_label(row) for row in warning_groups)}."
+                    if warning_groups else ""
+                ),
+            },
+            request,
+            competicio.id,
+        )
+    )
+
+
+@require_POST
+@csrf_protect
+def groups_assign(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        payload = {}
+
+    group = _resolve_group_workspace_group(competicio, payload, include_inactive=True)
+    if group is None:
+        return HttpResponseBadRequest("group invalid")
+
+    resolved = _resolve_group_workspace_target_ids(competicio, payload)
+    target_ids = resolved["target_ids"]
+    blocked_groups = get_programmed_groups_emptied_by_ids(competicio, target_ids, exclude_group_id=group.id)
+    if blocked_groups:
+        return HttpResponseBadRequest(_message_for_emptied_programmed_groups(blocked_groups))
+    warning_groups = _get_programmed_groups_warned_by_ids(competicio, target_ids, exclude_group_id=group.id)
+
+    before_snapshot = capture_inscripcions_history_snapshot(request, competicio)
+    result = move_inscripcions_to_group(group, target_ids)
+    sync_competicio_group_names_view(competicio)
+    record_inscripcions_history_entry(
+        request,
+        competicio,
+        action_type="groups_assign_manual",
+        action_label="Assignar seleccio a grup",
+        before_snapshot=before_snapshot,
+        after_snapshot=capture_inscripcions_history_snapshot(request, competicio),
+    )
+    return JsonResponse(
+        with_inscripcions_history_payload(
+            {
+                "ok": True,
+                "updated": int(result.get("updated") or 0),
+                "moved_ids": list(result.get("moved_ids") or []),
+                "skipped_ids": list(result.get("skipped_ids") or []),
+                "group": get_group_detail_payload(group, member_limit=5),
+                "selection": _build_group_workspace_selection_summary(competicio, target_ids),
+                "warnings": [group_label(row) for row in warning_groups],
+                "notice": (
+                    f"S'ha modificat un grup programat: {', '.join(group_label(row) for row in warning_groups)}."
+                    if warning_groups else ""
+                ),
+            },
+            request,
+            competicio.id,
+        )
+    )
+
+
+@require_POST
+@csrf_protect
+def groups_unassign(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        payload = {}
+
+    resolved = _resolve_group_workspace_target_ids(competicio, payload)
+    target_ids = resolved["target_ids"]
+    blocked_groups = get_programmed_groups_emptied_by_ids(competicio, target_ids)
+    if blocked_groups:
+        return HttpResponseBadRequest(_message_for_emptied_programmed_groups(blocked_groups))
+    warning_groups = _get_programmed_groups_warned_by_ids(competicio, target_ids)
+
+    before_snapshot = capture_inscripcions_history_snapshot(request, competicio)
+    result = clear_inscripcions_group(competicio, target_ids)
+    sync_competicio_group_names_view(competicio)
+    record_inscripcions_history_entry(
+        request,
+        competicio,
+        action_type="groups_unassign_manual",
+        action_label="Treure seleccio del grup",
+        before_snapshot=before_snapshot,
+        after_snapshot=capture_inscripcions_history_snapshot(request, competicio),
+    )
+    return JsonResponse(
+        with_inscripcions_history_payload(
+            {
+                "ok": True,
+                "updated": int(result.get("updated") or 0),
+                "cleared_ids": list(result.get("cleared_ids") or []),
+                "selection": _build_group_workspace_selection_summary(competicio, target_ids),
+                "warnings": [group_label(row) for row in warning_groups],
+                "notice": (
+                    f"S'ha modificat un grup programat: {', '.join(group_label(row) for row in warning_groups)}."
+                    if warning_groups else ""
+                ),
+            },
+            request,
+            competicio.id,
+        )
+    )
+
+
+@require_POST
+@csrf_protect
+def groups_delete(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        payload = {}
+
+    group = _resolve_group_workspace_group(competicio, payload, include_inactive=True)
+    if group is None:
+        return HttpResponseBadRequest("group invalid")
+
+    before_snapshot = capture_inscripcions_history_snapshot(request, competicio)
+    ok, reason = safe_deactivate_empty_group(group)
+    if not ok:
+        if reason == "group_not_empty":
+            return HttpResponseBadRequest("group not empty")
+        return HttpResponseBadRequest("group invalid")
+
+    sync_competicio_group_names_view(competicio)
+    record_inscripcions_history_entry(
+        request,
+        competicio,
+        action_type="groups_delete_manual",
+        action_label="Desactivar grup buit",
+        before_snapshot=before_snapshot,
+        after_snapshot=capture_inscripcions_history_snapshot(request, competicio),
+    )
+    return JsonResponse(
+        with_inscripcions_history_payload(
+            {
+                "ok": True,
+                "deleted": True,
+                "group": get_group_detail_payload(group, member_limit=5),
+            },
             request,
             competicio.id,
         )
