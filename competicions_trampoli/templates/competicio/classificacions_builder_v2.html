@@ -4768,22 +4768,19 @@
     els.particionsFieldsBox.addEventListener("change", (ev) => {
       const node = ev.target;
       if (!node) return;
+      if (node.matches('[data-part-stack="available"]')) {
+        return;
+      }
       if (node.matches('[data-part-entry="apply_mode"]')) {
         const row = node.closest("[data-part-entry-row]");
         const wrap = row ? row.querySelector("[data-part-entry-parent-wrap]") : null;
         if (wrap) wrap.style.display = node.value === "some_parents" ? "" : "none";
+        syncAdvancedFromUI();
+        return;
       }
-      const partEntries = readParticioEntriesFromUI();
-      const parts = particioCodesFromEntries(partEntries);
-      const custom = normalizeParticionsCustom(readParticionsCustomUI(parts));
-      const particionsConfig = readParticionsConfigUI();
-      renderDerivedPartitionConfigUI(particionsConfig, parts);
-      renderParticionsCustomUI(
-        parts,
-        custom
-      );
-      renderParticioStackUI(partEntries, custom);
-      syncAdvancedFromUI();
+      if (node.matches('[data-part-entry="parent_values"]')) {
+        syncAdvancedFromUI();
+      }
     });
     els.particionsFieldsBox.addEventListener("click", (ev) => {
       const btn = ev.target.closest("button[data-part-stack-act]");

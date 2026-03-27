@@ -4155,9 +4155,12 @@ class GroupManagerV1Tests(_BaseTrampoliDataMixin, TestCase):
 
         summary = data.get("summary") or {}
         self.assertGreaterEqual(int(summary.get("groups_total") or 0), 3)
+        self.assertGreaterEqual(int(summary.get("groups_with_members") or 0), 1)
+        self.assertGreaterEqual(int(summary.get("empty_groups") or 0), 1)
         self.assertEqual(int(summary.get("assigned_count") or 0), 3)
         self.assertEqual(int(summary.get("unassigned_count") or 0), 2)
-        self.assertEqual(int(summary.get("out_of_program_count") or 0), 1)
+        self.assertEqual(int(summary.get("programmed_groups") or 0), 1)
+        self.assertEqual(int(summary.get("out_of_program_groups") or 0), 1)
 
     def test_groups_detail_contract_returns_members_and_state_flags(self):
         resp = self._post_groups_contract(
@@ -9133,6 +9136,70 @@ class TeamMemberTreatmentSchemaTests(_BaseTrampoliDataMixin, TestCase):
             schema.full_clean()
         self.assertIn("member_scalar", str(ctx.exception))
 
+    def test_schema_rejects_member_treatment_with_invalid_select(self):
+        schema = ScoringSchema(
+            aparell=self.app,
+            schema={
+                "fields": [
+                    {"code": "E", "label": "Exec", "type": "number", "scope": "member"},
+                ],
+                "computed": [
+                    {"code": "TOTAL", "label": "Total", "formula": "member_treatment(E, select='median_band', agg='sum')"},
+                ],
+            },
+        )
+        with self.assertRaises(ValidationError) as ctx:
+            schema.full_clean()
+        self.assertIn("member_treatment.select invalid", str(ctx.exception))
+
+    def test_schema_rejects_member_treatment_with_invalid_agg(self):
+        schema = ScoringSchema(
+            aparell=self.app,
+            schema={
+                "fields": [
+                    {"code": "E", "label": "Exec", "type": "number", "scope": "member"},
+                ],
+                "computed": [
+                    {"code": "TOTAL", "label": "Total", "formula": "member_treatment(E, agg='median')"},
+                ],
+            },
+        )
+        with self.assertRaises(ValidationError) as ctx:
+            schema.full_clean()
+        self.assertIn("member_treatment.agg invalid", str(ctx.exception))
+
+    def test_schema_rejects_member_treatment_missing_n_when_selector_requires_it(self):
+        schema = ScoringSchema(
+            aparell=self.app,
+            schema={
+                "fields": [
+                    {"code": "E", "label": "Exec", "type": "number", "scope": "member"},
+                ],
+                "computed": [
+                    {"code": "TOTAL", "label": "Total", "formula": "member_treatment(E, select='drop_extremes_until_n', agg='sum')"},
+                ],
+            },
+        )
+        with self.assertRaises(ValidationError) as ctx:
+            schema.full_clean()
+        self.assertIn("requereix n", str(ctx.exception))
+
+    def test_schema_rejects_member_treatment_with_n_when_selector_does_not_use_it(self):
+        schema = ScoringSchema(
+            aparell=self.app,
+            schema={
+                "fields": [
+                    {"code": "E", "label": "Exec", "type": "number", "scope": "member"},
+                ],
+                "computed": [
+                    {"code": "TOTAL", "label": "Total", "formula": "member_treatment(E, select='drop_extremes', n=2, agg='sum')"},
+                ],
+            },
+        )
+        with self.assertRaises(ValidationError) as ctx:
+            schema.full_clean()
+        self.assertIn("no admet n", str(ctx.exception))
+
     def test_individual_app_rejects_member_treatment(self):
         app = self._create_aparell("INDSC", "Individual Schema")
         schema = ScoringSchema(
@@ -9178,6 +9245,63 @@ class TeamMemberTreatmentSchemaTests(_BaseTrampoliDataMixin, TestCase):
         )
         self.assertAlmostEqual(result.outputs["BEST_EXEC"], 8.1)
         self.assertAlmostEqual(result.total, 14.1)
+
+    def test_runtime_member_treatment_wrappers_match_explicit_contract(self):
+        schema = {
+            "fields": [
+                {"code": "E", "label": "Exec", "type": "number", "scope": "member"},
+            ],
+            "computed": [
+                {"code": "SUM_EXPL", "label": "Sum explicit", "formula": "member_treatment(E, agg='sum')"},
+                {"code": "SUM_WRAP", "label": "Sum wrap", "formula": "members_sum(E)"},
+                {"code": "AVG_EXPL", "label": "Avg explicit", "formula": "member_treatment(E, agg='avg')"},
+                {"code": "AVG_WRAP", "label": "Avg wrap", "formula": "members_avg(E)"},
+                {"code": "MIN_EXPL", "label": "Min explicit", "formula": "member_treatment(E, agg='min')"},
+                {"code": "MIN_WRAP", "label": "Min wrap", "formula": "members_min(E)"},
+                {"code": "MAX_EXPL", "label": "Max explicit", "formula": "member_treatment(E, agg='max')"},
+                {"code": "MAX_WRAP", "label": "Max wrap", "formula": "members_max(E)"},
+                {"code": "COUNT_EXPL", "label": "Count explicit", "formula": "member_treatment(E, agg='count')"},
+                {"code": "COUNT_WRAP", "label": "Count wrap", "formula": "members_count(E)"},
+            ],
+        }
+        runtime_schema = runtime_schema_for_comp_aparell(schema, self.comp_app, member_count=3)
+        result = ScoringEngine(runtime_schema).compute(
+            {
+                "E__m1": 8.1,
+                "E__m2": 7.4,
+                "E__m3": 8.5,
+            }
+        )
+        self.assertAlmostEqual(result.outputs["SUM_EXPL"], result.outputs["SUM_WRAP"])
+        self.assertAlmostEqual(result.outputs["AVG_EXPL"], result.outputs["AVG_WRAP"])
+        self.assertAlmostEqual(result.outputs["MIN_EXPL"], result.outputs["MIN_WRAP"])
+        self.assertAlmostEqual(result.outputs["MAX_EXPL"], result.outputs["MAX_WRAP"])
+        self.assertAlmostEqual(result.outputs["COUNT_EXPL"], result.outputs["COUNT_WRAP"])
+
+    def test_runtime_member_treatment_supports_official_advanced_selectors_and_med(self):
+        schema = {
+            "fields": [
+                {"code": "E", "label": "Exec", "type": "number", "scope": "member"},
+            ],
+            "computed": [
+                {"code": "DROP_SUM", "label": "Drop extremes", "formula": "member_treatment(E, select='drop_extremes', agg='sum')"},
+                {"code": "ALT_TWO", "label": "Alternating extremes", "formula": "member_treatment(E, select='drop_extremes_until_n', n=2, agg='sum')"},
+                {"code": "MEDIAN", "label": "Median", "formula": "member_treatment(E, agg='med')"},
+            ],
+        }
+        runtime_schema = runtime_schema_for_comp_aparell(schema, self.comp_app, member_count=5)
+        result = ScoringEngine(runtime_schema).compute(
+            {
+                "E__m1": 1.0,
+                "E__m2": 3.0,
+                "E__m3": 5.0,
+                "E__m4": 7.0,
+                "E__m5": 9.0,
+            }
+        )
+        self.assertAlmostEqual(result.outputs["DROP_SUM"], 15.0)
+        self.assertAlmostEqual(result.outputs["ALT_TWO"], 8.0)
+        self.assertAlmostEqual(result.outputs["MEDIAN"], 5.0)
 
     def test_runtime_schema_expands_member_computed_before_member_treatment(self):
         schema = {
@@ -9302,6 +9426,22 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
         )
         schema.comp_aparell = self.comp_app
         schema.full_clean()
+
+    def test_team_builder_shows_official_member_treatment_options(self):
+        self.app.competition_unit = Aparell.CompetitionUnit.TEAM
+        self.app.save(update_fields=["competition_unit"])
+
+        response = self.client.get(
+            reverse("scoring_schema_update", kwargs={"pk": self.comp.id, "ap_id": self.comp_app.id})
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode("utf-8")
+        self.assertIn("member_treatment(source, select='all', n=None, agg='sum')", body)
+        self.assertIn('<option value="drop_extremes">', body)
+        self.assertIn('<option value="drop_extremes_until_n">', body)
+        self.assertIn('<option value="count">Comptar</option>', body)
+        self.assertIn('<option value="med">Mediana</option>', body)
 
     def test_scoring_save_partial_creates_team_score_entry(self):
         ScoringSchema.objects.create(

@@ -361,6 +361,8 @@
                 <span class="badge badge-light border" id="groups-existing-count-badge">0 grups</span>
               </div>
 
+              <div class="team-context-teams-status small text-muted" id="groups-existing-status">Sense dades encara.</div>
+              <div class="team-context-unassigned-dropzone" id="groups-context-unassigned-dropzone"></div>
               <div class="team-context-teams-list" id="groups-active-list"></div>
               <div class="team-context-zero-members-wrap mt-2" id="groups-empty-wrap">
                 <div class="team-pane-head mb-2">
@@ -370,46 +372,6 @@
                   </div>
                 </div>
                 <div class="team-context-zero-members-list" id="groups-empty-list"></div>
-              </div>
-            </div>
-
-            <div class="team-pane-card mt-3" id="groups-detail-panel">
-              <div class="team-pane-head">
-                <div>
-                  <div class="fw-semibold">Detall del grup</div>
-                  <div class="small text-muted" id="groups-detail-meta">Selecciona un grup per veure'n membres i accions.</div>
-                </div>
-                <span class="badge badge-light border d-none" id="groups-detail-status-badge"></span>
-              </div>
-              <div id="groups-detail-empty" class="small text-muted">
-                Encara no hi ha cap grup seleccionat.
-              </div>
-              <div class="d-none" id="groups-detail-content">
-                <div class="d-flex flex-wrap align-items-center mb-2" style="gap:8px;">
-                  <span class="badge badge-light border" id="groups-detail-members-count">0 membres</span>
-                  <span class="badge badge-light border" id="groups-detail-programmed-badge">No programat</span>
-                  <span class="badge badge-light border" id="groups-detail-delete-badge">No es pot desactivar</span>
-                </div>
-                <div class="d-flex flex-wrap mb-2" style="gap:8px;">
-                  <button type="button" class="btn btn-sm btn-outline-primary" id="groups-detail-select-btn" data-group-action="detail-select">Assignar seleccio a aquest grup</button>
-                  <button type="button" class="btn btn-sm btn-outline-info js-view-group-order" id="groups-detail-order-btn" data-group="">Veure ordre competicio</button>
-                  <button type="button" class="btn btn-sm btn-outline-secondary" id="groups-detail-rename-btn" data-group-rename="">Editar nom</button>
-                  <button type="button" class="btn btn-sm btn-outline-danger" id="groups-detail-delete-btn" data-group-action="delete">Desactivar grup buit</button>
-                </div>
-                <div class="d-none mb-2" id="groups-detail-name-editor">
-                  <div class="d-flex flex-wrap align-items-center" style="gap:8px;">
-                    <input
-                      type="text"
-                      class="form-control form-control-sm"
-                      id="groups-detail-name-input"
-                      style="min-width:220px; max-width:320px;"
-                      placeholder="Nom del grup">
-                    <button type="button" class="btn btn-sm btn-primary js-save-group-name">Desar</button>
-                    <button type="button" class="btn btn-sm btn-light js-cancel-group-name">Cancelar</button>
-                  </div>
-                </div>
-                <div class="small text-muted mb-2" id="groups-detail-summary"></div>
-                <div class="team-context-member-list" id="groups-detail-members" style="max-height:360px; overflow:auto;"></div>
               </div>
             </div>
 

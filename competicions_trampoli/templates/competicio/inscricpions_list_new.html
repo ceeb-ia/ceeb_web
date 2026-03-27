@@ -4417,6 +4417,12 @@
         .filter(v => !!v);
     }
 
+    function syncGroupsWorkspaceSelectionFromMainList() {
+      if (window.__groupsWorkspaceApi && typeof window.__groupsWorkspaceApi.setExternalSelection === 'function') {
+        window.__groupsWorkspaceApi.setExternalSelection(getSelectedInscripcioIds());
+      }
+    }
+
     function getSelectedTeamContextCode() {
       return (
         document.getElementById('team-workspace-context-select')?.value ||
@@ -4436,7 +4442,10 @@
           changed = true;
         }
       });
-      if (changed) markTeamPreviewDirty();
+      if (changed) {
+        markTeamPreviewDirty();
+        syncGroupsWorkspaceSelectionFromMainList();
+      }
     }
 
     function getSelectedTeamFields() {
@@ -7268,9 +7277,7 @@
     document.addEventListener('change', (e) => {
       if (e.target && e.target.closest('.js-team-row-select')) {
         markTeamPreviewDirty();
-        if (window.__groupsWorkspaceApi && typeof window.__groupsWorkspaceApi.setExternalSelection === 'function') {
-          window.__groupsWorkspaceApi.setExternalSelection(getSelectedInscripcioIds());
-        }
+        syncGroupsWorkspaceSelectionFromMainList();
       }
     });
     clearTeamPreview();

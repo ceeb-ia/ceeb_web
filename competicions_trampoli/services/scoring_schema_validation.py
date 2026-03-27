@@ -14,6 +14,26 @@ from .team_scoring import (
     runtime_schema_for_subject,
 )
 
+TEAM_MEMBER_TREATMENT_SELECT_OPTIONS: Set[str] = {
+    "all",
+    "best_n",
+    "worst_n",
+    "drop_extremes",
+    "drop_extremes_until_n",
+}
+TEAM_MEMBER_TREATMENT_AGG_OPTIONS: Set[str] = {
+    "sum",
+    "avg",
+    "min",
+    "max",
+    "count",
+    "med",
+}
+TEAM_MEMBER_TREATMENT_SELECTS_REQUIRING_N: Set[str] = {
+    "best_n",
+    "worst_n",
+    "drop_extremes_until_n",
+}
 ALLOWED_FUNCTIONS: Set[str] = {
     "sum", "avg", "min", "max",
     "exec_by_judge", "select_sum", "best_n",
@@ -201,6 +221,73 @@ def _field_kind(field: Dict[str, Any], *, is_team: bool) -> str:
     return f"{prefix}_matrix"
 
 
+def _literal_eval_or_none(node: ast.AST):
+    try:
+        return ast.literal_eval(node)
+    except Exception:
+        return None
+
+
+def _validate_member_treatment_signature(node: ast.Call, *, fn_name: str, loc: str, errors: List[str]) -> None:
+    if fn_name != "member_treatment":
+        if len(list(node.args or [])) != 1:
+            errors.append(f"{loc}: {fn_name} requereix exactament una font.")
+        if node.keywords:
+            errors.append(f"{loc}: {fn_name} no admet parametres addicionals.")
+        return
+
+    if len(list(node.args or [])) != 1:
+        errors.append(f"{loc}: member_treatment requereix exactament una font.")
+
+    allowed_kwargs = {"select", "n", "agg"}
+    kwargs: Dict[str, Any] = {}
+    for kw in list(node.keywords or []):
+        if kw.arg is None:
+            errors.append(f"{loc}: member_treatment no admet **kwargs.")
+            continue
+        if kw.arg not in allowed_kwargs:
+            errors.append(f"{loc}: member_treatment no admet el parametre '{kw.arg}'.")
+            continue
+        value = _literal_eval_or_none(kw.value)
+        if value is None and not (
+            isinstance(kw.value, ast.Constant) and getattr(kw.value, "value", None) is None
+        ):
+            errors.append(f"{loc}: member_treatment requereix valors literals per '{kw.arg}'.")
+            continue
+        kwargs[kw.arg] = value
+
+    raw_select = kwargs.get("select", "all")
+    if not isinstance(raw_select, str):
+        errors.append(f"{loc}: member_treatment.select ha de ser un string.")
+        select = "all"
+    else:
+        select = str(raw_select).strip().lower() or "all"
+        if select not in TEAM_MEMBER_TREATMENT_SELECT_OPTIONS:
+            allowed = ", ".join(sorted(TEAM_MEMBER_TREATMENT_SELECT_OPTIONS))
+            errors.append(f"{loc}: member_treatment.select invalid: {raw_select!r}. Usa: {allowed}.")
+
+    raw_agg = kwargs.get("agg", "sum")
+    if not isinstance(raw_agg, str):
+        errors.append(f"{loc}: member_treatment.agg ha de ser un string.")
+        agg = "sum"
+    else:
+        agg = str(raw_agg).strip().lower() or "sum"
+        if agg not in TEAM_MEMBER_TREATMENT_AGG_OPTIONS:
+            allowed = ", ".join(sorted(TEAM_MEMBER_TREATMENT_AGG_OPTIONS))
+            errors.append(f"{loc}: member_treatment.agg invalid: {raw_agg!r}. Usa: {allowed}.")
+
+    has_n = "n" in kwargs and kwargs.get("n") is not None
+    if has_n:
+        raw_n = kwargs.get("n")
+        if isinstance(raw_n, bool) or not isinstance(raw_n, int) or int(raw_n) < 1:
+            errors.append(f"{loc}: member_treatment.n ha de ser un enter positiu.")
+
+    if select in TEAM_MEMBER_TREATMENT_SELECTS_REQUIRING_N and not has_n:
+        errors.append(f"{loc}: member_treatment amb select='{select}' requereix n.")
+    if select in TEAM_MEMBER_TREATMENT_SELECT_OPTIONS - TEAM_MEMBER_TREATMENT_SELECTS_REQUIRING_N and has_n:
+        errors.append(f"{loc}: member_treatment amb select='{select}' no admet n.")
+
+
 def _validate_member_helper_calls(tree: ast.AST, kind_env: Dict[str, str], *, is_team: bool, loc: str, errors: List[str]) -> None:
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
@@ -214,6 +301,7 @@ def _validate_member_helper_calls(tree: ast.AST, kind_env: Dict[str, str], *, is
         if not node.args:
             errors.append(f"{loc}: {fn_name} requereix una font member_scalar.")
             continue
+        _validate_member_treatment_signature(node, fn_name=fn_name, loc=loc, errors=errors)
         arg_kind = infer_team_expr_kind(node.args[0], kind_env)
         if arg_kind != KIND_MEMBER_SCALAR:
             errors.append(

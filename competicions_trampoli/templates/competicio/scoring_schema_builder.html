@@ -90,7 +90,8 @@
       <div class="alert alert-info">
         Aquest aparell global competeix per equips.
         Els camps amb abast <strong>Individual</strong> es recullen per cada membre real de la unitat competitiva.
-        Primer redueix cada membre si cal amb funcions com <code>row_custom_compute(...)</code> i després agrega entre membres amb <code>member_treatment(...)</code> o amb els helpers ràpids <code>members_sum(...)</code> i <code>members_avg(...)</code>.
+        Primer redueix cada membre si cal amb funcions com <code>row_custom_compute(...)</code> i després agrega entre membres amb <code>member_treatment(...)</code>.
+        El contracte oficial és <code>member_treatment(source, select='all', n=None, agg='sum')</code> amb selecció <code>all</code>, <code>best_n</code>, <code>worst_n</code>, <code>drop_extremes</code>, <code>drop_extremes_until_n</code> i agregació <code>sum</code>, <code>avg</code>, <code>min</code>, <code>max</code>, <code>count</code>, <code>med</code>. Els helpers <code>members_sum(...)</code> i similars continuen disponibles com a sucre sintàctic.
       </div>
       {% endif %}
 
@@ -292,6 +293,16 @@
     ["max", "Màxim"],
   ];
 
+  const MEMBER_TREATMENT_SELECT_OPTIONS = SELECT_OPTIONS;
+  const MEMBER_TREATMENT_AGG_OPTIONS = [
+    ["sum", "Suma"],
+    ["avg", "Mitjana"],
+    ["med", "Mediana"],
+    ["min", "Mínim"],
+    ["max", "Màxim"],
+    ["count", "Comptar"],
+  ];
+
   const SELECT_ON_OPTIONS = [
     ["expr", "Sobre el resultat calculat (item_expr)"],
     ["raw",  "Sobre el valor original (x)"],
@@ -391,17 +402,71 @@
     return Array.from(new Set(codes));
   }
 
+  function fieldKindForMemberTreatment(r){
+    const scope = r.querySelector('[data-k="scope"]')?.value || "member";
+    const judges = Number(r.querySelector('[data-k="judges_count"]')?.value || 1);
+    const items = Number(r.querySelector('[data-k="items_count"]')?.value || 1);
+    const prefix = (scope === "member") ? "member" : "shared";
+    if(Number.isFinite(judges) && Number.isFinite(items) && judges === 1 && items === 1){
+      return `${prefix}_scalar`;
+    }
+    if(Number.isFinite(items) && items === 1){
+      return `${prefix}_list`;
+    }
+    return `${prefix}_matrix`;
+  }
+
+  function kindFromSource(kindMap, rawSource){
+    const src = (rawSource || "").trim().replace(/^['"]|['"]$/g, "");
+    return kindMap.get(src) || null;
+  }
+
+  function inferComputedKindForMemberTreatment(r, kindMap){
+    const preset = r.querySelector('[data-k="preset"]')?.value || "";
+    const formula = (r.querySelector('[data-k="formula"]')?.value || "").trim();
+    const sourceMatch = formula.match(/^\s*([A-Za-z_]\w*)\s*\(\s*(?:'([^']+)'|"([^"]+)"|([A-Za-z_]\w*))?/);
+    const fnName = sourceMatch?.[1] || "";
+    const rawSource = sourceMatch?.[2] || sourceMatch?.[3] || sourceMatch?.[4] || "";
+
+    if(preset === "row_compute" || preset === "column_compute"){
+      const src = r.querySelector('[data-k="rc_source"]')?.value || rawSource;
+      const srcKind = kindFromSource(kindMap, src);
+      return (srcKind && srcKind.startsWith("member_")) ? "member_scalar" : "shared_scalar";
+    }
+
+    if(preset === "exec_trampoli" || preset === "row_agregation"){
+      const src = r.querySelector('[data-k="rc_source"]')?.value || r.querySelector('[data-k="et_source"]')?.value || rawSource;
+      const srcKind = kindFromSource(kindMap, src);
+      return (srcKind && srcKind.startsWith("member_")) ? "member_list" : "shared_list";
+    }
+
+    if(fnName === "member_treatment" || /^members_(sum|avg|min|max|count)$/.test(fnName)){
+      return "shared_scalar";
+    }
+
+    if(["row_custom_compute", "column_custom_compute", "select_sum", "sum", "avg", "min", "max", "float"].includes(fnName)){
+      const srcKind = kindFromSource(kindMap, rawSource);
+      return (srcKind && srcKind.startsWith("member_")) ? "member_scalar" : "shared_scalar";
+    }
+
+    if(["row_custom_agregation", "exec_by_judge", "best_n"].includes(fnName)){
+      const srcKind = kindFromSource(kindMap, rawSource);
+      return (srcKind && srcKind.startsWith("member_")) ? "member_list" : "shared_list";
+    }
+
+    return null;
+  }
+
   function memberTreatmentSourceCodes(){
     const codes = [];
+    const kindMap = new Map();
 
     document.querySelectorAll("#fieldsTable tbody tr").forEach(r=>{
       const c = r.querySelector('[data-k="code"]').value.trim();
       if(!c) return;
-      const scope = r.querySelector('[data-k="scope"]')?.value || "member";
-      if(scope !== "member") return;
-      const judges = Number(r.querySelector('[data-k="judges_count"]')?.value || 1);
-      const items = Number(r.querySelector('[data-k="items_count"]')?.value || 1);
-      if(Number.isFinite(judges) && Number.isFinite(items) && judges === 1 && items === 1){
+      const kind = fieldKindForMemberTreatment(r);
+      kindMap.set(c, kind);
+      if(kind === "member_scalar"){
         codes.push(c);
       }
     });
@@ -409,8 +474,11 @@
     document.querySelectorAll("#computedTable tbody tr").forEach(r=>{
       const c = r.querySelector('[data-k="code"]')?.value.trim();
       if(!c) return;
-      const preset = r.querySelector('[data-k="preset"]')?.value || "";
-      if(preset === "row_compute" || preset === "column_compute"){
+      const kind = inferComputedKindForMemberTreatment(r, kindMap);
+      if(kind){
+        kindMap.set(c, kind);
+      }
+      if(kind === "member_scalar"){
         codes.push(c);
       }
     });
@@ -720,28 +788,21 @@
             <div class="col-md-4 mb-2">
               <label class="small text-muted mb-1">Font individual escalar</label>
               <select class="form-control form-control-sm mono" data-k="mt_source"></select>
-              <div class="pill-help mt-1">
-                Només mostra camps individuals 1x1 i computeds que normalment retornen un escalar per membre.
-                Si el camp encara és nxm, redueix-lo abans amb <span class="mono">row_custom_compute(...)</span>.
+              <div class="pill-help mt-1" data-k="mt_help">
+                Només mostra fonts individuals escalaritzades. Si el camp encara és nxm, redueix-lo abans i després aplica <span class="mono">member_treatment(source, select='all', n=None, agg='sum')</span>.
               </div>
             </div>
             <div class="col-md-3 mb-2">
               <label class="small text-muted mb-1">Selecció entre membres</label>
               <select class="form-control form-control-sm" data-k="mt_select">
-                <option value="all">Tots</option>
-                <option value="best_n">Millors N</option>
-                <option value="worst_n">Pitjors N</option>
+                ${optionHTML(MEMBER_TREATMENT_SELECT_OPTIONS)}
               </select>
               <input class="form-control form-control-sm mt-1 d-none" data-k="mt_n" placeholder="N (si aplica)">
             </div>
             <div class="col-md-3 mb-2">
               <label class="small text-muted mb-1">Agregació</label>
               <select class="form-control form-control-sm" data-k="mt_agg">
-                <option value="sum">Suma</option>
-                <option value="avg">Mitjana</option>
-                <option value="min">Mínim</option>
-                <option value="max">Màxim</option>
-                <option value="count">Comptar</option>
+                ${optionHTML(MEMBER_TREATMENT_AGG_OPTIONS)}
               </select>
             </div>
             <div class="col-md-2 mb-2">
@@ -870,7 +931,7 @@
     if (preset === "member_treatment_guided") {
       tr.querySelector('[data-k="mt_source"]').dataset.initialValue = (b.source || "") + "";
       tr.querySelector('[data-k="mt_select"]').value = (b.select || "all");
-      tr.querySelector('[data-k="mt_n"]').value = (b.n ?? 1) + "";
+      tr.querySelector('[data-k="mt_n"]').value = (b.n ?? "") + "";
       tr.querySelector('[data-k="mt_agg"]').value = (b.agg || "sum");
     }
 
@@ -959,11 +1020,12 @@
     if(preset === "member_treatment_guided"){
       const codes = memberTreatmentSourceCodes();
       const sel = tr.querySelector('[data-k="mt_source"]');
-      refillDynamicSelect(sel, codes, "(cap font individual escalar disponible)");
+      const help = tr.querySelector('[data-k="mt_help"]');
+      refillDynamicSelect(sel, codes, "(cap font individual escalar disponible; redueix primer un camp individual fins a escalar)");
 
       const select = tr.querySelector('[data-k="mt_select"]').value || "all";
       const nEl = tr.querySelector('[data-k="mt_n"]');
-      const needsMemberN = (select === "best_n" || select === "worst_n");
+      const needsMemberN = needsN(select);
       showIf(nEl, needsMemberN);
       const nRaw = (nEl.value || "").trim();
       const agg = tr.querySelector('[data-k="mt_agg"]').value || "sum";
@@ -981,6 +1043,11 @@
       const formula = source ? `member_treatment(${source}${kwargs.length ? ", " + kwargs.join(", ") : ""})` : "";
       tr.querySelector('[data-k="formula"]').value = formula;
       tr.querySelector('[data-k="mt_preview"]').value = formula || "Redueix primer un camp individual fins a escalar.";
+      if(help){
+        help.innerHTML = codes.length
+          ? "Font vàlida: camp <strong>Individual</strong> 1x1 o computed que retorni un escalar per membre. Contracte oficial: <span class=\"mono\">member_treatment(source, select='all', n=None, agg='sum')</span>."
+          : "No hi ha fonts individuals escalaritzades disponibles. Si el camp encara és nxm, redueix-lo abans amb <span class=\"mono\">row_custom_compute(...)</span> o <span class=\"mono\">column_custom_compute(...)</span>.";
+      }
       return;
     }
 
@@ -1293,10 +1360,14 @@
       else if(preset === "member_treatment_guided"){
         const src = tr.querySelector('[data-k="mt_source"]').value;
         const select = tr.querySelector('[data-k="mt_select"]').value || "all";
+        const needsMemberN = needsN(select);
         const nRaw = (tr.querySelector('[data-k="mt_n"]').value || "").trim();
-        let n = Number(nRaw || 1);
-        if(!Number.isFinite(n) || n < 1) n = 1;
-        n = Math.floor(n);
+        let n = undefined;
+        if(needsMemberN){
+          n = Number(nRaw || 1);
+          if(!Number.isFinite(n) || n < 1) n = 1;
+          n = Math.floor(n);
+        }
         const agg = tr.querySelector('[data-k="mt_agg"]').value || "sum";
         out.builder = { preset: "member_treatment_guided", source: src, select, n, agg };
       }

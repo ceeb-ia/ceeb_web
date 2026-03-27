@@ -2,7 +2,116 @@
 
 from django.conf import settings
 from django.db import migrations, models
+from django.db.models import Case, IntegerField, Value, When
 import django.db.models.deletion
+
+
+def _get_auth_user_model(apps):
+    app_label, model_name = settings.AUTH_USER_MODEL.split(".", 1)
+    return apps.get_model(app_label, model_name)
+
+
+def _resolve_fallback_user_id(apps, db_alias):
+    User = _get_auth_user_model(apps)
+    fallback_user_id = (
+        User.objects.using(db_alias)
+        .filter(is_superuser=True)
+        .order_by("id")
+        .values_list("id", flat=True)
+        .first()
+    )
+    if fallback_user_id:
+        return fallback_user_id
+
+    fallback_user_id = (
+        User.objects.using(db_alias)
+        .order_by("id")
+        .values_list("id", flat=True)
+        .first()
+    )
+    if fallback_user_id:
+        return fallback_user_id
+
+    raise RuntimeError(
+        "No hi ha usuaris al sistema per assignar created_by a les plantilles de classificacio."
+    )
+
+
+def _build_owner_map(apps, db_alias):
+    CompeticioMembership = apps.get_model("competicions_trampoli", "CompeticioMembership")
+    owner_rank = Case(
+        When(role="owner", then=Value(0)),
+        When(role="editor", then=Value(1)),
+        default=Value(99),
+        output_field=IntegerField(),
+    )
+    rows = (
+        CompeticioMembership.objects.using(db_alias)
+        .filter(is_active=True)
+        .annotate(owner_rank=owner_rank)
+        .order_by("competicio_id", "owner_rank", "id")
+        .values_list("competicio_id", "user_id", "owner_rank")
+    )
+    owner_by_comp = {}
+    for competicio_id, user_id, rank in rows:
+        if rank > 1:
+            continue
+        owner_by_comp.setdefault(competicio_id, user_id)
+    return owner_by_comp
+
+
+def _extract_source_competicio_id(template_obj):
+    payload = getattr(template_obj, "payload", None) or {}
+    if not isinstance(payload, dict):
+        return None
+    source = payload.get("source") or {}
+    if not isinstance(source, dict):
+        return None
+    raw = source.get("competicio_id")
+    try:
+        return int(raw)
+    except Exception:
+        return None
+
+
+def _next_owner_slug(base_slug, existing_slugs):
+    slug = base_slug or "classificacio-template"
+    if slug not in existing_slugs:
+        return slug
+    idx = 2
+    while True:
+        candidate = f"{slug}-{idx}"
+        if candidate not in existing_slugs:
+            return candidate
+        idx += 1
+
+
+def backfill_template_created_by(apps, schema_editor):
+    db_alias = schema_editor.connection.alias
+    ClassificacioTemplateGlobal = apps.get_model(
+        "competicions_trampoli", "ClassificacioTemplateGlobal"
+    )
+
+    fallback_user_id = _resolve_fallback_user_id(apps, db_alias)
+    owner_by_comp = _build_owner_map(apps, db_alias)
+
+    for tpl in ClassificacioTemplateGlobal.objects.using(db_alias).order_by("id"):
+        if not tpl.created_by_id:
+            comp_id = _extract_source_competicio_id(tpl)
+            tpl.created_by_id = owner_by_comp.get(comp_id) if comp_id else None
+            if not tpl.created_by_id:
+                tpl.created_by_id = fallback_user_id
+
+        existing_slugs = set(
+            ClassificacioTemplateGlobal.objects.using(db_alias)
+            .filter(created_by_id=tpl.created_by_id)
+            .exclude(pk=tpl.id)
+            .values_list("slug", flat=True)
+        )
+        if tpl.slug in existing_slugs:
+            tpl.slug = _next_owner_slug(tpl.slug, existing_slugs)
+
+        tpl.save(update_fields=["created_by", "slug"])
 
 
 class Migration(migrations.Migration):
@@ -12,6 +121,7 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
+        migrations.RunPython(backfill_template_created_by, migrations.RunPython.noop),
         migrations.AlterField(
             model_name="classificaciotemplateglobal",
             name="created_by",
