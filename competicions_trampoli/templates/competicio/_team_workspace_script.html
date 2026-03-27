@@ -17,7 +17,7 @@ if (teamWorkspaceShell) {
     contextCode: getSelectedTeamContextCode(),
     filters: Object.assign({ assignment_state: 'all', equip_id: '' }, getCurrentInscripcioFilters()),
     selectionMode: 'filtered',
-    selectedIds: new Set(),
+    selectedIds: new Set((typeof getSelectedInscripcioIds === 'function' ? getSelectedInscripcioIds() : []).map(String).filter(Boolean)),
     candidatePage: 1,
     candidatePageSize: 40,
     memberPageSize: 5,
@@ -50,6 +50,87 @@ if (teamWorkspaceShell) {
     context_code: state.contextCode,
     inscripcio_ids: (inscripcioIds || []).map(String).filter(Boolean),
   });
+
+  function openWorkspaceCard() {
+    if (typeof getExpandedGroupCardId === 'function' && typeof setExpandedGroupCard === 'function') {
+      if (getExpandedGroupCardId() !== 'teams-main-card') {
+        setExpandedGroupCard('teams-main-card');
+      }
+      if (typeof saveWorkspaceState === 'function') saveWorkspaceState({ expandedGroupCardId: 'teams-main-card' });
+      return;
+    }
+    const btn = document.querySelector('[data-expand-target="teams-main-card"]');
+    if (btn && btn.getAttribute('aria-expanded') !== 'true') btn.click();
+  }
+
+  function renderCompactActionState() {
+    const note = document.getElementById('team-compact-actions-note');
+    const createBtn = document.getElementById('btn-team-compact-create');
+    const assignBtn = document.getElementById('btn-team-compact-assign');
+    const unassignBtn = document.getElementById('btn-team-compact-unassign');
+    const selectedCount = ids().length;
+    const filteredCount = Number(state.lastWorkspace?.summary?.filtered_count || 0);
+
+    if (createBtn) createBtn.disabled = selectedCount <= 0;
+    if (assignBtn) assignBtn.disabled = selectedCount <= 0;
+    if (unassignBtn) unassignBtn.disabled = selectedCount <= 0;
+    if (!note) return;
+
+    if (!selectedCount) {
+      if (state.selectionMode === 'filtered') {
+        note.textContent = `L'abast actual del workspace es "Visibles filtrades" (${filteredCount}), pero les accions rapides treballen sobre la seleccio actual.`;
+      } else {
+        note.textContent = 'Selecciona inscripcions al modal o importa la seleccio del llistat per fer accions rapides.';
+      }
+      return;
+    }
+    note.textContent = `Aquestes accions treballaran sobre ${selectedCount} inscripcions seleccionades al context actual.`;
+  }
+
+  function setSelectionMode(mode, options = {}) {
+    state.selectionMode = String(mode || '') === 'selected' ? 'selected' : 'filtered';
+    const compact = document.getElementById('team-compact-scope');
+    if (compact) compact.value = state.selectionMode;
+    document.querySelectorAll('input[name="team-selection-mode"]').forEach((radio) => {
+      radio.checked = radio.value === state.selectionMode;
+    });
+    updateSelectionSummary();
+    renderCompactActionState();
+    if (!options.skipDirty) dirtyPreview();
+  }
+
+  async function applyContextChange(nextCode) {
+    const normalized = String(nextCode || 'native').trim() || 'native';
+    state.contextCode = normalized;
+    const workspaceSelect = document.getElementById('team-workspace-context-select');
+    if (workspaceSelect) workspaceSelect.value = normalized;
+    const compactSelect = document.getElementById('team-compact-context');
+    if (compactSelect) compactSelect.value = normalized;
+    state.selectedIds = new Set();
+    state.expandedTeamIds = new Set();
+    state.teamMemberPages = {};
+    state.candidatePage = 1;
+    setContextDetailsOpen(false);
+    clearTeamPreview();
+    renderCompactActionState();
+    await refreshWorkspace({ resetPage: true, clearSelection: true });
+  }
+
+  function ensureCompactManualSelection() {
+    if (!ids().length) {
+      showAlert('Selecciona com a minim una inscripcio dins del workspace.');
+      return false;
+    }
+    return true;
+  }
+
+  function syncExternalSelection(externalIds) {
+    const rows = Array.isArray(externalIds) ? externalIds.map(String).filter(Boolean) : [];
+    state.selectedIds = new Set(rows);
+    if (state.lastWorkspace) renderCandidates(state.lastWorkspace);
+    updateSelectionSummary();
+    dirtyPreview();
+  }
 
   function destroySortables() {
     (state.sortables || []).forEach((sortable) => {
@@ -151,10 +232,12 @@ if (teamWorkspaceShell) {
   }
 
   function renderContextMeta(context, summary, contexts) {
-    fillSelect(document.getElementById('team-workspace-context-select'), contexts || [], state.contextCode, '', (item) => ({
+    const contextMap = (item) => ({
       value: item?.code,
       label: item?.nom || item?.code || 'Context',
-    }));
+    });
+    fillSelect(document.getElementById('team-workspace-context-select'), contexts || [], state.contextCode, '', contextMap);
+    fillSelect(document.getElementById('team-compact-context'), contexts || [], state.contextCode, '', contextMap);
     const name = String(context?.nom || context?.code || 'Context');
     setText('team-context-title', name);
     setText('team-context-title-inline', name);
@@ -166,6 +249,10 @@ if (teamWorkspaceShell) {
     setText('team-summary-assigned', Number(summary?.assigned_count || 0));
     setText('team-summary-unassigned', Number(summary?.unassigned_count || 0));
     setText('team-summary-total', Number(summary?.total_inscripcions || 0));
+    setText('team-context-metric-teams-with-members', Number(summary?.teams_with_members || 0));
+    setText('team-context-metric-assigned', Number(summary?.assigned_count || 0));
+    setText('team-context-metric-unassigned', Number(summary?.unassigned_count || 0));
+    setText('team-context-metric-total', Number(summary?.total_inscripcions || 0));
     const metrics = document.getElementById('team-compact-summary-metrics');
     if (metrics) {
       metrics.innerHTML = '';
@@ -177,6 +264,7 @@ if (teamWorkspaceShell) {
     const deleteBtn = document.getElementById('btn-team-workspace-context-delete');
     if (renameBtn) renameBtn.disabled = !!context?.is_native;
     if (deleteBtn) deleteBtn.disabled = !!context?.is_native;
+    renderCompactActionState();
   }
 
   function renderContextSources(workspace) {
@@ -246,6 +334,7 @@ if (teamWorkspaceShell) {
       ? `Treballara nomes sobre ${selectedCount} inscripcions seleccionades al modal.`
       : `Treballara sobre ${filteredCount} candidates filtrades del workspace.`);
     setText('team-manual-scope-note', `S'aplicara a ${selectedCount} inscripcions seleccionades en aquest context.`);
+    renderCompactActionState();
   }
 
   function candidateRow(item) {
@@ -428,6 +517,7 @@ if (teamWorkspaceShell) {
     const zeroWrap = document.getElementById('team-context-zero-members-wrap');
     const zeroList = document.getElementById('team-context-zero-members-list');
     const existingSelect = document.getElementById('team-workspace-existing-select');
+    const compactSelect = document.getElementById('team-compact-target-team');
     if (!list || !zeroWrap || !zeroList) return;
 
     const teams = Array.isArray(workspace?.teams) ? workspace.teams : [];
@@ -579,10 +669,12 @@ if (teamWorkspaceShell) {
     zeroList.innerHTML = '';
     empty.forEach((team) => zeroList.appendChild(card(team, true)));
     zeroWrap.classList.toggle('d-none', empty.length === 0);
-    fillSelect(existingSelect, teams, existingSelect?.value, '-- Selecciona equip --', (item) => ({
+    const mapTeamOption = (item) => ({
       value: item?.id,
       label: `${item?.nom || 'Equip'} (${Number(item?.membres || 0)})`,
-    }));
+    });
+    fillSelect(existingSelect, teams, existingSelect?.value, '-- Selecciona equip --', mapTeamOption);
+    fillSelect(compactSelect, teams, compactSelect?.value, 'Cap equip disponible', mapTeamOption);
   }
 
   function renderFilterOptions(workspace) {
@@ -789,9 +881,7 @@ if (teamWorkspaceShell) {
     radio.checked = radio.value === state.selectionMode;
     radio.addEventListener('change', () => {
       if (!radio.checked) return;
-      state.selectionMode = radio.value === 'selected' ? 'selected' : 'filtered';
-      updateSelectionSummary();
-      dirtyPreview();
+      setSelectionMode(radio.value);
     });
   });
 
@@ -835,14 +925,21 @@ if (teamWorkspaceShell) {
   const contextSelect = document.getElementById('team-workspace-context-select');
   if (contextSelect) {
     contextSelect.addEventListener('change', async () => {
-      state.contextCode = getSelectedTeamContextCode();
-      state.selectedIds = new Set();
-      state.expandedTeamIds = new Set();
-      state.teamMemberPages = {};
-      state.candidatePage = 1;
-      setContextDetailsOpen(false);
-      clearTeamPreview();
-      await refreshWorkspace({ resetPage: true, clearSelection: true });
+      await applyContextChange(contextSelect.value);
+    });
+  }
+
+  const compactContext = document.getElementById('team-compact-context');
+  if (compactContext) {
+    compactContext.addEventListener('change', async () => {
+      await applyContextChange(compactContext.value);
+    });
+  }
+
+  const compactScope = document.getElementById('team-compact-scope');
+  if (compactScope) {
+    compactScope.addEventListener('change', () => {
+      setSelectionMode(compactScope.value);
     });
   }
 
@@ -1072,12 +1169,52 @@ if (teamWorkspaceShell) {
     });
   }
 
+  const compactCreate = document.getElementById('btn-team-compact-create');
+  if (compactCreate) {
+    compactCreate.addEventListener('click', async () => {
+      if (!ensureCompactManualSelection()) return;
+      const name = String(document.getElementById('team-compact-name')?.value || '').trim();
+      if (!name) return showAlert('Indica un nom per al nou equip.');
+      try {
+        const data = await postJson(createManualUrl, {
+          context_code: state.contextCode,
+          name,
+          selected_ids: ids(),
+        });
+        if (!data.ok) return showAlert("No s'ha pogut crear l'equip.");
+        const input = document.getElementById('team-compact-name');
+        if (input) input.value = '';
+        resetPreview();
+        await refreshWorkspace();
+      } catch (err) {
+        showAlert(`No s'ha pogut crear l'equip.\n${err.message || err}`);
+      }
+    });
+  }
+
   const assignBtn = document.getElementById('btn-team-workspace-assign');
   if (assignBtn) {
     assignBtn.addEventListener('click', async () => {
       const equipId = String(document.getElementById('team-workspace-existing-select')?.value || '').trim();
       if (!equipId) return showAlert('Selecciona un equip.');
       if (!ids().length) return showAlert('Selecciona com a minim una inscripcio dins del workspace.');
+      try {
+        const data = await postAssign(equipId, ids());
+        if (!data.ok) return showAlert("No s'han pogut assignar les inscripcions.");
+        resetPreview();
+        await refreshWorkspace();
+      } catch (err) {
+        showAlert(`No s'han pogut assignar les inscripcions.\n${err.message || err}`);
+      }
+    });
+  }
+
+  const compactAssign = document.getElementById('btn-team-compact-assign');
+  if (compactAssign) {
+    compactAssign.addEventListener('click', async () => {
+      if (!ensureCompactManualSelection()) return;
+      const equipId = String(document.getElementById('team-compact-target-team')?.value || '').trim();
+      if (!equipId) return showAlert('Selecciona un equip desti.');
       try {
         const data = await postAssign(equipId, ids());
         if (!data.ok) return showAlert("No s'han pogut assignar les inscripcions.");
@@ -1102,6 +1239,26 @@ if (teamWorkspaceShell) {
         showAlert(`No s'han pogut desassignar les inscripcions.\n${err.message || err}`);
       }
     });
+  }
+
+  const compactUnassign = document.getElementById('btn-team-compact-unassign');
+  if (compactUnassign) {
+    compactUnassign.addEventListener('click', async () => {
+      if (!ensureCompactManualSelection()) return;
+      try {
+        const data = await postUnassign(ids());
+        if (!data.ok) return showAlert("No s'han pogut desassignar les inscripcions.");
+        resetPreview();
+        await refreshWorkspace();
+      } catch (err) {
+        showAlert(`No s'han pogut desassignar les inscripcions.\n${err.message || err}`);
+      }
+    });
+  }
+
+  const compactOpenWorkspace = document.getElementById('btn-team-compact-open-workspace');
+  if (compactOpenWorkspace) {
+    compactOpenWorkspace.addEventListener('click', () => openWorkspaceCard());
   }
 
   const deleteAll = document.getElementById('btn-team-workspace-delete-all');
@@ -1130,9 +1287,21 @@ if (teamWorkspaceShell) {
   const previewClear = document.getElementById('btn-team-preview-clear');
   if (previewClear) previewClear.addEventListener('click', () => clearTeamPreview());
 
+  window.__teamWorkspaceApi = {
+    refresh: refreshWorkspace,
+    setExternalSelection: syncExternalSelection,
+    getState: () => ({
+      selectionMode: state.selectionMode,
+      selectedIds: ids(),
+      contextCode: state.contextCode,
+      filters: { ...state.filters },
+    }),
+  };
+
   applyWorkspaceMode();
   setContextDetailsOpen(false);
   setFiltersToDom(state.filters);
+  setSelectionMode(state.selectionMode, { skipDirty: true });
   clearTeamPreview();
   refreshWorkspace({ resetPage: true, clearSelection: true });
 }

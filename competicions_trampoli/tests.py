@@ -8683,6 +8683,29 @@ class EquipPreviewUiTests(_BaseTrampoliDataMixin, TestCase):
         self.assertContains(response, 'id="team-context-unassigned-dropzone"')
         self.assertContains(response, "Flux complet d'equips")
 
+    def test_inscripcions_list_renders_team_context_metric_anchors(self):
+        response = self.client.get(reverse("inscripcions_list", kwargs={"pk": self.comp.id}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="team-context-metric-teams-with-members"')
+        self.assertContains(response, 'id="team-context-metric-assigned"')
+        self.assertContains(response, 'id="team-context-metric-unassigned"')
+        self.assertContains(response, 'id="team-context-metric-total"')
+
+    def test_inscripcions_list_renders_team_compact_actions(self):
+        response = self.client.get(reverse("inscripcions_list", kwargs={"pk": self.comp.id}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="team-compact-actions"')
+        self.assertContains(response, 'id="team-compact-context"')
+        self.assertContains(response, 'id="team-compact-scope"')
+        self.assertContains(response, 'id="team-compact-target-team"')
+        self.assertContains(response, 'id="team-compact-name"')
+        self.assertContains(response, 'id="btn-team-compact-create"')
+        self.assertContains(response, 'id="btn-team-compact-assign"')
+        self.assertContains(response, 'id="btn-team-compact-unassign"')
+        self.assertContains(response, 'id="btn-team-compact-open-workspace"')
+
     def test_equips_workspace_returns_context_summary_candidates_and_filters(self):
         response = self.client.post(
             reverse("inscripcions_equips_workspace", kwargs={"pk": self.comp.id}),
@@ -9442,6 +9465,84 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertIn('<option value="drop_extremes_until_n">', body)
         self.assertIn('<option value="count">Comptar</option>', body)
         self.assertIn('<option value="med">Mediana</option>', body)
+
+    def test_scoring_schema_builder_get_exposes_saved_bootstrap_and_draft_key(self):
+        schema = ScoringSchema.objects.create(
+            aparell=self.app,
+            schema={
+                "fields": [
+                    {"code": "SYNC", "label": "Sincronisme", "type": "number"},
+                ],
+                "computed": [],
+            },
+        )
+
+        response = self.client.get(
+            reverse("scoring_schema_update", kwargs={"pk": self.comp.id, "ap_id": self.comp_app.id})
+        )
+
+        self.assertEqual(response.status_code, 200)
+        bootstrap = response.context["schema_bootstrap"]
+        self.assertEqual(bootstrap["schema_initial_source"], "saved")
+        self.assertEqual(bootstrap["schema_initial"], schema.schema)
+        self.assertIn(f"comp-aparell:{self.comp_app.id}", bootstrap["schema_draft_storage_key"])
+
+    def test_scoring_schema_builder_rehydrates_last_posted_invalid_schema(self):
+        existing = ScoringSchema.objects.create(
+            aparell=self.app,
+            schema={
+                "fields": [
+                    {"code": "OLD", "label": "Antic", "type": "number"},
+                ],
+                "computed": [],
+            },
+        )
+        invalid_schema = {
+            "fields": [
+                {"code": "E", "label": "Exec", "type": "number"},
+            ],
+            "computed": [
+                {"code": "E", "label": "Duplicat", "formula": "1"},
+            ],
+        }
+
+        response = self.client.post(
+            reverse("scoring_schema_update", kwargs={"pk": self.comp.id, "ap_id": self.comp_app.id}),
+            data={"schema_json": json.dumps(invalid_schema)},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        bootstrap = response.context["schema_bootstrap"]
+        self.assertEqual(bootstrap["schema_initial_source"], "posted_invalid")
+        self.assertEqual(bootstrap["schema_initial"], invalid_schema)
+        self.assertEqual(bootstrap["schema_raw_invalid_json"], "")
+        existing.refresh_from_db()
+        self.assertEqual(existing.schema["fields"][0]["code"], "OLD")
+
+    def test_scoring_schema_builder_preserves_raw_invalid_json(self):
+        existing = ScoringSchema.objects.create(
+            aparell=self.app,
+            schema={
+                "fields": [
+                    {"code": "OLD", "label": "Antic", "type": "number"},
+                ],
+                "computed": [],
+            },
+        )
+        invalid_raw_json = '{"fields": ['
+
+        response = self.client.post(
+            reverse("scoring_schema_update", kwargs={"pk": self.comp.id, "ap_id": self.comp_app.id}),
+            data={"schema_json": invalid_raw_json},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        bootstrap = response.context["schema_bootstrap"]
+        self.assertEqual(bootstrap["schema_initial_source"], "raw_invalid_json")
+        self.assertEqual(bootstrap["schema_initial"], existing.schema)
+        self.assertEqual(bootstrap["schema_raw_invalid_json"], invalid_raw_json)
+        existing.refresh_from_db()
+        self.assertEqual(existing.schema["fields"][0]["code"], "OLD")
 
     def test_scoring_save_partial_creates_team_score_entry(self):
         ScoringSchema.objects.create(

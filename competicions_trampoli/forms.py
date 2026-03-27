@@ -597,12 +597,17 @@ class ScoringSchemaForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         self.comp_aparell = kwargs.pop("comp_aparell", None)
+        self.raw_schema_json = ""
         super().__init__(*args, **kwargs)
         if self.instance and self.instance.pk:
             self.fields["schema_json"].initial = json.dumps(self.instance.schema or {}, ensure_ascii=False)
 
+    def get_raw_schema_json(self) -> str:
+        return str(self.raw_schema_json or "")
+
     def clean_schema_json(self):
         txt = (self.cleaned_data.get("schema_json") or "").strip()
+        self.raw_schema_json = txt
         if not txt:
             return None
 

@@ -4412,9 +4412,21 @@
     }
 
     function getSelectedInscripcioIds() {
-      return Array.from(document.querySelectorAll('.js-team-row-select:checked'))
-        .map(el => el.getAttribute('data-ins-id'))
-        .filter(v => !!v);
+      return Array.from(new Set(
+        Array.from(document.querySelectorAll('.js-team-row-select:checked'))
+          .map(el => el.getAttribute('data-ins-id'))
+          .filter(v => !!v)
+      ));
+    }
+
+    function syncInscripcioSelectionCheckboxes(insId, checked, source = null) {
+      const cleanId = String(insId || '').trim();
+      if (!cleanId) return;
+      document.querySelectorAll('.js-team-row-select').forEach(el => {
+        if (el === source) return;
+        if (String(el.getAttribute('data-ins-id') || '').trim() !== cleanId) return;
+        el.checked = !!checked;
+      });
     }
 
     function syncGroupsWorkspaceSelectionFromMainList() {
@@ -4423,9 +4435,16 @@
       }
     }
 
+    function syncTeamsWorkspaceSelectionFromMainList() {
+      if (window.__teamWorkspaceApi && typeof window.__teamWorkspaceApi.setExternalSelection === 'function') {
+        window.__teamWorkspaceApi.setExternalSelection(getSelectedInscripcioIds());
+      }
+    }
+
     function getSelectedTeamContextCode() {
       return (
         document.getElementById('team-workspace-context-select')?.value ||
+        document.getElementById('team-compact-context')?.value ||
         document.getElementById('team-context-select')?.value ||
         'native'
       ).trim() || 'native';
@@ -4445,6 +4464,7 @@
       if (changed) {
         markTeamPreviewDirty();
         syncGroupsWorkspaceSelectionFromMainList();
+        syncTeamsWorkspaceSelectionFromMainList();
       }
     }
 
@@ -7274,10 +7294,27 @@
     document.querySelectorAll('.js-team-field, #team-auto-selected-only, #team-auto-replace').forEach(el => {
       el.addEventListener('change', () => markTeamPreviewDirty());
     });
+    document.addEventListener('click', (e) => {
+      if (e.target && e.target.closest('.js-team-row-select, .row-controls')) {
+        e.stopPropagation();
+      }
+    }, true);
+    document.addEventListener('pointerdown', (e) => {
+      if (e.target && e.target.closest('.js-team-row-select, .row-controls')) {
+        e.stopPropagation();
+      }
+    }, true);
     document.addEventListener('change', (e) => {
       if (e.target && e.target.closest('.js-team-row-select')) {
+        const checkbox = e.target.closest('.js-team-row-select');
+        syncInscripcioSelectionCheckboxes(
+          checkbox?.getAttribute('data-ins-id'),
+          !!checkbox?.checked,
+          checkbox,
+        );
         markTeamPreviewDirty();
         syncGroupsWorkspaceSelectionFromMainList();
+        syncTeamsWorkspaceSelectionFromMainList();
       }
     });
     clearTeamPreview();

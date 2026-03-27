@@ -110,6 +110,11 @@
       {% endif %}
       {% endif %}
 
+      <div id="schemaRecoveryNotice" class="alert d-none d-flex justify-content-between align-items-start" role="alert">
+        <div id="schemaRecoveryNoticeText" class="pr-3"></div>
+        <button type="button" id="schemaDraftDiscardBtn" class="btn btn-sm btn-outline-secondary d-none">Descartar esborrany</button>
+      </div>
+
       {{ form.schema_json }}
 
       <ul class="nav nav-tabs" role="tablist">
@@ -215,7 +220,7 @@
               Avançat (JSON)
               <button type="button" class="help-trigger help-trigger--inline" data-help-key="advanced_json" aria-label="Ajuda JSON avancat">?</button>
             </div>
-            <div class="pill-help mb-2">JSON generat automàticament pel builder (només lectura).</div>
+            <div class="pill-help mb-2">JSON generat automàticament pel builder. En mode recuperació per JSON invàlid, aquest camp es desbloqueja perquè el puguis corregir manualment.</div>
             <textarea id="advancedJson" class="form-control mono" rows="18" readonly></textarea>
           </div>
         </div>
@@ -240,15 +245,22 @@
   </aside>
 </div>
 
-{{ schema_initial|json_script:"schema-initial" }}
+{{ schema_bootstrap|json_script:"schema-bootstrap" }}
 {{ schema_builder_config|json_script:"schema-builder-config" }}
 <script src="{% staticv 'js/scoring_schema_help.js' %}" defer></script>
 
 <script>
-  // --- Schema inicial ---
+  // --- Bootstrap inicial ---
+  let SCHEMA_BOOTSTRAP = {};
+  try { SCHEMA_BOOTSTRAP = JSON.parse(document.getElementById("schema-bootstrap").textContent || "{}"); }
+  catch (e) { SCHEMA_BOOTSTRAP = {}; }
+  const SAVED_SCHEMA = (SCHEMA_BOOTSTRAP && typeof SCHEMA_BOOTSTRAP.schema_saved === "object" && SCHEMA_BOOTSTRAP.schema_saved) ? SCHEMA_BOOTSTRAP.schema_saved : {};
+  let SERVER_SCHEMA = (SCHEMA_BOOTSTRAP && typeof SCHEMA_BOOTSTRAP.schema_initial === "object" && SCHEMA_BOOTSTRAP.schema_initial) ? SCHEMA_BOOTSTRAP.schema_initial : {};
+  let SERVER_SCHEMA_SOURCE = String((SCHEMA_BOOTSTRAP && SCHEMA_BOOTSTRAP.schema_initial_source) || "saved");
+  let RAW_INVALID_JSON = String((SCHEMA_BOOTSTRAP && SCHEMA_BOOTSTRAP.schema_raw_invalid_json) || "");
+  const SCHEMA_DRAFT_STORAGE_KEY = String((SCHEMA_BOOTSTRAP && SCHEMA_BOOTSTRAP.schema_draft_storage_key) || "");
+  const SCHEMA_UI_STATE_STORAGE_KEY = SCHEMA_DRAFT_STORAGE_KEY ? `${SCHEMA_DRAFT_STORAGE_KEY}::ui` : "";
   let schema = {};
-  try { schema = JSON.parse(document.getElementById("schema-initial").textContent || "{}"); }
-  catch (e) { schema = {}; }
   let BUILDER_CONFIG = {};
   try { BUILDER_CONFIG = JSON.parse(document.getElementById("schema-builder-config").textContent || "{}"); }
   catch (e) { BUILDER_CONFIG = {}; }
@@ -256,11 +268,217 @@
   // --- Helpers ---
   function uid(){ return Math.random().toString(16).slice(2); }
   function qs(sel){ return document.querySelector(sel); }
+  function deepClone(value){
+    try { return JSON.parse(JSON.stringify(value ?? {})); }
+    catch (e) { return {}; }
+  }
+  function stableStringify(value){
+    try { return JSON.stringify(value ?? {}); }
+    catch (e) { return "{}"; }
+  }
+  function readSessionJSON(key){
+    if(!key) return null;
+    try { return JSON.parse(sessionStorage.getItem(key) || "null"); }
+    catch (e) { return null; }
+  }
+  function writeSessionJSON(key, value){
+    if(!key) return;
+    try { sessionStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
+  }
+  function removeSessionKey(key){
+    if(!key) return;
+    try { sessionStorage.removeItem(key); } catch (e) {}
+  }
 
   function showIf(el, yes){
     if(!el) return;
     el.classList.toggle("d-none", !yes);
   }
+
+  function getActiveTabHref(){
+    return document.querySelector('.nav-link.active[data-toggle="tab"]')?.getAttribute("href") || "#tab-fields";
+  }
+
+  function activateTabByHref(href){
+    if(!href) return;
+    document.querySelectorAll('.nav-link[data-toggle="tab"]').forEach(link=>{
+      const isActive = link.getAttribute("href") === href;
+      link.classList.toggle("active", isActive);
+      link.setAttribute("aria-selected", isActive ? "true" : "false");
+    });
+    document.querySelectorAll('.tab-pane').forEach(pane=>{
+      const isActive = `#${pane.id}` === href;
+      pane.classList.toggle("show", isActive);
+      pane.classList.toggle("active", isActive);
+    });
+  }
+
+  let ACTIVE_SCHEMA_SOURCE = SERVER_SCHEMA_SOURCE;
+  let ACTIVE_DRAFT_MODE = "";
+  let MANUAL_JSON_MODE = false;
+  let IS_INITIALIZING = true;
+  let draftSaveTimer = null;
+  let uiStateTimer = null;
+
+  function loadSchemaDraft(){
+    const payload = readSessionJSON(SCHEMA_DRAFT_STORAGE_KEY);
+    if(!payload || typeof payload !== "object") return null;
+
+    if(payload.mode === "schema" && payload.schema && typeof payload.schema === "object"){
+      if(stableStringify(payload.schema) === stableStringify(SAVED_SCHEMA)){
+        removeSessionKey(SCHEMA_DRAFT_STORAGE_KEY);
+        return null;
+      }
+      return payload;
+    }
+
+    if(payload.mode === "raw_json" && typeof payload.raw_json === "string" && payload.raw_json.trim()){
+      try {
+        const parsed = JSON.parse(payload.raw_json);
+        if(parsed && typeof parsed === "object" && stableStringify(parsed) === stableStringify(SAVED_SCHEMA)){
+          removeSessionKey(SCHEMA_DRAFT_STORAGE_KEY);
+          return null;
+        }
+      } catch (_err) {}
+      return payload;
+    }
+
+    return null;
+  }
+
+  function persistSchemaDraft(){
+    if(!SCHEMA_DRAFT_STORAGE_KEY || MANUAL_JSON_MODE) return;
+    writeSessionJSON(SCHEMA_DRAFT_STORAGE_KEY, {
+      mode: "schema",
+      schema: buildSchemaFromUI(),
+      savedAt: Date.now(),
+    });
+  }
+
+  function persistRawJsonDraft(rawText){
+    if(!SCHEMA_DRAFT_STORAGE_KEY) return;
+    writeSessionJSON(SCHEMA_DRAFT_STORAGE_KEY, {
+      mode: "raw_json",
+      raw_json: String(rawText || ""),
+      savedAt: Date.now(),
+    });
+  }
+
+  function clearSchemaDraft(){
+    removeSessionKey(SCHEMA_DRAFT_STORAGE_KEY);
+    removeSessionKey(SCHEMA_UI_STATE_STORAGE_KEY);
+  }
+
+  function saveUiState(extra){
+    if(IS_INITIALIZING || !SCHEMA_UI_STATE_STORAGE_KEY) return;
+    writeSessionJSON(SCHEMA_UI_STATE_STORAGE_KEY, {
+      savedAt: Date.now(),
+      activeTabHref: getActiveTabHref(),
+      scrollY: window.scrollY || window.pageYOffset || 0,
+      ...(extra || {}),
+    });
+  }
+
+  function scheduleUiStateSave(extra){
+    if(IS_INITIALIZING || !SCHEMA_UI_STATE_STORAGE_KEY) return;
+    clearTimeout(uiStateTimer);
+    uiStateTimer = setTimeout(()=>saveUiState(extra), 120);
+  }
+
+  function scheduleDraftSave(){
+    if(IS_INITIALIZING || !SCHEMA_DRAFT_STORAGE_KEY) return;
+    clearTimeout(draftSaveTimer);
+    draftSaveTimer = setTimeout(()=>{
+      if(MANUAL_JSON_MODE){
+        persistRawJsonDraft(qs("#advancedJson")?.value || "");
+      } else {
+        persistSchemaDraft();
+      }
+    }, 180);
+  }
+
+  function setRecoveryNotice(source){
+    const box = qs("#schemaRecoveryNotice");
+    const text = qs("#schemaRecoveryNoticeText");
+    const discardBtn = qs("#schemaDraftDiscardBtn");
+    if(!box || !text || !discardBtn) return;
+
+    let message = "";
+    let tone = "alert-info";
+    if(source === "posted_invalid"){
+      message = "S'ha restaurat l'últim intent amb errors de validació perquè el puguis corregir sense perdre canvis.";
+      tone = "alert-warning";
+    } else if(source === "raw_invalid_json"){
+      message = "El JSON enviat no s'ha pogut interpretar. S'ha conservat el text original a la pestanya JSON perquè el puguis corregir.";
+      tone = "alert-warning";
+    } else if(source === "session_draft"){
+      message = "S'ha restaurat un esborrany local no desat d'aquesta sessió.";
+      tone = "alert-info";
+    }
+
+    if(!message){
+      box.className = "alert d-none d-flex justify-content-between align-items-start";
+      text.textContent = "";
+      showIf(discardBtn, false);
+      return;
+    }
+
+    box.className = `alert ${tone} d-flex justify-content-between align-items-start`;
+    text.textContent = message;
+    showIf(discardBtn, source === "session_draft");
+  }
+
+  function setManualJsonMode(enabled, rawText){
+    const adv = qs("#advancedJson");
+    if(!adv) return;
+    MANUAL_JSON_MODE = !!enabled;
+    adv.readOnly = !MANUAL_JSON_MODE;
+    adv.classList.toggle("border-warning", MANUAL_JSON_MODE);
+    if(MANUAL_JSON_MODE){
+      adv.value = String(rawText || "");
+    } else {
+      adv.value = JSON.stringify(buildSchemaFromUI(), null, 2);
+    }
+  }
+
+  function restoreUiState(){
+    if(ACTIVE_SCHEMA_SOURCE === "raw_invalid_json" || ACTIVE_DRAFT_MODE === "raw_json"){
+      activateTabByHref("#tab-advanced");
+      return;
+    }
+    const state = readSessionJSON(SCHEMA_UI_STATE_STORAGE_KEY);
+    if(!state || typeof state !== "object") return;
+    if(state.activeTabHref) activateTabByHref(String(state.activeTabHref));
+    const scrollY = Number(state.scrollY || 0);
+    if(Number.isFinite(scrollY) && scrollY > 0){
+      window.scrollTo(0, scrollY);
+    }
+  }
+
+  function resolveBootstrapSchema(){
+    if(SERVER_SCHEMA_SOURCE === "posted_invalid" || SERVER_SCHEMA_SOURCE === "raw_invalid_json"){
+      ACTIVE_SCHEMA_SOURCE = SERVER_SCHEMA_SOURCE;
+      ACTIVE_DRAFT_MODE = "";
+      return deepClone(SERVER_SCHEMA);
+    }
+
+    const draft = loadSchemaDraft();
+    if(draft){
+      ACTIVE_SCHEMA_SOURCE = "session_draft";
+      ACTIVE_DRAFT_MODE = String(draft.mode || "");
+      if(draft.mode === "raw_json"){
+        RAW_INVALID_JSON = String(draft.raw_json || "");
+        return deepClone(SAVED_SCHEMA);
+      }
+      return deepClone(draft.schema || {});
+    }
+
+    ACTIVE_SCHEMA_SOURCE = "saved";
+    ACTIVE_DRAFT_MODE = "";
+    return deepClone(SERVER_SCHEMA);
+  }
+
+  schema = resolveBootstrapSchema();
 
   function needsN(method){
     return (method === "best_n" || method === "worst_n" || method === "drop_extremes_until_n");
@@ -1386,7 +1604,12 @@
     return { meta, fields, computed, ui: { columns: cols } };
   }
 
-  function refreshAll(){
+  function refreshAll(opts){
+    const preserveManualJson = !!(opts && opts.preserveManualJson);
+    if(MANUAL_JSON_MODE && !preserveManualJson){
+      setManualJsonMode(false);
+    }
+
     // actualitza cada fila computed (això també recalcula la fórmula)
     document.querySelectorAll("#computedTable tbody tr").forEach(tr=>{
       updateComputedRowUI(tr);
@@ -1394,7 +1617,9 @@
 
     // actualitza JSON avançat
     const adv = qs("#advancedJson");
-    if (adv) adv.value = JSON.stringify(buildSchemaFromUI(), null, 2);
+    if (adv && !MANUAL_JSON_MODE) adv.value = JSON.stringify(buildSchemaFromUI(), null, 2);
+    scheduleDraftSave();
+    scheduleUiStateSave();
   }
 
   function init(){
@@ -1488,15 +1713,55 @@
       refreshAll();
     });
 
-    document.getElementById("schemaForm").addEventListener("submit", ()=>{
-      const built = buildSchemaFromUI();
-      const hidden = document.querySelector('[name="schema_json"]');
-      if (hidden) hidden.value = JSON.stringify(built);
-      const adv = qs("#advancedJson");
-      if (adv) adv.value = JSON.stringify(built, null, 2);
+    document.querySelectorAll('.nav-link[data-toggle="tab"]').forEach(link=>{
+      link.addEventListener("click", ()=>{
+        scheduleUiStateSave({ activeTabHref: link.getAttribute("href") || "#tab-fields" });
+      });
     });
 
-    refreshAll();
+    window.addEventListener("scroll", ()=>scheduleUiStateSave());
+
+    const adv = qs("#advancedJson");
+    if (adv) {
+      adv.addEventListener("input", ()=>{
+        if(!MANUAL_JSON_MODE) return;
+        scheduleDraftSave();
+        scheduleUiStateSave({ activeTabHref: "#tab-advanced" });
+      });
+    }
+
+    const discardBtn = qs("#schemaDraftDiscardBtn");
+    if (discardBtn) {
+      discardBtn.addEventListener("click", ()=>{
+        clearSchemaDraft();
+        window.location.reload();
+      });
+    }
+
+    document.getElementById("schemaForm").addEventListener("submit", ()=>{
+      const hidden = document.querySelector('[name="schema_json"]');
+      const adv = qs("#advancedJson");
+      if (hidden) {
+        hidden.value = MANUAL_JSON_MODE
+          ? String((adv && adv.value) || "")
+          : JSON.stringify(buildSchemaFromUI());
+      }
+      if (adv && !MANUAL_JSON_MODE) adv.value = JSON.stringify(buildSchemaFromUI(), null, 2);
+      saveUiState();
+    });
+
+    refreshAll({ preserveManualJson: true });
+    if(ACTIVE_SCHEMA_SOURCE === "raw_invalid_json" || ACTIVE_DRAFT_MODE === "raw_json"){
+      setManualJsonMode(true, RAW_INVALID_JSON);
+    } else {
+      setManualJsonMode(false);
+    }
+    setRecoveryNotice(ACTIVE_SCHEMA_SOURCE);
+    restoreUiState();
+    IS_INITIALIZING = false;
+    if(ACTIVE_SCHEMA_SOURCE !== "saved"){
+      scheduleDraftSave();
+    }
   }
 
   init();

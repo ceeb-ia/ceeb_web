@@ -52,6 +52,43 @@
         </div>
       </div>
 
+      <div class="team-compact-summary mt-3" id="team-compact-actions">
+        <div class="team-compact-summary-copy">
+          <div class="fw-semibold mb-2">Accions rapides</div>
+          <div class="small text-muted">Context i abast compartits amb el workspace. Les accions manuals rapides treballen sobre la seleccio actual.</div>
+        </div>
+        <div class="d-flex flex-column" style="gap:10px; min-width:min(100%, 520px);">
+          <div class="d-flex flex-wrap align-items-center" style="gap:8px;">
+            <label class="small text-muted mb-0" for="team-compact-context">Context</label>
+            <select id="team-compact-context" class="form-control form-control-sm" style="width:190px;">
+              {% for ctx in team_contexts %}
+                <option value="{{ ctx.code }}" {% if ctx.code == team_context_selected_code %}selected{% endif %}>{{ ctx.nom }}</option>
+              {% endfor %}
+            </select>
+            <label class="small text-muted mb-0" for="team-compact-scope">Abast</label>
+            <select id="team-compact-scope" class="form-control form-control-sm" style="width:170px;">
+              <option value="selected">Seleccio actual</option>
+              <option value="filtered">Visibles filtrades</option>
+            </select>
+            <label class="small text-muted mb-0" for="team-compact-target-team">Equip desti</label>
+            <select id="team-compact-target-team" class="form-control form-control-sm" style="width:min(100%, 260px); min-width:220px;">
+              <option value="">-- Selecciona equip --</option>
+              {% for e in equips_existing %}
+                <option value="{{ e.id }}">{{ e.nom }} ({{ e.membres_count }})</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="d-flex flex-wrap align-items-center" style="gap:8px;">
+            <input type="text" class="form-control form-control-sm" id="team-compact-name" style="width:min(100%, 260px);" placeholder="Nom del nou equip...">
+            <button type="button" class="btn btn-sm btn-outline-primary" id="btn-team-compact-create">Crear equip nou amb seleccio</button>
+            <button type="button" class="btn btn-sm btn-outline-dark" id="btn-team-compact-assign">Assignar seleccio</button>
+            <button type="button" class="btn btn-sm btn-outline-warning" id="btn-team-compact-unassign">Treure seleccio</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-team-compact-open-workspace">Obrir workspace</button>
+          </div>
+          <div class="small text-muted" id="team-compact-actions-note">Aquestes accions treballaran sobre la seleccio actual del modal.</div>
+        </div>
+      </div>
+
       <div class="team-workspace-shell" id="team-workspace-shell">
         <div class="team-workspace-header" id="team-workspace-header">
           <div class="team-workspace-header-bar">
@@ -113,19 +150,19 @@
             <div class="team-context-metrics" id="team-context-metrics">
               <div class="team-context-metric">
                 <span class="team-context-metric-label">Equips actius</span>
-                <strong class="team-context-metric-value">{{ team_context_summary.teams_with_members }}</strong>
+                <strong class="team-context-metric-value" id="team-context-metric-teams-with-members">{{ team_context_summary.teams_with_members }}</strong>
               </div>
               <div class="team-context-metric">
                 <span class="team-context-metric-label">Amb equip</span>
-                <strong class="team-context-metric-value">{{ team_context_summary.assigned_count }}</strong>
+                <strong class="team-context-metric-value" id="team-context-metric-assigned">{{ team_context_summary.assigned_count }}</strong>
               </div>
               <div class="team-context-metric">
                 <span class="team-context-metric-label">Sense equip</span>
-                <strong class="team-context-metric-value">{{ team_context_summary.unassigned_count }}</strong>
+                <strong class="team-context-metric-value" id="team-context-metric-unassigned">{{ team_context_summary.unassigned_count }}</strong>
               </div>
               <div class="team-context-metric">
                 <span class="team-context-metric-label">Total inscripcions</span>
-                <strong class="team-context-metric-value">{{ team_context_summary.total_inscripcions }}</strong>
+                <strong class="team-context-metric-value" id="team-context-metric-total">{{ team_context_summary.total_inscripcions }}</strong>
               </div>
             </div>
           </div>

@@ -675,6 +675,74 @@ class ScoringSchemaUpdate(UpdateView):
         kwargs["comp_aparell"] = self.comp_aparell
         return kwargs
 
+    def _saved_schema_payload(self):
+        return self.object.schema if isinstance(getattr(self.object, "schema", None), dict) else {}
+
+    def _schema_draft_storage_key(self):
+        mode = "competition" if self.comp_aparell else "global"
+        parts = [
+            "scoring-schema-builder",
+            mode,
+            f"aparell:{getattr(self.aparell, 'id', 'unknown')}",
+        ]
+        if self.comp_aparell:
+            parts.append(f"comp-aparell:{self.comp_aparell.id}")
+        parts.append(self.request.path)
+        return "::".join(str(part) for part in parts if part is not None)
+
+    def _schema_bootstrap_payload(self):
+        base = getattr(self, "_schema_bootstrap_payload_override", None)
+        if isinstance(base, dict):
+            payload = dict(base)
+        else:
+            saved_schema = self._saved_schema_payload()
+            payload = {
+                "schema_initial": saved_schema,
+                "schema_saved": saved_schema,
+                "schema_initial_source": "saved",
+                "schema_raw_invalid_json": "",
+            }
+        payload["schema_draft_storage_key"] = self._schema_draft_storage_key()
+        return payload
+
+    def _build_invalid_schema_bootstrap(self, form):
+        saved_schema = self._saved_schema_payload()
+        raw_schema = ""
+        if form is not None and hasattr(form, "get_raw_schema_json"):
+            raw_schema = str(form.get_raw_schema_json() or "")
+        if not raw_schema and form is not None:
+            raw_schema = str((form.data.get("schema_json") if hasattr(form, "data") else "") or "")
+        raw_schema = raw_schema.strip()
+
+        bootstrap = {
+            "schema_initial": saved_schema,
+            "schema_saved": saved_schema,
+            "schema_initial_source": "saved",
+            "schema_raw_invalid_json": "",
+        }
+        if not raw_schema:
+            return bootstrap
+
+        try:
+            parsed = json.loads(raw_schema)
+        except Exception:
+            bootstrap["schema_initial_source"] = "raw_invalid_json"
+            bootstrap["schema_raw_invalid_json"] = raw_schema
+            return bootstrap
+
+        if isinstance(parsed, dict):
+            bootstrap["schema_initial"] = parsed
+            bootstrap["schema_initial_source"] = "posted_invalid"
+            return bootstrap
+
+        bootstrap["schema_initial_source"] = "raw_invalid_json"
+        bootstrap["schema_raw_invalid_json"] = raw_schema
+        return bootstrap
+
+    def form_invalid(self, form):
+        self._schema_bootstrap_payload_override = self._build_invalid_schema_bootstrap(form)
+        return self.render_to_response(self.get_context_data(form=form))
+
     def form_valid(self, form):
         schema_json = form.cleaned_data.get("schema_json")
         schema_changed = False
@@ -725,7 +793,12 @@ class ScoringSchemaUpdate(UpdateView):
     
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        ctx["schema_initial"] = self.object.schema or {}
+        schema_bootstrap = self._schema_bootstrap_payload()
+        ctx["schema_bootstrap"] = schema_bootstrap
+        ctx["schema_initial"] = schema_bootstrap.get("schema_initial") or {}
+        ctx["schema_initial_source"] = schema_bootstrap.get("schema_initial_source") or "saved"
+        ctx["schema_raw_invalid_json"] = schema_bootstrap.get("schema_raw_invalid_json") or ""
+        ctx["schema_draft_storage_key"] = schema_bootstrap.get("schema_draft_storage_key") or ""
         ctx["aparell"] = self.aparell
 
         next_url = self.request.GET.get("next")
