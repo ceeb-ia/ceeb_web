@@ -16,7 +16,7 @@ from django.views.generic import TemplateView, UpdateView
 from django.utils import timezone
 from .models import Competicio, Inscripcio, InscripcioMedia
 from .models_trampoli import Aparell, CompeticioAparell, InscripcioAparellExclusio
-from .models_rotacions import RotacioAssignacio, RotacioFranja
+from .models_rotacions import RotacioAssignacio, RotacioAssignacioSerieEquip, RotacioFranja
 from .models_scoring import ScoringSchema, ScoreEntry, ScoreEntryVideo, TeamScoreEntry, TeamScoreEntryVideo
 from .forms import ScoringSchemaForm
 from .scoring_engine import ScoringEngine, ScoringError
@@ -44,12 +44,19 @@ from .services.competition_groups import (
 )
 from .services.rotacions_ordering import (
     ORDER_MODE_MAINTAIN,
+    assignacio_series,
     assignacio_grups,
     build_group_rotation_step_map,
+    build_series_rotation_step_map,
     effective_rotate_steps,
     get_rotacions_order_modes,
     order_pairs_for_mode,
     unique_ordered,
+)
+from .services.team_series import (
+    get_series_maps,
+    team_subject_bucket_key,
+    team_subject_bucket_label,
 )
 
 
@@ -258,6 +265,9 @@ class ScoringNotesHome(TemplateView):
         group_labels_map = {"0": "Sense grup"}
         for group in group_maps["groups"]:
             group_labels_map[str(group.id)] = group_label(group)
+        team_group_rows_by_key = {}
+        team_programmed_group_keys = []
+        team_out_of_program_group_keys = []
 
         franja_selected_id = None
         fr_raw = self.request.GET.get("franja")
@@ -313,6 +323,7 @@ class ScoringNotesHome(TemplateView):
         out_of_program_groups = [(g, grouped[g]) for g in out_of_program_group_keys]
         show_out_of_program_groups = show_out_of_program_in_competition_views(competicio)
         visible_groups = programmed_groups + (out_of_program_groups if show_out_of_program_groups else [])
+        visible_individual_groups = list(visible_groups)
 
 
         # Aparells de la competició
@@ -401,13 +412,51 @@ class ScoringNotesHome(TemplateView):
             if not is_team_context_app(ca):
                 continue
             app_subjects, issues = build_team_subjects_for_comp_aparell(competicio, ca)
-            team_subjects.extend(app_subjects)
+            rows_by_bucket = defaultdict(list)
+            programmed_series_ids = set(
+                RotacioAssignacioSerieEquip.objects
+                .filter(assignacio__competicio=competicio, serie__comp_aparell=ca)
+                .values_list("serie_id", flat=True)
+                .distinct()
+            )
+            app_name = str(getattr(ca.aparell, "nom", "") or "").strip()
+            for raw_subject in app_subjects:
+                subject = dict(raw_subject)
+                bucket_key = team_subject_bucket_key(subject, ca.id)
+                subject["group"] = bucket_key
+                subject["group_label"] = team_subject_bucket_label(subject, app_name)
+                rows_by_bucket[bucket_key].append(subject)
+                if subject.get("serie_id"):
+                    if int(subject["serie_id"]) in programmed_series_ids:
+                        if bucket_key not in team_programmed_group_keys:
+                            team_programmed_group_keys.append(bucket_key)
+                    elif bucket_key not in team_out_of_program_group_keys:
+                        team_out_of_program_group_keys.append(bucket_key)
+                elif bucket_key not in team_out_of_program_group_keys:
+                    team_out_of_program_group_keys.append(bucket_key)
+                group_labels_map[str(bucket_key)] = subject["group_label"]
+                team_subjects.append(subject)
+            for bucket_key, rows in rows_by_bucket.items():
+                team_group_rows_by_key[str(bucket_key)] = rows
             team_issues_by_app[str(ca.id)] = issues
             eligible_team_ids_by_app[int(ca.id)] = [
                 int(subject["subject_id"])
                 for subject in app_subjects
                 if int(ca.id) in (subject.get("allowed_app_ids") or [])
             ]
+        team_programmed_groups = [
+            (group_key, team_group_rows_by_key[group_key])
+            for group_key in team_programmed_group_keys
+            if group_key in team_group_rows_by_key
+        ]
+        team_out_of_program_groups = [
+            (group_key, team_group_rows_by_key[group_key])
+            for group_key in team_out_of_program_group_keys
+            if group_key in team_group_rows_by_key and group_key not in team_programmed_group_keys
+        ]
+        programmed_groups.extend(team_programmed_groups)
+        out_of_program_groups.extend(team_out_of_program_groups)
+        visible_groups = programmed_groups + (out_of_program_groups if show_out_of_program_groups else [])
 
         team_score_app_ids = [app_id for app_id, ids in eligible_team_ids_by_app.items() if ids]
         team_subject_ids = [team_id for ids in eligible_team_ids_by_app.values() for team_id in ids]
@@ -431,7 +480,7 @@ class ScoringNotesHome(TemplateView):
         # ─────────────────────────────
         # inscripcions: llista plana per al JS
         inscripcions = []
-        for g, rows in visible_groups:
+        for g, rows in visible_individual_groups:
             for r in rows:
                 meta_parts = []
                 if getattr(r, "entitat", None):
@@ -534,15 +583,22 @@ class ScoringNotesHome(TemplateView):
                     estacio__comp_aparell__isnull=False,
                 )
                 .select_related("franja", "estacio")
-                .prefetch_related("grup_links__grup")
+                .prefetch_related("grup_links__grup", "serie_links__serie")
                 .order_by("franja__ordre", "franja_id", "estacio__ordre", "id")
             )
-            rotation_step_map = build_group_rotation_step_map(all_assigns, franja_modes)
+            rotation_group_step_map = build_group_rotation_step_map(all_assigns, franja_modes)
+            rotation_series_step_map = build_series_rotation_step_map(all_assigns, franja_modes)
             assigns = [a for a in all_assigns if a.franja_id == franja_selected_id]
             app_groups_map = {}
             for a in assigns:
                 app_id = a.estacio.comp_aparell_id
-                groups_for_cell = assignacio_grups(a)
+                if app_id in team_app_ids:
+                    groups_for_cell = [
+                        f"app-{app_id}-serie-{serie_id}"
+                        for serie_id in assignacio_series(a)
+                    ]
+                else:
+                    groups_for_cell = assignacio_grups(a)
                 prev = app_groups_map.get(app_id, [])
                 app_groups_map[app_id] = unique_ordered(list(prev) + list(groups_for_cell))
 
@@ -556,13 +612,16 @@ class ScoringNotesHome(TemplateView):
                 subject_rows_by_group = {}
                 if app_id in team_app_ids:
                     for subject in team_subjects:
-                        key = 0 if subject.get("group") in (None, 0) else int(subject.get("group") or 0)
+                        if int(app_id) not in (subject.get("allowed_app_ids") or []) and not subject.get("invalid_reasons"):
+                            continue
+                        key = str(subject.get("group") or "")
                         if key not in app_groups:
                             continue
-                        if app_id in (subject.get("allowed_app_ids") or []) or subject.get("invalid_reasons"):
-                            subject_rows_by_group.setdefault(key, []).append(subject)
+                        subject_rows_by_group.setdefault(key, []).append(subject)
                 else:
                     for g, rows in programmed_groups:
+                        if isinstance(g, str):
+                            continue
                         key = 0 if g in (None, 0) else int(g)
                         subject_rows_by_group[key] = list(rows)
                 for g in app_groups:
@@ -580,7 +639,11 @@ class ScoringNotesHome(TemplateView):
                         mode_for_franja,
                         rotate_steps=effective_rotate_steps(
                             mode_for_franja,
-                            rotation_step_map.get((g, franja_selected_id), 0),
+                            (
+                                rotation_series_step_map.get((int(str(g).rsplit("-", 1)[-1]), franja_selected_id), 0)
+                                if app_id in team_app_ids and str(g).startswith(f"app-{app_id}-serie-")
+                                else rotation_group_step_map.get((g, franja_selected_id), 0)
+                            ),
                         ),
                         seed_prefix=f"notes|{competicio.id}|{franja_selected_id}|{app_id}|{g}",
                     )
@@ -1171,15 +1234,17 @@ def scoring_media_context(request, pk):
                 "id": team_subject_obj.id,
                 "name": f"{team_subject.get('context_name') or ''} · {team_subject.get('name') or team_subject_obj.label}".strip(" ·"),
                 "meta": " · ".join(
-                    subject.get("members_text", "")
-                    for subject in build_team_subjects_for_comp_aparell(competicio, comp_aparell)[0]
-                    if int(subject.get("subject_id") or 0) == int(equip.id)
-                    and subject.get("members_text")
+                    part for part in [
+                        team_subject.get("members_text", ""),
+                        team_subject.get("serie_label", ""),
+                    ] if part
                 ),
             },
             "context": {
                 "comp_aparell_id": comp_aparell_id,
                 "exercici": exercici,
+                "serie_id": team_subject.get("serie_id"),
+                "serie_label": team_subject.get("serie_label"),
             },
             "media": _split_media_for_playback([]),
             "judge_video": judge_video_payload,
@@ -1251,6 +1316,7 @@ def scoring_updates(request, pk):
     comp_aparell_id = request.GET.get("comp_aparell_id")
     exercici = request.GET.get("exercici")
     group = request.GET.get("group")  # opcional
+    serie_id = request.GET.get("serie_id")  # opcional per aparells team
 
     dt = parse_datetime(since) if since else None
     if dt is None:
@@ -1263,7 +1329,25 @@ def scoring_updates(request, pk):
         team_app = CompeticioAparell.objects.filter(pk=comp_aparell_id, competicio=competicio).first()
 
     if team_app and is_team_context_app(team_app):
-        allowed_team_ids = list(_eligible_team_subject_map(competicio, team_app).keys())
+        eligible_subjects = _eligible_team_subject_map(competicio, team_app)
+        allowed_team_ids = list(eligible_subjects.keys())
+        if serie_id not in (None, ""):
+            try:
+                clean_serie_id = int(serie_id)
+            except Exception:
+                clean_serie_id = None
+            if clean_serie_id:
+                allowed_team_ids = [
+                    team_id
+                    for team_id, subject in eligible_subjects.items()
+                    if int(subject.get("serie_id") or 0) == clean_serie_id
+                ]
+            else:
+                allowed_team_ids = [
+                    team_id
+                    for team_id, subject in eligible_subjects.items()
+                    if not subject.get("serie_id")
+                ]
         qs = TeamScoreEntry.objects.filter(
             competicio=competicio,
             comp_aparell=team_app,
@@ -1275,12 +1359,8 @@ def scoring_updates(request, pk):
                 qs = qs.filter(exercici=int(exercici))
             except Exception:
                 pass
-        if group is not None:
-            try:
-                int(group)
-            except Exception:
-                pass
         for s in qs.select_related("team_subject")[:500]:
+            team_subject = eligible_subjects.get(int(s.team_subject_id), {})
             updates.append({
                 **serialize_subject_payload("team_unit", s.team_subject_id),
                 "exercici": s.exercici,
@@ -1289,6 +1369,10 @@ def scoring_updates(request, pk):
                 "outputs": s.outputs or {},
                 "total": float(s.total),
                 "updated_at": s.updated_at.isoformat(),
+                "serie_id": team_subject.get("serie_id"),
+                "serie_label": team_subject.get("serie_label"),
+                "serie_order": team_subject.get("serie_order"),
+                "series_state": team_subject.get("series_state"),
             })
     else:
         qs = ScoreEntry.objects.filter(competicio=competicio, updated_at__gt=dt)

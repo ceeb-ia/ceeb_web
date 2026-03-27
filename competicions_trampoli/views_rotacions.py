@@ -19,7 +19,14 @@ from openpyxl.drawing.image import Image as XLImage
 from django.http import HttpResponse
 from .models import Competicio, Inscripcio
 from .models_trampoli import CompeticioAparell, InscripcioAparellExclusio
-from .models_rotacions import RotacioFranja, RotacioAssignacio, RotacioAssignacioGrup, RotacioEstacio
+from .models_rotacions import (
+    RotacioAssignacio,
+    RotacioAssignacioGrup,
+    RotacioAssignacioSerieEquip,
+    RotacioEstacio,
+    RotacioFranja,
+)
+from .models_scoring import SerieEquip
 from .services.competition_groups import (
     get_competicio_groups,
     get_group_maps,
@@ -36,6 +43,7 @@ from .services.rotacions_ordering import (
     ORDER_MODE_MAINTAIN,
     ORDER_MODE_CHOICES,
     ORDER_MODE_LABELS,
+    assignacio_series,
     assignacio_grups,
     assignacio_grups_from_values,
     build_group_rotation_step_map,
@@ -46,6 +54,8 @@ from .services.rotacions_ordering import (
     set_rotacio_order_mode,
     unique_ordered,
 )
+from .services.team_series import get_programmed_series_ids, get_series_maps, serie_label
+from .services.team_scoring import build_team_subjects_for_comp_aparell, is_team_context_app
 from datetime import date, datetime, timedelta
 from django.utils.dateparse import parse_time
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -108,6 +118,93 @@ def _sync_assignacio_groups(assignacio, group_ids, groups_by_id):
     assignacio.grup = legacy_display_nums[0] if legacy_display_nums else None
     assignacio.save(update_fields=["grups", "grup"])
     return [group_id for group_id, _idx in desired]
+
+
+def _normalize_program_keys(values):
+    if values is None:
+        return []
+    raw_values = list(values) if isinstance(values, (list, tuple, set)) else [values]
+    out = []
+    seen = set()
+    for raw in raw_values:
+        key = str(raw or "").strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(key)
+    return out
+
+
+def _split_program_keys(values):
+    group_ids = []
+    serie_ids = []
+    for key in _normalize_program_keys(values):
+        if key.startswith("g:"):
+            try:
+                group_id = int(key.split(":", 1)[1])
+            except Exception:
+                continue
+            if group_id > 0:
+                group_ids.append(group_id)
+        elif key.startswith("s:"):
+            try:
+                serie_id = int(key.split(":", 1)[1])
+            except Exception:
+                continue
+            if serie_id > 0:
+                serie_ids.append(serie_id)
+    return unique_ordered(group_ids), unique_ordered(serie_ids)
+
+
+def _sync_assignacio_series(assignacio, serie_ids, series_by_id):
+    clean_ids = unique_ordered(normalize_positive_int_list(serie_ids))
+    desired = []
+    for idx, serie_id in enumerate(clean_ids, start=1):
+        serie = series_by_id.get(serie_id)
+        if not serie:
+            continue
+        desired.append((serie.id, idx))
+
+    existing = {
+        link.serie_id: link
+        for link in assignacio.serie_links.all()
+    }
+    keep_ids = set()
+    updates = []
+    creates = []
+    for serie_id, order_idx in desired:
+        keep_ids.add(serie_id)
+        link = existing.get(serie_id)
+        if link is None:
+            creates.append(
+                RotacioAssignacioSerieEquip(assignacio=assignacio, serie_id=serie_id, ordre=order_idx)
+            )
+            continue
+        if link.ordre != order_idx:
+            link.ordre = order_idx
+            updates.append(link)
+
+    stale_ids = [serie_id for serie_id in existing.keys() if serie_id not in keep_ids]
+    if stale_ids:
+        RotacioAssignacioSerieEquip.objects.filter(assignacio=assignacio, serie_id__in=stale_ids).delete()
+    if creates:
+        RotacioAssignacioSerieEquip.objects.bulk_create(creates, batch_size=200)
+    if updates:
+        RotacioAssignacioSerieEquip.objects.bulk_update(updates, ["ordre"], batch_size=200)
+    return [serie_id for serie_id, _idx in desired]
+
+
+def _assignacio_program_keys(assignacio):
+    estacio = getattr(assignacio, "estacio", None)
+    is_team_station = bool(
+        estacio
+        and getattr(estacio, "tipus", "") == "aparell"
+        and getattr(getattr(estacio, "comp_aparell", None), "aparell", None)
+        and getattr(estacio.comp_aparell.aparell, "competition_unit", "") == "team"
+    )
+    if is_team_station:
+        return [f"s:{serie_id}" for serie_id in assignacio_series(assignacio)]
+    return [f"g:{group_id}" for group_id in _assignacio_grups(assignacio)]
 
 
 def _ordered_inscripcions_by_group_ids(competicio, group_ids):
@@ -415,6 +512,8 @@ def rotacions_planner(request, pk):
     out_of_program_group_ids = get_out_of_program_group_ids(competicio)
     group_sidebar = [
         {
+            "key": f"g:{group.id}",
+            "kind": "group",
             "id": group.id,
             "label": group_labels_map[str(group.id)],
             "members_count": int(group_participant_counts.get(group.id, 0) or 0),
@@ -426,23 +525,80 @@ def rotacions_planner(request, pk):
     grups = [group.id for group in groups]
     grups_display = [{"id": group.id, "label": group_labels_map[str(group.id)]} for group in groups]
 
-    estacions = list(RotacioEstacio.objects.filter(competicio=competicio, actiu=True).order_by("ordre", "id"))
+    series_qs = (
+        SerieEquip.objects
+        .filter(competicio=competicio, actiu=True, comp_aparell__actiu=True)
+        .select_related("comp_aparell__aparell")
+        .annotate(subjects_count=Count("team_subject_items"))
+        .order_by("comp_aparell__ordre", "comp_aparell_id", "display_num", "id")
+    )
+    programmed_series_ids = set(get_programmed_series_ids(competicio))
+    series_sidebar = []
+    program_item_labels = {str(group.id): group_labels_map[str(group.id)] for group in groups}
+    program_item_labels.update({f"g:{group.id}": group_labels_map[str(group.id)] for group in groups})
+    for serie in series_qs:
+        label = f"{getattr(serie.comp_aparell.aparell, 'nom', '')} · {serie_label(serie)}"
+        program_item_labels[f"s:{serie.id}"] = label
+        series_sidebar.append({
+            "key": f"s:{serie.id}",
+            "kind": "series",
+            "id": int(serie.id),
+            "app_id": int(serie.comp_aparell_id),
+            "label": label,
+            "members_count": int(getattr(serie, "subjects_count", 0) or 0),
+            "is_programmed": int(serie.id) in programmed_series_ids,
+            "is_out_of_program": int(serie.id) not in programmed_series_ids,
+        })
+    program_sidebar = group_sidebar + series_sidebar
+
+    estacions = list(
+        RotacioEstacio.objects
+        .filter(competicio=competicio, actiu=True)
+        .select_related("comp_aparell__aparell")
+        .order_by("ordre", "id")
+    )
     franges = list(RotacioFranja.objects.filter(competicio=competicio).order_by("ordre", "id"))
     franja_modes = get_rotacions_order_modes(competicio)
     export_meta = _get_export_meta(competicio)
     export_meta["logo_url"] = _logo_url_from_path(export_meta.get("logo_path", ""))
     export_participant_fields = _rotacions_available_participant_fields(competicio)
+    station_modes = {}
+    for estacio in estacions:
+        mode = "none"
+        comp_aparell_id = getattr(estacio, "comp_aparell_id", None)
+        comp_aparell = getattr(estacio, "comp_aparell", None)
+        aparell = getattr(comp_aparell, "aparell", None)
+        if getattr(estacio, "tipus", "") == "aparell" and comp_aparell_id:
+            if aparell is not None and getattr(aparell, "competition_unit", "") == "team":
+                mode = "series"
+            else:
+                mode = "group"
+        station_modes[str(estacio.id)] = {
+            "mode": mode,
+            "comp_aparell_id": int(comp_aparell_id or 0) or None,
+            "label": str(getattr(aparell, "nom", "") or ""),
+        }
 
     assigns = (
         RotacioAssignacio.objects
         .filter(competicio=competicio)
         .select_related("franja", "estacio")
-        .prefetch_related("grup_links__grup")
+        .prefetch_related("grup_links__grup", "serie_links__serie")
     )
 
     grid = {}  # grid[franja_id][estacio_id] = [grups]
     for a in assigns:
-        grid.setdefault(a.franja_id, {})[a.estacio_id] = _assignacio_grups(a)
+        estacio = getattr(a, "estacio", None)
+        is_team_station = bool(
+            estacio
+            and getattr(estacio, "tipus", "") == "aparell"
+            and getattr(getattr(estacio, "comp_aparell", None), "aparell", None)
+            and getattr(estacio.comp_aparell.aparell, "competition_unit", "") == "team"
+        )
+        if is_team_station:
+            grid.setdefault(a.franja_id, {})[a.estacio_id] = [f"s:{serie_id}" for serie_id in assignacio_series(a)]
+        else:
+            grid.setdefault(a.franja_id, {})[a.estacio_id] = [f"g:{group_id}" for group_id in _assignacio_grups(a)]
 
     ctx = {
         "competicio": competicio,
@@ -455,14 +611,15 @@ def rotacions_planner(request, pk):
             for m in ORDER_MODE_CHOICES
         ],
         "grid_json": json.dumps(grid, ensure_ascii=False),
-        "group_labels_json": json.dumps(group_labels_map, ensure_ascii=False),
-        "group_sidebar_json": json.dumps(group_sidebar, ensure_ascii=False),
+        "group_labels_json": json.dumps(program_item_labels, ensure_ascii=False),
+        "group_sidebar_json": json.dumps(program_sidebar, ensure_ascii=False),
+        "station_modes_json": json.dumps(station_modes, ensure_ascii=False),
         "franja_order_modes_json": json.dumps(franja_modes, ensure_ascii=False),
         "export_meta_json": json.dumps(export_meta, ensure_ascii=False),
         "export_participant_fields_json": json.dumps(export_participant_fields, ensure_ascii=False),
         "grups_json": json.dumps(grups, ensure_ascii=False),
-        "out_of_program_groups_count": sum(1 for item in group_sidebar if item["members_count"] > 0 and item["is_out_of_program"]),
-        "out_of_program_members_total": sum(item["members_count"] for item in group_sidebar if item["members_count"] > 0 and item["is_out_of_program"]),
+        "out_of_program_groups_count": sum(1 for item in program_sidebar if item["members_count"] > 0 and item["is_out_of_program"]),
+        "out_of_program_members_total": sum(item["members_count"] for item in program_sidebar if item["members_count"] > 0 and item["is_out_of_program"]),
         "show_out_of_program_in_competition_views": show_out_of_program_in_competition_views(competicio),
     }
     return render(request, "competicio/rotacions_planner.html", ctx)
@@ -499,8 +656,18 @@ def rotacions_save(request, pk):
         return HttpResponseBadRequest("Format incorrecte")
 
     franja_ids = set(RotacioFranja.objects.filter(competicio=competicio).values_list("id", flat=True))
-    estacio_ids = set(RotacioEstacio.objects.filter(competicio=competicio).values_list("id", flat=True))
+    estacions = list(
+        RotacioEstacio.objects
+        .filter(competicio=competicio)
+        .select_related("comp_aparell__aparell")
+    )
+    estacio_ids = {int(estacio.id) for estacio in estacions}
+    estacions_by_id = {int(estacio.id): estacio for estacio in estacions}
     groups_by_id = get_group_maps(competicio)["by_id"]
+    series_by_id = {
+        int(serie.id): serie
+        for serie in SerieEquip.objects.filter(competicio=competicio, actiu=True).select_related("comp_aparell")
+    }
 
     with transaction.atomic():
         for c in cells:
@@ -515,10 +682,31 @@ def rotacions_save(request, pk):
             if fr_id not in franja_ids or es_id not in estacio_ids:
                 continue
 
-            if "grups" in c:
+            if "items" in c:
+                groups, series = _split_program_keys(c.get("items"))
+            elif "grups" in c:
                 groups = _normalize_grups(c.get("grups"))
+                series = []
             else:
                 groups = _normalize_grups(c.get("grup", None))
+                series = []
+
+            estacio = estacions_by_id.get(es_id)
+            is_team_station = bool(
+                estacio
+                and getattr(estacio, "tipus", "") == "aparell"
+                and getattr(getattr(estacio, "comp_aparell", None), "aparell", None)
+                and getattr(estacio.comp_aparell.aparell, "competition_unit", "") == "team"
+            )
+            if is_team_station:
+                groups = []
+                series = [
+                    serie_id
+                    for serie_id in series
+                    if serie_id in series_by_id and int(series_by_id[serie_id].comp_aparell_id or 0) == int(getattr(estacio, "comp_aparell_id", 0) or 0)
+                ]
+            else:
+                series = []
 
             assignacio, _created = RotacioAssignacio.objects.update_or_create(
                 competicio=competicio,
@@ -530,6 +718,7 @@ def rotacions_save(request, pk):
                 },
             )
             _sync_assignacio_groups(assignacio, groups, groups_by_id)
+            _sync_assignacio_series(assignacio, series, series_by_id)
 
     return JsonResponse({"ok": True})
 
@@ -666,8 +855,13 @@ def rotacions_extrapolar(request, pk, franja_id):
 
     # 1) Llegim assignació de la franja base segons ordre d'estacions
     base_map = {}
-    for a in RotacioAssignacio.objects.filter(competicio=competicio, franja=fr_base).prefetch_related("grup_links__grup"):
-        base_map[a.estacio_id] = _assignacio_grups(a)
+    for a in (
+        RotacioAssignacio.objects
+        .filter(competicio=competicio, franja=fr_base)
+        .select_related("estacio__comp_aparell__aparell")
+        .prefetch_related("grup_links__grup", "serie_links__serie")
+    ):
+        base_map[a.estacio_id] = _assignacio_program_keys(a)
 
     base_groups = []
     for e in estacions:
@@ -706,6 +900,10 @@ def rotacions_extrapolar(request, pk, franja_id):
     # Ens assegurem que existeixen idx_base+1 ... idx_base+count
     created = 0
     groups_by_id = get_group_maps(competicio)["by_id"]
+    series_by_id = {
+        int(serie.id): serie
+        for serie in SerieEquip.objects.filter(competicio=competicio, actiu=True).select_related("comp_aparell")
+    }
     with transaction.atomic():
         # refresquem per evitar desajustos
         franges = list(RotacioFranja.objects.filter(competicio=competicio).order_by("ordre", "id"))
@@ -747,6 +945,7 @@ def rotacions_extrapolar(request, pk, franja_id):
             shifted = [list(base_groups[(i - k) % n]) for i in range(n)]  # shift cap a la dreta
 
             for e, gs in zip(estacions, shifted):
+                group_ids, serie_ids = _split_program_keys(gs)
                 assignacio, _created = RotacioAssignacio.objects.update_or_create(
                     competicio=competicio,
                     franja=fr_t,
@@ -756,7 +955,22 @@ def rotacions_extrapolar(request, pk, franja_id):
                         "grup": None,
                     },
                 )
-                _sync_assignacio_groups(assignacio, gs, groups_by_id)
+                is_team_station = bool(
+                    getattr(e, "tipus", "") == "aparell"
+                    and getattr(getattr(e, "comp_aparell", None), "aparell", None)
+                    and getattr(e.comp_aparell.aparell, "competition_unit", "") == "team"
+                )
+                if is_team_station:
+                    group_ids = []
+                    serie_ids = [
+                        serie_id
+                        for serie_id in serie_ids
+                        if serie_id in series_by_id and int(series_by_id[serie_id].comp_aparell_id or 0) == int(getattr(e, "comp_aparell_id", 0) or 0)
+                    ]
+                else:
+                    serie_ids = []
+                _sync_assignacio_groups(assignacio, group_ids, groups_by_id)
+                _sync_assignacio_series(assignacio, serie_ids, series_by_id)
                 filled_cells += 1
 
     return JsonResponse({
@@ -1080,7 +1294,10 @@ def franges_export_excel(request, pk):
         mode = "participants"
 
     estacions = list(
-        RotacioEstacio.objects.filter(competicio=competicio, actiu=True).order_by("ordre", "id")
+        RotacioEstacio.objects
+        .filter(competicio=competicio, actiu=True)
+        .select_related("comp_aparell__aparell")
+        .order_by("ordre", "id")
     )
     franges = list(RotacioFranja.objects.filter(competicio=competicio).order_by("ordre", "id"))
 
@@ -1093,22 +1310,41 @@ def franges_export_excel(request, pk):
         RotacioAssignacio.objects
         .filter(competicio=competicio)
         .select_related("franja", "estacio")
-        .prefetch_related("grup_links__grup")
+        .prefetch_related("grup_links__grup", "serie_links__serie")
         .order_by("franja__ordre", "franja_id", "estacio__ordre", "id")
     )
     rotation_step_map = build_group_rotation_step_map(assigns, franja_modes)
+    rotation_series_step_map = build_series_rotation_step_map(assigns, franja_modes)
     cell_groups = {}
     for a in assigns:
-        gs = _assignacio_grups(a)
-        cell_groups[(a.franja_id, a.estacio_id)] = gs
+        cell_groups[(a.franja_id, a.estacio_id)] = _assignacio_program_keys(a)
 
     estacio_comp_aparell = {
         e.id: (e.comp_aparell_id if getattr(e, "tipus", None) == "aparell" else None)
         for e in estacions
     }
+    estacio_is_team = {
+        e.id: bool(
+            getattr(e, "tipus", None) == "aparell"
+            and getattr(getattr(e, "comp_aparell", None), "aparell", None)
+            and getattr(e.comp_aparell.aparell, "competition_unit", "") == "team"
+        )
+        for e in estacions
+    }
     comp_aparell_ids = sorted({x for x in estacio_comp_aparell.values() if x})
 
-    group_ids = sorted({g for gs in cell_groups.values() for g in gs})
+    group_ids = sorted({
+        int(key.split(":", 1)[1])
+        for items in cell_groups.values()
+        for key in items
+        if str(key).startswith("g:")
+    })
+    serie_ids = sorted({
+        int(key.split(":", 1)[1])
+        for items in cell_groups.values()
+        for key in items
+        if str(key).startswith("s:")
+    })
     ins_by_grup = {}
     excluded_pairs = set()
     if group_ids:
@@ -1145,6 +1381,25 @@ def franges_export_excel(request, pk):
                     comp_aparell_id__in=comp_aparell_ids,
                 ).values_list("inscripcio_id", "comp_aparell_id")
             )
+
+    series_by_id = {
+        int(serie.id): serie
+        for serie in SerieEquip.objects
+        .filter(competicio=competicio, id__in=serie_ids)
+        .select_related("comp_aparell__aparell")
+    }
+    team_subjects_by_serie = {}
+    if serie_ids:
+        app_ids_for_series = sorted({int(serie.comp_aparell_id) for serie in series_by_id.values()})
+        for app_id in app_ids_for_series:
+            comp_aparell = CompeticioAparell.objects.filter(pk=app_id, competicio=competicio).select_related("aparell").first()
+            if comp_aparell is None or not is_team_context_app(comp_aparell):
+                continue
+            subjects, _issues = build_team_subjects_for_comp_aparell(competicio, comp_aparell)
+            for subject in subjects:
+                serie_id = int(subject.get("serie_id") or 0)
+                if serie_id > 0:
+                    team_subjects_by_serie.setdefault(serie_id, []).append(subject)
 
     def _group_label(g):
         return group_labels_by_id.get(g) or group_label(groups_by_id.get(g))
@@ -1222,6 +1477,37 @@ def franges_export_excel(request, pk):
                 seen_ins.add(ins_id)
                 ordered_inscripcions.append(ins)
         return ordered_inscripcions
+
+    def _ordered_team_subjects_for_cell(franja, estacio, items):
+        if not items:
+            return []
+        mode_for_franja = franja_modes.get(str(franja.id), ORDER_MODE_MAINTAIN)
+        ordered_subjects = []
+        seen_subject_ids = set()
+        for key in items:
+            if not str(key).startswith("s:"):
+                continue
+            try:
+                serie_id = int(str(key).split(":", 1)[1])
+            except Exception:
+                continue
+            rows = list(team_subjects_by_serie.get(serie_id, []))
+            base_pairs = [(int(row.get("subject_id") or 0), row) for row in rows if int(row.get("subject_id") or 0) > 0]
+            ordered_pairs = order_pairs_for_mode(
+                base_pairs,
+                mode_for_franja,
+                rotate_steps=effective_rotate_steps(
+                    mode_for_franja,
+                    rotation_series_step_map.get((serie_id, franja.id), 0),
+                ),
+                seed_prefix=f"rot-export|team|{competicio.id}|{franja.id}|{estacio.id}|{serie_id}",
+            )
+            for subject_id, subject in ordered_pairs:
+                if subject_id in seen_subject_ids:
+                    continue
+                seen_subject_ids.add(subject_id)
+                ordered_subjects.append(subject)
+        return ordered_subjects
 
     titol_competicio = str(export_meta.get("title", "") or "").strip() or getattr(
         competicio, "nom", f"Competicio {competicio.id}"
@@ -1357,7 +1643,14 @@ def franges_export_excel(request, pk):
             max_participants = 0
             for e in estacions:
                 gs = cell_groups.get((f.id, e.id), [])
-                ordered = _ordered_inscripcions_for_cell(f, e, gs)
+                if estacio_is_team.get(e.id):
+                    ordered = _ordered_team_subjects_for_cell(f, e, gs)
+                else:
+                    ordered = _ordered_inscripcions_for_cell(f, e, [
+                        int(str(key).split(":", 1)[1])
+                        for key in gs
+                        if str(key).startswith("g:")
+                    ])
                 cell_participants[e.id] = ordered
                 if len(ordered) > max_participants:
                     max_participants = len(ordered)
@@ -1395,7 +1688,17 @@ def franges_export_excel(request, pk):
                     for idx, code in enumerate(participant_fields):
                         value = ""
                         if current_ins is not None:
-                            value = _format_field_value(_inscripcio_field_value(current_ins, code))
+                            if estacio_is_team.get(e.id):
+                                if code == "nom_i_cognoms":
+                                    value = str(current_ins.get("name") or current_ins.get("label") or "")
+                                elif code == "grup":
+                                    value = str(current_ins.get("serie_label") or "")
+                                elif code == "ordre_sortida":
+                                    value = str(current_ins.get("order") or "")
+                                else:
+                                    value = str(current_ins.get("members_text") or current_ins.get("meta") or "")
+                            else:
+                                value = _format_field_value(_inscripcio_field_value(current_ins, code))
                         cell = ws.cell(row=rr, column=start_col + idx, value=value)
                         cell.alignment = left_center
                         cell.border = border
@@ -1437,7 +1740,18 @@ def franges_export_excel(request, pk):
                 if not gs:
                     txt = ""
                 else:
-                    labels = unique_ordered(_group_label(g) for g in gs)
+                    if estacio_is_team.get(e.id):
+                        labels = unique_ordered(
+                            f"{getattr(series_by_id.get(int(str(key).split(':', 1)[1])), 'comp_aparell', None).aparell.nom if series_by_id.get(int(str(key).split(':', 1)[1])) and getattr(series_by_id.get(int(str(key).split(':', 1)[1])).comp_aparell, 'aparell', None) else ''} · {serie_label(series_by_id.get(int(str(key).split(':', 1)[1])))}".strip(" ·")
+                            for key in gs
+                            if str(key).startswith("s:") and int(str(key).split(":", 1)[1]) in series_by_id
+                        )
+                    else:
+                        labels = unique_ordered(
+                            _group_label(int(str(key).split(":", 1)[1]))
+                            for key in gs
+                            if str(key).startswith("g:")
+                        )
                     txt = "\n".join(labels) if labels else "-"
                 cell = ws.cell(row=r, column=j, value=txt)
                 cell.alignment = center

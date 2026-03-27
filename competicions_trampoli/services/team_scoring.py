@@ -15,6 +15,7 @@ from ..models_trampoli import (
     InscripcioAparellExclusio,
 )
 from .equip_contexts import NATIVE_EQUIP_CONTEXT_CODE, normalize_equip_context_code
+from .team_series import enrich_team_subjects_with_series
 
 if TYPE_CHECKING:
     from ..models_scoring import TeamCompetitiveSubject
@@ -606,8 +607,11 @@ def build_team_subjects_for_comp_aparell(competicio, comp_aparell: CompeticioApa
                     )
                 subjects.append(subject)
 
+    subjects = enrich_team_subjects_with_series(competicio, comp_aparell, subjects)
     subjects.sort(
         key=lambda item: (
+            int(item.get("serie_display_num") or 10**9),
+            int(item.get("serie_order") or 10**9),
             int(item.get("group") or 0),
             int(item.get("order") or 0),
             str(item.get("context_name") or "").lower(),

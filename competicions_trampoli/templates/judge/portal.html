@@ -292,7 +292,7 @@
         {% endif %}
         <div class="mt-2">
           <div class="judge-meta">
-            Ordre segons la franja assignada a cada grup.
+            Ordre segons la franja assignada a cada {% if team_subject_mode %}serie{% else %}grup{% endif %}.
             {% if exercicis|length > 1 %}
               Exercici inicial obert: {{ exercici }}.
             {% endif %}
@@ -1373,9 +1373,9 @@
 
   function updateGroupInUrl(target){
     const url = new URL(window.location.href);
-    const match = String(target || "").match(/^group-(-?\d+)$/);
-    if(match){
-      url.searchParams.set("group", match[1]);
+    const rawTarget = String(target || "");
+    if(rawTarget.startsWith("group-")){
+      url.searchParams.set("group", rawTarget.slice("group-".length));
     } else {
       url.searchParams.delete("group");
     }

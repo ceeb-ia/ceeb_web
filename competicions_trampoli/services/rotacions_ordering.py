@@ -161,6 +161,26 @@ def assignacio_grups_from_values(grups_value, grup_value) -> List[int]:
     return normalize_positive_int_list(grup_value)
 
 
+def assignacio_series(assignacio) -> List[int]:
+    raw_links = getattr(assignacio, "serie_links", None)
+    if raw_links is None:
+        return []
+    if hasattr(raw_links, "all"):
+        raw_links = raw_links.all()
+    out = []
+    seen = set()
+    for link in raw_links:
+        try:
+            serie_id = int(getattr(link, "serie_id", None))
+        except Exception:
+            continue
+        if serie_id <= 0 or serie_id in seen:
+            continue
+        seen.add(serie_id)
+        out.append(serie_id)
+    return out
+
+
 def build_group_rotation_step_map(assignacions, franja_modes=None) -> Dict[Tuple[int, int], int]:
     """
     Returns a map keyed by (group_id, franja_id) -> 0-based rotation step for
@@ -199,6 +219,35 @@ def build_group_rotation_step_map(assignacions, franja_modes=None) -> Dict[Tuple
             mode = sanitize_order_mode(modes.get(str(franja_id)))
             if mode == ORDER_MODE_ROTATE:
                 counters[clean_group_id] = step + 1
+
+    return out
+
+
+def build_series_rotation_step_map(assignacions, franja_modes=None) -> Dict[Tuple[int, int], int]:
+    out: Dict[Tuple[int, int], int] = {}
+    counters: Dict[int, int] = {}
+    seen = set()
+    modes = franja_modes or {}
+
+    for assignacio in list(assignacions or []):
+        try:
+            franja_id = int(getattr(assignacio, "franja_id", None) or 0)
+        except Exception:
+            franja_id = 0
+        if franja_id <= 0:
+            continue
+
+        for serie_id in assignacio_series(assignacio):
+            seen_key = (serie_id, franja_id)
+            if seen_key in seen:
+                continue
+            seen.add(seen_key)
+
+            step = counters.get(serie_id, 0)
+            out[seen_key] = step
+            mode = sanitize_order_mode(modes.get(str(franja_id)))
+            if mode == ORDER_MODE_ROTATE:
+                counters[serie_id] = step + 1
 
     return out
 

@@ -5,7 +5,7 @@ from django.dispatch import receiver
 from .models import EquipContext, InscripcioEquipAssignacio
 from .live_cache import mark_live_dirty
 from .models_classificacions import ClassificacioConfig
-from .models_scoring import ScoreEntry, TeamScoreEntry
+from .models_scoring import ScoreEntry, SerieEquip, SerieEquipItem, TeamScoreEntry
 
 
 def _mark_live_dirty_on_commit(competicio_id):
@@ -62,3 +62,25 @@ def _equip_assignacio_saved_mark_live_dirty(sender, instance, **kwargs):
 @receiver(post_delete, sender=InscripcioEquipAssignacio)
 def _equip_assignacio_deleted_mark_live_dirty(sender, instance, **kwargs):
     _mark_live_dirty_on_commit(getattr(instance, "competicio_id", None))
+
+
+@receiver(post_save, sender=SerieEquip)
+def _serie_equip_saved_mark_live_dirty(sender, instance, **kwargs):
+    _mark_live_dirty_on_commit(getattr(instance, "competicio_id", None))
+
+
+@receiver(post_delete, sender=SerieEquip)
+def _serie_equip_deleted_mark_live_dirty(sender, instance, **kwargs):
+    _mark_live_dirty_on_commit(getattr(instance, "competicio_id", None))
+
+
+@receiver(post_save, sender=SerieEquipItem)
+def _serie_equip_item_saved_mark_live_dirty(sender, instance, **kwargs):
+    competicio_id = getattr(getattr(instance, "serie", None), "competicio_id", None)
+    _mark_live_dirty_on_commit(competicio_id)
+
+
+@receiver(post_delete, sender=SerieEquipItem)
+def _serie_equip_item_deleted_mark_live_dirty(sender, instance, **kwargs):
+    competicio_id = getattr(getattr(instance, "serie", None), "competicio_id", None)
+    _mark_live_dirty_on_commit(competicio_id)

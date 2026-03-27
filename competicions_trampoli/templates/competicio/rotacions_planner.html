@@ -244,8 +244,8 @@
         </div>
       </div>
       <div class="planner-summary-badges">
-        <span class="planner-summary-badge" id="out-of-program-groups-badge">{{ out_of_program_groups_count }} grups</span>
-        <span class="planner-summary-badge" id="out-of-program-members-badge">{{ out_of_program_members_total }} inscripcions</span>
+        <span class="planner-summary-badge" id="out-of-program-groups-badge">{{ out_of_program_groups_count }} elements</span>
+        <span class="planner-summary-badge" id="out-of-program-members-badge">{{ out_of_program_members_total }} subjectes</span>
       </div>
     </div>
     <div class="board">
@@ -254,10 +254,10 @@
       <div class="cardx-h">
         <div>
           <div class="fw-semibold d-flex align-items-center" style="gap:6px;">
-            <span>Grups</span>
+            <span>Elements programables</span>
             <button type="button" class="rot-help-trigger rot-help-trigger--inline" data-rot-help-key="grups" aria-label="Ajuda grups">?</button>
           </div>
-          <div class="mini">Drag & drop</div>
+          <div class="mini">Grups per aparells individuals i series per aparells d'equip.</div>
         </div>
         <span class="badge badge-light">{{ grups_display|length }}</span>
       </div>
@@ -300,7 +300,7 @@
             <div class="fw-semibold">Utilitats</div>
           </div>
           <div class="group-bucket-list">
-            <div class="chip chip-muted" draggable="true" data-grup="">(Buit)</div>
+            <div class="chip chip-muted" draggable="true" data-key="">(Buit)</div>
           </div>
         </div>
 
@@ -562,6 +562,7 @@
 <script id="grid-data" type="application/json">{{ grid_json|safe }}</script>
 <script id="group-labels-data" type="application/json">{{ group_labels_json|safe }}</script>
 <script id="group-sidebar-data" type="application/json">{{ group_sidebar_json|safe }}</script>
+<script id="station-modes-data" type="application/json">{{ station_modes_json|safe }}</script>
 <script id="franja-order-modes-data" type="application/json">{{ franja_order_modes_json|safe }}</script>
 <script id="export-meta-data" type="application/json">{{ export_meta_json|safe }}</script>
 <script id="export-participant-fields-data" type="application/json">{{ export_participant_fields_json|safe }}</script>
@@ -752,6 +753,13 @@ const groupSidebar = (() => {
     return [];
   }
 })();
+const stationModes = (() => {
+  try {
+    return JSON.parse(document.getElementById("station-modes-data")?.textContent || "{}");
+  } catch (e) {
+    return {};
+  }
+})();
 const franjaOrderModes = (() => {
   try {
     return JSON.parse(document.getElementById("franja-order-modes-data")?.textContent || "{}");
@@ -789,19 +797,35 @@ function normalizeGroups(raw){
   const out = [];
   const seen = new Set();
   for (const x of arr){
-    const n = parseInt(x, 10);
-    if (!Number.isFinite(n) || n <= 0 || seen.has(n)) continue;
-    seen.add(n);
-    out.push(n);
+    const value = String(x ?? "").trim();
+    if (!value) continue;
+    let key = value;
+    if (/^\d+$/.test(value)) key = `g:${value}`;
+    if (!/^([gs]:\d+)$/.test(key) || seen.has(key)) continue;
+    seen.add(key);
+    out.push(key);
   }
   return out;
+}
+
+function stationModeFor(estacioId){
+  return stationModes[String(estacioId)] || {mode: "none", comp_aparell_id: null};
+}
+
+function itemAllowedInStation(itemKey, estacioId){
+  const mode = stationModeFor(estacioId);
+  const key = String(itemKey || "");
+  if (!key) return true;
+  if (mode.mode === "group") return key.startsWith("g:");
+  if (mode.mode === "series") return key.startsWith("s:");
+  return false;
 }
 
 function cellHtml(fr, es, grups){
   if (!grups.length) return '<span class="pill empty">—</span>';
   return grups.map((g) => {
-    const label = escapeHtml(groupLabels[String(g)] || `G${g}`);
-    return `<span class="pill">${label}<button type="button" class="pill-rm js-pill-remove" data-franja="${fr}" data-estacio="${es}" data-grup="${g}" title="Eliminar grup">×</button></span>`;
+    const label = escapeHtml(groupLabels[String(g)] || g);
+    return `<span class="pill">${label}<button type="button" class="pill-rm js-pill-remove" data-franja="${fr}" data-estacio="${es}" data-key="${escapeHtml(g)}" title="Eliminar element">×</button></span>`;
   }).join("");
 }
 
@@ -828,10 +852,10 @@ function collectAssignedGroupIds(){
 }
 
 function groupChipHtml(item){
-  const label = escapeHtml(item?.label || `G${item?.id || "?"}`);
+  const label = escapeHtml(item?.label || `${item?.kind === "series" ? "Serie" : "Grup"} ${item?.id || "?"}`);
   const members = Number(item?.members_count || 0);
   return `
-    <div class="chip group-chip" draggable="true" data-grup="${item.id}" title="${label}">
+    <div class="chip group-chip" draggable="true" data-key="${escapeHtml(item?.key || "")}" title="${label}">
       <span class="group-chip-label">${label}</span>
       <span class="group-chip-count">${members}</span>
     </div>
@@ -869,13 +893,13 @@ function renderGroupBuckets(){
   const outMembersCount = outOfProgram.reduce((acc, item) => acc + (Number(item?.members_count || 0) || 0), 0);
   if (programmedCountEl) programmedCountEl.textContent = String(programmed.length);
   if (outCountEl) outCountEl.textContent = String(outGroupCount);
-  if (outGroupsBadge) outGroupsBadge.textContent = `${outGroupCount} grups`;
-  if (outMembersBadge) outMembersBadge.textContent = `${outMembersCount} inscripcions`;
+  if (outGroupsBadge) outGroupsBadge.textContent = `${outGroupCount} elements`;
+  if (outMembersBadge) outMembersBadge.textContent = `${outMembersCount} subjectes`;
   if (summary) summary.classList.toggle("is-quiet", outGroupCount <= 0);
   if (summaryText) {
     summaryText.textContent = outGroupCount
-      ? "Aquests grups existeixen pero encara no formen part de l'horari actual."
-      : "Tots els grups actuals estan situats dins el programa de rotacions.";
+      ? "Hi ha grups o series que existeixen pero encara no formen part de l'horari actual."
+      : "Tots els elements programables actuals estan situats dins el programa de rotacions.";
   }
 
   initChipDnD();
@@ -1037,7 +1061,7 @@ async function autoSaveGrid() {
       cells.push({
         franja: parseInt(fr, 10),
         estacio: parseInt(es, 10),
-        grups: gs,
+        items: gs,
       });
     }
   }
@@ -1153,7 +1177,7 @@ function initColumnDnD(){
 function initChipDnD(){
   document.querySelectorAll(".chip[draggable='true']").forEach((chip) => {
     chip.addEventListener("dragstart", (ev) => {
-      ev.dataTransfer.setData("text/plain", chip.dataset.grup ?? "");
+      ev.dataTransfer.setData("text/plain", chip.dataset.key ?? "");
     });
   });
 }
@@ -1169,17 +1193,22 @@ function initCellDnD(){
       ev.preventDefault();
       cell.classList.remove("is-over");
 
-      const grup = ev.dataTransfer.getData("text/plain"); // "" => buida
+      const itemKey = ev.dataTransfer.getData("text/plain"); // "" => buida
       const fr = cell.dataset.franja;
       const es = cell.dataset.estacio;
 
       if (!grid[fr]) grid[fr] = {};
-      if (grup === "") {
+      if (itemKey === "") {
         grid[fr][es] = [];
       } else {
         const current = normalizeGroups(grid[fr][es]);
-        const g = parseInt(grup, 10);
-        if (Number.isFinite(g) && g > 0 && !current.includes(g)) current.push(g);
+        const key = normalizeGroups([itemKey])[0];
+        if (!key) return;
+        if (!itemAllowedInStation(key, es)){
+          showAlert("Aquest element no es pot col.locar en aquesta estacio.");
+          return;
+        }
+        if (!current.includes(key)) current.push(key);
         grid[fr][es] = current;
       }
       renderAll();
@@ -1227,7 +1256,7 @@ function initTopButtons(){
           cells.push({
             franja: parseInt(fr, 10),
             estacio: parseInt(es, 10),
-            grups: gs,
+            items: gs,
           });
         }
       }
@@ -1440,8 +1469,8 @@ function initGlobalClickHandler(){
     if (removePillBtn){
       const fr = removePillBtn.dataset.franja;
       const es = removePillBtn.dataset.estacio;
-      const g = parseInt(removePillBtn.dataset.grup, 10);
-      if (!fr || !es || !Number.isFinite(g)) return;
+      const g = String(removePillBtn.dataset.key || "");
+      if (!fr || !es || !g) return;
       if (!grid[fr]) grid[fr] = {};
       grid[fr][es] = normalizeGroups(grid[fr][es]).filter((x) => x !== g);
       renderAll();
@@ -1516,7 +1545,7 @@ function initGlobalClickHandler(){
             cells.push({
               franja: parseInt(fr, 10),
               estacio: parseInt(es, 10),
-              grups: gs,
+              items: gs,
             });
           }
         }

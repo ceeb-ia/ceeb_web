@@ -64,6 +64,16 @@ from .views_equips import (
     equips_workspace,
 )
 from .views_scoring import ScoringNotesHome, ScoringSchemaUpdate, scoring_media_context, scoring_save
+from .views_team_series import (
+    series_assign,
+    series_create,
+    series_delete,
+    series_detail,
+    series_rename,
+    series_reorder,
+    series_unassign,
+    series_workspace,
+)
 from .views_trampoli import (
     AparellCreate,
     AparellDeleteView,
@@ -158,6 +168,14 @@ urlpatterns = [
     path("competicio/<int:pk>/inscripcions/equips/<int:equip_id>/rename/", competition_view(equips_rename, "inscripcions.edit"), name="inscripcions_equips_rename"),
     path("competicio/<int:pk>/inscripcions/equips/<int:equip_id>/delete/", competition_view(equips_delete, "inscripcions.edit"), name="inscripcions_equips_delete"),
     path("competicio/<int:pk>/inscripcions/equips/delete-all/", competition_view(equips_delete_all, "inscripcions.edit"), name="inscripcions_equips_delete_all"),
+    path("competicio/<int:pk>/inscripcions/series-equips/workspace/", competition_view(series_workspace, "inscripcions.view"), name="inscripcions_series_equips_workspace"),
+    path("competicio/<int:pk>/inscripcions/series-equips/detail/", competition_view(series_detail, "inscripcions.view"), name="inscripcions_series_equips_detail"),
+    path("competicio/<int:pk>/inscripcions/series-equips/create/", competition_view(series_create, "inscripcions.edit"), name="inscripcions_series_equips_create"),
+    path("competicio/<int:pk>/inscripcions/series-equips/assign/", competition_view(series_assign, "inscripcions.edit"), name="inscripcions_series_equips_assign"),
+    path("competicio/<int:pk>/inscripcions/series-equips/unassign/", competition_view(series_unassign, "inscripcions.edit"), name="inscripcions_series_equips_unassign"),
+    path("competicio/<int:pk>/inscripcions/series-equips/delete/", competition_view(series_delete, "inscripcions.edit"), name="inscripcions_series_equips_delete"),
+    path("competicio/<int:pk>/inscripcions/series-equips/rename/", competition_view(series_rename, "inscripcions.edit"), name="inscripcions_series_equips_rename"),
+    path("competicio/<int:pk>/inscripcions/series-equips/reorder/", competition_view(series_reorder, "inscripcions.edit"), name="inscripcions_series_equips_reorder"),
     path("competicio/<int:pk>/inscripcio/<int:ins_id>/editar/", competition_view(views.InscripcioUpdateView.as_view(), "inscripcions.edit"), name="inscripcio_edit"),
     path("competicio/<int:pk>/inscripcio/<int:ins_id>/eliminar/", competition_view(views.InscripcioDeleteView.as_view(), "inscripcions.edit"), name="inscripcio_delete"),
     path("competicio/<int:pk>/inscripcio/nova/", competition_view(views.InscripcioCreateView.as_view(), "inscripcions.edit"), name="inscripcio_add"),

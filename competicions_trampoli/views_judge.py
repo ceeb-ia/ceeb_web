@@ -55,13 +55,16 @@ from .services.competition_groups import (
 )
 from .services.rotacions_ordering import (
     ORDER_MODE_MAINTAIN,
+    assignacio_series,
     assignacio_grups,
     build_group_rotation_step_map,
+    build_series_rotation_step_map,
     effective_rotate_steps,
     get_rotacions_order_modes,
     order_pairs_for_mode,
     unique_ordered,
 )
+from .services.team_series import team_subject_bucket_key, team_subject_bucket_label
 
 logger = logging.getLogger(__name__)
 
@@ -550,6 +553,8 @@ def judge_portal(request, token):
 
     franja_modes = get_rotacions_order_modes(competicio)
 
+    team_subject_mode = is_team_context_app(comp_aparell)
+
     # Franges programades per aquest aparell. El portal mostra tots els grups
     # visibles i resol l'ordre de cada grup segons la seva franja associada.
     group_maps = get_group_maps(competicio)
@@ -568,10 +573,14 @@ def judge_portal(request, token):
             estacio__comp_aparell__isnull=False,
         )
         .select_related("franja", "estacio")
-        .prefetch_related("grup_links__grup")
+        .prefetch_related("grup_links__grup", "serie_links__serie")
         .order_by("franja__ordre", "franja_id", "estacio__ordre", "id")
     )
-    rotation_step_map = build_group_rotation_step_map(all_assigns, franja_modes)
+    rotation_step_map = (
+        build_series_rotation_step_map(all_assigns, franja_modes)
+        if team_subject_mode
+        else build_group_rotation_step_map(all_assigns, franja_modes)
+    )
     assigns = [
         a for a in all_assigns
         if getattr(a, "estacio", None) is not None and getattr(a.estacio, "comp_aparell_id", None) == comp_aparell.id
@@ -588,7 +597,13 @@ def judge_portal(request, token):
         fid = getattr(a, "franja_id", None)
         if not fid:
             continue
-        groups_for_assignacio = assignacio_grups(a)
+        if team_subject_mode:
+            groups_for_assignacio = [
+                team_subject_bucket_key({"serie_id": serie_id}, comp_aparell.id)
+                for serie_id in assignacio_series(a)
+            ]
+        else:
+            groups_for_assignacio = assignacio_grups(a)
         if not groups_for_assignacio:
             continue
         app_groups_by_franja[fid] = unique_ordered(
@@ -607,17 +622,19 @@ def judge_portal(request, token):
         franja_override_id = None
     franja_override = franges_by_id.get(franja_override_id) if franja_override_id else None
 
-    team_subject_mode = is_team_context_app(comp_aparell)
     if team_subject_mode:
         raw_subjects, _issues = build_team_subjects_for_comp_aparell(competicio, comp_aparell)
         base_subjects = [
             dict(item)
             for item in raw_subjects
-            if int(comp_aparell.id) in (item.get("allowed_app_ids") or [])
+            if int(comp_aparell.id) in (item.get("allowed_app_ids") or []) or item.get("invalid_reasons")
         ]
+        app_name = str(getattr(comp_aparell.aparell, "nom", "") or "").strip()
         for item in base_subjects:
             item.setdefault("nom_i_cognoms", item.get("name") or "")
             item.setdefault("ordre_sortida", item.get("order") or "")
+            item["group"] = team_subject_bucket_key(item, comp_aparell.id)
+            item["group_label"] = team_subject_bucket_label(item, app_name)
     else:
         excluded_ins_ids = set(
             InscripcioAparellExclusio.objects
@@ -651,14 +668,28 @@ def judge_portal(request, token):
     subject_list = []
     grouped = {}
     for subject in base_subjects:
-        key = 0 if subject.get("group") in (None, 0) else int(subject.get("group") or 0)
+        if team_subject_mode:
+            key = str(subject.get("group") or team_subject_bucket_key(subject, comp_aparell.id))
+        else:
+            key = 0 if subject.get("group") in (None, 0) else int(subject.get("group") or 0)
         grouped.setdefault(key, []).append(subject)
 
     ordered_groups = [g for g in app_programmed_group_ids if g in grouped]
-    remaining_groups = sorted(g for g in grouped.keys() if g not in app_programmed_group_ids and g != 0)
+    if team_subject_mode:
+        unassigned_key = team_subject_bucket_key({}, comp_aparell.id)
+        remaining_groups = sorted(
+            (g for g in grouped.keys() if g not in app_programmed_group_ids and g != unassigned_key),
+            key=lambda value: str(value),
+        )
+    else:
+        remaining_groups = sorted(g for g in grouped.keys() if g not in app_programmed_group_ids and g != 0)
     always_visible_group_ids = list(ordered_groups)
-    if 0 in grouped and 0 not in always_visible_group_ids:
-        always_visible_group_ids.append(0)
+    if team_subject_mode:
+        if unassigned_key in grouped and unassigned_key not in always_visible_group_ids:
+            always_visible_group_ids.append(unassigned_key)
+    else:
+        if 0 in grouped and 0 not in always_visible_group_ids:
+            always_visible_group_ids.append(0)
     show_out_of_program_groups = show_out_of_program_in_competition_views(competicio)
 
     override_group_ids = set(app_groups_by_franja.get(franja_override_id, [])) if franja_override_id else set()
@@ -671,7 +702,12 @@ def judge_portal(request, token):
             return franja_override_id
         return default_fid
 
-    def group_label_for(group_id: int) -> str:
+    def group_label_for(group_id) -> str:
+        if team_subject_mode:
+            items = grouped.get(group_id, [])
+            if items:
+                return str(items[0].get("group_label") or "Sense serie")
+            return "Sense serie"
         if group_id in (None, 0):
             return "Sense grup"
         return group_label(groups_by_id.get(group_id))
@@ -683,7 +719,11 @@ def judge_portal(request, token):
         mode_for_group = franja_modes.get(str(fid), ORDER_MODE_MAINTAIN) if fid else ORDER_MODE_MAINTAIN
         rotate_steps = effective_rotate_steps(
             mode_for_group,
-            rotation_step_map.get((group_id, fid), 0) if fid else 0,
+            (
+                rotation_step_map.get((int(str(group_id).rsplit("-", 1)[-1]), fid), 0)
+                if team_subject_mode and str(group_id).startswith(f"app-{comp_aparell.id}-serie-") and fid
+                else rotation_step_map.get((group_id, fid), 0) if fid else 0
+            ),
         )
         seed_franja = fid if fid is not None else 0
 
@@ -724,7 +764,10 @@ def judge_portal(request, token):
             out_of_program_group_blocks.append(block)
             subject_list.extend(block["list"])
     if not programmed_group_blocks and not out_of_program_group_blocks and grouped:
-        fallback_group_ids = sorted(grouped.keys(), key=lambda group_id: (group_id == 0, group_id))
+        fallback_group_ids = sorted(
+            grouped.keys(),
+            key=lambda group_id: ((group_id == 0) if not team_subject_mode else (str(group_id) == unassigned_key), str(group_id)),
+        )
         for g in fallback_group_ids:
             block = build_group_block(g)
             programmed_group_blocks.append(block)
@@ -733,10 +776,13 @@ def judge_portal(request, token):
     visible_group_keys = [block["key"] for block in programmed_group_blocks]
     visible_group_keys.extend(block["key"] for block in out_of_program_group_blocks)
     raw_group = request.GET.get("group")
-    try:
-        requested_group_key = int(raw_group) if raw_group not in (None, "") else None
-    except Exception:
-        requested_group_key = None
+    if team_subject_mode:
+        requested_group_key = str(raw_group).strip() if raw_group not in (None, "") else None
+    else:
+        try:
+            requested_group_key = int(raw_group) if raw_group not in (None, "") else None
+        except Exception:
+            requested_group_key = None
     if requested_group_key in visible_group_keys:
         active_group_key = requested_group_key
     elif visible_group_keys:
@@ -853,6 +899,7 @@ def judge_updates(request, token):
     competicio = tok.competicio
     comp_aparell = tok.comp_aparell
     raw_exercicis = request.GET.getlist("exercici")
+    serie_id = request.GET.get("serie_id")
     if not raw_exercicis:
         single_exercici = request.GET.get("exercici") or request.GET.get("ex")
         raw_exercicis = [single_exercici] if single_exercici not in (None, "") else []
@@ -874,11 +921,29 @@ def judge_updates(request, token):
     allowed_input_codes = _allowed_input_codes_from_permissions(permissions)
 
     if is_team_context_app(comp_aparell):
-        allowed_team_ids = [
-            int(item["subject_id"])
+        eligible_subjects = {
+            int(item["subject_id"]): item
             for item in build_team_subjects_for_comp_aparell(competicio, comp_aparell)[0]
             if int(comp_aparell.id) in (item.get("allowed_app_ids") or [])
-        ]
+        }
+        allowed_team_ids = list(eligible_subjects.keys())
+        if serie_id not in (None, ""):
+            try:
+                clean_serie_id = int(serie_id)
+            except Exception:
+                clean_serie_id = None
+            if clean_serie_id:
+                allowed_team_ids = [
+                    team_id
+                    for team_id, subject in eligible_subjects.items()
+                    if int(subject.get("serie_id") or 0) == clean_serie_id
+                ]
+            else:
+                allowed_team_ids = [
+                    team_id
+                    for team_id, subject in eligible_subjects.items()
+                    if not subject.get("serie_id")
+                ]
         qs = (
             TeamScoreEntry.objects
             .filter(
@@ -913,7 +978,7 @@ def judge_updates(request, token):
     for s in qs[:500]:
         subject_kind = "team_unit" if is_team_context_app(comp_aparell) else "inscripcio"
         subject_id = s.team_subject_id if subject_kind == "team_unit" else s.inscripcio_id
-        updates.append({
+        payload = {
             **serialize_subject_payload(subject_kind, subject_id),
             "exercici": s.exercici,
             "comp_aparell_id": s.comp_aparell_id,
@@ -921,7 +986,16 @@ def judge_updates(request, token):
             "outputs": s.outputs or {},
             "total": float(s.total),
             "updated_at": s.updated_at.isoformat(),
-        })
+        }
+        if subject_kind == "team_unit":
+            meta = eligible_subjects.get(int(subject_id), {})
+            payload.update({
+                "serie_id": meta.get("serie_id"),
+                "serie_label": meta.get("serie_label"),
+                "serie_order": meta.get("serie_order"),
+                "series_state": meta.get("series_state"),
+            })
+        updates.append(payload)
 
     return JsonResponse({"ok": True, "now": timezone.now().isoformat(), "updates": updates})
 

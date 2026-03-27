@@ -130,3 +130,32 @@ class RotacioAssignacioGrup(models.Model):
 
     def __str__(self):
         return f"{self.assignacio} -> {self.grup}"
+
+
+class RotacioAssignacioSerieEquip(models.Model):
+    assignacio = models.ForeignKey(
+        RotacioAssignacio,
+        on_delete=models.CASCADE,
+        related_name="serie_links",
+    )
+    serie = models.ForeignKey(
+        "competicions_trampoli.SerieEquip",
+        on_delete=models.CASCADE,
+        related_name="rotacio_links",
+    )
+    ordre = models.PositiveIntegerField(default=1, db_index=True)
+
+    class Meta:
+        ordering = ["ordre", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["assignacio", "serie"],
+                name="uniq_rot_assignacio_serie_equip_link",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["serie", "ordre"]),
+        ]
+
+    def __str__(self):
+        return f"{self.assignacio} -> {self.serie}"

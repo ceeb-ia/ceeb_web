@@ -2582,6 +2582,8 @@
 
         {% include "competicio/_equips_panel.html" %}
 
+        {% include "competicio/_series_panel.html" %}
+
         <!-- MEDIA -->
         <div class="panel" data-panel-key="media">
           <div class="panel-head collapsed" data-target="#panel-media" aria-expanded="false">
@@ -7478,6 +7480,7 @@
     });
 
     {% include "competicio/_team_workspace_script.html" %}
+    {% include "competicio/_series_workspace_script.html" %}
     {% include "competicio/_groups_workspace_script.html" %}
 
     console.log("Sortables inicialitzats:", document.querySelectorAll('tbody.sortable-body').length);

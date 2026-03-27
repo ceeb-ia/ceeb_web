@@ -594,6 +594,16 @@ class InscripcionsListNewView(InscripcionsListView):
         ctx["team_contexts"] = get_equip_context_payload(self.competicio)
         ctx["team_context_selected_code"] = team_context_code
         ctx["team_context_summary"] = get_equip_context_summary(self.competicio, team_context_code)
+        ctx["series_team_aparells"] = list(
+            CompeticioAparell.objects
+            .filter(
+                competicio=self.competicio,
+                actiu=True,
+                aparell__competition_unit="team",
+            )
+            .select_related("aparell")
+            .order_by("ordre", "id")
+        )
 
         # Pas 8 del pla: dades necessàries per a la columna "Aparells".
         aparells_cfg = list(

@@ -148,6 +148,92 @@ class TeamCompetitiveSubject(models.Model):
         return f"TeamSubject app={self.comp_aparell_id} ctx={self.context_id} equip={self.equip_id}"
 
 
+class SerieEquip(models.Model):
+    competicio = models.ForeignKey(
+        Competicio,
+        on_delete=models.CASCADE,
+        related_name="series_equip",
+    )
+    comp_aparell = models.ForeignKey(
+        CompeticioAparell,
+        on_delete=models.CASCADE,
+        related_name="series_equip",
+    )
+    display_num = models.PositiveIntegerField()
+    nom = models.CharField(max_length=180, blank=True, default="")
+    actiu = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["comp_aparell_id", "display_num", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["competicio", "comp_aparell", "display_num"],
+                name="uniq_serie_equip_display_num_per_app",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["competicio", "comp_aparell", "actiu"]),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        if self.comp_aparell_id and self.comp_aparell.competicio_id != self.competicio_id:
+            errors["comp_aparell"] = _("L'aparell no pertany a la mateixa competicio.")
+        if self.comp_aparell_id and not self.comp_aparell.is_team_competition_unit:
+            errors["comp_aparell"] = _("Aquest aparell no es un aparell global d'equip.")
+        if errors:
+            raise ValidationError(errors)
+
+    def __str__(self):
+        label = str(self.nom or "").strip() or f"Serie {self.display_num}"
+        return f"{label} ({self.comp_aparell_id})"
+
+
+class SerieEquipItem(models.Model):
+    serie = models.ForeignKey(
+        SerieEquip,
+        on_delete=models.CASCADE,
+        related_name="items",
+    )
+    team_subject = models.ForeignKey(
+        TeamCompetitiveSubject,
+        on_delete=models.CASCADE,
+        related_name="serie_items",
+    )
+    ordre = models.PositiveIntegerField(default=1)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["ordre", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["serie", "team_subject"],
+                name="uniq_serie_equip_item_subject",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["serie", "ordre"]),
+            models.Index(fields=["team_subject"]),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        if self.serie_id and self.team_subject_id:
+            if self.serie.competicio_id != self.team_subject.competicio_id:
+                errors["team_subject"] = _("La unitat competitiva no pertany a la mateixa competicio.")
+            if self.serie.comp_aparell_id != self.team_subject.comp_aparell_id:
+                errors["team_subject"] = _("La unitat competitiva no pertany a aquest aparell.")
+        if errors:
+            raise ValidationError(errors)
+
+    def __str__(self):
+        return f"SerieItem serie={self.serie_id} subject={self.team_subject_id}"
+
+
 class TeamScoreEntry(models.Model):
     competicio = models.ForeignKey(Competicio, on_delete=models.CASCADE, related_name="team_scores")
     team_subject = models.ForeignKey(
