@@ -19,6 +19,13 @@ from .team_scoring import is_team_context_app
 
 logger = logging.getLogger(__name__)
 
+BIRTH_YEAR_RANGE_PARTITION_CODE = "any_naixement_forquilla"
+DEFAULT_BIRTH_YEAR_RANGE_PARTITION_CONFIG = {
+    "ranges": [],
+    "sense_data_label": "Sense data",
+    "fora_rang_label": "Fora de forquilla",
+}
+
 
 # -----------------------------
 # DEFAULTS (nova proposta)
@@ -27,6 +34,11 @@ DEFAULT_SCHEMA = {
     "particions": [],
     "particions_v2": [],
     "particions_custom": {},
+    "particions_config": {
+        BIRTH_YEAR_RANGE_PARTITION_CODE: {
+            **DEFAULT_BIRTH_YEAR_RANGE_PARTITION_CONFIG,
+        },
+    },
     "filtres": {
         "entitats_in": [],
         "categories_in": [],
@@ -168,6 +180,9 @@ def _merge_schema(schema: dict) -> dict:
     out["particions"] = particio_codes_from_entries(part_entries)
     raw_custom = schema.get("particions_custom", DEFAULT_SCHEMA["particions_custom"]) or {}
     out["particions_custom"] = raw_custom if isinstance(raw_custom, dict) else {}
+    out["particions_config"] = normalize_particions_config(
+        schema.get("particions_config", DEFAULT_SCHEMA["particions_config"]) or {}
+    )
     out["filtres"] = {**DEFAULT_SCHEMA["filtres"], **(schema.get("filtres") or {})}
     out["puntuacio"] = {**DEFAULT_SCHEMA["puntuacio"], **(schema.get("puntuacio") or {})}
     out["puntuacio"]["victories"] = {
@@ -186,6 +201,69 @@ def _merge_schema(schema: dict) -> dict:
         **(((schema.get("equips") or {}).get("particio_edat")) or {}),
     }
     return out
+
+
+def _parse_optional_year(raw):
+    if raw in (None, ""):
+        return None
+    try:
+        return int(raw)
+    except Exception:
+        return None
+
+
+def _default_birth_year_range_label(from_year, to_year, idx):
+    if from_year is not None and to_year is not None:
+        if from_year == to_year:
+            return str(from_year)
+        return f"{from_year}-{to_year}"
+    return f"Forquilla {idx + 1}"
+
+
+def normalize_birth_year_range_partition_config(raw_cfg):
+    cfg = raw_cfg if isinstance(raw_cfg, dict) else {}
+    out = {
+        **DEFAULT_BIRTH_YEAR_RANGE_PARTITION_CONFIG,
+    }
+    out["sense_data_label"] = (
+        str(cfg.get("sense_data_label") or out["sense_data_label"]).strip()
+        or DEFAULT_BIRTH_YEAR_RANGE_PARTITION_CONFIG["sense_data_label"]
+    )
+    out["fora_rang_label"] = (
+        str(cfg.get("fora_rang_label") or out["fora_rang_label"]).strip()
+        or DEFAULT_BIRTH_YEAR_RANGE_PARTITION_CONFIG["fora_rang_label"]
+    )
+
+    ranges_out = []
+    for idx, item in enumerate(cfg.get("ranges") or []):
+        if not isinstance(item, dict):
+            continue
+        raw_label = str(item.get("label") or "").strip()
+        raw_from = item.get("from_year")
+        raw_to = item.get("to_year")
+        if raw_label == "" and raw_from in (None, "") and raw_to in (None, ""):
+            continue
+        from_year = _parse_optional_year(raw_from)
+        to_year = _parse_optional_year(raw_to)
+        label = raw_label or _default_birth_year_range_label(from_year, to_year, idx)
+        ranges_out.append(
+            {
+                "label": label,
+                "from_year": from_year,
+                "to_year": to_year,
+            }
+        )
+    out["ranges"] = ranges_out
+    return out
+
+
+def normalize_particions_config(raw_cfg):
+    cfg = raw_cfg if isinstance(raw_cfg, dict) else {}
+    return {
+        BIRTH_YEAR_RANGE_PARTITION_CODE: normalize_birth_year_range_partition_config(
+            cfg.get(BIRTH_YEAR_RANGE_PARTITION_CODE)
+        ),
+    }
 
 
 def _normalize_equip_assignment_source(raw_cfg):
@@ -340,6 +418,33 @@ def _inscripcio_value_for_partition(ins: Inscripcio, field_code: str):
             if legacy_code in extra:
                 return extra.get(legacy_code)
     return None
+
+
+def _birth_year_range_partition_value(ins: Inscripcio, particions_config: dict):
+    cfg = normalize_birth_year_range_partition_config(
+        ((particions_config or {}).get(BIRTH_YEAR_RANGE_PARTITION_CODE))
+    )
+    birth_date = getattr(ins, "data_naixement", None)
+    if not isinstance(birth_date, date):
+        return cfg.get("sense_data_label") or DEFAULT_BIRTH_YEAR_RANGE_PARTITION_CONFIG["sense_data_label"]
+
+    birth_year = int(birth_date.year)
+    for item in cfg.get("ranges") or []:
+        from_year = item.get("from_year")
+        to_year = item.get("to_year")
+        if from_year is None or to_year is None:
+            continue
+        if from_year <= birth_year <= to_year:
+            return str(item.get("label") or "").strip() or _default_birth_year_range_label(from_year, to_year, 0)
+
+    return cfg.get("fora_rang_label") or DEFAULT_BIRTH_YEAR_RANGE_PARTITION_CONFIG["fora_rang_label"]
+
+
+def _partition_raw_value(ins: Inscripcio, field_code: str, particions_config=None):
+    code = (field_code or "").strip()
+    if code == BIRTH_YEAR_RANGE_PARTITION_CODE:
+        return _birth_year_range_partition_value(ins, particions_config or {})
+    return _inscripcio_value_for_partition(ins, code)
 
 
 def _partition_value_display(value) -> str:
@@ -497,20 +602,20 @@ def _resolve_partition_display(field_code: str, raw_display: str, custom_idx: di
     return raw_display
 
 
-def _partition_key(ins: Inscripcio, fields: list, particions_custom_index=None):
+def _partition_key(ins: Inscripcio, fields: list, particions_custom_index=None, particions_config=None):
     parts = []
     for f in fields or []:
         f = (f or "").strip()
         if not f:
             continue
-        raw_value = _inscripcio_value_for_partition(ins, f)
+        raw_value = _partition_raw_value(ins, f, particions_config=particions_config)
         display_value = _partition_value_display(raw_value)
         resolved = _resolve_partition_display(f, display_value, particions_custom_index or {})
         parts.append(f"{f}:{resolved}")
     return "|".join(parts) if parts else "global"
 
 
-def _partition_key_from_entries(ins: Inscripcio, entries: list, particions_custom_index=None):
+def _partition_key_from_entries(ins: Inscripcio, entries: list, particions_custom_index=None, particions_config=None):
     part_entries = normalize_particions_v2_entries(entries)
     if not part_entries:
         return "global"
@@ -535,7 +640,7 @@ def _partition_key_from_entries(ins: Inscripcio, entries: list, particions_custo
                     parent_resolved = None
                     break
 
-        raw_value = _inscripcio_value_for_partition(ins, code)
+        raw_value = _partition_raw_value(ins, code, particions_config=particions_config)
         display_value = _partition_value_display(raw_value)
         resolved = _resolve_partition_display(code, display_value, particions_custom_index or {})
         parts.append(f"{code}:{resolved}")
@@ -1397,6 +1502,7 @@ def compute_classificacio(competicio, cfg_obj):
         schema.get("particions") or []
     )
     part_custom_idx = _build_particions_custom_index(schema.get("particions_custom") or {})
+    particions_config = normalize_particions_config(schema.get("particions_config") or {})
     filtres = schema["filtres"] or {}
     punt = schema["puntuacio"] or {}
     desempat = schema["desempat"] or []
@@ -2500,7 +2606,12 @@ def compute_classificacio(competicio, cfg_obj):
     per_particio = defaultdict(list)
 
     for ins in ins_list:
-        pkey = _partition_key_from_entries(ins, part_entries, part_custom_idx)
+        pkey = _partition_key_from_entries(
+            ins,
+            part_entries,
+            part_custom_idx,
+            particions_config=particions_config,
+        )
         participant = (
             getattr(ins, "nom_complet", None)
             or getattr(ins, "nom_i_cognoms", None)
@@ -2754,7 +2865,12 @@ def compute_classificacio(competicio, cfg_obj):
             )
             if resolved_equip is None and not include_sense_equip:
                 continue
-            base_pkey = _partition_key_from_entries(ins, part_entries, part_custom_idx)
+            base_pkey = _partition_key_from_entries(
+                ins,
+                part_entries,
+                part_custom_idx,
+                particions_config=particions_config,
+            )
             team_id_key = resolved_equip.id if resolved_equip is not None else "__sense_equip__"
             grouped[base_pkey][team_id_key].append((ins, resolved_equip))
 

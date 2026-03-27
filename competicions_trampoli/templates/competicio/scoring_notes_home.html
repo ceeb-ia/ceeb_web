@@ -1185,11 +1185,11 @@
   function crashKeyFor(fieldCode){ return `__crash__${fieldCode}`; }
 
   function isTeamSchema(schema){
-    return String((((schema || {}).meta || {}).subject_mode) || "individual") === "team_context";
+    return String((((schema || {}).meta || {}).subject_mode) || "individual") === "team";
   }
   function isBlockedSubjectForApp(subject, appId){
     if(!subject || !Array.isArray(subject.invalid_reasons) || !subject.invalid_reasons.length) return false;
-    return String(subject.subject_kind || "") === "equip";
+    return String(subject.subject_kind || "") === "team_unit";
   }
   function memberLinesForSubject(subject){
     if(!subject || !Array.isArray(subject.members)) return [];
@@ -1200,7 +1200,7 @@
     return INS.filter(x => {
       if(String(x.group)!==String(group)) return false;
       if(teamMode){
-        if(String(x.subject_kind || "") !== "equip") return false;
+        if(String(x.subject_kind || "") !== "team_unit") return false;
         if(appHasRotationGroups(appId) && !inscripcioInRotationGroup(x, appId)) return false;
         if(inscripcioCompeteixAApp(x, appId)) return true;
         return isBlockedSubjectForApp(x, appId);
@@ -1462,7 +1462,7 @@
           nameBtn.dataset.exercici = String(exercici);
           nameBtn.dataset.compAparellId = String(appId);
           nameTd.appendChild(nameBtn);
-          if(String(ins.subject_kind || "") === "equip"){
+          if(String(ins.subject_kind || "") === "team_unit"){
             memberLinesForSubject(ins).forEach(line => {
               nameTd.appendChild(el("div",{class:"small", text:line}));
             });

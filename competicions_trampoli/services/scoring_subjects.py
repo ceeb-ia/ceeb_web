@@ -6,11 +6,12 @@ from django.db import IntegrityError
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 
-from ..models import Competicio, Equip, Inscripcio
+from ..models import Competicio, Inscripcio
 from ..models_scoring import (
     ScoreEntry,
     ScoreEntryVideo,
     ScoreEntryVideoEvent,
+    TeamCompetitiveSubject,
     TeamScoreEntry,
     TeamScoreEntryVideo,
     TeamScoreEntryVideoEvent,
@@ -55,12 +56,17 @@ def resolve_scoring_subject(
     if is_team_context_app(comp_aparell):
         subject_kind = str(payload.get("subject_kind") or "").strip().lower()
         subject_id = payload.get("subject_id")
-        if subject_kind != "equip" or not subject_id:
+        if subject_kind != "team_unit" or not subject_id:
             return None, JsonResponse(
-                {"ok": False, "error": "Aquest aparell nomes accepta subject_kind=equip."},
+                {"ok": False, "error": "Aquest aparell nomes accepta subject_kind=team_unit."},
                 status=400,
             )
-        equip = get_object_or_404(Equip, pk=subject_id, competicio=competicio)
+        team_subject = get_object_or_404(
+            TeamCompetitiveSubject.objects.select_related("context", "equip"),
+            pk=subject_id,
+            competicio=competicio,
+            comp_aparell=comp_aparell,
+        )
         eligible_ids = set(
             int(x)
             for x in (
@@ -69,15 +75,17 @@ def resolve_scoring_subject(
                 else eligible_team_ids_for_comp_aparell(competicio, comp_aparell)
             )
         )
-        if equip.id not in eligible_ids:
+        if team_subject.id not in eligible_ids:
             return None, JsonResponse(
-                {"ok": False, "error": "Aquest equip no es elegible en aquest aparell."},
+                {"ok": False, "error": "Aquesta unitat competitiva d'equip no es elegible en aquest aparell."},
                 status=403,
             )
         return {
-            "subject_kind": "equip",
-            "subject_id": int(equip.id),
-            "equip": equip,
+            "subject_kind": "team_unit",
+            "subject_id": int(team_subject.id),
+            "team_subject": team_subject,
+            "equip": team_subject.equip,
+            "context": team_subject.context,
         }, None
 
     subject_kind = str(payload.get("subject_kind") or "").strip().lower()
@@ -117,8 +125,8 @@ def get_or_create_subject_entry_locked(
         "comp_aparell": comp_aparell,
         "exercici": exercici,
     }
-    if str(subject.get("subject_kind")) == "equip":
-        lookup["equip"] = subject["equip"]
+    if str(subject.get("subject_kind")) == "team_unit":
+        lookup["team_subject"] = subject["team_subject"]
         model = TeamScoreEntry
     else:
         lookup["inscripcio"] = subject["inscripcio"]

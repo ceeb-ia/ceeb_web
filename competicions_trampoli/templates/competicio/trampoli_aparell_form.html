@@ -73,32 +73,13 @@
       </div>
 
       <div class="border rounded p-3 mb-3">
-        <div class="fw-semibold mb-2">Participacio i puntuacio</div>
-        <div class="row g-3">
-          <div class="col-12 col-md-6">
-            <label class="form-label" for="{{ form.participant_mode.id_for_label }}">Mode de participacio</label>
-            {{ form.participant_mode }}
-            {{ form.participant_mode.errors }}
-            <div class="text-muted small mt-1">Defineix si competeixen inscripcions individuals o equips d'un context de la competicio.</div>
-          </div>
+        <div class="fw-semibold mb-2">Unitat competitiva</div>
+        <div class="small text-muted mb-2">
+          El tipus de l'aparell es global i es defineix a la fitxa de l'aparell. Aquesta configuracio de competicio nomes decideix l'ús de l'aparell.
         </div>
-        <div id="team-context-config" class="row g-3 mt-1" style="display:none;">
-          <div class="col-12 col-md-6">
-            <label class="form-label" for="{{ form.team_context.id_for_label }}">Context d'equips</label>
-            {{ form.team_context }}
-            {{ form.team_context.errors }}
-          </div>
-          <div class="col-12 col-md-3">
-            <label class="form-label" for="{{ form.expected_team_size.id_for_label }}">Mida esperada</label>
-            {{ form.expected_team_size }}
-            {{ form.expected_team_size.errors }}
-          </div>
-          <div class="col-12 col-md-6">
-            <label class="form-label" for="{{ form.team_scoring_mode.id_for_label }}">Mode de camps</label>
-            {{ form.team_scoring_mode }}
-            {{ form.team_scoring_mode.errors }}
-            <div class="text-muted small mt-1">Marca si aquest aparell admet camps per membre, camps compartits o una combinacio dels dos.</div>
-          </div>
+        <div class="alert alert-light border mb-0">
+          <strong id="competition-unit-label">Selecciona un aparell</strong>
+          <div class="small text-muted mt-1" id="competition-unit-help"></div>
         </div>
       </div>
 
@@ -116,9 +97,17 @@
   (function () {
     var select = document.getElementById('{{ form.aparell.id_for_label }}');
     var link = document.getElementById('puntuacio-link');
-    var participantMode = document.getElementById('{{ form.participant_mode.id_for_label }}');
-    var teamConfig = document.getElementById('team-context-config');
     if (!select || !link) return;
+    var unitLabel = document.getElementById('competition-unit-label');
+    var unitHelp = document.getElementById('competition-unit-help');
+    var unitByAparell = {
+      {% for ap in form.aparell.field.queryset %}
+      "{{ ap.id }}": {
+        "unit": "{{ ap.competition_unit|default:'individual' }}",
+        "label": "{% if ap.is_team_competition_unit %}Equip{% else %}Individual{% endif %}"
+      },
+      {% endfor %}
+    };
 
     function updatePuntuacioLink() {
       var aparellId = select.value;
@@ -140,15 +129,24 @@
     select.addEventListener('change', updatePuntuacioLink);
     updatePuntuacioLink();
 
-    function updateParticipantConfig() {
-      if (!participantMode || !teamConfig) return;
-      teamConfig.style.display = participantMode.value === 'team_context' ? '' : 'none';
+    function updateCompetitionUnit() {
+      if (!unitLabel || !unitHelp) return;
+      var info = unitByAparell[select.value];
+      if (!info) {
+        unitLabel.textContent = 'Selecciona un aparell';
+        unitHelp.textContent = '';
+        return;
+      }
+      if (info.unit === 'team') {
+        unitLabel.textContent = 'Aparell global d\'equip';
+        unitHelp.textContent = "Els contexts que competeixen en aquest aparell es configuren des del workspace d'equips de la competicio.";
+        return;
+      }
+      unitLabel.textContent = 'Aparell global individual';
+      unitHelp.textContent = "Aquest aparell competeix per inscripcions. Despres el pots usar en classificacions individuals o per equips.";
     }
-
-    if (participantMode) {
-      participantMode.addEventListener('change', updateParticipantConfig);
-      updateParticipantConfig();
-    }
+    select.addEventListener('change', updateCompetitionUnit);
+    updateCompetitionUnit();
   })();
 </script>
 {% endblock %}

@@ -4,7 +4,7 @@ from django import forms
 FIELD_CHOICES_EMPTY = [("", "-")]
 SCOPE_CHOICES = [
     ("shared", "Compartit"),
-    ("member", "Membre"),
+    ("member", "Individual"),
 ]
 
 
@@ -38,12 +38,6 @@ class PermissionRowForm(forms.Form):
         choices=SCOPE_CHOICES,
         initial="shared",
         widget=forms.Select(attrs={"class": "form-select form-select-sm", "style": "width:120px"}),
-    )
-    member_slot = forms.IntegerField(
-        required=False,
-        min_value=1,
-        error_messages={"min_value": "El membre ha de ser 1 o superior."},
-        widget=forms.NumberInput(attrs={"class": "form-control form-control-sm", "style": "width:90px"}),
     )
     judge_index = forms.IntegerField(
         required=True,

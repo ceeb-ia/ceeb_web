@@ -30,6 +30,13 @@
           {% if form.nom.errors %}<div class="text-danger small mt-1">{{ form.nom.errors }}</div>{% endif %}
         </div>
 
+        <div class="col-12 col-md-4">
+          <label class="form-label" for="{{ form.competition_unit.id_for_label }}">{{ form.competition_unit.label }}</label>
+          {{ form.competition_unit }}
+          {% if form.competition_unit.errors %}<div class="text-danger small mt-1">{{ form.competition_unit.errors }}</div>{% endif %}
+          <div class="form-text">Defineix si l'aparell competeix globalment per inscripcio o per equip.</div>
+        </div>
+
         <div class="col-12">
           <div class="form-check">
             {{ form.actiu }}

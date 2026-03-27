@@ -1,7 +1,7 @@
 import json
 import re
 from io import BytesIO
-from datetime import timedelta
+from datetime import date, timedelta
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -5480,6 +5480,98 @@ class ClassificacioMatrixScalarTests(_BaseTrampoliDataMixin, TestCase):
             ],
         )
 
+    def test_compute_classificacio_partitions_by_birth_year_ranges(self):
+        self.ins_a.data_naixement = date(2008, 5, 4)
+        self.ins_b.data_naixement = date(2011, 2, 10)
+        self.ins_a.save(update_fields=["data_naixement"])
+        self.ins_b.save(update_fields=["data_naixement"])
+
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins_a,
+            exercici=1,
+            comp_aparell=self.comp_app_a,
+            inputs={},
+            outputs={},
+            total=9.0,
+        )
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins_b,
+            exercici=1,
+            comp_aparell=self.comp_app_a,
+            inputs={},
+            outputs={},
+            total=8.0,
+        )
+
+        schema = self._valid_partition_schema()
+        schema["particions"] = ["any_naixement_forquilla"]
+        schema["particions_v2"] = [
+            {"code": "any_naixement_forquilla", "apply_mode": "all", "parent_values": []},
+        ]
+        schema["particions_config"] = {
+            "any_naixement_forquilla": {
+                "ranges": [
+                    {"label": "2007-2009", "from_year": 2007, "to_year": 2009},
+                    {"label": "2010-2012", "from_year": 2010, "to_year": 2012},
+                ],
+                "sense_data_label": "Sense data",
+                "fora_rang_label": "Fora de forquilla",
+            }
+        }
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Forquilles naixement",
+            activa=True,
+            ordre=1,
+            tipus="individual",
+            schema=schema,
+        )
+
+        out = compute_classificacio(self.comp, cfg)
+        self.assertEqual(
+            set(out.keys()),
+            {"any_naixement_forquilla:2007-2009", "any_naixement_forquilla:2010-2012"},
+        )
+        self.assertEqual(out["any_naixement_forquilla:2007-2009"][0]["participant"], "Participant A")
+        self.assertEqual(out["any_naixement_forquilla:2010-2012"][0]["participant"], "Participant B")
+
+    def test_classificacio_save_rejects_overlapping_birth_year_ranges(self):
+        schema = self._valid_partition_schema()
+        schema["particions"] = ["any_naixement_forquilla"]
+        schema["particions_v2"] = [
+            {"code": "any_naixement_forquilla", "apply_mode": "all", "parent_values": []},
+        ]
+        schema["particions_config"] = {
+            "any_naixement_forquilla": {
+                "ranges": [
+                    {"label": "2007-2009", "from_year": 2007, "to_year": 2009},
+                    {"label": "2009-2011", "from_year": 2009, "to_year": 2011},
+                ]
+            }
+        }
+
+        _, errors = _validate_schema_for_competicio(self.comp, schema, tipus="individual")
+        self.assertTrue(any("solapament" in e for e in errors))
+
+    def test_classificacio_save_rejects_birth_year_ranges_for_team_rankings(self):
+        schema = self._valid_partition_schema()
+        schema["particions"] = ["any_naixement_forquilla"]
+        schema["particions_v2"] = [
+            {"code": "any_naixement_forquilla", "apply_mode": "all", "parent_values": []},
+        ]
+        schema["particions_config"] = {
+            "any_naixement_forquilla": {
+                "ranges": [
+                    {"label": "2007-2009", "from_year": 2007, "to_year": 2009},
+                ]
+            }
+        }
+
+        _, errors = _validate_schema_for_competicio(self.comp, schema, tipus="equips")
+        self.assertTrue(any("nomes es valid per classificacions individuals" in e for e in errors))
+
     def test_validate_particions_schema_rejects_conditional_partition_without_parent_values(self):
         schema = self._valid_partition_schema()
         schema["particions_v2"] = [
@@ -7620,6 +7712,49 @@ class LiveClassificacionsRedisCacheTests(_BaseTrampoliDataMixin, TestCase):
 
         self.assertIsNotNone(fake_redis.get(live_cache.live_dirty_key(self.comp.id)))
 
+    def test_teamscoreentry_signal_marks_dirty_after_commit(self):
+        team_ctx = EquipContext.objects.create(
+            competicio=self.comp,
+            code="parelles-live",
+            nom="Parelles live",
+        )
+        self.comp_app.participant_mode = CompeticioAparell.ParticipantMode.TEAM_CONTEXT
+        self.comp_app.team_context = team_ctx
+        self.comp_app.expected_team_size = 2
+        self.comp_app.team_scoring_mode = CompeticioAparell.TeamScoringMode.MEMBERS_PLUS_SHARED
+        self.comp_app.save(
+            update_fields=["participant_mode", "team_context", "expected_team_size", "team_scoring_mode"]
+        )
+        equip = Equip.objects.create(competicio=self.comp, nom="Equip live")
+        ins_b = self._create_inscripcio(self.comp, "Participant Cache 2", ordre=2)
+        InscripcioEquipAssignacio.objects.create(
+            competicio=self.comp,
+            context=team_ctx,
+            inscripcio=self.ins,
+            equip=equip,
+        )
+        InscripcioEquipAssignacio.objects.create(
+            competicio=self.comp,
+            context=team_ctx,
+            inscripcio=ins_b,
+            equip=equip,
+        )
+
+        fake_redis = self.FakeRedis()
+        with patch("competicions_trampoli.live_cache._live_redis_client", return_value=fake_redis):
+            with self.captureOnCommitCallbacks(execute=True):
+                TeamScoreEntry.objects.create(
+                    competicio=self.comp,
+                    equip=equip,
+                    exercici=1,
+                    comp_aparell=self.comp_app,
+                    inputs={},
+                    outputs={},
+                    total=8.4,
+                )
+
+        self.assertIsNotNone(fake_redis.get(live_cache.live_dirty_key(self.comp.id)))
+
     def test_classificacioconfig_signal_marks_dirty_after_commit(self):
         fake_redis = self.FakeRedis()
         with patch("competicions_trampoli.live_cache._live_redis_client", return_value=fake_redis):
@@ -8644,6 +8779,32 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(entry.inputs["E__m1"], 8.1)
         self.assertEqual(entry.inputs["E__m2"], 8.2)
 
+    def test_scoring_save_rejects_individual_payload_for_team_context_app(self):
+        ScoringSchema.objects.create(
+            aparell=self.app,
+            schema={
+                "meta": {"subject_mode": "team_context", "expected_team_size": 2},
+                "fields": [{"code": "SYNC", "label": "Sincronisme", "type": "number", "scope": "shared"}],
+                "computed": [],
+            },
+        )
+
+        response = self.client.post(
+            reverse("scoring_save", kwargs={"pk": self.comp.id}),
+            data=json.dumps(
+                {
+                    "comp_aparell_id": self.comp_app.id,
+                    "inscripcio_id": self.ins1.id,
+                    "exercici": 1,
+                    "inputs": {"SYNC": 7.5},
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("subject_kind=equip", response.json()["error"])
+
     def test_judge_save_partial_uses_team_subject_and_runtime_member_permission(self):
         ScoringSchema.objects.create(
             aparell=self.app,
@@ -8696,6 +8857,38 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(entry.inputs["SYNC"], 6.4)
         self.assertEqual(entry.inputs["E__m2"], 7.1)
         self.assertEqual(entry.inputs["E__m1"], 0.0)
+
+    def test_judge_save_partial_rejects_individual_payload_for_team_context_app(self):
+        ScoringSchema.objects.create(
+            aparell=self.app,
+            schema={
+                "meta": {"subject_mode": "team_context", "expected_team_size": 2},
+                "fields": [{"code": "SYNC", "label": "Sincronisme", "type": "number", "scope": "shared"}],
+                "computed": [],
+            },
+        )
+        token = JudgeDeviceToken.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            label="Team Judge Reject",
+            permissions=[{"field_code": "SYNC", "runtime_field_code": "SYNC", "scope": "shared", "judge_index": 1}],
+            is_active=True,
+        )
+
+        response = self.client.post(
+            reverse("judge_save_partial", kwargs={"token": token.id}),
+            data=json.dumps(
+                {
+                    "inscripcio_id": self.ins1.id,
+                    "exercici": 1,
+                    "inputs_patch": {"SYNC": 6.4},
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("subject_kind=equip", response.json()["error"])
 
     def test_scoring_media_context_accepts_team_subject(self):
         response = self.client.get(

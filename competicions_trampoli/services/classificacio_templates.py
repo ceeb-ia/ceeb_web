@@ -8,7 +8,10 @@ from ..models_classificacions import ClassificacioTemplateGlobal
 from ..models_scoring import ScoringSchema
 from ..models_trampoli import Aparell, CompeticioAparell
 from .services_classificacions_2 import (
+    BIRTH_YEAR_RANGE_PARTITION_CODE,
     DEFAULT_SCHEMA,
+    normalize_birth_year_range_partition_config,
+    normalize_particions_config,
     normalize_particions_v2_entries,
     particio_codes_from_entries,
 )
@@ -20,6 +23,7 @@ GLOBAL_NATIVE_PARTICIO_FIELDS = [
     {"code": "entitat", "label": "Entitat", "ui_label": "Entitat (Nativa)", "kind": "builtin", "source": "native"},
     {"code": "sexe", "label": "Sexe", "ui_label": "Sexe (Nativa)", "kind": "builtin", "source": "native"},
     {"code": "data_naixement", "label": "Data naixement", "ui_label": "Data naixement (Nativa)", "kind": "builtin", "source": "native"},
+    {"code": BIRTH_YEAR_RANGE_PARTITION_CODE, "label": "Forquilla any naixement", "ui_label": "Forquilla any naixement (Derivada)", "kind": "derived", "source": "derived"},
     {"code": "document", "label": "Document", "ui_label": "Document (Nativa)", "kind": "builtin", "source": "native"},
     {"code": "grup", "label": "Grup", "ui_label": "Grup (Nativa)", "kind": "builtin", "source": "native"},
 ]
@@ -139,7 +143,71 @@ def normalize_particions_schema(schema):
     out["particions_v2"] = part_entries
     out["particions"] = particio_codes_from_entries(part_entries)
     out["particions_custom"] = normalize_particions_custom(schema.get("particions_custom") or {})
+    out["particions_config"] = normalize_particions_config(schema.get("particions_config") or {})
     return out
+
+
+def validate_particions_config_global(schema: dict, *, tipus="individual"):
+    schema = schema or {}
+    errors = []
+    part_entries = normalize_particions_v2(
+        schema.get("particions_v2") or [],
+        fallback_codes=schema.get("particions") or [],
+    )
+    parts = particio_codes_from_entries(part_entries)
+    if BIRTH_YEAR_RANGE_PARTITION_CODE not in parts:
+        return errors
+
+    if str(tipus or "individual").strip().lower() != "individual":
+        errors.append(
+            "particions_config.any_naixement_forquilla: nomes es valid per classificacions individuals."
+        )
+        return errors
+
+    cfg = normalize_birth_year_range_partition_config(
+        ((schema.get("particions_config") or {}).get(BIRTH_YEAR_RANGE_PARTITION_CODE))
+    )
+    ranges = cfg.get("ranges") or []
+    if not ranges:
+        errors.append(
+            "particions_config.any_naixement_forquilla.ranges: cal definir almenys una forquilla."
+        )
+        return errors
+
+    seen_labels = {}
+    normalized_ranges = []
+    for idx, item in enumerate(ranges):
+        label = str(item.get("label") or "").strip()
+        from_year = item.get("from_year")
+        to_year = item.get("to_year")
+        if from_year is None or to_year is None:
+            errors.append(
+                f"particions_config.any_naixement_forquilla.ranges[{idx}]: cal indicar from_year i to_year."
+            )
+            continue
+        if from_year > to_year:
+            errors.append(
+                f"particions_config.any_naixement_forquilla.ranges[{idx}]: from_year no pot ser mes gran que to_year."
+            )
+        key = " ".join(label.split()).casefold()
+        if key:
+            owner = seen_labels.get(key)
+            if owner is not None:
+                errors.append(
+                    f"particions_config.any_naixement_forquilla.ranges[{idx}]: etiqueta repetida amb la forquilla {owner}."
+                )
+            else:
+                seen_labels[key] = idx
+        normalized_ranges.append((idx, int(from_year), int(to_year)))
+
+    for pos, (idx_a, from_a, to_a) in enumerate(normalized_ranges):
+        for idx_b, from_b, to_b in normalized_ranges[pos + 1 :]:
+            if from_a <= to_b and from_b <= to_a:
+                errors.append(
+                    "particions_config.any_naixement_forquilla.ranges: "
+                    f"solapament entre indexos {idx_a} i {idx_b}."
+                )
+    return errors
 
 
 def extract_template_schema(payload_or_schema):
@@ -1219,6 +1287,7 @@ def validate_template_schema_global(
     for code in custom_map:
         if code not in allowed_particio_codes and code not in preserved_particio_codes:
             errors.append(f"particions_custom['{code}']: camp no permes al builder global.")
+    errors.extend(validate_particions_config_global(schema, tipus=tipus))
 
     filtres = schema.get("filtres") or {}
     if filtres and not isinstance(filtres, dict):

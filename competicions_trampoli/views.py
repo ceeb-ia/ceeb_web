@@ -103,6 +103,7 @@ BUILTIN_GROUP_FIELDS = [
     {"code": "entitat", "label": "Entitat", "kind": "builtin"},
     {"code": "sexe", "label": "Sexe", "kind": "builtin"},
     {"code": "data_naixement", "label": "Data naixement", "kind": "builtin"},
+    {"code": "any_naixement_forquilla", "label": "Forquilla any naixement", "kind": "derived"},
     {"code": "document", "label": "Document", "kind": "builtin"},
 ]
 
@@ -153,7 +154,12 @@ def _excel_schema_codes(competicio):
 
 
 def _label_with_source(label: str, source: str):
-    suffix = "Excel" if source == "excel" else "Nativa"
+    if source == "excel":
+        suffix = "Excel"
+    elif source == "derived":
+        suffix = "Derivada"
+    else:
+        suffix = "Nativa"
     return f"{label} ({suffix})"
 
 
@@ -195,7 +201,10 @@ def get_allowed_group_fields(competicio):
     # builtins sempre
     for f in BUILTIN_GROUP_FIELDS:
         if f["code"] not in seen:
-            source = "excel" if f["code"] in excel_codes else "native"
+            if f.get("kind") == "derived":
+                source = "derived"
+            else:
+                source = "excel" if f["code"] in excel_codes else "native"
             out.append(
                 {
                     **f,

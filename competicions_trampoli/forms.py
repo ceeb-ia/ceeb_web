@@ -478,10 +478,6 @@ class CompeticioAparellForm(forms.ModelForm):
             if not self.user.groups.filter(name="platform_admin").exists():
                 qs = qs.filter(created_by=self.user)
         self.fields["aparell"].queryset = qs.order_by("nom", "id")
-        team_context_qs = EquipContext.objects.none()
-        if self.competicio is not None:
-            team_context_qs = EquipContext.objects.filter(competicio=self.competicio).order_by("nom", "id")
-        self.fields["team_context"].queryset = team_context_qs
 
     def clean_aparell(self):
         aparell = self.cleaned_data.get("aparell")
@@ -527,32 +523,9 @@ class CompeticioAparellForm(forms.ModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
-        participant_mode = cleaned_data.get("participant_mode") or CompeticioAparell.ParticipantMode.INDIVIDUAL
-        team_context = cleaned_data.get("team_context")
-        expected_team_size = cleaned_data.get("expected_team_size")
-        team_scoring_mode = cleaned_data.get("team_scoring_mode")
-
-        if participant_mode == CompeticioAparell.ParticipantMode.TEAM_CONTEXT:
-            if team_context is None:
-                self.add_error("team_context", "Cal seleccionar un context d'equips.")
-            elif self.competicio and team_context.competicio_id != self.competicio.id:
-                self.add_error("team_context", "El context seleccionat no pertany a aquesta competicio.")
-            if expected_team_size in (None, ""):
-                self.add_error("expected_team_size", "Cal indicar la mida esperada de l'equip.")
-            else:
-                try:
-                    expected_team_size = int(expected_team_size)
-                except Exception:
-                    expected_team_size = 0
-                if expected_team_size < 2:
-                    self.add_error("expected_team_size", "La mida esperada de l'equip ha de ser 2 o superior.")
-            if not team_scoring_mode:
-                self.add_error("team_scoring_mode", "Cal indicar el mode de puntuacio per equips.")
-        else:
-            cleaned_data["team_context"] = None
-            cleaned_data["expected_team_size"] = None
-            cleaned_data["team_scoring_mode"] = ""
-
+        aparell = cleaned_data.get("aparell")
+        if aparell and not getattr(aparell, "actiu", True):
+            self.add_error("aparell", "Cal seleccionar un aparell actiu.")
         return cleaned_data
 
     class Meta:
@@ -560,18 +533,10 @@ class CompeticioAparellForm(forms.ModelForm):
         fields = [
             "aparell",
             "nombre_exercicis",
-            "participant_mode",
-            "team_context",
-            "expected_team_size",
-            "team_scoring_mode",
         ]
         widgets = {
             "aparell": forms.Select(attrs={"class": "form-select"}),
             "nombre_exercicis": forms.NumberInput(attrs={"class": "form-control", "min": 1, "max": 10, "value": 1}),
-            "participant_mode": forms.Select(attrs={"class": "form-select"}),
-            "team_context": forms.Select(attrs={"class": "form-select"}),
-            "expected_team_size": forms.NumberInput(attrs={"class": "form-control", "min": 2, "max": 20}),
-            "team_scoring_mode": forms.Select(attrs={"class": "form-select"}),
         }
 
 
@@ -609,13 +574,14 @@ class AparellForm(forms.ModelForm):
 
     class Meta:
         model = Aparell
-        fields = ["codi", "nom", "actiu"]
+        fields = ["codi", "nom", "competition_unit", "actiu"]
         widgets = {
             "codi": forms.TextInput(attrs={"class": "form-control", "placeholder": "Ex: TRAMP, DMT..."}),
             "nom": forms.TextInput(attrs={"class": "form-control", "placeholder": "Nom de l'aparell"}),
+            "competition_unit": forms.Select(attrs={"class": "form-select"}),
             "actiu": forms.CheckboxInput(attrs={"class": "form-check-input"}),
         }
-        labels = {"codi": "Codi", "nom": "Nom", "actiu": "Actiu"}
+        labels = {"codi": "Codi", "nom": "Nom", "competition_unit": "Unitat competitiva", "actiu": "Actiu"}
         help_texts = {"codi": "Ha de ser unic per usuari. Recomanat en majuscules (ex: TRAMP)."}
 
 
@@ -648,5 +614,8 @@ class ScoringSchemaForm(forms.ModelForm):
         if not isinstance(data, dict):
             raise ValidationError("El JSON ha de ser un objecte (dict).")
 
-        validate_schema(data, comp_aparell=self.comp_aparell)
+        validate_schema(
+            data,
+            aparell=(self.comp_aparell.aparell if self.comp_aparell else getattr(self.instance, "aparell", None)),
+        )
         return data

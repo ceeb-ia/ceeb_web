@@ -1,33 +1,31 @@
-# models_scoring.py
-from django.db import models
 from django.core.exceptions import ValidationError
+from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from .models import Competicio, Equip, Inscripcio
+from .models import Competicio, Equip, EquipContext, Inscripcio
 from .models_trampoli import Aparell, CompeticioAparell
 from .services.scoring_schema_validation import validate_schema
 
 
 class ScoringSchema(models.Model):
     """
-    Schema de puntuació per a cada aparell dins d'una competició (CompeticioAparell).
-    Conté camps, paràmetres, fórmules i configuració de UI.
+    Schema de puntuacio global per aparell.
     """
+
     comp_aparell = models.OneToOneField(
         CompeticioAparell,
-        null=True, blank=True,
+        null=True,
+        blank=True,
         on_delete=models.CASCADE,
         related_name="scoring_schema",
     )
-
     aparell = models.OneToOneField(
         Aparell,
-        null=True, blank=True,
+        null=True,
+        blank=True,
         on_delete=models.CASCADE,
         related_name="scoring_schema",
     )
-
-
     schema = models.JSONField(default=dict, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -36,17 +34,13 @@ class ScoringSchema(models.Model):
         if not isinstance(self.schema, dict):
             raise ValidationError({"schema": _("El schema ha de ser un objecte JSON (dict).")})
 
-        # Convivencia temporal: aparell es canonic i comp_aparell es opcional legacy.
         if self.comp_aparell_id and not self.aparell_id:
             self.aparell = self.comp_aparell.aparell
-
         if not self.aparell_id:
             raise ValidationError({"aparell": _("Cal informar l'aparell.")})
-
         if self.comp_aparell_id and self.comp_aparell.aparell_id != self.aparell_id:
-            # En mode transitori prioritzem l'aparell global i descartem l'enllac legacy inconsistent.
             self.comp_aparell = None
-        # Validacions mínimes (la validació forta la fem també a l'engine)
+
         fields = self.schema.get("fields", [])
         computed = self.schema.get("computed", [])
         if fields and not isinstance(fields, list):
@@ -54,7 +48,6 @@ class ScoringSchema(models.Model):
         if computed and not isinstance(computed, list):
             raise ValidationError({"schema": _("'computed' ha de ser una llista.")})
 
-        # codes únics
         codes = []
         for f in fields:
             if isinstance(f, dict) and f.get("code"):
@@ -65,7 +58,7 @@ class ScoringSchema(models.Model):
         if len(codes) != len(set(codes)):
             raise ValidationError({"schema": _("Hi ha 'code' duplicats a fields/computed.")})
         try:
-            validate_schema(self.schema, comp_aparell=self.comp_aparell)
+            validate_schema(self.schema, aparell=self.aparell)
         except ValidationError as exc:
             raise ValidationError({"schema": exc.messages})
 
@@ -76,12 +69,6 @@ class ScoringSchema(models.Model):
 
 
 class ScoreEntry(models.Model):
-    """
-    Entrada de puntuació genèrica per (inscripció, exercici, aparell en competició).
-    - inputs: el que entra l'usuari
-    - outputs: el que calcula l'engine
-    - total: numèric principal per ordenar/classificar
-    """
     competicio = models.ForeignKey(Competicio, on_delete=models.CASCADE, related_name="scores")
     inscripcio = models.ForeignKey(Inscripcio, on_delete=models.CASCADE, related_name="scores")
     exercici = models.PositiveSmallIntegerField(default=1)
@@ -90,7 +77,6 @@ class ScoreEntry(models.Model):
     inputs = models.JSONField(default=dict, blank=True)
     outputs = models.JSONField(default=dict, blank=True)
     total = models.DecimalField(max_digits=10, decimal_places=3, default=0)
-
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -105,63 +91,119 @@ class ScoreEntry(models.Model):
         return f"ScoreEntry ins={self.inscripcio_id} ex={self.exercici} app={self.comp_aparell_id}"
 
 
+class TeamCompetitiveSubject(models.Model):
+    competicio = models.ForeignKey(
+        Competicio,
+        on_delete=models.CASCADE,
+        related_name="team_subjects",
+    )
+    comp_aparell = models.ForeignKey(
+        CompeticioAparell,
+        on_delete=models.CASCADE,
+        related_name="team_subjects",
+    )
+    context = models.ForeignKey(
+        EquipContext,
+        on_delete=models.CASCADE,
+        related_name="team_subjects",
+    )
+    equip = models.ForeignKey(
+        Equip,
+        on_delete=models.CASCADE,
+        related_name="competitive_subjects",
+    )
+    member_ids = models.JSONField(default=list, blank=True)
+    member_names = models.JSONField(default=list, blank=True)
+    label = models.CharField(max_length=255, blank=True, default="")
+    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["competicio", "comp_aparell", "context", "equip"],
+                name="uniq_team_competitive_subject",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["competicio", "comp_aparell"]),
+            models.Index(fields=["competicio", "context"]),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        if self.comp_aparell_id and self.comp_aparell.competicio_id != self.competicio_id:
+            errors["comp_aparell"] = _("L'aparell no pertany a la mateixa competicio.")
+        if self.context_id and self.context.competicio_id != self.competicio_id:
+            errors["context"] = _("El context no pertany a la mateixa competicio.")
+        if self.equip_id and self.equip.competicio_id != self.competicio_id:
+            errors["equip"] = _("L'equip no pertany a la mateixa competicio.")
+        if self.comp_aparell_id and not self.comp_aparell.is_team_competition_unit:
+            errors["comp_aparell"] = _("Aquest aparell no es un aparell global d'equip.")
+        if errors:
+            raise ValidationError(errors)
+
+    def __str__(self):
+        return f"TeamSubject app={self.comp_aparell_id} ctx={self.context_id} equip={self.equip_id}"
+
+
 class TeamScoreEntry(models.Model):
-    """
-    Entrada de puntuacio per equips/context:
-    una fila per (equip, exercici, aparell en competicio).
-    """
     competicio = models.ForeignKey(Competicio, on_delete=models.CASCADE, related_name="team_scores")
-    equip = models.ForeignKey(Equip, on_delete=models.CASCADE, related_name="team_scores")
+    team_subject = models.ForeignKey(
+        TeamCompetitiveSubject,
+        on_delete=models.CASCADE,
+        related_name="scores",
+    )
     exercici = models.PositiveSmallIntegerField(default=1)
     comp_aparell = models.ForeignKey(CompeticioAparell, on_delete=models.CASCADE, related_name="team_scores")
 
     inputs = models.JSONField(default=dict, blank=True)
     outputs = models.JSONField(default=dict, blank=True)
     total = models.DecimalField(max_digits=10, decimal_places=3, default=0)
-
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         constraints = [
             models.UniqueConstraint(
-                fields=["competicio", "equip", "exercici", "comp_aparell"],
-                name="uniq_teamscoreentry_per_exercici_aparell",
+                fields=["competicio", "team_subject", "exercici", "comp_aparell"],
+                name="uniq_teamscoreentry_per_subject_exercici_aparell",
             )
         ]
         indexes = [
             models.Index(fields=["competicio", "comp_aparell", "exercici"]),
-            models.Index(fields=["competicio", "equip"]),
+            models.Index(fields=["competicio", "team_subject"]),
         ]
 
     def clean(self):
         super().clean()
         errors = {}
-        if self.equip_id and self.equip.competicio_id != self.competicio_id:
-            errors["equip"] = _("L'equip no pertany a la mateixa competicio.")
+        if self.team_subject_id:
+            if self.team_subject.competicio_id != self.competicio_id:
+                errors["team_subject"] = _("La unitat competitiva no pertany a la mateixa competicio.")
+            if self.team_subject.comp_aparell_id != self.comp_aparell_id:
+                errors["comp_aparell"] = _("La unitat competitiva no pertany a aquest aparell.")
         if self.comp_aparell_id and self.comp_aparell.competicio_id != self.competicio_id:
             errors["comp_aparell"] = _("L'aparell no pertany a la mateixa competicio.")
-        if self.comp_aparell_id and getattr(self.comp_aparell, "participant_mode", "") != "team_context":
-            errors["comp_aparell"] = _("Aquest aparell no esta configurat per puntuacio per equips/context.")
+        if self.comp_aparell_id and not self.comp_aparell.is_team_competition_unit:
+            errors["comp_aparell"] = _("Aquest aparell no es un aparell global d'equip.")
         if errors:
             raise ValidationError(errors)
 
+    @property
+    def equip_id(self):
+        return getattr(self.team_subject, "equip_id", None)
+
     def __str__(self):
-        return f"TeamScoreEntry equip={self.equip_id} ex={self.exercici} app={self.comp_aparell_id}"
+        return f"TeamScoreEntry subject={self.team_subject_id} ex={self.exercici} app={self.comp_aparell_id}"
 
 
 class ScoreEntryVideo(models.Model):
-    """
-    Video capture linked to one concrete score entry.
-    MVP decision: one active video per (inscripcio, exercici, comp_aparell),
-    enforced through OneToOne with ScoreEntry.
-    """
-
     class Status(models.TextChoices):
         PENDING = "pending", "Pendent"
         READY = "ready", "Disponible"
         FAILED = "failed", "Error"
 
-    # Step 1 (functional scope) captured as constants for upcoming API/UI layers.
     VIDEO_MAX_DURATION_SECONDS = 180
     VIDEO_MAX_SIZE_BYTES = 120 * 1024 * 1024
     ALLOWED_MIME_TYPES = (
@@ -183,14 +225,12 @@ class ScoreEntryVideo(models.Model):
         null=True,
         blank=True,
     )
-
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
     duration_seconds = models.PositiveIntegerField(null=True, blank=True)
     file_size_bytes = models.PositiveBigIntegerField(default=0)
     mime_type = models.CharField(max_length=100, blank=True, default="")
     original_filename = models.CharField(max_length=255, blank=True, default="")
     error_message = models.CharField(max_length=300, blank=True, default="")
-
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -211,8 +251,7 @@ class ScoreEntryVideo(models.Model):
                 {"file_size_bytes": _("La mida supera el maxim configurat per l'MVP.")}
             )
         if self.mime_type and self.mime_type not in self.ALLOWED_MIME_TYPES:
-            raise ValidationError({"mime_type": _("Tipus MIME de video no permès.")})
-
+            raise ValidationError({"mime_type": _("Tipus MIME de video no permes.")})
         if self.judge_token_id and self.score_entry_id:
             if self.judge_token.competicio_id != self.score_entry.competicio_id:
                 raise ValidationError(
@@ -223,16 +262,8 @@ class ScoreEntryVideo(models.Model):
                     {"judge_token": _("El token no pertany al mateix aparell del score.")}
                 )
 
-    def __str__(self):
-        return f"ScoreEntryVideo score={self.score_entry_id} status={self.status}"
-
 
 class ScoreEntryVideoEvent(models.Model):
-    """
-    Immutable audit trail for judge video operations.
-    Events remain even if the concrete video row is deleted/replaced.
-    """
-
     class Action(models.TextChoices):
         UPLOAD = "upload", "Upload"
         REPLACE = "replace", "Replace"
@@ -253,21 +284,9 @@ class ScoreEntryVideoEvent(models.Model):
         null=True,
         blank=True,
     )
-    competicio = models.ForeignKey(
-        Competicio,
-        on_delete=models.CASCADE,
-        related_name="score_video_events",
-    )
-    inscripcio = models.ForeignKey(
-        Inscripcio,
-        on_delete=models.CASCADE,
-        related_name="score_video_events",
-    )
-    comp_aparell = models.ForeignKey(
-        CompeticioAparell,
-        on_delete=models.CASCADE,
-        related_name="score_video_events",
-    )
+    competicio = models.ForeignKey(Competicio, on_delete=models.CASCADE, related_name="score_video_events")
+    inscripcio = models.ForeignKey(Inscripcio, on_delete=models.CASCADE, related_name="score_video_events")
+    comp_aparell = models.ForeignKey(CompeticioAparell, on_delete=models.CASCADE, related_name="score_video_events")
     judge_token = models.ForeignKey(
         "competicions_trampoli.JudgeDeviceToken",
         on_delete=models.SET_NULL,
@@ -289,12 +308,6 @@ class ScoreEntryVideoEvent(models.Model):
             models.Index(fields=["judge_token", "created_at"]),
             models.Index(fields=["score_entry", "created_at"]),
         ]
-
-    def __str__(self):
-        return (
-            f"ScoreEntryVideoEvent action={self.action} "
-            f"score={self.score_entry_id or '-'} ok={self.ok} status={self.http_status}"
-        )
 
 
 class TeamScoreEntryVideo(models.Model):
@@ -320,7 +333,6 @@ class TeamScoreEntryVideo(models.Model):
         null=True,
         blank=True,
     )
-
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
     duration_seconds = models.PositiveIntegerField(null=True, blank=True)
     file_size_bytes = models.PositiveBigIntegerField(default=0)
@@ -347,7 +359,7 @@ class TeamScoreEntryVideo(models.Model):
                 {"file_size_bytes": _("La mida supera el maxim configurat per l'MVP.")}
             )
         if self.mime_type and self.mime_type not in self.ALLOWED_MIME_TYPES:
-            raise ValidationError({"mime_type": _("Tipus MIME de video no permès.")})
+            raise ValidationError({"mime_type": _("Tipus MIME de video no permes.")})
         if self.judge_token_id and self.team_score_entry_id:
             if self.judge_token.competicio_id != self.team_score_entry.competicio_id:
                 raise ValidationError(
@@ -384,6 +396,11 @@ class TeamScoreEntryVideoEvent(models.Model):
         Competicio,
         on_delete=models.CASCADE,
         related_name="team_score_video_events",
+    )
+    team_subject = models.ForeignKey(
+        TeamCompetitiveSubject,
+        on_delete=models.CASCADE,
+        related_name="video_events",
     )
     equip = models.ForeignKey(
         Equip,

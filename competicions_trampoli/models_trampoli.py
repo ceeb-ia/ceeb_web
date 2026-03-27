@@ -1,15 +1,25 @@
 # models_trampoli.py
 from django.conf import settings
-from django.db import models
 from django.core.exceptions import ValidationError
+from django.db import models
+
 from .models import Competicio, EquipContext, Inscripcio
 
 NUM_SALTS = 11  # S1..S11
 
 
 class Aparell(models.Model):
-    codi = models.CharField(max_length=20)   # TRAMP, DMT, TUMB...
-    nom = models.CharField(max_length=60)                # "Trampolí", "DMT", ...
+    class CompetitionUnit(models.TextChoices):
+        INDIVIDUAL = "individual", "Individual"
+        TEAM = "team", "Equip"
+
+    codi = models.CharField(max_length=20)  # TRAMP, DMT, TUMB...
+    nom = models.CharField(max_length=60)  # "Trampoli", "DMT", ...
+    competition_unit = models.CharField(
+        max_length=20,
+        choices=CompetitionUnit.choices,
+        default=CompetitionUnit.INDIVIDUAL,
+    )
     actiu = models.BooleanField(default=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -37,56 +47,31 @@ class Aparell(models.Model):
         self.codi = str(self.codi or "").strip().upper()
         super().save(*args, **kwargs)
 
+    @property
+    def is_team_competition_unit(self) -> bool:
+        return self.competition_unit == self.CompetitionUnit.TEAM
+
 
 class CompeticioAparell(models.Model):
-    class ParticipantMode(models.TextChoices):
-        INDIVIDUAL = "individual", "Individual"
-        TEAM_CONTEXT = "team_context", "Equips d'un context"
-
-    class TeamScoringMode(models.TextChoices):
-        MEMBERS_PLUS_SHARED = "members_plus_shared", "Membres + compartides"
-        MEMBERS_ONLY = "members_only", "Nomes membres"
-        SHARED_ONLY = "shared_only", "Nomes compartides"
-
     competicio = models.ForeignKey(Competicio, on_delete=models.CASCADE, related_name="aparells_cfg")
     aparell = models.ForeignKey(Aparell, on_delete=models.PROTECT, related_name="competicio_cfg")
     nombre_exercicis = models.PositiveSmallIntegerField(default=1, verbose_name="Nombre d'exercicis")
 
-    #CREC QUE REDUNDANT A PARTIR D'AQUI; INUTIL JA
+    # CREC QUE REDUNDANT A PARTIR D'AQUI; INUTIL JA
     ordre = models.PositiveSmallIntegerField(default=1)
 
     # Nombre d'elements (ex: salts)
     nombre_elements = models.PositiveSmallIntegerField(default=11)
 
-    # Ítems de puntuació disponibles
+    # Items de puntuacio disponibles
     te_execucio = models.BooleanField(default=True)
     te_dificultat = models.BooleanField(default=True)
     te_tof = models.BooleanField(default=True)
     te_hd = models.BooleanField(default=True)
     te_penalitzacio = models.BooleanField(default=True)
 
-    MODE_EXECUCIO_CHOICES = [("salts", "Per elements"), ("manual", "Execució global manual")]
+    MODE_EXECUCIO_CHOICES = [("salts", "Per elements"), ("manual", "Execucio global manual")]
     mode_execucio = models.CharField(max_length=10, choices=MODE_EXECUCIO_CHOICES, default="salts")
-
-    participant_mode = models.CharField(
-        max_length=20,
-        choices=ParticipantMode.choices,
-        default=ParticipantMode.INDIVIDUAL,
-    )
-    team_context = models.ForeignKey(
-        EquipContext,
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name="aparells_cfg",
-    )
-    expected_team_size = models.PositiveSmallIntegerField(null=True, blank=True)
-    team_scoring_mode = models.CharField(
-        max_length=24,
-        choices=TeamScoringMode.choices,
-        blank=True,
-        default="",
-    )
     actiu = models.BooleanField(default=True)
 
     class Meta:
@@ -97,43 +82,71 @@ class CompeticioAparell(models.Model):
 
     def clean(self):
         super().clean()
-        errors = {}
-
-        if self.team_context_id and self.team_context.competicio_id != self.competicio_id:
-            errors["team_context"] = "El context d'equips ha de pertanyer a la mateixa competicio."
-
-        if self.participant_mode == self.ParticipantMode.TEAM_CONTEXT:
-            if not self.team_context_id:
-                errors["team_context"] = "Cal seleccionar un context d'equips."
-            if self.expected_team_size in (None, ""):
-                errors["expected_team_size"] = "Cal indicar la mida esperada de l'equip."
-            else:
-                try:
-                    expected = int(self.expected_team_size)
-                except Exception:
-                    expected = 0
-                if expected < 2:
-                    errors["expected_team_size"] = "La mida esperada de l'equip ha de ser 2 o superior."
-            if not str(self.team_scoring_mode or "").strip():
-                errors["team_scoring_mode"] = "Cal indicar el mode de puntuacio per equips."
-        else:
-            self.team_context = None
-            self.expected_team_size = None
-            self.team_scoring_mode = ""
-
-        if errors:
-            raise ValidationError(errors)
+        if self.aparell_id and self.aparell.created_by_id is None:
+            raise ValidationError({"aparell": "L'aparell seleccionat no es valid."})
 
     @property
     def is_team_context_mode(self) -> bool:
-        return self.participant_mode == self.ParticipantMode.TEAM_CONTEXT
+        return self.is_team_competition_unit
+
+    @property
+    def is_team_competition_unit(self) -> bool:
+        return bool(self.aparell_id and self.aparell.is_team_competition_unit)
+
+
+class CompeticioAparellEquipContextSource(models.Model):
+    competicio = models.ForeignKey(
+        Competicio,
+        on_delete=models.CASCADE,
+        related_name="aparell_equip_context_sources",
+    )
+    comp_aparell = models.ForeignKey(
+        CompeticioAparell,
+        on_delete=models.CASCADE,
+        related_name="team_context_sources",
+    )
+    context = models.ForeignKey(
+        EquipContext,
+        on_delete=models.CASCADE,
+        related_name="comp_aparell_sources",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["comp_aparell_id", "context_id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["comp_aparell", "context"],
+                name="uniq_comp_aparell_context_source",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["competicio", "context"]),
+            models.Index(fields=["competicio", "comp_aparell"]),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        if self.comp_aparell_id and self.comp_aparell.competicio_id != self.competicio_id:
+            errors["comp_aparell"] = "L'aparell no pertany a la mateixa competicio."
+        if self.context_id and self.context.competicio_id != self.competicio_id:
+            errors["context"] = "El context no pertany a la mateixa competicio."
+        if self.comp_aparell_id and not self.comp_aparell.is_team_competition_unit:
+            errors["comp_aparell"] = "Aquest aparell no es un aparell global d'equip."
+        if errors:
+            raise ValidationError(errors)
+
+    def __str__(self):
+        return f"Source comp_aparell={self.comp_aparell_id} context={self.context_id}"
 
 
 class InscripcioAparellExclusio(models.Model):
     """
-    Exclusió explícita d'una inscripció en un aparell concret de la competició.
-    Si no existeix registre, la inscripció s'assumeix admesa a l'aparell.
+    Exclusio explicita d'una inscripcio en un aparell concret de la competicio.
+    Si no existeix registre, la inscripcio s'assumeix admesa a l'aparell.
     """
+
     inscripcio = models.ForeignKey(
         Inscripcio,
         on_delete=models.CASCADE,
@@ -183,27 +196,25 @@ class TrampoliConfiguracio(models.Model):
     sistema_classificacio = models.CharField(max_length=50, default="suma")
     nombre_exercicis = models.PositiveSmallIntegerField(default=1, verbose_name="Nombre d'exercicis de cada gimnasta")
 
-    # quantes notes d'execució compten (<= nombre_jutges_execucio)
     nombre_notes_valides_execucio = models.PositiveSmallIntegerField(
         default=3,
-        verbose_name="Nombre de notes d'execució vàlides"
+        verbose_name="Nombre de notes d'execucio valides",
     )
-    # criteri de selecció
     CRITERI_EXEC_CHOICES = [
         ("totes", "Totes (mitjana)"),
         ("eliminar_extrems", "Eliminar extrems"),
-        ("maximes", "Notes màximes"),
-        ("minimes", "Notes mínimes"),
+        ("maximes", "Notes maximes"),
+        ("minimes", "Notes minimes"),
     ]
     criteri_execucio = models.CharField(
         max_length=20,
         choices=CRITERI_EXEC_CHOICES,
         default="totes",
-        verbose_name="Criteri selecció execució",
+        verbose_name="Criteri seleccio execucio",
     )
     MODE_EXECUCIO_CHOICES = [
         ("salts", "Per salts (S1..S11)"),
-        ("manual", "Execució global manual"),
+        ("manual", "Execucio global manual"),
     ]
     mode_execucio = models.CharField(max_length=10, choices=MODE_EXECUCIO_CHOICES, default="salts")
 
@@ -211,16 +222,15 @@ class TrampoliConfiguracio(models.Model):
     mostrar_dificultat = models.BooleanField(default=True, verbose_name="Mostrar Dificultat")
     mostrar_tof = models.BooleanField(default=True, verbose_name="Mostrar TOF")
     mostrar_hd = models.BooleanField(default=True, verbose_name="Mostrar HD")
-    mostrar_penalitzacio = models.BooleanField(default=True, verbose_name="Mostrar Penalització")
+    mostrar_penalitzacio = models.BooleanField(default=True, verbose_name="Mostrar Penalitzacio")
     mostrar_total = models.BooleanField(default=True, verbose_name="Mostrar Total")
-
 
     def clean(self):
         super().clean()
         if self.nombre_notes_valides_execucio and self.nombre_jutges_execucio:
             if self.nombre_notes_valides_execucio > self.nombre_jutges_execucio:
                 raise ValidationError({
-                    "nombre_notes_valides_execucio": "Ha de ser menor o igual al nombre de jutges d'execució."
+                    "nombre_notes_valides_execucio": "Ha de ser menor o igual al nombre de jutges d'execucio."
                 })
 
 
@@ -236,7 +246,7 @@ class TrampoliNota(models.Model):
     )
 
     execucio_manual = models.DecimalField(max_digits=7, decimal_places=3, null=True, blank=True)
-    execucio_manuals = models.JSONField(default=list, blank=True)  # NOU: [J1..Jn]
+    execucio_manuals = models.JSONField(default=list, blank=True)
     notes_execucio = models.JSONField(default=list, blank=True)
     crash_execucio = models.JSONField(default=list, blank=True)
     execucio_total = models.DecimalField(max_digits=7, decimal_places=3, default=0)
@@ -248,7 +258,6 @@ class TrampoliNota(models.Model):
 
     updated_at = models.DateTimeField(auto_now=True)
 
-
     def suma_execucio(self) -> float:
         total = 0.0
         for row in self.notes_execucio or []:
@@ -258,8 +267,6 @@ class TrampoliNota(models.Model):
                 except Exception:
                     pass
         return total
-
-
 
     def recalcular_total_simple(self):
         self.total = (
@@ -272,8 +279,6 @@ class TrampoliNota(models.Model):
 
     def clean(self):
         super().clean()
-
-        # 1) quants jutges d'execució toca tenir
         n_jutges = 3
         try:
             cfg = getattr(self.competicio, "cfg_trampoli", None)
@@ -282,26 +287,20 @@ class TrampoliNota(models.Model):
         except Exception:
             n_jutges = 3
 
-        # 2) normalitza estructura
         if not isinstance(self.notes_execucio, list):
             self.notes_execucio = []
 
-        # assegura longitud n_jutges
         while len(self.notes_execucio) < n_jutges:
             self.notes_execucio.append([0] * NUM_SALTS)
         if len(self.notes_execucio) > n_jutges:
             self.notes_execucio = self.notes_execucio[:n_jutges]
 
-        # 3) per cada jutge: assegura llista i 11 salts
         for i in range(n_jutges):
             row = self.notes_execucio[i]
             if not isinstance(row, list):
                 row = []
             row = (row + [0] * NUM_SALTS)[:NUM_SALTS]
             self.notes_execucio[i] = row
-
-        # IMPORTANT: NO llencem ValidationError si hi ha zeros
-        # (ja és un estat "encara no complet" i és útil en directe)
 
     class Meta:
         constraints = [
@@ -310,4 +309,3 @@ class TrampoliNota(models.Model):
                 name="uniq_nota_trampoli_per_exercici_aparell",
             )
         ]
-

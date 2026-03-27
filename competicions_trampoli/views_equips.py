@@ -12,6 +12,7 @@ from django.views.decorators.http import require_POST
 
 from .live_cache import mark_live_dirty
 from .models import Competicio, Equip, EquipContext, Inscripcio, InscripcioEquipAssignacio
+from .models_trampoli import CompeticioAparell, CompeticioAparellEquipContextSource
 from .services.equip_contexts import (
     NATIVE_EQUIP_CONTEXT_CODE,
     build_unique_equip_context_code,
@@ -98,6 +99,35 @@ def _serialize_equips(
 
 def _serialize_contexts(competicio: Competicio):
     return get_equip_context_payload(competicio)
+
+
+def _serialize_team_comp_aparell_sources(competicio: Competicio, context_code: str):
+    qs = (
+        CompeticioAparell.objects
+        .filter(competicio=competicio, actiu=True, aparell__competition_unit="team")
+        .select_related("aparell")
+        .order_by("ordre", "aparell__nom", "id")
+    )
+    selected_ids = set()
+    code = normalize_equip_context_code(context_code)
+    if code != NATIVE_EQUIP_CONTEXT_CODE:
+        ctx = get_custom_equip_context(competicio, code)
+        if ctx is not None:
+            selected_ids = set(
+                CompeticioAparellEquipContextSource.objects
+                .filter(competicio=competicio, context=ctx)
+                .values_list("comp_aparell_id", flat=True)
+            )
+    return [
+        {
+            "id": int(ca.id),
+            "aparell_id": int(ca.aparell_id),
+            "nom": str(getattr(ca.aparell, "nom", "") or f"Aparell {ca.id}").strip(),
+            "codi": str(getattr(ca.aparell, "codi", "") or "").strip(),
+            "selected": int(ca.id) in selected_ids,
+        }
+        for ca in qs
+    ]
 
 
 def _get_context_or_400(competicio: Competicio, context_code: str):
@@ -334,6 +364,7 @@ def _build_workspace_payload(competicio, context_code, filters=None, page=1, pag
         },
         "teams": _serialize_equips(competicio, context_code, members_by_team_id=team_members),
         "contexts": _serialize_contexts(competicio),
+        "team_comp_aparells": _serialize_team_comp_aparell_sources(competicio, context_code),
     }
 
 
@@ -1175,6 +1206,80 @@ def equip_context_delete(request, pk, context_code):
     return JsonResponse(
         with_inscripcions_history_payload(
             {"ok": True, "contexts": _serialize_contexts(competicio)},
+            request,
+            competicio.id,
+        )
+    )
+
+
+@require_POST
+@csrf_protect
+@transaction.atomic
+def equip_context_sources_save(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    payload = _parse_payload(request)
+    if payload is None:
+        return HttpResponseBadRequest("JSON invalid")
+
+    context_code = _payload_context_code(payload)
+    context_code, context_obj, err = _get_context_or_400(competicio, context_code)
+    if err is not None:
+        return err
+    if is_native_equip_context(context_code):
+        return HttpResponseBadRequest("El context natiu no es pot vincular com a font d'aparells d'equip.")
+
+    requested_ids = []
+    for raw in (payload.get("comp_aparell_ids") or []):
+        try:
+            app_id = int(raw)
+        except Exception:
+            continue
+        if app_id > 0 and app_id not in requested_ids:
+            requested_ids.append(app_id)
+
+    valid_ids = set(
+        CompeticioAparell.objects
+        .filter(competicio=competicio, actiu=True, aparell__competition_unit="team", id__in=requested_ids)
+        .values_list("id", flat=True)
+    )
+
+    before_snapshot = capture_inscripcions_history_snapshot(request, competicio)
+    (
+        CompeticioAparellEquipContextSource.objects
+        .filter(competicio=competicio, context=context_obj)
+        .exclude(comp_aparell_id__in=valid_ids)
+        .delete()
+    )
+    existing_ids = set(
+        CompeticioAparellEquipContextSource.objects
+        .filter(competicio=competicio, context=context_obj)
+        .values_list("comp_aparell_id", flat=True)
+    )
+    for app_id in valid_ids:
+        if app_id in existing_ids:
+            continue
+        CompeticioAparellEquipContextSource.objects.create(
+            competicio=competicio,
+            comp_aparell_id=app_id,
+            context=context_obj,
+        )
+
+    record_inscripcions_history_entry(
+        request,
+        competicio,
+        action_type="equip_context_sources_save",
+        action_label="Configurar fonts d'aparells d'equip",
+        before_snapshot=before_snapshot,
+        after_snapshot=capture_inscripcions_history_snapshot(request, competicio),
+    )
+    _mark_live_dirty_on_commit(competicio.id)
+    return JsonResponse(
+        with_inscripcions_history_payload(
+            {
+                "ok": True,
+                "context_code": context_code,
+                "team_comp_aparells": _serialize_team_comp_aparell_sources(competicio, context_code),
+            },
             request,
             competicio.id,
         )

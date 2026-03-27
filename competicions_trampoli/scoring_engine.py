@@ -504,6 +504,8 @@ class ScoringEngine:
         def _max(x):
             x = list(x or [])
             return max(x) if x else 0.0
+        def _count(x):
+            return len(list(x or []))
 
         def exec_by_judge(E, crash, params):
             n_elements = int((params or {}).get("n_elements") or (params or {}).get("num_elements") or NUM_SALTS_DEFAULT)
@@ -1212,6 +1214,11 @@ class ScoringEngine:
             "avg": _avg,
             "min": _min,
             "max": _max,
+            "members_sum": _sum,
+            "members_avg": _avg,
+            "members_min": _min,
+            "members_max": _max,
+            "members_count": _count,
             "med": _median,
             "exec_by_judge": exec_by_judge,
             "select_sum": select_sum,

@@ -9,6 +9,7 @@ if (teamWorkspaceShell) {
   const ctxCreateUrl = "{% url 'inscripcions_equip_context_create' competicio.id %}";
   const ctxRenameUrlTpl = "{% url 'inscripcions_equip_context_rename' competicio.id '__context__' %}";
   const ctxDeleteUrlTpl = "{% url 'inscripcions_equip_context_delete' competicio.id '__context__' %}";
+  const ctxSourcesSaveUrl = "{% url 'inscripcions_equip_context_sources_save' competicio.id %}";
   const renameUrlTpl = "{% url 'inscripcions_equips_rename' competicio.id 999999 %}";
   const deleteUrlTpl = "{% url 'inscripcions_equips_delete' competicio.id 999999 %}";
 
@@ -176,6 +177,49 @@ if (teamWorkspaceShell) {
     const deleteBtn = document.getElementById('btn-team-workspace-context-delete');
     if (renameBtn) renameBtn.disabled = !!context?.is_native;
     if (deleteBtn) deleteBtn.disabled = !!context?.is_native;
+  }
+
+  function renderContextSources(workspace) {
+    const list = document.getElementById('team-context-source-list');
+    const status = document.getElementById('team-context-source-status');
+    const saveBtn = document.getElementById('btn-team-context-sources-save');
+    if (!list) return;
+
+    const items = Array.isArray(workspace?.team_comp_aparells) ? workspace.team_comp_aparells : [];
+    list.innerHTML = '';
+    if (status) {
+      status.textContent = items.length
+        ? "Selecciona en quins aparells globals d'equip competeix aquest context."
+        : "No hi ha cap aparell global d'equip actiu en aquesta competició.";
+    }
+    if (saveBtn) saveBtn.disabled = !editable() || state.contextCode === 'native' || !items.length;
+
+    items.forEach((item) => {
+      const label = document.createElement('label');
+      label.className = 'd-flex align-items-start p-2 border rounded bg-white';
+      label.style.gap = '10px';
+
+      const check = document.createElement('input');
+      check.type = 'checkbox';
+      check.className = 'mt-1 js-team-context-source-check';
+      check.value = String(item?.id || '');
+      check.checked = !!item?.selected;
+      check.disabled = !editable() || state.contextCode === 'native';
+      label.appendChild(check);
+
+      const copy = document.createElement('div');
+      const title = document.createElement('div');
+      title.className = 'fw-semibold';
+      title.textContent = String(item?.nom || `Aparell ${item?.id || ''}`);
+      copy.appendChild(title);
+      const meta = document.createElement('div');
+      meta.className = 'small text-muted';
+      meta.textContent = item?.codi ? `Codi ${item.codi}` : "Aparell global d'equip";
+      copy.appendChild(meta);
+      label.appendChild(copy);
+
+      list.appendChild(label);
+    });
   }
 
   function setActionTab(tab) {
@@ -559,6 +603,7 @@ if (teamWorkspaceShell) {
     state.contextCode = String(workspace.context_code || 'native');
     applyWorkspaceMode();
     renderContextMeta(workspace.context, workspace.summary, workspace.contexts || []);
+    renderContextSources(workspace);
     renderFilterOptions(workspace);
     renderCandidates(workspace);
     renderTeams(workspace);
@@ -870,6 +915,32 @@ if (teamWorkspaceShell) {
         await refreshWorkspace({ resetPage: true, clearSelection: true });
       } catch (err) {
         showAlert(`No s'ha pogut eliminar el context.\n${err.message || err}`);
+      }
+    });
+  }
+
+  const contextSourcesSave = document.getElementById('btn-team-context-sources-save');
+  if (contextSourcesSave) {
+    contextSourcesSave.addEventListener('click', async () => {
+      if (state.contextCode === 'native') {
+        showAlert("El context natiu no es pot vincular a aparells globals d'equip.");
+        return;
+      }
+      const compAparellIds = Array.from(document.querySelectorAll('.js-team-context-source-check:checked'))
+        .map((node) => Number(node.value || 0))
+        .filter((value) => Number.isFinite(value) && value > 0);
+      try {
+        const data = await postJson(ctxSourcesSaveUrl, {
+          context_code: state.contextCode,
+          comp_aparell_ids: compAparellIds,
+        });
+        if (!data?.ok) {
+          showAlert("No s'han pogut desar els aparells globals d'equip per aquest context.");
+          return;
+        }
+        await refreshWorkspace();
+      } catch (err) {
+        showAlert(`No s'han pogut desar els aparells globals d'equip.\n${err.message || err}`);
       }
     });
   }

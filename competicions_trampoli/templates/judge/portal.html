@@ -616,7 +616,7 @@
   }
   function subjectForId(insId){
     return SUBJECTS_BY_ID[String(insId)] || {
-      subject_kind: TEAM_SUBJECT_MODE ? "equip" : "inscripcio",
+      subject_kind: TEAM_SUBJECT_MODE ? "team_unit" : "inscripcio",
       subject_id: Number(insId),
     };
   }
@@ -750,7 +750,6 @@
       field_code: String(p && p.field_code ? p.field_code : ""),
       runtime_field_code: String((p && (p.runtime_field_code || p.field_code)) || ""),
       scope: String((p && p.scope) || "shared"),
-      member_slot: (p && p.member_slot != null && p.member_slot !== "") ? Math.max(1, Number(p.member_slot)) : null,
       judge_index: Math.max(1, Number((p && p.judge_index) || 1)),
       item_start: Math.max(1, Number((p && p.item_start) || 1)),
       item_count: (p && p.item_count != null && p.item_count !== "") ? Math.max(1, Number(p.item_count)) : null,
@@ -759,7 +758,7 @@
   function permKey(p, idx){
     const n = normalizePerm(p);
     const c = (n.item_count == null) ? "all" : String(n.item_count);
-    const slot = n.scope === "member" ? `|m${n.member_slot}` : "|shared";
+    const slot = n.scope === "member" ? "|individual" : "|shared";
     return `${idx}|${n.runtime_field_code}|j${n.judge_index}|s${n.item_start}|c${c}${slot}`;
   }
   const PERM_DESCS = PERMS.map((p, idx) => {
@@ -1177,7 +1176,7 @@
     if(subject.subject_kind === "inscripcio"){
       url.searchParams.set("inscripcio_id", String(subject.subject_id || insId));
     }
-    url.searchParams.set("subject_kind", String(subject.subject_kind || (TEAM_SUBJECT_MODE ? "equip" : "inscripcio")));
+    url.searchParams.set("subject_kind", String(subject.subject_kind || (TEAM_SUBJECT_MODE ? "team_unit" : "inscripcio")));
     url.searchParams.set("subject_id", String(subject.subject_id || insId));
     url.searchParams.set("exercici", String(exercici));
     const els = getVideoEls(insId, exercici);
@@ -1229,7 +1228,7 @@
     if(!el) return;
     const parts = PERM_DESCS.map(p => {
       const range = p.item_count ? `(${p.item_start}..${p.item_start + p.item_count - 1})` : "";
-      const scope = p.scope === "member" ? `M${p.member_slot}` : "Compartit";
+      const scope = p.scope === "member" ? "Individual" : "Compartit";
       return `${p.field_code} [${scope}] [J${p.judge_index}] ${range}`.trim();
     });
     el.textContent = parts.join(" · ");
@@ -1802,7 +1801,7 @@
         const subject = subjectForId(insId);
         return {
           inscripcio_id: subject.subject_kind === "inscripcio" ? Number(subject.subject_id || insId) : undefined,
-          subject_kind: subject.subject_kind || (TEAM_SUBJECT_MODE ? "equip" : "inscripcio"),
+          subject_kind: subject.subject_kind || (TEAM_SUBJECT_MODE ? "team_unit" : "inscripcio"),
           subject_id: Number(subject.subject_id || insId),
           exercici: Number(exercici),
           inputs_patch: patch
@@ -2094,14 +2093,14 @@
 
     const ext = (st.pendingMimeType || "").includes("mp4") ? "mp4" : ((st.pendingMimeType || "").includes("quicktime") ? "mov" : "webm");
     const subject = subjectForId(insId);
-    const filename = `${subject.subject_kind === "equip" ? "equip" : "ins"}_${insId}_ex_${exercici}_${Date.now()}.${ext}`;
+    const filename = `${subject.subject_kind === "team_unit" ? "team" : "ins"}_${insId}_ex_${exercici}_${Date.now()}.${ext}`;
     const fileObj = new File([blob], filename, { type: st.pendingMimeType || blob.type || "video/webm" });
 
     const fd = new FormData();
     if(subject.subject_kind === "inscripcio"){
       fd.append("inscripcio_id", String(subject.subject_id || insId));
     }
-    fd.append("subject_kind", String(subject.subject_kind || (TEAM_SUBJECT_MODE ? "equip" : "inscripcio")));
+    fd.append("subject_kind", String(subject.subject_kind || (TEAM_SUBJECT_MODE ? "team_unit" : "inscripcio")));
     fd.append("subject_id", String(subject.subject_id || insId));
     fd.append("exercici", String(exercici));
     if(st.pendingDuration) fd.append("duration_seconds", String(st.pendingDuration));
@@ -2162,7 +2161,7 @@
     if(subject.subject_kind === "inscripcio"){
       fd.append("inscripcio_id", String(subject.subject_id || insId));
     }
-    fd.append("subject_kind", String(subject.subject_kind || (TEAM_SUBJECT_MODE ? "equip" : "inscripcio")));
+    fd.append("subject_kind", String(subject.subject_kind || (TEAM_SUBJECT_MODE ? "team_unit" : "inscripcio")));
     fd.append("subject_id", String(subject.subject_id || insId));
     fd.append("exercici", String(exercici));
 

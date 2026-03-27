@@ -43,22 +43,15 @@ def _validate_permission_row(schema_by_code: dict, row: dict):
     if not f:
         raise ValueError("Camp no existeix al schema")
     scope = str(row.get("scope") or "shared").strip().lower() or "shared"
-    member_slot = row.get("member_slot")
 
     field_scope = str((f.get("scope") or "shared")).strip().lower() or "shared"
     if scope not in {"shared", "member"}:
         raise ValueError(f"{code}: scope invalid.")
     if scope == "member":
         if field_scope != "member":
-            raise ValueError(f"{code}: aquest camp no admet abast de membre.")
-        try:
-            member_slot = int(member_slot or 0)
-        except Exception:
-            member_slot = 0
-        if member_slot < 1:
-            raise ValueError(f"{code}: cal indicar member_slot.")
+            raise ValueError(f"{code}: aquest camp no admet abast individual.")
     elif field_scope == "member":
-        raise ValueError(f"{code}: cal crear el permis com a membre.")
+        raise ValueError(f"{code}: cal crear el permis com a individual.")
 
     # limit judges.count
     max_j = int(((f.get("judges") or {}).get("count")) or 1)
@@ -90,7 +83,6 @@ def _validate_permission_row(schema_by_code: dict, row: dict):
     return {
         "field_code": code,
         "scope": scope,
-        "member_slot": member_slot if scope == "member" else None,
         "judge_index": j,
         "item_start": item_start,
         "item_count": item_count,
@@ -169,12 +161,6 @@ def judges_qr_home(request, competicio_id):
                     continue
                 try:
                     perm = _validate_permission_row(schema_by_code, f)
-                    if is_team_context_app(comp_aparell):
-                        max_members = int(getattr(comp_aparell, "expected_team_size", 0) or 0)
-                        if perm["scope"] == "member" and int(perm["member_slot"] or 0) > max_members:
-                            raise ValueError(
-                                f"{perm['field_code']}: member_slot fora de rang (1..{max_members})."
-                            )
                     perm["runtime_field_code"] = permission_runtime_code(perm, comp_aparell)
                     perms.append(perm)
                 except ValueError as e:
@@ -228,7 +214,6 @@ def judges_qr_home(request, competicio_id):
         "exercicis": exercicis,
         "exercici": exercici,
         "is_team_context_mode": bool(comp_aparell and is_team_context_app(comp_aparell)),
-        "expected_team_size": int(getattr(comp_aparell, "expected_team_size", 0) or 0) if comp_aparell else 0,
         "permission_label_builder": build_permission_label,
     }
     return render(request, "judge/admin_tokens.html", ctx)

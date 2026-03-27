@@ -72,7 +72,7 @@
     {% else %}
       {% if is_team_context_mode %}
       <div class="alert alert-info py-2 small">
-        Aquest aparell treballa per equips. Els permisos poden ser `Compartit` o `Membre N` fins a `{{ expected_team_size }}`.
+        Aquest aparell treballa per equips. Els permisos poden ser `Compartit` o `Individual`.
       </div>
       {% endif %}
       <div class="row g-3">
@@ -144,7 +144,6 @@
                       <tr class="text-muted small">
                         <th style="min-width:240px;">Camp</th>
                         <th>Abast</th>
-                        <th>Slot</th>
                         <th>Jutge</th>
                         <th>Start</th>
                         <th>Count</th>
@@ -164,12 +163,6 @@
                           {{ f.scope }}
                           {% if f.scope.errors %}
                             <div class="text-danger small mt-1">{{ f.scope.errors }}</div>
-                          {% endif %}
-                        </td>
-                        <td>
-                          {{ f.member_slot }}
-                          {% if f.member_slot.errors %}
-                            <div class="text-danger small mt-1">{{ f.member_slot.errors }}</div>
                           {% endif %}
                         </td>
                         <td>
@@ -199,7 +192,7 @@
                       </tr>
                       {% if f.non_field_errors %}
                       <tr>
-                        <td colspan="7" class="pt-0">
+                        <td colspan="6" class="pt-0">
                           <div class="text-danger small">{{ f.non_field_errors }}</div>
                         </td>
                       </tr>
@@ -213,7 +206,6 @@
                   <tr class="perm-row">
                     <td>{{ formset.empty_form.field_code }}</td>
                     <td>{{ formset.empty_form.scope }}</td>
-                    <td>{{ formset.empty_form.member_slot }}</td>
                     <td>{{ formset.empty_form.judge_index }}</td>
                     <td>{{ formset.empty_form.item_start }}</td>
                     <td>{{ formset.empty_form.item_count }}</td>
@@ -280,7 +272,7 @@
                             <div>
                               <span class="badge bg-light text-dark">{{ p.field_code }}</span>
                               <span class="badge bg-light text-dark">
-                                {% if p.scope == "member" %}Membre {{ p.member_slot }}{% else %}Compartit{% endif %}
+                                {% if p.scope == "member" %}Individual{% else %}Compartit{% endif %}
                               </span>
                               <span class="badge bg-light text-dark">J{{ p.judge_index }}</span>
                               {% if p.item_count %}

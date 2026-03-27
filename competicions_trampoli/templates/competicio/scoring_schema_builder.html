@@ -86,10 +86,10 @@
     <form method="post" id="schemaForm">
       {% csrf_token %}
 
-      {% if schema_builder_config.participant_mode == "team_context" %}
+      {% if schema_builder_config.is_team_unit %}
       <div class="alert alert-info">
-        Aquest aparell puntua per equips del context <strong>{{ schema_builder_config.team_context_name|default:"(sense context)" }}</strong>.
-        Camps amb abast <strong>Membre</strong> es replicaran per {{ schema_builder_config.expected_team_size|default:"?" }} slots i les fórmules han d'usar codis expandits com <code>E__m1</code>, <code>E__m2</code>.
+        Aquest aparell global competeix per equips.
+        Els camps amb abast <strong>Individual</strong> es recullen per cada membre real de la unitat competitiva i les fórmules han d'usar helpers com <code>members_sum(E)</code> o <code>members_avg(E)</code>.
       </div>
       {% endif %}
 
@@ -348,16 +348,9 @@
     document.querySelectorAll("#fieldsTable tbody tr").forEach(r=>{
       const c = r.querySelector('[data-k="code"]').value.trim();
       const v = r.querySelector('[data-k="var"]')?.value.trim();
-      const scope = r.querySelector('[data-k="scope"]')?.value || "shared";
+      const scope = r.querySelector('[data-k="scope"]')?.value || "member";
       if(c) codes.push(c);
       if(v) codes.push(v);
-      if(scope === "member" && String(BUILDER_CONFIG.participant_mode) === "team_context"){
-        const expected = Math.max(2, Number(BUILDER_CONFIG.expected_team_size || 2));
-        for(let idx=1; idx<=expected; idx++){
-          if(c) codes.push(`${c}__m${idx}`);
-          if(v) codes.push(`${v}_m${idx}`);
-        }
-      }
     });
     document.querySelectorAll("#computedTable tbody tr").forEach(r=>{
       const c = r.querySelector('[data-k="code"]').value.trim();
@@ -406,8 +399,8 @@
       <td><input class="form-control form-control-sm mono" data-k="var" value="${data.var||""}"></td>
       <td>
         <select class="form-control form-control-sm" data-k="scope">
+          <option value="member">Individual</option>
           <option value="shared">Compartit</option>
-          <option value="member">Membre</option>
         </select>
       </td>
 
@@ -428,9 +421,9 @@
     `;
 
     tr.querySelector('input[data-k="crash_enabled"]').checked = !!data.crash_enabled;
-    tr.querySelector('[data-k="scope"]').value = data.scope || "shared";
-    if(String(BUILDER_CONFIG.participant_mode) !== "team_context"){
-      tr.querySelector('[data-k="scope"]').value = "shared";
+    tr.querySelector('[data-k="scope"]').value = data.scope || "member";
+    if(!BUILDER_CONFIG.is_team_unit){
+      tr.querySelector('[data-k="scope"]').value = "member";
       tr.querySelector('[data-k="scope"]').disabled = true;
     }
 
@@ -1061,7 +1054,7 @@
       const label = tr.querySelector('[data-k="label"]').value.trim();
       const code = tr.querySelector('[data-k="code"]').value.trim();
       const vari = tr.querySelector('[data-k="var"]').value.trim();
-      const scope = tr.querySelector('[data-k="scope"]').value || "shared";
+      const scope = tr.querySelector('[data-k="scope"]').value || "member";
 
       const minv = tr.querySelector('[data-k="min"]').value.trim();
       const maxv = tr.querySelector('[data-k="max"]').value.trim();
@@ -1203,10 +1196,7 @@
     computed.forEach(c=>cols.push(c.code));
 
     const meta = {
-      subject_mode: String(BUILDER_CONFIG.participant_mode) === "team_context" ? "team_context" : "individual",
-      expected_team_size: String(BUILDER_CONFIG.participant_mode) === "team_context"
-        ? Number(BUILDER_CONFIG.expected_team_size || 2)
-        : undefined,
+      subject_mode: BUILDER_CONFIG.is_team_unit ? "team" : "individual",
     };
 
     return { meta, fields, computed, ui: { columns: cols } };
@@ -1234,7 +1224,7 @@
         label: f.label,
         code: f.code,
         var: f.var,
-        scope: f.scope || "shared",
+        scope: f.scope || "member",
         min: f.min,
         max: f.max,
         decimals: f.decimals,

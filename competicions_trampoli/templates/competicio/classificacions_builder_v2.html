@@ -694,6 +694,17 @@
             <div class="small text-muted">Selecciona almenys un camp de partició per configurar grups custom.</div>
           </div>
 
+          <div class="border rounded p-2 mb-2" id="particionsDerivedBox" style="display:none;">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <div>
+                <div class="small text-muted">Forquilles d'any de naixement</div>
+                <div class="small text-muted">Configura els rangs que alimenten la partició derivada.</div>
+              </div>
+              <div class="builder-inline-note">Només individual</div>
+            </div>
+            <div id="birthYearRangeConfigBox"></div>
+          </div>
+
           <div id="equipCfgBox" class="builder-subsection builder-subsection--muted" style="display:none;">
             <div class="builder-subsection__head">
               <div>
@@ -1215,6 +1226,7 @@
   const CAN_PREVIEW = parseJsonScript("builder-can-preview", true);
   const INITIAL_SELECTED_ID = parseJsonScript("builder-selected-id", null);
   const AUTO_ADD_NEW = parseJsonScript("builder-auto-add-new", false);
+  const BIRTH_YEAR_RANGE_PARTITION_CODE = "any_naixement_forquilla";
 
   const TEMPLATE_LIST_URL = "{% if competicio %}{% url 'classificacio_template_list' competicio.id %}{% endif %}";
   const TEMPLATE_SAVE_URL = "{% if competicio %}{% url 'classificacio_template_save' competicio.id %}{% endif %}";
@@ -1226,6 +1238,13 @@
     particions: [],
     particions_v2: [],
     particions_custom: {},
+    particions_config: {
+      [BIRTH_YEAR_RANGE_PARTITION_CODE]: {
+        ranges: [],
+        sense_data_label: "Sense data",
+        fora_rang_label: "Fora de forquilla",
+      },
+    },
     filtres: {},
     puntuacio: {
       aparells: { mode:"tots", ids:[] },
@@ -1310,6 +1329,8 @@
 
     particionsFieldsBox: document.getElementById("particionsFieldsBox"),
     particionsCustomBox: document.getElementById("particionsCustomBox"),
+    particionsDerivedBox: document.getElementById("particionsDerivedBox"),
+    birthYearRangeConfigBox: document.getElementById("birthYearRangeConfigBox"),
 
     apSelBox: document.getElementById("apSelBox"),
     apChkList: document.getElementById("apChkList"),
@@ -1604,10 +1625,8 @@
     (APARELLS || []).forEach(a => {
       const id = Number(a && a.id);
       if (!Number.isFinite(id) || seen.has(String(id))) return;
-      const participantMode = String((a && a.participant_mode) || "individual");
-      const teamContextCode = String((a && a.team_context_code) || "").trim();
-      if (tipus === "individual" && participantMode === "team_context") return;
-      if (tipus === "equips" && participantMode === "team_context" && selectedContextCode !== "native" && teamContextCode && teamContextCode !== selectedContextCode) return;
+      const competitionUnit = String((a && a.competition_unit) || "individual");
+      if (competitionUnit === "team") return;
       seen.add(String(id));
       out.push({ id, nom: String(a.nom || `Aparell ${id}`), stale: false });
     });
@@ -1974,6 +1993,7 @@
     }
     refreshVictoryTieVisibility();
     rebuildAparellChecksPreservingSelection(getSchemaReferencedAppIds(cfg && cfg.schema ? cfg.schema : {}));
+    renderDerivedPartitionConfigUI(readParticionsConfigUI(), selectedParticioCodesFromUI());
   }
 
   function sanitizeDesempatForTipus(list, tipus) {
@@ -3586,6 +3606,11 @@
     schema.particions_custom = schema.particions_custom && typeof schema.particions_custom === "object" && !Array.isArray(schema.particions_custom)
       ? schema.particions_custom
       : {};
+    schema.particions_config = normalizeParticionsConfig(
+      schema.particions_config && typeof schema.particions_config === "object" && !Array.isArray(schema.particions_config)
+        ? schema.particions_config
+        : fallback.particions_config
+    );
     schema.equips = schema.equips && typeof schema.equips === "object" && !Array.isArray(schema.equips)
       ? schema.equips
       : fallback.equips;
@@ -3789,6 +3814,10 @@
   }
 
   function getParticioChoiceEntriesForCode(code) {
+    const synthetic = syntheticParticioChoiceEntries(code, readParticionsConfigUI());
+    if (synthetic) {
+      return normalizeParticioChoiceEntries(synthetic);
+    }
     const raw = (PARTICIO_VALUE_CHOICES && Object.prototype.hasOwnProperty.call(PARTICIO_VALUE_CHOICES, code))
       ? PARTICIO_VALUE_CHOICES[code]
       : [];
@@ -4258,6 +4287,177 @@
     return out;
   }
 
+  function defaultBirthYearRangeLabel(fromYear, toYear, idx) {
+    if (Number.isInteger(fromYear) && Number.isInteger(toYear)) {
+      return fromYear === toYear ? String(fromYear) : `${fromYear}-${toYear}`;
+    }
+    return `Forquilla ${Number(idx) + 1}`;
+  }
+
+  function normalizeBirthYearRangePartitionConfig(raw) {
+    const fallback = (((DEFAULT_SCHEMA || {}).particions_config || {})[BIRTH_YEAR_RANGE_PARTITION_CODE]) || {
+      ranges: [],
+      sense_data_label: "Sense data",
+      fora_rang_label: "Fora de forquilla",
+    };
+    const cfg = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+    const out = {
+      ranges: [],
+      sense_data_label: String(cfg.sense_data_label || fallback.sense_data_label || "Sense data").trim() || "Sense data",
+      fora_rang_label: String(cfg.fora_rang_label || fallback.fora_rang_label || "Fora de forquilla").trim() || "Fora de forquilla",
+    };
+
+    (Array.isArray(cfg.ranges) ? cfg.ranges : []).forEach((item, idx) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return;
+      const rawLabel = String(item.label || "").trim();
+      const rawFrom = String(item.from_year ?? "").trim();
+      const rawTo = String(item.to_year ?? "").trim();
+      if (!rawLabel && !rawFrom && !rawTo) return;
+      const fromYear = rawFrom ? Number.parseInt(rawFrom, 10) : null;
+      const toYear = rawTo ? Number.parseInt(rawTo, 10) : null;
+      out.ranges.push({
+        label: rawLabel || defaultBirthYearRangeLabel(
+          Number.isInteger(fromYear) ? fromYear : null,
+          Number.isInteger(toYear) ? toYear : null,
+          idx
+        ),
+        from_year: Number.isInteger(fromYear) ? fromYear : null,
+        to_year: Number.isInteger(toYear) ? toYear : null,
+      });
+    });
+    return out;
+  }
+
+  function normalizeParticionsConfig(raw) {
+    const cfg = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+    return {
+      [BIRTH_YEAR_RANGE_PARTITION_CODE]: normalizeBirthYearRangePartitionConfig(cfg[BIRTH_YEAR_RANGE_PARTITION_CODE]),
+    };
+  }
+
+  function currentParticionsConfigFallback() {
+    const cfg = currentCfg();
+    const schema = cfg && cfg.schema && typeof cfg.schema === "object" ? cfg.schema : DEFAULT_SCHEMA;
+    return normalizeParticionsConfig(schema.particions_config || {});
+  }
+
+  function readBirthYearRangePartitionConfigUI() {
+    const fallback = currentParticionsConfigFallback()[BIRTH_YEAR_RANGE_PARTITION_CODE];
+    if (!els.birthYearRangeConfigBox || els.birthYearRangeConfigBox.dataset.rendered !== "1") {
+      return fallback;
+    }
+
+    const ranges = [];
+    els.birthYearRangeConfigBox.querySelectorAll("[data-byr-row]").forEach((row, idx) => {
+      const rawLabel = String(row.querySelector('[data-byr="label"]')?.value || "").trim();
+      const rawFrom = String(row.querySelector('[data-byr="from"]')?.value || "").trim();
+      const rawTo = String(row.querySelector('[data-byr="to"]')?.value || "").trim();
+      if (!rawLabel && !rawFrom && !rawTo) return;
+      const fromYear = rawFrom ? Number.parseInt(rawFrom, 10) : null;
+      const toYear = rawTo ? Number.parseInt(rawTo, 10) : null;
+      ranges.push({
+        label: rawLabel || defaultBirthYearRangeLabel(
+          Number.isInteger(fromYear) ? fromYear : null,
+          Number.isInteger(toYear) ? toYear : null,
+          idx
+        ),
+        from_year: Number.isInteger(fromYear) ? fromYear : null,
+        to_year: Number.isInteger(toYear) ? toYear : null,
+      });
+    });
+
+    return normalizeBirthYearRangePartitionConfig({
+      ranges,
+      sense_data_label: String(els.birthYearRangeConfigBox.querySelector('[data-byr="sense"]')?.value || fallback.sense_data_label || "Sense data").trim() || "Sense data",
+      fora_rang_label: String(els.birthYearRangeConfigBox.querySelector('[data-byr="outside"]')?.value || fallback.fora_rang_label || "Fora de forquilla").trim() || "Fora de forquilla",
+    });
+  }
+
+  function readParticionsConfigUI() {
+    const current = currentParticionsConfigFallback();
+    current[BIRTH_YEAR_RANGE_PARTITION_CODE] = readBirthYearRangePartitionConfigUI();
+    return current;
+  }
+
+  function syntheticParticioChoiceEntries(code, particionsConfigRaw) {
+    if (String(code || "").trim() !== BIRTH_YEAR_RANGE_PARTITION_CODE) return null;
+    const cfg = normalizeParticionsConfig(particionsConfigRaw || readParticionsConfigUI())[BIRTH_YEAR_RANGE_PARTITION_CODE];
+    const out = [];
+    const seen = new Set();
+    const pushValue = (label) => {
+      const txt = String(label || "").trim();
+      if (!txt) return;
+      const key = particioValueKey(txt);
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      out.push({ value: txt, label: txt, count: 0 });
+    };
+    (Array.isArray(cfg.ranges) ? cfg.ranges : []).forEach(item => pushValue(item?.label));
+    pushValue(cfg.sense_data_label);
+    pushValue(cfg.fora_rang_label);
+    return out;
+  }
+
+  function renderDerivedPartitionConfigUI(particionsConfigRaw, selectedCodesRaw) {
+    if (!els.particionsDerivedBox || !els.birthYearRangeConfigBox) return;
+    const selectedCodes = normalizeParticioCodes(selectedCodesRaw || selectedParticioCodesFromUI());
+    const active = currentTipus() === "individual" && selectedCodes.includes(BIRTH_YEAR_RANGE_PARTITION_CODE);
+    if (!active) {
+      els.particionsDerivedBox.style.display = "none";
+      els.birthYearRangeConfigBox.dataset.rendered = "0";
+      els.birthYearRangeConfigBox.innerHTML = "";
+      return;
+    }
+
+    const cfg = normalizeParticionsConfig(particionsConfigRaw || readParticionsConfigUI())[BIRTH_YEAR_RANGE_PARTITION_CODE];
+    let html = `
+      <div class="row mb-2">
+        <div class="col-12 col-md-6 mb-2">
+          <label class="small text-muted mb-1">Etiqueta sense data</label>
+          <input class="form-control form-control-sm" data-byr="sense" type="text" value="${esc(cfg.sense_data_label || "Sense data")}">
+        </div>
+        <div class="col-12 col-md-6 mb-2">
+          <label class="small text-muted mb-1">Etiqueta fora de forquilla</label>
+          <input class="form-control form-control-sm" data-byr="outside" type="text" value="${esc(cfg.fora_rang_label || "Fora de forquilla")}">
+        </div>
+      </div>
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <label class="small text-muted mb-0">Forquilles</label>
+        <button type="button" class="btn btn-sm btn-outline-primary" data-byr-act="add">+ Forquilla</button>
+      </div>
+    `;
+    if (!(cfg.ranges || []).length) {
+      html += `<div class="small text-muted border rounded p-2 mb-2">Cap forquilla definida.</div>`;
+    }
+    (cfg.ranges || []).forEach((item, idx) => {
+      html += `
+        <div class="border rounded p-2 mb-2" data-byr-row data-idx="${esc(String(idx))}">
+          <div class="row">
+            <div class="col-12 col-md-4 mb-2">
+              <label class="small text-muted mb-1">Etiqueta</label>
+              <input class="form-control form-control-sm" data-byr="label" type="text" value="${esc(item.label || "")}" placeholder="2007-2009">
+            </div>
+            <div class="col-6 col-md-3 mb-2">
+              <label class="small text-muted mb-1">Any inici</label>
+              <input class="form-control form-control-sm" data-byr="from" type="number" value="${item.from_year ?? ""}" placeholder="2007">
+            </div>
+            <div class="col-6 col-md-3 mb-2">
+              <label class="small text-muted mb-1">Any fi</label>
+              <input class="form-control form-control-sm" data-byr="to" type="number" value="${item.to_year ?? ""}" placeholder="2009">
+            </div>
+            <div class="col-12 col-md-2 d-flex align-items-end mb-2">
+              <button type="button" class="btn btn-sm btn-outline-danger w-100" data-byr-act="del" data-idx="${esc(String(idx))}">-</button>
+            </div>
+          </div>
+        </div>
+      `;
+    });
+
+    els.particionsDerivedBox.style.display = "";
+    els.birthYearRangeConfigBox.dataset.rendered = "1";
+    els.birthYearRangeConfigBox.innerHTML = html;
+  }
+
   function ensureSelectOption(selectEl, rawValue, labelBuilder) {
     if (!selectEl) return;
     const value = String(rawValue ?? "").trim();
@@ -4306,6 +4506,7 @@
     const partEntries = readParticioEntriesFromUI();
     const parts = particioCodesFromEntries(partEntries);
     const particionsCustom = readParticionsCustomUI(parts);
+    const particionsConfig = readParticionsConfigUI();
 
     // filtres UI
     function selectedValues(sel){
@@ -4368,6 +4569,7 @@
       particions: parts,
       particions_v2: partEntries,
       particions_custom: particionsCustom,
+      particions_config: particionsConfig,
       filtres: filtres,
       puntuacio: {
         aparells: { mode: apMode, ids: apIds },
@@ -4420,6 +4622,7 @@
     const partEntries = normalizeParticioEntries(schema.particions_v2 || [], schema.particions || []);
     const parts = particioCodesFromEntries(partEntries);
     renderParticioStackUI(partEntries, schema.particions_custom || {});
+    renderDerivedPartitionConfigUI(schema.particions_config || {}, parts);
     renderParticionsCustomUI(parts, schema.particions_custom || {});
 
     // aparells (sense mode "tots": normalitzem legacy a seleccio explicita)
@@ -4573,6 +4776,8 @@
       const partEntries = readParticioEntriesFromUI();
       const parts = particioCodesFromEntries(partEntries);
       const custom = normalizeParticionsCustom(readParticionsCustomUI(parts));
+      const particionsConfig = readParticionsConfigUI();
+      renderDerivedPartitionConfigUI(particionsConfig, parts);
       renderParticionsCustomUI(
         parts,
         custom
@@ -4613,6 +4818,7 @@
       }
 
       renderParticioStackUI(entries, custom);
+      renderDerivedPartitionConfigUI(readParticionsConfigUI(), particioCodesFromEntries(entries));
       renderParticionsCustomUI(particioCodesFromEntries(entries), custom);
       syncAdvancedFromUI();
     });
@@ -4674,6 +4880,78 @@
       renderParticionsCustomUI(selected, cur);
       renderParticioStackUI(readParticioEntriesFromUI(), cur);
       syncAdvancedFromUI();
+    });
+  }
+
+  if (els.birthYearRangeConfigBox) {
+    els.birthYearRangeConfigBox.addEventListener("click", (ev) => {
+      const btn = ev.target.closest("button[data-byr-act]");
+      if (!btn) return;
+      ev.preventDefault();
+      const cfgMap = readParticionsConfigUI();
+      const cfg = normalizeBirthYearRangePartitionConfig(cfgMap[BIRTH_YEAR_RANGE_PARTITION_CODE]);
+      const ranges = Array.isArray(cfg.ranges) ? cfg.ranges.slice() : [];
+      const act = String(btn.getAttribute("data-byr-act") || "").trim();
+      if (act === "add") {
+        ranges.push({
+          label: `Forquilla ${ranges.length + 1}`,
+          from_year: null,
+          to_year: null,
+        });
+      } else if (act === "del") {
+        const idx = Number(btn.getAttribute("data-idx"));
+        if (!Number.isInteger(idx) || idx < 0 || idx >= ranges.length) return;
+        ranges.splice(idx, 1);
+      } else {
+        return;
+      }
+
+      cfgMap[BIRTH_YEAR_RANGE_PARTITION_CODE] = {
+        ...cfg,
+        ranges,
+      };
+      const partEntries = readParticioEntriesFromUI();
+      const parts = particioCodesFromEntries(partEntries);
+      const custom = normalizeParticionsCustom(readParticionsCustomUI(parts));
+      renderDerivedPartitionConfigUI(cfgMap, parts);
+      renderParticionsCustomUI(parts, custom);
+      renderParticioStackUI(partEntries, custom);
+      syncAdvancedFromUI();
+    });
+
+    els.birthYearRangeConfigBox.addEventListener("input", (ev) => {
+      const node = ev.target;
+      if (!node) return;
+      if (
+        node.matches('[data-byr="sense"]') ||
+        node.matches('[data-byr="outside"]') ||
+        node.matches('[data-byr="label"]') ||
+        node.matches('[data-byr="from"]') ||
+        node.matches('[data-byr="to"]')
+      ) {
+        syncAdvancedFromUI();
+      }
+    });
+
+    els.birthYearRangeConfigBox.addEventListener("change", (ev) => {
+      const node = ev.target;
+      if (!node) return;
+      if (
+        node.matches('[data-byr="sense"]') ||
+        node.matches('[data-byr="outside"]') ||
+        node.matches('[data-byr="label"]') ||
+        node.matches('[data-byr="from"]') ||
+        node.matches('[data-byr="to"]')
+      ) {
+        const partEntries = readParticioEntriesFromUI();
+        const parts = particioCodesFromEntries(partEntries);
+        const custom = normalizeParticionsCustom(readParticionsCustomUI(parts));
+        const particionsConfig = readParticionsConfigUI();
+        renderDerivedPartitionConfigUI(particionsConfig, parts);
+        renderParticionsCustomUI(parts, custom);
+        renderParticioStackUI(partEntries, custom);
+        syncAdvancedFromUI();
+      }
     });
   }
 

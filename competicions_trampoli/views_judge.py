@@ -28,6 +28,7 @@ from .models_scoring import (
     ScoreEntryVideo,
     ScoreEntryVideoEvent,
     ScoringSchema,
+    TeamCompetitiveSubject,
     TeamScoreEntry,
     TeamScoreEntryVideo,
     TeamScoreEntryVideoEvent,
@@ -352,17 +353,11 @@ def _normalize_permissions(perms):
         if not code:
             continue
         scope = str(p.get("scope") or "shared").strip().lower() or "shared"
-        member_slot = p.get("member_slot")
         runtime_field_code = str(p.get("runtime_field_code") or code)
         out.append({
             "field_code": str(code),
             "runtime_field_code": runtime_field_code,
             "scope": scope,
-            "member_slot": (
-                None
-                if member_slot in (None, "", "null")
-                else int(member_slot)
-            ),
             "judge_index": int(p.get("judge_index") or 1),
             "item_start": int(p.get("item_start") or 1),
             "item_count": (None if p.get("item_count") in (None, "", "null") else int(p["item_count"])),
@@ -467,7 +462,8 @@ def _create_video_audit_event(
             "judge_token": judge_token,
             "video": video,
         }
-        if str(subject.get("subject_kind")) == "equip":
+        if str(subject.get("subject_kind")) == "team_unit":
+            create_kwargs["team_subject"] = subject["team_subject"]
             create_kwargs["equip"] = subject["equip"]
             create_kwargs["team_score_entry"] = score_entry
         else:
@@ -756,13 +752,13 @@ def judge_portal(request, token):
         "comp_aparell": comp_aparell,
     }
     if team_subject_mode:
-        entry_filters["equip_id__in"] = subject_ids
+        entry_filters["team_subject_id__in"] = subject_ids
     else:
         entry_filters["inscripcio_id__in"] = subject_ids
     entries = entry_model.objects.filter(**entry_filters)
     entry_map = {}
     for e in entries:
-        owner_id = int(e.equip_id if team_subject_mode else e.inscripcio_id)
+        owner_id = int(e.team_subject_id if team_subject_mode else e.inscripcio_id)
         entry_map[(owner_id, e.exercici)] = e
 
     # Construïm un “snapshot” dels inputs rellevants per inscripció/exercici
@@ -890,7 +886,7 @@ def judge_updates(request, token):
                 comp_aparell=comp_aparell,
                 exercici__in=exercicis,
                 updated_at__gt=dt,
-                equip_id__in=allowed_team_ids,
+                team_subject_id__in=allowed_team_ids,
             )
             .order_by("updated_at", "id")
         )
@@ -915,8 +911,8 @@ def judge_updates(request, token):
 
     updates = []
     for s in qs[:500]:
-        subject_kind = "equip" if is_team_context_app(comp_aparell) else "inscripcio"
-        subject_id = s.equip_id if subject_kind == "equip" else s.inscripcio_id
+        subject_kind = "team_unit" if is_team_context_app(comp_aparell) else "inscripcio"
+        subject_id = s.team_subject_id if subject_kind == "team_unit" else s.inscripcio_id
         updates.append({
             **serialize_subject_payload(subject_kind, subject_id),
             "exercici": s.exercici,
@@ -1000,7 +996,7 @@ def judge_video_status(request, token):
             "warning",
             "video_status_denied_subject",
             token=str(token),
-            subject_kind=subject_payload.get("subject_kind") or ("equip" if is_team_context_app(comp_aparell) else "inscripcio"),
+            subject_kind=subject_payload.get("subject_kind") or ("team_unit" if is_team_context_app(comp_aparell) else "inscripcio"),
             subject_id=subject_payload.get("subject_id") or subject_payload.get("inscripcio_id"),
             exercici=exercici,
             comp_aparell_id=comp_aparell.id,
@@ -1014,8 +1010,8 @@ def judge_video_status(request, token):
         "exercici": exercici,
         "comp_aparell": comp_aparell,
     }
-    if subject["subject_kind"] == "equip":
-        entry_filters["equip"] = subject["equip"]
+    if subject["subject_kind"] == "team_unit":
+        entry_filters["team_subject"] = subject["team_subject"]
     else:
         entry_filters["inscripcio"] = subject["inscripcio"]
 
@@ -1043,7 +1039,7 @@ def judge_video_status(request, token):
         })
 
     video_model, _event_model = subject_video_models(comp_aparell)
-    video_lookup = {"team_score_entry": entry} if subject["subject_kind"] == "equip" else {"score_entry": entry}
+    video_lookup = {"team_score_entry": entry} if subject["subject_kind"] == "team_unit" else {"score_entry": entry}
     video = video_model.objects.filter(**video_lookup).first()
     if not video or not video.video_file:
         _log_video_event(
@@ -1161,13 +1157,19 @@ def judge_video_upload(request, token):
     if error_response is not None:
         rejected_subject = None
         if is_team_context_app(comp_aparell):
-            equip_id = subject_payload.get("subject_id")
-            equip = Equip.objects.filter(pk=equip_id, competicio=competicio).first() if equip_id else None
-            if equip is not None:
+            team_subject_id = subject_payload.get("subject_id")
+            team_subject = TeamCompetitiveSubject.objects.filter(
+                pk=team_subject_id,
+                competicio=competicio,
+                comp_aparell=comp_aparell,
+            ).select_related("equip", "context").first() if team_subject_id else None
+            if team_subject is not None:
                 rejected_subject = {
-                    "subject_kind": "equip",
-                    "subject_id": int(equip.id),
-                    "equip": equip,
+                    "subject_kind": "team_unit",
+                    "subject_id": int(team_subject.id),
+                    "team_subject": team_subject,
+                    "equip": team_subject.equip,
+                    "context": team_subject.context,
                 }
         else:
             ins_id = subject_payload.get("subject_id") or subject_payload.get("inscripcio_id")
@@ -1269,7 +1271,7 @@ def judge_video_upload(request, token):
     )
 
     video_model, event_model = subject_video_models(comp_aparell)
-    video_lookup = {"team_score_entry": entry} if subject["subject_kind"] == "equip" else {"score_entry": entry}
+    video_lookup = {"team_score_entry": entry} if subject["subject_kind"] == "team_unit" else {"score_entry": entry}
     video, created_video = video_model.objects.get_or_create(
         **video_lookup,
         defaults={
@@ -1440,7 +1442,7 @@ def judge_video_delete(request, token):
             "video_delete_denied_subject",
             token=str(token),
             **serialize_subject_payload(
-                str(subject_payload.get("subject_kind") or ("equip" if is_team_context_app(comp_aparell) else "inscripcio")),
+                str(subject_payload.get("subject_kind") or ("team_unit" if is_team_context_app(comp_aparell) else "inscripcio")),
                 int(subject_payload.get("subject_id") or subject_payload.get("inscripcio_id") or 0),
             ),
             exercici=exercici,
@@ -1456,7 +1458,7 @@ def judge_video_delete(request, token):
             competicio=competicio,
             exercici=exercici,
             comp_aparell=comp_aparell,
-            **({"equip": subject["equip"]} if subject["subject_kind"] == "equip" else {"inscripcio": subject["inscripcio"]}),
+            **({"team_subject": subject["team_subject"]} if subject["subject_kind"] == "team_unit" else {"inscripcio": subject["inscripcio"]}),
         )
         .first()
     )
@@ -1482,7 +1484,7 @@ def judge_video_delete(request, token):
 
     video_model, _event_model = subject_video_models(comp_aparell)
     video = video_model.objects.filter(
-        **({"team_score_entry": entry} if subject["subject_kind"] == "equip" else {"score_entry": entry})
+        **({"team_score_entry": entry} if subject["subject_kind"] == "team_unit" else {"score_entry": entry})
     ).first()
     if not video:
         _log_video_event(

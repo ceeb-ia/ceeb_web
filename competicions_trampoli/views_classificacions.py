@@ -16,9 +16,12 @@ from .models_trampoli import CompeticioAparell
 from .models_classificacions import ClassificacioConfig, ClassificacioTemplateGlobal
 from .models_judging import PublicLiveToken
 from .services.services_classificacions_2 import (
+    BIRTH_YEAR_RANGE_PARTITION_CODE,
     compute_classificacio,
     DEFAULT_SCHEMA,
     get_display_columns,
+    normalize_birth_year_range_partition_config,
+    normalize_particions_config,
     normalize_particions_v2_entries,
     particio_codes_from_entries,
 )
@@ -991,8 +994,7 @@ class ClassificacionsHome(TemplateView):
                 "nom": ca.aparell.nom,
                 "codi": ca.aparell.codi,
                 "nombre_exercicis": int(getattr(ca, "nombre_exercicis", 1) or 1),
-                "participant_mode": str(getattr(ca, "participant_mode", "") or "individual"),
-                "team_context_code": normalize_equip_context_code(getattr(getattr(ca, "team_context", None), "code", "")),
+                "competition_unit": str(getattr(ca.aparell, "competition_unit", "") or "individual"),
             })
 
         equips_qs = (
@@ -1141,6 +1143,7 @@ def _normalize_particions_schema(schema):
     out["particions_v2"] = part_entries
     out["particions"] = particio_codes_from_entries(part_entries)
     out["particions_custom"] = _normalize_particions_custom(schema.get("particions_custom") or {})
+    out["particions_config"] = normalize_particions_config(schema.get("particions_config") or {})
     return out
 
 
@@ -1756,7 +1759,7 @@ def _scoreable_codes_by_app_id(competicio, *, tipus=None, assignment_context_cod
     active_apps = list(
         CompeticioAparell.objects
         .filter(competicio=competicio, actiu=True)
-        .select_related("aparell", "team_context")
+        .select_related("aparell")
     )
     schemas_by_aparell = {
         s.aparell_id: (s.schema or {})
@@ -1764,13 +1767,8 @@ def _scoreable_codes_by_app_id(competicio, *, tipus=None, assignment_context_cod
     }
     out = {}
     for ca in active_apps:
-        if tipus == "individual" and is_team_context_app(ca):
+        if is_team_context_app(ca):
             continue
-        if tipus == "equips" and is_team_context_app(ca):
-            expected_context = normalize_equip_context_code(getattr(getattr(ca, "team_context", None), "code", ""))
-            actual_context = normalize_equip_context_code(assignment_context_code)
-            if actual_context and actual_context != expected_context:
-                continue
         sch = schemas_by_aparell.get(ca.aparell_id, {}) or {}
         meta = _build_scoreable_meta_for_schema(sch, strict_unknown=True)
         out[int(ca.id)] = {code for code, info in (meta or {}).items() if (info or {}).get("scoreable")}
@@ -2023,23 +2021,18 @@ def _validate_schema_for_competicio(competicio, schema_local, tipus="individual"
     if selected_app_ids:
         selected_apps = {
             ca.id: ca
-            for ca in CompeticioAparell.objects.filter(competicio=competicio, id__in=selected_app_ids).select_related("team_context")
+            for ca in CompeticioAparell.objects.filter(competicio=competicio, id__in=selected_app_ids).select_related("aparell")
         }
         for app_id in selected_app_ids:
             ca = selected_apps.get(app_id)
             if ca is None:
                 continue
             if is_team_context_app(ca):
-                if tipus != "equips":
-                    errors.append(f"puntuacio.aparells.ids: l'aparell {app_id} es team_context i no es valid per classificacions individuals.")
-                    continue
-                expected_context = normalize_equip_context_code(getattr(getattr(ca, "team_context", None), "code", ""))
-                actual_context = normalize_equip_context_code(assignment_source.get("context_code"))
-                if actual_context != expected_context:
-                    errors.append(
-                        f"puntuacio.aparells.ids: l'aparell {app_id} requereix context {expected_context}, pero la classificacio usa {actual_context}."
-                    )
+                errors.append(
+                    f"puntuacio.aparells.ids: l'aparell {app_id} es un aparell global d'equip i no es valid a les classificacions actuals."
+                )
     errors.extend(_validate_particions_schema(competicio, schema_local))
+    errors.extend(_validate_particions_config_schema(schema_local, tipus=tipus))
     errors.extend(_validate_no_tots_mode(schema_local))
     errors.extend(_validate_camps_per_aparell(competicio, schema_local))
     errors.extend(_validate_tie_camps_per_aparell(competicio, schema_local))
@@ -2524,6 +2517,70 @@ def _validate_particions_schema(competicio, schema: dict):
                     )
                     continue
                 values_owner[key] = gidx
+
+    return errors
+
+
+def _validate_particions_config_schema(schema: dict, tipus="individual"):
+    schema = schema or {}
+    errors = []
+    part_entries = _normalize_particions_v2(
+        schema.get("particions_v2") or [],
+        fallback_codes=schema.get("particions") or [],
+    )
+    parts = particio_codes_from_entries(part_entries)
+    if BIRTH_YEAR_RANGE_PARTITION_CODE not in parts:
+        return errors
+
+    if str(tipus or "individual").strip().lower() != "individual":
+        errors.append(
+            "particions_config.any_naixement_forquilla: nomes es valid per classificacions individuals."
+        )
+        return errors
+
+    cfg = normalize_birth_year_range_partition_config(
+        ((schema.get("particions_config") or {}).get(BIRTH_YEAR_RANGE_PARTITION_CODE))
+    )
+    ranges = cfg.get("ranges") or []
+    if not ranges:
+        errors.append(
+            "particions_config.any_naixement_forquilla.ranges: cal definir almenys una forquilla."
+        )
+        return errors
+
+    seen_labels = {}
+    normalized_ranges = []
+    for idx, item in enumerate(ranges):
+        label = str(item.get("label") or "").strip()
+        from_year = item.get("from_year")
+        to_year = item.get("to_year")
+        if from_year is None or to_year is None:
+            errors.append(
+                f"particions_config.any_naixement_forquilla.ranges[{idx}]: cal indicar from_year i to_year."
+            )
+            continue
+        if from_year > to_year:
+            errors.append(
+                f"particions_config.any_naixement_forquilla.ranges[{idx}]: from_year no pot ser mes gran que to_year."
+            )
+        key = " ".join(label.split()).casefold()
+        if key:
+            owner = seen_labels.get(key)
+            if owner is not None:
+                errors.append(
+                    f"particions_config.any_naixement_forquilla.ranges[{idx}]: etiqueta repetida amb la forquilla {owner}."
+                )
+            else:
+                seen_labels[key] = idx
+        normalized_ranges.append((idx, int(from_year), int(to_year), label))
+
+    for pos, (idx_a, from_a, to_a, _label_a) in enumerate(normalized_ranges):
+        for idx_b, from_b, to_b, _label_b in normalized_ranges[pos + 1 :]:
+            if from_a <= to_b and from_b <= to_a:
+                errors.append(
+                    "particions_config.any_naixement_forquilla.ranges: "
+                    f"solapament entre indexos {idx_a} i {idx_b}."
+                )
 
     return errors
 
