@@ -1,18 +1,35 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+import hashlib
+import json
+from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Sequence, Tuple
 
+from django.apps import apps
 from django.db import transaction
-from django.db.models import Count, Max
+from django.db.models import Max
 
-from ..models import Competicio
+from ..models import Competicio, Inscripcio
 from ..models_rotacions import RotacioAssignacioSerieEquip
-from ..models_scoring import SerieEquip, SerieEquipItem, TeamCompetitiveSubject
 from ..models_trampoli import CompeticioAparell
+
+if TYPE_CHECKING:
+    from ..models_scoring import SerieEquip, SerieEquipItem, TeamCompetitiveSubject
 
 
 UNASSIGNED_SERIE_KEY = "series-unassigned"
+
+
+def _serie_equip_model():
+    return apps.get_model("competicions_trampoli", "SerieEquip")
+
+
+def _serie_equip_item_model():
+    return apps.get_model("competicions_trampoli", "SerieEquipItem")
+
+
+def _team_subject_model():
+    return apps.get_model("competicions_trampoli", "TeamCompetitiveSubject")
 
 
 def normalize_subject_ids(values) -> List[int]:
@@ -44,8 +61,9 @@ def serie_label(serie: Optional[SerieEquip]) -> str:
 
 
 def next_serie_display_num(competicio: Competicio, comp_aparell: CompeticioAparell) -> int:
+    serie_model = _serie_equip_model()
     return (
-        SerieEquip.objects
+        serie_model.objects
         .filter(competicio=competicio, comp_aparell=comp_aparell)
         .aggregate(Max("display_num"))["display_num__max"]
         or 0
@@ -53,7 +71,7 @@ def next_serie_display_num(competicio: Competicio, comp_aparell: CompeticioApare
 
 
 def get_series_queryset(competicio: Competicio, comp_aparell: CompeticioAparell, *, include_inactive=True):
-    qs = SerieEquip.objects.filter(competicio=competicio, comp_aparell=comp_aparell)
+    qs = _serie_equip_model().objects.filter(competicio=competicio, comp_aparell=comp_aparell)
     if not include_inactive:
         qs = qs.filter(actiu=True)
     return qs.order_by("display_num", "id")
@@ -81,8 +99,9 @@ def get_series_assignment_map(
     *,
     include_inactive=True,
 ) -> Dict[int, Dict[str, object]]:
+    serie_item_model = _serie_equip_item_model()
     qs = (
-        SerieEquipItem.objects
+        serie_item_model.objects
         .filter(
             serie__competicio=competicio,
             serie__comp_aparell=comp_aparell,
@@ -181,6 +200,87 @@ def default_subject_order(subject: dict) -> Tuple[int, str, int]:
     )
 
 
+def workspace_subject_order(subject: dict) -> Tuple[int, int, int, str, int]:
+    serie_id = int(subject.get("serie_id") or 0)
+    if serie_id > 0:
+        return (
+            1,
+            int(subject.get("serie_display_num") or 10**9),
+            int(subject.get("serie_order") or 10**9),
+            str(subject.get("context_name") or "").lower(),
+            int(subject.get("subject_id") or 0),
+        )
+    order, context_name, subject_id = default_subject_order(subject)
+    return (0, order, 0, context_name, subject_id)
+
+
+def assigned_subject_order(subject: dict) -> Tuple[int, int]:
+    return (
+        int(subject.get("serie_order") or 10**9),
+        int(subject.get("subject_id") or 0),
+    )
+
+
+def _subject_initial_order_map(subject_ids: Iterable[int]) -> Dict[int, Tuple[int, str, int]]:
+    clean_ids = normalize_subject_ids(subject_ids)
+    if not clean_ids:
+        return {}
+    subjects = list(
+        _team_subject_model().objects
+        .filter(id__in=clean_ids)
+        .select_related("context")
+        .only("id", "member_ids", "context__nom")
+    )
+    member_ids = sorted({
+        int(member_id)
+        for subject in subjects
+        for member_id in list(getattr(subject, "member_ids", []) or [])
+        if str(member_id).isdigit() and int(member_id) > 0
+    })
+    order_by_member_id = {
+        int(row["id"]): int(row["ordre_competicio"] or 10**9)
+        for row in (
+            Inscripcio.objects
+            .filter(id__in=member_ids)
+            .values("id", "ordre_competicio")
+        )
+    }
+    out: Dict[int, Tuple[int, str, int]] = {}
+    for subject in subjects:
+        member_orders = [
+            int(order_by_member_id.get(int(member_id), 10**9))
+            for member_id in list(getattr(subject, "member_ids", []) or [])
+            if str(member_id).isdigit() and int(member_id) > 0
+        ]
+        out[int(subject.id)] = (
+            min(member_orders or [10**9]),
+            str(getattr(getattr(subject, "context", None), "nom", "") or "").lower(),
+            int(subject.id),
+        )
+    return out
+
+
+def subject_ids_for_serie_filter(subject_map: Dict[int, dict], raw_serie_id) -> List[int]:
+    clean_map = {int(subject_id): dict(subject or {}) for subject_id, subject in (subject_map or {}).items()}
+    if raw_serie_id in (None, ""):
+        return list(clean_map.keys())
+    try:
+        clean_serie_id = int(raw_serie_id)
+    except Exception:
+        clean_serie_id = None
+    if clean_serie_id:
+        return [
+            subject_id
+            for subject_id, subject in clean_map.items()
+            if int(subject.get("serie_id") or 0) == clean_serie_id
+        ]
+    return [
+        subject_id
+        for subject_id, subject in clean_map.items()
+        if not subject.get("serie_id")
+    ]
+
+
 def get_series_cards_payload(
     competicio: Competicio,
     comp_aparell: CompeticioAparell,
@@ -198,7 +298,7 @@ def get_series_cards_payload(
     programmed_ids = set(int(x) for x in get_programmed_series_ids(competicio, comp_aparell))
     rows = []
     for serie in series:
-        items = sorted(members.get(int(serie.id), []), key=default_subject_order)
+        items = sorted(members.get(int(serie.id), []), key=assigned_subject_order)
         rows.append({
             "id": int(serie.id),
             "display_num": int(serie.display_num),
@@ -221,9 +321,10 @@ def ensure_serie(
     display_num: Optional[int] = None,
     name: str = "",
 ) -> SerieEquip:
+    serie_model = _serie_equip_model()
     clean_name = str(name or "").strip()
     display_num = int(display_num or next_serie_display_num(competicio, comp_aparell))
-    serie, _created = SerieEquip.objects.get_or_create(
+    serie, _created = serie_model.objects.get_or_create(
         competicio=competicio,
         comp_aparell=comp_aparell,
         display_num=display_num,
@@ -249,7 +350,11 @@ def _bulk_resequence_items(items: Sequence[SerieEquipItem]):
             row.ordre = idx
             updates.append(row)
     if updates:
-        SerieEquipItem.objects.bulk_update(updates, ["ordre"], batch_size=200)
+        _serie_equip_item_model().objects.bulk_update(updates, ["ordre"], batch_size=200)
+
+
+def _validate_item_or_raise(row: SerieEquipItem):
+    row.full_clean()
 
 
 @transaction.atomic
@@ -257,12 +362,15 @@ def assign_subjects_to_serie(
     serie: SerieEquip,
     subject_ids: Iterable[int],
 ) -> Dict[str, List[int]]:
+    team_subject_model = _team_subject_model()
+    serie_item_model = _serie_equip_item_model()
     clean_ids = normalize_subject_ids(subject_ids)
     if not clean_ids:
         return {"updated_ids": [], "skipped_ids": []}
 
     valid_subject_ids = set(
-        TeamCompetitiveSubject.objects
+        team_subject_model.objects
+        .select_for_update()
         .filter(
             competicio=serie.competicio,
             comp_aparell=serie.comp_aparell,
@@ -276,14 +384,15 @@ def assign_subjects_to_serie(
         return {"updated_ids": [], "skipped_ids": skipped_ids}
 
     existing_rows = list(
-        SerieEquipItem.objects
+        serie_item_model.objects
+        .select_for_update()
         .select_related("serie")
         .filter(team_subject_id__in=target_ids, serie__comp_aparell=serie.comp_aparell)
         .order_by("serie_id", "ordre", "id")
     )
     stale_ids = [row.id for row in existing_rows if int(row.serie_id) != int(serie.id)]
     if stale_ids:
-        SerieEquipItem.objects.filter(id__in=stale_ids).delete()
+        serie_item_model.objects.filter(id__in=stale_ids).delete()
 
     already_in_target = {
         int(row.team_subject_id)
@@ -291,21 +400,31 @@ def assign_subjects_to_serie(
         if int(row.serie_id) == int(serie.id)
     }
     next_order = (
-        SerieEquipItem.objects
+        serie_item_model.objects
         .filter(serie=serie)
         .aggregate(Max("ordre"))["ordre__max"]
         or 0
     )
+    subject_order_map = _subject_initial_order_map(target_ids)
     creates = []
     updated_ids = []
-    for subject_id in target_ids:
+    ordered_target_ids = sorted(
+        target_ids,
+        key=lambda subject_id: subject_order_map.get(
+            int(subject_id),
+            (10**9, "", int(subject_id)),
+        ),
+    )
+    for subject_id in ordered_target_ids:
         if subject_id in already_in_target:
             continue
         next_order += 1
-        creates.append(SerieEquipItem(serie=serie, team_subject_id=subject_id, ordre=next_order))
+        row = serie_item_model(serie=serie, team_subject_id=subject_id, ordre=next_order)
+        _validate_item_or_raise(row)
+        creates.append(row)
         updated_ids.append(subject_id)
     if creates:
-        SerieEquipItem.objects.bulk_create(creates, batch_size=200)
+        serie_item_model.objects.bulk_create(creates, batch_size=200)
 
     touched_series_ids = {int(serie.id)} | {
         int(getattr(row, "serie_id", 0) or 0)
@@ -313,7 +432,7 @@ def assign_subjects_to_serie(
         if getattr(row, "serie_id", None)
     }
     for serie_id in touched_series_ids:
-        rows = list(SerieEquipItem.objects.filter(serie_id=serie_id).order_by("ordre", "id"))
+        rows = list(serie_item_model.objects.filter(serie_id=serie_id).order_by("ordre", "id"))
         _bulk_resequence_items(rows)
 
     return {"updated_ids": updated_ids, "skipped_ids": skipped_ids}
@@ -321,11 +440,12 @@ def assign_subjects_to_serie(
 
 @transaction.atomic
 def unassign_subjects_from_series(competicio: Competicio, comp_aparell: CompeticioAparell, subject_ids: Iterable[int]) -> Dict[str, List[int]]:
+    serie_item_model = _serie_equip_item_model()
     clean_ids = normalize_subject_ids(subject_ids)
     if not clean_ids:
         return {"updated_ids": []}
     existing = list(
-        SerieEquipItem.objects
+        serie_item_model.objects
         .filter(team_subject_id__in=clean_ids, serie__competicio=competicio, serie__comp_aparell=comp_aparell)
         .order_by("serie_id", "ordre", "id")
     )
@@ -333,9 +453,9 @@ def unassign_subjects_from_series(competicio: Competicio, comp_aparell: Competic
         return {"updated_ids": []}
     serie_ids = {int(row.serie_id) for row in existing}
     updated_ids = [int(row.team_subject_id) for row in existing]
-    SerieEquipItem.objects.filter(id__in=[row.id for row in existing]).delete()
+    serie_item_model.objects.filter(id__in=[row.id for row in existing]).delete()
     for serie_id in serie_ids:
-        rows = list(SerieEquipItem.objects.filter(serie_id=serie_id).order_by("ordre", "id"))
+        rows = list(serie_item_model.objects.filter(serie_id=serie_id).order_by("ordre", "id"))
         _bulk_resequence_items(rows)
     return {"updated_ids": updated_ids}
 
@@ -343,7 +463,7 @@ def unassign_subjects_from_series(competicio: Competicio, comp_aparell: Competic
 @transaction.atomic
 def reorder_serie_subjects(serie: SerieEquip, subject_ids: Iterable[int]) -> List[int]:
     clean_ids = normalize_subject_ids(subject_ids)
-    rows = list(SerieEquipItem.objects.filter(serie=serie).order_by("ordre", "id"))
+    rows = list(_serie_equip_item_model().objects.filter(serie=serie).order_by("ordre", "id"))
     by_subject_id = {int(row.team_subject_id): row for row in rows}
     desired = [subject_id for subject_id in clean_ids if subject_id in by_subject_id]
     desired.extend([int(row.team_subject_id) for row in rows if int(row.team_subject_id) not in desired])
@@ -352,12 +472,98 @@ def reorder_serie_subjects(serie: SerieEquip, subject_ids: Iterable[int]) -> Lis
     return desired
 
 
+@transaction.atomic
 def safe_deactivate_empty_serie(serie: SerieEquip) -> Tuple[bool, str]:
-    has_items = SerieEquipItem.objects.filter(serie=serie).exists()
+    serie_model = _serie_equip_model()
+    locked = (
+        serie_model.objects
+        .select_for_update()
+        .filter(pk=getattr(serie, "pk", None))
+        .first()
+    )
+    if locked is None:
+        return False, "serie_invalid"
+    has_items = _serie_equip_item_model().objects.select_for_update().filter(serie=locked).exists()
     if has_items:
         return False, "serie_not_empty"
-    if not serie.actiu:
+    is_programmed = RotacioAssignacioSerieEquip.objects.select_for_update().filter(serie=locked).exists()
+    if is_programmed:
+        return False, "serie_programmed"
+    if not locked.actiu:
         return True, "already_inactive"
-    serie.actiu = False
-    serie.save(update_fields=["actiu", "updated_at"])
+    locked.actiu = False
+    locked.save(update_fields=["actiu", "updated_at"])
     return True, "deactivated"
+
+
+def series_plan_signature(preview: dict) -> str:
+    payload = {
+        "action": str(preview.get("action") or ""),
+        "serie_id": int(preview.get("serie_id") or 0),
+        "serie_label": str(preview.get("serie_label") or ""),
+        "can_run": bool(preview.get("can_run")),
+        "reason": str(preview.get("reason") or ""),
+        "counts": dict(preview.get("counts") or {}),
+        "requested_ids": [int(x) for x in list(preview.get("requested_ids") or [])],
+        "effective_subject_ids": [int(x) for x in list(preview.get("effective_subject_ids") or [])],
+        "invalid_selection_ids": [int(x) for x in list(preview.get("invalid_selection_ids") or [])],
+        "invalid_subject_ids": [int(x) for x in list(preview.get("invalid_subject_ids") or [])],
+        "source_series_ids": [int(x) for x in list(preview.get("source_series_ids") or [])],
+        "touched_series_ids": [int(x) for x in list(preview.get("touched_series_ids") or [])],
+    }
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def summarize_subject_selection(
+    competicio: Competicio,
+    comp_aparell: CompeticioAparell,
+    subject_ids: Iterable[int],
+) -> Dict[str, object]:
+    from .team_scoring import build_team_subjects_for_comp_aparell
+
+    team_subject_model = _team_subject_model()
+    clean_ids = normalize_subject_ids(subject_ids)
+    if not clean_ids:
+        return {
+            "requested_ids": [],
+            "valid_ids": [],
+            "invalid_ids": [],
+            "assigned_ids": [],
+            "unassigned_ids": [],
+            "invalid_subject_ids": [],
+        }
+
+    valid_subject_ids = set(
+        team_subject_model.objects
+        .filter(
+            competicio=competicio,
+            comp_aparell=comp_aparell,
+            id__in=clean_ids,
+        )
+        .values_list("id", flat=True)
+    )
+    subjects, _issues = build_team_subjects_for_comp_aparell(competicio, comp_aparell)
+    subject_map = {
+        int(subject["subject_id"]): dict(subject)
+        for subject in subjects
+        if int(subject["subject_id"]) in valid_subject_ids
+    }
+    valid_ids = [subject_id for subject_id in clean_ids if subject_id in valid_subject_ids]
+    invalid_ids = [subject_id for subject_id in clean_ids if subject_id not in valid_subject_ids]
+    assigned_ids = [subject_id for subject_id in valid_ids if subject_map.get(subject_id, {}).get("serie_id")]
+    unassigned_ids = [subject_id for subject_id in valid_ids if not subject_map.get(subject_id, {}).get("serie_id")]
+    invalid_subject_ids = [
+        subject_id
+        for subject_id in valid_ids
+        if str(subject_map.get(subject_id, {}).get("series_state") or "") == "invalid"
+    ]
+    return {
+        "requested_ids": clean_ids,
+        "valid_ids": valid_ids,
+        "invalid_ids": invalid_ids,
+        "assigned_ids": assigned_ids,
+        "unassigned_ids": unassigned_ids,
+        "invalid_subject_ids": invalid_subject_ids,
+        "subject_map": subject_map,
+    }

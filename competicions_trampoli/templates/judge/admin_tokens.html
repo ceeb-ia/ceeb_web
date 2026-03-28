@@ -25,6 +25,14 @@
     .token-video-toggle .custom-control-label::after {
       top: 0.08rem;
     }
+    .permission-member-slot {
+      min-width: 48px;
+    }
+    .permission-member-slot.is-active {
+      background: #0d6efd;
+      color: #fff;
+      border-color: #0d6efd;
+    }
   </style>
   <div class="card-surface">
     <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
@@ -144,17 +152,22 @@
                       <tr class="text-muted small">
                         <th style="min-width:240px;">Camp</th>
                         <th>Abast</th>
+                        {% if is_team_context_mode %}<th style="min-width:220px;">Membres</th>{% endif %}
                         <th>Jutge</th>
                         <th>Start</th>
                         <th>Count</th>
                         <th></th>
                       </tr>
                     </thead>
-                    <tbody id="permTbody" data-max-permissions="{{ max_permissions }}">
+                    <tbody id="permTbody" data-max-permissions="{{ max_permissions }}" data-team-context="{% if is_team_context_mode %}1{% else %}0{% endif %}">
                       {% for f in formset.forms %}
                       <tr class="perm-row">
                         <td>
                           {{ f.field_code }}
+                          {% if not is_team_context_mode %}
+                            {{ f.member_mode.as_hidden }}
+                            {{ f.member_slots }}
+                          {% endif %}
                           {% if f.field_code.errors %}
                             <div class="text-danger small mt-1">{{ f.field_code.errors }}</div>
                           {% endif %}
@@ -165,6 +178,28 @@
                             <div class="text-danger small mt-1">{{ f.scope.errors }}</div>
                           {% endif %}
                         </td>
+                        {% if is_team_context_mode %}
+                        <td>
+                          <div data-member-target="1">
+                            <div class="mb-1">{{ f.member_mode }}</div>
+                            {{ f.member_slots }}
+                            <div class="d-flex flex-wrap gap-1" data-member-slot-picker="1">
+                              {% for slot in member_slot_choices %}
+                                <label class="btn btn-sm btn-outline-secondary permission-member-slot" data-member-slot-label="1">
+                                  <input type="checkbox" class="d-none" value="{{ slot }}" data-member-slot-check="1">
+                                  M{{ slot }}
+                                </label>
+                              {% endfor %}
+                            </div>
+                            {% if f.member_mode.errors %}
+                              <div class="text-danger small mt-1">{{ f.member_mode.errors }}</div>
+                            {% endif %}
+                            {% if f.member_slots.errors %}
+                              <div class="text-danger small mt-1">{{ f.member_slots.errors }}</div>
+                            {% endif %}
+                          </div>
+                        </td>
+                        {% endif %}
                         <td>
                           {{ f.judge_index }}
                           {% if f.judge_index.errors %}
@@ -192,7 +227,7 @@
                       </tr>
                       {% if f.non_field_errors %}
                       <tr>
-                        <td colspan="6" class="pt-0">
+                        <td colspan="{% if is_team_context_mode %}7{% else %}6{% endif %}" class="pt-0">
                           <div class="text-danger small">{{ f.non_field_errors }}</div>
                         </td>
                       </tr>
@@ -204,8 +239,30 @@
 
                 <template id="permRowTemplate">
                   <tr class="perm-row">
-                    <td>{{ formset.empty_form.field_code }}</td>
+                    <td>
+                      {{ formset.empty_form.field_code }}
+                      {% if not is_team_context_mode %}
+                        {{ formset.empty_form.member_mode.as_hidden }}
+                        {{ formset.empty_form.member_slots }}
+                      {% endif %}
+                    </td>
                     <td>{{ formset.empty_form.scope }}</td>
+                    {% if is_team_context_mode %}
+                    <td>
+                      <div data-member-target="1">
+                        <div class="mb-1">{{ formset.empty_form.member_mode }}</div>
+                        {{ formset.empty_form.member_slots }}
+                        <div class="d-flex flex-wrap gap-1" data-member-slot-picker="1">
+                          {% for slot in member_slot_choices %}
+                            <label class="btn btn-sm btn-outline-secondary permission-member-slot" data-member-slot-label="1">
+                              <input type="checkbox" class="d-none" value="{{ slot }}" data-member-slot-check="1">
+                              M{{ slot }}
+                            </label>
+                          {% endfor %}
+                        </div>
+                      </div>
+                    </td>
+                    {% endif %}
                     <td>{{ formset.empty_form.judge_index }}</td>
                     <td>{{ formset.empty_form.item_start }}</td>
                     <td>{{ formset.empty_form.item_count }}</td>
@@ -220,6 +277,7 @@
 
                 <div class="text-muted small">
                   Notes: per camps tipus matrix (com E), Start/Count limita ítems. Per DD/TOF/HD/P (1 ítem) no cal.
+                  {% if is_team_context_mode %} Si el permís és `Individual`, pots apuntar-lo a tots els membres o a slots concrets `M1/M2/...`.{% endif %}
                   Màxim {{ max_permissions }} permisos per token.
                 </div>
               </div>
@@ -268,12 +326,9 @@
                         </td>
 
                         <td class="text-muted small" style="min-width:220px;">
-                          {% for p in t.permissions %}
+                          {% for p in t.permission_summaries %}
                             <div>
-                              <span class="badge bg-light text-dark">{{ p.field_code }}</span>
-                              <span class="badge bg-light text-dark">
-                                {% if p.scope == "member" %}Individual{% else %}Compartit{% endif %}
-                              </span>
+                              <span class="badge bg-light text-dark">{{ p.label }}</span>
                               <span class="badge bg-light text-dark">J{{ p.judge_index }}</span>
                               {% if p.item_count %}
                                 <span class="badge bg-light text-dark">{{ p.item_start }}..{{ p.item_start|add:p.item_count|add:"-1" }}</span>
@@ -335,6 +390,87 @@
     if (!tbody || !addBtn || !counter || !totalFormsInput || !rowTemplate) return;
 
     const maxPermissions = Number(tbody.dataset.maxPermissions || "10");
+    const isTeamContextMode = tbody.dataset.teamContext === "1";
+
+    function parseSlotsValue(rawValue) {
+      if (!rawValue) return [];
+      return String(rawValue)
+        .split(/[\s,;]+/)
+        .map((item) => String(item || "").trim().toUpperCase().replace(/^M/, ""))
+        .map((item) => Number(item))
+        .filter((item, idx, arr) => Number.isFinite(item) && item > 0 && arr.indexOf(item) === idx);
+    }
+
+    function bindPermissionRow(row) {
+      if (!isTeamContextMode || !row) return;
+      const scopeSelect = row.querySelector('select[name$="-scope"]');
+      const modeSelect = row.querySelector('select[name$="-member_mode"]');
+      const slotsInput = row.querySelector('input[name$="-member_slots"]');
+      const targetWrap = row.querySelector('[data-member-target="1"]');
+      if (!scopeSelect || !modeSelect || !slotsInput || !targetWrap) return;
+
+      const checks = Array.from(targetWrap.querySelectorAll('[data-member-slot-check="1"]'));
+      const labels = Array.from(targetWrap.querySelectorAll('[data-member-slot-label="1"]'));
+
+      function syncFromInput() {
+        const selected = parseSlotsValue(slotsInput.value);
+        checks.forEach((check) => {
+          const slot = Number(check.value || "0");
+          check.checked = selected.includes(slot);
+        });
+      }
+
+      function syncLabels() {
+        labels.forEach((label) => {
+          const check = label.querySelector('[data-member-slot-check="1"]');
+          const checked = !!(check && check.checked);
+          label.classList.toggle("is-active", checked);
+          label.classList.toggle("btn-outline-secondary", !checked);
+          label.classList.toggle("btn-primary", checked);
+        });
+      }
+
+      function syncToInput() {
+        let selected = checks
+          .filter((check) => check.checked)
+          .map((check) => Number(check.value || "0"))
+          .filter((slot) => Number.isFinite(slot) && slot > 0);
+        if (scopeSelect.value !== "member" || modeSelect.value === "all") {
+          selected = [];
+          checks.forEach((check) => { check.checked = false; });
+        } else if (modeSelect.value === "single" && selected.length > 1) {
+          selected = [selected[selected.length - 1]];
+          checks.forEach((check) => {
+            check.checked = selected.includes(Number(check.value || "0"));
+          });
+        }
+        slotsInput.value = selected.join(",");
+        syncLabels();
+      }
+
+      function refreshVisibility() {
+        const showTarget = scopeSelect.value === "member";
+        targetWrap.classList.toggle("d-none", !showTarget);
+        const disableChecks = !showTarget || modeSelect.value === "all";
+        checks.forEach((check) => {
+          check.disabled = disableChecks;
+        });
+        if (!showTarget || modeSelect.value === "all") {
+          slotsInput.value = "";
+        }
+        syncFromInput();
+        syncToInput();
+      }
+
+      scopeSelect.addEventListener("change", refreshVisibility);
+      modeSelect.addEventListener("change", refreshVisibility);
+      checks.forEach((check) => {
+        check.addEventListener("change", syncToInput);
+      });
+
+      syncFromInput();
+      refreshVisibility();
+    }
 
     function refreshCounter() {
       const total = Number(totalFormsInput.value || "0");
@@ -348,10 +484,12 @@
 
       const html = rowTemplate.innerHTML.replace(/__prefix__/g, String(total));
       tbody.insertAdjacentHTML("beforeend", html);
+      bindPermissionRow(tbody.lastElementChild);
       totalFormsInput.value = String(total + 1);
       refreshCounter();
     });
 
+    Array.from(tbody.querySelectorAll(".perm-row")).forEach(bindPermissionRow);
     refreshCounter();
   })();
 </script>

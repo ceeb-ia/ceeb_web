@@ -227,6 +227,20 @@ class SerieEquipItem(models.Model):
                 errors["team_subject"] = _("La unitat competitiva no pertany a la mateixa competicio.")
             if self.serie.comp_aparell_id != self.team_subject.comp_aparell_id:
                 errors["team_subject"] = _("La unitat competitiva no pertany a aquest aparell.")
+            conflict_qs = (
+                SerieEquipItem.objects
+                .filter(
+                    team_subject=self.team_subject,
+                    serie__competicio_id=self.serie.competicio_id,
+                    serie__comp_aparell_id=self.serie.comp_aparell_id,
+                    serie__actiu=True,
+                )
+                .exclude(pk=self.pk)
+            )
+            if conflict_qs.exists():
+                errors["team_subject"] = _(
+                    "La unitat competitiva ja esta assignada a una altra serie activa d'aquest aparell."
+                )
         if errors:
             raise ValidationError(errors)
 

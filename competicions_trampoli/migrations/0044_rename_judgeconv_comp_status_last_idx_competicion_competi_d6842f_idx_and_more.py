@@ -3,6 +3,16 @@
 from django.db import migrations
 
 
+def _rename_index(*, model_name, old_name, new_name):
+    if hasattr(migrations, "RenameIndex"):
+        return migrations.RenameIndex(
+            model_name=model_name,
+            old_name=old_name,
+            new_name=new_name,
+        )
+    return migrations.RunPython(migrations.RunPython.noop, migrations.RunPython.noop)
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -10,37 +20,37 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RenameIndex(
+        _rename_index(
             model_name='judgeconversation',
             new_name='competicion_competi_d6842f_idx',
             old_name='judgeconv_comp_status_last_idx',
         ),
-        migrations.RenameIndex(
+        _rename_index(
             model_name='judgeconversation',
             new_name='competicion_competi_10d6ca_idx',
             old_name='judgeconv_comp_unread_last_idx',
         ),
-        migrations.RenameIndex(
+        _rename_index(
             model_name='judgeconversation',
             new_name='competicion_judge_t_a5551d_idx',
             old_name='judgeconv_token_updated_idx',
         ),
-        migrations.RenameIndex(
+        _rename_index(
             model_name='judgeconversationmessage',
             new_name='competicion_convers_f3e682_idx',
             old_name='judgeconvmsg_conv_created_idx',
         ),
-        migrations.RenameIndex(
+        _rename_index(
             model_name='judgeconversationmessage',
             new_name='competicion_competi_19fc44_idx',
             old_name='judgeconvmsg_comp_created_idx',
         ),
-        migrations.RenameIndex(
+        _rename_index(
             model_name='judgeconversationmessage',
             new_name='competicion_judge_t_765e03_idx',
             old_name='judgeconvmsg_token_created_idx',
         ),
-        migrations.RenameIndex(
+        _rename_index(
             model_name='judgeconversationmessage',
             new_name='competicion_message_f3add4_idx',
             old_name='judgeconvmsg_type_created_idx',

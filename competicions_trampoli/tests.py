@@ -40,6 +40,7 @@ from .models_classificacions import ClassificacioConfig, ClassificacioTemplateGl
 from .models_rotacions import (
     RotacioAssignacio,
     RotacioAssignacioGrup,
+    RotacioAssignacioSerieEquip,
     RotacioEstacio,
     RotacioFranja,
 )
@@ -48,13 +49,17 @@ from .models_scoring import (
     ScoreEntry,
     ScoreEntryVideo,
     ScoreEntryVideoEvent,
+    SerieEquip,
+    SerieEquipItem,
     TeamScoreEntry,
+    TeamCompetitiveSubject,
     TeamScoreEntryVideo,
     TeamScoreEntryVideoEvent,
 )
 from .models_trampoli import (
     Aparell,
     CompeticioAparell,
+    CompeticioAparellEquipContextSource,
     InscripcioAparellExclusio,
 )
 from .models import CompeticioMembership
@@ -89,7 +94,14 @@ from .services.competition_groups import (
     move_inscripcio_to_group,
     next_group_display_num,
 )
-from .services.team_scoring import runtime_schema_for_comp_aparell
+from .services.team_scoring import (
+    build_permission_label,
+    build_team_subjects_for_comp_aparell,
+    resolve_permission_runtime_entries,
+    runtime_schema_for_comp_aparell,
+)
+from .services.team_series import safe_deactivate_empty_serie
+from .views_judge_admin import _validate_permission_row
 from .templatetags.competicio_extras import (
     DEFAULT_COMPETITION_BACKGROUND,
     get_competicio_background_url_from_request,
@@ -2788,6 +2800,12 @@ class InscripcioManualFormViewTests(_BaseTrampoliDataMixin, TestCase):
     def _edit_url(self, inscripcio):
         return reverse("inscripcio_edit", kwargs={"pk": self.comp.id, "ins_id": inscripcio.id})
 
+    def _add_url_with_context(self, context_code):
+        return f"{self._add_url()}?team_context={context_code}"
+
+    def _edit_url_with_context(self, inscripcio, context_code):
+        return f"{self._edit_url(inscripcio)}?team_context={context_code}"
+
     def test_create_form_uses_schema_fields_and_competition_scoped_choices(self):
         self.comp.inscripcions_schema = {
             "columns": [
@@ -3077,6 +3095,107 @@ class InscripcioManualFormViewTests(_BaseTrampoliDataMixin, TestCase):
                 "equip_choice",
                 "equip_altres",
             },
+        )
+
+    def test_create_form_custom_context_creates_contextual_assignment_without_touching_native_team(self):
+        team_ctx = EquipContext.objects.create(competicio=self.comp, code="finals", nom="Finals")
+        existing_team = Equip.objects.create(competicio=self.comp, nom="Equip Finals")
+
+        response = self.client.post(
+            self._add_url_with_context(team_ctx.code),
+            data={
+                "nom_i_cognoms": "Nova contextual",
+                "entitat_choice": "",
+                "categoria_choice": "",
+                "subcategoria_choice": "",
+                "grup_competicio_choice": "",
+                "equip_choice": str(existing_team.id),
+                "team_context": team_ctx.code,
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        inscripcio = Inscripcio.objects.get(competicio=self.comp, nom_i_cognoms="Nova contextual")
+        self.assertIsNone(inscripcio.equip_id)
+
+        assignacio = InscripcioEquipAssignacio.objects.get(
+            competicio=self.comp,
+            context=team_ctx,
+            inscripcio=inscripcio,
+        )
+        self.assertEqual(assignacio.equip_id, existing_team.id)
+        self.assertEqual(assignacio.origen, InscripcioEquipAssignacio.Origen.MANUAL)
+
+    def test_edit_form_custom_context_reads_contextual_team_and_shows_native_hint(self):
+        native_team = Equip.objects.create(competicio=self.comp, nom="Equip Base")
+        contextual_team = Equip.objects.create(competicio=self.comp, nom="Equip Finals")
+        team_ctx = EquipContext.objects.create(competicio=self.comp, code="finals", nom="Finals")
+        inscripcio = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Contextual",
+            equip=native_team,
+            ordre_sortida=1,
+        )
+        InscripcioEquipAssignacio.objects.create(
+            competicio=self.comp,
+            context=team_ctx,
+            inscripcio=inscripcio,
+            equip=contextual_team,
+        )
+
+        response = self.client.get(self._edit_url_with_context(inscripcio, team_ctx.code))
+
+        self.assertEqual(response.status_code, 200)
+        form = response.context["form"]
+        self.assertEqual(response.context["team_context_selected_code"], team_ctx.code)
+        self.assertEqual(form.fields["equip_choice"].label, "Equip (Finals)")
+        self.assertEqual(form["equip_choice"].value(), str(contextual_team.id))
+        self.assertEqual(response.context["team_native_hint"], "Equip Base")
+        self.assertContains(response, "Aquest formulari assignara l'equip al context")
+        self.assertContains(response, "Equip natiu actual: Equip Base")
+
+    def test_edit_form_custom_context_can_clear_assignment_without_changing_native_team(self):
+        native_team = Equip.objects.create(competicio=self.comp, nom="Equip Base")
+        contextual_team = Equip.objects.create(competicio=self.comp, nom="Equip Finals")
+        team_ctx = EquipContext.objects.create(competicio=self.comp, code="finals", nom="Finals")
+        inscripcio = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Treu contextual",
+            entitat="Club A",
+            categoria="Open",
+            subcategoria="Nivell 4",
+            equip=native_team,
+            ordre_sortida=1,
+        )
+        InscripcioEquipAssignacio.objects.create(
+            competicio=self.comp,
+            context=team_ctx,
+            inscripcio=inscripcio,
+            equip=contextual_team,
+        )
+
+        response = self.client.post(
+            self._edit_url_with_context(inscripcio, team_ctx.code),
+            data={
+                "nom_i_cognoms": "Treu contextual",
+                "entitat_choice": "Club A",
+                "categoria_choice": "Open",
+                "subcategoria_choice": "Nivell 4",
+                "grup_competicio_choice": "",
+                "equip_choice": "",
+                "team_context": team_ctx.code,
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        inscripcio.refresh_from_db()
+        self.assertEqual(inscripcio.equip_id, native_team.id)
+        self.assertFalse(
+            InscripcioEquipAssignacio.objects.filter(
+                competicio=self.comp,
+                context=team_ctx,
+                inscripcio=inscripcio,
+            ).exists()
         )
 
 
@@ -8706,6 +8825,20 @@ class EquipPreviewUiTests(_BaseTrampoliDataMixin, TestCase):
         self.assertContains(response, 'id="btn-team-compact-unassign"')
         self.assertContains(response, 'id="btn-team-compact-open-workspace"')
 
+    def test_inscripcions_list_renders_series_team_panel_navigation_and_shortcut(self):
+        response = self.client.get(reverse("inscripcions_list", kwargs={"pk": self.comp.id}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-panel-target="series-equips"')
+        self.assertContains(response, 'id="panel-series-equips"')
+        self.assertContains(response, 'id="series-main-card"')
+        self.assertContains(response, 'data-expand-card="series-main-card"')
+        self.assertContains(response, 'id="series-workspace-shell"')
+        self.assertContains(response, 'id="series-compact-actions"')
+        self.assertContains(response, 'id="btn-series-compact-open-workspace"')
+        self.assertContains(response, "Workspace de series")
+        self.assertContains(response, "Obrir sèries d'equip")
+
     def test_equips_workspace_returns_context_summary_candidates_and_filters(self):
         response = self.client.post(
             reverse("inscripcions_equips_workspace", kwargs={"pk": self.comp.id}),
@@ -9386,6 +9519,8 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
         )
         self.client.force_login(self.user)
         self.app = self._create_aparell("SYNC", "Sincronitzat")
+        self.app.competition_unit = Aparell.CompetitionUnit.TEAM
+        self.app.save(update_fields=["competition_unit"])
         self.comp_app = self._create_comp_aparell(self.comp, self.app, ordre=1)
         self.ctx = EquipContext.objects.create(
             competicio=self.comp,
@@ -9417,6 +9552,11 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.comp_app.expected_team_size = 2
         self.comp_app.team_scoring_mode = CompeticioAparell.TeamScoringMode.MEMBERS_PLUS_SHARED
         self.comp_app.save()
+        CompeticioAparellEquipContextSource.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            context=self.ctx,
+        )
 
     def _create_team_with_members(self, team_name, member_names, *, context=None, start_order=10):
         context = context or self.ctx
@@ -9432,6 +9572,31 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
             )
             members.append(ins)
         return equip, members
+
+    def _team_subject(self, equip=None):
+        equip = equip or self.equip
+        subjects, _issues = build_team_subjects_for_comp_aparell(self.comp, self.comp_app)
+        for subject in subjects:
+            if int(subject.get("equip_id") or 0) == int(equip.id):
+                subject_obj = TeamCompetitiveSubject.objects.get(pk=int(subject["subject_id"]))
+                return subject_obj, subject
+        self.fail(f"No s'ha trobat team_subject per a l'equip {equip.id}")
+
+    def _team_payload(self, equip=None, **extra):
+        subject_obj, _subject = self._team_subject(equip)
+        payload = {
+            "subject_kind": "team_unit",
+            "subject_id": subject_obj.id,
+        }
+        payload.update(extra)
+        return payload
+
+    def _post_json(self, url_name, payload, **kwargs):
+        return self.client.post(
+            reverse(url_name, kwargs={"pk": self.comp.id, **kwargs}),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
 
     def test_scoring_schema_full_clean_accepts_member_scope_for_team_context(self):
         schema = ScoringSchema(
@@ -9465,6 +9630,22 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertIn('<option value="drop_extremes_until_n">', body)
         self.assertIn('<option value="count">Comptar</option>', body)
         self.assertIn('<option value="med">Mediana</option>', body)
+
+    def test_team_subject_label_is_truncated_to_model_limit(self):
+        long_team_name = "Equip " + ("MoltLlarg" * 20)
+        long_members = [
+            "Participant " + ("Alpha" * 12),
+            "Participant " + ("Beta" * 12),
+            "Participant " + ("Gamma" * 12),
+        ]
+        equip, _members = self._create_team_with_members(long_team_name, long_members, start_order=50)
+
+        subject_obj, subject = self._team_subject(equip)
+
+        self.assertLessEqual(len(subject_obj.label), 255)
+        self.assertEqual(subject_obj.label, subject_obj.label.strip())
+        self.assertIn("Parelles", subject_obj.label)
+        self.assertIn("Equip", subject_obj.label)
 
     def test_scoring_schema_builder_get_exposes_saved_bootstrap_and_draft_key(self):
         schema = ScoringSchema.objects.create(
@@ -9558,14 +9739,15 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
                 ],
             },
         )
+        team_subject, _subject_meta = self._team_subject()
 
         response = self.client.post(
             reverse("scoring_save_partial", kwargs={"pk": self.comp.id}),
             data=json.dumps(
                 {
                     "comp_aparell_id": self.comp_app.id,
-                    "subject_kind": "equip",
-                    "subject_id": self.equip.id,
+                    "subject_kind": "team_unit",
+                    "subject_id": team_subject.id,
                     "exercici": 1,
                     "inputs_patch": {
                         "SYNC": 7.5,
@@ -9579,18 +9761,26 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
-        self.assertEqual(payload["subject_kind"], "equip")
-        self.assertEqual(payload["subject_id"], self.equip.id)
+        self.assertEqual(payload["subject_kind"], "team_unit")
+        self.assertEqual(payload["subject_id"], team_subject.id)
+        self.assertEqual(payload["inputs"]["E__m1"], 8.1)
+        self.assertEqual(payload["inputs"]["E__m2"], 8.2)
 
         entry = TeamScoreEntry.objects.get(
             competicio=self.comp,
             comp_aparell=self.comp_app,
-            equip=self.equip,
+            team_subject=team_subject,
             exercici=1,
         )
         self.assertEqual(float(entry.total), 23.8)
-        self.assertEqual(entry.inputs["E__m1"], 8.1)
-        self.assertEqual(entry.inputs["E__m2"], 8.2)
+        self.assertEqual(entry.inputs["SYNC"], 7.5)
+        self.assertEqual(
+            entry.inputs["E"],
+            {
+                str(team_subject.member_ids[0]): 8.1,
+                str(team_subject.member_ids[1]): 8.2,
+            },
+        )
 
     def test_scoring_save_rejects_individual_payload_for_team_context_app(self):
         ScoringSchema.objects.create(
@@ -9616,7 +9806,7 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
         )
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("subject_kind=equip", response.json()["error"])
+        self.assertIn("subject_kind=team_unit", response.json()["error"])
 
     def test_judge_save_partial_uses_team_subject_and_runtime_member_permission(self):
         ScoringSchema.objects.create(
@@ -9642,13 +9832,14 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
             ],
             is_active=True,
         )
+        team_subject, _subject_meta = self._team_subject()
 
         response = self.client.post(
             reverse("judge_save_partial", kwargs={"token": token.id}),
             data=json.dumps(
                 {
-                    "subject_kind": "equip",
-                    "subject_id": self.equip.id,
+                    "subject_kind": "team_unit",
+                    "subject_id": team_subject.id,
                     "exercici": 1,
                     "inputs_patch": {"SYNC": 6.4, "E__m2": 7.1},
                 }
@@ -9658,18 +9849,239 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
-        self.assertEqual(payload["subject_kind"], "equip")
-        self.assertEqual(payload["subject_id"], self.equip.id)
+        self.assertEqual(payload["subject_kind"], "team_unit")
+        self.assertEqual(payload["subject_id"], team_subject.id)
+        self.assertEqual(payload["inputs"]["SYNC"], 6.4)
+        self.assertEqual(payload["inputs"]["E__m2"], 7.1)
 
         entry = TeamScoreEntry.objects.get(
             competicio=self.comp,
             comp_aparell=self.comp_app,
-            equip=self.equip,
+            team_subject=team_subject,
             exercici=1,
         )
         self.assertEqual(entry.inputs["SYNC"], 6.4)
-        self.assertEqual(entry.inputs["E__m2"], 7.1)
-        self.assertEqual(entry.inputs["E__m1"], 0.0)
+        self.assertEqual(entry.inputs["E"][str(self.ins2.id)], 7.1)
+        self.assertEqual(entry.inputs["E"][str(self.ins1.id)], 0.0)
+
+    def test_permission_runtime_resolution_supports_member_modes_and_legacy_permissions(self):
+        all_entries = resolve_permission_runtime_entries(
+            {"field_code": "E", "scope": "member", "judge_index": 1, "member_mode": "all"},
+            self.comp_app,
+            member_count=2,
+        )
+        self.assertEqual([row["runtime_field_code"] for row in all_entries], ["E__m1", "E__m2"])
+
+        subset_entries = resolve_permission_runtime_entries(
+            {"field_code": "E", "scope": "member", "judge_index": 1, "member_mode": "subset", "member_slots": [1, 2]},
+            self.comp_app,
+            member_count=2,
+        )
+        self.assertEqual([row["runtime_field_code"] for row in subset_entries], ["E__m1", "E__m2"])
+        self.assertEqual(build_permission_label({"field_code": "E", "scope": "member", "member_mode": "subset", "member_slots": [1, 2]}), "E · Individual · M1,M2")
+
+        legacy_entries = resolve_permission_runtime_entries(
+            {"field_code": "E", "scope": "member", "judge_index": 1, "runtime_field_code": "E__m2"},
+            self.comp_app,
+            member_count=2,
+        )
+        self.assertEqual([row["runtime_field_code"] for row in legacy_entries], ["E__m2"])
+
+        missing_slot_entries = resolve_permission_runtime_entries(
+            {"field_code": "E", "scope": "member", "judge_index": 1, "member_mode": "subset", "member_slots": [3]},
+            self.comp_app,
+            member_count=2,
+        )
+        self.assertEqual(missing_slot_entries, [])
+
+    def test_validate_permission_row_rejects_invalid_member_targeting(self):
+        schema_by_code = {
+            "E": {"code": "E", "type": "number", "scope": "member", "judges": {"count": 1}},
+            "SYNC": {"code": "SYNC", "type": "number", "scope": "shared", "judges": {"count": 1}},
+        }
+
+        valid = _validate_permission_row(
+            schema_by_code,
+            {
+                "field_code": "E",
+                "scope": "member",
+                "judge_index": 1,
+                "member_mode": "single",
+                "member_slots": "2",
+            },
+            team_context_mode=True,
+        )
+        self.assertEqual(valid["member_mode"], "single")
+        self.assertEqual(valid["member_slots"], [2])
+
+        with self.assertRaisesMessage(ValueError, "exactament un membre"):
+            _validate_permission_row(
+                schema_by_code,
+                {
+                    "field_code": "E",
+                    "scope": "member",
+                    "judge_index": 1,
+                    "member_mode": "single",
+                    "member_slots": "1,2",
+                },
+                team_context_mode=True,
+            )
+
+        with self.assertRaisesMessage(ValueError, "almenys un membre"):
+            _validate_permission_row(
+                schema_by_code,
+                {
+                    "field_code": "E",
+                    "scope": "member",
+                    "judge_index": 1,
+                    "member_mode": "subset",
+                    "member_slots": "",
+                },
+                team_context_mode=True,
+            )
+
+        with self.assertRaisesMessage(ValueError, "nomes estan disponibles en aparells d'equip"):
+            _validate_permission_row(
+                schema_by_code,
+                {
+                    "field_code": "E",
+                    "scope": "member",
+                    "judge_index": 1,
+                    "member_mode": "all",
+                },
+                team_context_mode=False,
+            )
+
+    def test_judge_admin_create_token_stores_member_targeting(self):
+        ScoringSchema.objects.create(
+            aparell=self.app,
+            schema={
+                "meta": {"subject_mode": "team_context", "expected_team_size": 2},
+                "fields": [
+                    {"code": "SYNC", "label": "Sincronisme", "type": "number", "scope": "shared"},
+                    {"code": "E", "label": "Exec", "type": "number", "scope": "member"},
+                ],
+                "computed": [],
+            },
+        )
+
+        response = self.client.post(
+            f"{reverse('judges_qr_home', kwargs={'competicio_id': self.comp.id})}?comp_aparell={self.comp_app.id}",
+            data={
+                "action": "create",
+                "label": "Judge subset",
+                "form-TOTAL_FORMS": "1",
+                "form-INITIAL_FORMS": "0",
+                "form-MIN_NUM_FORMS": "0",
+                "form-MAX_NUM_FORMS": "15",
+                "form-0-field_code": "E",
+                "form-0-scope": "member",
+                "form-0-member_mode": "subset",
+                "form-0-member_slots": "1,2",
+                "form-0-judge_index": "1",
+                "form-0-item_start": "1",
+                "form-0-item_count": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        token = JudgeDeviceToken.objects.get(label="Judge subset")
+        self.assertEqual(token.permissions[0]["member_mode"], "subset")
+        self.assertEqual(token.permissions[0]["member_slots"], [1, 2])
+
+    def test_judge_portal_uses_team_dom_keys_and_member_target_metadata(self):
+        ScoringSchema.objects.create(
+            aparell=self.app,
+            schema={
+                "meta": {"subject_mode": "team_context", "expected_team_size": 2},
+                "fields": [
+                    {"code": "E", "label": "Exec", "type": "number", "scope": "member"},
+                ],
+                "computed": [],
+            },
+        )
+        token = JudgeDeviceToken.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            label="Team portal subset",
+            permissions=[
+                {"field_code": "E", "scope": "member", "judge_index": 1, "member_mode": "subset", "member_slots": [1, 2]},
+            ],
+            is_active=True,
+        )
+        team_subject, _subject_meta = self._team_subject()
+        TeamScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            team_subject=team_subject,
+            exercici=1,
+            inputs={
+                "E": {
+                    str(self.ins1.id): 8.1,
+                    str(self.ins2.id): 8.2,
+                }
+            },
+            outputs={},
+            total=0,
+        )
+
+        response = self.client.get(reverse("judge_portal", kwargs={"token": token.id}))
+
+        self.assertEqual(response.status_code, 200)
+        dom_key = f"team_unit:{team_subject.id}"
+        self.assertIn(dom_key, response.context["scores_payload_json"])
+        exercise_payload = response.context["scores_payload_json"][dom_key]["exercises"]["1"]["inputs"]
+        self.assertEqual(exercise_payload["E__m1"], 8.1)
+        self.assertEqual(exercise_payload["E__m2"], 8.2)
+        self.assertEqual(response.context["permissions"][0]["member_mode"], "subset")
+        self.assertEqual(response.context["permissions"][0]["member_slots"], [1, 2])
+
+    def test_judge_save_partial_accepts_member_mode_all_permissions(self):
+        ScoringSchema.objects.create(
+            aparell=self.app,
+            schema={
+                "meta": {"subject_mode": "team_context", "expected_team_size": 2},
+                "fields": [
+                    {"code": "E", "label": "Exec", "type": "number", "scope": "member"},
+                ],
+                "computed": [],
+            },
+        )
+        token = JudgeDeviceToken.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            label="Team Judge All Members",
+            permissions=[{"field_code": "E", "scope": "member", "judge_index": 1, "member_mode": "all"}],
+            is_active=True,
+        )
+        team_subject, _subject_meta = self._team_subject()
+
+        response = self.client.post(
+            reverse("judge_save_partial", kwargs={"token": token.id}),
+            data=json.dumps(
+                {
+                    "subject_kind": "team_unit",
+                    "subject_id": team_subject.id,
+                    "exercici": 1,
+                    "inputs_patch": {"E__m1": 8.4, "E__m2": 8.1},
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["inputs"]["E__m1"], 8.4)
+        self.assertEqual(payload["inputs"]["E__m2"], 8.1)
+
+        entry = TeamScoreEntry.objects.get(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            team_subject=team_subject,
+            exercici=1,
+        )
+        self.assertEqual(entry.inputs["E"][str(self.ins1.id)], 8.4)
+        self.assertEqual(entry.inputs["E"][str(self.ins2.id)], 8.1)
 
     def test_judge_save_partial_rejects_individual_payload_for_team_context_app(self):
         ScoringSchema.objects.create(
@@ -9701,15 +10113,16 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
         )
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("subject_kind=equip", response.json()["error"])
+        self.assertIn("subject_kind=team_unit", response.json()["error"])
 
     def test_scoring_media_context_accepts_team_subject(self):
+        team_subject, _subject_meta = self._team_subject()
         response = self.client.get(
             reverse("scoring_media_context", kwargs={"pk": self.comp.id}),
             {
                 "comp_aparell_id": self.comp_app.id,
-                "subject_kind": "equip",
-                "subject_id": self.equip.id,
+                "subject_kind": "team_unit",
+                "subject_id": team_subject.id,
                 "exercici": 1,
             },
         )
@@ -9717,8 +10130,8 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertTrue(payload["ok"])
-        self.assertEqual(payload["subject"]["kind"], "equip")
-        self.assertEqual(payload["subject"]["id"], self.equip.id)
+        self.assertEqual(payload["subject"]["kind"], "team_unit")
+        self.assertEqual(payload["subject"]["id"], team_subject.id)
 
     def test_judge_video_endpoints_support_team_subjects(self):
         token = JudgeDeviceToken.objects.create(
@@ -9729,6 +10142,7 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
             can_record_video=True,
             is_active=True,
         )
+        team_subject, _subject_meta = self._team_subject()
         probe_data = {
             "duration_seconds": 9,
             "mime_type": "video/mp4",
@@ -9740,8 +10154,8 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
             upload_res = self.client.post(
                 reverse("judge_video_upload", kwargs={"token": token.id}),
                 data={
-                    "subject_kind": "equip",
-                    "subject_id": self.equip.id,
+                    "subject_kind": "team_unit",
+                    "subject_id": team_subject.id,
                     "exercici": 1,
                     "video_file": SimpleUploadedFile("team.mp4", b"\x00" * 1024, content_type="video/mp4"),
                 },
@@ -9750,13 +10164,13 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(upload_res.status_code, 200)
         upload_payload = upload_res.json()
         self.assertTrue(upload_payload["ok"])
-        self.assertEqual(upload_payload["subject_kind"], "equip")
-        self.assertEqual(upload_payload["subject_id"], self.equip.id)
+        self.assertEqual(upload_payload["subject_kind"], "team_unit")
+        self.assertEqual(upload_payload["subject_id"], team_subject.id)
 
         entry = TeamScoreEntry.objects.get(
             competicio=self.comp,
             comp_aparell=self.comp_app,
-            equip=self.equip,
+            team_subject=team_subject,
             exercici=1,
         )
         self.assertTrue(TeamScoreEntryVideo.objects.filter(team_score_entry=entry).exists())
@@ -9770,14 +10184,14 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
 
         status_res = self.client.get(
             reverse("judge_video_status", kwargs={"token": token.id}),
-            {"subject_kind": "equip", "subject_id": self.equip.id, "exercici": 1},
+            {"subject_kind": "team_unit", "subject_id": team_subject.id, "exercici": 1},
         )
         self.assertEqual(status_res.status_code, 200)
         self.assertTrue(status_res.json()["has_video"])
 
         delete_res = self.client.post(
             reverse("judge_video_delete", kwargs={"token": token.id}),
-            {"subject_kind": "equip", "subject_id": self.equip.id, "exercici": 1},
+            {"subject_kind": "team_unit", "subject_id": team_subject.id, "exercici": 1},
         )
         self.assertEqual(delete_res.status_code, 200)
         self.assertTrue(delete_res.json()["deleted"])
@@ -9792,10 +10206,11 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
                 "computed": [],
             },
         )
+        team_subject, _subject_meta = self._team_subject()
         TeamScoreEntry.objects.create(
             competicio=self.comp,
             comp_aparell=self.comp_app,
-            equip=self.equip,
+            team_subject=team_subject,
             exercici=1,
             inputs={"TOTAL": 30},
             outputs={},
@@ -9886,12 +10301,14 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertIn("expected_team_size", form.errors)
         self.assertIn("team_scoring_mode", form.errors)
 
-    def test_scoring_updates_omits_ineligible_team_entries(self):
+    def test_scoring_updates_include_invalid_team_entries_with_series_state(self):
         invalid_team, _members = self._create_team_with_members("Parella incompleta", ["Berta"], start_order=20)
+        team_subject, _subject_meta = self._team_subject()
+        invalid_team_subject, _invalid_meta = self._team_subject(invalid_team)
         TeamScoreEntry.objects.create(
             competicio=self.comp,
             comp_aparell=self.comp_app,
-            equip=self.equip,
+            team_subject=team_subject,
             exercici=1,
             inputs={"SYNC": 5},
             outputs={},
@@ -9900,7 +10317,7 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
         TeamScoreEntry.objects.create(
             competicio=self.comp,
             comp_aparell=self.comp_app,
-            equip=invalid_team,
+            team_subject=invalid_team_subject,
             exercici=1,
             inputs={"SYNC": 9},
             outputs={},
@@ -9916,16 +10333,149 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
         )
         self.assertEqual(res.status_code, 200)
         updates = res.json().get("updates", [])
-        self.assertEqual({u["subject_id"] for u in updates}, {self.equip.id})
+        self.assertEqual({u["subject_id"] for u in updates}, {team_subject.id, invalid_team_subject.id})
+        by_id = {int(row["subject_id"]): row for row in updates}
+        self.assertEqual(by_id[team_subject.id]["series_state"], "unassigned")
+        self.assertEqual(by_id[invalid_team_subject.id]["series_state"], "invalid")
+
+    def test_scoring_notes_home_renders_team_schema_without_nameerror(self):
+        ScoringSchema.objects.create(
+            aparell=self.app,
+            schema={
+                "meta": {"subject_mode": "team_context", "expected_team_size": 2},
+                "fields": [
+                    {"code": "SYNC", "label": "Sincronisme", "type": "number", "scope": "shared"},
+                    {"code": "E", "label": "Exec", "type": "number", "scope": "member"},
+                ],
+                "computed": [
+                    {"code": "TOTAL", "label": "Total", "formula": "SYNC + E__m1 + E__m2"},
+                ],
+            },
+        )
+
+        response = self.client.get(reverse("scoring_notes_home", kwargs={"pk": self.comp.id}))
+
+        self.assertEqual(response.status_code, 200)
+        schema = response.context["schemas"][str(self.comp_app.id)]
+        self.assertIn("E__m1", {field["code"] for field in schema["fields"]})
+        self.assertIn("E__m2", {field["code"] for field in schema["fields"]})
+
+    def test_inscripcions_list_exposes_series_panel_navigation(self):
+        response = self.client.get(reverse("inscripcions_list", kwargs={"pk": self.comp.id}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-panel-target="series-equips"')
+        self.assertContains(response, 'id="panel-series-equips"')
+
+    def test_series_preview_signature_is_required_for_selection_actions(self):
+        equip2, _members2 = self._create_team_with_members("Parella 2", ["Nora", "Marta"], start_order=30)
+        subject_1, _meta_1 = self._team_subject()
+        subject_2, _meta_2 = self._team_subject(equip2)
+        serie = SerieEquip.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            display_num=1,
+            nom="Serie A",
+        )
+        SerieEquipItem.objects.create(serie=serie, team_subject=subject_1, ordre=1)
+
+        preview_res = self._post_json(
+            "inscripcions_series_equips_preview",
+            {
+                "comp_aparell_id": self.comp_app.id,
+                "action": "assign",
+                "serie_id": serie.id,
+                "selected_ids": [subject_2.id],
+            },
+        )
+        self.assertEqual(preview_res.status_code, 200)
+        plan_signature = preview_res.json()["preview"]["plan_signature"]
+
+        missing_signature_res = self._post_json(
+            "inscripcions_series_equips_assign",
+            {
+                "comp_aparell_id": self.comp_app.id,
+                "serie_id": serie.id,
+                "selected_ids": [subject_2.id],
+            },
+        )
+        self.assertEqual(missing_signature_res.status_code, 400)
+
+        stale_signature_res = self._post_json(
+            "inscripcions_series_equips_assign",
+            {
+                "comp_aparell_id": self.comp_app.id,
+                "serie_id": serie.id,
+                "selected_ids": [subject_2.id],
+                "plan_signature": "stale-signature",
+            },
+        )
+        self.assertEqual(stale_signature_res.status_code, 400)
+
+        assign_res = self._post_json(
+            "inscripcions_series_equips_assign",
+            {
+                "comp_aparell_id": self.comp_app.id,
+                "serie_id": serie.id,
+                "selected_ids": [subject_2.id],
+                "plan_signature": plan_signature,
+            },
+        )
+        self.assertEqual(assign_res.status_code, 200)
+
+    def test_series_delete_is_blocked_while_programmed(self):
+        serie = SerieEquip.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            display_num=1,
+            nom="Serie Buida",
+        )
+        franja = RotacioFranja.objects.create(
+            competicio=self.comp,
+            hora_inici=timezone.datetime(2025, 1, 1, 9, 0).time(),
+            hora_fi=timezone.datetime(2025, 1, 1, 10, 0).time(),
+            ordre=1,
+            titol="Franja 1",
+        )
+        estacio = RotacioEstacio.objects.create(
+            competicio=self.comp,
+            tipus="aparell",
+            comp_aparell=self.comp_app,
+            ordre=1,
+        )
+        assignacio = RotacioAssignacio.objects.create(
+            competicio=self.comp,
+            franja=franja,
+            estacio=estacio,
+        )
+        RotacioAssignacioSerieEquip.objects.create(assignacio=assignacio, serie=serie, ordre=1)
+
+        preview_res = self._post_json(
+            "inscripcions_series_equips_preview",
+            {
+                "comp_aparell_id": self.comp_app.id,
+                "action": "delete",
+                "serie_id": serie.id,
+            },
+        )
+        self.assertEqual(preview_res.status_code, 200)
+        preview = preview_res.json()["preview"]
+        self.assertFalse(preview["can_run"])
+        self.assertEqual(preview["reason"], "serie_programmed")
+
+        ok, reason = safe_deactivate_empty_serie(serie)
+        self.assertFalse(ok)
+        self.assertEqual(reason, "serie_programmed")
 
     def test_scoring_media_context_rejects_ineligible_team_subject(self):
         invalid_team, _members = self._create_team_with_members("Parella incompleta", ["Berta"], start_order=20)
+        invalid_team_subject, _invalid_meta = self._team_subject(invalid_team)
         res = self.client.get(
             reverse("scoring_media_context", kwargs={"pk": self.comp.id}),
             {
                 "comp_aparell_id": self.comp_app.id,
-                "subject_kind": "equip",
-                "subject_id": invalid_team.id,
+                "subject_kind": "team_unit",
+                "subject_id": invalid_team_subject.id,
                 "exercici": 1,
             },
         )
@@ -9933,10 +10483,12 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
 
     def test_scoring_notes_home_exposes_canonical_score_keys_and_invalid_teams(self):
         invalid_team, _members = self._create_team_with_members("Parella incompleta", ["Berta"], start_order=20)
+        team_subject, _subject_meta = self._team_subject()
+        invalid_team_subject, _invalid_meta = self._team_subject(invalid_team)
         TeamScoreEntry.objects.create(
             competicio=self.comp,
             comp_aparell=self.comp_app,
-            equip=self.equip,
+            team_subject=team_subject,
             exercici=1,
             inputs={"SYNC": 5},
             outputs={},
@@ -9945,17 +10497,19 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
         response = self.client.get(reverse("scoring_notes_home", kwargs={"pk": self.comp.id}))
         self.assertEqual(response.status_code, 200)
         scores = response.context["scores"]
-        self.assertIn(f"equip:{self.equip.id}|1|{self.comp_app.id}", scores)
+        self.assertIn(f"team_unit:{team_subject.id}|1|{self.comp_app.id}", scores)
         subjects = {str(item["id"]): item for item in response.context["inscripcions"]}
-        self.assertIn(f"equip:{invalid_team.id}", subjects)
-        self.assertTrue(subjects[f"equip:{invalid_team.id}"]["invalid_reasons"])
+        self.assertIn(f"team_unit:{invalid_team_subject.id}", subjects)
+        self.assertTrue(subjects[f"team_unit:{invalid_team_subject.id}"]["invalid_reasons"])
 
     def test_compute_classificacio_team_tie_break_uses_team_score_entries(self):
         equip2, members2 = self._create_team_with_members("Parella 2", ["Nora", "Marta"], start_order=30)
+        team_subject, _subject_meta = self._team_subject()
+        team_subject_2, _subject_meta_2 = self._team_subject(equip2)
         TeamScoreEntry.objects.create(
             competicio=self.comp,
             comp_aparell=self.comp_app,
-            equip=self.equip,
+            team_subject=team_subject,
             exercici=1,
             inputs={"TOTAL": 30},
             outputs={"SYNC": 9},
@@ -9964,7 +10518,7 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
         TeamScoreEntry.objects.create(
             competicio=self.comp,
             comp_aparell=self.comp_app,
-            equip=equip2,
+            team_subject=team_subject_2,
             exercici=1,
             inputs={"TOTAL": 30},
             outputs={"SYNC": 8},
@@ -10011,6 +10565,724 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
         )
         rows = compute_classificacio(self.comp, cfg).get("global", [])
         self.assertEqual([row["participant"] for row in rows[:2]], ["Parella 1", "Parella 2"])
+
+    def test_series_workspace_respects_persistent_order_and_hides_inactive_series(self):
+        equip2, _members2 = self._create_team_with_members("Parella 2", ["Nora", "Marta"], start_order=30)
+        equip3, _members3 = self._create_team_with_members("Parella 3", ["Jana", "Paula"], start_order=40)
+        subject_1, _meta_1 = self._team_subject()
+        subject_2, _meta_2 = self._team_subject(equip2)
+        subject_3, _meta_3 = self._team_subject(equip3)
+
+        create_preview_res = self._post_json(
+            "inscripcions_series_equips_preview",
+            {
+                "comp_aparell_id": self.comp_app.id,
+                "action": "create",
+                "name": "Serie Alpha",
+                "selected_ids": [subject_1.id, subject_2.id, subject_3.id],
+            },
+        )
+        self.assertEqual(create_preview_res.status_code, 200)
+        create_plan_signature = create_preview_res.json()["preview"]["plan_signature"]
+
+        create_res = self._post_json(
+            "inscripcions_series_equips_create",
+            {
+                "comp_aparell_id": self.comp_app.id,
+                "name": "Serie Alpha",
+                "selected_ids": [subject_1.id, subject_2.id, subject_3.id],
+                "plan_signature": create_plan_signature,
+            },
+        )
+        self.assertEqual(create_res.status_code, 200)
+        serie = SerieEquip.objects.get(pk=create_res.json()["serie_id"])
+
+        reorder_res = self._post_json(
+            "inscripcions_series_equips_reorder",
+            {
+                "comp_aparell_id": self.comp_app.id,
+                "serie_id": serie.id,
+                "subject_ids": [subject_3.id, subject_1.id, subject_2.id],
+            },
+        )
+        self.assertEqual(reorder_res.status_code, 200)
+
+        empty_res = self._post_json(
+            "inscripcions_series_equips_create",
+            {
+                "comp_aparell_id": self.comp_app.id,
+                "name": "Serie Buida",
+                "selected_ids": [],
+            },
+        )
+        self.assertEqual(empty_res.status_code, 200)
+        empty_serie_id = empty_res.json()["serie_id"]
+        delete_preview_res = self._post_json(
+            "inscripcions_series_equips_preview",
+            {
+                "comp_aparell_id": self.comp_app.id,
+                "action": "delete",
+                "serie_id": empty_serie_id,
+            },
+        )
+        self.assertEqual(delete_preview_res.status_code, 200)
+        delete_plan_signature = delete_preview_res.json()["preview"]["plan_signature"]
+        delete_res = self._post_json(
+            "inscripcions_series_equips_delete",
+            {
+                "comp_aparell_id": self.comp_app.id,
+                "serie_id": empty_serie_id,
+                "plan_signature": delete_plan_signature,
+            },
+        )
+        self.assertEqual(delete_res.status_code, 200)
+
+        workspace_res = self._post_json(
+            "inscripcions_series_equips_workspace",
+            {"comp_aparell_id": self.comp_app.id},
+        )
+        self.assertEqual(workspace_res.status_code, 200)
+        workspace = workspace_res.json()["workspace"]
+        self.assertEqual([row["id"] for row in workspace["series"]], [serie.id])
+        self.assertEqual(
+            [row["subject_id"] for row in workspace["series"][0]["subjects"]],
+            [subject_3.id, subject_1.id, subject_2.id],
+        )
+        self.assertFalse(SerieEquip.objects.get(pk=empty_serie_id).actiu)
+
+    def test_series_workspace_and_detail_include_compact_fields(self):
+        equip2, _members2 = self._create_team_with_members("Parella 2", ["Nora", "Marta"], start_order=30)
+        subject_1, _meta_1 = self._team_subject()
+        subject_2, _meta_2 = self._team_subject(equip2)
+        serie = SerieEquip.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            display_num=1,
+            nom="Serie Compacta",
+        )
+        SerieEquipItem.objects.create(serie=serie, team_subject=subject_2, ordre=1)
+
+        workspace_res = self._post_json(
+            "inscripcions_series_equips_workspace",
+            {"comp_aparell_id": self.comp_app.id},
+        )
+        self.assertEqual(workspace_res.status_code, 200)
+        workspace = workspace_res.json()["workspace"]
+
+        candidate = next(row for row in workspace["candidates"]["items"] if row["subject_id"] == subject_2.id)
+        self.assertEqual(candidate["members_count"], 2)
+        self.assertEqual(candidate["members_preview"], "Nora + Marta")
+        self.assertIn("2 membres", candidate["compact_meta"])
+
+        serie_row = workspace["series"][0]
+        self.assertEqual(serie_row["summary_label"], "Serie Compacta · 1 unitat · no programada")
+        self.assertEqual(serie_row["subjects"][0]["members_preview"], "Nora + Marta")
+        self.assertEqual(serie_row["subjects"][0]["members_count"], 2)
+
+        detail_res = self._post_json(
+            "inscripcions_series_equips_detail",
+            {"comp_aparell_id": self.comp_app.id, "serie_id": serie.id},
+        )
+        self.assertEqual(detail_res.status_code, 200)
+        detail = detail_res.json()["serie"]
+        self.assertEqual(detail["summary_label"], "Serie Compacta · 1 unitat · no programada")
+        self.assertEqual(detail["subjects"][0]["members_preview"], "Nora + Marta")
+        self.assertEqual(detail["subjects"][0]["members_count"], 2)
+
+    def test_series_assignment_moves_subject_between_active_series(self):
+        subject_1, _meta_1 = self._team_subject()
+        serie_a = SerieEquip.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            display_num=1,
+            nom="Serie A",
+        )
+        serie_b = SerieEquip.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            display_num=2,
+            nom="Serie B",
+        )
+        SerieEquipItem.objects.create(serie=serie_a, team_subject=subject_1, ordre=1)
+
+        preview_res = self._post_json(
+            "inscripcions_series_equips_preview",
+            {
+                "comp_aparell_id": self.comp_app.id,
+                "action": "assign",
+                "serie_id": serie_b.id,
+                "selected_ids": [subject_1.id],
+            },
+        )
+        self.assertEqual(preview_res.status_code, 200)
+        plan_signature = preview_res.json()["preview"]["plan_signature"]
+
+        assign_res = self._post_json(
+            "inscripcions_series_equips_assign",
+            {
+                "comp_aparell_id": self.comp_app.id,
+                "serie_id": serie_b.id,
+                "selected_ids": [subject_1.id],
+                "plan_signature": plan_signature,
+            },
+        )
+        self.assertEqual(assign_res.status_code, 200)
+        self.assertFalse(SerieEquipItem.objects.filter(serie=serie_a, team_subject=subject_1).exists())
+        self.assertTrue(SerieEquipItem.objects.filter(serie=serie_b, team_subject=subject_1).exists())
+        self.assertEqual(SerieEquipItem.objects.filter(team_subject=subject_1).count(), 1)
+
+    def test_series_preview_updates_and_exports_use_team_unit_contract(self):
+        equip2, _members2 = self._create_team_with_members("Parella 2", ["Nora", "Marta"], start_order=30)
+        subject_1, _meta_1 = self._team_subject()
+        subject_2, _meta_2 = self._team_subject(equip2)
+        serie = SerieEquip.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            display_num=1,
+            nom="Serie A",
+        )
+        SerieEquipItem.objects.create(serie=serie, team_subject=subject_1, ordre=1)
+
+        preview_res = self._post_json(
+            "inscripcions_series_equips_preview",
+            {
+                "comp_aparell_id": self.comp_app.id,
+                "action": "assign",
+                "serie_id": serie.id,
+                "selected_ids": [subject_2.id],
+            },
+        )
+        self.assertEqual(preview_res.status_code, 200)
+        self.assertTrue(preview_res.json()["preview"]["can_run"])
+        self.assertTrue(preview_res.json()["preview"]["plan_signature"])
+
+        TeamScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            team_subject=subject_1,
+            exercici=1,
+            inputs={"SYNC": 5},
+            outputs={},
+            total=5,
+        )
+        TeamScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            team_subject=subject_2,
+            exercici=1,
+            inputs={"SYNC": 7},
+            outputs={},
+            total=7,
+        )
+
+        scoring_res = self.client.get(
+            reverse("scoring_updates", kwargs={"pk": self.comp.id}),
+            {
+                "since": (timezone.now() - timedelta(minutes=10)).isoformat(),
+                "comp_aparell_id": self.comp_app.id,
+                "serie_id": serie.id,
+            },
+        )
+        self.assertEqual(scoring_res.status_code, 200)
+        scoring_updates = scoring_res.json()["updates"]
+        self.assertEqual({row["subject_kind"] for row in scoring_updates}, {"team_unit"})
+        self.assertEqual({row["subject_id"] for row in scoring_updates}, {subject_1.id})
+        self.assertEqual(scoring_updates[0]["serie_id"], serie.id)
+        self.assertEqual(scoring_updates[0]["series_state"], "assigned")
+
+        token = JudgeDeviceToken.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            label="Team Judge Series",
+            permissions=[{"field_code": "SYNC", "runtime_field_code": "SYNC", "scope": "shared", "judge_index": 1}],
+            is_active=True,
+        )
+        judge_res = self.client.get(
+            reverse("judge_updates", kwargs={"token": token.id}),
+            {
+                "since": (timezone.now() - timedelta(minutes=10)).isoformat(),
+                "exercici": 1,
+                "serie_id": serie.id,
+            },
+        )
+        self.assertEqual(judge_res.status_code, 200)
+        judge_updates = judge_res.json()["updates"]
+        self.assertEqual({row["subject_kind"] for row in judge_updates}, {"team_unit"})
+        self.assertEqual({row["subject_id"] for row in judge_updates}, {subject_1.id})
+        self.assertEqual(judge_updates[0]["serie_id"], serie.id)
+        self.assertEqual(judge_updates[0]["series_state"], "assigned")
+
+        start_list_res = self.client.get(
+            reverse("inscripcions_series_equips_start_list_export", kwargs={"pk": self.comp.id}),
+            {"comp_aparell_id": self.comp_app.id},
+        )
+        self.assertEqual(start_list_res.status_code, 200)
+        self.assertIn("series_start_list", start_list_res["Content-Disposition"])
+
+        work_sheet_res = self.client.get(
+            reverse("inscripcions_series_equips_work_sheet_export", kwargs={"pk": self.comp.id}),
+            {"comp_aparell_id": self.comp_app.id, "serie_id": serie.id},
+        )
+        self.assertEqual(work_sheet_res.status_code, 200)
+        self.assertIn("serie_work_sheet", work_sheet_res["Content-Disposition"])
+        workbook = load_workbook(BytesIO(work_sheet_res.content))
+        ws = workbook.active
+        values = [row[1] for row in ws.iter_rows(min_row=4, values_only=True) if row and row[1]]
+        self.assertEqual(values[:1], [subject_1.label])
+
+    def test_series_assign_requires_preview_signature(self):
+        subject_1, _meta_1 = self._team_subject()
+        equip2, _members2 = self._create_team_with_members("Parella 2", ["Nora", "Marta"], start_order=30)
+        subject_2, _meta_2 = self._team_subject(equip2)
+        serie = SerieEquip.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            display_num=1,
+            nom="Serie A",
+        )
+        SerieEquipItem.objects.create(serie=serie, team_subject=subject_1, ordre=1)
+
+        missing_preview_res = self._post_json(
+            "inscripcions_series_equips_assign",
+            {
+                "comp_aparell_id": self.comp_app.id,
+                "serie_id": serie.id,
+                "selected_ids": [subject_2.id],
+            },
+        )
+        self.assertEqual(missing_preview_res.status_code, 400)
+        self.assertContains(missing_preview_res, "preview required", status_code=400)
+
+        preview_res = self._post_json(
+            "inscripcions_series_equips_preview",
+            {
+                "comp_aparell_id": self.comp_app.id,
+                "action": "assign",
+                "serie_id": serie.id,
+                "selected_ids": [subject_2.id],
+            },
+        )
+        self.assertEqual(preview_res.status_code, 200)
+        plan_signature = preview_res.json()["preview"]["plan_signature"]
+
+        assign_res = self._post_json(
+            "inscripcions_series_equips_assign",
+            {
+                "comp_aparell_id": self.comp_app.id,
+                "serie_id": serie.id,
+                "selected_ids": [subject_2.id],
+                "plan_signature": plan_signature,
+            },
+        )
+        self.assertEqual(assign_res.status_code, 200)
+        self.assertTrue(SerieEquipItem.objects.filter(serie=serie, team_subject=subject_2).exists())
+
+    def test_scoring_and_judge_updates_include_invalid_team_subjects(self):
+        invalid_team, _members = self._create_team_with_members("Parella incompleta", ["Berta"], start_order=20)
+        invalid_team_subject, _invalid_meta = self._team_subject(invalid_team)
+        TeamScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            team_subject=invalid_team_subject,
+            exercici=1,
+            inputs={"SYNC": 4.0},
+            outputs={},
+            total=4.0,
+        )
+
+        scoring_res = self.client.get(
+            reverse("scoring_updates", kwargs={"pk": self.comp.id}),
+            {
+                "since": (timezone.now() - timedelta(minutes=10)).isoformat(),
+                "comp_aparell_id": self.comp_app.id,
+            },
+        )
+        self.assertEqual(scoring_res.status_code, 200)
+        scoring_updates = {int(row["subject_id"]): row for row in scoring_res.json()["updates"]}
+        self.assertEqual(scoring_updates[invalid_team_subject.id]["series_state"], "invalid")
+        self.assertIsNone(scoring_updates[invalid_team_subject.id]["serie_id"])
+
+        token = JudgeDeviceToken.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            label="Team Judge Invalid Bucket",
+            permissions=[{"field_code": "SYNC", "runtime_field_code": "SYNC", "scope": "shared", "judge_index": 1}],
+            is_active=True,
+        )
+        judge_res = self.client.get(
+            reverse("judge_updates", kwargs={"token": token.id}),
+            {
+                "since": (timezone.now() - timedelta(minutes=10)).isoformat(),
+                "exercici": 1,
+            },
+        )
+        self.assertEqual(judge_res.status_code, 200)
+        judge_updates = {int(row["subject_id"]): row for row in judge_res.json()["updates"]}
+        self.assertEqual(judge_updates[invalid_team_subject.id]["series_state"], "invalid")
+        self.assertIsNone(judge_updates[invalid_team_subject.id]["serie_id"])
+
+    def test_series_delete_blocks_programmed_empty_serie(self):
+        serie = SerieEquip.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            display_num=1,
+            nom="Serie Programada",
+        )
+        franja = RotacioFranja.objects.create(
+            competicio=self.comp,
+            hora_inici=timezone.datetime(2025, 1, 1, 9, 0).time(),
+            hora_fi=timezone.datetime(2025, 1, 1, 10, 0).time(),
+            ordre=1,
+            titol="Franja 1",
+        )
+        estacio = RotacioEstacio.objects.create(
+            competicio=self.comp,
+            tipus="aparell",
+            comp_aparell=self.comp_app,
+            ordre=1,
+        )
+        save_res = self._post_json(
+            "rotacions_save",
+            {
+                "cells": [
+                    {
+                        "franja": franja.id,
+                        "estacio": estacio.id,
+                        "items": [f"s:{serie.id}"],
+                    }
+                ],
+            },
+        )
+        self.assertEqual(save_res.status_code, 200)
+
+        preview_res = self._post_json(
+            "inscripcions_series_equips_preview",
+            {
+                "comp_aparell_id": self.comp_app.id,
+                "action": "delete",
+                "serie_id": serie.id,
+            },
+        )
+        self.assertEqual(preview_res.status_code, 200)
+        preview = preview_res.json()["preview"]
+        self.assertFalse(preview["can_run"])
+        self.assertEqual(preview["reason"], "serie_programmed")
+
+        delete_res = self._post_json(
+            "inscripcions_series_equips_delete",
+            {
+                "comp_aparell_id": self.comp_app.id,
+                "serie_id": serie.id,
+                "plan_signature": preview["plan_signature"],
+            },
+        )
+        self.assertEqual(delete_res.status_code, 400)
+        self.assertContains(delete_res, "serie programmed", status_code=400)
+        self.assertTrue(SerieEquip.objects.get(pk=serie.id).actiu)
+
+    def test_series_start_list_export_includes_unassigned_bucket_and_persistent_order(self):
+        equip2, _members2 = self._create_team_with_members("Parella 2", ["Nora", "Marta"], start_order=30)
+        equip3, _members3 = self._create_team_with_members("Parella 3", ["Jana", "Paula"], start_order=40)
+        subject_1, meta_1 = self._team_subject()
+        subject_2, meta_2 = self._team_subject(equip2)
+        subject_3, meta_3 = self._team_subject(equip3)
+
+        create_preview_res = self._post_json(
+            "inscripcions_series_equips_preview",
+            {
+                "comp_aparell_id": self.comp_app.id,
+                "action": "create",
+                "name": "Serie Export",
+                "selected_ids": [subject_1.id, subject_2.id],
+            },
+        )
+        self.assertEqual(create_preview_res.status_code, 200)
+        create_plan_signature = create_preview_res.json()["preview"]["plan_signature"]
+        create_res = self._post_json(
+            "inscripcions_series_equips_create",
+            {
+                "comp_aparell_id": self.comp_app.id,
+                "name": "Serie Export",
+                "selected_ids": [subject_1.id, subject_2.id],
+                "plan_signature": create_plan_signature,
+            },
+        )
+        self.assertEqual(create_res.status_code, 200)
+        serie = SerieEquip.objects.get(pk=create_res.json()["serie_id"])
+
+        reorder_res = self._post_json(
+            "inscripcions_series_equips_reorder",
+            {
+                "comp_aparell_id": self.comp_app.id,
+                "serie_id": serie.id,
+                "subject_ids": [subject_2.id, subject_1.id],
+            },
+        )
+        self.assertEqual(reorder_res.status_code, 200)
+
+        start_list_res = self.client.get(
+            reverse("inscripcions_series_equips_start_list_export", kwargs={"pk": self.comp.id}),
+            {"comp_aparell_id": self.comp_app.id},
+        )
+        self.assertEqual(start_list_res.status_code, 200)
+        workbook = load_workbook(BytesIO(start_list_res.content))
+        ws = workbook.active
+        rows = list(ws.iter_rows(values_only=True))
+
+        serie_title_idx = next(idx for idx, row in enumerate(rows) if row and row[0] == "Serie Export")
+        self.assertEqual(rows[serie_title_idx + 2][1], meta_2["name"])
+        self.assertEqual(rows[serie_title_idx + 3][1], meta_1["name"])
+
+        unassigned_title_idx = next(idx for idx, row in enumerate(rows) if row and row[0] == "Sense serie")
+        self.assertEqual(rows[unassigned_title_idx + 2][1], meta_3["name"])
+
+    def test_rotacions_save_ignores_mixed_program_keys_by_station_mode(self):
+        franja = RotacioFranja.objects.create(
+            competicio=self.comp,
+            hora_inici=timezone.datetime(2025, 1, 1, 9, 0).time(),
+            hora_fi=timezone.datetime(2025, 1, 1, 10, 0).time(),
+            ordre=1,
+            titol="Franja 1",
+        )
+        team_estacio = RotacioEstacio.objects.create(
+            competicio=self.comp,
+            tipus="aparell",
+            comp_aparell=self.comp_app,
+            ordre=1,
+        )
+        individual_app = self._create_aparell("IND2", "Individual 2")
+        individual_comp_app = self._create_comp_aparell(self.comp, individual_app, ordre=3)
+        individual_estacio = RotacioEstacio.objects.create(
+            competicio=self.comp,
+            tipus="aparell",
+            comp_aparell=individual_comp_app,
+            ordre=2,
+        )
+        serie = SerieEquip.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            display_num=1,
+            nom="Serie Mixta",
+        )
+        group_id = int(self.ins1.grup_competicio_id)
+
+        save_res = self._post_json(
+            "rotacions_save",
+            {
+                "cells": [
+                    {
+                        "franja": franja.id,
+                        "estacio": team_estacio.id,
+                        "items": [f"g:{group_id}", f"s:{serie.id}"],
+                    },
+                    {
+                        "franja": franja.id,
+                        "estacio": individual_estacio.id,
+                        "items": [f"s:{serie.id}", f"g:{group_id}"],
+                    },
+                ],
+            },
+        )
+        self.assertEqual(save_res.status_code, 200)
+
+        team_assignacio = RotacioAssignacio.objects.get(competicio=self.comp, franja=franja, estacio=team_estacio)
+        individual_assignacio = RotacioAssignacio.objects.get(competicio=self.comp, franja=franja, estacio=individual_estacio)
+
+        self.assertEqual(list(team_assignacio.serie_links.values_list("serie_id", flat=True)), [serie.id])
+        self.assertEqual(list(team_assignacio.grup_links.values_list("grup_id", flat=True)), [])
+        self.assertEqual(list(individual_assignacio.serie_links.values_list("serie_id", flat=True)), [])
+        self.assertEqual(list(individual_assignacio.grup_links.values_list("grup_id", flat=True)), [group_id])
+
+    def test_rotacions_save_filters_team_series_to_matching_comp_aparell(self):
+        franja = RotacioFranja.objects.create(
+            competicio=self.comp,
+            hora_inici=timezone.datetime(2025, 1, 1, 9, 0).time(),
+            hora_fi=timezone.datetime(2025, 1, 1, 10, 0).time(),
+            ordre=1,
+            titol="Franja 1",
+        )
+        estacio = RotacioEstacio.objects.create(
+            competicio=self.comp,
+            tipus="aparell",
+            comp_aparell=self.comp_app,
+            ordre=1,
+        )
+        other_app = self._create_aparell("SYNC2", "Sincronitzat 2")
+        other_app.competition_unit = Aparell.CompetitionUnit.TEAM
+        other_app.save(update_fields=["competition_unit"])
+        other_comp_app = self._create_comp_aparell(self.comp, other_app, ordre=2)
+        other_ctx = EquipContext.objects.create(competicio=self.comp, code="trios", nom="Trios")
+        CompeticioAparellEquipContextSource.objects.create(
+            competicio=self.comp,
+            comp_aparell=other_comp_app,
+            context=other_ctx,
+        )
+        valid_serie = SerieEquip.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            display_num=1,
+            nom="Serie OK",
+        )
+        foreign_serie = SerieEquip.objects.create(
+            competicio=self.comp,
+            comp_aparell=other_comp_app,
+            display_num=1,
+            nom="Serie Fora",
+        )
+
+        save_res = self._post_json(
+            "rotacions_save",
+            {
+                "cells": [
+                    {
+                        "franja": franja.id,
+                        "estacio": estacio.id,
+                        "items": [f"s:{foreign_serie.id}", f"s:{valid_serie.id}"],
+                    }
+                ],
+            },
+        )
+        self.assertEqual(save_res.status_code, 200)
+        assignacio = RotacioAssignacio.objects.get(competicio=self.comp, franja=franja, estacio=estacio)
+        self.assertEqual(list(assignacio.serie_links.values_list("serie_id", flat=True)), [valid_serie.id])
+
+    def test_rotacions_save_keeps_team_and_individual_station_payloads_separated(self):
+        franja = RotacioFranja.objects.create(
+            competicio=self.comp,
+            hora_inici=timezone.datetime(2025, 1, 1, 9, 0).time(),
+            hora_fi=timezone.datetime(2025, 1, 1, 10, 0).time(),
+            ordre=1,
+            titol="Franja 1",
+        )
+        team_estacio = RotacioEstacio.objects.create(
+            competicio=self.comp,
+            tipus="aparell",
+            comp_aparell=self.comp_app,
+            ordre=1,
+        )
+        team_serie = SerieEquip.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            display_num=1,
+            nom="Serie Team",
+        )
+        individual_app = self._create_aparell("TRA", "Trampolí")
+        individual_comp_app = self._create_comp_aparell(self.comp, individual_app, ordre=2)
+        individual_estacio = RotacioEstacio.objects.create(
+            competicio=self.comp,
+            tipus="aparell",
+            comp_aparell=individual_comp_app,
+            ordre=2,
+        )
+        group = GrupCompeticio.objects.create(competicio=self.comp, display_num=1, nom="Grup 1")
+
+        save_res = self._post_json(
+            "rotacions_save",
+            {
+                "cells": [
+                    {
+                        "franja": franja.id,
+                        "estacio": team_estacio.id,
+                        "items": [f"g:{group.id}", f"s:{team_serie.id}"],
+                    },
+                    {
+                        "franja": franja.id,
+                        "estacio": individual_estacio.id,
+                        "items": [f"g:{group.id}", f"s:{team_serie.id}"],
+                    },
+                ],
+            },
+        )
+        self.assertEqual(save_res.status_code, 200)
+
+        team_assignacio = RotacioAssignacio.objects.get(competicio=self.comp, franja=franja, estacio=team_estacio)
+        individual_assignacio = RotacioAssignacio.objects.get(competicio=self.comp, franja=franja, estacio=individual_estacio)
+        self.assertEqual(list(team_assignacio.serie_links.values_list("serie_id", flat=True)), [team_serie.id])
+        self.assertEqual(list(team_assignacio.grup_links.values_list("grup_id", flat=True)), [])
+        self.assertEqual(list(individual_assignacio.serie_links.values_list("serie_id", flat=True)), [])
+        self.assertEqual(list(individual_assignacio.grup_links.values_list("grup_id", flat=True)), [group.id])
+
+    def test_rotacions_extrapolar_preserves_team_series_links(self):
+        franja = RotacioFranja.objects.create(
+            competicio=self.comp,
+            hora_inici=timezone.datetime(2025, 1, 1, 9, 0).time(),
+            hora_fi=timezone.datetime(2025, 1, 1, 10, 0).time(),
+            ordre=1,
+            titol="Franja 1",
+        )
+        estacio = RotacioEstacio.objects.create(
+            competicio=self.comp,
+            tipus="aparell",
+            comp_aparell=self.comp_app,
+            ordre=1,
+        )
+        serie = SerieEquip.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            display_num=1,
+            nom="Serie A",
+        )
+        save_res = self._post_json(
+            "rotacions_save",
+            {
+                "cells": [
+                    {
+                        "franja": franja.id,
+                        "estacio": estacio.id,
+                        "items": [f"s:{serie.id}"],
+                    }
+                ],
+            },
+        )
+        self.assertEqual(save_res.status_code, 200)
+
+        extrapolar_res = self.client.post(
+            reverse("rotacions_extrapolar", kwargs={"pk": self.comp.id, "franja_id": franja.id}),
+            data=json.dumps({"count": 1}),
+            content_type="application/json",
+        )
+        self.assertEqual(extrapolar_res.status_code, 200)
+        new_franja = RotacioFranja.objects.exclude(pk=franja.id).get(competicio=self.comp)
+        new_assignacio = RotacioAssignacio.objects.get(competicio=self.comp, franja=new_franja, estacio=estacio)
+        self.assertEqual(list(new_assignacio.serie_links.values_list("serie_id", flat=True)), [serie.id])
+
+    def test_rotacions_save_ignores_group_keys_for_team_station(self):
+        franja = RotacioFranja.objects.create(
+            competicio=self.comp,
+            hora_inici=timezone.datetime(2025, 1, 1, 9, 0).time(),
+            hora_fi=timezone.datetime(2025, 1, 1, 10, 0).time(),
+            ordre=1,
+            titol="Franja 1",
+        )
+        estacio = RotacioEstacio.objects.create(
+            competicio=self.comp,
+            tipus="aparell",
+            comp_aparell=self.comp_app,
+            ordre=1,
+        )
+        valid_serie = SerieEquip.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            display_num=1,
+            nom="Serie OK",
+        )
+
+        save_res = self._post_json(
+            "rotacions_save",
+            {
+                "cells": [
+                    {
+                        "franja": franja.id,
+                        "estacio": estacio.id,
+                        "items": ["g:1", f"s:{valid_serie.id}"],
+                    }
+                ],
+            },
+        )
+        self.assertEqual(save_res.status_code, 200)
+        assignacio = RotacioAssignacio.objects.get(competicio=self.comp, franja=franja, estacio=estacio)
+        self.assertEqual(list(assignacio.serie_links.values_list("serie_id", flat=True)), [valid_serie.id])
+        self.assertEqual(assignacio.grup_links.count(), 0)
 
     def test_scoreable_codes_filter_team_apps_by_tipus_and_context(self):
         individual_app = self._create_aparell("IND", "Individual")

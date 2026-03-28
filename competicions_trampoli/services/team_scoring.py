@@ -5,6 +5,7 @@ import copy
 import re
 from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Tuple
 
+from django.apps import apps
 from django.db import transaction
 
 from ..models import Equip, Inscripcio, InscripcioEquipAssignacio
@@ -17,11 +18,13 @@ from ..models_trampoli import (
 from .equip_contexts import NATIVE_EQUIP_CONTEXT_CODE, normalize_equip_context_code
 from .team_series import enrich_team_subjects_with_series
 
-if TYPE_CHECKING:
-    from ..models_scoring import TeamCompetitiveSubject
+
+def _team_subject_model():
+    return apps.get_model("competicions_trampoli", "TeamCompetitiveSubject")
 
 
 MEMBER_CODE_SUFFIX_RE = re.compile(r"__m\d+$")
+MEMBER_CODE_SLOT_RE = re.compile(r"__m(?P<slot>\d+)$")
 TEAM_MEMBER_KEYS_HELPERS = {
     "members_sum",
     "members_avg",
@@ -53,6 +56,14 @@ KIND_SHARED_MATRIX = "shared_matrix"
 SCALAR_KINDS = {KIND_MEMBER_SCALAR, KIND_SHARED_SCALAR}
 MEMBER_KINDS = {KIND_MEMBER_SCALAR, KIND_MEMBER_LIST, KIND_MEMBER_MATRIX}
 SHARED_KINDS = {KIND_SHARED_SCALAR, KIND_SHARED_LIST, KIND_SHARED_MATRIX}
+PERMISSION_MEMBER_MODE_SINGLE = "single"
+PERMISSION_MEMBER_MODE_SUBSET = "subset"
+PERMISSION_MEMBER_MODE_ALL = "all"
+PERMISSION_MEMBER_MODES = {
+    PERMISSION_MEMBER_MODE_SINGLE,
+    PERMISSION_MEMBER_MODE_SUBSET,
+    PERMISSION_MEMBER_MODE_ALL,
+}
 
 
 def is_team_context_app(comp_aparell: Optional[CompeticioAparell]) -> bool:
@@ -476,11 +487,29 @@ def _team_member_rows_for_context(competicio, context) -> Dict[int, List[Inscrip
 
 
 def _subject_label(equip: Equip, context_name: str, members: List[Inscripcio]) -> str:
+    max_length = 255
     member_names = [str(getattr(member, "nom_i_cognoms", "") or "").strip() for member in members if member is not None]
     team_name = str(getattr(equip, "nom", "") or f"Equip {getattr(equip, 'id', '')}").strip()
-    if member_names:
-        return f"{context_name} · {team_name} ({', '.join(member_names)})"
-    return f"{context_name} · {team_name}"
+    base_label = f"{context_name} - {team_name}".strip(" -")
+    if not member_names:
+        return base_label[:max_length]
+
+    members_label = ", ".join(member_names)
+    full_label = f"{base_label} ({members_label})"
+    if len(full_label) <= max_length:
+        return full_label
+
+    if len(base_label) >= max_length:
+        return f"{base_label[:max_length - 3].rstrip()}..."
+
+    available_for_members = max_length - len(base_label) - 3
+    if available_for_members <= 3:
+        return f"{base_label[:max_length - 3].rstrip()}..."
+
+    trimmed_members = members_label[:available_for_members - 3].rstrip(" ,")
+    if not trimmed_members:
+        return base_label[:max_length]
+    return f"{base_label} ({trimmed_members}...)"
 
 
 def sync_team_subject_for_members(
@@ -490,10 +519,11 @@ def sync_team_subject_for_members(
     equip: Equip,
     members: List[Inscripcio],
 ) -> TeamCompetitiveSubject:
+    team_subject_model = _team_subject_model()
     member_ids = [int(member.id) for member in members if member is not None]
     member_names = [str(getattr(member, "nom_i_cognoms", "") or "").strip() for member in members if member is not None]
     label = _subject_label(equip, str(getattr(context, "nom", "") or getattr(context, "code", "")), members)
-    subject, _created = TeamCompetitiveSubject.objects.update_or_create(
+    subject, _created = team_subject_model.objects.update_or_create(
         competicio=competicio,
         comp_aparell=comp_aparell,
         context=context,
@@ -622,25 +652,230 @@ def build_team_subjects_for_comp_aparell(competicio, comp_aparell: CompeticioApa
     return subjects, issues
 
 
+def build_team_subject_registry(competicio, comp_aparell: CompeticioAparell) -> Dict[str, Any]:
+    subjects, issues = build_team_subjects_for_comp_aparell(competicio, comp_aparell)
+    all_by_id: Dict[int, Dict[str, Any]] = {}
+    eligible_by_id: Dict[int, Dict[str, Any]] = {}
+    invalid_by_id: Dict[int, Dict[str, Any]] = {}
+
+    for raw_subject in subjects:
+        subject = dict(raw_subject or {})
+        subject_id = int(subject.get("subject_id") or 0)
+        if subject_id <= 0:
+            continue
+        all_by_id[subject_id] = subject
+        if int(comp_aparell.id) in (subject.get("allowed_app_ids") or []):
+            eligible_by_id[subject_id] = subject
+        if subject.get("invalid_reasons") or str(subject.get("series_state") or "") == "invalid":
+            invalid_by_id[subject_id] = subject
+
+    return {
+        "subjects": subjects,
+        "issues": issues,
+        "all_by_id": all_by_id,
+        "eligible_by_id": eligible_by_id,
+        "invalid_by_id": invalid_by_id,
+    }
+
+
+def team_subject_ids_for_serie_filter(subject_map: Dict[int, Dict[str, Any]], raw_serie_id) -> List[int]:
+    clean_map = {
+        int(subject_id): dict(subject or {})
+        for subject_id, subject in (subject_map or {}).items()
+        if int(subject_id or 0) > 0
+    }
+    if raw_serie_id in (None, ""):
+        return list(clean_map.keys())
+    try:
+        clean_serie_id = int(raw_serie_id)
+    except Exception:
+        clean_serie_id = None
+    if clean_serie_id:
+        return [
+            subject_id
+            for subject_id, subject in clean_map.items()
+            if int(subject.get("serie_id") or 0) == clean_serie_id
+        ]
+    return [
+        subject_id
+        for subject_id, subject in clean_map.items()
+        if not subject.get("serie_id")
+    ]
+
+
 def eligible_team_ids_for_comp_aparell(competicio, comp_aparell: CompeticioAparell) -> List[int]:
-    subjects, _issues = build_team_subjects_for_comp_aparell(competicio, comp_aparell)
-    return [int(subject["subject_id"]) for subject in subjects if int(comp_aparell.id) in (subject.get("allowed_app_ids") or [])]
+    registry = build_team_subject_registry(competicio, comp_aparell)
+    return list(registry["eligible_by_id"].keys())
+
+
+def team_runtime_schema_for_subject(schema: dict, comp_aparell: Optional[CompeticioAparell], subject) -> dict:
+    team_subject = subject.get("team_subject") if isinstance(subject, dict) else subject
+    member_count = len(getattr(team_subject, "member_ids", []) or []) if team_subject is not None else 0
+    return runtime_schema_for_comp_aparell(schema or {}, comp_aparell, member_count=member_count)
+
+
+def runtime_input_codes(schema: dict) -> set:
+    allowed = set()
+    for field in (schema.get("fields") or []):
+        if isinstance(field, dict) and field.get("code"):
+            allowed.add(str(field["code"]))
+            allowed.add(f"__crash__{field['code']}")
+    return allowed
+
+
+def parse_permission_member_slots(raw_value) -> List[int]:
+    if raw_value in (None, "", [], (), set()):
+        return []
+    if isinstance(raw_value, (list, tuple, set)):
+        raw_items = list(raw_value)
+    else:
+        raw_items = re.split(r"[\s,;]+", str(raw_value or "").strip())
+
+    slots: List[int] = []
+    for raw_item in raw_items:
+        if raw_item in (None, ""):
+            continue
+        cleaned = str(raw_item).strip().upper()
+        if cleaned.startswith("M"):
+            cleaned = cleaned[1:]
+        try:
+            slot = int(cleaned)
+        except Exception:
+            continue
+        if slot > 0:
+            slots.append(slot)
+    return slots
+
+
+def _legacy_permission_member_slot(row: dict) -> Optional[int]:
+    try:
+        slot = int((row or {}).get("member_slot") or 0)
+    except Exception:
+        slot = 0
+    if slot > 0:
+        return slot
+
+    runtime_code = str((row or {}).get("runtime_field_code") or "").strip()
+    match = MEMBER_CODE_SLOT_RE.search(runtime_code)
+    if not match:
+        return None
+    try:
+        slot = int(match.group("slot"))
+    except Exception:
+        slot = 0
+    return slot if slot > 0 else None
+
+
+def normalize_permission_target(row: dict) -> Dict[str, Any]:
+    clean_row = dict(row or {})
+    scope = str(clean_row.get("scope") or "shared").strip().lower() or "shared"
+    if scope != "member":
+        clean_row.pop("member_mode", None)
+        clean_row.pop("member_slots", None)
+        clean_row.pop("member_slot", None)
+        return clean_row
+
+    member_mode = str(clean_row.get("member_mode") or "").strip().lower()
+    member_slots = parse_permission_member_slots(clean_row.get("member_slots"))
+    legacy_slot = _legacy_permission_member_slot(clean_row)
+    if legacy_slot and legacy_slot not in member_slots:
+        member_slots.append(legacy_slot)
+
+    unique_slots: List[int] = []
+    for slot in member_slots:
+        if slot not in unique_slots:
+            unique_slots.append(slot)
+
+    if member_mode not in PERMISSION_MEMBER_MODES:
+        member_mode = (
+            PERMISSION_MEMBER_MODE_SINGLE
+            if len(unique_slots) == 1
+            else PERMISSION_MEMBER_MODE_ALL
+        )
+
+    clean_row["member_mode"] = member_mode
+    if member_mode == PERMISSION_MEMBER_MODE_ALL:
+        clean_row.pop("member_slots", None)
+        clean_row.pop("member_slot", None)
+    else:
+        clean_row["member_slots"] = unique_slots
+        if len(unique_slots) == 1:
+            clean_row["member_slot"] = unique_slots[0]
+        else:
+            clean_row.pop("member_slot", None)
+    return clean_row
+
+
+def permission_target_label(row: dict) -> str:
+    clean_row = normalize_permission_target(row)
+    if str(clean_row.get("scope") or "shared").strip().lower() != "member":
+        return "Compartit"
+
+    member_mode = str(clean_row.get("member_mode") or PERMISSION_MEMBER_MODE_ALL).strip().lower()
+    member_slots = parse_permission_member_slots(clean_row.get("member_slots"))
+    if member_mode == PERMISSION_MEMBER_MODE_ALL:
+        return "Tots"
+    if not member_slots:
+        return "Sense membres"
+    return ",".join(f"M{slot}" for slot in member_slots)
+
+
+def resolve_permission_runtime_entries(
+    row: dict,
+    comp_aparell: Optional[CompeticioAparell],
+    *,
+    member_count: int = 0,
+) -> List[Dict[str, Any]]:
+    clean_row = normalize_permission_target(row)
+    code = str(clean_row.get("field_code") or "").strip()
+    if not code:
+        return []
+
+    scope = str(clean_row.get("scope") or "shared").strip().lower() or "shared"
+    if not is_team_context_app(comp_aparell) or scope != "member":
+        shared_row = dict(clean_row)
+        shared_row["runtime_field_code"] = str(shared_row.get("runtime_field_code") or code)
+        shared_row["member_slot"] = None
+        return [shared_row]
+
+    member_count = max(0, int(member_count or 0))
+    member_mode = str(clean_row.get("member_mode") or PERMISSION_MEMBER_MODE_ALL).strip().lower()
+    if member_mode == PERMISSION_MEMBER_MODE_ALL:
+        slots = list(range(1, member_count + 1))
+    else:
+        slots = [
+            slot
+            for slot in parse_permission_member_slots(clean_row.get("member_slots"))
+            if slot > 0 and (member_count <= 0 or slot <= member_count)
+        ]
+
+    out: List[Dict[str, Any]] = []
+    for slot in slots:
+        resolved = dict(clean_row)
+        resolved["runtime_field_code"] = member_runtime_code(code, slot)
+        resolved["member_slot"] = slot
+        resolved["member_label"] = f"M{slot}"
+        out.append(resolved)
+    return out
 
 
 def permission_runtime_code(row: dict, comp_aparell: Optional[CompeticioAparell]) -> str:
     code = str((row or {}).get("field_code") or "").strip()
     if not code:
         return code
-    scope = str((row or {}).get("scope") or "shared").strip().lower() or "shared"
-    if not is_team_context_app(comp_aparell) or scope != "member":
+    resolved = resolve_permission_runtime_entries(row, comp_aparell, member_count=0)
+    if not resolved:
         return code
-    return code
+    return str((resolved[0] or {}).get("runtime_field_code") or code)
 
 
 def build_permission_label(row: dict) -> str:
-    code = str((row or {}).get("field_code") or "").strip()
-    scope = str((row or {}).get("scope") or "shared").strip().lower() or "shared"
-    return f"{code} · {'Individual' if scope == 'member' else 'Compartit'}"
+    clean_row = normalize_permission_target(row)
+    code = str(clean_row.get("field_code") or "").strip()
+    scope = str(clean_row.get("scope") or "shared").strip().lower() or "shared"
+    if scope != "member":
+        return f"{code} · Compartit"
+    return f"{code} · Individual · {permission_target_label(clean_row)}"
 
 
 def logical_team_inputs_to_runtime_inputs(inputs: dict, subject: TeamCompetitiveSubject, schema: dict) -> dict:

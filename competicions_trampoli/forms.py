@@ -5,10 +5,16 @@ from django import forms
 from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
 
-from .models import Competicio, Equip, EquipContext, Inscripcio
+from .models import Competicio, Equip, EquipContext, Inscripcio, InscripcioEquipAssignacio
 from .models_scoring import ScoringSchema
 from .models_trampoli import Aparell, CompeticioAparell
 from .services.competition_groups import get_competicio_groups, group_label
+from .services.equip_contexts import (
+    NATIVE_EQUIP_CONTEXT_CODE,
+    get_custom_equip_context,
+    get_equip_context_payload,
+    normalize_equip_context_code,
+)
 from .services.import_excel import (
     _build_value_aliases,
     _canonicalize_text_field,
@@ -74,7 +80,7 @@ class InscripcioForm(forms.ModelForm):
     EQUIP_SELECTOR_CONFIG = {
         "choice_name": "equip_choice",
         "other_name": "equip_altres",
-        "label": "Equip (Nativa)",
+        "label": "Equip (Natiu)",
         "empty_label": "Sense equip",
         "other_label": "Altre equip",
         "placeholder": "Escriu l'equip si no surt al llistat",
@@ -110,11 +116,35 @@ class InscripcioForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         self.competicio = kwargs.pop("competicio", None)
+        self.team_context_code = normalize_equip_context_code(kwargs.pop("team_context_code", None))
         super().__init__(*args, **kwargs)
         if self.competicio is None:
             self.competicio = getattr(self.instance, "competicio", None)
         if self.competicio is None:
             raise ValueError("InscripcioForm requires a competicio instance.")
+
+        self.team_context = None
+        if self.team_context_code != NATIVE_EQUIP_CONTEXT_CODE:
+            self.team_context = get_custom_equip_context(self.competicio, self.team_context_code)
+            if self.team_context is None:
+                self.team_context_code = NATIVE_EQUIP_CONTEXT_CODE
+        self.team_context_is_native = self.team_context_code == NATIVE_EQUIP_CONTEXT_CODE
+        self.team_context_payload = next(
+            (item for item in get_equip_context_payload(self.competicio) if item["code"] == self.team_context_code),
+            {
+                "code": self.team_context_code,
+                "nom": "Natiu",
+                "description": "Equip natiu de la inscripcio",
+                "is_native": True,
+            },
+        )
+        self.team_context_label = str(self.team_context_payload.get("nom") or "Natiu").strip() or "Natiu"
+        self.current_native_equip = getattr(self.instance, "equip", None)
+        self.current_context_assignment = self._get_current_context_assignment()
+        if self.team_context_is_native:
+            self.current_equip = self.current_native_equip
+        else:
+            self.current_equip = getattr(self.current_context_assignment, "equip", None)
 
         self.schema_columns = self._get_schema_columns()
         self.extra_field_map = OrderedDict()
@@ -136,6 +166,20 @@ class InscripcioForm(forms.ModelForm):
         self.other_wrapper_field_names = self._build_other_wrapper_field_names()
         self.full_width_basic_field_names = ["nom_i_cognoms", *self.other_wrapper_field_names]
         self.show_altres_fields = self._build_show_altres_fields()
+
+    def _get_current_context_assignment(self):
+        if self.team_context_is_native or not getattr(self.instance, "pk", None):
+            return None
+        return (
+            InscripcioEquipAssignacio.objects
+            .filter(
+                competicio=self.competicio,
+                context=self.team_context,
+                inscripcio=self.instance,
+            )
+            .select_related("equip")
+            .first()
+        )
 
     def _get_schema_columns(self):
         schema = self.competicio.inscripcions_schema or {}
@@ -257,10 +301,15 @@ class InscripcioForm(forms.ModelForm):
         )
 
     def _configure_equip_field(self):
-        config = self.EQUIP_SELECTOR_CONFIG
+        config = dict(self.EQUIP_SELECTOR_CONFIG)
+        config["label"] = (
+            "Equip (Natiu)"
+            if self.team_context_is_native
+            else f"Equip ({self.team_context_label})"
+        )
         equips = list(Equip.objects.filter(competicio=self.competicio).order_by("nom", "id"))
         seen_equip_ids = {equip.id for equip in equips}
-        current_equip = getattr(self.instance, "equip", None)
+        current_equip = self.current_equip
         if current_equip is not None and current_equip.id not in seen_equip_ids:
             equips.append(current_equip)
 
@@ -407,6 +456,41 @@ class InscripcioForm(forms.ModelForm):
             self.add_error(choice_name, "L'equip seleccionat no es valid.")
         cleaned_data["resolved_equip"] = resolved_equip
 
+    def _persist_contextual_equip_assignment(self, instance, equip):
+        if self.team_context_is_native:
+            return
+
+        existing = (
+            InscripcioEquipAssignacio.objects
+            .filter(
+                competicio=self.competicio,
+                context=self.team_context,
+                inscripcio=instance,
+            )
+            .first()
+        )
+        if equip is None:
+            if existing is not None:
+                existing.delete()
+            return
+
+        if existing is None:
+            InscripcioEquipAssignacio.objects.create(
+                competicio=self.competicio,
+                context=self.team_context,
+                inscripcio=instance,
+                equip=equip,
+                origen=InscripcioEquipAssignacio.Origen.MANUAL,
+                criteri={},
+            )
+            return
+
+        if existing.equip_id != equip.id or existing.origen != InscripcioEquipAssignacio.Origen.MANUAL or existing.criteri:
+            existing.equip = equip
+            existing.origen = InscripcioEquipAssignacio.Origen.MANUAL
+            existing.criteri = {}
+            existing.save(update_fields=["equip", "origen", "criteri", "updated_at"])
+
     def clean(self):
         cleaned_data = super().clean()
 
@@ -452,7 +536,8 @@ class InscripcioForm(forms.ModelForm):
                 nom=resolved_equip_name,
                 defaults={"origen": Equip.Origen.MANUAL, "criteri": {}},
             )
-        instance.equip = resolved_equip
+        if self.team_context_is_native:
+            instance.equip = resolved_equip
 
         next_extra = dict(getattr(instance, "extra", None) or {})
         for field_name, code in self.extra_field_map.items():
@@ -465,6 +550,7 @@ class InscripcioForm(forms.ModelForm):
 
         if commit:
             instance.save()
+            self._persist_contextual_equip_assignment(instance, resolved_equip)
         return instance
 
 

@@ -1,6 +1,7 @@
 ﻿import random
 import hashlib
 import copy
+from urllib.parse import parse_qs, urlparse
 from django.shortcuts import render
 import math
 from datetime import date, datetime
@@ -55,6 +56,12 @@ from .services.competition_groups import (
     normalize_positive_int,
     save_group_competition_order,
     sync_competicio_group_names_view,
+)
+from .services.equip_contexts import (
+    NATIVE_EQUIP_CONTEXT_CODE,
+    get_custom_equip_context,
+    get_equip_context_payload,
+    normalize_equip_context_code,
 )
 
 
@@ -3764,18 +3771,63 @@ class InscripcioFormViewMixin:
 
     def dispatch(self, request, *args, **kwargs):
         self.competicio = get_object_or_404(Competicio, pk=kwargs["pk"])
+        self.team_contexts_payload = get_equip_context_payload(self.competicio)
+        self.team_context_code = self._resolve_team_context_code()
+        self.team_context = (
+            None
+            if self.team_context_code == NATIVE_EQUIP_CONTEXT_CODE
+            else get_custom_equip_context(self.competicio, self.team_context_code)
+        )
+        self.team_context_selected = next(
+            (item for item in self.team_contexts_payload if item["code"] == self.team_context_code),
+            self.team_contexts_payload[0] if self.team_contexts_payload else {
+                "code": NATIVE_EQUIP_CONTEXT_CODE,
+                "nom": "Natiu",
+                "description": "Equip natiu de la inscripcio",
+                "is_native": True,
+            },
+        )
         return super().dispatch(request, *args, **kwargs)
+
+    def _extract_team_context_from_url(self, raw_url):
+        if not raw_url:
+            return ""
+        try:
+            parsed = urlparse(str(raw_url))
+            values = parse_qs(parsed.query or "").get("team_context") or []
+        except Exception:
+            return ""
+        return str(values[0] or "").strip() if values else ""
+
+    def _resolve_team_context_code(self):
+        raw_candidates = [
+            self.request.GET.get("team_context"),
+            self.request.POST.get("team_context"),
+            self._extract_team_context_from_url(self.request.GET.get("next")),
+            self._extract_team_context_from_url(self.request.POST.get("next")),
+            self._extract_team_context_from_url(self.request.META.get("HTTP_REFERER")),
+        ]
+        valid_codes = {item["code"] for item in self.team_contexts_payload}
+        for raw in raw_candidates:
+            code = normalize_equip_context_code(raw)
+            if code in valid_codes:
+                return code
+        return NATIVE_EQUIP_CONTEXT_CODE
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
         kwargs["competicio"] = self.competicio
+        kwargs["team_context_code"] = self.team_context_code
         return kwargs
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        next_url = self.request.GET.get("next", "")
+        next_url = self.request.GET.get("next") or self.request.POST.get("next", "")
         ctx["competicio"] = self.competicio
         ctx["next"] = next_url
+        ctx["team_context_selected_code"] = self.team_context_code
+        ctx["team_context_selected"] = self.team_context_selected
+        ctx["team_contexts"] = list(self.team_contexts_payload)
         ctx["cancel_url"] = (
             next_url
             or self.request.META.get("HTTP_REFERER")
@@ -3787,6 +3839,7 @@ class InscripcioFormViewMixin:
         ctx["show_altres_fields"] = {}
         ctx["full_width_basic_field_names"] = []
         ctx["altres_wrapper_field_names"] = []
+        ctx["team_native_hint"] = ""
         if form is not None:
             ctx["form_basic_fields"] = [
                 form[name]
@@ -3805,10 +3858,12 @@ class InscripcioFormViewMixin:
             ctx["altres_wrapper_field_names"] = list(
                 getattr(form, "other_wrapper_field_names", []) or []
             )
+            current_native_equip = getattr(form, "current_native_equip", None)
+            ctx["team_native_hint"] = str(getattr(current_native_equip, "nom", "") or "").strip()
         return ctx
 
     def get_success_url(self):
-        nxt = self.request.GET.get("next")
+        nxt = self.request.GET.get("next") or self.request.POST.get("next")
         if nxt:
             return nxt
         return reverse("inscripcions_list", kwargs={"pk": self.kwargs["pk"]})

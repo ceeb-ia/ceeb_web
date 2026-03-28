@@ -13,6 +13,19 @@
         {{ hidden }}
       {% endfor %}
 
+      <div class="alert alert-info py-2 mb-3">
+        {% if team_context_selected.is_native %}
+          Aquest formulari editara l'equip natiu de la inscripcio.
+        {% else %}
+          Aquest formulari assignara l'equip al context <strong>{{ team_context_selected.nom }}</strong>.
+          {% if team_native_hint %}
+            <div class="small mt-1">Equip natiu actual: {{ team_native_hint }}</div>
+          {% else %}
+            <div class="small mt-1">Equip natiu actual: sense equip.</div>
+          {% endif %}
+        {% endif %}
+      </div>
+
       {% if form.non_field_errors %}
         <div class="alert alert-danger py-2 mb-3">
           {% for error in form.non_field_errors %}
@@ -65,6 +78,7 @@
       {% if next %}
         <input type="hidden" name="next" value="{{ next }}">
       {% endif %}
+      <input type="hidden" name="team_context" value="{{ team_context_selected_code }}">
 
       <div class="form-actions mt-3">
         <button type="submit" class="btn btn-primary">Desar</button>

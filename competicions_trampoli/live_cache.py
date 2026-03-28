@@ -8,7 +8,10 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from django.utils.timezone import is_aware
 
-import redis
+try:
+    import redis
+except ImportError:  # pragma: no cover - optional dependency in local/test envs
+    redis = None
 
 
 logger = logging.getLogger(__name__)
@@ -22,6 +25,8 @@ LIVE_CACHE_WAIT_DELAY_SECONDS = 0.2
 
 
 def _live_redis_client():
+    if redis is None:
+        raise RuntimeError("redis package is not installed")
     return redis.from_url(REDIS_URL, encoding="utf-8", decode_responses=True)
 
 

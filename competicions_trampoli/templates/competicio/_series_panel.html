@@ -7,7 +7,13 @@
   </div>
 
   <div class="action-panel-body">
-    <div class="tab-select-card" id="series-main-card">
+    <div
+      class="tab-select-card team-workbench-card"
+      id="series-main-card"
+      data-expand-card="series-main-card"
+      data-expand-title="Workspace de series d'equip"
+      data-expand-subtitle="Aparell actiu, candidates filtrables i series existents en una vista ampla compartida."
+    >
       <div class="tab-select-card-head">
         <div>
           <div class="fw-semibold">Workspace de series</div>
@@ -15,13 +21,23 @@
         </div>
         <div class="tab-select-card-tools">
           <span class="badge badge-light border" id="series-selected-app-badge">Sense aparell</span>
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-primary tab-select-expand-btn js-expand-tab-select"
+            data-expand-target="series-main-card"
+            data-label-collapsed="Obrir workspace"
+            data-label-expanded="Tancar vista ampla"
+            aria-expanded="false"
+          >
+            Obrir workspace
+          </button>
         </div>
       </div>
 
       {% if series_team_aparells %}
       <div class="team-compact-summary">
         <div class="team-compact-summary-copy">
-          Selecciona un aparell d'equip, filtra les unitats competitives disponibles i reparteix-les manualment en series.
+          Selecciona un aparell d'equip, revisa l'estat global i obre el workspace quan necessitis preparar la seleccio o editar una serie en detall.
         </div>
         <div class="d-flex flex-wrap align-items-center" style="gap:8px;">
           <label class="small text-muted mb-0" for="series-comp-aparell-select">Aparell</label>
@@ -31,91 +47,168 @@
             {% endfor %}
           </select>
           <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-series-refresh">Refrescar</button>
+          <button type="button" class="btn btn-sm btn-outline-primary" id="btn-series-export-start-list">Start list</button>
         </div>
       </div>
 
-      <div class="team-workspace-grid mt-3" id="series-workspace-shell" style="grid-template-columns:minmax(320px, 1.2fr) minmax(360px, 1fr);">
-        <section class="team-workspace-pane team-workspace-pane-left">
-          <div class="team-pane-card">
-            <div class="team-pane-head">
-              <div>
-                <div class="fw-semibold">Unitats competitives</div>
-                <div class="small text-muted">Team subjects elegibles o amb incidencies per a l'aparell seleccionat.</div>
-              </div>
-              <span class="badge badge-light border" id="series-candidates-count-badge">0 candidates</span>
-            </div>
+      <div class="team-compact-summary mt-3">
+        <div class="team-compact-summary-copy">
+          <div class="fw-semibold mb-2">Resum rapid</div>
+          <div class="small text-muted">Mostra un resum de l'aparell actiu. Obre el workspace per veure totes les candidates o desplegar el detall d'una serie.</div>
+        </div>
+        <div class="team-compact-summary-metrics" id="series-compact-summary-metrics">
+          <span class="group-preview-badge badge badge-light border">Carregant resum...</span>
+        </div>
+      </div>
 
-            <div class="team-filters-grid">
-              <div>
-                <label class="small text-muted mb-1 d-block" for="series-filter-q">Cerca</label>
-                <input type="text" class="form-control form-control-sm" id="series-filter-q" placeholder="Nom, context o membres...">
-              </div>
-              <div>
-                <label class="small text-muted mb-1 d-block" for="series-filter-context">Context</label>
-                <select id="series-filter-context" class="form-control form-control-sm">
-                  <option value="">Tots</option>
-                </select>
-              </div>
-              <div>
-                <label class="small text-muted mb-1 d-block" for="series-filter-state">Estat</label>
-                <select id="series-filter-state" class="form-control form-control-sm">
-                  <option value="all">Totes</option>
-                  <option value="assigned">Amb serie</option>
-                  <option value="unassigned">Sense serie</option>
-                  <option value="invalid">Invalides</option>
-                </select>
-              </div>
-              <div>
-                <label class="small text-muted mb-1 d-block" for="series-filter-serie">Serie</label>
-                <select id="series-filter-serie" class="form-control form-control-sm">
-                  <option value="">Qualsevol</option>
-                </select>
+      <div class="team-compact-summary mt-3" id="series-compact-actions">
+        <div class="team-compact-summary-copy">
+          <div class="fw-semibold mb-2">Accions rapides</div>
+          <div class="small text-muted">Treballen sobre la seleccio preparada dins del modal. Si no hi ha seleccio, nomes es pot crear una serie buida.</div>
+        </div>
+        <div class="d-flex flex-column" style="gap:10px; min-width:min(100%, 540px);">
+          <div class="d-flex flex-wrap align-items-center" style="gap:8px;">
+            <input
+              type="text"
+              class="form-control form-control-sm"
+              id="series-compact-create-name"
+              style="width:min(100%, 260px);"
+              placeholder="Nom opcional de la serie..."
+            >
+            <button type="button" class="btn btn-sm btn-outline-primary" id="btn-series-compact-create-empty">Crear serie buida</button>
+            <button type="button" class="btn btn-sm btn-primary" id="btn-series-compact-create-with-selection">Crear amb seleccio</button>
+            <button type="button" class="btn btn-sm btn-outline-warning" id="btn-series-compact-unassign-selection">Treure seleccio</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-series-compact-open-workspace">Obrir workspace</button>
+          </div>
+          <div class="small text-muted" id="series-compact-actions-note">Aquestes accions treballaran sobre la seleccio preparada al modal.</div>
+        </div>
+      </div>
+
+      <div class="team-compact-summary mt-3">
+        <div class="team-compact-summary-copy">
+          <div class="fw-semibold mb-2">Series en vista rapida</div>
+          <div class="small text-muted" id="series-compact-list-note">Mostrant les series actives de l'aparell seleccionat.</div>
+        </div>
+        <div class="team-compact-summary-metrics w-100" id="series-compact-list"></div>
+      </div>
+
+      <div class="team-workspace-shell" id="series-workspace-shell">
+        <div class="team-workspace-header">
+          <div class="team-workspace-header-bar">
+            <div class="team-workspace-header-main">
+              <span class="badge badge-light border" id="series-workspace-badge">Sense aparell</span>
+              <div class="team-workspace-title-wrap">
+                <div class="team-workspace-title" id="series-workspace-title">Workspace de series</div>
+                <div class="small text-muted" id="series-workspace-description">Selecciona candidates, crea series i desplega el detall nomes quan el necessitis.</div>
               </div>
             </div>
-
-            <div class="team-selection-toolbar">
-              <div class="team-selection-summary">
-                <strong id="series-selection-count">0 seleccionades</strong>
-                <span class="text-muted">Seleccio propia del workspace</span>
+            <div class="team-workspace-header-tools">
+              <div class="team-context-inline-metrics" id="series-summary-metrics">
+                <span class="group-preview-badge badge badge-light border">Carregant...</span>
               </div>
-              <div class="d-flex flex-wrap" style="gap:8px;">
-                <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-series-select-visible">Seleccionar visibles</button>
-                <button type="button" class="btn btn-sm btn-outline-danger" id="btn-series-clear-selection">Netejar seleccio</button>
-              </div>
-            </div>
-
-            <div class="d-flex flex-wrap align-items-center mb-2" style="gap:8px;">
-              <input type="text" class="form-control form-control-sm" id="series-create-name" style="width:min(100%, 260px);" placeholder="Nom opcional de la serie...">
-              <button type="button" class="btn btn-sm btn-outline-primary" id="btn-series-create-empty">Crear serie buida</button>
-              <button type="button" class="btn btn-sm btn-primary" id="btn-series-create-with-selection">Crear amb seleccio</button>
-              <button type="button" class="btn btn-sm btn-outline-warning" id="btn-series-unassign-selection">Treure de la serie</button>
-            </div>
-
-            <div class="team-candidates-status small text-muted" id="series-candidates-status">Carregant candidates...</div>
-            <div class="team-candidates-list" id="series-candidates-list"></div>
-            <div class="team-candidates-footer">
-              <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-series-prev">Anterior</button>
-              <span class="small text-muted" id="series-page-label">Pagina 1</span>
-              <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-series-next">Seguent</button>
             </div>
           </div>
-        </section>
-
-        <section class="team-workspace-pane team-workspace-pane-right">
-          <div class="team-pane-card">
-            <div class="team-pane-head">
-              <div>
-                <div class="fw-semibold">Series creades</div>
-                <div class="small text-muted">Les series es poden renombrar, omplir, buidar i reordenar sense tocar el scoring.</div>
-              </div>
-              <span class="badge badge-light border" id="series-summary-badge">0 series</span>
-            </div>
-
-            <div class="d-flex flex-wrap mb-3" id="series-summary-metrics" style="gap:8px;"></div>
-            <div class="team-candidates-status small text-muted" id="series-board-status">Cap serie carregada.</div>
-            <div id="series-board-list" class="d-flex flex-column" style="gap:12px;"></div>
+          <div class="d-flex flex-wrap align-items-center" style="gap:8px;">
+            <label class="small text-muted mb-0" for="series-workspace-comp-aparell-select">Aparell</label>
+            <select id="series-workspace-comp-aparell-select" class="form-control form-control-sm" style="width:min(100%, 320px);">
+              {% for app in series_team_aparells %}
+                <option value="{{ app.id }}">{{ app.aparell.nom }}</option>
+              {% endfor %}
+            </select>
+            <input
+              type="text"
+              class="form-control form-control-sm"
+              id="series-workspace-create-name"
+              style="width:min(100%, 260px);"
+              placeholder="Nom opcional de la serie..."
+            >
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-series-workspace-refresh">Refrescar</button>
+            <button type="button" class="btn btn-sm btn-outline-primary" id="btn-series-workspace-create-empty">Crear serie buida</button>
+            <button type="button" class="btn btn-sm btn-primary" id="btn-series-workspace-create-with-selection">Crear amb seleccio</button>
+            <button type="button" class="btn btn-sm btn-outline-warning" id="btn-series-workspace-unassign-selection">Treure seleccio</button>
+            <button type="button" class="btn btn-sm btn-outline-dark" id="btn-series-workspace-export-start-list">Start list</button>
           </div>
-        </section>
+          <div class="small text-muted" id="series-selection-helper-note">Les accions d'aquest modal treballen sobre la seleccio actual del workspace.</div>
+        </div>
+
+        <div class="alert alert-warning border mb-0 d-none" id="series-issues-banner"></div>
+
+        <div class="team-workspace-grid" style="grid-template-columns:minmax(320px, 1.05fr) minmax(360px, 1fr);">
+          <section class="team-workspace-pane team-workspace-pane-left">
+            <div class="team-pane-card">
+              <div class="team-pane-head">
+                <div>
+                  <div class="fw-semibold">Unitats competitives</div>
+                  <div class="small text-muted">Filtra les candidates de l'aparell actiu i prepara una seleccio propia del workspace.</div>
+                </div>
+                <span class="badge badge-light border" id="series-candidates-count-badge">0 candidates</span>
+              </div>
+
+              <div class="team-filters-grid">
+                <div>
+                  <label class="small text-muted mb-1 d-block" for="series-filter-q">Cerca</label>
+                  <input type="text" class="form-control form-control-sm" id="series-filter-q" placeholder="Equip, context o membres...">
+                </div>
+                <div>
+                  <label class="small text-muted mb-1 d-block" for="series-filter-context">Context</label>
+                  <select id="series-filter-context" class="form-control form-control-sm">
+                    <option value="">Tots</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="small text-muted mb-1 d-block" for="series-filter-state">Estat</label>
+                  <select id="series-filter-state" class="form-control form-control-sm">
+                    <option value="all">Totes</option>
+                    <option value="assigned">Amb serie</option>
+                    <option value="unassigned">Sense serie</option>
+                    <option value="invalid">Invalides</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="small text-muted mb-1 d-block" for="series-filter-serie">Serie</label>
+                  <select id="series-filter-serie" class="form-control form-control-sm">
+                    <option value="">Qualsevol</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="team-selection-toolbar">
+                <div class="team-selection-summary">
+                  <strong id="series-selection-count">0 seleccionades</strong>
+                  <span class="text-muted">Seleccio propia del workspace</span>
+                </div>
+                <div class="d-flex flex-wrap" style="gap:8px;">
+                  <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-series-select-visible">Seleccionar visibles</button>
+                  <button type="button" class="btn btn-sm btn-outline-danger" id="btn-series-clear-selection">Netejar seleccio</button>
+                </div>
+              </div>
+
+              <div class="team-candidates-status small text-muted" id="series-candidates-status">Carregant candidates...</div>
+              <div class="team-candidates-list" id="series-candidates-list"></div>
+              <div class="team-candidates-footer">
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-series-prev">Anterior</button>
+                <span class="small text-muted" id="series-page-label">Pagina 1</span>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-series-next">Seguent</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="team-workspace-pane team-workspace-pane-right">
+            <div class="team-pane-card">
+              <div class="team-pane-head">
+                <div>
+                  <div class="fw-semibold">Series creades</div>
+                  <div class="small text-muted">Cada card mostra el resum i nomes carrega el detall complet quan l'obres.</div>
+                </div>
+                <span class="badge badge-light border" id="series-summary-badge">0 series</span>
+              </div>
+
+              <div class="alert alert-light border mt-2 mb-3 d-none" id="series-board-empty-state" role="status"></div>
+              <div class="team-candidates-status small text-muted" id="series-board-status">Cap serie carregada.</div>
+              <div id="series-board-list" class="d-flex flex-column" style="gap:12px;"></div>
+            </div>
+          </section>
+        </div>
       </div>
       {% else %}
       <div class="alert alert-light border mt-3 mb-0">

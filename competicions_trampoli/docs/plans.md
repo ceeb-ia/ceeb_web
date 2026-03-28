@@ -1,107 +1,3 @@
-# Pla d'acció: estabilitzar el gestor de grups V1
-
-## Resum
-Corregir el gestor de grups sense tocar models ni migracions. L’objectiu és que totes les accions manuals visibles funcionin de manera consistent, que els errors de backend siguin visibles a l’usuari i que el mode compacte treballi sobre la selecció real del llistat principal.
-
-## Canvis d’implementació
-### 1. Cablejat correcte del `rename`
-- A [`_groups_panel.html`](/c:/Users/Extra/Desktop/ceeb_web/competicions_trampoli/templates/competicio/_groups_panel.html) afegir l’editor inline del detall del grup, perquè el JS ja espera aquests nodes.
-- El detall ha d’incloure:
-  - `#groups-detail-name-editor`
-  - `#groups-detail-name-input`
-  - botó `.js-save-group-name`
-  - botó `.js-cancel-group-name`
-- Unificar el flux de rename perquè tant:
-  - `Renombrar` de les targetes de grup
-  - `Editar nom` del panell de detall
-  acabin al mateix handler.
-- Decisió: el botó del detall deixarà de dependre de `data-group-action="rename"` i s’alinearà amb el mateix patró que les targetes (`data-group-rename` o selector equivalent únic).
-- El rename continuarà reutilitzant l’endpoint existent `inscripcions_set_group_name`; no s’afegeix cap endpoint nou.
-
-### 2. Gestió d’errors visible per a totes les accions manuals
-- A [`_groups_workspace_script.html`](/c:/Users/Extra/Desktop/ceeb_web/competicions_trampoli/templates/competicio/_groups_workspace_script.html) embolcallar amb `try/catch`:
-  - `previewAction()`
-  - `runAction()`
-  - `fetchWorkspace()`
-  - `fetchDetail()`
-- Qualsevol resposta `400` o error de xarxa s’ha de mostrar amb `showAlert(err.message || err)`.
-- Mantenir el text retornat pel backend com a font principal del missatge, especialment per:
-  - bloquejos de rotacions
-  - `group invalid`
-  - `group not empty`
-- Decisió: no es canvia la semàntica dels endpoints; només es fa visible el feedback que ja existeix.
-
-### 3. Sincronitzar la selecció real del llistat amb el gestor
-- El gestor no pot continuar depenent només de la selecció inicial o del botó `Importar seleccio`.
-- A [`_groups_workspace_script.html`](/c:/Users/Extra/Desktop/ceeb_web/competicions_trampoli/templates/competicio/_groups_workspace_script.html) exposar `window.__groupsWorkspaceApi.setExternalSelection(ids)`.
-- Aquest mètode ha de:
-  - reemplaçar `state.selectedIds`
-  - refrescar resum de selecció
-  - rerenderitzar candidates visibles si el workspace ja està carregat
-  - no fer cap `POST` automàtic
-- Al listener existent del llistat principal de `.js-team-row-select`, cridar `setExternalSelection(getSelectedInscripcioIds())`.
-- El botó `Importar seleccio del llistat` es manté, però passa a ser redundància útil, no dependència funcional.
-- Decisió: la selecció “selected” del gestor és sempre live respecte al llistat principal.
-
-### 4. Tancar el contracte frontend/backend del resum
-- Mantenir com a claus canòniques del backend les actuals de servei:
-  - `groups_total`
-  - `groups_with_members`
-  - `empty_groups`
-  - `assigned_count`
-  - `unassigned_count`
-  - `programmed_groups`
-  - `out_of_program_groups`
-- Adaptar el frontend perquè deixi de llegir:
-  - `groups_without_members`
-  - `programmed_groups_count`
-  - `out_of_program_count`
-- Decisió: no afegir aliases nous al backend; la correcció serà al frontend per reduir dispersió.
-- Revisar també els badges del resum compacte perquè consumeixin les mateixes claus canòniques.
-
-### 5. Endurir el flux de botons i estats
-- Revisar els handlers dels botons del detall perquè tots facin una de dues coses:
-  - o tenen selector propi explícit
-  - o passen per `data-group-action` amb branca implementada
-- Evitar botons “ornamentals” sense handler real.
-- Mantenir la lògica actual de bloqueig per rotacions i desactivació de grups buits sense canviar regles de negoci.
-
-## APIs i interfícies
-- No es creen endpoints nous.
-- No es modifiquen models ni migracions.
-- S’afegeix una interfície JS pública nova:
-  - `window.__groupsWorkspaceApi.setExternalSelection(ids: string[] | number[])`
-- Es manté `inscripcions_set_group_name` com a únic punt de desat del nom del grup.
-- Es manté la política actual dels endpoints `groups_*`; només millora el consum al frontend.
-
-## Pla de proves
-- `Editar nom` des del detall obre editor, desa i refresca l’estat.
-- `Renombrar` des d’una targeta de grup obre el mateix editor i desa correctament.
-- `Crear grup nou amb seleccio` al mode compacte funciona després de marcar checkboxes al llistat principal sense haver de prémer `Importar seleccio`.
-- `Assignar seleccio` i `Treure seleccio` treballen sobre la selecció viva del llistat.
-- Si el backend bloqueja una acció per rotacions, l’usuari veu un missatge explícit.
-- Si s’intenta `Desactivar grup buit` sobre un grup no buit, es veu error explícit.
-- Els comptadors del workspace mostren valors reals per:
-  - buits
-  - programats
-  - fora de programa
-- Regressió:
-  - ordre de competició del grup continua obrint-se des de targeta i detall
-  - historial `undo/redo` continua arribant via payload i actualitzant la UI
-
-## Millores futures
-- Unificar el patró del gestor de grups amb el d’equips en un helper JS compartit per evitar divergències de wiring i d’error handling.
-- Afegir testos frontend o testos Django amb assertions de payload per blindar el contracte de claus del workspace.
-- Fer que el backend retorni un camp `error_code` estable, a més del missatge humà, per permetre UX més rica sense parsejar textos.
-- Afegir un estat visual de “loading/disabled” mentre s’executa cada acció manual per evitar dobles clics i donar feedback immediat.
-- Consolidar els selectors de botons en convencions úniques (`data-group-*`) i eliminar dependències de selectors mixtos (`data-*` + classes JS) que ara fan més fàcil trencar el wiring.
-
-## Assumptions i defaults
-- No es toca l’esquema de base de dades.
-- No es canvia cap regla funcional de rotacions, eliminació o assignació.
-- El backend actual és vàlid en lògica de negoci; el problema principal és de integració frontend i de feedback d’errors.
-- Les claus canòniques del resum queden fixades al backend actual, i el frontend s’hi adapta.
-
 
 
 PLAN 2
@@ -363,3 +259,127 @@ La decisió funcional queda tancada així:
 - El primer v1 només necessita `all`, `best_n`, `worst_n` i agregacions `sum/avg/min/max/count`.
 - “Escalaritzable” no vol dir “escalar automàticament”: la reducció de `list/matrix` ha de ser explícita amb un computed previ.
 - `members_sum/avg/min/max/count` es mantenen com a API estable i sugar del nou model, no es deprequen.
+
+
+
+
+PLAN 3: Revision
+
+
+# Permisos QR per membre en aparells d’equip
+
+## Resum
+- Corregir el cas actual en què un permís `scope=member` acaba mostrant `Camp no disponible al schema: E` al portal de jutges.
+- Estendre els permisos del QR perquè, en aparells d’equip, un camp individual pugui apuntar a `un`, `varis` o `tots` els membres del subjecte.
+- Fer servir sempre slots estables `M1`, `M2`, `M3`, ... com a model de targeting, no persones concretes.
+- Mantenir el model actual per camps `shared` i per aparells no d’equip.
+
+## Canvis clau
+### Model lògic dels permisos
+- Mantenir els camps existents del permís: `field_code`, `scope`, `judge_index`, `item_start`, `item_count`.
+- Afegir als permisos de tipus `member`:
+  - `member_mode`: `"single" | "subset" | "all"`
+  - `member_slots`: llista d’enters 1-based, ex. `[1]`, `[1,2]`; buida o absent quan `member_mode="all"`.
+- Regla de compatibilitat:
+  - permisos antics amb `scope="member"` i sense `member_mode` es tracten com `member_mode="all"` mentre no es regravin.
+- No fer migracions de BD; el camp `permissions` ja és JSON i pot absorbir l’extensió.
+
+### Admin de QRs
+- A la UI de creació/edició de permisos:
+  - mantenir `scope = Compartit / Individual`
+  - si `scope="Individual"` i l’aparell és d’equip, mostrar controls de targeting:
+    - `Tots els membres`
+    - `Només un membre`
+    - `Diversos membres`
+  - per `Només un membre`, selector simple `M1/M2/M3/M4`
+  - per `Diversos membres`, multi-select de slots
+- Validació de backend:
+  - `shared` no pot portar `member_mode` ni `member_slots`
+  - `member` en aparell no d’equip continua invalid
+  - `member_mode="single"` exigeix exactament un slot
+  - `member_mode="subset"` exigeix almenys un slot i sense duplicats
+  - `member_mode="all"` no necessita slots
+  - no validar contra nombre real de membres en crear el QR; això es resol en temps d’execució per subjecte
+
+### Resolució runtime al portal
+- Introduir una capa de resolució de permisos abans de renderitzar inputs:
+  - `shared` continua resolent a un únic `runtime_field_code = field_code`
+  - `member + single/subset/all` es resol a una o més entrades runtime:
+    - `E__m1`, `E__m2`, ...
+- La resolució s’ha de fer per subjecte actual, perquè el nombre real de membres pot variar.
+- Si un permís apunta a `M3` i el subjecte només té 2 membres:
+  - aquell subpermís no es renderitza
+  - no ha de provocar error global del bloc
+- El missatge `Camp no disponible al schema: E` ha de desaparèixer per aquests casos perquè el portal ja no ha de buscar el codi base `E` quan és un permís individual.
+
+### Render i captura al portal de jutges
+- Per cada permís individual resolt, renderitzar un bloc separat amb capçalera clara:
+  - `Execució · M1 [E] · Jutge 1`
+  - `Execució · M2 [E] · Jutge 1`
+- Per `member_mode="all"`, renderitzar tots els slots disponibles del subjecte en ordre.
+- Per `member_mode="subset"`, renderitzar només els slots demanats i existents.
+- Reutilitzar la lògica actual de camps runtime `E__m1`, `E__m2`, etc.; no inventar un format nou al frontend.
+- La sanitització del patch ha de permetre els codis runtime expandits resultants, no només el codi base.
+- El resum visible del QR al portal i a la pantalla d’admin/print ha de mostrar també el target:
+  - `E · Individual · M1`
+  - `E · Individual · M1,M2`
+  - `E · Individual · Tots`
+
+### Conversió d’inputs i scoring
+- Mantenir la distinció existent entre schema lògic i schema runtime.
+- Seguir usant la conversió lògica/runtime ja existent per camps de membre:
+  - lògic: mapa per camp base i membre
+  - runtime: codis expandits `__mN`
+- No canviar el contracte de càlcul del scoring; el canvi només ha de millorar com el QR selecciona i edita quins `runtime_field_code` es poden tocar.
+
+## Interfícies i comportament esperat
+- Nou shape de permís individual en tokens:
+```json
+{
+  "field_code": "E",
+  "scope": "member",
+  "judge_index": 1,
+  "member_mode": "single",
+  "member_slots": [1]
+}
+```
+- Permís “tots”:
+```json
+{
+  "field_code": "E",
+  "scope": "member",
+  "judge_index": 1,
+  "member_mode": "all"
+}
+```
+- La funció que avui calcula `runtime_field_code` per permisos s’ha de substituir per una resolució més rica:
+  - a l’admin pot continuar generant una etiqueta resum
+  - al portal ha de produir una llista de codis runtime efectius per subjecte
+- No canviar rutes existents ni el flux general de QR, només el contracte intern de `permissions`.
+
+## Pla de proves
+- Validació admin:
+  - camp `member` en aparell d’equip admet `single`, `subset`, `all`
+  - `single` amb més d’un slot falla
+  - `subset` buit falla
+  - `shared` amb metadata de membre falla o es normalitza fora
+- Compatibilitat:
+  - un permís antic `{"field_code":"E","scope":"member"}` es tracta com `all`
+- Portal:
+  - un QR amb `single M1` renderitza només `E__m1`
+  - un QR amb `subset M1,M2` renderitza dos blocs
+  - un QR amb `all` renderitza tots els membres disponibles
+  - si es demana `M3` i el subjecte només té 2 membres, no hi ha error i no es renderitza `M3`
+  - desapareix el missatge `Camp no disponible al schema: E` per permisos individuals ben configurats
+- Persistència:
+  - editar i guardar inputs de `M1` només actualitza el codi runtime corresponent
+  - `shared` continua funcionant exactament igual
+- Presentació:
+  - admin de tokens mostra el target de membre a la taula i a la impressió de QRs
+
+## Assumptions i defaults
+- El targeting de membre es fa per slot (`M1`, `M2`, ...) i no per identitat real de persona.
+- Un permís individual pot apuntar a `un`, `varis` o `tots`.
+- Els permisos antics de tipus `member` sense target explícit passen a significar `tots`.
+- No es fan migracions ni canvis de models SQL; tot es resol dins del JSON `permissions`.
+- No es modifica el motor de scoring, només la capa de permisos QR, resolució runtime i render del portal.

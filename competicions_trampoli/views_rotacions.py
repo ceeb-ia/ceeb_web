@@ -11,7 +11,7 @@ from django.shortcuts import render, get_object_or_404
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
-from django.db.models import Q, Max, Min, Case, When, IntegerField, F
+from django.db.models import Q, Max, Min, Case, When, IntegerField, F, Count
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
@@ -529,7 +529,7 @@ def rotacions_planner(request, pk):
         SerieEquip.objects
         .filter(competicio=competicio, actiu=True, comp_aparell__actiu=True)
         .select_related("comp_aparell__aparell")
-        .annotate(subjects_count=Count("team_subject_items"))
+        .annotate(subjects_count=Count("items"))
         .order_by("comp_aparell__ordre", "comp_aparell_id", "display_num", "id")
     )
     programmed_series_ids = set(get_programmed_series_ids(competicio))

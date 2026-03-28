@@ -42,10 +42,20 @@ from .services.scoring_subjects import (
     subject_video_models,
 )
 from .services.team_scoring import (
+    build_permission_label,
     build_team_subjects_for_comp_aparell,
     is_team_context_app,
-    permission_runtime_code,
+    logical_team_inputs_to_runtime_inputs,
+    normalize_permission_target,
+    resolve_permission_runtime_entries,
     runtime_schema_for_comp_aparell,
+    runtime_inputs_to_logical_team_inputs,
+)
+from .services.team_subject_contract import (
+    build_team_subject_registry,
+    filter_team_subject_ids_for_serie,
+    runtime_schema_for_team_subjects,
+    team_subject_meta,
 )
 from .services.competition_groups import (
     get_group_maps,
@@ -352,19 +362,28 @@ def _normalize_permissions(perms):
     for p in perms:
         if not isinstance(p, dict):
             continue
-        code = p.get("field_code")
+        raw_perm = normalize_permission_target(p)
+        code = raw_perm.get("field_code")
         if not code:
             continue
-        scope = str(p.get("scope") or "shared").strip().lower() or "shared"
-        runtime_field_code = str(p.get("runtime_field_code") or code)
-        out.append({
+        scope = str(raw_perm.get("scope") or "shared").strip().lower() or "shared"
+        item_count = raw_perm.get("item_count")
+        row = {
             "field_code": str(code),
-            "runtime_field_code": runtime_field_code,
+            "runtime_field_code": str(raw_perm.get("runtime_field_code") or code),
             "scope": scope,
-            "judge_index": int(p.get("judge_index") or 1),
-            "item_start": int(p.get("item_start") or 1),
-            "item_count": (None if p.get("item_count") in (None, "", "null") else int(p["item_count"])),
-        })
+            "judge_index": int(raw_perm.get("judge_index") or 1),
+            "item_start": int(raw_perm.get("item_start") or 1),
+            "item_count": (None if item_count in (None, "", "null") else int(item_count)),
+        }
+        if scope == "member":
+            row["member_mode"] = str(raw_perm.get("member_mode") or "all")
+            if raw_perm.get("member_slots") not in (None, ""):
+                row["member_slots"] = list(raw_perm.get("member_slots") or [])
+            if raw_perm.get("member_slot"):
+                row["member_slot"] = int(raw_perm.get("member_slot"))
+        row["label"] = build_permission_label(row)
+        out.append(row)
     return out
 
 
@@ -377,6 +396,39 @@ def _allowed_input_codes_from_permissions(permissions: list) -> set:
         allowed_codes.add(str(code))
         allowed_codes.add(f"__crash__{code}")
     return allowed_codes
+
+
+def _subject_member_count(subject) -> int:
+    if not isinstance(subject, dict):
+        return 0
+    team_subject = subject.get("team_subject")
+    if team_subject is not None:
+        return len(getattr(team_subject, "member_ids", []) or [])
+    return len(subject.get("members") or [])
+
+
+def _resolve_permissions_for_subject(permissions: list, comp_aparell, subject=None) -> list:
+    member_count = _subject_member_count(subject)
+    resolved = []
+    for perm in permissions or []:
+        resolved.extend(
+            resolve_permission_runtime_entries(
+                perm,
+                comp_aparell,
+                member_count=member_count,
+            )
+        )
+    return resolved
+
+
+def _subject_dom_id(subject) -> str:
+    if not isinstance(subject, dict):
+        return ""
+    raw_id = subject.get("id")
+    if raw_id not in (None, ""):
+        return str(raw_id)
+    subject_id = subject.get("subject_id")
+    return "" if subject_id in (None, "") else str(subject_id)
 
 
 def _filter_inputs_for_allowed_codes(inputs: dict, allowed_codes: set) -> dict:
@@ -539,17 +591,8 @@ def judge_portal(request, token):
         aparell=comp_aparell.aparell,
         defaults={"schema": {}},
     )
-    schema = runtime_schema_for_comp_aparell(ss.schema or {}, comp_aparell)
 
     permissions = _normalize_permissions(tok.permissions)
-    for perm in permissions:
-        perm["runtime_field_code"] = str(
-            perm.get("runtime_field_code")
-            or permission_runtime_code(perm, comp_aparell)
-            or perm.get("field_code")
-            or ""
-        )
-    allowed_input_codes = _allowed_input_codes_from_permissions(permissions)
 
     franja_modes = get_rotacions_order_modes(competicio)
 
@@ -623,7 +666,9 @@ def judge_portal(request, token):
     franja_override = franges_by_id.get(franja_override_id) if franja_override_id else None
 
     if team_subject_mode:
-        raw_subjects, _issues = build_team_subjects_for_comp_aparell(competicio, comp_aparell)
+        registry = build_team_subject_registry(competicio, comp_aparell)
+        raw_subjects = list(registry["subjects"])
+        schema = runtime_schema_for_team_subjects(ss.schema or {}, comp_aparell, raw_subjects)
         base_subjects = [
             dict(item)
             for item in raw_subjects
@@ -636,6 +681,7 @@ def judge_portal(request, token):
             item["group"] = team_subject_bucket_key(item, comp_aparell.id)
             item["group_label"] = team_subject_bucket_label(item, app_name)
     else:
+        schema = runtime_schema_for_comp_aparell(ss.schema or {}, comp_aparell)
         excluded_ins_ids = set(
             InscripcioAparellExclusio.objects
             .filter(comp_aparell=comp_aparell)
@@ -802,6 +848,8 @@ def judge_portal(request, token):
     else:
         entry_filters["inscripcio_id__in"] = subject_ids
     entries = entry_model.objects.filter(**entry_filters)
+    if team_subject_mode:
+        entries = entries.select_related("team_subject")
     entry_map = {}
     for e in entries:
         owner_id = int(e.team_subject_id if team_subject_mode else e.inscripcio_id)
@@ -814,20 +862,27 @@ def judge_portal(request, token):
     exercici_default = _clamp_exercici_for_aparell(comp_aparell, request.GET.get("ex"))
     scores_payload = {}
     for item in subject_list:
+        subject_dom_id = _subject_dom_id(item) or str(item.get("subject_id") or "")
+        resolved_permissions = _resolve_permissions_for_subject(permissions, comp_aparell, item)
+        allowed_input_codes = _allowed_input_codes_from_permissions(resolved_permissions)
         exercise_map = {}
         for ex in exercicis:
             e = entry_map.get((int(item["subject_id"]), ex))
+            if team_subject_mode and e and isinstance(e.inputs, dict):
+                runtime_inputs = logical_team_inputs_to_runtime_inputs(e.inputs, e.team_subject, ss.schema or {})
+            else:
+                runtime_inputs = e.inputs if e and isinstance(e.inputs, dict) else {}
             exercise_map[str(ex)] = {
                 "inputs": (
-                    _filter_inputs_for_allowed_codes(e.inputs, allowed_input_codes)
-                    if e and isinstance(e.inputs, dict)
+                    _filter_inputs_for_allowed_codes(runtime_inputs, allowed_input_codes)
+                    if runtime_inputs
                     else {}
                 ),
                 "outputs": (e.outputs if e and isinstance(e.outputs, dict) else {}),
                 "total": (float(e.total) if e else 0.0),
                 "updated_at": (e.updated_at.isoformat() if e else None),
             }
-        scores_payload[str(item["subject_id"])] = {
+        scores_payload[subject_dom_id] = {
             "exercises": exercise_map,
         }
 
@@ -850,6 +905,7 @@ def judge_portal(request, token):
         "schema": schema,
         "permissions": permissions,
         "inscripcions": subject_list,
+        "subjects_payload_json": subject_list,
         "group_blocks": programmed_group_blocks,
         "out_of_program_group_blocks": out_of_program_group_blocks,
         "active_group_key": active_group_key,
@@ -911,39 +967,12 @@ def judge_updates(request, token):
     else:
         exercicis = [_clamp_exercici_for_aparell(comp_aparell, request.GET.get("exercici") or request.GET.get("ex"))]
     permissions = _normalize_permissions(tok.permissions)
-    for perm in permissions:
-        perm["runtime_field_code"] = str(
-            perm.get("runtime_field_code")
-            or permission_runtime_code(perm, comp_aparell)
-            or perm.get("field_code")
-            or ""
-        )
-    allowed_input_codes = _allowed_input_codes_from_permissions(permissions)
+    ss, _ = ScoringSchema.objects.get_or_create(aparell=comp_aparell.aparell, defaults={"schema": {}})
 
     if is_team_context_app(comp_aparell):
-        eligible_subjects = {
-            int(item["subject_id"]): item
-            for item in build_team_subjects_for_comp_aparell(competicio, comp_aparell)[0]
-            if int(comp_aparell.id) in (item.get("allowed_app_ids") or [])
-        }
-        allowed_team_ids = list(eligible_subjects.keys())
-        if serie_id not in (None, ""):
-            try:
-                clean_serie_id = int(serie_id)
-            except Exception:
-                clean_serie_id = None
-            if clean_serie_id:
-                allowed_team_ids = [
-                    team_id
-                    for team_id, subject in eligible_subjects.items()
-                    if int(subject.get("serie_id") or 0) == clean_serie_id
-                ]
-            else:
-                allowed_team_ids = [
-                    team_id
-                    for team_id, subject in eligible_subjects.items()
-                    if not subject.get("serie_id")
-                ]
+        registry = build_team_subject_registry(competicio, comp_aparell)
+        subject_map = registry["all_by_id"]
+        allowed_team_ids = filter_team_subject_ids_for_serie(subject_map, serie_id)
         qs = (
             TeamScoreEntry.objects
             .filter(
@@ -953,6 +982,7 @@ def judge_updates(request, token):
                 updated_at__gt=dt,
                 team_subject_id__in=allowed_team_ids,
             )
+            .select_related("team_subject")
             .order_by("updated_at", "id")
         )
     else:
@@ -978,23 +1008,31 @@ def judge_updates(request, token):
     for s in qs[:500]:
         subject_kind = "team_unit" if is_team_context_app(comp_aparell) else "inscripcio"
         subject_id = s.team_subject_id if subject_kind == "team_unit" else s.inscripcio_id
+        if subject_kind == "team_unit":
+            subject_meta = dict(subject_map.get(int(subject_id), {}))
+            subject_meta["team_subject"] = getattr(s, "team_subject", None)
+            resolved_permissions = _resolve_permissions_for_subject(permissions, comp_aparell, subject_meta)
+            runtime_inputs = (
+                logical_team_inputs_to_runtime_inputs(s.inputs, s.team_subject, ss.schema or {})
+                if isinstance(s.inputs, dict)
+                else {}
+            )
+        else:
+            subject_meta = {}
+            resolved_permissions = _resolve_permissions_for_subject(permissions, comp_aparell, None)
+            runtime_inputs = s.inputs if isinstance(s.inputs, dict) else {}
+        allowed_input_codes = _allowed_input_codes_from_permissions(resolved_permissions)
         payload = {
             **serialize_subject_payload(subject_kind, subject_id),
             "exercici": s.exercici,
             "comp_aparell_id": s.comp_aparell_id,
-            "inputs": _filter_inputs_for_allowed_codes(s.inputs, allowed_input_codes),
+            "inputs": _filter_inputs_for_allowed_codes(runtime_inputs, allowed_input_codes),
             "outputs": s.outputs or {},
             "total": float(s.total),
             "updated_at": s.updated_at.isoformat(),
         }
         if subject_kind == "team_unit":
-            meta = eligible_subjects.get(int(subject_id), {})
-            payload.update({
-                "serie_id": meta.get("serie_id"),
-                "serie_label": meta.get("serie_label"),
-                "serie_order": meta.get("serie_order"),
-                "series_state": meta.get("series_state"),
-            })
+            payload.update(team_subject_meta(subject_meta))
         updates.append(payload)
 
     return JsonResponse({"ok": True, "now": timezone.now().isoformat(), "updates": updates})
@@ -1054,11 +1092,7 @@ def judge_video_status(request, token):
 
     team_ids = None
     if is_team_context_app(comp_aparell):
-        team_ids = [
-            int(item["subject_id"])
-            for item in build_team_subjects_for_comp_aparell(competicio, comp_aparell)[0]
-            if int(comp_aparell.id) in (item.get("allowed_app_ids") or [])
-        ]
+        team_ids = list(build_team_subject_registry(competicio, comp_aparell)["eligible_by_id"].keys())
     subject, error_response = resolve_scoring_subject(
         competicio,
         comp_aparell,
@@ -1217,11 +1251,7 @@ def judge_video_upload(request, token):
 
     team_ids = None
     if is_team_context_app(comp_aparell):
-        team_ids = [
-            int(item["subject_id"])
-            for item in build_team_subjects_for_comp_aparell(competicio, comp_aparell)[0]
-            if int(comp_aparell.id) in (item.get("allowed_app_ids") or [])
-        ]
+        team_ids = list(build_team_subject_registry(competicio, comp_aparell)["eligible_by_id"].keys())
     subject, error_response = resolve_scoring_subject(
         competicio,
         comp_aparell,
@@ -1718,22 +1748,7 @@ def judge_save_partial(request, token):
     if not isinstance(inputs_patch, dict):
         return JsonResponse({"ok": False, "error": "inputs_patch ha de ser objecte JSON"}, status=400)
 
-    # Seguretat: només permetre editar camps que apareixen a permissions
     permissions = _normalize_permissions(tok.permissions)
-    for perm in permissions:
-        perm["runtime_field_code"] = str(
-            perm.get("runtime_field_code")
-            or permission_runtime_code(perm, comp_aparell)
-            or perm.get("field_code")
-            or ""
-        )
-    allowed_codes = {p["runtime_field_code"] for p in permissions}
-    allowed_input_codes = _allowed_input_codes_from_permissions(permissions)
-    allowed_patch_codes = set(allowed_codes)
-    allowed_patch_codes.update({f"__crash__{code}" for code in allowed_codes})
-    patch_codes = set(inputs_patch.keys())
-    if not patch_codes.issubset(allowed_patch_codes):
-        return JsonResponse({"ok": False, "error": "Intentes editar un camp no autoritzat per aquest QR"}, status=403)
 
     team_ids = None
     if is_team_context_app(comp_aparell):
@@ -1752,7 +1767,18 @@ def judge_save_partial(request, token):
         return error_response
 
     ss, _ = ScoringSchema.objects.get_or_create(aparell=comp_aparell.aparell, defaults={"schema": {}})
-    schema = runtime_schema_for_comp_aparell(ss.schema or {}, comp_aparell)
+    team_subject = subject.get("team_subject") if str(subject.get("subject_kind")) == "team_unit" else None
+    team_member_count = len(getattr(team_subject, "member_ids", []) or []) if team_subject is not None else 0
+    resolved_permissions = _resolve_permissions_for_subject(permissions, comp_aparell, subject)
+    allowed_codes = {str(p.get("runtime_field_code") or p.get("field_code") or "") for p in resolved_permissions}
+    allowed_codes.discard("")
+    allowed_input_codes = _allowed_input_codes_from_permissions(resolved_permissions)
+    allowed_patch_codes = set(allowed_codes)
+    allowed_patch_codes.update({f"__crash__{code}" for code in allowed_codes})
+    patch_codes = set(inputs_patch.keys())
+    if not patch_codes.issubset(allowed_patch_codes):
+        return JsonResponse({"ok": False, "error": "Intentes editar un camp no autoritzat per aquest QR"}, status=403)
+    schema = runtime_schema_for_comp_aparell(ss.schema or {}, comp_aparell, member_count=team_member_count)
 
     entry, _ = get_or_create_subject_entry_locked(
         competicio=competicio,
@@ -1762,8 +1788,10 @@ def judge_save_partial(request, token):
         defaults={"inputs": {}, "outputs": {}, "total": 0},
     )
 
-    sanitized = _sanitize_patch_by_permissions(schema, permissions, inputs_patch)
+    sanitized = _sanitize_patch_by_permissions(schema, resolved_permissions, inputs_patch)
     current_inputs = entry.inputs if isinstance(entry.inputs, dict) else {}
+    if team_subject is not None:
+        current_inputs = logical_team_inputs_to_runtime_inputs(current_inputs, team_subject, ss.schema or {})
 
     # MERGE per no trepitjar altres camps/jutges
     merged_inputs = _apply_sanitized_patch(current_inputs, sanitized, schema)
@@ -1785,7 +1813,11 @@ def judge_save_partial(request, token):
     except Exception:
         return JsonResponse({"ok": False, "error": "Error inesperat calculant puntuació"}, status=500)
 
-    entry.inputs = result.inputs
+    entry.inputs = (
+        runtime_inputs_to_logical_team_inputs(result.inputs, team_subject, ss.schema or {})
+        if team_subject is not None
+        else result.inputs
+    )
     entry.outputs = result.outputs
     entry.total = result.total
     entry.save(update_fields=["inputs", "outputs", "total", "updated_at"])
@@ -1793,7 +1825,7 @@ def judge_save_partial(request, token):
     return JsonResponse({
         "ok": True,
         **serialize_subject_payload(subject["subject_kind"], subject["subject_id"]),
-        "inputs": _filter_inputs_for_allowed_codes(entry.inputs, allowed_input_codes),
+        "inputs": _filter_inputs_for_allowed_codes(result.inputs if team_subject is not None else entry.inputs, allowed_input_codes),
         "outputs": entry.outputs or {},
         "total": float(entry.total),
         "updated_at": entry.updated_at.isoformat(),

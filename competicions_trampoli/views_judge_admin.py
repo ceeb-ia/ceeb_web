@@ -11,7 +11,10 @@ from .models_scoring import ScoringSchema
 from .models_judging import JudgeDeviceToken, PublicLiveToken
 from .services.team_scoring import (
     build_permission_label,
+    build_team_subjects_for_comp_aparell,
     is_team_context_app,
+    normalize_permission_target,
+    parse_permission_member_slots,
     permission_runtime_code,
     runtime_schema_for_comp_aparell,
 )
@@ -34,7 +37,32 @@ def _schema_field_by_code(schema: dict):
     return {f.get("code"): f for f in (schema.get("fields") or []) if isinstance(f, dict) and f.get("code")}
 
 
-def _validate_permission_row(schema_by_code: dict, row: dict):
+def _member_slot_choices(competicio, comp_aparell):
+    max_slots = max(4, int(getattr(comp_aparell, "expected_team_size", 0) or 0))
+    if comp_aparell and is_team_context_app(comp_aparell):
+        try:
+            subjects, _issues = build_team_subjects_for_comp_aparell(competicio, comp_aparell)
+            max_slots = max(max_slots, max((len(item.get("members") or []) for item in subjects), default=0))
+        except Exception:
+            pass
+    return list(range(1, max_slots + 1))
+
+
+def _permission_summary_rows(perms):
+    rows = []
+    for raw_perm in perms or []:
+        perm = normalize_permission_target(raw_perm)
+        item_count = perm.get("item_count")
+        rows.append({
+            "label": build_permission_label(perm),
+            "judge_index": int(perm.get("judge_index") or 1),
+            "item_start": int(perm.get("item_start") or 1),
+            "item_count": (None if item_count in (None, "", "null") else int(item_count)),
+        })
+    return rows
+
+
+def _validate_permission_row(schema_by_code: dict, row: dict, *, team_context_mode: bool = False):
     """
     Normalitza i limita judge_index / items segons schema real.
     """
@@ -48,6 +76,8 @@ def _validate_permission_row(schema_by_code: dict, row: dict):
     if scope not in {"shared", "member"}:
         raise ValueError(f"{code}: scope invalid.")
     if scope == "member":
+        if not team_context_mode:
+            raise ValueError(f"{code}: els permisos individuals nomes estan disponibles en aparells d'equip.")
         if field_scope != "member":
             raise ValueError(f"{code}: aquest camp no admet abast individual.")
     elif field_scope == "member":
@@ -80,13 +110,36 @@ def _validate_permission_row(schema_by_code: dict, row: dict):
         item_start = 1
         item_count = None
 
-    return {
+    member_mode = None
+    member_slots = []
+    if scope == "member":
+        member_mode = str(row.get("member_mode") or "").strip().lower() or "all"
+        member_slots = parse_permission_member_slots(row.get("member_slots"))
+        if member_mode not in {"single", "subset", "all"}:
+            raise ValueError(f"{code}: mode de membre invalid.")
+        if member_mode == "single":
+            if len(member_slots) != 1:
+                raise ValueError(f"{code}: has d'escollir exactament un membre.")
+        elif member_mode == "subset":
+            if not member_slots:
+                raise ValueError(f"{code}: has d'escollir almenys un membre.")
+            if len(set(member_slots)) != len(member_slots):
+                raise ValueError(f"{code}: hi ha membres duplicats a la seleccio.")
+        else:
+            member_slots = []
+
+    result = {
         "field_code": code,
         "scope": scope,
         "judge_index": j,
         "item_start": item_start,
         "item_count": item_count,
     }
+    if scope == "member":
+        result["member_mode"] = member_mode
+        if member_mode != "all":
+            result["member_slots"] = member_slots
+    return result
 
 
 @require_http_methods(["GET", "POST"])
@@ -123,6 +176,7 @@ def judges_qr_home(request, competicio_id):
 
     field_choices = _schema_field_choices(schema)
     schema_by_code = _schema_field_by_code(schema)
+    member_slot_choices = _member_slot_choices(competicio, comp_aparell)
 
     PermissionFS = formset_factory(
         PermissionRowForm,
@@ -160,7 +214,11 @@ def judges_qr_home(request, competicio_id):
                 if not f.get("field_code"):
                     continue
                 try:
-                    perm = _validate_permission_row(schema_by_code, f)
+                    perm = _validate_permission_row(
+                        schema_by_code,
+                        f,
+                        team_context_mode=bool(comp_aparell and is_team_context_app(comp_aparell)),
+                    )
                     perm["runtime_field_code"] = permission_runtime_code(perm, comp_aparell)
                     perms.append(perm)
                 except ValueError as e:
@@ -200,6 +258,8 @@ def judges_qr_home(request, competicio_id):
         tokens = (JudgeDeviceToken.objects
                   .filter(competicio=competicio, comp_aparell=comp_aparell)
                   .order_by("-created_at"))
+        for token in tokens:
+            token.permission_summaries = _permission_summary_rows(token.permissions)
 
     ctx = {
         "competicio": competicio,
@@ -214,7 +274,7 @@ def judges_qr_home(request, competicio_id):
         "exercicis": exercicis,
         "exercici": exercici,
         "is_team_context_mode": bool(comp_aparell and is_team_context_app(comp_aparell)),
-        "permission_label_builder": build_permission_label,
+        "member_slot_choices": member_slot_choices,
     }
     return render(request, "judge/admin_tokens.html", ctx)
 
@@ -239,6 +299,8 @@ def judges_qr_print(request, competicio_id):
     tokens = (JudgeDeviceToken.objects
               .filter(competicio=competicio, comp_aparell=comp_aparell, is_active=True, revoked_at__isnull=True)
               .order_by("label", "created_at"))
+    for token in tokens:
+        token.permission_summaries = _permission_summary_rows(token.permissions)
 
     ctx = {
         "competicio": competicio,

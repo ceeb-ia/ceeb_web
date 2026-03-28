@@ -30,8 +30,8 @@
           <div class="label">{{ t.label|default:"(sense etiqueta)" }}</div>
           <div class="meta">{{ t.id }}</div>
           <div class="meta" style="margin-top:6px;">
-            {% for p in t.permissions %}
-              <div>{{ p.field_code }} · J{{ p.judge_index }}{% if p.item_count %} · {{ p.item_start }}..{{ p.item_start|add:p.item_count|add:"-1" }}{% endif %}</div>
+            {% for p in t.permission_summaries %}
+              <div>{{ p.label }} · J{{ p.judge_index }}{% if p.item_count %} · {{ p.item_start }}..{{ p.item_start|add:p.item_count|add:"-1" }}{% endif %}</div>
             {% endfor %}
           </div>
         </div>

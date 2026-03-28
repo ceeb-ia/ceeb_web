@@ -6,10 +6,22 @@ from django.conf import settings
 from django.core.files.storage import FileSystemStorage
 from django.http import JsonResponse, StreamingHttpResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
-from celery.result import AsyncResult
-from .tasks import process_certificats_task, process_calendaritzacions_task, process_designacions_task, process_llistats_provisionals_task
-from .tasks import process_llistats_definitius_task, process_calendaritzacions_fase_dos_task
-import redis
+try:
+    from celery.result import AsyncResult
+    from .tasks import process_certificats_task, process_calendaritzacions_task, process_designacions_task, process_llistats_provisionals_task
+    from .tasks import process_llistats_definitius_task, process_calendaritzacions_fase_dos_task
+except ImportError:  # pragma: no cover - optional dependency in local/test envs
+    AsyncResult = None
+    process_certificats_task = None
+    process_calendaritzacions_task = None
+    process_designacions_task = None
+    process_llistats_provisionals_task = None
+    process_llistats_definitius_task = None
+    process_calendaritzacions_fase_dos_task = None
+try:
+    import redis
+except ImportError:  # pragma: no cover - optional dependency in local/test envs
+    redis = None
 from django.views import View
 from django.utils.dateparse import parse_datetime
 from django.contrib.auth.mixins import LoginRequiredMixin

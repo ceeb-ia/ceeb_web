@@ -1,4 +1,5 @@
 
+import importlib.util
 import os
 from pathlib import Path
 
@@ -13,6 +14,9 @@ def _env_bool(name: str, default: bool) -> bool:
 def _env_csv(name: str, default: str) -> list[str]:
     raw = os.getenv(name, default)
     return [x.strip() for x in str(raw).split(",") if x.strip()]
+
+
+HAS_DJANGO_CELERY_RESULTS = importlib.util.find_spec("django_celery_results") is not None
 
 APP_ENV = os.getenv("APP_ENV", "dev")
 DEFAULT_PROJECT_APPS = (
@@ -30,8 +34,10 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'django_celery_results',  # Resultats de Celery
 ] + PROJECT_APPS
+
+if HAS_DJANGO_CELERY_RESULTS:
+    INSTALLED_APPS.append('django_celery_results')
 
 
 MIDDLEWARE = [
@@ -71,16 +77,26 @@ TEMPLATES = [
 DEBUG = _env_bool("DEBUG", True)
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.getenv("POSTGRES_DB"),
-        "USER": os.getenv("POSTGRES_USER"),
-        "PASSWORD": os.getenv("POSTGRES_PASSWORD"),
-        "HOST": os.getenv("POSTGRES_HOST", "db"),
-        "PORT": os.getenv("POSTGRES_PORT", 5432),
+POSTGRES_DB = os.getenv("POSTGRES_DB")
+
+if POSTGRES_DB:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": POSTGRES_DB,
+            "USER": os.getenv("POSTGRES_USER"),
+            "PASSWORD": os.getenv("POSTGRES_PASSWORD"),
+            "HOST": os.getenv("POSTGRES_HOST", "db"),
+            "PORT": os.getenv("POSTGRES_PORT", 5432),
+        }
     }
-}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": str(BASE_DIR / "db.sqlite3"),
+        }
+    }
 
 
 WSGI_APPLICATION = 'ceeb_web.wsgi.application'
@@ -184,4 +200,3 @@ EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "gmerino@ceeb.cat")      # ex: no
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "Et5!2FD*WacG")
 
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER)
-

@@ -1,15 +1,18 @@
-<script>
 (function(){
   const shell = document.getElementById('series-workspace-shell');
   if (!shell) return;
 
   const workspaceUrl = "{% url 'inscripcions_series_equips_workspace' competicio.id %}";
+  const detailUrl = "{% url 'inscripcions_series_equips_detail' competicio.id %}";
+  const previewUrl = "{% url 'inscripcions_series_equips_preview' competicio.id %}";
   const createUrl = "{% url 'inscripcions_series_equips_create' competicio.id %}";
   const assignUrl = "{% url 'inscripcions_series_equips_assign' competicio.id %}";
   const unassignUrl = "{% url 'inscripcions_series_equips_unassign' competicio.id %}";
   const renameUrl = "{% url 'inscripcions_series_equips_rename' competicio.id %}";
   const reorderUrl = "{% url 'inscripcions_series_equips_reorder' competicio.id %}";
   const deleteUrl = "{% url 'inscripcions_series_equips_delete' competicio.id %}";
+  const startListExportUrl = "{% url 'inscripcions_series_equips_start_list_export' competicio.id %}";
+  const workSheetExportUrl = "{% url 'inscripcions_series_equips_work_sheet_export' competicio.id %}";
 
   const state = {
     compAparellId: String(document.getElementById('series-comp-aparell-select')?.value || '').trim(),
@@ -22,8 +25,12 @@
       series_state: 'all',
       serie_id: '',
     },
+    createName: '',
     workspace: null,
     filterTimer: null,
+    expandedSeriesIds: new Set(),
+    seriesDetails: {},
+    loadingSeriesIds: new Set(),
   };
 
   function editable(){
@@ -43,6 +50,68 @@
   function setText(id, value){
     const el = document.getElementById(id);
     if (el) el.textContent = String(value ?? '');
+  }
+
+  function compactBadge(text, variant){
+    if (typeof createGroupPreviewBadge === 'function'){
+      return createGroupPreviewBadge(text, variant || 'neutral');
+    }
+    const span = document.createElement('span');
+    span.className = 'badge badge-light border';
+    span.textContent = String(text || '');
+    return span;
+  }
+
+  function promptText(message, initialValue){
+    if (typeof showPrompt === 'function'){
+      return showPrompt(message, initialValue);
+    }
+    return Promise.resolve(window.prompt(message, initialValue));
+  }
+
+  function openWorkspaceCard(){
+    if (typeof getExpandedGroupCardId === 'function' && typeof setExpandedGroupCard === 'function'){
+      if (getExpandedGroupCardId() !== 'series-main-card'){
+        setExpandedGroupCard('series-main-card');
+      }
+      if (typeof saveUiState === 'function'){
+        saveUiState();
+      }
+      return;
+    }
+    const btn = document.querySelector('[data-expand-target="series-main-card"]');
+    if (btn && btn.getAttribute('aria-expanded') !== 'true'){
+      btn.click();
+    }
+  }
+
+  function currentCreateName(){
+    return String(state.createName || '').trim();
+  }
+
+  function syncCreateNameInputs(skipId){
+    ['series-compact-create-name', 'series-workspace-create-name'].forEach((id) => {
+      const input = document.getElementById(id);
+      if (!input || id === skipId) return;
+      if (input.value !== state.createName){
+        input.value = state.createName;
+      }
+    });
+  }
+
+  function setCreateName(value, skipId){
+    state.createName = String(value || '');
+    syncCreateNameInputs(skipId);
+  }
+
+  function syncAparellSelects(skipId){
+    ['series-comp-aparell-select', 'series-workspace-comp-aparell-select'].forEach((id) => {
+      const select = document.getElementById(id);
+      if (!select || id === skipId) return;
+      if (select.value !== state.compAparellId){
+        select.value = state.compAparellId;
+      }
+    });
   }
 
   function syncFiltersFromDom(){
@@ -80,43 +149,36 @@
     }
   }
 
-  function badge(text, variant){
-    if (typeof createGroupPreviewBadge === 'function'){
-      return createGroupPreviewBadge(text, variant || 'neutral');
-    }
-    const span = document.createElement('span');
-    span.className = 'badge badge-light border';
-    span.textContent = String(text || '');
-    return span;
+  function compactCandidateMeta(item){
+    return String(item?.compact_meta || '').trim() || [
+      item?.context_name,
+      item?.members_preview || item?.members_text,
+      item?.meta,
+    ].filter(Boolean).join(' | ') || 'Sense metadades';
   }
 
-  function renderSummary(workspace){
-    const summary = workspace?.summary || {};
-    const wrap = document.getElementById('series-summary-metrics');
-    if (wrap){
-      wrap.innerHTML = '';
-      wrap.appendChild(badge(`${Number(summary.series_total || 0)} series`));
-      wrap.appendChild(badge(`${Number(summary.assigned_count || 0)} assignades`));
-      wrap.appendChild(badge(`${Number(summary.unassigned_count || 0)} sense serie`));
-      if (Number(summary.invalid_count || 0) > 0){
-        wrap.appendChild(badge(`${Number(summary.invalid_count || 0)} invalides`, 'removed'));
-      }
-      wrap.appendChild(badge(`${Number(summary.programmed_series || 0)} programades`));
-    }
-    setText('series-summary-badge', `${Number(summary.series_total || 0)} series`);
-    setText('series-selected-app-badge', workspace?.comp_aparell?.nom || 'Sense aparell');
+  function seriesMetaText(serie){
+    return [
+      `${Number(serie?.subjects_count || 0)} unitat${Number(serie?.subjects_count || 0) === 1 ? '' : 's'}`,
+      serie?.status_label || '',
+    ].filter(Boolean).join(' | ');
   }
 
   function updateSelectionSummary(){
-    setText('series-selection-count', `${selectedIds().length} seleccionades`);
-  }
-
-  function candidateMeta(item){
-    const parts = [];
-    if (item?.context_name) parts.push(String(item.context_name));
-    if (item?.members_text) parts.push(String(item.members_text));
-    if (item?.meta) parts.push(String(item.meta));
-    return parts.join(' | ') || 'Sense metadades';
+    const count = selectedIds().length;
+    setText('series-selection-count', `${count} seleccionades`);
+    const note = document.getElementById('series-compact-actions-note');
+    if (note){
+      note.textContent = count
+        ? `Les accions rapides treballaran sobre ${count} unitat${count === 1 ? '' : 's'} seleccionada${count === 1 ? '' : 's'} al modal.`
+        : "Aquestes accions treballaran sobre la seleccio preparada al modal.";
+    }
+    setText(
+      'series-selection-helper-note',
+      count
+        ? `La seleccio actual del workspace te ${count} unitat${count === 1 ? '' : 's'} competitiva${count === 1 ? '' : 's'}.`
+        : "Les accions d'aquest modal treballen sobre la seleccio actual del workspace."
+    );
   }
 
   function toggleSelection(id, checked){
@@ -126,6 +188,202 @@
     else state.selectedIds.delete(cleanId);
     updateSelectionSummary();
     renderCandidates(state.workspace);
+  }
+
+  function pruneSeriesState(workspace){
+    const activeIds = new Set((Array.isArray(workspace?.series) ? workspace.series : []).map((serie) => String(serie?.id || '')));
+    state.expandedSeriesIds = new Set(
+      Array.from(state.expandedSeriesIds).filter((serieId) => activeIds.has(String(serieId || '')))
+    );
+    Object.keys(state.seriesDetails).forEach((serieId) => {
+      if (!activeIds.has(String(serieId || ''))){
+        delete state.seriesDetails[serieId];
+      }
+    });
+  }
+
+  async function runAction(url, payload, successMessage){
+    try {
+      const data = await postJson(url, payload);
+      setHistory(data);
+      state.seriesDetails = {};
+      if (typeof showAlert === 'function' && successMessage){
+        showAlert(successMessage);
+      }
+      await refreshWorkspace({ preservePage: true });
+      return data;
+    } catch (error) {
+      if (typeof showAlert === 'function'){
+        showAlert(error?.message || String(error));
+      }
+      throw error;
+    }
+  }
+
+  async function confirmPreview(action, payload){
+    try {
+      const data = await postJson(previewUrl, {
+        comp_aparell_id: state.compAparellId,
+        action,
+        ...payload,
+      });
+      const preview = data?.preview || {};
+      if (!preview?.can_run){
+        if (typeof showAlert === 'function'){
+          showAlert(preview?.message || "L'accio no es pot executar ara mateix.");
+        }
+        return false;
+      }
+      const nextPayload = { ...payload };
+      if (preview?.plan_signature){
+        nextPayload.plan_signature = String(preview.plan_signature);
+      }
+      if (typeof showConfirm === 'function'){
+        const confirmed = await showConfirm(String(preview?.message || 'Continuar?'));
+        return confirmed ? nextPayload : false;
+      }
+      return nextPayload;
+    } catch (error) {
+      if (typeof showAlert === 'function'){
+        showAlert(error?.message || String(error));
+      }
+      return false;
+    }
+  }
+
+  function exportUrl(baseUrl, params){
+    const url = new URL(baseUrl, window.location.origin);
+    Object.entries(params || {}).forEach(([key, value]) => {
+      if (value === null || value === undefined || value === '') return;
+      url.searchParams.set(key, String(value));
+    });
+    return url.toString();
+  }
+
+  function renderSummary(workspace){
+    const summary = workspace?.summary || {};
+    const issues = Array.isArray(workspace?.issues) ? workspace.issues : [];
+    const compactWrap = document.getElementById('series-compact-summary-metrics');
+    const headerWrap = document.getElementById('series-summary-metrics');
+    const issuesBanner = document.getElementById('series-issues-banner');
+    const metrics = [
+      compactBadge(`${Number(summary.series_total || 0)} series`),
+      compactBadge(`${Number(summary.assigned_count || 0)} assignades`),
+      compactBadge(`${Number(summary.unassigned_count || 0)} sense serie`),
+    ];
+    if (Number(summary.invalid_count || 0) > 0){
+      metrics.push(compactBadge(`${Number(summary.invalid_count || 0)} invalides`, 'removed'));
+    }
+    metrics.push(compactBadge(`${Number(summary.programmed_series || 0)} programades`));
+
+    [compactWrap, headerWrap].forEach((wrap) => {
+      if (!wrap) return;
+      wrap.innerHTML = '';
+      metrics.forEach((metric) => wrap.appendChild(metric.cloneNode(true)));
+    });
+
+    if (issuesBanner){
+      if (issues.length){
+        issuesBanner.classList.remove('d-none');
+        issuesBanner.innerHTML = issues.map((issue) => {
+          const label = String(issue?.team_label || issue?.context_code || 'Incidencia');
+          const reasons = Array.isArray(issue?.reasons) ? issue.reasons.join(', ') : '';
+          return `<div><strong>${label}</strong>${reasons ? `: ${reasons}` : ''}</div>`;
+        }).join('');
+      } else {
+        issuesBanner.classList.add('d-none');
+        issuesBanner.innerHTML = '';
+      }
+    }
+
+    const appName = String(workspace?.comp_aparell?.nom || 'Sense aparell');
+    setText('series-selected-app-badge', appName);
+    setText('series-workspace-badge', appName);
+    setText('series-workspace-title', appName === 'Sense aparell' ? 'Workspace de series' : `Series d'equip - ${appName}`);
+    setText('series-summary-badge', `${Number(summary.series_total || 0)} series`);
+    setText(
+      'series-workspace-description',
+      issues.length
+        ? "Hi ha incidencies detectades en alguns equips d'aquest aparell. Revisa-les abans de programar."
+        : "Selecciona candidates, crea series i desplega el detall nomes quan el necessitis."
+    );
+  }
+
+  function seriesEmptyStateMessage(workspace){
+    const series = Array.isArray(workspace?.series) ? workspace.series : [];
+    const issues = Array.isArray(workspace?.issues) ? workspace.issues : [];
+    const candidateCount = Number(workspace?.candidates?.total || 0);
+
+    if (series.length > 0){
+      return { visible: false, message: '' };
+    }
+
+    const issueText = issues
+      .flatMap((issue) => [
+        String(issue?.team_label || ''),
+        ...(Array.isArray(issue?.reasons) ? issue.reasons : []),
+      ])
+      .join(' ')
+      .toLowerCase();
+
+    if (issueText.includes('sense fonts configurades') || issueText.includes('cap context configurat') || issueText.includes('no te cap context')){
+      return {
+        visible: true,
+        message: "Aquest aparell d'equip no te contextos font configurats encara. Ves al gestor d'equips per seleccionar els contextos que alimenten les series.",
+      };
+    }
+
+    if (candidateCount > 0){
+      return {
+        visible: true,
+        message: "Encara no hi ha cap serie creada per aquest aparell. Pots crear una serie buida o crear-ne una amb la seleccio actual.",
+      };
+    }
+
+    return {
+      visible: true,
+      message: "No hi ha cap serie carregable per aquest aparell amb la configuracio actual.",
+    };
+  }
+
+  function renderCompactSeriesList(workspace){
+    const wrap = document.getElementById('series-compact-list');
+    const note = document.getElementById('series-compact-list-note');
+    if (!wrap) return;
+    const series = Array.isArray(workspace?.series) ? workspace.series : [];
+    wrap.innerHTML = '';
+    if (note){
+      note.textContent = series.length
+        ? `Mostrant ${series.length} serie${series.length === 1 ? '' : 's'} activa${series.length === 1 ? '' : 's'} de l'aparell seleccionat.`
+        : "No hi ha series actives per aquest aparell.";
+    }
+    if (!series.length){
+      const empty = document.createElement('div');
+      empty.className = 'small text-muted';
+      empty.textContent = "Cap serie activa carregada.";
+      wrap.appendChild(empty);
+      return;
+    }
+    series.forEach((serie) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'group-preview-source-row text-left';
+      btn.style.minWidth = '240px';
+      btn.style.cursor = 'pointer';
+      btn.innerHTML = `
+        <span class="group-preview-source-label">
+          <strong>${String(serie?.label || `Serie ${serie?.display_num || ''}`)}</strong>
+          <span class="d-block small text-muted">${String(serie?.status_label || '') || 'No programada'}</span>
+        </span>
+        <span class="group-preview-source-count">${Number(serie?.subjects_count || 0)}</span>
+      `;
+      btn.addEventListener('click', () => {
+        state.expandedSeriesIds = new Set([String(serie?.id || '')]);
+        renderSeries(state.workspace);
+        openWorkspaceCard();
+      });
+      wrap.appendChild(btn);
+    });
   }
 
   function renderCandidates(workspace){
@@ -168,14 +426,26 @@
 
       const meta = document.createElement('div');
       meta.className = 'team-candidate-meta';
-      meta.textContent = candidateMeta(item);
+      meta.textContent = compactCandidateMeta(item);
       main.appendChild(meta);
+
+      const preview = document.createElement('div');
+      preview.className = 'small text-muted';
+      preview.textContent = String(item?.members_preview || item?.members_text || '').trim() || 'Sense membres';
+      main.appendChild(preview);
 
       const badges = document.createElement('div');
       badges.className = 'team-candidate-teams';
-      badges.appendChild(badge(item?.serie_label ? `Serie: ${item.serie_label}` : 'Sense serie', item?.serie_id ? 'neutral' : 'incoming'));
+      badges.appendChild(
+        compactBadge(
+          item?.serie_label ? `Serie: ${item.serie_label}` : 'Sense serie',
+          item?.serie_id ? 'neutral' : 'incoming'
+        )
+      );
       if (Array.isArray(item?.invalid_reasons) && item.invalid_reasons.length){
-        badges.appendChild(badge(`Incidencies: ${item.invalid_reasons.join(', ')}`, 'removed'));
+        const invalidBadge = compactBadge(`Incidencies (${item.invalid_reasons.length})`, 'removed');
+        invalidBadge.title = item.invalid_reasons.join(', ');
+        badges.appendChild(invalidBadge);
       }
       main.appendChild(badges);
 
@@ -199,21 +469,125 @@
     return btn;
   }
 
-  async function runAction(url, payload, successMessage){
-    try {
-      const data = await postJson(url, payload);
-      setHistory(data);
-      if (typeof showAlert === 'function' && successMessage){
-        showAlert(successMessage);
+  function renderSeriesDetail(subjects, serie){
+    const detail = document.createElement('div');
+    detail.className = 'd-flex flex-column mt-3';
+    detail.style.gap = '8px';
+
+    if (!subjects.length){
+      const empty = document.createElement('div');
+      empty.className = 'small text-muted border rounded p-2 bg-light';
+      empty.textContent = "Serie buida. Pots crear-la ara i omplir-la mes tard des del mateix workspace.";
+      detail.appendChild(empty);
+      return detail;
+    }
+
+    subjects.forEach((subject, index) => {
+      const row = document.createElement('div');
+      row.className = 'd-flex justify-content-between align-items-start border rounded p-2';
+      row.style.gap = '8px';
+
+      const copy = document.createElement('div');
+      copy.className = 'min-w-0';
+
+      const title = document.createElement('div');
+      title.className = 'fw-semibold';
+      title.textContent = String(subject?.name || subject?.label || `Subjecte ${subject?.subject_id || ''}`);
+      copy.appendChild(title);
+
+      const meta = document.createElement('div');
+      meta.className = 'small text-muted';
+      meta.textContent = compactCandidateMeta(subject);
+      copy.appendChild(meta);
+
+      const preview = document.createElement('div');
+      preview.className = 'small text-muted mt-1';
+      preview.textContent = String(subject?.members_preview || subject?.members_text || '').trim() || 'Sense membres';
+      copy.appendChild(preview);
+
+      if (Array.isArray(subject?.invalid_reasons) && subject.invalid_reasons.length){
+        const warn = document.createElement('div');
+        warn.className = 'small text-warning mt-1';
+        warn.textContent = `Incidencies: ${subject.invalid_reasons.join(', ')}`;
+        copy.appendChild(warn);
       }
-      await refreshWorkspace({ preservePage: true });
-      return data;
+
+      row.appendChild(copy);
+
+      const tools = document.createElement('div');
+      tools.className = 'd-flex flex-wrap';
+      tools.style.gap = '4px';
+      tools.appendChild(actionButton('Amunt', 'btn btn-sm btn-outline-secondary', async () => {
+        if (index <= 0) return;
+        const ids = subjects.map((item) => Number(item?.subject_id || item?.id || 0)).filter(Boolean);
+        const moved = ids.splice(index, 1)[0];
+        ids.splice(index - 1, 0, moved);
+        await runAction(reorderUrl, {
+          comp_aparell_id: state.compAparellId,
+          serie_id: serie.id,
+          subject_ids: ids,
+        }, 'Ordre actualitzat.');
+      }, !editable() || index <= 0));
+      tools.appendChild(actionButton('Avall', 'btn btn-sm btn-outline-secondary', async () => {
+        if (index >= subjects.length - 1) return;
+        const ids = subjects.map((item) => Number(item?.subject_id || item?.id || 0)).filter(Boolean);
+        const moved = ids.splice(index, 1)[0];
+        ids.splice(index + 1, 0, moved);
+        await runAction(reorderUrl, {
+          comp_aparell_id: state.compAparellId,
+          serie_id: serie.id,
+          subject_ids: ids,
+        }, 'Ordre actualitzat.');
+      }, !editable() || index >= subjects.length - 1));
+      tools.appendChild(actionButton('Treure', 'btn btn-sm btn-outline-warning', async () => {
+        const previewPayload = await confirmPreview('unassign', {
+          selected_ids: [subject?.subject_id || subject?.id],
+        });
+        if (!previewPayload) return;
+        await runAction(unassignUrl, {
+          comp_aparell_id: state.compAparellId,
+          ...previewPayload,
+        }, 'Subjecte tret de la serie.');
+      }, !editable()));
+      row.appendChild(tools);
+      detail.appendChild(row);
+    });
+    return detail;
+  }
+
+  async function ensureSeriesDetailLoaded(serieId){
+    const key = String(serieId || '').trim();
+    if (!key || state.seriesDetails[key] || state.loadingSeriesIds.has(key)) return;
+    state.loadingSeriesIds.add(key);
+    renderSeries(state.workspace);
+    try {
+      const data = await postJson(detailUrl, {
+        comp_aparell_id: state.compAparellId,
+        serie_id: key,
+      });
+      setHistory(data);
+      state.seriesDetails[key] = data?.serie || data;
     } catch (error) {
       if (typeof showAlert === 'function'){
         showAlert(error?.message || String(error));
       }
-      throw error;
+    } finally {
+      state.loadingSeriesIds.delete(key);
+      renderSeries(state.workspace);
     }
+  }
+
+  function toggleSeriesExpanded(serieId){
+    const key = String(serieId || '').trim();
+    if (!key) return;
+    if (state.expandedSeriesIds.has(key)){
+      state.expandedSeriesIds.delete(key);
+      renderSeries(state.workspace);
+      return;
+    }
+    state.expandedSeriesIds.add(key);
+    renderSeries(state.workspace);
+    ensureSeriesDetailLoaded(key);
   }
 
   function renderSeries(workspace){
@@ -221,14 +595,27 @@
     if (!wrap) return;
     const series = Array.isArray(workspace?.series) ? workspace.series : [];
     const boardStatus = document.getElementById('series-board-status');
+    const emptyState = seriesEmptyStateMessage(workspace);
     if (boardStatus){
       boardStatus.textContent = series.length
-        ? 'Gestiona el contingut i l ordre de cada serie des d aqui.'
-        : 'Encara no hi ha cap serie creada per aquest aparell.';
+        ? "Gestiona el contingut i obre el detall d'una serie nomes quan calgui."
+        : (emptyState.message || 'Encara no hi ha cap serie creada per aquest aparell.');
     }
-    wrap.innerHTML = '';
+    const emptyStateEl = document.getElementById('series-board-empty-state');
+    if (emptyStateEl){
+      emptyStateEl.textContent = emptyState.message;
+      emptyStateEl.classList.toggle('d-none', !emptyState.visible);
+    }
 
+    wrap.innerHTML = '';
     series.forEach((serie) => {
+      const key = String(serie?.id || '');
+      const expanded = state.expandedSeriesIds.has(key);
+      const detail = state.seriesDetails[key];
+      const detailSubjects = Array.isArray(detail?.subjects)
+        ? detail.subjects
+        : (Array.isArray(serie?.subjects) ? serie.subjects : []);
+
       const card = document.createElement('div');
       card.className = 'border rounded bg-white p-3';
 
@@ -244,133 +631,106 @@
 
       const meta = document.createElement('div');
       meta.className = 'small text-muted';
-      meta.textContent = [
-        `${Number(serie?.subjects_count || 0)} subjectes`,
-        serie?.is_programmed ? 'Programada' : 'No programada',
-        serie?.is_empty ? 'Buida' : '',
-      ].filter(Boolean).join(' | ');
+      meta.textContent = seriesMetaText(serie);
       titleWrap.appendChild(meta);
+
+      const summary = document.createElement('div');
+      summary.className = 'small text-muted mt-1';
+      summary.textContent = String(serie?.summary_label || '').trim();
+      titleWrap.appendChild(summary);
+
       head.appendChild(titleWrap);
 
-      const tools = document.createElement('div');
-      tools.className = 'd-flex flex-wrap';
-      tools.style.gap = '6px';
-      tools.appendChild(actionButton('Assignar seleccio', 'btn btn-sm btn-outline-primary', async () => {
+      const headBadges = document.createElement('div');
+      headBadges.className = 'd-flex flex-wrap justify-content-end';
+      headBadges.style.gap = '6px';
+      headBadges.appendChild(compactBadge(`${Number(serie?.subjects_count || 0)} unitats`));
+      if (serie?.is_programmed){
+        headBadges.appendChild(compactBadge('Programada', 'incoming'));
+      }
+      if (serie?.is_empty){
+        headBadges.appendChild(compactBadge('Buida'));
+      }
+      head.appendChild(headBadges);
+      card.appendChild(head);
+
+      const primaryTools = document.createElement('div');
+      primaryTools.className = 'd-flex flex-wrap mt-3';
+      primaryTools.style.gap = '6px';
+      primaryTools.appendChild(actionButton('Assignar seleccio', 'btn btn-sm btn-outline-primary', async () => {
         if (!selectedIds().length){
           if (typeof showAlert === 'function') showAlert('Selecciona almenys una unitat competitiva.');
           return;
         }
-        await runAction(assignUrl, {
-          comp_aparell_id: state.compAparellId,
+        const previewPayload = await confirmPreview('assign', {
           serie_id: serie.id,
           selected_ids: selectedIds(),
+        });
+        if (!previewPayload) return;
+        await runAction(assignUrl, {
+          comp_aparell_id: state.compAparellId,
+          ...previewPayload,
         }, 'Seleccio assignada a la serie.');
       }, !editable()));
-      tools.appendChild(actionButton('Renombrar', 'btn btn-sm btn-outline-secondary', async () => {
+      primaryTools.appendChild(actionButton(
+        expanded ? 'Amagar detall' : 'Veure detall',
+        'btn btn-sm btn-outline-secondary',
+        () => toggleSeriesExpanded(serie.id),
+        false
+      ));
+      card.appendChild(primaryTools);
+
+      const secondaryTools = document.createElement('div');
+      secondaryTools.className = 'd-flex flex-wrap mt-2';
+      secondaryTools.style.gap = '6px';
+      secondaryTools.appendChild(actionButton('Renombrar', 'btn btn-sm btn-outline-secondary', async () => {
         const current = String(serie?.name || '');
-        const next = window.prompt("Nou nom de la serie", current);
+        const next = await promptText('Nou nom de la serie', current);
         if (next === null) return;
         await runAction(renameUrl, {
           comp_aparell_id: state.compAparellId,
           serie_id: serie.id,
-          name: next,
+          name: String(next || '').trim(),
         }, 'Serie renombrada.');
       }, !editable()));
-      tools.appendChild(actionButton('Desactivar', 'btn btn-sm btn-outline-danger', async () => {
-        const canDelete = !!serie?.is_empty;
-        if (!canDelete){
+      secondaryTools.appendChild(actionButton('Full de treball', 'btn btn-sm btn-outline-secondary', async () => {
+        window.location.href = exportUrl(workSheetExportUrl, {
+          comp_aparell_id: state.compAparellId,
+          serie_id: serie.id,
+        });
+      }, false));
+      secondaryTools.appendChild(actionButton('Desactivar', 'btn btn-sm btn-outline-danger', async () => {
+        if (!serie?.is_empty){
           if (typeof showAlert === 'function') showAlert('Nomes es poden desactivar series buides.');
           return;
         }
-        let confirmed = true;
-        if (typeof showConfirm === 'function'){
-          confirmed = await showConfirm("Desactivar aquesta serie buida?");
-        }
-        if (!confirmed) return;
+        const previewPayload = await confirmPreview('delete', { serie_id: serie.id });
+        if (!previewPayload) return;
         await runAction(deleteUrl, {
           comp_aparell_id: state.compAparellId,
-          serie_id: serie.id,
+          ...previewPayload,
         }, 'Serie desactivada.');
       }, !editable()));
-      head.appendChild(tools);
-      card.appendChild(head);
+      card.appendChild(secondaryTools);
 
-      const list = document.createElement('div');
-      list.className = 'd-flex flex-column mt-3';
-      list.style.gap = '8px';
-
-      const subjects = Array.isArray(serie?.subjects) ? serie.subjects : [];
-      if (!subjects.length){
-        const empty = document.createElement('div');
-        empty.className = 'small text-muted border rounded p-2 bg-light';
-        empty.textContent = "Serie buida. Pots crear-la ara i omplir-la mes tard des del mateix workspace.";
-        list.appendChild(empty);
+      if (expanded){
+        const detailWrap = document.createElement('div');
+        if (state.loadingSeriesIds.has(key) && !detail){
+          detailWrap.className = 'small text-muted border rounded p-2 mt-3 bg-light';
+          detailWrap.textContent = 'Carregant detall de la serie...';
+        } else {
+          detailWrap.appendChild(renderSeriesDetail(detailSubjects, serie));
+        }
+        card.appendChild(detailWrap);
       }
 
-      subjects.forEach((subject, index) => {
-        const row = document.createElement('div');
-        row.className = 'd-flex justify-content-between align-items-start border rounded p-2';
-        row.style.gap = '8px';
-
-        const copy = document.createElement('div');
-        copy.className = 'min-w-0';
-        const rowTitle = document.createElement('div');
-        rowTitle.className = 'fw-semibold';
-        rowTitle.textContent = String(subject?.name || subject?.label || `Subjecte ${subject?.subject_id || ''}`);
-        copy.appendChild(rowTitle);
-        const rowMeta = document.createElement('div');
-        rowMeta.className = 'small text-muted';
-        rowMeta.textContent = [
-          subject?.context_name,
-          subject?.members_text,
-          subject?.meta,
-        ].filter(Boolean).join(' | ') || 'Sense metadades';
-        copy.appendChild(rowMeta);
-        if (Array.isArray(subject?.invalid_reasons) && subject.invalid_reasons.length){
-          const warn = document.createElement('div');
-          warn.className = 'small text-warning mt-1';
-          warn.textContent = `Incidencies: ${subject.invalid_reasons.join(', ')}`;
-          copy.appendChild(warn);
-        }
-        row.appendChild(copy);
-
-        const rowTools = document.createElement('div');
-        rowTools.className = 'd-flex flex-wrap';
-        rowTools.style.gap = '4px';
-        rowTools.appendChild(actionButton('↑', 'btn btn-sm btn-outline-secondary', async () => {
-          if (index <= 0) return;
-          const ids = subjects.map((item) => Number(item?.subject_id || item?.id || 0)).filter(Boolean);
-          const moved = ids.splice(index, 1)[0];
-          ids.splice(index - 1, 0, moved);
-          await runAction(reorderUrl, {
-            comp_aparell_id: state.compAparellId,
-            serie_id: serie.id,
-            subject_ids: ids,
-          }, 'Ordre actualitzat.');
-        }, !editable() || index <= 0));
-        rowTools.appendChild(actionButton('↓', 'btn btn-sm btn-outline-secondary', async () => {
-          if (index >= subjects.length - 1) return;
-          const ids = subjects.map((item) => Number(item?.subject_id || item?.id || 0)).filter(Boolean);
-          const moved = ids.splice(index, 1)[0];
-          ids.splice(index + 1, 0, moved);
-          await runAction(reorderUrl, {
-            comp_aparell_id: state.compAparellId,
-            serie_id: serie.id,
-            subject_ids: ids,
-          }, 'Ordre actualitzat.');
-        }, !editable() || index >= subjects.length - 1));
-        rowTools.appendChild(actionButton('Treure', 'btn btn-sm btn-outline-warning', async () => {
-          await runAction(unassignUrl, {
-            comp_aparell_id: state.compAparellId,
-            selected_ids: [subject?.subject_id || subject?.id],
-          }, 'Subjecte tret de la serie.');
-        }, !editable()));
-        row.appendChild(rowTools);
-        list.appendChild(row);
-      });
-
-      card.appendChild(list);
       wrap.appendChild(card);
+    });
+
+    Array.from(state.expandedSeriesIds).forEach((serieId) => {
+      if (!state.seriesDetails[String(serieId || '')]){
+        ensureSeriesDetailLoaded(serieId);
+      }
     });
   }
 
@@ -388,8 +748,11 @@
     const data = await postJson(workspaceUrl, payload);
     setHistory(data);
     state.workspace = data.workspace || data;
+    pruneSeriesState(state.workspace);
+    syncAparellSelects();
     applyFiltersToDom(state.workspace);
     renderSummary(state.workspace);
+    renderCompactSeriesList(state.workspace);
     renderCandidates(state.workspace);
     renderSeries(state.workspace);
     updateSelectionSummary();
@@ -405,20 +768,96 @@
     el.addEventListener('change', () => refreshWorkspace({ preservePage: false }));
   }
 
+  async function runCreateEmpty(){
+    await runAction(createUrl, {
+      comp_aparell_id: state.compAparellId,
+      name: currentCreateName(),
+      selected_ids: [],
+    }, 'Serie creada.');
+    setCreateName('');
+  }
+
+  async function runCreateWithSelection(){
+    if (!selectedIds().length){
+      if (typeof showAlert === 'function') showAlert('Selecciona almenys una unitat competitiva.');
+      return;
+    }
+    const previewPayload = await confirmPreview('create', {
+      name: currentCreateName(),
+      selected_ids: selectedIds(),
+    });
+    if (!previewPayload) return;
+    await runAction(createUrl, {
+      comp_aparell_id: state.compAparellId,
+      ...previewPayload,
+    }, 'Serie creada amb la seleccio.');
+    state.selectedIds = new Set();
+    setCreateName('');
+    updateSelectionSummary();
+    renderCandidates(state.workspace);
+  }
+
+  async function runUnassignSelection(){
+    if (!selectedIds().length){
+      if (typeof showAlert === 'function') showAlert('Selecciona almenys una unitat competitiva.');
+      return;
+    }
+    const previewPayload = await confirmPreview('unassign', {
+      selected_ids: selectedIds(),
+    });
+    if (!previewPayload) return;
+    await runAction(unassignUrl, {
+      comp_aparell_id: state.compAparellId,
+      ...previewPayload,
+    }, 'Seleccio treta de la serie.');
+    state.selectedIds = new Set();
+    updateSelectionSummary();
+    renderCandidates(state.workspace);
+  }
+
+  async function applyAparellChange(nextId, sourceId){
+    const cleanId = String(nextId || '').trim();
+    if (!cleanId || cleanId === state.compAparellId) {
+      syncAparellSelects(sourceId);
+      return;
+    }
+    state.compAparellId = cleanId;
+    state.selectedIds = new Set();
+    state.page = 1;
+    state.expandedSeriesIds = new Set();
+    state.seriesDetails = {};
+    syncAparellSelects(sourceId);
+    updateSelectionSummary();
+    await refreshWorkspace({ preservePage: false });
+  }
+
   bindFilter('series-filter-q');
   bindFilter('series-filter-context');
   bindFilter('series-filter-state');
   bindFilter('series-filter-serie');
 
-  document.getElementById('series-comp-aparell-select')?.addEventListener('change', async (event) => {
-    state.compAparellId = String(event.target.value || '').trim();
-    state.selectedIds = new Set();
-    state.page = 1;
-    await refreshWorkspace({ preservePage: false });
+  ['series-compact-create-name', 'series-workspace-create-name'].forEach((id) => {
+    document.getElementById(id)?.addEventListener('input', (event) => {
+      setCreateName(event.target.value, id);
+    });
   });
 
-  document.getElementById('btn-series-refresh')?.addEventListener('click', async () => {
-    await refreshWorkspace({ preservePage: true });
+  ['series-comp-aparell-select', 'series-workspace-comp-aparell-select'].forEach((id) => {
+    document.getElementById(id)?.addEventListener('change', async (event) => {
+      await applyAparellChange(event.target.value, id);
+    });
+  });
+
+  ['btn-series-refresh', 'btn-series-workspace-refresh'].forEach((id) => {
+    document.getElementById(id)?.addEventListener('click', async () => {
+      await refreshWorkspace({ preservePage: true });
+    });
+  });
+
+  ['btn-series-export-start-list', 'btn-series-workspace-export-start-list'].forEach((id) => {
+    document.getElementById(id)?.addEventListener('click', () => {
+      window.location.href = exportUrl(startListExportUrl, { comp_aparell_id: state.compAparellId });
+    });
   });
 
   document.getElementById('btn-series-select-visible')?.addEventListener('click', () => {
@@ -434,37 +873,26 @@
     renderCandidates(state.workspace);
   });
 
-  document.getElementById('btn-series-create-empty')?.addEventListener('click', async () => {
-    await runAction(createUrl, {
-      comp_aparell_id: state.compAparellId,
-      name: String(document.getElementById('series-create-name')?.value || '').trim(),
-      selected_ids: [],
-    }, 'Serie creada.');
+  ['btn-series-compact-create-empty', 'btn-series-workspace-create-empty'].forEach((id) => {
+    document.getElementById(id)?.addEventListener('click', async () => {
+      await runCreateEmpty();
+    });
   });
 
-  document.getElementById('btn-series-create-with-selection')?.addEventListener('click', async () => {
-    if (!selectedIds().length){
-      if (typeof showAlert === 'function') showAlert('Selecciona almenys una unitat competitiva.');
-      return;
-    }
-    await runAction(createUrl, {
-      comp_aparell_id: state.compAparellId,
-      name: String(document.getElementById('series-create-name')?.value || '').trim(),
-      selected_ids: selectedIds(),
-    }, 'Serie creada amb la seleccio.');
-    state.selectedIds = new Set();
+  ['btn-series-compact-create-with-selection', 'btn-series-workspace-create-with-selection'].forEach((id) => {
+    document.getElementById(id)?.addEventListener('click', async () => {
+      await runCreateWithSelection();
+    });
   });
 
-  document.getElementById('btn-series-unassign-selection')?.addEventListener('click', async () => {
-    if (!selectedIds().length){
-      if (typeof showAlert === 'function') showAlert('Selecciona almenys una unitat competitiva.');
-      return;
-    }
-    await runAction(unassignUrl, {
-      comp_aparell_id: state.compAparellId,
-      selected_ids: selectedIds(),
-    }, 'Seleccio treta de la serie.');
-    state.selectedIds = new Set();
+  ['btn-series-compact-unassign-selection', 'btn-series-workspace-unassign-selection'].forEach((id) => {
+    document.getElementById(id)?.addEventListener('click', async () => {
+      await runUnassignSelection();
+    });
+  });
+
+  document.getElementById('btn-series-compact-open-workspace')?.addEventListener('click', () => {
+    openWorkspaceCard();
   });
 
   document.getElementById('btn-series-prev')?.addEventListener('click', async () => {
@@ -479,8 +907,8 @@
     await refreshWorkspace({ preservePage: true });
   });
 
+  updateSelectionSummary();
   refreshWorkspace({ preservePage: false }).catch((error) => {
     setText('series-candidates-status', error?.message || String(error));
   });
 })();
-</script>

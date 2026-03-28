@@ -2215,7 +2215,7 @@
 
       <div class="d-flex flex-wrap justify-content-end gap-2">
         <a href="{% url 'import' competicio.id %}" class="btn btn-sm btn-success">+ Importar Excel</a>
-        <a href="{% url 'inscripcio_add' competicio.id %}?next={{ request.get_full_path|urlencode }}"
+        <a href="{% url 'inscripcio_add' competicio.id %}?team_context={{ team_context_selected_code|urlencode }}&next={{ request.get_full_path|urlencode }}"
            class="btn btn-sm btn-primary">+ Afegir inscripció</a>
         <a href="{% url 'trampoli_config' competicio.id %}" class="btn btn-sm btn-outline-primary">
           Configuració competició
@@ -2453,6 +2453,13 @@
                   <span class="badge badge-light">{{ equips_existing|length }}</span>
                 </span>
                 <span class="actions-nav-btn-meta">Automàtic i manual</span>
+              </button>
+              <button type="button" class="actions-nav-btn" data-panel-target="series-equips">
+                <span class="actions-nav-btn-title">
+                  <span>Sèries d'equip</span>
+                  <span class="badge badge-light">{{ series_team_aparells|length }}</span>
+                </span>
+                <span class="actions-nav-btn-meta">Workspace i programació</span>
               </button>
               <button type="button" class="actions-nav-btn" data-panel-target="media">
                 <span class="actions-nav-btn-title">
@@ -2970,7 +2977,7 @@
                         <td class="{% if col.code == 'nom_i_cognoms' %}font-weight-bold{% endif %} {% if col.code == '__actions__' %}text-nowrap{% endif %}">
                           {% if col.code == "__actions__" %}
                             <a class="btn btn-sm btn-outline-primary"
-                               href="{% url 'inscripcio_edit' competicio.id r.id %}?next={{ request.get_full_path|urlencode }}">Editar</a>
+                               href="{% url 'inscripcio_edit' competicio.id r.id %}?team_context={{ team_context_selected_code|urlencode }}&next={{ request.get_full_path|urlencode }}">Editar</a>
                             <a class="btn btn-sm btn-outline-danger"
                                href="{% url 'inscripcio_delete' competicio.id r.id %}?next={{ request.get_full_path|urlencode }}">Eliminar</a>
                           {% elif col.code == "equip" %}
@@ -3225,7 +3232,7 @@
                   <td class="{% if col.code == 'nom_i_cognoms' %}font-weight-bold{% endif %} {% if col.code == '__actions__' %}text-nowrap{% endif %}">
                     {% if col.code == "__actions__" %}
                       <a class="btn btn-sm btn-outline-primary"
-                         href="{% url 'inscripcio_edit' competicio.id r.id %}?next={{ request.get_full_path|urlencode }}">
+                         href="{% url 'inscripcio_edit' competicio.id r.id %}?team_context={{ team_context_selected_code|urlencode }}&next={{ request.get_full_path|urlencode }}">
                         Editar
                       </a>
                       <a class="btn btn-sm btn-outline-danger"

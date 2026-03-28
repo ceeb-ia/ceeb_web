@@ -6,6 +6,11 @@ SCOPE_CHOICES = [
     ("shared", "Compartit"),
     ("member", "Individual"),
 ]
+MEMBER_MODE_CHOICES = [
+    ("all", "Tots els membres"),
+    ("single", "Només un membre"),
+    ("subset", "Diversos membres"),
+]
 
 
 class JudgeTokenCreateForm(forms.Form):
@@ -60,6 +65,16 @@ class PermissionRowForm(forms.Form):
         error_messages={"min_value": "Count ha de ser 1 o superior."},
         widget=forms.NumberInput(attrs={"class": "form-control form-control-sm", "style": "width:90px"}),
     )
+    member_mode = forms.ChoiceField(
+        required=False,
+        choices=MEMBER_MODE_CHOICES,
+        initial="all",
+        widget=forms.Select(attrs={"class": "form-select form-select-sm", "style": "min-width:150px"}),
+    )
+    member_slots = forms.CharField(
+        required=False,
+        widget=forms.HiddenInput(),
+    )
 
     def __init__(self, *args, field_choices=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -67,3 +82,4 @@ class PermissionRowForm(forms.Form):
         self.fields["field_code"].choices = choices
         self.fields["item_start"].initial = 1
         self.fields["scope"].initial = "shared"
+        self.fields["member_mode"].initial = "all"
