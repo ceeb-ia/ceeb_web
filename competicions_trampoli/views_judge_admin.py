@@ -38,13 +38,13 @@ def _schema_field_by_code(schema: dict):
 
 
 def _member_slot_choices(competicio, comp_aparell):
-    max_slots = max(4, int(getattr(comp_aparell, "expected_team_size", 0) or 0))
-    if comp_aparell and is_team_context_app(comp_aparell):
-        try:
-            subjects, _issues = build_team_subjects_for_comp_aparell(competicio, comp_aparell)
-            max_slots = max(max_slots, max((len(item.get("members") or []) for item in subjects), default=0))
-        except Exception:
-            pass
+    if not comp_aparell or not is_team_context_app(comp_aparell):
+        return []
+    try:
+        subjects, _issues = build_team_subjects_for_comp_aparell(competicio, comp_aparell)
+    except Exception:
+        return []
+    max_slots = max((len(item.get("members") or []) for item in subjects), default=0)
     return list(range(1, max_slots + 1))
 
 

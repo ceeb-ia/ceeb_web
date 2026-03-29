@@ -59,9 +59,19 @@ from .services.competition_groups import (
 )
 from .services.equip_contexts import (
     NATIVE_EQUIP_CONTEXT_CODE,
-    get_custom_equip_context,
+    get_contextual_assignment_map,
+    get_equip_context,
     get_equip_context_payload,
     normalize_equip_context_code,
+    resolve_inscripcio_equip,
+)
+from .services.birth_year_ranges import (
+    BIRTH_YEAR_RANGE_PARTITION_CODE,
+    birth_year_range_partition_expression,
+    birth_year_range_partition_value,
+    clear_inscripcions_derived_group_config_cache,
+    get_cached_inscripcions_derived_group_config,
+    get_inscripcions_derived_group_config,
 )
 
 
@@ -110,7 +120,7 @@ BUILTIN_GROUP_FIELDS = [
     {"code": "entitat", "label": "Entitat", "kind": "builtin"},
     {"code": "sexe", "label": "Sexe", "kind": "builtin"},
     {"code": "data_naixement", "label": "Data naixement", "kind": "builtin"},
-    {"code": "any_naixement_forquilla", "label": "Forquilla any naixement", "kind": "derived"},
+    {"code": "any_naixement_forquilla", "label": "Forquilla data naixement", "kind": "derived"},
     {"code": "document", "label": "Document", "kind": "builtin"},
 ]
 
@@ -177,6 +187,49 @@ def _s(v):
 def _norm_val(v):
     return "__NULL__" if v in (None, "") else str(v)
 
+def _resolve_base_equip_for_inscripcio(obj, assignment_map=None):
+    if obj is None:
+        return None
+    if assignment_map is None and getattr(obj, "_base_equip_cache_ready", False):
+        return getattr(obj, "_base_equip_cache", None)
+    if assignment_map is None and getattr(obj, "competicio", None) is None and getattr(obj, "competicio_id", None):
+        try:
+            obj._competicio_cache = Competicio.objects.filter(id=obj.competicio_id).first()
+        except Exception:
+            pass
+    equip = resolve_inscripcio_equip(
+        obj,
+        context_code=NATIVE_EQUIP_CONTEXT_CODE,
+        fallback=None,
+        assignment_map=assignment_map,
+    )
+    try:
+        obj._base_equip_cache = equip
+        obj._base_equip_cache_ready = True
+        obj._base_equip_id_cache = getattr(equip, "id", None)
+        obj._base_equip_name_cache = str(getattr(equip, "nom", "") or "").strip()
+    except Exception:
+        pass
+    return equip
+
+
+def _attach_base_equip_runtime(records):
+    rows = list(records or [])
+    if not rows:
+        return {}
+    competicio = next((getattr(obj, "competicio", None) for obj in rows if getattr(obj, "competicio", None) is not None), None)
+    if competicio is None:
+        competicio_id = next((getattr(obj, "competicio_id", None) for obj in rows if getattr(obj, "competicio_id", None)), None)
+        if competicio_id:
+            competicio = Competicio.objects.filter(id=competicio_id).first()
+    if competicio is None:
+        return {}
+    assignment_map = get_contextual_assignment_map(competicio, rows, NATIVE_EQUIP_CONTEXT_CODE)
+    for obj in rows:
+        _resolve_base_equip_for_inscripcio(obj, assignment_map=assignment_map)
+    return assignment_map
+
+
 def get_inscripcio_value(obj, code: str):
     """
     Retorna valor per a un camp d'agrupació.
@@ -184,6 +237,26 @@ def get_inscripcio_value(obj, code: str):
     - extra: obj.extra.get(code)
     """
     extra = getattr(obj, "extra", None) or {}
+    if code == BIRTH_YEAR_RANGE_PARTITION_CODE:
+        annotated_value = getattr(obj, f"_derived_{BIRTH_YEAR_RANGE_PARTITION_CODE}", None)
+        if annotated_value not in (None, ""):
+            return annotated_value
+        derived_cfg = getattr(obj, "_inscripcions_derived_group_config", None)
+        if not isinstance(derived_cfg, dict):
+            fields_cache = getattr(getattr(obj, "_state", None), "fields_cache", {}) or {}
+            competicio = fields_cache.get("competicio")
+            if competicio is not None:
+                derived_cfg = get_inscripcions_derived_group_config(getattr(competicio, "inscripcions_view", None))
+            else:
+                derived_cfg = get_cached_inscripcions_derived_group_config(getattr(obj, "competicio_id", None))
+        return birth_year_range_partition_value(
+            obj,
+            (derived_cfg or {}).get(BIRTH_YEAR_RANGE_PARTITION_CODE),
+            empty_if_unconfigured=True,
+        )
+    if code == "equip":
+        equip = _resolve_base_equip_for_inscripcio(obj)
+        return getattr(equip, "nom", None)
     if isinstance(extra, dict) and isinstance(code, str) and code.startswith("excel__"):
         if code in extra:
             return extra.get(code)
@@ -195,6 +268,24 @@ def get_inscripcio_value(obj, code: str):
     if isinstance(extra, dict) and code in extra:
         return extra.get(code)
     return extra.get(code)
+
+
+def annotate_birth_year_range_partition_queryset(qs, competicio, *, alias=None):
+    alias = str(alias or f"_derived_{BIRTH_YEAR_RANGE_PARTITION_CODE}").strip() or f"_derived_{BIRTH_YEAR_RANGE_PARTITION_CODE}"
+    if qs is None or competicio is None:
+        return qs
+    derived_cfg = get_inscripcions_derived_group_config(getattr(competicio, "inscripcions_view", None))
+    partition_cfg = (derived_cfg or {}).get(BIRTH_YEAR_RANGE_PARTITION_CODE)
+    if not isinstance(partition_cfg, dict) or not (partition_cfg.get("ranges") or []):
+        return qs
+    return qs.annotate(**{alias: birth_year_range_partition_expression(partition_cfg)})
+
+
+def annotate_inscripcions_queryset_for_group_codes(qs, competicio, group_codes):
+    codes = {str(code or "").strip() for code in (group_codes or []) if str(code or "").strip()}
+    if BIRTH_YEAR_RANGE_PARTITION_CODE in codes:
+        qs = annotate_birth_year_range_partition_queryset(qs, competicio)
+    return qs
 
 def get_allowed_group_fields(competicio):
     """
@@ -512,6 +603,8 @@ def _sort_scalar(v):
 
 def _build_sort_field_runtime_context(records, sort_code):
     code = str(sort_code or "").strip()
+    if code == "equip":
+        return {"base_assignment_map": _attach_base_equip_runtime(records)}
     if code != "grup":
         return {}
 
@@ -549,8 +642,8 @@ def _resolve_sort_field_runtime(obj, sort_code, context=None):
         }
 
     if code == "equip":
-        equip_id = getattr(obj, "equip_id", None)
-        equip = getattr(obj, "equip", None)
+        equip = _resolve_base_equip_for_inscripcio(obj, assignment_map=ctx.get("base_assignment_map"))
+        equip_id = getattr(equip, "id", None)
         equip_name = str(getattr(equip, "nom", "") or "").strip() if equip is not None else ""
         token = str(equip_id) if equip_id else ""
         label = equip_name or (f"Equip {equip_id}" if equip_id else "")
@@ -596,11 +689,6 @@ def _build_sort_records_queryset(qs, sort_codes=None, include_competition_order=
             ])
             continue
         if code == "equip":
-            select_related_fields.append("equip")
-            only_fields.extend([
-                "equip_id",
-                "equip__nom",
-            ])
             continue
         if hasattr(Inscripcio, code):
             only_fields.append(code)
@@ -851,7 +939,6 @@ def capture_inscripcions_history_snapshot(request, competicio):
             "grup",
             "grup_competicio_id",
             "ordre_competicio",
-            "equip_id",
         )
     )
     grups_rows = list(
@@ -870,7 +957,7 @@ def capture_inscripcions_history_snapshot(request, competicio):
         Equip.objects
         .filter(competicio=competicio)
         .order_by("id")
-        .values("id", "nom", "origen", "criteri")
+        .values("id", "context_id", "nom", "origen", "criteri")
     )
     equip_context_rows = list(
         EquipContext.objects
@@ -901,8 +988,12 @@ def capture_inscripcions_history_snapshot(request, competicio):
 
 def _apply_equips_state_snapshot(competicio, equips_state):
     rows = equips_state if isinstance(equips_state, list) else []
+    base_ctx = get_equip_context(competicio, NATIVE_EQUIP_CONTEXT_CODE)
     normalized = []
     seen_ids = set()
+    valid_context_ids = set(
+        EquipContext.objects.filter(competicio=competicio).values_list("id", flat=True)
+    )
     for row in rows:
         if not isinstance(row, dict):
             continue
@@ -912,11 +1003,20 @@ def _apply_equips_state_snapshot(competicio, equips_state):
             continue
         if equip_id <= 0 or equip_id in seen_ids:
             continue
+        try:
+            context_id = int(row.get("context_id"))
+        except Exception:
+            context_id = getattr(base_ctx, "id", None)
+        if context_id not in valid_context_ids:
+            context_id = getattr(base_ctx, "id", None)
+        if context_id not in valid_context_ids:
+            continue
         seen_ids.add(equip_id)
         normalized.append(
             Equip(
                 id=equip_id,
                 competicio=competicio,
+                context_id=context_id,
                 nom=str(row.get("nom") or "").strip(),
                 origen=str(row.get("origen") or Equip.Origen.MANUAL).strip() or Equip.Origen.MANUAL,
                 criteri=_json_clone(row.get("criteri") or {}),
@@ -970,8 +1070,10 @@ def _apply_equip_assignacions_state_snapshot(competicio, equip_assignacions_stat
     valid_ins_ids = set(
         Inscripcio.objects.filter(competicio=competicio).values_list("id", flat=True)
     )
-    valid_equip_ids = set(
-        Equip.objects.filter(competicio=competicio).values_list("id", flat=True)
+    valid_equip_context_map = dict(
+        Equip.objects
+        .filter(competicio=competicio)
+        .values_list("id", "context_id")
     )
     for row in rows:
         if not isinstance(row, dict):
@@ -987,7 +1089,8 @@ def _apply_equip_assignacions_state_snapshot(competicio, equip_assignacions_stat
             key in seen_keys
             or context_id not in valid_context_ids
             or inscripcio_id not in valid_ins_ids
-            or equip_id not in valid_equip_ids
+            or equip_id not in valid_equip_context_map
+            or int(valid_equip_context_map.get(equip_id) or 0) != context_id
         ):
             continue
         seen_keys.add(key)
@@ -1007,6 +1110,52 @@ def _apply_equip_assignacions_state_snapshot(competicio, equip_assignacions_stat
         InscripcioEquipAssignacio.objects.bulk_create(normalized, batch_size=500)
 
 
+def _apply_legacy_base_assignacions_from_snapshot(competicio, inscripcions_fields):
+    rows = inscripcions_fields if isinstance(inscripcions_fields, list) else []
+    base_ctx = get_equip_context(competicio, NATIVE_EQUIP_CONTEXT_CODE)
+    if base_ctx is None:
+        return
+    valid_ins_ids = set(
+        Inscripcio.objects.filter(competicio=competicio).values_list("id", flat=True)
+    )
+    valid_equip_ids = set(
+        Equip.objects.filter(competicio=competicio).values_list("id", flat=True)
+    )
+    existing_ins_ids = set(
+        InscripcioEquipAssignacio.objects
+        .filter(competicio=competicio, context=base_ctx)
+        .values_list("inscripcio_id", flat=True)
+    )
+    creates = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        try:
+            ins_id = int(row.get("id"))
+            equip_id = int(row.get("equip_id"))
+        except Exception:
+            continue
+        if (
+            ins_id not in valid_ins_ids
+            or equip_id not in valid_equip_ids
+            or ins_id in existing_ins_ids
+        ):
+            continue
+        existing_ins_ids.add(ins_id)
+        creates.append(
+            InscripcioEquipAssignacio(
+                competicio=competicio,
+                context=base_ctx,
+                inscripcio_id=ins_id,
+                equip_id=equip_id,
+                origen=InscripcioEquipAssignacio.Origen.MANUAL,
+                criteri={},
+            )
+        )
+    if creates:
+        InscripcioEquipAssignacio.objects.bulk_create(creates, batch_size=500)
+
+
 def _apply_inscripcions_fields_snapshot(competicio, inscripcions_fields):
     rows = inscripcions_fields if isinstance(inscripcions_fields, list) else []
     by_id = {}
@@ -1022,7 +1171,6 @@ def _apply_inscripcions_fields_snapshot(competicio, inscripcions_fields):
             "grup": row.get("grup"),
             "grup_competicio_id": row.get("grup_competicio_id"),
             "ordre_competicio": row.get("ordre_competicio"),
-            "equip_id": row.get("equip_id"),
         }
 
     if not by_id:
@@ -1030,7 +1178,7 @@ def _apply_inscripcions_fields_snapshot(competicio, inscripcions_fields):
 
     updates = []
     qs = Inscripcio.objects.filter(competicio=competicio, id__in=list(by_id.keys()))
-    for obj in qs.only("id", "ordre_sortida", "grup", "grup_competicio", "ordre_competicio", "equip"):
+    for obj in qs.only("id", "ordre_sortida", "grup", "grup_competicio", "ordre_competicio"):
         row = by_id.get(obj.id)
         if row is None:
             continue
@@ -1038,25 +1186,22 @@ def _apply_inscripcions_fields_snapshot(competicio, inscripcions_fields):
         next_grp = row.get("grup")
         next_grup_competicio_id = row.get("grup_competicio_id")
         next_ordre_competicio = row.get("ordre_competicio")
-        next_equip = row.get("equip_id")
         if (
             obj.ordre_sortida != next_ord
             or obj.grup != next_grp
             or obj.grup_competicio_id != next_grup_competicio_id
             or obj.ordre_competicio != next_ordre_competicio
-            or obj.equip_id != next_equip
         ):
             obj.ordre_sortida = next_ord
             obj.grup = next_grp
             obj.grup_competicio_id = next_grup_competicio_id
             obj.ordre_competicio = next_ordre_competicio
-            obj.equip_id = next_equip
             updates.append(obj)
 
     if updates:
         Inscripcio.objects.bulk_update(
             updates,
-            ["ordre_sortida", "grup", "grup_competicio", "ordre_competicio", "equip"],
+            ["ordre_sortida", "grup", "grup_competicio", "ordre_competicio"],
             batch_size=500,
         )
 
@@ -1156,16 +1301,19 @@ def _apply_competicio_fields_snapshot(competicio, competicio_fields):
         updates.append("inscripcions_view")
     if updates:
         competicio.save(update_fields=updates)
+        if "inscripcions_view" in updates:
+            clear_inscripcions_derived_group_config_cache()
 
 
 def apply_inscripcions_history_snapshot(request, competicio, snapshot):
     snap = snapshot if isinstance(snapshot, dict) else {}
     with transaction.atomic():
-        _apply_equips_state_snapshot(competicio, snap.get("equips_state"))
         _apply_equip_contexts_state_snapshot(competicio, snap.get("equip_contexts_state"))
+        _apply_equips_state_snapshot(competicio, snap.get("equips_state"))
         _apply_grups_competicio_snapshot(competicio, snap.get("grups_competicio"))
         _apply_inscripcions_fields_snapshot(competicio, snap.get("inscripcions_fields"))
         _apply_equip_assignacions_state_snapshot(competicio, snap.get("equip_assignacions_state"))
+        _apply_legacy_base_assignacions_from_snapshot(competicio, snap.get("inscripcions_fields"))
         _apply_aparells_exclusions_snapshot(competicio, snap.get("aparells_exclusions"))
         _apply_competicio_fields_snapshot(competicio, snap.get("competicio_fields"))
 
@@ -3681,7 +3829,11 @@ class InscripcionsListView(ListView):
         selected = [g for g in selected if g in allowed_codes]
         ctx["selected_group_fields"] = selected
 
-        records = self.get_queryset_base_filtrada().order_by("ordre_sortida", "id")
+        records_qs = self.get_queryset_base_filtrada()
+        if selected:
+            records_qs = annotate_inscripcions_queryset_for_group_codes(records_qs, self.competicio, selected)
+        records = list(records_qs.order_by("ordre_sortida", "id"))
+        _attach_base_equip_runtime(records)
         grouping_sig = "|".join(selected) if selected else ""
         ctx["grouping_sig"] = grouping_sig
 
@@ -3744,6 +3896,9 @@ class InscripcionsListView(ListView):
             ctx["records_grouped"] = records_grouped
         else:
             ctx["records_grouped"] = None
+        ctx_records = ctx.get("records")
+        if ctx_records is not None:
+            _attach_base_equip_runtime(list(ctx_records))
 
         excel_cols = get_available_excel_columns(self.competicio)
         excel_codes = {c["code"] for c in excel_cols}
@@ -3773,17 +3928,13 @@ class InscripcioFormViewMixin:
         self.competicio = get_object_or_404(Competicio, pk=kwargs["pk"])
         self.team_contexts_payload = get_equip_context_payload(self.competicio)
         self.team_context_code = self._resolve_team_context_code()
-        self.team_context = (
-            None
-            if self.team_context_code == NATIVE_EQUIP_CONTEXT_CODE
-            else get_custom_equip_context(self.competicio, self.team_context_code)
-        )
+        self.team_context = get_equip_context(self.competicio, self.team_context_code)
         self.team_context_selected = next(
             (item for item in self.team_contexts_payload if item["code"] == self.team_context_code),
             self.team_contexts_payload[0] if self.team_contexts_payload else {
                 "code": NATIVE_EQUIP_CONTEXT_CODE,
-                "nom": "Natiu",
-                "description": "Equip natiu de la inscripcio",
+                "nom": "Base",
+                "description": "Context base d'equips de la competicio",
                 "is_native": True,
             },
         )
@@ -3839,7 +3990,7 @@ class InscripcioFormViewMixin:
         ctx["show_altres_fields"] = {}
         ctx["full_width_basic_field_names"] = []
         ctx["altres_wrapper_field_names"] = []
-        ctx["team_native_hint"] = ""
+        ctx["team_base_hint"] = ""
         if form is not None:
             ctx["form_basic_fields"] = [
                 form[name]
@@ -3858,8 +4009,8 @@ class InscripcioFormViewMixin:
             ctx["altres_wrapper_field_names"] = list(
                 getattr(form, "other_wrapper_field_names", []) or []
             )
-            current_native_equip = getattr(form, "current_native_equip", None)
-            ctx["team_native_hint"] = str(getattr(current_native_equip, "nom", "") or "").strip()
+            current_base_equip = getattr(form, "current_base_equip", None)
+            ctx["team_base_hint"] = str(getattr(current_base_equip, "nom", "") or "").strip()
         return ctx
 
     def get_success_url(self):

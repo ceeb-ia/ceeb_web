@@ -3,18 +3,22 @@ import json
 from django.utils.text import slugify
 
 from ..models import Equip, EquipContext
-from .equip_contexts import NATIVE_EQUIP_CONTEXT_CODE, normalize_equip_context_code
+from .equip_contexts import (
+    NATIVE_EQUIP_CONTEXT_CODE,
+    get_equip_context,
+    normalize_equip_context_code,
+)
 from ..models_classificacions import ClassificacioTemplateGlobal
 from ..models_scoring import ScoringSchema
 from ..models_trampoli import Aparell, CompeticioAparell
 from .services_classificacions_2 import (
     BIRTH_YEAR_RANGE_PARTITION_CODE,
     DEFAULT_SCHEMA,
-    normalize_birth_year_range_partition_config,
     normalize_particions_config,
     normalize_particions_v2_entries,
     particio_codes_from_entries,
 )
+from .birth_year_ranges import validate_birth_year_range_partition_config
 
 
 GLOBAL_NATIVE_PARTICIO_FIELDS = [
@@ -23,7 +27,7 @@ GLOBAL_NATIVE_PARTICIO_FIELDS = [
     {"code": "entitat", "label": "Entitat", "ui_label": "Entitat (Nativa)", "kind": "builtin", "source": "native"},
     {"code": "sexe", "label": "Sexe", "ui_label": "Sexe (Nativa)", "kind": "builtin", "source": "native"},
     {"code": "data_naixement", "label": "Data naixement", "ui_label": "Data naixement (Nativa)", "kind": "builtin", "source": "native"},
-    {"code": BIRTH_YEAR_RANGE_PARTITION_CODE, "label": "Forquilla any naixement", "ui_label": "Forquilla any naixement (Derivada)", "kind": "derived", "source": "derived"},
+    {"code": BIRTH_YEAR_RANGE_PARTITION_CODE, "label": "Forquilla data naixement", "ui_label": "Forquilla data naixement (Derivada)", "kind": "derived", "source": "derived"},
     {"code": "document", "label": "Document", "ui_label": "Document (Nativa)", "kind": "builtin", "source": "native"},
     {"code": "grup", "label": "Grup", "ui_label": "Grup (Nativa)", "kind": "builtin", "source": "native"},
 ]
@@ -43,13 +47,26 @@ def json_clone(value):
         return {}
 
 
+def _assignment_teams_queryset(competicio, raw_cfg):
+    if isinstance(raw_cfg, dict) and raw_cfg.get("context_code"):
+        context_code = normalize_equip_context_code(raw_cfg.get("context_code"))
+    else:
+        cfg = _normalize_assignment_source(raw_cfg)
+        context_code = cfg.get("context_code")
+    ctx = get_equip_context(competicio, context_code)
+    if ctx is None:
+        return Equip.objects.none()
+    return Equip.objects.filter(competicio=competicio, context=ctx)
+
+
 def _normalize_assignment_source(raw_cfg):
     cfg = raw_cfg if isinstance(raw_cfg, dict) else {}
-    mode = str(cfg.get("mode") or "native").strip().lower()
-    if mode not in {"native", "context"}:
-        mode = "native"
+    raw_mode = str(cfg.get("mode") or "native").strip().lower()
+    mode = raw_mode if raw_mode in {"native", "context"} else "native"
     context_code = normalize_equip_context_code(cfg.get("context_code"))
-    if mode == "native":
+    legacy_mode = mode == "native"
+    if legacy_mode:
+        mode = "context"
         context_code = NATIVE_EQUIP_CONTEXT_CODE
     fallback = str(cfg.get("fallback") or NATIVE_EQUIP_CONTEXT_CODE).strip().lower()
     if fallback != NATIVE_EQUIP_CONTEXT_CODE:
@@ -58,6 +75,7 @@ def _normalize_assignment_source(raw_cfg):
         "mode": mode,
         "context_code": context_code,
         "fallback": fallback,
+        "legacy_mode": legacy_mode,
     }
 
 
@@ -157,56 +175,12 @@ def validate_particions_config_global(schema: dict, *, tipus="individual"):
     parts = particio_codes_from_entries(part_entries)
     if BIRTH_YEAR_RANGE_PARTITION_CODE not in parts:
         return errors
-
-    if str(tipus or "individual").strip().lower() != "individual":
-        errors.append(
-            "particions_config.any_naixement_forquilla: nomes es valid per classificacions individuals."
-        )
-        return errors
-
-    cfg = normalize_birth_year_range_partition_config(
-        ((schema.get("particions_config") or {}).get(BIRTH_YEAR_RANGE_PARTITION_CODE))
+    _cfg, cfg_errors = validate_birth_year_range_partition_config(
+        ((schema.get("particions_config") or {}).get(BIRTH_YEAR_RANGE_PARTITION_CODE)),
+        require_ranges=True,
     )
-    ranges = cfg.get("ranges") or []
-    if not ranges:
-        errors.append(
-            "particions_config.any_naixement_forquilla.ranges: cal definir almenys una forquilla."
-        )
-        return errors
-
-    seen_labels = {}
-    normalized_ranges = []
-    for idx, item in enumerate(ranges):
-        label = str(item.get("label") or "").strip()
-        from_year = item.get("from_year")
-        to_year = item.get("to_year")
-        if from_year is None or to_year is None:
-            errors.append(
-                f"particions_config.any_naixement_forquilla.ranges[{idx}]: cal indicar from_year i to_year."
-            )
-            continue
-        if from_year > to_year:
-            errors.append(
-                f"particions_config.any_naixement_forquilla.ranges[{idx}]: from_year no pot ser mes gran que to_year."
-            )
-        key = " ".join(label.split()).casefold()
-        if key:
-            owner = seen_labels.get(key)
-            if owner is not None:
-                errors.append(
-                    f"particions_config.any_naixement_forquilla.ranges[{idx}]: etiqueta repetida amb la forquilla {owner}."
-                )
-            else:
-                seen_labels[key] = idx
-        normalized_ranges.append((idx, int(from_year), int(to_year)))
-
-    for pos, (idx_a, from_a, to_a) in enumerate(normalized_ranges):
-        for idx_b, from_b, to_b in normalized_ranges[pos + 1 :]:
-            if from_a <= to_b and from_b <= to_a:
-                errors.append(
-                    "particions_config.any_naixement_forquilla.ranges: "
-                    f"solapament entre indexos {idx_a} i {idx_b}."
-                )
+    for err in cfg_errors:
+        errors.append(f"particions_config.any_naixement_forquilla: {err}")
     return errors
 
 
@@ -458,14 +432,18 @@ def schema_to_template_schema(competicio, schema_local):
     equips_cfg = schema.get("equips") or {}
     if isinstance(equips_cfg, dict):
         assignment_source = _normalize_assignment_source(equips_cfg.get("assignment_source"))
-        if assignment_source.get("mode") == "native":
-            assignment_source["context_code"] = ""
+        context_code = normalize_equip_context_code(
+            equips_cfg.get("context_code") or assignment_source.get("context_code")
+        )
+        if assignment_source.get("legacy_mode"):
+            warnings.append("equips.assignment_source.mode='native' detectat; es normalitza al context Base.")
         equips_cfg["assignment_source"] = assignment_source
+        equips_cfg["context_code"] = context_code
         manual = equips_cfg.get("particions_manuals") or []
         if isinstance(manual, list):
             team_name_by_id = {
                 int(e.id): str(e.nom or "").strip()
-                for e in Equip.objects.filter(competicio=competicio).only("id", "nom")
+                for e in _assignment_teams_queryset(competicio, {"context_code": context_code}).only("id", "nom")
             }
             manual_out = []
             for idx, item in enumerate(manual):
@@ -642,27 +620,30 @@ def template_schema_to_competicio_schema(competicio, schema_tpl):
     equips_cfg = schema.get("equips") or {}
     if isinstance(equips_cfg, dict):
         assignment_source = _normalize_assignment_source(equips_cfg.get("assignment_source"))
-        if assignment_source.get("mode") == "context":
-            valid_codes = set(
-                EquipContext.objects
-                .filter(competicio=competicio)
-                .values_list("code", flat=True)
+        context_code = normalize_equip_context_code(
+            equips_cfg.get("context_code") or assignment_source.get("context_code")
+        )
+        valid_codes = set(
+            EquipContext.objects
+            .filter(competicio=competicio)
+            .values_list("code", flat=True)
+        )
+        if context_code not in valid_codes:
+            warnings.append(
+                f"equips.context_code '{context_code}' no trobat a la competicio; s'aplica el context Base"
             )
-            if assignment_source.get("context_code") not in valid_codes:
-                warnings.append(
-                    f"equips.assignment_source.context_code '{assignment_source.get('context_code')}' no trobat a la competicio; s'aplica mode native"
-                )
-                assignment_source = {
-                    "mode": "native",
-                    "context_code": "",
-                    "fallback": NATIVE_EQUIP_CONTEXT_CODE,
-                }
-        else:
-            assignment_source["context_code"] = ""
+            assignment_source = {
+                "mode": "context",
+                "context_code": NATIVE_EQUIP_CONTEXT_CODE,
+                "fallback": NATIVE_EQUIP_CONTEXT_CODE,
+                "legacy_mode": False,
+            }
+            context_code = NATIVE_EQUIP_CONTEXT_CODE
         equips_cfg["assignment_source"] = assignment_source
+        equips_cfg["context_code"] = context_code
         manual = equips_cfg.get("particions_manuals") or []
         if isinstance(manual, list):
-            teams = list(Equip.objects.filter(competicio=competicio).only("id", "nom"))
+            teams = list(_assignment_teams_queryset(competicio, {"context_code": context_code}).only("id", "nom"))
             id_by_name = {}
             for t in teams:
                 key = str(t.nom or "").strip().casefold()
@@ -684,7 +665,7 @@ def template_schema_to_competicio_schema(competicio, schema_tpl):
                     eid = id_by_name.get(key)
                     if not eid:
                         warnings.append(
-                            f"equips.particions_manuals[{idx}]: equip '{raw_name}' no trobat a la competicio"
+                            f"equips.particions_manuals[{idx}]: equip '{raw_name}' no trobat al context seleccionat"
                         )
                         continue
                     if eid in seen_eq:

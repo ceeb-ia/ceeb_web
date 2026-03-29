@@ -11,6 +11,7 @@
   const renameUrl = "{% url 'inscripcions_series_equips_rename' competicio.id %}";
   const reorderUrl = "{% url 'inscripcions_series_equips_reorder' competicio.id %}";
   const deleteUrl = "{% url 'inscripcions_series_equips_delete' competicio.id %}";
+  const deleteEmptyUrl = "{% url 'inscripcions_series_equips_delete_empty' competicio.id %}";
   const startListExportUrl = "{% url 'inscripcions_series_equips_start_list_export' competicio.id %}";
   const workSheetExportUrl = "{% url 'inscripcions_series_equips_work_sheet_export' competicio.id %}";
 
@@ -852,6 +853,32 @@
     document.getElementById(id)?.addEventListener('click', async () => {
       await refreshWorkspace({ preservePage: true });
     });
+  });
+
+  document.getElementById('btn-series-workspace-delete-empty')?.addEventListener('click', async () => {
+    if (!state.compAparellId) return;
+    if (typeof showConfirm === 'function') {
+      const ok = await showConfirm("Desactivar totes les series buides de l'aparell actual?");
+      if (!ok) return;
+    }
+    try {
+      const data = await postJson(deleteEmptyUrl, { comp_aparell_id: state.compAparellId });
+      setHistory(data);
+      state.seriesDetails = {};
+      await refreshWorkspace({ preservePage: true });
+      if (typeof showAlert === 'function') {
+        const deleted = Number(data?.deleted || 0);
+        const blocked = Array.isArray(data?.skipped_programmed_ids) ? data.skipped_programmed_ids.length : 0;
+        const summary = deleted > 0
+          ? `${deleted} serie(s) buida(es) desactivada(es).`
+          : 'No hi havia cap serie buida per desactivar.';
+        showAlert(blocked > 0 ? `${summary}\n${blocked} serie(s) programada(es) s'han conservat.` : summary);
+      }
+    } catch (error) {
+      if (typeof showAlert === 'function') {
+        showAlert(error?.message || String(error));
+      }
+    }
   });
 
   ['btn-series-export-start-list', 'btn-series-workspace-export-start-list'].forEach((id) => {

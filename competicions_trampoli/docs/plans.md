@@ -156,109 +156,93 @@ Decisió tancada:
 - El tall net implica actualitzar tests i qualsevol JS/client intern que encara emeti `equip` o `__mN`
 
 
+Per implementar:
 
 
-JA IMPLEMENTED: per revisio
-
-# Pla de canvis per afegir `member_treatment` als aparells globals d’equip
+# Pla per cobrir `derived` per membre i `derived` per pool d’equip amb UX explícita
 
 ## Resum
-Afegir una nova capa de càlcul només per aparells globals `team`: `member_treatment(...)`. Aquesta funció treballarà sobre una sèrie de valors escalaritzats per membre i permetrà aplicar selecció i agregació entre membres. El model queda així:
+Afegiré un segon eix de configuració per a `tipus=equips + team_mode=derived_from_individual`: **on es fa la selecció d’exercicis**. La classificació podrà funcionar en dos modes explícits:
+- `per_member`: cada membre selecciona els seus exercicis i després l’equip suma els subtotals
+- `team_pool`: l’equip construeix un pool comú d’exercicis i selecciona els `N` millors globals, amb `max_per_participant` aplicat de debò
 
-- tractament dins de cada membre: `row_compute`, `column_compute`, `select_sum`, etc.
-- tractament entre membres: `member_treatment(...)`
-- els helpers actuals `members_sum/avg/min/max/count` es mantenen com a sugar del nou model
+Això només s’exposarà a `derived_from_individual`. `native_team` manté el comportament actual a nivell d’equip i no mostrarà aquest control. Les configuracions existents de `derived` conservaran per defecte la semàntica actual (`per_member`). També s’aplicarà el mateix model als desempats.
 
-La decisió funcional queda tancada així:
-- API pública nova: `member_treatment(...)`
-- inputs permesos: camps `member` escalars i `computed` derivats que produeixin un escalar per membre
-- `members_sum/avg/min/max/count` continuen existint, però conceptualment passen a ser casos simples del nou mecanisme
+## Canvis de contracte i comportament
+- Afegiré `puntuacio.exercise_selection_scope` amb valors:
+  - `per_member`
+  - `team_pool`
+- Afegiré `desempat[i].exercise_selection_scope` amb valors:
+  - `hereta`
+  - `per_member`
+  - `team_pool`
+- Aquest camp només serà vàlid quan la classificació sigui `tipus=equips + team_mode=derived_from_individual`.
+- En `derived` sense camp explícit, el backend normalitzarà i interpretar à `per_member` per compatibilitat.
+- En `native_team` i `individual`, el camp no es mostrarà a la UI i el backend el rebutjarà si arriba amb un valor incompatible.
+- `mode_seleccio_exercicis` es manté, però el seu significat quedarà subordinat al nou eix:
+  - `exercise_selection_scope=per_member`: la selecció es fa dins de cada membre
+  - `exercise_selection_scope=team_pool`: la selecció es fa sobre un pool agregat de l’equip
+- `max_per_participant` només tindrà sentit funcional en `team_pool`; en `per_member` es considerarà irrellevant i no es mostrarà a la UI principal.
 
-## Canvis principals
-### 1. Contracte funcional nou
-- Afegir `member_treatment(source, select='all', n=None, agg='sum')` al llenguatge de fórmules.
-- `source` només pot ser una sèrie per membre amb valor escalar per membre.
-- `select` ha de suportar com a mínim:
-  - `all`
-  - `best_n`
-  - `worst_n`
-- `agg` ha de suportar com a mínim:
-  - `sum`
-  - `avg`
-  - `min`
-  - `max`
-  - `count`
-- `members_sum(X)`, `members_avg(X)`, `members_min(X)`, `members_max(X)`, `members_count(X)` es mantenen i es documenten com sucre sintàctic sobre `member_treatment`.
+## Implementació
+- **Motor**
+  - Mantindré intacte el camí actual de `derived` com a `per_member`.
+  - Afegiré un segon camí de càlcul per `derived + team_pool` dins [services_classificacions_2.py](/c:/Users/Guillem%20Merino/Desktop/ceeb_web/competicions_trampoli/services/services_classificacions_2.py):
+    - construir pool d’exercicis individuals per equip i aparell
+    - cada fila conservarà `inscripcio_id`, `app_id`, `exercici`, `value`
+    - aplicar la mateixa maquinària de selecció (`tots`, `millor_n`, `pitjor_n`, `index`, `llista`, `global_pool`, `per_aparell_override`) però amb el pool d’equip com a base
+    - aplicar `max_per_participant` com a límit real per membre dins del pool
+    - calcular `team_by_app` directament des de les files seleccionades del pool, sense sumar subtotals per membre
+  - Els desempats en `derived` heretaran el mateix eix:
+    - `per_member`: es manté lògica actual
+    - `team_pool`: el criteri opera sobre el pool d’equip amb les mateixes regles d’exercicis i agregació
+  - `native_team` no canvia semànticament.
 
-### 2. Regles de tipus i escalarització
-- Només s’activa en aparells globals `competition_unit='team'`.
-- Un camp `member` base de tipus `number` és directament vàlid per `member_treatment`.
-- També és vàlid qualsevol `computed` derivat d’un camp `member` si el resultat per membre és escalar.
-- Es considera “escalar per membre”:
-  - `number`
-  - `list` d’1 element reduïda explícitament a escalar
-  - `matrix` 1x1 reduïda explícitament a escalar
-  - qualsevol computed que el motor/validator marqui com a `member_scalar`
-- No és vàlid aplicar `member_treatment` directament sobre:
-  - `list` o `matrix` per membre no reduïts
-  - cap objecte que segueixi sent `member_vector` o `member_matrix`
-- `row_compute` sobre un camp `member` passa a produir explícitament un resultat “per membre”. Si la seva sortida és escalar, ja és admissible per `member_treatment`.
+- **Validació i normalització**
+  - A [views_classificacions.py](/c:/Users/Guillem%20Merino/Desktop/ceeb_web/competicions_trampoli/views_classificacions.py) validaré:
+    - `puntuacio.exercise_selection_scope` en `{per_member, team_pool}`
+    - `desempat[i].exercise_selection_scope` en `{hereta, per_member, team_pool}`
+    - ús només permès a `tipus=equips + team_mode=derived_from_individual`
+  - En `save`, les configs `derived` existents sense camp nou es persistiran amb `per_member`.
+  - Els desempats `derived` sense override nou seguiran heretant `puntuacio.exercise_selection_scope`.
+  - No hi haurà inferència automàtica cap a `team_pool`.
 
-### 3. Motor i validador
-- Estendre el motor perquè, a més de “scalar/list/matrix”, conegui metadades de nivell membre:
-  - `member_scalar`
-  - `member_list`
-  - `member_matrix`
-  - `shared_scalar`
-  - `shared_list`
-  - `shared_matrix`
-- `member_treatment` només accepta `member_scalar` i retorna un `shared_scalar`.
-- El validator ha de rebutjar:
-  - `member_treatment` en aparells `individual`
-  - `member_treatment` sobre `shared`
-  - `member_treatment` sobre `member_list` o `member_matrix`
-  - fórmules amb `__mN`, que continuen prohibits
-- El validator ha de permetre:
-  - `member_treatment(E)` si `E` és `member` escalar
-  - `member_treatment(e_member)` si `e_member` és un computed `member_scalar`
-- Els helpers actuals `members_*` es validen amb la mateixa regla interna que `member_treatment`.
+- **Builder i UX**
+  - A [classificacions_builder_v2.html](/c:/Users/Guillem%20Merino/Desktop/ceeb_web/competicions_trampoli/templates/competicio/classificacions_builder_v2.html) afegiré un control nou dins del bloc **Puntuació**, just abans de la secció de selecció d’exercicis:
+    - etiqueta: `Base de selecció`
+    - opcions:
+      - `Per membre i després suma`
+      - `Pool d’equip amb límit per membre`
+  - Només serà visible si `tipus=equips` i `team_mode=derived_from_individual`.
+  - Canviaré els textos i hints de forma dinàmica:
+    - `per_member`: “Millors N per membre”, “després se sumen els subtotals dels membres”
+    - `team_pool`: “Millors N de l’equip”, “màxim per membre dins del pool”
+  - `Max N per participant` quedarà ocult en `per_member` i visible en `team_pool`.
+  - Afegiré un resum textual sempre visible sota la configuració:
+    - exemple `TR: millors 2 per membre; després suma`
+    - exemple `TR: millors 3 de l’equip; màxim 2 per membre`
+  - El mateix eix apareixerà al builder de desempats amb `Hereta / Per membre / Pool d’equip`.
+  - No exposaré aquest selector a `native_team`; allà la UI continuarà parlant sempre en termes d’equip.
 
-### 4. Builder i ajuda d’usuari
-- En aparells globals `team`, el builder ha d’afegir `member_treatment` a l’autocomplet i a les fórmules guiades.
-- El text d’ajuda ha de canviar de “usa `members_sum(E)` o `members_avg(E)`” a una explicació en dues capes:
-  - primer redueix cada membre si cal
-  - després agrega entre membres amb `member_treatment(...)` o amb els sugars `members_*`
-- Afegir validació visual clara:
-  - si el camp encara és `nxm`, no es pot aplicar `member_treatment`
-  - si primer fas `row_compute(...)` i el resultat és escalar, sí
-- Mantenir etiquetes UI:
-  - `Individual`
-  - `Compartit`
-
-### 5. Compatibilitat i comportament existent
-- No es toca el model públic del schema guardat: continua sent global, amb `scope` lògic.
-- No es reintrodueix cap model de slots `__mN`.
-- Els schemata existents amb `members_sum/avg/min/max/count` continuen funcionant sense migració.
-- El motor intern pot implementar `members_*` com wrappers de `member_treatment` per reduir duplicació.
-
-## Casos de prova
-- Acceptar `member_treatment(E)` quan `E` és un camp `member` de tipus `number`.
-- Acceptar `member_treatment(row_compute(E,...))` quan `E` és `matrix` per membre i `row_compute` el redueix a escalar.
-- Rebutjar `member_treatment(E)` si `E` és `matrix` o `list` per membre no reduït.
-- Rebutjar `member_treatment(S)` si `S` és `shared`.
-- Rebutjar qualsevol ús de `member_treatment` en aparell global `individual`.
-- Verificar equivalència funcional:
-  - `members_sum(E)` == `member_treatment(E, select='all', agg='sum')`
-  - `members_avg(E)` == `member_treatment(E, select='all', agg='avg')`
-- Verificar selecció:
-  - `best_n` i `worst_n` sobre camps `member_scalar`
-- Verificar que el builder mostra ajuda/autocomplet coherents i errors de validació correctes.
+## Proves
+- `derived + per_member` manté exactament el comportament actual per score principal.
+- `derived + team_pool` selecciona els `N` millors de l’equip en un aparell aplicant `max_per_participant`.
+- `derived + team_pool + global_pool` selecciona els `N` millors globals del conjunt d’aparells de l’equip amb topall per membre.
+- `per_aparell_override` funciona en tots dos scopes.
+- Els desempats en `derived` hereten el scope del score si no tenen override.
+- Els desempats en `derived + team_pool` calculen sobre pool d’equip i no sobre subtotals per membre.
+- Les classificacions existents de `derived` sense camp nou es normalitzen a `per_member`.
+- `native_team` rebutja `exercise_selection_scope` explícit i manté el comportament actual.
+- La UI mostra/oculta correctament `Base de selecció` i `Max N per participant` segons el mode.
+- Els resums textuals de la UI reflecteixen el comportament real del motor.
 
 ## Assumptions i defaults
-- Signatura inicial recomanada: `member_treatment(source, select='all', n=None, agg='sum')`.
-- El primer v1 només necessita `all`, `best_n`, `worst_n` i agregacions `sum/avg/min/max/count`.
-- “Escalaritzable” no vol dir “escalar automàticament”: la reducció de `list/matrix` ha de ser explícita amb un computed previ.
-- `members_sum/avg/min/max/count` es mantenen com a API estable i sugar del nou model, no es deprequen.
+- El nom intern del camp nou serà `exercise_selection_scope`.
+- El valor per defecte i de compatibilitat per `derived` serà `per_member`.
+- `team_pool` només s’introduirà a `derived_from_individual`; `native_team` no guanya cap bifurcació nova.
+- No faré canvis al live en aquest paquet.
+- No hi haurà migracions de model; el canvi és només de schema JSON, validació, motor i builder.
+
 
 
 
@@ -383,3 +367,106 @@ PLAN 3: Revision
 - Els permisos antics de tipus `member` sense target explícit passen a significar `tots`.
 - No es fan migracions ni canvis de models SQL; tot es resol dins del JSON `permissions`.
 - No es modifica el motor de scoring, només la capa de permisos QR, resolució runtime i render del portal.
+
+
+
+
+PLAN 4 :Revision
+
+
+
+# Pla d’unificació de `Context d'equips` i partició per naixement en classificacions
+
+## Resum
+- Moure `Context d'equips` i `Mode d'equips` a **Metadades**.
+- Deixar d’usar `equips.particio_edat` com a mecanisme actiu i substituir-lo per una única partició `any_naixement_forquilla`.
+- Fer que `any_naixement_forquilla` sigui vàlida tant per `tipus=individual` com per `tipus=equips`.
+- En equips, la forquilla es resol a nivell d’equip amb la **data de naixement del membre més gran** i una regla de compliment configurable.
+- Mantenir les **particions manuals d’equip** com a bloc especial en aquesta iteració.
+
+## Canvis de contracte
+- `schema.particions_config.any_naixement_forquilla` passa a admetre també configuració d’equip:
+  ```json
+  {
+    "ranges": [],
+    "sense_data_label": "Sense data",
+    "fora_rang_label": "Fora de forquilla",
+    "team_rules": {
+      "reference_mode": "oldest_member_birthdate",
+      "compliance_mode": "strict",
+      "max_members_outside_range": 0,
+      "missing_birthdate_policy": "outside_range"
+    }
+  }
+  ```
+- Semàntica:
+  - `reference_mode` queda fixat a `oldest_member_birthdate` en aquesta iteració.
+  - `compliance_mode`:
+    - `strict`: cap membre pot quedar fora de la forquilla candidata.
+    - `allow_outside_n`: es permeten fins a `max_members_outside_range` membres fora.
+  - `missing_birthdate_policy=outside_range`: membres sense `data_naixement` compten com a fora de forquilla.
+- `equips.particio_edat` deixa de ser configuració nova admesa.
+- `equips.combinar_manual_i_edat` es manté només per compatibilitat transitòria si cal preservar hidrata/lectura legacy; el builder nou ja no l’ha de presentar com a configuració principal.
+
+## Implementació
+- **Motor i càlcul**
+  - Fer que `any_naixement_forquilla` es pugui resoldre a nivell d’equip en `derived_from_individual` i `native_team`.
+  - En equips, calcular primer la forquilla candidata a partir de la data més antiga dels integrants.
+  - Si no hi ha cap data vàlida coneguda, l’equip entra a `sense_data_label`.
+  - Avaluar compliment:
+    - `strict`: `outside_count` ha de ser `0`.
+    - `allow_outside_n`: `outside_count <= max_members_outside_range`.
+  - Si l’equip no compleix, entra a `fora_rang_label`; no s’exclou ni es bloqueja.
+  - Per `native_team`, resoldre integrants des de `team_subject.member_ids` de manera deduplicada.
+  - Mantenir les particions manuals d’equip com ara; la nova partició per naixement conviu amb elles sense redissenyar-les en `particions_v2`.
+
+- **Validació i compatibilitat**
+  - Fer vàlid `BIRTH_YEAR_RANGE_PARTITION_CODE` també per `tipus=equips`.
+  - Validar `team_rules`:
+    - `reference_mode` només pot ser `oldest_member_birthdate`.
+    - `compliance_mode` només `strict` o `allow_outside_n`.
+    - `max_members_outside_range` obligatori i `>= 0` quan el mode és `allow_outside_n`.
+    - `missing_birthdate_policy` només `outside_range`.
+  - Actualitzar també la validació de plantilles globals perquè accepti equips.
+  - Tractar `equips.particio_edat` com a legacy de lectura:
+    - si existeix i no hi ha `team_rules` nous, el builder la mostra com a configuració legacy inferida.
+    - en desar, sempre persistir només el contracte nou a `particions_config.any_naixement_forquilla`.
+  - La conversió legacy ha de derivar forquilles de naixement equivalents a partir de `llindars` i la data de la competició; si no es pot resoldre una data de referència vàlida, marcar la configuració com a legacy pendent de revisió en lloc de reinterpretar-la silenciosament.
+
+- **Builder i UX**
+  - Moure `Context d'equips` i `Mode d'equips` al bloc **Metadades**, al costat de `Tipus`.
+  - Deixar a **Particions**:
+    - particions generals
+    - particions manuals d’equip
+    - configuració de `any_naixement_forquilla`
+  - Reutilitzar el mateix editor de forquilles que ja existeix a inscripcions/classificacions.
+  - Si `tipus=individual`, mostrar només:
+    - rangs
+    - `sense_data_label`
+    - `fora_rang_label`
+  - Si `tipus=equips`, afegir al mateix bloc:
+    - “Regla d’equip” amb text clar que la forquilla es calcula pel membre més gran
+    - selector `strict` / `allow_outside_n`
+    - input `N` quan toca
+    - nota que els membres sense data compten com a fora de forquilla
+  - Eliminar del builder el bloc antic de “Partició per edat màxima d’equip”.
+
+## Proves
+- Accepta `any_naixement_forquilla` en `tipus=equips` a validació i a plantilles.
+- `tipus=individual` continua agrupant exactament com ara.
+- `tipus=equips + derived_from_individual`:
+  - resol forquilla per equip amb el membre més gran
+  - `strict` envia equips no conformes a `fora_rang_label`
+  - `allow_outside_n` admet fins a `N` membres fora
+  - membres sense data compten com a fora
+- `tipus=equips + native_team` replica la mateixa semàntica.
+- Equips sense cap data vàlida coneguda entren a `sense_data_label`.
+- El builder mostra `Context d'equips` a Metadades i ja no mostra `equips.particio_edat`.
+- Configs legacy amb `equips.particio_edat` es detecten, s’hidraten per revisió i es normalitzen al contracte nou en desar.
+
+## Assumptions i defaults
+- La nova partició de naixement s’aplica a **totes** les classificacions d’equips, inclòs `native_team`.
+- L’equip que incompleix la regla va a `Fora de forquilla`; no s’exclou.
+- `missing_birthdate_policy` queda fixat a `outside_range` en aquesta iteració.
+- `reference_mode` queda fixat a la data del membre més gran; no s’obre encara a altres estratègies.
+- Les particions manuals d’equip es mantenen especials en aquesta fase; no es passen encara a `particions_v2`.

@@ -390,6 +390,14 @@
                   <button
                     type="button"
                     class="btn btn-sm btn-outline-danger"
+                    id="btn-team-workspace-delete-empty"
+                    data-delete-empty-url="{% url 'inscripcions_equips_delete_empty' competicio.id %}"
+                  >
+                    Eliminar buits
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-outline-danger"
                     id="btn-team-workspace-delete-all"
                     data-delete-all-url="{% url 'inscripcions_equips_delete_all' competicio.id %}"
                   >

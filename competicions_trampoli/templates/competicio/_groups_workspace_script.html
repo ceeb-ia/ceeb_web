@@ -8,6 +8,7 @@ if (groupsWorkspaceShell && groupsMainCard) {
   const groupsAssignUrl = "{% url 'groups_assign' competicio.id %}";
   const groupsUnassignUrl = "{% url 'groups_unassign' competicio.id %}";
   const groupsDeleteUrl = "{% url 'groups_delete' competicio.id %}";
+  const groupsDeleteEmptyUrl = "{% url 'groups_delete_empty' competicio.id %}";
 
   const state = {
     filters: Object.assign({ group_state: 'all', group_id: '' }, getCurrentInscripcioFilters()),
@@ -1307,6 +1308,24 @@ if (groupsWorkspaceShell && groupsMainCard) {
         }
         syncSelectedGroup(groupId);
         await runAction('delete', groupsDeleteUrl, { group_id: groupId });
+        return;
+      }
+
+      if (action === 'delete-empty') {
+        if (!(await confirmBox('Desactivar tots els grups buits?'))) return;
+        try {
+          const data = await postJson(groupsDeleteEmptyUrl, {});
+          invalidateAllGroupDetails();
+          await fetchWorkspace();
+          const deleted = Number(data?.deleted || 0);
+          alertBox(
+            deleted > 0
+              ? `${deleted} grup(s) buit(s) desactivat(s).`
+              : 'No hi havia cap grup buit per desactivar.'
+          );
+        } catch (err) {
+          showRequestError("No s'han pogut desactivar els grups buits.", err);
+        }
       }
     });
 

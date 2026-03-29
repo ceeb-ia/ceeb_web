@@ -6,6 +6,7 @@ if (teamWorkspaceShell) {
   const createManualUrl = "{% url 'inscripcions_equips_create_manual' competicio.id %}";
   const assignUrl = "{% url 'inscripcions_equips_assign' competicio.id %}";
   const unassignUrl = "{% url 'inscripcions_equips_unassign' competicio.id %}";
+  const deleteEmptyUrl = "{% url 'inscripcions_equips_delete_empty' competicio.id %}";
   const ctxCreateUrl = "{% url 'inscripcions_equip_context_create' competicio.id %}";
   const ctxRenameUrlTpl = "{% url 'inscripcions_equip_context_rename' competicio.id '__context__' %}";
   const ctxDeleteUrlTpl = "{% url 'inscripcions_equip_context_delete' competicio.id '__context__' %}";
@@ -241,8 +242,8 @@ if (teamWorkspaceShell) {
     const name = String(context?.nom || context?.code || 'Context');
     setText('team-context-title', name);
     setText('team-context-title-inline', name);
-    setText('team-context-badge', context?.is_native ? 'Context natiu' : `Context ${context?.code || ''}`);
-    setText('team-context-badge-inline', context?.is_native ? 'Context natiu' : `Context ${context?.code || ''}`);
+    setText('team-context-badge', context?.is_native ? 'Context Base' : `Context ${context?.code || ''}`);
+    setText('team-context-badge-inline', context?.is_native ? 'Context Base' : `Context ${context?.code || ''}`);
     setText('team-context-description', String(context?.description || '').trim() || "Totes les accions d'aquest modal s'apliquen nomes a aquest context.");
     setText('team-manual-context-name', name);
     setText('team-summary-teams-with-members', Number(summary?.teams_with_members || 0));
@@ -280,7 +281,7 @@ if (teamWorkspaceShell) {
         ? "Selecciona en quins aparells globals d'equip competeix aquest context."
         : "No hi ha cap aparell global d'equip actiu en aquesta competició.";
     }
-    if (saveBtn) saveBtn.disabled = !editable() || state.contextCode === 'native' || !items.length;
+    if (saveBtn) saveBtn.disabled = !editable() || !items.length;
 
     items.forEach((item) => {
       const label = document.createElement('label');
@@ -292,7 +293,7 @@ if (teamWorkspaceShell) {
       check.className = 'mt-1 js-team-context-source-check';
       check.value = String(item?.id || '');
       check.checked = !!item?.selected;
-      check.disabled = !editable() || state.contextCode === 'native';
+      check.disabled = !editable();
       label.appendChild(check);
 
       const copy = document.createElement('div');
@@ -387,7 +388,7 @@ if (teamWorkspaceShell) {
     badges.className = 'team-candidate-teams';
     badges.appendChild(createGroupPreviewBadge(item?.current_team_name ? `Context: ${item.current_team_name}` : 'Context: sense equip', item?.current_team_name ? '' : 'incoming'));
     if (item?.show_native_team_hint) {
-      badges.appendChild(createGroupPreviewBadge(item?.native_team_name ? `Natiu: ${item.native_team_name}` : 'Natiu: sense equip'));
+      badges.appendChild(createGroupPreviewBadge(item?.native_team_name ? `Base: ${item.native_team_name}` : 'Base: sense equip'));
     }
     main.appendChild(badges);
     row.appendChild(main);
@@ -444,7 +445,7 @@ if (teamWorkspaceShell) {
     if (state.contextCode !== 'native') {
       const hint = document.createElement('div');
       hint.className = 'team-context-member-native';
-      hint.textContent = member?.native_team_name ? `Equip natiu: ${member.native_team_name}` : 'Equip natiu: sense equip';
+      hint.textContent = member?.native_team_name ? `Equip base: ${member.native_team_name}` : 'Equip base: sense equip';
       main.appendChild(hint);
     }
 
@@ -586,7 +587,7 @@ if (teamWorkspaceShell) {
         remove.className = 'btn btn-sm btn-outline-danger js-team-delete';
         remove.dataset.teamName = String(team?.nom || '');
         remove.dataset.deleteUrl = actionUrl(deleteUrlTpl, team?.id);
-        remove.textContent = isEmpty ? 'Eliminar equip' : 'Treure del context';
+        remove.textContent = 'Eliminar equip';
         actions.appendChild(remove);
       }
       head.appendChild(actions);
@@ -976,7 +977,7 @@ if (teamWorkspaceShell) {
   if (contextRename) {
     contextRename.addEventListener('click', async () => {
       const code = state.contextCode;
-      if (code === 'native') return showAlert('El context natiu no es pot renombrar.');
+      if (code === 'native') return showAlert('El context Base no es pot renombrar.');
       const current = contextSelect?.selectedOptions?.[0]?.textContent || code;
       const name = await showPrompt("Nou nom del context d'equips:", current);
       if (!name || !name.trim()) return;
@@ -996,7 +997,7 @@ if (teamWorkspaceShell) {
   if (contextDelete) {
     contextDelete.addEventListener('click', async () => {
       const code = state.contextCode;
-      if (code === 'native') return showAlert('El context natiu no es pot eliminar.');
+      if (code === 'native') return showAlert('El context Base no es pot eliminar.');
       const label = contextSelect?.selectedOptions?.[0]?.textContent || code;
       const ok = await showConfirm(`Eliminar el context "${label}"? S'esborraran les seves assignacions.`);
       if (!ok) return;
@@ -1019,10 +1020,6 @@ if (teamWorkspaceShell) {
   const contextSourcesSave = document.getElementById('btn-team-context-sources-save');
   if (contextSourcesSave) {
     contextSourcesSave.addEventListener('click', async () => {
-      if (state.contextCode === 'native') {
-        showAlert("El context natiu no es pot vincular a aparells globals d'equip.");
-        return;
-      }
       const compAparellIds = Array.from(document.querySelectorAll('.js-team-context-source-check:checked'))
         .map((node) => Number(node.value || 0))
         .filter((value) => Number.isFinite(value) && value > 0);
@@ -1267,8 +1264,8 @@ if (teamWorkspaceShell) {
       const url = deleteAll.getAttribute('data-delete-all-url');
       if (!url) return showAlert("URL d'eliminacio massiva no disponible.");
       const message = state.contextCode === 'native'
-        ? 'Vols eliminar tots els equips existents? Les inscripcions quedaran sense equip.'
-        : "Vols eliminar totes les assignacions d'equip d'aquest context?";
+        ? "Vols eliminar tots els equips del context Base?"
+        : "Vols eliminar tots els equips d'aquest context?";
       if (!(await showConfirm(message))) return;
       try {
         const data = await postJson(url, { context_code: state.contextCode });
@@ -1280,6 +1277,32 @@ if (teamWorkspaceShell) {
         await refreshWorkspace({ clearSelection: true });
       } catch (err) {
         showAlert(`No s'han pogut eliminar tots els equips.\n${err.message || err}`);
+      }
+    });
+  }
+
+  const deleteEmpty = document.getElementById('btn-team-workspace-delete-empty');
+  if (deleteEmpty) {
+    deleteEmpty.addEventListener('click', async () => {
+      const message = state.contextCode === 'native'
+        ? "Vols eliminar els equips buits del context Base?"
+        : "Vols eliminar els equips buits d'aquest context?";
+      if (!(await showConfirm(message))) return;
+      try {
+        const data = await postJson(deleteEmptyUrl, { context_code: state.contextCode });
+        if (!data.ok) return showAlert("No s'han pogut eliminar els equips buits.");
+        const deleted = Number(data.deleted || 0);
+        state.selectedIds = new Set();
+        state.expandedTeamIds = new Set();
+        state.teamMemberPages = {};
+        resetPreview();
+        await refreshWorkspace({ clearSelection: true });
+        const summary = deleted > 0
+          ? `${deleted} equip(s) buit(s) eliminat(s).`
+          : "No hi havia cap equip buit per eliminar.";
+        showAlert(summary);
+      } catch (err) {
+        showAlert(`No s'han pogut eliminar els equips buits.\n${err.message || err}`);
       }
     });
   }

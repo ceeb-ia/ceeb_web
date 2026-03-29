@@ -358,7 +358,10 @@
                   <div class="fw-semibold">Grups existents</div>
                   <div class="small text-muted">Resum visual rapid amb accions immediates per grup.</div>
                 </div>
-                <span class="badge badge-light border" id="groups-existing-count-badge">0 grups</span>
+                <div class="d-flex align-items-center flex-wrap" style="gap:8px;">
+                  <span class="badge badge-light border" id="groups-existing-count-badge">0 grups</span>
+                  <button type="button" class="btn btn-sm btn-outline-danger" id="btn-groups-delete-empty" data-group-action="delete-empty">Desactivar buits</button>
+                </div>
               </div>
 
               <div class="team-context-teams-status small text-muted" id="groups-existing-status">Sense dades encara.</div>

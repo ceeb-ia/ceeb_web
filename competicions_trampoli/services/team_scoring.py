@@ -15,7 +15,6 @@ from ..models_trampoli import (
     CompeticioAparellEquipContextSource,
     InscripcioAparellExclusio,
 )
-from .equip_contexts import NATIVE_EQUIP_CONTEXT_CODE, normalize_equip_context_code
 from .team_series import enrich_team_subjects_with_series
 
 
@@ -460,22 +459,10 @@ def runtime_schema_for_comp_aparell(
 
 def _team_member_rows_for_context(competicio, context) -> Dict[int, List[Inscripcio]]:
     grouped: Dict[int, List[Inscripcio]] = {}
-    context_code = normalize_equip_context_code(getattr(context, "code", ""))
-    base_qs = (
-        Inscripcio.objects
-        .filter(competicio=competicio)
-        .select_related("equip", "grup_competicio")
-        .order_by("grup_competicio__display_num", "ordre_competicio", "ordre_sortida", "id")
-    )
-    if context_code == NATIVE_EQUIP_CONTEXT_CODE:
-        for ins in base_qs.exclude(equip__isnull=True):
-            grouped.setdefault(int(ins.equip_id), []).append(ins)
-        return grouped
-
     rows = (
         InscripcioEquipAssignacio.objects
         .filter(competicio=competicio, context=context)
-        .select_related("inscripcio__equip", "inscripcio__grup_competicio")
+        .select_related("inscripcio__grup_competicio")
         .order_by("inscripcio__grup_competicio__display_num", "inscripcio__ordre_competicio", "inscripcio__ordre_sortida", "inscripcio_id")
     )
     for row in rows:
@@ -574,7 +561,7 @@ def build_team_subjects_for_comp_aparell(competicio, comp_aparell: CompeticioApa
                 continue
             equips = list(
                 Equip.objects
-                .filter(competicio=competicio, id__in=list(members_by_team.keys()))
+                .filter(competicio=competicio, context=context, id__in=list(members_by_team.keys()))
                 .order_by("nom", "id")
             )
             equip_map = {equip.id: equip for equip in equips}

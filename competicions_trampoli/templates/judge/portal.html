@@ -843,12 +843,14 @@
       }
 
       let slots = [];
+      let missingSlots = [];
       if(base.member_mode === "all"){
         for(let slot = 1; slot <= memberCount; slot += 1){
           slots.push(slot);
         }
       } else {
         slots = base.member_slots.filter((slot) => slot <= memberCount);
+        missingSlots = base.member_slots.filter((slot) => slot > memberCount);
       }
 
       slots.forEach((slot) => {
@@ -858,6 +860,23 @@
           runtime_field_code: runtimeFieldCode,
           member_slot: slot,
           member_label: `M${slot}`,
+        };
+        resolved.push({
+          ...resolvedPerm,
+          idx,
+          key: permKey(resolvedPerm, idx),
+          field: schemaField(runtimeFieldCode),
+        });
+      });
+
+      missingSlots.forEach((slot) => {
+        const runtimeFieldCode = `${base.field_code}__m${slot}`;
+        const resolvedPerm = {
+          ...base,
+          runtime_field_code: runtimeFieldCode,
+          member_slot: slot,
+          member_label: `M${slot}`,
+          disabled_missing_member: true,
         };
         resolved.push({
           ...resolvedPerm,
@@ -1840,6 +1859,12 @@
     block.className = "border rounded p-2 mb-2";
 
     if(!field){
+      if(perm.disabled_missing_member){
+        block.classList.add("bg-light");
+        block.innerHTML = `<div class="judge-meta mb-1">${perm.runtime_field_code || perm.field_code} · M${perm.member_slot || "?"}</div><div class="text-muted small">Membre no disponible per aquest equip. El camp queda desactivat.</div>`;
+        parent.appendChild(block);
+        return;
+      }
       block.innerHTML = `<div class="text-muted small">Camp no disponible al schema: ${perm.field_code}</div>`;
       parent.appendChild(block);
       return;
@@ -1851,6 +1876,23 @@
     const memberLabel = perm.member_slot ? ` · M${perm.member_slot}` : "";
     head.textContent = `${field.label || perm.runtime_field_code}${memberLabel} [${perm.field_code}] · Jutge ${perm.judge_index}${range}`;
     block.appendChild(head);
+
+    if(perm.disabled_missing_member){
+      block.classList.add("bg-light");
+      const note = document.createElement("div");
+      note.className = "text-muted small mb-2";
+      note.textContent = "Membre no disponible per aquest equip. El camp queda desactivat.";
+      block.appendChild(note);
+      const disabledInput = document.createElement("input");
+      disabledInput.className = "form-control form-control-sm";
+      disabledInput.type = "text";
+      disabledInput.disabled = true;
+      disabledInput.value = "";
+      disabledInput.placeholder = "Membre inexistent";
+      block.appendChild(disabledInput);
+      parent.appendChild(block);
+      return;
+    }
 
     const type = field.type || "number";
     if(type === "number"){

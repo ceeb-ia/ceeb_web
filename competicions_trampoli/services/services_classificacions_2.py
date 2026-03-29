@@ -4,9 +4,17 @@ import logging
 from collections import defaultdict
 from datetime import date
 from decimal import Decimal
+from types import SimpleNamespace
 from django.db import models
 from django.utils import timezone
 from ..models import Inscripcio
+from .birth_year_ranges import (
+    BIRTH_YEAR_RANGE_PARTITION_CODE,
+    DEFAULT_BIRTH_YEAR_RANGE_PARTITION_CONFIG,
+    birth_year_range_partition_value,
+    legacy_team_age_partition_to_birth_year_range_config,
+    normalize_birth_year_range_partition_config,
+)
 from .equip_contexts import (
     NATIVE_EQUIP_CONTEXT_CODE,
     get_contextual_assignment_map,
@@ -19,12 +27,36 @@ from .team_scoring import is_team_context_app
 
 logger = logging.getLogger(__name__)
 
-BIRTH_YEAR_RANGE_PARTITION_CODE = "any_naixement_forquilla"
-DEFAULT_BIRTH_YEAR_RANGE_PARTITION_CONFIG = {
-    "ranges": [],
-    "sense_data_label": "Sense data",
-    "fora_rang_label": "Fora de forquilla",
-}
+EXERCISE_SELECTION_SCOPE_PER_MEMBER = "per_member"
+EXERCISE_SELECTION_SCOPE_TEAM_POOL = "team_pool"
+EXERCISE_SELECTION_SCOPE_INHERIT = "hereta"
+
+
+def _legacy_native_equip_for_classificacio(inscripcio):
+    equip = getattr(inscripcio, "equip", None)
+    if equip is not None:
+        return equip
+    equip_id = getattr(inscripcio, "equip_id", None)
+    if not equip_id:
+        return None
+    return SimpleNamespace(id=int(equip_id), nom=str(getattr(inscripcio, "equip__nom", "") or "").strip())
+
+
+def _resolve_inscripcio_equip_for_classificacio(inscripcio, *, context_code=None, fallback=None, assignment_map=None):
+    resolved = resolve_inscripcio_equip(
+        inscripcio,
+        context_code=context_code,
+        fallback=fallback,
+        assignment_map=assignment_map,
+    )
+    if resolved is not None:
+        return resolved
+
+    code = normalize_equip_context_code(context_code)
+    fallback_code = normalize_equip_context_code(fallback) if fallback not in (None, "") else ""
+    if code != NATIVE_EQUIP_CONTEXT_CODE and fallback_code != NATIVE_EQUIP_CONTEXT_CODE:
+        return None
+    return _legacy_native_equip_for_classificacio(inscripcio)
 
 
 # -----------------------------
@@ -125,10 +157,16 @@ DEFAULT_SCHEMA = {
 
     # Config additiva per tipus="equips"
     "equips": {
+        "context_code": NATIVE_EQUIP_CONTEXT_CODE,
+        "team_mode": "",
+        "mode_resolution": {
+            "resolved_at": "",
+            "eligible_team_app_ids_at_save": [],
+        },
         "assignment_source": {
-            "mode": "native",
-            "context_code": "",
-            "fallback": "native",
+            "mode": "context",
+            "context_code": NATIVE_EQUIP_CONTEXT_CODE,
+            "fallback": NATIVE_EQUIP_CONTEXT_CODE,
         },
         "incloure_sense_equip": False,
         "particions_manuals": [],  # [{key,label,equip_ids:[...]}]
@@ -196,64 +234,15 @@ def _merge_schema(schema: dict) -> dict:
         **DEFAULT_SCHEMA["equips"]["assignment_source"],
         **(((schema.get("equips") or {}).get("assignment_source")) or {}),
     }
+    out["equips"]["mode_resolution"] = {
+        **DEFAULT_SCHEMA["equips"]["mode_resolution"],
+        **(((schema.get("equips") or {}).get("mode_resolution")) or {}),
+    }
     out["equips"]["particio_edat"] = {
         **DEFAULT_SCHEMA["equips"]["particio_edat"],
         **(((schema.get("equips") or {}).get("particio_edat")) or {}),
     }
-    return out
-
-
-def _parse_optional_year(raw):
-    if raw in (None, ""):
-        return None
-    try:
-        return int(raw)
-    except Exception:
-        return None
-
-
-def _default_birth_year_range_label(from_year, to_year, idx):
-    if from_year is not None and to_year is not None:
-        if from_year == to_year:
-            return str(from_year)
-        return f"{from_year}-{to_year}"
-    return f"Forquilla {idx + 1}"
-
-
-def normalize_birth_year_range_partition_config(raw_cfg):
-    cfg = raw_cfg if isinstance(raw_cfg, dict) else {}
-    out = {
-        **DEFAULT_BIRTH_YEAR_RANGE_PARTITION_CONFIG,
-    }
-    out["sense_data_label"] = (
-        str(cfg.get("sense_data_label") or out["sense_data_label"]).strip()
-        or DEFAULT_BIRTH_YEAR_RANGE_PARTITION_CONFIG["sense_data_label"]
-    )
-    out["fora_rang_label"] = (
-        str(cfg.get("fora_rang_label") or out["fora_rang_label"]).strip()
-        or DEFAULT_BIRTH_YEAR_RANGE_PARTITION_CONFIG["fora_rang_label"]
-    )
-
-    ranges_out = []
-    for idx, item in enumerate(cfg.get("ranges") or []):
-        if not isinstance(item, dict):
-            continue
-        raw_label = str(item.get("label") or "").strip()
-        raw_from = item.get("from_year")
-        raw_to = item.get("to_year")
-        if raw_label == "" and raw_from in (None, "") and raw_to in (None, ""):
-            continue
-        from_year = _parse_optional_year(raw_from)
-        to_year = _parse_optional_year(raw_to)
-        label = raw_label or _default_birth_year_range_label(from_year, to_year, idx)
-        ranges_out.append(
-            {
-                "label": label,
-                "from_year": from_year,
-                "to_year": to_year,
-            }
-        )
-    out["ranges"] = ranges_out
+    out["equips"] = _normalize_classificacio_equips_cfg(out["equips"])
     return out
 
 
@@ -268,11 +257,12 @@ def normalize_particions_config(raw_cfg):
 
 def _normalize_equip_assignment_source(raw_cfg):
     cfg = raw_cfg if isinstance(raw_cfg, dict) else {}
-    mode = str(cfg.get("mode") or "native").strip().lower()
-    if mode not in {"native", "context"}:
-        mode = "native"
+    raw_mode = str(cfg.get("mode") or "native").strip().lower()
+    mode = raw_mode if raw_mode in {"native", "context"} else "native"
     context_code = normalize_equip_context_code(cfg.get("context_code"))
-    if mode == "native":
+    legacy_mode = mode == "native"
+    if legacy_mode:
+        mode = "context"
         context_code = NATIVE_EQUIP_CONTEXT_CODE
     fallback = str(cfg.get("fallback") or NATIVE_EQUIP_CONTEXT_CODE).strip().lower()
     if fallback != NATIVE_EQUIP_CONTEXT_CODE:
@@ -281,7 +271,181 @@ def _normalize_equip_assignment_source(raw_cfg):
         "mode": mode,
         "context_code": context_code,
         "fallback": fallback,
+        "legacy_mode": legacy_mode,
     }
+
+
+def _normalize_team_mode(raw_mode) -> str:
+    mode = str(raw_mode or "").strip().lower()
+    if mode in {"derived_from_individual", "native_team"}:
+        return mode
+    return ""
+
+
+def _normalize_exercise_selection_scope(raw_scope, *, allow_inherit=False):
+    scope = str(raw_scope or "").strip().lower()
+    allowed = {
+        EXERCISE_SELECTION_SCOPE_PER_MEMBER,
+        EXERCISE_SELECTION_SCOPE_TEAM_POOL,
+    }
+    if allow_inherit:
+        allowed = allowed | {EXERCISE_SELECTION_SCOPE_INHERIT}
+        if not scope:
+            return EXERCISE_SELECTION_SCOPE_INHERIT
+    if scope in allowed:
+        return scope
+    return (
+        EXERCISE_SELECTION_SCOPE_INHERIT
+        if allow_inherit
+        else EXERCISE_SELECTION_SCOPE_PER_MEMBER
+    )
+
+
+def _normalize_mode_resolution(raw_cfg):
+    cfg = raw_cfg if isinstance(raw_cfg, dict) else {}
+    eligible_ids = []
+    seen_ids = set()
+    for raw_id in (cfg.get("eligible_team_app_ids_at_save") or []):
+        try:
+            app_id = int(raw_id)
+        except Exception:
+            continue
+        if app_id > 0 and app_id not in seen_ids:
+            seen_ids.add(app_id)
+            eligible_ids.append(app_id)
+    return {
+        "resolved_at": str(cfg.get("resolved_at") or "").strip(),
+        "eligible_team_app_ids_at_save": eligible_ids,
+    }
+
+
+def _normalize_classificacio_equips_cfg(raw_cfg):
+    cfg = raw_cfg if isinstance(raw_cfg, dict) else {}
+    assignment_source = _normalize_equip_assignment_source(cfg.get("assignment_source"))
+    context_code = normalize_equip_context_code(
+        cfg.get("context_code") or assignment_source.get("context_code")
+    )
+    return {
+        **DEFAULT_SCHEMA["equips"],
+        **cfg,
+        "context_code": context_code,
+        "team_mode": _normalize_team_mode(cfg.get("team_mode")),
+        "mode_resolution": _normalize_mode_resolution(cfg.get("mode_resolution")),
+        "assignment_source": assignment_source,
+        "particio_edat": {
+            **DEFAULT_SCHEMA["equips"]["particio_edat"],
+            **(cfg.get("particio_edat") or {}),
+        },
+    }
+
+
+def _competition_reference_date(competicio):
+    ref_date = getattr(competicio, "data", None)
+    return ref_date if isinstance(ref_date, date) else None
+
+
+def _has_explicit_birth_year_team_rules(schema):
+    if not isinstance(schema, dict):
+        return False
+    part_cfg = ((schema.get("particions_config") or {}).get(BIRTH_YEAR_RANGE_PARTITION_CODE)) or {}
+    return isinstance(part_cfg, dict) and isinstance(part_cfg.get("team_rules"), dict)
+
+
+def _has_explicit_birth_year_ranges(schema):
+    if not isinstance(schema, dict):
+        return False
+    part_cfg = ((schema.get("particions_config") or {}).get(BIRTH_YEAR_RANGE_PARTITION_CODE)) or {}
+    return bool((part_cfg if isinstance(part_cfg, dict) else {}).get("ranges"))
+
+
+def normalize_schema_legacy_team_birth_partition(competicio, schema, *, tipus="individual", persist=False):
+    raw_schema = schema if isinstance(schema, dict) else {}
+    out = _merge_schema(raw_schema)
+    info = {
+        "legacy_inferred": False,
+        "legacy_pending_review": False,
+        "compatibility_errors": [],
+    }
+
+    if str(tipus or "").strip().lower() != "equips":
+        return out, info
+
+    equips_cfg = _normalize_classificacio_equips_cfg(out.get("equips") or {})
+    age_cfg = equips_cfg.get("particio_edat") or {}
+    age_active = bool(age_cfg.get("activa", False))
+    if not age_active:
+        if persist:
+            equips_cfg["particio_edat"] = dict(DEFAULT_SCHEMA["equips"]["particio_edat"])
+            equips_cfg["combinar_manual_i_edat"] = False
+            out["equips"] = equips_cfg
+        return out, info
+
+    info["legacy_inferred"] = True
+    if equips_cfg.get("particions_manuals") and not bool(equips_cfg.get("combinar_manual_i_edat", False)):
+        info["legacy_pending_review"] = True
+        info["compatibility_errors"].append(
+            "La configuracio legacy amb particions manuals + edat maxima sense combinar no es pot convertir automaticament."
+        )
+    else:
+        part_entries = normalize_particions_v2_entries(
+            out.get("particions_v2") or [],
+            fallback_codes=out.get("particions") or [],
+        )
+        if not any(str((entry or {}).get("code") or "").strip() == BIRTH_YEAR_RANGE_PARTITION_CODE for entry in part_entries):
+            part_entries.append(
+                {"code": BIRTH_YEAR_RANGE_PARTITION_CODE, "apply_mode": "all", "parent_values": []}
+            )
+        out["particions_v2"] = part_entries
+        out["particions"] = particio_codes_from_entries(part_entries)
+
+        current_cfg = dict((((raw_schema.get("particions_config") or {}).get(BIRTH_YEAR_RANGE_PARTITION_CODE)) or {}))
+        if not _has_explicit_birth_year_ranges(raw_schema):
+            ref_date = _competition_reference_date(competicio)
+            if not isinstance(ref_date, date):
+                info["legacy_pending_review"] = True
+                info["compatibility_errors"].append(
+                    "No es pot inferir la particio legacy d'edat maxima sense data de competicio."
+                )
+            else:
+                current_cfg = {
+                    **legacy_team_age_partition_to_birth_year_range_config(age_cfg, ref_date),
+                    **current_cfg,
+                }
+        if not _has_explicit_birth_year_team_rules(raw_schema):
+            current_cfg = {
+                **current_cfg,
+                "team_rules": {
+                    "reference_mode": "oldest_member_birthdate",
+                    "compliance_mode": "strict",
+                    "max_members_outside_range": 0,
+                    "missing_birthdate_policy": "outside_range",
+                },
+            }
+        out["particions_config"] = {
+            **(out.get("particions_config") or {}),
+            BIRTH_YEAR_RANGE_PARTITION_CODE: normalize_birth_year_range_partition_config(current_cfg),
+        }
+
+    if persist:
+        equips_cfg["particio_edat"] = dict(DEFAULT_SCHEMA["equips"]["particio_edat"])
+        equips_cfg["combinar_manual_i_edat"] = False
+    out["equips"] = equips_cfg
+    return out, info
+
+
+def _infer_team_mode_from_comp_aparells(comp_aparells) -> str:
+    saw_individual = False
+    saw_team = False
+    for comp_aparell in comp_aparells or []:
+        if is_team_context_app(comp_aparell):
+            saw_team = True
+        else:
+            saw_individual = True
+    if saw_individual and saw_team:
+        return ""
+    if saw_team:
+        return "native_team"
+    return "derived_from_individual"
 
 
 def _to_float(v):
@@ -424,20 +588,63 @@ def _birth_year_range_partition_value(ins: Inscripcio, particions_config: dict):
     cfg = normalize_birth_year_range_partition_config(
         ((particions_config or {}).get(BIRTH_YEAR_RANGE_PARTITION_CODE))
     )
-    birth_date = getattr(ins, "data_naixement", None)
-    if not isinstance(birth_date, date):
-        return cfg.get("sense_data_label") or DEFAULT_BIRTH_YEAR_RANGE_PARTITION_CONFIG["sense_data_label"]
+    return birth_year_range_partition_value(ins, cfg)
 
-    birth_year = int(birth_date.year)
-    for item in cfg.get("ranges") or []:
-        from_year = item.get("from_year")
-        to_year = item.get("to_year")
-        if from_year is None or to_year is None:
+
+def _dedupe_int_ids_preserve_order(raw_ids):
+    out = []
+    seen = set()
+    for raw_id in list(raw_ids or []):
+        try:
+            value = int(raw_id)
+        except Exception:
             continue
-        if from_year <= birth_year <= to_year:
-            return str(item.get("label") or "").strip() or _default_birth_year_range_label(from_year, to_year, 0)
+        if value in seen:
+            continue
+        seen.add(value)
+        out.append(value)
+    return out
 
-    return cfg.get("fora_rang_label") or DEFAULT_BIRTH_YEAR_RANGE_PARTITION_CONFIG["fora_rang_label"]
+
+def _birth_year_range_partition_value_for_team(member_rows, particions_config: dict):
+    cfg = normalize_birth_year_range_partition_config(
+        ((particions_config or {}).get(BIRTH_YEAR_RANGE_PARTITION_CODE))
+    )
+    team_rules = cfg.get("team_rules") or {}
+    sense_label = cfg.get("sense_data_label") or DEFAULT_BIRTH_YEAR_RANGE_PARTITION_CONFIG["sense_data_label"]
+    outside_label = cfg.get("fora_rang_label") or DEFAULT_BIRTH_YEAR_RANGE_PARTITION_CONFIG["fora_rang_label"]
+
+    members = [item[0] for item in (member_rows or []) if isinstance(item, (list, tuple)) and item]
+    birth_dates = [getattr(member, "data_naixement", None) for member in members if isinstance(getattr(member, "data_naixement", None), date)]
+    if not birth_dates:
+        return sense_label
+
+    oldest_birth_date = min(birth_dates)
+    candidate_label = birth_year_range_partition_value(
+        SimpleNamespace(data_naixement=oldest_birth_date),
+        cfg,
+    )
+    if candidate_label in {sense_label, outside_label}:
+        return candidate_label
+
+    outside_count = 0
+    for member in members:
+        birth_date = getattr(member, "data_naixement", None)
+        if not isinstance(birth_date, date):
+            outside_count += 1
+            continue
+        member_label = birth_year_range_partition_value(
+            SimpleNamespace(data_naixement=birth_date),
+            cfg,
+        )
+        if member_label != candidate_label:
+            outside_count += 1
+
+    compliance_mode = str(team_rules.get("compliance_mode") or "strict").strip().lower()
+    if compliance_mode == "allow_outside_n":
+        limit = max(0, int(team_rules.get("max_members_outside_range") or 0))
+        return candidate_label if outside_count <= limit else outside_label
+    return candidate_label if outside_count == 0 else outside_label
 
 
 def _partition_raw_value(ins: Inscripcio, field_code: str, particions_config=None):
@@ -641,6 +848,51 @@ def _partition_key_from_entries(ins: Inscripcio, entries: list, particions_custo
                     break
 
         raw_value = _partition_raw_value(ins, code, particions_config=particions_config)
+        display_value = _partition_value_display(raw_value)
+        resolved = _resolve_partition_display(code, display_value, particions_custom_index or {})
+        parts.append(f"{code}:{resolved}")
+        parent_resolved = resolved
+
+    return "|".join(parts) if parts else "global"
+
+
+def _partition_key_from_entries_for_team(member_rows, entries: list, particions_custom_index=None, particions_config=None):
+    part_entries = normalize_particions_v2_entries(entries)
+    if not part_entries:
+        return "global"
+
+    ref_member = None
+    for item in member_rows or []:
+        if isinstance(item, (list, tuple)) and item:
+            ref_member = item[0]
+            break
+
+    parts = []
+    parent_resolved = None
+    for idx, entry in enumerate(part_entries):
+        code = str((entry or {}).get("code") or "").strip()
+        if not code:
+            continue
+
+        if idx > 0:
+            if parent_resolved is None:
+                break
+            apply_mode = str((entry or {}).get("apply_mode") or "all").strip().lower()
+            if apply_mode == "some_parents":
+                allowed = {
+                    _normalize_partition_token(val)
+                    for val in _normalize_partition_parent_values((entry or {}).get("parent_values"))
+                }
+                if not allowed or _normalize_partition_token(parent_resolved) not in allowed:
+                    parent_resolved = None
+                    break
+
+        if code == BIRTH_YEAR_RANGE_PARTITION_CODE:
+            raw_value = _birth_year_range_partition_value_for_team(member_rows, particions_config or {})
+        elif ref_member is not None:
+            raw_value = _partition_raw_value(ref_member, code, particions_config=particions_config)
+        else:
+            raw_value = None
         display_value = _partition_value_display(raw_value)
         resolved = _resolve_partition_display(code, display_value, particions_custom_index or {})
         parts.append(f"{code}:{resolved}")
@@ -1014,6 +1266,11 @@ def _tie_key(crit: dict) -> str:
     if ex_sel_mode not in ("hereta", "per_aparell_global", "per_aparell_override", "global_pool"):
         ex_sel_mode = "hereta"
 
+    ex_sel_scope = _normalize_exercise_selection_scope(
+        crit.get("exercise_selection_scope"),
+        allow_inherit=True,
+    )
+
     ex_per_app = (
         crit.get("exercicis_per_aparell")
         or ex.get("exercicis_per_aparell")
@@ -1052,7 +1309,7 @@ def _tie_key(crit: dict) -> str:
     p_agg = (crit.get("agregacio_participants") or "sum").lower().strip()
     return (
         f"camps[{camps_sig}]|{apps_sig}|ex[{ex_sig}]"
-        f"|ex_sel[{ex_sel_mode}]|ex_app[{ex_per_app_sig}]"
+        f"|ex_sel[{ex_sel_mode}]|ex_scope[{ex_sel_scope}]|ex_app[{ex_per_app_sig}]"
         f"|agg_c[{agg_c}]|agg_e[{agg_e}]|agg_a[{agg_a}]"
         f"|parts[{p_sig}]|parts_agg[{p_agg}]"
     )
@@ -1497,7 +1754,13 @@ def compute_classificacio(competicio, cfg_obj):
       - inscripcio_id, nom, entitat_nom, score, tie{...}
       - posicio/punts els posa _rank()
     """
-    schema = _merge_schema(getattr(cfg_obj, "schema", {}) or {})
+    tipus = (getattr(cfg_obj, "tipus", "individual") or "individual").lower().strip()
+    schema, _legacy_info = normalize_schema_legacy_team_birth_partition(
+        competicio,
+        getattr(cfg_obj, "schema", {}) or {},
+        tipus=tipus,
+        persist=False,
+    )
     part_entries = schema.get("particions_v2") or normalize_particions_v2_entries(
         schema.get("particions") or []
     )
@@ -1508,9 +1771,11 @@ def compute_classificacio(competicio, cfg_obj):
     desempat = schema["desempat"] or []
     presentacio = schema["presentacio"] or {}
     display_columns = get_display_columns(schema)
-    equips_cfg = schema.get("equips") or {}
-    assignment_source = _normalize_equip_assignment_source((equips_cfg or {}).get("assignment_source"))
-    tipus = (getattr(cfg_obj, "tipus", "individual") or "individual").lower().strip()
+    equips_cfg = _normalize_classificacio_equips_cfg(schema.get("equips") or {})
+    assignment_source = equips_cfg.get("assignment_source") or _normalize_equip_assignment_source({})
+    team_context_code = normalize_equip_context_code(
+        equips_cfg.get("context_code") or assignment_source.get("context_code")
+    )
     desempat = _sanitize_desempat_for_tipus(desempat, tipus)
     mode_resultat_aparells = _normalize_mode_resultat_aparells(punt.get("mode_resultat_aparells"))
     victories_cfg = _normalize_victories_cfg((punt.get("victories") or {}))
@@ -1553,6 +1818,14 @@ def compute_classificacio(competicio, cfg_obj):
     if app_mode == "seleccionar" and app_ids:
         aparells_qs = aparells_qs.filter(id__in=app_ids)
     aparells = list(aparells_qs.order_by("ordre", "id"))
+    team_mode = ""
+    if tipus == "equips":
+        team_mode = _normalize_team_mode(equips_cfg.get("team_mode")) or _infer_team_mode_from_comp_aparells(aparells)
+    exercise_selection_scope = EXERCISE_SELECTION_SCOPE_PER_MEMBER
+    if tipus == "equips" and team_mode == "derived_from_individual":
+        exercise_selection_scope = _normalize_exercise_selection_scope(
+            punt.get("exercise_selection_scope")
+        )
 
     # si no hi ha aparells seleccionats -> retorn buit
     if not aparells:
@@ -1576,11 +1849,11 @@ def compute_classificacio(competicio, cfg_obj):
     ins_list = list(ins_qs)
     ins_by_id = {i.id: i for i in ins_list}
     team_assignment_map = {}
-    if tipus == "equips" and assignment_source.get("mode") == "context":
+    if tipus == "equips" and team_mode == "derived_from_individual" and assignment_source.get("mode") == "context":
         team_assignment_map = get_contextual_assignment_map(
             competicio,
             ins_list,
-            assignment_source.get("context_code"),
+            team_context_code,
         )
 
     # notes per tots els aparells seleccionats (una query)
@@ -1591,13 +1864,13 @@ def compute_classificacio(competicio, cfg_obj):
     )
     notes = list(notes_qs)
     team_notes = []
-    if tipus == "equips":
+    if tipus == "equips" and team_mode == "native_team":
         team_apps = [ca for ca in aparells if is_team_context_app(ca)]
         if team_apps:
             team_notes = list(
                 TeamScoreEntry.objects
                 .filter(competicio=competicio, comp_aparell__in=team_apps)
-                .select_related("equip", "comp_aparell")
+                .select_related("team_subject__equip", "team_subject__context", "comp_aparell")
             )
 
     notes_by_app = defaultdict(list)  # app_id -> [notes...]
@@ -1615,6 +1888,11 @@ def compute_classificacio(competicio, cfg_obj):
     team_notes_by_app = defaultdict(list)
     team_ids_by_app = defaultdict(set)
     for n in team_notes:
+        note_context_code = normalize_equip_context_code(
+            getattr(getattr(getattr(n, "team_subject", None), "context", None), "code", "")
+        )
+        if note_context_code != team_context_code:
+            continue
         team_notes_by_app[n.comp_aparell_id].append(n)
         team_ids_by_app[n.comp_aparell_id].add(n.equip_id)
 
@@ -2039,6 +2317,170 @@ def compute_classificacio(competicio, cfg_obj):
         selected_team_rows_field_cache[cache_key] = dict(picked_by_app)
         return selected_team_rows_field_cache[cache_key]
 
+    derived_team_selected_rows_agg_cache = {}
+    derived_team_selected_rows_field_cache = {}
+
+    def _derived_team_cache_key(equip_id, member_ids):
+        if equip_id not in (None, "", "__sense_equip__"):
+            try:
+                return f"equip:{int(equip_id)}"
+            except Exception:
+                pass
+        mids = []
+        for raw_member_id in (member_ids or []):
+            try:
+                mids.append(int(raw_member_id))
+            except Exception:
+                continue
+        mids = sorted(set(mids))
+        return f"members:{','.join(str(mid) for mid in mids)}"
+
+    def _build_derived_team_rows_for_app(member_ids, app_id: int, *, field_code=None):
+        rows = []
+        seen_members = set()
+        for raw_member_id in (member_ids or []):
+            try:
+                member_id = int(raw_member_id)
+            except Exception:
+                continue
+            if member_id in seen_members:
+                continue
+            seen_members.add(member_id)
+            for base_row in app_ex_rows_by_ins.get(app_id, {}).get(member_id, []):
+                value = (
+                    ((base_row.get("by_camp") or {}).get(field_code))
+                    if field_code is not None
+                    else base_row.get("value")
+                )
+                item = _copy_ex_row_with_value(base_row, value)
+                item["inscripcio_id"] = member_id
+                rows.append(item)
+        return rows
+
+    def _get_selected_rows_agg_for_derived_team(team_cache_key: str, member_ids):
+        if team_cache_key in derived_team_selected_rows_agg_cache:
+            return derived_team_selected_rows_agg_cache[team_cache_key]
+
+        picked_by_app = defaultdict(list)
+        if mode_seleccio_exercicis == "global_pool":
+            pool_rows = []
+            for ca in aparells:
+                app_id = ca.id
+                if is_team_context_app(ca):
+                    continue
+                for row in _build_derived_team_rows_for_app(member_ids, app_id):
+                    item = _copy_ex_row_with_value(row, row.get("value"))
+                    item["idx"] = 0
+                    pool_rows.append(item)
+
+            if pool_rows:
+                pool_rows = sorted(
+                    pool_rows,
+                    key=lambda r: (r.get("app_order", 0), r.get("exercici", 0), r.get("app_id", 0)),
+                )
+                for idx, row in enumerate(pool_rows, start=1):
+                    row["idx"] = idx
+                picked_rows = _pick_exercicis_rows(
+                    pool_rows,
+                    exerc_mode,
+                    ex_best_n,
+                    index=ex_index,
+                    ids=ex_ids,
+                    max_per_participant=base_ex_cfg.get("max_per_participant", 0),
+                    participant_key="inscripcio_id",
+                )
+                for row in picked_rows:
+                    try:
+                        app_id = int(row.get("app_id"))
+                    except Exception:
+                        continue
+                    picked_by_app[app_id].append(_copy_ex_row_with_value(row, row.get("value")))
+        else:
+            for ca in aparells:
+                app_id = ca.id
+                if is_team_context_app(ca):
+                    continue
+                rows_ex = _build_derived_team_rows_for_app(member_ids, app_id)
+                ex_cfg_app = _resolve_ex_cfg_for_app(app_id)
+                picked = _pick_exercicis_rows(
+                    rows_ex,
+                    ex_cfg_app["mode"],
+                    ex_cfg_app["best_n"],
+                    index=ex_cfg_app["index"],
+                    ids=ex_cfg_app["ids"],
+                    max_per_participant=ex_cfg_app.get("max_per_participant", 0),
+                    participant_key="inscripcio_id",
+                )
+                picked_by_app[app_id] = [
+                    _copy_ex_row_with_value(row, row.get("value"))
+                    for row in picked
+                ]
+
+        derived_team_selected_rows_agg_cache[team_cache_key] = dict(picked_by_app)
+        return derived_team_selected_rows_agg_cache[team_cache_key]
+
+    def _get_selected_rows_for_derived_team_field(team_cache_key: str, member_ids, field_code: str):
+        cache_key = (team_cache_key, str(field_code or ""))
+        if cache_key in derived_team_selected_rows_field_cache:
+            return derived_team_selected_rows_field_cache[cache_key]
+
+        picked_by_app = defaultdict(list)
+        if mode_seleccio_exercicis == "global_pool":
+            pool_rows = []
+            for ca in aparells:
+                app_id = ca.id
+                if is_team_context_app(ca):
+                    continue
+                for row in _build_derived_team_rows_for_app(member_ids, app_id, field_code=field_code):
+                    item = _copy_ex_row_with_value(row, row.get("value"))
+                    item["idx"] = 0
+                    pool_rows.append(item)
+            if pool_rows:
+                pool_rows = sorted(
+                    pool_rows,
+                    key=lambda r: (r.get("app_order", 0), r.get("exercici", 0), r.get("app_id", 0)),
+                )
+                for idx, row in enumerate(pool_rows, start=1):
+                    row["idx"] = idx
+                picked_rows = _pick_exercicis_rows(
+                    pool_rows,
+                    exerc_mode,
+                    ex_best_n,
+                    index=ex_index,
+                    ids=ex_ids,
+                    max_per_participant=base_ex_cfg.get("max_per_participant", 0),
+                    participant_key="inscripcio_id",
+                )
+                for row in picked_rows:
+                    try:
+                        app_id = int(row.get("app_id"))
+                    except Exception:
+                        continue
+                    picked_by_app[app_id].append(_copy_ex_row_with_value(row, row.get("value")))
+        else:
+            for ca in aparells:
+                app_id = ca.id
+                if is_team_context_app(ca):
+                    continue
+                rows_ex = _build_derived_team_rows_for_app(member_ids, app_id, field_code=field_code)
+                ex_cfg_app = _resolve_ex_cfg_for_app(app_id)
+                picked = _pick_exercicis_rows(
+                    rows_ex,
+                    ex_cfg_app["mode"],
+                    ex_cfg_app["best_n"],
+                    index=ex_cfg_app["index"],
+                    ids=ex_cfg_app["ids"],
+                    max_per_participant=ex_cfg_app.get("max_per_participant", 0),
+                    participant_key="inscripcio_id",
+                )
+                picked_by_app[app_id] = [
+                    _copy_ex_row_with_value(row, row.get("value"))
+                    for row in picked
+                ]
+
+        derived_team_selected_rows_field_cache[cache_key] = dict(picked_by_app)
+        return derived_team_selected_rows_field_cache[cache_key]
+
     for ins_id, obj in per_ins.items():
         selected_rows_by_app = _get_selected_rows_agg_for_ins(ins_id)
         for ca in aparells:
@@ -2374,6 +2816,237 @@ def compute_classificacio(competicio, cfg_obj):
         if not mids:
             return 0.0
 
+        crit_selection_scope = _normalize_exercise_selection_scope(
+            (crit or {}).get("exercise_selection_scope"),
+            allow_inherit=True,
+        )
+        if crit_selection_scope == EXERCISE_SELECTION_SCOPE_INHERIT:
+            crit_selection_scope = exercise_selection_scope
+
+        def _inherit(v, fallback):
+            v = (v or "hereta")
+            return fallback if str(v).lower().strip() == "hereta" else str(v).lower().strip()
+
+        def _resolve_target_apps(crit_apps, forced_app_ids=None):
+            if forced_app_ids is not None:
+                out = []
+                for raw_app_id in (forced_app_ids or []):
+                    try:
+                        out.append(int(raw_app_id))
+                    except Exception:
+                        continue
+                return out
+
+            mode = str(crit_apps.get("mode") or "").lower().strip()
+            ids = crit_apps.get("ids") or []
+            if mode == "seleccionar" and ids:
+                out = []
+                for raw_app_id in ids:
+                    try:
+                        out.append(int(raw_app_id))
+                    except Exception:
+                        continue
+                return out
+            if mode == "tots":
+                return [int(ca.id) for ca in aparells]
+            if crit.get("aparell_id") not in (None, "", 0, "0"):
+                try:
+                    return [int(crit.get("aparell_id"))]
+                except Exception:
+                    return [int(ca.id) for ca in aparells]
+            return [int(ca.id) for ca in aparells]
+
+        def _calc_metric_value_for_team_pool(
+            mids_local,
+            crit_local,
+            *,
+            forced_app_ids=None,
+            forced_exercici_ids=None,
+            forced_camps=None,
+        ):
+            if forced_camps is not None:
+                camps = [str(x).strip() for x in (forced_camps or []) if str(x).strip()]
+            else:
+                camps = _normalize_tie_camps(crit_local)
+            if not camps:
+                return 0.0
+
+            scope = crit_local.get("scope") or {}
+            crit_apps = scope.get("aparells") or {}
+            crit_ex = scope.get("exercicis") or {}
+
+            crit_agg_camps = _inherit(crit_local.get("agregacio_camps"), agg_camps)
+            crit_agg_exercicis = _inherit(crit_local.get("agregacio_exercicis"), agg_exercicis)
+            crit_agg_aparells = _inherit(crit_local.get("agregacio_aparells"), agg_aparells)
+
+            crit_ex_mode = (crit_ex.get("mode") or "hereta").lower().strip()
+            if crit_ex_mode == "hereta":
+                crit_ex_mode = exerc_mode
+
+            try:
+                crit_best_n = int(crit_ex.get("best_n") or ex_best_n)
+            except Exception:
+                crit_best_n = ex_best_n
+            crit_ex_index = crit_ex.get("index", ex_index)
+            crit_ex_ids = crit_ex.get("ids", ex_ids)
+            try:
+                crit_ex_max_per_participant = int(
+                    crit_ex.get("max_per_participant", base_ex_cfg.get("max_per_participant", 0))
+                )
+            except Exception:
+                crit_ex_max_per_participant = int(base_ex_cfg.get("max_per_participant", 0) or 0)
+            crit_ex_max_per_participant = max(0, crit_ex_max_per_participant)
+
+            crit_ex_cfg_global = _normalize_exercicis_cfg(
+                {
+                    "mode": crit_ex_mode,
+                    "best_n": crit_best_n,
+                    "index": crit_ex_index,
+                    "ids": crit_ex_ids,
+                    "max_per_participant": crit_ex_max_per_participant,
+                },
+                fallback=base_ex_cfg,
+            )
+
+            crit_mode_sel = (
+                crit_local.get("mode_seleccio_exercicis")
+                or crit_ex.get("mode_seleccio_exercicis")
+                or "hereta"
+            )
+            crit_mode_sel = _inherit(crit_mode_sel, mode_seleccio_exercicis)
+            if crit_mode_sel not in ("per_aparell_global", "per_aparell_override", "global_pool"):
+                crit_mode_sel = mode_seleccio_exercicis
+
+            crit_ex_per_app_raw = (
+                crit_local.get("exercicis_per_aparell")
+                or crit_ex.get("exercicis_per_aparell")
+                or {}
+            )
+            if not isinstance(crit_ex_per_app_raw, dict):
+                crit_ex_per_app_raw = {}
+
+            def _resolve_tie_ex_cfg_for_app(app_id: int):
+                if crit_mode_sel != "per_aparell_override":
+                    return crit_ex_cfg_global
+                raw = crit_ex_per_app_raw.get(str(app_id))
+                if raw is None:
+                    raw = crit_ex_per_app_raw.get(app_id)
+                return _normalize_exercicis_cfg(raw, fallback=crit_ex_cfg_global)
+
+            target_apps = _resolve_target_apps(crit_apps, forced_app_ids=forced_app_ids)
+            forced_exercicis_set = None
+            if forced_exercici_ids is not None:
+                forced_exercicis_set = set()
+                for raw_ex in (forced_exercici_ids or []):
+                    try:
+                        forced_exercicis_set.add(int(raw_ex))
+                    except Exception:
+                        continue
+
+            app_rows_ex = {}
+            for app_id in target_apps:
+                ca = next((x for x in aparells if x.id == app_id), None)
+                if not ca or is_team_context_app(ca):
+                    continue
+
+                n_ex = int(getattr(ca, "nombre_exercicis", 1) or 1)
+                n_ex = max(1, min(50, n_ex))
+
+                app_scores = notes_by_app.get(app_id, [])
+                by_ins_ex = defaultdict(dict)
+                for se in app_scores:
+                    ex_idx = int(getattr(se, "exercici", 1) or 1)
+                    if 1 <= ex_idx <= n_ex:
+                        by_ins_ex[se.inscripcio_id][ex_idx] = se
+
+                rows_ex = []
+                for mid in mids_local:
+                    for ex_idx in range(1, n_ex + 1):
+                        if forced_exercicis_set is not None and ex_idx not in forced_exercicis_set:
+                            continue
+                        se = by_ins_ex.get(mid, {}).get(ex_idx)
+                        if not se:
+                            continue
+                        vals_fields = [_get_score_field(se, c) for c in camps]
+                        v_ex = _apply_simple_agg(vals_fields, crit_agg_camps)
+                        rows_ex.append(
+                            {
+                                "idx": int(ex_idx),
+                                "value": _to_float(v_ex),
+                                "app_id": app_id,
+                                "app_order": app_order.get(app_id, 0),
+                                "exercici": int(ex_idx),
+                                "inscripcio_id": mid,
+                            }
+                        )
+                app_rows_ex[app_id] = rows_ex
+
+            vals_apps = []
+            if forced_exercicis_set is not None:
+                for app_id in target_apps:
+                    vals_apps.append(
+                        _apply_simple_agg(
+                            [_to_float(row.get("value")) for row in app_rows_ex.get(app_id, [])],
+                            crit_agg_exercicis,
+                        )
+                    )
+            elif crit_mode_sel == "global_pool":
+                pool_rows = []
+                for app_id in target_apps:
+                    for row in app_rows_ex.get(app_id, []):
+                        item = _copy_ex_row_with_value(row, row.get("value"))
+                        item["idx"] = 0
+                        pool_rows.append(item)
+                pool_rows = sorted(
+                    pool_rows,
+                    key=lambda r: (r.get("app_order", 0), r.get("exercici", 0), r.get("app_id", 0)),
+                )
+                for idx, row in enumerate(pool_rows, start=1):
+                    row["idx"] = idx
+                picked_rows = _pick_exercicis_rows(
+                    pool_rows,
+                    crit_ex_cfg_global["mode"],
+                    crit_ex_cfg_global["best_n"],
+                    index=crit_ex_cfg_global["index"],
+                    ids=crit_ex_cfg_global["ids"],
+                    max_per_participant=crit_ex_cfg_global.get("max_per_participant", 0),
+                    participant_key="inscripcio_id",
+                )
+                picked_by_app = defaultdict(list)
+                for row in picked_rows:
+                    try:
+                        app_id = int(row.get("app_id"))
+                    except Exception:
+                        continue
+                    picked_by_app[app_id].append(_to_float(row.get("value")))
+                for app_id in target_apps:
+                    vals_apps.append(
+                        _apply_simple_agg(picked_by_app.get(app_id, []), crit_agg_exercicis)
+                    )
+            else:
+                for app_id in target_apps:
+                    ex_cfg_app = _resolve_tie_ex_cfg_for_app(app_id)
+                    picked = _pick_exercicis_rows(
+                        app_rows_ex.get(app_id, []),
+                        ex_cfg_app["mode"],
+                        ex_cfg_app["best_n"],
+                        index=ex_cfg_app["index"],
+                        ids=ex_cfg_app["ids"],
+                        max_per_participant=ex_cfg_app.get("max_per_participant", 0),
+                        participant_key="inscripcio_id",
+                    )
+                    vals_apps.append(
+                        _apply_simple_agg(
+                            [_to_float(row.get("value")) for row in picked],
+                            crit_agg_exercicis,
+                        )
+                    )
+
+            return float(_apply_simple_agg(vals_apps, crit_agg_aparells))
+
+        if crit_selection_scope == EXERCISE_SELECTION_SCOPE_TEAM_POOL:
+            return _calc_metric_value_for_team_pool(mids, crit or {})
+
         part_scope = ((crit.get("scope") or {}).get("participants") or {})
         part_mode = (part_scope.get("mode") or "tots").lower().strip()
         if part_mode == "hereta":
@@ -2459,6 +3132,188 @@ def compute_classificacio(competicio, cfg_obj):
         vals = member_vals or [calc_metric_value_for_ins(mid, crit) for mid in mids]
         selected_vals = _pick_participants(vals, part_mode, part_n)
         return float(_apply_simple_agg(selected_vals, agg_parts))
+
+    def calc_metric_value_for_native_team(equip_id: int, crit: dict) -> float:
+        try:
+            equip_id = int(equip_id)
+        except Exception:
+            return 0.0
+        if equip_id <= 0:
+            return 0.0
+
+        camps = _normalize_tie_camps(crit)
+        if not camps:
+            return 0.0
+
+        scope = crit.get("scope") or {}
+        if not isinstance(scope, dict):
+            scope = {}
+        crit_apps = scope.get("aparells") or {}
+        if not isinstance(crit_apps, dict):
+            crit_apps = {}
+        crit_ex = scope.get("exercicis") or {}
+        if not isinstance(crit_ex, dict):
+            crit_ex = {}
+
+        def _inherit(v, fallback):
+            v = (v or "hereta")
+            return fallback if str(v).lower().strip() == "hereta" else str(v).lower().strip()
+
+        crit_agg_camps = _inherit(crit.get("agregacio_camps"), agg_camps)
+        crit_agg_exercicis = _inherit(crit.get("agregacio_exercicis"), agg_exercicis)
+        crit_agg_aparells = _inherit(crit.get("agregacio_aparells"), agg_aparells)
+
+        crit_ex_mode = (crit_ex.get("mode") or "hereta").lower().strip()
+        if crit_ex_mode == "hereta":
+            crit_ex_mode = exerc_mode
+
+        try:
+            crit_best_n = int(crit_ex.get("best_n") or ex_best_n)
+        except Exception:
+            crit_best_n = ex_best_n
+        crit_ex_index = crit_ex.get("index", ex_index)
+        crit_ex_ids = crit_ex.get("ids", ex_ids)
+        try:
+            crit_ex_max_per_participant = int(
+                crit_ex.get("max_per_participant", base_ex_cfg.get("max_per_participant", 0))
+            )
+        except Exception:
+            crit_ex_max_per_participant = int(base_ex_cfg.get("max_per_participant", 0) or 0)
+        crit_ex_max_per_participant = max(0, crit_ex_max_per_participant)
+
+        crit_ex_cfg_global = _normalize_exercicis_cfg(
+            {
+                "mode": crit_ex_mode,
+                "best_n": crit_best_n,
+                "index": crit_ex_index,
+                "ids": crit_ex_ids,
+                "max_per_participant": crit_ex_max_per_participant,
+            },
+            fallback=base_ex_cfg,
+        )
+
+        crit_mode_sel = (
+            crit.get("mode_seleccio_exercicis")
+            or crit_ex.get("mode_seleccio_exercicis")
+            or "hereta"
+        )
+        crit_mode_sel = _inherit(crit_mode_sel, mode_seleccio_exercicis)
+        if crit_mode_sel not in ("per_aparell_global", "per_aparell_override", "global_pool"):
+            crit_mode_sel = mode_seleccio_exercicis
+
+        crit_ex_per_app_raw = (
+            crit.get("exercicis_per_aparell")
+            or crit_ex.get("exercicis_per_aparell")
+            or {}
+        )
+        if not isinstance(crit_ex_per_app_raw, dict):
+            crit_ex_per_app_raw = {}
+
+        team_apps = [ca for ca in aparells if is_team_context_app(ca)]
+        team_app_ids = [int(ca.id) for ca in team_apps]
+        target_apps = []
+        mode = str(crit_apps.get("mode") or "").lower().strip()
+        ids = crit_apps.get("ids") or []
+        if mode == "seleccionar" and ids:
+            for raw_app_id in ids:
+                try:
+                    app_id = int(raw_app_id)
+                except Exception:
+                    continue
+                if app_id in team_app_ids:
+                    target_apps.append(app_id)
+        else:
+            raw_app_id = crit.get("aparell_id", None)
+            if raw_app_id in (None, "", 0, "0"):
+                target_apps = list(team_app_ids)
+            else:
+                try:
+                    app_id = int(raw_app_id)
+                except Exception:
+                    app_id = None
+                if app_id in team_app_ids:
+                    target_apps = [app_id]
+        if not target_apps:
+            return 0.0
+
+        def _resolve_tie_ex_cfg_for_app(app_id: int):
+            if crit_mode_sel != "per_aparell_override":
+                return crit_ex_cfg_global
+            raw = crit_ex_per_app_raw.get(str(app_id))
+            if raw is None:
+                raw = crit_ex_per_app_raw.get(app_id)
+            return _normalize_exercicis_cfg(raw, fallback=crit_ex_cfg_global)
+
+        vals_apps = []
+        app_vals_ex = {}
+        for app_id in target_apps:
+            vals_ex = []
+            for nt in team_notes_by_app.get(app_id, []):
+                if int(getattr(nt, "equip_id", 0) or 0) != equip_id:
+                    continue
+                ex_idx = int(getattr(nt, "exercici", 1) or 1)
+                vals_fields = [_get_score_field(nt, c) for c in camps]
+                vals_ex.append((ex_idx, _apply_simple_agg(vals_fields, crit_agg_camps)))
+            app_vals_ex[app_id] = vals_ex
+
+        if crit_mode_sel == "global_pool":
+            pool_rows = []
+            for app_id in target_apps:
+                vals_ex = app_vals_ex.get(app_id, [])
+                for ex_idx, v_ex in vals_ex:
+                    pool_rows.append(
+                        {
+                            "idx": 0,
+                            "value": _to_float(v_ex),
+                            "app_id": app_id,
+                            "app_order": app_order.get(app_id, 0),
+                            "exercici": int(ex_idx),
+                            "equip_id": equip_id,
+                        }
+                    )
+            pool_rows = sorted(
+                pool_rows,
+                key=lambda r: (r.get("app_order", 0), r.get("exercici", 0), r.get("app_id", 0)),
+            )
+            for idx, row in enumerate(pool_rows, start=1):
+                row["idx"] = idx
+            picked_rows = _pick_exercicis_rows(
+                pool_rows,
+                crit_ex_cfg_global["mode"],
+                crit_ex_cfg_global["best_n"],
+                index=crit_ex_cfg_global["index"],
+                ids=crit_ex_cfg_global["ids"],
+                max_per_participant=crit_ex_cfg_global.get("max_per_participant", 0),
+                participant_key="equip_id",
+            )
+            picked_by_app = defaultdict(list)
+            for row in picked_rows:
+                try:
+                    app_id = int(row.get("app_id"))
+                except Exception:
+                    continue
+                picked_by_app[app_id].append(_to_float(row.get("value")))
+
+            for app_id in target_apps:
+                vals_apps.append(
+                    _apply_simple_agg(picked_by_app.get(app_id, []), crit_agg_exercicis)
+                )
+        else:
+            for app_id in target_apps:
+                vals_ex = app_vals_ex.get(app_id, [])
+                ex_cfg_app = _resolve_tie_ex_cfg_for_app(app_id)
+                picked = _pick_exercicis_tuples(
+                    vals_ex,
+                    ex_cfg_app["mode"],
+                    ex_cfg_app["best_n"],
+                    index=ex_cfg_app["index"],
+                    ids=ex_cfg_app["ids"],
+                    max_per_participant=ex_cfg_app.get("max_per_participant", 0),
+                    participant_key="equip_id",
+                )
+                vals_apps.append(_apply_simple_agg(picked, crit_agg_exercicis))
+
+        return float(_apply_simple_agg(vals_apps, crit_agg_aparells))
 
     def _apply_decimals_if_numeric(v, decimals):
         if decimals is None:
@@ -2822,12 +3677,13 @@ def compute_classificacio(competicio, cfg_obj):
     out = {}
 
     if tipus == "equips":
-        include_sense_equip = bool(equips_cfg.get("incloure_sense_equip", False))
-        manual_defs = equips_cfg.get("particions_manuals") or []
-        age_cfg = equips_cfg.get("particio_edat") or {}
-        age_active = bool(age_cfg.get("activa", False))
+        use_native_team_mode = team_mode == "native_team"
+        include_sense_equip = bool(equips_cfg.get("incloure_sense_equip", False)) if not use_native_team_mode else False
+        manual_defs = (equips_cfg.get("particions_manuals") or []) if not use_native_team_mode else []
+        age_cfg = (equips_cfg.get("particio_edat") or {}) if not use_native_team_mode else {}
+        age_active = bool(age_cfg.get("activa", False)) if not use_native_team_mode else False
         age_label_empty = (age_cfg.get("sense_data_label") or "Sense edat").strip() or "Sense edat"
-        combine_manual_age = bool(equips_cfg.get("combinar_manual_i_edat", False))
+        combine_manual_age = bool(equips_cfg.get("combinar_manual_i_edat", False)) if not use_native_team_mode else False
 
         llindars = []
         for x in (age_cfg.get("llindars") or []):
@@ -2854,25 +3710,51 @@ def compute_classificacio(competicio, cfg_obj):
                 if eid not in manual_map:
                     manual_map[eid] = team_key
 
-        # agrupem participants per equip dins cada particio "base" existent
+        has_team_birth_partition = any(
+            str((entry or {}).get("code") or "").strip() == BIRTH_YEAR_RANGE_PARTITION_CODE
+            for entry in (part_entries or [])
+        )
         grouped = defaultdict(lambda: defaultdict(list))  # base_pkey -> equip_id_key -> [ins]
-        for ins in ins_list:
-            resolved_equip = resolve_inscripcio_equip(
-                ins,
-                context_code=assignment_source.get("context_code"),
-                fallback=assignment_source.get("fallback"),
-                assignment_map=team_assignment_map,
-            )
-            if resolved_equip is None and not include_sense_equip:
-                continue
-            base_pkey = _partition_key_from_entries(
-                ins,
-                part_entries,
-                part_custom_idx,
-                particions_config=particions_config,
-            )
-            team_id_key = resolved_equip.id if resolved_equip is not None else "__sense_equip__"
-            grouped[base_pkey][team_id_key].append((ins, resolved_equip))
+        if use_native_team_mode:
+            for app_id, rows in team_notes_by_app.items():
+                if app_id not in {int(ca.id) for ca in aparells if is_team_context_app(ca)}:
+                    continue
+                for row in rows:
+                    subject = getattr(row, "team_subject", None)
+                    equip = getattr(subject, "equip", None)
+                    if subject is None or equip is None:
+                        continue
+                    member_rows = []
+                    for member_id in _dedupe_int_ids_preserve_order(
+                        getattr(subject, "member_ids", []) or []
+                    ):
+                        member = ins_by_id.get(member_id)
+                        if member is None:
+                            member = SimpleNamespace(id=member_id, data_naixement=None)
+                        member_rows.append((member, equip))
+                    base_bucket = "__team_partition__" if has_team_birth_partition else "global"
+                    grouped[base_bucket].setdefault(int(equip.id), member_rows)
+        else:
+            for ins in ins_list:
+                resolved_equip = _resolve_inscripcio_equip_for_classificacio(
+                    ins,
+                    context_code=team_context_code,
+                    fallback=assignment_source.get("fallback"),
+                    assignment_map=team_assignment_map,
+                )
+                if resolved_equip is None and not include_sense_equip:
+                    continue
+                if has_team_birth_partition:
+                    base_pkey = "__team_partition__"
+                else:
+                    base_pkey = _partition_key_from_entries(
+                        ins,
+                        part_entries,
+                        part_custom_idx,
+                        particions_config=particions_config,
+                    )
+                team_id_key = resolved_equip.id if resolved_equip is not None else "__sense_equip__"
+                grouped[base_pkey][team_id_key].append((ins, resolved_equip))
 
         for base_pkey, teams in grouped.items():
             for team_id_key, members in teams.items():
@@ -2888,28 +3770,42 @@ def compute_classificacio(competicio, cfg_obj):
                     eq_obj = members[0][1]
                     equip_nom = (getattr(eq_obj, "nom", None) or f"Equip {equip_id}").strip()
 
-                # particio manual / edat
-                manual_part = manual_map.get(equip_id) if equip_id is not None else None
-                age_part = None
-                if age_active:
-                    ref_date = getattr(competicio, "data", None) or timezone.localdate()
-                    ages = []
-                    for m, _resolved_equip in members:
-                        age = _years_old(getattr(m, "data_naixement", None), ref_date)
-                        if age is not None:
-                            ages.append(age)
-                    age_max = max(ages) if ages else None
-                    age_part = _bucket_edat(age_max, llindars, age_label_empty)
-
-                team_part = _resolve_particio_equip(manual_part, age_part, combine_manual_age)
-                if base_pkey != "global" and team_part != "global":
-                    final_pkey = f"{base_pkey}|{team_part}"
-                elif team_part != "global":
-                    final_pkey = team_part
+                if has_team_birth_partition:
+                    base_partition_key = _partition_key_from_entries_for_team(
+                        members,
+                        part_entries,
+                        part_custom_idx,
+                        particions_config=particions_config,
+                    )
                 else:
-                    final_pkey = base_pkey
+                    base_partition_key = base_pkey
+
+                # particio manual / compat legacy
+                if use_native_team_mode:
+                    final_pkey = base_partition_key
+                else:
+                    manual_part = manual_map.get(equip_id) if equip_id is not None else None
+                    age_part = None
+                    if age_active and not has_team_birth_partition:
+                        ref_date = getattr(competicio, "data", None) or timezone.localdate()
+                        ages = []
+                        for m, _resolved_equip in members:
+                            age = _years_old(getattr(m, "data_naixement", None), ref_date)
+                            if age is not None:
+                                ages.append(age)
+                        age_max = max(ages) if ages else None
+                        age_part = _bucket_edat(age_max, llindars, age_label_empty)
+
+                    team_part = _resolve_particio_equip(manual_part, age_part, combine_manual_age)
+                    if base_partition_key != "global" and team_part != "global":
+                        final_pkey = f"{base_partition_key}|{team_part}"
+                    elif team_part != "global":
+                        final_pkey = team_part
+                    else:
+                        final_pkey = base_partition_key
 
                 member_ids = [m.id for m, _resolved_equip in members]
+                derived_team_cache_key = _derived_team_cache_key(equip_id, member_ids)
                 team_by_app = {}
                 for ca in aparells:
                     app_id = ca.id
@@ -2925,6 +3821,23 @@ def compute_classificacio(competicio, cfg_obj):
                                 agg_exercicis,
                             )
                         )
+                        continue
+
+                    if use_native_team_mode:
+                        continue
+
+                    if exercise_selection_scope == EXERCISE_SELECTION_SCOPE_TEAM_POOL:
+                        selected_rows = _get_selected_rows_agg_for_derived_team(
+                            derived_team_cache_key,
+                            member_ids,
+                        ).get(app_id, [])
+                        if selected_rows:
+                            team_by_app[app_id] = float(
+                                _apply_simple_agg(
+                                    [_to_float(row.get("value")) for row in selected_rows],
+                                    agg_exercicis,
+                                )
+                            )
                         continue
 
                     app_total = 0.0
@@ -2945,7 +3858,10 @@ def compute_classificacio(competicio, cfg_obj):
                     tkey = _tie_key(t)
                     if not tkey:
                         continue
-                    team_tie[tkey] = calc_metric_value_for_group(member_ids, t)
+                    if use_native_team_mode and equip_id is not None:
+                        team_tie[tkey] = calc_metric_value_for_native_team(int(equip_id), t)
+                    else:
+                        team_tie[tkey] = calc_metric_value_for_group(member_ids, t)
 
                 out.setdefault(final_pkey, []).append({
                     "equip_id": equip_id,

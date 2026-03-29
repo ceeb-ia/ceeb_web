@@ -1,6 +1,8 @@
 # views_classificacions.py
+import ast
 import json
 import re
+from types import SimpleNamespace
 from django.shortcuts import get_object_or_404, redirect
 from django.contrib import messages
 from django.views.generic import TemplateView
@@ -12,19 +14,28 @@ from django.utils.http import urlencode
 from django.utils.text import slugify
 from .models_scoring import ScoreEntry, ScoringSchema  
 from .models import Competicio, Inscripcio, Equip, EquipContext
-from .models_trampoli import CompeticioAparell
+from .models_trampoli import CompeticioAparell, CompeticioAparellEquipContextSource
 from .models_classificacions import ClassificacioConfig, ClassificacioTemplateGlobal
 from .models_judging import PublicLiveToken
 from .services.services_classificacions_2 import (
     BIRTH_YEAR_RANGE_PARTITION_CODE,
+    EXERCISE_SELECTION_SCOPE_INHERIT,
+    EXERCISE_SELECTION_SCOPE_PER_MEMBER,
     compute_classificacio,
     DEFAULT_SCHEMA,
+    _infer_team_mode_from_comp_aparells,
+    _normalize_classificacio_equips_cfg,
+    _normalize_exercise_selection_scope,
     get_display_columns,
+    _normalize_equip_assignment_source,
+    _normalize_team_mode,
+    normalize_schema_legacy_team_birth_partition,
     normalize_birth_year_range_partition_config,
     normalize_particions_config,
     normalize_particions_v2_entries,
     particio_codes_from_entries,
 )
+from .services.birth_year_ranges import validate_birth_year_range_partition_config
 from .live_cache import get_live_payload_cached, mark_live_dirty
 from .services.classificacio_templates import (
     build_template_requirements as build_template_requirements_shared,
@@ -40,9 +51,13 @@ from .services.classificacio_templates import (
     schema_to_template_schema as schema_to_template_schema_shared,
     template_schema_to_competicio_schema as template_schema_to_competicio_schema_shared,
 )
-from .services.team_scoring import is_team_context_app
+from .services.team_scoring import (
+    infer_team_expr_kind,
+    is_team_context_app,
+)
 from .services.equip_contexts import (
     NATIVE_EQUIP_CONTEXT_CODE,
+    get_equip_context,
     get_equip_context_payload,
     normalize_equip_context_code,
 )
@@ -112,16 +127,32 @@ def _live_data_payload(competicio, since_raw=None):
 
     payload_cfgs = []
     for cfg in cfgs:
-        data = compute_classificacio(competicio, cfg)
+        schema_local, validation_errors = _validate_schema_for_competicio(
+            competicio,
+            cfg.schema or {},
+            tipus=cfg.tipus,
+        )
         parts = []
-        for k in sorted(data.keys()):
-            parts.append({"particio": k, "rows": data[k]})
+        error_payload = None
+        if validation_errors:
+            error_payload = {
+                "message": "Configuracio de classificacio invalida.",
+                "errors": validation_errors,
+            }
+        else:
+            data = compute_classificacio(
+                competicio,
+                SimpleNamespace(schema=schema_local, tipus=cfg.tipus),
+            )
+            for k in sorted(data.keys()):
+                parts.append({"particio": k, "rows": data[k]})
         payload_cfgs.append({
             "id": cfg.id,
             "nom": cfg.nom,
             "tipus": cfg.tipus,
             "columns": get_display_columns(cfg.schema or {}),
             "parts": parts,
+            **({"error": error_payload} if error_payload else {}),
         })
 
     return {
@@ -461,7 +492,19 @@ def classificacions_live_export_excel(request, pk):
         ws = wb.active if idx == 0 else wb.create_sheet()
         ws.title = _build_excel_sheet_name(cfg.nom or f"Classificacio {idx + 1}", used_sheet_names)
 
-        data = compute_classificacio(competicio, cfg)
+        schema_local, validation_errors = _validate_schema_for_competicio(
+            competicio,
+            cfg.schema or {},
+            tipus=cfg.tipus,
+        )
+        if validation_errors:
+            return HttpResponseBadRequest(
+                f"La classificacio '{cfg.nom}' no es pot exportar: {' | '.join(validation_errors)}"
+            )
+        data = compute_classificacio(
+            competicio,
+            SimpleNamespace(schema=schema_local, tipus=cfg.tipus),
+        )
         parts = [{"particio": k, "rows": data[k]} for k in sorted(data.keys())]
         columns = get_display_columns(cfg.schema or {}) or _default_live_columns()
         _write_cfg_excel_sheet(ws, competicio, cfg.nom or f"Classificacio {idx + 1}", columns, parts)
@@ -597,16 +640,32 @@ def _classificacions_live_data_uncached_legacy(request, pk):
 
     payload_cfgs = []
     for cfg in cfgs:
-        data = compute_classificacio(competicio, cfg)  # {particio_key: [rows]}
+        schema_local, validation_errors = _validate_schema_for_competicio(
+            competicio,
+            cfg.schema or {},
+            tipus=cfg.tipus,
+        )
         parts = []
-        for k in sorted(data.keys()):
-            parts.append({"particio": k, "rows": data[k]})
+        error_payload = None
+        if validation_errors:
+            error_payload = {
+                "message": "Configuracio de classificacio invalida.",
+                "errors": validation_errors,
+            }
+        else:
+            data = compute_classificacio(
+                competicio,
+                SimpleNamespace(schema=schema_local, tipus=cfg.tipus),
+            )
+            for k in sorted(data.keys()):
+                parts.append({"particio": k, "rows": data[k]})
         payload_cfgs.append({
             "id": cfg.id,
             "nom": cfg.nom,
             "tipus": cfg.tipus,
-            "columns": get_display_columns(cfg.schema or {}),
+            "columns": get_display_columns(schema_local if not validation_errors else (cfg.schema or {})),
             "parts": parts,
+            **({"error": error_payload} if error_payload else {}),
         })
 
     return JsonResponse({
@@ -745,16 +804,32 @@ def _public_classificacions_live_data_uncached_legacy(request, token):
 
     payload_cfgs = []
     for cfg in cfgs:
-        data = compute_classificacio(competicio, cfg)
+        schema_local, validation_errors = _validate_schema_for_competicio(
+            competicio,
+            cfg.schema or {},
+            tipus=cfg.tipus,
+        )
         parts = []
-        for k in sorted(data.keys()):
-            parts.append({"particio": k, "rows": data[k]})
+        error_payload = None
+        if validation_errors:
+            error_payload = {
+                "message": "Configuracio de classificacio invalida.",
+                "errors": validation_errors,
+            }
+        else:
+            data = compute_classificacio(
+                competicio,
+                SimpleNamespace(schema=schema_local, tipus=cfg.tipus),
+            )
+            for k in sorted(data.keys()):
+                parts.append({"particio": k, "rows": data[k]})
         payload_cfgs.append({
             "id": cfg.id,
             "nom": cfg.nom,
             "tipus": cfg.tipus,
-            "columns": get_display_columns(cfg.schema or {}),
+            "columns": get_display_columns(schema_local if not validation_errors else (cfg.schema or {})),
             "parts": parts,
+            **({"error": error_payload} if error_payload else {}),
         })
 
     return JsonResponse({
@@ -977,15 +1052,24 @@ class ClassificacionsHome(TemplateView):
 
 
         cfg_payload = []
+        cfg_status_payload = {}
         for c in cfgs:
+            display_schema, _legacy_info = normalize_schema_legacy_team_birth_partition(
+                competicio,
+                c.schema or {},
+                tipus=c.tipus,
+                persist=False,
+            )
+            status = _build_cfg_status(competicio, c.tipus, display_schema)
             cfg_payload.append({
                 "id": c.id,
                 "nom": c.nom,
                 "activa": c.activa,
                 "ordre": c.ordre,
                 "tipus": c.tipus,
-                "schema": c.schema or {},
+                "schema": display_schema,
             })
+            cfg_status_payload[str(c.id)] = status
 
         aparell_payload = []
         for ca in aparells_cfg:
@@ -1000,7 +1084,8 @@ class ClassificacionsHome(TemplateView):
         equips_qs = (
             Equip.objects
             .filter(competicio=competicio)
-            .annotate(membres_count=models.Count("membres"))
+            .select_related("context")
+            .annotate(membres_count=models.Count("assignacions_contextuals"))
             .order_by("nom", "id")
         )
         equips_payload = []
@@ -1010,14 +1095,22 @@ class ClassificacionsHome(TemplateView):
                 "nom": e.nom,
                 "origen": e.origen,
                 "membres_count": int(getattr(e, "membres_count", 0) or 0),
+                "context_id": getattr(e, "context_id", None),
+                "context_code": str(getattr(getattr(e, "context", None), "code", "") or ""),
             })
 
         ctx.update({
             "competicio": competicio,
             "cfgs": cfg_payload,
+            "cfg_status": cfg_status_payload,
+            "cfg_statuses": cfg_status_payload,
             "aparells": aparell_payload,
             "equips": equips_payload,
             "equip_contexts": get_equip_context_payload(competicio),
+            "team_context_capabilities": [
+                _get_team_context_capabilities(competicio, item.get("code"))
+                for item in get_equip_context_payload(competicio)
+            ],
             "can_manage_global_templates": bool(
                 user_has_competicio_capability(self.request.user, competicio, "classificacions.edit")
             ),
@@ -1152,6 +1245,153 @@ def _json_clone(value):
         return json.loads(json.dumps(value, ensure_ascii=False))
     except Exception:
         return {}
+
+
+def _classification_assignment_source(raw_cfg):
+    return _normalize_equip_assignment_source(raw_cfg if isinstance(raw_cfg, dict) else {})
+
+
+def _classification_context_code(raw_cfg):
+    return normalize_equip_context_code(
+        _classification_assignment_source(raw_cfg).get("context_code")
+    )
+
+
+def _classification_teams_queryset(competicio, raw_cfg):
+    cfg = _normalize_classificacio_equips_cfg(raw_cfg if isinstance(raw_cfg, dict) else {})
+    ctx = get_equip_context(competicio, normalize_equip_context_code(cfg.get("context_code")))
+    if ctx is None:
+        return Equip.objects.none()
+    return Equip.objects.filter(competicio=competicio, context=ctx)
+
+
+def _selected_app_ids_from_schema(schema_local):
+    apps_cfg = ((schema_local.get("puntuacio") or {}).get("aparells") or {})
+    out = []
+    seen = set()
+    for raw in (apps_cfg.get("ids") or []):
+        try:
+            app_id = int(raw)
+        except Exception:
+            continue
+        if app_id > 0 and app_id not in seen:
+            seen.add(app_id)
+            out.append(app_id)
+    return out
+
+
+def _get_team_context_capabilities(competicio, context_code):
+    normalized_code = normalize_equip_context_code(context_code)
+    context_obj = get_equip_context(competicio, normalized_code)
+    if context_obj is None:
+        return {
+            "context_code": normalized_code,
+            "exists": False,
+            "has_team_apps": False,
+            "eligible_team_app_ids": [],
+        }
+    eligible_team_app_ids = list(
+        CompeticioAparellEquipContextSource.objects
+        .filter(
+            competicio=competicio,
+            context=context_obj,
+            comp_aparell__actiu=True,
+            comp_aparell__aparell__competition_unit="team",
+        )
+        .values_list("comp_aparell_id", flat=True)
+        .distinct()
+    )
+    eligible_team_app_ids = sorted({int(app_id) for app_id in eligible_team_app_ids})
+    return {
+        "context_code": normalized_code,
+        "exists": True,
+        "has_team_apps": bool(eligible_team_app_ids),
+        "eligible_team_app_ids": eligible_team_app_ids,
+    }
+
+
+def _build_cfg_status(competicio, tipus, schema_local):
+    schema_local, legacy_info = normalize_schema_legacy_team_birth_partition(
+        competicio,
+        schema_local or {},
+        tipus=tipus,
+        persist=False,
+    )
+    schema_local = _normalize_particions_schema(schema_local or {})
+    equips_cfg = _normalize_classificacio_equips_cfg(schema_local.get("equips") or {})
+    selected_app_ids = _selected_app_ids_from_schema(schema_local)
+    selected_apps = list(
+        CompeticioAparell.objects
+        .filter(competicio=competicio, id__in=selected_app_ids)
+        .select_related("aparell")
+    )
+    capabilities = _get_team_context_capabilities(competicio, equips_cfg.get("context_code"))
+    inferred_team_mode = _infer_team_mode_from_comp_aparells(selected_apps) if str(tipus or "") == "equips" else ""
+    explicit_team_mode = _normalize_team_mode(equips_cfg.get("team_mode"))
+    effective_team_mode = explicit_team_mode or inferred_team_mode
+    mode_resolution = equips_cfg.get("mode_resolution") or {}
+    errors = list(legacy_info.get("compatibility_errors") or [])
+
+    if tipus == "equips":
+        if not capabilities["exists"]:
+            errors.append(f"equips.context_code no existeix: {capabilities['context_code']}")
+        if not effective_team_mode and selected_app_ids:
+            errors.append("La classificacio legacy barreja aparells individuals i d'equip; cal revisar el mode d'equips.")
+        if effective_team_mode == "native_team":
+            eligible_ids = set(capabilities["eligible_team_app_ids"])
+            for comp_aparell in selected_apps:
+                if not is_team_context_app(comp_aparell):
+                    errors.append(
+                        f"puntuacio.aparells.ids: l'aparell {comp_aparell.id} no es un aparell global d'equip per team_mode=native_team."
+                    )
+                elif int(comp_aparell.id) not in eligible_ids:
+                    errors.append(
+                        f"puntuacio.aparells.ids: l'aparell {comp_aparell.id} no admet el context {capabilities['context_code']}."
+                    )
+        elif effective_team_mode == "derived_from_individual":
+            for comp_aparell in selected_apps:
+                if is_team_context_app(comp_aparell):
+                    errors.append(
+                        f"puntuacio.aparells.ids: l'aparell {comp_aparell.id} no es valid per team_mode=derived_from_individual."
+                    )
+        errors.extend(
+            _validate_desempat_mode_compatibility(
+                competicio,
+                schema_local,
+                tipus=tipus,
+                team_mode=effective_team_mode,
+                context_code=capabilities["context_code"],
+                capabilities=capabilities,
+                selected_apps=selected_apps,
+            )
+        )
+
+    return {
+        "context_code": capabilities["context_code"],
+        "effective_team_mode": effective_team_mode,
+        "inferred_team_mode": inferred_team_mode,
+        "has_team_apps": capabilities["has_team_apps"],
+        "eligible_team_app_ids": capabilities["eligible_team_app_ids"],
+        "eligible_team_app_ids_at_save": list(mode_resolution.get("eligible_team_app_ids_at_save") or []),
+        "resolved_at": str(mode_resolution.get("resolved_at") or "").strip(),
+        "is_stale": bool(errors),
+        "compatibility_errors": errors,
+        "legacy_inferred": bool(legacy_info.get("legacy_inferred")),
+    }
+
+
+def _with_mode_resolution(competicio, tipus, schema_local):
+    schema_out = _normalize_particions_schema(_json_clone(schema_local or {}))
+    if str(tipus or "").strip().lower() != "equips":
+        return schema_out
+    equips_cfg = _normalize_classificacio_equips_cfg(schema_out.get("equips") or {})
+    capabilities = _get_team_context_capabilities(competicio, equips_cfg.get("context_code"))
+    equips_cfg["mode_resolution"] = {
+        "resolved_at": timezone.now().isoformat(),
+        "eligible_team_app_ids_at_save": capabilities["eligible_team_app_ids"],
+    }
+    schema_out["equips"] = equips_cfg
+    return schema_out
 
 
 def _canon_app_code(raw) -> str:
@@ -1375,11 +1615,13 @@ def _schema_to_template_schema(competicio, schema_local):
 
     equips_cfg = schema.get("equips") or {}
     if isinstance(equips_cfg, dict):
+        assignment_source = _classification_assignment_source(equips_cfg.get("assignment_source"))
+        equips_cfg["assignment_source"] = assignment_source
         manual = equips_cfg.get("particions_manuals") or []
         if isinstance(manual, list):
             team_name_by_id = {
                 int(e.id): str(e.nom or "").strip()
-                for e in Equip.objects.filter(competicio=competicio).only("id", "nom")
+                for e in _classification_teams_queryset(competicio, assignment_source).only("id", "nom")
             }
             manual_out = []
             for idx, item in enumerate(manual):
@@ -1556,9 +1798,11 @@ def _template_schema_to_competicio_schema(competicio, schema_tpl):
 
     equips_cfg = schema.get("equips") or {}
     if isinstance(equips_cfg, dict):
+        assignment_source = _classification_assignment_source(equips_cfg.get("assignment_source"))
+        equips_cfg["assignment_source"] = assignment_source
         manual = equips_cfg.get("particions_manuals") or []
         if isinstance(manual, list):
-            teams = list(Equip.objects.filter(competicio=competicio).only("id", "nom"))
+            teams = list(_classification_teams_queryset(competicio, assignment_source).only("id", "nom"))
             id_by_name = {}
             for t in teams:
                 key = str(t.nom or "").strip().casefold()
@@ -1580,7 +1824,7 @@ def _template_schema_to_competicio_schema(competicio, schema_tpl):
                     eid = id_by_name.get(key)
                     if not eid:
                         warnings.append(
-                            f"equips.particions_manuals[{idx}]: equip '{raw_name}' no trobat a la competicio"
+                            f"equips.particions_manuals[{idx}]: equip '{raw_name}' no trobat al context seleccionat"
                         )
                         continue
                     if eid in seen_eq:
@@ -1755,7 +1999,7 @@ def _next_fallback_mode(mode: str):
     return None
 
 
-def _scoreable_codes_by_app_id(competicio, *, tipus=None, assignment_context_code=None):
+def _scoreable_codes_by_app_id(competicio, *, tipus=None, assignment_context_code=None, team_mode=None):
     active_apps = list(
         CompeticioAparell.objects
         .filter(competicio=competicio, actiu=True)
@@ -1765,9 +2009,20 @@ def _scoreable_codes_by_app_id(competicio, *, tipus=None, assignment_context_cod
         s.aparell_id: (s.schema or {})
         for s in ScoringSchema.objects.filter(aparell_id__in=[ca.aparell_id for ca in active_apps]).only("aparell_id", "schema")
     }
+    normalized_team_mode = _normalize_team_mode(team_mode)
+    eligible_team_app_ids = set()
+    if normalized_team_mode == "native_team":
+        eligible_team_app_ids = set(
+            _get_team_context_capabilities(competicio, assignment_context_code).get("eligible_team_app_ids", [])
+        )
     out = {}
     for ca in active_apps:
         if is_team_context_app(ca):
+            if str(tipus or "").strip().lower() != "equips" or normalized_team_mode != "native_team":
+                continue
+            if int(ca.id) not in eligible_team_app_ids:
+                continue
+        elif str(tipus or "").strip().lower() == "equips" and normalized_team_mode == "native_team":
             continue
         sch = schemas_by_aparell.get(ca.aparell_id, {}) or {}
         meta = _build_scoreable_meta_for_schema(sch, strict_unknown=True)
@@ -1780,11 +2035,13 @@ def _sanitize_schema_for_builder(competicio, schema_local, tipus="individual"):
     active_apps, by_id, _ = _get_comp_aparell_maps(competicio, active_only=True)
     active_ids = [int(ca.id) for ca in active_apps]
     active_set = set(active_ids)
-    assignment_source = ((schema.get("equips") or {}).get("assignment_source") or {})
+    equips_cfg = _normalize_classificacio_equips_cfg(schema.get("equips") or {})
+    schema["equips"] = equips_cfg
     scoreable_by_app = _scoreable_codes_by_app_id(
         competicio,
         tipus=tipus,
-        assignment_context_code=assignment_source.get("context_code"),
+        assignment_context_code=equips_cfg.get("context_code"),
+        team_mode=equips_cfg.get("team_mode"),
     )
 
     punt = schema.get("puntuacio") or {}
@@ -1813,6 +2070,9 @@ def _sanitize_schema_for_builder(competicio, schema_local, tipus="individual"):
     apps_cfg["mode"] = "seleccionar"
     apps_cfg["ids"] = selected_ids
     punt["aparells"] = apps_cfg
+    effective_team_mode = equips_cfg.get("team_mode") or _infer_team_mode_from_comp_aparells(
+        [by_id[app_id] for app_id in selected_ids if app_id in by_id]
+    )
 
     def _normalize_codes(raw_codes):
         if isinstance(raw_codes, str):
@@ -1855,6 +2115,16 @@ def _sanitize_schema_for_builder(competicio, schema_local, tipus="individual"):
             if app_id in active_set and app_id in selected_set:
                 ex_per_app_out[str(app_id)] = cfg
     punt["exercicis_per_aparell"] = ex_per_app_out
+    allow_exercise_scope = _is_derived_team_scope_enabled(
+        tipus=tipus,
+        team_mode=effective_team_mode,
+    )
+    if allow_exercise_scope:
+        punt["exercise_selection_scope"] = _normalize_exercise_selection_scope(
+            punt.get("exercise_selection_scope")
+        )
+    else:
+        punt.pop("exercise_selection_scope", None)
 
     def _sanitize_tie_item(raw_tie, *, selected_main_ids, allow_app_scope: bool, allow_participants: bool):
         if not isinstance(raw_tie, dict):
@@ -1920,6 +2190,18 @@ def _sanitize_schema_for_builder(competicio, schema_local, tipus="individual"):
             item["exercicis_per_aparell"] = ex_map_out
         else:
             item.pop("exercicis_per_aparell", None)
+
+        if allow_exercise_scope:
+            tie_scope = _normalize_exercise_selection_scope(
+                item.get("exercise_selection_scope"),
+                allow_inherit=True,
+            )
+            if tie_scope == EXERCISE_SELECTION_SCOPE_INHERIT:
+                item.pop("exercise_selection_scope", None)
+            else:
+                item["exercise_selection_scope"] = tie_scope
+        else:
+            item.pop("exercise_selection_scope", None)
 
         return item
 
@@ -1995,42 +2277,101 @@ def _sanitize_schema_for_builder(competicio, schema_local, tipus="individual"):
 
 
 def _validate_schema_for_competicio(competicio, schema_local, tipus="individual"):
+    schema_local, legacy_info = normalize_schema_legacy_team_birth_partition(
+        competicio,
+        schema_local or {},
+        tipus=tipus,
+        persist=False,
+    )
     schema_local = _normalize_particions_schema(schema_local or {})
-    errors = []
-    equips_cfg = schema_local.get("equips") or {}
-    assignment_source = equips_cfg.get("assignment_source") or {}
-    mode = str(assignment_source.get("mode") or "native").strip().lower()
-    if mode not in {"native", "context"}:
-        errors.append(f"equips.assignment_source.mode invalid: {mode}")
-    if mode == "context":
-        context_code = normalize_equip_context_code(assignment_source.get("context_code"))
-        if context_code == NATIVE_EQUIP_CONTEXT_CODE:
-            errors.append("equips.assignment_source.context_code invalid per mode='context'.")
-        elif not EquipContext.objects.filter(competicio=competicio, code=context_code).exists():
-            errors.append(f"equips.assignment_source.context_code no existeix: {context_code}")
-    fallback = str(assignment_source.get("fallback") or NATIVE_EQUIP_CONTEXT_CODE).strip().lower()
-    if fallback != NATIVE_EQUIP_CONTEXT_CODE:
-        errors.append(f"equips.assignment_source.fallback invalid: {fallback}")
-    selected_app_ids = []
-    apps_cfg = ((schema_local.get("puntuacio") or {}).get("aparells") or {})
-    for raw in (apps_cfg.get("ids") or []):
-        try:
-            selected_app_ids.append(int(raw))
-        except Exception:
-            continue
-    if selected_app_ids:
-        selected_apps = {
-            ca.id: ca
-            for ca in CompeticioAparell.objects.filter(competicio=competicio, id__in=selected_app_ids).select_related("aparell")
-        }
+    errors = list(legacy_info.get("compatibility_errors") or [])
+    equips_cfg = _normalize_classificacio_equips_cfg(schema_local.get("equips") or {})
+    schema_local["equips"] = equips_cfg
+    raw_assignment_source = (schema_local.get("equips") or {}).get("assignment_source") or {}
+    assignment_source = equips_cfg.get("assignment_source") or _normalize_equip_assignment_source(raw_assignment_source)
+    context_code = normalize_equip_context_code(equips_cfg.get("context_code") or assignment_source.get("context_code"))
+    selected_app_ids = _selected_app_ids_from_schema(schema_local)
+    selected_apps = {
+        ca.id: ca
+        for ca in CompeticioAparell.objects.filter(competicio=competicio, id__in=selected_app_ids).select_related("aparell")
+    }
+    selected_apps_list = [selected_apps[app_id] for app_id in selected_app_ids if app_id in selected_apps]
+
+    if str(tipus or "").strip().lower() == "individual":
         for app_id in selected_app_ids:
             ca = selected_apps.get(app_id)
             if ca is None:
                 continue
             if is_team_context_app(ca):
                 errors.append(
-                    f"puntuacio.aparells.ids: l'aparell {app_id} es un aparell global d'equip i no es valid a les classificacions actuals."
+                    f"puntuacio.aparells.ids: l'aparell {app_id} es un aparell global d'equip i no es valid per tipus='individual'."
                 )
+    elif str(tipus or "").strip().lower() == "equips":
+        capabilities = _get_team_context_capabilities(competicio, context_code)
+        if not capabilities["exists"]:
+            errors.append(f"equips.context_code no existeix: {context_code}")
+        explicit_team_mode = _normalize_team_mode(equips_cfg.get("team_mode"))
+        inferred_team_mode = _infer_team_mode_from_comp_aparells(selected_apps_list)
+        effective_team_mode = explicit_team_mode or inferred_team_mode
+
+        if not capabilities["has_team_apps"]:
+            effective_team_mode = "derived_from_individual"
+        elif not effective_team_mode:
+            errors.append("equips.team_mode es obligatori quan el context participa en aparells d'equip.")
+
+        schema_local["equips"]["context_code"] = context_code
+        schema_local["equips"]["team_mode"] = effective_team_mode
+
+        if explicit_team_mode and effective_team_mode != explicit_team_mode and capabilities["has_team_apps"]:
+            errors.append("equips.team_mode no concorda amb els aparells seleccionats.")
+
+        if effective_team_mode == "derived_from_individual":
+            for app_id in selected_app_ids:
+                ca = selected_apps.get(app_id)
+                if ca is None:
+                    continue
+                if is_team_context_app(ca):
+                    errors.append(
+                        f"puntuacio.aparells.ids: l'aparell {app_id} no es valid per team_mode=derived_from_individual."
+                    )
+        elif effective_team_mode == "native_team":
+            eligible_ids = set(capabilities["eligible_team_app_ids"])
+            for app_id in selected_app_ids:
+                ca = selected_apps.get(app_id)
+                if ca is None:
+                    continue
+                if not is_team_context_app(ca):
+                    errors.append(
+                        f"puntuacio.aparells.ids: l'aparell {app_id} no es valid per team_mode=native_team."
+                    )
+                elif int(app_id) not in eligible_ids:
+                    errors.append(
+                        f"puntuacio.aparells.ids: l'aparell {app_id} no admet el context {context_code}."
+                    )
+
+        if effective_team_mode == "native_team":
+            if bool(equips_cfg.get("incloure_sense_equip", False)):
+                errors.append("equips.incloure_sense_equip no es compatible amb team_mode=native_team.")
+            if equips_cfg.get("particions_manuals"):
+                errors.append("equips.particions_manuals no es compatible amb team_mode=native_team.")
+            errors.extend(
+                _validate_desempat_mode_compatibility(
+                    competicio,
+                    schema_local,
+                    tipus=tipus,
+                    team_mode=effective_team_mode,
+                    context_code=context_code,
+                    capabilities=capabilities,
+                    selected_apps=selected_apps_list,
+                )
+            )
+    errors.extend(
+        _validate_exercise_selection_scope(
+            schema_local,
+            tipus=tipus,
+            team_mode=schema_local.get("equips", {}).get("team_mode", ""),
+        )
+    )
     errors.extend(_validate_particions_schema(competicio, schema_local))
     errors.extend(_validate_particions_config_schema(schema_local, tipus=tipus))
     errors.extend(_validate_no_tots_mode(schema_local))
@@ -2055,11 +2396,13 @@ def _autofix_schema_for_competicio(competicio, schema_local, mode: str, tipus=No
     active_apps, by_id, _ = _get_comp_aparell_maps(competicio, active_only=True)
     active_ids = [int(ca.id) for ca in active_apps]
     active_set = set(active_ids)
-    assignment_source = ((schema.get("equips") or {}).get("assignment_source") or {})
+    equips_cfg = _normalize_classificacio_equips_cfg(schema.get("equips") or {})
+    schema["equips"] = equips_cfg
     scoreable_by_app = _scoreable_codes_by_app_id(
         competicio,
         tipus=tipus,
-        assignment_context_code=assignment_source.get("context_code"),
+        assignment_context_code=equips_cfg.get("context_code"),
+        team_mode=equips_cfg.get("team_mode"),
     )
 
     punt = schema.get("puntuacio") or {}
@@ -2273,6 +2616,11 @@ def _autofix_schema_for_competicio(competicio, schema_local, mode: str, tipus=No
 
     equips_cfg = schema.get("equips") or {}
     if isinstance(equips_cfg, dict):
+        assignment_source = _classification_assignment_source(equips_cfg.get("assignment_source"))
+        equips_cfg["assignment_source"] = assignment_source
+        valid_team_ids = set(
+            _classification_teams_queryset(competicio, assignment_source).values_list("id", flat=True)
+        )
         manual_in = equips_cfg.get("particions_manuals") or []
         manual_out = []
         for idx, item in enumerate(manual_in if isinstance(manual_in, list) else []):
@@ -2284,7 +2632,7 @@ def _autofix_schema_for_competicio(competicio, schema_local, mode: str, tipus=No
                     eid = int(raw_id)
                 except Exception:
                     continue
-                if Equip.objects.filter(competicio=competicio, id=eid).exists():
+                if eid in valid_team_ids:
                     ids.append(eid)
             if ids:
                 row = dict(item)
@@ -2532,56 +2880,12 @@ def _validate_particions_config_schema(schema: dict, tipus="individual"):
     if BIRTH_YEAR_RANGE_PARTITION_CODE not in parts:
         return errors
 
-    if str(tipus or "individual").strip().lower() != "individual":
-        errors.append(
-            "particions_config.any_naixement_forquilla: nomes es valid per classificacions individuals."
-        )
-        return errors
-
-    cfg = normalize_birth_year_range_partition_config(
-        ((schema.get("particions_config") or {}).get(BIRTH_YEAR_RANGE_PARTITION_CODE))
+    _cfg, cfg_errors = validate_birth_year_range_partition_config(
+        ((schema.get("particions_config") or {}).get(BIRTH_YEAR_RANGE_PARTITION_CODE)),
+        require_ranges=True,
     )
-    ranges = cfg.get("ranges") or []
-    if not ranges:
-        errors.append(
-            "particions_config.any_naixement_forquilla.ranges: cal definir almenys una forquilla."
-        )
-        return errors
-
-    seen_labels = {}
-    normalized_ranges = []
-    for idx, item in enumerate(ranges):
-        label = str(item.get("label") or "").strip()
-        from_year = item.get("from_year")
-        to_year = item.get("to_year")
-        if from_year is None or to_year is None:
-            errors.append(
-                f"particions_config.any_naixement_forquilla.ranges[{idx}]: cal indicar from_year i to_year."
-            )
-            continue
-        if from_year > to_year:
-            errors.append(
-                f"particions_config.any_naixement_forquilla.ranges[{idx}]: from_year no pot ser mes gran que to_year."
-            )
-        key = " ".join(label.split()).casefold()
-        if key:
-            owner = seen_labels.get(key)
-            if owner is not None:
-                errors.append(
-                    f"particions_config.any_naixement_forquilla.ranges[{idx}]: etiqueta repetida amb la forquilla {owner}."
-                )
-            else:
-                seen_labels[key] = idx
-        normalized_ranges.append((idx, int(from_year), int(to_year), label))
-
-    for pos, (idx_a, from_a, to_a, _label_a) in enumerate(normalized_ranges):
-        for idx_b, from_b, to_b, _label_b in normalized_ranges[pos + 1 :]:
-            if from_a <= to_b and from_b <= to_a:
-                errors.append(
-                    "particions_config.any_naixement_forquilla.ranges: "
-                    f"solapament entre indexos {idx_a} i {idx_b}."
-                )
-
+    for err in cfg_errors:
+        errors.append(f"particions_config.any_naixement_forquilla: {err}")
     return errors
 
 
@@ -2620,6 +2924,273 @@ def _field_is_direct_scoreable(field_cfg: dict):
         return False, "camp tipus matriu; per puntuacio directa nomes s'admet 1x1"
 
     return False, "tipus de camp no puntuable directament"
+
+
+def _score_field_kind_for_app(field_cfg: dict, *, is_team_app: bool) -> str:
+    if not isinstance(field_cfg, dict):
+        return KIND_SHARED_SCALAR
+
+    scope = str(field_cfg.get("scope") or "member").strip().lower() or "member"
+    if not is_team_app:
+        scope = "shared"
+    prefix = "member" if scope == "member" else "shared"
+
+    ftype = str(field_cfg.get("type") or "number").strip().lower() or "number"
+    if ftype == "number":
+        suffix = "scalar"
+    elif ftype == "list":
+        suffix = "list"
+    else:
+        suffix = "matrix"
+    return f"{prefix}_{suffix}"
+
+
+def _expr_uses_member_inputs(node, member_env: dict) -> bool:
+    if node is None:
+        return False
+    if isinstance(node, ast.Expression):
+        return _expr_uses_member_inputs(node.body, member_env)
+    if isinstance(node, ast.Name):
+        return bool(member_env.get(node.id, False))
+    if isinstance(node, ast.Constant):
+        return False
+    if isinstance(node, (ast.List, ast.Tuple)):
+        return any(_expr_uses_member_inputs(elt, member_env) for elt in node.elts)
+    if isinstance(node, ast.UnaryOp):
+        return _expr_uses_member_inputs(node.operand, member_env)
+    if isinstance(node, ast.Subscript):
+        return _expr_uses_member_inputs(node.value, member_env)
+    if isinstance(node, ast.BinOp):
+        return _expr_uses_member_inputs(node.left, member_env) or _expr_uses_member_inputs(node.right, member_env)
+    if isinstance(node, ast.Call):
+        fn_name = node.func.id if isinstance(node.func, ast.Name) else ""
+        if fn_name == "field" and node.args and isinstance(node.args[0], ast.Constant):
+            return bool(member_env.get(str(getattr(node.args[0], "value", "")), False))
+        return any(_expr_uses_member_inputs(arg, member_env) for arg in list(node.args or []))
+    return False
+
+
+def _build_metric_meta_for_comp_aparell(comp_aparell, schema_obj: dict, strict_unknown=False):
+    schema_obj = schema_obj or {}
+    is_team_app = bool(is_team_context_app(comp_aparell))
+    base_meta = _build_scoreable_meta_for_schema(schema_obj, strict_unknown=bool(strict_unknown))
+    meta = {}
+    for code, info in (base_meta or {}).items():
+        item = dict(info if isinstance(info, dict) else {})
+        item["kind"] = KIND_SHARED_SCALAR if str(code).strip().lower() == "total" else ""
+        meta[str(code)] = item
+
+    params = schema_obj.get("params", {})
+    if not isinstance(params, dict):
+        params = {}
+    fields = schema_obj.get("fields", [])
+    if not isinstance(fields, list):
+        fields = []
+    computed = schema_obj.get("computed", [])
+    if not isinstance(computed, list):
+        computed = []
+
+    aliases = _build_alias_map(fields, computed, params)
+    allowed_names = set(aliases.keys()) | RESERVED_NAMES | ALLOWED_FUNCTIONS
+    kind_env = {}
+    member_env = {}
+    computed_codes = set()
+    comp_lookup = {}
+    comp_index = {}
+    comp_deps = {}
+    ordered_codes = []
+
+    for field in fields:
+        if not isinstance(field, dict):
+            continue
+        code = str(field.get("code") or "").strip()
+        if not code:
+            continue
+        kind = _score_field_kind_for_app(field, is_team_app=is_team_app)
+        kind_env[code] = kind
+        member_dependent = bool(is_team_app and str(field.get("scope") or "member").strip().lower() == "member")
+        member_env[code] = member_dependent
+        allowed_names.add(code)
+        var = str(field.get("var") or "").strip()
+        if var:
+            kind_env[var] = kind
+            member_env[var] = member_dependent
+            allowed_names.add(var)
+        meta.setdefault(code, {"scoreable": False, "reason": "", "kind": kind, "member_dependent": member_dependent})
+        meta[code]["kind"] = kind
+        meta[code]["member_dependent"] = member_dependent
+
+    for idx, comp in enumerate(computed):
+        if not isinstance(comp, dict):
+            continue
+        code = str(comp.get("code") or "").strip()
+        if not code:
+            continue
+        computed_codes.add(code)
+        ordered_codes.append(code)
+        comp_lookup[code] = comp
+        comp_index[code] = idx
+        allowed_names.add(code)
+        var = str(comp.get("var") or "").strip()
+        if var:
+            allowed_names.add(var)
+        formula = str(comp.get("formula") or "").strip()
+        if not formula:
+            comp_deps[code] = set()
+            continue
+        loc = f"computed[{idx}]({code})"
+        try:
+            tree = _ast_parse(formula, loc)
+            names = _extract_names(tree)
+            resolved_names = {aliases.get(name, name) for name in names}
+            comp_deps[code] = {name for name in resolved_names if name in computed_codes}
+        except Exception:
+            comp_deps[code] = set()
+
+    try:
+        ordered_codes = _topo_sort(ordered_codes, comp_deps)
+    except Exception:
+        pass
+
+    for code in ordered_codes:
+        comp = comp_lookup.get(code) or {}
+        idx = comp_index.get(code, 0)
+        formula = str(comp.get("formula") or "").strip()
+        kind = ""
+        if formula:
+            loc = f"computed[{idx}]({code})"
+            try:
+                tree = _ast_parse(formula, loc)
+                names = _extract_names(tree)
+                unknown = [name for name in names if name not in allowed_names]
+                if not unknown:
+                    kind = infer_team_expr_kind(tree.body, kind_env)
+                    member_dependent = _expr_uses_member_inputs(tree.body, member_env)
+            except Exception:
+                kind = ""
+                member_dependent = False
+        else:
+            member_dependent = False
+        meta.setdefault(code, {"scoreable": False, "reason": "", "kind": "", "member_dependent": member_dependent})
+        meta[code]["kind"] = kind
+        meta[code]["member_dependent"] = member_dependent
+        if kind:
+            kind_env[code] = kind
+            member_env[code] = member_dependent
+            var = str(comp.get("var") or "").strip()
+            if var:
+                kind_env[var] = kind
+                member_env[var] = member_dependent
+
+    return meta
+
+
+def _resolve_tie_target_app_ids(tie, *, selected_app_ids):
+    if not isinstance(tie, dict):
+        return []
+    scope = tie.get("scope") or {}
+    if not isinstance(scope, dict):
+        scope = {}
+    app_scope = scope.get("aparells") or {}
+    if not isinstance(app_scope, dict):
+        app_scope = {}
+    app_mode = str(app_scope.get("mode") or "").strip().lower()
+    if app_mode == "seleccionar":
+        return _parse_positive_int_list(app_scope.get("ids"))
+    raw_app_id = tie.get("aparell_id")
+    if raw_app_id not in (None, "", 0, "0"):
+        try:
+            app_id = int(raw_app_id)
+        except Exception:
+            return []
+        return [app_id] if app_id > 0 else []
+    return list(selected_app_ids or [])
+
+
+def _validate_desempat_mode_compatibility(
+    competicio,
+    schema_local,
+    *,
+    tipus="individual",
+    team_mode="",
+    context_code="",
+    capabilities=None,
+    selected_apps=None,
+):
+    if str(tipus or "").strip().lower() != "equips":
+        return []
+    if _normalize_team_mode(team_mode) != "native_team":
+        return []
+
+    capabilities = capabilities or _get_team_context_capabilities(competicio, context_code)
+    selected_apps = list(selected_apps or [])
+    selected_app_ids = [int(getattr(app, "id", 0) or 0) for app in selected_apps if getattr(app, "id", None)]
+    selected_ids_set = set(selected_app_ids)
+    eligible_ids = set(capabilities.get("eligible_team_app_ids") or [])
+    active_apps = {
+        int(ca.id): ca
+        for ca in CompeticioAparell.objects
+        .filter(competicio=competicio, actiu=True)
+        .select_related("aparell")
+    }
+    schemas_by_aparell = {
+        s.aparell_id: (s.schema or {})
+        for s in ScoringSchema.objects.filter(
+            aparell_id__in=[ca.aparell_id for ca in active_apps.values()]
+        ).only("aparell_id", "schema")
+    }
+    metric_meta_cache = {}
+    errors = []
+
+    for idx, tie in enumerate((schema_local.get("desempat") or [])):
+        prefix = f"desempat[{idx}]"
+        if not isinstance(tie, dict):
+            continue
+
+        if "agregacio_participants" in tie and str(tie.get("agregacio_participants") or "").strip():
+            errors.append(f"{prefix}.agregacio_participants no es compatible amb team_mode=native_team.")
+
+        scope = tie.get("scope") or {}
+        if not isinstance(scope, dict):
+            scope = {}
+        if "participants" in scope:
+            errors.append(f"{prefix}.scope.participants no es compatible amb team_mode=native_team.")
+
+        target_ids = _resolve_tie_target_app_ids(tie, selected_app_ids=selected_app_ids)
+        camps = _normalize_tie_camps_for_validation(tie)
+        for app_id in target_ids:
+            comp_aparell = active_apps.get(int(app_id))
+            if comp_aparell is None:
+                errors.append(f"{prefix}: aparell {app_id} no valid o no actiu.")
+                continue
+            if not is_team_context_app(comp_aparell):
+                errors.append(f"{prefix}: l'aparell {app_id} no es valid per team_mode=native_team.")
+                continue
+            if int(app_id) not in eligible_ids:
+                errors.append(f"{prefix}: l'aparell {app_id} no admet el context {context_code}.")
+                continue
+            if int(app_id) not in selected_ids_set:
+                errors.append(f"{prefix}: l'aparell {app_id} no forma part dels aparells seleccionats.")
+                continue
+            if int(app_id) not in metric_meta_cache:
+                metric_meta_cache[int(app_id)] = _build_metric_meta_for_comp_aparell(
+                    comp_aparell,
+                    schemas_by_aparell.get(comp_aparell.aparell_id, {}) or {},
+                    strict_unknown=True,
+                )
+            metric_meta = metric_meta_cache[int(app_id)]
+            for code in camps:
+                info = metric_meta.get(code)
+                if not info:
+                    errors.append(f"{prefix}: aparell {app_id}: camp '{code}' no existeix al schema.")
+                    continue
+                if not info.get("scoreable", False):
+                    errors.append(
+                        f"{prefix}: aparell {app_id}: camp '{code}' no es puntuable directament "
+                        f"({info.get('reason')})."
+                    )
+                    continue
+    return errors
 
 
 def _infer_schema_code_shapes(schema_obj: dict):
@@ -3343,6 +3914,58 @@ def _get_active_and_selected_app_ids(competicio, punt: dict):
     return active_app_ids, selected_ids
 
 
+def _is_derived_team_scope_enabled(*, tipus="individual", team_mode="") -> bool:
+    return (
+        str(tipus or "").strip().lower() == "equips"
+        and _normalize_team_mode(team_mode) == "derived_from_individual"
+    )
+
+
+def _validate_exercise_selection_scope(schema: dict, *, tipus="individual", team_mode=""):
+    schema = schema or {}
+    punt = schema.get("puntuacio")
+    if not isinstance(punt, dict):
+        punt = {}
+    schema["puntuacio"] = punt
+
+    allow_scope = _is_derived_team_scope_enabled(tipus=tipus, team_mode=team_mode)
+    errors = []
+
+    raw_main_scope = punt.get("exercise_selection_scope")
+    main_scope = _normalize_exercise_selection_scope(raw_main_scope)
+    if allow_scope:
+        if raw_main_scope not in (None, "") and str(raw_main_scope).strip().lower() not in {"per_member", "team_pool"}:
+            errors.append(f"puntuacio.exercise_selection_scope invalid: {raw_main_scope}")
+        punt["exercise_selection_scope"] = main_scope or EXERCISE_SELECTION_SCOPE_PER_MEMBER
+    elif raw_main_scope not in (None, ""):
+        errors.append(
+            "puntuacio.exercise_selection_scope nomes es compatible amb tipus='equips' + team_mode=derived_from_individual."
+        )
+
+    desempat = schema.get("desempat") or []
+    if not isinstance(desempat, list):
+        return errors
+
+    for idx, tie in enumerate(desempat):
+        if not isinstance(tie, dict):
+            continue
+        raw_tie_scope = tie.get("exercise_selection_scope")
+        tie_scope = _normalize_exercise_selection_scope(raw_tie_scope, allow_inherit=True)
+        if allow_scope:
+            if raw_tie_scope not in (None, "") and str(raw_tie_scope).strip().lower() not in {"hereta", "per_member", "team_pool"}:
+                errors.append(f"desempat[{idx}].exercise_selection_scope invalid: {raw_tie_scope}")
+            if tie_scope == EXERCISE_SELECTION_SCOPE_INHERIT:
+                tie.pop("exercise_selection_scope", None)
+            else:
+                tie["exercise_selection_scope"] = tie_scope
+        elif raw_tie_scope not in (None, ""):
+            errors.append(
+                f"desempat[{idx}].exercise_selection_scope nomes es compatible amb tipus='equips' + team_mode=derived_from_individual."
+            )
+
+    return errors
+
+
 def _validate_exercicis_selection(competicio, schema: dict):
     schema = schema or {}
     punt = (schema.get("puntuacio") or {})
@@ -3720,7 +4343,7 @@ def classificacio_save(request, pk):
     if tipus not in ("individual", "entitat", "equips"):
         tipus = "individual"
 
-    _, validation_errors = _validate_schema_for_competicio(competicio, schema, tipus=tipus)
+    schema, validation_errors = _validate_schema_for_competicio(competicio, schema, tipus=tipus)
     if validation_errors:
         return JsonResponse(
             {
@@ -3730,6 +4353,13 @@ def classificacio_save(request, pk):
             },
             status=400,
         )
+    schema, _legacy_info = normalize_schema_legacy_team_birth_partition(
+        competicio,
+        schema,
+        tipus=tipus,
+        persist=True,
+    )
+    schema = _with_mode_resolution(competicio, tipus, schema)
 
     if cid:
         obj = get_object_or_404(ClassificacioConfig, pk=cid, competicio=competicio)
@@ -3784,7 +4414,7 @@ def classificacio_preview(request, pk, cid):
     competicio = get_object_or_404(Competicio, pk=pk)
     cfg = get_object_or_404(ClassificacioConfig, pk=cid, competicio=competicio)
 
-    _, validation_errors = _validate_schema_for_competicio(
+    schema_local, validation_errors = _validate_schema_for_competicio(
         competicio,
         cfg.schema or {},
         tipus=cfg.tipus,
@@ -3799,7 +4429,10 @@ def classificacio_preview(request, pk, cid):
             status=400,
         )
 
-    data = compute_classificacio(competicio, cfg)
+    data = compute_classificacio(
+        competicio,
+        SimpleNamespace(schema=schema_local, tipus=cfg.tipus),
+    )
 
     # Retorna una estructura fàcil pel front:
     # [
@@ -3811,7 +4444,7 @@ def classificacio_preview(request, pk, cid):
 
     return JsonResponse({
         "ok": True,
-        "columns": get_display_columns(cfg.schema or {}),
+        "columns": get_display_columns(schema_local or {}),
         "data": out,
     })
 

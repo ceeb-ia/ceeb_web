@@ -579,15 +579,14 @@
     }
     .group-buckets-modal{
       position:fixed;
-      top:calc(var(--actions-drawer-top) + 12px);
-      right:24px;
-      bottom:24px;
-      left:24px;
+      inset:0;
+      width:100vw;
+      height:100dvh;
       display:none;
       flex-direction:column;
       background:#ffffff;
-      border:1px solid #cfd9ec;
-      border-radius:18px;
+      border:none;
+      border-radius:0;
       box-shadow:0 28px 80px rgba(15, 23, 42, 0.32);
       z-index:3995;
       overflow:hidden;
@@ -600,7 +599,7 @@
       align-items:flex-start;
       justify-content:space-between;
       gap:16px;
-      padding:16px 20px 14px;
+      padding:18px 24px 16px;
       border-bottom:1px solid #e5ebf5;
       background:linear-gradient(135deg, #f8fbff 0%, #eef5ff 100%);
       flex:0 0 auto;
@@ -617,14 +616,24 @@
       font-size:.84rem;
     }
     .group-buckets-modal-body{
+      display:flex;
       flex:1 1 auto;
+      flex-direction:column;
       min-height:0;
       overflow:auto;
-      padding:18px 20px 20px;
+      padding:16px 20px 20px;
       background:#f4f7fb;
+      overscroll-behavior:contain;
+    }
+    .group-buckets-modal-body > .team-workbench-card{
+      flex:1 1 auto;
+      min-height:100%;
     }
     .group-buckets-modal-body .tab-select-card{
       box-shadow:none;
+    }
+    .group-buckets-modal-body .team-workbench-card{
+      gap:16px;
     }
     .group-buckets-modal-body .tab-select-grid{
       grid-template-columns:repeat(auto-fit, minmax(250px, 1fr));
@@ -855,9 +864,38 @@
     }
     .group-buckets-modal-body .team-workspace-shell{
       display:flex;
+      flex:1 1 auto;
+      min-height:0;
+      overflow:auto;
     }
     .group-buckets-modal-body .team-compact-summary{
       display:none;
+    }
+    .group-buckets-modal-body .team-workspace-grid{
+      flex:1 1 auto;
+      min-height:0;
+    }
+    .group-buckets-modal-body .team-workspace-pane{
+      display:flex;
+      flex-direction:column;
+      min-height:0;
+    }
+    .group-buckets-modal-body .team-pane-card{
+      flex:1 1 auto;
+      min-height:0;
+    }
+    .group-buckets-modal-body .team-candidates-list{
+      flex:1 1 auto;
+      min-height:0;
+      max-height:none;
+    }
+    .group-buckets-modal-body .team-context-teams-list,
+    .group-buckets-modal-body .team-context-zero-members-list,
+    .group-buckets-modal-body #series-board-list{
+      flex:1 1 auto;
+      min-height:0;
+      overflow:auto;
+      padding-right:4px;
     }
     .team-workspace-header{
       position:sticky;
@@ -2083,10 +2121,16 @@
         --actions-drawer-width: min(95vw, 640px);
       }
       .group-buckets-modal{
-        top:calc(var(--actions-drawer-top) + 8px);
-        right:12px;
-        bottom:12px;
-        left:12px;
+        inset:0;
+        width:100vw;
+        height:100dvh;
+        border-radius:0;
+      }
+      .group-buckets-modal-head{
+        padding:14px 16px 12px;
+      }
+      .group-buckets-modal-body{
+        padding:12px 12px 16px;
       }
       .custom-sort-modal{
         top:calc(var(--actions-drawer-top) + 8px);
@@ -2521,6 +2565,43 @@
                     <span>{{ f.ui_label|default:f.label }}</span>
                   </label>
                 {% endfor %}
+              </div>
+
+              <div class="team-box mt-3 d-none" id="birth-year-range-config-box">
+                <div class="d-flex flex-wrap align-items-start justify-content-between" style="gap:12px;">
+                  <div>
+                    <div class="fw-semibold">Configuracio de forquilles de data de naixement</div>
+                    <div class="small text-muted">
+                      Aquestes forquilles s'usaran quan divideixis per <strong>Forquilla data naixement</strong>.
+                    </div>
+                  </div>
+                  <div class="small text-muted" id="birth-year-range-config-status"></div>
+                </div>
+
+                <fieldset class="mt-3" {% if not can_edit_inscripcions %}disabled{% endif %}>
+                  <div class="team-filters-grid" style="margin-bottom:12px;">
+                    <div>
+                      <label class="small text-muted mb-1 d-block" for="birth-year-range-sense-data">Etiqueta sense data</label>
+                      <input type="text" id="birth-year-range-sense-data" class="form-control form-control-sm" placeholder="Sense data">
+                    </div>
+                    <div>
+                      <label class="small text-muted mb-1 d-block" for="birth-year-range-outside">Etiqueta fora de rang</label>
+                      <input type="text" id="birth-year-range-outside" class="form-control form-control-sm" placeholder="Fora de forquilla">
+                    </div>
+                  </div>
+
+                  <div class="small text-muted mb-2">
+                    Defineix intervals de dates inclusius. Pots indicar inici, final o tots dos.
+                  </div>
+                  <div id="birth-year-range-config-rows" class="d-flex flex-column" style="gap:8px;"></div>
+
+                  <div class="d-flex flex-wrap mt-2" style="gap:8px;">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-birth-year-range-add">Afegir forquilla</button>
+                    {% if can_edit_inscripcions %}
+                      <button type="button" class="btn btn-sm btn-primary" id="btn-birth-year-range-save">Desar forquilles</button>
+                    {% endif %}
+                  </div>
+                </fieldset>
               </div>
 
               {% if selected_group_fields %}
@@ -2966,7 +3047,7 @@
                         data-group="{{ r.grup|default:'' }}"
                         data-group-name="{% with gkey=r.grup|stringformat:'s' %}{{ group_names|get_item:gkey|default:''|escape }}{% endwith %}"
                         data-competition-order="{{ r.ordre_competicio|default:'' }}"
-                        data-team="{{ r.equip_id|default:'' }}">
+                        data-team="{{ r.base_equip_id|default:'' }}">
                       <td class="control-col">
                         <div class="row-controls">
                           <input type="checkbox" class="inscripcio-select js-team-row-select" data-ins-id="{{ r.id }}">
@@ -2981,8 +3062,8 @@
                             <a class="btn btn-sm btn-outline-danger"
                                href="{% url 'inscripcio_delete' competicio.id r.id %}?next={{ request.get_full_path|urlencode }}">Eliminar</a>
                           {% elif col.code == "equip" %}
-                            {% if r.equip_id %}
-                              {% with ek=r.equip_id|stringformat:"s" %}
+                            {% if r.base_equip_id %}
+                              {% with ek=r.base_equip_id|stringformat:"s" %}
                                 <span class="equip-badge">{{ equip_name_map|get_item:ek|default:"Equip "|add:ek }}</span>
                               {% endwith %}
                             {% else %}
@@ -3221,7 +3302,7 @@
                         data-group="{{ r.grup|default:'' }}"
                         data-group-name="{% with gkey=r.grup|stringformat:'s' %}{{ group_names|get_item:gkey|default:''|escape }}{% endwith %}"
                         data-competition-order="{{ r.ordre_competicio|default:'' }}"
-                        data-team="{{ r.equip_id|default:'' }}">
+                        data-team="{{ r.base_equip_id|default:'' }}">
                 <td class="control-col">
                   <div class="row-controls">
                     <input type="checkbox" class="inscripcio-select js-team-row-select" data-ins-id="{{ r.id }}">
@@ -3240,8 +3321,8 @@
                         Eliminar
                       </a>
                     {% elif col.code == "equip" %}
-                      {% if r.equip_id %}
-                        {% with ek=r.equip_id|stringformat:"s" %}
+                      {% if r.base_equip_id %}
+                        {% with ek=r.base_equip_id|stringformat:"s" %}
                           <span class="equip-badge">{{ equip_name_map|get_item:ek|default:"Equip "|add:ek }}</span>
                         {% endwith %}
                       {% else %}
@@ -3343,6 +3424,7 @@
 
 {{ media_match_inscripcions_options|json_script:"media-match-options-data" }}
 {{ media_matching_config|json_script:"media-matching-config-data" }}
+{{ birth_year_range_group_config|json_script:"birth-year-range-group-config-data" }}
 
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
 
@@ -3381,6 +3463,149 @@
     return url.searchParams.getAll('group_by');
   }
 
+  const BIRTH_YEAR_RANGE_GROUP_CODE = 'any_naixement_forquilla';
+
+  function normalizeBirthYearRangeDateValue(raw) {
+    const token = String(raw ?? '').trim();
+    if (!token) return '';
+    return /^\d{4}-\d{2}-\d{2}$/.test(token) ? token : '';
+  }
+
+  function birthYearRangeLabelFromDates(fromDate, untilDate, idx) {
+    if (fromDate && untilDate) {
+      return `${fromDate} a ${untilDate}`;
+    }
+    if (fromDate) {
+      return `Des de ${fromDate}`;
+    }
+    if (untilDate) {
+      return `Fins ${untilDate}`;
+    }
+    return `Forquilla ${Number(idx || 0) + 1}`;
+  }
+
+  function normalizeBirthYearRangeGroupConfig(raw) {
+    const fallback = {
+      ranges: [],
+      sense_data_label: 'Sense data',
+      fora_rang_label: 'Fora de forquilla',
+    };
+    const cfg = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    const out = {
+      sense_data_label: String(cfg.sense_data_label || fallback.sense_data_label).trim() || fallback.sense_data_label,
+      fora_rang_label: String(cfg.fora_rang_label || fallback.fora_rang_label).trim() || fallback.fora_rang_label,
+      ranges: [],
+    };
+
+    (Array.isArray(cfg.ranges) ? cfg.ranges : []).forEach((item, idx) => {
+      if (!item || typeof item !== 'object') return;
+      const rawLabel = String(item.label || '').trim();
+      let rawFrom = normalizeBirthYearRangeDateValue(item.from_date);
+      let rawTo = normalizeBirthYearRangeDateValue(item.until_date);
+      if (!rawFrom) {
+        const fromYear = String(item.from_year ?? '').trim();
+        rawFrom = /^\d{4}$/.test(fromYear) ? `${fromYear}-01-01` : '';
+      }
+      if (!rawTo) {
+        const toYear = String(item.to_year ?? '').trim();
+        rawTo = /^\d{4}$/.test(toYear) ? `${toYear}-12-31` : '';
+      }
+      if (!rawLabel && !rawFrom && !rawTo) return;
+      out.ranges.push({
+        label: rawLabel || birthYearRangeLabelFromDates(rawFrom, rawTo, idx),
+        from_date: rawFrom || null,
+        until_date: rawTo || null,
+      });
+    });
+
+    return out;
+  }
+
+  function birthYearRangeConfigsEqual(a, b) {
+    return JSON.stringify(normalizeBirthYearRangeGroupConfig(a)) === JSON.stringify(normalizeBirthYearRangeGroupConfig(b));
+  }
+
+  function escapeHtmlAttr(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
+  function readBirthYearRangeGroupConfigUi() {
+    const rows = [];
+    document.querySelectorAll('#birth-year-range-config-rows [data-range-row="1"]').forEach((row) => {
+      rows.push({
+        label: String(row.querySelector('[data-range-field="label"]')?.value || '').trim(),
+        from_date: normalizeBirthYearRangeDateValue(row.querySelector('[data-range-field="from"]')?.value || ''),
+        until_date: normalizeBirthYearRangeDateValue(row.querySelector('[data-range-field="to"]')?.value || ''),
+      });
+    });
+    return normalizeBirthYearRangeGroupConfig({
+      sense_data_label: document.getElementById('birth-year-range-sense-data')?.value || '',
+      fora_rang_label: document.getElementById('birth-year-range-outside')?.value || '',
+      ranges: rows,
+    });
+  }
+
+  function createBirthYearRangeRow(item = {}) {
+    const row = document.createElement('div');
+    row.className = 'd-flex flex-wrap align-items-end';
+    row.style.gap = '8px';
+    row.setAttribute('data-range-row', '1');
+    row.innerHTML = `
+      <div style="width:160px;">
+        <label class="small text-muted mb-1 d-block">Des de data</label>
+        <input type="date" class="form-control form-control-sm" data-range-field="from" value="${escapeHtmlAttr(String(item.from_date ?? '').trim())}">
+      </div>
+      <div style="width:160px;">
+        <label class="small text-muted mb-1 d-block">Fins a data</label>
+        <input type="date" class="form-control form-control-sm" data-range-field="to" value="${escapeHtmlAttr(String(item.until_date ?? '').trim())}">
+      </div>
+      <div style="min-width:180px; flex:1 1 220px;">
+        <label class="small text-muted mb-1 d-block">Etiqueta</label>
+        <input type="text" class="form-control form-control-sm" data-range-field="label" value="${escapeHtmlAttr(String(item.label || '').trim())}" placeholder="Des de 2013-01-01">
+      </div>
+      <div>
+        <button type="button" class="btn btn-sm btn-outline-danger" data-range-remove="1">Treure</button>
+      </div>
+    `;
+    row.querySelectorAll('input').forEach((input) => {
+      input.addEventListener('input', () => updateBirthYearRangeConfigUi());
+    });
+    row.querySelector('[data-range-remove="1"]')?.addEventListener('click', () => {
+      row.remove();
+      ensureBirthYearRangeConfigRows();
+      updateBirthYearRangeConfigUi();
+    });
+    return row;
+  }
+
+  function ensureBirthYearRangeConfigRows() {
+    const root = document.getElementById('birth-year-range-config-rows');
+    if (!root) return;
+    if (!root.querySelector('[data-range-row="1"]')) {
+      root.appendChild(createBirthYearRangeRow({}));
+    }
+  }
+
+  function renderBirthYearRangeGroupConfig(raw) {
+    const cfg = normalizeBirthYearRangeGroupConfig(raw);
+    const root = document.getElementById('birth-year-range-config-rows');
+    if (!root) return;
+    document.getElementById('birth-year-range-sense-data').value = cfg.sense_data_label || 'Sense data';
+    document.getElementById('birth-year-range-outside').value = cfg.fora_rang_label || 'Fora de forquilla';
+    root.innerHTML = '';
+    const rows = cfg.ranges.length ? cfg.ranges : [{}];
+    rows.forEach((item) => root.appendChild(createBirthYearRangeRow(item)));
+    ensureBirthYearRangeConfigRows();
+  }
+
+  function isBirthYearRangeGroupingSelected() {
+    return !!document.querySelector(`input[name="group_by"][value="${BIRTH_YEAR_RANGE_GROUP_CODE}"]:checked`);
+  }
+
   function labelForKey(groupKey) {
     if (!groupKey) return '';
     const li = document.querySelector(`#tabs-root > li.nav-item[data-group-key="${CSS.escape(groupKey)}"]`);
@@ -3390,8 +3615,10 @@
   const canEditInscripcions = {% if can_edit_inscripcions %}true{% else %}false{% endif %};
   const saveGroupCompetitionOrderUrl = "{% url 'inscripcions_save_group_competition_order' competicio.id %}";
   const groupCompetitionOrderPreviewUrl = "{% url 'inscripcions_group_competition_order_preview' competicio.id %}";
+  const saveBirthYearRangeGroupConfigUrl = "{% url 'inscripcions_save_birth_year_range_config' competicio.id %}";
   let mediaMatchOptions = [];
   let mediaMatchingConfig = {};
+  let birthYearRangeSavedConfig = normalizeBirthYearRangeGroupConfig({});
   try {
     mediaMatchOptions = JSON.parse(document.getElementById('media-match-options-data')?.textContent || '[]');
   } catch (_err) {
@@ -3401,6 +3628,13 @@
     mediaMatchingConfig = JSON.parse(document.getElementById('media-matching-config-data')?.textContent || '{}');
   } catch (_err) {
     mediaMatchingConfig = {};
+  }
+  try {
+    birthYearRangeSavedConfig = normalizeBirthYearRangeGroupConfig(
+      JSON.parse(document.getElementById('birth-year-range-group-config-data')?.textContent || '{}')
+    );
+  } catch (_err) {
+    birthYearRangeSavedConfig = normalizeBirthYearRangeGroupConfig({});
   }
   let mediaFolderSelection = [];
   let mediaPreviewRows = [];
@@ -3448,17 +3682,29 @@
     return modal ? (modal.getAttribute('data-active-card-id') || '') : '';
   }
 
+  function ensureExpandedGroupModalRoot() {
+    const backdrop = document.getElementById('group-buckets-backdrop');
+    const modal = document.getElementById('group-buckets-modal');
+    if (backdrop && backdrop.parentNode !== document.body) {
+      document.body.appendChild(backdrop);
+    }
+    if (modal && modal.parentNode !== document.body) {
+      document.body.appendChild(modal);
+    }
+  }
+
   function refreshExpandButtons() {
+    const expandedCardId = getExpandedGroupCardId();
     document.querySelectorAll('.js-expand-tab-select').forEach(btn => {
       const targetId = btn.getAttribute('data-expand-target') || '';
-      const target = targetId ? document.getElementById(targetId) : null;
-      const expanded = !!(target && target.classList.contains('is-expanded'));
+      const expanded = expandedCardId === targetId;
       btn.textContent = expanded
-        ? (btn.getAttribute('data-label-expanded') || 'Tancar vista amplia')
+        ? (btn.getAttribute('data-label-expanded') || 'Tancar vista ampla')
         : (btn.getAttribute('data-label-collapsed') || 'Expandir');
       btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
     });
   }
+
 
   const groupBucketsModalState = {
     cardId: '',
@@ -3470,6 +3716,7 @@
     if (!groupBucketsModalState.cardId || !groupBucketsModalState.parent) return;
     const card = document.getElementById(groupBucketsModalState.cardId);
     if (!card) return;
+    card.classList.remove('is-expanded');
     if (groupBucketsModalState.nextSibling && groupBucketsModalState.nextSibling.parentNode === groupBucketsModalState.parent) {
       groupBucketsModalState.parent.insertBefore(card, groupBucketsModalState.nextSibling);
     } else {
@@ -3481,6 +3728,7 @@
   }
 
   function setExpandedGroupCard(cardId, options = {}) {
+    ensureExpandedGroupModalRoot();
     const backdrop = document.getElementById('group-buckets-backdrop');
     const modal = document.getElementById('group-buckets-modal');
     const modalBody = document.getElementById('group-buckets-modal-body');
@@ -3497,6 +3745,7 @@
         groupBucketsModalState.cardId = cardId;
         groupBucketsModalState.parent = card.parentNode;
         groupBucketsModalState.nextSibling = card.nextSibling;
+        card.classList.add('is-expanded');
         modalBody.appendChild(card);
         activeCard = card;
       }
@@ -4415,6 +4664,71 @@
       if (!resp.ok) {
         const txt = await resp.text();
         showAlert(`No s'ha pogut desar el nom del grup (${resp.status}).\n${txt}`);
+        return false;
+      }
+      return true;
+    }
+
+    function updateBirthYearRangeConfigUi() {
+      const box = document.getElementById('birth-year-range-config-box');
+      const status = document.getElementById('birth-year-range-config-status');
+      if (!box || !status) return;
+
+      const selected = isBirthYearRangeGroupingSelected();
+      const saved = normalizeBirthYearRangeGroupConfig(birthYearRangeSavedConfig);
+      const current = readBirthYearRangeGroupConfigUi();
+      const hasSavedRanges = Array.isArray(saved.ranges) && saved.ranges.length > 0;
+      const dirty = !birthYearRangeConfigsEqual(saved, current);
+
+      box.classList.toggle('d-none', !selected);
+      if (!selected) {
+        status.textContent = hasSavedRanges
+          ? `${saved.ranges.length} forquilla(es) desada(es). Activa la divisio per fer-les servir.`
+          : 'Configura les forquilles per data i activa la divisio quan les vulguis utilitzar.';
+        return;
+      }
+      if (!hasSavedRanges) {
+        status.textContent = 'Encara no hi ha cap forquilla desada. Desa-la abans d\'aplicar la divisio.';
+        return;
+      }
+      status.textContent = dirty
+        ? 'Hi ha canvis sense desar en aquesta configuracio.'
+        : `${saved.ranges.length} forquilla(es) desada(es) i llesta(es) per dividir.`;
+    }
+
+    async function saveBirthYearRangeGroupConfig() {
+      const current = readBirthYearRangeGroupConfigUi();
+      if (!current.ranges.length) {
+        showAlert("Has de definir almenys una forquilla abans de desar.");
+        return false;
+      }
+      try {
+        const data = await postJson(saveBirthYearRangeGroupConfigUrl, { config: current });
+        birthYearRangeSavedConfig = normalizeBirthYearRangeGroupConfig(data?.config || current);
+        renderBirthYearRangeGroupConfig(birthYearRangeSavedConfig);
+        updateBirthYearRangeConfigUi();
+        if (typeof markGroupPreviewDirty === 'function') markGroupPreviewDirty();
+        showAlert("Forquilles de data de naixement desades.");
+        return true;
+      } catch (err) {
+        showAlert(`No s'ha pogut desar la configuracio de forquilles.\n${err.message || err}`);
+        return false;
+      }
+    }
+
+    function validateBirthYearRangeGroupingBeforeSubmit(event) {
+      const submitterName = String(event?.submitter?.name || '').trim();
+      if (submitterName && submitterName !== 'recalc_order') return true;
+      if (!isBirthYearRangeGroupingSelected()) return true;
+      const current = readBirthYearRangeGroupConfigUi();
+      if (!current.ranges.length) {
+        event.preventDefault();
+        showAlert("Configura i desa almenys una forquilla abans d'aplicar la divisio per data de naixement.");
+        return false;
+      }
+      if (!birthYearRangeSavedConfig.ranges.length || !birthYearRangeConfigsEqual(current, birthYearRangeSavedConfig)) {
+        event.preventDefault();
+        showAlert("Hi ha canvis de forquilles sense desar. Desa'ls abans d'aplicar la divisio.");
         return false;
       }
       return true;
@@ -6957,6 +7271,20 @@
       });
       updateColsVisibleCount();
     }
+
+    renderBirthYearRangeGroupConfig(birthYearRangeSavedConfig);
+    document.getElementById('birth-year-range-sense-data')?.addEventListener('input', updateBirthYearRangeConfigUi);
+    document.getElementById('birth-year-range-outside')?.addEventListener('input', updateBirthYearRangeConfigUi);
+    document.getElementById('btn-birth-year-range-add')?.addEventListener('click', () => {
+      document.getElementById('birth-year-range-config-rows')?.appendChild(createBirthYearRangeRow({}));
+      updateBirthYearRangeConfigUi();
+    });
+    document.getElementById('btn-birth-year-range-save')?.addEventListener('click', saveBirthYearRangeGroupConfig);
+    document.querySelectorAll('input[name="group_by"]').forEach((input) => {
+      input.addEventListener('change', updateBirthYearRangeConfigUi);
+    });
+    document.getElementById('inscripcions-actions-sidebar')?.addEventListener('submit', validateBirthYearRangeGroupingBeforeSubmit);
+    updateBirthYearRangeConfigUi();
 
     applyGroupBands();
     scheduleRefreshGroupHeaderIndicators();

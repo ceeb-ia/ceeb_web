@@ -139,6 +139,8 @@ class TeamCompetitiveSubject(models.Model):
             errors["context"] = _("El context no pertany a la mateixa competicio.")
         if self.equip_id and self.equip.competicio_id != self.competicio_id:
             errors["equip"] = _("L'equip no pertany a la mateixa competicio.")
+        if self.context_id and self.equip_id and self.equip.context_id != self.context_id:
+            errors["equip"] = _("L'equip no pertany a aquest context.")
         if self.comp_aparell_id and not self.comp_aparell.is_team_competition_unit:
             errors["comp_aparell"] = _("Aquest aparell no es un aparell global d'equip.")
         if errors:
@@ -533,3 +535,21 @@ class TeamScoreEntryVideoEvent(models.Model):
             models.Index(fields=["judge_token", "created_at"]),
             models.Index(fields=["team_score_entry", "created_at"]),
         ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        if self.team_subject_id:
+            if self.team_subject.competicio_id != self.competicio_id:
+                errors["team_subject"] = _("La unitat competitiva no pertany a la mateixa competicio.")
+            if self.comp_aparell_id and self.team_subject.comp_aparell_id != self.comp_aparell_id:
+                errors["comp_aparell"] = _("La unitat competitiva no pertany a aquest aparell.")
+        if self.equip_id:
+            if self.equip.competicio_id != self.competicio_id:
+                errors["equip"] = _("L'equip no pertany a la mateixa competicio.")
+            if self.team_subject_id and self.team_subject.equip_id != self.equip_id:
+                errors["equip"] = _("L'equip no coincideix amb la unitat competitiva.")
+        if self.comp_aparell_id and self.comp_aparell.competicio_id != self.competicio_id:
+            errors["comp_aparell"] = _("L'aparell no pertany a la mateixa competicio.")
+        if errors:
+            raise ValidationError(errors)

@@ -11,9 +11,10 @@ from .models_trampoli import Aparell, CompeticioAparell
 from .services.competition_groups import get_competicio_groups, group_label
 from .services.equip_contexts import (
     NATIVE_EQUIP_CONTEXT_CODE,
-    get_custom_equip_context,
+    get_equip_context,
     get_equip_context_payload,
     normalize_equip_context_code,
+    resolve_inscripcio_equip,
 )
 from .services.import_excel import (
     _build_value_aliases,
@@ -80,7 +81,7 @@ class InscripcioForm(forms.ModelForm):
     EQUIP_SELECTOR_CONFIG = {
         "choice_name": "equip_choice",
         "other_name": "equip_altres",
-        "label": "Equip (Natiu)",
+        "label": "Equip (Base)",
         "empty_label": "Sense equip",
         "other_label": "Altre equip",
         "placeholder": "Escriu l'equip si no surt al llistat",
@@ -123,28 +124,35 @@ class InscripcioForm(forms.ModelForm):
         if self.competicio is None:
             raise ValueError("InscripcioForm requires a competicio instance.")
 
-        self.team_context = None
-        if self.team_context_code != NATIVE_EQUIP_CONTEXT_CODE:
-            self.team_context = get_custom_equip_context(self.competicio, self.team_context_code)
-            if self.team_context is None:
-                self.team_context_code = NATIVE_EQUIP_CONTEXT_CODE
+        self.team_context = get_equip_context(self.competicio, self.team_context_code)
+        if self.team_context is None:
+            self.team_context_code = NATIVE_EQUIP_CONTEXT_CODE
+            self.team_context = get_equip_context(self.competicio, self.team_context_code)
         self.team_context_is_native = self.team_context_code == NATIVE_EQUIP_CONTEXT_CODE
         self.team_context_payload = next(
             (item for item in get_equip_context_payload(self.competicio) if item["code"] == self.team_context_code),
             {
                 "code": self.team_context_code,
-                "nom": "Natiu",
-                "description": "Equip natiu de la inscripcio",
+                "nom": "Base",
+                "description": "Context base d'equips de la competicio",
                 "is_native": True,
             },
         )
-        self.team_context_label = str(self.team_context_payload.get("nom") or "Natiu").strip() or "Natiu"
-        self.current_native_equip = getattr(self.instance, "equip", None)
+        self.team_context_label = str(self.team_context_payload.get("nom") or "Base").strip() or "Base"
+        self.current_native_equip = (
+            resolve_inscripcio_equip(
+                self.instance,
+                context_code=NATIVE_EQUIP_CONTEXT_CODE,
+                fallback=None,
+            )
+            if getattr(self.instance, "pk", None)
+            else None
+        )
+        self.current_base_equip = self.current_native_equip
         self.current_context_assignment = self._get_current_context_assignment()
-        if self.team_context_is_native:
-            self.current_equip = self.current_native_equip
-        else:
-            self.current_equip = getattr(self.current_context_assignment, "equip", None)
+        self.current_equip = getattr(self.current_context_assignment, "equip", None)
+        if self.current_equip is None and self.team_context_is_native:
+            self.current_equip = self.current_base_equip
 
         self.schema_columns = self._get_schema_columns()
         self.extra_field_map = OrderedDict()
@@ -168,7 +176,7 @@ class InscripcioForm(forms.ModelForm):
         self.show_altres_fields = self._build_show_altres_fields()
 
     def _get_current_context_assignment(self):
-        if self.team_context_is_native or not getattr(self.instance, "pk", None):
+        if not getattr(self.instance, "pk", None) or self.team_context is None:
             return None
         return (
             InscripcioEquipAssignacio.objects
@@ -303,11 +311,15 @@ class InscripcioForm(forms.ModelForm):
     def _configure_equip_field(self):
         config = dict(self.EQUIP_SELECTOR_CONFIG)
         config["label"] = (
-            "Equip (Natiu)"
+            "Equip (Base)"
             if self.team_context_is_native
             else f"Equip ({self.team_context_label})"
         )
-        equips = list(Equip.objects.filter(competicio=self.competicio).order_by("nom", "id"))
+        equips = list(
+            Equip.objects
+            .filter(competicio=self.competicio, context=self.team_context)
+            .order_by("nom", "id")
+        )
         seen_equip_ids = {equip.id for equip in equips}
         current_equip = self.current_equip
         if current_equip is not None and current_equip.id not in seen_equip_ids:
@@ -457,7 +469,7 @@ class InscripcioForm(forms.ModelForm):
         cleaned_data["resolved_equip"] = resolved_equip
 
     def _persist_contextual_equip_assignment(self, instance, equip):
-        if self.team_context_is_native:
+        if self.team_context is None:
             return
 
         existing = (
@@ -533,11 +545,10 @@ class InscripcioForm(forms.ModelForm):
         if resolved_equip_name:
             resolved_equip, _created = Equip.objects.get_or_create(
                 competicio=self.competicio,
+                context=self.team_context,
                 nom=resolved_equip_name,
                 defaults={"origen": Equip.Origen.MANUAL, "criteri": {}},
             )
-        if self.team_context_is_native:
-            instance.equip = resolved_equip
 
         next_extra = dict(getattr(instance, "extra", None) or {})
         for field_name, code in self.extra_field_map.items():

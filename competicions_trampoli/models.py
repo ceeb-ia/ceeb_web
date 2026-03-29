@@ -98,6 +98,11 @@ class Equip(models.Model):
         on_delete=models.CASCADE,
         related_name="equips",
     )
+    context = models.ForeignKey(
+        "EquipContext",
+        on_delete=models.CASCADE,
+        related_name="equips",
+    )
     nom = models.CharField(max_length=180)
     origen = models.CharField(
         max_length=20,
@@ -112,16 +117,33 @@ class Equip(models.Model):
         ordering = ["nom", "id"]
         constraints = [
             models.UniqueConstraint(
-                fields=["competicio", "nom"],
-                name="uniq_equip_nom_per_competicio",
+                fields=["context", "nom"],
+                name="uniq_equip_nom_per_context",
             )
         ]
         indexes = [
-            models.Index(fields=["competicio", "nom"]),
+            models.Index(fields=["competicio", "context"], name="equip_competicio_context_idx"),
+            models.Index(fields=["context", "nom"], name="equip_context_nom_idx"),
+            models.Index(fields=["competicio", "nom"], name="equip_competicio_nom_idx"),
         ]
 
     def __str__(self):
         return f"{self.nom} ({self.competicio})"
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        if self.context_id and self.context.competicio_id != self.competicio_id:
+            errors["context"] = "El context no pertany a la mateixa competicio."
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        if not self.context_id and self.competicio_id:
+            from .services.equip_contexts import ensure_base_equip_context
+
+            self.context = ensure_base_equip_context(self.competicio)
+        super().save(*args, **kwargs)
 
 
 class EquipContext(models.Model):
@@ -328,6 +350,8 @@ class InscripcioEquipAssignacio(models.Model):
             errors["inscripcio"] = "La inscripcio no pertany a la mateixa competicio."
         if self.equip_id and self.equip.competicio_id != competicio_id:
             errors["equip"] = "L'equip no pertany a la mateixa competicio."
+        if self.context_id and self.equip_id and self.equip.context_id != self.context_id:
+            errors["equip"] = "L'equip no pertany al context indicat."
         if errors:
             raise ValidationError(errors)
 

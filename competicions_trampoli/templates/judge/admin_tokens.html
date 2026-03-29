@@ -191,6 +191,9 @@
                                 </label>
                               {% endfor %}
                             </div>
+                            {% if not member_slot_choices %}
+                              <div class="text-muted small mt-1">No hi ha equips disponibles per calcular slots de membre en aquest aparell.</div>
+                            {% endif %}
                             {% if f.member_mode.errors %}
                               <div class="text-danger small mt-1">{{ f.member_mode.errors }}</div>
                             {% endif %}
@@ -260,6 +263,9 @@
                             </label>
                           {% endfor %}
                         </div>
+                        {% if not member_slot_choices %}
+                          <div class="text-muted small mt-1">No hi ha equips disponibles per calcular slots de membre en aquest aparell.</div>
+                        {% endif %}
                       </div>
                     </td>
                     {% endif %}
@@ -277,7 +283,7 @@
 
                 <div class="text-muted small">
                   Notes: per camps tipus matrix (com E), Start/Count limita ítems. Per DD/TOF/HD/P (1 ítem) no cal.
-                  {% if is_team_context_mode %} Si el permís és `Individual`, pots apuntar-lo a tots els membres o a slots concrets `M1/M2/...`.{% endif %}
+                  {% if is_team_context_mode %} Els slots visibles `M1..Mn` surten del màxim real de membres detectat entre tots els equips i contextos que competeixen en aquest aparell. Si un equip concret té menys membres, els slots inexistents es mostraran desactivats al portal del jutge.{% endif %}
                   Màxim {{ max_permissions }} permisos per token.
                 </div>
               </div>

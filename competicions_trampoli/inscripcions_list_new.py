@@ -45,8 +45,16 @@ from .services.media_matching import (
     match_media_files_to_inscripcions,
     normalize_media_matching_config,
 )
+from .services.birth_year_ranges import (
+    BIRTH_YEAR_RANGE_PARTITION_CODE,
+    clear_inscripcions_derived_group_config_cache,
+    get_inscripcions_derived_group_config,
+    normalize_birth_year_range_partition_config_for_inscripcions,
+    validate_birth_year_range_partition_config,
+)
 from .views import (
     InscripcionsListView,
+    annotate_inscripcions_queryset_for_group_codes,
     _build_inscripcions_filtered_qs,
     _message_for_emptied_programmed_groups,
     get_allowed_group_fields,
@@ -485,8 +493,13 @@ class InscripcionsListNewView(InscripcionsListView):
         partition_buckets = []
         if partition_codes:
             partition_builtin_fields = [c for c in partition_codes if hasattr(Inscripcio, c)]
+            records_for_partition_qs = annotate_inscripcions_queryset_for_group_codes(
+                filtered_qs,
+                self.competicio,
+                partition_codes,
+            )
             records_for_partition = list(
-                filtered_qs.order_by("ordre_sortida", "id").only("id", "extra", *partition_builtin_fields)
+                records_for_partition_qs.order_by("ordre_sortida", "id").only("id", "extra", "data_naixement", *partition_builtin_fields)
             )
             buckets_raw = _build_sort_partition_buckets(records_for_partition, partition_codes)
             partition_buckets = [
@@ -520,10 +533,16 @@ class InscripcionsListNewView(InscripcionsListView):
         group_resolution_builtin_fields = [
             code for code in group_resolution_codes if hasattr(Inscripcio, code)
         ]
+        records_for_group_resolution_qs = annotate_inscripcions_queryset_for_group_codes(
+            filtered_qs,
+            self.competicio,
+            group_resolution_codes,
+        )
         records_for_group_resolution = list(
-            filtered_qs.order_by("ordre_sortida", "id").only(
+            records_for_group_resolution_qs.order_by("ordre_sortida", "id").only(
                 "id",
                 "extra",
+                "data_naixement",
                 *group_resolution_builtin_fields,
             )
         )
@@ -565,6 +584,10 @@ class InscripcionsListNewView(InscripcionsListView):
             for bucket in auto_group_buckets_raw
         ]
         ctx["group_creation_auto_bucket_count"] = len(ctx["group_creation_auto_buckets"])
+        derived_group_cfg = get_inscripcions_derived_group_config(self.competicio.inscripcions_view or {})
+        ctx["birth_year_range_group_config"] = (
+            derived_group_cfg.get(BIRTH_YEAR_RANGE_PARTITION_CODE) or {"ranges": []}
+        )
 
         ctx["group_names"] = get_group_maps(self.competicio).get("name_map") or {}
         ctx["group_member_totals"] = {
@@ -587,10 +610,11 @@ class InscripcionsListNewView(InscripcionsListView):
         team_field_codes = {f["code"] for f in team_fields}
         default_team_fields = [c for c in ("entitat", "subcategoria", "sexe") if c in team_field_codes]
         teams_list = list(get_equips_for_context(self.competicio, team_context_code))
+        base_teams_list = list(get_equips_for_context(self.competicio, NATIVE_EQUIP_CONTEXT_CODE))
         ctx["team_partition_fields"] = team_fields
         ctx["team_partition_default_fields"] = default_team_fields
         ctx["equips_existing"] = teams_list
-        ctx["equip_name_map"] = {str(e.id): e.nom for e in teams_list}
+        ctx["equip_name_map"] = {str(e.id): e.nom for e in base_teams_list}
         ctx["team_contexts"] = get_equip_context_payload(self.competicio)
         ctx["team_context_selected_code"] = team_context_code
         ctx["team_context_summary"] = get_equip_context_summary(self.competicio, team_context_code)
@@ -621,10 +645,14 @@ class InscripcionsListNewView(InscripcionsListView):
         if records_grouped:
             for _label, rows, _group_key in records_grouped:
                 for r in rows:
+                    base_equip_id = getattr(r, "_base_equip_id_cache", None)
+                    setattr(r, "base_equip_id", base_equip_id)
                     if getattr(r, "id", None):
                         visible_ins_ids.add(r.id)
         else:
             for r in (ctx.get("records") or []):
+                base_equip_id = getattr(r, "_base_equip_id_cache", None)
+                setattr(r, "base_equip_id", base_equip_id)
                 if getattr(r, "id", None):
                     visible_ins_ids.add(r.id)
 
@@ -769,6 +797,50 @@ def inscripcions_set_group_name(request, pk):
     return JsonResponse(
         with_inscripcions_history_payload(
             {"ok": True, "group": group_int, "name": name},
+            request,
+            competicio.id,
+        )
+    )
+
+
+@require_POST
+@csrf_protect
+def inscripcions_save_birth_year_range_config(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        return HttpResponseBadRequest("JSON invalid")
+
+    raw_cfg = payload.get("config") if isinstance(payload, dict) else {}
+    cfg, errors = validate_birth_year_range_partition_config(raw_cfg, require_ranges=True)
+    if errors:
+        return HttpResponseBadRequest("\n".join(errors))
+    storage_cfg = normalize_birth_year_range_partition_config_for_inscripcions(cfg)
+
+    before_snapshot = capture_inscripcions_history_snapshot(request, competicio)
+    view_cfg = dict(competicio.inscripcions_view or {})
+    derived_group_cfg = view_cfg.get("derived_group_config")
+    if not isinstance(derived_group_cfg, dict):
+        derived_group_cfg = {}
+    else:
+        derived_group_cfg = dict(derived_group_cfg)
+    derived_group_cfg[BIRTH_YEAR_RANGE_PARTITION_CODE] = storage_cfg
+    view_cfg["derived_group_config"] = derived_group_cfg
+    competicio.inscripcions_view = view_cfg
+    competicio.save(update_fields=["inscripcions_view"])
+    clear_inscripcions_derived_group_config_cache()
+    record_inscripcions_history_entry(
+        request,
+        competicio,
+        action_type="save_birth_year_range_group_config",
+        action_label="Desar forquilles de data de naixement",
+        before_snapshot=before_snapshot,
+        after_snapshot=capture_inscripcions_history_snapshot(request, competicio),
+    )
+    return JsonResponse(
+        with_inscripcions_history_payload(
+            {"ok": True, "config": storage_cfg},
             request,
             competicio.id,
         )
@@ -1424,6 +1496,53 @@ def groups_delete(request, pk):
                 "ok": True,
                 "deleted": True,
                 "group": get_group_detail_payload(group, member_limit=5),
+            },
+            request,
+            competicio.id,
+        )
+    )
+
+
+@require_POST
+@csrf_protect
+def groups_delete_empty(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    try:
+        json.loads(request.body.decode("utf-8") or "{}")
+    except Exception:
+        return HttpResponseBadRequest("JSON invalid")
+
+    groups = list(get_competicio_groups(competicio, include_inactive=False))
+    deleted_ids = []
+    skipped_ids = []
+
+    before_snapshot = capture_inscripcions_history_snapshot(request, competicio)
+    for group in groups:
+        payload = get_group_card_payload(group, member_limit=1)
+        if int((payload or {}).get("members_count") or 0) > 0:
+            continue
+        ok, _reason = safe_deactivate_empty_group(group)
+        if ok:
+            deleted_ids.append(int(group.id))
+        else:
+            skipped_ids.append(int(group.id))
+
+    sync_competicio_group_names_view(competicio)
+    record_inscripcions_history_entry(
+        request,
+        competicio,
+        action_type="groups_delete_empty",
+        action_label="Desactivar grups buits",
+        before_snapshot=before_snapshot,
+        after_snapshot=capture_inscripcions_history_snapshot(request, competicio),
+    )
+    return JsonResponse(
+        with_inscripcions_history_payload(
+            {
+                "ok": True,
+                "deleted": len(deleted_ids),
+                "deleted_ids": deleted_ids,
+                "skipped_ids": skipped_ids,
             },
             request,
             competicio.id,

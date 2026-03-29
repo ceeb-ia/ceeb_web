@@ -710,6 +710,58 @@ def series_delete(request, pk):
 
 @require_POST
 @csrf_protect
+def series_delete_empty(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    payload = _parse_payload(request)
+    comp_aparell = _resolve_team_comp_aparell(competicio, payload)
+    if comp_aparell is None:
+        return HttpResponseBadRequest("comp_aparell_id invalid")
+
+    deleted_ids = []
+    skipped_programmed_ids = []
+    skipped_not_empty_ids = []
+    series = list(
+        SerieEquip.objects
+        .filter(competicio=competicio, comp_aparell=comp_aparell, actiu=True)
+        .order_by("display_num", "id")
+    )
+
+    before_snapshot = capture_inscripcions_history_snapshot(request, competicio)
+    for serie in series:
+        ok, reason = safe_deactivate_empty_serie(serie)
+        if ok:
+            deleted_ids.append(int(serie.id))
+        elif reason == "serie_programmed":
+            skipped_programmed_ids.append(int(serie.id))
+        elif reason == "serie_not_empty":
+            skipped_not_empty_ids.append(int(serie.id))
+
+    record_inscripcions_history_entry(
+        request,
+        competicio,
+        action_type="series_equip_delete_empty",
+        action_label="Desactivar series buides",
+        before_snapshot=before_snapshot,
+        after_snapshot=capture_inscripcions_history_snapshot(request, competicio),
+    )
+    return JsonResponse(
+        with_inscripcions_history_payload(
+            {
+                "ok": True,
+                "deleted": len(deleted_ids),
+                "deleted_ids": deleted_ids,
+                "skipped_programmed_ids": skipped_programmed_ids,
+                "skipped_not_empty_ids": skipped_not_empty_ids,
+                "comp_aparell_id": int(comp_aparell.id),
+            },
+            request,
+            competicio.id,
+        )
+    )
+
+
+@require_POST
+@csrf_protect
 def series_rename(request, pk):
     competicio = get_object_or_404(Competicio, pk=pk)
     payload = _parse_payload(request)
