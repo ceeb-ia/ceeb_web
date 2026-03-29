@@ -56,6 +56,7 @@ from .views import (
     InscripcionsListView,
     annotate_inscripcions_queryset_for_group_codes,
     _build_inscripcions_filtered_qs,
+    _normalize_sort_filters,
     _message_for_emptied_programmed_groups,
     get_available_column_filter_fields,
     get_allowed_group_fields,
@@ -872,10 +873,7 @@ def inscripcions_save_birth_year_range_config(request, pk):
 def _normalize_group_workspace_filters(raw_filters):
     filters = raw_filters if isinstance(raw_filters, dict) else {}
     out = {
-        "q": str(filters.get("q") or "").strip(),
-        "categoria": str(filters.get("categoria") or "").strip(),
-        "subcategoria": str(filters.get("subcategoria") or "").strip(),
-        "entitat": str(filters.get("entitat") or "").strip(),
+        **_normalize_sort_filters(filters),
         "group_state": str(filters.get("group_state") or "all").strip().lower(),
         "group_id": None,
         "group_num": None,

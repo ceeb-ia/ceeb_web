@@ -99,29 +99,6 @@ def _active_cfg_values(competicio):
 
 
 def _live_data_payload(competicio, since_raw=None):
-    last_note = (
-        ScoreEntry.objects
-        .filter(competicio=competicio)
-        .order_by("-updated_at")
-        .values_list("updated_at", flat=True)
-        .first()
-    )
-    last_cfg = (
-        ClassificacioConfig.objects
-        .filter(competicio=competicio)
-        .order_by("-updated_at")
-        .values_list("updated_at", flat=True)
-        .first()
-    )
-    stamp = max([d for d in [last_note, last_cfg] if d is not None], default=timezone.now())
-
-    if since_raw:
-        since_dt = parse_datetime(since_raw)
-        if since_dt and not is_aware(since_dt):
-            since_dt = timezone.make_aware(since_dt, timezone.get_current_timezone())
-        if since_dt and stamp <= since_dt:
-            return {"ok": True, "changed": False, "stamp": stamp.isoformat()}
-
     cfgs = (
         ClassificacioConfig.objects
         .filter(competicio=competicio, activa=True)
@@ -158,10 +135,14 @@ def _live_data_payload(competicio, since_raw=None):
             **({"error": error_payload} if error_payload else {}),
         })
 
+    # El live és un snapshot versionat: cada regeneració real del payload ha de
+    # produir un stamp nou perquè els clients amb ?since=<versió anterior>
+    # rebin changed=true encara que el canvi provingui d'altres models.
+    stamp = timezone.now().isoformat()
     return {
         "ok": True,
         "changed": True,
-        "stamp": stamp.isoformat(),
+        "stamp": stamp,
         "competicio": {"id": competicio.id, "nom": competicio.nom},
         "cfgs": payload_cfgs,
     }
@@ -268,6 +249,36 @@ def _normalize_excel_cell(value, col):
                 items = [items]
             vals = [_format_scalar_text(it, decimals) for it in items]
             lines.append(f"{judge_label}: " + " | ".join(vals))
+        return _excel_safe_text("\n".join([ln for ln in lines if ln])), None, True
+
+    if isinstance(value, dict) and value.get("_kind") == "team_raw_detail":
+        lines = []
+        summary = value.get("summary")
+        if summary not in (None, ""):
+            lines.append(_format_scalar_text(summary, decimals))
+        for row in value.get("rows") or []:
+            if not isinstance(row, dict):
+                continue
+            label = str(row.get("label") or "").strip()
+            if not label:
+                continue
+            judge_rows = row.get("judge_rows")
+            if isinstance(judge_rows, dict) and judge_rows.get("_kind") == "judge_rows":
+                lines.append(f"{label}:")
+                for judge_row in judge_rows.get("rows") or []:
+                    judge_num = judge_row.get("judge")
+                    try:
+                        judge_num = int(judge_num)
+                    except Exception:
+                        judge_num = None
+                    judge_label = f"J{judge_num}" if judge_num and judge_num > 0 else "J?"
+                    items = judge_row.get("items") or []
+                    if not isinstance(items, list):
+                        items = [items]
+                    vals = [_format_scalar_text(it, decimals) for it in items]
+                    lines.append(f"  {judge_label}: " + " | ".join(vals))
+                continue
+            lines.append(f"{label}: {_format_scalar_text(row.get('value'), decimals)}")
         return _excel_safe_text("\n".join([ln for ln in lines if ln])), None, True
 
     if isinstance(value, (dict, list)):
@@ -3790,6 +3801,8 @@ def _validate_camps_per_aparell(competicio, schema: dict):
 def _validate_presentacio_columns(competicio, schema: dict):
     schema = schema or {}
     punt = schema.get("puntuacio") or {}
+    equips_cfg = schema.get("equips") or {}
+    team_mode = str((equips_cfg.get("team_mode") or "")).strip().lower()
     presentacio = schema.get("presentacio") or {}
     if not isinstance(presentacio, dict):
         presentacio = {}
@@ -3828,6 +3841,11 @@ def _validate_presentacio_columns(competicio, schema: dict):
             continue
         if app_id not in app_by_id:
             errors.append(f"presentacio.columnes[{idx}] raw: aparell {app_id} no valid o no actiu.")
+            continue
+        if team_mode == "native_team" and getattr(app_by_id[app_id].aparell, "competition_unit", "") != "team":
+            errors.append(
+                f"presentacio.columnes[{idx}] raw: en team_mode=native_team nomes es poden mostrar aparells d'equip."
+            )
             continue
         if selected_ids and app_id not in selected_ids:
             errors.append(f"presentacio.columnes[{idx}] raw: aparell {app_id} no esta seleccionat a puntuacio.")

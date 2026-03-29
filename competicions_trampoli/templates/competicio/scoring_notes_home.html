@@ -102,53 +102,47 @@
       </div>
     </div>
 
-    {% if out_of_program_groups %}
+    {% if out_of_program_groups_render %}
       <div class="alert alert-warning mt-3" role="alert">
         <div class="fw-semibold">Fora de programa</div>
         <div class="small mb-2">Aquests blocs existeixen pero no tenen cap franja assignada dins el programa actual.</div>
         <div class="d-flex flex-wrap" style="gap:8px;">
-          {% for g, rows in out_of_program_groups %}
-            {% with gkey=g|stringformat:"s" %}
-              <span class="badge badge-warning p-2">
-                {{ group_labels_map|get_item:gkey|default:"Sense grup" }} · {{ rows|length }}
-              </span>
-            {% endwith %}
+          {% for group in out_of_program_groups_render %}
+            <span class="badge badge-warning p-2">
+              {{ group.label }} · {{ group.count }}
+            </span>
           {% endfor %}
         </div>
       </div>
     {% endif %}
 
-    {% if groups or out_of_program_groups %}
+    {% if groups_render or out_of_program_groups_render %}
       <!-- PESTANYES DE GRUPS -->
       <ul class="nav nav-tabs" role="tablist">
-        {% for g, rows in groups %}
+        {% for group in groups_render %}
           <li class="nav-item" role="presentation">
             <a class="nav-link {% if forloop.first %}active{% endif %}"
                data-toggle="tab"
-               href="#pane-{{ g }}"
+               href="#pane-{{ group.key }}"
                role="tab"
-               aria-controls="pane-{{ g }}"
+               aria-controls="pane-{{ group.key }}"
                aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
-              {% with gkey=g|stringformat:"s" %}
-                {{ group_labels_map|get_item:gkey|default:"Sense grup" }}
-              {% endwith %}
-              <span class="badge badge-light ml-1">{{ rows|length }}</span>
+              {{ group.label }}
+              <span class="badge badge-light ml-1">{{ group.count }}</span>
             </a>
           </li>
         {% endfor %}
-        {% for g, rows in out_of_program_groups %}
+        {% for group in out_of_program_groups_render %}
           <li class="nav-item" role="presentation">
-            <a class="nav-link {% if not groups and forloop.first %}active{% endif %}"
+            <a class="nav-link {% if not groups_render and forloop.first %}active{% endif %}"
                data-toggle="tab"
-               href="#off-pane-{{ g }}"
+               href="#off-pane-{{ group.key }}"
                role="tab"
-               aria-controls="off-pane-{{ g }}"
-               aria-selected="{% if not groups and forloop.first %}true{% else %}false{% endif %}">
-              {% with gkey=g|stringformat:"s" %}
-                {{ group_labels_map|get_item:gkey|default:"Sense grup" }}
-              {% endwith %}
+               aria-controls="off-pane-{{ group.key }}"
+               aria-selected="{% if not groups_render and forloop.first %}true{% else %}false{% endif %}">
+              {{ group.label }}
               <span class="badge badge-warning ml-1">Fora</span>
-              <span class="badge badge-light ml-1">{{ rows|length }}</span>
+              <span class="badge badge-light ml-1">{{ group.count }}</span>
             </a>
           </li>
         {% endfor %}
@@ -156,20 +150,20 @@
 
       <!-- CONTINGUT GRUP -->
       <div class="tab-content pt-3">
-        {% for g, rows in groups %}
+        {% for group in groups_render %}
           <div class="tab-pane fade {% if forloop.first %}show active{% endif %}"
-               id="pane-{{ g }}"
+               id="pane-{{ group.key }}"
                role="tabpanel">
 
             <!-- SUB-PESTANYES D’APARELL (PILLS) -->
             <ul class="nav nav-pills mb-3" role="tablist">
-              {% for app in aparells_cfg %}
+              {% for app in group.apps %}
                 <li class="nav-item" role="presentation">
                   <a class="nav-link {% if forloop.first %}active{% endif %}"
                      data-toggle="tab"
-                     href="#pane-{{ g }}-app-{{ app.id }}"
+                     href="#pane-{{ group.key }}-app-{{ app.id }}"
                      role="tab"
-                     aria-controls="pane-{{ g }}-app-{{ app.id }}"
+                     aria-controls="pane-{{ group.key }}-app-{{ app.id }}"
                      aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
                     {{ app.aparell.nom }}
                   </a>
@@ -178,12 +172,13 @@
             </ul>
 
             <div class="tab-content">
-              {% for app in aparells_cfg %}
+              {% for app in group.apps %}
                 <div class="tab-pane fade {% if forloop.first %}show active{% endif %}"
-                     id="pane-{{ g }}-app-{{ app.id }}"
+                     id="pane-{{ group.key }}-app-{{ app.id }}"
                      role="tabpanel"
                      data-comp-aparell-id="{{ app.id }}"
-                     data-group="{{ g }}">
+                     data-group="{{ group.key }}"
+                     data-group-kind="{{ group.kind }}">
 
                   <!-- SUB-PESTANYES D’EXERCICI -->
                   <ul class="nav nav-tabs mb-3" role="tablist">
@@ -192,9 +187,9 @@
                       <li class="nav-item" role="presentation">
                         <a class="nav-link {% if forloop.first %}active{% endif %}"
                            data-toggle="tab"
-                           href="#pane-{{ g }}-app-{{ app.id }}-ex-{{ ex }}"
+                           href="#pane-{{ group.key }}-app-{{ app.id }}-ex-{{ ex }}"
                            role="tab"
-                           aria-controls="pane-{{ g }}-app-{{ app.id }}-ex-{{ ex }}"
+                           aria-controls="pane-{{ group.key }}-app-{{ app.id }}-ex-{{ ex }}"
                            aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
                           Exercici {{ ex }}
                         </a>
@@ -207,14 +202,12 @@
                     {% for ex in exercicis %}
                       {% if ex <= app.nombre_exercicis %}
                         <div class="tab-pane fade {% if ex == 1 %}show active{% endif %}"
-                            id="pane-{{ g }}-app-{{ app.id }}-ex-{{ ex }}"
+                            id="pane-{{ group.key }}-app-{{ app.id }}-ex-{{ ex }}"
                             role="tabpanel">
 
                           <div class="d-flex justify-content-between align-items-center mb-2">
                             <div class="mini-help">
-                              {% with gkey=g|stringformat:"s" %}
-                                {{ group_labels_map|get_item:gkey|default:"Sense grup" }} ·
-                              {% endwith %}
+                              {{ group.label }} ·
                               {{ app.aparell.nom }} · Exercici {{ ex }}
                             </div>
                             <div>
@@ -247,7 +240,7 @@
                           <div class="table-responsive table-sticky" data-scroll-wrap="1">
                             <table class="table table-bordered table-sm align-middle"
                                   data-scoring-table="1"
-                                  data-group="{{ g }}"
+                                  data-group="{{ group.key }}"
                                   data-exercici="{{ ex }}"
                                   data-comp-aparell-id="{{ app.id }}">
                               <thead></thead>
@@ -267,19 +260,19 @@
 
           </div>
         {% endfor %}
-        {% for g, rows in out_of_program_groups %}
-          <div class="tab-pane fade {% if not groups and forloop.first %}show active{% endif %}"
-               id="off-pane-{{ g }}"
+        {% for group in out_of_program_groups_render %}
+          <div class="tab-pane fade {% if not groups_render and forloop.first %}show active{% endif %}"
+               id="off-pane-{{ group.key }}"
                role="tabpanel">
 
             <ul class="nav nav-pills mb-3" role="tablist">
-              {% for app in aparells_cfg %}
+              {% for app in group.apps %}
                 <li class="nav-item" role="presentation">
                   <a class="nav-link {% if forloop.first %}active{% endif %}"
                      data-toggle="tab"
-                     href="#off-pane-{{ g }}-app-{{ app.id }}"
+                     href="#off-pane-{{ group.key }}-app-{{ app.id }}"
                      role="tab"
-                     aria-controls="off-pane-{{ g }}-app-{{ app.id }}"
+                     aria-controls="off-pane-{{ group.key }}-app-{{ app.id }}"
                      aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
                     {{ app.aparell.nom }}
                   </a>
@@ -288,12 +281,13 @@
             </ul>
 
             <div class="tab-content">
-              {% for app in aparells_cfg %}
+              {% for app in group.apps %}
                 <div class="tab-pane fade {% if forloop.first %}show active{% endif %}"
-                     id="off-pane-{{ g }}-app-{{ app.id }}"
+                     id="off-pane-{{ group.key }}-app-{{ app.id }}"
                      role="tabpanel"
                      data-comp-aparell-id="{{ app.id }}"
-                     data-group="{{ g }}">
+                     data-group="{{ group.key }}"
+                     data-group-kind="{{ group.kind }}">
 
                   <ul class="nav nav-tabs mb-3" role="tablist">
                     {% for ex in exercicis %}
@@ -301,9 +295,9 @@
                       <li class="nav-item" role="presentation">
                         <a class="nav-link {% if forloop.first %}active{% endif %}"
                            data-toggle="tab"
-                           href="#off-pane-{{ g }}-app-{{ app.id }}-ex-{{ ex }}"
+                           href="#off-pane-{{ group.key }}-app-{{ app.id }}-ex-{{ ex }}"
                            role="tab"
-                           aria-controls="off-pane-{{ g }}-app-{{ app.id }}-ex-{{ ex }}"
+                           aria-controls="off-pane-{{ group.key }}-app-{{ app.id }}-ex-{{ ex }}"
                            aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
                           Exercici {{ ex }}
                         </a>
@@ -316,14 +310,12 @@
                     {% for ex in exercicis %}
                       {% if ex <= app.nombre_exercicis %}
                         <div class="tab-pane fade {% if ex == 1 %}show active{% endif %}"
-                            id="off-pane-{{ g }}-app-{{ app.id }}-ex-{{ ex }}"
+                            id="off-pane-{{ group.key }}-app-{{ app.id }}-ex-{{ ex }}"
                             role="tabpanel">
 
                           <div class="d-flex justify-content-between align-items-center mb-2">
                             <div class="mini-help">
-                              {% with gkey=g|stringformat:"s" %}
-                                Fora de programa · {{ group_labels_map|get_item:gkey|default:"Sense grup" }} ·
-                              {% endwith %}
+                              Fora de programa · {{ group.label }} ·
                               {{ app.aparell.nom }} · Exercici {{ ex }}
                             </div>
                             <div>
@@ -355,7 +347,7 @@
                           <div class="table-responsive table-sticky" data-scroll-wrap="1">
                             <table class="table table-bordered table-sm align-middle"
                                   data-scoring-table="1"
-                                  data-group="{{ g }}"
+                                  data-group="{{ group.key }}"
                                   data-exercici="{{ ex }}"
                                   data-comp-aparell-id="{{ app.id }}">
                               <thead></thead>
@@ -414,6 +406,7 @@
 </div>
 
 {{ schemas|json_script:"schemas-data" }}
+{{ logical_schemas|json_script:"logical-schemas-data" }}
 {{ scores|json_script:"scores-data" }}
 {{ inscripcions|json_script:"inscripcions-data" }}
 {{ media_counts_by_inscripcio|json_script:"media-counts-data" }}
@@ -446,11 +439,19 @@
   .th-draggable{ cursor: grab; user-select:none; }
   .th-draggable.dragging{ opacity:.5; }
   .th-drop-hint{ outline:2px dashed #adb5bd; outline-offset:-2px; }
+  .team-summary-row td{ background:#f8fbff; font-weight:600; }
+  .team-member-row td{ background:#fff; }
+  .team-member-name{ padding-left:1.5rem; color:#495057; }
+  .team-shared-cell{ background:#fcfcfd; vertical-align:top; }
+  .team-input-stack{ display:flex; flex-direction:column; gap:6px; min-width:96px; }
+  .team-input-inline{ display:flex; align-items:center; gap:6px; }
+  .team-mini-label{ font-size:.72rem; color:#6c757d; min-width:22px; text-align:left; }
 </style>
 
 <script>
   // --- Dades JSON segures (json_script) ---
   const SCHEMAS = JSON.parse(document.getElementById("schemas-data").textContent);
+  const LOGICAL_SCHEMAS = JSON.parse(document.getElementById("logical-schemas-data").textContent);
   const SCORES  = JSON.parse(document.getElementById("scores-data").textContent);
   const INS     = JSON.parse(document.getElementById("inscripcions-data").textContent);
   const SUBJECTS_BY_ID = Object.fromEntries((INS || []).map((item) => [String(item.id), item]));
@@ -494,7 +495,8 @@
   function keyForSubject(subjectKind, subjectId, ex, appId){
     return `${String(subjectKind)}:${String(subjectId)}|${ex}|${appId}`;
   }
-  function getSchema(appId){ return SCHEMAS[String(appId)] || {}; }
+  function getRuntimeSchema(appId){ return SCHEMAS[String(appId)] || {}; }
+  function getSchema(appId){ return LOGICAL_SCHEMAS[String(appId)] || getRuntimeSchema(appId); }
   const COMPUTED_MAX_DECIMALS = 3;
   function formatComputedValue(v, maxDecimals = COMPUTED_MAX_DECIMALS){
     if(v === null || v === undefined || v === "") return "";
@@ -939,56 +941,20 @@
     const subjectId = (u.subject_kind === "inscripcio") ? (u.inscripcio_id || u.subject_id) : u.subject_id;
     const scoreKey = keyForSubject(u.subject_kind || "inscripcio", subjectId, u.exercici, u.comp_aparell_id);
 
-    // actualitza el store local
+    // scoring_updates és un feed incremental: sincronitzem el store local
+    // i deixem que el re-render del bloc complet governi la UI visible.
     SCORES[scoreKey] = {
       inputs: u.inputs || {},
       outputs: u.outputs || {},
       total: u.total || 0
     };
 
-    // actualitza outputs visibles (ja tens updateOutputs)
-    updateOutputs(scoreKey, {outputs: u.outputs || {}, total: u.total});
+    if(isEditingScoreKey(scoreKey)){
+      markScoreKeyPendingRemoteRerender(scoreKey);
+      return;
+    }
 
-    // opcional: actualitzar inputs visibles si NO s’està editant aquella cel·la
-    const active = document.activeElement;
-    document.querySelectorAll(`tr[data-score-key="${CSS.escape(scoreKey)}"] input[data-field]`).forEach(inp=>{
-      if(active === inp) return; // no trepitgis mentre s’escriu
-
-      const field = inp.dataset.field;
-      const j = Number(inp.dataset.j);
-      const i = Number(inp.dataset.i);
-
-      const mat = (u.inputs && u.inputs[field]) ? u.inputs[field] : null;
-      const v = (Array.isArray(mat) && Array.isArray(mat[j-1])) ? mat[j-1][i-1] : null;
-
-      // només si ha canviat
-      const newVal = (v === null || v === undefined) ? "" : String(v);
-      if(inp.value !== newVal) inp.value = newVal;
-    });
-
-    // Reaplica visual de crash per updates remots (__crash__<field>)
-    document.querySelectorAll(`tr[data-score-key="${CSS.escape(scoreKey)}"]`).forEach((tr) => {
-      const judgeIdx = Number(tr.dataset.judge || 0);
-      if(!judgeIdx) return;
-
-      const elemsByField = {};
-      tr.querySelectorAll('button[data-crash-btn="1"][data-field][data-j][data-i]').forEach((btn) => {
-        const btnJudge = Number(btn.dataset.j || 0);
-        if(btnJudge !== judgeIdx) return;
-        const field = String(btn.dataset.field || "");
-        const i = Number(btn.dataset.i || 0);
-        if(!field || i <= 0) return;
-        elemsByField[field] = Math.max(Number(elemsByField[field] || 0), i);
-      });
-
-      Object.entries(elemsByField).forEach(([field, nElems]) => {
-        const ck = crashKeyFor(field);
-        const rawCrash = (u.inputs && Array.isArray(u.inputs[ck])) ? u.inputs[ck] : [];
-        const crashArr = ensureList(Math.max(judgeIdx, rawCrash.length || 0, 1), rawCrash);
-        const crashAt = Number(crashArr[judgeIdx - 1] || 0);
-        applyCrashDisable(tr, field, judgeIdx, Number(nElems || 0), crashAt);
-      });
-    });
+    rerenderTablesForScoreKey(scoreKey);
   }
 
   function ensureColumnsPanel(table, schema){
@@ -1155,13 +1121,64 @@
 
   // Debounce per gimnasta+aparell+exercici (evita moltes peticions mentre escrius)
   const timers=new Map();
+  const pendingRemoteScoreKeys = new Set();
   function scheduleSave(scoreKey, fn){
     if(timers.has(scoreKey)) clearTimeout(timers.get(scoreKey));
     timers.set(scoreKey, setTimeout(fn, 250));
   }
 
+  function activeScoreKey(){
+    const active = document.activeElement;
+    if(!active || typeof active.closest !== "function") return "";
+    const row = active.closest("tr[data-score-key]");
+    return row ? String(row.getAttribute("data-score-key") || "") : "";
+  }
+
+  function isEditingScoreKey(scoreKey){
+    return !!scoreKey && activeScoreKey() === String(scoreKey);
+  }
+
+  function markScoreKeyPendingRemoteRerender(scoreKey){
+    if(!scoreKey) return;
+    pendingRemoteScoreKeys.add(String(scoreKey));
+  }
+
+  function flushPendingRemoteRerender(scoreKey){
+    const resolved = String(scoreKey || "");
+    if(!resolved || isEditingScoreKey(resolved) || !pendingRemoteScoreKeys.has(resolved)) return;
+    pendingRemoteScoreKeys.delete(resolved);
+    rerenderTablesForScoreKey(resolved);
+  }
+
+  function rerenderTable(table){
+    if(!table) return;
+    const appId = table.getAttribute("data-comp-aparell-id");
+    const ex = table.getAttribute("data-exercici");
+    const group = table.getAttribute("data-group");
+    const schema = getSchema(appId);
+    buildHeader(table, schema);
+    buildBody(table, schema, ex, appId, group);
+    syncScrollbars();
+  }
+
+  function rerenderTablesForScoreKey(scoreKey){
+    const seen = new Set();
+    document.querySelectorAll(`tr[data-score-key="${CSS.escape(scoreKey)}"]`).forEach((row) => {
+      const table = row.closest("table[data-scoring-table='1']");
+      if(!table) return;
+      const marker = table.getAttribute("id") || `${table.getAttribute("data-group")}|${table.getAttribute("data-exercici")}|${table.getAttribute("data-comp-aparell-id")}`;
+      if(seen.has(marker)) return;
+      seen.add(marker);
+      rerenderTable(table);
+    });
+  }
+
   // Actualitza outputs: sempre a la fila del jutge 1 (és on hi ha els outputs)
   function updateOutputs(scoreKey, resp){
+    if(String(scoreKey || "").startsWith("team_unit:")){
+      rerenderTablesForScoreKey(scoreKey);
+      return;
+    }
     const mainRow = document.querySelector(
       `tr[data-score-key="${CSS.escape(scoreKey)}"][data-judge="1"]`
     );
@@ -1211,6 +1228,40 @@
     });
   }
 
+  function memberRuntimeCode(baseCode, memberSlot){
+    return `${String(baseCode || "")}__m${Number(memberSlot || 0)}`;
+  }
+
+  function fieldScopeMap(schema){
+    const out = {};
+    (Array.isArray(schema?.fields) ? schema.fields : []).forEach((field) => {
+      const code = String(field?.code || "").trim();
+      if(!code) return;
+      const scope = String(field?.render_scope || field?.scope || "member").trim().toLowerCase() || "member";
+      out[code] = scope;
+      out[crashKeyFor(code)] = scope;
+    });
+    return out;
+  }
+
+  function mergeTeamInputsForStore(currentInputs, patch, schema){
+    const merged = JSON.parse(JSON.stringify(currentInputs || {}));
+    const scopeMap = fieldScopeMap(schema || {});
+    Object.entries(patch || {}).forEach(([code, value]) => {
+      if(!Object.prototype.hasOwnProperty.call(scopeMap, code)) return;
+      if(scopeMap[code] === "member" && value && typeof value === "object" && !Array.isArray(value)){
+        const currentMap = merged[code] && typeof merged[code] === "object" && !Array.isArray(merged[code]) ? merged[code] : {};
+        merged[code] = { ...currentMap };
+        Object.entries(value).forEach(([memberId, memberValue]) => {
+          merged[code][String(memberId)] = JSON.parse(JSON.stringify(memberValue));
+        });
+        return;
+      }
+      merged[code] = JSON.parse(JSON.stringify(value));
+    });
+    return merged;
+  }
+
   function applyCrashDisable(rowEl, fieldCode, judgeIdx, nElems, crashAt){
     const cut = Number(crashAt || 0);
     for(let i=1;i<=nElems;i++){
@@ -1225,6 +1276,402 @@
     }
   }
 
+  function teamVisibleCols(table, schema){
+    let cols = (schema.ui && Array.isArray(schema.ui.columns)) ? schema.ui.columns : [];
+    cols = applySavedOrder(table.getAttribute("data-comp-aparell-id"), cols);
+    cols = applyVisibility(table.getAttribute("data-comp-aparell-id"), cols);
+    return cols;
+  }
+
+  function teamColumnDefs(table, schema){
+    const cols = teamVisibleCols(table, schema);
+    const fields = Array.isArray(schema.fields) ? schema.fields : [];
+    const computed = Array.isArray(schema.computed) ? schema.computed : [];
+    const byCode = {};
+    const byCompCode = {};
+    fields.forEach(f => { if(f && f.code) byCode[String(f.code)] = f; });
+    computed.forEach(c => { if(c && c.code) byCompCode[String(c.code)] = c; });
+
+    const defs = [];
+    cols.forEach((col) => {
+      const field = byCode[String(col)];
+      const comp = byCompCode[String(col)];
+      if(field && field.type === "matrix" && field.items && field.items.count){
+        const count = Number(field.items.count || 0);
+        for(let itemIdx = 1; itemIdx <= count; itemIdx++){
+          defs.push({
+            key: `${String(col)}__item_${itemIdx}`,
+            baseCode: String(col),
+            label: `${String(field.label || col)} ${itemIdx}`,
+            kind: "field",
+            scope: String(field.render_scope || field.scope || "member"),
+            field,
+            itemIndex: itemIdx,
+          });
+        }
+        return;
+      }
+      defs.push({
+        key: String(col),
+        baseCode: String(col),
+        label: String((field && field.label) || (comp && comp.label) || col),
+        kind: field ? "field" : "computed",
+        scope: String((field && (field.render_scope || field.scope)) || (comp && comp.render_scope) || "shared"),
+        field: field || null,
+        computed: comp || null,
+        itemIndex: null,
+      });
+    });
+    return defs;
+  }
+
+  function buildTeamHeader(table, schema){
+    const thead = table.querySelector("thead");
+    thead.innerHTML = "";
+    ensureColumnsButton(table, schema);
+    const defs = teamColumnDefs(table, schema);
+    const tr = document.createElement("tr");
+    tr.appendChild(el("th", { class:"th-center name-cell", text:"Equip / Membres" }));
+    defs.forEach((def) => {
+      tr.appendChild(el("th", { class:"th-center", text:def.label }));
+    });
+    thead.appendChild(tr);
+  }
+
+  function teamMemberValue(inputs, code, memberId){
+    const source = inputs && typeof inputs[code] === "object" && !Array.isArray(inputs[code]) ? inputs[code] : {};
+    return source[String(memberId)];
+  }
+
+  function teamPatchForField(code, value, memberId){
+    if(memberId === null || memberId === undefined || memberId === ""){
+      return { [code]: value };
+    }
+    return { [code]: { [String(memberId)]: value } };
+  }
+
+  function updateTeamScoreLocally(insId, exercici, appId, schema, patch){
+    const cur = getScore(insId, exercici, appId);
+    const nextInputs = mergeTeamInputsForStore(cur.inputs || {}, patch || {}, schema || {});
+    setScore(insId, exercici, appId, { inputs: nextInputs, outputs: cur.outputs || {}, total: cur.total || 0 });
+    return cur;
+  }
+
+  function scheduleTeamSave(scoreKey, insId, exercici, appId, patch){
+    scheduleSave(scoreKey, async ()=>{
+      try{
+        const resp = await saveEntry(insId, exercici, appId, patch);
+        setScore(insId, exercici, appId, { inputs: resp.inputs || {}, outputs: resp.outputs || {}, total: resp.total || 0 });
+        updateOutputs(scoreKey, resp);
+      }catch(e){ console.error(e); showAlert(e.message); }
+    });
+  }
+
+  function renderTeamNumberControl(td, { field, subject, memberId, appId, exercici, scoreKey, blockedRow, schema }){
+    const code = String(field.code);
+    const cur = getScore(subject.id, exercici, appId);
+    const inputs = cur.inputs || {};
+    const currentValue = memberId ? teamMemberValue(inputs, code, memberId) : inputs[code];
+    const inp = el("input", { class:"form-control form-control-sm input-num", type:"number", step:"any" });
+    inp.disabled = blockedRow;
+    inp.value = (currentValue !== undefined && currentValue !== null) ? currentValue : "";
+    inp.addEventListener("input", ()=>{
+      if(blockedRow) return;
+      const nextValue = (inp.value === "" ? 0 : Number(inp.value));
+      const patch = teamPatchForField(code, nextValue, memberId);
+      updateTeamScoreLocally(subject.id, exercici, appId, schema, patch);
+      scheduleTeamSave(scoreKey, subject.id, exercici, appId, patch);
+    });
+    td.appendChild(inp);
+  }
+
+  function renderTeamListControl(td, { field, subject, memberId, appId, exercici, scoreKey, blockedRow, schema }){
+    const code = String(field.code);
+    const nJudges = Number(field?.judges?.count || 1) || 1;
+    const cur = getScore(subject.id, exercici, appId);
+    const inputs = cur.inputs || {};
+    const baseValue = memberId ? teamMemberValue(inputs, code, memberId) : inputs[code];
+    const arr = ensureList(nJudges, baseValue);
+    const stack = el("div", { class:"team-input-stack" });
+    for(let judgeIdx = 1; judgeIdx <= nJudges; judgeIdx++){
+      const row = el("div", { class:"team-input-inline" });
+      row.appendChild(el("span", { class:"team-mini-label", text:`J${judgeIdx}` }));
+      const inp = el("input", { class:"form-control form-control-sm input-num", type:"number", step:"any" });
+      inp.disabled = blockedRow;
+      inp.value = arr[judgeIdx - 1] ?? 0;
+      inp.addEventListener("input", ()=>{
+        if(blockedRow) return;
+        const live = getScore(subject.id, exercici, appId);
+        const liveInputs = live.inputs || {};
+        const source = memberId ? teamMemberValue(liveInputs, code, memberId) : liveInputs[code];
+        const nextArr = ensureList(nJudges, source);
+        nextArr[judgeIdx - 1] = Number(inp.value || 0);
+        const patch = teamPatchForField(code, nextArr, memberId);
+        updateTeamScoreLocally(subject.id, exercici, appId, schema, patch);
+        scheduleTeamSave(scoreKey, subject.id, exercici, appId, patch);
+      });
+      row.appendChild(inp);
+      stack.appendChild(row);
+    }
+    td.appendChild(stack);
+  }
+
+  function renderTeamMatrixControl(td, { field, baseCode, itemIndex, subject, memberId, appId, exercici, scoreKey, blockedRow, schema, rowEl }){
+    const nJudges = Number(field?.judges?.count || 1) || 1;
+    const nItems = Number(field?.items?.count || 0) || 0;
+    const crashEnabled = !!(field?.crash?.enabled);
+    const cur = getScore(subject.id, exercici, appId);
+    const inputs = cur.inputs || {};
+    const source = memberId ? teamMemberValue(inputs, baseCode, memberId) : inputs[baseCode];
+    const mat = ensureMatrix(nJudges, nItems, source);
+    const crashSource = crashEnabled
+      ? (memberId ? teamMemberValue(inputs, crashKeyFor(baseCode), memberId) : inputs[crashKeyFor(baseCode)])
+      : null;
+    const crashArr = crashEnabled ? ensureList(nJudges, crashSource) : [];
+    const stack = el("div", { class:"team-input-stack" });
+
+    for(let judgeIdx = 1; judgeIdx <= nJudges; judgeIdx++){
+      const row = el("div", { class:"team-input-inline" });
+      row.appendChild(el("span", { class:"team-mini-label", text:`J${judgeIdx}` }));
+      const inp = el("input", {
+        class:"form-control form-control-sm input-salt",
+        type:"number",
+        step:"any",
+        "data-field": baseCode,
+        "data-j": String(judgeIdx),
+        "data-i": String(itemIndex),
+      });
+      inp.disabled = blockedRow;
+      inp.value = (mat[judgeIdx - 1] && mat[judgeIdx - 1][itemIndex - 1] !== undefined) ? mat[judgeIdx - 1][itemIndex - 1] : 0;
+      inp.addEventListener("input", ()=>{
+        if(blockedRow) return;
+        const live = getScore(subject.id, exercici, appId);
+        const liveInputs = live.inputs || {};
+        const liveSource = memberId ? teamMemberValue(liveInputs, baseCode, memberId) : liveInputs[baseCode];
+        const nextMat = ensureMatrix(nJudges, nItems, liveSource);
+        nextMat[judgeIdx - 1][itemIndex - 1] = Number(inp.value || 0);
+        const patch = teamPatchForField(baseCode, nextMat, memberId);
+        let mergedPatch = patch;
+        if(crashEnabled){
+          const liveCrashSource = memberId ? teamMemberValue(liveInputs, crashKeyFor(baseCode), memberId) : liveInputs[crashKeyFor(baseCode)];
+          const nextCrash = ensureList(nJudges, liveCrashSource);
+          mergedPatch = { ...patch, ...teamPatchForField(crashKeyFor(baseCode), nextCrash, memberId) };
+        }
+        updateTeamScoreLocally(subject.id, exercici, appId, schema, mergedPatch);
+        scheduleTeamSave(scoreKey, subject.id, exercici, appId, mergedPatch);
+      });
+      row.appendChild(inp);
+
+      if(crashEnabled){
+        const btn = el("button", {
+          class:"btn btn-sm btn-outline-danger p-0",
+          type:"button",
+          text:"X",
+          "data-crash-btn":"1",
+          "data-field": baseCode,
+          "data-j": String(judgeIdx),
+          "data-i": String(itemIndex),
+        });
+        btn.style.width = "22px";
+        btn.style.height = "22px";
+        btn.disabled = blockedRow;
+        btn.addEventListener("click", ()=>{
+          if(blockedRow) return;
+          const live = getScore(subject.id, exercici, appId);
+          const liveInputs = live.inputs || {};
+          const liveSource = memberId ? teamMemberValue(liveInputs, baseCode, memberId) : liveInputs[baseCode];
+          const nextMat = ensureMatrix(nJudges, nItems, liveSource);
+          const liveCrashSource = memberId ? teamMemberValue(liveInputs, crashKeyFor(baseCode), memberId) : liveInputs[crashKeyFor(baseCode)];
+          const nextCrash = ensureList(nJudges, liveCrashSource);
+          const current = Number(nextCrash[judgeIdx - 1] || 0);
+          nextCrash[judgeIdx - 1] = (current === itemIndex) ? 0 : itemIndex;
+          const patch = {
+            ...teamPatchForField(baseCode, nextMat, memberId),
+            ...teamPatchForField(crashKeyFor(baseCode), nextCrash, memberId),
+          };
+          updateTeamScoreLocally(subject.id, exercici, appId, schema, patch);
+          applyCrashDisable(rowEl, baseCode, judgeIdx, nItems, nextCrash[judgeIdx - 1]);
+          scheduleTeamSave(scoreKey, subject.id, exercici, appId, patch);
+        });
+        row.appendChild(btn);
+        setTimeout(()=>applyCrashDisable(rowEl, baseCode, judgeIdx, nItems, Number(crashArr[judgeIdx - 1] || 0)), 0);
+      }
+
+      stack.appendChild(row);
+    }
+
+    td.appendChild(stack);
+  }
+
+  function appendTeamFieldCell(tr, def, ctx){
+    const td = el("td", { class:`cell-center ${ctx.isShared ? "team-shared-cell" : ""}` });
+    if(ctx.rowSpan && ctx.rowSpan > 1) td.rowSpan = ctx.rowSpan;
+    if(ctx.blockedRow) td.classList.add("table-warning");
+    if(def.field.type === "number"){
+      renderTeamNumberControl(td, { ...ctx, field:def.field });
+    } else if(def.field.type === "list"){
+      renderTeamListControl(td, { ...ctx, field:def.field });
+    } else if(def.field.type === "matrix"){
+      renderTeamMatrixControl(td, { ...ctx, field:def.field, baseCode:def.baseCode, itemIndex:def.itemIndex, rowEl:tr });
+    } else {
+      td.textContent = "";
+    }
+    tr.appendChild(td);
+  }
+
+  function appendTeamComputedCell(tr, def, { subject, memberIndex, score, rowSpan, isShared, blockedRow }){
+    const td = el("td", { class:`cell-center readonly ${isShared ? "team-shared-cell" : ""}` });
+    if(rowSpan && rowSpan > 1) td.rowSpan = rowSpan;
+    if(blockedRow) td.classList.add("table-warning");
+    let outputCode = def.baseCode;
+    if(def.scope === "member"){
+      outputCode = memberRuntimeCode(def.baseCode, memberIndex + 1);
+    }
+    td.dataset.out = outputCode;
+    td.textContent = formatComputedValue((score.outputs || {})[outputCode]);
+    tr.appendChild(td);
+  }
+
+  function buildTeamBody(table, schema, exercici, appId, group){
+    const tbody = table.querySelector("tbody");
+    tbody.innerHTML = "";
+    const defs = teamColumnDefs(table, schema);
+    const rows = visibleRowsForAppGroup(group, appId, schema);
+    rows.sort((a, b) => {
+      const ra = rotationRankFor(a.id, appId);
+      const rb = rotationRankFor(b.id, appId);
+      if(ra !== null && rb !== null) return ra - rb;
+      if(ra !== null) return -1;
+      if(rb !== null) return 1;
+      const oa = Number(a.order || 0);
+      const ob = Number(b.order || 0);
+      if(oa !== ob) return oa - ob;
+      return Number(a.id || 0) - Number(b.id || 0);
+    });
+
+    rows.forEach((subject) => {
+      const scoreKey = keyFor(subject.id, exercici, appId);
+      const score = getScore(subject.id, exercici, appId);
+      const blockedRow = isBlockedSubjectForApp(subject, appId) && !inscripcioCompeteixAApp(subject, appId);
+      const members = Array.isArray(subject.members) ? subject.members : [];
+      const sharedRowSpan = Math.max(1, members.length + 1);
+
+      const summaryTr = document.createElement("tr");
+      summaryTr.classList.add("team-summary-row");
+      summaryTr.dataset.scoreKey = scoreKey;
+      summaryTr.dataset.insId = String(subject.id);
+      summaryTr.dataset.exercici = String(exercici);
+      summaryTr.dataset.compAparellId = String(appId);
+
+      const summaryNameTd = document.createElement("td");
+      summaryNameTd.className = "name-cell";
+      const nameBtn = el("button", {
+        type:"button",
+        class:"btn btn-link p-0 playback-name-btn js-open-playback",
+        text:(subject.name || ""),
+      });
+      nameBtn.dataset.insId = String(subject.id);
+      nameBtn.dataset.exercici = String(exercici);
+      nameBtn.dataset.compAparellId = String(appId);
+      summaryNameTd.appendChild(nameBtn);
+      if(subject.context_name){
+        summaryNameTd.appendChild(el("div", { class:"small text-muted", text:subject.context_name }));
+      }
+      if(subject.meta){
+        summaryNameTd.appendChild(el("div", { class:"text-muted small", text:subject.meta }));
+      }
+      if(blockedRow){
+        summaryNameTd.appendChild(el("div", { class:"text-danger small", text:(subject.invalid_reasons || []).join(" ") }));
+      }
+      const mediaBadge = el("button", {
+        type:"button",
+        class:"playback-media-badge js-open-playback js-playback-media-badge",
+        text: playbackBadgeText(subject.id, exercici, appId),
+      });
+      mediaBadge.dataset.insId = String(subject.id);
+      mediaBadge.dataset.exercici = String(exercici);
+      mediaBadge.dataset.compAparellId = String(appId);
+      summaryNameTd.appendChild(el("div", { class:"mt-1" }, [mediaBadge]));
+      summaryTr.appendChild(summaryNameTd);
+
+      defs.forEach((def) => {
+        if(def.scope === "member"){
+          summaryTr.appendChild(el("td", { class:"cell-center readonly", text:"" }));
+          return;
+        }
+        if(def.kind === "computed"){
+          appendTeamComputedCell(summaryTr, def, {
+            subject,
+            memberIndex: null,
+            score,
+            rowSpan: sharedRowSpan,
+            isShared: true,
+            blockedRow,
+          });
+          return;
+        }
+        appendTeamFieldCell(summaryTr, def, {
+          subject,
+          memberId: null,
+          appId,
+          exercici,
+          scoreKey,
+          blockedRow,
+          schema,
+          rowSpan: sharedRowSpan,
+          isShared: true,
+        });
+      });
+      tbody.appendChild(summaryTr);
+
+      members.forEach((member, memberIndex) => {
+        const tr = document.createElement("tr");
+        tr.classList.add("team-member-row");
+        tr.dataset.scoreKey = scoreKey;
+        tr.dataset.insId = String(subject.id);
+        tr.dataset.exercici = String(exercici);
+        tr.dataset.compAparellId = String(appId);
+        tr.dataset.memberId = String(member.id || "");
+        if(blockedRow) tr.classList.add("table-warning");
+
+        const nameTd = document.createElement("td");
+        nameTd.className = "name-cell team-member-name";
+        nameTd.textContent = member && member.name ? member.name : `Membre ${memberIndex + 1}`;
+        tr.appendChild(nameTd);
+
+        defs.forEach((def) => {
+          if(def.scope === "shared"){
+            return;
+          }
+          if(def.kind === "computed"){
+            appendTeamComputedCell(tr, def, {
+              subject,
+              memberIndex,
+              score,
+              rowSpan: 1,
+              isShared: false,
+              blockedRow,
+            });
+            return;
+          }
+          appendTeamFieldCell(tr, def, {
+            subject,
+            memberId: String(member.id || ""),
+            appId,
+            exercici,
+            scoreKey,
+            blockedRow,
+            schema,
+            rowSpan: 1,
+            isShared: false,
+          });
+        });
+        tbody.appendChild(tr);
+      });
+    });
+    highlightPlaybackRows();
+  }
+
   
   // --- Header segons schema.ui.columns; matrix -> expand per ítems ---
   function buildHeader(table, schema){
@@ -1232,6 +1679,10 @@
     thead.innerHTML = "";
 
     const teamMode = isTeamSchema(schema);
+    if(teamMode){
+      buildTeamHeader(table, schema);
+      return;
+    }
     const tr1 = document.createElement("tr");
     tr1.appendChild(el("th",{class:"th-center name-cell", text:"Nom"}));
 
@@ -1294,7 +1745,7 @@
       if(f && f.type==="matrix" && f.items && f.items.count){
         const n = Number(f.items.count || 0);
         for(let i=1;i<=n;i++){
-          const th = el("th",{class:"th-center", text:`${col}${i}`});
+          const th = el("th",{class:"th-center", text:`${label} ${i}`});
           if(i===1){
             th.classList.add("th-draggable");
             th.draggable = true;
@@ -1380,6 +1831,10 @@
   function buildBody(table, schema, exercici, appId, group){
     const tbody = table.querySelector("tbody");
     tbody.innerHTML = "";
+    if(isTeamSchema(schema)){
+      buildTeamBody(table, schema, exercici, appId, group);
+      return;
+    }
 
     // ✅ ordre guardat aplicat al BODY (perquè es mogui el contingut, no només el títol)
     let cols = (schema.ui && Array.isArray(schema.ui.columns)) ? schema.ui.columns : [];
@@ -1783,6 +2238,15 @@
   }
 
   document.addEventListener("DOMContentLoaded", ()=>{
+    document.addEventListener("focusout", (ev)=>{
+      const row = ev.target && typeof ev.target.closest === "function"
+        ? ev.target.closest("tr[data-score-key]")
+        : null;
+      const scoreKey = row ? String(row.getAttribute("data-score-key") || "") : "";
+      if(!scoreKey) return;
+      setTimeout(()=>flushPendingRemoteRerender(scoreKey), 0);
+    });
+
     document.addEventListener("click", (ev)=>{
       const closeBtn = ev.target.closest("#media-drawer-close");
       if(closeBtn){

@@ -2051,6 +2051,7 @@ def compute_classificacio(competicio, cfg_obj):
         for n in lst:
             ins_ids_by_app[app_id].add(n.inscripcio_id)
     team_notes_by_app = defaultdict(list)
+    team_notes_by_key = {}
     team_ids_by_app = defaultdict(set)
     for n in team_notes:
         note_context_code = normalize_equip_context_code(
@@ -2059,6 +2060,8 @@ def compute_classificacio(competicio, cfg_obj):
         if note_context_code != team_context_code:
             continue
         team_notes_by_app[n.comp_aparell_id].append(n)
+        ex_idx = int(getattr(n, "exercici", 1) or 1)
+        team_notes_by_key[(n.equip_id, n.comp_aparell_id, ex_idx)] = n
         team_ids_by_app[n.comp_aparell_id].add(n.equip_id)
 
     # 4) CAMPS per aparell (lliures)
@@ -2483,6 +2486,7 @@ def compute_classificacio(competicio, cfg_obj):
         return selected_team_rows_field_cache[cache_key]
 
     main_selected_rows_for_group_cache = {}
+    main_selected_rows_for_group_field_cache = {}
     derived_team_selected_rows_agg_cache = {}
     derived_team_selected_rows_field_cache = {}
 
@@ -2689,6 +2693,50 @@ def compute_classificacio(competicio, cfg_obj):
 
         derived_team_selected_rows_field_cache[cache_key] = dict(picked_by_app)
         return derived_team_selected_rows_field_cache[cache_key]
+
+    def _get_main_selected_rows_for_group_field(team_cache_key: str, member_ids, field_code: str):
+        cache_key = (team_cache_key, str(field_code or ""))
+        if cache_key in main_selected_rows_for_group_field_cache:
+            return main_selected_rows_for_group_field_cache[cache_key]
+
+        if exercise_selection_scope == EXERCISE_SELECTION_SCOPE_TEAM_POOL:
+            rows = _get_selected_rows_for_derived_team_field(team_cache_key, member_ids, field_code)
+            main_selected_rows_for_group_field_cache[cache_key] = rows
+            return rows
+
+        picked_by_app = defaultdict(list)
+        seen_members = set()
+        for raw_member_id in (member_ids or []):
+            try:
+                member_id = int(raw_member_id)
+            except Exception:
+                continue
+            if member_id in seen_members:
+                continue
+            seen_members.add(member_id)
+            for app_id, rows in (_get_selected_rows_for_field(member_id, field_code) or {}).items():
+                try:
+                    app_id_int = int(app_id)
+                except Exception:
+                    continue
+                for row in (rows or []):
+                    item = _copy_ex_row_with_value(row, row.get("value"))
+                    item["inscripcio_id"] = member_id
+                    picked_by_app[app_id_int].append(item)
+
+        for app_id, rows in list(picked_by_app.items()):
+            picked_by_app[app_id] = sorted(
+                rows,
+                key=lambda r: (
+                    r.get("app_order", 0),
+                    r.get("exercici", 0),
+                    r.get("app_id", 0),
+                    r.get("inscripcio_id", 0),
+                ),
+            )
+
+        main_selected_rows_for_group_field_cache[cache_key] = dict(picked_by_app)
+        return main_selected_rows_for_group_field_cache[cache_key]
 
     for ins_id, obj in per_ins.items():
         selected_rows_by_app = _get_selected_rows_agg_for_ins(ins_id)
@@ -3489,6 +3537,195 @@ def compute_classificacio(competicio, cfg_obj):
         jids = jcfg.get("ids") if isinstance(jcfg.get("ids"), list) else []
         return _apply_judge_selection(raw, jids)
 
+    def _is_scalar_team_raw_value(value):
+        if value in (None, ""):
+            return False
+        if isinstance(value, bool):
+            return True
+        if isinstance(value, (int, float, Decimal)):
+            return True
+        return isinstance(value, str)
+
+    def _build_team_raw_detail(rows):
+        detail_rows = []
+        numeric_values = []
+
+        for item in rows or []:
+            if not isinstance(item, dict):
+                continue
+            label = str(item.get("label") or "").strip()
+            value = item.get("value")
+            judge_rows = item.get("judge_rows")
+            if not label:
+                continue
+            row_out = {"label": label}
+            if judge_rows and isinstance(judge_rows, dict) and judge_rows.get("_kind") == "judge_rows":
+                row_out["judge_rows"] = judge_rows
+            else:
+                row_out["value"] = value
+                if _is_scalar_team_raw_value(value):
+                    if not isinstance(value, bool):
+                        num = _numeric_scalar_or_1x1(value)
+                        if num is not None:
+                            numeric_values.append(num)
+            detail_rows.append(row_out)
+
+        if not detail_rows:
+            return ""
+
+        summary = ""
+        if len(detail_rows) == 1:
+            only = detail_rows[0]
+            if "judge_rows" not in only:
+                summary = only.get("value", "")
+        elif numeric_values and len(numeric_values) == len(detail_rows):
+            summary = float(sum(numeric_values))
+
+        return {"_kind": "team_raw_detail", "summary": summary, "rows": detail_rows}
+
+    def _merge_judge_rows_payloads(payloads):
+        merged = {}
+        order = []
+        for payload in payloads or []:
+            if not isinstance(payload, dict) or payload.get("_kind") != "judge_rows":
+                continue
+            for row in payload.get("rows") or []:
+                if not isinstance(row, dict):
+                    continue
+                judge = row.get("judge")
+                key = str(judge)
+                if key not in merged:
+                    merged[key] = {"judge": judge, "items": []}
+                    order.append(key)
+                items = row.get("items") or []
+                if not isinstance(items, list):
+                    items = [items]
+                merged[key]["items"].extend(items)
+        out_rows = [merged[key] for key in order if merged[key]["items"]]
+        if not out_rows:
+            return ""
+        return {"_kind": "judge_rows", "rows": out_rows}
+
+    def _aggregate_selected_raw_values(raw_values):
+        values = [v for v in (raw_values or []) if v not in (None, "")]
+        if not values:
+            return ""
+
+        judge_payloads = [
+            v for v in values
+            if isinstance(v, dict) and v.get("_kind") == "judge_rows"
+        ]
+        if judge_payloads:
+            if len(judge_payloads) != len(values):
+                return ""
+            return _merge_judge_rows_payloads(judge_payloads)
+
+        if len(values) == 1:
+            return values[0]
+
+        numeric_values = []
+        for value in values:
+            if isinstance(value, bool):
+                return ""
+            num = _numeric_scalar_or_1x1(value)
+            if num is None:
+                return ""
+            numeric_values.append(num)
+        return float(sum(numeric_values))
+
+    def _raw_value_for_selected_member_row(row, field_code: str, judge_ids):
+        try:
+            member_id = int(row.get("inscripcio_id"))
+            app_id = int(row.get("app_id"))
+            ex_idx = int(row.get("exercici"))
+        except Exception:
+            return ""
+        entry = notes_by_key.get((member_id, app_id, ex_idx))
+        if not entry:
+            return ""
+        raw = _value_from_entry(entry, field_code)
+        return _apply_judge_selection(raw, judge_ids)
+
+    def _raw_value_for_selected_team_row(row, field_code: str, judge_ids):
+        try:
+            equip_id = int(row.get("equip_id"))
+            app_id = int(row.get("app_id"))
+            ex_idx = int(row.get("exercici"))
+        except Exception:
+            return ""
+        entry = team_notes_by_key.get((equip_id, app_id, ex_idx))
+        if not entry:
+            return ""
+        raw = _value_from_entry(entry, field_code)
+        return _apply_judge_selection(raw, judge_ids)
+
+    def _raw_col_value_for_team_row(row, col):
+        team_mode_value = str(row.get("_team_mode") or "").strip().lower()
+        equip_id = row.get("equip_id")
+        member_ids = row.get("_member_ids") or []
+        src = col.get("source") or {}
+        camp = str(src.get("camp") or "total").strip() or "total"
+        jcfg = src.get("jutges") if isinstance(src.get("jutges"), dict) else {}
+        jids = jcfg.get("ids") if isinstance(jcfg.get("ids"), list) else []
+        try:
+            app_id = int(src.get("aparell_id"))
+        except Exception:
+            return ""
+        if team_mode_value == "native_team":
+            if equip_id in (None, "", "__sense_equip__"):
+                return ""
+            ca = next((item for item in aparells if int(item.id) == app_id), None)
+            if not ca or not is_team_context_app(ca):
+                return ""
+            selected_rows = _get_selected_team_rows_for_field(int(equip_id), camp).get(app_id, [])
+            raw_value = _aggregate_selected_raw_values([
+                _raw_value_for_selected_team_row(selected_row, camp, jids)
+                for selected_row in selected_rows
+            ])
+            if raw_value in (None, ""):
+                return ""
+            if isinstance(raw_value, dict) and raw_value.get("_kind") == "judge_rows":
+                return _build_team_raw_detail([
+                    {"label": row.get("participant") or row.get("nom") or "Equip", "judge_rows": raw_value}
+                ])
+            return _build_team_raw_detail([
+                {"label": row.get("participant") or row.get("nom") or "Equip", "value": raw_value}
+            ])
+
+        team_cache_key = _derived_team_cache_key(equip_id, member_ids)
+        selected_rows_by_app = _get_main_selected_rows_for_group_field(team_cache_key, member_ids, camp)
+        selected_rows = selected_rows_by_app.get(app_id, [])
+        rows_by_member = defaultdict(list)
+        for selected_row in selected_rows:
+            try:
+                member_id = int(selected_row.get("inscripcio_id"))
+            except Exception:
+                continue
+            rows_by_member[member_id].append(selected_row)
+
+        detail_rows = []
+        for member_id in member_ids:
+            member = all_ins_by_id.get(member_id)
+            if member is None:
+                continue
+            label = (
+                getattr(member, "nom_complet", None)
+                or getattr(member, "nom_i_cognoms", None)
+                or getattr(member, "nom", None)
+                or str(member)
+            )
+            raw_value = _aggregate_selected_raw_values([
+                _raw_value_for_selected_member_row(selected_row, camp, jids)
+                for selected_row in rows_by_member.get(member_id, [])
+            ])
+            if raw_value in (None, ""):
+                continue
+            if isinstance(raw_value, dict) and raw_value.get("_kind") == "judge_rows":
+                detail_rows.append({"label": label, "judge_rows": raw_value})
+            else:
+                detail_rows.append({"label": label, "value": raw_value})
+        return _build_team_raw_detail(detail_rows)
+
     def _builtin_col_value(row: dict, key: str):
         if key == "nom":
             key = "participant"
@@ -3516,13 +3753,16 @@ def compute_classificacio(competicio, cfg_obj):
 
                 if ctype == "raw":
                     if entity_mode:
-                        if len(member_ids) == 1:
+                        if row.get("_team_mode"):
+                            val = _raw_col_value_for_team_row(row, col)
+                        elif len(member_ids) == 1:
                             val = _raw_col_value_for_ins(member_ids[0], col)
                         else:
                             val = ""
                     else:
                         val = _raw_col_value_for_ins(row.get("inscripcio_id"), col)
-                    val = _apply_decimals_if_numeric(val, col.get("decimals"))
+                    if not (isinstance(val, dict) and val.get("_kind") == "team_raw_detail"):
+                        val = _apply_decimals_if_numeric(val, col.get("decimals"))
                 else:
                     val = _builtin_col_value(row, ckey)
                     val = _apply_decimals_if_numeric(val, col.get("decimals"))
@@ -3532,6 +3772,7 @@ def compute_classificacio(competicio, cfg_obj):
             row["cells"] = cells
             row["display"] = cells
             row.pop("_member_ids", None)
+            row.pop("_team_mode", None)
         return rows
 
     # guardem tie values (amb clau estable per UI)
@@ -3960,6 +4201,7 @@ def compute_classificacio(competicio, cfg_obj):
                     "tie": team_tie,
                     "participants": len(members),
                     "_member_ids": member_ids,
+                    "_team_mode": team_mode,
                 })
 
         for pkey, rows in out.items():

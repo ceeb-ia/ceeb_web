@@ -2315,7 +2315,7 @@
 
       <div class="d-flex flex-wrap justify-content-end gap-2">
         <a href="{% url 'import' competicio.id %}" class="btn btn-sm btn-success">+ Importar Excel</a>
-        <a href="{% url 'inscripcio_add' competicio.id %}?team_context={{ team_context_selected_code|urlencode }}&next={{ request.get_full_path|urlencode }}"
+        <a href="{% url 'inscripcio_add' competicio.id %}?next={{ request.get_full_path|urlencode }}"
            class="btn btn-sm btn-primary">+ Afegir inscripció</a>
         <a href="{% url 'trampoli_config' competicio.id %}" class="btn btn-sm btn-outline-primary">
           Configuració competició
@@ -4879,17 +4879,98 @@
       });
     }
 
-    function syncGroupsWorkspaceSelectionFromMainList() {
+    function getVisibleInscripcioIds() {
+      return Array.from(new Set(
+        Array.from(document.querySelectorAll('.js-team-row-select'))
+          .filter(el => {
+            const row = el.closest('tr');
+            return !!row && !row.classList.contains('d-none') && row.offsetParent !== null;
+          })
+          .map(el => el.getAttribute('data-ins-id'))
+          .filter(v => !!v)
+      ));
+    }
+
+    function markSelectionDependentsDirty() {
+      if (typeof markTeamPreviewDirty === 'function') markTeamPreviewDirty();
+    }
+
+    function syncGroupsWorkspaceSelectionFromMainList(source = 'main') {
       if (window.__groupsWorkspaceApi && typeof window.__groupsWorkspaceApi.setExternalSelection === 'function') {
-        window.__groupsWorkspaceApi.setExternalSelection(getSelectedInscripcioIds());
+        window.__groupsWorkspaceApi.setExternalSelection(getSelectedInscripcioIds(), { source });
       }
     }
 
-    function syncTeamsWorkspaceSelectionFromMainList() {
+    function syncTeamsWorkspaceSelectionFromMainList(source = 'main') {
       if (window.__teamWorkspaceApi && typeof window.__teamWorkspaceApi.setExternalSelection === 'function') {
-        window.__teamWorkspaceApi.setExternalSelection(getSelectedInscripcioIds());
+        window.__teamWorkspaceApi.setExternalSelection(getSelectedInscripcioIds(), { source });
       }
     }
+
+    function notifyInscripcioSelectionChange(source = 'main') {
+      markSelectionDependentsDirty();
+      if (source !== 'groups_workspace') syncGroupsWorkspaceSelectionFromMainList(source);
+      if (source !== 'team_workspace') syncTeamsWorkspaceSelectionFromMainList(source);
+    }
+
+    function updateMainInscripcioSelection(ids, mode = 'set', options = {}) {
+      const rows = Array.isArray(ids) ? ids.map(id => String(id || '').trim()).filter(Boolean) : [];
+      const source = options && Object.prototype.hasOwnProperty.call(options, 'source') ? options.source : 'main';
+      let changed = false;
+
+      if (mode === 'set') {
+        const nextSet = new Set(rows);
+        document.querySelectorAll('.js-team-row-select').forEach(el => {
+          const cleanId = String(el.getAttribute('data-ins-id') || '').trim();
+          if (!cleanId) return;
+          const shouldBeChecked = nextSet.has(cleanId);
+          if (el.checked !== shouldBeChecked) {
+            el.checked = shouldBeChecked;
+            changed = true;
+          }
+        });
+      } else if (mode === 'clear') {
+        document.querySelectorAll('.js-team-row-select:checked').forEach(el => {
+          el.checked = false;
+          changed = true;
+        });
+      } else {
+        rows.forEach((cleanId) => {
+          const shouldBeChecked = mode === 'add';
+          let localChange = false;
+          document.querySelectorAll('.js-team-row-select').forEach(el => {
+            if (String(el.getAttribute('data-ins-id') || '').trim() !== cleanId) return;
+            if (el.checked === shouldBeChecked) return;
+            el.checked = shouldBeChecked;
+            localChange = true;
+          });
+          if (localChange) changed = true;
+        });
+      }
+
+      if (changed || options.forceNotify) {
+        notifyInscripcioSelectionChange(source);
+      }
+      return getSelectedInscripcioIds();
+    }
+
+    window.__inscripcionsSelectionApi = {
+      getSelectedIds() {
+        return getSelectedInscripcioIds();
+      },
+      set(ids, options = {}) {
+        return updateMainInscripcioSelection(ids, 'set', options);
+      },
+      add(ids, options = {}) {
+        return updateMainInscripcioSelection(ids, 'add', options);
+      },
+      remove(ids, options = {}) {
+        return updateMainInscripcioSelection(ids, 'remove', options);
+      },
+      clear(options = {}) {
+        return updateMainInscripcioSelection([], 'clear', options);
+      },
+    };
 
     function getSelectedTeamContextCode() {
       return (
@@ -4901,21 +4982,10 @@
     }
 
     function setVisibleInscripcioSelection(checked) {
-      let changed = false;
-      document.querySelectorAll('.js-team-row-select').forEach(el => {
-        const row = el.closest('tr');
-        if (!row || row.classList.contains('d-none') || row.offsetParent === null) return;
-        const nextChecked = !!checked;
-        if (el.checked !== nextChecked) {
-          el.checked = nextChecked;
-          changed = true;
-        }
-      });
-      if (changed) {
-        markTeamPreviewDirty();
-        syncGroupsWorkspaceSelectionFromMainList();
-        syncTeamsWorkspaceSelectionFromMainList();
-      }
+      const visibleIds = getVisibleInscripcioIds();
+      if (!visibleIds.length) return;
+      if (checked) window.__inscripcionsSelectionApi.add(visibleIds, { source: 'main' });
+      else window.__inscripcionsSelectionApi.remove(visibleIds, { source: 'main' });
     }
 
     function getSelectedTeamFields() {
@@ -7966,14 +8036,12 @@
     document.addEventListener('change', (e) => {
       if (e.target && e.target.closest('.js-team-row-select')) {
         const checkbox = e.target.closest('.js-team-row-select');
-        syncInscripcioSelectionCheckboxes(
-          checkbox?.getAttribute('data-ins-id'),
-          !!checkbox?.checked,
-          checkbox,
-        );
-        markTeamPreviewDirty();
-        syncGroupsWorkspaceSelectionFromMainList();
-        syncTeamsWorkspaceSelectionFromMainList();
+        const id = checkbox?.getAttribute('data-ins-id');
+        if (checkbox?.checked) {
+          window.__inscripcionsSelectionApi.add([id], { source: 'main', forceNotify: true });
+        } else {
+          window.__inscripcionsSelectionApi.remove([id], { source: 'main', forceNotify: true });
+        }
       }
     });
     clearTeamPreview();

@@ -360,6 +360,32 @@
     color: #6c757d;
     font-weight: 600;
   }
+  .team-raw-cell {
+    min-width: 0;
+  }
+  .team-raw-summary {
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+  }
+  .team-raw-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  .team-raw-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+  .team-raw-label {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #475467;
+  }
+  .team-raw-more {
+    font-size: 0.78rem;
+    color: #667085;
+  }
   .partition-card {
     border: 1px solid #dde4ef;
     border-radius: 10px;
@@ -1159,6 +1185,7 @@
                         <button type="button" class="btn btn-sm btn-outline-primary" id="btnColAddRaw">+ Camp</button>
                         <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="columns_raw" aria-label="Ajuda columnes raw">?</button>
                       </div>
+                      <div id="columnsRawContextualCopy" class="small text-muted mb-2"></div>
                       <div id="columnsBox" class="mb-3"></div>
                       <div class="builder-preview-shell">
                         <div class="border rounded p-2" id="previewBox">
@@ -1350,6 +1377,7 @@
     editorBody: document.getElementById("editorBody"),
     previewBox: document.getElementById("previewBox"),
     columnsBox: document.getElementById("columnsBox"),
+    columnsRawContextualCopy: document.getElementById("columnsRawContextualCopy"),
     btnColAddBuiltin: document.getElementById("btnColAddBuiltin"),
     btnColAddRaw: document.getElementById("btnColAddRaw"),
 
@@ -1874,6 +1902,23 @@
 
     sectionDesc.textContent = sectionText;
     simpleDesc.textContent = simpleText;
+  }
+
+  function renderColumnsRawContextualCopy() {
+    const node = els.columnsRawContextualCopy;
+    if (!node) return;
+
+    const tipus = currentTipus();
+    const uiState = getEquipsUiState();
+    const teamMode = uiState.effectiveTeamMode || TEAM_MODE_DERIVED;
+
+    let text = "Les columnes de camp mostren el valor d'un camp concret d'un aparell i exercici.";
+    if (tipus === "equips" && teamMode === TEAM_MODE_NATIVE) {
+      text = "En equips amb nota nativa, les columnes de camp mostren el valor d'equip i només són representables per aparells d'equip.";
+    } else if (tipus === "equips") {
+      text = "En equips derivats, les columnes de camp mostren un resum i el detall per membres de l'equip.";
+    }
+    node.textContent = text;
   }
 
   function renderEquipsModeControls() {
@@ -2652,6 +2697,7 @@
     refreshVictoryTieVisibility();
     renderEquipsModeControls();
     renderFiltersContextualCopy();
+    renderColumnsRawContextualCopy();
     refreshMainExercicisUI();
     const selectedIds = rebuildAparellChecksPreservingSelection(
       getCurrentBuilderAppIds(cfg && cfg.schema ? cfg.schema : {}),
@@ -4521,9 +4567,39 @@
     return html;
   }
 
+  function previewRenderTeamRawDetailCell(v, col){
+    const rows = Array.isArray(v?.rows) ? v.rows : [];
+    const summary = v?.summary;
+    let html = '<div class="team-raw-cell">';
+    if (summary !== null && summary !== undefined && summary !== "") {
+      html += `<div class="team-raw-summary">${esc(previewFormatCellText(summary, col))}</div>`;
+    }
+    if (rows.length) {
+      html += '<div class="team-raw-list">';
+      rows.forEach(r => {
+        const label = String(r?.label || "").trim();
+        if (!label) return;
+        html += '<div class="team-raw-row">';
+        html += `<div class="team-raw-label">${esc(label)}</div>`;
+        if (r && typeof r.judge_rows === "object" && r.judge_rows._kind === "judge_rows") {
+          html += previewRenderJudgeRowsCell(r.judge_rows, col);
+        } else {
+          html += `<div>${esc(previewFormatCellText(r?.value, col))}</div>`;
+        }
+        html += "</div>";
+      });
+      html += "</div>";
+    }
+    html += "</div>";
+    return html;
+  }
+
   function previewRenderCellHTML(v, col){
     if (v && typeof v === "object" && v._kind === "judge_rows") {
       return previewRenderJudgeRowsCell(v, col);
+    }
+    if (v && typeof v === "object" && v._kind === "team_raw_detail") {
+      return previewRenderTeamRawDetailCell(v, col);
     }
     return esc(previewFormatCellText(v, col));
   }

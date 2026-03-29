@@ -14,7 +14,9 @@
       {% endfor %}
 
       <div class="alert alert-info py-2 mb-3">
-        {% if team_context_selected.is_native %}
+        {% if not object %}
+          Els equips seleccionats en crear una inscripcio sempre s'assignen al context <strong>Base</strong>.
+        {% elif team_context_selected.is_native %}
           Aquest formulari editara l'equip base de la inscripcio.
         {% else %}
           Aquest formulari assignara l'equip al context <strong>{{ team_context_selected.nom }}</strong>.

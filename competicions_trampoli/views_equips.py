@@ -3,7 +3,7 @@ from collections import OrderedDict, defaultdict
 from typing import Optional
 
 from django.db import transaction
-from django.db.models import Count, Q
+from django.db.models import Count
 from django.http import HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils.text import slugify
@@ -27,6 +27,8 @@ from .services.equip_contexts import (
     resolve_inscripcio_equip,
 )
 from .views import (
+    _build_inscripcions_filtered_qs,
+    _normalize_sort_filters,
     capture_inscripcions_history_snapshot,
     get_allowed_group_fields,
     record_inscripcions_history_entry,
@@ -175,28 +177,10 @@ def _empty_team_ids_for_context_scope(competicio: Competicio, context_obj: Equip
 
 
 def _filter_inscripcions(competicio: Competicio, filters: Optional[dict]):
-    qs = Inscripcio.objects.filter(competicio=competicio)
-    if not isinstance(filters, dict):
-        return qs
-
-    q = (filters.get("q") or "").strip()
-    categoria = (filters.get("categoria") or "").strip()
-    subcategoria = (filters.get("subcategoria") or "").strip()
-    entitat = (filters.get("entitat") or "").strip()
-
-    if subcategoria:
-        qs = qs.filter(subcategoria__iexact=subcategoria)
-    if entitat:
-        qs = qs.filter(entitat__icontains=entitat)
-    if categoria:
-        qs = qs.filter(categoria__iexact=categoria)
-    if q:
-        qs = qs.filter(
-            Q(nom_i_cognoms__icontains=q)
-            | Q(document__icontains=q)
-            | Q(entitat__icontains=q)
-        )
-    return qs
+    return _build_inscripcions_filtered_qs(
+        competicio,
+        _normalize_workspace_filters(filters),
+    )
 
 
 def _validated_partition_fields(competicio: Competicio, requested):
@@ -250,7 +234,11 @@ def _finalize_preview_sample(container):
 def _filters_are_active(filters):
     if not isinstance(filters, dict):
         return False
-    return any(str(filters.get(key) or "").strip() for key in ("q", "categoria", "subcategoria", "entitat"))
+    normalized = _normalize_workspace_filters(filters)
+    return any(
+        str(normalized.get(key) or "").strip()
+        for key in ("q", "categoria", "subcategoria", "entitat")
+    ) or bool(normalized.get("column_filters"))
 
 
 def _build_preview_selection_summary(records_count, filters, selected_ids, replace_existing):
@@ -276,14 +264,14 @@ def _build_preview_selection_summary(records_count, filters, selected_ids, repla
 
 def _normalize_workspace_filters(filters):
     data = filters if isinstance(filters, dict) else {}
-    return {
-        "q": str(data.get("q") or "").strip(),
-        "categoria": str(data.get("categoria") or "").strip(),
-        "subcategoria": str(data.get("subcategoria") or "").strip(),
-        "entitat": str(data.get("entitat") or "").strip(),
+    out = {
+        **_normalize_sort_filters(data),
         "assignment_state": str(data.get("assignment_state") or "all").strip().lower() or "all",
         "equip_id": str(data.get("equip_id") or "").strip(),
     }
+    if out["assignment_state"] not in {"all", "assigned", "unassigned"}:
+        out["assignment_state"] = "all"
+    return out
 
 
 def _serialize_workspace_candidate(ins, context_code, current_team=None, base_assignment_map=None):

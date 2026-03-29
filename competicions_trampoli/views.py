@@ -4277,6 +4277,9 @@ class InscripcioUpdateView(InscripcioFormViewMixin, UpdateView):
 class InscripcioCreateView(InscripcioFormViewMixin, CreateView):
     model = Inscripcio
 
+    def _resolve_team_context_code(self):
+        return NATIVE_EQUIP_CONTEXT_CODE
+
     def form_valid(self, form):
         # Assign the competition before saving
         form.instance.competicio = self.competicio

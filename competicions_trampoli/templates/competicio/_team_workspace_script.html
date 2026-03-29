@@ -40,6 +40,16 @@ if (teamWorkspaceShell) {
     if (el) el.textContent = String(value);
   };
   const dirtyPreview = () => markTeamPreviewDirty();
+  const mainSelectionApi = () => (
+    window.__inscripcionsSelectionApi && typeof window.__inscripcionsSelectionApi.getSelectedIds === 'function'
+      ? window.__inscripcionsSelectionApi
+      : null
+  );
+  const getExternalSelectionIds = () => {
+    const api = mainSelectionApi();
+    if (!api) return [];
+    return (api.getSelectedIds() || []).map(String).filter(Boolean);
+  };
   const resetPreview = () => clearTeamPreview("Canvis aplicats. Torna a previsualitzar per revisar l'estat actual.");
   const actionUrl = (tpl, id) => String(tpl || '').replace('999999', String(id || '0'));
   const postAssign = (equipId, inscripcioIds) => postJson(assignUrl, {
@@ -107,7 +117,7 @@ if (teamWorkspaceShell) {
     if (workspaceSelect) workspaceSelect.value = normalized;
     const compactSelect = document.getElementById('team-compact-context');
     if (compactSelect) compactSelect.value = normalized;
-    state.selectedIds = new Set();
+    state.selectedIds = new Set(getExternalSelectionIds());
     state.expandedTeamIds = new Set();
     state.teamMemberPages = {};
     state.candidatePage = 1;
@@ -125,12 +135,34 @@ if (teamWorkspaceShell) {
     return true;
   }
 
-  function syncExternalSelection(externalIds) {
-    const rows = Array.isArray(externalIds) ? externalIds.map(String).filter(Boolean) : [];
-    state.selectedIds = new Set(rows);
+  function renderSelectionState(options = {}) {
     if (state.lastWorkspace) renderCandidates(state.lastWorkspace);
     updateSelectionSummary();
-    dirtyPreview();
+    renderCompactActionState();
+    if (!options.skipDirty) dirtyPreview();
+  }
+
+  function applySelectionChange(selectionIds, mode, options = {}) {
+    const rows = Array.isArray(selectionIds) ? selectionIds.map(String).filter(Boolean) : [];
+    if (mode === 'set') state.selectedIds = new Set(rows);
+    if (mode === 'add') rows.forEach((id) => state.selectedIds.add(id));
+    if (mode === 'remove') rows.forEach((id) => state.selectedIds.delete(id));
+    if (mode === 'clear') state.selectedIds = new Set();
+    renderSelectionState(options);
+    if (!options.skipSyncToMain) {
+      const api = mainSelectionApi();
+      if (api) {
+        if (mode === 'set') api.set(ids(), { source: 'team_workspace' });
+        else if (mode === 'add') api.add(rows, { source: 'team_workspace' });
+        else if (mode === 'remove') api.remove(rows, { source: 'team_workspace' });
+        else if (mode === 'clear') api.clear({ source: 'team_workspace' });
+      }
+    }
+  }
+
+  function syncExternalSelection(externalIds, options = {}) {
+    const rows = Array.isArray(externalIds) ? externalIds.map(String).filter(Boolean) : [];
+    applySelectionChange(rows, 'set', { ...options, skipSyncToMain: true });
   }
 
   function destroySortables() {
@@ -706,7 +738,7 @@ if (teamWorkspaceShell) {
 
   async function refreshWorkspace(opts = {}) {
     if (opts.resetPage) state.candidatePage = 1;
-    if (opts.clearSelection) state.selectedIds = new Set();
+    if (opts.clearSelection) state.selectedIds = new Set(getExternalSelectionIds());
     destroySortables();
     const status = document.getElementById('team-candidates-status');
     if (status) status.textContent = 'Carregant candidates...';
@@ -905,7 +937,7 @@ if (teamWorkspaceShell) {
     filterQ.addEventListener('input', () => {
       if (state.filterTimer) clearTimeout(state.filterTimer);
       state.filterTimer = setTimeout(() => {
-        state.filters = readFilters();
+        state.filters = Object.assign({}, state.filters, readFilters());
         dirtyPreview();
         refreshWorkspace({ resetPage: true });
       }, 220);
@@ -916,7 +948,7 @@ if (teamWorkspaceShell) {
     const el = document.getElementById(id);
     if (el) {
       el.addEventListener('change', () => {
-        state.filters = readFilters();
+        state.filters = Object.assign({}, state.filters, readFilters());
         dirtyPreview();
         refreshWorkspace({ resetPage: true });
       });
@@ -961,7 +993,7 @@ if (teamWorkspaceShell) {
         const data = await postJson(ctxCreateUrl, { name: name.trim() });
         if (!data.ok) return showAlert("No s'ha pogut crear el context.");
         state.contextCode = String(data.context?.code || 'native');
-        state.selectedIds = new Set();
+        state.selectedIds = new Set(getExternalSelectionIds());
         state.expandedTeamIds = new Set();
         state.teamMemberPages = {};
         setContextDetailsOpen(true);
@@ -1005,7 +1037,7 @@ if (teamWorkspaceShell) {
         const data = await postJson(ctxDeleteUrlTpl.replace('__context__', encodeURIComponent(code)), {});
         if (!data.ok) return showAlert("No s'ha pogut eliminar el context.");
         state.contextCode = 'native';
-        state.selectedIds = new Set();
+        state.selectedIds = new Set(getExternalSelectionIds());
         state.expandedTeamIds = new Set();
         state.teamMemberPages = {};
         setContextDetailsOpen(false);
@@ -1041,34 +1073,28 @@ if (teamWorkspaceShell) {
 
   [
     ['btn-team-workspace-select-visible', () => {
-      state.selectedIds = new Set(((state.lastWorkspace?.candidates?.items) || []).map((item) => String(item?.id || '')).filter(Boolean));
-      renderCandidates(state.lastWorkspace);
-      updateSelectionSummary();
-      dirtyPreview();
+      applySelectionChange(
+        ((state.lastWorkspace?.candidates?.items) || []).map((item) => String(item?.id || '')).filter(Boolean),
+        'set',
+      );
     }],
     ['btn-team-workspace-add-visible', () => {
-      ((state.lastWorkspace?.candidates?.items) || []).forEach((item) => state.selectedIds.add(String(item?.id || '')));
-      renderCandidates(state.lastWorkspace);
-      updateSelectionSummary();
-      dirtyPreview();
+      applySelectionChange(
+        ((state.lastWorkspace?.candidates?.items) || []).map((item) => String(item?.id || '')).filter(Boolean),
+        'add',
+      );
     }],
     ['btn-team-workspace-remove-visible', () => {
-      ((state.lastWorkspace?.candidates?.items) || []).forEach((item) => state.selectedIds.delete(String(item?.id || '')));
-      renderCandidates(state.lastWorkspace);
-      updateSelectionSummary();
-      dirtyPreview();
+      applySelectionChange(
+        ((state.lastWorkspace?.candidates?.items) || []).map((item) => String(item?.id || '')).filter(Boolean),
+        'remove',
+      );
     }],
     ['btn-team-import-selection', () => {
-      (getSelectedInscripcioIds() || []).forEach((item) => state.selectedIds.add(String(item || '')));
-      renderCandidates(state.lastWorkspace);
-      updateSelectionSummary();
-      dirtyPreview();
+      syncExternalSelection(getExternalSelectionIds(), { source: 'main' });
     }],
     ['btn-team-workspace-clear-selection', () => {
-      state.selectedIds = new Set();
-      renderCandidates(state.lastWorkspace);
-      updateSelectionSummary();
-      dirtyPreview();
+      applySelectionChange([], 'clear');
     }],
   ].forEach(([id, fn]) => {
     const el = document.getElementById(id);
@@ -1100,11 +1126,8 @@ if (teamWorkspaceShell) {
       if (!input) return;
       const id = String(input.value || '').trim();
       if (!id) return;
-      if (input.checked) state.selectedIds.add(id);
-      else state.selectedIds.delete(id);
-      renderCandidates(state.lastWorkspace);
-      updateSelectionSummary();
-      dirtyPreview();
+      if (input.checked) applySelectionChange([id], 'add');
+      else applySelectionChange([id], 'remove');
     });
     candidateList.addEventListener('click', (event) => {
       const row = event.target.closest('.team-candidate-row');
@@ -1270,7 +1293,7 @@ if (teamWorkspaceShell) {
       try {
         const data = await postJson(url, { context_code: state.contextCode });
         if (!data.ok) return showAlert("No s'han pogut eliminar tots els equips.");
-        state.selectedIds = new Set();
+        state.selectedIds = new Set(getExternalSelectionIds());
         state.expandedTeamIds = new Set();
         state.teamMemberPages = {};
         resetPreview();
@@ -1292,7 +1315,7 @@ if (teamWorkspaceShell) {
         const data = await postJson(deleteEmptyUrl, { context_code: state.contextCode });
         if (!data.ok) return showAlert("No s'han pogut eliminar els equips buits.");
         const deleted = Number(data.deleted || 0);
-        state.selectedIds = new Set();
+        state.selectedIds = new Set(getExternalSelectionIds());
         state.expandedTeamIds = new Set();
         state.teamMemberPages = {};
         resetPreview();

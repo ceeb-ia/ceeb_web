@@ -84,6 +84,32 @@
     color: #6c757d;
     font-weight: 600;
   }
+  .team-raw-cell {
+    min-width: 0;
+  }
+  .team-raw-summary {
+    font-weight: 700;
+    margin-bottom: 0.15rem;
+  }
+  .team-raw-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+  .team-raw-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+  }
+  .team-raw-label {
+    font-size: 0.76rem;
+    font-weight: 700;
+    color: #475467;
+  }
+  .team-raw-more {
+    font-size: 0.76rem;
+    color: #667085;
+  }
 </style>
 
 <div class="container-fluid mt-4">
@@ -241,9 +267,43 @@
     return html;
   }
 
+  function renderTeamRawDetailCell(v, col){
+    const rows = (v && Array.isArray(v.rows)) ? v.rows : [];
+    const summary = v?.summary;
+    const visibleRows = rows.slice(0, 2);
+    let html = '<div class="team-raw-cell">';
+    if (summary !== null && summary !== undefined && summary !== "") {
+      html += '<div class="team-raw-summary">' + esc(formatCellText(summary, col)) + "</div>";
+    }
+    if (visibleRows.length) {
+      html += '<div class="team-raw-list">';
+      visibleRows.forEach(r => {
+        const label = String(r?.label || "").trim();
+        if (!label) return;
+        html += '<div class="team-raw-row">';
+        html += '<div class="team-raw-label">' + esc(label) + "</div>";
+        if (r && typeof r.judge_rows === "object" && r.judge_rows._kind === "judge_rows") {
+          html += renderJudgeRowsCell(r.judge_rows, col);
+        } else {
+          html += '<div>' + esc(formatCellText(r?.value, col)) + "</div>";
+        }
+        html += "</div>";
+      });
+      if (rows.length > visibleRows.length) {
+        html += '<div class="team-raw-more">+' + esc(String(rows.length - visibleRows.length)) + ' mes</div>';
+      }
+      html += "</div>";
+    }
+    html += "</div>";
+    return html;
+  }
+
   function renderCellHTML(v, col){
     if (v && typeof v === "object" && v._kind === "judge_rows") {
       return renderJudgeRowsCell(v, col);
+    }
+    if (v && typeof v === "object" && v._kind === "team_raw_detail") {
+      return renderTeamRawDetailCell(v, col);
     }
     return esc(formatCellText(v, col));
   }

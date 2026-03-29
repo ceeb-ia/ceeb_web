@@ -42,6 +42,11 @@ if (groupsWorkspaceShell && groupsMainCard) {
     const detail = err?.message || err;
     alertBox(detail ? `${prefix}\n${detail}` : prefix);
   };
+  const mainSelectionApi = () => (
+    window.__inscripcionsSelectionApi && typeof window.__inscripcionsSelectionApi.getSelectedIds === 'function'
+      ? window.__inscripcionsSelectionApi
+      : null
+  );
   const getExternalSelectionIds = () => (
     typeof getSelectedInscripcioIds === 'function'
       ? getSelectedInscripcioIds().map(String).filter(Boolean)
@@ -222,8 +227,8 @@ if (groupsWorkspaceShell && groupsMainCard) {
     );
   }
 
-  function syncExternalSelection(ids) {
-    updateSelection(ids, 'set');
+  function syncExternalSelection(ids, options = {}) {
+    updateSelection(ids, 'set', { ...options, skipSyncToMain: true });
   }
 
   function scrollSelectedGroupCardIntoView(groupId) {
@@ -811,7 +816,7 @@ if (groupsWorkspaceShell && groupsMainCard) {
     return items.map((item) => String(item?.id || '')).filter(Boolean);
   }
 
-  function updateSelection(ids, mode) {
+  function updateSelection(ids, mode, options = {}) {
     const rows = Array.isArray(ids) ? ids.map(String).filter(Boolean) : [];
     if (mode === 'set') state.selectedIds = new Set(rows);
     if (mode === 'add') rows.forEach((id) => state.selectedIds.add(id));
@@ -824,6 +829,15 @@ if (groupsWorkspaceShell && groupsMainCard) {
       setupDnd();
     }
     saveWorkspaceState();
+    if (!options.skipSyncToMain) {
+      const api = mainSelectionApi();
+      if (api) {
+        if (mode === 'set') api.set(selectedIds(), { source: 'groups_workspace' });
+        else if (mode === 'add') api.add(rows, { source: 'groups_workspace' });
+        else if (mode === 'remove') api.remove(rows, { source: 'groups_workspace' });
+        else if (mode === 'clear') api.clear({ source: 'groups_workspace' });
+      }
+    }
   }
 
   const postAssignIds = (groupId, ids) => postJson(

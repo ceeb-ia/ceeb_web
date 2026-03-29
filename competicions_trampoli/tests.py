@@ -77,6 +77,7 @@ from .views import (
     sort_records_by_field_stable,
 )
 from .views_classificacions import (
+    _normalize_excel_cell,
     _build_scoreable_meta_for_schema,
     _normalize_particions_schema,
     _scoreable_codes_by_app_id,
@@ -3624,9 +3625,21 @@ class InscripcioManualFormViewTests(_BaseTrampoliDataMixin, TestCase):
             },
         )
 
-    def test_create_form_custom_context_creates_contextual_assignment_without_touching_native_team(self):
+    def test_create_form_ignores_requested_context_and_uses_base_assignment(self):
         team_ctx = EquipContext.objects.create(competicio=self.comp, code="finals", nom="Finals")
-        existing_team = Equip.objects.create(competicio=self.comp, nom="Equip Finals")
+        existing_team = Equip.objects.create(competicio=self.comp, nom="Equip Base")
+
+        response = self.client.get(self._add_url_with_context(team_ctx.code))
+
+        self.assertEqual(response.status_code, 200)
+        form = response.context["form"]
+        self.assertEqual(response.context["team_context_selected_code"], "native")
+        self.assertEqual(form.fields["equip_choice"].label, "Equip (Base)")
+        self.assertContains(
+            response,
+            "Els equips seleccionats en crear una inscripcio sempre s'assignen al context",
+        )
+        self.assertNotContains(response, 'id="team-context-select"', html=False)
 
         response = self.client.post(
             self._add_url_with_context(team_ctx.code),
@@ -3647,11 +3660,18 @@ class InscripcioManualFormViewTests(_BaseTrampoliDataMixin, TestCase):
 
         assignacio = InscripcioEquipAssignacio.objects.get(
             competicio=self.comp,
-            context=team_ctx,
+            context__code="native",
             inscripcio=inscripcio,
         )
         self.assertEqual(assignacio.equip_id, existing_team.id)
         self.assertEqual(assignacio.origen, InscripcioEquipAssignacio.Origen.MANUAL)
+        self.assertFalse(
+            InscripcioEquipAssignacio.objects.filter(
+                competicio=self.comp,
+                context=team_ctx,
+                inscripcio=inscripcio,
+            ).exists()
+        )
 
     def test_edit_form_custom_context_reads_contextual_team_and_shows_native_hint(self):
         native_team = Equip.objects.create(competicio=self.comp, nom="Equip Base")
@@ -4191,6 +4211,18 @@ class ScoringMediaPlaybackContextTests(_BaseTrampoliDataMixin, TestCase):
         judge_map = res.context["judge_video_presence_by_key"]
         self.assertEqual(int(judge_map.get(f"{self.ins.id}|1|{self.comp_app.id}") or 0), 1)
         self.assertEqual(int(judge_map.get(f"{ins_without_media.id}|1|{self.comp_app.id}") or 0), 0)
+
+    def test_scoring_notes_home_queues_remote_rerender_while_local_row_is_editing(self):
+        url = reverse("scoring_notes_home", kwargs={"pk": self.comp.id})
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, 200)
+
+        body = res.content.decode("utf-8")
+        self.assertIn("const pendingRemoteScoreKeys = new Set();", body)
+        self.assertIn("function isEditingScoreKey(scoreKey){", body)
+        self.assertIn("markScoreKeyPendingRemoteRerender(scoreKey);", body)
+        self.assertIn("setTimeout(()=>flushPendingRemoteRerender(scoreKey), 0);", body)
+        self.assertIn("rerenderTablesForScoreKey(scoreKey);", body)
 
 
 class ScoringAndJudgeExclusionFlowTests(_BaseTrampoliDataMixin, TestCase):
@@ -4872,6 +4904,40 @@ class GroupManagerV1Tests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(int(summary.get("unassigned_count") or 0), 2)
         self.assertEqual(int(summary.get("programmed_groups") or 0), 1)
         self.assertEqual(int(summary.get("out_of_program_groups") or 0), 1)
+
+    def test_groups_workspace_filtered_scope_respects_column_filters(self):
+        self.ins_free_a.entitat = "Club Filtrat"
+        self.ins_free_a.save(update_fields=["entitat"])
+        self.ins_free_b.entitat = "Club Altre"
+        self.ins_free_b.save(update_fields=["entitat"])
+
+        resp = self._post_groups_contract(
+            "workspace",
+            {
+                "scope": "filtered",
+                "selected_ids": [],
+                "filters": {
+                    "q": "",
+                    "categoria": "",
+                    "subcategoria": "",
+                    "entitat": "",
+                    "column_filters": {"entitat": ["Club Filtrat"]},
+                    "group_state": "unassigned",
+                },
+                "page": 1,
+                "page_size": 25,
+            },
+        )
+
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data.get("ok"))
+        self.assertEqual(data.get("filters", {}).get("column_filters"), {"entitat": ["Club Filtrat"]})
+        self.assertEqual(data.get("target_ids"), [self.ins_free_a.id])
+        self.assertEqual(
+            [row.get("id") for row in (data.get("candidates") or [])],
+            [self.ins_free_a.id],
+        )
 
     def test_groups_detail_contract_returns_members_and_state_flags(self):
         resp = self._post_groups_contract(
@@ -7878,6 +7944,11 @@ class ClassificacioTemplateFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertContains(res, "function pruneSchemaAppReferences(schema, allowedIds)")
         self.assertContains(res, 'buildAparellChecks([...ids], { includeStale: true });')
         self.assertContains(res, "refreshTipusUI({ includeStale: false, dropInvalidSelection: true });")
+        self.assertContains(res, "function previewRenderTeamRawDetailCell(v, col)")
+        self.assertContains(res, "team-raw-summary")
+        self.assertContains(res, 'v._kind === "team_raw_detail"')
+        self.assertContains(res, "En equips derivats, les columnes de camp mostren un resum i el detall per membres de l'equip.")
+        self.assertContains(res, "En equips amb nota nativa, les columnes de camp mostren el valor d'equip i només són representables per aparells d'equip.")
 
     def test_classificacions_home_exposes_contextual_filter_copy_contract(self):
         self.client.force_login(self.editor_user)
@@ -8292,6 +8363,9 @@ class GlobalClassificacioTemplateManagementTests(_BaseTrampoliDataMixin, TestCas
         self.assertContains(res, "function pruneSchemaAppReferences(schema, allowedIds)")
         self.assertContains(res, 'buildAparellChecks([...ids], { includeStale: true });')
         self.assertContains(res, "refreshTipusUI({ includeStale: false, dropInvalidSelection: true });")
+        self.assertContains(res, "function previewRenderTeamRawDetailCell(v, col)")
+        self.assertContains(res, "En equips derivats, les columnes de camp mostren un resum i el detall per membres de l'equip.")
+        self.assertContains(res, "En equips amb nota nativa, les columnes de camp mostren el valor d'equip i només són representables per aparells d'equip.")
 
     def test_admin_global_builder_edit_is_scoped_to_template_owner_catalog(self):
         own_tpl = ClassificacioTemplateGlobal.objects.create(
@@ -8617,6 +8691,9 @@ class PublicLiveTokenViewsTests(_BaseTrampoliDataMixin, TestCase):
         body = res.content.decode("utf-8")
         self.assertIn("Classificacions", body)
         self.assertIn(reverse("public_live_classificacions_data", kwargs={"token": self.token.id}), body)
+        self.assertIn("function renderTeamRawDetailCell(v, col)", body)
+        self.assertIn("team-raw-summary", body)
+        self.assertIn('v._kind === "team_raw_detail"', body)
 
     def test_public_live_portal_rejects_revoked_token(self):
         self.token.is_active = False
@@ -8848,6 +8925,30 @@ class LiveClassificacionsRedisCacheTests(_BaseTrampoliDataMixin, TestCase):
         self.assertFalse(second_res.json()["changed"])
         self.assertEqual(second_res.json()["stamp"], stamp)
         self.assertEqual(second_res.json().get("permissions", {}).get("can_view_media"), False)
+
+    def test_dirty_refresh_with_since_returns_changed_true_and_new_snapshot_stamp(self):
+        fake_redis = self.FakeRedis()
+        old_stamp = "2026-03-29T10:00:00+00:00"
+        snapshot = self._snapshot_payload()
+        snapshot["stamp"] = old_stamp
+        snapshot["generated_at"] = (timezone.now() - timedelta(seconds=1)).isoformat()
+        fake_redis.set(live_cache.live_cache_key(self.comp.id), json.dumps(snapshot))
+        fake_redis.set(live_cache.live_dirty_key(self.comp.id), "dirty-1")
+
+        compute_result = {
+            "global": [{"participant": "Participant Cache", "punts": 9.9, "posicio": 1}]
+        }
+
+        with patch("competicions_trampoli.live_cache._live_redis_client", return_value=fake_redis):
+            with patch("competicions_trampoli.views_classificacions.compute_classificacio", return_value=compute_result):
+                res = self.client.get(self._public_url(), {"since": old_stamp})
+
+        self.assertEqual(res.status_code, 200)
+        payload = res.json()
+        self.assertTrue(payload["changed"])
+        self.assertNotEqual(payload["stamp"], old_stamp)
+        self.assertEqual(payload.get("cfgs", [])[0].get("parts", [])[0].get("rows", [])[0].get("punts"), 9.9)
+        self.assertEqual(res["X-Live-Cache"], "refresh")
 
     def test_lock_contention_waits_for_snapshot_without_recompute(self):
         fake_redis = self.FakeRedis()
@@ -9597,6 +9698,14 @@ class EquipPreviewUiTests(_BaseTrampoliDataMixin, TestCase):
         self.assertContains(response, 'id="btn-team-workspace-delete-empty"')
         self.assertContains(response, 'id="btn-series-workspace-delete-empty"')
 
+    def test_inscripcions_list_exposes_shared_selection_api_for_workspaces(self):
+        response = self.client.get(reverse("inscripcions_list", kwargs={"pk": self.comp.id}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "window.__inscripcionsSelectionApi")
+        self.assertContains(response, "source: 'groups_workspace'")
+        self.assertContains(response, "source: 'team_workspace'")
+
     def test_equips_workspace_returns_context_summary_candidates_and_filters(self):
         response = self.client.post(
             reverse("inscripcions_equips_workspace", kwargs={"pk": self.comp.id}),
@@ -9633,6 +9742,38 @@ class EquipPreviewUiTests(_BaseTrampoliDataMixin, TestCase):
         teams_by_name = {row.get("nom"): row for row in (payload.get("teams") or [])}
         self.assertEqual([m.get("nom") for m in teams_by_name["Club A"]["members"]], ["Dina Context"])
         self.assertEqual(teams_by_name["Club A"]["members"][0]["native_team_name"], "Alt Equip")
+
+    def test_equips_workspace_preserves_column_filters(self):
+        response = self.client.post(
+            reverse("inscripcions_equips_workspace", kwargs={"pk": self.comp.id}),
+            data=json.dumps(
+                {
+                    "context_code": "finals",
+                    "filters": {
+                        "q": "",
+                        "categoria": "",
+                        "subcategoria": "",
+                        "entitat": "",
+                        "column_filters": {"entitat": ["Club C"]},
+                        "assignment_state": "all",
+                        "equip_id": "",
+                    },
+                    "page": 1,
+                    "page_size": 25,
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload.get("ok"))
+        self.assertEqual(payload.get("filters", {}).get("column_filters"), {"entitat": ["Club C"]})
+        self.assertEqual(payload.get("summary", {}).get("filtered_count"), 1)
+        self.assertEqual(
+            [row.get("nom") for row in (payload.get("candidates", {}).get("items") or [])],
+            ["Carla New"],
+        )
 
     def test_equips_workspace_team_members_ignore_candidate_filters_and_keep_stable_order(self):
         ins_early = Inscripcio.objects.create(
@@ -10032,6 +10173,73 @@ class EquipPreviewUiTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(payload["preview"][0]["existing_team_name"], "Club A")
         self.assertTrue(payload["preview"][0]["will_keep"])
         self.assertFalse(payload["preview"][0]["will_create"])
+
+    def test_equips_preview_respects_column_filters(self):
+        response = self.client.post(
+            reverse("inscripcions_equips_preview", kwargs={"pk": self.comp.id}),
+            data=json.dumps(
+                {
+                    "context_code": "native",
+                    "fields": ["entitat"],
+                    "replace_existing": True,
+                    "filters": {
+                        "q": "",
+                        "categoria": "",
+                        "subcategoria": "",
+                        "entitat": "",
+                        "column_filters": {"entitat": ["Club C"]},
+                    },
+                    "selected_ids": [],
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload.get("ok"))
+        self.assertEqual(payload.get("total_inscripcions"), 1)
+        self.assertEqual(payload.get("selection_summary", {}).get("mode"), "filtered")
+        self.assertEqual([row.get("nom_suggerit") for row in (payload.get("preview") or [])], ["Club C"])
+
+    def test_equips_auto_create_respects_column_filters(self):
+        response = self.client.post(
+            reverse("inscripcions_equips_auto_create", kwargs={"pk": self.comp.id}),
+            data=json.dumps(
+                {
+                    "context_code": "finals",
+                    "fields": ["entitat"],
+                    "replace_existing": False,
+                    "filters": {
+                        "q": "",
+                        "categoria": "",
+                        "subcategoria": "",
+                        "entitat": "",
+                        "column_filters": {"entitat": ["Club C"]},
+                    },
+                    "selected_ids": [],
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload.get("ok"))
+        self.assertEqual(payload.get("created"), 1)
+        assignacio = InscripcioEquipAssignacio.objects.get(
+            competicio=self.comp,
+            context=self.ctx,
+            inscripcio=self.ins_new,
+        )
+        self.assertEqual(assignacio.equip.nom, "Club C")
+        self.assertFalse(
+            InscripcioEquipAssignacio.objects.filter(
+                competicio=self.comp,
+                context=self.ctx,
+                inscripcio=self.ins_keep,
+            ).exists()
+        )
 
 
 class EquipContextClassificacioTests(_BaseTrampoliDataMixin, TestCase):
@@ -10937,8 +11145,10 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
                     "exercici": 1,
                     "inputs_patch": {
                         "SYNC": 7.5,
-                        "E__m1": 8.1,
-                        "E__m2": 8.2,
+                        "E": {
+                            str(team_subject.member_ids[0]): 8.1,
+                            str(team_subject.member_ids[1]): 8.2,
+                        },
                     },
                 }
             ),
@@ -10949,8 +11159,13 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
         payload = response.json()
         self.assertEqual(payload["subject_kind"], "team_unit")
         self.assertEqual(payload["subject_id"], team_subject.id)
-        self.assertEqual(payload["inputs"]["E__m1"], 8.1)
-        self.assertEqual(payload["inputs"]["E__m2"], 8.2)
+        self.assertEqual(
+            payload["inputs"]["E"],
+            {
+                str(team_subject.member_ids[0]): 8.1,
+                str(team_subject.member_ids[1]): 8.2,
+            },
+        )
 
         entry = TeamScoreEntry.objects.get(
             competicio=self.comp,
@@ -10967,6 +11182,104 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
                 str(team_subject.member_ids[1]): 8.2,
             },
         )
+
+    def test_scoring_save_partial_rejects_runtime_member_keys_for_team_app(self):
+        ScoringSchema.objects.create(
+            aparell=self.app,
+            schema={
+                "meta": {"subject_mode": "team_context", "expected_team_size": 2},
+                "fields": [
+                    {"code": "SYNC", "label": "Sincronisme", "type": "number", "scope": "shared"},
+                    {"code": "E", "label": "Exec", "type": "number", "scope": "member"},
+                ],
+                "computed": [
+                    {"code": "TOTAL", "label": "Total", "formula": "SYNC + E__m1 + E__m2"},
+                ],
+            },
+        )
+        team_subject, _subject_meta = self._team_subject()
+
+        response = self.client.post(
+            reverse("scoring_save_partial", kwargs={"pk": self.comp.id}),
+            data=json.dumps(
+                {
+                    "comp_aparell_id": self.comp_app.id,
+                    "subject_kind": "team_unit",
+                    "subject_id": team_subject.id,
+                    "exercici": 1,
+                    "inputs_patch": {"SYNC": 7.5, "E__m1": 8.1},
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("__mN", response.json()["error"])
+
+    def test_schema_recalc_for_team_preserves_orphan_inputs(self):
+        schema = ScoringSchema.objects.create(
+            aparell=self.app,
+            schema={
+                "meta": {"subject_mode": "team_context", "expected_team_size": 2},
+                "fields": [
+                    {"code": "SYNC", "label": "Sincronisme", "type": "number", "scope": "shared"},
+                    {"code": "E", "label": "Exec", "type": "number", "scope": "member"},
+                ],
+                "computed": [
+                    {"code": "TOTAL", "label": "Total", "formula": "SYNC + E__m1 + E__m2"},
+                ],
+            },
+        )
+        team_subject, _subject_meta = self._team_subject()
+        TeamScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            team_subject=team_subject,
+            exercici=1,
+            inputs={
+                "SYNC": 7.5,
+                "E": {
+                    str(team_subject.member_ids[0]): 8.1,
+                    str(team_subject.member_ids[1]): 8.2,
+                },
+                "OLD_FIELD": 99.0,
+            },
+            outputs={"TOTAL": 23.8},
+            total=23.8,
+        )
+
+        response = self.client.post(
+            reverse("scoring_schema_update", kwargs={"pk": self.comp.id, "ap_id": self.comp_app.id}),
+            data={
+                "schema_json": json.dumps(
+                    {
+                        "meta": {"subject_mode": "team_context", "expected_team_size": 2},
+                        "fields": [
+                            {"code": "SYNC", "label": "Sincronisme", "type": "number", "scope": "shared"},
+                            {"code": "E", "label": "Exec", "type": "number", "scope": "member"},
+                            {"code": "BONUS", "label": "Bonus", "type": "number", "scope": "shared"},
+                        ],
+                        "computed": [
+                            {"code": "TOTAL", "label": "Total", "formula": "SYNC + E__m1 + E__m2 + BONUS"},
+                        ],
+                    }
+                )
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        schema.refresh_from_db()
+        entry = TeamScoreEntry.objects.get(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            team_subject=team_subject,
+            exercici=1,
+        )
+        self.assertIn("OLD_FIELD", entry.inputs)
+        self.assertEqual(entry.inputs["OLD_FIELD"], 99.0)
+        self.assertEqual(entry.inputs["SYNC"], 7.5)
+        self.assertEqual(entry.inputs["E"][str(team_subject.member_ids[0])], 8.1)
+        self.assertEqual(entry.inputs["E"][str(team_subject.member_ids[1])], 8.2)
 
     def test_scoring_save_rejects_individual_payload_for_team_context_app(self):
         ScoringSchema.objects.create(
@@ -11561,6 +11874,536 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(rows[0]["participant"], "Parella 1")
         self.assertEqual(rows[0]["score"], 31.0)
 
+    def test_compute_classificacio_derived_team_raw_column_returns_team_detail_payload(self):
+        ind_app = self._create_aparell("TR_RAW", "Tramp raw")
+        comp_ind_app = self._create_comp_aparell(self.comp, ind_app, ordre=2)
+
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=comp_ind_app,
+            inscripcio=self.ins1,
+            exercici=1,
+            inputs={},
+            outputs={},
+            total=12.5,
+        )
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=comp_ind_app,
+            inscripcio=self.ins2,
+            exercici=1,
+            inputs={},
+            outputs={},
+            total=11.25,
+        )
+
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Derived raw detail",
+            activa=True,
+            ordre=1,
+            tipus="equips",
+            schema={
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [comp_ind_app.id]},
+                    "camps_per_aparell": {str(comp_ind_app.id): ["total"]},
+                    "agregacio_camps": "sum",
+                    "exercicis": {"mode": "tots"},
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "ordre": "desc",
+                },
+                "presentacio": {
+                    "columnes": [
+                        {"type": "builtin", "key": "participant", "label": "Nom", "align": "left"},
+                        {
+                            "type": "raw",
+                            "key": "raw_total",
+                            "label": "Raw total",
+                            "align": "right",
+                            "decimals": 2,
+                            "source": {"aparell_id": comp_ind_app.id, "exercici": 1, "camp": "total", "jutges": {"ids": []}},
+                        },
+                    ]
+                },
+                "equips": {
+                    "context_code": "parelles",
+                    "team_mode": "derived_from_individual",
+                    "incloure_sense_equip": False,
+                },
+            },
+        )
+
+        rows = compute_classificacio(self.comp, cfg).get("global", [])
+
+        payload = rows[0]["cells"]["raw_total"]
+        self.assertEqual(payload["_kind"], "team_raw_detail")
+        self.assertEqual(payload["summary"], 23.75)
+        self.assertEqual([item["label"] for item in payload["rows"]], ["Maria", "Laia"])
+        self.assertEqual([item["value"] for item in payload["rows"]], [12.5, 11.25])
+
+    def test_compute_classificacio_derived_team_raw_multijudge_keeps_member_judge_rows(self):
+        ind_app = self._create_aparell("TR_J", "Tramp judges")
+        comp_ind_app = self._create_comp_aparell(self.comp, ind_app, ordre=2)
+
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=comp_ind_app,
+            inscripcio=self.ins1,
+            exercici=1,
+            inputs={"E": [8.1, 8.2]},
+            outputs={},
+            total=12.0,
+        )
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=comp_ind_app,
+            inscripcio=self.ins2,
+            exercici=1,
+            inputs={"E": [7.4, 7.6]},
+            outputs={},
+            total=11.0,
+        )
+
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Derived raw judges",
+            activa=True,
+            ordre=1,
+            tipus="equips",
+            schema={
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [comp_ind_app.id]},
+                    "camps_per_aparell": {str(comp_ind_app.id): ["total"]},
+                    "agregacio_camps": "sum",
+                    "exercicis": {"mode": "tots"},
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "ordre": "desc",
+                },
+                "presentacio": {
+                    "columnes": [
+                        {"type": "builtin", "key": "participant", "label": "Nom", "align": "left"},
+                        {
+                            "type": "raw",
+                            "key": "raw_exec",
+                            "label": "Exec",
+                            "align": "right",
+                            "decimals": 2,
+                            "source": {"aparell_id": comp_ind_app.id, "exercici": 1, "camp": "E", "jutges": {"ids": []}},
+                        },
+                    ]
+                },
+                "equips": {
+                    "context_code": "parelles",
+                    "team_mode": "derived_from_individual",
+                    "incloure_sense_equip": False,
+                },
+            },
+        )
+
+        rows = compute_classificacio(self.comp, cfg).get("global", [])
+
+        payload = rows[0]["cells"]["raw_exec"]
+        self.assertEqual(payload["_kind"], "team_raw_detail")
+        self.assertEqual(payload["summary"], "")
+        self.assertEqual(payload["rows"][0]["judge_rows"]["_kind"], "judge_rows")
+        self.assertEqual(payload["rows"][1]["judge_rows"]["_kind"], "judge_rows")
+
+    def test_compute_classificacio_derived_team_raw_column_uses_per_member_selected_exercises(self):
+        ind_app = self._create_aparell("TR_PM", "Tramp per member")
+        comp_ind_app = self._create_comp_aparell(self.comp, ind_app, ordre=2)
+        comp_ind_app.nombre_exercicis = 2
+        comp_ind_app.save(update_fields=["nombre_exercicis"])
+
+        for inscripcio, exercici, total in (
+            (self.ins1, 1, 1.0),
+            (self.ins1, 2, 10.0),
+            (self.ins2, 1, 2.0),
+            (self.ins2, 2, 9.0),
+        ):
+            ScoreEntry.objects.create(
+                competicio=self.comp,
+                comp_aparell=comp_ind_app,
+                inscripcio=inscripcio,
+                exercici=exercici,
+                inputs={},
+                outputs={},
+                total=total,
+            )
+
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Derived raw per member",
+            activa=True,
+            ordre=1,
+            tipus="equips",
+            schema={
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [comp_ind_app.id]},
+                    "camps_per_aparell": {str(comp_ind_app.id): ["total"]},
+                    "agregacio_camps": "sum",
+                    "exercicis": {"mode": "millor_n", "best_n": 1},
+                    "exercise_selection_scope": "per_member",
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "ordre": "desc",
+                },
+                "presentacio": {
+                    "columnes": [
+                        {"type": "builtin", "key": "participant", "label": "Nom", "align": "left"},
+                        {
+                            "type": "raw",
+                            "key": "raw_total",
+                            "label": "Raw total",
+                            "align": "right",
+                            "decimals": 2,
+                            "source": {"aparell_id": comp_ind_app.id, "exercici": 1, "camp": "total", "jutges": {"ids": []}},
+                        },
+                    ]
+                },
+                "equips": {
+                    "context_code": "parelles",
+                    "team_mode": "derived_from_individual",
+                    "incloure_sense_equip": False,
+                },
+            },
+        )
+
+        rows = compute_classificacio(self.comp, cfg).get("global", [])
+
+        payload = rows[0]["cells"]["raw_total"]
+        self.assertEqual(payload["_kind"], "team_raw_detail")
+        self.assertEqual(payload["summary"], 19.0)
+        self.assertEqual([item["value"] for item in payload["rows"]], [10.0, 9.0])
+
+    def test_compute_classificacio_derived_team_raw_column_uses_team_pool_selected_exercises(self):
+        ind_app = self._create_aparell("TR_TP", "Tramp team pool")
+        comp_ind_app = self._create_comp_aparell(self.comp, ind_app, ordre=2)
+        comp_ind_app.nombre_exercicis = 2
+        comp_ind_app.save(update_fields=["nombre_exercicis"])
+
+        for inscripcio, exercici, total in (
+            (self.ins1, 1, 1.0),
+            (self.ins1, 2, 10.0),
+            (self.ins2, 1, 2.0),
+            (self.ins2, 2, 9.0),
+        ):
+            ScoreEntry.objects.create(
+                competicio=self.comp,
+                comp_aparell=comp_ind_app,
+                inscripcio=inscripcio,
+                exercici=exercici,
+                inputs={},
+                outputs={},
+                total=total,
+            )
+
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Derived raw team pool",
+            activa=True,
+            ordre=1,
+            tipus="equips",
+            schema={
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [comp_ind_app.id]},
+                    "camps_per_aparell": {str(comp_ind_app.id): ["total"]},
+                    "agregacio_camps": "sum",
+                    "exercicis": {"mode": "millor_n", "best_n": 2, "max_per_participant": 1},
+                    "exercise_selection_scope": "team_pool",
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "ordre": "desc",
+                },
+                "presentacio": {
+                    "columnes": [
+                        {"type": "builtin", "key": "participant", "label": "Nom", "align": "left"},
+                        {
+                            "type": "raw",
+                            "key": "raw_total",
+                            "label": "Raw total",
+                            "align": "right",
+                            "decimals": 2,
+                            "source": {"aparell_id": comp_ind_app.id, "exercici": 1, "camp": "total", "jutges": {"ids": []}},
+                        },
+                    ]
+                },
+                "equips": {
+                    "context_code": "parelles",
+                    "team_mode": "derived_from_individual",
+                    "incloure_sense_equip": False,
+                },
+            },
+        )
+
+        rows = compute_classificacio(self.comp, cfg).get("global", [])
+
+        payload = rows[0]["cells"]["raw_total"]
+        self.assertEqual(payload["_kind"], "team_raw_detail")
+        self.assertEqual(payload["summary"], 19.0)
+        self.assertEqual([item["value"] for item in payload["rows"]], [10.0, 9.0])
+
+    def test_compute_classificacio_derived_team_raw_column_respects_global_pool_per_app(self):
+        app_a = self._create_aparell("TRA_RAW", "Tramp A raw")
+        app_b = self._create_aparell("TRB_RAW", "Tramp B raw")
+        comp_app_a = self._create_comp_aparell(self.comp, app_a, ordre=2)
+        comp_app_b = self._create_comp_aparell(self.comp, app_b, ordre=3)
+
+        for comp_aparell, inscripcio, total in (
+            (comp_app_a, self.ins1, 1.0),
+            (comp_app_b, self.ins1, 10.0),
+            (comp_app_a, self.ins2, 2.0),
+            (comp_app_b, self.ins2, 9.0),
+        ):
+            ScoreEntry.objects.create(
+                competicio=self.comp,
+                comp_aparell=comp_aparell,
+                inscripcio=inscripcio,
+                exercici=1,
+                inputs={},
+                outputs={},
+                total=total,
+            )
+
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Derived raw global pool",
+            activa=True,
+            ordre=1,
+            tipus="equips",
+            schema={
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [comp_app_a.id, comp_app_b.id]},
+                    "camps_per_aparell": {
+                        str(comp_app_a.id): ["total"],
+                        str(comp_app_b.id): ["total"],
+                    },
+                    "agregacio_camps": "sum",
+                    "exercicis": {"mode": "millor_n", "best_n": 2, "max_per_participant": 1},
+                    "exercise_selection_scope": "team_pool",
+                    "mode_seleccio_exercicis": "global_pool",
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "ordre": "desc",
+                },
+                "presentacio": {
+                    "columnes": [
+                        {"type": "builtin", "key": "participant", "label": "Nom", "align": "left"},
+                        {
+                            "type": "raw",
+                            "key": "raw_a",
+                            "label": "Raw A",
+                            "align": "right",
+                            "decimals": 2,
+                            "source": {"aparell_id": comp_app_a.id, "exercici": 1, "camp": "total", "jutges": {"ids": []}},
+                        },
+                        {
+                            "type": "raw",
+                            "key": "raw_b",
+                            "label": "Raw B",
+                            "align": "right",
+                            "decimals": 2,
+                            "source": {"aparell_id": comp_app_b.id, "exercici": 1, "camp": "total", "jutges": {"ids": []}},
+                        },
+                    ]
+                },
+                "equips": {
+                    "context_code": "parelles",
+                    "team_mode": "derived_from_individual",
+                    "incloure_sense_equip": False,
+                },
+            },
+        )
+
+        rows = compute_classificacio(self.comp, cfg).get("global", [])
+
+        self.assertEqual(rows[0]["cells"]["raw_a"], "")
+        payload = rows[0]["cells"]["raw_b"]
+        self.assertEqual(payload["_kind"], "team_raw_detail")
+        self.assertEqual(payload["summary"], 19.0)
+        self.assertEqual([item["value"] for item in payload["rows"]], [10.0, 9.0])
+
+    def test_compute_classificacio_native_team_raw_column_returns_team_detail_payload(self):
+        team_subject, _subject_meta = self._team_subject()
+        TeamScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            team_subject=team_subject,
+            exercici=1,
+            inputs={"SYNC": 7.5},
+            outputs={},
+            total=31,
+        )
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Native raw detail",
+            activa=True,
+            ordre=1,
+            tipus="equips",
+            schema={
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [self.comp_app.id]},
+                    "camps_per_aparell": {str(self.comp_app.id): ["total"]},
+                    "agregacio_camps": "sum",
+                    "exercicis": {"mode": "tots"},
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "ordre": "desc",
+                },
+                "presentacio": {
+                    "columnes": [
+                        {"type": "builtin", "key": "participant", "label": "Nom", "align": "left"},
+                        {
+                            "type": "raw",
+                            "key": "raw_sync",
+                            "label": "Sync",
+                            "align": "right",
+                            "decimals": 2,
+                            "source": {"aparell_id": self.comp_app.id, "exercici": 1, "camp": "SYNC", "jutges": {"ids": []}},
+                        },
+                    ]
+                },
+                "equips": {
+                    "context_code": "parelles",
+                    "team_mode": "native_team",
+                    "incloure_sense_equip": False,
+                },
+            },
+        )
+
+        rows = compute_classificacio(self.comp, cfg).get("global", [])
+
+        payload = rows[0]["cells"]["raw_sync"]
+        self.assertEqual(payload["_kind"], "team_raw_detail")
+        self.assertEqual(payload["summary"], 7.5)
+        self.assertEqual(payload["rows"], [{"label": "Parella 1", "value": 7.5}])
+
+    def test_compute_classificacio_native_team_raw_column_uses_selected_team_exercises(self):
+        self.comp_app.nombre_exercicis = 2
+        self.comp_app.save(update_fields=["nombre_exercicis"])
+        team_subject, _subject_meta = self._team_subject()
+        TeamScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            team_subject=team_subject,
+            exercici=1,
+            inputs={"SYNC": 1.0},
+            outputs={},
+            total=10.0,
+        )
+        TeamScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            team_subject=team_subject,
+            exercici=2,
+            inputs={"SYNC": 7.5},
+            outputs={},
+            total=30.0,
+        )
+
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Native raw selected exercises",
+            activa=True,
+            ordre=1,
+            tipus="equips",
+            schema={
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [self.comp_app.id]},
+                    "camps_per_aparell": {str(self.comp_app.id): ["total"]},
+                    "agregacio_camps": "sum",
+                    "exercicis": {"mode": "millor_n", "best_n": 1},
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "ordre": "desc",
+                },
+                "presentacio": {
+                    "columnes": [
+                        {"type": "builtin", "key": "participant", "label": "Nom", "align": "left"},
+                        {
+                            "type": "raw",
+                            "key": "raw_sync",
+                            "label": "Sync",
+                            "align": "right",
+                            "decimals": 2,
+                            "source": {"aparell_id": self.comp_app.id, "exercici": 1, "camp": "SYNC", "jutges": {"ids": []}},
+                        },
+                    ]
+                },
+                "equips": {
+                    "context_code": "parelles",
+                    "team_mode": "native_team",
+                    "incloure_sense_equip": False,
+                },
+            },
+        )
+
+        rows = compute_classificacio(self.comp, cfg).get("global", [])
+
+        payload = rows[0]["cells"]["raw_sync"]
+        self.assertEqual(payload["_kind"], "team_raw_detail")
+        self.assertEqual(payload["summary"], 7.5)
+        self.assertEqual(payload["rows"], [{"label": "Parella 1", "value": 7.5}])
+
+    def test_compute_classificacio_native_team_raw_column_on_individual_app_returns_blank_for_stale_schema(self):
+        ind_app = self._create_aparell("TR_STALE", "Tramp stale")
+        comp_ind_app = self._create_comp_aparell(self.comp, ind_app, ordre=2)
+        team_subject, _subject_meta = self._team_subject()
+        TeamScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            team_subject=team_subject,
+            exercici=1,
+            inputs={"SYNC": 6.0},
+            outputs={},
+            total=31.0,
+        )
+
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Native raw stale individual app",
+            activa=True,
+            ordre=1,
+            tipus="equips",
+            schema={
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [self.comp_app.id, comp_ind_app.id]},
+                    "camps_per_aparell": {
+                        str(self.comp_app.id): ["total"],
+                        str(comp_ind_app.id): ["total"],
+                    },
+                    "agregacio_camps": "sum",
+                    "exercicis": {"mode": "tots"},
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "ordre": "desc",
+                },
+                "presentacio": {
+                    "columnes": [
+                        {"type": "builtin", "key": "participant", "label": "Nom", "align": "left"},
+                        {
+                            "type": "raw",
+                            "key": "raw_invalid",
+                            "label": "Raw invalid",
+                            "align": "right",
+                            "decimals": 2,
+                            "source": {"aparell_id": comp_ind_app.id, "exercici": 1, "camp": "total", "jutges": {"ids": []}},
+                        },
+                    ]
+                },
+                "equips": {
+                    "context_code": "parelles",
+                    "team_mode": "native_team",
+                    "incloure_sense_equip": False,
+                },
+            },
+        )
+
+        rows = compute_classificacio(self.comp, cfg).get("global", [])
+
+        self.assertEqual(rows[0]["cells"]["raw_invalid"], "")
+
     def test_compute_classificacio_native_team_filters_require_all_members_to_match(self):
         self.ins1.categoria = "Base"
         self.ins2.categoria = "Promo"
@@ -12001,6 +12844,55 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
         )
 
         self.assertTrue(any("team_mode=native_team" in err for err in errors))
+
+    def test_classificacio_validation_rejects_native_team_raw_column_on_individual_app(self):
+        ind_app = self._create_aparell("TR_RAW_VAL", "Tramp raw validation")
+        comp_ind_app = self._create_comp_aparell(self.comp, ind_app, ordre=2)
+
+        _schema, errors = _validate_schema_for_competicio(
+            self.comp,
+            {
+                **self._native_team_schema_with_tie({"camps": ["TOTAL"], "ordre": "desc"}),
+                "presentacio": {
+                    "columnes": [
+                        {"type": "builtin", "key": "participant", "label": "Nom", "align": "left"},
+                        {
+                            "type": "raw",
+                            "key": "raw_total",
+                            "label": "Raw total",
+                            "align": "right",
+                            "decimals": 3,
+                            "source": {"aparell_id": comp_ind_app.id, "exercici": 1, "camp": "total", "jutges": {"ids": []}},
+                        },
+                    ]
+                },
+            },
+            tipus="equips",
+        )
+
+        self.assertTrue(any("nomes es poden mostrar aparells d'equip" in err for err in errors))
+
+    def test_normalize_excel_cell_supports_team_raw_detail(self):
+        value, _fmt, wrap = _normalize_excel_cell(
+            {
+                "_kind": "team_raw_detail",
+                "summary": 23.75,
+                "rows": [
+                    {"label": "Maria", "value": 12.5},
+                    {
+                        "label": "Laia",
+                        "judge_rows": {
+                            "_kind": "judge_rows",
+                            "rows": [{"judge": 1, "items": [7.4, 7.6]}],
+                        },
+                    },
+                ],
+            },
+            {"decimals": 2},
+        )
+
+        self.assertEqual(value, "23.75\nMaria: 12.50\nLaia:\n  J1: 7.40 | 7.60")
+        self.assertTrue(wrap)
 
     def test_classificacio_validation_rejects_native_team_tie_with_participant_scope(self):
         _schema, errors = _validate_schema_for_competicio(
@@ -12625,8 +13517,31 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
 
         self.assertEqual(response.status_code, 200)
         schema = response.context["schemas"][str(self.comp_app.id)]
+        logical_schema = response.context["logical_schemas"][str(self.comp_app.id)]
         self.assertIn("E__m1", {field["code"] for field in schema["fields"]})
         self.assertIn("E__m2", {field["code"] for field in schema["fields"]})
+        self.assertEqual({field["code"] for field in logical_schema["fields"]}, {"SYNC", "E"})
+
+    def test_scoring_notes_home_exposes_scoped_group_apps(self):
+        indiv_app = self._create_aparell("IND", "Individual")
+        indiv_comp_app = self._create_comp_aparell(self.comp, indiv_app, ordre=2)
+        ScoringSchema.objects.create(
+            aparell=indiv_app,
+            schema={
+                "fields": [{"code": "N", "label": "Nota", "type": "number"}],
+                "computed": [{"code": "TOTAL", "label": "Total", "formula": "N"}],
+            },
+        )
+
+        response = self.client.get(reverse("scoring_notes_home", kwargs={"pk": self.comp.id}))
+
+        self.assertEqual(response.status_code, 200)
+        groups_render = list(response.context["groups_render"]) + list(response.context["out_of_program_groups_render"])
+        individual_groups = [item for item in groups_render if item["kind"] == "individual_group"]
+        team_groups = [item for item in groups_render if item["kind"] == "team_bucket"]
+        self.assertTrue(any(int(app.id) == indiv_comp_app.id for item in individual_groups for app in item["apps"]))
+        self.assertTrue(any(int(app.id) == self.comp_app.id for item in team_groups for app in item["apps"]))
+        self.assertFalse(any(int(app.id) == self.comp_app.id for item in individual_groups for app in item["apps"]))
 
     def test_inscripcions_list_exposes_series_panel_navigation(self):
         response = self.client.get(reverse("inscripcions_list", kwargs={"pk": self.comp.id}))

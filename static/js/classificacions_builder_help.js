@@ -517,7 +517,7 @@
     columns_raw: {
       title: "Columnes raw",
       summary:
-        "Mostren valors d'un camp concret d'un aparell i exercici. Son utiles per ensenyar detalls del calcul al costat de la classificacio.",
+        "Mostren valors d'un camp concret d'un aparell i exercici. En equips, la live pot ensenyar resum i detall per membres o valor natiu d'equip segons el mode.",
     },
     preview_help: {
       title: "Previsualitzacio",
