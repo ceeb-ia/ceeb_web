@@ -19,10 +19,12 @@ from .models_classificacions import ClassificacioConfig, ClassificacioTemplateGl
 from .models_judging import PublicLiveToken
 from .services.services_classificacions_2 import (
     BIRTH_YEAR_RANGE_PARTITION_CODE,
+    CLASSIFICACIO_FILTER_KEYS,
     EXERCISE_SELECTION_SCOPE_INHERIT,
     EXERCISE_SELECTION_SCOPE_PER_MEMBER,
     compute_classificacio,
     DEFAULT_SCHEMA,
+    _normalize_classificacio_filters,
     _infer_team_mode_from_comp_aparells,
     _normalize_classificacio_equips_cfg,
     _normalize_exercise_selection_scope,
@@ -61,6 +63,7 @@ from .services.equip_contexts import (
     get_equip_context_payload,
     normalize_equip_context_code,
 )
+from .services.competition_groups import get_group_maps, group_label
 from .views import get_allowed_group_fields, get_inscripcio_value
 from .access import user_has_competicio_capability
 from .services.scoring_schema_validation import (
@@ -1019,8 +1022,22 @@ class ClassificacionsHome(TemplateView):
         else:
             filter_choices["subcategories"] = [{"value": v, "label": str(v)} for v in _distinct_values(ins_qs, "subcategoria")]
 
-        # grup (normalment text)
-        filter_choices["grups"] = [{"value": v, "label": str(v)} for v in _distinct_values(ins_qs, "grup")]
+        # grup: prioritat al grup normalitzat; fallback al camp legacy si cal
+        group_choices = []
+        seen_group_values = set()
+        for group in get_group_maps(competicio).get("groups", []):
+            value = str(getattr(group, "display_num", "") or "").strip()
+            if not value or value in seen_group_values:
+                continue
+            seen_group_values.add(value)
+            group_choices.append({"value": value, "label": group_label(group)})
+        for legacy_value in _distinct_values(ins_qs, "grup"):
+            value = str(legacy_value).strip()
+            if not value or value in seen_group_values:
+                continue
+            seen_group_values.add(value)
+            group_choices.append({"value": value, "label": f"Grup {value}"})
+        filter_choices["grups"] = group_choices
 
         ctx["filter_choices"] = filter_choices
 
@@ -1238,6 +1255,29 @@ def _normalize_particions_schema(schema):
     out["particions_custom"] = _normalize_particions_custom(schema.get("particions_custom") or {})
     out["particions_config"] = normalize_particions_config(schema.get("particions_config") or {})
     return out
+
+
+def _validate_filtres_schema(schema: dict):
+    schema = schema if isinstance(schema, dict) else {}
+    raw_filters = schema.get("filtres")
+    errors = []
+
+    if raw_filters in (None, ""):
+        raw_filters = {}
+    if not isinstance(raw_filters, dict):
+        schema["filtres"] = {}
+        return ["filtres ha de ser un objecte."]
+
+    allowed_keys = set(CLASSIFICACIO_FILTER_KEYS)
+    for key in sorted(raw_filters.keys()):
+        if key not in allowed_keys:
+            errors.append(f"filtres.{key}: clau no admesa.")
+            continue
+        if not isinstance(raw_filters.get(key), list):
+            errors.append(f"filtres.{key}: ha de ser una llista.")
+
+    schema["filtres"] = _normalize_classificacio_filters(raw_filters)
+    return errors
 
 
 def _json_clone(value):
@@ -2032,6 +2072,7 @@ def _scoreable_codes_by_app_id(competicio, *, tipus=None, assignment_context_cod
 
 def _sanitize_schema_for_builder(competicio, schema_local, tipus="individual"):
     schema = _normalize_particions_schema(_json_clone(schema_local or {}))
+    schema["filtres"] = _normalize_classificacio_filters(schema.get("filtres") or {})
     active_apps, by_id, _ = _get_comp_aparell_maps(competicio, active_only=True)
     active_ids = [int(ca.id) for ca in active_apps]
     active_set = set(active_ids)
@@ -2125,6 +2166,7 @@ def _sanitize_schema_for_builder(competicio, schema_local, tipus="individual"):
         )
     else:
         punt.pop("exercise_selection_scope", None)
+    main_exercise_scope = punt.get("exercise_selection_scope") or EXERCISE_SELECTION_SCOPE_PER_MEMBER
 
     def _sanitize_tie_item(raw_tie, *, selected_main_ids, allow_app_scope: bool, allow_participants: bool):
         if not isinstance(raw_tie, dict):
@@ -2176,9 +2218,20 @@ def _sanitize_schema_for_builder(competicio, schema_local, tipus="individual"):
         item["camps"] = valid_camps
         item["scope"] = scope
 
+        effective_tie_scope = _effective_tie_exercise_selection_scope(
+            item,
+            main_scope=main_exercise_scope,
+        )
+        if effective_tie_scope == EXERCISE_SELECTION_SCOPE_TEAM_POOL:
+            scope.pop("exercicis", None)
+            scope.pop("participants", None)
+            item.pop("agregacio_participants", None)
+            item.pop("mode_seleccio_exercicis", None)
+            item.pop("exercicis_per_aparell", None)
+
         ex_map_in = item.get("exercicis_per_aparell") or {}
         ex_map_out = {}
-        if isinstance(ex_map_in, dict):
+        if effective_tie_scope != EXERCISE_SELECTION_SCOPE_TEAM_POOL and isinstance(ex_map_in, dict):
             for raw_key, cfg in ex_map_in.items():
                 try:
                     app_id = int(raw_key)
@@ -2285,6 +2338,7 @@ def _validate_schema_for_competicio(competicio, schema_local, tipus="individual"
     )
     schema_local = _normalize_particions_schema(schema_local or {})
     errors = list(legacy_info.get("compatibility_errors") or [])
+    errors.extend(_validate_filtres_schema(schema_local))
     equips_cfg = _normalize_classificacio_equips_cfg(schema_local.get("equips") or {})
     schema_local["equips"] = equips_cfg
     raw_assignment_source = (schema_local.get("equips") or {}).get("assignment_source") or {}
@@ -2379,7 +2433,14 @@ def _validate_schema_for_competicio(competicio, schema_local, tipus="individual"
     errors.extend(_validate_tie_camps_per_aparell(competicio, schema_local))
     errors.extend(_validate_presentacio_columns(competicio, schema_local))
     errors.extend(_validate_exercicis_selection(competicio, schema_local))
-    errors.extend(_validate_tie_exercicis_selection(competicio, schema_local))
+    errors.extend(
+        _validate_tie_exercicis_selection(
+            competicio,
+            schema_local,
+            tipus=tipus,
+            team_mode=schema_local.get("equips", {}).get("team_mode", ""),
+        )
+    )
     errors.extend(_validate_victories_schema(competicio, schema_local, tipus=tipus))
     return schema_local, errors
 
@@ -2387,6 +2448,7 @@ def _validate_schema_for_competicio(competicio, schema_local, tipus="individual"
 def _autofix_schema_for_competicio(competicio, schema_local, mode: str, tipus=None):
     mode = _parse_fallback_mode(mode)
     schema = _normalize_particions_schema(_json_clone(schema_local or {}))
+    schema["filtres"] = _normalize_classificacio_filters(schema.get("filtres") or {})
     warnings = []
     dropped = []
 
@@ -3921,6 +3983,16 @@ def _is_derived_team_scope_enabled(*, tipus="individual", team_mode="") -> bool:
     )
 
 
+def _effective_tie_exercise_selection_scope(tie: dict, *, main_scope=None):
+    tie_scope = _normalize_exercise_selection_scope(
+        (tie or {}).get("exercise_selection_scope"),
+        allow_inherit=True,
+    )
+    if tie_scope == EXERCISE_SELECTION_SCOPE_INHERIT:
+        return main_scope or EXERCISE_SELECTION_SCOPE_PER_MEMBER
+    return tie_scope
+
+
 def _validate_exercise_selection_scope(schema: dict, *, tipus="individual", team_mode=""):
     schema = schema or {}
     punt = schema.get("puntuacio")
@@ -4111,7 +4183,7 @@ def _validate_tie_camps_per_aparell(competicio, schema: dict):
     return errors
 
 
-def _validate_tie_exercicis_selection(competicio, schema: dict):
+def _validate_tie_exercicis_selection(competicio, schema: dict, *, tipus="individual", team_mode=""):
     schema = schema or {}
     punt = (schema.get("puntuacio") or {})
     desempat = schema.get("desempat") or []
@@ -4120,6 +4192,12 @@ def _validate_tie_exercicis_selection(competicio, schema: dict):
 
     errors = []
     active_app_ids, selected_ids_main = _get_active_and_selected_app_ids(competicio, punt)
+    allow_exercise_scope = _is_derived_team_scope_enabled(tipus=tipus, team_mode=team_mode)
+    main_scope = (
+        _normalize_exercise_selection_scope(punt.get("exercise_selection_scope"))
+        if allow_exercise_scope
+        else EXERCISE_SELECTION_SCOPE_PER_MEMBER
+    )
 
     for idx, tie in enumerate(desempat):
         if not isinstance(tie, dict):
@@ -4135,6 +4213,40 @@ def _validate_tie_exercicis_selection(competicio, schema: dict):
             errors.append(f"desempat[{idx}].scope.exercicis ha de ser un objecte.")
         if not isinstance(ex_scope, dict):
             ex_scope = {}
+
+        effective_tie_scope = _effective_tie_exercise_selection_scope(
+            tie,
+            main_scope=main_scope,
+        )
+        if effective_tie_scope == EXERCISE_SELECTION_SCOPE_TEAM_POOL:
+            if scope.get("exercicis") not in (None, {}):
+                errors.append(
+                    f"desempat[{idx}].scope.exercicis no es compatible amb exercise_selection_scope=team_pool."
+                )
+            mode_sel_present = (
+                tie.get("mode_seleccio_exercicis") not in (None, "")
+                or ex_scope.get("mode_seleccio_exercicis") not in (None, "")
+            )
+            if mode_sel_present:
+                errors.append(
+                    f"desempat[{idx}].mode_seleccio_exercicis no es compatible amb exercise_selection_scope=team_pool."
+                )
+            raw_map = tie.get("exercicis_per_aparell")
+            if raw_map is None:
+                raw_map = ex_scope.get("exercicis_per_aparell")
+            if raw_map not in (None, {}, []):
+                errors.append(
+                    f"desempat[{idx}].exercicis_per_aparell no es compatible amb exercise_selection_scope=team_pool."
+                )
+            if scope.get("participants") not in (None, {}):
+                errors.append(
+                    f"desempat[{idx}].scope.participants no es compatible amb exercise_selection_scope=team_pool."
+                )
+            if tie.get("agregacio_participants") not in (None, ""):
+                errors.append(
+                    f"desempat[{idx}].agregacio_participants no es compatible amb exercise_selection_scope=team_pool."
+                )
+            continue
 
         ex_mode = str(ex_scope.get("mode") or "hereta").strip().lower()
         if ex_mode != "hereta":

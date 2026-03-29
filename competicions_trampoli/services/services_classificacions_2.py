@@ -30,6 +30,12 @@ logger = logging.getLogger(__name__)
 EXERCISE_SELECTION_SCOPE_PER_MEMBER = "per_member"
 EXERCISE_SELECTION_SCOPE_TEAM_POOL = "team_pool"
 EXERCISE_SELECTION_SCOPE_INHERIT = "hereta"
+CLASSIFICACIO_FILTER_KEYS = (
+    "entitats_in",
+    "categories_in",
+    "subcategories_in",
+    "grups_in",
+)
 
 
 def _legacy_native_equip_for_classificacio(inscripcio):
@@ -57,6 +63,163 @@ def _resolve_inscripcio_equip_for_classificacio(inscripcio, *, context_code=None
     if code != NATIVE_EQUIP_CONTEXT_CODE and fallback_code != NATIVE_EQUIP_CONTEXT_CODE:
         return None
     return _legacy_native_equip_for_classificacio(inscripcio)
+
+
+def _normalize_positive_int(value):
+    try:
+        num = int(value)
+    except Exception:
+        return None
+    return num if num > 0 else None
+
+
+def _normalized_text_token(value) -> str:
+    txt = str(value or "")
+    txt = " ".join(txt.split()).strip()
+    return txt.casefold()
+
+
+def _normalize_classificacio_filter_values(raw_values, *, groups=False):
+    items = raw_values if isinstance(raw_values, list) else ([] if raw_values in (None, "") else [raw_values])
+    out = []
+    seen = set()
+    for raw in items:
+        if raw is None or isinstance(raw, bool):
+            continue
+
+        as_int = None
+        if isinstance(raw, int):
+            as_int = _normalize_positive_int(raw)
+        elif isinstance(raw, Decimal):
+            try:
+                if raw == raw.to_integral_value():
+                    as_int = _normalize_positive_int(int(raw))
+            except Exception:
+                as_int = None
+        elif isinstance(raw, float):
+            if raw.is_integer():
+                as_int = _normalize_positive_int(int(raw))
+
+        txt = ""
+        if as_int is None:
+            txt = str(raw).strip()
+            if not txt:
+                continue
+            parsed = _normalize_positive_int(txt)
+            if parsed is not None:
+                as_int = parsed
+
+        if groups:
+            stored = str(as_int) if as_int is not None else txt
+            token = ("group", _normalized_text_token(stored))
+        elif as_int is not None:
+            stored = int(as_int)
+            token = ("id", int(as_int))
+        else:
+            stored = txt
+            token = ("txt", _normalized_text_token(txt))
+
+        if not stored or token in seen:
+            continue
+        seen.add(token)
+        out.append(stored)
+    return out
+
+
+def _normalize_classificacio_filters(raw_filters):
+    filters = raw_filters if isinstance(raw_filters, dict) else {}
+    out = {}
+    for key in CLASSIFICACIO_FILTER_KEYS:
+        values = _normalize_classificacio_filter_values(
+            filters.get(key),
+            groups=(key == "grups_in"),
+        )
+        if values:
+            out[key] = values
+    return out
+
+
+def _normalized_group_filter_value(inscripcio) -> str:
+    group_obj = getattr(inscripcio, "grup_competicio", None)
+    display_num = _normalize_positive_int(getattr(group_obj, "display_num", None))
+    if display_num is not None:
+        return str(display_num)
+
+    legacy_group = _normalize_positive_int(getattr(inscripcio, "grup", None))
+    if legacy_group is not None:
+        return str(legacy_group)
+
+    raw_group = str(getattr(inscripcio, "grup", "") or "").strip()
+    return raw_group
+
+
+def _inscripcio_matches_filter_field(inscripcio, field_name: str, allowed_values) -> bool:
+    if not allowed_values:
+        return True
+
+    if _is_relational_field(Inscripcio, field_name):
+        candidate_id = _normalize_positive_int(getattr(inscripcio, f"{field_name}_id", None))
+        candidate_text = _normalized_text_token(_display_value(inscripcio, field_name))
+        for raw in allowed_values:
+            raw_id = _normalize_positive_int(raw)
+            if raw_id is not None and candidate_id is not None and raw_id == candidate_id:
+                return True
+            if candidate_text and candidate_text == _normalized_text_token(raw):
+                return True
+        return False
+
+    candidate_text = _normalized_text_token(getattr(inscripcio, field_name, None))
+    if not candidate_text:
+        return False
+    for raw in allowed_values:
+        if candidate_text == _normalized_text_token(raw):
+            return True
+    return False
+
+
+def _inscripcio_matches_classificacio_filters(inscripcio, filtres) -> bool:
+    filters = _normalize_classificacio_filters(filtres)
+    if not filters:
+        return True
+
+    if not _inscripcio_matches_filter_field(inscripcio, "entitat", filters.get("entitats_in") or []):
+        return False
+    if not _inscripcio_matches_filter_field(inscripcio, "categoria", filters.get("categories_in") or []):
+        return False
+    if not _inscripcio_matches_filter_field(inscripcio, "subcategoria", filters.get("subcategories_in") or []):
+        return False
+
+    group_filters = filters.get("grups_in") or []
+    if group_filters:
+        candidate_group = _normalized_text_token(_normalized_group_filter_value(inscripcio))
+        if not candidate_group:
+            return False
+        if all(candidate_group != _normalized_text_token(raw) for raw in group_filters):
+            return False
+
+    return True
+
+
+def _native_team_members_match_classificacio_filters(member_rows, filtres) -> bool:
+    resolved_members = []
+    seen_ids = set()
+    for item in member_rows or []:
+        if not isinstance(item, (list, tuple)) or not item:
+            return False
+        member = item[0]
+        member_id = _normalize_positive_int(getattr(member, "id", None))
+        if member_id is None or member_id in seen_ids:
+            continue
+        seen_ids.add(member_id)
+        resolved_members.append(member)
+
+    if not resolved_members:
+        return False
+
+    for member in resolved_members:
+        if not _inscripcio_matches_classificacio_filters(member, filtres):
+            return False
+    return True
 
 
 # -----------------------------
@@ -221,7 +384,7 @@ def _merge_schema(schema: dict) -> dict:
     out["particions_config"] = normalize_particions_config(
         schema.get("particions_config", DEFAULT_SCHEMA["particions_config"]) or {}
     )
-    out["filtres"] = {**DEFAULT_SCHEMA["filtres"], **(schema.get("filtres") or {})}
+    out["filtres"] = _normalize_classificacio_filters(schema.get("filtres") or {})
     out["puntuacio"] = {**DEFAULT_SCHEMA["puntuacio"], **(schema.get("puntuacio") or {})}
     out["puntuacio"]["victories"] = {
         **DEFAULT_SCHEMA["puntuacio"]["victories"],
@@ -1766,7 +1929,7 @@ def compute_classificacio(competicio, cfg_obj):
     )
     part_custom_idx = _build_particions_custom_index(schema.get("particions_custom") or {})
     particions_config = normalize_particions_config(schema.get("particions_config") or {})
-    filtres = schema["filtres"] or {}
+    filtres = _normalize_classificacio_filters(schema.get("filtres") or {})
     punt = schema["puntuacio"] or {}
     desempat = schema["desempat"] or []
     presentacio = schema["presentacio"] or {}
@@ -1832,27 +1995,29 @@ def compute_classificacio(competicio, cfg_obj):
         return {"global": []}
 
     # 3) INSCRIPCIONS per competició, agrupades per aparell
-    ins_qs = Inscripcio.objects.filter(competicio=competicio)
-    ins_qs = _filter_in(ins_qs, Inscripcio, "entitat", filtres.get("entitats_in") or [])
-    ins_qs = _filter_in(ins_qs, Inscripcio, "categoria", filtres.get("categories_in") or [])
-    ins_qs = _filter_in(ins_qs, Inscripcio, "subcategoria", filtres.get("subcategories_in") or [])
-    if filtres.get("grups_in"):
-        ins_qs = ins_qs.filter(grup__in=filtres["grups_in"])
+    all_ins_qs = Inscripcio.objects.filter(competicio=competicio)
 
     sr = []
-    for f in ("entitat", "categoria", "subcategoria", "equip"):
+    for f in ("entitat", "categoria", "subcategoria", "equip", "grup_competicio"):
         if _is_relational_field(Inscripcio, f):
             sr.append(f)
     if sr:
-        ins_qs = ins_qs.select_related(*sr)
+        all_ins_qs = all_ins_qs.select_related(*sr)
 
-    ins_list = list(ins_qs)
-    ins_by_id = {i.id: i for i in ins_list}
+    all_ins_list = list(all_ins_qs)
+    all_ins_by_id = {i.id: i for i in all_ins_list}
+    filtered_ins_list = [
+        ins for ins in all_ins_list
+        if _inscripcio_matches_classificacio_filters(ins, filtres)
+    ]
+    filtered_ins_by_id = {i.id: i for i in filtered_ins_list}
+    ins_list = filtered_ins_list
+    ins_by_id = filtered_ins_by_id
     team_assignment_map = {}
     if tipus == "equips" and team_mode == "derived_from_individual" and assignment_source.get("mode") == "context":
         team_assignment_map = get_contextual_assignment_map(
             competicio,
-            ins_list,
+            filtered_ins_list,
             team_context_code,
         )
 
@@ -2317,6 +2482,7 @@ def compute_classificacio(competicio, cfg_obj):
         selected_team_rows_field_cache[cache_key] = dict(picked_by_app)
         return selected_team_rows_field_cache[cache_key]
 
+    main_selected_rows_for_group_cache = {}
     derived_team_selected_rows_agg_cache = {}
     derived_team_selected_rows_field_cache = {}
 
@@ -2418,6 +2584,49 @@ def compute_classificacio(competicio, cfg_obj):
 
         derived_team_selected_rows_agg_cache[team_cache_key] = dict(picked_by_app)
         return derived_team_selected_rows_agg_cache[team_cache_key]
+
+    def _get_main_selected_rows_for_group(team_cache_key: str, member_ids):
+        if team_cache_key in main_selected_rows_for_group_cache:
+            return main_selected_rows_for_group_cache[team_cache_key]
+
+        if exercise_selection_scope == EXERCISE_SELECTION_SCOPE_TEAM_POOL:
+            rows = _get_selected_rows_agg_for_derived_team(team_cache_key, member_ids)
+            main_selected_rows_for_group_cache[team_cache_key] = rows
+            return rows
+
+        picked_by_app = defaultdict(list)
+        seen_members = set()
+        for raw_member_id in (member_ids or []):
+            try:
+                member_id = int(raw_member_id)
+            except Exception:
+                continue
+            if member_id in seen_members:
+                continue
+            seen_members.add(member_id)
+            for app_id, rows in (_get_selected_rows_agg_for_ins(member_id) or {}).items():
+                try:
+                    app_id_int = int(app_id)
+                except Exception:
+                    continue
+                for row in (rows or []):
+                    item = _copy_ex_row_with_value(row, row.get("value"))
+                    item["inscripcio_id"] = member_id
+                    picked_by_app[app_id_int].append(item)
+
+        for app_id, rows in list(picked_by_app.items()):
+            picked_by_app[app_id] = sorted(
+                rows,
+                key=lambda r: (
+                    r.get("app_order", 0),
+                    r.get("exercici", 0),
+                    r.get("app_id", 0),
+                    r.get("inscripcio_id", 0),
+                ),
+            )
+
+        main_selected_rows_for_group_cache[team_cache_key] = dict(picked_by_app)
+        return main_selected_rows_for_group_cache[team_cache_key]
 
     def _get_selected_rows_for_derived_team_field(team_cache_key: str, member_ids, field_code: str):
         cache_key = (team_cache_key, str(field_code or ""))
@@ -2873,65 +3082,10 @@ def compute_classificacio(competicio, cfg_obj):
 
             scope = crit_local.get("scope") or {}
             crit_apps = scope.get("aparells") or {}
-            crit_ex = scope.get("exercicis") or {}
 
             crit_agg_camps = _inherit(crit_local.get("agregacio_camps"), agg_camps)
             crit_agg_exercicis = _inherit(crit_local.get("agregacio_exercicis"), agg_exercicis)
             crit_agg_aparells = _inherit(crit_local.get("agregacio_aparells"), agg_aparells)
-
-            crit_ex_mode = (crit_ex.get("mode") or "hereta").lower().strip()
-            if crit_ex_mode == "hereta":
-                crit_ex_mode = exerc_mode
-
-            try:
-                crit_best_n = int(crit_ex.get("best_n") or ex_best_n)
-            except Exception:
-                crit_best_n = ex_best_n
-            crit_ex_index = crit_ex.get("index", ex_index)
-            crit_ex_ids = crit_ex.get("ids", ex_ids)
-            try:
-                crit_ex_max_per_participant = int(
-                    crit_ex.get("max_per_participant", base_ex_cfg.get("max_per_participant", 0))
-                )
-            except Exception:
-                crit_ex_max_per_participant = int(base_ex_cfg.get("max_per_participant", 0) or 0)
-            crit_ex_max_per_participant = max(0, crit_ex_max_per_participant)
-
-            crit_ex_cfg_global = _normalize_exercicis_cfg(
-                {
-                    "mode": crit_ex_mode,
-                    "best_n": crit_best_n,
-                    "index": crit_ex_index,
-                    "ids": crit_ex_ids,
-                    "max_per_participant": crit_ex_max_per_participant,
-                },
-                fallback=base_ex_cfg,
-            )
-
-            crit_mode_sel = (
-                crit_local.get("mode_seleccio_exercicis")
-                or crit_ex.get("mode_seleccio_exercicis")
-                or "hereta"
-            )
-            crit_mode_sel = _inherit(crit_mode_sel, mode_seleccio_exercicis)
-            if crit_mode_sel not in ("per_aparell_global", "per_aparell_override", "global_pool"):
-                crit_mode_sel = mode_seleccio_exercicis
-
-            crit_ex_per_app_raw = (
-                crit_local.get("exercicis_per_aparell")
-                or crit_ex.get("exercicis_per_aparell")
-                or {}
-            )
-            if not isinstance(crit_ex_per_app_raw, dict):
-                crit_ex_per_app_raw = {}
-
-            def _resolve_tie_ex_cfg_for_app(app_id: int):
-                if crit_mode_sel != "per_aparell_override":
-                    return crit_ex_cfg_global
-                raw = crit_ex_per_app_raw.get(str(app_id))
-                if raw is None:
-                    raw = crit_ex_per_app_raw.get(app_id)
-                return _normalize_exercicis_cfg(raw, fallback=crit_ex_cfg_global)
 
             target_apps = _resolve_target_apps(crit_apps, forced_app_ids=forced_app_ids)
             forced_exercicis_set = None
@@ -2943,104 +3097,35 @@ def compute_classificacio(competicio, cfg_obj):
                     except Exception:
                         continue
 
-            app_rows_ex = {}
+            team_cache_key = _derived_team_cache_key(None, mids_local)
+            selected_rows_by_app = _get_main_selected_rows_for_group(
+                team_cache_key,
+                mids_local,
+            )
+            vals_apps = []
             for app_id in target_apps:
                 ca = next((x for x in aparells if x.id == app_id), None)
                 if not ca or is_team_context_app(ca):
                     continue
 
-                n_ex = int(getattr(ca, "nombre_exercicis", 1) or 1)
-                n_ex = max(1, min(50, n_ex))
+                selected_rows = list(selected_rows_by_app.get(app_id, []))
+                if forced_exercicis_set is not None:
+                    selected_rows = [
+                        row for row in selected_rows
+                        if int(row.get("exercici", 0) or 0) in forced_exercicis_set
+                    ]
 
-                app_scores = notes_by_app.get(app_id, [])
-                by_ins_ex = defaultdict(dict)
-                for se in app_scores:
-                    ex_idx = int(getattr(se, "exercici", 1) or 1)
-                    if 1 <= ex_idx <= n_ex:
-                        by_ins_ex[se.inscripcio_id][ex_idx] = se
-
-                rows_ex = []
-                for mid in mids_local:
-                    for ex_idx in range(1, n_ex + 1):
-                        if forced_exercicis_set is not None and ex_idx not in forced_exercicis_set:
-                            continue
-                        se = by_ins_ex.get(mid, {}).get(ex_idx)
-                        if not se:
-                            continue
-                        vals_fields = [_get_score_field(se, c) for c in camps]
-                        v_ex = _apply_simple_agg(vals_fields, crit_agg_camps)
-                        rows_ex.append(
-                            {
-                                "idx": int(ex_idx),
-                                "value": _to_float(v_ex),
-                                "app_id": app_id,
-                                "app_order": app_order.get(app_id, 0),
-                                "exercici": int(ex_idx),
-                                "inscripcio_id": mid,
-                            }
-                        )
-                app_rows_ex[app_id] = rows_ex
-
-            vals_apps = []
-            if forced_exercicis_set is not None:
-                for app_id in target_apps:
-                    vals_apps.append(
+                row_values = []
+                for row in selected_rows:
+                    by_camp = dict((row or {}).get("by_camp") or {})
+                    row_values.append(
                         _apply_simple_agg(
-                            [_to_float(row.get("value")) for row in app_rows_ex.get(app_id, [])],
-                            crit_agg_exercicis,
+                            [_to_float(by_camp.get(code)) for code in camps],
+                            crit_agg_camps,
                         )
                     )
-            elif crit_mode_sel == "global_pool":
-                pool_rows = []
-                for app_id in target_apps:
-                    for row in app_rows_ex.get(app_id, []):
-                        item = _copy_ex_row_with_value(row, row.get("value"))
-                        item["idx"] = 0
-                        pool_rows.append(item)
-                pool_rows = sorted(
-                    pool_rows,
-                    key=lambda r: (r.get("app_order", 0), r.get("exercici", 0), r.get("app_id", 0)),
-                )
-                for idx, row in enumerate(pool_rows, start=1):
-                    row["idx"] = idx
-                picked_rows = _pick_exercicis_rows(
-                    pool_rows,
-                    crit_ex_cfg_global["mode"],
-                    crit_ex_cfg_global["best_n"],
-                    index=crit_ex_cfg_global["index"],
-                    ids=crit_ex_cfg_global["ids"],
-                    max_per_participant=crit_ex_cfg_global.get("max_per_participant", 0),
-                    participant_key="inscripcio_id",
-                )
-                picked_by_app = defaultdict(list)
-                for row in picked_rows:
-                    try:
-                        app_id = int(row.get("app_id"))
-                    except Exception:
-                        continue
-                    picked_by_app[app_id].append(_to_float(row.get("value")))
-                for app_id in target_apps:
-                    vals_apps.append(
-                        _apply_simple_agg(picked_by_app.get(app_id, []), crit_agg_exercicis)
-                    )
-            else:
-                for app_id in target_apps:
-                    ex_cfg_app = _resolve_tie_ex_cfg_for_app(app_id)
-                    picked = _pick_exercicis_rows(
-                        app_rows_ex.get(app_id, []),
-                        ex_cfg_app["mode"],
-                        ex_cfg_app["best_n"],
-                        index=ex_cfg_app["index"],
-                        ids=ex_cfg_app["ids"],
-                        max_per_participant=ex_cfg_app.get("max_per_participant", 0),
-                        participant_key="inscripcio_id",
-                    )
-                    vals_apps.append(
-                        _apply_simple_agg(
-                            [_to_float(row.get("value")) for row in picked],
-                            crit_agg_exercicis,
-                        )
-                    )
+
+                vals_apps.append(_apply_simple_agg(row_values, crit_agg_exercicis))
 
             return float(_apply_simple_agg(vals_apps, crit_agg_aparells))
 
@@ -3725,13 +3810,17 @@ def compute_classificacio(competicio, cfg_obj):
                     if subject is None or equip is None:
                         continue
                     member_rows = []
+                    missing_members = False
                     for member_id in _dedupe_int_ids_preserve_order(
                         getattr(subject, "member_ids", []) or []
                     ):
-                        member = ins_by_id.get(member_id)
+                        member = all_ins_by_id.get(member_id)
                         if member is None:
-                            member = SimpleNamespace(id=member_id, data_naixement=None)
+                            missing_members = True
+                            break
                         member_rows.append((member, equip))
+                    if missing_members or not _native_team_members_match_classificacio_filters(member_rows, filtres):
+                        continue
                     base_bucket = "__team_partition__" if has_team_birth_partition else "global"
                     grouped[base_bucket].setdefault(int(equip.id), member_rows)
         else:

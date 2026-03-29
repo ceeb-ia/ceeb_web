@@ -1558,6 +1558,44 @@
     return "";
   }
 
+  function normalizeFilterList(rawValues, opts = {}) {
+    const values = Array.isArray(rawValues) ? rawValues : (rawValues == null || rawValues === "" ? [] : [rawValues]);
+    const groups = !!opts.groups;
+    const out = [];
+    const seen = new Set();
+    values.forEach(raw => {
+      if (raw == null || typeof raw === "boolean") return;
+      let stored = "";
+      if (groups) {
+        const num = Number(raw);
+        stored = Number.isFinite(num) && num > 0 ? String(Math.trunc(num)) : String(raw).trim();
+      } else {
+        const num = Number(raw);
+        stored = Number.isFinite(num) && String(raw).trim() !== "" ? Math.trunc(num) : String(raw).trim();
+      }
+      if (stored === "" || stored == null) return;
+      const token = typeof stored === "number" ? `n:${stored}` : `s:${String(stored).trim().toLowerCase()}`;
+      if (seen.has(token)) return;
+      seen.add(token);
+      out.push(stored);
+    });
+    return out;
+  }
+
+  function normalizeFilters(rawFilters) {
+    const filters = rawFilters && typeof rawFilters === "object" && !Array.isArray(rawFilters) ? rawFilters : {};
+    const out = {};
+    const entitats = normalizeFilterList(filters.entitats_in);
+    const categories = normalizeFilterList(filters.categories_in);
+    const subcategories = normalizeFilterList(filters.subcategories_in);
+    const grups = normalizeFilterList(filters.grups_in, { groups: true });
+    if (entitats.length) out.entitats_in = entitats;
+    if (categories.length) out.categories_in = categories;
+    if (subcategories.length) out.subcategories_in = subcategories;
+    if (grups.length) out.grups_in = grups;
+    return out;
+  }
+
   function normalizeExerciseSelectionScope(raw) {
     const scope = String(raw || "").trim().toLowerCase();
     if ([EXERCISE_SELECTION_SCOPE_PER_MEMBER, EXERCISE_SELECTION_SCOPE_TEAM_POOL].includes(scope)) return scope;
@@ -1809,6 +1847,33 @@
       return "Tria si aquesta classificació d'equips es calcula des d'aparells individuals o des de notes natives d'equip.";
     }
     return "No hi ha dades de capacitat de context; es farà servir el mode seleccionat o el suggerit per la selecció actual.";
+  }
+
+  function renderFiltersContextualCopy() {
+    const sectionDesc = document.querySelector("#section-filtres .builder-section__desc");
+    const simpleDesc = document.querySelector("#section-filtres .builder-subsection__desc");
+    if (!sectionDesc || !simpleDesc) return;
+
+    const tipus = currentTipus();
+    const uiState = getEquipsUiState();
+    const teamMode = uiState.effectiveTeamMode || TEAM_MODE_DERIVED;
+
+    let sectionText = "Entren només els participants que compleixin aquests filtres abans de calcular resultats o mostrar particions.";
+    let simpleText = "Combina entitats, categories, subcategories i grups per limitar la mostra de participants.";
+
+    if (tipus === "entitat") {
+      sectionText = "Primer es filtren participants i després s'agrega el resultat per entitat.";
+      simpleText = "Combina entitats, categories, subcategories i grups per limitar els participants abans d'agrupar-los per entitat.";
+    } else if (tipus === "equips" && teamMode === TEAM_MODE_NATIVE) {
+      sectionText = "Un equip només entra si tots els seus membres compleixen aquests filtres abans de calcular la nota nativa d'equip.";
+      simpleText = "Els filtres es comproven sobre la composició completa de l'equip: si falla un membre, l'equip queda fora.";
+    } else if (tipus === "equips") {
+      sectionText = "Primer es filtren membres i després es calcula l'equip amb els membres resultants.";
+      simpleText = "Combina entitats, categories, subcategories i grups per limitar quins membres entren al càlcul d'equips.";
+    }
+
+    sectionDesc.textContent = sectionText;
+    simpleDesc.textContent = simpleText;
   }
 
   function renderEquipsModeControls() {
@@ -2070,6 +2135,44 @@
     return getSchemaSelectedAppIds(schema);
   }
 
+  function getCompatibleAppIds() {
+    return getAppChoices([], { includeStale: false }).map(a => Number(a.id)).filter(Number.isFinite);
+  }
+
+  function sanitizeCompatibleAppIds(rawIds) {
+    const allowed = new Set(getCompatibleAppIds().map(id => String(id)));
+    return _uniquePositiveInts(rawIds).filter(id => allowed.has(String(id)));
+  }
+
+  function filterPerAppMapByCompatibleIds(rawMap, allowedIds) {
+    const out = {};
+    if (!rawMap || typeof rawMap !== "object" || Array.isArray(rawMap)) return out;
+    const allowed = new Set(sanitizeCompatibleAppIds(allowedIds).map(id => String(id)));
+    Object.entries(rawMap).forEach(([rawKey, value]) => {
+      const appId = Number(rawKey);
+      if (!Number.isFinite(appId) || !allowed.has(String(appId))) return;
+      out[String(appId)] = value;
+    });
+    return out;
+  }
+
+  function pruneSchemaAppReferences(schema, allowedIds) {
+    if (!schema || typeof schema !== "object" || Array.isArray(schema)) return [];
+    if (!schema.puntuacio || typeof schema.puntuacio !== "object" || Array.isArray(schema.puntuacio)) {
+      schema.puntuacio = {};
+    }
+    const punt = schema.puntuacio;
+    if (!punt.aparells || typeof punt.aparells !== "object" || Array.isArray(punt.aparells)) {
+      punt.aparells = {};
+    }
+    const selectedIds = sanitizeCompatibleAppIds(allowedIds);
+    punt.aparells.mode = "seleccionar";
+    punt.aparells.ids = selectedIds;
+    punt.camps_per_aparell = filterPerAppMapByCompatibleIds(punt.camps_per_aparell, selectedIds);
+    punt.exercicis_per_aparell = filterPerAppMapByCompatibleIds(punt.exercicis_per_aparell, selectedIds);
+    return selectedIds;
+  }
+
   function getAppChoices(extraIds, opts = {}) {
     const includeStale = opts.includeStale !== false;
     const seen = new Set();
@@ -2107,9 +2210,9 @@
     return out;
   }
 
-  function buildAparellChecks(extraIds) {
+  function buildAparellChecks(extraIds, opts = {}) {
     els.apChkList.innerHTML = "";
-    getAppChoices(extraIds).forEach(a => {
+    getAppChoices(extraIds, opts).forEach(a => {
       const col = document.createElement("div");
       col.className = "col-6 col-md-4 mb-1";
       col.innerHTML = `
@@ -2121,14 +2224,19 @@
     });
   }
 
-  function rebuildAparellChecksPreservingSelection(extraIds){
+  function rebuildAparellChecksPreservingSelection(extraIds, opts = {}){
+    const includeStale = opts.includeStale !== false;
+    const dropInvalidSelection = opts.dropInvalidSelection === true;
     const selected = selectedAparellIdsFromUI();
-    const merged = [...selected, ...(Array.isArray(extraIds) ? extraIds : [])];
-    buildAparellChecks(merged);
-    const allowed = new Set(getAppChoices(merged).map(a => String(a.id)));
+    const merged = _uniquePositiveInts([...selected, ...(Array.isArray(extraIds) ? extraIds : [])]);
+    const effectiveSelection = dropInvalidSelection ? sanitizeCompatibleAppIds(merged) : merged;
+    buildAparellChecks(effectiveSelection, { includeStale });
+    const allowed = new Set(getAppChoices(effectiveSelection, { includeStale }).map(a => String(a.id)));
+    const selectedSet = new Set(effectiveSelection.map(id => String(id)));
     (els.apChkList?.querySelectorAll('input.form-check-input[type="checkbox"]') || []).forEach(el => {
-      el.checked = allowed.has(String(el.value)) && merged.map(String).includes(String(el.value));
+      el.checked = allowed.has(String(el.value)) && selectedSet.has(String(el.value));
     });
+    return effectiveSelection;
   }
 
   function selectedAparellIdsFromUI() {
@@ -2297,6 +2405,13 @@
     return scope === EXERCISE_SELECTION_SCOPE_INHERIT
       ? getExerciseSelectionScopeFromUI()
       : scope;
+  }
+
+  function isTieExerciseSelectionLockedToMainPool(rawScope) {
+    return (
+      isDerivedExerciseSelectionScopeAvailable() &&
+      getEffectiveTieExerciseSelectionScope(rawScope || EXERCISE_SELECTION_SCOPE_INHERIT) === EXERCISE_SELECTION_SCOPE_TEAM_POOL
+    );
   }
 
   function describeExerciseMode(mode, bestN, index, ids) {
@@ -2509,7 +2624,7 @@
     els.exModeHint.textContent = txt;
   }
 
-  function refreshTipusUI() {
+  function refreshTipusUI(opts = {}) {
     const cfg = currentCfg();
     const tipus = (cfg && cfg.tipus) || (els.fTipus && els.fTipus.value) || "individual";
     const isEquips = (tipus === "equips");
@@ -2536,9 +2651,17 @@
     }
     refreshVictoryTieVisibility();
     renderEquipsModeControls();
+    renderFiltersContextualCopy();
     refreshMainExercicisUI();
-    rebuildAparellChecksPreservingSelection(getCurrentBuilderAppIds(cfg && cfg.schema ? cfg.schema : {}));
+    const selectedIds = rebuildAparellChecksPreservingSelection(
+      getCurrentBuilderAppIds(cfg && cfg.schema ? cfg.schema : {}),
+      opts
+    );
+    if (opts.dropInvalidSelection && cfg && cfg.schema) {
+      pruneSchemaAppReferences(cfg.schema, selectedIds);
+    }
     renderDerivedPartitionConfigUI(readParticionsConfigUI(), selectedParticioCodesFromUI());
+    return selectedIds;
   }
 
   function sanitizeDesempatForTipus(list, tipus) {
@@ -2598,6 +2721,7 @@
     return `
       <td data-cell="participants">
         <div class="d-flex flex-column gap-1">
+          <div class="small text-muted" data-k="p_locked_note" style="display:none;">En pool d'equip no es reescullen participants.</div>
           <select class="form-control form-control-sm" data-k="p_mode">
             <option value="hereta">Hereta (tots)</option>
             <option value="tots">Tots</option>
@@ -2821,6 +2945,10 @@
   }
 
   function readTiePerAppExercicisFromRow(tr, fallbackMap){
+    if (isTieExerciseSelectionLockedToMainPool(tr.querySelector('[data-k="ex_scope"]')?.value || EXERCISE_SELECTION_SCOPE_INHERIT)) {
+      writeTiePerAppState(tr, {});
+      return {};
+    }
     const modeSel = normalizeTieModeSeleccioExercicis(tr.querySelector('[data-k="ex_sel_mode"]')?.value || "hereta");
     let state = normalizeTieExercicisPerAparellMap(fallbackMap || readTiePerAppState(tr));
     if (modeSel === "per_aparell_override") {
@@ -2832,6 +2960,15 @@
   }
 
   function renderTiePerAppExercicisUI(tr){
+    if (isTieExerciseSelectionLockedToMainPool(tr.querySelector('[data-k="ex_scope"]')?.value || EXERCISE_SELECTION_SCOPE_INHERIT)) {
+      writeTiePerAppState(tr, {});
+      const box = tr.querySelector('[data-k="ex_per_app_box"]');
+      if (box) {
+        box.style.display = "none";
+        box.innerHTML = "";
+      }
+      return;
+    }
     const modeSel = normalizeTieModeSeleccioExercicis(tr.querySelector('[data-k="ex_sel_mode"]')?.value || "hereta");
     const box = tr.querySelector('[data-k="ex_per_app_box"]');
     if (!box) return;
@@ -2905,6 +3042,7 @@
 
     const appScope = tr.querySelector('[data-k="app_scope"]').value; // hereta|app:<id>
     const exScope = normalizeTieExerciseSelectionScope(tr.querySelector('[data-k="ex_scope"]')?.value || "hereta");
+    const fixedTeamPool = isTieExerciseSelectionLockedToMainPool(exScope);
     const exSelMode = normalizeTieModeSeleccioExercicis(tr.querySelector('[data-k="ex_sel_mode"]')?.value || "hereta");
     const exMode = tr.querySelector('[data-k="ex_mode"]').value; // hereta|tots|millor_1|millor_n|pitjor_1|pitjor_n|primer|ultim|index|llista
     const bestN = Number(tr.querySelector('[data-k="ex_best_n"]').value || 1);
@@ -2921,7 +3059,6 @@
     };
     obj.scope = {
       aparells: { mode: "hereta" },
-      exercicis: { mode: exMode },
     };
 
     if (appScope.startsWith("app:")) {
@@ -2932,19 +3069,23 @@
       }
     }
 
-    if (exMode === "millor_n" || exMode === "pitjor_n") obj.scope.exercicis.best_n = bestN;
-    if (exMode === "index") obj.scope.exercicis.index = exIndex;
-    if (allowMaxPerParticipant && exMaxPP > 0) {
-      obj.scope.exercicis.max_per_participant = exMaxPP;
-    }
-    if (exMode === "llista") obj.scope.exercicis.ids = exIds;
     if (isDerivedExerciseSelectionScopeAvailable() && exScope !== EXERCISE_SELECTION_SCOPE_INHERIT) {
       obj.exercise_selection_scope = exScope;
     }
-    if (exSelMode !== "hereta") obj.mode_seleccio_exercicis = exSelMode;
-    if (exSelMode === "per_aparell_override") obj.exercicis_per_aparell = exPerApp;
 
-    if (includeParticipants) {
+    if (!fixedTeamPool) {
+      obj.scope.exercicis = { mode: exMode };
+      if (exMode === "millor_n" || exMode === "pitjor_n") obj.scope.exercicis.best_n = bestN;
+      if (exMode === "index") obj.scope.exercicis.index = exIndex;
+      if (allowMaxPerParticipant && exMaxPP > 0) {
+        obj.scope.exercicis.max_per_participant = exMaxPP;
+      }
+      if (exMode === "llista") obj.scope.exercicis.ids = exIds;
+      if (exSelMode !== "hereta") obj.mode_seleccio_exercicis = exSelMode;
+      if (exSelMode === "per_aparell_override") obj.exercicis_per_aparell = exPerApp;
+    }
+
+    if (includeParticipants && !fixedTeamPool) {
       applyParticipantsToObj(obj, readParticipantsFromRow(tr));
     }
 
@@ -3145,7 +3286,22 @@
   function refreshParticipantsControls(tr) {
     const pModeSel = tr.querySelector('[data-k="p_mode"]');
     const pNEl = tr.querySelector('[data-k="p_n"]');
-    if (!pModeSel || !pNEl) return;
+    const pAggSel = tr.querySelector('[data-k="p_agg"]');
+    const pLockedNote = tr.querySelector('[data-k="p_locked_note"]');
+    if (!pModeSel || !pNEl || !pAggSel) return;
+    const fixedTeamPool = isTieExerciseSelectionLockedToMainPool(
+      tr.querySelector('[data-k="ex_scope"]')?.value || EXERCISE_SELECTION_SCOPE_INHERIT
+    );
+    if (fixedTeamPool) {
+      pModeSel.style.display = "none";
+      pNEl.style.display = "none";
+      pAggSel.style.display = "none";
+      if (pLockedNote) pLockedNote.style.display = "";
+      return;
+    }
+    if (pLockedNote) pLockedNote.style.display = "none";
+    pModeSel.style.display = "";
+    pAggSel.style.display = "";
     const m = pModeSel.value;
     pNEl.style.display = isParticipantsModeWithN(m) ? "" : "none";
   }
@@ -3513,33 +3669,42 @@
         collectVisibleTiePerAppOverrides(tr);
         const m = exModeSel.value;
         const selectionScope = getEffectiveTieExerciseSelectionScope(exScopeSel?.value || EXERCISE_SELECTION_SCOPE_INHERIT);
+        const fixedTeamPool = showSelectionScope && selectionScope === EXERCISE_SELECTION_SCOPE_TEAM_POOL;
         const modeSel = normalizeTieModeSeleccioExercicis(exSelModeSel.value);
         const isOverride = modeSel === "per_aparell_override";
-        exModeSel.style.display = isOverride ? "none" : "";
-        exBestNEl.style.display = (!isOverride && (m === "millor_n" || m === "pitjor_n")) ? "" : "none";
-        exIndexEl.style.display = (!isOverride && (m === "index")) ? "" : "none";
-        exMaxPPEl.style.display = (!isOverride && (!showSelectionScope || selectionScope === EXERCISE_SELECTION_SCOPE_TEAM_POOL)) ? "" : "none";
-        exIdsEl.style.display = (!isOverride && (m === "llista")) ? "" : "none";
+        exSelModeSel.style.display = fixedTeamPool ? "none" : "";
+        exModeSel.style.display = (fixedTeamPool || isOverride) ? "none" : "";
+        exBestNEl.style.display = (!fixedTeamPool && !isOverride && (m === "millor_n" || m === "pitjor_n")) ? "" : "none";
+        exIndexEl.style.display = (!fixedTeamPool && !isOverride && (m === "index")) ? "" : "none";
+        exMaxPPEl.style.display = (!fixedTeamPool && !isOverride && (!showSelectionScope || selectionScope === EXERCISE_SELECTION_SCOPE_TEAM_POOL)) ? "" : "none";
+        exIdsEl.style.display = (!fixedTeamPool && !isOverride && (m === "llista")) ? "" : "none";
         renderTiePerAppExercicisUI(tr);
 
         if (exSummary) {
           if (showSelectionScope) {
-            const summaryLabel = describeExerciseMode(
-              m,
-              exBestNEl?.value,
-              exIndexEl?.value,
-              exIdsEl?.value,
-            );
-            const maxTxt = Math.max(0, Number(exMaxPPEl?.value || 0));
-            exSummary.textContent = selectionScope === EXERCISE_SELECTION_SCOPE_TEAM_POOL
+            if (fixedTeamPool) {
+              exSummary.textContent = "TR: mateix set d'exercicis que la puntuació; opcionalment filtrat per aparell.";
+            } else {
+              const summaryLabel = describeExerciseMode(
+                m,
+                exBestNEl?.value,
+                exIndexEl?.value,
+                exIdsEl?.value,
+              );
+              const maxTxt = Math.max(0, Number(exMaxPPEl?.value || 0));
+              exSummary.textContent = selectionScope === EXERCISE_SELECTION_SCOPE_TEAM_POOL
               ? `TR: ${summaryLabel} de l'equip; ${maxTxt > 0 ? `màxim ${maxTxt} per membre` : "sense límit per membre"}`
               : `TR: ${summaryLabel} per membre; després suma`;
+            }
           } else {
             exSummary.textContent = "";
           }
         }
 
-        if (isOverride) {
+        if (fixedTeamPool) {
+          exHint.style.display = "";
+          exHint.textContent = "En pool d'equip, el desempat reutilitza exactament els exercicis seleccionats a la puntuació principal.";
+        } else if (isOverride) {
           exHint.style.display = "";
           exHint.textContent = "Override per aparell actiu (criteri global ocult).";
         } else if (m === "millor_n") {
@@ -3568,16 +3733,59 @@
           exHint.textContent = "";
         }
 
-        if (!isOverride && exHint.style.display !== "none") {
+        if (!fixedTeamPool && !isOverride && exHint.style.display !== "none") {
           if (modeSel === "per_aparell_override") exHint.textContent += " Override per aparell.";
           else if (modeSel === "global_pool") exHint.textContent += " Aplicat al sac global.";
           else exHint.textContent += " Aplicat per aparell.";
         }
-        if (showSelectionScope && exHint.style.display !== "none") {
+        if (showSelectionScope && exHint.style.display !== "none" && !fixedTeamPool) {
           exHint.textContent += selectionScope === EXERCISE_SELECTION_SCOPE_TEAM_POOL
             ? " Calculat sobre el pool d'equip."
             : " Calculat per membre i després sumat.";
         }
+        if (showSelectionScope) {
+          if (fixedTeamPool) {
+            if (exSummary) {
+              exSummary.textContent = "TR: mateix set d'exercicis que la puntuacio; opcionalment filtrat per aparell.";
+            }
+            exHint.style.display = "";
+            exHint.textContent = "En pool d'equip, el desempat reutilitza exactament els exercicis seleccionats a la puntuacio principal.";
+          } else if (exSummary) {
+            const summaryLabel = describeExerciseMode(
+              m,
+              exBestNEl?.value,
+              exIndexEl?.value,
+              exIdsEl?.value,
+            );
+            const maxTxt = Math.max(0, Number(exMaxPPEl?.value || 0));
+            exSummary.textContent = selectionScope === EXERCISE_SELECTION_SCOPE_TEAM_POOL
+              ? `TR: ${summaryLabel} de l'equip; ${maxTxt > 0 ? `maxim ${maxTxt} per membre` : "sense limit per membre"}`
+              : `TR: ${summaryLabel} per membre; despres suma`;
+            if (exHint.style.display !== "none") {
+              let hintBase = "";
+              if (isOverride) hintBase = "Override per aparell actiu (criteri global ocult).";
+              else if (m === "millor_n") hintBase = "Tria els N millors exercicis.";
+              else if (m === "pitjor_n") hintBase = "Tria els N pitjors exercicis.";
+              else if (m === "pitjor_1") hintBase = "Agafa el pitjor exercici existent.";
+              else if (m === "primer") hintBase = "Agafa el primer exercici existent.";
+              else if (m === "ultim") hintBase = "Agafa l'ultim exercici existent.";
+              else if (m === "index") hintBase = "Fa servir nomes l'exercici # (1..N).";
+              else if (m === "llista") hintBase = "Llista d'indexs: 1,3,4.";
+
+              if (!isOverride) {
+                if (modeSel === "per_aparell_override") hintBase += " Override per aparell.";
+                else if (modeSel === "global_pool") hintBase += " Aplicat al sac global.";
+                else if (hintBase) hintBase += " Aplicat per aparell.";
+              }
+
+              const finalScopeHint = selectionScope === EXERCISE_SELECTION_SCOPE_TEAM_POOL
+                ? "Calculat sobre el pool d'equip."
+                : "Calculat per membre i despres sumat.";
+              exHint.textContent = hintBase ? `${hintBase} ${finalScopeHint}` : finalScopeHint;
+            }
+          }
+        }
+        refreshParticipantsControls(tr);
       }
       // Render inicial camp + controls
       const campCell = tr.querySelector('[data-cell="camp"]');
@@ -4229,7 +4437,7 @@
     const victories = punt.victories && typeof punt.victories === "object" && !Array.isArray(punt.victories) ? punt.victories : {};
     victories.desempat_comparacio = Array.isArray(victories.desempat_comparacio) ? victories.desempat_comparacio : [];
     punt.victories = victories;
-    schema.filtres = schema.filtres && typeof schema.filtres === "object" && !Array.isArray(schema.filtres) ? schema.filtres : {};
+    schema.filtres = normalizeFilters(schema.filtres);
     schema.desempat = Array.isArray(schema.desempat) ? schema.desempat : [];
 
     const presentacio = schema.presentacio && typeof schema.presentacio === "object" && !Array.isArray(schema.presentacio) ? schema.presentacio : {};
@@ -5231,12 +5439,12 @@
       subcategories_in: selectedValues(els.fSubcategories).map(x => isNaN(x) ? x : Number(x)),
       grups_in: selectedValues(els.fGrups),
     };
-    Object.keys(filtres).forEach(k => { if (!filtres[k].length) delete filtres[k]; });
+    filtres = normalizeFilters(filtres);
 
     let usedAdvancedFiltres = false;
     if (preferAdvanced && advancedDirty.filtres) {
       try {
-        filtres = JSON.parse(els.tFiltres.value || "{}");
+        filtres = normalizeFilters(JSON.parse(els.tFiltres.value || "{}"));
         usedAdvancedFiltres = true;
       } catch(e) {}
     }
@@ -5351,8 +5559,8 @@
     const ids = new Set(idsNorm);
 
     if (els.apSelBox) els.apSelBox.style.display = "";
-    buildAparellChecks([...ids]);
-    getAppChoices([...ids]).forEach(a => {
+    buildAparellChecks([...ids], { includeStale: true });
+    getAppChoices([...ids], { includeStale: true }).forEach(a => {
       const el = document.getElementById("app_" + a.id);
       if (el) el.checked = ids.has(String(a.id));
     });
@@ -5857,28 +6065,30 @@
     const cfg = currentCfg(); if (!cfg) return;
     ensureLegacyTipusOption(els.fTipus.value);
     cfg.tipus = els.fTipus.value;
-    refreshTipusUI();
+    refreshTipusUI({ includeStale: false, dropInvalidSelection: true });
+    renderPerAppUI((currentCfg()||{}).schema || DEFAULT_SCHEMA);
     renderTieUI(readTieUI(true));
+    renderVictoryTieUI(readVictoryTieUI(true));
     syncAdvancedFromUI();
     renderList();
   });
   if (els.eqAssignmentContext) {
     els.eqAssignmentContext.addEventListener("change", () => {
-      renderEquipsModeControls();
+      refreshTipusUI({ includeStale: false, dropInvalidSelection: true });
       renderEquipManualRows(readEquipManualRows());
-      rebuildAparellChecksPreservingSelection(getCurrentBuilderAppIds((currentCfg() || {}).schema || {}));
-      refreshMainExercicisUI();
+      renderPerAppUI((currentCfg()||{}).schema || DEFAULT_SCHEMA);
       renderTieUI(readTieUI(true));
+      renderVictoryTieUI(readVictoryTieUI(true));
       syncAdvancedFromUI();
     });
   }
 
   if (els.eqTeamMode) {
     els.eqTeamMode.addEventListener("change", () => {
-      renderEquipsModeControls();
-      rebuildAparellChecksPreservingSelection(getCurrentBuilderAppIds((currentCfg() || {}).schema || {}));
-      refreshMainExercicisUI();
+      refreshTipusUI({ includeStale: false, dropInvalidSelection: true });
+      renderPerAppUI((currentCfg()||{}).schema || DEFAULT_SCHEMA);
       renderTieUI(readTieUI(true));
+      renderVictoryTieUI(readVictoryTieUI(true));
       syncAdvancedFromUI();
     });
   }

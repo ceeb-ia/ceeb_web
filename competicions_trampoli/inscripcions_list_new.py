@@ -57,8 +57,10 @@ from .views import (
     annotate_inscripcions_queryset_for_group_codes,
     _build_inscripcions_filtered_qs,
     _message_for_emptied_programmed_groups,
+    get_available_column_filter_fields,
     get_allowed_group_fields,
     get_competicio_custom_sort_codes,
+    get_request_inscripcio_filters,
     build_inscripcions_sort_context_key,
     reconcile_inscripcions_sort_context_state,
     _extract_sort_partition_codes,
@@ -340,6 +342,13 @@ class InscripcionsListNewView(InscripcionsListView):
         selected_table_columns = get_selected_table_columns(
             self.competicio, available_table_columns
         )
+        active_filters = get_request_inscripcio_filters(
+            self.request,
+            competicio=self.competicio,
+        )
+        column_filter_fields = get_available_column_filter_fields(self.competicio)
+        filterable_codes = {f["code"] for f in column_filter_fields}
+        active_column_filters = dict(active_filters.get("column_filters") or {})
 
         ctx["available_table_columns"] = available_table_columns
         ctx["selected_table_columns"] = selected_table_columns
@@ -351,6 +360,8 @@ class InscripcionsListNewView(InscripcionsListView):
             if isinstance(s, dict) and s.get("code")
         ]
         sortable_codes = set(ctx["sortable_table_column_codes"])
+        ctx["filterable_table_column_codes"] = sorted(filterable_codes)
+        ctx["column_menu_codes"] = sorted(sortable_codes | filterable_codes)
         custom_sort_codes = set(
             get_competicio_custom_sort_codes(
                 self.competicio,
@@ -359,12 +370,6 @@ class InscripcionsListNewView(InscripcionsListView):
         )
 
         active_group_by = list(ctx.get("selected_group_fields") or [])
-        active_filters = {
-            "q": self.request.GET.get("q") or "",
-            "categoria": self.request.GET.get("categoria") or "",
-            "subcategoria": self.request.GET.get("subcategoria") or "",
-            "entitat": self.request.GET.get("entitat") or "",
-        }
         sort_context_key = build_inscripcions_sort_context_key(
             self.competicio.id,
             filters=active_filters,
@@ -478,6 +483,23 @@ class InscripcionsListNewView(InscripcionsListView):
         ctx["column_sort_entries"] = sort_entries
         ctx["column_sort_indicator_by_code"] = indicator_by_code
         ctx["custom_sort_enabled_by_code"] = {code: True for code in custom_sort_codes}
+        ctx["column_filter_indicator_by_code"] = {
+            code: {
+                "count": len(tokens),
+                "title": f"{len(tokens)} valor(s) filtrat(s)",
+            }
+            for code, tokens in active_column_filters.items()
+            if tokens
+        }
+        ctx["column_filter_tokens_by_code"] = active_column_filters
+        ctx["active_column_filter_items"] = [
+            {
+                "param": f"cf_{code}",
+                "token": token,
+            }
+            for code, tokens in active_column_filters.items()
+            for token in tokens
+        ]
 
         partition_codes = _extract_sort_partition_codes(sort_stack)
         partition_fields = []

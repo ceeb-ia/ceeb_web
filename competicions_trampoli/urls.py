@@ -150,6 +150,7 @@ urlpatterns = [
     path("competicio/<int:pk>/inscripcions/sort-remove/", competition_view(views.inscripcions_sort_remove, "inscripcions.edit"), name="inscripcions_sort_remove"),
     path("competicio/<int:pk>/inscripcions/sort-clear/", competition_view(views.inscripcions_sort_clear, "inscripcions.edit"), name="inscripcions_sort_clear"),
     path("competicio/<int:pk>/inscripcions/sort-competition-tail/", competition_view(views.inscripcions_sort_competition_tail_toggle, "inscripcions.edit"), name="inscripcions_sort_competition_tail_toggle"),
+    path("competicio/<int:pk>/inscripcions/filter-values/", competition_view(views.inscripcions_filter_values, "inscripcions.view"), name="inscripcions_filter_values"),
     path("competicio/<int:pk>/inscripcions/sort-custom/values/", competition_view(views.inscripcions_sort_custom_values, "inscripcions.edit"), name="inscripcions_sort_custom_values"),
     path("competicio/<int:pk>/inscripcions/sort-custom/save/", competition_view(views.inscripcions_sort_custom_save, "inscripcions.edit"), name="inscripcions_sort_custom_save"),
     path("competicio/<int:pk>/inscripcions/history/undo/", competition_view(views.inscripcions_history_undo, "inscripcions.edit"), name="inscripcions_history_undo"),

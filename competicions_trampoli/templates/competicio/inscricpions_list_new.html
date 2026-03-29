@@ -1512,12 +1512,68 @@
       top: calc(100% + 4px);
       right: 0;
       z-index: 1200;
-      width: 230px;
+      width: 260px;
       background: #fff;
       border: 1px solid #d9e0ef;
       border-radius: 8px;
       box-shadow: 0 8px 22px rgba(0, 0, 0, 0.12);
       padding: 10px;
+    }
+    .col-filter-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 1px 7px;
+      border-radius: 999px;
+      border: 1px solid #cfe5cc;
+      background: #edf9ed;
+      color: #23653a;
+      font-size: 0.72rem;
+      line-height: 1.25;
+      white-space: nowrap;
+    }
+    .col-menu-section {
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid #edf2fa;
+    }
+    .col-filter-options {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-height: 180px;
+      overflow: auto;
+      padding: 2px 1px 2px 0;
+    }
+    .col-filter-option {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 6px 8px;
+      border: 1px solid #e5ebf5;
+      border-radius: 8px;
+      background: #fafcff;
+    }
+    .col-filter-option input {
+      margin-top: 2px;
+    }
+    .col-filter-option-main {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .col-filter-option-label {
+      font-size: 0.85rem;
+      color: #111827;
+      word-break: break-word;
+    }
+    .col-filter-option-count {
+      font-size: 0.72rem;
+      color: #6b7280;
+    }
+    .col-filter-search-empty {
+      padding: 8px 0 2px;
     }
     .group-actions-pop {
       position: relative;
@@ -2465,6 +2521,9 @@
           <input type="hidden" name="categoria" value="{{ request.GET.categoria|default:'' }}">
           <input type="hidden" name="subcategoria" value="{{ request.GET.subcategoria|default:'' }}">
           <input type="hidden" name="entitat" value="{{ request.GET.entitat|default:'' }}">
+          {% for item in active_column_filter_items %}
+            <input type="hidden" name="{{ item.param }}" value="{{ item.token }}">
+          {% endfor %}
           <!-- clau per no paginar quan no hi ha agrupació -->
           <input type="hidden" name="per_page" value="{{ request.GET.per_page|default:'all' }}">
 
@@ -2549,7 +2608,7 @@
 
                 {% if selected_group_fields %}
                   <a class="btn btn-sm btn-outline-secondary"
-                     href="?clear_group=1&q={{ request.GET.q|urlencode }}&categoria={{ request.GET.categoria|urlencode }}&subcategoria={{ request.GET.subcategoria|urlencode }}&entitat={{ request.GET.entitat|urlencode }}">
+                     href="?clear_group=1{% if current_query %}&{{ current_query }}{% endif %}">
                     Treure divisió
                   </a>
                 {% endif %}
@@ -2915,6 +2974,13 @@
                             {% if custom_sort_enabled_by_code|get_item:col.code %}
                               <span class="custom-sort-badge">Custom</span>
                             {% endif %}
+                            {% with col_filter=column_filter_indicator_by_code|get_item:col.code %}
+                              {% if col_filter %}
+                                <span class="col-filter-indicator" title="{{ col_filter.title }}">
+                                  F {{ col_filter.count }}
+                                </span>
+                              {% endif %}
+                            {% endwith %}
                             {% with col_ind=column_sort_indicator_by_code|get_item:col.code %}
                               {% if col_ind %}
                                 <span class="col-sort-indicator" title="{{ col_ind.title }}">
@@ -2931,52 +2997,74 @@
                               {% endif %}
                             {% endwith %}
                           </div>
-                          {% if col.code in sortable_table_column_codes %}
+                          {% if col.code in column_menu_codes %}
                             <div class="col-sort-pop">
                               <button
                                 type="button"
                                 class="btn btn-link btn-sm p-0 js-col-sort-toggle"
                                 data-col-sort-toggle
-                                title="Ordenar per aquesta columna">
+                                title="Opcions de columna">
                                 &#8942;
                               </button>
                               <div class="col-sort-menu d-none" data-col-sort-menu data-col-code="{{ col.code }}">
                                 <div class="small fw-semibold mb-2 js-col-sort-title">{{ col.ui_label|default:col.label }}</div>
+                                {% if col.code in sortable_table_column_codes %}
+                                  <div class="js-col-sort-block">
+                                    <label class="small text-muted mb-1 d-block">Mode</label>
+                                    <select class="form-control form-control-sm js-col-sort-dir mb-2">
+                                      <option value="asc">Asc</option>
+                                      <option value="desc">Desc</option>
+                                      <option value="arrow_asc">Fletxa (asc)</option>
+                                      <option value="arrow_desc">Fletxa (desc)</option>
+                                      <option value="custom">Custom</option>
+                                    </select>
 
-                                <label class="small text-muted mb-1 d-block">Mode</label>
-                                <select class="form-control form-control-sm js-col-sort-dir mb-2">
-                                  <option value="asc">Asc</option>
-                                  <option value="desc">Desc</option>
-                                  <option value="arrow_asc">Fletxa (asc)</option>
-                                  <option value="arrow_desc">Fletxa (desc)</option>
-                                  <option value="custom">Custom</option>
-                                </select>
+                                    <label class="small text-muted mb-1 d-block">Ambit</label>
+                                    <select class="form-control form-control-sm js-col-sort-scope">
+                                      <option value="all">Totes les inscripcions filtrades</option>
+                                      <option value="tab">Dins de cada pestanya activa</option>
+                                      <option value="all_groups">Dins de cada grup</option>
+                                      <option value="group">Nomes un grup numeric concret</option>
+                                    </select>
+                                    <div class="small text-muted mt-2 js-col-sort-scope-help">
+                                      Pot canviar l'ordre de les pestanyes actives.
+                                    </div>
 
-                                <label class="small text-muted mb-1 d-block">Ambit</label>
-                                <select class="form-control form-control-sm js-col-sort-scope">
-                                  <option value="all">Totes les inscripcions filtrades</option>
-                                  <option value="tab">Dins de cada pestanya activa</option>
-                                  <option value="all_groups">Dins de cada grup</option>
-                                  <option value="group">Nomes un grup numeric concret</option>
-                                </select>
-                                <div class="small text-muted mt-2 js-col-sort-scope-help">
-                                  Pot canviar l'ordre de les pestanyes actives.
-                                </div>
+                                    <div class="mt-2 d-none js-col-sort-group-wrap">
+                                      <label class="small text-muted mb-1 d-block">Grup numeric</label>
+                                      <select class="form-control form-control-sm js-col-sort-group"></select>
+                                    </div>
 
-                                <div class="mt-2 d-none js-col-sort-group-wrap">
-                                  <label class="small text-muted mb-1 d-block">Grup numeric</label>
-                                  <select class="form-control form-control-sm js-col-sort-group"></select>
-                                </div>
+                                    <div class="mt-2">
+                                      <button type="button" class="btn btn-sm btn-outline-secondary w-100 js-col-sort-custom">Ordre custom</button>
+                                      <button type="button" class="btn btn-sm btn-outline-light w-100 mt-1 js-col-sort-custom-clear">Reset custom</button>
+                                      <div class="custom-sort-list mt-2 d-none js-col-sort-custom-preview"></div>
+                                    </div>
 
-                                <div class="mt-2">
-                                  <button type="button" class="btn btn-sm btn-outline-secondary w-100 js-col-sort-custom">Ordre custom</button>
-                                  <button type="button" class="btn btn-sm btn-outline-light w-100 mt-1 js-col-sort-custom-clear">Reset custom</button>
-                                  <div class="custom-sort-list mt-2 d-none js-col-sort-custom-preview"></div>
-                                </div>
-
-                                <div class="d-flex justify-content-end mt-2" style="gap:8px;">
-                                  <button type="button" class="btn btn-sm btn-primary js-col-sort-apply">Aplicar</button>
-                                </div>
+                                    <div class="d-flex justify-content-end mt-2" style="gap:8px;">
+                                      <button type="button" class="btn btn-sm btn-primary js-col-sort-apply">Aplicar</button>
+                                    </div>
+                                  </div>
+                                {% endif %}
+                                {% if col.code in filterable_table_column_codes %}
+                                  <div class="col-menu-section js-col-filter-block">
+                                    <div class="d-flex justify-content-between align-items-center mb-2" style="gap:8px;">
+                                      <div class="small fw-semibold">Filtrar valors</div>
+                                      <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2 js-col-filter-refresh">Carregar</button>
+                                    </div>
+                                    <input type="text"
+                                           class="form-control form-control-sm js-col-filter-search"
+                                           placeholder="Cerca dins els valors..."
+                                           disabled>
+                                    <div class="small text-muted mt-2 js-col-filter-status">Carrega els valors de la columna per filtrar.</div>
+                                    <div class="col-filter-options mt-2 d-none js-col-filter-options"></div>
+                                    <div class="small text-muted col-filter-search-empty d-none js-col-filter-search-empty">No hi ha valors que coincideixin amb la cerca.</div>
+                                    <div class="d-flex justify-content-end mt-2" style="gap:8px;">
+                                      <button type="button" class="btn btn-sm btn-outline-light js-col-filter-clear">Netejar filtre</button>
+                                      <button type="button" class="btn btn-sm btn-success js-col-filter-apply">Aplicar filtre</button>
+                                    </div>
+                                  </div>
+                                {% endif %}
                               </div>
                             </div>
                           {% endif %}
@@ -3172,6 +3260,13 @@
                       {% if custom_sort_enabled_by_code|get_item:col.code %}
                         <span class="custom-sort-badge">Custom</span>
                       {% endif %}
+                      {% with col_filter=column_filter_indicator_by_code|get_item:col.code %}
+                        {% if col_filter %}
+                          <span class="col-filter-indicator" title="{{ col_filter.title }}">
+                            F {{ col_filter.count }}
+                          </span>
+                        {% endif %}
+                      {% endwith %}
                       {% with col_ind=column_sort_indicator_by_code|get_item:col.code %}
                         {% if col_ind %}
                           <span class="col-sort-indicator" title="{{ col_ind.title }}">
@@ -3188,52 +3283,74 @@
                         {% endif %}
                       {% endwith %}
                     </div>
-                    {% if col.code in sortable_table_column_codes %}
+                    {% if col.code in column_menu_codes %}
                       <div class="col-sort-pop">
                         <button
                           type="button"
                           class="btn btn-link btn-sm p-0 js-col-sort-toggle"
                           data-col-sort-toggle
-                          title="Ordenar per aquesta columna">
+                          title="Opcions de columna">
                           &#8942;
                         </button>
                         <div class="col-sort-menu d-none" data-col-sort-menu data-col-code="{{ col.code }}">
                           <div class="small fw-semibold mb-2 js-col-sort-title">{{ col.ui_label|default:col.label }}</div>
+                          {% if col.code in sortable_table_column_codes %}
+                            <div class="js-col-sort-block">
+                              <label class="small text-muted mb-1 d-block">Mode</label>
+                              <select class="form-control form-control-sm js-col-sort-dir mb-2">
+                                <option value="asc">Asc</option>
+                                <option value="desc">Desc</option>
+                                <option value="arrow_asc">Fletxa (asc)</option>
+                                <option value="arrow_desc">Fletxa (desc)</option>
+                                <option value="custom">Custom</option>
+                              </select>
 
-                          <label class="small text-muted mb-1 d-block">Mode</label>
-                          <select class="form-control form-control-sm js-col-sort-dir mb-2">
-                            <option value="asc">Asc</option>
-                            <option value="desc">Desc</option>
-                            <option value="arrow_asc">Fletxa (asc)</option>
-                            <option value="arrow_desc">Fletxa (desc)</option>
-                            <option value="custom">Custom</option>
-                          </select>
+                              <label class="small text-muted mb-1 d-block">Ambit</label>
+                              <select class="form-control form-control-sm js-col-sort-scope">
+                                <option value="all">Totes les inscripcions filtrades</option>
+                                <option value="tab">Dins de cada pestanya activa</option>
+                                <option value="all_groups">Dins de cada grup</option>
+                                <option value="group">Nomes un grup numeric concret</option>
+                              </select>
+                              <div class="small text-muted mt-2 js-col-sort-scope-help">
+                                Pot canviar l'ordre de les pestanyes actives.
+                              </div>
 
-                          <label class="small text-muted mb-1 d-block">Ambit</label>
-                          <select class="form-control form-control-sm js-col-sort-scope">
-                            <option value="all">Totes les inscripcions filtrades</option>
-                            <option value="tab">Dins de cada pestanya activa</option>
-                            <option value="all_groups">Dins de cada grup</option>
-                            <option value="group">Nomes un grup numeric concret</option>
-                          </select>
-                          <div class="small text-muted mt-2 js-col-sort-scope-help">
-                            Pot canviar l'ordre de les pestanyes actives.
-                          </div>
+                              <div class="mt-2 d-none js-col-sort-group-wrap">
+                                <label class="small text-muted mb-1 d-block">Grup numeric</label>
+                                <select class="form-control form-control-sm js-col-sort-group"></select>
+                              </div>
 
-                          <div class="mt-2 d-none js-col-sort-group-wrap">
-                            <label class="small text-muted mb-1 d-block">Grup numeric</label>
-                            <select class="form-control form-control-sm js-col-sort-group"></select>
-                          </div>
+                              <div class="mt-2">
+                                <button type="button" class="btn btn-sm btn-outline-secondary w-100 js-col-sort-custom">Ordre custom</button>
+                                <button type="button" class="btn btn-sm btn-outline-light w-100 mt-1 js-col-sort-custom-clear">Reset custom</button>
+                                <div class="custom-sort-list mt-2 d-none js-col-sort-custom-preview"></div>
+                              </div>
 
-                          <div class="mt-2">
-                            <button type="button" class="btn btn-sm btn-outline-secondary w-100 js-col-sort-custom">Ordre custom</button>
-                            <button type="button" class="btn btn-sm btn-outline-light w-100 mt-1 js-col-sort-custom-clear">Reset custom</button>
-                            <div class="custom-sort-list mt-2 d-none js-col-sort-custom-preview"></div>
-                          </div>
-
-                          <div class="d-flex justify-content-end mt-2" style="gap:8px;">
-                            <button type="button" class="btn btn-sm btn-primary js-col-sort-apply">Aplicar</button>
-                          </div>
+                              <div class="d-flex justify-content-end mt-2" style="gap:8px;">
+                                <button type="button" class="btn btn-sm btn-primary js-col-sort-apply">Aplicar</button>
+                              </div>
+                            </div>
+                          {% endif %}
+                          {% if col.code in filterable_table_column_codes %}
+                            <div class="col-menu-section js-col-filter-block">
+                              <div class="d-flex justify-content-between align-items-center mb-2" style="gap:8px;">
+                                <div class="small fw-semibold">Filtrar valors</div>
+                                <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2 js-col-filter-refresh">Carregar</button>
+                              </div>
+                              <input type="text"
+                                     class="form-control form-control-sm js-col-filter-search"
+                                     placeholder="Cerca dins els valors..."
+                                     disabled>
+                              <div class="small text-muted mt-2 js-col-filter-status">Carrega els valors de la columna per filtrar.</div>
+                              <div class="col-filter-options mt-2 d-none js-col-filter-options"></div>
+                              <div class="small text-muted col-filter-search-empty d-none js-col-filter-search-empty">No hi ha valors que coincideixin amb la cerca.</div>
+                              <div class="d-flex justify-content-end mt-2" style="gap:8px;">
+                                <button type="button" class="btn btn-sm btn-outline-light js-col-filter-clear">Netejar filtre</button>
+                                <button type="button" class="btn btn-sm btn-success js-col-filter-apply">Aplicar filtre</button>
+                              </div>
+                            </div>
+                          {% endif %}
                         </div>
                       </div>
                     {% endif %}
@@ -3450,11 +3567,21 @@
 
   function getCurrentInscripcioFilters() {
     const url = new URL(window.location.href);
+    const columnFilters = {};
+    Array.from(url.searchParams.entries()).forEach(([key, value]) => {
+      if (!key || !key.startsWith('cf_')) return;
+      const code = String(key.slice(3) || '').trim();
+      const token = String(value || '').trim();
+      if (!code || !token) return;
+      if (!columnFilters[code]) columnFilters[code] = [];
+      if (!columnFilters[code].includes(token)) columnFilters[code].push(token);
+    });
     return {
       q: url.searchParams.get('q') || '',
       categoria: url.searchParams.get('categoria') || '',
       subcategoria: url.searchParams.get('subcategoria') || '',
-      entitat: url.searchParams.get('entitat') || ''
+      entitat: url.searchParams.get('entitat') || '',
+      column_filters: columnFilters,
     };
   }
 
@@ -4891,6 +5018,7 @@
     const sortRemoveUrl = "{% url 'inscripcions_sort_remove' competicio.id %}";
     const sortClearUrl = "{% url 'inscripcions_sort_clear' competicio.id %}";
     const sortCompetitionTailUrl = "{% url 'inscripcions_sort_competition_tail_toggle' competicio.id %}";
+    const filterValuesUrl = "{% url 'inscripcions_filter_values' competicio.id %}";
     const sortCustomValuesUrl = "{% url 'inscripcions_sort_custom_values' competicio.id %}";
     const sortCustomSaveUrl = "{% url 'inscripcions_sort_custom_save' competicio.id %}";
     const historyUndoUrl = "{% url 'inscripcions_history_undo' competicio.id %}";
@@ -6064,6 +6192,167 @@
       });
     }
 
+    function getColumnFilterParamName(code) {
+      return `cf_${String(code || '').trim()}`;
+    }
+
+    function setColumnFilterTokensOnUrl(url, code, tokens) {
+      if (!url || !code) return;
+      const param = getColumnFilterParamName(code);
+      url.searchParams.delete(param);
+      (tokens || []).forEach(raw => {
+        const token = String(raw || '').trim();
+        if (token) url.searchParams.append(param, token);
+      });
+    }
+
+    function updateColumnFilterSearchVisibility(menu) {
+      if (!menu) return;
+      const searchInput = menu.querySelector('.js-col-filter-search');
+      const optionsWrap = menu.querySelector('.js-col-filter-options');
+      const emptyEl = menu.querySelector('.js-col-filter-search-empty');
+      if (!searchInput || !optionsWrap || !emptyEl) return;
+      const query = String(searchInput.value || '').trim().toLowerCase();
+      let visible = 0;
+      Array.from(optionsWrap.querySelectorAll('.js-col-filter-option')).forEach(labelEl => {
+        const text = String(labelEl.getAttribute('data-filter-text') || '').toLowerCase();
+        const match = !query || text.includes(query);
+        labelEl.classList.toggle('d-none', !match);
+        if (match) visible += 1;
+      });
+      emptyEl.classList.toggle('d-none', visible > 0);
+    }
+
+    function renderColumnFilterOptions(menu, rows) {
+      if (!menu) return;
+      const status = menu.querySelector('.js-col-filter-status');
+      const searchInput = menu.querySelector('.js-col-filter-search');
+      const optionsWrap = menu.querySelector('.js-col-filter-options');
+      const emptyEl = menu.querySelector('.js-col-filter-search-empty');
+      if (!status || !searchInput || !optionsWrap || !emptyEl) return;
+
+      const items = Array.isArray(rows) ? rows : [];
+      optionsWrap.innerHTML = '';
+
+      items.forEach((row, index) => {
+        const token = String(row?.token || '').trim();
+        if (!token) return;
+        const label = String(row?.label || token).trim() || token;
+        const count = Number(row?.count || 0);
+        const wrapper = document.createElement('label');
+        wrapper.className = 'col-filter-option js-col-filter-option';
+        wrapper.setAttribute('data-filter-text', `${label} ${token}`);
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'js-col-filter-checkbox';
+        checkbox.value = token;
+        checkbox.checked = !!row?.selected;
+        checkbox.setAttribute('data-token', token);
+        checkbox.id = `col-filter-${menu.getAttribute('data-col-code') || 'col'}-${index}`;
+        wrapper.appendChild(checkbox);
+
+        const main = document.createElement('span');
+        main.className = 'col-filter-option-main';
+
+        const labelEl = document.createElement('span');
+        labelEl.className = 'col-filter-option-label';
+        labelEl.textContent = label;
+        main.appendChild(labelEl);
+
+        const countEl = document.createElement('span');
+        countEl.className = 'col-filter-option-count';
+        countEl.textContent = `${count} registre(s)`;
+        main.appendChild(countEl);
+
+        wrapper.appendChild(main);
+        optionsWrap.appendChild(wrapper);
+      });
+
+      searchInput.disabled = items.length === 0;
+      if (!items.length) searchInput.value = '';
+      optionsWrap.classList.toggle('d-none', items.length === 0);
+      emptyEl.classList.add('d-none');
+      status.textContent = items.length
+        ? `${items.length} valor(s) disponibles.`
+        : "No hi ha valors disponibles amb el context actual.";
+      menu.dataset.filterLoaded = '1';
+      updateColumnFilterSearchVisibility(menu);
+    }
+
+    async function loadColumnFilterOptions(menu, { force = false } = {}) {
+      if (!menu) return;
+      if (!force && menu.dataset.filterLoaded === '1') {
+        updateColumnFilterSearchVisibility(menu);
+        return;
+      }
+
+      const columnCode = menu.getAttribute('data-col-code') || '';
+      const status = menu.querySelector('.js-col-filter-status');
+      const searchInput = menu.querySelector('.js-col-filter-search');
+      const optionsWrap = menu.querySelector('.js-col-filter-options');
+      const emptyEl = menu.querySelector('.js-col-filter-search-empty');
+      if (!columnCode || !status) return;
+
+      if (searchInput) {
+        searchInput.disabled = true;
+        searchInput.value = '';
+      }
+      if (optionsWrap) {
+        optionsWrap.classList.add('d-none');
+        optionsWrap.innerHTML = '';
+      }
+      if (emptyEl) emptyEl.classList.add('d-none');
+      status.textContent = 'Carregant valors...';
+
+      try {
+        const data = await postJson(filterValuesUrl, {
+          column_code: columnCode,
+          filters: getCurrentInscripcioFilters(),
+          group_by: getCurrentGroupByCodes(),
+        });
+        if (!data || !data.ok) {
+          status.textContent = "No s'han pogut carregar els valors.";
+          return;
+        }
+        renderColumnFilterOptions(menu, data.values || []);
+      } catch (err) {
+        status.textContent = "No s'han pogut carregar els valors.";
+      }
+    }
+
+    function collectSelectedColumnFilterTokens(menu) {
+      if (!menu) return [];
+      const out = [];
+      menu.querySelectorAll('.js-col-filter-checkbox:checked').forEach(input => {
+        const token = String(input.value || '').trim();
+        if (token && !out.includes(token)) out.push(token);
+      });
+      return out;
+    }
+
+    async function applyColumnFilter(menu) {
+      if (!menu) return;
+      const columnCode = menu.getAttribute('data-col-code') || '';
+      if (!columnCode) return;
+      if (menu.dataset.filterLoaded !== '1') {
+        await loadColumnFilterOptions(menu, { force: true });
+      }
+      const url = new URL(window.location.href);
+      const tokens = collectSelectedColumnFilterTokens(menu);
+      setColumnFilterTokensOnUrl(url, columnCode, tokens);
+      navigateWithUiState(url.toString());
+    }
+
+    function clearColumnFilter(menu) {
+      if (!menu) return;
+      const columnCode = menu.getAttribute('data-col-code') || '';
+      if (!columnCode) return;
+      const url = new URL(window.location.href);
+      setColumnFilterTokensOnUrl(url, columnCode, []);
+      navigateWithUiState(url.toString());
+    }
+
     async function applyColumnSort(menu) {
       if (!menu) return;
 
@@ -6309,6 +6598,9 @@
             refreshColumnSortGroupOptions();
             syncColumnSortScopeUI(menu);
             menu.classList.remove('d-none');
+            if (menu.querySelector('.js-col-filter-block')) {
+              loadColumnFilterOptions(menu);
+            }
           } else {
             menu.classList.add('d-none');
           }
@@ -6348,6 +6640,36 @@
           e.stopPropagation();
           const menu = btn.closest('[data-col-sort-menu]');
           await clearColumnCustomSort(menu);
+        });
+      });
+      document.querySelectorAll('.js-col-filter-refresh').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const menu = btn.closest('[data-col-sort-menu]');
+          await loadColumnFilterOptions(menu, { force: true });
+        });
+      });
+      document.querySelectorAll('.js-col-filter-apply').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const menu = btn.closest('[data-col-sort-menu]');
+          await applyColumnFilter(menu);
+        });
+      });
+      document.querySelectorAll('.js-col-filter-clear').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const menu = btn.closest('[data-col-sort-menu]');
+          clearColumnFilter(menu);
+        });
+      });
+      document.querySelectorAll('.js-col-filter-search').forEach(input => {
+        input.addEventListener('input', () => {
+          const menu = input.closest('[data-col-sort-menu]');
+          updateColumnFilterSearchVisibility(menu);
         });
       });
       document.querySelectorAll('.js-col-sort-remove').forEach(btn => {

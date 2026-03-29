@@ -466,12 +466,17 @@
     filtres_overview: {
       title: "Filtres",
       summary:
-        "Els filtres actuen abans del calcul. Serveixen per decidir quines inscripcions entren realment a la classificacio.",
+        "Els filtres actuen abans del calcul, pero la seva unitat depen del tipus: participants a individual i entitat, membres a equips derivats i composicio completa a equips natius.",
       sections: [
         {
           title: "Exemple",
           text:
             "Si filtres per categoria A, els participants d'altres categories ni es calculen ni es mostren.",
+        },
+        {
+          title: "Equips natius",
+          text:
+            "Quan la classificacio usa notes natives d'equip, l'equip nomes entra si tots els seus membres compleixen els filtres actius.",
         },
       ],
     },

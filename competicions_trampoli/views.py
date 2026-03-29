@@ -87,6 +87,21 @@ BUILTIN_SORT_FIELDS = [
     {"code": "equip", "label": "Equip", "kind": "builtin"},
 ]
 
+BUILTIN_COLUMN_FILTER_FIELDS = [
+    {"code": "nom_i_cognoms", "label": "Nom i cognoms", "kind": "builtin"},
+    {"code": "document", "label": "Document", "kind": "builtin"},
+    {"code": "sexe", "label": "Sexe", "kind": "builtin"},
+    {"code": "data_naixement", "label": "Data naixement", "kind": "builtin"},
+    {"code": "entitat", "label": "Entitat", "kind": "builtin"},
+    {"code": "categoria", "label": "Categoria", "kind": "builtin"},
+    {"code": "subcategoria", "label": "Subcategoria", "kind": "builtin"},
+    {"code": "grup", "label": "Grup", "kind": "builtin"},
+    {"code": "equip", "label": "Equip", "kind": "builtin"},
+    {"code": "ordre_sortida", "label": "Ordre", "kind": "builtin"},
+]
+
+COLUMN_FILTER_EMPTY_TOKEN = "__EMPTY__"
+
 # Compatibilitat amb URLs antigues (?sort_key=nom|edat)
 LEGACY_SORT_KEY_MAP = {
     "nom": "nom_i_cognoms",
@@ -390,6 +405,128 @@ def get_available_sort_fields(competicio):
             seen.add(code)
 
     return out
+
+
+def get_available_column_filter_fields(competicio):
+    """
+    Camps filtrables per columna: builtins de dades + extras detectats a schema.columns.
+    Exclou explicitament columnes UI com accions, aparells i media.
+    """
+    out = []
+    seen = set()
+    excel_codes = _excel_schema_codes(competicio)
+    reserved = _reserved_inscripcio_codes()
+
+    for f in BUILTIN_COLUMN_FILTER_FIELDS:
+        if f["code"] in seen:
+            continue
+        source = "excel" if f["code"] in excel_codes else "native"
+        out.append(
+            {
+                **f,
+                "source": source,
+                "ui_label": _label_with_source(f["label"], source),
+            }
+        )
+        seen.add(f["code"])
+
+    schema = competicio.inscripcions_schema or {}
+    cols = schema.get("columns") or []
+    if isinstance(cols, list):
+        for c in cols:
+            if not isinstance(c, dict):
+                continue
+            code = c.get("code")
+            if not code:
+                continue
+            kind = c.get("kind") or "extra"
+            if kind != "extra":
+                continue
+            code = _normalize_schema_extra_code(code, reserved)
+            if code in seen:
+                continue
+            label = c.get("label") or code
+            out.append(
+                {
+                    "code": code,
+                    "label": label,
+                    "kind": "extra",
+                    "source": "excel",
+                    "ui_label": _label_with_source(label, "excel"),
+                }
+            )
+            seen.add(code)
+
+    return out
+
+
+def _normalize_column_filter_tokens(raw_tokens):
+    out = []
+    seen = set()
+    values = raw_tokens if isinstance(raw_tokens, list) else [raw_tokens]
+    for raw in values:
+        token = str(raw or "").strip()
+        if not token:
+            continue
+        key = _custom_sort_token_key(token)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(token)
+    out.sort(key=lambda token: _custom_sort_token_key(token))
+    return out
+
+
+def _normalize_column_filters(raw_column_filters, allowed_filter_codes=None):
+    raw = raw_column_filters if isinstance(raw_column_filters, dict) else {}
+    allowed = set(allowed_filter_codes or [])
+    restrict = bool(allowed)
+    out = {}
+    for raw_code, raw_tokens in raw.items():
+        if not isinstance(raw_code, str):
+            continue
+        code = LEGACY_SORT_KEY_MAP.get(raw_code.strip(), raw_code.strip())
+        if not code:
+            continue
+        if restrict and code not in allowed:
+            continue
+        tokens = _normalize_column_filter_tokens(raw_tokens)
+        if tokens:
+            out[code] = tokens
+    return out
+
+
+def get_request_column_filters(request, competicio=None):
+    allowed_codes = None
+    if competicio is not None:
+        allowed_codes = {
+            f["code"]
+            for f in get_available_column_filter_fields(competicio)
+        }
+
+    collected = {}
+    for key, values in request.GET.lists():
+        if not isinstance(key, str) or not key.startswith("cf_"):
+            continue
+        code = LEGACY_SORT_KEY_MAP.get(key[3:].strip(), key[3:].strip())
+        if not code:
+            continue
+        if allowed_codes is not None and code not in allowed_codes:
+            continue
+        tokens = _normalize_column_filter_tokens(values)
+        if tokens:
+            collected[code] = tokens
+    return collected
+
+
+def get_request_inscripcio_filters(request, competicio=None):
+    return {
+        "q": str(request.GET.get("q") or "").strip(),
+        "categoria": str(request.GET.get("categoria") or "").strip(),
+        "subcategoria": str(request.GET.get("subcategoria") or "").strip(),
+        "entitat": str(request.GET.get("entitat") or "").strip(),
+        "column_filters": get_request_column_filters(request, competicio=competicio),
+    }
 
 
 def _normalize_custom_sort_token(value):
@@ -821,6 +958,7 @@ def _normalize_sort_filters(raw_filters):
         "categoria": str(data.get("categoria") or "").strip(),
         "subcategoria": str(data.get("subcategoria") or "").strip(),
         "entitat": str(data.get("entitat") or "").strip(),
+        "column_filters": _normalize_column_filters(data.get("column_filters")),
     }
 
 
@@ -850,6 +988,7 @@ def build_inscripcions_sort_context_key(competicio_id, filters=None, group_by=No
         clean_filters["categoria"],
         clean_filters["subcategoria"],
         clean_filters["entitat"],
+        json.dumps(clean_filters["column_filters"], ensure_ascii=False, sort_keys=True),
         "|".join(clean_group_by),
     ]
     return "||".join(parts)
@@ -1452,6 +1591,7 @@ def get_inscripcions_sort_context_state(request, context_key):
             "base_ids": [],
             "context_ids": [],
             "competition_order_tail": False,
+            "competition_order_tail_explicit": False,
         }
     store = _read_sort_stack_store(request)
     state = store.get(context_key)
@@ -1462,6 +1602,7 @@ def get_inscripcions_sort_context_state(request, context_key):
             "base_ids": [],
             "context_ids": [],
             "competition_order_tail": False,
+            "competition_order_tail_explicit": False,
         }
     stack = state.get("stack")
     if not isinstance(stack, list):
@@ -1475,13 +1616,18 @@ def get_inscripcions_sort_context_state(request, context_key):
     context_ids = state.get("context_ids")
     if not isinstance(context_ids, list):
         context_ids = []
-    competition_order_tail = bool(state.get("competition_order_tail"))
+    competition_order_tail_explicit = "competition_order_tail" in state
+    if competition_order_tail_explicit:
+        competition_order_tail = bool(state.get("competition_order_tail"))
+    else:
+        competition_order_tail = bool(stack)
     return {
         "stack": stack,
         "order_sig": order_sig,
         "base_ids": base_ids,
         "context_ids": context_ids,
         "competition_order_tail": competition_order_tail,
+        "competition_order_tail_explicit": competition_order_tail_explicit,
     }
 
 
@@ -1569,6 +1715,7 @@ def reconcile_inscripcions_sort_context_state(request, context_key, current_ids,
             "base_ids": [],
             "context_ids": [],
             "competition_order_tail": False,
+            "competition_order_tail_explicit": False,
         }
 
     current_ids_list = list(current_ids or [])
@@ -1587,6 +1734,7 @@ def reconcile_inscripcions_sort_context_state(request, context_key, current_ids,
             "base_ids": state.get("base_ids") if isinstance(state.get("base_ids"), list) else [],
             "context_ids": context_ids_state,
             "competition_order_tail": bool(state.get("competition_order_tail")),
+            "competition_order_tail_explicit": bool(state.get("competition_order_tail_explicit")),
         }
 
     same_set = (
@@ -1611,6 +1759,7 @@ def reconcile_inscripcions_sort_context_state(request, context_key, current_ids,
             "base_ids": current_base_ids_list,
             "context_ids": current_ids_list,
             "competition_order_tail": bool(state.get("competition_order_tail")),
+            "competition_order_tail_explicit": bool(state.get("competition_order_tail_explicit")),
         }
 
     # Context realment diferent: neteja.
@@ -1621,14 +1770,24 @@ def reconcile_inscripcions_sort_context_state(request, context_key, current_ids,
         "base_ids": [],
         "context_ids": [],
         "competition_order_tail": False,
+        "competition_order_tail_explicit": False,
     }
 
 
 def _build_inscripcions_filtered_qs(competicio, filters):
-    q = (filters.get("q") or "").strip()
-    categoria = (filters.get("categoria") or "").strip()
-    subcategoria = (filters.get("subcategoria") or "").strip()
-    entitat = (filters.get("entitat") or "").strip()
+    clean_filters = _normalize_sort_filters(filters)
+    q = clean_filters["q"]
+    categoria = clean_filters["categoria"]
+    subcategoria = clean_filters["subcategoria"]
+    entitat = clean_filters["entitat"]
+    allowed_filter_codes = {
+        f["code"]
+        for f in get_available_column_filter_fields(competicio)
+    }
+    column_filters = _normalize_column_filters(
+        clean_filters.get("column_filters"),
+        allowed_filter_codes=allowed_filter_codes,
+    )
 
     qs = Inscripcio.objects.filter(competicio=competicio)
     if subcategoria:
@@ -1643,7 +1802,77 @@ def _build_inscripcions_filtered_qs(competicio, filters):
         )
     if categoria:
         qs = qs.filter(categoria__iexact=categoria)
-    return qs
+
+    if not column_filters:
+        return qs
+
+    filter_codes = list(column_filters.keys())
+    records = list(_build_sort_records_queryset(qs, filter_codes))
+    if not records:
+        return qs.none()
+
+    runtime_contexts = {
+        code: _build_sort_field_runtime_context(records, code)
+        for code in filter_codes
+    }
+    matching_ids = []
+    for obj in records:
+        matches_all = True
+        for code, tokens in column_filters.items():
+            runtime = _resolve_sort_field_runtime(obj, code, context=runtime_contexts.get(code))
+            token = runtime.get("token") or ""
+            if token:
+                if token not in tokens:
+                    matches_all = False
+                    break
+            elif COLUMN_FILTER_EMPTY_TOKEN not in tokens:
+                matches_all = False
+                break
+        if matches_all:
+            matching_ids.append(obj.id)
+
+    if not matching_ids:
+        return qs.none()
+
+    return qs.filter(id__in=matching_ids)
+
+
+def _collect_column_filter_value_rows(records, column_code):
+    out = OrderedDict()
+    empty_count = 0
+    context = _build_sort_field_runtime_context(records, column_code)
+    for obj in records:
+        runtime = _resolve_sort_field_runtime(obj, column_code, context=context)
+        token = runtime.get("token") or ""
+        if not token:
+            empty_count += 1
+            continue
+        key = _custom_sort_token_key(token)
+        if not key:
+            continue
+        row = out.get(key)
+        if row is None:
+            row = {
+                "token": token,
+                "label": runtime.get("label") or token,
+                "count": 0,
+                "sort_scalar": runtime.get("sort_scalar"),
+            }
+            out[key] = row
+        row["count"] += 1
+
+    values = list(out.values())
+    values.sort(key=lambda row: row["sort_scalar"])
+    if empty_count:
+        values.append(
+            {
+                "token": COLUMN_FILTER_EMPTY_TOKEN,
+                "label": "(Sense valor)",
+                "count": empty_count,
+                "sort_scalar": _sort_scalar(""),
+            }
+        )
+    return values
 
 
 def _collect_sort_field_value_stats(records, sort_code):
@@ -3202,27 +3431,10 @@ class InscripcionsListView(ListView):
         return self.get_queryset_base_filtrada().order_by("ordre_sortida", "id")
 
     def get_queryset_base_filtrada(self):
-        qs = Inscripcio.objects.filter(competicio=self.competicio)
-
-        q = self.request.GET.get("q")
-        categoria = self.request.GET.get("categoria")
-        subcategoria = self.request.GET.get("subcategoria")
-        entitat = self.request.GET.get("entitat")
-
-        if subcategoria:
-            qs = qs.filter(subcategoria__iexact=subcategoria)
-        if entitat:
-            qs = qs.filter(entitat__icontains=entitat)
-        if q:
-            qs = qs.filter(
-                Q(nom_i_cognoms__icontains=q) |
-                Q(document__icontains=q) |
-                Q(entitat__icontains=q)
-            )
-        if categoria:
-            qs = qs.filter(categoria__iexact=categoria)
-
-        return qs
+        return _build_inscripcions_filtered_qs(
+            self.competicio,
+            get_request_inscripcio_filters(self.request, competicio=self.competicio),
+        )
 
     def get(self, request, *args, **kwargs):
         allowed = get_allowed_group_fields(self.competicio)
@@ -4221,7 +4433,7 @@ def inscripcions_sort_apply(request, pk):
         current_ids,
         current_base_ids=pre_runtime["application_ids"],
     )
-    competition_order_tail_active = bool(state.get("competition_order_tail"))
+    competition_order_tail_explicit = bool(state.get("competition_order_tail_explicit"))
     stack_existing_raw = state.get("stack") if isinstance(state.get("stack"), list) else []
 
     stack_existing = []
@@ -4240,6 +4452,11 @@ def inscripcions_sort_apply(request, pk):
     stack_full = _upsert_sort_stack_entry_preserving_priority(stack_existing, new_entry)
     if len(stack_full) > 20:
         stack_full = stack_full[-20:]
+    competition_order_tail_active = (
+        bool(state.get("competition_order_tail"))
+        if competition_order_tail_explicit
+        else bool(stack_full)
+    )
 
     runtime = _build_sort_application_runtime(
         competicio,
@@ -4714,6 +4931,83 @@ def inscripcions_sort_competition_tail_toggle(request, pk):
             request,
             competicio.id,
         )
+    )
+
+
+@require_POST
+@csrf_protect
+def inscripcions_filter_values(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        payload = {}
+
+    filter_fields = get_available_column_filter_fields(competicio)
+    filter_codes = {f["code"] for f in filter_fields}
+    filter_label_by_code = {
+        f["code"]: f.get("ui_label") or f.get("label") or f["code"]
+        for f in filter_fields
+    }
+
+    raw_column_code = str(payload.get("column_code") or payload.get("sort_key") or "").strip()
+    column_code = LEGACY_SORT_KEY_MAP.get(raw_column_code, raw_column_code)
+    if column_code not in filter_codes:
+        return HttpResponseBadRequest("column_code invalid")
+
+    filters = _normalize_sort_filters(payload.get("filters"))
+    selected_tokens = list(filters.get("column_filters", {}).get(column_code) or [])
+
+    filters_without_self = dict(filters)
+    filters_without_self["column_filters"] = dict(filters.get("column_filters") or {})
+    filters_without_self["column_filters"].pop(column_code, None)
+
+    qs = _build_inscripcions_filtered_qs(competicio, filters_without_self)
+    records = list(_build_sort_records_queryset(qs, [column_code]))
+    values = _collect_column_filter_value_rows(records, column_code)
+
+    value_rows = []
+    seen = set()
+    for row in values:
+        token = str(row.get("token") or "").strip()
+        if not token:
+            continue
+        key = _custom_sort_token_key(token)
+        seen.add(key)
+        value_rows.append(
+            {
+                "token": token,
+                "label": row.get("label") or token,
+                "count": int(row.get("count") or 0),
+                "selected": token in selected_tokens,
+            }
+        )
+
+    for token in selected_tokens:
+        key = _custom_sort_token_key(token)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        value_rows.insert(
+            0,
+            {
+                "token": token,
+                "label": "(Sense valor)" if token == COLUMN_FILTER_EMPTY_TOKEN else token,
+                "count": 0,
+                "selected": True,
+            }
+        )
+
+    return JsonResponse(
+        {
+            "ok": True,
+            "column_code": column_code,
+            "column_label": filter_label_by_code.get(column_code, column_code),
+            "values": value_rows,
+            "selected_tokens": selected_tokens,
+            "filters": filters,
+        }
     )
 
 
