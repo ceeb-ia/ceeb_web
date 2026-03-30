@@ -2219,7 +2219,6 @@
   }
 
   function getAppChoices(extraIds, opts = {}) {
-    const includeStale = opts.includeStale !== false;
     const seen = new Set();
     const out = [];
     const uiState = getEquipsUiState();
@@ -2245,13 +2244,6 @@
       seen.add(String(id));
       out.push({ id, nom: String(a.nom || `Aparell ${id}`), stale: false });
     });
-    if (includeStale) {
-      _uniquePositiveInts(extraIds).forEach(id => {
-        if (seen.has(String(id))) return;
-        seen.add(String(id));
-        out.push({ id, nom: `Aparell ${id} (no disponible)`, stale: true });
-      });
-    }
     return out;
   }
 
@@ -2303,26 +2295,17 @@
       seen.add(code);
       out.push({ ...item, code });
     });
-    (selectedValues || []).forEach(value => {
-      const code = String(value || "").trim();
-      if (!code || seen.has(code)) return;
-      seen.add(code);
-      out.push({
-        code,
-        label: typeof labelBuilder === "function" ? labelBuilder(code) : `${code} (no disponible)`,
-        stale: true,
-      });
-    });
     return out;
   }
 
   function perAppFieldsHTML(compAparellId, selectedCodes){
     const opts = extendOptionsWithSelectedValues(
       APARELL_FIELD_OPTIONS[String(compAparellId)] || [],
-      selectedCodes,
-      code => `${code} (camp no disponible)`
+      selectedCodes
     );
-    const selected = new Set((selectedCodes || []).map(String));
+    const selected = new Set(
+      (selectedCodes || []).map(String).filter(code => opts.some(o => String(o.code) === String(code)))
+    );
 
     return `
       <label class="small text-muted mb-1">Camps (multi)</label>
@@ -2334,9 +2317,7 @@
           const kindLabel = kind === "field" ? "input" : (kind === "computed" ? "computed" : (kind || "camp"));
           const judgesCount = Number(o.judges_count || 1);
           const judgesLabel = judgesCount > 1 ? `, ${judgesCount} jutges` : "";
-          const label = o.stale
-            ? `${o.label || o.code} - legacy`
-            : `${o.label} (${o.code}) - ${kindLabel}${judgesLabel}`;
+          const label = `${o.label} (${o.code}) - ${kindLabel}${judgesLabel}`;
           return `
           <option value="${esc(o.code)}" ${selected.has(String(o.code)) ? "selected" : ""}>
             ${esc(label)}
@@ -2366,7 +2347,7 @@
   function getTieOptionsForAppIds(appIds, selectedCamps){
     const ids = _uniquePositiveInts(appIds);
     if (!ids.length) {
-      return extendOptionsWithSelectedValues([], selectedCamps, code => `${code} (camp no disponible)`);
+      return [];
     }
 
     let common = null;
@@ -2386,19 +2367,21 @@
         if (!byCode.has(code)) common.delete(code);
       });
     });
-    return extendOptionsWithSelectedValues(common ? Array.from(common.values()) : [], selectedCamps, code => `${code} (camp no disponible)`);
+    return extendOptionsWithSelectedValues(common ? Array.from(common.values()) : [], selectedCamps);
   }
 
   function buildCampSelectHTMLForApps(appIds, selectedCamps, selectedAgg){
     const opts = getTieOptionsForAppIds(appIds, selectedCamps);
-    const selected = new Set((selectedCamps || []).map(x => String(x)));
+    const selected = new Set(
+      (selectedCamps || []).map(x => String(x)).filter(code => opts.some(o => String(o.code) === String(code)))
+    );
     const agg = String(selectedAgg || "hereta").toLowerCase();
     return `
       <div class="d-flex flex-column gap-1">
         <select class="form-control form-control-sm" data-k="camps" multiple size="6">
           ${opts.map(o => `
             <option value="${esc(o.code)}" ${selected.has(String(o.code)) ? "selected":""}>
-              ${esc(o.stale ? `${o.label} - legacy` : `${o.label} (${o.code})`)}
+              ${esc(`${o.label} (${o.code})`)}
             </option>
           `).join("")}
         </select>
@@ -3419,6 +3402,25 @@
     els.eqAssignmentContext.value = target;
   }
 
+  function usePortableEquipNameRows() {
+    return BUILDER_MODE === "global";
+  }
+
+  function splitPortableEquipNames(raw) {
+    const text = String(raw || "");
+    const seen = new Set();
+    return text
+      .split(/[\n,;]+/g)
+      .map(part => part.trim())
+      .filter(Boolean)
+      .filter(name => {
+        const key = name.toLocaleLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+  }
+
   function renderEquipManualRows(rows) {
     if (!els.eqManualRows) return;
     const data = Array.isArray(rows) ? rows : [];
@@ -3432,6 +3434,13 @@
     data.forEach((r, idx) => {
       const label = (r && (r.label || r.key) || "").toString();
       const equipIds = Array.isArray(r && r.equip_ids) ? r.equip_ids : [];
+      const equipNames = Array.isArray(r && r.equips_noms) ? r.equips_noms : [];
+      const teamFieldHtml = usePortableEquipNameRows()
+        ? `<input class="form-control form-control-sm" data-k="equips_noms" type="text" value="${esc(equipNames.join(", "))}" placeholder="Equip A, Equip B">`
+        : `<select class="form-control form-control-sm" data-k="equip_ids" multiple size="4">
+              ${_equipsOptionsHTML(equipIds)}
+            </select>`;
+      const teamFieldLabel = usePortableEquipNameRows() ? "Equips (noms)" : "Equips";
 
       const row = document.createElement("div");
       row.className = "eq-manual-row border rounded p-2 mb-2";
@@ -3442,10 +3451,8 @@
             <input class="form-control form-control-sm" data-k="label" type="text" value="${esc(label)}" placeholder="Bloc A">
           </div>
           <div class="col-12 col-md-7 mb-2">
-            <label class="small text-muted mb-1">Equips</label>
-            <select class="form-control form-control-sm" data-k="equip_ids" multiple size="4">
-              ${_equipsOptionsHTML(equipIds)}
-            </select>
+            <label class="small text-muted mb-1">${teamFieldLabel}</label>
+            ${teamFieldHtml}
           </div>
           <div class="col-12 col-md-1 d-flex align-items-end mb-2">
             <button type="button" class="btn btn-sm btn-outline-danger w-100" data-act="del">-</button>
@@ -3473,6 +3480,16 @@
     const out = [];
     document.querySelectorAll("#eqManualRows .eq-manual-row").forEach((row, idx) => {
       const labelRaw = (row.querySelector('[data-k="label"]')?.value || "").trim();
+      if (usePortableEquipNameRows()) {
+        const names = splitPortableEquipNames(row.querySelector('[data-k="equips_noms"]')?.value || "");
+        if (!labelRaw && !names.length) return;
+        out.push({
+          key: `manual_${idx + 1}`,
+          label: labelRaw || `Particio ${idx + 1}`,
+          equips_noms: names
+        });
+        return;
+      }
       const ids = Array.from(row.querySelector('[data-k="equip_ids"]')?.selectedOptions || [])
         .map(o => Number(o.value))
         .filter(v => !isNaN(v));
@@ -3675,7 +3692,6 @@
       const exHint = tr.querySelector('[data-k="ex_hint"]');
       const ordSel = tr.querySelector('[data-k="ordre"]');
 
-      ensureSelectOption(appScopeSel, appScope, value => value.startsWith("app:") ? `${value.replace(/^app:/, "Aparell ")} (no disponible)` : `${value} (legacy)`);
       appScopeSel.value = appScope;
       ensureSelectOption(ordSel, ordre, value => `${value} (legacy)`);
       ordSel.value = ordre;
@@ -4041,7 +4057,7 @@
   }
 
   function buildRawAppOptionsHTML(selectedAppId) {
-    return getAppChoices(Number.isFinite(Number(selectedAppId)) ? [selectedAppId] : [], { includeStale: true }).map(app => `
+    return getAppChoices([], { includeStale: false }).map(app => `
       <option value="${esc(app.id)}" ${Number(app.id) === Number(selectedAppId) ? "selected" : ""}>${esc(app.nom)}</option>
     `).join("");
   }
@@ -4055,20 +4071,19 @@
     }
     return [
       '<option value="hereta">Hereta (puntuació)</option>',
-      ...getAppChoices(selectedAppId ? [selectedAppId] : [], { includeStale: true }).map(app => `<option value="app:${esc(app.id)}">${esc(app.nom)}</option>`),
+      ...getAppChoices([], { includeStale: false }).map(app => `<option value="app:${esc(app.id)}">${esc(app.nom)}</option>`),
     ].join("");
   }
 
   function buildRawCampOptionsHTML(appId, selectedCamp) {
     const opts = extendOptionsWithSelectedValues(
       getFieldOptionsForApp(appId),
-      selectedCamp ? [selectedCamp] : [],
-      code => `${code} (camp no disponible)`
+      selectedCamp ? [selectedCamp] : []
     );
     const camp = String(selectedCamp || "").trim();
     return opts.map(o => {
       const jc = Number(o.judges_count || 1);
-      const label = o.stale ? `${o.label} - legacy` : `${o.label} (${o.code})`;
+      const label = `${o.label} (${o.code})`;
       return `<option value="${esc(o.code)}" data-judges-count="${esc(jc)}" data-kind="${esc(o.kind || "")}" ${String(o.code) === camp ? "selected" : ""}>${esc(label)}</option>`;
     }).join("");
   }
@@ -4514,6 +4529,41 @@
     schema.equips.assignment_source = schema.equips.assignment_source && typeof schema.equips.assignment_source === "object" && !Array.isArray(schema.equips.assignment_source)
       ? schema.equips.assignment_source
       : fallback.equips.assignment_source;
+
+    const selectedAppIds = (() => {
+      const rawApps = punt.aparells || {};
+      const mode = String(rawApps.mode || "seleccionar").toLowerCase().trim();
+      if (mode === "tots") return getCompatibleAppIds();
+      return sanitizeCompatibleAppIds(Array.isArray(rawApps.ids) ? rawApps.ids : []);
+    })();
+    punt.aparells = {
+      ...(punt.aparells || {}),
+      mode: "seleccionar",
+      ids: selectedAppIds,
+    };
+    punt.camps_per_aparell = sanitizeMainCampsPerAparell(punt.camps_per_aparell || {}, selectedAppIds);
+    punt.exercicis_per_aparell = filterPerAppMapByCompatibleIds(
+      punt.exercicis_per_aparell || {},
+      selectedAppIds
+    );
+
+    const allowTieParticipants = currentTipus() === "equips";
+    schema.desempat = (Array.isArray(schema.desempat) ? schema.desempat : [])
+      .map(item => sanitizeTieItemForUI(item, selectedAppIds, true, allowTieParticipants))
+      .filter(Boolean);
+
+    const victoriesOut = punt.victories && typeof punt.victories === "object" && !Array.isArray(punt.victories)
+      ? { ...punt.victories }
+      : {};
+    victoriesOut.desempat_comparacio = (Array.isArray(victoriesOut.desempat_comparacio) ? victoriesOut.desempat_comparacio : [])
+      .map(item => sanitizeTieItemForUI(item, selectedAppIds, false, false))
+      .filter(Boolean);
+    punt.victories = victoriesOut;
+
+    schema.presentacio = {
+      ...schema.presentacio,
+      columnes: sanitizeRawColumnsForUI(schema.presentacio?.columnes || fallback.presentacio.columnes, selectedAppIds),
+    };
 
     return schema;
   }
@@ -5617,6 +5667,8 @@
 
   function syncUIFromSchema(schema) {
     schema = normalizeForHydration(schema || DEFAULT_SCHEMA);
+    const cfg = currentCfg();
+    if (cfg) cfg.schema = schema;
 
     const partEntries = normalizeParticioEntries(schema.particions_v2 || [], schema.particions || []);
     const parts = particioCodesFromEntries(partEntries);
@@ -5635,8 +5687,8 @@
     const ids = new Set(idsNorm);
 
     if (els.apSelBox) els.apSelBox.style.display = "";
-    buildAparellChecks([...ids], { includeStale: true });
-    getAppChoices([...ids], { includeStale: true }).forEach(a => {
+    buildAparellChecks([...ids], { includeStale: false });
+    getAppChoices([...ids], { includeStale: false }).forEach(a => {
       const el = document.getElementById("app_" + a.id);
       if (el) el.checked = ids.has(String(a.id));
     });
@@ -6016,7 +6068,11 @@
   if (els.btnEqManualAdd) {
     els.btnEqManualAdd.addEventListener("click", () => {
       const cur = readEquipManualRows();
-      cur.push({ key: `manual_${cur.length + 1}`, label: `Partició ${cur.length + 1}`, equip_ids: [] });
+      cur.push(
+        usePortableEquipNameRows()
+          ? { key: `manual_${cur.length + 1}`, label: `Partició ${cur.length + 1}`, equips_noms: [] }
+          : { key: `manual_${cur.length + 1}`, label: `Partició ${cur.length + 1}`, equip_ids: [] }
+      );
       renderEquipManualRows(cur);
       syncAdvancedFromUI();
     });

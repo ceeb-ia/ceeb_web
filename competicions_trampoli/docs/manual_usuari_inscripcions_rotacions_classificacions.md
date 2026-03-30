@@ -1,769 +1,79 @@
-# Manual d'usuari provisional
-
+﻿# Manual d'usuari provisional
 ## Objectiu d'aquest document
 
-Aquest document explica, amb llenguatge d'usuari i sense entrar en detalls tecnics, com funciona el bloc de treball de:
+Aquest manual explica, amb llenguatge d'usuari i sense entrar en detalls tecnics, com preparar i fer servir el bloc principal de treball d'una competicio.
 
-1. Inscripcions
-2. Rotacions
-3. Classificacions
+L'objectiu es que una persona que no coneix el programa pugui entendre:
 
-A mes, incorpora un capitol previ sobre aparells i puntuacio, perque aquesta configuracio condiciona com es recullen les notes i com es podran construir les classificacions.
-
-L'ordre segueix el flux de treball habitual d'una competicio: primer es defineixen els aparells i la seva logica de puntuacio, despres es preparen les persones inscrites, tot seguit es programa on competiran i finalment es defineix com es mostraran els resultats.
+- quins conceptes basics fa servir el sistema
+- quina funcio te cada pantalla principal
+- en quin ordre conve preparar la competicio
+- com es passa de la preparacio inicial a la feina de notes i jutges
 
 ## Abast
 
-Aquest manual esta pensat per a persones d'organitzacio, coordinacio o secretaria tecnica que necessiten entendre:
+Aquest document esta pensat per a persones d'organitzacio, coordinacio o secretaria tecnica que necessiten una visio operativa del flux complet.
 
-- que fa cada pantalla
-- que fa cada boto o accio visible
-- quan conve utilitzar cada opcio
-- quins avisos o limits es poden trobar
-- com resoldre casos senzills i casos mes complexos
+Inclou:
 
+- les definicions basiques del vocabulari del programa
+- la preparacio de participants, grups, equips i series
+- la configuracio d'aparells i puntuacio
+- la programacio de rotacions
+- la configuracio de classificacions
+- el treball a `Notes`
+- la creacio i l'us de `QRs`, portals de jutge i accessos publics
+
+No preten descriure detalls interns del codi ni totes les variants possibles de configuracio. La prioritat es ajudar a entendre que fa cada bloc i quan conve utilitzar-lo.
+
+## Estructura del document
+
+L'ordre del manual segueix el desenvolupament habitual de la feina:
+
+0. Definicions
+1. Inscripcions
+2. Aparells
+3. Rotacions
+4. Classificacions
+5. Notes
+6. QRs, jurat i portals
+Despres, el document tanca amb recorreguts complets, recomanacions practiques i un resum final.
 ---
 
-# 0. Aparells, tipus i puntuacio
-
-## 0.1. Que son els aparells dins del programa
-
-En aquest programa, un aparell es la manera d'identificar una prova o unitat de notes que despres es fara servir a la competicio.
-
-Dit d'una manera practica, l'aparell respon a preguntes com aquestes:
-
-- quina prova existeix
-- com es diu i amb quin codi es reconeix
-- si competeix per persona o per equip
-- quants exercicis tindra
-- com s'introdueixen les notes
-- quins calculs es fan abans d'arribar al resultat final
-
-Per tant, els aparells no son nomes un nom visible. Tambe defineixen com treballara la puntuacio.
-
-### Exemple senzill
-
-Una competicio te nomes un aparell anomenat `Trampoli`, amb 2 exercicis i una puntuacio final que surt de combinar execucio, dificultat i altres valors.
-
-### Exemple mes complex
-
-Una competicio te diversos aparells, alguns individuals i alguns d'equip. Cada un pot tenir un nombre d'exercicis diferent i una manera de calcular la nota final tambe diferent.
-
-## 0.2. Diferencia entre aparell global i aparell dins d'una competicio
-
-El programa separa dues idees:
-
-- l'aparell global
-- l'aparell configurat dins d'una competicio
-
-L'aparell global es la fitxa reutilitzable. Es on es defineix la identitat de l'aparell:
-
-- codi
-- nom
-- tipus d'unitat competitiva
-- si esta actiu
-- model de puntuacio base
-
-L'aparell dins d'una competicio es l'us concret d'aquell aparell en una competicio determinada. Aqui es decideix, per exemple:
-
-- si aquest aparell s'utilitzara realment en la competicio
-- quants exercicis tindra
-- si esta actiu o no en aquella competicio
-
-En resum:
-
-- l'aparell global es la plantilla reutilitzable
-- l'aparell de competicio es l'aplicacio concreta d'aquella plantilla
-
-## 0.3. On es troba aquesta configuracio
-
-Des de la pantalla de configuracio de la competicio, l'usuari troba tres accessos importants:
-
-- `Configurar aparells`
-- `Configurar classificacions`
-- `Configurar rotacions`
-
-Per treballar els aparells, el flux habitual es:
-
-1. entrar a `Configurar aparells`
-2. revisar els aparells ja afegits a la competicio
-3. afegir-ne un de nou o editar-ne un d'existent
-4. obrir `Puntuacio` quan calgui revisar camps i calculs
-
-Tambe hi ha un acces a `Aparells globals`, que serveix per crear o mantenir les plantilles reutilitzables.
-
-## 0.4. Pantalla de gestio d'aparells globals
-
-La pantalla de `Gestio d'aparells globals` es el cataleg de plantilles d'aparell.
-
-L'usuari hi troba:
-
-- `Crear aparell`
-- la llista d'aparells existents
-- un indicador de si l'aparell esta actiu
-- el recompte de quantes competicions el fan servir
-- l'estat de la seva puntuacio
-- les accions `Editar`, `Puntuacio` i, si es pot, `Eliminar`
-
-### Que significa cada columna
-
-`Codi`
-
-Es l'identificador curt de l'aparell. Conve que sigui clar i consistent.
-
-`Nom`
-
-Es el nom visible que l'usuari trobara despres als desplegables i llistats.
-
-`Actiu`
-
-Indica si l'aparell esta disponible per fer-lo servir. Si no esta actiu, no hauria de formar part de noves configuracions habituals.
-
-`En competicions`
-
-Mostra quantes competicions fan servir aquest aparell. Es molt util per saber si es tracta d'un aparell ja consolidat o d'una prova encara no usada.
-
-`Schema puntuacio`
-
-Indica si l'aparell ja te configurada la seva logica de camps i calculs. Si diu que no esta configurat, l'aparell existeix, pero la part de notes encara no esta preparada.
-
-### Accions disponibles
-
-`Crear aparell`
-
-Obre el formulari per donar d'alta una nova plantilla d'aparell.
-
-`Editar`
-
-Permet canviar nom, codi, tipus i estat actiu.
-
-`Puntuacio`
-
-Obre la pantalla on es defineix com es recullen i es calculen les notes.
-
-`Eliminar`
-
-Nomes es pot eliminar quan l'aparell no esta en us en cap competicio. Si ja s'esta fent servir, el programa protegeix aquesta eliminacio.
-
-### Exemple senzill
-
-Una organitzacio crea l'aparell `TRAMP` amb nom `Trampoli`, el deixa actiu i li defineix la puntuacio basica. A partir d'aqui, el podra reutilitzar a diverses competicions sense haver-lo de tornar a crear.
-
-### Exemple mes complex
-
-Una organitzacio te diversos aparells historics. Alguns continuen actius, d'altres ja no. Mirant la columna `En competicions`, pot decidir quins mantenir, quins deixar inactius i quins no conve tocar perque ja s'estan fent servir en esdeveniments reals.
-
-## 0.5. Crear o editar un aparell global
-
-Quan s'obre el formulari de crear o editar un aparell global, l'usuari veu principalment aquests camps:
-
-- `Codi`
-- `Nom`
-- `Unitat competitiva`
-- `Actiu`
-
-I, a mes, veu el boto de `Puntuacio`.
-
-### Codi
-
-Es recomanable que sigui curt, clar i facil de reconeixer. Normalment s'utilitza una abreviacio estable.
-
-Bon criteri:
-
-- un codi curt
-- en majuscules
-- facil de diferenciar d'altres aparells
-
-Mal criteri:
-
-- un codi molt llarg
-- un codi ambigu
-- un codi gairebe igual a un altre ja existent
-
-### Nom
-
-Es el text que veuran les persones usuaries a les pantalles.
-
-Ha de ser entenedor. En general, es millor un nom natural que no pas una abreviacio.
-
-### Unitat competitiva
-
-Aquest es un dels camps mes importants, perque defineix el tipus de subjecte que competira en aquest aparell.
-
-Les opcions visibles son:
-
-- `Individual`
-- `Equip`
-
-`Individual`
-
-L'aparell competeix per inscripcio. Es a dir, cada persona inscrita pot passar per aquest aparell i tenir-hi notes propies.
-
-`Equip`
-
-L'aparell competeix per equip. En aquest cas, la logica de treball canvia: l'aparell es vincula a unitats d'equip i no nomes a persones individuals.
-
-### Actiu
-
-Serveix per decidir si l'aparell queda disponible per fer-lo servir.
-
-Desactivar un aparell pot ser util quan:
-
-- ja no es vol oferir en noves competicions
-- es vol conservar l'historic pero evitar usos nous
-
-### El boto `Puntuacio`
-
-Si l'aparell encara no s'ha desat, el boto apareix desactivat amb el missatge que primer cal desar.
-
-Quan l'aparell ja existeix, aquest boto obre el constructor de puntuacio.
-
-### Exemple senzill
-
-Es crea un aparell `DMT`, amb nom `Doble minitramp`, tipus `Individual` i estat actiu. Despres de desar-lo, ja es pot entrar a `Puntuacio`.
-
-### Exemple mes complex
-
-Es crea un aparell d'equip per a una prova en que el resultat final no surt d'una sola persona, sino de la combinacio de diversos membres. En aquest cas, marcar `Equip` des del principi es clau perque la resta de pantalles mostrin opcions coherents amb aquest tipus de treball.
-
-## 0.6. Afegir un aparell a una competicio
-
-A la pantalla `Aparells [nom de la competicio]`, l'usuari veu els aparells que aquella competicio te actius o configurats.
-
-Des d'aqui hi ha accessos a:
-
-- `Configuracio`
-- `Aparells globals`
-- `Afegir aparell`
-- `Anar a notes`
-
-La taula mostra, habitualment:
-
-- codi
-- nom de l'aparell
-- nombre d'exercicis
-- si esta actiu
-- accio `Editar`
-
-### El boto `Afegir aparell`
-
-Serveix per incorporar a la competicio un aparell global que ja existeix.
-
-Quan l'usuari entra al formulari, veu:
-
-- el desplegable `Aparell`
-- el camp `Nombre d'Exercicis`
-- un resum de la `Unitat competitiva`
-- el boto `Puntuacio`
-
-### Aparell
-
-Aquest desplegable mostra els aparells globals disponibles.
-
-Si l'usuari selecciona un aparell, la pantalla informa automaticament si es tracta d'un aparell:
-
-- global individual
-- global d'equip
-
-Aquesta ajuda es important per entendre quina mena de subjectes competiran en aquella prova.
-
-### Nombre d'exercicis
-
-Indica quantes vegades competiran les persones o equips en aquell aparell dins d'aquella competicio.
-
-No es exactament la mateixa idea que els camps de notes. Aqui no es defineixen els valors d'una nota, sino quantes passades o exercicis hi haura.
-
-### Resum d'unitat competitiva
-
-La mateixa pantalla recorda a l'usuari:
-
-- si l'aparell es individual, despres es podra fer servir amb inscripcions
-- si l'aparell es d'equip, el treball de preparacio es fara des del workspace d'equips de la competicio
-
-### El boto `Puntuacio`
-
-Quan l'usuari ha triat un aparell, aquest boto apunta a la pantalla on es poden revisar o editar els camps i calculs d'aquell aparell.
-
-### Exemple senzill
-
-Una competicio afegeix `Trampoli` i li posa `2` exercicis. A partir d'aqui, les notes i les classificacions ja sabran que en aquest aparell hi ha dues passades.
-
-### Exemple mes complex
-
-Una competicio afegeix un aparell d'equip i un aparell individual. Encara que tots dos aparells visquin dins la mateixa competicio, el programa mostrara usos diferents mes endavant: l'individual treballara amb inscripcions, i el d'equip amb contextos, equips o series.
-
-## 0.7. Com entendre els tipus d'aparell
-
-Hi ha dues grans preguntes que l'usuari s'ha de fer:
-
-1. aquest aparell competeix per persona o per equip?
-2. aquest aparell tindra una puntuacio simple o una puntuacio amb diversos passos de calcul?
-
-La primera pregunta es resol amb la `Unitat competitiva`.
-
-La segona es resol a `Puntuacio`.
-
-### Quan triar `Individual`
-
-Quan cada esportista te la seva nota propia i aquella nota neix de les seves dades i els seus exercicis.
-
-Exemples habituals:
-
-- cada persona fa la seva passada
-- cada persona te una dificultat propia
-- cada persona apareix individualment a les classificacions o forma part d'una suma posterior
-
-### Quan triar `Equip`
-
-Quan la unitat que competeix no es una sola persona, sino un grup de membres que despres produiran un resultat conjunt.
-
-Exemples habituals:
-
-- equips on compten diversos membres
-- resultats on es seleccionen les millors aportacions de l'equip
-- proves on una mateixa nota final depen de diverses persones
-
-### Cas important
-
-Un aparell pot ser `Individual` i, mes endavant, participar en una classificacio per equips.
-
-Aixo no es cap contradiccio.
-
-Vol dir, simplement, que:
-
-- les notes es recullen per persona
-- pero el ranking final es pot agrupar o sumar per equips
-
-Per tant, el tipus de l'aparell no diu com es mostrara tota la competicio; diu com competeix aquella prova en el moment de recollir i tractar les notes.
-
-## 0.8. Pantalla de puntuacio de l'aparell
-
-La pantalla `Puntuacio` serveix per definir com es construeix la nota.
-
-Te tres pestanyes principals:
-
-- `Camps`
-- `Formules`
-- `Avancat (JSON)`
-
-I, a la part superior, acostuma a mostrar:
-
-- el nom de l'aparell
-- el nom de la competicio, si s'hi ha arribat des d'una competicio
-- el boto `Ajuda`
-- el boto `Desar`
-- el boto `Cancelar`
-
-### Idea general
-
-El flux mental correcte es aquest:
-
-1. decidir quines dades s'introduiran
-2. decidir com es combinaran
-3. desar el resultat
-
-Si es fa al reves, es facil acabar amb formules que fan referencia a camps que encara no existeixen o a conceptes poc clars.
-
-## 0.9. Pestanya `Camps`
-
-La pestanya `Camps` defineix les dades d'entrada. Es a dir, que es demanara o es recollira abans del calcul final.
-
-Cada fila de camp acostuma a tenir aquestes parts:
-
-- `Etiqueta`
-- `Code`
-- `Var`
-- `Abast`
-- `Jutges`
-- `Items`
-- `Min`
-- `Max`
-- `Decimals`
-- `Crash`
-- `Eliminar`
-
-### `Etiqueta`
-
-Es el nom visible per a l'usuari.
-
-Exemple:
-
-- `Execucio`
-- `Dificultat`
-- `TOF`
-
-### `Code`
-
-Es la clau estable d'aquell camp. L'usuari no l'ha d'entendre com una funcio tecnica, sino com el nom curt amb que la resta de calculs reconeixeran aquest valor.
-
-Conve no canviar-lo a la lleugera un cop el camp ja esta en us.
-
-### `Var`
-
-Es un nom curt alternatiu per fer que algunes formules siguin mes facils d'escriure o de llegir.
-
-Si l'usuari vol simplicitat, pot deixar una nomenclatura curta i coherent.
-
-### `Abast`
-
-Indica a qui pertany realment aquest camp.
-
-En un aparell individual, normalment el camp pertany a la persona que competeix.
-
-En un aparell d'equip, aquest punt es especialment important perque ajuda a distingir:
-
-- valors que pertanyen a cada membre
-- valors compartits per tota la unitat competitiva
-
-### `Jutges`
-
-Quants jutges ompliran aquest camp.
-
-### `Items`
-
-Quants valors aporta cada jutge dins del mateix camp.
-
-Es pot entendre aixi:
-
-- si `Items` es `1`, cada jutge posa un sol valor
-- si `Items` es `10`, cada jutge posa una llista de 10 valors
-
-### `Min` i `Max`
-
-Serveixen per limitar el rang admissible.
-
-Son especialment utils per evitar errors d'entrada.
-
-### `Decimals`
-
-Serveix per decidir la precisio amb que es desara i es mostrara el valor.
-
-### `Crash`
-
-Activa una logica de tall o aturada en camps on aquesta regla tingui sentit.
-
-Per a l'usuari, el mes important es entendre que, si s'activa, el programa pot deixar de tenir en compte part dels valors a partir d'un determinat punt.
-
-### Exemple senzill
-
-Camp `Dificultat`: 1 jutge, 1 item, minim 0, maxim alt, 2 decimals. Es el cas d'un valor unic i directe.
-
-### Exemple mitja
-
-Camp `Execucio`: 3 jutges, 10 items, decimals controlats. Cada jutge introdueix una petita taula de valors i despres una formula en fara el resum.
-
-### Exemple complex
-
-En un aparell d'equip, es defineix un camp individual per membre i un altre camp compartit per tota la unitat. Aixo permet que unes dades vinguin de cada participant i d'altres siguin comunes a tot l'equip.
-
-## 0.10. Pestanya `Formules`: camps calculats o computed
-
-La pestanya `Formules` serveix per crear resultats calculats a partir dels camps d'entrada o d'altres calculs anteriors.
-
-En llenguatge d'usuari, aqui es decideix com neix la nota.
-
-Cada fila acostuma a tenir:
-
-- `Etiqueta`
-- `Code`
-- `Var`
-- `Funcio`
-- `Configuracio / Formula`
-- `Eliminar`
-
-### Regla practica
-
-Cada formula hauria de tenir una finalitat clara.
-
-Per exemple:
-
-- obtenir una nota per jutge
-- resumir diversos valors d'un mateix jutge
-- resumir diversos jutges
-- resumir aportacions de membres d'un equip
-- construir el resultat final
-
-## 0.11. Opcions de `Funcio` que l'usuari pot trobar
-
-La columna `Funcio` es la que determina el tipus de calcul.
-
-Les opcions habituals visibles son aquestes.
-
-### `Expressio manual`
-
-Es l'opcio mes directa. L'usuari escriu una formula lliure a partir de camps o calculs ja existents.
-
-Quan conve:
-
-- quan el calcul es simple
-- quan ja es te clar el resultat que es vol
-- quan nomes cal sumar, restar o combinar valors coneguts
-
-Exemple senzill:
-
-Una nota final que es la suma de diversos blocs i una resta de penalitzacio.
-
-Avantatge:
-
-- maxima llibertat
-
-Precaucio:
-
-- demana mes atencio, perque no guia tant com les opcions assistides
-
-### `Per jutge i despres entre jutges (total final)`
-
-Aquesta opcio fa un calcul en dues fases:
-
-1. primer treballa dins de cada jutge
-2. despres combina els resultats de tots els jutges
-
-Es molt util quan cada jutge te diversos valors i primer cal resumir-los abans d'arribar a la nota final.
-
-Exemple senzill:
-
-Cada jutge valora diversos items d'execucio. Primer es calcula el resum de cada jutge i despres es fa la mitjana o la seleccio entre jutges.
-
-Exemple mes complex:
-
-Primer s'eliminen extrems dins de cada jutge, despres s'obte una nota per jutge, i finalment es tornen a aplicar regles de seleccio entre jutges per obtenir el resultat final.
-
-### `Resultat per jutge (nota per jutge)`
-
-Aquesta opcio calcula el resultat dins de cada jutge, pero no arriba a combinar els jutges entre ells.
-
-Serveix quan l'usuari vol obtenir una llista de resultats, un per cada jutge, per usar-la despres en una altra formula.
-
-Exemple molt clar:
-
-Primer es crea una nota resumida per cada jutge, i mes endavant una altra formula decideix quines d'aquestes notes compten i com s'agreguen.
-
-### `Per items i despres entre items (total final)`
-
-Aqui l'ordre mental es l'invers:
-
-1. primer es calcula que passa a cada item entre els jutges
-2. despres es combinen els resultats de tots els items
-
-Conve quan el protagonisme el tenen els items o elements, i no tant cada jutge considerat com a bloc complet.
-
-Exemple senzill:
-
-Per a cada element, es calcula un resum entre jutges. Despres se sumen o s'agreguen els resultats de tots els elements.
-
-### `Entre membres (seleccio + agregacio)`
-
-Aquesta opcio nomes apareix quan l'aparell es d'equip.
-
-Serveix per combinar les aportacions dels membres d'una mateixa unitat competitiva.
-
-Exemples habituals:
-
-- sumar tots els membres
-- fer la mitjana de tots els membres
-- quedar-se amb els millors `N`
-- eliminar extrems entre membres
-
-Exemple senzill:
-
-Un equip te 4 membres, pero nomes compten els 3 millors. Aquesta opcio permet triar exactament aquesta regla.
-
-Exemple mes complex:
-
-Primer es calcula una nota individual resumida per cada membre i despres, en una segona formula, es seleccionen les millors aportacions de l'equip per construir el resultat conjunt.
-
-## 0.12. Opcions de seleccio que apareixen en les funcions assistides
-
-Quan l'usuari fa servir funcions guiades, acostuma a trobar aquestes opcions de seleccio:
-
-- `Tots (no seleccionar)`
-- `Eliminar extrems (min i max)`
-- `Eliminar extrems alternant fins N`
-- `Millors N`
-- `Pitjors N`
-
-### `Tots (no seleccionar)`
-
-No es descarta cap valor. Es fan servir tots els disponibles.
-
-### `Eliminar extrems (min i max)`
-
-Serveix per treure el valor mes baix i el mes alt abans de fer el calcul final.
-
-Es una opcio molt util quan es vol reduir l'impacte d'un valor massa extrem.
-
-### `Eliminar extrems alternant fins N`
-
-Va traient valors extrems de manera progressiva fins quedar-se amb la quantitat desitjada.
-
-Es util quan hi ha molts valors i es vol arribar a un conjunt mes controlat.
-
-### `Millors N`
-
-Nomes es queden els `N` valors mes alts.
-
-### `Pitjors N`
-
-Nomes es queden els `N` valors mes baixos.
-
-### Exemple senzill
-
-Hi ha 5 valors i l'organitzacio vol que nomes comptin els 3 millors. La seleccio correcta es `Millors N` i `N = 3`.
-
-### Exemple mes complex
-
-En un equip gran, es volen ignorar els extrems i acabar treballant amb un nucli mes representatiu. En aquest cas, `Eliminar extrems alternant fins N` pot ser mes adequat que una simple mitjana de tots els valors.
-
-## 0.13. Opcions d'agregacio que l'usuari pot trobar
-
-Despres de seleccionar quins valors compten, el programa demana com s'han de combinar.
-
-Les opcions habituals son:
-
-- `Suma`
-- `Mitjana`
-- `Mediana`
-- `Minim`
-- `Maxim`
-
-I, quan es tracta de funcions entre membres, tambe pot apareixer:
-
-- `Comptar`
-
-### `Suma`
-
-Ajunta tots els valors seleccionats en un total.
-
-### `Mitjana`
-
-Fa la mitjana dels valors seleccionats.
-
-### `Mediana`
-
-Agafa el valor central. Es especialment util quan es vol reduir l'efecte d'algun extrem.
-
-### `Minim`
-
-Es queda amb el valor mes baix.
-
-### `Maxim`
-
-Es queda amb el valor mes alt.
-
-### `Comptar`
-
-No construeix una nota com a tal, sino que retorna quants valors s'han tingut en compte. Es una opcio molt especifica, pero pot ser util en regles d'equip o comprovacions.
-
-## 0.14. Altres opcions de configuracio dins les funcions guiades
-
-Segons la funcio triada, l'usuari pot trobar mes opcions de detall.
-
-### Camp font
-
-Es la font d'on surten les dades que es volen tractar.
-
-### Transformacio per valor
-
-Permet aplicar una petita regla a cada valor abans de seleccionar o agregar.
-
-En llenguatge d'usuari, vol dir:
-
-- transformar cada dada abans del resum
-
-Exemple:
-
-- invertir una escala
-- convertir un valor en una deduccio
-- ajustar el comportament de cada item abans del calcul final
-
-### Rang d'items
-
-Permet dir des de quin item es comenca i quants items es volen tenir en compte.
-
-Es molt util quan:
-
-- nomes volen comptar alguns elements
-- hi ha una part inicial o final que no s'ha d'incloure
-
-### Seleccionar segons valor original o resultat transformat
-
-Algunes pantalles avancades deixen decidir si la seleccio i l'agregacio s'han de fer:
-
-- sobre el valor original
-- sobre el valor ja transformat
-
-Per a la majoria d'usos normals, el mes senzill es mantenir el comportament per defecte i nomes tocar aquesta opcio si es te molt clar el criteri esportiu o reglamentari.
-
-### Transformacio final
-
-Permet aplicar un ultim ajust al resultat, un cop el resum principal ja esta fet.
-
-Pot ser util quan:
-
-- cal canviar d'escala al final
-- cal invertir el sentit del resultat
-- cal presentar una nota derivada del resum obtingut
-
-## 0.15. Pestanya `Avancat (JSON)`
-
-Aquesta pestanya existeix com a suport avancat i de revisio.
-
-Per a una persona usuaria no tecnica, la recomanacio habitual es clara:
-
-- no tocar aquesta pestanya si les altres dues ja permeten fer la configuracio necessaria
-
-Conve veure-la com una vista interna del resultat de la configuracio, no com la via principal de treball.
-
-## 0.16. Exemples complets de configuracio
-
-### Cas molt senzill
-
-Es crea un aparell individual amb:
-
-- un camp de dificultat
-- un camp de penalitzacio
-- una formula manual final
-
-Aquest cas es bo per a proves simples on quasi tot es resol amb valors unics.
-
-### Cas habitual
-
-Es crea un aparell individual amb:
-
-- un camp d'execucio amb diversos jutges i diversos items
-- un camp de dificultat
-- un camp de temps o valor complementari
-- una formula per obtenir una nota per jutge
-- una formula final que combina el resum d'execucio amb la resta de blocs
-
-Aquest es el patro mes habitual quan la nota necessita diversos passos abans del resultat final.
-
-### Cas d'equip
-
-Es crea un aparell d'equip on:
-
-- cada membre aporta una nota individual
-- primer es resumeix la nota de cada membre
-- despres es seleccionen els millors membres
-- finalment es construeix la nota global de l'equip
-
-Aquest cas ajuda a entendre per que el tipus `Equip` no es nomes un detall, sino una decisio que condiciona tota la logica posterior.
-
-## 0.17. Recomanacio de flux per treballar be els aparells
-
-El flux mes segur acostuma a ser aquest:
-
-1. crear o revisar l'aparell global
-2. decidir si es `Individual` o `Equip`
-3. entrar a `Puntuacio` i definir els camps basics
-4. afegir les formules mes necessaries, de la mes simple a la mes final
-5. afegir l'aparell a la competicio
-6. indicar el nombre d'exercicis
-7. nomes despres continuar amb Inscripcions, Rotacions i Classificacions
-
-Si aquest ordre es respecta, la resta del programa es torna molt mes previsible i molt mes facil d'explicar a l'usuari final.
-
----
+# 0. Definicions
+
+Aquest apartat fa de petit glossari inicial. La idea no es donar una definicio academica, sino ajudar a entendre que vol dir cada concepte dins del programa.
+
+Si en algun moment del manual un terme sembla confus, val la pena tornar aqui i rellegir-lo amb aquesta idea practica.
+
+- `Inscripcio`: es la fitxa d'una persona dins d'una competicio. Aqui hi ha les seves dades basiques, la seva categoria, el seu grup, el seu equip i, si cal, els aparells on competira.
+- `Participant`: en aquest manual, sovint es fa servir com a manera mes natural de dir "inscripcio". Quan es parla de preparar participants, en realitat s'esta treballant sobre fitxes d'inscripcio.
+- `Unitat competitiva`: es allo que realment competeix en un aparell concret. Si l'aparell es individual, la unitat competitiva es la persona inscrita. Si l'aparell es d'equip, la unitat competitiva es l'equip preparat per competir en aquell aparell.
+- `Grup`: es un bloc de participants que serveix per organitzar la competicio. Els grups s'utilitzen sobretot per ordenar participants, programar rotacions i separar el treball de notes. Un grup no es el mateix que un equip.
+- `Equip`: es un conjunt de persones que comparteixen una participacio d'equip. Un equip serveix per proves o classificacions d'equip. Un mateix participant pot estar sense equip, tenir l'equip base o formar part d'un equip diferent dins d'un context concret.
+- `Context d'equips`: es una manera de tenir diverses versions dels equips dins la mateixa competicio. El context `Base` es el context per defecte. Altres contextos serveixen quan cal reorganitzar equips per a una prova, una classificacio o una necessitat concreta sense tocar l'equip base.
+- `Aparell`: es la prova o unitat de notes que existeix dins del programa. L'aparell defineix com es diu la prova, si competeix per persona o per equip i com es recullen i calculen les notes.
+- `Aparell individual`: es un aparell on competeix cada inscripcio per separat. Les notes neixen per persona, encara que despres aquestes notes puguin alimentar una classificacio per equips.
+- `Aparell d'equip`: es un aparell on la unitat que competeix ja no es una sola persona, sino una unitat d'equip. Aixo fa que les notes, les series i part de la logica de treball passin a girar al voltant de l'equip i dels seus membres.
+- `Aparell global`: es la plantilla reutilitzable d'una prova. Serveix per definir el tipus d'aparell una sola vegada i poder-lo reutilitzar en diverses competicions.
+- `Aparell de competicio`: es l'us concret d'un aparell global dins d'una competicio determinada. Aqui es decideix, per exemple, si s'activa, quants exercicis tindra i com quedara integrat en aquella competicio.
+- `Exercici`: es cada passada, intent o bloc de nota que es registra dins d'un aparell. Si un aparell te 2 exercicis, vol dir que cada unitat competitiva hi tindra dues entrades de notes diferenciades.
+- `Serie d'equip`: es una llista ordenada de unitats competitives d'un aparell d'equip. Serveix per preparar l'ordre de treball, programar rotacions i presentar clarament quins equips passaran per una prova.
+- `Rotacio`: es el programa que diu on ha d'estar cada grup o cada serie al llarg del temps. Dit d'una altra manera, es el mapa de circulacio de la competicio entre franges i estacions.
+- `Franja`: es un tram horari concret dins del planner de rotacions. Cada franja te hora d'inici i hora de fi, i representa una fila temporal del programa.
+- `Estacio`: es cada columna funcional dins de les rotacions. Normalment correspon a un aparell, pero tambe pot ser una estacio de descans.
+- `Assignacio de rotacio`: es la combinacio concreta d'una franja i una estacio amb el grup o la serie que hi ha programat. Es la resposta a la pregunta "qui va aqui, en aquest moment?".
+- `Camp puntuable`: es una dada que s'introdueix manualment a notes o al portal de jutges. Pot ser, per exemple, execucio, dificultat, TOF o qualsevol altre valor d'entrada que despres servira per calcular el resultat.
+- `Camp computed` o `camp calculat`: es un valor que el programa no demana escriure directament, sino que calcula a partir d'altres camps o formules. Serveix per construir subtotals, seleccions entre jutges, resums per membre o totals finals.
+- `Abast del camp`: indica a qui pertany un camp. En un aparell d'equip, aquest punt es important per distingir entre valors compartits per tota la unitat competitiva i valors propis de cada membre.
+- `Classificacio`: es la manera d'ordenar i mostrar resultats. Una classificacio pot treballar amb notes individuals, amb agregacions per equips o amb filtres i particions que separen diferents blocs de competicio.
+
+Una idea clau per no perdre's es aquesta:
+
+- `inscripcio` = persona registrada
+- `grup` = bloc organitzatiu per programar i treballar
+- `equip` = conjunt de persones per competir o classificar per equips
+- `unitat competitiva` = subjecte real que rep notes en un aparell concret
 
 # 1. Inscripcions
 
@@ -1457,9 +767,750 @@ Un ordre de treball habitual es:
 
 ---
 
-# 2. Rotacions
+# 2. Aparells, tipus i puntuacio
 
-## 2.1. Per a que serveix
+## 2.1. Que son els aparells dins del programa
+
+En aquest programa, un aparell es la manera d'identificar una prova o unitat de notes que despres es fara servir a la competicio.
+
+Dit d'una manera practica, l'aparell respon a preguntes com aquestes:
+
+- quina prova existeix
+- com es diu i amb quin codi es reconeix
+- si competeix per persona o per equip
+- quants exercicis tindra
+- com s'introdueixen les notes
+- quins calculs es fan abans d'arribar al resultat final
+
+Per tant, els aparells no son nomes un nom visible. Tambe defineixen com treballara la puntuacio.
+
+### Exemple senzill
+
+Una competicio te nomes un aparell anomenat `Trampoli`, amb 2 exercicis i una puntuacio final que surt de combinar execucio, dificultat i altres valors.
+
+### Exemple mes complex
+
+Una competicio te diversos aparells, alguns individuals i alguns d'equip. Cada un pot tenir un nombre d'exercicis diferent i una manera de calcular la nota final tambe diferent.
+
+## 2.2. Diferencia entre aparell global i aparell dins d'una competicio
+
+El programa separa dues idees:
+
+- l'aparell global
+- l'aparell configurat dins d'una competicio
+
+L'aparell global es la fitxa reutilitzable. Es on es defineix la identitat de l'aparell:
+
+- codi
+- nom
+- tipus d'unitat competitiva
+- si esta actiu
+- model de puntuacio base
+
+L'aparell dins d'una competicio es l'us concret d'aquell aparell en una competicio determinada. Aqui es decideix, per exemple:
+
+- si aquest aparell s'utilitzara realment en la competicio
+- quants exercicis tindra
+- si esta actiu o no en aquella competicio
+
+En resum:
+
+- l'aparell global es la plantilla reutilitzable
+- l'aparell de competicio es l'aplicacio concreta d'aquella plantilla
+
+## 2.3. On es troba aquesta configuracio
+
+Des de la pantalla de configuracio de la competicio, l'usuari troba tres accessos importants:
+
+- `Configurar aparells`
+- `Configurar classificacions`
+- `Configurar rotacions`
+
+Per treballar els aparells, el flux habitual es:
+
+1. entrar a `Configurar aparells`
+2. revisar els aparells ja afegits a la competicio
+3. afegir-ne un de nou o editar-ne un d'existent
+4. obrir `Puntuacio` quan calgui revisar camps i calculs
+
+Tambe hi ha un acces a `Aparells globals`, que serveix per crear o mantenir les plantilles reutilitzables.
+
+## 2.4. Pantalla de gestio d'aparells globals
+
+La pantalla de `Gestio d'aparells globals` es el cataleg de plantilles d'aparell.
+
+L'usuari hi troba:
+
+- `Crear aparell`
+- la llista d'aparells existents
+- un indicador de si l'aparell esta actiu
+- el recompte de quantes competicions el fan servir
+- l'estat de la seva puntuacio
+- les accions `Editar`, `Puntuacio` i, si es pot, `Eliminar`
+
+### Que significa cada columna
+
+`Codi`
+
+Es l'identificador curt de l'aparell. Conve que sigui clar i consistent.
+
+`Nom`
+
+Es el nom visible que l'usuari trobara despres als desplegables i llistats.
+
+`Actiu`
+
+Indica si l'aparell esta disponible per fer-lo servir. Si no esta actiu, no hauria de formar part de noves configuracions habituals.
+
+`En competicions`
+
+Mostra quantes competicions fan servir aquest aparell. Es molt util per saber si es tracta d'un aparell ja consolidat o d'una prova encara no usada.
+
+`Schema puntuacio`
+
+Indica si l'aparell ja te configurada la seva logica de camps i calculs. Si diu que no esta configurat, l'aparell existeix, pero la part de notes encara no esta preparada.
+
+### Accions disponibles
+
+`Crear aparell`
+
+Obre el formulari per donar d'alta una nova plantilla d'aparell.
+
+`Editar`
+
+Permet canviar nom, codi, tipus i estat actiu.
+
+`Puntuacio`
+
+Obre la pantalla on es defineix com es recullen i es calculen les notes.
+
+`Eliminar`
+
+Nomes es pot eliminar quan l'aparell no esta en us en cap competicio. Si ja s'esta fent servir, el programa protegeix aquesta eliminacio.
+
+### Exemple senzill
+
+Una organitzacio crea l'aparell `TRAMP` amb nom `Trampoli`, el deixa actiu i li defineix la puntuacio basica. A partir d'aqui, el podra reutilitzar a diverses competicions sense haver-lo de tornar a crear.
+
+### Exemple mes complex
+
+Una organitzacio te diversos aparells historics. Alguns continuen actius, d'altres ja no. Mirant la columna `En competicions`, pot decidir quins mantenir, quins deixar inactius i quins no conve tocar perque ja s'estan fent servir en esdeveniments reals.
+
+## 2.5. Crear o editar un aparell global
+
+Quan s'obre el formulari de crear o editar un aparell global, l'usuari veu principalment aquests camps:
+
+- `Codi`
+- `Nom`
+- `Unitat competitiva`
+- `Actiu`
+
+I, a mes, veu el boto de `Puntuacio`.
+
+### Codi
+
+Es recomanable que sigui curt, clar i facil de reconeixer. Normalment s'utilitza una abreviacio estable.
+
+Bon criteri:
+
+- un codi curt
+- en majuscules
+- facil de diferenciar d'altres aparells
+
+Mal criteri:
+
+- un codi molt llarg
+- un codi ambigu
+- un codi gairebe igual a un altre ja existent
+
+### Nom
+
+Es el text que veuran les persones usuaries a les pantalles.
+
+Ha de ser entenedor. En general, es millor un nom natural que no pas una abreviacio.
+
+### Unitat competitiva
+
+Aquest es un dels camps mes importants, perque defineix el tipus de subjecte que competira en aquest aparell.
+
+Les opcions visibles son:
+
+- `Individual`
+- `Equip`
+
+`Individual`
+
+L'aparell competeix per inscripcio. Es a dir, cada persona inscrita pot passar per aquest aparell i tenir-hi notes propies.
+
+`Equip`
+
+L'aparell competeix per equip. En aquest cas, la logica de treball canvia: l'aparell es vincula a unitats d'equip i no nomes a persones individuals.
+
+### Actiu
+
+Serveix per decidir si l'aparell queda disponible per fer-lo servir.
+
+Desactivar un aparell pot ser util quan:
+
+- ja no es vol oferir en noves competicions
+- es vol conservar l'historic pero evitar usos nous
+
+### El boto `Puntuacio`
+
+Si l'aparell encara no s'ha desat, el boto apareix desactivat amb el missatge que primer cal desar.
+
+Quan l'aparell ja existeix, aquest boto obre el constructor de puntuacio.
+
+### Exemple senzill
+
+Es crea un aparell `DMT`, amb nom `Doble minitramp`, tipus `Individual` i estat actiu. Despres de desar-lo, ja es pot entrar a `Puntuacio`.
+
+### Exemple mes complex
+
+Es crea un aparell d'equip per a una prova en que el resultat final no surt d'una sola persona, sino de la combinacio de diversos membres. En aquest cas, marcar `Equip` des del principi es clau perque la resta de pantalles mostrin opcions coherents amb aquest tipus de treball.
+
+## 2.6. Afegir un aparell a una competicio
+
+A la pantalla `Aparells [nom de la competicio]`, l'usuari veu els aparells que aquella competicio te actius o configurats.
+
+Des d'aqui hi ha accessos a:
+
+- `Configuracio`
+- `Aparells globals`
+- `Afegir aparell`
+- `Anar a notes`
+
+La taula mostra, habitualment:
+
+- codi
+- nom de l'aparell
+- nombre d'exercicis
+- si esta actiu
+- accio `Editar`
+
+### El boto `Afegir aparell`
+
+Serveix per incorporar a la competicio un aparell global que ja existeix.
+
+Quan l'usuari entra al formulari, veu:
+
+- el desplegable `Aparell`
+- el camp `Nombre d'Exercicis`
+- un resum de la `Unitat competitiva`
+- el boto `Puntuacio`
+
+### Aparell
+
+Aquest desplegable mostra els aparells globals disponibles.
+
+Si l'usuari selecciona un aparell, la pantalla informa automaticament si es tracta d'un aparell:
+
+- global individual
+- global d'equip
+
+Aquesta ajuda es important per entendre quina mena de subjectes competiran en aquella prova.
+
+### Nombre d'exercicis
+
+Indica quantes vegades competiran les persones o equips en aquell aparell dins d'aquella competicio.
+
+No es exactament la mateixa idea que els camps de notes. Aqui no es defineixen els valors d'una nota, sino quantes passades o exercicis hi haura.
+
+### Resum d'unitat competitiva
+
+La mateixa pantalla recorda a l'usuari:
+
+- si l'aparell es individual, despres es podra fer servir amb inscripcions
+- si l'aparell es d'equip, el treball de preparacio es fara des del workspace d'equips de la competicio
+
+### El boto `Puntuacio`
+
+Quan l'usuari ha triat un aparell, aquest boto apunta a la pantalla on es poden revisar o editar els camps i calculs d'aquell aparell.
+
+### Exemple senzill
+
+Una competicio afegeix `Trampoli` i li posa `2` exercicis. A partir d'aqui, les notes i les classificacions ja sabran que en aquest aparell hi ha dues passades.
+
+### Exemple mes complex
+
+Una competicio afegeix un aparell d'equip i un aparell individual. Encara que tots dos aparells visquin dins la mateixa competicio, el programa mostrara usos diferents mes endavant: l'individual treballara amb inscripcions, i el d'equip amb contextos, equips o series.
+
+## 2.7. Com entendre els tipus d'aparell
+
+Hi ha dues grans preguntes que l'usuari s'ha de fer:
+
+1. aquest aparell competeix per persona o per equip?
+2. aquest aparell tindra una puntuacio simple o una puntuacio amb diversos passos de calcul?
+
+La primera pregunta es resol amb la `Unitat competitiva`.
+
+La segona es resol a `Puntuacio`.
+
+### Quan triar `Individual`
+
+Quan cada esportista te la seva nota propia i aquella nota neix de les seves dades i els seus exercicis.
+
+Exemples habituals:
+
+- cada persona fa la seva passada
+- cada persona te una dificultat propia
+- cada persona apareix individualment a les classificacions o forma part d'una suma posterior
+
+### Quan triar `Equip`
+
+Quan la unitat que competeix no es una sola persona, sino un grup de membres que despres produiran un resultat conjunt.
+
+Exemples habituals:
+
+- equips on compten diversos membres
+- resultats on es seleccionen les millors aportacions de l'equip
+- proves on una mateixa nota final depen de diverses persones
+
+### Cas important
+
+Un aparell pot ser `Individual` i, mes endavant, participar en una classificacio per equips.
+
+Aixo no es cap contradiccio.
+
+Vol dir, simplement, que:
+
+- les notes es recullen per persona
+- pero el ranking final es pot agrupar o sumar per equips
+
+Per tant, el tipus de l'aparell no diu com es mostrara tota la competicio; diu com competeix aquella prova en el moment de recollir i tractar les notes.
+
+## 2.8. Pantalla de puntuacio de l'aparell
+
+La pantalla `Puntuacio` serveix per definir com es construeix la nota.
+
+Te tres pestanyes principals:
+
+- `Camps`
+- `Formules`
+- `Avancat (JSON)`
+
+I, a la part superior, acostuma a mostrar:
+
+- el nom de l'aparell
+- el nom de la competicio, si s'hi ha arribat des d'una competicio
+- el boto `Ajuda`
+- el boto `Desar`
+- el boto `Cancelar`
+
+### Idea general
+
+El flux mental correcte es aquest:
+
+1. decidir quines dades s'introduiran
+2. decidir com es combinaran
+3. desar el resultat
+
+Si es fa al reves, es facil acabar amb formules que fan referencia a camps que encara no existeixen o a conceptes poc clars.
+
+## 2.9. Pestanya `Camps`
+
+La pestanya `Camps` defineix les dades d'entrada. Es a dir, que es demanara o es recollira abans del calcul final.
+
+Cada fila de camp acostuma a tenir aquestes parts:
+
+- `Etiqueta`
+- `Code`
+- `Var`
+- `Abast`
+- `Jutges`
+- `Items`
+- `Min`
+- `Max`
+- `Decimals`
+- `Crash`
+- `Eliminar`
+
+### `Etiqueta`
+
+Es el nom visible per a l'usuari.
+
+Exemple:
+
+- `Execucio`
+- `Dificultat`
+- `TOF`
+
+### `Code`
+
+Es la clau estable d'aquell camp. L'usuari no l'ha d'entendre com una funcio tecnica, sino com el nom curt amb que la resta de calculs reconeixeran aquest valor.
+
+Conve no canviar-lo a la lleugera un cop el camp ja esta en us.
+
+### `Var`
+
+Es un nom curt alternatiu per fer que algunes formules siguin mes facils d'escriure o de llegir.
+
+Si l'usuari vol simplicitat, pot deixar una nomenclatura curta i coherent.
+
+### `Abast`
+
+Indica a qui pertany realment aquest camp.
+
+En un aparell individual, normalment el camp pertany a la persona que competeix.
+
+En un aparell d'equip, aquest punt es especialment important perque ajuda a distingir:
+
+- valors que pertanyen a cada membre
+- valors compartits per tota la unitat competitiva
+
+### `Jutges`
+
+Quants jutges ompliran aquest camp.
+
+### `Items`
+
+Quants valors aporta cada jutge dins del mateix camp.
+
+Es pot entendre aixi:
+
+- si `Items` es `1`, cada jutge posa un sol valor
+- si `Items` es `10`, cada jutge posa una llista de 10 valors
+
+### `Min` i `Max`
+
+Serveixen per limitar el rang admissible.
+
+Son especialment utils per evitar errors d'entrada.
+
+### `Decimals`
+
+Serveix per decidir la precisio amb que es desara i es mostrara el valor.
+
+### `Crash`
+
+Activa una logica de tall o aturada en camps on aquesta regla tingui sentit.
+
+Per a l'usuari, el mes important es entendre que, si s'activa, el programa pot deixar de tenir en compte part dels valors a partir d'un determinat punt.
+
+### Exemple senzill
+
+Camp `Dificultat`: 1 jutge, 1 item, minim 0, maxim alt, 2 decimals. Es el cas d'un valor unic i directe.
+
+### Exemple mitja
+
+Camp `Execucio`: 3 jutges, 10 items, decimals controlats. Cada jutge introdueix una petita taula de valors i despres una formula en fara el resum.
+
+### Exemple complex
+
+En un aparell d'equip, es defineix un camp individual per membre i un altre camp compartit per tota la unitat. Aixo permet que unes dades vinguin de cada participant i d'altres siguin comunes a tot l'equip.
+
+## 2.10. Pestanya `Formules`: camps calculats o computed
+
+La pestanya `Formules` serveix per crear resultats calculats a partir dels camps d'entrada o d'altres calculs anteriors.
+
+En llenguatge d'usuari, aqui es decideix com neix la nota.
+
+Cada fila acostuma a tenir:
+
+- `Etiqueta`
+- `Code`
+- `Var`
+- `Funcio`
+- `Configuracio / Formula`
+- `Eliminar`
+
+### Regla practica
+
+Cada formula hauria de tenir una finalitat clara.
+
+Per exemple:
+
+- obtenir una nota per jutge
+- resumir diversos valors d'un mateix jutge
+- resumir diversos jutges
+- resumir aportacions de membres d'un equip
+- construir el resultat final
+
+## 2.11. Opcions de `Funcio` que l'usuari pot trobar
+
+La columna `Funcio` es la que determina el tipus de calcul.
+
+Les opcions habituals visibles son aquestes.
+
+### `Expressio manual`
+
+Es l'opcio mes directa. L'usuari escriu una formula lliure a partir de camps o calculs ja existents.
+
+Quan conve:
+
+- quan el calcul es simple
+- quan ja es te clar el resultat que es vol
+- quan nomes cal sumar, restar o combinar valors coneguts
+
+Exemple senzill:
+
+Una nota final que es la suma de diversos blocs i una resta de penalitzacio.
+
+Avantatge:
+
+- maxima llibertat
+
+Precaucio:
+
+- demana mes atencio, perque no guia tant com les opcions assistides
+
+### `Per jutge i despres entre jutges (total final)`
+
+Aquesta opcio fa un calcul en dues fases:
+
+1. primer treballa dins de cada jutge
+2. despres combina els resultats de tots els jutges
+
+Es molt util quan cada jutge te diversos valors i primer cal resumir-los abans d'arribar a la nota final.
+
+Exemple senzill:
+
+Cada jutge valora diversos items d'execucio. Primer es calcula el resum de cada jutge i despres es fa la mitjana o la seleccio entre jutges.
+
+Exemple mes complex:
+
+Primer s'eliminen extrems dins de cada jutge, despres s'obte una nota per jutge, i finalment es tornen a aplicar regles de seleccio entre jutges per obtenir el resultat final.
+
+### `Resultat per jutge (nota per jutge)`
+
+Aquesta opcio calcula el resultat dins de cada jutge, pero no arriba a combinar els jutges entre ells.
+
+Serveix quan l'usuari vol obtenir una llista de resultats, un per cada jutge, per usar-la despres en una altra formula.
+
+Exemple molt clar:
+
+Primer es crea una nota resumida per cada jutge, i mes endavant una altra formula decideix quines d'aquestes notes compten i com s'agreguen.
+
+### `Per items i despres entre items (total final)`
+
+Aqui l'ordre mental es l'invers:
+
+1. primer es calcula que passa a cada item entre els jutges
+2. despres es combinen els resultats de tots els items
+
+Conve quan el protagonisme el tenen els items o elements, i no tant cada jutge considerat com a bloc complet.
+
+Exemple senzill:
+
+Per a cada element, es calcula un resum entre jutges. Despres se sumen o s'agreguen els resultats de tots els elements.
+
+### `Entre membres (seleccio + agregacio)`
+
+Aquesta opcio nomes apareix quan l'aparell es d'equip.
+
+Serveix per combinar les aportacions dels membres d'una mateixa unitat competitiva.
+
+Exemples habituals:
+
+- sumar tots els membres
+- fer la mitjana de tots els membres
+- quedar-se amb els millors `N`
+- eliminar extrems entre membres
+
+Exemple senzill:
+
+Un equip te 4 membres, pero nomes compten els 3 millors. Aquesta opcio permet triar exactament aquesta regla.
+
+Exemple mes complex:
+
+Primer es calcula una nota individual resumida per cada membre i despres, en una segona formula, es seleccionen les millors aportacions de l'equip per construir el resultat conjunt.
+
+## 2.12. Opcions de seleccio que apareixen en les funcions assistides
+
+Quan l'usuari fa servir funcions guiades, acostuma a trobar aquestes opcions de seleccio:
+
+- `Tots (no seleccionar)`
+- `Eliminar extrems (min i max)`
+- `Eliminar extrems alternant fins N`
+- `Millors N`
+- `Pitjors N`
+
+### `Tots (no seleccionar)`
+
+No es descarta cap valor. Es fan servir tots els disponibles.
+
+### `Eliminar extrems (min i max)`
+
+Serveix per treure el valor mes baix i el mes alt abans de fer el calcul final.
+
+Es una opcio molt util quan es vol reduir l'impacte d'un valor massa extrem.
+
+### `Eliminar extrems alternant fins N`
+
+Va traient valors extrems de manera progressiva fins quedar-se amb la quantitat desitjada.
+
+Es util quan hi ha molts valors i es vol arribar a un conjunt mes controlat.
+
+### `Millors N`
+
+Nomes es queden els `N` valors mes alts.
+
+### `Pitjors N`
+
+Nomes es queden els `N` valors mes baixos.
+
+### Exemple senzill
+
+Hi ha 5 valors i l'organitzacio vol que nomes comptin els 3 millors. La seleccio correcta es `Millors N` i `N = 3`.
+
+### Exemple mes complex
+
+En un equip gran, es volen ignorar els extrems i acabar treballant amb un nucli mes representatiu. En aquest cas, `Eliminar extrems alternant fins N` pot ser mes adequat que una simple mitjana de tots els valors.
+
+## 2.13. Opcions d'agregacio que l'usuari pot trobar
+
+Despres de seleccionar quins valors compten, el programa demana com s'han de combinar.
+
+Les opcions habituals son:
+
+- `Suma`
+- `Mitjana`
+- `Mediana`
+- `Minim`
+- `Maxim`
+
+I, quan es tracta de funcions entre membres, tambe pot apareixer:
+
+- `Comptar`
+
+### `Suma`
+
+Ajunta tots els valors seleccionats en un total.
+
+### `Mitjana`
+
+Fa la mitjana dels valors seleccionats.
+
+### `Mediana`
+
+Agafa el valor central. Es especialment util quan es vol reduir l'efecte d'algun extrem.
+
+### `Minim`
+
+Es queda amb el valor mes baix.
+
+### `Maxim`
+
+Es queda amb el valor mes alt.
+
+### `Comptar`
+
+No construeix una nota com a tal, sino que retorna quants valors s'han tingut en compte. Es una opcio molt especifica, pero pot ser util en regles d'equip o comprovacions.
+
+## 2.14. Altres opcions de configuracio dins les funcions guiades
+
+Segons la funcio triada, l'usuari pot trobar mes opcions de detall.
+
+### Camp font
+
+Es la font d'on surten les dades que es volen tractar.
+
+### Transformacio per valor
+
+Permet aplicar una petita regla a cada valor abans de seleccionar o agregar.
+
+En llenguatge d'usuari, vol dir:
+
+- transformar cada dada abans del resum
+
+Exemple:
+
+- invertir una escala
+- convertir un valor en una deduccio
+- ajustar el comportament de cada item abans del calcul final
+
+### Rang d'items
+
+Permet dir des de quin item es comenca i quants items es volen tenir en compte.
+
+Es molt util quan:
+
+- nomes volen comptar alguns elements
+- hi ha una part inicial o final que no s'ha d'incloure
+
+### Seleccionar segons valor original o resultat transformat
+
+Algunes pantalles avancades deixen decidir si la seleccio i l'agregacio s'han de fer:
+
+- sobre el valor original
+- sobre el valor ja transformat
+
+Per a la majoria d'usos normals, el mes senzill es mantenir el comportament per defecte i nomes tocar aquesta opcio si es te molt clar el criteri esportiu o reglamentari.
+
+### Transformacio final
+
+Permet aplicar un ultim ajust al resultat, un cop el resum principal ja esta fet.
+
+Pot ser util quan:
+
+- cal canviar d'escala al final
+- cal invertir el sentit del resultat
+- cal presentar una nota derivada del resum obtingut
+
+## 2.15. Pestanya `Avancat (JSON)`
+
+Aquesta pestanya existeix com a suport avancat i de revisio.
+
+Per a una persona usuaria no tecnica, la recomanacio habitual es clara:
+
+- no tocar aquesta pestanya si les altres dues ja permeten fer la configuracio necessaria
+
+Conve veure-la com una vista interna del resultat de la configuracio, no com la via principal de treball.
+
+## 2.16. Exemples complets de configuracio
+
+### Cas molt senzill
+
+Es crea un aparell individual amb:
+
+- un camp de dificultat
+- un camp de penalitzacio
+- una formula manual final
+
+Aquest cas es bo per a proves simples on quasi tot es resol amb valors unics.
+
+### Cas habitual
+
+Es crea un aparell individual amb:
+
+- un camp d'execucio amb diversos jutges i diversos items
+- un camp de dificultat
+- un camp de temps o valor complementari
+- una formula per obtenir una nota per jutge
+- una formula final que combina el resum d'execucio amb la resta de blocs
+
+Aquest es el patro mes habitual quan la nota necessita diversos passos abans del resultat final.
+
+### Cas d'equip
+
+Es crea un aparell d'equip on:
+
+- cada membre aporta una nota individual
+- primer es resumeix la nota de cada membre
+- despres es seleccionen els millors membres
+- finalment es construeix la nota global de l'equip
+
+Aquest cas ajuda a entendre per que el tipus `Equip` no es nomes un detall, sino una decisio que condiciona tota la logica posterior.
+
+## 2.17. Recomanacio de flux per treballar be els aparells
+
+El flux mes segur acostuma a ser aquest:
+
+1. crear o revisar l'aparell global
+2. decidir si es `Individual` o `Equip`
+3. entrar a `Puntuacio` i definir els camps basics
+4. afegir les formules mes necessaries, de la mes simple a la mes final
+5. afegir l'aparell a la competicio
+6. indicar el nombre d'exercicis
+7. nomes despres continuar amb Inscripcions, Rotacions i Classificacions
+
+Si aquest ordre es respecta, la resta del programa es torna molt mes previsible i molt mes facil d'explicar a l'usuari final.
+
+---
+
+# 3. Rotacions
+
+## 3.1. Per a que serveix
 
 La pantalla de Rotacions serveix per construir el programa horari de la competicio.
 
@@ -1473,7 +1524,7 @@ Des d'aqui es pot:
 - guardar dades d'exportacio
 - descarregar l'horari en Excel
 
-## 2.2. Capcalera i accessos principals
+## 3.2. Capcalera i accessos principals
 
 Botons visibles:
 
@@ -1487,7 +1538,7 @@ La capcalera recorda:
 - quina competicio s'esta editant
 - que la graella es treballa arrossegant grups o series
 
-## 2.3. Resum de fora de programa
+## 3.3. Resum de fora de programa
 
 A la part superior hi ha un resum anomenat `Fora de programa`.
 
@@ -1499,7 +1550,7 @@ Mostra:
 
 Aquest resum es molt util per detectar si el programa esta incomplet.
 
-## 2.4. Columna esquerra: elements programables
+## 3.4. Columna esquerra: elements programables
 
 La columna esquerra separa els elements en tres blocs:
 
@@ -1523,7 +1574,7 @@ Inclou:
 
 Aquest element serveix per esborrar una cel.la de la graella arrossegant-lo fins a la posicio que es vol buidar.
 
-## 2.5. Mostrar grups fora de programa a notes i jutges
+## 3.5. Mostrar grups fora de programa a notes i jutges
 
 Hi ha un interruptor amb el text:
 
@@ -1539,7 +1590,7 @@ Si esta desactivat:
 
 Es una decisio organitzativa important quan hi ha grups encara pendents de situar.
 
-## 2.6. Afegir una franja manualment
+## 3.6. Afegir una franja manualment
 
 El bloc `Afegir franja` te:
 
@@ -1554,7 +1605,7 @@ Serveix per crear una franja concreta de manera manual.
 
 Es crea una franja de `09:00` a `09:20` amb el titol `Escalfament`.
 
-## 2.7. Generar franges automaticament
+## 3.7. Generar franges automaticament
 
 El bloc `Generar franges automaticament` te:
 
@@ -1580,7 +1631,7 @@ De `09:00` a `11:00`, amb interval de `20` minuts i titol base `Rotacio`, el sis
 
 Despres d'una reunio d'ultima hora, es decideix refer tot l'horari del mati. Es marca l'opcio d'esborrar i es regeneren totes les franges del tram.
 
-## 2.8. Afegir descans
+## 3.8. Afegir descans
 
 El bloc `Afegir descans` te:
 
@@ -1588,7 +1639,7 @@ El bloc `Afegir descans` te:
 
 Serveix per crear una estacio o punt de descans que pot entrar a la planificacio com a part del circuit.
 
-## 2.9. Graella del programa
+## 3.9. Graella del programa
 
 La zona central es la graella `Programa (franges x estacions)`.
 
@@ -1602,7 +1653,7 @@ Si s'intenta posar un element en una estacio incompatible:
 
 - el sistema ho bloqueja i ho avisa
 
-## 2.10. Estacions
+## 3.10. Estacions
 
 Cada columna representa una estacio.
 
@@ -1613,7 +1664,7 @@ Accions visibles a la capcalera de cada estacio:
 
 L'ordre de les estacions afecta directament la lectura del programa i tambe la manera com es fa servir l'opcio d'extrapolar.
 
-## 2.11. Accions de cada franja
+## 3.11. Accions de cada franja
 
 Cada franja mostra:
 
@@ -1674,7 +1725,7 @@ No te sentit si la franja base esta buida.
 
 Esborra la franja.
 
-## 2.12. Netejar tot el programa
+## 3.12. Netejar tot el programa
 
 Boto visible:
 
@@ -1687,7 +1738,7 @@ Avis important:
 - es una accio forta i el sistema la demana confirmar
 - no es pot desfer de manera automatica
 
-## 2.13. Exportacio Excel
+## 3.13. Exportacio Excel
 
 A la columna dreta hi ha el bloc `Exportacio Excel`.
 
@@ -1701,7 +1752,7 @@ La diferencia practica es:
 - el mode de participants mostra el detall de les persones dins cada cel.la
 - el mode de grups resumeix el programa a nivell de grup o serie
 
-## 2.14. Dades de l'exportacio
+## 3.14. Dades de l'exportacio
 
 El bloc `Dades export Excel` permet personalitzar el document.
 
@@ -1729,7 +1780,7 @@ S'omple titol, seu i data i es desa. Despres s'exporta l'horari.
 
 S'afegeix el logo oficial, es reordenen els camps de participant i es genera un Excel mes formal per enviar a clubs i jutges.
 
-## 2.15. Recomanacio de flux a Rotacions
+## 3.15. Recomanacio de flux a Rotacions
 
 Un flux de treball habitual es:
 
@@ -1744,9 +1795,9 @@ Un flux de treball habitual es:
 
 ---
 
-# 3. Classificacions
+# 4. Classificacions
 
-## 3.1. Per a que serveix
+## 4.1. Per a que serveix
 
 La zona de Classificacions serveix per definir com es calculen i es mostren els resultats de la competicio.
 
@@ -1762,7 +1813,7 @@ Des d'aqui es pot:
 - reutilitzar plantilles
 - consultar la vista en viu i el mode loop
 
-## 3.2. Barra superior del configurador
+## 4.2. Barra superior del configurador
 
 Botons visibles:
 
@@ -1782,7 +1833,7 @@ Important:
 
 - si una classificacio es nova i encara no s'ha guardat, algunes accions com la previsualitzacio poden quedar limitades fins que es desi
 
-## 3.3. Biblioteca de plantilles
+## 4.3. Biblioteca de plantilles
 
 A sota de la barra principal pot apareixer la biblioteca de plantilles.
 
@@ -1828,7 +1879,7 @@ Es carrega una plantilla de `General individual`, es comprova i s'aplica per est
 
 Es prova una plantilla antiga que no encaixa del tot. El sistema mostra avisos, es confirma una adaptacio assistida i finalment es crea una nova classificacio compatible.
 
-## 3.4. Columna esquerra: configuracions
+## 4.4. Columna esquerra: configuracions
 
 A l'esquerra es veu la llista de classificacions guardades.
 
@@ -1843,7 +1894,7 @@ En fer clic sobre una configuracio:
 
 - s'obre l'editor de la dreta
 
-## 3.5. Ajuda contextual i navegacio interna
+## 4.5. Ajuda contextual i navegacio interna
 
 L'editor te:
 
@@ -1853,7 +1904,7 @@ L'editor te:
 
 Aquestes ajudes estan pensades per orientar l'usuari sense sortir de la pantalla.
 
-## 3.6. Bloc 1: Metadades
+## 4.6. Bloc 1: Metadades
 
 Serveix per definir la identitat general de la classificacio.
 
@@ -1876,7 +1927,7 @@ El `Tipus` sol distingir entre:
 
 L'opcio `Activa` decideix si aquella classificacio ha d'apareixer a la vista en viu.
 
-## 3.7. Bloc 2: Particions
+## 4.7. Bloc 2: Particions
 
 Serveix per decidir com es divideix el resultat final en diferents blocs visibles.
 
@@ -1902,7 +1953,7 @@ Una classificacio es divideix per `Categoria`.
 
 Una classificacio per equips es divideix per un context d'equips concret i, dins d'aquest, per particions manuals que representen diferents blocs de competicio.
 
-## 3.8. Bloc 3: Puntuacio
+## 4.8. Bloc 3: Puntuacio
 
 Es el cor de la classificacio.
 
@@ -2003,7 +2054,7 @@ Classificacio que nomes compta els `millors 2` exercicis d'un conjunt d'aparells
 
 Classificacio per equips derivada dels resultats individuals, amb seleccio comuna d'exercicis i limit per participant per evitar que un sol membre concentri tot el pes del resultat.
 
-## 3.9. Bloc 4: Desempat
+## 4.9. Bloc 4: Desempat
 
 Serveix per decidir que passa quan dues o mes posicions queden igualades.
 
@@ -2031,7 +2082,7 @@ Si dues persones empaten a punts, guanya qui te millor execucio.
 
 Primer es desempata pel millor aparell, despres per un camp concret i finalment per una altra combinacio d'exercicis si encara persisteix l'empat.
 
-## 3.10. Bloc 5: Filtres
+## 4.10. Bloc 5: Filtres
 
 Serveix per decidir qui entra a la classificacio abans de calcular el resultat.
 
@@ -2052,7 +2103,7 @@ Es crea una classificacio nomes per a una categoria concreta.
 
 Es crea una classificacio d'una sola fase de competicio filtrant per grups i subcategories alhora.
 
-## 3.11. Bloc 6: Presentacio
+## 4.11. Bloc 6: Presentacio
 
 Serveix per decidir com es veura el resultat final.
 
@@ -2096,7 +2147,7 @@ Es mostra nomes posicio, nom i punts.
 
 S'afegeixen columnes extres per mostrar parcials, detalls de jutges o camps especifics que siguin importants per a aquella classificacio.
 
-## 3.12. Guardar, eliminar i previsualitzar
+## 4.12. Guardar, eliminar i previsualitzar
 
 ### Guardar
 
@@ -2118,7 +2169,7 @@ Si la classificacio no estava guardada encara:
 
 - es mostra l'avis que primer s'ha de guardar
 
-## 3.13. Vista en viu
+## 4.13. Vista en viu
 
 La vista `Classificacions en viu` serveix per seguir els resultats mentre s'estan entrant notes o ajustant configuracions.
 
@@ -2151,7 +2202,7 @@ Es segueix la classificacio general en directe mentre entren les notes.
 
 Hi ha diverses classificacions actives alhora, com general, per categoria i per equips, i cada una es consulta en la seva pestanya.
 
-## 3.14. Mode Loop
+## 4.14. Mode Loop
 
 La vista `Classificacions - Mode Loop` rota automaticament entre classificacions i particions.
 
@@ -2184,7 +2235,7 @@ Es projecta una sola classificacio i el loop va passant les pagines automaticame
 
 En una pantalla de pavello es van alternant diferents classificacions i particions de manera automatica durant tota la jornada.
 
-## 3.15. Recomanacio de flux a Classificacions
+## 4.15. Recomanacio de flux a Classificacions
 
 Un ordre de treball habitual es:
 
@@ -2202,71 +2253,12 @@ Un ordre de treball habitual es:
 
 ---
 
-# 4. Tres recorreguts complets
+# 5. Notes
 
-## 4.1. Cas molt senzill
+Aquesta seccio explica el panell central de `Notes`, que es el lloc des d'on organitzacio veu l'estat de la puntuacio, revisa la informacio entrant i controla el directe.
 
-1. Importar Excel.
-2. Fer una cerca rapida per validar que hi son totes les persones.
-3. Aplicar una divisio per categoria.
-4. Exportar l'Excel de suport.
-
-## 4.2. Cas habitual de competicio individual
-
-1. Importar participants.
-2. Crear grups per categories o subcategories.
-3. Revisar i desar l'ordre de competicio dins de cada grup.
-4. Passar a Rotacions i col.locar cada grup a la seva franja i estacio.
-5. Crear una classificacio general i una altra per categoria.
-6. Previsualitzar-les.
-7. Activar-les i revisar la vista en viu.
-
-## 4.3. Cas mes complet amb equips
-
-1. Importar participants.
-2. Crear o revisar equips en el context adequat.
-3. Preparar series d'equip per als aparells corresponents.
-4. Configurar Rotacions combinant grups individuals i series d'equip.
-5. Definir una classificacio individual i una classificacio per equips.
-6. Fer servir previsualitzacions abans d'aplicar canvis grans.
-7. Mostrar la classificacio en directe a una pantalla amb mode loop.
-
----
-
-# 5. Recomanacions practiques
-
-- Abans de fer canvis grans, fes una previsualitzacio si la pantalla l'ofereix.
-- Si una pantalla permet `Desfer`, utilitza-la quan hagis provat una ordenacio o una reorganitzacio que no t'encaixa.
-- Quan treballis amb grups o equips ja programats, revisa els avisos amb calma abans de confirmar.
-- Si una llista visible no coincideix amb l'ordre guardat, no ho donis per bo fins revisar l'ordre de competicio.
-- A Rotacions, no deixis elements fora de programa sense decidir si han de ser visibles o no a Notes i jutges.
-- A Classificacions, guarda abans de previsualitzar i activa nomes les configuracions que realment hagin d'apareixer en viu.
-
----
-
-# 7. Notes, Jurat, QRs i portal
-
-## 7.1. Per a que serveix aquest bloc
-
-Aquest bloc cobreix tot el tram que va des de la introduccio de notes fins a la feina dels jutges i la comparticio dels accessos.
-
-En la practica, reuneix quatre peces molt relacionades:
-
-- el panell central de `Notes`
-- la gestio de `Jurat / QRs`
-- el `Portal del jutge` que s'obre amb cada QR
-- el `Portal public` per compartir classificacions en viu
-
-Es important entendre que no son pantalles separades sense relacio. Formen un circuit complet:
-
-1. l'organitzacio prepara aparells, grups i rotacions
-2. des de `Notes` obre l'entrada de puntuacions
-3. des de `Jurat / QRs` crea accessos concrets per als jutges
-4. els jutges entren pel seu portal i desen valors
-5. l'organitzacio controla incidencies des del centre de suport
-6. si cal, es comparteixen classificacions en viu amb el portal public
-
-## 7.2. Capcalera del panell de `Notes`
+En la practica, `Notes` es el punt on conflueixen els grups o unitats competitives, els aparells, els exercicis, els camps editables i els resultats calculats.
+## 5.1. Capcalera del panell de `Notes`
 
 La pantalla `Notes` es presenta com a panell central d'organitzacio.
 
@@ -2313,7 +2305,7 @@ La secretaria tecnica esta entrant notes i, al mateix temps, vol comprovar el ra
 
 Durant una competicio, una persona d'organitzacio pot anar alternant entre `Notes`, `Suport jutges` i `QR public` segons si necessita revisar valors, respondre una incidencia o compartir la classificacio amb una pantalla externa.
 
-## 7.3. El panell d'inscripcions dins de `Notes`
+## 5.2. El panell d'inscripcions dins de `Notes`
 
 A la zona central de `Notes`, el programa organitza la feina en diversos nivells de pestanyes.
 
@@ -2363,7 +2355,7 @@ Un grup te un sol aparell i un sol exercici. L'usuari gairebe no ha de navegar: 
 
 Una competicio te diversos grups, un aparell amb dues passades i un altre aparell d'equip. En aquest cas, les pestanyes ajuden a separar clarament cada bloc de treball i a evitar que s'introdueixin notes al lloc equivocat.
 
-## 7.4. Accions contextuals dins de cada bloc de `Notes`
+## 5.3. Accions contextuals dins de cada bloc de `Notes`
 
 Damunt de cada taula d'un aparell i exercici, solen apareixer dues accions molt importants:
 
@@ -2390,7 +2382,7 @@ Conve fer-lo servir quan:
 - s'ha de donar un QR amb permisos concrets
 - s'ha de revisar qui pot introduir quin camp
 
-## 7.5. La taula central de `Notes`
+## 5.4. La taula central de `Notes`
 
 La taula central es la zona on l'organitzacio veu l'estat de la puntuacio.
 
@@ -2415,7 +2407,7 @@ Altres son de resultat.
 
 Per tant, no tot el que es veu s'edita manualment.
 
-## 7.6. Botons i elements visibles dins de la taula de `Notes`
+## 5.5. Botons i elements visibles dins de la taula de `Notes`
 
 ### `Columnes`
 
@@ -2465,7 +2457,7 @@ Solen correspondre a:
 - totals
 - valors que depenen d'altres dades
 
-## 7.7. Calaix de reproduccio multimedia
+## 5.6. Calaix de reproduccio multimedia
 
 La pantalla de `Notes` inclou un calaix lateral de reproduccio.
 
@@ -2497,7 +2489,7 @@ Una participant te una sola pista d'audio. L'usuari obre el calaix, comprova el 
 
 Una unitat te audio, video i video de jutge. El calaix permet saltar d'una pista a una altra sense abandonar la pantalla de notes.
 
-## 7.8. Actualitzacions i comportament en viu del panell de `Notes`
+## 5.7. Actualitzacions i comportament en viu del panell de `Notes`
 
 El panell de `Notes` esta pensat per treballar de manera viva.
 
@@ -2512,7 +2504,12 @@ Per a l'usuari, el mes important es entendre que:
 - no sempre cal refrescar manualment la pagina
 - alguns indicadors poden canviar mentre la pantalla esta oberta
 
-## 7.9. Pantalla `Jurat / QRs`
+# 6. QRs, jurat i portals
+
+Aquesta seccio cobreix la creacio de `QRs` de jutge, la gestio dels permisos, el suport durant la competicio, el portal del jutge i els accessos publics de classificacions.
+
+En la practica, aquest bloc completa el circuit de treball: organitzacio crea accessos, els jutges entren pel seu portal i, quan cal, es comparteixen resultats en viu amb accessos publics.
+## 6.1. Pantalla `Jurat / QRs`
 
 Aquesta pantalla serveix per crear, imprimir, revisar i revocar accessos de jutges.
 
@@ -2539,7 +2536,7 @@ Conve fer-ho quan:
 - es vol preparar una carpeta de pista
 - es vol tenir un recurs de reserva si falla algun dispositiu
 
-## 7.10. Crear un token de jutge
+## 6.2. Crear un token de jutge
 
 La zona de `Crear token` es la mes delicada de tota la pantalla, perque aqui es decideix exactament que podra fer aquell QR.
 
@@ -2643,7 +2640,7 @@ Es crea un token que pot introduir dos camps diferents per al mateix aparell. Ai
 
 En un aparell d'equip, es crea un QR limitat a certs membres i a un tram concret d'items. Aquest nivell de detall evita que un jutge vegi o modifiqui dades que no li pertoquen.
 
-## 7.11. Llista de tokens existents
+## 6.3. Llista de tokens existents
 
 La columna o taula de `Tokens existents` serveix per revisar l'estat del que ja s'ha creat.
 
@@ -2682,7 +2679,7 @@ Conve fer-ho quan:
 - s'ha creat un token incorrecte
 - s'ha acabat la necessitat d'aquell QR
 
-## 7.12. Centre `Suport jutges`
+## 6.4. Centre `Suport jutges`
 
 La pantalla de suport serveix per centralitzar converses i incidencies.
 
@@ -2735,7 +2732,7 @@ Un jutge demana ajuda. L'organitzacio entra al centre de suport, obre la convers
 
 Diversos jutges escriuen alhora. La llista de converses ajuda a veure primer les que estan demanant assistencia i a ordenar les respostes sense perdre el fil.
 
-## 7.13. El portal del jutge
+## 6.5. El portal del jutge
 
 El `Portal del jutge` es la pantalla que s'obre quan el jutge escaneja el seu QR o entra amb el seu enllac.
 
@@ -2762,7 +2759,7 @@ Aixo es molt important per al jutge, perque li deixa clar:
 - quina part del treball li pertoca
 - que no te acces a tot
 
-## 7.14. El panell d'inscripcions dins del portal del jutge
+## 6.6. El panell d'inscripcions dins del portal del jutge
 
 Dins del portal, les persones o unitats es mostren en targetes.
 
@@ -2801,7 +2798,7 @@ La seva aparenca pot canviar segons l'estat:
 
 Per a l'usuari, aixo es una ajuda visual rapida per saber que queda per fer.
 
-## 7.15. Accions visibles dins de cada targeta del portal del jutge
+## 6.7. Accions visibles dins de cada targeta del portal del jutge
 
 Cada exercici obert dins d'una targeta pot mostrar:
 
@@ -2831,7 +2828,7 @@ La pantalla pot mostrar missatges que indiquen si la dada:
 - s'ha desat correctament
 - te algun problema
 
-## 7.16. Gravacio de video des del portal del jutge
+## 6.8. Gravacio de video des del portal del jutge
 
 Si el token te video activat, el portal mostra:
 
@@ -2873,7 +2870,7 @@ Un jutge te un QR nomes per notes. No veu cap control de video i la pantalla que
 
 Un altre jutge te permis per gravar. Fa una captura, la revisa, la puja i, si no queda be, la regrava abans de desar definitivament.
 
-## 7.17. Suport des del portal del jutge
+## 6.9. Suport des del portal del jutge
 
 El boto `SOS` obre el calaix de suport.
 
@@ -2898,7 +2895,7 @@ Permeten afegir context a la peticio o continuar una conversa ja oberta.
 
 La peticio rapida no s'ha d'usar com a xat constant, sino com a recurs de suport quan realment cal atencio de l'organitzacio.
 
-## 7.18. `QR Public` i portal public de classificacions
+## 6.10. `QR Public` i portal public de classificacions
 
 Des de `Notes`, l'organitzacio pot entrar a `QR public`.
 
@@ -2947,7 +2944,7 @@ Es crea un token per a una pantalla del pavello. S'obre `Loop` i es deixa projec
 
 Es creen diversos accessos publics: un per la pantalla principal, un altre per una pantalla secundaria i un tercer de reserva. Si cal, algun es revoca sense afectar la resta.
 
-## 7.19. Recomanacio de flux per a `Notes`, `Jurat` i portals
+## 6.11. Recomanacio de flux per a `QRs`, `Jurat` i portals
 
 Un flux molt segur i clar acostuma a ser aquest:
 
@@ -2959,7 +2956,7 @@ Un flux molt segur i clar acostuma a ser aquest:
 6. deixar obert `Suport jutges` durant la competicio
 7. usar el `QR public` nomes quan les classificacions ja estiguin llestes per ser compartides
 
-## 7.20. Dos recorreguts complets
+## 6.12. Dos recorreguts complets
 
 ### Cas molt senzill
 
@@ -2981,12 +2978,61 @@ Un flux molt segur i clar acostuma a ser aquest:
 
 ---
 
-# 8. Tancament
+# 7. Tres recorreguts complets
+
+## 7.1. Cas molt senzill
+
+1. Importar Excel.
+2. Fer una cerca rapida per validar que hi son totes les persones.
+3. Aplicar una divisio per categoria.
+4. Exportar l'Excel de suport.
+
+## 7.2. Cas habitual de competicio individual
+
+1. Importar participants.
+2. Crear grups per categories o subcategories.
+3. Revisar i desar l'ordre de competicio dins de cada grup.
+4. Passar a Rotacions i col.locar cada grup a la seva franja i estacio.
+5. Crear una classificacio general i una altra per categoria.
+6. Previsualitzar-les.
+7. Activar-les i revisar la vista en viu.
+
+## 7.3. Cas mes complet amb equips
+
+1. Importar participants.
+2. Crear o revisar equips en el context adequat.
+3. Preparar series d'equip per als aparells corresponents.
+4. Configurar Rotacions combinant grups individuals i series d'equip.
+5. Definir una classificacio individual i una classificacio per equips.
+6. Fer servir previsualitzacions abans d'aplicar canvis grans.
+7. Mostrar la classificacio en directe a una pantalla amb mode loop.
+
+---
+
+# 8. Recomanacions practiques
+
+- Abans de fer canvis grans, fes una previsualitzacio si la pantalla l'ofereix.
+- Si una pantalla permet `Desfer`, utilitza-la quan hagis provat una ordenacio o una reorganitzacio que no t'encaixa.
+- Quan treballis amb grups o equips ja programats, revisa els avisos amb calma abans de confirmar.
+- Si una llista visible no coincideix amb l'ordre guardat, no ho donis per bo fins revisar l'ordre de competicio.
+- A Rotacions, no deixis elements fora de programa sense decidir si han de ser visibles o no a Notes i jutges.
+- A Classificacions, guarda abans de previsualitzar i activa nomes les configuracions que realment hagin d'apareixer en viu.
+
+---
+
+# 9. Tancament
 
 Si es fa servir amb aquest ordre, el programa es deixa entendre millor:
 
-- Inscripcions per preparar la base
+- Definicions per entendre el vocabulari de treball
+- Inscripcions per preparar la base de participants
+- Aparells per definir proves, camps i calculs
 - Rotacions per convertir la base en horari real
-- Classificacions per convertir les notes en resultats visibles
+- Classificacions per transformar les notes en resultats visibles
+- Notes per seguir i revisar el directe
+- QRs i portals per repartir accessos i treballar amb jutges i pantalles publiques
 
 Aquest document es una base extensa per al manual d'usuari i es pot ampliar mes endavant amb altres blocs del programa.
+
+
+

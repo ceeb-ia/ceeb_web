@@ -1089,13 +1089,18 @@ class ClassificacionsHome(TemplateView):
                 persist=False,
             )
             status = _build_cfg_status(competicio, c.tipus, display_schema)
+            builder_schema = _sanitize_schema_for_builder(
+                competicio,
+                display_schema,
+                tipus=c.tipus,
+            )
             cfg_payload.append({
                 "id": c.id,
                 "nom": c.nom,
                 "activa": c.activa,
                 "ordre": c.ordre,
                 "tipus": c.tipus,
-                "schema": display_schema,
+                "schema": builder_schema,
             })
             cfg_status_payload[str(c.id)] = status
 
@@ -1522,6 +1527,7 @@ def _extract_template_schema(payload_or_schema):
 
 
 def _schema_to_template_schema(competicio, schema_local):
+    return schema_to_template_schema_shared(competicio, schema_local)
     schema = _json_clone(schema_local or {})
     warnings = []
 
@@ -1706,6 +1712,8 @@ def _schema_to_template_schema(competicio, schema_local):
 
 
 def _template_schema_to_competicio_schema(competicio, schema_tpl):
+    schema, warnings, mapping, _compat_meta = template_schema_to_competicio_schema_shared(competicio, schema_tpl)
+    return schema, warnings, mapping
     schema = _json_clone(schema_tpl or {})
     warnings = []
 
@@ -1982,6 +1990,7 @@ def _collect_required_app_codes_from_template(schema_tpl):
 
 
 def _build_template_requirements(schema_tpl):
+    return build_template_requirements_shared(schema_tpl)
     schema = schema_tpl or {}
     punt = schema.get("puntuacio") or {}
     if not isinstance(punt, dict):
@@ -2470,6 +2479,22 @@ def _autofix_schema_for_competicio(competicio, schema_local, mode: str, tipus=No
     active_ids = [int(ca.id) for ca in active_apps]
     active_set = set(active_ids)
     equips_cfg = _normalize_classificacio_equips_cfg(schema.get("equips") or {})
+    if str(tipus or "").strip().lower() == "equips":
+        requested_context_code = normalize_equip_context_code(
+            equips_cfg.get("context_code") or (equips_cfg.get("assignment_source") or {}).get("context_code")
+        )
+        capabilities = _get_team_context_capabilities(competicio, requested_context_code)
+        if not capabilities.get("exists"):
+            equips_cfg["context_code"] = NATIVE_EQUIP_CONTEXT_CODE
+            equips_cfg["assignment_source"] = {
+                "mode": "context",
+                "context_code": NATIVE_EQUIP_CONTEXT_CODE,
+                "fallback": NATIVE_EQUIP_CONTEXT_CODE,
+            }
+            warnings.append(
+                f"{mode.capitalize()}: equips.context_code '{requested_context_code}' no existeix; s'ha substituit pel context Base."
+            )
+            dropped.append(f"equips.context_code: {requested_context_code} -> {NATIVE_EQUIP_CONTEXT_CODE}")
     schema["equips"] = equips_cfg
     scoreable_by_app = _scoreable_codes_by_app_id(
         competicio,
@@ -2691,27 +2716,56 @@ def _autofix_schema_for_competicio(competicio, schema_local, mode: str, tipus=No
     if isinstance(equips_cfg, dict):
         assignment_source = _classification_assignment_source(equips_cfg.get("assignment_source"))
         equips_cfg["assignment_source"] = assignment_source
-        valid_team_ids = set(
-            _classification_teams_queryset(competicio, assignment_source).values_list("id", flat=True)
-        )
+        teams = list(_classification_teams_queryset(competicio, assignment_source).only("id", "nom"))
+        valid_team_ids = {int(team.id) for team in teams}
+        id_by_name = {}
+        for team in teams:
+            key = str(team.nom or "").strip().casefold()
+            if key and key not in id_by_name:
+                id_by_name[key] = int(team.id)
         manual_in = equips_cfg.get("particions_manuals") or []
         manual_out = []
         for idx, item in enumerate(manual_in if isinstance(manual_in, list) else []):
             if not isinstance(item, dict):
                 continue
             ids = []
+            seen_ids = set()
             for raw_id in (item.get("equip_ids") or []):
                 try:
                     eid = int(raw_id)
                 except Exception:
                     continue
-                if eid in valid_team_ids:
+                if eid in valid_team_ids and eid not in seen_ids:
+                    seen_ids.add(eid)
                     ids.append(eid)
+            unresolved_names = []
+            for raw_name in (item.get("equips_noms") or []):
+                key = str(raw_name or "").strip().casefold()
+                if not key:
+                    continue
+                eid = id_by_name.get(key)
+                if not eid:
+                    unresolved_names.append(str(raw_name or "").strip())
+                    continue
+                if eid in seen_ids:
+                    continue
+                seen_ids.add(eid)
+                ids.append(eid)
+            row = dict(item)
+            row["equip_ids"] = ids
+            label = str(row.get("label") or row.get("key") or f"Particio {idx + 1}").strip()
+            if unresolved_names:
+                dropped.append(
+                    f"equips.particions_manuals[{idx}]: equips no trobats ({', '.join(unresolved_names)})"
+                )
+                warnings.append(
+                    f"{mode.capitalize()}: la particio manual '{label}' no ha pogut resoldre tots els equips al context actiu."
+                )
             if ids:
-                row = dict(item)
-                row["equip_ids"] = ids
                 manual_out.append(row)
-            elif mode == "force":
+            elif mode == "assistit":
+                manual_out.append(row)
+            else:
                 warnings.append(f"FORCE: s'ha eliminat particio manual d'equips {idx + 1} sense equips mapejats.")
         equips_cfg["particions_manuals"] = manual_out
         schema["equips"] = equips_cfg
@@ -2773,7 +2827,10 @@ def _build_force_minimal_schema(competicio, schema_local):
 def _validate_template_for_competicio(competicio, template_obj, fallback_mode="strict"):
     fallback_mode = _parse_fallback_mode(fallback_mode)
     schema_tpl = extract_template_schema_shared(getattr(template_obj, "payload", {}) or {})
-    schema_local, mapping_warnings, mapping = template_schema_to_competicio_schema_shared(competicio, schema_tpl)
+    schema_local, mapping_warnings, mapping, compat_meta = template_schema_to_competicio_schema_shared(
+        competicio,
+        schema_tpl,
+    )
 
     required_codes = collect_required_app_codes_from_template_shared(schema_tpl)
     _, _by_id_active, by_code_active = get_comp_aparell_maps_shared(competicio, active_only=True)
@@ -2781,6 +2838,7 @@ def _validate_template_for_competicio(competicio, template_obj, fallback_mode="s
     blocking = []
     warnings = list(mapping_warnings or [])
     dropped = []
+    compat_meta = compat_meta if isinstance(compat_meta, dict) else {}
     for code in sorted(required_codes):
         if code and code not in by_code_active:
             msg = f"Aparell requerit per la plantilla no disponible a la competicio: {code}"
@@ -2788,6 +2846,23 @@ def _validate_template_for_competicio(competicio, template_obj, fallback_mode="s
                 blocking.append(msg)
             else:
                 warnings.append(msg)
+
+    for item in compat_meta.get("unresolved_manual_team_partitions") or []:
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("label") or f"Particio {int(item.get('index', 0)) + 1}").strip()
+        missing_names = [str(name or "").strip() for name in (item.get("missing_names") or []) if str(name or "").strip()]
+        context_code = normalize_equip_context_code(item.get("context_code"))
+        if not missing_names:
+            continue
+        msg = (
+            f"equips.particions_manuals: la particio '{label}' no pot resoldre els equips "
+            f"{', '.join(missing_names)} al context {context_code}."
+        )
+        if fallback_mode == "strict":
+            blocking.append(msg)
+        else:
+            warnings.append(msg)
 
     tpl_tipus = str(getattr(template_obj, "tipus", "individual") or "individual").strip().lower()
     schema_local, strict_errors = _validate_schema_for_competicio(competicio, schema_local, tipus=tpl_tipus)
@@ -2816,6 +2891,8 @@ def _validate_template_for_competicio(competicio, template_obj, fallback_mode="s
     next_mode = _next_fallback_mode(fallback_mode) if blocking else None
 
     return {
+        "portable": bool(compat_meta.get("portable", True)),
+        "adaptable": bool(compat_meta.get("adaptable")) or bool(next_mode),
         "compatible": not blocking,
         "blocking_errors": blocking,
         "warnings": warnings,
@@ -2832,8 +2909,10 @@ def _template_to_payload_row(obj):
     payload = getattr(obj, "payload", {}) or {}
     schema = extract_template_schema_shared(payload)
     req = getattr(obj, "requirements", {}) or {}
-    if not isinstance(req, dict) or not req:
-        req = build_template_requirements_shared(schema)
+    computed_req = build_template_requirements_shared(schema, tipus=getattr(obj, "tipus", "individual"))
+    if not isinstance(req, dict):
+        req = {}
+    req = {**req, **computed_req}
     return {
         "id": obj.id,
         "nom": obj.nom,
@@ -4615,7 +4694,7 @@ def classificacio_template_save(request, pk):
     activa = bool(payload.get("activa", True))
 
     schema_tpl, export_warnings = schema_to_template_schema_shared(competicio, cfg.schema or {})
-    requirements = build_template_requirements_shared(schema_tpl)
+    requirements = build_template_requirements_shared(schema_tpl, tipus=cfg.tipus)
     payload_obj = {
         "schema": schema_tpl,
         "source": {

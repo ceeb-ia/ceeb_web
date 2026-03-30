@@ -27,10 +27,9 @@
     </div>
 
     <div class="alert alert-warning small mb-3">
-      <strong>Warning de noms conflictius:</strong> si una columna extra te el mateix nom que un camp preestablert
-      (per exemple <code>equip</code>, <code>grup</code>, <code>ordre_sortida</code>, <code>document</code>),
-      el valor es pot trepitjar en algunes vistes o exportacions.
-      Recomanacio: renombra aquestes columnes amb un prefix com <code>extra__equip</code>.
+      <strong>Warning de noms conflictius:</strong> El sistema espera un excel amb columnes segons s'especifiquen adalt. Si el vostre fitxer conté 
+      columnes com "Nom Inscripció", "Entitat Inscripció", etc., el sistema intentarà mapar-les a les columnes esperades. Si el mapeig no és clar, es poden produir errors o dades mal interpretades.
+      És recomanable renombrar les columnes del vostre fitxer Excel per assegurar una importació correcta.
     </div>
 
     <form method="post" enctype="multipart/form-data">

@@ -479,6 +479,11 @@ def schema_to_template_schema(competicio, schema_local):
 def template_schema_to_competicio_schema(competicio, schema_tpl):
     schema = json_clone(schema_tpl or {})
     warnings = []
+    compat_meta = {
+        "portable": True,
+        "missing_context_codes": [],
+        "unresolved_manual_team_partitions": [],
+    }
 
     _apps_active, by_id_active, by_code_active = get_comp_aparell_maps(competicio, active_only=True)
     mapping = {code: int(ca.id) for code, ca in by_code_active.items()}
@@ -630,15 +635,9 @@ def template_schema_to_competicio_schema(competicio, schema_tpl):
         )
         if context_code not in valid_codes:
             warnings.append(
-                f"equips.context_code '{context_code}' no trobat a la competicio; s'aplica el context Base"
+                f"equips.context_code '{context_code}' no trobat a la competicio desti"
             )
-            assignment_source = {
-                "mode": "context",
-                "context_code": NATIVE_EQUIP_CONTEXT_CODE,
-                "fallback": NATIVE_EQUIP_CONTEXT_CODE,
-                "legacy_mode": False,
-            }
-            context_code = NATIVE_EQUIP_CONTEXT_CODE
+            compat_meta["missing_context_codes"].append(context_code)
         equips_cfg["assignment_source"] = assignment_source
         equips_cfg["context_code"] = context_code
         manual = equips_cfg.get("particions_manuals") or []
@@ -658,6 +657,7 @@ def template_schema_to_competicio_schema(competicio, schema_tpl):
                 names = row.get("equips_noms") or []
                 out_ids = []
                 seen_eq = set()
+                missing_names = []
                 for raw_name in names if isinstance(names, list) else []:
                     key = str(raw_name or "").strip().casefold()
                     if not key:
@@ -667,17 +667,36 @@ def template_schema_to_competicio_schema(competicio, schema_tpl):
                         warnings.append(
                             f"equips.particions_manuals[{idx}]: equip '{raw_name}' no trobat al context seleccionat"
                         )
+                        missing_names.append(str(raw_name or "").strip())
                         continue
                     if eid in seen_eq:
                         continue
                     seen_eq.add(eid)
                     out_ids.append(eid)
                 row["equip_ids"] = out_ids
+                if isinstance(names, list):
+                    row["equips_noms"] = [str(name or "").strip() for name in names if str(name or "").strip()]
+                if missing_names:
+                    compat_meta["unresolved_manual_team_partitions"].append(
+                        {
+                            "index": idx,
+                            "label": str(row.get("label") or row.get("key") or f"Particio {idx + 1}").strip(),
+                            "context_code": context_code,
+                            "missing_names": missing_names,
+                        }
+                    )
                 manual_out.append(row)
             equips_cfg["particions_manuals"] = manual_out
             schema["equips"] = equips_cfg
 
-    return schema, warnings, mapping
+    compat_meta["missing_context_codes"] = sorted(
+        {normalize_equip_context_code(code) for code in compat_meta["missing_context_codes"] if str(code or "").strip()}
+    )
+    compat_meta["adaptable"] = bool(
+        compat_meta["missing_context_codes"] or compat_meta["unresolved_manual_team_partitions"]
+    )
+
+    return schema, warnings, mapping, compat_meta
 
 
 def template_schema_to_global_ui_schema(schema_tpl, by_id, by_code):
@@ -959,7 +978,7 @@ def collect_required_app_codes_from_template(schema_tpl):
     return out
 
 
-def build_template_requirements(schema_tpl):
+def build_template_requirements(schema_tpl, *, tipus=None):
     schema = schema_tpl or {}
     punt = schema.get("puntuacio") or {}
     if not isinstance(punt, dict):
@@ -969,11 +988,30 @@ def build_template_requirements(schema_tpl):
         schema.get("particions_v2") or [],
         fallback_codes=schema.get("particions") or [],
     )
+    equips_cfg = schema.get("equips") or {}
+    if not isinstance(equips_cfg, dict):
+        equips_cfg = {}
+    assignment_source = _normalize_assignment_source(equips_cfg.get("assignment_source"))
+    context_code = normalize_equip_context_code(
+        equips_cfg.get("context_code") or assignment_source.get("context_code")
+    ) if equips_cfg else ""
+    team_mode = str(equips_cfg.get("team_mode") or "").strip().lower()
+    manual_defs = equips_cfg.get("particions_manuals") or []
+
     req = {
+        "tipus": str(tipus or schema.get("tipus") or "individual").strip().lower() or "individual",
         "aparells_codis": sorted(collect_required_app_codes_from_template(schema)),
         "particions": particio_codes_from_entries(part_entries),
         "camps_per_aparell": {},
         "desempat_camps": [],
+        "team_mode": team_mode,
+        "context_code": context_code if context_code else "",
+        "uses_manual_team_partitions": bool(isinstance(manual_defs, list) and manual_defs),
+        "uses_exercise_selection_scope": False,
+        "exercise_selection_scope": "",
+        "exercise_selection_scope_modes": [],
+        "presentacio_raw_camps": [],
+        "presentacio_metric_camps": [],
     }
 
     camps_map = punt.get("camps_per_aparell") or {}
@@ -1004,6 +1042,47 @@ def build_template_requirements(schema_tpl):
             if code:
                 tie_codes.add(str(code).strip())
     req["desempat_camps"] = sorted([c for c in tie_codes if c])
+
+    exercise_scopes = set()
+    main_scope = str(punt.get("exercise_selection_scope") or "").strip().lower()
+    if main_scope:
+        exercise_scopes.add(main_scope)
+        req["exercise_selection_scope"] = main_scope
+    for tie in (schema.get("desempat") or []):
+        if not isinstance(tie, dict):
+            continue
+        tie_scope = str(tie.get("exercise_selection_scope") or "").strip().lower()
+        if tie_scope:
+            exercise_scopes.add(tie_scope)
+    for tie in (victories.get("desempat_comparacio") or []) if isinstance(victories, dict) else []:
+        if not isinstance(tie, dict):
+            continue
+        tie_scope = str(tie.get("exercise_selection_scope") or "").strip().lower()
+        if tie_scope:
+            exercise_scopes.add(tie_scope)
+    req["uses_exercise_selection_scope"] = bool(exercise_scopes)
+    req["exercise_selection_scope_modes"] = sorted(exercise_scopes)
+
+    raw_camps = set()
+    metric_camps = set()
+    presentacio = schema.get("presentacio") or {}
+    if isinstance(presentacio, dict):
+        for col in (presentacio.get("columnes") or []):
+            if not isinstance(col, dict):
+                continue
+            ctype = str(col.get("type") or "builtin").strip().lower()
+            if ctype == "raw":
+                src = col.get("source") if isinstance(col.get("source"), dict) else {}
+                camp = str(src.get("camp") or "").strip()
+                if camp:
+                    raw_camps.add(camp)
+            elif ctype == "metric":
+                criteri = col.get("criteri") if isinstance(col.get("criteri"), dict) else {}
+                for code in normalize_tie_camps_for_validation(criteri):
+                    if code:
+                        metric_camps.add(str(code).strip())
+    req["presentacio_raw_camps"] = sorted(raw_camps)
+    req["presentacio_metric_camps"] = sorted(metric_camps)
     return req
 
 

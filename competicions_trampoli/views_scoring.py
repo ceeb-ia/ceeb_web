@@ -59,12 +59,15 @@ from .services.team_subject_contract import (
     build_team_subject_registry,
     filter_team_subject_ids_for_serie,
     runtime_schema_for_team_subjects,
-    team_subject_meta,
 )
 from .services.team_series import (
     get_series_maps,
     team_subject_bucket_key,
     team_subject_bucket_label,
+)
+from .services.update_payloads import (
+    build_score_update_payload,
+    filter_inputs_for_allowed_codes,
 )
 
 
@@ -153,13 +156,93 @@ def _merge_team_logical_patch(current_inputs: dict, patch: dict, schema: dict) -
 
 
 def _sanitize_inputs_for_client(inputs: dict, allowed_codes: set) -> dict:
-    if not isinstance(inputs, dict):
-        return {}
-    clean = {}
-    for key, value in inputs.items():
-        if key in allowed_codes:
-            clean[key] = copy.deepcopy(value)
-    return clean
+    return filter_inputs_for_allowed_codes(inputs, allowed_codes)
+
+
+def _serialize_individual_scoring_update(entry, allowed_inputs: set) -> dict:
+    return build_score_update_payload(
+        subject_kind="inscripcio",
+        subject_id=entry.inscripcio_id,
+        exercici=entry.exercici,
+        comp_aparell_id=entry.comp_aparell_id,
+        inputs=_sanitize_inputs_for_client(entry.inputs or {}, allowed_inputs),
+        outputs=entry.outputs or {},
+        total=entry.total,
+        updated_at=entry.updated_at,
+    )
+
+
+def _serialize_team_scoring_update(entry, allowed_inputs: set, subject_meta: dict | None) -> dict:
+    return build_score_update_payload(
+        subject_kind="team_unit",
+        subject_id=entry.team_subject_id,
+        exercici=entry.exercici,
+        comp_aparell_id=entry.comp_aparell_id,
+        inputs=_sanitize_inputs_for_client(entry.inputs or {}, allowed_inputs),
+        outputs=entry.outputs or {},
+        total=entry.total,
+        updated_at=entry.updated_at,
+        subject_meta=subject_meta,
+    )
+
+
+def _collect_team_scoring_updates(competicio, dt, *, comp_aparell_id=None, exercici=None, serie_id=None) -> list[dict]:
+    team_apps_qs = (
+        CompeticioAparell.objects
+        .filter(competicio=competicio, actiu=True)
+        .select_related("aparell")
+    )
+    if comp_aparell_id:
+        team_apps_qs = team_apps_qs.filter(pk=comp_aparell_id)
+    team_apps = [app for app in team_apps_qs if is_team_context_app(app)]
+    if not team_apps:
+        return []
+
+    team_app_ids = [int(app.id) for app in team_apps]
+    allowed_inputs_by_app = {}
+    subject_meta_by_app = {}
+    allowed_team_ids_by_app = {}
+    for app in team_apps:
+        registry = build_team_subject_registry(competicio, app)
+        subject_meta_by_app[int(app.id)] = registry["all_by_id"]
+        if comp_aparell_id and str(app.id) == str(comp_aparell_id):
+            allowed_team_ids_by_app[int(app.id)] = set(
+                filter_team_subject_ids_for_serie(registry["all_by_id"], serie_id)
+            )
+        else:
+            allowed_team_ids_by_app[int(app.id)] = set(registry["all_by_id"].keys())
+        ss, _ = ScoringSchema.objects.get_or_create(aparell=app.aparell, defaults={"schema": {}})
+        allowed_inputs_by_app[int(app.id)] = _logical_team_input_codes(ss.schema or {})
+
+    qs = (
+        TeamScoreEntry.objects
+        .filter(
+            competicio=competicio,
+            updated_at__gt=dt,
+            comp_aparell_id__in=team_app_ids,
+        )
+        .select_related("team_subject")
+        .order_by("updated_at", "id")
+    )
+    if exercici:
+        try:
+            qs = qs.filter(exercici=int(exercici))
+        except Exception:
+            pass
+
+    updates = []
+    for entry in qs[:500]:
+        app_id = int(entry.comp_aparell_id)
+        if int(entry.team_subject_id) not in allowed_team_ids_by_app.get(app_id, set()):
+            continue
+        updates.append(
+            _serialize_team_scoring_update(
+                entry,
+                allowed_inputs=allowed_inputs_by_app.get(app_id, set()),
+                subject_meta=(subject_meta_by_app.get(app_id, {}) or {}).get(int(entry.team_subject_id), {}),
+            )
+        )
+    return updates
 
 
 def _recalculate_scores_for_comp_aparell(competicio, comp_aparell, chunk_size: int = 200) -> dict:
@@ -1496,84 +1579,54 @@ def scoring_updates(request, pk):
         return JsonResponse({"ok": True, "now": None, "updates": []})
 
     updates = []
-    team_app = None
-    if comp_aparell_id:
-        team_app = CompeticioAparell.objects.filter(pk=comp_aparell_id, competicio=competicio).first()
-
-    if team_app and is_team_context_app(team_app):
-        registry = build_team_subject_registry(competicio, team_app)
-        subject_map = registry["all_by_id"]
-        allowed_team_ids = filter_team_subject_ids_for_serie(subject_map, serie_id)
-        ss, _ = ScoringSchema.objects.get_or_create(aparell=team_app.aparell, defaults={"schema": {}})
-        allowed_inputs = _logical_team_input_codes(ss.schema or {})
-        qs = TeamScoreEntry.objects.filter(
-            competicio=competicio,
-            comp_aparell=team_app,
-            updated_at__gt=dt,
-            team_subject_id__in=allowed_team_ids,
-        )
-        if exercici:
-            try:
-                qs = qs.filter(exercici=int(exercici))
-            except Exception:
-                pass
-        for s in qs.select_related("team_subject")[:500]:
-            team_subject = subject_map.get(int(s.team_subject_id), {})
-            updates.append({
-                **serialize_subject_payload("team_unit", s.team_subject_id),
-                "exercici": s.exercici,
-                "comp_aparell_id": s.comp_aparell_id,
-                "inputs": _sanitize_inputs_for_client(s.inputs or {}, allowed_inputs),
-                "outputs": s.outputs or {},
-                "total": float(s.total),
-                "updated_at": s.updated_at.isoformat(),
-                **team_subject_meta(team_subject),
-            })
-    else:
-        allowed_inputs_by_app = {}
-        qs = ScoreEntry.objects.filter(competicio=competicio, updated_at__gt=dt)
-        qs = qs.annotate(
-            _excluded=Exists(
-                InscripcioAparellExclusio.objects.filter(
-                    inscripcio_id=OuterRef("inscripcio_id"),
-                    comp_aparell_id=OuterRef("comp_aparell_id"),
-                )
+    allowed_inputs_by_app = {}
+    qs = ScoreEntry.objects.filter(competicio=competicio, updated_at__gt=dt)
+    qs = qs.annotate(
+        _excluded=Exists(
+            InscripcioAparellExclusio.objects.filter(
+                inscripcio_id=OuterRef("inscripcio_id"),
+                comp_aparell_id=OuterRef("comp_aparell_id"),
             )
-        ).filter(_excluded=False)
+        )
+    ).filter(_excluded=False)
 
-        if comp_aparell_id:
-            qs = qs.filter(comp_aparell_id=comp_aparell_id)
-        if exercici:
-            try:
-                qs = qs.filter(exercici=int(exercici))
-            except Exception:
-                pass
-        if group is not None:
-            try:
-                qs = qs.filter(inscripcio__grup_competicio_id=int(group))
-            except Exception:
-                pass
+    if comp_aparell_id:
+        qs = qs.filter(comp_aparell_id=comp_aparell_id)
+    if exercici:
+        try:
+            qs = qs.filter(exercici=int(exercici))
+        except Exception:
+            pass
+    if group is not None:
+        try:
+            qs = qs.filter(inscripcio__grup_competicio_id=int(group))
+        except Exception:
+            pass
 
-        for s in qs.select_related("inscripcio")[:500]:
-            if int(s.comp_aparell_id) not in allowed_inputs_by_app:
-                ca = CompeticioAparell.objects.filter(pk=s.comp_aparell_id, competicio=competicio).first()
-                ss, _ = ScoringSchema.objects.get_or_create(aparell=ca.aparell, defaults={"schema": {}}) if ca else (None, False)
-                allowed_inputs_by_app[int(s.comp_aparell_id)] = _allowed_input_codes_for_schema(
-                    ss.schema if ss is not None else {},
-                    ca,
-                )
-            updates.append({
-                **serialize_subject_payload("inscripcio", s.inscripcio_id),
-                "exercici": s.exercici,
-                "comp_aparell_id": s.comp_aparell_id,
-                "inputs": _sanitize_inputs_for_client(
-                    s.inputs or {},
-                    allowed_inputs_by_app.get(int(s.comp_aparell_id), set()),
-                ),
-                "outputs": s.outputs or {},
-                "total": float(s.total),
-                "updated_at": s.updated_at.isoformat(),
-            })
+    for s in qs.select_related("inscripcio")[:500]:
+        if int(s.comp_aparell_id) not in allowed_inputs_by_app:
+            ca = CompeticioAparell.objects.filter(pk=s.comp_aparell_id, competicio=competicio).first()
+            ss, _ = ScoringSchema.objects.get_or_create(aparell=ca.aparell, defaults={"schema": {}}) if ca else (None, False)
+            allowed_inputs_by_app[int(s.comp_aparell_id)] = _allowed_input_codes_for_schema(
+                ss.schema if ss is not None else {},
+                ca,
+            )
+        updates.append(
+            _serialize_individual_scoring_update(
+                s,
+                allowed_inputs=allowed_inputs_by_app.get(int(s.comp_aparell_id), set()),
+            )
+        )
+
+    updates.extend(
+        _collect_team_scoring_updates(
+            competicio,
+            dt,
+            comp_aparell_id=comp_aparell_id,
+            exercici=exercici,
+            serie_id=serie_id if comp_aparell_id else None,
+        )
+    )
 
     # “now” del servidor per anar avançant el cursor
     return JsonResponse({"ok": True, "now": timezone.now().isoformat(), "updates": updates})

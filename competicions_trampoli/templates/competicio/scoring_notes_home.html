@@ -1121,10 +1121,31 @@
 
   // Debounce per gimnasta+aparell+exercici (evita moltes peticions mentre escrius)
   const timers=new Map();
+  const pendingSaveFns = new Map();
   const pendingRemoteScoreKeys = new Set();
+  let pendingFocusRestoreDescriptor = null;
   function scheduleSave(scoreKey, fn){
-    if(timers.has(scoreKey)) clearTimeout(timers.get(scoreKey));
-    timers.set(scoreKey, setTimeout(fn, 250));
+    const resolved = String(scoreKey || "");
+    if(!resolved) return;
+    if(timers.has(resolved)) clearTimeout(timers.get(resolved));
+    pendingSaveFns.set(resolved, fn);
+    timers.set(resolved, setTimeout(async ()=>{
+      timers.delete(resolved);
+      const pendingFn = pendingSaveFns.get(resolved);
+      pendingSaveFns.delete(resolved);
+      if(pendingFn) await pendingFn();
+    }, 250));
+  }
+
+  async function flushPendingSaveForScoreKey(scoreKey){
+    const resolved = String(scoreKey || "");
+    if(!resolved || !timers.has(resolved)) return false;
+    clearTimeout(timers.get(resolved));
+    timers.delete(resolved);
+    const pendingFn = pendingSaveFns.get(resolved);
+    pendingSaveFns.delete(resolved);
+    if(pendingFn) await pendingFn();
+    return true;
   }
 
   function activeScoreKey(){
@@ -1141,6 +1162,133 @@
   function markScoreKeyPendingRemoteRerender(scoreKey){
     if(!scoreKey) return;
     pendingRemoteScoreKeys.add(String(scoreKey));
+  }
+
+  function selectScoreInputContents(input){
+    if(!input) return;
+    try{
+      input.select();
+    }catch(_e){
+      // ignore unsupported selection APIs
+    }
+  }
+
+  function focusScoreInput(input){
+    if(!input) return false;
+    input.focus();
+    selectScoreInputContents(input);
+    return document.activeElement === input;
+  }
+
+  function scoreInputDescriptorForElement(input){
+    if(!input || input.tagName !== "INPUT") return null;
+    const table = input.closest("table[data-scoring-table='1']");
+    if(!table) return null;
+    return {
+      scoreKey: String(input.dataset.scoreKey || ""),
+      field: String(input.dataset.field || ""),
+      judge: String(input.dataset.j || ""),
+      item: String(input.dataset.i || ""),
+      memberId: String(input.dataset.memberId || ""),
+      appId: String(table.getAttribute("data-comp-aparell-id") || ""),
+      exercici: String(table.getAttribute("data-exercici") || ""),
+      group: String(table.getAttribute("data-group") || ""),
+    };
+  }
+
+  function activeScoreInputDescriptor(){
+    const active = document.activeElement;
+    if(!active || active.tagName !== "INPUT") return null;
+    if(String(active.dataset.navScope || "") !== "score-input") return null;
+    return scoreInputDescriptorForElement(active);
+  }
+
+  function findScoreTableForDescriptor(descriptor){
+    if(!descriptor) return null;
+    const sel = [
+      "table[data-scoring-table='1']",
+      `[data-comp-aparell-id="${CSS.escape(String(descriptor.appId || ""))}"]`,
+      `[data-exercici="${CSS.escape(String(descriptor.exercici || ""))}"]`,
+      `[data-group="${CSS.escape(String(descriptor.group || ""))}"]`,
+    ].join("");
+    return document.querySelector(sel);
+  }
+
+  function isScoreInputFocusable(input){
+    if(!input || input.disabled) return false;
+    return !!(input.offsetParent || input.getClientRects().length);
+  }
+
+  function getEditableScoreInputsInContext(source){
+    const table = source instanceof Element
+      ? source.closest("table[data-scoring-table='1']")
+      : findScoreTableForDescriptor(source);
+    if(!table) return [];
+    return Array.from(table.querySelectorAll('input[data-nav-scope="score-input"]'))
+      .filter(isScoreInputFocusable);
+  }
+
+  function findScoreInputByDescriptor(descriptor){
+    if(!descriptor) return null;
+    return getEditableScoreInputsInContext(descriptor).find((input) => {
+      const candidate = scoreInputDescriptorForElement(input);
+      return !!candidate
+        && candidate.scoreKey === String(descriptor.scoreKey || "")
+        && candidate.field === String(descriptor.field || "")
+        && candidate.judge === String(descriptor.judge || "")
+        && candidate.item === String(descriptor.item || "")
+        && candidate.memberId === String(descriptor.memberId || "");
+    }) || null;
+  }
+
+  function restoreScoreInputFocus(descriptor){
+    if(!descriptor) return false;
+    const exact = findScoreInputByDescriptor(descriptor);
+    if(exact) return focusScoreInput(exact);
+
+    const fallbackInputs = getEditableScoreInputsInContext(descriptor);
+    if(!fallbackInputs.length) return false;
+    const sameScore = fallbackInputs.find((input) => String(input.dataset.scoreKey || "") === String(descriptor.scoreKey || ""));
+    return focusScoreInput(sameScore || fallbackInputs[0]);
+  }
+
+  function adjacentScoreInputDescriptor(currentInput, direction){
+    const inputs = getEditableScoreInputsInContext(currentInput);
+    if(!inputs.length) return null;
+    const idx = inputs.indexOf(currentInput);
+    if(idx === -1) return scoreInputDescriptorForElement(inputs[0]);
+    const nextIdx = direction < 0
+      ? Math.max(idx - 1, 0)
+      : Math.min(idx + 1, inputs.length - 1);
+    return scoreInputDescriptorForElement(inputs[nextIdx] || currentInput);
+  }
+
+  function bindScoreInputNavigation(input, meta = {}){
+    if(!input) return;
+    input.dataset.navScope = "score-input";
+    input.dataset.scoreKey = String(meta.scoreKey || input.dataset.scoreKey || "");
+    input.dataset.field = String(meta.field || input.dataset.field || "");
+    input.dataset.j = meta.judge != null ? String(meta.judge) : String(input.dataset.j || "");
+    input.dataset.i = meta.item != null ? String(meta.item) : String(input.dataset.i || "");
+    if(meta.memberId !== undefined && meta.memberId !== null && meta.memberId !== ""){
+      input.dataset.memberId = String(meta.memberId);
+    }else{
+      delete input.dataset.memberId;
+    }
+    input.addEventListener("focus", ()=>{ selectScoreInputContents(input); });
+    input.addEventListener("keydown", async (evt)=>{
+      if(evt.key !== "Tab") return;
+      evt.preventDefault();
+      const scoreKey = String(input.dataset.scoreKey || "");
+      pendingFocusRestoreDescriptor = adjacentScoreInputDescriptor(input, evt.shiftKey ? -1 : 1)
+        || scoreInputDescriptorForElement(input);
+      await flushPendingSaveForScoreKey(scoreKey);
+      const restoreDescriptor = pendingFocusRestoreDescriptor;
+      pendingFocusRestoreDescriptor = null;
+      if(restoreDescriptor){
+        setTimeout(()=>{ restoreScoreInputFocus(restoreDescriptor); }, 0);
+      }
+    });
   }
 
   function flushPendingRemoteRerender(scoreKey){
@@ -1162,8 +1310,19 @@
   }
 
   function rerenderTablesForScoreKey(scoreKey){
+    const resolvedScoreKey = String(scoreKey || "");
+    const activeDescriptor = activeScoreInputDescriptor();
+    const restoreDescriptor = (
+      pendingFocusRestoreDescriptor && String(pendingFocusRestoreDescriptor.scoreKey || "") === resolvedScoreKey
+    )
+      ? { ...pendingFocusRestoreDescriptor }
+      : (
+        activeDescriptor && String(activeDescriptor.scoreKey || "") === resolvedScoreKey
+          ? activeDescriptor
+          : null
+      );
     const seen = new Set();
-    document.querySelectorAll(`tr[data-score-key="${CSS.escape(scoreKey)}"]`).forEach((row) => {
+    document.querySelectorAll(`tr[data-score-key="${CSS.escape(resolvedScoreKey)}"]`).forEach((row) => {
       const table = row.closest("table[data-scoring-table='1']");
       if(!table) return;
       const marker = table.getAttribute("id") || `${table.getAttribute("data-group")}|${table.getAttribute("data-exercici")}|${table.getAttribute("data-comp-aparell-id")}`;
@@ -1171,6 +1330,21 @@
       seen.add(marker);
       rerenderTable(table);
     });
+    if(restoreDescriptor){
+      setTimeout(()=>{
+        restoreScoreInputFocus(restoreDescriptor);
+        if(
+          pendingFocusRestoreDescriptor
+          && String(pendingFocusRestoreDescriptor.scoreKey || "") === resolvedScoreKey
+          && String(pendingFocusRestoreDescriptor.field || "") === String(restoreDescriptor.field || "")
+          && String(pendingFocusRestoreDescriptor.judge || "") === String(restoreDescriptor.judge || "")
+          && String(pendingFocusRestoreDescriptor.item || "") === String(restoreDescriptor.item || "")
+          && String(pendingFocusRestoreDescriptor.memberId || "") === String(restoreDescriptor.memberId || "")
+        ){
+          pendingFocusRestoreDescriptor = null;
+        }
+      }, 0);
+    }
   }
 
   // Actualitza outputs: sempre a la fila del jutge 1 (és on hi ha els outputs)
@@ -1375,6 +1549,7 @@
     const inp = el("input", { class:"form-control form-control-sm input-num", type:"number", step:"any" });
     inp.disabled = blockedRow;
     inp.value = (currentValue !== undefined && currentValue !== null) ? currentValue : "";
+    bindScoreInputNavigation(inp, { scoreKey, field: code, memberId });
     inp.addEventListener("input", ()=>{
       if(blockedRow) return;
       const nextValue = (inp.value === "" ? 0 : Number(inp.value));
@@ -1399,6 +1574,7 @@
       const inp = el("input", { class:"form-control form-control-sm input-num", type:"number", step:"any" });
       inp.disabled = blockedRow;
       inp.value = arr[judgeIdx - 1] ?? 0;
+      bindScoreInputNavigation(inp, { scoreKey, field: code, judge: judgeIdx, memberId });
       inp.addEventListener("input", ()=>{
         if(blockedRow) return;
         const live = getScore(subject.id, exercici, appId);
@@ -1443,6 +1619,13 @@
       });
       inp.disabled = blockedRow;
       inp.value = (mat[judgeIdx - 1] && mat[judgeIdx - 1][itemIndex - 1] !== undefined) ? mat[judgeIdx - 1][itemIndex - 1] : 0;
+      bindScoreInputNavigation(inp, {
+        scoreKey,
+        field: baseCode,
+        judge: judgeIdx,
+        item: itemIndex,
+        memberId,
+      });
       inp.addEventListener("input", ()=>{
         if(blockedRow) return;
         const live = getScore(subject.id, exercici, appId);
@@ -1998,6 +2181,7 @@
               });
               inp.disabled = blockedRow;
               inp.value = (mat[j-1] && mat[j-1][i-1]!==undefined) ? mat[j-1][i-1] : 0;
+              bindScoreInputNavigation(inp, { scoreKey, field: col, judge: j, item: i });
 
               let btn = null;
               if(crashEnabled){
@@ -2107,6 +2291,7 @@
             const inp = el("input",{class:"form-control form-control-sm input-num", type:"number", step:"any"});
             inp.disabled = blockedRow;
             inp.value = (arr[j-1]!==undefined) ? arr[j-1] : 0;
+            bindScoreInputNavigation(inp, { scoreKey, field: col, judge: j });
 
             inp.addEventListener("input", ()=>{
               if(blockedRow) return;
@@ -2144,6 +2329,7 @@
             const inp = el("input",{class:"form-control form-control-sm input-num", type:"number", step:"any"});
             inp.disabled = blockedRow;
             inp.value = (inputs[col]!==undefined && inputs[col]!==null) ? inputs[col] : "";
+            bindScoreInputNavigation(inp, { scoreKey, field: col });
 
             inp.addEventListener("input", ()=>{
               if(blockedRow) return;

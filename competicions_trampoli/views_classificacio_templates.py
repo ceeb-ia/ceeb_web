@@ -53,7 +53,10 @@ def _template_to_builder_row(obj, *, by_id, by_code, ordre):
 def _template_to_list_row(obj):
     payload = getattr(obj, "payload", {}) or {}
     schema = extract_template_schema(payload)
-    requirements = build_template_requirements(schema)
+    requirements = {
+        **(getattr(obj, "requirements", {}) or {}),
+        **build_template_requirements(schema, tipus=getattr(obj, "tipus", "individual")),
+    }
     return {
         "id": obj.id,
         "nom": obj.nom,
@@ -96,6 +99,38 @@ def _collect_filter_choices(templates):
                     continue
                 seen[target].add(marker)
                 out[target].append({"value": value, "label": value})
+    return out
+
+
+def _collect_template_equip_contexts(templates):
+    seen = set()
+    out = []
+
+    def _append(code, label):
+        normalized = str(code or "").strip() or "native"
+        if normalized in seen:
+            return
+        seen.add(normalized)
+        out.append(
+            {
+                "code": normalized,
+                "nom": str(label or normalized).strip() or normalized,
+                "description": "",
+                "is_native": normalized == "native",
+            }
+        )
+
+    _append("native", "Base")
+    for tpl in templates:
+        schema = extract_template_schema(getattr(tpl, "payload", {}) or {})
+        equips_cfg = schema.get("equips") or {}
+        if not isinstance(equips_cfg, dict):
+            continue
+        assignment_source = equips_cfg.get("assignment_source") if isinstance(equips_cfg.get("assignment_source"), dict) else {}
+        context_code = str(equips_cfg.get("context_code") or assignment_source.get("context_code") or "").strip()
+        if not context_code:
+            continue
+        _append(context_code, "Base" if context_code == "native" else context_code)
     return out
 
 
@@ -195,6 +230,7 @@ class ClassificacioTemplateGlobalBuilder(TemplateView):
                     for app in self.aparells
                 ],
                 "equips": [],
+                "equip_contexts": _collect_template_equip_contexts(templates),
                 "particio_fields": build_global_native_particio_fields(),
                 "particio_value_choices": _collect_particio_value_choices(templates),
                 "filter_choices": _collect_filter_choices(templates),
@@ -302,7 +338,7 @@ def classificacio_template_global_save(request):
         tpl.tipus = tipus
         tpl.activa = activa
         tpl.payload = {"schema": schema_tpl, "source": {"mode": "global_builder"}}
-        tpl.requirements = build_template_requirements(schema_tpl)
+        tpl.requirements = build_template_requirements(schema_tpl, tipus=tipus)
         tpl.version = int(tpl.version or 1) + 1
         tpl.save()
     else:
@@ -317,7 +353,7 @@ def classificacio_template_global_save(request):
             tipus=tipus,
             activa=activa,
             payload={"schema": schema_tpl, "source": {"mode": "global_builder"}},
-            requirements=build_template_requirements(schema_tpl),
+            requirements=build_template_requirements(schema_tpl, tipus=tipus),
             created_by=owner,
         )
 

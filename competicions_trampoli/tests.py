@@ -7856,6 +7856,54 @@ class ClassificacioTemplateFlowTests(_BaseTrampoliDataMixin, TestCase):
             ["total"],
         )
 
+    def test_template_validation_distinguishes_strict_vs_assistit_for_missing_team_context(self):
+        schema_tpl, warnings = _schema_to_template_schema(self.comp_source, self.cfg_source.schema or {})
+        self.assertFalse(warnings)
+        schema_tpl["equips"] = {
+            "context_code": "ctx-finals",
+            "assignment_source": {"mode": "context", "context_code": "ctx-finals", "fallback": "native"},
+            "team_mode": "derived_from_individual",
+            "particions_manuals": [
+                {"key": "manual_1", "label": "Bloc A", "equips_noms": ["Equip Finals"]},
+            ],
+        }
+        tpl = ClassificacioTemplateGlobal.objects.create(
+            nom="TPL Missing Context",
+            slug="tpl-missing-context",
+            tipus="equips",
+            activa=True,
+            payload={"schema": schema_tpl},
+            requirements={},
+            created_by=self.editor_user,
+        )
+
+        strict_res = self._post_json_as(
+            self.editor_user,
+            "classificacio_template_validate",
+            self.comp_target.id,
+            {"template_id": tpl.id, "fallback_mode": "strict"},
+        )
+        self.assertEqual(strict_res.status_code, 200)
+        strict_body = strict_res.json()
+        self.assertFalse(strict_body.get("compatible"))
+        self.assertTrue(any("equips.context_code no existeix" in err for err in strict_body.get("blocking_errors", [])))
+        self.assertTrue(any("Equip Finals" in err for err in strict_body.get("blocking_errors", [])))
+
+        assistit_res = self._post_json_as(
+            self.editor_user,
+            "classificacio_template_validate",
+            self.comp_target.id,
+            {"template_id": tpl.id, "fallback_mode": "assistit"},
+        )
+        self.assertEqual(assistit_res.status_code, 200)
+        assistit_body = assistit_res.json()
+        self.assertTrue(assistit_body.get("compatible"))
+        self.assertTrue(assistit_body.get("portable"))
+        self.assertTrue(assistit_body.get("adaptable"))
+        self.assertTrue(any("context Base" in msg for msg in assistit_body.get("warnings", [])))
+        self.assertTrue(any("Equip Finals" in msg for msg in assistit_body.get("warnings", [])))
+        self.assertTrue(any("equips.context_code" in msg for msg in assistit_body.get("dropped_rules", [])))
+
     def test_template_list_only_shows_owner_templates(self):
         own = self._post_json_as(
             self.editor_user,
@@ -7942,7 +7990,7 @@ class ClassificacioTemplateFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertContains(res, 'data-help-key="victories_overview"')
         self.assertNotContains(res, '<option value="entitat">Per entitat</option>', html=True)
         self.assertContains(res, "function pruneSchemaAppReferences(schema, allowedIds)")
-        self.assertContains(res, 'buildAparellChecks([...ids], { includeStale: true });')
+        self.assertContains(res, 'buildAparellChecks([...ids], { includeStale: false });')
         self.assertContains(res, "refreshTipusUI({ includeStale: false, dropInvalidSelection: true });")
         self.assertContains(res, "function previewRenderTeamRawDetailCell(v, col)")
         self.assertContains(res, "team-raw-summary")
@@ -8077,6 +8125,54 @@ class ClassificacioTemplateFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual((original.get("puntuacio") or {}).get("camps_per_aparell", {}).get(str(self.source_app.id)), ["E_total", "ex"])
         self.assertEqual(len(original.get("desempat") or []), 2)
         self.assertEqual(len((((original.get("puntuacio") or {}).get("victories") or {}).get("desempat_comparacio")) or []), 2)
+
+    def test_classificacions_home_sanitizes_missing_app_refs_for_builder(self):
+        schema = json.loads(json.dumps(self.cfg_source.schema or {}))
+        missing_app_id = self.source_app.id + 9999
+        schema["puntuacio"]["aparells"] = {"mode": "seleccionar", "ids": [self.source_app.id, missing_app_id]}
+        schema["puntuacio"]["camps_per_aparell"] = {
+            str(self.source_app.id): ["E_total"],
+            str(missing_app_id): ["E_total"],
+        }
+        schema["puntuacio"]["exercicis_per_aparell"] = {
+            str(self.source_app.id): {"mode": "tots"},
+            str(missing_app_id): {"mode": "tots"},
+        }
+        schema["desempat"] = [
+            {
+                "camps": ["E_total"],
+                "agregacio_camps": "hereta",
+                "ordre": "desc",
+                "scope": {"aparells": {"mode": "seleccionar", "ids": [missing_app_id]}},
+            }
+        ]
+        schema["presentacio"]["columnes"] = [
+            {"type": "builtin", "key": "participant", "label": "Nom", "align": "left"},
+            {
+                "type": "raw",
+                "key": "raw_missing_app",
+                "label": "No App",
+                "align": "right",
+                "decimals": 3,
+                "source": {"aparell_id": missing_app_id, "exercici": 1, "camp": "E_total", "jutges": {"ids": []}},
+            },
+        ]
+        self.cfg_source.schema = schema
+        self.cfg_source.save(update_fields=["schema"])
+
+        self.client.force_login(self.editor_user)
+        res = self.client.get(reverse("classificacions_home", kwargs={"pk": self.comp_source.id}))
+        self.assertEqual(res.status_code, 200)
+
+        cfg_payload = next(cfg for cfg in res.context["cfgs"] if cfg["id"] == self.cfg_source.id)
+        sanitized = cfg_payload["schema"]
+        punt = sanitized.get("puntuacio") or {}
+        self.assertEqual((punt.get("aparells") or {}).get("ids"), [self.source_app.id])
+        self.assertEqual(set((punt.get("camps_per_aparell") or {}).keys()), {str(self.source_app.id)})
+        self.assertEqual(set((punt.get("exercicis_per_aparell") or {}).keys()), {str(self.source_app.id)})
+        self.assertEqual(sanitized.get("desempat") or [], [])
+        raw_columns = [c for c in ((sanitized.get("presentacio") or {}).get("columnes") or []) if c.get("type") == "raw"]
+        self.assertEqual(raw_columns, [])
 
 
 class GlobalClassificacioTemplateManagementTests(_BaseTrampoliDataMixin, TestCase):
@@ -8265,6 +8361,47 @@ class GlobalClassificacioTemplateManagementTests(_BaseTrampoliDataMixin, TestCas
         self.assertTrue(any("camp no permes" in err for err in body.get("errors", [])))
         self.assertTrue(any("no es puntuable" in err for err in body.get("errors", [])))
 
+    def test_global_template_save_tracks_extended_team_requirements(self):
+        self.client.force_login(self.user)
+        save_url = reverse("classificacio_template_global_save")
+        schema = self._build_global_schema_payload(self.app.id)
+        schema["puntuacio"]["exercise_selection_scope"] = "team_pool"
+        schema["equips"] = {
+            "context_code": "ctx-finals",
+            "assignment_source": {"mode": "context", "context_code": "ctx-finals", "fallback": "native"},
+            "team_mode": "derived_from_individual",
+            "particions_manuals": [
+                {"key": "manual_1", "label": "Bloc A", "equips_noms": ["Equip A", "Equip B"]},
+            ],
+        }
+        res = self.client.post(
+            save_url,
+            data=json.dumps(
+                {
+                    "nom": "Tpl Equips Portable",
+                    "slug": "tpl-equips-portable",
+                    "activa": True,
+                    "tipus": "equips",
+                    "schema": schema,
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 200)
+        tpl = ClassificacioTemplateGlobal.objects.get(slug="tpl-equips-portable")
+        req = tpl.requirements or {}
+        self.assertEqual(req.get("tipus"), "equips")
+        self.assertEqual(req.get("team_mode"), "derived_from_individual")
+        self.assertEqual(req.get("context_code"), "ctx-finals")
+        self.assertTrue(req.get("uses_manual_team_partitions"))
+        self.assertTrue(req.get("uses_exercise_selection_scope"))
+        self.assertEqual(req.get("exercise_selection_scope"), "team_pool")
+        self.assertEqual(req.get("exercise_selection_scope_modes"), ["team_pool"])
+        self.assertEqual(
+            ((((tpl.payload or {}).get("schema") or {}).get("equips") or {}).get("particions_manuals") or [])[0].get("equips_noms"),
+            ["Equip A", "Equip B"],
+        )
+
     def test_global_edit_preserves_legacy_extra_fields(self):
         legacy_schema = {
             "particions": ["custom_excel"],
@@ -8361,7 +8498,7 @@ class GlobalClassificacioTemplateManagementTests(_BaseTrampoliDataMixin, TestCas
         self.assertContains(res, 'data-help-key="desempat_overview"')
         self.assertNotContains(res, '<option value="entitat">Per entitat</option>', html=True)
         self.assertContains(res, "function pruneSchemaAppReferences(schema, allowedIds)")
-        self.assertContains(res, 'buildAparellChecks([...ids], { includeStale: true });')
+        self.assertContains(res, 'buildAparellChecks([...ids], { includeStale: false });')
         self.assertContains(res, "refreshTipusUI({ includeStale: false, dropInvalidSelection: true });")
         self.assertContains(res, "function previewRenderTeamRawDetailCell(v, col)")
         self.assertContains(res, "En equips derivats, les columnes de camp mostren un resum i el detall per membres de l'equip.")
@@ -8403,6 +8540,38 @@ class GlobalClassificacioTemplateManagementTests(_BaseTrampoliDataMixin, TestCas
         self.assertNotContains(res, own_tpl.nom)
         self.assertContains(res, foreign_app.nom)
         self.assertNotContains(res, self.app.nom)
+
+    def test_global_builder_edit_exposes_portable_team_context_choices(self):
+        tpl = ClassificacioTemplateGlobal.objects.create(
+            nom="Tpl Context Portable",
+            slug="tpl-context-portable",
+            tipus="equips",
+            activa=True,
+            payload={
+                "schema": {
+                    "puntuacio": {
+                        "aparells": {"mode": "seleccionar", "ids": [self.app.codi]},
+                        "camps_per_aparell": {self.app.codi: ["total"]},
+                    },
+                    "equips": {
+                        "context_code": "ctx-finals",
+                        "assignment_source": {"mode": "context", "context_code": "ctx-finals", "fallback": "native"},
+                        "team_mode": "derived_from_individual",
+                        "particions_manuals": [
+                            {"key": "manual_1", "label": "Bloc A", "equips_noms": ["Equip A"]},
+                        ],
+                    },
+                    "presentacio": {"columnes": []},
+                }
+            },
+            requirements={},
+            created_by=self.user,
+        )
+        self.client.force_login(self.user)
+        res = self.client.get(reverse("classificacio_template_global_update", kwargs={"pk": tpl.id}))
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, "ctx-finals")
+        self.assertContains(res, "Equip A")
 
 
 class JudgeVideoApiTests(_BaseTrampoliDataMixin, TestCase):
@@ -9047,7 +9216,7 @@ class LiveClassificacionsRedisCacheTests(_BaseTrampoliDataMixin, TestCase):
 
         self.assertIsNotNone(fake_redis.get(live_cache.live_dirty_key(self.comp.id)))
 
-    def test_teamscoreentry_signal_marks_dirty_after_commit(self):
+    def test_teamscoreentry_signal_does_not_mark_dirty_after_commit(self):
         team_ctx = EquipContext.objects.create(
             competicio=self.comp,
             code="parelles-live",
@@ -9088,7 +9257,58 @@ class LiveClassificacionsRedisCacheTests(_BaseTrampoliDataMixin, TestCase):
                     total=8.4,
                 )
 
-        self.assertIsNotNone(fake_redis.get(live_cache.live_dirty_key(self.comp.id)))
+        self.assertIsNone(fake_redis.get(live_cache.live_dirty_key(self.comp.id)))
+
+    def test_teamscoreentry_change_does_not_refresh_cached_live_snapshot(self):
+        snapshot = json.loads(self._snapshot_blob())
+        stamp = snapshot["stamp"]
+        fake_redis = self.FakeRedis()
+        fake_redis.set(live_cache.live_cache_key(self.comp.id), json.dumps(snapshot))
+
+        team_ctx = EquipContext.objects.create(
+            competicio=self.comp,
+            code="parelles-live-cache",
+            nom="Parelles live cache",
+        )
+        self.comp_app.participant_mode = CompeticioAparell.ParticipantMode.TEAM_CONTEXT
+        self.comp_app.team_context = team_ctx
+        self.comp_app.expected_team_size = 2
+        self.comp_app.team_scoring_mode = CompeticioAparell.TeamScoringMode.MEMBERS_PLUS_SHARED
+        self.comp_app.save(
+            update_fields=["participant_mode", "team_context", "expected_team_size", "team_scoring_mode"]
+        )
+        equip = Equip.objects.create(competicio=self.comp, nom="Equip live cache")
+        ins_b = self._create_inscripcio(self.comp, "Participant Cache 2", ordre=2)
+        InscripcioEquipAssignacio.objects.create(
+            competicio=self.comp,
+            context=team_ctx,
+            inscripcio=self.ins,
+            equip=equip,
+        )
+        InscripcioEquipAssignacio.objects.create(
+            competicio=self.comp,
+            context=team_ctx,
+            inscripcio=ins_b,
+            equip=equip,
+        )
+
+        with patch("competicions_trampoli.live_cache._live_redis_client", return_value=fake_redis):
+            with self.captureOnCommitCallbacks(execute=True):
+                TeamScoreEntry.objects.create(
+                    competicio=self.comp,
+                    equip=equip,
+                    exercici=1,
+                    comp_aparell=self.comp_app,
+                    inputs={},
+                    outputs={},
+                    total=8.4,
+                )
+            res = self.client.get(self._public_url(), {"since": stamp})
+
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res["X-Live-Cache"], "hit")
+        self.assertFalse(res.json()["changed"])
+        self.assertEqual(res.json()["stamp"], stamp)
 
     def test_classificacioconfig_signal_marks_dirty_after_commit(self):
         fake_redis = self.FakeRedis()
@@ -14103,6 +14323,81 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
         judge_updates = {int(row["subject_id"]): row for row in judge_res.json()["updates"]}
         self.assertEqual(judge_updates[invalid_team_subject.id]["series_state"], "invalid")
         self.assertIsNone(judge_updates[invalid_team_subject.id]["serie_id"])
+
+    def test_scoring_updates_without_comp_aparell_id_include_individual_and_team_entries(self):
+        ScoringSchema.objects.create(
+            aparell=self.app,
+            schema={
+                "meta": {"subject_mode": "team_context", "expected_team_size": 2},
+                "fields": [
+                    {"code": "SYNC", "label": "Sync", "type": "number", "scope": "shared"},
+                    {"code": "E", "label": "Exec", "type": "number", "scope": "member"},
+                ],
+                "computed": [
+                    {"code": "TOTAL", "label": "Total", "formula": "SYNC"},
+                ],
+            },
+        )
+        indiv_app = self._create_aparell("IND-UPD", "Individual updates")
+        indiv_comp_app = self._create_comp_aparell(self.comp, indiv_app, ordre=2)
+        ScoringSchema.objects.create(
+            aparell=indiv_app,
+            schema={
+                "fields": [{"code": "N", "label": "Nota", "type": "number"}],
+                "computed": [{"code": "TOTAL", "label": "Total", "formula": "N"}],
+            },
+        )
+
+        team_subject, _team_meta = self._team_subject()
+        TeamScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            team_subject=team_subject,
+            exercici=1,
+            inputs={
+                "SYNC": 5.0,
+                "E": {
+                    str(self.ins1.id): 0.2,
+                    str(self.ins2.id): 0.3,
+                },
+            },
+            outputs={"TOTAL": 5.0},
+            total=5.0,
+        )
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=indiv_comp_app,
+            inscripcio=self.ins1,
+            exercici=1,
+            inputs={"N": 7.5},
+            outputs={"TOTAL": 7.5},
+            total=7.5,
+        )
+
+        res = self.client.get(
+            reverse("scoring_updates", kwargs={"pk": self.comp.id}),
+            {"since": (timezone.now() - timedelta(minutes=10)).isoformat()},
+        )
+
+        self.assertEqual(res.status_code, 200)
+        updates = res.json()["updates"]
+        by_kind = {(row["subject_kind"], int(row["subject_id"])): row for row in updates}
+        self.assertIn(("inscripcio", self.ins1.id), by_kind)
+        self.assertIn(("team_unit", team_subject.id), by_kind)
+        self.assertEqual(by_kind[("inscripcio", self.ins1.id)]["comp_aparell_id"], indiv_comp_app.id)
+        self.assertEqual(by_kind[("inscripcio", self.ins1.id)]["inputs"], {"N": 7.5})
+        self.assertEqual(
+            by_kind[("team_unit", team_subject.id)]["inputs"],
+            {
+                "SYNC": 5.0,
+                "E": {
+                    str(self.ins1.id): 0.2,
+                    str(self.ins2.id): 0.3,
+                },
+            },
+        )
+        self.assertEqual(by_kind[("team_unit", team_subject.id)]["comp_aparell_id"], self.comp_app.id)
+        self.assertEqual(by_kind[("team_unit", team_subject.id)]["series_state"], "unassigned")
 
     def test_series_delete_blocks_programmed_empty_serie(self):
         serie = SerieEquip.objects.create(

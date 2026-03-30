@@ -57,6 +57,10 @@ from .services.team_subject_contract import (
     runtime_schema_for_team_subjects,
     team_subject_meta,
 )
+from .services.update_payloads import (
+    build_score_update_payload,
+    filter_inputs_for_allowed_codes as shared_filter_inputs_for_allowed_codes,
+)
 from .services.competition_groups import (
     get_group_maps,
     get_inscripcio_competition_order,
@@ -432,9 +436,7 @@ def _subject_dom_id(subject) -> str:
 
 
 def _filter_inputs_for_allowed_codes(inputs: dict, allowed_codes: set) -> dict:
-    if not isinstance(inputs, dict):
-        return {}
-    return {k: v for k, v in inputs.items() if k in allowed_codes}
+    return shared_filter_inputs_for_allowed_codes(inputs, allowed_codes)
 
 
 def _clamp_exercici_for_aparell(comp_aparell, exercici_raw):
@@ -1022,18 +1024,19 @@ def judge_updates(request, token):
             resolved_permissions = _resolve_permissions_for_subject(permissions, comp_aparell, None)
             runtime_inputs = s.inputs if isinstance(s.inputs, dict) else {}
         allowed_input_codes = _allowed_input_codes_from_permissions(resolved_permissions)
-        payload = {
-            **serialize_subject_payload(subject_kind, subject_id),
-            "exercici": s.exercici,
-            "comp_aparell_id": s.comp_aparell_id,
-            "inputs": _filter_inputs_for_allowed_codes(runtime_inputs, allowed_input_codes),
-            "outputs": s.outputs or {},
-            "total": float(s.total),
-            "updated_at": s.updated_at.isoformat(),
-        }
-        if subject_kind == "team_unit":
-            payload.update(team_subject_meta(subject_meta))
-        updates.append(payload)
+        updates.append(
+            build_score_update_payload(
+                subject_kind=subject_kind,
+                subject_id=subject_id,
+                exercici=s.exercici,
+                comp_aparell_id=s.comp_aparell_id,
+                inputs=_filter_inputs_for_allowed_codes(runtime_inputs, allowed_input_codes),
+                outputs=s.outputs or {},
+                total=s.total,
+                updated_at=s.updated_at,
+                subject_meta=subject_meta if subject_kind == "team_unit" else None,
+            )
+        )
 
     return JsonResponse({"ok": True, "now": timezone.now().isoformat(), "updates": updates})
 
