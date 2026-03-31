@@ -3994,7 +3994,32 @@ def _validate_presentacio_columns(competicio, schema: dict, tipus="individual"):
             return "individual"
         return None
 
-    def _validate_detail_columns(raw_cols, path_prefix, section_type):
+    def _detail_section_app_id(section):
+        try:
+            app_id = int((section or {}).get("aparell_id"))
+        except Exception:
+            return None
+        return app_id if app_id > 0 else None
+
+    def _detail_raw_app_ids(raw_cols):
+        out = []
+        if not isinstance(raw_cols, list):
+            return out
+        for col in raw_cols:
+            if not isinstance(col, dict):
+                continue
+            if str(col.get("type") or "builtin").strip().lower() != "raw":
+                continue
+            src = col.get("source") if isinstance(col.get("source"), dict) else {}
+            try:
+                app_id = int(src.get("aparell_id"))
+            except Exception:
+                continue
+            if app_id > 0 and app_id not in out:
+                out.append(app_id)
+        return out
+
+    def _validate_detail_columns(raw_cols, path_prefix, section_type, *, section_app_id=None):
         if not isinstance(raw_cols, list):
             errors.append(f"{path_prefix} ha de ser una llista.")
             return
@@ -4019,6 +4044,11 @@ def _validate_presentacio_columns(competicio, schema: dict, tipus="individual"):
                 app_id = int(src.get("aparell_id"))
             except Exception:
                 errors.append(f"{path_prefix}[{cidx}] raw: aparell invalid.")
+                continue
+            if section_app_id is not None and app_id != section_app_id:
+                errors.append(
+                    f"{path_prefix}[{cidx}] raw: l'aparell {app_id} no concorda amb presentacio.detall.sections.aparell_id={section_app_id}."
+                )
                 continue
             if app_id not in app_by_id:
                 errors.append(f"{path_prefix}[{cidx}] raw: aparell {app_id} no valid o no actiu.")
@@ -4087,6 +4117,10 @@ def _validate_presentacio_columns(competicio, schema: dict, tipus="individual"):
                 f"presentacio.detall.columnes nomes es compatible amb contexts que admeten members_table ({detail_section_key})."
             )
         else:
+            if len(_detail_raw_app_ids(raw_legacy_cols)) > 1:
+                errors.append(
+                    "presentacio.detall.columnes barreja aparells multiples; cal dividir el detall en una seccio per aparell."
+                )
             _validate_detail_columns(raw_legacy_cols, "presentacio.detall.columnes", "members_table")
 
     if isinstance(raw_sections, list):
@@ -4106,15 +4140,50 @@ def _validate_presentacio_columns(competicio, schema: dict, tipus="individual"):
                 )
                 continue
             if section_type == "members_list":
+                if section.get("aparell_id") not in (None, "", 0, "0"):
+                    errors.append(
+                        f"presentacio.detall.sections[{sidx}].aparell_id no es compatible amb members_list."
+                    )
                 if "columns" in section and section.get("columns") not in (None, []):
                     errors.append(
                         f"presentacio.detall.sections[{sidx}].columns no es compatible amb members_list."
                     )
                 continue
+            section_app_id = _detail_section_app_id(section)
+            raw_app_ids = _detail_raw_app_ids(section.get("columns"))
+            if raw_app_ids and section_app_id is None:
+                errors.append(
+                    f"presentacio.detall.sections[{sidx}].aparell_id es obligatori quan hi ha columnes raw."
+                )
+            if len(raw_app_ids) > 1:
+                errors.append(
+                    f"presentacio.detall.sections[{sidx}] barreja aparells multiples; cal dividir el detall en una seccio per aparell."
+                )
+            if section_app_id is not None:
+                if section_app_id not in app_by_id:
+                    errors.append(
+                        f"presentacio.detall.sections[{sidx}].aparell_id: aparell {section_app_id} no valid o no actiu."
+                    )
+                else:
+                    app_unit = getattr(app_by_id[section_app_id].aparell, "competition_unit", "") or ""
+                    expected_unit = _detail_expected_unit(section_type)
+                    if expected_unit == "team" and app_unit != "team":
+                        errors.append(
+                            f"presentacio.detall.sections[{sidx}].aparell_id: en {section_type} nomes es poden mostrar aparells d'equip."
+                        )
+                    elif expected_unit == "individual" and app_unit == "team":
+                        errors.append(
+                            f"presentacio.detall.sections[{sidx}].aparell_id: en {section_type} no es poden mostrar aparells d'equip."
+                        )
+                    elif selected_ids and section_app_id not in selected_ids:
+                        errors.append(
+                            f"presentacio.detall.sections[{sidx}].aparell_id: aparell {section_app_id} no esta seleccionat a puntuacio."
+                        )
             _validate_detail_columns(
                 section.get("columns"),
                 f"presentacio.detall.sections[{sidx}].columns",
                 section_type,
+                section_app_id=section_app_id,
             )
 
     if detail_enabled:
@@ -4126,6 +4195,61 @@ def _validate_presentacio_columns(competicio, schema: dict, tipus="individual"):
             )
 
     return errors
+
+
+def _validation_error_section_from_path(path: str) -> str:
+    path = str(path or "").strip()
+    if path.startswith("presentacio"):
+        return "presentacio"
+    if path.startswith("filtres"):
+        return "filtres"
+    if path.startswith("puntuacio"):
+        return "puntuacio"
+    if path.startswith("desempat"):
+        return "desempat"
+    if path.startswith("particions"):
+        return "particions"
+    if path.startswith("equips"):
+        return "meta"
+    return "general"
+
+
+def _build_validation_error_details(error_messages):
+    details = []
+    patterns = [
+        (re.compile(r"^(?P<path>[A-Za-z_][\w\.\[\]']*) raw: aparell .+$"), ".source.aparell_id"),
+        (re.compile(r"^(?P<path>[A-Za-z_][\w\.\[\]']*) raw: camp .+$"), ".source.camp"),
+        (re.compile(r"^(?P<path>[A-Za-z_][\w\.\[\]']*) builtin: .+$"), ".key"),
+        (re.compile(r"^(?P<path>[A-Za-z_][\w\.\[\]']*) tipus .+$"), ".type"),
+        (re.compile(r"^(?P<path>[A-Za-z_][\w\.\[\]']*\.enabled) .*$"), ""),
+        (re.compile(r"^(?P<path>[A-Za-z_][\w\.\[\]']*\.default_open) .*$"), ""),
+        (re.compile(r"^(?P<path>[A-Za-z_][\w\.\[\]']*\.aparell_id): .+$"), ""),
+        (re.compile(r"^(?P<path>[A-Za-z_][\w\.\[\]']*\.columns) .+$"), ""),
+        (re.compile(r"^(?P<path>[A-Za-z_][\w\.\[\]']*): .+$"), ""),
+    ]
+
+    for raw in error_messages or []:
+        message = str(raw or "").strip()
+        if not message:
+            continue
+        path = ""
+        for pattern, suffix in patterns:
+            match = pattern.match(message)
+            if not match:
+                continue
+            path = str(match.group("path") or "").strip()
+            if suffix and not path.endswith(suffix):
+                path = f"{path}{suffix}"
+            break
+        details.append(
+            {
+                "path": path,
+                "message": message,
+                "section": _validation_error_section_from_path(path or message),
+                "severity": "error",
+            }
+        )
+    return details
 
 
 def _parse_positive_int_list(raw):
@@ -4734,6 +4858,7 @@ def classificacio_save(request, pk):
                 "ok": False,
                 "error": "Configuracio de classificacio invalida.",
                 "errors": validation_errors,
+                "error_details": _build_validation_error_details(validation_errors),
             },
             status=400,
         )
@@ -4809,6 +4934,7 @@ def classificacio_preview(request, pk, cid):
                 "ok": False,
                 "error": "Configuracio de classificacio invalida per previsualitzar.",
                 "errors": validation_errors,
+                "error_details": _build_validation_error_details(validation_errors),
             },
             status=400,
         )

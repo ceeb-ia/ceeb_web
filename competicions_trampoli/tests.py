@@ -8040,13 +8040,17 @@ class ClassificacioTemplateFlowTests(_BaseTrampoliDataMixin, TestCase):
 
         schema_tpl, warnings = _schema_to_template_schema(self.comp_source, schema)
         self.assertFalse(warnings)
-        detail_tpl = (((((schema_tpl.get("presentacio") or {}).get("detall") or {}).get("sections")) or [])[0] or {}).get("columns") or []
+        detail_section_tpl = (((((schema_tpl.get("presentacio") or {}).get("detall") or {}).get("sections")) or [])[0] or {})
+        detail_tpl = detail_section_tpl.get("columns") or []
+        self.assertEqual(detail_section_tpl.get("aparell_id"), self.app.codi)
         self.assertEqual(detail_tpl[1]["source"]["aparell_id"], self.app.codi)
 
         schema_local, mapping_warnings, mapping = _template_schema_to_competicio_schema(self.comp_target, schema_tpl)
         self.assertFalse(mapping_warnings)
         self.assertEqual(mapping.get(self.app.codi), self.target_app.id)
-        detail_local = (((((schema_local.get("presentacio") or {}).get("detall") or {}).get("sections")) or [])[0] or {}).get("columns") or []
+        detail_section_local = (((((schema_local.get("presentacio") or {}).get("detall") or {}).get("sections")) or [])[0] or {})
+        detail_local = detail_section_local.get("columns") or []
+        self.assertEqual(detail_section_local.get("aparell_id"), self.target_app.id)
         self.assertEqual(detail_local[1]["source"]["aparell_id"], self.target_app.id)
 
     def test_global_template_can_be_saved_validated_and_applied(self):
@@ -8643,6 +8647,7 @@ class GlobalClassificacioTemplateManagementTests(_BaseTrampoliDataMixin, TestCas
                 {
                     "type": "members_table",
                     "label": "Detall",
+                    "aparell_id": self.app.id,
                     "columns": [
                         {"type": "builtin", "key": "participant", "label": "Participant", "align": "left"},
                         {
@@ -8675,15 +8680,62 @@ class GlobalClassificacioTemplateManagementTests(_BaseTrampoliDataMixin, TestCas
         self.assertTrue(body.get("ok"))
 
         cfg = body.get("cfg") or {}
-        detail_ui = (((((cfg.get("schema") or {}).get("presentacio") or {}).get("detall") or {}).get("sections")) or [])[0]["columns"]
+        detail_ui_section = (((((cfg.get("schema") or {}).get("presentacio") or {}).get("detall") or {}).get("sections")) or [])[0]
+        detail_ui = detail_ui_section["columns"]
+        self.assertEqual(detail_ui_section["aparell_id"], self.app.id)
         self.assertEqual(detail_ui[1]["source"]["aparell_id"], self.app.id)
 
         tpl = ClassificacioTemplateGlobal.objects.get(pk=cfg.get("id"))
         detail_tpl = (((tpl.payload or {}).get("schema") or {}).get("presentacio") or {}).get("detall") or {}
         self.assertTrue(detail_tpl.get("enabled"))
-        detail_tpl_cols = (((detail_tpl.get("sections") or [])[0] or {}).get("columns")) or []
+        detail_tpl_section = (detail_tpl.get("sections") or [])[0] or {}
+        detail_tpl_cols = detail_tpl_section.get("columns") or []
+        self.assertEqual(detail_tpl_section.get("aparell_id"), self.app.codi)
         self.assertEqual(detail_tpl_cols[1]["source"]["aparell_id"], self.app.codi)
         self.assertIn("total", tpl.requirements.get("presentacio_raw_camps") or [])
+
+    def test_global_template_save_returns_error_details_for_invalid_detail_section_field(self):
+        self.client.force_login(self.user)
+        save_url = reverse("classificacio_template_global_save")
+        schema = self._build_global_schema_payload(self.app.id)
+        schema["presentacio"]["detall"] = {
+            "enabled": True,
+            "sections": [
+                {
+                    "type": "exercise_table",
+                    "label": "Exercicis",
+                    "aparell_id": self.app.id,
+                    "columns": [
+                        {"type": "builtin", "key": "exercise_index", "label": "Ex.", "align": "left"},
+                        {
+                            "type": "raw",
+                            "key": "detail_bad",
+                            "label": "Camp invalid",
+                            "align": "right",
+                            "decimals": 3,
+                            "source": {"aparell_id": self.app.id, "exercici": 1, "camp": "NO_EXISTEIX", "jutges": {"ids": []}},
+                        },
+                    ],
+                }
+            ],
+        }
+        res = self.client.post(
+            save_url,
+            data=json.dumps(
+                {
+                    "nom": "Plantilla Global Error Detail",
+                    "slug": "plantilla-global-error-detail",
+                    "activa": True,
+                    "tipus": "individual",
+                    "schema": schema,
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 400)
+        body = res.json()
+        details = body.get("error_details") or []
+        self.assertTrue(any(item.get("path") == "presentacio.detall.sections[0].columns[1].source.camp" for item in details))
 
     def test_owner_list_hides_foreign_templates_and_admin_sees_both(self):
         own_tpl = ClassificacioTemplateGlobal.objects.create(
@@ -13516,6 +13568,7 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual([section["type"] for section in detail["sections"]], ["members_list", "team_metrics"])
         self.assertEqual([item["participant"] for item in detail["sections"][0]["items"]], ["Maria", "Laia"])
         metrics_section = detail["sections"][1]
+        self.assertEqual(metrics_section["aparell_id"], self.comp_app.id)
         self.assertEqual([col["key"] for col in metrics_section["columns"]], ["team_total"])
         metric_cell = metrics_section["rows"][0]["cells"]["team_total"]
         self.assertEqual(metric_cell["_kind"], "team_raw_detail")
@@ -13613,6 +13666,7 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
 
         detail = rows[0]["detail"]
         self.assertEqual([section["type"] for section in detail["sections"]], ["exercise_table"])
+        self.assertEqual(detail["sections"][0]["aparell_id"], comp_ind_app.id)
         exercise_rows = detail["sections"][0]["rows"]
         self.assertEqual([item["exercise_index"] for item in exercise_rows], [1, 2])
         self.assertEqual(exercise_rows[0]["cells"]["total_ex1"], 10.5)
@@ -14330,6 +14384,99 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertTrue(
             any("presentacio.detall.columnes nomes es compatible" in err for err in errors)
         )
+
+    def test_classificacio_validation_rejects_multi_app_detail_section(self):
+        app_b = self._create_aparell("TR_DETAIL_MULTI", "Tramp detail multi")
+        comp_app_b = self._create_comp_aparell(self.comp, app_b, ordre=3)
+
+        _schema, errors = _validate_schema_for_competicio(
+            self.comp,
+            {
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [self.comp_app.id, comp_app_b.id]},
+                    "camps_per_aparell": {
+                        str(self.comp_app.id): ["total"],
+                        str(comp_app_b.id): ["total"],
+                    },
+                },
+                "presentacio": {
+                    "detall": {
+                        "enabled": True,
+                        "sections": [
+                            {
+                                "type": "members_table",
+                                "label": "Detall",
+                                "columns": [
+                                    {"type": "builtin", "key": "participant", "label": "Participant", "align": "left"},
+                                    {
+                                        "type": "raw",
+                                        "key": "detail_total_a",
+                                        "label": "Total A",
+                                        "align": "right",
+                                        "decimals": 3,
+                                        "source": {"aparell_id": self.comp_app.id, "exercici": 1, "camp": "total", "jutges": {"ids": []}},
+                                    },
+                                    {
+                                        "type": "raw",
+                                        "key": "detail_total_b",
+                                        "label": "Total B",
+                                        "align": "right",
+                                        "decimals": 3,
+                                        "source": {"aparell_id": comp_app_b.id, "exercici": 1, "camp": "total", "jutges": {"ids": []}},
+                                    },
+                                ],
+                            }
+                        ],
+                    },
+                },
+                "equips": {
+                    "context_code": "parelles",
+                    "team_mode": "derived_from_individual",
+                },
+            },
+            tipus="equips",
+        )
+
+        self.assertTrue(
+            any("presentacio.detall.sections[0] barreja aparells multiples" in err for err in errors)
+        )
+
+    def test_classificacio_save_returns_error_details_for_invalid_detail_section_field(self):
+        payload = self._classificacio_payload(tipus="individual", app_ids=[self.comp_app.id])
+        payload["schema"]["presentacio"] = {
+            "top_n": 0,
+            "mostrar_empats": True,
+            "columnes": [
+                {"type": "builtin", "key": "participant", "label": "Nom", "align": "left"},
+            ],
+            "detall": {
+                "enabled": True,
+                "sections": [
+                    {
+                        "type": "exercise_table",
+                        "label": "Exercicis",
+                        "aparell_id": self.comp_app.id,
+                        "columns": [
+                            {"type": "builtin", "key": "exercise_index", "label": "Ex.", "align": "left"},
+                            {
+                                "type": "raw",
+                                "key": "detail_bad",
+                                "label": "Camp invalid",
+                                "align": "right",
+                                "decimals": 3,
+                                "source": {"aparell_id": self.comp_app.id, "exercici": 1, "camp": "NO_EXISTEIX", "jutges": {"ids": []}},
+                            },
+                        ],
+                    }
+                ],
+            },
+        }
+
+        response = self._post_json("classificacio_save", payload)
+        self.assertEqual(response.status_code, 400)
+        body = response.json()
+        details = body.get("error_details") or []
+        self.assertTrue(any(item.get("path") == "presentacio.detall.sections[0].columns[1].source.camp" for item in details))
 
     def test_normalize_excel_cell_supports_team_raw_detail(self):
         value, _fmt, wrap = _normalize_excel_cell(

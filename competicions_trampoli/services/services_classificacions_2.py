@@ -1948,6 +1948,7 @@ def _detail_section_default(section_type: str):
         return {
             "type": "team_metrics",
             "label": "Notes equip",
+            "aparell_id": None,
             "columns": [
                 {"type": "raw", "key": "team_raw_1", "label": "Total", "align": "right", "decimals": 3,
                  "source": {"aparell_id": None, "exercici": 1, "camp": "total", "jutges": {"ids": []}}},
@@ -1957,6 +1958,7 @@ def _detail_section_default(section_type: str):
         return {
             "type": "exercise_table",
             "label": "Exercicis",
+            "aparell_id": None,
             "columns": [
                 {"type": "builtin", "key": "aparell_nom", "label": "Aparell", "align": "left"},
                 {"type": "builtin", "key": "exercise_index", "label": "Ex.", "align": "left"},
@@ -1968,6 +1970,7 @@ def _detail_section_default(section_type: str):
         return {
             "type": "entity_members_table",
             "label": "Participants",
+            "aparell_id": None,
             "columns": [
                 {"type": "builtin", "key": "participant", "label": "Participant", "align": "left"},
             ],
@@ -1975,6 +1978,7 @@ def _detail_section_default(section_type: str):
     return {
         "type": "members_table",
         "label": "Detall",
+        "aparell_id": None,
         "columns": [
             {"type": "builtin", "key": "participant", "label": "Participant", "align": "left"},
         ],
@@ -1991,6 +1995,8 @@ def _normalize_detail_section(section):
     out = {**base, **section, "type": stype}
     label = str(out.get("label") or base.get("label") or "").strip()
     out["label"] = label or str(base.get("label") or "").strip()
+    section_app_id = _normalize_positive_int(out.get("aparell_id"))
+    raw_app_ids = set()
     if "columns" in base or isinstance(section.get("columns"), list):
         out["columns"] = _normalize_display_columns(
             section.get("columns") if isinstance(section.get("columns"), list) else base.get("columns"),
@@ -1998,8 +2004,29 @@ def _normalize_detail_section(section):
             allowed_builtin_keys=_detail_section_builtin_keys(stype),
             default_cols=base.get("columns") or [],
         )
+        for col in out.get("columns") or []:
+            if str(col.get("type") or "").strip().lower() != "raw":
+                continue
+            src = col.get("source") if isinstance(col.get("source"), dict) else {}
+            app_id = _normalize_positive_int(src.get("aparell_id"))
+            if app_id is not None:
+                raw_app_ids.add(app_id)
+        if section_app_id is None and len(raw_app_ids) == 1:
+            section_app_id = next(iter(raw_app_ids))
+        if section_app_id is not None:
+            for col in out.get("columns") or []:
+                if str(col.get("type") or "").strip().lower() != "raw":
+                    continue
+                src = col.get("source") if isinstance(col.get("source"), dict) else {}
+                if _normalize_positive_int(src.get("aparell_id")) is None:
+                    src = {**src, "aparell_id": section_app_id}
+                    col["source"] = src
     else:
         out.pop("columns", None)
+    if stype == "members_list":
+        out.pop("aparell_id", None)
+    else:
+        out["aparell_id"] = section_app_id
     return out
 
 
@@ -3956,6 +3983,19 @@ def compute_classificacio(competicio, cfg_obj):
             return ""
         return getattr(getattr(ca, "aparell", None), "nom", None) or str(ca)
 
+    def _comp_aparell_exercise_count(app_id):
+        try:
+            app_id = int(app_id)
+        except Exception:
+            return 1
+        ca = next((item for item in aparells if int(getattr(item, "id", 0) or 0) == app_id), None)
+        if ca is None:
+            return 1
+        try:
+            return max(1, int(getattr(ca, "nombre_exercicis", 1) or 1))
+        except Exception:
+            return 1
+
     def _detail_row_id(row: dict):
         if row.get("_team_mode"):
             equip_marker = row.get("equip_id")
@@ -3990,7 +4030,11 @@ def compute_classificacio(competicio, cfg_obj):
             )
         if not items:
             return None
-        return {"type": "members_list", "label": str(section.get("label") or "Participants"), "items": items}
+        return {
+            "type": "members_list",
+            "label": str(section.get("label") or "Participants"),
+            "items": items,
+        }
 
     def _build_members_table_section(row: dict, section: dict):
         detail_rows = []
@@ -4033,6 +4077,7 @@ def compute_classificacio(competicio, cfg_obj):
         return {
             "type": str(section.get("type") or "members_table"),
             "label": str(section.get("label") or "Detall"),
+            "aparell_id": _normalize_positive_int(section.get("aparell_id")),
             "columns": _json_clone_value(detail_columns),
             "rows": detail_rows,
         }
@@ -4058,6 +4103,7 @@ def compute_classificacio(competicio, cfg_obj):
         return {
             "type": "team_metrics",
             "label": str(section.get("label") or "Notes equip"),
+            "aparell_id": _normalize_positive_int(section.get("aparell_id")),
             "columns": _json_clone_value(detail_columns),
             "rows": [
                 {
@@ -4074,6 +4120,7 @@ def compute_classificacio(competicio, cfg_obj):
         if ins_id is None:
             return None
         detail_columns = section.get("columns") or []
+        section_app_id = _normalize_positive_int(section.get("aparell_id"))
         row_defs = []
         seen_defs = set()
         for col in detail_columns:
@@ -4089,6 +4136,9 @@ def compute_classificacio(competicio, cfg_obj):
                 continue
             seen_defs.add(key)
             row_defs.append(key)
+        if not row_defs and section_app_id is not None:
+            for ex_idx in range(1, _comp_aparell_exercise_count(section_app_id) + 1):
+                row_defs.append((section_app_id, ex_idx))
         if not row_defs:
             return None
 
@@ -4139,6 +4189,7 @@ def compute_classificacio(competicio, cfg_obj):
         return {
             "type": "exercise_table",
             "label": str(section.get("label") or "Exercicis"),
+            "aparell_id": section_app_id,
             "columns": _json_clone_value(detail_columns),
             "rows": rows_out,
         }

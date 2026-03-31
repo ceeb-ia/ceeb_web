@@ -241,6 +241,22 @@
   .builder-status-banner {
     border-radius: 14px;
   }
+  .builder-save-errors {
+    white-space: pre-line;
+  }
+  .builder-error-target {
+    border-color: #dc2626 !important;
+    box-shadow: 0 0 0 0.12rem rgba(220, 38, 38, 0.16);
+  }
+  .builder-error-note {
+    margin-top: 0.3rem;
+    font-size: 0.78rem;
+    color: #b91c1c;
+  }
+  .builder-section.has-error {
+    outline: 2px solid rgba(220, 38, 38, 0.12);
+    outline-offset: 6px;
+  }
   .builder-subsection__head {
     display: flex;
     align-items: flex-start;
@@ -624,6 +640,7 @@
     <div id="saveMsg" class="alert alert-success py-2 px-3 mb-2" style="display:none;">
     Guardat correctament
   </div>
+  <div id="saveErrorsBox" class="alert alert-danger py-2 px-3 mb-2 builder-save-errors" style="display:none;"></div>
   <div class="row">
     <div class="col-12 col-lg-4 mb-3">
       <div class="card">
@@ -1131,11 +1148,11 @@
                       <div class="builder-subsection__head">
                         <div>
                           <p class="builder-subsection__title">Detall desplegable</p>
-                          <p class="builder-subsection__desc">Afegeix un segon nivell sota cada fila. En aquesta fase nomÃ©s estÃ  disponible per equips derivats d'individual.</p>
+                          <p class="builder-subsection__desc">Afegeix un segon nivell sota cada fila. Aquest detall es configura per seccions i, en les taules, per aparell.</p>
                         </div>
                       </div>
                       <div id="detailScopeHint" class="alert alert-secondary py-2 px-3 small mb-3">
-                        Disponible nomÃ©s a classificacions d'equips amb mode derivat d'individual.
+                        Configura seccions desplegables sota cada fila, limitades al tipus de classificació actual.
                       </div>
                       <div class="form-check mb-2">
                         <input class="form-check-input" type="checkbox" id="detailEnabled">
@@ -1410,6 +1427,7 @@
     btnAdd: document.getElementById("btnAdd"),
     btnSave: document.getElementById("btnSave"),
     btnDelete: document.getElementById("btnDelete"),
+    saveErrorsBox: document.getElementById("saveErrorsBox"),
     backToTop: document.getElementById("classif-builder-back-to-top"),
     templateSelect: document.getElementById("templateSelect"),
     btnTemplateRefresh: document.getElementById("btnTemplateRefresh"),
@@ -1626,6 +1644,140 @@
 
   function currentCfg() {
     return state.cfgs.find(x => x.id === state.selectedId);
+  }
+
+  function registerStaticErrorPaths() {
+    const map = [
+      [els.detailEnabled, "presentacio.detall.enabled"],
+      [els.detailDefaultOpen, "presentacio.detall.default_open"],
+      [els.iTopN, "presentacio.top_n"],
+      [els.cEmpats, "presentacio.mostrar_empats"],
+      [els.advancedJson, "schema"],
+    ];
+    map.forEach(([node, path]) => {
+      if (node && path) node.dataset.errorPath = path;
+    });
+    [
+      ["section-meta", "meta"],
+      ["section-particions", "particions"],
+      ["section-puntuacio", "puntuacio"],
+      ["section-desempat", "desempat"],
+      ["section-filtres", "filtres"],
+      ["section-presentacio", "presentacio"],
+    ].forEach(([id, path]) => {
+      const node = document.getElementById(id);
+      if (node && path) node.dataset.errorPath = path;
+    });
+  }
+
+  function clearBuilderSaveFeedback() {
+    if (els.saveErrorsBox) {
+      els.saveErrorsBox.style.display = "none";
+      els.saveErrorsBox.innerHTML = "";
+    }
+    document.querySelectorAll(".builder-error-note").forEach(node => node.remove());
+    document.querySelectorAll(".builder-error-target").forEach(node => node.classList.remove("builder-error-target"));
+    document.querySelectorAll(".builder-section.has-error").forEach(node => node.classList.remove("has-error"));
+  }
+
+  function builderSectionIdFromErrorPath(path) {
+    const value = String(path || "").trim();
+    if (value.startsWith("presentacio")) return "section-presentacio";
+    if (value.startsWith("filtres")) return "section-filtres";
+    if (value.startsWith("desempat")) return "section-desempat";
+    if (value.startsWith("puntuacio")) return "section-puntuacio";
+    if (value.startsWith("particions")) return "section-particions";
+    if (value.startsWith("equips") || value.startsWith("meta")) return "section-meta";
+    return "";
+  }
+
+  function normalizeSaveErrorDetails(rawDetails) {
+    return (Array.isArray(rawDetails) ? rawDetails : []).map(item => {
+      if (!item || typeof item !== "object") return null;
+      return {
+        path: String(item.path || "").trim(),
+        message: String(item.message || "").trim(),
+        section: String(item.section || "").trim() || "general",
+        severity: String(item.severity || "error").trim() || "error",
+      };
+    }).filter(item => item && item.message);
+  }
+
+  function findBestErrorNode(path) {
+    const target = String(path || "").trim();
+    if (!target) return null;
+    const exact = document.querySelector(`[data-error-path="${CSS.escape(target)}"]`);
+    if (exact) return exact;
+    let best = null;
+    let bestScore = -1;
+    document.querySelectorAll("[data-error-path]").forEach(node => {
+      const candidate = String(node.dataset.errorPath || "").trim();
+      if (!candidate) return;
+      if (!(target.startsWith(candidate) || candidate.startsWith(target))) return;
+      if (candidate.length > bestScore) {
+        best = node;
+        bestScore = candidate.length;
+      }
+    });
+    return best;
+  }
+
+  function appendErrorNote(node, message) {
+    if (!node || !message) return;
+    const note = document.createElement("div");
+    note.className = "builder-error-note";
+    note.textContent = message;
+    if (["INPUT", "SELECT", "TEXTAREA"].includes(String(node.tagName || "").toUpperCase()) && node.parentElement) {
+      node.parentElement.appendChild(note);
+    } else {
+      node.appendChild(note);
+    }
+  }
+
+  function renderBuilderSaveErrors(rawDetails, fallbackMessages) {
+    clearBuilderSaveFeedback();
+    const details = normalizeSaveErrorDetails(rawDetails);
+    const fallback = (Array.isArray(fallbackMessages) ? fallbackMessages : []).map(msg => String(msg || "").trim()).filter(Boolean);
+    if (els.saveErrorsBox) {
+      const lines = [];
+      if (details.length) {
+        lines.push(`No s'ha pogut guardar. ${details.length} error(s):`);
+        details.slice(0, 8).forEach((item, idx) => lines.push(`${idx + 1}. ${item.message}`));
+        if (details.length > 8) lines.push(`... i ${details.length - 8} errors més.`);
+      } else if (fallback.length) {
+        lines.push(`No s'ha pogut guardar. ${fallback.length} error(s):`);
+        fallback.slice(0, 8).forEach((msg, idx) => lines.push(`${idx + 1}. ${msg}`));
+        if (fallback.length > 8) lines.push(`... i ${fallback.length - 8} errors més.`);
+      }
+      if (lines.length) {
+        els.saveErrorsBox.style.display = "";
+        els.saveErrorsBox.textContent = lines.join("\n");
+      }
+    }
+
+    let firstTarget = null;
+    const source = details.length ? details : fallback.map(msg => ({ path: "", message: msg, section: "general", severity: "error" }));
+    source.forEach(item => {
+      const sectionId = builderSectionIdFromErrorPath(item.path || item.section);
+      if (sectionId) {
+        const sectionNode = document.getElementById(sectionId);
+        if (sectionNode) sectionNode.classList.add("has-error");
+      }
+      const node = findBestErrorNode(item.path);
+      if (node) {
+        node.classList.add("builder-error-target");
+        appendErrorNote(node, item.message);
+        if (!firstTarget) firstTarget = node;
+      } else if (!firstTarget && sectionId) {
+        firstTarget = document.getElementById(sectionId);
+      }
+    });
+
+    if (firstTarget) {
+      const targetSection = firstTarget.closest("[data-builder-section]");
+      if (targetSection && targetSection.id) setActiveBuilderNav(targetSection.id);
+      firstTarget.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
   }
 
   function normalizeContextCode(raw) {
@@ -2213,6 +2365,29 @@
     pushMany(((punt.aparells || {}).ids) || []);
     pushMany(Object.keys((punt.camps_per_aparell && typeof punt.camps_per_aparell === "object") ? punt.camps_per_aparell : {}));
     pushMany(Object.keys((punt.exercicis_per_aparell && typeof punt.exercicis_per_aparell === "object") ? punt.exercicis_per_aparell : {}));
+    return out;
+  }
+
+  function getSchemaReferencedAppIds(schema) {
+    const punt = schema && typeof schema === "object" && !Array.isArray(schema) ? (schema.puntuacio || {}) : {};
+    const presentacio = schema && typeof schema === "object" && !Array.isArray(schema) ? (schema.presentacio || {}) : {};
+    const detailCfg = presentacio && typeof presentacio === "object" && !Array.isArray(presentacio) ? (presentacio.detall || {}) : {};
+    const out = [];
+    const pushMany = rawIds => {
+      _uniquePositiveInts(rawIds).forEach(id => {
+        if (!out.includes(id)) out.push(id);
+      });
+    };
+    pushMany(((punt.aparells || {}).ids) || []);
+    pushMany(Object.keys((punt.camps_per_aparell && typeof punt.camps_per_aparell === "object") ? punt.camps_per_aparell : {}));
+    pushMany(Object.keys((punt.exercicis_per_aparell && typeof punt.exercicis_per_aparell === "object") ? punt.exercicis_per_aparell : {}));
+    pushMany((Array.isArray(detailCfg.sections) ? detailCfg.sections : []).map(section => section && typeof section === "object" ? section.aparell_id : null));
+    (Array.isArray(detailCfg.sections) ? detailCfg.sections : []).forEach(section => {
+      (((section || {}).columns) || []).forEach(col => {
+        const source = col && typeof col === "object" ? (col.source || {}) : {};
+        pushMany([source.aparell_id]);
+      });
+    });
     return out;
   }
 
@@ -4080,6 +4255,11 @@
     return sanitizeCompatibleAppIds(selected);
   }
 
+  function detailSectionRequiresApp(sectionType) {
+    const st = String(sectionType || "").trim();
+    return ["members_table", "entity_members_table", "exercise_table", "team_metrics"].includes(st);
+  }
+
   function detailSectionRawAppMode(sectionType) {
     const st = String(sectionType || "").trim();
     if (st === "team_metrics") return "team";
@@ -4091,23 +4271,66 @@
     return st === "exercise_table" || st === "team_metrics";
   }
 
-  function getDetailRawSourceForSection(sectionType) {
+  function getDetailSectionAppChoices(sectionType, selectedAppId = null) {
     const st = String(sectionType || "").trim();
     const requiredMode = detailSectionRawAppMode(st);
     const preferredIds = detailPreferredAppIds();
-    const preferredSet = new Set(preferredIds.map(id => String(id)));
+    const selectedId = Number(selectedAppId);
+    const preferredSet = new Set(
+      [...preferredIds, ...(Number.isFinite(selectedId) && selectedId > 0 ? [selectedId] : [])].map(id => String(id))
+    );
     const allChoices = getAppChoices([], { includeStale: false });
     const orderedChoices = [
       ...allChoices.filter(app => preferredSet.has(String(app.id))),
       ...allChoices.filter(app => !preferredSet.has(String(app.id))),
     ];
+    const out = [];
+    const seen = new Set();
 
+    orderedChoices.forEach(app => {
+      const appId = Number(app && app.id);
+      if (!Number.isFinite(appId)) return;
+      const unit = getAppCompetitionUnitById(appId);
+      if (requiredMode === "team" && unit !== "team") return;
+      if (requiredMode === "individual" && unit === "team") return;
+      if (seen.has(appId)) return;
+      seen.add(appId);
+      out.push(app);
+    });
+    return out;
+  }
+
+  function getDefaultDetailSectionAppId(sectionType) {
+    const choices = getDetailSectionAppChoices(sectionType);
+    const first = choices[0] || null;
+    const appId = Number(first && first.id);
+    return Number.isFinite(appId) && appId > 0 ? appId : null;
+  }
+
+  function getDetailRawSourceForSection(sectionType, preferredAppId = null) {
+    const st = String(sectionType || "").trim();
+    const preferred = Number(preferredAppId);
+    const orderedChoices = getDetailSectionAppChoices(st, preferred);
     for (const app of orderedChoices) {
       const appId = Number(app && app.id);
       if (!Number.isFinite(appId)) continue;
-      const unit = getAppCompetitionUnitById(appId);
-      if (requiredMode === "team" && unit !== "team") continue;
-      if (requiredMode === "individual" && unit === "team") continue;
+      if (Number.isFinite(preferred) && preferred > 0 && appId !== preferred) {
+        continue;
+      }
+      const fieldOptions = getFieldOptionsForApp(appId);
+      const firstField = fieldOptions.find(opt => String(opt?.code || "").trim());
+      if (!firstField) continue;
+      return {
+        aparell_id: appId,
+        exercici: 1,
+        camp: String(firstField.code || "").trim(),
+        jutges: { ids: [] },
+      };
+    }
+    if (Number.isFinite(preferred) && preferred > 0) return null;
+    for (const app of getDetailSectionAppChoices(st)) {
+      const appId = Number(app && app.id);
+      if (!Number.isFinite(appId)) continue;
       const fieldOptions = getFieldOptionsForApp(appId);
       const firstField = fieldOptions.find(opt => String(opt?.code || "").trim());
       if (!firstField) continue;
@@ -4127,14 +4350,14 @@
     return !!getDetailRawSourceForSection(sectionType);
   }
 
-  function canAddDetailRawColumn(sectionType) {
-    return !!getDetailRawSourceForSection(sectionType);
+  function canAddDetailRawColumn(sectionType, sectionAppId = null) {
+    return !!getDetailRawSourceForSection(sectionType, sectionAppId);
   }
 
-  function defaultDetailColumnsForSection(sectionType) {
+  function defaultDetailColumnsForSection(sectionType, sectionAppId = null) {
     const st = String(sectionType || "").trim();
     if (st === "exercise_table") {
-      const source = getDetailRawSourceForSection(st);
+      const source = getDetailRawSourceForSection(st, sectionAppId);
       return [
         { type:"builtin", key:"aparell_nom", label:"Aparell", align:"left" },
         { type:"builtin", key:"exercise_index", label:"Ex.", align:"left" },
@@ -4142,7 +4365,7 @@
       ];
     }
     if (st === "team_metrics") {
-      const source = getDetailRawSourceForSection(st);
+      const source = getDetailRawSourceForSection(st, sectionAppId);
       return source
         ? [{ type:"raw", key:"team_raw_1", label:"Total", align:"right", decimals:3, source }]
         : [];
@@ -4155,13 +4378,16 @@
     return [];
   }
 
-  function defaultDetailSection(sectionType) {
+  function defaultDetailSection(sectionType, preferredAppId = null) {
     const st = String(sectionType || "").trim();
     if (st === "members_list") return { type: "members_list", label: "Participants" };
-    if (st === "team_metrics") return { type: "team_metrics", label: "Notes equip", columns: defaultDetailColumnsForSection(st) };
-    if (st === "exercise_table") return { type: "exercise_table", label: "Exercicis", columns: defaultDetailColumnsForSection(st) };
-    if (st === "entity_members_table") return { type: "entity_members_table", label: "Participants", columns: defaultDetailColumnsForSection(st) };
-    return { type: "members_table", label: "Detall", columns: defaultDetailColumnsForSection("members_table") };
+    const appId = Number.isFinite(Number(preferredAppId)) && Number(preferredAppId) > 0
+      ? Number(preferredAppId)
+      : getDefaultDetailSectionAppId(st);
+    if (st === "team_metrics") return { type: "team_metrics", label: "Notes equip", aparell_id: appId, columns: defaultDetailColumnsForSection(st, appId) };
+    if (st === "exercise_table") return { type: "exercise_table", label: "Exercicis", aparell_id: appId, columns: defaultDetailColumnsForSection(st, appId) };
+    if (st === "entity_members_table") return { type: "entity_members_table", label: "Participants", aparell_id: appId, columns: defaultDetailColumnsForSection(st, appId) };
+    return { type: "members_table", label: "Detall", aparell_id: appId, columns: defaultDetailColumnsForSection("members_table", appId) };
   }
 
   function defaultDetailSectionForCurrentContext() {
@@ -4198,9 +4424,9 @@
     return normalizeDetailColumnsForSection(only.columns || [], "members_table");
   }
 
-  function normalizeDetailColumnsForSection(rawCols, sectionType) {
+  function normalizeDetailColumnsForSection(rawCols, sectionType, sectionAppId = null) {
     const cols = Array.isArray(rawCols) ? rawCols : [];
-    const defaults = defaultDetailColumnsForSection(sectionType);
+    const defaults = defaultDetailColumnsForSection(sectionType, sectionAppId);
     const allowedBuiltins = new Set(detailAllowedBuiltinKeysForSection(sectionType));
     if (!cols.length) return defaults;
     const out = [];
@@ -4229,7 +4455,9 @@
           align: String(c.align || "right"),
           decimals: Number.isFinite(Number(c.decimals)) ? Number(c.decimals) : 3,
           source: {
-            aparell_id: Number.isFinite(Number(src.aparell_id)) ? Number(src.aparell_id) : null,
+            aparell_id: Number.isFinite(Number(sectionAppId))
+              ? Number(sectionAppId)
+              : (Number.isFinite(Number(src.aparell_id)) ? Number(src.aparell_id) : null),
             exercici: Math.max(1, Number(src.exercici || 1) || 1),
             camp: String(src.camp || ""),
             jutges: { ids: judgeIds },
@@ -4269,7 +4497,21 @@
       if (!section || typeof section !== "object") return;
       const type = String(section.type || "").trim();
       if (!allowedTypes.has(type)) return;
-      const base = defaultDetailSection(type);
+      const sectionAppIdRaw = Number(section.aparell_id);
+      const rawAppIds = Array.from(new Set(
+        (Array.isArray(section.columns) ? section.columns : [])
+          .filter(col => col && String(col.type || "builtin").toLowerCase() === "raw")
+          .map(col => Number(col?.source?.aparell_id))
+          .filter(appId => Number.isFinite(appId) && appId > 0)
+      ));
+      const hasMixedRawApps =
+        rawAppIds.length > 1 ||
+        ((Number.isFinite(sectionAppIdRaw) && sectionAppIdRaw > 0) && rawAppIds.some(appId => appId !== sectionAppIdRaw));
+      const inferredAppId = Number.isFinite(sectionAppIdRaw) && sectionAppIdRaw > 0
+        ? sectionAppIdRaw
+        : (rawAppIds.length === 1 ? rawAppIds[0] : null);
+      const fallbackAppId = inferredAppId || getDefaultDetailSectionAppId(type);
+      const base = defaultDetailSection(type, inferredAppId);
       const normalized = {
         ...base,
         ...section,
@@ -4277,18 +4519,39 @@
         label: String(section.label || base.label || "").trim() || base.label,
       };
       if (Array.isArray(base.columns) || Array.isArray(section.columns)) {
-        normalized.columns = normalizeDetailColumnsForSection(section.columns || base.columns || [], type);
+        normalized.columns = normalizeDetailColumnsForSection(
+          section.columns || base.columns || [],
+          type,
+          hasMixedRawApps ? null : inferredAppId
+        );
       } else {
         delete normalized.columns;
+      }
+      if (detailSectionRequiresApp(type)) {
+        normalized.aparell_id = Number.isFinite(inferredAppId) && inferredAppId > 0 ? inferredAppId : null;
+        if (!normalized.aparell_id && !rawAppIds.length && Number.isFinite(fallbackAppId) && fallbackAppId > 0) {
+          normalized.aparell_id = fallbackAppId;
+        }
+      } else {
+        delete normalized.aparell_id;
       }
       out.push(normalized);
     });
     if (out.length) return out;
     if (Array.isArray(detailCfg.columnes) && allowedTypes.has("members_table")) {
+      const legacyAppIds = Array.from(new Set(
+        detailCfg.columnes
+          .filter(col => col && String(col.type || "builtin").toLowerCase() === "raw")
+          .map(col => Number(col?.source?.aparell_id))
+          .filter(appId => Number.isFinite(appId) && appId > 0)
+      ));
+      const inferredAppId = legacyAppIds.length === 1 ? legacyAppIds[0] : null;
+      const fallbackAppId = inferredAppId || getDefaultDetailSectionAppId("members_table");
       return [{
         type: "members_table",
         label: "Detall",
-        columns: normalizeDetailColumnsForSection(detailCfg.columnes, "members_table"),
+        aparell_id: Number.isFinite(inferredAppId) && inferredAppId > 0 ? inferredAppId : (!legacyAppIds.length && Number.isFinite(fallbackAppId) && fallbackAppId > 0 ? fallbackAppId : null),
+        columns: normalizeDetailColumnsForSection(detailCfg.columnes, "members_table", legacyAppIds.length > 1 ? null : inferredAppId),
       }];
     }
     return [];
@@ -4298,6 +4561,60 @@
     const id = Number(appId);
     if (!Number.isFinite(id)) return null;
     return (APARELLS || []).find(a => Number(a.id) === id) || null;
+  }
+
+  function detailSectionAppName(appId) {
+    const app = getAparellById(appId);
+    return String(app?.nom || "").trim();
+  }
+
+  function getDetailSectionRawAppIds(section) {
+    const out = [];
+    (Array.isArray(section?.columns) ? section.columns : []).forEach(col => {
+      if (!col || String(col.type || "builtin").toLowerCase() !== "raw") return;
+      const appId = Number(col?.source?.aparell_id);
+      if (Number.isFinite(appId) && appId > 0 && !out.includes(appId)) out.push(appId);
+    });
+    return out;
+  }
+
+  function getDetailSectionSplitInfo(section) {
+    const appIds = getDetailSectionRawAppIds(section);
+    return {
+      appIds,
+      needsSplit: appIds.length > 1,
+    };
+  }
+
+  function splitDetailSectionByApp(section) {
+    const rawColumns = (Array.isArray(section?.columns) ? section.columns : []).filter(col => col && String(col.type || "builtin").toLowerCase() === "raw");
+    const builtinColumns = (Array.isArray(section?.columns) ? section.columns : []).filter(col => col && String(col.type || "builtin").toLowerCase() !== "raw");
+    const grouped = new Map();
+    rawColumns.forEach(col => {
+      const appId = Number(col?.source?.aparell_id);
+      if (!Number.isFinite(appId) || appId <= 0) return;
+      if (!grouped.has(appId)) grouped.set(appId, []);
+      grouped.get(appId).push(JSON.parse(JSON.stringify(col)));
+    });
+    if (!grouped.size) return [section];
+    return Array.from(grouped.entries()).map(([appId, cols]) => {
+      const appName = detailSectionAppName(appId) || `Aparell ${appId}`;
+      return {
+        ...JSON.parse(JSON.stringify(section)),
+        label: `${String(section?.label || "Detall")} · ${appName}`,
+        aparell_id: appId,
+        columns: [
+          ...JSON.parse(JSON.stringify(builtinColumns)),
+          ...cols.map(col => ({
+            ...col,
+            source: {
+              ...(col.source || {}),
+              aparell_id: appId,
+            },
+          })),
+        ],
+      };
+    });
   }
 
   function getFieldOptionsForApp(appId) {
@@ -4365,6 +4682,20 @@
     return getAppChoices([], { includeStale: false }).map(app => `
       <option value="${esc(app.id)}" ${Number(app.id) === Number(selectedAppId) ? "selected" : ""}>${esc(app.nom)}</option>
     `).join("");
+  }
+
+  function buildDetailSectionAppOptionsHTML(sectionType, selectedAppId) {
+    const selected = Number(selectedAppId);
+    const options = getDetailSectionAppChoices(sectionType, selected);
+    let html = '<option value="">Selecciona aparell</option>';
+    options.forEach(app => {
+      html += `<option value="${esc(app.id)}" ${Number(app.id) === selected ? "selected" : ""}>${esc(app.nom)}</option>`;
+    });
+    if (Number.isFinite(selected) && selected > 0 && !options.some(app => Number(app.id) === selected)) {
+      const label = detailSectionAppName(selected) || `Aparell ${selected}`;
+      html += `<option value="${esc(selected)}" selected>${esc(label)}</option>`;
+    }
+    return html;
   }
 
   function buildTieAppScopeOptionsHTML(selectedScope) {
@@ -4686,11 +5017,11 @@
     return;
     if (isDetailConfigAvailable()) {
       els.detailScopeHint.className = "alert alert-info py-2 px-3 small mb-3";
-      els.detailScopeHint.textContent = "El detall desplegable es mostrarÃ  sota cada equip i renderitzarÃ  una fila per membre.";
+      els.detailScopeHint.textContent = "El detall desplegable es mostrara sota cada equip i renderitzara una fila per membre.";
       return;
     }
     els.detailScopeHint.className = "alert alert-secondary py-2 px-3 small mb-3";
-    els.detailScopeHint.textContent = "Disponible nomÃ©s a classificacions d'equips amb mode derivat d'individual.";
+    els.detailScopeHint.textContent = "Disponible nomes a classificacions d'equips amb mode derivat d'individual.";
   }
 
   function setDetailConfigAlert(message) {
@@ -4829,8 +5160,8 @@
               </select>
             </div>
             <div class="col-12 col-md-3 mb-2 d-flex align-items-end justify-content-end gap-1">
-              <button type="button" class="btn btn-sm btn-outline-secondary" data-act="up" ${enabled ? "" : "disabled"}>â†‘</button>
-              <button type="button" class="btn btn-sm btn-outline-secondary" data-act="down" ${enabled ? "" : "disabled"}>â†“</button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" data-act="up" ${enabled ? "" : "disabled"}>Up</button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" data-act="down" ${enabled ? "" : "disabled"}>Down</button>
               <button type="button" class="btn btn-sm btn-outline-danger" data-act="del" ${enabled ? "" : "disabled"}>Eliminar</button>
             </div>
           </div>
@@ -4867,8 +5198,8 @@
               <input class="form-control form-control-sm" data-k="decimals" type="number" min="0" max="6" value="${esc(col.decimals ?? "")}" ${enabled ? "" : "disabled"}>
             </div>
             <div class="col-12 col-md-1 mb-2 d-flex align-items-end justify-content-end gap-1">
-              <button type="button" class="btn btn-sm btn-outline-secondary" data-act="up" ${enabled ? "" : "disabled"}>â†‘</button>
-              <button type="button" class="btn btn-sm btn-outline-secondary" data-act="down" ${enabled ? "" : "disabled"}>â†“</button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" data-act="up" ${enabled ? "" : "disabled"}>Up</button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" data-act="down" ${enabled ? "" : "disabled"}>Down</button>
               <button type="button" class="btn btn-sm btn-outline-danger" data-act="del" ${enabled ? "" : "disabled"}>-</button>
             </div>
           </div>
@@ -5174,6 +5505,361 @@
         });
         section.columns = normalizeDetailColumnsForSection(cols, sectionType);
       }
+      out.push(section);
+    });
+    return out;
+  }
+
+  function renderBuilderSaveErrors(rawDetails, fallbackMessages) {
+    clearBuilderSaveFeedback();
+    const details = normalizeSaveErrorDetails(rawDetails);
+    const fallback = (Array.isArray(fallbackMessages) ? fallbackMessages : []).map(msg => String(msg || "").trim()).filter(Boolean);
+    if (els.saveErrorsBox) {
+      const lines = [];
+      if (details.length) {
+        lines.push(`No s'ha pogut guardar. ${details.length} error(s):`);
+        details.slice(0, 8).forEach((item, idx) => lines.push(`${idx + 1}. ${item.message}`));
+        if (details.length > 8) lines.push(`... i ${details.length - 8} errors mes.`);
+      } else if (fallback.length) {
+        lines.push(`No s'ha pogut guardar. ${fallback.length} error(s):`);
+        fallback.slice(0, 8).forEach((msg, idx) => lines.push(`${idx + 1}. ${msg}`));
+        if (fallback.length > 8) lines.push(`... i ${fallback.length - 8} errors mes.`);
+      }
+      if (lines.length) {
+        els.saveErrorsBox.style.display = "";
+        els.saveErrorsBox.textContent = lines.join("\n");
+      }
+    }
+
+    let firstTarget = null;
+    const source = details.length ? details : fallback.map(msg => ({ path: "", message: msg, section: "general", severity: "error" }));
+    source.forEach(item => {
+      const sectionId = builderSectionIdFromErrorPath(item.path || item.section);
+      if (sectionId) {
+        const sectionNode = document.getElementById(sectionId);
+        if (sectionNode) sectionNode.classList.add("has-error");
+      }
+      const node = findBestErrorNode(item.path);
+      if (node) {
+        node.classList.add("builder-error-target");
+        appendErrorNote(node, item.message);
+        if (!firstTarget) firstTarget = node;
+      } else if (!firstTarget && sectionId) {
+        firstTarget = document.getElementById(sectionId);
+      }
+    });
+
+    if (firstTarget) {
+      const targetSection = firstTarget.closest("[data-builder-section]");
+      if (targetSection && targetSection.id) setActiveBuilderNav(targetSection.id);
+      firstTarget.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }
+
+  function renderDetailContextualCopy() {
+    if (!els.detailScopeHint) return;
+    const tipus = currentTipus();
+    const teamMode = getEquipsUiState().effectiveTeamMode || TEAM_MODE_DERIVED;
+    els.detailScopeHint.className = "alert alert-info py-2 px-3 small mb-3";
+    if (tipus === "individual") {
+      els.detailScopeHint.textContent = "El detall desplegable mostrara els exercicis del participant segons les seccions configurades.";
+      return;
+    }
+    if (tipus === "entitat") {
+      els.detailScopeHint.textContent = "El detall desplegable mostrara els participants agregats sota cada entitat.";
+      return;
+    }
+    if (tipus === "equips" && teamMode === TEAM_MODE_NATIVE) {
+      els.detailScopeHint.textContent = "El detall desplegable mostrara la llista de membres i les metriques propies de l'equip.";
+      return;
+    }
+    if (tipus === "equips") {
+      els.detailScopeHint.textContent = "El detall desplegable mostrara membres i detall per participant dins de cada equip.";
+      return;
+    }
+    els.detailScopeHint.className = "alert alert-secondary py-2 px-3 small mb-3";
+    els.detailScopeHint.textContent = "Aquest tipus de classificacio no admet detall desplegable.";
+  }
+
+  function renderDetailSectionColumnsUI(sectionBox, sectionType, rawCols, enabled, sectionIdx, sectionAppId) {
+    const cols = normalizeDetailColumnsForSection(rawCols, sectionType, sectionAppId);
+    const builtins = detailAllowedBuiltinKeysForSection(sectionType).map(key => {
+      const labels = { participant: "Participant", entitat_nom: "Entitat", exercise_index: "Ex.", aparell_nom: "Aparell" };
+      return [key, labels[key] || key];
+    });
+    const body = sectionBox.querySelector("[data-k='columns_box']");
+    if (!body) return;
+    body.innerHTML = "";
+
+    cols.forEach((col, idx) => {
+      const colPath = `presentacio.detall.sections[${sectionIdx}].columns[${idx}]`;
+      const row = document.createElement("div");
+      row.className = "border rounded p-2 mb-2 col-row";
+      row.setAttribute("data-type", col.type || "builtin");
+      row.dataset.errorPath = colPath;
+
+      if ((col.type || "builtin") === "raw") {
+        const src = (col.source && typeof col.source === "object") ? col.source : {};
+        const appId = Number(sectionAppId || src.aparell_id || 0);
+        const camp = String(src.camp || "");
+        const ex = Math.max(1, Number(src.exercici || 1) || 1);
+        const judgeIds = _uniquePositiveInts((((src.jutges || {}).ids) || []));
+        row.innerHTML = `
+          <input type="hidden" data-k="app_id" value="${esc(String(appId || ""))}">
+          <div class="row">
+            <div class="col-12 col-md-2 mb-2"><label class="small text-muted mb-1">Tipus</label><input class="form-control form-control-sm" value="Camp" disabled></div>
+            <div class="col-12 col-md-2 mb-2"><label class="small text-muted mb-1">Key</label><input class="form-control form-control-sm" data-k="key" data-error-path="${esc(colPath + ".key")}" value="${esc(col.key || `detail_raw_${idx+1}`)}" ${enabled ? "" : "disabled"}></div>
+            <div class="col-12 col-md-3 mb-2"><label class="small text-muted mb-1">Etiqueta</label><input class="form-control form-control-sm" data-k="label" data-error-path="${esc(colPath + ".label")}" value="${esc(col.label || "")}" ${enabled ? "" : "disabled"}></div>
+            <div class="col-12 col-md-3 mb-2"><label class="small text-muted mb-1">Aparell</label><input class="form-control form-control-sm" value="${esc(detailSectionAppName(appId) || "")}" disabled></div>
+            <div class="col-6 col-md-1 mb-2"><label class="small text-muted mb-1">Dec</label><input class="form-control form-control-sm" data-k="decimals" data-error-path="${esc(colPath + ".decimals")}" type="number" min="0" max="6" value="${esc(col.decimals ?? 3)}" ${enabled ? "" : "disabled"}></div>
+            <div class="col-6 col-md-1 mb-2"><label class="small text-muted mb-1">Align</label><select class="form-control form-control-sm" data-k="align" data-error-path="${esc(colPath + ".align")}" ${enabled ? "" : "disabled"}><option value="right" ${(col.align || "right") === "right" ? "selected" : ""}>R</option><option value="left" ${(col.align || "") === "left" ? "selected" : ""}>L</option><option value="center" ${(col.align || "") === "center" ? "selected" : ""}>C</option></select></div>
+          </div>
+          <div class="row">
+            <div class="col-12 col-md-5 mb-2"><label class="small text-muted mb-1">Camp</label><select class="form-control form-control-sm" data-k="camp" data-error-path="${esc(colPath + ".source.camp")}" ${enabled ? "" : "disabled"}>${buildRawCampOptionsHTML(appId, camp)}</select></div>
+            <div class="col-12 col-md-2 mb-2"><label class="small text-muted mb-1">Exercici</label><select class="form-control form-control-sm" data-k="exercici" data-error-path="${esc(colPath + ".source.exercici")}" ${enabled ? "" : "disabled"}>${buildExerciciOptionsHTML(appId, ex)}</select></div>
+            <div class="col-12 col-md-2 mb-2" data-k="judge_wrap" style="display:none;"><label class="small text-muted mb-1">Jutges</label><select class="form-control form-control-sm" data-k="judge_ids" data-error-path="${esc(colPath + ".source.jutges.ids")}" multiple size="3" ${enabled ? "" : "disabled"}></select></div>
+            <div class="col-12 col-md-3 mb-2 d-flex align-items-end justify-content-end gap-1"><button type="button" class="btn btn-sm btn-outline-secondary" data-act="up" ${enabled ? "" : "disabled"}>Up</button><button type="button" class="btn btn-sm btn-outline-secondary" data-act="down" ${enabled ? "" : "disabled"}>Down</button><button type="button" class="btn btn-sm btn-outline-danger" data-act="del" ${enabled ? "" : "disabled"}>Eliminar</button></div>
+          </div>
+        `;
+        refreshRawControls(row, judgeIds);
+      } else {
+        const key = String(col.key || builtins[0]?.[0] || "participant");
+        row.innerHTML = `
+          <div class="row">
+            <div class="col-12 col-md-2 mb-2"><label class="small text-muted mb-1">Tipus</label><input class="form-control form-control-sm" value="Builtin" disabled></div>
+            <div class="col-12 col-md-3 mb-2"><label class="small text-muted mb-1">Camp</label><select class="form-control form-control-sm" data-k="key" data-error-path="${esc(colPath + ".key")}" ${enabled ? "" : "disabled"}>${builtins.map(([k,l]) => `<option value="${k}" ${k===key ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+            <div class="col-12 col-md-3 mb-2"><label class="small text-muted mb-1">Etiqueta</label><input class="form-control form-control-sm" data-k="label" data-error-path="${esc(colPath + ".label")}" value="${esc(col.label || "")}" ${enabled ? "" : "disabled"}></div>
+            <div class="col-6 col-md-2 mb-2"><label class="small text-muted mb-1">Align</label><select class="form-control form-control-sm" data-k="align" data-error-path="${esc(colPath + ".align")}" ${enabled ? "" : "disabled"}><option value="left" ${(col.align || "left") === "left" ? "selected" : ""}>L</option><option value="right" ${(col.align || "") === "right" ? "selected" : ""}>R</option><option value="center" ${(col.align || "") === "center" ? "selected" : ""}>C</option></select></div>
+            <div class="col-6 col-md-1 mb-2"><label class="small text-muted mb-1">Dec</label><input class="form-control form-control-sm" data-k="decimals" data-error-path="${esc(colPath + ".decimals")}" type="number" min="0" max="6" value="${esc(col.decimals ?? "")}" ${enabled ? "" : "disabled"}></div>
+            <div class="col-12 col-md-1 mb-2 d-flex align-items-end justify-content-end gap-1"><button type="button" class="btn btn-sm btn-outline-secondary" data-act="up" ${enabled ? "" : "disabled"}>Up</button><button type="button" class="btn btn-sm btn-outline-secondary" data-act="down" ${enabled ? "" : "disabled"}>Down</button><button type="button" class="btn btn-sm btn-outline-danger" data-act="del" ${enabled ? "" : "disabled"}>-</button></div>
+          </div>
+        `;
+      }
+
+      row.querySelectorAll("input,select").forEach(el => {
+        el.addEventListener("change", () => {
+          if (row.getAttribute("data-type") === "raw" && el.matches('[data-k="camp"]')) {
+            refreshRawControls(row);
+          }
+          syncAdvancedFromUI();
+        });
+        el.addEventListener("input", syncAdvancedFromUI);
+      });
+      row.querySelector('[data-act="del"]').addEventListener("click", () => {
+        const sections = readDetailSectionsUI(true);
+        const curSection = sections[sectionIdx] || {};
+        const cur = normalizeDetailColumnsForSection((curSection.columns || []), sectionType, curSection.aparell_id);
+        cur.splice(idx, 1);
+        sections[sectionIdx].columns = cur;
+        renderDetailSectionsUI(sections);
+        syncAdvancedFromUI();
+      });
+      row.querySelector('[data-act="up"]').addEventListener("click", () => {
+        if (idx <= 0) return;
+        const sections = readDetailSectionsUI(true);
+        const curSection = sections[sectionIdx] || {};
+        const cur = normalizeDetailColumnsForSection((curSection.columns || []), sectionType, curSection.aparell_id);
+        const t = cur[idx - 1]; cur[idx - 1] = cur[idx]; cur[idx] = t;
+        sections[sectionIdx].columns = cur;
+        renderDetailSectionsUI(sections);
+        syncAdvancedFromUI();
+      });
+      row.querySelector('[data-act="down"]').addEventListener("click", () => {
+        const sections = readDetailSectionsUI(true);
+        const curSection = sections[sectionIdx] || {};
+        const cur = normalizeDetailColumnsForSection((curSection.columns || []), sectionType, curSection.aparell_id);
+        if (idx >= cur.length - 1) return;
+        const t = cur[idx + 1]; cur[idx + 1] = cur[idx]; cur[idx] = t;
+        sections[sectionIdx].columns = cur;
+        renderDetailSectionsUI(sections);
+        syncAdvancedFromUI();
+      });
+      body.appendChild(row);
+    });
+  }
+
+  function renderDetailSectionsUI(rawSections) {
+    if (!els.detailSectionsBox) return;
+    const sections = normalizeDetailSectionsFromSchema({ sections: rawSections });
+    const enabled = isDetailConfigAvailable() && !!els.detailEnabled?.checked;
+    els.detailSectionsBox.innerHTML = "";
+
+    sections.forEach((section, idx) => {
+      const sectionPath = `presentacio.detall.sections[${idx}]`;
+      const sectionAppId = Number(section?.aparell_id || 0);
+      const splitInfo = getDetailSectionSplitInfo(section);
+      const box = document.createElement("div");
+      box.className = "border rounded p-2 mb-3";
+      box.setAttribute("data-section-idx", String(idx));
+      box.setAttribute("data-section-type", String(section.type || ""));
+      box.dataset.errorPath = sectionPath;
+      const hasColumns = Array.isArray(section.columns);
+      const requiresApp = detailSectionRequiresApp(section.type);
+      const canAddRaw = canAddDetailRawColumn(section.type, sectionAppId);
+      const appHelp = requiresApp && hasColumns && !sectionAppId
+        ? `<div class="small text-muted mb-2">Selecciona un aparell per poder afegir i validar les columnes raw d'aquesta seccio.</div>`
+        : "";
+      const splitWarning = splitInfo.needsSplit
+        ? `<div class="alert alert-warning py-2 px-3 small mb-2" data-error-path="${esc(sectionPath + ".columns")}">Aquesta seccio barreja columnes raw de diversos aparells. Divideix-la en una seccio per aparell abans de desar.</div>`
+        : "";
+      const appSelector = requiresApp
+        ? `<div class="col-12 col-md-4 mb-2"><label class="small text-muted mb-1">Aparell</label><select class="form-control form-control-sm" data-k="section_app_id" data-error-path="${esc(sectionPath + ".aparell_id")}" ${enabled && !splitInfo.needsSplit ? "" : "disabled"}>${buildDetailSectionAppOptionsHTML(section.type, sectionAppId)}</select></div>`
+        : "";
+      box.innerHTML = `
+        <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+          <div class="flex-fill">
+            <div class="small text-muted mb-1">Seccio</div>
+            <div class="font-weight-bold">${esc(detailSectionChoices().find(x => x.type === section.type)?.label || section.type)}</div>
+          </div>
+          <div class="d-flex gap-1">
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-act="up" ${enabled ? "" : "disabled"}>Up</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-act="down" ${enabled ? "" : "disabled"}>Down</button>
+            <button type="button" class="btn btn-sm btn-outline-danger" data-act="del" ${enabled ? "" : "disabled"}>Eliminar</button>
+          </div>
+        </div>
+        <div class="row">
+          <div class="col-12 col-md-4 mb-2"><label class="small text-muted mb-1">Tipus</label><input class="form-control form-control-sm" value="${esc(detailSectionChoices().find(x => x.type === section.type)?.label || section.type)}" disabled></div>
+          ${appSelector}
+          <div class="col-12 ${requiresApp ? "col-md-4" : "col-md-8"} mb-2"><label class="small text-muted mb-1">Etiqueta</label><input class="form-control form-control-sm" data-k="label" data-error-path="${esc(sectionPath + ".label")}" value="${esc(section.label || "")}" ${enabled ? "" : "disabled"}></div>
+        </div>
+        ${splitWarning}
+        ${hasColumns ? `${appHelp}<div class="d-flex flex-wrap gap-2 mb-2"><button type="button" class="btn btn-sm btn-outline-primary" data-act="add_builtin" ${enabled ? "" : "disabled"}>+ Builtin</button><button type="button" class="btn btn-sm btn-outline-primary" data-act="add_raw" ${(enabled && canAddRaw && !splitInfo.needsSplit) ? "" : "disabled"}>+ Camp</button>${splitInfo.needsSplit ? `<button type="button" class="btn btn-sm btn-outline-warning" data-act="split" ${enabled ? "" : "disabled"}>Dividir per aparell</button>` : ""}</div>${!canAddRaw && !splitInfo.needsSplit ? `<div class="small text-muted mb-2">Cal un aparell compatible amb camps scoreables per afegir columnes raw en aquesta seccio.</div>` : ""}<div data-k="columns_box" data-error-path="${esc(sectionPath + ".columns")}"></div>` : `<div class="small text-muted">Aquesta seccio no necessita columnes configurables.</div>`}
+      `;
+      box.querySelector('[data-k="label"]').addEventListener("input", syncAdvancedFromUI);
+      const appSelect = box.querySelector('[data-k="section_app_id"]');
+      if (appSelect) {
+        appSelect.addEventListener("change", async () => {
+          const cur = readDetailSectionsUI(true);
+          const currentSection = cur[idx] || {};
+          const prevAppId = Number(currentSection.aparell_id || 0);
+          const nextAppId = Number(appSelect.value || 0);
+          if (prevAppId === nextAppId) {
+            syncAdvancedFromUI();
+            return;
+          }
+          const currentColumns = Array.isArray(currentSection.columns) ? currentSection.columns : [];
+          const hasRawColumns = currentColumns.some(col => String(col?.type || "builtin") === "raw");
+          if (hasRawColumns) {
+            const accepted = await showConfirm("Canviar l'aparell eliminara les columnes raw incompatibles d'aquesta seccio. Vols continuar?");
+            if (!accepted) {
+              appSelect.value = prevAppId ? String(prevAppId) : "";
+              return;
+            }
+          }
+          currentSection.aparell_id = Number.isFinite(nextAppId) && nextAppId > 0 ? nextAppId : null;
+          currentSection.columns = normalizeDetailColumnsForSection(
+            currentColumns.filter(col => String(col?.type || "builtin") !== "raw"),
+            currentSection.type,
+            currentSection.aparell_id
+          );
+          cur[idx] = currentSection;
+          renderDetailSectionsUI(cur);
+          syncAdvancedFromUI();
+        });
+      }
+      box.querySelector('[data-act="del"]').addEventListener("click", () => {
+        const cur = readDetailSectionsUI(true);
+        cur.splice(idx, 1);
+        renderDetailSectionsUI(cur);
+        syncAdvancedFromUI();
+      });
+      box.querySelector('[data-act="up"]').addEventListener("click", () => {
+        if (idx <= 0) return;
+        const cur = readDetailSectionsUI(true);
+        const t = cur[idx - 1]; cur[idx - 1] = cur[idx]; cur[idx] = t;
+        renderDetailSectionsUI(cur);
+        syncAdvancedFromUI();
+      });
+      box.querySelector('[data-act="down"]').addEventListener("click", () => {
+        const cur = readDetailSectionsUI(true);
+        if (idx >= cur.length - 1) return;
+        const t = cur[idx + 1]; cur[idx + 1] = cur[idx]; cur[idx] = t;
+        renderDetailSectionsUI(cur);
+        syncAdvancedFromUI();
+      });
+      if (hasColumns) {
+        const splitBtn = box.querySelector('[data-act="split"]');
+        if (splitBtn) {
+          splitBtn.addEventListener("click", () => {
+            const cur = readDetailSectionsUI(true);
+            const replacement = splitDetailSectionByApp(cur[idx] || {});
+            if (!replacement.length) return;
+            cur.splice(idx, 1, ...replacement);
+            renderDetailSectionsUI(cur);
+            syncAdvancedFromUI();
+          });
+        }
+        box.querySelector('[data-act="add_builtin"]').addEventListener("click", () => {
+          const cur = readDetailSectionsUI(true);
+          const builtins = detailAllowedBuiltinKeysForSection(section.type);
+          const used = new Set((((cur[idx] || {}).columns) || []).filter(x => String(x?.type || "builtin") === "builtin").map(x => String(x.key || "")));
+          const nextKey = builtins.find(key => !used.has(key)) || builtins[0];
+          if (!nextKey) return;
+          const labels = { participant: "Participant", entitat_nom: "Entitat", exercise_index: "Ex.", aparell_nom: "Aparell" };
+          cur[idx].columns = [...((((cur[idx] || {}).columns) || [])), { type: "builtin", key: nextKey, label: labels[nextKey] || nextKey, align: "left" }];
+          renderDetailSectionsUI(cur);
+          syncAdvancedFromUI();
+        });
+        box.querySelector('[data-act="add_raw"]').addEventListener("click", () => {
+          const cur = readDetailSectionsUI(true);
+          const currentSection = cur[idx] || {};
+          const currentAppId = Number(currentSection.aparell_id || 0);
+          const source = getDetailRawSourceForSection(section.type, currentAppId);
+          if (!source) {
+            setDetailConfigAlert("Selecciona un aparell compatible amb camps scoreables abans d'afegir una columna raw.");
+            return;
+          }
+          cur[idx].aparell_id = Number(source.aparell_id || currentAppId || 0) || null;
+          cur[idx].columns = [...((((cur[idx] || {}).columns) || [])), { type: "raw", key: `detail_raw_${((((cur[idx] || {}).columns) || []).length + 1)}`, label: "Detall", align: "right", decimals: 3, source: { ...source, aparell_id: cur[idx].aparell_id } }];
+          renderDetailSectionsUI(cur);
+          syncAdvancedFromUI();
+        });
+        renderDetailSectionColumnsUI(box, section.type, section.columns || [], enabled, idx, sectionAppId);
+      }
+      els.detailSectionsBox.appendChild(box);
+    });
+  }
+
+  function readDetailSectionsUI(includeInvalid) {
+    const out = [];
+    document.querySelectorAll("#detailSectionsBox [data-section-idx]").forEach(sectionBox => {
+      const sectionType = String(sectionBox.getAttribute("data-section-type") || "").trim();
+      if (!sectionType) return;
+      const section = {
+        type: sectionType,
+        label: String(sectionBox.querySelector('[data-k="label"]')?.value || "").trim() || (defaultDetailSection(sectionType).label || sectionType),
+      };
+      const sectionAppIdRaw = Number(sectionBox.querySelector('[data-k="section_app_id"]')?.value || 0);
+      const sectionAppId = Number.isFinite(sectionAppIdRaw) && sectionAppIdRaw > 0 ? sectionAppIdRaw : null;
+      if (detailSectionRequiresApp(sectionType)) section.aparell_id = sectionAppId;
+      const columnsHost = sectionBox.querySelector("[data-k='columns_box']");
+      if (columnsHost) {
+        const cols = [];
+        columnsHost.querySelectorAll(".col-row").forEach((row, idx) => {
+          const type = row.getAttribute("data-type") || "builtin";
+          const key = String(row.querySelector('[data-k="key"]')?.value || "").trim();
+          const label = String(row.querySelector('[data-k="label"]')?.value || "").trim();
+          const align = String(row.querySelector('[data-k="align"]')?.value || (type === "raw" ? "right" : "left")).trim();
+          const decRaw = String(row.querySelector('[data-k="decimals"]')?.value || "").trim();
+          const decimals = decRaw === "" ? null : Number(decRaw);
+          if (type === "raw") {
+            const appId = Number(sectionAppId || row.querySelector('[data-k="app_id"]')?.value);
+            const ex = Math.max(1, Number(row.querySelector('[data-k="exercici"]')?.value || 1));
+            const camp = String(row.querySelector('[data-k="camp"]')?.value || "").trim();
+            const judgeIds = _uniquePositiveInts(Array.from(row.querySelector('[data-k="judge_ids"]')?.selectedOptions || []).map(o => Number(o.value)));
+            if (!includeInvalid && (!Number.isFinite(appId) || !getAparellById(appId) || !camp || !isRealFieldForApp(appId, camp))) return;
+            cols.push({ type: "raw", key: key || `detail_raw_${idx + 1}`, label: label || key || `detail_raw_${idx + 1}`, align: ["left","right","center"].includes(align) ? align : "right", decimals: Number.isFinite(decimals) ? Math.max(0, Math.min(6, decimals)) : 3, source: { aparell_id: Number.isFinite(appId) ? appId : null, exercici: ex, camp, jutges: { ids: judgeIds } } });
+          } else {
+            if (!detailAllowedBuiltinKeysForSection(sectionType).includes(key)) return;
+            const labels = { participant: "Participant", entitat_nom: "Entitat", exercise_index: "Ex.", aparell_nom: "Aparell" };
+            const item = { type: "builtin", key, label: label || labels[key] || key, align: ["left","right","center"].includes(align) ? align : "left" };
+            if (Number.isFinite(decimals)) item.decimals = Math.max(0, Math.min(6, decimals));
+            cols.push(item);
+          }
+        });
+        section.columns = normalizeDetailColumnsForSection(cols, sectionType, sectionAppId);
+      }
+      if (!detailSectionRequiresApp(sectionType)) delete section.aparell_id;
       out.push(section);
     });
     return out;
@@ -6437,6 +7123,7 @@
     const preferAdvanced = !!opts.preferAdvanced;
     const cfg = currentCfg();
     if (!cfg) return;
+    clearBuilderSaveFeedback();
 
     const partEntries = readParticioEntriesFromUI();
     const parts = particioCodesFromEntries(partEntries);
@@ -6681,6 +7368,7 @@
 
   function selectCfg(id) {
     state.selectedId = id;
+    clearBuilderSaveFeedback();
     renderList();
     setActiveBuilderNav("section-meta");
 
@@ -7406,6 +8094,7 @@
     const cfg = currentCfg();
     if (!cfg) return;
 
+    clearBuilderSaveFeedback();
     syncAdvancedFromUI({ preferAdvanced: true });
 
     const payload = {
@@ -7434,6 +8123,7 @@
         renderList();
       }
      // MISSATGE D'ÈXIT
+    clearBuilderSaveFeedback();
     const msg = document.getElementById("saveMsg");
     msg.style.display = "";
     msg.textContent = "Guardat correctament";
@@ -7444,7 +8134,8 @@
     }, 2000);
     
     } catch (e) {
-      showAlert("Error guardant: " + e.message);
+      const details = e && e.details ? e.details : null;
+      renderBuilderSaveErrors(details && details.error_details, (details && details.errors) || [e.message]);
     }
   });
 
@@ -7552,6 +8243,7 @@
 
   // init
   initBuilderSectionNav();
+  registerStaticErrorPaths();
   relocateDetailConfigBox();
   buildAparellChecks();
   buildParticioFieldChecks();

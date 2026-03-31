@@ -642,3 +642,180 @@ Defaults triats:
 - `scoring.view` continua sent suficient per al calaix multimèdia intern; no afegim una nova capacitat de permisos ara per no canviar operativa.
 - El desplegament de media protegida inclou una finestra de migració operativa per moure fitxers privats existents a paths protegits.
 - Si cal reduir abast, la primera entrega hauria d’incloure obligatòriament els blocs 1, 2, 3, 4 i 5; la resta poden anar a una segona passada curta.
+
+
+
+REVISION
+
+# Fase 3: Feedback de Guardat + Detall per Bloc/Aparell + Neteja de Caràcters Corruptes
+
+## Resum
+Millorar el builder de classificacions en tres fronts coordinats:
+
+- Fer que els errors de guardat siguin accionables: resum global, highlight inline i focus al primer camp erroni.
+- Fer coherent el detall multiaparell: cada secció tabular de detall quedarà lligada a un únic aparell, i per tenir diversos aparells s’afegiran diverses seccions.
+- Fer una passada de neteja d’encoding als templates de classificacions i als textos de suport que s’hi mostren.
+
+No es toca el polling ni el contracte general de `live`. El canvi és de schema de `presentacio.detall`, de validació/save, de builder i de renderització del detall.
+
+## Canvis principals
+
+### 1. Feedback de guardat útil i mapat a la UI
+- Mantenir `errors: string[]` al backend per compatibilitat, però afegir també `error_details: []`.
+- Cada entrada d’`error_details` tindrà com a mínim:
+  - `path`: path estable de schema, per exemple `presentacio.detall.sections[1].columns[2].source.camp`
+  - `message`: text llegible
+  - `section`: àrea funcional per al builder (`presentacio`, `filtres`, `puntuacio`, etc.)
+  - `severity`: `error`
+- Fer que `classificacio_save` i `classificacio_template_global_save` retornin aquest shape nou en els 400 de validació.
+- Al builder:
+  - mostrar un banner superior amb resum curt del nombre d’errors i els primers missatges
+  - activar la secció/tab correcta si l’error cau fora de la secció visible
+  - fer scroll al primer error
+  - aplicar highlight inline als controls afectats
+  - mostrar un missatge contextual al costat de la secció o columna amb error
+- Si només hi ha `errors` antics i no `error_details`, el builder continua mostrant el resum global.
+
+### 2. Model nou: una secció tabular de detall = un sol aparell
+- Afegir `aparell_id` a nivell de secció dins de `presentacio.detall.sections[*]`.
+- Aplicar-lo a seccions amb columnes `raw`:
+  - `members_table`
+  - `entity_members_table`
+  - `exercise_table`
+  - `team_metrics`
+- `members_list` no porta `aparell_id`.
+- Regla canònica:
+  - si una secció té `aparell_id`, totes les seves columnes `raw.source.aparell_id` han de coincidir amb aquest valor
+  - el builder ja no permet triar l’aparell per columna dins d’aquestes seccions; l’aparell es tria un cop a nivell de secció
+- El renderer del `live` no canvia de contracte: continua rebent `detail.sections`, però cada taula serà coherent per aparell.
+- Els defaults de secció passen a incloure `aparell_id` quan el tipus de secció requereix camps raw i hi ha un aparell compatible disponible.
+
+### 3. Builder de detall orientat a blocs per aparell
+- Per cada secció tabular, mostrar al builder:
+  - tipus de secció
+  - etiqueta
+  - selector `Aparell`
+  - editor de columnes limitat a camps/exercicis/jutges d’aquell aparell
+- En canviar l’aparell d’una secció:
+  - es revalida la llista de columnes
+  - les builtins es conserven
+  - les raw incompatibles es marquen com a pendents de correcció o s’eliminen només si l’usuari confirma
+- Per `exercise_table`, les files del detall continuen sent per exercici, però només de l’aparell de la secció.
+- Per `members_table` i `entity_members_table`, la taula continua sent per participant, però les columnes raw només són del mateix aparell.
+- Per `team_metrics`, la secció mostra mètriques d’un únic aparell d’equip.
+
+### 4. Compatibilitat i assistent per seccions multiaparell existents
+- Estratègia escollida: assistent de split, no auto-split silenciós.
+- Si una secció existent barreja raw de diversos aparells:
+  - el backend la considera invàlida per al model nou
+  - el builder la detecta en carregar i mostra un avís clar
+  - es mostra una acció “Dividir per aparell”
+- El split assistit:
+  - agrupa les columnes raw per `source.aparell_id`
+  - replica les builtins comunes a cada secció nova
+  - genera una secció nova per aparell
+  - proposa etiquetes derivades com `Detall · TR`, `Detall · DMT`
+  - no desa res automàticament; només actualitza l’estat del builder perquè l’usuari revisi i desi
+- Compatibilitat F1/F2:
+  - `presentacio.detall.columnes` continua llegint-se com a shorthand de `members_table`
+  - si aquest shorthand conté raw de diversos aparells, també entra pel flux de split assistit
+
+### 5. Validació backend alineada amb el model nou
+- Estendre la validació de `presentacio.detall.sections` perquè comprovi:
+  - `aparell_id` obligatori a seccions tabulars que tinguin raw
+  - `aparell_id` absent a `members_list`
+  - totes les raw del bloc pertanyen a l’aparell de la secció
+  - l’aparell és compatible amb el tipus:
+    - `exercise_table`, `members_table`, `entity_members_table`: aparell individual
+    - `team_metrics`: aparell d’equip
+  - el camp i exercici existeixen dins d’aquell aparell
+- Els errors han de sortir amb paths precisos, perquè el builder pugui mapar-los.
+
+### 6. Repàs de caràcters corruptes
+- Fer una passada centrada en:
+  - `classificacions_builder_v2.html`
+  - `classificacions_live.html`
+  - textos curts de save/preview/template que el builder mostra i que vinguin d’aquests fluxos
+- Corregir totes les cadenes mal codificades tipus `ConfiguraciÃ³`, `nomÃ©s`, `mostrarÃ `, `MantÃ©`, `mÃ©s`.
+- No fer una neteja global del repo; només dels templates i dels textos directament visibles en aquest flux.
+
+## Interfícies i comportament nou
+- Shape de secció canònica:
+```json
+{
+  "type": "exercise_table",
+  "label": "Exercicis TR",
+  "aparell_id": 12,
+  "columns": [
+    {"type": "builtin", "key": "exercise_index", "label": "Ex."},
+    {"type": "raw", "key": "total", "label": "Total", "source": {"aparell_id": 12, "exercici": 1, "camp": "total", "jutges": {"ids": []}}}
+  ]
+}
+```
+- Shape de resposta d’error de save:
+```json
+{
+  "ok": false,
+  "error": "Configuracio de classificacio invalida.",
+  "errors": ["presentacio.detall.sections[0] ..."],
+  "error_details": [
+    {
+      "path": "presentacio.detall.sections[0].columns[1].source.camp",
+      "message": "Camp 'total' no valid per l'aparell seleccionat.",
+      "section": "presentacio",
+      "severity": "error"
+    }
+  ]
+}
+```
+- El `live` manté el mateix payload general; només consumeix seccions més coherents.
+
+## Pla de proves
+- Backend:
+  - valida `aparell_id` per secció i rebutja raw d’un altre aparell dins del mateix bloc
+  - manté compatibilitat amb `columnes` antic quan és representable
+  - retorna `error_details` amb `path` estable en guardar
+- Builder:
+  - mostra resum global i highlight inline en errors de save
+  - activa la secció correcta i fa scroll al primer error
+  - secció tabular nova obliga a triar/aprofita un sol aparell
+  - en canviar d’aparell, filtra camps i detecta incompatibilitats
+  - l’assistent “Dividir per aparell” converteix una secció multiaparell en diverses seccions coherents
+- Live/preview:
+  - una classificació amb diverses seccions per aparell es veu com diverses taules coherents
+  - no apareixen columnes buides per barreja artificial d’aparells dins del mateix bloc
+- Regressions:
+  - `members_list` continua funcionant
+  - `loop live` continua ignorant el detall
+  - polling sense canvis
+- Textos:
+  - cap string corrupta visible als templates de classificacions o als missatges de guardat/preview associats
+
+## Assumptions i defaults
+- El model oficial passa a ser “una secció tabular, un aparell”.
+- El builder oferirà split assistit per esquemes multiaparell antics; no es farà auto-split silenciós.
+- El feedback de guardat serà “resum + inline”.
+- Les builtins d’una secció es poden repetir en diverses seccions després del split.
+- La neteja d’encoding es limita al flux de classificacions i no inclou una auditoria global del repo.
+
+
+
+Diagnostic :
+
+Troballes
+
+Alta: la validació de plantilles globals no està alineada amb la validació de classificacions reals, així que pots desar una plantilla “vàlida” que després una competició rebutjarà. A validate_template_schema_global només es valida congruència d’aparell/camp, però no es restringeixen tipus de secció per tipus, ni members_list.columns, ni les builtins permeses; això sí que es fa a _validate_presentacio_columns. Referències: classificacio_templates.py (line 1488), classificacio_templates.py (line 1536), views_classificacions.py (line 4022), views_classificacions.py (line 4131).
+
+Alta: el model nou encara no valida source.exercici contra el nombre real d’exercicis de l’aparell, ni en classificacio_save ni en classificacio_template_global_save. Es valida aparell_id i camp, però no l’índex d’exercici; després el motor construeix files amb qualsevol exercici que vingui al schema. Això deixa passar configs invàlides que al live/previsualització acaben en files fantasma o buides. Referències: views_classificacions.py (line 4042), classificacio_templates.py (line 1493), services_classificacions_2.py (line 4126).
+
+Mitjana-alta: el builder corregeix en silenci un cas invàlid important: secció amb un únic raw.source.aparell_id diferent de section.aparell_id. La normalització detecta el desajust, però l’assistent de split només s’activa si hi ha més d’un aparell raw; després la UI mostra i regrava el raw amb l’aparell de secció, sense avís explícit. Això contradiu l’estratègia “split assistit, no auto-fix silenciós”. Referències: classificacions_builder_v2.html (line 4507), classificacions_builder_v2.html (line 4581), classificacions_builder_v2.html (line 5603), classificacions_builder_v2.html (line 5846).
+
+Mitjana: en canviar l’Aparell d’una secció, el builder elimina totes les columnes raw, no només les incompatibles. El pla deia revalidar i conservar les compatibles o, com a mínim, marcar-les pendents; el codi actual fa una neteja total després d’una confirmació genèrica. Referència: classificacions_builder_v2.html (line 5740).
+
+Mitjana: el feedback de guardat no compleix del tot el contracte nou. error_details es construeix per regex a partir de missatges lliures; alguns errors nous no generen path estable, i al frontend només es fa scrollIntoView, no focus() real sobre el primer camp. Això deixa errors sense highlight inline fiable i incompleix el “focus al primer camp erroni”. Referències: views_classificacions.py (line 4217), views_classificacions.py (line 4158), views_classificacions.py (line 4193), classificacions_builder_v2.html (line 5552).
+
+Riscos oberts
+
+El builder té funcions duplicades i mortes per a aquest flux (renderDetailSectionsUI, readDetailSectionsUI, renderBuilderSaveErrors). Ara mana la segona definició, però és un risc clar de regressió i de mantenibilitat. Referències: classificacions_builder_v2.html (line 1737), classificacions_builder_v2.html (line 5513), classificacions_builder_v2.html (line 5391), classificacions_builder_v2.html (line 5681), classificacions_builder_v2.html (line 5472), classificacions_builder_v2.html (line 5823).
+La neteja d’encoding no la donaria per tancada només amb aquesta revisió: al terminal encara apareixen cadenes sospitoses en alguns punts del builder/live, però no puc assegurar si és mojibake real del fitxer o un tema de codepage de consola.
+No he implementat cap canvi. He intentat executar els tests específics del flux, però aquest entorn no té Django/venv disponible i py -3 manage.py test ... falla amb ModuleNotFoundError: django.

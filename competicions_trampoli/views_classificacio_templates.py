@@ -26,7 +26,7 @@ from .services.classificacio_templates import (
     template_schema_to_global_ui_schema,
     validate_template_schema_global,
 )
-from .views_classificacions import _build_scoreable_meta_for_schema
+from .views_classificacions import _build_scoreable_meta_for_schema, _build_validation_error_details
 
 
 def _is_global_templates_admin(user) -> bool:
@@ -274,6 +274,7 @@ def classificacio_template_global_save(request):
         include_all_owners=False,
     )
     scoreable_by_code = {}
+    app_units_by_code = {}
     schemas_by_aparell = {
         s.aparell_id: (s.schema or {})
         for s in ScoringSchema.objects.filter(aparell_id__in=[app.id for app in apps]).only("aparell_id", "schema")
@@ -284,6 +285,7 @@ def classificacio_template_global_save(request):
         scoreable_by_code[app.codi.upper()] = {
             code for code, info in meta.items() if (info or {}).get("scoreable")
         }
+        app_units_by_code[app.codi.upper()] = str(getattr(app, "competition_unit", "") or "").strip().lower()
 
     allowed_particio_codes = {item["code"] for item in build_global_native_particio_fields()}
     preserved_particio_codes = set()
@@ -310,6 +312,7 @@ def classificacio_template_global_save(request):
         schema_tpl,
         available_app_codes={app.codi.upper() for app in apps},
         scoreable_by_code=scoreable_by_code,
+        app_units_by_code=app_units_by_code,
         allowed_particio_codes=allowed_particio_codes,
         allowed_filter_keys=GLOBAL_FILTER_KEYS,
         preserved_particio_codes=preserved_particio_codes,
@@ -318,7 +321,12 @@ def classificacio_template_global_save(request):
     )
     if validation_errors:
         return JsonResponse(
-            {"ok": False, "error": "Plantilla global invalida.", "errors": validation_errors},
+            {
+                "ok": False,
+                "error": "Plantilla global invalida.",
+                "errors": validation_errors,
+                "error_details": _build_validation_error_details(validation_errors),
+            },
             status=400,
         )
 

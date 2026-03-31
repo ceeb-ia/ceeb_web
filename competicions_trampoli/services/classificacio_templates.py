@@ -230,6 +230,23 @@ def _assign_presentacio_column_group(presentacio, path, cols_out):
             presentacio["detall"] = detail
 
 
+def _iter_presentacio_detail_sections(presentacio):
+    if not isinstance(presentacio, dict):
+        return []
+    detail = presentacio.get("detall")
+    if not isinstance(detail, dict):
+        return []
+    sections = detail.get("sections")
+    if not isinstance(sections, list):
+        return []
+    out = []
+    for idx, section in enumerate(sections):
+        if not isinstance(section, dict):
+            continue
+        out.append((idx, section))
+    return out
+
+
 def get_comp_aparell_maps(competicio, active_only=True):
     qs = CompeticioAparell.objects.filter(competicio=competicio).select_related("aparell").order_by("ordre", "id")
     if active_only:
@@ -465,6 +482,16 @@ def schema_to_template_schema(competicio, schema_local):
                 item.pop("aparell_id", None)
             cols_out.append(item)
         _assign_presentacio_column_group(presentacio, path, cols_out)
+    for sidx, section in _iter_presentacio_detail_sections(presentacio):
+        raw_app = section.get("aparell_id", section.get("aparell_codi"))
+        if raw_app in (None, "", 0, "0"):
+            continue
+        code = resolve_app_code_for_template(raw_app, by_id_all, by_code_all)
+        if code:
+            section["aparell_codi"] = code
+        else:
+            warnings.append(f"presentacio.detall.sections[{sidx}].aparell_id no exportat: {raw_app}")
+        section.pop("aparell_id", None)
     schema["presentacio"] = presentacio
 
     equips_cfg = schema.get("equips") or {}
@@ -659,6 +686,17 @@ def template_schema_to_competicio_schema(competicio, schema_tpl):
                     item.pop("aparell_codi", None)
                 cols_out.append(item)
             _assign_presentacio_column_group(presentacio, path, cols_out)
+        for sidx, section in _iter_presentacio_detail_sections(presentacio):
+            raw_app = section.get("aparell_codi", section.get("aparell_id"))
+            if raw_app in (None, "", 0, "0"):
+                section.pop("aparell_codi", None)
+                continue
+            app_id = resolve_app_id(raw_app, by_id_active, by_code_active)
+            if app_id:
+                section["aparell_id"] = app_id
+            else:
+                warnings.append(f"presentacio.detall.sections[{sidx}].aparell_codi no disponible: {raw_app}")
+            section.pop("aparell_codi", None)
         schema["presentacio"] = presentacio
 
     equips_cfg = schema.get("equips") or {}
@@ -1341,6 +1379,7 @@ def validate_template_schema_global(
     *,
     available_app_codes,
     scoreable_by_code,
+    app_units_by_code=None,
     allowed_particio_codes,
     allowed_filter_keys=None,
     preserved_particio_codes=None,
@@ -1349,6 +1388,11 @@ def validate_template_schema_global(
 ):
     schema = normalize_particions_schema(schema_tpl or {})
     errors = []
+    app_units_by_code = {
+        canon_app_code(code): str(unit or "").strip().lower()
+        for code, unit in (app_units_by_code or {}).items()
+        if canon_app_code(code)
+    }
     allowed_particio_codes = {str(code or "").strip() for code in (allowed_particio_codes or []) if str(code or "").strip()}
     allowed_filter_keys = {str(key or "").strip() for key in (allowed_filter_keys or []) if str(key or "").strip()}
     preserved_particio_codes = {str(code or "").strip() for code in (preserved_particio_codes or []) if str(code or "").strip()}
@@ -1480,5 +1524,58 @@ def validate_template_schema_global(
                                 errors.append(
                                     f"{path}[{idx}] metric: aparell {target_code}: camp '{code}' no es puntuable directament."
                                 )
+        detail = presentacio.get("detall") or {}
+        sections = detail.get("sections") or []
+        if isinstance(sections, list):
+            expected_by_type = {
+                "members_table": "individual",
+                "entity_members_table": "individual",
+                "exercise_table": "individual",
+                "team_metrics": "team",
+            }
+            for sidx, section in enumerate(sections):
+                if not isinstance(section, dict):
+                    continue
+                section_type = str(section.get("type") or "").strip().lower()
+                if section_type == "members_list":
+                    if section.get("aparell_codi") not in (None, "", 0, "0") or section.get("aparell_id") not in (None, "", 0, "0"):
+                        errors.append(f"presentacio.detall.sections[{sidx}].aparell_id no es compatible amb members_list.")
+                    continue
+                section_code = canon_app_code(section.get("aparell_codi") or section.get("aparell_id"))
+                raw_codes = []
+                for col in (section.get("columns") or []):
+                    if not isinstance(col, dict):
+                        continue
+                    if str(col.get("type") or "builtin").strip().lower() != "raw":
+                        continue
+                    src = col.get("source") if isinstance(col.get("source"), dict) else {}
+                    app_code = canon_app_code(src.get("aparell_codi") or src.get("aparell_id"))
+                    if app_code and app_code not in raw_codes:
+                        raw_codes.append(app_code)
+                if raw_codes and not section_code:
+                    errors.append(f"presentacio.detall.sections[{sidx}].aparell_id es obligatori quan hi ha columnes raw.")
+                if len(raw_codes) > 1:
+                    errors.append(f"presentacio.detall.sections[{sidx}] barreja aparells multiples; cal dividir el detall en una seccio per aparell.")
+                if section_code:
+                    if section_code not in available_app_codes:
+                        errors.append(f"presentacio.detall.sections[{sidx}].aparell_id: aparell no disponible")
+                    else:
+                        expected_unit = expected_by_type.get(section_type)
+                        unit = str(app_units_by_code.get(section_code) or "").strip().lower()
+                        if expected_unit == "team" and unit and unit != "team":
+                            errors.append(f"presentacio.detall.sections[{sidx}].aparell_id: en {section_type} nomes es poden mostrar aparells d'equip.")
+                        elif expected_unit == "individual" and unit == "team":
+                            errors.append(f"presentacio.detall.sections[{sidx}].aparell_id: en {section_type} no es poden mostrar aparells d'equip.")
+                for cidx, col in enumerate(section.get("columns") or []):
+                    if not isinstance(col, dict):
+                        continue
+                    if str(col.get("type") or "builtin").strip().lower() != "raw":
+                        continue
+                    src = col.get("source") if isinstance(col.get("source"), dict) else {}
+                    app_code = canon_app_code(src.get("aparell_codi") or src.get("aparell_id"))
+                    if section_code and app_code and app_code != section_code:
+                        errors.append(
+                            f"presentacio.detall.sections[{sidx}].columns[{cidx}] raw: l'aparell {app_code} no concorda amb presentacio.detall.sections.aparell_id={section_code}."
+                        )
 
     return schema, errors
