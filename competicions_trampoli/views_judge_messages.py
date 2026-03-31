@@ -5,7 +5,6 @@ from django.db.models import Case, IntegerField, Value, When
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
-from django.utils.dateparse import parse_datetime
 from django.views.decorators.http import require_http_methods, require_POST
 
 from .models import Competicio
@@ -14,6 +13,7 @@ from .models_judging import (
     JudgeConversationMessage,
     JudgeDeviceToken,
 )
+from .services.incremental_feeds import FeedCursor, apply_single_model_cursor, build_single_model_feed_meta, parse_feed_cursor
 
 
 JUDGE_MESSAGE_MAX_LENGTH = 500
@@ -230,6 +230,22 @@ def _list_messages_for_conversation(conversation, since_dt=None):
     return rows
 
 
+def _list_messages_for_conversation_cursor(conversation, cursor: FeedCursor):
+    qs = JudgeConversationMessage.objects.filter(conversation=conversation).select_related("sender_user", "judge_token")
+    if cursor.dt is None:
+        rows = list(qs.order_by("-created_at", "-id")[:JUDGE_MESSAGES_SNAPSHOT_LIMIT])
+        rows.reverse()
+        return {
+            "page": rows,
+            "has_more": False,
+            "next_since": rows[-1].created_at.isoformat() if rows else None,
+            "next_after_id": str(rows[-1].id) if rows else "",
+        }
+    qs = apply_single_model_cursor(qs.order_by("created_at", "id"), cursor, timestamp_field="created_at")
+    rows = list(qs[: JUDGE_MESSAGES_DELTA_LIMIT + 1])
+    return build_single_model_feed_meta(rows, limit=JUDGE_MESSAGES_DELTA_LIMIT, cursor=cursor, timestamp_attr="created_at")
+
+
 @require_POST
 def judge_request_support(request, token):
     token_obj = get_object_or_404(JudgeDeviceToken, pk=token)
@@ -339,8 +355,7 @@ def judge_messages_updates(request, token):
         return JsonResponse({"ok": False, "error": "Token invalid o revocat"}, status=403)
     token_obj.touch()
 
-    since_raw = (request.GET.get("since") or "").strip()
-    since_dt = parse_datetime(since_raw) if since_raw else None
+    cursor = parse_feed_cursor(request)
     conversation = _get_or_create_conversation_for_token(token_obj)
     conversation = (
         JudgeConversation.objects
@@ -348,7 +363,7 @@ def judge_messages_updates(request, token):
         .get(pk=conversation.pk)
     )
 
-    messages = _list_messages_for_conversation(conversation, since_dt=since_dt)
+    message_feed = _list_messages_for_conversation_cursor(conversation, cursor)
     now_dt = timezone.now()
     JudgeConversation.objects.filter(pk=conversation.pk).update(
         unread_for_judge=0,
@@ -361,10 +376,13 @@ def judge_messages_updates(request, token):
     return JsonResponse(
         {
             "ok": True,
-            "now": now_dt.isoformat(),
+            "now": message_feed["next_since"],
             "conversation": _conversation_payload(conversation),
             "cooldown_remaining": cooldown_remaining,
-            "messages": [_message_payload(m) for m in messages],
+            "messages": [_message_payload(m) for m in message_feed["page"]],
+            "next_since": message_feed["next_since"],
+            "next_after_id": message_feed["next_after_id"],
+            "has_more": message_feed["has_more"],
         }
     )
 
@@ -405,8 +423,10 @@ def judge_messages_hub(request, competicio_id):
 @require_http_methods(["GET"])
 def judge_messages_updates_org(request, competicio_id):
     competicio = get_object_or_404(Competicio, pk=competicio_id)
-    since_raw = (request.GET.get("since") or "").strip()
-    since_dt = parse_datetime(since_raw) if since_raw else None
+    conversation_cursor = parse_feed_cursor(request)
+    message_since_param = "message_since" if request.GET.get("message_since") not in (None, "") else "since"
+    message_after_param = "message_after_id" if request.GET.get("message_after_id") not in (None, "") else "after_id"
+    message_cursor = parse_feed_cursor(request, since_param=message_since_param, after_param=message_after_param)
     conversation_id = (request.GET.get("conversation_id") or "").strip()
 
     conv_qs = (
@@ -414,12 +434,25 @@ def judge_messages_updates_org(request, competicio_id):
         .filter(competicio=competicio)
         .select_related("judge_token", "comp_aparell__aparell")
     )
-    if since_dt:
-        conv_qs = conv_qs.filter(updated_at__gt=since_dt)
-    conv_qs = _conversation_ordering_queryset(conv_qs)[:ORG_CONVERSATIONS_LIMIT]
-    conversations = list(conv_qs)
+    if conversation_cursor.dt is None:
+        conversations = list(_conversation_ordering_queryset(conv_qs)[:ORG_CONVERSATIONS_LIMIT])
+        conversation_feed = {
+            "page": conversations,
+            "has_more": False,
+            "next_since": conversations[-1].updated_at.isoformat() if conversations else None,
+            "next_after_id": str(conversations[-1].id) if conversations else "",
+        }
+    else:
+        conv_qs = apply_single_model_cursor(conv_qs.order_by("updated_at", "id"), conversation_cursor)
+        conversation_rows = list(conv_qs[: ORG_CONVERSATIONS_LIMIT + 1])
+        conversation_feed = build_single_model_feed_meta(
+            conversation_rows,
+            limit=ORG_CONVERSATIONS_LIMIT,
+            cursor=conversation_cursor,
+        )
+        conversations = list(conversation_feed["page"])
 
-    messages = []
+    message_feed = {"page": [], "has_more": False, "next_since": None, "next_after_id": ""}
     selected_conversation = None
     if conversation_id:
         selected_conversation = get_object_or_404(
@@ -427,7 +460,7 @@ def judge_messages_updates_org(request, competicio_id):
             pk=conversation_id,
             competicio=competicio,
         )
-        messages = _list_messages_for_conversation(selected_conversation, since_dt=since_dt)
+        message_feed = _list_messages_for_conversation_cursor(selected_conversation, message_cursor)
         now_dt = timezone.now()
         JudgeConversation.objects.filter(pk=selected_conversation.pk).update(
             unread_for_org=0,
@@ -438,14 +471,19 @@ def judge_messages_updates_org(request, competicio_id):
         if selected_conversation.pk not in {c.pk for c in conversations}:
             conversations.insert(0, selected_conversation)
 
-    now_iso = timezone.now().isoformat()
     return JsonResponse(
         {
             "ok": True,
-            "now": now_iso,
+            "now": conversation_feed["next_since"],
             "selected_conversation_id": str(selected_conversation.id) if selected_conversation else "",
             "conversations": [_conversation_payload(c) for c in conversations],
-            "messages": [_message_payload(m) for m in messages],
+            "messages": [_message_payload(m) for m in message_feed["page"]],
+            "next_since": conversation_feed["next_since"],
+            "next_after_id": conversation_feed["next_after_id"],
+            "has_more": conversation_feed["has_more"],
+            "messages_next_since": message_feed["next_since"],
+            "messages_next_after_id": message_feed["next_after_id"],
+            "messages_has_more": message_feed["has_more"],
         }
     )
 

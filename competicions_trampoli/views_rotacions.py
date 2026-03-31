@@ -668,46 +668,80 @@ def rotacions_save(request, pk):
         int(serie.id): serie
         for serie in SerieEquip.objects.filter(competicio=competicio, actiu=True).select_related("comp_aparell")
     }
+    seen_groups_by_franja = {}
+    seen_series_by_franja = {}
+    validation_errors = []
+    normalized_cells = []
+
+    for c in cells:
+        if not isinstance(c, dict):
+            continue
+        try:
+            fr_id = int(c.get("franja"))
+            es_id = int(c.get("estacio"))
+        except Exception:
+            continue
+
+        if fr_id not in franja_ids or es_id not in estacio_ids:
+            continue
+
+        if "items" in c:
+            groups, series = _split_program_keys(c.get("items"))
+        elif "grups" in c:
+            groups = _normalize_grups(c.get("grups"))
+            series = []
+        else:
+            groups = _normalize_grups(c.get("grup", None))
+            series = []
+
+        estacio = estacions_by_id.get(es_id)
+        is_team_station = bool(
+            estacio
+            and getattr(estacio, "tipus", "") == "aparell"
+            and getattr(getattr(estacio, "comp_aparell", None), "aparell", None)
+            and getattr(estacio.comp_aparell.aparell, "competition_unit", "") == "team"
+        )
+        if is_team_station:
+            groups = []
+            series = [
+                serie_id
+                for serie_id in series
+                if serie_id in series_by_id and int(series_by_id[serie_id].comp_aparell_id or 0) == int(getattr(estacio, "comp_aparell_id", 0) or 0)
+            ]
+        else:
+            series = []
+
+        for group_id in groups:
+            owner_map = seen_groups_by_franja.setdefault(fr_id, {})
+            previous_estacio = owner_map.setdefault(group_id, es_id)
+            if previous_estacio != es_id:
+                validation_errors.append(
+                    f"El grup {group_id} no pot estar assignat a dues estacions dins la mateixa franja."
+                )
+        for serie_id in series:
+            owner_map = seen_series_by_franja.setdefault(fr_id, {})
+            previous_estacio = owner_map.setdefault(serie_id, es_id)
+            if previous_estacio != es_id:
+                validation_errors.append(
+                    f"La serie {serie_id} no pot estar assignada a dues estacions dins la mateixa franja."
+                )
+
+        normalized_cells.append(
+            {
+                "franja_id": fr_id,
+                "estacio_id": es_id,
+                "groups": groups,
+                "series": series,
+            }
+        )
+
+    if validation_errors:
+        return JsonResponse({"ok": False, "errors": validation_errors}, status=400)
 
     with transaction.atomic():
-        for c in cells:
-            if not isinstance(c, dict):
-                continue
-            try:
-                fr_id = int(c.get("franja"))
-                es_id = int(c.get("estacio"))
-            except Exception:
-                continue
-
-            if fr_id not in franja_ids or es_id not in estacio_ids:
-                continue
-
-            if "items" in c:
-                groups, series = _split_program_keys(c.get("items"))
-            elif "grups" in c:
-                groups = _normalize_grups(c.get("grups"))
-                series = []
-            else:
-                groups = _normalize_grups(c.get("grup", None))
-                series = []
-
-            estacio = estacions_by_id.get(es_id)
-            is_team_station = bool(
-                estacio
-                and getattr(estacio, "tipus", "") == "aparell"
-                and getattr(getattr(estacio, "comp_aparell", None), "aparell", None)
-                and getattr(estacio.comp_aparell.aparell, "competition_unit", "") == "team"
-            )
-            if is_team_station:
-                groups = []
-                series = [
-                    serie_id
-                    for serie_id in series
-                    if serie_id in series_by_id and int(series_by_id[serie_id].comp_aparell_id or 0) == int(getattr(estacio, "comp_aparell_id", 0) or 0)
-                ]
-            else:
-                series = []
-
+        for cell in normalized_cells:
+            fr_id = cell["franja_id"]
+            es_id = cell["estacio_id"]
             assignacio, _created = RotacioAssignacio.objects.update_or_create(
                 competicio=competicio,
                 franja_id=fr_id,
@@ -717,8 +751,8 @@ def rotacions_save(request, pk):
                     "grup": None,
                 },
             )
-            _sync_assignacio_groups(assignacio, groups, groups_by_id)
-            _sync_assignacio_series(assignacio, series, series_by_id)
+            _sync_assignacio_groups(assignacio, cell["groups"], groups_by_id)
+            _sync_assignacio_series(assignacio, cell["series"], series_by_id)
 
     return JsonResponse({"ok": True})
 

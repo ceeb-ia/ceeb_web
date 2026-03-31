@@ -3,7 +3,7 @@ from django.urls import path
 
 from competicions_trampoli import views, views_judge_admin, views_judge_messages, views_rotacions, views_scoring
 
-from .access import require_competicio_capability
+from .access import require_competicio_capability, require_global_groups
 from .inscripcions_list_new import (
     InscripcionsListNewView,
     groups_assign,
@@ -66,7 +66,14 @@ from .views_equips import (
     equips_unassign,
     equips_workspace,
 )
-from .views_scoring import ScoringNotesHome, ScoringSchemaUpdate, scoring_media_context, scoring_save
+from .views_scoring import (
+    ScoringNotesHome,
+    ScoringSchemaUpdate,
+    scoring_judge_video_file,
+    scoring_media_context,
+    scoring_media_file,
+    scoring_save,
+)
 from .views_team_series import (
     series_assign,
     series_create,
@@ -107,19 +114,23 @@ def authenticated_view(view):
     return login_required(view)
 
 
-urlpatterns = [
-    path("trampoli/aparells/", authenticated_view(AparellList.as_view()), name="aparells_list"),
-    path("trampoli/aparells/nou/", authenticated_view(AparellCreate.as_view()), name="aparell_create"),
-    path("trampoli/aparells/<int:pk>/editar/", authenticated_view(AparellUpdate.as_view()), name="aparell_update"),
-    path("trampoli/aparells/<int:pk>/eliminar/", authenticated_view(AparellDeleteView.as_view()), name="aparell_delete"),
-    path("trampoli/aparells/<int:pk>/puntuacio/", authenticated_view(ScoringSchemaUpdate.as_view()), name="aparell_scoring_schema_update"),
-    path("trampoli/classificacio-templates/", authenticated_view(ClassificacioTemplateGlobalList.as_view()), name="classificacio_template_global_list"),
-    path("trampoli/classificacio-templates/nou/", authenticated_view(ClassificacioTemplateGlobalBuilder.as_view()), name="classificacio_template_global_create"),
-    path("trampoli/classificacio-templates/<int:pk>/editar/", authenticated_view(ClassificacioTemplateGlobalBuilder.as_view()), name="classificacio_template_global_update"),
-    path("trampoli/classificacio-templates/save/", authenticated_view(classificacio_template_global_save), name="classificacio_template_global_save"),
-    path("trampoli/classificacio-templates/<int:pk>/eliminar/", authenticated_view(ClassificacioTemplateGlobalDeleteView.as_view()), name="classificacio_template_global_delete"),
+def global_authenticated_view(view, *group_names):
+    return login_required(require_global_groups(*group_names)(view))
 
-    path("competicions/nova/", authenticated_view(CompeticioCreateView.as_view()), name="create"),
+
+urlpatterns = [
+    path("trampoli/aparells/", global_authenticated_view(AparellList.as_view(), "platform_admin", "competicions_manager"), name="aparells_list"),
+    path("trampoli/aparells/nou/", global_authenticated_view(AparellCreate.as_view(), "platform_admin", "competicions_manager"), name="aparell_create"),
+    path("trampoli/aparells/<int:pk>/editar/", global_authenticated_view(AparellUpdate.as_view(), "platform_admin", "competicions_manager"), name="aparell_update"),
+    path("trampoli/aparells/<int:pk>/eliminar/", global_authenticated_view(AparellDeleteView.as_view(), "platform_admin", "competicions_manager"), name="aparell_delete"),
+    path("trampoli/aparells/<int:pk>/puntuacio/", global_authenticated_view(ScoringSchemaUpdate.as_view(), "platform_admin", "competicions_manager"), name="aparell_scoring_schema_update"),
+    path("trampoli/classificacio-templates/", global_authenticated_view(ClassificacioTemplateGlobalList.as_view(), "platform_admin", "competicions_manager"), name="classificacio_template_global_list"),
+    path("trampoli/classificacio-templates/nou/", global_authenticated_view(ClassificacioTemplateGlobalBuilder.as_view(), "platform_admin", "competicions_manager"), name="classificacio_template_global_create"),
+    path("trampoli/classificacio-templates/<int:pk>/editar/", global_authenticated_view(ClassificacioTemplateGlobalBuilder.as_view(), "platform_admin", "competicions_manager"), name="classificacio_template_global_update"),
+    path("trampoli/classificacio-templates/save/", global_authenticated_view(classificacio_template_global_save, "platform_admin", "competicions_manager"), name="classificacio_template_global_save"),
+    path("trampoli/classificacio-templates/<int:pk>/eliminar/", global_authenticated_view(ClassificacioTemplateGlobalDeleteView.as_view(), "platform_admin", "competicions_manager"), name="classificacio_template_global_delete"),
+
+    path("competicions/nova/", global_authenticated_view(CompeticioCreateView.as_view(), "platform_admin", "competicions_manager"), name="create"),
     path("competicions/created/", authenticated_view(CompeticioListView.as_view()), name="created"),
     path("competicions/", authenticated_view(CompeticioHomeView.as_view()), name="competicions_home"),
 
@@ -211,6 +222,9 @@ urlpatterns = [
     path("scoring/<int:pk>/save-partial/", competition_view(views_scoring.scoring_save_partial, "scoring.edit"), name="scoring_save_partial"),
     path("scoring/<int:pk>/updates/", competition_view(views_scoring.scoring_updates, "scoring.view"), name="scoring_updates"),
     path("scoring/<int:pk>/media/context/", competition_view(scoring_media_context, "scoring.view"), name="scoring_media_context"),
+    path("scoring/<int:pk>/media/files/<int:media_id>/", competition_view(scoring_media_file, "scoring.view"), name="scoring_media_file"),
+    path("scoring/<int:pk>/media/judge-video/<str:video_kind>/<int:video_id>/", competition_view(scoring_judge_video_file, "scoring.view"), name="scoring_judge_video_file"),
+    path("competicio/<int:pk>/inscripcions/media/files/<int:media_id>/", competition_view(views.inscripcions_media_file, "inscripcions.view"), name="inscripcions_media_file"),
 
     path("competicio/<int:pk>/rotacions/", competition_view(views_rotacions.rotacions_planner, "rotacions.view"), name="rotacions_planner"),
     path("competicio/<int:pk>/rotacions/save/", competition_view(views_rotacions.rotacions_save, "rotacions.edit"), name="rotacions_save"),
@@ -291,6 +305,7 @@ urlpatterns = [
     path("judge/<uuid:token>/api/save/", views_judge.judge_save_partial, name="judge_save_partial"),
     path("judge/<uuid:token>/api/updates/", views_judge.judge_updates, name="judge_updates"),
     path("judge/<uuid:token>/api/video/status/", views_judge.judge_video_status, name="judge_video_status"),
+    path("judge/<uuid:token>/api/video/file/<str:subject_kind>/<int:subject_id>/<int:exercici>/", views_judge.judge_video_file, name="judge_video_file"),
     path("judge/<uuid:token>/api/video/upload/", views_judge.judge_video_upload, name="judge_video_upload"),
     path("judge/<uuid:token>/api/video/delete/", views_judge.judge_video_delete, name="judge_video_delete"),
     path("judge/<uuid:token>/api/messages/request-support/", views_judge_messages.judge_request_support, name="judge_request_support"),

@@ -19,13 +19,14 @@ from .models import (
     EquipContext,
     GrupCompeticio,
     Inscripcio,
+    InscripcioMedia,
     InscripcioEquipAssignacio,
 )
 from .forms import CompeticioForm
 from .access import user_has_competicio_capability
 from .services.import_excel import importar_inscripcions_excel
 import json
-from django.http import JsonResponse, HttpResponseBadRequest
+from django.http import FileResponse, Http404, JsonResponse, HttpResponseBadRequest
 from django.views.decorators.http import require_POST
 from django.views.decorators.csrf import csrf_protect
 from django.db import transaction
@@ -3342,6 +3343,29 @@ def notes_home_router(request, pk):
     return redirect("created")
 
 
+def inscripcions_media_file(request, pk, media_id):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    item = get_object_or_404(
+        InscripcioMedia.objects.select_related("inscripcio"),
+        pk=media_id,
+        competicio=competicio,
+    )
+    if not item.fitxer or not getattr(item.fitxer, "name", ""):
+        raise Http404("Fitxer no disponible")
+    try:
+        file_handle = item.fitxer.open("rb")
+    except Exception as exc:
+        raise Http404("Fitxer no disponible") from exc
+    response = FileResponse(
+        file_handle,
+        as_attachment=False,
+        filename=(item.original_filename or "").strip() or None,
+    )
+    if item.mime_type:
+        response["Content-Type"] = item.mime_type
+    return response
+
+
 # ------------------------------------------------------------------------------------------------
 #
 #
@@ -3368,12 +3392,18 @@ class InscripcionsImportExcelView(FormView):
         sheet = form.cleaned_data.get("sheet") or ""
 
         result = importar_inscripcions_excel(fitxer, self.competicio, sheet)
-        messages.success(
-            self.request,
-            f"Importació OK. Full: {result['full']} | Creats: {result['creats']} | "
+        summary = (
+            f"Full: {result['full']} | Creats: {result['creats']} | "
             f"Actualitzats: {result['actualitzats']} | Ignorats: {result['ignorats']} | "
-            f"Ambiguos: {result.get('ambiguos', 0)}"
+            f"Ambiguos: {result.get('ambiguos', 0)} | Errors: {result.get('errors', 0)}"
         )
+        if int(result.get("errors", 0) or 0) > 0:
+            messages.warning(
+                self.request,
+                f"Importació parcial amb incidències. {summary}",
+            )
+        else:
+            messages.success(self.request, f"Importació OK. {summary}")
         warnings = result.get("warnings") or []
         if warnings:
             parts = []
@@ -3390,6 +3420,13 @@ class InscripcionsImportExcelView(FormView):
                     "S'han detectat columnes d'Excel amb noms reservats i s'han remapejat automaticament "
                     f"({', '.join(parts)}).",
                 )
+        noms_competicio_excel = result.get("noms_competicio_excel") or []
+        if len(noms_competicio_excel) > 1:
+            messages.warning(
+                self.request,
+                "L'Excel conté múltiples noms de competició detectats: "
+                + ", ".join(str(name) for name in noms_competicio_excel),
+            )
         return super().form_valid(form)
 
     def get_success_url(self):

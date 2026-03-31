@@ -43,6 +43,14 @@ class ImportInscripcionsExcelForm(forms.Form):
     fitxer = forms.FileField()
     sheet = forms.CharField(required=False, help_text="Nom del full (opcional)")
 
+    def clean_fitxer(self):
+        fitxer = self.cleaned_data["fitxer"]
+        filename = str(getattr(fitxer, "name", "") or "").strip().lower()
+        allowed_exts = (".xlsx", ".xlsm", ".xltx", ".xltm")
+        if not filename.endswith(allowed_exts):
+            raise ValidationError("Cal pujar un fitxer Excel compatible amb OpenXML (.xlsx/.xlsm).")
+        return fitxer
+
 
 class InscripcioForm(forms.ModelForm):
     ENTITAT_ALTRES_VALUE = "__other__"

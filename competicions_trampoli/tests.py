@@ -4139,6 +4139,11 @@ class ScoringMediaPlaybackContextTests(_BaseTrampoliDataMixin, TestCase):
             ["v-alt.mp4"],
         )
         self.assertEqual((payload.get("judge_video") or {}).get("original_filename"), "judge.mp4")
+        self.assertIn(reverse("scoring_media_file", kwargs={"pk": self.comp.id, "media_id": media["audio_primary"]["id"]}), (media.get("audio_primary") or {}).get("url", ""))
+        self.assertIn(
+            reverse("scoring_judge_video_file", kwargs={"pk": self.comp.id, "video_kind": "individual", "video_id": payload["judge_video"]["id"]}),
+            (payload.get("judge_video") or {}).get("url", ""),
+        )
 
     def test_media_context_rejects_foreign_comp_aparell(self):
         other_comp = self._create_competicio("Comp Altre Media")
@@ -8193,6 +8198,9 @@ class GlobalClassificacioTemplateManagementTests(_BaseTrampoliDataMixin, TestCas
             password="testpass123",
             email="global-tpl-admin@example.com",
         )
+        manager_group = Group.objects.get_or_create(name="competicions_manager")[0]
+        self.user.groups.add(manager_group)
+        self.other_user.groups.add(manager_group)
         self.app = self._create_aparell("TRAMP_GLOB", "Tramp Global", owner=self.user)
         ScoringSchema.objects.create(
             aparell=self.app,
@@ -8638,6 +8646,18 @@ class JudgeVideoApiTests(_BaseTrampoliDataMixin, TestCase):
         payload = r.json()
         self.assertTrue(payload.get("ok"))
         self.assertTrue(payload.get("created"))
+        self.assertIn(
+            reverse(
+                "judge_video_file",
+                kwargs={
+                    "token": self.token.id,
+                    "subject_kind": "inscripcio",
+                    "subject_id": self.ins_allowed.id,
+                    "exercici": 1,
+                },
+            ),
+            ((payload.get("video") or {}).get("url") or ""),
+        )
 
         entry = ScoreEntry.objects.get(
             competicio=self.comp,
@@ -8801,6 +8821,49 @@ class JudgeVideoApiTests(_BaseTrampoliDataMixin, TestCase):
                 ok=True,
             ).exists()
         )
+
+    def test_other_token_cannot_replace_or_delete_existing_video(self):
+        upload_url = reverse("judge_video_upload", kwargs={"token": self.token.id})
+        self.assertEqual(
+            self.client.post(
+                upload_url,
+                data={
+                    "inscripcio_id": self.ins_allowed.id,
+                    "exercici": 1,
+                    "video_file": self._sample_video(name="owner.mp4", size=1024),
+                },
+            ).status_code,
+            200,
+        )
+
+        other_token = JudgeDeviceToken.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            label="Judge Video 2",
+            permissions=[{"field_code": "E", "judge_index": 2}],
+            can_record_video=True,
+            is_active=True,
+        )
+        other_upload_url = reverse("judge_video_upload", kwargs={"token": other_token.id})
+        other_delete_url = reverse("judge_video_delete", kwargs={"token": other_token.id})
+
+        upload_res = self.client.post(
+            other_upload_url,
+            data={
+                "inscripcio_id": self.ins_allowed.id,
+                "exercici": 1,
+                "video_file": self._sample_video(name="other.mp4", size=1024),
+            },
+        )
+        self.assertEqual(upload_res.status_code, 403)
+        self.assertEqual(upload_res.json().get("reason"), "video_owned_by_other_token")
+
+        delete_res = self.client.post(
+            other_delete_url,
+            data={"inscripcio_id": self.ins_allowed.id, "exercici": 1},
+        )
+        self.assertEqual(delete_res.status_code, 403)
+        self.assertEqual(delete_res.json().get("reason"), "video_owned_by_other_token")
 
     def test_video_delete_removes_existing_capture(self):
         upload_url = reverse("judge_video_upload", kwargs={"token": self.token.id})
@@ -9216,7 +9279,7 @@ class LiveClassificacionsRedisCacheTests(_BaseTrampoliDataMixin, TestCase):
 
         self.assertIsNotNone(fake_redis.get(live_cache.live_dirty_key(self.comp.id)))
 
-    def test_teamscoreentry_signal_does_not_mark_dirty_after_commit(self):
+    def test_teamscoreentry_signal_marks_dirty_after_commit(self):
         team_ctx = EquipContext.objects.create(
             competicio=self.comp,
             code="parelles-live",
@@ -9257,9 +9320,9 @@ class LiveClassificacionsRedisCacheTests(_BaseTrampoliDataMixin, TestCase):
                     total=8.4,
                 )
 
-        self.assertIsNone(fake_redis.get(live_cache.live_dirty_key(self.comp.id)))
+        self.assertIsNotNone(fake_redis.get(live_cache.live_dirty_key(self.comp.id)))
 
-    def test_teamscoreentry_change_does_not_refresh_cached_live_snapshot(self):
+    def test_teamscoreentry_change_refreshes_cached_live_snapshot(self):
         snapshot = json.loads(self._snapshot_blob())
         stamp = snapshot["stamp"]
         fake_redis = self.FakeRedis()
@@ -9306,9 +9369,9 @@ class LiveClassificacionsRedisCacheTests(_BaseTrampoliDataMixin, TestCase):
             res = self.client.get(self._public_url(), {"since": stamp})
 
         self.assertEqual(res.status_code, 200)
-        self.assertEqual(res["X-Live-Cache"], "hit")
-        self.assertFalse(res.json()["changed"])
-        self.assertEqual(res.json()["stamp"], stamp)
+        self.assertNotEqual(res["X-Live-Cache"], "hit")
+        self.assertTrue(res.json()["changed"])
+        self.assertNotEqual(res.json()["stamp"], stamp)
 
     def test_classificacioconfig_signal_marks_dirty_after_commit(self):
         fake_redis = self.FakeRedis()
@@ -9432,9 +9495,23 @@ class CompetitionAccessControlTests(_BaseTrampoliDataMixin, TestCase):
         res = self.client.get(url)
         self.assertEqual(res.status_code, 403)
 
-    def test_create_competition_assigns_owner_membership_to_creator(self):
+    def test_regular_user_cannot_create_competition_from_global_route(self):
         url = reverse("create")
         self.client.force_login(self.readonly_user)
+        res = self.client.post(
+            url,
+            data={
+                "nom": "Comp Creada Usuari",
+                "tipus": Competicio.Tipus.TRAMPOLI,
+                "data": "",
+            },
+        )
+        self.assertEqual(res.status_code, 403)
+        self.assertFalse(Competicio.objects.filter(nom="Comp Creada Usuari").exists())
+
+    def test_competicions_manager_create_competition_assigns_owner_membership_to_creator(self):
+        url = reverse("create")
+        self.client.force_login(self.manager_user)
         res = self.client.post(
             url,
             data={
@@ -9447,12 +9524,12 @@ class CompetitionAccessControlTests(_BaseTrampoliDataMixin, TestCase):
 
         created_comp = Competicio.objects.get(nom="Comp Creada Usuari")
         membership = CompeticioMembership.objects.get(
-            user=self.readonly_user,
+            user=self.manager_user,
             competicio=created_comp,
         )
         self.assertEqual(membership.role, CompeticioMembership.Role.OWNER)
         self.assertTrue(membership.is_active)
-        self.assertEqual(membership.granted_by_id, self.readonly_user.id)
+        self.assertEqual(membership.granted_by_id, self.manager_user.id)
 
     def test_public_live_token_creation_persists_media_permission(self):
         url = reverse("public_live_qr_home", kwargs={"competicio_id": self.comp.id})
@@ -9616,6 +9693,128 @@ class JudgeMessagingFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(conv.status, JudgeConversation.Status.RESOLVED)
         self.assertTrue(conv.resolved_at is not None)
 
+    def test_judge_messages_updates_use_cursor_after_id_for_same_timestamp(self):
+        self.client.post(
+            reverse("judge_request_support", kwargs={"token": self.token.id}),
+            data=json.dumps({}),
+            content_type="application/json",
+        )
+        conversation = JudgeConversation.objects.get(judge_token=self.token)
+        JudgeConversationMessage.objects.filter(conversation=conversation).delete()
+        base_time = timezone.now()
+        msg_1 = JudgeConversationMessage.objects.create(
+            conversation=conversation,
+            sender_type=JudgeConversationMessage.SenderType.ORGANIZATION,
+            message_type=JudgeConversationMessage.MessageType.REPLY,
+            text="M1",
+        )
+        msg_2 = JudgeConversationMessage.objects.create(
+            conversation=conversation,
+            sender_type=JudgeConversationMessage.SenderType.ORGANIZATION,
+            message_type=JudgeConversationMessage.MessageType.REPLY,
+            text="M2",
+        )
+        msg_3 = JudgeConversationMessage.objects.create(
+            conversation=conversation,
+            sender_type=JudgeConversationMessage.SenderType.ORGANIZATION,
+            message_type=JudgeConversationMessage.MessageType.REPLY,
+            text="M3",
+        )
+        JudgeConversationMessage.objects.filter(pk__in=[msg_1.id, msg_2.id, msg_3.id]).update(created_at=base_time)
+
+        updates_url = reverse("judge_messages_updates", kwargs={"token": self.token.id})
+        with patch("competicions_trampoli.views_judge_messages.JUDGE_MESSAGES_DELTA_LIMIT", 2):
+            first_res = self.client.get(
+                updates_url,
+                {"since": (base_time - timedelta(seconds=1)).isoformat()},
+            )
+            self.assertEqual(first_res.status_code, 200)
+            first_body = first_res.json()
+            self.assertTrue(first_body.get("has_more"))
+            self.assertEqual([row["text"] for row in first_body.get("messages", [])], ["M1", "M2"])
+
+            second_res = self.client.get(
+                updates_url,
+                {
+                    "since": first_body.get("next_since"),
+                    "after_id": first_body.get("next_after_id"),
+                },
+            )
+        self.assertEqual(second_res.status_code, 200)
+        self.assertEqual([row["text"] for row in second_res.json().get("messages", [])], ["M3"])
+
+
+class ScoringUpdatesCursorTests(_BaseTrampoliDataMixin, TestCase):
+    def setUp(self):
+        self.comp = self._create_competicio("Comp Scoring Cursor")
+        self.app = self._create_aparell("TRAMP_CURSOR", "Tramp Cursor")
+        self.comp_app = self._create_comp_aparell(self.comp, self.app, ordre=1, actiu=True)
+        self.ins_1 = self._create_inscripcio(self.comp, "P1", ordre=1)
+        self.ins_2 = self._create_inscripcio(self.comp, "P2", ordre=2)
+        self.ins_3 = self._create_inscripcio(self.comp, "P3", ordre=3)
+        User = get_user_model()
+        self.user = User.objects.create_user(
+            username="scoring_cursor_user",
+            password="testpass123",
+            email="scoring-cursor@example.com",
+        )
+        CompeticioMembership.objects.create(
+            user=self.user,
+            competicio=self.comp,
+            role=CompeticioMembership.Role.SCORING,
+            is_active=True,
+        )
+        self.client.force_login(self.user)
+
+    def test_scoring_updates_use_after_id_for_same_timestamp(self):
+        base_time = timezone.now()
+        e1 = ScoreEntry.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins_1,
+            exercici=1,
+            comp_aparell=self.comp_app,
+            inputs={},
+            outputs={},
+            total=1,
+        )
+        e2 = ScoreEntry.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins_2,
+            exercici=1,
+            comp_aparell=self.comp_app,
+            inputs={},
+            outputs={},
+            total=2,
+        )
+        e3 = ScoreEntry.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins_3,
+            exercici=1,
+            comp_aparell=self.comp_app,
+            inputs={},
+            outputs={},
+            total=3,
+        )
+        ScoreEntry.objects.filter(pk__in=[e1.id, e2.id, e3.id]).update(updated_at=base_time)
+
+        url = reverse("scoring_updates", kwargs={"pk": self.comp.id})
+        with patch("competicions_trampoli.views_scoring.SCORING_UPDATES_LIMIT", 2):
+            first_res = self.client.get(url, {"since": (base_time - timedelta(seconds=1)).isoformat()})
+            self.assertEqual(first_res.status_code, 200)
+            first_body = first_res.json()
+            self.assertTrue(first_body.get("has_more"))
+            self.assertEqual([row.get("inscripcio_id") for row in first_body.get("updates", [])], [self.ins_1.id, self.ins_2.id])
+
+            second_res = self.client.get(
+                url,
+                {
+                    "since": first_body.get("next_since"),
+                    "after_id": first_body.get("next_after_id"),
+                },
+            )
+        self.assertEqual(second_res.status_code, 200)
+        self.assertEqual([row.get("inscripcio_id") for row in second_res.json().get("updates", [])], [self.ins_3.id])
+
 
 class AparellOwnershipIsolationTests(_BaseTrampoliDataMixin, TestCase):
     def setUp(self):
@@ -9630,6 +9829,9 @@ class AparellOwnershipIsolationTests(_BaseTrampoliDataMixin, TestCase):
             password="testpass123",
             email="ap-owner-b@example.com",
         )
+        manager_group = Group.objects.get_or_create(name="competicions_manager")[0]
+        self.user_a.groups.add(manager_group)
+        self.user_b.groups.add(manager_group)
 
         self.comp = self._create_competicio("Comp Aparell Owners")
         CompeticioMembership.objects.create(
@@ -14744,6 +14946,33 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(list(team_assignacio.grup_links.values_list("grup_id", flat=True)), [])
         self.assertEqual(list(individual_assignacio.serie_links.values_list("serie_id", flat=True)), [])
         self.assertEqual(list(individual_assignacio.grup_links.values_list("grup_id", flat=True)), [group.id])
+
+    def test_rotacions_save_rejects_duplicate_group_within_same_franja(self):
+        franja = RotacioFranja.objects.create(
+            competicio=self.comp,
+            hora_inici=timezone.datetime(2025, 1, 1, 9, 0).time(),
+            hora_fi=timezone.datetime(2025, 1, 1, 10, 0).time(),
+            ordre=1,
+            titol="Franja 1",
+        )
+        individual_app = self._create_aparell("TRA_DUP", "Tramp Duplicat")
+        comp_app_a = self._create_comp_aparell(self.comp, individual_app, ordre=2)
+        comp_app_b = self._create_comp_aparell(self.comp, self._create_aparell("TRA_DUP_2", "Tramp Duplicat 2"), ordre=3)
+        estacio_a = RotacioEstacio.objects.create(competicio=self.comp, tipus="aparell", comp_aparell=comp_app_a, ordre=1)
+        estacio_b = RotacioEstacio.objects.create(competicio=self.comp, tipus="aparell", comp_aparell=comp_app_b, ordre=2)
+        group_id = int(self.ins1.grup_competicio_id)
+
+        save_res = self._post_json(
+            "rotacions_save",
+            {
+                "cells": [
+                    {"franja": franja.id, "estacio": estacio_a.id, "items": [f"g:{group_id}"]},
+                    {"franja": franja.id, "estacio": estacio_b.id, "items": [f"g:{group_id}"]},
+                ],
+            },
+        )
+        self.assertEqual(save_res.status_code, 400)
+        self.assertTrue(any("mateixa franja" in err for err in save_res.json().get("errors", [])))
 
     def test_rotacions_extrapolar_preserves_team_series_links(self):
         franja = RotacioFranja.objects.create(

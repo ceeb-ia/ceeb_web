@@ -3,6 +3,8 @@ import importlib.util
 import os
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
+
 
 def _env_bool(name: str, default: bool) -> bool:
     raw = os.getenv(name)
@@ -14,6 +16,38 @@ def _env_bool(name: str, default: bool) -> bool:
 def _env_csv(name: str, default: str) -> list[str]:
     raw = os.getenv(name, default)
     return [x.strip() for x in str(raw).split(",") if x.strip()]
+
+
+def _env_str(name: str, default: str = "") -> str:
+    return str(os.getenv(name, default) or "").strip()
+
+
+def _is_placeholder(value: str) -> bool:
+    lowered = str(value or "").strip().lower()
+    return lowered in {
+        "",
+        "replace-with-strong-secret",
+        "replace_me",
+        "changeme",
+        "change-me",
+        "todo",
+    }
+
+
+def _require_prod_setting(name: str, *, placeholder_ok: bool = False) -> str:
+    value = _env_str(name)
+    if not value or (not placeholder_ok and _is_placeholder(value)):
+        raise ImproperlyConfigured(f"{name} is required when APP_ENV=prod")
+    return value
+
+
+def _email_backend_setting() -> str:
+    value = _env_str("EMAIL_BACKEND", "console")
+    aliases = {
+        "console": "django.core.mail.backends.console.EmailBackend",
+        "smtp": "django.core.mail.backends.smtp.EmailBackend",
+    }
+    return aliases.get(value.lower(), value)
 
 
 HAS_DJANGO_CELERY_RESULTS = importlib.util.find_spec("django_celery_results") is not None
@@ -51,7 +85,7 @@ MIDDLEWARE = [
 ]
 
 # filepath: c:\Users\Extra\Desktop\ceeb_web\ceeb_web\settings.py
-SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", 'django-insecure-4x8z$1@#k2!3v&l^7%9m(0p)q*r&s+t=u')
+SECRET_KEY = _env_str("DJANGO_SECRET_KEY")
 ROOT_URLCONF = "ceeb_web.urls_prod" if APP_ENV == "prod" else "ceeb_web.urls"
 # filepath: c:\Users\Extra\Desktop\ceeb_web\ceeb_web\settings.py
 ALLOWED_HOSTS = _env_csv("ALLOWED_HOSTS", "localhost,127.0.0.1")
@@ -74,7 +108,7 @@ TEMPLATES = [
         },
     },
 ]
-DEBUG = _env_bool("DEBUG", True)
+DEBUG = _env_bool("DEBUG", APP_ENV != "prod")
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 POSTGRES_DB = os.getenv("POSTGRES_DB")
@@ -97,6 +131,15 @@ else:
             "NAME": str(BASE_DIR / "db.sqlite3"),
         }
     }
+
+if APP_ENV == "prod":
+    if _is_placeholder(SECRET_KEY):
+        raise ImproperlyConfigured("DJANGO_SECRET_KEY is required when APP_ENV=prod")
+    if not ALLOWED_HOSTS:
+        raise ImproperlyConfigured("ALLOWED_HOSTS is required when APP_ENV=prod")
+    _require_prod_setting("POSTGRES_DB")
+    _require_prod_setting("POSTGRES_USER")
+    _require_prod_setting("POSTGRES_PASSWORD")
 
 
 WSGI_APPLICATION = 'ceeb_web.wsgi.application'
@@ -136,6 +179,13 @@ JUDGE_VIDEO_FFPROBE_TIMEOUT_SECONDS = int(os.getenv("JUDGE_VIDEO_FFPROBE_TIMEOUT
 CSRF_TRUSTED_ORIGINS = _env_csv("CSRF_TRUSTED_ORIGINS", "")
 if _env_bool("USE_X_FORWARDED_PROTO", False):
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+if APP_ENV == "prod":
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = int(os.getenv("SECURE_HSTS_SECONDS", "31536000"))
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = _env_bool("SECURE_HSTS_INCLUDE_SUBDOMAINS", True)
+    SECURE_HSTS_PRELOAD = _env_bool("SECURE_HSTS_PRELOAD", False)
 
 CELERY_BROKER_URL = 'redis://redis:6379/0'  # URL del backend de missatgeria
 CELERY_ACCEPT_CONTENT = ['json']
@@ -189,14 +239,13 @@ TIME_ZONE = "Europe/Madrid"
 USE_TZ = True
 
 
-#EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend" # PRODUCTION
-EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+EMAIL_BACKEND = _email_backend_setting()
 
 EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.office365.com")
 EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
-EMAIL_USE_TLS = True
+EMAIL_USE_TLS = _env_bool("EMAIL_USE_TLS", True)
 
-EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "gmerino@ceeb.cat")      # ex: no-reply@elteudomini.cat
-EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "Et5!2FD*WacG")
+EMAIL_HOST_USER = _env_str("EMAIL_HOST_USER")      # ex: no-reply@elteudomini.cat
+EMAIL_HOST_PASSWORD = _env_str("EMAIL_HOST_PASSWORD")
 
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER)

@@ -8,6 +8,7 @@ from django.http import HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.db import transaction
 from django.db.models import Count
+from django.urls import reverse
 from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.http import require_POST
 
@@ -189,13 +190,6 @@ def _validate_uploaded_media_file(uploaded):
 
 
 def _serialize_media_item(item):
-    url = ""
-    try:
-        if item.fitxer:
-            url = item.fitxer.url
-    except Exception:
-        url = ""
-
     return {
         "id": item.id,
         "inscripcio_id": item.inscripcio_id,
@@ -206,7 +200,7 @@ def _serialize_media_item(item):
         "is_primary": bool(item.is_primary),
         "source": item.source or "",
         "match_score": float(item.match_score) if item.match_score is not None else None,
-        "url": url,
+        "url": reverse("inscripcions_media_file", kwargs={"pk": item.competicio_id, "media_id": item.id}),
     }
 
 

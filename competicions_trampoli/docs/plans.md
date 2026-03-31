@@ -470,3 +470,175 @@ PLAN 4 :Revision
 - `missing_birthdate_policy` queda fixat a `outside_range` en aquesta iteració.
 - `reference_mode` queda fixat a la data del membre més gran; no s’obre encara a altres estratègies.
 - Les particions manuals d’equip es mantenen especials en aquesta fase; no es passen encara a `particions_v2`.
+
+
+
+IMPLEMENTACION
+
+# Pla d’Implementació: Bloquejants de Producció Sense Trencar l’Operativa Actual
+
+## Resum
+Implementar els bloquejants en 4 blocs, preservant el comportament visible actual: mateix polling (`poll_ms` i ritme de refresc), mateix flux de QR/tokens, mateixes pantalles i mateix contracte funcional bàsic. El canvi més delicat serà intern: cursorització correcta del polling, invalidació live d’equips, tancament de media privada i tancament real dels accessos globals.
+
+Defaults triats:
+- Creació de competicions: només `platform_admin` o `competicions_manager`.
+- Tokens: hardening compatible, sense expiració.
+- Media privada: protegida pel backend; els URLs públics directes deixen d’exposar fitxers privats.
+
+## Canvis d’Implementació
+
+### 1. Configuració i arrencada segura
+- A `ceeb_web/settings.py`, fer `fail-fast` quan `APP_ENV=prod` i faltin valors crítics o siguin placeholders:
+  - `DJANGO_SECRET_KEY`
+  - `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`
+  - `ALLOWED_HOSTS`
+- Eliminar tots els fallbacks sensibles del codi per `SECRET_KEY` i credencials SMTP.
+- Fer que `EMAIL_BACKEND` es llegeixi realment d’entorn; si no s’usa, no bloquejarà funcionalment però no ha de quedar hardcoded.
+- Afegir proteccions de producció condicionades a `APP_ENV=prod`:
+  - `SESSION_COOKIE_SECURE = True`
+  - `CSRF_COOKIE_SECURE = True`
+  - `SECURE_HSTS_SECONDS`, `SECURE_HSTS_INCLUDE_SUBDOMAINS`, `SECURE_HSTS_PRELOAD`
+- Mantenir `USE_X_FORWARDED_PROTO` i `CSRF_TRUSTED_ORIGINS` com ara.
+
+### 2. Accessos globals coherents
+- Aplicar `require_global_groups("platform_admin", "competicions_manager")` a les rutes globals:
+  - crear competició
+  - gestió d’aparells globals
+  - plantilles globals de classificació
+- No tocar el model de membresies per competició ni els permisos interns existents.
+- Mantenir l’autoassignació com a `OWNER` quan un gestor crea una competició; només canvia qui pot entrar a la ruta global.
+- Afegir tests d’autorització per garantir:
+  - un usuari amb login normal no pot crear competicions
+  - `competicions_manager` sí
+  - els permisos per competició continuen exactament igual
+
+### 3. Polling incremental coherent sense canviar el ritme actual
+- No tocar `poll_ms`, ni el patró de polling del frontend, ni la semàntica visual de “marca d’actualització”.
+- Corregir els endpoints incrementals perquè no perdin events:
+  - ordenar sempre per `(updated_at, id)`
+  - limitar per lot, però tornar un cursor del darrer registre realment enviat, no `timezone.now()`
+- Contracte nou, compatible:
+  - request: mantenir `since`, afegir `after_id` opcional
+  - response: mantenir `updates`, afegir `next_since`, `next_after_id`, `has_more`
+- Frontend:
+  - si rep `next_since`, usar-lo per al següent poll
+  - si `has_more=true`, fer polls consecutius immediats fins buidar cua, sense esperar el següent interval normal
+  - si el client només envia `since` vell, continuar funcionant, però tota la UI pròpia del repo ha de migrar al cursor nou
+- Aplicar el mateix patró a:
+  - `scoring_updates`
+  - `judge_updates`
+  - `judge_messages_updates`
+  - `judge_messages_updates_org`
+- Mantenir els límits actuals de lot si no hi ha motiu per canviar-los; el fix és de cursorització, no de freqüència.
+
+### 4. Live cache correcte per equips
+- A `competicions_trampoli/signals.py`, afegir invalidació `mark_live_dirty` per:
+  - `TeamScoreEntry` `post_save`
+  - `TeamScoreEntry` `post_delete`
+- Revisar i actualitzar els tests que avui fixen com a “correcte” que una nota d’equip no marqui dirty.
+- No canviar el comportament de cache per classificacions individuals.
+- No tocar `poll_ms` del live ni la forma del payload live.
+
+### 5. Media privada protegida sense canviar la UX
+- Mantenir els camps `url` als payloads perquè el frontend no canviï de concepte.
+- Deixar de retornar `.fitxer.url` o `.video_file.url` directes per media privada; en lloc d’això, retornar rutes backend protegides.
+- Crear endpoints protegits per streaming/download:
+  - backoffice scoring: accés amb capacitat existent de `scoring.view`
+  - vídeos de jutge: accés només amb el token o permís adequat
+  - public live: només si el token té `can_view_media=True`
+- Implementació de servei de fitxer:
+  - backend amb `FileResponse` per compatibilitat universal
+  - opcionalment, suport `X-Accel-Redirect` si es configura Nginx intern
+- Producció:
+  - deixar de servir `/media/` genericament per fitxers privats de `competicions_trampoli`
+  - reservar accés directe només per contingut explícitament públic
+- Fitxers existents:
+  - afegir un comandament de migració operativa per reubicar media privada actual a un prefix protegit i actualitzar referències de BD
+  - durant la transició, els endpoints protegits han de poder llegir tant paths nous com legacy
+- Afegir cleanup de fitxer en cascada per `InscripcioMedia` quan s’esborra la inscripció.
+
+### 6. Tokens i logs sense canviar l’operativa
+- No introduir expiració automàtica.
+- Redactar tokens a logs:
+  - mai logar el UUID complet
+  - logar només hash curt o suffix truncat
+- Mantenir QR, revocació manual i flux actual.
+- Endurir el control de vídeo perquè només el token que ha creat o està vinculat a una captura la pugui reemplaçar o eliminar, excepte usuaris de backoffice amb permís explícit.
+
+### 7. Guardat de schema sense estat mixt
+- Canviar el flux de guardat de schema a “validar primer, aplicar després”.
+- El save del schema i el recàlcul associat han de ser atòmics a nivell funcional:
+  - si algun recàlcul falla, el schema no es publica
+  - no poden quedar score entries antigues barrejades amb schema nou
+- Si el recàlcul complet és massa pesat per una sola transacció, usar estratègia de “shadow validation”:
+  - validar i calcular tot en memòria / sobre dades temporals
+  - només persistir quan el conjunt complet és consistent
+
+### 8. Validació de rotacions impossible de duplicar
+- A `rotacions_save`, validar tot el payload abans de persistir:
+  - cap grup no pot aparèixer a dues estacions dins la mateixa franja
+  - cap sèrie no pot aparèixer a dues estacions dins la mateixa franja
+- Si hi ha conflicte, retornar error 400 amb missatge clar i sense persistir res.
+- No canviar la UI ni el model visual del planner; només rebutjar estats impossibles.
+
+### 9. Import Excel amb feedback fiable
+- Validar tipus de fitxer a formulari abans de passar-lo a `openpyxl`.
+- Canviar el contracte d’import perquè la vista informi de:
+  - `creats`
+  - `actualitzats`
+  - `ignorats`
+  - `ambiguos`
+  - `errors`
+  - discrepàncies de nom de competició si n’hi ha
+- Si hi ha errors de fila, no mostrar “Importació OK” sense matís:
+  - missatge `warning/error` si `errors > 0`
+  - missatge `success` només si l’import és net o només amb warnings no destructius
+- Mantenir el comportament actual d’import parcial, però fer-lo visible i testejat.
+
+## Canvis d’Interfície / Contracte
+- Polling:
+  - request nou compatible: `since` + `after_id`
+  - response nova: `next_since`, `next_after_id`, `has_more`
+  - es manté `updates`
+- Media:
+  - els payloads continuen portant `url`
+  - el valor de `url` passa a ser una ruta protegida d’aplicació, no una URL directa de storage
+- No hi ha canvi visible a `poll_ms`, intervals ni UX de marques live.
+- No hi ha expiració nova de tokens.
+
+## Pla de Tests
+- Accessos:
+  - usuari autenticat normal denegat a crear competició
+  - `competicions_manager` autoritzat
+  - permisos per competició existents no canvien
+- Polling:
+  - més de 500 updates no es perden
+  - `has_more` pagina correctament
+  - múltiples updates amb mateix `updated_at` no es dupliquen ni es salten
+  - els frontends migren al cursor nou sense alterar el ritme de polling
+- Live equips:
+  - `TeamScoreEntry` marca dirty
+  - classificació `equips/native_team` refresca després d’una nota nova
+- Media:
+  - fitxer privat no és accessible per URL directa
+  - backoffice autoritzat el pot reproduir
+  - public token sense `can_view_media` rep 403
+  - public token amb `can_view_media` accedeix
+  - esborrar una inscripció elimina els fitxers associats
+- Tokens/logs:
+  - els logs no contenen el token complet
+  - un token diferent no pot reemplaçar/esborrar una captura aliena
+- Schema:
+  - si falla un recàlcul, el schema vell continua vigent
+  - no queden score entries en estat mixt
+- Rotacions:
+  - duplicar grup o sèrie dins una franja retorna error i no persisteix
+- Import:
+  - fitxer invàlid es rebutja abans de parsejar
+  - import parcial amb errors mostra warning, no “OK” net
+
+## Assumptions
+- Ignorem expressament el cas “vídeo sense nota” perquè has indicat que no forma part de l’ús real.
+- `scoring.view` continua sent suficient per al calaix multimèdia intern; no afegim una nova capacitat de permisos ara per no canviar operativa.
+- El desplegament de media protegida inclou una finestra de migració operativa per moure fitxers privats existents a paths protegits.
+- Si cal reduir abast, la primera entrega hauria d’incloure obligatòriament els blocs 1, 2, 3, 4 i 5; la resta poden anar a una segona passada curta.

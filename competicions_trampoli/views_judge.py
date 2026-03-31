@@ -12,7 +12,7 @@ import time
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
-from django.http import HttpResponse, JsonResponse
+from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import NoReverseMatch, reverse
 from django.views.decorators.http import require_http_methods, require_POST
@@ -57,6 +57,7 @@ from .services.team_subject_contract import (
     runtime_schema_for_team_subjects,
     team_subject_meta,
 )
+from .services.incremental_feeds import apply_single_model_cursor, build_single_model_feed_meta, parse_feed_cursor
 from .services.update_payloads import (
     build_score_update_payload,
     filter_inputs_for_allowed_codes as shared_filter_inputs_for_allowed_codes,
@@ -81,6 +82,7 @@ from .services.rotacions_ordering import (
 from .services.team_series import team_subject_bucket_key, team_subject_bucket_label
 
 logger = logging.getLogger(__name__)
+JUDGE_UPDATES_LIMIT = 500
 
 
 class VideoValidationError(Exception):
@@ -452,11 +454,32 @@ def _judge_video_capture_enabled_for_token(tok) -> bool:
     return bool(getattr(tok, "can_record_video", False))
 
 
-def _serialize_video_record(video_record, request):
+def _protected_video_response(video_file, *, original_filename: str = "", mime_type: str = ""):
+    if not video_file or not getattr(video_file, "name", ""):
+        raise Http404("Video no disponible")
+    try:
+        file_handle = video_file.open("rb")
+    except Exception as exc:
+        raise Http404("Video no disponible") from exc
+    response = FileResponse(file_handle, as_attachment=False, filename=(original_filename or "").strip() or None)
+    if mime_type:
+        response["Content-Type"] = mime_type
+    return response
+
+
+def _serialize_video_record(video_record, request, *, token_obj=None, subject=None, exercici=None):
     url = None
-    if video_record.video_file:
+    if video_record.video_file and token_obj is not None and subject is not None and exercici is not None:
         try:
-            media_url = video_record.video_file.url
+            media_url = reverse(
+                "judge_video_file",
+                kwargs={
+                    "token": str(token_obj.id),
+                    "subject_kind": str(subject.get("subject_kind") or "inscripcio"),
+                    "subject_id": int(subject.get("subject_id") or 0),
+                    "exercici": int(exercici),
+                },
+            )
             url = request.build_absolute_uri(media_url)
         except Exception:
             url = None
@@ -480,9 +503,28 @@ def _request_meta(request):
     }
 
 
+def _redact_token_value(value) -> str:
+    token = str(value or "").strip()
+    if not token:
+        return ""
+    if len(token) <= 8:
+        return "***"
+    return f"{token[:4]}...{token[-4:]}"
+
+
+def _sanitize_video_log_payload(payload: dict) -> dict:
+    clean = {}
+    for key, value in (payload or {}).items():
+        if key in {"token", "judge_token"}:
+            clean[key] = _redact_token_value(value)
+        else:
+            clean[key] = value
+    return clean
+
+
 def _log_video_event(level: str, event: str, **payload):
     raw = {"event": event}
-    raw.update(payload)
+    raw.update(_sanitize_video_log_payload(payload))
     msg = json.dumps(raw, ensure_ascii=True, sort_keys=True)
     if level == "error":
         logger.error(msg)
@@ -490,6 +532,10 @@ def _log_video_event(level: str, event: str, **payload):
         logger.warning(msg)
     else:
         logger.info(msg)
+
+
+def _video_belongs_to_same_token(video_obj, tok) -> bool:
+    return bool(video_obj and getattr(video_obj, "judge_token_id", None) == getattr(tok, "id", None))
 
 
 def _create_video_audit_event(
@@ -949,10 +995,18 @@ def judge_updates(request, token):
     if not tok.is_valid():
         return JsonResponse({"ok": False, "error": "Token invàlid o revocat"}, status=403)
 
-    since = request.GET.get("since")
-    dt = parse_datetime(since) if since else None
-    if dt is None:
-        return JsonResponse({"ok": True, "now": timezone.now().isoformat(), "updates": []})
+    cursor = parse_feed_cursor(request)
+    if cursor.dt is None:
+        return JsonResponse(
+            {
+                "ok": True,
+                "now": None,
+                "updates": [],
+                "next_since": None,
+                "next_after_id": "",
+                "has_more": False,
+            }
+        )
 
     competicio = tok.competicio
     comp_aparell = tok.comp_aparell
@@ -981,7 +1035,6 @@ def judge_updates(request, token):
                 competicio=competicio,
                 comp_aparell=comp_aparell,
                 exercici__in=exercicis,
-                updated_at__gt=dt,
                 team_subject_id__in=allowed_team_ids,
             )
             .select_related("team_subject")
@@ -1000,14 +1053,15 @@ def judge_updates(request, token):
                 competicio=competicio,
                 comp_aparell=comp_aparell,
                 exercici__in=exercicis,
-                updated_at__gt=dt,
             )
             .exclude(inscripcio_id__in=excluded_ins_ids)
             .order_by("updated_at", "id")
         )
 
+    qs = apply_single_model_cursor(qs, cursor)
     updates = []
-    for s in qs[:500]:
+    rows = list(qs[: JUDGE_UPDATES_LIMIT + 1])
+    for s in rows[:JUDGE_UPDATES_LIMIT]:
         subject_kind = "team_unit" if is_team_context_app(comp_aparell) else "inscripcio"
         subject_id = s.team_subject_id if subject_kind == "team_unit" else s.inscripcio_id
         if subject_kind == "team_unit":
@@ -1038,7 +1092,66 @@ def judge_updates(request, token):
             )
         )
 
-    return JsonResponse({"ok": True, "now": timezone.now().isoformat(), "updates": updates})
+    feed_meta = build_single_model_feed_meta(rows, limit=JUDGE_UPDATES_LIMIT, cursor=cursor)
+    return JsonResponse(
+        {
+            "ok": True,
+            "now": feed_meta["next_since"],
+            "updates": updates,
+            "next_since": feed_meta["next_since"],
+            "next_after_id": feed_meta["next_after_id"],
+            "has_more": feed_meta["has_more"],
+        }
+    )
+
+
+@require_http_methods(["GET"])
+def judge_video_file(request, token, subject_kind, subject_id, exercici):
+    tok = get_object_or_404(JudgeDeviceToken, pk=token)
+    if not tok.is_valid():
+        raise Http404("Token invalid")
+    if not _judge_video_capture_enabled_for_token(tok):
+        raise Http404("Video disabled")
+
+    comp_aparell = tok.comp_aparell
+    competicio = tok.competicio
+    eligible_team_ids = None
+    if is_team_context_app(comp_aparell):
+        eligible_team_ids = list(build_team_subject_registry(competicio, comp_aparell)["eligible_by_id"].keys())
+
+    subject, error_response = resolve_scoring_subject(
+        competicio,
+        comp_aparell,
+        {"subject_kind": subject_kind, "subject_id": subject_id},
+        eligible_team_ids=eligible_team_ids,
+    )
+    if error_response is not None:
+        raise Http404("Subject invalid")
+
+    entry_filters = {
+        "competicio": competicio,
+        "exercici": _clamp_exercici_for_aparell(comp_aparell, exercici),
+        "comp_aparell": comp_aparell,
+    }
+    if subject["subject_kind"] == "team_unit":
+        entry_filters["team_subject"] = subject["team_subject"]
+    else:
+        entry_filters["inscripcio"] = subject["inscripcio"]
+    entry = subject_entry_model(comp_aparell).objects.filter(**entry_filters).first()
+    if not entry:
+        raise Http404("Score absent")
+
+    video_model, _event_model = subject_video_models(comp_aparell)
+    video_lookup = {"team_score_entry": entry} if subject["subject_kind"] == "team_unit" else {"score_entry": entry}
+    video_obj = video_model.objects.filter(**video_lookup).first()
+    if not video_obj:
+        raise Http404("Video absent")
+
+    return _protected_video_response(
+        video_obj.video_file,
+        original_filename=video_obj.original_filename,
+        mime_type=video_obj.mime_type,
+    )
 
 
 @require_http_methods(["GET"])
@@ -1181,7 +1294,13 @@ def judge_video_status(request, token):
             **serialize_subject_payload(subject["subject_kind"], subject["subject_id"]),
             "exercici": exercici,
             "score_entry_id": entry.id,
-            "video": _serialize_video_record(video, request),
+            "video": _serialize_video_record(
+                video,
+                request,
+                token_obj=tok,
+                subject=subject,
+                exercici=exercici,
+            ),
         }
     )
     _log_video_event(
@@ -1386,6 +1505,14 @@ def judge_video_upload(request, token):
             "file_size_bytes": 0,
         },
     )
+    if not created_video and getattr(video, "judge_token_id", None) and not _video_belongs_to_same_token(video, tok):
+        return _reject(
+            "Aquest video ja esta vinculat a un altre QR i no es pot substituir des d'aquest dispositiu.",
+            403,
+            "video_owned_by_other_token",
+            score_entry=entry,
+            payload={"existing_video_id": video.id},
+        )
 
     previous_file_name = video.video_file.name if video.video_file else ""
 
@@ -1472,7 +1599,13 @@ def judge_video_upload(request, token):
             **serialize_subject_payload(subject["subject_kind"], subject["subject_id"]),
             "exercici": exercici,
             "score_entry_id": entry.id,
-            "video": _serialize_video_record(video, request),
+            "video": _serialize_video_record(
+                video,
+                request,
+                token_obj=tok,
+                subject=subject,
+                exercici=exercici,
+            ),
         }
     )
 
@@ -1613,6 +1746,28 @@ def judge_video_delete(request, token):
                 "exercici": exercici,
                 "score_entry_id": entry.id,
             }
+        )
+
+    if getattr(video, "judge_token_id", None) and not _video_belongs_to_same_token(video, tok):
+        _log_video_event(
+            "warning",
+            "video_delete_denied_owner",
+            token=str(token),
+            **serialize_subject_payload(subject["subject_kind"], subject["subject_id"]),
+            exercici=exercici,
+            comp_aparell_id=comp_aparell.id,
+            score_entry_id=entry.id,
+            video_id=video.id,
+            latency_ms=int((time.monotonic() - started) * 1000),
+            **req_meta,
+        )
+        return JsonResponse(
+            {
+                "ok": False,
+                "error": "Aquest video esta vinculat a un altre QR i no es pot esborrar des d'aquest dispositiu.",
+                "reason": "video_owned_by_other_token",
+            },
+            status=403,
         )
 
     deleted_path = video.video_file.name if video.video_file else ""

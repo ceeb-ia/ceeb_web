@@ -2,16 +2,26 @@ from django.db import transaction
 from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver
 
-from .models import EquipContext, InscripcioEquipAssignacio
+from .models import EquipContext, InscripcioEquipAssignacio, InscripcioMedia
 from .live_cache import mark_live_dirty
 from .models_classificacions import ClassificacioConfig
-from .models_scoring import ScoreEntry, SerieEquip, SerieEquipItem
+from .models_scoring import ScoreEntry, ScoreEntryVideo, SerieEquip, SerieEquipItem, TeamScoreEntry, TeamScoreEntryVideo
 
 
 def _mark_live_dirty_on_commit(competicio_id):
     if not competicio_id:
         return
     transaction.on_commit(lambda cid=int(competicio_id): mark_live_dirty(cid))
+
+
+def _delete_file_on_commit(file_field):
+    if not file_field:
+        return
+    storage = getattr(file_field, "storage", None)
+    name = str(getattr(file_field, "name", "") or "").strip()
+    if storage is None or not name:
+        return
+    transaction.on_commit(lambda s=storage, n=name: s.delete(n))
 
 
 @receiver(post_save, sender=ScoreEntry)
@@ -21,6 +31,16 @@ def _scoreentry_saved_mark_live_dirty(sender, instance, **kwargs):
 
 @receiver(post_delete, sender=ScoreEntry)
 def _scoreentry_deleted_mark_live_dirty(sender, instance, **kwargs):
+    _mark_live_dirty_on_commit(getattr(instance, "competicio_id", None))
+
+
+@receiver(post_save, sender=TeamScoreEntry)
+def _teamscoreentry_saved_mark_live_dirty(sender, instance, **kwargs):
+    _mark_live_dirty_on_commit(getattr(instance, "competicio_id", None))
+
+
+@receiver(post_delete, sender=TeamScoreEntry)
+def _teamscoreentry_deleted_mark_live_dirty(sender, instance, **kwargs):
     _mark_live_dirty_on_commit(getattr(instance, "competicio_id", None))
 
 
@@ -74,3 +94,18 @@ def _serie_equip_item_saved_mark_live_dirty(sender, instance, **kwargs):
 def _serie_equip_item_deleted_mark_live_dirty(sender, instance, **kwargs):
     competicio_id = getattr(getattr(instance, "serie", None), "competicio_id", None)
     _mark_live_dirty_on_commit(competicio_id)
+
+
+@receiver(post_delete, sender=InscripcioMedia)
+def _inscripcio_media_deleted_cleanup_file(sender, instance, **kwargs):
+    _delete_file_on_commit(getattr(instance, "fitxer", None))
+
+
+@receiver(post_delete, sender=ScoreEntryVideo)
+def _score_video_deleted_cleanup_file(sender, instance, **kwargs):
+    _delete_file_on_commit(getattr(instance, "video_file", None))
+
+
+@receiver(post_delete, sender=TeamScoreEntryVideo)
+def _team_score_video_deleted_cleanup_file(sender, instance, **kwargs):
+    _delete_file_on_commit(getattr(instance, "video_file", None))

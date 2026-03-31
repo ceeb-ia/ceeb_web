@@ -109,6 +109,9 @@
   const messagesByConversation = {};
   let activeConversationId = "";
   let lastSince = null;
+  let lastAfterId = "";
+  let messageSince = null;
+  let messageAfterId = "";
 
   const elConvList = document.getElementById("conversationList");
   const elConvCounter = document.getElementById("convCounter");
@@ -204,7 +207,8 @@
     elConvList.querySelectorAll("[data-conv-id]").forEach((el) => {
       el.addEventListener("click", () => {
         activeConversationId = String(el.dataset.convId || "");
-        lastSince = null;
+        messageSince = null;
+        messageAfterId = "";
         renderConversationList();
         renderActiveConversation();
         pollUpdates();
@@ -350,14 +354,24 @@
     }
   }
 
-  async function pollUpdates(){
+  async function pollUpdates(opts = {}){
     const url = new URL(UPDATES_URL, window.location.origin);
     if(lastSince){
       url.searchParams.set("since", lastSince);
     }
+    if(lastAfterId){
+      url.searchParams.set("conversation_after_id", lastAfterId);
+    }
     if(activeConversationId){
       url.searchParams.set("conversation_id", activeConversationId);
+      if(messageSince){
+        url.searchParams.set("message_since", messageSince);
+      }
+      if(messageAfterId){
+        url.searchParams.set("message_after_id", messageAfterId);
+      }
     }
+    let nextPollDelay = opts.drain ? null : 1200;
     try{
       const res = await fetch(url.toString(), {headers: {"Accept": "application/json"}});
       const data = await res.json().catch(() => ({}));
@@ -374,8 +388,22 @@
         if(activeConversationId && Array.isArray(data.messages)){
           mergeMessages(activeConversationId, data.messages);
         }
-        if(data.now){
+        if(typeof data.next_since === "string" || data.next_since === null){
+          lastSince = data.next_since || lastSince;
+          lastAfterId = String(data.next_after_id || "");
+        } else if(data.now){
           lastSince = data.now;
+          lastAfterId = "";
+        }
+        if(typeof data.messages_next_since === "string" || data.messages_next_since === null){
+          messageSince = data.messages_next_since || messageSince;
+          messageAfterId = String(data.messages_next_after_id || "");
+        } else if(activeConversationId && data.now){
+          messageSince = data.now;
+          messageAfterId = "";
+        }
+        if(data.has_more || data.messages_has_more){
+          nextPollDelay = 0;
         }
         renderConversationList();
         renderActiveConversation();
@@ -383,7 +411,9 @@
     }catch(_e){
       // ignore transient poll failures
     }finally{
-      window.setTimeout(pollUpdates, 1200);
+      if(nextPollDelay !== null){
+        window.setTimeout(() => pollUpdates({drain: nextPollDelay === 0}), nextPollDelay);
+      }
     }
   }
 

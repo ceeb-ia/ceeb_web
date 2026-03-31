@@ -5,7 +5,12 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
 
-from ...models_scoring import ScoreEntryVideo, ScoreEntryVideoEvent
+from ...models_scoring import (
+    ScoreEntryVideo,
+    ScoreEntryVideoEvent,
+    TeamScoreEntryVideo,
+    TeamScoreEntryVideoEvent,
+)
 
 
 class Command(BaseCommand):
@@ -47,23 +52,34 @@ class Command(BaseCommand):
             return
 
         cutoff = timezone.now() - timedelta(days=older_than_days)
-        qs = ScoreEntryVideo.objects.filter(created_at__lt=cutoff).select_related(
+        deleted = 0
+        total = 0
+
+        individual_qs = ScoreEntryVideo.objects.filter(created_at__lt=cutoff).select_related(
             "score_entry",
             "score_entry__competicio",
             "score_entry__inscripcio",
             "score_entry__comp_aparell",
             "judge_token",
         )
+        team_qs = TeamScoreEntryVideo.objects.filter(created_at__lt=cutoff).select_related(
+            "team_score_entry",
+            "team_score_entry__competicio",
+            "team_score_entry__team_subject",
+            "team_score_entry__equip",
+            "team_score_entry__comp_aparell",
+            "judge_token",
+        )
         if status_filter != "all":
-            qs = qs.filter(status=status_filter)
+            individual_qs = individual_qs.filter(status=status_filter)
+            team_qs = team_qs.filter(status=status_filter)
 
-        total = qs.count()
+        total = individual_qs.count() + team_qs.count()
         self.stdout.write(f"Candidates: {total} (cutoff={cutoff.isoformat()}, status={status_filter})")
         if total == 0:
             return
 
-        deleted = 0
-        for video in qs.iterator(chunk_size=batch_size):
+        for video in individual_qs.iterator(chunk_size=batch_size):
             if dry_run:
                 self.stdout.write(
                     f"[DRY] id={video.id} score={video.score_entry_id} status={video.status} file={video.video_file.name if video.video_file else ''}"
@@ -88,6 +104,42 @@ class Command(BaseCommand):
                         inscripcio=inscripcio,
                         comp_aparell=comp_aparell,
                         score_entry=score_entry,
+                        video=video,
+                        judge_token=video.judge_token,
+                    )
+
+                if video.video_file:
+                    video.video_file.delete(save=False)
+                video.delete()
+                deleted += 1
+
+        for video in team_qs.iterator(chunk_size=batch_size):
+            if dry_run:
+                self.stdout.write(
+                    f"[DRY] id={video.id} team_score={video.team_score_entry_id} status={video.status} file={video.video_file.name if video.video_file else ''}"
+                )
+                continue
+
+            with transaction.atomic():
+                file_name = video.video_file.name if video.video_file else ""
+                team_score_entry = video.team_score_entry
+                competicio = team_score_entry.competicio if team_score_entry else None
+                team_subject = team_score_entry.team_subject if team_score_entry else None
+                equip = team_score_entry.equip if team_score_entry else None
+                comp_aparell = team_score_entry.comp_aparell if team_score_entry else None
+
+                if team_score_entry and competicio and team_subject and equip and comp_aparell:
+                    TeamScoreEntryVideoEvent.objects.create(
+                        action=TeamScoreEntryVideoEvent.Action.DELETE,
+                        ok=True,
+                        http_status=200,
+                        detail="retention_cleanup",
+                        payload={"cleanup": True, "deleted_path": file_name},
+                        competicio=competicio,
+                        team_subject=team_subject,
+                        equip=equip,
+                        comp_aparell=comp_aparell,
+                        team_score_entry=team_score_entry,
                         video=video,
                         judge_token=video.judge_token,
                     )

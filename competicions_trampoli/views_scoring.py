@@ -8,8 +8,8 @@ from django.views.decorators.http import require_GET
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
-from django.db.models import Count, Exists, OuterRef
-from django.http import JsonResponse
+from django.db.models import Count, Exists, OuterRef, Q
+from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.views.decorators.http import require_POST
@@ -65,6 +65,7 @@ from .services.team_series import (
     team_subject_bucket_key,
     team_subject_bucket_label,
 )
+from .services.incremental_feeds import FeedCursor, parse_feed_cursor
 from .services.update_payloads import (
     build_score_update_payload,
     filter_inputs_for_allowed_codes,
@@ -72,6 +73,78 @@ from .services.update_payloads import (
 
 
 logger = logging.getLogger(__name__)
+SCORING_UPDATES_LIMIT = 500
+SCORING_FEED_SOURCE_SCORE = "score"
+SCORING_FEED_SOURCE_TEAM = "team"
+
+
+def _protected_file_response(file_field, *, original_filename: str = "", mime_type: str = ""):
+    if not file_field or not getattr(file_field, "name", ""):
+        raise Http404("Fitxer no disponible")
+    try:
+        file_handle = file_field.open("rb")
+    except Exception as exc:
+        raise Http404("Fitxer no disponible") from exc
+    response = FileResponse(
+        file_handle,
+        as_attachment=False,
+        filename=(original_filename or "").strip() or None,
+    )
+    if mime_type:
+        response["Content-Type"] = mime_type
+    return response
+
+
+def _combined_source_rank(source: str) -> int:
+    return 0 if source == SCORING_FEED_SOURCE_SCORE else 1
+
+
+def _parse_combined_after_id(raw_after_id: str) -> tuple[str, int | None]:
+    text = str(raw_after_id or "").strip()
+    if ":" not in text:
+        return "", None
+    source, raw_id = text.split(":", 1)
+    try:
+        parsed_id = int(raw_id)
+    except Exception:
+        return "", None
+    return str(source or "").strip(), parsed_id
+
+
+def _apply_combined_cursor(qs, cursor: FeedCursor, *, source: str):
+    if cursor.dt is None:
+        return qs
+
+    after_source, after_id = _parse_combined_after_id(cursor.after_id)
+    if after_source == source and after_id is not None:
+        return qs.filter(
+            Q(updated_at__gt=cursor.dt)
+            | Q(updated_at=cursor.dt, id__gt=after_id)
+        )
+    if after_source == SCORING_FEED_SOURCE_SCORE and source == SCORING_FEED_SOURCE_TEAM:
+        return qs.filter(
+            Q(updated_at__gt=cursor.dt)
+            | Q(updated_at=cursor.dt)
+        )
+    return qs.filter(updated_at__gt=cursor.dt)
+
+
+def _combined_feed_meta(rows: list[dict], *, limit: int, cursor: FeedCursor) -> dict:
+    page = rows[:limit]
+    has_more = len(rows) > limit
+    if page:
+        last_row = page[-1]
+        next_since = last_row["sort_updated_at"].isoformat() if last_row.get("sort_updated_at") else None
+        next_after_id = f"{last_row.get('sort_source')}:{last_row.get('sort_id')}"
+    else:
+        next_since = cursor.dt.isoformat() if cursor.dt else None
+        next_after_id = cursor.after_id
+    return {
+        "page": page,
+        "has_more": has_more,
+        "next_since": next_since,
+        "next_after_id": str(next_after_id or ""),
+    }
 
 
 def _allowed_input_codes_for_schema(schema: dict, comp_aparell=None) -> set:
@@ -186,7 +259,7 @@ def _serialize_team_scoring_update(entry, allowed_inputs: set, subject_meta: dic
     )
 
 
-def _collect_team_scoring_updates(competicio, dt, *, comp_aparell_id=None, exercici=None, serie_id=None) -> list[dict]:
+def _collect_team_scoring_updates(competicio, cursor: FeedCursor, *, comp_aparell_id=None, exercici=None, serie_id=None) -> list[dict]:
     team_apps_qs = (
         CompeticioAparell.objects
         .filter(competicio=competicio, actiu=True)
@@ -218,12 +291,12 @@ def _collect_team_scoring_updates(competicio, dt, *, comp_aparell_id=None, exerc
         TeamScoreEntry.objects
         .filter(
             competicio=competicio,
-            updated_at__gt=dt,
             comp_aparell_id__in=team_app_ids,
         )
         .select_related("team_subject")
         .order_by("updated_at", "id")
     )
+    qs = _apply_combined_cursor(qs, cursor, source=SCORING_FEED_SOURCE_TEAM)
     if exercici:
         try:
             qs = qs.filter(exercici=int(exercici))
@@ -231,21 +304,33 @@ def _collect_team_scoring_updates(competicio, dt, *, comp_aparell_id=None, exerc
             pass
 
     updates = []
-    for entry in qs[:500]:
+    for entry in qs[: SCORING_UPDATES_LIMIT + 1]:
         app_id = int(entry.comp_aparell_id)
         if int(entry.team_subject_id) not in allowed_team_ids_by_app.get(app_id, set()):
             continue
         updates.append(
-            _serialize_team_scoring_update(
-                entry,
-                allowed_inputs=allowed_inputs_by_app.get(app_id, set()),
-                subject_meta=(subject_meta_by_app.get(app_id, {}) or {}).get(int(entry.team_subject_id), {}),
-            )
+            {
+                "payload": _serialize_team_scoring_update(
+                    entry,
+                    allowed_inputs=allowed_inputs_by_app.get(app_id, set()),
+                    subject_meta=(subject_meta_by_app.get(app_id, {}) or {}).get(int(entry.team_subject_id), {}),
+                ),
+                "sort_updated_at": entry.updated_at,
+                "sort_id": int(entry.id),
+                "sort_source": SCORING_FEED_SOURCE_TEAM,
+            }
         )
     return updates
 
 
-def _recalculate_scores_for_comp_aparell(competicio, comp_aparell, chunk_size: int = 200) -> dict:
+def _recalculate_scores_for_comp_aparell(
+    competicio,
+    comp_aparell,
+    chunk_size: int = 200,
+    *,
+    schema_override: dict | None = None,
+    apply_changes: bool = True,
+) -> dict:
     """
     Recalculate all ScoreEntry rows for one competition + comp_aparell using the current
     global schema attached to the Aparell.
@@ -265,13 +350,10 @@ def _recalculate_scores_for_comp_aparell(competicio, comp_aparell, chunk_size: i
         "errors_preview": [],
     }
 
-    ss, _ = ScoringSchema.objects.get_or_create(
-        aparell=comp_aparell.aparell,
-        defaults={"schema": {}},
-    )
-
-    base_schema = ss.schema or {}
+    ss, _ = ScoringSchema.objects.get_or_create(aparell=comp_aparell.aparell, defaults={"schema": {}})
+    base_schema = copy.deepcopy(schema_override) if isinstance(schema_override, dict) else (ss.schema or {})
     is_team_app = is_team_context_app(comp_aparell)
+    pending_updates = []
     if not is_team_app:
         try:
             engine = ScoringEngine(runtime_schema_for_comp_aparell(base_schema, comp_aparell))
@@ -300,13 +382,18 @@ def _recalculate_scores_for_comp_aparell(competicio, comp_aparell, chunk_size: i
                 runtime_inputs = logical_team_inputs_to_runtime_inputs(known_inputs, team_subject, base_schema)
                 result = ScoringEngine(runtime_schema).compute(runtime_inputs)
                 logical_inputs = runtime_inputs_to_logical_team_inputs(result.inputs, team_subject, base_schema)
-                entry.inputs = _merge_inputs_preserving_orphans(logical_inputs, orphan_inputs)
+                entry_inputs = _merge_inputs_preserving_orphans(logical_inputs, orphan_inputs)
             else:
                 result = engine.compute(known_inputs)
-                entry.inputs = _merge_inputs_preserving_orphans(result.inputs, orphan_inputs)
-            entry.outputs = result.outputs
-            entry.total = result.total
-            entry.save(update_fields=["inputs", "outputs", "total", "updated_at"])
+                entry_inputs = _merge_inputs_preserving_orphans(result.inputs, orphan_inputs)
+            pending_updates.append(
+                {
+                    "entry": entry,
+                    "inputs": entry_inputs,
+                    "outputs": result.outputs,
+                    "total": result.total,
+                }
+            )
             summary["updated"] += 1
         except ScoringError as exc:
             summary["failed"] += 1
@@ -326,6 +413,17 @@ def _recalculate_scores_for_comp_aparell(competicio, comp_aparell, chunk_size: i
                 entry.id,
                 exc,
             )
+
+    if apply_changes and summary["failed"] == 0:
+        with transaction.atomic():
+            for item in pending_updates:
+                entry = item["entry"]
+                entry.inputs = item["inputs"]
+                entry.outputs = item["outputs"]
+                entry.total = item["total"]
+                entry.save(update_fields=["inputs", "outputs", "total", "updated_at"])
+
+    summary["planned_updates"] = pending_updates
 
     logger.info(
         "Schema recalc summary competicio=%s comp_aparell=%s total=%s updated=%s failed=%s",
@@ -354,7 +452,7 @@ def _serialize_inscripcio_media_for_playback(item: InscripcioMedia) -> dict:
         "is_primary": bool(item.is_primary),
         "original_filename": item.original_filename or "",
         "mime_type": item.mime_type or "",
-        "url": _safe_file_url(item.fitxer),
+        "url": reverse("scoring_media_file", kwargs={"pk": item.competicio_id, "media_id": item.id}),
     }
 
 
@@ -393,17 +491,18 @@ def _split_media_for_playback(items: list) -> dict:
     }
 
 
-def _serialize_judge_video_for_playback(video_obj):
-    if not video_obj or not video_obj.video_file:
+def _serialize_judge_video_for_playback(video_obj, competicio_id=None):
+    if not video_obj or not video_obj.video_file or not competicio_id:
         return None
-    url = _safe_file_url(video_obj.video_file)
-    if not url:
-        return None
+    video_kind = "team" if isinstance(video_obj, TeamScoreEntryVideo) else "individual"
     return {
         "id": video_obj.id,
         "original_filename": video_obj.original_filename or "",
         "mime_type": video_obj.mime_type or "",
-        "url": url,
+        "url": reverse(
+            "scoring_judge_video_file",
+            kwargs={"pk": competicio_id, "video_kind": video_kind, "video_id": video_obj.id},
+        ),
         "status": video_obj.status,
     }
 
@@ -1108,32 +1207,55 @@ class ScoringSchemaUpdate(UpdateView):
         if schema_json is not None:
             previous_schema = self.object.schema if isinstance(self.object.schema, dict) else {}
             schema_changed = previous_schema != schema_json
-            self.object.schema = schema_json
-            self.object.save()
 
         # Auto recalc only in competition flow and only if schema really changed.
         if schema_changed and self.competicio and self.comp_aparell:
-            summary = _recalculate_scores_for_comp_aparell(self.competicio, self.comp_aparell)
+            summary = _recalculate_scores_for_comp_aparell(
+                self.competicio,
+                self.comp_aparell,
+                schema_override=schema_json,
+                apply_changes=False,
+            )
             engine_error = summary.get("engine_error")
 
             if engine_error:
                 messages.error(
                     self.request,
-                    f"Schema desat, pero no s'han recalculat notes: {engine_error}",
+                    f"Schema no desat: validacio del recalc ha fallat ({engine_error}).",
                 )
+                return redirect(self.get_success_url())
             elif summary["failed"] > 0:
                 preview = "; ".join(summary["errors_preview"])
                 extra = f" Errors: {preview}" if preview else ""
-                messages.warning(
+                messages.error(
                     self.request,
-                    f"Schema desat. Recalculades {summary['updated']}/{summary['total']} notes"
-                    f" ({summary['failed']} fallades).{extra}",
+                    f"Schema no desat. El recalc ha fallat per {summary['failed']}/{summary['total']} notes.{extra}",
                 )
+                return redirect(self.get_success_url())
             else:
-                messages.success(
-                    self.request,
-                    f"Schema desat. Recalculades {summary['updated']}/{summary['total']} notes.",
-                )
+                with transaction.atomic():
+                    self.object.schema = schema_json
+                    self.object.save()
+                    for item in summary.get("planned_updates", []):
+                        entry = item["entry"]
+                        entry.inputs = item["inputs"]
+                        entry.outputs = item["outputs"]
+                        entry.total = item["total"]
+                        entry.save(update_fields=["inputs", "outputs", "total", "updated_at"])
+
+        elif schema_changed:
+            self.object.schema = schema_json
+            self.object.save()
+
+        if schema_changed:
+            messages.success(
+                self.request,
+                (
+                    f"Schema desat. Recalculades {summary['updated']}/{summary['total']} notes."
+                    if self.competicio and self.comp_aparell
+                    else "Schema desat."
+                ),
+            )
 
         return redirect(self.get_success_url())
 
@@ -1428,6 +1550,46 @@ def scoring_save_partial(request, pk):
 
 
 @require_GET
+def scoring_media_file(request, pk, media_id):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    item = get_object_or_404(
+        InscripcioMedia.objects.select_related("inscripcio"),
+        pk=media_id,
+        competicio=competicio,
+    )
+    return _protected_file_response(
+        item.fitxer,
+        original_filename=item.original_filename,
+        mime_type=item.mime_type,
+    )
+
+
+@require_GET
+def scoring_judge_video_file(request, pk, video_kind, video_id):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    normalized_kind = str(video_kind or "").strip().lower()
+    if normalized_kind == "team":
+        video_obj = get_object_or_404(
+            TeamScoreEntryVideo.objects.select_related("team_score_entry"),
+            pk=video_id,
+            team_score_entry__competicio=competicio,
+        )
+    elif normalized_kind == "individual":
+        video_obj = get_object_or_404(
+            ScoreEntryVideo.objects.select_related("score_entry"),
+            pk=video_id,
+            score_entry__competicio=competicio,
+        )
+    else:
+        raise Http404("Tipus de video invalid")
+    return _protected_file_response(
+        video_obj.video_file,
+        original_filename=video_obj.original_filename,
+        mime_type=video_obj.mime_type,
+    )
+
+
+@require_GET
 def scoring_media_context(request, pk):
     competicio = get_object_or_404(Competicio, pk=pk)
 
@@ -1479,7 +1641,7 @@ def scoring_media_context(request, pk):
             )
             if score:
                 video_obj = TeamScoreEntryVideo.objects.filter(team_score_entry=score).first()
-                judge_video_payload = _serialize_judge_video_for_playback(video_obj)
+                judge_video_payload = _serialize_judge_video_for_playback(video_obj, competicio.id)
 
         return JsonResponse({
             "ok": True,
@@ -1535,7 +1697,7 @@ def scoring_media_context(request, pk):
         )
         if score:
             video_obj = ScoreEntryVideo.objects.filter(score_entry=score).first()
-            judge_video_payload = _serialize_judge_video_for_playback(video_obj)
+            judge_video_payload = _serialize_judge_video_for_playback(video_obj, competicio.id)
 
     meta_parts = []
     if getattr(inscripcio, "entitat", None):
@@ -1567,20 +1729,28 @@ def scoring_media_context(request, pk):
 def scoring_updates(request, pk):
     competicio = get_object_or_404(Competicio, pk=pk)
 
-    since = request.GET.get("since")
+    cursor = parse_feed_cursor(request)
     comp_aparell_id = request.GET.get("comp_aparell_id")
     exercici = request.GET.get("exercici")
     group = request.GET.get("group")  # opcional
     serie_id = request.GET.get("serie_id")  # opcional per aparells team
 
-    dt = parse_datetime(since) if since else None
-    if dt is None:
+    if cursor.dt is None:
         # si no arriba since, no petem: retornem buit
-        return JsonResponse({"ok": True, "now": None, "updates": []})
+        return JsonResponse(
+            {
+                "ok": True,
+                "now": None,
+                "updates": [],
+                "next_since": None,
+                "next_after_id": "",
+                "has_more": False,
+            }
+        )
 
-    updates = []
+    rows = []
     allowed_inputs_by_app = {}
-    qs = ScoreEntry.objects.filter(competicio=competicio, updated_at__gt=dt)
+    qs = ScoreEntry.objects.filter(competicio=competicio)
     qs = qs.annotate(
         _excluded=Exists(
             InscripcioAparellExclusio.objects.filter(
@@ -1603,7 +1773,9 @@ def scoring_updates(request, pk):
         except Exception:
             pass
 
-    for s in qs.select_related("inscripcio")[:500]:
+    qs = _apply_combined_cursor(qs.order_by("updated_at", "id"), cursor, source=SCORING_FEED_SOURCE_SCORE)
+
+    for s in qs.select_related("inscripcio")[: SCORING_UPDATES_LIMIT + 1]:
         if int(s.comp_aparell_id) not in allowed_inputs_by_app:
             ca = CompeticioAparell.objects.filter(pk=s.comp_aparell_id, competicio=competicio).first()
             ss, _ = ScoringSchema.objects.get_or_create(aparell=ca.aparell, defaults={"schema": {}}) if ca else (None, False)
@@ -1611,17 +1783,22 @@ def scoring_updates(request, pk):
                 ss.schema if ss is not None else {},
                 ca,
             )
-        updates.append(
-            _serialize_individual_scoring_update(
-                s,
-                allowed_inputs=allowed_inputs_by_app.get(int(s.comp_aparell_id), set()),
-            )
+        rows.append(
+            {
+                "payload": _serialize_individual_scoring_update(
+                    s,
+                    allowed_inputs=allowed_inputs_by_app.get(int(s.comp_aparell_id), set()),
+                ),
+                "sort_updated_at": s.updated_at,
+                "sort_id": int(s.id),
+                "sort_source": SCORING_FEED_SOURCE_SCORE,
+            }
         )
 
-    updates.extend(
+    rows.extend(
         _collect_team_scoring_updates(
             competicio,
-            dt,
+            cursor,
             comp_aparell_id=comp_aparell_id,
             exercici=exercici,
             serie_id=serie_id if comp_aparell_id else None,
@@ -1629,4 +1806,15 @@ def scoring_updates(request, pk):
     )
 
     # “now” del servidor per anar avançant el cursor
-    return JsonResponse({"ok": True, "now": timezone.now().isoformat(), "updates": updates})
+    rows.sort(key=lambda row: (row["sort_updated_at"], _combined_source_rank(row["sort_source"]), row["sort_id"]))
+    feed_meta = _combined_feed_meta(rows, limit=SCORING_UPDATES_LIMIT, cursor=cursor)
+    return JsonResponse(
+        {
+            "ok": True,
+            "now": feed_meta["next_since"],
+            "updates": [row["payload"] for row in feed_meta["page"]],
+            "next_since": feed_meta["next_since"],
+            "next_after_id": feed_meta["next_after_id"],
+            "has_more": feed_meta["has_more"],
+        }
+    )
