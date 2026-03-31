@@ -58,10 +58,15 @@ from .views import (
     annotate_inscripcions_queryset_for_group_codes,
     _build_inscripcions_filtered_qs,
     _normalize_sort_filters,
+    _normalize_sort_group_by,
+    _normalize_sort_criterion,
+    _parse_fallback_mode,
     _message_for_emptied_programmed_groups,
     get_available_column_filter_fields,
+    get_available_sort_fields,
     get_allowed_group_fields,
     get_competicio_custom_sort_codes,
+    get_inscripcions_sort_context_state,
     get_request_inscripcio_filters,
     build_inscripcions_sort_context_key,
     reconcile_inscripcions_sort_context_state,
@@ -866,9 +871,22 @@ def inscripcions_save_birth_year_range_config(request, pk):
 
 def _normalize_group_workspace_filters(raw_filters):
     filters = raw_filters if isinstance(raw_filters, dict) else {}
+    def _normalize_positive_int_list(raw_values):
+        out = []
+        values = raw_values if isinstance(raw_values, list) else []
+        for value in values:
+            try:
+                clean = int(value)
+            except Exception:
+                continue
+            if clean > 0 and clean not in out:
+                out.append(clean)
+        return out
+
     out = {
         **_normalize_sort_filters(filters),
         "group_state": str(filters.get("group_state") or "all").strip().lower(),
+        "group_ids": _normalize_positive_int_list(filters.get("group_ids")),
         "group_id": None,
         "group_num": None,
     }
@@ -882,34 +900,62 @@ def _normalize_group_workspace_filters(raw_filters):
         group_num = int(filters.get("group_num"))
     except Exception:
         group_num = None
+    if out.get("categoria") and out["categoria"] not in out["categories"]:
+        out["categories"].append(out["categoria"])
+    if out.get("subcategoria") and out["subcategoria"] not in out["subcategories"]:
+        out["subcategories"].append(out["subcategoria"])
+    if out.get("entitat") and out["entitat"] not in out["entitats"]:
+        out["entitats"].append(out["entitat"])
     out["group_id"] = group_id if group_id and group_id > 0 else None
     out["group_num"] = group_num if group_num and group_num > 0 else None
+    if out["group_id"] and out["group_id"] not in out["group_ids"]:
+        out["group_ids"].append(out["group_id"])
     return out
 
 
+def _build_group_workspace_candidates_qs(competicio, filters):
+    filters = _normalize_group_workspace_filters(filters)
+    qs = _build_inscripcions_filtered_qs(competicio, filters)
+    group_ids = list(filters.get("group_ids") or [])
+    group_id = filters.get("group_id")
+    group_num = filters.get("group_num")
+    if group_ids:
+        qs = qs.filter(grup_competicio_id__in=group_ids)
+    elif group_id:
+        qs = qs.filter(grup_competicio_id=group_id)
+    elif group_num:
+        qs = qs.filter(grup=group_num)
+    if filters["group_state"] == "assigned":
+        qs = qs.filter(grup_competicio__isnull=False)
+    elif filters["group_state"] == "unassigned":
+        qs = qs.filter(grup_competicio__isnull=True)
+    return qs
+
+
+def _resolve_group_workspace_filtered_target_ids(competicio, filters):
+    normalized_filters = _normalize_group_workspace_filters(filters)
+    target_ids = list(
+        _build_group_workspace_candidates_qs(competicio, normalized_filters)
+        .order_by("ordre_sortida", "id")
+        .values_list("id", flat=True)
+    )
+    return {
+        "filters": normalized_filters,
+        "target_ids": normalize_inscripcio_ids(target_ids),
+    }
+
+
 def _resolve_group_workspace_target_ids(competicio, payload):
-    scope = str(payload.get("scope") or "selected").strip().lower()
     filters = _normalize_group_workspace_filters(payload.get("filters"))
     selected_ids = normalize_inscripcio_ids(payload.get("selected_ids") or payload.get("ids") or [])
-
-    if scope == "filtered":
-        qs = _build_inscripcions_filtered_qs(competicio, filters)
-        group_id = filters.get("group_id")
-        group_num = filters.get("group_num")
-        if group_id:
-            qs = qs.filter(grup_competicio_id=group_id)
-        elif group_num:
-            qs = qs.filter(grup=group_num)
-        if filters["group_state"] == "assigned":
-            qs = qs.filter(grup_competicio__isnull=False)
-        elif filters["group_state"] == "unassigned":
-            qs = qs.filter(grup_competicio__isnull=True)
-        target_ids = list(qs.order_by("ordre_sortida", "id").values_list("id", flat=True))
+    if selected_ids:
+        target_ids = list(selected_ids)
+    elif str(payload.get("scope") or "").strip().lower() == "filtered":
+        target_ids = _resolve_group_workspace_filtered_target_ids(competicio, filters)["target_ids"]
     else:
-        target_ids = selected_ids
+        target_ids = []
 
     return {
-        "scope": scope,
         "filters": filters,
         "selected_ids": selected_ids,
         "target_ids": normalize_inscripcio_ids(target_ids),
@@ -986,6 +1032,19 @@ def _build_group_workspace_filter_options(records, groups):
     }
 
 
+def _build_group_workspace_filter_option_source_qs(competicio, filters):
+    option_filters = {
+        **_normalize_sort_filters(filters),
+        "categoria": "",
+        "subcategoria": "",
+        "entitat": "",
+        "categories": [],
+        "subcategories": [],
+        "entitats": [],
+    }
+    return _build_inscripcions_filtered_qs(competicio, option_filters)
+
+
 def _build_group_workspace_selection_summary(competicio, selected_ids):
     selected_ids = normalize_inscripcio_ids(selected_ids)
     if not selected_ids:
@@ -1036,10 +1095,12 @@ def _build_group_workspace_selection_summary(competicio, selected_ids):
 
 
 def _build_group_workspace_payload(competicio, payload):
-    selection = _resolve_group_workspace_target_ids(competicio, payload)
-    filters = selection["filters"]
-    selected_ids = selection["selected_ids"]
-    target_ids = selection["target_ids"]
+    filtered_target_bundle = _resolve_group_workspace_filtered_target_ids(
+        competicio,
+        payload.get("filters"),
+    )
+    filters = filtered_target_bundle["filters"]
+    selected_ids = normalize_inscripcio_ids(payload.get("selected_ids") or payload.get("ids") or [])
     page = 1
     page_size = 40
     try:
@@ -1053,15 +1114,13 @@ def _build_group_workspace_payload(competicio, payload):
     page = max(1, page)
     page_size = max(1, min(200, page_size))
 
-    candidates_qs = _build_inscripcions_filtered_qs(competicio, filters)
-    if filters["group_state"] == "assigned":
-        candidates_qs = candidates_qs.filter(grup_competicio__isnull=False)
-    elif filters["group_state"] == "unassigned":
-        candidates_qs = candidates_qs.filter(grup_competicio__isnull=True)
-    if filters.get("group_id"):
-        candidates_qs = candidates_qs.filter(grup_competicio_id=filters["group_id"])
-    elif filters.get("group_num"):
-        candidates_qs = candidates_qs.filter(grup=filters["group_num"])
+    filter_option_records = list(
+        _build_group_workspace_filter_option_source_qs(competicio, filters)
+        .order_by("ordre_sortida", "id")
+        .only("id", "categoria", "subcategoria", "entitat")
+    )
+
+    candidates_qs = _build_group_workspace_candidates_qs(competicio, filters)
 
     candidate_records = list(
         candidates_qs
@@ -1101,10 +1160,8 @@ def _build_group_workspace_payload(competicio, payload):
         "rotacions_active": bool(competicio_has_rotacions(competicio)),
         "selection": _build_group_workspace_selection_summary(competicio, selected_ids),
         "filters": filters,
-        "filter_options": _build_group_workspace_filter_options(candidate_records, groups),
-        "scope": selection["scope"],
+        "filter_options": _build_group_workspace_filter_options(filter_option_records, groups),
         "selected_ids": selected_ids,
-        "target_ids": target_ids,
         "paging": {
             "page": page,
             "page_size": page_size,
@@ -1113,6 +1170,115 @@ def _build_group_workspace_payload(competicio, payload):
         },
         "candidates": [_serialize_group_workspace_candidate(ins, selected_ids=selected_ids) for ins in page_rows],
         "groups": group_cards,
+    }
+
+
+def _build_group_workspace_auto_context(competicio, request, payload):
+    filters = _normalize_group_workspace_filters(payload.get("filters"))
+    selected_ids = normalize_inscripcio_ids(payload.get("selected_ids") or payload.get("ids") or [])
+    fallback_mode = _parse_fallback_mode(payload.get("fallback_mode"))
+
+    allowed_group_fields = get_allowed_group_fields(competicio)
+    allowed_group_codes = {field["code"] for field in allowed_group_fields}
+    selected_group_codes = _normalize_sort_group_by(
+        payload.get("group_by"),
+        allowed_group_codes,
+        fallback_group_by=competicio.group_by_default or [],
+    )
+
+    sort_fields = get_available_sort_fields(competicio)
+    sort_codes = {field["code"] for field in sort_fields}
+    context_key = build_inscripcions_sort_context_key(
+        competicio.id,
+        filters=filters,
+        group_by=selected_group_codes,
+    )
+    sort_state = get_inscripcions_sort_context_state(request, context_key)
+    stack_raw = sort_state.get("stack") if isinstance(sort_state.get("stack"), list) else []
+    stack = []
+    for item in stack_raw:
+        normalized = _normalize_sort_criterion(
+            item,
+            sort_codes=sort_codes,
+            allowed_group_codes=allowed_group_codes,
+            fallback_group_by=selected_group_codes,
+        )
+        if normalized is not None:
+            stack.append(normalized)
+    partition_codes = _extract_sort_partition_codes(stack)
+
+    if not selected_ids:
+        return {
+            "selection_count": 0,
+            "buckets": [],
+            "buckets_total": 0,
+            "layers_used": [],
+            "used_fallback": False,
+            "fallback_reason": "",
+            "default_bucket_keys": [],
+        }
+
+    resolution_codes = list(dict.fromkeys(list(selected_group_codes) + list(partition_codes)))
+    resolution_builtin_fields = [
+        code for code in resolution_codes if hasattr(Inscripcio, code)
+    ]
+    records_qs = Inscripcio.objects.filter(competicio=competicio, id__in=selected_ids)
+    if resolution_codes:
+        records_qs = annotate_inscripcions_queryset_for_group_codes(
+            records_qs,
+            competicio,
+            resolution_codes,
+        )
+    records = list(
+        records_qs.order_by("ordre_sortida", "id").only(
+            "id",
+            "extra",
+            "data_naixement",
+            *resolution_builtin_fields,
+        )
+    )
+    if not records:
+        return {
+            "selection_count": 0,
+            "buckets": [],
+            "buckets_total": 0,
+            "layers_used": [],
+            "used_fallback": False,
+            "fallback_reason": "",
+            "default_bucket_keys": [],
+        }
+
+    resolution = _resolve_group_creation_buckets(
+        competicio,
+        records,
+        group_codes=selected_group_codes,
+        partition_codes=partition_codes,
+        fallback_mode=fallback_mode,
+    )
+    buckets_raw = (resolution.get("buckets") if resolution.get("ok") else []) or []
+    buckets = [
+        {
+            "key": bucket.get("key"),
+            "label": bucket.get("label"),
+            "count": int(bucket.get("count") or 0),
+            "sources": bucket.get("sources") or [],
+            "kinds": [
+                str(source.get("kind") or "").strip().lower()
+                for source in (bucket.get("sources") or [])
+                if str(source.get("kind") or "").strip()
+            ],
+        }
+        for bucket in buckets_raw
+        if str(bucket.get("key") or "").strip()
+    ]
+    return {
+        "selection_count": len(records),
+        "buckets": buckets,
+        "buckets_total": len(buckets),
+        "layers_used": list(resolution.get("layers_used") or []),
+        "used_fallback": bool(resolution.get("used_fallback")),
+        "fallback_reason": str(resolution.get("fallback_reason") or ""),
+        "default_bucket_keys": [bucket["key"] for bucket in buckets],
     }
 
 
@@ -1155,10 +1321,10 @@ def _get_programmed_groups_warned_by_ids(competicio, inscripcio_ids, exclude_gro
 
 def _group_workspace_action_preview(competicio, payload):
     action = str(payload.get("action") or "create").strip().lower()
-    scope_bundle = _resolve_group_workspace_target_ids(competicio, payload)
-    filters = scope_bundle["filters"]
-    selected_ids = scope_bundle["selected_ids"]
-    target_ids = scope_bundle["target_ids"]
+    target_bundle = _resolve_group_workspace_target_ids(competicio, payload)
+    filters = target_bundle["filters"]
+    selected_ids = target_bundle["selected_ids"]
+    target_ids = target_bundle["target_ids"]
     records = list(
         Inscripcio.objects
         .filter(competicio=competicio, id__in=target_ids)
@@ -1204,7 +1370,6 @@ def _group_workspace_action_preview(competicio, payload):
 
     preview = {
         "action": action,
-        "scope": scope_bundle["scope"],
         "selection": selection_summary,
         "summary": summary,
         "rotacions_active": bool(competicio_has_rotacions(competicio)),
@@ -1271,6 +1436,42 @@ def groups_workspace(request, pk):
         payload = json.loads(request.body.decode("utf-8"))
     except Exception:
         payload = {}
+    operation = str(payload.get("operation") or "").strip().lower()
+    if operation == "resolve_filtered_ids":
+        resolved = _resolve_group_workspace_filtered_target_ids(
+            competicio,
+            payload.get("filters"),
+        )
+        return JsonResponse(
+            with_inscripcions_history_payload(
+                {
+                    "ok": True,
+                    "operation": "resolve_filtered_ids",
+                    "filters": resolved["filters"],
+                    "target_ids": resolved["target_ids"],
+                    "total": len(resolved["target_ids"]),
+                },
+                request,
+                competicio.id,
+            )
+        )
+    if operation == "resolve_auto_context":
+        auto_context = _build_group_workspace_auto_context(
+            competicio,
+            request,
+            payload,
+        )
+        return JsonResponse(
+            with_inscripcions_history_payload(
+                {
+                    "ok": True,
+                    "operation": "resolve_auto_context",
+                    **auto_context,
+                },
+                request,
+                competicio.id,
+            )
+        )
     workspace = _build_group_workspace_payload(competicio, payload)
     return JsonResponse(
         with_inscripcions_history_payload(
@@ -1557,6 +1758,73 @@ def groups_delete_empty(request, pk):
                 "deleted": len(deleted_ids),
                 "deleted_ids": deleted_ids,
                 "skipped_ids": skipped_ids,
+            },
+            request,
+            competicio.id,
+        )
+    )
+
+
+@require_POST
+@csrf_protect
+@transaction.atomic
+def groups_delete_all(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    try:
+        json.loads(request.body.decode("utf-8") or "{}")
+    except Exception:
+        return HttpResponseBadRequest("JSON invalid")
+
+    groups = list(get_competicio_groups(competicio, include_inactive=False))
+    programmed_group_ids = set(get_programmed_group_ids(competicio) or [])
+    protected_groups = []
+    deleted_groups = []
+
+    before_snapshot = capture_inscripcions_history_snapshot(request, competicio)
+
+    for group in groups:
+        if int(group.id) in programmed_group_ids:
+            protected_groups.append({
+                "id": int(group.id),
+                "display_num": int(group.display_num or 0),
+                "label": group_label(group),
+            })
+            continue
+
+        member_ids = list(
+            Inscripcio.objects
+            .filter(grup_competicio=group)
+            .values_list("id", flat=True)
+        )
+        if member_ids:
+            clear_inscripcions_group(competicio, member_ids)
+        ok, reason = safe_deactivate_empty_group(group)
+        if ok:
+            deleted_groups.append({
+                "id": int(group.id),
+                "display_num": int(group.display_num or 0),
+                "label": group_label(group),
+            })
+        elif reason == "group_not_empty":
+            return HttpResponseBadRequest("group not empty after clearing")
+
+    sync_competicio_group_names_view(competicio)
+    record_inscripcions_history_entry(
+        request,
+        competicio,
+        action_type="groups_delete_all",
+        action_label="Desactivar tots els grups no programats",
+        before_snapshot=before_snapshot,
+        after_snapshot=capture_inscripcions_history_snapshot(request, competicio),
+    )
+    return JsonResponse(
+        with_inscripcions_history_payload(
+            {
+                "ok": True,
+                "deleted": len(deleted_groups),
+                "deleted_groups": deleted_groups,
+                "protected": len(protected_groups),
+                "protected_groups": protected_groups,
             },
             request,
             competicio.id,

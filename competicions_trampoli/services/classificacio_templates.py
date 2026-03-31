@@ -192,6 +192,44 @@ def extract_template_schema(payload_or_schema):
     return json_clone(payload_or_schema)
 
 
+def _iter_presentacio_column_groups(presentacio):
+    if not isinstance(presentacio, dict):
+        return []
+    groups = [("presentacio.columnes", presentacio.get("columnes"))]
+    detail = presentacio.get("detall")
+    if isinstance(detail, dict):
+        groups.append(("presentacio.detall.columnes", detail.get("columnes")))
+        sections = detail.get("sections") or []
+        if isinstance(sections, list):
+            for idx, section in enumerate(sections):
+                if not isinstance(section, dict):
+                    continue
+                groups.append((f"presentacio.detall.sections[{idx}].columns", section.get("columns")))
+    return groups
+
+
+def _assign_presentacio_column_group(presentacio, path, cols_out):
+    if path == "presentacio.columnes":
+        presentacio["columnes"] = cols_out
+        return
+    detail = presentacio.get("detall") if isinstance(presentacio.get("detall"), dict) else {}
+    if path == "presentacio.detall.columnes":
+        detail["columnes"] = cols_out
+        presentacio["detall"] = detail
+        return
+    if path.startswith("presentacio.detall.sections[") and path.endswith("].columns"):
+        raw_idx = path[len("presentacio.detall.sections[") : -len("].columns")]
+        try:
+            idx = int(raw_idx)
+        except Exception:
+            return
+        sections = detail.get("sections") if isinstance(detail.get("sections"), list) else []
+        if 0 <= idx < len(sections) and isinstance(sections[idx], dict):
+            sections[idx]["columns"] = cols_out
+            detail["sections"] = sections
+            presentacio["detall"] = detail
+
+
 def get_comp_aparell_maps(competicio, active_only=True):
     qs = CompeticioAparell.objects.filter(competicio=competicio).select_related("aparell").order_by("ordre", "id")
     if active_only:
@@ -395,38 +433,38 @@ def schema_to_template_schema(competicio, schema_local):
     presentacio = schema.get("presentacio") or {}
     if not isinstance(presentacio, dict):
         presentacio = {}
-    cols = presentacio.get("columnes") or []
-    if not isinstance(cols, list):
-        cols = []
-    cols_out = []
-    for idx, col in enumerate(cols):
-        if not isinstance(col, dict):
-            cols_out.append(col)
+    for path, cols in _iter_presentacio_column_groups(presentacio):
+        if not isinstance(cols, list):
             continue
-        item = dict(col)
-        ctype = str(item.get("type") or "builtin").strip().lower()
-        if ctype == "raw":
-            src = item.get("source") if isinstance(item.get("source"), dict) else {}
-            src2 = dict(src)
-            code = resolve_app_code_for_template(src2.get("aparell_codi"), by_id_all, by_code_all)
-            if not code:
-                code = resolve_app_code_for_template(src2.get("aparell_id"), by_id_all, by_code_all)
-            if code:
-                src2["aparell_codi"] = code
-            elif src2.get("aparell_id") not in (None, "", 0, "0"):
-                warnings.append(f"presentacio.columnes[{idx}] raw: aparell no exportat")
-            src2.pop("aparell_id", None)
-            item.pop("aparell_id", None)
-            item["source"] = src2
-        elif ctype == "metric":
-            code = resolve_app_code_for_template(item.get("aparell_codi"), by_id_all, by_code_all)
-            if not code:
-                code = resolve_app_code_for_template(item.get("aparell_id"), by_id_all, by_code_all)
-            if code:
-                item["aparell_codi"] = code
-            item.pop("aparell_id", None)
-        cols_out.append(item)
-    presentacio["columnes"] = cols_out
+        cols_out = []
+        for idx, col in enumerate(cols):
+            if not isinstance(col, dict):
+                cols_out.append(col)
+                continue
+            item = dict(col)
+            ctype = str(item.get("type") or "builtin").strip().lower()
+            if ctype == "raw":
+                src = item.get("source") if isinstance(item.get("source"), dict) else {}
+                src2 = dict(src)
+                code = resolve_app_code_for_template(src2.get("aparell_codi"), by_id_all, by_code_all)
+                if not code:
+                    code = resolve_app_code_for_template(src2.get("aparell_id"), by_id_all, by_code_all)
+                if code:
+                    src2["aparell_codi"] = code
+                elif src2.get("aparell_id") not in (None, "", 0, "0"):
+                    warnings.append(f"{path}[{idx}] raw: aparell no exportat")
+                src2.pop("aparell_id", None)
+                item.pop("aparell_id", None)
+                item["source"] = src2
+            elif ctype == "metric":
+                code = resolve_app_code_for_template(item.get("aparell_codi"), by_id_all, by_code_all)
+                if not code:
+                    code = resolve_app_code_for_template(item.get("aparell_id"), by_id_all, by_code_all)
+                if code:
+                    item["aparell_codi"] = code
+                item.pop("aparell_id", None)
+            cols_out.append(item)
+        _assign_presentacio_column_group(presentacio, path, cols_out)
     schema["presentacio"] = presentacio
 
     equips_cfg = schema.get("equips") or {}
@@ -589,8 +627,9 @@ def template_schema_to_competicio_schema(competicio, schema_tpl):
 
     presentacio = schema.get("presentacio") or {}
     if isinstance(presentacio, dict):
-        cols = presentacio.get("columnes") or []
-        if isinstance(cols, list):
+        for path, cols in _iter_presentacio_column_groups(presentacio):
+            if not isinstance(cols, list):
+                continue
             cols_out = []
             for idx, col in enumerate(cols):
                 if not isinstance(col, dict):
@@ -607,7 +646,7 @@ def template_schema_to_competicio_schema(competicio, schema_tpl):
                     if app_id:
                         src2["aparell_id"] = app_id
                     elif src2.get("aparell_codi") not in (None, "", 0, "0") or src2.get("aparell_id") not in (None, "", 0, "0"):
-                        warnings.append(f"presentacio.columnes[{idx}] raw: aparell no disponible")
+                        warnings.append(f"{path}[{idx}] raw: aparell no disponible")
                     src2.pop("aparell_codi", None)
                     item["source"] = src2
                     item.pop("aparell_codi", None)
@@ -619,8 +658,8 @@ def template_schema_to_competicio_schema(competicio, schema_tpl):
                         item["aparell_id"] = app_id
                     item.pop("aparell_codi", None)
                 cols_out.append(item)
-            presentacio["columnes"] = cols_out
-            schema["presentacio"] = presentacio
+            _assign_presentacio_column_group(presentacio, path, cols_out)
+        schema["presentacio"] = presentacio
 
     equips_cfg = schema.get("equips") or {}
     if isinstance(equips_cfg, dict):
@@ -783,8 +822,9 @@ def template_schema_to_global_ui_schema(schema_tpl, by_id, by_code):
 
     presentacio = schema.get("presentacio") or {}
     if isinstance(presentacio, dict):
-        cols = presentacio.get("columnes") or []
-        if isinstance(cols, list):
+        for path, cols in _iter_presentacio_column_groups(presentacio):
+            if not isinstance(cols, list):
+                continue
             cols_out = []
             for col in cols:
                 if not isinstance(col, dict):
@@ -806,8 +846,8 @@ def template_schema_to_global_ui_schema(schema_tpl, by_id, by_code):
                         item["aparell_id"] = app_id
                     item.pop("aparell_codi", None)
                 cols_out.append(item)
-            presentacio["columnes"] = cols_out
-            schema["presentacio"] = presentacio
+            _assign_presentacio_column_group(presentacio, path, cols_out)
+        schema["presentacio"] = presentacio
 
     return schema, warnings
 
@@ -896,8 +936,9 @@ def global_ui_schema_to_template_schema(schema_ui, by_id, by_code):
 
     presentacio = schema.get("presentacio") or {}
     if isinstance(presentacio, dict):
-        cols = presentacio.get("columnes") or []
-        if isinstance(cols, list):
+        for path, cols in _iter_presentacio_column_groups(presentacio):
+            if not isinstance(cols, list):
+                continue
             cols_out = []
             for col in cols:
                 if not isinstance(col, dict):
@@ -919,8 +960,8 @@ def global_ui_schema_to_template_schema(schema_ui, by_id, by_code):
                         item["aparell_codi"] = code
                     item.pop("aparell_id", None)
                 cols_out.append(item)
-            presentacio["columnes"] = cols_out
-            schema["presentacio"] = presentacio
+            _assign_presentacio_column_group(presentacio, path, cols_out)
+        schema["presentacio"] = presentacio
 
     return schema, warnings
 
@@ -962,19 +1003,20 @@ def collect_required_app_codes_from_template(schema_tpl):
                             out.add(code)
     presentacio = schema.get("presentacio") or {}
     if isinstance(presentacio, dict):
-        for col in (presentacio.get("columnes") or []):
-            if not isinstance(col, dict):
-                continue
-            ctype = str(col.get("type") or "builtin").strip().lower()
-            if ctype == "raw":
-                src = col.get("source") if isinstance(col.get("source"), dict) else {}
-                code = canon_app_code(src.get("aparell_codi"))
-                if code:
-                    out.add(code)
-            elif ctype == "metric":
-                code = canon_app_code(col.get("aparell_codi"))
-                if code:
-                    out.add(code)
+        for _path, cols in _iter_presentacio_column_groups(presentacio):
+            for col in cols or []:
+                if not isinstance(col, dict):
+                    continue
+                ctype = str(col.get("type") or "builtin").strip().lower()
+                if ctype == "raw":
+                    src = col.get("source") if isinstance(col.get("source"), dict) else {}
+                    code = canon_app_code(src.get("aparell_codi"))
+                    if code:
+                        out.add(code)
+                elif ctype == "metric":
+                    code = canon_app_code(col.get("aparell_codi"))
+                    if code:
+                        out.add(code)
     return out
 
 
@@ -1067,20 +1109,21 @@ def build_template_requirements(schema_tpl, *, tipus=None):
     metric_camps = set()
     presentacio = schema.get("presentacio") or {}
     if isinstance(presentacio, dict):
-        for col in (presentacio.get("columnes") or []):
-            if not isinstance(col, dict):
-                continue
-            ctype = str(col.get("type") or "builtin").strip().lower()
-            if ctype == "raw":
-                src = col.get("source") if isinstance(col.get("source"), dict) else {}
-                camp = str(src.get("camp") or "").strip()
-                if camp:
-                    raw_camps.add(camp)
-            elif ctype == "metric":
-                criteri = col.get("criteri") if isinstance(col.get("criteri"), dict) else {}
-                for code in normalize_tie_camps_for_validation(criteri):
-                    if code:
-                        metric_camps.add(str(code).strip())
+        for _path, cols in _iter_presentacio_column_groups(presentacio):
+            for col in cols or []:
+                if not isinstance(col, dict):
+                    continue
+                ctype = str(col.get("type") or "builtin").strip().lower()
+                if ctype == "raw":
+                    src = col.get("source") if isinstance(col.get("source"), dict) else {}
+                    camp = str(src.get("camp") or "").strip()
+                    if camp:
+                        raw_camps.add(camp)
+                elif ctype == "metric":
+                    criteri = col.get("criteri") if isinstance(col.get("criteri"), dict) else {}
+                    for code in normalize_tie_camps_for_validation(criteri):
+                        if code:
+                            metric_camps.add(str(code).strip())
     req["presentacio_raw_camps"] = sorted(raw_camps)
     req["presentacio_metric_camps"] = sorted(metric_camps)
     return req
@@ -1398,43 +1441,44 @@ def validate_template_schema_global(
 
     presentacio = schema.get("presentacio") or {}
     if isinstance(presentacio, dict):
-        for idx, col in enumerate(presentacio.get("columnes") or []):
-            if not isinstance(col, dict):
-                continue
-            ctype = str(col.get("type") or "builtin").strip().lower()
-            if ctype == "raw":
-                src = col.get("source") if isinstance(col.get("source"), dict) else {}
-                app_code = canon_app_code(src.get("aparell_codi"))
-                camp = str(src.get("camp") or "total").strip() or "total"
-                if app_code not in available_app_codes:
-                    errors.append(f"presentacio.columnes[{idx}] raw: aparell no disponible")
+        for path, cols in _iter_presentacio_column_groups(presentacio):
+            for idx, col in enumerate(cols or []):
+                if not isinstance(col, dict):
                     continue
-                if camp not in scoreable_by_code.get(app_code, {"total", "TOTAL"}):
-                    errors.append(f"presentacio.columnes[{idx}] raw: camp no puntuable")
-            elif ctype == "metric":
-                app_code = canon_app_code(col.get("aparell_codi"))
-                if app_code and app_code not in available_app_codes:
-                    errors.append(f"presentacio.columnes[{idx}] metric: aparell no disponible")
-                    continue
-                criteri = col.get("criteri") if isinstance(col.get("criteri"), dict) else {}
-                target_codes = [app_code] if app_code else []
-                if not target_codes:
-                    scope = criteri.get("scope") if isinstance(criteri, dict) else {}
-                    app_scope = scope.get("aparells") if isinstance(scope, dict) else {}
-                    if isinstance(app_scope, dict) and str(app_scope.get("mode") or "").strip().lower() == "seleccionar":
-                        target_codes = [
-                            canon_app_code(raw)
-                            for raw in (app_scope.get("ids") or [])
-                            if canon_app_code(raw)
-                        ]
-                for target_code in target_codes:
-                    if target_code not in available_app_codes:
-                        errors.append(f"presentacio.columnes[{idx}] metric: aparell no disponible")
+                ctype = str(col.get("type") or "builtin").strip().lower()
+                if ctype == "raw":
+                    src = col.get("source") if isinstance(col.get("source"), dict) else {}
+                    app_code = canon_app_code(src.get("aparell_codi"))
+                    camp = str(src.get("camp") or "total").strip() or "total"
+                    if app_code not in available_app_codes:
+                        errors.append(f"{path}[{idx}] raw: aparell no disponible")
                         continue
-                    for code in normalize_tie_camps_for_validation(criteri):
-                        if code not in scoreable_by_code.get(target_code, {"total", "TOTAL"}):
-                            errors.append(
-                                f"presentacio.columnes[{idx}] metric: aparell {target_code}: camp '{code}' no es puntuable directament."
-                            )
+                    if camp not in scoreable_by_code.get(app_code, {"total", "TOTAL"}):
+                        errors.append(f"{path}[{idx}] raw: camp no puntuable")
+                elif ctype == "metric":
+                    app_code = canon_app_code(col.get("aparell_codi"))
+                    if app_code and app_code not in available_app_codes:
+                        errors.append(f"{path}[{idx}] metric: aparell no disponible")
+                        continue
+                    criteri = col.get("criteri") if isinstance(col.get("criteri"), dict) else {}
+                    target_codes = [app_code] if app_code else []
+                    if not target_codes:
+                        scope = criteri.get("scope") if isinstance(criteri, dict) else {}
+                        app_scope = scope.get("aparells") if isinstance(scope, dict) else {}
+                        if isinstance(app_scope, dict) and str(app_scope.get("mode") or "").strip().lower() == "seleccionar":
+                            target_codes = [
+                                canon_app_code(raw)
+                                for raw in (app_scope.get("ids") or [])
+                                if canon_app_code(raw)
+                            ]
+                    for target_code in target_codes:
+                        if target_code not in available_app_codes:
+                            errors.append(f"{path}[{idx}] metric: aparell no disponible")
+                            continue
+                        for code in normalize_tie_camps_for_validation(criteri):
+                            if code not in scoreable_by_code.get(target_code, {"total", "TOTAL"}):
+                                errors.append(
+                                    f"{path}[{idx}] metric: aparell {target_code}: camp '{code}' no es puntuable directament."
+                                )
 
     return schema, errors

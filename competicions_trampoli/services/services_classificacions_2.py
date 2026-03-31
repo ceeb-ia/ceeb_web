@@ -316,6 +316,14 @@ DEFAULT_SCHEMA = {
             {"type": "builtin", "key": "participant", "label": "Nom", "align": "left"},
             {"type": "builtin", "key": "punts", "label": "Punts", "align": "right", "decimals": 3},
         ],
+        "detall": {
+            "enabled": False,
+            "default_open": False,
+            "sections": [],
+            "columnes": [
+                {"type": "builtin", "key": "participant", "label": "Participant", "align": "left"},
+            ],
+        },
     },
 
     # Config additiva per tipus="equips"
@@ -341,6 +349,17 @@ DEFAULT_SCHEMA = {
         "combinar_manual_i_edat": False,
     },
 }
+
+DISPLAY_BUILTIN_KEYS = ("posicio", "participant", "nom", "entitat_nom", "participants", "punts")
+DETAIL_DISPLAY_BUILTIN_KEYS = ("participant", "entitat_nom")
+DETAIL_EXERCISE_BUILTIN_KEYS = ("exercise_index", "aparell_nom", "participant", "entitat_nom")
+DETAIL_SECTION_TYPES = (
+    "members_list",
+    "members_table",
+    "team_metrics",
+    "exercise_table",
+    "entity_members_table",
+)
 
 
 # -----------------------------
@@ -371,6 +390,13 @@ def _display_value(ins, field_name: str) -> str:
     return str(val)
 
 
+def _json_clone_value(value):
+    try:
+        return json.loads(json.dumps(value, ensure_ascii=False))
+    except Exception:
+        return value
+
+
 def _merge_schema(schema: dict) -> dict:
     out = {**DEFAULT_SCHEMA}
     schema = schema or {}
@@ -391,6 +417,12 @@ def _merge_schema(schema: dict) -> dict:
         **((((schema.get("puntuacio") or {}).get("victories")) or {}) if isinstance(schema.get("puntuacio"), dict) else {}),
     }
     out["presentacio"] = {**DEFAULT_SCHEMA["presentacio"], **(schema.get("presentacio") or {})}
+    out["presentacio"]["detall"] = {
+        **DEFAULT_SCHEMA["presentacio"]["detall"],
+        **(((schema.get("presentacio") or {}).get("detall")) or {}),
+    }
+    if not isinstance(out["presentacio"]["detall"].get("sections"), list):
+        out["presentacio"]["detall"]["sections"] = []
     out["desempat"] = schema.get("desempat", DEFAULT_SCHEMA["desempat"]) or []
     out["equips"] = {**DEFAULT_SCHEMA["equips"], **(schema.get("equips") or {})}
     out["equips"]["assignment_source"] = {
@@ -1724,33 +1756,24 @@ def _apply_victories_per_app_to_rows(
     return rows
 
 
-def get_display_columns(schema_or_presentacio=None):
-    """
-    Retorna columnes normalitzades per a renderitzar live/preview.
-    Admet:
-      - schema complet (amb clau presentacio)
-      - objecte presentacio directament
-    """
-    if not isinstance(schema_or_presentacio, dict):
-        presentacio = {}
-    elif "presentacio" in schema_or_presentacio:
-        presentacio = schema_or_presentacio.get("presentacio") or {}
-    else:
-        presentacio = schema_or_presentacio or {}
-
-    raw_cols = presentacio.get("columnes")
+def _normalize_display_columns(raw_cols, *, detail_mode=False, allowed_builtin_keys=None, default_cols=None):
     cols = raw_cols if isinstance(raw_cols, list) else []
-
-    def _default():
-        return [
-            {"type": "builtin", "key": "posicio", "label": "#", "align": "left"},
-            {"type": "builtin", "key": "participant", "label": "Nom", "align": "left"},
-            {"type": "builtin", "key": "punts", "label": "Punts", "align": "right", "decimals": 3},
-        ]
-
+    if default_cols is None:
+        default_cols = (
+            [
+                {"type": "builtin", "key": "participant", "label": "Participant", "align": "left"},
+            ]
+            if detail_mode
+            else [
+                {"type": "builtin", "key": "posicio", "label": "#", "align": "left"},
+                {"type": "builtin", "key": "participant", "label": "Nom", "align": "left"},
+                {"type": "builtin", "key": "punts", "label": "Punts", "align": "right", "decimals": 3},
+            ]
+        )
+    if allowed_builtin_keys is None:
+        allowed_builtin_keys = DETAIL_DISPLAY_BUILTIN_KEYS if detail_mode else DISPLAY_BUILTIN_KEYS
     if not cols:
-        return _default()
-
+        return _json_clone_value(default_cols)
     out = []
     seen_keys = set()
     metric_idx = 1
@@ -1878,7 +1901,7 @@ def get_display_columns(schema_or_presentacio=None):
             }
         else:
             key = str(item.get("key") or "").strip()
-            if key not in ("posicio", "participant", "nom", "entitat_nom", "participants", "punts"):
+            if key not in allowed_builtin_keys:
                 continue
             if not label:
                 label = {
@@ -1905,7 +1928,145 @@ def get_display_columns(schema_or_presentacio=None):
         seen_keys.add(key)
         out.append(out_item)
 
-    return out or _default()
+    return out or _json_clone_value(default_cols)
+
+
+def _detail_section_builtin_keys(section_type: str):
+    stype = str(section_type or "").strip().lower()
+    if stype == "exercise_table":
+        return DETAIL_EXERCISE_BUILTIN_KEYS
+    if stype in ("members_table", "entity_members_table", "team_metrics"):
+        return DETAIL_DISPLAY_BUILTIN_KEYS
+    return ()
+
+
+def _detail_section_default(section_type: str):
+    stype = str(section_type or "").strip().lower()
+    if stype == "members_list":
+        return {"type": "members_list", "label": "Participants"}
+    if stype == "team_metrics":
+        return {
+            "type": "team_metrics",
+            "label": "Notes equip",
+            "columns": [
+                {"type": "raw", "key": "team_raw_1", "label": "Total", "align": "right", "decimals": 3,
+                 "source": {"aparell_id": None, "exercici": 1, "camp": "total", "jutges": {"ids": []}}},
+            ],
+        }
+    if stype == "exercise_table":
+        return {
+            "type": "exercise_table",
+            "label": "Exercicis",
+            "columns": [
+                {"type": "builtin", "key": "aparell_nom", "label": "Aparell", "align": "left"},
+                {"type": "builtin", "key": "exercise_index", "label": "Ex.", "align": "left"},
+                {"type": "raw", "key": "exercise_raw_1", "label": "Total", "align": "right", "decimals": 3,
+                 "source": {"aparell_id": None, "exercici": 1, "camp": "total", "jutges": {"ids": []}}},
+            ],
+        }
+    if stype == "entity_members_table":
+        return {
+            "type": "entity_members_table",
+            "label": "Participants",
+            "columns": [
+                {"type": "builtin", "key": "participant", "label": "Participant", "align": "left"},
+            ],
+        }
+    return {
+        "type": "members_table",
+        "label": "Detall",
+        "columns": [
+            {"type": "builtin", "key": "participant", "label": "Participant", "align": "left"},
+        ],
+    }
+
+
+def _normalize_detail_section(section):
+    if not isinstance(section, dict):
+        return None
+    stype = str(section.get("type") or "").strip().lower()
+    if stype not in DETAIL_SECTION_TYPES:
+        return None
+    base = _detail_section_default(stype)
+    out = {**base, **section, "type": stype}
+    label = str(out.get("label") or base.get("label") or "").strip()
+    out["label"] = label or str(base.get("label") or "").strip()
+    if "columns" in base or isinstance(section.get("columns"), list):
+        out["columns"] = _normalize_display_columns(
+            section.get("columns") if isinstance(section.get("columns"), list) else base.get("columns"),
+            detail_mode=True,
+            allowed_builtin_keys=_detail_section_builtin_keys(stype),
+            default_cols=base.get("columns") or [],
+        )
+    else:
+        out.pop("columns", None)
+    return out
+
+
+def _default_detail_sections_for_context(tipus="individual", team_mode=""):
+    tipus = str(tipus or "individual").strip().lower()
+    team_mode = str(team_mode or "").strip().lower()
+    if tipus == "individual":
+        return [_detail_section_default("exercise_table")]
+    if tipus == "entitat":
+        return [_detail_section_default("entity_members_table")]
+    if tipus == "equips" and team_mode == "native_team":
+        return [
+            _detail_section_default("members_list"),
+            _detail_section_default("team_metrics"),
+        ]
+    if tipus == "equips":
+        return [_detail_section_default("members_table")]
+    return []
+
+
+def get_display_columns(schema_or_presentacio=None):
+    """
+    Retorna columnes normalitzades per a renderitzar live/preview.
+    Admet:
+      - schema complet (amb clau presentacio)
+      - objecte presentacio directament
+    """
+    if not isinstance(schema_or_presentacio, dict):
+        presentacio = {}
+    elif "presentacio" in schema_or_presentacio:
+        presentacio = schema_or_presentacio.get("presentacio") or {}
+    else:
+        presentacio = schema_or_presentacio or {}
+
+    return _normalize_display_columns(presentacio.get("columnes"), detail_mode=False)
+
+
+def get_detail_display_config(schema_or_presentacio=None, *, tipus="individual", team_mode=""):
+    if not isinstance(schema_or_presentacio, dict):
+        presentacio = {}
+    elif "presentacio" in schema_or_presentacio:
+        presentacio = schema_or_presentacio.get("presentacio") or {}
+    else:
+        presentacio = schema_or_presentacio or {}
+
+    raw_detail = presentacio.get("detall") if isinstance(presentacio.get("detall"), dict) else {}
+    raw_sections = raw_detail.get("sections") if isinstance(raw_detail.get("sections"), list) else []
+    sections = []
+    for item in raw_sections:
+        norm = _normalize_detail_section(item)
+        if norm is not None:
+            sections.append(norm)
+    if not sections and isinstance(raw_detail.get("columnes"), list):
+        sections = [
+            _normalize_detail_section(
+                {
+                    "type": "members_table",
+                    "label": "Detall",
+                    "columns": raw_detail.get("columnes") or [],
+                }
+            )
+        ]
+    return {
+        "enabled": bool(raw_detail.get("enabled", False)),
+        "default_open": bool(raw_detail.get("default_open", False)),
+        "sections": [s for s in sections if s],
+    }
 
 
 def compute_classificacio(competicio, cfg_obj):
@@ -1984,6 +2145,8 @@ def compute_classificacio(competicio, cfg_obj):
     team_mode = ""
     if tipus == "equips":
         team_mode = _normalize_team_mode(equips_cfg.get("team_mode")) or _infer_team_mode_from_comp_aparells(aparells)
+    detail_config = get_detail_display_config(schema, tipus=tipus, team_mode=team_mode)
+    detail_enabled = bool(detail_config.get("enabled"))
     exercise_selection_scope = EXERCISE_SELECTION_SCOPE_PER_MEMBER
     if tipus == "equips" and team_mode == "derived_from_individual":
         exercise_selection_scope = _normalize_exercise_selection_scope(
@@ -3741,6 +3904,272 @@ def compute_classificacio(competicio, cfg_obj):
             return row.get("participants", 0)
         return row.get(key)
 
+    def _detail_builtin_value_for_member(member, key: str):
+        if key == "participant":
+            return (
+                getattr(member, "nom_complet", None)
+                or getattr(member, "nom_i_cognoms", None)
+                or getattr(member, "nom", None)
+                or str(member)
+            )
+        if key == "entitat_nom":
+            return _display_value(member, "entitat")
+        return ""
+
+    def _detail_builtin_value_for_row(row, key: str):
+        if key == "participant":
+            return row.get("participant") or row.get("nom") or row.get("entitat_nom") or ""
+        if key == "entitat_nom":
+            return row.get("entitat_nom") or ""
+        return row.get(key) or ""
+
+    def _detail_builtin_value_for_exercise_row(row, key: str):
+        if key == "exercise_index":
+            return row.get("exercise_index")
+        if key == "aparell_nom":
+            return row.get("aparell_nom") or ""
+        if key == "participant":
+            return row.get("participant") or ""
+        if key == "entitat_nom":
+            return row.get("entitat_nom") or ""
+        return row.get(key) or ""
+
+    def _detail_type_for_row(row: dict):
+        team_mode_row = str(row.get("_team_mode") or "").strip().lower()
+        if team_mode_row == "derived_from_individual":
+            return "derived_team"
+        if team_mode_row == "native_team":
+            return "native_team"
+        if _normalize_positive_int(row.get("inscripcio_id")) is not None:
+            return "individual"
+        if row.get("entitat_nom") and (row.get("_member_ids") or []):
+            return "entity"
+        return ""
+
+    def _comp_aparell_label(app_id):
+        try:
+            app_id = int(app_id)
+        except Exception:
+            return ""
+        ca = next((item for item in aparells if int(getattr(item, "id", 0) or 0) == app_id), None)
+        if ca is None:
+            return ""
+        return getattr(getattr(ca, "aparell", None), "nom", None) or str(ca)
+
+    def _detail_row_id(row: dict):
+        if row.get("_team_mode"):
+            equip_marker = row.get("equip_id")
+            if equip_marker in (None, ""):
+                equip_marker = "none"
+            member_part = "-".join(str(int(x)) for x in (row.get("_member_ids") or []) if _normalize_positive_int(x))
+            return f"team:{equip_marker}:{member_part}"
+        if row.get("entitat_nom") and (row.get("_member_ids") or []):
+            member_part = "-".join(str(int(x)) for x in (row.get("_member_ids") or []) if _normalize_positive_int(x))
+            ent_part = _normalized_text_token(row.get("entitat_nom") or "sense-entitat") or "sense-entitat"
+            return f"entity:{ent_part}:{member_part}"
+        ins_id = _normalize_positive_int(row.get("inscripcio_id"))
+        return f"row:{ins_id}" if ins_id is not None else ""
+
+    def _build_members_list_section(row: dict, section: dict):
+        items = []
+        seen = set()
+        for member_id in row.get("_member_ids") or []:
+            member_pk = _normalize_positive_int(member_id)
+            if member_pk is None or member_pk in seen:
+                continue
+            seen.add(member_pk)
+            member = all_ins_by_id.get(member_pk)
+            if member is None:
+                continue
+            items.append(
+                {
+                    "member_id": member_pk,
+                    "participant": _detail_builtin_value_for_member(member, "participant"),
+                    "entitat_nom": _detail_builtin_value_for_member(member, "entitat_nom"),
+                }
+            )
+        if not items:
+            return None
+        return {"type": "members_list", "label": str(section.get("label") or "Participants"), "items": items}
+
+    def _build_members_table_section(row: dict, section: dict):
+        detail_rows = []
+        detail_columns = section.get("columns") or []
+        for member_id in row.get("_member_ids") or []:
+            member_pk = _normalize_positive_int(member_id)
+            if member_pk is None:
+                continue
+            member = all_ins_by_id.get(member_pk)
+            if member is None:
+                continue
+
+            cells = {}
+            for col in detail_columns:
+                ctype = str(col.get("type") or "builtin").strip().lower()
+                ckey = str(col.get("key") or "").strip()
+                if not ckey:
+                    continue
+                if ctype == "raw":
+                    val = _raw_col_value_for_ins(member_pk, col)
+                    if not (isinstance(val, dict) and val.get("_kind") == "judge_rows"):
+                        val = _apply_decimals_if_numeric(val, col.get("decimals"))
+                else:
+                    val = _detail_builtin_value_for_member(member, ckey)
+                    val = _apply_decimals_if_numeric(val, col.get("decimals"))
+                cells[ckey] = val
+
+            detail_rows.append(
+                {
+                    "member_id": member_pk,
+                    "participant": _detail_builtin_value_for_member(member, "participant"),
+                    "entitat_nom": _detail_builtin_value_for_member(member, "entitat_nom"),
+                    "cells": cells,
+                    "display": cells,
+                }
+            )
+
+        if not detail_rows:
+            return None
+        return {
+            "type": str(section.get("type") or "members_table"),
+            "label": str(section.get("label") or "Detall"),
+            "columns": _json_clone_value(detail_columns),
+            "rows": detail_rows,
+        }
+
+    def _build_team_metrics_section(row: dict, section: dict):
+        detail_columns = section.get("columns") or []
+        cells = {}
+        for col in detail_columns:
+            ctype = str(col.get("type") or "builtin").strip().lower()
+            ckey = str(col.get("key") or "").strip()
+            if not ckey:
+                continue
+            if ctype == "raw":
+                val = _raw_col_value_for_team_row(row, col)
+                if not (isinstance(val, dict) and val.get("_kind") == "team_raw_detail"):
+                    val = _apply_decimals_if_numeric(val, col.get("decimals"))
+            else:
+                val = _detail_builtin_value_for_row(row, ckey)
+                val = _apply_decimals_if_numeric(val, col.get("decimals"))
+            cells[ckey] = val
+        if not cells:
+            return None
+        return {
+            "type": "team_metrics",
+            "label": str(section.get("label") or "Notes equip"),
+            "columns": _json_clone_value(detail_columns),
+            "rows": [
+                {
+                    "participant": _detail_builtin_value_for_row(row, "participant"),
+                    "entitat_nom": _detail_builtin_value_for_row(row, "entitat_nom"),
+                    "cells": cells,
+                    "display": cells,
+                }
+            ],
+        }
+
+    def _build_exercise_table_section(row: dict, section: dict):
+        ins_id = _normalize_positive_int(row.get("inscripcio_id"))
+        if ins_id is None:
+            return None
+        detail_columns = section.get("columns") or []
+        row_defs = []
+        seen_defs = set()
+        for col in detail_columns:
+            if str(col.get("type") or "").strip().lower() != "raw":
+                continue
+            src = col.get("source") if isinstance(col.get("source"), dict) else {}
+            app_id = _normalize_positive_int(src.get("aparell_id"))
+            ex_idx = _normalize_positive_int(src.get("exercici")) or 1
+            if app_id is None:
+                continue
+            key = (app_id, ex_idx)
+            if key in seen_defs:
+                continue
+            seen_defs.add(key)
+            row_defs.append(key)
+        if not row_defs:
+            return None
+
+        rows_out = []
+        for app_id, ex_idx in row_defs:
+            cells = {}
+            for col in detail_columns:
+                ctype = str(col.get("type") or "builtin").strip().lower()
+                ckey = str(col.get("key") or "").strip()
+                if not ckey:
+                    continue
+                if ctype == "raw":
+                    src = col.get("source") if isinstance(col.get("source"), dict) else {}
+                    if _normalize_positive_int(src.get("aparell_id")) != app_id:
+                        cells[ckey] = ""
+                        continue
+                    if (_normalize_positive_int(src.get("exercici")) or 1) != ex_idx:
+                        cells[ckey] = ""
+                        continue
+                    val = _raw_col_value_for_ins(ins_id, col)
+                    if not (isinstance(val, dict) and val.get("_kind") == "judge_rows"):
+                        val = _apply_decimals_if_numeric(val, col.get("decimals"))
+                else:
+                    val = _detail_builtin_value_for_exercise_row(
+                        {
+                            "exercise_index": ex_idx,
+                            "aparell_nom": _comp_aparell_label(app_id),
+                            "participant": _detail_builtin_value_for_row(row, "participant"),
+                            "entitat_nom": _detail_builtin_value_for_row(row, "entitat_nom"),
+                        },
+                        ckey,
+                    )
+                    val = _apply_decimals_if_numeric(val, col.get("decimals"))
+                cells[ckey] = val
+            rows_out.append(
+                {
+                    "app_id": app_id,
+                    "exercise_index": ex_idx,
+                    "aparell_nom": _comp_aparell_label(app_id),
+                    "participant": _detail_builtin_value_for_row(row, "participant"),
+                    "entitat_nom": _detail_builtin_value_for_row(row, "entitat_nom"),
+                    "cells": cells,
+                    "display": cells,
+                }
+            )
+        if not rows_out:
+            return None
+        return {
+            "type": "exercise_table",
+            "label": str(section.get("label") or "Exercicis"),
+            "columns": _json_clone_value(detail_columns),
+            "rows": rows_out,
+        }
+
+    def _build_detail_payload(row: dict):
+        if not detail_enabled:
+            return None
+        sections = []
+        detail_type = _detail_type_for_row(row)
+        for section in detail_config.get("sections") or []:
+            stype = str(section.get("type") or "").strip().lower()
+            section_payload = None
+            if stype == "members_list" and detail_type in ("derived_team", "native_team"):
+                section_payload = _build_members_list_section(row, section)
+            elif stype == "members_table" and detail_type == "derived_team":
+                section_payload = _build_members_table_section(row, section)
+            elif stype == "entity_members_table" and detail_type == "entity":
+                section_payload = _build_members_table_section(row, section)
+            elif stype == "team_metrics" and detail_type == "native_team":
+                section_payload = _build_team_metrics_section(row, section)
+            elif stype == "exercise_table" and detail_type == "individual":
+                section_payload = _build_exercise_table_section(row, section)
+            if section_payload is not None:
+                sections.append(section_payload)
+        if not sections:
+            return None
+        return {
+            "default_open": bool(detail_config.get("default_open", False)),
+            "sections": sections,
+        }
+
     def _attach_display_cells(rows, entity_mode=False):
         for row in rows:
             cells = {}
@@ -3771,6 +4200,12 @@ def compute_classificacio(competicio, cfg_obj):
 
             row["cells"] = cells
             row["display"] = cells
+            row["row_id"] = _detail_row_id(row)
+            detail_payload = _build_detail_payload(row)
+            if detail_payload is not None:
+                row["detail"] = detail_payload
+            else:
+                row.pop("detail", None)
             row.pop("_member_ids", None)
             row.pop("_team_mode", None)
         return rows

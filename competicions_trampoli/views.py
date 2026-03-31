@@ -54,6 +54,7 @@ from .services.competition_groups import (
     get_programmed_group_ids,
     move_inscripcio_to_group,
     next_group_display_num,
+    normalize_inscripcio_ids,
     normalize_positive_int,
     save_group_competition_order,
     sync_competicio_group_names_view,
@@ -954,11 +955,26 @@ INSCRIPCIONS_HISTORY_DEPTH = 20
 
 def _normalize_sort_filters(raw_filters):
     data = raw_filters if isinstance(raw_filters, dict) else {}
+    categoria = str(data.get("categoria") or "").strip()
+    subcategoria = str(data.get("subcategoria") or "").strip()
+    entitat = str(data.get("entitat") or "").strip()
+    def _normalize_string_list(raw_values):
+        out = []
+        values = raw_values if isinstance(raw_values, list) else []
+        for value in values:
+            text = str(value or "").strip()
+            if text and text not in out:
+                out.append(text)
+        return out
+
     return {
         "q": str(data.get("q") or "").strip(),
-        "categoria": str(data.get("categoria") or "").strip(),
-        "subcategoria": str(data.get("subcategoria") or "").strip(),
-        "entitat": str(data.get("entitat") or "").strip(),
+        "categoria": categoria,
+        "subcategoria": subcategoria,
+        "entitat": entitat,
+        "categories": _normalize_string_list(data.get("categories")),
+        "subcategories": _normalize_string_list(data.get("subcategories")),
+        "entitats": _normalize_string_list(data.get("entitats")),
         "column_filters": _normalize_column_filters(data.get("column_filters")),
     }
 
@@ -989,6 +1005,9 @@ def build_inscripcions_sort_context_key(competicio_id, filters=None, group_by=No
         clean_filters["categoria"],
         clean_filters["subcategoria"],
         clean_filters["entitat"],
+        json.dumps(clean_filters.get("categories") or [], ensure_ascii=False),
+        json.dumps(clean_filters.get("subcategories") or [], ensure_ascii=False),
+        json.dumps(clean_filters.get("entitats") or [], ensure_ascii=False),
         json.dumps(clean_filters["column_filters"], ensure_ascii=False, sort_keys=True),
         "|".join(clean_group_by),
     ]
@@ -1781,6 +1800,9 @@ def _build_inscripcions_filtered_qs(competicio, filters):
     categoria = clean_filters["categoria"]
     subcategoria = clean_filters["subcategoria"]
     entitat = clean_filters["entitat"]
+    categories = list(clean_filters.get("categories") or [])
+    subcategories = list(clean_filters.get("subcategories") or [])
+    entitats = list(clean_filters.get("entitats") or [])
     allowed_filter_codes = {
         f["code"]
         for f in get_available_column_filter_fields(competicio)
@@ -1791,9 +1813,13 @@ def _build_inscripcions_filtered_qs(competicio, filters):
     )
 
     qs = Inscripcio.objects.filter(competicio=competicio)
-    if subcategoria:
+    if subcategories:
+        qs = qs.filter(subcategoria__in=subcategories)
+    elif subcategoria:
         qs = qs.filter(subcategoria__iexact=subcategoria)
-    if entitat:
+    if entitats:
+        qs = qs.filter(entitat__in=entitats)
+    elif entitat:
         qs = qs.filter(entitat__icontains=entitat)
     if q:
         qs = qs.filter(
@@ -1801,7 +1827,9 @@ def _build_inscripcions_filtered_qs(competicio, filters):
             Q(document__icontains=q) |
             Q(entitat__icontains=q)
         )
-    if categoria:
+    if categories:
+        qs = qs.filter(categoria__in=categories)
+    elif categoria:
         qs = qs.filter(categoria__iexact=categoria)
 
     if not column_filters:
@@ -5419,6 +5447,33 @@ def inscripcions_groups_from_sort(request, pk):
 
     preview_only = bool(payload.get("preview_only"))
     fallback_mode = _parse_fallback_mode(payload.get("fallback_mode"))
+    scope = str(payload.get("scope") or "filtered").strip().lower()
+    if scope not in {"selected", "filtered"}:
+        scope = "filtered"
+    selected_ids = normalize_inscripcio_ids(payload.get("selected_ids") or [])
+    raw_filters = payload.get("filters") if isinstance(payload.get("filters"), dict) else {}
+
+    group_state = str(raw_filters.get("group_state") or "all").strip().lower()
+    if group_state not in {"all", "assigned", "unassigned"}:
+        group_state = "all"
+
+    group_ids = []
+    raw_group_ids = raw_filters.get("group_ids")
+    if isinstance(raw_group_ids, list):
+        for value in raw_group_ids:
+            try:
+                clean = int(value)
+            except Exception:
+                continue
+            if clean > 0 and clean not in group_ids:
+                group_ids.append(clean)
+
+    try:
+        legacy_group_id = int(raw_filters.get("group_id"))
+    except Exception:
+        legacy_group_id = None
+    if legacy_group_id and legacy_group_id > 0 and legacy_group_id not in group_ids:
+        group_ids.append(legacy_group_id)
 
     allowed_group_fields = get_allowed_group_fields(competicio)
     allowed_group_codes = {f["code"] for f in allowed_group_fields}
@@ -5452,7 +5507,16 @@ def inscripcions_groups_from_sort(request, pk):
 
     partition_codes = _extract_sort_partition_codes(stack)
 
-    qs = _build_inscripcions_filtered_qs(competicio, filters)
+    if scope == "selected":
+        qs = Inscripcio.objects.filter(competicio=competicio, id__in=selected_ids)
+    else:
+        qs = _build_inscripcions_filtered_qs(competicio, filters)
+        if group_ids:
+            qs = qs.filter(grup_competicio_id__in=group_ids)
+        if group_state == "assigned":
+            qs = qs.filter(grup_competicio__isnull=False)
+        elif group_state == "unassigned":
+            qs = qs.filter(grup_competicio__isnull=True)
     records = list(qs.order_by("ordre_sortida", "id"))
     if not records:
         return JsonResponse(
@@ -5520,6 +5584,8 @@ def inscripcions_groups_from_sort(request, pk):
 
     if selected_keys:
         buckets_to_apply = [bucket_by_key[k] for k in selected_keys]
+    elif str(payload.get("bucket_selection_mode") or "").strip().lower() == "none":
+        buckets_to_apply = []
     else:
         buckets_to_apply = list(buckets)
 

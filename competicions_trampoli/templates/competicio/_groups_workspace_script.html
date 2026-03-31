@@ -8,16 +8,22 @@ if (groupsWorkspaceShell && groupsMainCard) {
   const groupsAssignUrl = "{% url 'groups_assign' competicio.id %}";
   const groupsUnassignUrl = "{% url 'groups_unassign' competicio.id %}";
   const groupsDeleteUrl = "{% url 'groups_delete' competicio.id %}";
+  const groupsDeleteAllUrl = "/competicio/{{ competicio.id }}/groups/delete-all/";
   const groupsDeleteEmptyUrl = "{% url 'groups_delete_empty' competicio.id %}";
 
   const state = {
-    filters: Object.assign({ group_state: 'all', group_id: '' }, getCurrentInscripcioFilters()),
-    selectionMode: 'selected',
+    filters: Object.assign({
+      group_state: 'all',
+      categories: [],
+      subcategories: [],
+      entitats: [],
+      group_ids: [],
+    }, getCurrentInscripcioFilters()),
     selectedIds: new Set((typeof getSelectedInscripcioIds === 'function' ? getSelectedInscripcioIds() : []).map(String)),
     page: 1,
     pageSize: 40,
     selectedGroupId: '',
-    activeTab: 'manual',
+    autoContextExpanded: false,
     filterTimer: null,
     workspace: null,
     selectionSummaryFresh: false,
@@ -32,6 +38,11 @@ if (groupsWorkspaceShell && groupsMainCard) {
   const editable = () => typeof canEditInscripcions !== 'undefined' && !!canEditInscripcions;
   const dndEnabled = () => editable() && typeof Sortable !== 'undefined';
   const selectedIds = () => Array.from(state.selectedIds).map(String).filter(Boolean);
+  const selectedOptionValues = (selectEl) => (
+    Array.from(selectEl?.selectedOptions || [])
+      .map((option) => String(option?.value || '').trim())
+      .filter(Boolean)
+  );
   const alertBox = (message) => typeof showAlert === 'function' ? showAlert(message) : window.alert(message);
   const confirmBox = async (message) => typeof showConfirm === 'function' ? !!(await showConfirm(message)) : window.confirm(message);
   const text = (id, value) => {
@@ -52,7 +63,7 @@ if (groupsWorkspaceShell && groupsMainCard) {
       ? getSelectedInscripcioIds().map(String).filter(Boolean)
       : []
   );
-  const selectionSummaryKey = () => `${state.selectionMode}:${selectedIds().slice().sort().join(',')}`;
+  const selectionSummaryKey = () => selectedIds().slice().sort().join(',');
   const normalizeWorkspace = (data) => (data && data.workspace && typeof data.workspace === 'object') ? data.workspace : (data || {});
   const invalidateAllGroupDetails = () => {
     state.groupDetailCache = {};
@@ -96,11 +107,10 @@ if (groupsWorkspaceShell && groupsMainCard) {
     if (typeof saveUiState !== 'function') return;
     saveUiState({
       groupsWorkspaceState: {
-        selectionMode: state.selectionMode,
         page: state.page,
         pageSize: state.pageSize,
         selectedGroupId: state.selectedGroupId,
-        activeTab: state.activeTab,
+        autoContextExpanded: !!state.autoContextExpanded,
         filters: { ...state.filters },
         ...extra,
       },
@@ -113,33 +123,47 @@ if (groupsWorkspaceShell && groupsMainCard) {
       if (saved.filters && typeof saved.filters === 'object') {
         state.filters = Object.assign({}, state.filters, saved.filters);
       }
-      if (saved.selectionMode) state.selectionMode = String(saved.selectionMode) === 'filtered' ? 'filtered' : 'selected';
       if (saved.page) state.page = Math.max(1, Number(saved.page) || 1);
       if (saved.pageSize) state.pageSize = Math.max(1, Number(saved.pageSize) || 40);
       if (saved.selectedGroupId) state.selectedGroupId = String(saved.selectedGroupId);
-      if (saved.activeTab) state.activeTab = String(saved.activeTab) === 'auto' ? 'auto' : 'manual';
+      if (Object.prototype.hasOwnProperty.call(saved, 'autoContextExpanded')) {
+        state.autoContextExpanded = !!saved.autoContextExpanded;
+      }
     }
   }
 
   function fillSelect(selectEl, items, selectedValue, emptyLabel, mapItem) {
     if (!selectEl) return;
-    const current = String(selectedValue ?? '');
+    const isMultiple = !!selectEl.multiple;
+    const currentValues = isMultiple
+      ? new Set((Array.isArray(selectedValue) ? selectedValue : []).map((value) => String(value ?? '')).filter(Boolean))
+      : new Set([String(selectedValue ?? '')]);
     const frag = document.createDocumentFragment();
-    const first = document.createElement('option');
-    first.value = '';
-    first.textContent = emptyLabel || 'Totes';
-    frag.appendChild(first);
+    if (!isMultiple) {
+      const first = document.createElement('option');
+      first.value = '';
+      first.textContent = emptyLabel || 'Totes';
+      frag.appendChild(first);
+    }
     (items || []).forEach((item) => {
       const row = typeof mapItem === 'function' ? mapItem(item) : { value: item, label: item };
       const option = document.createElement('option');
       option.value = String(row?.value ?? '');
       option.textContent = String(row?.label ?? '');
+      option.selected = currentValues.has(option.value);
       frag.appendChild(option);
     });
     selectEl.innerHTML = '';
     selectEl.appendChild(frag);
     const allowed = new Set(Array.from(selectEl.options).map((option) => String(option.value)));
-    selectEl.value = allowed.has(current) ? current : '';
+    if (isMultiple) {
+      Array.from(selectEl.options).forEach((option) => {
+        option.selected = currentValues.has(String(option.value || ''));
+      });
+    } else {
+      const current = Array.from(currentValues)[0] || '';
+      selectEl.value = allowed.has(current) ? current : '';
+    }
   }
 
   function syncTargetGroupSelectors() {
@@ -149,25 +173,18 @@ if (groupsWorkspaceShell && groupsMainCard) {
     });
   }
 
-  function setSelectionMode(mode) {
-    state.selectionMode = String(mode || '') === 'filtered' ? 'filtered' : 'selected';
-    state.selectionSummaryFresh = false;
-    const compact = document.getElementById('groups-compact-scope');
-    if (compact) compact.value = state.selectionMode;
-    document.querySelectorAll('input[name="groups-selection-mode"]').forEach((input) => {
-      input.checked = input.value === state.selectionMode;
-    });
-    renderSelectionSummary();
-  }
-
   function readFilters() {
     return {
       q: String(document.getElementById('groups-filter-q')?.value || '').trim(),
-      categoria: String(document.getElementById('groups-filter-categoria')?.value || '').trim(),
-      subcategoria: String(document.getElementById('groups-filter-subcategoria')?.value || '').trim(),
-      entitat: String(document.getElementById('groups-filter-entitat')?.value || '').trim(),
+      categoria: '',
+      subcategoria: '',
+      entitat: '',
+      categories: selectedOptionValues(document.getElementById('groups-filter-categoria')),
+      subcategories: selectedOptionValues(document.getElementById('groups-filter-subcategoria')),
+      entitats: selectedOptionValues(document.getElementById('groups-filter-entitat')),
       group_state: String(document.getElementById('groups-filter-group-state')?.value || 'all').trim() || 'all',
-      group_id: String(document.getElementById('groups-filter-group-id')?.value || '').trim(),
+      group_id: '',
+      group_ids: selectedOptionValues(document.getElementById('groups-filter-group-id')),
     };
   }
 
@@ -176,13 +193,13 @@ if (groupsWorkspaceShell && groupsMainCard) {
     const filterOptions = options || {};
     const q = document.getElementById('groups-filter-q');
     if (q) q.value = String(data.q || '');
-    fillSelect(document.getElementById('groups-filter-categoria'), filterOptions.categories || [], data.categoria, 'Totes');
-    fillSelect(document.getElementById('groups-filter-subcategoria'), filterOptions.subcategories || [], data.subcategoria, 'Totes');
-    fillSelect(document.getElementById('groups-filter-entitat'), filterOptions.entitats || [], data.entitat, 'Totes');
+    fillSelect(document.getElementById('groups-filter-categoria'), filterOptions.categories || [], data.categories || [], 'Totes');
+    fillSelect(document.getElementById('groups-filter-subcategoria'), filterOptions.subcategories || [], data.subcategories || [], 'Totes');
+    fillSelect(document.getElementById('groups-filter-entitat'), filterOptions.entitats || [], data.entitats || [], 'Totes');
     fillSelect(
       document.getElementById('groups-filter-group-id'),
       filterOptions.groups || [],
-      data.group_id,
+      data.group_ids || [],
       'Qualsevol',
       (item) => ({ value: item?.id, label: item?.label || `Grup ${item?.display_num || ''}` })
     );
@@ -192,7 +209,6 @@ if (groupsWorkspaceShell && groupsMainCard) {
 
   function buildPayload(extra = {}) {
     return Object.assign({
-      scope: state.selectionMode,
       selected_ids: selectedIds(),
       filters: state.filters,
       page: state.page,
@@ -204,27 +220,54 @@ if (groupsWorkspaceShell && groupsMainCard) {
     return (Array.isArray(rows) ? rows : []).reduce((acc, row) => acc + Number(row?.members_count || 0), 0);
   }
 
+  function dispatchGroupCreationContextChanged() {
+    document.dispatchEvent(new CustomEvent('inscripcions:group-creation-context-changed', {
+      detail: {
+        source: 'groups_workspace',
+        selectedIds: selectedIds(),
+        filters: { ...state.filters },
+        filteredCount: Number(state.workspace?.paging?.total || 0),
+      },
+    }));
+  }
+
+  function updateWorkspaceActionAvailability() {
+    const hasSelection = selectedIds().length > 0;
+    [
+      'preview-create',
+      'create',
+      'compact-create',
+      'assign',
+      'compact-assign',
+      'unassign',
+      'compact-unassign',
+    ].forEach((action) => {
+      document.querySelectorAll(`[data-group-action="${action}"]`).forEach((button) => {
+        button.disabled = !hasSelection;
+      });
+    });
+  }
+
   function renderSelectionSummary() {
     const workspace = state.workspace || {};
-    const selection = workspace.selection || {};
     const selectedCount = selectedIds().length;
     const filteredCount = Number(workspace?.paging?.total || 0);
-    const selectionSummary = state.selectionSummaryFresh
-      ? `${Number(selection.assigned_count || 0)} ja tenen grup | ${Number(selection.unassigned_count || 0)} sense grup`
-      : 'Seleccio actual sincronitzada amb el llistat principal.';
     text('groups-selection-count', `${selectedCount} seleccionades`);
-    text(
-      'groups-selection-mode-label',
-      state.selectionMode === 'selected'
-        ? `Treballant sobre la seleccio actual (${selectedCount})`
-        : `Treballant sobre totes les candidates filtrades (${filteredCount})`
-    );
-    text(
-      'groups-manual-scope-note',
-      state.selectionMode === 'selected'
-        ? selectionSummary
-        : `${filteredCount} candidates filtrades al workspace`
-    );
+    text('groups-selection-mode-label', 'Seleccio activa');
+    text('groups-selection-detail', `${filteredCount} filtrades`);
+    updateWorkspaceActionAvailability();
+  }
+
+  function setAutoContextExpanded(expanded, options = {}) {
+    state.autoContextExpanded = !!expanded;
+    const panel = document.getElementById('groups-auto-context-panel');
+    const toggle = document.getElementById('btn-groups-auto-context-toggle');
+    if (panel) panel.classList.toggle('d-none', !state.autoContextExpanded);
+    if (toggle) {
+      toggle.setAttribute('aria-expanded', state.autoContextExpanded ? 'true' : 'false');
+      toggle.textContent = state.autoContextExpanded ? 'Amagar context automatic' : 'Veure context automatic';
+    }
+    if (!options.skipSave) saveWorkspaceState();
   }
 
   function syncExternalSelection(ids, options = {}) {
@@ -238,20 +281,6 @@ if (groupsWorkspaceShell && groupsMainCard) {
     if (node && typeof node.scrollIntoView === 'function') {
       node.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     }
-  }
-
-  function setActionTab(tab, options = {}) {
-    state.activeTab = String(tab) === 'auto' ? 'auto' : 'manual';
-    document.querySelectorAll('.js-groups-action-tab').forEach((node) => {
-      const active = node.getAttribute('data-groups-action-tab') === state.activeTab;
-      node.classList.toggle('is-active', active);
-      node.classList.toggle('btn-dark', active);
-      node.classList.toggle('btn-outline-dark', !active);
-    });
-    document.querySelectorAll('[data-groups-action-panel]').forEach((panel) => {
-      panel.classList.toggle('d-none', panel.getAttribute('data-groups-action-panel') !== state.activeTab);
-    });
-    if (!options.skipSave) saveWorkspaceState();
   }
 
   function candidateRow(item) {
@@ -443,7 +472,7 @@ if (groupsWorkspaceShell && groupsMainCard) {
     const canDelete = detail ? !!detail.can_delete : !Number(group?.members_count || 0);
 
     const wrap = document.createElement('div');
-    wrap.className = `team-context-team-card team-context-drop-target${Number(group?.members_count || 0) === 0 ? ' is-empty' : ''}${expanded ? ' is-expanded' : ''}`;
+    wrap.className = `team-context-team-card team-context-drop-target${Number(group?.members_count || 0) === 0 ? ' is-empty' : ''}${expanded ? ' is-expanded' : ''}${String(state.selectedGroupId || '') === groupId ? ' is-current' : ''}${group?.is_programmed ? ' is-programmed' : ''}${group?.is_out_of_program ? ' is-out-of-program' : ''}`;
     wrap.dataset.groupId = groupId;
     wrap.dataset.groupCardId = groupId;
     wrap.setAttribute('data-group-card-id', groupId);
@@ -453,7 +482,7 @@ if (groupsWorkspaceShell && groupsMainCard) {
     const titleWrap = document.createElement('div');
     titleWrap.className = 'team-context-team-title-wrap';
     const title = document.createElement('div');
-    title.className = 'fw-semibold';
+    title.className = 'fw-semibold team-context-team-name';
     title.textContent = String(group?.label || `Grup ${group?.display_num || '?'}`);
     titleWrap.appendChild(title);
     const meta = document.createElement('div');
@@ -467,7 +496,7 @@ if (groupsWorkspaceShell && groupsMainCard) {
     titleWrap.appendChild(meta);
     if (Array.isArray(group?.member_names_preview) && group.member_names_preview.length && !expanded) {
       const preview = document.createElement('div');
-      preview.className = 'small text-muted mt-1';
+      preview.className = 'small text-muted mt-1 team-context-team-preview';
       preview.textContent = group.member_names_preview.join(', ');
       titleWrap.appendChild(preview);
     }
@@ -557,14 +586,14 @@ if (groupsWorkspaceShell && groupsMainCard) {
       editor.appendChild(input);
       const save = document.createElement('button');
       save.type = 'button';
-      save.className = 'btn btn-sm btn-primary js-save-group-name';
+      save.className = 'btn btn-sm btn-primary js-workspace-save-group-name';
       save.dataset.groupId = groupId;
       save.dataset.groupNum = String(detail?.display_num || group?.display_num || '');
       save.textContent = 'Desar';
       editor.appendChild(save);
       const cancel = document.createElement('button');
       cancel.type = 'button';
-      cancel.className = 'btn btn-sm btn-light js-cancel-group-name';
+      cancel.className = 'btn btn-sm btn-light js-workspace-cancel-group-name';
       cancel.dataset.groupId = groupId;
       cancel.textContent = 'Cancelar';
       editor.appendChild(cancel);
@@ -625,7 +654,19 @@ if (groupsWorkspaceShell && groupsMainCard) {
     emptyList.innerHTML = '';
     active.forEach((group) => activeList.appendChild(groupCard(group)));
     empty.forEach((group) => emptyList.appendChild(groupCard(group)));
-    if (emptyWrap) emptyWrap.classList.toggle('d-none', empty.length === 0);
+    if (!active.length) {
+      const placeholder = document.createElement('div');
+      placeholder.className = 'groups-board-placeholder';
+      placeholder.textContent = 'Encara no hi ha grups amb participants en aquesta vista.';
+      activeList.appendChild(placeholder);
+    }
+    if (!empty.length) {
+      const placeholder = document.createElement('div');
+      placeholder.className = 'groups-board-placeholder';
+      placeholder.textContent = 'No hi ha grups buits disponibles ara mateix.';
+      emptyList.appendChild(placeholder);
+    }
+    if (emptyWrap) emptyWrap.classList.remove('d-none');
     if (badge) badge.textContent = `${groups.length} grups`;
     if (status) {
       status.textContent = groups.length
@@ -648,6 +689,7 @@ if (groupsWorkspaceShell && groupsMainCard) {
       groups: planned,
       groups_total: planned.length,
       members_total: sumMembers(planned),
+      selection_count: Number(preview?.selection?.count || preview?.target_ids_count || 0),
     };
   }
 
@@ -660,6 +702,27 @@ if (groupsWorkspaceShell && groupsMainCard) {
     } else if (warned.length && typeof setGroupPreviewStatus === 'function') {
       setGroupPreviewStatus(`Atencio: es modificaran grups programats (${warned.map((row) => row?.label || `Grup ${row?.display_num || '?'}`).join(', ')}).`, 'warning');
     }
+  }
+
+  function syncManualPreviewConfirmIntent(preview, action, extra = {}) {
+    const previewApi = window.__groupsPreviewApi;
+    if (!previewApi || typeof previewApi.setConfirmIntent !== 'function' || typeof previewApi.clearConfirmIntent !== 'function') return;
+    if (action !== 'create') {
+      previewApi.clearConfirmIntent();
+      return;
+    }
+    const normalized = previewPayload(preview);
+    const plannedGroups = Array.isArray(normalized?.groups) ? normalized.groups : [];
+    if (!plannedGroups.length) {
+      previewApi.clearConfirmIntent();
+      return;
+    }
+    previewApi.setConfirmIntent({
+      label: 'Previsualitzacio de: Crear un grup amb la seleccio',
+      buttonLabel: 'Confirmar aquesta creacio',
+      canConfirm: true,
+      execute: () => runAction('create', groupsCreateUrl, extra, { skipConfirm: true }),
+    });
   }
 
   async function loadGroupDetail(groupId, options = {}) {
@@ -771,8 +834,8 @@ if (groupsWorkspaceShell && groupsMainCard) {
       text(
         'groups-workspace-description',
         workspace.rotacions_active
-          ? 'Rotacions actives: buidar un grup programat queda bloquejat i modificar-lo genera avis.'
-          : 'Rotacions inactives: pots crear, assignar i revisar grups des del mateix workspace.'
+          ? 'Rotacions actives: no es poden buidar grups programats.'
+          : 'Rotacions inactives: sense bloquejos per programacio.'
       );
 
       fillSelect(
@@ -792,6 +855,7 @@ if (groupsWorkspaceShell && groupsMainCard) {
       syncTargetGroupSelectors();
       await ensureExpandedGroupDetails();
       setupDnd();
+      dispatchGroupCreationContextChanged();
       return workspace;
     } catch (err) {
       showRequestError("No s'ha pogut carregar el gestor de grups.", err);
@@ -816,6 +880,23 @@ if (groupsWorkspaceShell && groupsMainCard) {
     return items.map((item) => String(item?.id || '')).filter(Boolean);
   }
 
+  async function resolveFilteredCandidateIds() {
+    if (Number(state.workspace?.paging?.total || 0) === 0) return [];
+    try {
+      const data = await postJson(groupsWorkspaceUrl, buildPayload({ operation: 'resolve_filtered_ids' }));
+      return Array.isArray(data?.target_ids) ? data.target_ids.map(String).filter(Boolean) : [];
+    } catch (err) {
+      showRequestError("No s'ha pogut resoldre el conjunt filtrat del workspace.", err);
+      return null;
+    }
+  }
+
+  function ensureSelection() {
+    if (selectedIds().length) return true;
+    alertBox('Selecciona com a minim una inscripcio.');
+    return false;
+  }
+
   function updateSelection(ids, mode, options = {}) {
     const rows = Array.isArray(ids) ? ids.map(String).filter(Boolean) : [];
     if (mode === 'set') state.selectedIds = new Set(rows);
@@ -829,6 +910,8 @@ if (groupsWorkspaceShell && groupsMainCard) {
       setupDnd();
     }
     saveWorkspaceState();
+    if (!options.skipPreviewDirty && typeof markGroupPreviewDirty === 'function') markGroupPreviewDirty();
+    dispatchGroupCreationContextChanged();
     if (!options.skipSyncToMain) {
       const api = mainSelectionApi();
       if (api) {
@@ -843,7 +926,6 @@ if (groupsWorkspaceShell && groupsMainCard) {
   const postAssignIds = (groupId, ids) => postJson(
     groupsAssignUrl,
     buildPayload({
-      scope: 'selected',
       group_id: String(groupId || '').trim(),
       selected_ids: (ids || []).map(String).filter(Boolean),
     })
@@ -852,44 +934,39 @@ if (groupsWorkspaceShell && groupsMainCard) {
   const postUnassignIds = (ids) => postJson(
     groupsUnassignUrl,
     buildPayload({
-      scope: 'selected',
       selected_ids: (ids || []).map(String).filter(Boolean),
     })
   );
 
   async function previewAction(action, extra = {}) {
-    if (action !== 'delete' && state.selectionMode === 'selected' && !selectedIds().length) {
-      alertBox('Selecciona almenys una inscripcio.');
-      return;
-    }
+    if (action !== 'delete' && !ensureSelection()) return;
     try {
       const data = await postJson(groupsPreviewUrl, buildPayload(Object.assign({ action }, extra || {})));
       renderManualPreview(data?.preview || {}, action);
+      syncManualPreviewConfirmIntent(data?.preview || {}, action, extra || {});
     } catch (err) {
+      if (window.__groupsPreviewApi && typeof window.__groupsPreviewApi.clearConfirmIntent === 'function') {
+        window.__groupsPreviewApi.clearConfirmIntent();
+      }
       showRequestError("No s'ha pogut calcular la previsualitzacio del gestor de grups.", err);
     }
   }
 
-  async function runAction(action, url, extra = {}) {
+  async function runAction(action, url, extra = {}, options = {}) {
     if (!editable()) return;
-    if (action !== 'delete' && state.selectionMode === 'selected' && !selectedIds().length) {
-      alertBox('Selecciona almenys una inscripcio.');
-      return;
+    if (action !== 'delete' && !ensureSelection()) return;
+    if (!options?.skipConfirm) {
+      const ok = await confirmBox(
+        action === 'create'
+          ? 'Crear un grup nou amb la seleccio activa?'
+          : action === 'assign'
+            ? 'Enviar la seleccio activa al grup seleccionat?'
+            : action === 'unassign'
+              ? 'Deixar la seleccio activa sense grup?'
+              : 'Desactivar aquest grup buit?'
+      );
+      if (!ok) return;
     }
-    if (action === 'create' && state.selectionMode === 'filtered' && !Number(state.workspace?.paging?.total || 0)) {
-      alertBox('No hi ha cap inscripcio filtrada per crear el grup.');
-      return;
-    }
-    const ok = await confirmBox(
-      action === 'create'
-        ? 'Crear un grup nou amb l\'abast actual?'
-        : action === 'assign'
-          ? 'Assignar l\'abast actual al grup seleccionat?'
-          : action === 'unassign'
-            ? 'Treure del grup l\'abast actual?'
-            : 'Desactivar aquest grup buit?'
-    );
-    if (!ok) return;
     try {
       const data = await postJson(url, buildPayload(extra));
       invalidateAllGroupDetails();
@@ -905,6 +982,10 @@ if (groupsWorkspaceShell && groupsMainCard) {
         state.selectedGroupId = '';
       }
       await fetchWorkspace();
+      if (window.__groupsPreviewApi && typeof window.__groupsPreviewApi.clearConfirmIntent === 'function') {
+        window.__groupsPreviewApi.clearConfirmIntent();
+      }
+      if (typeof markGroupPreviewDirty === 'function') markGroupPreviewDirty();
       if (action === 'assign' || action === 'create') {
         const updated = Number(data?.updated || 0);
         const skipped = Array.isArray(data?.skipped_ids) ? data.skipped_ids.length : 0;
@@ -1059,26 +1140,6 @@ if (groupsWorkspaceShell && groupsMainCard) {
   }
 
   function wireEvents() {
-    const compactScope = document.getElementById('groups-compact-scope');
-    if (compactScope) {
-      compactScope.addEventListener('change', async () => {
-        state.page = 1;
-        setSelectionMode(compactScope.value);
-        saveWorkspaceState();
-        await fetchWorkspace();
-      });
-    }
-
-    document.querySelectorAll('input[name="groups-selection-mode"]').forEach((input) => {
-      input.addEventListener('change', async () => {
-        if (!input.checked) return;
-        state.page = 1;
-        setSelectionMode(input.value);
-        saveWorkspaceState();
-        await fetchWorkspace();
-      });
-    });
-
     const syncSelectedGroup = (value) => {
       state.selectedGroupId = String(value || '').trim();
       syncTargetGroupSelectors();
@@ -1095,6 +1156,7 @@ if (groupsWorkspaceShell && groupsMainCard) {
       state.filters = Object.assign({}, state.filters, readFilters());
       state.page = 1;
       saveWorkspaceState();
+      if (typeof markGroupPreviewDirty === 'function') markGroupPreviewDirty();
       if (state.filterTimer) window.clearTimeout(state.filterTimer);
       const run = async () => { await fetchWorkspace(); };
       if (immediate) run();
@@ -1207,7 +1269,7 @@ if (groupsWorkspaceShell && groupsMainCard) {
         return;
       }
 
-      const cancelRenameBtn = event.target.closest('.js-cancel-group-name');
+      const cancelRenameBtn = event.target.closest('.js-workspace-cancel-group-name');
       if (cancelRenameBtn) {
         event.preventDefault();
         const groupId = String(cancelRenameBtn.getAttribute('data-group-id') || '').trim();
@@ -1217,7 +1279,7 @@ if (groupsWorkspaceShell && groupsMainCard) {
         return;
       }
 
-      const saveRenameBtn = event.target.closest('.js-save-group-name');
+      const saveRenameBtn = event.target.closest('.js-workspace-save-group-name');
       if (saveRenameBtn) {
         event.preventDefault();
         const groupId = String(saveRenameBtn.getAttribute('data-group-id') || '').trim();
@@ -1266,16 +1328,22 @@ if (groupsWorkspaceShell && groupsMainCard) {
         openWorkspaceCard();
         return;
       }
-      if (action === 'select-visible') {
-        updateSelection(visibleCandidateIds(), 'set');
+      if (action === 'select-filtered') {
+        const ids = await resolveFilteredCandidateIds();
+        if (ids === null) return;
+        updateSelection(ids, 'set');
         return;
       }
-      if (action === 'add-visible') {
-        updateSelection(visibleCandidateIds(), 'add');
+      if (action === 'add-filtered') {
+        const ids = await resolveFilteredCandidateIds();
+        if (ids === null) return;
+        updateSelection(ids, 'add');
         return;
       }
-      if (action === 'remove-visible') {
-        updateSelection(visibleCandidateIds(), 'remove');
+      if (action === 'remove-filtered') {
+        const ids = await resolveFilteredCandidateIds();
+        if (ids === null) return;
+        updateSelection(ids, 'remove');
         return;
       }
       if (action === 'import-selection') {
@@ -1341,10 +1409,44 @@ if (groupsWorkspaceShell && groupsMainCard) {
           showRequestError("No s'han pogut desactivar els grups buits.", err);
         }
       }
-    });
 
-    document.querySelectorAll('.js-groups-action-tab').forEach((button) => {
-      button.addEventListener('click', () => setActionTab(button.getAttribute('data-groups-action-tab')));
+      if (action === 'delete-all') {
+        const programmedCount = Number(state.workspace?.summary?.programmed_groups || 0);
+        const protectedHint = programmedCount > 0
+          ? ` ${programmedCount} grup(s) programat(s) no s'esborraran.`
+          : '';
+        const warning = state.workspace?.rotacions_active
+          ? `S'esborraran tots els grups no programats. Els grups presents a rotacions o al programa no s'esborraran.${protectedHint}`
+          : `S'esborraran tots els grups no programats.${protectedHint}`;
+        if (!(await confirmBox(`${warning}\n\nVols continuar?`))) return;
+        try {
+          const data = await postJson(groupsDeleteAllUrl, {});
+          invalidateAllGroupDetails();
+          if (window.__groupsPreviewApi && typeof window.__groupsPreviewApi.clearConfirmIntent === 'function') {
+            window.__groupsPreviewApi.clearConfirmIntent();
+          }
+          if (typeof clearGroupPreview === 'function') {
+            clearGroupPreview('La previsualitzacio s\'ha netejat despres de l\'esborrada massiva de grups.');
+          }
+          await fetchWorkspace();
+          const deleted = Number(data?.deleted || 0);
+          const protectedCount = Number(data?.protected || 0);
+          const protectedLabels = (Array.isArray(data?.protected_groups) ? data.protected_groups : [])
+            .map((row) => String(row?.label || '').trim())
+            .filter(Boolean);
+          let message = deleted > 0
+            ? `${deleted} grup(s) no programat(s) desactivat(s).`
+            : "No s'ha desactivat cap grup no programat.";
+          if (protectedCount > 0) {
+            const preview = protectedLabels.slice(0, 4).join(', ');
+            const suffix = protectedLabels.length > 4 ? '...' : '';
+            message += ` ${protectedCount} grup(s) s'han mantingut per estar al programa${preview ? `: ${preview}${suffix}` : '.'}`;
+          }
+          alertBox(message);
+        } catch (err) {
+          showRequestError("No s'han pogut esborrar els grups no programats.", err);
+        }
+      }
     });
 
     const previewClear = document.getElementById('btn-groups-preview-clear');
@@ -1353,24 +1455,33 @@ if (groupsWorkspaceShell && groupsMainCard) {
         if (typeof clearGroupPreview === 'function') clearGroupPreview();
       });
     }
+
+    const autoContextToggle = document.getElementById('btn-groups-auto-context-toggle');
+    if (autoContextToggle) {
+      autoContextToggle.addEventListener('click', () => {
+        setAutoContextExpanded(!state.autoContextExpanded);
+      });
+    }
   }
 
   restoreWorkspaceState();
   state.selectedIds = new Set(getExternalSelectionIds());
   wireEvents();
-  setSelectionMode(state.selectionMode);
-  setActionTab(state.activeTab, { skipSave: true });
+  renderSelectionSummary();
+  setAutoContextExpanded(state.autoContextExpanded, { skipSave: true });
 
   window.__groupsWorkspaceApi = {
     refresh: fetchWorkspace,
+    resolveAutoContext: (extra = {}) => postJson(groupsWorkspaceUrl, buildPayload({ operation: 'resolve_auto_context', ...extra })),
     selectGroup: (groupId) => toggleGroupExpanded(groupId, { forceOpen: true, scroll: true }),
     preview: previewAction,
     setExternalSelection: syncExternalSelection,
     getState: () => ({
-      selectionMode: state.selectionMode,
       selectedIds: selectedIds(),
+      selectionCount: selectedIds().length,
       selectedGroupId: state.selectedGroupId,
       expandedGroupIds: Array.from(state.expandedGroupIds),
+      filteredCount: Number(state.workspace?.paging?.total || 0),
       filters: { ...state.filters },
     }),
   };

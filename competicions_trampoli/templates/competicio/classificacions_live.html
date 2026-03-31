@@ -69,6 +69,33 @@
     font-weight: 700;
     color: #475467;
   }
+  .live-row-main {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.45rem;
+  }
+  .live-detail-toggle {
+    border: 1px solid #d3deed;
+    background: #ffffff;
+    color: #334155;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    line-height: 1;
+    padding: 0.18rem 0.35rem;
+    cursor: pointer;
+  }
+  .live-detail-shell {
+    background: #f8fbff;
+    border: 1px solid #dde4ef;
+    border-radius: 10px;
+    padding: 0.75rem;
+  }
+  .live-detail-title {
+    font-size: 0.82rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+    color: #334155;
+  }
   .partition-card {
     border: 1px solid #dde4ef;
     border-radius: 10px;
@@ -205,6 +232,8 @@
 
   let lastStamp = null;
   let timer = null;
+  const liveCfgStore = new Map();
+  const liveDetailState = new Map();
 
   const els = {
     status: document.getElementById("liveStatus"),
@@ -314,6 +343,63 @@
     return esc(formatCellText(v, col));
   }
 
+  function detailStateKey(cfgId, partKey, row){
+    const rowId = String(row?.row_id || "").trim();
+    if (!rowId) return "";
+    return `${cfgId}|${String(partKey || "global")}|${rowId}`;
+  }
+
+  function isDetailOpen(key, defaultOpen){
+    if (!key) return !!defaultOpen;
+    if (liveDetailState.has(key)) return !!liveDetailState.get(key);
+    return !!defaultOpen;
+  }
+
+  function renderDetailTable(detail){
+    const sections = Array.isArray(detail?.sections) ? detail.sections : [];
+    if (!sections.length) return "";
+
+    const renderSectionTable = (section) => {
+      const columns = Array.isArray(section?.columns) ? section.columns : [];
+      const rows = Array.isArray(section?.rows) ? section.rows : [];
+      if (!columns.length || !rows.length) return "";
+      let html = '<div class="table-responsive"><table class="table table-sm live-classif-table mb-0"><thead><tr>';
+      columns.forEach(col => {
+        html += `<th class="${esc(colClass(col))}">${esc(col.label || col.key || "")}</th>`;
+      });
+      html += '</tr></thead><tbody>';
+      rows.forEach(row => {
+        const cells = row.cells || row.display || {};
+        html += '<tr>';
+        columns.forEach(col => {
+          const raw = Object.prototype.hasOwnProperty.call(cells, col.key)
+            ? cells[col.key]
+            : fallbackCellValue(row, col.key);
+          html += `<td class="${esc(colClass(col))}">${renderCellHTML(raw, col)}</td>`;
+        });
+        html += '</tr>';
+      });
+      html += '</tbody></table></div>';
+      return html;
+    };
+
+    let html = '<div class="live-detail-shell">';
+    html += '<div class="live-detail-title">Detall</div>';
+    sections.forEach(section => {
+      const type = String(section?.type || "").trim();
+      const label = String(section?.label || "").trim();
+      if (label) html += `<div class="live-detail-title mb-2">${esc(label)}</div>`;
+      if (type === "members_list") {
+        const items = Array.isArray(section?.items) ? section.items : [];
+        html += `<div class="small text-muted mb-2">${items.map(item => esc(String(item?.participant || ""))).filter(Boolean).join(" · ")}</div>`;
+      } else {
+        html += renderSectionTable(section);
+      }
+    });
+    html += '</div>';
+    return html;
+  }
+
   function formatPartitionTitle(raw){
     const source = (raw === null || raw === undefined) ? "global" : String(raw);
     const parts = source
@@ -332,6 +418,7 @@
     const host = document.getElementById("cfg-" + cfg.id);
     if (!host) return;
 
+    liveCfgStore.set(String(cfg.id), cfg);
     const parts = cfg.parts || [];
     const columns = (Array.isArray(cfg.columns) && cfg.columns.length) ? cfg.columns : defaultColumns();
     document.getElementById("badge-" + cfg.id).textContent = parts.length ? parts.length : "0";
@@ -365,14 +452,43 @@
 
       (p.rows || []).forEach(r => {
         const cells = r.cells || r.display || {};
+        const detail = r && r.detail && Array.isArray(r.detail.sections) && r.detail.sections.length ? r.detail : null;
+        const detailKey = detail ? detailStateKey(cfg.id, p.particio, r) : "";
+        const detailOpen = detail ? isDetailOpen(detailKey, !!detail.default_open) : false;
+        const toggleColKey = columns.some(col => String(col?.key || "") === "participant")
+          ? "participant"
+          : String(columns[0]?.key || "");
+        let toggleInjected = false;
+
         html += '<tr>';
         columns.forEach(col => {
           const raw = Object.prototype.hasOwnProperty.call(cells, col.key)
             ? cells[col.key]
             : fallbackCellValue(r, col.key);
-          html += '<td class="' + esc(colClass(col)) + '">' + renderCellHTML(raw, col) + '</td>';
+          let cellHtml = renderCellHTML(raw, col);
+          if (detail && !toggleInjected && String(col?.key || "") === toggleColKey) {
+            toggleInjected = true;
+            cellHtml = '' +
+              '<div class="live-row-main">' +
+                '<button type="button" class="live-detail-toggle js-live-detail-toggle"' +
+                  ' data-cfg-id="' + esc(String(cfg.id)) + '"' +
+                  ' data-part-key="' + esc(String(p.particio || "global")) + '"' +
+                  ' data-row-id="' + esc(String(r.row_id || "")) + '"' +
+                  ' aria-expanded="' + (detailOpen ? 'true' : 'false') + '"' +
+                  ' aria-label="' + esc(detailOpen ? 'Amagar detall' : 'Mostrar detall') + '">' +
+                  (detailOpen ? '▾' : '▸') +
+                '</button>' +
+                '<div class="flex-fill">' + cellHtml + '</div>' +
+              '</div>';
+          }
+          html += '<td class="' + esc(colClass(col)) + '">' + cellHtml + '</td>';
         });
         html += '</tr>';
+        if (detail && detailOpen) {
+          html += '<tr class="table-light live-detail-row">';
+          html += '<td colspan="' + esc(String(columns.length)) + '">' + renderDetailTable(detail) + '</td>';
+          html += '</tr>';
+        }
       });
 
       html +=       '</tbody></table>';
@@ -415,6 +531,20 @@
   }
 
   document.addEventListener("DOMContentLoaded", async () => {
+    document.addEventListener("click", (ev) => {
+      const btn = ev.target.closest(".js-live-detail-toggle");
+      if (!btn) return;
+      const cfgId = String(btn.getAttribute("data-cfg-id") || "").trim();
+      const partKey = String(btn.getAttribute("data-part-key") || "global");
+      const rowId = String(btn.getAttribute("data-row-id") || "").trim();
+      if (!cfgId || !rowId) return;
+      const stateKey = `${cfgId}|${partKey}|${rowId}`;
+      const nextOpen = String(btn.getAttribute("aria-expanded") || "false") !== "true";
+      liveDetailState.set(stateKey, nextOpen);
+      const cfg = liveCfgStore.get(cfgId);
+      if (cfg) renderCfg(cfg);
+    });
+
     const btnExportActive = document.getElementById("btnExportActiveCfg");
     if (btnExportActive){
       btnExportActive.addEventListener("click", () => {

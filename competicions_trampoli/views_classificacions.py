@@ -2451,7 +2451,7 @@ def _validate_schema_for_competicio(competicio, schema_local, tipus="individual"
     errors.extend(_validate_no_tots_mode(schema_local))
     errors.extend(_validate_camps_per_aparell(competicio, schema_local))
     errors.extend(_validate_tie_camps_per_aparell(competicio, schema_local))
-    errors.extend(_validate_presentacio_columns(competicio, schema_local))
+    errors.extend(_validate_presentacio_columns(competicio, schema_local, tipus=tipus))
     errors.extend(_validate_exercicis_selection(competicio, schema_local))
     errors.extend(
         _validate_tie_exercicis_selection(
@@ -3877,7 +3877,7 @@ def _validate_camps_per_aparell(competicio, schema: dict):
     return errors
 
 
-def _validate_presentacio_columns(competicio, schema: dict):
+def _validate_presentacio_columns(competicio, schema: dict, tipus="individual"):
     schema = schema or {}
     punt = schema.get("puntuacio") or {}
     equips_cfg = schema.get("equips") or {}
@@ -3948,6 +3948,181 @@ def _validate_presentacio_columns(competicio, schema: dict):
             errors.append(
                 f"presentacio.columnes[{idx}] raw: camp '{camp}' no es puntuable directament "
                 f"({info.get('reason')})."
+            )
+
+    presentacio = schema.get("presentacio") if isinstance(schema.get("presentacio"), dict) else {}
+    raw_detail = presentacio.get("detall")
+    if raw_detail is None:
+        return errors
+    if not isinstance(raw_detail, dict):
+        errors.append("presentacio.detall ha de ser un objecte.")
+        return errors
+
+    equips_cfg = schema.get("equips") or {}
+    team_mode = str((equips_cfg.get("team_mode") or "")).strip().lower()
+    tipus_norm = str(tipus or "").strip().lower()
+    detail_section_types = {
+        "members_list",
+        "members_table",
+        "team_metrics",
+        "exercise_table",
+        "entity_members_table",
+    }
+    section_allowed = {
+        "individual": {"exercise_table"},
+        "entitat": {"entity_members_table"},
+        "equips:derived_from_individual": {"members_list", "members_table"},
+        "equips:native_team": {"members_list", "team_metrics"},
+    }
+
+    def _detail_section_key():
+        if tipus_norm == "equips":
+            return f"equips:{team_mode}"
+        return tipus_norm
+
+    def _detail_allowed_builtin(section_type):
+        if section_type == "exercise_table":
+            return {"exercise_index", "aparell_nom", "participant", "entitat_nom"}
+        if section_type in {"members_table", "entity_members_table", "team_metrics"}:
+            return {"participant", "entitat_nom"}
+        return set()
+
+    def _detail_expected_unit(section_type):
+        if section_type == "team_metrics":
+            return "team"
+        if section_type in {"members_table", "entity_members_table", "exercise_table"}:
+            return "individual"
+        return None
+
+    def _validate_detail_columns(raw_cols, path_prefix, section_type):
+        if not isinstance(raw_cols, list):
+            errors.append(f"{path_prefix} ha de ser una llista.")
+            return
+        for cidx, col in enumerate(raw_cols):
+            if not isinstance(col, dict):
+                errors.append(f"{path_prefix}[{cidx}] ha de ser un objecte.")
+                continue
+            ctype = str(col.get("type") or "builtin").strip().lower()
+            if ctype == "builtin":
+                key = str(col.get("key") or "").strip()
+                if key not in _detail_allowed_builtin(section_type):
+                    errors.append(
+                        f"{path_prefix}[{cidx}] builtin: clau no permesa ({key})."
+                    )
+                continue
+            if ctype != "raw":
+                errors.append(f"{path_prefix}[{cidx}] tipus no valid: {ctype}.")
+                continue
+
+            src = col.get("source") if isinstance(col.get("source"), dict) else {}
+            try:
+                app_id = int(src.get("aparell_id"))
+            except Exception:
+                errors.append(f"{path_prefix}[{cidx}] raw: aparell invalid.")
+                continue
+            if app_id not in app_by_id:
+                errors.append(f"{path_prefix}[{cidx}] raw: aparell {app_id} no valid o no actiu.")
+                continue
+            app_unit = getattr(app_by_id[app_id].aparell, "competition_unit", "") or ""
+            expected_unit = _detail_expected_unit(section_type)
+            if expected_unit == "team" and app_unit != "team":
+                errors.append(
+                    f"{path_prefix}[{cidx}] raw: en {section_type} nomes es poden mostrar aparells d'equip."
+                )
+                continue
+            if expected_unit == "individual" and app_unit == "team":
+                errors.append(
+                    f"{path_prefix}[{cidx}] raw: en {section_type} no es poden mostrar aparells d'equip."
+                )
+                continue
+            if selected_ids and app_id not in selected_ids:
+                errors.append(f"{path_prefix}[{cidx}] raw: aparell {app_id} no esta seleccionat a puntuacio.")
+                continue
+            camp = str(src.get("camp") or "").strip()
+            if not camp:
+                errors.append(f"{path_prefix}[{cidx}] raw: camp obligatori.")
+                continue
+            if app_id not in meta_cache:
+                sch = schemas_by_aparell.get(app_by_id[app_id].aparell_id, {}) or {}
+                meta_cache[app_id] = _build_scoreable_meta_for_schema(sch, strict_unknown=True)
+            info = meta_cache[app_id].get(camp)
+            if not info:
+                errors.append(
+                    f"{path_prefix}[{cidx}] raw: camp '{camp}' no existeix al schema de l'aparell {app_id}."
+                )
+                continue
+            if not info.get("scoreable", False):
+                errors.append(
+                    f"{path_prefix}[{cidx}] raw: camp '{camp}' no es puntuable directament "
+                    f"({info.get('reason')})."
+                )
+
+    detail_enabled_raw = raw_detail.get("enabled", False)
+    detail_default_open_raw = raw_detail.get("default_open", False)
+    if "enabled" in raw_detail and not isinstance(detail_enabled_raw, bool):
+        errors.append("presentacio.detall.enabled ha de ser boolea.")
+    if "default_open" in raw_detail and not isinstance(detail_default_open_raw, bool):
+        errors.append("presentacio.detall.default_open ha de ser boolea.")
+
+    detail_enabled = bool(detail_enabled_raw) if isinstance(detail_enabled_raw, bool) else False
+    detail_section_key = _detail_section_key()
+    allowed_types = section_allowed.get(detail_section_key) or set()
+    detail_active = bool(allowed_types)
+
+    raw_sections = raw_detail.get("sections", None)
+    if raw_sections is not None and not isinstance(raw_sections, list):
+        errors.append("presentacio.detall.sections ha de ser una llista.")
+        raw_sections = None
+    raw_legacy_cols = raw_detail.get("columnes", None)
+    if raw_legacy_cols is not None and not isinstance(raw_legacy_cols, list):
+        errors.append("presentacio.detall.columnes ha de ser una llista.")
+        raw_legacy_cols = None
+
+    if detail_enabled and not detail_active:
+        errors.append(f"presentacio.detall.enabled no es compatible amb {detail_section_key}.")
+
+    if raw_legacy_cols is not None:
+        if "members_table" not in allowed_types:
+            errors.append(
+                f"presentacio.detall.columnes nomes es compatible amb contexts que admeten members_table ({detail_section_key})."
+            )
+        else:
+            _validate_detail_columns(raw_legacy_cols, "presentacio.detall.columnes", "members_table")
+
+    if isinstance(raw_sections, list):
+        for sidx, section in enumerate(raw_sections):
+            if not isinstance(section, dict):
+                errors.append(f"presentacio.detall.sections[{sidx}] ha de ser un objecte.")
+                continue
+            section_type = str(section.get("type") or "").strip().lower()
+            if section_type not in detail_section_types:
+                errors.append(
+                    f"presentacio.detall.sections[{sidx}] tipus no valid: {section_type}."
+                )
+                continue
+            if section_type not in allowed_types:
+                errors.append(
+                    f"presentacio.detall.sections[{sidx}] tipus no permes per {detail_section_key}: {section_type}."
+                )
+                continue
+            if section_type == "members_list":
+                if "columns" in section and section.get("columns") not in (None, []):
+                    errors.append(
+                        f"presentacio.detall.sections[{sidx}].columns no es compatible amb members_list."
+                    )
+                continue
+            _validate_detail_columns(
+                section.get("columns"),
+                f"presentacio.detall.sections[{sidx}].columns",
+                section_type,
+            )
+
+    if detail_enabled:
+        has_sections = isinstance(raw_sections, list) and len(raw_sections) > 0
+        has_legacy = isinstance(raw_legacy_cols, list)
+        if not has_sections and not has_legacy:
+            errors.append(
+                "presentacio.detall.enabled requereix sections o columnes legacy compatibles."
             )
 
     return errors

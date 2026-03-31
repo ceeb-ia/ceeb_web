@@ -659,6 +659,13 @@
       gap:12px;
       margin-bottom:12px;
     }
+    .group-preview-actions{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      flex-wrap:wrap;
+      justify-content:flex-end;
+    }
     .group-preview-status{
       margin-top:4px;
       font-size:.84rem;
@@ -1303,6 +1310,424 @@
       align-items:center;
       gap:10px;
       padding-top:4px;
+    }
+    .groups-workspace-shell{
+      gap:14px;
+      padding:14px;
+      border:1px solid #dbe5f2;
+      border-radius:20px;
+      background:linear-gradient(180deg, #f8fbff 0%, #f1f6fc 100%);
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.8);
+    }
+    .groups-workspace-layout{
+      display:flex;
+      flex-direction:column;
+      gap:16px;
+    }
+    .groups-workspace-row{
+      display:grid;
+      gap:16px;
+      align-items:start;
+    }
+    .groups-workspace-row-prep{
+      grid-template-columns:minmax(0, 1.12fr) minmax(360px, .88fr);
+    }
+    .groups-workspace-row-selection{
+      grid-template-columns:1fr;
+    }
+    .groups-workspace-row-impact{
+      grid-template-columns:minmax(0, 1.45fr) minmax(320px, .82fr);
+    }
+    .groups-prep-main,
+    .groups-prep-side{
+      display:grid;
+      gap:16px;
+      min-width:0;
+    }
+    .groups-prep-main{
+      grid-template-columns:1fr;
+    }
+    .groups-prep-side{
+      grid-template-columns:1fr;
+    }
+    .groups-workspace-header-compact{
+      position:static;
+      padding:10px 12px;
+      gap:8px;
+      border-radius:16px;
+    }
+    .groups-workspace-header-compact .team-workspace-header-bar{
+      gap:10px;
+      align-items:center;
+    }
+    .groups-workspace-header-compact .team-workspace-title{
+      font-size:1rem;
+    }
+    .groups-workspace-header-compact .team-workspace-header-tools{
+      gap:6px;
+    }
+    .groups-pane{
+      min-width:0;
+    }
+    .groups-pane-card{
+      position:relative;
+      gap:14px;
+      min-height:100%;
+    }
+    .groups-pane-card::before{
+      content:"";
+      position:absolute;
+      inset:0 0 auto 0;
+      height:4px;
+      border-radius:16px 16px 0 0;
+      opacity:.9;
+    }
+    .groups-pane-card-universe{
+      background:linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+    }
+    .groups-pane-card-universe::before{
+      background:linear-gradient(90deg, #0f766e 0%, #14b8a6 100%);
+    }
+    .groups-pane-card-selection{
+      background:linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
+    }
+    .groups-pane-card-selection::before{
+      background:linear-gradient(90deg, #2563eb 0%, #60a5fa 100%);
+    }
+    .groups-pane-card-actions{
+      background:linear-gradient(180deg, #ffffff 0%, #fffaf1 100%);
+    }
+    .groups-pane-card-actions::before{
+      background:linear-gradient(90deg, #c2410c 0%, #fb923c 100%);
+    }
+    .groups-pane-card-board{
+      background:linear-gradient(180deg, #fdfefe 0%, #f4f8fc 100%);
+    }
+    .groups-pane-card-board::before{
+      background:linear-gradient(90deg, #334155 0%, #64748b 100%);
+    }
+    .groups-pane-card-preview{
+      background:linear-gradient(180deg, #ffffff 0%, #f7f8fc 100%);
+    }
+    .groups-pane-card-preview::before{
+      background:linear-gradient(90deg, #7c3aed 0%, #a78bfa 100%);
+    }
+    .groups-pane-step{
+      margin-bottom:4px;
+      font-size:.73rem;
+      font-weight:800;
+      letter-spacing:.05em;
+      text-transform:uppercase;
+      color:#64748b;
+    }
+    .groups-toolbar-label{
+      font-size:.78rem;
+      font-weight:700;
+      color:#334155;
+    }
+    .groups-selection-strip{
+      gap:10px;
+      padding-top:12px;
+      padding-bottom:12px;
+    }
+    .groups-selection-strip-main{
+      display:flex;
+      justify-content:space-between;
+      align-items:flex-start;
+      gap:14px;
+      flex-wrap:wrap;
+    }
+    .groups-selection-summary-inline{
+      min-width:0;
+      max-width:520px;
+    }
+    .groups-selection-inline-metrics{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      justify-content:flex-end;
+    }
+    .groups-candidates-toolbar{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:12px;
+      padding:10px 12px;
+      margin-bottom:10px;
+      border:1px solid #dbe5f2;
+      border-radius:14px;
+      background:rgba(255,255,255,.84);
+    }
+    .groups-candidates-toolbar-actions{
+      display:grid;
+      grid-template-columns:repeat(2, minmax(0, 1fr));
+      gap:10px;
+      flex:1 1 auto;
+    }
+    .groups-selection-strip-actions{
+      display:grid;
+      grid-template-columns:repeat(2, minmax(0, 1fr));
+      gap:10px;
+    }
+    .groups-selection-strip-group{
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+      padding:10px 11px;
+      border:1px solid #dbe5f2;
+      border-radius:14px;
+      background:rgba(255,255,255,.8);
+    }
+    .groups-action-section{
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+    }
+    .groups-action-section-head{
+      display:flex;
+      flex-direction:column;
+      gap:2px;
+    }
+    .groups-action-grid{
+      display:grid;
+      grid-template-columns:repeat(2, minmax(0, 1fr));
+      gap:8px;
+    }
+    .groups-strategy-list{
+      display:grid;
+      gap:10px;
+    }
+    .groups-strategy-card{
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      padding:11px 12px;
+      border:1px solid #e3e9f5;
+      border-radius:14px;
+      background:rgba(255,255,255,.88);
+      box-shadow:0 8px 18px rgba(15,23,42,.04);
+    }
+    .groups-auto-context-fold{
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      padding-top:4px;
+    }
+    .groups-auto-context-panel{
+      padding:11px 12px;
+      border:1px solid #dbe5f2;
+      border-radius:14px;
+      background:linear-gradient(180deg, #ffffff 0%, #f4fbf7 100%);
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.7);
+    }
+    .groups-strategy-card-head{
+      display:flex;
+      justify-content:space-between;
+      align-items:flex-start;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+    .groups-strategy-card-body{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      flex-wrap:wrap;
+    }
+    .groups-strategy-number{
+      width:90px;
+    }
+    .groups-board{
+      display:flex;
+      flex-direction:column;
+      gap:16px;
+    }
+    .groups-board-section{
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      padding:12px;
+      border:1px solid #dfe7f2;
+      border-radius:16px;
+      background:rgba(255,255,255,.74);
+    }
+    .groups-board-section-head{
+      display:flex;
+      justify-content:space-between;
+      align-items:flex-start;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+    .groups-board-grid{
+      display:grid;
+      grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));
+      gap:14px;
+    }
+    .groups-board-grid-empty{
+      grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));
+    }
+    .groups-preview-note{
+      padding:8px 10px;
+      border:1px solid #e4e3fb;
+      border-radius:12px;
+      background:#f5f3ff;
+    }
+    .groups-pane-preview{
+      position:relative;
+    }
+    .groups-pane-preview .groups-pane-card-preview{
+      position:sticky;
+      top:18px;
+    }
+    .groups-universe-body{
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      min-height:0;
+    }
+    .groups-pane-card-universe .team-candidates-list{
+      max-height:32vh;
+      min-height:220px;
+      overflow:auto;
+    }
+    .groups-pane-card-universe .team-candidates-footer{
+      padding-top:4px;
+      border-top:1px solid #e2e8f0;
+      background:transparent;
+    }
+    .groups-workspace-shell .team-candidate-row{
+      background:linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+      box-shadow:0 6px 14px rgba(15,23,42,.03);
+    }
+    .groups-workspace-shell .team-context-unassigned-dropzone{
+      min-height:120px;
+      background:linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.7);
+    }
+    .groups-workspace-shell .team-context-team-card{
+      min-height:176px;
+      gap:12px;
+      padding:13px;
+      border-radius:16px;
+      background:linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+      box-shadow:0 12px 24px rgba(15,23,42,.05);
+    }
+    .groups-workspace-shell .team-context-team-card.is-empty{
+      background:linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+      border-style:dashed;
+    }
+    .groups-workspace-shell .team-context-team-card.is-current{
+      border-color:#60a5fa;
+      box-shadow:0 0 0 2px rgba(37,99,235,.12), 0 14px 28px rgba(15,23,42,.08);
+    }
+    .groups-workspace-shell .team-context-team-card.is-programmed{
+      border-color:#c4b5fd;
+    }
+    .groups-workspace-shell .team-context-team-card.is-out-of-program{
+      border-color:#f6ad55;
+    }
+    .groups-workspace-shell .team-context-team-head{
+      gap:12px;
+      align-items:flex-start;
+    }
+    .groups-workspace-shell .team-context-team-title-wrap{
+      min-width:0;
+      flex:1 1 auto;
+    }
+    .groups-workspace-shell .team-context-team-name{
+      overflow:hidden;
+      white-space:nowrap;
+      text-overflow:ellipsis;
+    }
+    .groups-workspace-shell .team-context-team-actions{
+      gap:6px;
+      max-width:100%;
+      flex:0 1 46%;
+    }
+    .groups-workspace-shell .team-context-team-actions .btn{
+      max-width:100%;
+    }
+    .groups-workspace-shell .team-context-team-meta{
+      display:-webkit-box;
+      -webkit-line-clamp:2;
+      -webkit-box-orient:vertical;
+      overflow:hidden;
+      word-break:break-word;
+      line-height:1.35;
+    }
+    .groups-workspace-shell .team-context-team-preview{
+      display:-webkit-box;
+      -webkit-line-clamp:2;
+      -webkit-box-orient:vertical;
+      overflow:hidden;
+      line-height:1.35;
+      word-break:break-word;
+    }
+    .groups-workspace-shell .team-context-team-card.is-expanded .team-context-team-name{
+      white-space:normal;
+      overflow:visible;
+      text-overflow:clip;
+    }
+    .groups-workspace-shell .team-context-team-card.is-expanded .team-context-team-preview{
+      display:block;
+      -webkit-line-clamp:unset;
+      overflow:visible;
+    }
+    .groups-workspace-shell .team-context-team-drop-hint{
+      background:#fff;
+    }
+    .groups-workspace-shell .team-context-team-body{
+      gap:10px;
+      padding-top:10px;
+    }
+    .groups-workspace-shell .team-context-member-row{
+      background:linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+    }
+    .groups-board-placeholder{
+      padding:18px 14px;
+      border:1px dashed #cbd5e1;
+      border-radius:14px;
+      background:#fff;
+      color:#64748b;
+      font-size:.82rem;
+      text-align:center;
+    }
+    @media (max-width: 1399.98px){
+      .groups-workspace-row-prep,
+      .groups-workspace-row-impact,
+      .groups-prep-main{
+        grid-template-columns:1fr;
+      }
+      .groups-selection-strip-actions{
+        grid-template-columns:1fr;
+      }
+      .groups-candidates-toolbar,
+      .groups-candidates-toolbar-actions{
+        grid-template-columns:1fr;
+      }
+      .groups-candidates-toolbar{
+        flex-direction:column;
+      }
+      .groups-pane-preview .groups-pane-card-preview{
+        position:static;
+      }
+    }
+    @media (max-width: 991.98px){
+      .groups-action-grid{
+        grid-template-columns:1fr;
+      }
+      .groups-selection-strip-main{
+        flex-direction:column;
+      }
+      .groups-board-grid,
+      .groups-board-grid-empty{
+        grid-template-columns:1fr;
+      }
+      .groups-workspace-header-compact .team-workspace-header-tools{
+        justify-content:flex-start;
+      }
+      .groups-workspace-shell .team-context-team-actions{
+        flex:1 1 100%;
+      }
     }
 
     .drag-handle, .col-drag-handle {
@@ -5621,16 +6046,240 @@
       return;
     }
 
+    const groupBucketSelectionState = {
+      mode: 'all',
+      availableKeys: [],
+      selectedKeys: new Set(),
+    };
+
+    function getGroupsAutoContextElements() {
+      return {
+        resolutionLabel: document.getElementById('groups-resolution-label'),
+        resolutionStatus: document.getElementById('groups-resolution-status'),
+        bucketsCount: document.getElementById('groups-buckets-count'),
+        bucketsGrid: document.getElementById('groups-buckets-grid'),
+        bucketsEmpty: document.getElementById('groups-buckets-empty'),
+        bucketsSelectionNote: document.getElementById('groups-buckets-selection-note'),
+      };
+    }
+
+    function setGroupsAutoContextMessage(message) {
+      const els = getGroupsAutoContextElements();
+      if (els.bucketsEmpty) {
+        els.bucketsEmpty.textContent = message || '';
+        els.bucketsEmpty.classList.toggle('d-none', !message);
+      }
+    }
+
+    function setGroupsBucketSelectionNote(message) {
+      const note = document.getElementById('groups-buckets-selection-note');
+      if (!note) return;
+      note.textContent = message || '';
+      note.classList.toggle('d-none', !message);
+    }
+
+    function setGroupsBucketSelectionMode(mode) {
+      groupBucketSelectionState.mode = ['all', 'none', 'custom'].includes(mode) ? mode : 'all';
+    }
+
     function getSelectedGroupBucketKeys() {
-      return Array.from(document.querySelectorAll('.js-group-bucket-check:checked'))
-        .map(el => el.value)
-        .filter(v => !!v);
+      const available = new Set(groupBucketSelectionState.availableKeys || []);
+      if (!available.size) return [];
+      if (groupBucketSelectionState.mode === 'none') return [];
+      if (groupBucketSelectionState.mode === 'all') return Array.from(available);
+      return Array.from(groupBucketSelectionState.selectedKeys || []).filter(key => available.has(key));
+    }
+
+    function applyGroupBucketSelectionToDom() {
+      const selectedKeys = new Set(getSelectedGroupBucketKeys());
+      document.querySelectorAll('.js-group-bucket-check').forEach(el => {
+        el.checked = selectedKeys.has(String(el.value || ''));
+      });
     }
 
     function setGroupBucketSelection(checked) {
-      document.querySelectorAll('.js-group-bucket-check').forEach(el => {
-        el.checked = !!checked;
+      if (checked) {
+        setGroupsBucketSelectionMode('all');
+        groupBucketSelectionState.selectedKeys = new Set(groupBucketSelectionState.availableKeys || []);
+      } else {
+        setGroupsBucketSelectionMode('none');
+        groupBucketSelectionState.selectedKeys = new Set();
+      }
+      applyGroupBucketSelectionToDom();
+      setGroupsBucketSelectionNote('');
+    }
+
+    function updateGroupBucketSelectionForContext(buckets) {
+      const availableKeys = (Array.isArray(buckets) ? buckets : [])
+        .map(bucket => String(bucket?.key || '').trim())
+        .filter(Boolean);
+      const availableSet = new Set(availableKeys);
+      const previousCustomKeys = new Set(groupBucketSelectionState.selectedKeys || []);
+      groupBucketSelectionState.availableKeys = availableKeys;
+
+      if (groupBucketSelectionState.mode === 'all') {
+        groupBucketSelectionState.selectedKeys = new Set(availableKeys);
+        setGroupsBucketSelectionNote('');
+        return;
+      }
+
+      if (groupBucketSelectionState.mode === 'none') {
+        groupBucketSelectionState.selectedKeys = new Set();
+        setGroupsBucketSelectionNote('');
+        return;
+      }
+
+      const survivingKeys = Array.from(previousCustomKeys).filter(key => availableSet.has(key));
+      groupBucketSelectionState.selectedKeys = new Set(survivingKeys);
+      if (previousCustomKeys.size > 0 && survivingKeys.length === 0 && availableKeys.length > 0) {
+        setGroupsBucketSelectionNote("Els blocs seleccionats ja no existeixen en el context actual.");
+      } else {
+        setGroupsBucketSelectionNote('');
+      }
+    }
+
+    function describeGroupsResolutionLabel(layersUsed, usedFallback) {
+      const layers = Array.isArray(layersUsed) ? layersUsed : [];
+      if (layers.includes('tabs') && layers.includes('sort')) return 'Seleccio activa + resolucio combinada';
+      if (layers.includes('tabs')) return 'Seleccio activa + agrupacions';
+      if (layers.includes('sort')) return 'Seleccio activa + ordenacions';
+      if (usedFallback) return 'Seleccio activa + fallback';
+      return 'Seleccio activa';
+    }
+
+    function describeGroupsResolutionStatus(context) {
+      const selectionCount = Number(context?.selection_count || 0);
+      const bucketsTotal = Number(context?.buckets_total || 0);
+      const layersUsed = Array.isArray(context?.layers_used) ? context.layers_used : [];
+      if (!selectionCount) {
+        return 'Selecciona inscripcions per activar la creacio automatica.';
+      }
+      if (!bucketsTotal) {
+        return 'Sense criteris resolubles: tota la seleccio activa.';
+      }
+      if (layersUsed.includes('tabs') && layersUsed.includes('sort')) {
+        return 'Blocs origen resolts sobre la seleccio activa amb agrupacions i ordenacions.';
+      }
+      if (layersUsed.includes('tabs')) {
+        return 'Blocs origen resolts sobre la seleccio activa a partir de les agrupacions.';
+      }
+      if (layersUsed.includes('sort')) {
+        return 'Blocs origen resolts sobre la seleccio activa a partir de les ordenacions.';
+      }
+      return 'Blocs origen resolts sobre la seleccio activa.';
+    }
+
+    function createGroupBucketNode(bucket) {
+      const key = String(bucket?.key || '').trim();
+      const label = document.createElement('label');
+      label.className = 'tab-select-item';
+
+      const input = document.createElement('input');
+      input.type = 'checkbox';
+      input.className = 'js-group-bucket-check';
+      input.value = key;
+      input.checked = getSelectedGroupBucketKeys().includes(key);
+      label.appendChild(input);
+
+      const text = document.createElement('span');
+      text.className = 'tab-label small';
+      text.title = String(bucket?.label || key);
+      text.textContent = String(bucket?.label || key);
+      label.appendChild(text);
+
+      (Array.isArray(bucket?.kinds) ? bucket.kinds : []).forEach(kind => {
+        const badge = document.createElement('span');
+        badge.className = 'badge badge-light border';
+        badge.textContent = kind === 'tabs' ? 'Divisio' : (kind === 'sort' ? 'Ordenacio' : kind);
+        label.appendChild(badge);
       });
+
+      const count = document.createElement('span');
+      count.className = 'badge badge-light';
+      count.textContent = String(Number(bucket?.count || 0));
+      label.appendChild(count);
+      return label;
+    }
+
+    function updateGroupsStrategyButtonsState(context = null) {
+      const selectionCount = Number(context?.selection_count || 0);
+      const bucketsTotal = Number(context?.buckets_total || 0);
+      const hasSelection = selectionCount > 0;
+      ['btn-groups-create-count',
+        'btn-groups-preview-count',
+        'btn-groups-create-size',
+        'btn-groups-preview-size',
+        'btn-groups-create-range-balanced',
+        'btn-groups-preview-range-balanced',
+        'btn-groups-create-count-range',
+        'btn-groups-preview-count-range',
+        'btn-groups-create-per-bucket',
+        'btn-groups-preview-per-bucket',
+      ].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.disabled = !hasSelection;
+      });
+      ['btn-groups-buckets-all', 'btn-groups-buckets-none'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.disabled = !hasSelection || bucketsTotal === 0;
+      });
+    }
+
+    function renderGroupsAutoContext(context) {
+      const els = getGroupsAutoContextElements();
+      const data = context && typeof context === 'object' ? context : {};
+      const buckets = Array.isArray(data.buckets) ? data.buckets : [];
+      updateGroupBucketSelectionForContext(buckets);
+
+      if (els.resolutionLabel) {
+        els.resolutionLabel.textContent = describeGroupsResolutionLabel(data.layers_used, data.used_fallback);
+      }
+      if (els.resolutionStatus) {
+        els.resolutionStatus.textContent = describeGroupsResolutionStatus(data);
+      }
+      if (els.bucketsCount) {
+        els.bucketsCount.textContent = `Blocs origen resolts sobre la seleccio activa: ${Number(data.buckets_total || 0)}`;
+      }
+      if (els.bucketsGrid) {
+        els.bucketsGrid.innerHTML = '';
+        buckets.forEach(bucket => {
+          els.bucketsGrid.appendChild(createGroupBucketNode(bucket));
+        });
+        els.bucketsGrid.classList.toggle('d-none', buckets.length === 0);
+      }
+
+      updateGroupsStrategyButtonsState(data);
+      if (!Number(data.selection_count || 0)) {
+        setGroupsAutoContextMessage('Selecciona inscripcions per activar la creacio automatica.');
+      } else if (!buckets.length) {
+        setGroupsAutoContextMessage('Sense criteris resolubles: tota la seleccio activa.');
+      } else {
+        setGroupsAutoContextMessage('');
+      }
+      applyGroupBucketSelectionToDom();
+    }
+
+    async function refreshGroupsAutoContext() {
+      if (!window.__groupsWorkspaceApi || typeof window.__groupsWorkspaceApi.resolveAutoContext !== 'function') {
+        return null;
+      }
+      try {
+        const data = await window.__groupsWorkspaceApi.resolveAutoContext({
+          fallback_mode: getGroupsFallbackMode(),
+          group_by: getCurrentGroupByCodes(),
+        });
+        renderGroupsAutoContext(data);
+        return data;
+      } catch (err) {
+        updateGroupsStrategyButtonsState(null);
+        setGroupsAutoContextMessage("No s'ha pogut resoldre el context automatic dels grups.");
+        setGroupsBucketSelectionNote('');
+        const els = getGroupsAutoContextElements();
+        if (els.resolutionStatus) {
+          els.resolutionStatus.textContent = "No s'ha pogut resoldre el context automatic dels grups.";
+        }
+        return null;
+      }
     }
 
     function readIntInput(id, minValue = 1) {
@@ -5644,24 +6293,41 @@
       return document.getElementById('groups-fallback')?.value || 'all_filtered';
     }
 
+    function getGroupsWorkspaceState() {
+      if (!window.__groupsWorkspaceApi || typeof window.__groupsWorkspaceApi.getState !== 'function') return null;
+      return window.__groupsWorkspaceApi.getState();
+    }
+
     function buildGroupsPayload(strategy, extraPayload = {}) {
+      const workspaceState = getGroupsWorkspaceState();
+      const filters = workspaceState?.filters && typeof workspaceState.filters === 'object'
+        ? workspaceState.filters
+        : getCurrentInscripcioFilters();
+      const selectedIds = Array.isArray(workspaceState?.selectedIds) ? workspaceState.selectedIds : [];
       return Object.assign(
         {
           resolution_mode: 'auto',
           strategy: strategy,
           fallback_mode: getGroupsFallbackMode(),
-          filters: getCurrentInscripcioFilters(),
+          scope: 'selected',
+          selected_ids: selectedIds,
+          filters,
           group_by: getCurrentGroupByCodes(),
           selected_keys: getSelectedGroupBucketKeys(),
+          bucket_selection_mode: groupBucketSelectionState.mode,
         },
         extraPayload || {}
       );
     }
 
+    let lastConfirmableGroupPreview = null;
+    let groupPreviewConfirmBusy = false;
+
     function getGroupPreviewElements() {
       return {
         root: document.getElementById('groups-preview'),
         status: document.getElementById('groups-preview-status'),
+        intentLabel: document.getElementById('groups-preview-intent-label'),
         summary: document.getElementById('groups-preview-summary'),
         existingWrap: document.getElementById('groups-preview-existing-wrap'),
         existingMeta: document.getElementById('groups-preview-existing-meta'),
@@ -5669,8 +6335,52 @@
         plannedWrap: document.getElementById('groups-preview-planned-wrap'),
         plannedMeta: document.getElementById('groups-preview-planned-meta'),
         list: document.getElementById('groups-preview-list'),
+        confirm: document.getElementById('btn-groups-preview-confirm'),
         clear: document.getElementById('btn-groups-preview-clear'),
       };
+    }
+
+    function updateGroupPreviewConfirmUi() {
+      const els = getGroupPreviewElements();
+      const root = els.root;
+      const intent = lastConfirmableGroupPreview;
+      const dirty = !!(root && root.dataset.dirty === '1');
+      const hasPreview = !!(root && root.dataset.hasPreview === '1');
+      const loading = !!(root && root.dataset.loading === '1');
+
+      if (els.intentLabel) {
+        const label = String(intent?.label || '').trim();
+        els.intentLabel.textContent = dirty && label ? `${label} - desactualitzada` : label;
+        els.intentLabel.classList.toggle('d-none', !label);
+      }
+
+      if (els.confirm) {
+        const canShow = hasPreview && !!intent && !!intent.canConfirm;
+        const buttonLabel = String(intent?.buttonLabel || 'Confirmar aquesta creacio').trim() || 'Confirmar aquesta creacio';
+        els.confirm.textContent = buttonLabel;
+        els.confirm.disabled = !canShow || dirty || loading || groupPreviewConfirmBusy;
+        els.confirm.classList.toggle('d-none', !canShow);
+      }
+    }
+
+    function clearGroupPreviewConfirmIntent() {
+      lastConfirmableGroupPreview = null;
+      groupPreviewConfirmBusy = false;
+      updateGroupPreviewConfirmUi();
+    }
+
+    function setGroupPreviewConfirmIntent(intent) {
+      if (!intent || typeof intent.execute !== 'function' || !intent.canConfirm) {
+        clearGroupPreviewConfirmIntent();
+        return;
+      }
+      lastConfirmableGroupPreview = {
+        label: String(intent.label || '').trim(),
+        buttonLabel: String(intent.buttonLabel || 'Confirmar aquesta creacio').trim(),
+        canConfirm: true,
+        execute: intent.execute,
+      };
+      updateGroupPreviewConfirmUi();
     }
 
     function setGroupPreviewStatus(message, variant = 'muted') {
@@ -5684,6 +6394,8 @@
       const els = getGroupPreviewElements();
       if (!els.root) return;
       els.root.dataset.hasPreview = '0';
+      els.root.dataset.dirty = '0';
+      els.root.dataset.loading = '0';
       if (els.summary) {
         els.summary.innerHTML = '';
         els.summary.classList.add('d-none');
@@ -5713,12 +6425,15 @@
         statusText || "Encara no s'ha calculat cap previsualitzacio amb aquesta configuracio.",
         'muted'
       );
+      clearGroupPreviewConfirmIntent();
     }
 
     function markGroupPreviewDirty() {
       const els = getGroupPreviewElements();
       if (!els.root || els.root.dataset.hasPreview !== '1') return;
+      els.root.dataset.dirty = '1';
       setGroupPreviewStatus('La configuracio ha canviat. Torna a previsualitzar per actualitzar el resultat.', 'warning');
+      updateGroupPreviewConfirmUi();
     }
 
     function setGroupPreviewLoading(loading) {
@@ -5728,6 +6443,7 @@
       if (loading) {
         setGroupPreviewStatus('Calculant la previsualitzacio dels grups...', 'info');
       }
+      updateGroupPreviewConfirmUi();
     }
 
     function createGroupPreviewBadge(text, variant = 'neutral') {
@@ -5928,9 +6644,13 @@
       const groups = Array.isArray(previewData.groups) ? previewData.groups : [];
       const existingGroups = Array.isArray(previewData.existing_groups) ? previewData.existing_groups : [];
       els.root.dataset.hasPreview = '1';
+      els.root.dataset.dirty = '0';
 
       if (els.summary) {
         els.summary.innerHTML = '';
+        if (Number(previewData.selection_count || 0) > 0) {
+          els.summary.appendChild(createGroupPreviewBadge(`${Number(previewData.selection_count || 0)} seleccionades`));
+        }
         els.summary.appendChild(createGroupPreviewBadge(`${Number(previewData.existing_groups_total || existingGroups.length || 0)} grups actuals`));
         els.summary.appendChild(createGroupPreviewBadge(`${Number(previewData.existing_members_total || 0)} integrants actuals`));
         els.summary.appendChild(createGroupPreviewBadge(`${Number(previewData.groups_total || groups.length || 0)} grups previstos`));
@@ -5977,14 +6697,35 @@
         : 'No es generen grups nous amb aquesta configuracio.';
       const fallbackMessage = previewData.used_fallback ? " S'ha aplicat un fallback per resoldre la particio." : '';
       setGroupPreviewStatus(`${baseMessage}${fallbackMessage}`, groups.length ? 'info' : 'muted');
+      updateGroupPreviewConfirmUi();
     }
 
     async function previewGroups(strategy, extraPayload = {}) {
       const payload = buildGroupsPayload(strategy, Object.assign({}, extraPayload || {}, { preview_only: true }));
+      if (!(payload.selected_ids || []).length) {
+        clearGroupPreview('Selecciona com a minim una inscripcio.');
+        showAlert('Selecciona com a minim una inscripcio.');
+        return false;
+      }
       setGroupPreviewLoading(true);
       try {
         const data = await postJson(groupsFromSortUrl, payload);
-        renderGroupPreview(data?.preview || {}, data?.strategy || strategy);
+        const resolvedStrategy = data?.strategy || strategy;
+        const previewData = Object.assign({}, data?.preview || {}, { selection_count: (payload.selected_ids || []).length });
+        renderGroupPreview(previewData, resolvedStrategy);
+        const plannedGroups = Array.isArray(previewData.groups) ? previewData.groups : [];
+        if (plannedGroups.length) {
+          const confirmPayload = Object.assign({}, payload);
+          delete confirmPayload.preview_only;
+          setGroupPreviewConfirmIntent({
+            label: `Previsualitzacio de: ${describeGroupStrategy(resolvedStrategy)}`,
+            buttonLabel: 'Confirmar aquesta creacio',
+            canConfirm: true,
+            execute: () => makeGroupsFromPayload(confirmPayload),
+          });
+        } else {
+          clearGroupPreviewConfirmIntent();
+        }
         return true;
       } catch (err) {
         clearGroupPreview("No s'ha pogut calcular la previsualitzacio amb aquesta configuracio.");
@@ -5995,8 +6736,11 @@
       }
     }
 
-    async function makeGroups(strategy, extraPayload = {}) {
-      const payload = buildGroupsPayload(strategy, extraPayload);
+    async function makeGroupsFromPayload(payload) {
+      if (!(payload.selected_ids || []).length) {
+        showAlert('Selecciona com a minim una inscripcio.');
+        return false;
+      }
 
       try {
         const data = await postJson(groupsFromSortUrl, payload);
@@ -6004,12 +6748,17 @@
           showAlert("No s'han pogut crear grups amb aquesta configuracio.");
           return false;
         }
+        clearGroupPreviewConfirmIntent();
         reloadWithUiState();
         return true;
       } catch (err) {
         showAlert(`No s'han pogut crear grups.\\n${err.message || err}`);
         return false;
       }
+    }
+
+    async function makeGroups(strategy, extraPayload = {}) {
+      return makeGroupsFromPayload(buildGroupsPayload(strategy, extraPayload));
     }
 
     function bindPreviewDirtyHandlers(selectors, eventName) {
@@ -6036,6 +6785,34 @@
           markGroupPreviewDirty();
         });
       }
+
+      const bucketsGrid = document.getElementById('groups-buckets-grid');
+      if (bucketsGrid) {
+        bucketsGrid.addEventListener('change', (event) => {
+          const checkbox = event.target.closest('.js-group-bucket-check');
+          if (!checkbox) return;
+          setGroupsBucketSelectionMode('custom');
+          groupBucketSelectionState.selectedKeys = new Set(
+            Array.from(document.querySelectorAll('.js-group-bucket-check:checked'))
+              .map(el => String(el.value || '').trim())
+              .filter(Boolean)
+          );
+          setGroupsBucketSelectionNote('');
+          markGroupPreviewDirty();
+        });
+      }
+
+      const fallback = document.getElementById('groups-fallback');
+      if (fallback) {
+        fallback.addEventListener('change', async () => {
+          markGroupPreviewDirty();
+          await refreshGroupsAutoContext();
+        });
+      }
+
+      document.addEventListener('inscripcions:group-creation-context-changed', async () => {
+        await refreshGroupsAutoContext();
+      });
 
       const btnCreateCount = document.getElementById('btn-groups-create-count');
       if (btnCreateCount) {
@@ -6173,20 +6950,36 @@
         });
       }
 
+      const btnPreviewConfirm = document.getElementById('btn-groups-preview-confirm');
+      if (btnPreviewConfirm) {
+        btnPreviewConfirm.addEventListener('click', async () => {
+          const els = getGroupPreviewElements();
+          if (!lastConfirmableGroupPreview || !lastConfirmableGroupPreview.canConfirm) return;
+          if (!els.root || els.root.dataset.hasPreview !== '1' || els.root.dataset.dirty === '1') return;
+          if (groupPreviewConfirmBusy) return;
+          try {
+            groupPreviewConfirmBusy = true;
+            updateGroupPreviewConfirmUi();
+            await lastConfirmableGroupPreview.execute();
+          } finally {
+            groupPreviewConfirmBusy = false;
+            updateGroupPreviewConfirmUi();
+          }
+        });
+      }
+
       const btnPreviewClear = document.getElementById('btn-groups-preview-clear');
       if (btnPreviewClear) {
         btnPreviewClear.addEventListener('click', () => clearGroupPreview());
       }
 
       bindPreviewDirtyHandlers([
-        '#groups-fallback',
         '#groups-group-count',
         '#groups-group-size',
         '#groups-group-size-mode',
         '#groups-group-min-size',
         '#groups-group-max-size',
         '#groups-group-count-range',
-        '.js-group-bucket-check',
       ], 'change');
       bindPreviewDirtyHandlers([
         '#groups-group-count',
@@ -6197,7 +6990,14 @@
       ], 'input');
 
       clearGroupPreview();
+      updateGroupsStrategyButtonsState(null);
+      refreshGroupsAutoContext();
     }
+
+    window.__groupsPreviewApi = {
+      setConfirmIntent: setGroupPreviewConfirmIntent,
+      clearConfirmIntent: clearGroupPreviewConfirmIntent,
+    };
 
     function collectNumericGroups() {
       const out = new Set();

@@ -2467,6 +2467,42 @@ class InscripcionsSortFlowTests(TestCase):
 
         self.assertEqual(staying.grup, 1)
 
+    def test_groups_preview_selected_scope_uses_selected_ids_even_outside_filters(self):
+        club_a = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Club A",
+            entitat="Club A",
+            ordre_sortida=1,
+            grup=None,
+        )
+        club_b = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Club B",
+            entitat="Club B",
+            ordre_sortida=2,
+            grup=None,
+        )
+
+        resp = self._post_json(
+            "inscripcions_groups_from_sort",
+            self._groups_payload(
+                scope="selected",
+                selected_ids=[club_b.id],
+                filters={"q": "", "categoria": "", "subcategoria": "", "entitat": "Club A"},
+            ),
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data.get("ok"))
+
+        preview = data.get("preview") or {}
+        self.assertEqual(preview.get("members_total"), 1)
+        groups = preview.get("groups") or []
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0].get("member_names_preview"), [club_b.nom_i_cognoms])
+        self.assertEqual(club_a.grup, None)
+        self.assertEqual(club_b.grup, None)
+
     def test_groups_preview_marks_existing_group_as_removed_when_all_members_move(self):
         first = Inscripcio.objects.create(
             competicio=self.comp,
@@ -4910,6 +4946,98 @@ class GroupManagerV1Tests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(int(summary.get("programmed_groups") or 0), 1)
         self.assertEqual(int(summary.get("out_of_program_groups") or 0), 1)
 
+    def test_groups_workspace_contract_keeps_selection_and_omits_filtered_target_ids_by_default(self):
+        resp = self._post_groups_contract(
+            "workspace",
+            {
+                "selected_ids": [self.ins_programmed_a.id, self.ins_free_a.id],
+                "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                "page": 1,
+                "page_size": 2,
+            },
+        )
+
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data.get("ok"))
+        self.assertEqual(data.get("selected_ids"), [self.ins_programmed_a.id, self.ins_free_a.id])
+        self.assertEqual(int((data.get("selection") or {}).get("count") or 0), 2)
+        self.assertNotIn("target_ids", data)
+
+    def test_groups_workspace_resolve_filtered_ids_operation_returns_full_filtered_set(self):
+        resp = self._post_groups_contract(
+            "workspace",
+            {
+                "operation": "resolve_filtered_ids",
+                "filters": {
+                    "q": "",
+                    "categoria": "",
+                    "subcategoria": "",
+                    "entitat": "",
+                    "group_state": "unassigned",
+                },
+                "page": 1,
+                "page_size": 1,
+            },
+        )
+
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data.get("ok"))
+        self.assertEqual(data.get("operation"), "resolve_filtered_ids")
+        self.assertEqual(data.get("target_ids"), [self.ins_free_a.id, self.ins_free_b.id])
+        self.assertEqual(int(data.get("total") or 0), 2)
+
+    def test_groups_workspace_resolve_auto_context_returns_empty_without_selection(self):
+        resp = self._post_groups_contract(
+            "workspace",
+            {
+                "operation": "resolve_auto_context",
+                "selected_ids": [],
+                "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                "fallback_mode": "all_filtered",
+                "group_by": ["categoria"],
+            },
+        )
+
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data.get("ok"))
+        self.assertEqual(data.get("operation"), "resolve_auto_context")
+        self.assertEqual(int(data.get("selection_count") or 0), 0)
+        self.assertEqual(data.get("buckets"), [])
+        self.assertEqual(data.get("default_bucket_keys"), [])
+        self.assertFalse(data.get("used_fallback"))
+
+    def test_groups_workspace_resolve_auto_context_returns_buckets_for_selected_ids(self):
+        self.ins_programmed_a.categoria = "Alevi"
+        self.ins_programmed_a.save(update_fields=["categoria"])
+        self.ins_other.categoria = "Infantil"
+        self.ins_other.save(update_fields=["categoria"])
+
+        resp = self._post_groups_contract(
+            "workspace",
+            {
+                "operation": "resolve_auto_context",
+                "selected_ids": [self.ins_programmed_a.id, self.ins_other.id],
+                "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                "fallback_mode": "all_filtered",
+                "group_by": ["categoria"],
+            },
+        )
+
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data.get("ok"))
+        self.assertEqual(int(data.get("selection_count") or 0), 2)
+        self.assertEqual(int(data.get("buckets_total") or 0), 2)
+        self.assertEqual(sorted(data.get("layers_used") or []), ["tabs"])
+        self.assertEqual(len(data.get("default_bucket_keys") or []), 2)
+        self.assertEqual(
+            sorted(bucket.get("label") for bucket in (data.get("buckets") or [])),
+            ["Alevi", "Infantil"],
+        )
+
     def test_groups_workspace_filtered_scope_respects_column_filters(self):
         self.ins_free_a.entitat = "Club Filtrat"
         self.ins_free_a.save(update_fields=["entitat"])
@@ -4938,10 +5066,94 @@ class GroupManagerV1Tests(_BaseTrampoliDataMixin, TestCase):
         data = resp.json()
         self.assertTrue(data.get("ok"))
         self.assertEqual(data.get("filters", {}).get("column_filters"), {"entitat": ["Club Filtrat"]})
-        self.assertEqual(data.get("target_ids"), [self.ins_free_a.id])
         self.assertEqual(
             [row.get("id") for row in (data.get("candidates") or [])],
             [self.ins_free_a.id],
+        )
+        self.assertEqual(int((data.get("paging") or {}).get("total") or 0), 1)
+
+    def test_groups_workspace_filtered_scope_supports_multiselect_fields_and_group_ids(self):
+        self.ins_programmed_a.categoria = "Alevi"
+        self.ins_programmed_a.entitat = "Club A"
+        self.ins_programmed_a.save(update_fields=["categoria", "entitat"])
+        self.ins_programmed_b.categoria = "Infantil"
+        self.ins_programmed_b.entitat = "Club C"
+        self.ins_programmed_b.save(update_fields=["categoria", "entitat"])
+        self.ins_other.categoria = "Infantil"
+        self.ins_other.entitat = "Club B"
+        self.ins_other.save(update_fields=["categoria", "entitat"])
+        self.ins_free_a.categoria = "Infantil"
+        self.ins_free_a.entitat = "Club B"
+        self.ins_free_a.save(update_fields=["categoria", "entitat"])
+
+        resp = self._post_groups_contract(
+            "workspace",
+            {
+                "scope": "filtered",
+                "selected_ids": [],
+                "filters": {
+                    "q": "",
+                    "categoria": "",
+                    "subcategoria": "",
+                    "entitat": "",
+                    "categories": ["Alevi", "Infantil"],
+                    "entitats": ["Club B"],
+                    "group_ids": [self.programmed_group.id, self.other_group.id],
+                    "group_state": "assigned",
+                },
+                "page": 1,
+                "page_size": 25,
+            },
+        )
+
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data.get("ok"))
+        self.assertEqual(data.get("filters", {}).get("categories"), ["Alevi", "Infantil"])
+        self.assertEqual(data.get("filters", {}).get("entitats"), ["Club B"])
+        self.assertEqual(data.get("filters", {}).get("group_ids"), [self.programmed_group.id, self.other_group.id])
+        self.assertEqual(
+            [row.get("id") for row in (data.get("candidates") or [])],
+            [self.ins_other.id],
+        )
+        self.assertEqual(int((data.get("paging") or {}).get("total") or 0), 1)
+
+    def test_groups_workspace_filter_options_keep_other_categories_visible_after_filtering_one(self):
+        self.ins_programmed_a.categoria = "Alevi"
+        self.ins_programmed_a.save(update_fields=["categoria"])
+        self.ins_other.categoria = "Infantil"
+        self.ins_other.save(update_fields=["categoria"])
+        self.ins_free_a.categoria = "Juvenil"
+        self.ins_free_a.save(update_fields=["categoria"])
+
+        resp = self._post_groups_contract(
+            "workspace",
+            {
+                "scope": "filtered",
+                "selected_ids": [],
+                "filters": {
+                    "q": "",
+                    "categoria": "",
+                    "subcategoria": "",
+                    "entitat": "",
+                    "categories": ["Alevi"],
+                    "group_state": "all",
+                },
+                "page": 1,
+                "page_size": 25,
+            },
+        )
+
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data.get("ok"))
+        self.assertEqual(
+            sorted(data.get("filter_options", {}).get("categories") or []),
+            ["Alevi", "Infantil", "Juvenil"],
+        )
+        self.assertEqual(
+            [row.get("id") for row in (data.get("candidates") or [])],
+            [self.ins_programmed_a.id],
         )
 
     def test_groups_detail_contract_returns_members_and_state_flags(self):
@@ -5011,6 +5223,62 @@ class GroupManagerV1Tests(_BaseTrampoliDataMixin, TestCase):
         removed_preview = resp_removed.json().get("preview") or resp_removed.json()
         removed_groups = removed_preview.get("existing_groups") or []
         self.assertTrue(any(row.get("impact_kind") == "removed" for row in removed_groups))
+
+    def test_groups_preview_uses_selected_ids_even_when_legacy_filtered_scope_is_sent(self):
+        resp = self._post_groups_contract(
+            "preview",
+            {
+                "scope": "filtered",
+                "selected_ids": [self.ins_free_a.id],
+                "filters": {
+                    "q": "",
+                    "categoria": "",
+                    "subcategoria": "",
+                    "entitat": "",
+                    "group_state": "unassigned",
+                },
+                "action": "create",
+            },
+        )
+
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data.get("ok"))
+        preview = data.get("preview") or {}
+        self.assertEqual(int((preview.get("selection") or {}).get("count") or 0), 1)
+        self.assertEqual(int(preview.get("target_ids_count") or 0), 1)
+        self.assertEqual(
+            [row.get("members_count") for row in (preview.get("planned_groups") or [])],
+            [1],
+        )
+
+    def test_groups_preview_per_bucket_with_bucket_selection_mode_none_returns_empty_plan(self):
+        self.ins_free_a.categoria = "Alevi"
+        self.ins_free_a.save(update_fields=["categoria"])
+        self.ins_free_b.categoria = "Infantil"
+        self.ins_free_b.save(update_fields=["categoria"])
+
+        resp = self._post_json(
+            "inscripcions_groups_from_sort",
+            self._groups_payload(
+                strategy="per_bucket",
+                preview_only=True,
+                scope="selected",
+                selected_ids=[self.ins_free_a.id, self.ins_free_b.id],
+                group_by=["categoria"],
+                selected_keys=[],
+                bucket_selection_mode="none",
+            ),
+        )
+
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data.get("ok"))
+        self.assertEqual(int(data.get("buckets_total") or 0), 2)
+        self.assertEqual(int(data.get("buckets_applied") or 0), 0)
+        preview = data.get("preview") or {}
+        self.assertEqual(int(preview.get("groups_total") or 0), 0)
+        self.assertEqual(int(preview.get("members_total") or 0), 0)
 
     def test_groups_create_contract_assigns_selected_ids_to_new_group(self):
         expected_group_num = next_group_display_num(self.comp)
@@ -5126,6 +5394,35 @@ class GroupManagerV1Tests(_BaseTrampoliDataMixin, TestCase):
         self.assertFalse(extra_empty_group.actiu)
         self.assertTrue(self.programmed_group.actiu)
         self.assertTrue(self.other_group.actiu)
+
+    def test_groups_delete_all_contract_deactivates_non_programmed_groups_only(self):
+        resp = self._post_groups_contract("delete-all", {})
+
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data.get("ok"))
+        self.assertEqual(int(data.get("deleted") or 0), 2)
+        self.assertEqual(int(data.get("protected") or 0), 1)
+        self.assertEqual(
+            [row.get("label") for row in (data.get("protected_groups") or [])],
+            [group_label(self.programmed_group)],
+        )
+
+        self.programmed_group.refresh_from_db()
+        self.other_group.refresh_from_db()
+        self.empty_group.refresh_from_db()
+        self.ins_programmed_a.refresh_from_db()
+        self.ins_programmed_b.refresh_from_db()
+        self.ins_other.refresh_from_db()
+
+        self.assertTrue(self.programmed_group.actiu)
+        self.assertFalse(self.other_group.actiu)
+        self.assertFalse(self.empty_group.actiu)
+        self.assertEqual(self.ins_programmed_a.grup_competicio_id, self.programmed_group.id)
+        self.assertEqual(self.ins_programmed_b.grup_competicio_id, self.programmed_group.id)
+        self.assertIsNone(self.ins_other.grup_competicio_id)
+        self.assertIsNone(self.ins_other.grup)
+        self.assertIsNone(self.ins_other.ordre_competicio)
 
 
 class RotationOrderingDisplayTests(_BaseTrampoliDataMixin, TestCase):
@@ -7692,6 +7989,66 @@ class ClassificacioTemplateFlowTests(_BaseTrampoliDataMixin, TestCase):
             ["E_total"],
         )
 
+    def test_template_schema_helpers_roundtrip_presentacio_detall_columns(self):
+        schema = {
+            "puntuacio": {
+                "aparells": {"mode": "seleccionar", "ids": [self.source_app.id]},
+                "camps_per_aparell": {str(self.source_app.id): ["E_total"]},
+                "agregacio_camps": "sum",
+                "exercicis": {"mode": "tots"},
+                "agregacio_exercicis": "sum",
+                "agregacio_aparells": "sum",
+                "ordre": "desc",
+            },
+            "equips": {
+                "context_code": "ctx-finals",
+                "assignment_source": {"mode": "context", "context_code": "ctx-finals", "fallback": "native"},
+                "team_mode": "derived_from_individual",
+            },
+            "presentacio": {
+                "columnes": [
+                    {"type": "builtin", "key": "participant", "label": "Nom", "align": "left"},
+                ],
+                "detall": {
+                    "enabled": True,
+                    "default_open": True,
+                    "sections": [
+                        {
+                            "type": "members_table",
+                            "label": "Detall",
+                            "columns": [
+                                {"type": "builtin", "key": "participant", "label": "Participant", "align": "left"},
+                                {
+                                    "type": "raw",
+                                    "key": "detail_exec",
+                                    "label": "Execucio",
+                                    "align": "right",
+                                    "decimals": 3,
+                                    "source": {
+                                        "aparell_id": self.source_app.id,
+                                        "exercici": 1,
+                                        "camp": "E_total",
+                                        "jutges": {"ids": []},
+                                    },
+                                },
+                            ],
+                        }
+                    ],
+                },
+            },
+        }
+
+        schema_tpl, warnings = _schema_to_template_schema(self.comp_source, schema)
+        self.assertFalse(warnings)
+        detail_tpl = (((((schema_tpl.get("presentacio") or {}).get("detall") or {}).get("sections")) or [])[0] or {}).get("columns") or []
+        self.assertEqual(detail_tpl[1]["source"]["aparell_id"], self.app.codi)
+
+        schema_local, mapping_warnings, mapping = _template_schema_to_competicio_schema(self.comp_target, schema_tpl)
+        self.assertFalse(mapping_warnings)
+        self.assertEqual(mapping.get(self.app.codi), self.target_app.id)
+        detail_local = (((((schema_local.get("presentacio") or {}).get("detall") or {}).get("sections")) or [])[0] or {}).get("columns") or []
+        self.assertEqual(detail_local[1]["source"]["aparell_id"], self.target_app.id)
+
     def test_global_template_can_be_saved_validated_and_applied(self):
         save_res = self._post_json_as(
             self.editor_user,
@@ -8000,6 +8357,8 @@ class ClassificacioTemplateFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertContains(res, "function previewRenderTeamRawDetailCell(v, col)")
         self.assertContains(res, "team-raw-summary")
         self.assertContains(res, 'v._kind === "team_raw_detail"')
+        self.assertContains(res, '<details class="builder-preview-shell builder-preview-panel">', html=True)
+        self.assertContains(res, 'id="detailConfigAlert"')
         self.assertContains(res, "En equips derivats, les columnes de camp mostren un resum i el detall per membres de l'equip.")
         self.assertContains(res, "En equips amb nota nativa, les columnes de camp mostren el valor d'equip i només són representables per aparells d'equip.")
 
@@ -8267,6 +8626,64 @@ class GlobalClassificacioTemplateManagementTests(_BaseTrampoliDataMixin, TestCas
         )
         self.assertEqual(delete_res.status_code, 200)
         self.assertFalse(ClassificacioTemplateGlobal.objects.filter(pk=tpl.id).exists())
+
+    def test_global_template_save_roundtrips_presentacio_detall_schema(self):
+        self.client.force_login(self.user)
+        save_url = reverse("classificacio_template_global_save")
+        schema = self._build_global_schema_payload(self.app.id)
+        schema["equips"] = {
+            "context_code": "ctx-finals",
+            "assignment_source": {"mode": "context", "context_code": "ctx-finals", "fallback": "native"},
+            "team_mode": "derived_from_individual",
+        }
+        schema["presentacio"]["detall"] = {
+            "enabled": True,
+            "default_open": True,
+            "sections": [
+                {
+                    "type": "members_table",
+                    "label": "Detall",
+                    "columns": [
+                        {"type": "builtin", "key": "participant", "label": "Participant", "align": "left"},
+                        {
+                            "type": "raw",
+                            "key": "detail_total",
+                            "label": "Total",
+                            "align": "right",
+                            "decimals": 3,
+                            "source": {"aparell_id": self.app.id, "exercici": 1, "camp": "total", "jutges": {"ids": []}},
+                        },
+                    ],
+                }
+            ],
+        }
+        res = self.client.post(
+            save_url,
+            data=json.dumps(
+                {
+                    "nom": "Plantilla Global Detail",
+                    "slug": "plantilla-global-detail",
+                    "activa": True,
+                    "tipus": "equips",
+                    "schema": schema,
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 200)
+        body = res.json()
+        self.assertTrue(body.get("ok"))
+
+        cfg = body.get("cfg") or {}
+        detail_ui = (((((cfg.get("schema") or {}).get("presentacio") or {}).get("detall") or {}).get("sections")) or [])[0]["columns"]
+        self.assertEqual(detail_ui[1]["source"]["aparell_id"], self.app.id)
+
+        tpl = ClassificacioTemplateGlobal.objects.get(pk=cfg.get("id"))
+        detail_tpl = (((tpl.payload or {}).get("schema") or {}).get("presentacio") or {}).get("detall") or {}
+        self.assertTrue(detail_tpl.get("enabled"))
+        detail_tpl_cols = (((detail_tpl.get("sections") or [])[0] or {}).get("columns")) or []
+        self.assertEqual(detail_tpl_cols[1]["source"]["aparell_id"], self.app.codi)
+        self.assertIn("total", tpl.requirements.get("presentacio_raw_camps") or [])
 
     def test_owner_list_hides_foreign_templates_and_admin_sees_both(self):
         own_tpl = ClassificacioTemplateGlobal.objects.create(
@@ -10117,6 +10534,7 @@ class EquipPreviewUiTests(_BaseTrampoliDataMixin, TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'id="btn-groups-delete-empty"')
+        self.assertContains(response, 'id="btn-groups-delete-all"')
         self.assertContains(response, 'id="btn-team-workspace-delete-empty"')
         self.assertContains(response, 'id="btn-series-workspace-delete-empty"')
 
@@ -12768,6 +13186,521 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(payload["summary"], 7.5)
         self.assertEqual(payload["rows"], [{"label": "Parella 1", "value": 7.5}])
 
+    def test_compute_classificacio_derived_team_detail_payload_exposes_member_rows(self):
+        ind_app = self._create_aparell("TR_DETAIL", "Tramp detail")
+        comp_ind_app = self._create_comp_aparell(self.comp, ind_app, ordre=2)
+
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=comp_ind_app,
+            inscripcio=self.ins1,
+            exercici=1,
+            inputs={},
+            outputs={},
+            total=12.5,
+        )
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=comp_ind_app,
+            inscripcio=self.ins2,
+            exercici=1,
+            inputs={},
+            outputs={},
+            total=11.25,
+        )
+
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Derived member detail",
+            activa=True,
+            ordre=1,
+            tipus="equips",
+            schema={
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [comp_ind_app.id]},
+                    "camps_per_aparell": {str(comp_ind_app.id): ["total"]},
+                    "agregacio_camps": "sum",
+                    "exercicis": {"mode": "tots"},
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "ordre": "desc",
+                },
+                "presentacio": {
+                    "columnes": [
+                        {"type": "builtin", "key": "participant", "label": "Nom", "align": "left"},
+                    ],
+                    "detall": {
+                        "enabled": True,
+                        "default_open": True,
+                        "columnes": [
+                            {"type": "builtin", "key": "participant", "label": "Participant", "align": "left"},
+                            {
+                                "type": "raw",
+                                "key": "detail_total",
+                                "label": "Total",
+                                "align": "right",
+                                "decimals": 2,
+                                "source": {
+                                    "aparell_id": comp_ind_app.id,
+                                    "exercici": 1,
+                                    "camp": "total",
+                                    "jutges": {"ids": []},
+                                },
+                            },
+                        ],
+                    },
+                },
+                "equips": {
+                    "context_code": "parelles",
+                    "team_mode": "derived_from_individual",
+                    "incloure_sense_equip": False,
+                },
+            },
+        )
+
+        rows = compute_classificacio(self.comp, cfg).get("global", [])
+
+        self.assertTrue(rows[0]["row_id"].startswith("team:"))
+        detail = rows[0]["detail"]
+        self.assertTrue(detail["default_open"])
+        self.assertEqual([section["type"] for section in detail["sections"]], ["members_table"])
+        members_table = detail["sections"][0]
+        self.assertEqual([col["key"] for col in members_table["columns"]], ["participant", "detail_total"])
+        self.assertEqual([item["participant"] for item in members_table["rows"]], ["Maria", "Laia"])
+        self.assertEqual([item["cells"]["detail_total"] for item in members_table["rows"]], [12.5, 11.25])
+
+    def test_compute_classificacio_derived_team_detail_defaults_to_participant_column(self):
+        ind_app = self._create_aparell("TR_DETAIL_DEF", "Tramp detail default")
+        comp_ind_app = self._create_comp_aparell(self.comp, ind_app, ordre=2)
+
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=comp_ind_app,
+            inscripcio=self.ins1,
+            exercici=1,
+            inputs={},
+            outputs={},
+            total=12.5,
+        )
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=comp_ind_app,
+            inscripcio=self.ins2,
+            exercici=1,
+            inputs={},
+            outputs={},
+            total=11.25,
+        )
+
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Derived member detail default",
+            activa=True,
+            ordre=1,
+            tipus="equips",
+            schema={
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [comp_ind_app.id]},
+                    "camps_per_aparell": {str(comp_ind_app.id): ["total"]},
+                    "agregacio_camps": "sum",
+                    "exercicis": {"mode": "tots"},
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "ordre": "desc",
+                },
+                "presentacio": {
+                    "columnes": [
+                        {"type": "builtin", "key": "participant", "label": "Nom", "align": "left"},
+                    ],
+                    "detall": {
+                        "enabled": True,
+                        "columnes": [],
+                    },
+                },
+                "equips": {
+                    "context_code": "parelles",
+                    "team_mode": "derived_from_individual",
+                    "incloure_sense_equip": False,
+                },
+            },
+        )
+
+        rows = compute_classificacio(self.comp, cfg).get("global", [])
+
+        detail = rows[0]["detail"]
+        self.assertEqual([section["type"] for section in detail["sections"]], ["members_table"])
+        members_table = detail["sections"][0]
+        self.assertEqual([col["key"] for col in members_table["columns"]], ["participant"])
+        self.assertEqual([item["cells"]["participant"] for item in members_table["rows"]], ["Maria", "Laia"])
+
+    def test_compute_classificacio_detail_enabled_without_sections_does_not_invent_defaults(self):
+        ind_app = self._create_aparell("TR_DETAIL_NONE", "Tramp detail none")
+        comp_ind_app = self._create_comp_aparell(self.comp, ind_app, ordre=2)
+
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=comp_ind_app,
+            inscripcio=self.ins1,
+            exercici=1,
+            inputs={},
+            outputs={},
+            total=12.5,
+        )
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=comp_ind_app,
+            inscripcio=self.ins2,
+            exercici=1,
+            inputs={},
+            outputs={},
+            total=11.25,
+        )
+
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Derived detail no defaults",
+            activa=True,
+            ordre=1,
+            tipus="equips",
+            schema={
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [comp_ind_app.id]},
+                    "camps_per_aparell": {str(comp_ind_app.id): ["total"]},
+                    "agregacio_camps": "sum",
+                    "exercicis": {"mode": "tots"},
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "ordre": "desc",
+                },
+                "presentacio": {
+                    "columnes": [
+                        {"type": "builtin", "key": "participant", "label": "Nom", "align": "left"},
+                    ],
+                    "detall": {
+                        "enabled": True,
+                    },
+                },
+                "equips": {
+                    "context_code": "parelles",
+                    "team_mode": "derived_from_individual",
+                    "incloure_sense_equip": False,
+                },
+            },
+        )
+
+        rows = compute_classificacio(self.comp, cfg).get("global", [])
+
+        self.assertNotIn("detail", rows[0])
+
+    def test_compute_classificacio_native_team_legacy_member_table_detail_is_ignored(self):
+        team_subject, _subject_meta = self._team_subject()
+        TeamScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            team_subject=team_subject,
+            exercici=1,
+            inputs={"SYNC": 7.5},
+            outputs={},
+            total=31,
+        )
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Native detail disabled by mode",
+            activa=True,
+            ordre=1,
+            tipus="equips",
+            schema={
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [self.comp_app.id]},
+                    "camps_per_aparell": {str(self.comp_app.id): ["total"]},
+                    "agregacio_camps": "sum",
+                    "exercicis": {"mode": "tots"},
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "ordre": "desc",
+                },
+                "presentacio": {
+                    "columnes": [
+                        {"type": "builtin", "key": "participant", "label": "Nom", "align": "left"},
+                    ],
+                    "detall": {
+                        "enabled": True,
+                        "default_open": True,
+                        "columnes": [
+                            {"type": "builtin", "key": "participant", "label": "Participant", "align": "left"},
+                        ],
+                    },
+                },
+                "equips": {
+                    "context_code": "parelles",
+                    "team_mode": "native_team",
+                    "incloure_sense_equip": False,
+                },
+            },
+        )
+
+        rows = compute_classificacio(self.comp, cfg).get("global", [])
+
+        self.assertTrue(rows[0]["row_id"].startswith("team:"))
+        self.assertNotIn("detail", rows[0])
+
+    def test_compute_classificacio_native_team_detail_sections_include_members_and_metrics(self):
+        team_subject, _subject_meta = self._team_subject()
+        TeamScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            team_subject=team_subject,
+            exercici=1,
+            inputs={"SYNC": 7.5},
+            outputs={},
+            total=31,
+        )
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Native detail sections",
+            activa=True,
+            ordre=1,
+            tipus="equips",
+            schema={
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [self.comp_app.id]},
+                    "camps_per_aparell": {str(self.comp_app.id): ["total"]},
+                    "agregacio_camps": "sum",
+                    "exercicis": {"mode": "tots"},
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "ordre": "desc",
+                },
+                "presentacio": {
+                    "columnes": [
+                        {"type": "builtin", "key": "participant", "label": "Nom", "align": "left"},
+                    ],
+                    "detall": {
+                        "enabled": True,
+                        "default_open": True,
+                        "sections": [
+                            {"type": "members_list", "label": "Participants"},
+                            {
+                                "type": "team_metrics",
+                                "label": "Notes equip",
+                                "columns": [
+                                    {
+                                        "type": "raw",
+                                        "key": "team_total",
+                                        "label": "Total",
+                                        "align": "right",
+                                        "decimals": 2,
+                                        "source": {
+                                            "aparell_id": self.comp_app.id,
+                                            "exercici": 1,
+                                            "camp": "total",
+                                            "jutges": {"ids": []},
+                                        },
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                },
+                "equips": {
+                    "context_code": "parelles",
+                    "team_mode": "native_team",
+                    "incloure_sense_equip": False,
+                },
+            },
+        )
+
+        rows = compute_classificacio(self.comp, cfg).get("global", [])
+
+        detail = rows[0]["detail"]
+        self.assertEqual([section["type"] for section in detail["sections"]], ["members_list", "team_metrics"])
+        self.assertEqual([item["participant"] for item in detail["sections"][0]["items"]], ["Maria", "Laia"])
+        metrics_section = detail["sections"][1]
+        self.assertEqual([col["key"] for col in metrics_section["columns"]], ["team_total"])
+        metric_cell = metrics_section["rows"][0]["cells"]["team_total"]
+        self.assertEqual(metric_cell["_kind"], "team_raw_detail")
+        self.assertEqual(metric_cell["summary"], 31.0)
+
+    def test_compute_classificacio_individual_detail_sections_include_exercise_table(self):
+        ind_app = self._create_aparell("TR_DETAIL_EX", "Tramp detail exercises")
+        comp_ind_app = self._create_comp_aparell(self.comp, ind_app, ordre=2)
+        comp_ind_app.nombre_exercicis = 2
+        comp_ind_app.save(update_fields=["nombre_exercicis"])
+
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=comp_ind_app,
+            inscripcio=self.ins1,
+            exercici=1,
+            inputs={},
+            outputs={},
+            total=10.5,
+        )
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=comp_ind_app,
+            inscripcio=self.ins1,
+            exercici=2,
+            inputs={},
+            outputs={},
+            total=11.25,
+        )
+
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Individual detail sections",
+            activa=True,
+            ordre=1,
+            tipus="individual",
+            schema={
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [comp_ind_app.id]},
+                    "camps_per_aparell": {str(comp_ind_app.id): ["total"]},
+                    "agregacio_camps": "sum",
+                    "exercicis": {"mode": "tots"},
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "ordre": "desc",
+                },
+                "presentacio": {
+                    "columnes": [
+                        {"type": "builtin", "key": "participant", "label": "Nom", "align": "left"},
+                    ],
+                    "detall": {
+                        "enabled": True,
+                        "sections": [
+                            {
+                                "type": "exercise_table",
+                                "label": "Exercicis",
+                                "columns": [
+                                    {"type": "builtin", "key": "aparell_nom", "label": "Aparell", "align": "left"},
+                                    {"type": "builtin", "key": "exercise_index", "label": "Ex.", "align": "left"},
+                                    {
+                                        "type": "raw",
+                                        "key": "total_ex1",
+                                        "label": "Total 1",
+                                        "align": "right",
+                                        "decimals": 2,
+                                        "source": {
+                                            "aparell_id": comp_ind_app.id,
+                                            "exercici": 1,
+                                            "camp": "total",
+                                            "jutges": {"ids": []},
+                                        },
+                                    },
+                                    {
+                                        "type": "raw",
+                                        "key": "total_ex2",
+                                        "label": "Total 2",
+                                        "align": "right",
+                                        "decimals": 2,
+                                        "source": {
+                                            "aparell_id": comp_ind_app.id,
+                                            "exercici": 2,
+                                            "camp": "total",
+                                            "jutges": {"ids": []},
+                                        },
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                },
+            },
+        )
+
+        rows = compute_classificacio(self.comp, cfg).get("global", [])
+
+        detail = rows[0]["detail"]
+        self.assertEqual([section["type"] for section in detail["sections"]], ["exercise_table"])
+        exercise_rows = detail["sections"][0]["rows"]
+        self.assertEqual([item["exercise_index"] for item in exercise_rows], [1, 2])
+        self.assertEqual(exercise_rows[0]["cells"]["total_ex1"], 10.5)
+        self.assertEqual(exercise_rows[0]["cells"]["total_ex2"], "")
+        self.assertEqual(exercise_rows[1]["cells"]["total_ex1"], "")
+        self.assertEqual(exercise_rows[1]["cells"]["total_ex2"], 11.25)
+
+    def test_compute_classificacio_entitat_detail_sections_include_member_table(self):
+        ind_app = self._create_aparell("TR_DETAIL_ENT", "Tramp detail entitat")
+        comp_ind_app = self._create_comp_aparell(self.comp, ind_app, ordre=2)
+
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=comp_ind_app,
+            inscripcio=self.ins1,
+            exercici=1,
+            inputs={},
+            outputs={},
+            total=12.5,
+        )
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=comp_ind_app,
+            inscripcio=self.ins2,
+            exercici=1,
+            inputs={},
+            outputs={},
+            total=11.0,
+        )
+
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Entity detail sections",
+            activa=True,
+            ordre=1,
+            tipus="entitat",
+            schema={
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [comp_ind_app.id]},
+                    "camps_per_aparell": {str(comp_ind_app.id): ["total"]},
+                    "agregacio_camps": "sum",
+                    "exercicis": {"mode": "tots"},
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "ordre": "desc",
+                },
+                "presentacio": {
+                    "columnes": [
+                        {"type": "builtin", "key": "participant", "label": "Entitat", "align": "left"},
+                    ],
+                    "detall": {
+                        "enabled": True,
+                        "sections": [
+                            {
+                                "type": "entity_members_table",
+                                "label": "Participants",
+                                "columns": [
+                                    {"type": "builtin", "key": "participant", "label": "Participant", "align": "left"},
+                                    {
+                                        "type": "raw",
+                                        "key": "detail_total",
+                                        "label": "Total",
+                                        "align": "right",
+                                        "decimals": 2,
+                                        "source": {
+                                            "aparell_id": comp_ind_app.id,
+                                            "exercici": 1,
+                                            "camp": "total",
+                                            "jutges": {"ids": []},
+                                        },
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                },
+            },
+        )
+
+        rows = compute_classificacio(self.comp, cfg).get("global", [])
+
+        self.assertTrue(rows[0]["row_id"].startswith("entity:"))
+        detail = rows[0]["detail"]
+        self.assertEqual([section["type"] for section in detail["sections"]], ["entity_members_table"])
+        members_table = detail["sections"][0]
+        self.assertEqual([item["participant"] for item in members_table["rows"]], ["Maria", "Laia"])
+        self.assertEqual([item["cells"]["detail_total"] for item in members_table["rows"]], [12.5, 11.0])
+
     def test_compute_classificacio_native_team_raw_column_on_individual_app_returns_blank_for_stale_schema(self):
         ind_app = self._create_aparell("TR_STALE", "Tramp stale")
         comp_ind_app = self._create_comp_aparell(self.comp, ind_app, ordre=2)
@@ -13293,6 +14226,110 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
         )
 
         self.assertTrue(any("nomes es poden mostrar aparells d'equip" in err for err in errors))
+
+    def test_classificacio_validation_rejects_invalid_detail_builtin_for_derived_team(self):
+        ind_app = self._create_aparell("TR_DETAIL_VAL", "Tramp detail validation")
+        comp_ind_app = self._create_comp_aparell(self.comp, ind_app, ordre=2)
+
+        _schema, errors = _validate_schema_for_competicio(
+            self.comp,
+            {
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [comp_ind_app.id]},
+                    "camps_per_aparell": {str(comp_ind_app.id): ["total"]},
+                },
+                "presentacio": {
+                    "detall": {
+                        "enabled": True,
+                        "columnes": [
+                            {"type": "builtin", "key": "punts", "label": "Punts", "align": "right"},
+                        ],
+                    },
+                },
+                "equips": {
+                    "context_code": "parelles",
+                    "team_mode": "derived_from_individual",
+                },
+            },
+            tipus="equips",
+        )
+
+        self.assertTrue(
+            any("presentacio.detall.columnes[0] builtin: clau no permesa" in err for err in errors)
+        )
+
+    def test_classificacio_validation_rejects_detail_enabled_without_sections(self):
+        ind_app = self._create_aparell("TR_DETAIL_REQ", "Tramp detail required")
+        comp_ind_app = self._create_comp_aparell(self.comp, ind_app, ordre=2)
+
+        _schema, errors = _validate_schema_for_competicio(
+            self.comp,
+            {
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [comp_ind_app.id]},
+                    "camps_per_aparell": {str(comp_ind_app.id): ["total"]},
+                },
+                "presentacio": {
+                    "detall": {
+                        "enabled": True,
+                        "sections": [],
+                    },
+                },
+            },
+            tipus="individual",
+        )
+
+        self.assertTrue(
+            any("presentacio.detall.enabled requereix sections o columnes legacy compatibles" in err for err in errors)
+        )
+
+    def test_classificacio_validation_rejects_legacy_detail_columns_for_individual(self):
+        ind_app = self._create_aparell("TR_DETAIL_F1_IND", "Tramp detail legacy individual")
+        comp_ind_app = self._create_comp_aparell(self.comp, ind_app, ordre=2)
+
+        _schema, errors = _validate_schema_for_competicio(
+            self.comp,
+            {
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [comp_ind_app.id]},
+                    "camps_per_aparell": {str(comp_ind_app.id): ["total"]},
+                },
+                "presentacio": {
+                    "detall": {
+                        "enabled": True,
+                        "columnes": [
+                            {"type": "builtin", "key": "participant", "label": "Participant", "align": "left"},
+                        ],
+                    },
+                },
+            },
+            tipus="individual",
+        )
+
+        self.assertTrue(
+            any("presentacio.detall.columnes nomes es compatible" in err for err in errors)
+        )
+
+    def test_classificacio_validation_rejects_legacy_detail_columns_for_native_team(self):
+        _schema, errors = _validate_schema_for_competicio(
+            self.comp,
+            {
+                **self._native_team_schema_with_tie({"camps": ["TOTAL"], "ordre": "desc"}),
+                "presentacio": {
+                    "detall": {
+                        "enabled": True,
+                        "columnes": [
+                            {"type": "builtin", "key": "participant", "label": "Participant", "align": "left"},
+                        ],
+                    },
+                },
+            },
+            tipus="equips",
+        )
+
+        self.assertTrue(
+            any("presentacio.detall.columnes nomes es compatible" in err for err in errors)
+        )
 
     def test_normalize_excel_cell_supports_team_raw_detail(self):
         value, _fmt, wrap = _normalize_excel_cell(
