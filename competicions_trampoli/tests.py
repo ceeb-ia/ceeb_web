@@ -8737,6 +8737,60 @@ class GlobalClassificacioTemplateManagementTests(_BaseTrampoliDataMixin, TestCas
         details = body.get("error_details") or []
         self.assertTrue(any(item.get("path") == "presentacio.detall.sections[0].columns[1].source.camp" for item in details))
 
+    def test_global_template_save_defers_detail_exercise_range_validation_until_competicio(self):
+        self.client.force_login(self.user)
+        save_url = reverse("classificacio_template_global_save")
+        schema = self._build_global_schema_payload(self.app.id)
+        schema["presentacio"]["detall"] = {
+            "enabled": True,
+            "sections": [
+                {
+                    "type": "exercise_table",
+                    "label": "Exercicis",
+                    "aparell_id": self.app.id,
+                    "columns": [
+                        {"type": "builtin", "key": "exercise_index", "label": "Ex.", "align": "left"},
+                        {
+                            "type": "raw",
+                            "key": "detail_total",
+                            "label": "Total",
+                            "align": "right",
+                            "decimals": 3,
+                            "source": {"aparell_id": self.app.id, "exercici": 99, "camp": "TOTAL", "jutges": {"ids": []}},
+                        },
+                    ],
+                }
+            ],
+        }
+        save_res = self.client.post(
+            save_url,
+            data=json.dumps(
+                {
+                    "nom": "Plantilla Global Exercise Deferred",
+                    "slug": "plantilla-global-exercise-deferred",
+                    "activa": True,
+                    "tipus": "individual",
+                    "schema": schema,
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(save_res.status_code, 200)
+        tpl_id = (save_res.json().get("cfg") or {}).get("id")
+        self.assertTrue(tpl_id)
+
+        validate_res = self.client.post(
+            reverse("classificacio_template_validate", kwargs={"pk": self.comp.id}),
+            data=json.dumps({"template_id": tpl_id}),
+            content_type="application/json",
+        )
+        self.assertEqual(validate_res.status_code, 200)
+        validate_body = validate_res.json()
+        self.assertFalse(validate_body.get("compatible"))
+        self.assertTrue(
+            any("source.exercici" in str(err or "") or "fora de rang" in str(err or "") for err in validate_body.get("blocking_errors", []))
+        )
+
     def test_owner_list_hides_foreign_templates_and_admin_sees_both(self):
         own_tpl = ClassificacioTemplateGlobal.objects.create(
             nom="Tpl Own",
@@ -14477,6 +14531,76 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
         body = response.json()
         details = body.get("error_details") or []
         self.assertTrue(any(item.get("path") == "presentacio.detall.sections[0].columns[1].source.camp" for item in details))
+
+    def test_classificacio_save_rejects_detail_exercici_out_of_range_with_precise_path(self):
+        payload = self._classificacio_payload(tipus="individual", app_ids=[self.comp_app.id])
+        payload["schema"]["presentacio"] = {
+            "top_n": 0,
+            "mostrar_empats": True,
+            "columnes": [
+                {"type": "builtin", "key": "participant", "label": "Nom", "align": "left"},
+            ],
+            "detall": {
+                "enabled": True,
+                "sections": [
+                    {
+                        "type": "exercise_table",
+                        "label": "Exercicis",
+                        "aparell_id": self.comp_app.id,
+                        "columns": [
+                            {"type": "builtin", "key": "exercise_index", "label": "Ex.", "align": "left"},
+                            {
+                                "type": "raw",
+                                "key": "detail_total",
+                                "label": "Total",
+                                "align": "right",
+                                "decimals": 3,
+                                "source": {"aparell_id": self.comp_app.id, "exercici": 99, "camp": "total", "jutges": {"ids": []}},
+                            },
+                        ],
+                    }
+                ],
+            },
+        }
+
+        response = self._post_json("classificacio_save", payload)
+        self.assertEqual(response.status_code, 400)
+        body = response.json()
+        self.assertTrue(any("fora de rang" in err for err in (body.get("errors") or [])))
+        details = body.get("error_details") or []
+        self.assertTrue(any(item.get("path") == "presentacio.detall.sections[0].columns[1].source.exercici" for item in details))
+
+    def test_classificacio_validation_rejects_members_list_columns(self):
+        _schema, errors = _validate_schema_for_competicio(
+            self.comp,
+            {
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [self.comp_app.id]},
+                    "camps_per_aparell": {str(self.comp_app.id): ["total"]},
+                },
+                "equips": {
+                    "context_code": "parelles",
+                    "team_mode": "derived_from_individual",
+                },
+                "presentacio": {
+                    "detall": {
+                        "enabled": True,
+                        "sections": [
+                            {
+                                "type": "members_list",
+                                "label": "Membres",
+                                "columns": [
+                                    {"type": "builtin", "key": "participant", "label": "Participant", "align": "left"},
+                                ],
+                            }
+                        ],
+                    },
+                },
+            },
+            tipus="equips",
+        )
+
+        self.assertTrue(any("presentacio.detall.sections[0].columns no es compatible amb members_list" in err for err in errors))
 
     def test_normalize_excel_cell_supports_team_raw_detail(self):
         value, _fmt, wrap = _normalize_excel_cell(

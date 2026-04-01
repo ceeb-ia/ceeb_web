@@ -308,7 +308,7 @@ def classificacio_template_global_save(request):
             allowed_particio_codes=allowed_particio_codes,
             allowed_filter_keys=GLOBAL_FILTER_KEYS,
         )
-    schema_tpl, validation_errors = validate_template_schema_global(
+    schema_tpl, validation_errors, validation_details = validate_template_schema_global(
         schema_tpl,
         available_app_codes={app.codi.upper() for app in apps},
         scoreable_by_code=scoreable_by_code,
@@ -325,7 +325,7 @@ def classificacio_template_global_save(request):
                 "ok": False,
                 "error": "Plantilla global invalida.",
                 "errors": validation_errors,
-                "error_details": _build_validation_error_details(validation_errors),
+                "error_details": _build_validation_error_details(validation_details or validation_errors),
             },
             status=400,
         )

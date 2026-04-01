@@ -1734,7 +1734,7 @@
     }
   }
 
-  function renderBuilderSaveErrors(rawDetails, fallbackMessages) {
+  function _unusedRenderBuilderSaveErrorsLegacy(rawDetails, fallbackMessages) {
     clearBuilderSaveFeedback();
     const details = normalizeSaveErrorDetails(rawDetails);
     const fallback = (Array.isArray(fallbackMessages) ? fallbackMessages : []).map(msg => String(msg || "").trim()).filter(Boolean);
@@ -1777,6 +1777,7 @@
       const targetSection = firstTarget.closest("[data-builder-section]");
       if (targetSection && targetSection.id) setActiveBuilderNav(targetSection.id);
       firstTarget.scrollIntoView({ behavior: "smooth", block: "center" });
+      focusBuilderErrorTarget(firstTarget);
     }
   }
 
@@ -4455,9 +4456,9 @@
           align: String(c.align || "right"),
           decimals: Number.isFinite(Number(c.decimals)) ? Number(c.decimals) : 3,
           source: {
-            aparell_id: Number.isFinite(Number(sectionAppId))
-              ? Number(sectionAppId)
-              : (Number.isFinite(Number(src.aparell_id)) ? Number(src.aparell_id) : null),
+            aparell_id: Number.isFinite(Number(src.aparell_id))
+              ? Number(src.aparell_id)
+              : (Number.isFinite(Number(sectionAppId)) ? Number(sectionAppId) : null),
             exercici: Math.max(1, Number(src.exercici || 1) || 1),
             camp: String(src.camp || ""),
             jutges: { ids: judgeIds },
@@ -4580,8 +4581,12 @@
 
   function getDetailSectionSplitInfo(section) {
     const appIds = getDetailSectionRawAppIds(section);
+    const sectionAppId = Number(section?.aparell_id || 0);
+    const mismatchAppIds = appIds.filter(appId => Number.isFinite(sectionAppId) && sectionAppId > 0 && appId !== sectionAppId);
     return {
       appIds,
+      mismatchAppIds,
+      hasAppMismatch: mismatchAppIds.length > 0,
       needsSplit: appIds.length > 1,
     };
   }
@@ -4615,6 +4620,40 @@
         ],
       };
     });
+  }
+
+  function getCompatibleDetailColumnsForSectionApp(columns, nextAppId) {
+    const kept = [];
+    const removed = [];
+    (Array.isArray(columns) ? columns : []).forEach(col => {
+      if (String(col?.type || "builtin").toLowerCase() !== "raw") {
+        kept.push(col);
+        return;
+      }
+      const rawAppId = Number(col?.source?.aparell_id || 0);
+      if (Number.isFinite(Number(nextAppId)) && Number(nextAppId) > 0 && rawAppId === Number(nextAppId)) {
+        kept.push({
+          ...col,
+          source: {
+            ...(col.source || {}),
+            aparell_id: Number(nextAppId),
+          },
+        });
+        return;
+      }
+      removed.push(col);
+    });
+    return { kept, removed };
+  }
+
+  function focusBuilderErrorTarget(node) {
+    if (!node) return;
+    const tag = String(node.tagName || "").toUpperCase();
+    const direct = ["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(tag) ? node : null;
+    const target = direct || node.querySelector?.("input,select,textarea,button");
+    if (target && typeof target.focus === "function") {
+      target.focus({ preventScroll: true });
+    }
   }
 
   function getFieldOptionsForApp(appId) {
@@ -5388,128 +5427,6 @@
     });
   }
 
-  function renderDetailSectionsUI(rawSections) {
-    if (!els.detailSectionsBox) return;
-    const sections = normalizeDetailSectionsFromSchema({ sections: rawSections });
-    const enabled = isDetailConfigAvailable() && !!els.detailEnabled?.checked;
-    els.detailSectionsBox.innerHTML = "";
-
-    sections.forEach((section, idx) => {
-      const box = document.createElement("div");
-      box.className = "border rounded p-2 mb-3";
-      box.setAttribute("data-section-idx", String(idx));
-      box.setAttribute("data-section-type", String(section.type || ""));
-      const hasColumns = Array.isArray(section.columns);
-      const canAddRaw = canAddDetailRawColumn(section.type);
-      box.innerHTML = `
-        <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
-          <div class="flex-fill">
-            <div class="small text-muted mb-1">Seccio</div>
-            <div class="font-weight-bold">${esc(detailSectionChoices().find(x => x.type === section.type)?.label || section.type)}</div>
-          </div>
-          <div class="d-flex gap-1">
-            <button type="button" class="btn btn-sm btn-outline-secondary" data-act="up" ${enabled ? "" : "disabled"}>Up</button>
-            <button type="button" class="btn btn-sm btn-outline-secondary" data-act="down" ${enabled ? "" : "disabled"}>Down</button>
-            <button type="button" class="btn btn-sm btn-outline-danger" data-act="del" ${enabled ? "" : "disabled"}>Eliminar</button>
-          </div>
-        </div>
-        <div class="row">
-          <div class="col-12 col-md-4 mb-2"><label class="small text-muted mb-1">Tipus</label><input class="form-control form-control-sm" value="${esc(detailSectionChoices().find(x => x.type === section.type)?.label || section.type)}" disabled></div>
-          <div class="col-12 col-md-8 mb-2"><label class="small text-muted mb-1">Etiqueta</label><input class="form-control form-control-sm" data-k="label" value="${esc(section.label || "")}" ${enabled ? "" : "disabled"}></div>
-        </div>
-        ${hasColumns ? `<div class="d-flex flex-wrap gap-2 mb-2"><button type="button" class="btn btn-sm btn-outline-primary" data-act="add_builtin" ${enabled ? "" : "disabled"}>+ Builtin</button><button type="button" class="btn btn-sm btn-outline-primary" data-act="add_raw" ${(enabled && canAddRaw) ? "" : "disabled"}>+ Camp</button></div>${!canAddRaw ? `<div class="small text-muted mb-2">Cal un aparell compatible amb camps scoreables per afegir columnes raw en aquesta seccio.</div>` : ""}<div data-k="columns_box"></div>` : `<div class="small text-muted">Aquesta seccio no necessita columnes configurables.</div>`}
-      `;
-      box.querySelector('[data-k="label"]').addEventListener("input", syncAdvancedFromUI);
-      box.querySelector('[data-act="del"]').addEventListener("click", () => {
-        const cur = readDetailSectionsUI(true);
-        cur.splice(idx, 1);
-        renderDetailSectionsUI(cur);
-        syncAdvancedFromUI();
-      });
-      box.querySelector('[data-act="up"]').addEventListener("click", () => {
-        if (idx <= 0) return;
-        const cur = readDetailSectionsUI(true);
-        const t = cur[idx - 1]; cur[idx - 1] = cur[idx]; cur[idx] = t;
-        renderDetailSectionsUI(cur);
-        syncAdvancedFromUI();
-      });
-      box.querySelector('[data-act="down"]').addEventListener("click", () => {
-        const cur = readDetailSectionsUI(true);
-        if (idx >= cur.length - 1) return;
-        const t = cur[idx + 1]; cur[idx + 1] = cur[idx]; cur[idx] = t;
-        renderDetailSectionsUI(cur);
-        syncAdvancedFromUI();
-      });
-      if (hasColumns) {
-        box.querySelector('[data-act="add_builtin"]').addEventListener("click", () => {
-          const cur = readDetailSectionsUI(true);
-          const builtins = detailAllowedBuiltinKeysForSection(section.type);
-          const used = new Set((((cur[idx] || {}).columns) || []).filter(x => String(x?.type || "builtin") === "builtin").map(x => String(x.key || "")));
-          const nextKey = builtins.find(key => !used.has(key)) || builtins[0];
-          if (!nextKey) return;
-          const labels = { participant: "Participant", entitat_nom: "Entitat", exercise_index: "Ex.", aparell_nom: "Aparell" };
-          cur[idx].columns = [...((((cur[idx] || {}).columns) || [])), { type: "builtin", key: nextKey, label: labels[nextKey] || nextKey, align: "left" }];
-          renderDetailSectionsUI(cur);
-          syncAdvancedFromUI();
-        });
-        box.querySelector('[data-act="add_raw"]').addEventListener("click", () => {
-          const source = getDetailRawSourceForSection(section.type);
-          if (!source) {
-            setDetailConfigAlert("Selecciona un aparell compatible amb camps scoreables abans d'afegir aquesta seccio.");
-            return;
-          }
-          const cur = readDetailSectionsUI(true);
-          cur[idx].columns = [...((((cur[idx] || {}).columns) || [])), { type: "raw", key: `detail_raw_${((((cur[idx] || {}).columns) || []).length + 1)}`, label: "Detall", align: "right", decimals: 3, source }];
-          renderDetailSectionsUI(cur);
-          syncAdvancedFromUI();
-        });
-        renderDetailSectionColumnsUI(box, section.type, section.columns || [], enabled, idx);
-      }
-      els.detailSectionsBox.appendChild(box);
-    });
-  }
-
-  function readDetailSectionsUI(includeInvalid) {
-    const out = [];
-    document.querySelectorAll("#detailSectionsBox [data-section-idx]").forEach(sectionBox => {
-      const sectionType = String(sectionBox.getAttribute("data-section-type") || "").trim();
-      if (!sectionType) return;
-      const section = {
-        type: sectionType,
-        label: String(sectionBox.querySelector('[data-k="label"]')?.value || "").trim() || (defaultDetailSection(sectionType).label || sectionType),
-      };
-      const columnsHost = sectionBox.querySelector("[data-k='columns_box']");
-      if (columnsHost) {
-        const cols = [];
-        columnsHost.querySelectorAll(".col-row").forEach((row, idx) => {
-          const type = row.getAttribute("data-type") || "builtin";
-          const key = String(row.querySelector('[data-k="key"]')?.value || "").trim();
-          const label = String(row.querySelector('[data-k="label"]')?.value || "").trim();
-          const align = String(row.querySelector('[data-k="align"]')?.value || (type === "raw" ? "right" : "left")).trim();
-          const decRaw = String(row.querySelector('[data-k="decimals"]')?.value || "").trim();
-          const decimals = decRaw === "" ? null : Number(decRaw);
-          if (type === "raw") {
-            const appId = Number(row.querySelector('[data-k="app_id"]')?.value);
-            const ex = Math.max(1, Number(row.querySelector('[data-k="exercici"]')?.value || 1));
-            const camp = String(row.querySelector('[data-k="camp"]')?.value || "").trim();
-            const judgeIds = _uniquePositiveInts(Array.from(row.querySelector('[data-k="judge_ids"]')?.selectedOptions || []).map(o => Number(o.value)));
-            if (!includeInvalid && (!Number.isFinite(appId) || !getAparellById(appId) || !camp || !isRealFieldForApp(appId, camp))) return;
-            cols.push({ type: "raw", key: key || `detail_raw_${idx + 1}`, label: label || key || `detail_raw_${idx + 1}`, align: ["left","right","center"].includes(align) ? align : "right", decimals: Number.isFinite(decimals) ? Math.max(0, Math.min(6, decimals)) : 3, source: { aparell_id: Number.isFinite(appId) ? appId : null, exercici: ex, camp, jutges: { ids: judgeIds } } });
-          } else {
-            if (!detailAllowedBuiltinKeysForSection(sectionType).includes(key)) return;
-            const labels = { participant: "Participant", entitat_nom: "Entitat", exercise_index: "Ex.", aparell_nom: "Aparell" };
-            const item = { type: "builtin", key, label: label || labels[key] || key, align: ["left","right","center"].includes(align) ? align : "left" };
-            if (Number.isFinite(decimals)) item.decimals = Math.max(0, Math.min(6, decimals));
-            cols.push(item);
-          }
-        });
-        section.columns = normalizeDetailColumnsForSection(cols, sectionType);
-      }
-      out.push(section);
-    });
-    return out;
-  }
-
   function renderBuilderSaveErrors(rawDetails, fallbackMessages) {
     clearBuilderSaveFeedback();
     const details = normalizeSaveErrorDetails(rawDetails);
@@ -5553,6 +5470,7 @@
       const targetSection = firstTarget.closest("[data-builder-section]");
       if (targetSection && targetSection.id) setActiveBuilderNav(targetSection.id);
       firstTarget.scrollIntoView({ behavior: "smooth", block: "center" });
+      focusBuilderErrorTarget(firstTarget);
     }
   }
 
@@ -5600,7 +5518,7 @@
 
       if ((col.type || "builtin") === "raw") {
         const src = (col.source && typeof col.source === "object") ? col.source : {};
-        const appId = Number(sectionAppId || src.aparell_id || 0);
+        const appId = Number(src.aparell_id || sectionAppId || 0);
         const camp = String(src.camp || "");
         const ex = Math.max(1, Number(src.exercici || 1) || 1);
         const judgeIds = _uniquePositiveInts((((src.jutges || {}).ids) || []));
@@ -5695,12 +5613,16 @@
       box.dataset.errorPath = sectionPath;
       const hasColumns = Array.isArray(section.columns);
       const requiresApp = detailSectionRequiresApp(section.type);
+      const sectionConflict = splitInfo.needsSplit || splitInfo.hasAppMismatch;
       const canAddRaw = canAddDetailRawColumn(section.type, sectionAppId);
       const appHelp = requiresApp && hasColumns && !sectionAppId
         ? `<div class="small text-muted mb-2">Selecciona un aparell per poder afegir i validar les columnes raw d'aquesta seccio.</div>`
         : "";
       const splitWarning = splitInfo.needsSplit
         ? `<div class="alert alert-warning py-2 px-3 small mb-2" data-error-path="${esc(sectionPath + ".columns")}">Aquesta seccio barreja columnes raw de diversos aparells. Divideix-la en una seccio per aparell abans de desar.</div>`
+        : "";
+      const mismatchWarning = splitInfo.hasAppMismatch
+        ? `<div class="alert alert-danger py-2 px-3 small mb-2" data-error-path="${esc(sectionPath + ".aparell_id")}">L'aparell de la seccio no concorda amb ${splitInfo.mismatchAppIds.length === 1 ? "la columna raw existent" : "algunes columnes raw"}. Revisa l'aparell de la seccio o elimina les columnes incompatibles abans de desar.</div>`
         : "";
       const appSelector = requiresApp
         ? `<div class="col-12 col-md-4 mb-2"><label class="small text-muted mb-1">Aparell</label><select class="form-control form-control-sm" data-k="section_app_id" data-error-path="${esc(sectionPath + ".aparell_id")}" ${enabled && !splitInfo.needsSplit ? "" : "disabled"}>${buildDetailSectionAppOptionsHTML(section.type, sectionAppId)}</select></div>`
@@ -5723,7 +5645,8 @@
           <div class="col-12 ${requiresApp ? "col-md-4" : "col-md-8"} mb-2"><label class="small text-muted mb-1">Etiqueta</label><input class="form-control form-control-sm" data-k="label" data-error-path="${esc(sectionPath + ".label")}" value="${esc(section.label || "")}" ${enabled ? "" : "disabled"}></div>
         </div>
         ${splitWarning}
-        ${hasColumns ? `${appHelp}<div class="d-flex flex-wrap gap-2 mb-2"><button type="button" class="btn btn-sm btn-outline-primary" data-act="add_builtin" ${enabled ? "" : "disabled"}>+ Builtin</button><button type="button" class="btn btn-sm btn-outline-primary" data-act="add_raw" ${(enabled && canAddRaw && !splitInfo.needsSplit) ? "" : "disabled"}>+ Camp</button>${splitInfo.needsSplit ? `<button type="button" class="btn btn-sm btn-outline-warning" data-act="split" ${enabled ? "" : "disabled"}>Dividir per aparell</button>` : ""}</div>${!canAddRaw && !splitInfo.needsSplit ? `<div class="small text-muted mb-2">Cal un aparell compatible amb camps scoreables per afegir columnes raw en aquesta seccio.</div>` : ""}<div data-k="columns_box" data-error-path="${esc(sectionPath + ".columns")}"></div>` : `<div class="small text-muted">Aquesta seccio no necessita columnes configurables.</div>`}
+        ${mismatchWarning}
+        ${hasColumns ? `${appHelp}<div class="d-flex flex-wrap gap-2 mb-2"><button type="button" class="btn btn-sm btn-outline-primary" data-act="add_builtin" ${enabled ? "" : "disabled"}>+ Builtin</button><button type="button" class="btn btn-sm btn-outline-primary" data-act="add_raw" ${(enabled && canAddRaw && !sectionConflict) ? "" : "disabled"}>+ Camp</button>${splitInfo.needsSplit ? `<button type="button" class="btn btn-sm btn-outline-warning" data-act="split" ${enabled ? "" : "disabled"}>Dividir per aparell</button>` : ""}</div>${!canAddRaw && !sectionConflict ? `<div class="small text-muted mb-2">Cal un aparell compatible amb camps scoreables per afegir columnes raw en aquesta seccio.</div>` : ""}<div data-k="columns_box" data-error-path="${esc(sectionPath + ".columns")}"></div>` : `<div class="small text-muted">Aquesta seccio no necessita columnes configurables.</div>`}
       `;
       box.querySelector('[data-k="label"]').addEventListener("input", syncAdvancedFromUI);
       const appSelect = box.querySelector('[data-k="section_app_id"]');
@@ -5738,9 +5661,9 @@
             return;
           }
           const currentColumns = Array.isArray(currentSection.columns) ? currentSection.columns : [];
-          const hasRawColumns = currentColumns.some(col => String(col?.type || "builtin") === "raw");
-          if (hasRawColumns) {
-            const accepted = await showConfirm("Canviar l'aparell eliminara les columnes raw incompatibles d'aquesta seccio. Vols continuar?");
+          const compat = getCompatibleDetailColumnsForSectionApp(currentColumns, nextAppId);
+          if (compat.removed.length) {
+            const accepted = await showConfirm(`Canviar l'aparell eliminara ${compat.removed.length} columna(es) raw incompatible(s) d'aquesta seccio. Vols continuar?`);
             if (!accepted) {
               appSelect.value = prevAppId ? String(prevAppId) : "";
               return;
@@ -5748,7 +5671,7 @@
           }
           currentSection.aparell_id = Number.isFinite(nextAppId) && nextAppId > 0 ? nextAppId : null;
           currentSection.columns = normalizeDetailColumnsForSection(
-            currentColumns.filter(col => String(col?.type || "builtin") !== "raw"),
+            compat.kept,
             currentSection.type,
             currentSection.aparell_id
           );
@@ -5843,7 +5766,9 @@
           const decRaw = String(row.querySelector('[data-k="decimals"]')?.value || "").trim();
           const decimals = decRaw === "" ? null : Number(decRaw);
           if (type === "raw") {
-            const appId = Number(sectionAppId || row.querySelector('[data-k="app_id"]')?.value);
+            const rowAppIdRaw = Number(row.querySelector('[data-k="app_id"]')?.value || 0);
+            const rowAppId = Number.isFinite(rowAppIdRaw) && rowAppIdRaw > 0 ? rowAppIdRaw : null;
+            const appId = rowAppId ?? sectionAppId;
             const ex = Math.max(1, Number(row.querySelector('[data-k="exercici"]')?.value || 1));
             const camp = String(row.querySelector('[data-k="camp"]')?.value || "").trim();
             const judgeIds = _uniquePositiveInts(Array.from(row.querySelector('[data-k="judge_ids"]')?.selectedOptions || []).map(o => Number(o.value)));
@@ -7323,7 +7248,7 @@
     const detailCfg = ((schema.presentacio || {}).detall || {});
     if (els.detailEnabled) els.detailEnabled.checked = !!detailCfg.enabled;
     if (els.detailDefaultOpen) els.detailDefaultOpen.checked = !!detailCfg.default_open;
-    renderDetailSectionsUI(detailCfg.sections || normalizeDetailSectionsFromSchema(detailCfg));
+    renderDetailSectionsUI(normalizeDetailSectionsFromSchema(detailCfg));
 
     // tie + filtres JSON
     const victoriesCfg = ((schema.puntuacio || {}).victories || {});

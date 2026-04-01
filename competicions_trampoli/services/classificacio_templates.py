@@ -19,6 +19,11 @@ from .services_classificacions_2 import (
     particio_codes_from_entries,
 )
 from .birth_year_ranges import validate_birth_year_range_partition_config
+from .detail_schema_validation import (
+    detail_section_key_for_tipus,
+    validate_detail_schema,
+    validation_details_to_messages,
+)
 
 
 GLOBAL_NATIVE_PARTICIO_FIELDS = [
@@ -1388,6 +1393,7 @@ def validate_template_schema_global(
 ):
     schema = normalize_particions_schema(schema_tpl or {})
     errors = []
+    error_details = []
     app_units_by_code = {
         canon_app_code(code): str(unit or "").strip().lower()
         for code, unit in (app_units_by_code or {}).items()
@@ -1524,58 +1530,49 @@ def validate_template_schema_global(
                                 errors.append(
                                     f"{path}[{idx}] metric: aparell {target_code}: camp '{code}' no es puntuable directament."
                                 )
-        detail = presentacio.get("detall") or {}
-        sections = detail.get("sections") or []
-        if isinstance(sections, list):
-            expected_by_type = {
-                "members_table": "individual",
-                "entity_members_table": "individual",
-                "exercise_table": "individual",
-                "team_metrics": "team",
-            }
-            for sidx, section in enumerate(sections):
-                if not isinstance(section, dict):
-                    continue
-                section_type = str(section.get("type") or "").strip().lower()
-                if section_type == "members_list":
-                    if section.get("aparell_codi") not in (None, "", 0, "0") or section.get("aparell_id") not in (None, "", 0, "0"):
-                        errors.append(f"presentacio.detall.sections[{sidx}].aparell_id no es compatible amb members_list.")
-                    continue
-                section_code = canon_app_code(section.get("aparell_codi") or section.get("aparell_id"))
-                raw_codes = []
-                for col in (section.get("columns") or []):
-                    if not isinstance(col, dict):
-                        continue
-                    if str(col.get("type") or "builtin").strip().lower() != "raw":
-                        continue
-                    src = col.get("source") if isinstance(col.get("source"), dict) else {}
-                    app_code = canon_app_code(src.get("aparell_codi") or src.get("aparell_id"))
-                    if app_code and app_code not in raw_codes:
-                        raw_codes.append(app_code)
-                if raw_codes and not section_code:
-                    errors.append(f"presentacio.detall.sections[{sidx}].aparell_id es obligatori quan hi ha columnes raw.")
-                if len(raw_codes) > 1:
-                    errors.append(f"presentacio.detall.sections[{sidx}] barreja aparells multiples; cal dividir el detall en una seccio per aparell.")
-                if section_code:
-                    if section_code not in available_app_codes:
-                        errors.append(f"presentacio.detall.sections[{sidx}].aparell_id: aparell no disponible")
-                    else:
-                        expected_unit = expected_by_type.get(section_type)
-                        unit = str(app_units_by_code.get(section_code) or "").strip().lower()
-                        if expected_unit == "team" and unit and unit != "team":
-                            errors.append(f"presentacio.detall.sections[{sidx}].aparell_id: en {section_type} nomes es poden mostrar aparells d'equip.")
-                        elif expected_unit == "individual" and unit == "team":
-                            errors.append(f"presentacio.detall.sections[{sidx}].aparell_id: en {section_type} no es poden mostrar aparells d'equip.")
-                for cidx, col in enumerate(section.get("columns") or []):
-                    if not isinstance(col, dict):
-                        continue
-                    if str(col.get("type") or "builtin").strip().lower() != "raw":
-                        continue
-                    src = col.get("source") if isinstance(col.get("source"), dict) else {}
-                    app_code = canon_app_code(src.get("aparell_codi") or src.get("aparell_id"))
-                    if section_code and app_code and app_code != section_code:
-                        errors.append(
-                            f"presentacio.detall.sections[{sidx}].columns[{cidx}] raw: l'aparell {app_code} no concorda amb presentacio.detall.sections.aparell_id={section_code}."
-                        )
+        detail = presentacio.get("detall")
+        detail_key = detail_section_key_for_tipus(
+            tipus=tipus,
+            team_mode=str((schema.get("equips") or {}).get("team_mode") or "").strip().lower(),
+        )
 
-    return schema, errors
+        def normalize_app(raw):
+            return canon_app_code(raw)
+
+        def is_app_available(app_code):
+            return app_code in available_app_codes
+
+        def get_app_unit(app_code):
+            return str(app_units_by_code.get(app_code) or "").strip().lower()
+
+        def get_scoreable_info(app_code, camp):
+            if app_code not in available_app_codes:
+                return None
+            if camp not in scoreable_by_code.get(app_code, {"total", "TOTAL"}):
+                return None
+            return {"scoreable": True}
+
+        def validate_exercise(_app_code, raw_exercici):
+            try:
+                exercise = int(raw_exercici or 1)
+            except Exception:
+                exercise = 0
+            if exercise < 1:
+                return "exercici invalid."
+            return None
+
+        error_details.extend(
+            validate_detail_schema(
+                detail,
+                detail_section_key=detail_key,
+                normalize_app=normalize_app,
+                is_app_available=is_app_available,
+                get_app_unit=get_app_unit,
+                get_scoreable_info=get_scoreable_info,
+                selected_apps=(selected_codes or None),
+                validate_exercise=validate_exercise,
+            )
+        )
+
+    errors.extend(validation_details_to_messages(error_details))
+    return schema, errors, error_details

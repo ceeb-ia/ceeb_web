@@ -423,6 +423,16 @@
     const columns = (Array.isArray(cfg.columns) && cfg.columns.length) ? cfg.columns : defaultColumns();
     document.getElementById("badge-" + cfg.id).textContent = parts.length ? parts.length : "0";
 
+    if (cfg && cfg.error) {
+      const lines = [esc(String(cfg.error.message || "Configuracio de classificacio invalida."))];
+      (Array.isArray(cfg.error.errors) ? cfg.error.errors : []).slice(0, 6).forEach(err => {
+        const text = String(err || "").trim();
+        if (text) lines.push(esc(text));
+      });
+      host.innerHTML = '<div class="alert alert-danger small mb-0">' + lines.join("<br>") + '</div>';
+      return;
+    }
+
     if (!parts.length){
       host.innerHTML = '<div class="text-muted small">Sense resultats.</div>';
       return;

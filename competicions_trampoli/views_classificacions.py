@@ -53,6 +53,13 @@ from .services.classificacio_templates import (
     schema_to_template_schema as schema_to_template_schema_shared,
     template_schema_to_competicio_schema as template_schema_to_competicio_schema_shared,
 )
+from .services.detail_schema_validation import (
+    build_validation_detail,
+    detail_section_key_for_tipus,
+    legacy_validation_error_details,
+    validate_detail_schema,
+    validation_details_to_messages,
+)
 from .services.team_scoring import (
     infer_team_expr_kind,
     is_team_context_app,
@@ -105,35 +112,7 @@ def _live_data_payload(competicio, since_raw=None):
         .order_by("ordre", "id")
     )
 
-    payload_cfgs = []
-    for cfg in cfgs:
-        schema_local, validation_errors = _validate_schema_for_competicio(
-            competicio,
-            cfg.schema or {},
-            tipus=cfg.tipus,
-        )
-        parts = []
-        error_payload = None
-        if validation_errors:
-            error_payload = {
-                "message": "Configuracio de classificacio invalida.",
-                "errors": validation_errors,
-            }
-        else:
-            data = compute_classificacio(
-                competicio,
-                SimpleNamespace(schema=schema_local, tipus=cfg.tipus),
-            )
-            for k in sorted(data.keys()):
-                parts.append({"particio": k, "rows": data[k]})
-        payload_cfgs.append({
-            "id": cfg.id,
-            "nom": cfg.nom,
-            "tipus": cfg.tipus,
-            "columns": get_display_columns(cfg.schema or {}),
-            "parts": parts,
-            **({"error": error_payload} if error_payload else {}),
-        })
+    payload_cfgs = [_build_live_cfg_payload_row(competicio, cfg) for cfg in cfgs]
 
     # El live és un snapshot versionat: cada regeneració real del payload ha de
     # produir un stamp nou perquè els clients amb ?since=<versió anterior>
@@ -652,35 +631,7 @@ def _classificacions_live_data_uncached_legacy(request, pk):
         .order_by("ordre", "id")
     )
 
-    payload_cfgs = []
-    for cfg in cfgs:
-        schema_local, validation_errors = _validate_schema_for_competicio(
-            competicio,
-            cfg.schema or {},
-            tipus=cfg.tipus,
-        )
-        parts = []
-        error_payload = None
-        if validation_errors:
-            error_payload = {
-                "message": "Configuracio de classificacio invalida.",
-                "errors": validation_errors,
-            }
-        else:
-            data = compute_classificacio(
-                competicio,
-                SimpleNamespace(schema=schema_local, tipus=cfg.tipus),
-            )
-            for k in sorted(data.keys()):
-                parts.append({"particio": k, "rows": data[k]})
-        payload_cfgs.append({
-            "id": cfg.id,
-            "nom": cfg.nom,
-            "tipus": cfg.tipus,
-            "columns": get_display_columns(schema_local if not validation_errors else (cfg.schema or {})),
-            "parts": parts,
-            **({"error": error_payload} if error_payload else {}),
-        })
+    payload_cfgs = [_build_live_cfg_payload_row(competicio, cfg) for cfg in cfgs]
 
     return JsonResponse({
         "ok": True,
@@ -816,35 +767,7 @@ def _public_classificacions_live_data_uncached_legacy(request, token):
         .order_by("ordre", "id")
     )
 
-    payload_cfgs = []
-    for cfg in cfgs:
-        schema_local, validation_errors = _validate_schema_for_competicio(
-            competicio,
-            cfg.schema or {},
-            tipus=cfg.tipus,
-        )
-        parts = []
-        error_payload = None
-        if validation_errors:
-            error_payload = {
-                "message": "Configuracio de classificacio invalida.",
-                "errors": validation_errors,
-            }
-        else:
-            data = compute_classificacio(
-                competicio,
-                SimpleNamespace(schema=schema_local, tipus=cfg.tipus),
-            )
-            for k in sorted(data.keys()):
-                parts.append({"particio": k, "rows": data[k]})
-        payload_cfgs.append({
-            "id": cfg.id,
-            "nom": cfg.nom,
-            "tipus": cfg.tipus,
-            "columns": get_display_columns(schema_local if not validation_errors else (cfg.schema or {})),
-            "parts": parts,
-            **({"error": error_payload} if error_payload else {}),
-        })
+    payload_cfgs = [_build_live_cfg_payload_row(competicio, cfg) for cfg in cfgs]
 
     return JsonResponse({
         "ok": True,
@@ -2349,7 +2272,7 @@ def _sanitize_schema_for_builder(competicio, schema_local, tipus="individual"):
     return schema
 
 
-def _validate_schema_for_competicio(competicio, schema_local, tipus="individual"):
+def _validate_schema_for_competicio_detailed(competicio, schema_local, tipus="individual"):
     schema_local, legacy_info = normalize_schema_legacy_team_birth_partition(
         competicio,
         schema_local or {},
@@ -2358,6 +2281,7 @@ def _validate_schema_for_competicio(competicio, schema_local, tipus="individual"
     )
     schema_local = _normalize_particions_schema(schema_local or {})
     errors = list(legacy_info.get("compatibility_errors") or [])
+    details = []
     errors.extend(_validate_filtres_schema(schema_local))
     equips_cfg = _normalize_classificacio_equips_cfg(schema_local.get("equips") or {})
     schema_local["equips"] = equips_cfg
@@ -2451,7 +2375,13 @@ def _validate_schema_for_competicio(competicio, schema_local, tipus="individual"
     errors.extend(_validate_no_tots_mode(schema_local))
     errors.extend(_validate_camps_per_aparell(competicio, schema_local))
     errors.extend(_validate_tie_camps_per_aparell(competicio, schema_local))
-    errors.extend(_validate_presentacio_columns(competicio, schema_local, tipus=tipus))
+    presentacio_errors, presentacio_details = _validate_presentacio_columns_details(
+        competicio,
+        schema_local,
+        tipus=tipus,
+    )
+    errors.extend(presentacio_errors)
+    details.extend(presentacio_details)
     errors.extend(_validate_exercicis_selection(competicio, schema_local))
     errors.extend(
         _validate_tie_exercicis_selection(
@@ -2462,6 +2392,15 @@ def _validate_schema_for_competicio(competicio, schema_local, tipus="individual"
         )
     )
     errors.extend(_validate_victories_schema(competicio, schema_local, tipus=tipus))
+    return schema_local, errors, details
+
+
+def _validate_schema_for_competicio(competicio, schema_local, tipus="individual"):
+    schema_local, errors, _details = _validate_schema_for_competicio_detailed(
+        competicio,
+        schema_local,
+        tipus=tipus,
+    )
     return schema_local, errors
 
 
@@ -3950,306 +3889,190 @@ def _validate_presentacio_columns(competicio, schema: dict, tipus="individual"):
                 f"({info.get('reason')})."
             )
 
-    presentacio = schema.get("presentacio") if isinstance(schema.get("presentacio"), dict) else {}
-    raw_detail = presentacio.get("detall")
-    if raw_detail is None:
-        return errors
-    if not isinstance(raw_detail, dict):
-        errors.append("presentacio.detall ha de ser un objecte.")
-        return errors
+    errors.extend(_validate_presentacio_columns_details(competicio, schema, tipus=tipus)[0])
+    return errors
 
+
+def _validate_presentacio_columns_details(competicio, schema: dict, tipus="individual"):
+    schema = schema or {}
+    punt = schema.get("puntuacio") or {}
     equips_cfg = schema.get("equips") or {}
     team_mode = str((equips_cfg.get("team_mode") or "")).strip().lower()
-    tipus_norm = str(tipus or "").strip().lower()
-    detail_section_types = {
-        "members_list",
-        "members_table",
-        "team_metrics",
-        "exercise_table",
-        "entity_members_table",
+    presentacio = schema.get("presentacio") if isinstance(schema.get("presentacio"), dict) else {}
+
+    active_apps = list(
+        CompeticioAparell.objects
+        .filter(competicio=competicio, actiu=True)
+        .select_related("aparell")
+    )
+    app_by_id = {ca.id: ca for ca in active_apps}
+    _, selected_ids = _get_active_and_selected_app_ids(competicio, punt)
+    schemas_by_aparell = {
+        s.aparell_id: (s.schema or {})
+        for s in ScoringSchema.objects.filter(aparell_id__in=[ca.aparell_id for ca in active_apps]).only("aparell_id", "schema")
     }
-    section_allowed = {
-        "individual": {"exercise_table"},
-        "entitat": {"entity_members_table"},
-        "equips:derived_from_individual": {"members_list", "members_table"},
-        "equips:native_team": {"members_list", "team_metrics"},
-    }
 
-    def _detail_section_key():
-        if tipus_norm == "equips":
-            return f"equips:{team_mode}"
-        return tipus_norm
+    meta_cache = {}
+    errors = []
+    details = []
 
-    def _detail_allowed_builtin(section_type):
-        if section_type == "exercise_table":
-            return {"exercise_index", "aparell_nom", "participant", "entitat_nom"}
-        if section_type in {"members_table", "entity_members_table", "team_metrics"}:
-            return {"participant", "entitat_nom"}
-        return set()
+    cols = presentacio.get("columnes") or []
+    if not isinstance(cols, list):
+        errors.append("presentacio.columnes ha de ser una llista.")
+        return errors, details
 
-    def _detail_expected_unit(section_type):
-        if section_type == "team_metrics":
-            return "team"
-        if section_type in {"members_table", "entity_members_table", "exercise_table"}:
-            return "individual"
-        return None
-
-    def _detail_section_app_id(section):
-        try:
-            app_id = int((section or {}).get("aparell_id"))
-        except Exception:
-            return None
-        return app_id if app_id > 0 else None
-
-    def _detail_raw_app_ids(raw_cols):
-        out = []
-        if not isinstance(raw_cols, list):
-            return out
-        for col in raw_cols:
+    if app_by_id:
+        for idx, col in enumerate(cols):
             if not isinstance(col, dict):
                 continue
             if str(col.get("type") or "builtin").strip().lower() != "raw":
                 continue
-            src = col.get("source") if isinstance(col.get("source"), dict) else {}
-            try:
-                app_id = int(src.get("aparell_id"))
-            except Exception:
-                continue
-            if app_id > 0 and app_id not in out:
-                out.append(app_id)
-        return out
-
-    def _validate_detail_columns(raw_cols, path_prefix, section_type, *, section_app_id=None):
-        if not isinstance(raw_cols, list):
-            errors.append(f"{path_prefix} ha de ser una llista.")
-            return
-        for cidx, col in enumerate(raw_cols):
-            if not isinstance(col, dict):
-                errors.append(f"{path_prefix}[{cidx}] ha de ser un objecte.")
-                continue
-            ctype = str(col.get("type") or "builtin").strip().lower()
-            if ctype == "builtin":
-                key = str(col.get("key") or "").strip()
-                if key not in _detail_allowed_builtin(section_type):
-                    errors.append(
-                        f"{path_prefix}[{cidx}] builtin: clau no permesa ({key})."
-                    )
-                continue
-            if ctype != "raw":
-                errors.append(f"{path_prefix}[{cidx}] tipus no valid: {ctype}.")
-                continue
 
             src = col.get("source") if isinstance(col.get("source"), dict) else {}
             try:
                 app_id = int(src.get("aparell_id"))
             except Exception:
-                errors.append(f"{path_prefix}[{cidx}] raw: aparell invalid.")
-                continue
-            if section_app_id is not None and app_id != section_app_id:
-                errors.append(
-                    f"{path_prefix}[{cidx}] raw: l'aparell {app_id} no concorda amb presentacio.detall.sections.aparell_id={section_app_id}."
-                )
+                errors.append(f"presentacio.columnes[{idx}] raw: aparell invalid.")
                 continue
             if app_id not in app_by_id:
-                errors.append(f"{path_prefix}[{cidx}] raw: aparell {app_id} no valid o no actiu.")
+                errors.append(f"presentacio.columnes[{idx}] raw: aparell {app_id} no valid o no actiu.")
                 continue
-            app_unit = getattr(app_by_id[app_id].aparell, "competition_unit", "") or ""
-            expected_unit = _detail_expected_unit(section_type)
-            if expected_unit == "team" and app_unit != "team":
+            if team_mode == "native_team" and getattr(app_by_id[app_id].aparell, "competition_unit", "") != "team":
                 errors.append(
-                    f"{path_prefix}[{cidx}] raw: en {section_type} nomes es poden mostrar aparells d'equip."
-                )
-                continue
-            if expected_unit == "individual" and app_unit == "team":
-                errors.append(
-                    f"{path_prefix}[{cidx}] raw: en {section_type} no es poden mostrar aparells d'equip."
+                    f"presentacio.columnes[{idx}] raw: en team_mode=native_team nomes es poden mostrar aparells d'equip."
                 )
                 continue
             if selected_ids and app_id not in selected_ids:
-                errors.append(f"{path_prefix}[{cidx}] raw: aparell {app_id} no esta seleccionat a puntuacio.")
+                errors.append(f"presentacio.columnes[{idx}] raw: aparell {app_id} no esta seleccionat a puntuacio.")
                 continue
+
             camp = str(src.get("camp") or "").strip()
             if not camp:
-                errors.append(f"{path_prefix}[{cidx}] raw: camp obligatori.")
+                errors.append(f"presentacio.columnes[{idx}] raw: camp obligatori.")
                 continue
+
             if app_id not in meta_cache:
                 sch = schemas_by_aparell.get(app_by_id[app_id].aparell_id, {}) or {}
                 meta_cache[app_id] = _build_scoreable_meta_for_schema(sch, strict_unknown=True)
             info = meta_cache[app_id].get(camp)
             if not info:
                 errors.append(
-                    f"{path_prefix}[{cidx}] raw: camp '{camp}' no existeix al schema de l'aparell {app_id}."
+                    f"presentacio.columnes[{idx}] raw: camp '{camp}' no existeix al schema de l'aparell {app_id}."
                 )
                 continue
             if not info.get("scoreable", False):
                 errors.append(
-                    f"{path_prefix}[{cidx}] raw: camp '{camp}' no es puntuable directament "
+                    f"presentacio.columnes[{idx}] raw: camp '{camp}' no es puntuable directament "
                     f"({info.get('reason')})."
                 )
 
-    detail_enabled_raw = raw_detail.get("enabled", False)
-    detail_default_open_raw = raw_detail.get("default_open", False)
-    if "enabled" in raw_detail and not isinstance(detail_enabled_raw, bool):
-        errors.append("presentacio.detall.enabled ha de ser boolea.")
-    if "default_open" in raw_detail and not isinstance(detail_default_open_raw, bool):
-        errors.append("presentacio.detall.default_open ha de ser boolea.")
+    raw_detail = presentacio.get("detall")
+    if raw_detail is None:
+        return errors, details
 
-    detail_enabled = bool(detail_enabled_raw) if isinstance(detail_enabled_raw, bool) else False
-    detail_section_key = _detail_section_key()
-    allowed_types = section_allowed.get(detail_section_key) or set()
-    detail_active = bool(allowed_types)
+    detail_key = detail_section_key_for_tipus(tipus=tipus, team_mode=team_mode)
 
-    raw_sections = raw_detail.get("sections", None)
-    if raw_sections is not None and not isinstance(raw_sections, list):
-        errors.append("presentacio.detall.sections ha de ser una llista.")
-        raw_sections = None
-    raw_legacy_cols = raw_detail.get("columnes", None)
-    if raw_legacy_cols is not None and not isinstance(raw_legacy_cols, list):
-        errors.append("presentacio.detall.columnes ha de ser una llista.")
-        raw_legacy_cols = None
+    def normalize_app(raw):
+        try:
+            value = int(raw)
+        except Exception:
+            return None
+        return value if value > 0 else None
 
-    if detail_enabled and not detail_active:
-        errors.append(f"presentacio.detall.enabled no es compatible amb {detail_section_key}.")
+    def is_app_available(app_id):
+        return app_id in app_by_id
 
-    if raw_legacy_cols is not None:
-        if "members_table" not in allowed_types:
-            errors.append(
-                f"presentacio.detall.columnes nomes es compatible amb contexts que admeten members_table ({detail_section_key})."
-            )
-        else:
-            if len(_detail_raw_app_ids(raw_legacy_cols)) > 1:
-                errors.append(
-                    "presentacio.detall.columnes barreja aparells multiples; cal dividir el detall en una seccio per aparell."
-                )
-            _validate_detail_columns(raw_legacy_cols, "presentacio.detall.columnes", "members_table")
+    def get_app_unit(app_id):
+        comp_app = app_by_id.get(app_id)
+        if comp_app is None:
+            return ""
+        return getattr(comp_app.aparell, "competition_unit", "") or ""
 
-    if isinstance(raw_sections, list):
-        for sidx, section in enumerate(raw_sections):
-            if not isinstance(section, dict):
-                errors.append(f"presentacio.detall.sections[{sidx}] ha de ser un objecte.")
-                continue
-            section_type = str(section.get("type") or "").strip().lower()
-            if section_type not in detail_section_types:
-                errors.append(
-                    f"presentacio.detall.sections[{sidx}] tipus no valid: {section_type}."
-                )
-                continue
-            if section_type not in allowed_types:
-                errors.append(
-                    f"presentacio.detall.sections[{sidx}] tipus no permes per {detail_section_key}: {section_type}."
-                )
-                continue
-            if section_type == "members_list":
-                if section.get("aparell_id") not in (None, "", 0, "0"):
-                    errors.append(
-                        f"presentacio.detall.sections[{sidx}].aparell_id no es compatible amb members_list."
-                    )
-                if "columns" in section and section.get("columns") not in (None, []):
-                    errors.append(
-                        f"presentacio.detall.sections[{sidx}].columns no es compatible amb members_list."
-                    )
-                continue
-            section_app_id = _detail_section_app_id(section)
-            raw_app_ids = _detail_raw_app_ids(section.get("columns"))
-            if raw_app_ids and section_app_id is None:
-                errors.append(
-                    f"presentacio.detall.sections[{sidx}].aparell_id es obligatori quan hi ha columnes raw."
-                )
-            if len(raw_app_ids) > 1:
-                errors.append(
-                    f"presentacio.detall.sections[{sidx}] barreja aparells multiples; cal dividir el detall en una seccio per aparell."
-                )
-            if section_app_id is not None:
-                if section_app_id not in app_by_id:
-                    errors.append(
-                        f"presentacio.detall.sections[{sidx}].aparell_id: aparell {section_app_id} no valid o no actiu."
-                    )
-                else:
-                    app_unit = getattr(app_by_id[section_app_id].aparell, "competition_unit", "") or ""
-                    expected_unit = _detail_expected_unit(section_type)
-                    if expected_unit == "team" and app_unit != "team":
-                        errors.append(
-                            f"presentacio.detall.sections[{sidx}].aparell_id: en {section_type} nomes es poden mostrar aparells d'equip."
-                        )
-                    elif expected_unit == "individual" and app_unit == "team":
-                        errors.append(
-                            f"presentacio.detall.sections[{sidx}].aparell_id: en {section_type} no es poden mostrar aparells d'equip."
-                        )
-                    elif selected_ids and section_app_id not in selected_ids:
-                        errors.append(
-                            f"presentacio.detall.sections[{sidx}].aparell_id: aparell {section_app_id} no esta seleccionat a puntuacio."
-                        )
-            _validate_detail_columns(
-                section.get("columns"),
-                f"presentacio.detall.sections[{sidx}].columns",
-                section_type,
-                section_app_id=section_app_id,
-            )
+    def get_scoreable_info(app_id, camp):
+        if app_id not in meta_cache:
+            comp_app = app_by_id.get(app_id)
+            if comp_app is None:
+                return None
+            sch = schemas_by_aparell.get(comp_app.aparell_id, {}) or {}
+            meta_cache[app_id] = _build_scoreable_meta_for_schema(sch, strict_unknown=True)
+        return meta_cache[app_id].get(camp)
 
-    if detail_enabled:
-        has_sections = isinstance(raw_sections, list) and len(raw_sections) > 0
-        has_legacy = isinstance(raw_legacy_cols, list)
-        if not has_sections and not has_legacy:
-            errors.append(
-                "presentacio.detall.enabled requereix sections o columnes legacy compatibles."
-            )
+    def validate_exercise(app_id, raw_exercici):
+        try:
+            exercise = int(raw_exercici or 1)
+        except Exception:
+            exercise = 0
+        if exercise < 1:
+            return "exercici invalid."
+        comp_app = app_by_id.get(app_id)
+        max_ex = max(1, int(getattr(comp_app, "nombre_exercicis", 1) or 1)) if comp_app else 1
+        if exercise > max_ex:
+            return f"exercici {exercise} fora de rang per l'aparell {app_id} (maxim {max_ex})."
+        return None
 
-    return errors
-
-
-def _validation_error_section_from_path(path: str) -> str:
-    path = str(path or "").strip()
-    if path.startswith("presentacio"):
-        return "presentacio"
-    if path.startswith("filtres"):
-        return "filtres"
-    if path.startswith("puntuacio"):
-        return "puntuacio"
-    if path.startswith("desempat"):
-        return "desempat"
-    if path.startswith("particions"):
-        return "particions"
-    if path.startswith("equips"):
-        return "meta"
-    return "general"
+    details = validate_detail_schema(
+        raw_detail,
+        detail_section_key=detail_key,
+        normalize_app=normalize_app,
+        is_app_available=is_app_available,
+        get_app_unit=get_app_unit,
+        get_scoreable_info=get_scoreable_info,
+        selected_apps=(selected_ids or None),
+        validate_exercise=validate_exercise,
+    )
+    errors.extend(validation_details_to_messages(details))
+    return errors, details
 
 
 def _build_validation_error_details(error_messages):
-    details = []
-    patterns = [
-        (re.compile(r"^(?P<path>[A-Za-z_][\w\.\[\]']*) raw: aparell .+$"), ".source.aparell_id"),
-        (re.compile(r"^(?P<path>[A-Za-z_][\w\.\[\]']*) raw: camp .+$"), ".source.camp"),
-        (re.compile(r"^(?P<path>[A-Za-z_][\w\.\[\]']*) builtin: .+$"), ".key"),
-        (re.compile(r"^(?P<path>[A-Za-z_][\w\.\[\]']*) tipus .+$"), ".type"),
-        (re.compile(r"^(?P<path>[A-Za-z_][\w\.\[\]']*\.enabled) .*$"), ""),
-        (re.compile(r"^(?P<path>[A-Za-z_][\w\.\[\]']*\.default_open) .*$"), ""),
-        (re.compile(r"^(?P<path>[A-Za-z_][\w\.\[\]']*\.aparell_id): .+$"), ""),
-        (re.compile(r"^(?P<path>[A-Za-z_][\w\.\[\]']*\.columns) .+$"), ""),
-        (re.compile(r"^(?P<path>[A-Za-z_][\w\.\[\]']*): .+$"), ""),
-    ]
+    raw_list = list(error_messages or [])
+    if raw_list and all(isinstance(item, dict) and item.get("message") for item in raw_list):
+        return [
+            build_validation_detail(
+                item.get("path") or "",
+                item.get("message") or "",
+                section=item.get("section"),
+                severity=item.get("severity") or "error",
+            )
+            for item in raw_list
+            if isinstance(item, dict) and str(item.get("message") or "").strip()
+        ]
+    return legacy_validation_error_details(raw_list)
 
-    for raw in error_messages or []:
-        message = str(raw or "").strip()
-        if not message:
-            continue
-        path = ""
-        for pattern, suffix in patterns:
-            match = pattern.match(message)
-            if not match:
-                continue
-            path = str(match.group("path") or "").strip()
-            if suffix and not path.endswith(suffix):
-                path = f"{path}{suffix}"
-            break
-        details.append(
-            {
-                "path": path,
-                "message": message,
-                "section": _validation_error_section_from_path(path or message),
-                "severity": "error",
-            }
+
+def _build_live_cfg_payload_row(competicio, cfg):
+    schema_local, validation_errors, _validation_details = _validate_schema_for_competicio_detailed(
+        competicio,
+        cfg.schema or {},
+        tipus=cfg.tipus,
+    )
+    parts = []
+    error_payload = None
+    try:
+        data = compute_classificacio(
+            competicio,
+            SimpleNamespace(schema=schema_local, tipus=cfg.tipus),
         )
-    return details
+    except Exception as exc:
+        message = "Configuracio de classificacio invalida."
+        if not validation_errors:
+            validation_errors = [str(exc or "").strip() or "No s'ha pogut renderitzar la classificacio."]
+            message = "No s'ha pogut renderitzar la classificacio."
+        error_payload = {
+            "message": message,
+            "errors": validation_errors,
+        }
+    else:
+        for k in sorted(data.keys()):
+            parts.append({"particio": k, "rows": data[k]})
+    return {
+        "id": cfg.id,
+        "nom": cfg.nom,
+        "tipus": cfg.tipus,
+        "columns": get_display_columns(schema_local if isinstance(schema_local, dict) else (cfg.schema or {})),
+        "parts": parts,
+        **({"error": error_payload} if error_payload else {}),
+    }
 
 
 def _parse_positive_int_list(raw):
@@ -4851,14 +4674,18 @@ def classificacio_save(request, pk):
     if tipus not in ("individual", "entitat", "equips"):
         tipus = "individual"
 
-    schema, validation_errors = _validate_schema_for_competicio(competicio, schema, tipus=tipus)
+    schema, validation_errors, validation_details = _validate_schema_for_competicio_detailed(
+        competicio,
+        schema,
+        tipus=tipus,
+    )
     if validation_errors:
         return JsonResponse(
             {
                 "ok": False,
                 "error": "Configuracio de classificacio invalida.",
                 "errors": validation_errors,
-                "error_details": _build_validation_error_details(validation_errors),
+                "error_details": _build_validation_error_details(validation_details or validation_errors),
             },
             status=400,
         )
@@ -4923,7 +4750,7 @@ def classificacio_preview(request, pk, cid):
     competicio = get_object_or_404(Competicio, pk=pk)
     cfg = get_object_or_404(ClassificacioConfig, pk=cid, competicio=competicio)
 
-    schema_local, validation_errors = _validate_schema_for_competicio(
+    schema_local, validation_errors, validation_details = _validate_schema_for_competicio_detailed(
         competicio,
         cfg.schema or {},
         tipus=cfg.tipus,
@@ -4934,7 +4761,7 @@ def classificacio_preview(request, pk, cid):
                 "ok": False,
                 "error": "Configuracio de classificacio invalida per previsualitzar.",
                 "errors": validation_errors,
-                "error_details": _build_validation_error_details(validation_errors),
+                "error_details": _build_validation_error_details(validation_details or validation_errors),
             },
             status=400,
         )
