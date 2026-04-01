@@ -1493,10 +1493,27 @@ def groups_detail(request, pk):
     group = _resolve_group_workspace_group(competicio, payload, include_inactive=True)
     if group is None:
         return HttpResponseBadRequest("group invalid")
-    detail = get_group_detail_payload(group, member_limit=50)
+    detail_page = payload.get("page")
+    detail_page_size = payload.get("page_size")
+    detail = get_group_detail_payload(
+        group,
+        member_limit=50,
+        page=detail_page,
+        page_size=detail_page_size or 10,
+    )
     return JsonResponse(
         with_inscripcions_history_payload(
-            {"ok": True, "group": detail, "members": detail.get("members") or []},
+            {
+                "ok": True,
+                "group": detail,
+                "members": detail.get("members") or [],
+                "members_total": int(detail.get("members_total") or 0),
+                "members_page": int(detail.get("members_page") or 1),
+                "members_page_size": int(detail.get("members_page_size") or 10),
+                "members_total_pages": int(detail.get("members_total_pages") or 1),
+                "members_has_prev": bool(detail.get("members_has_prev")),
+                "members_has_next": bool(detail.get("members_has_next")),
+            },
             request,
             competicio.id,
         )

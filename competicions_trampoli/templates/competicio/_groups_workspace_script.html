@@ -23,11 +23,13 @@ if (groupsWorkspaceShell && groupsMainCard) {
     page: 1,
     pageSize: 40,
     selectedGroupId: '',
+    selectedGroupDetail: null,
+    selectedGroupMembersPage: 1,
+    selectedRightPaneTab: 'preview',
     autoContextExpanded: false,
     filterTimer: null,
     workspace: null,
     selectionSummaryFresh: false,
-    expandedGroupIds: new Set(),
     editingGroupIds: new Set(),
     loadingGroupIds: new Set(),
     groupDetailCache: {},
@@ -68,6 +70,7 @@ if (groupsWorkspaceShell && groupsMainCard) {
   const invalidateAllGroupDetails = () => {
     state.groupDetailCache = {};
     state.loadingGroupIds = new Set();
+    state.selectedGroupDetail = null;
   };
 
   function destroySortables() {
@@ -110,6 +113,8 @@ if (groupsWorkspaceShell && groupsMainCard) {
         page: state.page,
         pageSize: state.pageSize,
         selectedGroupId: state.selectedGroupId,
+        selectedGroupMembersPage: state.selectedGroupMembersPage,
+        selectedRightPaneTab: state.selectedRightPaneTab,
         autoContextExpanded: !!state.autoContextExpanded,
         filters: { ...state.filters },
         ...extra,
@@ -126,6 +131,12 @@ if (groupsWorkspaceShell && groupsMainCard) {
       if (saved.page) state.page = Math.max(1, Number(saved.page) || 1);
       if (saved.pageSize) state.pageSize = Math.max(1, Number(saved.pageSize) || 40);
       if (saved.selectedGroupId) state.selectedGroupId = String(saved.selectedGroupId);
+      if (saved.selectedGroupMembersPage) {
+        state.selectedGroupMembersPage = Math.max(1, Number(saved.selectedGroupMembersPage) || 1);
+      }
+      if (saved.selectedRightPaneTab === 'detail' || saved.selectedRightPaneTab === 'preview') {
+        state.selectedRightPaneTab = saved.selectedRightPaneTab;
+      }
       if (Object.prototype.hasOwnProperty.call(saved, 'autoContextExpanded')) {
         state.autoContextExpanded = !!saved.autoContextExpanded;
       }
@@ -281,6 +292,40 @@ if (groupsWorkspaceShell && groupsMainCard) {
     if (node && typeof node.scrollIntoView === 'function') {
       node.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     }
+  }
+
+  function getCurrentSelectedGroupSummary() {
+    const cleanId = String(state.selectedGroupId || '').trim();
+    if (!cleanId) return null;
+    const groups = Array.isArray(state.workspace?.groups) ? state.workspace.groups : [];
+    return groups.find((group) => String(group?.id || '').trim() === cleanId) || null;
+  }
+
+  function updateRightPaneTabUi() {
+    const card = document.getElementById('groups-right-pane-card');
+    const detailView = document.getElementById('groups-right-pane-detail');
+    const previewView = document.getElementById('groups-right-pane-preview');
+    const detailBtn = document.getElementById('btn-groups-right-tab-detail');
+    const previewBtn = document.getElementById('btn-groups-right-tab-preview');
+    const activeTab = state.selectedRightPaneTab === 'detail' ? 'detail' : 'preview';
+
+    if (card) card.classList.toggle('is-preview-active', activeTab === 'preview');
+    if (detailView) detailView.classList.toggle('d-none', activeTab !== 'detail');
+    if (previewView) previewView.classList.toggle('d-none', activeTab !== 'preview');
+    if (detailBtn) {
+      detailBtn.classList.toggle('is-active', activeTab === 'detail');
+      detailBtn.setAttribute('aria-selected', activeTab === 'detail' ? 'true' : 'false');
+    }
+    if (previewBtn) {
+      previewBtn.classList.toggle('is-active', activeTab === 'preview');
+      previewBtn.setAttribute('aria-selected', activeTab === 'preview' ? 'true' : 'false');
+    }
+  }
+
+  function setRightPaneTab(tab, options = {}) {
+    state.selectedRightPaneTab = tab === 'detail' ? 'detail' : 'preview';
+    updateRightPaneTabUi();
+    if (!options.skipSave) saveWorkspaceState();
   }
 
   function candidateRow(item) {
@@ -462,17 +507,210 @@ if (groupsWorkspaceShell && groupsMainCard) {
     return state.groupDetailCache[String(groupId || '').trim()] || null;
   }
 
-  function groupCard(group) {
-    const groupId = String(group?.id || '').trim();
-    const expanded = state.expandedGroupIds.has(groupId);
-    const detail = getGroupDetail(groupId);
-    const loading = state.loadingGroupIds.has(groupId);
-    const editing = state.editingGroupIds.has(groupId);
-    const members = Array.isArray(detail?.members) ? detail.members : [];
+  function renderDetailPane() {
+    const empty = document.getElementById('groups-detail-empty');
+    const panel = document.getElementById('groups-detail-panel');
+    const title = document.getElementById('groups-detail-title');
+    const meta = document.getElementById('groups-detail-meta');
+    const summary = document.getElementById('groups-detail-summary');
+    const actions = document.getElementById('groups-detail-actions');
+    const editor = document.getElementById('groups-detail-editor');
+    const nameNote = document.getElementById('groups-detail-name-note');
+    const membersList = document.getElementById('groups-detail-members-list');
+    const pager = document.getElementById('groups-detail-members-pager');
+    if (!empty || !panel || !title || !meta || !summary || !actions || !editor || !nameNote || !membersList || !pager) return;
+
+    const group = getCurrentSelectedGroupSummary();
+    const groupId = String(group?.id || state.selectedGroupId || '').trim();
+    const detail = getGroupDetail(groupId)
+      || (String(state.selectedGroupDetail?.id || '') === groupId ? state.selectedGroupDetail : null);
+    const loading = !!(groupId && state.loadingGroupIds.has(groupId));
+    const editing = !!(groupId && state.editingGroupIds.has(groupId));
+    const detailGroup = detail || group;
     const canDelete = detail ? !!detail.can_delete : !Number(group?.members_count || 0);
 
+    if (!groupId || !group) {
+      empty.classList.remove('d-none');
+      panel.classList.add('d-none');
+      empty.textContent = "Selecciona un grup de la board per veure'n el detall sense deformar la graella.";
+      membersList.innerHTML = '';
+      pager.innerHTML = '';
+      pager.classList.add('d-none');
+      state.selectedGroupDetail = null;
+      return;
+    }
+
+    empty.classList.add('d-none');
+    panel.classList.remove('d-none');
+    state.selectedGroupDetail = detail || null;
+
+    title.textContent = String(detailGroup?.label || `Grup ${detailGroup?.display_num || '?'}`);
+    meta.textContent = [
+      `${Number(detailGroup?.members_total ?? detailGroup?.members_count ?? group?.members_count ?? 0)} participants`,
+      detailGroup?.is_programmed ? 'Programat' : '',
+      detailGroup?.is_out_of_program ? 'Fora de programa' : '',
+      canDelete ? 'Es pot desactivar' : '',
+    ].filter(Boolean).join(' | ') || 'Sense dades';
+
+    summary.innerHTML = '';
+    summary.appendChild(createGroupPreviewBadge(`${Number(detailGroup?.members_total ?? detailGroup?.members_count ?? 0)} membres`));
+    summary.appendChild(createGroupPreviewBadge(detailGroup?.is_programmed ? 'Programat' : 'No programat'));
+    if (detailGroup?.is_out_of_program) summary.appendChild(createGroupPreviewBadge('Fora programa', 'reduced'));
+    if (canDelete) summary.appendChild(createGroupPreviewBadge('Es pot desactivar'));
+    if (loading) summary.appendChild(createGroupPreviewBadge('Carregant detall'));
+
+    actions.innerHTML = '';
+    const detailBtn = document.createElement('button');
+    detailBtn.type = 'button';
+    detailBtn.className = 'btn btn-sm btn-outline-dark';
+    detailBtn.setAttribute('data-group-open', groupId);
+    detailBtn.textContent = loading ? 'Carregant...' : 'Refrescar detall';
+    actions.appendChild(detailBtn);
+
+    const assign = document.createElement('button');
+    assign.type = 'button';
+    assign.className = 'btn btn-sm btn-outline-primary';
+    assign.setAttribute('data-group-assign-to', groupId);
+    assign.textContent = 'Assignar seleccio';
+    assign.disabled = !editable();
+    actions.appendChild(assign);
+
+    const order = document.createElement('button');
+    order.type = 'button';
+    order.className = 'btn btn-sm btn-outline-info';
+    order.setAttribute('data-group-order', String(detailGroup?.display_num || group?.display_num || ''));
+    order.textContent = 'Ordre competicio';
+    actions.appendChild(order);
+
+    const rename = document.createElement('button');
+    rename.type = 'button';
+    rename.className = 'btn btn-sm btn-outline-secondary';
+    rename.setAttribute('data-group-rename', groupId);
+    rename.textContent = 'Renombrar';
+    rename.disabled = !editable();
+    actions.appendChild(rename);
+
+    if (!Number(detailGroup?.members_total ?? detailGroup?.members_count ?? group?.members_count ?? 0) || canDelete) {
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'btn btn-sm btn-outline-danger';
+      remove.setAttribute('data-group-delete', groupId);
+      remove.textContent = 'Desactivar';
+      remove.disabled = !editable() || !canDelete;
+      actions.appendChild(remove);
+    }
+
+    editor.innerHTML = '';
+    editor.classList.toggle('d-none', !editing);
+    if (editing) {
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'form-control form-control-sm';
+      input.style.minWidth = '220px';
+      input.style.maxWidth = '320px';
+      input.value = String(detailGroup?.name || group?.name || '');
+      input.setAttribute('data-group-name-input', groupId);
+      input.placeholder = 'Nom del grup';
+      editor.appendChild(input);
+
+      const save = document.createElement('button');
+      save.type = 'button';
+      save.className = 'btn btn-sm btn-primary js-workspace-save-group-name';
+      save.dataset.groupId = groupId;
+      save.dataset.groupNum = String(detailGroup?.display_num || group?.display_num || '');
+      save.textContent = 'Desar';
+      editor.appendChild(save);
+
+      const cancel = document.createElement('button');
+      cancel.type = 'button';
+      cancel.className = 'btn btn-sm btn-light js-workspace-cancel-group-name';
+      cancel.dataset.groupId = groupId;
+      cancel.textContent = 'Cancelar';
+      editor.appendChild(cancel);
+    }
+
+    nameNote.textContent = detailGroup?.name
+      ? `Nom: ${detailGroup.name}`
+      : (group?.name ? `Nom: ${group.name}` : 'Sense observacions');
+
+    membersList.innerHTML = '';
+    membersList.dataset.groupId = groupId;
+    if (loading && !detail) {
+      const loadingNode = document.createElement('div');
+      loadingNode.className = 'team-context-drop-placeholder';
+      loadingNode.textContent = 'Carregant participants...';
+      membersList.appendChild(loadingNode);
+    } else if (detail) {
+      const members = Array.isArray(detail?.members) ? detail.members : [];
+      if (members.length) {
+        members.forEach((member) => membersList.appendChild(groupMemberRow(member, groupId)));
+      } else {
+        const placeholder = document.createElement('div');
+        placeholder.className = 'team-context-drop-placeholder';
+        placeholder.textContent = editable()
+          ? "Aquest grup es buit. Pots deixar-hi una inscripcio directament sobre la targeta."
+          : 'Aquest grup no te participants.';
+        membersList.appendChild(placeholder);
+      }
+    } else {
+      const emptyState = document.createElement('div');
+      emptyState.className = 'team-context-drop-placeholder';
+      emptyState.textContent = 'Detall no carregat encara.';
+      membersList.appendChild(emptyState);
+    }
+
+    const currentPage = Number(detail?.members_page || state.selectedGroupMembersPage || 1);
+    const totalPages = Number(detail?.members_total_pages || 1);
+    const membersTotal = Number(detail?.members_total ?? detail?.members_count ?? group?.members_count ?? 0);
+    const pageSize = Number(detail?.members_page_size || 10);
+    pager.innerHTML = '';
+    pager.classList.toggle('d-none', totalPages <= 1);
+    if (totalPages > 1) {
+      const start = membersTotal > 0 ? ((currentPage - 1) * pageSize) + 1 : 0;
+      const end = membersTotal > 0 ? Math.min(currentPage * pageSize, membersTotal) : 0;
+      const label = document.createElement('div');
+      label.className = 'small text-muted';
+      label.textContent = `Mostrant ${start}-${end} de ${membersTotal}`;
+      pager.appendChild(label);
+
+      const controls = document.createElement('div');
+      controls.className = 'd-flex align-items-center flex-wrap';
+      controls.style.gap = '8px';
+
+      const prevBtn = document.createElement('button');
+      prevBtn.type = 'button';
+      prevBtn.className = 'btn btn-sm btn-outline-secondary';
+      prevBtn.setAttribute('data-group-members-page', String(Math.max(1, currentPage - 1)));
+      prevBtn.textContent = 'Anterior';
+      prevBtn.disabled = currentPage <= 1 || loading;
+      controls.appendChild(prevBtn);
+
+      const pageLabel = document.createElement('span');
+      pageLabel.className = 'small text-muted';
+      pageLabel.textContent = `Pagina ${currentPage} de ${totalPages}`;
+      controls.appendChild(pageLabel);
+
+      const nextBtn = document.createElement('button');
+      nextBtn.type = 'button';
+      nextBtn.className = 'btn btn-sm btn-outline-secondary';
+      nextBtn.setAttribute('data-group-members-page', String(Math.min(totalPages, currentPage + 1)));
+      nextBtn.textContent = 'Seguent';
+      nextBtn.disabled = currentPage >= totalPages || loading;
+      controls.appendChild(nextBtn);
+
+      pager.appendChild(controls);
+    }
+  }
+
+  function groupCard(group) {
+    const groupId = String(group?.id || '').trim();
+    const detail = getGroupDetail(groupId);
+    const loading = state.loadingGroupIds.has(groupId);
+    const canDelete = detail ? !!detail.can_delete : !Number(group?.members_count || 0);
+    const isCurrent = String(state.selectedGroupId || '') === groupId;
+
     const wrap = document.createElement('div');
-    wrap.className = `team-context-team-card team-context-drop-target${Number(group?.members_count || 0) === 0 ? ' is-empty' : ''}${expanded ? ' is-expanded' : ''}${String(state.selectedGroupId || '') === groupId ? ' is-current' : ''}${group?.is_programmed ? ' is-programmed' : ''}${group?.is_out_of_program ? ' is-out-of-program' : ''}`;
+    wrap.className = `team-context-team-card team-context-drop-target${Number(group?.members_count || 0) === 0 ? ' is-empty' : ''}${isCurrent ? ' is-current' : ''}${group?.is_programmed ? ' is-programmed' : ''}${group?.is_out_of_program ? ' is-out-of-program' : ''}`;
     wrap.dataset.groupId = groupId;
     wrap.dataset.groupCardId = groupId;
     wrap.setAttribute('data-group-card-id', groupId);
@@ -492,9 +730,10 @@ if (groupsWorkspaceShell && groupsMainCard) {
       group?.is_programmed ? 'Programat' : '',
       group?.is_out_of_program ? 'Fora de programa' : '',
       canDelete ? 'Es pot desactivar' : '',
+      loading ? 'Carregant detall' : '',
     ].filter(Boolean).join(' | ') || 'Sense dades';
     titleWrap.appendChild(meta);
-    if (Array.isArray(group?.member_names_preview) && group.member_names_preview.length && !expanded) {
+    if (Array.isArray(group?.member_names_preview) && group.member_names_preview.length) {
       const preview = document.createElement('div');
       preview.className = 'small text-muted mt-1 team-context-team-preview';
       preview.textContent = group.member_names_preview.join(', ');
@@ -509,7 +748,7 @@ if (groupsWorkspaceShell && groupsMainCard) {
     toggle.type = 'button';
     toggle.className = 'btn btn-sm btn-outline-dark';
     toggle.setAttribute('data-group-open', groupId);
-    toggle.textContent = expanded ? 'Plegar' : 'Veure participants';
+    toggle.textContent = isCurrent ? 'Veient detall' : 'Veure detall';
     actions.appendChild(toggle);
 
     const assign = document.createElement('button');
@@ -558,83 +797,6 @@ if (groupsWorkspaceShell && groupsMainCard) {
       : 'Aquest grup es mostra en mode lectura.';
     dropSurface.appendChild(dropHint);
     wrap.appendChild(dropSurface);
-
-    const body = document.createElement('div');
-    body.className = `team-context-team-body${expanded ? '' : ' d-none'}`;
-
-    const bodyMeta = document.createElement('div');
-    bodyMeta.className = 'd-flex flex-wrap align-items-center mb-2';
-    bodyMeta.style.gap = '8px';
-    bodyMeta.appendChild(createGroupPreviewBadge(`${Number(detail?.members_count ?? group?.members_count ?? 0)} membres`));
-    bodyMeta.appendChild(createGroupPreviewBadge(group?.is_programmed ? 'Programat' : 'No programat'));
-    if (group?.is_out_of_program) bodyMeta.appendChild(createGroupPreviewBadge('Fora programa', 'reduced'));
-    if (canDelete) bodyMeta.appendChild(createGroupPreviewBadge('Es pot desactivar'));
-    body.appendChild(bodyMeta);
-
-    if (editing) {
-      const editor = document.createElement('div');
-      editor.className = 'd-flex flex-wrap align-items-center mb-2';
-      editor.style.gap = '8px';
-      const input = document.createElement('input');
-      input.type = 'text';
-      input.className = 'form-control form-control-sm';
-      input.style.minWidth = '220px';
-      input.style.maxWidth = '320px';
-      input.value = String(detail?.name || group?.name || '');
-      input.setAttribute('data-group-name-input', groupId);
-      input.placeholder = 'Nom del grup';
-      editor.appendChild(input);
-      const save = document.createElement('button');
-      save.type = 'button';
-      save.className = 'btn btn-sm btn-primary js-workspace-save-group-name';
-      save.dataset.groupId = groupId;
-      save.dataset.groupNum = String(detail?.display_num || group?.display_num || '');
-      save.textContent = 'Desar';
-      editor.appendChild(save);
-      const cancel = document.createElement('button');
-      cancel.type = 'button';
-      cancel.className = 'btn btn-sm btn-light js-workspace-cancel-group-name';
-      cancel.dataset.groupId = groupId;
-      cancel.textContent = 'Cancelar';
-      editor.appendChild(cancel);
-      body.appendChild(editor);
-    }
-
-    const summary = document.createElement('div');
-    summary.className = 'small text-muted mb-2';
-    summary.textContent = detail?.name
-      ? `Nom: ${detail.name}`
-      : (group?.name ? `Nom: ${group.name}` : 'Sense observacions');
-    body.appendChild(summary);
-
-    const membersList = document.createElement('div');
-    membersList.className = 'team-context-member-list';
-    membersList.dataset.groupId = groupId;
-    membersList.dataset.groupMemberSource = '1';
-    if (loading) {
-      const loadingNode = document.createElement('div');
-      loadingNode.className = 'team-context-drop-placeholder';
-      loadingNode.textContent = 'Carregant participants...';
-      membersList.appendChild(loadingNode);
-    } else if (detail) {
-      if (members.length) {
-        members.forEach((member) => membersList.appendChild(groupMemberRow(member, groupId)));
-      } else {
-        const placeholder = document.createElement('div');
-        placeholder.className = 'team-context-drop-placeholder';
-        placeholder.textContent = editable()
-          ? "Aquest grup es buit. Pots deixar-hi una inscripcio directament sobre la targeta."
-          : 'Aquest grup no te participants.';
-        membersList.appendChild(placeholder);
-      }
-    } else {
-      const emptyState = document.createElement('div');
-      emptyState.className = 'team-context-drop-placeholder';
-      emptyState.textContent = 'Detall no carregat encara.';
-      membersList.appendChild(emptyState);
-    }
-    body.appendChild(membersList);
-    wrap.appendChild(body);
     return wrap;
   }
 
@@ -673,6 +835,7 @@ if (groupsWorkspaceShell && groupsMainCard) {
         ? `${active.length} grups amb participants i ${empty.length} grups buits disponibles.`
         : 'Encara no hi ha grups disponibles.';
     }
+    renderDetailPane();
   }
 
   function previewPayload(preview) {
@@ -694,6 +857,7 @@ if (groupsWorkspaceShell && groupsMainCard) {
   }
 
   function renderManualPreview(preview, action) {
+    setRightPaneTab('preview');
     if (typeof renderGroupPreview === 'function') renderGroupPreview(previewPayload(preview), action || 'manual');
     const blocked = Array.isArray(preview?.blocked_groups) ? preview.blocked_groups : [];
     const warned = Array.isArray(preview?.warning_groups) ? preview.warning_groups : [];
@@ -729,14 +893,26 @@ if (groupsWorkspaceShell && groupsMainCard) {
     const cleanId = String(groupId || '').trim();
     if (!cleanId) return null;
     const opts = options || {};
+    const requestedPage = Math.max(1, Number(opts.page || state.selectedGroupMembersPage || 1) || 1);
+    const requestedPageSize = Math.max(1, Number(opts.pageSize || 10) || 10);
     try {
-      const data = await postJson(groupsDetailUrl, { group_id: cleanId });
+      const data = await postJson(groupsDetailUrl, {
+        group_id: cleanId,
+        page: requestedPage,
+        page_size: requestedPageSize,
+      });
       state.groupDetailCache[cleanId] = data?.group || null;
+      if (String(state.selectedGroupId || '') === cleanId) {
+        state.selectedGroupDetail = state.groupDetailCache[cleanId];
+        state.selectedGroupMembersPage = Number(state.groupDetailCache[cleanId]?.members_page || requestedPage);
+      }
       return state.groupDetailCache[cleanId];
     } catch (err) {
       delete state.groupDetailCache[cleanId];
-      state.expandedGroupIds.delete(cleanId);
       state.editingGroupIds.delete(cleanId);
+      if (String(state.selectedGroupId || '') === cleanId) {
+        state.selectedGroupDetail = null;
+      }
       if (opts.showError !== false) showRequestError("No s'ha pogut carregar el detall del grup.", err);
       return null;
     } finally {
@@ -744,48 +920,52 @@ if (groupsWorkspaceShell && groupsMainCard) {
     }
   }
 
-  async function ensureExpandedGroupDetails() {
+  async function ensureSelectedGroupDetail() {
+    const cleanId = String(state.selectedGroupId || '').trim();
     const groupsById = new Set((Array.isArray(state.workspace?.groups) ? state.workspace.groups : []).map((group) => String(group?.id || '')));
-    const missing = Array.from(state.expandedGroupIds)
-      .map(String)
-      .filter((id) => id && groupsById.has(id) && !state.groupDetailCache[id] && !state.loadingGroupIds.has(id));
-    if (!missing.length) return;
-    missing.forEach((id) => state.loadingGroupIds.add(id));
+    if (!cleanId || !groupsById.has(cleanId) || state.groupDetailCache[cleanId] || state.loadingGroupIds.has(cleanId)) {
+      renderDetailPane();
+      return;
+    }
+    state.loadingGroupIds.add(cleanId);
     renderCards(state.workspace);
     setupDnd();
-    await Promise.all(missing.map((id) => loadGroupDetail(id, { showError: true })));
+    await loadGroupDetail(cleanId, {
+      showError: true,
+      page: state.selectedGroupMembersPage,
+      pageSize: 10,
+    });
     renderCards(state.workspace);
     setupDnd();
   }
 
-  async function toggleGroupExpanded(groupId, options = {}) {
+  async function selectGroup(groupId, options = {}) {
     const cleanId = String(groupId || '').trim();
     if (!cleanId) return null;
     const opts = options || {};
-    const forceOpen = !!opts.forceOpen;
-    const expanded = state.expandedGroupIds.has(cleanId);
-
     openWorkspaceCard();
     state.selectedGroupId = cleanId;
-    syncTargetGroupSelectors();
-
-    if (expanded && !forceOpen) {
-      state.expandedGroupIds.delete(cleanId);
-      state.editingGroupIds.delete(cleanId);
-      state.loadingGroupIds.delete(cleanId);
-      renderCards(state.workspace);
-      setupDnd();
-      saveWorkspaceState();
-      return null;
+    state.selectedGroupDetail = state.groupDetailCache[cleanId] || null;
+    state.selectedRightPaneTab = 'detail';
+    if (opts.resetPage !== false) {
+      state.selectedGroupMembersPage = Math.max(1, Number(opts.page || 1) || 1);
+    } else if (opts.page) {
+      state.selectedGroupMembersPage = Math.max(1, Number(opts.page) || 1);
     }
-
-    state.expandedGroupIds.add(cleanId);
+    syncTargetGroupSelectors();
     saveWorkspaceState();
-    if (!state.groupDetailCache[cleanId] && !state.loadingGroupIds.has(cleanId)) {
+    updateRightPaneTabUi();
+    if (opts.forceReload || !state.groupDetailCache[cleanId]) {
       state.loadingGroupIds.add(cleanId);
       renderCards(state.workspace);
       setupDnd();
-      await loadGroupDetail(cleanId, { showError: true });
+      await loadGroupDetail(cleanId, {
+        showError: true,
+        page: state.selectedGroupMembersPage,
+        pageSize: 10,
+      });
+    } else {
+      state.selectedGroupDetail = state.groupDetailCache[cleanId];
     }
     renderCards(state.workspace);
     setupDnd();
@@ -807,13 +987,14 @@ if (groupsWorkspaceShell && groupsMainCard) {
 
       const groups = Array.isArray(workspace.groups) ? workspace.groups : [];
       const availableIds = new Set(groups.map((group) => String(group?.id || '')));
-      state.expandedGroupIds = new Set(Array.from(state.expandedGroupIds).filter((id) => availableIds.has(String(id || ''))));
       state.editingGroupIds = new Set(Array.from(state.editingGroupIds).filter((id) => availableIds.has(String(id || ''))));
       Object.keys(state.groupDetailCache).forEach((groupId) => {
         if (!availableIds.has(String(groupId || ''))) delete state.groupDetailCache[groupId];
       });
       if (state.selectedGroupId && !availableIds.has(String(state.selectedGroupId || ''))) {
         state.selectedGroupId = '';
+        state.selectedGroupDetail = null;
+        state.selectedGroupMembersPage = 1;
       }
 
       setFiltersToDom(state.filters, workspace.filter_options || {});
@@ -853,7 +1034,7 @@ if (groupsWorkspaceShell && groupsMainCard) {
         (item) => ({ value: item?.id, label: `${item?.label || `Grup ${item?.display_num || ''}`} | ${Number(item?.members_count || 0)}` })
       );
       syncTargetGroupSelectors();
-      await ensureExpandedGroupDetails();
+      await ensureSelectedGroupDetail();
       setupDnd();
       dispatchGroupCreationContextChanged();
       return workspace;
@@ -975,11 +1156,14 @@ if (groupsWorkspaceShell && groupsMainCard) {
         const nextGroupId = String(data?.group?.id || extra?.group_id || state.selectedGroupId || '').trim();
         if (nextGroupId) {
           state.selectedGroupId = nextGroupId;
-          if (action === 'create') state.expandedGroupIds.add(nextGroupId);
+          state.selectedGroupMembersPage = 1;
+          state.selectedRightPaneTab = 'detail';
         }
       }
       if (action === 'delete' && extra?.group_id && String(extra.group_id) === String(state.selectedGroupId || '')) {
         state.selectedGroupId = '';
+        state.selectedGroupDetail = null;
+        state.selectedGroupMembersPage = 1;
       }
       await fetchWorkspace();
       if (window.__groupsPreviewApi && typeof window.__groupsPreviewApi.clearConfirmIntent === 'function') {
@@ -1140,16 +1324,25 @@ if (groupsWorkspaceShell && groupsMainCard) {
   }
 
   function wireEvents() {
-    const syncSelectedGroup = (value) => {
-      state.selectedGroupId = String(value || '').trim();
-      syncTargetGroupSelectors();
-      saveWorkspaceState();
+    const syncSelectedGroup = async (value, options = {}) => {
+      const cleanValue = String(value || '').trim();
+      if (!cleanValue) {
+        state.selectedGroupId = '';
+        state.selectedGroupDetail = null;
+        state.selectedGroupMembersPage = 1;
+        syncTargetGroupSelectors();
+        renderCards(state.workspace);
+        setupDnd();
+        saveWorkspaceState();
+        return;
+      }
+      await selectGroup(cleanValue, { scroll: false, ...options });
     };
 
     ['groups-workspace-target-group', 'groups-compact-target-group'].forEach((id) => {
       const select = document.getElementById(id);
       if (!select) return;
-      select.addEventListener('change', () => syncSelectedGroup(select.value));
+      select.addEventListener('change', async () => syncSelectedGroup(select.value));
     });
 
     const scheduleFilterRefresh = (immediate = false) => {
@@ -1220,12 +1413,19 @@ if (groupsWorkspaceShell && groupsMainCard) {
     };
 
     groupsMainCard.addEventListener('click', async (event) => {
+      const tabBtn = event.target.closest('[data-groups-right-tab]');
+      if (tabBtn) {
+        event.preventDefault();
+        setRightPaneTab(String(tabBtn.getAttribute('data-groups-right-tab') || '').trim());
+        return;
+      }
+
       const openBtn = event.target.closest('[data-group-open]');
       if (openBtn) {
         event.preventDefault();
         const groupId = String(openBtn.getAttribute('data-group-open') || '').trim();
-        const forceOpen = !!openBtn.closest('#groups-compact-list');
-        await toggleGroupExpanded(groupId, { forceOpen, scroll: true });
+        const preservePage = !!openBtn.closest('#groups-right-pane-detail') || groupId === String(state.selectedGroupId || '');
+        await selectGroup(groupId, { scroll: true, resetPage: !preservePage, forceReload: true });
         return;
       }
 
@@ -1234,9 +1434,7 @@ if (groupsWorkspaceShell && groupsMainCard) {
         event.preventDefault();
         const groupId = String(assignBtn.getAttribute('data-group-assign-to') || '').trim();
         if (!groupId) return;
-        state.selectedGroupId = groupId;
-        syncTargetGroupSelectors();
-        saveWorkspaceState();
+        await selectGroup(groupId, { scroll: false, resetPage: false });
         await runAction('assign', groupsAssignUrl, { group_id: groupId });
         return;
       }
@@ -1257,7 +1455,7 @@ if (groupsWorkspaceShell && groupsMainCard) {
         event.preventDefault();
         const groupId = String(renameBtn.getAttribute('data-group-rename') || '').trim();
         if (!groupId) return;
-        await toggleGroupExpanded(groupId, { forceOpen: true, scroll: true });
+        await selectGroup(groupId, { scroll: true, resetPage: false });
         state.editingGroupIds.add(groupId);
         renderCards(state.workspace);
         setupDnd();
@@ -1293,8 +1491,16 @@ if (groupsWorkspaceShell && groupsMainCard) {
         state.editingGroupIds.delete(groupId);
         delete state.groupDetailCache[groupId];
         await fetchWorkspace();
-        await toggleGroupExpanded(groupId, { forceOpen: true, scroll: false });
+        await selectGroup(groupId, { scroll: false, resetPage: false, forceReload: true });
         alertBox('Nom del grup desat.');
+        return;
+      }
+
+      const detailPagerBtn = event.target.closest('[data-group-members-page]');
+      if (detailPagerBtn) {
+        event.preventDefault();
+        const nextPage = Number(detailPagerBtn.getAttribute('data-group-members-page') || 1);
+        await selectGroup(state.selectedGroupId, { scroll: false, resetPage: false, page: nextPage, forceReload: true });
         return;
       }
 
@@ -1311,9 +1517,7 @@ if (groupsWorkspaceShell && groupsMainCard) {
         event.preventDefault();
         const groupId = String(deleteCardBtn.getAttribute('data-group-delete') || '').trim();
         if (!groupId) return;
-        state.selectedGroupId = groupId;
-        syncTargetGroupSelectors();
-        saveWorkspaceState();
+        await selectGroup(groupId, { scroll: false, resetPage: false });
         await runAction('delete', groupsDeleteUrl, { group_id: groupId });
         return;
       }
@@ -1469,18 +1673,20 @@ if (groupsWorkspaceShell && groupsMainCard) {
   wireEvents();
   renderSelectionSummary();
   setAutoContextExpanded(state.autoContextExpanded, { skipSave: true });
+  updateRightPaneTabUi();
 
   window.__groupsWorkspaceApi = {
     refresh: fetchWorkspace,
     resolveAutoContext: (extra = {}) => postJson(groupsWorkspaceUrl, buildPayload({ operation: 'resolve_auto_context', ...extra })),
-    selectGroup: (groupId) => toggleGroupExpanded(groupId, { forceOpen: true, scroll: true }),
+    selectGroup: (groupId) => selectGroup(groupId, { scroll: true, resetPage: true }),
     preview: previewAction,
     setExternalSelection: syncExternalSelection,
     getState: () => ({
       selectedIds: selectedIds(),
       selectionCount: selectedIds().length,
       selectedGroupId: state.selectedGroupId,
-      expandedGroupIds: Array.from(state.expandedGroupIds),
+      selectedGroupMembersPage: state.selectedGroupMembersPage,
+      selectedRightPaneTab: state.selectedRightPaneTab,
       filteredCount: Number(state.workspace?.paging?.total || 0),
       filters: { ...state.filters },
     }),

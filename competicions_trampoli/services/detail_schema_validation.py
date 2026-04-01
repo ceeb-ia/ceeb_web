@@ -255,6 +255,8 @@ def validate_detail_schema(
     if raw_legacy_cols is not None and not isinstance(raw_legacy_cols, list):
         add("presentacio.detall.columnes", "presentacio.detall.columnes ha de ser una llista.")
         raw_legacy_cols = None
+    elif isinstance(raw_legacy_cols, list) and not raw_legacy_cols:
+        raw_legacy_cols = None
 
     if detail_enabled and not detail_active:
         add(

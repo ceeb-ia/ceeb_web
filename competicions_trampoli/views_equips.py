@@ -183,6 +183,16 @@ def _filter_inscripcions(competicio: Competicio, filters: Optional[dict]):
     )
 
 
+def _normalize_int_string_list(raw_values):
+    values = raw_values if isinstance(raw_values, list) else []
+    out = []
+    for value in values:
+        text = str(value or "").strip()
+        if text.isdigit() and text not in out:
+            out.append(text)
+    return out
+
+
 def _validated_partition_fields(competicio: Competicio, requested):
     requested = requested or []
     if not isinstance(requested, list):
@@ -264,14 +274,128 @@ def _build_preview_selection_summary(records_count, filters, selected_ids, repla
 
 def _normalize_workspace_filters(filters):
     data = filters if isinstance(filters, dict) else {}
+    equip_ids = _normalize_int_string_list(data.get("equip_ids"))
+    equip_id = str(data.get("equip_id") or "").strip()
+    if equip_id.isdigit() and equip_id not in equip_ids:
+        equip_ids.append(equip_id)
     out = {
         **_normalize_sort_filters(data),
         "assignment_state": str(data.get("assignment_state") or "all").strip().lower() or "all",
-        "equip_id": str(data.get("equip_id") or "").strip(),
+        "equip_id": equip_id if equip_id.isdigit() else "",
+        "equip_ids": equip_ids,
     }
     if out["assignment_state"] not in {"all", "assigned", "unassigned"}:
         out["assignment_state"] = "all"
     return out
+
+
+def _normalize_bucket_keys(raw_bucket_keys):
+    bucket_keys = raw_bucket_keys if isinstance(raw_bucket_keys, list) else []
+    out = []
+    for raw_key in bucket_keys:
+        key = str(raw_key or "").strip()
+        if key and key not in out:
+            out.append(key)
+    return out
+
+
+def _resolve_workspace_records(competicio: Competicio, context_code: str, filters=None, *, only_fields=None):
+    clean_filters = _normalize_workspace_filters(filters)
+    base_fields = [
+        "id",
+        "nom_i_cognoms",
+        "document",
+        "entitat",
+        "categoria",
+        "subcategoria",
+        "ordre_sortida",
+    ]
+    requested_fields = []
+    for field in (only_fields or []):
+        field_name = str(field or "").strip()
+        if field_name and field_name not in requested_fields:
+            requested_fields.append(field_name)
+    for field_name in base_fields:
+        if field_name not in requested_fields:
+            requested_fields.append(field_name)
+
+    qs = (
+        _build_inscripcions_filtered_qs(competicio, clean_filters)
+        .only(*requested_fields)
+        .order_by("ordre_sortida", "id")
+    )
+    base_records = list(qs)
+    assignment_map = get_contextual_assignment_map(competicio, base_records, context_code)
+    base_assignment_map = get_contextual_assignment_map(competicio, base_records, NATIVE_EQUIP_CONTEXT_CODE)
+
+    assignment_state = str(clean_filters.get("assignment_state") or "all").strip().lower()
+    equip_filter_ids = {int(value) for value in (clean_filters.get("equip_ids") or []) if str(value).isdigit()}
+
+    resolved_rows = []
+    for ins in base_records:
+        current_team = resolve_inscripcio_equip(
+            ins,
+            context_code=context_code,
+            fallback=None,
+            assignment_map=assignment_map,
+        )
+        current_team_id = getattr(current_team, "id", None)
+        if assignment_state == "assigned" and current_team_id is None:
+            continue
+        if assignment_state == "unassigned" and current_team_id is not None:
+            continue
+        if equip_filter_ids and current_team_id not in equip_filter_ids:
+            continue
+        resolved_rows.append(
+            {
+                "inscripcio": ins,
+                "current_team": current_team,
+            }
+        )
+
+    return {
+        "filters": clean_filters,
+        "all_records": base_records,
+        "assignment_map": assignment_map,
+        "base_assignment_map": base_assignment_map,
+        "rows": resolved_rows,
+    }
+
+
+def _resolve_workspace_filtered_target_ids(competicio: Competicio, context_code: str, filters=None):
+    resolved = _resolve_workspace_records(competicio, context_code, filters=filters)
+    return {
+        "filters": resolved["filters"],
+        "target_ids": [int(row["inscripcio"].id) for row in resolved["rows"]],
+    }
+
+
+def _resolve_workspace_target_records(
+    competicio: Competicio,
+    context_code: str,
+    filters=None,
+    selected_ids=None,
+    *,
+    only_fields=None,
+):
+    resolved = _resolve_workspace_records(
+        competicio,
+        context_code,
+        filters=filters,
+        only_fields=only_fields,
+    )
+    records = [row["inscripcio"] for row in resolved["rows"]]
+    ids_clean = [int(x) for x in (selected_ids or []) if str(x).isdigit()]
+    target_scope = "selected" if ids_clean else "filtered"
+    if ids_clean:
+        selected_set = set(ids_clean)
+        records = [ins for ins in records if int(ins.id) in selected_set]
+    return {
+        "filters": resolved["filters"],
+        "records": records,
+        "selected_ids": ids_clean,
+        "target_scope": target_scope,
+    }
 
 
 def _serialize_workspace_candidate(ins, context_code, current_team=None, base_assignment_map=None):
@@ -299,7 +423,26 @@ def _serialize_workspace_candidate(ins, context_code, current_team=None, base_as
     }
 
 
-def _build_workspace_filter_options(records, context_code, assignment_map, teams):
+def _build_workspace_filter_option_source_records(competicio: Competicio, context_code: str, filters=None):
+    option_filters = {
+        **_normalize_workspace_filters(filters),
+        "categoria": "",
+        "subcategoria": "",
+        "entitat": "",
+        "categories": [],
+        "subcategories": [],
+        "entitats": [],
+    }
+    resolved = _resolve_workspace_records(
+        competicio,
+        context_code,
+        filters=option_filters,
+        only_fields=["categoria", "subcategoria", "entitat"],
+    )
+    return [row["inscripcio"] for row in resolved["rows"]]
+
+
+def _build_workspace_filter_options(records, teams):
     categories = sorted({str(getattr(ins, "categoria", "") or "").strip() for ins in records if str(getattr(ins, "categoria", "") or "").strip()})
     subcategories = sorted({str(getattr(ins, "subcategoria", "") or "").strip() for ins in records if str(getattr(ins, "subcategoria", "") or "").strip()})
     entitats = sorted({str(getattr(ins, "entitat", "") or "").strip() for ins in records if str(getattr(ins, "entitat", "") or "").strip()})
@@ -323,41 +466,69 @@ def _build_workspace_filter_options(records, context_code, assignment_map, teams
     }
 
 
+def _build_team_partition_buckets(records, fields):
+    grouped = _partition_records(records, fields)
+    record_map = OrderedDict((int(ins.id), ins) for ins in records)
+    buckets = []
+    for key, item in grouped.items():
+        member_sample = {"items": [], "extra": 0}
+        for ins_id in item["ids"]:
+            ins = record_map.get(int(ins_id))
+            if ins is None:
+                continue
+            _append_preview_sample(member_sample, getattr(ins, "nom_i_cognoms", ""))
+        member_samples, member_samples_remaining = _finalize_preview_sample(member_sample)
+        buckets.append(
+            {
+                "key": key,
+                "label": _build_team_name(fields, item["vals_pretty"]),
+                "count": len(item["ids"]),
+                "values": list(item["vals_pretty"]),
+                "member_samples": member_samples,
+                "member_samples_remaining": member_samples_remaining,
+            }
+        )
+    return buckets
+
+
+def _filter_partition_records_by_bucket_keys(records, fields, raw_bucket_keys):
+    grouped = _partition_records(records, fields)
+    normalized_bucket_keys = _normalize_bucket_keys(raw_bucket_keys)
+    if not normalized_bucket_keys:
+        return records, grouped, list(grouped.keys())
+
+    allowed_keys = set(normalized_bucket_keys)
+    filtered_grouped = OrderedDict(
+        (key, item)
+        for key, item in grouped.items()
+        if key in allowed_keys
+    )
+    if len(filtered_grouped) == len(grouped):
+        return records, filtered_grouped, list(filtered_grouped.keys())
+
+    allowed_ids = {
+        int(ins_id)
+        for item in filtered_grouped.values()
+        for ins_id in (item.get("ids") or [])
+    }
+    filtered_records = [ins for ins in records if int(ins.id) in allowed_ids]
+    return filtered_records, filtered_grouped, list(filtered_grouped.keys())
+
+
 def _build_workspace_payload(competicio, context_code, filters=None, page=1, page_size=40):
-    filters = _normalize_workspace_filters(filters)
+    resolved = _resolve_workspace_records(competicio, context_code, filters=filters)
+    filters = resolved["filters"]
     page = max(1, int(page or 1))
     page_size = max(10, min(200, int(page_size or 40)))
-    qs = (
-        _filter_inscripcions(competicio, filters)
-        .only("id", "nom_i_cognoms", "document", "entitat", "categoria", "subcategoria", "ordre_sortida")
-        .order_by("ordre_sortida", "id")
-    )
-    records = list(qs)
+    records = list(_build_workspace_filter_option_source_records(competicio, context_code, filters))
     teams = list(get_equips_for_context(competicio, context_code))
     team_members = get_team_members_payload_for_context(competicio, context_code)
-    assignment_map = get_contextual_assignment_map(competicio, records, context_code)
-    base_assignment_map = get_contextual_assignment_map(competicio, records, NATIVE_EQUIP_CONTEXT_CODE)
-
-    equip_id_filter = None
-    if str(filters.get("equip_id") or "").isdigit():
-        equip_id_filter = int(filters["equip_id"])
-    assignment_state = str(filters.get("assignment_state") or "all").strip().lower()
+    base_assignment_map = resolved["base_assignment_map"]
 
     filtered_candidates = []
-    for ins in records:
-        current_team = resolve_inscripcio_equip(
-            ins,
-            context_code=context_code,
-            fallback=None,
-            assignment_map=assignment_map,
-        )
-        current_team_id = getattr(current_team, "id", None)
-        if assignment_state == "assigned" and current_team_id is None:
-            continue
-        if assignment_state == "unassigned" and current_team_id is not None:
-            continue
-        if equip_id_filter and current_team_id != equip_id_filter:
-            continue
+    for row in resolved["rows"]:
+        ins = row["inscripcio"]
+        current_team = row["current_team"]
         filtered_candidates.append(
             _serialize_workspace_candidate(
                 ins,
@@ -388,7 +559,7 @@ def _build_workspace_payload(competicio, context_code, filters=None, page=1, pag
             "page_count": len(page_rows),
         },
         "filters": filters,
-        "filter_options": _build_workspace_filter_options(records, context_code, assignment_map, teams),
+        "filter_options": _build_workspace_filter_options(records, teams),
         "candidates": {
             "items": page_rows,
             "total": total_filtered,
@@ -415,7 +586,52 @@ def equips_workspace(request, pk):
     if err is not None:
         return err
 
+    operation = str(payload.get("operation") or "").strip().lower()
     filters = payload.get("filters") or {}
+    if operation == "resolve_filtered_ids":
+        resolved = _resolve_workspace_filtered_target_ids(competicio, context_code, filters=filters)
+        return JsonResponse(
+            with_inscripcions_history_payload(
+                {
+                    "ok": True,
+                    "operation": "resolve_filtered_ids",
+                    "filters": resolved["filters"],
+                    "target_ids": resolved["target_ids"],
+                    "total": len(resolved["target_ids"]),
+                    "context_code": context_code,
+                },
+                request,
+                competicio.id,
+            )
+        )
+    if operation == "resolve_auto_context":
+        fields = _validated_partition_fields(competicio, payload.get("fields"))
+        if not fields:
+            return HttpResponseBadRequest("No hi ha camps de particio valids")
+        target = _resolve_workspace_target_records(
+            competicio,
+            context_code,
+            filters=filters,
+            selected_ids=payload.get("selected_ids") or [],
+            only_fields=["extra", *[f for f in fields if hasattr(Inscripcio, f)]],
+        )
+        buckets = _build_team_partition_buckets(target["records"], fields) if target["records"] else []
+        return JsonResponse(
+            with_inscripcions_history_payload(
+                {
+                    "ok": True,
+                    "operation": "resolve_auto_context",
+                    "context_code": context_code,
+                    "target_scope": target["target_scope"],
+                    "target_count": len(target["records"]),
+                    "buckets_total": len(buckets),
+                    "buckets": buckets,
+                    "default_bucket_keys": [bucket["key"] for bucket in buckets],
+                },
+                request,
+                competicio.id,
+            )
+        )
     page = payload.get("page") or 1
     page_size = payload.get("page_size") or 40
     return JsonResponse(_build_workspace_payload(competicio, context_code, filters=filters, page=page, page_size=page_size))
@@ -441,18 +657,19 @@ def equips_preview(request, pk):
     selected_ids = payload.get("selected_ids") or []
     if not isinstance(selected_ids, list):
         selected_ids = []
+    bucket_keys = payload.get("bucket_keys") or []
     replace_existing = bool(payload.get("replace_existing", True))
 
-    qs = _filter_inscripcions(competicio, filters)
-    ids_clean = []
-    if selected_ids:
-        ids_clean = [int(x) for x in selected_ids if str(x).isdigit()]
-        qs = qs.filter(id__in=ids_clean)
-
     builtin_fields = [f for f in fields if hasattr(Inscripcio, f)]
-    only_fields = ["id", "extra", "nom_i_cognoms", *builtin_fields]
-    records = list(qs.only(*only_fields).order_by("ordre_sortida", "id"))
-    grouped = _partition_records(records, fields)
+    target = _resolve_workspace_target_records(
+        competicio,
+        context_code,
+        filters=filters,
+        selected_ids=selected_ids,
+        only_fields=["extra", *builtin_fields],
+    )
+    records = list(target["records"])
+    records, grouped, applied_bucket_keys = _filter_partition_records_by_bucket_keys(records, fields, bucket_keys)
     record_map = OrderedDict((ins.id, ins) for ins in records)
     existing_assignments = get_contextual_assignment_map(competicio, records, context_code)
     existing_teams = list(get_equips_for_context(competicio, context_code))
@@ -634,9 +851,14 @@ def equips_preview(request, pk):
             "selection_summary": _build_preview_selection_summary(
                 len(records),
                 filters,
-                ids_clean,
+                target["selected_ids"],
                 replace_existing,
             ),
+            "bucket_summary": {
+                "available_count": len(_partition_records(target["records"], fields)),
+                "selected_count": len(applied_bucket_keys),
+                "applied_count": len(applied_bucket_keys),
+            },
             "existing_summary": {
                 "teams_total": len(existing_teams),
                 "teams_with_members": teams_with_members,
@@ -670,26 +892,35 @@ def equips_auto_create(request, pk):
     selected_ids = payload.get("selected_ids") or []
     if not isinstance(selected_ids, list):
         selected_ids = []
-
-    qs = _filter_inscripcions(competicio, filters)
-    if selected_ids:
-        ids_clean = [int(x) for x in selected_ids if str(x).isdigit()]
-        qs = qs.filter(id__in=ids_clean)
+    bucket_keys = payload.get("bucket_keys") or []
 
     builtin_fields = [f for f in fields if hasattr(Inscripcio, f)]
-    only_fields = ["id", "extra", *builtin_fields]
-    records = list(qs.only(*only_fields).order_by("ordre_sortida", "id"))
+    target = _resolve_workspace_target_records(
+        competicio,
+        context_code,
+        filters=filters,
+        selected_ids=selected_ids,
+        only_fields=["extra", *builtin_fields],
+    )
+    records = list(target["records"])
+    records, grouped, _applied_bucket_keys = _filter_partition_records_by_bucket_keys(records, fields, bucket_keys)
     if not records:
         return JsonResponse(
             with_inscripcions_history_payload(
-                {"ok": True, "created": 0, "updated": 0, "equips": [], "contexts": _serialize_contexts(competicio)},
+                {
+                    "ok": True,
+                    "context_code": context_code,
+                    "created": 0,
+                    "updated": 0,
+                    "equips": [],
+                    "contexts": _serialize_contexts(competicio),
+                },
                 request,
                 competicio.id,
             )
         )
 
     before_snapshot = capture_inscripcions_history_snapshot(request, competicio)
-    grouped = _partition_records(records, fields)
     team_by_key = {}
     created = 0
     existing_assignments = get_contextual_assignment_map(competicio, records, context_code)

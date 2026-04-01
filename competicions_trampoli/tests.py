@@ -86,7 +86,11 @@ from .views_classificacions import (
     _validate_schema_for_competicio,
     _validate_particions_schema,
 )
-from .services.services_classificacions_2 import DEFAULT_SCHEMA, compute_classificacio
+from .services.services_classificacions_2 import (
+    DEFAULT_SCHEMA,
+    compute_classificacio,
+    normalize_schema_legacy_team_birth_partition,
+)
 from .services.competition_groups import (
     assign_groups_by_display_num,
     compact_competition_order_for_group,
@@ -5172,6 +5176,52 @@ class GroupManagerV1Tests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(group_data.get("label") or group_data.get("nom") or data.get("group_label"), "Final")
         self.assertTrue(group_data.get("is_programmed", data.get("is_programmed")))
         self.assertEqual([member.get("nom") for member in members], ["Programmed A", "Programmed B"])
+
+    def test_groups_detail_contract_supports_member_pagination(self):
+        resp = self._post_groups_contract(
+            "detail",
+            {"group_id": self.programmed_group.id, "page": 2, "page_size": 1},
+        )
+
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data.get("ok"))
+        group_data = data.get("group") or {}
+        members = data.get("members") or group_data.get("members") or []
+
+        self.assertEqual(int(group_data.get("members_total") or 0), 2)
+        self.assertEqual(int(group_data.get("members_page") or 0), 2)
+        self.assertEqual(int(group_data.get("members_page_size") or 0), 1)
+        self.assertEqual(int(group_data.get("members_total_pages") or 0), 2)
+        self.assertTrue(group_data.get("members_has_prev"))
+        self.assertFalse(group_data.get("members_has_next"))
+        self.assertEqual([member.get("nom") for member in members], ["Programmed B"])
+
+    def test_groups_detail_contract_returns_consistent_empty_pagination(self):
+        empty_group = GrupCompeticio.objects.create(
+            competicio=self.comp,
+            legacy_num=9,
+            display_num=9,
+            nom="Empty detail",
+            actiu=True,
+        )
+
+        resp = self._post_groups_contract(
+            "detail",
+            {"group_id": empty_group.id},
+        )
+
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data.get("ok"))
+        group_data = data.get("group") or {}
+
+        self.assertEqual(group_data.get("members"), [])
+        self.assertEqual(int(group_data.get("members_total") or 0), 0)
+        self.assertEqual(int(group_data.get("members_page") or 0), 1)
+        self.assertEqual(int(group_data.get("members_total_pages") or 0), 1)
+        self.assertFalse(group_data.get("members_has_prev"))
+        self.assertFalse(group_data.get("members_has_next"))
 
     def test_groups_preview_contract_reports_reduced_and_removed_programmed_groups(self):
         single_group = GrupCompeticio.objects.create(
@@ -10592,6 +10642,9 @@ class EquipPreviewUiTests(_BaseTrampoliDataMixin, TestCase):
         self.assertContains(response, 'id="btn-team-workspace-board-mode"')
         self.assertContains(response, 'id="team-filter-q"')
         self.assertContains(response, 'id="btn-team-workspace-preview"')
+        self.assertContains(response, 'id="team-auto-buckets-grid"')
+        self.assertContains(response, 'id="btn-team-auto-buckets-all"')
+        self.assertContains(response, 'id="btn-team-auto-buckets-none"')
         self.assertContains(response, 'id="team-preview-status"')
         self.assertContains(response, 'id="team-preview-existing-list"')
         self.assertContains(response, 'id="team-preview-list"')
@@ -10719,6 +10772,180 @@ class EquipPreviewUiTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(
             [row.get("nom") for row in (payload.get("candidates", {}).get("items") or [])],
             ["Carla New"],
+        )
+
+    def test_equips_workspace_filter_options_keep_other_categories_visible_after_filtering_one(self):
+        self.ins_keep.categoria = "Alevi"
+        self.ins_keep.save(update_fields=["categoria"])
+        self.ins_move.categoria = "Infantil"
+        self.ins_move.save(update_fields=["categoria"])
+        self.ins_new.categoria = "Juvenil"
+        self.ins_new.save(update_fields=["categoria"])
+
+        response = self.client.post(
+            reverse("inscripcions_equips_workspace", kwargs={"pk": self.comp.id}),
+            data=json.dumps(
+                {
+                    "context_code": "finals",
+                    "filters": {
+                        "q": "",
+                        "categoria": "",
+                        "subcategoria": "",
+                        "entitat": "",
+                        "categories": ["Alevi"],
+                        "assignment_state": "all",
+                        "equip_id": "",
+                    },
+                    "page": 1,
+                    "page_size": 25,
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload.get("ok"))
+        self.assertEqual(
+            sorted(payload.get("filter_options", {}).get("categories") or []),
+            ["Alevi", "Infantil", "Juvenil"],
+        )
+        self.assertEqual(
+            [row.get("nom") for row in (payload.get("candidates", {}).get("items") or [])],
+            ["Anna Keep"],
+        )
+
+    def test_equips_workspace_can_resolve_filtered_ids_for_full_selection_strip(self):
+        response = self.client.post(
+            reverse("inscripcions_equips_workspace", kwargs={"pk": self.comp.id}),
+            data=json.dumps(
+                {
+                    "context_code": "finals",
+                    "operation": "resolve_filtered_ids",
+                    "filters": {
+                        "q": "",
+                        "categories": [],
+                        "subcategories": [],
+                        "entitats": [],
+                        "assignment_state": "assigned",
+                        "equip_ids": [str(self.team_existing.id)],
+                    },
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload.get("ok"))
+        self.assertEqual(payload.get("operation"), "resolve_filtered_ids")
+        self.assertEqual(payload.get("target_ids"), [self.ins_ctx.id])
+        self.assertEqual(payload.get("total"), 1)
+
+    def test_equips_workspace_can_resolve_auto_context_from_selected_ids(self):
+        response = self.client.post(
+            reverse("inscripcions_equips_workspace", kwargs={"pk": self.comp.id}),
+            data=json.dumps(
+                {
+                    "context_code": "finals",
+                    "operation": "resolve_auto_context",
+                    "selected_ids": [self.ins_keep.id, self.ins_new.id],
+                    "filters": {
+                        "q": "",
+                        "categoria": "",
+                        "subcategoria": "",
+                        "entitat": "",
+                    },
+                    "fields": ["entitat"],
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload.get("ok"))
+        self.assertEqual(payload.get("operation"), "resolve_auto_context")
+        self.assertEqual(payload.get("target_scope"), "selected")
+        self.assertEqual(int(payload.get("target_count") or 0), 2)
+        self.assertEqual(int(payload.get("buckets_total") or 0), 2)
+        self.assertEqual(
+            sorted(bucket.get("label") for bucket in (payload.get("buckets") or [])),
+            ["Club A", "Club C"],
+        )
+        self.assertEqual(len(payload.get("default_bucket_keys") or []), 2)
+
+    def test_equips_workspace_can_resolve_auto_context_from_filtered_rows(self):
+        self.ins_keep.categoria = "Alevi"
+        self.ins_keep.save(update_fields=["categoria"])
+        self.ins_move.categoria = "Infantil"
+        self.ins_move.save(update_fields=["categoria"])
+        self.ins_ctx.categoria = "Alevi"
+        self.ins_ctx.save(update_fields=["categoria"])
+
+        response = self.client.post(
+            reverse("inscripcions_equips_workspace", kwargs={"pk": self.comp.id}),
+            data=json.dumps(
+                {
+                    "context_code": "finals",
+                    "operation": "resolve_auto_context",
+                    "selected_ids": [],
+                    "filters": {
+                        "q": "",
+                        "categoria": "",
+                        "subcategoria": "",
+                        "entitat": "",
+                        "column_filters": {"entitat": ["Club A"]},
+                    },
+                    "fields": ["categoria"],
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload.get("ok"))
+        self.assertEqual(payload.get("target_scope"), "filtered")
+        self.assertEqual(int(payload.get("target_count") or 0), 3)
+        self.assertEqual(int(payload.get("buckets_total") or 0), 2)
+        self.assertEqual(
+            sorted(bucket.get("label") for bucket in (payload.get("buckets") or [])),
+            ["Alevi", "Infantil"],
+        )
+
+    def test_equips_workspace_resolve_auto_context_supports_excel_fields(self):
+        self.comp.inscripcions_schema = {
+            "columns": [
+                {"code": "excel__bloc", "label": "Bloc", "kind": "extra"},
+            ]
+        }
+        self.comp.save(update_fields=["inscripcions_schema"])
+        self.ins_keep.extra = {"excel__bloc": "Nord"}
+        self.ins_keep.save(update_fields=["extra"])
+        self.ins_new.extra = {"excel__bloc": "Sud"}
+        self.ins_new.save(update_fields=["extra"])
+
+        response = self.client.post(
+            reverse("inscripcions_equips_workspace", kwargs={"pk": self.comp.id}),
+            data=json.dumps(
+                {
+                    "context_code": "native",
+                    "operation": "resolve_auto_context",
+                    "selected_ids": [self.ins_keep.id, self.ins_new.id],
+                    "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                    "fields": ["excel__bloc"],
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload.get("ok"))
+        self.assertEqual(
+            sorted(bucket.get("label") for bucket in (payload.get("buckets") or [])),
+            ["Nord", "Sud"],
         )
 
     def test_equips_workspace_team_members_ignore_candidate_filters_and_keep_stable_order(self):
@@ -11148,6 +11375,57 @@ class EquipPreviewUiTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(payload.get("selection_summary", {}).get("mode"), "filtered")
         self.assertEqual([row.get("nom_suggerit") for row in (payload.get("preview") or [])], ["Club C"])
 
+    def test_equips_preview_respects_assignment_filters_from_workspace(self):
+        response = self.client.post(
+            reverse("inscripcions_equips_preview", kwargs={"pk": self.comp.id}),
+            data=json.dumps(
+                {
+                    "context_code": "finals",
+                    "fields": ["entitat"],
+                    "replace_existing": True,
+                    "filters": {
+                        "q": "",
+                        "categories": [],
+                        "subcategories": [],
+                        "entitats": [],
+                        "assignment_state": "assigned",
+                        "equip_ids": [str(self.team_existing.id)],
+                    },
+                    "selected_ids": [],
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload.get("ok"))
+        self.assertEqual(payload.get("total_inscripcions"), 1)
+        self.assertEqual([row.get("nom_suggerit") for row in (payload.get("preview") or [])], ["Club A"])
+
+    def test_equips_preview_can_limit_scope_with_bucket_keys(self):
+        response = self.client.post(
+            reverse("inscripcions_equips_preview", kwargs={"pk": self.comp.id}),
+            data=json.dumps(
+                {
+                    "context_code": "native",
+                    "fields": ["entitat"],
+                    "replace_existing": True,
+                    "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                    "selected_ids": [],
+                    "bucket_keys": [json.dumps(["Club C"], ensure_ascii=False)],
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload.get("ok"))
+        self.assertEqual(payload.get("total_inscripcions"), 1)
+        self.assertEqual(payload.get("bucket_summary", {}).get("selected_count"), 1)
+        self.assertEqual([row.get("nom_suggerit") for row in (payload.get("preview") or [])], ["Club C"])
+
     def test_equips_auto_create_respects_column_filters(self):
         response = self.client.post(
             reverse("inscripcions_equips_auto_create", kwargs={"pk": self.comp.id}),
@@ -11184,6 +11462,47 @@ class EquipPreviewUiTests(_BaseTrampoliDataMixin, TestCase):
                 competicio=self.comp,
                 context=self.ctx,
                 inscripcio=self.ins_keep,
+            ).exists()
+        )
+
+    def test_equips_auto_create_can_limit_scope_with_bucket_keys(self):
+        response = self.client.post(
+            reverse("inscripcions_equips_auto_create", kwargs={"pk": self.comp.id}),
+            data=json.dumps(
+                {
+                    "context_code": "finals",
+                    "fields": ["entitat"],
+                    "replace_existing": False,
+                    "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                    "selected_ids": [],
+                    "bucket_keys": [json.dumps(["Club C"], ensure_ascii=False)],
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload.get("ok"))
+        self.assertEqual(payload.get("created"), 1)
+        assignacio = InscripcioEquipAssignacio.objects.get(
+            competicio=self.comp,
+            context=self.ctx,
+            inscripcio=self.ins_new,
+        )
+        self.assertEqual(assignacio.equip.nom, "Club C")
+        self.assertFalse(
+            InscripcioEquipAssignacio.objects.filter(
+                competicio=self.comp,
+                context=self.ctx,
+                inscripcio=self.ins_keep,
+            ).exists()
+        )
+        self.assertFalse(
+            InscripcioEquipAssignacio.objects.filter(
+                competicio=self.comp,
+                context=self.ctx,
+                inscripcio=self.ins_move,
             ).exists()
         )
 
@@ -14438,6 +14757,97 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertTrue(
             any("presentacio.detall.columnes nomes es compatible" in err for err in errors)
         )
+
+    def test_normalize_schema_does_not_inject_legacy_detail_columns_when_absent(self):
+        schema, _info = normalize_schema_legacy_team_birth_partition(
+            self.comp,
+            {
+                **self._native_team_schema_with_tie({"camps": ["TOTAL"], "ordre": "desc"}),
+                "presentacio": {
+                    "columnes": [
+                        {"type": "builtin", "key": "participant", "label": "Nom", "align": "left"},
+                        {"type": "builtin", "key": "punts", "label": "Punts", "align": "right", "decimals": 3},
+                    ],
+                    "detall": {
+                        "enabled": False,
+                        "default_open": False,
+                        "sections": [],
+                    },
+                },
+            },
+            tipus="equips",
+            persist=False,
+        )
+
+        self.assertNotIn("columnes", (schema.get("presentacio") or {}).get("detall") or {})
+
+    def test_normalize_schema_preserves_explicit_legacy_detail_columns(self):
+        schema, _info = normalize_schema_legacy_team_birth_partition(
+            self.comp,
+            {
+                **self._native_team_schema_with_tie({"camps": ["TOTAL"], "ordre": "desc"}),
+                "presentacio": {
+                    "detall": {
+                        "enabled": True,
+                        "columnes": [
+                            {"type": "builtin", "key": "participant", "label": "Participant", "align": "left"},
+                        ],
+                    },
+                },
+            },
+            tipus="equips",
+            persist=False,
+        )
+
+        self.assertEqual(
+            (((schema.get("presentacio") or {}).get("detall") or {}).get("columnes")) or [],
+            [{"type": "builtin", "key": "participant", "label": "Participant", "align": "left"}],
+        )
+
+    def test_classificacio_validation_accepts_empty_legacy_detail_columns_for_native_team_sections(self):
+        _schema, errors = _validate_schema_for_competicio(
+            self.comp,
+            {
+                **self._native_team_schema_with_tie({"camps": ["TOTAL"], "ordre": "desc"}),
+                "presentacio": {
+                    "columnes": [
+                        {"type": "builtin", "key": "participant", "label": "Nom", "align": "left"},
+                        {"type": "builtin", "key": "punts", "label": "Punts", "align": "right", "decimals": 3},
+                    ],
+                    "detall": {
+                        "enabled": True,
+                        "default_open": False,
+                        "sections": [
+                            {"type": "members_list", "label": "Participants"},
+                            {
+                                "type": "team_metrics",
+                                "label": "Notes equip",
+                                "aparell_id": self.comp_app.id,
+                                "columns": [
+                                    {
+                                        "type": "raw",
+                                        "key": "team_total",
+                                        "label": "Total",
+                                        "align": "right",
+                                        "decimals": 3,
+                                        "source": {
+                                            "aparell_id": self.comp_app.id,
+                                            "exercici": 1,
+                                            "camp": "total",
+                                            "jutges": {"ids": []},
+                                        },
+                                    },
+                                ],
+                            },
+                        ],
+                        "columnes": [],
+                    },
+                },
+            },
+            tipus="equips",
+        )
+
+        self.assertEqual(errors, [])
 
     def test_classificacio_validation_rejects_multi_app_detail_section(self):
         app_b = self._create_aparell("TR_DETAIL_MULTI", "Tramp detail multi")

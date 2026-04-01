@@ -320,9 +320,6 @@ DEFAULT_SCHEMA = {
             "enabled": False,
             "default_open": False,
             "sections": [],
-            "columnes": [
-                {"type": "builtin", "key": "participant", "label": "Participant", "align": "left"},
-            ],
         },
     },
 
@@ -421,6 +418,9 @@ def _merge_schema(schema: dict) -> dict:
         **DEFAULT_SCHEMA["presentacio"]["detall"],
         **(((schema.get("presentacio") or {}).get("detall")) or {}),
     }
+    raw_detail = ((schema.get("presentacio") or {}).get("detall")) or {}
+    if isinstance(raw_detail, dict) and "columnes" in raw_detail:
+        out["presentacio"]["detall"]["columnes"] = _json_clone_value(raw_detail.get("columnes"))
     if not isinstance(out["presentacio"]["detall"].get("sections"), list):
         out["presentacio"]["detall"]["sections"] = []
     out["desempat"] = schema.get("desempat", DEFAULT_SCHEMA["desempat"]) or []

@@ -4425,6 +4425,20 @@
     return normalizeDetailColumnsForSection(only.columns || [], "members_table");
   }
 
+  function detailSupportsLegacyColumns() {
+    return detailSectionChoices().some(choice => String(choice?.type || "").trim() === "members_table");
+  }
+
+  function serializeLegacyDetailColumns(detailSections, rawDetail = null) {
+    if (!detailSupportsLegacyColumns()) return undefined;
+    if (Array.isArray(rawDetail?.columnes) && rawDetail.columnes.length) {
+      const normalizedLegacy = normalizeDetailColumnsFromSchema(rawDetail.columnes);
+      if (normalizedLegacy.length) return normalizedLegacy;
+    }
+    const derivedLegacy = detailLegacyColumnsFromSections(detailSections);
+    return derivedLegacy.length ? derivedLegacy : undefined;
+  }
+
   function normalizeDetailColumnsForSection(rawCols, sectionType, sectionAppId = null) {
     const cols = Array.isArray(rawCols) ? rawCols : [];
     const defaults = defaultDetailColumnsForSection(sectionType, sectionAppId);
@@ -6008,15 +6022,16 @@
       detall: (() => {
         const detailRaw = schema.presentacio?.detall || fallback.presentacio.detall;
         const detailSections = normalizeDetailSectionsFromSchema(detailRaw);
-        return {
+        const detailOut = {
           ...detailRaw,
           enabled: !!(schema.presentacio?.detall?.enabled),
           default_open: !!(schema.presentacio?.detall?.default_open),
           sections: detailSections,
-          columnes: Array.isArray(detailRaw?.columnes)
-            ? normalizeDetailColumnsFromSchema(detailRaw.columnes)
-            : detailLegacyColumnsFromSections(detailSections),
         };
+        const legacyColumns = serializeLegacyDetailColumns(detailSections, detailRaw);
+        if (legacyColumns?.length) detailOut.columnes = legacyColumns;
+        else delete detailOut.columnes;
+        return detailOut;
       })(),
     };
 
@@ -7112,6 +7127,8 @@
     }
     desempat = sanitizeDesempatForTipus(desempat, tipus);
     const equipsSchema = readEquipsSchemaUI(cfg.schema && cfg.schema.equips);
+    const detailSections = readDetailSectionsUI(true);
+    const detailLegacyColumns = serializeLegacyDetailColumns(detailSections);
 
     const schema = {
       particions: parts,
@@ -7152,12 +7169,14 @@
         detall: {
           enabled: !!els.detailEnabled?.checked,
           default_open: !!els.detailDefaultOpen?.checked,
-          sections: readDetailSectionsUI(true),
-          columnes: readDetailColumnsUI(true),
+          sections: detailSections,
         },
       },
       equips: equipsSchema,
     };
+    if (detailLegacyColumns?.length) {
+      schema.presentacio.detall.columnes = detailLegacyColumns;
+    }
 
     cfg.schema = schema;
     if (usedAdvancedDesempat) advancedDirty.desempat = false;

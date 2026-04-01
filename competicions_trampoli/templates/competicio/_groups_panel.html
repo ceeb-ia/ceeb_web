@@ -181,13 +181,13 @@
                 <div class="team-pane-card groups-pane-card groups-pane-card-actions">
                   <div class="team-pane-head">
                     <div>
-                      <div class="groups-pane-step">3. Aplica una operacio</div>
-                      <div class="fw-semibold">Accions sobre la seleccio</div>
-                      <div class="small text-muted">Operacions directes i estratègies de creació sobre la mateixa seleccio activa.</div>
+                      <div class="groups-pane-step">2. Aplica una operació</div>
+                      <div class="fw-semibold">Accions sobre la selecció</div>
+                      <div class="small text-muted">Operacions directes i estratègies de creació sobre la mateixa selecció activa.</div>
                     </div>
                   </div>
 
-                  <div class="team-action-note" id="groups-manual-scope-note">Aquestes accions modifiquen directament grups existents o creen un grup nou amb la seleccio activa.</div>
+                  <div class="team-action-note" id="groups-manual-scope-note">Aquestes accions modifiquen directament grups existents o creen un grup nou amb la selecció activa.</div>
 
                   <div class="groups-action-section">
                     <div class="groups-action-section-head">
@@ -351,7 +351,7 @@
               <div class="team-pane-card groups-pane-card groups-pane-card-board">
                 <div class="team-pane-head">
                   <div>
-                    <div class="groups-pane-step">4. Revisa l'impacte</div>
+                    <div class="groups-pane-step">3. Revisa l'impacte</div>
                     <div class="fw-semibold">Grups actuals</div>
                     <div class="small text-muted">Vista global en format board per revisar d'un cop grups actius, buits i l'espai sense grup.</div>
                   </div>
@@ -394,15 +394,57 @@
             </section>
 
             <aside class="team-workspace-pane groups-pane groups-pane-preview">
-              <div class="team-pane-card groups-pane-card groups-pane-card-preview">
+              <div class="team-pane-card groups-pane-card groups-pane-card-preview" id="groups-right-pane-card">
                 <div class="team-pane-head">
                   <div>
-                    <div class="groups-pane-step">Impacte previst</div>
-                    <div class="fw-semibold">Previsualitzacio</div>
-                    <div class="small text-muted">Revisa el resultat abans d'aplicar canvis manuals o automatics.</div>
+                    <div class="groups-pane-step">Inspector lateral</div>
+                    <div class="fw-semibold">Detall i previsualitzacio</div>
+                    <div class="small text-muted">Selecciona un grup per revisar-ne el detall o canvia a la previsualitzacio de les accions del workspace.</div>
                   </div>
                   <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="btn-groups-preview-clear">Netejar</button>
                 </div>
+                <div class="groups-right-pane-tabs" role="tablist" aria-label="Inspector de grups">
+                  <button
+                    type="button"
+                    class="groups-right-pane-tab is-active"
+                    id="btn-groups-right-tab-detail"
+                    data-groups-right-tab="detail"
+                    aria-selected="true"
+                  >
+                    Detall del grup
+                  </button>
+                  <button
+                    type="button"
+                    class="groups-right-pane-tab"
+                    id="btn-groups-right-tab-preview"
+                    data-groups-right-tab="preview"
+                    aria-selected="false"
+                  >
+                    Previsualitzacio
+                  </button>
+                </div>
+                <div class="groups-right-pane-view" id="groups-right-pane-detail">
+                  <div class="groups-detail-empty" id="groups-detail-empty">
+                    Selecciona un grup de la board per veure'n el detall sense deformar la graella.
+                  </div>
+                  <div class="groups-detail-panel d-none" id="groups-detail-panel">
+                    <div class="groups-detail-head">
+                      <div class="groups-detail-head-main">
+                        <div class="groups-detail-title" id="groups-detail-title">Grup</div>
+                        <div class="small text-muted" id="groups-detail-meta">Sense dades</div>
+                      </div>
+                      <div class="groups-detail-actions" id="groups-detail-actions"></div>
+                    </div>
+                    <div class="groups-detail-summary" id="groups-detail-summary"></div>
+                    <div class="groups-detail-editor d-none" id="groups-detail-editor"></div>
+                    <div class="small text-muted" id="groups-detail-name-note">Sense observacions</div>
+                    <div class="groups-detail-members">
+                      <div class="team-context-member-list" id="groups-detail-members-list" data-group-member-source="1"></div>
+                      <div class="groups-detail-members-pager d-none" id="groups-detail-members-pager"></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="groups-right-pane-view d-none" id="groups-right-pane-preview">
                 <div class="small text-muted groups-preview-note">La preview es reutilitza per a totes les accions del workspace i es manté visible mentre explores els grups.</div>
                 <div class="group-preview-panel" id="groups-preview" data-has-preview="0">
                   <div class="group-preview-toolbar">
@@ -433,6 +475,7 @@
                       <div class="group-preview-list" id="groups-preview-list"></div>
                     </div>
                   </div>
+                </div>
                 </div>
               </div>
             </aside>

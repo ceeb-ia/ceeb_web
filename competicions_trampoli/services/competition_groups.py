@@ -537,7 +537,7 @@ def normalize_inscripcio_ids(values):
     return out
 
 
-def get_group_member_preview(group, limit=5):
+def get_group_member_preview(group, limit=5, offset=0):
     if not group:
         return []
     try:
@@ -546,6 +546,12 @@ def get_group_member_preview(group, limit=5):
         limit = 5
     if limit <= 0:
         limit = 5
+    try:
+        offset = int(offset)
+    except Exception:
+        offset = 0
+    if offset < 0:
+        offset = 0
 
     rows = (
         Inscripcio.objects
@@ -554,7 +560,7 @@ def get_group_member_preview(group, limit=5):
         .only("id", "nom_i_cognoms", "entitat", "ordre_competicio", "ordre_sortida")
     )
     out = []
-    for ins in rows[:limit]:
+    for ins in rows[offset:offset + limit]:
         label = str(getattr(ins, "nom_i_cognoms", "") or "").strip() or f"Inscripcio {ins.id}"
         secondary_label = str(getattr(ins, "entitat", "") or "").strip()
         out.append(
@@ -691,15 +697,20 @@ def get_group_card_payload(
     }
 
 
-def get_group_detail_payload(group, *, member_limit=50, programmed_group_ids=None):
+def get_group_detail_payload(group, *, member_limit=50, programmed_group_ids=None, page=1, page_size=None):
     if group is None:
         return None
     if programmed_group_ids is None:
         programmed_group_ids = get_programmed_group_ids(group.competicio)
-    members = get_group_member_preview(group, limit=member_limit)
     members_count = int(
         Inscripcio.objects.filter(grup_competicio=group).count()
     )
+    resolved_page = normalize_positive_int(page) or 1
+    resolved_page_size = normalize_positive_int(page_size) or normalize_positive_int(member_limit) or 10
+    members_total_pages = max(1, (members_count + resolved_page_size - 1) // resolved_page_size)
+    resolved_page = min(resolved_page, members_total_pages)
+    offset = (resolved_page - 1) * resolved_page_size
+    members = get_group_member_preview(group, limit=resolved_page_size, offset=offset)
     return {
         "id": group.id,
         "display_num": int(group.display_num),
@@ -710,6 +721,12 @@ def get_group_detail_payload(group, *, member_limit=50, programmed_group_ids=Non
         "members_count": members_count,
         "members": members,
         "members_preview": members[:5],
+        "members_total": members_count,
+        "members_page": resolved_page,
+        "members_page_size": resolved_page_size,
+        "members_total_pages": members_total_pages,
+        "members_has_prev": resolved_page > 1,
+        "members_has_next": resolved_page < members_total_pages,
         "is_programmed": group.id in programmed_group_ids,
         "is_out_of_program": bool(members_count > 0 and group.id not in programmed_group_ids),
         "status": get_group_status(group, members_count=members_count, programmed_group_ids=programmed_group_ids),
