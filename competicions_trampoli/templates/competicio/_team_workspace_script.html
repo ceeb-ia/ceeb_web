@@ -86,6 +86,13 @@ if (teamWorkspaceShell) {
     if (state.bucketSelectionMode === 'all') return Array.from(available);
     return selectedBucketKeys().filter((key) => available.has(key));
   };
+  const teamPreviewApi = () => (
+    window.__teamPreviewApi
+    && typeof window.__teamPreviewApi.setConfirmIntent === 'function'
+    && typeof window.__teamPreviewApi.clearConfirmIntent === 'function'
+      ? window.__teamPreviewApi
+      : null
+  );
   const resetPreview = () => clearTeamPreview("Canvis aplicats. Torna a previsualitzar per revisar l'estat actual.");
   const actionUrl = (tpl, id) => String(tpl || '').replace('999999', String(id || '0'));
   const postAssign = (equipId, inscripcioIds) => postJson(assignUrl, {
@@ -1244,7 +1251,7 @@ if (teamWorkspaceShell) {
     }
   }
 
-  async function requestPreview() {
+  async function resolveAutoCreatePayload() {
     const fields = getSelectedTeamPartitionFields();
     if (!fields.length) {
       showAlert('Selecciona com a minim un camp de particio.');
@@ -1261,17 +1268,42 @@ if (teamWorkspaceShell) {
       showAlert('Selecciona com a minim un bucket resolt.');
       return null;
     }
+    return {
+      context_code: state.contextCode,
+      fields,
+      replace_existing: document.getElementById('team-auto-replace')?.checked ?? true,
+      filters: state.filters,
+      selected_ids: ids().length ? ids() : [],
+      bucket_keys: activeBucketKeys,
+    };
+  }
+
+  function syncAutoPreviewConfirmIntent(payload, data) {
+    const previewApi = teamPreviewApi();
+    if (!previewApi) return;
+    const plannedTeams = Array.isArray(data?.preview) ? data.preview : [];
+    if (!plannedTeams.length) {
+      previewApi.clearConfirmIntent();
+      return;
+    }
+    const frozenPayload = JSON.parse(JSON.stringify(payload || {}));
+    previewApi.setConfirmIntent({
+      label: 'Previsualitzacio de: Crear equips automaticament',
+      buttonLabel: 'Confirmar aquesta creacio',
+      canConfirm: true,
+      execute: () => runAutoCreate(frozenPayload),
+    });
+  }
+
+  async function requestPreview() {
+    const payload = await resolveAutoCreatePayload();
+    if (!payload) return null;
     setTeamPreviewLoading(true);
     try {
-      const data = await postJson(previewUrl, {
-        context_code: state.contextCode,
-        fields,
-        replace_existing: document.getElementById('team-auto-replace')?.checked ?? true,
-        filters: state.filters,
-        selected_ids: ids().length ? ids() : [],
-        bucket_keys: activeBucketKeys,
-      });
+      const data = await postJson(previewUrl, payload);
       renderTeamPreview(data);
+      syncAutoPreviewConfirmIntent(payload, data);
+      setRightPaneTab('preview');
       return data;
     } catch (err) {
       clearTeamPreview("No s'ha pogut calcular la previsualitzacio amb aquesta configuracio.");
@@ -1279,6 +1311,24 @@ if (teamWorkspaceShell) {
       return null;
     } finally {
       setTeamPreviewLoading(false);
+    }
+  }
+
+  async function runAutoCreate(payload = null) {
+    const requestPayload = payload ? JSON.parse(JSON.stringify(payload)) : await resolveAutoCreatePayload();
+    if (!requestPayload) return false;
+    try {
+      const data = await postJson(autoCreateUrl, requestPayload);
+      if (!data.ok) {
+        showAlert("No s'han pogut crear equips.");
+        return false;
+      }
+      resetPreview();
+      await refreshWorkspace();
+      return true;
+    } catch (err) {
+      showAlert(`No s'han pogut crear equips.\n${err.message || err}`);
+      return false;
     }
   }
 
@@ -1351,6 +1401,7 @@ if (teamWorkspaceShell) {
       },
       preview: previewRows,
     });
+    teamPreviewApi()?.clearConfirmIntent();
     setRightPaneTab('preview');
   }
 
@@ -1910,28 +1961,8 @@ if (teamWorkspaceShell) {
   const autoBtn = document.getElementById('btn-team-workspace-auto-create');
   if (autoBtn) {
     autoBtn.addEventListener('click', async () => {
-      const fields = getSelectedTeamPartitionFields();
-      if (!fields.length) return showAlert('Selecciona com a minim un camp de particio.');
-      const autoContext = await refreshAutoContext();
-      if (Number(autoContext?.target_count || 0) <= 0) return showAlert('No hi ha cap inscripcio disponible per a aquesta estrategia.');
-      const activeBucketKeys = getActiveBucketKeys();
-      if (!activeBucketKeys.length) return showAlert('Selecciona com a minim un bucket resolt.');
       if (!(await ensureFreshPreview())) return;
-      try {
-        const data = await postJson(autoCreateUrl, {
-          context_code: state.contextCode,
-          fields,
-          replace_existing: document.getElementById('team-auto-replace')?.checked ?? true,
-          filters: state.filters,
-          selected_ids: ids().length ? ids() : [],
-          bucket_keys: activeBucketKeys,
-        });
-        if (!data.ok) return showAlert("No s'han pogut crear equips.");
-        resetPreview();
-        await refreshWorkspace();
-      } catch (err) {
-        showAlert(`No s'han pogut crear equips.\n${err.message || err}`);
-      }
+      await runAutoCreate();
     });
   }
 

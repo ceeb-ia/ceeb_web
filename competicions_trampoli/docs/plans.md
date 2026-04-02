@@ -90,3 +90,104 @@
 - Si un mateix `save_partial` genera blocs per supervisors diferents, aquests blocs conviuen i es resolen de forma independent.
 - V1 prohibeix cicles de supervisió per evitar dependències circulars de revisió.
 - El vídeo no canvia de model en aquesta fase; només queda restringit a tokens amb almenys un camp supervisor.
+
+
+
+
+PLA 2:
+
+# Separació de `competicions_trampoli/tests.py` en paquet `tests/`
+
+## Resum
+Refactor estructural, sense canvis funcionals, per substituir [tests.py](c:/Users/Extra/Desktop/ceeb_web/competicions_trampoli/tests.py) per `competicions_trampoli/tests/` amb fitxers per domini. L’objectiu és mantenir `manage.py test competicions_trampoli.tests` estable i preservar al màxim els labels antics via reexports a `tests/__init__.py`.
+
+## Canvis principals
+- Convertir `competicions_trampoli.tests` de mòdul únic a paquet:
+  - eliminar el fitxer únic i crear `competicions_trampoli/tests/__init__.py`
+  - moure `_BaseTrampoliDataMixin` a `competicions_trampoli/tests/base.py`
+  - mantenir noms de classes i noms de tests exactament iguals en aquesta fase
+
+- Fer la partició per domini, amb aquest layout:
+  - `test_templates_and_sort_basics.py`
+    - `CompeticioBackgroundTemplateTagTests`
+    - `ScoringEngineAliasResolutionTests`
+    - `CustomSortOrderFallbackTests`
+  - `test_inscripcions_sort_groups.py`
+    - `InscripcionsSortFlowTests`
+    - `GroupNameSyncTests`
+    - `ProgrammedGroupReconfigurationTests`
+    - `GroupManagerV1Tests`
+  - `test_inscripcions_forms_media.py`
+    - `InscripcioManualFormViewTests`
+    - `InscripcioAparellExclusioModelTests`
+    - `InscripcionsSetAparellsViewTests`
+    - `InscripcionsMediaFlowTests`
+  - `test_scoring_judge.py`
+    - `ScoringMediaPlaybackContextTests`
+    - `ScoringAndJudgeExclusionFlowTests`
+    - `JudgeVideoApiTests`
+    - `JudgeMessagingFlowTests`
+    - `ScoringUpdatesCursorTests`
+  - `test_rotacions.py`
+    - `RotationOrderingDisplayTests`
+  - `test_classificacions.py`
+    - `ClassificacioMatrixScalarTests`
+    - `ClassificacioFilterSemanticsTests`
+    - `ClassificacionsExportExcelTests`
+    - `ClassificacioTemplateFlowTests`
+    - `GlobalClassificacioTemplateManagementTests`
+    - `LiveClassificacionsRedisCacheTests`
+  - `test_access_and_catalog.py`
+    - `CompetitionAccessControlTests`
+    - `AparellOwnershipIsolationTests`
+    - `PublicLiveTokenViewsTests`
+  - `test_equips_context.py`
+    - `EquipContextFlowTests`
+    - `EquipPreviewUiTests`
+    - `EquipContextClassificacioTests`
+    - `EquipContextHistorySnapshotTests`
+    - `BaseTeamContextAuditCommandTests`
+  - `test_team_scoring.py`
+    - `TeamMemberTreatmentSchemaTests`
+    - `TeamContextScoringFlowTests`
+
+- Mantenir compatibilitat forta:
+  - `tests/__init__.py` importarà i reexportarà totes les classes `TestCase`
+  - això manté estable `manage.py test competicions_trampoli.tests`
+  - també manté, en la pràctica, la majoria de labels antics per classe sota `competicions_trampoli.tests.<Classe>`
+  - no es reanomenarà cap classe ni cap mètode de test en aquesta passada
+
+- Estructuració interna:
+  - només s’extrauran helpers clarament globals a `base.py`
+  - els helpers locals de cada classe es quedaran al seu fitxer per evitar barrejar responsabilitats en el mateix refactor
+  - no s’aprofitarà aquesta passada per deduplicar proves ni canviar assertions
+
+- Ajustos col·laterals mínims:
+  - actualitzar qualsevol documentació interna que encara referenciï `competicions_trampoli/tests.py`, com [desplegament_autenticacio_i_accessos.md](c:/Users/Extra/Desktop/ceeb_web/competicions_trampoli/docs/desplegament_autenticacio_i_accessos.md#L264)
+  - no tocar altres apps del projecte en aquesta fase
+
+## Interfícies i compatibilitat
+- El contracte estable de descoberta de tests serà:
+  - `manage.py test competicions_trampoli.tests`
+  - labels nous per fitxer, per exemple `competicions_trampoli.tests.test_classificacions`
+- El contracte de compatibilitat a preservar serà:
+  - import de `competicions_trampoli.tests`
+  - accés a les classes reexportades des de `tests/__init__.py`
+- No es garantirà compatibilitat amb paths antics basats en números de línia ni amb referències documentals a un fitxer únic.
+
+## Pla de validació
+- Verificar discovery global:
+  - `manage.py test competicions_trampoli.tests`
+- Verificar compatibilitat per classe antiga:
+  - almenys una classe de cada domini via label antic reexportat
+- Verificar labels nous per mòdul:
+  - un fitxer de cada domini via `competicions_trampoli.tests.test_*`
+- Comprovar que no hi ha imports circulars:
+  - `tests/__init__.py` només agrega i reexporta
+  - `base.py` no importa cap mòdul de tests
+- Confirmar que el recompte de classes i tests es manté igual abans i després del refactor
+
+## Assumptions
+- Aquesta passada és només estructural; no inclou neteja de tests obsolets ni creació de nous tests.
+- Es prioritza risc baix i compatibilitat màxima per sobre d’una arquitectura de helpers més agressiva.
+- La resta d’apps poden continuar amb `tests.py` monolític; no s’alinearan ara.

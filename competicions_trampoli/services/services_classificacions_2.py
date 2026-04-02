@@ -353,6 +353,7 @@ DETAIL_EXERCISE_BUILTIN_KEYS = ("exercise_index", "aparell_nom", "participant", 
 DETAIL_SECTION_TYPES = (
     "members_list",
     "members_table",
+    "team_members_table",
     "team_metrics",
     "exercise_table",
     "entity_members_table",
@@ -1935,7 +1936,7 @@ def _detail_section_builtin_keys(section_type: str):
     stype = str(section_type or "").strip().lower()
     if stype == "exercise_table":
         return DETAIL_EXERCISE_BUILTIN_KEYS
-    if stype in ("members_table", "entity_members_table", "team_metrics"):
+    if stype in ("members_table", "team_members_table", "entity_members_table", "team_metrics"):
         return DETAIL_DISPLAY_BUILTIN_KEYS
     return ()
 
@@ -1970,6 +1971,15 @@ def _detail_section_default(section_type: str):
         return {
             "type": "entity_members_table",
             "label": "Participants",
+            "aparell_id": None,
+            "columns": [
+                {"type": "builtin", "key": "participant", "label": "Participant", "align": "left"},
+            ],
+        }
+    if stype == "team_members_table":
+        return {
+            "type": "team_members_table",
+            "label": "Notes per membre",
             "aparell_id": None,
             "columns": [
                 {"type": "builtin", "key": "participant", "label": "Participant", "align": "left"},
@@ -3849,6 +3859,28 @@ def compute_classificacio(competicio, cfg_obj):
         raw = _value_from_entry(entry, field_code)
         return _apply_judge_selection(raw, judge_ids)
 
+    def _team_member_raw_value(raw_value, member_id):
+        if not isinstance(raw_value, dict):
+            return ""
+        return raw_value.get(str(int(member_id)), "")
+
+    def _raw_value_for_selected_team_member_row(row, field_code: str, judge_ids, member_id):
+        try:
+            equip_id = int(row.get("equip_id"))
+            app_id = int(row.get("app_id"))
+            ex_idx = int(row.get("exercici"))
+            member_pk = int(member_id)
+        except Exception:
+            return ""
+        entry = team_notes_by_key.get((equip_id, app_id, ex_idx))
+        if not entry:
+            return ""
+        raw = _field_value_from_entry(entry, field_code)
+        member_raw = _team_member_raw_value(raw, member_pk)
+        if member_raw in (None, ""):
+            return ""
+        return _apply_judge_selection(member_raw, judge_ids)
+
     def _raw_col_value_for_team_row(row, col):
         team_mode_value = str(row.get("_team_mode") or "").strip().lower()
         equip_id = row.get("equip_id")
@@ -4115,6 +4147,76 @@ def compute_classificacio(competicio, cfg_obj):
             ],
         }
 
+    def _build_native_team_members_table_section(row: dict, section: dict):
+        equip_id = _normalize_positive_int(row.get("equip_id"))
+        member_ids = row.get("_member_ids") or []
+        if equip_id is None or not member_ids:
+            return None
+
+        detail_columns = section.get("columns") or []
+        detail_rows = []
+        selected_rows_cache = {}
+
+        def selected_rows_for(app_id, field_code):
+            cache_key = (int(app_id), str(field_code or "").strip())
+            if cache_key not in selected_rows_cache:
+                selected_rows_cache[cache_key] = _get_selected_rows_agg_for_team(equip_id).get(int(app_id), [])
+            return selected_rows_cache[cache_key]
+
+        for member_id in member_ids:
+            member_pk = _normalize_positive_int(member_id)
+            if member_pk is None:
+                continue
+            member = all_ins_by_id.get(member_pk)
+            if member is None:
+                continue
+
+            cells = {}
+            for col in detail_columns:
+                ctype = str(col.get("type") or "builtin").strip().lower()
+                ckey = str(col.get("key") or "").strip()
+                if not ckey:
+                    continue
+                if ctype == "raw":
+                    src = col.get("source") if isinstance(col.get("source"), dict) else {}
+                    app_id = _normalize_positive_int(src.get("aparell_id"))
+                    camp = str(src.get("camp") or "").strip()
+                    jcfg = src.get("jutges") if isinstance(src.get("jutges"), dict) else {}
+                    jids = jcfg.get("ids") if isinstance(jcfg.get("ids"), list) else []
+                    if app_id is None or not camp:
+                        val = ""
+                    else:
+                        val = _aggregate_selected_raw_values([
+                            _raw_value_for_selected_team_member_row(selected_row, camp, jids, member_pk)
+                            for selected_row in selected_rows_for(app_id, camp)
+                        ])
+                    if not (isinstance(val, dict) and val.get("_kind") == "judge_rows"):
+                        val = _apply_decimals_if_numeric(val, col.get("decimals"))
+                else:
+                    val = _detail_builtin_value_for_member(member, ckey)
+                    val = _apply_decimals_if_numeric(val, col.get("decimals"))
+                cells[ckey] = val
+
+            detail_rows.append(
+                {
+                    "member_id": member_pk,
+                    "participant": _detail_builtin_value_for_member(member, "participant"),
+                    "entitat_nom": _detail_builtin_value_for_member(member, "entitat_nom"),
+                    "cells": cells,
+                    "display": cells,
+                }
+            )
+
+        if not detail_rows:
+            return None
+        return {
+            "type": "team_members_table",
+            "label": str(section.get("label") or "Notes per membre"),
+            "aparell_id": _normalize_positive_int(section.get("aparell_id")),
+            "columns": _json_clone_value(detail_columns),
+            "rows": detail_rows,
+        }
+
     def _build_exercise_table_section(row: dict, section: dict):
         ins_id = _normalize_positive_int(row.get("inscripcio_id"))
         if ins_id is None:
@@ -4206,6 +4308,8 @@ def compute_classificacio(competicio, cfg_obj):
                 section_payload = _build_members_list_section(row, section)
             elif stype == "members_table" and detail_type == "derived_team":
                 section_payload = _build_members_table_section(row, section)
+            elif stype == "team_members_table" and detail_type == "native_team":
+                section_payload = _build_native_team_members_table_section(row, section)
             elif stype == "entity_members_table" and detail_type == "entity":
                 section_payload = _build_members_table_section(row, section)
             elif stype == "team_metrics" and detail_type == "native_team":

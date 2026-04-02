@@ -70,6 +70,11 @@ def backfill_aparell_created_by(apps, schema_editor):
     CompeticioAparell = apps.get_model("competicions_trampoli", "CompeticioAparell")
     ScoringSchema = apps.get_model("competicions_trampoli", "ScoringSchema")
 
+    # Test databases can be empty when migrations run for the first time.
+    # In that case there is nothing to backfill and no fallback user is needed.
+    if not Aparell.objects.using(db_alias).exists():
+        return
+
     fallback_user_id = _resolve_fallback_user_id(apps, db_alias)
     owner_by_comp = _build_owner_map(apps, db_alias)
 

@@ -290,37 +290,34 @@
                       </button>
                       <div class="groups-auto-context-panel d-none" id="groups-auto-context-panel">
                         <div class="small mb-2">
+                          <span class="text-muted fw-semibold mr-2">Origen:</span>
+                          <span class="badge badge-light border" id="groups-auto-context-source">Tota la competicio</span>
+                        </div>
+
+                        <div class="small mb-2">
                           <span class="text-muted fw-semibold mr-2">Divisions actives:</span>
-                          {% if group_creation_group_fields %}
-                            {% for field in group_creation_group_fields %}
-                              <span class="badge badge-info mr-1">{{ field.label }}</span>
-                            {% endfor %}
-                          {% else %}
-                            <span class="text-muted">cap</span>
-                          {% endif %}
+                          <span id="groups-detected-group-fields" class="d-inline-flex flex-wrap" style="gap:4px;">
+                            <span class="text-muted">Carregant...</span>
+                          </span>
                         </div>
 
                         <div class="small mb-2">
                           <span class="text-muted fw-semibold mr-2">Ordenacions detectades:</span>
-                          {% if sort_partition_fields %}
-                            {% for f in sort_partition_fields %}
-                              <span class="badge badge-primary mr-1">#{{ f.priority }} {{ f.label }}</span>
-                            {% endfor %}
-                          {% else %}
-                            <span class="text-muted">cap</span>
-                          {% endif %}
+                          <span id="groups-detected-sort-fields" class="d-inline-flex flex-wrap" style="gap:4px;">
+                            <span class="text-muted">Carregant...</span>
+                          </span>
                         </div>
 
                         <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
                           <span class="text-muted small fw-semibold">Resolucio final:</span>
-                          <span class="badge badge-light border" id="groups-resolution-label">Seleccio activa</span>
-                          <span class="text-muted small" id="groups-resolution-status">Selecciona inscripcions per activar la creacio automatica.</span>
+                          <span class="badge badge-light border" id="groups-resolution-label">Blocs proposats</span>
+                          <span class="text-muted small" id="groups-resolution-status">Carregant el context automatic dels grups.</span>
                         </div>
 
                         <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
                           <span class="text-muted small fw-semibold">Fallback:</span>
                           <select id="groups-fallback" class="form-control form-control-sm" style="width:280px;">
-                            <option value="all_filtered" selected>Sense criteris resolubles: tota la seleccio activa</option>
+                            <option value="all_filtered" selected>Sense criteris resolubles: usar la seleccio final a preview/creacio</option>
                             <option value="strict">Estricte (error)</option>
                             <option value="adjust_k">Ajustar k si cal</option>
                             <option value="ignore_range">Ignorar forquilla si cal</option>
@@ -328,14 +325,18 @@
                         </div>
 
                         <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
-                          <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-groups-buckets-all">Seleccionar tots</button>
-                          <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-groups-buckets-none">Netejar</button>
-                          <span class="text-muted small" id="groups-buckets-count">Blocs origen resolts sobre la seleccio activa: 0</span>
+                          <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-groups-buckets-all">Marcar tots</button>
+                          <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-groups-buckets-none">Desmarcar</button>
+                          <button type="button" class="btn btn-sm btn-outline-primary" id="btn-groups-buckets-add">Afegir a la seleccio</button>
+                          <button type="button" class="btn btn-sm btn-outline-warning" id="btn-groups-buckets-remove">Treure de la seleccio</button>
+                          <button type="button" class="btn btn-sm btn-primary" id="btn-groups-buckets-set">Substituir la seleccio</button>
+                          <span class="text-muted small" id="groups-buckets-count">Blocs proposats sobre tota la competicio: 0</span>
                         </div>
+                        <div class="text-muted small mb-2" id="groups-buckets-selection-summary">Seleccionades globalment: 0</div>
 
                         <div class="tab-select-grid mb-3" id="groups-buckets-grid"></div>
                         <div class="text-muted small mb-3" id="groups-buckets-empty">
-                          Selecciona inscripcions per activar la creacio automatica.
+                          Carregant blocs proposats sobre tota la competicio.
                         </div>
                         <div class="text-muted small mb-3 d-none" id="groups-buckets-selection-note"></div>
                       </div>

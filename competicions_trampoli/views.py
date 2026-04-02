@@ -2319,11 +2319,27 @@ def _build_sort_partition_buckets(records, partition_codes):
         bucket = buckets.get(bucket_key)
         if bucket is None:
             label_parts = [_s(v) for v in raw_vals]
+            sources = []
+            for code, raw_value, norm_value in zip(partition_codes, raw_vals, norm_vals):
+                label = _clean_group_suggestion_label(_s(raw_value))
+                if not label:
+                    continue
+                source = _build_group_name_source(
+                    kind="sort",
+                    key=f"sort:{code}:{json.dumps(norm_value, ensure_ascii=False)}",
+                    label=label,
+                    field_code=code,
+                    value_label=label,
+                    origin_scope="bucket",
+                )
+                if source is not None:
+                    sources.append(source)
             bucket = {
                 "key": bucket_key,
                 "label": " · ".join(label_parts) if label_parts else "(Sense valor)",
                 "count": 0,
                 "ids": [],
+                "sources": sources,
             }
             buckets[bucket_key] = bucket
         bucket["count"] += 1
@@ -2349,15 +2365,18 @@ def _build_tabs_partition_buckets(competicio, records, group_codes):
 
     simple_label_map = {}
     simple_values_by_id = {}
+    simple_display_values_by_key = {}
     for r in records:
         vals = [_norm_val(get_inscripcio_value(r, code)) for code in group_codes]
         simple = json.dumps(vals, ensure_ascii=False)
         simple_values_by_id[r.id] = simple
+        simple_display_values_by_key[simple] = [_s(get_inscripcio_value(r, code)) for code in group_codes]
         if simple not in simple_label_map:
             simple_label_map[simple] = _simple_label_from_obj(r)
 
     tab_to_ids = OrderedDict()
     tab_label_map = {}
+    tab_simple_keys = OrderedDict()
 
     for r in records:
         simple = simple_values_by_id.get(r.id, "")
@@ -2365,6 +2384,9 @@ def _build_tabs_partition_buckets(competicio, records, group_codes):
         merged_tuple = merge_map.get(simple)
         tab_key = json.dumps(list(merged_tuple), ensure_ascii=False) if merged_tuple else simple
         tab_to_ids.setdefault(tab_key, []).append(r.id)
+        tab_simple_keys.setdefault(tab_key, [])
+        if simple and simple not in tab_simple_keys[tab_key]:
+            tab_simple_keys[tab_key].append(simple)
 
         if tab_key in tab_label_map:
             continue
@@ -2381,12 +2403,33 @@ def _build_tabs_partition_buckets(competicio, records, group_codes):
 
     out = []
     for tab_key, ids in tab_to_ids.items():
+        sources = []
+        for code_index, code in enumerate(group_codes):
+            for simple_key in tab_simple_keys.get(tab_key, []):
+                values = simple_display_values_by_key.get(simple_key) or []
+                raw_label = values[code_index] if code_index < len(values) else ""
+                label = _clean_group_suggestion_label(raw_label)
+                if not label:
+                    continue
+                source = _build_group_name_source(
+                    kind="tabs",
+                    key=f"tabs:{code}:{label}",
+                    label=label,
+                    field_code=code,
+                    value_label=label,
+                    origin_scope="bucket",
+                )
+                if source is None:
+                    continue
+                if source not in sources:
+                    sources.append(source)
         out.append(
             {
                 "key": tab_key,
                 "label": tab_label_map.get(tab_key, tab_key),
                 "count": len(ids),
                 "ids": ids,
+                "sources": sources,
             }
         )
     return out
@@ -2434,6 +2477,13 @@ GROUP_NAME_SUGGESTION_IGNORED_LABELS = {
     "Totes les inscripcions filtrades",
     "(Sense valor)",
 }
+GROUP_NAME_COMPONENT_FIELD_ORDER = ("categoria", "subcategoria", "entitat")
+GROUP_NAME_FILTER_MULTI_KEYS = {
+    "categoria": "categories",
+    "subcategoria": "subcategories",
+    "entitat": "entitats",
+}
+MAX_GROUP_NAME_VALUES_PER_FIELD = 3
 
 
 def _clean_group_suggestion_label(raw_label):
@@ -2443,9 +2493,173 @@ def _clean_group_suggestion_label(raw_label):
     return label
 
 
-def _build_group_suggested_name(sources):
-    ranked_by_label = OrderedDict()
-    for idx, row in enumerate(sources or []):
+def _group_name_field_code(raw_code):
+    code = str(raw_code or "").strip()
+    return code if code in GROUP_NAME_COMPONENT_FIELD_ORDER else ""
+
+
+def _build_group_name_source(
+    *,
+    kind="",
+    key="",
+    label="",
+    field_code="",
+    value_label="",
+    origin_scope="bucket",
+):
+    clean_label = _clean_group_suggestion_label(value_label or label)
+    if not clean_label:
+        return None
+    normalized_field_code = _group_name_field_code(field_code)
+    clean_kind = str(kind or "").strip().lower()
+    clean_key = str(key or clean_label).strip() or clean_label
+    clean_origin_scope = str(origin_scope or "bucket").strip().lower() or "bucket"
+    return {
+        "kind": clean_kind,
+        "key": clean_key,
+        "label": str(label or clean_label).strip() or clean_label,
+        "field_code": normalized_field_code,
+        "value_label": clean_label,
+        "origin_scope": clean_origin_scope,
+    }
+
+
+def _source_values_from_normalized_filters(filters, field_code):
+    data = filters if isinstance(filters, dict) else {}
+    out = []
+    single_value = _clean_group_suggestion_label(data.get(field_code))
+    if single_value and single_value not in out:
+        out.append(single_value)
+    multi_key = GROUP_NAME_FILTER_MULTI_KEYS.get(field_code, "")
+    raw_values = data.get(multi_key) if multi_key else []
+    if isinstance(raw_values, list):
+        for raw_value in raw_values:
+            label = _clean_group_suggestion_label(raw_value)
+            if label and label not in out:
+                out.append(label)
+    return out
+
+
+def _build_group_name_filter_sources(main_filters=None, workspace_filters=None):
+    out = []
+    main_data = main_filters if isinstance(main_filters, dict) else {}
+    workspace_data = workspace_filters if isinstance(workspace_filters, dict) else {}
+    for field_code in GROUP_NAME_COMPONENT_FIELD_ORDER:
+        workspace_values = _source_values_from_normalized_filters(workspace_data, field_code)
+        main_values = _source_values_from_normalized_filters(main_data, field_code)
+        active_values = workspace_values or main_values
+        origin_scope = "workspace_filter" if workspace_values else ("main_filter" if main_values else "")
+        if not origin_scope:
+            continue
+        for label in active_values:
+            source = _build_group_name_source(
+                kind="filter",
+                key=f"{origin_scope}:{field_code}:{label}",
+                label=label,
+                field_code=field_code,
+                value_label=label,
+                origin_scope=origin_scope,
+            )
+            if source is not None:
+                out.append(source)
+    return out
+
+
+def _render_group_name_values(values):
+    rows = list(values or [])
+    if not rows:
+        return ""
+    labels = [str(row.get("label") or "").strip() for row in rows[:MAX_GROUP_NAME_VALUES_PER_FIELD] if str(row.get("label") or "").strip()]
+    remaining = max(0, len(rows) - len(labels))
+    if remaining > 0:
+        labels.append(f"{remaining} més")
+    return " + ".join(labels)
+
+
+def _extract_group_name_components_from_row(row):
+    components = _normalize_bucket_source_entries(row.get("components"), default_origin_scope="bucket")
+    if components:
+        return components
+
+    fallback = []
+    labels_by_kind = row.get("labels_by_kind")
+    if isinstance(labels_by_kind, dict):
+        for kind in ("tabs", "sort", ""):
+            raw_labels = labels_by_kind.get(kind) or []
+            if not isinstance(raw_labels, list):
+                continue
+            for label_order, raw_label in enumerate(raw_labels):
+                source = _build_group_name_source(
+                    kind=kind,
+                    key=f"legacy:{kind}:{label_order}:{raw_label}",
+                    label=raw_label,
+                    value_label=raw_label,
+                    origin_scope="bucket",
+                )
+                if source is not None:
+                    fallback.append(source)
+    if fallback:
+        return fallback
+
+    source = _build_group_name_source(
+        kind="",
+        key=f"legacy:{row.get('label')}",
+        label=row.get("label"),
+        value_label=row.get("label"),
+        origin_scope="bucket",
+    )
+    return [source] if source is not None else []
+
+
+def _build_group_suggested_name(sources, filter_sources=None):
+    field_values = OrderedDict((field_code, OrderedDict()) for field_code in GROUP_NAME_COMPONENT_FIELD_ORDER)
+    atomic_values = OrderedDict()
+
+    def _register(source, *, weight, order_idx):
+        if not isinstance(source, dict):
+            return
+        label = _clean_group_suggestion_label(source.get("value_label") or source.get("label"))
+        if not label:
+            return
+        field_code = _group_name_field_code(source.get("field_code"))
+        origin_scope = str(source.get("origin_scope") or "bucket").strip().lower() or "bucket"
+        has_bucket_weight = weight > 0
+
+        if field_code:
+            bucket = field_values.setdefault(field_code, OrderedDict())
+            key = label.casefold()
+            meta = bucket.get(key)
+            if meta is None:
+                bucket[key] = {
+                    "label": label,
+                    "bucket_weight": weight if has_bucket_weight else 0,
+                    "has_bucket_weight": has_bucket_weight,
+                    "origin_scope": origin_scope,
+                    "order_idx": order_idx,
+                }
+                return
+            if has_bucket_weight:
+                meta["bucket_weight"] += weight
+                meta["has_bucket_weight"] = True
+            meta["order_idx"] = min(meta["order_idx"], order_idx)
+            return
+
+        key = label.casefold()
+        meta = atomic_values.get(key)
+        if meta is None:
+            atomic_values[key] = {
+                "label": label,
+                "bucket_weight": weight if has_bucket_weight else 0,
+                "has_bucket_weight": has_bucket_weight,
+                "order_idx": order_idx,
+            }
+            return
+        if has_bucket_weight:
+            meta["bucket_weight"] += weight
+            meta["has_bucket_weight"] = True
+        meta["order_idx"] = min(meta["order_idx"], order_idx)
+
+    for row_idx, row in enumerate(sources or []):
         if not isinstance(row, dict):
             continue
         try:
@@ -2453,80 +2667,50 @@ def _build_group_suggested_name(sources):
         except Exception:
             count = 0
         count = max(0, count)
+        for comp_idx, source in enumerate(_extract_group_name_components_from_row(row)):
+            _register(source, weight=count, order_idx=(row_idx, comp_idx, 0))
 
-        labels_by_kind = row.get("labels_by_kind")
-        emitted = False
-        if isinstance(labels_by_kind, dict):
-            for kind_priority, kind in enumerate(("tabs", "sort", "")):
-                raw_labels = labels_by_kind.get(kind) or []
-                if not isinstance(raw_labels, list):
-                    continue
-                for label_order, raw_label in enumerate(raw_labels):
-                    label = _clean_group_suggestion_label(raw_label)
-                    if not label:
-                        continue
-                    emitted = True
-                    key = label.casefold()
-                    meta = ranked_by_label.get(key)
-                    if meta is None:
-                        ranked_by_label[key] = {
-                            "label": label,
-                            "count": count,
-                            "kind_priority": kind_priority,
-                            "row_idx": idx,
-                            "label_order": label_order,
-                        }
-                        continue
-                    meta["count"] += count
-                    meta["kind_priority"] = min(meta["kind_priority"], kind_priority)
-                    if (idx, label_order) < (meta["row_idx"], meta["label_order"]):
-                        meta["row_idx"] = idx
-                        meta["label_order"] = label_order
+    for filter_idx, source in enumerate(filter_sources or []):
+        _register(source, weight=0, order_idx=(len(sources or []) + filter_idx, 0, 1))
 
-        if emitted:
-            continue
+    segments = []
+    for field_code in GROUP_NAME_COMPONENT_FIELD_ORDER:
+        rows = list((field_values.get(field_code) or {}).values())
+        rows.sort(
+            key=lambda item: (
+                0 if item.get("has_bucket_weight") else 1,
+                -int(item.get("bucket_weight") or 0),
+                item.get("order_idx") or (0, 0, 0),
+                str(item.get("label") or "").casefold(),
+            )
+        )
+        segment = _render_group_name_values(rows)
+        if segment:
+            segments.append(segment)
 
-        label = _clean_group_suggestion_label(row.get("label"))
-        if not label:
-            continue
-        key = label.casefold()
-        meta = ranked_by_label.get(key)
-        if meta is None:
-            ranked_by_label[key] = {
-                "label": label,
-                "count": count,
-                "kind_priority": 99,
-                "row_idx": idx,
-                "label_order": 0,
-            }
-            continue
-        meta["count"] += count
-        if idx < meta["row_idx"]:
-            meta["row_idx"] = idx
-
-    if not ranked_by_label:
-        return ""
-
-    ranked = list(ranked_by_label.values())
-    ranked.sort(
+    atomic_rows = list(atomic_values.values())
+    atomic_rows.sort(
         key=lambda item: (
-            item["kind_priority"],
-            -item["count"],
-            item["row_idx"],
-            item["label_order"],
-            item["label"].casefold(),
+            0 if item.get("has_bucket_weight") else 1,
+            -int(item.get("bucket_weight") or 0),
+            item.get("order_idx") or (0, 0, 0),
+            str(item.get("label") or "").casefold(),
         )
     )
-    ordered_labels = [item["label"] for item in ranked]
-    return " + ".join(ordered_labels)
+    for row in atomic_rows:
+        label = str(row.get("label") or "").strip()
+        if label:
+            segments.append(label)
+
+    return " · ".join(segments)
 
 
-def _apply_group_suggested_names(preview_groups):
+def _apply_group_suggested_names(preview_groups, filter_sources=None):
     out = list(preview_groups or [])
     grouped_indexes = OrderedDict()
 
     for idx, row in enumerate(out):
-        suggested_name = _build_group_suggested_name(row.get("sources"))
+        suggested_name = _build_group_suggested_name(row.get("sources"), filter_sources=filter_sources)
         row["suggested_name"] = suggested_name
         if not suggested_name:
             continue
@@ -2541,7 +2725,7 @@ def _apply_group_suggested_names(preview_groups):
     return out
 
 
-def _normalize_bucket_source_entries(raw_sources):
+def _normalize_bucket_source_entries(raw_sources, default_kind="", default_origin_scope="bucket"):
     if isinstance(raw_sources, dict):
         raw_sources = [raw_sources]
     out = []
@@ -2549,22 +2733,28 @@ def _normalize_bucket_source_entries(raw_sources):
     for row in raw_sources or []:
         if not isinstance(row, dict):
             continue
-        kind = str(row.get("kind") or "").strip().lower()
-        key = str(row.get("key") or "").strip()
-        label = str(row.get("label") or "").strip()
-        if not label:
+        source = _build_group_name_source(
+            kind=row.get("kind") or default_kind,
+            key=row.get("key"),
+            label=row.get("label"),
+            field_code=row.get("field_code"),
+            value_label=row.get("value_label"),
+            origin_scope=row.get("origin_scope") or default_origin_scope,
+        )
+        if source is None:
             continue
-        ident = (kind, key, label)
+        ident = (
+            source["kind"],
+            source["key"],
+            source["label"],
+            source["field_code"],
+            source["value_label"],
+            source["origin_scope"],
+        )
         if ident in seen:
             continue
         seen.add(ident)
-        out.append(
-            {
-                "kind": kind,
-                "key": key,
-                "label": label,
-            }
-        )
+        out.append(source)
     return out
 
 
@@ -2583,7 +2773,17 @@ def _bucket_labels_by_kind(sources):
 
 def _bucket_source_signature(sources):
     normalized = _normalize_bucket_source_entries(sources)
-    return tuple((row["kind"], row["key"], row["label"]) for row in normalized)
+    return tuple(
+        (
+            row["kind"],
+            row["key"],
+            row["label"],
+            row.get("field_code") or "",
+            row.get("value_label") or "",
+            row.get("origin_scope") or "",
+        )
+        for row in normalized
+    )
 
 
 def _build_bucket_source_label(sources):
@@ -2630,17 +2830,25 @@ def _decorate_buckets_with_sources(buckets, kind):
     for bucket in buckets or []:
         label = str(bucket.get("label") or "Sense bloc")
         key = str(bucket.get("key") or "")
+        sources = _normalize_bucket_source_entries(
+            bucket.get("sources"),
+            default_kind=kind,
+            default_origin_scope="bucket",
+        )
+        if not sources:
+            fallback_source = _build_group_name_source(
+                kind=kind,
+                key=key or label,
+                label=label,
+                value_label=label,
+                origin_scope="bucket",
+            )
+            sources = [fallback_source] if fallback_source is not None else []
         out.append(
             {
                 **bucket,
                 "label": label,
-                "sources": [
-                    {
-                        "kind": kind,
-                        "key": key or label,
-                        "label": label,
-                    }
-                ],
+                "sources": sources,
             }
         )
     return out
@@ -2651,16 +2859,24 @@ def _build_combined_partition_buckets(records, layers):
     for record in records or []:
         raw_sources = []
         for layer in layers or []:
-            source_row = layer.get("by_id", {}).get(record.id)
-            if not isinstance(source_row, dict):
+            source_rows = layer.get("by_id", {}).get(record.id)
+            if isinstance(source_rows, dict):
+                source_rows = [source_rows]
+            if not isinstance(source_rows, list):
                 continue
-            raw_sources.append(
-                {
-                    "kind": str(source_row.get("kind") or "").strip().lower(),
-                    "key": str(source_row.get("key") or "").strip(),
-                    "label": str(source_row.get("label") or "").strip(),
-                }
-            )
+            for source_row in source_rows:
+                if not isinstance(source_row, dict):
+                    continue
+                raw_sources.append(
+                    {
+                        "kind": str(source_row.get("kind") or "").strip().lower(),
+                        "key": str(source_row.get("key") or "").strip(),
+                        "label": str(source_row.get("label") or "").strip(),
+                        "field_code": str(source_row.get("field_code") or "").strip(),
+                        "value_label": str(source_row.get("value_label") or "").strip(),
+                        "origin_scope": str(source_row.get("origin_scope") or "").strip().lower() or "bucket",
+                    }
+                )
 
         sources = _normalize_bucket_source_entries(raw_sources)
         if not sources:
@@ -2752,7 +2968,7 @@ def _resolve_group_creation_buckets(
                 {
                     "kind": "tabs",
                     "by_id": {
-                        ins_id: bucket["sources"][0]
+                        ins_id: list(bucket.get("sources") or [])
                         for bucket in tabs_buckets
                         for ins_id in (bucket.get("ids") or [])
                     },
@@ -2763,7 +2979,7 @@ def _resolve_group_creation_buckets(
                 {
                     "kind": "sort",
                     "by_id": {
-                        ins_id: bucket["sources"][0]
+                        ins_id: list(bucket.get("sources") or [])
                         for bucket in sort_buckets
                         for ins_id in (bucket.get("ids") or [])
                     },
@@ -2780,7 +2996,7 @@ def _resolve_group_creation_buckets(
     }
 
 
-def _build_group_creation_preview(objs, sizes, start_group_num, bucket_sources_by_id=None):
+def _build_group_creation_preview(objs, sizes, start_group_num, bucket_sources_by_id=None, filter_name_sources=None):
     bucket_sources_by_id = bucket_sources_by_id or {}
     out = []
     idx = 0
@@ -2807,6 +3023,7 @@ def _build_group_creation_preview(objs, sizes, start_group_num, bucket_sources_b
                     "count": 0,
                     "kinds": _build_bucket_source_kinds(sources),
                     "labels_by_kind": dict(_bucket_labels_by_kind(sources)),
+                    "components": list(_normalize_bucket_source_entries(sources)),
                 }
                 source_counts[source_key] = row
             row["count"] += 1
@@ -2826,7 +3043,7 @@ def _build_group_creation_preview(objs, sizes, start_group_num, bucket_sources_b
             }
         )
 
-    return _apply_group_suggested_names(out)
+    return _apply_group_suggested_names(out, filter_sources=filter_name_sources)
 
 
 def _build_existing_groups_preview(competicio, records, bucket_sources_by_id=None, moving_ids=None):
@@ -5452,6 +5669,11 @@ def inscripcions_groups_from_sort(request, pk):
         scope = "filtered"
     selected_ids = normalize_inscripcio_ids(payload.get("selected_ids") or [])
     raw_filters = payload.get("filters") if isinstance(payload.get("filters"), dict) else {}
+    sort_context_filters_raw = (
+        payload.get("sort_context_filters")
+        if isinstance(payload.get("sort_context_filters"), dict)
+        else raw_filters
+    )
 
     group_state = str(raw_filters.get("group_state") or "all").strip().lower()
     if group_state not in {"all", "assigned", "unassigned"}:
@@ -5482,7 +5704,8 @@ def inscripcions_groups_from_sort(request, pk):
         allowed_group_codes,
         fallback_group_by=competicio.group_by_default or [],
     )
-    filters = _normalize_sort_filters(payload.get("filters"))
+    workspace_filters = _normalize_sort_filters(raw_filters)
+    filters = _normalize_sort_filters(sort_context_filters_raw)
     context_key = build_inscripcions_sort_context_key(
         competicio.id,
         filters=filters,
@@ -5779,12 +6002,14 @@ def inscripcions_groups_from_sort(request, pk):
 
     max_grup = (GrupCompeticio.objects.filter(competicio=competicio).aggregate(m=Max("display_num"))["m"] or 0)
     bucket_sources_by_id = _build_bucket_sources_by_id(buckets_to_apply)
+    filter_name_sources = _build_group_name_filter_sources(filters, workspace_filters)
 
     preview_groups = _build_group_creation_preview(
         objs,
         sizes,
         start_group_num=max_grup,
         bucket_sources_by_id=bucket_sources_by_id,
+        filter_name_sources=filter_name_sources,
     )
 
     if preview_only:

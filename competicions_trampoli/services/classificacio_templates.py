@@ -878,7 +878,9 @@ def template_schema_to_global_ui_schema(schema_tpl, by_id, by_code):
                 if ctype == "raw":
                     src = item.get("source") if isinstance(item.get("source"), dict) else {}
                     src2 = dict(src)
-                    app_id = resolve_app_id(src2.get("aparell_codi"), by_id, by_code)
+                    app_id = resolve_app_id(src2.get("aparell_id"), by_id, by_code)
+                    if not app_id:
+                        app_id = resolve_app_id(src2.get("aparell_codi"), by_id, by_code)
                     if app_id:
                         src2["aparell_id"] = app_id
                     src2.pop("aparell_codi", None)
@@ -890,6 +892,28 @@ def template_schema_to_global_ui_schema(schema_tpl, by_id, by_code):
                     item.pop("aparell_codi", None)
                 cols_out.append(item)
             _assign_presentacio_column_group(presentacio, path, cols_out)
+        for _sidx, section in _iter_presentacio_detail_sections(presentacio):
+            raw_code = section.get("aparell_codi", section.get("aparell_id"))
+            if raw_code in (None, "", 0, "0"):
+                cols = section.get("columns") if isinstance(section.get("columns"), list) else []
+                raw_ids = []
+                for col in cols:
+                    if not isinstance(col, dict):
+                        continue
+                    if str(col.get("type") or "builtin").strip().lower() != "raw":
+                        continue
+                    src = col.get("source") if isinstance(col.get("source"), dict) else {}
+                    app_id = resolve_app_id(src.get("aparell_id") or src.get("aparell_codi"), by_id, by_code)
+                    if app_id and app_id not in raw_ids:
+                        raw_ids.append(app_id)
+                if len(raw_ids) == 1:
+                    section["aparell_id"] = raw_ids[0]
+                section.pop("aparell_codi", None)
+                continue
+            app_id = resolve_app_id(raw_code, by_id, by_code)
+            if app_id:
+                section["aparell_id"] = app_id
+            section.pop("aparell_codi", None)
         schema["presentacio"] = presentacio
 
     return schema, warnings
@@ -993,9 +1017,11 @@ def global_ui_schema_to_template_schema(schema_ui, by_id, by_code):
                     src = item.get("source") if isinstance(item.get("source"), dict) else {}
                     src2 = dict(src)
                     code = resolve_app_code_for_template(src2.get("aparell_id"), by_id, by_code)
+                    if not code:
+                        code = resolve_app_code_for_template(src2.get("aparell_codi"), by_id, by_code)
                     if code:
-                        src2["aparell_codi"] = code
-                    src2.pop("aparell_id", None)
+                        src2["aparell_id"] = code
+                    src2.pop("aparell_codi", None)
                     item["source"] = src2
                 elif ctype == "metric":
                     code = resolve_app_code_for_template(item.get("aparell_id"), by_id, by_code)
@@ -1004,6 +1030,15 @@ def global_ui_schema_to_template_schema(schema_ui, by_id, by_code):
                     item.pop("aparell_id", None)
                 cols_out.append(item)
             _assign_presentacio_column_group(presentacio, path, cols_out)
+        for _sidx, section in _iter_presentacio_detail_sections(presentacio):
+            raw_app = section.get("aparell_id", section.get("aparell_codi"))
+            if raw_app in (None, "", 0, "0"):
+                section.pop("aparell_codi", None)
+                continue
+            code = resolve_app_code_for_template(raw_app, by_id, by_code)
+            if code:
+                section["aparell_id"] = code
+            section.pop("aparell_codi", None)
         schema["presentacio"] = presentacio
 
     return schema, warnings
@@ -1053,7 +1088,7 @@ def collect_required_app_codes_from_template(schema_tpl):
                 ctype = str(col.get("type") or "builtin").strip().lower()
                 if ctype == "raw":
                     src = col.get("source") if isinstance(col.get("source"), dict) else {}
-                    code = canon_app_code(src.get("aparell_codi"))
+                    code = canon_app_code(src.get("aparell_id") or src.get("aparell_codi"))
                     if code:
                         out.add(code)
                 elif ctype == "metric":
@@ -1250,7 +1285,7 @@ def merge_global_builder_schema(existing_schema_tpl, updated_schema_tpl, *, allo
     return merged
 
 
-def build_global_aparell_field_options(aparells, scoreable_meta_builder):
+def build_global_aparell_field_options(aparells, field_meta_builder):
     apps = list(aparells or [])
     schemas_by_aparell = {
         s.aparell_id: (s.schema or {})
@@ -1259,14 +1294,14 @@ def build_global_aparell_field_options(aparells, scoreable_meta_builder):
     out = {}
     for app in apps:
         sch = schemas_by_aparell.get(app.id, {}) or {}
-        meta = scoreable_meta_builder(sch, strict_unknown=True)
+        meta = field_meta_builder(app, sch, strict_unknown=True)
         opts = []
         for f in (sch.get("fields") or []):
             if not isinstance(f, dict) or not f.get("code"):
                 continue
             code = str(f["code"])
             info = meta.get(code) or {}
-            if not info.get("scoreable", False):
+            if not (info.get("scoreable", False) or info.get("detail_displayable", False)):
                 continue
             judges_count = 1
             judges = f.get("judges")
@@ -1279,20 +1314,28 @@ def build_global_aparell_field_options(aparells, scoreable_meta_builder):
                 "code": code,
                 "label": str(f.get("label") or code),
                 "kind": "field",
+                "scoreable": bool(info.get("scoreable", False)),
                 "judges_count": max(1, judges_count),
+                "member_dependent": bool(info.get("member_dependent", False)),
+                "detail_displayable": bool(info.get("detail_displayable", False)),
+                "detail_display_kind": str(info.get("detail_display_kind") or "none"),
             })
         for c in (sch.get("computed") or []):
             if not isinstance(c, dict) or not c.get("code"):
                 continue
             code = str(c["code"])
             info = meta.get(code) or {}
-            if not info.get("scoreable", False):
+            if not (info.get("scoreable", False) or info.get("detail_displayable", False)):
                 continue
             opts.append({
                 "code": code,
                 "label": str(c.get("label") or code),
                 "kind": "computed",
+                "scoreable": bool(info.get("scoreable", False)),
                 "judges_count": 1,
+                "member_dependent": bool(info.get("member_dependent", False)),
+                "detail_displayable": bool(info.get("detail_displayable", False)),
+                "detail_display_kind": str(info.get("detail_display_kind") or "none"),
             })
         seen = set()
         dedup = []
@@ -1383,7 +1426,7 @@ def validate_template_schema_global(
     schema_tpl,
     *,
     available_app_codes,
-    scoreable_by_code,
+    field_meta_by_code,
     app_units_by_code=None,
     allowed_particio_codes,
     allowed_filter_keys=None,
@@ -1397,6 +1440,11 @@ def validate_template_schema_global(
     app_units_by_code = {
         canon_app_code(code): str(unit or "").strip().lower()
         for code, unit in (app_units_by_code or {}).items()
+        if canon_app_code(code)
+    }
+    field_meta_by_code = {
+        canon_app_code(code): (meta if isinstance(meta, dict) else {})
+        for code, meta in (field_meta_by_code or {}).items()
         if canon_app_code(code)
     }
     allowed_particio_codes = {str(code or "").strip() for code in (allowed_particio_codes or []) if str(code or "").strip()}
@@ -1464,13 +1512,16 @@ def validate_template_schema_global(
                 continue
             codes = [str(x).strip() for x in raw_codes] if isinstance(raw_codes, list) else []
             for code in [x for x in codes if x]:
-                if code not in scoreable_by_code.get(app_code, {"total", "TOTAL"}):
+                info = field_meta_by_code.get(app_code, {}).get(code)
+                if not bool((info or {}).get("scoreable", False)):
                     errors.append(f"aparell {app_code}: camp '{code}' no es puntuable directament.")
 
     if str(punt.get("mode_resultat_aparells") or "score").strip().lower() == "victories" and str(tipus or "individual").strip().lower() != "individual":
         errors.append("puntuacio.mode_resultat_aparells='victories' nomes s'admet per tipus='individual'.")
     if str(punt.get("mode_resultat_aparells") or "score").strip().lower() == "victories":
         errors.extend(validate_victories_granular_options(punt.get("victories") or {}))
+
+    team_mode_value = str((schema.get("equips") or {}).get("team_mode") or "").strip().lower()
 
     for idx, tie in enumerate(schema.get("desempat") or []):
         if not isinstance(tie, dict):
@@ -1486,7 +1537,8 @@ def validate_template_schema_global(
             target_codes = list(selected_codes)
         for app_code in target_codes:
             for code in normalize_tie_camps_for_validation(tie):
-                if code not in scoreable_by_code.get(app_code, {"total", "TOTAL"}):
+                info = field_meta_by_code.get(app_code, {}).get(code)
+                if not bool((info or {}).get("scoreable", False)):
                     errors.append(f"desempat[{idx}]: aparell {app_code}: camp '{code}' no es puntuable directament.")
 
     presentacio = schema.get("presentacio") or {}
@@ -1497,14 +1549,22 @@ def validate_template_schema_global(
                     continue
                 ctype = str(col.get("type") or "builtin").strip().lower()
                 if ctype == "raw":
+                    if path.startswith("presentacio.detall"):
+                        continue
                     src = col.get("source") if isinstance(col.get("source"), dict) else {}
-                    app_code = canon_app_code(src.get("aparell_codi"))
+                    app_code = canon_app_code(src.get("aparell_id") or src.get("aparell_codi"))
                     camp = str(src.get("camp") or "total").strip() or "total"
                     if app_code not in available_app_codes:
                         errors.append(f"{path}[{idx}] raw: aparell no disponible")
                         continue
-                    if camp not in scoreable_by_code.get(app_code, {"total", "TOTAL"}):
+                    info = field_meta_by_code.get(app_code, {}).get(camp)
+                    if not bool((info or {}).get("scoreable", False)):
                         errors.append(f"{path}[{idx}] raw: camp no puntuable")
+                        continue
+                    if path == "presentacio.columnes" and team_mode_value == "native_team" and bool((info or {}).get("member_dependent", False)):
+                        errors.append(
+                            f"{path}[{idx}] raw: en team_mode=native_team els camps individuals per membre nomes es poden mostrar a presentacio.detall.sections de tipus team_members_table."
+                        )
                 elif ctype == "metric":
                     app_code = canon_app_code(col.get("aparell_codi"))
                     if app_code and app_code not in available_app_codes:
@@ -1526,14 +1586,49 @@ def validate_template_schema_global(
                             errors.append(f"{path}[{idx}] metric: aparell no disponible")
                             continue
                         for code in normalize_tie_camps_for_validation(criteri):
-                            if code not in scoreable_by_code.get(target_code, {"total", "TOTAL"}):
+                            info = field_meta_by_code.get(target_code, {}).get(code)
+                            if not bool((info or {}).get("scoreable", False)):
                                 errors.append(
                                     f"{path}[{idx}] metric: aparell {target_code}: camp '{code}' no es puntuable directament."
                                 )
         detail = presentacio.get("detall")
+        detail_for_validation = json_clone(detail) if isinstance(detail, dict) else detail
+        if isinstance(detail_for_validation, dict):
+            legacy_cols = detail_for_validation.get("columnes")
+            if isinstance(legacy_cols, list):
+                for col in legacy_cols:
+                    if not isinstance(col, dict):
+                        continue
+                    if str(col.get("type") or "builtin").strip().lower() != "raw":
+                        continue
+                    src = col.get("source") if isinstance(col.get("source"), dict) else {}
+                    if src.get("aparell_id") in (None, "", 0, "0") and src.get("aparell_codi") not in (None, "", 0, "0"):
+                        src = dict(src)
+                        src["aparell_id"] = src.get("aparell_codi")
+                        col["source"] = src
+            sections = detail_for_validation.get("sections")
+            if isinstance(sections, list):
+                for section in sections:
+                    if not isinstance(section, dict):
+                        continue
+                    if section.get("aparell_id") in (None, "", 0, "0") and section.get("aparell_codi") not in (None, "", 0, "0"):
+                        section["aparell_id"] = section.get("aparell_codi")
+                    cols = section.get("columns")
+                    if not isinstance(cols, list):
+                        continue
+                    for col in cols:
+                        if not isinstance(col, dict):
+                            continue
+                        if str(col.get("type") or "builtin").strip().lower() != "raw":
+                            continue
+                        src = col.get("source") if isinstance(col.get("source"), dict) else {}
+                        if src.get("aparell_id") in (None, "", 0, "0") and src.get("aparell_codi") not in (None, "", 0, "0"):
+                            src = dict(src)
+                            src["aparell_id"] = src.get("aparell_codi")
+                            col["source"] = src
         detail_key = detail_section_key_for_tipus(
             tipus=tipus,
-            team_mode=str((schema.get("equips") or {}).get("team_mode") or "").strip().lower(),
+            team_mode=team_mode_value,
         )
 
         def normalize_app(raw):
@@ -1548,9 +1643,7 @@ def validate_template_schema_global(
         def get_scoreable_info(app_code, camp):
             if app_code not in available_app_codes:
                 return None
-            if camp not in scoreable_by_code.get(app_code, {"total", "TOTAL"}):
-                return None
-            return {"scoreable": True}
+            return field_meta_by_code.get(app_code, {}).get(camp)
 
         def validate_exercise(_app_code, raw_exercici):
             try:
@@ -1563,7 +1656,7 @@ def validate_template_schema_global(
 
         error_details.extend(
             validate_detail_schema(
-                detail,
+                detail_for_validation,
                 detail_section_key=detail_key,
                 normalize_app=normalize_app,
                 is_app_available=is_app_available,

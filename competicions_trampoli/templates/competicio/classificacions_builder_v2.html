@@ -2528,7 +2528,7 @@
 
   function perAppFieldsHTML(compAparellId, selectedCodes){
     const opts = extendOptionsWithSelectedValues(
-      APARELL_FIELD_OPTIONS[String(compAparellId)] || [],
+      (APARELL_FIELD_OPTIONS[String(compAparellId)] || []).filter(o => !!o?.scoreable),
       selectedCodes
     );
     const selected = new Set(
@@ -2561,7 +2561,7 @@
     const seen = new Set();
     const out = [];
     Object.values(APARELL_FIELD_OPTIONS || {}).forEach(list => {
-      (list || []).forEach(o => {
+      (list || []).filter(o => !!o?.scoreable).forEach(o => {
         if (!o || !o.code) return;
         const c = String(o.code);
         if (seen.has(c)) return;
@@ -2580,7 +2580,7 @@
 
     let common = null;
     ids.forEach(id => {
-      const opts = getFieldOptionsForApp(id);
+      const opts = getFieldOptionsForApp(id).filter(o => !!o?.scoreable);
       const byCode = new Map();
       (opts || []).forEach(o => {
         if (!o || !o.code) return;
@@ -4231,6 +4231,7 @@
       return [
         { type: "members_list", label: "Llista participants" },
         { type: "team_metrics", label: "Metriques equip" },
+        { type: "team_members_table", label: "Notes per membre" },
       ];
     }
     if (tipus === "equips") {
@@ -4245,7 +4246,7 @@
   function detailAllowedBuiltinKeysForSection(sectionType) {
     const st = String(sectionType || "").trim();
     if (st === "exercise_table") return ["exercise_index", "aparell_nom", "participant", "entitat_nom"];
-    if (["members_table", "entity_members_table", "team_metrics"].includes(st)) return ["participant", "entitat_nom"];
+    if (["members_table", "team_members_table", "entity_members_table", "team_metrics"].includes(st)) return ["participant", "entitat_nom"];
     return [];
   }
 
@@ -4258,12 +4259,12 @@
 
   function detailSectionRequiresApp(sectionType) {
     const st = String(sectionType || "").trim();
-    return ["members_table", "entity_members_table", "exercise_table", "team_metrics"].includes(st);
+    return ["members_table", "team_members_table", "entity_members_table", "exercise_table", "team_metrics"].includes(st);
   }
 
   function detailSectionRawAppMode(sectionType) {
     const st = String(sectionType || "").trim();
-    if (st === "team_metrics") return "team";
+    if (st === "team_metrics" || st === "team_members_table") return "team";
     return "individual";
   }
 
@@ -4308,6 +4309,25 @@
     return Number.isFinite(appId) && appId > 0 ? appId : null;
   }
 
+  function filterFieldOptionsForRawUsage(appId, usage = null) {
+    const options = getFieldOptionsForApp(appId);
+    const normalizedUsage = usage && typeof usage === "object" ? usage : {};
+    const sectionType = String(normalizedUsage.sectionType || "").trim();
+    if (sectionType === "team_members_table") {
+      return options.filter(opt => !!opt?.detail_displayable && !!opt?.member_dependent);
+    }
+    if (normalizedUsage.mainColumns) {
+      return options.filter(opt => !!opt?.scoreable && !opt?.member_dependent);
+    }
+    if (sectionType === "team_metrics") {
+      return options.filter(opt => !!opt?.scoreable && !opt?.member_dependent);
+    }
+    if (sectionType) {
+      return options.filter(opt => !!opt?.scoreable);
+    }
+    return options.filter(opt => !!opt?.scoreable);
+  }
+
   function getDetailRawSourceForSection(sectionType, preferredAppId = null) {
     const st = String(sectionType || "").trim();
     const preferred = Number(preferredAppId);
@@ -4318,7 +4338,7 @@
       if (Number.isFinite(preferred) && preferred > 0 && appId !== preferred) {
         continue;
       }
-      const fieldOptions = getFieldOptionsForApp(appId);
+      const fieldOptions = filterFieldOptionsForRawUsage(appId, { sectionType: st });
       const firstField = fieldOptions.find(opt => String(opt?.code || "").trim());
       if (!firstField) continue;
       return {
@@ -4332,7 +4352,7 @@
     for (const app of getDetailSectionAppChoices(st)) {
       const appId = Number(app && app.id);
       if (!Number.isFinite(appId)) continue;
-      const fieldOptions = getFieldOptionsForApp(appId);
+      const fieldOptions = filterFieldOptionsForRawUsage(appId, { sectionType: st });
       const firstField = fieldOptions.find(opt => String(opt?.code || "").trim());
       if (!firstField) continue;
       return {
@@ -4371,7 +4391,7 @@
         ? [{ type:"raw", key:"team_raw_1", label:"Total", align:"right", decimals:3, source }]
         : [];
     }
-    if (st === "members_table" || st === "entity_members_table") {
+    if (st === "members_table" || st === "team_members_table" || st === "entity_members_table") {
       return [
         { type:"builtin", key:"participant", label:"Participant", align:"left" },
       ];
@@ -4386,6 +4406,7 @@
       ? Number(preferredAppId)
       : getDefaultDetailSectionAppId(st);
     if (st === "team_metrics") return { type: "team_metrics", label: "Notes equip", aparell_id: appId, columns: defaultDetailColumnsForSection(st, appId) };
+    if (st === "team_members_table") return { type: "team_members_table", label: "Notes per membre", aparell_id: appId, columns: defaultDetailColumnsForSection(st, appId) };
     if (st === "exercise_table") return { type: "exercise_table", label: "Exercicis", aparell_id: appId, columns: defaultDetailColumnsForSection(st, appId) };
     if (st === "entity_members_table") return { type: "entity_members_table", label: "Participants", aparell_id: appId, columns: defaultDetailColumnsForSection(st, appId) };
     return { type: "members_table", label: "Detall", aparell_id: appId, columns: defaultDetailColumnsForSection("members_table", appId) };
@@ -4711,6 +4732,7 @@
   function getRealFieldCodesForApp(appId) {
     return new Set(
       getFieldOptionsForApp(appId)
+        .filter(o => !!o?.scoreable)
         .map(o => String(o && o.code || "").trim())
         .filter(Boolean)
     );
@@ -4764,9 +4786,9 @@
     ].join("");
   }
 
-  function buildRawCampOptionsHTML(appId, selectedCamp) {
+  function buildRawCampOptionsHTML(appId, selectedCamp, usage = null) {
     const opts = extendOptionsWithSelectedValues(
-      getFieldOptionsForApp(appId),
+      filterFieldOptionsForRawUsage(appId, usage),
       selectedCamp ? [selectedCamp] : []
     );
     const camp = String(selectedCamp || "").trim();
@@ -4788,7 +4810,16 @@
     return html;
   }
 
-  function refreshRawControls(row, keepJudgeIds) {
+  function rawUsageFromRow(row, explicitUsage = null) {
+    if (explicitUsage && typeof explicitUsage === "object") return explicitUsage;
+    const usage = {};
+    if (String(row?.dataset?.rawUsage || "").trim() === "main") usage.mainColumns = true;
+    const sectionType = String(row?.dataset?.sectionType || "").trim();
+    if (sectionType) usage.sectionType = sectionType;
+    return usage;
+  }
+
+  function refreshRawControls(row, keepJudgeIds, explicitUsage = null) {
     const appSel = row.querySelector('[data-k="app_id"]');
     const campSel = row.querySelector('[data-k="camp"]');
     const exSel = row.querySelector('[data-k="exercici"]');
@@ -4799,11 +4830,12 @@
     const appId = Number(appSel.value);
     const prevCamp = String(campSel.value || "");
     const prevEx = Number(exSel.value || 1);
+    const usage = rawUsageFromRow(row, explicitUsage);
     const selectedJudgeIds = Array.isArray(keepJudgeIds)
       ? _uniquePositiveInts(keepJudgeIds)
       : _uniquePositiveInts(Array.from(judgeSel.selectedOptions || []).map(o => Number(o.value)));
 
-    campSel.innerHTML = buildRawCampOptionsHTML(appId, prevCamp);
+    campSel.innerHTML = buildRawCampOptionsHTML(appId, prevCamp, usage);
     if (!campSel.value) {
       const first = campSel.querySelector("option");
       campSel.value = first ? first.value : "";
@@ -4892,7 +4924,7 @@
             <div class="col-12 col-md-5 mb-2">
               <label class="small text-muted mb-1">Camp</label>
               <select class="form-control form-control-sm" data-k="camp">
-                ${buildRawCampOptionsHTML(appId, camp)}
+                ${buildRawCampOptionsHTML(appId, camp, { mainColumns: true })}
               </select>
             </div>
             <div class="col-12 col-md-2 mb-2">
@@ -4913,7 +4945,8 @@
             </div>
           </div>
         `;
-        refreshRawControls(row, judgeIds);
+        row.dataset.rawUsage = "main";
+        refreshRawControls(row, judgeIds, { mainColumns: true });
       } else {
         const key = String(col.key || "participant");
         row.innerHTML = `
@@ -4957,9 +4990,9 @@
         el.addEventListener("change", () => {
           if (row.getAttribute("data-type") === "raw") {
             if (el.matches('[data-k="app_id"]')) {
-              refreshRawControls(row, []);
+              refreshRawControls(row, [], { mainColumns: true });
             } else if (el.matches('[data-k="camp"]')) {
-              refreshRawControls(row);
+              refreshRawControls(row, null, { mainColumns: true });
             }
           }
           syncAdvancedFromUI();
@@ -5058,7 +5091,7 @@
       return;
     }
     if (tipus === "equips" && teamMode === TEAM_MODE_NATIVE) {
-      els.detailScopeHint.textContent = "El detall desplegable mostrara la llista de membres i les metriques propies de l'equip.";
+      els.detailScopeHint.textContent = "El detall desplegable mostrara la llista de membres, les metriques d'equip i, si es configura, les notes individuals per membre.";
       return;
     }
     if (tipus === "equips") {
@@ -5131,7 +5164,7 @@
     if (!detailChecked) {
       setDetailConfigAlert("");
     } else if (!sections.length && detailSectionNeedsInitialRaw(selectedSectionType) && !canAddDetailSection(selectedSectionType)) {
-      setDetailConfigAlert("Selecciona un aparell compatible amb camps scoreables abans d'afegir aquesta seccio.");
+      setDetailConfigAlert("Selecciona un aparell compatible amb camps disponibles abans d'afegir aquesta seccio.");
     } else {
       setDetailConfigAlert("");
     }
@@ -5547,13 +5580,14 @@
             <div class="col-6 col-md-1 mb-2"><label class="small text-muted mb-1">Align</label><select class="form-control form-control-sm" data-k="align" data-error-path="${esc(colPath + ".align")}" ${enabled ? "" : "disabled"}><option value="right" ${(col.align || "right") === "right" ? "selected" : ""}>R</option><option value="left" ${(col.align || "") === "left" ? "selected" : ""}>L</option><option value="center" ${(col.align || "") === "center" ? "selected" : ""}>C</option></select></div>
           </div>
           <div class="row">
-            <div class="col-12 col-md-5 mb-2"><label class="small text-muted mb-1">Camp</label><select class="form-control form-control-sm" data-k="camp" data-error-path="${esc(colPath + ".source.camp")}" ${enabled ? "" : "disabled"}>${buildRawCampOptionsHTML(appId, camp)}</select></div>
+            <div class="col-12 col-md-5 mb-2"><label class="small text-muted mb-1">Camp</label><select class="form-control form-control-sm" data-k="camp" data-error-path="${esc(colPath + ".source.camp")}" ${enabled ? "" : "disabled"}>${buildRawCampOptionsHTML(appId, camp, { sectionType })}</select></div>
             <div class="col-12 col-md-2 mb-2"><label class="small text-muted mb-1">Exercici</label><select class="form-control form-control-sm" data-k="exercici" data-error-path="${esc(colPath + ".source.exercici")}" ${enabled ? "" : "disabled"}>${buildExerciciOptionsHTML(appId, ex)}</select></div>
             <div class="col-12 col-md-2 mb-2" data-k="judge_wrap" style="display:none;"><label class="small text-muted mb-1">Jutges</label><select class="form-control form-control-sm" data-k="judge_ids" data-error-path="${esc(colPath + ".source.jutges.ids")}" multiple size="3" ${enabled ? "" : "disabled"}></select></div>
             <div class="col-12 col-md-3 mb-2 d-flex align-items-end justify-content-end gap-1"><button type="button" class="btn btn-sm btn-outline-secondary" data-act="up" ${enabled ? "" : "disabled"}>Up</button><button type="button" class="btn btn-sm btn-outline-secondary" data-act="down" ${enabled ? "" : "disabled"}>Down</button><button type="button" class="btn btn-sm btn-outline-danger" data-act="del" ${enabled ? "" : "disabled"}>Eliminar</button></div>
           </div>
         `;
-        refreshRawControls(row, judgeIds);
+        row.dataset.sectionType = sectionType;
+        refreshRawControls(row, judgeIds, { sectionType });
       } else {
         const key = String(col.key || builtins[0]?.[0] || "participant");
         row.innerHTML = `
@@ -5571,7 +5605,7 @@
       row.querySelectorAll("input,select").forEach(el => {
         el.addEventListener("change", () => {
           if (row.getAttribute("data-type") === "raw" && el.matches('[data-k="camp"]')) {
-            refreshRawControls(row);
+            refreshRawControls(row, null, { sectionType });
           }
           syncAdvancedFromUI();
         });
@@ -5660,7 +5694,7 @@
         </div>
         ${splitWarning}
         ${mismatchWarning}
-        ${hasColumns ? `${appHelp}<div class="d-flex flex-wrap gap-2 mb-2"><button type="button" class="btn btn-sm btn-outline-primary" data-act="add_builtin" ${enabled ? "" : "disabled"}>+ Builtin</button><button type="button" class="btn btn-sm btn-outline-primary" data-act="add_raw" ${(enabled && canAddRaw && !sectionConflict) ? "" : "disabled"}>+ Camp</button>${splitInfo.needsSplit ? `<button type="button" class="btn btn-sm btn-outline-warning" data-act="split" ${enabled ? "" : "disabled"}>Dividir per aparell</button>` : ""}</div>${!canAddRaw && !sectionConflict ? `<div class="small text-muted mb-2">Cal un aparell compatible amb camps scoreables per afegir columnes raw en aquesta seccio.</div>` : ""}<div data-k="columns_box" data-error-path="${esc(sectionPath + ".columns")}"></div>` : `<div class="small text-muted">Aquesta seccio no necessita columnes configurables.</div>`}
+        ${hasColumns ? `${appHelp}<div class="d-flex flex-wrap gap-2 mb-2"><button type="button" class="btn btn-sm btn-outline-primary" data-act="add_builtin" ${enabled ? "" : "disabled"}>+ Builtin</button><button type="button" class="btn btn-sm btn-outline-primary" data-act="add_raw" ${(enabled && canAddRaw && !sectionConflict) ? "" : "disabled"}>+ Camp</button>${splitInfo.needsSplit ? `<button type="button" class="btn btn-sm btn-outline-warning" data-act="split" ${enabled ? "" : "disabled"}>Dividir per aparell</button>` : ""}</div>${!canAddRaw && !sectionConflict ? `<div class="small text-muted mb-2">Cal un aparell compatible amb camps disponibles per afegir columnes raw en aquesta seccio.</div>` : ""}<div data-k="columns_box" data-error-path="${esc(sectionPath + ".columns")}"></div>` : `<div class="small text-muted">Aquesta seccio no necessita columnes configurables.</div>`}
       `;
       box.querySelector('[data-k="label"]').addEventListener("input", syncAdvancedFromUI);
       const appSelect = box.querySelector('[data-k="section_app_id"]');
@@ -5743,7 +5777,7 @@
           const currentAppId = Number(currentSection.aparell_id || 0);
           const source = getDetailRawSourceForSection(section.type, currentAppId);
           if (!source) {
-            setDetailConfigAlert("Selecciona un aparell compatible amb camps scoreables abans d'afegir una columna raw.");
+            setDetailConfigAlert("Selecciona un aparell compatible amb camps disponibles abans d'afegir una columna raw.");
             return;
           }
           cur[idx].aparell_id = Number(source.aparell_id || currentAppId || 0) || null;
@@ -5767,11 +5801,12 @@
         label: String(sectionBox.querySelector('[data-k="label"]')?.value || "").trim() || (defaultDetailSection(sectionType).label || sectionType),
       };
       const sectionAppIdRaw = Number(sectionBox.querySelector('[data-k="section_app_id"]')?.value || 0);
-      const sectionAppId = Number.isFinite(sectionAppIdRaw) && sectionAppIdRaw > 0 ? sectionAppIdRaw : null;
-      if (detailSectionRequiresApp(sectionType)) section.aparell_id = sectionAppId;
+      const selectedSectionAppId = Number.isFinite(sectionAppIdRaw) && sectionAppIdRaw > 0 ? sectionAppIdRaw : null;
       const columnsHost = sectionBox.querySelector("[data-k='columns_box']");
+      let inferredSectionAppId = selectedSectionAppId;
       if (columnsHost) {
         const cols = [];
+        const rawAppIds = new Set();
         columnsHost.querySelectorAll(".col-row").forEach((row, idx) => {
           const type = row.getAttribute("data-type") || "builtin";
           const key = String(row.querySelector('[data-k="key"]')?.value || "").trim();
@@ -5782,10 +5817,11 @@
           if (type === "raw") {
             const rowAppIdRaw = Number(row.querySelector('[data-k="app_id"]')?.value || 0);
             const rowAppId = Number.isFinite(rowAppIdRaw) && rowAppIdRaw > 0 ? rowAppIdRaw : null;
-            const appId = rowAppId ?? sectionAppId;
+            const appId = rowAppId ?? selectedSectionAppId;
             const ex = Math.max(1, Number(row.querySelector('[data-k="exercici"]')?.value || 1));
             const camp = String(row.querySelector('[data-k="camp"]')?.value || "").trim();
             const judgeIds = _uniquePositiveInts(Array.from(row.querySelector('[data-k="judge_ids"]')?.selectedOptions || []).map(o => Number(o.value)));
+            if (Number.isFinite(appId) && appId > 0) rawAppIds.add(appId);
             if (!includeInvalid && (!Number.isFinite(appId) || !getAparellById(appId) || !camp || !isRealFieldForApp(appId, camp))) return;
             cols.push({ type: "raw", key: key || `detail_raw_${idx + 1}`, label: label || key || `detail_raw_${idx + 1}`, align: ["left","right","center"].includes(align) ? align : "right", decimals: Number.isFinite(decimals) ? Math.max(0, Math.min(6, decimals)) : 3, source: { aparell_id: Number.isFinite(appId) ? appId : null, exercici: ex, camp, jutges: { ids: judgeIds } } });
           } else {
@@ -5796,9 +5832,13 @@
             cols.push(item);
           }
         });
-        section.columns = normalizeDetailColumnsForSection(cols, sectionType, sectionAppId);
+        if (!inferredSectionAppId && rawAppIds.size === 1) {
+          inferredSectionAppId = Array.from(rawAppIds)[0] || null;
+        }
+        section.columns = normalizeDetailColumnsForSection(cols, sectionType, inferredSectionAppId);
       }
-      if (!detailSectionRequiresApp(sectionType)) delete section.aparell_id;
+      if (detailSectionRequiresApp(sectionType)) section.aparell_id = inferredSectionAppId;
+      else delete section.aparell_id;
       out.push(section);
     });
     return out;
@@ -7741,7 +7781,7 @@
       const sectionType = String(els.detailSectionType?.value || "").trim();
       if (!sectionType) return;
       if (!canAddDetailSection(sectionType)) {
-        setDetailConfigAlert("Selecciona un aparell compatible amb camps scoreables abans d'afegir aquesta seccio.");
+        setDetailConfigAlert("Selecciona un aparell compatible amb camps disponibles abans d'afegir aquesta seccio.");
         return;
       }
       const cur = readDetailSectionsUI(true);
@@ -7806,7 +7846,7 @@
           if (defaultSection) {
             renderDetailSectionsUI([defaultSection]);
           } else {
-            setDetailConfigAlert("Selecciona un aparell compatible amb camps scoreables abans d'afegir detall.");
+            setDetailConfigAlert("Selecciona un aparell compatible amb camps disponibles abans d'afegir detall.");
           }
         }
       }

@@ -4,6 +4,7 @@ import re
 DETAIL_SECTION_TYPES = {
     "members_list",
     "members_table",
+    "team_members_table",
     "team_metrics",
     "exercise_table",
     "entity_members_table",
@@ -13,7 +14,7 @@ DETAIL_SECTION_ALLOWED = {
     "individual": {"exercise_table"},
     "entitat": {"entity_members_table"},
     "equips:derived_from_individual": {"members_list", "members_table"},
-    "equips:native_team": {"members_list", "team_metrics"},
+    "equips:native_team": {"members_list", "team_metrics", "team_members_table"},
 }
 
 
@@ -99,14 +100,14 @@ def detail_allowed_builtin(section_type: str):
     stype = str(section_type or "").strip().lower()
     if stype == "exercise_table":
         return {"exercise_index", "aparell_nom", "participant", "entitat_nom"}
-    if stype in {"members_table", "entity_members_table", "team_metrics"}:
+    if stype in {"members_table", "team_members_table", "entity_members_table", "team_metrics"}:
         return {"participant", "entitat_nom"}
     return set()
 
 
 def detail_expected_unit(section_type: str):
     stype = str(section_type or "").strip().lower()
-    if stype == "team_metrics":
+    if stype in {"team_metrics", "team_members_table"}:
         return "team"
     if stype in {"members_table", "entity_members_table", "exercise_table"}:
         return "individual"
@@ -150,7 +151,7 @@ def validate_detail_schema(
                 continue
             src = col.get("source") if isinstance(col.get("source"), dict) else {}
             app_value = normalize_app(src.get("aparell_id"))
-            if app_value is not None and app_value not in out:
+            if app_value not in (None, "", 0, "0") and app_value not in out:
                 out.append(app_value)
         return out
 
@@ -176,7 +177,7 @@ def validate_detail_schema(
             src = col.get("source") if isinstance(col.get("source"), dict) else {}
             raw_app = src.get("aparell_id")
             app_value = normalize_app(raw_app)
-            if app_value is None:
+            if app_value in (None, "", 0, "0"):
                 add(f"{col_path}.source.aparell_id", f"{col_path} raw: aparell invalid.")
                 continue
             if section_app is not None and app_value != section_app:
@@ -222,10 +223,38 @@ def validate_detail_schema(
                     f"{col_path} raw: camp '{camp}' no existeix al schema de l'aparell {app_value}.",
                 )
                 continue
-            if not bool((info or {}).get("scoreable", False)):
+            member_dependent = bool((info or {}).get("member_dependent", False))
+            if section_type == "team_members_table":
+                if not bool((info or {}).get("detail_displayable", False)):
+                    detail_kind = str((info or {}).get("detail_display_kind") or "none").strip().lower()
+                    reason = str((info or {}).get("reason") or "").strip()
+                    if detail_kind == "none" and reason:
+                        reason = f" ({reason})"
+                    elif detail_kind == "none":
+                        reason = ""
+                    else:
+                        reason = f" (detail_display_kind={detail_kind})"
+                    add(
+                        f"{col_path}.source.camp",
+                        f"{col_path} raw: camp '{camp}' no es visualitzable a team_members_table{reason}.",
+                    )
+                    continue
+                if not member_dependent:
+                    add(
+                        f"{col_path}.source.camp",
+                        f"{col_path} raw: en team_members_table nomes es poden mostrar camps individuals per membre.",
+                    )
+                    continue
+            elif not bool((info or {}).get("scoreable", False)):
                 add(
                     f"{col_path}.source.camp",
                     f"{col_path} raw: camp '{camp}' no es puntuable directament ({info.get('reason')}).",
+                )
+                continue
+            if section_type == "team_metrics" and member_dependent:
+                add(
+                    f"{col_path}.source.camp",
+                    f"{col_path} raw: en team_metrics nomes es poden mostrar camps d'equip o compartits.",
                 )
                 continue
             if validate_exercise is not None:
@@ -308,8 +337,12 @@ def validate_detail_schema(
                 continue
 
             section_app = normalize_app(section.get("aparell_id"))
+            if section_app in (None, "", 0, "0"):
+                section_app = None
             raw_apps = raw_app_values(section.get("columns"))
-            if raw_apps and section_app is None:
+            if section_app is None and len(raw_apps) == 1:
+                section_app = raw_apps[0]
+            elif raw_apps and section_app is None:
                 add(
                     f"{section_path}.aparell_id",
                     f"{section_path}.aparell_id es obligatori quan hi ha columnes raw.",

@@ -557,11 +557,11 @@
       flex:1 1 auto;
       min-width:0;
       max-width:100%;
-      overflow:hidden;
-      white-space:nowrap;
-      text-overflow:ellipsis;
+      overflow-wrap:anywhere;
+      word-break:break-word;
+      line-height:1.25;
     }
-    .tab-select-item .badge{ margin-left:auto; flex:0 0 auto; }
+    .tab-select-item .badge{ margin-left:auto; flex:0 0 auto; align-self:flex-start; }
     .group-buckets-backdrop{
       position:fixed;
       inset:0;
@@ -6358,16 +6358,21 @@
     }
 
     const groupBucketSelectionState = {
-      mode: 'all',
+      mode: 'none',
       availableKeys: [],
       selectedKeys: new Set(),
     };
+    let currentGroupsAutoContext = null;
 
     function getGroupsAutoContextElements() {
       return {
+        source: document.getElementById('groups-auto-context-source'),
+        detectedGroups: document.getElementById('groups-detected-group-fields'),
+        detectedSorts: document.getElementById('groups-detected-sort-fields'),
         resolutionLabel: document.getElementById('groups-resolution-label'),
         resolutionStatus: document.getElementById('groups-resolution-status'),
         bucketsCount: document.getElementById('groups-buckets-count'),
+        bucketsSelectionSummary: document.getElementById('groups-buckets-selection-summary'),
         bucketsGrid: document.getElementById('groups-buckets-grid'),
         bucketsEmpty: document.getElementById('groups-buckets-empty'),
         bucketsSelectionNote: document.getElementById('groups-buckets-selection-note'),
@@ -6390,7 +6395,7 @@
     }
 
     function setGroupsBucketSelectionMode(mode) {
-      groupBucketSelectionState.mode = ['all', 'none', 'custom'].includes(mode) ? mode : 'all';
+      groupBucketSelectionState.mode = ['all', 'none', 'custom'].includes(mode) ? mode : 'none';
     }
 
     function getSelectedGroupBucketKeys() {
@@ -6425,7 +6430,7 @@
         .map(bucket => String(bucket?.key || '').trim())
         .filter(Boolean);
       const availableSet = new Set(availableKeys);
-      const previousCustomKeys = new Set(groupBucketSelectionState.selectedKeys || []);
+      const previousKeys = new Set(groupBucketSelectionState.selectedKeys || []);
       groupBucketSelectionState.availableKeys = availableKeys;
 
       if (groupBucketSelectionState.mode === 'all') {
@@ -6440,44 +6445,100 @@
         return;
       }
 
-      const survivingKeys = Array.from(previousCustomKeys).filter(key => availableSet.has(key));
+      const survivingKeys = Array.from(previousKeys).filter(key => availableSet.has(key));
       groupBucketSelectionState.selectedKeys = new Set(survivingKeys);
-      if (previousCustomKeys.size > 0 && survivingKeys.length === 0 && availableKeys.length > 0) {
-        setGroupsBucketSelectionNote("Els blocs seleccionats ja no existeixen en el context actual.");
+      if (previousKeys.size > 0 && survivingKeys.length === 0 && availableKeys.length > 0) {
+        setGroupsBucketSelectionNote("Els blocs marcats ja no existeixen en el context actual.");
       } else {
         setGroupsBucketSelectionNote('');
       }
     }
 
-    function describeGroupsResolutionLabel(layersUsed, usedFallback) {
+    function renderDetectedGroupFields(fields) {
+      const wrap = getGroupsAutoContextElements().detectedGroups;
+      if (!wrap) return;
+      wrap.innerHTML = '';
+      const rows = Array.isArray(fields) ? fields : [];
+      if (!rows.length) {
+        const empty = document.createElement('span');
+        empty.className = 'text-muted';
+        empty.textContent = 'cap';
+        wrap.appendChild(empty);
+        return;
+      }
+      rows.forEach(field => {
+        const badge = document.createElement('span');
+        badge.className = 'badge badge-info';
+        badge.textContent = String(field?.label || field?.code || '');
+        wrap.appendChild(badge);
+      });
+    }
+
+    function renderDetectedSortFields(fields) {
+      const wrap = getGroupsAutoContextElements().detectedSorts;
+      if (!wrap) return;
+      wrap.innerHTML = '';
+      const rows = Array.isArray(fields) ? fields : [];
+      if (!rows.length) {
+        const empty = document.createElement('span');
+        empty.className = 'text-muted';
+        empty.textContent = 'cap';
+        wrap.appendChild(empty);
+        return;
+      }
+      rows.forEach(field => {
+        const badge = document.createElement('span');
+        badge.className = 'badge badge-primary';
+        const priority = Number(field?.priority || 0);
+        badge.textContent = `${priority > 0 ? `#${priority} ` : ''}${String(field?.label || field?.code || '')}`;
+        wrap.appendChild(badge);
+      });
+    }
+
+    function describeGroupsResolutionLabel(layersUsed) {
       const layers = Array.isArray(layersUsed) ? layersUsed : [];
-      if (layers.includes('tabs') && layers.includes('sort')) return 'Seleccio activa + resolucio combinada';
-      if (layers.includes('tabs')) return 'Seleccio activa + agrupacions';
-      if (layers.includes('sort')) return 'Seleccio activa + ordenacions';
-      if (usedFallback) return 'Seleccio activa + fallback';
-      return 'Seleccio activa';
+      if (layers.includes('tabs') && layers.includes('sort')) return 'Tota la competicio + resolucio combinada';
+      if (layers.includes('tabs')) return 'Tota la competicio + agrupacions';
+      if (layers.includes('sort')) return 'Tota la competicio + ordenacions';
+      return 'Sense criteris resolubles';
     }
 
     function describeGroupsResolutionStatus(context) {
-      const selectionCount = Number(context?.selection_count || 0);
+      const sourceTotal = Number(context?.source_total || 0);
       const bucketsTotal = Number(context?.buckets_total || 0);
       const layersUsed = Array.isArray(context?.layers_used) ? context.layers_used : [];
-      if (!selectionCount) {
-        return 'Selecciona inscripcions per activar la creacio automatica.';
+      if (!sourceTotal) {
+        return 'No hi ha inscripcions disponibles a la competicio.';
       }
       if (!bucketsTotal) {
-        return 'Sense criteris resolubles: tota la seleccio activa.';
+        return "No s'han detectat divisions ni ordenacions segmentadores sobre tota la competicio.";
       }
       if (layersUsed.includes('tabs') && layersUsed.includes('sort')) {
-        return 'Blocs origen resolts sobre la seleccio activa amb agrupacions i ordenacions.';
+        return 'Blocs proposats sobre tota la competicio combinant divisions i ordenacions.';
       }
       if (layersUsed.includes('tabs')) {
-        return 'Blocs origen resolts sobre la seleccio activa a partir de les agrupacions.';
+        return 'Blocs proposats sobre tota la competicio a partir de les divisions.';
       }
       if (layersUsed.includes('sort')) {
-        return 'Blocs origen resolts sobre la seleccio activa a partir de les ordenacions.';
+        return 'Blocs proposats sobre tota la competicio a partir de les ordenacions.';
       }
-      return 'Blocs origen resolts sobre la seleccio activa.';
+      return 'Blocs proposats sobre tota la competicio.';
+    }
+
+    function createBucketMetricBadge(text, variant = 'light') {
+      const badge = document.createElement('span');
+      badge.className = 'badge';
+      if (variant === 'light') {
+        badge.className += ' badge-light border';
+      } else if (variant === 'primary') {
+        badge.className += ' badge-primary';
+      } else if (variant === 'secondary') {
+        badge.className += ' badge-secondary';
+      } else {
+        badge.className += ' badge-light border';
+      }
+      badge.textContent = text;
+      return badge;
     }
 
     function createGroupBucketNode(bucket) {
@@ -6498,23 +6559,14 @@
       text.textContent = String(bucket?.label || key);
       label.appendChild(text);
 
-      (Array.isArray(bucket?.kinds) ? bucket.kinds : []).forEach(kind => {
-        const badge = document.createElement('span');
-        badge.className = 'badge badge-light border';
-        badge.textContent = kind === 'tabs' ? 'Divisio' : (kind === 'sort' ? 'Ordenacio' : kind);
-        label.appendChild(badge);
-      });
-
-      const count = document.createElement('span');
-      count.className = 'badge badge-light';
-      count.textContent = String(Number(bucket?.count || 0));
-      label.appendChild(count);
+      label.appendChild(createBucketMetricBadge(`Global: ${Number(bucket?.global_count || bucket?.count || 0)}`));
       return label;
     }
 
     function updateGroupsStrategyButtonsState(context = null) {
       const selectionCount = Number(context?.selection_count || 0);
       const bucketsTotal = Number(context?.buckets_total || 0);
+      const markedBuckets = getSelectedGroupBucketKeys().length;
       const hasSelection = selectionCount > 0;
       ['btn-groups-create-count',
         'btn-groups-preview-count',
@@ -6532,24 +6584,40 @@
       });
       ['btn-groups-buckets-all', 'btn-groups-buckets-none'].forEach(id => {
         const el = document.getElementById(id);
-        if (el) el.disabled = !hasSelection || bucketsTotal === 0;
+        if (el) el.disabled = bucketsTotal === 0;
+      });
+      ['btn-groups-buckets-add', 'btn-groups-buckets-remove', 'btn-groups-buckets-set'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.disabled = bucketsTotal === 0 || markedBuckets === 0;
       });
     }
 
     function renderGroupsAutoContext(context) {
       const els = getGroupsAutoContextElements();
       const data = context && typeof context === 'object' ? context : {};
+      currentGroupsAutoContext = data;
       const buckets = Array.isArray(data.buckets) ? data.buckets : [];
       updateGroupBucketSelectionForContext(buckets);
 
+      if (els.source) {
+        els.source.textContent = String(data.source_scope || 'competition_all') === 'competition_all'
+          ? 'Tota la competicio'
+          : String(data.source_scope || 'competition_all');
+      }
+      renderDetectedGroupFields(data.detected_group_fields);
+      renderDetectedSortFields(data.detected_sort_fields);
+
       if (els.resolutionLabel) {
-        els.resolutionLabel.textContent = describeGroupsResolutionLabel(data.layers_used, data.used_fallback);
+        els.resolutionLabel.textContent = describeGroupsResolutionLabel(data.layers_used);
       }
       if (els.resolutionStatus) {
         els.resolutionStatus.textContent = describeGroupsResolutionStatus(data);
       }
       if (els.bucketsCount) {
-        els.bucketsCount.textContent = `Blocs origen resolts sobre la seleccio activa: ${Number(data.buckets_total || 0)}`;
+        els.bucketsCount.textContent = `Blocs proposats sobre tota la competicio: ${Number(data.buckets_total || 0)}`;
+      }
+      if (els.bucketsSelectionSummary) {
+        els.bucketsSelectionSummary.textContent = `Seleccionades globalment: ${Number(data.selection_count || 0)}`;
       }
       if (els.bucketsGrid) {
         els.bucketsGrid.innerHTML = '';
@@ -6560,10 +6628,8 @@
       }
 
       updateGroupsStrategyButtonsState(data);
-      if (!Number(data.selection_count || 0)) {
-        setGroupsAutoContextMessage('Selecciona inscripcions per activar la creacio automatica.');
-      } else if (!buckets.length) {
-        setGroupsAutoContextMessage('Sense criteris resolubles: tota la seleccio activa.');
+      if (!buckets.length) {
+        setGroupsAutoContextMessage("No s'han detectat blocs proposables sobre tota la competicio.");
       } else {
         setGroupsAutoContextMessage('');
       }
@@ -6574,21 +6640,39 @@
       if (!window.__groupsWorkspaceApi || typeof window.__groupsWorkspaceApi.resolveAutoContext !== 'function') {
         return null;
       }
+      const workspaceState = getGroupsWorkspaceState();
       try {
         const data = await window.__groupsWorkspaceApi.resolveAutoContext({
           fallback_mode: getGroupsFallbackMode(),
           group_by: getCurrentGroupByCodes(),
+          sort_context_filters: getCurrentInscripcioFilters(),
+          workspace_filters: workspaceState?.filters || {},
+          selected_ids: Array.isArray(workspaceState?.selectedIds) ? workspaceState.selectedIds : [],
+          source_scope: 'competition_all',
         });
         renderGroupsAutoContext(data);
         return data;
       } catch (err) {
+        currentGroupsAutoContext = null;
         updateGroupsStrategyButtonsState(null);
         setGroupsAutoContextMessage("No s'ha pogut resoldre el context automatic dels grups.");
         setGroupsBucketSelectionNote('');
         const els = getGroupsAutoContextElements();
+        if (els.bucketsCount) {
+          els.bucketsCount.textContent = 'Blocs proposats sobre tota la competicio: 0';
+        }
+        if (els.bucketsSelectionSummary) {
+          els.bucketsSelectionSummary.textContent = 'Seleccionades globalment: 0';
+        }
+        if (els.bucketsGrid) {
+          els.bucketsGrid.innerHTML = '';
+          els.bucketsGrid.classList.add('d-none');
+        }
         if (els.resolutionStatus) {
           els.resolutionStatus.textContent = "No s'ha pogut resoldre el context automatic dels grups.";
         }
+        renderDetectedGroupFields([]);
+        renderDetectedSortFields([]);
         return null;
       }
     }
@@ -6623,12 +6707,52 @@
           scope: 'selected',
           selected_ids: selectedIds,
           filters,
+          sort_context_filters: getCurrentInscripcioFilters(),
           group_by: getCurrentGroupByCodes(),
-          selected_keys: getSelectedGroupBucketKeys(),
-          bucket_selection_mode: groupBucketSelectionState.mode,
         },
         extraPayload || {}
       );
+    }
+
+    async function applySelectedGroupBuckets(selectionMode) {
+      const bucketKeys = getSelectedGroupBucketKeys();
+      if (!bucketKeys.length) {
+        showAlert('Marca com a minim un bloc proposat.');
+        return false;
+      }
+      if (!window.__groupsWorkspaceApi || typeof window.__groupsWorkspaceApi.applyAutoContextSelection !== 'function') {
+        showAlert("No s'ha pogut accedir al gestor de grups.");
+        return false;
+      }
+      const workspaceState = getGroupsWorkspaceState();
+      try {
+        const data = await window.__groupsWorkspaceApi.applyAutoContextSelection({
+          bucket_keys: bucketKeys,
+          selection_mode: selectionMode,
+          selected_ids: Array.isArray(workspaceState?.selectedIds) ? workspaceState.selectedIds : [],
+          sort_context_filters: getCurrentInscripcioFilters(),
+          workspace_filters: workspaceState?.filters || {},
+          group_by: getCurrentGroupByCodes(),
+          source_scope: 'competition_all',
+        });
+        if (typeof window.__groupsWorkspaceApi.setSelection === 'function') {
+          window.__groupsWorkspaceApi.setSelection(Array.isArray(data?.selected_ids) ? data.selected_ids : [], {
+            skipPreviewDirty: false,
+          });
+        }
+        const updatedCount = Number(data?.selection_count || 0);
+        setGroupsBucketSelectionNote(
+          selectionMode === 'remove'
+            ? `Seleccio actualitzada: ${updatedCount} inscripcions despres de treure ${Number(data?.buckets_applied || 0)} bloc(s).`
+            : selectionMode === 'set'
+              ? `Seleccio substituida pels ${Number(data?.buckets_applied || 0)} bloc(s) marcats: ${updatedCount} inscripcions.`
+              : `Seleccio ampliada amb ${Number(data?.buckets_applied || 0)} bloc(s): ${updatedCount} inscripcions.`
+        );
+        return true;
+      } catch (err) {
+        showAlert(`No s'ha pogut actualitzar la seleccio des del context automatic.\n${err.message || err}`);
+        return false;
+      }
     }
 
     let lastConfirmableGroupPreview = null;
@@ -7086,7 +7210,7 @@
       if (btnAll) {
         btnAll.addEventListener('click', () => {
           setGroupBucketSelection(true);
-          markGroupPreviewDirty();
+          updateGroupsStrategyButtonsState(currentGroupsAutoContext);
         });
       }
 
@@ -7094,7 +7218,28 @@
       if (btnNone) {
         btnNone.addEventListener('click', () => {
           setGroupBucketSelection(false);
-          markGroupPreviewDirty();
+          updateGroupsStrategyButtonsState(currentGroupsAutoContext);
+        });
+      }
+
+      const btnAdd = document.getElementById('btn-groups-buckets-add');
+      if (btnAdd) {
+        btnAdd.addEventListener('click', async () => {
+          await applySelectedGroupBuckets('add');
+        });
+      }
+
+      const btnRemove = document.getElementById('btn-groups-buckets-remove');
+      if (btnRemove) {
+        btnRemove.addEventListener('click', async () => {
+          await applySelectedGroupBuckets('remove');
+        });
+      }
+
+      const btnSet = document.getElementById('btn-groups-buckets-set');
+      if (btnSet) {
+        btnSet.addEventListener('click', async () => {
+          await applySelectedGroupBuckets('set');
         });
       }
 
@@ -7110,7 +7255,7 @@
               .filter(Boolean)
           );
           setGroupsBucketSelectionNote('');
-          markGroupPreviewDirty();
+          updateGroupsStrategyButtonsState(currentGroupsAutoContext);
         });
       }
 
@@ -8205,10 +8350,14 @@
       }
     }
 
+    let lastConfirmableTeamPreview = null;
+    let teamPreviewConfirmBusy = false;
+
     function getTeamPreviewElements() {
       return {
         root: document.getElementById('team-preview'),
         status: document.getElementById('team-preview-status'),
+        intentLabel: document.getElementById('team-preview-intent-label'),
         selection: document.getElementById('team-preview-selection-summary'),
         summary: document.getElementById('team-preview-summary'),
         existingWrap: document.getElementById('team-preview-existing-wrap'),
@@ -8217,8 +8366,52 @@
         plannedWrap: document.getElementById('team-preview-planned-wrap'),
         plannedMeta: document.getElementById('team-preview-planned-meta'),
         plannedList: document.getElementById('team-preview-list'),
+        confirm: document.getElementById('btn-team-preview-confirm'),
         clear: document.getElementById('btn-team-preview-clear'),
       };
+    }
+
+    function updateTeamPreviewConfirmUi() {
+      const els = getTeamPreviewElements();
+      const root = els.root;
+      const intent = lastConfirmableTeamPreview;
+      const dirty = !!(root && root.dataset.dirty === '1');
+      const hasPreview = !!(root && root.dataset.hasPreview === '1');
+      const loading = !!(root && root.dataset.loading === '1');
+
+      if (els.intentLabel) {
+        const label = String(intent?.label || '').trim();
+        els.intentLabel.textContent = dirty && label ? `${label} - desactualitzada` : label;
+        els.intentLabel.classList.toggle('d-none', !label);
+      }
+
+      if (els.confirm) {
+        const canShow = hasPreview && !!intent && !!intent.canConfirm;
+        const buttonLabel = String(intent?.buttonLabel || 'Confirmar aquesta creacio').trim() || 'Confirmar aquesta creacio';
+        els.confirm.textContent = buttonLabel;
+        els.confirm.disabled = !canShow || dirty || loading || teamPreviewConfirmBusy;
+        els.confirm.classList.toggle('d-none', !canShow);
+      }
+    }
+
+    function clearTeamPreviewConfirmIntent() {
+      lastConfirmableTeamPreview = null;
+      teamPreviewConfirmBusy = false;
+      updateTeamPreviewConfirmUi();
+    }
+
+    function setTeamPreviewConfirmIntent(intent) {
+      if (!intent || typeof intent.execute !== 'function' || !intent.canConfirm) {
+        clearTeamPreviewConfirmIntent();
+        return;
+      }
+      lastConfirmableTeamPreview = {
+        label: String(intent.label || '').trim(),
+        buttonLabel: String(intent.buttonLabel || 'Confirmar aquesta creacio').trim(),
+        canConfirm: true,
+        execute: intent.execute,
+      };
+      updateTeamPreviewConfirmUi();
     }
 
     function setTeamPreviewStatus(message, variant = 'muted') {
@@ -8267,6 +8460,7 @@
         statusText || "Encara no s'ha calculat cap previsualitzacio amb aquesta configuracio.",
         'muted'
       );
+      clearTeamPreviewConfirmIntent();
     }
 
     function markTeamPreviewDirty() {
@@ -8274,6 +8468,7 @@
       if (!els.root || els.root.dataset.hasPreview !== '1') return;
       els.root.dataset.dirty = '1';
       setTeamPreviewStatus('La configuracio ha canviat. Torna a previsualitzar per actualitzar el resultat.', 'warning');
+      updateTeamPreviewConfirmUi();
     }
 
     function setTeamPreviewLoading(loading) {
@@ -8283,6 +8478,7 @@
       if (loading) {
         setTeamPreviewStatus('Calculant la previsualitzacio dels equips...', 'info');
       }
+      updateTeamPreviewConfirmUi();
     }
 
     function createTeamPreviewCard(team, kind = 'planned') {
@@ -8473,6 +8669,7 @@
         clearTeamPreview("No s'ha pogut calcular la previsualitzacio.");
         return;
       }
+      clearTeamPreviewConfirmIntent();
 
       const plannedTeams = Array.isArray(data.preview) ? data.preview : [];
       const existingSummary = data.existing_summary && typeof data.existing_summary === 'object' ? data.existing_summary : {};
@@ -8536,7 +8733,31 @@
         ? `Previsualitzacio calculada per al context "${String(data.context_code || 'native')}".`
         : 'No es generen equips amb aquesta configuracio.';
       setTeamPreviewStatus(message, plannedTeams.length ? 'info' : 'muted');
+      updateTeamPreviewConfirmUi();
     }
+
+    const btnTeamPreviewConfirm = document.getElementById('btn-team-preview-confirm');
+    if (btnTeamPreviewConfirm) {
+      btnTeamPreviewConfirm.addEventListener('click', async () => {
+        const els = getTeamPreviewElements();
+        if (!lastConfirmableTeamPreview || !lastConfirmableTeamPreview.canConfirm) return;
+        if (!els.root || els.root.dataset.hasPreview !== '1' || els.root.dataset.dirty === '1') return;
+        if (teamPreviewConfirmBusy) return;
+        try {
+          teamPreviewConfirmBusy = true;
+          updateTeamPreviewConfirmUi();
+          await lastConfirmableTeamPreview.execute();
+        } finally {
+          teamPreviewConfirmBusy = false;
+          updateTeamPreviewConfirmUi();
+        }
+      });
+    }
+
+    window.__teamPreviewApi = {
+      setConfirmIntent: setTeamPreviewConfirmIntent,
+      clearConfirmIntent: clearTeamPreviewConfirmIntent,
+    };
     // Tabs Bootstrap 4 (depèn de jQuery + bootstrap.js)
     if (window.jQuery) {
       window.jQuery('a[data-toggle="tab"]').on('click', function (e) {

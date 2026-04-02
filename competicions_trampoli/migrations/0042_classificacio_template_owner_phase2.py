@@ -92,6 +92,11 @@ def backfill_template_created_by(apps, schema_editor):
         "competicions_trampoli", "ClassificacioTemplateGlobal"
     )
 
+    # Test databases can be empty when migrations run for the first time.
+    # In that case there is nothing to backfill and no fallback user is needed.
+    if not ClassificacioTemplateGlobal.objects.using(db_alias).exists():
+        return
+
     fallback_user_id = _resolve_fallback_user_id(apps, db_alias)
     owner_by_comp = _build_owner_map(apps, db_alias)
 

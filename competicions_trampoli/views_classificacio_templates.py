@@ -26,7 +26,10 @@ from .services.classificacio_templates import (
     template_schema_to_global_ui_schema,
     validate_template_schema_global,
 )
-from .views_classificacions import _build_scoreable_meta_for_schema, _build_validation_error_details
+from .views_classificacions import (
+    _build_metric_meta_for_schema_owner,
+    _build_validation_error_details,
+)
 
 
 def _is_global_templates_admin(user) -> bool:
@@ -226,7 +229,13 @@ class ClassificacioTemplateGlobalBuilder(TemplateView):
                 "is_global_builder": True,
                 "cfgs": cfgs,
                 "aparells": [
-                    {"id": app.id, "nom": app.nom, "codi": app.codi, "nombre_exercicis": 4}
+                    {
+                        "id": app.id,
+                        "nom": app.nom,
+                        "codi": app.codi,
+                        "nombre_exercicis": 4,
+                        "competition_unit": str(getattr(app, "competition_unit", "") or "individual"),
+                    }
                     for app in self.aparells
                 ],
                 "equips": [],
@@ -236,7 +245,7 @@ class ClassificacioTemplateGlobalBuilder(TemplateView):
                 "filter_choices": _collect_filter_choices(templates),
                 "aparell_field_options": build_global_aparell_field_options(
                     self.aparells,
-                    _build_scoreable_meta_for_schema,
+                    _build_metric_meta_for_schema_owner,
                 ),
                 "can_manage_global_templates": False,
             }
@@ -273,7 +282,7 @@ def classificacio_template_global_save(request):
         include_inactive=False,
         include_all_owners=False,
     )
-    scoreable_by_code = {}
+    field_meta_by_code = {}
     app_units_by_code = {}
     schemas_by_aparell = {
         s.aparell_id: (s.schema or {})
@@ -281,10 +290,8 @@ def classificacio_template_global_save(request):
     }
     for app in apps:
         sch = schemas_by_aparell.get(app.id, {}) or {}
-        meta = _build_scoreable_meta_for_schema(sch, strict_unknown=True)
-        scoreable_by_code[app.codi.upper()] = {
-            code for code, info in meta.items() if (info or {}).get("scoreable")
-        }
+        meta = _build_metric_meta_for_schema_owner(app, sch, strict_unknown=True)
+        field_meta_by_code[app.codi.upper()] = meta
         app_units_by_code[app.codi.upper()] = str(getattr(app, "competition_unit", "") or "").strip().lower()
 
     allowed_particio_codes = {item["code"] for item in build_global_native_particio_fields()}
@@ -311,7 +318,7 @@ def classificacio_template_global_save(request):
     schema_tpl, validation_errors, validation_details = validate_template_schema_global(
         schema_tpl,
         available_app_codes={app.codi.upper() for app in apps},
-        scoreable_by_code=scoreable_by_code,
+        field_meta_by_code=field_meta_by_code,
         app_units_by_code=app_units_by_code,
         allowed_particio_codes=allowed_particio_codes,
         allowed_filter_keys=GLOBAL_FILTER_KEYS,

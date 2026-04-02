@@ -61,7 +61,14 @@ from .services.detail_schema_validation import (
     validation_details_to_messages,
 )
 from .services.team_scoring import (
+    KIND_MEMBER_LIST,
+    KIND_MEMBER_MATRIX,
+    KIND_MEMBER_SCALAR,
+    KIND_SHARED_LIST,
+    KIND_SHARED_MATRIX,
+    KIND_SHARED_SCALAR,
     infer_team_expr_kind,
+    is_team_competition_unit,
     is_team_context_app,
 )
 from .services.equip_contexts import (
@@ -860,14 +867,14 @@ class ClassificacionsHome(TemplateView):
         for ca in aparells_cfg:
             sch = schemas_by_aparell.get(ca.aparell_id, {}) or {}
             opts = []
-            score_meta = _build_scoreable_meta_for_schema(sch)
+            field_meta = _build_metric_meta_for_comp_aparell(ca, sch, strict_unknown=False)
 
 
             for f in (sch.get("fields") or []):
                 if isinstance(f, dict) and f.get("code"):
                     code = str(f["code"])
-                    info = score_meta.get(code) or {}
-                    if not info.get("scoreable", False):
+                    info = field_meta.get(code) or {}
+                    if not (info.get("scoreable", False) or info.get("detail_displayable", False)):
                         continue
                     judges_count = 1
                     j = f.get("judges")
@@ -886,20 +893,32 @@ class ClassificacionsHome(TemplateView):
                         "code": code,
                         "label": str(f.get("label") or code),
                         "kind": "field",
+                        "scoreable": bool(info.get("scoreable", False)),
                         "judges_count": judges_count,
+                        "member_dependent": bool(info.get("member_dependent", False)),
+                        "detail_displayable": bool(info.get("detail_displayable", False)),
+                        "detail_display_kind": str(
+                            info.get("detail_display_kind") or DETAIL_DISPLAY_KIND_NONE
+                        ),
                     })
 
             for c in (sch.get("computed") or []):
                 if isinstance(c, dict) and c.get("code"):
                     code = str(c["code"])
-                    info = score_meta.get(code) or {}
-                    if not info.get("scoreable", False):
+                    info = field_meta.get(code) or {}
+                    if not (info.get("scoreable", False) or info.get("detail_displayable", False)):
                         continue
                     opts.append({
                         "code": code,
                         "label": str(c.get("label") or code),
                         "kind": "computed",
+                        "scoreable": bool(info.get("scoreable", False)),
                         "judges_count": 1,
+                        "member_dependent": bool(info.get("member_dependent", False)),
+                        "detail_displayable": bool(info.get("detail_displayable", False)),
+                        "detail_display_kind": str(
+                            info.get("detail_display_kind") or DETAIL_DISPLAY_KIND_NONE
+                        ),
                     })
 
             # dedup
@@ -3017,6 +3036,54 @@ def _field_is_direct_scoreable(field_cfg: dict):
     return False, "tipus de camp no puntuable directament"
 
 
+DETAIL_DISPLAY_KIND_NONE = "none"
+DETAIL_DISPLAY_KIND_SCALAR = "scalar"
+DETAIL_DISPLAY_KIND_JUDGE_ROWS = "judge_rows"
+
+
+def _detail_display_meta_for_field(field_cfg: dict):
+    if not isinstance(field_cfg, dict):
+        return {
+            "detail_displayable": False,
+            "detail_display_kind": DETAIL_DISPLAY_KIND_NONE,
+        }
+
+    ftype = str(field_cfg.get("type") or "").strip().lower()
+    shape = str(field_cfg.get("shape") or "").strip().lower()
+
+    if ftype == "number":
+        return {
+            "detail_displayable": True,
+            "detail_display_kind": DETAIL_DISPLAY_KIND_SCALAR,
+        }
+    if ftype == "list" and shape == "judge":
+        return {
+            "detail_displayable": True,
+            "detail_display_kind": DETAIL_DISPLAY_KIND_JUDGE_ROWS,
+        }
+    if ftype == "matrix" and shape in ("judge_x_item", "judge_x_element"):
+        return {
+            "detail_displayable": True,
+            "detail_display_kind": DETAIL_DISPLAY_KIND_JUDGE_ROWS,
+        }
+    return {
+        "detail_displayable": False,
+        "detail_display_kind": DETAIL_DISPLAY_KIND_NONE,
+    }
+
+
+def _detail_display_meta_for_computed_shape(shape_info):
+    if _is_scalar_shape_info(shape_info):
+        return {
+            "detail_displayable": True,
+            "detail_display_kind": DETAIL_DISPLAY_KIND_SCALAR,
+        }
+    return {
+        "detail_displayable": False,
+        "detail_display_kind": DETAIL_DISPLAY_KIND_NONE,
+    }
+
+
 def _score_field_kind_for_app(field_cfg: dict, *, is_team_app: bool) -> str:
     if not isinstance(field_cfg, dict):
         return KIND_SHARED_SCALAR
@@ -3024,16 +3091,13 @@ def _score_field_kind_for_app(field_cfg: dict, *, is_team_app: bool) -> str:
     scope = str(field_cfg.get("scope") or "member").strip().lower() or "member"
     if not is_team_app:
         scope = "shared"
-    prefix = "member" if scope == "member" else "shared"
 
     ftype = str(field_cfg.get("type") or "number").strip().lower() or "number"
     if ftype == "number":
-        suffix = "scalar"
-    elif ftype == "list":
-        suffix = "list"
-    else:
-        suffix = "matrix"
-    return f"{prefix}_{suffix}"
+        return KIND_MEMBER_SCALAR if scope == "member" else KIND_SHARED_SCALAR
+    if ftype == "list":
+        return KIND_MEMBER_LIST if scope == "member" else KIND_SHARED_LIST
+    return KIND_MEMBER_MATRIX if scope == "member" else KIND_SHARED_MATRIX
 
 
 def _expr_uses_member_inputs(node, member_env: dict) -> bool:
@@ -3061,14 +3125,34 @@ def _expr_uses_member_inputs(node, member_env: dict) -> bool:
     return False
 
 
-def _build_metric_meta_for_comp_aparell(comp_aparell, schema_obj: dict, strict_unknown=False):
+def _computed_is_member_dependent(comp_cfg: dict, tree, member_env: dict) -> bool:
+    formula = str((comp_cfg or {}).get("formula") or "").strip()
+    call_name, args_txt = _parse_formula_root_call(formula)
+    source_code = _extract_source_from_call(comp_cfg, call_name, args_txt)
+    if source_code and bool(member_env.get(source_code, False)):
+        return True
+    return _expr_uses_member_inputs(tree.body, member_env)
+
+
+def _build_metric_meta_for_schema_owner(schema_owner, schema_obj: dict, strict_unknown=False):
     schema_obj = schema_obj or {}
-    is_team_app = bool(is_team_context_app(comp_aparell))
+    is_team_app = bool(is_team_competition_unit(schema_owner))
     base_meta = _build_scoreable_meta_for_schema(schema_obj, strict_unknown=bool(strict_unknown))
+    inferred_shapes = {}
+    try:
+        inferred_shapes = _infer_schema_code_shapes(schema_obj)
+    except Exception:
+        inferred_shapes = {}
     meta = {}
     for code, info in (base_meta or {}).items():
         item = dict(info if isinstance(info, dict) else {})
         item["kind"] = KIND_SHARED_SCALAR if str(code).strip().lower() == "total" else ""
+        item.setdefault("member_dependent", False)
+        item.setdefault("detail_displayable", str(code).strip().lower() == "total")
+        item.setdefault(
+            "detail_display_kind",
+            DETAIL_DISPLAY_KIND_SCALAR if str(code).strip().lower() == "total" else DETAIL_DISPLAY_KIND_NONE,
+        )
         meta[str(code)] = item
 
     params = schema_obj.get("params", {})
@@ -3098,6 +3182,7 @@ def _build_metric_meta_for_comp_aparell(comp_aparell, schema_obj: dict, strict_u
         if not code:
             continue
         kind = _score_field_kind_for_app(field, is_team_app=is_team_app)
+        display_meta = _detail_display_meta_for_field(field)
         kind_env[code] = kind
         member_dependent = bool(is_team_app and str(field.get("scope") or "member").strip().lower() == "member")
         member_env[code] = member_dependent
@@ -3107,9 +3192,21 @@ def _build_metric_meta_for_comp_aparell(comp_aparell, schema_obj: dict, strict_u
             kind_env[var] = kind
             member_env[var] = member_dependent
             allowed_names.add(var)
-        meta.setdefault(code, {"scoreable": False, "reason": "", "kind": kind, "member_dependent": member_dependent})
+        meta.setdefault(
+            code,
+            {
+                "scoreable": False,
+                "reason": "",
+                "kind": kind,
+                "member_dependent": member_dependent,
+                "detail_displayable": display_meta["detail_displayable"],
+                "detail_display_kind": display_meta["detail_display_kind"],
+            },
+        )
         meta[code]["kind"] = kind
         meta[code]["member_dependent"] = member_dependent
+        meta[code]["detail_displayable"] = display_meta["detail_displayable"]
+        meta[code]["detail_display_kind"] = display_meta["detail_display_kind"]
 
     for idx, comp in enumerate(computed):
         if not isinstance(comp, dict):
@@ -3148,6 +3245,11 @@ def _build_metric_meta_for_comp_aparell(comp_aparell, schema_obj: dict, strict_u
         idx = comp_index.get(code, 0)
         formula = str(comp.get("formula") or "").strip()
         kind = ""
+        member_dependent = False
+        display_meta = {
+            "detail_displayable": False,
+            "detail_display_kind": DETAIL_DISPLAY_KIND_NONE,
+        }
         if formula:
             loc = f"computed[{idx}]({code})"
             try:
@@ -3156,15 +3258,31 @@ def _build_metric_meta_for_comp_aparell(comp_aparell, schema_obj: dict, strict_u
                 unknown = [name for name in names if name not in allowed_names]
                 if not unknown:
                     kind = infer_team_expr_kind(tree.body, kind_env)
-                    member_dependent = _expr_uses_member_inputs(tree.body, member_env)
+                    member_dependent = _computed_is_member_dependent(comp, tree, member_env)
+                    display_meta = _detail_display_meta_for_computed_shape(inferred_shapes.get(code))
+                    if _formula_forces_vector_return(formula):
+                        display_meta = {
+                            "detail_displayable": False,
+                            "detail_display_kind": DETAIL_DISPLAY_KIND_NONE,
+                        }
             except Exception:
                 kind = ""
                 member_dependent = False
-        else:
-            member_dependent = False
-        meta.setdefault(code, {"scoreable": False, "reason": "", "kind": "", "member_dependent": member_dependent})
+        meta.setdefault(
+            code,
+            {
+                "scoreable": False,
+                "reason": "",
+                "kind": "",
+                "member_dependent": member_dependent,
+                "detail_displayable": display_meta["detail_displayable"],
+                "detail_display_kind": display_meta["detail_display_kind"],
+            },
+        )
         meta[code]["kind"] = kind
         meta[code]["member_dependent"] = member_dependent
+        meta[code]["detail_displayable"] = display_meta["detail_displayable"]
+        meta[code]["detail_display_kind"] = display_meta["detail_display_kind"]
         if kind:
             kind_env[code] = kind
             member_env[code] = member_dependent
@@ -3174,6 +3292,10 @@ def _build_metric_meta_for_comp_aparell(comp_aparell, schema_obj: dict, strict_u
                 member_env[var] = member_dependent
 
     return meta
+
+
+def _build_metric_meta_for_comp_aparell(comp_aparell, schema_obj: dict, strict_unknown=False):
+    return _build_metric_meta_for_schema_owner(comp_aparell, schema_obj, strict_unknown=bool(strict_unknown))
 
 
 def _resolve_tie_target_app_ids(tie, *, selected_app_ids):
@@ -3953,7 +4075,11 @@ def _validate_presentacio_columns_details(competicio, schema: dict, tipus="indiv
 
             if app_id not in meta_cache:
                 sch = schemas_by_aparell.get(app_by_id[app_id].aparell_id, {}) or {}
-                meta_cache[app_id] = _build_scoreable_meta_for_schema(sch, strict_unknown=True)
+                meta_cache[app_id] = _build_metric_meta_for_comp_aparell(
+                    app_by_id[app_id],
+                    sch,
+                    strict_unknown=True,
+                )
             info = meta_cache[app_id].get(camp)
             if not info:
                 errors.append(
@@ -3964,6 +4090,11 @@ def _validate_presentacio_columns_details(competicio, schema: dict, tipus="indiv
                 errors.append(
                     f"presentacio.columnes[{idx}] raw: camp '{camp}' no es puntuable directament "
                     f"({info.get('reason')})."
+                )
+                continue
+            if team_mode == "native_team" and bool(info.get("member_dependent", False)):
+                errors.append(
+                    f"presentacio.columnes[{idx}] raw: en team_mode=native_team els camps individuals per membre nomes es poden mostrar a presentacio.detall.sections de tipus team_members_table."
                 )
 
     raw_detail = presentacio.get("detall")
@@ -3994,7 +4125,11 @@ def _validate_presentacio_columns_details(competicio, schema: dict, tipus="indiv
             if comp_app is None:
                 return None
             sch = schemas_by_aparell.get(comp_app.aparell_id, {}) or {}
-            meta_cache[app_id] = _build_scoreable_meta_for_schema(sch, strict_unknown=True)
+            meta_cache[app_id] = _build_metric_meta_for_comp_aparell(
+                comp_app,
+                sch,
+                strict_unknown=True,
+            )
         return meta_cache[app_id].get(camp)
 
     def validate_exercise(app_id, raw_exercici):

@@ -1678,9 +1678,11 @@ if (groupsWorkspaceShell && groupsMainCard) {
   window.__groupsWorkspaceApi = {
     refresh: fetchWorkspace,
     resolveAutoContext: (extra = {}) => postJson(groupsWorkspaceUrl, buildPayload({ operation: 'resolve_auto_context', ...extra })),
+    applyAutoContextSelection: (extra = {}) => postJson(groupsWorkspaceUrl, buildPayload({ operation: 'apply_auto_context_selection', ...extra })),
     selectGroup: (groupId) => selectGroup(groupId, { scroll: true, resetPage: true }),
     preview: previewAction,
     setExternalSelection: syncExternalSelection,
+    setSelection: (ids, options = {}) => updateSelection(ids, 'set', options),
     getState: () => ({
       selectedIds: selectedIds(),
       selectionCount: selectedIds().length,
