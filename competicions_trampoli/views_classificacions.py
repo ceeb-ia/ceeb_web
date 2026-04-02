@@ -22,6 +22,7 @@ from .services.services_classificacions_2 import (
     CLASSIFICACIO_FILTER_KEYS,
     EXERCISE_SELECTION_SCOPE_INHERIT,
     EXERCISE_SELECTION_SCOPE_PER_MEMBER,
+    EXERCISE_SELECTION_SCOPE_TEAM_POOL,
     compute_classificacio,
     DEFAULT_SCHEMA,
     _normalize_classificacio_filters,

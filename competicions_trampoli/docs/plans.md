@@ -99,7 +99,7 @@ PLA 2:
 # Separació de `competicions_trampoli/tests.py` en paquet `tests/`
 
 ## Resum
-Refactor estructural, sense canvis funcionals, per substituir [tests.py](c:/Users/Extra/Desktop/ceeb_web/competicions_trampoli/tests.py) per `competicions_trampoli/tests/` amb fitxers per domini. L’objectiu és mantenir `manage.py test competicions_trampoli.tests` estable i preservar al màxim els labels antics via reexports a `tests/__init__.py`.
+Refactor estructural, sense canvis funcionals, per substituir [`competicions_trampoli/tests/`](/c:/Users/Guillem Merino/Desktop/ceeb_web/competicions_trampoli/tests/__init__.py) com a nou punt d’entrada dels tests amb fitxers per domini. L’objectiu és mantenir `manage.py test competicions_trampoli.tests` estable i preservar al màxim els labels antics via reexports a `tests/__init__.py`.
 
 ## Canvis principals
 - Convertir `competicions_trampoli.tests` de mòdul únic a paquet:
@@ -163,7 +163,7 @@ Refactor estructural, sense canvis funcionals, per substituir [tests.py](c:/User
   - no s’aprofitarà aquesta passada per deduplicar proves ni canviar assertions
 
 - Ajustos col·laterals mínims:
-  - actualitzar qualsevol documentació interna que encara referenciï `competicions_trampoli/tests.py`, com [desplegament_autenticacio_i_accessos.md](c:/Users/Extra/Desktop/ceeb_web/competicions_trampoli/docs/desplegament_autenticacio_i_accessos.md#L264)
+  - actualitzar qualsevol documentació interna que encara referenciï `competicions_trampoli/tests.py`, com [desplegament_autenticacio_i_accessos.md](/c:/Users/Guillem Merino/Desktop/ceeb_web/competicions_trampoli/docs/desplegament_autenticacio_i_accessos.md#L264)
   - no tocar altres apps del projecte en aquesta fase
 
 ## Interfícies i compatibilitat

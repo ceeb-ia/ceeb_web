@@ -261,7 +261,7 @@ S'ha ajustat el frontend de classificacions per treballar amb una URL de dades i
 - `competicions_trampoli/urls.py`
 - `competicions_trampoli/views_classificacions.py`
 - `competicions_trampoli/admin.py`
-- `competicions_trampoli/tests.py`
+- `competicions_trampoli/tests/`
 - `competicions_trampoli/migrations/0035_competiciomembership.py`
 
 ### Templates
