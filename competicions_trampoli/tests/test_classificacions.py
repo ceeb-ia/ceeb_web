@@ -3864,6 +3864,79 @@ class LiveClassificacionsRedisCacheTests(_BaseTrampoliDataMixin, TestCase):
         payload["generated_at"] = (generated_at or timezone.now()).isoformat()
         return json.dumps(payload)
 
+    def test_internal_live_view_exposes_poll_ms_and_internal_data_url_bootstrap(self):
+        self.client.force_login(self.user)
+        res = self.client.get(reverse("classificacions_live", kwargs={"pk": self.comp.id}))
+
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.context["poll_ms"], 4000)
+        self.assertFalse(res.context["is_public"])
+        self.assertContains(res, 'id="poll-ms"', status_code=200)
+        self.assertContains(
+            res,
+            reverse("classificacions_live_data", kwargs={"pk": self.comp.id}),
+            status_code=200,
+        )
+
+    def test_loop_live_view_clamps_polling_params_and_uses_internal_data_url(self):
+        self.client.force_login(self.user)
+        res = self.client.get(
+            reverse("classificacions_loop_live", kwargs={"pk": self.comp.id}),
+            {
+                "poll_ms": 5,
+                "slide_ms": 999999,
+                "rows": 1,
+                "transition": "spin",
+            },
+        )
+
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.context["poll_ms"], 1000)
+        self.assertEqual(res.context["slide_ms"], 120000)
+        self.assertEqual(res.context["rows_per_page"], 3)
+        self.assertEqual(res.context["transition"], "fade")
+        self.assertContains(res, 'id="loop-poll-ms"', status_code=200)
+        self.assertContains(res, 'id="loop-slide-ms"', status_code=200)
+        self.assertContains(res, 'id="loop-data-url"', status_code=200)
+        self.assertContains(
+            res,
+            reverse("classificacions_live_data", kwargs={"pk": self.comp.id}),
+            status_code=200,
+        )
+
+    def test_public_loop_live_exposes_public_data_url_and_media_capability(self):
+        self.token.can_view_media = True
+        self.token.save(update_fields=["can_view_media"])
+
+        res = self.client.get(reverse("public_live_loop", kwargs={"token": self.token.id}))
+
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(res.context["is_public"])
+        self.assertTrue(res.context["public_token_can_view_media"])
+        self.assertEqual(
+            res.context["data_url"],
+            f"http://testserver{reverse('public_live_classificacions_data', kwargs={'token': self.token.id})}",
+        )
+        self.assertContains(
+            res,
+            reverse("public_live_classificacions_data", kwargs={"token": self.token.id}),
+            status_code=200,
+        )
+
+    def test_loop_live_shows_empty_state_when_no_active_classificacions(self):
+        self.cfg.activa = False
+        self.cfg.save(update_fields=["activa"])
+        self.client.force_login(self.user)
+
+        res = self.client.get(reverse("classificacions_loop_live", kwargs={"pk": self.comp.id}))
+
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(
+            res,
+            "No hi ha cap classificacio activa. Quan n'hi hagi, apareixeran automaticament.",
+            status_code=200,
+        )
+
     def test_first_get_computes_and_second_get_uses_cache(self):
         fake_redis = self.FakeRedis()
         compute_result = {
@@ -3922,6 +3995,25 @@ class LiveClassificacionsRedisCacheTests(_BaseTrampoliDataMixin, TestCase):
         self.assertFalse(second_res.json()["changed"])
         self.assertEqual(second_res.json()["stamp"], stamp)
         self.assertEqual(second_res.json().get("permissions", {}).get("can_view_media"), False)
+
+    def test_internal_since_is_served_from_cached_stamp_without_recompute(self):
+        fake_redis = self.FakeRedis()
+        compute_result = {
+            "global": [{"participant": "Participant Cache", "punts": 9.8, "posicio": 1}]
+        }
+        self.client.force_login(self.user)
+        with patch("competicions_trampoli.live_cache._live_redis_client", return_value=fake_redis):
+            with patch("competicions_trampoli.views_classificacions.compute_classificacio", return_value=compute_result) as mocked_compute:
+                first_res = self.client.get(self._internal_url())
+                stamp = first_res.json()["stamp"]
+                second_res = self.client.get(self._internal_url(), {"since": stamp})
+
+        self.assertEqual(first_res.status_code, 200)
+        self.assertEqual(second_res.status_code, 200)
+        self.assertEqual(mocked_compute.call_count, 1)
+        self.assertFalse(second_res.json()["changed"])
+        self.assertEqual(second_res.json()["stamp"], stamp)
+        self.assertNotIn("permissions", second_res.json())
 
     def test_dirty_refresh_with_since_returns_changed_true_and_new_snapshot_stamp(self):
         fake_redis = self.FakeRedis()

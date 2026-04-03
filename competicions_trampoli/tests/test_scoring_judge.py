@@ -657,6 +657,47 @@ class ScoringAndJudgeExclusionFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual({u["exercici"] for u in updates}, {1, 2})
         self.assertEqual({u["inscripcio_id"] for u in updates}, {self.ins_allowed.id})
 
+    def test_judge_updates_without_since_returns_empty_feed_contract(self):
+        url = reverse("judge_updates", kwargs={"token": self.token.id})
+        res = self.client.get(url)
+
+        self.assertEqual(res.status_code, 200)
+        self.assertJSONEqual(
+            res.content.decode("utf-8"),
+            {
+                "ok": True,
+                "now": None,
+                "updates": [],
+                "next_since": None,
+                "next_after_id": "",
+                "has_more": False,
+            },
+        )
+
+    def test_judge_updates_filter_inputs_by_token_permissions(self):
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins_allowed,
+            exercici=1,
+            comp_aparell=self.comp_app,
+            inputs={
+                "E": [0.2, 0.3, 0.4, 0.5, 0.6],
+                "X": [1.0, 1.1, 1.2, 1.3, 1.4],
+            },
+            outputs={},
+            total=2.0,
+        )
+
+        url = reverse("judge_updates", kwargs={"token": self.token.id})
+        res = self.client.get(url, {"since": (timezone.now() - timedelta(minutes=10)).isoformat(), "exercici": 1})
+
+        self.assertEqual(res.status_code, 200)
+        updates = res.json().get("updates", [])
+        self.assertEqual(len(updates), 1)
+        self.assertEqual(updates[0]["inscripcio_id"], self.ins_allowed.id)
+        self.assertEqual(updates[0]["inputs"], {"E": [0.2, 0.3, 0.4, 0.5, 0.6]})
+        self.assertNotIn("X", updates[0]["inputs"])
+
 
 class JudgeVideoApiTests(_BaseTrampoliDataMixin, TestCase):
     def setUp(self):
@@ -1165,6 +1206,53 @@ class JudgeMessagingFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(second_res.status_code, 200)
         self.assertEqual([row["text"] for row in second_res.json().get("messages", [])], ["M3"])
 
+    def test_judge_messages_updates_without_since_returns_empty_snapshot_for_new_conversation(self):
+        updates_url = reverse("judge_messages_updates", kwargs={"token": self.token.id})
+        updates_res = self.client.get(updates_url)
+
+        self.assertEqual(updates_res.status_code, 200)
+        payload = updates_res.json()
+        self.assertTrue(payload.get("ok"))
+        self.assertEqual(payload.get("messages"), [])
+        self.assertFalse(payload.get("has_more"))
+        self.assertEqual(payload.get("next_after_id"), "")
+        self.assertIn("conversation", payload)
+        self.assertEqual(str(payload["conversation"]["token_id"]), str(self.token.id))
+
+    def test_judge_messages_updates_reset_unread_and_return_cooldown_remaining(self):
+        self.client.post(
+            reverse("judge_request_support", kwargs={"token": self.token.id}),
+            data=json.dumps({}),
+            content_type="application/json",
+        )
+        self.client.force_login(self.manager_user)
+        self.client.post(
+            reverse("judge_messages_send_org", kwargs={"competicio_id": self.comp.id}),
+            data=json.dumps(
+                {
+                    "judge_token_id": str(self.token.id),
+                    "message_type": "instruction",
+                    "text": "Confirma recepcio del dispositiu.",
+                }
+            ),
+            content_type="application/json",
+        )
+        self.client.logout()
+
+        conversation = JudgeConversation.objects.get(judge_token=self.token)
+        self.assertGreater(conversation.unread_for_judge, 0)
+
+        updates_url = reverse("judge_messages_updates", kwargs={"token": self.token.id})
+        updates_res = self.client.get(updates_url)
+
+        self.assertEqual(updates_res.status_code, 200)
+        payload = updates_res.json()
+        self.assertTrue(any("Confirma recepcio" in (row.get("text") or "") for row in payload.get("messages", [])))
+        self.assertIsInstance(payload.get("cooldown_remaining"), int)
+        self.assertGreaterEqual(payload.get("cooldown_remaining"), 0)
+        conversation.refresh_from_db()
+        self.assertEqual(conversation.unread_for_judge, 0)
+
 
 class ScoringUpdatesCursorTests(_BaseTrampoliDataMixin, TestCase):
     def setUp(self):
@@ -1236,3 +1324,20 @@ class ScoringUpdatesCursorTests(_BaseTrampoliDataMixin, TestCase):
             )
         self.assertEqual(second_res.status_code, 200)
         self.assertEqual([row.get("inscripcio_id") for row in second_res.json().get("updates", [])], [self.ins_3.id])
+
+    def test_scoring_updates_without_since_returns_empty_feed_contract(self):
+        url = reverse("scoring_updates", kwargs={"pk": self.comp.id})
+        res = self.client.get(url)
+
+        self.assertEqual(res.status_code, 200)
+        self.assertJSONEqual(
+            res.content.decode("utf-8"),
+            {
+                "ok": True,
+                "now": None,
+                "updates": [],
+                "next_since": None,
+                "next_after_id": "",
+                "has_more": False,
+            },
+        )

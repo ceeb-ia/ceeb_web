@@ -744,13 +744,6 @@ if (groupsWorkspaceShell && groupsMainCard) {
     const actions = document.createElement('div');
     actions.className = 'team-context-team-actions';
 
-    const toggle = document.createElement('button');
-    toggle.type = 'button';
-    toggle.className = 'btn btn-sm btn-outline-dark';
-    toggle.setAttribute('data-group-open', groupId);
-    toggle.textContent = isCurrent ? 'Veient detall' : 'Veure detall';
-    actions.appendChild(toggle);
-
     const assign = document.createElement('button');
     assign.type = 'button';
     assign.className = 'btn btn-sm btn-outline-primary';
@@ -1519,6 +1512,16 @@ if (groupsWorkspaceShell && groupsMainCard) {
         if (!groupId) return;
         await selectGroup(groupId, { scroll: false, resetPage: false });
         await runAction('delete', groupsDeleteUrl, { group_id: groupId });
+        return;
+      }
+
+      const card = event.target.closest('.team-context-team-card[data-group-id]');
+      if (card) {
+        if (event.target.closest('button,input,a,select,textarea,label')) return;
+        const groupId = String(card.getAttribute('data-group-id') || '').trim();
+        if (!groupId) return;
+        const preservePage = groupId === String(state.selectedGroupId || '');
+        await selectGroup(groupId, { scroll: false, resetPage: !preservePage, forceReload: true });
         return;
       }
 

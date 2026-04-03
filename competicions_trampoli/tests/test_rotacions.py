@@ -391,6 +391,45 @@ class RotationOrderingDisplayTests(_BaseTrampoliDataMixin, TestCase):
         self.assertIn('data-exercise-chip="1"', body)
         self.assertNotIn("data-exercise-link", body)
 
+    def test_judge_portal_bootstraps_polling_contract_and_support_updates_url(self):
+        self.token.can_record_video = True
+        self.token.save(update_fields=["can_record_video"])
+        portal_url = reverse("judge_portal", kwargs={"token": self.token.id})
+        portal_res = self.client.get(portal_url)
+
+        self.assertEqual(portal_res.status_code, 200)
+        self.assertEqual(
+            portal_res.context["save_url"],
+            reverse("judge_save_partial", kwargs={"token": self.token.id}),
+        )
+        self.assertEqual(
+            portal_res.context["updates_url"],
+            reverse("judge_updates", kwargs={"token": self.token.id}),
+        )
+        self.assertEqual(
+            portal_res.context["video_status_url"],
+            reverse("judge_video_status", kwargs={"token": self.token.id}),
+        )
+        self.assertTrue(portal_res.context["updates_cursor_init"])
+
+        body = portal_res.content.decode("utf-8")
+        self.assertIn(reverse("judge_save_partial", kwargs={"token": self.token.id}), body)
+        self.assertIn(reverse("judge_updates", kwargs={"token": self.token.id}), body)
+        self.assertIn(reverse("judge_video_status", kwargs={"token": self.token.id}), body)
+        self.assertIn(reverse("judge_messages_updates", kwargs={"token": self.token.id}), body)
+        self.assertIn('id="updates-cursor-init"', body)
+
+    def test_scoring_notes_home_bootstraps_updates_url_and_cursor_contract(self):
+        scoring_url = reverse("scoring_notes_home", kwargs={"pk": self.comp.id})
+        scoring_res = self.client.get(scoring_url)
+
+        self.assertEqual(scoring_res.status_code, 200)
+        self.assertTrue(scoring_res.context["updates_cursor_init"])
+        body = scoring_res.content.decode("utf-8")
+        self.assertIn(reverse("scoring_updates", kwargs={"pk": self.comp.id}), body)
+        self.assertIn('id="updates-cursor-init"', body)
+        self.assertIn("const UPDATES_URL = ", body)
+
     def test_scoring_notes_home_supports_franja_selection_for_programmed_groups(self):
         scoring_url = reverse("scoring_notes_home", kwargs={"pk": self.comp.id})
 

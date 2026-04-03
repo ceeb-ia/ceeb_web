@@ -5245,6 +5245,186 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(by_kind[("team_unit", team_subject.id)]["comp_aparell_id"], self.comp_app.id)
         self.assertEqual(by_kind[("team_unit", team_subject.id)]["series_state"], "unassigned")
 
+    def test_judge_updates_team_unit_use_after_id_for_same_timestamp(self):
+        equip2, _members2 = self._create_team_with_members("Parella 2", ["Nora", "Marta"], start_order=30)
+        equip3, _members3 = self._create_team_with_members("Parella 3", ["Jana", "Paula"], start_order=40)
+        subject_1, _meta_1 = self._team_subject()
+        subject_2, _meta_2 = self._team_subject(equip2)
+        subject_3, _meta_3 = self._team_subject(equip3)
+        token = JudgeDeviceToken.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            label="Team Judge Cursor",
+            permissions=[{"field_code": "SYNC", "runtime_field_code": "SYNC", "scope": "shared", "judge_index": 1}],
+            is_active=True,
+        )
+        base_time = timezone.now()
+        e1 = TeamScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            team_subject=subject_1,
+            exercici=1,
+            inputs={"SYNC": 5},
+            outputs={},
+            total=5,
+        )
+        e2 = TeamScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            team_subject=subject_2,
+            exercici=1,
+            inputs={"SYNC": 6},
+            outputs={},
+            total=6,
+        )
+        e3 = TeamScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            team_subject=subject_3,
+            exercici=1,
+            inputs={"SYNC": 7},
+            outputs={},
+            total=7,
+        )
+        TeamScoreEntry.objects.filter(pk__in=[e1.id, e2.id, e3.id]).update(updated_at=base_time)
+
+        url = reverse("judge_updates", kwargs={"token": token.id})
+        with patch("competicions_trampoli.views_judge.JUDGE_UPDATES_LIMIT", 2):
+            first_res = self.client.get(url, {"since": (base_time - timedelta(seconds=1)).isoformat(), "exercici": 1})
+            self.assertEqual(first_res.status_code, 200)
+            first_body = first_res.json()
+            self.assertTrue(first_body.get("has_more"))
+            self.assertEqual(
+                [int(row["subject_id"]) for row in first_body.get("updates", [])],
+                [subject_1.id, subject_2.id],
+            )
+
+            second_res = self.client.get(
+                url,
+                {
+                    "since": first_body.get("next_since"),
+                    "after_id": first_body.get("next_after_id"),
+                    "exercici": 1,
+                },
+            )
+
+        self.assertEqual(second_res.status_code, 200)
+        self.assertEqual(
+            [int(row["subject_id"]) for row in second_res.json().get("updates", [])],
+            [subject_3.id],
+        )
+
+    def test_scoring_updates_combined_cursor_orders_individual_before_team_for_same_timestamp(self):
+        indiv_app = self._create_aparell("IND-CURSOR", "Individual cursor")
+        indiv_comp_app = self._create_comp_aparell(self.comp, indiv_app, ordre=2)
+        equip2, _members2 = self._create_team_with_members("Parella 2", ["Nora", "Marta"], start_order=30)
+        subject_1, _meta_1 = self._team_subject()
+        subject_2, _meta_2 = self._team_subject(equip2)
+        base_time = timezone.now()
+        score_entry = ScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=indiv_comp_app,
+            inscripcio=self.ins1,
+            exercici=1,
+            inputs={"N": 7.5},
+            outputs={"TOTAL": 7.5},
+            total=7.5,
+        )
+        team_entry_1 = TeamScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            team_subject=subject_1,
+            exercici=1,
+            inputs={"SYNC": 5},
+            outputs={},
+            total=5,
+        )
+        team_entry_2 = TeamScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            team_subject=subject_2,
+            exercici=1,
+            inputs={"SYNC": 6},
+            outputs={},
+            total=6,
+        )
+        ScoreEntry.objects.filter(pk=score_entry.id).update(updated_at=base_time)
+        TeamScoreEntry.objects.filter(pk__in=[team_entry_1.id, team_entry_2.id]).update(updated_at=base_time)
+
+        url = reverse("scoring_updates", kwargs={"pk": self.comp.id})
+        with patch("competicions_trampoli.views_scoring.SCORING_UPDATES_LIMIT", 2):
+            first_res = self.client.get(url, {"since": (base_time - timedelta(seconds=1)).isoformat()})
+            self.assertEqual(first_res.status_code, 200)
+            first_body = first_res.json()
+            self.assertTrue(first_body.get("has_more"))
+            self.assertEqual(
+                [(row["subject_kind"], int(row["subject_id"])) for row in first_body.get("updates", [])],
+                [("inscripcio", self.ins1.id), ("team_unit", subject_1.id)],
+            )
+            self.assertEqual(first_body.get("next_after_id"), f"team:{team_entry_1.id}")
+
+            second_res = self.client.get(
+                url,
+                {
+                    "since": first_body.get("next_since"),
+                    "after_id": first_body.get("next_after_id"),
+                },
+            )
+
+        self.assertEqual(second_res.status_code, 200)
+        self.assertEqual(
+            [(row["subject_kind"], int(row["subject_id"])) for row in second_res.json().get("updates", [])],
+            [("team_unit", subject_2.id)],
+        )
+
+    def test_scoring_updates_group_filter_keeps_team_rows_and_filters_individual_rows(self):
+        indiv_app = self._create_aparell("IND-GROUP", "Individual group")
+        indiv_comp_app = self._create_comp_aparell(self.comp, indiv_app, ordre=2)
+        team_subject, _team_meta = self._team_subject()
+        other_group_ins = self._create_inscripcio(self.comp, "Berta grup 2", ordre=50, grup=2)
+
+        TeamScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            team_subject=team_subject,
+            exercici=1,
+            inputs={"SYNC": 5.0},
+            outputs={},
+            total=5.0,
+        )
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=indiv_comp_app,
+            inscripcio=self.ins1,
+            exercici=1,
+            inputs={"N": 7.5},
+            outputs={"TOTAL": 7.5},
+            total=7.5,
+        )
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=indiv_comp_app,
+            inscripcio=other_group_ins,
+            exercici=1,
+            inputs={"N": 6.5},
+            outputs={"TOTAL": 6.5},
+            total=6.5,
+        )
+
+        res = self.client.get(
+            reverse("scoring_updates", kwargs={"pk": self.comp.id}),
+            {
+                "since": (timezone.now() - timedelta(minutes=10)).isoformat(),
+                "group": self.ins1.grup_competicio_id,
+            },
+        )
+
+        self.assertEqual(res.status_code, 200)
+        updates = {(row["subject_kind"], int(row["subject_id"])): row for row in res.json()["updates"]}
+        self.assertIn(("inscripcio", self.ins1.id), updates)
+        self.assertNotIn(("inscripcio", other_group_ins.id), updates)
+        self.assertIn(("team_unit", team_subject.id), updates)
+
     def test_series_delete_blocks_programmed_empty_serie(self):
         serie = SerieEquip.objects.create(
             competicio=self.comp,
