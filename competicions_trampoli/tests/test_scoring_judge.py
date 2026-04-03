@@ -65,16 +65,20 @@ from ..models_trampoli import (
 )
 from ..models import CompeticioMembership
 from ..scoring_engine import ScoringEngine
-from ..views import (
+from ..inscripcions_views_shared import (
+    _split_custom_sort_tokens,
+    renumber_groups_for_competicio,
+    sort_records_by_field_stable,
+)
+from ..services.inscripcions.history import (
+    apply_inscripcions_history_snapshot,
+    capture_inscripcions_history_snapshot,
+)
+from ..services.inscripcions.queries import (
     COLUMN_FILTER_EMPTY_TOKEN,
     _build_inscripcions_filtered_qs,
-    apply_inscripcions_history_snapshot,
     build_inscripcions_sort_context_key,
-    _split_custom_sort_tokens,
-    capture_inscripcions_history_snapshot,
-    renumber_groups_for_competicio,
     get_competicio_custom_sort_rank_map,
-    sort_records_by_field_stable,
 )
 from ..views_classificacions import (
     ClassificacionsHome,

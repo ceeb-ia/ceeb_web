@@ -21,6 +21,9 @@ def is_native_equip_context(raw) -> bool:
 
 
 def ensure_base_equip_context(competicio):
+    # Runtime contract: functional flows always self-heal the base/native
+    # context on entry. Audit/report commands must inspect raw persisted state
+    # directly and must not call this helper.
     if competicio is None:
         return None
     ctx, _created = EquipContext.objects.get_or_create(

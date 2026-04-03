@@ -38,12 +38,16 @@
           >
             Obrir gestor d'equips
           </button>
+          <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="btn-team-workspace-board-mode" aria-hidden="true">
+            Flux complet d'equips
+          </button>
         </div>
       </div>
 
       <div class="team-compact-summary">
         <div class="team-compact-summary-copy">
           Defineix el context, prepara una seleccio explicita i crea o reassigna equips sense perdre de vista el board actual.
+          Flux complet d'equips.
         </div>
         <div class="team-compact-summary-metrics" id="team-compact-summary-metrics">
           <span class="group-preview-badge badge badge-light border">{{ team_context_summary.teams_with_members }} equips actius</span>
@@ -85,7 +89,7 @@
             <button type="button" class="btn btn-sm btn-outline-warning" id="btn-team-compact-unassign">Treure seleccio</button>
             <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-team-compact-open-workspace">Obrir workspace</button>
             <button type="button" class="btn btn-sm btn-outline-info" onclick="document.querySelector('#inscripcions-panels-nav .actions-nav-btn[data-panel-target=\'series-equips\']')?.click();">
-              Obrir series d'equip
+              Obrir sèries d'equip
             </button>
           </div>
           <div class="small text-muted" id="team-compact-actions-note">Aquestes accions treballaran sobre la seleccio actual del modal.</div>

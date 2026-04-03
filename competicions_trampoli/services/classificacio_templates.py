@@ -11,9 +11,9 @@ from .equip_contexts import (
 from ..models_classificacions import ClassificacioTemplateGlobal
 from ..models_scoring import ScoringSchema
 from ..models_trampoli import Aparell, CompeticioAparell
-from .services_classificacions_2 import (
+from .classificacions.compute import DEFAULT_SCHEMA
+from .classificacions.partitions import (
     BIRTH_YEAR_RANGE_PARTITION_CODE,
-    DEFAULT_SCHEMA,
     normalize_particions_config,
     normalize_particions_v2_entries,
     particio_codes_from_entries,
@@ -53,11 +53,7 @@ def json_clone(value):
 
 
 def _assignment_teams_queryset(competicio, raw_cfg):
-    if isinstance(raw_cfg, dict) and raw_cfg.get("context_code"):
-        context_code = normalize_equip_context_code(raw_cfg.get("context_code"))
-    else:
-        cfg = _normalize_assignment_source(raw_cfg)
-        context_code = cfg.get("context_code")
+    context_code = _resolve_assignment_context_code(raw_cfg)
     ctx = get_equip_context(competicio, context_code)
     if ctx is None:
         return Equip.objects.none()
@@ -82,6 +78,21 @@ def _normalize_assignment_source(raw_cfg):
         "fallback": fallback,
         "legacy_mode": legacy_mode,
     }
+
+
+def _resolve_assignment_context_code(raw_cfg, normalized_assignment_source=None):
+    cfg = raw_cfg if isinstance(raw_cfg, dict) else {}
+    assignment_source = (
+        normalized_assignment_source
+        if isinstance(normalized_assignment_source, dict)
+        else _normalize_assignment_source(cfg.get("assignment_source") if isinstance(cfg.get("assignment_source"), dict) else raw_cfg)
+    )
+    assignment_source_provided = isinstance(cfg.get("assignment_source"), dict) and bool(cfg.get("assignment_source"))
+    if assignment_source_provided:
+        return normalize_equip_context_code(assignment_source.get("context_code"))
+    if str(cfg.get("context_code") or "").strip():
+        return normalize_equip_context_code(cfg.get("context_code"))
+    return normalize_equip_context_code(assignment_source.get("context_code"))
 
 
 def canon_app_code(raw) -> str:
@@ -502,8 +513,9 @@ def schema_to_template_schema(competicio, schema_local):
     equips_cfg = schema.get("equips") or {}
     if isinstance(equips_cfg, dict):
         assignment_source = _normalize_assignment_source(equips_cfg.get("assignment_source"))
-        context_code = normalize_equip_context_code(
-            equips_cfg.get("context_code") or assignment_source.get("context_code")
+        context_code = _resolve_assignment_context_code(
+            equips_cfg,
+            normalized_assignment_source=assignment_source,
         )
         if assignment_source.get("legacy_mode"):
             warnings.append("equips.assignment_source.mode='native' detectat; es normalitza al context Base.")
@@ -707,8 +719,9 @@ def template_schema_to_competicio_schema(competicio, schema_tpl):
     equips_cfg = schema.get("equips") or {}
     if isinstance(equips_cfg, dict):
         assignment_source = _normalize_assignment_source(equips_cfg.get("assignment_source"))
-        context_code = normalize_equip_context_code(
-            equips_cfg.get("context_code") or assignment_source.get("context_code")
+        context_code = _resolve_assignment_context_code(
+            equips_cfg,
+            normalized_assignment_source=assignment_source,
         )
         valid_codes = set(
             EquipContext.objects
@@ -1112,8 +1125,9 @@ def build_template_requirements(schema_tpl, *, tipus=None):
     if not isinstance(equips_cfg, dict):
         equips_cfg = {}
     assignment_source = _normalize_assignment_source(equips_cfg.get("assignment_source"))
-    context_code = normalize_equip_context_code(
-        equips_cfg.get("context_code") or assignment_source.get("context_code")
+    context_code = _resolve_assignment_context_code(
+        equips_cfg,
+        normalized_assignment_source=assignment_source,
     ) if equips_cfg else ""
     team_mode = str(equips_cfg.get("team_mode") or "").strip().lower()
     manual_defs = equips_cfg.get("particions_manuals") or []

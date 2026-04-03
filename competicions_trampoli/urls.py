@@ -1,55 +1,44 @@
 from django.contrib.auth.decorators import login_required
 from django.urls import path
 
-from competicions_trampoli import views, views_judge_admin, views_judge_messages, views_rotacions, views_scoring
+from competicions_trampoli import views_judge_admin, views_judge_messages, views_rotacions, views_scoring
 
 from .access import require_competicio_capability, require_global_groups
-from .inscripcions_list_new import (
-    InscripcionsListNewView,
-    groups_assign,
-    groups_create,
-    groups_delete,
-    groups_delete_all,
-    groups_delete_empty,
-    groups_detail,
-    groups_preview,
-    groups_unassign,
-    groups_workspace,
-    inscripcions_group_competition_order_preview,
-    inscripcions_media_delete,
-    inscripcions_media_match_apply,
-    inscripcions_media_match_preview,
-    inscripcions_media_set_primary,
-    inscripcions_media_upload,
-    inscripcions_save_birth_year_range_config,
-    inscripcions_save_table_columns as inscripcions_save_table_columns_new,
-    inscripcions_set_aparells as inscripcions_set_aparells_new,
-    inscripcions_set_group_name as inscripcions_set_group_name_new,
-)
-from .views import CompeticioCreateView, CompeticioDeleteView, CompeticioHomeView, CompeticioListView, InscripcionsImportExcelView
-from .views_classificacions import (
+from .views_classificacions_builder import (
     ClassificacionsHome,
-    ClassificacionsLive,
-    ClassificacionsLoopLive,
-    PublicClassificacionsLive,
-    PublicClassificacionsLoopLive,
-    classificacio_template_apply,
-    classificacio_template_list,
-    classificacio_template_save,
-    classificacio_template_validate,
     classificacio_delete,
     classificacio_preview,
     classificacio_reorder,
     classificacio_save,
-    classificacions_live_export_excel,
+)
+from .views_classificacions_export import classificacions_live_export_excel
+from .views_classificacions_live import (
+    ClassificacionsLive,
+    ClassificacionsLoopLive,
+    PublicClassificacionsLive,
+    PublicClassificacionsLoopLive,
     classificacions_live_data,
     public_classificacions_live_data,
+)
+from .views_classificacions_templates import (
+    classificacio_template_apply,
+    classificacio_template_list,
+    classificacio_template_save,
+    classificacio_template_validate,
 )
 from .views_classificacio_templates import (
     ClassificacioTemplateGlobalBuilder,
     ClassificacioTemplateGlobalDeleteView,
     ClassificacioTemplateGlobalList,
     classificacio_template_global_save,
+)
+from .views_competitions import (
+    CompeticioCreateView,
+    CompeticioDeleteView,
+    CompeticioHomeView,
+    CompeticioListView,
+    InscripcionsImportExcelView,
+    notes_home_router,
 )
 from .views_equips import (
     equip_context_create,
@@ -66,6 +55,54 @@ from .views_equips import (
     equips_rename,
     equips_unassign,
     equips_workspace,
+)
+from .views_inscripcions_crud import (
+    InscripcioCreateView,
+    InscripcioDeleteView,
+    InscripcioUpdateView,
+)
+from .views_inscripcions_groups import (
+    groups_assign,
+    groups_create,
+    groups_delete,
+    groups_delete_all,
+    groups_delete_empty,
+    groups_detail,
+    groups_preview,
+    groups_unassign,
+    groups_workspace,
+    inscripcions_group_competition_order_preview,
+    inscripcions_groups_from_sort,
+    inscripcions_merge_tabs,
+    inscripcions_reorder,
+    inscripcions_save_group_competition_order,
+)
+from .views_inscripcions_listing import (
+    InscripcionsListNewView,
+    inscripcions_save_birth_year_range_config,
+    inscripcions_save_table_columns as inscripcions_save_table_columns_new,
+    inscripcions_set_aparells as inscripcions_set_aparells_new,
+    inscripcions_set_group_name as inscripcions_set_group_name_new,
+)
+from .views_inscripcions_media import (
+    inscripcions_media_delete,
+    inscripcions_media_file,
+    inscripcions_media_match_apply,
+    inscripcions_media_match_preview,
+    inscripcions_media_set_primary,
+    inscripcions_media_upload,
+)
+from .views_inscripcions_sorting import (
+    inscripcions_filter_values,
+    inscripcions_history_redo,
+    inscripcions_history_undo,
+    inscripcions_sort_apply,
+    inscripcions_sort_clear,
+    inscripcions_sort_competition_tail_toggle,
+    inscripcions_sort_custom_save,
+    inscripcions_sort_custom_values,
+    inscripcions_sort_remove,
+    inscripcions_sort_undo,
 )
 from .views_scoring import (
     ScoringNotesHome,
@@ -139,8 +176,8 @@ urlpatterns = [
     path("competicions/<int:pk>/inscripcions/", competition_view(InscripcionsListNewView.as_view(), "inscripcions.view"), name="inscripcions_list"),
     path("competicions/<int:pk>/delete/", competition_view(CompeticioDeleteView.as_view(), "competition.delete"), name="delete"),
 
-    path("competicio/<int:pk>/inscripcions/reorder/", competition_view(views.inscripcions_reorder, "inscripcions.edit"), name="inscripcions_reorder"),
-    path("competicio/<int:pk>/inscripcions/save-group-competition-order/", competition_view(views.inscripcions_save_group_competition_order, "inscripcions.edit"), name="inscripcions_save_group_competition_order"),
+    path("competicio/<int:pk>/inscripcions/reorder/", competition_view(inscripcions_reorder, "inscripcions.edit"), name="inscripcions_reorder"),
+    path("competicio/<int:pk>/inscripcions/save-group-competition-order/", competition_view(inscripcions_save_group_competition_order, "inscripcions.edit"), name="inscripcions_save_group_competition_order"),
     path("competicio/<int:pk>/inscripcions/group-competition-order/preview/", competition_view(inscripcions_group_competition_order_preview, "inscripcions.view"), name="inscripcions_group_competition_order_preview"),
     path("competicio/<int:pk>/groups/workspace/", competition_view(groups_workspace, "inscripcions.view"), name="groups_workspace"),
     path("competicio/<int:pk>/groups/detail/", competition_view(groups_detail, "inscripcions.view"), name="groups_detail"),
@@ -160,17 +197,17 @@ urlpatterns = [
     path("competicio/<int:pk>/inscripcions/groups/delete/", competition_view(groups_delete, "inscripcions.edit"), name="groups_delete_legacy"),
     path("competicio/<int:pk>/inscripcions/groups/delete-all/", competition_view(groups_delete_all, "inscripcions.edit"), name="groups_delete_all_legacy"),
     path("competicio/<int:pk>/inscripcions/groups/delete-empty/", competition_view(groups_delete_empty, "inscripcions.edit"), name="groups_delete_empty_legacy"),
-    path("competicio/<int:pk>/inscripcions/sort-apply/", competition_view(views.inscripcions_sort_apply, "inscripcions.edit"), name="inscripcions_sort_apply"),
-    path("competicio/<int:pk>/inscripcions/sort-remove/", competition_view(views.inscripcions_sort_remove, "inscripcions.edit"), name="inscripcions_sort_remove"),
-    path("competicio/<int:pk>/inscripcions/sort-clear/", competition_view(views.inscripcions_sort_clear, "inscripcions.edit"), name="inscripcions_sort_clear"),
-    path("competicio/<int:pk>/inscripcions/sort-competition-tail/", competition_view(views.inscripcions_sort_competition_tail_toggle, "inscripcions.edit"), name="inscripcions_sort_competition_tail_toggle"),
-    path("competicio/<int:pk>/inscripcions/filter-values/", competition_view(views.inscripcions_filter_values, "inscripcions.view"), name="inscripcions_filter_values"),
-    path("competicio/<int:pk>/inscripcions/sort-custom/values/", competition_view(views.inscripcions_sort_custom_values, "inscripcions.edit"), name="inscripcions_sort_custom_values"),
-    path("competicio/<int:pk>/inscripcions/sort-custom/save/", competition_view(views.inscripcions_sort_custom_save, "inscripcions.edit"), name="inscripcions_sort_custom_save"),
-    path("competicio/<int:pk>/inscripcions/history/undo/", competition_view(views.inscripcions_history_undo, "inscripcions.edit"), name="inscripcions_history_undo"),
-    path("competicio/<int:pk>/inscripcions/history/redo/", competition_view(views.inscripcions_history_redo, "inscripcions.edit"), name="inscripcions_history_redo"),
-    path("competicio/<int:pk>/inscripcions/sort-undo/", competition_view(views.inscripcions_sort_undo, "inscripcions.edit"), name="inscripcions_sort_undo"),
-    path("competicio/<int:pk>/inscripcions/groups-from-sort/", competition_view(views.inscripcions_groups_from_sort, "inscripcions.edit"), name="inscripcions_groups_from_sort"),
+    path("competicio/<int:pk>/inscripcions/sort-apply/", competition_view(inscripcions_sort_apply, "inscripcions.edit"), name="inscripcions_sort_apply"),
+    path("competicio/<int:pk>/inscripcions/sort-remove/", competition_view(inscripcions_sort_remove, "inscripcions.edit"), name="inscripcions_sort_remove"),
+    path("competicio/<int:pk>/inscripcions/sort-clear/", competition_view(inscripcions_sort_clear, "inscripcions.edit"), name="inscripcions_sort_clear"),
+    path("competicio/<int:pk>/inscripcions/sort-competition-tail/", competition_view(inscripcions_sort_competition_tail_toggle, "inscripcions.edit"), name="inscripcions_sort_competition_tail_toggle"),
+    path("competicio/<int:pk>/inscripcions/filter-values/", competition_view(inscripcions_filter_values, "inscripcions.view"), name="inscripcions_filter_values"),
+    path("competicio/<int:pk>/inscripcions/sort-custom/values/", competition_view(inscripcions_sort_custom_values, "inscripcions.edit"), name="inscripcions_sort_custom_values"),
+    path("competicio/<int:pk>/inscripcions/sort-custom/save/", competition_view(inscripcions_sort_custom_save, "inscripcions.edit"), name="inscripcions_sort_custom_save"),
+    path("competicio/<int:pk>/inscripcions/history/undo/", competition_view(inscripcions_history_undo, "inscripcions.edit"), name="inscripcions_history_undo"),
+    path("competicio/<int:pk>/inscripcions/history/redo/", competition_view(inscripcions_history_redo, "inscripcions.edit"), name="inscripcions_history_redo"),
+    path("competicio/<int:pk>/inscripcions/sort-undo/", competition_view(inscripcions_sort_undo, "inscripcions.edit"), name="inscripcions_sort_undo"),
+    path("competicio/<int:pk>/inscripcions/groups-from-sort/", competition_view(inscripcions_groups_from_sort, "inscripcions.edit"), name="inscripcions_groups_from_sort"),
     path("competicio/<int:pk>/inscripcions/save-table-columns/", competition_view(inscripcions_save_table_columns_new, "inscripcions.edit"), name="inscripcions_save_table_columns"),
     path("competicio/<int:pk>/inscripcions/save-birth-year-range-config/", competition_view(inscripcions_save_birth_year_range_config, "inscripcions.edit"), name="inscripcions_save_birth_year_range_config"),
     path("competicio/<int:pk>/inscripcions/set-group-name/", competition_view(inscripcions_set_group_name_new, "inscripcions.edit"), name="inscripcions_set_group_name"),
@@ -206,12 +243,12 @@ urlpatterns = [
     path("competicio/<int:pk>/inscripcions/series-equips/reorder/", competition_view(series_reorder, "inscripcions.edit"), name="inscripcions_series_equips_reorder"),
     path("competicio/<int:pk>/inscripcions/series-equips/start-list.xlsx", competition_view(series_start_list_export, "inscripcions.view"), name="inscripcions_series_equips_start_list_export"),
     path("competicio/<int:pk>/inscripcions/series-equips/work-sheet.xlsx", competition_view(series_work_sheet_export, "inscripcions.view"), name="inscripcions_series_equips_work_sheet_export"),
-    path("competicio/<int:pk>/inscripcio/<int:ins_id>/editar/", competition_view(views.InscripcioUpdateView.as_view(), "inscripcions.edit"), name="inscripcio_edit"),
-    path("competicio/<int:pk>/inscripcio/<int:ins_id>/eliminar/", competition_view(views.InscripcioDeleteView.as_view(), "inscripcions.edit"), name="inscripcio_delete"),
-    path("competicio/<int:pk>/inscripcio/nova/", competition_view(views.InscripcioCreateView.as_view(), "inscripcions.edit"), name="inscripcio_add"),
-    path("competicio/<int:pk>/inscripcions/merge-tabs/", competition_view(views.inscripcions_merge_tabs, "inscripcions.edit"), name="inscripcions_merge_tabs"),
+    path("competicio/<int:pk>/inscripcio/<int:ins_id>/editar/", competition_view(InscripcioUpdateView.as_view(), "inscripcions.edit"), name="inscripcio_edit"),
+    path("competicio/<int:pk>/inscripcio/<int:ins_id>/eliminar/", competition_view(InscripcioDeleteView.as_view(), "inscripcions.edit"), name="inscripcio_delete"),
+    path("competicio/<int:pk>/inscripcio/nova/", competition_view(InscripcioCreateView.as_view(), "inscripcions.edit"), name="inscripcio_add"),
+    path("competicio/<int:pk>/inscripcions/merge-tabs/", competition_view(inscripcions_merge_tabs, "inscripcions.edit"), name="inscripcions_merge_tabs"),
 
-    path("competicio/<int:pk>/notes/", competition_view(views.notes_home_router, "competition.view"), name="notes_home"),
+    path("competicio/<int:pk>/notes/", competition_view(notes_home_router, "competition.view"), name="notes_home"),
     path("competicio/<int:pk>/notes/trampoli/", competition_view(TrampoliNotesHome.as_view(), "scoring.view"), name="trampoli_notes_home"),
     path("competicio/<int:pk>/notes/trampoli/configuracio/", competition_view(ConfiguracioCompeticio.as_view(), "scoring.edit"), name="trampoli_config"),
     path("competicio/<int:pk>/notes/trampoli/guardar/", competition_view(trampoli_guardar_nota, "scoring.edit"), name="trampoli_save"),
@@ -227,7 +264,7 @@ urlpatterns = [
     path("scoring/<int:pk>/media/context/", competition_view(scoring_media_context, "scoring.view"), name="scoring_media_context"),
     path("scoring/<int:pk>/media/files/<int:media_id>/", competition_view(scoring_media_file, "scoring.view"), name="scoring_media_file"),
     path("scoring/<int:pk>/media/judge-video/<str:video_kind>/<int:video_id>/", competition_view(scoring_judge_video_file, "scoring.view"), name="scoring_judge_video_file"),
-    path("competicio/<int:pk>/inscripcions/media/files/<int:media_id>/", competition_view(views.inscripcions_media_file, "inscripcions.view"), name="inscripcions_media_file"),
+    path("competicio/<int:pk>/inscripcions/media/files/<int:media_id>/", competition_view(inscripcions_media_file, "inscripcions.view"), name="inscripcions_media_file"),
 
     path("competicio/<int:pk>/rotacions/", competition_view(views_rotacions.rotacions_planner, "rotacions.view"), name="rotacions_planner"),
     path("competicio/<int:pk>/rotacions/save/", competition_view(views_rotacions.rotacions_save, "rotacions.edit"), name="rotacions_save"),

@@ -26,7 +26,7 @@ from .services.team_series import (
     unassign_subjects_from_series,
     workspace_subject_order,
 )
-from .views import (
+from .services.inscripcions_history import (
     capture_inscripcions_history_snapshot,
     record_inscripcions_history_entry,
     with_inscripcions_history_payload,

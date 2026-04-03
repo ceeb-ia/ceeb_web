@@ -26,13 +26,15 @@ from .services.equip_contexts import (
     normalize_equip_context_code,
     resolve_inscripcio_equip,
 )
-from .views import (
-    _build_inscripcions_filtered_qs,
-    _normalize_sort_filters,
+from .services.inscripcions_history import (
     capture_inscripcions_history_snapshot,
-    get_allowed_group_fields,
     record_inscripcions_history_entry,
     with_inscripcions_history_payload,
+)
+from .services.inscripcions_queries import (
+    _build_inscripcions_filtered_qs,
+    _normalize_sort_filters,
+    get_allowed_group_fields,
 )
 
 

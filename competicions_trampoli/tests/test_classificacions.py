@@ -65,16 +65,20 @@ from ..models_trampoli import (
 )
 from ..models import CompeticioMembership
 from ..scoring_engine import ScoringEngine
-from ..views import (
+from ..inscripcions_views_shared import (
+    _split_custom_sort_tokens,
+    renumber_groups_for_competicio,
+    sort_records_by_field_stable,
+)
+from ..services.inscripcions.history import (
+    apply_inscripcions_history_snapshot,
+    capture_inscripcions_history_snapshot,
+)
+from ..services.inscripcions.queries import (
     COLUMN_FILTER_EMPTY_TOKEN,
     _build_inscripcions_filtered_qs,
-    apply_inscripcions_history_snapshot,
     build_inscripcions_sort_context_key,
-    _split_custom_sort_tokens,
-    capture_inscripcions_history_snapshot,
-    renumber_groups_for_competicio,
     get_competicio_custom_sort_rank_map,
-    sort_records_by_field_stable,
 )
 from ..views_classificacions import (
     ClassificacionsHome,
@@ -2370,6 +2374,45 @@ class ClassificacioTemplateFlowTests(_BaseTrampoliDataMixin, TestCase):
         detail_section_local = (((((schema_local.get("presentacio") or {}).get("detall") or {}).get("sections")) or [])[0] or {})
         detail_local = detail_section_local.get("columns") or []
         self.assertEqual(detail_local[1]["source"]["aparell_id"], self.target_app.id)
+
+    def test_template_schema_helpers_keep_assignment_source_context_authoritative(self):
+        self._ensure_native_equip_context(self.comp_source)
+        self._ensure_native_equip_context(self.comp_target)
+        EquipContext.objects.create(competicio=self.comp_source, code="ctx-finals", nom="Finals")
+        EquipContext.objects.create(competicio=self.comp_target, code="ctx-finals", nom="Finals")
+
+        schema = {
+            "puntuacio": {
+                "aparells": {"mode": "seleccionar", "ids": [self.source_app.id]},
+                "camps_per_aparell": {str(self.source_app.id): ["E_total"]},
+                "agregacio_camps": "sum",
+                "exercicis": {"mode": "tots"},
+                "agregacio_exercicis": "sum",
+                "agregacio_aparells": "sum",
+                "ordre": "desc",
+            },
+            "equips": {
+                "context_code": "native",
+                "assignment_source": {"mode": "context", "context_code": "ctx-finals", "fallback": "native"},
+                "team_mode": "derived_from_individual",
+            },
+        }
+
+        schema_tpl, warnings = _schema_to_template_schema(self.comp_source, schema)
+        self.assertFalse(warnings)
+        self.assertEqual((schema_tpl.get("equips") or {}).get("context_code"), "ctx-finals")
+        self.assertEqual(
+            (((schema_tpl.get("equips") or {}).get("assignment_source")) or {}).get("context_code"),
+            "ctx-finals",
+        )
+
+        schema_local, mapping_warnings, _mapping = _template_schema_to_competicio_schema(self.comp_target, schema_tpl)
+        self.assertFalse(mapping_warnings)
+        self.assertEqual((schema_local.get("equips") or {}).get("context_code"), "ctx-finals")
+        self.assertEqual(
+            (((schema_local.get("equips") or {}).get("assignment_source")) or {}).get("context_code"),
+            "ctx-finals",
+        )
 
     def test_global_template_can_be_saved_validated_and_applied(self):
         save_res = self._post_json_as(

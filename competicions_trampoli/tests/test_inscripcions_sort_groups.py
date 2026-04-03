@@ -65,17 +65,21 @@ from ..models_trampoli import (
 )
 from ..models import CompeticioMembership
 from ..scoring_engine import ScoringEngine
-from ..views import (
+from ..inscripcions_views_shared import (
+    _split_custom_sort_tokens,
+    renumber_groups_for_competicio,
+    sort_records_by_field_stable,
+)
+from ..services.inscripcions.history import (
+    apply_inscripcions_history_snapshot,
+    capture_inscripcions_history_snapshot,
+)
+from ..services.inscripcions.queries import (
     COLUMN_FILTER_EMPTY_TOKEN,
     _build_inscripcions_filtered_qs,
     _resolve_group_creation_buckets,
-    apply_inscripcions_history_snapshot,
     build_inscripcions_sort_context_key,
-    _split_custom_sort_tokens,
-    capture_inscripcions_history_snapshot,
-    renumber_groups_for_competicio,
     get_competicio_custom_sort_rank_map,
-    sort_records_by_field_stable,
 )
 from ..views_classificacions import (
     ClassificacionsHome,
@@ -3428,6 +3432,26 @@ class GroupManagerV1Tests(_BaseTrampoliDataMixin, TestCase):
             is_active=True,
         )
         self.client.force_login(self.user)
+
+    def _post_json(self, url_name, payload):
+        url = reverse(url_name, kwargs={"pk": self.comp.id})
+        return self.client.post(
+            url,
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+    def _groups_payload(self, **overrides):
+        payload = {
+            "resolution_mode": "auto",
+            "strategy": "count",
+            "group_count": 1,
+            "preview_only": True,
+            "filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+            "group_by": [],
+        }
+        payload.update(overrides)
+        return payload
 
     def _attach_rotation_to_group(self, group):
         next_order = (RotacioFranja.objects.filter(competicio=self.comp).aggregate(max_ordre=Max("ordre")).get("max_ordre") or 0) + 1

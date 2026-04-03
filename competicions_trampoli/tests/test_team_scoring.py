@@ -65,16 +65,20 @@ from ..models_trampoli import (
 )
 from ..models import CompeticioMembership
 from ..scoring_engine import ScoringEngine
-from ..views import (
+from ..inscripcions_views_shared import (
+    _split_custom_sort_tokens,
+    renumber_groups_for_competicio,
+    sort_records_by_field_stable,
+)
+from ..services.inscripcions.history import (
+    apply_inscripcions_history_snapshot,
+    capture_inscripcions_history_snapshot,
+)
+from ..services.inscripcions.queries import (
     COLUMN_FILTER_EMPTY_TOKEN,
     _build_inscripcions_filtered_qs,
-    apply_inscripcions_history_snapshot,
     build_inscripcions_sort_context_key,
-    _split_custom_sort_tokens,
-    capture_inscripcions_history_snapshot,
-    renumber_groups_for_competicio,
     get_competicio_custom_sort_rank_map,
-    sort_records_by_field_stable,
 )
 from ..views_classificacions import (
     ClassificacionsHome,
@@ -688,11 +692,7 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
         }
 
     def test_team_builder_native_context_ignores_legacy_team_without_base_assignment(self):
-        base_ctx = EquipContext.objects.create(
-            competicio=self.comp,
-            code="native",
-            nom="Base",
-        )
+        base_ctx = self._ensure_native_equip_context(self.comp)
         legacy_team = Equip.objects.create(competicio=self.comp, nom="Legacy Base")
         Inscripcio.objects.create(
             competicio=self.comp,

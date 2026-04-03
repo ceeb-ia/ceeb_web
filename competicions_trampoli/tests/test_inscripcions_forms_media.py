@@ -65,16 +65,20 @@ from ..models_trampoli import (
 )
 from ..models import CompeticioMembership
 from ..scoring_engine import ScoringEngine
-from ..views import (
+from ..inscripcions_views_shared import (
+    _split_custom_sort_tokens,
+    renumber_groups_for_competicio,
+    sort_records_by_field_stable,
+)
+from ..services.inscripcions.history import (
+    apply_inscripcions_history_snapshot,
+    capture_inscripcions_history_snapshot,
+)
+from ..services.inscripcions.queries import (
     COLUMN_FILTER_EMPTY_TOKEN,
     _build_inscripcions_filtered_qs,
-    apply_inscripcions_history_snapshot,
     build_inscripcions_sort_context_key,
-    _split_custom_sort_tokens,
-    capture_inscripcions_history_snapshot,
-    renumber_groups_for_competicio,
     get_competicio_custom_sort_rank_map,
-    sort_records_by_field_stable,
 )
 from ..views_classificacions import (
     ClassificacionsHome,
@@ -383,7 +387,7 @@ class InscripcioManualFormViewTests(_BaseTrampoliDataMixin, TestCase):
             ]
         }
         self.comp.save(update_fields=["inscripcions_schema"])
-        base_ctx = EquipContext.objects.create(competicio=self.comp, code="native", nom="Base")
+        base_ctx = self._ensure_native_equip_context(self.comp)
 
         inactive_group = GrupCompeticio.objects.create(
             competicio=self.comp,
@@ -523,7 +527,7 @@ class InscripcioManualFormViewTests(_BaseTrampoliDataMixin, TestCase):
     def test_edit_form_custom_context_reads_contextual_team_and_shows_native_hint(self):
         native_team = Equip.objects.create(competicio=self.comp, nom="Equip Base")
         contextual_team = Equip.objects.create(competicio=self.comp, nom="Equip Finals")
-        base_ctx = EquipContext.objects.create(competicio=self.comp, code="native", nom="Base")
+        base_ctx = self._ensure_native_equip_context(self.comp)
         team_ctx = EquipContext.objects.create(competicio=self.comp, code="finals", nom="Finals")
         inscripcio = Inscripcio.objects.create(
             competicio=self.comp,
@@ -557,7 +561,7 @@ class InscripcioManualFormViewTests(_BaseTrampoliDataMixin, TestCase):
     def test_edit_form_custom_context_can_clear_assignment_without_changing_native_team(self):
         native_team = Equip.objects.create(competicio=self.comp, nom="Equip Base")
         contextual_team = Equip.objects.create(competicio=self.comp, nom="Equip Finals")
-        base_ctx = EquipContext.objects.create(competicio=self.comp, code="native", nom="Base")
+        base_ctx = self._ensure_native_equip_context(self.comp)
         team_ctx = EquipContext.objects.create(competicio=self.comp, code="finals", nom="Finals")
         inscripcio = Inscripcio.objects.create(
             competicio=self.comp,
@@ -613,7 +617,7 @@ class InscripcioManualFormViewTests(_BaseTrampoliDataMixin, TestCase):
 
     def test_edit_form_native_can_clear_assignment_without_resolving_legacy_team(self):
         native_team = Equip.objects.create(competicio=self.comp, nom="Equip Base")
-        base_ctx = EquipContext.objects.create(competicio=self.comp, code="native", nom="Base")
+        base_ctx = self._ensure_native_equip_context(self.comp)
         inscripcio = Inscripcio.objects.create(
             competicio=self.comp,
             nom_i_cognoms="Native clear",

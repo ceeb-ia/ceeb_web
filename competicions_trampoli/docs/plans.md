@@ -191,3 +191,89 @@ Refactor estructural, sense canvis funcionals, per substituir [`competicions_tra
 - Aquesta passada és només estructural; no inclou neteja de tests obsolets ni creació de nous tests.
 - Es prioritza risc baix i compatibilitat màxima per sobre d’una arquitectura de helpers més agressiva.
 - La resta d’apps poden continuar amb `tests.py` monolític; no s’alinearan ara.
+
+
+
+
+# Tancament de la fase d’`inscripcions`
+
+## Resum
+La fase només es donarà per tancada quan es compleixin tres coses alhora: `equips_context` verd, `views.py` i `inscripcions_list_new.py` reduïts a façana real, i smoke estable de rutes/render/payloads d’`inscripcions`.
+
+Decisió de contracte adoptada per aquest pla:
+- El contracte oficial d’aplicació és `native` autoassegurat pel servei/model quan el flux funcional entra al domini.
+- Les eines d’auditoria han de llegir estat persistent cru i no poden introduir side effects.
+- Els tests s’han d’alinear amb aquesta separació: fluxos normals reutilitzen helper/servei; auditories validen estat cru explícitament preparat pel test.
+
+## Implementació de tancament
+### 1. Tancar la regressió d’`equips_context`
+- Abans de tocar la lògica, documentar i fer explícita la regla anterior dins del codi i dels tests rellevants.
+- Revisar `views_equips.py` a `equips_assign`, `equips_workspace` i `equips_preview` perquè el comportament sigui coherent amb equips contextuals, equips base i dades legacy.
+- Garantir que un equip usat en context custom es resol de forma consistent amb el seu `context`, i que els fluxos no depenen accidentalment d’equips creats al context base.
+- Reconciliar `resolve_inscripcio_equip`, `get_equips_for_context`, workspace, preview i classificacions perquè `assignment_source.mode="context"` amb `fallback="native"` torni a separar correctament equip contextual i equip base.
+- Ajustar `audit_base_team_context` i els seus tests perquè l’auditoria inspeccioni estat cru sense auto-crear `native`, però sense contradir el contracte general del runtime.
+- No canviar URLs, payloads ni contractes UI mentre es corregeix aquest bloc.
+
+### 2. Deixar `views.py` i `inscripcions_list_new.py` com a façana real
+- Fer una cerca prèvia de consumidors interns, tests i `patch()` sobre `views.py` i `inscripcions_list_new.py` abans de buidar-los.
+- Migrar qualsevol test o `patch()` que encara depengui d’aquests mòduls com a implementació real, cap als entrypoints nous o serveis estables.
+- Un cop els consumidors estiguin identificats, eliminar de `views.py` tota la lògica activa d’`inscripcions` que avui està duplicada.
+- Eliminar d’`inscripcions_list_new.py` la implementació activa de listing/groups/media i deixar només compatibilitat mínima temporal si encara hi ha imports residuals.
+- Mantenir intactes noms públics, exports necessaris, URLs, plantilles i shapes de payloads AJAX.
+
+### 3. Consolidar la validació de tancament d’`inscripcions`
+- Deixar smoke d’imports dels mòduls `views_inscripcions_listing`, `views_inscripcions_sorting`, `views_inscripcions_groups`, `views_inscripcions_media` i `inscripcions_views_shared`.
+- Deixar smoke de `reverse()/resolve()` de totes les rutes d’`inscripcions`.
+- Deixar render smoke de `inscricpions_list_new.html` validant `200`, plantilla correcta i context mínim esperat.
+- Afegir comprovacions de contracte per payloads AJAX de sorting, groups i media, validant claus i forma pública, no implementació interna.
+- Mantenir la validació mínima obligatòria com a seqüència curta i repetible per pre-merge; en execució Docker no interactiva, usar `--keepdb`.
+
+### 4. Criteri de tancament de fase
+- `python manage.py check`
+- `python manage.py test competicions_trampoli.tests.test_inscripcions_sort_groups --keepdb`
+- `python manage.py test competicions_trampoli.tests.test_inscripcions_forms_media --keepdb`
+- `python manage.py test competicions_trampoli.tests.test_equips_context --keepdb`
+- `python manage.py test competicions_trampoli.tests.test_inscripcions_backend_smoke --keepdb`
+- smoke d’imports, rutes i render d’`inscripcions`
+- cap `views_inscripcions_*` importa `views.py` o `inscripcions_list_new.py`
+- `inscripcions_views_shared.py` no importa `views.py`
+- `views.py` no conté lògica activa d’`inscripcions`
+- `inscripcions_list_new.py` no conté implementació activa del domini
+
+## Passos futurs per a un altre agent
+### 1. Backend de `classificacions`
+- Convertir en reals `views_classificacions_builder`, `views_classificacions_live`, `views_classificacions_templates` i `views_classificacions_export`.
+- Substituir la dependència efectiva de `views_classificacions.py`.
+- Començar a eliminar reexports des de `services_classificacions_2.py` cap a serveis nous estables.
+- Mantenir `validation.py` com a font de veritat per mètriques i `error_details`.
+- Migrar en paral·lel tests i `patch()` que encara apunten a `views_classificacions.py` o `services_classificacions_2.py`.
+
+### 2. Frontend d’`inscripcions`
+- Un cop el backend estigui verd, consolidar bootstrap JSON de la pantalla en un únic punt coherent.
+- Extreure el JS inline principal i scripts auxiliars a `static/js`.
+- No tocar DOM, selectors, `data-*`, URLs ni payloads.
+
+### 3. Frontend de `classificacions`
+- Mateix patró que `inscripcions`: bootstrap estable, JS extern, contracte HTML intacte.
+- Els tests han de validar contracte de dades i càrrega d’assets, no implementació inline.
+
+### 4. Neteja final i professionalització
+- Eliminar façanes sense consumidors.
+- Reduir imports legacy residuals.
+- Afegir runbook curt de verificació i contribució.
+- Definir subset mínim obligatori de CI i subset extens de regressió.
+- Tancar amb un criteri formal de `done`: imports nets, contractes estables, suite del domini verda i documentació actualitzada.
+
+## Test plan
+- Primer: `python manage.py check`
+- Després: `python manage.py test competicions_trampoli.tests.test_equips_context --keepdb`
+- Després: `python manage.py test competicions_trampoli.tests.test_inscripcions_sort_groups --keepdb` i `python manage.py test competicions_trampoli.tests.test_inscripcions_forms_media --keepdb`
+- Després: `python manage.py test competicions_trampoli.tests.test_inscripcions_backend_smoke --keepdb`
+- Després: smoke d’imports, `reverse()/resolve()`, render i payloads AJAX d’`inscripcions`
+- Quan entri a `classificacions`: suite curta específica per builder/live/templates/export abans de buidar monòlits
+
+## Assumptions i defaults
+- No es toquen URLs, plantilles ni shapes de payloads en aquesta fase.
+- `native` continua sent únic per competició.
+- El runtime autoassegura `native`; l’auditoria inspecciona estat cru sense side effects.
+- La fase actual només cobreix backend d’`inscripcions`; `classificacions`, frontend i professionalització són treball posterior.

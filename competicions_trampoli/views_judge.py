@@ -4,7 +4,6 @@ import logging
 import math
 import mimetypes
 import os
-import qrcode
 import subprocess
 import tempfile
 import time
@@ -62,6 +61,17 @@ from .services.update_payloads import (
     build_score_update_payload,
     filter_inputs_for_allowed_codes as shared_filter_inputs_for_allowed_codes,
 )
+
+try:
+    import qrcode
+except ImportError:  # pragma: no cover - optional at import time, required at runtime for QR endpoints.
+    qrcode = None
+
+
+def _require_qrcode():
+    if qrcode is None:
+        raise RuntimeError("La dependencia 'qrcode' no esta disponible.")
+    return qrcode
 from .services.competition_groups import (
     get_group_maps,
     get_inscripcio_competition_order,
@@ -596,7 +606,7 @@ def judge_qr_png(request, token):
             sep = "&" if "?" in portal_url else "?"
             portal_url = f"{portal_url}{sep}franja={franja_id}"
     url = request.build_absolute_uri(portal_url)
-    img = qrcode.make(url)
+    img = _require_qrcode().make(url)
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return HttpResponse(buf.getvalue(), content_type="image/png")
@@ -605,7 +615,7 @@ def judge_qr_png(request, token):
 def public_live_qr_png(request, token):
     tok = get_object_or_404(PublicLiveToken, pk=token)
     url = request.build_absolute_uri(reverse("public_live_portal", kwargs={"token": str(tok.id)}))
-    img = qrcode.make(url)
+    img = _require_qrcode().make(url)
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return HttpResponse(buf.getvalue(), content_type="image/png")

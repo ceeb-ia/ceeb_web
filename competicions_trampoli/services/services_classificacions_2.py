@@ -425,20 +425,7 @@ def _merge_schema(schema: dict) -> dict:
     if not isinstance(out["presentacio"]["detall"].get("sections"), list):
         out["presentacio"]["detall"]["sections"] = []
     out["desempat"] = schema.get("desempat", DEFAULT_SCHEMA["desempat"]) or []
-    out["equips"] = {**DEFAULT_SCHEMA["equips"], **(schema.get("equips") or {})}
-    out["equips"]["assignment_source"] = {
-        **DEFAULT_SCHEMA["equips"]["assignment_source"],
-        **(((schema.get("equips") or {}).get("assignment_source")) or {}),
-    }
-    out["equips"]["mode_resolution"] = {
-        **DEFAULT_SCHEMA["equips"]["mode_resolution"],
-        **(((schema.get("equips") or {}).get("mode_resolution")) or {}),
-    }
-    out["equips"]["particio_edat"] = {
-        **DEFAULT_SCHEMA["equips"]["particio_edat"],
-        **(((schema.get("equips") or {}).get("particio_edat")) or {}),
-    }
-    out["equips"] = _normalize_classificacio_equips_cfg(out["equips"])
+    out["equips"] = _normalize_classificacio_equips_cfg(schema.get("equips") or {})
     return out
 
 
@@ -469,6 +456,28 @@ def _normalize_equip_assignment_source(raw_cfg):
         "fallback": fallback,
         "legacy_mode": legacy_mode,
     }
+
+
+def _resolve_classificacio_equips_context_code(raw_context_code=None, raw_assignment_source=None, normalized_assignment_source=None):
+    assignment_source = (
+        normalized_assignment_source
+        if isinstance(normalized_assignment_source, dict)
+        else _normalize_equip_assignment_source(raw_assignment_source)
+    )
+    assignment_source_provided = isinstance(raw_assignment_source, dict) and bool(raw_assignment_source)
+    if assignment_source_provided:
+        return normalize_equip_context_code(assignment_source.get("context_code"))
+    if str(raw_context_code or "").strip():
+        return normalize_equip_context_code(raw_context_code)
+    return normalize_equip_context_code(assignment_source.get("context_code"))
+
+
+def _get_effective_team_context_code(equips_cfg):
+    cfg = equips_cfg if isinstance(equips_cfg, dict) else {}
+    assignment_source = cfg.get("assignment_source")
+    if isinstance(assignment_source, dict) and assignment_source:
+        return normalize_equip_context_code(assignment_source.get("context_code"))
+    return normalize_equip_context_code(cfg.get("context_code"))
 
 
 def _normalize_team_mode(raw_mode) -> str:
@@ -518,8 +527,10 @@ def _normalize_mode_resolution(raw_cfg):
 def _normalize_classificacio_equips_cfg(raw_cfg):
     cfg = raw_cfg if isinstance(raw_cfg, dict) else {}
     assignment_source = _normalize_equip_assignment_source(cfg.get("assignment_source"))
-    context_code = normalize_equip_context_code(
-        cfg.get("context_code") or assignment_source.get("context_code")
+    context_code = _resolve_classificacio_equips_context_code(
+        cfg.get("context_code"),
+        cfg.get("assignment_source"),
+        assignment_source,
     )
     return {
         **DEFAULT_SCHEMA["equips"],
@@ -2134,9 +2145,7 @@ def compute_classificacio(competicio, cfg_obj):
     display_columns = get_display_columns(schema)
     equips_cfg = _normalize_classificacio_equips_cfg(schema.get("equips") or {})
     assignment_source = equips_cfg.get("assignment_source") or _normalize_equip_assignment_source({})
-    team_context_code = normalize_equip_context_code(
-        equips_cfg.get("context_code") or assignment_source.get("context_code")
-    )
+    team_context_code = _get_effective_team_context_code(equips_cfg)
     desempat = _sanitize_desempat_for_tipus(desempat, tipus)
     mode_resultat_aparells = _normalize_mode_resultat_aparells(punt.get("mode_resultat_aparells"))
     victories_cfg = _normalize_victories_cfg((punt.get("victories") or {}))
@@ -4592,6 +4601,16 @@ def compute_classificacio(competicio, cfg_obj):
 
     out = {}
 
+    resolved_team_by_ins_id = {}
+    if tipus == "equips" and team_mode != "native_team":
+        for ins in ins_list:
+            resolved_team_by_ins_id[int(ins.id)] = _resolve_inscripcio_equip_for_classificacio(
+                ins,
+                context_code=team_context_code,
+                fallback=assignment_source.get("fallback"),
+                assignment_map=team_assignment_map,
+            )
+
     if tipus == "equips":
         use_native_team_mode = team_mode == "native_team"
         include_sense_equip = bool(equips_cfg.get("incloure_sense_equip", False)) if not use_native_team_mode else False
@@ -4656,12 +4675,7 @@ def compute_classificacio(competicio, cfg_obj):
                     grouped[base_bucket].setdefault(int(equip.id), member_rows)
         else:
             for ins in ins_list:
-                resolved_equip = _resolve_inscripcio_equip_for_classificacio(
-                    ins,
-                    context_code=team_context_code,
-                    fallback=assignment_source.get("fallback"),
-                    assignment_map=team_assignment_map,
-                )
+                resolved_equip = resolved_team_by_ins_id.get(int(ins.id))
                 if resolved_equip is None and not include_sense_equip:
                     continue
                 if has_team_birth_partition:

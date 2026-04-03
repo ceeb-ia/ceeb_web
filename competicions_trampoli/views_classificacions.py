@@ -17,26 +17,29 @@ from .models import Competicio, Inscripcio, Equip, EquipContext
 from .models_trampoli import CompeticioAparell, CompeticioAparellEquipContextSource
 from .models_classificacions import ClassificacioConfig, ClassificacioTemplateGlobal
 from .models_judging import PublicLiveToken
-from .services.services_classificacions_2 import (
-    BIRTH_YEAR_RANGE_PARTITION_CODE,
+from .services.classificacions.compute import DEFAULT_SCHEMA, compute_classificacio
+from .services.classificacions.display import get_display_columns
+from .services.classificacions.filters import (
     CLASSIFICACIO_FILTER_KEYS,
-    EXERCISE_SELECTION_SCOPE_INHERIT,
-    EXERCISE_SELECTION_SCOPE_PER_MEMBER,
-    EXERCISE_SELECTION_SCOPE_TEAM_POOL,
-    compute_classificacio,
-    DEFAULT_SCHEMA,
-    _normalize_classificacio_filters,
-    _infer_team_mode_from_comp_aparells,
-    _normalize_classificacio_equips_cfg,
-    _normalize_exercise_selection_scope,
-    get_display_columns,
-    _normalize_equip_assignment_source,
-    _normalize_team_mode,
-    normalize_schema_legacy_team_birth_partition,
+    infer_team_mode_from_comp_aparells as _infer_team_mode_from_comp_aparells,
+    normalize_classificacio_equips_cfg as _normalize_classificacio_equips_cfg,
+    normalize_classificacio_filters as _normalize_classificacio_filters,
+    normalize_equip_assignment_source as _normalize_equip_assignment_source,
+    normalize_exercise_selection_scope as _normalize_exercise_selection_scope,
+    normalize_team_mode as _normalize_team_mode,
+)
+from .services.classificacions.partitions import (
+    BIRTH_YEAR_RANGE_PARTITION_CODE,
     normalize_birth_year_range_partition_config,
     normalize_particions_config,
     normalize_particions_v2_entries,
+    normalize_schema_legacy_team_birth_partition,
     particio_codes_from_entries,
+)
+from .services.services_classificacions_2 import (
+    EXERCISE_SELECTION_SCOPE_INHERIT,
+    EXERCISE_SELECTION_SCOPE_PER_MEMBER,
+    EXERCISE_SELECTION_SCOPE_TEAM_POOL,
 )
 from .services.birth_year_ranges import validate_birth_year_range_partition_config
 from .live_cache import get_live_payload_cached, mark_live_dirty
@@ -79,7 +82,7 @@ from .services.equip_contexts import (
     normalize_equip_context_code,
 )
 from .services.competition_groups import get_group_maps, group_label
-from .views import get_allowed_group_fields, get_inscripcio_value
+from .services.inscripcions_queries import get_allowed_group_fields, get_inscripcio_value
 from .access import user_has_competicio_capability
 from .services.scoring_schema_validation import (
     _field_shape,

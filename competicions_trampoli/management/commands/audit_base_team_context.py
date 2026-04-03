@@ -27,6 +27,9 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
+        # This command intentionally stays side-effect free. The runtime repairs
+        # the native context in functional flows; the audit reads persisted
+        # state as-is.
         competicio_id = options.get("competicio_id")
         sample_limit = max(1, int(options.get("sample_limit") or 10))
 

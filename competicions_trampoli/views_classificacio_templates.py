@@ -26,9 +26,9 @@ from .services.classificacio_templates import (
     template_schema_to_global_ui_schema,
     validate_template_schema_global,
 )
-from .views_classificacions import (
-    _build_metric_meta_for_schema_owner,
-    _build_validation_error_details,
+from .services.classificacions.builder_shared import (
+    build_metric_meta_for_schema_owner as _build_metric_meta_for_schema_owner,
+    build_validation_error_details as _build_validation_error_details,
 )
 
 

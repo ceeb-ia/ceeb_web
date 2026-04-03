@@ -3,6 +3,50 @@
 from django.db import migrations
 
 
+def _conditional_rename_index(*, app_label, model_name, old_name, new_name):
+    def forwards(apps, schema_editor):
+        model = apps.get_model(app_label, model_name)
+        table_name = model._meta.db_table
+        with schema_editor.connection.cursor() as cursor:
+            constraints = schema_editor.connection.introspection.get_constraints(cursor, table_name)
+
+        if new_name in constraints or old_name not in constraints:
+            return
+
+        vendor = schema_editor.connection.vendor
+        quote_name = schema_editor.quote_name
+        if vendor == "postgresql":
+            schema_editor.execute(
+                f"ALTER INDEX {quote_name(old_name)} RENAME TO {quote_name(new_name)}"
+            )
+            return
+        if vendor in {"mysql", "mariadb"}:
+            schema_editor.execute(
+                f"ALTER TABLE {quote_name(table_name)} RENAME INDEX {quote_name(old_name)} TO {quote_name(new_name)}"
+            )
+            return
+        # SQLite test databases do not depend on the concrete generated index names.
+        # If the old generated name is still present, keep the DB index as-is and
+        # let the migration state advance to the canonical name.
+
+    if hasattr(migrations, "RenameIndex"):
+        state_operation = migrations.RenameIndex(
+            model_name=model_name,
+            old_name=old_name,
+            new_name=new_name,
+        )
+    else:
+        state_operation = migrations.RunPython(
+            migrations.RunPython.noop,
+            migrations.RunPython.noop,
+        )
+
+    return migrations.SeparateDatabaseAndState(
+        state_operations=[state_operation],
+        database_operations=[migrations.RunPython(forwards, migrations.RunPython.noop)],
+    )
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -10,22 +54,26 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RenameIndex(
+        _conditional_rename_index(
+            app_label='competicions_trampoli',
             model_name='rotacioassignacioserieequip',
             new_name='competicion_serie_i_c97877_idx',
             old_name='competicion_serie_i_24c55a_idx',
         ),
-        migrations.RenameIndex(
+        _conditional_rename_index(
+            app_label='competicions_trampoli',
             model_name='serieequip',
             new_name='competicion_competi_531993_idx',
             old_name='competicion_competi_8b69dd_idx',
         ),
-        migrations.RenameIndex(
+        _conditional_rename_index(
+            app_label='competicions_trampoli',
             model_name='serieequipitem',
             new_name='competicion_serie_i_4b524d_idx',
             old_name='competicion_serie_i_6cf549_idx',
         ),
-        migrations.RenameIndex(
+        _conditional_rename_index(
+            app_label='competicions_trampoli',
             model_name='serieequipitem',
             new_name='competicion_team_su_18d79b_idx',
             old_name='competicion_team_s_8a272e_idx',

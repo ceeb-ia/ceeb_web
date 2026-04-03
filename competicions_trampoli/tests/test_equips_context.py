@@ -65,16 +65,20 @@ from ..models_trampoli import (
 )
 from ..models import CompeticioMembership
 from ..scoring_engine import ScoringEngine
-from ..views import (
+from ..inscripcions_views_shared import (
+    _split_custom_sort_tokens,
+    renumber_groups_for_competicio,
+    sort_records_by_field_stable,
+)
+from ..services.inscripcions.history import (
+    apply_inscripcions_history_snapshot,
+    capture_inscripcions_history_snapshot,
+)
+from ..services.inscripcions.queries import (
     COLUMN_FILTER_EMPTY_TOKEN,
     _build_inscripcions_filtered_qs,
-    apply_inscripcions_history_snapshot,
     build_inscripcions_sort_context_key,
-    _split_custom_sort_tokens,
-    capture_inscripcions_history_snapshot,
-    renumber_groups_for_competicio,
     get_competicio_custom_sort_rank_map,
-    sort_records_by_field_stable,
 )
 from ..views_classificacions import (
     ClassificacionsHome,
@@ -124,10 +128,9 @@ from .base import _BaseTrampoliDataMixin
 class EquipContextFlowTests(_BaseTrampoliDataMixin, TestCase):
     def setUp(self):
         self.comp = self._create_competicio("Comp Equip Context")
-        self.native_team = Equip.objects.create(competicio=self.comp, nom="Equip Natiu")
-        self.custom_team = Equip.objects.create(competicio=self.comp, nom="Equip Context")
+        self.base_ctx = self._ensure_native_equip_context(self.comp)
+        self.native_team = Equip.objects.create(competicio=self.comp, context=self.base_ctx, nom="Equip Natiu")
         self.ins = self._create_inscripcio(self.comp, "Participant Context", ordre=1)
-        self.base_ctx = EquipContext.objects.create(competicio=self.comp, code="native", nom="Base")
         InscripcioEquipAssignacio.objects.create(
             competicio=self.comp,
             context=self.base_ctx,
@@ -157,13 +160,15 @@ class EquipContextFlowTests(_BaseTrampoliDataMixin, TestCase):
         )
         self.assertEqual(create_res.status_code, 200)
         context_code = create_res.json()["context"]["code"]
+        custom_ctx = EquipContext.objects.get(competicio=self.comp, code=context_code)
+        custom_team = Equip.objects.create(competicio=self.comp, context=custom_ctx, nom="Equip Context")
 
         assign_res = self.client.post(
             reverse("inscripcions_equips_assign", kwargs={"pk": self.comp.id}),
             data=json.dumps(
                 {
                     "context_code": context_code,
-                    "equip_id": self.custom_team.id,
+                    "equip_id": custom_team.id,
                     "inscripcio_ids": [self.ins.id],
                 }
             ),
@@ -175,7 +180,7 @@ class EquipContextFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertIsNone(self.ins.equip_id)
         assignacio = InscripcioEquipAssignacio.objects.get(inscripcio=self.ins, context__code=context_code)
         self.assertEqual(assignacio.context.code, context_code)
-        self.assertEqual(assignacio.equip_id, self.custom_team.id)
+        self.assertEqual(assignacio.equip_id, custom_team.id)
         self.assertTrue(
             InscripcioEquipAssignacio.objects.filter(
                 inscripcio=self.ins,
@@ -188,10 +193,19 @@ class EquipContextFlowTests(_BaseTrampoliDataMixin, TestCase):
 class EquipPreviewUiTests(_BaseTrampoliDataMixin, TestCase):
     def setUp(self):
         self.comp = self._create_competicio("Comp Team Preview UI")
-        self.team_existing = Equip.objects.create(competicio=self.comp, nom="Club A")
-        self.team_other = Equip.objects.create(competicio=self.comp, nom="Alt Equip")
-        self.base_ctx = EquipContext.objects.create(competicio=self.comp, code="native", nom="Base")
+        self.base_ctx = self._ensure_native_equip_context(self.comp)
         self.ctx = EquipContext.objects.create(competicio=self.comp, code="finals", nom="Finals")
+        self.team_aparell = Aparell.objects.create(
+            codi="TEAMCTX",
+            nom="Aparell Equip",
+            competition_unit=Aparell.CompetitionUnit.TEAM,
+            actiu=True,
+            created_by=self._ensure_default_aparell_owner(),
+        )
+        self.comp_team_aparell = self._create_comp_aparell(self.comp, self.team_aparell, ordre=1, actiu=True)
+        self.team_existing_native = Equip.objects.create(competicio=self.comp, context=self.base_ctx, nom="Club A")
+        self.team_existing = Equip.objects.create(competicio=self.comp, context=self.ctx, nom="Club A")
+        self.team_other = Equip.objects.create(competicio=self.comp, context=self.base_ctx, nom="Alt Equip")
 
         self.ins_keep = Inscripcio.objects.create(
             competicio=self.comp,
@@ -221,7 +235,7 @@ class EquipPreviewUiTests(_BaseTrampoliDataMixin, TestCase):
             competicio=self.comp,
             context=self.base_ctx,
             inscripcio=self.ins_keep,
-            equip=self.team_existing,
+            equip=self.team_existing_native,
         )
         InscripcioEquipAssignacio.objects.create(
             competicio=self.comp,
@@ -623,7 +637,7 @@ class EquipPreviewUiTests(_BaseTrampoliDataMixin, TestCase):
             context=self.base_ctx,
             inscripcio=self.ins_ctx,
         )
-        assignacio.equip = self.team_existing
+        assignacio.equip = self.team_existing_native
         assignacio.save(update_fields=["equip", "updated_at"])
 
         response = self.client.post(
@@ -733,8 +747,8 @@ class EquipPreviewUiTests(_BaseTrampoliDataMixin, TestCase):
         )
 
     def test_equips_delete_empty_removes_only_globally_empty_teams_in_custom_context(self):
-        globally_empty = Equip.objects.create(competicio=self.comp, nom="Ghost Team")
-        native_only = Equip.objects.create(competicio=self.comp, nom="Native Only")
+        globally_empty = Equip.objects.create(competicio=self.comp, context=self.ctx, nom="Ghost Team")
+        native_only = Equip.objects.create(competicio=self.comp, context=self.base_ctx, nom="Native Only")
         InscripcioEquipAssignacio.objects.create(
             competicio=self.comp,
             context=self.base_ctx,
@@ -754,7 +768,7 @@ class EquipPreviewUiTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(data.get("deleted"), 1)
         self.assertFalse(Equip.objects.filter(pk=globally_empty.id).exists())
         self.assertTrue(Equip.objects.filter(pk=native_only.id).exists())
-        self.assertIn(native_only.id, data.get("skipped_ids", []))
+        self.assertEqual(data.get("deleted_ids"), [globally_empty.id])
 
     def test_equips_workspace_native_ignores_legacy_team_without_base_assignment(self):
         legacy_only = Inscripcio.objects.create(
@@ -762,7 +776,7 @@ class EquipPreviewUiTests(_BaseTrampoliDataMixin, TestCase):
             nom_i_cognoms="Eva Legacy",
             entitat="Club A",
             ordre_sortida=5,
-            equip=self.team_existing,
+            equip=self.team_existing_native,
         )
 
         response = self.client.post(
@@ -805,13 +819,13 @@ class EquipPreviewUiTests(_BaseTrampoliDataMixin, TestCase):
             nom_i_cognoms="Fiona Native",
             entitat="Club A",
             ordre_sortida=5,
-            equip=self.team_existing,
+            equip=self.team_existing_native,
         )
         InscripcioEquipAssignacio.objects.create(
             competicio=self.comp,
             context=self.base_ctx,
             inscripcio=legacy_backed,
-            equip=self.team_existing,
+            equip=self.team_existing_native,
         )
 
         response = self.client.post(
@@ -859,7 +873,7 @@ class EquipPreviewUiTests(_BaseTrampoliDataMixin, TestCase):
         self.assertIsNone(candidate.get("current_team_id"))
         self.assertEqual(candidate.get("native_team_name"), "")
         legacy_backed.refresh_from_db()
-        self.assertEqual(legacy_backed.equip_id, self.team_existing.id)
+        self.assertEqual(legacy_backed.equip_id, self.team_existing_native.id)
 
     def test_equips_delete_all_native_does_not_resurrect_legacy_teams(self):
         legacy_backed = Inscripcio.objects.create(
@@ -1137,10 +1151,10 @@ class EquipContextClassificacioTests(_BaseTrampoliDataMixin, TestCase):
         self.app = self._create_aparell("CTX", "Aparell Context")
         self.comp_app = self._create_comp_aparell(self.comp, self.app, ordre=1, actiu=True)
 
-        self.team_native = Equip.objects.create(competicio=self.comp, nom="Equip Base")
-        self.team_context = Equip.objects.create(competicio=self.comp, nom="Equip Finals")
-        self.base_ctx = EquipContext.objects.create(competicio=self.comp, code="native", nom="Base")
+        self.base_ctx = self._ensure_native_equip_context(self.comp)
         self.ctx = EquipContext.objects.create(competicio=self.comp, code="finals", nom="Finals")
+        self.team_native = Equip.objects.create(competicio=self.comp, context=self.base_ctx, nom="Equip Base")
+        self.team_context = Equip.objects.create(competicio=self.comp, context=self.ctx, nom="Equip Finals")
 
         self.ins_a = self._create_inscripcio(self.comp, "Participant A", ordre=1)
         self.ins_b = self._create_inscripcio(self.comp, "Participant B", ordre=2)
@@ -1186,6 +1200,7 @@ class EquipContextClassificacioTests(_BaseTrampoliDataMixin, TestCase):
                 "agregacio_aparells": "sum",
                 "ordre": "desc",
             },
+            "presentacio": {"top_n": 0, "mostrar_empats": True},
             "equips": {
                 "assignment_source": {"mode": "context", "context_code": "finals", "fallback": "native"},
                 "incloure_sense_equip": False,
@@ -1226,6 +1241,7 @@ class EquipContextClassificacioTests(_BaseTrampoliDataMixin, TestCase):
                 "agregacio_aparells": "sum",
                 "ordre": "desc",
             },
+            "presentacio": {"top_n": 0, "mostrar_empats": True},
             "equips": {
                 "assignment_source": {"mode": "context", "context_code": "finals", "fallback": "native"},
                 "incloure_sense_equip": False,
@@ -1246,14 +1262,34 @@ class EquipContextClassificacioTests(_BaseTrampoliDataMixin, TestCase):
         self.assertIn("Equip Base", by_name)
         self.assertEqual(by_name["Equip Base"]["participants"], 1)
 
+    def test_normalize_schema_keeps_assignment_source_context_authoritative(self):
+        normalized, info = normalize_schema_legacy_team_birth_partition(
+            self.comp,
+            {
+                "equips": {
+                    "context_code": "native",
+                    "assignment_source": {
+                        "mode": "context",
+                        "context_code": "finals",
+                        "fallback": "native",
+                    },
+                }
+            },
+            tipus="equips",
+        )
+
+        self.assertFalse(info["legacy_inferred"])
+        self.assertEqual(normalized["equips"]["assignment_source"]["context_code"], "finals")
+        self.assertEqual(normalized["equips"]["context_code"], "finals")
+
 
 class EquipContextHistorySnapshotTests(_BaseTrampoliDataMixin, TestCase):
     def setUp(self):
         self.comp = self._create_competicio("Comp Snapshot Context")
-        self.team_native = Equip.objects.create(competicio=self.comp, nom="Equip Base")
-        self.team_context = Equip.objects.create(competicio=self.comp, nom="Equip Alt")
-        self.base_ctx = EquipContext.objects.create(competicio=self.comp, code="native", nom="Base")
+        self.base_ctx = self._ensure_native_equip_context(self.comp)
         self.ctx = EquipContext.objects.create(competicio=self.comp, code="ctx-alt", nom="Context Alt")
+        self.team_native = Equip.objects.create(competicio=self.comp, context=self.base_ctx, nom="Equip Base")
+        self.team_context = Equip.objects.create(competicio=self.comp, context=self.ctx, nom="Equip Alt")
         self.ins = self._create_inscripcio(self.comp, "Participant Snapshot", ordre=1)
         InscripcioEquipAssignacio.objects.create(
             competicio=self.comp,
@@ -1331,18 +1367,20 @@ class EquipContextHistorySnapshotTests(_BaseTrampoliDataMixin, TestCase):
 class BaseTeamContextAuditCommandTests(_BaseTrampoliDataMixin, TestCase):
     def test_command_reports_missing_contexts_orphans_and_divergences_without_mutating_data(self):
         comp_missing = self._create_competicio("Comp Missing")
-        missing_team = Equip.objects.create(competicio=comp_missing, nom="Legacy Missing")
+        missing_ctx = EquipContext.objects.create(competicio=comp_missing, code="legacy-only", nom="Legacy Only")
+        missing_team = Equip.objects.create(competicio=comp_missing, context=missing_ctx, nom="Legacy Missing")
         Inscripcio.objects.create(
             competicio=comp_missing,
             nom_i_cognoms="Orfe Legacy",
             equip=missing_team,
             ordre_sortida=1,
         )
+        self.assertFalse(EquipContext.objects.filter(competicio=comp_missing, code="native").exists())
 
         comp_div = self._create_competicio("Comp Divergence")
-        legacy_team = Equip.objects.create(competicio=comp_div, nom="Legacy Team")
-        native_team = Equip.objects.create(competicio=comp_div, nom="Native Team")
-        base_ctx = EquipContext.objects.create(competicio=comp_div, code="native", nom="Base")
+        base_ctx = self._ensure_native_equip_context(comp_div)
+        legacy_team = Equip.objects.create(competicio=comp_div, context=base_ctx, nom="Legacy Team")
+        native_team = Equip.objects.create(competicio=comp_div, context=base_ctx, nom="Native Team")
         ins_div = Inscripcio.objects.create(
             competicio=comp_div,
             nom_i_cognoms="Divergent",
