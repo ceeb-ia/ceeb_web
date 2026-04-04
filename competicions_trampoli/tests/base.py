@@ -87,6 +87,9 @@ class _BaseTrampoliDataMixin:
 
     def _create_equip(self, competicio, nom, *, context=None, origen=Equip.Origen.MANUAL, criteri=None):
         context = context or self._ensure_native_equip_context(competicio)
+        max_nom_length = getattr(Equip._meta.get_field("nom"), "max_length", None)
+        if isinstance(max_nom_length, int) and max_nom_length > 0:
+            nom = str(nom or "")[:max_nom_length]
         return Equip.objects.create(
             competicio=competicio,
             context=context,

@@ -1033,8 +1033,11 @@ def global_ui_schema_to_template_schema(schema_ui, by_id, by_code):
                     if not code:
                         code = resolve_app_code_for_template(src2.get("aparell_codi"), by_id, by_code)
                     if code:
-                        src2["aparell_id"] = code
+                        src2["aparell_codi"] = code
+                    src2.pop("aparell_id", None)
                     src2.pop("aparell_codi", None)
+                    if code:
+                        src2["aparell_codi"] = code
                     item["source"] = src2
                 elif ctype == "metric":
                     code = resolve_app_code_for_template(item.get("aparell_id"), by_id, by_code)
@@ -1050,8 +1053,11 @@ def global_ui_schema_to_template_schema(schema_ui, by_id, by_code):
                 continue
             code = resolve_app_code_for_template(raw_app, by_id, by_code)
             if code:
-                section["aparell_id"] = code
+                section["aparell_codi"] = code
+            section.pop("aparell_id", None)
             section.pop("aparell_codi", None)
+            if code:
+                section["aparell_codi"] = code
         schema["presentacio"] = presentacio
 
     return schema, warnings

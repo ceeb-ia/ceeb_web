@@ -9,12 +9,6 @@ from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.http import require_POST
 
 from .access import user_has_competicio_capability
-from .inscripcions_views_shared import (
-    _message_for_emptied_programmed_groups,
-    _persist_group_suggested_names,
-    _sync_group_names_for_competicio,
-    sync_stable_groups_from_legacy,
-)
 from .models import Competicio, GrupCompeticio, Inscripcio
 from .services.competition_groups import (
     clear_inscripcions_group,
@@ -53,6 +47,7 @@ from .services.inscripcions.queries import (
     _bucket_labels_by_kind,
     _bucket_source_signature,
     _extract_sort_partition_codes,
+    _message_for_emptied_programmed_groups,
     _normalize_sort_criterion,
     _normalize_sort_filters,
     _normalize_sort_group_by,
@@ -66,6 +61,124 @@ from .services.inscripcions.queries import (
     get_inscripcions_sort_context_state,
     reconcile_inscripcions_sort_context_state,
 )
+
+
+def _normalize_group_names_map(raw_group_names):
+    out = {}
+    if not isinstance(raw_group_names, dict):
+        return out
+    for raw_group, raw_label in raw_group_names.items():
+        try:
+            group_num = int(str(raw_group).strip())
+        except Exception:
+            continue
+        if group_num <= 0:
+            continue
+        label = str(raw_label or "").strip()
+        if not label:
+            continue
+        out[group_num] = label
+    return out
+
+
+def _persist_group_suggested_names(competicio, preview_groups):
+    suggested_by_display_num = {}
+    for row in preview_groups or []:
+        group_num = int(row.get("group_num") or 0) if str(row.get("group_num") or "").isdigit() else None
+        suggested_name = str(row.get("suggested_name") or "").strip()
+        if not group_num or not suggested_name:
+            continue
+        suggested_by_display_num[group_num] = suggested_name
+
+    if not suggested_by_display_num:
+        sync_competicio_group_names_view(competicio)
+        return 0
+
+    groups = list(
+        GrupCompeticio.objects.filter(
+            competicio=competicio,
+            display_num__in=list(suggested_by_display_num.keys()),
+        )
+    )
+    updates = []
+    for group in groups:
+        suggested_name = suggested_by_display_num.get(group.display_num, "")
+        if not suggested_name or group.nom == suggested_name:
+            continue
+        group.nom = suggested_name
+        updates.append(group)
+
+    if updates:
+        GrupCompeticio.objects.bulk_update(updates, ["nom"], batch_size=200)
+
+    sync_competicio_group_names_view(competicio)
+    return len(updates)
+
+
+def sync_stable_groups_from_legacy(competicio):
+    view_cfg = competicio.inscripcions_view or {}
+    group_names = _normalize_group_names_map(view_cfg.get("group_names") or {})
+    live_display_nums = list(
+        Inscripcio.objects.filter(competicio=competicio, grup__isnull=False)
+        .order_by("grup")
+        .values_list("grup", flat=True)
+        .distinct()
+    )
+    live_display_nums = [int(num) for num in live_display_nums if isinstance(num, int) and num > 0]
+
+    group_maps = get_group_maps(competicio)
+    groups_by_display = group_maps["by_display_num"]
+    touched_group_ids = set()
+    updates = []
+    with transaction.atomic():
+        for display_num in live_display_nums:
+            group = groups_by_display.get(display_num)
+            name = str(group_names.get(display_num) or "").strip()
+            if group is None:
+                group = ensure_group_for_display_num(competicio, display_num, name=name)
+                groups_by_display[display_num] = group
+            else:
+                fields = []
+                if not group.actiu:
+                    group.actiu = True
+                    fields.append("actiu")
+                if name != group.nom:
+                    group.nom = name
+                    fields.append("nom")
+                if fields:
+                    group.save(update_fields=fields)
+            touched_group_ids.add(group.id)
+
+        stale_groups = [
+            group
+            for group in get_group_maps(competicio)["groups"]
+            if group.id not in touched_group_ids
+        ]
+        if stale_groups:
+            GrupCompeticio.objects.filter(id__in=[group.id for group in stale_groups]).update(actiu=False)
+
+        counters = {}
+        qs = (
+            Inscripcio.objects.filter(competicio=competicio)
+            .order_by("grup", "ordre_sortida", "id")
+            .only("id", "grup", "grup_competicio", "ordre_competicio")
+        )
+        for inscripcio in qs:
+            display_num = getattr(inscripcio, "grup", None)
+            group = groups_by_display.get(display_num)
+            next_group_id = getattr(group, "id", None)
+            next_comp_order = None
+            if next_group_id:
+                counters[next_group_id] = int(counters.get(next_group_id, 0) or 0) + 1
+                next_comp_order = counters[next_group_id]
+            if inscripcio.grup_competicio_id != next_group_id or inscripcio.ordre_competicio != next_comp_order:
+                inscripcio.grup_competicio_id = next_group_id
+                inscripcio.ordre_competicio = next_comp_order
+                updates.append(inscripcio)
+        if updates:
+            Inscripcio.objects.bulk_update(updates, ["grup_competicio", "ordre_competicio"], batch_size=500)
+
+    sync_competicio_group_names_view(competicio)
 
 
 def _normalize_group_workspace_filters(raw_filters):
@@ -1212,7 +1325,7 @@ def inscripcions_reorder(request, pk):
                     Inscripcio.objects.filter(id=moved_id).update(grup=None, grup_competicio=None, ordre_competicio=None)
                     compact_competition_order_for_group(old_group)
 
-    _sync_group_names_for_competicio(competicio)
+    sync_competicio_group_names_view(competicio)
     filters = _normalize_sort_filters(raw_filters)
     allowed_group_fields = get_allowed_group_fields(competicio)
     allowed_group_codes = {field["code"] for field in allowed_group_fields}

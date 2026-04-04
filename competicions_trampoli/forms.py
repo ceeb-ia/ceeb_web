@@ -10,6 +10,8 @@ from .models_scoring import ScoringSchema
 from .models_trampoli import Aparell, CompeticioAparell
 from .services.competition_groups import get_competicio_groups, group_label
 from .services.equip_contexts import (
+    BASE_EQUIP_CONTEXT_DESCRIPTION,
+    BASE_EQUIP_CONTEXT_NAME,
     NATIVE_EQUIP_CONTEXT_CODE,
     get_equip_context,
     get_equip_context_payload,
@@ -141,12 +143,15 @@ class InscripcioForm(forms.ModelForm):
             (item for item in get_equip_context_payload(self.competicio) if item["code"] == self.team_context_code),
             {
                 "code": self.team_context_code,
-                "nom": "Base",
-                "description": "Context base d'equips de la competicio",
+                "nom": BASE_EQUIP_CONTEXT_NAME,
+                "description": BASE_EQUIP_CONTEXT_DESCRIPTION,
                 "is_native": True,
             },
         )
-        self.team_context_label = str(self.team_context_payload.get("nom") or "Base").strip() or "Base"
+        self.team_context_label = (
+            str(self.team_context_payload.get("nom") or BASE_EQUIP_CONTEXT_NAME).strip()
+            or BASE_EQUIP_CONTEXT_NAME
+        )
         self.current_native_equip = (
             resolve_inscripcio_equip(
                 self.instance,
@@ -709,6 +714,13 @@ class ScoringSchemaForm(forms.ModelForm):
 
     def get_raw_schema_json(self) -> str:
         return str(self.raw_schema_json or "")
+
+    def _update_errors(self, errors):
+        if hasattr(errors, "error_dict") and isinstance(errors.error_dict, dict):
+            schema_errors = list(errors.error_dict.pop("schema", []) or [])
+            if schema_errors:
+                errors.error_dict.setdefault("schema_json", []).extend(schema_errors)
+        return super()._update_errors(errors)
 
     def clean_schema_json(self):
         txt = (self.cleaned_data.get("schema_json") or "").strip()

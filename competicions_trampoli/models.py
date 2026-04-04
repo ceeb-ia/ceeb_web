@@ -255,8 +255,21 @@ class Inscripcio(models.Model):
         return f"{self.nom_i_cognoms} ({self.competicio})"
 
     def save(self, *args, **kwargs):
+        raw_update_fields = kwargs.get("update_fields")
+        update_fields = set(raw_update_fields) if raw_update_fields is not None else None
+        group_competicio_explicit = update_fields is not None and "grup_competicio" in update_fields
+        legacy_grup_explicit = update_fields is not None and "grup" in update_fields
         current_group = getattr(self, "grup_competicio", None)
-        if self.grup_competicio_id and self.grup:
+        if self.grup_competicio_id and (
+            group_competicio_explicit or (self.grup and not legacy_grup_explicit)
+        ):
+            display_num = getattr(current_group, "display_num", None)
+            if display_num:
+                self.grup = display_num
+                if update_fields is not None:
+                    update_fields.add("grup")
+
+        if self.grup_competicio_id and self.grup and not group_competicio_explicit:
             display_num = getattr(current_group, "display_num", None)
             if display_num and int(display_num) != int(self.grup):
                 from .services.competition_groups import ensure_group_for_display_num
@@ -265,6 +278,8 @@ class Inscripcio(models.Model):
                 if remapped_group is not None:
                     self.grup_competicio = remapped_group
                     current_group = remapped_group
+                    if update_fields is not None:
+                        update_fields.add("grup_competicio")
 
         if self.grup_competicio_id and not self.grup:
             display_num = getattr(current_group, "display_num", None)
@@ -277,6 +292,8 @@ class Inscripcio(models.Model):
             group = ensure_group_for_display_num(self.competicio, self.grup)
             if group is not None:
                 self.grup_competicio = group
+                if update_fields is not None:
+                    update_fields.add("grup_competicio")
 
         if self.grup_competicio_id and self.ordre_competicio is None:
             max_order = (
@@ -291,6 +308,8 @@ class Inscripcio(models.Model):
         if not self.grup_competicio_id:
             self.ordre_competicio = None
 
+        if update_fields is not None:
+            kwargs["update_fields"] = tuple(update_fields)
         super().save(*args, **kwargs)
 
 

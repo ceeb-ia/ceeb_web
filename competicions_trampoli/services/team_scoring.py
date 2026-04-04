@@ -499,6 +499,69 @@ def _subject_label(equip: Equip, context_name: str, members: List[Inscripcio]) -
     return f"{base_label} ({trimmed_members}...)"
 
 
+def _expected_team_size_for_comp_aparell(comp_aparell: Optional[CompeticioAparell]) -> int:
+    from ..models_scoring import ScoringSchema
+
+    def _infer_from_context_sources() -> int:
+        source_rows = list(
+            CompeticioAparellEquipContextSource.objects
+            .filter(competicio=comp_aparell.competicio, comp_aparell=comp_aparell)
+            .values_list("context__code", "context__nom")
+        )
+        inferred_sizes = set()
+        for context_code, context_name in source_rows:
+            raw_tokens = [
+                str(context_code or "").strip().lower(),
+                str(context_name or "").strip().lower(),
+            ]
+            for token in raw_tokens:
+                if not token:
+                    continue
+                if token.startswith("parell") or "parell" in token or any(
+                    part in token for part in ("duo", "duet", "pair", "sync")
+                ):
+                    inferred_sizes.add(2)
+                    break
+                if "trio" in token:
+                    inferred_sizes.add(3)
+                    break
+                if any(part in token for part in ("quartet", "quatre", "quad")):
+                    inferred_sizes.add(4)
+                    break
+        if len(inferred_sizes) == 1:
+            return next(iter(inferred_sizes))
+        return 0
+
+    if comp_aparell is None:
+        return 0
+
+    schema_obj = (
+        ScoringSchema.objects
+        .filter(comp_aparell=comp_aparell)
+        .only("schema")
+        .first()
+    )
+    if schema_obj is None and getattr(comp_aparell, "aparell_id", None):
+        schema_obj = (
+            ScoringSchema.objects
+            .filter(aparell_id=comp_aparell.aparell_id)
+            .only("schema")
+            .first()
+        )
+
+    meta = (getattr(schema_obj, "schema", None) or {}).get("meta") if schema_obj is not None else {}
+    if not isinstance(meta, dict):
+        meta = {}
+    try:
+        expected = int(meta.get("expected_team_size") or 0)
+    except Exception:
+        expected = 0
+    expected = max(0, expected)
+    if expected:
+        return expected
+    return _infer_from_context_sources()
+
+
 def sync_team_subject_for_members(
     competicio,
     comp_aparell: CompeticioAparell,
@@ -547,6 +610,7 @@ def build_team_subjects_for_comp_aparell(competicio, comp_aparell: CompeticioApa
     )
     subjects: List[Dict[str, Any]] = []
     issues: List[Dict[str, Any]] = []
+    expected_team_size = _expected_team_size_for_comp_aparell(comp_aparell)
 
     with transaction.atomic():
         for source in source_rows:
@@ -573,6 +637,10 @@ def build_team_subjects_for_comp_aparell(competicio, comp_aparell: CompeticioApa
                 member_ids = [int(member.id) for member in members]
                 if not members:
                     invalid_reasons.append("L'equip no te membres assignats dins d'aquest context.")
+                if expected_team_size and len(member_ids) != expected_team_size:
+                    invalid_reasons.append(
+                        f"L'equip ha de tenir {expected_team_size} membres per aquest aparell."
+                    )
                 if len(set(member_ids)) != len(member_ids):
                     invalid_reasons.append("Hi ha membres duplicats dins del mateix equip.")
                 if any(member_id in excluded_ids for member_id in member_ids):
@@ -599,6 +667,7 @@ def build_team_subjects_for_comp_aparell(competicio, comp_aparell: CompeticioApa
                     "context_code": str(getattr(context, "code", "") or ""),
                     "context_name": str(getattr(context, "nom", "") or getattr(context, "code", "")).strip(),
                     "name": str(getattr(equip, "nom", "") or f"Equip {equip.id}").strip(),
+                    "label": str(getattr(subject_obj, "label", "") or "").strip(),
                     "members": [
                         {"id": int(member.id), "name": str(getattr(member, "nom_i_cognoms", "") or "").strip()}
                         for member in members

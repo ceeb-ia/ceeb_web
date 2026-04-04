@@ -6,6 +6,7 @@ from decimal import Decimal
 from django.db import transaction
 from django.http import FileResponse, Http404, HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404
+from django.urls import reverse
 from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.http import require_POST
 
@@ -38,6 +39,13 @@ MEDIA_ALLOWED_EXTENSIONS = {
 def _get_media_matching_config(competicio):
     view_cfg = competicio.inscripcions_view or {}
     return normalize_media_matching_config(view_cfg.get("media_matching"))
+
+
+def _load_json_body(request):
+    try:
+        return json.loads(request.body.decode("utf-8"))
+    except Exception:
+        raise ValueError("JSON invalid")
 
 
 def _guess_media_tipus(*, mime_type: str, filename: str) -> str:
@@ -95,7 +103,10 @@ def _serialize_media_item(item):
         "is_primary": bool(item.is_primary),
         "source": item.source or "",
         "match_score": float(item.match_score) if item.match_score is not None else None,
-        "url": f"/competicio/{item.competicio_id}/inscripcions/media/{item.id}/file/",
+        "url": reverse(
+            "inscripcions_media_file",
+            kwargs={"pk": item.competicio_id, "media_id": item.id},
+        ),
     }
 
 
@@ -185,9 +196,9 @@ def inscripcions_media_upload(request, pk):
 def inscripcions_media_delete(request, pk):
     competicio = get_object_or_404(Competicio, pk=pk)
     try:
-        payload = json.loads(request.body.decode("utf-8"))
-    except Exception:
-        return HttpResponseBadRequest("JSON invalid")
+        payload = _load_json_body(request)
+    except ValueError as exc:
+        return HttpResponseBadRequest(str(exc))
 
     try:
         media_id = int(payload.get("media_id"))
@@ -221,9 +232,9 @@ def inscripcions_media_delete(request, pk):
 def inscripcions_media_set_primary(request, pk):
     competicio = get_object_or_404(Competicio, pk=pk)
     try:
-        payload = json.loads(request.body.decode("utf-8"))
-    except Exception:
-        return HttpResponseBadRequest("JSON invalid")
+        payload = _load_json_body(request)
+    except ValueError as exc:
+        return HttpResponseBadRequest(str(exc))
 
     try:
         media_id = int(payload.get("media_id"))
@@ -248,9 +259,9 @@ def inscripcions_media_set_primary(request, pk):
 def inscripcions_media_match_preview(request, pk):
     competicio = get_object_or_404(Competicio, pk=pk)
     try:
-        payload = json.loads(request.body.decode("utf-8"))
-    except Exception:
-        return HttpResponseBadRequest("JSON invalid")
+        payload = _load_json_body(request)
+    except ValueError as exc:
+        return HttpResponseBadRequest(str(exc))
 
     files = payload.get("files") or []
     if not isinstance(files, list):

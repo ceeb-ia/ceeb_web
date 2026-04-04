@@ -54,6 +54,7 @@ from .services.rotacions_ordering import (
     set_rotacio_order_mode,
     unique_ordered,
 )
+from .services.inscripcions.queries import _normalize_schema_extra_code, _reserved_inscripcio_codes
 from .services.team_series import get_programmed_series_ids, get_series_maps, serie_label
 from .services.team_scoring import build_team_subjects_for_comp_aparell, is_team_context_app
 from datetime import date, datetime, timedelta
@@ -234,30 +235,6 @@ ROTACIONS_EXPORT_BUILTIN_FIELDS = [
     {"code": "grup", "label": "Grup", "kind": "builtin"},
     {"code": "ordre_sortida", "label": "Ordre", "kind": "builtin"},
 ]
-
-
-def _reserved_inscripcio_codes():
-    out = set()
-    for f in Inscripcio._meta.concrete_fields:
-        name = str(getattr(f, "name", "") or "").strip()
-        attname = str(getattr(f, "attname", "") or "").strip()
-        if name:
-            out.add(name)
-        if attname:
-            out.add(attname)
-    return out
-
-
-def _normalize_schema_extra_code(code: str, reserved_codes):
-    code = (code or "").strip()
-    if not code:
-        return code
-    if code.startswith("excel__"):
-        return code
-    if code in reserved_codes:
-        return f"excel__{code}"
-    return code
-
 
 def _rotacions_available_participant_fields(competicio):
     out = []

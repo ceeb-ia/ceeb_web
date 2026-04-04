@@ -15,6 +15,8 @@ from .services.competition_groups import (
     sync_competicio_group_names_view,
 )
 from .services.equip_contexts import (
+    BASE_EQUIP_CONTEXT_DESCRIPTION,
+    BASE_EQUIP_CONTEXT_NAME,
     NATIVE_EQUIP_CONTEXT_CODE,
     get_equip_context,
     get_equip_context_payload,
@@ -37,8 +39,8 @@ class InscripcioFormViewMixin:
             if self.team_contexts_payload
             else {
                 "code": NATIVE_EQUIP_CONTEXT_CODE,
-                "nom": "Base",
-                "description": "Context base d'equips de la competicio",
+                "nom": BASE_EQUIP_CONTEXT_NAME,
+                "description": BASE_EQUIP_CONTEXT_DESCRIPTION,
                 "is_native": True,
             },
         )

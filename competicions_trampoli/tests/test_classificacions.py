@@ -80,23 +80,22 @@ from ..services.inscripcions.queries import (
     build_inscripcions_sort_context_key,
     get_competicio_custom_sort_rank_map,
 )
-from ..views_classificacions import (
-    ClassificacionsHome,
-    _build_metric_meta_for_comp_aparell,
-    _normalize_excel_cell,
-    _build_scoreable_meta_for_schema,
-    _normalize_particions_schema,
-    _scoreable_codes_by_app_id,
-    _schema_to_template_schema,
-    _template_schema_to_competicio_schema,
-    _validate_schema_for_competicio,
-    _validate_particions_schema,
+from ..services.classificacio_templates import (
+    normalize_particions_schema as _normalize_particions_schema,
+    schema_to_template_schema as _schema_to_template_schema,
+    template_schema_to_competicio_schema as _template_schema_to_competicio_schema_service,
 )
-from ..services.services_classificacions_2 import (
-    DEFAULT_SCHEMA,
-    compute_classificacio,
-    normalize_schema_legacy_team_birth_partition,
+from ..services.classificacions.builder import scoreable_codes_by_app_id as _scoreable_codes_by_app_id
+from ..services.classificacions.compute import DEFAULT_SCHEMA, compute_classificacio
+from ..services.classificacions.export import _normalize_excel_cell
+from ..services.classificacions.partitions import normalize_schema_legacy_team_birth_partition
+from ..services.classificacions.validation import (
+    build_metric_meta_for_comp_aparell as _build_metric_meta_for_comp_aparell,
+    build_scoreable_meta_for_schema as _build_scoreable_meta_for_schema,
+    validate_particions_schema as _validate_particions_schema,
+    validate_schema_for_competicio as _validate_schema_for_competicio,
 )
+from ..views_classificacions_builder import ClassificacionsHome
 from ..services.competition_groups import (
     assign_groups_by_display_num,
     compact_competition_order_for_group,
@@ -123,6 +122,14 @@ from ..templatetags.competicio_extras import (
 )
 
 from .base import _BaseTrampoliDataMixin
+
+
+def _template_schema_to_competicio_schema(*args, **kwargs):
+    schema_local, mapping_warnings, mapping, _compat_meta = _template_schema_to_competicio_schema_service(
+        *args,
+        **kwargs,
+    )
+    return schema_local, mapping_warnings, mapping
 
 
 class ClassificacioMatrixScalarTests(_BaseTrampoliDataMixin, TestCase):
@@ -592,6 +599,64 @@ class ClassificacioMatrixScalarTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual((cfg.schema.get("puntuacio") or {}).get("best_n"), 1)
         self.assertEqual((cfg.schema.get("desempat") or [])[0].get("camps"), ["E_total"])
         self.assertNotIn("camp", (cfg.schema.get("desempat") or [])[0])
+
+    def test_classificacio_save_returns_persisted_team_schema_with_mode_resolution(self):
+        self._ensure_native_equip_context(self.comp)
+        payload = {
+            "nom": "Cfg equips persisted",
+            "activa": True,
+            "ordre": 1,
+            "tipus": "equips",
+            "schema": {
+                **self._selected_total_schema([self.comp_app_a.id]),
+                "equips": {
+                    "context_code": "native",
+                    "assignment_source": {"mode": "context", "context_code": "native", "fallback": "native"},
+                    "team_mode": "derived_from_individual",
+                },
+            },
+        }
+
+        res = self.client.post(
+            reverse("classificacio_save", kwargs={"pk": self.comp.id}),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        self.assertEqual(res.status_code, 200)
+        body = res.json()
+        cfg_payload = body.get("cfg") or {}
+        self.assertEqual(cfg_payload.get("tipus"), "equips")
+        mode_resolution = (((cfg_payload.get("schema") or {}).get("equips") or {}).get("mode_resolution")) or {}
+        self.assertTrue(mode_resolution.get("resolved_at"))
+        self.assertIn("eligible_team_app_ids_at_save", mode_resolution)
+
+        cfg = ClassificacioConfig.objects.get(pk=body["id"])
+        saved_resolution = (((cfg.schema.get("equips") or {}).get("mode_resolution")) or {})
+        self.assertEqual(saved_resolution.get("resolved_at"), mode_resolution.get("resolved_at"))
+
+    def test_classificacio_preview_returns_consistent_error_when_compute_fails(self):
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Preview runtime error",
+            activa=True,
+            ordre=1,
+            tipus="individual",
+            schema=self._selected_total_schema([self.comp_app_a.id]),
+        )
+
+        with patch("competicions_trampoli.views_classificacions_builder.compute_classificacio", side_effect=RuntimeError("boom preview")):
+            res = self.client.post(
+                reverse("classificacio_preview", kwargs={"pk": self.comp.id, "cid": cfg.id}),
+                data=json.dumps({}),
+                content_type="application/json",
+            )
+
+        self.assertEqual(res.status_code, 400)
+        body = res.json()
+        self.assertEqual(body.get("error"), "No s'ha pogut previsualitzar la classificacio.")
+        self.assertEqual(body.get("errors"), ["boom preview"])
+        self.assertTrue(body.get("error_details"))
 
     def test_classificacio_save_accepts_row_compute_by_judge_when_single_judge(self):
         schema_obj = {
@@ -2150,6 +2215,17 @@ class ClassificacionsExportExcelTests(_BaseTrampoliDataMixin, TestCase):
         res = self.client.get(url, {"cfg_id": "abc"})
         self.assertEqual(res.status_code, 400)
 
+    def test_export_excel_returns_consistent_error_when_compute_fails(self):
+        self.client.force_login(self.user)
+        url = reverse("classificacions_live_export_excel", kwargs={"pk": self.comp.id})
+        with patch("competicions_trampoli.views_classificacions_export.compute_classificacio", side_effect=RuntimeError("boom export")):
+            res = self.client.get(url, {"cfg_id": self.cfg_general.id})
+
+        self.assertEqual(res.status_code, 400)
+        body = res.content.decode("utf-8")
+        self.assertIn("No s'ha pogut renderitzar la classificacio.", body)
+        self.assertIn("boom export", body)
+
 
 class ClassificacioTemplateFlowTests(_BaseTrampoliDataMixin, TestCase):
     def setUp(self):
@@ -2582,6 +2658,50 @@ class ClassificacioTemplateFlowTests(_BaseTrampoliDataMixin, TestCase):
             (((cfg.get("schema") or {}).get("puntuacio") or {}).get("camps_per_aparell") or {}).get(str(self.target_app.id)),
             ["total"],
         )
+
+    def test_global_template_apply_persists_mode_resolution_for_team_schema(self):
+        self._ensure_native_equip_context(self.comp_source)
+        self._ensure_native_equip_context(self.comp_target)
+        team_cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp_source,
+            nom="Cfg Source Team",
+            activa=True,
+            ordre=2,
+            tipus="equips",
+            schema={
+                **json.loads(json.dumps(self.cfg_source.schema or {})),
+                "equips": {
+                    "context_code": "native",
+                    "assignment_source": {"mode": "context", "context_code": "native", "fallback": "native"},
+                    "team_mode": "derived_from_individual",
+                },
+            },
+        )
+
+        save_res = self._post_json_as(
+            self.editor_user,
+            "classificacio_template_save",
+            self.comp_source.id,
+            {"cfg_id": team_cfg.id, "nom": "TPL Team Mode Resolution"},
+        )
+        self.assertEqual(save_res.status_code, 200)
+        template_id = save_res.json().get("template", {}).get("id")
+        self.assertTrue(template_id)
+
+        apply_res = self._post_json_as(
+            self.editor_user,
+            "classificacio_template_apply",
+            self.comp_target.id,
+            {"template_id": template_id, "nom": "Aplicada Team", "activa": False},
+        )
+        self.assertEqual(apply_res.status_code, 200)
+        cfg = apply_res.json().get("cfg") or {}
+        mode_resolution = (((cfg.get("schema") or {}).get("equips") or {}).get("mode_resolution")) or {}
+        self.assertTrue(mode_resolution.get("resolved_at"))
+        self.assertIn("eligible_team_app_ids_at_save", mode_resolution)
+
+        saved_cfg = ClassificacioConfig.objects.get(pk=cfg.get("id"))
+        self.assertTrue((((saved_cfg.schema.get("equips") or {}).get("mode_resolution")) or {}).get("resolved_at"))
 
     def test_template_validation_distinguishes_strict_vs_assistit_for_missing_team_context(self):
         schema_tpl, warnings = _schema_to_template_schema(self.comp_source, self.cfg_source.schema or {})
@@ -3987,7 +4107,7 @@ class LiveClassificacionsRedisCacheTests(_BaseTrampoliDataMixin, TestCase):
         }
         cache_key = live_cache.live_cache_key(self.comp.id)
         with patch("competicions_trampoli.live_cache._live_redis_client", return_value=fake_redis):
-            with patch("competicions_trampoli.views_classificacions.compute_classificacio", return_value=compute_result) as mocked_compute:
+            with patch("competicions_trampoli.views_classificacions_live.compute_classificacio", return_value=compute_result) as mocked_compute:
                 res_1 = self.client.get(self._public_url())
                 res_2 = self.client.get(self._public_url())
 
@@ -4009,7 +4129,7 @@ class LiveClassificacionsRedisCacheTests(_BaseTrampoliDataMixin, TestCase):
         }
         self.client.force_login(self.user)
         with patch("competicions_trampoli.live_cache._live_redis_client", return_value=fake_redis):
-            with patch("competicions_trampoli.views_classificacions.compute_classificacio", return_value=compute_result) as mocked_compute:
+            with patch("competicions_trampoli.views_classificacions_live.compute_classificacio", return_value=compute_result) as mocked_compute:
                 public_res = self.client.get(self._public_url())
                 internal_res = self.client.get(self._internal_url())
 
@@ -4027,7 +4147,7 @@ class LiveClassificacionsRedisCacheTests(_BaseTrampoliDataMixin, TestCase):
             "global": [{"participant": "Participant Cache", "punts": 9.8, "posicio": 1}]
         }
         with patch("competicions_trampoli.live_cache._live_redis_client", return_value=fake_redis):
-            with patch("competicions_trampoli.views_classificacions.compute_classificacio", return_value=compute_result) as mocked_compute:
+            with patch("competicions_trampoli.views_classificacions_live.compute_classificacio", return_value=compute_result) as mocked_compute:
                 first_res = self.client.get(self._public_url())
                 stamp = first_res.json()["stamp"]
                 second_res = self.client.get(self._public_url(), {"since": stamp})
@@ -4046,7 +4166,7 @@ class LiveClassificacionsRedisCacheTests(_BaseTrampoliDataMixin, TestCase):
         }
         self.client.force_login(self.user)
         with patch("competicions_trampoli.live_cache._live_redis_client", return_value=fake_redis):
-            with patch("competicions_trampoli.views_classificacions.compute_classificacio", return_value=compute_result) as mocked_compute:
+            with patch("competicions_trampoli.views_classificacions_live.compute_classificacio", return_value=compute_result) as mocked_compute:
                 first_res = self.client.get(self._internal_url())
                 stamp = first_res.json()["stamp"]
                 second_res = self.client.get(self._internal_url(), {"since": stamp})
@@ -4072,7 +4192,7 @@ class LiveClassificacionsRedisCacheTests(_BaseTrampoliDataMixin, TestCase):
         }
 
         with patch("competicions_trampoli.live_cache._live_redis_client", return_value=fake_redis):
-            with patch("competicions_trampoli.views_classificacions.compute_classificacio", return_value=compute_result):
+            with patch("competicions_trampoli.views_classificacions_live.compute_classificacio", return_value=compute_result):
                 res = self.client.get(self._public_url(), {"since": old_stamp})
 
         self.assertEqual(res.status_code, 200)
@@ -4088,7 +4208,7 @@ class LiveClassificacionsRedisCacheTests(_BaseTrampoliDataMixin, TestCase):
         waited_snapshot = json.loads(self._snapshot_blob())
         with patch("competicions_trampoli.live_cache._live_redis_client", return_value=fake_redis):
             with patch("competicions_trampoli.live_cache._wait_for_live_snapshot", return_value=waited_snapshot):
-                with patch("competicions_trampoli.views_classificacions.compute_classificacio") as mocked_compute:
+                with patch("competicions_trampoli.views_classificacions_live.compute_classificacio") as mocked_compute:
                     res = self.client.get(self._public_url())
 
         self.assertEqual(res.status_code, 200)
@@ -4103,7 +4223,7 @@ class LiveClassificacionsRedisCacheTests(_BaseTrampoliDataMixin, TestCase):
         )
         fake_redis.set(live_cache.live_lock_key(self.comp.id), "busy")
         with patch("competicions_trampoli.live_cache._live_redis_client", return_value=fake_redis):
-            with patch("competicions_trampoli.views_classificacions.compute_classificacio") as mocked_compute:
+            with patch("competicions_trampoli.views_classificacions_live.compute_classificacio") as mocked_compute:
                 res = self.client.get(self._public_url())
 
         self.assertEqual(res.status_code, 200)
@@ -4118,7 +4238,7 @@ class LiveClassificacionsRedisCacheTests(_BaseTrampoliDataMixin, TestCase):
             "competicions_trampoli.live_cache._live_redis_client",
             side_effect=RuntimeError("redis down"),
         ):
-            with patch("competicions_trampoli.views_classificacions.compute_classificacio", return_value=compute_result) as mocked_compute:
+            with patch("competicions_trampoli.views_classificacions_live.compute_classificacio", return_value=compute_result) as mocked_compute:
                 res = self.client.get(self._public_url())
 
         self.assertEqual(res.status_code, 200)
@@ -4134,7 +4254,7 @@ class LiveClassificacionsRedisCacheTests(_BaseTrampoliDataMixin, TestCase):
             "global": [{"participant": "Participant Cache", "punts": 9.8, "posicio": 1}]
         }
         with patch("competicions_trampoli.live_cache._live_redis_client", return_value=fake_redis):
-            with patch("competicions_trampoli.views_classificacions.compute_classificacio", return_value=compute_result) as mocked_compute:
+            with patch("competicions_trampoli.views_classificacions_live.compute_classificacio", return_value=compute_result) as mocked_compute:
                 res = self.client.get(self._public_url())
 
         self.assertEqual(res.status_code, 200)
@@ -4196,13 +4316,19 @@ class LiveClassificacionsRedisCacheTests(_BaseTrampoliDataMixin, TestCase):
         ins_b = self._create_inscripcio(self.comp, "Participant Cache 2", ordre=2)
         self._assign_equip(self.comp, self.ins, equip, context=team_ctx)
         self._assign_equip(self.comp, ins_b, equip, context=team_ctx)
+        team_subjects, _issues = build_team_subjects_for_comp_aparell(self.comp, self.comp_app)
+        team_subject_id = next(
+            item["subject_id"]
+            for item in team_subjects
+            if int(item.get("equip_id") or 0) == equip.id
+        )
 
         fake_redis = self.FakeRedis()
         with patch("competicions_trampoli.live_cache._live_redis_client", return_value=fake_redis):
             with self.captureOnCommitCallbacks(execute=True):
                 TeamScoreEntry.objects.create(
                     competicio=self.comp,
-                    equip=equip,
+                    team_subject_id=team_subject_id,
                     exercici=1,
                     comp_aparell=self.comp_app,
                     inputs={},
@@ -4234,12 +4360,18 @@ class LiveClassificacionsRedisCacheTests(_BaseTrampoliDataMixin, TestCase):
         ins_b = self._create_inscripcio(self.comp, "Participant Cache 2", ordre=2)
         self._assign_equip(self.comp, self.ins, equip, context=team_ctx)
         self._assign_equip(self.comp, ins_b, equip, context=team_ctx)
+        team_subjects, _issues = build_team_subjects_for_comp_aparell(self.comp, self.comp_app)
+        team_subject_id = next(
+            item["subject_id"]
+            for item in team_subjects
+            if int(item.get("equip_id") or 0) == equip.id
+        )
 
         with patch("competicions_trampoli.live_cache._live_redis_client", return_value=fake_redis):
             with self.captureOnCommitCallbacks(execute=True):
                 TeamScoreEntry.objects.create(
                     competicio=self.comp,
-                    equip=equip,
+                    team_subject_id=team_subject_id,
                     exercici=1,
                     comp_aparell=self.comp_app,
                     inputs={},

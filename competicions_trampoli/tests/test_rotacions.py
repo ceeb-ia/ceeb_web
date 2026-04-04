@@ -251,11 +251,11 @@ class RotationOrderingDisplayTests(_BaseTrampoliDataMixin, TestCase):
         block = portal_res.context["group_blocks"][0]
         self.assertEqual(block["franja_id"], self.franja_2.id)
         self.assertEqual(
-            [ins.nom_i_cognoms for ins in block["list"]],
+            [ins["nom_i_cognoms"] for ins in block["list"]],
             ["Participant 1", "Participant 3", "Participant 2"],
         )
         self.assertEqual(
-            [ins.rotation_order_display for ins in block["list"]],
+            [ins["rotation_order_display"] for ins in block["list"]],
             [1, 2, 3],
         )
 
@@ -272,11 +272,11 @@ class RotationOrderingDisplayTests(_BaseTrampoliDataMixin, TestCase):
         third_block = third_res.context["group_blocks"][0]
         self.assertEqual(third_block["franja_id"], self.franja_3.id)
         self.assertEqual(
-            [ins.nom_i_cognoms for ins in third_block["list"]],
+            [ins["nom_i_cognoms"] for ins in third_block["list"]],
             ["Participant 3", "Participant 2", "Participant 1"],
         )
         self.assertEqual(
-            [ins.rotation_order_display for ins in third_block["list"]],
+            [ins["rotation_order_display"] for ins in third_block["list"]],
             [1, 2, 3],
         )
 
@@ -300,12 +300,12 @@ class RotationOrderingDisplayTests(_BaseTrampoliDataMixin, TestCase):
         )
         self.assertEqual(blocks[0]["franja_id"], self.franja_2.id)
         self.assertEqual(
-            [ins.nom_i_cognoms for ins in blocks[0]["list"]],
+            [ins["nom_i_cognoms"] for ins in blocks[0]["list"]],
             ["Participant 1", "Participant 3", "Participant 2"],
         )
         self.assertEqual(blocks[1]["franja_id"], self.franja_3.id)
         self.assertEqual(
-            [ins.nom_i_cognoms for ins in blocks[1]["list"]],
+            [ins["nom_i_cognoms"] for ins in blocks[1]["list"]],
             ["Participant 5", "Participant 4"],
         )
 
@@ -329,12 +329,12 @@ class RotationOrderingDisplayTests(_BaseTrampoliDataMixin, TestCase):
         )
         self.assertEqual(blocks[0]["franja_id"], self.franja_3.id)
         self.assertEqual(
-            [ins.nom_i_cognoms for ins in blocks[0]["list"]],
+            [ins["nom_i_cognoms"] for ins in blocks[0]["list"]],
             ["Participant 3", "Participant 2", "Participant 1"],
         )
         self.assertEqual(blocks[1]["franja_id"], self.franja_2.id)
         self.assertEqual(
-            [ins.nom_i_cognoms for ins in blocks[1]["list"]],
+            [ins["nom_i_cognoms"] for ins in blocks[1]["list"]],
             ["Participant 7", "Participant 6"],
         )
 

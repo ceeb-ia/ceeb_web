@@ -644,7 +644,8 @@ class ScoringNotesHome(TemplateView):
         programmed_groups = [(g, grouped[g]) for g in always_visible_group_keys]
         out_of_program_groups = [(g, grouped[g]) for g in out_of_program_group_keys]
         show_out_of_program_groups = show_out_of_program_in_competition_views(competicio)
-        visible_groups = programmed_groups + (out_of_program_groups if show_out_of_program_groups else [])
+        render_out_of_program_groups = show_out_of_program_groups or not programmed_groups
+        visible_groups = programmed_groups + (out_of_program_groups if render_out_of_program_groups else [])
         visible_individual_groups = list(visible_groups)
 
 
@@ -791,7 +792,7 @@ class ScoringNotesHome(TemplateView):
         ]
         programmed_groups.extend(team_programmed_groups)
         out_of_program_groups.extend(team_out_of_program_groups)
-        visible_groups = programmed_groups + (out_of_program_groups if show_out_of_program_groups else [])
+        visible_groups = programmed_groups + (out_of_program_groups if render_out_of_program_groups else [])
 
         team_score_app_ids = [app_id for app_id, ids in eligible_team_ids_by_app.items() if ids]
         team_subject_ids = [team_id for ids in eligible_team_ids_by_app.values() for team_id in ids]
@@ -1041,7 +1042,7 @@ class ScoringNotesHome(TemplateView):
         groups_render = _render_groups_payload(programmed_groups)
         out_of_program_groups_render = (
             _render_groups_payload(out_of_program_groups)
-            if show_out_of_program_groups
+            if render_out_of_program_groups
             else []
         )
 
@@ -1281,7 +1282,7 @@ class ScoringSchemaUpdate(UpdateView):
         ctx["schema_draft_storage_key"] = schema_bootstrap.get("schema_draft_storage_key") or ""
         ctx["aparell"] = self.aparell
 
-        next_url = self.request.GET.get("next")
+        next_url = self.request.GET.get("next") or self.next_url or self.get_success_url()
         if next_url:
             ctx["next"] = next_url
 

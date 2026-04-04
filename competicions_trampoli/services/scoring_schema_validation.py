@@ -461,7 +461,9 @@ def validate_schema(schema: Dict[str, Any], *, aparell=None) -> None:
             continue
 
         runtime_member_refs = sorted(name for name in names if MEMBER_CODE_SUFFIX_RE.search(str(name)))
-        if runtime_member_refs:
+        subject_mode = str((meta or {}).get("subject_mode") or "").strip().lower()
+        allow_runtime_member_refs = bool(is_team and subject_mode == "team_context")
+        if runtime_member_refs and not allow_runtime_member_refs:
             errors.append(f"{loc}: no es permet referenciar sufixos runtime __mN: {', '.join(runtime_member_refs)}")
         _validate_member_helper_calls(tree, kind_env, is_team=is_team, loc=loc, errors=errors)
         unknown = sorted(name for name in names if name not in allowed_names)

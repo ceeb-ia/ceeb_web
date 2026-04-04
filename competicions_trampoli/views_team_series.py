@@ -26,7 +26,7 @@ from .services.team_series import (
     unassign_subjects_from_series,
     workspace_subject_order,
 )
-from .services.inscripcions_history import (
+from .services.inscripcions.history import (
     capture_inscripcions_history_snapshot,
     record_inscripcions_history_entry,
     with_inscripcions_history_payload,
@@ -426,17 +426,21 @@ def _preview_error_response(reason):
     return HttpResponseBadRequest("preview stale")
 
 
-def _build_series_export_rows(subjects):
+def _build_series_export_rows(subjects, *, use_full_label=False):
     rows = []
     for idx, subject in enumerate(subjects, start=1):
+        full_label = str(subject.get("label") or "").strip()
+        short_label = str(subject.get("name") or "").strip()
         rows.append({
             "ordre": int(subject.get("serie_order") or idx),
-            "equip": str(subject.get("name") or subject.get("label") or "").strip(),
+            "equip": full_label if use_full_label and full_label else short_label,
             "context": str(subject.get("context_name") or "").strip(),
             "membres": str(subject.get("members_text") or "").strip(),
             "meta": str(subject.get("meta") or "").strip(),
             "estat": str(subject.get("series_state") or "").strip(),
         })
+        if not use_full_label and short_label:
+            rows[-1]["equip"] = short_label
     return rows
 
 
@@ -883,7 +887,7 @@ def series_work_sheet_export(request, pk):
         return HttpResponseBadRequest("serie invalid")
     wb = _build_series_workbook(
         f"Full de treball - {competicio.nom} - {serie_label(serie)}",
-        [{"title": serie_label(serie), "rows": _build_series_export_rows(detail.get("subjects") or [])}],
+        [{"title": serie_label(serie), "rows": _build_series_export_rows(detail.get("subjects") or [], use_full_label=True)}],
     )
     response = HttpResponse(
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"

@@ -3,7 +3,7 @@ from collections import OrderedDict
 from django.db.models import Count
 from django.utils.text import slugify
 
-from ..models import Equip, EquipContext, Inscripcio, InscripcioEquipAssignacio
+from ..models import Competicio, Equip, EquipContext, Inscripcio, InscripcioEquipAssignacio
 
 
 NATIVE_EQUIP_CONTEXT_CODE = "native"
@@ -160,6 +160,13 @@ def resolve_inscripcio_equip(inscripcio, context_code=None, fallback="native", a
     competicio_id = getattr(inscripcio, "competicio_id", None)
     if competicio is None and competicio_id:
         competicio = getattr(inscripcio, "_competicio_cache", None)
+    if competicio is None and competicio_id:
+        competicio = Competicio.objects.filter(id=competicio_id).first()
+        if competicio is not None:
+            try:
+                inscripcio._competicio_cache = competicio
+            except Exception:
+                pass
 
     if competicio is not None and ins_id:
         rows = _context_assignment_rows(competicio, code, ins_ids=[ins_id])

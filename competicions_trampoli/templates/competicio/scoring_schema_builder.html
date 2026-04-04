@@ -93,6 +93,21 @@
         Primer redueix cada membre si cal amb funcions com <code>row_custom_compute(...)</code> i després agrega entre membres amb <code>member_treatment(...)</code>.
         El contracte oficial és <code>member_treatment(source, select='all', n=None, agg='sum')</code> amb selecció <code>all</code>, <code>best_n</code>, <code>worst_n</code>, <code>drop_extremes</code>, <code>drop_extremes_until_n</code> i agregació <code>sum</code>, <code>avg</code>, <code>min</code>, <code>max</code>, <code>count</code>, <code>med</code>. Els helpers <code>members_sum(...)</code> i similars continuen disponibles com a sucre sintàctic.
       </div>
+      <template id="member-treatment-option-catalog">
+        <select>
+          <option value="all">Tots (no seleccionar)</option>
+          <option value="drop_extremes">Eliminar extrems (min i max)</option>
+          <option value="drop_extremes_until_n">Eliminar extrems alternant fins N</option>
+          <option value="best_n">Millors N</option>
+          <option value="worst_n">Pitjors N</option>
+          <option value="sum">Sumar</option>
+          <option value="avg">Mitjana</option>
+          <option value="min">Mínim</option>
+          <option value="max">Màxim</option>
+          <option value="count">Comptar</option>
+          <option value="med">Mediana</option>
+        </select>
+      </template>
       {% endif %}
 
       {% if form.errors %}
@@ -228,7 +243,7 @@
 
       <div class="d-flex flex-wrap gap-2 mt-3">
         <button class="btn btn-primary" type="submit">Desar</button>
-        <a class="btn btn-outline-secondary" href="{{ next|default:request.META.HTTP_REFERER }}">Cancel·lar</a>
+        <a class="btn btn-outline-secondary" href="{{ next }}">Cancel·lar</a>
       </div>
     </form>
   </div>

@@ -26,12 +26,12 @@ from .services.equip_contexts import (
     normalize_equip_context_code,
     resolve_inscripcio_equip,
 )
-from .services.inscripcions_history import (
+from .services.inscripcions.history import (
     capture_inscripcions_history_snapshot,
     record_inscripcions_history_entry,
     with_inscripcions_history_payload,
 )
-from .services.inscripcions_queries import (
+from .services.inscripcions.queries import (
     _build_inscripcions_filtered_qs,
     _normalize_sort_filters,
     get_allowed_group_fields,

@@ -33,26 +33,22 @@ from .services.inscripcions.history import (
     with_inscripcions_history_payload,
 )
 from .services.inscripcions.queries import (
-    _build_existing_groups_preview,
-    _build_inscripcions_filtered_qs,
     _build_sort_partition_buckets,
     _extract_sort_partition_codes,
-    _normalize_sort_criterion,
-    _normalize_sort_filters,
-    _normalize_sort_group_by,
+    _label_with_source,
+    _normalize_schema_extra_code,
     _resolve_group_creation_buckets,
+    _reserved_inscripcio_codes,
     annotate_inscripcions_queryset_for_group_codes,
     build_inscripcions_sort_context_key,
-    competicio_has_rotacions,
     get_allowed_group_fields,
     get_available_column_filter_fields,
     get_available_sort_fields,
     get_competicio_custom_sort_codes,
-    get_inscripcions_sort_context_state,
     get_request_inscripcio_filters,
     reconcile_inscripcions_sort_context_state,
 )
-from .views_inscripcions_media import _get_media_matching_config, _serialize_media_item
+from .services.media_matching import normalize_media_matching_config
 
 
 BUILTIN_TABLE_FIELDS = [
@@ -73,33 +69,24 @@ BUILTIN_TABLE_FIELDS = [
 SYSTEM_NATIVE_TABLE_CODES = {"grup", "equip", "ordre_sortida", "__aparells__", "__media__", "__actions__"}
 
 
-def _reserved_inscripcio_codes():
-    out = set()
-    for field in Inscripcio._meta.concrete_fields:
-        name = str(getattr(field, "name", "") or "").strip()
-        attname = str(getattr(field, "attname", "") or "").strip()
-        if name:
-            out.add(name)
-        if attname:
-            out.add(attname)
-    return out
+def _get_listing_media_matching_config(competicio):
+    view_cfg = competicio.inscripcions_view or {}
+    return normalize_media_matching_config(view_cfg.get("media_matching"))
 
 
-def _normalize_schema_extra_code(code: str, reserved_codes):
-    code = str(code or "").strip()
-    if not code:
-        return code
-    if code.startswith("excel__"):
-        return code
-    if code in reserved_codes:
-        return f"excel__{code}"
-    return code
-
-
-def _label_with_source(label: str, source: str):
-    suffix = "Excel" if source == "excel" else "Nativa"
-    return f"{label} ({suffix})"
-
+def _serialize_listing_media_item(item):
+    return {
+        "id": item.id,
+        "inscripcio_id": item.inscripcio_id,
+        "tipus": item.tipus,
+        "mime_type": item.mime_type or "",
+        "original_filename": item.original_filename or "",
+        "file_size_bytes": int(item.file_size_bytes or 0),
+        "is_primary": bool(item.is_primary),
+        "source": item.source or "",
+        "match_score": float(item.match_score) if item.match_score is not None else None,
+        "url": f"/competicio/{item.competicio_id}/inscripcions/media/{item.id}/file/",
+    }
 
 def get_available_table_columns(competicio):
     out = []
@@ -449,7 +436,7 @@ class InscripcionsListNewView(InscripcionsListView):
                 .order_by("inscripcio_id", "-is_primary", "-created_at", "id")
             )
             for media in media_qs:
-                media_map.setdefault(str(media.inscripcio_id), []).append(_serialize_media_item(media))
+                media_map.setdefault(str(media.inscripcio_id), []).append(_serialize_listing_media_item(media))
         ctx["inscripcio_media_map"] = media_map
 
         all_ins_qs = Inscripcio.objects.filter(competicio=self.competicio).order_by("ordre_sortida", "id").only(
@@ -471,7 +458,7 @@ class InscripcionsListNewView(InscripcionsListView):
             media_match_options.append({"id": ins.id, "label": label})
 
         ctx["media_match_inscripcions_options"] = media_match_options
-        ctx["media_matching_config"] = _get_media_matching_config(self.competicio)
+        ctx["media_matching_config"] = _get_listing_media_matching_config(self.competicio)
         ctx["history_state"] = get_inscripcions_history_state(self.request, self.competicio.id)
         return ctx
 
@@ -608,7 +595,12 @@ def inscripcions_set_aparells(request, pk):
         return HttpResponseBadRequest("selected_comp_aparell_ids ha de ser una llista")
 
     inscripcio = get_object_or_404(Inscripcio, pk=inscripcio_id, competicio=competicio)
-    active_ids = list(CompeticioAparell.objects.filter(competicio=competicio, actiu=True).values_list("id", flat=True))
+    active_ids = list(
+        CompeticioAparell.objects
+        .filter(competicio=competicio, actiu=True)
+        .order_by("ordre", "id")
+        .values_list("id", flat=True)
+    )
     active_set = set(active_ids)
     selected_set = set()
     for value in selected_ids_raw:

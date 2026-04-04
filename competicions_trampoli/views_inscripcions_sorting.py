@@ -7,15 +7,6 @@ from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.http import require_POST
 
-from .inscripcions_views_shared import (
-    _build_sort_field_runtime_context,
-    _norm_val,
-    _normalize_competition_order_tail_flag,
-    _split_custom_sort_tokens,
-    arrow_positions,
-    set_competicio_custom_sort_order_values,
-    sort_records_by_field_stable,
-)
 from .models import Competicio, Inscripcio
 from .services.competition_groups import normalize_positive_int
 from .services.inscripcions.history import (
@@ -31,10 +22,13 @@ from .services.inscripcions.history import (
 from .services.inscripcions.queries import (
     COLUMN_FILTER_EMPTY_TOKEN,
     LEGACY_SORT_KEY_MAP,
+    _build_sort_field_runtime_context,
     _build_inscripcions_filtered_qs,
     _build_sort_records_queryset,
     _custom_sort_token_key,
+    _norm_val,
     _normalize_custom_sort_order,
+    _normalize_custom_sort_token,
     _normalize_sort_criterion,
     _normalize_sort_filters,
     _normalize_sort_group_by,
@@ -53,6 +47,122 @@ from .services.inscripcions.queries import (
     reconcile_inscripcions_sort_context_state,
     save_inscripcions_sort_context_state,
 )
+
+
+def sort_records_by_field_stable(records, sort_code, descending=False, custom_rank_map=None):
+    custom_map = custom_rank_map if isinstance(custom_rank_map, dict) else {}
+    custom_enabled = bool(custom_map)
+    custom_filled = []
+    fallback_filled = []
+    empty = []
+    context = _build_sort_field_runtime_context(records, sort_code)
+    for obj in records:
+        runtime = _resolve_sort_field_runtime(obj, sort_code, context=context)
+        token = runtime.get("token") or ""
+        if not token:
+            empty.append(obj)
+            continue
+        if custom_enabled:
+            key = _custom_sort_token_key(token)
+            if key in custom_map:
+                custom_filled.append((obj, custom_map[key]))
+                continue
+        fallback_filled.append((obj, runtime.get("sort_scalar")))
+    custom_filled.sort(key=lambda item: item[1], reverse=descending)
+    fallback_filled.sort(key=lambda item: item[1], reverse=descending)
+    return [obj for (obj, _rank) in custom_filled] + [obj for (obj, _value) in fallback_filled] + empty
+
+
+def arrow_positions(n: int) -> list[int]:
+    if n <= 0:
+        return []
+    seq = []
+    if n % 2 == 0:
+        left = n // 2 - 1
+        right = n // 2
+        while left >= 0 or right < n:
+            if left >= 0:
+                seq.append(left)
+                left -= 1
+            if right < n:
+                seq.append(right)
+                right += 1
+    else:
+        center = n // 2
+        seq.append(center)
+        step = 1
+        while center - step >= 0 or center + step < n:
+            if center - step >= 0:
+                seq.append(center - step)
+            if center + step < n:
+                seq.append(center + step)
+            step += 1
+    return seq
+
+
+def set_competicio_custom_sort_order_values(
+    competicio,
+    sort_code,
+    raw_values=None,
+    clear=False,
+    allowed_sort_codes=None,
+):
+    code_raw = str(sort_code or "").strip()
+    code = LEGACY_SORT_KEY_MAP.get(code_raw, code_raw)
+    if not code:
+        raise ValueError("sort_key invalid")
+    if allowed_sort_codes is not None and code not in set(allowed_sort_codes):
+        raise ValueError("sort_key invalid")
+
+    values = [] if clear else _normalize_custom_sort_order(raw_values)
+    view_cfg = dict(competicio.inscripcions_view or {})
+    custom_map = view_cfg.get("custom_sort_orders")
+    if not isinstance(custom_map, dict):
+        custom_map = {}
+    custom_map = dict(custom_map)
+
+    if values:
+        custom_map[code] = values
+    else:
+        custom_map.pop(code, None)
+
+    if custom_map:
+        view_cfg["custom_sort_orders"] = custom_map
+    else:
+        view_cfg.pop("custom_sort_orders", None)
+
+    competicio.inscripcions_view = view_cfg
+    competicio.save(update_fields=["inscripcions_view"])
+    return values
+
+
+def _split_custom_sort_tokens(custom_tokens, available_token_keys):
+    active = []
+    stale = []
+    available = set(available_token_keys or set())
+    seen = set()
+    for raw in custom_tokens or []:
+        token = _normalize_custom_sort_token(raw)
+        if not token:
+            continue
+        key = _custom_sort_token_key(token)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        if key in available:
+            active.append(token)
+        else:
+            stale.append(token)
+    return active, stale
+
+
+def _normalize_competition_order_tail_flag(raw_value):
+    if isinstance(raw_value, bool):
+        return raw_value
+    if isinstance(raw_value, (int, float)):
+        return bool(raw_value)
+    token = str(raw_value or "").strip().lower()
+    return token in {"1", "true", "yes", "on"}
 
 
 def _collect_column_filter_value_rows(records, column_code):

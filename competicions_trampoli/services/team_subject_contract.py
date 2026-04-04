@@ -16,9 +16,9 @@ def build_team_subject_registry(competicio, comp_aparell) -> dict:
         if subject_id <= 0:
             continue
         all_by_id[subject_id] = subject
-        if int(comp_aparell.id) in (subject.get("allowed_app_ids") or []):
+        if int(comp_aparell.id) in (subject.get("allowed_app_ids") or []) and not subject.get("invalid_reasons"):
             eligible_by_id[subject_id] = subject
-        if str(subject.get("series_state") or "") == "invalid":
+        if subject.get("invalid_reasons") or str(subject.get("series_state") or "") == "invalid":
             invalid_by_id[subject_id] = subject
     return {
         "subjects": list(all_by_id.values()),

@@ -526,12 +526,18 @@ def _normalize_mode_resolution(raw_cfg):
 
 def _normalize_classificacio_equips_cfg(raw_cfg):
     cfg = raw_cfg if isinstance(raw_cfg, dict) else {}
-    assignment_source = _normalize_equip_assignment_source(cfg.get("assignment_source"))
+    raw_assignment_source = cfg.get("assignment_source")
+    assignment_source = _normalize_equip_assignment_source(raw_assignment_source)
     context_code = _resolve_classificacio_equips_context_code(
         cfg.get("context_code"),
-        cfg.get("assignment_source"),
+        raw_assignment_source,
         assignment_source,
     )
+    if not (isinstance(raw_assignment_source, dict) and raw_assignment_source):
+        assignment_source = {
+            **assignment_source,
+            "context_code": context_code,
+        }
     return {
         **DEFAULT_SCHEMA["equips"],
         **cfg,
@@ -2161,7 +2167,11 @@ def compute_classificacio(competicio, cfg_obj):
     base_ex_cfg = _normalize_exercicis_cfg(
         {
             **(ex_cfg if isinstance(ex_cfg, dict) else {}),
-            "best_n": (punt.get("exercicis_best_n") or (ex_cfg.get("best_n") if isinstance(ex_cfg, dict) else 1) or 1),
+            "best_n": (
+                (ex_cfg.get("best_n") if isinstance(ex_cfg, dict) else None)
+                or punt.get("exercicis_best_n")
+                or 1
+            ),
         },
         fallback={"mode": "tots", "best_n": 1, "index": 1, "ids": []},
     )
@@ -2278,7 +2288,7 @@ def compute_classificacio(competicio, cfg_obj):
     # fallback legacy: si no hi ha camps_per_aparell, usem camp legacy per tots els aparells
     legacy_camp = (punt.get("camp") or "total").strip()
 
-    def camps_for_app(app_id: int):
+    def _score_camps_for_app(app_id: int):
         raw = camps_per_aparell.get(str(app_id)) or camps_per_aparell.get(app_id)
         if isinstance(raw, list) and raw:
             return [str(x).strip() for x in raw if str(x).strip()]
@@ -2287,6 +2297,65 @@ def compute_classificacio(competicio, cfg_obj):
             return [x.strip() for x in raw.split(",") if x.strip()]
         # legacy
         return [legacy_camp] if legacy_camp else ["total"]
+
+    def camps_for_app(app_id: int):
+        out = list(_score_camps_for_app(app_id))
+        seen = set()
+        for crit in desempat or []:
+            scope = (crit.get("scope") or {}) if isinstance(crit, dict) else {}
+            app_scope = (scope.get("aparells") or {}) if isinstance(scope, dict) else {}
+            app_mode = str(app_scope.get("mode") or "").strip().lower()
+            target_ids = []
+            if app_mode == "seleccionar":
+                for raw_app_id in (app_scope.get("ids") or []):
+                    try:
+                        target_ids.append(int(raw_app_id))
+                    except Exception:
+                        continue
+            elif crit.get("aparell_id") not in (None, "", 0, "0"):
+                try:
+                    target_ids.append(int(crit.get("aparell_id")))
+                except Exception:
+                    pass
+            if not target_ids:
+                target_ids = [int(app_id)]
+            if int(app_id) in target_ids:
+                out.extend(_normalize_tie_camps(crit))
+
+        def _collect_raw_columns(raw_columns):
+            if not isinstance(raw_columns, list):
+                return
+            for col in raw_columns:
+                if not isinstance(col, dict):
+                    continue
+                if str(col.get("type") or "builtin").strip().lower() != "raw":
+                    continue
+                src = col.get("source") if isinstance(col.get("source"), dict) else {}
+                try:
+                    source_app_id = int(src.get("aparell_id"))
+                except Exception:
+                    continue
+                if source_app_id != int(app_id):
+                    continue
+                camp = str(src.get("camp") or "").strip()
+                if camp:
+                    out.append(camp)
+
+        presentacio = schema.get("presentacio") if isinstance(schema.get("presentacio"), dict) else {}
+        _collect_raw_columns(presentacio.get("columnes"))
+        detail_cfg = presentacio.get("detall") if isinstance(presentacio.get("detall"), dict) else {}
+        _collect_raw_columns(detail_cfg.get("columnes"))
+        for section in (detail_cfg.get("sections") or []):
+            if isinstance(section, dict):
+                _collect_raw_columns(section.get("columns"))
+
+        dedup = []
+        for code in out:
+            if code in seen:
+                continue
+            seen.add(code)
+            dedup.append(code)
+        return dedup
 
     # 5) EXERCICIS per aparell segons CompeticioAparell.nombre_exercicis
     # 6) AGREGACIONS + construccio de score final per inscripcio
@@ -2303,8 +2372,9 @@ def compute_classificacio(competicio, cfg_obj):
         app_id = ca.id
         n_ex = int(getattr(ca, "nombre_exercicis", 1) or 1)
         n_ex = max(1, min(50, n_ex))
+        score_fields = _score_camps_for_app(app_id)
         fields = camps_for_app(app_id)
-        app_fields_by_app[app_id] = list(fields)
+        app_fields_by_app[app_id] = list(score_fields)
 
         if tipus == "equips" and is_team_context_app(ca):
             app_notes = team_notes_by_app.get(app_id, [])
@@ -2324,7 +2394,7 @@ def compute_classificacio(competicio, cfg_obj):
                     if not nt:
                         continue
                     fields_map = {f: _get_score_field(nt, f) for f in fields}
-                    v_fields = [fields_map.get(f, 0.0) for f in fields]
+                    v_fields = [fields_map.get(f, 0.0) for f in score_fields]
                     v_ex = _apply_simple_agg(v_fields, agg_camps)
                     vals_rows.append(
                         {
@@ -2367,7 +2437,7 @@ def compute_classificacio(competicio, cfg_obj):
                 if not nt:
                     continue
                 fields_map = {f: _get_score_field(nt, f) for f in fields}
-                v_fields = [fields_map.get(f, 0.0) for f in fields]
+                v_fields = [fields_map.get(f, 0.0) for f in score_fields]
 
                 v_ex = _apply_simple_agg(v_fields, agg_camps)  # agregacio camps dins exercici
                 vals_ex.append((ex_idx, v_ex))
@@ -4010,7 +4080,7 @@ def compute_classificacio(competicio, cfg_obj):
             return "native_team"
         if _normalize_positive_int(row.get("inscripcio_id")) is not None:
             return "individual"
-        if row.get("entitat_nom") and (row.get("_member_ids") or []):
+        if "entitat_nom" in row and (row.get("_member_ids") or []):
             return "entity"
         return ""
 
@@ -4044,7 +4114,7 @@ def compute_classificacio(competicio, cfg_obj):
                 equip_marker = "none"
             member_part = "-".join(str(int(x)) for x in (row.get("_member_ids") or []) if _normalize_positive_int(x))
             return f"team:{equip_marker}:{member_part}"
-        if row.get("entitat_nom") and (row.get("_member_ids") or []):
+        if "entitat_nom" in row and (row.get("_member_ids") or []):
             member_part = "-".join(str(int(x)) for x in (row.get("_member_ids") or []) if _normalize_positive_int(x))
             ent_part = _normalized_text_token(row.get("entitat_nom") or "sense-entitat") or "sense-entitat"
             return f"entity:{ent_part}:{member_part}"
@@ -4054,7 +4124,16 @@ def compute_classificacio(competicio, cfg_obj):
     def _build_members_list_section(row: dict, section: dict):
         items = []
         seen = set()
-        for member_id in row.get("_member_ids") or []:
+        ordered_member_ids = sorted(
+            (row.get("_member_ids") or []),
+            key=lambda raw_member_id: (
+                getattr(all_ins_by_id.get(_normalize_positive_int(raw_member_id) or -1), "ordre_competicio", None)
+                or getattr(all_ins_by_id.get(_normalize_positive_int(raw_member_id) or -1), "ordre_sortida", None)
+                or 10**9,
+                _normalize_positive_int(raw_member_id) or 10**9,
+            ),
+        )
+        for member_id in ordered_member_ids:
             member_pk = _normalize_positive_int(member_id)
             if member_pk is None or member_pk in seen:
                 continue
@@ -4080,7 +4159,16 @@ def compute_classificacio(competicio, cfg_obj):
     def _build_members_table_section(row: dict, section: dict):
         detail_rows = []
         detail_columns = section.get("columns") or []
-        for member_id in row.get("_member_ids") or []:
+        ordered_member_ids = sorted(
+            (row.get("_member_ids") or []),
+            key=lambda raw_member_id: (
+                getattr(all_ins_by_id.get(_normalize_positive_int(raw_member_id) or -1), "ordre_competicio", None)
+                or getattr(all_ins_by_id.get(_normalize_positive_int(raw_member_id) or -1), "ordre_sortida", None)
+                or 10**9,
+                _normalize_positive_int(raw_member_id) or 10**9,
+            ),
+        )
+        for member_id in ordered_member_ids:
             member_pk = _normalize_positive_int(member_id)
             if member_pk is None:
                 continue
@@ -4694,6 +4782,13 @@ def compute_classificacio(competicio, cfg_obj):
             for team_id_key, members in teams.items():
                 if not members:
                     continue
+                members = sorted(
+                    members,
+                    key=lambda item: (
+                        int(getattr(item[0], "ordre_competicio", 10**9) or 10**9),
+                        int(getattr(item[0], "id", 10**9) or 10**9),
+                    ),
+                )
 
                 # nom equip
                 if team_id_key == "__sense_equip__":

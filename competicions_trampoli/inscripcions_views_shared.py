@@ -18,7 +18,6 @@ from openpyxl.utils import get_column_letter
 
 from .forms import ImportInscripcionsExcelForm
 from .models import Competicio, GrupCompeticio, Inscripcio
-from .models_rotacions import RotacioAssignacio
 from .services.competition_groups import (
     ensure_group_for_display_num,
     get_group_for_display_num,
@@ -37,12 +36,17 @@ from .services.inscripcions.history import (
 )
 from .services.inscripcions.queries import (
     LEGACY_SORT_KEY_MAP,
+    _build_sort_field_runtime_context,
     _build_inscripcions_filtered_qs,
     _custom_sort_token_key,
+    _label_with_source,
     _normalize_custom_sort_order,
     _normalize_custom_sort_token,
+    _normalize_schema_extra_code,
     _resolve_sort_field_runtime,
+    _reserved_inscripcio_codes,
     annotate_inscripcions_queryset_for_group_codes,
+    competicio_has_rotacions,
     get_allowed_group_fields,
     get_available_sort_fields,
     get_inscripcio_value,
@@ -70,31 +74,6 @@ LEGACY_EXCEL_COL_MAP = {
     "ordre": "ordre_sortida",
 }
 
-
-def _reserved_inscripcio_codes():
-    out = set()
-    for field in Inscripcio._meta.concrete_fields:
-        name = str(getattr(field, "name", "") or "").strip()
-        attname = str(getattr(field, "attname", "") or "").strip()
-        if name:
-            out.add(name)
-        if attname:
-            out.add(attname)
-    return out
-
-
-def _normalize_schema_extra_code(code: str, reserved_codes=None):
-    code = str(code or "").strip()
-    if not code:
-        return code
-    if code.startswith("excel__"):
-        return code
-    reserved = reserved_codes if reserved_codes is not None else _reserved_inscripcio_codes()
-    if code in reserved:
-        return f"excel__{code}"
-    return code
-
-
 def _excel_schema_codes(competicio):
     schema = competicio.inscripcions_schema or {}
     cols = schema.get("columns") or []
@@ -113,17 +92,6 @@ def _excel_schema_codes(competicio):
             code = _normalize_schema_extra_code(code, reserved)
         out.add(code)
     return out
-
-
-def _label_with_source(label: str, source: str):
-    if source == "excel":
-        suffix = "Excel"
-    elif source == "derived":
-        suffix = "Derivada"
-    else:
-        suffix = "Nativa"
-    return f"{label} ({suffix})"
-
 
 def _norm_val(value):
     return "__NULL__" if value in (None, "") else str(value)
@@ -222,22 +190,6 @@ def get_excel_export_value(obj, code):
     if isinstance(value, (dict, list)):
         return json.dumps(value, ensure_ascii=False)
     return value
-
-
-def _build_sort_field_runtime_context(records, sort_code):
-    code = str(sort_code or "").strip()
-    if code == "equip":
-        return {"base_assignment_map": _attach_base_equip_runtime(records)}
-    if code != "grup":
-        return {}
-    competicio_id = next((getattr(obj, "competicio_id", None) for obj in records or [] if getattr(obj, "competicio_id", None)), None)
-    if not competicio_id:
-        return {}
-    competicio = Competicio.objects.filter(id=competicio_id).first()
-    if competicio is None:
-        return {}
-    return {"group_maps": get_group_maps(competicio)}
-
 
 def sort_records_by_field_stable(records, sort_code, descending=False, custom_rank_map=None):
     custom_map = custom_rank_map if isinstance(custom_rank_map, dict) else {}
@@ -481,11 +433,6 @@ def _persist_group_suggested_names(competicio, preview_groups):
 
 def renumber_groups_for_competicio(competicio):
     _sync_group_names_for_competicio(competicio)
-
-
-def competicio_has_rotacions(competicio):
-    return RotacioAssignacio.objects.filter(competicio=competicio).exists()
-
 
 def _resolve_group_id_for_inscripcio(inscripcio, groups_by_display_num):
     group_id = getattr(inscripcio, "grup_competicio_id", None)

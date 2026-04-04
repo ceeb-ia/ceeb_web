@@ -80,23 +80,22 @@ from ..services.inscripcions.queries import (
     build_inscripcions_sort_context_key,
     get_competicio_custom_sort_rank_map,
 )
-from ..views_classificacions import (
-    ClassificacionsHome,
-    _build_metric_meta_for_comp_aparell,
-    _normalize_excel_cell,
-    _build_scoreable_meta_for_schema,
-    _normalize_particions_schema,
-    _scoreable_codes_by_app_id,
-    _schema_to_template_schema,
-    _template_schema_to_competicio_schema,
-    _validate_schema_for_competicio,
-    _validate_particions_schema,
+from ..services.classificacio_templates import (
+    normalize_particions_schema as _normalize_particions_schema,
+    schema_to_template_schema as _schema_to_template_schema,
+    template_schema_to_competicio_schema as _template_schema_to_competicio_schema_service,
 )
-from ..services.services_classificacions_2 import (
-    DEFAULT_SCHEMA,
-    compute_classificacio,
-    normalize_schema_legacy_team_birth_partition,
+from ..services.classificacions.builder import scoreable_codes_by_app_id as _scoreable_codes_by_app_id
+from ..services.classificacions.compute import DEFAULT_SCHEMA, compute_classificacio
+from ..services.classificacions.export import _normalize_excel_cell
+from ..services.classificacions.partitions import normalize_schema_legacy_team_birth_partition
+from ..services.classificacions.validation import (
+    build_metric_meta_for_comp_aparell as _build_metric_meta_for_comp_aparell,
+    build_scoreable_meta_for_schema as _build_scoreable_meta_for_schema,
+    validate_particions_schema as _validate_particions_schema,
+    validate_schema_for_competicio as _validate_schema_for_competicio,
 )
+from ..views_classificacions_builder import ClassificacionsHome
 from ..services.competition_groups import (
     assign_groups_by_display_num,
     compact_competition_order_for_group,
@@ -123,6 +122,14 @@ from ..templatetags.competicio_extras import (
 )
 
 from .base import _BaseTrampoliDataMixin
+
+
+def _template_schema_to_competicio_schema(*args, **kwargs):
+    schema_local, mapping_warnings, mapping, _compat_meta = _template_schema_to_competicio_schema_service(
+        *args,
+        **kwargs,
+    )
+    return schema_local, mapping_warnings, mapping
 
 
 class TeamMemberTreatmentSchemaTests(_BaseTrampoliDataMixin, TestCase):
@@ -3569,7 +3576,9 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
         )
 
     def test_classificacio_save_returns_error_details_for_invalid_detail_section_field(self):
-        payload = self._classificacio_payload(tipus="individual", app_ids=[self.comp_app.id])
+        ind_app = self._create_aparell("TR_DETAIL_BAD", "Tramp detail bad")
+        comp_ind_app = self._create_comp_aparell(self.comp, ind_app, ordre=2)
+        payload = self._classificacio_payload(tipus="individual", app_ids=[comp_ind_app.id])
         payload["schema"]["presentacio"] = {
             "top_n": 0,
             "mostrar_empats": True,
@@ -3582,7 +3591,7 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
                     {
                         "type": "exercise_table",
                         "label": "Exercicis",
-                        "aparell_id": self.comp_app.id,
+                        "aparell_id": comp_ind_app.id,
                         "columns": [
                             {"type": "builtin", "key": "exercise_index", "label": "Ex.", "align": "left"},
                             {
@@ -3591,7 +3600,7 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
                                 "label": "Camp invalid",
                                 "align": "right",
                                 "decimals": 3,
-                                "source": {"aparell_id": self.comp_app.id, "exercici": 1, "camp": "NO_EXISTEIX", "jutges": {"ids": []}},
+                                "source": {"aparell_id": comp_ind_app.id, "exercici": 1, "camp": "NO_EXISTEIX", "jutges": {"ids": []}},
                             },
                         ],
                     }
@@ -3606,7 +3615,9 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertTrue(any(item.get("path") == "presentacio.detall.sections[0].columns[1].source.camp" for item in details))
 
     def test_classificacio_save_rejects_detail_exercici_out_of_range_with_precise_path(self):
-        payload = self._classificacio_payload(tipus="individual", app_ids=[self.comp_app.id])
+        ind_app = self._create_aparell("TR_DETAIL_RANGE", "Tramp detail range")
+        comp_ind_app = self._create_comp_aparell(self.comp, ind_app, ordre=2)
+        payload = self._classificacio_payload(tipus="individual", app_ids=[comp_ind_app.id])
         payload["schema"]["presentacio"] = {
             "top_n": 0,
             "mostrar_empats": True,
@@ -3619,7 +3630,7 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
                     {
                         "type": "exercise_table",
                         "label": "Exercicis",
-                        "aparell_id": self.comp_app.id,
+                        "aparell_id": comp_ind_app.id,
                         "columns": [
                             {"type": "builtin", "key": "exercise_index", "label": "Ex.", "align": "left"},
                             {
@@ -3628,7 +3639,7 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
                                 "label": "Total",
                                 "align": "right",
                                 "decimals": 3,
-                                "source": {"aparell_id": self.comp_app.id, "exercici": 99, "camp": "total", "jutges": {"ids": []}},
+                                "source": {"aparell_id": comp_ind_app.id, "exercici": 99, "camp": "total", "jutges": {"ids": []}},
                             },
                         ],
                     }
@@ -5743,7 +5754,7 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
             comp_aparell=individual_comp_app,
             ordre=2,
         )
-        group = GrupCompeticio.objects.create(competicio=self.comp, display_num=1, nom="Grup 1")
+        group = ensure_group_for_display_num(self.comp, 1, name="Grup 1")
 
         save_res = self._post_json(
             "rotacions_save",
