@@ -1,12 +1,7 @@
-"""Stable compatibility boundary for classification computation.
+"""Stable public boundary for classification computation."""
 
-The real implementation still lives in the legacy monolith. This module keeps
-the public entrypoints explicit so the rest of the package can depend on a
-single import path while the internals are being decomposed.
-"""
-
-from ..services_classificacions_2 import DEFAULT_SCHEMA as _DEFAULT_SCHEMA
-from ..services_classificacions_2 import compute_classificacio as _compute_classificacio
+from ._compute_bridge import DEFAULT_SCHEMA as _DEFAULT_SCHEMA
+from ._compute_bridge import compute_classificacio as _compute_classificacio
 
 
 DEFAULT_SCHEMA = _DEFAULT_SCHEMA

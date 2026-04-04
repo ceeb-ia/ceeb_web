@@ -95,7 +95,7 @@ from ..services.classificacions.validation import (
     validate_particions_schema as _validate_particions_schema,
     validate_schema_for_competicio as _validate_schema_for_competicio,
 )
-from ..views_classificacions_builder import ClassificacionsHome
+from ..views.classificacions.builder import ClassificacionsHome
 from ..services.competition_groups import (
     assign_groups_by_display_num,
     compact_competition_order_for_group,
@@ -645,7 +645,7 @@ class ClassificacioMatrixScalarTests(_BaseTrampoliDataMixin, TestCase):
             schema=self._selected_total_schema([self.comp_app_a.id]),
         )
 
-        with patch("competicions_trampoli.views_classificacions_builder.compute_classificacio", side_effect=RuntimeError("boom preview")):
+        with patch("competicions_trampoli.views.classificacions.builder.compute_classificacio", side_effect=RuntimeError("boom preview")):
             res = self.client.post(
                 reverse("classificacio_preview", kwargs={"pk": self.comp.id, "cid": cfg.id}),
                 data=json.dumps({}),
@@ -2218,7 +2218,7 @@ class ClassificacionsExportExcelTests(_BaseTrampoliDataMixin, TestCase):
     def test_export_excel_returns_consistent_error_when_compute_fails(self):
         self.client.force_login(self.user)
         url = reverse("classificacions_live_export_excel", kwargs={"pk": self.comp.id})
-        with patch("competicions_trampoli.views_classificacions_export.compute_classificacio", side_effect=RuntimeError("boom export")):
+        with patch("competicions_trampoli.views.classificacions.export.compute_classificacio", side_effect=RuntimeError("boom export")):
             res = self.client.get(url, {"cfg_id": self.cfg_general.id})
 
         self.assertEqual(res.status_code, 400)
@@ -4107,7 +4107,7 @@ class LiveClassificacionsRedisCacheTests(_BaseTrampoliDataMixin, TestCase):
         }
         cache_key = live_cache.live_cache_key(self.comp.id)
         with patch("competicions_trampoli.live_cache._live_redis_client", return_value=fake_redis):
-            with patch("competicions_trampoli.views_classificacions_live.compute_classificacio", return_value=compute_result) as mocked_compute:
+            with patch("competicions_trampoli.views.classificacions.live.compute_classificacio", return_value=compute_result) as mocked_compute:
                 res_1 = self.client.get(self._public_url())
                 res_2 = self.client.get(self._public_url())
 
@@ -4129,7 +4129,7 @@ class LiveClassificacionsRedisCacheTests(_BaseTrampoliDataMixin, TestCase):
         }
         self.client.force_login(self.user)
         with patch("competicions_trampoli.live_cache._live_redis_client", return_value=fake_redis):
-            with patch("competicions_trampoli.views_classificacions_live.compute_classificacio", return_value=compute_result) as mocked_compute:
+            with patch("competicions_trampoli.views.classificacions.live.compute_classificacio", return_value=compute_result) as mocked_compute:
                 public_res = self.client.get(self._public_url())
                 internal_res = self.client.get(self._internal_url())
 
@@ -4147,7 +4147,7 @@ class LiveClassificacionsRedisCacheTests(_BaseTrampoliDataMixin, TestCase):
             "global": [{"participant": "Participant Cache", "punts": 9.8, "posicio": 1}]
         }
         with patch("competicions_trampoli.live_cache._live_redis_client", return_value=fake_redis):
-            with patch("competicions_trampoli.views_classificacions_live.compute_classificacio", return_value=compute_result) as mocked_compute:
+            with patch("competicions_trampoli.views.classificacions.live.compute_classificacio", return_value=compute_result) as mocked_compute:
                 first_res = self.client.get(self._public_url())
                 stamp = first_res.json()["stamp"]
                 second_res = self.client.get(self._public_url(), {"since": stamp})
@@ -4166,7 +4166,7 @@ class LiveClassificacionsRedisCacheTests(_BaseTrampoliDataMixin, TestCase):
         }
         self.client.force_login(self.user)
         with patch("competicions_trampoli.live_cache._live_redis_client", return_value=fake_redis):
-            with patch("competicions_trampoli.views_classificacions_live.compute_classificacio", return_value=compute_result) as mocked_compute:
+            with patch("competicions_trampoli.views.classificacions.live.compute_classificacio", return_value=compute_result) as mocked_compute:
                 first_res = self.client.get(self._internal_url())
                 stamp = first_res.json()["stamp"]
                 second_res = self.client.get(self._internal_url(), {"since": stamp})
@@ -4192,7 +4192,7 @@ class LiveClassificacionsRedisCacheTests(_BaseTrampoliDataMixin, TestCase):
         }
 
         with patch("competicions_trampoli.live_cache._live_redis_client", return_value=fake_redis):
-            with patch("competicions_trampoli.views_classificacions_live.compute_classificacio", return_value=compute_result):
+            with patch("competicions_trampoli.views.classificacions.live.compute_classificacio", return_value=compute_result):
                 res = self.client.get(self._public_url(), {"since": old_stamp})
 
         self.assertEqual(res.status_code, 200)
@@ -4208,7 +4208,7 @@ class LiveClassificacionsRedisCacheTests(_BaseTrampoliDataMixin, TestCase):
         waited_snapshot = json.loads(self._snapshot_blob())
         with patch("competicions_trampoli.live_cache._live_redis_client", return_value=fake_redis):
             with patch("competicions_trampoli.live_cache._wait_for_live_snapshot", return_value=waited_snapshot):
-                with patch("competicions_trampoli.views_classificacions_live.compute_classificacio") as mocked_compute:
+                with patch("competicions_trampoli.views.classificacions.live.compute_classificacio") as mocked_compute:
                     res = self.client.get(self._public_url())
 
         self.assertEqual(res.status_code, 200)
@@ -4223,7 +4223,7 @@ class LiveClassificacionsRedisCacheTests(_BaseTrampoliDataMixin, TestCase):
         )
         fake_redis.set(live_cache.live_lock_key(self.comp.id), "busy")
         with patch("competicions_trampoli.live_cache._live_redis_client", return_value=fake_redis):
-            with patch("competicions_trampoli.views_classificacions_live.compute_classificacio") as mocked_compute:
+            with patch("competicions_trampoli.views.classificacions.live.compute_classificacio") as mocked_compute:
                 res = self.client.get(self._public_url())
 
         self.assertEqual(res.status_code, 200)
@@ -4238,7 +4238,7 @@ class LiveClassificacionsRedisCacheTests(_BaseTrampoliDataMixin, TestCase):
             "competicions_trampoli.live_cache._live_redis_client",
             side_effect=RuntimeError("redis down"),
         ):
-            with patch("competicions_trampoli.views_classificacions_live.compute_classificacio", return_value=compute_result) as mocked_compute:
+            with patch("competicions_trampoli.views.classificacions.live.compute_classificacio", return_value=compute_result) as mocked_compute:
                 res = self.client.get(self._public_url())
 
         self.assertEqual(res.status_code, 200)
@@ -4254,7 +4254,7 @@ class LiveClassificacionsRedisCacheTests(_BaseTrampoliDataMixin, TestCase):
             "global": [{"participant": "Participant Cache", "punts": 9.8, "posicio": 1}]
         }
         with patch("competicions_trampoli.live_cache._live_redis_client", return_value=fake_redis):
-            with patch("competicions_trampoli.views_classificacions_live.compute_classificacio", return_value=compute_result) as mocked_compute:
+            with patch("competicions_trampoli.views.classificacions.live.compute_classificacio", return_value=compute_result) as mocked_compute:
                 res = self.client.get(self._public_url())
 
         self.assertEqual(res.status_code, 200)

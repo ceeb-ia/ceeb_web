@@ -1,0 +1,1 @@
+"""Canonical inscripcions view package."""

@@ -95,7 +95,7 @@ from ..services.classificacions.validation import (
     validate_particions_schema as _validate_particions_schema,
     validate_schema_for_competicio as _validate_schema_for_competicio,
 )
-from ..views_classificacions_builder import ClassificacionsHome
+from ..views.classificacions.builder import ClassificacionsHome
 from ..services.competition_groups import (
     assign_groups_by_display_num,
     compact_competition_order_for_group,

@@ -18,7 +18,7 @@ from ..detail_schema_validation import (
     validation_details_to_messages,
 )
 from ..equip_contexts import get_equip_context, normalize_equip_context_code
-from ..inscripcions_queries import get_allowed_group_fields
+from ..inscripcions.queries import get_allowed_group_fields
 from ..scoring_schema_validation import (
     ALLOWED_FUNCTIONS,
     RESERVED_NAMES,

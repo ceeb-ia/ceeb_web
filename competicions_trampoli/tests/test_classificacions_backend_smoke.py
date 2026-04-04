@@ -30,23 +30,30 @@ class ClassificacionsBackendSmokeTests(_BaseTrampoliDataMixin, TestCase):
 
     def test_entrypoint_modules_import_and_do_not_depend_on_legacy_monolith(self):
         modules = [
-            "competicions_trampoli.views_classificacions_builder",
-            "competicions_trampoli.views_classificacions_live",
-            "competicions_trampoli.views_classificacions_templates",
-            "competicions_trampoli.views_classificacions_export",
+            "competicions_trampoli.views.classificacions.builder",
+            "competicions_trampoli.views.classificacions.live",
+            "competicions_trampoli.views.classificacions.templates",
+            "competicions_trampoli.views.classificacions.export",
+            "competicions_trampoli.views.classificacions.global_templates",
+            "competicions_trampoli.views_classificacions",
         ]
         for module_name in modules:
             importlib.import_module(module_name)
 
         package_root = Path(__file__).resolve().parents[1]
         for rel_path in [
-            "views_classificacions_builder.py",
-            "views_classificacions_live.py",
-            "views_classificacions_templates.py",
-            "views_classificacions_export.py",
+            "views/classificacions/builder.py",
+            "views/classificacions/live.py",
+            "views/classificacions/templates.py",
+            "views/classificacions/export.py",
+            "views/classificacions/global_templates.py",
         ]:
             source = (package_root / rel_path).read_text(encoding="utf-8")
-            self.assertNotIn("from .views_classificacions import", source)
+            self.assertNotIn("views_classificacions_builder", source)
+            self.assertNotIn("views_classificacions_live", source)
+            self.assertNotIn("views_classificacions_templates", source)
+            self.assertNotIn("views_classificacions_export", source)
+            self.assertNotIn("views_classificacio_templates", source)
 
     def test_legacy_file_reexports_split_entrypoints(self):
         package_root = Path(__file__).resolve().parents[1]
@@ -55,10 +62,10 @@ class ClassificacionsBackendSmokeTests(_BaseTrampoliDataMixin, TestCase):
         func_defs = [node.name for node in tree.body if isinstance(node, ast.FunctionDef)]
         class_defs = [node.name for node in tree.body if isinstance(node, ast.ClassDef)]
         self.assertIn("Compatibility facade for split classificacions entrypoints", source)
-        self.assertIn("from .views_classificacions_builder import", source)
-        self.assertIn("from .views_classificacions_live import", source)
-        self.assertIn("from .views_classificacions_templates import", source)
-        self.assertIn("from .views_classificacions_export import", source)
+        self.assertIn("from .views.classificacions.builder import", source)
+        self.assertIn("from .views.classificacions.live import", source)
+        self.assertIn("from .views.classificacions.templates import", source)
+        self.assertIn("from .views.classificacions.export import", source)
         self.assertEqual(class_defs, [])
         self.assertEqual(func_defs, ["_template_schema_to_competicio_schema"])
         wrapper = next(node for node in tree.body if isinstance(node, ast.FunctionDef))

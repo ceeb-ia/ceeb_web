@@ -18,15 +18,15 @@ from .services.classificacions.validation import (
     validate_particions_schema as _validate_particions_schema,
     validate_schema_for_competicio as _validate_schema_for_competicio,
 )
-from .views_classificacions_builder import (
+from .views.classificacions.builder import (
     ClassificacionsHome,
     classificacio_delete,
     classificacio_preview,
     classificacio_reorder,
     classificacio_save,
 )
-from .views_classificacions_export import classificacions_live_export_excel
-from .views_classificacions_live import (
+from .views.classificacions.export import classificacions_live_export_excel
+from .views.classificacions.live import (
     ClassificacionsLive,
     ClassificacionsLoopLive,
     PublicClassificacionsLive,
@@ -34,7 +34,7 @@ from .views_classificacions_live import (
     classificacions_live_data,
     public_classificacions_live_data,
 )
-from .views_classificacions_templates import (
+from .views.classificacions.templates import (
     classificacio_template_apply,
     classificacio_template_list,
     classificacio_template_save,

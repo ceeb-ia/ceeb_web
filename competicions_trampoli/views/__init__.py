@@ -1,35 +1,34 @@
 """Compatibility facade for legacy inscripcions imports.
 
-This module intentionally re-exports stable entrypoints from the extracted
-inscripcions modules. Runtime routes no longer depend on this file.
+This package re-exports stable entrypoints from the extracted inscripcions
+modules. Runtime routes no longer depend on the old top-level `views.py` file.
 """
 
-from .inscripcions_views_shared import (
-    InscripcionsImportExcelView,
-    InscripcionsListView,
-    _split_custom_sort_tokens,
-    renumber_groups_for_competicio,
-    sort_records_by_field_stable,
-)
-from .services.inscripcions.history import (
+from .inscripcions.base import InscripcionsImportExcelView, InscripcionsListView
+from ..services.inscripcions.groups import renumber_groups_for_competicio
+from ..services.inscripcions.history import (
     apply_inscripcions_history_snapshot,
     capture_inscripcions_history_snapshot,
 )
-from .services.inscripcions.queries import (
+from ..services.inscripcions.queries import (
     COLUMN_FILTER_EMPTY_TOKEN,
     _build_inscripcions_filtered_qs,
     _resolve_group_creation_buckets,
     build_inscripcions_sort_context_key,
     get_competicio_custom_sort_rank_map,
 )
-from .views_inscripcions_groups import (
+from ..services.inscripcions.sorting import (
+    _split_custom_sort_tokens,
+    sort_records_by_field_stable,
+)
+from .inscripcions.groups import (
     inscripcions_groups_from_sort,
     inscripcions_merge_tabs,
     inscripcions_reorder,
     inscripcions_save_group_competition_order,
 )
-from .views_inscripcions_media import inscripcions_media_file
-from .views_inscripcions_sorting import (
+from .inscripcions.media import inscripcions_media_file
+from .inscripcions.sorting import (
     inscripcions_filter_values,
     inscripcions_history_redo,
     inscripcions_history_undo,

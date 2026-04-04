@@ -38,7 +38,7 @@ from ...services.equip_contexts import (
     get_equip_context_payload,
     normalize_equip_context_code,
 )
-from ...services.inscripcions_queries import get_allowed_group_fields, get_inscripcio_value
+from ...services.inscripcions.queries import get_allowed_group_fields, get_inscripcio_value
 from ...services.team_scoring import is_team_context_app
 
 

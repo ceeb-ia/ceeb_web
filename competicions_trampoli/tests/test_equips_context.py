@@ -80,23 +80,22 @@ from ..services.inscripcions.queries import (
     build_inscripcions_sort_context_key,
     get_competicio_custom_sort_rank_map,
 )
-from ..views_classificacions import (
-    ClassificacionsHome,
-    _build_metric_meta_for_comp_aparell,
-    _normalize_excel_cell,
-    _build_scoreable_meta_for_schema,
-    _normalize_particions_schema,
-    _scoreable_codes_by_app_id,
-    _schema_to_template_schema,
-    _template_schema_to_competicio_schema,
-    _validate_schema_for_competicio,
-    _validate_particions_schema,
+from ..services.classificacions.builder import scoreable_codes_by_app_id as _scoreable_codes_by_app_id
+from ..services.classificacions.compute import DEFAULT_SCHEMA, compute_classificacio
+from ..services.classificacions.export import _normalize_excel_cell
+from ..services.classificacions.partitions import normalize_schema_legacy_team_birth_partition
+from ..services.classificacions.validation import (
+    build_metric_meta_for_comp_aparell as _build_metric_meta_for_comp_aparell,
+    build_scoreable_meta_for_schema as _build_scoreable_meta_for_schema,
+    validate_particions_schema as _validate_particions_schema,
+    validate_schema_for_competicio as _validate_schema_for_competicio,
 )
-from ..services.services_classificacions_2 import (
-    DEFAULT_SCHEMA,
-    compute_classificacio,
-    normalize_schema_legacy_team_birth_partition,
+from ..services.classificacio_templates import (
+    normalize_particions_schema as _normalize_particions_schema,
+    schema_to_template_schema as _schema_to_template_schema,
+    template_schema_to_competicio_schema as _template_schema_to_competicio_schema,
 )
+from ..views.classificacions.builder import ClassificacionsHome
 from ..services.competition_groups import (
     assign_groups_by_display_num,
     compact_competition_order_for_group,

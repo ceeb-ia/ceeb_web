@@ -4,15 +4,15 @@ from django.urls import path
 from competicions_trampoli import views_judge_admin, views_judge_messages, views_rotacions, views_scoring
 
 from .access import require_competicio_capability, require_global_groups
-from .views_classificacions_builder import (
+from .views.classificacions.builder import (
     ClassificacionsHome,
     classificacio_delete,
     classificacio_preview,
     classificacio_reorder,
     classificacio_save,
 )
-from .views_classificacions_export import classificacions_live_export_excel
-from .views_classificacions_live import (
+from .views.classificacions.export import classificacions_live_export_excel
+from .views.classificacions.live import (
     ClassificacionsLive,
     ClassificacionsLoopLive,
     PublicClassificacionsLive,
@@ -20,27 +20,27 @@ from .views_classificacions_live import (
     classificacions_live_data,
     public_classificacions_live_data,
 )
-from .views_classificacions_templates import (
+from .views.classificacions.templates import (
     classificacio_template_apply,
     classificacio_template_list,
     classificacio_template_save,
     classificacio_template_validate,
 )
-from .views_classificacio_templates import (
+from .views.classificacions.global_templates import (
     ClassificacioTemplateGlobalBuilder,
     ClassificacioTemplateGlobalDeleteView,
     ClassificacioTemplateGlobalList,
     classificacio_template_global_save,
 )
+from .views.inscripcions.base import InscripcionsImportExcelView
 from .views_competitions import (
     CompeticioCreateView,
     CompeticioDeleteView,
     CompeticioHomeView,
     CompeticioListView,
-    InscripcionsImportExcelView,
     notes_home_router,
 )
-from .views_equips import (
+from .views.inscripcions.equips import (
     equip_context_create,
     equip_context_delete,
     equip_context_rename,
@@ -56,12 +56,12 @@ from .views_equips import (
     equips_unassign,
     equips_workspace,
 )
-from .views_inscripcions_crud import (
+from .views.inscripcions.crud import (
     InscripcioCreateView,
     InscripcioDeleteView,
     InscripcioUpdateView,
 )
-from .views_inscripcions_groups import (
+from .views.inscripcions.groups import (
     groups_assign,
     groups_create,
     groups_delete,
@@ -77,14 +77,14 @@ from .views_inscripcions_groups import (
     inscripcions_reorder,
     inscripcions_save_group_competition_order,
 )
-from .views_inscripcions_listing import (
+from .views.inscripcions.listing import (
     InscripcionsListNewView,
     inscripcions_save_birth_year_range_config,
     inscripcions_save_table_columns as inscripcions_save_table_columns_new,
     inscripcions_set_aparells as inscripcions_set_aparells_new,
     inscripcions_set_group_name as inscripcions_set_group_name_new,
 )
-from .views_inscripcions_media import (
+from .views.inscripcions.media import (
     inscripcions_media_delete,
     inscripcions_media_file,
     inscripcions_media_match_apply,
@@ -92,7 +92,7 @@ from .views_inscripcions_media import (
     inscripcions_media_set_primary,
     inscripcions_media_upload,
 )
-from .views_inscripcions_sorting import (
+from .views.inscripcions.sorting import (
     inscripcions_filter_values,
     inscripcions_history_redo,
     inscripcions_history_undo,
@@ -112,7 +112,7 @@ from .views_scoring import (
     scoring_media_file,
     scoring_save,
 )
-from .views_team_series import (
+from .views.inscripcions.team_series import (
     series_assign,
     series_create,
     series_delete,

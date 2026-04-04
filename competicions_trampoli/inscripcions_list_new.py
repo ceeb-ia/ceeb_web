@@ -1,11 +1,7 @@
-"""Compatibility facade for the extracted inscripcions backend.
+"""Compatibility facade for extracted inscripcions entrypoints."""
 
-The real runtime implementation now lives in the dedicated
-`views_inscripcions_*` modules plus `inscripcions_views_shared`.
-"""
-
-from .inscripcions_views_shared import InscripcionsListView
-from .views_inscripcions_groups import (
+from .views.inscripcions.base import InscripcionsListView
+from .views.inscripcions.groups import (
     groups_assign,
     groups_create,
     groups_delete,
@@ -17,7 +13,7 @@ from .views_inscripcions_groups import (
     groups_workspace,
     inscripcions_group_competition_order_preview,
 )
-from .views_inscripcions_listing import (
+from .views.inscripcions.listing import (
     InscripcionsListNewView,
     get_available_table_columns,
     get_selected_table_columns,
@@ -26,7 +22,7 @@ from .views_inscripcions_listing import (
     inscripcions_set_aparells,
     inscripcions_set_group_name,
 )
-from .views_inscripcions_media import (
+from .views.inscripcions.media import (
     _get_media_matching_config,
     _serialize_media_item,
     inscripcions_media_delete,

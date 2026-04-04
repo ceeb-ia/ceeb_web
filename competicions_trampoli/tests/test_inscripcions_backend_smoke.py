@@ -27,43 +27,44 @@ class InscripcionsBackendSmokeTests(_BaseTrampoliDataMixin, TestCase):
 
     def test_entrypoint_modules_import_and_do_not_depend_on_legacy_monoliths(self):
         modules = [
-            "competicions_trampoli.views_inscripcions_listing",
-            "competicions_trampoli.views_inscripcions_sorting",
-            "competicions_trampoli.views_inscripcions_groups",
-            "competicions_trampoli.views_inscripcions_media",
+            "competicions_trampoli.views.inscripcions.base",
+            "competicions_trampoli.views.inscripcions.crud",
+            "competicions_trampoli.views.inscripcions.equips",
+            "competicions_trampoli.views.inscripcions.listing",
+            "competicions_trampoli.views.inscripcions.team_series",
+            "competicions_trampoli.views.inscripcions.sorting",
+            "competicions_trampoli.views.inscripcions.groups",
+            "competicions_trampoli.views.inscripcions.media",
             "competicions_trampoli.inscripcions_views_shared",
         ]
         for module_name in modules:
             importlib.import_module(module_name)
 
         package_root = Path(__file__).resolve().parents[1]
-        for rel_path in [
-            "views_inscripcions_listing.py",
-            "views_inscripcions_sorting.py",
-            "views_inscripcions_groups.py",
-            "views_inscripcions_media.py",
-        ]:
-            source = (package_root / rel_path).read_text(encoding="utf-8")
-            self.assertNotIn("from .views import", source)
-            self.assertNotIn("from .inscripcions_list_new import", source)
-
         shared_source = (package_root / "inscripcions_views_shared.py").read_text(encoding="utf-8")
         self.assertNotIn("from .views import", shared_source)
+        self.assertNotIn("class InscripcionsListView(", shared_source)
+        self.assertNotIn("class InscripcionsImportExcelView(", shared_source)
 
     def test_legacy_files_are_facades_only(self):
         package_root = Path(__file__).resolve().parents[1]
-        views_source = (package_root / "views.py").read_text(encoding="utf-8")
+        views_source = (package_root / "views" / "__init__.py").read_text(encoding="utf-8")
         legacy_list_source = (package_root / "inscripcions_list_new.py").read_text(encoding="utf-8")
+        shared_source = (package_root / "inscripcions_views_shared.py").read_text(encoding="utf-8")
 
         self.assertIn("Compatibility facade", views_source)
-        self.assertIn("from .views_inscripcions_sorting import", views_source)
+        self.assertIn("from .inscripcions.sorting import", views_source)
         self.assertNotIn("def inscripcions_sort_apply", views_source)
         self.assertNotIn("class InscripcionsListView(", views_source)
 
         self.assertIn("Compatibility facade", legacy_list_source)
-        self.assertIn("from .views_inscripcions_listing import", legacy_list_source)
+        self.assertIn("from .views.inscripcions.listing import", legacy_list_source)
         self.assertNotIn("class InscripcionsListNewView(", legacy_list_source)
         self.assertNotIn("def inscripcions_media_upload", legacy_list_source)
+
+        self.assertIn("Compatibility facade", shared_source)
+        self.assertIn("from .views.inscripcions.base import", shared_source)
+        self.assertNotIn("class InscripcionsListView(", shared_source)
 
     def test_reverse_and_resolve_all_inscripcions_routes(self):
         route_kwargs = {
