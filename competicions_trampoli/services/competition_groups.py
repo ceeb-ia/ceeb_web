@@ -81,7 +81,7 @@ def get_unassigned_participant_count(competicio) -> int:
 
 
 def get_programmed_group_ids(competicio):
-    from ..models_rotacions import RotacioAssignacioGrup
+    from ..models.rotacions import RotacioAssignacioGrup
 
     return set(
         RotacioAssignacioGrup.objects

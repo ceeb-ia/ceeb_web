@@ -2,11 +2,10 @@ from django.contrib import admin
 from django.contrib.auth import get_user_model
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 
-from competicions_trampoli.models_trampoli import CompeticioAparell
-
 from .models import Competicio, CompeticioMembership
-from .models_classificacions import ClassificacioTemplateGlobal
-from .models_judging import JudgeConversation, JudgeConversationMessage
+from .models.classificacions import ClassificacioTemplateGlobal
+from .models.competicio import CompeticioAparell
+from .models.judging import JudgeConversation, JudgeConversationMessage
 
 
 class CompeticioMembershipByCompeticioInline(admin.TabularInline):

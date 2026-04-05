@@ -21,8 +21,8 @@ from .equip_contexts import (
     normalize_equip_context_code,
     resolve_inscripcio_equip,
 )
-from ..models_trampoli import CompeticioAparell
-from ..models_scoring import ScoreEntry, TeamScoreEntry
+from ..models.competicio import CompeticioAparell
+from ..models.scoring import ScoreEntry, TeamScoreEntry
 from .team_scoring import is_team_context_app
 
 logger = logging.getLogger(__name__)

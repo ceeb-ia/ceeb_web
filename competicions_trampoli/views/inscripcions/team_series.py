@@ -24,8 +24,8 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font
 
 from ...models import Competicio
-from ...models_scoring import SerieEquip
-from ...models_trampoli import CompeticioAparell
+from ...models.competicio import CompeticioAparell
+from ...models.scoring import SerieEquip
 from ...services.team_scoring import build_team_subjects_for_comp_aparell, is_team_context_app
 from ...services.team_series import (
     assign_subjects_to_serie,

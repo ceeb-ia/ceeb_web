@@ -4,8 +4,15 @@ from django.dispatch import receiver
 
 from .models import EquipContext, InscripcioEquipAssignacio, InscripcioMedia
 from .live_cache import mark_live_dirty
-from .models_classificacions import ClassificacioConfig
-from .models_scoring import ScoreEntry, ScoreEntryVideo, SerieEquip, SerieEquipItem, TeamScoreEntry, TeamScoreEntryVideo
+from .models.classificacions import ClassificacioConfig
+from .models.scoring import (
+    ScoreEntry,
+    ScoreEntryVideo,
+    SerieEquip,
+    SerieEquipItem,
+    TeamScoreEntry,
+    TeamScoreEntryVideo,
+)
 
 
 def _mark_live_dirty_on_commit(competicio_id):

@@ -4,7 +4,7 @@ from django.db import transaction
 from django.db.models import Case, IntegerField, Value, When
 
 from ...models import CompeticioMembership
-from ...models_classificacions import ClassificacioTemplateGlobal
+from ...models.classificacions import ClassificacioTemplateGlobal
 
 
 class Command(BaseCommand):

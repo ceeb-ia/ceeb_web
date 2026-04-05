@@ -1,4 +1,5 @@
 import json
+from importlib import import_module
 import re
 from io import BytesIO, StringIO
 from datetime import date, timedelta
@@ -31,21 +32,21 @@ from ..models import (
     InscripcioEquipAssignacio,
     InscripcioMedia,
 )
-from ..models_judging import (
+from ..models.judging import (
     JudgeConversation,
     JudgeConversationMessage,
     JudgeDeviceToken,
     PublicLiveToken,
 )
-from ..models_classificacions import ClassificacioConfig, ClassificacioTemplateGlobal
-from ..models_rotacions import (
+from ..models.classificacions import ClassificacioConfig, ClassificacioTemplateGlobal
+from ..models.rotacions import (
     RotacioAssignacio,
     RotacioAssignacioGrup,
     RotacioAssignacioSerieEquip,
     RotacioEstacio,
     RotacioFranja,
 )
-from ..models_scoring import (
+from ..models.scoring import (
     ScoringSchema,
     ScoreEntry,
     ScoreEntryVideo,
@@ -57,7 +58,7 @@ from ..models_scoring import (
     TeamScoreEntryVideo,
     TeamScoreEntryVideoEvent,
 )
-from ..models_trampoli import (
+from ..models.competicio import (
     Aparell,
     CompeticioAparell,
     CompeticioAparellEquipContextSource,
@@ -65,9 +66,9 @@ from ..models_trampoli import (
 )
 from ..models import CompeticioMembership
 from ..scoring_engine import ScoringEngine
-from ..inscripcions_views_shared import (
+from ..services.inscripcions.groups import renumber_groups_for_competicio
+from ..services.inscripcions.sorting import (
     _split_custom_sort_tokens,
-    renumber_groups_for_competicio,
     sort_records_by_field_stable,
 )
 from ..services.inscripcions.history import (
@@ -115,7 +116,7 @@ from ..services.team_scoring import (
     runtime_schema_for_comp_aparell,
 )
 from ..services.team_series import safe_deactivate_empty_serie
-from ..views_judge_admin import _member_slot_choices, _validate_permission_row
+from ..views.judge.admin import _member_slot_choices, _validate_permission_row
 from ..templatetags.competicio_extras import (
     DEFAULT_COMPETITION_BACKGROUND,
     get_competicio_background_url_from_request,
@@ -306,8 +307,8 @@ class ScoringMediaPlaybackContextTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(media_counts[str(ins_without_media.id)]["video"], 0)
 
         judge_map = res.context["judge_video_presence_by_key"]
-        self.assertEqual(int(judge_map.get(f"{self.ins.id}|1|{self.comp_app.id}") or 0), 1)
-        self.assertEqual(int(judge_map.get(f"{ins_without_media.id}|1|{self.comp_app.id}") or 0), 0)
+        self.assertEqual(int(judge_map.get(f"inscripcio:{self.ins.id}|1|{self.comp_app.id}") or 0), 1)
+        self.assertEqual(int(judge_map.get(f"inscripcio:{ins_without_media.id}|1|{self.comp_app.id}") or 0), 0)
 
     def test_scoring_notes_home_queues_remote_rerender_while_local_row_is_editing(self):
         url = reverse("scoring_notes_home", kwargs={"pk": self.comp.id})
@@ -724,7 +725,7 @@ class JudgeVideoApiTests(_BaseTrampoliDataMixin, TestCase):
             is_active=True,
         )
         self._probe_patcher = patch(
-            "competicions_trampoli.views_judge._probe_uploaded_video_metadata",
+            "competicions_trampoli.views.judge.video._probe_uploaded_video_metadata",
             side_effect=self._fake_probe_uploaded_video_metadata,
         )
         self._probe_patcher.start()
@@ -732,7 +733,7 @@ class JudgeVideoApiTests(_BaseTrampoliDataMixin, TestCase):
 
     @staticmethod
     def _fake_probe_uploaded_video_metadata(uploaded_file):
-        from ..views_judge import VideoValidationError
+        from ..views.judge import VideoValidationError
 
         name = (getattr(uploaded_file, "name", "") or "").lower()
         if name.endswith(".txt"):
@@ -1170,18 +1171,27 @@ class JudgeMessagingFlowTests(_BaseTrampoliDataMixin, TestCase):
         base_time = timezone.now()
         msg_1 = JudgeConversationMessage.objects.create(
             conversation=conversation,
+            competicio=conversation.competicio,
+            comp_aparell=conversation.comp_aparell,
+            judge_token=conversation.judge_token,
             sender_type=JudgeConversationMessage.SenderType.ORGANIZATION,
             message_type=JudgeConversationMessage.MessageType.REPLY,
             text="M1",
         )
         msg_2 = JudgeConversationMessage.objects.create(
             conversation=conversation,
+            competicio=conversation.competicio,
+            comp_aparell=conversation.comp_aparell,
+            judge_token=conversation.judge_token,
             sender_type=JudgeConversationMessage.SenderType.ORGANIZATION,
             message_type=JudgeConversationMessage.MessageType.REPLY,
             text="M2",
         )
         msg_3 = JudgeConversationMessage.objects.create(
             conversation=conversation,
+            competicio=conversation.competicio,
+            comp_aparell=conversation.comp_aparell,
+            judge_token=conversation.judge_token,
             sender_type=JudgeConversationMessage.SenderType.ORGANIZATION,
             message_type=JudgeConversationMessage.MessageType.REPLY,
             text="M3",
@@ -1189,7 +1199,7 @@ class JudgeMessagingFlowTests(_BaseTrampoliDataMixin, TestCase):
         JudgeConversationMessage.objects.filter(pk__in=[msg_1.id, msg_2.id, msg_3.id]).update(created_at=base_time)
 
         updates_url = reverse("judge_messages_updates", kwargs={"token": self.token.id})
-        with patch("competicions_trampoli.views_judge_messages.JUDGE_MESSAGES_DELTA_LIMIT", 2):
+        with patch("competicions_trampoli.views.judge.messages.JUDGE_MESSAGES_DELTA_LIMIT", 2):
             first_res = self.client.get(
                 updates_url,
                 {"since": (base_time - timedelta(seconds=1)).isoformat()},
@@ -1311,7 +1321,7 @@ class ScoringUpdatesCursorTests(_BaseTrampoliDataMixin, TestCase):
         ScoreEntry.objects.filter(pk__in=[e1.id, e2.id, e3.id]).update(updated_at=base_time)
 
         url = reverse("scoring_updates", kwargs={"pk": self.comp.id})
-        with patch("competicions_trampoli.views_scoring.SCORING_UPDATES_LIMIT", 2):
+        with patch("competicions_trampoli.views.scoring.updates.SCORING_UPDATES_LIMIT", 2):
             first_res = self.client.get(url, {"since": (base_time - timedelta(seconds=1)).isoformat()})
             self.assertEqual(first_res.status_code, 200)
             first_body = first_res.json()
@@ -1344,3 +1354,71 @@ class ScoringUpdatesCursorTests(_BaseTrampoliDataMixin, TestCase):
                 "has_more": False,
             },
         )
+
+
+class JudgePackageSmokeTests(TestCase):
+    ROUTE_EXPORTS = [
+        "judge_portal",
+        "judge_qr_png",
+        "judge_save_partial",
+        "judge_updates",
+        "judge_video_status",
+        "judge_video_file",
+        "judge_video_upload",
+        "judge_video_delete",
+        "public_live_qr_png",
+    ]
+
+    def test_judge_package_and_submodules_are_importable(self):
+        package = import_module("competicions_trampoli.views.judge")
+        self.assertTrue(set(self.ROUTE_EXPORTS).issubset(set(package.__all__)))
+        self.assertIn("VideoValidationError", package.__all__)
+
+        for module_name in (
+            "competicions_trampoli.views.judge._shared",
+            "competicions_trampoli.views.judge.permissions",
+            "competicions_trampoli.views.judge.portal",
+            "competicions_trampoli.views.judge.save",
+            "competicions_trampoli.views.judge.updates",
+            "competicions_trampoli.views.judge.video",
+        ):
+            self.assertIsNotNone(import_module(module_name))
+
+    def test_judge_package_exports_route_entrypoints_and_contract_symbols(self):
+        package = import_module("competicions_trampoli.views.judge")
+
+        for export_name in self.ROUTE_EXPORTS:
+            self.assertTrue(callable(getattr(package, export_name)))
+            self.assertIn(export_name, package.__all__)
+
+        self.assertTrue(issubclass(package.VideoValidationError, Exception))
+        self.assertIsInstance(package.JUDGE_UPDATES_LIMIT, int)
+
+    def test_judge_routes_reverse_and_resolve_keep_public_names(self):
+        package = import_module("competicions_trampoli.views.judge")
+        route_cases = [
+            ("judge_portal", {"token": "00000000-0000-0000-0000-000000000001"}, package.judge_portal),
+            ("judge_qr_png", {"token": "00000000-0000-0000-0000-000000000001"}, package.judge_qr_png),
+            ("judge_save_partial", {"token": "00000000-0000-0000-0000-000000000001"}, package.judge_save_partial),
+            ("judge_updates", {"token": "00000000-0000-0000-0000-000000000001"}, package.judge_updates),
+            ("judge_video_status", {"token": "00000000-0000-0000-0000-000000000001"}, package.judge_video_status),
+            (
+                "judge_video_file",
+                {
+                    "token": "00000000-0000-0000-0000-000000000001",
+                    "subject_kind": "inscripcio",
+                    "subject_id": 1,
+                    "exercici": 1,
+                },
+                package.judge_video_file,
+            ),
+            ("judge_video_upload", {"token": "00000000-0000-0000-0000-000000000001"}, package.judge_video_upload),
+            ("judge_video_delete", {"token": "00000000-0000-0000-0000-000000000001"}, package.judge_video_delete),
+            ("public_live_qr_png", {"token": "00000000-0000-0000-0000-000000000001"}, package.public_live_qr_png),
+        ]
+
+        for route_name, kwargs, expected_view in route_cases:
+            path = reverse(route_name, kwargs=kwargs)
+            match = resolve(path)
+            self.assertEqual(match.view_name, route_name)
+            self.assertIs(match.func, expected_view)

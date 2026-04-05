@@ -5,7 +5,7 @@ from django.shortcuts import get_object_or_404
 from openpyxl import Workbook
 
 from ...models import Competicio
-from ...models_classificacions import ClassificacioConfig
+from ...models.classificacions import ClassificacioConfig
 from ...services.classificacions.compute import compute_classificacio
 from ...services.classificacions.export import (
     build_excel_sheet_name,

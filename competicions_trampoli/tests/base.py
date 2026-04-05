@@ -1,7 +1,7 @@
 from django.contrib.auth import get_user_model
 
 from ..models import Competicio, CompeticioMembership, Equip, Inscripcio, InscripcioEquipAssignacio
-from ..models_trampoli import Aparell, CompeticioAparell
+from ..models.competicio import Aparell, CompeticioAparell
 from ..services.equip_contexts import ensure_base_equip_context
 
 

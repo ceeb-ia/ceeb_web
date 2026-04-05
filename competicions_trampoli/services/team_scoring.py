@@ -9,7 +9,7 @@ from django.apps import apps
 from django.db import transaction
 
 from ..models import Equip, Inscripcio, InscripcioEquipAssignacio
-from ..models_trampoli import (
+from ..models.competicio import (
     Aparell,
     CompeticioAparell,
     CompeticioAparellEquipContextSource,
@@ -500,7 +500,7 @@ def _subject_label(equip: Equip, context_name: str, members: List[Inscripcio]) -
 
 
 def _expected_team_size_for_comp_aparell(comp_aparell: Optional[CompeticioAparell]) -> int:
-    from ..models_scoring import ScoringSchema
+    from ..models.scoring import ScoringSchema
 
     def _infer_from_context_sources() -> int:
         source_rows = list(

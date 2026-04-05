@@ -3,7 +3,7 @@ from collections import defaultdict
 from decimal import Decimal
 from django.db import models
 from ..models import Inscripcio
-from ..models_trampoli import TrampoliNota, CompeticioAparell
+from ..models.competicio import CompeticioAparell, TrampoliNota
 ALLOWED_SCORE_FIELDS = {
     "total": {"label": "Total", "sign": +1},
     "execucio_total": {"label": "Execució", "sign": +1},

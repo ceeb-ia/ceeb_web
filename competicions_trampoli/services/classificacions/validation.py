@@ -1,8 +1,8 @@
 import ast
 import re
 
-from ...models_scoring import ScoringSchema
-from ...models_trampoli import CompeticioAparell, CompeticioAparellEquipContextSource
+from ...models.competicio import CompeticioAparell, CompeticioAparellEquipContextSource
+from ...models.scoring import ScoringSchema
 from ..birth_year_ranges import validate_birth_year_range_partition_config
 from ..classificacio_templates import (
     json_clone,

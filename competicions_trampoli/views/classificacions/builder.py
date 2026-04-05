@@ -12,9 +12,9 @@ from django.views.generic import TemplateView
 from ...access import user_has_competicio_capability
 from ...live_cache import mark_live_dirty
 from ...models import Competicio, Equip, Inscripcio
-from ...models_classificacions import ClassificacioConfig
-from ...models_scoring import ScoringSchema
-from ...models_trampoli import CompeticioAparell
+from ...models.classificacions import ClassificacioConfig
+from ...models.competicio import CompeticioAparell
+from ...models.scoring import ScoringSchema
 from ...services.classificacions.builder import (
     build_cfg_status,
     collect_particio_value_choices,

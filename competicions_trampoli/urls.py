@@ -1,7 +1,8 @@
 from django.contrib.auth.decorators import login_required
 from django.urls import path
 
-from competicions_trampoli import views_judge_admin, views_judge_messages, views_rotacions, views_scoring
+from .views.judge import admin as views_judge_admin
+from .views.judge import messages as views_judge_messages
 
 from .access import require_competicio_capability, require_global_groups
 from .views.classificacions.builder import (
@@ -104,14 +105,16 @@ from .views.inscripcions.sorting import (
     inscripcions_sort_remove,
     inscripcions_sort_undo,
 )
-from .views_scoring import (
-    ScoringNotesHome,
-    ScoringSchemaUpdate,
+from .views.scoring.media import (
     scoring_judge_video_file,
     scoring_media_context,
     scoring_media_file,
-    scoring_save,
 )
+from .views.scoring.notes import ScoringNotesHome
+from .views.scoring.save import scoring_save, scoring_save_partial
+from .views.scoring.schema import ScoringSchemaUpdate
+from .views.scoring.updates import scoring_updates
+from .views import rotacions as views_rotacions
 from .views.inscripcions.team_series import (
     series_assign,
     series_create,
@@ -139,7 +142,7 @@ from .views_trampoli import (
     TrampoliNotesHome,
     trampoli_guardar_nota,
 )
-from . import views_judge
+from .views import judge as views_judge
 
 
 def competition_view(view, capability, competicio_kwarg="pk"):
@@ -259,8 +262,8 @@ urlpatterns = [
     path("competicio/<int:pk>/aparell/<int:ap_id>/schema/", competition_view(ScoringSchemaUpdate.as_view(), "scoring.edit"), name="scoring_schema_update"),
     path("competicio/<int:pk>/aparells/<int:app_id>/eliminar/", competition_view(CompeticioAparellDeleteView.as_view(), "scoring.edit"), name="competicio_aparell_delete"),
     path("competicio/<int:pk>/scores/save/", competition_view(scoring_save, "scoring.edit"), name="scoring_save"),
-    path("scoring/<int:pk>/save-partial/", competition_view(views_scoring.scoring_save_partial, "scoring.edit"), name="scoring_save_partial"),
-    path("scoring/<int:pk>/updates/", competition_view(views_scoring.scoring_updates, "scoring.view"), name="scoring_updates"),
+    path("scoring/<int:pk>/save-partial/", competition_view(scoring_save_partial, "scoring.edit"), name="scoring_save_partial"),
+    path("scoring/<int:pk>/updates/", competition_view(scoring_updates, "scoring.view"), name="scoring_updates"),
     path("scoring/<int:pk>/media/context/", competition_view(scoring_media_context, "scoring.view"), name="scoring_media_context"),
     path("scoring/<int:pk>/media/files/<int:media_id>/", competition_view(scoring_media_file, "scoring.view"), name="scoring_media_file"),
     path("scoring/<int:pk>/media/judge-video/<str:video_kind>/<int:video_id>/", competition_view(scoring_judge_video_file, "scoring.view"), name="scoring_judge_video_file"),

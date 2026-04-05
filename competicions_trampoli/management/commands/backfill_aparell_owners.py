@@ -6,8 +6,8 @@ from django.db import transaction
 from django.db.models import Case, IntegerField, Value, When
 
 from ...models import CompeticioMembership
-from ...models_scoring import ScoringSchema
-from ...models_trampoli import Aparell, CompeticioAparell
+from ...models.competicio import Aparell, CompeticioAparell
+from ...models.scoring import ScoringSchema
 
 
 class Command(BaseCommand):

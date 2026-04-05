@@ -1,4 +1,5 @@
 import json
+from importlib import import_module
 import re
 from io import BytesIO, StringIO
 from datetime import date, timedelta
@@ -31,21 +32,21 @@ from ..models import (
     InscripcioEquipAssignacio,
     InscripcioMedia,
 )
-from ..models_judging import (
+from ..models.judging import (
     JudgeConversation,
     JudgeConversationMessage,
     JudgeDeviceToken,
     PublicLiveToken,
 )
-from ..models_classificacions import ClassificacioConfig, ClassificacioTemplateGlobal
-from ..models_rotacions import (
+from ..models.classificacions import ClassificacioConfig, ClassificacioTemplateGlobal
+from ..models.rotacions import (
     RotacioAssignacio,
     RotacioAssignacioGrup,
     RotacioAssignacioSerieEquip,
     RotacioEstacio,
     RotacioFranja,
 )
-from ..models_scoring import (
+from ..models.scoring import (
     ScoringSchema,
     ScoreEntry,
     ScoreEntryVideo,
@@ -57,7 +58,7 @@ from ..models_scoring import (
     TeamScoreEntryVideo,
     TeamScoreEntryVideoEvent,
 )
-from ..models_trampoli import (
+from ..models.competicio import (
     Aparell,
     CompeticioAparell,
     CompeticioAparellEquipContextSource,
@@ -65,9 +66,9 @@ from ..models_trampoli import (
 )
 from ..models import CompeticioMembership
 from ..scoring_engine import ScoringEngine
-from ..inscripcions_views_shared import (
+from ..services.inscripcions.groups import renumber_groups_for_competicio
+from ..services.inscripcions.sorting import (
     _split_custom_sort_tokens,
-    renumber_groups_for_competicio,
     sort_records_by_field_stable,
 )
 from ..services.inscripcions.history import (
@@ -115,7 +116,7 @@ from ..services.team_scoring import (
     runtime_schema_for_comp_aparell,
 )
 from ..services.team_series import safe_deactivate_empty_serie
-from ..views_judge_admin import _member_slot_choices, _validate_permission_row
+from ..views.judge.admin import _member_slot_choices, _validate_permission_row
 from ..templatetags.competicio_extras import (
     DEFAULT_COMPETITION_BACKGROUND,
     get_competicio_background_url_from_request,
@@ -551,3 +552,74 @@ class RotationOrderingDisplayTests(_BaseTrampoliDataMixin, TestCase):
         portal_body = portal_res.content.decode("utf-8")
         self.assertIn("Fora de programa", portal_body)
         self.assertIn(extra_ins.nom_i_cognoms, portal_body)
+
+
+class RotacionsPackageContractTests(TestCase):
+    ROUTE_EXPORTS = [
+        "estacio_delete",
+        "estacio_descans_create",
+        "estacions_reorder",
+        "franges_auto_create",
+        "franges_export_excel",
+        "franja_create",
+        "franja_delete",
+        "franja_insert_after",
+        "franja_order_mode_set",
+        "franja_update_inline",
+        "rotacions_clear_all",
+        "rotacions_extrapolar",
+        "rotacions_export_logo_clear",
+        "rotacions_export_logo_upload",
+        "rotacions_export_meta_save",
+        "rotacions_out_of_program_visibility_save",
+        "rotacions_planner",
+        "rotacions_save",
+    ]
+
+    def test_rotacions_package_and_submodules_are_importable(self):
+        package = import_module("competicions_trampoli.views.rotacions")
+        self.assertEqual(set(package.__all__), set(self.ROUTE_EXPORTS))
+
+        for module_name in (
+            "competicions_trampoli.views.rotacions._shared",
+            "competicions_trampoli.views.rotacions.assignments",
+            "competicions_trampoli.views.rotacions.estacions",
+            "competicions_trampoli.views.rotacions.export",
+            "competicions_trampoli.views.rotacions.franges",
+            "competicions_trampoli.views.rotacions.planner",
+        ):
+            self.assertIsNotNone(import_module(module_name))
+
+    def test_rotacions_package_exports_route_entrypoints(self):
+        package = import_module("competicions_trampoli.views.rotacions")
+
+        for export_name in self.ROUTE_EXPORTS:
+            self.assertTrue(callable(getattr(package, export_name)))
+            self.assertIn(export_name, package.__all__)
+
+    def test_rotacions_routes_reverse_and_resolve_keep_public_names(self):
+        route_cases = [
+            ("rotacions_planner", {"pk": 1}),
+            ("rotacions_save", {"pk": 1}),
+            ("rotacions_franges_auto_create", {"pk": 1}),
+            ("rotacions_franja_create", {"pk": 1}),
+            ("rotacions_franja_delete", {"pk": 1, "franja_id": 1}),
+            ("rotacions_estacio_descans_create", {"pk": 1}),
+            ("rotacions_estacio_delete", {"pk": 1, "estacio_id": 1}),
+            ("rotacions_extrapolar", {"pk": 1, "franja_id": 1}),
+            ("rotacions_estacions_reorder", {"pk": 1}),
+            ("rotacions_clear_all", {"pk": 1}),
+            ("rotacions_out_of_program_visibility_save", {"pk": 1}),
+            ("rotacions_franja_insert_after", {"pk": 1, "franja_id": 1}),
+            ("rotacions_franja_update_inline", {"pk": 1, "franja_id": 1}),
+            ("rotacions_franja_order_mode_set", {"pk": 1, "franja_id": 1}),
+            ("rotacions_export_meta_save", {"pk": 1}),
+            ("rotacions_export_logo_upload", {"pk": 1}),
+            ("rotacions_export_logo_clear", {"pk": 1}),
+            ("rotacions_franges_export_excel", {"pk": 1}),
+        ]
+
+        for route_name, kwargs in route_cases:
+            match = resolve(reverse(route_name, kwargs=kwargs))
+            self.assertEqual(match.view_name, route_name)
+            self.assertEqual(match.url_name, route_name)

@@ -1,6 +1,6 @@
 from django.utils import timezone
 
-from ...models_classificacions import ClassificacioConfig
+from ...models.classificacions import ClassificacioConfig
 from .compute import compute_classificacio
 from .display import get_display_columns
 from .runtime import execute_classificacio_runtime

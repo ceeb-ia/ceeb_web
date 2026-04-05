@@ -3,7 +3,7 @@ from datetime import datetime
 from django.db import transaction
 
 from ...models import Equip, EquipContext, GrupCompeticio, Inscripcio, InscripcioEquipAssignacio
-from ...models_trampoli import InscripcioAparellExclusio
+from ...models.competicio import InscripcioAparellExclusio
 from ..birth_year_ranges import clear_inscripcions_derived_group_config_cache
 from ..competition_groups import sync_competicio_group_names_view
 from ..equip_contexts import NATIVE_EQUIP_CONTEXT_CODE, get_equip_context

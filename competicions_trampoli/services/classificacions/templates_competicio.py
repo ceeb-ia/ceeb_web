@@ -1,7 +1,7 @@
 from django.utils import timezone
 from django.utils.text import slugify
 
-from ...models_classificacions import ClassificacioTemplateGlobal
+from ...models.classificacions import ClassificacioTemplateGlobal
 from ...services.classificacio_templates import (
     build_template_requirements,
     collect_required_app_codes_from_template,

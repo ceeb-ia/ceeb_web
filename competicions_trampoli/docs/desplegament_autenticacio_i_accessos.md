@@ -225,7 +225,7 @@ S'ha canviat el model per separar:
 
 S'han tocat:
 
-- `competicions_trampoli/views_classificacions.py`
+- `competicions_trampoli/views/classificacions/`
 - `competicions_trampoli/urls.py`
 - templates de live i loop live
 
@@ -259,7 +259,7 @@ S'ha ajustat el frontend de classificacions per treballar amb una URL de dades i
 - `competicions_trampoli/models.py`
 - `competicions_trampoli/access.py`
 - `competicions_trampoli/urls.py`
-- `competicions_trampoli/views_classificacions.py`
+- `competicions_trampoli/views/classificacions/`
 - `competicions_trampoli/admin.py`
 - `competicions_trampoli/tests/`
 - `competicions_trampoli/migrations/0035_competiciomembership.py`

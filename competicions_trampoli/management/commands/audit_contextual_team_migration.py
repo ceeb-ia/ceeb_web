@@ -1,8 +1,8 @@
 from django.core.management.base import BaseCommand
 
 from ...models import Competicio, Equip, EquipContext, InscripcioEquipAssignacio
-from ...models_classificacions import ClassificacioConfig
-from ...models_scoring import TeamCompetitiveSubject
+from ...models.classificacions import ClassificacioConfig
+from ...models.scoring import TeamCompetitiveSubject
 from ...services.equip_contexts import NATIVE_EQUIP_CONTEXT_CODE
 
 

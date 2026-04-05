@@ -6,8 +6,8 @@ from django.test import TestCase
 from django.urls import resolve, reverse
 
 from ..models import CompeticioMembership
-from ..models_judging import PublicLiveToken
-from ..models_trampoli import CompeticioAparell
+from ..models.competicio import CompeticioAparell
+from ..models.judging import PublicLiveToken
 from .base import _BaseTrampoliDataMixin
 
 
@@ -35,7 +35,6 @@ class ClassificacionsBackendSmokeTests(_BaseTrampoliDataMixin, TestCase):
             "competicions_trampoli.views.classificacions.templates",
             "competicions_trampoli.views.classificacions.export",
             "competicions_trampoli.views.classificacions.global_templates",
-            "competicions_trampoli.views_classificacions",
         ]
         for module_name in modules:
             importlib.import_module(module_name)
@@ -55,22 +54,15 @@ class ClassificacionsBackendSmokeTests(_BaseTrampoliDataMixin, TestCase):
             self.assertNotIn("views_classificacions_export", source)
             self.assertNotIn("views_classificacio_templates", source)
 
-    def test_legacy_file_reexports_split_entrypoints(self):
+    def test_classificacions_package_init_is_lightweight(self):
         package_root = Path(__file__).resolve().parents[1]
-        source = (package_root / "views_classificacions.py").read_text(encoding="utf-8")
+        source = (package_root / "views" / "classificacions" / "__init__.py").read_text(encoding="utf-8")
         tree = ast.parse(source)
         func_defs = [node.name for node in tree.body if isinstance(node, ast.FunctionDef)]
         class_defs = [node.name for node in tree.body if isinstance(node, ast.ClassDef)]
-        self.assertIn("Compatibility facade for split classificacions entrypoints", source)
-        self.assertIn("from .views.classificacions.builder import", source)
-        self.assertIn("from .views.classificacions.live import", source)
-        self.assertIn("from .views.classificacions.templates import", source)
-        self.assertIn("from .views.classificacions.export import", source)
         self.assertEqual(class_defs, [])
-        self.assertEqual(func_defs, ["_template_schema_to_competicio_schema"])
-        wrapper = next(node for node in tree.body if isinstance(node, ast.FunctionDef))
-        return_nodes = [node for node in wrapper.body if isinstance(node, ast.Return)]
-        self.assertEqual(len(return_nodes), 1)
+        self.assertEqual(func_defs, [])
+        self.assertNotIn("import *", source)
 
     def test_reverse_and_resolve_classificacions_routes(self):
         route_kwargs = {

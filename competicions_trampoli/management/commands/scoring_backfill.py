@@ -2,8 +2,8 @@
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
-from ...models_trampoli import CompeticioAparell, TrampoliConfiguracio
-from ...models_scoring import ScoringSchema
+from ...models.competicio import CompeticioAparell, TrampoliConfiguracio
+from ...models.scoring import ScoringSchema
 
 
 def build_default_schema_for_comp_aparell(comp_aparell: CompeticioAparell, cfg: TrampoliConfiguracio | None) -> dict:

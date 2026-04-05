@@ -10,11 +10,11 @@ from django.db import transaction
 from django.db.models import Max
 
 from ..models import Competicio, Inscripcio
-from ..models_rotacions import RotacioAssignacioSerieEquip
-from ..models_trampoli import CompeticioAparell
+from ..models.competicio import CompeticioAparell
+from ..models.rotacions import RotacioAssignacioSerieEquip
 
 if TYPE_CHECKING:
-    from ..models_scoring import SerieEquip, SerieEquipItem, TeamCompetitiveSubject
+    from ..models.scoring import SerieEquip, SerieEquipItem, TeamCompetitiveSubject
 
 
 UNASSIGNED_SERIE_KEY = "series-unassigned"

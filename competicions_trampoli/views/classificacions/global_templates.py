@@ -10,8 +10,8 @@ from django.views import View
 from django.views.decorators.http import require_POST
 from django.views.generic import ListView, TemplateView
 
-from ...models_classificacions import ClassificacioTemplateGlobal
-from ...models_scoring import ScoringSchema
+from ...models.classificacions import ClassificacioTemplateGlobal
+from ...models.scoring import ScoringSchema
 from ...services.classificacio_templates import (
     build_global_aparell_field_options,
     build_global_native_particio_fields,

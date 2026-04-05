@@ -4,9 +4,9 @@ from django.db import models
 from django.utils import timezone
 
 from ...models import Equip, Inscripcio
-from ...models_classificacions import ClassificacioConfig
-from ...models_scoring import ScoringSchema
-from ...models_trampoli import CompeticioAparell
+from ...models.classificacions import ClassificacioConfig
+from ...models.competicio import CompeticioAparell
+from ...models.scoring import ScoringSchema
 from ...services.classificacio_templates import (
     json_clone,
     normalize_particions_custom,

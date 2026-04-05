@@ -8,9 +8,9 @@ from .equip_contexts import (
     get_equip_context,
     normalize_equip_context_code,
 )
-from ..models_classificacions import ClassificacioTemplateGlobal
-from ..models_scoring import ScoringSchema
-from ..models_trampoli import Aparell, CompeticioAparell
+from ..models.classificacions import ClassificacioTemplateGlobal
+from ..models.competicio import Aparell, CompeticioAparell
+from ..models.scoring import ScoringSchema
 from .classificacions.compute import DEFAULT_SCHEMA
 from .classificacions.partitions import (
     BIRTH_YEAR_RANGE_PARTITION_CODE,

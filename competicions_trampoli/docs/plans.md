@@ -198,7 +198,7 @@ Refactor estructural, sense canvis funcionals, per substituir [`competicions_tra
 # Tancament de la fase d’`inscripcions`
 
 ## Resum
-La fase només es donarà per tancada quan es compleixin tres coses alhora: `equips_context` verd, `views.py` i `inscripcions_list_new.py` reduïts a façana real, i smoke estable de rutes/render/payloads d’`inscripcions`.
+La fase només es donarà per tancada quan es compleixin tres coses alhora: `equips_context` verd, el paquet `views/inscripcions/` consolidat com a canònic, i smoke estable de rutes/render/payloads d’`inscripcions`.
 
 Decisió de contracte adoptada per aquest pla:
 - El contracte oficial d’aplicació és `native` autoassegurat pel servei/model quan el flux funcional entra al domini.
@@ -208,21 +208,21 @@ Decisió de contracte adoptada per aquest pla:
 ## Implementació de tancament
 ### 1. Tancar la regressió d’`equips_context`
 - Abans de tocar la lògica, documentar i fer explícita la regla anterior dins del codi i dels tests rellevants.
-- Revisar `views_equips.py` a `equips_assign`, `equips_workspace` i `equips_preview` perquè el comportament sigui coherent amb equips contextuals, equips base i dades legacy.
+- Revisar els entrypoints d’equips a `views/inscripcions/equips.py` perquè el comportament sigui coherent amb equips contextuals, equips base i dades legacy.
 - Garantir que un equip usat en context custom es resol de forma consistent amb el seu `context`, i que els fluxos no depenen accidentalment d’equips creats al context base.
 - Reconciliar `resolve_inscripcio_equip`, `get_equips_for_context`, workspace, preview i classificacions perquè `assignment_source.mode="context"` amb `fallback="native"` torni a separar correctament equip contextual i equip base.
 - Ajustar `audit_base_team_context` i els seus tests perquè l’auditoria inspeccioni estat cru sense auto-crear `native`, però sense contradir el contracte general del runtime.
 - No canviar URLs, payloads ni contractes UI mentre es corregeix aquest bloc.
 
-### 2. Deixar `views.py` i `inscripcions_list_new.py` com a façana real
-- Fer una cerca prèvia de consumidors interns, tests i `patch()` sobre `views.py` i `inscripcions_list_new.py` abans de buidar-los.
+### 2. Deixar el paquet `views/` i `views/inscripcions/` com a capa canònica
+- Fer una cerca prèvia de consumidors interns, tests i `patch()` sobre façanes legacy abans d’eliminar-les.
 - Migrar qualsevol test o `patch()` que encara depengui d’aquests mòduls com a implementació real, cap als entrypoints nous o serveis estables.
 - Un cop els consumidors estiguin identificats, eliminar de `views.py` tota la lògica activa d’`inscripcions` que avui està duplicada.
-- Eliminar d’`inscripcions_list_new.py` la implementació activa de listing/groups/media i deixar només compatibilitat mínima temporal si encara hi ha imports residuals.
+- Eliminar façanes legacy d’`inscripcions` quan no quedin imports residuals.
 - Mantenir intactes noms públics, exports necessaris, URLs, plantilles i shapes de payloads AJAX.
 
 ### 3. Consolidar la validació de tancament d’`inscripcions`
-- Deixar smoke d’imports dels mòduls `views_inscripcions_listing`, `views_inscripcions_sorting`, `views_inscripcions_groups`, `views_inscripcions_media` i `inscripcions_views_shared`.
+- Deixar smoke d’imports dels mòduls canònics `views.inscripcions.*`.
 - Deixar smoke de `reverse()/resolve()` de totes les rutes d’`inscripcions`.
 - Deixar render smoke de `inscricpions_list_new.html` validant `200`, plantilla correcta i context mínim esperat.
 - Afegir comprovacions de contracte per payloads AJAX de sorting, groups i media, validant claus i forma pública, no implementació interna.
@@ -235,18 +235,16 @@ Decisió de contracte adoptada per aquest pla:
 - `python manage.py test competicions_trampoli.tests.test_equips_context --keepdb`
 - `python manage.py test competicions_trampoli.tests.test_inscripcions_backend_smoke --keepdb`
 - smoke d’imports, rutes i render d’`inscripcions`
-- cap `views_inscripcions_*` importa `views.py` o `inscripcions_list_new.py`
-- `inscripcions_views_shared.py` no importa `views.py`
-- `views.py` no conté lògica activa d’`inscripcions`
-- `inscripcions_list_new.py` no conté implementació activa del domini
+- cap mòdul actiu d’`inscripcions` depèn de façanes legacy
+- el paquet `views/inscripcions/` conté tota la implementació activa del domini
 
 ## Passos futurs per a un altre agent
 ### 1. Backend de `classificacions`
-- Convertir en reals `views_classificacions_builder`, `views_classificacions_live`, `views_classificacions_templates` i `views_classificacions_export`.
-- Substituir la dependència efectiva de `views_classificacions.py`.
+- Consolidar `views/classificacions/` com a única capa d’entrypoints HTTP.
+- Eliminar dependències residuals de façanes legacy de `classificacions`.
 - Començar a eliminar reexports des de `services_classificacions_2.py` cap a serveis nous estables.
 - Mantenir `validation.py` com a font de veritat per mètriques i `error_details`.
-- Migrar en paral·lel tests i `patch()` que encara apunten a `views_classificacions.py` o `services_classificacions_2.py`.
+- Migrar en paral·lel tests i `patch()` que encara apuntin a compat layers o a `services_classificacions_2.py`.
 
 ### 2. Frontend d’`inscripcions`
 - Un cop el backend estigui verd, consolidar bootstrap JSON de la pantalla en un únic punt coherent.

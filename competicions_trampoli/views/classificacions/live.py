@@ -5,7 +5,7 @@ from django.views.generic import TemplateView
 
 from ...live_cache import get_live_payload_cached
 from ...models import Competicio
-from ...models_judging import PublicLiveToken
+from ...models.judging import PublicLiveToken
 from ...services.classificacions.compute import compute_classificacio
 from ...services.classificacions.live import (
     active_cfg_values,

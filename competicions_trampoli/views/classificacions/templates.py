@@ -9,7 +9,7 @@ from django.views.decorators.http import require_POST
 
 from ...access import user_has_competicio_capability
 from ...models import Competicio
-from ...models_classificacions import ClassificacioConfig, ClassificacioTemplateGlobal
+from ...models.classificacions import ClassificacioConfig, ClassificacioTemplateGlobal
 from ...services.classificacions.runtime import prepare_schema_for_persistence
 from ...services.classificacions.templates_competicio import (
     build_template_save_payload,

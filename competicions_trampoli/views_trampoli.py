@@ -5,9 +5,9 @@ from django.shortcuts import get_object_or_404
 from django.views.generic import TemplateView, UpdateView
 from django.urls import reverse
 from competicions_trampoli.forms import CompeticioAparellForm
-from competicions_trampoli.models_classificacions import ClassificacioConfig
+from competicions_trampoli.models.classificacions import ClassificacioConfig
 from .models import Competicio, Inscripcio
-from .models_trampoli import TrampoliConfiguracio, TrampoliNota, CompeticioAparell, Aparell
+from .models.competicio import Aparell, CompeticioAparell, TrampoliConfiguracio, TrampoliNota
 from django.http import JsonResponse
 from django.views.decorators.http import require_POST
 from django.db import transaction
@@ -21,7 +21,7 @@ from django.shortcuts import redirect
 from competicions_trampoli.forms import CompeticioAparellForm, AparellForm
 from django.views.generic import ListView, CreateView, UpdateView
 from .access import user_has_competicio_capability
-from .models_scoring import ScoringSchema
+from .models.scoring import ScoringSchema
 
 
 

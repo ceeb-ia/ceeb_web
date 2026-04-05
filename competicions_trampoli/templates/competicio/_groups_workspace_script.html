@@ -8,7 +8,7 @@ if (groupsWorkspaceShell && groupsMainCard) {
   const groupsAssignUrl = "{% url 'groups_assign' competicio.id %}";
   const groupsUnassignUrl = "{% url 'groups_unassign' competicio.id %}";
   const groupsDeleteUrl = "{% url 'groups_delete' competicio.id %}";
-  const groupsDeleteAllUrl = "/competicio/{{ competicio.id }}/groups/delete-all/";
+  const groupsDeleteAllUrl = "{% url 'groups_delete_all' competicio.id %}";
   const groupsDeleteEmptyUrl = "{% url 'groups_delete_empty' competicio.id %}";
 
   const state = {

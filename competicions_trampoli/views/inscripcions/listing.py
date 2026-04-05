@@ -10,7 +10,7 @@ from django.views.decorators.http import require_POST
 from ...access import user_has_competicio_capability
 from .base import InscripcionsListView
 from ...models import Competicio, Inscripcio, InscripcioMedia
-from ...models_trampoli import CompeticioAparell, InscripcioAparellExclusio
+from ...models.competicio import CompeticioAparell, InscripcioAparellExclusio
 from ...services.birth_year_ranges import (
     BIRTH_YEAR_RANGE_PARTITION_CODE,
     clear_inscripcions_derived_group_config_cache,

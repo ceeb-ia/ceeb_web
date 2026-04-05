@@ -31,21 +31,21 @@ from ..models import (
     InscripcioEquipAssignacio,
     InscripcioMedia,
 )
-from ..models_judging import (
+from ..models.judging import (
     JudgeConversation,
     JudgeConversationMessage,
     JudgeDeviceToken,
     PublicLiveToken,
 )
-from ..models_classificacions import ClassificacioConfig, ClassificacioTemplateGlobal
-from ..models_rotacions import (
+from ..models.classificacions import ClassificacioConfig, ClassificacioTemplateGlobal
+from ..models.rotacions import (
     RotacioAssignacio,
     RotacioAssignacioGrup,
     RotacioAssignacioSerieEquip,
     RotacioEstacio,
     RotacioFranja,
 )
-from ..models_scoring import (
+from ..models.scoring import (
     ScoringSchema,
     ScoreEntry,
     ScoreEntryVideo,
@@ -57,7 +57,7 @@ from ..models_scoring import (
     TeamScoreEntryVideo,
     TeamScoreEntryVideoEvent,
 )
-from ..models_trampoli import (
+from ..models.competicio import (
     Aparell,
     CompeticioAparell,
     CompeticioAparellEquipContextSource,
@@ -65,9 +65,9 @@ from ..models_trampoli import (
 )
 from ..models import CompeticioMembership
 from ..scoring_engine import ScoringEngine
-from ..inscripcions_views_shared import (
+from ..services.inscripcions.groups import renumber_groups_for_competicio
+from ..services.inscripcions.sorting import (
     _split_custom_sort_tokens,
-    renumber_groups_for_competicio,
     sort_records_by_field_stable,
 )
 from ..services.inscripcions.history import (
@@ -116,7 +116,7 @@ from ..services.team_scoring import (
     runtime_schema_for_comp_aparell,
 )
 from ..services.team_series import safe_deactivate_empty_serie
-from ..views_judge_admin import _member_slot_choices, _validate_permission_row
+from ..views.judge.admin import _member_slot_choices, _validate_permission_row
 from ..templatetags.competicio_extras import (
     DEFAULT_COMPETITION_BACKGROUND,
     get_competicio_background_url_from_request,

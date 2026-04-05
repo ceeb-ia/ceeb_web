@@ -41,7 +41,7 @@ docker compose --profile edge up
 
 ## 3) Observability
 
-- Video endpoints emit structured JSON logs from `views_judge.py`.
+- Video endpoints emit structured JSON logs from `views/judge/video.py`.
 - Logged fields include token, inscription, exercise, apparatus, status and latency.
 
 ## 4) Retention operations

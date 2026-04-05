@@ -6,7 +6,7 @@ from datetime import date, datetime
 from django.db.models import Q
 
 from ...models import Inscripcio
-from ...models_rotacions import RotacioAssignacio
+from ...models.rotacions import RotacioAssignacio
 from ..birth_year_ranges import (
     BIRTH_YEAR_RANGE_PARTITION_CODE,
     birth_year_range_partition_expression,

@@ -6,8 +6,8 @@ from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
 
 from .models import Competicio, Equip, EquipContext, Inscripcio, InscripcioEquipAssignacio
-from .models_scoring import ScoringSchema
-from .models_trampoli import Aparell, CompeticioAparell
+from .models.competicio import Aparell, CompeticioAparell
+from .models.scoring import ScoringSchema
 from .services.competition_groups import get_competicio_groups, group_label
 from .services.equip_contexts import (
     BASE_EQUIP_CONTEXT_DESCRIPTION,
