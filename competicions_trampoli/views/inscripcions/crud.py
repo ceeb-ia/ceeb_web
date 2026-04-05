@@ -1,11 +1,12 @@
 from urllib.parse import parse_qs, urlparse
 
+from django.contrib import messages
 from django.db.models import Max
 from django.shortcuts import get_object_or_404
-from django.urls import reverse
-from django.views.generic import CreateView, DeleteView, UpdateView
+from django.urls import reverse, reverse_lazy
+from django.views.generic import CreateView, DeleteView, FormView, UpdateView
 
-from ...forms import InscripcioForm
+from ...forms import ImportInscripcionsExcelForm, InscripcioForm
 from ...models import Competicio, Inscripcio
 from ...services.competition_groups import (
     compact_competition_order_for_group,
@@ -22,6 +23,7 @@ from ...services.equip_contexts import (
     get_equip_context_payload,
     normalize_equip_context_code,
 )
+from ...services.import_excel import importar_inscripcions_excel
 
 
 class InscripcioFormViewMixin:
@@ -182,10 +184,66 @@ class InscripcioDeleteView(DeleteView):
         sync_competicio_group_names_view(get_object_or_404(Competicio, pk=self.kwargs["pk"]))
         return response
 
+class InscripcionsImportExcelView(FormView):
+    template_name = "competicio/inscripcions_import.html"
+    form_class = ImportInscripcionsExcelForm
+
+    def dispatch(self, request, *args, **kwargs):
+        self.competicio = get_object_or_404(Competicio, pk=kwargs["pk"])
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["competicio"] = self.competicio
+        return ctx
+
+    def form_valid(self, form):
+        fitxer = form.cleaned_data["fitxer"]
+        sheet = form.cleaned_data.get("sheet") or ""
+        result = importar_inscripcions_excel(fitxer, self.competicio, sheet)
+        summary = (
+            f"Full: {result['full']} | Creats: {result['creats']} | "
+            f"Actualitzats: {result['actualitzats']} | Ignorats: {result['ignorats']} | "
+            f"Ambiguos: {result.get('ambiguos', 0)} | Errors: {result.get('errors', 0)}"
+        )
+        if int(result.get("errors", 0) or 0) > 0:
+            messages.warning(self.request, f"Importació parcial amb incidències. {summary}")
+        else:
+            messages.success(self.request, f"Importació OK. {summary}")
+        warnings = result.get("warnings") or []
+        if warnings:
+            parts = []
+            for warning in warnings:
+                code = str(warning.get("code") or "").strip()
+                remapped = str(warning.get("remapped_code") or warning.get("suggested_code") or "").strip()
+                if code and remapped:
+                    parts.append(f"{code} -> {remapped}")
+                elif code:
+                    parts.append(code)
+            if parts:
+                messages.warning(
+                    self.request,
+                    "S'han detectat columnes d'Excel amb noms reservats i s'han remapejat automaticament "
+                    f"({', '.join(parts)}).",
+                )
+        noms_competicio_excel = result.get("noms_competicio_excel") or []
+        if len(noms_competicio_excel) > 1:
+            messages.warning(
+                self.request,
+                "L'Excel conté múltiples noms de competició detectats: "
+                + ", ".join(str(name) for name in noms_competicio_excel),
+            )
+        return super().form_valid(form)
+
+    def get_success_url(self):
+        return reverse_lazy("inscripcions_list", kwargs={"pk": self.competicio.pk})
+
+
 
 __all__ = [
     "InscripcioCreateView",
     "InscripcioDeleteView",
     "InscripcioFormViewMixin",
     "InscripcioUpdateView",
+    "InscripcionsImportExcelView",
 ]

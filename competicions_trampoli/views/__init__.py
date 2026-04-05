@@ -4,7 +4,8 @@ This package re-exports stable entrypoints from the extracted inscripcions
 modules. Runtime routes no longer depend on the old top-level `views.py` file.
 """
 
-from .inscripcions.base import InscripcionsImportExcelView, InscripcionsListView
+from .inscripcions.base import InscripcionsListView
+from .inscripcions.crud import InscripcionsImportExcelView
 from ..services.inscripcions.groups import renumber_groups_for_competicio
 from ..services.inscripcions.history import (
     apply_inscripcions_history_snapshot,

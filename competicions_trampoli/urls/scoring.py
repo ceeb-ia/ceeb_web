@@ -1,24 +1,23 @@
 from django.urls import path
 
 from .base import competition_view
+from ..views.competition.aparatus import (
+    CompeticioAparellCreate,
+    CompeticioAparellDeleteView,
+    CompeticioAparellUpdate,
+    TrampoliAparellList,
+)
+from ..views.competition.legacy import ConfiguracioCompeticio
 from ..views.scoring.media import (
     scoring_judge_video_file,
     scoring_media_context,
     scoring_media_file,
 )
+from ..views.scoring.legacy import TrampoliNotesHome, trampoli_guardar_nota
 from ..views.scoring.notes import ScoringNotesHome
 from ..views.scoring.save import scoring_save, scoring_save_partial
 from ..views.scoring.schema import ScoringSchemaUpdate
 from ..views.scoring.updates import scoring_updates
-from ..views_trampoli import (
-    CompeticioAparellCreate,
-    CompeticioAparellDeleteView,
-    CompeticioAparellUpdate,
-    ConfiguracioCompeticio,
-    TrampoliAparellList,
-    TrampoliNotesHome,
-    trampoli_guardar_nota,
-)
 
 
 urlpatterns = [

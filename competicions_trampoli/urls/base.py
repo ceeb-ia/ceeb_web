@@ -8,20 +8,20 @@ from ..views.classificacions.global_templates import (
     ClassificacioTemplateGlobalList,
     classificacio_template_global_save,
 )
-from ..views.scoring.schema import ScoringSchemaUpdate
-from ..views_competitions import (
+from ..views.competition.aparatus import (
+    AparellCreate,
+    AparellDeleteView,
+    AparellList,
+    AparellUpdate,
+)
+from ..views.competition.competicio import (
     CompeticioCreateView,
     CompeticioDeleteView,
     CompeticioHomeView,
     CompeticioListView,
     notes_home_router,
 )
-from ..views_trampoli import (
-    AparellCreate,
-    AparellDeleteView,
-    AparellList,
-    AparellUpdate,
-)
+from ..views.scoring.schema import ScoringSchemaUpdate
 
 
 def competition_view(view, capability, competicio_kwarg="pk"):

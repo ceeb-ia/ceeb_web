@@ -1,10 +1,10 @@
 from django.urls import path
 
 from .base import competition_view
-from ..views.inscripcions.base import InscripcionsImportExcelView
 from ..views.inscripcions.crud import (
     InscripcioCreateView,
     InscripcioDeleteView,
+    InscripcionsImportExcelView,
     InscripcioUpdateView,
 )
 from ..views.inscripcions.equips import (
