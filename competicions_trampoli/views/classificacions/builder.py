@@ -36,7 +36,7 @@ from ...services.classificacions.validation import (
     DETAIL_DISPLAY_KIND_NONE,
     build_metric_meta_for_comp_aparell,
 )
-from ...services.competition_groups import get_group_maps, group_label
+from ...services.shared.competition_groups import get_group_maps, group_label
 
 
 class ClassificacionsHome(TemplateView):

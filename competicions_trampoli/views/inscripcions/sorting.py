@@ -8,7 +8,7 @@ from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.http import require_POST
 
 from ...models import Competicio, Inscripcio
-from ...services.competition_groups import normalize_positive_int
+from ...services.shared.competition_groups import normalize_positive_int
 from ...services.inscripcions.history import (
     INSCRIPCIONS_HISTORY_DEPTH,
     _history_comp_key,

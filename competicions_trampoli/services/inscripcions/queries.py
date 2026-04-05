@@ -7,15 +7,15 @@ from django.db.models import Q
 
 from ...models import Inscripcio
 from ...models.rotacions import RotacioAssignacio
-from ..birth_year_ranges import (
+from ..shared.birth_year_ranges import (
     BIRTH_YEAR_RANGE_PARTITION_CODE,
     birth_year_range_partition_expression,
     birth_year_range_partition_value,
     get_cached_inscripcions_derived_group_config,
     get_inscripcions_derived_group_config,
 )
-from ..competition_groups import get_group_maps, group_label, normalize_positive_int
-from ..equip_contexts import (
+from ..shared.competition_groups import get_group_maps, group_label, normalize_positive_int
+from ..teams.equip_contexts import (
     NATIVE_EQUIP_CONTEXT_CODE,
     get_contextual_assignment_map,
     resolve_inscripcio_equip,

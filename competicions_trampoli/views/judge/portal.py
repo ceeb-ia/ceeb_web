@@ -9,13 +9,13 @@ from ...models.competicio import InscripcioAparellExclusio
 from ...models.judging import JudgeDeviceToken, PublicLiveToken
 from ...models.rotacions import RotacioAssignacio, RotacioFranja
 from ...models.scoring import ScoreEntryVideo, ScoringSchema
-from ...services.competition_groups import (
+from ...services.shared.competition_groups import (
     get_group_maps,
     get_inscripcio_competition_order,
     group_label,
     show_out_of_program_in_competition_views,
 )
-from ...services.rotacions_ordering import (
+from ...services.rotacions.rotacions_ordering import (
     ORDER_MODE_MAINTAIN,
     assignacio_grups,
     assignacio_series,
@@ -26,15 +26,15 @@ from ...services.rotacions_ordering import (
     order_pairs_for_mode,
     unique_ordered,
 )
-from ...services.scoring_subjects import subject_entry_model
-from ...services.team_scoring import (
+from ...services.scoring.scoring_subjects import subject_entry_model
+from ...services.scoring.team_scoring import (
     build_team_subjects_for_comp_aparell,
     is_team_context_app,
     logical_team_inputs_to_runtime_inputs,
     runtime_schema_for_comp_aparell,
 )
-from ...services.team_series import team_subject_bucket_key, team_subject_bucket_label
-from ...services.team_subject_contract import (
+from ...services.teams.team_series import team_subject_bucket_key, team_subject_bucket_label
+from ...services.scoring.team_subject_contract import (
     build_team_subject_registry,
     runtime_schema_for_team_subjects,
 )

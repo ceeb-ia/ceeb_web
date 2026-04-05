@@ -12,7 +12,7 @@ from ...services.inscripcions.queries import (
     _normalize_schema_extra_code,
     _reserved_inscripcio_codes,
 )
-from ...services.rotacions_ordering import (
+from ...services.rotacions.rotacions_ordering import (
     assignacio_grups,
     assignacio_series,
     normalize_positive_int_list,

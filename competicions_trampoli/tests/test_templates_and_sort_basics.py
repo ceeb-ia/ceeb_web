@@ -90,13 +90,13 @@ from ..services.classificacions.validation import (
     validate_particions_schema as _validate_particions_schema,
     validate_schema_for_competicio as _validate_schema_for_competicio,
 )
-from ..services.classificacio_templates import (
+from ..services.classificacions.classificacio_templates import (
     normalize_particions_schema as _normalize_particions_schema,
     schema_to_template_schema as _schema_to_template_schema,
     template_schema_to_competicio_schema as _template_schema_to_competicio_schema,
 )
 from ..views.classificacions.builder import ClassificacionsHome
-from ..services.competition_groups import (
+from ..services.shared.competition_groups import (
     assign_groups_by_display_num,
     compact_competition_order_for_group,
     ensure_group_for_display_num,
@@ -108,13 +108,13 @@ from ..services.competition_groups import (
     move_inscripcio_to_group,
     next_group_display_num,
 )
-from ..services.team_scoring import (
+from ..services.scoring.team_scoring import (
     build_permission_label,
     build_team_subjects_for_comp_aparell,
     resolve_permission_runtime_entries,
     runtime_schema_for_comp_aparell,
 )
-from ..services.team_series import safe_deactivate_empty_serie
+from ..services.teams.team_series import safe_deactivate_empty_serie
 from ..views.judge.admin import _member_slot_choices, _validate_permission_row
 from ..templatetags.competicio_extras import (
     DEFAULT_COMPETITION_BACKGROUND,

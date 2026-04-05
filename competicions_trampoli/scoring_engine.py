@@ -5,7 +5,7 @@ import ast
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple, Callable, Set
 
-from .services.team_scoring import runtime_schema_for_comp_aparell
+from .services.scoring.team_scoring import runtime_schema_for_comp_aparell
 
 NUM_SALTS_DEFAULT = 11
 

@@ -10,12 +10,12 @@ from ...models import Competicio
 from ...models.competicio import CompeticioAparell
 from ...models.scoring import ScoringSchema
 from ...scoring_engine import ScoringEngine, ScoringError
-from ...services.scoring_subjects import (
+from ...services.scoring.scoring_subjects import (
     get_or_create_subject_entry_locked,
     resolve_scoring_subject,
     serialize_subject_payload,
 )
-from ...services.team_scoring import (
+from ...services.scoring.team_scoring import (
     MEMBER_CODE_SUFFIX_RE,
     eligible_team_ids_for_comp_aparell,
     is_team_context_app,

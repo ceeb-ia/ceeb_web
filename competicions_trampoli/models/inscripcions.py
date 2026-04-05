@@ -56,7 +56,7 @@ class Equip(models.Model):
 
     def save(self, *args, **kwargs):
         if not self.context_id and self.competicio_id:
-            from ..services.equip_contexts import ensure_base_equip_context
+            from ..services.teams.equip_contexts import ensure_base_equip_context
 
             self.context = ensure_base_equip_context(self.competicio)
         super().save(*args, **kwargs)
@@ -188,7 +188,7 @@ class Inscripcio(models.Model):
         if self.grup_competicio_id and self.grup and not group_competicio_explicit:
             display_num = getattr(current_group, "display_num", None)
             if display_num and int(display_num) != int(self.grup):
-                from ..services.competition_groups import ensure_group_for_display_num
+                from ..services.shared.competition_groups import ensure_group_for_display_num
 
                 remapped_group = ensure_group_for_display_num(self.competicio, self.grup)
                 if remapped_group is not None:
@@ -203,7 +203,7 @@ class Inscripcio(models.Model):
                 self.grup = display_num
 
         if self.grup and not self.grup_competicio_id and self.competicio_id:
-            from ..services.competition_groups import ensure_group_for_display_num
+            from ..services.shared.competition_groups import ensure_group_for_display_num
 
             group = ensure_group_for_display_num(self.competicio, self.grup)
             if group is not None:

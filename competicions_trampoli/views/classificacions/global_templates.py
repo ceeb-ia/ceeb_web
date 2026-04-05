@@ -12,7 +12,7 @@ from django.views.generic import ListView, TemplateView
 
 from ...models.classificacions import ClassificacioTemplateGlobal
 from ...models.scoring import ScoringSchema
-from ...services.classificacio_templates import (
+from ...services.classificacions.classificacio_templates import (
     build_global_aparell_field_options,
     build_global_native_particio_fields,
     GLOBAL_FILTER_KEYS,

@@ -1,6 +1,6 @@
 import json
 
-from ..birth_year_ranges import (
+from ..shared.birth_year_ranges import (
     BIRTH_YEAR_RANGE_PARTITION_CODE,
     DEFAULT_BIRTH_YEAR_RANGE_PARTITION_CONFIG,
     legacy_team_age_partition_to_birth_year_range_config,

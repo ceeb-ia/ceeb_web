@@ -369,7 +369,7 @@ def get_inscripcions_derived_group_config(view_cfg):
 
 @lru_cache(maxsize=256)
 def _cached_inscripcions_derived_group_config(competicio_id):
-    from ..models import Competicio
+    from ...models import Competicio
 
     if not competicio_id:
         return normalize_inscripcions_derived_group_config({})

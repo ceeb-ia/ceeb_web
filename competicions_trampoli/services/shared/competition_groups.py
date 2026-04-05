@@ -3,7 +3,7 @@ from collections import OrderedDict, defaultdict
 from django.db import transaction
 from django.db.models import Count, Max
 
-from ..models import GrupCompeticio, Inscripcio
+from ...models import GrupCompeticio, Inscripcio
 
 
 UNASSIGNED_GROUP_KEY = 0
@@ -81,7 +81,7 @@ def get_unassigned_participant_count(competicio) -> int:
 
 
 def get_programmed_group_ids(competicio):
-    from ..models.rotacions import RotacioAssignacioGrup
+    from ...models.rotacions import RotacioAssignacioGrup
 
     return set(
         RotacioAssignacioGrup.objects

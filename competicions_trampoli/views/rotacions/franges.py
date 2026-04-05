@@ -12,8 +12,8 @@ from django.views.decorators.http import require_POST
 from ...models import Competicio
 from ...models.rotacions import RotacioAssignacio, RotacioEstacio, RotacioFranja
 from ...models.scoring import SerieEquip
-from ...services.competition_groups import get_group_maps
-from ...services.rotacions_ordering import set_rotacio_order_mode
+from ...services.shared.competition_groups import get_group_maps
+from ...services.rotacions.rotacions_ordering import set_rotacio_order_mode
 from ._shared import (
     _assignacio_program_keys,
     _split_program_keys,

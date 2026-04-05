@@ -7,13 +7,13 @@ from ...models import Equip, Inscripcio
 from ...models.classificacions import ClassificacioConfig
 from ...models.competicio import CompeticioAparell
 from ...models.scoring import ScoringSchema
-from ...services.classificacio_templates import (
+from .classificacio_templates import (
     json_clone,
     normalize_particions_custom,
     normalize_particions_schema,
 )
-from ...services.classificacions.compute import DEFAULT_SCHEMA
-from ...services.classificacions.filters import (
+from .compute import DEFAULT_SCHEMA
+from .filters import (
     EXERCISE_SELECTION_SCOPE_INHERIT,
     EXERCISE_SELECTION_SCOPE_PER_MEMBER,
     infer_team_mode_from_comp_aparells,
@@ -23,23 +23,23 @@ from ...services.classificacions.filters import (
     normalize_exercise_selection_scope,
     normalize_team_mode,
 )
-from ...services.classificacions.partitions import (
+from .partitions import (
     normalize_particions_v2_entries,
     normalize_schema_legacy_team_birth_partition,
 )
-from ...services.classificacions.validation import (
+from .validation import (
     build_scoreable_meta_for_schema,
     get_team_context_capabilities,
     selected_app_ids_from_schema,
 )
-from ...services.equip_contexts import (
+from ..teams.equip_contexts import (
     NATIVE_EQUIP_CONTEXT_CODE,
     get_equip_context,
     get_equip_context_payload,
     normalize_equip_context_code,
 )
-from ...services.inscripcions.queries import get_allowed_group_fields, get_inscripcio_value
-from ...services.team_scoring import is_team_context_app
+from ..inscripcions.queries import get_allowed_group_fields, get_inscripcio_value
+from ..scoring.team_scoring import is_team_context_app
 
 
 def _particio_value_to_text(raw) -> str:

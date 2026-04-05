@@ -6,8 +6,8 @@ from django.db import IntegrityError
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 
-from ..models import Competicio, Inscripcio
-from ..models.scoring import (
+from ...models import Competicio, Inscripcio
+from ...models.scoring import (
     ScoreEntry,
     ScoreEntryVideo,
     ScoreEntryVideoEvent,
@@ -16,7 +16,7 @@ from ..models.scoring import (
     TeamScoreEntryVideo,
     TeamScoreEntryVideoEvent,
 )
-from ..models.competicio import CompeticioAparell, InscripcioAparellExclusio
+from ...models.competicio import CompeticioAparell, InscripcioAparellExclusio
 from .team_scoring import eligible_team_ids_for_comp_aparell, is_team_context_app
 
 

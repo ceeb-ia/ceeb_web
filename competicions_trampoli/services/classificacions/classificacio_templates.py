@@ -2,23 +2,23 @@ import json
 
 from django.utils.text import slugify
 
-from ..models import Equip, EquipContext
-from .equip_contexts import (
+from ...models import Equip, EquipContext
+from ..teams.equip_contexts import (
     NATIVE_EQUIP_CONTEXT_CODE,
     get_equip_context,
     normalize_equip_context_code,
 )
-from ..models.classificacions import ClassificacioTemplateGlobal
-from ..models.competicio import Aparell, CompeticioAparell
-from ..models.scoring import ScoringSchema
-from .classificacions.compute import DEFAULT_SCHEMA
-from .classificacions.partitions import (
+from ...models.classificacions import ClassificacioTemplateGlobal
+from ...models.competicio import Aparell, CompeticioAparell
+from ...models.scoring import ScoringSchema
+from .compute import DEFAULT_SCHEMA
+from .partitions import (
     BIRTH_YEAR_RANGE_PARTITION_CODE,
     normalize_particions_config,
     normalize_particions_v2_entries,
     particio_codes_from_entries,
 )
-from .birth_year_ranges import validate_birth_year_range_partition_config
+from ..shared.birth_year_ranges import validate_birth_year_range_partition_config
 from .detail_schema_validation import (
     detail_section_key_for_tipus,
     validate_detail_schema,

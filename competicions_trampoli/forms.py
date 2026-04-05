@@ -8,8 +8,8 @@ from django.utils.translation import gettext_lazy as _
 from .models import Competicio, Equip, EquipContext, Inscripcio, InscripcioEquipAssignacio
 from .models.competicio import Aparell, CompeticioAparell
 from .models.scoring import ScoringSchema
-from .services.competition_groups import get_competicio_groups, group_label
-from .services.equip_contexts import (
+from .services.shared.competition_groups import get_competicio_groups, group_label
+from .services.teams.equip_contexts import (
     BASE_EQUIP_CONTEXT_DESCRIPTION,
     BASE_EQUIP_CONTEXT_NAME,
     NATIVE_EQUIP_CONTEXT_CODE,
@@ -18,13 +18,13 @@ from .services.equip_contexts import (
     normalize_equip_context_code,
     resolve_inscripcio_equip,
 )
-from .services.import_excel import (
+from .services.inscripcions.import_excel import (
     _build_value_aliases,
     _canonicalize_text_field,
     _clean_text,
     _norm_text_key,
 )
-from .services.scoring_schema_validation import validate_schema
+from .services.scoring.scoring_schema_validation import validate_schema
 
 
 def _text_sort_key(value):

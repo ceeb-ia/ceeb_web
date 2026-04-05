@@ -5,9 +5,9 @@ from django.urls import reverse
 
 from ...models import InscripcioMedia
 from ...models.scoring import TeamScoreEntryVideo
-from ...services.team_scoring import is_team_context_app, runtime_schema_for_comp_aparell
-from ...services.team_subject_contract import build_team_subject_registry
-from ...services.update_payloads import build_score_update_payload, filter_inputs_for_allowed_codes
+from ...services.scoring.team_scoring import is_team_context_app, runtime_schema_for_comp_aparell
+from ...services.scoring.team_subject_contract import build_team_subject_registry
+from ...services.scoring.update_payloads import build_score_update_payload, filter_inputs_for_allowed_codes
 
 
 def _protected_file_response(file_field, *, original_filename: str = "", mime_type: str = ""):

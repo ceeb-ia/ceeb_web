@@ -13,7 +13,7 @@ from ...models.judging import (
     JudgeConversationMessage,
     JudgeDeviceToken,
 )
-from ...services.incremental_feeds import (
+from ...services.shared.incremental_feeds import (
     FeedCursor,
     apply_single_model_cursor,
     build_single_model_feed_meta,

@@ -2,7 +2,7 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from ..services.scoring_schema_validation import validate_schema
+from ..services.scoring.scoring_schema_validation import validate_schema
 from .base import Competicio
 from .competicio import Aparell, CompeticioAparell
 from .inscripcions import Equip, EquipContext, Inscripcio

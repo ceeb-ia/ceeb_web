@@ -2,7 +2,7 @@ from django.utils import timezone
 from django.utils.text import slugify
 
 from ...models.classificacions import ClassificacioTemplateGlobal
-from ...services.classificacio_templates import (
+from .classificacio_templates import (
     build_template_requirements,
     collect_required_app_codes_from_template,
     extract_template_schema,
@@ -10,12 +10,12 @@ from ...services.classificacio_templates import (
     schema_to_template_schema,
     template_schema_to_competicio_schema,
 )
-from ...services.classificacions.builder import (
+from .builder import (
     autofix_schema_for_competicio,
     build_force_minimal_schema,
     next_cfg_ordre_for_competicio,
 )
-from ...services.classificacions.validation import validate_schema_for_competicio
+from .validation import validate_schema_for_competicio
 
 
 def parse_fallback_mode(raw) -> str:

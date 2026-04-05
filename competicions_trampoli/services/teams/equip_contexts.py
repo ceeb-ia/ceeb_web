@@ -3,7 +3,7 @@ from collections import OrderedDict
 from django.db.models import Count
 from django.utils.text import slugify
 
-from ..models import Competicio, Equip, EquipContext, Inscripcio, InscripcioEquipAssignacio
+from ...models import Competicio, Equip, EquipContext, Inscripcio, InscripcioEquipAssignacio
 
 
 NATIVE_EQUIP_CONTEXT_CODE = "native"

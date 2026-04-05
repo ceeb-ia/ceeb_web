@@ -1,6 +1,6 @@
 """Temporary private bridge for classification display helpers."""
 
-from ..services_classificacions_2 import get_display_columns
+from ..legacy.services_classificacions_2 import get_display_columns
 
 
 __all__ = ["get_display_columns"]

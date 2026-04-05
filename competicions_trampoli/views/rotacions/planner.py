@@ -9,7 +9,7 @@ from django.views.decorators.http import require_POST
 from ...models import Competicio
 from ...models.rotacions import RotacioAssignacio, RotacioEstacio, RotacioFranja
 from ...models.scoring import SerieEquip
-from ...services.competition_groups import (
+from ...services.shared.competition_groups import (
     get_group_maps,
     get_group_participant_counts,
     get_out_of_program_group_ids,
@@ -18,13 +18,13 @@ from ...services.competition_groups import (
     set_show_out_of_program_in_competition_views,
     show_out_of_program_in_competition_views,
 )
-from ...services.rotacions_ordering import (
+from ...services.rotacions.rotacions_ordering import (
     ORDER_MODE_CHOICES,
     ORDER_MODE_LABELS,
     assignacio_series,
     get_rotacions_order_modes,
 )
-from ...services.team_series import get_programmed_series_ids, serie_label
+from ...services.teams.team_series import get_programmed_series_ids, serie_label
 from ._shared import (
     _assignacio_grups,
     _get_export_meta,

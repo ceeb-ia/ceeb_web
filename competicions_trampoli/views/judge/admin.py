@@ -9,7 +9,7 @@ from ...models import Competicio
 from ...models.competicio import CompeticioAparell
 from ...models.judging import JudgeDeviceToken, PublicLiveToken
 from ...models.scoring import ScoringSchema
-from ...services.team_scoring import (
+from ...services.scoring.team_scoring import (
     build_permission_label,
     build_team_subjects_for_comp_aparell,
     is_team_context_app,

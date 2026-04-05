@@ -12,7 +12,7 @@ from django.views.decorators.http import require_POST
 
 from ...models import Competicio, Inscripcio, InscripcioMedia
 from ...services.inscripcions.history import with_inscripcions_history_payload
-from ...services.media_matching import (
+from ...services.inscripcions.media_matching import (
     build_inscripcio_media_match_candidates,
     match_media_files_to_inscripcions,
     normalize_media_matching_config,

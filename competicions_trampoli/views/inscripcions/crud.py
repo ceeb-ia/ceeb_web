@@ -8,14 +8,14 @@ from django.views.generic import CreateView, DeleteView, FormView, UpdateView
 
 from ...forms import ImportInscripcionsExcelForm, InscripcioForm
 from ...models import Competicio, Inscripcio
-from ...services.competition_groups import (
+from ...services.shared.competition_groups import (
     compact_competition_order_for_group,
     ensure_group_for_display_num,
     get_group_for_display_num,
     move_inscripcio_to_group,
     sync_competicio_group_names_view,
 )
-from ...services.equip_contexts import (
+from ...services.teams.equip_contexts import (
     BASE_EQUIP_CONTEXT_DESCRIPTION,
     BASE_EQUIP_CONTEXT_NAME,
     NATIVE_EQUIP_CONTEXT_CODE,
@@ -23,7 +23,7 @@ from ...services.equip_contexts import (
     get_equip_context_payload,
     normalize_equip_context_code,
 )
-from ...services.import_excel import importar_inscripcions_excel
+from ...services.inscripcions.import_excel import importar_inscripcions_excel
 
 
 class InscripcioFormViewMixin:

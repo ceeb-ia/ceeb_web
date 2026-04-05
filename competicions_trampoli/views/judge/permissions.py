@@ -1,4 +1,4 @@
-from ...services.team_scoring import (
+from ...services.scoring.team_scoring import (
     build_permission_label,
     normalize_permission_target,
     resolve_permission_runtime_entries,

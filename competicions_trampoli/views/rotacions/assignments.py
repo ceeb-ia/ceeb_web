@@ -9,7 +9,7 @@ from django.views.decorators.http import require_POST
 from ...models import Competicio
 from ...models.rotacions import RotacioAssignacio, RotacioEstacio, RotacioFranja
 from ...models.scoring import SerieEquip
-from ...services.competition_groups import get_group_maps
+from ...services.shared.competition_groups import get_group_maps
 from ._shared import (
     _normalize_grups,
     _split_program_keys,

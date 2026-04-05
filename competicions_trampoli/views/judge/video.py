@@ -10,15 +10,15 @@ from django.views.decorators.http import require_POST, require_http_methods
 from ...models import Inscripcio
 from ...models.judging import JudgeDeviceToken
 from ...models.scoring import ScoreEntryVideo, ScoreEntryVideoEvent, TeamCompetitiveSubject
-from ...services.scoring_subjects import (
+from ...services.scoring.scoring_subjects import (
     get_or_create_subject_entry_locked,
     resolve_scoring_subject,
     serialize_subject_payload,
     subject_entry_model,
     subject_video_models,
 )
-from ...services.team_scoring import build_team_subjects_for_comp_aparell, is_team_context_app
-from ...services.team_subject_contract import build_team_subject_registry
+from ...services.scoring.team_scoring import build_team_subjects_for_comp_aparell, is_team_context_app
+from ...services.scoring.team_subject_contract import build_team_subject_registry
 from ._shared import (
     VideoValidationError,
     _clamp_exercici_for_aparell,

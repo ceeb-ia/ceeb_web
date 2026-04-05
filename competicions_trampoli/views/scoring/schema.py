@@ -14,14 +14,14 @@ from ...models import Competicio
 from ...models.competicio import Aparell, CompeticioAparell
 from ...models.scoring import ScoringSchema
 from ...scoring_engine import ScoringEngine, ScoringError
-from ...services.scoring_subjects import subject_entry_model
-from ...services.team_scoring import (
+from ...services.scoring.scoring_subjects import subject_entry_model
+from ...services.scoring.team_scoring import (
     is_team_context_app,
     logical_team_inputs_to_runtime_inputs,
     runtime_inputs_to_logical_team_inputs,
     runtime_schema_for_comp_aparell,
 )
-from ...services.team_subject_contract import build_team_subject_registry, runtime_schema_for_team_subjects
+from ...services.scoring.team_subject_contract import build_team_subject_registry, runtime_schema_for_team_subjects
 from .helpers import (
     _allowed_input_codes_for_schema,
     _logical_team_input_codes,

@@ -5,8 +5,8 @@ from django.views.decorators.http import require_GET
 from ...models import Competicio, Inscripcio, InscripcioMedia
 from ...models.competicio import CompeticioAparell
 from ...models.scoring import ScoreEntry, ScoreEntryVideo, TeamScoreEntry, TeamScoreEntryVideo
-from ...services.scoring_subjects import resolve_scoring_subject, serialize_subject_payload
-from ...services.team_scoring import is_team_context_app
+from ...services.scoring.scoring_subjects import resolve_scoring_subject, serialize_subject_payload
+from ...services.scoring.team_scoring import is_team_context_app
 from .helpers import (
     _eligible_team_subject_map,
     _parse_positive_int,

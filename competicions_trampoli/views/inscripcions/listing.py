@@ -11,15 +11,15 @@ from ...access import user_has_competicio_capability
 from .base import InscripcionsListView
 from ...models import Competicio, Inscripcio, InscripcioMedia
 from ...models.competicio import CompeticioAparell, InscripcioAparellExclusio
-from ...services.birth_year_ranges import (
+from ...services.shared.birth_year_ranges import (
     BIRTH_YEAR_RANGE_PARTITION_CODE,
     clear_inscripcions_derived_group_config_cache,
     get_inscripcions_derived_group_config,
     normalize_birth_year_range_partition_config_for_inscripcions,
     validate_birth_year_range_partition_config,
 )
-from ...services.competition_groups import get_group_for_display_num, get_group_maps, sync_competicio_group_names_view
-from ...services.equip_contexts import (
+from ...services.shared.competition_groups import get_group_for_display_num, get_group_maps, sync_competicio_group_names_view
+from ...services.teams.equip_contexts import (
     NATIVE_EQUIP_CONTEXT_CODE,
     get_equip_context_payload,
     get_equip_context_summary,
@@ -48,7 +48,7 @@ from ...services.inscripcions.queries import (
     get_request_inscripcio_filters,
     reconcile_inscripcions_sort_context_state,
 )
-from ...services.media_matching import normalize_media_matching_config
+from ...services.inscripcions.media_matching import normalize_media_matching_config
 
 
 BUILTIN_TABLE_FIELDS = [

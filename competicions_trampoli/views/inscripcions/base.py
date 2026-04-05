@@ -17,7 +17,7 @@ from openpyxl.utils import get_column_letter
 
 from ...forms import ImportInscripcionsExcelForm
 from ...models import Competicio, GrupCompeticio, Inscripcio
-from ...services.competition_groups import (
+from ...services.shared.competition_groups import (
     ensure_group_for_display_num,
     get_group_for_display_num,
     get_group_maps,
@@ -26,7 +26,7 @@ from ...services.competition_groups import (
     normalize_positive_int,
     sync_competicio_group_names_view,
 )
-from ...services.import_excel import importar_inscripcions_excel
+from ...services.inscripcions.import_excel import importar_inscripcions_excel
 from ...services.inscripcions.export import (
     LEGACY_EXCEL_COL_MAP,
     get_available_excel_columns,

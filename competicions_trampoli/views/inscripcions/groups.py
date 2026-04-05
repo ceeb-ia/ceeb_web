@@ -10,7 +10,7 @@ from django.views.decorators.http import require_POST
 
 from ...access import user_has_competicio_capability
 from ...models import Competicio, GrupCompeticio, Inscripcio
-from ...services.competition_groups import (
+from ...services.shared.competition_groups import (
     clear_inscripcions_group,
     compact_competition_order_for_group,
     ensure_group_for_display_num,

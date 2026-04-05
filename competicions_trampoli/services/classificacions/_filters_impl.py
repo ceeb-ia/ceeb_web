@@ -1,8 +1,8 @@
 from datetime import date
 
-from ..birth_year_ranges import BIRTH_YEAR_RANGE_PARTITION_CODE
-from ..equip_contexts import NATIVE_EQUIP_CONTEXT_CODE, normalize_equip_context_code
-from ..team_scoring import is_team_context_app
+from ..shared.birth_year_ranges import BIRTH_YEAR_RANGE_PARTITION_CODE
+from ..teams.equip_contexts import NATIVE_EQUIP_CONTEXT_CODE, normalize_equip_context_code
+from ..scoring.team_scoring import is_team_context_app
 
 
 EXERCISE_SELECTION_SCOPE_PER_MEMBER = "per_member"

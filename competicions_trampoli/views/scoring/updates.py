@@ -6,9 +6,9 @@ from django.views.decorators.http import require_GET
 from ...models import Competicio
 from ...models.competicio import CompeticioAparell, InscripcioAparellExclusio
 from ...models.scoring import ScoreEntry, ScoringSchema, TeamScoreEntry
-from ...services.incremental_feeds import FeedCursor, parse_feed_cursor
-from ...services.team_scoring import is_team_context_app
-from ...services.team_subject_contract import build_team_subject_registry, filter_team_subject_ids_for_serie
+from ...services.shared.incremental_feeds import FeedCursor, parse_feed_cursor
+from ...services.scoring.team_scoring import is_team_context_app
+from ...services.scoring.team_subject_contract import build_team_subject_registry, filter_team_subject_ids_for_serie
 from .helpers import (
     _allowed_input_codes_for_schema,
     _logical_team_input_codes,

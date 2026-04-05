@@ -9,12 +9,12 @@ from django.apps import apps
 from django.db import transaction
 from django.db.models import Max
 
-from ..models import Competicio, Inscripcio
-from ..models.competicio import CompeticioAparell
-from ..models.rotacions import RotacioAssignacioSerieEquip
+from ...models import Competicio, Inscripcio
+from ...models.competicio import CompeticioAparell
+from ...models.rotacions import RotacioAssignacioSerieEquip
 
 if TYPE_CHECKING:
-    from ..models.scoring import SerieEquip, SerieEquipItem, TeamCompetitiveSubject
+    from ...models.scoring import SerieEquip, SerieEquipItem, TeamCompetitiveSubject
 
 
 UNASSIGNED_SERIE_KEY = "series-unassigned"
@@ -520,7 +520,7 @@ def summarize_subject_selection(
     comp_aparell: CompeticioAparell,
     subject_ids: Iterable[int],
 ) -> Dict[str, object]:
-    from .team_scoring import build_team_subjects_for_comp_aparell
+    from ..scoring.team_scoring import build_team_subjects_for_comp_aparell
 
     team_subject_model = _team_subject_model()
     clean_ids = normalize_subject_ids(subject_ids)

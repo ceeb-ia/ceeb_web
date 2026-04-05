@@ -7,23 +7,23 @@ from decimal import Decimal
 from types import SimpleNamespace
 from django.db import models
 from django.utils import timezone
-from ..models import Inscripcio
-from .birth_year_ranges import (
+from ...models import Inscripcio
+from ..shared.birth_year_ranges import (
     BIRTH_YEAR_RANGE_PARTITION_CODE,
     DEFAULT_BIRTH_YEAR_RANGE_PARTITION_CONFIG,
     birth_year_range_partition_value,
     legacy_team_age_partition_to_birth_year_range_config,
     normalize_birth_year_range_partition_config,
 )
-from .equip_contexts import (
+from ..teams.equip_contexts import (
     NATIVE_EQUIP_CONTEXT_CODE,
     get_contextual_assignment_map,
     normalize_equip_context_code,
     resolve_inscripcio_equip,
 )
-from ..models.competicio import CompeticioAparell
-from ..models.scoring import ScoreEntry, TeamScoreEntry
-from .team_scoring import is_team_context_app
+from ...models.competicio import CompeticioAparell
+from ...models.scoring import ScoreEntry, TeamScoreEntry
+from ..scoring.team_scoring import is_team_context_app
 
 logger = logging.getLogger(__name__)
 

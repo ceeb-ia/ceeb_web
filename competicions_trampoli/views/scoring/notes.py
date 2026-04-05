@@ -7,14 +7,14 @@ from ...models import Competicio, Inscripcio, InscripcioMedia
 from ...models.competicio import CompeticioAparell, InscripcioAparellExclusio
 from ...models.rotacions import RotacioAssignacio, RotacioAssignacioSerieEquip, RotacioFranja
 from ...models.scoring import ScoreEntry, ScoreEntryVideo, ScoringSchema, TeamScoreEntry, TeamScoreEntryVideo
-from ...services.competition_groups import (
+from ...services.shared.competition_groups import (
     get_group_maps,
     get_inscripcio_competition_order,
     get_inscripcio_group_display_num,
     group_label,
     show_out_of_program_in_competition_views,
 )
-from ...services.rotacions_ordering import (
+from ...services.rotacions.rotacions_ordering import (
     ORDER_MODE_MAINTAIN,
     assignacio_grups,
     assignacio_series,
@@ -25,10 +25,10 @@ from ...services.rotacions_ordering import (
     order_pairs_for_mode,
     unique_ordered,
 )
-from ...services.scoring_subjects import score_store_key
-from ...services.team_scoring import is_team_context_app, runtime_schema_for_comp_aparell
-from ...services.team_series import team_subject_bucket_key, team_subject_bucket_label
-from ...services.team_subject_contract import build_team_subject_registry, runtime_schema_for_team_subjects
+from ...services.scoring.scoring_subjects import score_store_key
+from ...services.scoring.team_scoring import is_team_context_app, runtime_schema_for_comp_aparell
+from ...services.teams.team_series import team_subject_bucket_key, team_subject_bucket_label
+from ...services.scoring.team_subject_contract import build_team_subject_registry, runtime_schema_for_team_subjects
 from .helpers import (
     _allowed_input_codes_for_schema,
     _bucket_app_id,

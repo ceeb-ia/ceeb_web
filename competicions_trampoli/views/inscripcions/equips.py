@@ -30,7 +30,7 @@ from django.views.decorators.http import require_POST
 from ...live_cache import mark_live_dirty
 from ...models import Competicio, Equip, EquipContext, Inscripcio, InscripcioEquipAssignacio
 from ...models.competicio import CompeticioAparell, CompeticioAparellEquipContextSource
-from ...services.equip_contexts import (
+from ...services.teams.equip_contexts import (
     NATIVE_EQUIP_CONTEXT_CODE,
     build_unique_equip_context_code,
     get_contextual_assignment_map,

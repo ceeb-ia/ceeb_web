@@ -7,7 +7,7 @@ from typing import Optional, Dict, Any, Set, Tuple, List
 
 from openpyxl import load_workbook
 
-from ..models import Inscripcio, Competicio
+from ...models import Inscripcio, Competicio
 
 
 def _reserved_inscripcio_codes() -> Set[str]:

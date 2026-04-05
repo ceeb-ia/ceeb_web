@@ -3,23 +3,23 @@ import re
 
 from ...models.competicio import CompeticioAparell, CompeticioAparellEquipContextSource
 from ...models.scoring import ScoringSchema
-from ..birth_year_ranges import validate_birth_year_range_partition_config
-from ..classificacio_templates import (
+from ..shared.birth_year_ranges import validate_birth_year_range_partition_config
+from .classificacio_templates import (
     json_clone,
     normalize_particions_custom,
     normalize_particions_schema,
     split_particio_custom_values,
 )
-from ..detail_schema_validation import (
+from .detail_schema_validation import (
     build_validation_detail,
     detail_section_key_for_tipus,
     legacy_validation_error_details,
     validate_detail_schema,
     validation_details_to_messages,
 )
-from ..equip_contexts import get_equip_context, normalize_equip_context_code
+from ..teams.equip_contexts import get_equip_context, normalize_equip_context_code
 from ..inscripcions.queries import get_allowed_group_fields
-from ..scoring_schema_validation import (
+from ..scoring.scoring_schema_validation import (
     ALLOWED_FUNCTIONS,
     RESERVED_NAMES,
     DryRunEval,
@@ -32,7 +32,7 @@ from ..scoring_schema_validation import (
     _resolve_name,
     _topo_sort,
 )
-from ..team_scoring import (
+from ..scoring.team_scoring import (
     KIND_MEMBER_LIST,
     KIND_MEMBER_MATRIX,
     KIND_MEMBER_SCALAR,

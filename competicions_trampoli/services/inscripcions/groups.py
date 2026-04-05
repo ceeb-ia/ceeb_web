@@ -10,7 +10,7 @@ from collections import defaultdict
 from django.db import transaction
 
 from ...models import GrupCompeticio, Inscripcio
-from ..competition_groups import (
+from ..shared.competition_groups import (
     ensure_group_for_display_num,
     get_group_maps,
     get_programmed_group_ids,

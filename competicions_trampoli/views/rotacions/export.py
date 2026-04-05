@@ -19,13 +19,13 @@ from ...models import Competicio, Inscripcio
 from ...models.competicio import CompeticioAparell, InscripcioAparellExclusio
 from ...models.rotacions import RotacioAssignacio, RotacioEstacio, RotacioFranja
 from ...models.scoring import SerieEquip
-from ...services.competition_groups import (
+from ...services.shared.competition_groups import (
     get_group_maps,
     get_inscripcio_competition_order,
     get_inscripcio_group_display_num,
     group_label,
 )
-from ...services.rotacions_ordering import (
+from ...services.rotacions.rotacions_ordering import (
     ORDER_MODE_MAINTAIN,
     build_group_rotation_step_map,
     build_series_rotation_step_map,
@@ -34,8 +34,8 @@ from ...services.rotacions_ordering import (
     order_pairs_for_mode,
     unique_ordered,
 )
-from ...services.team_scoring import build_team_subjects_for_comp_aparell, is_team_context_app
-from ...services.team_series import serie_label
+from ...services.scoring.team_scoring import build_team_subjects_for_comp_aparell, is_team_context_app
+from ...services.teams.team_series import serie_label
 from ._shared import (
     _assignacio_program_keys,
     _export_meta_defaults,

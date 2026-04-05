@@ -5,18 +5,18 @@ from django.views.decorators.http import require_http_methods
 from ...models.competicio import InscripcioAparellExclusio
 from ...models.judging import JudgeDeviceToken
 from ...models.scoring import ScoreEntry, ScoringSchema, TeamScoreEntry
-from ...services.incremental_feeds import (
+from ...services.shared.incremental_feeds import (
     apply_single_model_cursor,
     build_single_model_feed_meta,
     parse_feed_cursor,
 )
-from ...services.rotacions_ordering import unique_ordered
-from ...services.team_scoring import is_team_context_app, logical_team_inputs_to_runtime_inputs
-from ...services.team_subject_contract import (
+from ...services.rotacions.rotacions_ordering import unique_ordered
+from ...services.scoring.team_scoring import is_team_context_app, logical_team_inputs_to_runtime_inputs
+from ...services.scoring.team_subject_contract import (
     build_team_subject_registry,
     filter_team_subject_ids_for_serie,
 )
-from ...services.update_payloads import build_score_update_payload
+from ...services.scoring.update_payloads import build_score_update_payload
 from ._shared import _clamp_exercici_for_aparell, _filter_inputs_for_allowed_codes
 from .permissions import (
     _allowed_input_codes_from_permissions,

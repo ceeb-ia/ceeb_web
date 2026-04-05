@@ -10,12 +10,12 @@ from ...models.competicio import CompeticioAparell
 from ...models.judging import JudgeDeviceToken
 from ...models.scoring import ScoringSchema
 from ...scoring_engine import ScoringEngine, ScoringError
-from ...services.scoring_subjects import (
+from ...services.scoring.scoring_subjects import (
     get_or_create_subject_entry_locked,
     resolve_scoring_subject,
     serialize_subject_payload,
 )
-from ...services.team_scoring import (
+from ...services.scoring.team_scoring import (
     build_team_subjects_for_comp_aparell,
     is_team_context_app,
     logical_team_inputs_to_runtime_inputs,

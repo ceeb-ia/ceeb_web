@@ -12,8 +12,8 @@ from django.http import FileResponse, Http404, HttpResponse
 from django.urls import reverse
 
 from ...models.scoring import ScoreEntryVideo
-from ...services.scoring_subjects import serialize_subject_payload, subject_video_models
-from ...services.update_payloads import (
+from ...services.scoring.scoring_subjects import serialize_subject_payload, subject_video_models
+from ...services.scoring.update_payloads import (
     filter_inputs_for_allowed_codes as shared_filter_inputs_for_allowed_codes,
 )
 

@@ -8,14 +8,14 @@ from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Tuple
 from django.apps import apps
 from django.db import transaction
 
-from ..models import Equip, Inscripcio, InscripcioEquipAssignacio
-from ..models.competicio import (
+from ...models import Equip, Inscripcio, InscripcioEquipAssignacio
+from ...models.competicio import (
     Aparell,
     CompeticioAparell,
     CompeticioAparellEquipContextSource,
     InscripcioAparellExclusio,
 )
-from .team_series import enrich_team_subjects_with_series
+from ..teams.team_series import enrich_team_subjects_with_series
 
 
 def _team_subject_model():
@@ -500,7 +500,7 @@ def _subject_label(equip: Equip, context_name: str, members: List[Inscripcio]) -
 
 
 def _expected_team_size_for_comp_aparell(comp_aparell: Optional[CompeticioAparell]) -> int:
-    from ..models.scoring import ScoringSchema
+    from ...models.scoring import ScoringSchema
 
     def _infer_from_context_sources() -> int:
         source_rows = list(

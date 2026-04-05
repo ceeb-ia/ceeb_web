@@ -3,7 +3,7 @@ from django.core.management.base import BaseCommand
 from ...models import Competicio, Equip, EquipContext, InscripcioEquipAssignacio
 from ...models.classificacions import ClassificacioConfig
 from ...models.scoring import TeamCompetitiveSubject
-from ...services.equip_contexts import NATIVE_EQUIP_CONTEXT_CODE
+from ...services.teams.equip_contexts import NATIVE_EQUIP_CONTEXT_CODE
 
 
 class Command(BaseCommand):
