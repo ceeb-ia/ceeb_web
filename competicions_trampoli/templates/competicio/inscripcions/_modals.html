@@ -1,0 +1,75 @@
+<div class="inscripcions-backdrop" id="inscripcions-drawer-backdrop" aria-hidden="true"></div>
+<div class="group-buckets-backdrop" id="group-buckets-backdrop" aria-hidden="true"></div>
+
+<div class="group-buckets-modal" id="group-buckets-modal" aria-hidden="true">
+  <div class="group-buckets-modal-head">
+    <div>
+      <p class="group-buckets-modal-title mb-0" id="group-buckets-modal-title">Vista ampliada</p>
+      <p class="group-buckets-modal-subtitle" id="group-buckets-modal-subtitle">Treballa amb el bloc seleccionat en una vista ampla.</p>
+    </div>
+    <button type="button" class="btn btn-sm btn-outline-secondary" id="group-buckets-modal-close">Tancar</button>
+  </div>
+  <div class="group-buckets-modal-body" id="group-buckets-modal-body"></div>
+</div>
+
+<div class="custom-sort-modal-backdrop" id="custom-sort-modal-backdrop" aria-hidden="true"></div>
+
+<div class="custom-sort-modal" id="custom-sort-modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="custom-sort-modal-title" tabindex="-1">
+  <div class="custom-sort-modal-head">
+    <div>
+      <p class="custom-sort-modal-title mb-0" id="custom-sort-modal-title">Ordre custom</p>
+      <p class="custom-sort-modal-subtitle" id="custom-sort-modal-subtitle">Reordena els valors detectats i desa l'ordre per al context actual.</p>
+    </div>
+    <button type="button" class="btn btn-sm btn-outline-secondary" id="custom-sort-modal-close">Tancar</button>
+  </div>
+  <div class="custom-sort-modal-body">
+    <div class="custom-sort-modal-panel">
+      <div class="custom-sort-modal-toolbar">
+        <div>
+          <div class="custom-sort-modal-toolbar-title">Arrossega per reordenar</div>
+          <p class="custom-sort-modal-toolbar-copy mb-0">Aquest ordre es desa per aquesta columna amb els filtres i divisions actuals.</p>
+        </div>
+      </div>
+      <div class="small text-muted" id="custom-sort-modal-status">Sense dades carregades.</div>
+      <div class="custom-sort-modal-list-wrap">
+        <div id="custom-sort-modal-list" class="custom-sort-modal-list d-flex flex-column" style="gap:8px;"></div>
+      </div>
+      <div class="custom-sort-modal-foot">
+        <div class="small text-muted" id="custom-sort-modal-footnote">Arrossega per canviar l'ordre i desa quan el resultat sigui correcte.</div>
+        <div class="custom-sort-modal-actions d-flex" style="gap:8px;">
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-custom-sort-reset">Reset</button>
+          <button type="button" class="btn btn-sm btn-primary" id="btn-custom-sort-save">Desar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="group-competition-modal-backdrop" id="group-competition-modal-backdrop" aria-hidden="true"></div>
+
+<div class="group-competition-modal d-none" id="group-competition-modal" aria-hidden="true">
+  <div class="group-competition-modal-head d-flex justify-content-between align-items-start" style="gap:12px;">
+    <div>
+      <h3 class="mb-1" id="group-competition-modal-title">Ordre de competicio del grup</h3>
+      <div class="small text-muted" id="group-competition-modal-subtitle">Consulta i ajusta l'ordre desat del grup seleccionat.</div>
+    </div>
+    <button type="button" class="btn btn-sm btn-outline-secondary" id="group-competition-modal-close">Tancar</button>
+  </div>
+
+  <div class="group-competition-modal-status px-3 py-2">
+    <div class="small text-muted" id="group-competition-modal-count">Sense dades carregades.</div>
+    <div class="small text-warning d-none mt-1" id="group-competition-modal-warning"></div>
+  </div>
+
+  <div class="group-competition-modal-list-wrap p-3">
+    <div id="group-competition-modal-list" class="group-competition-modal-list d-flex flex-column" style="gap:8px;"></div>
+  </div>
+
+  <div class="group-competition-modal-foot d-flex justify-content-between align-items-center p-3" style="gap:12px;">
+    <div class="small text-muted" id="group-competition-modal-footnote">El canvi d'ordre es desa sobre l'ordre de competicio real del grup.</div>
+    <div class="group-competition-modal-actions d-flex" style="gap:8px;">
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="group-competition-modal-cancel">Cancelar</button>
+      <button type="button" class="btn btn-sm btn-primary" id="group-competition-modal-save">Desar ordre</button>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,876 @@
+<script>
+(function () {
+  'use strict';
+
+  const root = document.getElementById('inscripcions-page-shell') || document.getElementById('inscripcions-page');
+  if (!root) return;
+
+  function parseJsonScript(id, fallback) {
+    const el = document.getElementById(id);
+    if (!el) return fallback;
+    try {
+      return JSON.parse(el.textContent || 'null');
+    } catch (_err) {
+      return fallback;
+    }
+  }
+
+  const boot = parseJsonScript('inscripcions-page-boot-data', {}) || {};
+
+  function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+      const cookies = document.cookie.split(';');
+      for (const rawCookie of cookies) {
+        const cookie = rawCookie.trim();
+        if (cookie.substring(0, name.length + 1) === `${name}=`) {
+          cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+          break;
+        }
+      }
+    }
+    return cookieValue;
+  }
+
+  function csrfToken() {
+    return getCookie('csrftoken');
+  }
+
+  const app = {
+    competicioId: String(boot?.ids?.competicioId || root.dataset.competicioId || '').trim(),
+    canEdit: !!(boot?.flags?.canEdit || String(root.dataset.canEdit || '').trim() === '1'),
+    sortContextKey: String(boot?.flags?.sortContextKey || '').trim(),
+    urls: Object.assign({}, boot?.urls || {}),
+    initial: Object.assign({}, boot?.initial || {}),
+    selection: new Set(),
+    historyState: {},
+  };
+
+  const UI_STATE_MAX_AGE_MS = 45 * 60 * 1000;
+  let uiStateRestoring = false;
+  const expandedModalState = {
+    cardId: '',
+    parent: null,
+    nextSibling: null,
+  };
+  const previousShowAlert = typeof window.showAlert === 'function' ? window.showAlert.bind(window) : null;
+  const previousShowConfirm = typeof window.showConfirm === 'function' ? window.showConfirm.bind(window) : null;
+  const previousShowPrompt = typeof window.showPrompt === 'function' ? window.showPrompt.bind(window) : null;
+
+  function hasTabs() {
+    return !!document.getElementById('tabs-root');
+  }
+
+  function showAlert(message) {
+    if (previousShowAlert) return previousShowAlert(String(message || "S'ha produit un error."));
+    window.alert(String(message || "S'ha produit un error."));
+  }
+
+  function showConfirm(message) {
+    if (previousShowConfirm) return previousShowConfirm(String(message || 'Confirmar?'));
+    return Promise.resolve(window.confirm(String(message || 'Confirmar?')));
+  }
+
+  function showPrompt(message, defaultValue) {
+    if (previousShowPrompt) return previousShowPrompt(String(message || ''), String(defaultValue || ''));
+    return Promise.resolve(window.prompt(String(message || ''), String(defaultValue || '')));
+  }
+
+  function debounce(fn, wait) {
+    let timer = null;
+    return (...args) => {
+      clearTimeout(timer);
+      timer = window.setTimeout(() => fn(...args), wait || 250);
+    };
+  }
+
+  async function getJson(url, options = {}) {
+    const response = await fetch(url, {
+      method: options.method || 'GET',
+      headers: {
+        'X-Requested-With': 'XMLHttpRequest',
+        ...(options.headers || {}),
+      },
+      credentials: 'same-origin',
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || `HTTP ${response.status}`);
+    }
+    return response.json();
+  }
+
+  async function postJson(url, payload = {}) {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': csrfToken(),
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+      credentials: 'same-origin',
+      body: JSON.stringify(payload || {}),
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || `HTTP ${response.status}`);
+    }
+    const data = await response.json();
+    if (data && typeof data === 'object' && data.history) {
+      applyHistoryState(data.history);
+    }
+    return data;
+  }
+
+  function getCurrentUrl() {
+    return new URL(window.location.href);
+  }
+
+  function getCurrentInscripcioFilters() {
+    const url = getCurrentUrl();
+    const params = url.searchParams;
+    const filters = {
+      q: (params.get('q') || '').trim(),
+      categoria: (params.get('categoria') || '').trim(),
+      subcategoria: (params.get('subcategoria') || '').trim(),
+      entitat: (params.get('entitat') || '').trim(),
+      column_filters: {},
+    };
+
+    for (const [key, value] of params.entries()) {
+      let code = '';
+      if (key.startsWith('cf__')) code = key.slice(4).trim();
+      else if (key.startsWith('cf_')) code = key.slice(3).trim();
+      if (!code) continue;
+      const items = String(value || '')
+        .split('|')
+        .map((v) => v.trim())
+        .filter(Boolean);
+      if (items.length) filters.column_filters[code] = items;
+    }
+    return filters;
+  }
+
+  function getCurrentGroupBy() {
+    const url = getCurrentUrl();
+    const direct = url.searchParams.getAll('group_by').map((v) => v.trim()).filter(Boolean);
+    if (direct.length) return direct;
+    return Array
+      .from(document.querySelectorAll('.js-group-by-field:checked'))
+      .map((el) => String(el.value || '').trim())
+      .filter(Boolean);
+  }
+
+  function getCurrentGroupByCodes() {
+    return getCurrentGroupBy();
+  }
+
+  function getSelectedTeamContextCode() {
+    return (
+      document.getElementById('team-workspace-context-select')?.value ||
+      document.getElementById('team-context-select')?.value ||
+      document.getElementById('team-compact-context')?.value ||
+      String(boot?.flags?.teamContextSelectedCode || 'native')
+    ).trim() || 'native';
+  }
+
+  function getSelectedTeamFields() {
+    return Array
+      .from(document.querySelectorAll('.js-team-field:checked'))
+      .map((el) => String(el.value || '').trim())
+      .filter(Boolean);
+  }
+
+  function getActiveTabKey() {
+    const activeLink = document.querySelector('#tabs-root a.nav-link.active');
+    const li = activeLink ? activeLink.closest('li.nav-item') : null;
+    return li ? String(li.getAttribute('data-group-key') || '').trim() : '';
+  }
+
+  function getUiStateKey() {
+    return `inscripcions_ui_state:${app.competicioId}:${window.location.pathname}`;
+  }
+
+  function getInscripcionsPageShell() {
+    return root;
+  }
+
+  function getActionsDrawerInner() {
+    return document.querySelector('.actions-shell-inner');
+  }
+
+  function isActionsDrawerOpen() {
+    return root.classList.contains('is-drawer-open');
+  }
+
+  function getActionsDrawerScrollTop() {
+    return getActionsDrawerInner()?.scrollTop || 0;
+  }
+
+  function resolvePanelAlias(panelKey) {
+    const key = String(panelKey || '').trim();
+    const aliases = {
+      teams: 'equips',
+      team: 'equips',
+      groups: 'grups',
+      group: 'grups',
+      series: 'series-equips',
+      sorting: 'altres',
+      columns: 'columnes',
+      grouping: 'agrupacio',
+    };
+    return aliases[key] || key;
+  }
+
+  function getPanelSections() {
+    return Array.from(document.querySelectorAll('[data-panel-key]'));
+  }
+
+  function getActiveActionsPanelKey() {
+    const activeBtn = document.querySelector('.actions-nav-btn.is-active');
+    if (activeBtn) {
+      return resolvePanelAlias(activeBtn.getAttribute('data-panel-target') || activeBtn.dataset.panel || '');
+    }
+    const activePanel = getPanelSections().find((panel) => !panel.classList.contains('d-none') && !panel.hidden);
+    return activePanel ? resolvePanelAlias(activePanel.getAttribute('data-panel-key')) : '';
+  }
+
+  function setActiveActionsPanel(panelKey, options = {}) {
+    const resolved = resolvePanelAlias(panelKey);
+    if (!resolved) return;
+
+    document.querySelectorAll('.actions-nav-btn').forEach((btn) => {
+      const btnPanel = resolvePanelAlias(btn.getAttribute('data-panel-target') || btn.dataset.panel || '');
+      btn.classList.toggle('is-active', btnPanel === resolved);
+    });
+
+    getPanelSections().forEach((panel) => {
+      const panelValue = resolvePanelAlias(panel.getAttribute('data-panel-key'));
+      const active = panelValue === resolved;
+      panel.classList.toggle('is-active', active);
+      panel.classList.toggle('d-none', !active);
+      panel.hidden = !active;
+    });
+
+    if (!options.skipSave) saveUiState();
+  }
+
+  function activatePanel(panelKey) {
+    setActiveActionsPanel(panelKey);
+  }
+
+  function openPanel(panelKey) {
+    const resolved = resolvePanelAlias(panelKey);
+    if (!resolved) return;
+    setActiveActionsPanel(resolved, { skipSave: true });
+    setActionsDrawerOpen(true, { skipSave: true });
+    saveUiState();
+  }
+
+  function ensureExpandedGroupModalRoot() {
+    const backdrop = document.getElementById('group-buckets-backdrop');
+    const modal = document.getElementById('group-buckets-modal');
+    if (backdrop && backdrop.parentNode !== document.body) document.body.appendChild(backdrop);
+    if (modal && modal.parentNode !== document.body) document.body.appendChild(modal);
+  }
+
+  function getExpandedGroupCardId() {
+    const modal = document.getElementById('group-buckets-modal');
+    return modal ? String(modal.getAttribute('data-active-card-id') || '') : '';
+  }
+
+  function refreshExpandButtons() {
+    const expandedCardId = getExpandedGroupCardId();
+    document.querySelectorAll('.js-expand-tab-select').forEach((btn) => {
+      const targetId = String(btn.getAttribute('data-expand-target') || '').trim();
+      const expanded = targetId && expandedCardId === targetId;
+      btn.textContent = expanded
+        ? (btn.getAttribute('data-label-expanded') || 'Tancar vista ampla')
+        : (btn.getAttribute('data-label-collapsed') || 'Expandir');
+      btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    });
+  }
+
+  function restoreExpandedGroupCardToOrigin() {
+    if (!expandedModalState.cardId || !expandedModalState.parent) return;
+    const card = document.getElementById(expandedModalState.cardId);
+    if (!card) return;
+    card.classList.remove('is-expanded');
+    if (expandedModalState.nextSibling && expandedModalState.nextSibling.parentNode === expandedModalState.parent) {
+      expandedModalState.parent.insertBefore(card, expandedModalState.nextSibling);
+    } else {
+      expandedModalState.parent.appendChild(card);
+    }
+    expandedModalState.cardId = '';
+    expandedModalState.parent = null;
+    expandedModalState.nextSibling = null;
+  }
+
+  function setExpandedGroupCard(cardId, options = {}) {
+    ensureExpandedGroupModalRoot();
+    const backdrop = document.getElementById('group-buckets-backdrop');
+    const modal = document.getElementById('group-buckets-modal');
+    const modalBody = document.getElementById('group-buckets-modal-body');
+    const modalTitle = document.getElementById('group-buckets-modal-title');
+    const modalSubtitle = document.getElementById('group-buckets-modal-subtitle');
+    if (!backdrop || !modal || !modalBody || !modalTitle || !modalSubtitle) return;
+
+    restoreExpandedGroupCardToOrigin();
+
+    let activeCard = null;
+    const cleanId = String(cardId || '').trim();
+    if (cleanId) {
+      const card = document.getElementById(cleanId);
+      if (card) {
+        expandedModalState.cardId = cleanId;
+        expandedModalState.parent = card.parentNode;
+        expandedModalState.nextSibling = card.nextSibling;
+        card.classList.add('is-expanded');
+        modalBody.appendChild(card);
+        activeCard = card;
+      }
+    }
+
+    const visible = !!activeCard;
+    backdrop.classList.toggle('is-visible', visible);
+    backdrop.setAttribute('aria-hidden', visible ? 'false' : 'true');
+    modal.classList.toggle('is-visible', visible);
+    modal.setAttribute('aria-hidden', visible ? 'false' : 'true');
+    modal.setAttribute('data-active-card-id', visible ? cleanId : '');
+
+    if (visible) {
+      modalTitle.textContent =
+        String(activeCard.getAttribute('data-expand-title') || '').trim() ||
+        activeCard.querySelector('.fw-semibold, .panel-title, .team-workspace-title')?.textContent?.trim() ||
+        'Vista ampliada';
+      modalSubtitle.textContent =
+        String(activeCard.getAttribute('data-expand-subtitle') || '').trim() ||
+        'Treballa amb el bloc seleccionat en una vista ampla.';
+      document.body.classList.add('group-buckets-modal-open');
+    } else {
+      modalTitle.textContent = 'Vista ampliada';
+      modalSubtitle.textContent = 'Treballa amb el bloc seleccionat en una vista ampla.';
+      document.body.classList.remove('group-buckets-modal-open');
+    }
+
+    refreshExpandButtons();
+    if (!options.skipSave) saveUiState();
+  }
+
+  function toggleExpandedGroupCard(cardId, options = {}) {
+    const cleanId = String(cardId || '').trim();
+    setExpandedGroupCard(getExpandedGroupCardId() === cleanId ? '' : cleanId, options);
+  }
+
+  function setActionsDrawerOpen(open, options = {}) {
+    const toggleBtn = document.getElementById('inscripcions-drawer-toggle');
+    const backdrop = document.getElementById('inscripcions-drawer-backdrop');
+    const sidebar = document.querySelector('.inscripcions-sidebar');
+    const isOpen = !!open;
+
+    root.classList.toggle('is-drawer-open', isOpen);
+    if (toggleBtn) toggleBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    if (backdrop) backdrop.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+    if (sidebar) sidebar.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+
+    if (!isOpen) setExpandedGroupCard('', { skipSave: true });
+    if (!options.skipSave) saveUiState();
+  }
+
+  function toggleActionsDrawer(options = {}) {
+    setActionsDrawerOpen(!isActionsDrawerOpen(), options);
+  }
+
+  function manualActivateTab(li) {
+    if (!li) return;
+    const link = li.querySelector('a.nav-link');
+    if (!link) return;
+
+    document.querySelectorAll('#tabs-root a.nav-link').forEach((a) => {
+      a.classList.remove('active');
+      a.setAttribute('aria-selected', 'false');
+    });
+    document.querySelectorAll('#tabs-content .tab-pane').forEach((pane) => {
+      pane.classList.remove('show', 'active');
+    });
+
+    link.classList.add('active');
+    link.setAttribute('aria-selected', 'true');
+    const paneSelector = link.getAttribute('href');
+    const pane = paneSelector ? document.querySelector(paneSelector) : null;
+    if (pane) pane.classList.add('show', 'active');
+  }
+
+  function captureUiState(extra) {
+    return Object.assign({
+      savedAt: Date.now(),
+      activeTabKey: getActiveTabKey(),
+      activeActionsPanel: getActiveActionsPanelKey(),
+      actionsDrawerOpen: isActionsDrawerOpen(),
+      actionsDrawerScrollTop: getActionsDrawerScrollTop(),
+      expandedGroupCardId: getExpandedGroupCardId(),
+      scrollY: window.scrollY || window.pageYOffset || 0,
+      selectedIds: Array.from(app.selection),
+      teamContextCode: getSelectedTeamContextCode(),
+    }, extra || {});
+  }
+
+  function saveUiState(extra) {
+    if (uiStateRestoring) return;
+    try {
+      sessionStorage.setItem(getUiStateKey(), JSON.stringify(captureUiState(extra)));
+    } catch (_err) {}
+  }
+
+  function restoreUiState() {
+    let state = null;
+    try {
+      state = JSON.parse(sessionStorage.getItem(getUiStateKey()) || 'null');
+    } catch (_err) {
+      state = null;
+    }
+    if (!state || typeof state !== 'object') return;
+
+    const savedAt = Number(state.savedAt || 0);
+    if (savedAt && (Date.now() - savedAt > UI_STATE_MAX_AGE_MS)) {
+      try { sessionStorage.removeItem(getUiStateKey()); } catch (_err) {}
+      return;
+    }
+
+    uiStateRestoring = true;
+    try {
+      if (typeof state.actionsDrawerOpen === 'boolean') {
+        setActionsDrawerOpen(state.actionsDrawerOpen, { skipSave: true });
+      }
+
+      const activeActionsPanel = String(state.activeActionsPanel || '').trim();
+      if (activeActionsPanel) {
+        setActiveActionsPanel(activeActionsPanel, { skipSave: true });
+      } else {
+        const firstBtn = document.querySelector('.actions-nav-btn[data-panel-target], .actions-nav-btn[data-panel]');
+        if (firstBtn) {
+          setActiveActionsPanel(firstBtn.getAttribute('data-panel-target') || firstBtn.dataset.panel || '', { skipSave: true });
+        }
+      }
+
+      const savedSelection = Array.isArray(state.selectedIds) ? state.selectedIds : [];
+      if (savedSelection.length) {
+        updateMainInscripcioSelection(savedSelection, 'replace', { skipSave: true });
+      }
+
+      const activeTabKey = String(state.activeTabKey || '').trim();
+      if (activeTabKey) {
+        const li = document.querySelector(`#tabs-root > li.nav-item[data-group-key="${CSS.escape(activeTabKey)}"]`);
+        if (li) {
+          const link = li.querySelector('a[data-toggle="tab"]');
+          if (link && window.jQuery && typeof window.jQuery(link).tab === 'function') {
+            window.jQuery(link).tab('show');
+          } else {
+            manualActivateTab(li);
+          }
+        }
+      }
+
+      const expandedGroupCardId = String(state.expandedGroupCardId || '').trim();
+      if (expandedGroupCardId && isActionsDrawerOpen()) {
+        setExpandedGroupCard(expandedGroupCardId, { skipSave: true });
+      }
+    } finally {
+      uiStateRestoring = false;
+    }
+
+    const scrollY = Number(state.scrollY);
+    if (Number.isFinite(scrollY) && scrollY >= 0) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => window.scrollTo(0, scrollY));
+      });
+    }
+
+    const drawerY = Number(state.actionsDrawerScrollTop);
+    if (Number.isFinite(drawerY) && drawerY >= 0) {
+      requestAnimationFrame(() => {
+        const inner = getActionsDrawerInner();
+        if (inner) inner.scrollTop = drawerY;
+      });
+    }
+  }
+
+  function navigateWithUiState(url, extra) {
+    saveUiState(extra);
+    window.location.assign(url);
+  }
+
+  function reloadWithUiState(extra) {
+    saveUiState(extra);
+    window.location.reload();
+  }
+
+  function getVisibleInscripcioIds() {
+    return Array
+      .from(document.querySelectorAll('tbody tr[data-inscripcio-id], tbody tr.inscripcio-row[data-id]'))
+      .map((row) => parseInt(row.dataset.inscripcioId || row.dataset.id || '0', 10))
+      .filter((id) => Number.isInteger(id) && id > 0);
+  }
+
+  function syncSelectionUi() {
+    document.querySelectorAll('.js-inscripcio-select, .js-team-row-select').forEach((checkbox) => {
+      const id = parseInt(
+        checkbox.value ||
+        checkbox.dataset.inscripcioId ||
+        checkbox.dataset.insId ||
+        checkbox.closest('tr.inscripcio-row')?.dataset.id ||
+        '0',
+        10
+      );
+      const checked = app.selection.has(id);
+      checkbox.checked = checked;
+      const row = checkbox.closest('.team-candidate-row, tr.inscripcio-row');
+      if (row) row.classList.toggle('is-selected', checked);
+    });
+
+    document.querySelectorAll('.js-selection-count').forEach((el) => {
+      el.textContent = String(app.selection.size);
+    });
+  }
+
+  function updateMainInscripcioSelection(ids, mode = 'replace', options = {}) {
+    const cleanIds = (ids || [])
+      .map((id) => parseInt(id, 10))
+      .filter((id) => Number.isInteger(id) && id > 0);
+
+    if (mode === 'replace' || mode === 'set') {
+      app.selection = new Set(cleanIds);
+    } else if (mode === 'add') {
+      cleanIds.forEach((id) => app.selection.add(id));
+    } else if (mode === 'remove') {
+      cleanIds.forEach((id) => app.selection.delete(id));
+    } else if (mode === 'clear') {
+      app.selection.clear();
+    }
+
+    syncSelectionUi();
+    if (!options.skipSave) saveUiState();
+    document.dispatchEvent(new CustomEvent('inscripcions:selection-changed', {
+      detail: { ids: Array.from(app.selection), source: options.source || 'main' },
+    }));
+  }
+
+  function setVisibleInscripcioSelection(checked) {
+    const ids = getVisibleInscripcioIds();
+    if (!ids.length) return;
+    updateMainInscripcioSelection(ids, checked ? 'add' : 'remove');
+  }
+
+  function getSelectedInscripcioIds() {
+    return Array.from(app.selection).map(String);
+  }
+
+  function applyHistoryState(state) {
+    const next = (state && typeof state === 'object') ? state : {};
+    app.historyState = Object.assign(
+      {
+        can_undo: false,
+        can_redo: false,
+        undo_label: '',
+        redo_label: '',
+        undo_count: 0,
+        redo_count: 0,
+      },
+      next
+    );
+
+    const undoBtn = document.getElementById('btn-history-undo');
+    const redoBtn = document.getElementById('btn-history-redo');
+    const summary = document.getElementById('history-stack-summary');
+
+    if (undoBtn) {
+      undoBtn.disabled = (!app.canEdit) || (!app.historyState.can_undo);
+      undoBtn.title = app.historyState.undo_label
+        ? `Desfer: ${app.historyState.undo_label}`
+        : 'No hi ha canvis per desfer';
+    }
+
+    if (redoBtn) {
+      redoBtn.disabled = (!app.canEdit) || (!app.historyState.can_redo);
+      redoBtn.title = app.historyState.redo_label
+        ? `Refer: ${app.historyState.redo_label}`
+        : 'No hi ha canvis per refer';
+    }
+
+    if (summary) {
+      summary.textContent = `Desfer ${Number(app.historyState.undo_count || 0)} · Refer ${Number(app.historyState.redo_count || 0)}`;
+    }
+  }
+
+  async function undoHistory() {
+    try {
+      const data = await postJson(app.urls.historyUndo, {});
+      if (!data?.ok) throw new Error("No s'ha pogut desfer l'ultim canvi.");
+      if (!data.applied) {
+        applyHistoryState(data.history);
+        showAlert('No hi ha cap canvi per desfer.');
+        return;
+      }
+      reloadWithUiState();
+    } catch (err) {
+      showAlert(`No s'ha pogut desfer l'ultim canvi.\n${err.message || err}`);
+    }
+  }
+
+  async function redoHistory() {
+    try {
+      const data = await postJson(app.urls.historyRedo, {});
+      if (!data?.ok) throw new Error("No s'ha pogut refer el canvi.");
+      if (!data.applied) {
+        applyHistoryState(data.history);
+        showAlert('No hi ha cap canvi per refer.');
+        return;
+      }
+      reloadWithUiState();
+    } catch (err) {
+      showAlert(`No s'ha pogut refer el canvi.\n${err.message || err}`);
+    }
+  }
+
+  function createGroupPreviewBadge(text, variant) {
+    const badge = document.createElement('span');
+    const cleanVariant = String(variant || 'neutral').trim();
+    badge.className = 'group-preview-badge badge badge-light border';
+    if (cleanVariant && cleanVariant !== 'neutral') badge.classList.add(`is-${cleanVariant}`);
+    badge.textContent = String(text || '');
+    return badge;
+  }
+
+  function getTeamPreviewElements() {
+    return {
+      root: document.getElementById('team-preview'),
+      status: document.getElementById('team-preview-status'),
+      existingList: document.getElementById('team-preview-existing-list'),
+      list: document.getElementById('team-preview-list'),
+    };
+  }
+
+  function clearTeamPreview(statusText) {
+    const els = getTeamPreviewElements();
+    if (els.root) {
+      els.root.dataset.hasPreview = '0';
+      els.root.dataset.dirty = '0';
+    }
+    if (els.status) {
+      els.status.textContent = String(statusText || "Previsualitza abans d'aplicar canvis.");
+    }
+    if (els.existingList) els.existingList.innerHTML = '';
+    if (els.list) els.list.innerHTML = '';
+  }
+
+  function markTeamPreviewDirty() {
+    const els = getTeamPreviewElements();
+    if (!els.root || els.root.dataset.hasPreview !== '1') return;
+    els.root.dataset.dirty = '1';
+    if (els.status) {
+      els.status.textContent = 'Hi ha canvis nous. Torna a previsualitzar abans de confirmar.';
+    }
+  }
+
+  function wireDrawer() {
+    document.getElementById('inscripcions-drawer-toggle')?.addEventListener('click', () => toggleActionsDrawer());
+    document.getElementById('inscripcions-drawer-backdrop')?.addEventListener('click', () => setActionsDrawerOpen(false));
+    document.getElementById('group-buckets-backdrop')?.addEventListener('click', () => setExpandedGroupCard(''));
+    document.getElementById('group-buckets-modal-close')?.addEventListener('click', () => setExpandedGroupCard(''));
+
+    document.querySelectorAll('.actions-nav-btn[data-panel-target], .actions-nav-btn[data-panel]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        openPanel(btn.getAttribute('data-panel-target') || btn.dataset.panel || '');
+      });
+    });
+
+    document.querySelectorAll('[data-open-panel]').forEach((btn) => {
+      btn.addEventListener('click', (event) => {
+        event.preventDefault();
+        openPanel(btn.getAttribute('data-open-panel') || '');
+      });
+    });
+
+    document.querySelectorAll('.js-expand-tab-select').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const targetId = btn.getAttribute('data-expand-target') || '';
+        if (targetId) toggleExpandedGroupCard(targetId);
+      });
+    });
+
+    getActionsDrawerInner()?.addEventListener('scroll', () => saveUiState(), { passive: true });
+  }
+
+  function wireSearch() {
+    const searchInput = document.getElementById('search-input');
+    if (!searchInput) return;
+
+    const applySearch = () => {
+      const value = searchInput.value.trim();
+      const url = getCurrentUrl();
+      if (value) url.searchParams.set('q', value);
+      else url.searchParams.delete('q');
+      navigateWithUiState(url.toString());
+    };
+
+    document.getElementById('search-btn')?.addEventListener('click', applySearch);
+    document.getElementById('clear-search-btn')?.addEventListener('click', () => {
+      searchInput.value = '';
+      applySearch();
+    });
+    searchInput.addEventListener('keypress', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        applySearch();
+      }
+    });
+    searchInput.addEventListener('input', debounce(applySearch, 450));
+  }
+
+  function wireHistoryButtons() {
+    document.getElementById('btn-history-undo')?.addEventListener('click', () => undoHistory());
+    document.getElementById('btn-history-redo')?.addEventListener('click', () => redoHistory());
+  }
+
+  function wireGlobalSelection() {
+    document.addEventListener('change', (event) => {
+      const checkbox = event.target.closest('.js-inscripcio-select, .js-team-row-select');
+      if (!checkbox) return;
+      const id = parseInt(
+        checkbox.value ||
+        checkbox.dataset.inscripcioId ||
+        checkbox.dataset.insId ||
+        checkbox.closest('tr.inscripcio-row')?.dataset.id ||
+        '0',
+        10
+      );
+      if (!Number.isInteger(id) || id <= 0) return;
+      updateMainInscripcioSelection([id], checkbox.checked ? 'add' : 'remove');
+    });
+
+    document.getElementById('select-all-visible')?.addEventListener('change', (event) => {
+      setVisibleInscripcioSelection(!!event.target.checked);
+    });
+    document.getElementById('btn-team-select-visible')?.addEventListener('click', () => setVisibleInscripcioSelection(true));
+    document.getElementById('btn-team-unselect-visible')?.addEventListener('click', () => setVisibleInscripcioSelection(false));
+  }
+
+  function exposeLegacySelectionApi() {
+    window.__inscripcionsSelectionApi = {
+      legacy_sources: {
+        groups_workspace: { source: 'groups_workspace' },
+        team_workspace: { source: 'team_workspace' },
+      },
+      getSelectedIds() {
+        return Array.from(app.selection).map(String);
+      },
+      list() {
+        return Array.from(app.selection);
+      },
+      set(ids, options = {}) {
+        updateMainInscripcioSelection(ids, 'replace', options);
+      },
+      replace(ids, options = {}) {
+        updateMainInscripcioSelection(ids, 'replace', options);
+      },
+      add(ids, options = {}) {
+        updateMainInscripcioSelection(ids, 'add', options);
+      },
+      remove(ids, options = {}) {
+        updateMainInscripcioSelection(ids, 'remove', options);
+      },
+      clear(options = {}) {
+        updateMainInscripcioSelection([], 'clear', options);
+      },
+    };
+  }
+
+  window.InscripcionsApp = {
+    app,
+    parseJsonScript,
+    getCookie,
+    csrfToken,
+    hasTabs,
+    showAlert,
+    showConfirm,
+    showPrompt,
+    debounce,
+    getJson,
+    postJson,
+    getCurrentUrl,
+    getCurrentInscripcioFilters,
+    getCurrentGroupBy,
+    getCurrentGroupByCodes,
+    getSelectedTeamContextCode,
+    getSelectedTeamFields,
+    getVisibleInscripcioIds,
+    getUiStateKey,
+    saveUiState,
+    restoreUiState,
+    navigateWithUiState,
+    reloadWithUiState,
+    updateMainInscripcioSelection,
+    setVisibleInscripcioSelection,
+    applyHistoryState,
+    activatePanel,
+    openPanel,
+    getActiveActionsPanelKey,
+    setActiveActionsPanel,
+    getInscripcionsPageShell,
+    getActionsDrawerInner,
+    isActionsDrawerOpen,
+    setActionsDrawerOpen,
+    toggleActionsDrawer,
+    getExpandedGroupCardId,
+    setExpandedGroupCard,
+    toggleExpandedGroupCard,
+    refreshExpandButtons,
+    getSelectedInscripcioIds,
+    createGroupPreviewBadge,
+    clearTeamPreview,
+    markTeamPreviewDirty,
+  };
+
+  window.canEditInscripcions = app.canEdit;
+  window.postJson = postJson;
+  if (typeof window.showAlert !== 'function') window.showAlert = showAlert;
+  if (typeof window.showConfirm !== 'function') window.showConfirm = showConfirm;
+  if (typeof window.showPrompt !== 'function') window.showPrompt = showPrompt;
+  window.getUiStateKey = getUiStateKey;
+  window.saveUiState = saveUiState;
+  window.restoreUiState = restoreUiState;
+  window.navigateWithUiState = navigateWithUiState;
+  window.reloadWithUiState = reloadWithUiState;
+  window.getSelectedInscripcioIds = getSelectedInscripcioIds;
+  window.getCurrentInscripcioFilters = getCurrentInscripcioFilters;
+  window.getCurrentGroupBy = getCurrentGroupBy;
+  window.getCurrentGroupByCodes = getCurrentGroupByCodes;
+  window.getSelectedTeamContextCode = getSelectedTeamContextCode;
+  window.getSelectedTeamFields = getSelectedTeamFields;
+  window.applyHistoryState = applyHistoryState;
+  window.getExpandedGroupCardId = getExpandedGroupCardId;
+  window.setExpandedGroupCard = setExpandedGroupCard;
+  window.toggleExpandedGroupCard = toggleExpandedGroupCard;
+  window.refreshExpandButtons = refreshExpandButtons;
+  window.getInscripcionsPageShell = getInscripcionsPageShell;
+  window.getActionsDrawerInner = getActionsDrawerInner;
+  window.isActionsDrawerOpen = isActionsDrawerOpen;
+  window.setActionsDrawerOpen = setActionsDrawerOpen;
+  window.toggleActionsDrawer = toggleActionsDrawer;
+  window.createGroupPreviewBadge = createGroupPreviewBadge;
+  window.clearTeamPreview = clearTeamPreview;
+  window.markTeamPreviewDirty = markTeamPreviewDirty;
+
+  document.addEventListener('DOMContentLoaded', () => {
+    wireDrawer();
+    wireSearch();
+    wireHistoryButtons();
+    wireGlobalSelection();
+    restoreUiState();
+    applyHistoryState(app.initial.historyState || {});
+    exposeLegacySelectionApi();
+    syncSelectionUi();
+    window.addEventListener('beforeunload', () => saveUiState());
+  });
+})();
+</script>

@@ -1,0 +1,51 @@
+<div class="panel" id="panel-media" data-panel-key="media">
+  <div class="panel-head">
+    <h3 class="panel-title">Media</h3>
+    <div class="subtle">Assignacio assistida i gestio de fitxers.</div>
+  </div>
+
+  <div class="panel-body">
+    <div class="team-box mb-3">
+      <div class="fw-semibold">Assignacio assistida des de carpeta</div>
+      <div class="text-muted small mb-2">
+        Selecciona una carpeta local. El sistema fara match automatic per nom, entitat, sexe i subcategoria.
+      </div>
+
+      <div class="d-flex align-items-center flex-wrap" style="gap:8px;">
+        <input type="file" id="media-folder-input" class="form-control form-control-sm" webkitdirectory directory multiple>
+        <button type="button" class="btn btn-sm btn-outline-primary" id="btn-media-match-preview">
+          Previsualitzar match
+        </button>
+        <button type="button" class="btn btn-sm btn-primary" id="btn-media-match-apply" {% if not can_edit_inscripcions %}disabled{% endif %}>
+          Aplicar assignacions
+        </button>
+      </div>
+
+      <div class="small text-muted mt-2" id="media-match-summary">
+        Cap fitxer carregat.
+      </div>
+
+      <div class="media-match-table-wrap mt-2 d-none" id="media-match-table-wrap">
+        <table class="table table-sm mb-0 media-match-table">
+          <thead class="table-light">
+            <tr>
+              <th>Fitxer</th>
+              <th>Estat</th>
+              <th>Inscripcio</th>
+              <th>Score</th>
+              <th>Detall</th>
+            </tr>
+          </thead>
+          <tbody id="media-match-table-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="mt-4">
+      <div class="fw-semibold mb-2">Configuracio actual</div>
+      <div class="small text-muted">
+        La configuracio de match i les opcions d'inscripcions es llegeixen del boot inicial de la pagina.
+      </div>
+    </div>
+  </div>
+</div>

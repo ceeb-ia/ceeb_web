@@ -1,0 +1,243 @@
+<script>
+(function () {
+  'use strict';
+
+  const API = window.InscripcionsApp;
+  if (!API) return;
+
+  const BIRTH_YEAR_RANGE_GROUP_CODE = 'any_naixement_forquilla';
+  let birthYearRangeSavedConfig = API.app.initial.birthYearRangeGroupConfig || { sense_data_label: '', fora_rang_label: '', ranges: [] };
+
+  function getSelectedGroupFields() {
+    return Array
+      .from(document.querySelectorAll('.js-group-by-field:checked'))
+      .map((el) => String(el.value || '').trim())
+      .filter(Boolean);
+  }
+
+  function normalizeDateValue(value) {
+    return String(value || '').trim();
+  }
+
+  function normalizeBirthYearRangeGroupConfig(raw) {
+    const cfg = raw && typeof raw === 'object' ? raw : {};
+    const ranges = Array.isArray(cfg.ranges) ? cfg.ranges : [];
+    return {
+      sense_data_label: String(cfg.sense_data_label || 'Sense data').trim() || 'Sense data',
+      fora_rang_label: String(cfg.fora_rang_label || 'Fora de forquilla').trim() || 'Fora de forquilla',
+      ranges: ranges.map((item) => ({
+        label: String(item?.label || '').trim(),
+        from_date: normalizeDateValue(item?.from_date || ''),
+        until_date: normalizeDateValue(item?.until_date || ''),
+      })),
+    };
+  }
+
+  function readBirthYearRangeGroupConfigUi() {
+    const rows = [];
+    document.querySelectorAll('#birth-year-range-config-rows [data-range-row="1"]').forEach((row) => {
+      rows.push({
+        label: String(row.querySelector('[data-range-field="label"]')?.value || '').trim(),
+        from_date: normalizeDateValue(row.querySelector('[data-range-field="from"]')?.value || ''),
+        until_date: normalizeDateValue(row.querySelector('[data-range-field="to"]')?.value || ''),
+      });
+    });
+    return normalizeBirthYearRangeGroupConfig({
+      sense_data_label: document.getElementById('birth-year-range-sense-data')?.value || '',
+      fora_rang_label: document.getElementById('birth-year-range-outside')?.value || '',
+      ranges: rows,
+    });
+  }
+
+  function createBirthYearRangeRow(item = {}) {
+    const row = document.createElement('div');
+    row.className = 'team-filters-grid';
+    row.setAttribute('data-range-row', '1');
+    row.style.gap = '8px';
+    row.innerHTML = `
+      <div>
+        <label class="small text-muted mb-1 d-block">Etiqueta</label>
+        <input type="text" class="form-control form-control-sm" data-range-field="label" value="${String(item.label || '').replace(/"/g, '&quot;')}" placeholder="Infantil">
+      </div>
+      <div>
+        <label class="small text-muted mb-1 d-block">Des de</label>
+        <input type="date" class="form-control form-control-sm" data-range-field="from" value="${String(item.from_date || '').replace(/"/g, '&quot;')}">
+      </div>
+      <div>
+        <label class="small text-muted mb-1 d-block">Fins a</label>
+        <input type="date" class="form-control form-control-sm" data-range-field="to" value="${String(item.until_date || '').replace(/"/g, '&quot;')}">
+      </div>
+      <div>
+        <label class="small text-muted mb-1 d-block">&nbsp;</label>
+        <button type="button" class="btn btn-sm btn-outline-danger" data-range-remove="1">Treure</button>
+      </div>
+    `;
+    row.querySelectorAll('input').forEach((input) => {
+      input.addEventListener('input', () => updateBirthYearRangeConfigUi());
+    });
+    row.querySelector('[data-range-remove="1"]')?.addEventListener('click', () => {
+      row.remove();
+      ensureBirthYearRangeConfigRows();
+      updateBirthYearRangeConfigUi();
+    });
+    return row;
+  }
+
+  function ensureBirthYearRangeConfigRows() {
+    const root = document.getElementById('birth-year-range-config-rows');
+    if (!root) return;
+    if (!root.querySelector('[data-range-row="1"]')) {
+      root.appendChild(createBirthYearRangeRow({}));
+    }
+  }
+
+  function renderBirthYearRangeGroupConfig(raw) {
+    const cfg = normalizeBirthYearRangeGroupConfig(raw);
+    const root = document.getElementById('birth-year-range-config-rows');
+    if (!root) return;
+    const senseData = document.getElementById('birth-year-range-sense-data');
+    const outside = document.getElementById('birth-year-range-outside');
+    if (senseData) senseData.value = cfg.sense_data_label || 'Sense data';
+    if (outside) outside.value = cfg.fora_rang_label || 'Fora de forquilla';
+    root.innerHTML = '';
+    const rows = cfg.ranges.length ? cfg.ranges : [{}];
+    rows.forEach((item) => root.appendChild(createBirthYearRangeRow(item)));
+    ensureBirthYearRangeConfigRows();
+  }
+
+  function isBirthYearRangeGroupingSelected() {
+    return getSelectedGroupFields().includes(BIRTH_YEAR_RANGE_GROUP_CODE);
+  }
+
+  function setGroupPreviewStatus(message) {
+    const status = document.getElementById('groups-preview-status');
+    if (status) status.textContent = String(message || '');
+  }
+
+  function clearGroupPreview(statusText) {
+    const root = document.getElementById('groups-preview');
+    if (root) {
+      root.dataset.hasPreview = '0';
+      root.dataset.dirty = '0';
+      root.dataset.loading = '0';
+    }
+    const summary = document.getElementById('groups-preview-summary');
+    const existing = document.getElementById('groups-preview-existing-list');
+    const created = document.getElementById('groups-preview-list');
+    if (summary) summary.innerHTML = '';
+    if (existing) existing.innerHTML = '';
+    if (created) created.innerHTML = '';
+    setGroupPreviewStatus(statusText || 'Previsualitza abans d aplicar canvis.');
+  }
+
+  function markGroupPreviewDirty() {
+    const root = document.getElementById('groups-preview');
+    if (!root || root.dataset.hasPreview !== '1') return;
+    root.dataset.dirty = '1';
+    setGroupPreviewStatus('La configuracio ha canviat. Torna a previsualitzar per actualitzar el resultat.');
+  }
+
+  function updateBirthYearRangeConfigUi() {
+    const box = document.getElementById('birth-year-range-config-box');
+    const status = document.getElementById('birth-year-range-config-status');
+    if (!box || !status) return;
+
+    const selected = isBirthYearRangeGroupingSelected();
+    const saved = normalizeBirthYearRangeGroupConfig(birthYearRangeSavedConfig);
+    const current = readBirthYearRangeGroupConfigUi();
+    const savedJson = JSON.stringify(saved);
+    const currentJson = JSON.stringify(current);
+
+    box.classList.toggle('d-none', !selected);
+    if (!selected) {
+      status.textContent = '';
+      return;
+    }
+
+    if (savedJson === currentJson) {
+      status.textContent = Array.isArray(saved.ranges) && saved.ranges.length
+        ? 'Configuracio desada.'
+        : 'Sense forquilles desades encara.';
+    } else {
+      status.textContent = 'Hi ha canvis pendents de desar.';
+    }
+  }
+
+  async function saveBirthYearRangeGroupConfig() {
+    if (!API.app.urls.saveBirthYearRangeConfig) return false;
+    const current = readBirthYearRangeGroupConfigUi();
+    const data = await API.postJson(API.app.urls.saveBirthYearRangeConfig, { config: current });
+    birthYearRangeSavedConfig = normalizeBirthYearRangeGroupConfig(data?.config || current);
+    renderBirthYearRangeGroupConfig(birthYearRangeSavedConfig);
+    updateBirthYearRangeConfigUi();
+    if (typeof window.markGroupPreviewDirty === 'function') window.markGroupPreviewDirty();
+    API.showAlert('Forquilles de data de naixement desades.');
+    return true;
+  }
+
+  function navigateGrouping(extraParams = {}) {
+    const url = API.getCurrentUrl();
+    url.searchParams.delete('group_by');
+    getSelectedGroupFields().forEach((code) => url.searchParams.append('group_by', code));
+    Object.entries(extraParams || {}).forEach(([key, value]) => {
+      if (value === null || value === undefined || value === '') url.searchParams.delete(key);
+      else url.searchParams.set(key, String(value));
+    });
+    API.navigateWithUiState(url.toString());
+  }
+
+  function wireGroupingControls() {
+    document.getElementById('btn-apply-grouping')?.addEventListener('click', (event) => {
+      event.preventDefault();
+      navigateGrouping({ recalc_order: '1', shuffle_order: null, clear_group: null });
+    });
+
+    document.getElementById('btn-shuffle-grouping')?.addEventListener('click', (event) => {
+      event.preventDefault();
+      navigateGrouping({ shuffle_order: '1', recalc_order: null, clear_group: null });
+    });
+
+    document.getElementById('btn-clear-grouping')?.addEventListener('click', (event) => {
+      event.preventDefault();
+      const url = API.getCurrentUrl();
+      url.searchParams.set('clear_group', '1');
+      url.searchParams.delete('recalc_order');
+      url.searchParams.delete('shuffle_order');
+      url.searchParams.delete('group_by');
+      API.navigateWithUiState(url.toString());
+    });
+
+    document.querySelectorAll('.js-group-by-field').forEach((input) => {
+      input.addEventListener('change', () => {
+        updateBirthYearRangeConfigUi();
+        if (typeof window.markGroupPreviewDirty === 'function') window.markGroupPreviewDirty();
+      });
+    });
+
+    document.getElementById('birth-year-range-sense-data')?.addEventListener('input', updateBirthYearRangeConfigUi);
+    document.getElementById('birth-year-range-outside')?.addEventListener('input', updateBirthYearRangeConfigUi);
+    document.getElementById('btn-birth-year-range-add')?.addEventListener('click', () => {
+      document.getElementById('birth-year-range-config-rows')?.appendChild(createBirthYearRangeRow({}));
+      updateBirthYearRangeConfigUi();
+    });
+    document.getElementById('btn-birth-year-range-save')?.addEventListener('click', async () => {
+      try {
+        await saveBirthYearRangeGroupConfig();
+      } catch (err) {
+        API.showAlert(err.message || err);
+      }
+    });
+
+    renderBirthYearRangeGroupConfig(birthYearRangeSavedConfig);
+    updateBirthYearRangeConfigUi();
+  }
+
+  window.clearGroupPreview = clearGroupPreview;
+  window.markGroupPreviewDirty = markGroupPreviewDirty;
+
+  document.addEventListener('DOMContentLoaded', wireGroupingControls);
+})();
+
+{% include "competicio/inscripcions/scripts/_groups_preview.html" %}
+{% include "competicio/_groups_workspace_script.html" %}
+</script>

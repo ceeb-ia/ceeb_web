@@ -1,0 +1,986 @@
+(function () {
+  'use strict';
+
+  const API = window.InscripcionsApp;
+  if (!API || !document.getElementById('panel-grups')) return;
+
+  const groupsFromSortUrl = "{% url 'inscripcions_groups_from_sort' competicio.id %}";
+  const showAlert = typeof window.showAlert === 'function' ? window.showAlert : API.showAlert;
+  const postJson = typeof window.postJson === 'function' ? window.postJson : API.postJson;
+  const reloadWithUiState = typeof window.reloadWithUiState === 'function' ? window.reloadWithUiState : API.reloadWithUiState;
+  const getCurrentInscripcioFilters = typeof window.getCurrentInscripcioFilters === 'function'
+    ? window.getCurrentInscripcioFilters
+    : API.getCurrentInscripcioFilters;
+  const getCurrentGroupByCodes = typeof window.getCurrentGroupByCodes === 'function'
+    ? window.getCurrentGroupByCodes
+    : API.getCurrentGroupByCodes;
+  const createPreviewBadge = typeof window.createGroupPreviewBadge === 'function'
+    ? window.createGroupPreviewBadge
+    : function (text, variant) {
+      const badge = document.createElement('span');
+      badge.className = 'group-preview-badge badge badge-light border';
+      if (variant && variant !== 'neutral') badge.classList.add(`is-${variant}`);
+      badge.textContent = String(text || '');
+      return badge;
+    };
+
+  const groupBucketSelectionState = {
+    mode: 'none',
+    availableKeys: [],
+    selectedKeys: new Set(),
+  };
+  let currentGroupsAutoContext = null;
+  let lastConfirmableGroupPreview = null;
+  let groupPreviewConfirmBusy = false;
+
+  function getGroupsAutoContextElements() {
+    return {
+      source: document.getElementById('groups-auto-context-source'),
+      detectedGroups: document.getElementById('groups-detected-group-fields'),
+      detectedSorts: document.getElementById('groups-detected-sort-fields'),
+      resolutionLabel: document.getElementById('groups-resolution-label'),
+      resolutionStatus: document.getElementById('groups-resolution-status'),
+      bucketsCount: document.getElementById('groups-buckets-count'),
+      bucketsSelectionSummary: document.getElementById('groups-buckets-selection-summary'),
+      bucketsGrid: document.getElementById('groups-buckets-grid'),
+      bucketsEmpty: document.getElementById('groups-buckets-empty'),
+    };
+  }
+
+  function setGroupsAutoContextMessage(message) {
+    const els = getGroupsAutoContextElements();
+    if (!els.bucketsEmpty) return;
+    els.bucketsEmpty.textContent = message || '';
+    els.bucketsEmpty.classList.toggle('d-none', !message);
+  }
+
+  function setGroupsBucketSelectionNote(message) {
+    const note = document.getElementById('groups-buckets-selection-note');
+    if (!note) return;
+    note.textContent = message || '';
+    note.classList.toggle('d-none', !message);
+  }
+
+  function setGroupsBucketSelectionMode(mode) {
+    groupBucketSelectionState.mode = ['all', 'none', 'custom'].includes(mode) ? mode : 'none';
+  }
+
+  function getSelectedGroupBucketKeys() {
+    const available = new Set(groupBucketSelectionState.availableKeys || []);
+    if (!available.size) return [];
+    if (groupBucketSelectionState.mode === 'none') return [];
+    if (groupBucketSelectionState.mode === 'all') return Array.from(available);
+    return Array.from(groupBucketSelectionState.selectedKeys || []).filter((key) => available.has(key));
+  }
+
+  function applyGroupBucketSelectionToDom() {
+    const selectedKeys = new Set(getSelectedGroupBucketKeys());
+    document.querySelectorAll('.js-group-bucket-check').forEach((el) => {
+      el.checked = selectedKeys.has(String(el.value || ''));
+    });
+  }
+
+  function setGroupBucketSelection(checked) {
+    if (checked) {
+      setGroupsBucketSelectionMode('all');
+      groupBucketSelectionState.selectedKeys = new Set(groupBucketSelectionState.availableKeys || []);
+    } else {
+      setGroupsBucketSelectionMode('none');
+      groupBucketSelectionState.selectedKeys = new Set();
+    }
+    applyGroupBucketSelectionToDom();
+    setGroupsBucketSelectionNote('');
+  }
+
+  function updateGroupBucketSelectionForContext(buckets) {
+    const availableKeys = (Array.isArray(buckets) ? buckets : [])
+      .map((bucket) => String(bucket?.key || '').trim())
+      .filter(Boolean);
+    const availableSet = new Set(availableKeys);
+    const previousKeys = new Set(groupBucketSelectionState.selectedKeys || []);
+    groupBucketSelectionState.availableKeys = availableKeys;
+
+    if (groupBucketSelectionState.mode === 'all') {
+      groupBucketSelectionState.selectedKeys = new Set(availableKeys);
+      setGroupsBucketSelectionNote('');
+      return;
+    }
+
+    if (groupBucketSelectionState.mode === 'none') {
+      groupBucketSelectionState.selectedKeys = new Set();
+      setGroupsBucketSelectionNote('');
+      return;
+    }
+
+    const survivingKeys = Array.from(previousKeys).filter((key) => availableSet.has(key));
+    groupBucketSelectionState.selectedKeys = new Set(survivingKeys);
+    if (previousKeys.size > 0 && survivingKeys.length === 0 && availableKeys.length > 0) {
+      setGroupsBucketSelectionNote('Els blocs marcats ja no existeixen en el context actual.');
+    } else {
+      setGroupsBucketSelectionNote('');
+    }
+  }
+
+  function renderDetectedGroupFields(fields) {
+    const wrap = getGroupsAutoContextElements().detectedGroups;
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    const rows = Array.isArray(fields) ? fields : [];
+    if (!rows.length) {
+      const empty = document.createElement('span');
+      empty.className = 'text-muted';
+      empty.textContent = 'cap';
+      wrap.appendChild(empty);
+      return;
+    }
+    rows.forEach((field) => {
+      const badge = document.createElement('span');
+      badge.className = 'badge badge-info';
+      badge.textContent = String(field?.label || field?.code || '');
+      wrap.appendChild(badge);
+    });
+  }
+
+  function renderDetectedSortFields(fields) {
+    const wrap = getGroupsAutoContextElements().detectedSorts;
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    const rows = Array.isArray(fields) ? fields : [];
+    if (!rows.length) {
+      const empty = document.createElement('span');
+      empty.className = 'text-muted';
+      empty.textContent = 'cap';
+      wrap.appendChild(empty);
+      return;
+    }
+    rows.forEach((field) => {
+      const badge = document.createElement('span');
+      badge.className = 'badge badge-primary';
+      const priority = Number(field?.priority || 0);
+      badge.textContent = `${priority > 0 ? `#${priority} ` : ''}${String(field?.label || field?.code || '')}`;
+      wrap.appendChild(badge);
+    });
+  }
+
+  function describeGroupsResolutionLabel(layersUsed) {
+    const layers = Array.isArray(layersUsed) ? layersUsed : [];
+    if (layers.includes('tabs') && layers.includes('sort')) return 'Tota la competicio + resolucio combinada';
+    if (layers.includes('tabs')) return 'Tota la competicio + agrupacions';
+    if (layers.includes('sort')) return 'Tota la competicio + ordenacions';
+    return 'Sense criteris resolubles';
+  }
+
+  function describeGroupsResolutionStatus(context) {
+    const sourceTotal = Number(context?.source_total || 0);
+    const bucketsTotal = Number(context?.buckets_total || 0);
+    const layersUsed = Array.isArray(context?.layers_used) ? context.layers_used : [];
+    if (!sourceTotal) return 'No hi ha inscripcions disponibles a la competicio.';
+    if (!bucketsTotal) return "No s'han detectat divisions ni ordenacions segmentadores sobre tota la competicio.";
+    if (layersUsed.includes('tabs') && layersUsed.includes('sort')) {
+      return 'Blocs proposats sobre tota la competicio combinant divisions i ordenacions.';
+    }
+    if (layersUsed.includes('tabs')) return 'Blocs proposats sobre tota la competicio a partir de les divisions.';
+    if (layersUsed.includes('sort')) return 'Blocs proposats sobre tota la competicio a partir de les ordenacions.';
+    return 'Blocs proposats sobre tota la competicio.';
+  }
+
+  function createBucketMetricBadge(text, variant = 'light') {
+    const badge = document.createElement('span');
+    badge.className = 'badge';
+    if (variant === 'primary') badge.className += ' badge-primary';
+    else if (variant === 'secondary') badge.className += ' badge-secondary';
+    else badge.className += ' badge-light border';
+    badge.textContent = String(text || '');
+    return badge;
+  }
+
+  function createGroupBucketNode(bucket) {
+    const key = String(bucket?.key || '').trim();
+    const label = document.createElement('label');
+    label.className = 'tab-select-item';
+
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.className = 'js-group-bucket-check';
+    input.value = key;
+    input.checked = getSelectedGroupBucketKeys().includes(key);
+    label.appendChild(input);
+
+    const text = document.createElement('span');
+    text.className = 'tab-label small';
+    text.title = String(bucket?.label || key);
+    text.textContent = String(bucket?.label || key);
+    label.appendChild(text);
+
+    label.appendChild(createBucketMetricBadge(`Global: ${Number(bucket?.global_count || bucket?.count || 0)}`));
+    return label;
+  }
+
+  function updateGroupsStrategyButtonsState(context = null) {
+    const selectionCount = Number(context?.selection_count || 0);
+    const bucketsTotal = Number(context?.buckets_total || 0);
+    const markedBuckets = getSelectedGroupBucketKeys().length;
+    const hasSelection = selectionCount > 0;
+
+    [
+      'btn-groups-create-count',
+      'btn-groups-preview-count',
+      'btn-groups-create-size',
+      'btn-groups-preview-size',
+      'btn-groups-create-range-balanced',
+      'btn-groups-preview-range-balanced',
+      'btn-groups-create-count-range',
+      'btn-groups-preview-count-range',
+      'btn-groups-create-per-bucket',
+      'btn-groups-preview-per-bucket',
+    ].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.disabled = !hasSelection;
+    });
+
+    ['btn-groups-buckets-all', 'btn-groups-buckets-none'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.disabled = bucketsTotal === 0;
+    });
+
+    ['btn-groups-buckets-add', 'btn-groups-buckets-remove', 'btn-groups-buckets-set'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.disabled = bucketsTotal === 0 || markedBuckets === 0;
+    });
+  }
+
+  function renderGroupsAutoContext(context) {
+    const els = getGroupsAutoContextElements();
+    const data = context && typeof context === 'object' ? context : {};
+    const buckets = Array.isArray(data.buckets) ? data.buckets : [];
+    currentGroupsAutoContext = data;
+    updateGroupBucketSelectionForContext(buckets);
+
+    if (els.source) {
+      els.source.textContent = String(data.source_scope || 'competition_all') === 'competition_all'
+        ? 'Tota la competicio'
+        : String(data.source_scope || 'competition_all');
+    }
+    renderDetectedGroupFields(data.detected_group_fields);
+    renderDetectedSortFields(data.detected_sort_fields);
+
+    if (els.resolutionLabel) els.resolutionLabel.textContent = describeGroupsResolutionLabel(data.layers_used);
+    if (els.resolutionStatus) els.resolutionStatus.textContent = describeGroupsResolutionStatus(data);
+    if (els.bucketsCount) els.bucketsCount.textContent = `Blocs proposats sobre tota la competicio: ${Number(data.buckets_total || 0)}`;
+    if (els.bucketsSelectionSummary) {
+      els.bucketsSelectionSummary.textContent = `Seleccionades globalment: ${Number(data.selection_count || 0)}`;
+    }
+    if (els.bucketsGrid) {
+      els.bucketsGrid.innerHTML = '';
+      buckets.forEach((bucket) => els.bucketsGrid.appendChild(createGroupBucketNode(bucket)));
+      els.bucketsGrid.classList.toggle('d-none', buckets.length === 0);
+    }
+
+    updateGroupsStrategyButtonsState(data);
+    setGroupsAutoContextMessage(buckets.length ? '' : "No s'han detectat blocs proposables sobre tota la competicio.");
+    applyGroupBucketSelectionToDom();
+  }
+
+  function readIntInput(id, minValue = 1) {
+    const el = document.getElementById(id);
+    const n = Number(el?.value || 0);
+    if (!Number.isFinite(n) || n < minValue) return null;
+    return Math.trunc(n);
+  }
+
+  function getGroupsFallbackMode() {
+    return document.getElementById('groups-fallback')?.value || 'all_filtered';
+  }
+
+  function getGroupsWorkspaceState() {
+    if (!window.__groupsWorkspaceApi || typeof window.__groupsWorkspaceApi.getState !== 'function') return null;
+    return window.__groupsWorkspaceApi.getState();
+  }
+
+  function buildGroupsPayload(strategy, extraPayload = {}) {
+    const workspaceState = getGroupsWorkspaceState();
+    const filters = workspaceState?.filters && typeof workspaceState.filters === 'object'
+      ? workspaceState.filters
+      : getCurrentInscripcioFilters();
+    const selectedIds = Array.isArray(workspaceState?.selectedIds) ? workspaceState.selectedIds : [];
+    return Object.assign({
+      resolution_mode: 'auto',
+      strategy,
+      fallback_mode: getGroupsFallbackMode(),
+      scope: 'selected',
+      selected_ids: selectedIds,
+      filters,
+      sort_context_filters: getCurrentInscripcioFilters(),
+      group_by: getCurrentGroupByCodes(),
+    }, extraPayload || {});
+  }
+
+  async function refreshGroupsAutoContext() {
+    if (!window.__groupsWorkspaceApi || typeof window.__groupsWorkspaceApi.resolveAutoContext !== 'function') {
+      return null;
+    }
+    const workspaceState = getGroupsWorkspaceState();
+    try {
+      const data = await window.__groupsWorkspaceApi.resolveAutoContext({
+        fallback_mode: getGroupsFallbackMode(),
+        group_by: getCurrentGroupByCodes(),
+        sort_context_filters: getCurrentInscripcioFilters(),
+        workspace_filters: workspaceState?.filters || {},
+        selected_ids: Array.isArray(workspaceState?.selectedIds) ? workspaceState.selectedIds : [],
+        source_scope: 'competition_all',
+      });
+      renderGroupsAutoContext(data);
+      return data;
+    } catch (_err) {
+      currentGroupsAutoContext = null;
+      updateGroupsStrategyButtonsState(null);
+      setGroupsAutoContextMessage("No s'ha pogut resoldre el context automatic dels grups.");
+      setGroupsBucketSelectionNote('');
+      renderDetectedGroupFields([]);
+      renderDetectedSortFields([]);
+      const els = getGroupsAutoContextElements();
+      if (els.bucketsCount) els.bucketsCount.textContent = 'Blocs proposats sobre tota la competicio: 0';
+      if (els.bucketsSelectionSummary) els.bucketsSelectionSummary.textContent = 'Seleccionades globalment: 0';
+      if (els.bucketsGrid) {
+        els.bucketsGrid.innerHTML = '';
+        els.bucketsGrid.classList.add('d-none');
+      }
+      if (els.resolutionStatus) {
+        els.resolutionStatus.textContent = "No s'ha pogut resoldre el context automatic dels grups.";
+      }
+      return null;
+    }
+  }
+
+  async function applySelectedGroupBuckets(selectionMode) {
+    const bucketKeys = getSelectedGroupBucketKeys();
+    if (!bucketKeys.length) {
+      showAlert('Marca com a minim un bloc proposat.');
+      return false;
+    }
+    if (!window.__groupsWorkspaceApi || typeof window.__groupsWorkspaceApi.applyAutoContextSelection !== 'function') {
+      showAlert("No s'ha pogut accedir al gestor de grups.");
+      return false;
+    }
+
+    const workspaceState = getGroupsWorkspaceState();
+    try {
+      const data = await window.__groupsWorkspaceApi.applyAutoContextSelection({
+        bucket_keys: bucketKeys,
+        selection_mode: selectionMode,
+        selected_ids: Array.isArray(workspaceState?.selectedIds) ? workspaceState.selectedIds : [],
+        sort_context_filters: getCurrentInscripcioFilters(),
+        workspace_filters: workspaceState?.filters || {},
+        group_by: getCurrentGroupByCodes(),
+        source_scope: 'competition_all',
+      });
+      if (typeof window.__groupsWorkspaceApi.setSelection === 'function') {
+        window.__groupsWorkspaceApi.setSelection(Array.isArray(data?.selected_ids) ? data.selected_ids : [], {
+          skipPreviewDirty: false,
+        });
+      }
+      const updatedCount = Number(data?.selection_count || 0);
+      setGroupsBucketSelectionNote(
+        selectionMode === 'remove'
+          ? `Seleccio actualitzada: ${updatedCount} inscripcions despres de treure ${Number(data?.buckets_applied || 0)} bloc(s).`
+          : selectionMode === 'set'
+            ? `Seleccio substituida pels ${Number(data?.buckets_applied || 0)} bloc(s) marcats: ${updatedCount} inscripcions.`
+            : `Seleccio ampliada amb ${Number(data?.buckets_applied || 0)} bloc(s): ${updatedCount} inscripcions.`
+      );
+      return true;
+    } catch (err) {
+      showAlert(`No s'ha pogut actualitzar la seleccio des del context automatic.\n${err.message || err}`);
+      return false;
+    }
+  }
+
+  function getGroupPreviewElements() {
+    return {
+      root: document.getElementById('groups-preview'),
+      status: document.getElementById('groups-preview-status'),
+      intentLabel: document.getElementById('groups-preview-intent-label'),
+      summary: document.getElementById('groups-preview-summary'),
+      existingWrap: document.getElementById('groups-preview-existing-wrap'),
+      existingMeta: document.getElementById('groups-preview-existing-meta'),
+      existingList: document.getElementById('groups-preview-existing-list'),
+      plannedWrap: document.getElementById('groups-preview-planned-wrap'),
+      plannedMeta: document.getElementById('groups-preview-planned-meta'),
+      list: document.getElementById('groups-preview-list'),
+      confirm: document.getElementById('btn-groups-preview-confirm'),
+      clear: document.getElementById('btn-groups-preview-clear'),
+    };
+  }
+
+  function updateGroupPreviewConfirmUi() {
+    const els = getGroupPreviewElements();
+    const root = els.root;
+    const intent = lastConfirmableGroupPreview;
+    const dirty = !!(root && root.dataset.dirty === '1');
+    const hasPreview = !!(root && root.dataset.hasPreview === '1');
+    const loading = !!(root && root.dataset.loading === '1');
+
+    if (els.intentLabel) {
+      const label = String(intent?.label || '').trim();
+      els.intentLabel.textContent = dirty && label ? `${label} - desactualitzada` : label;
+      els.intentLabel.classList.toggle('d-none', !label);
+    }
+
+    if (els.confirm) {
+      const canShow = hasPreview && !!intent && !!intent.canConfirm;
+      const buttonLabel = String(intent?.buttonLabel || 'Confirmar aquesta creacio').trim() || 'Confirmar aquesta creacio';
+      els.confirm.textContent = buttonLabel;
+      els.confirm.disabled = !canShow || dirty || loading || groupPreviewConfirmBusy;
+      els.confirm.classList.toggle('d-none', !canShow);
+    }
+  }
+
+  function clearGroupPreviewConfirmIntent() {
+    lastConfirmableGroupPreview = null;
+    groupPreviewConfirmBusy = false;
+    updateGroupPreviewConfirmUi();
+  }
+
+  function setGroupPreviewConfirmIntent(intent) {
+    if (!intent || typeof intent.execute !== 'function' || !intent.canConfirm) {
+      clearGroupPreviewConfirmIntent();
+      return;
+    }
+    lastConfirmableGroupPreview = {
+      label: String(intent.label || '').trim(),
+      buttonLabel: String(intent.buttonLabel || 'Confirmar aquesta creacio').trim(),
+      canConfirm: true,
+      execute: intent.execute,
+    };
+    updateGroupPreviewConfirmUi();
+  }
+
+  function setGroupPreviewStatus(message, variant = 'muted') {
+    const status = getGroupPreviewElements().status;
+    if (!status) return;
+    status.textContent = message || '';
+    status.style.color = variant === 'warning' ? '#b45309' : (variant === 'info' ? '#1d4ed8' : '#64748b');
+  }
+
+  function clearGroupPreview(statusText) {
+    const els = getGroupPreviewElements();
+    if (!els.root) return;
+    els.root.dataset.hasPreview = '0';
+    els.root.dataset.dirty = '0';
+    els.root.dataset.loading = '0';
+    if (els.summary) {
+      els.summary.innerHTML = '';
+      els.summary.classList.add('d-none');
+    }
+    if (els.existingList) els.existingList.innerHTML = '';
+    if (els.existingWrap) els.existingWrap.classList.add('d-none');
+    if (els.existingMeta) els.existingMeta.textContent = '';
+    if (els.list) els.list.innerHTML = '';
+    if (els.plannedWrap) els.plannedWrap.classList.add('d-none');
+    if (els.plannedMeta) els.plannedMeta.textContent = '';
+    if (els.clear) els.clear.classList.add('d-none');
+    setGroupPreviewStatus(
+      statusText || "Encara no s'ha calculat cap previsualitzacio amb aquesta configuracio.",
+      'muted'
+    );
+    clearGroupPreviewConfirmIntent();
+  }
+
+  function markGroupPreviewDirty() {
+    const els = getGroupPreviewElements();
+    if (!els.root || els.root.dataset.hasPreview !== '1') return;
+    els.root.dataset.dirty = '1';
+    setGroupPreviewStatus('La configuracio ha canviat. Torna a previsualitzar per actualitzar el resultat.', 'warning');
+    updateGroupPreviewConfirmUi();
+  }
+
+  function setGroupPreviewLoading(loading) {
+    const els = getGroupPreviewElements();
+    if (!els.root) return;
+    els.root.dataset.loading = loading ? '1' : '0';
+    if (loading) setGroupPreviewStatus('Calculant la previsualitzacio dels grups...', 'info');
+    updateGroupPreviewConfirmUi();
+  }
+
+  function describeGroupStrategy(strategy) {
+    switch (strategy) {
+      case 'count':
+        return 'X grups';
+      case 'size_fixed':
+        return 'Mida fixa';
+      case 'size_balanced':
+        return 'Mida equilibrada';
+      case 'range_balanced':
+        return 'Forquilla equilibrada';
+      case 'count_with_range':
+        return 'X grups amb forquilla';
+      case 'per_bucket':
+        return '1 grup per bloc';
+      default:
+        return 'Configuracio actual';
+    }
+  }
+
+  function createGroupPreviewCard(group, kind = 'planned') {
+    const previewKind = String(group?.preview_kind || (kind === 'existing' ? 'existing' : 'created')).trim().toLowerCase();
+    const impactKind = String(group?.impact_kind || '').trim().toLowerCase();
+    const card = document.createElement('div');
+    card.className = 'group-preview-card';
+    if (previewKind === 'created') card.classList.add('is-created');
+    else if (impactKind === 'removed') card.classList.add('is-removed');
+    else if (impactKind === 'reduced') card.classList.add('is-reduced');
+    else if (kind === 'existing') card.classList.add('is-existing');
+
+    const head = document.createElement('div');
+    head.className = 'group-preview-card-head';
+
+    const headText = document.createElement('div');
+    headText.className = 'group-preview-card-copy';
+    const title = document.createElement('p');
+    title.className = 'group-preview-card-title';
+    const preferredGroupName = String(group?.group_label || group?.suggested_name || '').trim();
+    title.textContent = preferredGroupName || `Grup ${group?.group_num || '?'}`;
+    headText.appendChild(title);
+
+    const groupNum = String(group?.group_num || '').trim();
+    if (groupNum && preferredGroupName) {
+      const groupRef = document.createElement('p');
+      groupRef.className = 'group-preview-card-subtitle';
+      groupRef.textContent = `Grup ${groupNum}`;
+      headText.appendChild(groupRef);
+    }
+
+    const subtitle = document.createElement('p');
+    subtitle.className = 'group-preview-card-subtitle';
+    const sourceCount = Array.isArray(group?.sources) ? group.sources.length : 0;
+    subtitle.textContent = `${sourceCount} ${sourceCount === 1 ? 'bloc origen implicat' : 'blocs origen implicats'}`;
+    headText.appendChild(subtitle);
+
+    const movingMembersCount = Number(group?.moving_members_count || 0);
+    const remainingMembersCount = Number(group?.remaining_members_count || 0);
+    let impactText = '';
+    let impactVariant = '';
+    if (previewKind === 'created') {
+      impactText = `Creat amb ${Number(group?.members_count || 0)} integrants`;
+      impactVariant = 'created';
+    } else if (impactKind === 'removed') {
+      impactText = `Surten ${movingMembersCount}, el grup quedara buit`;
+      impactVariant = 'removed';
+    } else if (impactKind === 'reduced') {
+      impactText = `Surten ${movingMembersCount}, en queden ${remainingMembersCount}`;
+      impactVariant = 'reduced';
+    }
+    if (impactText) {
+      const impact = document.createElement('p');
+      impact.className = 'group-preview-card-impact';
+      if (impactVariant) impact.classList.add(`is-${impactVariant}`);
+      impact.textContent = impactText;
+      headText.appendChild(impact);
+    }
+    head.appendChild(headText);
+
+    const badges = document.createElement('div');
+    badges.className = 'group-preview-card-badges';
+    if (previewKind === 'created') badges.appendChild(createPreviewBadge('Creat', 'created'));
+    else if (impactKind === 'removed') badges.appendChild(createPreviewBadge('Queda buit', 'removed'));
+    else if (impactKind === 'reduced') badges.appendChild(createPreviewBadge('Es redueix', 'reduced'));
+
+    const sourceKinds = new Set();
+    (Array.isArray(group?.sources) ? group.sources : []).forEach((sourceRow) => {
+      (Array.isArray(sourceRow?.kinds) ? sourceRow.kinds : []).forEach((kindName) => {
+        if (kindName) sourceKinds.add(String(kindName));
+      });
+    });
+    if (sourceKinds.has('tabs') && sourceKinds.has('sort')) badges.appendChild(createPreviewBadge('Combinat'));
+    else if (sourceKinds.has('tabs')) badges.appendChild(createPreviewBadge('Agrupacio'));
+    else if (sourceKinds.has('sort')) badges.appendChild(createPreviewBadge('Ordenacio'));
+    badges.appendChild(createPreviewBadge(`${Number(group?.members_count || 0)} integrants`));
+    head.appendChild(badges);
+    card.appendChild(head);
+
+    const sourcesWrap = document.createElement('div');
+    sourcesWrap.className = 'group-preview-sources';
+    const sources = Array.isArray(group?.sources) ? group.sources : [];
+    if (sources.length) {
+      sources.forEach((sourceRow) => {
+        const row = document.createElement('div');
+        row.className = 'group-preview-source-row';
+
+        const label = document.createElement('div');
+        label.className = 'group-preview-source-label';
+        label.textContent = String(sourceRow?.label || 'Sense bloc');
+        row.appendChild(label);
+
+        const count = document.createElement('span');
+        count.className = 'group-preview-source-count';
+        const totalCount = Number(sourceRow?.count || 0);
+        const movingCount = Number(sourceRow?.moving_count || 0);
+        const remainingCount = Number(sourceRow?.remaining_count || 0);
+        if (movingCount > 0) {
+          count.classList.add('is-impact');
+          count.textContent = `${totalCount} totals | surten ${movingCount} | queden ${remainingCount}`;
+        } else {
+          count.textContent = `${totalCount}`;
+        }
+        row.appendChild(count);
+        sourcesWrap.appendChild(row);
+      });
+    } else {
+      const empty = document.createElement('div');
+      empty.className = 'small text-muted';
+      empty.textContent = 'Sense composicio detallada disponible.';
+      sourcesWrap.appendChild(empty);
+    }
+    card.appendChild(sourcesWrap);
+
+    const movingMemberNames = Array.isArray(group?.moving_member_names_preview) ? group.moving_member_names_preview.filter(Boolean) : [];
+    const memberNames = Array.isArray(group?.member_names_preview) ? group.member_names_preview.filter(Boolean) : [];
+    const namesToShow = movingMemberNames.length ? movingMemberNames : memberNames;
+    const namesRemaining = movingMemberNames.length
+      ? Number(group?.moving_member_names_remaining || 0)
+      : Number(group?.member_names_remaining || 0);
+    const namesLabel = movingMemberNames.length ? 'Surten:' : "Exemple d'integrants:";
+    if (namesToShow.length) {
+      const members = document.createElement('div');
+      members.className = 'group-preview-members';
+      const suffix = namesRemaining > 0 ? ` +${namesRemaining} mes` : '';
+      const strong = document.createElement('strong');
+      strong.textContent = namesLabel;
+      members.appendChild(strong);
+      members.appendChild(document.createTextNode(` ${namesToShow.join(', ')}${suffix}`));
+      card.appendChild(members);
+    }
+
+    return card;
+  }
+
+  function renderGroupPreviewSection(wrap, meta, list, groups, kind) {
+    if (!wrap || !list) return;
+    const rows = Array.isArray(groups) ? groups : [];
+    list.innerHTML = '';
+    rows.forEach((group) => {
+      list.appendChild(createGroupPreviewCard(group, kind));
+    });
+    wrap.classList.toggle('d-none', rows.length === 0);
+    if (meta) {
+      const membersTotal = rows.reduce((acc, row) => acc + Number(row?.members_count || 0), 0);
+      meta.textContent = rows.length ? `${rows.length} grups, ${membersTotal} integrants` : '';
+    }
+  }
+
+  function renderGroupPreview(preview, strategy) {
+    const els = getGroupPreviewElements();
+    if (!els.root) return;
+
+    const previewData = preview && typeof preview === 'object' ? preview : {};
+    const groups = Array.isArray(previewData.groups) ? previewData.groups : [];
+    const existingGroups = Array.isArray(previewData.existing_groups) ? previewData.existing_groups : [];
+    els.root.dataset.hasPreview = '1';
+    els.root.dataset.dirty = '0';
+
+    if (els.summary) {
+      els.summary.innerHTML = '';
+      if (Number(previewData.selection_count || 0) > 0) {
+        els.summary.appendChild(createPreviewBadge(`${Number(previewData.selection_count || 0)} seleccionades`));
+      }
+      els.summary.appendChild(createPreviewBadge(`${Number(previewData.existing_groups_total || existingGroups.length || 0)} grups actuals`));
+      els.summary.appendChild(createPreviewBadge(`${Number(previewData.existing_members_total || 0)} integrants actuals`));
+      els.summary.appendChild(createPreviewBadge(`${Number(previewData.groups_total || groups.length || 0)} grups previstos`));
+      els.summary.appendChild(createPreviewBadge(`${Number(previewData.members_total || 0)} integrants previstos`));
+      if (Number(previewData.size_min || 0) > 0 || Number(previewData.size_max || 0) > 0) {
+        els.summary.appendChild(createPreviewBadge(`Mida ${Number(previewData.size_min || 0)}-${Number(previewData.size_max || 0)}`));
+      }
+      els.summary.appendChild(createPreviewBadge(`${Number(previewData.buckets_applied || 0)} blocs origen`));
+      if (Number(previewData.effective_bucket_count || 0) > 0) {
+        els.summary.appendChild(createPreviewBadge(`${Number(previewData.effective_bucket_count || 0)} blocs resolts`));
+      }
+
+      const layersUsed = Array.isArray(previewData.layers_used) ? previewData.layers_used : [];
+      if (layersUsed.includes('tabs') && layersUsed.includes('sort')) {
+        els.summary.appendChild(createPreviewBadge('Resolucio combinada'));
+      } else if (layersUsed.includes('tabs')) {
+        els.summary.appendChild(createPreviewBadge('Agrupacions'));
+      } else if (layersUsed.includes('sort')) {
+        els.summary.appendChild(createPreviewBadge('Ordenacions'));
+      }
+
+      if (existingGroups.some((group) => String(group?.impact_kind || '').trim().toLowerCase() === 'reduced')) {
+        els.summary.appendChild(createPreviewBadge('Groc: es redueix', 'reduced'));
+      }
+      if (existingGroups.some((group) => String(group?.impact_kind || '').trim().toLowerCase() === 'removed')) {
+        els.summary.appendChild(createPreviewBadge('Vermell: queda buit', 'removed'));
+      }
+      if (groups.some((group) => String(group?.preview_kind || '').trim().toLowerCase() === 'created')) {
+        els.summary.appendChild(createPreviewBadge('Verd: grup nou', 'created'));
+      }
+      if (previewData.used_fallback) {
+        els.summary.appendChild(createPreviewBadge('Amb fallback'));
+      }
+      els.summary.classList.remove('d-none');
+    }
+
+    renderGroupPreviewSection(els.existingWrap, els.existingMeta, els.existingList, existingGroups, 'existing');
+    renderGroupPreviewSection(els.plannedWrap, els.plannedMeta, els.list, groups, 'planned');
+
+    if (els.clear) els.clear.classList.remove('d-none');
+
+    const baseMessage = groups.length
+      ? `Previsualitzacio calculada amb l'estrategia "${describeGroupStrategy(strategy)}".`
+      : 'No es generen grups nous amb aquesta configuracio.';
+    const fallbackMessage = previewData.used_fallback ? " S'ha aplicat un fallback per resoldre la particio." : '';
+    setGroupPreviewStatus(`${baseMessage}${fallbackMessage}`, groups.length ? 'info' : 'muted');
+    updateGroupPreviewConfirmUi();
+  }
+
+  async function previewGroups(strategy, extraPayload = {}) {
+    const payload = buildGroupsPayload(strategy, Object.assign({}, extraPayload || {}, { preview_only: true }));
+    if (!(payload.selected_ids || []).length) {
+      clearGroupPreview('Selecciona com a minim una inscripcio.');
+      showAlert('Selecciona com a minim una inscripcio.');
+      return false;
+    }
+
+    setGroupPreviewLoading(true);
+    try {
+      const data = await postJson(groupsFromSortUrl, payload);
+      const resolvedStrategy = data?.strategy || strategy;
+      const previewData = Object.assign({}, data?.preview || {}, {
+        selection_count: (payload.selected_ids || []).length,
+      });
+      renderGroupPreview(previewData, resolvedStrategy);
+      const plannedGroups = Array.isArray(previewData.groups) ? previewData.groups : [];
+      if (plannedGroups.length) {
+        const confirmPayload = Object.assign({}, payload);
+        delete confirmPayload.preview_only;
+        setGroupPreviewConfirmIntent({
+          label: `Previsualitzacio de: ${describeGroupStrategy(resolvedStrategy)}`,
+          buttonLabel: 'Confirmar aquesta creacio',
+          canConfirm: true,
+          execute: () => makeGroupsFromPayload(confirmPayload),
+        });
+      } else {
+        clearGroupPreviewConfirmIntent();
+      }
+      return true;
+    } catch (err) {
+      clearGroupPreview("No s'ha pogut calcular la previsualitzacio amb aquesta configuracio.");
+      showAlert(`No s'ha pogut calcular la previsualitzacio.\n${err.message || err}`);
+      return false;
+    } finally {
+      setGroupPreviewLoading(false);
+    }
+  }
+
+  async function makeGroupsFromPayload(payload) {
+    if (!(payload.selected_ids || []).length) {
+      showAlert('Selecciona com a minim una inscripcio.');
+      return false;
+    }
+
+    try {
+      const data = await postJson(groupsFromSortUrl, payload);
+      if (!data || !data.ok) {
+        showAlert("No s'han pogut crear grups amb aquesta configuracio.");
+        return false;
+      }
+      clearGroupPreviewConfirmIntent();
+      reloadWithUiState();
+      return true;
+    } catch (err) {
+      showAlert(`No s'han pogut crear grups.\n${err.message || err}`);
+      return false;
+    }
+  }
+
+  async function makeGroups(strategy, extraPayload = {}) {
+    return makeGroupsFromPayload(buildGroupsPayload(strategy, extraPayload));
+  }
+
+  function bindPreviewDirtyHandlers(selectors, eventName) {
+    selectors.forEach((selector) => {
+      document.querySelectorAll(selector).forEach((el) => {
+        el.addEventListener(eventName, () => markGroupPreviewDirty());
+      });
+    });
+  }
+
+  function initGroupsPanel() {
+    const btnAll = document.getElementById('btn-groups-buckets-all');
+    if (btnAll) {
+      btnAll.addEventListener('click', () => {
+        setGroupBucketSelection(true);
+        updateGroupsStrategyButtonsState(currentGroupsAutoContext);
+      });
+    }
+
+    const btnNone = document.getElementById('btn-groups-buckets-none');
+    if (btnNone) {
+      btnNone.addEventListener('click', () => {
+        setGroupBucketSelection(false);
+        updateGroupsStrategyButtonsState(currentGroupsAutoContext);
+      });
+    }
+
+    const btnAdd = document.getElementById('btn-groups-buckets-add');
+    if (btnAdd) btnAdd.addEventListener('click', async () => { await applySelectedGroupBuckets('add'); });
+
+    const btnRemove = document.getElementById('btn-groups-buckets-remove');
+    if (btnRemove) btnRemove.addEventListener('click', async () => { await applySelectedGroupBuckets('remove'); });
+
+    const btnSet = document.getElementById('btn-groups-buckets-set');
+    if (btnSet) btnSet.addEventListener('click', async () => { await applySelectedGroupBuckets('set'); });
+
+    const bucketsGrid = document.getElementById('groups-buckets-grid');
+    if (bucketsGrid) {
+      bucketsGrid.addEventListener('change', (event) => {
+        const checkbox = event.target.closest('.js-group-bucket-check');
+        if (!checkbox) return;
+        setGroupsBucketSelectionMode('custom');
+        groupBucketSelectionState.selectedKeys = new Set(
+          Array.from(document.querySelectorAll('.js-group-bucket-check:checked'))
+            .map((el) => String(el.value || '').trim())
+            .filter(Boolean)
+        );
+        setGroupsBucketSelectionNote('');
+        updateGroupsStrategyButtonsState(currentGroupsAutoContext);
+      });
+    }
+
+    const fallback = document.getElementById('groups-fallback');
+    if (fallback) {
+      fallback.addEventListener('change', async () => {
+        markGroupPreviewDirty();
+        await refreshGroupsAutoContext();
+      });
+    }
+
+    document.addEventListener('inscripcions:group-creation-context-changed', async () => {
+      await refreshGroupsAutoContext();
+    });
+
+    const strategyConfig = [
+      ['btn-groups-create-count', 'count', () => ({ group_count: readIntInput('groups-group-count', 1) }), "Introdueix un nombre de grups valid."],
+      ['btn-groups-preview-count', 'count', () => ({ group_count: readIntInput('groups-group-count', 1) }), "Introdueix un nombre de grups valid.", true],
+      ['btn-groups-create-per-bucket', 'per_bucket', () => ({}), ''],
+      ['btn-groups-preview-per-bucket', 'per_bucket', () => ({}), '', true],
+    ];
+
+    strategyConfig.forEach(([id, strategy, readArgs, errorMessage, previewOnly]) => {
+      const btn = document.getElementById(id);
+      if (!btn) return;
+      btn.addEventListener('click', async () => {
+        const args = readArgs();
+        if (Object.values(args).some((value) => value === null)) {
+          if (errorMessage) showAlert(errorMessage);
+          return;
+        }
+        if (previewOnly) await previewGroups(strategy, args);
+        else await makeGroups(strategy, args);
+      });
+    });
+
+    const btnCreateSize = document.getElementById('btn-groups-create-size');
+    if (btnCreateSize) {
+      btnCreateSize.addEventListener('click', async () => {
+        const size = readIntInput('groups-group-size', 2);
+        if (!size) return void showAlert('Introdueix una mida valida (>=2).');
+        const mode = document.getElementById('groups-group-size-mode')?.value || 'fixed';
+        await makeGroups(mode === 'balanced' ? 'size_balanced' : 'size_fixed', { group_size: size });
+      });
+    }
+
+    const btnPreviewSize = document.getElementById('btn-groups-preview-size');
+    if (btnPreviewSize) {
+      btnPreviewSize.addEventListener('click', async () => {
+        const size = readIntInput('groups-group-size', 2);
+        if (!size) return void showAlert('Introdueix una mida valida (>=2).');
+        const mode = document.getElementById('groups-group-size-mode')?.value || 'fixed';
+        await previewGroups(mode === 'balanced' ? 'size_balanced' : 'size_fixed', { group_size: size });
+      });
+    }
+
+    const bindRangeStrategy = (buttonId, strategy, previewOnly) => {
+      const btn = document.getElementById(buttonId);
+      if (!btn) return;
+      btn.addEventListener('click', async () => {
+        const minSize = readIntInput('groups-group-min-size', 1);
+        const maxSize = readIntInput('groups-group-max-size', 1);
+        if (!minSize || !maxSize || minSize > maxSize) {
+          showAlert('Forquilla invalida: comprova minim i maxim.');
+          return;
+        }
+        const payload = { min_size: minSize, max_size: maxSize };
+        if (strategy === 'count_with_range') {
+          const groupCount = readIntInput('groups-group-count-range', 1);
+          if (!groupCount) {
+            showAlert('Introdueix un nombre de grups valid.');
+            return;
+          }
+          payload.group_count = groupCount;
+        }
+        if (previewOnly) await previewGroups(strategy, payload);
+        else await makeGroups(strategy, payload);
+      });
+    };
+
+    bindRangeStrategy('btn-groups-create-range-balanced', 'range_balanced', false);
+    bindRangeStrategy('btn-groups-preview-range-balanced', 'range_balanced', true);
+    bindRangeStrategy('btn-groups-create-count-range', 'count_with_range', false);
+    bindRangeStrategy('btn-groups-preview-count-range', 'count_with_range', true);
+
+    const btnPreviewConfirm = document.getElementById('btn-groups-preview-confirm');
+    if (btnPreviewConfirm) {
+      btnPreviewConfirm.addEventListener('click', async () => {
+        const els = getGroupPreviewElements();
+        if (!lastConfirmableGroupPreview || !lastConfirmableGroupPreview.canConfirm) return;
+        if (!els.root || els.root.dataset.hasPreview !== '1' || els.root.dataset.dirty === '1') return;
+        if (groupPreviewConfirmBusy) return;
+        try {
+          groupPreviewConfirmBusy = true;
+          updateGroupPreviewConfirmUi();
+          await lastConfirmableGroupPreview.execute();
+        } finally {
+          groupPreviewConfirmBusy = false;
+          updateGroupPreviewConfirmUi();
+        }
+      });
+    }
+
+    const btnPreviewClear = document.getElementById('btn-groups-preview-clear');
+    if (btnPreviewClear) btnPreviewClear.addEventListener('click', () => clearGroupPreview());
+
+    bindPreviewDirtyHandlers([
+      '#groups-group-count',
+      '#groups-group-size',
+      '#groups-group-size-mode',
+      '#groups-group-min-size',
+      '#groups-group-max-size',
+      '#groups-group-count-range',
+    ], 'change');
+    bindPreviewDirtyHandlers([
+      '#groups-group-count',
+      '#groups-group-size',
+      '#groups-group-min-size',
+      '#groups-group-max-size',
+      '#groups-group-count-range',
+    ], 'input');
+
+    clearGroupPreview();
+    updateGroupsStrategyButtonsState(null);
+    refreshGroupsAutoContext();
+  }
+
+  window.setGroupPreviewStatus = setGroupPreviewStatus;
+  window.clearGroupPreview = clearGroupPreview;
+  window.markGroupPreviewDirty = markGroupPreviewDirty;
+  window.renderGroupPreview = renderGroupPreview;
+  window.__groupsPreviewApi = {
+    setConfirmIntent: setGroupPreviewConfirmIntent,
+    clearConfirmIntent: clearGroupPreviewConfirmIntent,
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initGroupsPanel);
+  } else {
+    initGroupsPanel();
+  }
+})();

@@ -1,0 +1,288 @@
+<script>
+(function () {
+  'use strict';
+
+  const API = window.InscripcionsApp;
+  if (!API) return;
+
+  let mediaFolderSelection = [];
+  let mediaPreviewRows = [];
+
+  function buildMediaFolderSelection() {
+    const input = document.getElementById('media-folder-input');
+    const files = Array.from(input?.files || []);
+    mediaFolderSelection = files.map((file, idx) => ({
+      key: String(idx),
+      filename: String(file?.name || ''),
+      relative_path: String(file?.webkitRelativePath || file?.name || ''),
+      size: Number(file?.size || 0),
+      file,
+    }));
+    return mediaFolderSelection;
+  }
+
+  function formatBytes(num) {
+    const n = Number(num || 0);
+    if (!Number.isFinite(n) || n <= 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let value = n;
+    let idx = 0;
+    while (value >= 1024 && idx < units.length - 1) {
+      value /= 1024;
+      idx += 1;
+    }
+    return `${value.toFixed(idx === 0 ? 0 : 1)} ${units[idx]}`;
+  }
+
+  function renderMediaMatchSummary(text) {
+    const summary = document.getElementById('media-match-summary');
+    if (summary) summary.textContent = text || '';
+  }
+
+  function renderMediaMatchRows(rows, counts) {
+    const wrap = document.getElementById('media-match-table-wrap');
+    const tbody = document.getElementById('media-match-table-body');
+    if (!wrap || !tbody) return;
+    tbody.innerHTML = '';
+    const list = Array.isArray(rows) ? rows : [];
+    if (!list.length) {
+      wrap.classList.add('d-none');
+      renderMediaMatchSummary('No hi ha resultats de match.');
+      return;
+    }
+
+    wrap.classList.remove('d-none');
+    const statusLabel = { auto: 'AUTO', review: 'REVISAR', unmatched: 'SENSE MATCH' };
+    const options = Array.isArray(API.app.initial.mediaMatchInscripcionsOptions)
+      ? API.app.initial.mediaMatchInscripcionsOptions
+      : [];
+
+    list.forEach((row) => {
+      const tr = document.createElement('tr');
+
+      const fileTd = document.createElement('td');
+      fileTd.textContent = `${row.relative_path || row.filename || '-'} (${formatBytes(row.size)})`;
+      tr.appendChild(fileTd);
+
+      const statusTd = document.createElement('td');
+      const badge = document.createElement('span');
+      const status = String(row.status || 'unmatched');
+      badge.className = `media-match-status ${status}`;
+      badge.textContent = statusLabel[status] || status.toUpperCase();
+      statusTd.appendChild(badge);
+      tr.appendChild(statusTd);
+
+      const selectTd = document.createElement('td');
+      const select = document.createElement('select');
+      select.className = 'form-control form-control-sm js-media-match-select';
+      select.dataset.key = String(row.key || '');
+      const empty = document.createElement('option');
+      empty.value = '';
+      empty.textContent = '-- Sense assignar --';
+      select.appendChild(empty);
+
+      const optionPool = Array.isArray(row.top_candidates) && row.top_candidates.length
+        ? row.top_candidates.map((candidate) => ({
+            id: candidate.inscripcio_id,
+            label: `${candidate.label || candidate.inscripcio_id} (${Number(candidate.score || 0).toFixed(3)})`,
+          }))
+        : options;
+      optionPool.forEach((candidate) => {
+        const opt = document.createElement('option');
+        opt.value = String(candidate.id || candidate.inscripcio_id || '');
+        opt.textContent = candidate.label || String(candidate.id || candidate.inscripcio_id || '');
+        select.appendChild(opt);
+      });
+      if (row.suggested_inscripcio_id != null) {
+        select.value = String(row.suggested_inscripcio_id);
+      }
+      selectTd.appendChild(select);
+      tr.appendChild(selectTd);
+
+      const scoreTd = document.createElement('td');
+      scoreTd.textContent = `${Number(row.score || 0).toFixed(3)} (Δ ${Number(row.margin || 0).toFixed(3)})`;
+      tr.appendChild(scoreTd);
+
+      const detailTd = document.createElement('td');
+      detailTd.textContent = String(row.reason || '');
+      tr.appendChild(detailTd);
+
+      tbody.appendChild(tr);
+    });
+
+    const c = counts || {};
+    renderMediaMatchSummary(
+      `Fitxers: ${Number(c.total || list.length)} · AUTO: ${Number(c.auto || 0)} · REVISAR: ${Number(c.review || 0)} · SENSE MATCH: ${Number(c.unmatched || 0)}`
+    );
+  }
+
+  async function previewMediaFolderMatch() {
+    const entries = buildMediaFolderSelection();
+    if (!entries.length) {
+      API.showAlert('Selecciona primer una carpeta amb fitxers.');
+      return;
+    }
+    const data = await API.postJson(API.app.urls.mediaMatchPreview, {
+      files: entries.map((entry) => ({
+        key: entry.key,
+        filename: entry.filename,
+        relative_path: entry.relative_path,
+        size: entry.size,
+      })),
+    });
+    if (!data?.ok) throw new Error("No s'ha pogut previsualitzar el match.");
+    mediaPreviewRows = Array.isArray(data.rows) ? data.rows : [];
+    renderMediaMatchRows(mediaPreviewRows, data.counts || {});
+  }
+
+  async function applyMediaFolderMatch() {
+    if (!Array.isArray(mediaPreviewRows) || !mediaPreviewRows.length) {
+      API.showAlert('Fes primer la previsualització de match.');
+      return;
+    }
+    const fileByKey = new Map((mediaFolderSelection || []).map((entry) => [String(entry.key), entry.file]));
+    const form = new FormData();
+    const mapping = [];
+
+    mediaPreviewRows.forEach((row) => {
+      const key = String(row.key || '');
+      const select = document.querySelector(`.js-media-match-select[data-key="${CSS.escape(key)}"]`);
+      const inscripcioId = parseInt(select?.value || '0', 10);
+      const file = fileByKey.get(key);
+      if (!Number.isInteger(inscripcioId) || inscripcioId <= 0 || !file) return;
+      mapping.push({ key, inscripcio_id: inscripcioId, score: Number(row.score || 0) });
+      form.append(`file_${key}`, file, file.name);
+    });
+
+    if (!mapping.length) {
+      API.showAlert("No hi ha cap assignació seleccionada.");
+      return;
+    }
+
+    form.append('mapping_json', JSON.stringify(mapping));
+    const response = await fetch(API.app.urls.mediaMatchApply, {
+      method: 'POST',
+      headers: {
+        'X-CSRFToken': API.csrfToken(),
+      },
+      credentials: 'same-origin',
+      body: form,
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || `HTTP ${response.status}`);
+    }
+    const data = await response.json();
+    if (!data?.ok) throw new Error("No s'han pogut aplicar les assignacions.");
+    API.reloadWithUiState();
+  }
+
+  async function uploadMedia(inscripcioId, file) {
+    const form = new FormData();
+    form.append('inscripcio_id', String(inscripcioId));
+    form.append('media_file', file, file.name);
+    const response = await fetch(API.app.urls.mediaUpload, {
+      method: 'POST',
+      headers: {
+        'X-CSRFToken': API.csrfToken(),
+      },
+      credentials: 'same-origin',
+      body: form,
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || `HTTP ${response.status}`);
+    }
+    return response.json();
+  }
+
+  async function setPrimary(mediaId) {
+    return API.postJson(API.app.urls.mediaSetPrimary, { media_id: mediaId });
+  }
+
+  async function removeMedia(mediaId) {
+    return API.postJson(API.app.urls.mediaDelete, { media_id: mediaId });
+  }
+
+  function wireMediaActions() {
+    const folderInput = document.getElementById('media-folder-input');
+    if (folderInput) {
+      folderInput.addEventListener('change', () => {
+        const entries = buildMediaFolderSelection();
+        mediaPreviewRows = [];
+        renderMediaMatchRows([], {});
+        if (!entries.length) {
+          renderMediaMatchSummary('Cap fitxer carregat.');
+          return;
+        }
+        const autoMin = Number(API.app.initial.mediaMatchingConfig?.thresholds?.auto_score_min || 0).toFixed(2);
+        renderMediaMatchSummary(`${entries.length} fitxers preparats per al match (AUTO >= ${autoMin}).`);
+      });
+    }
+
+    document.getElementById('btn-media-match-preview')?.addEventListener('click', async () => {
+      try {
+        await previewMediaFolderMatch();
+      } catch (err) {
+        API.showAlert(err.message || err);
+      }
+    });
+
+    document.getElementById('btn-media-match-apply')?.addEventListener('click', async () => {
+      try {
+        await applyMediaFolderMatch();
+      } catch (err) {
+        API.showAlert(err.message || err);
+      }
+    });
+
+    document.addEventListener('click', async (e) => {
+      const uploadBtn = e.target.closest('.js-media-upload-btn');
+      if (uploadBtn) {
+        const insId = parseInt(uploadBtn.dataset.insId || '0', 10);
+        const input = document.querySelector(`.js-media-upload-input[data-ins-id="${CSS.escape(String(insId))}"]`);
+        const file = input?.files?.[0];
+        if (!file) {
+          API.showAlert('Selecciona un fitxer abans de pujar-lo.');
+          return;
+        }
+        try {
+          const data = await uploadMedia(insId, file);
+          if (!data?.ok) throw new Error("No s'ha pogut pujar el fitxer.");
+          API.reloadWithUiState();
+        } catch (err) {
+          API.showAlert(err.message || err);
+        }
+        return;
+      }
+
+      const primaryBtn = e.target.closest('.js-media-set-primary');
+      if (primaryBtn) {
+        try {
+          const data = await setPrimary(parseInt(primaryBtn.dataset.mediaId || '0', 10));
+          if (!data?.ok) throw new Error("No s'ha pogut marcar com a principal.");
+          API.reloadWithUiState();
+        } catch (err) {
+          API.showAlert(err.message || err);
+        }
+        return;
+      }
+
+      const deleteBtn = e.target.closest('.js-media-delete');
+      if (deleteBtn) {
+        const ok = await API.showConfirm('Eliminar aquest fitxer?');
+        if (!ok) return;
+        try {
+          const data = await removeMedia(parseInt(deleteBtn.dataset.mediaId || '0', 10));
+          if (!data?.ok) throw new Error("No s'ha pogut eliminar el fitxer.");
+          API.reloadWithUiState();
+        } catch (err) {
+          API.showAlert(err.message || err);
+        }
+      }
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', wireMediaActions);
+})();
+</script>

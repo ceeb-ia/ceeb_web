@@ -1,0 +1,161 @@
+{% load competicio_extras %}
+
+<tbody class="sortable-body" data-pane-id="{% if pane_id == '__single__' %}__single__{% else %}pane-{{ pane_id }}{% endif %}">
+  {% for r in rows %}
+    {% ifchanged r.grup %}
+      {% if r.grup %}
+        <tr class="group-row group-grup" data-group-header="{{ r.grup|default:'' }}" data-pane-id="{% if pane_id == '__single__' %}__single__{% else %}pane-{{ pane_id }}{% endif %}">
+          <td colspan="{{ table_colspan|add:'1' }}">
+            <div class="d-flex justify-content-between align-items-center">
+              <div class="d-flex align-items-center flex-wrap" style="gap:10px;">
+                {% with gkey=r.grup|stringformat:"s" %}
+                  <span class="font-weight-bold group-title">
+                    <span class="group-name-text" data-group="{{ r.grup }}">
+                      {% if group_names|get_item:gkey %}
+                        {{ group_names|get_item:gkey }}
+                      {% else %}
+                        Grup {{ gkey }}
+                      {% endif %}
+                    </span>
+                  </span>
+                  <span class="badge badge-light js-group-count" data-group="{{ r.grup }}" data-group-total="{{ group_member_totals|get_item:gkey|default:0 }}" title="Integrants totals del grup">{{ group_member_totals|get_item:gkey|default:0 }} integrants</span>
+                  <span class="badge badge-warning d-none js-group-order-dirty" data-group="{{ r.grup }}" title="L'ordre visual d'aquest grup no coincideix amb l'ordre de competicio desat">Ordre no desat</span>
+                  <div class="group-actions-pop">
+                    <button
+                      type="button"
+                      class="btn btn-link btn-sm p-0 js-group-actions-toggle"
+                      data-group-actions-toggle
+                      data-group="{{ r.grup }}"
+                      title="Accions del grup"
+                      aria-label="Accions del grup">
+                      &#8942;
+                    </button>
+                    <div class="group-actions-menu d-none" data-group-actions-menu data-group="{{ r.grup }}">
+                      <button type="button" class="btn btn-sm btn-outline-info w-100 js-view-group-order" data-group="{{ r.grup }}">Veure ordre competició</button>
+                      <button type="button" class="btn btn-sm btn-outline-primary w-100 mt-1 js-save-group-order" data-group="{{ r.grup }}" {% if not can_edit_inscripcions %}disabled{% endif %}>Desar ordre competició</button>
+                      <button type="button" class="btn btn-sm btn-outline-secondary w-100 mt-1 js-edit-group-name" data-group="{{ r.grup }}" {% if not can_edit_inscripcions %}disabled{% endif %}>Editar nom</button>
+                    </div>
+                  </div>
+                  <span class="d-none js-group-name-editor" data-group="{{ r.grup }}">
+                    <input type="text" class="form-control form-control-sm d-inline-block" style="width:240px;" placeholder="Nom del grup..." value="{{ group_names|get_item:gkey|default:'' }}">
+                    <button type="button" class="btn btn-sm btn-primary js-save-group-name" data-group="{{ r.grup }}">Desar</button>
+                    <button type="button" class="btn btn-sm btn-light js-cancel-group-name" data-group="{{ r.grup }}">Cancelar</button>
+                  </span>
+                {% endwith %}
+              </div>
+            </div>
+          </td>
+        </tr>
+      {% endif %}
+    {% endifchanged %}
+
+    <tr
+      class="inscripcio-row"
+      data-inscripcio-id="{{ r.id }}"
+      data-id="{{ r.id }}"
+      data-name="{{ r.nom_i_cognoms|default:''|escape }}"
+      data-document="{{ r.document|default:''|escape }}"
+      data-entitat="{{ r.entitat|default:''|escape }}"
+      data-categoria="{{ r.categoria|default:''|escape }}"
+      data-subcategoria="{{ r.subcategoria|default:''|escape }}"
+      data-sexe="{{ r.sexe|default:''|escape }}"
+      data-group="{{ r.grup|default:'' }}"
+      data-group-name="{% with gkey=r.grup|stringformat:'s' %}{{ group_names|get_item:gkey|default:''|escape }}{% endwith %}"
+      data-competition-order="{{ r.ordre_competicio|default:'' }}"
+      data-team="{{ r.base_equip_id|default:'' }}">
+      <td class="control-col">
+        <div class="row-controls">
+          <input type="checkbox" class="inscripcio-select js-inscripcio-select js-team-row-select" value="{{ r.id }}" data-inscripcio-id="{{ r.id }}" data-ins-id="{{ r.id }}">
+          <span class="drag-handle" title="Arrossega">&#8942;</span>
+        </div>
+      </td>
+      {% for col in selected_table_columns %}
+        <td class="{% if col.code == 'nom_i_cognoms' %}font-weight-bold{% endif %} {% if col.code == '__actions__' %}text-nowrap{% endif %}">
+          {% if col.code == "__actions__" %}
+            <a class="btn btn-sm btn-outline-primary" href="{% url 'inscripcio_edit' competicio.id r.id %}?team_context={{ team_context_selected_code|urlencode }}&next={{ request.get_full_path|urlencode }}">Editar</a>
+            <a class="btn btn-sm btn-outline-danger" href="{% url 'inscripcio_delete' competicio.id r.id %}?next={{ request.get_full_path|urlencode }}">Eliminar</a>
+          {% elif col.code == "nom_i_cognoms" %}
+            {{ r.nom_i_cognoms|default:"-" }}
+          {% elif col.code == "equip" %}
+            {% if r.base_equip_id %}
+              {% with ek=r.base_equip_id|stringformat:"s" %}
+                <span class="equip-badge">{{ equip_name_map|get_item:ek|default:"Equip "|add:ek }}</span>
+              {% endwith %}
+            {% else %}
+              -
+            {% endif %}
+          {% elif col.code == "grup" %}
+            {% if r.grup %}
+              {% with gkey=r.grup|stringformat:"s" %}
+                {% if group_names|get_item:gkey %}
+                  {{ group_names|get_item:gkey }}
+                {% else %}
+                  Grup {{ gkey }}
+                {% endif %}
+              {% endwith %}
+            {% else %}
+              -
+            {% endif %}
+          {% elif col.code == "ordre_sortida" %}
+            <span class="js-ordre-sortida-cell" data-ins-id="{{ r.id }}">{{ r.ordre_sortida|default:"-" }}</span>
+          {% elif col.code == "__aparells__" %}
+            {% with rid=r.id|stringformat:"s" %}
+              {% with ex_ids=inscripcio_aparells_excluded_map|get_item:rid %}
+                <select class="form-control form-control-sm aparells-select js-aparells-select" data-ins-id="{{ r.id }}" multiple size="3" {% if not can_edit_inscripcions %}disabled{% endif %}>
+                  {% for app in inscripcio_aparells_cfg %}
+                    <option value="{{ app.id }}" {% if app.id not in ex_ids %}selected{% endif %}>{{ app.aparell.nom }}</option>
+                  {% empty %}
+                    <option value="" disabled>(Sense aparells actius)</option>
+                  {% endfor %}
+                </select>
+              {% endwith %}
+            {% endwith %}
+          {% elif col.code == "__media__" %}
+            {% with rid=r.id|stringformat:"s" %}
+              {% with media_items=inscripcio_media_map|get_item:rid %}
+                <div class="media-cell" data-ins-id="{{ r.id }}">
+                  <div class="media-list js-media-list" data-ins-id="{{ r.id }}">
+                    {% for m in media_items %}
+                      <span class="media-badge {% if m.is_primary %}media-badge-primary{% endif %}" data-media-id="{{ m.id }}" data-media-ins-id="{{ r.id }}">
+                        {% if m.url %}
+                          <a class="media-badge-name" href="{{ m.url }}" target="_blank" rel="noopener noreferrer" title="{{ m.original_filename }}">{{ m.original_filename }}</a>
+                        {% else %}
+                          <span class="media-badge-name" title="{{ m.original_filename }}">{{ m.original_filename }}</span>
+                        {% endif %}
+                        <span class="text-muted">{{ m.tipus }}</span>
+                        {% if can_edit_inscripcions %}
+                          <button type="button" class="media-icon-btn js-media-set-primary" data-media-id="{{ m.id }}" title="Marcar com a principal">*</button>
+                          <button type="button" class="media-icon-btn js-media-delete" data-media-id="{{ m.id }}" title="Eliminar fitxer">x</button>
+                        {% endif %}
+                      </span>
+                    {% empty %}
+                      <span class="small text-muted js-media-empty" data-ins-id="{{ r.id }}">Sense fitxers</span>
+                    {% endfor %}
+                  </div>
+                  {% if can_edit_inscripcions %}
+                    <div class="media-upload-row">
+                      <input type="file" class="form-control form-control-sm js-media-upload-input" data-ins-id="{{ r.id }}" accept=".mp3,.wav,.m4a,.aac,.ogg,.mp4,.mov,.m4v,.webm,.jpg,.jpeg,.png">
+                      <button type="button" class="btn btn-sm btn-outline-primary js-media-upload-btn" data-ins-id="{{ r.id }}">Pujar</button>
+                    </div>
+                  {% endif %}
+                </div>
+              {% endwith %}
+            {% endwith %}
+          {% elif col.kind == "extra" %}
+            {{ r.extra|extra_item:col.code|default:"-" }}
+          {% elif col.code == "data_naixement" %}
+            {% with v=r|attr:col.code %}
+              {% if v %}{{ v|date:"d/m/Y" }}{% else %}-{% endif %}
+            {% endwith %}
+          {% else %}
+            {{ r|attr:col.code|default:"-" }}
+          {% endif %}
+        </td>
+      {% endfor %}
+    </tr>
+  {% empty %}
+    <tr>
+      <td colspan="{{ table_colspan|add:'1' }}" class="text-center text-muted">No hi ha inscripcions per aquesta competicio</td>
+    </tr>
+  {% endfor %}
+</tbody>

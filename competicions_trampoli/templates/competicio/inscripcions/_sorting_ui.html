@@ -1,0 +1,67 @@
+<div class="panel is-active">
+  <div class="panel-head">
+    <h3 class="panel-title">Ordenacions i filtres de columna</h3>
+    <div class="subtle">Estat actual de la pila d'ordenació i accions ràpides.</div>
+  </div>
+
+  <div class="panel-body">
+    <div class="mb-3">
+      <div class="d-flex flex-wrap align-items-center justify-content-between" style="gap:8px;">
+        <div>
+          <div class="fw-semibold">Pila activa</div>
+          <div class="small text-muted">
+            {{ column_sort_effective_count|default:0 }} criteris efectius
+          </div>
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-danger js-clear-sort">
+          Netejar ordenacions
+        </button>
+      </div>
+    </div>
+
+    <div class="d-flex flex-column" style="gap:10px;">
+      {% for entry in column_sort_entries %}
+        <div class="border rounded p-2 bg-white">
+          <div class="d-flex justify-content-between align-items-start" style="gap:8px;">
+            <div>
+              <div class="fw-semibold">
+                #{{ entry.priority }} · {{ entry.label }}
+              </div>
+              <div class="small text-muted">
+                {{ entry.sort_dir_label }} · {{ entry.scope_label }}
+              </div>
+            </div>
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-secondary js-remove-sort"
+              data-priority="{{ entry.remove_priority }}">
+              Treure
+            </button>
+          </div>
+        </div>
+      {% empty %}
+        <div class="text-muted">No hi ha criteris d'ordenació actius.</div>
+      {% endfor %}
+    </div>
+
+    <hr>
+
+    <div>
+      <div class="fw-semibold mb-2">Camps disponibles</div>
+      <div class="d-flex flex-wrap" style="gap:8px;">
+        {% for col in selected_table_columns %}
+          {% if col.code in sortable_table_column_codes %}
+            <div class="border rounded p-2 bg-white">
+              <div class="small font-weight-bold mb-1">{{ col.ui_label|default:col.label }}</div>
+              <div class="d-flex flex-wrap" style="gap:6px;">
+                <button type="button" class="btn btn-sm btn-outline-primary js-apply-sort" data-sort-key="{{ col.code }}" data-sort-dir="asc" data-scope="all">↑</button>
+                <button type="button" class="btn btn-sm btn-outline-primary js-apply-sort" data-sort-key="{{ col.code }}" data-sort-dir="desc" data-scope="all">↓</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary js-custom-sort-values" data-sort-key="{{ col.code }}">Custom</button>
+              </div>
+            </div>
+          {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>

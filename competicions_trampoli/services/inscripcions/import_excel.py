@@ -2,7 +2,7 @@
 import hashlib
 import json
 import unicodedata
-from datetime import datetime, date
+from datetime import datetime, date, time
 from typing import Optional, Dict, Any, Set, Tuple, List
 
 from openpyxl import load_workbook
@@ -104,6 +104,35 @@ def _normalize_document(v) -> Optional[str]:
     return txt or None
 
 
+def _normalize_extra_value(value):
+    """
+    Normalitza valors perquè es puguin guardar de forma segura a JSONField.
+    Excel pot entregar dates/datetimes natives d'openpyxl, que Django no
+    serialitza directament dins d'un JSONField.
+    """
+    value = _to_none(value)
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, time):
+        return value.isoformat()
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, (bool, int, float)):
+        return value
+    if isinstance(value, (list, tuple, set)):
+        return [_normalize_extra_value(item) for item in value]
+    if isinstance(value, dict):
+        return {
+            str(key): _normalize_extra_value(item)
+            for key, item in value.items()
+        }
+    return str(value)
+
+
 def _parse_date(value) -> Optional[date]:
     """
     Accepta:
@@ -139,7 +168,21 @@ BUILTIN = {
     },
     "nom_i_cognoms": {
         "label": "Nom i cognoms",
-        "syn": ["nom_i_cognoms", "nom_cognoms", "participant", "nom_complet", "nomcomplert", "nom_i_llinatges", "nombre_y_apellidos","nombre_completo"],
+        "syn": [
+            "nom_i_cognoms",
+            "nom_cognoms",
+            "participant",
+            "nom_complet",
+            "nomcomplert",
+            "nom_i_llinatges",
+            "nombre_y_apellidos",
+            "nombre_completo",
+            "nom_inscripcio",
+            "nom_inscripció",
+            "nom_federat",
+            "nom_federat_complet",
+
+        ],
         "setter": lambda defaults, v: defaults.__setitem__("nom_i_cognoms", str(v).strip() if _to_none(v) is not None else None),
     },
     # per si ve separat:
@@ -155,7 +198,7 @@ BUILTIN = {
     },
     "entitat": {
         "label": "Entitat/Club",
-        "syn": ["entitat", "club", "organitzacio", "organizacion"],
+        "syn": ["entitat", "club", "organitzacio", "organizacion", "entitat_inscripcio", "entitat_inscripció", "entitat_participant", "entitat_federat"],
         "setter": lambda defaults, v: defaults.__setitem__("entitat", str(v).strip() if _to_none(v) is not None else None),
     },
     "categoria": {
@@ -622,12 +665,9 @@ def importar_inscripcions_excel(fitxer, competicio: Competicio, sheet: str = "")
             extra: Dict[str, Any] = {}
             for h_norm, extra_code in header_to_extra_code.items():
                 v = ws.cell(row=r, column=headers[h_norm][1]).value
-                v = _to_none(v)
+                v = _normalize_extra_value(v)
                 if v is None:
                     continue
-                # guarda strings netes
-                if isinstance(v, str):
-                    v = v.strip()
                 extra[extra_code] = v
 
             # 6.4 document (si existeix)

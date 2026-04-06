@@ -1,0 +1,507 @@
+<script>
+(function () {
+  'use strict';
+
+  const API = window.InscripcionsApp;
+  if (!API) return;
+
+  const groupModalState = {
+    groupNum: '',
+    rows: [],
+  };
+
+  function arraysEqual(a, b) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    for (let index = 0; index < a.length; index += 1) {
+      if (String(a[index]) !== String(b[index])) return false;
+    }
+    return true;
+  }
+
+  function collectGlobalIds() {
+    const ids = [];
+    if (API.hasTabs()) {
+      Array.from(document.querySelectorAll('#tabs-root > li.nav-item')).forEach((li) => {
+        const paneId = li.getAttribute('data-pane-id');
+        if (!paneId) return;
+        const tbody = document.querySelector(`#${paneId} tbody.sortable-body`);
+        if (!tbody) return;
+        Array.from(tbody.querySelectorAll('tr.inscripcio-row')).forEach((row) => {
+          if (row.dataset.id) ids.push(String(row.dataset.id));
+        });
+      });
+      return ids;
+    }
+    document.querySelectorAll('tbody.sortable-body tr.inscripcio-row').forEach((row) => {
+      if (row.dataset.id) ids.push(String(row.dataset.id));
+    });
+    return ids;
+  }
+
+  function rowsForGroupInContainer(groupNum, container, options = {}) {
+    const key = String(groupNum || '').trim();
+    if (!key || !container) return [];
+    return Array
+      .from(container.querySelectorAll(`tr.inscripcio-row[data-group="${CSS.escape(key)}"]`))
+      .filter((row) => !options.visibleOnly || row.offsetParent !== null);
+  }
+
+  function collectIdsForGroup(groupNum) {
+    const key = String(groupNum || '').trim();
+    return Array
+      .from(document.querySelectorAll(`tr.inscripcio-row[data-group="${CSS.escape(key)}"]`))
+      .map((row) => String(row.dataset.id || '').trim())
+      .filter(Boolean);
+  }
+
+  function refreshDisplayedOrdreSortida() {
+    collectGlobalIds().forEach((id, index) => {
+      const nextValue = String(index + 1);
+      document.querySelectorAll(`.js-ordre-sortida-cell[data-ins-id="${CSS.escape(String(id))}"]`).forEach((el) => {
+        el.textContent = nextValue;
+      });
+      document.querySelectorAll(`tr.inscripcio-row[data-id="${CSS.escape(String(id))}"]`).forEach((row) => {
+        row.setAttribute('data-ordre-sortida', nextValue);
+      });
+    });
+  }
+
+  function getSavedCompetitionOrderIdsForGroupInContainer(groupNum, container, options = {}) {
+    return rowsForGroupInContainer(groupNum, container, options)
+      .slice()
+      .sort((a, b) => {
+        const orderA = parseInt(a.getAttribute('data-competition-order') || '', 10);
+        const orderB = parseInt(b.getAttribute('data-competition-order') || '', 10);
+        if (Number.isNaN(orderA) && Number.isNaN(orderB)) return 0;
+        if (Number.isNaN(orderA)) return 1;
+        if (Number.isNaN(orderB)) return -1;
+        if (orderA !== orderB) return orderA - orderB;
+        return String(a.dataset.id || '').localeCompare(String(b.dataset.id || ''));
+      })
+      .map((row) => String(row.dataset.id || ''))
+      .filter(Boolean);
+  }
+
+  function refreshGroupHeaderIndicators() {
+    document.querySelectorAll('tr.group-row[data-group-header]').forEach((headerRow) => {
+      const groupNum = String(headerRow.getAttribute('data-group-header') || '').trim();
+      const container = headerRow.closest('tbody.sortable-body');
+      if (!groupNum || !container) return;
+
+      const visibleIds = rowsForGroupInContainer(groupNum, container, { visibleOnly: true })
+        .map((row) => String(row.dataset.id || ''))
+        .filter(Boolean);
+      const savedIds = getSavedCompetitionOrderIdsForGroupInContainer(groupNum, container, { visibleOnly: true });
+      const dirty = visibleIds.length > 0 && !arraysEqual(visibleIds, savedIds);
+
+      const countEl = headerRow.querySelector('.js-group-count');
+      const dirtyEl = headerRow.querySelector('.js-group-order-dirty');
+      if (countEl) {
+        const total = Number(countEl.getAttribute('data-group-total') || 0);
+        countEl.textContent = `${total} integrants`;
+      }
+      if (dirtyEl) dirtyEl.classList.toggle('d-none', !dirty);
+    });
+  }
+
+  function scheduleRefreshGroupHeaderIndicators() {
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => refreshGroupHeaderIndicators());
+    });
+  }
+
+  function applyGroupBands() {
+    const clearBandClasses = (node) => {
+      Array.from(node.classList)
+        .filter((className) => className.startsWith('group-band-'))
+        .forEach((className) => node.classList.remove(className));
+    };
+    const bandFromGroup = (groupValue) => {
+      const value = parseInt(groupValue, 10);
+      if (Number.isNaN(value)) return '';
+      return `group-band-${value % 8}`;
+    };
+
+    document.querySelectorAll('tbody.sortable-body tr').forEach((row) => {
+      clearBandClasses(row);
+      if (row.classList.contains('group-row')) {
+        const band = bandFromGroup(row.getAttribute('data-group-header'));
+        if (band) row.classList.add(band);
+        return;
+      }
+      if (row.classList.contains('inscripcio-row')) {
+        const band = bandFromGroup(row.getAttribute('data-group'));
+        if (band) row.classList.add(band);
+      }
+    });
+  }
+
+  async function saveGlobalOrder(movedId, targetGroup, originalGroup) {
+    const ids = collectGlobalIds();
+    if (!ids.length) return false;
+    const newIndex = movedId ? ids.indexOf(String(movedId)) : -1;
+    const mode = movedId && targetGroup !== originalGroup ? 'group_edit' : 'visual';
+    const data = await API.postJson(API.app.urls.reorder, {
+      ids,
+      moved_id: movedId ? String(movedId) : null,
+      new_index: newIndex >= 0 ? newIndex : null,
+      target_group: targetGroup || null,
+      mode,
+      filters: API.getCurrentInscripcioFilters(),
+      group_by: API.getCurrentGroupByCodes(),
+    });
+    if (!data?.ok) throw new Error("No s'ha pogut desar l'ordre.");
+    refreshDisplayedOrdreSortida();
+    return true;
+  }
+
+  async function mergeTabs(sourceKey, targetKey) {
+    const source = String(sourceKey || '').trim();
+    const target = String(targetKey || '').trim();
+    if (!source || !target || source === target) return;
+
+    const ok = await API.showConfirm('Vols fusionar aquestes dues pestanyes?');
+    if (!ok) return;
+
+    const data = await API.postJson(API.app.urls.mergeTabs, {
+      group_field: "{{ grouping_sig|default:''|escapejs }}",
+      source_key: source,
+      target_key: target,
+    });
+    if (!data?.ok) throw new Error("No s'han pogut fusionar les pestanyes.");
+    API.reloadWithUiState();
+  }
+
+  function inferTargetGroupForRow(row) {
+    let cursor = row?.previousElementSibling || null;
+    while (cursor) {
+      if (cursor.classList.contains('group-row')) {
+        return String(cursor.getAttribute('data-group-header') || '').trim() || null;
+      }
+      cursor = cursor.previousElementSibling;
+    }
+    return null;
+  }
+
+  function initSortableRows() {
+    if (typeof window.Sortable === 'undefined') return;
+    document.querySelectorAll('tbody.sortable-body').forEach((tbody) => {
+      if (tbody.dataset.sortableBound === '1') return;
+      tbody.dataset.sortableBound = '1';
+
+      window.Sortable.create(tbody, {
+        animation: 150,
+        handle: '.drag-handle',
+        draggable: 'tr.inscripcio-row',
+        filter: 'button, a, .hidden-tab, input, select, textarea',
+        preventOnFilter: true,
+        forceFallback: true,
+        fallbackOnBody: true,
+        onEnd: async (evt) => {
+          const row = evt.item;
+          const movedId = String(row?.dataset.id || '').trim();
+          const targetGroup = inferTargetGroupForRow(row);
+          const originalGroup = String(row?.dataset.group || '').trim() || null;
+          try {
+            await saveGlobalOrder(movedId, targetGroup, originalGroup);
+            API.reloadWithUiState();
+          } catch (err) {
+            API.showAlert(err.message || err);
+            API.reloadWithUiState();
+          }
+        },
+      });
+    });
+  }
+
+  function initSortableTabs() {
+    const tabsRoot = document.getElementById('tabs-root');
+    if (!tabsRoot || typeof window.Sortable === 'undefined') return;
+
+    window.Sortable.create(tabsRoot, {
+      animation: 150,
+      draggable: 'li.nav-item',
+      delay: 120,
+      delayOnTouchOnly: true,
+      forceFallback: true,
+      fallbackOnBody: true,
+      onEnd: async (evt) => {
+        const originEvent = evt.originalEvent;
+        if (originEvent && typeof document.elementFromPoint === 'function') {
+          const hovered = document.elementFromPoint(originEvent.clientX, originEvent.clientY);
+          const targetLi = hovered ? hovered.closest('#tabs-root > li.nav-item') : null;
+          if (targetLi && targetLi !== evt.item) {
+            try {
+              await mergeTabs(
+                evt.item.getAttribute('data-group-key'),
+                targetLi.getAttribute('data-group-key')
+              );
+            } catch (err) {
+              API.showAlert(err.message || err);
+              API.reloadWithUiState();
+            }
+            return;
+          }
+        }
+        try {
+          await saveGlobalOrder(null, null, null);
+          API.reloadWithUiState();
+        } catch (err) {
+          API.showAlert(err.message || err);
+          API.reloadWithUiState();
+        }
+      },
+    });
+  }
+
+  async function setGroupName(group, name) {
+    const data = await API.postJson(API.app.urls.setGroupName, { group, name });
+    if (!data?.ok) throw new Error("No s'ha pogut desar el nom del grup.");
+  }
+
+  async function saveAparells(selectEl) {
+    const inscripcioId = parseInt(selectEl.dataset.insId || '0', 10);
+    const selectedIds = Array
+      .from(selectEl.options || [])
+      .filter((option) => option.selected)
+      .map((option) => parseInt(option.value || '0', 10))
+      .filter((value) => Number.isInteger(value) && value > 0);
+
+    const data = await API.postJson(API.app.urls.setAparells, {
+      inscripcio_id: inscripcioId,
+      selected_comp_aparell_ids: selectedIds,
+    });
+    if (!data?.ok) throw new Error("No s'han pogut desar els aparells.");
+  }
+
+  function getGroupModalEls() {
+    return {
+      backdrop: document.getElementById('group-competition-modal-backdrop'),
+      modal: document.getElementById('group-competition-modal'),
+      title: document.getElementById('group-competition-modal-title'),
+      subtitle: document.getElementById('group-competition-modal-subtitle'),
+      count: document.getElementById('group-competition-modal-count'),
+      warning: document.getElementById('group-competition-modal-warning'),
+      list: document.getElementById('group-competition-modal-list'),
+      footnote: document.getElementById('group-competition-modal-footnote'),
+      close: document.getElementById('group-competition-modal-close'),
+      cancel: document.getElementById('group-competition-modal-cancel'),
+      save: document.getElementById('group-competition-modal-save'),
+    };
+  }
+
+  function closeGroupCompetitionModal() {
+    const els = getGroupModalEls();
+    groupModalState.groupNum = '';
+    groupModalState.rows = [];
+    if (els.backdrop) els.backdrop.classList.remove('is-visible');
+    if (els.modal) {
+      els.modal.classList.remove('is-visible');
+      els.modal.classList.add('d-none');
+      els.modal.setAttribute('aria-hidden', 'true');
+    }
+    document.body.classList.remove('group-competition-modal-open');
+  }
+
+  function renderGroupCompetitionRows() {
+    const els = getGroupModalEls();
+    if (!els.list) return;
+    if (!groupModalState.rows.length) {
+      els.list.innerHTML = '<div class="group-competition-modal-empty">Aquest grup no te participants guardats.</div>';
+      return;
+    }
+
+    els.list.innerHTML = groupModalState.rows.map((row, index) => `
+      <div class="group-competition-order-item js-group-competition-order-item" data-id="${row.id}">
+        <span class="group-competition-order-item-order">${index + 1}</span>
+        <span class="group-competition-order-item-handle js-group-competition-order-item-handle">↕</span>
+        <div class="group-competition-order-item-main">
+          <div class="group-competition-order-item-label">${row.label || `Inscripcio ${row.id}`}</div>
+          <div class="group-competition-order-item-meta">${row.secondary_label || ''}</div>
+        </div>
+      </div>
+    `).join('');
+
+    if (typeof window.Sortable !== 'undefined') {
+      if (els.list._sortable) els.list._sortable.destroy();
+      els.list._sortable = window.Sortable.create(els.list, {
+        animation: 120,
+        handle: '.js-group-competition-order-item-handle',
+        draggable: '.js-group-competition-order-item',
+        onEnd() {
+          groupModalState.rows = Array
+            .from(els.list.querySelectorAll('.js-group-competition-order-item'))
+            .map((node) => {
+              const id = String(node.dataset.id || '');
+              return groupModalState.rows.find((row) => String(row.id) === id) || { id, label: id };
+            });
+          renderGroupCompetitionRows();
+        },
+      });
+    }
+  }
+
+  async function openGroupCompetitionModal(groupNum) {
+    const els = getGroupModalEls();
+    groupModalState.groupNum = String(groupNum || '').trim();
+    if (!groupModalState.groupNum) return;
+
+    if (els.title) els.title.textContent = `Ordre de competicio · Grup ${groupModalState.groupNum}`;
+    if (els.subtitle) els.subtitle.textContent = "Carregant ordre guardat del grup...";
+    if (els.count) els.count.textContent = 'Carregant participants...';
+    if (els.warning) {
+      els.warning.classList.add('d-none');
+      els.warning.textContent = '';
+    }
+    if (els.list) els.list.innerHTML = '<div class="group-competition-modal-empty">Carregant ordre guardat...</div>';
+    if (els.backdrop) els.backdrop.classList.add('is-visible');
+    if (els.modal) {
+      els.modal.classList.remove('d-none');
+      els.modal.classList.add('is-visible');
+      els.modal.setAttribute('aria-hidden', 'false');
+    }
+    document.body.classList.add('group-competition-modal-open');
+
+    const data = await API.postJson(API.app.urls.groupCompetitionOrderPreview, { group_num: groupModalState.groupNum });
+    if (!data?.ok) throw new Error("No s'ha pogut carregar l'ordre de competicio.");
+    groupModalState.rows = Array.isArray(data.rows) ? data.rows.slice() : [];
+
+    if (els.title) els.title.textContent = `Ordre de competicio · ${data.group_label || `Grup ${groupModalState.groupNum}`}`;
+    if (els.subtitle) els.subtitle.textContent = "Aquest ordre correspon a l'ordre de competicio real del grup complet.";
+    if (els.count) els.count.textContent = `${Number(data.total_count || groupModalState.rows.length)} participants`;
+    if (els.footnote) {
+      els.footnote.textContent = data.can_edit
+        ? 'Arrossega per reordenar i desa quan hagis acabat.'
+        : 'Mode lectura: nomes es pot consultar l ordre guardat.';
+    }
+    if (els.save) els.save.disabled = !data.can_edit || !groupModalState.rows.length;
+    renderGroupCompetitionRows();
+  }
+
+  async function saveGroupCompetitionOrder() {
+    const ids = groupModalState.rows.map((row) => row.id);
+    const data = await API.postJson(API.app.urls.saveGroupCompetitionOrder, {
+      group_num: groupModalState.groupNum,
+      ids,
+    });
+    if (!data?.ok) throw new Error("No s'ha pogut desar l'ordre de competicio.");
+    closeGroupCompetitionModal();
+    API.reloadWithUiState();
+  }
+
+  function wireTableActions() {
+    document.querySelectorAll('.js-aparells-select').forEach((selectEl) => {
+      selectEl.addEventListener('change', async () => {
+        try {
+          await saveAparells(selectEl);
+        } catch (err) {
+          API.showAlert(err.message || err);
+          API.reloadWithUiState();
+        }
+      });
+    });
+
+    document.addEventListener('click', async (event) => {
+      const groupToggle = event.target.closest('[data-group-actions-toggle]');
+      if (groupToggle) {
+        event.preventDefault();
+        event.stopPropagation();
+        const wrap = groupToggle.closest('.group-actions-pop');
+        const menu = wrap ? wrap.querySelector('[data-group-actions-menu]') : null;
+        if (menu) menu.classList.toggle('d-none');
+        document.querySelectorAll('[data-group-actions-menu]').forEach((node) => {
+          if (node !== menu) node.classList.add('d-none');
+        });
+        return;
+      }
+
+      const editGroupNameBtn = event.target.closest('.js-edit-group-name');
+      if (editGroupNameBtn) {
+        event.preventDefault();
+        const groupNum = editGroupNameBtn.dataset.group;
+        const currentLabel = document.querySelector(`.group-name-text[data-group="${CSS.escape(String(groupNum || ''))}"]`)?.textContent || '';
+        const nextName = await API.showPrompt('Nou nom del grup:', currentLabel.trim());
+        if (nextName === null) return;
+        try {
+          await setGroupName(groupNum, nextName.trim());
+          API.reloadWithUiState();
+        } catch (err) {
+          API.showAlert(err.message || err);
+        }
+        return;
+      }
+
+      const previewBtn = event.target.closest('.js-view-group-order');
+      if (previewBtn) {
+        event.preventDefault();
+        try {
+          await openGroupCompetitionModal(previewBtn.dataset.group);
+        } catch (err) {
+          closeGroupCompetitionModal();
+          API.showAlert(err.message || err);
+        }
+        return;
+      }
+
+      const saveBtn = event.target.closest('.js-save-group-order');
+      if (saveBtn) {
+        event.preventDefault();
+        try {
+          groupModalState.groupNum = String(saveBtn.dataset.group || '').trim();
+          groupModalState.rows = collectIdsForGroup(groupModalState.groupNum).map((id) => ({ id }));
+          await saveGroupCompetitionOrder();
+        } catch (err) {
+          API.showAlert(err.message || err);
+        }
+        return;
+      }
+
+      if (!event.target.closest('[data-group-actions-menu]')) {
+        document.querySelectorAll('[data-group-actions-menu]').forEach((node) => node.classList.add('d-none'));
+      }
+    });
+
+    const modalEls = getGroupModalEls();
+    if (modalEls.backdrop) modalEls.backdrop.addEventListener('click', closeGroupCompetitionModal);
+    if (modalEls.close) modalEls.close.addEventListener('click', closeGroupCompetitionModal);
+    if (modalEls.cancel) modalEls.cancel.addEventListener('click', closeGroupCompetitionModal);
+    if (modalEls.save) {
+      modalEls.save.addEventListener('click', async () => {
+        try {
+          await saveGroupCompetitionOrder();
+        } catch (err) {
+          API.showAlert(err.message || err);
+        }
+      });
+    }
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && document.body.classList.contains('group-competition-modal-open')) {
+        event.preventDefault();
+        closeGroupCompetitionModal();
+      }
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    initSortableTabs();
+    initSortableRows();
+    wireTableActions();
+    applyGroupBands();
+    scheduleRefreshGroupHeaderIndicators();
+    document.querySelectorAll('#tabs-root a.nav-link').forEach((link) => {
+      link.addEventListener('click', () => scheduleRefreshGroupHeaderIndicators());
+    });
+    if (window.jQuery) {
+      window.jQuery('a[data-toggle="tab"]').on('shown.bs.tab', function () {
+        API.saveUiState?.();
+        scheduleRefreshGroupHeaderIndicators();
+      });
+    }
+  });
+
+  window.applyGroupBands = applyGroupBands;
+  window.refreshGroupHeaderIndicators = refreshGroupHeaderIndicators;
+  window.scheduleRefreshGroupHeaderIndicators = scheduleRefreshGroupHeaderIndicators;
+})();
+</script>

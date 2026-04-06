@@ -1,0 +1,51 @@
+{% load competicio_extras %}
+
+<div class="d-flex flex-wrap justify-content-between align-items-start mb-3" style="gap:12px;">
+  <div>
+    <h1 class="h3 mb-1">Inscripcions</h1>
+    <div class="text-muted">
+      <strong>{{ competicio.nom }}</strong>
+    </div>
+    <div class="mt-2 d-flex flex-wrap" style="gap:8px;">
+      <span class="badge badge-primary">{{ inscrits_filtered_count }} visibles</span>
+      <span class="badge badge-light">{{ inscrits_total_count }} totals</span>
+      <span class="badge badge-light">{{ existing_groups_count|default:0 }} grups</span>
+      {% if selected_group_fields %}
+        <span class="badge badge-info">
+          Agrupat per:
+          {% for field in allowed_group_fields %}
+            {% if field.code in selected_group_fields %}
+              {% if not forloop.first %}{% endif %}
+              <span>{{ field.label|default:field.code }}</span>{% if not forloop.last %}{% endif %}
+            {% endif %}
+          {% endfor %}
+        </span>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="d-flex flex-wrap align-items-center" style="gap:8px;">
+    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.history.back();">
+      Tornar
+    </button>
+    {% if can_edit_inscripcions %}
+      <a class="btn btn-sm btn-primary" href="{% url 'inscripcio_add' competicio.id %}?next={{ request.get_full_path|urlencode }}">
+        + Afegir inscripció manual
+      </a>
+    {% endif %}
+    <a class="btn btn-sm btn-outline-primary" href="{% url 'import' competicio.id %}">
+      Importar Excel
+    </a>
+    <a class="btn btn-sm btn-outline-primary" href="{% url 'scoring_notes_home' competicio.id %}">
+      Notes
+    </a>
+    <a class="btn btn-sm btn-outline-primary" href="{% url 'rotacions_planner' competicio.id %}" target="_blank" rel="noopener">
+      Rotacions
+    </a>
+    {% if can_edit_inscripcions %}
+      <button type="button" class="btn btn-sm btn-primary" id="btn-open-panel-altres" data-open-panel="altres">
+        Configuració
+      </button>
+    {% endif %}
+  </div>
+</div>

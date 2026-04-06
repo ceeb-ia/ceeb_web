@@ -4,6 +4,7 @@ from django.db import transaction
 from django.db.models import Count
 from django.http import HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404
+from django.urls import reverse
 from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.http import require_POST
 
@@ -85,8 +86,27 @@ def _serialize_listing_media_item(item):
         "is_primary": bool(item.is_primary),
         "source": item.source or "",
         "match_score": float(item.match_score) if item.match_score is not None else None,
-        "url": f"/competicio/{item.competicio_id}/inscripcions/media/{item.id}/file/",
+        "url": reverse(
+            "inscripcions_media_file",
+            kwargs={"pk": item.competicio_id, "media_id": item.id},
+        ),
     }
+
+
+def _build_url_template(url_name, *, pk, placeholder_kwargs):
+    kwargs = {"pk": pk}
+    replacements = []
+    for key, config in (placeholder_kwargs or {}).items():
+        dummy = config["dummy"]
+        placeholder = config["placeholder"]
+        kwargs[key] = dummy
+        replacements.append((str(dummy), placeholder))
+
+    url = reverse(url_name, kwargs=kwargs)
+    for dummy, placeholder in replacements:
+        url = url.replace(dummy, placeholder, 1)
+    return url
+
 
 def get_available_table_columns(competicio):
     out = []
@@ -179,7 +199,7 @@ def get_selected_table_columns(competicio, available_cols):
 
 
 class InscripcionsListNewView(InscripcionsListView):
-    template_name = "competicio/inscricpions_list_new.html"
+    template_name = "competicio/inscripcions/inscripcions_page.html"
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
@@ -460,6 +480,97 @@ class InscripcionsListNewView(InscripcionsListView):
         ctx["media_match_inscripcions_options"] = media_match_options
         ctx["media_matching_config"] = _get_listing_media_matching_config(self.competicio)
         ctx["history_state"] = get_inscripcions_history_state(self.request, self.competicio.id)
+        ctx["inscripcions_page_boot"] = {
+            "ids": {
+                "competicioId": self.competicio.id,
+            },
+            "flags": {
+                "canEdit": bool(ctx["can_edit_inscripcions"]),
+                "sortContextKey": sort_context_key,
+                "teamContextSelectedCode": team_context_code,
+            },
+            "urls": {
+                "historyUndo": reverse("inscripcions_history_undo", kwargs={"pk": self.competicio.id}),
+                "historyRedo": reverse("inscripcions_history_redo", kwargs={"pk": self.competicio.id}),
+                "sortApply": reverse("inscripcions_sort_apply", kwargs={"pk": self.competicio.id}),
+                "sortRemove": reverse("inscripcions_sort_remove", kwargs={"pk": self.competicio.id}),
+                "sortClear": reverse("inscripcions_sort_clear", kwargs={"pk": self.competicio.id}),
+                "sortTailToggle": reverse("inscripcions_sort_competition_tail_toggle", kwargs={"pk": self.competicio.id}),
+                "filterValues": reverse("inscripcions_filter_values", kwargs={"pk": self.competicio.id}),
+                "sortCustomValues": reverse("inscripcions_sort_custom_values", kwargs={"pk": self.competicio.id}),
+                "sortCustomSave": reverse("inscripcions_sort_custom_save", kwargs={"pk": self.competicio.id}),
+                "groupsWorkspace": reverse("groups_workspace", kwargs={"pk": self.competicio.id}),
+                "groupsDetail": reverse("groups_detail", kwargs={"pk": self.competicio.id}),
+                "groupsPreview": reverse("groups_preview", kwargs={"pk": self.competicio.id}),
+                "groupsCreate": reverse("groups_create", kwargs={"pk": self.competicio.id}),
+                "groupsAssign": reverse("groups_assign", kwargs={"pk": self.competicio.id}),
+                "groupsUnassign": reverse("groups_unassign", kwargs={"pk": self.competicio.id}),
+                "groupsDelete": reverse("groups_delete", kwargs={"pk": self.competicio.id}),
+                "groupsDeleteEmpty": reverse("groups_delete_empty", kwargs={"pk": self.competicio.id}),
+                "groupsDeleteAll": reverse("groups_delete_all", kwargs={"pk": self.competicio.id}),
+                "saveBirthYearRangeConfig": reverse("inscripcions_save_birth_year_range_config", kwargs={"pk": self.competicio.id}),
+                "equipsWorkspace": reverse("inscripcions_equips_workspace", kwargs={"pk": self.competicio.id}),
+                "equipsPreview": reverse("inscripcions_equips_preview", kwargs={"pk": self.competicio.id}),
+                "equipsAssign": reverse("inscripcions_equips_assign", kwargs={"pk": self.competicio.id}),
+                "equipsUnassign": reverse("inscripcions_equips_unassign", kwargs={"pk": self.competicio.id}),
+                "equipsAutoCreate": reverse("inscripcions_equips_auto_create", kwargs={"pk": self.competicio.id}),
+                "equipsCreateManual": reverse("inscripcions_equips_create_manual", kwargs={"pk": self.competicio.id}),
+                "equipsDeleteAll": reverse("inscripcions_equips_delete_all", kwargs={"pk": self.competicio.id}),
+                "equipsDeleteEmpty": reverse("inscripcions_equips_delete_empty", kwargs={"pk": self.competicio.id}),
+                "equipsRenameTemplate": _build_url_template(
+                    "inscripcions_equips_rename",
+                    pk=self.competicio.id,
+                    placeholder_kwargs={"equip_id": {"dummy": 987654321, "placeholder": "__equip_id__"}},
+                ),
+                "equipsDeleteTemplate": _build_url_template(
+                    "inscripcions_equips_delete",
+                    pk=self.competicio.id,
+                    placeholder_kwargs={"equip_id": {"dummy": 987654321, "placeholder": "__equip_id__"}},
+                ),
+                "equipContextCreate": reverse("inscripcions_equip_context_create", kwargs={"pk": self.competicio.id}),
+                "equipContextRenameTemplate": _build_url_template(
+                    "inscripcions_equip_context_rename",
+                    pk=self.competicio.id,
+                    placeholder_kwargs={"context_code": {"dummy": "__context__", "placeholder": "__context__"}},
+                ),
+                "equipContextDeleteTemplate": _build_url_template(
+                    "inscripcions_equip_context_delete",
+                    pk=self.competicio.id,
+                    placeholder_kwargs={"context_code": {"dummy": "__context__", "placeholder": "__context__"}},
+                ),
+                "equipContextSourcesSave": reverse("inscripcions_equip_context_sources_save", kwargs={"pk": self.competicio.id}),
+                "mediaUpload": reverse("inscripcions_media_upload", kwargs={"pk": self.competicio.id}),
+                "mediaSetPrimary": reverse("inscripcions_media_set_primary", kwargs={"pk": self.competicio.id}),
+                "mediaDelete": reverse("inscripcions_media_delete", kwargs={"pk": self.competicio.id}),
+                "mediaMatchPreview": reverse("inscripcions_media_match_preview", kwargs={"pk": self.competicio.id}),
+                "mediaMatchApply": reverse("inscripcions_media_match_apply", kwargs={"pk": self.competicio.id}),
+                "reorder": reverse("inscripcions_reorder", kwargs={"pk": self.competicio.id}),
+                "saveTableColumns": reverse("inscripcions_save_table_columns", kwargs={"pk": self.competicio.id}),
+                "setGroupName": reverse("inscripcions_set_group_name", kwargs={"pk": self.competicio.id}),
+                "setAparells": reverse("inscripcions_set_aparells", kwargs={"pk": self.competicio.id}),
+                "mergeTabs": reverse("inscripcions_merge_tabs", kwargs={"pk": self.competicio.id}),
+                "groupCompetitionOrderPreview": reverse("inscripcions_group_competition_order_preview", kwargs={"pk": self.competicio.id}),
+                "saveGroupCompetitionOrder": reverse("inscripcions_save_group_competition_order", kwargs={"pk": self.competicio.id}),
+                "seriesWorkspace": reverse("inscripcions_series_equips_workspace", kwargs={"pk": self.competicio.id}),
+                "seriesDetail": reverse("inscripcions_series_equips_detail", kwargs={"pk": self.competicio.id}),
+                "seriesPreview": reverse("inscripcions_series_equips_preview", kwargs={"pk": self.competicio.id}),
+                "seriesCreate": reverse("inscripcions_series_equips_create", kwargs={"pk": self.competicio.id}),
+                "seriesAssign": reverse("inscripcions_series_equips_assign", kwargs={"pk": self.competicio.id}),
+                "seriesUnassign": reverse("inscripcions_series_equips_unassign", kwargs={"pk": self.competicio.id}),
+                "seriesDelete": reverse("inscripcions_series_equips_delete", kwargs={"pk": self.competicio.id}),
+                "seriesDeleteEmpty": reverse("inscripcions_series_equips_delete_empty", kwargs={"pk": self.competicio.id}),
+                "seriesRename": reverse("inscripcions_series_equips_rename", kwargs={"pk": self.competicio.id}),
+                "seriesReorder": reverse("inscripcions_series_equips_reorder", kwargs={"pk": self.competicio.id}),
+                "seriesStartListExport": reverse("inscripcions_series_equips_start_list_export", kwargs={"pk": self.competicio.id}),
+                "seriesWorkSheetExport": reverse("inscripcions_series_equips_work_sheet_export", kwargs={"pk": self.competicio.id}),
+            },
+            "initial": {
+                "historyState": ctx["history_state"],
+                "mediaMatchInscripcionsOptions": media_match_options,
+                "mediaMatchingConfig": ctx["media_matching_config"],
+                "birthYearRangeGroupConfig": ctx["birth_year_range_group_config"],
+            },
+        }
         return ctx
 
 

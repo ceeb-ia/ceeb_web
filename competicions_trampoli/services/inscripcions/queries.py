@@ -369,9 +369,16 @@ def get_request_column_filters(request, competicio=None):
         allowed_codes = {field["code"] for field in get_available_column_filter_fields(competicio)}
     collected = {}
     for key, values in request.GET.lists():
-        if not isinstance(key, str) or not key.startswith("cf_"):
+        if not isinstance(key, str):
             continue
-        code = LEGACY_SORT_KEY_MAP.get(key[3:].strip(), key[3:].strip())
+        raw_code = ""
+        if key.startswith("cf__"):
+            raw_code = key[4:].strip()
+        elif key.startswith("cf_"):
+            raw_code = key[3:].strip()
+        else:
+            continue
+        code = LEGACY_SORT_KEY_MAP.get(raw_code, raw_code)
         if not code:
             continue
         if allowed_codes is not None and code not in allowed_codes:

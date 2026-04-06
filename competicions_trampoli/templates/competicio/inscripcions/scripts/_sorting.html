@@ -1,0 +1,399 @@
+<script>
+(function () {
+  'use strict';
+
+  const API = window.InscripcionsApp;
+  if (!API) return;
+
+  const modalState = {
+    sortKey: '',
+    rows: [],
+    originalRows: [],
+  };
+
+  function buildSortPayload(extra = {}) {
+    return {
+      filters: API.getCurrentInscripcioFilters(),
+      group_by: API.getCurrentGroupByCodes(),
+      ...extra,
+    };
+  }
+
+  async function applySort({ sortKey, sortDir, scope = 'all', groupNum = null }) {
+    const data = await API.postJson(API.app.urls.sortApply, buildSortPayload({
+      sort_key: sortKey,
+      sort_dir: sortDir,
+      scope,
+      group_num: scope === 'group' ? groupNum : null,
+    }));
+    if (!data?.ok) throw new Error("No s'ha pogut aplicar l'ordenacio.");
+    API.reloadWithUiState();
+  }
+
+  async function removeSort(priority) {
+    const data = await API.postJson(API.app.urls.sortRemove, buildSortPayload({ priority }));
+    if (!data?.ok) throw new Error("No s'ha pogut treure el criteri.");
+    API.reloadWithUiState();
+  }
+
+  async function clearSort() {
+    const data = await API.postJson(API.app.urls.sortClear, buildSortPayload());
+    if (!data?.ok) throw new Error("No s'ha pogut netejar l'ordenacio.");
+    API.reloadWithUiState();
+  }
+
+  async function toggleCompetitionTail(enabled) {
+    const data = await API.postJson(API.app.urls.sortTailToggle, buildSortPayload({ enabled: !!enabled }));
+    if (!data?.ok) throw new Error("No s'ha pogut actualitzar l'ordre de competicio.");
+    API.reloadWithUiState();
+  }
+
+  async function loadColumnFilterValues(columnCode) {
+    return API.postJson(API.app.urls.filterValues, buildSortPayload({ column_code: columnCode }));
+  }
+
+  function saveColumnFilterValues(columnCode, tokens) {
+    const url = API.getCurrentUrl();
+    const key = `cf_${columnCode}`;
+    if (tokens && tokens.length) url.searchParams.set(key, tokens.join('|'));
+    else url.searchParams.delete(key);
+    API.navigateWithUiState(url.toString());
+  }
+
+  async function loadCustomSortValues(sortKey) {
+    return API.postJson(API.app.urls.sortCustomValues, buildSortPayload({ sort_key: sortKey }));
+  }
+
+  async function saveCustomSortValues(sortKey, orderedTokens) {
+    const data = await API.postJson(API.app.urls.sortCustomSave, buildSortPayload({
+      sort_key: sortKey,
+      order: orderedTokens,
+      preserve_missing_context: true,
+    }));
+    if (!data?.ok) throw new Error("No s'ha pogut desar l'ordre custom.");
+    API.reloadWithUiState();
+  }
+
+  function getModalEls() {
+    return {
+      backdrop: document.getElementById('custom-sort-modal-backdrop'),
+      modal: document.getElementById('custom-sort-modal'),
+      title: document.getElementById('custom-sort-modal-title'),
+      subtitle: document.getElementById('custom-sort-modal-subtitle'),
+      status: document.getElementById('custom-sort-modal-status'),
+      list: document.getElementById('custom-sort-modal-list'),
+      close: document.getElementById('custom-sort-modal-close'),
+      reset: document.getElementById('btn-custom-sort-reset'),
+      save: document.getElementById('btn-custom-sort-save'),
+      footnote: document.getElementById('custom-sort-modal-footnote'),
+    };
+  }
+
+  function closeMenus(exceptMenu = null) {
+    document.querySelectorAll('[data-col-sort-menu]').forEach((menu) => {
+      if (exceptMenu && menu === exceptMenu) return;
+      menu.classList.add('d-none');
+    });
+  }
+
+  function closeCustomSortModal() {
+    const els = getModalEls();
+    modalState.sortKey = '';
+    modalState.rows = [];
+    modalState.originalRows = [];
+    if (els.backdrop) els.backdrop.classList.remove('is-visible');
+    if (els.modal) {
+      els.modal.classList.remove('is-visible');
+      els.modal.classList.add('d-none');
+      els.modal.setAttribute('aria-hidden', 'true');
+    }
+    document.body.classList.remove('custom-sort-modal-open');
+  }
+
+  function renderCustomSortRows() {
+    const els = getModalEls();
+    if (!els.list) return;
+    if (!modalState.rows.length) {
+      els.list.innerHTML = '<div class="custom-sort-modal-empty">No hi ha valors disponibles per aquest camp.</div>';
+      return;
+    }
+
+    els.list.innerHTML = modalState.rows.map((row, index) => `
+      <div class="custom-sort-item js-custom-sort-item" data-token="${row.token}">
+        <span class="custom-sort-item-handle" title="Arrossegar">↕</span>
+        <span class="custom-sort-item-label">${index + 1}. ${row.label}</span>
+        <span class="custom-sort-item-count">${Number(row.count || 0)}</span>
+      </div>
+    `).join('');
+
+    if (typeof window.Sortable !== 'undefined') {
+      if (els.list._sortable) els.list._sortable.destroy();
+      els.list._sortable = window.Sortable.create(els.list, {
+        animation: 120,
+        handle: '.custom-sort-item-handle',
+        draggable: '.js-custom-sort-item',
+        onEnd() {
+          modalState.rows = Array
+            .from(els.list.querySelectorAll('.js-custom-sort-item'))
+            .map((node) => {
+              const token = String(node.dataset.token || '');
+              return modalState.rows.find((row) => row.token === token) || { token, label: token, count: 0 };
+            });
+          renderCustomSortRows();
+        },
+      });
+    }
+  }
+
+  async function openCustomSortEditor(sortKey) {
+    const els = getModalEls();
+    modalState.sortKey = sortKey;
+    if (els.title) els.title.textContent = `Ordre custom · ${sortKey}`;
+    if (els.subtitle) els.subtitle.textContent = "Reordena els valors detectats per aquest camp.";
+    if (els.status) els.status.textContent = 'Carregant valors...';
+    if (els.list) els.list.innerHTML = '<div class="custom-sort-modal-empty">Carregant valors...</div>';
+    if (els.backdrop) els.backdrop.classList.add('is-visible');
+    if (els.modal) {
+      els.modal.classList.remove('d-none');
+      els.modal.classList.add('is-visible');
+      els.modal.setAttribute('aria-hidden', 'false');
+    }
+    document.body.classList.add('custom-sort-modal-open');
+
+    try {
+      const data = await loadCustomSortValues(sortKey);
+      const rows = (data.values || []).map((row) => ({
+        token: String(row.token || ''),
+        label: row.label || row.token || '-',
+        count: Number(row.count || 0),
+      }));
+      modalState.rows = rows.slice();
+      modalState.originalRows = rows.slice();
+      if (els.status) els.status.textContent = `${rows.length} valor(s) disponibles.`;
+      renderCustomSortRows();
+    } catch (err) {
+      closeCustomSortModal();
+      API.showAlert(err.message || err);
+    }
+  }
+
+  function updateMenuScopeUi(menu) {
+    const scope = menu.querySelector('.js-col-sort-scope')?.value || 'all';
+    const groupWrap = menu.querySelector('.js-col-sort-group-wrap');
+    if (groupWrap) groupWrap.classList.toggle('d-none', scope !== 'group');
+  }
+
+  function renderFilterOptions(menu, rows) {
+    const optionsWrap = menu.querySelector('.js-col-filter-options');
+    const status = menu.querySelector('.js-col-filter-status');
+    if (!optionsWrap || !status) return;
+
+    const items = Array.isArray(rows) ? rows : [];
+    menu.__filterRows = items;
+    if (!items.length) {
+      optionsWrap.classList.add('d-none');
+      optionsWrap.innerHTML = '';
+      status.textContent = 'No hi ha valors disponibles per aquest filtre.';
+      return;
+    }
+
+    status.textContent = `${items.length} valor(s) disponibles.`;
+    optionsWrap.classList.remove('d-none');
+    optionsWrap.innerHTML = items.map((row, index) => `
+      <label class="d-flex align-items-center justify-content-between py-1" data-filter-row="${index}">
+        <span class="mr-2">
+          <input type="checkbox" class="js-col-filter-option mr-1" value="${String(row.token || '').replace(/"/g, '&quot;')}" ${row.selected ? 'checked' : ''}>
+          ${row.label || row.token || '-'}
+        </span>
+        <span class="small text-muted">${Number(row.count || 0)}</span>
+      </label>
+    `).join('');
+  }
+
+  function filterVisibleOptions(menu, query) {
+    const needle = String(query || '').trim().toLowerCase();
+    const empty = menu.querySelector('.js-col-filter-search-empty');
+    let visible = 0;
+    menu.querySelectorAll('[data-filter-row]').forEach((row) => {
+      const text = String(row.textContent || '').toLowerCase();
+      const matches = !needle || text.includes(needle);
+      row.classList.toggle('d-none', !matches);
+      if (matches) visible += 1;
+    });
+    if (empty) empty.classList.toggle('d-none', visible > 0);
+  }
+
+  async function refreshFilterValues(menu) {
+    const columnCode = menu.getAttribute('data-col-code') || '';
+    const search = menu.querySelector('.js-col-filter-search');
+    try {
+      const data = await loadColumnFilterValues(columnCode);
+      renderFilterOptions(menu, data.values || []);
+      if (search) search.disabled = false;
+      filterVisibleOptions(menu, search?.value || '');
+    } catch (err) {
+      API.showAlert(err.message || err);
+    }
+  }
+
+  function collectSelectedFilterTokens(menu) {
+    return Array
+      .from(menu.querySelectorAll('.js-col-filter-option:checked'))
+      .map((input) => String(input.value || '').trim())
+      .filter(Boolean);
+  }
+
+  function wireColumnMenus() {
+    document.addEventListener('click', async (event) => {
+      const toggle = event.target.closest('[data-col-sort-toggle]');
+      if (toggle) {
+        event.preventDefault();
+        event.stopPropagation();
+        const menu = toggle.closest('.col-sort-pop')?.querySelector('[data-col-sort-menu]');
+        if (!menu) return;
+        const willOpen = menu.classList.contains('d-none');
+        closeMenus(willOpen ? menu : null);
+        menu.classList.toggle('d-none', !willOpen);
+        updateMenuScopeUi(menu);
+        return;
+      }
+
+      const removeBtn = event.target.closest('.js-col-sort-remove');
+      if (removeBtn) {
+        event.preventDefault();
+        try {
+          await removeSort(parseInt(removeBtn.dataset.sortPriority || '0', 10));
+        } catch (err) {
+          API.showAlert(err.message || err);
+        }
+        return;
+      }
+
+      const applyBtn = event.target.closest('.js-col-sort-apply');
+      if (applyBtn) {
+        event.preventDefault();
+        const menu = applyBtn.closest('[data-col-sort-menu]');
+        if (!menu) return;
+        try {
+          await applySort({
+            sortKey: menu.getAttribute('data-col-code') || '',
+            sortDir: menu.querySelector('.js-col-sort-dir')?.value || 'asc',
+            scope: menu.querySelector('.js-col-sort-scope')?.value || 'all',
+            groupNum: menu.querySelector('.js-col-sort-group')?.value || null,
+          });
+        } catch (err) {
+          API.showAlert(err.message || err);
+        }
+        return;
+      }
+
+      const customBtn = event.target.closest('.js-col-sort-custom');
+      if (customBtn) {
+        event.preventDefault();
+        const menu = customBtn.closest('[data-col-sort-menu]');
+        if (!menu) return;
+        closeMenus();
+        openCustomSortEditor(menu.getAttribute('data-col-code') || '');
+        return;
+      }
+
+      const customClearBtn = event.target.closest('.js-col-sort-custom-clear');
+      if (customClearBtn) {
+        event.preventDefault();
+        const menu = customClearBtn.closest('[data-col-sort-menu]');
+        if (!menu) return;
+        try {
+          await saveCustomSortValues(menu.getAttribute('data-col-code') || '', []);
+        } catch (err) {
+          API.showAlert(err.message || err);
+        }
+        return;
+      }
+
+      const filterRefreshBtn = event.target.closest('.js-col-filter-refresh');
+      if (filterRefreshBtn) {
+        event.preventDefault();
+        const menu = filterRefreshBtn.closest('[data-col-sort-menu]');
+        if (menu) await refreshFilterValues(menu);
+        return;
+      }
+
+      const filterApplyBtn = event.target.closest('.js-col-filter-apply');
+      if (filterApplyBtn) {
+        event.preventDefault();
+        const menu = filterApplyBtn.closest('[data-col-sort-menu]');
+        if (!menu) return;
+        saveColumnFilterValues(menu.getAttribute('data-col-code') || '', collectSelectedFilterTokens(menu));
+        return;
+      }
+
+      const filterClearBtn = event.target.closest('.js-col-filter-clear');
+      if (filterClearBtn) {
+        event.preventDefault();
+        const menu = filterClearBtn.closest('[data-col-sort-menu]');
+        if (!menu) return;
+        saveColumnFilterValues(menu.getAttribute('data-col-code') || '', []);
+        return;
+      }
+
+      if (!event.target.closest('.col-sort-pop')) {
+        closeMenus();
+      }
+    });
+
+    document.addEventListener('change', (event) => {
+      const scope = event.target.closest('.js-col-sort-scope');
+      if (scope) updateMenuScopeUi(scope.closest('[data-col-sort-menu]'));
+    });
+
+    document.addEventListener('input', (event) => {
+      const search = event.target.closest('.js-col-filter-search');
+      if (!search) return;
+      const menu = search.closest('[data-col-sort-menu]');
+      if (menu) filterVisibleOptions(menu, search.value);
+    });
+
+    const tailToggle = document.getElementById('competition-order-tail-toggle');
+    if (tailToggle) {
+      tailToggle.addEventListener('change', async () => {
+        try {
+          await toggleCompetitionTail(tailToggle.checked);
+        } catch (err) {
+          API.showAlert(err.message || err);
+          tailToggle.checked = !tailToggle.checked;
+        }
+      });
+    }
+
+    const els = getModalEls();
+    if (els.backdrop) els.backdrop.addEventListener('click', closeCustomSortModal);
+    if (els.close) els.close.addEventListener('click', closeCustomSortModal);
+    if (els.reset) {
+      els.reset.addEventListener('click', () => {
+        modalState.rows = modalState.originalRows.slice();
+        renderCustomSortRows();
+      });
+    }
+    if (els.save) {
+      els.save.addEventListener('click', async () => {
+        try {
+          await saveCustomSortValues(modalState.sortKey, modalState.rows.map((row) => row.token));
+        } catch (err) {
+          API.showAlert(err.message || err);
+        }
+      });
+    }
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && document.body.classList.contains('custom-sort-modal-open')) {
+        event.preventDefault();
+        closeCustomSortModal();
+        return;
+      }
+      if (event.key === 'Escape') closeMenus();
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', wireColumnMenus);
+})();
+</script>

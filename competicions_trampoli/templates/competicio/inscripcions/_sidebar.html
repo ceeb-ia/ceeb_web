@@ -1,0 +1,98 @@
+<aside class="inscripcions-sidebar">
+  <form method="get" class="inscripcions-actions-form" id="inscripcions-actions-sidebar">
+    <div class="actions-shell">
+      <div class="actions-shell-inner">
+        <div class="actions-shell-head">
+          <div class="actions-shell-headline">
+            <div>
+              <p class="actions-shell-title">Accions</p>
+              <p class="actions-shell-subtitle">Divideix, reorganitza i exporta sense menjar-te la zona central de la taula.</p>
+            </div>
+            <span class="badge badge-info">{{ inscrits_filtered_count }}</span>
+          </div>
+          <div class="actions-history">
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-history-undo">Desfer</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-history-redo">Refer</button>
+            <span class="text-muted small align-self-center" id="history-stack-summary">
+              Desfer {{ history_state.undo_count|default:0 }} · Refer {{ history_state.redo_count|default:0 }}
+            </span>
+          </div>
+        </div>
+
+        <input type="hidden" name="q" value="{{ request.GET.q|default:'' }}">
+        <input type="hidden" name="categoria" value="{{ request.GET.categoria|default:'' }}">
+        <input type="hidden" name="subcategoria" value="{{ request.GET.subcategoria|default:'' }}">
+        <input type="hidden" name="entitat" value="{{ request.GET.entitat|default:'' }}">
+        {% for item in active_column_filter_items %}
+          <input type="hidden" name="{{ item.param }}" value="{{ item.token }}">
+        {% endfor %}
+        <input type="hidden" name="per_page" value="{{ request.GET.per_page|default:'all' }}">
+
+        <div class="actions-body">
+          <nav class="actions-nav" id="inscripcions-panels-nav" aria-label="Seccions d'accions">
+            <button type="button" class="actions-nav-btn is-active" data-panel-target="agrupacio">
+              <span class="actions-nav-btn-title">
+                <span>Divisions</span>
+                <span class="badge badge-light">{{ selected_group_fields|length }}</span>
+              </span>
+              <span class="actions-nav-btn-meta">Camps i pestanyes</span>
+            </button>
+            <button type="button" class="actions-nav-btn" data-panel-target="columnes">
+              <span class="actions-nav-btn-title">
+                <span>Columnes</span>
+                <span class="badge badge-light border" id="cols-visible-count-nav">-/-</span>
+              </span>
+              <span class="actions-nav-btn-meta">Ordre i visibilitat</span>
+            </button>
+            <button type="button" class="actions-nav-btn" data-panel-target="grups">
+              <span class="actions-nav-btn-title">
+                <span>Grups</span>
+                <span class="badge badge-light">{{ existing_groups_count|default:0 }}</span>
+              </span>
+              <span class="actions-nav-btn-meta">Crear i repartir</span>
+            </button>
+            <button type="button" class="actions-nav-btn" data-panel-target="equips">
+              <span class="actions-nav-btn-title">
+                <span>Equips</span>
+                <span class="badge badge-light">{{ equips_existing|length }}</span>
+              </span>
+              <span class="actions-nav-btn-meta">Automatic i manual</span>
+            </button>
+            <button type="button" class="actions-nav-btn" data-panel-target="series-equips">
+              <span class="actions-nav-btn-title">
+                <span>Sèries d'equip</span>
+                <span class="badge badge-light">{{ series_team_aparells|length }}</span>
+              </span>
+              <span class="actions-nav-btn-meta">Workspace i programacio</span>
+            </button>
+            <button type="button" class="actions-nav-btn" data-panel-target="media">
+              <span class="actions-nav-btn-title">
+                <span>Multimedia</span>
+              </span>
+              <span class="actions-nav-btn-meta">Carpeta i assignacio</span>
+            </button>
+            <button type="button" class="actions-nav-btn" data-panel-target="altres">
+              <span class="actions-nav-btn-title">
+                <span>Altres</span>
+                <span class="badge badge-light">{{ column_sort_effective_count }}</span>
+              </span>
+              <span class="actions-nav-btn-meta">Exportacio i sort</span>
+            </button>
+          </nav>
+
+          <div class="actions-content">
+            <div class="d-flex flex-column gap-2 mb-3" id="inscripcions-panels">
+              {% include "competicio/inscripcions/_grouping_panel.html" %}
+              {% include "competicio/inscripcions/_columns_panel.html" %}
+              {% include "competicio/inscripcions/_groups_panel.html" %}
+              {% include "competicio/inscripcions/_teams_panel.html" %}
+              {% include "competicio/inscripcions/_series_panel.html" %}
+              {% include "competicio/inscripcions/_media_panel.html" %}
+              {% include "competicio/inscripcions/_altres_panel.html" %}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </form>
+</aside>

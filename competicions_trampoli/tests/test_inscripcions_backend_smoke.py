@@ -1,11 +1,16 @@
 import importlib
 import json
 from pathlib import Path
+from datetime import date, datetime
+from io import BytesIO
 
 from django.test import TestCase
 from django.urls import resolve, reverse
+from openpyxl import Workbook
 
-from ..models import Competicio, CompeticioMembership, Inscripcio
+from ..models import Competicio, CompeticioMembership, Inscripcio, InscripcioMedia
+from ..services.inscripcions.import_excel import importar_inscripcions_excel
+from ..views.inscripcions.listing import _serialize_listing_media_item
 from .base import _BaseTrampoliDataMixin
 
 
@@ -164,10 +169,59 @@ class InscripcionsBackendSmokeTests(_BaseTrampoliDataMixin, TestCase):
         response = self.client.get(reverse("inscripcions_list", kwargs={"pk": self.comp.id}))
 
         self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(response, "competicio/inscricpions_list_new.html")
+        self.assertTemplateUsed(response, "competicio/inscripcions/inscripcions_page.html")
         self.assertIn("selected_table_columns", response.context)
         self.assertIn("sort_field_options", response.context)
         self.assertIn("table_colspan", response.context)
+        self.assertIn("inscripcions_page_boot", response.context)
+        self.assertIn("urls", response.context["inscripcions_page_boot"])
+        self.assertContains(response, reverse("inscripcio_add", kwargs={"pk": self.comp.id}))
+        self.assertContains(response, reverse("scoring_notes_home", kwargs={"pk": self.comp.id}))
+        self.assertContains(response, reverse("rotacions_planner", kwargs={"pk": self.comp.id}))
+        self.assertContains(response, 'id="btn-groups-preview-confirm"', html=False)
+        self.assertContains(response, 'id="btn-groups-preview-clear"', html=False)
+        self.assertContains(response, 'id="btn-groups-preview-count"', html=False)
+        self.assertContains(response, 'id="btn-groups-create-count"', html=False)
+        self.assertContains(response, 'id="btn-groups-preview-size"', html=False)
+        self.assertContains(response, 'id="btn-groups-create-size"', html=False)
+        self.assertContains(response, 'id="btn-groups-preview-range-balanced"', html=False)
+        self.assertContains(response, 'id="btn-groups-create-range-balanced"', html=False)
+        self.assertContains(response, 'id="btn-groups-preview-count-range"', html=False)
+        self.assertContains(response, 'id="btn-groups-create-count-range"', html=False)
+        self.assertContains(response, 'id="btn-groups-preview-per-bucket"', html=False)
+        self.assertContains(response, 'id="btn-groups-create-per-bucket"', html=False)
+
+    def test_column_filter_query_params_accept_canonical_and_legacy_prefixes(self):
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Marta Altres",
+            entitat="Club Altres",
+            ordre_sortida=2,
+        )
+
+        base_url = reverse("inscripcions_list", kwargs={"pk": self.comp.id})
+        for param_name in ("cf_entitat", "cf__entitat"):
+            with self.subTest(param_name=param_name):
+                response = self.client.get(base_url, {param_name: "Club Smoke"})
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.context["column_filter_tokens_by_code"].get("entitat"), ["Club Smoke"])
+                self.assertEqual(response.context["inscrits_filtered_count"], 1)
+                self.assertContains(response, 'name="cf_entitat"', html=False)
+                self.assertNotContains(response, 'name="cf__entitat"', html=False)
+
+    def test_core_script_preserves_global_dialogs_instead_of_overwriting_them(self):
+        package_root = Path(__file__).resolve().parents[1]
+        source = (package_root / "templates" / "competicio" / "inscripcions" / "scripts" / "_core.html").read_text(encoding="utf-8")
+
+        self.assertIn("const previousShowAlert", source)
+        self.assertIn("const previousShowConfirm", source)
+        self.assertIn("const previousShowPrompt", source)
+        self.assertIn("if (previousShowAlert) return previousShowAlert", source)
+        self.assertIn("if (previousShowConfirm) return previousShowConfirm", source)
+        self.assertIn("if (previousShowPrompt) return previousShowPrompt", source)
+        self.assertIn("if (typeof window.showAlert !== 'function') window.showAlert = showAlert;", source)
+        self.assertIn("if (typeof window.showConfirm !== 'function') window.showConfirm = showConfirm;", source)
+        self.assertIn("if (typeof window.showPrompt !== 'function') window.showPrompt = showPrompt;", source)
 
     def test_ajax_payload_contract_smoke_for_sorting_groups_and_media(self):
         sorting_response = self.client.post(
@@ -215,3 +269,91 @@ class InscripcionsBackendSmokeTests(_BaseTrampoliDataMixin, TestCase):
         self.assertIn("rows", media_payload)
         self.assertIn("counts", media_payload)
         self.assertIn("config", media_payload)
+
+
+class InscripcionsExcelImportServiceTests(_BaseTrampoliDataMixin, TestCase):
+    def _build_workbook_file(self, headers, row):
+        wb = Workbook()
+        ws = wb.active
+        ws.append(headers)
+        ws.append(row)
+        content = BytesIO()
+        wb.save(content)
+        content.seek(0)
+        return content
+
+    def test_import_accepts_datetime_values_in_extra_columns_and_real_headers(self):
+        comp = self._create_competicio("Comp Import Excel")
+        fitxer = self._build_workbook_file(
+            [
+                "Id Adjunt",
+                "Id Inscripció",
+                "Lliga",
+                "Grup",
+                "Club",
+                "Nom",
+                "Cognoms",
+                "Data Naixement",
+                "Competició",
+                "Estat inscripció",
+                "Data Introducció",
+                "Modalitat",
+                "Categoria",
+                "SubCategoria",
+                "Link Adjunt",
+            ],
+            [
+                991,
+                225,
+                "CEEB",
+                "A",
+                "Club Example",
+                "Laia",
+                "Garcia",
+                date(2014, 5, 3),
+                "Competició prova",
+                "Pendent",
+                datetime(2026, 4, 5, 10, 30, 15),
+                "Individual",
+                "Benjamí",
+                "Nivell 1",
+                "https://example.invalid/file",
+            ],
+        )
+
+        result = importar_inscripcions_excel(fitxer, comp)
+
+        self.assertEqual(result["errors"], 0)
+        self.assertEqual(result["creats"], 1)
+
+        inscripcio = Inscripcio.objects.get(competicio=comp)
+        self.assertEqual(inscripcio.nom_i_cognoms, "Laia Garcia")
+        self.assertEqual(inscripcio.entitat, "Club Example")
+        self.assertEqual(inscripcio.categoria, "Benjamí")
+        self.assertEqual(inscripcio.subcategoria, "Nivell 1")
+        self.assertEqual(inscripcio.data_naixement, date(2014, 5, 3))
+        self.assertEqual(inscripcio.extra["data_introduccio"], "2026-04-05T10:30:15")
+        self.assertEqual(inscripcio.extra["modalitat"], "Individual")
+        self.assertEqual(inscripcio.extra["excel__grup"], "A")
+
+
+class InscripcionsListingMediaUrlTests(_BaseTrampoliDataMixin, TestCase):
+    def test_listing_media_item_uses_registered_route(self):
+        item = InscripcioMedia(
+            id=9,
+            competicio_id=43,
+            inscripcio_id=12,
+            tipus=InscripcioMedia.Tipus.AUDIO,
+            mime_type="audio/mpeg",
+            original_filename="prova.mp3",
+            file_size_bytes=123,
+            is_primary=True,
+            source=InscripcioMedia.Source.MANUAL,
+        )
+
+        payload = _serialize_listing_media_item(item)
+
+        self.assertEqual(
+            payload["url"],
+            reverse("inscripcions_media_file", kwargs={"pk": 43, "media_id": 9}),
+        )

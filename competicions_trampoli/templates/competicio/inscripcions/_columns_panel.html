@@ -1,0 +1,53 @@
+<div class="panel" data-panel-key="columnes">
+  <div class="panel-head collapsed" data-target="#panel-columnes" aria-expanded="false">
+    <div>
+      <p class="panel-title mb-0">Columnes</p>
+      <div class="subtle">Reordena en linia i marca/desmarca visibilitat.</div>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+      <span class="badge badge-light border" id="cols-visible-count">-/-</span>
+      <span class="chev">&#9662;</span>
+    </div>
+  </div>
+
+  <div id="panel-columnes" class="panel-collapse is-collapsed">
+    <div class="panel-body">
+      <div class="cols-toolbar">
+        <div class="cols-toolbar-left">
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-cols-all">Tot</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-cols-none">Cap</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-cols-default">Per defecte</button>
+        </div>
+        <div class="cols-toolbar-right">
+          <div class="small text-muted">Arrossega les targetes per canviar l'ordre.</div>
+          <button type="button" class="btn btn-sm btn-primary" id="btn-save-cols" {% if not can_edit_inscripcions %}disabled{% endif %}>Desar columnes</button>
+        </div>
+      </div>
+
+      <ul id="cols-sortable" class="cols-inline-sortable mb-2">
+        {% for col in available_table_columns %}
+          <li class="cols-inline-item" data-col="{{ col.code }}">
+            <div class="cols-inline-main">
+              <span class="col-drag-handle" title="Arrossega">&#8942;&#8942;</span>
+              <div class="custom-control custom-checkbox cols-inline-toggle">
+                <input
+                  type="checkbox"
+                  class="custom-control-input js-col-check"
+                  id="col_check_{{ forloop.counter0 }}"
+                  data-col="{{ col.code }}"
+                  {% for s in selected_table_columns %}{% if s.code == col.code %}checked{% endif %}{% endfor %}>
+                <label
+                  class="custom-control-label cols-inline-label"
+                  for="col_check_{{ forloop.counter0 }}"
+                  title="{{ col.ui_label|default:col.label }}">
+                  <span class="cols-inline-label-text">{{ col.ui_label|default:col.label }}</span>
+                </label>
+              </div>
+            </div>
+            <span class="cols-inline-code" title="{{ col.code }}">{{ col.code }}</span>
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+</div>
