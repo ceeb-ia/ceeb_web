@@ -199,6 +199,14 @@
     return document.querySelector('.actions-shell-inner');
   }
 
+  function usesOverlayActionsDrawer() {
+    return window.matchMedia('(max-width: 1199.98px)').matches;
+  }
+
+  function getDefaultActionsDrawerOpen() {
+    return !usesOverlayActionsDrawer();
+  }
+
   function isActionsDrawerOpen() {
     return root.classList.contains('is-drawer-open');
   }
@@ -434,14 +442,17 @@
     const savedAt = Number(state.savedAt || 0);
     if (savedAt && (Date.now() - savedAt > UI_STATE_MAX_AGE_MS)) {
       try { sessionStorage.removeItem(getUiStateKey()); } catch (_err) {}
-      return;
+      state = null;
     }
 
     uiStateRestoring = true;
     try {
-      if (typeof state.actionsDrawerOpen === 'boolean') {
-        setActionsDrawerOpen(state.actionsDrawerOpen, { skipSave: true });
-      }
+      const savedDrawerOpen = (state && typeof state === 'object' && typeof state.actionsDrawerOpen === 'boolean')
+        ? state.actionsDrawerOpen
+        : getDefaultActionsDrawerOpen();
+      setActionsDrawerOpen(savedDrawerOpen, { skipSave: true });
+
+      if (!state || typeof state !== 'object') return;
 
       const activeActionsPanel = String(state.activeActionsPanel || '').trim();
       if (activeActionsPanel) {

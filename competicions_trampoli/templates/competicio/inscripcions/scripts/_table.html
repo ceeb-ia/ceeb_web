@@ -110,6 +110,25 @@
     });
   }
 
+  function setDragging(on) {
+    document.body.classList.toggle('dragging', !!on);
+  }
+
+  function clearDraggingState() {
+    setDragging(false);
+  }
+
+  function bindDraggingStateCleanup() {
+    if (window.__inscripcionsDraggingCleanupBound) return;
+    window.__inscripcionsDraggingCleanupBound = true;
+    ['mouseup', 'touchend', 'touchcancel', 'pointerup', 'dragend', 'blur'].forEach((eventName) => {
+      window.addEventListener(eventName, clearDraggingState, { passive: true });
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) clearDraggingState();
+    });
+  }
+
   function applyGroupBands() {
     const clearBandClasses = (node) => {
       Array.from(node.classList)
@@ -197,6 +216,9 @@
         preventOnFilter: true,
         forceFallback: true,
         fallbackOnBody: true,
+        onChoose: () => setDragging(true),
+        onStart: () => setDragging(true),
+        onUnchoose: () => clearDraggingState(),
         onEnd: async (evt) => {
           const row = evt.item;
           const movedId = String(row?.dataset.id || '').trim();
@@ -208,6 +230,8 @@
           } catch (err) {
             API.showAlert(err.message || err);
             API.reloadWithUiState();
+          } finally {
+            clearDraggingState();
           }
         },
       });
@@ -225,6 +249,9 @@
       delayOnTouchOnly: true,
       forceFallback: true,
       fallbackOnBody: true,
+      onChoose: () => setDragging(true),
+      onStart: () => setDragging(true),
+      onUnchoose: () => clearDraggingState(),
       onEnd: async (evt) => {
         const originEvent = evt.originalEvent;
         if (originEvent && typeof document.elementFromPoint === 'function') {
@@ -249,6 +276,8 @@
         } catch (err) {
           API.showAlert(err.message || err);
           API.reloadWithUiState();
+        } finally {
+          clearDraggingState();
         }
       },
     });
@@ -484,6 +513,7 @@
   }
 
   document.addEventListener('DOMContentLoaded', () => {
+    bindDraggingStateCleanup();
     initSortableTabs();
     initSortableRows();
     wireTableActions();

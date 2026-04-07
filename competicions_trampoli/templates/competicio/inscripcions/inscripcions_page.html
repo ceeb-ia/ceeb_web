@@ -9,7 +9,7 @@
 
 <div
   id="inscripcions-page-shell"
-  class="card-surface inscripcions-page-shell is-drawer-open"
+  class="card-surface inscripcions-page-shell"
   data-competicio-id="{{ competicio.id }}"
   data-can-edit="{{ can_edit_inscripcions|yesno:'1,0' }}"
 >
@@ -25,7 +25,7 @@
       class="btn btn-sm btn-primary inscripcions-drawer-toggle"
       id="inscripcions-drawer-toggle"
       aria-controls="inscripcions-actions-sidebar"
-      aria-expanded="true">
+      aria-expanded="false">
       <span class="inscripcions-drawer-toggle-icon" aria-hidden="true">&#9776;</span>
       <span class="inscripcions-drawer-toggle-label-open">Amagar accions</span>
       <span class="inscripcions-drawer-toggle-label-closed">Mostrar accions</span>
@@ -46,6 +46,7 @@
     </div>
   </div>
 
+  <script src="{% static 'js/vendor/Sortable.min.js' %}"></script>
   {% include "competicio/inscripcions/scripts/_core.html" %}
   {% include "competicio/inscripcions/scripts/_table.html" %}
   {% include "competicio/inscripcions/scripts/_sorting.html" %}

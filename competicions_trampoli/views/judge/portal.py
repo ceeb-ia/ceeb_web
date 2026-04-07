@@ -8,7 +8,8 @@ from ...models import Inscripcio
 from ...models.competicio import InscripcioAparellExclusio
 from ...models.judging import JudgeDeviceToken, PublicLiveToken
 from ...models.rotacions import RotacioAssignacio, RotacioFranja
-from ...models.scoring import ScoreEntryVideo, ScoringSchema
+from ...models.scoring import ScoreEntryVideo
+from ...services.scoring.schema_resolution import resolve_scoring_schema_for_comp_aparell
 from ...services.shared.competition_groups import (
     get_group_maps,
     get_inscripcio_competition_order,
@@ -63,10 +64,7 @@ def judge_portal(request, token):
     competicio = tok.competicio
     video_capture_enabled = _judge_video_capture_enabled_for_token(tok)
 
-    ss, _ = ScoringSchema.objects.get_or_create(
-        aparell=comp_aparell.aparell,
-        defaults={"schema": {}},
-    )
+    _schema_obj, base_schema = resolve_scoring_schema_for_comp_aparell(comp_aparell)
 
     permissions = _normalize_permissions(tok.permissions)
 
@@ -144,7 +142,7 @@ def judge_portal(request, token):
     if team_subject_mode:
         registry = build_team_subject_registry(competicio, comp_aparell)
         raw_subjects = list(registry["subjects"])
-        schema = runtime_schema_for_team_subjects(ss.schema or {}, comp_aparell, raw_subjects)
+        schema = runtime_schema_for_team_subjects(base_schema, comp_aparell, raw_subjects)
         base_subjects = [
             dict(item)
             for item in raw_subjects
@@ -157,7 +155,7 @@ def judge_portal(request, token):
             item["group"] = team_subject_bucket_key(item, comp_aparell.id)
             item["group_label"] = team_subject_bucket_label(item, app_name)
     else:
-        schema = runtime_schema_for_comp_aparell(ss.schema or {}, comp_aparell)
+        schema = runtime_schema_for_comp_aparell(base_schema, comp_aparell)
         excluded_ins_ids = set(
             InscripcioAparellExclusio.objects
             .filter(comp_aparell=comp_aparell)
@@ -345,7 +343,7 @@ def judge_portal(request, token):
         for ex in exercicis:
             e = entry_map.get((int(item["subject_id"]), ex))
             if team_subject_mode and e and isinstance(e.inputs, dict):
-                runtime_inputs = logical_team_inputs_to_runtime_inputs(e.inputs, e.team_subject, ss.schema or {})
+                runtime_inputs = logical_team_inputs_to_runtime_inputs(e.inputs, e.team_subject, base_schema)
             else:
                 runtime_inputs = e.inputs if e and isinstance(e.inputs, dict) else {}
             exercise_map[str(ex)] = {

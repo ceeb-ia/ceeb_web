@@ -33,19 +33,17 @@
         + Afegir inscripció manual
       </a>
     {% endif %}
-    <a class="btn btn-sm btn-outline-primary" href="{% url 'import' competicio.id %}">
+    <a class="btn btn-sm btn-outline-success" href="{% url 'import' competicio.id %}">
       Importar Excel
     </a>
-    <a class="btn btn-sm btn-outline-primary" href="{% url 'scoring_notes_home' competicio.id %}">
+    <a class="btn btn-sm btn-primary" href="{% url 'scoring_notes_home' competicio.id %}">
       Notes
     </a>
     <a class="btn btn-sm btn-outline-primary" href="{% url 'rotacions_planner' competicio.id %}" target="_blank" rel="noopener">
       Rotacions
     </a>
-    {% if can_edit_inscripcions %}
-      <button type="button" class="btn btn-sm btn-primary" id="btn-open-panel-altres" data-open-panel="altres">
-        Configuració
-      </button>
-    {% endif %}
+    <a class="btn btn-sm btn-outline-primary" href="{% url 'trampoli_config' competicio.id %}" target="_blank" rel="noopener">
+      Configuració
+    </a>
   </div>
 </div>

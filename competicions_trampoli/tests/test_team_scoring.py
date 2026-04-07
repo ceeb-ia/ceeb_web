@@ -108,6 +108,7 @@ from ..services.shared.competition_groups import (
     move_inscripcio_to_group,
     next_group_display_num,
 )
+from ..services.scoring.schema_resolution import resolve_scoring_schema_for_comp_aparell
 from ..services.scoring.team_scoring import (
     build_permission_label,
     build_team_subjects_for_comp_aparell,
@@ -518,6 +519,11 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
         }
         payload.update(extra)
         return payload
+
+    def _create_individual_comp_aparell(self, codi="TRIND", nom="Tramp Individual", ordre=9):
+        app = self._create_aparell(codi, nom)
+        comp_aparell = self._create_comp_aparell(self.comp, app, ordre=ordre)
+        return app, comp_aparell
 
     def _post_json(self, url_name, payload, **kwargs):
         return self.client.post(
@@ -1101,6 +1107,55 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(entry.inputs["E"][str(self.ins2.id)], 7.1)
         self.assertEqual(entry.inputs["E"][str(self.ins1.id)], 0.0)
 
+    def test_judge_save_partial_uses_comp_aparell_specific_schema_before_global(self):
+        app, comp_aparell = self._create_individual_comp_aparell(codi="TRSAVE", nom="Tramp Save", ordre=10)
+        ScoringSchema.objects.create(
+            aparell=app,
+            schema={
+                "fields": [{"code": "SYNC", "label": "Sync", "type": "number"}],
+                "computed": [{"code": "TOTAL", "label": "Total", "formula": "SYNC"}],
+            },
+        )
+        ScoringSchema.objects.create(
+            comp_aparell=comp_aparell,
+            schema={
+                "fields": [{"code": "ALT", "label": "Alt", "type": "number"}],
+                "computed": [{"code": "TOTAL", "label": "Total", "formula": "ALT"}],
+            },
+        )
+        token = JudgeDeviceToken.objects.create(
+            competicio=self.comp,
+            comp_aparell=comp_aparell,
+            label="Individual override",
+            permissions=[{"field_code": "ALT", "runtime_field_code": "ALT", "scope": "shared", "judge_index": 1}],
+            is_active=True,
+        )
+
+        response = self.client.post(
+            reverse("judge_save_partial", kwargs={"token": token.id}),
+            data=json.dumps(
+                {
+                    "subject_kind": "inscripcio",
+                    "subject_id": self.ins1.id,
+                    "exercici": 1,
+                    "inputs_patch": {"ALT": 5.5},
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["inputs"]["ALT"], 5.5)
+        entry = ScoreEntry.objects.get(
+            competicio=self.comp,
+            comp_aparell=comp_aparell,
+            inscripcio=self.ins1,
+            exercici=1,
+        )
+        self.assertEqual(entry.inputs["ALT"], 5.5)
+        self.assertAlmostEqual(float(entry.total), 5.5)
+
     def test_permission_runtime_resolution_supports_member_modes_and_legacy_permissions(self):
         all_entries = resolve_permission_runtime_entries(
             {"field_code": "E", "scope": "member", "judge_index": 1, "member_mode": "all"},
@@ -1200,17 +1255,69 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
                 team_context_mode=True,
             )
 
-        with self.assertRaisesMessage(ValueError, "nomes estan disponibles en aparells d'equip"):
+        legacy_individual = _validate_permission_row(
+            schema_by_code,
+            {
+                "field_code": "E",
+                "scope": "member",
+                "judge_index": 1,
+                "member_mode": "all",
+            },
+            team_context_mode=False,
+        )
+        self.assertEqual(legacy_individual["scope"], "shared")
+        self.assertNotIn("member_mode", legacy_individual)
+
+        with self.assertRaisesMessage(ValueError, "abast compartit"):
             _validate_permission_row(
                 schema_by_code,
                 {
-                    "field_code": "E",
+                    "field_code": "SYNC",
                     "scope": "member",
                     "judge_index": 1,
                     "member_mode": "all",
                 },
-                team_context_mode=False,
+                team_context_mode=True,
             )
+
+        with self.assertRaisesMessage(ValueError, "abast individual"):
+            _validate_permission_row(
+                schema_by_code,
+                {
+                    "field_code": "E",
+                    "scope": "shared",
+                    "judge_index": 1,
+                },
+                team_context_mode=True,
+            )
+
+    def test_resolve_scoring_schema_for_comp_aparell_prefers_specific_before_global(self):
+        global_schema = ScoringSchema.objects.create(
+            aparell=self.app,
+            schema={"fields": [{"code": "SYNC", "label": "Sync", "type": "number", "scope": "shared"}], "computed": []},
+        )
+        specific_schema = ScoringSchema.objects.create(
+            comp_aparell=self.comp_app,
+            schema={"fields": [{"code": "ALT", "label": "Alt", "type": "number", "scope": "shared"}], "computed": []},
+        )
+
+        schema_obj, schema = resolve_scoring_schema_for_comp_aparell(self.comp_app)
+
+        self.assertEqual(schema_obj.pk, specific_schema.pk)
+        self.assertEqual(schema["fields"][0]["code"], "ALT")
+        global_schema.refresh_from_db()
+        self.assertEqual(global_schema.schema["fields"][0]["code"], "SYNC")
+
+    def test_resolve_scoring_schema_for_comp_aparell_falls_back_to_global(self):
+        global_schema = ScoringSchema.objects.create(
+            aparell=self.app,
+            schema={"fields": [{"code": "SYNC", "label": "Sync", "type": "number", "scope": "shared"}], "computed": []},
+        )
+
+        schema_obj, schema = resolve_scoring_schema_for_comp_aparell(self.comp_app)
+
+        self.assertEqual(schema_obj.pk, global_schema.pk)
+        self.assertEqual(schema["fields"][0]["code"], "SYNC")
 
     def test_judge_admin_create_token_stores_member_targeting(self):
         ScoringSchema.objects.create(
@@ -1248,6 +1355,146 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
         token = JudgeDeviceToken.objects.get(label="Judge subset")
         self.assertEqual(token.permissions[0]["member_mode"], "subset")
         self.assertEqual(token.permissions[0]["member_slots"], [1, 2])
+
+    def test_judge_admin_uses_comp_aparell_specific_schema_before_global(self):
+        ScoringSchema.objects.create(
+            aparell=self.app,
+            schema={
+                "fields": [
+                    {"code": "SYNC", "label": "Sincronisme", "type": "number", "scope": "shared"},
+                ],
+                "computed": [],
+            },
+        )
+        ScoringSchema.objects.create(
+            comp_aparell=self.comp_app,
+            schema={
+                "meta": {"subject_mode": "team_context", "expected_team_size": 2},
+                "fields": [
+                    {"code": "ALT", "label": "Alternatiu", "type": "number", "scope": "shared"},
+                ],
+                "computed": [],
+            },
+        )
+
+        response = self.client.get(
+            f"{reverse('judges_qr_home', kwargs={'competicio_id': self.comp.id})}?comp_aparell={self.comp_app.id}"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["schema"]["fields"][0]["code"], "ALT")
+        self.assertEqual(response.context["schema_field_catalog"][0]["code"], "ALT")
+
+    def test_judge_admin_individual_app_hides_scope_and_tolerates_legacy_member_schema(self):
+        app, comp_aparell = self._create_individual_comp_aparell()
+        ScoringSchema.objects.create(
+            comp_aparell=comp_aparell,
+            schema={
+                "fields": [
+                    {"code": "ALT", "label": "Alternatiu", "type": "number", "scope": "member"},
+                ],
+                "computed": [
+                    {"code": "TOTAL", "label": "Total", "formula": "ALT"},
+                ],
+            },
+        )
+
+        response = self.client.get(
+            f"{reverse('judges_qr_home', kwargs={'competicio_id': self.comp.id})}?comp_aparell={comp_aparell.id}"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode("utf-8")
+        self.assertNotIn("<th>Abast</th>", body)
+        self.assertIn('type="hidden" name="form-0-scope"', body)
+
+        post_response = self.client.post(
+            f"{reverse('judges_qr_home', kwargs={'competicio_id': self.comp.id})}?comp_aparell={comp_aparell.id}",
+            data={
+                "action": "create",
+                "label": "Judge individual legacy",
+                "form-TOTAL_FORMS": "1",
+                "form-INITIAL_FORMS": "0",
+                "form-MIN_NUM_FORMS": "0",
+                "form-MAX_NUM_FORMS": "15",
+                "form-0-field_code": "ALT",
+                "form-0-scope": "shared",
+                "form-0-member_mode": "all",
+                "form-0-member_slots": "",
+                "form-0-judge_index": "1",
+                "form-0-item_start": "1",
+                "form-0-item_count": "",
+            },
+        )
+
+        self.assertEqual(post_response.status_code, 302)
+        token = JudgeDeviceToken.objects.get(label="Judge individual legacy")
+        self.assertEqual(token.comp_aparell_id, comp_aparell.id)
+        self.assertEqual(token.permissions[0]["field_code"], "ALT")
+        self.assertEqual(token.permissions[0]["scope"], "shared")
+        self.assertEqual(token.permissions[0]["runtime_field_code"], "ALT")
+        self.assertNotIn("member_mode", token.permissions[0])
+
+    def test_judge_admin_team_app_keeps_scope_column_visible(self):
+        ScoringSchema.objects.create(
+            aparell=self.app,
+            schema={
+                "meta": {"subject_mode": "team_context", "expected_team_size": 2},
+                "fields": [
+                    {"code": "SYNC", "label": "Sincronisme", "type": "number", "scope": "shared"},
+                ],
+                "computed": [],
+            },
+        )
+
+        response = self.client.get(
+            f"{reverse('judges_qr_home', kwargs={'competicio_id': self.comp.id})}?comp_aparell={self.comp_app.id}"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode("utf-8")
+        self.assertIn("<th>Abast</th>", body)
+        self.assertIn('id="judge-schema-field-catalog"', body)
+        self.assertIn('"code": "SYNC"', body)
+        self.assertIn('"scope": "shared"', body)
+
+    def test_judge_admin_team_shared_field_ignores_member_targeting(self):
+        ScoringSchema.objects.create(
+            aparell=self.app,
+            schema={
+                "meta": {"subject_mode": "team_context", "expected_team_size": 2},
+                "fields": [
+                    {"code": "SYNC", "label": "Sincronisme", "type": "number", "scope": "shared"},
+                    {"code": "E", "label": "Exec", "type": "number", "scope": "member"},
+                ],
+                "computed": [],
+            },
+        )
+
+        response = self.client.post(
+            f"{reverse('judges_qr_home', kwargs={'competicio_id': self.comp.id})}?comp_aparell={self.comp_app.id}",
+            data={
+                "action": "create",
+                "label": "Judge shared team",
+                "form-TOTAL_FORMS": "1",
+                "form-INITIAL_FORMS": "0",
+                "form-MIN_NUM_FORMS": "0",
+                "form-MAX_NUM_FORMS": "15",
+                "form-0-field_code": "SYNC",
+                "form-0-scope": "shared",
+                "form-0-member_mode": "subset",
+                "form-0-member_slots": "1,2",
+                "form-0-judge_index": "1",
+                "form-0-item_start": "1",
+                "form-0-item_count": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        token = JudgeDeviceToken.objects.get(label="Judge shared team")
+        self.assertEqual(token.permissions[0]["scope"], "shared")
+        self.assertNotIn("member_mode", token.permissions[0])
+        self.assertNotIn("member_slots", token.permissions[0])
 
     def test_judge_portal_uses_team_dom_keys_and_member_target_metadata(self):
         ScoringSchema.objects.create(

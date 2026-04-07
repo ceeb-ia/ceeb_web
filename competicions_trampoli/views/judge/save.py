@@ -8,8 +8,8 @@ from django.views.decorators.http import require_POST
 from ...models import Competicio
 from ...models.competicio import CompeticioAparell
 from ...models.judging import JudgeDeviceToken
-from ...models.scoring import ScoringSchema
 from ...scoring_engine import ScoringEngine, ScoringError
+from ...services.scoring.schema_resolution import resolve_scoring_schema_for_comp_aparell
 from ...services.scoring.scoring_subjects import (
     get_or_create_subject_entry_locked,
     resolve_scoring_subject,
@@ -79,7 +79,7 @@ def judge_save_partial(request, token):
     if error_response is not None:
         return error_response
 
-    ss, _ = ScoringSchema.objects.get_or_create(aparell=comp_aparell.aparell, defaults={"schema": {}})
+    _schema_obj, base_schema = resolve_scoring_schema_for_comp_aparell(comp_aparell)
     team_subject = subject.get("team_subject") if str(subject.get("subject_kind")) == "team_unit" else None
     team_member_count = len(getattr(team_subject, "member_ids", []) or []) if team_subject is not None else 0
     resolved_permissions = _resolve_permissions_for_subject(permissions, comp_aparell, subject)
@@ -91,7 +91,7 @@ def judge_save_partial(request, token):
     patch_codes = set(inputs_patch.keys())
     if not patch_codes.issubset(allowed_patch_codes):
         return JsonResponse({"ok": False, "error": "Intentes editar un camp no autoritzat per aquest QR"}, status=403)
-    schema = runtime_schema_for_comp_aparell(ss.schema or {}, comp_aparell, member_count=team_member_count)
+    schema = runtime_schema_for_comp_aparell(base_schema, comp_aparell, member_count=team_member_count)
 
     entry, _ = get_or_create_subject_entry_locked(
         competicio=competicio,
@@ -104,7 +104,7 @@ def judge_save_partial(request, token):
     sanitized = _sanitize_patch_by_permissions(schema, resolved_permissions, inputs_patch)
     current_inputs = entry.inputs if isinstance(entry.inputs, dict) else {}
     if team_subject is not None:
-        current_inputs = logical_team_inputs_to_runtime_inputs(current_inputs, team_subject, ss.schema or {})
+        current_inputs = logical_team_inputs_to_runtime_inputs(current_inputs, team_subject, base_schema)
 
     # MERGE per no trepitjar altres camps/jutges
     merged_inputs = _apply_sanitized_patch(current_inputs, sanitized, schema)
@@ -127,7 +127,7 @@ def judge_save_partial(request, token):
         return JsonResponse({"ok": False, "error": "Error inesperat calculant puntuació"}, status=500)
 
     entry.inputs = (
-        runtime_inputs_to_logical_team_inputs(result.inputs, team_subject, ss.schema or {})
+        runtime_inputs_to_logical_team_inputs(result.inputs, team_subject, base_schema)
         if team_subject is not None
         else result.inputs
     )

@@ -151,7 +151,7 @@
                     <thead>
                       <tr class="text-muted small">
                         <th style="min-width:240px;">Camp</th>
-                        <th>Abast</th>
+                        {% if is_team_context_mode %}<th>Abast</th>{% endif %}
                         {% if is_team_context_mode %}<th style="min-width:220px;">Membres</th>{% endif %}
                         <th>Jutge</th>
                         <th>Start</th>
@@ -165,6 +165,7 @@
                         <td>
                           {{ f.field_code }}
                           {% if not is_team_context_mode %}
+                            {{ f.scope.as_hidden }}
                             {{ f.member_mode.as_hidden }}
                             {{ f.member_slots }}
                           {% endif %}
@@ -172,13 +173,13 @@
                             <div class="text-danger small mt-1">{{ f.field_code.errors }}</div>
                           {% endif %}
                         </td>
+                        {% if is_team_context_mode %}
                         <td>
                           {{ f.scope }}
                           {% if f.scope.errors %}
                             <div class="text-danger small mt-1">{{ f.scope.errors }}</div>
                           {% endif %}
                         </td>
-                        {% if is_team_context_mode %}
                         <td>
                           <div data-member-target="1">
                             <div class="mb-1">{{ f.member_mode }}</div>
@@ -230,7 +231,7 @@
                       </tr>
                       {% if f.non_field_errors %}
                       <tr>
-                        <td colspan="{% if is_team_context_mode %}7{% else %}6{% endif %}" class="pt-0">
+                        <td colspan="{% if is_team_context_mode %}7{% else %}5{% endif %}" class="pt-0">
                           <div class="text-danger small">{{ f.non_field_errors }}</div>
                         </td>
                       </tr>
@@ -245,12 +246,13 @@
                     <td>
                       {{ formset.empty_form.field_code }}
                       {% if not is_team_context_mode %}
+                        {{ formset.empty_form.scope.as_hidden }}
                         {{ formset.empty_form.member_mode.as_hidden }}
                         {{ formset.empty_form.member_slots }}
                       {% endif %}
                     </td>
-                    <td>{{ formset.empty_form.scope }}</td>
                     {% if is_team_context_mode %}
+                    <td>{{ formset.empty_form.scope }}</td>
                     <td>
                       <div data-member-target="1">
                         <div class="mb-1">{{ formset.empty_form.member_mode }}</div>
@@ -386,6 +388,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
+{{ schema_field_catalog|json_script:"judge-schema-field-catalog" }}
 <script>
   (function () {
     const tbody = document.getElementById("permTbody");
@@ -397,6 +400,18 @@
 
     const maxPermissions = Number(tbody.dataset.maxPermissions || "10");
     const isTeamContextMode = tbody.dataset.teamContext === "1";
+    const fieldCatalogEl = document.getElementById("judge-schema-field-catalog");
+    let fieldCatalog = [];
+    try {
+      fieldCatalog = JSON.parse(fieldCatalogEl?.textContent || "[]");
+    } catch (_err) {
+      fieldCatalog = [];
+    }
+    const fieldMetaByCode = new Map(
+      fieldCatalog
+        .filter((item) => item && item.code)
+        .map((item) => [String(item.code), item])
+    );
 
     function parseSlotsValue(rawValue) {
       if (!rawValue) return [];
@@ -407,16 +422,41 @@
         .filter((item, idx, arr) => Number.isFinite(item) && item > 0 && arr.indexOf(item) === idx);
     }
 
+    function effectiveScopeForField(fieldCode) {
+      const cleanCode = String(fieldCode || "").trim();
+      if (!cleanCode) return "shared";
+      const meta = fieldMetaByCode.get(cleanCode) || {};
+      const scope = String(meta.scope || "").trim().toLowerCase();
+      if (scope === "member" || scope === "shared") return scope;
+      return isTeamContextMode ? "member" : "shared";
+    }
+
     function bindPermissionRow(row) {
-      if (!isTeamContextMode || !row) return;
+      if (!row) return;
+      const fieldSelect = row.querySelector('select[name$="-field_code"]');
       const scopeSelect = row.querySelector('select[name$="-scope"]');
+      const scopeInput = row.querySelector('input[name$="-scope"]');
       const modeSelect = row.querySelector('select[name$="-member_mode"]');
       const slotsInput = row.querySelector('input[name$="-member_slots"]');
       const targetWrap = row.querySelector('[data-member-target="1"]');
-      if (!scopeSelect || !modeSelect || !slotsInput || !targetWrap) return;
+      const checks = Array.from(row.querySelectorAll('[data-member-slot-check="1"]'));
+      const labels = Array.from(row.querySelectorAll('[data-member-slot-label="1"]'));
+      if (!fieldSelect || !slotsInput) return;
 
-      const checks = Array.from(targetWrap.querySelectorAll('[data-member-slot-check="1"]'));
-      const labels = Array.from(targetWrap.querySelectorAll('[data-member-slot-label="1"]'));
+      function applyEffectiveScope() {
+        const effectiveScope = effectiveScopeForField(fieldSelect.value);
+        if (scopeSelect) {
+          scopeSelect.value = effectiveScope;
+          scopeSelect.title = "Abast derivat del camp seleccionat.";
+          Array.from(scopeSelect.options).forEach((option) => {
+            option.disabled = option.value !== effectiveScope;
+          });
+        }
+        if (scopeInput) {
+          scopeInput.value = effectiveScope;
+        }
+        return effectiveScope;
+      }
 
       function syncFromInput() {
         const selected = parseSlotsValue(slotsInput.value);
@@ -437,11 +477,12 @@
       }
 
       function syncToInput() {
+        const effectiveScope = scopeSelect ? scopeSelect.value : (scopeInput?.value || "shared");
         let selected = checks
           .filter((check) => check.checked)
           .map((check) => Number(check.value || "0"))
           .filter((slot) => Number.isFinite(slot) && slot > 0);
-        if (scopeSelect.value !== "member" || modeSelect.value === "all") {
+        if (effectiveScope !== "member" || !modeSelect || modeSelect.value === "all") {
           selected = [];
           checks.forEach((check) => { check.checked = false; });
         } else if (modeSelect.value === "single" && selected.length > 1) {
@@ -455,25 +496,37 @@
       }
 
       function refreshVisibility() {
-        const showTarget = scopeSelect.value === "member";
-        targetWrap.classList.toggle("d-none", !showTarget);
-        const disableChecks = !showTarget || modeSelect.value === "all";
+        const effectiveScope = applyEffectiveScope();
+        const showTarget = isTeamContextMode && effectiveScope === "member" && !!targetWrap;
+        if (modeSelect && effectiveScope !== "member") {
+          modeSelect.value = "all";
+        }
+        if (targetWrap) {
+          targetWrap.classList.toggle("d-none", !showTarget);
+        }
+        const disableChecks = !showTarget || !modeSelect || modeSelect.value === "all";
         checks.forEach((check) => {
           check.disabled = disableChecks;
         });
-        if (!showTarget || modeSelect.value === "all") {
+        if (!showTarget || !modeSelect || modeSelect.value === "all") {
           slotsInput.value = "";
         }
         syncFromInput();
         syncToInput();
       }
 
-      scopeSelect.addEventListener("change", refreshVisibility);
-      modeSelect.addEventListener("change", refreshVisibility);
+      fieldSelect.addEventListener("change", refreshVisibility);
+      if (scopeSelect) {
+        scopeSelect.addEventListener("change", refreshVisibility);
+      }
+      if (modeSelect) {
+        modeSelect.addEventListener("change", refreshVisibility);
+      }
       checks.forEach((check) => {
         check.addEventListener("change", syncToInput);
       });
 
+      applyEffectiveScope();
       syncFromInput();
       refreshVisibility();
     }

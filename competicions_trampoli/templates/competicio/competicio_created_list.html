@@ -42,7 +42,7 @@
                 {% endif %}
                 {% if c.te_notes and a and a.can_view_notes %}
                   <a class="btn btn-sm btn-outline-dark" href="{% url 'notes_home' c.id %}">Notes</a>
-                  {% if c.tipus == 'trampoli' and a.can_view_trampoli_config %}
+                  {% if a.can_view_trampoli_config %}
                     <a class="btn btn-sm btn-outline-secondary" href="{% url 'trampoli_config' c.id %}">Configuració</a>
                   {% endif %}
                 {% endif %}

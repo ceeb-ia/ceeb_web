@@ -4,13 +4,14 @@ from django.views.decorators.http import require_http_methods
 
 from ...models.competicio import InscripcioAparellExclusio
 from ...models.judging import JudgeDeviceToken
-from ...models.scoring import ScoreEntry, ScoringSchema, TeamScoreEntry
+from ...models.scoring import ScoreEntry, TeamScoreEntry
 from ...services.shared.incremental_feeds import (
     apply_single_model_cursor,
     build_single_model_feed_meta,
     parse_feed_cursor,
 )
 from ...services.rotacions.rotacions_ordering import unique_ordered
+from ...services.scoring.schema_resolution import resolve_scoring_schema_for_comp_aparell
 from ...services.scoring.team_scoring import is_team_context_app, logical_team_inputs_to_runtime_inputs
 from ...services.scoring.team_subject_contract import (
     build_team_subject_registry,
@@ -61,7 +62,7 @@ def judge_updates(request, token):
     else:
         exercicis = [_clamp_exercici_for_aparell(comp_aparell, request.GET.get("exercici") or request.GET.get("ex"))]
     permissions = _normalize_permissions(tok.permissions)
-    ss, _ = ScoringSchema.objects.get_or_create(aparell=comp_aparell.aparell, defaults={"schema": {}})
+    _schema_obj, base_schema = resolve_scoring_schema_for_comp_aparell(comp_aparell)
 
     if is_team_context_app(comp_aparell):
         registry = build_team_subject_registry(competicio, comp_aparell)
@@ -107,7 +108,7 @@ def judge_updates(request, token):
             subject_meta["team_subject"] = getattr(s, "team_subject", None)
             resolved_permissions = _resolve_permissions_for_subject(permissions, comp_aparell, subject_meta)
             runtime_inputs = (
-                logical_team_inputs_to_runtime_inputs(s.inputs, s.team_subject, ss.schema or {})
+                logical_team_inputs_to_runtime_inputs(s.inputs, s.team_subject, base_schema)
                 if isinstance(s.inputs, dict)
                 else {}
             )

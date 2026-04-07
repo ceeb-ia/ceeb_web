@@ -190,6 +190,8 @@ class InscripcionsBackendSmokeTests(_BaseTrampoliDataMixin, TestCase):
         self.assertContains(response, 'id="btn-groups-create-count-range"', html=False)
         self.assertContains(response, 'id="btn-groups-preview-per-bucket"', html=False)
         self.assertContains(response, 'id="btn-groups-create-per-bucket"', html=False)
+        self.assertContains(response, '/static/js/vendor/Sortable.min.js', html=False)
+        self.assertNotContains(response, 'cdn.jsdelivr.net/npm/sortablejs', html=False)
 
     def test_column_filter_query_params_accept_canonical_and_legacy_prefixes(self):
         Inscripcio.objects.create(

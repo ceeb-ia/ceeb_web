@@ -19,10 +19,7 @@ class Competicio(models.Model):
     inscripcions_view = models.JSONField(default=dict, blank=True)  # preferències UI (columnes, noms grups, etc.)
 
     def te_notes(self) -> bool:
-            # per ara: totes tenen notes (o pots limitar-ho si vols)
-            return self.tipus in {
-                self.Tipus.TRAMPOLI,
-            }
+            return True
 
     def __str__(self):
         return self.nom

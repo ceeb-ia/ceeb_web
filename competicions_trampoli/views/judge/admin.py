@@ -8,7 +8,7 @@ from ...forms_judge import JudgeTokenCreateForm, PermissionRowForm
 from ...models import Competicio
 from ...models.competicio import CompeticioAparell
 from ...models.judging import JudgeDeviceToken, PublicLiveToken
-from ...models.scoring import ScoringSchema
+from ...services.scoring.schema_resolution import resolve_scoring_schema_for_comp_aparell
 from ...services.scoring.team_scoring import (
     build_permission_label,
     build_team_subjects_for_comp_aparell,
@@ -20,6 +20,13 @@ from ...services.scoring.team_scoring import (
 )
 
 MAX_TOKEN_PERMISSIONS = 15
+
+
+def _schema_field_scope(field: dict, *, team_context_mode: bool = False) -> str:
+    raw_scope = str((field or {}).get("scope") or "").strip().lower()
+    if raw_scope in {"shared", "member"}:
+        return raw_scope
+    return "member" if team_context_mode else "shared"
 
 
 def _schema_field_choices(schema: dict):
@@ -35,6 +42,22 @@ def _schema_field_choices(schema: dict):
 
 def _schema_field_by_code(schema: dict):
     return {f.get("code"): f for f in (schema.get("fields") or []) if isinstance(f, dict) and f.get("code")}
+
+
+def _schema_field_catalog(schema: dict, *, team_context_mode: bool = False):
+    items = []
+    for f in (schema.get("fields") or []):
+        if not isinstance(f, dict) or not f.get("code"):
+            continue
+        code = str(f.get("code") or "").strip()
+        label = str(f.get("label") or code).strip() or code
+        items.append({
+            "code": code,
+            "label": label,
+            "type": str(f.get("type") or "number").strip().lower() or "number",
+            "scope": _schema_field_scope(f, team_context_mode=team_context_mode),
+        })
+    return items
 
 
 def _member_slot_choices(competicio, comp_aparell):
@@ -70,18 +93,17 @@ def _validate_permission_row(schema_by_code: dict, row: dict, *, team_context_mo
     f = schema_by_code.get(code)
     if not f:
         raise ValueError("Camp no existeix al schema")
-    scope = str(row.get("scope") or "shared").strip().lower() or "shared"
-
-    field_scope = str((f.get("scope") or "shared")).strip().lower() or "shared"
-    if scope not in {"shared", "member"}:
+    requested_scope = str(row.get("scope") or "shared").strip().lower() or "shared"
+    if requested_scope not in {"shared", "member"}:
         raise ValueError(f"{code}: scope invalid.")
-    if scope == "member":
-        if not team_context_mode:
-            raise ValueError(f"{code}: els permisos individuals nomes estan disponibles en aparells d'equip.")
-        if field_scope != "member":
-            raise ValueError(f"{code}: aquest camp no admet abast individual.")
-    elif field_scope == "member":
-        raise ValueError(f"{code}: cal crear el permis com a individual.")
+    if team_context_mode:
+        scope = _schema_field_scope(f, team_context_mode=True)
+        if requested_scope != scope:
+            raise ValueError(
+                f"{code}: aquest camp nomes admet abast {'individual' if scope == 'member' else 'compartit'}."
+            )
+    else:
+        scope = "shared"
 
     # limit judges.count
     max_j = int(((f.get("judges") or {}).get("count")) or 1)
@@ -169,10 +191,12 @@ def judges_qr_home(request, competicio_id):
 
     schema = {}
     runtime_schema = {}
+    field_catalog = []
+    team_context_mode = bool(comp_aparell and is_team_context_app(comp_aparell))
     if comp_aparell:
-        ss, _ = ScoringSchema.objects.get_or_create(aparell=comp_aparell.aparell, defaults={"schema": {}})
-        schema = ss.schema or {}
+        _schema_obj, schema = resolve_scoring_schema_for_comp_aparell(comp_aparell)
         runtime_schema = runtime_schema_for_comp_aparell(schema, comp_aparell)
+        field_catalog = _schema_field_catalog(schema, team_context_mode=team_context_mode)
 
     field_choices = _schema_field_choices(schema)
     schema_by_code = _schema_field_by_code(schema)
@@ -217,7 +241,7 @@ def judges_qr_home(request, competicio_id):
                     perm = _validate_permission_row(
                         schema_by_code,
                         f,
-                        team_context_mode=bool(comp_aparell and is_team_context_app(comp_aparell)),
+                        team_context_mode=team_context_mode,
                     )
                     perm["runtime_field_code"] = permission_runtime_code(perm, comp_aparell)
                     perms.append(perm)
@@ -273,8 +297,9 @@ def judges_qr_home(request, competicio_id):
         "max_permissions": MAX_TOKEN_PERMISSIONS,
         "exercicis": exercicis,
         "exercici": exercici,
-        "is_team_context_mode": bool(comp_aparell and is_team_context_app(comp_aparell)),
+        "is_team_context_mode": team_context_mode,
         "member_slot_choices": member_slot_choices,
+        "schema_field_catalog": field_catalog,
     }
     return render(request, "judge/admin_tokens.html", ctx)
 

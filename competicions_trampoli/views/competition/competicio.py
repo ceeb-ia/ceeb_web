@@ -81,9 +81,7 @@ class CompeticioListView(ListView):
 
 def notes_home_router(request, pk):
     competicio = get_object_or_404(Competicio, pk=pk)
-    if competicio.tipus == Competicio.Tipus.TRAMPOLI:
-        return redirect("scoring_notes_home", pk=pk)
-    return redirect("created")
+    return redirect("scoring_notes_home", pk=pk)
 
 
 
