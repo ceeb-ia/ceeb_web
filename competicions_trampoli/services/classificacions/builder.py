@@ -31,6 +31,7 @@ from .validation import (
     build_scoreable_meta_for_schema,
     get_team_context_capabilities,
     selected_app_ids_from_schema,
+    validate_schema_for_competicio_detailed,
 )
 from ..teams.equip_contexts import (
     NATIVE_EQUIP_CONTEXT_CODE,
@@ -204,13 +205,17 @@ def _effective_tie_exercise_selection_scope(tie: dict, *, main_scope=None):
 
 
 def build_cfg_status(competicio, tipus, schema_local):
-    schema_local, legacy_info = normalize_schema_legacy_team_birth_partition(
+    _schema_with_legacy, legacy_info = normalize_schema_legacy_team_birth_partition(
         competicio,
         schema_local or {},
         tipus=tipus,
         persist=False,
     )
-    schema_local = normalize_particions_schema(schema_local or {})
+    schema_local, errors, _details = validate_schema_for_competicio_detailed(
+        competicio,
+        schema_local or {},
+        tipus=tipus,
+    )
     equips_cfg = normalize_classificacio_equips_cfg(schema_local.get("equips") or {})
     selected_ids = selected_app_ids_from_schema(schema_local)
     selected_apps = list(
@@ -218,35 +223,15 @@ def build_cfg_status(competicio, tipus, schema_local):
         .filter(competicio=competicio, id__in=selected_ids)
         .select_related("aparell")
     )
+    selected_apps_by_id = {int(comp_aparell.id): comp_aparell for comp_aparell in selected_apps}
+    missing_selected_ids = [app_id for app_id in selected_ids if int(app_id) not in selected_apps_by_id]
+    for app_id in missing_selected_ids:
+        errors.append(f"puntuacio.aparells.ids: l'aparell {app_id} no valid o no actiu.")
     capabilities = get_team_context_capabilities(competicio, equips_cfg.get("context_code"))
     inferred_team_mode = infer_team_mode_from_comp_aparells(selected_apps) if str(tipus or "") == "equips" else ""
     explicit_team_mode = normalize_team_mode(equips_cfg.get("team_mode"))
     effective_team_mode = explicit_team_mode or inferred_team_mode
     mode_resolution = equips_cfg.get("mode_resolution") or {}
-    errors = list(legacy_info.get("compatibility_errors") or [])
-
-    if tipus == "equips":
-        if not capabilities["exists"]:
-            errors.append(f"equips.context_code no existeix: {capabilities['context_code']}")
-        if not effective_team_mode and selected_ids:
-            errors.append("La classificacio legacy barreja aparells individuals i d'equip; cal revisar el mode d'equips.")
-        if effective_team_mode == "native_team":
-            eligible_ids = set(capabilities["eligible_team_app_ids"])
-            for comp_aparell in selected_apps:
-                if not is_team_context_app(comp_aparell):
-                    errors.append(
-                        f"puntuacio.aparells.ids: l'aparell {comp_aparell.id} no es un aparell global d'equip per team_mode=native_team."
-                    )
-                elif int(comp_aparell.id) not in eligible_ids:
-                    errors.append(
-                        f"puntuacio.aparells.ids: l'aparell {comp_aparell.id} no admet el context {capabilities['context_code']}."
-                    )
-        elif effective_team_mode == "derived_from_individual":
-            for comp_aparell in selected_apps:
-                if is_team_context_app(comp_aparell):
-                    errors.append(
-                        f"puntuacio.aparells.ids: l'aparell {comp_aparell.id} no es valid per team_mode=derived_from_individual."
-                    )
 
     return {
         "context_code": capabilities["context_code"],
@@ -293,7 +278,112 @@ def scoreable_codes_by_app_id(competicio, *, tipus=None, assignment_context_code
     return out
 
 
+def prepare_schema_for_builder_hydration(competicio, schema_local, tipus="individual"):
+    """Normalize builder payload shape without dropping stale or legacy selections."""
+    schema, _errors, _details = validate_schema_for_competicio_detailed(
+        competicio,
+        schema_local or {},
+        tipus=tipus,
+    )
+    schema = normalize_particions_schema(json_clone(schema or {}))
+    schema["filtres"] = normalize_classificacio_filters(schema.get("filtres") or {})
+    schema["equips"] = normalize_classificacio_equips_cfg(schema.get("equips") or {})
+
+    punt = schema.get("puntuacio") or {}
+    if not isinstance(punt, dict):
+        punt = {}
+    schema["puntuacio"] = punt
+    punt.pop("camp", None)
+    punt.pop("agregacio", None)
+    punt.pop("best_n", None)
+
+    apps_cfg = punt.get("aparells") or {}
+    if not isinstance(apps_cfg, dict):
+        apps_cfg = {}
+    ids_out = []
+    seen_ids = set()
+    raw_mode = str(apps_cfg.get("mode") or "seleccionar").strip().lower()
+    ids_in = apps_cfg.get("ids") or []
+    if raw_mode == "tots":
+        ids_in = list(
+            CompeticioAparell.objects
+            .filter(competicio=competicio, actiu=True)
+            .order_by("ordre", "id")
+            .values_list("id", flat=True)
+        )
+    for raw in ids_in if isinstance(ids_in, list) else []:
+        try:
+            app_id = int(raw)
+        except Exception:
+            continue
+        if app_id > 0 and app_id not in seen_ids:
+            seen_ids.add(app_id)
+            ids_out.append(app_id)
+    punt["aparells"] = {
+        **apps_cfg,
+        "mode": "seleccionar",
+        "ids": ids_out,
+    }
+
+    camps_in = punt.get("camps_per_aparell") or {}
+    camps_out = {}
+    if isinstance(camps_in, dict):
+        for raw_key, raw_codes in camps_in.items():
+            try:
+                app_id = int(raw_key)
+            except Exception:
+                continue
+            if app_id <= 0:
+                continue
+            if isinstance(raw_codes, str):
+                codes = [x.strip() for x in raw_codes.split(",") if x and x.strip()]
+            elif isinstance(raw_codes, list):
+                codes = [str(x).strip() for x in raw_codes if str(x).strip()]
+            else:
+                continue
+            if codes:
+                camps_out[str(app_id)] = codes
+    punt["camps_per_aparell"] = camps_out
+
+    punt["exercicis"] = punt.get("exercicis") if isinstance(punt.get("exercicis"), dict) else {}
+    ex_per_app_in = punt.get("exercicis_per_aparell") or {}
+    ex_per_app_out = {}
+    if isinstance(ex_per_app_in, dict):
+        for raw_key, cfg in ex_per_app_in.items():
+            try:
+                app_id = int(raw_key)
+            except Exception:
+                continue
+            if app_id > 0:
+                ex_per_app_out[str(app_id)] = cfg
+    punt["exercicis_per_aparell"] = ex_per_app_out
+
+    victories = punt.get("victories") or {}
+    if not isinstance(victories, dict):
+        victories = {}
+    victories["desempat_comparacio"] = list(victories.get("desempat_comparacio") or []) if isinstance(victories.get("desempat_comparacio"), list) else []
+    punt["victories"] = victories
+
+    schema["desempat"] = list(schema.get("desempat") or []) if isinstance(schema.get("desempat"), list) else []
+    schema["particions"] = list(schema.get("particions") or []) if isinstance(schema.get("particions"), list) else []
+    schema["particions_v2"] = list(schema.get("particions_v2") or []) if isinstance(schema.get("particions_v2"), list) else []
+    schema["particions_custom"] = schema.get("particions_custom") if isinstance(schema.get("particions_custom"), dict) else {}
+
+    presentacio = schema.get("presentacio") or {}
+    if not isinstance(presentacio, dict):
+        presentacio = {}
+    detail_cfg = presentacio.get("detall") or {}
+    if not isinstance(detail_cfg, dict):
+        detail_cfg = {}
+    presentacio["columnes"] = list(presentacio.get("columnes") or []) if isinstance(presentacio.get("columnes"), list) else list((DEFAULT_SCHEMA.get("presentacio") or {}).get("columnes") or [])
+    presentacio["detall"] = detail_cfg
+    schema["presentacio"] = presentacio
+
+    return schema
+
+
 def sanitize_schema_for_builder(competicio, schema_local, tipus="individual"):
+    """Build a compatibility-pruned schema for execution-oriented flows, not UI hydration."""
     schema = normalize_particions_schema(json_clone(schema_local or {}))
     schema["filtres"] = normalize_classificacio_filters(schema.get("filtres") or {})
     active_apps = list(
@@ -972,6 +1062,7 @@ __all__ = [
     "normalize_exercise_selection_scope",
     "normalize_particions_schema",
     "normalize_team_mode",
+    "prepare_schema_for_builder_hydration",
     "scoreable_codes_by_app_id",
     "selected_app_ids_from_schema",
     "sanitize_schema_for_builder",

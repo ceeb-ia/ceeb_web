@@ -2,7 +2,7 @@
 
 <div class="d-flex flex-wrap justify-content-between align-items-start mb-3" style="gap:12px;">
   <div>
-    <h1 class="h3 mb-1">Inscripcions</h1>
+    <h1 class="h2 mb-1"><strong>Inscripcions</strong></h1>
     <div class="text-muted">
       <strong>{{ competicio.nom }}</strong>
     </div>
@@ -25,25 +25,31 @@
   </div>
 
   <div class="d-flex flex-wrap align-items-center" style="gap:8px;">
-    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.history.back();">
-      Tornar
-    </button>
     {% if can_edit_inscripcions %}
       <a class="btn btn-sm btn-primary" href="{% url 'inscripcio_add' competicio.id %}?next={{ request.get_full_path|urlencode }}">
         + Afegir inscripció manual
       </a>
     {% endif %}
     <a class="btn btn-sm btn-outline-success" href="{% url 'import' competicio.id %}">
-      Importar Excel
+      + Importar Excel
     </a>
-    <a class="btn btn-sm btn-primary" href="{% url 'scoring_notes_home' competicio.id %}">
+    <a class="btn btn-sm btn-outline-warning" href="{% url 'scoring_notes_home' competicio.id %}">
       Notes
     </a>
     <a class="btn btn-sm btn-outline-primary" href="{% url 'rotacions_planner' competicio.id %}" target="_blank" rel="noopener">
       Rotacions
     </a>
-    <a class="btn btn-sm btn-outline-primary" href="{% url 'trampoli_config' competicio.id %}" target="_blank" rel="noopener">
+    <a class="btn btn-sm btn-outline-secondary" href="{% url 'trampoli_config' competicio.id %}" target="_blank" rel="noopener">
       Configuració
     </a>
   </div>
+  
+  <div class="d-flex flex-wrap align-items-center" style="gap:8px;">
+    <a class="btn btn-sm btn-outline-secondary" href="{% url 'created' %}" rel="noopener">
+      Tornar a competicions
+    </a>
+
+
+  </div>
+
 </div>

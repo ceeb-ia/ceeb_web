@@ -365,6 +365,58 @@
                 <div class="team-action-note">Esborrat massiu: es desactivaran tots els grups no programats i les seves inscripcions quedaran sense grup. Els grups dins del programa no s'esborraran.</div>
 
                 <div class="team-context-teams-status small text-muted" id="groups-existing-status">Sense dades encara.</div>
+                <div class="team-manual-banner mt-3">
+                  <div class="d-flex align-items-start justify-content-between flex-wrap" style="gap:10px;">
+                    <div>
+                      <div class="fw-semibold">Filtres del board</div>
+                      <div class="small text-muted" id="groups-board-filters-summary">Nom del grup, participants i facetes agregades del board actual.</div>
+                    </div>
+                    <div class="d-flex align-items-center flex-wrap" style="gap:8px;">
+                      <span class="badge badge-light border" id="groups-board-filter-count">0 de 0 grups</span>
+                      <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-groups-board-filters-clear">Netejar</button>
+                      <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-groups-board-filters-toggle" aria-expanded="false">Veure filtres del board</button>
+                    </div>
+                  </div>
+                  <div class="groups-auto-context-panel d-none mt-3" id="groups-board-filters-panel">
+                    <div class="team-filters-grid">
+                    <div>
+                      <label class="small text-muted mb-1 d-block" for="groups-board-filter-q">Cerca al board</label>
+                      <input type="text" class="form-control form-control-sm" id="groups-board-filter-q" placeholder="Nom del grup, participant o entitat...">
+                    </div>
+                    <div>
+                      <label class="small text-muted mb-1 d-block" for="groups-board-filter-categoria">Categories</label>
+                      <select id="groups-board-filter-categoria" class="form-control form-control-sm" multiple size="4"></select>
+                    </div>
+                    <div>
+                      <label class="small text-muted mb-1 d-block" for="groups-board-filter-subcategoria">Subcategories</label>
+                      <select id="groups-board-filter-subcategoria" class="form-control form-control-sm" multiple size="4"></select>
+                    </div>
+                    <div>
+                      <label class="small text-muted mb-1 d-block" for="groups-board-filter-entitat">Entitats</label>
+                      <select id="groups-board-filter-entitat" class="form-control form-control-sm" multiple size="4"></select>
+                    </div>
+                    <div>
+                      <label class="small text-muted mb-1 d-block" for="groups-board-filter-members-state">Estat del grup</label>
+                      <select id="groups-board-filter-members-state" class="form-control form-control-sm">
+                        <option value="all">Tots</option>
+                        <option value="with_members">Amb participants</option>
+                        <option value="empty">Buits</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label class="small text-muted mb-1 d-block" for="groups-board-filter-program-state">Programa</label>
+                      <select id="groups-board-filter-program-state" class="form-control form-control-sm">
+                        <option value="all">Tots</option>
+                        <option value="programmed">Programats</option>
+                        <option value="out_of_program">Fora de programa</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div class="small text-muted mt-2">
+                    Dins del mateix camp s'aplica qualsevol coincidencia; entre camps, totes alhora. La zona Sense grup es manté visible.
+                  </div>
+                  </div>
+                </div>
 
                 <div class="groups-board">
                   <div class="groups-board-section">

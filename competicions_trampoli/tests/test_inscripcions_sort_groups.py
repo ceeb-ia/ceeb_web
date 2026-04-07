@@ -506,6 +506,12 @@ class InscripcionsSortFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertNotContains(response, "Base de creacio:")
         self.assertNotContains(response, "Crear grups per pestanyes")
         self.assertNotContains(response, "Crear grups per ordenacio")
+        self.assertContains(response, 'id="groups-board-filter-q"')
+        self.assertContains(response, 'id="groups-board-filter-categoria"')
+        self.assertContains(response, 'id="groups-board-filter-program-state"')
+        self.assertContains(response, 'id="groups-board-filter-count"')
+        self.assertContains(response, 'id="btn-groups-board-filters-toggle"')
+        self.assertContains(response, 'id="groups-board-filters-panel"')
 
     def test_sort_context_key_changes_when_column_filters_change(self):
         base_filters = {
@@ -3600,6 +3606,50 @@ class GroupManagerV1Tests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(int(summary.get("unassigned_count") or 0), 2)
         self.assertEqual(int(summary.get("programmed_groups") or 0), 1)
         self.assertEqual(int(summary.get("out_of_program_groups") or 0), 1)
+
+    def test_groups_workspace_contract_includes_board_filter_facets_for_group_cards(self):
+        self.ins_programmed_a.categoria = "Alevi"
+        self.ins_programmed_a.subcategoria = "Sub A"
+        self.ins_programmed_a.entitat = "Club A"
+        self.ins_programmed_a.save(update_fields=["categoria", "subcategoria", "entitat"])
+        self.ins_programmed_b.categoria = "Senior"
+        self.ins_programmed_b.subcategoria = "Sub B"
+        self.ins_programmed_b.entitat = "Club Z"
+        self.ins_programmed_b.save(update_fields=["categoria", "subcategoria", "entitat"])
+
+        resp = self._post_groups_contract(
+            "workspace",
+            {
+                "scope": "filtered",
+                "selected_ids": [],
+                "filters": {
+                    "q": "",
+                    "categoria": "",
+                    "subcategoria": "",
+                    "entitat": "",
+                    "group_state": "unassigned",
+                },
+                "page": 1,
+                "page_size": 25,
+            },
+        )
+
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data.get("ok"))
+        groups_by_id = {
+            int(row.get("id") or 0): row
+            for row in (data.get("groups") or [])
+            if int(row.get("id") or 0) > 0
+        }
+        programmed_row = groups_by_id[self.programmed_group.id]
+
+        self.assertEqual(programmed_row.get("categories"), ["Alevi", "Senior"])
+        self.assertEqual(programmed_row.get("subcategories"), ["Sub A", "Sub B"])
+        self.assertEqual(programmed_row.get("entitats"), ["Club A", "Club Z"])
+        self.assertIn("Programmed A", programmed_row.get("search_text") or "")
+        self.assertIn("Programmed B", programmed_row.get("search_text") or "")
+        self.assertIn("Final", programmed_row.get("search_text") or "")
 
     def test_groups_workspace_contract_keeps_selection_and_omits_filtered_target_ids_by_default(self):
         resp = self._post_groups_contract(

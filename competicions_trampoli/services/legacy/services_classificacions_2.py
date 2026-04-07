@@ -23,7 +23,7 @@ from ..teams.equip_contexts import (
 )
 from ...models.competicio import CompeticioAparell
 from ...models.scoring import ScoreEntry, TeamScoreEntry
-from ..scoring.team_scoring import is_team_context_app
+from ..scoring.team_scoring import is_team_context_app, member_runtime_code
 
 logger = logging.getLogger(__name__)
 
@@ -1819,7 +1819,10 @@ def _normalize_display_columns(raw_cols, *, detail_mode=False, allowed_builtin_k
 
             source = item.get("source") if isinstance(item.get("source"), dict) else {}
             app_id = source.get("aparell_id")
-            exercici = source.get("exercici", 1)
+            exercici = source.get("exercici", item.get("exercici"))
+            exercise_mode = str(source.get("exercise_mode", item.get("exercise_mode")) or "").strip().lower()
+            if exercise_mode not in ("selected", "fixed"):
+                exercise_mode = ""
             camp = str(source.get("camp") or "").strip()
 
             if app_id in (None, "", 0, "0"):
@@ -1857,18 +1860,21 @@ def _normalize_display_columns(raw_cols, *, detail_mode=False, allowed_builtin_k
                 label = camp
             if decimals is None:
                 decimals = 3
+            out_source = {
+                "aparell_id": app_id,
+                "exercici": exercici,
+                "camp": camp,
+                "jutges": {"ids": jutges_ids},
+            }
+            if exercise_mode:
+                out_source["exercise_mode"] = exercise_mode
             out_item = {
                 "type": "raw",
                 "key": key,
                 "label": label,
                 "align": align,
                 "decimals": decimals,
-                "source": {
-                    "aparell_id": app_id,
-                    "exercici": exercici,
-                    "camp": camp,
-                    "jutges": {"ids": jutges_ids},
-                },
+                "source": out_source,
             }
         elif ctype == "metric":
             # compat retroactiva: converteix mètrica antiga a raw simple.
@@ -3943,19 +3949,60 @@ def compute_classificacio(competicio, cfg_obj):
             return ""
         return raw_value.get(str(int(member_id)), "")
 
-    def _raw_value_for_selected_team_member_row(row, field_code: str, judge_ids, member_id):
+    def _ordered_member_ids_for_team_entry(entry, fallback_member_ids):
+        fallback_ids = _dedupe_int_ids_preserve_order(fallback_member_ids or [])
+        subject = getattr(entry, "team_subject", None)
+        subject_ids = _dedupe_int_ids_preserve_order(getattr(subject, "member_ids", []) or [])
+        raw_subject_ids = [
+            _normalize_positive_int(raw_id)
+            for raw_id in (getattr(subject, "member_ids", []) or [])
+        ] if subject is not None else []
+        subject_ids_consistent = bool(subject_ids) and len(subject_ids) == len([value for value in raw_subject_ids if value is not None])
+        if fallback_ids and (not subject_ids_consistent or any(member_id not in subject_ids for member_id in fallback_ids)):
+            return fallback_ids
+        if subject_ids_consistent:
+            return subject_ids
+        return fallback_ids
+
+    def _team_member_slot_for_entry(entry, member_id, fallback_member_ids):
+        member_pk = _normalize_positive_int(member_id)
+        if member_pk is None:
+            return None
+        ordered_member_ids = _ordered_member_ids_for_team_entry(entry, fallback_member_ids)
         try:
-            equip_id = int(row.get("equip_id"))
-            app_id = int(row.get("app_id"))
-            ex_idx = int(row.get("exercici"))
-            member_pk = int(member_id)
-        except Exception:
+            return ordered_member_ids.index(member_pk) + 1
+        except ValueError:
+            return None
+
+    def _member_raw_value_from_container(container, field_code, member_id):
+        if not isinstance(container, dict):
+            return None
+        member_raw = _team_member_raw_value(container.get(str(field_code or "").strip()), member_id)
+        if member_raw in (None, ""):
+            return None
+        return member_raw
+
+    def _raw_value_for_team_member_entry(entry, field_code: str, judge_ids, member_id, fallback_member_ids):
+        member_pk = _normalize_positive_int(member_id)
+        if entry is None or member_pk is None:
             return ""
-        entry = team_notes_by_key.get((equip_id, app_id, ex_idx))
-        if not entry:
-            return ""
-        raw = _field_value_from_entry(entry, field_code)
-        member_raw = _team_member_raw_value(raw, member_pk)
+
+        field_code = str(field_code or "").strip()
+        inputs = entry.inputs if isinstance(entry.inputs, dict) else {}
+        outputs = entry.outputs if isinstance(entry.outputs, dict) else {}
+
+        member_raw = _member_raw_value_from_container(inputs, field_code, member_pk)
+        if member_raw is None:
+            member_raw = _member_raw_value_from_container(outputs, field_code, member_pk)
+
+        slot = _team_member_slot_for_entry(entry, member_pk, fallback_member_ids)
+        if member_raw is None and slot is not None:
+            runtime_code = member_runtime_code(field_code, slot)
+            if runtime_code in outputs and outputs.get(runtime_code) not in (None, ""):
+                member_raw = outputs.get(runtime_code)
+            elif runtime_code in inputs and inputs.get(runtime_code) not in (None, ""):
+                member_raw = inputs.get(runtime_code)
+
         if member_raw in (None, ""):
             return ""
         return _apply_judge_selection(member_raw, judge_ids)
@@ -4252,13 +4299,36 @@ def compute_classificacio(competicio, cfg_obj):
 
         detail_columns = section.get("columns") or []
         detail_rows = []
-        selected_rows_cache = {}
+        team_entries_cache = {}
 
-        def selected_rows_for(app_id, field_code):
-            cache_key = (int(app_id), str(field_code or "").strip())
-            if cache_key not in selected_rows_cache:
-                selected_rows_cache[cache_key] = _get_selected_rows_agg_for_team(equip_id).get(int(app_id), [])
-            return selected_rows_cache[cache_key]
+        def team_entries_for(app_id, exercici):
+            cache_key = (int(app_id), _normalize_positive_int(exercici) or 0)
+            if cache_key in team_entries_cache:
+                return team_entries_cache[cache_key]
+
+            if _normalize_positive_int(exercici) is not None:
+                entry = team_notes_by_key.get((equip_id, int(app_id), int(exercici)))
+                team_entries_cache[cache_key] = [entry] if entry is not None else []
+                return team_entries_cache[cache_key]
+
+            entries = []
+            seen = set()
+            for selected_row in _get_selected_rows_agg_for_team(equip_id).get(int(app_id), []):
+                try:
+                    selected_equip_id = int(selected_row.get("equip_id"))
+                    selected_app_id = int(selected_row.get("app_id"))
+                    selected_ex_idx = int(selected_row.get("exercici"))
+                except Exception:
+                    continue
+                entry_key = (selected_equip_id, selected_app_id, selected_ex_idx)
+                if entry_key in seen:
+                    continue
+                seen.add(entry_key)
+                entry = team_notes_by_key.get(entry_key)
+                if entry is not None:
+                    entries.append(entry)
+            team_entries_cache[cache_key] = entries
+            return team_entries_cache[cache_key]
 
         for member_id in member_ids:
             member_pk = _normalize_positive_int(member_id)
@@ -4277,6 +4347,8 @@ def compute_classificacio(competicio, cfg_obj):
                 if ctype == "raw":
                     src = col.get("source") if isinstance(col.get("source"), dict) else {}
                     app_id = _normalize_positive_int(src.get("aparell_id"))
+                    exercise_mode = str(src.get("exercise_mode") or "").strip().lower()
+                    exercici = _normalize_positive_int(src.get("exercici")) if exercise_mode == "fixed" else None
                     camp = str(src.get("camp") or "").strip()
                     jcfg = src.get("jutges") if isinstance(src.get("jutges"), dict) else {}
                     jids = jcfg.get("ids") if isinstance(jcfg.get("ids"), list) else []
@@ -4284,8 +4356,8 @@ def compute_classificacio(competicio, cfg_obj):
                         val = ""
                     else:
                         val = _aggregate_selected_raw_values([
-                            _raw_value_for_selected_team_member_row(selected_row, camp, jids, member_pk)
-                            for selected_row in selected_rows_for(app_id, camp)
+                            _raw_value_for_team_member_entry(entry, camp, jids, member_pk, member_ids)
+                            for entry in team_entries_for(app_id, exercici)
                         ])
                     if not (isinstance(val, dict) and val.get("_kind") == "judge_rows"):
                         val = _apply_decimals_if_numeric(val, col.get("decimals"))

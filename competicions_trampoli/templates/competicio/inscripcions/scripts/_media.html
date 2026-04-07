@@ -7,6 +7,7 @@
 
   let mediaFolderSelection = [];
   let mediaPreviewRows = [];
+  let mediaMatchInscripcionsOptions = [];
 
   function buildMediaFolderSelection() {
     const input = document.getElementById('media-folder-input');
@@ -53,10 +54,6 @@
 
     wrap.classList.remove('d-none');
     const statusLabel = { auto: 'AUTO', review: 'REVISAR', unmatched: 'SENSE MATCH' };
-    const options = Array.isArray(API.app.initial.mediaMatchInscripcionsOptions)
-      ? API.app.initial.mediaMatchInscripcionsOptions
-      : [];
-
     list.forEach((row) => {
       const tr = document.createElement('tr');
 
@@ -86,7 +83,7 @@
             id: candidate.inscripcio_id,
             label: `${candidate.label || candidate.inscripcio_id} (${Number(candidate.score || 0).toFixed(3)})`,
           }))
-        : options;
+        : mediaMatchInscripcionsOptions;
       optionPool.forEach((candidate) => {
         const opt = document.createElement('option');
         opt.value = String(candidate.id || candidate.inscripcio_id || '');
@@ -132,6 +129,9 @@
     });
     if (!data?.ok) throw new Error("No s'ha pogut previsualitzar el match.");
     mediaPreviewRows = Array.isArray(data.rows) ? data.rows : [];
+    if (Array.isArray(data.inscripcions_options)) {
+      mediaMatchInscripcionsOptions = data.inscripcions_options.slice();
+    }
     renderMediaMatchRows(mediaPreviewRows, data.counts || {});
   }
 

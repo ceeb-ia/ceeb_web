@@ -53,26 +53,45 @@
     parent: null,
     nextSibling: null,
   };
-  const previousShowAlert = typeof window.showAlert === 'function' ? window.showAlert.bind(window) : null;
-  const previousShowConfirm = typeof window.showConfirm === 'function' ? window.showConfirm.bind(window) : null;
-  const previousShowPrompt = typeof window.showPrompt === 'function' ? window.showPrompt.bind(window) : null;
+  const panelInitRuns = new Map();
+
+  function getDialogDelegate(name, localImpl) {
+    const candidate = window[name];
+    if (typeof candidate !== 'function' || candidate === localImpl) return null;
+    return candidate.bind(window);
+  }
+
+  function ensureDialogGlobals() {
+    if (typeof window.showAlert !== 'function') {
+      window.showAlert = (...args) => showAlert(...args);
+    }
+    if (typeof window.showConfirm !== 'function') {
+      window.showConfirm = (...args) => showConfirm(...args);
+    }
+    if (typeof window.showPrompt !== 'function') {
+      window.showPrompt = (...args) => showPrompt(...args);
+    }
+  }
 
   function hasTabs() {
     return !!document.getElementById('tabs-root');
   }
 
   function showAlert(message) {
-    if (previousShowAlert) return previousShowAlert(String(message || "S'ha produit un error."));
+    const delegate = getDialogDelegate('showAlert', showAlert);
+    if (delegate) return delegate(String(message || "S'ha produit un error."));
     window.alert(String(message || "S'ha produit un error."));
   }
 
   function showConfirm(message) {
-    if (previousShowConfirm) return previousShowConfirm(String(message || 'Confirmar?'));
+    const delegate = getDialogDelegate('showConfirm', showConfirm);
+    if (delegate) return delegate(String(message || 'Confirmar?'));
     return Promise.resolve(window.confirm(String(message || 'Confirmar?')));
   }
 
   function showPrompt(message, defaultValue) {
-    if (previousShowPrompt) return previousShowPrompt(String(message || ''), String(defaultValue || ''));
+    const delegate = getDialogDelegate('showPrompt', showPrompt);
+    if (delegate) return delegate(String(message || ''), String(defaultValue || ''));
     return Promise.resolve(window.prompt(String(message || ''), String(defaultValue || '')));
   }
 
@@ -243,9 +262,35 @@
     return activePanel ? resolvePanelAlias(activePanel.getAttribute('data-panel-key')) : '';
   }
 
+  function emitPanelActivated(panelKey, previousPanelKey) {
+    const resolved = resolvePanelAlias(panelKey);
+    if (!resolved) return;
+    document.dispatchEvent(new CustomEvent('inscripcions:panel-activated', {
+      detail: {
+        panelKey: resolved,
+        previousPanelKey: resolvePanelAlias(previousPanelKey),
+      },
+    }));
+  }
+
+  function runOnceForPanel(panelKey, initFn) {
+    const resolved = resolvePanelAlias(panelKey);
+    if (!resolved || typeof initFn !== 'function') return Promise.resolve(null);
+    if (panelInitRuns.has(resolved)) return panelInitRuns.get(resolved);
+    const run = Promise.resolve()
+      .then(() => initFn())
+      .catch((error) => {
+        panelInitRuns.delete(resolved);
+        throw error;
+      });
+    panelInitRuns.set(resolved, run);
+    return run;
+  }
+
   function setActiveActionsPanel(panelKey, options = {}) {
     const resolved = resolvePanelAlias(panelKey);
     if (!resolved) return;
+    const previousPanelKey = getActiveActionsPanelKey();
 
     document.querySelectorAll('.actions-nav-btn').forEach((btn) => {
       const btnPanel = resolvePanelAlias(btn.getAttribute('data-panel-target') || btn.dataset.panel || '');
@@ -260,6 +305,7 @@
       panel.hidden = !active;
     });
 
+    emitPanelActivated(resolved, previousPanelKey);
     if (!options.skipSave) saveUiState();
   }
 
@@ -423,20 +469,29 @@
     }, extra || {});
   }
 
+  function readStoredUiState() {
+    try {
+      const state = JSON.parse(sessionStorage.getItem(getUiStateKey()) || 'null');
+      return state && typeof state === 'object' ? state : {};
+    } catch (_err) {
+      return {};
+    }
+  }
+
   function saveUiState(extra) {
     if (uiStateRestoring) return;
     try {
-      sessionStorage.setItem(getUiStateKey(), JSON.stringify(captureUiState(extra)));
+      const existingState = readStoredUiState();
+      const shellState = captureUiState();
+      sessionStorage.setItem(
+        getUiStateKey(),
+        JSON.stringify(Object.assign({}, existingState, shellState, extra || {}))
+      );
     } catch (_err) {}
   }
 
   function restoreUiState() {
-    let state = null;
-    try {
-      state = JSON.parse(sessionStorage.getItem(getUiStateKey()) || 'null');
-    } catch (_err) {
-      state = null;
-    }
+    let state = readStoredUiState();
     if (!state || typeof state !== 'object') return;
 
     const savedAt = Number(state.savedAt || 0);
@@ -840,13 +895,11 @@
     createGroupPreviewBadge,
     clearTeamPreview,
     markTeamPreviewDirty,
+    runOnceForPanel,
   };
 
   window.canEditInscripcions = app.canEdit;
   window.postJson = postJson;
-  if (typeof window.showAlert !== 'function') window.showAlert = showAlert;
-  if (typeof window.showConfirm !== 'function') window.showConfirm = showConfirm;
-  if (typeof window.showPrompt !== 'function') window.showPrompt = showPrompt;
   window.getUiStateKey = getUiStateKey;
   window.saveUiState = saveUiState;
   window.restoreUiState = restoreUiState;
@@ -871,8 +924,10 @@
   window.createGroupPreviewBadge = createGroupPreviewBadge;
   window.clearTeamPreview = clearTeamPreview;
   window.markTeamPreviewDirty = markTeamPreviewDirty;
+  window.runOnceForPanel = runOnceForPanel;
 
   document.addEventListener('DOMContentLoaded', () => {
+    ensureDialogGlobals();
     wireDrawer();
     wireSearch();
     wireHistoryButtons();

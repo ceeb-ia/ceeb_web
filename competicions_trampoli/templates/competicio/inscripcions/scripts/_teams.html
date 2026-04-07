@@ -1,3 +1,17 @@
 <script>
 {% include "competicio/_team_workspace_script.html" %}
+(function () {
+  'use strict';
+
+  const API = window.InscripcionsApp;
+  if (!API) return;
+
+  document.addEventListener('inscripcions:panel-activated', (event) => {
+    const panelKey = String(event?.detail?.panelKey || '').trim();
+    if (panelKey !== 'equips') return;
+    API.runOnceForPanel('equips', () => window.initTeamsWorkspace?.()).catch((error) => {
+      API.showAlert(error?.message || error);
+    });
+  });
+})();
 </script>

@@ -1,5 +1,10 @@
-const teamWorkspaceShell = document.getElementById('team-workspace-shell');
-if (teamWorkspaceShell) {
+window.initTeamsWorkspace = async function () {
+  if (window.__teamWorkspaceInitialized) return window.__teamWorkspaceApi || null;
+
+  const teamWorkspaceShell = document.getElementById('team-workspace-shell');
+  if (!teamWorkspaceShell) return null;
+  window.__teamWorkspaceInitialized = true;
+
   const workspaceUrl = "{% url 'inscripcions_equips_workspace' competicio.id %}";
   const previewUrl = "{% url 'inscripcions_equips_preview' competicio.id %}";
   const autoCreateUrl = "{% url 'inscripcions_equips_auto_create' competicio.id %}";
@@ -17,6 +22,14 @@ if (teamWorkspaceShell) {
   const state = {
     contextCode: getSelectedTeamContextCode(),
     filters: Object.assign({ assignment_state: 'all', equip_ids: [], categories: [], subcategories: [], entitats: [] }, getCurrentInscripcioFilters()),
+    boardFilters: {
+      q: '',
+      categories: [],
+      subcategories: [],
+      entitats: [],
+      members_state: 'all',
+    },
+    boardFiltersExpanded: false,
     compactScope: 'selected',
     selectedIds: new Set((typeof getSelectedInscripcioIds === 'function' ? getSelectedInscripcioIds() : []).map(String).filter(Boolean)),
     candidatePage: 1,
@@ -36,6 +49,7 @@ if (teamWorkspaceShell) {
     selectedBucketKeys: new Set(),
     autoContext: null,
     bucketSelectionMode: 'all',
+    contextDetailsOpen: false,
   };
 
   const editable = () => typeof canEditInscripcions !== 'undefined' && !!canEditInscripcions;
@@ -64,6 +78,77 @@ if (teamWorkspaceShell) {
     const api = mainSelectionApi();
     if (!api) return [];
     return (api.getSelectedIds() || []).map(String).filter(Boolean);
+  };
+  const getSavedUiState = () => {
+    if (typeof getUiStateKey !== 'function') return {};
+    try {
+      return JSON.parse(sessionStorage.getItem(getUiStateKey()) || '{}') || {};
+    } catch (_err) {
+      return {};
+    }
+  };
+  const normalizeSearchText = (value) => String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+  const uniqueSortedStrings = (values) => Array.from(new Set(
+    (Array.isArray(values) ? values : [])
+      .map((value) => String(value || '').trim())
+      .filter(Boolean)
+  )).sort((a, b) => a.localeCompare(b, 'ca'));
+  const normalizeBoardFilters = (raw) => {
+    const data = raw && typeof raw === 'object' ? raw : {};
+    const membersState = String(data.members_state || 'all').trim() || 'all';
+    return {
+      q: String(data.q || '').trim(),
+      categories: uniqueSortedStrings(data.categories),
+      subcategories: uniqueSortedStrings(data.subcategories),
+      entitats: uniqueSortedStrings(data.entitats),
+      members_state: ['all', 'with_members', 'empty'].includes(membersState) ? membersState : 'all',
+    };
+  };
+  const saveWorkspaceState = (extra = {}) => {
+    if (typeof saveUiState !== 'function') return;
+    saveUiState({
+      teamWorkspaceState: {
+        contextCode: state.contextCode,
+        filters: { ...state.filters },
+        boardFilters: { ...state.boardFilters },
+        boardFiltersExpanded: !!state.boardFiltersExpanded,
+        compactScope: state.compactScope,
+        candidatePage: state.candidatePage,
+        selectedTeamId: state.selectedTeamId,
+        selectedTeamMembersPage: state.selectedTeamMembersPage,
+        selectedRightPaneTab: state.selectedRightPaneTab,
+        contextDetailsOpen: !!state.contextDetailsOpen,
+        ...extra,
+      },
+    });
+  };
+  const restoreWorkspaceState = () => {
+    const saved = getSavedUiState().teamWorkspaceState || {};
+    if (!saved || typeof saved !== 'object') return;
+    if (saved.contextCode) state.contextCode = String(saved.contextCode || 'native').trim() || 'native';
+    if (saved.filters && typeof saved.filters === 'object') {
+      state.filters = Object.assign({}, state.filters, saved.filters);
+    }
+    if (saved.boardFilters && typeof saved.boardFilters === 'object') {
+      state.boardFilters = normalizeBoardFilters(saved.boardFilters);
+    }
+    if (Object.prototype.hasOwnProperty.call(saved, 'boardFiltersExpanded')) {
+      state.boardFiltersExpanded = !!saved.boardFiltersExpanded;
+    }
+    if (saved.compactScope) state.compactScope = String(saved.compactScope || '') === 'filtered' ? 'filtered' : 'selected';
+    if (saved.candidatePage) state.candidatePage = Math.max(1, Number(saved.candidatePage) || 1);
+    if (saved.selectedTeamId) state.selectedTeamId = String(saved.selectedTeamId || '').trim();
+    if (saved.selectedTeamMembersPage) state.selectedTeamMembersPage = Math.max(1, Number(saved.selectedTeamMembersPage) || 1);
+    if (saved.selectedRightPaneTab === 'detail' || saved.selectedRightPaneTab === 'preview') {
+      state.selectedRightPaneTab = saved.selectedRightPaneTab;
+    }
+    if (Object.prototype.hasOwnProperty.call(saved, 'contextDetailsOpen')) {
+      state.contextDetailsOpen = !!saved.contextDetailsOpen;
+    }
   };
   const getSelectedTeamPartitionFields = () => (
     typeof getSelectedTeamFields === 'function'
@@ -104,6 +189,350 @@ if (teamWorkspaceShell) {
     context_code: state.contextCode,
     inscripcio_ids: (inscripcioIds || []).map(String).filter(Boolean),
   });
+  let lastConfirmableTeamPreview = null;
+  let teamPreviewConfirmBusy = false;
+
+  function getTeamPreviewElements() {
+    return {
+      root: document.getElementById('team-preview'),
+      status: document.getElementById('team-preview-status'),
+      intentLabel: document.getElementById('team-preview-intent-label'),
+      selection: document.getElementById('team-preview-selection-summary'),
+      summary: document.getElementById('team-preview-summary'),
+      existingWrap: document.getElementById('team-preview-existing-wrap'),
+      existingMeta: document.getElementById('team-preview-existing-meta'),
+      existingList: document.getElementById('team-preview-existing-list'),
+      plannedWrap: document.getElementById('team-preview-planned-wrap'),
+      plannedMeta: document.getElementById('team-preview-planned-meta'),
+      plannedList: document.getElementById('team-preview-list'),
+      confirm: document.getElementById('btn-team-preview-confirm'),
+      clear: document.getElementById('btn-team-preview-clear'),
+    };
+  }
+
+  function updateTeamPreviewConfirmUi() {
+    const els = getTeamPreviewElements();
+    const intent = lastConfirmableTeamPreview;
+    const dirty = !!(els.root && els.root.dataset.dirty === '1');
+    const hasPreview = !!(els.root && els.root.dataset.hasPreview === '1');
+    const loading = !!(els.root && els.root.dataset.loading === '1');
+
+    if (els.intentLabel) {
+      const label = String(intent?.label || '').trim();
+      els.intentLabel.textContent = dirty && label ? `${label} - desactualitzada` : label;
+      els.intentLabel.classList.toggle('d-none', !label);
+    }
+
+    if (els.confirm) {
+      const canShow = hasPreview && !!intent && !!intent.canConfirm;
+      els.confirm.textContent = String(intent?.buttonLabel || 'Confirmar aquesta creacio').trim() || 'Confirmar aquesta creacio';
+      els.confirm.disabled = !canShow || dirty || loading || teamPreviewConfirmBusy;
+      els.confirm.classList.toggle('d-none', !canShow);
+    }
+  }
+
+  function clearTeamPreviewConfirmIntent() {
+    lastConfirmableTeamPreview = null;
+    teamPreviewConfirmBusy = false;
+    updateTeamPreviewConfirmUi();
+  }
+
+  function setTeamPreviewConfirmIntent(intent) {
+    if (!intent || typeof intent.execute !== 'function' || !intent.canConfirm) {
+      clearTeamPreviewConfirmIntent();
+      return;
+    }
+    lastConfirmableTeamPreview = {
+      label: String(intent.label || '').trim(),
+      buttonLabel: String(intent.buttonLabel || 'Confirmar aquesta creacio').trim() || 'Confirmar aquesta creacio',
+      canConfirm: true,
+      execute: intent.execute,
+    };
+    updateTeamPreviewConfirmUi();
+  }
+
+  function setTeamPreviewStatus(message, variant = 'muted') {
+    const status = getTeamPreviewElements().status;
+    if (!status) return;
+    status.textContent = String(message || '');
+    status.style.color = variant === 'warning'
+      ? '#b45309'
+      : (variant === 'info' ? '#1d4ed8' : '#64748b');
+  }
+
+  function clearTeamPreview(statusText) {
+    const els = getTeamPreviewElements();
+    if (!els.root) return;
+    els.root.dataset.hasPreview = '0';
+    els.root.dataset.dirty = '0';
+    els.root.dataset.loading = '0';
+    if (els.selection) {
+      els.selection.innerHTML = '';
+      els.selection.classList.add('d-none');
+    }
+    if (els.summary) {
+      els.summary.innerHTML = '';
+      els.summary.classList.add('d-none');
+    }
+    if (els.existingList) els.existingList.innerHTML = '';
+    if (els.existingWrap) els.existingWrap.classList.add('d-none');
+    if (els.existingMeta) els.existingMeta.textContent = '';
+    if (els.plannedList) els.plannedList.innerHTML = '';
+    if (els.plannedWrap) els.plannedWrap.classList.add('d-none');
+    if (els.plannedMeta) els.plannedMeta.textContent = '';
+    if (els.clear) els.clear.classList.add('d-none');
+    setTeamPreviewStatus(
+      statusText || "Encara no s'ha calculat cap previsualitzacio amb aquesta configuracio.",
+      'muted'
+    );
+    clearTeamPreviewConfirmIntent();
+  }
+
+  function markTeamPreviewDirty() {
+    const els = getTeamPreviewElements();
+    if (!els.root || els.root.dataset.hasPreview !== '1') return;
+    els.root.dataset.dirty = '1';
+    setTeamPreviewStatus('La configuracio ha canviat. Torna a previsualitzar per actualitzar el resultat.', 'warning');
+    clearTeamPreviewConfirmIntent();
+  }
+
+  function setTeamPreviewLoading(loading) {
+    const els = getTeamPreviewElements();
+    if (!els.root) return;
+    els.root.dataset.loading = loading ? '1' : '0';
+    if (loading) setTeamPreviewStatus('Calculant la previsualitzacio dels equips...', 'info');
+    updateTeamPreviewConfirmUi();
+  }
+
+  function createTeamPreviewCard(team, kind = 'planned') {
+    const card = document.createElement('div');
+    card.className = 'group-preview-card';
+
+    if (kind === 'existing') {
+      const impactKind = String(team?.impact_kind || '').trim().toLowerCase();
+      if (impactKind === 'removed') card.classList.add('is-removed');
+      else if (impactKind === 'reduced') card.classList.add('is-reduced');
+      else if (impactKind === 'incoming') card.classList.add('is-incoming');
+      else card.classList.add('is-existing');
+    } else if (team?.will_create) {
+      card.classList.add('is-created');
+    } else if (team?.will_reassign) {
+      card.classList.add('is-reduced');
+    } else {
+      card.classList.add('is-existing');
+    }
+
+    const head = document.createElement('div');
+    head.className = 'group-preview-card-head';
+
+    const textWrap = document.createElement('div');
+    textWrap.className = 'group-preview-card-copy';
+    const title = document.createElement('p');
+    title.className = 'group-preview-card-title';
+    title.textContent = String(team?.team_name || team?.nom_suggerit || 'Equip');
+    textWrap.appendChild(title);
+
+    const subtitle = document.createElement('p');
+    subtitle.className = 'group-preview-card-subtitle';
+    if (kind === 'existing') {
+      subtitle.textContent = `${Number(team?.current_members_context || 0)} integrants actuals al context`;
+    } else {
+      const values = Array.isArray(team?.values) ? team.values.filter(Boolean) : [];
+      subtitle.textContent = values.length ? `Particio: ${values.join(' | ')}` : 'Sense valors de particio';
+    }
+    textWrap.appendChild(subtitle);
+
+    const impact = document.createElement('p');
+    impact.className = 'group-preview-card-impact';
+    if (kind === 'existing') {
+      const impactKind = String(team?.impact_kind || '').trim().toLowerCase();
+      if (impactKind === 'removed') {
+        impact.classList.add('is-removed');
+        impact.textContent = `Perdra ${Number(team?.outgoing_count || 0)} i quedara buit`;
+      } else if (impactKind === 'reduced') {
+        impact.classList.add('is-reduced');
+        impact.textContent = `Perdra ${Number(team?.outgoing_count || 0)} i en quedaran ${Number(team?.remaining_members_context || 0)}`;
+      } else if (impactKind === 'incoming') {
+        impact.classList.add('is-created');
+        impact.textContent = `Rebra ${Number(team?.incoming_count || 0)} participants`;
+      } else {
+        impact.textContent = `Mantindra ${Number(team?.keep_count || 0)} participants afectats`;
+      }
+    } else if (team?.will_create) {
+      impact.classList.add('is-created');
+      impact.textContent = `Es creara amb ${Number(team?.count || 0)} integrants`;
+    } else if (Number(team?.current_other_count || 0) > 0 && Number(team?.skipped_reassign_count || 0) > 0) {
+      impact.classList.add('is-reduced');
+      impact.textContent = `Hi ha ${Number(team?.skipped_reassign_count || 0)} membres amb equip diferent que no es reassignaran`;
+    } else if (team?.will_reassign) {
+      impact.classList.add('is-reduced');
+      impact.textContent = `Reassignara ${Number(team?.current_other_count || 0)} participants`;
+    } else if (team?.will_keep) {
+      impact.textContent = `Mantindra ${Number(team?.current_same_count || 0)} participants ja alineats`;
+    } else {
+      impact.textContent = `Assignara ${Number(team?.current_none_count || 0)} participants sense equip`;
+    }
+    textWrap.appendChild(impact);
+    head.appendChild(textWrap);
+
+    const badges = document.createElement('div');
+    badges.className = 'group-preview-card-badges';
+    if (kind === 'existing') {
+      const impactKind = String(team?.impact_kind || '').trim().toLowerCase();
+      if (impactKind === 'removed') badges.appendChild(createGroupPreviewBadge('Queda buit', 'removed'));
+      else if (impactKind === 'reduced') badges.appendChild(createGroupPreviewBadge('Es redueix', 'reduced'));
+      else if (impactKind === 'incoming') badges.appendChild(createGroupPreviewBadge('Rep membres', 'incoming'));
+      else badges.appendChild(createGroupPreviewBadge('Es mante'));
+      if (Number(team?.incoming_count || 0) > 0) {
+        badges.appendChild(createGroupPreviewBadge(`+${Number(team?.incoming_count || 0)} entren`, 'incoming'));
+      }
+      if (Number(team?.outgoing_count || 0) > 0) {
+        badges.appendChild(createGroupPreviewBadge(`-${Number(team?.outgoing_count || 0)} surten`, impactKind === 'removed' ? 'removed' : 'reduced'));
+      }
+    } else {
+      badges.appendChild(createGroupPreviewBadge(`${Number(team?.count || 0)} integrants`));
+      if (team?.will_create) {
+        badges.appendChild(createGroupPreviewBadge('Equip nou', 'created'));
+      } else {
+        badges.appendChild(createGroupPreviewBadge(`Existeix: ${String(team?.existing_team_name || team?.nom_suggerit || '')}`));
+      }
+      if (team?.will_reassign) {
+        badges.appendChild(createGroupPreviewBadge(`Reassigna ${Number(team?.current_other_count || 0)}`, 'reduced'));
+      }
+      if (team?.will_keep) {
+        badges.appendChild(createGroupPreviewBadge(`Ja hi son ${Number(team?.current_same_count || 0)}`));
+      }
+    }
+    head.appendChild(badges);
+    card.appendChild(head);
+
+    const sourcesWrap = document.createElement('div');
+    sourcesWrap.className = 'group-preview-sources';
+
+    const primaryRow = document.createElement('div');
+    primaryRow.className = 'group-preview-source-row';
+    const primaryLabel = document.createElement('div');
+    primaryLabel.className = 'group-preview-source-label';
+    primaryLabel.textContent = kind === 'existing' ? 'Afectacio al context actual' : 'Impacte previst sobre la particio';
+    primaryRow.appendChild(primaryLabel);
+    const primaryCount = document.createElement('span');
+    primaryCount.className = 'group-preview-source-count is-impact';
+    primaryCount.textContent = kind === 'existing'
+      ? `Entren ${Number(team?.incoming_count || 0)} | Surten ${Number(team?.outgoing_count || 0)} | Es queden ${Number(team?.keep_count || 0)}`
+      : `Sense equip ${Number(team?.current_none_count || 0)} | Mateix equip ${Number(team?.current_same_count || 0)} | Altres equips ${Number(team?.current_other_count || 0)}`;
+    primaryRow.appendChild(primaryCount);
+    sourcesWrap.appendChild(primaryRow);
+
+    if (kind !== 'existing' && Number(team?.skipped_reassign_count || 0) > 0) {
+      const blockedRow = document.createElement('div');
+      blockedRow.className = 'group-preview-source-row';
+      const blockedLabel = document.createElement('div');
+      blockedLabel.className = 'group-preview-source-label';
+      blockedLabel.textContent = 'Participants mantinguts al seu equip actual';
+      blockedRow.appendChild(blockedLabel);
+      const blockedCount = document.createElement('span');
+      blockedCount.className = 'group-preview-source-count is-impact';
+      blockedCount.textContent = `${Number(team?.skipped_reassign_count || 0)} no es mouran`;
+      blockedRow.appendChild(blockedCount);
+      sourcesWrap.appendChild(blockedRow);
+    }
+    card.appendChild(sourcesWrap);
+
+    const sampleNames = Array.isArray(team?.member_samples) ? team.member_samples.filter(Boolean) : [];
+    const sampleRemaining = Number(team?.member_samples_remaining || 0);
+    if (sampleNames.length) {
+      const members = document.createElement('div');
+      members.className = 'group-preview-members';
+      const suffix = sampleRemaining > 0 ? ` +${sampleRemaining} mes` : '';
+      const strong = document.createElement('strong');
+      strong.textContent = "Mostra d'integrants:";
+      members.appendChild(strong);
+      members.appendChild(document.createTextNode(` ${sampleNames.join(', ')}${suffix}`));
+      card.appendChild(members);
+    }
+
+    return card;
+  }
+
+  function renderTeamPreviewSection(wrap, meta, list, rows, kind) {
+    if (!wrap || !list) return;
+    const items = Array.isArray(rows) ? rows : [];
+    list.innerHTML = '';
+    items.forEach((item) => list.appendChild(createTeamPreviewCard(item, kind)));
+    wrap.classList.toggle('d-none', items.length === 0);
+    if (meta) {
+      const peopleCount = items.reduce((acc, row) => acc + Number(row?.count || row?.incoming_count || row?.current_members_context || 0), 0);
+      meta.textContent = items.length ? `${items.length} equips | ${peopleCount} registres destacats` : '';
+    }
+  }
+
+  function renderTeamPreview(data) {
+    const els = getTeamPreviewElements();
+    if (!els.root) return;
+    if (!data || !data.ok) {
+      clearTeamPreview("No s'ha pogut calcular la previsualitzacio.");
+      return;
+    }
+    clearTeamPreviewConfirmIntent();
+
+    const plannedTeams = Array.isArray(data.preview) ? data.preview : [];
+    const existingSummary = data.existing_summary && typeof data.existing_summary === 'object' ? data.existing_summary : {};
+    const affectedTeams = Array.isArray(existingSummary.affected_teams) ? existingSummary.affected_teams : [];
+    const selectionSummary = data.selection_summary && typeof data.selection_summary === 'object' ? data.selection_summary : {};
+
+    els.root.dataset.hasPreview = '1';
+    els.root.dataset.dirty = '0';
+
+    if (els.selection) {
+      els.selection.innerHTML = '';
+      els.selection.appendChild(createGroupPreviewBadge(selectionSummary.label || `${Number(data.total_inscripcions || 0)} registrades`));
+      if (selectionSummary.filters_active) els.selection.appendChild(createGroupPreviewBadge('Amb filtres actius'));
+      if (selectionSummary.mode === 'selected') els.selection.appendChild(createGroupPreviewBadge('Nomes seleccionades'));
+      else if (selectionSummary.mode === 'filtered') els.selection.appendChild(createGroupPreviewBadge('Subset filtrat'));
+      else els.selection.appendChild(createGroupPreviewBadge('Totes les visibles'));
+      els.selection.appendChild(
+        createGroupPreviewBadge(
+          selectionSummary.replace_existing ? 'Reassignant equips existents' : 'Respectant equips existents',
+          selectionSummary.replace_existing ? 'reduced' : 'incoming'
+        )
+      );
+      els.selection.classList.remove('d-none');
+    }
+
+    if (els.summary) {
+      els.summary.innerHTML = '';
+      els.summary.appendChild(createGroupPreviewBadge(`${Number(data.total_equips || plannedTeams.length || 0)} equips previstos`));
+      els.summary.appendChild(createGroupPreviewBadge(`${Number(data.total_inscripcions || 0)} inscripcions afectades`));
+      els.summary.appendChild(createGroupPreviewBadge(`${Number(existingSummary.teams_with_members || 0)} equips actuals amb membres`));
+      els.summary.appendChild(createGroupPreviewBadge(`${Number(existingSummary.assigned_total || 0)} assignacions actuals`));
+      if (Number(data?.bucket_summary?.selected_count || 0) > 0) {
+        els.summary.appendChild(createGroupPreviewBadge(`${Number(data.bucket_summary.selected_count || 0)} buckets actius`));
+      }
+      if (plannedTeams.some((team) => !!team?.will_create)) {
+        els.summary.appendChild(createGroupPreviewBadge('Es crearan equips nous', 'created'));
+      }
+      if (plannedTeams.some((team) => !!team?.will_reassign)) {
+        els.summary.appendChild(createGroupPreviewBadge('Hi ha reassignacions', 'reduced'));
+      }
+      if (affectedTeams.some((team) => String(team?.impact_kind || '').trim().toLowerCase() === 'removed')) {
+        els.summary.appendChild(createGroupPreviewBadge('Alguns equips poden quedar buits', 'removed'));
+      }
+      els.summary.classList.remove('d-none');
+    }
+
+    renderTeamPreviewSection(els.existingWrap, els.existingMeta, els.existingList, affectedTeams, 'existing');
+    renderTeamPreviewSection(els.plannedWrap, els.plannedMeta, els.plannedList, plannedTeams, 'planned');
+
+    if (els.clear) els.clear.classList.remove('d-none');
+
+    setTeamPreviewStatus(
+      plannedTeams.length
+        ? `Previsualitzacio calculada per al context "${String(data.context_code || 'native')}"`
+        : 'No es generen equips amb aquesta configuracio.',
+      plannedTeams.length ? 'info' : 'muted'
+    );
+    updateTeamPreviewConfirmUi();
+  }
 
   function openWorkspaceCard() {
     if (typeof getExpandedGroupCardId === 'function' && typeof setExpandedGroupCard === 'function') {
@@ -147,6 +576,7 @@ if (teamWorkspaceShell) {
     const compact = document.getElementById('team-compact-scope');
     if (compact) compact.value = state.compactScope;
     renderCompactActionState();
+    if (!options.skipSave) saveWorkspaceState();
     if (!options.skipDirty) dirtyPreview();
   }
 
@@ -240,6 +670,7 @@ if (teamWorkspaceShell) {
   }
 
   function setContextDetailsOpen(isOpen) {
+    state.contextDetailsOpen = !!isOpen;
     const details = document.getElementById('team-workspace-context-details');
     const toggle = document.getElementById('btn-team-workspace-context-toggle');
     if (details) details.classList.toggle('d-none', !isOpen);
@@ -247,6 +678,7 @@ if (teamWorkspaceShell) {
       toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
       toggle.textContent = isOpen ? 'Amagar gestio del context' : 'Veure gestio del context';
     }
+    saveWorkspaceState();
   }
 
   function cloneTeamDetail(team) {
@@ -328,6 +760,7 @@ if (teamWorkspaceShell) {
   function setRightPaneTab(tab) {
     state.selectedRightPaneTab = tab === 'detail' ? 'detail' : 'preview';
     updateRightPaneTabUi();
+    saveWorkspaceState();
   }
 
   function renderDetailPane() {
@@ -508,6 +941,7 @@ if (teamWorkspaceShell) {
     setRightPaneTab('detail');
     renderTeams(state.lastWorkspace);
     setupDnd();
+    saveWorkspaceState();
     if (opts.scroll !== false) {
       requestAnimationFrame(() => scrollSelectedTeamCardIntoView(cleanId));
     }
@@ -535,6 +969,152 @@ if (teamWorkspaceShell) {
       equip_id: '',
       equip_ids: selectedOptionValues(document.getElementById('team-filter-equip-id')),
     };
+  }
+
+  function readBoardFilters() {
+    return normalizeBoardFilters({
+      q: document.getElementById('team-board-filter-q')?.value || '',
+      categories: selectedOptionValues(document.getElementById('team-board-filter-categoria')),
+      subcategories: selectedOptionValues(document.getElementById('team-board-filter-subcategoria')),
+      entitats: selectedOptionValues(document.getElementById('team-board-filter-entitat')),
+      members_state: document.getElementById('team-board-filter-members-state')?.value || 'all',
+    });
+  }
+
+  function setBoardFiltersToDom(filters, options) {
+    const data = normalizeBoardFilters(filters);
+    const boardOptions = options || {};
+    const q = document.getElementById('team-board-filter-q');
+    if (q) q.value = String(data.q || '');
+    fillSelect(document.getElementById('team-board-filter-categoria'), boardOptions.categories || [], data.categories || [], 'Totes');
+    fillSelect(document.getElementById('team-board-filter-subcategoria'), boardOptions.subcategories || [], data.subcategories || [], 'Totes');
+    fillSelect(document.getElementById('team-board-filter-entitat'), boardOptions.entitats || [], data.entitats || [], 'Totes');
+    const membersState = document.getElementById('team-board-filter-members-state');
+    if (membersState) membersState.value = String(data.members_state || 'all');
+  }
+
+  function enrichTeamBoardData(team) {
+    const members = Array.isArray(team?.members) ? team.members : [];
+    const categories = new Set();
+    const subcategories = new Set();
+    const entitats = new Set();
+    const searchParts = [String(team?.nom || '').trim()];
+    members.forEach((member) => {
+      const nom = String(member?.nom || '').trim();
+      const entitat = String(member?.entitat || '').trim();
+      const categoria = String(member?.categoria || '').trim();
+      const subcategoria = String(member?.subcategoria || '').trim();
+      const nativeTeam = String(member?.native_team_name || '').trim();
+      if (nom) searchParts.push(nom);
+      if (entitat) {
+        entitats.add(entitat);
+        searchParts.push(entitat);
+      }
+      if (categoria) {
+        categories.add(categoria);
+        searchParts.push(categoria);
+      }
+      if (subcategoria) {
+        subcategories.add(subcategoria);
+        searchParts.push(subcategoria);
+      }
+      if (nativeTeam) searchParts.push(nativeTeam);
+    });
+    return {
+      ...team,
+      categories: Array.from(categories).sort((a, b) => a.localeCompare(b, 'ca')),
+      subcategories: Array.from(subcategories).sort((a, b) => a.localeCompare(b, 'ca')),
+      entitats: Array.from(entitats).sort((a, b) => a.localeCompare(b, 'ca')),
+      search_text: searchParts.filter(Boolean).join(' ').trim(),
+    };
+  }
+
+  function buildBoardFilterOptions(teams) {
+    const categories = new Set();
+    const subcategories = new Set();
+    const entitats = new Set();
+    (Array.isArray(teams) ? teams : []).forEach((team) => {
+      (team?.categories || []).forEach((value) => {
+        const clean = String(value || '').trim();
+        if (clean) categories.add(clean);
+      });
+      (team?.subcategories || []).forEach((value) => {
+        const clean = String(value || '').trim();
+        if (clean) subcategories.add(clean);
+      });
+      (team?.entitats || []).forEach((value) => {
+        const clean = String(value || '').trim();
+        if (clean) entitats.add(clean);
+      });
+    });
+    return {
+      categories: Array.from(categories).sort((a, b) => a.localeCompare(b, 'ca')),
+      subcategories: Array.from(subcategories).sort((a, b) => a.localeCompare(b, 'ca')),
+      entitats: Array.from(entitats).sort((a, b) => a.localeCompare(b, 'ca')),
+    };
+  }
+
+  function boardFiltersAreActive(filters = state.boardFilters) {
+    const current = normalizeBoardFilters(filters);
+    return !!(
+      current.q
+      || current.categories.length
+      || current.subcategories.length
+      || current.entitats.length
+      || current.members_state !== 'all'
+    );
+  }
+
+  function boardFilterSummaryText(filters = state.boardFilters) {
+    const current = normalizeBoardFilters(filters);
+    const parts = [];
+    if (current.q) parts.push(`text: ${current.q}`);
+    if (current.categories.length) parts.push(`${current.categories.length} categories`);
+    if (current.subcategories.length) parts.push(`${current.subcategories.length} subcategories`);
+    if (current.entitats.length) parts.push(`${current.entitats.length} entitats`);
+    if (current.members_state === 'with_members') parts.push('amb participants');
+    if (current.members_state === 'empty') parts.push('nomes buits');
+    if (!parts.length) return "Nom de l'equip, participants i facetes agregades del board del context actiu.";
+    return `Filtres actius: ${parts.join(' | ')}.`;
+  }
+
+  function setBoardFiltersExpanded(expanded, options = {}) {
+    state.boardFiltersExpanded = !!expanded;
+    const panel = document.getElementById('team-board-filters-panel');
+    const toggle = document.getElementById('btn-team-board-filters-toggle');
+    const summary = document.getElementById('team-board-filters-summary');
+    if (panel) panel.classList.toggle('d-none', !state.boardFiltersExpanded);
+    if (toggle) {
+      toggle.setAttribute('aria-expanded', state.boardFiltersExpanded ? 'true' : 'false');
+      toggle.textContent = state.boardFiltersExpanded ? 'Amagar filtres del board' : 'Veure filtres del board';
+    }
+    if (summary) summary.textContent = boardFilterSummaryText();
+    if (!options.skipSave) saveWorkspaceState();
+  }
+
+  function teamMatchesBoardFilters(team, filters = state.boardFilters) {
+    const current = normalizeBoardFilters(filters);
+    const membersCount = Number(team?.membres || (Array.isArray(team?.members) ? team.members.length : 0) || 0);
+    if (current.members_state === 'with_members' && membersCount <= 0) return false;
+    if (current.members_state === 'empty' && membersCount > 0) return false;
+    if (current.categories.length && !current.categories.some((value) => (team?.categories || []).includes(value))) return false;
+    if (current.subcategories.length && !current.subcategories.some((value) => (team?.subcategories || []).includes(value))) return false;
+    if (current.entitats.length && !current.entitats.some((value) => (team?.entitats || []).includes(value))) return false;
+    if (current.q) {
+      const haystack = normalizeSearchText([
+        team?.search_text,
+        team?.nom,
+      ].filter(Boolean).join(' '));
+      if (!haystack.includes(normalizeSearchText(current.q))) return false;
+    }
+    return true;
+  }
+
+  function renderBoardFilterControls(teams) {
+    const options = buildBoardFilterOptions(teams);
+    setBoardFiltersToDom(state.boardFilters, options);
+    state.boardFilters = readBoardFilters();
+    setBoardFiltersExpanded(state.boardFiltersExpanded, { skipSave: true });
   }
 
   function fillSelect(selectEl, items, selectedValue, emptyLabel, mapItem) {
@@ -1078,16 +1658,19 @@ if (teamWorkspaceShell) {
     if (!list || !zeroWrap || !zeroList) return;
 
     const teams = Array.isArray(workspace?.teams) ? workspace.teams : [];
-    const active = teams.filter((team) => Array.isArray(team?.members) && team.members.length > 0);
-    const empty = teams.filter((team) => !Array.isArray(team?.members) || team.members.length === 0);
+    const visibleTeams = teams.filter((team) => teamMatchesBoardFilters(team));
+    const active = visibleTeams.filter((team) => Array.isArray(team?.members) && team.members.length > 0);
+    const empty = visibleTeams.filter((team) => !Array.isArray(team?.members) || team.members.length === 0);
+    const filtersActive = boardFiltersAreActive();
 
     renderUnassigned(workspace);
     if (status) {
       status.textContent = teams.length
-        ? `${active.length} equips amb membres i ${empty.length} sense membres en aquest context.`
+        ? `${active.length} equips amb membres i ${empty.length} sense membres visibles${filtersActive ? ` de ${teams.length} totals` : ''} en aquest context.`
         : 'Encara no hi ha equips disponibles per a aquest context.';
     }
     if (countBadge) countBadge.textContent = `${teams.length} equips`;
+    setText('team-board-filter-count', `${visibleTeams.length} de ${teams.length} equips`);
 
     const card = (team, isEmpty) => {
       const teamId = String(team?.id || '').trim();
@@ -1178,9 +1761,25 @@ if (teamWorkspaceShell) {
 
     list.innerHTML = '';
     active.forEach((team) => list.appendChild(card(team, false)));
+    if (!active.length) {
+      const placeholder = document.createElement('div');
+      placeholder.className = 'groups-board-placeholder';
+      placeholder.textContent = filtersActive
+        ? 'Cap equip amb participants coincideix amb els filtres del board.'
+        : 'Encara no hi ha equips amb participants en aquest context.';
+      list.appendChild(placeholder);
+    }
     zeroList.innerHTML = '';
     empty.forEach((team) => zeroList.appendChild(card(team, true)));
-    zeroWrap.classList.toggle('d-none', empty.length === 0);
+    if (!empty.length) {
+      const placeholder = document.createElement('div');
+      placeholder.className = 'groups-board-placeholder';
+      placeholder.textContent = filtersActive
+        ? 'Cap equip buit coincideix amb els filtres del board.'
+        : 'No hi ha equips buits disponibles ara mateix.';
+      zeroList.appendChild(placeholder);
+    }
+    zeroWrap.classList.toggle('d-none', !filtersActive && empty.length === 0);
     const mapTeamOption = (item) => ({
       value: item?.id,
       label: `${item?.nom || 'Equip'} (${Number(item?.membres || 0)})`,
@@ -1205,9 +1804,9 @@ if (teamWorkspaceShell) {
 
   function renderWorkspace(workspace) {
     if (!workspace || !workspace.ok) return;
-    state.lastWorkspace = workspace;
+    const teams = (Array.isArray(workspace?.teams) ? workspace.teams : []).map((team) => enrichTeamBoardData(team));
+    state.lastWorkspace = { ...workspace, teams };
     state.contextCode = String(workspace.context_code || 'native');
-    const teams = Array.isArray(workspace?.teams) ? workspace.teams : [];
     const availableIds = new Set(teams.map((team) => String(team?.id || '').trim()).filter(Boolean));
     state.editingTeamIds = new Set(Array.from(state.editingTeamIds).filter((id) => availableIds.has(String(id || '').trim())));
     if (state.selectedTeamId && !availableIds.has(String(state.selectedTeamId || '').trim())) {
@@ -1221,9 +1820,10 @@ if (teamWorkspaceShell) {
     updateRightPaneTabUi();
     renderContextMeta(workspace.context, workspace.summary, workspace.contexts || []);
     renderContextSources(workspace);
-    renderFilterOptions(workspace);
-    renderCandidates(workspace);
-    renderTeams(workspace);
+    renderFilterOptions(state.lastWorkspace);
+    renderBoardFilterControls(teams);
+    renderCandidates(state.lastWorkspace);
+    renderTeams(state.lastWorkspace);
     updateSelectionSummary();
     setupDnd();
     refreshAutoContext().catch(() => {});
@@ -1243,6 +1843,7 @@ if (teamWorkspaceShell) {
         page_size: state.candidatePageSize,
       });
       renderWorkspace(data);
+      saveWorkspaceState();
       return data;
     } catch (err) {
       if (status) status.textContent = "No s'han pogut carregar les candidates del workspace.";
@@ -1604,6 +2205,7 @@ if (teamWorkspaceShell) {
       if (state.filterTimer) clearTimeout(state.filterTimer);
       state.filterTimer = setTimeout(() => {
         state.filters = Object.assign({}, state.filters, readFilters());
+        saveWorkspaceState();
         dirtyPreview();
         refreshWorkspace({ resetPage: true });
       }, 220);
@@ -1615,10 +2217,40 @@ if (teamWorkspaceShell) {
     if (el) {
       el.addEventListener('change', () => {
         state.filters = Object.assign({}, state.filters, readFilters());
+        saveWorkspaceState();
         dirtyPreview();
         refreshWorkspace({ resetPage: true });
       });
     }
+  });
+
+  const applyBoardFilterChange = () => {
+    state.boardFilters = readBoardFilters();
+    if (boardFiltersAreActive()) state.boardFiltersExpanded = true;
+    saveWorkspaceState();
+    setBoardFiltersExpanded(state.boardFiltersExpanded, { skipSave: true });
+    renderTeams(state.lastWorkspace);
+    setupDnd();
+  };
+
+  const boardFilterQ = document.getElementById('team-board-filter-q');
+  if (boardFilterQ) boardFilterQ.addEventListener('input', applyBoardFilterChange);
+
+  ['team-board-filter-categoria', 'team-board-filter-subcategoria', 'team-board-filter-entitat', 'team-board-filter-members-state'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', applyBoardFilterChange);
+  });
+
+  document.getElementById('btn-team-board-filters-clear')?.addEventListener('click', () => {
+    state.boardFilters = normalizeBoardFilters();
+    setBoardFiltersToDom(state.boardFilters, buildBoardFilterOptions(Array.isArray(state.lastWorkspace?.teams) ? state.lastWorkspace.teams : []));
+    setBoardFiltersExpanded(false, { skipSave: true });
+    saveWorkspaceState();
+    renderTeams(state.lastWorkspace);
+    setupDnd();
+  });
+  document.getElementById('btn-team-board-filters-toggle')?.addEventListener('click', () => {
+    setBoardFiltersExpanded(!state.boardFiltersExpanded);
   });
 
   const autoBucketsAll = document.getElementById('btn-team-auto-buckets-all');
@@ -2143,8 +2775,31 @@ if (teamWorkspaceShell) {
     });
   }
 
+  const previewConfirm = document.getElementById('btn-team-preview-confirm');
+  if (previewConfirm) {
+    previewConfirm.addEventListener('click', async () => {
+      const els = getTeamPreviewElements();
+      if (!lastConfirmableTeamPreview || !lastConfirmableTeamPreview.canConfirm) return;
+      if (!els.root || els.root.dataset.hasPreview !== '1' || els.root.dataset.dirty === '1') return;
+      if (teamPreviewConfirmBusy) return;
+      try {
+        teamPreviewConfirmBusy = true;
+        updateTeamPreviewConfirmUi();
+        await lastConfirmableTeamPreview.execute();
+      } finally {
+        teamPreviewConfirmBusy = false;
+        updateTeamPreviewConfirmUi();
+      }
+    });
+  }
+
   const previewClear = document.getElementById('btn-team-preview-clear');
   if (previewClear) previewClear.addEventListener('click', () => clearTeamPreview());
+
+  window.__teamPreviewApi = {
+    setConfirmIntent: setTeamPreviewConfirmIntent,
+    clearConfirmIntent: clearTeamPreviewConfirmIntent,
+  };
 
   window.__teamWorkspaceApi = {
     refresh: refreshWorkspace,
@@ -2154,13 +2809,18 @@ if (teamWorkspaceShell) {
       selectedIds: ids(),
       contextCode: state.contextCode,
       filters: { ...state.filters },
+      boardFilters: { ...state.boardFilters },
     }),
   };
 
-  setContextDetailsOpen(false);
+  restoreWorkspaceState();
+  setContextDetailsOpen(state.contextDetailsOpen);
   updateRightPaneTabUi();
   setFiltersToDom(state.filters);
   setCompactScope(state.compactScope, { skipDirty: true });
+  setBoardFiltersToDom(state.boardFilters, buildBoardFilterOptions([]));
+  setBoardFiltersExpanded(state.boardFiltersExpanded, { skipSave: true });
   clearTeamPreview();
-  refreshWorkspace({ resetPage: true, clearSelection: true });
-}
+  await refreshWorkspace({ resetPage: !state.candidatePage, clearSelection: true });
+  return window.__teamWorkspaceApi;
+};

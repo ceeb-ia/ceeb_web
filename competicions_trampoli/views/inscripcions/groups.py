@@ -14,6 +14,7 @@ from ...services.shared.competition_groups import (
     clear_inscripcions_group,
     compact_competition_order_for_group,
     ensure_group_for_display_num,
+    get_group_board_filter_facets,
     get_competicio_groups,
     get_group_card_payload,
     get_group_detail_payload,
@@ -430,7 +431,16 @@ def _build_group_workspace_payload(competicio, payload):
 
     summary = get_group_summary_counts(competicio, include_inactive=False)
     groups = list(get_competicio_groups(competicio, include_inactive=False))
-    group_cards = [get_group_card_payload(group, members_count=None, member_limit=5) for group in groups]
+    group_filter_facets = get_group_board_filter_facets(competicio, group_ids=[group.id for group in groups])
+    group_cards = [
+        get_group_card_payload(
+            group,
+            members_count=None,
+            member_limit=5,
+            filter_facets=group_filter_facets.get(int(group.id), {}),
+        )
+        for group in groups
+    ]
 
     return {
         "summary": summary,

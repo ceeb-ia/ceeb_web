@@ -2840,7 +2840,7 @@ class ClassificacioTemplateFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertContains(res, 'data-help-key="victories_overview"')
         self.assertNotContains(res, '<option value="entitat">Per entitat</option>', html=True)
         self.assertContains(res, "function pruneSchemaAppReferences(schema, allowedIds)")
-        self.assertContains(res, 'buildAparellChecks([...ids], { includeStale: false });')
+        self.assertContains(res, 'buildAparellChecks([...ids], { includeStale: true });')
         self.assertContains(res, "refreshTipusUI({ includeStale: false, dropInvalidSelection: true });")
         self.assertContains(res, "function previewRenderTeamRawDetailCell(v, col)")
         self.assertContains(res, "team-raw-summary")
@@ -2848,6 +2848,8 @@ class ClassificacioTemplateFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertContains(res, 'id="previewBox"')
         self.assertContains(res, "builder-preview-shell")
         self.assertContains(res, 'id="detailConfigAlert"')
+        self.assertContains(res, 'id="eqAssignmentContextHint"')
+        self.assertContains(res, 'id="saveMsg"')
         self.assertContains(res, "En equips derivats, les columnes de camp mostren un resum i el detall per membres de l'equip.")
         self.assertContains(res, "En equips amb nota nativa, les columnes de camp mostren el valor d'equip i només són representables per aparells d'equip.")
 
@@ -2861,7 +2863,7 @@ class ClassificacioTemplateFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertContains(res, "Primer es filtren membres i després es calcula l'equip amb els membres resultants.")
         self.assertContains(res, "Un equip només entra si tots els seus membres compleixen aquests filtres abans de calcular la nota nativa d'equip.")
 
-    def test_classificacions_home_sanitizes_legacy_field_refs_for_builder(self):
+    def test_classificacions_home_preserves_legacy_field_refs_for_builder_rehydration(self):
         schema = json.loads(json.dumps(self.cfg_source.schema or {}))
         schema["puntuacio"]["camps_per_aparell"] = {
             str(self.source_app.id): ["E_total", "ex"],
@@ -2952,26 +2954,33 @@ class ClassificacioTemplateFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(res.status_code, 200)
 
         cfg_payload = next(cfg for cfg in res.context["cfgs"] if cfg["id"] == self.cfg_source.id)
-        sanitized = cfg_payload["schema"]
-        punt = sanitized.get("puntuacio") or {}
+        hydrated = cfg_payload["schema"]
+        status = (res.context["cfg_status"] or {}).get(str(self.cfg_source.id)) or {}
+        punt = hydrated.get("puntuacio") or {}
         self.assertNotIn("camp", punt)
         self.assertNotIn("agregacio", punt)
         self.assertNotIn("best_n", punt)
-        self.assertEqual((punt.get("camps_per_aparell") or {}).get(str(self.source_app.id)), ["E_total"])
+        self.assertEqual((punt.get("camps_per_aparell") or {}).get(str(self.source_app.id)), ["E_total", "ex"])
 
-        desempat = sanitized.get("desempat") or []
-        self.assertEqual(len(desempat), 1)
-        self.assertEqual(desempat[0].get("camps"), ["E_total"])
-        self.assertNotIn("camp", desempat[0])
+        desempat = hydrated.get("desempat") or []
+        self.assertEqual(len(desempat), 2)
+        self.assertEqual(desempat[0].get("camps"), ["ex"])
+        self.assertEqual(desempat[1].get("camps"), ["E_total"])
 
         compare = (((punt.get("victories") or {}).get("desempat_comparacio")) or [])
-        self.assertEqual(len(compare), 1)
-        self.assertEqual(compare[0].get("camps"), ["E_total"])
-        self.assertNotIn("camp", compare[0])
+        self.assertEqual(len(compare), 2)
+        self.assertEqual(compare[0].get("camps"), ["ex"])
+        self.assertEqual(compare[1].get("camps"), ["E_total"])
 
-        raw_columns = [c for c in ((sanitized.get("presentacio") or {}).get("columnes") or []) if c.get("type") == "raw"]
-        self.assertEqual(len(raw_columns), 1)
-        self.assertEqual((((raw_columns[0].get("source") or {}).get("camp"))), "E_total")
+        raw_columns = [c for c in ((hydrated.get("presentacio") or {}).get("columnes") or []) if c.get("type") == "raw"]
+        self.assertEqual(len(raw_columns), 2)
+        self.assertEqual({((col.get("source") or {}).get("camp")) for col in raw_columns}, {"E_total", "ex"})
+
+        self.assertTrue(status.get("is_stale"))
+        errors = status.get("compatibility_errors") or []
+        self.assertTrue(any("puntuacio.camps_per_aparell" in err and "'ex' no existeix" in err for err in errors))
+        self.assertTrue(any("desempat[0]" in err and "'ex' no existeix" in err for err in errors))
+        self.assertTrue(any("presentacio.columnes" in err and "'ex' no existeix" in err for err in errors))
 
         self.cfg_source.refresh_from_db()
         original = self.cfg_source.schema or {}
@@ -2979,7 +2988,7 @@ class ClassificacioTemplateFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(len(original.get("desempat") or []), 2)
         self.assertEqual(len((((original.get("puntuacio") or {}).get("victories") or {}).get("desempat_comparacio")) or []), 2)
 
-    def test_classificacions_home_sanitizes_missing_app_refs_for_builder(self):
+    def test_classificacions_home_preserves_missing_app_refs_for_builder_rehydration(self):
         schema = json.loads(json.dumps(self.cfg_source.schema or {}))
         missing_app_id = self.source_app.id + 9999
         schema["puntuacio"]["aparells"] = {"mode": "seleccionar", "ids": [self.source_app.id, missing_app_id]}
@@ -3018,14 +3027,22 @@ class ClassificacioTemplateFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(res.status_code, 200)
 
         cfg_payload = next(cfg for cfg in res.context["cfgs"] if cfg["id"] == self.cfg_source.id)
-        sanitized = cfg_payload["schema"]
-        punt = sanitized.get("puntuacio") or {}
-        self.assertEqual((punt.get("aparells") or {}).get("ids"), [self.source_app.id])
-        self.assertEqual(set((punt.get("camps_per_aparell") or {}).keys()), {str(self.source_app.id)})
-        self.assertEqual(set((punt.get("exercicis_per_aparell") or {}).keys()), {str(self.source_app.id)})
-        self.assertEqual(sanitized.get("desempat") or [], [])
-        raw_columns = [c for c in ((sanitized.get("presentacio") or {}).get("columnes") or []) if c.get("type") == "raw"]
-        self.assertEqual(raw_columns, [])
+        hydrated = cfg_payload["schema"]
+        status = (res.context["cfg_status"] or {}).get(str(self.cfg_source.id)) or {}
+        punt = hydrated.get("puntuacio") or {}
+        self.assertEqual((punt.get("aparells") or {}).get("ids"), [self.source_app.id, missing_app_id])
+        self.assertEqual(set((punt.get("camps_per_aparell") or {}).keys()), {str(self.source_app.id), str(missing_app_id)})
+        self.assertEqual(set((punt.get("exercicis_per_aparell") or {}).keys()), {str(self.source_app.id), str(missing_app_id)})
+        self.assertEqual((((hydrated.get("desempat") or [])[0].get("scope") or {}).get("aparells") or {}).get("ids"), [missing_app_id])
+        raw_columns = [c for c in ((hydrated.get("presentacio") or {}).get("columnes") or []) if c.get("type") == "raw"]
+        self.assertEqual(len(raw_columns), 1)
+        self.assertEqual((((raw_columns[0].get("source") or {}).get("aparell_id"))), missing_app_id)
+
+        self.assertTrue(status.get("is_stale"))
+        errors = status.get("compatibility_errors") or []
+        self.assertTrue(any(f"puntuacio.aparells.ids: l'aparell {missing_app_id} no valid o no actiu." in err for err in errors))
+        self.assertTrue(any("puntuacio.camps_per_aparell: aparell" in err and str(missing_app_id) in err for err in errors))
+        self.assertTrue(any("presentacio.columnes[1] raw: aparell" in err and str(missing_app_id) in err for err in errors))
 
 
 class GlobalClassificacioTemplateManagementTests(_BaseTrampoliDataMixin, TestCase):
@@ -3359,7 +3376,13 @@ class GlobalClassificacioTemplateManagementTests(_BaseTrampoliDataMixin, TestCas
                             "label": "Exec",
                             "align": "right",
                             "decimals": 3,
-                            "source": {"aparell_id": self.team_app.id, "exercici": 1, "camp": "E", "jutges": {"ids": []}},
+                            "source": {
+                                "aparell_id": self.team_app.id,
+                                "exercise_mode": "fixed",
+                                "exercici": 1,
+                                "camp": "E",
+                                "jutges": {"ids": []},
+                            },
                         },
                     ],
                 }
@@ -3380,7 +3403,13 @@ class GlobalClassificacioTemplateManagementTests(_BaseTrampoliDataMixin, TestCas
             content_type="application/json",
         )
         self.assertEqual(res.status_code, 200)
-        self.assertTrue(res.json().get("ok"))
+        body = res.json()
+        self.assertTrue(body.get("ok"))
+        detail_ui_section = (((((body.get("cfg") or {}).get("schema") or {}).get("presentacio") or {}).get("detall") or {}).get("sections") or [])[0]
+        self.assertEqual((((detail_ui_section or {}).get("columns") or [])[0].get("source") or {}).get("exercise_mode"), "fixed")
+        tpl = ClassificacioTemplateGlobal.objects.get(pk=(body.get("cfg") or {}).get("id"))
+        detail_tpl_section = (((((tpl.payload or {}).get("schema") or {}).get("presentacio") or {}).get("detall") or {}).get("sections") or [])[0]
+        self.assertEqual((((detail_tpl_section or {}).get("columns") or [])[0].get("source") or {}).get("exercise_mode"), "fixed")
 
     def test_global_template_save_infers_team_members_table_section_app_from_single_raw_app(self):
         self.client.force_login(self.user)
@@ -3737,14 +3766,20 @@ class GlobalClassificacioTemplateManagementTests(_BaseTrampoliDataMixin, TestCas
             "puntuacio": {
                 "aparells": {"mode": "seleccionar", "ids": [self.app.codi]},
                 "camps_per_aparell": {self.app.codi: ["total"]},
+                "legacy_score_meta": {"origin": "legacy"},
             },
             "presentacio": {
+                "legacy_presentacio_flag": True,
                 "columnes": [
                     {"type": "builtin", "key": "posicio", "label": "#", "align": "left"},
                     {"type": "builtin", "key": "participant", "label": "Nom", "align": "left"},
                     {"type": "builtin", "key": "punts", "label": "Punts", "align": "right", "decimals": 3},
                 ]
             },
+            "equips": {
+                "legacy_equips_flag": "keep-me",
+            },
+            "legacy_root_blob": {"foo": "bar"},
         }
         tpl = ClassificacioTemplateGlobal.objects.create(
             nom="Tpl Legacy",
@@ -3776,6 +3811,10 @@ class GlobalClassificacioTemplateManagementTests(_BaseTrampoliDataMixin, TestCas
         self.assertEqual(saved_schema.get("filtres", {}).get("custom_excel_in"), ["A"])
         self.assertIn("custom_excel", saved_schema.get("particions", []))
         self.assertIn("custom_excel", saved_schema.get("particions_custom", {}))
+        self.assertEqual(saved_schema.get("legacy_root_blob"), {"foo": "bar"})
+        self.assertTrue((saved_schema.get("presentacio") or {}).get("legacy_presentacio_flag"))
+        self.assertEqual((saved_schema.get("puntuacio") or {}).get("legacy_score_meta"), {"origin": "legacy"})
+        self.assertEqual((saved_schema.get("equips") or {}).get("legacy_equips_flag"), "keep-me")
 
     def test_global_template_appears_in_competition_template_list(self):
         tpl = ClassificacioTemplateGlobal.objects.create(
@@ -3818,7 +3857,7 @@ class GlobalClassificacioTemplateManagementTests(_BaseTrampoliDataMixin, TestCas
         self.assertContains(res, 'data-help-key="desempat_overview"')
         self.assertNotContains(res, '<option value="entitat">Per entitat</option>', html=True)
         self.assertContains(res, "function pruneSchemaAppReferences(schema, allowedIds)")
-        self.assertContains(res, 'buildAparellChecks([...ids], { includeStale: false });')
+        self.assertContains(res, 'buildAparellChecks([...ids], { includeStale: true });')
         self.assertContains(res, "refreshTipusUI({ includeStale: false, dropInvalidSelection: true });")
         self.assertContains(res, "function previewRenderTeamRawDetailCell(v, col)")
         self.assertContains(res, "En equips derivats, les columnes de camp mostren un resum i el detall per membres de l'equip.")

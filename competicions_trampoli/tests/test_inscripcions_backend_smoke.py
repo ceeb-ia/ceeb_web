@@ -192,6 +192,8 @@ class InscripcionsBackendSmokeTests(_BaseTrampoliDataMixin, TestCase):
         self.assertContains(response, 'id="btn-groups-create-per-bucket"', html=False)
         self.assertContains(response, '/static/js/vendor/Sortable.min.js', html=False)
         self.assertNotContains(response, 'cdn.jsdelivr.net/npm/sortablejs', html=False)
+        self.assertNotIn("mediaMatchInscripcionsOptions", response.context["inscripcions_page_boot"]["initial"])
+        self.assertNotContains(response, '"mediaMatchInscripcionsOptions":', html=False)
 
     def test_column_filter_query_params_accept_canonical_and_legacy_prefixes(self):
         Inscripcio.objects.create(
@@ -211,19 +213,75 @@ class InscripcionsBackendSmokeTests(_BaseTrampoliDataMixin, TestCase):
                 self.assertContains(response, 'name="cf_entitat"', html=False)
                 self.assertNotContains(response, 'name="cf__entitat"', html=False)
 
-    def test_core_script_preserves_global_dialogs_instead_of_overwriting_them(self):
+    def test_core_script_delegates_to_global_dialogs_without_preempting_them(self):
         package_root = Path(__file__).resolve().parents[1]
         source = (package_root / "templates" / "competicio" / "inscripcions" / "scripts" / "_core.html").read_text(encoding="utf-8")
 
-        self.assertIn("const previousShowAlert", source)
-        self.assertIn("const previousShowConfirm", source)
-        self.assertIn("const previousShowPrompt", source)
-        self.assertIn("if (previousShowAlert) return previousShowAlert", source)
-        self.assertIn("if (previousShowConfirm) return previousShowConfirm", source)
-        self.assertIn("if (previousShowPrompt) return previousShowPrompt", source)
-        self.assertIn("if (typeof window.showAlert !== 'function') window.showAlert = showAlert;", source)
-        self.assertIn("if (typeof window.showConfirm !== 'function') window.showConfirm = showConfirm;", source)
-        self.assertIn("if (typeof window.showPrompt !== 'function') window.showPrompt = showPrompt;", source)
+        self.assertIn("function getDialogDelegate", source)
+        self.assertIn("function ensureDialogGlobals", source)
+        self.assertIn("const delegate = getDialogDelegate('showAlert', showAlert);", source)
+        self.assertIn("const delegate = getDialogDelegate('showConfirm', showConfirm);", source)
+        self.assertIn("const delegate = getDialogDelegate('showPrompt', showPrompt);", source)
+        self.assertIn("if (typeof window.showAlert !== 'function') {", source)
+        self.assertIn("if (typeof window.showConfirm !== 'function') {", source)
+        self.assertIn("if (typeof window.showPrompt !== 'function') {", source)
+        self.assertIn("ensureDialogGlobals();", source)
+        self.assertIn("inscripcions:panel-activated", source)
+        self.assertIn("function runOnceForPanel", source)
+        self.assertIn("function readStoredUiState()", source)
+        self.assertIn("const existingState = readStoredUiState();", source)
+        self.assertIn("const shellState = captureUiState();", source)
+        self.assertIn("Object.assign({}, existingState, shellState, extra || {})", source)
+        self.assertRegex(
+            source,
+            r"function reloadWithUiState\(extra\)[\s\S]*saveUiState\(extra\);[\s\S]*window\.location\.reload\(\);",
+        )
+        self.assertRegex(source, r"window\.addEventListener\('beforeunload',\s*\(\)\s*=>\s*saveUiState\(\)\);")
+
+    def test_core_ui_state_save_merges_existing_state_instead_of_overwriting_namespaces(self):
+        package_root = Path(__file__).resolve().parents[1]
+        source = (package_root / "templates" / "competicio" / "inscripcions" / "scripts" / "_core.html").read_text(encoding="utf-8")
+
+        self.assertIn("function readStoredUiState()", source)
+        self.assertIn("return state && typeof state === 'object' ? state : {};", source)
+        self.assertIn("const existingState = readStoredUiState();", source)
+        self.assertIn("const shellState = captureUiState();", source)
+        self.assertIn("JSON.stringify(Object.assign({}, existingState, shellState, extra || {}))", source)
+        self.assertIn("let state = readStoredUiState();", source)
+        self.assertNotIn("sessionStorage.setItem(getUiStateKey(), JSON.stringify(captureUiState(extra)));", source)
+
+    def test_panel_scripts_expose_lazy_initializers_instead_of_eager_refreshes(self):
+        package_root = Path(__file__).resolve().parents[1]
+        groups_preview = (
+            package_root / "templates" / "competicio" / "inscripcions" / "scripts" / "_groups_preview.html"
+        ).read_text(encoding="utf-8")
+        groups_wrapper = (
+            package_root / "templates" / "competicio" / "inscripcions" / "scripts" / "_groups.html"
+        ).read_text(encoding="utf-8")
+        groups_workspace = (package_root / "templates" / "competicio" / "_groups_workspace_script.html").read_text(encoding="utf-8")
+        teams_script = (package_root / "templates" / "competicio" / "_team_workspace_script.html").read_text(encoding="utf-8")
+        teams_wrapper = (
+            package_root / "templates" / "competicio" / "inscripcions" / "scripts" / "_teams.html"
+        ).read_text(encoding="utf-8")
+        series_script = (package_root / "templates" / "competicio" / "_series_workspace_script.html").read_text(encoding="utf-8")
+        series_wrapper = (
+            package_root / "templates" / "competicio" / "inscripcions" / "scripts" / "_series.html"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("window.initGroupsPanel", groups_preview)
+        self.assertNotIn("document.addEventListener('DOMContentLoaded', initGroupsPanel)", groups_preview)
+        self.assertIn("window.initGroupsWorkspace = async function ()", groups_workspace)
+        self.assertIn("await fetchWorkspace();", groups_workspace)
+        self.assertIn("inscripcions:panel-activated", groups_wrapper)
+        self.assertIn("window.initTeamsWorkspace = async function ()", teams_script)
+        self.assertIn("function setTeamPreviewLoading", teams_script)
+        self.assertIn("function renderTeamPreview", teams_script)
+        self.assertIn("window.__teamPreviewApi = {", teams_script)
+        self.assertIn("inscripcions:panel-activated", teams_wrapper)
+        self.assertIn("window.initTeamsWorkspace?.()", teams_wrapper)
+        self.assertIn("window.initSeriesWorkspace = async function ()", series_script)
+        self.assertNotIn("refreshWorkspace({ preservePage: false }).catch", series_script)
+        self.assertIn("inscripcions:panel-activated", series_wrapper)
 
     def test_ajax_payload_contract_smoke_for_sorting_groups_and_media(self):
         sorting_response = self.client.post(
@@ -271,6 +329,7 @@ class InscripcionsBackendSmokeTests(_BaseTrampoliDataMixin, TestCase):
         self.assertIn("rows", media_payload)
         self.assertIn("counts", media_payload)
         self.assertIn("config", media_payload)
+        self.assertIn("inscripcions_options", media_payload)
 
 
 class InscripcionsExcelImportServiceTests(_BaseTrampoliDataMixin, TestCase):

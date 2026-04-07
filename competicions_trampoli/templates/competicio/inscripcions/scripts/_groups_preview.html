@@ -978,9 +978,10 @@
     clearConfirmIntent: clearGroupPreviewConfirmIntent,
   };
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initGroupsPanel);
-  } else {
+  window.initGroupsPanel = function () {
+    if (window.__groupsPanelInitialized) return window.__groupsPreviewApi;
+    window.__groupsPanelInitialized = true;
     initGroupsPanel();
-  }
+    return window.__groupsPreviewApi;
+  };
 })();

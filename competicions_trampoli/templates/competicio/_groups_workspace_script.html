@@ -1,6 +1,11 @@
-const groupsWorkspaceShell = document.getElementById('groups-workspace-shell');
-const groupsMainCard = document.getElementById('groups-main-card');
-if (groupsWorkspaceShell && groupsMainCard) {
+window.initGroupsWorkspace = async function () {
+  if (window.__groupsWorkspaceInitialized) return window.__groupsWorkspaceApi || null;
+
+  const groupsWorkspaceShell = document.getElementById('groups-workspace-shell');
+  const groupsMainCard = document.getElementById('groups-main-card');
+  if (!groupsWorkspaceShell || !groupsMainCard) return null;
+  window.__groupsWorkspaceInitialized = true;
+
   const groupsWorkspaceUrl = "{% url 'groups_workspace' competicio.id %}";
   const groupsDetailUrl = "{% url 'groups_detail' competicio.id %}";
   const groupsPreviewUrl = "{% url 'groups_preview' competicio.id %}";
@@ -19,6 +24,15 @@ if (groupsWorkspaceShell && groupsMainCard) {
       entitats: [],
       group_ids: [],
     }, getCurrentInscripcioFilters()),
+    boardFilters: {
+      q: '',
+      categories: [],
+      subcategories: [],
+      entitats: [],
+      members_state: 'all',
+      program_state: 'all',
+    },
+    boardFiltersExpanded: false,
     selectedIds: new Set((typeof getSelectedInscripcioIds === 'function' ? getSelectedInscripcioIds() : []).map(String)),
     page: 1,
     pageSize: 40,
@@ -67,6 +81,29 @@ if (groupsWorkspaceShell && groupsMainCard) {
   );
   const selectionSummaryKey = () => selectedIds().slice().sort().join(',');
   const normalizeWorkspace = (data) => (data && data.workspace && typeof data.workspace === 'object') ? data.workspace : (data || {});
+  const normalizeSearchText = (value) => String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+  const uniqueSortedStrings = (values) => Array.from(new Set(
+    (Array.isArray(values) ? values : [])
+      .map((value) => String(value || '').trim())
+      .filter(Boolean)
+  )).sort((a, b) => a.localeCompare(b, 'ca'));
+  const normalizeBoardFilters = (raw) => {
+    const data = raw && typeof raw === 'object' ? raw : {};
+    const membersState = String(data.members_state || 'all').trim() || 'all';
+    const programState = String(data.program_state || 'all').trim() || 'all';
+    return {
+      q: String(data.q || '').trim(),
+      categories: uniqueSortedStrings(data.categories),
+      subcategories: uniqueSortedStrings(data.subcategories),
+      entitats: uniqueSortedStrings(data.entitats),
+      members_state: ['all', 'with_members', 'empty'].includes(membersState) ? membersState : 'all',
+      program_state: ['all', 'programmed', 'out_of_program'].includes(programState) ? programState : 'all',
+    };
+  };
   const invalidateAllGroupDetails = () => {
     state.groupDetailCache = {};
     state.loadingGroupIds = new Set();
@@ -117,6 +154,8 @@ if (groupsWorkspaceShell && groupsMainCard) {
         selectedRightPaneTab: state.selectedRightPaneTab,
         autoContextExpanded: !!state.autoContextExpanded,
         filters: { ...state.filters },
+        boardFilters: { ...state.boardFilters },
+        boardFiltersExpanded: !!state.boardFiltersExpanded,
         ...extra,
       },
     });
@@ -127,6 +166,12 @@ if (groupsWorkspaceShell && groupsMainCard) {
     if (saved && typeof saved === 'object') {
       if (saved.filters && typeof saved.filters === 'object') {
         state.filters = Object.assign({}, state.filters, saved.filters);
+      }
+      if (saved.boardFilters && typeof saved.boardFilters === 'object') {
+        state.boardFilters = normalizeBoardFilters(saved.boardFilters);
+      }
+      if (Object.prototype.hasOwnProperty.call(saved, 'boardFiltersExpanded')) {
+        state.boardFiltersExpanded = !!saved.boardFiltersExpanded;
       }
       if (saved.page) state.page = Math.max(1, Number(saved.page) || 1);
       if (saved.pageSize) state.pageSize = Math.max(1, Number(saved.pageSize) || 40);
@@ -216,6 +261,125 @@ if (groupsWorkspaceShell && groupsMainCard) {
     );
     const stateSelect = document.getElementById('groups-filter-group-state');
     if (stateSelect) stateSelect.value = String(data.group_state || 'all');
+  }
+
+  function readBoardFilters() {
+    return normalizeBoardFilters({
+      q: document.getElementById('groups-board-filter-q')?.value || '',
+      categories: selectedOptionValues(document.getElementById('groups-board-filter-categoria')),
+      subcategories: selectedOptionValues(document.getElementById('groups-board-filter-subcategoria')),
+      entitats: selectedOptionValues(document.getElementById('groups-board-filter-entitat')),
+      members_state: document.getElementById('groups-board-filter-members-state')?.value || 'all',
+      program_state: document.getElementById('groups-board-filter-program-state')?.value || 'all',
+    });
+  }
+
+  function setBoardFiltersToDom(filters, options) {
+    const data = normalizeBoardFilters(filters);
+    const boardOptions = options || {};
+    const q = document.getElementById('groups-board-filter-q');
+    if (q) q.value = String(data.q || '');
+    fillSelect(document.getElementById('groups-board-filter-categoria'), boardOptions.categories || [], data.categories || [], 'Totes');
+    fillSelect(document.getElementById('groups-board-filter-subcategoria'), boardOptions.subcategories || [], data.subcategories || [], 'Totes');
+    fillSelect(document.getElementById('groups-board-filter-entitat'), boardOptions.entitats || [], data.entitats || [], 'Totes');
+    const membersState = document.getElementById('groups-board-filter-members-state');
+    if (membersState) membersState.value = String(data.members_state || 'all');
+    const programState = document.getElementById('groups-board-filter-program-state');
+    if (programState) programState.value = String(data.program_state || 'all');
+  }
+
+  function buildBoardFilterOptions(groups) {
+    const categories = new Set();
+    const subcategories = new Set();
+    const entitats = new Set();
+    (Array.isArray(groups) ? groups : []).forEach((group) => {
+      (group?.categories || []).forEach((value) => {
+        const clean = String(value || '').trim();
+        if (clean) categories.add(clean);
+      });
+      (group?.subcategories || []).forEach((value) => {
+        const clean = String(value || '').trim();
+        if (clean) subcategories.add(clean);
+      });
+      (group?.entitats || []).forEach((value) => {
+        const clean = String(value || '').trim();
+        if (clean) entitats.add(clean);
+      });
+    });
+    return {
+      categories: Array.from(categories).sort((a, b) => a.localeCompare(b, 'ca')),
+      subcategories: Array.from(subcategories).sort((a, b) => a.localeCompare(b, 'ca')),
+      entitats: Array.from(entitats).sort((a, b) => a.localeCompare(b, 'ca')),
+    };
+  }
+
+  function boardFiltersAreActive(filters = state.boardFilters) {
+    const current = normalizeBoardFilters(filters);
+    return !!(
+      current.q
+      || current.categories.length
+      || current.subcategories.length
+      || current.entitats.length
+      || current.members_state !== 'all'
+      || current.program_state !== 'all'
+    );
+  }
+
+  function boardFilterSummaryText(filters = state.boardFilters) {
+    const current = normalizeBoardFilters(filters);
+    const parts = [];
+    if (current.q) parts.push(`text: ${current.q}`);
+    if (current.categories.length) parts.push(`${current.categories.length} categories`);
+    if (current.subcategories.length) parts.push(`${current.subcategories.length} subcategories`);
+    if (current.entitats.length) parts.push(`${current.entitats.length} entitats`);
+    if (current.members_state === 'with_members') parts.push('amb participants');
+    if (current.members_state === 'empty') parts.push('nomes buits');
+    if (current.program_state === 'programmed') parts.push('programats');
+    if (current.program_state === 'out_of_program') parts.push('fora de programa');
+    if (!parts.length) return 'Nom del grup, participants i facetes agregades del board actual.';
+    return `Filtres actius: ${parts.join(' | ')}.`;
+  }
+
+  function setBoardFiltersExpanded(expanded, options = {}) {
+    state.boardFiltersExpanded = !!expanded;
+    const panel = document.getElementById('groups-board-filters-panel');
+    const toggle = document.getElementById('btn-groups-board-filters-toggle');
+    const summary = document.getElementById('groups-board-filters-summary');
+    if (panel) panel.classList.toggle('d-none', !state.boardFiltersExpanded);
+    if (toggle) {
+      toggle.setAttribute('aria-expanded', state.boardFiltersExpanded ? 'true' : 'false');
+      toggle.textContent = state.boardFiltersExpanded ? 'Amagar filtres del board' : 'Veure filtres del board';
+    }
+    if (summary) summary.textContent = boardFilterSummaryText();
+    if (!options.skipSave) saveWorkspaceState();
+  }
+
+  function groupMatchesBoardFilters(group, filters = state.boardFilters) {
+    const current = normalizeBoardFilters(filters);
+    const membersCount = Number(group?.members_count || 0);
+    if (current.members_state === 'with_members' && membersCount <= 0) return false;
+    if (current.members_state === 'empty' && membersCount > 0) return false;
+    if (current.program_state === 'programmed' && !group?.is_programmed) return false;
+    if (current.program_state === 'out_of_program' && !group?.is_out_of_program) return false;
+    if (current.categories.length && !current.categories.some((value) => (group?.categories || []).includes(value))) return false;
+    if (current.subcategories.length && !current.subcategories.some((value) => (group?.subcategories || []).includes(value))) return false;
+    if (current.entitats.length && !current.entitats.some((value) => (group?.entitats || []).includes(value))) return false;
+    if (current.q) {
+      const haystack = normalizeSearchText([
+        group?.search_text,
+        group?.label,
+        group?.name,
+      ].filter(Boolean).join(' '));
+      if (!haystack.includes(normalizeSearchText(current.q))) return false;
+    }
+    return true;
+  }
+
+  function renderBoardFilterControls(groups) {
+    const options = buildBoardFilterOptions(groups);
+    setBoardFiltersToDom(state.boardFilters, options);
+    state.boardFilters = readBoardFilters();
+    setBoardFiltersExpanded(state.boardFiltersExpanded, { skipSave: true });
   }
 
   function buildPayload(extra = {}) {
@@ -801,8 +965,10 @@ if (groupsWorkspaceShell && groupsMainCard) {
     const status = document.getElementById('groups-existing-status');
     if (!activeList || !emptyList) return;
     const groups = Array.isArray(workspace?.groups) ? workspace.groups : [];
-    const active = groups.filter((group) => Number(group?.members_count || 0) > 0);
-    const empty = groups.filter((group) => Number(group?.members_count || 0) === 0);
+    const visibleGroups = groups.filter((group) => groupMatchesBoardFilters(group));
+    const active = visibleGroups.filter((group) => Number(group?.members_count || 0) > 0);
+    const empty = visibleGroups.filter((group) => Number(group?.members_count || 0) === 0);
+    const filtersActive = boardFiltersAreActive();
 
     renderUnassigned(workspace);
     activeList.innerHTML = '';
@@ -812,20 +978,25 @@ if (groupsWorkspaceShell && groupsMainCard) {
     if (!active.length) {
       const placeholder = document.createElement('div');
       placeholder.className = 'groups-board-placeholder';
-      placeholder.textContent = 'Encara no hi ha grups amb participants en aquesta vista.';
+      placeholder.textContent = filtersActive
+        ? 'Cap grup amb participants coincideix amb els filtres del board.'
+        : 'Encara no hi ha grups amb participants en aquesta vista.';
       activeList.appendChild(placeholder);
     }
     if (!empty.length) {
       const placeholder = document.createElement('div');
       placeholder.className = 'groups-board-placeholder';
-      placeholder.textContent = 'No hi ha grups buits disponibles ara mateix.';
+      placeholder.textContent = filtersActive
+        ? 'Cap grup buit coincideix amb els filtres del board.'
+        : 'No hi ha grups buits disponibles ara mateix.';
       emptyList.appendChild(placeholder);
     }
     if (emptyWrap) emptyWrap.classList.remove('d-none');
     if (badge) badge.textContent = `${groups.length} grups`;
+    text('groups-board-filter-count', `${visibleGroups.length} de ${groups.length} grups`);
     if (status) {
       status.textContent = groups.length
-        ? `${active.length} grups amb participants i ${empty.length} grups buits disponibles.`
+        ? `${active.length} grups amb participants i ${empty.length} grups buits visibles${filtersActive ? ` de ${groups.length} totals` : ''}.`
         : 'Encara no hi ha grups disponibles.';
     }
     renderDetailPane();
@@ -991,6 +1162,7 @@ if (groupsWorkspaceShell && groupsMainCard) {
       }
 
       setFiltersToDom(state.filters, workspace.filter_options || {});
+      renderBoardFilterControls(groups);
       renderCompactSummary(workspace.summary || {});
       renderCompactList(groups);
       renderCandidates(workspace);
@@ -1349,6 +1521,15 @@ if (groupsWorkspaceShell && groupsMainCard) {
       else state.filterTimer = window.setTimeout(run, 220);
     };
 
+    const applyBoardFilterChange = () => {
+      state.boardFilters = readBoardFilters();
+      if (boardFiltersAreActive()) state.boardFiltersExpanded = true;
+      saveWorkspaceState();
+      setBoardFiltersExpanded(state.boardFiltersExpanded, { skipSave: true });
+      renderCards(state.workspace);
+      setupDnd();
+    };
+
     const q = document.getElementById('groups-filter-q');
     if (q) q.addEventListener('input', () => scheduleFilterRefresh(false));
 
@@ -1357,6 +1538,25 @@ if (groupsWorkspaceShell && groupsMainCard) {
         const el = document.getElementById(id);
         if (el) el.addEventListener('change', () => scheduleFilterRefresh(true));
       });
+
+    const boardQ = document.getElementById('groups-board-filter-q');
+    if (boardQ) boardQ.addEventListener('input', applyBoardFilterChange);
+    ['groups-board-filter-categoria', 'groups-board-filter-subcategoria', 'groups-board-filter-entitat', 'groups-board-filter-members-state', 'groups-board-filter-program-state']
+      .forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('change', applyBoardFilterChange);
+      });
+    document.getElementById('btn-groups-board-filters-clear')?.addEventListener('click', () => {
+      state.boardFilters = normalizeBoardFilters();
+      setBoardFiltersToDom(state.boardFilters, buildBoardFilterOptions(Array.isArray(state.workspace?.groups) ? state.workspace.groups : []));
+      setBoardFiltersExpanded(false, { skipSave: true });
+      saveWorkspaceState();
+      renderCards(state.workspace);
+      setupDnd();
+    });
+    document.getElementById('btn-groups-board-filters-toggle')?.addEventListener('click', () => {
+      setBoardFiltersExpanded(!state.boardFiltersExpanded);
+    });
 
     const prev = document.getElementById('btn-groups-candidates-prev');
     if (prev) {
@@ -1671,13 +1871,6 @@ if (groupsWorkspaceShell && groupsMainCard) {
     }
   }
 
-  restoreWorkspaceState();
-  state.selectedIds = new Set(getExternalSelectionIds());
-  wireEvents();
-  renderSelectionSummary();
-  setAutoContextExpanded(state.autoContextExpanded, { skipSave: true });
-  updateRightPaneTabUi();
-
   window.__groupsWorkspaceApi = {
     refresh: fetchWorkspace,
     resolveAutoContext: (extra = {}) => postJson(groupsWorkspaceUrl, buildPayload({ operation: 'resolve_auto_context', ...extra })),
@@ -1694,8 +1887,18 @@ if (groupsWorkspaceShell && groupsMainCard) {
       selectedRightPaneTab: state.selectedRightPaneTab,
       filteredCount: Number(state.workspace?.paging?.total || 0),
       filters: { ...state.filters },
+      boardFilters: { ...state.boardFilters },
     }),
   };
 
-  fetchWorkspace();
-}
+  restoreWorkspaceState();
+  state.selectedIds = new Set(getExternalSelectionIds());
+  wireEvents();
+  renderSelectionSummary();
+  setAutoContextExpanded(state.autoContextExpanded, { skipSave: true });
+  setBoardFiltersExpanded(state.boardFiltersExpanded, { skipSave: true });
+  updateRightPaneTabUi();
+
+  await fetchWorkspace();
+  return window.__groupsWorkspaceApi;
+};

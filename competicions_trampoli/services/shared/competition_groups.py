@@ -117,6 +117,59 @@ def get_group_member_previews(competicio, limit=5):
     return previews
 
 
+def _append_unique_clean(target, value):
+    clean = str(value or "").strip()
+    if clean and clean not in target:
+        target.append(clean)
+
+
+def get_group_board_filter_facets(competicio, group_ids=None):
+    clean_group_ids = [int(group_id) for group_id in (group_ids or []) if normalize_positive_int(group_id)]
+    qs = (
+        Inscripcio.objects
+        .filter(competicio=competicio, grup_competicio_id__isnull=False)
+        .order_by("grup_competicio_id", "ordre_competicio", "ordre_sortida", "id")
+        .only("grup_competicio_id", "nom_i_cognoms", "entitat", "categoria", "subcategoria")
+    )
+    if clean_group_ids:
+        qs = qs.filter(grup_competicio_id__in=clean_group_ids)
+
+    grouped = {}
+    for inscripcio in qs:
+        group_id = int(getattr(inscripcio, "grup_competicio_id", 0) or 0)
+        if not group_id:
+            continue
+        row = grouped.setdefault(
+            group_id,
+            {
+                "categories": [],
+                "subcategories": [],
+                "entitats": [],
+                "search_parts": [],
+            },
+        )
+        _append_unique_clean(row["categories"], getattr(inscripcio, "categoria", ""))
+        _append_unique_clean(row["subcategories"], getattr(inscripcio, "subcategoria", ""))
+        _append_unique_clean(row["entitats"], getattr(inscripcio, "entitat", ""))
+        _append_unique_clean(row["search_parts"], getattr(inscripcio, "nom_i_cognoms", ""))
+        _append_unique_clean(row["search_parts"], getattr(inscripcio, "categoria", ""))
+        _append_unique_clean(row["search_parts"], getattr(inscripcio, "subcategoria", ""))
+        _append_unique_clean(row["search_parts"], getattr(inscripcio, "entitat", ""))
+
+    out = {}
+    for group_id, row in grouped.items():
+        categories = sorted(row["categories"])
+        subcategories = sorted(row["subcategories"])
+        entitats = sorted(row["entitats"])
+        out[group_id] = {
+            "categories": categories,
+            "subcategories": subcategories,
+            "entitats": entitats,
+            "search_text": " ".join(row["search_parts"] + categories + subcategories + entitats).strip(),
+        }
+    return out
+
+
 def build_group_summary_rows(competicio, include_inactive=False, member_preview_limit=5):
     group_maps = get_group_maps(competicio, include_inactive=include_inactive)
     groups = list(group_maps["groups"])
@@ -665,6 +718,7 @@ def get_group_card_payload(
     member_limit=5,
     programmed_group_ids=None,
     is_out_of_program=None,
+    filter_facets=None,
 ):
     if group is None:
         return None
@@ -679,6 +733,20 @@ def get_group_card_payload(
     member_preview = get_group_member_preview(group, limit=member_limit)
     member_names = [row["label"] for row in member_preview if row.get("label")]
     status = get_group_status(group, members_count=members_count, programmed_group_ids=programmed_group_ids)
+    facets = filter_facets if isinstance(filter_facets, dict) else {}
+    categories = sorted({str(value or "").strip() for value in (facets.get("categories") or []) if str(value or "").strip()})
+    subcategories = sorted({str(value or "").strip() for value in (facets.get("subcategories") or []) if str(value or "").strip()})
+    entitats = sorted({str(value or "").strip() for value in (facets.get("entitats") or []) if str(value or "").strip()})
+    search_parts = [
+        group_label(group),
+        str(getattr(group, "nom", "") or "").strip(),
+        *member_names,
+        str(facets.get("search_text") or "").strip(),
+        *categories,
+        *subcategories,
+        *entitats,
+    ]
+    search_text = " ".join(part for part in search_parts if part).strip()
     return {
         "id": group.id,
         "display_num": int(group.display_num),
@@ -694,6 +762,10 @@ def get_group_card_payload(
         "is_out_of_program": bool(is_out_of_program),
         "status": status,
         "can_delete": bool(int(members_count or 0) == 0),
+        "categories": categories,
+        "subcategories": subcategories,
+        "entitats": entitats,
+        "search_text": search_text,
     }
 
 

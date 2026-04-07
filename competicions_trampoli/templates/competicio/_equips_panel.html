@@ -394,6 +394,50 @@
                 </div>
                 <div class="team-action-note">L'esborrat massiu actua nomes sobre el context actiu. Les targetes accepten drops sense obrir-se ni creixer.</div>
                 <div class="team-context-teams-status small text-muted" id="team-context-teams-status">Sense dades encara.</div>
+                <div class="team-manual-banner mt-3">
+                  <div class="d-flex align-items-start justify-content-between flex-wrap" style="gap:10px;">
+                    <div>
+                      <div class="fw-semibold">Filtres del board</div>
+                      <div class="small text-muted" id="team-board-filters-summary">Nom de l'equip, participants i facetes agregades del board del context actiu.</div>
+                    </div>
+                    <div class="d-flex align-items-center flex-wrap" style="gap:8px;">
+                      <span class="badge badge-light border" id="team-board-filter-count">0 de 0 equips</span>
+                      <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-team-board-filters-clear">Netejar</button>
+                      <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-team-board-filters-toggle" aria-expanded="false">Veure filtres del board</button>
+                    </div>
+                  </div>
+                  <div class="groups-auto-context-panel d-none mt-3" id="team-board-filters-panel">
+                    <div class="team-filters-grid">
+                    <div>
+                      <label class="small text-muted mb-1 d-block" for="team-board-filter-q">Cerca al board</label>
+                      <input type="text" class="form-control form-control-sm" id="team-board-filter-q" placeholder="Nom de l'equip, participant o entitat...">
+                    </div>
+                    <div>
+                      <label class="small text-muted mb-1 d-block" for="team-board-filter-categoria">Categories</label>
+                      <select id="team-board-filter-categoria" class="form-control form-control-sm" multiple size="4"></select>
+                    </div>
+                    <div>
+                      <label class="small text-muted mb-1 d-block" for="team-board-filter-subcategoria">Subcategories</label>
+                      <select id="team-board-filter-subcategoria" class="form-control form-control-sm" multiple size="4"></select>
+                    </div>
+                    <div>
+                      <label class="small text-muted mb-1 d-block" for="team-board-filter-entitat">Entitats</label>
+                      <select id="team-board-filter-entitat" class="form-control form-control-sm" multiple size="4"></select>
+                    </div>
+                    <div>
+                      <label class="small text-muted mb-1 d-block" for="team-board-filter-members-state">Estat de l'equip</label>
+                      <select id="team-board-filter-members-state" class="form-control form-control-sm">
+                        <option value="all">Tots</option>
+                        <option value="with_members">Amb participants</option>
+                        <option value="empty">Buits</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div class="small text-muted mt-2">
+                    Dins del mateix camp s'aplica qualsevol coincidencia; entre camps, totes alhora. La zona Sense equip es manté visible.
+                  </div>
+                  </div>
+                </div>
                 <div class="groups-board">
                   <div class="groups-board-section">
                     <div class="groups-board-section-head">

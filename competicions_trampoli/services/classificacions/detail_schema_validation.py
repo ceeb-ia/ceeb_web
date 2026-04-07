@@ -62,6 +62,7 @@ def legacy_validation_error_details(error_messages):
         (re.compile(r"^(?P<path>[A-Za-z_][\w\.\[\]']*) raw: aparell .+$"), ".source.aparell_id"),
         (re.compile(r"^(?P<path>[A-Za-z_][\w\.\[\]']*) raw: camp .+$"), ".source.camp"),
         (re.compile(r"^(?P<path>[A-Za-z_][\w\.\[\]']*) raw: exercici .+$"), ".source.exercici"),
+        (re.compile(r"^(?P<path>[A-Za-z_][\w\.\[\]']*) raw: exercise_mode .+$"), ".source.exercise_mode"),
         (re.compile(r"^(?P<path>[A-Za-z_][\w\.\[\]']*) builtin: .+$"), ".key"),
         (re.compile(r"^(?P<path>[A-Za-z_][\w\.\[\]']*) tipus .+$"), ".type"),
         (re.compile(r"^(?P<path>[A-Za-z_][\w\.\[\]']*\.enabled) .*$"), ""),
@@ -255,6 +256,34 @@ def validate_detail_schema(
                 add(
                     f"{col_path}.source.camp",
                     f"{col_path} raw: en team_metrics nomes es poden mostrar camps d'equip o compartits.",
+                )
+                continue
+            raw_exercise_mode = str(src.get("exercise_mode") or "").strip().lower()
+            has_exercise_mode = "exercise_mode" in src and str(src.get("exercise_mode") or "").strip() != ""
+            if section_type == "team_members_table":
+                exercise_mode = raw_exercise_mode or "selected"
+                if raw_exercise_mode and raw_exercise_mode not in {"selected", "fixed"}:
+                    add(
+                        f"{col_path}.source.exercise_mode",
+                        f"{col_path} raw: exercise_mode invalid ({raw_exercise_mode}).",
+                    )
+                    continue
+                if exercise_mode == "fixed":
+                    if "exercici" not in src:
+                        add(
+                            f"{col_path}.source.exercici",
+                            f"{col_path} raw: exercici obligatori quan exercise_mode=fixed.",
+                        )
+                        continue
+                    if validate_exercise is not None:
+                        exercise_message = validate_exercise(app_value, src.get("exercici"))
+                        if exercise_message:
+                            add(f"{col_path}.source.exercici", f"{col_path} raw: {exercise_message}")
+                continue
+            if has_exercise_mode:
+                add(
+                    f"{col_path}.source.exercise_mode",
+                    f"{col_path} raw: exercise_mode no es compatible amb {section_type}.",
                 )
                 continue
             if validate_exercise is not None:

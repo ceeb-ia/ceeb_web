@@ -34,13 +34,9 @@ from ...services.inscripcions.history import (
     with_inscripcions_history_payload,
 )
 from ...services.inscripcions.queries import (
-    _build_sort_partition_buckets,
-    _extract_sort_partition_codes,
     _label_with_source,
     _normalize_schema_extra_code,
-    _resolve_group_creation_buckets,
     _reserved_inscripcio_codes,
-    annotate_inscripcions_queryset_for_group_codes,
     build_inscripcions_sort_context_key,
     get_allowed_group_fields,
     get_available_column_filter_fields,
@@ -242,7 +238,7 @@ class InscripcionsListNewView(InscripcionsListView):
                 continue
             sort_label_by_code[code] = item.get("ui_label") or item.get("label") or code
 
-        dir_to_symbol = {"asc": "↑", "desc": "↓", "arrow_asc": "↕↑", "arrow_desc": "↕↓", "custom": "C"}
+        dir_to_symbol = {"asc": "\u2191", "desc": "\u2193", "arrow_asc": "\u2195\u2191", "arrow_desc": "\u2195\u2193", "custom": "C"}
         dir_to_label = {
             "asc": "Ascendent",
             "desc": "Descendent",
@@ -271,7 +267,7 @@ class InscripcionsListNewView(InscripcionsListView):
                 scope_short = f"G{group_num}" if group_num else "G"
                 scope_label = f"Nomes grup numeric {group_num} complet" if group_num else "Nomes un grup numeric concret"
 
-            symbol = dir_to_symbol.get(sort_dir, "↑")
+            symbol = dir_to_symbol.get(sort_dir, "\u2191")
             sort_entries.append(
                 {
                     "priority": priority,
@@ -320,69 +316,7 @@ class InscripcionsListNewView(InscripcionsListView):
         ctx["column_filter_tokens_by_code"] = active_column_filters
         ctx["active_column_filter_items"] = [{"param": f"cf_{code}", "token": token} for code, tokens in active_column_filters.items() for token in tokens]
 
-        partition_codes = _extract_sort_partition_codes(sort_stack)
-        partition_fields = [{"priority": priority, "code": code, "label": sort_label_by_code.get(code, code)} for priority, code in enumerate(partition_codes, start=1)]
-        partition_buckets = []
-        if partition_codes:
-            partition_builtin_fields = [code for code in partition_codes if hasattr(Inscripcio, code)]
-            records_for_partition_qs = annotate_inscripcions_queryset_for_group_codes(filtered_qs, self.competicio, partition_codes)
-            records_for_partition = list(
-                records_for_partition_qs.order_by("ordre_sortida", "id").only("id", "extra", "data_naixement", *partition_builtin_fields)
-            )
-            buckets_raw = _build_sort_partition_buckets(records_for_partition, partition_codes)
-            partition_buckets = [{"key": bucket["key"], "label": bucket["label"], "count": bucket["count"]} for bucket in buckets_raw]
-
-        ctx["sort_partition_fields"] = partition_fields
-        ctx["sort_partition_has_fields"] = bool(partition_fields)
-        ctx["sort_partition_buckets"] = partition_buckets
-        ctx["sort_partition_bucket_count"] = len(partition_buckets)
-
         group_field_options = get_allowed_group_fields(self.competicio)
-        group_field_label_by_code = {
-            field["code"]: field.get("ui_label") or field.get("label") or field["code"]
-            for field in group_field_options
-            if isinstance(field, dict) and field.get("code")
-        }
-        ctx["group_creation_group_fields"] = [{"code": code, "label": group_field_label_by_code.get(code, code)} for code in active_group_by]
-
-        group_resolution_codes = list(dict.fromkeys(list(active_group_by) + list(partition_codes)))
-        group_resolution_builtin_fields = [code for code in group_resolution_codes if hasattr(Inscripcio, code)]
-        records_for_group_resolution_qs = annotate_inscripcions_queryset_for_group_codes(filtered_qs, self.competicio, group_resolution_codes)
-        records_for_group_resolution = list(
-            records_for_group_resolution_qs.order_by("ordre_sortida", "id").only("id", "extra", "data_naixement", *group_resolution_builtin_fields)
-        )
-        auto_group_resolution = _resolve_group_creation_buckets(
-            self.competicio,
-            records_for_group_resolution,
-            group_codes=active_group_by,
-            partition_codes=partition_codes,
-            fallback_mode="all_filtered",
-        )
-        auto_group_buckets_raw = (auto_group_resolution.get("buckets") if auto_group_resolution.get("ok") else []) or []
-        auto_group_layers_used = list(auto_group_resolution.get("layers_used") or [])
-        if auto_group_layers_used == ["tabs", "sort"]:
-            auto_group_resolution_label = "Agrupacions x ordenacions"
-        elif auto_group_layers_used == ["tabs"]:
-            auto_group_resolution_label = "Agrupacions actives"
-        elif auto_group_layers_used == ["sort"]:
-            auto_group_resolution_label = "Ordenacions segmentadores"
-        else:
-            auto_group_resolution_label = "Fallback sobre les filtrades"
-        ctx["group_creation_resolution_mode"] = "auto"
-        ctx["group_creation_resolution_layers_used"] = auto_group_layers_used
-        ctx["group_creation_resolution_label"] = auto_group_resolution_label
-        ctx["group_creation_has_resolvable_criteria"] = bool(auto_group_layers_used)
-        ctx["group_creation_auto_buckets"] = [
-            {
-                "key": bucket.get("key"),
-                "label": bucket.get("label"),
-                "count": bucket.get("count"),
-                "sources": bucket.get("sources") or [],
-                "kinds": [str(source.get("kind") or "").strip().lower() for source in (bucket.get("sources") or []) if str(source.get("kind") or "").strip()],
-            }
-            for bucket in auto_group_buckets_raw
-        ]
-        ctx["group_creation_auto_bucket_count"] = len(ctx["group_creation_auto_buckets"])
         derived_group_cfg = get_inscripcions_derived_group_config(self.competicio.inscripcions_view or {})
         ctx["birth_year_range_group_config"] = derived_group_cfg.get(BIRTH_YEAR_RANGE_PARTITION_CODE) or {"ranges": []}
 
@@ -458,26 +392,6 @@ class InscripcionsListNewView(InscripcionsListView):
             for media in media_qs:
                 media_map.setdefault(str(media.inscripcio_id), []).append(_serialize_listing_media_item(media))
         ctx["inscripcio_media_map"] = media_map
-
-        all_ins_qs = Inscripcio.objects.filter(competicio=self.competicio).order_by("ordre_sortida", "id").only(
-            "id",
-            "nom_i_cognoms",
-            "entitat",
-            "subcategoria",
-            "sexe",
-        )
-        media_match_options = []
-        for ins in all_ins_qs:
-            ent = str(getattr(ins, "entitat", "") or "").strip()
-            sub = str(getattr(ins, "subcategoria", "") or "").strip()
-            sexe = str(getattr(ins, "sexe", "") or "").strip()
-            extras = [item for item in [ent, sub, sexe] if item]
-            label = str(getattr(ins, "nom_i_cognoms", "") or "").strip()
-            if extras:
-                label = f"{label} ({' · '.join(extras)})"
-            media_match_options.append({"id": ins.id, "label": label})
-
-        ctx["media_match_inscripcions_options"] = media_match_options
         ctx["media_matching_config"] = _get_listing_media_matching_config(self.competicio)
         ctx["history_state"] = get_inscripcions_history_state(self.request, self.competicio.id)
         ctx["inscripcions_page_boot"] = {
@@ -566,7 +480,6 @@ class InscripcionsListNewView(InscripcionsListView):
             },
             "initial": {
                 "historyState": ctx["history_state"],
-                "mediaMatchInscripcionsOptions": media_match_options,
                 "mediaMatchingConfig": ctx["media_matching_config"],
                 "birthYearRangeGroupConfig": ctx["birth_year_range_group_config"],
             },

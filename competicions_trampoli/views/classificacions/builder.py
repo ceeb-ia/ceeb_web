@@ -24,7 +24,7 @@ from ...services.classificacions.builder import (
     get_equip_context_payload,
     get_team_context_capabilities,
     is_fk,
-    sanitize_schema_for_builder,
+    prepare_schema_for_builder_hydration,
 )
 from ...services.classificacions.compute import DEFAULT_SCHEMA, compute_classificacio
 from ...services.classificacions.partitions import normalize_schema_legacy_team_birth_partition
@@ -218,7 +218,7 @@ class ClassificacionsHome(TemplateView):
                 persist=False,
             )
             status = build_cfg_status(competicio, cfg.tipus, display_schema)
-            builder_schema = sanitize_schema_for_builder(competicio, display_schema, tipus=cfg.tipus)
+            builder_schema = prepare_schema_for_builder_hydration(competicio, display_schema, tipus=cfg.tipus)
             cfg_payload.append(
                 {
                     "id": cfg.id,

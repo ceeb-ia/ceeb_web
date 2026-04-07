@@ -240,4 +240,26 @@
 
 {% include "competicio/inscripcions/scripts/_groups_preview.html" %}
 {% include "competicio/_groups_workspace_script.html" %}
+(function () {
+  'use strict';
+
+  const API = window.InscripcionsApp;
+  if (!API) return;
+
+  document.addEventListener('inscripcions:panel-activated', (event) => {
+    const panelKey = String(event?.detail?.panelKey || '').trim();
+    if (panelKey !== 'grups') return;
+    API.runOnceForPanel('grups', async () => {
+      if (typeof window.initGroupsWorkspace === 'function') {
+        await window.initGroupsWorkspace();
+      }
+      if (typeof window.initGroupsPanel === 'function') {
+        window.initGroupsPanel();
+      }
+      return window.__groupsWorkspaceApi || window.__groupsPreviewApi || null;
+    }).catch((error) => {
+      API.showAlert(error?.message || error);
+    });
+  });
+})();
 </script>

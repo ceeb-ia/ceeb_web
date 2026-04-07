@@ -286,6 +286,11 @@ class EquipPreviewUiTests(_BaseTrampoliDataMixin, TestCase):
         self.assertContains(response, 'id="team-preview-existing-list"')
         self.assertContains(response, 'id="team-preview-list"')
         self.assertContains(response, 'id="team-context-unassigned-dropzone"')
+        self.assertContains(response, 'id="team-board-filter-q"')
+        self.assertContains(response, 'id="team-board-filter-categoria"')
+        self.assertContains(response, 'id="team-board-filter-count"')
+        self.assertContains(response, 'id="btn-team-board-filters-toggle"')
+        self.assertContains(response, 'id="team-board-filters-panel"')
         self.assertContains(response, "Flux complet d'equips")
 
     def test_inscripcions_list_renders_team_context_metric_anchors(self):

@@ -1,6 +1,9 @@
-(function(){
+window.initSeriesWorkspace = async function () {
+  if (window.__seriesWorkspaceInitialized) return window.__seriesWorkspaceApi || null;
+
   const shell = document.getElementById('series-workspace-shell');
-  if (!shell) return;
+  if (!shell) return null;
+  window.__seriesWorkspaceInitialized = true;
 
   const workspaceUrl = "{% url 'inscripcions_series_equips_workspace' competicio.id %}";
   const detailUrl = "{% url 'inscripcions_series_equips_detail' competicio.id %}";
@@ -934,8 +937,20 @@
     await refreshWorkspace({ preservePage: true });
   });
 
+  window.__seriesWorkspaceApi = {
+    refresh: refreshWorkspace,
+    getState: () => ({
+      compAparellId: state.compAparellId,
+      selectedIds: selectedIds(),
+      filters: { ...state.filters },
+    }),
+  };
+
   updateSelectionSummary();
-  refreshWorkspace({ preservePage: false }).catch((error) => {
+  try {
+    await refreshWorkspace({ preservePage: false });
+  } catch (error) {
     setText('series-candidates-status', error?.message || String(error));
-  });
-})();
+  }
+  return window.__seriesWorkspaceApi;
+};

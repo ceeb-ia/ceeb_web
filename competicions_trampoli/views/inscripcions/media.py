@@ -273,6 +273,7 @@ def inscripcions_media_match_preview(request, pk):
     candidates = build_inscripcio_media_match_candidates(inscripcions)
     cfg = _get_media_matching_config(competicio)
     rows = match_media_files_to_inscripcions(files, candidates, config=cfg, top_k=3)
+    inscripcions_options = [{"id": cand.inscripcio_id, "label": cand.label} for cand in candidates]
 
     auto_count = len([row for row in rows if row.get("status") == "auto"])
     review_count = len([row for row in rows if row.get("status") == "review"])
@@ -288,6 +289,7 @@ def inscripcions_media_match_preview(request, pk):
                 "unmatched": unmatched_count,
             },
             "config": cfg,
+            "inscripcions_options": inscripcions_options,
         }
     )
 

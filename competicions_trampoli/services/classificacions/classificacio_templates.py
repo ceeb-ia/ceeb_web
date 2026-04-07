@@ -1259,6 +1259,98 @@ def collect_global_builder_legacy_keys(schema_tpl, *, allowed_particio_codes, al
     return legacy_particio_codes, legacy_filter_keys
 
 
+def _global_builder_known_merge_shape():
+    return {
+        "particions": None,
+        "particions_v2": None,
+        "particions_custom": None,
+        "particions_config": None,
+        "filtres": None,
+        "puntuacio": {
+            "camp": None,
+            "agregacio": None,
+            "best_n": None,
+            "exercicis": {
+                "mode": None,
+                "index": None,
+                "ids": None,
+                "best_n": None,
+                "max_per_participant": None,
+            },
+            "exercicis_best_n": None,
+            "mode_seleccio_exercicis": None,
+            "exercicis_per_aparell": None,
+            "aparells": {"mode": None, "ids": None},
+            "camps_per_aparell": None,
+            "agregacio_camps": None,
+            "agregacio_exercicis": None,
+            "agregacio_aparells": None,
+            "mode_resultat_aparells": None,
+            "exercise_selection_scope": None,
+            "victories": {
+                "punts_victoria": None,
+                "punts_empat": None,
+                "sense_nota_mode": None,
+                "mode_camps": None,
+                "mode_exercicis": None,
+                "mode_seleccio_exercicis_camps_separats": None,
+                "agregacio_victories_camps": None,
+                "agregacio_victories_exercicis": None,
+                "desempat_comparacio": None,
+            },
+            "ordre": None,
+        },
+        "desempat": None,
+        "presentacio": {
+            "top_n": None,
+            "mostrar_empats": None,
+            "columnes": None,
+            "detall": {
+                "enabled": None,
+                "default_open": None,
+                "sections": None,
+                "columnes": None,
+            },
+        },
+        "equips": {
+            "context_code": None,
+            "team_mode": None,
+            "mode_resolution": {
+                "resolved_at": None,
+                "eligible_team_app_ids_at_save": None,
+            },
+            "assignment_source": {
+                "mode": None,
+                "context_code": None,
+                "fallback": None,
+            },
+            "incloure_sense_equip": None,
+            "particions_manuals": None,
+            "particio_edat": {
+                "activa": None,
+                "llindars": None,
+                "sense_data_label": None,
+            },
+            "combinar_manual_i_edat": None,
+        },
+    }
+
+
+def _merge_unknown_builder_keys(existing_value, updated_value, known_shape):
+    if not isinstance(existing_value, dict) or not isinstance(updated_value, dict) or not isinstance(known_shape, dict):
+        return json_clone(updated_value)
+
+    merged = json_clone(updated_value)
+    for key, existing_child in existing_value.items():
+        if key in updated_value:
+            if isinstance(existing_child, dict) and isinstance(updated_value.get(key), dict) and isinstance(known_shape.get(key), dict):
+                merged[key] = _merge_unknown_builder_keys(existing_child, updated_value.get(key), known_shape.get(key))
+            continue
+        if key not in known_shape:
+            merged[key] = json_clone(existing_child)
+    return merged
+
+
 def merge_global_builder_schema(existing_schema_tpl, updated_schema_tpl, *, allowed_particio_codes, allowed_filter_keys=None):
     existing = normalize_particions_schema(extract_template_schema(existing_schema_tpl))
     updated = normalize_particions_schema(updated_schema_tpl or {})
@@ -1302,7 +1394,11 @@ def merge_global_builder_schema(existing_schema_tpl, updated_schema_tpl, *, allo
                 updated_filters[key_txt] = json_clone(value)
     merged["filtres"] = updated_filters
 
-    return merged
+    return _merge_unknown_builder_keys(
+        existing,
+        merged,
+        _global_builder_known_merge_shape(),
+    )
 
 
 def build_global_aparell_field_options(aparells, field_meta_builder):

@@ -89,6 +89,7 @@ from ..services.classificacions.builder import scoreable_codes_by_app_id as _sco
 from ..services.classificacions.compute import DEFAULT_SCHEMA, compute_classificacio
 from ..services.classificacions.export import _normalize_excel_cell
 from ..services.classificacions.partitions import normalize_schema_legacy_team_birth_partition
+from ..services.classificacions.runtime import prepare_schema_for_persistence
 from ..services.classificacions.validation import (
     build_metric_meta_for_comp_aparell as _build_metric_meta_for_comp_aparell,
     build_scoreable_meta_for_schema as _build_scoreable_meta_for_schema,
@@ -2667,7 +2668,7 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(metric_cell["_kind"], "team_raw_detail")
         self.assertEqual(metric_cell["summary"], 31.0)
 
-    def test_compute_classificacio_native_team_team_members_table_exposes_member_rows(self):
+    def test_compute_classificacio_native_team_team_members_table_uses_fixed_exercise_when_configured(self):
         self.comp_app.nombre_exercicis = 2
         self.comp_app.save(update_fields=["nombre_exercicis"])
         ScoringSchema.objects.create(
@@ -2737,6 +2738,7 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
                                         "decimals": 2,
                                         "source": {
                                             "aparell_id": self.comp_app.id,
+                                            "exercise_mode": "fixed",
                                             "exercici": 1,
                                             "camp": "E",
                                             "jutges": {"ids": []},
@@ -2761,6 +2763,98 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual([section["type"] for section in detail["sections"]], ["team_members_table"])
         members_table = detail["sections"][0]
         self.assertEqual([item["participant"] for item in members_table["rows"]], ["Maria", "Laia"])
+        self.assertEqual([item["cells"]["member_exec"] for item in members_table["rows"]], [7.1, 7.0])
+
+    def test_compute_classificacio_native_team_team_members_table_uses_selected_exercises_for_legacy_schema_without_exercise_mode(self):
+        self.comp_app.nombre_exercicis = 2
+        self.comp_app.save(update_fields=["nombre_exercicis"])
+        ScoringSchema.objects.create(
+            aparell=self.app,
+            schema={
+                "meta": {"subject_mode": "team_context", "expected_team_size": 2},
+                "fields": [
+                    {"code": "SYNC", "label": "Sync", "type": "number", "scope": "shared"},
+                    {"code": "E", "label": "Exec", "type": "number", "scope": "member"},
+                ],
+                "computed": [],
+            },
+        )
+        team_subject, _subject_meta = self._team_subject()
+        TeamScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            team_subject=team_subject,
+            exercici=1,
+            inputs={"SYNC": 6.5, "E": {str(self.ins1.id): 7.1, str(self.ins2.id): 7.0}},
+            outputs={},
+            total=20,
+        )
+        TeamScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            team_subject=team_subject,
+            exercici=2,
+            inputs={"SYNC": 7.4, "E": {str(self.ins1.id): 8.3, str(self.ins2.id): 8.1}},
+            outputs={},
+            total=30,
+        )
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Native member detail selected",
+            activa=True,
+            ordre=1,
+            tipus="equips",
+            schema={
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [self.comp_app.id]},
+                    "camps_per_aparell": {str(self.comp_app.id): ["total"]},
+                    "agregacio_camps": "sum",
+                    "exercicis": {"mode": "millor_n", "best_n": 1},
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "ordre": "desc",
+                },
+                "presentacio": {
+                    "columnes": [
+                        {"type": "builtin", "key": "participant", "label": "Nom", "align": "left"},
+                    ],
+                    "detall": {
+                        "enabled": True,
+                        "sections": [
+                            {
+                                "type": "team_members_table",
+                                "label": "Notes per membre",
+                                "aparell_id": self.comp_app.id,
+                                "columns": [
+                                    {
+                                        "type": "raw",
+                                        "key": "member_exec",
+                                        "label": "Exec",
+                                        "align": "right",
+                                        "decimals": 2,
+                                        "source": {
+                                            "aparell_id": self.comp_app.id,
+                                            "exercici": 1,
+                                            "camp": "E",
+                                            "jutges": {"ids": []},
+                                        },
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                },
+                "equips": {
+                    "context_code": "parelles",
+                    "team_mode": "native_team",
+                    "incloure_sense_equip": False,
+                },
+            },
+        )
+
+        rows = compute_classificacio(self.comp, cfg).get("global", [])
+
+        members_table = rows[0]["detail"]["sections"][0]
         self.assertEqual([item["cells"]["member_exec"] for item in members_table["rows"]], [8.3, 8.1])
 
     def test_compute_classificacio_native_team_team_members_table_keeps_member_judge_rows(self):
@@ -2863,6 +2957,256 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
                 {"judge": 2, "items": [8.0, 8.3]},
             ],
         )
+
+    def test_compute_classificacio_native_team_team_members_table_resolves_member_computed_outputs_by_subject_slot(self):
+        ScoringSchema.objects.create(
+            aparell=self.app,
+            schema={
+                "meta": {"subject_mode": "team_context", "expected_team_size": 2},
+                "fields": [
+                    {"code": "E", "label": "Exec", "type": "number", "scope": "member"},
+                ],
+                "computed": [
+                    {"code": "E_mem", "label": "Exec neta", "formula": "E__m1 if 1 else E__m2"},
+                ],
+            },
+        )
+        team_subject, _subject_meta = self._team_subject()
+        team_subject.member_ids = [self.ins2.id, self.ins1.id]
+        team_subject.save(update_fields=["member_ids"])
+        TeamScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            team_subject=team_subject,
+            exercici=1,
+            inputs={"E": {str(self.ins1.id): 8.2, str(self.ins2.id): 8.1}},
+            outputs={"E_mem__m1": 5.4, "E_mem__m2": 9.7},
+            total=30,
+        )
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Native member computed detail",
+            activa=True,
+            ordre=1,
+            tipus="equips",
+            schema={
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [self.comp_app.id]},
+                    "camps_per_aparell": {str(self.comp_app.id): ["total"]},
+                    "agregacio_camps": "sum",
+                    "exercicis": {"mode": "tots"},
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "ordre": "desc",
+                },
+                "presentacio": {
+                    "columnes": [
+                        {"type": "builtin", "key": "participant", "label": "Nom", "align": "left"},
+                    ],
+                    "detall": {
+                        "enabled": True,
+                        "sections": [
+                            {
+                                "type": "team_members_table",
+                                "label": "Notes per membre",
+                                "aparell_id": self.comp_app.id,
+                                "columns": [
+                                    {
+                                        "type": "raw",
+                                        "key": "member_exec_net",
+                                        "label": "Exec neta",
+                                        "align": "right",
+                                        "decimals": 2,
+                                        "source": {
+                                            "aparell_id": self.comp_app.id,
+                                            "exercise_mode": "fixed",
+                                            "exercici": 1,
+                                            "camp": "E_mem",
+                                            "jutges": {"ids": []},
+                                        },
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                },
+                "equips": {
+                    "context_code": "parelles",
+                    "team_mode": "native_team",
+                    "incloure_sense_equip": False,
+                },
+            },
+        )
+
+        rows = compute_classificacio(self.comp, cfg).get("global", [])
+
+        members_table = rows[0]["detail"]["sections"][0]
+        self.assertEqual([item["participant"] for item in members_table["rows"]], ["Maria", "Laia"])
+        self.assertEqual([item["cells"]["member_exec_net"] for item in members_table["rows"]], [9.7, 5.4])
+
+    def test_compute_classificacio_native_team_team_members_table_falls_back_to_row_order_for_inconsistent_subject_slots(self):
+        ScoringSchema.objects.create(
+            aparell=self.app,
+            schema={
+                "meta": {"subject_mode": "team_context", "expected_team_size": 2},
+                "fields": [
+                    {"code": "E", "label": "Exec", "type": "number", "scope": "member"},
+                ],
+                "computed": [],
+            },
+        )
+        team_subject, _subject_meta = self._team_subject()
+        team_subject.member_ids = [self.ins1.id, self.ins2.id, self.ins2.id]
+        team_subject.save(update_fields=["member_ids"])
+        TeamScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            team_subject=team_subject,
+            exercici=1,
+            inputs={},
+            outputs={"E__m1": 6.2, "E__m2": 6.4},
+            total=30,
+        )
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Native member fallback order detail",
+            activa=True,
+            ordre=1,
+            tipus="equips",
+            schema={
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [self.comp_app.id]},
+                    "camps_per_aparell": {str(self.comp_app.id): ["total"]},
+                    "agregacio_camps": "sum",
+                    "exercicis": {"mode": "tots"},
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "ordre": "desc",
+                },
+                "presentacio": {
+                    "columnes": [
+                        {"type": "builtin", "key": "participant", "label": "Nom", "align": "left"},
+                    ],
+                    "detall": {
+                        "enabled": True,
+                        "sections": [
+                            {
+                                "type": "team_members_table",
+                                "label": "Notes per membre",
+                                "aparell_id": self.comp_app.id,
+                                "columns": [
+                                    {
+                                        "type": "raw",
+                                        "key": "member_exec",
+                                        "label": "Exec",
+                                        "align": "right",
+                                        "decimals": 2,
+                                        "source": {
+                                            "aparell_id": self.comp_app.id,
+                                            "exercise_mode": "fixed",
+                                            "exercici": 1,
+                                            "camp": "E",
+                                            "jutges": {"ids": []},
+                                        },
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                },
+                "equips": {
+                    "context_code": "parelles",
+                    "team_mode": "native_team",
+                    "incloure_sense_equip": False,
+                },
+            },
+        )
+
+        rows = compute_classificacio(self.comp, cfg).get("global", [])
+
+        members_table = rows[0]["detail"]["sections"][0]
+        self.assertEqual([item["cells"]["member_exec"] for item in members_table["rows"]], [6.2, 6.4])
+
+    def test_compute_classificacio_native_team_team_members_table_keeps_blank_when_member_value_missing(self):
+        ScoringSchema.objects.create(
+            aparell=self.app,
+            schema={
+                "meta": {"subject_mode": "team_context", "expected_team_size": 2},
+                "fields": [
+                    {"code": "E", "label": "Exec", "type": "number", "scope": "member"},
+                ],
+                "computed": [],
+            },
+        )
+        team_subject, _subject_meta = self._team_subject()
+        TeamScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            team_subject=team_subject,
+            exercici=1,
+            inputs={"E": {str(self.ins1.id): 6.2}},
+            outputs={},
+            total=30,
+        )
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Native member missing detail",
+            activa=True,
+            ordre=1,
+            tipus="equips",
+            schema={
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [self.comp_app.id]},
+                    "camps_per_aparell": {str(self.comp_app.id): ["total"]},
+                    "agregacio_camps": "sum",
+                    "exercicis": {"mode": "tots"},
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "ordre": "desc",
+                },
+                "presentacio": {
+                    "columnes": [
+                        {"type": "builtin", "key": "participant", "label": "Nom", "align": "left"},
+                    ],
+                    "detall": {
+                        "enabled": True,
+                        "sections": [
+                            {
+                                "type": "team_members_table",
+                                "label": "Notes per membre",
+                                "aparell_id": self.comp_app.id,
+                                "columns": [
+                                    {
+                                        "type": "raw",
+                                        "key": "member_exec",
+                                        "label": "Exec",
+                                        "align": "right",
+                                        "decimals": 2,
+                                        "source": {
+                                            "aparell_id": self.comp_app.id,
+                                            "exercise_mode": "fixed",
+                                            "exercici": 1,
+                                            "camp": "E",
+                                            "jutges": {"ids": []},
+                                        },
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                },
+                "equips": {
+                    "context_code": "parelles",
+                    "team_mode": "native_team",
+                    "incloure_sense_equip": False,
+                },
+            },
+        )
+
+        rows = compute_classificacio(self.comp, cfg).get("global", [])
+
+        members_table = rows[0]["detail"]["sections"][0]
+        self.assertEqual([item["cells"]["member_exec"] for item in members_table["rows"]], [6.2, ""])
 
     def test_compute_classificacio_individual_detail_sections_include_exercise_table(self):
         ind_app = self._create_aparell("TR_DETAIL_EX", "Tramp detail exercises")
@@ -3978,6 +4322,283 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
         )
 
         self.assertEqual(errors, [])
+
+    def test_classificacio_validation_accepts_native_team_team_members_table_fixed_exercise_mode(self):
+        ScoringSchema.objects.create(
+            aparell=self.app,
+            schema={
+                "meta": {"subject_mode": "team_context", "expected_team_size": 2},
+                "fields": [
+                    {"code": "SYNC", "label": "Sync", "type": "number", "scope": "shared"},
+                    {"code": "E", "label": "Exec", "type": "number", "scope": "member"},
+                ],
+                "computed": [],
+            },
+        )
+
+        _schema, errors = _validate_schema_for_competicio(
+            self.comp,
+            {
+                **self._native_team_schema_with_tie({"camps": ["TOTAL"], "ordre": "desc"}),
+                "presentacio": {
+                    "detall": {
+                        "enabled": True,
+                        "sections": [
+                            {
+                                "type": "team_members_table",
+                                "label": "Notes per membre",
+                                "aparell_id": self.comp_app.id,
+                                "columns": [
+                                    {
+                                        "type": "raw",
+                                        "key": "member_exec",
+                                        "label": "Exec",
+                                        "align": "right",
+                                        "decimals": 3,
+                                        "source": {
+                                            "aparell_id": self.comp_app.id,
+                                            "exercise_mode": "fixed",
+                                            "exercici": 1,
+                                            "camp": "E",
+                                            "jutges": {"ids": []},
+                                        },
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                },
+            },
+            tipus="equips",
+        )
+
+        self.assertEqual(errors, [])
+
+    def test_classificacio_validation_legacy_team_members_table_ignores_exercici_when_mode_missing(self):
+        self.comp_app.nombre_exercicis = 2
+        self.comp_app.save(update_fields=["nombre_exercicis"])
+        ScoringSchema.objects.create(
+            aparell=self.app,
+            schema={
+                "meta": {"subject_mode": "team_context", "expected_team_size": 2},
+                "fields": [
+                    {"code": "SYNC", "label": "Sync", "type": "number", "scope": "shared"},
+                    {"code": "E", "label": "Exec", "type": "number", "scope": "member"},
+                ],
+                "computed": [],
+            },
+        )
+
+        _schema, errors = _validate_schema_for_competicio(
+            self.comp,
+            {
+                **self._native_team_schema_with_tie({"camps": ["TOTAL"], "ordre": "desc"}),
+                "presentacio": {
+                    "detall": {
+                        "enabled": True,
+                        "sections": [
+                            {
+                                "type": "team_members_table",
+                                "label": "Notes per membre",
+                                "aparell_id": self.comp_app.id,
+                                "columns": [
+                                    {
+                                        "type": "raw",
+                                        "key": "member_exec",
+                                        "label": "Exec",
+                                        "align": "right",
+                                        "decimals": 3,
+                                        "source": {
+                                            "aparell_id": self.comp_app.id,
+                                            "exercici": 99,
+                                            "camp": "E",
+                                            "jutges": {"ids": []},
+                                        },
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                },
+            },
+            tipus="equips",
+        )
+
+        self.assertEqual(errors, [])
+
+    def test_classificacio_validation_rejects_native_team_team_members_table_invalid_exercise_mode(self):
+        ScoringSchema.objects.create(
+            aparell=self.app,
+            schema={
+                "meta": {"subject_mode": "team_context", "expected_team_size": 2},
+                "fields": [
+                    {"code": "SYNC", "label": "Sync", "type": "number", "scope": "shared"},
+                    {"code": "E", "label": "Exec", "type": "number", "scope": "member"},
+                ],
+                "computed": [],
+            },
+        )
+
+        _schema, errors = _validate_schema_for_competicio(
+            self.comp,
+            {
+                **self._native_team_schema_with_tie({"camps": ["TOTAL"], "ordre": "desc"}),
+                "presentacio": {
+                    "detall": {
+                        "enabled": True,
+                        "sections": [
+                            {
+                                "type": "team_members_table",
+                                "label": "Notes per membre",
+                                "aparell_id": self.comp_app.id,
+                                "columns": [
+                                    {
+                                        "type": "raw",
+                                        "key": "member_exec",
+                                        "label": "Exec",
+                                        "align": "right",
+                                        "decimals": 3,
+                                        "source": {
+                                            "aparell_id": self.comp_app.id,
+                                            "exercise_mode": "broken",
+                                            "camp": "E",
+                                            "jutges": {"ids": []},
+                                        },
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                },
+            },
+            tipus="equips",
+        )
+
+        self.assertTrue(any("exercise_mode invalid" in err for err in errors))
+
+    def test_prepare_schema_for_persistence_preserves_team_members_table_exercise_mode(self):
+        ScoringSchema.objects.create(
+            aparell=self.app,
+            schema={
+                "meta": {"subject_mode": "team_context", "expected_team_size": 2},
+                "fields": [
+                    {"code": "SYNC", "label": "Sync", "type": "number", "scope": "shared"},
+                    {"code": "E", "label": "Exec", "type": "number", "scope": "member"},
+                ],
+                "computed": [],
+            },
+        )
+        schema = {
+            **self._native_team_schema_with_tie({"camps": ["TOTAL"], "ordre": "desc"}),
+            "presentacio": {
+                "detall": {
+                    "enabled": True,
+                    "sections": [
+                        {
+                            "type": "team_members_table",
+                            "label": "Notes per membre",
+                            "aparell_id": self.comp_app.id,
+                            "columns": [
+                                {
+                                    "type": "raw",
+                                    "key": "member_exec",
+                                    "label": "Exec",
+                                    "align": "right",
+                                    "decimals": 3,
+                                    "source": {
+                                        "aparell_id": self.comp_app.id,
+                                        "exercise_mode": "fixed",
+                                        "exercici": 1,
+                                        "camp": "E",
+                                        "jutges": {"ids": []},
+                                    },
+                                },
+                            ],
+                        },
+                    ],
+                },
+            },
+            "equips": {
+                "context_code": "parelles",
+                "assignment_source": {"mode": "context", "context_code": "parelles", "fallback": "native"},
+                "team_mode": "native_team",
+                "incloure_sense_equip": False,
+            },
+        }
+
+        prepared = prepare_schema_for_persistence(self.comp, schema, tipus="equips")
+
+        self.assertEqual(prepared["errors"], [])
+        col_source = (((((prepared["schema"] or {}).get("presentacio") or {}).get("detall") or {}).get("sections") or [])[0]["columns"][0]["source"])
+        self.assertEqual(col_source.get("exercise_mode"), "fixed")
+        self.assertNotIn("has_explicit_exercici", col_source)
+
+    def test_competition_template_roundtrip_preserves_team_members_table_exercise_mode(self):
+        ScoringSchema.objects.create(
+            aparell=self.app,
+            schema={
+                "meta": {"subject_mode": "team_context", "expected_team_size": 2},
+                "fields": [
+                    {"code": "SYNC", "label": "Sync", "type": "number", "scope": "shared"},
+                    {"code": "E", "label": "Exec", "type": "number", "scope": "member"},
+                ],
+                "computed": [],
+            },
+        )
+        schema = {
+            **self._native_team_schema_with_tie({"camps": ["TOTAL"], "ordre": "desc"}),
+            "presentacio": {
+                "detall": {
+                    "enabled": True,
+                    "sections": [
+                        {
+                            "type": "team_members_table",
+                            "label": "Notes per membre",
+                            "aparell_id": self.comp_app.id,
+                            "columns": [
+                                {
+                                    "type": "raw",
+                                    "key": "member_exec",
+                                    "label": "Exec",
+                                    "align": "right",
+                                    "decimals": 3,
+                                    "source": {
+                                        "aparell_id": self.comp_app.id,
+                                        "exercise_mode": "fixed",
+                                        "exercici": 1,
+                                        "camp": "E",
+                                        "jutges": {"ids": []},
+                                    },
+                                },
+                            ],
+                        },
+                    ],
+                },
+            },
+            "equips": {
+                "context_code": "parelles",
+                "assignment_source": {"mode": "context", "context_code": "parelles", "fallback": "native"},
+                "team_mode": "native_team",
+                "incloure_sense_equip": False,
+            },
+        }
+
+        schema_tpl, warnings = _schema_to_template_schema(self.comp, schema)
+        self.assertEqual(warnings, [])
+        tpl_source = (((schema_tpl.get("presentacio") or {}).get("detall") or {}).get("sections") or [])[0]["columns"][0]["source"]
+        self.assertEqual(tpl_source.get("exercise_mode"), "fixed")
+        self.assertNotIn("has_explicit_exercici", tpl_source)
+
+        schema_roundtrip, compat_warnings, mapping, compat_meta = _template_schema_to_competicio_schema_service(
+            self.comp,
+            schema_tpl,
+        )
+        self.assertEqual(mapping.get(self.app.codi), self.comp_app.id)
+        self.assertEqual(compat_warnings, [])
+        self.assertFalse(compat_meta.get("adaptable"))
+        roundtrip_source = (((schema_roundtrip.get("presentacio") or {}).get("detall") or {}).get("sections") or [])[0]["columns"][0]["source"]
+        self.assertEqual(roundtrip_source.get("exercise_mode"), "fixed")
+        self.assertNotIn("has_explicit_exercici", roundtrip_source)
 
     def test_classificacio_validation_accepts_native_team_team_members_table_display_only_member_field(self):
         ScoringSchema.objects.create(

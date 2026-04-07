@@ -737,6 +737,7 @@
               <div class="col-12 col-md-6 mb-3">
                 <label class="small text-muted mb-1">Context d'equips</label>
                 <select class="form-control form-control-sm" id="eqAssignmentContext"></select>
+                <div class="small text-muted mt-1" id="eqAssignmentContextHint"></div>
               </div>
               <div class="col-12 col-md-6 mb-3" id="eqTeamModeWrap" style="display:none;">
                 <label class="small text-muted mb-1">Mode d'equips</label>
@@ -1427,6 +1428,7 @@
     btnAdd: document.getElementById("btnAdd"),
     btnSave: document.getElementById("btnSave"),
     btnDelete: document.getElementById("btnDelete"),
+    saveMsg: document.getElementById("saveMsg"),
     saveErrorsBox: document.getElementById("saveErrorsBox"),
     backToTop: document.getElementById("classif-builder-back-to-top"),
     templateSelect: document.getElementById("templateSelect"),
@@ -1459,6 +1461,7 @@
     equipMetaBox: document.getElementById("equipMetaBox"),
     equipCfgBox: document.getElementById("equipCfgBox"),
     eqAssignmentContext: document.getElementById("eqAssignmentContext"),
+    eqAssignmentContextHint: document.getElementById("eqAssignmentContextHint"),
     eqTeamModeWrap: document.getElementById("eqTeamModeWrap"),
     eqTeamMode: document.getElementById("eqTeamMode"),
     eqTeamModeHint: document.getElementById("eqTeamModeHint"),
@@ -1671,6 +1674,10 @@
   }
 
   function clearBuilderSaveFeedback() {
+    if (els.saveMsg) {
+      els.saveMsg.style.display = "none";
+      els.saveMsg.textContent = "";
+    }
     if (els.saveErrorsBox) {
       els.saveErrorsBox.style.display = "none";
       els.saveErrorsBox.innerHTML = "";
@@ -1678,6 +1685,34 @@
     document.querySelectorAll(".builder-error-note").forEach(node => node.remove());
     document.querySelectorAll(".builder-error-target").forEach(node => node.classList.remove("builder-error-target"));
     document.querySelectorAll(".builder-section.has-error").forEach(node => node.classList.remove("has-error"));
+  }
+
+  function showBuilderSaveSuccessFeedback(message) {
+    if (!els.saveMsg) return;
+    els.saveMsg.textContent = String(message || "Guardat correctament");
+    els.saveMsg.style.display = "";
+    els.saveMsg.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  function setSaveButtonBusy(isBusy, done = false) {
+    if (!els.btnSave) return;
+    if (!els.btnSave.dataset.defaultLabel) {
+      els.btnSave.dataset.defaultLabel = els.btnSave.textContent || "Guardar";
+    }
+    if (isBusy) {
+      els.btnSave.disabled = true;
+      els.btnSave.textContent = "Guardant...";
+      return;
+    }
+    els.btnSave.disabled = false;
+    els.btnSave.textContent = done ? "Guardat" : (els.btnSave.dataset.defaultLabel || "Guardar");
+    if (done) {
+      window.setTimeout(() => {
+        if (!els.btnSave.disabled) {
+          els.btnSave.textContent = els.btnSave.dataset.defaultLabel || "Guardar";
+        }
+      }, 1800);
+    }
   }
 
   function builderSectionIdFromErrorPath(path) {
@@ -2447,6 +2482,7 @@
   }
 
   function getAppChoices(extraIds, opts = {}) {
+    const includeStale = opts.includeStale !== false;
     const seen = new Set();
     const out = [];
     const uiState = getEquipsUiState();
@@ -2472,6 +2508,19 @@
       seen.add(String(id));
       out.push({ id, nom: String(a.nom || `Aparell ${id}`), stale: false });
     });
+    if (includeStale) {
+      _uniquePositiveInts(extraIds).forEach(id => {
+        if (seen.has(String(id))) return;
+        seen.add(String(id));
+        const app = getAparellById(id);
+        out.push({
+          id,
+          nom: String(app?.nom || `Aparell ${id}`),
+          stale: true,
+          injected: true,
+        });
+      });
+    }
     return out;
   }
 
@@ -2483,7 +2532,7 @@
       col.innerHTML = `
         <div class="form-check">
           <input class="form-check-input" type="checkbox" id="app_${a.id}" value="${esc(a.id)}">
-          <label class="form-check-label" for="app_${a.id}">${esc(a.nom)}</label>
+          <label class="form-check-label" for="app_${a.id}">${esc(a.nom)}${a.stale ? ' <span class="text-muted">(no disponible)</span>' : ""}</label>
         </div>`;
       els.apChkList.appendChild(col);
     });
@@ -2523,13 +2572,26 @@
       seen.add(code);
       out.push({ ...item, code });
     });
+    (Array.isArray(selectedValues) ? selectedValues : []).forEach(value => {
+      const code = String(value ?? "").trim();
+      if (!code || seen.has(code)) return;
+      seen.add(code);
+      out.push({
+        code,
+        value: code,
+        label: typeof labelBuilder === "function" ? labelBuilder(code) : code,
+        stale: true,
+        injected: true,
+      });
+    });
     return out;
   }
 
   function perAppFieldsHTML(compAparellId, selectedCodes){
     const opts = extendOptionsWithSelectedValues(
       (APARELL_FIELD_OPTIONS[String(compAparellId)] || []).filter(o => !!o?.scoreable),
-      selectedCodes
+      selectedCodes,
+      value => value
     );
     const selected = new Set(
       (selectedCodes || []).map(String).filter(code => opts.some(o => String(o.code) === String(code)))
@@ -2545,9 +2607,9 @@
           const kindLabel = kind === "field" ? "input" : (kind === "computed" ? "computed" : (kind || "camp"));
           const judgesCount = Number(o.judges_count || 1);
           const judgesLabel = judgesCount > 1 ? `, ${judgesCount} jutges` : "";
-          const label = `${o.label} (${o.code}) - ${kindLabel}${judgesLabel}`;
+          const label = `${o.label} (${o.code}) - ${kindLabel}${judgesLabel}${o.stale ? " (no disponible)" : ""}`;
           return `
-          <option value="${esc(o.code)}" ${selected.has(String(o.code)) ? "selected" : ""}>
+          <option value="${esc(o.code)}" ${selected.has(String(o.code)) ? "selected" : ""} ${o.injected ? 'data-injected="1"' : ""} ${o.stale ? 'data-stale="1"' : ""}>
             ${esc(label)}
           </option>
         `;
@@ -2608,8 +2670,8 @@
       <div class="d-flex flex-column gap-1">
         <select class="form-control form-control-sm" data-k="camps" multiple size="6">
           ${opts.map(o => `
-            <option value="${esc(o.code)}" ${selected.has(String(o.code)) ? "selected":""}>
-              ${esc(`${o.label} (${o.code})`)}
+            <option value="${esc(o.code)}" ${selected.has(String(o.code)) ? "selected":""} ${o.injected ? 'data-injected="1"' : ""} ${o.stale ? 'data-stale="1"' : ""}>
+              ${esc(`${o.label} (${o.code})${o.stale ? " (no disponible)" : ""}`)}
             </option>
           `).join("")}
         </select>
@@ -3625,10 +3687,21 @@
     els.eqAssignmentContext.innerHTML = (EQUIP_CONTEXTS || []).map(ctx => {
       const code = String(ctx.code || "native");
       const label = String(ctx.nom || code);
-      return `<option value="${esc(code)}" ${code === target ? "selected" : ""}>${esc(label)}</option>`;
+      const suffix = code === "native" ? "base" : code;
+      const description = String(ctx.description || "").trim();
+      return `<option value="${esc(code)}" ${code === target ? "selected" : ""} title="${esc(description)}">${esc(label)}${suffix ? ` (${esc(suffix)})` : ""}</option>`;
     }).join("");
-    ensureSelectOption(els.eqAssignmentContext, target, code => `${code} (legacy)`);
+    ensureSelectOption(els.eqAssignmentContext, target, code => `${code} (context no disponible)`);
     els.eqAssignmentContext.value = target;
+    const ctxMeta = (EQUIP_CONTEXTS || []).find(ctx => String(ctx.code || "native") === target);
+    if (els.eqAssignmentContextHint) {
+      if (ctxMeta) {
+        const description = String(ctxMeta.description || "").trim();
+        els.eqAssignmentContextHint.textContent = description || `Context seleccionat: ${String(ctxMeta.nom || target)}`;
+      } else {
+        els.eqAssignmentContextHint.textContent = `Context guardat no disponible actualment: ${target}.`;
+      }
+    }
   }
 
   function usePortableEquipNameRows() {
@@ -3921,6 +3994,16 @@
       const exHint = tr.querySelector('[data-k="ex_hint"]');
       const ordSel = tr.querySelector('[data-k="ordre"]');
 
+      ensureSelectOption(appScopeSel, appScope, value => {
+        if (String(value || "") === "hereta") return "Hereta (puntuació)";
+        if (String(value || "").startsWith("app:")) {
+          const id = Number(String(value || "").split(":")[1]);
+          const app = getAppChoices(Number.isFinite(id) && id > 0 ? [id] : [], { includeStale: true })
+            .find(item => Number(item.id) === id);
+          return `${app?.nom || `Aparell ${id}`}${app?.stale ? " (no disponible)" : ""}`;
+        }
+        return `${value} (legacy)`;
+      });
       appScopeSel.value = appScope;
       ensureSelectOption(ordSel, ordre, value => `${value} (legacy)`);
       ordSel.value = ordre;
@@ -4344,6 +4427,7 @@
       return {
         aparell_id: appId,
         exercici: 1,
+        ...(st === "team_members_table" ? { exercise_mode: "selected" } : {}),
         camp: String(firstField.code || "").trim(),
         jutges: { ids: [] },
       };
@@ -4358,6 +4442,7 @@
       return {
         aparell_id: appId,
         exercici: 1,
+        ...(st === "team_members_table" ? { exercise_mode: "selected" } : {}),
         camp: String(firstField.code || "").trim(),
         jutges: { ids: [] },
       };
@@ -4494,9 +4579,18 @@
             aparell_id: Number.isFinite(Number(src.aparell_id))
               ? Number(src.aparell_id)
               : (Number.isFinite(Number(sectionAppId)) ? Number(sectionAppId) : null),
-            exercici: Math.max(1, Number(src.exercici || 1) || 1),
             camp: String(src.camp || ""),
             jutges: { ids: judgeIds },
+            ...(String(sectionType || "").trim() === "team_members_table"
+              ? {
+                  exercise_mode: String(src.exercise_mode || "").toLowerCase().trim() === "fixed" ? "fixed" : "selected",
+                  ...(String(src.exercise_mode || "").toLowerCase().trim() === "fixed"
+                    ? { exercici: Math.max(1, Number(src.exercici || 1) || 1) }
+                    : {}),
+                }
+              : {
+                  exercici: Math.max(1, Number(src.exercici || 1) || 1),
+                }),
           },
         });
         return;
@@ -4754,8 +4848,9 @@
   }
 
   function buildRawAppOptionsHTML(selectedAppId) {
-    return getAppChoices([], { includeStale: false }).map(app => `
-      <option value="${esc(app.id)}" ${Number(app.id) === Number(selectedAppId) ? "selected" : ""}>${esc(app.nom)}</option>
+    const selected = Number(selectedAppId);
+    return getAppChoices(Number.isFinite(selected) && selected > 0 ? [selected] : [], { includeStale: true }).map(app => `
+      <option value="${esc(app.id)}" ${Number(app.id) === selected ? "selected" : ""} ${app.injected ? 'data-injected="1"' : ""} ${app.stale ? 'data-stale="1"' : ""}>${esc(app.nom)}${app.stale ? " (no disponible)" : ""}</option>
     `).join("");
   }
 
@@ -4786,16 +4881,34 @@
     ].join("");
   }
 
+  function buildTieAppScopeOptionsHTML(selectedScope) {
+    let selectedAppId = null;
+    const scope = String(selectedScope || "hereta");
+    if (scope.startsWith("app:")) {
+      const parsed = Number(scope.split(":")[1]);
+      if (Number.isFinite(parsed) && parsed > 0) selectedAppId = parsed;
+    }
+    const appChoices = getAppChoices(
+      Number.isFinite(selectedAppId) && selectedAppId > 0 ? [selectedAppId] : [],
+      { includeStale: true }
+    );
+    return [
+      `<option value="hereta" ${scope === "hereta" ? "selected" : ""}>Hereta (puntuació)</option>`,
+      ...appChoices.map(app => `<option value="app:${esc(app.id)}" ${scope === `app:${app.id}` ? "selected" : ""} ${app.injected ? 'data-injected="1"' : ""} ${app.stale ? 'data-stale="1"' : ""}>${esc(app.nom)}${app.stale ? " (no disponible)" : ""}</option>`),
+    ].join("");
+  }
+
   function buildRawCampOptionsHTML(appId, selectedCamp, usage = null) {
     const opts = extendOptionsWithSelectedValues(
       filterFieldOptionsForRawUsage(appId, usage),
-      selectedCamp ? [selectedCamp] : []
+      selectedCamp ? [selectedCamp] : [],
+      value => value
     );
     const camp = String(selectedCamp || "").trim();
     return opts.map(o => {
       const jc = Number(o.judges_count || 1);
-      const label = `${o.label} (${o.code})`;
-      return `<option value="${esc(o.code)}" data-judges-count="${esc(jc)}" data-kind="${esc(o.kind || "")}" ${String(o.code) === camp ? "selected" : ""}>${esc(label)}</option>`;
+      const label = `${o.label} (${o.code})${o.stale ? " (no disponible)" : ""}`;
+      return `<option value="${esc(o.code)}" data-judges-count="${esc(jc)}" data-kind="${esc(o.kind || "")}" ${o.injected ? 'data-injected="1"' : ""} ${o.stale ? 'data-stale="1"' : ""} ${String(o.code) === camp ? "selected" : ""}>${esc(label)}</option>`;
     }).join("");
   }
 
@@ -5546,6 +5659,16 @@
     els.detailScopeHint.textContent = "Aquest tipus de classificacio no admet detall desplegable.";
   }
 
+  function refreshTeamMembersTableExerciseControls(row) {
+    if (!row || String(row.dataset.sectionType || "").trim() !== "team_members_table") return;
+    const modeSelect = row.querySelector('[data-k="exercise_mode"]');
+    const exerciseInput = row.querySelector('[data-k="exercici"]');
+    const exerciseWrap = row.querySelector('[data-k="exercise_wrap"]');
+    const mode = String(modeSelect?.value || "selected").trim().toLowerCase() === "fixed" ? "fixed" : "selected";
+    if (exerciseInput) exerciseInput.disabled = mode !== "fixed" || !!modeSelect?.disabled;
+    if (exerciseWrap) exerciseWrap.style.display = mode === "fixed" ? "" : "none";
+  }
+
   function renderDetailSectionColumnsUI(sectionBox, sectionType, rawCols, enabled, sectionIdx, sectionAppId) {
     const cols = normalizeDetailColumnsForSection(rawCols, sectionType, sectionAppId);
     const builtins = detailAllowedBuiltinKeysForSection(sectionType).map(key => {
@@ -5568,7 +5691,16 @@
         const appId = Number(src.aparell_id || sectionAppId || 0);
         const camp = String(src.camp || "");
         const ex = Math.max(1, Number(src.exercici || 1) || 1);
+        const exerciseMode = sectionType === "team_members_table"
+          ? (String(src.exercise_mode || "").trim().toLowerCase() === "fixed" ? "fixed" : "selected")
+          : "";
         const judgeIds = _uniquePositiveInts((((src.jutges || {}).ids) || []));
+        const exerciseModeControl = sectionType === "team_members_table"
+          ? `<div class="col-12 col-md-3 mb-2"><label class="small text-muted mb-1">Mode exercici</label><select class="form-control form-control-sm" data-k="exercise_mode" data-error-path="${esc(colPath + ".source.exercise_mode")}" ${enabled ? "" : "disabled"}><option value="selected" ${exerciseMode === "selected" ? "selected" : ""}>Seguir seleccio de la classificacio</option><option value="fixed" ${exerciseMode === "fixed" ? "selected" : ""}>Forcar exercici concret</option></select></div>`
+          : "";
+        const exerciseControl = sectionType === "team_members_table"
+          ? `<div class="col-12 col-md-2 mb-2" data-k="exercise_wrap" style="${exerciseMode === "fixed" ? "" : "display:none;"}"><label class="small text-muted mb-1">Exercici</label><select class="form-control form-control-sm" data-k="exercici" data-error-path="${esc(colPath + ".source.exercici")}" ${(enabled && exerciseMode === "fixed") ? "" : "disabled"}>${buildExerciciOptionsHTML(appId, ex)}</select></div>`
+          : `<div class="col-12 col-md-2 mb-2"><label class="small text-muted mb-1">Exercici</label><select class="form-control form-control-sm" data-k="exercici" data-error-path="${esc(colPath + ".source.exercici")}" ${enabled ? "" : "disabled"}>${buildExerciciOptionsHTML(appId, ex)}</select></div>`;
         row.innerHTML = `
           <input type="hidden" data-k="app_id" value="${esc(String(appId || ""))}">
           <div class="row">
@@ -5581,7 +5713,8 @@
           </div>
           <div class="row">
             <div class="col-12 col-md-5 mb-2"><label class="small text-muted mb-1">Camp</label><select class="form-control form-control-sm" data-k="camp" data-error-path="${esc(colPath + ".source.camp")}" ${enabled ? "" : "disabled"}>${buildRawCampOptionsHTML(appId, camp, { sectionType })}</select></div>
-            <div class="col-12 col-md-2 mb-2"><label class="small text-muted mb-1">Exercici</label><select class="form-control form-control-sm" data-k="exercici" data-error-path="${esc(colPath + ".source.exercici")}" ${enabled ? "" : "disabled"}>${buildExerciciOptionsHTML(appId, ex)}</select></div>
+            ${exerciseModeControl}
+            ${exerciseControl}
             <div class="col-12 col-md-2 mb-2" data-k="judge_wrap" style="display:none;"><label class="small text-muted mb-1">Jutges</label><select class="form-control form-control-sm" data-k="judge_ids" data-error-path="${esc(colPath + ".source.jutges.ids")}" multiple size="3" ${enabled ? "" : "disabled"}></select></div>
             <div class="col-12 col-md-3 mb-2 d-flex align-items-end justify-content-end gap-1"><button type="button" class="btn btn-sm btn-outline-secondary" data-act="up" ${enabled ? "" : "disabled"}>Up</button><button type="button" class="btn btn-sm btn-outline-secondary" data-act="down" ${enabled ? "" : "disabled"}>Down</button><button type="button" class="btn btn-sm btn-outline-danger" data-act="del" ${enabled ? "" : "disabled"}>Eliminar</button></div>
           </div>
@@ -5607,10 +5740,14 @@
           if (row.getAttribute("data-type") === "raw" && el.matches('[data-k="camp"]')) {
             refreshRawControls(row, null, { sectionType });
           }
+          if (row.getAttribute("data-type") === "raw" && el.matches('[data-k="exercise_mode"]')) {
+            refreshTeamMembersTableExerciseControls(row);
+          }
           syncAdvancedFromUI();
         });
         el.addEventListener("input", syncAdvancedFromUI);
       });
+      refreshTeamMembersTableExerciseControls(row);
       row.querySelector('[data-act="del"]').addEventListener("click", () => {
         const sections = readDetailSectionsUI(true);
         const curSection = sections[sectionIdx] || {};
@@ -5818,12 +5955,26 @@
             const rowAppIdRaw = Number(row.querySelector('[data-k="app_id"]')?.value || 0);
             const rowAppId = Number.isFinite(rowAppIdRaw) && rowAppIdRaw > 0 ? rowAppIdRaw : null;
             const appId = rowAppId ?? selectedSectionAppId;
+            const exerciseMode = sectionType === "team_members_table"
+              ? (String(row.querySelector('[data-k="exercise_mode"]')?.value || "selected").trim().toLowerCase() === "fixed" ? "fixed" : "selected")
+              : "";
             const ex = Math.max(1, Number(row.querySelector('[data-k="exercici"]')?.value || 1));
             const camp = String(row.querySelector('[data-k="camp"]')?.value || "").trim();
             const judgeIds = _uniquePositiveInts(Array.from(row.querySelector('[data-k="judge_ids"]')?.selectedOptions || []).map(o => Number(o.value)));
             if (Number.isFinite(appId) && appId > 0) rawAppIds.add(appId);
             if (!includeInvalid && (!Number.isFinite(appId) || !getAparellById(appId) || !camp || !isRealFieldForApp(appId, camp))) return;
-            cols.push({ type: "raw", key: key || `detail_raw_${idx + 1}`, label: label || key || `detail_raw_${idx + 1}`, align: ["left","right","center"].includes(align) ? align : "right", decimals: Number.isFinite(decimals) ? Math.max(0, Math.min(6, decimals)) : 3, source: { aparell_id: Number.isFinite(appId) ? appId : null, exercici: ex, camp, jutges: { ids: judgeIds } } });
+            const source = {
+              aparell_id: Number.isFinite(appId) ? appId : null,
+              camp,
+              jutges: { ids: judgeIds },
+            };
+            if (sectionType === "team_members_table") {
+              source.exercise_mode = exerciseMode;
+              if (exerciseMode === "fixed") source.exercici = ex;
+            } else {
+              source.exercici = ex;
+            }
+            cols.push({ type: "raw", key: key || `detail_raw_${idx + 1}`, label: label || key || `detail_raw_${idx + 1}`, align: ["left","right","center"].includes(align) ? align : "right", decimals: Number.isFinite(decimals) ? Math.max(0, Math.min(6, decimals)) : 3, source });
           } else {
             if (!detailAllowedBuiltinKeysForSection(sectionType).includes(key)) return;
             const labels = { participant: "Participant", entitat_nom: "Entitat", exercise_index: "Ex.", aparell_nom: "Aparell" };
@@ -5841,6 +5992,19 @@
       else delete section.aparell_id;
       out.push(section);
     });
+    if (includeStale) {
+      _uniquePositiveInts(extraIds).forEach(id => {
+        if (seen.has(String(id))) return;
+        seen.add(String(id));
+        const app = getAparellById(id);
+        out.push({
+          id,
+          nom: String(app?.nom || `Aparell ${id}`),
+          stale: true,
+          injected: true,
+        });
+      });
+    }
     return out;
   }
 
@@ -6030,35 +6194,29 @@
       const rawApps = punt.aparells || {};
       const mode = String(rawApps.mode || "seleccionar").toLowerCase().trim();
       if (mode === "tots") return getCompatibleAppIds();
-      return sanitizeCompatibleAppIds(Array.isArray(rawApps.ids) ? rawApps.ids : []);
+      return _uniquePositiveInts(Array.isArray(rawApps.ids) ? rawApps.ids : []);
     })();
     punt.aparells = {
       ...(punt.aparells || {}),
       mode: "seleccionar",
       ids: selectedAppIds,
     };
-    punt.camps_per_aparell = sanitizeMainCampsPerAparell(punt.camps_per_aparell || {}, selectedAppIds);
-    punt.exercicis_per_aparell = filterPerAppMapByCompatibleIds(
-      punt.exercicis_per_aparell || {},
-      selectedAppIds
-    );
-
-    const allowTieParticipants = currentTipus() === "equips";
-    schema.desempat = (Array.isArray(schema.desempat) ? schema.desempat : [])
-      .map(item => sanitizeTieItemForUI(item, selectedAppIds, true, allowTieParticipants))
-      .filter(Boolean);
+    punt.camps_per_aparell = punt.camps_per_aparell && typeof punt.camps_per_aparell === "object" && !Array.isArray(punt.camps_per_aparell)
+      ? { ...punt.camps_per_aparell }
+      : {};
+    punt.exercicis_per_aparell = punt.exercicis_per_aparell && typeof punt.exercicis_per_aparell === "object" && !Array.isArray(punt.exercicis_per_aparell)
+      ? { ...punt.exercicis_per_aparell }
+      : {};
 
     const victoriesOut = punt.victories && typeof punt.victories === "object" && !Array.isArray(punt.victories)
       ? { ...punt.victories }
       : {};
-    victoriesOut.desempat_comparacio = (Array.isArray(victoriesOut.desempat_comparacio) ? victoriesOut.desempat_comparacio : [])
-      .map(item => sanitizeTieItemForUI(item, selectedAppIds, false, false))
-      .filter(Boolean);
+    victoriesOut.desempat_comparacio = Array.isArray(victoriesOut.desempat_comparacio) ? victoriesOut.desempat_comparacio : [];
     punt.victories = victoriesOut;
 
     schema.presentacio = {
       ...schema.presentacio,
-      columnes: sanitizeRawColumnsForUI(schema.presentacio?.columnes || fallback.presentacio.columnes, selectedAppIds),
+      columnes: normalizeColumnsFromSchema(schema.presentacio?.columnes || fallback.presentacio.columnes),
       detall: (() => {
         const detailRaw = schema.presentacio?.detall || fallback.presentacio.detall;
         const detailSections = normalizeDetailSectionsFromSchema(detailRaw);
@@ -7253,8 +7411,8 @@
     const ids = new Set(idsNorm);
 
     if (els.apSelBox) els.apSelBox.style.display = "";
-    buildAparellChecks([...ids], { includeStale: false });
-    getAppChoices([...ids], { includeStale: false }).forEach(a => {
+    buildAparellChecks([...ids], { includeStale: true });
+    getAppChoices([...ids], { includeStale: true }).forEach(a => {
       const el = document.getElementById("app_" + a.id);
       if (el) el.checked = ids.has(String(a.id));
     });
@@ -8079,6 +8237,7 @@
     if (!cfg) return;
 
     clearBuilderSaveFeedback();
+    setSaveButtonBusy(true);
     syncAdvancedFromUI({ preferAdvanced: true });
 
     const payload = {
@@ -8107,17 +8266,15 @@
         renderList();
       }
      // MISSATGE D'ÈXIT
-    clearBuilderSaveFeedback();
-    const msg = document.getElementById("saveMsg");
-    msg.style.display = "";
-    msg.textContent = "Guardat correctament";
-
-    // s'amaga sol al cap de 2 segons
-    setTimeout(() => {
-      msg.style.display = "none";
-    }, 2000);
+      clearBuilderSaveFeedback();
+      showBuilderSaveSuccessFeedback("Guardat correctament");
+      setSaveButtonBusy(false, true);
+      window.setTimeout(() => {
+        if (els.saveMsg) els.saveMsg.style.display = "none";
+      }, 2500);
     
     } catch (e) {
+      setSaveButtonBusy(false, false);
       const details = e && e.details ? e.details : null;
       renderBuilderSaveErrors(details && details.error_details, (details && details.errors) || [e.message]);
     }
