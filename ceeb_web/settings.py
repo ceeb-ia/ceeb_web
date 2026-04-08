@@ -133,8 +133,6 @@ else:
     }
 
 if APP_ENV == "prod":
-    if _is_placeholder(SECRET_KEY):
-        raise ImproperlyConfigured("DJANGO_SECRET_KEY is required when APP_ENV=prod")
     if not ALLOWED_HOSTS:
         raise ImproperlyConfigured("ALLOWED_HOSTS is required when APP_ENV=prod")
     _require_prod_setting("POSTGRES_DB")
