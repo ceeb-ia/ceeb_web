@@ -34,7 +34,11 @@ def rotacions_save(request, pk):
     if not isinstance(cells, list):
         return HttpResponseBadRequest("Format incorrecte")
 
-    franja_ids = set(RotacioFranja.objects.filter(competicio=competicio).values_list("id", flat=True))
+    franges_by_id = {
+        fr.id: fr
+        for fr in RotacioFranja.objects.filter(competicio=competicio)
+    }
+    franja_ids = set(franges_by_id.keys())
     estacions = list(
         RotacioEstacio.objects
         .filter(competicio=competicio)
@@ -62,6 +66,10 @@ def rotacions_save(request, pk):
             continue
 
         if fr_id not in franja_ids or es_id not in estacio_ids:
+            continue
+
+        franja = franges_by_id.get(fr_id)
+        if franja is None or not getattr(franja, "is_competitive", False):
             continue
 
         if "items" in c:

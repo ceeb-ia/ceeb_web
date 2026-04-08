@@ -40,6 +40,14 @@ DEFAULT_SCHEMA = {
         "aparells": {"mode": "tots", "ids": []},
         "camps_per_aparell": {},
         "agregacio_camps": "sum",
+        "candidate_source_mode": "raw_exercise",
+        "candidate_source_cfg": {
+            "mode": "tots",
+            "best_n": 1,
+            "index": 1,
+            "ids": [],
+            "agregacio_exercicis": "sum",
+        },
         "agregacio_exercicis": "sum",
         "agregacio_aparells": "sum",
         "mode_resultat_aparells": "score",
@@ -199,6 +207,10 @@ def _merge_schema(schema: dict) -> dict:
     )
     out["filtres"] = normalize_classificacio_filters(raw.get("filtres") or {})
     out["puntuacio"] = {**DEFAULT_SCHEMA["puntuacio"], **(raw.get("puntuacio") or {})}
+    out["puntuacio"]["candidate_source_cfg"] = {
+        **DEFAULT_SCHEMA["puntuacio"]["candidate_source_cfg"],
+        **((((raw.get("puntuacio") or {}).get("candidate_source_cfg")) or {}) if isinstance(raw.get("puntuacio"), dict) else {}),
+    }
     out["puntuacio"]["victories"] = {
         **DEFAULT_SCHEMA["puntuacio"]["victories"],
         **((((raw.get("puntuacio") or {}).get("victories")) or {}) if isinstance(raw.get("puntuacio"), dict) else {}),

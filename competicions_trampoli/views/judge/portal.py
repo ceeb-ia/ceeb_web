@@ -52,6 +52,10 @@ from .permissions import (
     _resolve_permissions_for_subject,
 )
 
+
+def _is_competitive_franja(franja):
+    return getattr(franja, "tipus", RotacioFranja.TIPUS_COMPETITION) == RotacioFranja.TIPUS_COMPETITION
+
 @require_http_methods(["GET"])
 def judge_portal(request, token):
     tok = get_object_or_404(JudgeDeviceToken, pk=token)
@@ -81,11 +85,14 @@ def judge_portal(request, token):
         .filter(competicio=competicio)
         .order_by("ordre", "id")
     )
-    franges_by_id = {fr.id: fr for fr in franges}
+    competition_franges = [fr for fr in franges if _is_competitive_franja(fr)]
+    competition_franja_ids = {fr.id for fr in competition_franges}
+    franges_by_id = {fr.id: fr for fr in competition_franges}
     all_assigns = list(
         RotacioAssignacio.objects
         .filter(
             competicio=competicio,
+            franja_id__in=competition_franja_ids,
             estacio__tipus="aparell",
             estacio__comp_aparell__isnull=False,
         )
@@ -232,6 +239,14 @@ def judge_portal(request, token):
             return "Sense grup"
         return group_label(groups_by_id.get(group_id))
 
+    def format_franja_time(value) -> str:
+        if value in (None, ""):
+            return ""
+        if hasattr(value, "strftime"):
+            return value.strftime("%H:%M")
+        text = str(value).strip()
+        return text[:5] if len(text) >= 5 else text
+
     def build_group_block(group_id):
         group_items = grouped.get(group_id, [])
         base_pairs = [(item["subject_id"], item) for item in group_items]
@@ -265,7 +280,7 @@ def judge_portal(request, token):
             "franja_id": fid,
             "franja_label": (
                 f"{getattr(franges_by_id.get(fid), 'titol', None) or 'Franja'} · "
-                f"{franges_by_id[fid].hora_inici.strftime('%H:%M')}-{franges_by_id[fid].hora_fi.strftime('%H:%M')}"
+                f"{format_franja_time(franges_by_id[fid].hora_inici)}-{format_franja_time(franges_by_id[fid].hora_fi)}"
                 if fid and fid in franges_by_id
                 else ""
             ),
@@ -411,6 +426,7 @@ def judge_portal(request, token):
         "exercicis": exercicis,
         "exercici": exercici_default,
         "team_subject_mode": team_subject_mode,
+        "franges": competition_franges,
     }
     return render(request, "judge/portal.html", ctx)
 
@@ -428,7 +444,11 @@ def judge_qr_png(request, token):
             franja_id = int(req_franja)
         except Exception:
             franja_id = None
-        if franja_id and RotacioFranja.objects.filter(competicio=tok.competicio, pk=franja_id).exists():
+        if franja_id and RotacioFranja.objects.filter(
+            competicio=tok.competicio,
+            pk=franja_id,
+            tipus=RotacioFranja.TIPUS_COMPETITION,
+        ).exists():
             sep = "&" if "?" in portal_url else "?"
             portal_url = f"{portal_url}{sep}franja={franja_id}"
     return _qr_png_response(request.build_absolute_uri(portal_url))

@@ -38,6 +38,10 @@ from .helpers import (
 )
 
 
+def _is_competitive_franja(franja):
+    return getattr(franja, "tipus", RotacioFranja.TIPUS_COMPETITION) == RotacioFranja.TIPUS_COMPETITION
+
+
 class ScoringNotesHome(TemplateView):
     """
     Pantalla de notes dinàmica basada en schema.
@@ -53,6 +57,8 @@ class ScoringNotesHome(TemplateView):
         ctx = super().get_context_data(**kwargs)
         competicio = self.competicio
         franges = list(RotacioFranja.objects.filter(competicio=competicio).order_by("ordre", "id"))
+        competition_franges = [fr for fr in franges if _is_competitive_franja(fr)]
+        competition_franja_ids = {fr.id for fr in competition_franges}
         franja_modes = get_rotacions_order_modes(competicio)
         group_maps = get_group_maps(competicio)
         groups_by_id = group_maps["by_id"]
@@ -70,7 +76,7 @@ class ScoringNotesHome(TemplateView):
                 fr_int = int(fr_raw)
             except Exception:
                 fr_int = None
-            if fr_int and any(f.id == fr_int for f in franges):
+            if fr_int and fr_int in competition_franja_ids:
                 franja_selected_id = fr_int
 
         ins = (
@@ -90,6 +96,7 @@ class ScoringNotesHome(TemplateView):
         assigns_for_order = (
             RotacioAssignacio.objects
             .filter(competicio=competicio)
+            .filter(franja_id__in=competition_franja_ids)
             .select_related("franja")
             .prefetch_related("grup_links__grup")
             .order_by("franja__ordre", "franja_id", "estacio__ordre", "id")
@@ -388,6 +395,7 @@ class ScoringNotesHome(TemplateView):
                 RotacioAssignacio.objects
                 .filter(
                     competicio=competicio,
+                    franja_id__in=competition_franja_ids,
                     estacio__tipus="aparell",
                     estacio__comp_aparell__isnull=False,
                 )
@@ -529,7 +537,8 @@ class ScoringNotesHome(TemplateView):
             "aparells_cfg": aparells_cfg,
             "exercicis": exercicis,
             "exercicis_by_aparell": exercicis_by_aparell,
-            "franges": franges,
+            "franges": competition_franges,
+            "competition_franges": competition_franges,
             "franja_selected_id": franja_selected_id,
             "rotation_rank_map": rotation_rank_map,
             "rotation_groups_by_app": rotation_groups_by_app,

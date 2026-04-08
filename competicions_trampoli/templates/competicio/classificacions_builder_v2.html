@@ -819,227 +819,7 @@
 
               </section>
 
-              <section id="section-puntuacio" class="builder-section builder-section--puntuacio" data-builder-section>
-                <div class="builder-section__header">
-                  <div>
-                    <div class="builder-section__eyebrow">Lògica</div>
-                    <h4 class="builder-section__title">Puntuació <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="puntuacio_overview" aria-label="Ajuda puntuació">?</button></h4>
-                    <p class="builder-section__desc">Tria aparells, camps, exercicis i agregacions. Aquest bloc defineix com es calcula el resultat numèric.</p>
-                  </div>
-                  <div class="builder-help-badge">Bloc central</div>
-                </div>
-                <div class="builder-section__body">
-                  <div class="builder-section__stack">
-                    <div class="builder-subsection">
-                      <div class="builder-subsection__head">
-                        <div>
-                          <p class="builder-subsection__title">Aparells inclosos i camps <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="apps_selected" aria-label="Ajuda aparells inclosos i camps">?</button></p>
-                          <p class="builder-subsection__desc">Selecciona els aparells i defineix els camps que entren al càlcul.</p>
-                        </div>
-                      </div>
-                      <div class="alert alert-warning py-2 px-3 small mb-3">
-                        Per al càlcul de <strong>Punts</strong>, els camps d'entrada només es tracten com a escalar si són escalar o matriu <strong>1x1</strong>. Matrius més grans no són puntuables directament.
-                      </div>
-
-          <div class="row">
-            <div class="col-12 mb-2">
-              <div class="small text-muted">Selecciona explícitament els aparells a incloure.</div>
-            </div>
-
-            <div class="col-12" id="apSelBox">
-              <div class="border rounded p-2 mb-3">
-                <div class="row" id="apChkList"></div>
-              </div>
-              <div id="appStaleBanner" class="builder-status-stack mb-3"></div>
-            </div>
-          </div>
-
-          <div id="perAppBox" class="mb-3"></div>
-
-          <div class="row">
-            <div class="col-12 col-md-4 mb-3">
-              <label class="font-weight-bold">Agregació camps (dins exercici) <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="agregacio_camps" aria-label="Ajuda agregació de camps">?</button></label>
-              <select class="form-control" id="sAggCamps">
-                <option value="sum">Suma</option>
-                <option value="avg">Mitjana</option>
-                <option value="median">Mediana</option>
-                <option value="max">Màxim</option>
-                <option value="min">Mínim</option>
-              </select>
-              <div class="small text-muted mt-1">Quan selecciones diversos camps d'un mateix exercici.</div>
-            </div>
-
-            <div class="col-12 col-md-4 mb-3">
-              <div id="exerciseSelectionScopeWrap" style="display:none;">
-                <label class="font-weight-bold">Base de selecció</label>
-                <select class="form-control mb-2" id="sExerciseSelectionScope">
-                  <option value="per_member">Per membre i després suma</option>
-                  <option value="team_pool">Pool d'equip amb límit per membre</option>
-                </select>
-              </div>
-              <label class="font-weight-bold">Selecció exercicis <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="seleccio_exercicis" aria-label="Ajuda selecció d'exercicis">?</button></label>
-              <select class="form-control mb-2" id="sModeSeleccioExercicis">
-                <option value="per_aparell_global">Per aparell (criteri global)</option>
-                <option value="per_aparell_override">Per aparell (override per aparell)</option>
-                <option value="global_pool">Sac global (tots els aparells)</option>
-              </select>
-              <label class="small text-muted mb-1" id="exerciseModeLabel">Mode d'exercicis <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="mode_exercicis" aria-label="Ajuda mode d'exercicis">?</button></label>
-              <select class="form-control" id="sExercicisMode">
-                <option value="tots">Tots</option>
-                <option value="millor_1">Millor 1</option>
-                <option value="millor_n">Millors N</option>
-                <option value="pitjor_1">Pitjor 1</option>
-                <option value="pitjor_n">Pitjors N</option>
-                <option value="primer">Primer existent</option>
-                <option value="ultim">Últim existent</option>
-                <option value="index">Exercici #</option>
-                <option value="llista">Exercicis (llista)</option>
-              </select>
-              <div class="row mt-2">
-                <div class="col-4" id="exBestNBox">
-                  <label class="small text-muted">N (si Millors/Pitjors N) <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="exercise_mode_details" aria-label="Ajuda opcions avançades dels exercicis">?</button></label>
-                  <input class="form-control" id="iExBestN" type="number" min="1" value="1">
-                </div>
-                <div class="col-4" id="exIndexBox" style="display:none;">
-                  <label class="small text-muted">Índex (si Exercici #) <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="exercise_mode_details" aria-label="Ajuda índex d'exercici">?</button></label>
-                  <input class="form-control" id="iExIndex" type="number" min="1" value="1">
-                </div>
-                <div class="col-4" id="exMaxPerParticipantBox">
-                  <label class="small text-muted">Max N per participant <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="exercise_mode_details" aria-label="Ajuda màxim per participant">?</button></label>
-                  <input class="form-control" id="iExMaxPerParticipant" type="number" min="0" value="0">
-                </div>
-                <div class="col-12  mb-3">
-                  <label class="small text-muted">Agregació exercicis <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="agregacio_exercicis" aria-label="Ajuda agregació d'exercicis">?</button></label>
-                  <select class="form-control" id="sAggExercicis">
-                    <option value="sum">Suma</option>
-                    <option value="avg">Mitjana</option>
-                    <option value="median">Mediana</option>
-                    <option value="max">Màxim</option>
-                    <option value="min">Mínim</option>
-                  </select>
-                </div>
-              </div>
-              <div class="mt-2" id="exIdsBox" style="display:none;">
-                <label class="small text-muted">Llista d'índexs (si Exercicis llista) <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="exercise_mode_details" aria-label="Ajuda llista d'índexs">?</button></label>
-                <input class="form-control" id="tExIds" type="text" placeholder="1,3,4">
-              </div>
-              <div class="small text-muted mt-1" id="exModeHint"></div>
-              <div class="small text-muted mt-1" id="exSelectionSummary"></div>
-            </div>
-
-            <div class="col-12 col-md-4 mb-3">
-              <label class="font-weight-bold">Agregació entre aparells <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="agregacio_aparells" aria-label="Ajuda agregació entre aparells">?</button></label>
-              <select class="form-control" id="sAggAparells">
-                <option value="sum">Suma</option>
-                <option value="avg">Mitjana</option>
-                <option value="median">Mediana</option>
-                <option value="max">Màxim</option>
-                <option value="min">Mínim</option>
-              </select>
-
-              <label class="font-weight-bold mt-2">Ordre principal <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="ordre_principal" aria-label="Ajuda ordre principal">?</button></label>
-              <select class="form-control" id="sOrdre">
-                <option value="desc">Desc (més és millor)</option>
-                <option value="asc">Asc (menys és millor)</option>
-              </select>
-
-              <label class="font-weight-bold mt-2">Resultat per aparell <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="resultat_per_aparell" aria-label="Ajuda resultat per aparell">?</button></label>
-              <select class="form-control" id="sModeResultatAparells">
-                <option value="score">Puntuació normal</option>
-                <option value="victories">Victòries</option>
-              </select>
-              <div class="small text-muted mt-1">
-                En mode victòries, cada aparell compara participants entre si i després s'agrega el resultat entre aparells.
-              </div>
-            </div>
-          </div>
-
-
-                    <div id="victoryConfigBox" class="builder-subsection builder-subsection--highlight" style="display:none;">
-                      <div class="builder-subsection__head">
-                        <div>
-                          <p class="builder-subsection__title">Configuració de victòries <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="victories_overview" aria-label="Ajuda configuració de victòries">?</button></p>
-                          <p class="builder-subsection__desc">Només s'aplica en mode <strong>Victòries</strong>. Defineix si els duels es calculen sobre camps o exercicis agregats o separats.</p>
-                        </div>
-                        <div class="builder-inline-note">Només Victòries</div>
-                      </div>
-                      <div class="row">
-                        <div class="col-12 col-md-6 mb-3">
-                          <label class="font-weight-bold">Càlcul sobre camps <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="victory_mode_camps" aria-label="Ajuda càlcul sobre camps">?</button></label>
-                          <select class="form-control" id="sVictoryModeCamps">
-                            <option value="agregat">Agregant camps</option>
-                            <option value="separat">Per camps separats</option>
-                          </select>
-                        </div>
-                        <div class="col-12 col-md-6 mb-3">
-                          <label class="font-weight-bold">Càlcul sobre exercicis <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="victory_mode_exercicis" aria-label="Ajuda càlcul sobre exercicis">?</button></label>
-                          <select class="form-control" id="sVictoryModeExercicis">
-                            <option value="agregat">Agregant exercicis</option>
-                            <option value="separat">Per exercicis separats</option>
-                          </select>
-                        </div>
-                      </div>
-                      <div class="row">
-                        <div class="col-12 col-md-6 mb-3" id="victoryFieldSelectionModeWrap" style="display:none;">
-                          <label class="font-weight-bold">Selecció d'exercicis amb camps separats <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="victory_field_selection" aria-label="Ajuda selecció d'exercicis amb camps separats">?</button></label>
-                          <select class="form-control" id="sVictoryFieldSelectionMode">
-                            <option value="per_camp">Selecció independent per camp</option>
-                            <option value="global">Selecció global agregada</option>
-                          </select>
-                        </div>
-                        <div class="col-12 col-md-6 mb-3" id="victoryAggCampsWrap" style="display:none;">
-                          <label class="font-weight-bold">Agregació de victòries entre camps <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="victory_agg_camps" aria-label="Ajuda agregació de victòries entre camps">?</button></label>
-                          <select class="form-control" id="sVictoryAggCamps">
-                            <option value="sum">Suma</option>
-                            <option value="avg">Mitjana</option>
-                            <option value="median">Mediana</option>
-                            <option value="max">Màxim</option>
-                            <option value="min">Mínim</option>
-                          </select>
-                        </div>
-                        <div class="col-12 col-md-6 mb-3" id="victoryAggExercicisWrap" style="display:none;">
-                          <label class="font-weight-bold">Agregació de victòries entre exercicis <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="victory_agg_exercicis" aria-label="Ajuda agregació de victòries entre exercicis">?</button></label>
-                          <select class="form-control" id="sVictoryAggExercicis">
-                            <option value="sum">Suma</option>
-                            <option value="avg">Mitjana</option>
-                            <option value="median">Mediana</option>
-                            <option value="max">Màxim</option>
-                            <option value="min">Mínim</option>
-                          </select>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div id="victoryTieBox" class="builder-subsection builder-subsection--muted" style="display:none;">
-                      <div class="builder-subsection__head">
-                        <div>
-                          <p class="builder-subsection__title">Desempat intern de comparació <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="victory_internal_tie" aria-label="Ajuda desempat intern de victòries">?</button></p>
-                          <p class="builder-subsection__desc">Només s'aplica en mode <strong>Victòries</strong>. Resol empats dins de cada duel d'un mateix aparell.</p>
-                        </div>
-                        <div class="builder-inline-note">Depèn de Victòries</div>
-                      </div>
-            <div class="builder-table-shell table-responsive mb-2">
-              <table class="table table-sm mb-0">
-                <thead>
-                  <tr>
-                    <th style="width:30%;">Camp <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="victory_internal_tie" aria-label="Ajuda camp de desempat intern">?</button></th>
-                    <th style="width:50%;">Exercicis <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="victory_internal_tie" aria-label="Ajuda exercicis de desempat intern">?</button></th>
-                    <th style="width:10%;">Ordre <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="victory_internal_tie" aria-label="Ajuda ordre de desempat intern">?</button></th>
-                    <th style="width:10%;" class="text-right">Accions</th>
-                  </tr>
-                </thead>
-                <tbody id="victoryTieBody"></tbody>
-              </table>
-            </div>
-
-            <button type="button" class="btn btn-sm btn-outline-primary mb-3" id="btnVictoryTieAdd">+ Afegir criteri</button>
-          </div>
-
-
-                    </div>
-                  </div>
-                </div>
-              </section>
+              {% include "classificacions/puntuacio.html" %}
 
               <section id="section-desempat" class="builder-section builder-section--desempat" data-builder-section>
                 <div class="builder-section__header">
@@ -1368,6 +1148,14 @@
       aparells: { mode:"tots", ids:[] },
       camps_per_aparell: {},
       agregacio_camps: "sum",
+      candidate_source_mode: "raw_exercise",
+      candidate_source_cfg: {
+        mode: "tots",
+        best_n: 1,
+        index: 1,
+        ids: [],
+        agregacio_exercicis: "sum",
+      },
       exercicis: { mode:"tots", index: 1, ids: [], max_per_participant: 0 },
       exercicis_best_n: 1,
       exercise_selection_scope: EXERCISE_SELECTION_SCOPE_PER_MEMBER,
@@ -1481,12 +1269,36 @@
     appStaleBanner: document.getElementById("appStaleBanner"),
 
     perAppBox: document.getElementById("perAppBox"),
+    fieldAggregationCard: document.getElementById("fieldAggregationCard"),
+    appAggregationCard: document.getElementById("appAggregationCard"),
 
     sAggCamps: document.getElementById("sAggCamps"),
+    candidateSourceCard: document.getElementById("candidateSourceCard"),
+    candidateSourceTitle: document.getElementById("candidateSourceTitle"),
+    candidateSourceDesc: document.getElementById("candidateSourceDesc"),
+    sCandidateSourceMode: document.getElementById("sCandidateSourceMode"),
+    candidateSourceModeLabel: document.getElementById("candidateSourceModeLabel"),
+    candidateSourceModeHint: document.getElementById("candidateSourceModeHint"),
+    candidateSourceCfgWrap: document.getElementById("candidateSourceCfgWrap"),
+    candidateSourceSelectionLabel: document.getElementById("candidateSourceSelectionLabel"),
+    candidateSourceAggLabel: document.getElementById("candidateSourceAggLabel"),
+    sCandidateSourceSelectionMode: document.getElementById("sCandidateSourceSelectionMode"),
+    candidateSourceBestNBox: document.getElementById("candidateSourceBestNBox"),
+    candidateSourceIndexBox: document.getElementById("candidateSourceIndexBox"),
+    candidateSourceIdsBox: document.getElementById("candidateSourceIdsBox"),
+    iCandidateSourceBestN: document.getElementById("iCandidateSourceBestN"),
+    iCandidateSourceIndex: document.getElementById("iCandidateSourceIndex"),
+    tCandidateSourceIds: document.getElementById("tCandidateSourceIds"),
+    sCandidateSourceAggExercicis: document.getElementById("sCandidateSourceAggExercicis"),
+    candidateSourceHint: document.getElementById("candidateSourceHint"),
     exerciseSelectionScopeWrap: document.getElementById("exerciseSelectionScopeWrap"),
     sExerciseSelectionScope: document.getElementById("sExerciseSelectionScope"),
     sModeSeleccioExercicis: document.getElementById("sModeSeleccioExercicis"),
+    candidateScopeHint: document.getElementById("candidateScopeHint"),
+    exerciseCriteriaCard: document.getElementById("exerciseCriteriaCard"),
     exerciseModeLabel: document.getElementById("exerciseModeLabel"),
+    globalExerciseCriteriaWrap: document.getElementById("globalExerciseCriteriaWrap"),
+    exerciseRestrictionsCard: document.getElementById("exerciseRestrictionsCard"),
     sExercicisMode: document.getElementById("sExercicisMode"),
     exBestNBox: document.getElementById("exBestNBox"),
     exIndexBox: document.getElementById("exIndexBox"),
@@ -1494,6 +1306,10 @@
     exIdsBox: document.getElementById("exIdsBox"),
     exModeHint: document.getElementById("exModeHint"),
     exSelectionSummary: document.getElementById("exSelectionSummary"),
+    restrictionsHint: document.getElementById("restrictionsHint"),
+    perAppConfigIntro: document.getElementById("perAppConfigIntro"),
+    puntuacioSummaryBox: document.getElementById("puntuacioSummaryBox"),
+    puntuacioSummaryText: document.getElementById("puntuacioSummaryText"),
     iExBestN: document.getElementById("iExBestN"),
     iExIndex: document.getElementById("iExIndex"),
     iExMaxPerParticipant: document.getElementById("iExMaxPerParticipant"),
@@ -3134,12 +2950,11 @@
         els.sModeResultatAparells.value = "score";
       }
     }
-    refreshVictoryTieVisibility();
+    refreshPuntuacioUI();
     renderEquipsModeControls();
     renderFiltersContextualCopy();
     renderColumnsRawContextualCopy();
     refreshDetailConfigUI();
-    refreshMainExercicisUI();
     const selectedIds = rebuildAparellChecksPreservingSelection(
       getCurrentBuilderAppIds(cfg && cfg.schema ? cfg.schema : {}),
       opts
@@ -3149,6 +2964,7 @@
     }
     renderAppStaleWarningBanner(cfg && cfg.schema ? cfg.schema : {}, selectedIds);
     renderDerivedPartitionConfigUI(readParticionsConfigUI(), selectedParticioCodesFromUI());
+    renderPuntuacioSection(cfg && cfg.schema ? cfg.schema : DEFAULT_SCHEMA);
     return selectedIds;
   }
 
@@ -3204,6 +3020,8 @@
       els.victoryAggExercicisWrap.style.display = exercicisSeparats ? "" : "none";
     }
   }
+
+  {% include "classificacions/_puntuacio_script.html" %}
 
   function getParticipantsCellHTML() {
     return `
@@ -6329,6 +6147,10 @@
     punt.exercicis = punt.exercicis && typeof punt.exercicis === "object" && !Array.isArray(punt.exercicis)
       ? punt.exercicis
       : {};
+    punt.candidate_source_mode = String(punt.candidate_source_mode || "raw_exercise").toLowerCase().trim();
+    punt.candidate_source_cfg = punt.candidate_source_cfg && typeof punt.candidate_source_cfg === "object" && !Array.isArray(punt.candidate_source_cfg)
+      ? punt.candidate_source_cfg
+      : JSON.parse(JSON.stringify(fallback.puntuacio.candidate_source_cfg));
     if (!punt.exercicis_per_aparell || typeof punt.exercicis_per_aparell !== "object" || Array.isArray(punt.exercicis_per_aparell)) {
       punt.exercicis_per_aparell = {};
     }
@@ -7471,25 +7293,9 @@
       } catch(e) {}
     }
 
-    // aparells (sempre seleccio explicita)
-    const apMode = "seleccionar";
-    const apIds = selectedAparellIdsFromUI();
-
-    // camps per aparell des d'inputs
-    const camps_per_aparell = {};
-    document.querySelectorAll("[data-app-select]").forEach(sel => {
-      const id = sel.getAttribute("data-app-select");
-      const codes = Array.from(sel.selectedOptions).map(o => o.value);
-      if (codes.length) camps_per_aparell[String(id)] = codes;
-    });
-
     const tipus = currentTipus();
-    const exCfg = readMainExercicisFromUI();
-    const exerciseSelectionScope = getExerciseSelectionScopeFromUI();
-    const modeSeleccioExercicis = getModeSeleccioExercicisFromUI();
-    const exPerAppCfg = readPerAppExercicisFromUI();
-    const modeResultatAparells = currentModeResultatAparells();
-    const victoriesCompareTie = readVictoryTieUI(true);
+    const apIds = selectedAparellIdsFromUI();
+    const puntuacio = readPuntuacioSchemaFromUI();
 
     // desempats
     let desempat = readTieUI(true);
@@ -7516,31 +7322,7 @@
       particions_custom: particionsCustom,
       particions_config: particionsConfig,
       filtres: filtres,
-      puntuacio: {
-        aparells: { mode: apMode, ids: apIds },
-        camps_per_aparell: camps_per_aparell,
-        agregacio_camps: els.sAggCamps.value,
-        exercicis: exCfg.cfg,
-        exercicis_best_n: exCfg.bestN,
-        ...(isDerivedExerciseSelectionScopeAvailable() ? { exercise_selection_scope: exerciseSelectionScope } : {}),
-        mode_seleccio_exercicis: modeSeleccioExercicis,
-        exercicis_per_aparell: exPerAppCfg,
-        agregacio_exercicis: els.sAggExercicis.value,
-        agregacio_aparells: els.sAggAparells.value,
-        mode_resultat_aparells: modeResultatAparells,
-        victories: {
-          punts_victoria: 1,
-          punts_empat: 0.5,
-          sense_nota_mode: "skip",
-          mode_camps: String(els.sVictoryModeCamps?.value || "agregat"),
-          mode_exercicis: String(els.sVictoryModeExercicis?.value || "agregat"),
-          mode_seleccio_exercicis_camps_separats: String(els.sVictoryFieldSelectionMode?.value || "per_camp"),
-          agregacio_victories_camps: String(els.sVictoryAggCamps?.value || "sum"),
-          agregacio_victories_exercicis: String(els.sVictoryAggExercicis?.value || "sum"),
-          desempat_comparacio: victoriesCompareTie,
-        },
-        ordre: els.sOrdre.value,
-      },
+      puntuacio: puntuacio,
       desempat: desempat,
       presentacio: {
         top_n: Number(els.iTopN.value || 0),
@@ -7571,6 +7353,7 @@
     if (Array.isArray(state.rehydrationIssues) && state.rehydrationIssues.length) {
       state.rehydrationIssues = [];
     }
+    refreshPuntuacioUI();
     renderEquipsModeControls();
     renderAppStaleWarningBanner(schema, apIds);
   }
@@ -7612,6 +7395,9 @@
 
     [
       els.sAggCamps,
+      els.sCandidateSourceMode,
+      els.sCandidateSourceSelectionMode,
+      els.sCandidateSourceAggExercicis,
       els.sExerciseSelectionScope,
       els.sModeSeleccioExercicis,
       els.sExercicisMode,
@@ -7628,12 +7414,39 @@
 
     ensureSelectOption(els.sAggCamps, (schema.puntuacio||{}).agregacio_camps, value => `${value} (legacy)`);
     els.sAggCamps.value = (schema.puntuacio||{}).agregacio_camps || "sum";
+    if (els.sCandidateSourceMode) {
+      ensureSelectOption(els.sCandidateSourceMode, (schema.puntuacio||{}).candidate_source_mode, value => `${value} (legacy)`);
+      els.sCandidateSourceMode.value = (schema.puntuacio||{}).candidate_source_mode || "raw_exercise";
+    }
+    if (els.sCandidateSourceSelectionMode) {
+      const candidateCfg = (schema.puntuacio||{}).candidate_source_cfg || {};
+      ensureSelectOption(els.sCandidateSourceSelectionMode, candidateCfg.mode, value => `${value} (legacy)`);
+      els.sCandidateSourceSelectionMode.value = candidateCfg.mode || "tots";
+    }
+    if (els.sCandidateSourceAggExercicis) {
+      const candidateCfg = (schema.puntuacio||{}).candidate_source_cfg || {};
+      ensureSelectOption(els.sCandidateSourceAggExercicis, candidateCfg.agregacio_exercicis, value => `${value} (legacy)`);
+      els.sCandidateSourceAggExercicis.value = candidateCfg.agregacio_exercicis || "sum";
+    }
+    if (els.iCandidateSourceBestN) {
+      const candidateCfg = (schema.puntuacio||{}).candidate_source_cfg || {};
+      els.iCandidateSourceBestN.value = candidateCfg.best_n || 1;
+    }
+    if (els.iCandidateSourceIndex) {
+      const candidateCfg = (schema.puntuacio||{}).candidate_source_cfg || {};
+      els.iCandidateSourceIndex.value = candidateCfg.index || 1;
+    }
+    if (els.tCandidateSourceIds) {
+      const candidateCfg = (schema.puntuacio||{}).candidate_source_cfg || {};
+      if (Array.isArray(candidateCfg.ids)) els.tCandidateSourceIds.value = candidateCfg.ids.join(",");
+      else els.tCandidateSourceIds.value = String(candidateCfg.ids || "");
+    }
     if (els.sExerciseSelectionScope) {
       ensureSelectOption(els.sExerciseSelectionScope, (schema.puntuacio||{}).exercise_selection_scope, value => `${value} (legacy)`);
       els.sExerciseSelectionScope.value = normalizeExerciseSelectionScope((schema.puntuacio||{}).exercise_selection_scope);
     }
     ensureSelectOption(els.sModeSeleccioExercicis, (schema.puntuacio||{}).mode_seleccio_exercicis, value => `${value} (legacy)`);
-    els.sModeSeleccioExercicis.value = (schema.puntuacio||{}).mode_seleccio_exercicis || "per_aparell_global";
+    els.sModeSeleccioExercicis.value = (schema.puntuacio||{}).mode_seleccio_exercicis || "per_aparell_override";
     const pEx = ((schema.puntuacio||{}).exercicis || {});
     ensureSelectOption(els.sExercicisMode, pEx.mode, value => `${value} (legacy)`);
     els.sExercicisMode.value = pEx.mode || "tots";
@@ -7651,6 +7464,7 @@
     els.sModeResultatAparells.value = (schema.puntuacio||{}).mode_resultat_aparells || "score";
     ensureSelectOption(els.sOrdre, (schema.puntuacio||{}).ordre, value => `${value} (legacy)`);
     els.sOrdre.value = (schema.puntuacio||{}).ordre || "desc";
+    hydratePuntuacioUI(schema);
 
     els.iTopN.value = (schema.presentacio||{}).top_n ?? 0;
     els.cEmpats.checked = !!((schema.presentacio||{}).mostrar_empats);
@@ -7698,9 +7512,8 @@
     applyMultiSelectValues(els.fGrups, (schema.filtres || {}).grups_in || []);
     refreshTipusUI();
 
-    // per aparell UI
-    runSafeHydrationRender("per aparell", () => {
-      renderPerAppUI(schema);
+    runSafeHydrationRender("puntuacio", () => {
+      renderPuntuacioSection(schema);
     });
     renderEquipsModeControls();
   }
@@ -7735,10 +7548,26 @@
 
   // events: canvis que afecten schema
   ["change","input"].forEach(ev => {
-    ["sAggCamps","sModeSeleccioExercicis","sExercicisMode","iExBestN","iExIndex","iExMaxPerParticipant","tExIds","sAggExercicis","sAggAparells","sModeResultatAparells","sOrdre","iTopN","cEmpats","eqAssignmentContext","eqTeamMode","eqIncludeSenseEquip","sVictoryModeCamps","sVictoryModeExercicis","sVictoryFieldSelectionMode","sVictoryAggCamps","sVictoryAggExercicis"]
+    const refreshPuntuacioIds = new Set([
+      "sCandidateSourceMode",
+      "sCandidateSourceSelectionMode",
+      "sCandidateSourceAggExercicis",
+      "iCandidateSourceBestN",
+      "iCandidateSourceIndex",
+      "tCandidateSourceIds",
+    ]);
+    ["sAggCamps","sCandidateSourceMode","sCandidateSourceSelectionMode","sCandidateSourceAggExercicis","iCandidateSourceBestN","iCandidateSourceIndex","tCandidateSourceIds","sModeSeleccioExercicis","sExercicisMode","iExBestN","iExIndex","iExMaxPerParticipant","tExIds","sAggExercicis","sAggAparells","sModeResultatAparells","sOrdre","iTopN","cEmpats","eqAssignmentContext","eqTeamMode","eqIncludeSenseEquip","sVictoryModeCamps","sVictoryModeExercicis","sVictoryFieldSelectionMode","sVictoryAggCamps","sVictoryAggExercicis"]
       .forEach(id => {
         const node = document.getElementById(id);
-        if (node) node.addEventListener(ev, syncAdvancedFromUI);
+        if (!node) return;
+        if (refreshPuntuacioIds.has(id)) {
+          node.addEventListener(ev, () => {
+            syncAdvancedFromUI();
+            refreshPuntuacioUI();
+          });
+          return;
+        }
+        node.addEventListener(ev, syncAdvancedFromUI);
       });
 
     [els.fEntitats, els.fCategories, els.fSubcategories, els.fGrups].forEach(x => {
@@ -7939,24 +7768,24 @@
   }
 
   if (els.sExercicisMode) {
-    els.sExercicisMode.addEventListener("change", refreshMainExercicisUI);
+    els.sExercicisMode.addEventListener("change", refreshPuntuacioUI);
   }
   [els.iExBestN, els.iExIndex, els.iExMaxPerParticipant, els.tExIds].forEach((node) => {
     if (!node) return;
-    node.addEventListener("input", refreshMainExercicisUI);
-    node.addEventListener("change", refreshMainExercicisUI);
+    node.addEventListener("input", refreshPuntuacioUI);
+    node.addEventListener("change", refreshPuntuacioUI);
   });
   if (els.sModeSeleccioExercicis) {
     els.sModeSeleccioExercicis.addEventListener("change", () => {
-      refreshMainExercicisUI();
-      renderPerAppUI((currentCfg()||{}).schema || DEFAULT_SCHEMA);
+      refreshPuntuacioUI();
+      renderPuntuacioSection((currentCfg()||{}).schema || DEFAULT_SCHEMA);
       syncAdvancedFromUI();
     });
   }
   if (els.sExerciseSelectionScope) {
     els.sExerciseSelectionScope.addEventListener("change", () => {
-      refreshMainExercicisUI();
-      renderPerAppUI((currentCfg()||{}).schema || DEFAULT_SCHEMA);
+      refreshPuntuacioUI();
+      renderPuntuacioSection((currentCfg()||{}).schema || DEFAULT_SCHEMA);
       renderTieUI(readTieUI(true));
       syncAdvancedFromUI();
     });
@@ -8007,7 +7836,7 @@
   // quan es marca/desmarca un aparell
   document.addEventListener("change", (e) => {
     if (e.target && e.target.id && e.target.id.startsWith("app_")) {
-      renderPerAppUI((currentCfg()||{}).schema || DEFAULT_SCHEMA);
+      renderPuntuacioSection((currentCfg()||{}).schema || DEFAULT_SCHEMA);
       renderTieUI(readTieUI(true));
       renderVictoryTieUI(readVictoryTieUI(true));
       syncAdvancedFromUI();
@@ -8186,7 +8015,7 @@
     ensureLegacyTipusOption(els.fTipus.value);
     cfg.tipus = els.fTipus.value;
     refreshTipusUI({ includeStale: false, dropInvalidSelection: true });
-    renderPerAppUI((currentCfg()||{}).schema || DEFAULT_SCHEMA);
+    renderPuntuacioSection((currentCfg()||{}).schema || DEFAULT_SCHEMA);
     renderTieUI(readTieUI(true));
     renderVictoryTieUI(readVictoryTieUI(true));
     syncAdvancedFromUI();
@@ -8219,7 +8048,7 @@
     els.eqAssignmentContext.addEventListener("change", () => {
       refreshTipusUI({ includeStale: false, dropInvalidSelection: true });
       renderEquipManualRows(readEquipManualRows());
-      renderPerAppUI((currentCfg()||{}).schema || DEFAULT_SCHEMA);
+      renderPuntuacioSection((currentCfg()||{}).schema || DEFAULT_SCHEMA);
       renderTieUI(readTieUI(true));
       renderVictoryTieUI(readVictoryTieUI(true));
       syncAdvancedFromUI();
@@ -8229,7 +8058,7 @@
   if (els.eqTeamMode) {
     els.eqTeamMode.addEventListener("change", () => {
       refreshTipusUI({ includeStale: false, dropInvalidSelection: true });
-      renderPerAppUI((currentCfg()||{}).schema || DEFAULT_SCHEMA);
+      renderPuntuacioSection((currentCfg()||{}).schema || DEFAULT_SCHEMA);
       renderTieUI(readTieUI(true));
       renderVictoryTieUI(readVictoryTieUI(true));
       syncAdvancedFromUI();
@@ -8621,7 +8450,4 @@
 <script src="{% staticv 'js/classificacions_builder_help.js' %}" defer></script>
 
 {% endblock %}
-
-
-
 

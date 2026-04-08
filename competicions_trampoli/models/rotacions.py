@@ -58,11 +58,29 @@ class RotacioEstacio(models.Model):
 
 
 class RotacioFranja(models.Model):
+    TIPUS_COMPETITION = "competition"
+    TIPUS_BREAK = "break"
+    TIPUS_AWARDS = "awards"
+    TIPUS_SEPARATOR = "separator"
+    TIPUS_CHOICES = [
+        (TIPUS_COMPETITION, "Competicio"),
+        (TIPUS_BREAK, "Descans"),
+        (TIPUS_AWARDS, "Premis"),
+        (TIPUS_SEPARATOR, "Separador"),
+    ]
+    TIPUS_LABELS = {
+        TIPUS_COMPETITION: "Franja",
+        TIPUS_BREAK: "Descans",
+        TIPUS_AWARDS: "Premis",
+        TIPUS_SEPARATOR: "Separador",
+    }
+
     competicio = models.ForeignKey(Competicio, on_delete=models.CASCADE, related_name="rot_franges")
     hora_inici = models.TimeField()
     hora_fi = models.TimeField()
     ordre = models.PositiveIntegerField(default=1, db_index=True)
     titol = models.CharField(max_length=120, blank=True, default="")
+    tipus = models.CharField(max_length=20, choices=TIPUS_CHOICES, default=TIPUS_COMPETITION, db_index=True)
 
     class Meta:
         ordering = ["ordre", "id"]
@@ -72,11 +90,25 @@ class RotacioFranja(models.Model):
 
     def clean(self):
         super().clean()
+        if self.tipus not in {choice[0] for choice in self.TIPUS_CHOICES}:
+            raise ValidationError("Tipus de franja invalid.")
         if self.hora_fi <= self.hora_inici:
             raise ValidationError("L'hora fi ha de ser posterior a l'hora inici.")
 
+    @property
+    def is_competitive(self):
+        return self.tipus == self.TIPUS_COMPETITION
+
+    @property
+    def tipus_label(self):
+        return self.TIPUS_LABELS.get(self.tipus, "Franja")
+
+    @property
+    def display_label(self):
+        return self.titol.strip() or self.tipus_label
+
     def __str__(self):
-        label = self.titol.strip() or "Franja"
+        label = self.display_label
         return f"{label} {self.hora_inici}-{self.hora_fi}"
 
 

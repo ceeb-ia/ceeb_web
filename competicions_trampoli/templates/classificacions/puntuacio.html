@@ -1,0 +1,349 @@
+<section id="section-puntuacio" class="builder-section builder-section--puntuacio" data-builder-section>
+  <div class="builder-section__header">
+    <div>
+      <div class="builder-section__eyebrow">Logica</div>
+      <h4 class="builder-section__title">Puntuacio <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="puntuacio_overview" aria-label="Ajuda puntuacio">?</button></h4>
+      <p class="builder-section__desc">Defineix d'on surten les notes d'exercici candidates, com se seleccionen i com es combinen per obtenir el resultat numeric final.</p>
+    </div>
+    <div class="builder-help-badge">Bloc central</div>
+  </div>
+  <div class="builder-section__body">
+    <div class="builder-section__stack">
+      <div class="builder-subsection builder-subsection--muted">
+        <div class="builder-subsection__head">
+          <div>
+            <p class="builder-subsection__title">Base del resultat <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="resultat_per_aparell" aria-label="Ajuda base del resultat">?</button></p>
+            <p class="builder-subsection__desc">Decideix si el resultat base es calcula per puntuacio normal o per victories, i quin ordre s'aplica a la classificacio final.</p>
+          </div>
+        </div>
+        <div class="row">
+          <div class="col-12 col-md-6 mb-3">
+            <label class="font-weight-bold">Base de puntuacio</label>
+            <select class="form-control" id="sModeResultatAparells">
+              <option value="score">Score</option>
+              <option value="victories">Victories</option>
+            </select>
+            <div class="small text-muted mt-1">En mode victories, cada aparell compara participants entre si abans de combinar el resultat final.</div>
+          </div>
+          <div class="col-12 col-md-6 mb-3">
+            <label class="font-weight-bold">Ordre principal <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="ordre_principal" aria-label="Ajuda ordre principal">?</button></label>
+            <select class="form-control" id="sOrdre">
+              <option value="desc">Desc (mes es millor)</option>
+              <option value="asc">Asc (menys es millor)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="builder-subsection">
+        <div class="builder-subsection__head">
+          <div>
+            <p class="builder-subsection__title">Aparells que entren al calcul i tractament <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="seleccio_exercicis" aria-label="Ajuda conjunt de notes candidates">?</button></p>
+            <p class="builder-subsection__desc">Defineix quins aparells entren al calcul i si les notes es tracten individualment per aparell o dins d'un sac conjunt. En equips derivats, tambe si es tracten per membre o per equip conjuntament.</p>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="col-12 mb-2">
+            <div class="font-weight-bold">1. Selecció d'aparells a incloure en aquest càlcul</div>
+          </div>
+          <div class="col-12" id="apSelBox">
+            <div class="border rounded p-2 mb-3">
+              <div class="row" id="apChkList"></div>
+            </div>
+            <div id="appStaleBanner" class="builder-status-stack mb-3"></div>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="col-12 col-md-6 mb-3">
+            <label class="font-weight-bold">2. Tractament dels Aparells</label>
+            <select class="form-control" id="sModeSeleccioExercicis">
+              <option value="per_aparell_override">Notes per aparell per separat</option>
+              <option value="global_pool">Totes les notes dels aparells junts</option>
+            </select>
+            <div class="small text-muted mt-1">Defineix si cada aparell resol els seus exercicis pel seu compte o si es crea una sola bossa amb els aparells seleccionats.</div>
+          </div>
+          <div class="col-12 col-md-6 mb-3" id="exerciseSelectionScopeWrap" style="display:none;">
+            <label class="font-weight-bold">Membres de l'equip</label>
+            <select class="form-control" id="sExerciseSelectionScope">
+              <option value="per_member">Notes per membre per separat</option>
+              <option value="team_pool">Totes les notes de l'equip juntes</option>
+            </select>
+            <div class="small text-muted mt-1">Nomes s'aplica en classificacions d'equips derivades d'individuals.</div>
+          </div>
+        </div>
+
+        <div id="candidateScopeHint" class="small text-muted"></div>
+
+      </div>
+
+      <div class="builder-subsection">
+        <div class="builder-subsection__head">
+          <div>
+            <p class="builder-subsection__title">Calcul de la puntuacio <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="apps_selected" aria-label="Ajuda configuracio per aparell">?</button></p>
+            <p class="builder-subsection__desc" id="perAppConfigIntro">Cada aparell mostra els camps inclosos i, si cal, el seu propi criteri de seleccio d'exercicis. Revisa aquest bloc abans de decidir com s'agreguen els camps.</p>
+          </div>
+        </div>
+        <div id="perAppBox" class="mb-0"></div>
+        <div class="alert alert-warning py-2 px-3 small mt-3 mb-3">
+          Per al calcul de <strong>Punts</strong>, els camps d'entrada nomes es tracten com a escalar si son escalar o matriu <strong>1x1</strong>. Matrius mes grans no son puntuables directament.
+        </div>
+        <div class="row" id="fieldAggregationCard">
+          <div class="col-12 col-md-6 mb-0">
+            <label class="font-weight-bold">Agregacio de camps <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="agregacio_camps" aria-label="Ajuda agregacio de camps">?</button></label>
+            <select class="form-control" id="sAggCamps">
+              <option value="sum">Suma</option>
+              <option value="avg">Mitjana</option>
+              <option value="median">Mediana</option>
+              <option value="max">Maxim</option>
+              <option value="min">Minim</option>
+            </select>
+            <div class="small text-muted mt-1">Amb els camps de cada aparell visibles just a sobre, aqui decideixes com es combinen dins d'un mateix exercici.</div>
+          </div>
+        </div>
+        <div class="builder-advanced mt-3" id="candidateSourceCard" style="display:none;">
+          <div class="builder-subsection__head mb-2">
+            <div>
+              <p class="builder-subsection__title mb-1" id="candidateSourceTitle">Formacio del conjunt candidat</p>
+              <p class="builder-subsection__desc mb-0" id="candidateSourceDesc">Tria si els exercicis entren directament al conjunt o si primer s'agreguen dins de cada participant o membre.</p>
+            </div>
+          </div>
+          <div class="row">
+            <div class="col-12 col-md-6 mb-3">
+              <label class="font-weight-bold" id="candidateSourceModeLabel">Mode de formacio</label>
+              <select class="form-control" id="sCandidateSourceMode">
+                <option value="raw_exercise">Exercicis sense tractament previ</option>
+                <option value="participant_aggregate">Agrupar primer per participant</option>
+              </select>
+              <div class="small text-muted mt-1" id="candidateSourceModeHint">Es pot deixar en exercicis crus o preagregar primer les notes de cada participant o membre.</div>
+            </div>
+          </div>
+          <div id="candidateSourceCfgWrap" style="display:none;">
+            <div class="row">
+              <div class="col-12 col-md-6 mb-2">
+                <label class="small text-muted mb-1" id="candidateSourceSelectionLabel">Seleccio dins del participant</label>
+                <select class="form-control" id="sCandidateSourceSelectionMode">
+                  <option value="tots">Tots</option>
+                  <option value="millor_1">Millor 1</option>
+                  <option value="millor_n">Millors N</option>
+                  <option value="pitjor_1">Pitjor 1</option>
+                  <option value="pitjor_n">Pitjors N</option>
+                  <option value="primer">Primer existent</option>
+                  <option value="ultim">Ultim existent</option>
+                  <option value="index">Exercici concret</option>
+                  <option value="llista">Llista</option>
+                </select>
+              </div>
+              <div class="col-12 col-md-6 mb-2">
+                <label class="small text-muted mb-1" id="candidateSourceAggLabel">Agregacio dins del participant</label>
+                <select class="form-control" id="sCandidateSourceAggExercicis">
+                  <option value="sum">Suma</option>
+                  <option value="avg">Mitjana</option>
+                  <option value="median">Mediana</option>
+                  <option value="max">Maxim</option>
+                  <option value="min">Minim</option>
+                </select>
+              </div>
+            </div>
+            <div class="row mt-2">
+              <div class="col-12 col-md-3 mb-2" id="candidateSourceBestNBox" style="display:none;">
+                <label class="small text-muted">N</label>
+                <input class="form-control" id="iCandidateSourceBestN" type="number" min="1" value="1">
+              </div>
+              <div class="col-12 col-md-3 mb-2" id="candidateSourceIndexBox" style="display:none;">
+                <label class="small text-muted">Index d'exercici</label>
+                <input class="form-control" id="iCandidateSourceIndex" type="number" min="1" value="1">
+              </div>
+              <div class="col-12 col-md-6 mb-2" id="candidateSourceIdsBox" style="display:none;">
+                <label class="small text-muted">Llista d'indexs</label>
+                <input class="form-control" id="tCandidateSourceIds" type="text" placeholder="1,3,4">
+              </div>
+            </div>
+          </div>
+          <div id="candidateSourceHint" class="small text-muted mt-2"></div>
+        </div>
+      </div>
+
+      <div class="builder-subsection" id="exerciseCriteriaCard">
+        <div class="builder-subsection__head">
+          <div>
+            <p class="builder-subsection__title">Seleccio de notes del sac <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="mode_exercicis" aria-label="Ajuda criteri de seleccio">?</button></p>
+            <p class="builder-subsection__desc">Aquest pas nomes s'aplica quan les notes es tracten conjuntament dins d'un sac. Si el tractament es individual per aparell, la seleccio queda definida a cada targeta d'aparell.</p>
+          </div>
+        </div>
+        <div id="globalExerciseCriteriaWrap">
+          <label class="small text-muted mb-1" id="exerciseModeLabel">Criteri global d'exercicis <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="mode_exercicis" aria-label="Ajuda mode d'exercicis">?</button></label>
+          <select class="form-control" id="sExercicisMode">
+            <option value="tots">Tots</option>
+            <option value="millor_1">Millor 1</option>
+            <option value="millor_n">Millors N</option>
+            <option value="pitjor_1">Pitjor 1</option>
+            <option value="pitjor_n">Pitjors N</option>
+            <option value="primer">Primer existent</option>
+            <option value="ultim">Ultim existent</option>
+            <option value="index">Exercici concret</option>
+            <option value="llista">Llista</option>
+          </select>
+          <div class="row mt-2">
+            <div class="col-12 col-md-3 mb-2" id="exBestNBox">
+              <label class="small text-muted">N</label>
+              <input class="form-control" id="iExBestN" type="number" min="1" value="1">
+            </div>
+            <div class="col-12 col-md-3 mb-2" id="exIndexBox" style="display:none;">
+              <label class="small text-muted">Index d'exercici</label>
+              <input class="form-control" id="iExIndex" type="number" min="1" value="1">
+            </div>
+            <div class="col-12 col-md-6 mb-2" id="exIdsBox" style="display:none;">
+              <label class="small text-muted">Llista d'indexs</label>
+              <input class="form-control" id="tExIds" type="text" placeholder="1,3,4">
+            </div>
+            <div class="col-12 col-md-6 mb-2">
+              <label class="small text-muted">Agregacio d'exercicis <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="agregacio_exercicis" aria-label="Ajuda agregacio d'exercicis">?</button></label>
+              <select class="form-control" id="sAggExercicis">
+                <option value="sum">Suma</option>
+                <option value="avg">Mitjana</option>
+                <option value="median">Mediana</option>
+                <option value="max">Maxim</option>
+                <option value="min">Minim</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="builder-subsection builder-subsection--muted" id="exerciseRestrictionsCard">
+        <div class="builder-subsection__head">
+          <div>
+            <p class="builder-subsection__title">Restriccions</p>
+            <p class="builder-subsection__desc">Les restriccions no canvien el criteri de seleccio. Nomes limiten com es reparteixen les notes finalment escollides dins del sac.</p>
+          </div>
+        </div>
+        <div class="row">
+          <div class="col-12 col-md-4 mb-2" id="exMaxPerParticipantBox" style="display:none;">
+            <label class="font-weight-bold">Aportacio maxima per participant <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="exercise_mode_details" aria-label="Ajuda aportacio maxima per participant">?</button></label>
+            <input class="form-control" id="iExMaxPerParticipant" type="number" min="0" value="0">
+            <div class="small text-muted mt-1">Cap participant no pot aportar mes de N notes a la seleccio final. `0` vol dir sense limit.</div>
+          </div>
+          <div class="col-12 col-md-8 mb-2">
+            <div id="restrictionsHint" class="small text-muted pt-2"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="builder-subsection builder-subsection--muted" id="appAggregationCard">
+        <div class="builder-subsection__head">
+          <div>
+            <p class="builder-subsection__title">Combinacio final entre aparells <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="agregacio_aparells" aria-label="Ajuda agregacio entre aparells">?</button></p>
+            <p class="builder-subsection__desc">Aquest es l'ultim pas del calcul i nomes s'aplica quan cada aparell es resol per separat. Si els aparells es tracten en un sac global, no hi ha combinacio final entre aparells.</p>
+          </div>
+        </div>
+        <div class="row">
+          <div class="col-12 col-md-6 mb-0">
+            <label class="font-weight-bold">Agregacio entre aparells</label>
+            <select class="form-control" id="sAggAparells">
+              <option value="sum">Suma</option>
+              <option value="avg">Mitjana</option>
+              <option value="median">Mediana</option>
+              <option value="max">Maxim</option>
+              <option value="min">Minim</option>
+            </select>
+            <div class="small text-muted mt-1">Defineix com es combinen els subtotals finals dels aparells seleccionats.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="builder-subsection builder-subsection--highlight">
+        <div class="builder-subsection__head">
+          <div>
+            <p class="builder-subsection__title">Resum viu</p>
+            <p class="builder-subsection__desc">Aquesta frase resumeix amb llenguatge natural com es calculara la puntuacio de la classificacio actual.</p>
+          </div>
+        </div>
+        <div class="builder-summary-box">
+          <div id="exSelectionSummary" class="builder-summary-box__text">Encara no hi ha prou informacio per resumir la puntuacio.</div>
+          <div id="exModeHint" class="small text-muted mt-2"></div>
+        </div>
+      </div>
+
+      <div id="victoryConfigBox" class="builder-subsection builder-subsection--highlight" style="display:none;">
+        <div class="builder-subsection__head">
+          <div>
+            <p class="builder-subsection__title">Configuracio de victories <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="victories_overview" aria-label="Ajuda configuracio de victories">?</button></p>
+            <p class="builder-subsection__desc">Nomes s'aplica quan la base de puntuacio es `Victories`. Defineix si els duels es calculen sobre camps o exercicis agregats o separats.</p>
+          </div>
+          <div class="builder-inline-note">Nomes Victories</div>
+        </div>
+        <div class="row">
+          <div class="col-12 col-md-6 mb-3">
+            <label class="font-weight-bold">Calcul sobre camps <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="victory_mode_camps" aria-label="Ajuda calcul sobre camps">?</button></label>
+            <select class="form-control" id="sVictoryModeCamps">
+              <option value="agregat">Agregant camps</option>
+              <option value="separat">Per camps separats</option>
+            </select>
+          </div>
+          <div class="col-12 col-md-6 mb-3">
+            <label class="font-weight-bold">Calcul sobre exercicis <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="victory_mode_exercicis" aria-label="Ajuda calcul sobre exercicis">?</button></label>
+            <select class="form-control" id="sVictoryModeExercicis">
+              <option value="agregat">Agregant exercicis</option>
+              <option value="separat">Per exercicis separats</option>
+            </select>
+          </div>
+        </div>
+        <div class="row">
+          <div class="col-12 col-md-6 mb-3" id="victoryFieldSelectionModeWrap" style="display:none;">
+            <label class="font-weight-bold">Seleccio d'exercicis amb camps separats <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="victory_field_selection" aria-label="Ajuda seleccio d'exercicis amb camps separats">?</button></label>
+            <select class="form-control" id="sVictoryFieldSelectionMode">
+              <option value="per_camp">Seleccio independent per camp</option>
+              <option value="global">Seleccio global agregada</option>
+            </select>
+          </div>
+          <div class="col-12 col-md-6 mb-3" id="victoryAggCampsWrap" style="display:none;">
+            <label class="font-weight-bold">Agregacio de victories entre camps <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="victory_agg_camps" aria-label="Ajuda agregacio de victories entre camps">?</button></label>
+            <select class="form-control" id="sVictoryAggCamps">
+              <option value="sum">Suma</option>
+              <option value="avg">Mitjana</option>
+              <option value="median">Mediana</option>
+              <option value="max">Maxim</option>
+              <option value="min">Minim</option>
+            </select>
+          </div>
+          <div class="col-12 col-md-6 mb-3" id="victoryAggExercicisWrap" style="display:none;">
+            <label class="font-weight-bold">Agregacio de victories entre exercicis <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="victory_agg_exercicis" aria-label="Ajuda agregacio de victories entre exercicis">?</button></label>
+            <select class="form-control" id="sVictoryAggExercicis">
+              <option value="sum">Suma</option>
+              <option value="avg">Mitjana</option>
+              <option value="median">Mediana</option>
+              <option value="max">Maxim</option>
+              <option value="min">Minim</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div id="victoryTieBox" class="builder-subsection builder-subsection--muted" style="display:none;">
+        <div class="builder-subsection__head">
+          <div>
+            <p class="builder-subsection__title">Desempat intern de comparacio <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="victory_internal_tie" aria-label="Ajuda desempat intern de victories">?</button></p>
+            <p class="builder-subsection__desc">Nomes s'aplica en mode <strong>Victories</strong>. Resol empats dins de cada duel d'un mateix aparell.</p>
+          </div>
+          <div class="builder-inline-note">Depen de Victories</div>
+        </div>
+        <div class="builder-table-shell table-responsive mb-2">
+          <table class="table table-sm mb-0">
+            <thead>
+              <tr>
+                <th style="width:30%;">Camp <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="victory_internal_tie" aria-label="Ajuda camp de desempat intern">?</button></th>
+                <th style="width:50%;">Exercicis <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="victory_internal_tie" aria-label="Ajuda exercicis de desempat intern">?</button></th>
+                <th style="width:10%;">Ordre <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="victory_internal_tie" aria-label="Ajuda ordre de desempat intern">?</button></th>
+                <th style="width:10%;" class="text-right">Accions</th>
+              </tr>
+            </thead>
+            <tbody id="victoryTieBody"></tbody>
+          </table>
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-primary mb-0" id="btnVictoryTieAdd">+ Afegir criteri</button>
+      </div>
+    </div>
+  </div>
+</section>

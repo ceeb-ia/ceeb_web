@@ -22,6 +22,21 @@ from ._shared import (
 )
 
 
+def _clean_franja_tipus(raw_value):
+    value = str(raw_value or "").strip().lower()
+    allowed = {
+        RotacioFranja.TIPUS_COMPETITION,
+        RotacioFranja.TIPUS_BREAK,
+        RotacioFranja.TIPUS_AWARDS,
+        RotacioFranja.TIPUS_SEPARATOR,
+    }
+    return value if value in allowed else RotacioFranja.TIPUS_COMPETITION
+
+
+def _is_competitive_franja(franja):
+    return getattr(franja, "tipus", RotacioFranja.TIPUS_COMPETITION) == RotacioFranja.TIPUS_COMPETITION
+
+
 @require_POST
 @csrf_protect
 def franges_auto_create(request, pk):
@@ -80,6 +95,7 @@ def franges_auto_create(request, pk):
                 hora_fi=nxt.time(),
                 ordre=base_ord,
                 titol=f"{titol_base} {idx}",
+                tipus=RotacioFranja.TIPUS_COMPETITION,
             ))
             cur = nxt
             idx += 1
@@ -101,13 +117,21 @@ def franja_create(request, pk):
     hi = parse_time(payload.get("hora_inici") or "")
     hf = parse_time(payload.get("hora_fi") or "")
     titol = (payload.get("titol") or "").strip()
+    tipus = _clean_franja_tipus(payload.get("tipus"))
 
     if not hi or not hf:
         return HttpResponseBadRequest("Hora inici/fi obligatòries")
 
     max_ord = (RotacioFranja.objects.filter(competicio=competicio).aggregate(Max("ordre"))["ordre__max"] or 0) + 1
 
-    f = RotacioFranja(competicio=competicio, hora_inici=hi, hora_fi=hf, ordre=max_ord, titol=titol)
+    f = RotacioFranja(
+        competicio=competicio,
+        hora_inici=hi,
+        hora_fi=hf,
+        ordre=max_ord,
+        titol=titol,
+        tipus=tipus,
+    )
     try:
         f.full_clean()
     except Exception as e:
@@ -215,6 +239,7 @@ def franja_insert_after(request, pk, franja_id):
             hora_fi=new_end.time(),
             ordre=fr_prev.ordre + 1,
             titol=titol or "",
+            tipus=RotacioFranja.TIPUS_COMPETITION,
         )
 
         # 4) Desplacem horaris de totes les franges que queden per sota (ara tenen ordre > fr_prev.ordre+1)
@@ -250,6 +275,7 @@ def franja_update_inline(request, pk, franja_id):
         return HttpResponseBadRequest("JSON invàlid")
 
     titol = (payload.get("titol") or "").strip()
+    tipus = _clean_franja_tipus(payload.get("tipus", fr.tipus))
     hora_inici = payload.get("hora_inici")
     hora_fi = payload.get("hora_fi")
 
@@ -268,13 +294,18 @@ def franja_update_inline(request, pk, franja_id):
     d_hf = datetime.combine(day, hf)
     if d_hf <= d_hi:
         return HttpResponseBadRequest("L'hora de fi ha de ser posterior a l'hora d'inici")
+    if tipus != RotacioFranja.TIPUS_COMPETITION:
+        has_assignacions = RotacioAssignacio.objects.filter(competicio=competicio, franja=fr).exists()
+        if has_assignacions:
+            return HttpResponseBadRequest("No pots convertir una franja amb assignacions en una franja no competitiva.")
 
     with transaction.atomic():
         # 1) Actualitza franja editada
         fr.titol = titol
         fr.hora_inici = hi
         fr.hora_fi = hf
-        fr.save(update_fields=["titol", "hora_inici", "hora_fi"])
+        fr.tipus = tipus
+        fr.save(update_fields=["titol", "hora_inici", "hora_fi", "tipus"])
 
         # 2) Reajusta totes les franges per sota perquè quedin encadenades
         below = list(
@@ -311,7 +342,9 @@ def franja_update_inline(request, pk, franja_id):
 @csrf_protect
 def franja_order_mode_set(request, pk, franja_id):
     competicio = get_object_or_404(Competicio, pk=pk)
-    get_object_or_404(RotacioFranja, pk=franja_id, competicio=competicio)
+    fr = get_object_or_404(RotacioFranja, pk=franja_id, competicio=competicio)
+    if not _is_competitive_franja(fr):
+        return HttpResponseBadRequest("Només les franges competitives tenen mode d'ordre.")
 
     try:
         payload = json.loads(request.body.decode("utf-8"))
@@ -328,6 +361,8 @@ def franja_order_mode_set(request, pk, franja_id):
 def rotacions_extrapolar(request, pk, franja_id):
     competicio = get_object_or_404(Competicio, pk=pk)
     fr_base = get_object_or_404(RotacioFranja, pk=franja_id, competicio=competicio)
+    if not _is_competitive_franja(fr_base):
+        return HttpResponseBadRequest("Només es pot extrapolar des d'una franja competitiva.")
 
     try:
         payload = json.loads(request.body.decode("utf-8"))
@@ -374,9 +409,10 @@ def rotacions_extrapolar(request, pk, franja_id):
 
     # 2) Aconseguim/creem franges següents
     franges = list(RotacioFranja.objects.filter(competicio=competicio).order_by("ordre", "id"))
-    idx_base = next((i for i, f in enumerate(franges) if f.id == fr_base.id), None)
+    competition_franges = [fr for fr in franges if _is_competitive_franja(fr)]
+    idx_base = next((i for i, f in enumerate(competition_franges) if f.id == fr_base.id), None)
     if idx_base is None:
-        return HttpResponseBadRequest("Franja base no trobada al llistat.")
+        return HttpResponseBadRequest("Franja base no trobada al llistat competitiu.")
 
     # Interval per crear franges: preferim interval de la base; si no es pot, del veí anterior
     def _delta_minutes(f):
@@ -394,7 +430,7 @@ def rotacions_extrapolar(request, pk, franja_id):
     interval_min = _delta_minutes(fr_base)
     if not interval_min:
         if idx_base > 0:
-            interval_min = _delta_minutes(franges[idx_base - 1])
+            interval_min = _delta_minutes(competition_franges[idx_base - 1])
     if not interval_min:
         return HttpResponseBadRequest("No puc deduir l'interval (minuts) per crear franges noves.")
 
@@ -408,15 +444,18 @@ def rotacions_extrapolar(request, pk, franja_id):
     with transaction.atomic():
         # refresquem per evitar desajustos
         franges = list(RotacioFranja.objects.filter(competicio=competicio).order_by("ordre", "id"))
-        idx_base = next((i for i, f in enumerate(franges) if f.id == fr_base.id), None)
+        competition_franges = [fr for fr in franges if _is_competitive_franja(fr)]
+        idx_base = next((i for i, f in enumerate(competition_franges) if f.id == fr_base.id), None)
+        if idx_base is None:
+            return HttpResponseBadRequest("Franja base no trobada al llistat competitiu.")
 
         max_ord = (RotacioFranja.objects.filter(competicio=competicio).aggregate(Max("ordre"))["ordre__max"] or 0)
 
         target_franges = []
         for k in range(1, count + 1):
             idx = idx_base + k
-            if idx < len(franges):
-                target_franges.append(franges[idx])
+            if idx < len(competition_franges):
+                target_franges.append(competition_franges[idx])
             else:
                 # crear franja nova a continuació temporalment
                 # start = fi de l'última franja existent
@@ -433,9 +472,11 @@ def rotacions_extrapolar(request, pk, franja_id):
                     hora_fi=new_end.time(),
                     ordre=max_ord,
                     titol=f"{fr_base.titol or 'Franja'} +{k}",
+                    tipus=RotacioFranja.TIPUS_COMPETITION,
                 )
                 created += 1
                 franges.append(nf)
+                competition_franges.append(nf)
                 target_franges.append(nf)
 
         # 3) Omplim les franges fent shift circular

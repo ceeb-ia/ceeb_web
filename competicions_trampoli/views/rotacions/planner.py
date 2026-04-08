@@ -34,6 +34,10 @@ from ._shared import (
 )
 
 
+def _is_competitive_franja(franja):
+    return getattr(franja, "tipus", RotacioFranja.TIPUS_COMPETITION) == RotacioFranja.TIPUS_COMPETITION
+
+
 def rotacions_planner(request, pk):
     competicio = get_object_or_404(Competicio, pk=pk)
 
@@ -96,6 +100,10 @@ def rotacions_planner(request, pk):
         .order_by("ordre", "id")
     )
     franges = list(RotacioFranja.objects.filter(competicio=competicio).order_by("ordre", "id"))
+    franja_type_options = [
+        {"value": value, "label": label}
+        for value, label in RotacioFranja.TIPUS_CHOICES
+    ]
     franja_modes = get_rotacions_order_modes(competicio)
     export_meta = _get_export_meta(competicio)
     export_meta["logo_url"] = _logo_url_from_path(export_meta.get("logo_path", ""))
@@ -123,9 +131,12 @@ def rotacions_planner(request, pk):
         .select_related("franja", "estacio")
         .prefetch_related("grup_links__grup", "serie_links__serie")
     )
+    competition_franja_ids = {fr.id for fr in franges if _is_competitive_franja(fr)}
 
     grid = {}  # grid[franja_id][estacio_id] = [grups]
     for a in assigns:
+        if a.franja_id not in competition_franja_ids:
+            continue
         estacio = getattr(a, "estacio", None)
         is_team_station = bool(
             estacio
@@ -153,6 +164,8 @@ def rotacions_planner(request, pk):
         "group_sidebar_json": json.dumps(program_sidebar, ensure_ascii=False),
         "station_modes_json": json.dumps(station_modes, ensure_ascii=False),
         "franja_order_modes_json": json.dumps(franja_modes, ensure_ascii=False),
+        "franja_type_options": franja_type_options,
+        "franja_type_options_json": json.dumps(franja_type_options, ensure_ascii=False),
         "export_meta_json": json.dumps(export_meta, ensure_ascii=False),
         "export_participant_fields_json": json.dumps(export_participant_fields, ensure_ascii=False),
         "grups_json": json.dumps(grups, ensure_ascii=False),

@@ -805,6 +805,19 @@ def _validate_exercicis_cfg_obj(cfg, prefix: str):
     return errors
 
 
+def _validate_candidate_source_cfg_obj(cfg, prefix: str):
+    errors = []
+    if not isinstance(cfg, dict):
+        return [f"{prefix} ha de ser un objecte."]
+    errors.extend(_validate_exercicis_cfg_obj(cfg, prefix))
+    raw_agg = str(cfg.get("agregacio_exercicis") or "sum").strip().lower()
+    if raw_agg not in {"sum", "avg", "median", "max", "min"}:
+        errors.append(f"{prefix}.agregacio_exercicis invalid: {raw_agg}")
+    if "max_per_participant" in cfg:
+        errors.append(f"{prefix}.max_per_participant no es admissible en la preagregacio.")
+    return errors
+
+
 def _validate_victories_granular_options(victories, prefix: str):
     errors = []
     if not isinstance(victories, dict):
@@ -1287,6 +1300,39 @@ def _validate_exercicis_selection(competicio, schema: dict):
     return errors
 
 
+def _validate_candidate_source(schema: dict, *, tipus="individual", team_mode=""):
+    schema = schema or {}
+    punt = (schema.get("puntuacio") or {})
+    if not isinstance(punt, dict):
+        punt = {}
+
+    raw_mode = str(punt.get("candidate_source_mode") or "raw_exercise").strip().lower()
+    if raw_mode not in {"raw_exercise", "participant_aggregate"}:
+        return [f"puntuacio.candidate_source_mode invalid: {raw_mode}"]
+
+    allow_candidate_source = (
+        str(tipus or "").strip().lower() == "individual"
+        or (
+            str(tipus or "").strip().lower() == "equips"
+            and str(team_mode or "").strip().lower() == "derived_from_individual"
+        )
+    )
+    if not allow_candidate_source:
+        if punt.get("candidate_source_mode") not in (None, "", "raw_exercise"):
+            return [
+                "puntuacio.candidate_source_mode nomes es compatible amb tipus='individual' o tipus='equips' + team_mode=derived_from_individual."
+            ]
+        return []
+
+    if raw_mode != "participant_aggregate":
+        return []
+
+    return _validate_candidate_source_cfg_obj(
+        punt.get("candidate_source_cfg") or {},
+        "puntuacio.candidate_source_cfg",
+    )
+
+
 def _validate_no_tots_mode(schema: dict):
     schema = schema or {}
     errors = []
@@ -1746,6 +1792,13 @@ def validate_schema_for_competicio_detailed(competicio, schema_local, tipus="ind
     errors.extend(_validate_particions_config_schema(schema_local, tipus=tipus))
     errors.extend(_validate_no_tots_mode(schema_local))
     errors.extend(_validate_camps_per_aparell(competicio, schema_local))
+    errors.extend(
+        _validate_candidate_source(
+            schema_local,
+            tipus=tipus,
+            team_mode=schema_local.get("equips", {}).get("team_mode", ""),
+        )
+    )
     errors.extend(_validate_tie_camps_per_aparell(competicio, schema_local))
     presentacio_errors, presentacio_details = _validate_presentacio_columns_details(competicio, schema_local, tipus=tipus)
     errors.extend(presentacio_errors)

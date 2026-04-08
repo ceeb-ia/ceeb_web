@@ -48,6 +48,10 @@ from ._shared import (
 )
 
 
+def _is_competitive_franja(franja):
+    return getattr(franja, "tipus", RotacioFranja.TIPUS_COMPETITION) == RotacioFranja.TIPUS_COMPETITION
+
+
 @require_POST
 @csrf_protect
 def rotacions_export_meta_save(request, pk):
@@ -176,9 +180,10 @@ def franges_export_excel(request, pk):
     group_maps = get_group_maps(competicio)
     groups_by_id = group_maps["by_id"]
     group_labels_by_id = group_maps["label_by_id"]
+    competition_franja_ids = {fr.id for fr in franges if _is_competitive_franja(fr)}
     assigns = list(
         RotacioAssignacio.objects
-        .filter(competicio=competicio)
+        .filter(competicio=competicio, franja_id__in=competition_franja_ids)
         .select_related("franja", "estacio")
         .prefetch_related("grup_links__grup", "serie_links__serie")
         .order_by("franja__ordre", "franja_id", "estacio__ordre", "id")
@@ -406,6 +411,7 @@ def franges_export_excel(request, pk):
     fill_sub = PatternFill("solid", fgColor="D9E1F2")
     fill_hdr = PatternFill("solid", fgColor="E9EEF7")
     fill_zebra = PatternFill("solid", fgColor="F6F8FC")
+    fill_special = PatternFill("solid", fgColor="EEF2F7")
 
     thin = Side(style="thin", color="9AA7B2")
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
@@ -506,8 +512,30 @@ def franges_export_excel(request, pk):
 
         current_row = data_start_row
         for i, f in enumerate(franges, start=1):
-            label = (f.titol or "").strip() or "Franja"
+            label = getattr(f, "display_label", None) or (f.titol or "").strip() or "Franja"
             fr_txt = f"{label}\n{f.hora_inici.strftime('%H:%M')}-{f.hora_fi.strftime('%H:%M')}"
+            is_competitive = _is_competitive_franja(f)
+
+            if not is_competitive:
+                start_row = current_row
+                end_row = start_row
+                ws.merge_cells(
+                    start_row=start_row,
+                    start_column=1,
+                    end_row=end_row,
+                    end_column=total_cols,
+                )
+                fr_cell = ws.cell(row=start_row, column=1, value=fr_txt)
+                fr_cell.alignment = center
+                fr_cell.border = border
+                fr_cell.font = bold
+                for col in range(1, total_cols + 1):
+                    cell = ws.cell(row=start_row, column=col)
+                    cell.fill = fill_special
+                    cell.border = border
+                ws.row_dimensions[start_row].height = 24
+                current_row = end_row + 1
+                continue
 
             cell_participants = {}
             max_participants = 0
@@ -594,8 +622,20 @@ def franges_export_excel(request, pk):
 
         for i, f in enumerate(franges, start=1):
             r = header_row + i
-            label = (f.titol or "").strip() or "Franja"
+            label = getattr(f, "display_label", None) or (f.titol or "").strip() or "Franja"
             fr_txt = f"{label}\n{f.hora_inici.strftime('%H:%M')}-{f.hora_fi.strftime('%H:%M')}"
+            if not _is_competitive_franja(f):
+                ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=total_cols)
+                c0 = ws.cell(row=r, column=1, value=fr_txt)
+                c0.alignment = center
+                c0.border = border
+                c0.font = bold
+                for col in range(1, total_cols + 1):
+                    cell = ws.cell(row=r, column=col)
+                    cell.fill = fill_special
+                    cell.border = border
+                ws.row_dimensions[r].height = 24
+                continue
 
             c0 = ws.cell(row=r, column=1, value=fr_txt)
             c0.alignment = center

@@ -1,0 +1,790 @@
+  let puntuacioUiBound = false;
+
+  function _puntuacioSelectedAppCount(schema) {
+    const uiCount = selectedAparellIdsFromUI().length;
+    if (uiCount > 0) return uiCount;
+    const source = schema || ((currentCfg() || {}).schema || DEFAULT_SCHEMA);
+    return sanitizeCompatibleAppIds(getCurrentBuilderAppIds(source)).length;
+  }
+
+  function _puntuacioNormalizeModeSelection(rawMode, appCount) {
+    const mode = String(rawMode || "per_aparell_override").toLowerCase().trim();
+    if (mode === "per_aparell_global") return "per_aparell_override";
+    if (mode === "global_pool" && !(Number.isFinite(appCount) && appCount > 1)) {
+      return "per_aparell_override";
+    }
+    if (["per_aparell_override", "global_pool"].includes(mode)) return mode;
+    return "per_aparell_override";
+  }
+
+  function _applyPuntuacioModeCopy(appCount) {
+    const count = Math.max(0, Number(appCount || 0));
+    const modeSel = els.sModeSeleccioExercicis;
+    if (!modeSel) return;
+
+    const legacyOpt = modeSel.querySelector('option[value="per_aparell_global"]');
+    if (legacyOpt) {
+      legacyOpt.hidden = true;
+      legacyOpt.disabled = true;
+      legacyOpt.textContent = "Per aparell (legacy)";
+    }
+
+    const overrideOpt = modeSel.querySelector('option[value="per_aparell_override"]');
+    if (overrideOpt) {
+      overrideOpt.hidden = false;
+      overrideOpt.disabled = false;
+      overrideOpt.textContent = "Individualment per aparell";
+    }
+
+    const globalOpt = modeSel.querySelector('option[value="global_pool"]');
+    if (globalOpt) {
+      globalOpt.hidden = count <= 1;
+      globalOpt.disabled = count <= 1;
+      globalOpt.textContent = count > 1
+        ? "Tots els aparells junts"
+        : "Tots els aparells junts (calen 2 o mes aparells)";
+    }
+  }
+
+  function _applyPuntuacioScopeCopy() {
+    const scopeSel = els.sExerciseSelectionScope;
+    if (!scopeSel) return;
+
+    const perMemberOpt = scopeSel.querySelector('option[value="per_member"]');
+    if (perMemberOpt) {
+      perMemberOpt.textContent = "Notes per membre per separat";
+    }
+    const teamPoolOpt = scopeSel.querySelector('option[value="team_pool"]');
+    if (teamPoolOpt) {
+      teamPoolOpt.textContent = "Bossa conjunta de l'equip";
+    }
+  }
+
+  function buildPuntuacioLiveSummary({
+    modeSel,
+    exerciseMode,
+    bestN,
+    index,
+    ids,
+    maxPerParticipant,
+    showScope,
+    isTeamPool,
+  }) {
+    const perAppLabel = modeSel === "global_pool"
+      ? "Tots els aparells junts"
+      : "Individualment per aparell";
+    const exerciseLabel = describeExerciseMode(exerciseMode, bestN, index, ids);
+    let summary = `${perAppLabel}: ${exerciseLabel}`;
+    let hint = modeSel === "global_pool"
+      ? "El conjunt de notes candidates es forma amb tots els aparells seleccionats."
+      : "Cada aparell es configura i es calcula per separat.";
+
+    if (showScope) {
+      if (isTeamPool) {
+        summary += ` de l'equip${maxPerParticipant > 0 ? `; max ${maxPerParticipant} per participant` : "; sense limit per participant"}`;
+        hint += " La seleccio es fa sobre una bossa conjunta d'equip.";
+      } else {
+        summary += " per membre; despres suma";
+        hint += " Cada membre selecciona els seus exercicis i despres se sumen els subtotals.";
+      }
+    }
+
+    return { summary, hint };
+  }
+
+  function getModeSeleccioExercicisFromUI() {
+    const appCount = _puntuacioSelectedAppCount();
+    return _puntuacioNormalizeModeSelection(
+      els.sModeSeleccioExercicis?.value || "per_aparell_override",
+      appCount,
+    );
+  }
+
+  function isDerivedExerciseSelectionScopeAvailable() {
+    return isTipusEquips() && getEquipsUiState().effectiveTeamMode === TEAM_MODE_DERIVED;
+  }
+
+  function getExerciseSelectionScopeFromUI() {
+    return normalizeExerciseSelectionScope(
+      els.sExerciseSelectionScope?.value || EXERCISE_SELECTION_SCOPE_PER_MEMBER
+    );
+  }
+
+  function getEffectiveTieExerciseSelectionScope(rawScope) {
+    const scope = normalizeTieExerciseSelectionScope(rawScope);
+    return scope === EXERCISE_SELECTION_SCOPE_INHERIT
+      ? getExerciseSelectionScopeFromUI()
+      : scope;
+  }
+
+  function isTieExerciseSelectionLockedToMainPool(rawScope) {
+    return (
+      isDerivedExerciseSelectionScopeAvailable() &&
+      getEffectiveTieExerciseSelectionScope(rawScope || EXERCISE_SELECTION_SCOPE_INHERIT) === EXERCISE_SELECTION_SCOPE_TEAM_POOL
+    );
+  }
+
+  function describeExerciseMode(mode, bestN, index, ids) {
+    if (mode === "hereta") return "exercicis heretats";
+    if (mode === "millor_n") return `millors ${Math.max(1, Number(bestN || 1))}`;
+    if (mode === "pitjor_n") return `pitjors ${Math.max(1, Number(bestN || 1))}`;
+    if (mode === "millor_1") return "millor 1";
+    if (mode === "pitjor_1") return "pitjor 1";
+    if (mode === "primer") return "primer existent";
+    if (mode === "ultim") return "ultim existent";
+    if (mode === "index") return `exercici #${Math.max(1, Number(index || 1))}`;
+    if (mode === "llista") {
+      const list = Array.isArray(ids) ? ids : parsePositiveIds(ids || "");
+      return list.length ? `llista ${list.join(",")}` : "llista";
+    }
+    return "tots";
+  }
+
+  function _copyPuntuacioExerciseCfg(rawCfg) {
+    const cfg = (rawCfg && typeof rawCfg === "object" && !Array.isArray(rawCfg)) ? rawCfg : {};
+    const mode = String(cfg.mode || "tots").toLowerCase().trim();
+    const outMode = ["tots","millor_1","millor_n","pitjor_1","pitjor_n","primer","ultim","index","llista"].includes(mode)
+      ? mode
+      : "tots";
+    const out = { mode: outMode };
+    if (isBestNMode(outMode)) out.best_n = Math.max(1, Number(cfg.best_n || 1));
+    if (outMode === "index") out.index = Math.max(1, Number(cfg.index || 1));
+    if (outMode === "llista") out.ids = parsePositiveIds(cfg.ids || []);
+    const maxPerParticipant = Math.max(0, Number(cfg.max_per_participant || 0));
+    if (maxPerParticipant > 0) out.max_per_participant = maxPerParticipant;
+    return out;
+  }
+
+  function isCandidateSourceAvailable() {
+    if (currentTipus() === "individual") return true;
+    return isTipusEquips() && getEquipsUiState().effectiveTeamMode === TEAM_MODE_DERIVED;
+  }
+
+  function getCandidateSourceOwnerLabel() {
+    return currentTipus() === "individual" ? "participant" : "membre";
+  }
+
+  function _copyCandidateSourceCfg(rawCfg) {
+    const cfg = (rawCfg && typeof rawCfg === "object" && !Array.isArray(rawCfg)) ? rawCfg : {};
+    const mode = String(cfg.mode || "tots").toLowerCase().trim();
+    const outMode = ["tots","millor_1","millor_n","pitjor_1","pitjor_n","primer","ultim","index","llista"].includes(mode)
+      ? mode
+      : "tots";
+    const out = { mode: outMode };
+    if (isBestNMode(outMode)) out.best_n = Math.max(1, Number(cfg.best_n || 1));
+    if (outMode === "index") out.index = Math.max(1, Number(cfg.index || 1));
+    if (outMode === "llista") out.ids = parsePositiveIds(cfg.ids || []);
+    const agg = String(cfg.agregacio_exercicis || "sum").toLowerCase().trim();
+    out.agregacio_exercicis = ["sum","avg","median","max","min"].includes(agg) ? agg : "sum";
+    return out;
+  }
+
+  function getCandidateSourceModeFromUI() {
+    return String(els.sCandidateSourceMode?.value || "raw_exercise").toLowerCase().trim();
+  }
+
+  function getCandidateSourceCfgFromUI() {
+    return _copyCandidateSourceCfg({
+      mode: els.sCandidateSourceSelectionMode?.value || "tots",
+      best_n: els.iCandidateSourceBestN?.value || 1,
+      index: els.iCandidateSourceIndex?.value || 1,
+      ids: parsePositiveIds(els.tCandidateSourceIds?.value || ""),
+      agregacio_exercicis: els.sCandidateSourceAggExercicis?.value || "sum",
+    });
+  }
+
+  function _applyCandidateSourceCopy() {
+    const modeSel = els.sCandidateSourceMode;
+    if (!modeSel) return;
+    const ownerLabel = getCandidateSourceOwnerLabel();
+    const isDerived = ownerLabel === "membre";
+    const rawOpt = modeSel.querySelector('option[value="raw_exercise"]');
+    if (rawOpt) rawOpt.textContent = "Exercicis sense tractament previ";
+    const aggOpt = modeSel.querySelector('option[value="participant_aggregate"]');
+    if (aggOpt) aggOpt.textContent = isDerived
+      ? "Agrupar primer per membre"
+      : "Agrupar primer per participant";
+    if (els.candidateSourceModeLabel) els.candidateSourceModeLabel.textContent = "Mode de formacio";
+    if (els.candidateSourceModeHint) {
+      els.candidateSourceModeHint.textContent = isDerived
+        ? "Es pot deixar en exercicis crus o preagregar primer les notes de cada membre."
+        : "Es pot deixar en exercicis crus o preagregar primer les notes de cada participant.";
+    }
+    if (els.candidateSourceSelectionLabel) {
+      els.candidateSourceSelectionLabel.textContent = `Seleccio dins del ${ownerLabel}`;
+    }
+    if (els.candidateSourceAggLabel) {
+      els.candidateSourceAggLabel.textContent = `Agregacio dins del ${ownerLabel}`;
+    }
+    if (els.candidateSourceTitle) {
+      els.candidateSourceTitle.textContent = "Formacio del conjunt candidat";
+    }
+    if (els.candidateSourceDesc) {
+      els.candidateSourceDesc.textContent = isDerived
+        ? "Tria si els exercicis entren directament al conjunt o si primer s'agreguen dins de cada membre."
+        : "Tria si els exercicis entren directament al conjunt o si primer s'agreguen dins de cada participant.";
+    }
+    if (els.candidateSourceHint) {
+      els.candidateSourceHint.textContent = isDerived
+        ? "Quan s'agrupa primer, es resol una seleccio i agregacio dins de cada membre abans d'entrar al conjunt final."
+        : "Quan s'agrupa primer, es resol una seleccio i agregacio dins de cada participant abans d'entrar al conjunt final.";
+    }
+  }
+
+  function refreshCandidateSourceUI(schema) {
+    const currentSchema = schema || ((currentCfg() || {}).schema || DEFAULT_SCHEMA);
+    const punt = (currentSchema.puntuacio || {});
+    const showCard = isCandidateSourceAvailable();
+    const mode = String(els.sCandidateSourceMode?.value || punt.candidate_source_mode || "raw_exercise").toLowerCase().trim();
+    const cfg = _copyCandidateSourceCfg(punt.candidate_source_cfg || {});
+    const showCfg = showCard && mode === "participant_aggregate";
+
+    _applyCandidateSourceCopy();
+
+    if (els.candidateSourceCard) {
+      els.candidateSourceCard.style.display = showCard ? "" : "none";
+    }
+    if (els.sCandidateSourceMode) {
+      ensureSelectOption(els.sCandidateSourceMode, mode, value => `${value} (legacy)`);
+      els.sCandidateSourceMode.value = ["raw_exercise", "participant_aggregate"].includes(mode) ? mode : "raw_exercise";
+    }
+    if (els.candidateSourceCfgWrap) {
+      els.candidateSourceCfgWrap.style.display = showCfg ? "" : "none";
+    }
+    if (els.sCandidateSourceSelectionMode) {
+      els.sCandidateSourceSelectionMode.value = cfg.mode || "tots";
+    }
+    if (els.iCandidateSourceBestN) {
+      els.iCandidateSourceBestN.value = cfg.best_n || 1;
+    }
+    if (els.iCandidateSourceIndex) {
+      els.iCandidateSourceIndex.value = cfg.index || 1;
+    }
+    if (els.tCandidateSourceIds) {
+      els.tCandidateSourceIds.value = Array.isArray(cfg.ids) ? cfg.ids.join(",") : String(cfg.ids || "");
+    }
+    if (els.sCandidateSourceAggExercicis) {
+      els.sCandidateSourceAggExercicis.value = cfg.agregacio_exercicis || "sum";
+    }
+    if (els.candidateSourceBestNBox) {
+      els.candidateSourceBestNBox.style.display = isBestNMode(cfg.mode) ? "" : "none";
+    }
+    if (els.candidateSourceIndexBox) {
+      els.candidateSourceIndexBox.style.display = cfg.mode === "index" ? "" : "none";
+    }
+    if (els.candidateSourceIdsBox) {
+      els.candidateSourceIdsBox.style.display = cfg.mode === "llista" ? "" : "none";
+    }
+  }
+
+  function _puntuacioSelectedAppIds(schema) {
+    const fromUi = selectedAparellIdsFromUI();
+    if (fromUi.length) return sanitizeCompatibleAppIds(fromUi);
+    return sanitizeCompatibleAppIds(getCurrentBuilderAppIds(schema || ((currentCfg() || {}).schema || DEFAULT_SCHEMA)));
+  }
+
+  function _getPerAppExerciseCfgForUi(punt, appId) {
+    const rawMap = punt && typeof punt.exercicis_per_aparell === "object" && !Array.isArray(punt.exercicis_per_aparell)
+      ? punt.exercicis_per_aparell
+      : {};
+    const key = String(appId);
+    const rawMode = String((punt && punt.mode_seleccio_exercicis) || "per_aparell_override").toLowerCase().trim();
+    const directCfg = rawMap[key] || rawMap[appId];
+    if (directCfg && typeof directCfg === "object") return _copyPuntuacioExerciseCfg(directCfg);
+    if (rawMode === "per_aparell_global") return _copyPuntuacioExerciseCfg((punt && punt.exercicis) || {});
+    return _copyPuntuacioExerciseCfg((punt && punt.exercicis) || {});
+  }
+
+  function _describePuntuacioCandidateScope(schema) {
+    const source = schema || ((currentCfg() || {}).schema || DEFAULT_SCHEMA);
+    const appIds = _puntuacioSelectedAppIds(source);
+    const appCount = appIds.length;
+    const modeSel = _puntuacioNormalizeModeSelection(
+      els.sModeSeleccioExercicis?.value || ((source.puntuacio || {}).mode_seleccio_exercicis) || "per_aparell_override",
+      appCount,
+    );
+    const showScope = isDerivedExerciseSelectionScopeAvailable();
+    const isTeamPool = showScope && getExerciseSelectionScopeFromUI() === EXERCISE_SELECTION_SCOPE_TEAM_POOL;
+
+    if (showScope) {
+      if (modeSel === "global_pool") {
+        return isTeamPool
+          ? "Es crea una unica bossa amb totes les notes dels aparells seleccionats i de tots els membres de l'equip."
+          : "Cada membre crea la seva propia bossa barrejant les notes de tots els aparells seleccionats.";
+      }
+      return isTeamPool
+        ? "Per a cada aparell es crea una bossa conjunta amb les notes de tots els membres de l'equip."
+        : "Cada membre resol les seves notes per separat dins de cada aparell seleccionat.";
+    }
+
+    return modeSel === "global_pool"
+      ? "Es crea una unica bossa amb totes les notes dels aparells seleccionats per a cada participant."
+      : "Cada aparell es calcula per separat per a cada participant.";
+  }
+
+  function _describeCandidateSource(schema) {
+    if (!isCandidateSourceAvailable()) {
+      return {
+        summary: "",
+        hint: "",
+      };
+    }
+    const source = schema || ((currentCfg() || {}).schema || DEFAULT_SCHEMA);
+    const punt = (source.puntuacio || {});
+    const mode = String(els.sCandidateSourceMode?.value || punt.candidate_source_mode || "raw_exercise").toLowerCase().trim();
+    const cfg = _copyCandidateSourceCfg(punt.candidate_source_cfg || {});
+    const ownerLabel = getCandidateSourceOwnerLabel();
+    if (mode !== "participant_aggregate") {
+      return {
+        summary: `El conjunt candidat es forma amb exercicis individuals de cada ${ownerLabel}.`,
+        hint: `Cada exercici entra directament al conjunt candidat sense preagregacio per ${ownerLabel}.`,
+      };
+    }
+    const label = describeExerciseMode(cfg.mode, cfg.best_n, cfg.index, cfg.ids);
+    return {
+      summary: `Primer s'agreguen els exercicis de cada ${ownerLabel} amb '${label}' i ${cfg.agregacio_exercicis}.`,
+      hint: `La seleccio final es fara sobre els subtotals preagregats de cada ${ownerLabel}.`,
+    };
+  }
+
+  function _puntuacioHasAnyMultiFieldSelection(schema) {
+    const source = schema || ((currentCfg() || {}).schema || DEFAULT_SCHEMA);
+    const punt = (source.puntuacio || {});
+    const campsPerAparell = punt && typeof punt.camps_per_aparell === "object" && !Array.isArray(punt.camps_per_aparell)
+      ? punt.camps_per_aparell
+      : {};
+    const appIds = _puntuacioSelectedAppIds(source);
+    return appIds.some((appId) => {
+      const key = String(appId);
+      const select = document.querySelector(`[data-app-select="${key}"]`);
+      if (select) {
+        const selectedCount = Array.from(select.selectedOptions || []).filter((opt) => String(opt.value || "").trim()).length;
+        return selectedCount >= 2;
+      }
+      const codes = Array.isArray(campsPerAparell[key]) ? campsPerAparell[key] : [];
+      return codes.filter(Boolean).length >= 2;
+    });
+  }
+
+  function _renderPuntuacioSummary(schema) {
+    const source = schema || ((currentCfg() || {}).schema || DEFAULT_SCHEMA);
+    const punt = (source.puntuacio || {});
+    const modeSel = getModeSeleccioExercicisFromUI();
+    const candidateSource = _describeCandidateSource(source);
+    const selectionScope = getExerciseSelectionScopeFromUI();
+    const showScope = isDerivedExerciseSelectionScopeAvailable();
+    const isTeamPool = showScope && selectionScope === EXERCISE_SELECTION_SCOPE_TEAM_POOL;
+    const isCombinedApps = modeSel === "global_pool";
+    const selectedAppIds = _puntuacioSelectedAppIds(source);
+    const selectedApps = selectedAppIds
+      .map(id => getAparellById(id))
+      .filter(Boolean)
+      .map(app => String(app.nom || app.codi || `Aparell ${app.id}`));
+    const exCfg = readMainExercicisFromUI();
+    const globalLabel = describeExerciseMode(exCfg.cfg.mode, exCfg.bestN, exCfg.index, exCfg.ids);
+    const perAppCfg = readPerAppExercicisFromUI();
+
+    if (els.candidateScopeHint) {
+      els.candidateScopeHint.textContent = _describePuntuacioCandidateScope(source);
+    }
+    if (els.perAppConfigIntro) {
+      els.perAppConfigIntro.textContent = isCombinedApps
+        ? "Cada targeta mostra els camps inclosos per aparell. El criteri global de seleccio s'aplica sobre una sola bossa comuna."
+        : "Cada targeta mostra els camps i el criteri propi de seleccio d'aquest aparell.";
+    }
+    if (els.candidateSourceHint) {
+      els.candidateSourceHint.textContent = candidateSource.hint || "";
+    }
+    if (els.restrictionsHint) {
+      const maxPerParticipant = Math.max(0, Number(els.iExMaxPerParticipant?.value || 0));
+      if (showScope && isTeamPool) {
+        els.restrictionsHint.textContent = isCombinedApps
+          ? (maxPerParticipant > 0
+              ? `La seleccio global quedara limitada a un maxim de ${maxPerParticipant} notes per participant.`
+              : "No s'aplica cap quota per participant sobre la bossa global d'equip.")
+          : "La quota per participant es defineix dins de cada targeta d'aparell.";
+      } else {
+        els.restrictionsHint.textContent = "No hi ha restriccions actives en aquest context.";
+      }
+    }
+
+    if (!els.puntuacioSummaryText) return;
+
+    let summary = `Es calculara per ${currentModeResultatAparells() === "victories" ? "victories" : "score"}. `;
+    summary += isCombinedApps
+      ? `Les notes candidates sortiran de tots els aparells seleccionats junts${selectedApps.length ? ` (${selectedApps.join(", ")})` : ""}. `
+      : `Cada aparell es tractara per separat${selectedApps.length ? ` (${selectedApps.join(", ")})` : ""}. `;
+
+    if (showScope) {
+      summary += isTeamPool
+        ? "Les notes dels membres de l'equip es posaran juntes en una sola bossa. "
+        : "Cada membre seleccionara les seves notes per separat i despres se sumaran els subtotals. ";
+    }
+
+    if (candidateSource.summary) {
+      summary += `${candidateSource.summary} `;
+    }
+
+    if (isCombinedApps) {
+      summary += `S'aplicara el criteri global '${globalLabel}'. `;
+      if (showScope && isTeamPool) {
+        const maxPerParticipant = Math.max(0, Number(els.iExMaxPerParticipant?.value || 0));
+        if (maxPerParticipant > 0) {
+          summary += `Cada participant podra aportar com a maxim ${maxPerParticipant} nota${maxPerParticipant === 1 ? "" : "s"}. `;
+        }
+      }
+    } else if (selectedAppIds.length) {
+      const parts = selectedAppIds.map((appId) => {
+        const cfg = perAppCfg[String(appId)] || _getPerAppExerciseCfgForUi(punt, appId);
+        const label = describeExerciseMode(cfg.mode, cfg.best_n, cfg.index, cfg.ids);
+        const app = getAparellById(appId);
+        const appName = String((app && (app.nom || app.codi)) || `Aparell ${appId}`);
+        const maxPerParticipant = Math.max(0, Number(cfg.max_per_participant || 0));
+        return `${appName}: ${label}${showScope && isTeamPool && maxPerParticipant > 0 ? `, max ${maxPerParticipant} per participant` : ""}`;
+      });
+      if (parts.length) summary += `${parts.join(". ")}. `;
+    }
+
+    if (!isCombinedApps && selectedAppIds.length > 1) {
+      summary += `Els subtotals finals dels aparells es combinaran per ${els.sAggAparells?.value || "sum"}.`;
+    } else if (isCombinedApps) {
+      summary += " Els aparells es tracten en un sol sac, aixi que no hi ha combinacio final entre aparells.";
+    }
+    els.puntuacioSummaryText.textContent = summary;
+  }
+
+  function perAppExercicisHTML(compAparellId, exCfg){
+    const cfg = exCfg || {};
+    const mode = String(cfg.mode || "tots").toLowerCase().trim();
+    const bestN = Math.max(1, Number(cfg.best_n || 1));
+    const index = Math.max(1, Number(cfg.index || 1));
+    const maxPerParticipant = Math.max(0, Number(cfg.max_per_participant || 0));
+    const ids = Array.isArray(cfg.ids) ? cfg.ids.join(",") : "";
+    const showMaxPerParticipant = isDerivedExerciseSelectionScopeAvailable() && getExerciseSelectionScopeFromUI() === EXERCISE_SELECTION_SCOPE_TEAM_POOL;
+    return `
+      <div class="mt-2 border-top pt-2" data-app-ex-box="${esc(compAparellId)}">
+        <label class="small text-muted mb-1">Seleccio d'exercicis per aparell</label>
+        <select class="form-control form-control-sm mb-1" data-app-ex-mode data-app-id="${esc(compAparellId)}">
+          <option value="tots" ${mode==="tots" ? "selected" : ""}>Tots</option>
+          <option value="millor_1" ${mode==="millor_1" ? "selected" : ""}>Millor 1</option>
+          <option value="millor_n" ${mode==="millor_n" ? "selected" : ""}>Millors N</option>
+          <option value="pitjor_1" ${mode==="pitjor_1" ? "selected" : ""}>Pitjor 1</option>
+          <option value="pitjor_n" ${mode==="pitjor_n" ? "selected" : ""}>Pitjors N</option>
+          <option value="primer" ${mode==="primer" ? "selected" : ""}>Primer existent</option>
+          <option value="ultim" ${mode==="ultim" ? "selected" : ""}>Ultim existent</option>
+          <option value="index" ${mode==="index" ? "selected" : ""}>Exercici #</option>
+          <option value="llista" ${mode==="llista" ? "selected" : ""}>Exercicis (llista)</option>
+        </select>
+        <input class="form-control form-control-sm mb-1"
+               data-app-ex-best-n data-app-id="${esc(compAparellId)}"
+               type="number" min="1" value="${esc(bestN)}" placeholder="N">
+        <input class="form-control form-control-sm mb-1"
+               data-app-ex-index data-app-id="${esc(compAparellId)}"
+               type="number" min="1" value="${esc(index)}" placeholder="Index">
+        <input class="form-control form-control-sm mb-1"
+               data-app-ex-max-per-participant data-app-id="${esc(compAparellId)}"
+               type="number" min="0" value="${esc(maxPerParticipant)}" placeholder="Aportacio maxima per participant" style="${showMaxPerParticipant ? "" : "display:none;"}">
+        <input class="form-control form-control-sm"
+               data-app-ex-ids data-app-id="${esc(compAparellId)}"
+               type="text" value="${esc(ids)}" placeholder="Llista (ex: 1,3,4)">
+      </div>
+    `;
+  }
+
+  function refreshPerAppExCardUI(card){
+    const modeSel = card.querySelector("[data-app-ex-mode]");
+    if (!modeSel) return;
+    const mode = String(modeSel.value || "tots").toLowerCase().trim();
+    const best = card.querySelector("[data-app-ex-best-n]");
+    const idx = card.querySelector("[data-app-ex-index]");
+    const max = card.querySelector("[data-app-ex-max-per-participant]");
+    const ids = card.querySelector("[data-app-ex-ids]");
+    const showMaxPerParticipant = isDerivedExerciseSelectionScopeAvailable() && getExerciseSelectionScopeFromUI() === EXERCISE_SELECTION_SCOPE_TEAM_POOL;
+    if (best) best.style.display = isBestNMode(mode) ? "" : "none";
+    if (idx) idx.style.display = (mode === "index") ? "" : "none";
+    if (max) max.style.display = showMaxPerParticipant ? "" : "none";
+    if (ids) ids.style.display = (mode === "llista") ? "" : "none";
+  }
+
+  function renderPerAppUI(schema) {
+    const punt = (schema.puntuacio || {});
+    const appIds = _puntuacioSelectedAppIds(schema);
+    const appCount = appIds.length;
+    const modeSel = getModeSeleccioExercicisFromUI() || _puntuacioNormalizeModeSelection(punt.mode_seleccio_exercicis || "per_aparell_override", appCount);
+    const showExOverride = modeSel === "per_aparell_override" || appCount <= 1;
+    els.perAppBox.innerHTML = "";
+
+    appIds.forEach(id => {
+      const key = String(id);
+      const selectedCodes = (punt.camps_per_aparell || {})[key] || [];
+      const perAppExCfg = _getPerAppExerciseCfgForUi(punt, id);
+      const app = getAparellById(id);
+      const appName = app ? app.nom : `Aparell ${key}`;
+
+      const card = document.createElement("div");
+      card.className = "border rounded p-2 mb-2";
+      card.innerHTML = `
+        <div class="font-weight-bold mb-1">${esc(appName)} (${esc(key)})</div>
+        ${perAppFieldsHTML(key, selectedCodes)}
+        ${showExOverride ? perAppExercicisHTML(key, perAppExCfg) : '<div class="small text-muted mt-2">Aquest aparell usa el criteri global definit a la seccio de seleccio.</div>'}
+      `;
+      els.perAppBox.appendChild(card);
+
+      const exModeNode = card.querySelector("[data-app-ex-mode]");
+      if (exModeNode) {
+        refreshPerAppExCardUI(card);
+      }
+      card.querySelectorAll("[data-app-select], [data-app-ex-mode], [data-app-ex-best-n], [data-app-ex-index], [data-app-ex-max-per-participant], [data-app-ex-ids]").forEach(node => {
+        node.addEventListener("change", () => {
+          if (node.matches("[data-app-ex-mode]")) refreshPerAppExCardUI(card);
+          syncAdvancedFromUI();
+          refreshPuntuacioUI();
+        });
+        node.addEventListener("input", () => {
+          syncAdvancedFromUI();
+          refreshPuntuacioUI();
+        });
+      });
+    });
+  }
+
+  function readPerAppExercicisFromUI() {
+    const map = {};
+    if (getModeSeleccioExercicisFromUI() !== "per_aparell_override") return map;
+    document.querySelectorAll("[data-app-ex-mode]").forEach(sel => {
+      const appId = String(sel.getAttribute("data-app-id") || "").trim();
+      if (!appId) return;
+      const mode = String(sel.value || "tots").toLowerCase().trim();
+      const bestNode = document.querySelector(`[data-app-ex-best-n][data-app-id="${appId}"]`);
+      const idxNode = document.querySelector(`[data-app-ex-index][data-app-id="${appId}"]`);
+      const maxNode = document.querySelector(`[data-app-ex-max-per-participant][data-app-id="${appId}"]`);
+      const idsNode = document.querySelector(`[data-app-ex-ids][data-app-id="${appId}"]`);
+      const cfg = { mode };
+      if (isBestNMode(mode)) cfg.best_n = Math.max(1, Number(bestNode?.value || 1));
+      if (mode === "index") cfg.index = Math.max(1, Number(idxNode?.value || 1));
+      const maxPerParticipant = Math.max(0, Number(maxNode?.value || 0));
+      if ((!isDerivedExerciseSelectionScopeAvailable() || getExerciseSelectionScopeFromUI() === EXERCISE_SELECTION_SCOPE_TEAM_POOL) && maxPerParticipant > 0) {
+        cfg.max_per_participant = maxPerParticipant;
+      }
+      if (mode === "llista") cfg.ids = parsePositiveIds(idsNode?.value || "");
+      map[appId] = cfg;
+    });
+    return map;
+  }
+
+  function readMainExercicisFromUI() {
+    const mode = String(els.sExercicisMode?.value || "tots").toLowerCase().trim();
+    const bestN = Math.max(1, Number(els.iExBestN?.value || 1));
+    const index = Math.max(1, Number(els.iExIndex?.value || 1));
+    const maxPerParticipant = Math.max(0, Number(els.iExMaxPerParticipant?.value || 0));
+    const ids = parsePositiveIds(els.tExIds?.value || "");
+    const selectionScope = getExerciseSelectionScopeFromUI();
+    const allowMaxPerParticipant = isDerivedExerciseSelectionScopeAvailable()
+      && selectionScope === EXERCISE_SELECTION_SCOPE_TEAM_POOL
+      && getModeSeleccioExercicisFromUI() === "global_pool";
+
+    const cfg = { mode };
+    if (isBestNMode(mode)) cfg.best_n = bestN;
+    if (mode === "index") cfg.index = index;
+    if (allowMaxPerParticipant && maxPerParticipant > 0) {
+      cfg.max_per_participant = maxPerParticipant;
+    }
+    if (mode === "llista") cfg.ids = ids;
+    return { cfg, bestN, index, ids, maxPerParticipant, selectionScope };
+  }
+
+  function readCandidateSourceFromUI() {
+    if (!isCandidateSourceAvailable()) return null;
+    const mode = getCandidateSourceModeFromUI();
+    if (mode !== "participant_aggregate") return null;
+    return {
+      candidate_source_mode: mode,
+      candidate_source_cfg: getCandidateSourceCfgFromUI(),
+    };
+  }
+
+  function refreshMainExercicisUI() {
+    const schema = (currentCfg() || {}).schema || DEFAULT_SCHEMA;
+    const appCount = _puntuacioSelectedAppCount(schema);
+    const currentMode = _puntuacioNormalizeModeSelection(els.sModeSeleccioExercicis?.value || "per_aparell_override", appCount);
+    if (els.sModeSeleccioExercicis) {
+      _applyPuntuacioModeCopy(appCount);
+      if (els.sModeSeleccioExercicis.value !== currentMode) {
+        els.sModeSeleccioExercicis.value = currentMode;
+      }
+    }
+
+    const m = String(els.sExercicisMode?.value || "tots").toLowerCase().trim();
+    const selectionScope = getExerciseSelectionScopeFromUI();
+    const showScope = isDerivedExerciseSelectionScopeAvailable();
+    const isTeamPool = showScope && selectionScope === EXERCISE_SELECTION_SCOPE_TEAM_POOL;
+    const modeSel = getModeSeleccioExercicisFromUI();
+    const isCombinedPool = modeSel === "global_pool";
+    const showFieldAggregation = _puntuacioHasAnyMultiFieldSelection(schema);
+    const showAppAggregation = !isCombinedPool && appCount > 1;
+
+    if (els.exerciseSelectionScopeWrap) els.exerciseSelectionScopeWrap.style.display = showScope ? "" : "none";
+    if (els.fieldAggregationCard) els.fieldAggregationCard.style.display = showFieldAggregation ? "" : "none";
+    if (els.appAggregationCard) els.appAggregationCard.style.display = showAppAggregation ? "" : "none";
+    if (els.exerciseCriteriaCard) els.exerciseCriteriaCard.style.display = isCombinedPool ? "" : "none";
+    if (els.exerciseRestrictionsCard) els.exerciseRestrictionsCard.style.display = (showScope && isTeamPool && isCombinedPool) ? "" : "none";
+    if (els.exerciseModeLabel) {
+      els.exerciseModeLabel.firstChild.textContent = showScope && !isTeamPool
+        ? "Criteri de seleccio per membre "
+        : "Criteri de seleccio ";
+    }
+    if (els.globalExerciseCriteriaWrap) els.globalExerciseCriteriaWrap.style.display = isCombinedPool ? "" : "none";
+    if (els.sExercicisMode) els.sExercicisMode.style.display = isCombinedPool ? "" : "none";
+    if (els.exBestNBox) els.exBestNBox.style.display = (isCombinedPool && isBestNMode(m)) ? "" : "none";
+    if (els.exIndexBox) els.exIndexBox.style.display = (isCombinedPool && (m === "index")) ? "" : "none";
+    if (els.exMaxPerParticipantBox) {
+      els.exMaxPerParticipantBox.style.display = (showScope && isTeamPool && isCombinedPool) ? "" : "none";
+    }
+    if (els.exIdsBox) els.exIdsBox.style.display = (isCombinedPool && (m === "llista")) ? "" : "none";
+
+    if (els.exSelectionSummary || els.exModeHint) {
+      const label = describeExerciseMode(m, els.iExBestN?.value, els.iExIndex?.value, els.tExIds?.value);
+      const maxTxt = Math.max(0, Number(els.iExMaxPerParticipant?.value || 0));
+      const summary = buildPuntuacioLiveSummary({
+        modeSel,
+        exerciseMode: m,
+        bestN: els.iExBestN?.value,
+        index: els.iExIndex?.value,
+        ids: els.tExIds?.value,
+        maxPerParticipant: maxTxt,
+        showScope,
+        isTeamPool,
+      });
+      if (els.exSelectionSummary) {
+        els.exSelectionSummary.textContent = summary.summary;
+      }
+      if (els.exModeHint) {
+        els.exModeHint.textContent = summary.hint + (showScope && !isTeamPool ? ` Seleccio actual: ${label} per membre.` : "");
+      }
+    }
+  }
+
+  function isVictoriesModeActive() {
+    return currentTipus() === "individual" && currentModeResultatAparells() === "victories";
+  }
+
+  function hydratePuntuacioUI(schema) {
+    const currentSchema = schema || ((currentCfg() || {}).schema || DEFAULT_SCHEMA);
+    const punt = (currentSchema.puntuacio || {});
+    const appCount = _puntuacioSelectedAppCount(currentSchema);
+    _applyPuntuacioModeCopy(appCount);
+    _applyCandidateSourceCopy();
+    _applyPuntuacioScopeCopy();
+
+    if (els.sCandidateSourceMode) {
+      ensureSelectOption(els.sCandidateSourceMode, punt.candidate_source_mode, value => `${value} (legacy)`);
+      els.sCandidateSourceMode.value = punt.candidate_source_mode || "raw_exercise";
+    }
+    if (els.sCandidateSourceSelectionMode) {
+      const candidateCfg = _copyCandidateSourceCfg(punt.candidate_source_cfg || {});
+      ensureSelectOption(els.sCandidateSourceSelectionMode, candidateCfg.mode, value => `${value} (legacy)`);
+      els.sCandidateSourceSelectionMode.value = candidateCfg.mode || "tots";
+    }
+    if (els.iCandidateSourceBestN) {
+      const candidateCfg = _copyCandidateSourceCfg(punt.candidate_source_cfg || {});
+      els.iCandidateSourceBestN.value = candidateCfg.best_n || 1;
+    }
+    if (els.iCandidateSourceIndex) {
+      const candidateCfg = _copyCandidateSourceCfg(punt.candidate_source_cfg || {});
+      els.iCandidateSourceIndex.value = candidateCfg.index || 1;
+    }
+    if (els.tCandidateSourceIds) {
+      const candidateCfg = _copyCandidateSourceCfg(punt.candidate_source_cfg || {});
+      els.tCandidateSourceIds.value = Array.isArray(candidateCfg.ids) ? candidateCfg.ids.join(",") : String(candidateCfg.ids || "");
+    }
+    if (els.sCandidateSourceAggExercicis) {
+      const candidateCfg = _copyCandidateSourceCfg(punt.candidate_source_cfg || {});
+      ensureSelectOption(els.sCandidateSourceAggExercicis, candidateCfg.agregacio_exercicis, value => `${value} (legacy)`);
+      els.sCandidateSourceAggExercicis.value = candidateCfg.agregacio_exercicis || "sum";
+    }
+
+    if (els.sModeSeleccioExercicis) {
+      els.sModeSeleccioExercicis.value = _puntuacioNormalizeModeSelection(punt.mode_seleccio_exercicis || "per_aparell_override", appCount);
+    }
+    if (els.sExerciseSelectionScope) {
+      ensureSelectOption(els.sExerciseSelectionScope, punt.exercise_selection_scope, value => `${value} (legacy)`);
+      els.sExerciseSelectionScope.value = normalizeExerciseSelectionScope(punt.exercise_selection_scope);
+    }
+    bindPuntuacioEvents();
+    renderPuntuacioSection(currentSchema);
+  }
+
+  function renderPuntuacioSection(schema) {
+    const currentSchema = schema || ((currentCfg() || {}).schema || DEFAULT_SCHEMA);
+    renderPerAppUI(currentSchema);
+    refreshPuntuacioUI(currentSchema);
+  }
+
+  function readPuntuacioSchemaFromUI() {
+    const apIds = selectedAparellIdsFromUI();
+    const apMode = apIds.length > 1 ? getModeSeleccioExercicisFromUI() : "per_aparell_override";
+    const camps_per_aparell = {};
+    apIds.forEach(id => {
+      const key = String(id);
+      const codes = Array.from((document.querySelector(`[data-app-select="${key}"]`)?.selectedOptions || [])).map(o => String(o.value || "").trim()).filter(Boolean);
+      if (codes.length) camps_per_aparell[key] = codes;
+    });
+
+    const exCfg = readMainExercicisFromUI();
+    const modeSeleccioExercicis = apMode;
+    const exPerAppCfg = readPerAppExercicisFromUI();
+    const modeResultatAparells = currentModeResultatAparells();
+    const victoriesCompareTie = readVictoryTieUI(true);
+    const candidateSource = readCandidateSourceFromUI();
+
+    const out = {
+      aparells: { mode: "seleccionar", ids: apIds },
+      camps_per_aparell,
+      agregacio_camps: els.sAggCamps?.value || "sum",
+      exercicis: exCfg.cfg,
+      exercicis_best_n: exCfg.bestN,
+      ...(isDerivedExerciseSelectionScopeAvailable() ? { exercise_selection_scope: exCfg.selectionScope } : {}),
+      mode_seleccio_exercicis: modeSeleccioExercicis,
+      exercicis_per_aparell: exPerAppCfg,
+      agregacio_exercicis: els.sAggExercicis?.value || "sum",
+      agregacio_aparells: els.sAggAparells?.value || "sum",
+      mode_resultat_aparells: modeResultatAparells,
+      victories: {
+        punts_victoria: 1,
+        punts_empat: 0.5,
+        sense_nota_mode: "skip",
+        mode_camps: String(els.sVictoryModeCamps?.value || "agregat"),
+        mode_exercicis: String(els.sVictoryModeExercicis?.value || "agregat"),
+        mode_seleccio_exercicis_camps_separats: String(els.sVictoryFieldSelectionMode?.value || "per_camp"),
+        agregacio_victories_camps: String(els.sVictoryAggCamps?.value || "sum"),
+        agregacio_victories_exercicis: String(els.sVictoryAggExercicis?.value || "sum"),
+        desempat_comparacio: victoriesCompareTie,
+      },
+      ordre: els.sOrdre?.value || "desc",
+    };
+
+    if (candidateSource) {
+      out.candidate_source_mode = candidateSource.candidate_source_mode;
+      out.candidate_source_cfg = candidateSource.candidate_source_cfg;
+    }
+
+    return out;
+  }
+
+  function refreshPuntuacioUI() {
+    const currentSchema = arguments.length ? arguments[0] : ((currentCfg() || {}).schema || DEFAULT_SCHEMA);
+    _applyPuntuacioModeCopy(_puntuacioSelectedAppCount(currentSchema));
+    _applyCandidateSourceCopy();
+    refreshCandidateSourceUI(currentSchema);
+    _applyPuntuacioScopeCopy();
+    refreshMainExercicisUI();
+    refreshVictoryTieVisibility();
+    _renderPuntuacioSummary(currentSchema);
+  }
+
+  function bindPuntuacioEvents() {
+    if (puntuacioUiBound) return;
+    puntuacioUiBound = true;
+    _applyPuntuacioModeCopy(_puntuacioSelectedAppCount());
+    _applyPuntuacioScopeCopy();
+  }

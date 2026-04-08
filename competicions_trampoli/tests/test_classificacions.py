@@ -291,6 +291,86 @@ class ClassificacioMatrixScalarTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(points_by_name.get("Participant A"), 0.0)
         self.assertEqual(points_by_name.get("Participant B"), 0.0)
 
+    def test_compute_classificacio_individual_candidate_source_modes_preserve_expected_scores(self):
+        self.comp_app_a.nombre_exercicis = 3
+        self.comp_app_a.save(update_fields=["nombre_exercicis"])
+
+        for inscripcio, exercici, total in (
+            (self.ins_a, 1, 1.0),
+            (self.ins_a, 2, 10.0),
+            (self.ins_a, 3, 2.0),
+            (self.ins_b, 1, 4.0),
+            (self.ins_b, 2, 9.0),
+            (self.ins_b, 3, 1.0),
+        ):
+            ScoreEntry.objects.create(
+                competicio=self.comp,
+                inscripcio=inscripcio,
+                exercici=exercici,
+                comp_aparell=self.comp_app_a,
+                inputs={},
+                outputs={},
+                total=total,
+            )
+
+        raw_schema = self._selected_total_schema([self.comp_app_a.id])
+        raw_schema["puntuacio"].update(
+            {
+                "candidate_source_mode": "raw_exercise",
+                "candidate_source_cfg": {
+                    "mode": "tots",
+                    "best_n": 1,
+                    "index": 1,
+                    "ids": [],
+                    "agregacio_exercicis": "sum",
+                },
+                "exercicis": {"mode": "tots"},
+                "agregacio_exercicis": "sum",
+            }
+        )
+        raw_cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Individual raw source",
+            activa=True,
+            ordre=1,
+            tipus="individual",
+            schema=raw_schema,
+        )
+
+        aggregate_schema = self._selected_total_schema([self.comp_app_a.id])
+        aggregate_schema["puntuacio"].update(
+            {
+                "candidate_source_mode": "participant_aggregate",
+                "candidate_source_cfg": {
+                    "mode": "millor_n",
+                    "best_n": 1,
+                    "index": 1,
+                    "ids": [],
+                    "agregacio_exercicis": "sum",
+                },
+                "exercicis": {"mode": "millor_n", "best_n": 1},
+                "agregacio_exercicis": "sum",
+            }
+        )
+        aggregate_cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Individual aggregate source",
+            activa=True,
+            ordre=1,
+            tipus="individual",
+            schema=aggregate_schema,
+        )
+
+        raw_rows = compute_classificacio(self.comp, raw_cfg).get("global", [])
+        aggregate_rows = compute_classificacio(self.comp, aggregate_cfg).get("global", [])
+        raw_scores = {row["participant"]: row["score"] for row in raw_rows}
+        aggregate_scores = {row["participant"]: row["score"] for row in aggregate_rows}
+
+        self.assertEqual(raw_scores.get("Participant A"), 13.0)
+        self.assertEqual(raw_scores.get("Participant B"), 14.0)
+        self.assertEqual(aggregate_scores.get("Participant A"), 10.0)
+        self.assertEqual(aggregate_scores.get("Participant B"), 9.0)
+
     def test_classificacio_save_rejects_non_1x1_matrix_field(self):
         ScoringSchema.objects.create(
             aparell=self.app_a,
@@ -637,6 +717,105 @@ class ClassificacioMatrixScalarTests(_BaseTrampoliDataMixin, TestCase):
         cfg = ClassificacioConfig.objects.get(pk=body["id"])
         saved_resolution = (((cfg.schema.get("equips") or {}).get("mode_resolution")) or {})
         self.assertEqual(saved_resolution.get("resolved_at"), mode_resolution.get("resolved_at"))
+
+    def test_classificacio_save_roundtrip_preserves_legacy_global_pool_and_member_cap(self):
+        self._ensure_native_equip_context(self.comp)
+        payload = {
+            "nom": "Cfg equips legacy exercise selection",
+            "activa": True,
+            "ordre": 1,
+            "tipus": "equips",
+            "schema": {
+                **self._selected_total_schema([self.comp_app_a.id, self.comp_app_b.id]),
+                "puntuacio": {
+                    **self._selected_total_schema([self.comp_app_a.id, self.comp_app_b.id])["puntuacio"],
+                    "aparells": {"mode": "seleccionar", "ids": [self.comp_app_a.id, self.comp_app_b.id]},
+                    "camps_per_aparell": {
+                        str(self.comp_app_a.id): ["total"],
+                        str(self.comp_app_b.id): ["total"],
+                    },
+                    "exercicis": {"mode": "millor_n", "best_n": 4, "max_per_participant": 1},
+                    "exercise_selection_scope": "team_pool",
+                    "mode_seleccio_exercicis": "per_aparell_global",
+                    "exercicis_per_aparell": {
+                        str(self.comp_app_a.id): {"mode": "millor_n", "best_n": 4, "max_per_participant": 1},
+                        str(self.comp_app_b.id): {"mode": "millor_n", "best_n": 3, "max_per_participant": 1},
+                    },
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "ordre": "desc",
+                },
+                "equips": {
+                    "context_code": "native",
+                    "assignment_source": {"mode": "context", "context_code": "native", "fallback": "native"},
+                    "team_mode": "derived_from_individual",
+                    "incloure_sense_equip": False,
+                },
+            },
+        }
+
+        res = self.client.post(
+            reverse("classificacio_save", kwargs={"pk": self.comp.id}),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        self.assertEqual(res.status_code, 200)
+        body = res.json()
+        cfg = ClassificacioConfig.objects.get(pk=body["id"])
+        punt = cfg.schema.get("puntuacio") or {}
+        self.assertEqual(punt.get("mode_seleccio_exercicis"), "per_aparell_global")
+        self.assertEqual(punt.get("exercise_selection_scope"), "team_pool")
+        self.assertEqual((punt.get("exercicis") or {}).get("max_per_participant"), 1)
+        self.assertEqual(sorted((punt.get("exercicis_per_aparell") or {}).keys()), [str(self.comp_app_a.id), str(self.comp_app_b.id)])
+
+        hydrated = prepare_schema_for_builder_hydration(self.comp, cfg.schema or {}, tipus="equips")
+        hydrated_punt = hydrated.get("puntuacio") or {}
+        self.assertEqual(hydrated_punt.get("mode_seleccio_exercicis"), "per_aparell_global")
+        self.assertEqual(hydrated_punt.get("exercise_selection_scope"), "team_pool")
+        self.assertEqual((hydrated_punt.get("exercicis") or {}).get("max_per_participant"), 1)
+        self.assertEqual((hydrated_punt.get("aparells") or {}).get("ids"), [self.comp_app_a.id, self.comp_app_b.id])
+
+    def test_classificacio_save_roundtrip_preserves_candidate_source_contract(self):
+        payload_schema = self._selected_total_schema([self.comp_app_a.id, self.comp_app_b.id])
+        payload_schema["puntuacio"] = {
+            **payload_schema["puntuacio"],
+            "candidate_source_mode": "participant_aggregate",
+            "candidate_source_cfg": {
+                "mode": "millor_n",
+                "best_n": 2,
+                "index": 1,
+                "ids": [],
+                "agregacio_exercicis": "sum",
+            },
+        }
+        payload = {
+            "nom": "Cfg candidate source",
+            "activa": True,
+            "ordre": 1,
+            "tipus": "individual",
+            "schema": payload_schema,
+        }
+
+        res = self.client.post(
+            reverse("classificacio_save", kwargs={"pk": self.comp.id}),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        self.assertEqual(res.status_code, 200)
+        body = res.json()
+        cfg = ClassificacioConfig.objects.get(pk=body["id"])
+        punt = cfg.schema.get("puntuacio") or {}
+        self.assertEqual(punt.get("candidate_source_mode"), "participant_aggregate")
+        self.assertEqual((punt.get("candidate_source_cfg") or {}).get("mode"), "millor_n")
+        self.assertEqual((punt.get("candidate_source_cfg") or {}).get("best_n"), 2)
+
+        hydrated = prepare_schema_for_builder_hydration(self.comp, cfg.schema or {}, tipus="individual")
+        hydrated_punt = hydrated.get("puntuacio") or {}
+        self.assertEqual(hydrated_punt.get("candidate_source_mode"), "participant_aggregate")
+        self.assertEqual((hydrated_punt.get("candidate_source_cfg") or {}).get("mode"), "millor_n")
+        self.assertEqual((hydrated_punt.get("candidate_source_cfg") or {}).get("best_n"), 2)
 
     def test_classificacio_preview_returns_consistent_error_when_compute_fails(self):
         cfg = ClassificacioConfig.objects.create(
@@ -2101,6 +2280,28 @@ class ClassificacioBuilderHydrationTests(_BaseTrampoliDataMixin, TestCase):
             "ctx-finals",
         )
 
+    def test_prepare_schema_for_builder_hydration_preserves_candidate_source_contract(self):
+        schema = self._builder_schema(context_code="ctx-finals", team_mode="derived_from_individual")
+        schema["puntuacio"]["candidate_source_mode"] = "participant_aggregate"
+        schema["puntuacio"]["candidate_source_cfg"] = {
+            "mode": "millor_n",
+            "best_n": 1,
+            "index": 1,
+            "ids": [],
+            "agregacio_exercicis": "sum",
+        }
+
+        hydrated = prepare_schema_for_builder_hydration(
+            self.comp,
+            schema,
+            tipus="equips",
+        )
+
+        punt = hydrated.get("puntuacio") or {}
+        self.assertEqual(punt.get("candidate_source_mode"), "participant_aggregate")
+        self.assertEqual((punt.get("candidate_source_cfg") or {}).get("mode"), "millor_n")
+        self.assertEqual((punt.get("candidate_source_cfg") or {}).get("best_n"), 1)
+
 
 class ClassificacioFilterSemanticsTests(_BaseTrampoliDataMixin, TestCase):
     def setUp(self):
@@ -2960,6 +3161,8 @@ class ClassificacioTemplateFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertContains(res, 'id="victoryConfigBox"')
         self.assertContains(res, 'id="sVictoryModeCamps"')
         self.assertContains(res, 'id="sVictoryModeExercicis"')
+        self.assertContains(res, 'id="puntuacioSummaryText"')
+        self.assertContains(res, 'id="candidateScopeHint"')
         self.assertContains(res, 'id="classifHelpDrawer"')
         self.assertContains(res, 'id="classif-builder-back-to-top"')
         self.assertContains(res, "classificacions_builder_help.css")
@@ -3993,6 +4196,8 @@ class GlobalClassificacioTemplateManagementTests(_BaseTrampoliDataMixin, TestCas
         self.assertContains(res, 'id="victoryConfigBox"')
         self.assertContains(res, 'id="sVictoryModeCamps"')
         self.assertContains(res, 'id="sVictoryModeExercicis"')
+        self.assertContains(res, 'id="puntuacioSummaryText"')
+        self.assertContains(res, 'id="candidateScopeHint"')
         self.assertContains(res, 'id="classifHelpDrawer"')
         self.assertContains(res, 'id="classif-builder-back-to-top"')
         self.assertContains(res, "classificacions_builder_help.css")

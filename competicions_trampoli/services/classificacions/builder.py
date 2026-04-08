@@ -278,6 +278,62 @@ def scoreable_codes_by_app_id(competicio, *, tipus=None, assignment_context_code
     return out
 
 
+def _normalize_candidate_source_mode(raw_mode):
+    mode = str(raw_mode or "raw_exercise").strip().lower()
+    if mode in {"raw_exercise", "participant_aggregate"}:
+        return mode
+    return "raw_exercise"
+
+
+def _sanitize_candidate_source_cfg(raw_cfg):
+    cfg = raw_cfg if isinstance(raw_cfg, dict) else {}
+    mode = str(cfg.get("mode") or "tots").strip().lower()
+    if mode not in {"tots", "millor_1", "millor_n", "pitjor_1", "pitjor_n", "primer", "ultim", "index", "llista"}:
+        mode = "tots"
+
+    try:
+        best_n = max(1, int(cfg.get("best_n") or 1))
+    except Exception:
+        best_n = 1
+    try:
+        index = max(1, int(cfg.get("index") or 1))
+    except Exception:
+        index = 1
+
+    ids = []
+    ids_raw = cfg.get("ids") or []
+    if isinstance(ids_raw, str):
+        ids_raw = [x.strip() for x in ids_raw.split(",") if x and x.strip()]
+    if isinstance(ids_raw, (list, tuple)):
+        seen = set()
+        for item in ids_raw:
+            try:
+                value = int(item)
+            except Exception:
+                continue
+            if value > 0 and value not in seen:
+                seen.add(value)
+                ids.append(value)
+
+    agg = str(cfg.get("agregacio_exercicis") or "sum").strip().lower()
+    if agg not in {"sum", "avg", "median", "max", "min"}:
+        agg = "sum"
+
+    return {
+        "mode": mode,
+        "best_n": best_n,
+        "index": index,
+        "ids": ids,
+        "agregacio_exercicis": agg,
+    }
+
+
+def _is_candidate_source_enabled(*, tipus="individual", team_mode=""):
+    tipus_norm = str(tipus or "").strip().lower()
+    team_mode_norm = str(team_mode or "").strip().lower()
+    return tipus_norm == "individual" or (tipus_norm == "equips" and team_mode_norm == "derived_from_individual")
+
+
 def prepare_schema_for_builder_hydration(competicio, schema_local, tipus="individual"):
     """Normalize builder payload shape without dropping stale or legacy selections."""
     schema, _errors, _details = validate_schema_for_competicio_detailed(
@@ -375,6 +431,8 @@ def prepare_schema_for_builder_hydration(competicio, schema_local, tipus="indivi
     punt["camps_per_aparell"] = camps_out
 
     punt["exercicis"] = punt.get("exercicis") if isinstance(punt.get("exercicis"), dict) else {}
+    punt["candidate_source_mode"] = _normalize_candidate_source_mode(punt.get("candidate_source_mode"))
+    punt["candidate_source_cfg"] = _sanitize_candidate_source_cfg(punt.get("candidate_source_cfg"))
     ex_per_app_in = punt.get("exercicis_per_aparell") or {}
     ex_per_app_out = {}
     if isinstance(ex_per_app_in, dict):
@@ -508,12 +566,22 @@ def sanitize_schema_for_builder(competicio, schema_local, tipus="individual"):
         tipus=tipus,
         team_mode=effective_team_mode,
     )
+    allow_candidate_source = _is_candidate_source_enabled(
+        tipus=tipus,
+        team_mode=effective_team_mode,
+    )
     if allow_exercise_scope:
         punt["exercise_selection_scope"] = normalize_exercise_selection_scope(
             punt.get("exercise_selection_scope")
         )
     else:
         punt.pop("exercise_selection_scope", None)
+    if allow_candidate_source:
+        punt["candidate_source_mode"] = _normalize_candidate_source_mode(punt.get("candidate_source_mode"))
+        punt["candidate_source_cfg"] = _sanitize_candidate_source_cfg(punt.get("candidate_source_cfg"))
+    else:
+        punt.pop("candidate_source_mode", None)
+        punt.pop("candidate_source_cfg", None)
     main_exercise_scope = punt.get("exercise_selection_scope") or EXERCISE_SELECTION_SCOPE_PER_MEMBER
 
     def sanitize_tie_item(raw_tie, *, selected_main_ids, allow_app_scope: bool, allow_participants: bool):
@@ -706,6 +774,14 @@ def build_force_minimal_schema(competicio, schema_local):
     punt["mode_seleccio_exercicis"] = "per_aparell_global"
     punt["exercicis_per_aparell"] = {}
     punt["agregacio_camps"] = "sum"
+    punt["candidate_source_mode"] = "raw_exercise"
+    punt["candidate_source_cfg"] = {
+        "mode": "tots",
+        "best_n": 1,
+        "index": 1,
+        "ids": [],
+        "agregacio_exercicis": "sum",
+    }
     punt["agregacio_exercicis"] = "sum"
     punt["agregacio_aparells"] = "sum"
     punt["mode_resultat_aparells"] = "score"

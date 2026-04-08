@@ -242,6 +242,17 @@ class RotationOrderingDisplayTests(_BaseTrampoliDataMixin, TestCase):
         RotacioAssignacioGrup.objects.create(assignacio=assignacio, grup=group, ordre=next_ordre)
         return assignacio
 
+    def _franja_stub(self, franja, *, tipus="competition"):
+        return SimpleNamespace(
+            id=franja.id,
+            competicio_id=self.comp.id,
+            hora_inici=franja.hora_inici,
+            hora_fi=franja.hora_fi,
+            ordre=franja.ordre,
+            titol=franja.titol,
+            tipus=tipus,
+        )
+
     def test_judge_portal_uses_first_app_franja_order_by_default_and_allows_override(self):
         portal_url = reverse("judge_portal", kwargs={"token": self.token.id})
         portal_res = self.client.get(portal_url)
@@ -459,6 +470,59 @@ class RotationOrderingDisplayTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(rank_map.get(f"{self.comp_app.id}|{self.ins_2.id}"), 2)
         self.assertEqual(rank_map.get(f"{self.comp_app.id}|{self.ins_1.id}"), 3)
 
+    def test_scoring_notes_home_ignores_non_competitive_franja_selection(self):
+        scoring_url = reverse("scoring_notes_home", kwargs={"pk": self.comp.id})
+        default_res = self.client.get(scoring_url)
+        self.assertEqual(default_res.status_code, 200)
+
+        fake_franges = [
+            self._franja_stub(self.franja_1, tipus="competition"),
+            self._franja_stub(self.franja_2, tipus="competition"),
+            self._franja_stub(self.franja_3, tipus="break"),
+        ]
+
+        with patch(
+            "competicions_trampoli.views.scoring.notes.RotacioFranja.objects.filter"
+        ) as mock_filter:
+            mock_qs = mock_filter.return_value
+            mock_qs.order_by.return_value = fake_franges
+            scoring_res = self.client.get(scoring_url, {"franja": self.franja_3.id})
+
+        self.assertEqual(scoring_res.status_code, 200)
+        self.assertIsNone(scoring_res.context["franja_selected_id"])
+        self.assertEqual(scoring_res.context["rotation_rank_map"], default_res.context["rotation_rank_map"])
+        self.assertEqual(
+            scoring_res.context["rotation_groups_by_app"],
+            default_res.context["rotation_groups_by_app"],
+        )
+
+    def test_judge_portal_ignores_non_competitive_franja_override(self):
+        portal_url = reverse("judge_portal", kwargs={"token": self.token.id})
+        default_res = self.client.get(portal_url)
+        self.assertEqual(default_res.status_code, 200)
+
+        fake_franges = [
+            self._franja_stub(self.franja_1, tipus="competition"),
+            self._franja_stub(self.franja_2, tipus="competition"),
+            self._franja_stub(self.franja_3, tipus="awards"),
+        ]
+
+        with patch(
+            "competicions_trampoli.views.judge.portal.RotacioFranja.objects.filter"
+        ) as mock_filter:
+            mock_qs = mock_filter.return_value
+            mock_qs.order_by.return_value = fake_franges
+            portal_res = self.client.get(portal_url, {"franja": self.franja_3.id})
+
+        self.assertEqual(portal_res.status_code, 200)
+        self.assertIsNone(portal_res.context["franja_override_id"])
+        self.assertEqual(portal_res.context["group_blocks"], default_res.context["group_blocks"])
+        self.assertEqual(
+            portal_res.context["out_of_program_group_blocks"],
+            default_res.context["out_of_program_group_blocks"],
+        )
+        self.assertEqual(portal_res.context["active_group_key"], default_res.context["active_group_key"])
+
     def test_out_of_program_visibility_toggle_controls_notes_and_judge_views(self):
         extra_group = GrupCompeticio.objects.create(
             competicio=self.comp,
@@ -552,6 +616,16 @@ class RotationOrderingDisplayTests(_BaseTrampoliDataMixin, TestCase):
         portal_body = portal_res.content.decode("utf-8")
         self.assertIn("Fora de programa", portal_body)
         self.assertIn(extra_ins.nom_i_cognoms, portal_body)
+
+    def test_rotacions_planner_uses_canonical_sidebar_keys_in_programmed_detection(self):
+        planner_url = reverse("rotacions_planner", kwargs={"pk": self.comp.id})
+        planner_res = self.client.get(planner_url)
+        self.assertEqual(planner_res.status_code, 200)
+
+        body = planner_res.content.decode("utf-8")
+        self.assertRegex(body, r'"key"\s*:\s*"g:')
+        self.assertRegex(body, r"assigned\.has\([^)]*item\.key")
+        self.assertNotIn("Number(item?.id", body)
 
 
 class RotacionsPackageContractTests(TestCase):

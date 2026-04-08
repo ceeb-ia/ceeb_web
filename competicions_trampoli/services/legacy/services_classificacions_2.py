@@ -1351,6 +1351,27 @@ def _normalize_exercicis_cfg(raw_cfg, fallback=None):
     }
 
 
+def _normalize_candidate_source_mode(raw_mode):
+    mode = str(raw_mode or "raw_exercise").lower().strip()
+    if mode in ("raw_exercise", "participant_aggregate"):
+        return mode
+    return "raw_exercise"
+
+
+def _normalize_candidate_source_cfg(raw_cfg, fallback=None):
+    fb = fallback or {}
+    cfg = raw_cfg if isinstance(raw_cfg, dict) else {}
+    ex_cfg = _normalize_exercicis_cfg(cfg, fallback=fb)
+    agg = str(cfg.get("agregacio_exercicis", fb.get("agregacio_exercicis", "sum")) or "sum").lower().strip()
+    if agg not in ("sum", "avg", "median", "max", "min"):
+        agg = str(fb.get("agregacio_exercicis") or "sum").lower().strip()
+        if agg not in ("sum", "avg", "median", "max", "min"):
+            agg = "sum"
+    ex_cfg.pop("max_per_participant", None)
+    ex_cfg["agregacio_exercicis"] = agg
+    return ex_cfg
+
+
 def _pick_participants(vals, mode: str, n: int):
     xs = [_to_float(x) for x in (vals or [])]
     if not xs:
@@ -2193,6 +2214,11 @@ def compute_classificacio(competicio, cfg_obj):
         exercicis_per_aparell = {}
 
     agg_camps = (punt.get("agregacio_camps") or "sum").lower().strip()
+    candidate_source_mode = _normalize_candidate_source_mode(punt.get("candidate_source_mode"))
+    candidate_source_cfg = _normalize_candidate_source_cfg(
+        punt.get("candidate_source_cfg"),
+        fallback={"mode": "tots", "best_n": 1, "index": 1, "ids": [], "agregacio_exercicis": "sum"},
+    )
     agg_exercicis = (punt.get("agregacio_exercicis") or "sum").lower().strip()
     agg_aparells = (punt.get("agregacio_aparells") or "sum").lower().strip()
 
@@ -2214,6 +2240,12 @@ def compute_classificacio(competicio, cfg_obj):
         exercise_selection_scope = _normalize_exercise_selection_scope(
             punt.get("exercise_selection_scope")
         )
+    allow_candidate_source = (
+        tipus == "individual"
+        or (tipus == "equips" and team_mode == "derived_from_individual")
+    )
+    if not allow_candidate_source:
+        candidate_source_mode = "raw_exercise"
 
     # si no hi ha aparells seleccionats -> retorn buit
     if not aparells:
@@ -2475,6 +2507,57 @@ def compute_classificacio(competicio, cfg_obj):
         item["by_camp"] = dict((row or {}).get("by_camp") or {})
         return item
 
+    def _build_candidate_rows_from_source_rows(rows_ex, *, participant_key="inscripcio_id"):
+        base_rows = [
+            _copy_ex_row_with_value(row, row.get("value"))
+            for row in (rows_ex or [])
+            if isinstance(row, dict)
+        ]
+        if candidate_source_mode != "participant_aggregate":
+            return base_rows
+        if not base_rows:
+            return []
+
+        picked_rows = _pick_exercicis_rows(
+            base_rows,
+            candidate_source_cfg["mode"],
+            candidate_source_cfg["best_n"],
+            index=candidate_source_cfg["index"],
+            ids=candidate_source_cfg["ids"],
+            max_per_participant=0,
+            participant_key=participant_key,
+        )
+        if not picked_rows:
+            return []
+
+        agg_value = _apply_simple_agg(
+            [_to_float(row.get("value")) for row in picked_rows],
+            candidate_source_cfg["agregacio_exercicis"],
+        )
+        all_field_codes = []
+        seen_field_codes = set()
+        for row in picked_rows:
+            for code in dict((row or {}).get("by_camp") or {}).keys():
+                code_str = str(code).strip()
+                if code_str and code_str not in seen_field_codes:
+                    seen_field_codes.add(code_str)
+                    all_field_codes.append(code_str)
+        by_camp = {}
+        for code in all_field_codes:
+            by_camp[code] = _apply_simple_agg(
+                [_to_float(dict((row or {}).get("by_camp") or {}).get(code)) for row in picked_rows],
+                candidate_source_cfg["agregacio_exercicis"],
+            )
+
+        first_row = picked_rows[0]
+        candidate_row = _copy_ex_row_with_value(first_row, agg_value)
+        candidate_row["idx"] = int(first_row.get("idx", 1) or 1)
+        candidate_row["exercici"] = int(first_row.get("exercici", 1) or 1)
+        candidate_row["by_camp"] = by_camp
+        candidate_row["candidate_source_mode"] = "participant_aggregate"
+        candidate_row["candidate_source_count"] = len(picked_rows)
+        return [candidate_row]
+
     selected_rows_agg_cache = {}
     selected_rows_field_cache = {}
     selected_team_rows_agg_cache = {}
@@ -2489,7 +2572,11 @@ def compute_classificacio(competicio, cfg_obj):
             pool_rows = []
             for ca in aparells:
                 app_id = ca.id
-                for row in app_ex_rows_by_ins.get(app_id, {}).get(ins_id, []):
+                source_rows = _build_candidate_rows_from_source_rows(
+                    app_ex_rows_by_ins.get(app_id, {}).get(ins_id, []),
+                    participant_key="inscripcio_id",
+                )
+                for row in source_rows:
                     item = _copy_ex_row_with_value(row, row.get("value"))
                     item["idx"] = 0
                     pool_rows.append(item)
@@ -2519,7 +2606,10 @@ def compute_classificacio(competicio, cfg_obj):
         else:
             for ca in aparells:
                 app_id = ca.id
-                rows_ex = app_ex_rows_by_ins.get(app_id, {}).get(ins_id, [])
+                rows_ex = _build_candidate_rows_from_source_rows(
+                    app_ex_rows_by_ins.get(app_id, {}).get(ins_id, []),
+                    participant_key="inscripcio_id",
+                )
                 ex_cfg_app = _resolve_ex_cfg_for_app(app_id)
                 picked = _pick_exercicis_rows(
                     rows_ex,
@@ -2610,10 +2700,15 @@ def compute_classificacio(competicio, cfg_obj):
             pool_rows = []
             for ca in aparells:
                 app_id = ca.id
-                for row in app_ex_rows_by_ins.get(app_id, {}).get(ins_id, []):
+                raw_rows = app_ex_rows_by_ins.get(app_id, {}).get(ins_id, [])
+                field_rows = [
+                    _copy_ex_row_with_value(row, ((row.get("by_camp") or {}).get(field_code)))
+                    for row in raw_rows
+                ]
+                for row in _build_candidate_rows_from_source_rows(field_rows, participant_key="inscripcio_id"):
                     item = _copy_ex_row_with_value(
                         row,
-                        ((row.get("by_camp") or {}).get(field_code)),
+                        row.get("value"),
                     )
                     item["idx"] = 0
                     pool_rows.append(item)
@@ -2648,6 +2743,7 @@ def compute_classificacio(competicio, cfg_obj):
                     _copy_ex_row_with_value(row, ((row.get("by_camp") or {}).get(field_code)))
                     for row in app_ex_rows_by_ins.get(app_id, {}).get(ins_id, [])
                 ]
+                rows_ex = _build_candidate_rows_from_source_rows(rows_ex, participant_key="inscripcio_id")
                 ex_cfg_app = _resolve_ex_cfg_for_app(app_id)
                 picked = _pick_exercicis_rows(
                     rows_ex,
@@ -2801,13 +2897,16 @@ def compute_classificacio(competicio, cfg_obj):
             if member_id in seen_members:
                 continue
             seen_members.add(member_id)
-            for base_row in app_ex_rows_by_ins.get(app_id, {}).get(member_id, []):
+            member_rows = app_ex_rows_by_ins.get(app_id, {}).get(member_id, [])
+            source_rows = []
+            for base_row in member_rows:
                 value = (
                     ((base_row.get("by_camp") or {}).get(field_code))
                     if field_code is not None
                     else base_row.get("value")
                 )
-                item = _copy_ex_row_with_value(base_row, value)
+                source_rows.append(_copy_ex_row_with_value(base_row, value))
+            for item in _build_candidate_rows_from_source_rows(source_rows, participant_key="inscripcio_id"):
                 item["inscripcio_id"] = member_id
                 rows.append(item)
         return rows

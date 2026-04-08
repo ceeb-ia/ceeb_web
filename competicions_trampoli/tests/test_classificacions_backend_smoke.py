@@ -100,8 +100,13 @@ class ClassificacionsBackendSmokeTests(_BaseTrampoliDataMixin, TestCase):
         builder_response = self.client.get(reverse("classificacions_home", kwargs={"pk": self.comp.id}))
         self.assertEqual(builder_response.status_code, 200)
         self.assertTemplateUsed(builder_response, "competicio/classificacions_builder_v2.html")
+        self.assertTemplateUsed(builder_response, "classificacions/puntuacio.html")
+        self.assertTemplateUsed(builder_response, "classificacions/_puntuacio_script.html")
         self.assertIn("cfg_status", builder_response.context)
         self.assertIn("aparell_field_options", builder_response.context)
+        self.assertContains(builder_response, 'id="section-puntuacio"')
+        self.assertContains(builder_response, 'id="victoryConfigBox"')
+        self.assertContains(builder_response, 'id="perAppBox"')
 
         live_response = self.client.get(reverse("classificacions_live", kwargs={"pk": self.comp.id}))
         self.assertEqual(live_response.status_code, 200)
