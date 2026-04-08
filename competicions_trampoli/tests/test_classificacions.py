@@ -85,7 +85,10 @@ from ..services.classificacions.classificacio_templates import (
     schema_to_template_schema as _schema_to_template_schema,
     template_schema_to_competicio_schema as _template_schema_to_competicio_schema_service,
 )
-from ..services.classificacions.builder import scoreable_codes_by_app_id as _scoreable_codes_by_app_id
+from ..services.classificacions.builder import (
+    prepare_schema_for_builder_hydration,
+    scoreable_codes_by_app_id as _scoreable_codes_by_app_id,
+)
 from ..services.classificacions.compute import DEFAULT_SCHEMA, compute_classificacio
 from ..services.classificacions.export import _normalize_excel_cell
 from ..services.classificacions.partitions import normalize_schema_legacy_team_birth_partition
@@ -1975,6 +1978,130 @@ class ClassificacioMatrixScalarTests(_BaseTrampoliDataMixin, TestCase):
         self.assertTrue(any("scope.participants no esta permes" in e for e in errors))
 
 
+class ClassificacioBuilderHydrationTests(_BaseTrampoliDataMixin, TestCase):
+    def setUp(self):
+        self.comp = self._create_competicio("Comp Builder Hydration")
+        self.user = self._login_competicio_user(
+            self.comp,
+            role=CompeticioMembership.Role.EDITOR,
+            username_prefix="builder_hydration",
+        )
+        self.native_ctx = self._ensure_native_equip_context(self.comp)
+        self.ctx_finals = EquipContext.objects.create(competicio=self.comp, code="ctx-finals", nom="Finals")
+        self.ctx_alt = EquipContext.objects.create(competicio=self.comp, code="ctx-alt", nom="Alt")
+
+        self.ind_app = self._create_aparell("BH_IND", "Builder Hydration Individual")
+        self.comp_ind_app = self._create_comp_aparell(self.comp, self.ind_app, ordre=1, actiu=True)
+
+        self.team_app_finals = self._create_aparell("BH_TEAM_F", "Builder Hydration Team Finals")
+        self.team_app_finals.competition_unit = Aparell.CompetitionUnit.TEAM
+        self.team_app_finals.save(update_fields=["competition_unit"])
+        self.comp_team_app_finals = self._create_comp_aparell(self.comp, self.team_app_finals, ordre=2, actiu=True)
+
+        self.team_app_alt = self._create_aparell("BH_TEAM_A", "Builder Hydration Team Alt")
+        self.team_app_alt.competition_unit = Aparell.CompetitionUnit.TEAM
+        self.team_app_alt.save(update_fields=["competition_unit"])
+        self.comp_team_app_alt = self._create_comp_aparell(self.comp, self.team_app_alt, ordre=3, actiu=True)
+
+        CompeticioAparellEquipContextSource.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_team_app_finals,
+            context=self.ctx_finals,
+        )
+        CompeticioAparellEquipContextSource.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_team_app_alt,
+            context=self.ctx_alt,
+        )
+
+    def _builder_schema(self, *, context_code="native", team_mode=""):
+        return {
+            "particions": [],
+            "particions_v2": [],
+            "particions_custom": {},
+            "particions_config": {},
+            "filtres": {},
+            "puntuacio": {
+                "aparells": {"mode": "tots", "ids": []},
+                "camps_per_aparell": {},
+                "agregacio_camps": "sum",
+                "exercicis": {"mode": "tots"},
+                "agregacio_exercicis": "sum",
+                "agregacio_aparells": "sum",
+                "mode_resultat_aparells": "score",
+                "victories": {
+                    "punts_victoria": 1,
+                    "punts_empat": 0.5,
+                    "sense_nota_mode": "skip",
+                    "mode_camps": "agregat",
+                    "mode_exercicis": "agregat",
+                    "mode_seleccio_exercicis_camps_separats": "per_camp",
+                    "agregacio_victories_camps": "sum",
+                    "agregacio_victories_exercicis": "sum",
+                    "desempat_comparacio": [],
+                },
+                "ordre": "desc",
+            },
+            "desempat": [],
+            "presentacio": {
+                "top_n": 0,
+                "mostrar_empats": True,
+                "columnes": [{"type": "builtin", "key": "participant", "label": "Participant", "align": "left"}],
+            },
+            "equips": {
+                "context_code": context_code,
+                "assignment_source": {"mode": "context", "context_code": context_code, "fallback": "native"},
+                "team_mode": team_mode,
+            },
+        }
+
+    def test_prepare_schema_for_builder_hydration_mode_tots_filters_individual_tipus(self):
+        hydrated = prepare_schema_for_builder_hydration(
+            self.comp,
+            self._builder_schema(),
+            tipus="individual",
+        )
+
+        self.assertEqual((hydrated.get("puntuacio") or {}).get("aparells", {}).get("ids"), [self.comp_ind_app.id])
+
+    def test_prepare_schema_for_builder_hydration_mode_tots_filters_derived_team_tipus(self):
+        hydrated = prepare_schema_for_builder_hydration(
+            self.comp,
+            self._builder_schema(context_code="ctx-finals", team_mode="derived_from_individual"),
+            tipus="equips",
+        )
+
+        self.assertEqual((hydrated.get("puntuacio") or {}).get("aparells", {}).get("ids"), [self.comp_ind_app.id])
+
+    def test_prepare_schema_for_builder_hydration_mode_tots_filters_native_team_by_context(self):
+        hydrated = prepare_schema_for_builder_hydration(
+            self.comp,
+            self._builder_schema(context_code="ctx-finals", team_mode="native_team"),
+            tipus="equips",
+        )
+
+        self.assertEqual(
+            (hydrated.get("puntuacio") or {}).get("aparells", {}).get("ids"),
+            [self.comp_team_app_finals.id],
+        )
+
+    def test_prepare_schema_for_builder_hydration_prefers_assignment_source_context_code(self):
+        schema = self._builder_schema(context_code="native", team_mode="derived_from_individual")
+        schema["equips"]["assignment_source"] = {"mode": "context", "context_code": "ctx-finals", "fallback": "native"}
+
+        hydrated = prepare_schema_for_builder_hydration(
+            self.comp,
+            schema,
+            tipus="equips",
+        )
+
+        self.assertEqual((hydrated.get("equips") or {}).get("context_code"), "ctx-finals")
+        self.assertEqual(
+            (((hydrated.get("equips") or {}).get("assignment_source")) or {}).get("context_code"),
+            "ctx-finals",
+        )
+
+
 class ClassificacioFilterSemanticsTests(_BaseTrampoliDataMixin, TestCase):
     def setUp(self):
         self.comp = self._create_competicio("Comp Filter Semantics")
@@ -2822,6 +2949,7 @@ class ClassificacioTemplateFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.client.force_login(self.editor_user)
         url = reverse("classificacions_home", kwargs={"pk": self.comp_source.id})
         res = self.client.get(url)
+        content = res.content.decode("utf-8")
         self.assertEqual(res.status_code, 200)
         self.assertContains(res, 'id="can-manage-global-templates"')
         self.assertContains(res, 'id="builder-save-url"')
@@ -2839,9 +2967,24 @@ class ClassificacioTemplateFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertContains(res, 'data-help-key="global_overview"')
         self.assertContains(res, 'data-help-key="victories_overview"')
         self.assertNotContains(res, '<option value="entitat">Per entitat</option>', html=True)
+        self.assertContains(res, 'id="appStaleBanner"')
         self.assertContains(res, "function pruneSchemaAppReferences(schema, allowedIds)")
-        self.assertContains(res, 'buildAparellChecks([...ids], { includeStale: true });')
+        self.assertContains(res, "function renderAppStaleWarningBanner(schema, selectedIds)")
+        self.assertContains(res, "function filterRawColumnsByAllowedApps(rawCols, allowedIds)")
+        self.assertContains(res, "function pruneDetailSectionsByAllowedApps(rawSections, allowedIds)")
+        self.assertContains(res, "const selectedCompatibleIds = sanitizeCompatibleAppIds(idsBase);")
+        self.assertContains(res, 'buildAparellChecks(selectedCompatibleIds, { includeStale: false });')
+        self.assertContains(res, 'const selected = getSingleCompatibleAppId(selectedAppId);')
+        self.assertContains(res, '<option value="" ${selected ? "" : "selected"}>Selecciona aparell</option>')
+        self.assertContains(res, 'const appIds = sanitizeCompatibleAppIds(getCurrentBuilderAppIds(schema));')
+        self.assertContains(res, "renderAppStaleWarningBanner(schema, selectedCompatibleIds);")
         self.assertContains(res, "refreshTipusUI({ includeStale: false, dropInvalidSelection: true });")
+        self.assertContains(res, 'function runSafeHydrationRender(label, renderFn)')
+        self.assertContains(res, 'runSafeHydrationRender("columnes", () => {')
+        self.assertContains(res, 'runSafeHydrationRender("desempat", () => {')
+        self.assertContains(res, 'runSafeHydrationRender("per aparell", () => {')
+        self.assertContains(res, 'state.rehydrationIssues = [];')
+        self.assertEqual(content.count("function buildTieAppScopeOptionsHTML("), 1)
         self.assertContains(res, "function previewRenderTeamRawDetailCell(v, col)")
         self.assertContains(res, "team-raw-summary")
         self.assertContains(res, 'v._kind === "team_raw_detail"')
@@ -3837,6 +3980,7 @@ class GlobalClassificacioTemplateManagementTests(_BaseTrampoliDataMixin, TestCas
         self.client.force_login(self.user)
         url = reverse("classificacio_template_global_create")
         res = self.client.get(url)
+        content = res.content.decode("utf-8")
         self.assertEqual(res.status_code, 200)
         self.assertContains(res, 'id="can-manage-global-templates"')
         self.assertContains(res, 'id="builder-save-url"')
@@ -3856,9 +4000,19 @@ class GlobalClassificacioTemplateManagementTests(_BaseTrampoliDataMixin, TestCas
         self.assertContains(res, 'data-help-key="global_overview"')
         self.assertContains(res, 'data-help-key="desempat_overview"')
         self.assertNotContains(res, '<option value="entitat">Per entitat</option>', html=True)
+        self.assertContains(res, 'id="appStaleBanner"')
         self.assertContains(res, "function pruneSchemaAppReferences(schema, allowedIds)")
-        self.assertContains(res, 'buildAparellChecks([...ids], { includeStale: true });')
+        self.assertContains(res, "function renderAppStaleWarningBanner(schema, selectedIds)")
+        self.assertContains(res, 'buildAparellChecks(selectedCompatibleIds, { includeStale: false });')
+        self.assertContains(res, 'const selected = getSingleCompatibleAppId(selectedAppId);')
+        self.assertContains(res, '<option value="" ${selected ? "" : "selected"}>Selecciona aparell</option>')
         self.assertContains(res, "refreshTipusUI({ includeStale: false, dropInvalidSelection: true });")
+        self.assertContains(res, 'function runSafeHydrationRender(label, renderFn)')
+        self.assertContains(res, 'runSafeHydrationRender("columnes", () => {')
+        self.assertContains(res, 'runSafeHydrationRender("desempat", () => {')
+        self.assertContains(res, 'runSafeHydrationRender("per aparell", () => {')
+        self.assertContains(res, 'state.rehydrationIssues = [];')
+        self.assertEqual(content.count("function buildTieAppScopeOptionsHTML("), 1)
         self.assertContains(res, "function previewRenderTeamRawDetailCell(v, col)")
         self.assertContains(res, "En equips derivats, les columnes de camp mostren un resum i el detall per membres de l'equip.")
         self.assertContains(res, "En equips amb nota nativa, les columnes de camp mostren el valor d'equip i només són representables per aparells d'equip.")

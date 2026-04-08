@@ -850,6 +850,7 @@
               <div class="border rounded p-2 mb-3">
                 <div class="row" id="apChkList"></div>
               </div>
+              <div id="appStaleBanner" class="builder-status-stack mb-3"></div>
             </div>
           </div>
 
@@ -1415,7 +1416,7 @@
       context_code: "native",
       team_mode: "",
       mode_resolution: { resolved_at: "", eligible_team_app_ids_at_save: [] },
-      assignment_source: { mode:"native", context_code:"", fallback:"native" },
+      assignment_source: { mode:"context", context_code:"native", fallback:"native" },
       incloure_sense_equip: false,
       particions_manuals: [],
       particio_edat: { activa:false, llindars:[], sense_data_label:"Sense edat" },
@@ -1477,6 +1478,7 @@
 
     apSelBox: document.getElementById("apSelBox"),
     apChkList: document.getElementById("apChkList"),
+    appStaleBanner: document.getElementById("appStaleBanner"),
 
     perAppBox: document.getElementById("perAppBox"),
 
@@ -1534,6 +1536,7 @@
     cfgs: JSON.parse(JSON.stringify(CFGS || [])),
     selectedId: null,
     templates: [],
+    rehydrationIssues: [],
   };
   let advancedDirty = {
     desempat: false,
@@ -2006,8 +2009,8 @@
       : {};
     const contextCode = normalizeContextCode(
       (els.eqAssignmentContext && els.eqAssignmentContext.value) ||
-      equips.context_code ||
       assignmentSource.context_code ||
+      equips.context_code ||
       "native"
     );
     const declaredTeamMode = normalizeTeamMode(
@@ -2242,6 +2245,15 @@
         text: uiState.compatibilityErrors.join(" "),
       });
     }
+    if (Array.isArray(state.rehydrationIssues) && state.rehydrationIssues.length) {
+      state.rehydrationIssues.forEach(message => {
+        statusItems.push({
+          variant: "warning",
+          title: "Rehidratació parcial",
+          text: `${message}. El JSON avançat continua carregat amb l'esquema normalitzat.`,
+        });
+      });
+    }
     renderStatusBanners(els.classifStatusBox, statusItems);
 
     const eqItems = [];
@@ -2392,21 +2404,9 @@
 
   function getSchemaReferencedAppIds(schema) {
     const punt = schema && typeof schema === "object" && !Array.isArray(schema) ? (schema.puntuacio || {}) : {};
-    const out = [];
-    const pushMany = rawIds => {
-      _uniquePositiveInts(rawIds).forEach(id => {
-        if (!out.includes(id)) out.push(id);
-      });
-    };
-    pushMany(((punt.aparells || {}).ids) || []);
-    pushMany(Object.keys((punt.camps_per_aparell && typeof punt.camps_per_aparell === "object") ? punt.camps_per_aparell : {}));
-    pushMany(Object.keys((punt.exercicis_per_aparell && typeof punt.exercicis_per_aparell === "object") ? punt.exercicis_per_aparell : {}));
-    return out;
-  }
-
-  function getSchemaReferencedAppIds(schema) {
-    const punt = schema && typeof schema === "object" && !Array.isArray(schema) ? (schema.puntuacio || {}) : {};
+    const desempat = Array.isArray(schema?.desempat) ? schema.desempat : [];
     const presentacio = schema && typeof schema === "object" && !Array.isArray(schema) ? (schema.presentacio || {}) : {};
+    const victories = punt && typeof punt.victories === "object" && !Array.isArray(punt.victories) ? punt.victories : {};
     const detailCfg = presentacio && typeof presentacio === "object" && !Array.isArray(presentacio) ? (presentacio.detall || {}) : {};
     const out = [];
     const pushMany = rawIds => {
@@ -2417,12 +2417,26 @@
     pushMany(((punt.aparells || {}).ids) || []);
     pushMany(Object.keys((punt.camps_per_aparell && typeof punt.camps_per_aparell === "object") ? punt.camps_per_aparell : {}));
     pushMany(Object.keys((punt.exercicis_per_aparell && typeof punt.exercicis_per_aparell === "object") ? punt.exercicis_per_aparell : {}));
+    desempat.forEach(item => {
+      pushMany((((item || {}).scope || {}).aparells || {}).ids || []);
+    });
+    (Array.isArray(victories.desempat_comparacio) ? victories.desempat_comparacio : []).forEach(item => {
+      pushMany((((item || {}).scope || {}).aparells || {}).ids || []);
+    });
+    (((presentacio || {}).columnes) || []).forEach(col => {
+      const source = col && typeof col === "object" ? (col.source || {}) : {};
+      pushMany([source.aparell_id]);
+    });
     pushMany((Array.isArray(detailCfg.sections) ? detailCfg.sections : []).map(section => section && typeof section === "object" ? section.aparell_id : null));
     (Array.isArray(detailCfg.sections) ? detailCfg.sections : []).forEach(section => {
       (((section || {}).columns) || []).forEach(col => {
         const source = col && typeof col === "object" ? (col.source || {}) : {};
         pushMany([source.aparell_id]);
       });
+    });
+    (((detailCfg || {}).columnes) || []).forEach(col => {
+      const source = col && typeof col === "object" ? (col.source || {}) : {};
+      pushMany([source.aparell_id]);
     });
     return out;
   }
@@ -2452,6 +2466,17 @@
     return _uniquePositiveInts(rawIds).filter(id => allowed.has(String(id)));
   }
 
+  function getSingleCompatibleAppId(rawAppId) {
+    const appId = Number(rawAppId);
+    if (!Number.isFinite(appId) || appId <= 0) return null;
+    return sanitizeCompatibleAppIds([appId])[0] || null;
+  }
+
+  function getDefaultCompatibleAppId() {
+    const first = (getAppChoices([], { includeStale: false }) || [])[0];
+    return getSingleCompatibleAppId(first?.id);
+  }
+
   function filterPerAppMapByCompatibleIds(rawMap, allowedIds) {
     const out = {};
     if (!rawMap || typeof rawMap !== "object" || Array.isArray(rawMap)) return out;
@@ -2462,6 +2487,110 @@
       out[String(appId)] = value;
     });
     return out;
+  }
+
+  function filterRawColumnsByAllowedApps(rawCols, allowedIds) {
+    const allowed = new Set(sanitizeCompatibleAppIds(allowedIds).map(id => String(id)));
+    const cols = Array.isArray(rawCols) ? rawCols : [];
+    return cols.filter(col => {
+      if (!col || typeof col !== "object") return false;
+      if (String(col.type || "builtin").toLowerCase().trim() !== "raw") return true;
+      const appId = Number(col?.source?.aparell_id);
+      return Number.isFinite(appId) && allowed.has(String(appId));
+    });
+  }
+
+  function pruneSelectableAppScope(rawScope, allowedIds) {
+    if (!rawScope || typeof rawScope !== "object" || Array.isArray(rawScope)) return { scope: rawScope, keep: true };
+    const mode = String(rawScope.mode || "").toLowerCase().trim();
+    if (mode !== "seleccionar") return { scope: rawScope, keep: true };
+    const ids = sanitizeCompatibleAppIds(rawScope.ids || []);
+    if (!ids.length) return { scope: { ...rawScope, ids: [] }, keep: false };
+    return { scope: { ...rawScope, ids }, keep: true };
+  }
+
+  function pruneTieCriteriaAppReferences(rawList, allowedIds) {
+    const items = Array.isArray(rawList) ? rawList : [];
+    const out = [];
+    items.forEach(item => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return;
+      const next = { ...item };
+      const rawScope = next.scope;
+      if (rawScope && typeof rawScope === "object" && !Array.isArray(rawScope)) {
+        const scope = { ...rawScope };
+        const pruned = pruneSelectableAppScope(scope.aparells, allowedIds);
+        if (!pruned.keep) return;
+        if (pruned.scope !== undefined) scope.aparells = pruned.scope;
+        next.scope = scope;
+      }
+      out.push(next);
+    });
+    return out;
+  }
+
+  function pruneDetailSectionsByAllowedApps(rawSections, allowedIds) {
+    const allowed = new Set(sanitizeCompatibleAppIds(allowedIds).map(id => String(id)));
+    const sections = Array.isArray(rawSections) ? rawSections : [];
+    const out = [];
+
+    sections.forEach(section => {
+      if (!section || typeof section !== "object" || Array.isArray(section)) return;
+      const next = { ...section };
+      const sectionType = String(next.type || "").trim();
+      const filteredColumns = filterRawColumnsByAllowedApps(next.columns, allowedIds);
+      const rawAppIds = _uniquePositiveInts(
+        filteredColumns
+          .filter(col => String(col?.type || "builtin").toLowerCase().trim() === "raw")
+          .map(col => col?.source?.aparell_id)
+      );
+      if (Array.isArray(next.columns)) next.columns = filteredColumns;
+
+      if (detailSectionRequiresApp(sectionType)) {
+        const currentSectionAppId = Number(next.aparell_id);
+        const resolvedSectionAppId = Number.isFinite(currentSectionAppId) && allowed.has(String(currentSectionAppId))
+          ? currentSectionAppId
+          : (rawAppIds.length === 1 ? rawAppIds[0] : null);
+        if (!(Number.isFinite(resolvedSectionAppId) && resolvedSectionAppId > 0)) return;
+        next.aparell_id = resolvedSectionAppId;
+      } else {
+        delete next.aparell_id;
+      }
+
+      if (detailSectionNeedsInitialRaw(sectionType)) {
+        const hasRawColumns = filteredColumns.some(col => String(col?.type || "builtin").toLowerCase().trim() === "raw");
+        if (!hasRawColumns) return;
+      }
+
+      if (Array.isArray(next.columns) && !next.columns.length) delete next.columns;
+      out.push(next);
+    });
+
+    return out;
+  }
+
+  function formatAppRefLabel(appId) {
+    const id = Number(appId);
+    if (!Number.isFinite(id) || id <= 0) return "";
+    const app = getAparellById(id);
+    return String(app?.nom || `Aparell ${id}`);
+  }
+
+  function renderAppStaleWarningBanner(schema, selectedIds) {
+    if (!els.appStaleBanner) return;
+    const selected = new Set(_uniquePositiveInts(selectedIds).map(id => String(id)));
+    const staleIds = getSchemaReferencedAppIds(schema).filter(id => !selected.has(String(id)));
+    if (!staleIds.length) {
+      renderStatusBanners(els.appStaleBanner, []);
+      return;
+    }
+    const labels = staleIds.map(formatAppRefLabel).filter(Boolean);
+    const sample = labels.slice(0, 5).join(", ");
+    const extraCount = Math.max(0, labels.length - 5);
+    const suffix = extraCount ? ` i ${extraCount} més` : "";
+    renderStatusBanners(els.appStaleBanner, [{
+      severity: "warning",
+      message: `Hi ha referències d'aparell incompatibles preservades només per compatibilitat: ${sample}${suffix}. No es mostren al selector principal i s'eliminaran en guardar.`,
+    }]);
   }
 
   function pruneSchemaAppReferences(schema, allowedIds) {
@@ -2478,7 +2607,45 @@
     punt.aparells.ids = selectedIds;
     punt.camps_per_aparell = filterPerAppMapByCompatibleIds(punt.camps_per_aparell, selectedIds);
     punt.exercicis_per_aparell = filterPerAppMapByCompatibleIds(punt.exercicis_per_aparell, selectedIds);
+    schema.desempat = pruneTieCriteriaAppReferences(schema.desempat, selectedIds);
+
+    const victories = punt && typeof punt.victories === "object" && !Array.isArray(punt.victories) ? punt.victories : null;
+    if (victories) {
+      victories.desempat_comparacio = pruneTieCriteriaAppReferences(victories.desempat_comparacio, selectedIds);
+    }
+
+    if (!schema.presentacio || typeof schema.presentacio !== "object" || Array.isArray(schema.presentacio)) {
+      schema.presentacio = {};
+    }
+    const presentacio = schema.presentacio;
+    presentacio.columnes = filterRawColumnsByAllowedApps(presentacio.columnes, selectedIds);
+
+    if (!presentacio.detall || typeof presentacio.detall !== "object" || Array.isArray(presentacio.detall)) {
+      presentacio.detall = {};
+    }
+    const detail = presentacio.detall;
+    detail.sections = pruneDetailSectionsByAllowedApps(detail.sections, selectedIds);
+    const legacyDetailColumns = filterRawColumnsByAllowedApps(detail.columnes, selectedIds);
+    if (legacyDetailColumns.length) detail.columnes = legacyDetailColumns;
+    else delete detail.columnes;
+    if (!detail.sections.length) detail.enabled = false;
     return selectedIds;
+  }
+
+  function rememberHydrationIssue(label, error) {
+    const detail = String(error?.message || error || "Error desconegut").trim() || "Error desconegut";
+    const message = `${label}: ${detail}`;
+    if (!Array.isArray(state.rehydrationIssues)) state.rehydrationIssues = [];
+    if (!state.rehydrationIssues.includes(message)) state.rehydrationIssues.push(message);
+    console.error(`Builder rehydration error [${label}]`, error);
+  }
+
+  function runSafeHydrationRender(label, renderFn) {
+    try {
+      renderFn();
+    } catch (error) {
+      rememberHydrationIssue(label, error);
+    }
   }
 
   function getAppChoices(extraIds, opts = {}) {
@@ -2803,7 +2970,7 @@
 
   function renderPerAppUI(schema) {
     const punt = (schema.puntuacio || {});
-    const appIds = getCurrentBuilderAppIds(schema);
+    const appIds = sanitizeCompatibleAppIds(getCurrentBuilderAppIds(schema));
     const modeSel = getModeSeleccioExercicisFromUI() || String(punt.mode_seleccio_exercicis || "per_aparell_global").toLowerCase().trim();
     const showExOverride = modeSel === "per_aparell_override";
     els.perAppBox.innerHTML = "";
@@ -2980,6 +3147,7 @@
     if (opts.dropInvalidSelection && cfg && cfg.schema) {
       pruneSchemaAppReferences(cfg.schema, selectedIds);
     }
+    renderAppStaleWarningBanner(cfg && cfg.schema ? cfg.schema : {}, selectedIds);
     renderDerivedPartitionConfigUI(readParticionsConfigUI(), selectedParticioCodesFromUI());
     return selectedIds;
   }
@@ -3812,12 +3980,10 @@
     const currentAssignment = prev.assignment_source && typeof prev.assignment_source === "object" && !Array.isArray(prev.assignment_source)
       ? prev.assignment_source
       : {};
-    const fallbackContextCode = normalizeContextCode(prev.context_code || currentAssignment.context_code || "");
+    const fallbackContextCode = normalizeContextCode(currentAssignment.context_code || prev.context_code || "");
     const selectedContextCode = normalizeContextCode(els.eqAssignmentContext?.value || fallbackContextCode || "native");
     const selectedTeamMode = normalizeTeamMode(els.eqTeamMode?.value || prev.team_mode || "");
-    const assignmentSource = selectedContextCode === "native"
-      ? { mode: "native", context_code: "", fallback: "native" }
-      : { mode: "context", context_code: selectedContextCode, fallback: "native" };
+    const assignmentSource = { mode: "context", context_code: selectedContextCode, fallback: "native" };
 
     return {
       ...prev,
@@ -3835,10 +4001,8 @@
     const eq = schema || {};
     const assignmentSource = eq.assignment_source || {};
     const selectedContextCode = normalizeContextCode(
+      String(assignmentSource.context_code || "") ||
       eq.context_code ||
-      (String((assignmentSource.mode || "native")).toLowerCase() === "context"
-        ? String(assignmentSource.context_code || "")
-        : "") ||
       "native"
     );
     const teamMode = normalizeTeamMode(eq.team_mode || "");
@@ -3886,6 +4050,10 @@
       // map a appScope: hereta|app:<id>
       let appScope = "hereta";
       if (appMode === "seleccionar" && appIds.length) appScope = `app:${appIds[0]}`;
+      if (appScope.startsWith("app:")) {
+        const compatibleAppId = getSingleCompatibleAppId(appScope.split(":")[1]);
+        appScope = Number.isFinite(compatibleAppId) ? `app:${compatibleAppId}` : "hereta";
+      }
 
       // exercicis
       let exMode = (sEx.mode || "hereta").toLowerCase().trim();
@@ -4005,6 +4173,11 @@
         return `${value} (legacy)`;
       });
       appScopeSel.value = appScope;
+      const selectedAppScopeOption = appScopeSel?.selectedOptions?.[0] || null;
+      if (selectedAppScopeOption && (selectedAppScopeOption.dataset.injected === "1" || selectedAppScopeOption.dataset.stale === "1")) {
+        selectedAppScopeOption.remove();
+        appScopeSel.value = "hereta";
+      }
       ensureSelectOption(ordSel, ordre, value => `${value} (legacy)`);
       ordSel.value = ordre;
 
@@ -4848,27 +5021,27 @@
   }
 
   function buildRawAppOptionsHTML(selectedAppId) {
-    const selected = Number(selectedAppId);
-    return getAppChoices(Number.isFinite(selected) && selected > 0 ? [selected] : [], { includeStale: true }).map(app => `
-      <option value="${esc(app.id)}" ${Number(app.id) === selected ? "selected" : ""} ${app.injected ? 'data-injected="1"' : ""} ${app.stale ? 'data-stale="1"' : ""}>${esc(app.nom)}${app.stale ? " (no disponible)" : ""}</option>
-    `).join("");
+    const selected = getSingleCompatibleAppId(selectedAppId);
+    return [
+      `<option value="" ${selected ? "" : "selected"}>Selecciona aparell</option>`,
+      ...getAppChoices([], { includeStale: false }).map(app => `
+      <option value="${esc(app.id)}" ${Number(app.id) === selected ? "selected" : ""}>${esc(app.nom)}</option>
+    `),
+    ].join("");
   }
 
   function buildDetailSectionAppOptionsHTML(sectionType, selectedAppId) {
     const selected = Number(selectedAppId);
     const options = getDetailSectionAppChoices(sectionType, selected);
-    let html = '<option value="">Selecciona aparell</option>';
+    const hasSelected = options.some(app => Number(app.id) === selected);
+    let html = `<option value="" ${hasSelected ? "" : "selected"}>Selecciona aparell</option>`;
     options.forEach(app => {
       html += `<option value="${esc(app.id)}" ${Number(app.id) === selected ? "selected" : ""}>${esc(app.nom)}</option>`;
     });
-    if (Number.isFinite(selected) && selected > 0 && !options.some(app => Number(app.id) === selected)) {
-      const label = detailSectionAppName(selected) || `Aparell ${selected}`;
-      html += `<option value="${esc(selected)}" selected>${esc(label)}</option>`;
-    }
     return html;
   }
 
-  function buildTieAppScopeOptionsHTML(selectedScope) {
+  function _legacyBuildTieAppScopeOptionsHTML1(selectedScope) {
     let selectedAppId = null;
     const scope = String(selectedScope || "hereta");
     if (scope.startsWith("app:")) {
@@ -4881,7 +5054,7 @@
     ].join("");
   }
 
-  function buildTieAppScopeOptionsHTML(selectedScope) {
+  function _legacyBuildTieAppScopeOptionsHTML2(selectedScope) {
     let selectedAppId = null;
     const scope = String(selectedScope || "hereta");
     if (scope.startsWith("app:")) {
@@ -4898,9 +5071,24 @@
     ].join("");
   }
 
+  function buildTieAppScopeOptionsHTML(selectedScope) {
+    const rawScope = String(selectedScope || "hereta");
+    const parsedAppId = rawScope.startsWith("app:") ? Number(rawScope.split(":")[1]) : null;
+    const compatibleAppId = getSingleCompatibleAppId(parsedAppId);
+    const scope = Number.isFinite(compatibleAppId) ? `app:${compatibleAppId}` : "hereta";
+    return [
+      `<option value="hereta" ${scope === "hereta" ? "selected" : ""}>Hereta (puntuació)</option>`,
+      ...getAppChoices([], { includeStale: false }).map(app => `<option value="app:${esc(app.id)}" ${scope === `app:${app.id}` ? "selected" : ""}>${esc(app.nom)}</option>`),
+    ].join("");
+  }
+
   function buildRawCampOptionsHTML(appId, selectedCamp, usage = null) {
+    const compatibleAppId = getSingleCompatibleAppId(appId);
+    if (!Number.isFinite(compatibleAppId)) {
+      return '<option value="" selected>Selecciona aparell</option>';
+    }
     const opts = extendOptionsWithSelectedValues(
-      filterFieldOptionsForRawUsage(appId, usage),
+      filterFieldOptionsForRawUsage(compatibleAppId, usage),
       selectedCamp ? [selectedCamp] : [],
       value => value
     );
@@ -4913,7 +5101,11 @@
   }
 
   function buildExerciciOptionsHTML(appId, selectedEx) {
-    const app = getAparellById(appId);
+    const compatibleAppId = getSingleCompatibleAppId(appId);
+    if (!Number.isFinite(compatibleAppId)) {
+      return '<option value="" selected>Selecciona aparell</option>';
+    }
+    const app = getAparellById(compatibleAppId);
     const n = Math.max(1, Number(app?.nombre_exercicis || 1) || 1);
     const ex = Math.max(1, Number(selectedEx || 1) || 1);
     let html = "";
@@ -4955,7 +5147,10 @@
     }
 
     exSel.innerHTML = buildExerciciOptionsHTML(appId, prevEx);
-    if (!exSel.value) exSel.value = "1";
+    if (!exSel.value) {
+      const first = exSel.querySelector("option");
+      exSel.value = first ? first.value : "";
+    }
 
     const selectedCampOpt = campSel.options[campSel.selectedIndex];
     const judgesCount = Number(selectedCampOpt?.dataset?.judgesCount || 1);
@@ -4995,7 +5190,7 @@
 
       if ((col.type || "builtin") === "raw") {
         const src = (col.source && typeof col.source === "object") ? col.source : {};
-        const appId = Number(src.aparell_id || ((APARELLS && APARELLS[0] && APARELLS[0].id) || 0));
+        const appId = Number.isFinite(Number(src.aparell_id)) ? Number(src.aparell_id) : null;
         const camp = String(src.camp || "");
         const ex = Math.max(1, Number(src.exercici || 1) || 1);
         const judgeIds = _uniquePositiveInts((((src.jutges || {}).ids) || []));
@@ -5302,7 +5497,7 @@
 
       if ((col.type || "builtin") === "raw") {
         const src = (col.source && typeof col.source === "object") ? col.source : {};
-        const appId = Number(src.aparell_id || ((APARELLS && APARELLS[0] && APARELLS[0].id) || 0));
+        const appId = Number.isFinite(Number(src.aparell_id)) ? Number(src.aparell_id) : null;
         const camp = String(src.camp || "");
         const ex = Math.max(1, Number(src.exercici || 1) || 1);
         const judgeIds = _uniquePositiveInts((((src.jutges || {}).ids) || []));
@@ -5512,7 +5707,7 @@
 
       if ((col.type || "builtin") === "raw") {
         const src = (col.source && typeof col.source === "object") ? col.source : {};
-        const appId = Number(src.aparell_id || ((APARELLS && APARELLS[0] && APARELLS[0].id) || 0));
+        const appId = Number.isFinite(Number(src.aparell_id)) ? Number(src.aparell_id) : null;
         const camp = String(src.camp || "");
         const ex = Math.max(1, Number(src.exercici || 1) || 1);
         const judgeIds = _uniquePositiveInts((((src.jutges || {}).ids) || []));
@@ -5992,19 +6187,6 @@
       else delete section.aparell_id;
       out.push(section);
     });
-    if (includeStale) {
-      _uniquePositiveInts(extraIds).forEach(id => {
-        if (seen.has(String(id))) return;
-        seen.add(String(id));
-        const app = getAparellById(id);
-        out.push({
-          id,
-          nom: String(app?.nom || `Aparell ${id}`),
-          stale: true,
-          injected: true,
-        });
-      });
-    }
     return out;
   }
 
@@ -6178,8 +6360,8 @@
       ? schema.equips
       : fallback.equips;
     schema.equips.context_code = normalizeContextCode(
-      schema.equips.context_code ||
       schema.equips.assignment_source?.context_code ||
+      schema.equips.context_code ||
       "native"
     );
     schema.equips.team_mode = normalizeTeamMode(schema.equips.team_mode || "");
@@ -7386,19 +7568,30 @@
       els.tFiltres.value = JSON.stringify(filtres, null, 2);
     }
     els.advancedJson.value = JSON.stringify(schema, null, 2);
+    if (Array.isArray(state.rehydrationIssues) && state.rehydrationIssues.length) {
+      state.rehydrationIssues = [];
+    }
     renderEquipsModeControls();
+    renderAppStaleWarningBanner(schema, apIds);
   }
 
   function syncUIFromSchema(schema) {
     schema = normalizeForHydration(schema || DEFAULT_SCHEMA);
     const cfg = currentCfg();
     if (cfg) cfg.schema = schema;
+    state.rehydrationIssues = [];
+    advancedDirty.desempat = false;
+    advancedDirty.filtres = false;
+    els.tDesempat.value = JSON.stringify(schema.desempat || [], null, 2);
+    els.tFiltres.value = JSON.stringify(schema.filtres || {}, null, 2);
+    els.advancedJson.value = JSON.stringify(schema, null, 2);
 
     const partEntries = normalizeParticioEntries(schema.particions_v2 || [], schema.particions || []);
     const parts = particioCodesFromEntries(partEntries);
     renderParticioStackUI(partEntries, schema.particions_custom || {});
     renderDerivedPartitionConfigUI(schema.particions_config || {}, parts);
     renderParticionsCustomUI(parts, schema.particions_custom || {});
+    syncEquipUIFromSchema(schema.equips || DEFAULT_SCHEMA.equips);
 
     // aparells (sense mode "tots": normalitzem legacy a seleccio explicita)
     const rawAparells = ((schema.puntuacio||{}).aparells||{});
@@ -7407,15 +7600,15 @@
     const idsBase = (apMode === "tots")
       ? (APARELLS || []).map(a => a.id)
       : idsLegacy;
-    const idsNorm = _uniquePositiveInts([...idsBase, ...getSchemaReferencedAppIds(schema)]).map(x => String(x));
-    const ids = new Set(idsNorm);
-
+    const selectedCompatibleIds = sanitizeCompatibleAppIds(idsBase);
     if (els.apSelBox) els.apSelBox.style.display = "";
-    buildAparellChecks([...ids], { includeStale: true });
-    getAppChoices([...ids], { includeStale: true }).forEach(a => {
+    buildAparellChecks(selectedCompatibleIds, { includeStale: false });
+    const selectedSet = new Set(selectedCompatibleIds.map(x => String(x)));
+    getAppChoices(selectedCompatibleIds, { includeStale: false }).forEach(a => {
       const el = document.getElementById("app_" + a.id);
-      if (el) el.checked = ids.has(String(a.id));
+      if (el) el.checked = selectedSet.has(String(a.id));
     });
+    renderAppStaleWarningBanner(schema, selectedCompatibleIds);
 
     [
       els.sAggCamps,
@@ -7461,11 +7654,15 @@
 
     els.iTopN.value = (schema.presentacio||{}).top_n ?? 0;
     els.cEmpats.checked = !!((schema.presentacio||{}).mostrar_empats);
-    renderColumnsUI((schema.presentacio||{}).columnes || DEFAULT_SCHEMA.presentacio.columnes);
+    runSafeHydrationRender("columnes", () => {
+      renderColumnsUI((schema.presentacio||{}).columnes || DEFAULT_SCHEMA.presentacio.columnes);
+    });
     const detailCfg = ((schema.presentacio || {}).detall || {});
     if (els.detailEnabled) els.detailEnabled.checked = !!detailCfg.enabled;
     if (els.detailDefaultOpen) els.detailDefaultOpen.checked = !!detailCfg.default_open;
-    renderDetailSectionsUI(normalizeDetailSectionsFromSchema(detailCfg));
+    runSafeHydrationRender("detall", () => {
+      renderDetailSectionsUI(normalizeDetailSectionsFromSchema(detailCfg));
+    });
 
     // tie + filtres JSON
     const victoriesCfg = ((schema.puntuacio || {}).victories || {});
@@ -7489,23 +7686,23 @@
       ensureSelectOption(els.sVictoryAggExercicis, victoriesCfg.agregacio_victories_exercicis, value => `${value} (legacy)`);
       els.sVictoryAggExercicis.value = victoriesCfg.agregacio_victories_exercicis || "sum";
     }
-    renderVictoryTieUI(victoriesCfg.desempat_comparacio || []);
-    renderTieUI(schema.desempat || []);
+    runSafeHydrationRender("desempat victories", () => {
+      renderVictoryTieUI(victoriesCfg.desempat_comparacio || []);
+    });
+    runSafeHydrationRender("desempat", () => {
+      renderTieUI(schema.desempat || []);
+    });
     applyMultiSelectValues(els.fEntitats, (schema.filtres || {}).entitats_in || []);
     applyMultiSelectValues(els.fCategories, (schema.filtres || {}).categories_in || []);
     applyMultiSelectValues(els.fSubcategories, (schema.filtres || {}).subcategories_in || []);
     applyMultiSelectValues(els.fGrups, (schema.filtres || {}).grups_in || []);
-    els.tDesempat.value = JSON.stringify(schema.desempat || [], null, 2);
-    els.tFiltres.value = JSON.stringify(schema.filtres || {}, null, 2);
-    advancedDirty.desempat = false;
-    advancedDirty.filtres = false;
-    syncEquipUIFromSchema(schema.equips || DEFAULT_SCHEMA.equips);
     refreshTipusUI();
 
     // per aparell UI
-    renderPerAppUI(schema);
-
-    els.advancedJson.value = JSON.stringify(schema, null, 2);
+    runSafeHydrationRender("per aparell", () => {
+      renderPerAppUI(schema);
+    });
+    renderEquipsModeControls();
   }
 
   function selectCfg(id) {
@@ -7867,7 +8064,7 @@
 
   if (els.btnColAddRaw) {
     els.btnColAddRaw.addEventListener("click", () => {
-      const firstApp = (APARELLS && APARELLS[0]) ? APARELLS[0].id : null;
+      const firstApp = getDefaultCompatibleAppId();
       const cur = readColumnsUI(true);
       cur.push({
         type: "raw",
@@ -7914,7 +8111,7 @@
 
   if (els.btnDetailColAddRaw) {
     els.btnDetailColAddRaw.addEventListener("click", () => {
-      const firstApp = (APARELLS && APARELLS[0]) ? APARELLS[0].id : null;
+      const firstApp = getDefaultCompatibleAppId();
       const cur = readDetailColumnsUI(true);
       cur.push({
         type: "raw",
@@ -8235,26 +8432,33 @@
   els.btnSave.addEventListener("click", async () => {
     const cfg = currentCfg();
     if (!cfg) return;
+    const previousCfgId = cfg.id;
 
     clearBuilderSaveFeedback();
     setSaveButtonBusy(true);
-    syncAdvancedFromUI({ preferAdvanced: true });
-
-    const payload = {
-      id: (String(cfg.id).startsWith("tmp_") ? null : cfg.id),
-      nom: cfg.nom,
-      slug: cfg.slug || "",
-      activa: !!cfg.activa,
-      ordre: cfg.ordre || 1,
-      tipus: cfg.tipus || "individual",
-      schema: cfg.schema || DEFAULT_SCHEMA
-    };
+    let saveDone = false;
 
     try {
+      syncAdvancedFromUI({ preferAdvanced: true });
+      const payloadSchema = (cfg.schema && typeof cfg.schema === "object" && !Array.isArray(cfg.schema)) ? cfg.schema : {};
+      pruneSchemaAppReferences(payloadSchema, selectedAparellIdsFromUI());
+      cfg.schema = payloadSchema;
+      const payload = {
+        id: (String(cfg.id).startsWith("tmp_") ? null : cfg.id),
+        nom: cfg.nom,
+        slug: cfg.slug || "",
+        activa: !!cfg.activa,
+        ordre: cfg.ordre || 1,
+        tipus: cfg.tipus || "individual",
+        schema: cfg.schema || DEFAULT_SCHEMA
+      };
       const out = await postJson(SAVE_URL, payload);
       const savedId = out && (out.id || (out.cfg && out.cfg.id));
       if (savedId) {
         cfg.id = savedId;
+        if (state.selectedId === previousCfgId) {
+          state.selectedId = savedId;
+        }
         if (out.cfg && typeof out.cfg === "object") {
           cfg.slug = String(out.cfg.slug || cfg.slug || "");
           cfg.nom = String(out.cfg.nom || cfg.nom || "");
@@ -8264,19 +8468,23 @@
         }
         cfg._isTemp = false;
         renderList();
+        if (state.selectedId === cfg.id) {
+          syncUIFromSchema(cfg.schema || DEFAULT_SCHEMA);
+        }
       }
-     // MISSATGE D'ÈXIT
       clearBuilderSaveFeedback();
       showBuilderSaveSuccessFeedback("Guardat correctament");
-      setSaveButtonBusy(false, true);
-      window.setTimeout(() => {
-        if (els.saveMsg) els.saveMsg.style.display = "none";
-      }, 2500);
-    
+      saveDone = true;
     } catch (e) {
-      setSaveButtonBusy(false, false);
       const details = e && e.details ? e.details : null;
       renderBuilderSaveErrors(details && details.error_details, (details && details.errors) || [e.message]);
+    } finally {
+      setSaveButtonBusy(false, saveDone);
+      if (saveDone) {
+        window.setTimeout(() => {
+          if (els.saveMsg) els.saveMsg.style.display = "none";
+        }, 2500);
+      }
     }
   });
 
@@ -8413,7 +8621,6 @@
 <script src="{% staticv 'js/classificacions_builder_help.js' %}" defer></script>
 
 {% endblock %}
-
 
 
 

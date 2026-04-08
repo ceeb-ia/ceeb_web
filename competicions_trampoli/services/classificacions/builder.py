@@ -305,12 +305,41 @@ def prepare_schema_for_builder_hydration(competicio, schema_local, tipus="indivi
     raw_mode = str(apps_cfg.get("mode") or "seleccionar").strip().lower()
     ids_in = apps_cfg.get("ids") or []
     if raw_mode == "tots":
-        ids_in = list(
+        tipus_norm = str(tipus or "").strip().lower()
+        equips_cfg = schema.get("equips") or {}
+        assignment_source = (
+            equips_cfg.get("assignment_source")
+            if isinstance(equips_cfg.get("assignment_source"), dict)
+            else {}
+        )
+        context_code = normalize_equip_context_code(
+            assignment_source.get("context_code") or equips_cfg.get("context_code")
+        )
+        capabilities = get_team_context_capabilities(competicio, context_code)
+        active_apps = list(
             CompeticioAparell.objects
             .filter(competicio=competicio, actiu=True)
+            .select_related("aparell")
             .order_by("ordre", "id")
-            .values_list("id", flat=True)
         )
+        team_mode = normalize_team_mode(equips_cfg.get("team_mode"))
+        if tipus_norm == "equips" and not team_mode:
+            team_mode = infer_team_mode_from_comp_aparells(active_apps) or "derived_from_individual"
+        eligible_team_ids = set(capabilities.get("eligible_team_app_ids") or [])
+        ids_in = []
+        for comp_aparell in active_apps:
+            if tipus_norm == "individual":
+                if is_team_context_app(comp_aparell):
+                    continue
+            elif tipus_norm == "equips":
+                if team_mode == "native_team":
+                    if not is_team_context_app(comp_aparell):
+                        continue
+                    if eligible_team_ids and int(comp_aparell.id) not in eligible_team_ids:
+                        continue
+                elif is_team_context_app(comp_aparell):
+                    continue
+            ids_in.append(int(comp_aparell.id))
     for raw in ids_in if isinstance(ids_in, list) else []:
         try:
             app_id = int(raw)
