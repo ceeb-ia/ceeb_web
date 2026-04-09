@@ -818,6 +818,27 @@ def _validate_candidate_source_cfg_obj(cfg, prefix: str):
     return errors
 
 
+def _candidate_source_context_allows_any(*, tipus="individual", team_mode=""):
+    tipus_norm = str(tipus or "").strip().lower()
+    team_mode_norm = str(team_mode or "").strip().lower()
+    return (
+        tipus_norm == "individual"
+        or (tipus_norm == "equips" and team_mode_norm in {"derived_from_individual", "native_team"})
+    )
+
+
+def _candidate_source_mode_allowed(mode: str, *, tipus="individual", team_mode=""):
+    tipus_norm = str(tipus or "").strip().lower()
+    team_mode_norm = str(team_mode or "").strip().lower()
+    if mode == "raw_exercise":
+        return True
+    if mode == "participant_aggregate":
+        return tipus_norm == "individual" or (tipus_norm == "equips" and team_mode_norm == "derived_from_individual")
+    if mode == "team_aggregate":
+        return tipus_norm == "equips" and team_mode_norm == "native_team"
+    return False
+
+
 def _validate_agregacio_camps_per_aparell(competicio, schema: dict):
     schema = schema or {}
     punt = schema.get("puntuacio") or {}
@@ -862,16 +883,10 @@ def _validate_candidate_source_per_aparell(competicio, schema: dict, *, tipus="i
     if not isinstance(raw_map, dict):
         return ["puntuacio.candidate_source_per_aparell ha de ser un objecte {app_id: cfg}."]
 
-    allow_candidate_source = (
-        str(tipus or "").strip().lower() == "individual"
-        or (
-            str(tipus or "").strip().lower() == "equips"
-            and str(team_mode or "").strip().lower() == "derived_from_individual"
-        )
-    )
+    allow_candidate_source = _candidate_source_context_allows_any(tipus=tipus, team_mode=team_mode)
     if not allow_candidate_source:
         return [
-            "puntuacio.candidate_source_per_aparell nomes es compatible amb tipus='individual' o tipus='equips' + team_mode=derived_from_individual."
+            "puntuacio.candidate_source_per_aparell nomes es compatible amb tipus='individual', tipus='equips' + team_mode=derived_from_individual o tipus='equips' + team_mode=native_team."
         ]
 
     active_app_ids, selected_ids = _get_active_and_selected_app_ids(competicio, punt)
@@ -892,10 +907,15 @@ def _validate_candidate_source_per_aparell(competicio, schema: dict, *, tipus="i
             errors.append(f"puntuacio.candidate_source_per_aparell[{app_id}] ha de ser un objecte.")
             continue
         mode = str(raw_value.get("mode") or "raw_exercise").strip().lower()
-        if mode not in {"raw_exercise", "participant_aggregate"}:
+        if mode not in {"raw_exercise", "participant_aggregate", "team_aggregate"}:
             errors.append(f"puntuacio.candidate_source_per_aparell[{app_id}].mode invalid: {mode}")
             continue
-        if mode != "participant_aggregate":
+        if not _candidate_source_mode_allowed(mode, tipus=tipus, team_mode=team_mode):
+            errors.append(
+                f"puntuacio.candidate_source_per_aparell[{app_id}].mode no es compatible amb tipus={tipus} i team_mode={team_mode or 'none'}."
+            )
+            continue
+        if mode == "raw_exercise":
             continue
         cfg = raw_value.get("cfg")
         if not isinstance(cfg, dict):
@@ -1399,24 +1419,22 @@ def _validate_candidate_source(schema: dict, *, tipus="individual", team_mode=""
         punt = {}
 
     raw_mode = str(punt.get("candidate_source_mode") or "raw_exercise").strip().lower()
-    if raw_mode not in {"raw_exercise", "participant_aggregate"}:
+    if raw_mode not in {"raw_exercise", "participant_aggregate", "team_aggregate"}:
         return [f"puntuacio.candidate_source_mode invalid: {raw_mode}"]
 
-    allow_candidate_source = (
-        str(tipus or "").strip().lower() == "individual"
-        or (
-            str(tipus or "").strip().lower() == "equips"
-            and str(team_mode or "").strip().lower() == "derived_from_individual"
-        )
-    )
+    allow_candidate_source = _candidate_source_context_allows_any(tipus=tipus, team_mode=team_mode)
     if not allow_candidate_source:
         if punt.get("candidate_source_mode") not in (None, "", "raw_exercise"):
             return [
-                "puntuacio.candidate_source_mode nomes es compatible amb tipus='individual' o tipus='equips' + team_mode=derived_from_individual."
+                "puntuacio.candidate_source_mode nomes es compatible amb tipus='individual', tipus='equips' + team_mode=derived_from_individual o tipus='equips' + team_mode=native_team."
             ]
         return []
 
-    if raw_mode != "participant_aggregate":
+    if not _candidate_source_mode_allowed(raw_mode, tipus=tipus, team_mode=team_mode):
+        return [
+            f"puntuacio.candidate_source_mode no es compatible amb tipus={tipus} i team_mode={team_mode or 'none'}."
+        ]
+    if raw_mode == "raw_exercise":
         return []
 
     return _validate_candidate_source_cfg_obj(

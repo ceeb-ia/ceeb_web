@@ -49,6 +49,12 @@ window.initTeamsWorkspace = async function () {
     selectedBucketKeys: new Set(),
     autoContext: null,
     bucketSelectionMode: 'all',
+    autoBucketsExpanded: false,
+    autoBucketViewFilters: {
+      q: '',
+      selected_state: 'all',
+      sort: 'count_desc',
+    },
     contextDetailsOpen: false,
   };
 
@@ -108,6 +114,16 @@ window.initTeamsWorkspace = async function () {
       members_state: ['all', 'with_members', 'empty'].includes(membersState) ? membersState : 'all',
     };
   };
+  const normalizeAutoBucketViewFilters = (raw) => {
+    const data = raw && typeof raw === 'object' ? raw : {};
+    const selectedState = String(data.selected_state || 'all').trim() || 'all';
+    const sort = String(data.sort || 'count_desc').trim() || 'count_desc';
+    return {
+      q: String(data.q || '').trim(),
+      selected_state: ['all', 'selected', 'unselected'].includes(selectedState) ? selectedState : 'all',
+      sort: ['count_desc', 'count_asc', 'label_asc'].includes(sort) ? sort : 'count_desc',
+    };
+  };
   const saveWorkspaceState = (extra = {}) => {
     if (typeof saveUiState !== 'function') return;
     saveUiState({
@@ -121,6 +137,8 @@ window.initTeamsWorkspace = async function () {
         selectedTeamId: state.selectedTeamId,
         selectedTeamMembersPage: state.selectedTeamMembersPage,
         selectedRightPaneTab: state.selectedRightPaneTab,
+        autoBucketsExpanded: !!state.autoBucketsExpanded,
+        autoBucketViewFilters: { ...state.autoBucketViewFilters },
         contextDetailsOpen: !!state.contextDetailsOpen,
         ...extra,
       },
@@ -145,6 +163,12 @@ window.initTeamsWorkspace = async function () {
     if (saved.selectedTeamMembersPage) state.selectedTeamMembersPage = Math.max(1, Number(saved.selectedTeamMembersPage) || 1);
     if (saved.selectedRightPaneTab === 'detail' || saved.selectedRightPaneTab === 'preview') {
       state.selectedRightPaneTab = saved.selectedRightPaneTab;
+    }
+    if (Object.prototype.hasOwnProperty.call(saved, 'autoBucketsExpanded')) {
+      state.autoBucketsExpanded = !!saved.autoBucketsExpanded;
+    }
+    if (saved.autoBucketViewFilters && typeof saved.autoBucketViewFilters === 'object') {
+      state.autoBucketViewFilters = normalizeAutoBucketViewFilters(saved.autoBucketViewFilters);
     }
     if (Object.prototype.hasOwnProperty.call(saved, 'contextDetailsOpen')) {
       state.contextDetailsOpen = !!saved.contextDetailsOpen;
@@ -981,6 +1005,14 @@ window.initTeamsWorkspace = async function () {
     });
   }
 
+  function readAutoBucketViewFilters() {
+    return normalizeAutoBucketViewFilters({
+      q: document.getElementById('team-auto-buckets-filter-q')?.value || '',
+      selected_state: document.getElementById('team-auto-buckets-filter-selected-state')?.value || 'all',
+      sort: document.getElementById('team-auto-buckets-filter-sort')?.value || 'count_desc',
+    });
+  }
+
   function setBoardFiltersToDom(filters, options) {
     const data = normalizeBoardFilters(filters);
     const boardOptions = options || {};
@@ -991,6 +1023,16 @@ window.initTeamsWorkspace = async function () {
     fillSelect(document.getElementById('team-board-filter-entitat'), boardOptions.entitats || [], data.entitats || [], 'Totes');
     const membersState = document.getElementById('team-board-filter-members-state');
     if (membersState) membersState.value = String(data.members_state || 'all');
+  }
+
+  function setAutoBucketViewFiltersToDom(filters) {
+    const data = normalizeAutoBucketViewFilters(filters);
+    const q = document.getElementById('team-auto-buckets-filter-q');
+    if (q) q.value = String(data.q || '');
+    const selectedState = document.getElementById('team-auto-buckets-filter-selected-state');
+    if (selectedState) selectedState.value = String(data.selected_state || 'all');
+    const sort = document.getElementById('team-auto-buckets-filter-sort');
+    if (sort) sort.value = String(data.sort || 'count_desc');
   }
 
   function enrichTeamBoardData(team) {
@@ -1092,6 +1134,18 @@ window.initTeamsWorkspace = async function () {
     if (!options.skipSave) saveWorkspaceState();
   }
 
+  function setAutoBucketsExpanded(expanded, options = {}) {
+    state.autoBucketsExpanded = !!expanded;
+    const panel = document.getElementById('team-auto-buckets-panel');
+    const toggle = document.getElementById('btn-team-auto-buckets-toggle');
+    if (panel) panel.classList.toggle('d-none', !state.autoBucketsExpanded);
+    if (toggle) {
+      toggle.setAttribute('aria-expanded', state.autoBucketsExpanded ? 'true' : 'false');
+      toggle.textContent = state.autoBucketsExpanded ? 'Amagar buckets resolts' : 'Veure buckets resolts';
+    }
+    if (!options.skipSave) saveWorkspaceState();
+  }
+
   function teamMatchesBoardFilters(team, filters = state.boardFilters) {
     const current = normalizeBoardFilters(filters);
     const membersCount = Number(team?.membres || (Array.isArray(team?.members) ? team.members.length : 0) || 0);
@@ -1108,6 +1162,37 @@ window.initTeamsWorkspace = async function () {
       if (!haystack.includes(normalizeSearchText(current.q))) return false;
     }
     return true;
+  }
+
+  function autoBucketMatchesViewFilters(bucket, filters = state.autoBucketViewFilters, activeKeySet = new Set(getActiveBucketKeys())) {
+    const current = normalizeAutoBucketViewFilters(filters);
+    const key = String(bucket?.key || '').trim();
+    const isSelected = activeKeySet.has(key);
+    if (current.selected_state === 'selected' && !isSelected) return false;
+    if (current.selected_state === 'unselected' && isSelected) return false;
+    if (current.q) {
+      const haystack = normalizeSearchText([
+        bucket?.label,
+        ...(Array.isArray(bucket?.values) ? bucket.values : []),
+        ...(Array.isArray(bucket?.member_samples) ? bucket.member_samples : []),
+      ].filter(Boolean).join(' '));
+      if (!haystack.includes(normalizeSearchText(current.q))) return false;
+    }
+    return true;
+  }
+
+  function sortVisibleAutoBuckets(buckets, filters = state.autoBucketViewFilters) {
+    const current = normalizeAutoBucketViewFilters(filters);
+    const rows = Array.isArray(buckets) ? [...buckets] : [];
+    rows.sort((a, b) => {
+      const countDiff = Number(a?.count || 0) - Number(b?.count || 0);
+      if (current.sort === 'count_asc' && countDiff !== 0) return countDiff;
+      if (current.sort === 'count_desc' && countDiff !== 0) return -countDiff;
+      const labelA = String(a?.label || a?.key || '').trim();
+      const labelB = String(b?.label || b?.key || '').trim();
+      return labelA.localeCompare(labelB, 'ca');
+    });
+    return rows;
   }
 
   function renderBoardFilterControls(teams) {
@@ -1208,8 +1293,11 @@ window.initTeamsWorkspace = async function () {
 
   function updateAutoBucketsMeta() {
     const total = Number(currentAutoContext()?.buckets_total || 0);
+    const resolvedCount = Array.isArray(state.resolvedBuckets) ? state.resolvedBuckets.length : total;
     const activeCount = total ? getActiveBucketKeys().length : 0;
+    const visibleCount = Number(document.getElementById('team-auto-buckets-grid')?.childElementCount || 0);
     setText('team-auto-buckets-count', `${activeCount} buckets actius de ${total}`);
+    setText('team-auto-buckets-visibility-summary', `${visibleCount} visibles de ${resolvedCount} buckets resolts.`);
     updateAutoStrategyButtonsState();
   }
 
@@ -1234,6 +1322,7 @@ window.initTeamsWorkspace = async function () {
     setText('team-auto-target-note', message || "Selecciona camps de particio per resoldre buckets sobre la seleccio activa o sobre les filtrades actuals.");
     setText('team-auto-buckets-status', message || 'Encara no hi ha cap resolucio automatica disponible.');
     setText('team-auto-buckets-count', '0 buckets actius de 0');
+    setText('team-auto-buckets-visibility-summary', '0 visibles de 0 buckets resolts.');
     updateAutoStrategyButtonsState();
   }
 
@@ -1291,10 +1380,17 @@ window.initTeamsWorkspace = async function () {
     const targetScope = String(context?.target_scope || '').trim() === 'selected' ? 'selected' : 'filtered';
     const targetCount = Number(context?.target_count || 0);
     const buckets = Array.isArray(state.resolvedBuckets) ? state.resolvedBuckets : [];
+    const activeKeySet = new Set(getActiveBucketKeys());
+    const viewFilters = normalizeAutoBucketViewFilters(state.autoBucketViewFilters);
+    const visibleBuckets = sortVisibleAutoBuckets(
+      buckets.filter((bucket) => autoBucketMatchesViewFilters(bucket, viewFilters, activeKeySet)),
+      viewFilters,
+    );
     const grid = document.getElementById('team-auto-buckets-grid');
     const empty = document.getElementById('team-auto-buckets-empty');
     const status = document.getElementById('team-auto-buckets-status');
     const targetNote = document.getElementById('team-auto-target-note');
+    state.autoBucketViewFilters = viewFilters;
 
     if (!fields.length) {
       resetAutoContextState("Selecciona com a minim un camp de particio per resoldre buckets.");
@@ -1321,16 +1417,18 @@ window.initTeamsWorkspace = async function () {
     }
     if (grid) {
       grid.innerHTML = '';
-      buckets.forEach((bucket) => {
+      visibleBuckets.forEach((bucket) => {
         grid.appendChild(createAutoBucketNode(bucket));
       });
-      grid.classList.toggle('d-none', buckets.length === 0);
+      grid.classList.toggle('d-none', visibleBuckets.length === 0);
     }
     if (empty) {
       empty.textContent = targetCount
-        ? (buckets.length ? '' : "No s'ha pogut resoldre cap bucket amb aquesta combinacio de camps.")
+        ? (buckets.length
+          ? (visibleBuckets.length ? '' : 'Cap bucket resolt coincideix amb els filtres de visualitzacio.')
+          : "No s'ha pogut resoldre cap bucket amb aquesta combinacio de camps.")
         : 'No hi ha inscripcions disponibles per a aquesta estrategia.';
-      empty.classList.toggle('d-none', !!(targetCount && buckets.length));
+      empty.classList.toggle('d-none', !!(targetCount && visibleBuckets.length));
     }
     updateAutoBucketsMeta();
   }
@@ -2253,6 +2351,30 @@ window.initTeamsWorkspace = async function () {
     setBoardFiltersExpanded(!state.boardFiltersExpanded);
   });
 
+  document.getElementById('btn-team-auto-buckets-toggle')?.addEventListener('click', () => {
+    setAutoBucketsExpanded(!state.autoBucketsExpanded);
+  });
+
+  const autoBucketFilterQ = document.getElementById('team-auto-buckets-filter-q');
+  if (autoBucketFilterQ) {
+    autoBucketFilterQ.addEventListener('input', () => {
+      state.autoBucketViewFilters = readAutoBucketViewFilters();
+      saveWorkspaceState();
+      renderAutoContext();
+    });
+  }
+
+  ['team-auto-buckets-filter-selected-state', 'team-auto-buckets-filter-sort'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.addEventListener('change', () => {
+        state.autoBucketViewFilters = readAutoBucketViewFilters();
+        saveWorkspaceState();
+        renderAutoContext();
+      });
+    }
+  });
+
   const autoBucketsAll = document.getElementById('btn-team-auto-buckets-all');
   if (autoBucketsAll) {
     autoBucketsAll.addEventListener('click', () => {
@@ -2820,6 +2942,8 @@ window.initTeamsWorkspace = async function () {
   setCompactScope(state.compactScope, { skipDirty: true });
   setBoardFiltersToDom(state.boardFilters, buildBoardFilterOptions([]));
   setBoardFiltersExpanded(state.boardFiltersExpanded, { skipSave: true });
+  setAutoBucketViewFiltersToDom(state.autoBucketViewFilters);
+  setAutoBucketsExpanded(state.autoBucketsExpanded, { skipSave: true });
   clearTeamPreview();
   await refreshWorkspace({ resetPage: !state.candidatePage, clearSelection: true });
   return window.__teamWorkspaceApi;

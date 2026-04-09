@@ -1363,7 +1363,7 @@ def _normalize_exercicis_cfg(raw_cfg, fallback=None):
 
 def _normalize_candidate_source_mode(raw_mode):
     mode = str(raw_mode or "raw_exercise").lower().strip()
-    if mode in ("raw_exercise", "participant_aggregate"):
+    if mode in ("raw_exercise", "participant_aggregate", "team_aggregate"):
         return mode
     return "raw_exercise"
 
@@ -2258,7 +2258,7 @@ def compute_classificacio(competicio, cfg_obj):
         )
     allow_candidate_source = (
         tipus == "individual"
-        or (tipus == "equips" and team_mode == "derived_from_individual")
+        or (tipus == "equips" and team_mode in ("derived_from_individual", "native_team"))
     )
     if not allow_candidate_source:
         candidate_source_mode = "raw_exercise"
@@ -2282,12 +2282,14 @@ def compute_classificacio(competicio, cfg_obj):
         raw = candidate_source_per_aparell.get(str(app_id))
         if raw is None:
             raw = candidate_source_per_aparell.get(app_id)
-        if not isinstance(raw, dict):
-            return fallback_mode, fallback_cfg
-        mode = _normalize_candidate_source_mode(raw.get("mode") or fallback_mode)
-        if mode != "participant_aggregate":
+        entry = raw if isinstance(raw, dict) else {}
+        mode = _normalize_candidate_source_mode(entry.get("mode") or fallback_mode)
+        if tipus == "equips" and team_mode == "native_team":
+            if mode != "team_aggregate":
+                return "raw_exercise", fallback_cfg
+        elif mode != "participant_aggregate":
             return "raw_exercise", fallback_cfg
-        cfg = _normalize_candidate_source_cfg(raw.get("cfg"), fallback=fallback_cfg)
+        cfg = _normalize_candidate_source_cfg(entry.get("cfg"), fallback=fallback_cfg)
         return mode, cfg
 
     # si no hi ha aparells seleccionats -> retorn buit
@@ -2558,7 +2560,7 @@ def compute_classificacio(competicio, cfg_obj):
             if isinstance(row, dict)
         ]
         source_mode, source_cfg = resolve_candidate_source_for_app(app_id)
-        if source_mode != "participant_aggregate":
+        if source_mode not in {"participant_aggregate", "team_aggregate"}:
             return base_rows
         if not base_rows:
             return []
@@ -2599,7 +2601,7 @@ def compute_classificacio(competicio, cfg_obj):
         candidate_row["idx"] = int(first_row.get("idx", 1) or 1)
         candidate_row["exercici"] = int(first_row.get("exercici", 1) or 1)
         candidate_row["by_camp"] = by_camp
-        candidate_row["candidate_source_mode"] = "participant_aggregate"
+        candidate_row["candidate_source_mode"] = source_mode
         candidate_row["candidate_source_count"] = len(picked_rows)
         return [candidate_row]
 
@@ -2913,10 +2915,185 @@ def compute_classificacio(competicio, cfg_obj):
         selected_team_rows_field_cache[cache_key] = dict(picked_by_app)
         return selected_team_rows_field_cache[cache_key]
 
+    def _build_team_field_rows_for_app(equip_id: int, app_id: int, field_code: str):
+        rows_ex = []
+        ca = next((item for item in aparells if int(item.id) == int(app_id)), None)
+        if ca is None or not is_team_context_app(ca):
+            return rows_ex
+        n_ex = int(getattr(ca, "nombre_exercicis", 1) or 1)
+        n_ex = max(1, min(50, n_ex))
+        by_team_ex = defaultdict(dict)
+        for nt in team_notes_by_app.get(app_id, []):
+            ex_idx = int(getattr(nt, "exercici", 1) or 1)
+            if 1 <= ex_idx <= n_ex:
+                by_team_ex[nt.equip_id][ex_idx] = nt
+        for ex_idx in range(1, n_ex + 1):
+            nt = by_team_ex.get(equip_id, {}).get(ex_idx)
+            if not nt:
+                continue
+            rows_ex.append(
+                {
+                    "idx": int(ex_idx),
+                    "value": _to_float(_get_score_field(nt, field_code)),
+                    "app_id": int(app_id),
+                    "app_order": app_order.get(int(app_id), 0),
+                    "exercici": int(ex_idx),
+                    "equip_id": int(equip_id),
+                    "by_camp": {field_code: _get_score_field(nt, field_code)},
+                }
+            )
+        return rows_ex
+
+    main_selected_team_rows_agg_cache = {}
+    main_selected_team_rows_field_cache = {}
     main_selected_rows_for_group_cache = {}
     main_selected_rows_for_group_field_cache = {}
     derived_team_selected_rows_agg_cache = {}
     derived_team_selected_rows_field_cache = {}
+
+    def _get_main_selected_rows_agg_for_team(equip_id: int):
+        if equip_id in main_selected_team_rows_agg_cache:
+            return main_selected_team_rows_agg_cache[equip_id]
+
+        picked_by_app = defaultdict(list)
+        if mode_seleccio_exercicis == "global_pool":
+            pool_rows = []
+            for ca in aparells:
+                app_id = ca.id
+                if not is_team_context_app(ca):
+                    continue
+                source_rows = _build_candidate_rows_from_source_rows(
+                    team_app_ex_rows_by_equip.get(app_id, {}).get(equip_id, []),
+                    app_id,
+                    participant_key="equip_id",
+                )
+                for row in source_rows:
+                    item = _copy_ex_row_with_value(row, row.get("value"))
+                    item["idx"] = 0
+                    pool_rows.append(item)
+
+            if pool_rows:
+                pool_rows = sorted(
+                    pool_rows,
+                    key=lambda r: (r.get("app_order", 0), r.get("exercici", 0), r.get("app_id", 0)),
+                )
+                for idx, row in enumerate(pool_rows, start=1):
+                    row["idx"] = idx
+                picked_rows = _pick_exercicis_rows(
+                    pool_rows,
+                    exerc_mode,
+                    ex_best_n,
+                    index=ex_index,
+                    ids=ex_ids,
+                    max_per_participant=base_ex_cfg.get("max_per_participant", 0),
+                    participant_key="equip_id",
+                )
+                for row in picked_rows:
+                    try:
+                        app_id = int(row.get("app_id"))
+                    except Exception:
+                        continue
+                    picked_by_app[app_id].append(_copy_ex_row_with_value(row, row.get("value")))
+        else:
+            for ca in aparells:
+                app_id = ca.id
+                if not is_team_context_app(ca):
+                    continue
+                rows_ex = _build_candidate_rows_from_source_rows(
+                    team_app_ex_rows_by_equip.get(app_id, {}).get(equip_id, []),
+                    app_id,
+                    participant_key="equip_id",
+                )
+                ex_cfg_app = _resolve_ex_cfg_for_app(app_id)
+                picked = _pick_exercicis_rows(
+                    rows_ex,
+                    ex_cfg_app["mode"],
+                    ex_cfg_app["best_n"],
+                    index=ex_cfg_app["index"],
+                    ids=ex_cfg_app["ids"],
+                    max_per_participant=ex_cfg_app.get("max_per_participant", 0),
+                    participant_key="equip_id",
+                )
+                picked_by_app[app_id] = [
+                    _copy_ex_row_with_value(row, row.get("value"))
+                    for row in picked
+                ]
+
+        main_selected_team_rows_agg_cache[equip_id] = dict(picked_by_app)
+        return main_selected_team_rows_agg_cache[equip_id]
+
+    def _get_main_selected_team_rows_for_field(equip_id: int, field_code: str):
+        cache_key = (equip_id, str(field_code or ""))
+        if cache_key in main_selected_team_rows_field_cache:
+            return main_selected_team_rows_field_cache[cache_key]
+
+        picked_by_app = defaultdict(list)
+        if mode_seleccio_exercicis == "global_pool":
+            pool_rows = []
+            for ca in aparells:
+                app_id = ca.id
+                if not is_team_context_app(ca):
+                    continue
+                rows_ex = _build_candidate_rows_from_source_rows(
+                    _build_team_field_rows_for_app(equip_id, app_id, field_code),
+                    app_id,
+                    participant_key="equip_id",
+                )
+                for row in rows_ex:
+                    item = _copy_ex_row_with_value(row, row.get("value"))
+                    item["idx"] = 0
+                    pool_rows.append(item)
+            if pool_rows:
+                pool_rows = sorted(
+                    pool_rows,
+                    key=lambda r: (r.get("app_order", 0), r.get("exercici", 0), r.get("app_id", 0)),
+                )
+                for idx, row in enumerate(pool_rows, start=1):
+                    row["idx"] = idx
+                picked_rows = _pick_exercicis_rows(
+                    pool_rows,
+                    exerc_mode,
+                    ex_best_n,
+                    index=ex_index,
+                    ids=ex_ids,
+                    max_per_participant=base_ex_cfg.get("max_per_participant", 0),
+                    participant_key="equip_id",
+                )
+                for row in picked_rows:
+                    try:
+                        app_id = int(row.get("app_id"))
+                    except Exception:
+                        continue
+                    picked_by_app[app_id].append(
+                        _copy_ex_row_with_value(row, row.get("value"))
+                    )
+        else:
+            for ca in aparells:
+                app_id = ca.id
+                if not is_team_context_app(ca):
+                    continue
+                rows_ex = _build_candidate_rows_from_source_rows(
+                    _build_team_field_rows_for_app(equip_id, app_id, field_code),
+                    app_id,
+                    participant_key="equip_id",
+                )
+                ex_cfg_app = _resolve_ex_cfg_for_app(app_id)
+                picked = _pick_exercicis_rows(
+                    rows_ex,
+                    ex_cfg_app["mode"],
+                    ex_cfg_app["best_n"],
+                    index=ex_cfg_app["index"],
+                    ids=ex_cfg_app["ids"],
+                    max_per_participant=ex_cfg_app.get("max_per_participant", 0),
+                    participant_key="equip_id",
+                )
+                picked_by_app[app_id] = [
+                    _copy_ex_row_with_value(row, row.get("value"))
+                    for row in picked
+                ]
+
+        main_selected_team_rows_field_cache[cache_key] = dict(picked_by_app)
+        return main_selected_team_rows_field_cache[cache_key]
 
     def _derived_team_cache_key(equip_id, member_ids):
         if equip_id not in (None, "", "__sense_equip__"):
@@ -4171,7 +4348,7 @@ def compute_classificacio(competicio, cfg_obj):
             ca = next((item for item in aparells if int(item.id) == app_id), None)
             if not ca or not is_team_context_app(ca):
                 return ""
-            selected_rows = _get_selected_team_rows_for_field(int(equip_id), camp).get(app_id, [])
+            selected_rows = _get_main_selected_team_rows_for_field(int(equip_id), camp).get(app_id, [])
             raw_value = _aggregate_selected_raw_values([
                 _raw_value_for_selected_team_row(selected_row, camp, jids)
                 for selected_row in selected_rows
@@ -4459,7 +4636,7 @@ def compute_classificacio(competicio, cfg_obj):
 
             entries = []
             seen = set()
-            for selected_row in _get_selected_rows_agg_for_team(equip_id).get(int(app_id), []):
+            for selected_row in _get_main_selected_rows_agg_for_team(equip_id).get(int(app_id), []):
                 try:
                     selected_equip_id = int(selected_row.get("equip_id"))
                     selected_app_id = int(selected_row.get("app_id"))
@@ -5059,7 +5236,7 @@ def compute_classificacio(competicio, cfg_obj):
                     if is_team_context_app(ca):
                         if equip_id is None:
                             continue
-                        selected_rows = _get_selected_rows_agg_for_team(int(equip_id)).get(app_id, [])
+                        selected_rows = _get_main_selected_rows_agg_for_team(int(equip_id)).get(app_id, [])
                         if not selected_rows:
                             continue
                         team_by_app[app_id] = float(

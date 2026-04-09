@@ -33,6 +33,7 @@ from ...services.teams.team_series import (
     get_programmed_series_ids,
     get_series_cards_payload,
     get_series_summary_payload,
+    next_serie_display_num,
     normalize_subject_ids,
     reorder_serie_subjects,
     safe_deactivate_empty_serie,
@@ -145,6 +146,152 @@ def _serialize_series_card(row):
         ),
         "status_label": " · ".join(status_parts),
     }
+
+
+def _preview_subject_samples(subjects, limit=4):
+    names = []
+    for subject in list(subjects or []):
+        label = str(subject.get("name") or subject.get("label") or "").strip()
+        if label:
+            names.append(label)
+    return names[:limit], max(0, len(names) - min(len(names), limit))
+
+
+def _selection_summary(summary):
+    summary = summary if isinstance(summary, dict) else {}
+    subject_map = summary.get("subject_map") or {}
+    valid_subjects = [
+        subject_map.get(subject_id)
+        for subject_id in list(summary.get("valid_ids") or [])
+        if subject_map.get(subject_id)
+    ]
+    samples, remaining = _preview_subject_samples(valid_subjects)
+    valid_count = len(list(summary.get("valid_ids") or []))
+    requested_count = len(list(summary.get("requested_ids") or []))
+    if valid_count > 0:
+        label = f"{valid_count} unitat{'s' if valid_count != 1 else ''} valida{'s' if valid_count != 1 else ''}"
+    elif requested_count > 0:
+        label = f"{requested_count} seleccionada{'s' if requested_count != 1 else ''}"
+    else:
+        label = "Sense seleccio"
+    return {
+        "count": valid_count,
+        "requested_count": requested_count,
+        "valid_count": valid_count,
+        "invalid_selection_count": len(list(summary.get("invalid_ids") or [])),
+        "invalid_subject_count": len(list(summary.get("invalid_subject_ids") or [])),
+        "assigned_count": len(list(summary.get("assigned_ids") or [])),
+        "unassigned_count": len(list(summary.get("unassigned_ids") or [])),
+        "label": label,
+        "subject_names_preview": samples,
+        "subject_names_remaining": remaining,
+    }
+
+
+def _preview_card_from_subjects(
+    *,
+    label,
+    display_num=None,
+    subjects=None,
+    serie_id=None,
+    name="",
+    is_programmed=False,
+    impact_kind="existing",
+    incoming_count=0,
+    outgoing_count=0,
+    will_create=False,
+    will_delete=False,
+    status_note="",
+):
+    serialized_subjects = [_serialize_series_subject(subject) for subject in list(subjects or [])]
+    samples, remaining = _preview_subject_samples(serialized_subjects)
+    subjects_count = len(serialized_subjects)
+    status_parts = []
+    if will_delete:
+        status_parts.append("Es desactivara")
+    elif will_create:
+        status_parts.append("Es creara")
+    elif str(impact_kind or "").strip() == "removed":
+        status_parts.append("Quedara buida")
+    elif str(impact_kind or "").strip() == "reduced":
+        status_parts.append("Es reduira")
+    elif str(impact_kind or "").strip() == "incoming":
+        status_parts.append("Rebra unitats")
+    if status_note:
+        status_parts.append(str(status_note).strip())
+    return {
+        "id": int(serie_id) if str(serie_id or "").isdigit() else None,
+        "display_num": int(display_num or 0) or None,
+        "label": str(label or "").strip() or "Serie",
+        "name": str(name or "").strip(),
+        "subjects": serialized_subjects,
+        "subjects_count": subjects_count,
+        "is_empty": subjects_count <= 0,
+        "is_programmed": bool(is_programmed),
+        "is_out_of_program": not bool(is_programmed),
+        "impact_kind": str(impact_kind or "existing").strip() or "existing",
+        "incoming_count": int(incoming_count or 0),
+        "outgoing_count": int(outgoing_count or 0),
+        "remaining_subjects_count": subjects_count,
+        "preview_subject_names": samples,
+        "preview_subject_names_remaining": remaining,
+        "status_label": " | ".join(part for part in status_parts if part),
+        "summary_label": " | ".join(
+            part
+            for part in [
+                str(label or "").strip(),
+                f"{subjects_count} unitat{'s' if subjects_count != 1 else ''}",
+                "programada" if is_programmed else "no programada",
+            ]
+            if part
+        ),
+        "will_create": bool(will_create),
+        "will_delete": bool(will_delete),
+    }
+
+
+def _preview_card_from_row(row, *, impact_kind="existing", incoming_count=0, outgoing_count=0, status_note=""):
+    card = _serialize_series_card(row)
+    samples, remaining = _preview_subject_samples(card.get("subjects") or [])
+    card.update(
+        {
+            "impact_kind": str(impact_kind or "existing").strip() or "existing",
+            "incoming_count": int(incoming_count or 0),
+            "outgoing_count": int(outgoing_count or 0),
+            "remaining_subjects_count": int(card.get("subjects_count") or 0),
+            "preview_subject_names": samples,
+            "preview_subject_names_remaining": remaining,
+            "will_create": False,
+            "will_delete": False,
+        }
+    )
+    if status_note:
+        note = str(status_note).strip()
+        card["status_label"] = " | ".join(
+            part for part in [str(card.get("status_label") or "").strip(), note] if part
+        )
+    return card
+
+
+def _visible_subject_maps(competicio, comp_aparell):
+    subjects = _collect_visible_team_subjects(competicio, comp_aparell)
+    return subjects, {int(subject["subject_id"]): dict(subject) for subject in subjects}
+
+
+def _active_series_card_maps(competicio, comp_aparell, subjects):
+    rows = get_series_cards_payload(competicio, comp_aparell, list(subjects or []), include_inactive=False)
+    return rows, {int(row["id"]): row for row in rows}
+
+
+def _blocked_reason_message(reason):
+    reason = str(reason or "").strip()
+    if reason == "serie_programmed":
+        return "La serie continua programada a rotacions."
+    if reason == "serie_not_empty":
+        return "La serie encara te unitats competitives assignades."
+    if reason == "preview_required":
+        return "Cal generar una nova previsualitzacio abans d'executar l'accio."
+    return "La previsualitzacio ha quedat obsoleta."
 
 
 def _subject_matches_filters(subject, filters):
@@ -271,17 +418,23 @@ def _preview_message(action, preview):
     counts = preview.get("counts") or {}
     if action == "create":
         selected = int(counts.get("valid", 0))
+        if int(counts.get("requested", 0)) > 0 and selected <= 0:
+            return "La seleccio actual no aporta cap unitat valida. Es creara una serie buida?"
         if selected <= 0:
             return "Crear una serie buida?"
         return f"Crear una nova serie amb {selected} unitats competitives?"
     if action == "assign":
         selected = int(counts.get("valid", 0))
+        if selected <= 0:
+            return "No hi ha cap unitat competitiva valida per assignar."
         moved = int(counts.get("already_assigned_elsewhere", 0))
         if moved > 0:
             return f"Assignar {selected} unitats competitives a la serie i reassignar-ne {moved} des d'altres series?"
         return f"Assignar {selected} unitats competitives a la serie?"
     if action == "unassign":
         selected = int(counts.get("assigned", 0))
+        if selected <= 0:
+            return "No hi ha cap unitat competitiva assignada dins la seleccio actual."
         return f"Treure {selected} unitats competitives de les seves series?"
     if action == "delete":
         if str(preview.get("reason") or "") == "serie_programmed":
@@ -326,12 +479,64 @@ def _build_preview_payload(competicio, comp_aparell, payload):
     if action not in {"create", "assign", "unassign", "delete"}:
         raise ValueError("action invalid")
 
+    subjects, visible_subject_map = _visible_subject_maps(competicio, comp_aparell)
+    current_summary = get_series_summary_payload(competicio, comp_aparell, subjects)
+    current_rows, current_row_map = _active_series_card_maps(competicio, comp_aparell, subjects)
+    current_order_by_id = {
+        int(row["id"]): idx
+        for idx, row in enumerate(current_rows)
+        if str(row.get("id") or "").isdigit()
+    }
+    programmed_ids = {int(x) for x in get_programmed_series_ids(competicio, comp_aparell)}
+
+    def ordered_series_ids(values):
+        return sorted(
+            {int(value) for value in list(values or []) if int(value or 0) > 0},
+            key=lambda serie_id: (current_order_by_id.get(int(serie_id), 10**9), int(serie_id)),
+        )
+
+    def current_card_for(serie_id, *, impact_kind="existing", incoming_count=0, outgoing_count=0, status_note=""):
+        row = current_row_map.get(int(serie_id or 0))
+        if row is None:
+            serie = (
+                SerieEquip.objects
+                .filter(competicio=competicio, comp_aparell=comp_aparell, actiu=True, id=int(serie_id or 0))
+                .first()
+            )
+            if serie is None:
+                return None
+            return _preview_card_from_subjects(
+                label=serie_label(serie),
+                display_num=getattr(serie, "display_num", None),
+                serie_id=getattr(serie, "id", None),
+                name=str(getattr(serie, "nom", "") or "").strip(),
+                subjects=[],
+                is_programmed=int(serie.id) in programmed_ids,
+                impact_kind=impact_kind,
+                incoming_count=incoming_count,
+                outgoing_count=outgoing_count,
+                status_note=status_note,
+            )
+        return _preview_card_from_row(
+            row,
+            impact_kind=impact_kind,
+            incoming_count=incoming_count,
+            outgoing_count=outgoing_count,
+            status_note=status_note,
+        )
+
     if action == "delete":
         serie = _resolve_serie_or_400(competicio, comp_aparell, payload, include_inactive=False)
         if serie is None:
             raise LookupError("serie invalid")
         is_empty = not serie.items.exists()
-        is_programmed = int(serie.id) in {int(x) for x in get_programmed_series_ids(competicio, comp_aparell)}
+        is_programmed = int(serie.id) in programmed_ids
+        reason = "" if is_empty and not is_programmed else ("serie_not_empty" if not is_empty else "serie_programmed")
+        current_card = current_card_for(
+            serie.id,
+            impact_kind="existing" if reason else "removed",
+            status_note="Serie actual",
+        )
         preview = {
             "action": action,
             "serie_id": int(serie.id),
@@ -344,15 +549,44 @@ def _build_preview_payload(competicio, comp_aparell, payload):
             "invalid_subject_ids": [],
             "source_series_ids": [int(serie.id)] if is_programmed else [],
             "touched_series_ids": [int(serie.id)],
-            "reason": "" if is_empty and not is_programmed else ("serie_not_empty" if not is_empty else "serie_programmed"),
+            "reason": reason,
+            "selection": {
+                "count": 0,
+                "requested_count": 0,
+                "valid_count": 0,
+                "invalid_selection_count": 0,
+                "invalid_subject_count": 0,
+                "assigned_count": 0,
+                "unassigned_count": 0,
+                "label": "Sense seleccio",
+                "subject_names_preview": [],
+                "subject_names_remaining": 0,
+            },
+            "summary": {
+                **current_summary,
+                "affected_subjects_count": 0,
+                "existing_series_total": 1,
+                "planned_series_total": 1 if not reason else 0,
+            },
+            "existing_series": [current_card] if current_card else [],
+            "planned_series": [
+                _preview_card_from_subjects(
+                    label=serie_label(serie),
+                    display_num=getattr(serie, "display_num", None),
+                    serie_id=getattr(serie, "id", None),
+                    name=str(getattr(serie, "nom", "") or "").strip(),
+                    subjects=[],
+                    is_programmed=False,
+                    impact_kind="removed",
+                    will_delete=True,
+                )
+            ] if not reason else [],
+            "blocked": bool(reason),
+            "blocked_reasons": [_blocked_reason_message(reason)] if reason else [],
         }
         return _finalize_preview_payload(preview)
 
-    summary = summarize_subject_selection(
-        competicio,
-        comp_aparell,
-        payload.get("selected_ids") or [],
-    )
+    summary = summarize_subject_selection(competicio, comp_aparell, payload.get("selected_ids") or [])
     counts = {
         "requested": len(summary.get("requested_ids") or []),
         "valid": len(summary.get("valid_ids") or []),
@@ -368,56 +602,159 @@ def _build_preview_payload(competicio, comp_aparell, payload):
         for subject in subject_map.values()
         if int(subject.get("serie_id") or 0) > 0
     })
+    selection = _selection_summary(summary)
+    mutated_subjects = [dict(subject) for subject in subjects]
+    mutated_subject_map = {int(subject["subject_id"]): subject for subject in mutated_subjects}
+    current_series_by_subject = {
+        int(subject_id): int(subject.get("serie_id") or 0)
+        for subject_id, subject in visible_subject_map.items()
+    }
+    effective_ids = list(summary.get("valid_ids") or [])
+    reason = ""
+    target_serie = None
+    planned_new_card = None
+
     if action == "assign":
         serie = _resolve_serie_or_400(competicio, comp_aparell, payload, include_inactive=False)
         if serie is None:
             raise LookupError("serie invalid")
+        target_serie = serie
         counts["already_assigned_elsewhere"] = sum(
             1
             for subject_id in summary.get("valid_ids") or []
             if int((summary.get("subject_map") or {}).get(subject_id, {}).get("serie_id") or 0) not in (0, int(serie.id))
         )
-        preview = {
-            "action": action,
-            "serie_id": int(serie.id),
-            "serie_label": serie_label(serie),
-            "can_run": bool(summary.get("valid_ids")),
-            "counts": counts,
-            "requested_ids": list(summary.get("requested_ids") or []),
-            "effective_subject_ids": list(summary.get("valid_ids") or []),
-            "invalid_selection_ids": list(summary.get("invalid_ids") or []),
-            "invalid_subject_ids": list(summary.get("invalid_subject_ids") or []),
-            "source_series_ids": source_series_ids,
-            "touched_series_ids": sorted(set(source_series_ids) | {int(serie.id)}),
-        }
-        return _finalize_preview_payload(preview)
+        reason = "" if effective_ids else "no_valid_selection"
+        for subject_id in effective_ids:
+            subject = mutated_subject_map.get(int(subject_id))
+            if subject is None:
+                continue
+            subject["serie_id"] = int(serie.id)
+            subject["serie_label"] = serie_label(serie)
+            subject["serie_display_num"] = int(getattr(serie, "display_num", 0) or 0) or None
+            subject["series_state"] = "assigned"
+    elif action == "create":
+        next_display_num = next_serie_display_num(competicio, comp_aparell)
+        next_label = str(payload.get("name") or "").strip() or f"Serie {next_display_num}"
+        for subject_id in effective_ids:
+            subject = mutated_subject_map.get(int(subject_id))
+            if subject is None:
+                continue
+            subject["serie_id"] = None
+            subject["serie_label"] = ""
+            subject["serie_display_num"] = None
+            subject["series_state"] = "unassigned"
+        planned_subjects = []
+        for subject_id in effective_ids:
+            subject = dict(visible_subject_map.get(int(subject_id)) or {})
+            if not subject:
+                continue
+            subject["serie_id"] = None
+            subject["serie_label"] = next_label
+            subject["serie_display_num"] = next_display_num
+            subject["series_state"] = "assigned"
+            planned_subjects.append(subject)
+        planned_new_card = _preview_card_from_subjects(
+            label=next_label,
+            display_num=next_display_num,
+            subjects=planned_subjects,
+            is_programmed=False,
+            impact_kind="created",
+            incoming_count=len(effective_ids),
+            will_create=True,
+        )
+    else:
+        effective_ids = list(summary.get("assigned_ids") or [])
+        reason = "" if effective_ids else "no_assigned_selection"
+        for subject_id in effective_ids:
+            subject = mutated_subject_map.get(int(subject_id))
+            if subject is None:
+                continue
+            subject["serie_id"] = None
+            subject["serie_label"] = ""
+            subject["serie_display_num"] = None
+            subject["series_state"] = "unassigned"
 
-    if action == "create":
-        preview = {
-            "action": action,
-            "serie_label": str(payload.get("name") or "").strip() or "Nova serie",
-            "next_display_num": None,
-            "can_run": True,
-            "counts": counts,
-            "requested_ids": list(summary.get("requested_ids") or []),
-            "effective_subject_ids": list(summary.get("valid_ids") or []),
-            "invalid_selection_ids": list(summary.get("invalid_ids") or []),
-            "invalid_subject_ids": list(summary.get("invalid_subject_ids") or []),
-            "source_series_ids": source_series_ids,
-            "touched_series_ids": source_series_ids,
-        }
-        return _finalize_preview_payload(preview)
+    planned_rows, planned_row_map = _active_series_card_maps(competicio, comp_aparell, mutated_subjects)
+    planned_series_by_subject = {
+        int(subject_id): int(subject.get("serie_id") or 0)
+        for subject_id, subject in mutated_subject_map.items()
+    }
+
+    touched_series_ids = set(source_series_ids)
+    if target_serie is not None:
+        touched_series_ids.add(int(target_serie.id))
+
+    existing_series = []
+    planned_series = []
+    for serie_id in ordered_series_ids(touched_series_ids):
+        incoming_count = sum(
+            1
+            for subject_id in effective_ids
+            if int(planned_series_by_subject.get(int(subject_id), 0) or 0) == int(serie_id)
+            and int(current_series_by_subject.get(int(subject_id), 0) or 0) != int(serie_id)
+        )
+        outgoing_count = sum(
+            1
+            for subject_id in effective_ids
+            if int(current_series_by_subject.get(int(subject_id), 0) or 0) == int(serie_id)
+            and int(planned_series_by_subject.get(int(subject_id), 0) or 0) != int(serie_id)
+        )
+        current_card = current_card_for(
+            serie_id,
+            impact_kind="existing",
+            incoming_count=incoming_count,
+            outgoing_count=outgoing_count,
+            status_note="Estat actual",
+        )
+        if current_card:
+            existing_series.append(current_card)
+
+        planned_row = planned_row_map.get(int(serie_id))
+        if planned_row is not None:
+            impact_kind = "incoming" if incoming_count > 0 and outgoing_count <= 0 else (
+                "reduced" if outgoing_count > 0 else "existing"
+            )
+            if outgoing_count > 0 and int(planned_row.get("subjects_count") or 0) <= 0:
+                impact_kind = "removed"
+            planned_series.append(
+                _preview_card_from_row(
+                    planned_row,
+                    impact_kind=impact_kind,
+                    incoming_count=incoming_count,
+                    outgoing_count=outgoing_count,
+                    status_note="Resultat previst",
+                )
+            )
+
+    if planned_new_card is not None:
+        planned_series.insert(0, planned_new_card)
 
     preview = {
         "action": action,
-        "can_run": bool(summary.get("assigned_ids")),
+        "serie_id": int(target_serie.id) if target_serie is not None else None,
+        "serie_label": serie_label(target_serie) if target_serie is not None else str(payload.get("name") or "").strip() or "Nova serie",
+        "next_display_num": planned_new_card.get("display_num") if planned_new_card else None,
+        "can_run": False if reason else (True if action == "create" else bool(effective_ids)),
         "counts": counts,
         "requested_ids": list(summary.get("requested_ids") or []),
-        "effective_subject_ids": list(summary.get("assigned_ids") or []),
+        "effective_subject_ids": list(effective_ids),
         "invalid_selection_ids": list(summary.get("invalid_ids") or []),
         "invalid_subject_ids": list(summary.get("invalid_subject_ids") or []),
         "source_series_ids": source_series_ids,
-        "touched_series_ids": source_series_ids,
+        "touched_series_ids": ordered_series_ids(touched_series_ids),
+        "reason": reason,
+        "selection": selection,
+        "summary": {
+            **current_summary,
+            "affected_subjects_count": len(effective_ids),
+            "existing_series_total": len(existing_series),
+            "planned_series_total": len(planned_series),
+        },
+        "existing_series": existing_series,
+        "planned_series": planned_series,
+        "blocked": bool(reason),
+        "blocked_reasons": [_blocked_reason_message(reason)] if reason else [],
     }
     return _finalize_preview_payload(preview)
 

@@ -12,7 +12,7 @@ from .validation import (
 
 def _normalize_candidate_source_mode(raw_mode):
     mode = str(raw_mode or "raw_exercise").strip().lower()
-    return mode if mode in {"raw_exercise", "participant_aggregate"} else "raw_exercise"
+    return mode if mode in {"raw_exercise", "participant_aggregate", "team_aggregate"} else "raw_exercise"
 
 
 def _sanitize_candidate_source_cfg(raw_cfg):

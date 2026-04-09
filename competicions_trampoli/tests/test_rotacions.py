@@ -617,6 +617,24 @@ class RotationOrderingDisplayTests(_BaseTrampoliDataMixin, TestCase):
         self.assertIn("Fora de programa", portal_body)
         self.assertIn(extra_ins.nom_i_cognoms, portal_body)
 
+    def test_rotacions_planner_sidebar_uses_three_panels_and_updated_labels(self):
+        planner_url = reverse("rotacions_planner", kwargs={"pk": self.comp.id})
+        planner_res = self.client.get(planner_url)
+        self.assertEqual(planner_res.status_code, 200)
+
+        body = planner_res.content.decode("utf-8")
+        self.assertContains(planner_res, 'data-drawer-panel-target="programables"')
+        self.assertContains(planner_res, 'data-drawer-panel-target="franges"')
+        self.assertContains(planner_res, 'data-drawer-panel-target="globals"')
+        self.assertContains(planner_res, "Programables")
+        self.assertContains(planner_res, "Franges")
+        self.assertContains(planner_res, "Operacions globals")
+        self.assertContains(planner_res, "No buits")
+        self.assertNotContains(planner_res, "Amb subjectes")
+        self.assertContains(planner_res, "Mostrar grups fora de programa a notes i jutges")
+        self.assertContains(planner_res, "+ Descans")
+        self.assertRegex(body, r"Netejar\s+[Pp]rograma")
+
     def test_rotacions_planner_uses_canonical_sidebar_keys_in_programmed_detection(self):
         planner_url = reverse("rotacions_planner", kwargs={"pk": self.comp.id})
         planner_res = self.client.get(planner_url)

@@ -2362,6 +2362,44 @@ class ClassificacioBuilderHydrationTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual((punt.get("candidate_source_cfg") or {}).get("mode"), "millor_n")
         self.assertEqual((punt.get("candidate_source_cfg") or {}).get("best_n"), 1)
 
+    def test_prepare_schema_for_builder_hydration_preserves_native_team_candidate_source_contract(self):
+        schema = self._builder_schema(context_code="ctx-finals", team_mode="native_team")
+        schema["puntuacio"]["candidate_source_mode"] = "team_aggregate"
+        schema["puntuacio"]["candidate_source_cfg"] = {
+            "mode": "millor_n",
+            "best_n": 2,
+            "index": 1,
+            "ids": [],
+            "agregacio_exercicis": "sum",
+        }
+        schema["puntuacio"]["candidate_source_per_aparell"] = {
+            str(self.comp_team_app_finals.id): {
+                "mode": "team_aggregate",
+                "cfg": {
+                    "mode": "index",
+                    "index": 2,
+                    "best_n": 1,
+                    "ids": [],
+                    "agregacio_exercicis": "max",
+                },
+            },
+        }
+
+        hydrated = prepare_schema_for_builder_hydration(
+            self.comp,
+            schema,
+            tipus="equips",
+        )
+
+        punt = hydrated.get("puntuacio") or {}
+        self.assertEqual(punt.get("candidate_source_mode"), "team_aggregate")
+        self.assertEqual((punt.get("candidate_source_cfg") or {}).get("mode"), "millor_n")
+        self.assertEqual((punt.get("candidate_source_cfg") or {}).get("best_n"), 2)
+        per_app = punt.get("candidate_source_per_aparell") or {}
+        self.assertEqual((per_app.get(str(self.comp_team_app_finals.id)) or {}).get("mode"), "team_aggregate")
+        self.assertEqual((((per_app.get(str(self.comp_team_app_finals.id)) or {}).get("cfg")) or {}).get("mode"), "index")
+        self.assertEqual((((per_app.get(str(self.comp_team_app_finals.id)) or {}).get("cfg")) or {}).get("index"), 2)
+
 
 class ClassificacioFilterSemanticsTests(_BaseTrampoliDataMixin, TestCase):
     def setUp(self):
@@ -3248,6 +3286,13 @@ class ClassificacioTemplateFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertContains(res, 'runSafeHydrationRender("per aparell", () => {')
         self.assertContains(res, 'state.rehydrationIssues = [];')
         self.assertEqual(content.count("function buildTieAppScopeOptionsHTML("), 1)
+        self.assertContains(res, "Agregació camps: Mateixa que puntuació")
+        self.assertContains(res, "Base: Mateixa que puntuació")
+        self.assertContains(res, "Selecció ex: Mateixa que puntuació")
+        self.assertContains(res, "Tractament: Mateix que puntuació")
+        self.assertContains(res, "Mateixos aparells que la puntuació")
+        self.assertNotContains(res, "Hereta (puntuació)")
+        self.assertNotContains(res, "Hereta (tots)")
         self.assertContains(res, "function previewRenderTeamRawDetailCell(v, col)")
         self.assertContains(res, "team-raw-summary")
         self.assertContains(res, 'v._kind === "team_raw_detail"')

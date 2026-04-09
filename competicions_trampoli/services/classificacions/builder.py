@@ -280,7 +280,7 @@ def scoreable_codes_by_app_id(competicio, *, tipus=None, assignment_context_code
 
 def _normalize_candidate_source_mode(raw_mode):
     mode = str(raw_mode or "raw_exercise").strip().lower()
-    if mode in {"raw_exercise", "participant_aggregate"}:
+    if mode in {"raw_exercise", "participant_aggregate", "team_aggregate"}:
         return mode
     return "raw_exercise"
 
@@ -366,7 +366,7 @@ def _sanitize_candidate_source_entry(raw_entry, *, fallback_mode="raw_exercise",
     entry = raw_entry if isinstance(raw_entry, dict) else {}
     mode = _normalize_candidate_source_mode(entry.get("mode") or fallback_mode)
     out = {"mode": mode}
-    if mode == "participant_aggregate":
+    if mode in {"participant_aggregate", "team_aggregate"}:
         out["cfg"] = _sanitize_candidate_source_cfg(entry.get("cfg"), fallback=fallback_cfg)
     return out
 
@@ -393,7 +393,10 @@ def _sanitize_candidate_source_per_aparell(raw_map, *, fallback_mode="raw_exerci
 def _is_candidate_source_enabled(*, tipus="individual", team_mode=""):
     tipus_norm = str(tipus or "").strip().lower()
     team_mode_norm = str(team_mode or "").strip().lower()
-    return tipus_norm == "individual" or (tipus_norm == "equips" and team_mode_norm == "derived_from_individual")
+    return (
+        tipus_norm == "individual"
+        or (tipus_norm == "equips" and team_mode_norm in {"derived_from_individual", "native_team"})
+    )
 
 
 def prepare_schema_for_builder_hydration(competicio, schema_local, tipus="individual"):

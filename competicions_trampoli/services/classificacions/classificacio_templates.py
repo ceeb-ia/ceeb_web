@@ -1694,12 +1694,12 @@ def validate_template_schema_global(
             str(tipus or "").strip().lower() == "individual"
             or (
                 str(tipus or "").strip().lower() == "equips"
-                and team_mode_value == "derived_from_individual"
+                and team_mode_value in {"derived_from_individual", "native_team"}
             )
         )
         if candidate_source_per_aparell and not allow_candidate_source:
             errors.append(
-                "puntuacio.candidate_source_per_aparell nomes es compatible amb tipus='individual' o tipus='equips' + team_mode=derived_from_individual."
+                "puntuacio.candidate_source_per_aparell nomes es compatible amb tipus='individual', tipus='equips' + team_mode=derived_from_individual o tipus='equips' + team_mode=native_team."
             )
         for raw_key, raw_cfg in candidate_source_per_aparell.items():
             app_code = canon_app_code(raw_key)
@@ -1712,10 +1712,20 @@ def validate_template_schema_global(
                 errors.append(f"puntuacio.candidate_source_per_aparell[{app_code}] ha de ser un objecte.")
                 continue
             mode = str(raw_cfg.get("mode") or "raw_exercise").strip().lower()
-            if mode not in {"raw_exercise", "participant_aggregate"}:
+            if mode not in {"raw_exercise", "participant_aggregate", "team_aggregate"}:
                 errors.append(f"puntuacio.candidate_source_per_aparell[{app_code}].mode invalid: {mode}")
                 continue
-            if mode != "participant_aggregate":
+            mode_allowed = (
+                mode == "raw_exercise"
+                or (mode == "participant_aggregate" and (str(tipus or "").strip().lower() == "individual" or team_mode_value == "derived_from_individual"))
+                or (mode == "team_aggregate" and team_mode_value == "native_team")
+            )
+            if not mode_allowed:
+                errors.append(
+                    f"puntuacio.candidate_source_per_aparell[{app_code}].mode no es compatible amb tipus={tipus} i team_mode={team_mode_value or 'none'}."
+                )
+                continue
+            if mode == "raw_exercise":
                 continue
             cfg = raw_cfg.get("cfg")
             if not isinstance(cfg, dict):

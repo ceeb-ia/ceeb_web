@@ -29,35 +29,61 @@ window.initSeriesWorkspace = async function () {
       series_state: 'all',
       serie_id: '',
     },
+    boardFilters: {
+      q: '',
+      contexts: [],
+      members_state: 'all',
+      program_state: 'all',
+    },
+    boardFiltersExpanded: false,
     createName: '',
+    selectedSerieId: '',
+    selectedRightPaneTab: 'detail',
     workspace: null,
+    detailCache: {},
+    loadingSerieIds: new Set(),
     filterTimer: null,
-    expandedSeriesIds: new Set(),
-    seriesDetails: {},
-    loadingSeriesIds: new Set(),
+    boardFilterTimer: null,
   };
 
-  function editable(){
+  let lastConfirmablePreview = null;
+  let previewConfirmBusy = false;
+
+  function editable() {
     return typeof canEditInscripcions !== 'undefined' && !!canEditInscripcions;
   }
 
-  function selectedIds(){
+  function selectedIds() {
     return Array.from(state.selectedIds).map((id) => String(id || '')).filter(Boolean);
   }
 
-  function setHistory(data){
-    if (data && typeof data === 'object' && data.history && typeof applyHistoryState === 'function'){
+  function setHistory(data) {
+    if (data && typeof data === 'object' && data.history && typeof applyHistoryState === 'function') {
       applyHistoryState(data.history);
     }
   }
 
-  function setText(id, value){
+  function setText(id, value) {
     const el = document.getElementById(id);
     if (el) el.textContent = String(value ?? '');
   }
 
-  function compactBadge(text, variant){
-    if (typeof createGroupPreviewBadge === 'function'){
+  function showAlertMessage(message) {
+    if (typeof showAlert === 'function') showAlert(message);
+  }
+
+  async function confirmMessage(message) {
+    if (typeof showConfirm === 'function') return !!(await showConfirm(message));
+    return window.confirm(message);
+  }
+
+  async function promptText(message, initialValue) {
+    if (typeof showPrompt === 'function') return showPrompt(message, initialValue);
+    return Promise.resolve(window.prompt(message, initialValue));
+  }
+
+  function compactBadge(text, variant) {
+    if (typeof createGroupPreviewBadge === 'function') {
       return createGroupPreviewBadge(text, variant || 'neutral');
     }
     const span = document.createElement('span');
@@ -66,94 +92,629 @@ window.initSeriesWorkspace = async function () {
     return span;
   }
 
-  function promptText(message, initialValue){
-    if (typeof showPrompt === 'function'){
-      return showPrompt(message, initialValue);
-    }
-    return Promise.resolve(window.prompt(message, initialValue));
+  function normalizeSearchText(value) {
+    return String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
   }
 
-  function openWorkspaceCard(){
-    if (typeof getExpandedGroupCardId === 'function' && typeof setExpandedGroupCard === 'function'){
-      if (getExpandedGroupCardId() !== 'series-main-card'){
+  function uniqueSortedStrings(values) {
+    return Array.from(new Set(
+      (Array.isArray(values) ? values : [])
+        .map((value) => String(value || '').trim())
+        .filter(Boolean)
+    )).sort((a, b) => a.localeCompare(b, 'ca'));
+  }
+
+  function normalizeBoardFilters(raw) {
+    const data = raw && typeof raw === 'object' ? raw : {};
+    const membersState = String(data.members_state || 'all').trim() || 'all';
+    const programState = String(data.program_state || 'all').trim() || 'all';
+    return {
+      q: String(data.q || '').trim(),
+      contexts: uniqueSortedStrings(data.contexts),
+      members_state: ['all', 'with_subjects', 'empty'].includes(membersState) ? membersState : 'all',
+      program_state: ['all', 'programmed', 'out_of_program'].includes(programState) ? programState : 'all',
+    };
+  }
+
+  function getSavedUiState() {
+    if (typeof getUiStateKey !== 'function') return {};
+    try {
+      return JSON.parse(sessionStorage.getItem(getUiStateKey()) || '{}') || {};
+    } catch (_err) {
+      return {};
+    }
+  }
+
+  function saveWorkspaceState(extra = {}) {
+    if (typeof saveUiState !== 'function') return;
+    saveUiState({
+      seriesWorkspaceState: {
+        compAparellId: state.compAparellId,
+        page: state.page,
+        pageSize: state.pageSize,
+        filters: { ...state.filters },
+        boardFilters: { ...state.boardFilters },
+        boardFiltersExpanded: !!state.boardFiltersExpanded,
+        createName: state.createName,
+        selectedSerieId: state.selectedSerieId,
+        selectedRightPaneTab: state.selectedRightPaneTab,
+        ...extra,
+      },
+    });
+  }
+
+  function restoreWorkspaceState() {
+    const saved = getSavedUiState().seriesWorkspaceState || {};
+    if (!saved || typeof saved !== 'object') return;
+    if (saved.compAparellId) state.compAparellId = String(saved.compAparellId || '').trim();
+    if (saved.page) state.page = Math.max(1, Number(saved.page) || 1);
+    if (saved.pageSize) state.pageSize = Math.max(10, Number(saved.pageSize) || 40);
+    if (saved.filters && typeof saved.filters === 'object') {
+      state.filters = Object.assign({}, state.filters, saved.filters);
+    }
+    if (saved.boardFilters && typeof saved.boardFilters === 'object') {
+      state.boardFilters = normalizeBoardFilters(saved.boardFilters);
+    }
+    if (Object.prototype.hasOwnProperty.call(saved, 'boardFiltersExpanded')) {
+      state.boardFiltersExpanded = !!saved.boardFiltersExpanded;
+    }
+    if (saved.createName) state.createName = String(saved.createName || '');
+    if (saved.selectedSerieId) state.selectedSerieId = String(saved.selectedSerieId || '').trim();
+    if (saved.selectedRightPaneTab === 'preview' || saved.selectedRightPaneTab === 'detail') {
+      state.selectedRightPaneTab = saved.selectedRightPaneTab;
+    }
+  }
+
+  function openWorkspaceCard() {
+    if (typeof getExpandedGroupCardId === 'function' && typeof setExpandedGroupCard === 'function') {
+      if (getExpandedGroupCardId() !== 'series-main-card') {
         setExpandedGroupCard('series-main-card');
       }
-      if (typeof saveUiState === 'function'){
-        saveUiState();
-      }
+      saveWorkspaceState({ expandedGroupCardId: 'series-main-card' });
       return;
     }
     const btn = document.querySelector('[data-expand-target="series-main-card"]');
-    if (btn && btn.getAttribute('aria-expanded') !== 'true'){
-      btn.click();
-    }
+    if (btn && btn.getAttribute('aria-expanded') !== 'true') btn.click();
   }
 
-  function currentCreateName(){
+  function currentCreateName() {
     return String(state.createName || '').trim();
   }
 
-  function syncCreateNameInputs(skipId){
+  function syncCreateNameInputs(skipId) {
     ['series-compact-create-name', 'series-workspace-create-name'].forEach((id) => {
       const input = document.getElementById(id);
       if (!input || id === skipId) return;
-      if (input.value !== state.createName){
-        input.value = state.createName;
-      }
+      if (input.value !== state.createName) input.value = state.createName;
     });
   }
 
-  function setCreateName(value, skipId){
+  function setCreateName(value, skipId) {
     state.createName = String(value || '');
     syncCreateNameInputs(skipId);
+    markPreviewDirty();
+    saveWorkspaceState();
   }
 
-  function syncAparellSelects(skipId){
+  function syncAparellSelects(skipId) {
     ['series-comp-aparell-select', 'series-workspace-comp-aparell-select'].forEach((id) => {
       const select = document.getElementById(id);
       if (!select || id === skipId) return;
-      if (select.value !== state.compAparellId){
-        select.value = state.compAparellId;
-      }
+      if (select.value !== state.compAparellId) select.value = state.compAparellId;
     });
   }
 
-  function syncFiltersFromDom(){
+  function fillSelect(selectEl, items, selectedValue, emptyLabel, mapItem) {
+    if (!selectEl) return;
+    const isMultiple = !!selectEl.multiple;
+    const currentValues = isMultiple
+      ? new Set((Array.isArray(selectedValue) ? selectedValue : []).map((value) => String(value ?? '')).filter(Boolean))
+      : new Set([String(selectedValue ?? '')]);
+    const frag = document.createDocumentFragment();
+    if (!isMultiple) {
+      const first = document.createElement('option');
+      first.value = '';
+      first.textContent = emptyLabel || 'Totes';
+      frag.appendChild(first);
+    }
+    (items || []).forEach((item) => {
+      const row = typeof mapItem === 'function' ? mapItem(item) : { value: item, label: item };
+      const option = document.createElement('option');
+      option.value = String(row?.value ?? '');
+      option.textContent = String(row?.label ?? '');
+      option.selected = currentValues.has(option.value);
+      frag.appendChild(option);
+    });
+    selectEl.innerHTML = '';
+    selectEl.appendChild(frag);
+    if (isMultiple) {
+      Array.from(selectEl.options).forEach((option) => {
+        option.selected = currentValues.has(String(option.value || ''));
+      });
+    } else {
+      const current = Array.from(currentValues)[0] || '';
+      selectEl.value = current;
+    }
+  }
+
+  function selectedOptionValues(selectEl) {
+    return (
+      Array.from(selectEl?.selectedOptions || [])
+        .map((option) => String(option?.value || '').trim())
+        .filter(Boolean)
+    );
+  }
+
+  function syncFiltersFromDom() {
     state.filters.q = String(document.getElementById('series-filter-q')?.value || '').trim();
     state.filters.context_name = String(document.getElementById('series-filter-context')?.value || '').trim();
     state.filters.series_state = String(document.getElementById('series-filter-state')?.value || 'all').trim() || 'all';
     state.filters.serie_id = String(document.getElementById('series-filter-serie')?.value || '').trim();
   }
 
-  function applyFiltersToDom(workspace){
+  function applyFiltersToDom(workspace) {
     const opts = workspace?.filter_options || {};
-    const contextSelect = document.getElementById('series-filter-context');
-    const seriesSelect = document.getElementById('series-filter-serie');
-    if (contextSelect){
-      const current = String(state.filters.context_name || '');
-      contextSelect.innerHTML = '<option value="">Tots</option>';
-      (opts.context_names || []).forEach((name) => {
-        const option = document.createElement('option');
-        option.value = String(name || '');
-        option.textContent = String(name || '');
-        if (option.value === current) option.selected = true;
-        contextSelect.appendChild(option);
+    const filterSeries = opts.series || [];
+    fillSelect(document.getElementById('series-filter-context'), opts.context_names || [], state.filters.context_name || '', 'Tots');
+    fillSelect(
+      document.getElementById('series-filter-serie'),
+      filterSeries,
+      state.filters.serie_id || '',
+      'Qualsevol',
+      (item) => ({ value: item?.id, label: item?.label || `Serie ${item?.id || ''}` })
+    );
+    const q = document.getElementById('series-filter-q');
+    const stateSelect = document.getElementById('series-filter-state');
+    if (q) q.value = String(state.filters.q || '');
+    if (stateSelect) stateSelect.value = String(state.filters.series_state || 'all');
+
+    fillSelect(
+      document.getElementById('series-workspace-existing-select'),
+      filterSeries,
+      state.selectedSerieId || '',
+      'Selecciona serie',
+      (item) => ({ value: item?.id, label: item?.label || `Serie ${item?.id || ''}` })
+    );
+  }
+
+  function readBoardFilters() {
+    return normalizeBoardFilters({
+      q: document.getElementById('series-board-filter-q')?.value || '',
+      contexts: selectedOptionValues(document.getElementById('series-board-filter-context')),
+      members_state: document.getElementById('series-board-filter-members-state')?.value || 'all',
+      program_state: document.getElementById('series-board-filter-program-state')?.value || 'all',
+    });
+  }
+
+  function buildBoardFilterOptions(series) {
+    const contexts = new Set();
+    (Array.isArray(series) ? series : []).forEach((serie) => {
+      const subjects = Array.isArray(serie?.subjects) ? serie.subjects : [];
+      subjects.forEach((subject) => {
+        const clean = String(subject?.context_name || '').trim();
+        if (clean) contexts.add(clean);
       });
+    });
+    return { contexts: Array.from(contexts).sort((a, b) => a.localeCompare(b, 'ca')) };
+  }
+
+  function setBoardFiltersToDom(filters, options) {
+    const data = normalizeBoardFilters(filters);
+    const q = document.getElementById('series-board-filter-q');
+    if (q) q.value = String(data.q || '');
+    fillSelect(document.getElementById('series-board-filter-context'), options?.contexts || [], data.contexts || [], 'Tots');
+    const membersState = document.getElementById('series-board-filter-members-state');
+    const programState = document.getElementById('series-board-filter-program-state');
+    if (membersState) membersState.value = String(data.members_state || 'all');
+    if (programState) programState.value = String(data.program_state || 'all');
+  }
+
+  function boardFiltersAreActive(filters = state.boardFilters) {
+    const current = normalizeBoardFilters(filters);
+    return !!(
+      current.q
+      || current.contexts.length
+      || current.members_state !== 'all'
+      || current.program_state !== 'all'
+    );
+  }
+
+  function boardFilterSummaryText(filters = state.boardFilters) {
+    const current = normalizeBoardFilters(filters);
+    const parts = [];
+    if (current.q) parts.push(`text: ${current.q}`);
+    if (current.contexts.length) parts.push(`${current.contexts.length} contexts`);
+    if (current.members_state === 'with_subjects') parts.push('amb unitats');
+    if (current.members_state === 'empty') parts.push('nomes buides');
+    if (current.program_state === 'programmed') parts.push('programades');
+    if (current.program_state === 'out_of_program') parts.push('fora de programa');
+    if (!parts.length) return 'Nom de la serie, equips, contexts i estat del programa del board actual.';
+    return `Filtres actius: ${parts.join(' | ')}.`;
+  }
+
+  function setBoardFiltersExpanded(expanded, options = {}) {
+    state.boardFiltersExpanded = !!expanded;
+    const panel = document.getElementById('series-board-filters-panel');
+    const toggle = document.getElementById('btn-series-board-filters-toggle');
+    const summary = document.getElementById('series-board-filters-summary');
+    if (panel) panel.classList.toggle('d-none', !state.boardFiltersExpanded);
+    if (toggle) {
+      toggle.setAttribute('aria-expanded', state.boardFiltersExpanded ? 'true' : 'false');
+      toggle.textContent = state.boardFiltersExpanded ? 'Amagar filtres del board' : 'Veure filtres del board';
     }
-    if (seriesSelect){
-      const current = String(state.filters.serie_id || '');
-      seriesSelect.innerHTML = '<option value="">Qualsevol</option>';
-      (opts.series || []).forEach((serie) => {
-        const option = document.createElement('option');
-        option.value = String(serie?.id || '');
-        option.textContent = String(serie?.label || `Serie ${serie?.id || ''}`);
-        if (option.value === current) option.selected = true;
-        seriesSelect.appendChild(option);
-      });
+    if (summary) summary.textContent = boardFilterSummaryText();
+    if (!options.skipSave) saveWorkspaceState();
+  }
+
+  function seriesSearchText(serie) {
+    const subjects = Array.isArray(serie?.subjects) ? serie.subjects : [];
+    return normalizeSearchText([
+      serie?.search_text,
+      serie?.label,
+      serie?.name,
+      serie?.summary_label,
+      ...subjects.map((subject) => `${subject?.label || ''} ${subject?.context_name || ''} ${subject?.members_text || ''}`),
+    ].filter(Boolean).join(' '));
+  }
+
+  function serieMatchesBoardFilters(serie, filters = state.boardFilters) {
+    const current = normalizeBoardFilters(filters);
+    const subjects = Array.isArray(serie?.subjects) ? serie.subjects : [];
+    if (current.members_state === 'with_subjects' && Number(serie?.subjects_count || 0) <= 0) return false;
+    if (current.members_state === 'empty' && Number(serie?.subjects_count || 0) > 0) return false;
+    if (current.program_state === 'programmed' && !serie?.is_programmed) return false;
+    if (current.program_state === 'out_of_program' && !serie?.is_out_of_program) return false;
+    if (current.contexts.length) {
+      const subjectContexts = new Set(
+        subjects.map((subject) => String(subject?.context_name || '').trim()).filter(Boolean)
+      );
+      if (!current.contexts.some((value) => subjectContexts.has(value))) return false;
+    }
+    if (current.q && !seriesSearchText(serie).includes(normalizeSearchText(current.q))) return false;
+    return true;
+  }
+
+  function renderBoardFilterControls(series) {
+    const options = buildBoardFilterOptions(series);
+    setBoardFiltersToDom(state.boardFilters, options);
+    state.boardFilters = readBoardFilters();
+    setBoardFiltersExpanded(state.boardFiltersExpanded, { skipSave: true });
+  }
+
+  function getPreviewElements() {
+    return {
+      root: document.getElementById('series-preview'),
+      status: document.getElementById('series-preview-status'),
+      intentLabel: document.getElementById('series-preview-intent-label'),
+      selection: document.getElementById('series-preview-selection-summary'),
+      summary: document.getElementById('series-preview-summary'),
+      existingWrap: document.getElementById('series-preview-existing-wrap'),
+      existingMeta: document.getElementById('series-preview-existing-meta'),
+      existingList: document.getElementById('series-preview-existing-list'),
+      plannedWrap: document.getElementById('series-preview-planned-wrap'),
+      plannedMeta: document.getElementById('series-preview-planned-meta'),
+      plannedList: document.getElementById('series-preview-list'),
+      confirm: document.getElementById('btn-series-preview-confirm'),
+      clear: document.getElementById('btn-series-preview-clear'),
+    };
+  }
+
+  function setPreviewStatus(message, variant = 'muted') {
+    const el = getPreviewElements().status;
+    if (!el) return;
+    el.textContent = String(message || '');
+    el.style.color = variant === 'warning'
+      ? '#b45309'
+      : (variant === 'info' ? '#1d4ed8' : '#64748b');
+  }
+
+  function updatePreviewConfirmUi() {
+    const els = getPreviewElements();
+    const intent = lastConfirmablePreview;
+    const dirty = !!(els.root && els.root.dataset.dirty === '1');
+    const hasPreview = !!(els.root && els.root.dataset.hasPreview === '1');
+    const loading = !!(els.root && els.root.dataset.loading === '1');
+
+    if (els.intentLabel) {
+      const label = String(intent?.label || '').trim();
+      els.intentLabel.textContent = dirty && label ? `${label} - desactualitzada` : label;
+      els.intentLabel.classList.toggle('d-none', !label);
+    }
+
+    if (els.confirm) {
+      const canShow = hasPreview && !!intent && !!intent.canConfirm;
+      els.confirm.textContent = String(intent?.buttonLabel || 'Confirmar aquesta accio').trim() || 'Confirmar aquesta accio';
+      els.confirm.disabled = !canShow || dirty || loading || previewConfirmBusy;
+      els.confirm.classList.toggle('d-none', !canShow);
     }
   }
 
-  function compactCandidateMeta(item){
+  function clearPreviewConfirmIntent() {
+    lastConfirmablePreview = null;
+    previewConfirmBusy = false;
+    updatePreviewConfirmUi();
+  }
+
+  function setPreviewConfirmIntent(intent) {
+    if (!intent || typeof intent.execute !== 'function' || !intent.canConfirm) {
+      clearPreviewConfirmIntent();
+      return;
+    }
+    lastConfirmablePreview = {
+      label: String(intent.label || '').trim(),
+      buttonLabel: String(intent.buttonLabel || 'Confirmar aquesta accio').trim() || 'Confirmar aquesta accio',
+      canConfirm: true,
+      execute: intent.execute,
+    };
+    updatePreviewConfirmUi();
+  }
+
+  function clearPreview(statusText) {
+    const els = getPreviewElements();
+    if (!els.root) return;
+    els.root.dataset.hasPreview = '0';
+    els.root.dataset.dirty = '0';
+    els.root.dataset.loading = '0';
+    if (els.selection) {
+      els.selection.innerHTML = '';
+      els.selection.classList.add('d-none');
+    }
+    if (els.summary) {
+      els.summary.innerHTML = '';
+      els.summary.classList.add('d-none');
+    }
+    if (els.existingList) els.existingList.innerHTML = '';
+    if (els.existingWrap) els.existingWrap.classList.add('d-none');
+    if (els.existingMeta) els.existingMeta.textContent = '';
+    if (els.plannedList) els.plannedList.innerHTML = '';
+    if (els.plannedWrap) els.plannedWrap.classList.add('d-none');
+    if (els.plannedMeta) els.plannedMeta.textContent = '';
+    if (els.clear) els.clear.classList.add('d-none');
+    setPreviewStatus(statusText || "Encara no s'ha calculat cap previsualitzacio amb aquesta configuracio.", 'muted');
+    clearPreviewConfirmIntent();
+  }
+
+  function markPreviewDirty() {
+    const els = getPreviewElements();
+    if (!els.root || els.root.dataset.hasPreview !== '1') return;
+    els.root.dataset.dirty = '1';
+    setPreviewStatus('La configuracio ha canviat. Torna a previsualitzar per actualitzar el resultat.', 'warning');
+    clearPreviewConfirmIntent();
+  }
+
+  function setPreviewLoading(loading) {
+    const els = getPreviewElements();
+    if (!els.root) return;
+    els.root.dataset.loading = loading ? '1' : '0';
+    if (loading) setPreviewStatus('Calculant la previsualitzacio de les series...', 'info');
+    updatePreviewConfirmUi();
+  }
+
+  function createPreviewCard(row, kind = 'planned') {
+    const card = document.createElement('div');
+    card.className = 'group-preview-card';
+    const impactKind = String(row?.impact_kind || '').trim().toLowerCase();
+    if (kind === 'planned' && (row?.will_create || impactKind === 'created')) card.classList.add('is-created');
+    else if (impactKind === 'removed' || row?.will_delete) card.classList.add('is-removed');
+    else if (impactKind === 'reduced') card.classList.add('is-reduced');
+    else if (impactKind === 'incoming') card.classList.add('is-incoming');
+    else card.classList.add('is-existing');
+
+    const head = document.createElement('div');
+    head.className = 'group-preview-card-head';
+
+    const copy = document.createElement('div');
+    copy.className = 'group-preview-card-copy';
+
+    const title = document.createElement('p');
+    title.className = 'group-preview-card-title';
+    title.textContent = String(row?.label || `Serie ${row?.display_num || ''}` || 'Serie');
+    copy.appendChild(title);
+
+    const subtitle = document.createElement('p');
+    subtitle.className = 'group-preview-card-subtitle';
+    subtitle.textContent = [
+      row?.display_num ? `Serie ${row.display_num}` : '',
+      `${Number(row?.subjects_count || 0)} unitat${Number(row?.subjects_count || 0) === 1 ? '' : 's'}`,
+      row?.is_programmed ? 'Programada' : 'No programada',
+    ].filter(Boolean).join(' | ') || 'Sense resum';
+    copy.appendChild(subtitle);
+
+    const impact = document.createElement('p');
+    impact.className = 'group-preview-card-impact';
+    if (row?.will_delete) {
+      impact.classList.add('is-removed');
+      impact.textContent = "La serie es desactivara si la configuracio es manté.";
+    } else if (row?.will_create) {
+      impact.classList.add('is-created');
+      impact.textContent = `Es creara amb ${Number(row?.subjects_count || 0)} unitat${Number(row?.subjects_count || 0) === 1 ? '' : 's'}.`;
+    } else if (impactKind === 'removed') {
+      impact.classList.add('is-removed');
+      impact.textContent = 'Pot quedar buida amb aquesta accio.';
+    } else if (impactKind === 'reduced') {
+      impact.classList.add('is-reduced');
+      impact.textContent = `Perdra ${Number(row?.outgoing_count || 0)} unitat${Number(row?.outgoing_count || 0) === 1 ? '' : 's'}.`;
+    } else if (impactKind === 'incoming') {
+      impact.classList.add('is-created');
+      impact.textContent = `Rebra ${Number(row?.incoming_count || 0)} unitat${Number(row?.incoming_count || 0) === 1 ? '' : 's'}.`;
+    } else {
+      impact.textContent = String(row?.status_label || '').trim() || 'Sense afectacio destacada.';
+    }
+    copy.appendChild(impact);
+    head.appendChild(copy);
+
+    const badges = document.createElement('div');
+    badges.className = 'group-preview-card-badges';
+    badges.appendChild(compactBadge(`${Number(row?.subjects_count || 0)} unitats`));
+    if (row?.is_programmed) badges.appendChild(compactBadge('Programada', 'incoming'));
+    if (row?.is_empty) badges.appendChild(compactBadge('Buida', impactKind === 'removed' ? 'removed' : 'neutral'));
+    if (row?.will_create) badges.appendChild(compactBadge('Serie nova', 'created'));
+    if (row?.will_delete) badges.appendChild(compactBadge('Es desactivara', 'removed'));
+    if (Number(row?.incoming_count || 0) > 0) badges.appendChild(compactBadge(`+${Number(row?.incoming_count || 0)} entren`, 'incoming'));
+    if (Number(row?.outgoing_count || 0) > 0) badges.appendChild(compactBadge(`-${Number(row?.outgoing_count || 0)} surten`, impactKind === 'removed' ? 'removed' : 'reduced'));
+    head.appendChild(badges);
+    card.appendChild(head);
+
+    const sampleNames = Array.isArray(row?.preview_subject_names) ? row.preview_subject_names.filter(Boolean) : [];
+    const sampleRemaining = Number(row?.preview_subject_names_remaining || 0);
+    if (sampleNames.length) {
+      const members = document.createElement('div');
+      members.className = 'group-preview-members';
+      const suffix = sampleRemaining > 0 ? ` +${sampleRemaining} mes` : '';
+      const strong = document.createElement('strong');
+      strong.textContent = 'Mostra:';
+      members.appendChild(strong);
+      members.appendChild(document.createTextNode(` ${sampleNames.join(', ')}${suffix}`));
+      card.appendChild(members);
+    }
+
+    return card;
+  }
+
+  function renderPreviewSection(wrap, meta, list, rows, kind) {
+    if (!wrap || !list) return;
+    const items = Array.isArray(rows) ? rows : [];
+    list.innerHTML = '';
+    items.forEach((item) => list.appendChild(createPreviewCard(item, kind)));
+    wrap.classList.toggle('d-none', items.length === 0);
+    if (meta) {
+      const subjectsCount = items.reduce((acc, row) => acc + Number(row?.subjects_count || 0), 0);
+      meta.textContent = items.length ? `${items.length} series | ${subjectsCount} unitats destacades` : '';
+    }
+  }
+
+  function renderPreview(preview) {
+    const els = getPreviewElements();
+    if (!els.root) return;
+    if (!preview || typeof preview !== 'object') {
+      clearPreview("No s'ha pogut calcular la previsualitzacio.");
+      return;
+    }
+
+    const existingSeries = Array.isArray(preview?.existing_series) ? preview.existing_series : [];
+    const plannedSeries = Array.isArray(preview?.planned_series) ? preview.planned_series : [];
+    const blockedReasons = Array.isArray(preview?.blocked_reasons) ? preview.blocked_reasons.filter(Boolean) : [];
+    const summary = preview?.summary && typeof preview.summary === 'object' ? preview.summary : {};
+    const selection = preview?.selection && typeof preview.selection === 'object' ? preview.selection : {};
+
+    els.root.dataset.hasPreview = '1';
+    els.root.dataset.dirty = '0';
+
+    if (els.selection) {
+      els.selection.innerHTML = '';
+      els.selection.appendChild(compactBadge(selection.label || `${Number(selection?.valid_count || 0)} seleccionades`));
+      if (Number(selection?.invalid_selection_count || 0) > 0) {
+        els.selection.appendChild(compactBadge(`${Number(selection.invalid_selection_count || 0)} fora de contracte`, 'removed'));
+      }
+      if (Number(selection?.invalid_subject_count || 0) > 0) {
+        els.selection.appendChild(compactBadge(`${Number(selection.invalid_subject_count || 0)} invalides`, 'removed'));
+      }
+      if (Number(selection?.assigned_count || 0) > 0) {
+        els.selection.appendChild(compactBadge(`${Number(selection.assigned_count || 0)} ja tenien serie`));
+      }
+      els.selection.classList.remove('d-none');
+    }
+
+    if (els.summary) {
+      els.summary.innerHTML = '';
+      els.summary.appendChild(compactBadge(`${Number(summary?.series_total || 0)} series actuals`));
+      els.summary.appendChild(compactBadge(`${Number(summary?.affected_subjects_count || 0)} unitats afectades`));
+      els.summary.appendChild(compactBadge(`${Number(summary?.existing_series_total || existingSeries.length || 0)} series revisades`));
+      els.summary.appendChild(compactBadge(`${Number(summary?.planned_series_total || plannedSeries.length || 0)} resultats previstos`));
+      if (Number(summary?.programmed_series || 0) > 0) {
+        els.summary.appendChild(compactBadge(`${Number(summary.programmed_series || 0)} programades`, 'incoming'));
+      }
+      if (blockedReasons.length) {
+        els.summary.appendChild(compactBadge('Accio bloquejada', 'removed'));
+      }
+      els.summary.classList.remove('d-none');
+    }
+
+    renderPreviewSection(els.existingWrap, els.existingMeta, els.existingList, existingSeries, 'existing');
+    renderPreviewSection(els.plannedWrap, els.plannedMeta, els.plannedList, plannedSeries, 'planned');
+    if (els.clear) els.clear.classList.remove('d-none');
+
+    if (blockedReasons.length) {
+      setPreviewStatus(blockedReasons.join(' '), 'warning');
+    } else {
+      setPreviewStatus(String(preview?.message || 'Previsualitzacio calculada.'), preview?.can_run ? 'info' : 'warning');
+    }
+    updatePreviewConfirmUi();
+  }
+
+  function buildRequestPayload(extra = {}) {
+    return Object.assign({
+      comp_aparell_id: state.compAparellId,
+      page: state.page,
+      page_size: state.pageSize,
+      selected_ids: selectedIds(),
+      filters: state.filters,
+    }, extra || {});
+  }
+
+  function actionSuccessMessage(action) {
+    if (action === 'create') return 'Serie creada amb la seleccio.';
+    if (action === 'assign') return 'Seleccio assignada a la serie.';
+    if (action === 'unassign') return 'Seleccio treta de les series.';
+    if (action === 'delete') return 'Serie desactivada.';
+    return 'Accio completada.';
+  }
+
+  function actionUrl(action) {
+    if (action === 'create') return createUrl;
+    if (action === 'assign') return assignUrl;
+    if (action === 'unassign') return unassignUrl;
+    if (action === 'delete') return deleteUrl;
+    return '';
+  }
+  function updateRightPaneTabUi() {
+    const card = document.getElementById('series-right-pane-card');
+    const detailView = document.getElementById('series-right-pane-detail');
+    const previewView = document.getElementById('series-right-pane-preview');
+    const detailBtn = document.getElementById('btn-series-right-tab-detail');
+    const previewBtn = document.getElementById('btn-series-right-tab-preview');
+    const activeTab = state.selectedRightPaneTab === 'preview' ? 'preview' : 'detail';
+
+    if (card) card.classList.toggle('is-preview-active', activeTab === 'preview');
+    if (detailView) detailView.classList.toggle('d-none', activeTab !== 'detail');
+    if (previewView) previewView.classList.toggle('d-none', activeTab !== 'preview');
+    if (detailBtn) {
+      detailBtn.classList.toggle('is-active', activeTab === 'detail');
+      detailBtn.setAttribute('aria-selected', activeTab === 'detail' ? 'true' : 'false');
+    }
+    if (previewBtn) {
+      previewBtn.classList.toggle('is-active', activeTab === 'preview');
+      previewBtn.setAttribute('aria-selected', activeTab === 'preview' ? 'true' : 'false');
+    }
+  }
+
+  function setRightPaneTab(tab) {
+    state.selectedRightPaneTab = tab === 'preview' ? 'preview' : 'detail';
+    updateRightPaneTabUi();
+    saveWorkspaceState();
+  }
+
+  function getCurrentSelectedSerieSummary(workspace = state.workspace) {
+    const series = Array.isArray(workspace?.series) ? workspace.series : [];
+    const cleanId = String(state.selectedSerieId || '').trim();
+    return series.find((serie) => String(serie?.id || '').trim() === cleanId) || null;
+  }
+
+  function pruneWorkspaceState(workspace) {
+    const availableSerieIds = new Set((Array.isArray(workspace?.series) ? workspace.series : []).map((serie) => String(serie?.id || '').trim()));
+    Object.keys(state.detailCache).forEach((serieId) => {
+      if (!availableSerieIds.has(String(serieId || '').trim())) delete state.detailCache[serieId];
+    });
+    if (state.selectedSerieId && !availableSerieIds.has(String(state.selectedSerieId || '').trim())) {
+      state.selectedSerieId = '';
+    }
+  }
+
+  function compactCandidateMeta(item) {
     return String(item?.compact_meta || '').trim() || [
       item?.context_name,
       item?.members_preview || item?.members_text,
@@ -161,133 +722,446 @@ window.initSeriesWorkspace = async function () {
     ].filter(Boolean).join(' | ') || 'Sense metadades';
   }
 
-  function seriesMetaText(serie){
+  function subjectDetailRow(subject, index, subjects, serie) {
+    const id = Number(subject?.subject_id || subject?.id || 0);
+    const row = document.createElement('div');
+    row.className = 'team-context-member-row';
+
+    const main = document.createElement('div');
+    main.className = 'team-context-member-main';
+
+    const title = document.createElement('div');
+    title.className = 'team-context-member-title';
+    title.textContent = String(subject?.name || subject?.label || `Unitat ${id}`);
+    main.appendChild(title);
+
+    const meta = document.createElement('div');
+    meta.className = 'team-context-member-meta';
+    meta.textContent = compactCandidateMeta(subject);
+    main.appendChild(meta);
+
+    row.appendChild(main);
+
+    const tools = document.createElement('div');
+    tools.className = 'd-flex flex-wrap';
+    tools.style.gap = '4px';
+
+    const moveUp = document.createElement('button');
+    moveUp.type = 'button';
+    moveUp.className = 'btn btn-sm btn-outline-secondary';
+    moveUp.textContent = 'Amunt';
+    moveUp.disabled = !editable() || index <= 0;
+    moveUp.addEventListener('click', async (event) => {
+      event.preventDefault();
+      const ids = subjects.map((item) => Number(item?.subject_id || item?.id || 0)).filter(Boolean);
+      const moved = ids.splice(index, 1)[0];
+      ids.splice(index - 1, 0, moved);
+      await runAction(reorderUrl, {
+        comp_aparell_id: state.compAparellId,
+        serie_id: serie.id,
+        subject_ids: ids,
+      }, 'Ordre actualitzat.');
+    });
+    tools.appendChild(moveUp);
+
+    const moveDown = document.createElement('button');
+    moveDown.type = 'button';
+    moveDown.className = 'btn btn-sm btn-outline-secondary';
+    moveDown.textContent = 'Avall';
+    moveDown.disabled = !editable() || index >= subjects.length - 1;
+    moveDown.addEventListener('click', async (event) => {
+      event.preventDefault();
+      const ids = subjects.map((item) => Number(item?.subject_id || item?.id || 0)).filter(Boolean);
+      const moved = ids.splice(index, 1)[0];
+      ids.splice(index + 1, 0, moved);
+      await runAction(reorderUrl, {
+        comp_aparell_id: state.compAparellId,
+        serie_id: serie.id,
+        subject_ids: ids,
+      }, 'Ordre actualitzat.');
+    });
+    tools.appendChild(moveDown);
+
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'btn btn-sm btn-outline-warning';
+    remove.textContent = 'Treure';
+    remove.disabled = !editable();
+    remove.addEventListener('click', async (event) => {
+      event.preventDefault();
+      await previewUnassignSelection([id]);
+    });
+    tools.appendChild(remove);
+
+    row.appendChild(tools);
+    return row;
+  }
+
+  function renderDetailPane() {
+    const empty = document.getElementById('series-detail-empty');
+    const panel = document.getElementById('series-detail-panel');
+    const title = document.getElementById('series-detail-title');
+    const meta = document.getElementById('series-detail-meta');
+    const summary = document.getElementById('series-detail-summary');
+    const actions = document.getElementById('series-detail-actions');
+    const editor = document.getElementById('series-detail-editor');
+    const nameNote = document.getElementById('series-detail-name-note');
+    const membersList = document.getElementById('series-detail-members-list');
+    if (!empty || !panel || !title || !meta || !summary || !actions || !editor || !nameNote || !membersList) return;
+
+    const summaryRow = getCurrentSelectedSerieSummary();
+    const serieId = String(summaryRow?.id || state.selectedSerieId || '').trim();
+    const detail = state.detailCache[serieId] || null;
+    const loading = !!(serieId && state.loadingSerieIds.has(serieId));
+    const serie = detail || summaryRow;
+
+    if (!serieId || !serie) {
+      empty.classList.remove('d-none');
+      panel.classList.add('d-none');
+      empty.textContent = "Selecciona una serie del board per veure'n el detall sense deformar la graella.";
+      membersList.innerHTML = '';
+      return;
+    }
+
+    empty.classList.add('d-none');
+    panel.classList.remove('d-none');
+
+    title.textContent = String(serie?.label || `Serie ${serie?.display_num || ''}`);
+    meta.textContent = [
+      serie?.display_num ? `Serie ${serie.display_num}` : '',
+      `${Number(serie?.subjects_count || 0)} unitat${Number(serie?.subjects_count || 0) === 1 ? '' : 's'}`,
+      serie?.is_programmed ? 'Programada' : 'No programada',
+      loading ? 'Carregant detall...' : '',
+    ].filter(Boolean).join(' | ') || 'Sense dades';
+
+    summary.innerHTML = '';
+    summary.appendChild(compactBadge(`${Number(serie?.subjects_count || 0)} unitats`));
+    summary.appendChild(compactBadge(serie?.is_programmed ? 'Programada' : 'No programada', serie?.is_programmed ? 'incoming' : 'neutral'));
+    if (serie?.is_empty) summary.appendChild(compactBadge('Buida', 'reduced'));
+
+    actions.innerHTML = '';
+
+    const refresh = document.createElement('button');
+    refresh.type = 'button';
+    refresh.className = 'btn btn-sm btn-outline-dark';
+    refresh.textContent = loading ? 'Carregant...' : 'Refrescar detall';
+    refresh.addEventListener('click', async () => {
+      await selectSerie(serieId, { forceReload: true });
+    });
+    actions.appendChild(refresh);
+
+    const assign = document.createElement('button');
+    assign.type = 'button';
+    assign.className = 'btn btn-sm btn-outline-primary';
+    assign.textContent = 'Assignar seleccio';
+    assign.disabled = !editable();
+    assign.addEventListener('click', async () => {
+      await previewAssignSelection(serieId);
+    });
+    actions.appendChild(assign);
+
+    const rename = document.createElement('button');
+    rename.type = 'button';
+    rename.className = 'btn btn-sm btn-outline-secondary';
+    rename.textContent = 'Renombrar';
+    rename.disabled = !editable();
+    rename.addEventListener('click', async () => {
+      const next = await promptText('Nou nom de la serie', String(serie?.name || ''));
+      if (next === null) return;
+      await runAction(renameUrl, {
+        comp_aparell_id: state.compAparellId,
+        serie_id: serie.id,
+        name: String(next || '').trim(),
+      }, 'Serie renombrada.');
+    });
+    actions.appendChild(rename);
+
+    const workSheet = document.createElement('button');
+    workSheet.type = 'button';
+    workSheet.className = 'btn btn-sm btn-outline-secondary';
+    workSheet.textContent = 'Full de treball';
+    workSheet.addEventListener('click', () => {
+      window.location.href = exportUrl(workSheetExportUrl, {
+        comp_aparell_id: state.compAparellId,
+        serie_id: serie.id,
+      });
+    });
+    actions.appendChild(workSheet);
+
+    if (serie?.is_empty) {
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'btn btn-sm btn-outline-danger';
+      remove.textContent = 'Previsualitzar baixa';
+      remove.disabled = !editable();
+      remove.addEventListener('click', async () => {
+        await previewDeleteSerie(serie.id);
+      });
+      actions.appendChild(remove);
+    }
+
+    editor.innerHTML = '';
+    editor.classList.add('d-none');
+    nameNote.textContent = serie?.name ? `Nom actual: ${serie.name}` : 'Sense nom explicit';
+
+    membersList.innerHTML = '';
+    const subjects = Array.isArray(serie?.subjects) ? serie.subjects : [];
+    if (loading && !detail) {
+      const placeholder = document.createElement('div');
+      placeholder.className = 'team-context-drop-placeholder';
+      placeholder.textContent = 'Carregant detall de la serie...';
+      membersList.appendChild(placeholder);
+      return;
+    }
+    if (!subjects.length) {
+      const placeholder = document.createElement('div');
+      placeholder.className = 'team-context-drop-placeholder';
+      placeholder.textContent = 'Serie buida. Pots crear-la ara i omplir-la mes tard des del mateix workspace.';
+      membersList.appendChild(placeholder);
+      return;
+    }
+
+    subjects.forEach((subject, index) => membersList.appendChild(subjectDetailRow(subject, index, subjects, serie)));
+  }
+
+  async function loadSerieDetail(serieId, options = {}) {
+    const cleanId = String(serieId || '').trim();
+    if (!cleanId) return null;
+    try {
+      const data = await postJson(detailUrl, {
+        comp_aparell_id: state.compAparellId,
+        serie_id: cleanId,
+      });
+      setHistory(data);
+      state.detailCache[cleanId] = data?.serie || data;
+      return state.detailCache[cleanId];
+    } catch (error) {
+      delete state.detailCache[cleanId];
+      if (options.showError !== false) showAlertMessage(error?.message || String(error));
+      return null;
+    } finally {
+      state.loadingSerieIds.delete(cleanId);
+    }
+  }
+
+  async function ensureSelectedSerieDetail() {
+    const cleanId = String(state.selectedSerieId || '').trim();
+    if (!cleanId || state.detailCache[cleanId] || state.loadingSerieIds.has(cleanId)) {
+      renderDetailPane();
+      return;
+    }
+    state.loadingSerieIds.add(cleanId);
+    renderCards(state.workspace);
+    renderDetailPane();
+    await loadSerieDetail(cleanId, { showError: true });
+    renderCards(state.workspace);
+    renderDetailPane();
+  }
+
+  async function selectSerie(serieId, options = {}) {
+    const cleanId = String(serieId || '').trim();
+    if (!cleanId) return null;
+    openWorkspaceCard();
+    state.selectedSerieId = cleanId;
+    state.selectedRightPaneTab = 'detail';
+    saveWorkspaceState();
+    updateRightPaneTabUi();
+    markPreviewDirty();
+    renderCards(state.workspace);
+    renderDetailPane();
+    if (options.forceReload || !state.detailCache[cleanId]) {
+      state.loadingSerieIds.add(cleanId);
+      renderCards(state.workspace);
+      renderDetailPane();
+      await loadSerieDetail(cleanId, { showError: true });
+      renderCards(state.workspace);
+      renderDetailPane();
+    }
+    return state.detailCache[cleanId] || getCurrentSelectedSerieSummary();
+  }
+  function seriesMetaText(serie) {
     return [
       `${Number(serie?.subjects_count || 0)} unitat${Number(serie?.subjects_count || 0) === 1 ? '' : 's'}`,
-      serie?.status_label || '',
+      serie?.is_programmed ? 'Programada' : 'No programada',
+      serie?.is_empty ? 'Buida' : '',
     ].filter(Boolean).join(' | ');
   }
 
-  function updateSelectionSummary(){
+  function updateSelectionSummary() {
     const count = selectedIds().length;
-    setText('series-selection-count', `${count} seleccionades`);
-    const note = document.getElementById('series-compact-actions-note');
-    if (note){
-      note.textContent = count
-        ? `Les accions rapides treballaran sobre ${count} unitat${count === 1 ? '' : 's'} seleccionada${count === 1 ? '' : 's'} al modal.`
+    const filteredCount = Number(state.workspace?.paging?.total || state.workspace?.candidates?.total || 0);
+    setText('series-selection-count', count);
+    setText('series-selection-detail', `${filteredCount} filtrades`);
+    const compactNote = document.getElementById('series-compact-actions-note');
+    if (compactNote) {
+      compactNote.textContent = count
+        ? `Les accions rapides treballaran sobre ${count} unitat${count === 1 ? '' : 's'} competitiva${count === 1 ? '' : 's'} seleccionada${count === 1 ? '' : 's'}.`
         : "Aquestes accions treballaran sobre la seleccio preparada al modal.";
     }
-    setText(
-      'series-selection-helper-note',
-      count
+    const helper = document.getElementById('series-selection-helper-note');
+    if (helper) {
+      helper.textContent = count
         ? `La seleccio actual del workspace te ${count} unitat${count === 1 ? '' : 's'} competitiva${count === 1 ? '' : 's'}.`
-        : "Les accions d'aquest modal treballen sobre la seleccio actual del workspace."
-    );
+        : "Les accions d'aquest modal treballen sobre la seleccio actual del workspace.";
+    }
+    const note = document.getElementById('series-workspace-selection-note');
+    if (note) {
+      note.textContent = count
+        ? `Aquestes accions treballaran sobre ${count} unitat${count === 1 ? '' : 's'} seleccionada${count === 1 ? '' : 's'} al workspace.`
+        : 'Aquestes accions treballaran sobre la seleccio activa del workspace.';
+    }
   }
 
-  function toggleSelection(id, checked){
+  function toggleSelection(id, checked) {
     const cleanId = String(id || '').trim();
     if (!cleanId) return;
     if (checked) state.selectedIds.add(cleanId);
     else state.selectedIds.delete(cleanId);
     updateSelectionSummary();
     renderCandidates(state.workspace);
+    markPreviewDirty();
   }
 
-  function pruneSeriesState(workspace){
-    const activeIds = new Set((Array.isArray(workspace?.series) ? workspace.series : []).map((serie) => String(serie?.id || '')));
-    state.expandedSeriesIds = new Set(
-      Array.from(state.expandedSeriesIds).filter((serieId) => activeIds.has(String(serieId || '')))
-    );
-    Object.keys(state.seriesDetails).forEach((serieId) => {
-      if (!activeIds.has(String(serieId || ''))){
-        delete state.seriesDetails[serieId];
-      }
+  function candidateRow(item) {
+    const id = String(item?.subject_id || item?.id || '').trim();
+    const row = document.createElement('div');
+    row.className = `team-candidate-row${state.selectedIds.has(id) ? ' is-selected' : ''}`;
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.className = 'js-series-candidate-check';
+    checkbox.value = id;
+    checkbox.checked = state.selectedIds.has(id);
+    checkbox.disabled = !editable();
+    checkbox.addEventListener('click', (event) => event.stopPropagation());
+    checkbox.addEventListener('change', () => toggleSelection(id, checkbox.checked));
+    row.appendChild(checkbox);
+
+    const main = document.createElement('div');
+    main.className = 'team-candidate-main';
+
+    const title = document.createElement('div');
+    title.className = 'team-candidate-title';
+    title.textContent = String(item?.label || `Unitat ${id}`);
+    main.appendChild(title);
+
+    const meta = document.createElement('div');
+    meta.className = 'team-candidate-meta';
+    meta.textContent = compactCandidateMeta(item);
+    main.appendChild(meta);
+
+    const preview = document.createElement('div');
+    preview.className = 'small text-muted';
+    preview.textContent = String(item?.members_preview || item?.members_text || '').trim() || 'Sense membres';
+    main.appendChild(preview);
+
+    const badges = document.createElement('div');
+    badges.className = 'team-candidate-teams';
+    badges.appendChild(compactBadge(item?.serie_label ? `Serie: ${item.serie_label}` : 'Sense serie', item?.serie_id ? 'neutral' : 'incoming'));
+    if (Array.isArray(item?.invalid_reasons) && item.invalid_reasons.length) {
+      const invalidBadge = compactBadge(`Incidencies (${item.invalid_reasons.length})`, 'removed');
+      invalidBadge.title = item.invalid_reasons.join(', ');
+      badges.appendChild(invalidBadge);
+    }
+    main.appendChild(badges);
+
+    row.appendChild(main);
+    row.addEventListener('click', (event) => {
+      if (!editable()) return;
+      if (event.target.closest('input,button,a,label')) return;
+      toggleSelection(id, !state.selectedIds.has(id));
     });
+    return row;
   }
 
-  async function runAction(url, payload, successMessage){
-    try {
-      const data = await postJson(url, payload);
-      setHistory(data);
-      state.seriesDetails = {};
-      if (typeof showAlert === 'function' && successMessage){
-        showAlert(successMessage);
-      }
-      await refreshWorkspace({ preservePage: true });
-      return data;
-    } catch (error) {
-      if (typeof showAlert === 'function'){
-        showAlert(error?.message || String(error));
-      }
-      throw error;
+  function renderCandidates(workspace) {
+    const list = document.getElementById('series-candidates-list');
+    if (!list) return;
+    const items = Array.isArray(workspace?.candidates?.items) ? workspace.candidates.items : [];
+    const total = Number(workspace?.candidates?.total || 0);
+    const page = Number(workspace?.candidates?.page || 1);
+    const pages = Number(workspace?.paging?.pages || 1);
+    setText('series-candidates-count-badge', `${total} candidates`);
+    setText('series-candidates-status', total ? `${total} unitats competitives segons els filtres actuals.` : "Cap unitat competitiva amb aquests filtres.");
+    setText('series-page-label', `Pagina ${page} de ${pages}`);
+    const prev = document.getElementById('btn-series-prev');
+    const next = document.getElementById('btn-series-next');
+    if (prev) prev.disabled = page <= 1;
+    if (next) next.disabled = !workspace?.candidates?.has_more;
+
+    list.innerHTML = '';
+    items.forEach((item) => list.appendChild(candidateRow(item)));
+  }
+
+  function renderCompactSummary(summary) {
+    const metrics = document.getElementById('series-compact-summary-metrics');
+    if (!metrics) return;
+    metrics.innerHTML = '';
+    metrics.appendChild(compactBadge(`${Number(summary?.series_total || 0)} series`));
+    metrics.appendChild(compactBadge(`${Number(summary?.assigned_count || 0)} assignades`));
+    metrics.appendChild(compactBadge(`${Number(summary?.unassigned_count || 0)} sense serie`));
+    metrics.appendChild(compactBadge(`${Number(summary?.programmed_series || 0)} programades`, 'incoming'));
+    if (Number(summary?.invalid_count || 0) > 0) {
+      metrics.appendChild(compactBadge(`${Number(summary.invalid_count || 0)} invalides`, 'removed'));
     }
   }
 
-  async function confirmPreview(action, payload){
-    try {
-      const data = await postJson(previewUrl, {
-        comp_aparell_id: state.compAparellId,
-        action,
-        ...payload,
+  function renderCompactSeriesList(workspace) {
+    const wrap = document.getElementById('series-compact-list');
+    const note = document.getElementById('series-compact-list-note');
+    if (!wrap) return;
+    const series = Array.isArray(workspace?.series) ? workspace.series : [];
+    wrap.innerHTML = '';
+    if (note) {
+      note.textContent = series.length
+        ? `Mostrant ${series.length} serie${series.length === 1 ? '' : 's'} activa${series.length === 1 ? '' : 's'} de l'aparell seleccionat.`
+        : "No hi ha series actives per aquest aparell.";
+    }
+    if (!series.length) {
+      const empty = document.createElement('div');
+      empty.className = 'small text-muted';
+      empty.textContent = 'Cap serie activa carregada.';
+      wrap.appendChild(empty);
+      return;
+    }
+    series.forEach((serie) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'group-preview-source-row text-left';
+      btn.style.minWidth = '240px';
+      btn.style.cursor = 'pointer';
+      btn.innerHTML = `
+        <span class="group-preview-source-label">
+          <strong>${String(serie?.label || `Serie ${serie?.display_num || ''}`)}</strong>
+          <span class="d-block small text-muted">${String(seriesMetaText(serie) || 'No programada')}</span>
+        </span>
+        <span class="group-preview-source-count">${Number(serie?.subjects_count || 0)}</span>
+      `;
+      btn.addEventListener('click', async () => {
+        openWorkspaceCard();
+        await selectSerie(serie?.id, { forceReload: true });
       });
-      const preview = data?.preview || {};
-      if (!preview?.can_run){
-        if (typeof showAlert === 'function'){
-          showAlert(preview?.message || "L'accio no es pot executar ara mateix.");
-        }
-        return false;
-      }
-      const nextPayload = { ...payload };
-      if (preview?.plan_signature){
-        nextPayload.plan_signature = String(preview.plan_signature);
-      }
-      if (typeof showConfirm === 'function'){
-        const confirmed = await showConfirm(String(preview?.message || 'Continuar?'));
-        return confirmed ? nextPayload : false;
-      }
-      return nextPayload;
-    } catch (error) {
-      if (typeof showAlert === 'function'){
-        showAlert(error?.message || String(error));
-      }
-      return false;
-    }
-  }
-
-  function exportUrl(baseUrl, params){
-    const url = new URL(baseUrl, window.location.origin);
-    Object.entries(params || {}).forEach(([key, value]) => {
-      if (value === null || value === undefined || value === '') return;
-      url.searchParams.set(key, String(value));
+      wrap.appendChild(btn);
     });
-    return url.toString();
   }
 
-  function renderSummary(workspace){
+  function renderSummary(workspace) {
     const summary = workspace?.summary || {};
     const issues = Array.isArray(workspace?.issues) ? workspace.issues : [];
-    const compactWrap = document.getElementById('series-compact-summary-metrics');
+    renderCompactSummary(summary);
+
     const headerWrap = document.getElementById('series-summary-metrics');
-    const issuesBanner = document.getElementById('series-issues-banner');
-    const metrics = [
-      compactBadge(`${Number(summary.series_total || 0)} series`),
-      compactBadge(`${Number(summary.assigned_count || 0)} assignades`),
-      compactBadge(`${Number(summary.unassigned_count || 0)} sense serie`),
-    ];
-    if (Number(summary.invalid_count || 0) > 0){
-      metrics.push(compactBadge(`${Number(summary.invalid_count || 0)} invalides`, 'removed'));
+    if (headerWrap) {
+      headerWrap.innerHTML = '';
+      headerWrap.appendChild(compactBadge(`${Number(summary.series_total || 0)} series`));
+      headerWrap.appendChild(compactBadge(`${Number(summary.assigned_count || 0)} assignades`));
+      headerWrap.appendChild(compactBadge(`${Number(summary.unassigned_count || 0)} sense serie`));
+      headerWrap.appendChild(compactBadge(`${Number(summary.programmed_series || 0)} programades`, 'incoming'));
     }
-    metrics.push(compactBadge(`${Number(summary.programmed_series || 0)} programades`));
 
-    [compactWrap, headerWrap].forEach((wrap) => {
-      if (!wrap) return;
-      wrap.innerHTML = '';
-      metrics.forEach((metric) => wrap.appendChild(metric.cloneNode(true)));
-    });
-
-    if (issuesBanner){
-      if (issues.length){
+    const issuesBanner = document.getElementById('series-issues-banner');
+    if (issuesBanner) {
+      if (issues.length) {
         issuesBanner.classList.remove('d-none');
         issuesBanner.innerHTML = issues.map((issue) => {
           const label = String(issue?.team_label || issue?.context_code || 'Incidencia');
@@ -309,18 +1183,16 @@ window.initSeriesWorkspace = async function () {
       'series-workspace-description',
       issues.length
         ? "Hi ha incidencies detectades en alguns equips d'aquest aparell. Revisa-les abans de programar."
-        : "Selecciona candidates, crea series i desplega el detall nomes quan el necessitis."
+        : "Selecciona candidates, prepara una accio i revisa les series en un board estable."
     );
   }
 
-  function seriesEmptyStateMessage(workspace){
+  function seriesEmptyStateMessage(workspace) {
     const series = Array.isArray(workspace?.series) ? workspace.series : [];
     const issues = Array.isArray(workspace?.issues) ? workspace.issues : [];
     const candidateCount = Number(workspace?.candidates?.total || 0);
 
-    if (series.length > 0){
-      return { visible: false, message: '' };
-    }
+    if (series.length > 0) return { visible: false, message: '' };
 
     const issueText = issues
       .flatMap((issue) => [
@@ -330,17 +1202,17 @@ window.initSeriesWorkspace = async function () {
       .join(' ')
       .toLowerCase();
 
-    if (issueText.includes('sense fonts configurades') || issueText.includes('cap context configurat') || issueText.includes('no te cap context')){
+    if (issueText.includes('sense fonts configurades') || issueText.includes('cap context configurat') || issueText.includes('no te cap context')) {
       return {
         visible: true,
         message: "Aquest aparell d'equip no te contextos font configurats encara. Ves al gestor d'equips per seleccionar els contextos que alimenten les series.",
       };
     }
 
-    if (candidateCount > 0){
+    if (candidateCount > 0) {
       return {
         visible: true,
-        message: "Encara no hi ha cap serie creada per aquest aparell. Pots crear una serie buida o crear-ne una amb la seleccio actual.",
+        message: "Encara no hi ha cap serie creada per aquest aparell. Pots crear-ne una de buida o preparar una creacio des de la seleccio actual.",
       };
     }
 
@@ -350,476 +1222,312 @@ window.initSeriesWorkspace = async function () {
     };
   }
 
-  function renderCompactSeriesList(workspace){
-    const wrap = document.getElementById('series-compact-list');
-    const note = document.getElementById('series-compact-list-note');
-    if (!wrap) return;
-    const series = Array.isArray(workspace?.series) ? workspace.series : [];
-    wrap.innerHTML = '';
-    if (note){
-      note.textContent = series.length
-        ? `Mostrant ${series.length} serie${series.length === 1 ? '' : 's'} activa${series.length === 1 ? '' : 's'} de l'aparell seleccionat.`
-        : "No hi ha series actives per aquest aparell.";
-    }
-    if (!series.length){
-      const empty = document.createElement('div');
-      empty.className = 'small text-muted';
-      empty.textContent = "Cap serie activa carregada.";
-      wrap.appendChild(empty);
-      return;
-    }
-    series.forEach((serie) => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'group-preview-source-row text-left';
-      btn.style.minWidth = '240px';
-      btn.style.cursor = 'pointer';
-      btn.innerHTML = `
-        <span class="group-preview-source-label">
-          <strong>${String(serie?.label || `Serie ${serie?.display_num || ''}`)}</strong>
-          <span class="d-block small text-muted">${String(serie?.status_label || '') || 'No programada'}</span>
-        </span>
-        <span class="group-preview-source-count">${Number(serie?.subjects_count || 0)}</span>
-      `;
-      btn.addEventListener('click', () => {
-        state.expandedSeriesIds = new Set([String(serie?.id || '')]);
-        renderSeries(state.workspace);
-        openWorkspaceCard();
-      });
-      wrap.appendChild(btn);
+  function serieCard(serie) {
+    const serieId = String(serie?.id || '').trim();
+    const card = document.createElement('div');
+    card.className = 'team-context-team-card';
+    if (String(state.selectedSerieId || '') === serieId) card.classList.add('is-current');
+    if (Number(serie?.subjects_count || 0) <= 0) card.classList.add('is-empty');
+    if (serie?.is_programmed) card.classList.add('is-programmed');
+    if (serie?.is_out_of_program) card.classList.add('is-out-of-program');
+    card.dataset.seriesCardId = serieId;
+
+    const head = document.createElement('div');
+    head.className = 'team-context-team-head';
+
+    const titleWrap = document.createElement('div');
+    titleWrap.className = 'team-context-team-title-wrap';
+    const title = document.createElement('div');
+    title.className = 'team-context-team-name';
+    title.textContent = String(serie?.label || `Serie ${serie?.display_num || ''}`);
+    titleWrap.appendChild(title);
+
+    const preview = document.createElement('div');
+    preview.className = 'small text-muted mt-1 team-context-team-preview';
+    preview.textContent = String(serie?.summary_label || '').trim() || seriesMetaText(serie);
+    titleWrap.appendChild(preview);
+    head.appendChild(titleWrap);
+
+    const actions = document.createElement('div');
+    actions.className = 'team-context-team-actions';
+
+    const openBtn = document.createElement('button');
+    openBtn.type = 'button';
+    openBtn.className = 'btn btn-sm btn-outline-secondary';
+    openBtn.textContent = String(state.selectedSerieId || '') === serieId ? 'Detall obert' : 'Veure detall';
+    openBtn.addEventListener('click', async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      await selectSerie(serieId, { forceReload: false });
     });
-  }
+    actions.appendChild(openBtn);
 
-  function renderCandidates(workspace){
-    const list = document.getElementById('series-candidates-list');
-    if (!list) return;
-    const items = Array.isArray(workspace?.candidates?.items) ? workspace.candidates.items : [];
-    const total = Number(workspace?.candidates?.total || 0);
-    const page = Number(workspace?.candidates?.page || 1);
-    const pages = Number(workspace?.paging?.pages || 1);
-    setText('series-candidates-count-badge', `${total} candidates`);
-    setText('series-candidates-status', total ? `${total} unitats competitives segons els filtres actuals.` : "Cap unitat competitiva amb aquests filtres.");
-    setText('series-page-label', `Pagina ${page} de ${pages}`);
-    const prev = document.getElementById('btn-series-prev');
-    const next = document.getElementById('btn-series-next');
-    if (prev) prev.disabled = page <= 1;
-    if (next) next.disabled = !workspace?.candidates?.has_more;
-
-    list.innerHTML = '';
-    items.forEach((item) => {
-      const id = String(item?.subject_id || item?.id || '');
-      const row = document.createElement('div');
-      row.className = `team-candidate-row${state.selectedIds.has(id) ? ' is-selected' : ''}`;
-
-      const checkbox = document.createElement('input');
-      checkbox.type = 'checkbox';
-      checkbox.className = 'js-series-candidate-check';
-      checkbox.value = id;
-      checkbox.checked = state.selectedIds.has(id);
-      checkbox.disabled = !editable();
-      checkbox.addEventListener('change', () => toggleSelection(id, checkbox.checked));
-      row.appendChild(checkbox);
-
-      const main = document.createElement('div');
-      main.className = 'team-candidate-main';
-
-      const title = document.createElement('div');
-      title.className = 'team-candidate-title';
-      title.textContent = String(item?.label || `Subjecte ${id}`);
-      main.appendChild(title);
-
-      const meta = document.createElement('div');
-      meta.className = 'team-candidate-meta';
-      meta.textContent = compactCandidateMeta(item);
-      main.appendChild(meta);
-
-      const preview = document.createElement('div');
-      preview.className = 'small text-muted';
-      preview.textContent = String(item?.members_preview || item?.members_text || '').trim() || 'Sense membres';
-      main.appendChild(preview);
-
-      const badges = document.createElement('div');
-      badges.className = 'team-candidate-teams';
-      badges.appendChild(
-        compactBadge(
-          item?.serie_label ? `Serie: ${item.serie_label}` : 'Sense serie',
-          item?.serie_id ? 'neutral' : 'incoming'
-        )
-      );
-      if (Array.isArray(item?.invalid_reasons) && item.invalid_reasons.length){
-        const invalidBadge = compactBadge(`Incidencies (${item.invalid_reasons.length})`, 'removed');
-        invalidBadge.title = item.invalid_reasons.join(', ');
-        badges.appendChild(invalidBadge);
-      }
-      main.appendChild(badges);
-
-      row.appendChild(main);
-      row.addEventListener('click', (event) => {
-        if (!editable()) return;
-        if (event.target.closest('input,button,a,label')) return;
-        toggleSelection(id, !state.selectedIds.has(id));
-      });
-      list.appendChild(row);
+    const assignBtn = document.createElement('button');
+    assignBtn.type = 'button';
+    assignBtn.className = 'btn btn-sm btn-outline-primary';
+    assignBtn.textContent = 'Assignar seleccio';
+    assignBtn.disabled = !editable();
+    assignBtn.addEventListener('click', async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      await previewAssignSelection(serieId);
     });
-  }
+    actions.appendChild(assignBtn);
 
-  function actionButton(label, className, handler, disabled){
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = className;
-    btn.textContent = label;
-    btn.disabled = !!disabled;
-    btn.addEventListener('click', handler);
-    return btn;
-  }
-
-  function renderSeriesDetail(subjects, serie){
-    const detail = document.createElement('div');
-    detail.className = 'd-flex flex-column mt-3';
-    detail.style.gap = '8px';
-
-    if (!subjects.length){
-      const empty = document.createElement('div');
-      empty.className = 'small text-muted border rounded p-2 bg-light';
-      empty.textContent = "Serie buida. Pots crear-la ara i omplir-la mes tard des del mateix workspace.";
-      detail.appendChild(empty);
-      return detail;
-    }
-
-    subjects.forEach((subject, index) => {
-      const row = document.createElement('div');
-      row.className = 'd-flex justify-content-between align-items-start border rounded p-2';
-      row.style.gap = '8px';
-
-      const copy = document.createElement('div');
-      copy.className = 'min-w-0';
-
-      const title = document.createElement('div');
-      title.className = 'fw-semibold';
-      title.textContent = String(subject?.name || subject?.label || `Subjecte ${subject?.subject_id || ''}`);
-      copy.appendChild(title);
-
-      const meta = document.createElement('div');
-      meta.className = 'small text-muted';
-      meta.textContent = compactCandidateMeta(subject);
-      copy.appendChild(meta);
-
-      const preview = document.createElement('div');
-      preview.className = 'small text-muted mt-1';
-      preview.textContent = String(subject?.members_preview || subject?.members_text || '').trim() || 'Sense membres';
-      copy.appendChild(preview);
-
-      if (Array.isArray(subject?.invalid_reasons) && subject.invalid_reasons.length){
-        const warn = document.createElement('div');
-        warn.className = 'small text-warning mt-1';
-        warn.textContent = `Incidencies: ${subject.invalid_reasons.join(', ')}`;
-        copy.appendChild(warn);
-      }
-
-      row.appendChild(copy);
-
-      const tools = document.createElement('div');
-      tools.className = 'd-flex flex-wrap';
-      tools.style.gap = '4px';
-      tools.appendChild(actionButton('Amunt', 'btn btn-sm btn-outline-secondary', async () => {
-        if (index <= 0) return;
-        const ids = subjects.map((item) => Number(item?.subject_id || item?.id || 0)).filter(Boolean);
-        const moved = ids.splice(index, 1)[0];
-        ids.splice(index - 1, 0, moved);
-        await runAction(reorderUrl, {
-          comp_aparell_id: state.compAparellId,
-          serie_id: serie.id,
-          subject_ids: ids,
-        }, 'Ordre actualitzat.');
-      }, !editable() || index <= 0));
-      tools.appendChild(actionButton('Avall', 'btn btn-sm btn-outline-secondary', async () => {
-        if (index >= subjects.length - 1) return;
-        const ids = subjects.map((item) => Number(item?.subject_id || item?.id || 0)).filter(Boolean);
-        const moved = ids.splice(index, 1)[0];
-        ids.splice(index + 1, 0, moved);
-        await runAction(reorderUrl, {
-          comp_aparell_id: state.compAparellId,
-          serie_id: serie.id,
-          subject_ids: ids,
-        }, 'Ordre actualitzat.');
-      }, !editable() || index >= subjects.length - 1));
-      tools.appendChild(actionButton('Treure', 'btn btn-sm btn-outline-warning', async () => {
-        const previewPayload = await confirmPreview('unassign', {
-          selected_ids: [subject?.subject_id || subject?.id],
-        });
-        if (!previewPayload) return;
-        await runAction(unassignUrl, {
-          comp_aparell_id: state.compAparellId,
-          ...previewPayload,
-        }, 'Subjecte tret de la serie.');
-      }, !editable()));
-      row.appendChild(tools);
-      detail.appendChild(row);
-    });
-    return detail;
-  }
-
-  async function ensureSeriesDetailLoaded(serieId){
-    const key = String(serieId || '').trim();
-    if (!key || state.seriesDetails[key] || state.loadingSeriesIds.has(key)) return;
-    state.loadingSeriesIds.add(key);
-    renderSeries(state.workspace);
-    try {
-      const data = await postJson(detailUrl, {
+    const renameBtn = document.createElement('button');
+    renameBtn.type = 'button';
+    renameBtn.className = 'btn btn-sm btn-outline-secondary';
+    renameBtn.textContent = 'Renombrar';
+    renameBtn.disabled = !editable();
+    renameBtn.addEventListener('click', async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const next = await promptText('Nou nom de la serie', String(serie?.name || ''));
+      if (next === null) return;
+      await runAction(renameUrl, {
         comp_aparell_id: state.compAparellId,
-        serie_id: key,
+        serie_id: serie.id,
+        name: String(next || '').trim(),
+      }, 'Serie renombrada.');
+    });
+    actions.appendChild(renameBtn);
+
+    const exportBtn = document.createElement('button');
+    exportBtn.type = 'button';
+    exportBtn.className = 'btn btn-sm btn-outline-secondary';
+    exportBtn.textContent = 'Full de treball';
+    exportBtn.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      window.location.href = exportUrl(workSheetExportUrl, {
+        comp_aparell_id: state.compAparellId,
+        serie_id: serie.id,
       });
-      setHistory(data);
-      state.seriesDetails[key] = data?.serie || data;
-    } catch (error) {
-      if (typeof showAlert === 'function'){
-        showAlert(error?.message || String(error));
-      }
-    } finally {
-      state.loadingSeriesIds.delete(key);
-      renderSeries(state.workspace);
+    });
+    actions.appendChild(exportBtn);
+
+    if (serie?.is_empty) {
+      const deleteBtn = document.createElement('button');
+      deleteBtn.type = 'button';
+      deleteBtn.className = 'btn btn-sm btn-outline-danger';
+      deleteBtn.textContent = 'Previsualitzar baixa';
+      deleteBtn.disabled = !editable();
+      deleteBtn.addEventListener('click', async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        await previewDeleteSerie(serie.id);
+      });
+      actions.appendChild(deleteBtn);
     }
+
+    head.appendChild(actions);
+    card.appendChild(head);
+
+    const meta = document.createElement('div');
+    meta.className = 'team-context-team-meta';
+    meta.textContent = seriesMetaText(serie) || 'Sense resum';
+    card.appendChild(meta);
+
+    const sampleNames = (Array.isArray(serie?.subjects) ? serie.subjects : [])
+      .map((subject) => String(subject?.name || subject?.label || '').trim())
+      .filter(Boolean)
+      .slice(0, 4);
+    if (sampleNames.length) {
+      const sample = document.createElement('div');
+      sample.className = 'small text-muted mt-1 team-context-team-preview';
+      sample.textContent = sampleNames.join(', ');
+      card.appendChild(sample);
+    }
+
+    card.addEventListener('click', async () => {
+      await selectSerie(serieId, { forceReload: false });
+    });
+    return card;
   }
 
-  function toggleSeriesExpanded(serieId){
-    const key = String(serieId || '').trim();
-    if (!key) return;
-    if (state.expandedSeriesIds.has(key)){
-      state.expandedSeriesIds.delete(key);
-      renderSeries(state.workspace);
-      return;
-    }
-    state.expandedSeriesIds.add(key);
-    renderSeries(state.workspace);
-    ensureSeriesDetailLoaded(key);
-  }
+  function renderCards(workspace) {
+    const activeList = document.getElementById('series-active-list');
+    const emptyList = document.getElementById('series-empty-list');
+    const emptyWrap = document.getElementById('series-empty-wrap');
+    if (!activeList || !emptyList || !emptyWrap) return;
 
-  function renderSeries(workspace){
-    const wrap = document.getElementById('series-board-list');
-    if (!wrap) return;
     const series = Array.isArray(workspace?.series) ? workspace.series : [];
-    const boardStatus = document.getElementById('series-board-status');
-    const emptyState = seriesEmptyStateMessage(workspace);
-    if (boardStatus){
-      boardStatus.textContent = series.length
-        ? "Gestiona el contingut i obre el detall d'una serie nomes quan calgui."
-        : (emptyState.message || 'Encara no hi ha cap serie creada per aquest aparell.');
+    const visibleSeries = series.filter((serie) => serieMatchesBoardFilters(serie));
+    const activeSeries = visibleSeries.filter((serie) => Number(serie?.subjects_count || 0) > 0);
+    const emptySeries = visibleSeries.filter((serie) => Number(serie?.subjects_count || 0) <= 0);
+
+    activeList.innerHTML = '';
+    emptyList.innerHTML = '';
+    activeSeries.forEach((serie) => activeList.appendChild(serieCard(serie)));
+    emptySeries.forEach((serie) => emptyList.appendChild(serieCard(serie)));
+    emptyWrap.classList.toggle('d-none', emptySeries.length === 0);
+
+    if (!activeList.children.length) {
+      const placeholder = document.createElement('div');
+      placeholder.className = 'groups-board-placeholder';
+      placeholder.textContent = boardFiltersAreActive()
+        ? 'Cap serie amb unitats coincideix amb els filtres del board.'
+        : 'Encara no hi ha cap serie amb unitats per aquest aparell.';
+      activeList.appendChild(placeholder);
     }
+
+    const emptyState = seriesEmptyStateMessage(workspace);
     const emptyStateEl = document.getElementById('series-board-empty-state');
-    if (emptyStateEl){
+    const boardStatus = document.getElementById('series-board-status');
+    if (emptyStateEl) {
       emptyStateEl.textContent = emptyState.message;
       emptyStateEl.classList.toggle('d-none', !emptyState.visible);
     }
-
-    wrap.innerHTML = '';
-    series.forEach((serie) => {
-      const key = String(serie?.id || '');
-      const expanded = state.expandedSeriesIds.has(key);
-      const detail = state.seriesDetails[key];
-      const detailSubjects = Array.isArray(detail?.subjects)
-        ? detail.subjects
-        : (Array.isArray(serie?.subjects) ? serie.subjects : []);
-
-      const card = document.createElement('div');
-      card.className = 'border rounded bg-white p-3';
-
-      const head = document.createElement('div');
-      head.className = 'd-flex justify-content-between align-items-start flex-wrap';
-      head.style.gap = '10px';
-
-      const titleWrap = document.createElement('div');
-      const title = document.createElement('div');
-      title.className = 'fw-semibold';
-      title.textContent = String(serie?.label || `Serie ${serie?.display_num || ''}`);
-      titleWrap.appendChild(title);
-
-      const meta = document.createElement('div');
-      meta.className = 'small text-muted';
-      meta.textContent = seriesMetaText(serie);
-      titleWrap.appendChild(meta);
-
-      const summary = document.createElement('div');
-      summary.className = 'small text-muted mt-1';
-      summary.textContent = String(serie?.summary_label || '').trim();
-      titleWrap.appendChild(summary);
-
-      head.appendChild(titleWrap);
-
-      const headBadges = document.createElement('div');
-      headBadges.className = 'd-flex flex-wrap justify-content-end';
-      headBadges.style.gap = '6px';
-      headBadges.appendChild(compactBadge(`${Number(serie?.subjects_count || 0)} unitats`));
-      if (serie?.is_programmed){
-        headBadges.appendChild(compactBadge('Programada', 'incoming'));
+    if (boardStatus) {
+      boardStatus.textContent = series.length
+        ? "Gestiona el contingut de les series i obre'n el detall al lateral quan calgui."
+        : (emptyState.message || 'Encara no hi ha cap serie creada per aquest aparell.');
+    }
+    setText('series-board-filter-count', `${visibleSeries.length} de ${series.length} series`);
+  }
+  async function runAction(url, payload, successMessage, options = {}) {
+    try {
+      const data = await postJson(url, payload);
+      setHistory(data);
+      state.detailCache = {};
+      if (options?.selectCreatedSerieId && data?.serie_id) {
+        state.selectedSerieId = String(data.serie_id);
       }
-      if (serie?.is_empty){
-        headBadges.appendChild(compactBadge('Buida'));
+      if (options?.clearSelectedSerie && options.clearSelectedSerie === state.selectedSerieId) {
+        state.selectedSerieId = '';
       }
-      head.appendChild(headBadges);
-      card.appendChild(head);
-
-      const primaryTools = document.createElement('div');
-      primaryTools.className = 'd-flex flex-wrap mt-3';
-      primaryTools.style.gap = '6px';
-      primaryTools.appendChild(actionButton('Assignar seleccio', 'btn btn-sm btn-outline-primary', async () => {
-        if (!selectedIds().length){
-          if (typeof showAlert === 'function') showAlert('Selecciona almenys una unitat competitiva.');
-          return;
-        }
-        const previewPayload = await confirmPreview('assign', {
-          serie_id: serie.id,
-          selected_ids: selectedIds(),
-        });
-        if (!previewPayload) return;
-        await runAction(assignUrl, {
-          comp_aparell_id: state.compAparellId,
-          ...previewPayload,
-        }, 'Seleccio assignada a la serie.');
-      }, !editable()));
-      primaryTools.appendChild(actionButton(
-        expanded ? 'Amagar detall' : 'Veure detall',
-        'btn btn-sm btn-outline-secondary',
-        () => toggleSeriesExpanded(serie.id),
-        false
-      ));
-      card.appendChild(primaryTools);
-
-      const secondaryTools = document.createElement('div');
-      secondaryTools.className = 'd-flex flex-wrap mt-2';
-      secondaryTools.style.gap = '6px';
-      secondaryTools.appendChild(actionButton('Renombrar', 'btn btn-sm btn-outline-secondary', async () => {
-        const current = String(serie?.name || '');
-        const next = await promptText('Nou nom de la serie', current);
-        if (next === null) return;
-        await runAction(renameUrl, {
-          comp_aparell_id: state.compAparellId,
-          serie_id: serie.id,
-          name: String(next || '').trim(),
-        }, 'Serie renombrada.');
-      }, !editable()));
-      secondaryTools.appendChild(actionButton('Full de treball', 'btn btn-sm btn-outline-secondary', async () => {
-        window.location.href = exportUrl(workSheetExportUrl, {
-          comp_aparell_id: state.compAparellId,
-          serie_id: serie.id,
-        });
-      }, false));
-      secondaryTools.appendChild(actionButton('Desactivar', 'btn btn-sm btn-outline-danger', async () => {
-        if (!serie?.is_empty){
-          if (typeof showAlert === 'function') showAlert('Nomes es poden desactivar series buides.');
-          return;
-        }
-        const previewPayload = await confirmPreview('delete', { serie_id: serie.id });
-        if (!previewPayload) return;
-        await runAction(deleteUrl, {
-          comp_aparell_id: state.compAparellId,
-          ...previewPayload,
-        }, 'Serie desactivada.');
-      }, !editable()));
-      card.appendChild(secondaryTools);
-
-      if (expanded){
-        const detailWrap = document.createElement('div');
-        if (state.loadingSeriesIds.has(key) && !detail){
-          detailWrap.className = 'small text-muted border rounded p-2 mt-3 bg-light';
-          detailWrap.textContent = 'Carregant detall de la serie...';
-        } else {
-          detailWrap.appendChild(renderSeriesDetail(detailSubjects, serie));
-        }
-        card.appendChild(detailWrap);
+      clearPreview("Canvis aplicats. Torna a previsualitzar per revisar l'estat actual.");
+      if (successMessage) showAlertMessage(successMessage);
+      await refreshWorkspace({ preservePage: true });
+      if (options?.selectCreatedSerieId && data?.serie_id) {
+        await selectSerie(data.serie_id, { forceReload: true });
       }
-
-      wrap.appendChild(card);
-    });
-
-    Array.from(state.expandedSeriesIds).forEach((serieId) => {
-      if (!state.seriesDetails[String(serieId || '')]){
-        ensureSeriesDetailLoaded(serieId);
-      }
-    });
+      return data;
+    } catch (error) {
+      showAlertMessage(error?.message || String(error));
+      throw error;
+    }
   }
 
-  async function refreshWorkspace(options){
-    if (!state.compAparellId) return;
-    syncFiltersFromDom();
-    if (!options?.preservePage) state.page = 1;
-    const payload = {
-      comp_aparell_id: state.compAparellId,
-      page: state.page,
-      page_size: state.pageSize,
-      selected_ids: selectedIds(),
-      filters: state.filters,
-    };
-    const data = await postJson(workspaceUrl, payload);
-    setHistory(data);
-    state.workspace = data.workspace || data;
-    pruneSeriesState(state.workspace);
-    syncAparellSelects();
-    applyFiltersToDom(state.workspace);
-    renderSummary(state.workspace);
-    renderCompactSeriesList(state.workspace);
-    renderCandidates(state.workspace);
-    renderSeries(state.workspace);
-    updateSelectionSummary();
-  }
-
-  function bindFilter(id){
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.addEventListener('input', () => {
-      window.clearTimeout(state.filterTimer);
-      state.filterTimer = window.setTimeout(() => refreshWorkspace({ preservePage: false }), 180);
-    });
-    el.addEventListener('change', () => refreshWorkspace({ preservePage: false }));
-  }
-
-  async function runCreateEmpty(){
+  async function runCreateEmpty() {
     await runAction(createUrl, {
       comp_aparell_id: state.compAparellId,
       name: currentCreateName(),
       selected_ids: [],
-    }, 'Serie creada.');
+    }, 'Serie creada.', { selectCreatedSerieId: true });
     setCreateName('');
   }
 
-  async function runCreateWithSelection(){
-    if (!selectedIds().length){
-      if (typeof showAlert === 'function') showAlert('Selecciona almenys una unitat competitiva.');
+  function syncPreviewConfirmIntent(action, payload, preview) {
+    const url = actionUrl(action);
+    if (!url || !preview?.can_run || !preview?.plan_signature) {
+      clearPreviewConfirmIntent();
       return;
     }
-    const previewPayload = await confirmPreview('create', {
+    const frozenPayload = JSON.parse(JSON.stringify(payload || {}));
+    setPreviewConfirmIntent({
+      label: `Previsualitzacio de: ${action === 'create' ? 'Crear serie' : action === 'assign' ? 'Assignar a serie' : action === 'unassign' ? 'Treure de serie' : 'Desactivar serie'}`,
+      buttonLabel: 'Confirmar aquesta accio',
+      canConfirm: true,
+      execute: async () => {
+        previewConfirmBusy = true;
+        updatePreviewConfirmUi();
+        try {
+          await runAction(
+            url,
+            {
+              comp_aparell_id: state.compAparellId,
+              ...frozenPayload,
+              plan_signature: String(preview.plan_signature),
+            },
+            actionSuccessMessage(action),
+            {
+              selectCreatedSerieId: action === 'create',
+              clearSelectedSerie: action === 'delete' ? String(frozenPayload?.serie_id || '') : '',
+            }
+          );
+        } finally {
+          previewConfirmBusy = false;
+          updatePreviewConfirmUi();
+        }
+      },
+    });
+  }
+
+  async function requestActionPreview(action, payload) {
+    setPreviewLoading(true);
+    try {
+      const data = await postJson(previewUrl, {
+        comp_aparell_id: state.compAparellId,
+        action,
+        ...payload,
+      });
+      setHistory(data);
+      const preview = data?.preview || {};
+      renderPreview(preview);
+      syncPreviewConfirmIntent(action, payload, preview);
+      setRightPaneTab('preview');
+      return preview;
+    } catch (error) {
+      clearPreview("No s'ha pogut calcular la previsualitzacio amb aquesta configuracio.");
+      showAlertMessage(error?.message || String(error));
+      return null;
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
+
+  function exportUrl(baseUrl, params) {
+    const url = new URL(baseUrl, window.location.origin);
+    Object.entries(params || {}).forEach(([key, value]) => {
+      if (value === null || value === undefined || value === '') return;
+      url.searchParams.set(key, String(value));
+    });
+    return url.toString();
+  }
+
+  async function previewCreateSelection() {
+    await requestActionPreview('create', {
       name: currentCreateName(),
       selected_ids: selectedIds(),
     });
-    if (!previewPayload) return;
-    await runAction(createUrl, {
-      comp_aparell_id: state.compAparellId,
-      ...previewPayload,
-    }, 'Serie creada amb la seleccio.');
-    state.selectedIds = new Set();
-    setCreateName('');
-    updateSelectionSummary();
-    renderCandidates(state.workspace);
   }
 
-  async function runUnassignSelection(){
-    if (!selectedIds().length){
-      if (typeof showAlert === 'function') showAlert('Selecciona almenys una unitat competitiva.');
-      return;
+  async function previewAssignSelection(serieId) {
+    const targetSerieId = String(serieId || state.selectedSerieId || document.getElementById('series-workspace-existing-select')?.value || '').trim();
+    if (!targetSerieId) {
+      showAlertMessage('Selecciona una serie desti.');
+      return null;
     }
-    const previewPayload = await confirmPreview('unassign', {
+    if (!selectedIds().length) {
+      showAlertMessage('Selecciona almenys una unitat competitiva.');
+      return null;
+    }
+    return requestActionPreview('assign', {
+      serie_id: targetSerieId,
       selected_ids: selectedIds(),
     });
-    if (!previewPayload) return;
-    await runAction(unassignUrl, {
-      comp_aparell_id: state.compAparellId,
-      ...previewPayload,
-    }, 'Seleccio treta de la serie.');
-    state.selectedIds = new Set();
-    updateSelectionSummary();
-    renderCandidates(state.workspace);
   }
 
-  async function applyAparellChange(nextId, sourceId){
+  async function previewUnassignSelection(subjectIds) {
+    const ids = Array.isArray(subjectIds) ? subjectIds.map((id) => String(id || '')).filter(Boolean) : selectedIds();
+    if (!ids.length) {
+      showAlertMessage('Selecciona almenys una unitat competitiva.');
+      return null;
+    }
+    return requestActionPreview('unassign', { selected_ids: ids });
+  }
+
+  async function previewDeleteSerie(serieId) {
+    const targetSerieId = String(serieId || state.selectedSerieId || document.getElementById('series-workspace-existing-select')?.value || '').trim();
+    if (!targetSerieId) {
+      showAlertMessage('Selecciona una serie.');
+      return null;
+    }
+    return requestActionPreview('delete', { serie_id: targetSerieId });
+  }
+
+  async function applyAparellChange(nextId, sourceId) {
     const cleanId = String(nextId || '').trim();
     if (!cleanId || cleanId === state.compAparellId) {
       syncAparellSelects(sourceId);
@@ -828,17 +1536,86 @@ window.initSeriesWorkspace = async function () {
     state.compAparellId = cleanId;
     state.selectedIds = new Set();
     state.page = 1;
-    state.expandedSeriesIds = new Set();
-    state.seriesDetails = {};
+    state.selectedSerieId = '';
+    state.detailCache = {};
     syncAparellSelects(sourceId);
+    clearPreview("Canvi d'aparell. Calcula una nova previsualitzacio si la necessites.");
     updateSelectionSummary();
     await refreshWorkspace({ preservePage: false });
   }
+
+  async function refreshWorkspace(options = {}) {
+    if (!state.compAparellId) return null;
+    syncFiltersFromDom();
+    if (!options.preservePage) state.page = 1;
+    try {
+      const data = await postJson(workspaceUrl, buildRequestPayload());
+      setHistory(data);
+      state.workspace = data.workspace || data;
+      pruneWorkspaceState(state.workspace);
+      syncAparellSelects();
+      syncCreateNameInputs();
+      applyFiltersToDom(state.workspace);
+      renderSummary(state.workspace);
+      renderCompactSeriesList(state.workspace);
+      renderCandidates(state.workspace);
+      renderBoardFilterControls(Array.isArray(state.workspace?.series) ? state.workspace.series : []);
+      renderCards(state.workspace);
+      renderDetailPane();
+      updateSelectionSummary();
+      saveWorkspaceState();
+      await ensureSelectedSerieDetail();
+      return data;
+    } catch (error) {
+      setText('series-candidates-status', error?.message || String(error));
+      showAlertMessage(error?.message || String(error));
+      return null;
+    }
+  }
+
+  function bindFilter(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('input', () => {
+      window.clearTimeout(state.filterTimer);
+      state.filterTimer = window.setTimeout(() => {
+        markPreviewDirty();
+        refreshWorkspace({ preservePage: false });
+      }, 180);
+    });
+    el.addEventListener('change', () => {
+      markPreviewDirty();
+      refreshWorkspace({ preservePage: false });
+    });
+  }
+
+  function applyBoardFilterChange() {
+    window.clearTimeout(state.boardFilterTimer);
+    state.boardFilterTimer = window.setTimeout(() => {
+      state.boardFilters = readBoardFilters();
+      if (boardFiltersAreActive()) state.boardFiltersExpanded = true;
+      setBoardFiltersExpanded(state.boardFiltersExpanded, { skipSave: true });
+      renderCards(state.workspace);
+      saveWorkspaceState();
+    }, 120);
+  }
+
+  restoreWorkspaceState();
+  syncAparellSelects();
+  syncCreateNameInputs();
+  updateRightPaneTabUi();
+  setBoardFiltersExpanded(state.boardFiltersExpanded, { skipSave: true });
+  clearPreview();
 
   bindFilter('series-filter-q');
   bindFilter('series-filter-context');
   bindFilter('series-filter-state');
   bindFilter('series-filter-serie');
+
+  document.getElementById('series-board-filter-q')?.addEventListener('input', applyBoardFilterChange);
+  ['series-board-filter-context', 'series-board-filter-members-state', 'series-board-filter-program-state'].forEach((id) => {
+    document.getElementById(id)?.addEventListener('change', applyBoardFilterChange);
+  });
 
   ['series-compact-create-name', 'series-workspace-create-name'].forEach((id) => {
     document.getElementById(id)?.addEventListener('input', (event) => {
@@ -852,36 +1629,30 @@ window.initSeriesWorkspace = async function () {
     });
   });
 
+  document.getElementById('series-workspace-existing-select')?.addEventListener('change', (event) => {
+    state.selectedSerieId = String(event.target.value || '').trim();
+    saveWorkspaceState();
+    markPreviewDirty();
+    renderCards(state.workspace);
+    renderDetailPane();
+  });
+
+  document.getElementById('btn-series-board-filters-clear')?.addEventListener('click', () => {
+    state.boardFilters = normalizeBoardFilters();
+    setBoardFiltersToDom(state.boardFilters, buildBoardFilterOptions(Array.isArray(state.workspace?.series) ? state.workspace.series : []));
+    setBoardFiltersExpanded(false, { skipSave: true });
+    renderCards(state.workspace);
+    saveWorkspaceState();
+  });
+
+  document.getElementById('btn-series-board-filters-toggle')?.addEventListener('click', () => {
+    setBoardFiltersExpanded(!state.boardFiltersExpanded);
+  });
+
   ['btn-series-refresh', 'btn-series-workspace-refresh'].forEach((id) => {
     document.getElementById(id)?.addEventListener('click', async () => {
       await refreshWorkspace({ preservePage: true });
     });
-  });
-
-  document.getElementById('btn-series-workspace-delete-empty')?.addEventListener('click', async () => {
-    if (!state.compAparellId) return;
-    if (typeof showConfirm === 'function') {
-      const ok = await showConfirm("Desactivar totes les series buides de l'aparell actual?");
-      if (!ok) return;
-    }
-    try {
-      const data = await postJson(deleteEmptyUrl, { comp_aparell_id: state.compAparellId });
-      setHistory(data);
-      state.seriesDetails = {};
-      await refreshWorkspace({ preservePage: true });
-      if (typeof showAlert === 'function') {
-        const deleted = Number(data?.deleted || 0);
-        const blocked = Array.isArray(data?.skipped_programmed_ids) ? data.skipped_programmed_ids.length : 0;
-        const summary = deleted > 0
-          ? `${deleted} serie(s) buida(es) desactivada(es).`
-          : 'No hi havia cap serie buida per desactivar.';
-        showAlert(blocked > 0 ? `${summary}\n${blocked} serie(s) programada(es) s'han conservat.` : summary);
-      }
-    } catch (error) {
-      if (typeof showAlert === 'function') {
-        showAlert(error?.message || String(error));
-      }
-    }
   });
 
   ['btn-series-export-start-list', 'btn-series-workspace-export-start-list'].forEach((id) => {
@@ -895,34 +1666,63 @@ window.initSeriesWorkspace = async function () {
     items.forEach((item) => state.selectedIds.add(String(item?.subject_id || item?.id || '')));
     updateSelectionSummary();
     renderCandidates(state.workspace);
+    markPreviewDirty();
   });
 
   document.getElementById('btn-series-clear-selection')?.addEventListener('click', () => {
     state.selectedIds = new Set();
     updateSelectionSummary();
     renderCandidates(state.workspace);
+    markPreviewDirty();
   });
 
-  ['btn-series-compact-create-empty', 'btn-series-workspace-create-empty'].forEach((id) => {
-    document.getElementById(id)?.addEventListener('click', async () => {
-      await runCreateEmpty();
-    });
+  document.getElementById('btn-series-compact-create-empty')?.addEventListener('click', async () => {
+    await runCreateEmpty();
   });
-
-  ['btn-series-compact-create-with-selection', 'btn-series-workspace-create-with-selection'].forEach((id) => {
-    document.getElementById(id)?.addEventListener('click', async () => {
-      await runCreateWithSelection();
-    });
+  document.getElementById('btn-series-workspace-create-empty')?.addEventListener('click', async () => {
+    await runCreateEmpty();
   });
-
-  ['btn-series-compact-unassign-selection', 'btn-series-workspace-unassign-selection'].forEach((id) => {
-    document.getElementById(id)?.addEventListener('click', async () => {
-      await runUnassignSelection();
-    });
+  document.getElementById('btn-series-compact-preview-create')?.addEventListener('click', async () => {
+    await previewCreateSelection();
   });
-
+  document.getElementById('btn-series-preview-create')?.addEventListener('click', async () => {
+    await previewCreateSelection();
+  });
+  document.getElementById('btn-series-compact-preview-unassign')?.addEventListener('click', async () => {
+    await previewUnassignSelection();
+  });
+  document.getElementById('btn-series-preview-unassign')?.addEventListener('click', async () => {
+    await previewUnassignSelection();
+  });
+  document.getElementById('btn-series-preview-assign')?.addEventListener('click', async () => {
+    await previewAssignSelection();
+  });
+  document.getElementById('btn-series-preview-delete')?.addEventListener('click', async () => {
+    await previewDeleteSerie();
+  });
   document.getElementById('btn-series-compact-open-workspace')?.addEventListener('click', () => {
     openWorkspaceCard();
+  });
+
+  document.getElementById('btn-series-workspace-delete-empty')?.addEventListener('click', async () => {
+    if (!state.compAparellId) return;
+    const ok = await confirmMessage("Desactivar totes les series buides de l'aparell actual?");
+    if (!ok) return;
+    try {
+      const data = await postJson(deleteEmptyUrl, { comp_aparell_id: state.compAparellId });
+      setHistory(data);
+      state.detailCache = {};
+      clearPreview("Despres d'una baixa massiva, torna a previsualitzar si vols revisar l'estat actual.");
+      await refreshWorkspace({ preservePage: true });
+      const deleted = Number(data?.deleted || 0);
+      const blocked = Array.isArray(data?.skipped_programmed_ids) ? data.skipped_programmed_ids.length : 0;
+      const summary = deleted > 0
+        ? `${deleted} serie(s) buida(es) desactivada(es).`
+        : 'No hi havia cap serie buida per desactivar.';
+      showAlertMessage(blocked > 0 ? `${summary}\n${blocked} serie(s) programada(es) s'han conservat.` : summary);
+    } catch (error) {
+      showAlertMessage(error?.message || String(error));
+    }
   });
 
   document.getElementById('btn-series-prev')?.addEventListener('click', async () => {
@@ -930,11 +1730,25 @@ window.initSeriesWorkspace = async function () {
     state.page -= 1;
     await refreshWorkspace({ preservePage: true });
   });
-
   document.getElementById('btn-series-next')?.addEventListener('click', async () => {
     if (!state.workspace?.candidates?.has_more) return;
     state.page += 1;
     await refreshWorkspace({ preservePage: true });
+  });
+
+  document.getElementById('btn-series-right-tab-detail')?.addEventListener('click', () => {
+    setRightPaneTab('detail');
+  });
+  document.getElementById('btn-series-right-tab-preview')?.addEventListener('click', () => {
+    setRightPaneTab('preview');
+  });
+
+  document.getElementById('btn-series-preview-clear')?.addEventListener('click', () => {
+    clearPreview();
+  });
+  document.getElementById('btn-series-preview-confirm')?.addEventListener('click', async () => {
+    if (!lastConfirmablePreview || typeof lastConfirmablePreview.execute !== 'function') return;
+    await lastConfirmablePreview.execute();
   });
 
   window.__seriesWorkspaceApi = {
@@ -943,6 +1757,9 @@ window.initSeriesWorkspace = async function () {
       compAparellId: state.compAparellId,
       selectedIds: selectedIds(),
       filters: { ...state.filters },
+      selectedSerieId: state.selectedSerieId,
+      selectedRightPaneTab: state.selectedRightPaneTab,
+      boardFilters: { ...state.boardFilters },
     }),
   };
 

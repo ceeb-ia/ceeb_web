@@ -313,20 +313,101 @@
       outline-offset: 2px;
     }
     .filter-chip small { opacity: .72; font-weight: 700; }
-    .program-group-tabs { display:flex; flex-wrap:wrap; gap:8px; margin-bottom: 10px; }
-    .program-group-tab {
-      border: 1px solid #dbe3f3;
-      background: #fff;
-      color: #0f172a;
-      border-radius: 999px;
-      padding: 6px 10px;
-      font-size: .85rem;
-      font-weight: 600;
+    .planner-sidebar-shell {
+      display:flex;
+      flex-direction:column;
+      gap:12px;
+      min-height:100%;
     }
-    .program-group-tab.is-active {
-      border-color: #0f172a;
-      background: #0f172a;
-      color: #fff;
+    .planner-sidebar-nav {
+      display:grid;
+      grid-template-columns:repeat(3, minmax(0, 1fr));
+      gap:8px;
+    }
+    .planner-sidebar-nav-btn {
+      display:flex;
+      flex-direction:column;
+      align-items:flex-start;
+      gap:4px;
+      width:100%;
+      min-width:0;
+      padding:10px 12px;
+      border:1px solid #dbe3f3;
+      border-radius:14px;
+      background:#f8fbff;
+      color:#0f172a;
+      text-align:left;
+      transition:border-color .12s ease, background .12s ease, box-shadow .12s ease, color .12s ease;
+    }
+    .planner-sidebar-nav-btn:hover {
+      border-color:#bfcde5;
+      background:#ffffff;
+    }
+    .planner-sidebar-nav-btn.is-active {
+      border-color:#0f172a;
+      background:#0f172a;
+      color:#fff;
+      box-shadow:0 8px 18px rgba(15, 23, 42, 0.14);
+    }
+    .planner-sidebar-nav-title {
+      display:flex;
+      align-items:center;
+      gap:8px;
+      width:100%;
+      min-width:0;
+      font-size:.95rem;
+      font-weight:700;
+    }
+    .planner-sidebar-nav-title > span:first-child {
+      min-width:0;
+      overflow-wrap:anywhere;
+    }
+    .planner-sidebar-nav-meta {
+      font-size:.78rem;
+      line-height:1.35;
+      color:#64748b;
+      overflow-wrap:anywhere;
+    }
+    .planner-sidebar-nav-btn.is-active .planner-sidebar-nav-meta {
+      color:rgba(255,255,255,.8);
+    }
+    .planner-sidebar-panels {
+      display:flex;
+      flex-direction:column;
+      gap:12px;
+    }
+    .planner-sidebar-panel[hidden] { display:none !important; }
+    .planner-panel-stack {
+      display:flex;
+      flex-direction:column;
+      gap:12px;
+    }
+    .drawer-subsection {
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+      padding-top:12px;
+      border-top:1px solid #eef1f7;
+    }
+    .drawer-subsection:first-child {
+      padding-top:0;
+      border-top:0;
+    }
+    .drawer-subsection-head {
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:8px;
+    }
+    .drawer-subsection-title {
+      font-size:.9rem;
+      font-weight:700;
+      color:#0f172a;
+    }
+    .drawer-subsection-copy {
+      font-size:.8rem;
+      color:#6b7280;
+      line-height:1.45;
     }
     .program-kind-group { margin-bottom: 12px; }
     .program-kind-head {
@@ -374,6 +455,7 @@
       color: #0f172a;
     }
     .drawer-active-station-meta { font-size: .8rem; color: #6b7280; }
+    .planner-program-bucket[hidden] { display:none !important; }
     .franja-row--break th,
     .franja-row--awards th,
     .franja-row--separator th {
@@ -468,6 +550,9 @@
       .planner-drawer-toggle { top: calc(var(--planner-drawer-top) + 8px); }
       .planner-left-toggle { left: 10px; }
       .planner-export-toggle { right: 10px; }
+      .planner-sidebar-nav {
+        grid-template-columns:1fr;
+      }
       .franja-actions{
         opacity:1;
         pointer-events:auto;
@@ -549,82 +634,123 @@
       <div class="cardx-h">
         <div>
           <div class="fw-semibold d-flex align-items-center" style="gap:6px;">
-            <span>Programacio</span>
+            <span>Planner</span>
             <button type="button" class="rot-help-trigger rot-help-trigger--inline" data-rot-help-key="grups" aria-label="Ajuda grups">?</button>
           </div>
-          <div class="mini">Programables i accions estructurals del planner.</div>
+          <div class="mini">Programables, franges i operacions globals del planner.</div>
         </div>
         <span class="badge badge-light">{{ grups_display|length }}</span>
       </div>
 
       <div class="cardx-b">
-        <section class="drawer-section">
-          <div class="drawer-section-head">
-            <div>
-              <div class="drawer-section-title d-flex align-items-center" style="gap:6px;">
+        <div class="planner-sidebar-shell">
+          <nav class="planner-sidebar-nav" id="planner-sidebar-nav" aria-label="Panells del planner">
+            <button type="button" class="planner-sidebar-nav-btn is-active" data-drawer-panel-target="programables">
+              <span class="planner-sidebar-nav-title">
                 <span>Programables</span>
-                <button type="button" class="rot-help-trigger rot-help-trigger--inline" data-rot-help-key="grups" aria-label="Ajuda programables">?</button>
-              </div>
-              <div class="drawer-section-subtitle">Grups individuals i series d'equip preparades per arrossegar a la graella.</div>
-            </div>
-            <span class="badge badge-light">{{ grups_display|length }}</span>
-          </div>
-          <div class="drawer-filterbar mb-3">
-            <input type="search" class="form-control form-control-sm" id="programSearch" placeholder="Cerca grup, serie, aparell o numero">
-            <div class="drawer-filter-row" id="programStatusFilters">
-              <button type="button" class="filter-chip is-active" data-program-status="all">Tots</button>
-              <button type="button" class="filter-chip" data-program-status="programmed">Programats</button>
-              <button type="button" class="filter-chip" data-program-status="out">Fora programa</button>
-              <button type="button" class="filter-chip" data-program-status="members">Amb subjectes</button>
-            </div>
-            <div class="drawer-filter-row" id="programKindFilters">
-              <button type="button" class="filter-chip is-active" data-program-kind="all">Tots</button>
-              <button type="button" class="filter-chip" data-program-kind="group">Grups</button>
-              <button type="button" class="filter-chip" data-program-kind="series">Equips</button>
-            </div>
-          </div>
-          <div class="drawer-active-station is-empty mb-3" id="activeStationBox">
-            <div class="drawer-active-station-copy">
-              <span class="drawer-active-station-label">Estacio activa</span>
-              <span class="drawer-active-station-meta" id="activeStationMeta">Cap focus seleccionat.</span>
-            </div>
-            <button type="button" class="btn btn-sm btn-outline-secondary" id="clearActiveStation">Netejar</button>
-          </div>
-          <div class="program-group-tabs" id="programTabButtons">
-            <button type="button" class="program-group-tab is-active" data-program-tab="all">Tot</button>
-            <button type="button" class="program-group-tab" data-program-tab="programmed">Programats</button>
-            <button type="button" class="program-group-tab" data-program-tab="out">Fora de programa</button>
-          </div>
+                <span class="badge badge-light">{{ grups_display|length }}</span>
+              </span>
+              <span class="planner-sidebar-nav-meta">Cerca, filtres i llistes per arrossegar.</span>
+            </button>
+            <button type="button" class="planner-sidebar-nav-btn" data-drawer-panel-target="franges">
+              <span class="planner-sidebar-nav-title">
+                <span>Franges</span>
+              </span>
+              <span class="planner-sidebar-nav-meta">Creacio manual i automatica de franges.</span>
+            </button>
+            <button type="button" class="planner-sidebar-nav-btn" data-drawer-panel-target="globals">
+              <span class="planner-sidebar-nav-title">
+                <span>Operacions globals</span>
+              </span>
+              <span class="planner-sidebar-nav-meta">Visibilitat, utilitats i estructura de graella.</span>
+            </button>
+          </nav>
 
-          <div class="group-bucket">
-            <div class="group-bucket-head">
-              <div class="fw-semibold">Programats</div>
-              <span class="badge badge-light" id="programmed-groups-count">0</span>
-            </div>
-            <div class="program-kind-group">
-              <div class="program-kind-head">
-                <div class="program-kind-title">Grups</div>
-                <span class="badge badge-light" id="programmed-groups-kind-count">0</span>
+          <div class="planner-sidebar-panels" id="planner-sidebar-panels">
+            <section class="drawer-section planner-sidebar-panel" data-drawer-panel="programables">
+              <div class="drawer-section-head">
+                <div>
+                  <div class="drawer-section-title d-flex align-items-center" style="gap:6px;">
+                    <span>Programables</span>
+                    <button type="button" class="rot-help-trigger rot-help-trigger--inline" data-rot-help-key="grups" aria-label="Ajuda programables">?</button>
+                  </div>
+                  <div class="drawer-section-subtitle">Grups individuals i series d'equip preparades per arrossegar a la graella.</div>
+                </div>
+                <span class="badge badge-light">{{ grups_display|length }}</span>
               </div>
-              <div class="group-bucket-list" id="programmed-group-list"></div>
-            </div>
-            <div class="program-kind-group">
-              <div class="program-kind-head">
-                <div class="program-kind-title">Equips</div>
-                <span class="badge badge-light" id="programmed-series-kind-count">0</span>
+              <div class="drawer-active-station is-empty" id="activeStationBox">
+                <div class="drawer-active-station-copy">
+                  <span class="drawer-active-station-label">Estacio activa</span>
+                  <span class="drawer-active-station-meta" id="activeStationMeta">Cap focus seleccionat.</span>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="clearActiveStation">Netejar</button>
               </div>
-              <div class="group-bucket-list" id="programmed-series-list"></div>
-            </div>
-          </div>
-        </section>
+              <div class="drawer-filterbar mb-3">
+                <input type="search" class="form-control form-control-sm" id="programSearch" placeholder="Cerca grup, serie, aparell o numero">
+                <div class="drawer-filter-row" id="programPlacementFilters">
+                  <button type="button" class="filter-chip is-active" data-program-placement="all">Tot</button>
+                  <button type="button" class="filter-chip" data-program-placement="programmed">Programats</button>
+                  <button type="button" class="filter-chip" data-program-placement="out">Fora de programa</button>
+                </div>
+                <div class="drawer-filter-row" id="programKindFilters">
+                  <button type="button" class="filter-chip is-active" data-program-kind="all">Tots</button>
+                  <button type="button" class="filter-chip" data-program-kind="group">Grups</button>
+                  <button type="button" class="filter-chip" data-program-kind="series">Equips</button>
+                  <button type="button" class="filter-chip" data-program-non-empty="true">No buits</button>
+                </div>
+              </div>
 
-        <section class="drawer-section">
+              <div class="planner-panel-stack">
+                <div class="group-bucket planner-program-bucket" id="programmed-bucket">
+                  <div class="group-bucket-head">
+                    <div class="fw-semibold">Programats</div>
+                    <span class="badge badge-light" id="programmed-groups-count">0</span>
+                  </div>
+                  <div class="program-kind-group">
+                    <div class="program-kind-head">
+                      <div class="program-kind-title">Grups</div>
+                      <span class="badge badge-light" id="programmed-groups-kind-count">0</span>
+                    </div>
+                    <div class="group-bucket-list" id="programmed-group-list"></div>
+                  </div>
+                  <div class="program-kind-group">
+                    <div class="program-kind-head">
+                      <div class="program-kind-title">Equips</div>
+                      <span class="badge badge-light" id="programmed-series-kind-count">0</span>
+                    </div>
+                    <div class="group-bucket-list" id="programmed-series-list"></div>
+                  </div>
+                </div>
+
+                <div class="group-bucket planner-program-bucket" id="out-of-program-bucket">
+                  <div class="group-bucket-head">
+                    <div class="fw-semibold">Fora de programa</div>
+                    <span class="badge badge-warning" id="out-of-program-groups-count">{{ out_of_program_groups_count }}</span>
+                  </div>
+                  <div class="program-kind-group">
+                    <div class="program-kind-head">
+                      <div class="program-kind-title">Grups</div>
+                      <span class="badge badge-light" id="out-of-program-groups-kind-count">0</span>
+                    </div>
+                    <div class="group-bucket-list" id="out-of-program-group-list"></div>
+                  </div>
+                  <div class="program-kind-group">
+                    <div class="program-kind-head">
+                      <div class="program-kind-title">Equips</div>
+                      <span class="badge badge-light" id="out-of-program-series-kind-count">0</span>
+                    </div>
+                    <div class="group-bucket-list" id="out-of-program-series-list"></div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="drawer-section planner-sidebar-panel" data-drawer-panel="globals" hidden>
           <div class="drawer-section-head">
             <div>
-              <div class="drawer-section-title">Fora de programa</div>
-              <div class="drawer-section-subtitle">Elements existents que encara no tenen cap franja o estacio assignada.</div>
+              <div class="drawer-section-title">Mostrar grups fora de programa</div>
+              <div class="drawer-section-subtitle">Controla si aquests grups tambe apareixen a notes i jutges.</div>
             </div>
-            <span class="badge badge-warning" id="out-of-program-groups-count">{{ out_of_program_groups_count }}</span>
           </div>
           <label class="visibility-toggle" for="show-out-of-program-toggle">
             <input
@@ -643,23 +769,9 @@
               </span>
             </span>
           </label>
-          <div class="program-kind-group">
-            <div class="program-kind-head">
-              <div class="program-kind-title">Grups</div>
-              <span class="badge badge-light" id="out-of-program-groups-kind-count">0</span>
-            </div>
-            <div class="group-bucket-list" id="out-of-program-group-list"></div>
-          </div>
-          <div class="program-kind-group">
-            <div class="program-kind-head">
-              <div class="program-kind-title">Equips</div>
-              <span class="badge badge-light" id="out-of-program-series-kind-count">0</span>
-            </div>
-            <div class="group-bucket-list" id="out-of-program-series-list"></div>
-          </div>
         </section>
 
-        <section class="drawer-section">
+        <section class="drawer-section planner-sidebar-panel" data-drawer-panel="globals" hidden>
           <div class="drawer-section-head">
             <div>
               <div class="drawer-section-title">Utilitats</div>
@@ -671,7 +783,7 @@
           </div>
         </section>
 
-        <section class="drawer-section">
+        <section class="drawer-section planner-sidebar-panel" data-drawer-panel="franges" hidden>
           <div class="drawer-section-head">
             <div>
               <div class="drawer-section-title d-flex align-items-center" style="gap:6px;">
@@ -694,7 +806,7 @@
           </div>
         </section>
 
-        <section class="drawer-section">
+        <section class="drawer-section planner-sidebar-panel" data-drawer-panel="franges" hidden>
           <div class="drawer-section-head">
             <div>
               <div class="drawer-section-title d-flex align-items-center" style="gap:6px;">
@@ -720,14 +832,14 @@
           </div>
         </section>
 
-        <section class="drawer-section">
+        <section class="drawer-section planner-sidebar-panel" data-drawer-panel="globals" hidden>
           <div class="drawer-section-head">
             <div>
               <div class="drawer-section-title d-flex align-items-center" style="gap:6px;">
-                <span>Afegir estacio descans</span>
+                <span>Estructura de graella</span>
                 <button type="button" class="rot-help-trigger rot-help-trigger--inline" data-rot-help-key="incidencies" aria-label="Ajuda descans">?</button>
               </div>
-              <div class="drawer-section-subtitle">Crear una estacio auxiliar de descans sense competir.</div>
+              <div class="drawer-section-subtitle">Afegir una estacio auxiliar de descans per estructurar la graella.</div>
             </div>
           </div>
           <div class="d-flex" style="gap:8px; align-items:center;">
@@ -735,18 +847,20 @@
           </div>
         </section>
 
-        <section class="drawer-section">
+        <section class="drawer-section planner-sidebar-panel" data-drawer-panel="globals" hidden>
           <div class="drawer-section-head">
             <div>
               <div class="drawer-section-title d-flex align-items-center" style="gap:6px;">
                 <span>Operacions globals</span>
                 <button type="button" class="rot-help-trigger rot-help-trigger--inline" data-rot-help-key="canvis_manuals" aria-label="Ajuda operacions globals">?</button>
               </div>
-              <div class="drawer-section-subtitle">Accions generals sobre el programa complet.</div>
+              <div class="drawer-section-subtitle">Accio destructiva sobre el programa complet.</div>
             </div>
           </div>
           <button class="btn btn-sm btn-outline-danger" id="btnClearAll" title="Netejar tot el programa">🧹 Netejar Programa</button>
         </section>
+      </div>
+    </div>
       </div>
     </div>
 
@@ -1216,11 +1330,12 @@ const exportParticipantFields = (() => {
 
 const programFilters = {
   query: "",
-  status: "all",
+  placement: "all",
   kind: "all",
-  tab: "all",
+  nonEmptyOnly: false,
   activeStationId: null,
 };
+let activePlannerDrawerPanel = "programables";
 
 function escapeHtml(s){
   return String(s ?? "")
@@ -2121,7 +2236,7 @@ function itemMatchesPlannerFilters(item){
   const kindFilter = String(programFilters.kind || "all");
 
   if (kindFilter !== "all" && String(item.kind || "") !== kindFilter) return false;
-  if (String(programFilters.status || "all") === "members" && Number(item.members_count || 0) <= 0) return false;
+  if (programFilters.nonEmptyOnly && Number(item.members_count || 0) <= 0) return false;
   if (mode){
     if (mode.mode === "group" && item.kind !== "group") return false;
     if (mode.mode === "series" && item.kind !== "series") return false;
@@ -2221,6 +2336,25 @@ function toggleExportDrawer(){
   setExportDrawerOpen(!document.body.classList.contains("planner-export-open"));
 }
 
+function syncPlannerDrawerPanels(){
+  document.querySelectorAll("[data-drawer-panel-target]").forEach((btn) => {
+    const isActive = String(btn.dataset.drawerPanelTarget || "programables") === activePlannerDrawerPanel;
+    btn.classList.toggle("is-active", isActive);
+    btn.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
+  document.querySelectorAll("[data-drawer-panel]").forEach((panel) => {
+    const shouldShow = String(panel.dataset.drawerPanel || "") === activePlannerDrawerPanel;
+    panel.hidden = !shouldShow;
+  });
+}
+
+function setPlannerDrawerPanel(panelKey){
+  activePlannerDrawerPanel = ["programables", "franges", "globals"].includes(String(panelKey || ""))
+    ? String(panelKey)
+    : "programables";
+  syncPlannerDrawerPanels();
+}
+
 function setProgramFilter(key, value){
   programFilters[key] = value;
   renderProgramables();
@@ -2264,14 +2398,14 @@ function syncActiveStationHighlights(){
 }
 
 function updateFilterButtons(){
-  document.querySelectorAll("[data-program-status]").forEach((btn) => {
-    btn.classList.toggle("is-active", String(btn.dataset.programStatus || "all") === String(programFilters.status || "all"));
+  document.querySelectorAll("[data-program-placement]").forEach((btn) => {
+    btn.classList.toggle("is-active", String(btn.dataset.programPlacement || "all") === String(programFilters.placement || "all"));
   });
   document.querySelectorAll("[data-program-kind]").forEach((btn) => {
     btn.classList.toggle("is-active", String(btn.dataset.programKind || "all") === String(programFilters.kind || "all"));
   });
-  document.querySelectorAll("[data-program-tab]").forEach((btn) => {
-    btn.classList.toggle("is-active", String(btn.dataset.programTab || "all") === String(programFilters.status || "all"));
+  document.querySelectorAll("[data-program-non-empty]").forEach((btn) => {
+    btn.classList.toggle("is-active", !!programFilters.nonEmptyOnly);
   });
 }
 
@@ -2280,6 +2414,8 @@ function renderProgramables(){
   const programmedSeriesWrap = document.getElementById("programmed-series-list");
   const outWrap = document.getElementById("out-of-program-group-list");
   const outSeriesWrap = document.getElementById("out-of-program-series-list");
+  const programmedBucket = document.getElementById("programmed-bucket");
+  const outBucket = document.getElementById("out-of-program-bucket");
   const programmedCountEl = document.getElementById("programmed-groups-count");
   const programmedGroupsKindCountEl = document.getElementById("programmed-groups-kind-count");
   const programmedSeriesKindCountEl = document.getElementById("programmed-series-kind-count");
@@ -2287,11 +2423,14 @@ function renderProgramables(){
   const outGroupsKindCountEl = document.getElementById("out-of-program-groups-kind-count");
   const outSeriesKindCountEl = document.getElementById("out-of-program-series-kind-count");
   const state = getProgramBuckets();
-  const statusFilter = String(programFilters.status || "all");
-  const programmedVisible = (statusFilter === "out" ? [] : state.programmed).filter(itemMatchesPlannerFilters);
-  const outVisible = (statusFilter === "programmed" ? [] : state.outOfProgram).filter(itemMatchesPlannerFilters);
+  const placementFilter = String(programFilters.placement || "all");
+  const programmedVisible = state.programmed.filter(itemMatchesPlannerFilters);
+  const outVisible = state.outOfProgram.filter(itemMatchesPlannerFilters);
   const programmedSplit = splitPlannerItemsByKind(programmedVisible);
   const outSplit = splitPlannerItemsByKind(outVisible);
+
+  if (programmedBucket) programmedBucket.hidden = placementFilter === "out";
+  if (outBucket) outBucket.hidden = placementFilter === "programmed";
 
   if (programmedWrap) {
     programmedWrap.innerHTML = programmedSplit.groups.length
@@ -2345,6 +2484,7 @@ function renderAll(options = {}){
   renderGridCells();
   renderPlannerSummary();
   renderProgramables();
+  syncPlannerDrawerPanels();
   syncActiveStationHighlights();
   syncPlannerDrawerStates();
   if (options.save !== false) autoSaveGrid();
@@ -2369,6 +2509,7 @@ function initPlannerDrawerControls(){
     syncPlannerDrawerStates();
   };
 
+  setPlannerDrawerPanel(activePlannerDrawerPanel);
   applyViewportDefaults();
 
   const leftToggleBtn = document.getElementById("planner-left-toggle");
@@ -2406,21 +2547,16 @@ function initPlannerDrawerControls(){
     });
   }
 
-  document.querySelectorAll("[data-program-status]").forEach((btn) => {
+  document.querySelectorAll("[data-drawer-panel-target]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      const value = String(btn.dataset.programStatus || "all");
-      programFilters.status = value;
-      programFilters.tab = value;
-      renderProgramables();
-      syncActiveStationHighlights();
+      setPlannerDrawerPanel(btn.dataset.drawerPanelTarget || "programables");
     });
   });
 
-  document.querySelectorAll("[data-program-tab]").forEach((btn) => {
+  document.querySelectorAll("[data-program-placement]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      const value = String(btn.dataset.programTab || "all");
-      programFilters.status = value;
-      programFilters.tab = value;
+      const value = String(btn.dataset.programPlacement || "all");
+      programFilters.placement = value;
       renderProgramables();
       syncActiveStationHighlights();
     });
@@ -2429,6 +2565,14 @@ function initPlannerDrawerControls(){
   document.querySelectorAll("[data-program-kind]").forEach((btn) => {
     btn.addEventListener("click", () => {
       programFilters.kind = String(btn.dataset.programKind || "all");
+      renderProgramables();
+      syncActiveStationHighlights();
+    });
+  });
+
+  document.querySelectorAll("[data-program-non-empty]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      programFilters.nonEmptyOnly = !programFilters.nonEmptyOnly;
       renderProgramables();
       syncActiveStationHighlights();
     });

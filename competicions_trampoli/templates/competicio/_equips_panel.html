@@ -342,7 +342,14 @@
                         <div class="small text-muted" id="team-auto-target-note">
                           Selecciona camps de particio per resoldre buckets sobre la seleccio activa o sobre les filtrades actuals.
                         </div>
-                        <div class="groups-auto-context-panel">
+                        <div class="d-flex align-items-center justify-content-between flex-wrap" style="gap:8px;">
+                          <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-team-auto-buckets-toggle" aria-expanded="false">
+                            Veure buckets resolts
+                          </button>
+                          <span class="badge badge-light border" id="team-auto-buckets-count">0 buckets actius de 0</span>
+                        </div>
+                        <div class="small text-muted" id="team-auto-buckets-visibility-summary">0 visibles de 0 buckets resolts.</div>
+                        <div class="groups-auto-context-panel d-none" id="team-auto-buckets-panel">
                           <div class="d-flex align-items-start justify-content-between flex-wrap" style="gap:10px;">
                             <div>
                               <div class="fw-semibold small text-uppercase text-muted">Buckets resolts</div>
@@ -351,9 +358,30 @@
                               </div>
                             </div>
                             <div class="d-flex align-items-center flex-wrap" style="gap:8px;">
-                              <span class="badge badge-light border" id="team-auto-buckets-count">0 buckets actius de 0</span>
                               <button type="button" class="btn btn-sm btn-light border" id="btn-team-auto-buckets-all">Seleccionar tots</button>
                               <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-team-auto-buckets-none">Netejar</button>
+                            </div>
+                          </div>
+                          <div class="team-auto-buckets-filter-grid mt-3">
+                            <div>
+                              <label class="small text-muted mb-1 d-block" for="team-auto-buckets-filter-q">Cerca</label>
+                              <input type="text" class="form-control form-control-sm" id="team-auto-buckets-filter-q" placeholder="Nom, valors o membres...">
+                            </div>
+                            <div>
+                              <label class="small text-muted mb-1 d-block" for="team-auto-buckets-filter-selected-state">Estat</label>
+                              <select id="team-auto-buckets-filter-selected-state" class="form-control form-control-sm">
+                                <option value="all">Tots</option>
+                                <option value="selected">Actius</option>
+                                <option value="unselected">No actius</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label class="small text-muted mb-1 d-block" for="team-auto-buckets-filter-sort">Ordenacio</label>
+                              <select id="team-auto-buckets-filter-sort" class="form-control form-control-sm">
+                                <option value="count_desc">Mida desc</option>
+                                <option value="count_asc">Mida asc</option>
+                                <option value="label_asc">A-Z</option>
+                              </select>
                             </div>
                           </div>
                           <div class="team-auto-buckets-grid d-none mt-2" id="team-auto-buckets-grid"></div>
