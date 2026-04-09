@@ -285,23 +285,31 @@ def _normalize_candidate_source_mode(raw_mode):
     return "raw_exercise"
 
 
-def _sanitize_candidate_source_cfg(raw_cfg):
+def _sanitize_candidate_source_cfg(raw_cfg, fallback=None):
+    fb = fallback if isinstance(fallback, dict) else {}
     cfg = raw_cfg if isinstance(raw_cfg, dict) else {}
-    mode = str(cfg.get("mode") or "tots").strip().lower()
-    if mode not in {"tots", "millor_1", "millor_n", "pitjor_1", "pitjor_n", "primer", "ultim", "index", "llista"}:
-        mode = "tots"
+
+    mode = str(cfg.get("mode") or fb.get("mode") or "tots").strip().lower()
+    allowed_modes = {"tots", "millor_1", "millor_n", "pitjor_1", "pitjor_n", "primer", "ultim", "index", "llista"}
+    if mode not in allowed_modes:
+        mode = str(fb.get("mode") or "tots").strip().lower()
+        if mode not in allowed_modes:
+            mode = "tots"
 
     try:
-        best_n = max(1, int(cfg.get("best_n") or 1))
+        best_n = int(cfg.get("best_n", fb.get("best_n", 1)))
     except Exception:
         best_n = 1
+    best_n = max(1, best_n)
+
     try:
-        index = max(1, int(cfg.get("index") or 1))
+        index = int(cfg.get("index", fb.get("index", 1)))
     except Exception:
         index = 1
+    index = max(1, index)
 
     ids = []
-    ids_raw = cfg.get("ids") or []
+    ids_raw = cfg.get("ids", fb.get("ids", []))
     if isinstance(ids_raw, str):
         ids_raw = [x.strip() for x in ids_raw.split(",") if x and x.strip()]
     if isinstance(ids_raw, (list, tuple)):
@@ -315,9 +323,11 @@ def _sanitize_candidate_source_cfg(raw_cfg):
                 seen.add(value)
                 ids.append(value)
 
-    agg = str(cfg.get("agregacio_exercicis") or "sum").strip().lower()
+    agg = str(cfg.get("agregacio_exercicis", fb.get("agregacio_exercicis", "sum")) or "sum").strip().lower()
     if agg not in {"sum", "avg", "median", "max", "min"}:
-        agg = "sum"
+        agg = str(fb.get("agregacio_exercicis") or "sum").strip().lower()
+        if agg not in {"sum", "avg", "median", "max", "min"}:
+            agg = "sum"
 
     return {
         "mode": mode,
@@ -326,6 +336,58 @@ def _sanitize_candidate_source_cfg(raw_cfg):
         "ids": ids,
         "agregacio_exercicis": agg,
     }
+
+
+def _normalize_agregacio_camps_value(raw_value):
+    agg = str(raw_value or "sum").strip().lower()
+    if agg not in {"sum", "avg", "median", "max", "min"}:
+        return "sum"
+    return agg
+
+
+def _sanitize_agregacio_camps_per_aparell(raw_map, *, fallback="sum"):
+    out = {}
+    if not isinstance(raw_map, dict):
+        return out
+    fallback_value = _normalize_agregacio_camps_value(fallback)
+    for raw_key, raw_value in raw_map.items():
+        try:
+            app_id = int(raw_key)
+        except Exception:
+            continue
+        if app_id <= 0:
+            continue
+        agg = _normalize_agregacio_camps_value(raw_value or fallback_value)
+        out[str(app_id)] = agg
+    return out
+
+
+def _sanitize_candidate_source_entry(raw_entry, *, fallback_mode="raw_exercise", fallback_cfg=None):
+    entry = raw_entry if isinstance(raw_entry, dict) else {}
+    mode = _normalize_candidate_source_mode(entry.get("mode") or fallback_mode)
+    out = {"mode": mode}
+    if mode == "participant_aggregate":
+        out["cfg"] = _sanitize_candidate_source_cfg(entry.get("cfg"), fallback=fallback_cfg)
+    return out
+
+
+def _sanitize_candidate_source_per_aparell(raw_map, *, fallback_mode="raw_exercise", fallback_cfg=None):
+    out = {}
+    if not isinstance(raw_map, dict):
+        return out
+    for raw_key, raw_value in raw_map.items():
+        try:
+            app_id = int(raw_key)
+        except Exception:
+            continue
+        if app_id <= 0:
+            continue
+        out[str(app_id)] = _sanitize_candidate_source_entry(
+            raw_value,
+            fallback_mode=fallback_mode,
+            fallback_cfg=fallback_cfg,
+        )
+    return out
 
 
 def _is_candidate_source_enabled(*, tipus="individual", team_mode=""):
@@ -429,10 +491,33 @@ def prepare_schema_for_builder_hydration(competicio, schema_local, tipus="indivi
             if codes:
                 camps_out[str(app_id)] = codes
     punt["camps_per_aparell"] = camps_out
+    fallback_agg_camps = _normalize_agregacio_camps_value(punt.get("agregacio_camps"))
+    agg_camps_map = _sanitize_agregacio_camps_per_aparell(
+        punt.get("agregacio_camps_per_aparell") or {},
+        fallback=fallback_agg_camps,
+    )
+    for app_id in ids_out:
+        agg_camps_map.setdefault(str(app_id), fallback_agg_camps)
+    punt["agregacio_camps_per_aparell"] = agg_camps_map
 
     punt["exercicis"] = punt.get("exercicis") if isinstance(punt.get("exercicis"), dict) else {}
     punt["candidate_source_mode"] = _normalize_candidate_source_mode(punt.get("candidate_source_mode"))
     punt["candidate_source_cfg"] = _sanitize_candidate_source_cfg(punt.get("candidate_source_cfg"))
+    candidate_source_map = _sanitize_candidate_source_per_aparell(
+        punt.get("candidate_source_per_aparell") or {},
+        fallback_mode=punt.get("candidate_source_mode"),
+        fallback_cfg=punt.get("candidate_source_cfg"),
+    )
+    for app_id in ids_out:
+        candidate_source_map.setdefault(
+            str(app_id),
+            _sanitize_candidate_source_entry(
+                {},
+                fallback_mode=punt.get("candidate_source_mode"),
+                fallback_cfg=punt.get("candidate_source_cfg"),
+            ),
+        )
+    punt["candidate_source_per_aparell"] = candidate_source_map
     ex_per_app_in = punt.get("exercicis_per_aparell") or {}
     ex_per_app_out = {}
     if isinstance(ex_per_app_in, dict):
@@ -550,6 +635,22 @@ def sanitize_schema_for_builder(competicio, schema_local, tipus="individual"):
         if kept:
             camps_out[str(app_id)] = kept
     punt["camps_per_aparell"] = camps_out
+    punt["agregacio_camps_per_aparell"] = {
+        str(app_id): _normalize_agregacio_camps_value(raw_value)
+        for app_id in selected_ids
+        for raw_value in [
+            (
+                ((punt.get("agregacio_camps_per_aparell") or {}).get(str(app_id)))
+                if isinstance(punt.get("agregacio_camps_per_aparell"), dict)
+                else None
+            )
+        ]
+    }
+    for app_id in selected_ids:
+        punt["agregacio_camps_per_aparell"].setdefault(
+            str(app_id),
+            _normalize_agregacio_camps_value(punt.get("agregacio_camps")),
+        )
 
     ex_per_app_in = punt.get("exercicis_per_aparell") or {}
     ex_per_app_out = {}
@@ -579,9 +680,29 @@ def sanitize_schema_for_builder(competicio, schema_local, tipus="individual"):
     if allow_candidate_source:
         punt["candidate_source_mode"] = _normalize_candidate_source_mode(punt.get("candidate_source_mode"))
         punt["candidate_source_cfg"] = _sanitize_candidate_source_cfg(punt.get("candidate_source_cfg"))
+        candidate_source_map = _sanitize_candidate_source_per_aparell(
+            punt.get("candidate_source_per_aparell") or {},
+            fallback_mode=punt.get("candidate_source_mode"),
+            fallback_cfg=punt.get("candidate_source_cfg"),
+        )
+        for app_id in selected_ids:
+            candidate_source_map.setdefault(
+                str(app_id),
+                _sanitize_candidate_source_entry(
+                    {},
+                    fallback_mode=punt.get("candidate_source_mode"),
+                    fallback_cfg=punt.get("candidate_source_cfg"),
+                ),
+            )
+        punt["candidate_source_per_aparell"] = {
+            str(app_id): candidate_source_map[str(app_id)]
+            for app_id in selected_ids
+            if str(app_id) in candidate_source_map
+        }
     else:
         punt.pop("candidate_source_mode", None)
         punt.pop("candidate_source_cfg", None)
+        punt.pop("candidate_source_per_aparell", None)
     main_exercise_scope = punt.get("exercise_selection_scope") or EXERCISE_SELECTION_SCOPE_PER_MEMBER
 
     def sanitize_tie_item(raw_tie, *, selected_main_ids, allow_app_scope: bool, allow_participants: bool):
@@ -771,6 +892,7 @@ def build_force_minimal_schema(competicio, schema_local):
         punt = {}
     punt["aparells"] = {"mode": "seleccionar", "ids": active_ids}
     punt["camps_per_aparell"] = {str(app_id): ["total"] for app_id in active_ids}
+    punt["agregacio_camps_per_aparell"] = {str(app_id): "sum" for app_id in active_ids}
     punt["mode_seleccio_exercicis"] = "per_aparell_global"
     punt["exercicis_per_aparell"] = {}
     punt["agregacio_camps"] = "sum"
@@ -781,6 +903,10 @@ def build_force_minimal_schema(competicio, schema_local):
         "index": 1,
         "ids": [],
         "agregacio_exercicis": "sum",
+    }
+    punt["candidate_source_per_aparell"] = {
+        str(app_id): {"mode": "raw_exercise"}
+        for app_id in active_ids
     }
     punt["agregacio_exercicis"] = "sum"
     punt["agregacio_aparells"] = "sum"

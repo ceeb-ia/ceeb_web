@@ -8,6 +8,10 @@
   const groupModalState = {
     groupNum: '',
     rows: [],
+    canEdit: false,
+    groupLabel: '',
+    source: 'general_list',
+    trigger: null,
   };
 
   function arraysEqual(a, b) {
@@ -319,10 +323,57 @@
     };
   }
 
-  function closeGroupCompetitionModal() {
+  function ensureGroupCompetitionModalRoot() {
     const els = getGroupModalEls();
+    if (els.backdrop && els.backdrop.parentNode !== document.body) document.body.appendChild(els.backdrop);
+    if (els.modal && els.modal.parentNode !== document.body) document.body.appendChild(els.modal);
+    return els;
+  }
+
+  function setGroupCompetitionModalSource(source) {
+    const normalized = source === 'groups_workspace' ? 'groups_workspace' : 'general_list';
+    const els = getGroupModalEls();
+    groupModalState.source = normalized;
+    document.body.classList.toggle('group-competition-modal-from-workspace', normalized === 'groups_workspace');
+    if (els.modal) els.modal.setAttribute('data-modal-source', normalized);
+  }
+
+  function normalizeGroupCompetitionModalOptions(rawOptions) {
+    if (rawOptions && rawOptions.nodeType === 1) {
+      return { trigger: rawOptions };
+    }
+    return rawOptions && typeof rawOptions === 'object' ? rawOptions : {};
+  }
+
+  function inferGroupCompetitionModalSource(options = {}) {
+    if (options.source === 'groups_workspace' || options.source === 'general_list') {
+      return options.source;
+    }
+    const trigger = options.trigger;
+    if (trigger?.closest?.('#groups-workspace-shell, #group-buckets-modal')) {
+      return 'groups_workspace';
+    }
+    return 'general_list';
+  }
+
+  function destroyGroupCompetitionSortable(listEl) {
+    if (!listEl?._sortable) return;
+    try {
+      listEl._sortable.destroy();
+    } catch (_err) {}
+    listEl._sortable = null;
+  }
+
+  function closeGroupCompetitionModal(options = {}) {
+    const els = getGroupModalEls();
+    const trigger = groupModalState.trigger;
+    destroyGroupCompetitionSortable(els.list);
     groupModalState.groupNum = '';
     groupModalState.rows = [];
+    groupModalState.canEdit = false;
+    groupModalState.groupLabel = '';
+    groupModalState.trigger = null;
+    setGroupCompetitionModalSource('general_list');
     if (els.backdrop) els.backdrop.classList.remove('is-visible');
     if (els.modal) {
       els.modal.classList.remove('is-visible');
@@ -330,11 +381,15 @@
       els.modal.setAttribute('aria-hidden', 'true');
     }
     document.body.classList.remove('group-competition-modal-open');
+    if (options.restoreFocus !== false && trigger && typeof trigger.focus === 'function') {
+      window.setTimeout(() => trigger.focus(), 0);
+    }
   }
 
   function renderGroupCompetitionRows() {
     const els = getGroupModalEls();
     if (!els.list) return;
+    destroyGroupCompetitionSortable(els.list);
     if (!groupModalState.rows.length) {
       els.list.innerHTML = '<div class="group-competition-modal-empty">Aquest grup no te participants guardats.</div>';
       return;
@@ -351,8 +406,7 @@
       </div>
     `).join('');
 
-    if (typeof window.Sortable !== 'undefined') {
-      if (els.list._sortable) els.list._sortable.destroy();
+    if (groupModalState.canEdit && typeof window.Sortable !== 'undefined') {
       els.list._sortable = window.Sortable.create(els.list, {
         animation: 120,
         handle: '.js-group-competition-order-item-handle',
@@ -370,18 +424,24 @@
     }
   }
 
-  async function openGroupCompetitionModal(groupNum) {
-    const els = getGroupModalEls();
+  async function openGroupCompetitionModal(groupNum, rawOptions = {}) {
+    const options = normalizeGroupCompetitionModalOptions(rawOptions);
+    const els = ensureGroupCompetitionModalRoot();
     groupModalState.groupNum = String(groupNum || '').trim();
     if (!groupModalState.groupNum) return;
+    groupModalState.trigger = options.trigger || document.activeElement;
+    groupModalState.groupLabel = String(options.groupLabel || '').trim();
+    groupModalState.canEdit = false;
+    setGroupCompetitionModalSource(inferGroupCompetitionModalSource(options));
 
-    if (els.title) els.title.textContent = `Ordre de competicio · Grup ${groupModalState.groupNum}`;
+    if (els.title) els.title.textContent = `Ordre de competicio · ${groupModalState.groupLabel || `Grup ${groupModalState.groupNum}`}`;
     if (els.subtitle) els.subtitle.textContent = "Carregant ordre guardat del grup...";
     if (els.count) els.count.textContent = 'Carregant participants...';
     if (els.warning) {
       els.warning.classList.add('d-none');
       els.warning.textContent = '';
     }
+    if (els.save) els.save.disabled = true;
     if (els.list) els.list.innerHTML = '<div class="group-competition-modal-empty">Carregant ordre guardat...</div>';
     if (els.backdrop) els.backdrop.classList.add('is-visible');
     if (els.modal) {
@@ -391,30 +451,35 @@
     }
     document.body.classList.add('group-competition-modal-open');
 
-    const data = await API.postJson(API.app.urls.groupCompetitionOrderPreview, { group_num: groupModalState.groupNum });
+    const requestGroupNum = groupModalState.groupNum;
+    const data = await API.postJson(API.app.urls.groupCompetitionOrderPreview, { group_num: requestGroupNum });
     if (!data?.ok) throw new Error("No s'ha pogut carregar l'ordre de competicio.");
+    if (groupModalState.groupNum !== requestGroupNum) return;
     groupModalState.rows = Array.isArray(data.rows) ? data.rows.slice() : [];
+    groupModalState.groupLabel = String(data.group_label || groupModalState.groupLabel || `Grup ${groupModalState.groupNum}`).trim();
+    groupModalState.canEdit = !!data.can_edit;
 
-    if (els.title) els.title.textContent = `Ordre de competicio · ${data.group_label || `Grup ${groupModalState.groupNum}`}`;
+    if (els.title) els.title.textContent = `Ordre de competicio · ${groupModalState.groupLabel}`;
     if (els.subtitle) els.subtitle.textContent = "Aquest ordre correspon a l'ordre de competicio real del grup complet.";
     if (els.count) els.count.textContent = `${Number(data.total_count || groupModalState.rows.length)} participants`;
     if (els.footnote) {
-      els.footnote.textContent = data.can_edit
+      els.footnote.textContent = groupModalState.canEdit
         ? 'Arrossega per reordenar i desa quan hagis acabat.'
         : 'Mode lectura: nomes es pot consultar l ordre guardat.';
     }
-    if (els.save) els.save.disabled = !data.can_edit || !groupModalState.rows.length;
+    if (els.save) els.save.disabled = !groupModalState.canEdit || !groupModalState.rows.length;
     renderGroupCompetitionRows();
   }
 
   async function saveGroupCompetitionOrder() {
+    if (!groupModalState.groupNum || !groupModalState.canEdit) return;
     const ids = groupModalState.rows.map((row) => row.id);
     const data = await API.postJson(API.app.urls.saveGroupCompetitionOrder, {
       group_num: groupModalState.groupNum,
       ids,
     });
     if (!data?.ok) throw new Error("No s'ha pogut desar l'ordre de competicio.");
-    closeGroupCompetitionModal();
+    closeGroupCompetitionModal({ restoreFocus: false });
     API.reloadWithUiState();
   }
 
@@ -464,7 +529,10 @@
       if (previewBtn) {
         event.preventDefault();
         try {
-          await openGroupCompetitionModal(previewBtn.dataset.group);
+          await openGroupCompetitionModal(previewBtn.dataset.group, {
+            trigger: previewBtn,
+            source: 'general_list',
+          });
         } catch (err) {
           closeGroupCompetitionModal();
           API.showAlert(err.message || err);
@@ -478,6 +546,9 @@
         try {
           groupModalState.groupNum = String(saveBtn.dataset.group || '').trim();
           groupModalState.rows = collectIdsForGroup(groupModalState.groupNum).map((id) => ({ id }));
+          groupModalState.canEdit = true;
+          groupModalState.trigger = saveBtn;
+          setGroupCompetitionModalSource('general_list');
           await saveGroupCompetitionOrder();
         } catch (err) {
           API.showAlert(err.message || err);
@@ -533,5 +604,7 @@
   window.applyGroupBands = applyGroupBands;
   window.refreshGroupHeaderIndicators = refreshGroupHeaderIndicators;
   window.scheduleRefreshGroupHeaderIndicators = scheduleRefreshGroupHeaderIndicators;
+  window.openGroupCompetitionOrderModal = openGroupCompetitionModal;
+  window.closeGroupCompetitionOrderModal = closeGroupCompetitionModal;
 })();
 </script>

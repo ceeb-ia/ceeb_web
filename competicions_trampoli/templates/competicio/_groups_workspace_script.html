@@ -916,13 +916,6 @@ window.initGroupsWorkspace = async function () {
     assign.disabled = !editable();
     actions.appendChild(assign);
 
-    const order = document.createElement('button');
-    order.type = 'button';
-    order.className = 'btn btn-sm btn-outline-info';
-    order.setAttribute('data-group-order', String(group?.display_num || ''));
-    order.textContent = 'Ordre competicio';
-    actions.appendChild(order);
-
     const rename = document.createElement('button');
     rename.type = 'button';
     rename.className = 'btn btn-sm btn-outline-secondary';
@@ -1638,7 +1631,10 @@ window.initGroupsWorkspace = async function () {
         const groupNum = String(orderBtn.getAttribute('data-group-order') || '').trim();
         if (!groupNum) return;
         if (typeof openGroupCompetitionOrderModal === 'function') {
-          await openGroupCompetitionOrderModal(groupNum, orderBtn);
+          await openGroupCompetitionOrderModal(groupNum, {
+            trigger: orderBtn,
+            source: 'groups_workspace',
+          });
         }
         return;
       }

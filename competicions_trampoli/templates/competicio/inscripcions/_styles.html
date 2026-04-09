@@ -236,10 +236,13 @@
     .panel-title { font-weight: 600; margin:0; }
     .subtle { color:#6b7280; font-size:.85rem; }
     .btn-row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    body,
     .inscripcions-page-shell {
       --actions-drawer-top: 96px;
       --actions-drawer-gap: 26px;
       --actions-drawer-width: clamp(560px, 38vw, 720px);
+    }
+    .inscripcions-page-shell {
       position: relative;
     }
     .inscripcions-workspace {
@@ -2588,6 +2591,12 @@
     .group-competition-modal.is-visible{
       display:flex;
     }
+    body.group-competition-modal-from-workspace .group-competition-modal-backdrop{
+      z-index:4030;
+    }
+    body.group-competition-modal-from-workspace .group-competition-modal{
+      z-index:4035;
+    }
     .group-competition-modal-head{
       display:flex;
       align-items:flex-start;
@@ -2859,6 +2868,7 @@
       .inscripcions-workspace {
         min-width: 0;
       }
+      body,
       .inscripcions-page-shell {
         --actions-drawer-top: 82px;
         --actions-drawer-width: min(92vw, 680px);
@@ -2901,6 +2911,7 @@
       }
     }
     @media (max-width: 767.98px) {
+      body,
       .inscripcions-page-shell {
         --actions-drawer-top: 74px;
         --actions-drawer-width: min(95vw, 640px);

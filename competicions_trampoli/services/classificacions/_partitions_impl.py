@@ -39,6 +39,7 @@ DEFAULT_SCHEMA = {
         "exercicis_per_aparell": {},
         "aparells": {"mode": "tots", "ids": []},
         "camps_per_aparell": {},
+        "agregacio_camps_per_aparell": {},
         "agregacio_camps": "sum",
         "candidate_source_mode": "raw_exercise",
         "candidate_source_cfg": {
@@ -48,6 +49,7 @@ DEFAULT_SCHEMA = {
             "ids": [],
             "agregacio_exercicis": "sum",
         },
+        "candidate_source_per_aparell": {},
         "agregacio_exercicis": "sum",
         "agregacio_aparells": "sum",
         "mode_resultat_aparells": "score",
@@ -211,6 +213,11 @@ def _merge_schema(schema: dict) -> dict:
         **DEFAULT_SCHEMA["puntuacio"]["candidate_source_cfg"],
         **((((raw.get("puntuacio") or {}).get("candidate_source_cfg")) or {}) if isinstance(raw.get("puntuacio"), dict) else {}),
     }
+    raw_punt = (raw.get("puntuacio") or {}) if isinstance(raw.get("puntuacio"), dict) else {}
+    raw_agg_map = raw_punt.get("agregacio_camps_per_aparell")
+    out["puntuacio"]["agregacio_camps_per_aparell"] = raw_agg_map if isinstance(raw_agg_map, dict) else {}
+    raw_candidate_map = raw_punt.get("candidate_source_per_aparell")
+    out["puntuacio"]["candidate_source_per_aparell"] = raw_candidate_map if isinstance(raw_candidate_map, dict) else {}
     out["puntuacio"]["victories"] = {
         **DEFAULT_SCHEMA["puntuacio"]["victories"],
         **((((raw.get("puntuacio") or {}).get("victories")) or {}) if isinstance(raw.get("puntuacio"), dict) else {}),

@@ -440,9 +440,17 @@ def schema_to_template_schema(competicio, schema_local):
         return item
 
     punt["camps_per_aparell"] = map_keys_to_codes(punt.get("camps_per_aparell") or {}, "camps_per_aparell")
+    punt["agregacio_camps_per_aparell"] = map_keys_to_codes(
+        punt.get("agregacio_camps_per_aparell") or {},
+        "agregacio_camps_per_aparell",
+    )
     punt["exercicis_per_aparell"] = map_keys_to_codes(
         punt.get("exercicis_per_aparell") or {},
         "exercicis_per_aparell",
+    )
+    punt["candidate_source_per_aparell"] = map_keys_to_codes(
+        punt.get("candidate_source_per_aparell") or {},
+        "candidate_source_per_aparell",
     )
     victories = punt.get("victories") or {}
     if isinstance(victories, dict):
@@ -646,9 +654,17 @@ def template_schema_to_competicio_schema(competicio, schema_tpl):
         return item
 
     punt["camps_per_aparell"] = map_keys_to_ids(punt.get("camps_per_aparell") or {}, "camps_per_aparell")
+    punt["agregacio_camps_per_aparell"] = map_keys_to_ids(
+        punt.get("agregacio_camps_per_aparell") or {},
+        "agregacio_camps_per_aparell",
+    )
     punt["exercicis_per_aparell"] = map_keys_to_ids(
         punt.get("exercicis_per_aparell") or {},
         "exercicis_per_aparell",
+    )
+    punt["candidate_source_per_aparell"] = map_keys_to_ids(
+        punt.get("candidate_source_per_aparell") or {},
+        "candidate_source_per_aparell",
     )
     victories = punt.get("victories") or {}
     if isinstance(victories, dict):
@@ -863,7 +879,9 @@ def template_schema_to_global_ui_schema(schema_tpl, by_id, by_code):
         return item
 
     punt["camps_per_aparell"] = map_keys_to_ids(punt.get("camps_per_aparell") or {})
+    punt["agregacio_camps_per_aparell"] = map_keys_to_ids(punt.get("agregacio_camps_per_aparell") or {})
     punt["exercicis_per_aparell"] = map_keys_to_ids(punt.get("exercicis_per_aparell") or {})
+    punt["candidate_source_per_aparell"] = map_keys_to_ids(punt.get("candidate_source_per_aparell") or {})
     victories = punt.get("victories") or {}
     if isinstance(victories, dict):
         victories_out = dict(victories)
@@ -1001,7 +1019,9 @@ def global_ui_schema_to_template_schema(schema_ui, by_id, by_code):
         return item
 
     punt["camps_per_aparell"] = map_keys_to_codes(punt.get("camps_per_aparell") or {})
+    punt["agregacio_camps_per_aparell"] = map_keys_to_codes(punt.get("agregacio_camps_per_aparell") or {})
     punt["exercicis_per_aparell"] = map_keys_to_codes(punt.get("exercicis_per_aparell") or {})
+    punt["candidate_source_per_aparell"] = map_keys_to_codes(punt.get("candidate_source_per_aparell") or {})
     victories = punt.get("victories") or {}
     if isinstance(victories, dict):
         victories_out = dict(victories)
@@ -1078,7 +1098,15 @@ def collect_required_app_codes_from_template(schema_tpl):
             code = canon_app_code(raw_key)
             if code:
                 out.add(code)
+        for raw_key in (punt.get("agregacio_camps_per_aparell") or {}).keys() if isinstance(punt.get("agregacio_camps_per_aparell"), dict) else []:
+            code = canon_app_code(raw_key)
+            if code:
+                out.add(code)
         for raw_key in (punt.get("exercicis_per_aparell") or {}).keys() if isinstance(punt.get("exercicis_per_aparell"), dict) else []:
+            code = canon_app_code(raw_key)
+            if code:
+                out.add(code)
+        for raw_key in (punt.get("candidate_source_per_aparell") or {}).keys() if isinstance(punt.get("candidate_source_per_aparell"), dict) else []:
             code = canon_app_code(raw_key)
             if code:
                 out.add(code)
@@ -1282,6 +1310,7 @@ def _global_builder_known_merge_shape():
             "exercicis_per_aparell": None,
             "aparells": {"mode": None, "ids": None},
             "camps_per_aparell": None,
+            "agregacio_camps_per_aparell": None,
             "agregacio_camps": None,
             "candidate_source_mode": None,
             "candidate_source_cfg": {
@@ -1291,6 +1320,7 @@ def _global_builder_known_merge_shape():
                 "best_n": None,
                 "agregacio_exercicis": None,
             },
+            "candidate_source_per_aparell": None,
             "agregacio_exercicis": None,
             "agregacio_aparells": None,
             "mode_resultat_aparells": None,
@@ -1622,6 +1652,7 @@ def validate_template_schema_global(
             key_txt = str(key or "").strip()
             if key_txt and key_txt not in allowed_filter_keys and key_txt not in preserved_filter_keys:
                 errors.append(f"filtres: clau no permesa al builder global: '{key_txt}'")
+    team_mode_value = str((schema.get("equips") or {}).get("team_mode") or "").strip().lower()
 
     camps_per_aparell = punt.get("camps_per_aparell") or {}
     if camps_per_aparell and not isinstance(camps_per_aparell, dict):
@@ -1640,12 +1671,67 @@ def validate_template_schema_global(
                 if not bool((info or {}).get("scoreable", False)):
                     errors.append(f"aparell {app_code}: camp '{code}' no es puntuable directament.")
 
+    agg_camps_per_aparell = punt.get("agregacio_camps_per_aparell") or {}
+    if agg_camps_per_aparell and not isinstance(agg_camps_per_aparell, dict):
+        errors.append("puntuacio.agregacio_camps_per_aparell ha de ser un objecte {aparell_codi: agregacio}.")
+    elif isinstance(agg_camps_per_aparell, dict):
+        for raw_key, raw_value in agg_camps_per_aparell.items():
+            app_code = canon_app_code(raw_key)
+            if app_code not in available_app_codes:
+                errors.append(f"aparell global no valid a agregacio_camps_per_aparell: {raw_key}")
+                continue
+            if selected_codes and app_code not in selected_codes:
+                continue
+            agg = str(raw_value or "sum").strip().lower()
+            if agg not in {"sum", "avg", "median", "max", "min"}:
+                errors.append(f"puntuacio.agregacio_camps_per_aparell[{app_code}] invalid: {agg}")
+
+    candidate_source_per_aparell = punt.get("candidate_source_per_aparell") or {}
+    if candidate_source_per_aparell and not isinstance(candidate_source_per_aparell, dict):
+        errors.append("puntuacio.candidate_source_per_aparell ha de ser un objecte {aparell_codi: cfg}.")
+    elif isinstance(candidate_source_per_aparell, dict):
+        allow_candidate_source = (
+            str(tipus or "").strip().lower() == "individual"
+            or (
+                str(tipus or "").strip().lower() == "equips"
+                and team_mode_value == "derived_from_individual"
+            )
+        )
+        if candidate_source_per_aparell and not allow_candidate_source:
+            errors.append(
+                "puntuacio.candidate_source_per_aparell nomes es compatible amb tipus='individual' o tipus='equips' + team_mode=derived_from_individual."
+            )
+        for raw_key, raw_cfg in candidate_source_per_aparell.items():
+            app_code = canon_app_code(raw_key)
+            if app_code not in available_app_codes:
+                errors.append(f"aparell global no valid a candidate_source_per_aparell: {raw_key}")
+                continue
+            if selected_codes and app_code not in selected_codes:
+                continue
+            if not isinstance(raw_cfg, dict):
+                errors.append(f"puntuacio.candidate_source_per_aparell[{app_code}] ha de ser un objecte.")
+                continue
+            mode = str(raw_cfg.get("mode") or "raw_exercise").strip().lower()
+            if mode not in {"raw_exercise", "participant_aggregate"}:
+                errors.append(f"puntuacio.candidate_source_per_aparell[{app_code}].mode invalid: {mode}")
+                continue
+            if mode != "participant_aggregate":
+                continue
+            cfg = raw_cfg.get("cfg")
+            if not isinstance(cfg, dict):
+                errors.append(f"puntuacio.candidate_source_per_aparell[{app_code}].cfg ha de ser un objecte.")
+                continue
+            cfg_mode = str(cfg.get("mode") or "tots").strip().lower()
+            if cfg_mode not in {"tots", "millor_1", "millor_n", "pitjor_1", "pitjor_n", "primer", "ultim", "index", "llista"}:
+                errors.append(f"puntuacio.candidate_source_per_aparell[{app_code}].cfg.mode invalid: {cfg_mode}")
+            cfg_agg = str(cfg.get("agregacio_exercicis") or "sum").strip().lower()
+            if cfg_agg not in {"sum", "avg", "median", "max", "min"}:
+                errors.append(f"puntuacio.candidate_source_per_aparell[{app_code}].cfg.agregacio_exercicis invalid: {cfg_agg}")
+
     if str(punt.get("mode_resultat_aparells") or "score").strip().lower() == "victories" and str(tipus or "individual").strip().lower() != "individual":
         errors.append("puntuacio.mode_resultat_aparells='victories' nomes s'admet per tipus='individual'.")
     if str(punt.get("mode_resultat_aparells") or "score").strip().lower() == "victories":
         errors.extend(validate_victories_granular_options(punt.get("victories") or {}))
-
-    team_mode_value = str((schema.get("equips") or {}).get("team_mode") or "").strip().lower()
 
     for idx, tie in enumerate(schema.get("desempat") or []):
         if not isinstance(tie, dict):

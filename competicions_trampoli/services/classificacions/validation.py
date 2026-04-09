@@ -818,6 +818,98 @@ def _validate_candidate_source_cfg_obj(cfg, prefix: str):
     return errors
 
 
+def _validate_agregacio_camps_per_aparell(competicio, schema: dict):
+    schema = schema or {}
+    punt = schema.get("puntuacio") or {}
+    if not isinstance(punt, dict):
+        punt = {}
+
+    raw_map = punt.get("agregacio_camps_per_aparell") or {}
+    if not raw_map:
+        return []
+    if not isinstance(raw_map, dict):
+        return ["puntuacio.agregacio_camps_per_aparell ha de ser un objecte {app_id: agregacio}."]
+
+    active_app_ids, selected_ids = _get_active_and_selected_app_ids(competicio, punt)
+    errors = []
+    for raw_key, raw_value in raw_map.items():
+        try:
+            app_id = int(raw_key)
+        except Exception:
+            errors.append(f"puntuacio.agregacio_camps_per_aparell: app_id invalid {raw_key}")
+            continue
+        if app_id not in active_app_ids:
+            errors.append(f"puntuacio.agregacio_camps_per_aparell: aparell {app_id} no valid o no actiu.")
+            continue
+        if selected_ids and app_id not in selected_ids:
+            errors.append(f"puntuacio.agregacio_camps_per_aparell: aparell {app_id} no esta seleccionat a puntuacio.")
+            continue
+        agg = str(raw_value or "sum").strip().lower()
+        if agg not in {"sum", "avg", "median", "max", "min"}:
+            errors.append(f"puntuacio.agregacio_camps_per_aparell[{app_id}] invalid: {agg}")
+    return errors
+
+
+def _validate_candidate_source_per_aparell(competicio, schema: dict, *, tipus="individual", team_mode=""):
+    schema = schema or {}
+    punt = (schema.get("puntuacio") or {})
+    if not isinstance(punt, dict):
+        punt = {}
+
+    raw_map = punt.get("candidate_source_per_aparell") or {}
+    if not raw_map:
+        return []
+    if not isinstance(raw_map, dict):
+        return ["puntuacio.candidate_source_per_aparell ha de ser un objecte {app_id: cfg}."]
+
+    allow_candidate_source = (
+        str(tipus or "").strip().lower() == "individual"
+        or (
+            str(tipus or "").strip().lower() == "equips"
+            and str(team_mode or "").strip().lower() == "derived_from_individual"
+        )
+    )
+    if not allow_candidate_source:
+        return [
+            "puntuacio.candidate_source_per_aparell nomes es compatible amb tipus='individual' o tipus='equips' + team_mode=derived_from_individual."
+        ]
+
+    active_app_ids, selected_ids = _get_active_and_selected_app_ids(competicio, punt)
+    errors = []
+    for raw_key, raw_value in raw_map.items():
+        try:
+            app_id = int(raw_key)
+        except Exception:
+            errors.append(f"puntuacio.candidate_source_per_aparell: app_id invalid {raw_key}")
+            continue
+        if app_id not in active_app_ids:
+            errors.append(f"puntuacio.candidate_source_per_aparell: aparell {app_id} no valid o no actiu.")
+            continue
+        if selected_ids and app_id not in selected_ids:
+            errors.append(f"puntuacio.candidate_source_per_aparell: aparell {app_id} no esta seleccionat a puntuacio.")
+            continue
+        if not isinstance(raw_value, dict):
+            errors.append(f"puntuacio.candidate_source_per_aparell[{app_id}] ha de ser un objecte.")
+            continue
+        mode = str(raw_value.get("mode") or "raw_exercise").strip().lower()
+        if mode not in {"raw_exercise", "participant_aggregate"}:
+            errors.append(f"puntuacio.candidate_source_per_aparell[{app_id}].mode invalid: {mode}")
+            continue
+        if mode != "participant_aggregate":
+            continue
+        cfg = raw_value.get("cfg")
+        if not isinstance(cfg, dict):
+            errors.append(f"puntuacio.candidate_source_per_aparell[{app_id}].cfg ha de ser un objecte.")
+            continue
+        errors.extend(
+            _validate_candidate_source_cfg_obj(
+                cfg,
+                f"puntuacio.candidate_source_per_aparell[{app_id}].cfg",
+            )
+        )
+    return errors
+
+
 def _validate_victories_granular_options(victories, prefix: str):
     errors = []
     if not isinstance(victories, dict):
@@ -1792,8 +1884,17 @@ def validate_schema_for_competicio_detailed(competicio, schema_local, tipus="ind
     errors.extend(_validate_particions_config_schema(schema_local, tipus=tipus))
     errors.extend(_validate_no_tots_mode(schema_local))
     errors.extend(_validate_camps_per_aparell(competicio, schema_local))
+    errors.extend(_validate_agregacio_camps_per_aparell(competicio, schema_local))
     errors.extend(
         _validate_candidate_source(
+            schema_local,
+            tipus=tipus,
+            team_mode=schema_local.get("equips", {}).get("team_mode", ""),
+        )
+    )
+    errors.extend(
+        _validate_candidate_source_per_aparell(
+            competicio,
             schema_local,
             tipus=tipus,
             team_mode=schema_local.get("equips", {}).get("team_mode", ""),

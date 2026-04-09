@@ -1147,6 +1147,7 @@
     puntuacio: {
       aparells: { mode:"tots", ids:[] },
       camps_per_aparell: {},
+      agregacio_camps_per_aparell: {},
       agregacio_camps: "sum",
       candidate_source_mode: "raw_exercise",
       candidate_source_cfg: {
@@ -1156,6 +1157,7 @@
         ids: [],
         agregacio_exercicis: "sum",
       },
+      candidate_source_per_aparell: {},
       exercicis: { mode:"tots", index: 1, ids: [], max_per_participant: 0 },
       exercicis_best_n: 1,
       exercise_selection_scope: EXERCISE_SELECTION_SCOPE_PER_MEMBER,
@@ -2232,7 +2234,9 @@
     };
     pushMany(((punt.aparells || {}).ids) || []);
     pushMany(Object.keys((punt.camps_per_aparell && typeof punt.camps_per_aparell === "object") ? punt.camps_per_aparell : {}));
+    pushMany(Object.keys((punt.agregacio_camps_per_aparell && typeof punt.agregacio_camps_per_aparell === "object") ? punt.agregacio_camps_per_aparell : {}));
     pushMany(Object.keys((punt.exercicis_per_aparell && typeof punt.exercicis_per_aparell === "object") ? punt.exercicis_per_aparell : {}));
+    pushMany(Object.keys((punt.candidate_source_per_aparell && typeof punt.candidate_source_per_aparell === "object") ? punt.candidate_source_per_aparell : {}));
     desempat.forEach(item => {
       pushMany((((item || {}).scope || {}).aparells || {}).ids || []);
     });
@@ -2422,7 +2426,9 @@
     punt.aparells.mode = "seleccionar";
     punt.aparells.ids = selectedIds;
     punt.camps_per_aparell = filterPerAppMapByCompatibleIds(punt.camps_per_aparell, selectedIds);
+    punt.agregacio_camps_per_aparell = filterPerAppMapByCompatibleIds(punt.agregacio_camps_per_aparell, selectedIds);
     punt.exercicis_per_aparell = filterPerAppMapByCompatibleIds(punt.exercicis_per_aparell, selectedIds);
+    punt.candidate_source_per_aparell = filterPerAppMapByCompatibleIds(punt.candidate_source_per_aparell, selectedIds);
     schema.desempat = pruneTieCriteriaAppReferences(schema.desempat, selectedIds);
 
     const victories = punt && typeof punt.victories === "object" && !Array.isArray(punt.victories) ? punt.victories : null;
@@ -2581,7 +2587,7 @@
     );
 
     return `
-      <label class="small text-muted mb-1">Camps (multi)</label>
+      <label class="small text-muted mb-1">1. Camps</label>
       <select class="form-control form-control-sm"
               data-app-select="${esc(compAparellId)}"
               multiple size="8">
@@ -6144,6 +6150,9 @@
     if (!punt.camps_per_aparell || typeof punt.camps_per_aparell !== "object" || Array.isArray(punt.camps_per_aparell)) {
       punt.camps_per_aparell = {};
     }
+    if (!punt.agregacio_camps_per_aparell || typeof punt.agregacio_camps_per_aparell !== "object" || Array.isArray(punt.agregacio_camps_per_aparell)) {
+      punt.agregacio_camps_per_aparell = {};
+    }
     punt.exercicis = punt.exercicis && typeof punt.exercicis === "object" && !Array.isArray(punt.exercicis)
       ? punt.exercicis
       : {};
@@ -6153,6 +6162,9 @@
       : JSON.parse(JSON.stringify(fallback.puntuacio.candidate_source_cfg));
     if (!punt.exercicis_per_aparell || typeof punt.exercicis_per_aparell !== "object" || Array.isArray(punt.exercicis_per_aparell)) {
       punt.exercicis_per_aparell = {};
+    }
+    if (!punt.candidate_source_per_aparell || typeof punt.candidate_source_per_aparell !== "object" || Array.isArray(punt.candidate_source_per_aparell)) {
+      punt.candidate_source_per_aparell = {};
     }
     punt.exercise_selection_scope = normalizeExerciseSelectionScope(punt.exercise_selection_scope);
 
@@ -6208,8 +6220,14 @@
     punt.camps_per_aparell = punt.camps_per_aparell && typeof punt.camps_per_aparell === "object" && !Array.isArray(punt.camps_per_aparell)
       ? { ...punt.camps_per_aparell }
       : {};
+    punt.agregacio_camps_per_aparell = punt.agregacio_camps_per_aparell && typeof punt.agregacio_camps_per_aparell === "object" && !Array.isArray(punt.agregacio_camps_per_aparell)
+      ? { ...punt.agregacio_camps_per_aparell }
+      : {};
     punt.exercicis_per_aparell = punt.exercicis_per_aparell && typeof punt.exercicis_per_aparell === "object" && !Array.isArray(punt.exercicis_per_aparell)
       ? { ...punt.exercicis_per_aparell }
+      : {};
+    punt.candidate_source_per_aparell = punt.candidate_source_per_aparell && typeof punt.candidate_source_per_aparell === "object" && !Array.isArray(punt.candidate_source_per_aparell)
+      ? { ...punt.candidate_source_per_aparell }
       : {};
 
     const victoriesOut = punt.victories && typeof punt.victories === "object" && !Array.isArray(punt.victories)
@@ -7412,8 +7430,10 @@
       els.sVictoryAggExercicis,
     ].forEach(clearInjectedSelectOptions);
 
-    ensureSelectOption(els.sAggCamps, (schema.puntuacio||{}).agregacio_camps, value => `${value} (legacy)`);
-    els.sAggCamps.value = (schema.puntuacio||{}).agregacio_camps || "sum";
+    if (els.sAggCamps) {
+      ensureSelectOption(els.sAggCamps, (schema.puntuacio||{}).agregacio_camps, value => `${value} (legacy)`);
+      els.sAggCamps.value = (schema.puntuacio||{}).agregacio_camps || "sum";
+    }
     if (els.sCandidateSourceMode) {
       ensureSelectOption(els.sCandidateSourceMode, (schema.puntuacio||{}).candidate_source_mode, value => `${value} (legacy)`);
       els.sCandidateSourceMode.value = (schema.puntuacio||{}).candidate_source_mode || "raw_exercise";

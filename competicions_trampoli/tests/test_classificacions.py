@@ -817,6 +817,66 @@ class ClassificacioMatrixScalarTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual((hydrated_punt.get("candidate_source_cfg") or {}).get("mode"), "millor_n")
         self.assertEqual((hydrated_punt.get("candidate_source_cfg") or {}).get("best_n"), 2)
 
+    def test_classificacio_save_roundtrip_applies_candidate_source_per_app_fallback_cfg(self):
+        payload_schema = self._selected_total_schema([self.comp_app_a.id, self.comp_app_b.id])
+        payload_schema["puntuacio"] = {
+            **payload_schema["puntuacio"],
+            "candidate_source_mode": "participant_aggregate",
+            "candidate_source_cfg": {
+                "mode": "millor_n",
+                "best_n": 2,
+                "index": 3,
+                "ids": [1, 2],
+                "agregacio_exercicis": "avg",
+            },
+            "candidate_source_per_aparell": {
+                str(self.comp_app_a.id): {
+                    "mode": "participant_aggregate",
+                },
+                str(self.comp_app_b.id): {
+                    "mode": "participant_aggregate",
+                    "cfg": {
+                        "mode": "index",
+                    },
+                },
+            },
+        }
+        payload = {
+            "nom": "Cfg candidate source fallback",
+            "activa": True,
+            "ordre": 1,
+            "tipus": "individual",
+            "schema": payload_schema,
+        }
+
+        res = self.client.post(
+            reverse("classificacio_save", kwargs={"pk": self.comp.id}),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        self.assertEqual(res.status_code, 200)
+        body = res.json()
+        cfg = ClassificacioConfig.objects.get(pk=body["id"])
+        punt = cfg.schema.get("puntuacio") or {}
+        per_app = punt.get("candidate_source_per_aparell") or {}
+
+        self.assertEqual((per_app.get(str(self.comp_app_a.id)) or {}).get("mode"), "participant_aggregate")
+        self.assertEqual(((per_app.get(str(self.comp_app_a.id)) or {}).get("cfg") or {}).get("mode"), "millor_n")
+        self.assertEqual(((per_app.get(str(self.comp_app_a.id)) or {}).get("cfg") or {}).get("best_n"), 2)
+        self.assertEqual(((per_app.get(str(self.comp_app_a.id)) or {}).get("cfg") or {}).get("index"), 3)
+        self.assertEqual(((per_app.get(str(self.comp_app_a.id)) or {}).get("cfg") or {}).get("agregacio_exercicis"), "avg")
+
+        self.assertEqual((per_app.get(str(self.comp_app_b.id)) or {}).get("mode"), "participant_aggregate")
+        self.assertEqual(((per_app.get(str(self.comp_app_b.id)) or {}).get("cfg") or {}).get("mode"), "index")
+        self.assertEqual(((per_app.get(str(self.comp_app_b.id)) or {}).get("cfg") or {}).get("index"), 3)
+        self.assertEqual(((per_app.get(str(self.comp_app_b.id)) or {}).get("cfg") or {}).get("agregacio_exercicis"), "avg")
+
+        hydrated = prepare_schema_for_builder_hydration(self.comp, cfg.schema or {}, tipus="individual")
+        hydrated_per_app = ((hydrated.get("puntuacio") or {}).get("candidate_source_per_aparell") or {})
+        self.assertEqual((((hydrated_per_app.get(str(self.comp_app_a.id)) or {}).get("cfg")) or {}).get("mode"), "millor_n")
+        self.assertEqual((((hydrated_per_app.get(str(self.comp_app_b.id)) or {}).get("cfg")) or {}).get("mode"), "index")
+
     def test_classificacio_preview_returns_consistent_error_when_compute_fails(self):
         cfg = ClassificacioConfig.objects.create(
             competicio=self.comp,
