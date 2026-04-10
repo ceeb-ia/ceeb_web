@@ -1,0 +1,423 @@
+  const els = {
+    list: document.getElementById("cfgList"),
+    btnAdd: document.getElementById("btnAdd"),
+    btnSave: document.getElementById("btnSave"),
+    btnDelete: document.getElementById("btnDelete"),
+    saveMsg: document.getElementById("saveMsg"),
+    saveErrorsBox: document.getElementById("saveErrorsBox"),
+    backToTop: document.getElementById("classif-builder-back-to-top"),
+    templateSelect: document.getElementById("templateSelect"),
+    btnTemplateRefresh: document.getElementById("btnTemplateRefresh"),
+    btnTemplateCheck: document.getElementById("btnTemplateCheck"),
+    btnTemplateApply: document.getElementById("btnTemplateApply"),
+    btnTemplateSave: document.getElementById("btnTemplateSave"),
+    btnPreview: document.getElementById("btnPreview"),
+    editorEmpty: document.getElementById("editorEmpty"),
+    editorBody: document.getElementById("editorBody"),
+    previewBox: document.getElementById("previewBox"),
+    columnsBox: document.getElementById("columnsBox"),
+    columnsRawContextualCopy: document.getElementById("columnsRawContextualCopy"),
+    btnColAddBuiltin: document.getElementById("btnColAddBuiltin"),
+    btnColAddRaw: document.getElementById("btnColAddRaw"),
+    detailConfigBox: document.getElementById("detailConfigBox"),
+    detailScopeHint: document.getElementById("detailScopeHint"),
+    detailConfigAlert: document.getElementById("detailConfigAlert"),
+    detailEnabled: document.getElementById("detailEnabled"),
+    detailDefaultOpen: document.getElementById("detailDefaultOpen"),
+    detailSectionType: document.getElementById("detailSectionType"),
+    detailSectionsBox: document.getElementById("detailSectionsBox"),
+    btnDetailSectionAdd: document.getElementById("btnDetailSectionAdd"),
+
+    fNom: document.getElementById("fNom"),
+    fSlug: document.getElementById("fSlug"),
+    fActiva: document.getElementById("fActiva"),
+    fTipus: document.getElementById("fTipus"),
+    classifStatusBox: document.getElementById("classifStatusBox"),
+    equipMetaBox: document.getElementById("equipMetaBox"),
+    equipCfgBox: document.getElementById("equipCfgBox"),
+    eqAssignmentContext: document.getElementById("eqAssignmentContext"),
+    eqAssignmentContextHint: document.getElementById("eqAssignmentContextHint"),
+    eqTeamModeWrap: document.getElementById("eqTeamModeWrap"),
+    eqTeamMode: document.getElementById("eqTeamMode"),
+    eqTeamModeHint: document.getElementById("eqTeamModeHint"),
+    eqCompatBanner: document.getElementById("eqCompatBanner"),
+    eqIncludeSenseEquip: document.getElementById("eqIncludeSenseEquip"),
+    btnEqManualAdd: document.getElementById("btnEqManualAdd"),
+    eqManualRows: document.getElementById("eqManualRows"),
+
+    particionsFieldsBox: document.getElementById("particionsFieldsBox"),
+    particionsCustomBox: document.getElementById("particionsCustomBox"),
+    particionsDerivedBox: document.getElementById("particionsDerivedBox"),
+    birthYearRangeConfigBox: document.getElementById("birthYearRangeConfigBox"),
+
+    apSelBox: document.getElementById("apSelBox"),
+    apChkList: document.getElementById("apChkList"),
+    appStaleBanner: document.getElementById("appStaleBanner"),
+
+    perAppBox: document.getElementById("perAppBox"),
+    fieldAggregationCard: document.getElementById("fieldAggregationCard"),
+    appAggregationCard: document.getElementById("appAggregationCard"),
+
+    sAggCamps: document.getElementById("sAggCamps"),
+    candidateSourceCard: document.getElementById("candidateSourceCard"),
+    candidateSourceTitle: document.getElementById("candidateSourceTitle"),
+    candidateSourceDesc: document.getElementById("candidateSourceDesc"),
+    sCandidateSourceMode: document.getElementById("sCandidateSourceMode"),
+    candidateSourceModeLabel: document.getElementById("candidateSourceModeLabel"),
+    candidateSourceModeHint: document.getElementById("candidateSourceModeHint"),
+    candidateSourceCfgWrap: document.getElementById("candidateSourceCfgWrap"),
+    candidateSourceSelectionLabel: document.getElementById("candidateSourceSelectionLabel"),
+    candidateSourceAggLabel: document.getElementById("candidateSourceAggLabel"),
+    sCandidateSourceSelectionMode: document.getElementById("sCandidateSourceSelectionMode"),
+    candidateSourceBestNBox: document.getElementById("candidateSourceBestNBox"),
+    candidateSourceIndexBox: document.getElementById("candidateSourceIndexBox"),
+    candidateSourceIdsBox: document.getElementById("candidateSourceIdsBox"),
+    iCandidateSourceBestN: document.getElementById("iCandidateSourceBestN"),
+    iCandidateSourceIndex: document.getElementById("iCandidateSourceIndex"),
+    tCandidateSourceIds: document.getElementById("tCandidateSourceIds"),
+    sCandidateSourceAggExercicis: document.getElementById("sCandidateSourceAggExercicis"),
+    candidateSourceHint: document.getElementById("candidateSourceHint"),
+    exerciseSelectionScopeWrap: document.getElementById("exerciseSelectionScopeWrap"),
+    sExerciseSelectionScope: document.getElementById("sExerciseSelectionScope"),
+    sModeSeleccioExercicis: document.getElementById("sModeSeleccioExercicis"),
+    candidateScopeHint: document.getElementById("candidateScopeHint"),
+    exerciseCriteriaCard: document.getElementById("exerciseCriteriaCard"),
+    exerciseModeLabel: document.getElementById("exerciseModeLabel"),
+    globalExerciseCriteriaWrap: document.getElementById("globalExerciseCriteriaWrap"),
+    exerciseRestrictionsCard: document.getElementById("exerciseRestrictionsCard"),
+    sExercicisMode: document.getElementById("sExercicisMode"),
+    exBestNBox: document.getElementById("exBestNBox"),
+    exIndexBox: document.getElementById("exIndexBox"),
+    exMaxPerParticipantBox: document.getElementById("exMaxPerParticipantBox"),
+    exIdsBox: document.getElementById("exIdsBox"),
+    exModeHint: document.getElementById("exModeHint"),
+    restrictionsHint: document.getElementById("restrictionsHint"),
+    perAppConfigIntro: document.getElementById("perAppConfigIntro"),
+    puntuacioSummaryBox: document.getElementById("puntuacioSummaryBox"),
+    puntuacioSummaryText: document.getElementById("puntuacioSummaryText"),
+    iExBestN: document.getElementById("iExBestN"),
+    iExIndex: document.getElementById("iExIndex"),
+    iExMaxPerParticipant: document.getElementById("iExMaxPerParticipant"),
+    tExIds: document.getElementById("tExIds"),
+    sAggExercicis: document.getElementById("sAggExercicis"),
+    sAggAparells: document.getElementById("sAggAparells"),
+    sModeResultatAparells: document.getElementById("sModeResultatAparells"),
+    sOrdre: document.getElementById("sOrdre"),
+
+    victoryConfigBox: document.getElementById("victoryConfigBox"),
+    sVictoryModeCamps: document.getElementById("sVictoryModeCamps"),
+    sVictoryModeExercicis: document.getElementById("sVictoryModeExercicis"),
+    sVictoryFieldSelectionMode: document.getElementById("sVictoryFieldSelectionMode"),
+    sVictoryAggCamps: document.getElementById("sVictoryAggCamps"),
+    sVictoryAggExercicis: document.getElementById("sVictoryAggExercicis"),
+    victoryFieldSelectionModeWrap: document.getElementById("victoryFieldSelectionModeWrap"),
+    victoryAggCampsWrap: document.getElementById("victoryAggCampsWrap"),
+    victoryAggExercicisWrap: document.getElementById("victoryAggExercicisWrap"),
+    victoryTieBox: document.getElementById("victoryTieBox"),
+    victoryTieBody: document.getElementById("victoryTieBody"),
+    btnVictoryTieAdd: document.getElementById("btnVictoryTieAdd"),
+    tieBody: document.getElementById("tieBody"),
+    tieParticipantsHead: document.getElementById("tieParticipantsHead"),
+    btnTieAdd: document.getElementById("btnTieAdd"),
+    btnTieCloneFromPuntuacio: document.getElementById("btnTieCloneFromPuntuacio"),
+    tDesempat: document.getElementById("tDesempat"),
+
+    fEntitats: document.getElementById("fEntitats"),
+    fCategories: document.getElementById("fCategories"),
+    fSubcategories: document.getElementById("fSubcategories"),
+    fGrups: document.getElementById("fGrups"),
+    tFiltres: document.getElementById("tFiltres"),
+
+    iTopN: document.getElementById("iTopN"),
+    cEmpats: document.getElementById("cEmpats"),
+
+    advancedJson: document.getElementById("advancedJson"),
+  };
+
+  let state = {
+    cfgs: JSON.parse(JSON.stringify(CFGS || [])),
+    selectedId: null,
+    templates: [],
+    rehydrationIssues: [],
+  };
+  let advancedDirty = {
+    desempat: false,
+    filtres: false,
+  };
+  let builderNavBound = false;
+
+  function setActiveBuilderNav(sectionId) {
+    document.querySelectorAll("[data-builder-nav-link]").forEach((link) => {
+      const target = String(link.getAttribute("href") || "").replace(/^#/, "");
+      link.classList.toggle("is-active", !!sectionId && target === sectionId);
+    });
+  }
+
+  function updateBuilderNavFromScroll() {
+    const sections = Array.from(document.querySelectorAll("[data-builder-section]"));
+    if (!sections.length) {
+      syncBuilderBackToTopButton();
+      return;
+    }
+
+    const threshold = window.scrollY + 180;
+    let activeId = sections[0].id;
+    sections.forEach((section) => {
+      if (section.offsetTop <= threshold) activeId = section.id;
+    });
+    setActiveBuilderNav(activeId);
+    syncBuilderBackToTopButton();
+  }
+
+  function syncBuilderBackToTopButton() {
+    if (!els.backToTop) return;
+    const isVisible = (window.scrollY || window.pageYOffset || 0) > 280;
+    els.backToTop.classList.toggle("is-visible", isVisible);
+    syncBuilderBackToTopButtonPosition();
+  }
+
+  function syncBuilderBackToTopButtonPosition() {
+    if (!els.backToTop) return;
+
+    els.backToTop.style.bottom = "";
+
+    const chatBtn = document.getElementById("chatbot-open");
+    if (!chatBtn) return;
+
+    const chatStyle = window.getComputedStyle(chatBtn);
+    if (
+      chatStyle.display === "none" ||
+      chatStyle.visibility === "hidden" ||
+      chatBtn.classList.contains("minimized")
+    ) {
+      return;
+    }
+
+    const chatRect = chatBtn.getBoundingClientRect();
+    if (chatRect.width <= 0 || chatRect.height <= 0) return;
+
+    const btnRect = els.backToTop.getBoundingClientRect();
+    const overlapsHorizontally = btnRect.right > (chatRect.left - 8) && btnRect.left < (chatRect.right + 8);
+    if (!overlapsHorizontally) return;
+
+    const bottomOffset = Math.max(0, window.innerHeight - chatRect.top) + 12;
+    els.backToTop.style.bottom = `${bottomOffset}px`;
+  }
+
+  function initBuilderSectionNav() {
+    if (builderNavBound) return;
+    builderNavBound = true;
+
+    document.querySelectorAll("[data-builder-nav-link]").forEach((link) => {
+      link.addEventListener("click", () => {
+        const targetId = String(link.getAttribute("href") || "").replace(/^#/, "");
+        setActiveBuilderNav(targetId);
+      });
+    });
+
+    window.addEventListener("scroll", updateBuilderNavFromScroll, { passive: true });
+    window.addEventListener("resize", updateBuilderNavFromScroll);
+    if (els.backToTop) {
+      els.backToTop.addEventListener("click", () => {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      });
+      const chatbotOpenBtn = document.getElementById("chatbot-open");
+      if (chatbotOpenBtn && window.MutationObserver) {
+        const chatbotObserver = new MutationObserver(() => syncBuilderBackToTopButtonPosition());
+        chatbotObserver.observe(chatbotOpenBtn, {
+          attributes: true,
+          attributeFilter: ["class", "style"],
+        });
+      }
+    }
+    updateBuilderNavFromScroll();
+  }
+
+  function getCookie(name) {
+    const v = document.cookie.split(";").map(x => x.trim());
+    for (const c of v) {
+      if (c.startsWith(name + "=")) return decodeURIComponent(c.substring(name.length + 1));
+    }
+    return "";
+  }
+
+  function esc(s) {
+    return String(s || "")
+      .split("&").join("&amp;")
+      .split("<").join("&lt;")
+      .split(">").join("&gt;")
+      .split('"').join("&quot;")
+      .split("'").join("&#39;");
+  }
+
+  function currentCfg() {
+    return state.cfgs.find(x => x.id === state.selectedId);
+  }
+
+  function registerStaticErrorPaths() {
+    const map = [
+      [els.detailEnabled, "presentacio.detall.enabled"],
+      [els.detailDefaultOpen, "presentacio.detall.default_open"],
+      [els.iTopN, "presentacio.top_n"],
+      [els.cEmpats, "presentacio.mostrar_empats"],
+      [els.advancedJson, "schema"],
+    ];
+    map.forEach(([node, path]) => {
+      if (node && path) node.dataset.errorPath = path;
+    });
+    [
+      ["section-meta", "meta"],
+      ["section-particions", "particions"],
+      ["section-puntuacio", "puntuacio"],
+      ["section-desempat", "desempat"],
+      ["section-filtres", "filtres"],
+      ["section-presentacio", "presentacio"],
+    ].forEach(([id, path]) => {
+      const node = document.getElementById(id);
+      if (node && path) node.dataset.errorPath = path;
+    });
+  }
+
+  function clearBuilderSaveFeedback() {
+    if (els.saveMsg) {
+      els.saveMsg.style.display = "none";
+      els.saveMsg.textContent = "";
+    }
+    if (els.saveErrorsBox) {
+      els.saveErrorsBox.style.display = "none";
+      els.saveErrorsBox.innerHTML = "";
+    }
+    document.querySelectorAll(".builder-error-note").forEach(node => node.remove());
+    document.querySelectorAll(".builder-error-target").forEach(node => node.classList.remove("builder-error-target"));
+    document.querySelectorAll(".builder-section.has-error").forEach(node => node.classList.remove("has-error"));
+  }
+
+  function showBuilderSaveSuccessFeedback(message) {
+    if (!els.saveMsg) return;
+    els.saveMsg.textContent = String(message || "Guardat correctament");
+    els.saveMsg.style.display = "";
+    els.saveMsg.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  function setSaveButtonBusy(isBusy, done = false) {
+    if (!els.btnSave) return;
+    if (!els.btnSave.dataset.defaultLabel) {
+      els.btnSave.dataset.defaultLabel = els.btnSave.textContent || "Guardar";
+    }
+    if (isBusy) {
+      els.btnSave.disabled = true;
+      els.btnSave.textContent = "Guardant...";
+      return;
+    }
+    els.btnSave.disabled = false;
+    els.btnSave.textContent = done ? "Guardat" : (els.btnSave.dataset.defaultLabel || "Guardar");
+    if (done) {
+      window.setTimeout(() => {
+        if (!els.btnSave.disabled) {
+          els.btnSave.textContent = els.btnSave.dataset.defaultLabel || "Guardar";
+        }
+      }, 1800);
+    }
+  }
+
+  function builderSectionIdFromErrorPath(path) {
+    const value = String(path || "").trim();
+    if (value.startsWith("presentacio")) return "section-presentacio";
+    if (value.startsWith("filtres")) return "section-filtres";
+    if (value.startsWith("desempat")) return "section-desempat";
+    if (value.startsWith("puntuacio")) return "section-puntuacio";
+    if (value.startsWith("particions")) return "section-particions";
+    if (value.startsWith("equips") || value.startsWith("meta")) return "section-meta";
+    return "";
+  }
+
+  function normalizeSaveErrorDetails(rawDetails) {
+    return (Array.isArray(rawDetails) ? rawDetails : []).map(item => {
+      if (!item || typeof item !== "object") return null;
+      return {
+        path: String(item.path || "").trim(),
+        message: String(item.message || "").trim(),
+        section: String(item.section || "").trim() || "general",
+        severity: String(item.severity || "error").trim() || "error",
+      };
+    }).filter(item => item && item.message);
+  }
+
+  function findBestErrorNode(path) {
+    const target = String(path || "").trim();
+    if (!target) return null;
+    const exact = document.querySelector(`[data-error-path="${CSS.escape(target)}"]`);
+    if (exact) return exact;
+    let best = null;
+    let bestScore = -1;
+    document.querySelectorAll("[data-error-path]").forEach(node => {
+      const candidate = String(node.dataset.errorPath || "").trim();
+      if (!candidate) return;
+      if (!(target.startsWith(candidate) || candidate.startsWith(target))) return;
+      if (candidate.length > bestScore) {
+        best = node;
+        bestScore = candidate.length;
+      }
+    });
+    return best;
+  }
+
+  function appendErrorNote(node, message) {
+    if (!node || !message) return;
+    const note = document.createElement("div");
+    note.className = "builder-error-note";
+    note.textContent = message;
+    if (["INPUT", "SELECT", "TEXTAREA"].includes(String(node.tagName || "").toUpperCase()) && node.parentElement) {
+      node.parentElement.appendChild(note);
+    } else {
+      node.appendChild(note);
+    }
+  }
+
+  function _unusedRenderBuilderSaveErrorsLegacy(rawDetails, fallbackMessages) {
+    clearBuilderSaveFeedback();
+    const details = normalizeSaveErrorDetails(rawDetails);
+    const fallback = (Array.isArray(fallbackMessages) ? fallbackMessages : []).map(msg => String(msg || "").trim()).filter(Boolean);
+    if (els.saveErrorsBox) {
+      const lines = [];
+      if (details.length) {
+        lines.push(`No s'ha pogut guardar. ${details.length} error(s):`);
+        details.slice(0, 8).forEach((item, idx) => lines.push(`${idx + 1}. ${item.message}`));
+        if (details.length > 8) lines.push(`... i ${details.length - 8} errors més.`);
+      } else if (fallback.length) {
+        lines.push(`No s'ha pogut guardar. ${fallback.length} error(s):`);
+        fallback.slice(0, 8).forEach((msg, idx) => lines.push(`${idx + 1}. ${msg}`));
+        if (fallback.length > 8) lines.push(`... i ${fallback.length - 8} errors més.`);
+      }
+      if (lines.length) {
+        els.saveErrorsBox.style.display = "";
+        els.saveErrorsBox.textContent = lines.join("\n");
+      }
+    }
+
+    let firstTarget = null;
+    const source = details.length ? details : fallback.map(msg => ({ path: "", message: msg, section: "general", severity: "error" }));
+    source.forEach(item => {
+      const sectionId = builderSectionIdFromErrorPath(item.path || item.section);
+      if (sectionId) {
+        const sectionNode = document.getElementById(sectionId);
+        if (sectionNode) sectionNode.classList.add("has-error");
+      }
+      const node = findBestErrorNode(item.path);
+      if (node) {
+        node.classList.add("builder-error-target");
+        appendErrorNote(node, item.message);
+        if (!firstTarget) firstTarget = node;
+      } else if (!firstTarget && sectionId) {
+        firstTarget = document.getElementById(sectionId);
+      }
+    });
+
+    if (firstTarget) {
+      const targetSection = firstTarget.closest("[data-builder-section]");
+      if (targetSection && targetSection.id) setActiveBuilderNav(targetSection.id);
+      firstTarget.scrollIntoView({ behavior: "smooth", block: "center" });
+      focusBuilderErrorTarget(firstTarget);
+    }
+  }
+

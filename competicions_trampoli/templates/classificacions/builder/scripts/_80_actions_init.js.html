@@ -1,0 +1,369 @@
+  // save/delete/preview: manté endpoints actuals
+  async function postJson(url, payload) {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": getCookie("csrftoken"),
+      },
+      body: JSON.stringify(payload),
+    });
+    const isJson = String(res.headers.get("content-type") || "").includes("application/json");
+    const body = isJson ? await res.json().catch(() => null) : await res.text();
+    if (!res.ok) {
+      const msg = isJson
+        ? String((body && (body.error || body.message)) || `HTTP ${res.status}`)
+        : String(body || `HTTP ${res.status}`);
+      const err = new Error(msg);
+      err.status = res.status;
+      err.details = isJson ? body : null;
+      err.raw = body;
+      throw err;
+    }
+    return body;
+  }
+
+  function fallbackModeLabel(mode) {
+    const m = String(mode || "strict").toLowerCase();
+    if (m === "assistit") return "assistit";
+    if (m === "force") return "force";
+    return "strict";
+  }
+
+  function buildFallbackWarning(details, nextMode) {
+    const blocking = Array.isArray(details?.blocking_errors) ? details.blocking_errors : [];
+    const warnings = Array.isArray(details?.warnings) ? details.warnings : [];
+    const phase = fallbackModeLabel(details?.phase);
+    const next = fallbackModeLabel(nextMode);
+    const lines = [];
+    lines.push(`No s'ha pogut aplicar la plantilla en mode ${phase}.`);
+    if (blocking.length) {
+      lines.push("Errors de compatibilitat:");
+      blocking.slice(0, 5).forEach((msg, idx) => lines.push(`${idx + 1}. ${msg}`));
+      if (blocking.length > 5) lines.push(`... i ${blocking.length - 5} errors més.`);
+    }
+    if (warnings.length) {
+      lines.push("Avisos:");
+      warnings.slice(0, 5).forEach((msg, idx) => lines.push(`${idx + 1}. ${msg}`));
+      if (warnings.length > 5) lines.push(`... i ${warnings.length - 5} avisos més.`);
+    }
+    lines.push(`Vols provar el fallback ${next}?`);
+    return lines.join("\n");
+  }
+
+  async function checkSelectedTemplate() {
+    const templateId = selectedTemplateId();
+    if (!templateId) {
+      showAlert("Selecciona una plantilla.");
+      return;
+    }
+    const out = await postJson(TEMPLATE_VALIDATE_URL, { template_id: templateId });
+    showAlert(summarizeTemplateValidation(out));
+  }
+
+  async function applySelectedTemplate() {
+    const templateId = selectedTemplateId();
+    if (!templateId) {
+      showAlert("Selecciona una plantilla.");
+      return;
+    }
+    const defaultName = `${templateNameById(templateId)} (tpl)`;
+    const nom = await showPrompt("Nom de la nova classificació:", defaultName);
+    if (nom === null) return;
+    const nomFinal = String(nom || "").trim() || defaultName;
+
+    let mode = "strict";
+    let ackWarning = false;
+    let out = null;
+    while (true) {
+      try {
+        out = await postJson(TEMPLATE_APPLY_URL, {
+          template_id: templateId,
+          nom: nomFinal,
+          activa: false,
+          fallback_mode: mode,
+          ack_warning: ackWarning,
+        });
+        break;
+      } catch (err) {
+        const details = err && err.details ? err.details : null;
+        const nextMode = details && details.next_fallback ? String(details.next_fallback) : "";
+        const canTryNext = !!(details && details.can_try_next && nextMode);
+        if (!canTryNext) throw err;
+        const accepted = await showConfirm(buildFallbackWarning(details, nextMode));
+        if (!accepted) return;
+        mode = nextMode;
+        ackWarning = true;
+      }
+    }
+
+    if (!out || !out.cfg) throw new Error("Resposta no vàlida aplicant plantilla.");
+    state.cfgs.push(out.cfg);
+    renderList();
+    selectCfg(out.cfg.id);
+
+    const warns = Array.isArray(out.warnings) ? out.warnings : [];
+    if (warns.length) {
+      showAlert(`Plantilla aplicada amb avisos:\n${warns.join("\n")}`);
+    }
+  }
+
+  async function saveCurrentCfgAsTemplate() {
+    const cfg = currentCfg();
+    if (!cfg) {
+      showAlert("Selecciona una configuració.");
+      return;
+    }
+    if (String(cfg.id).startsWith("tmp_")) {
+      showAlert("Guarda primer la classificació abans de crear la plantilla.");
+      return;
+    }
+
+    const nomInput = await showPrompt("Nom de la plantilla:", String(cfg.nom || "Plantilla classificació"));
+    if (nomInput === null) return;
+    const nom = String(nomInput || "").trim();
+    if (!nom) {
+      showAlert("Cal informar un nom de plantilla.");
+      return;
+    }
+    const descripcioInput = await showPrompt("Descripció (opcional):", "");
+    if (descripcioInput === null) return;
+
+    const out = await postJson(TEMPLATE_SAVE_URL, {
+      cfg_id: cfg.id,
+      nom: nom,
+      descripcio: String(descripcioInput || "").trim(),
+      activa: true,
+    });
+
+    await loadTemplateList();
+    if (els.templateSelect && out && out.template && out.template.id) {
+      els.templateSelect.value = String(out.template.id);
+    }
+
+    const warns = Array.isArray(out.warnings) ? out.warnings : [];
+    if (warns.length) {
+      showAlert(`Plantilla desada amb avisos:\n${warns.join("\n")}`);
+    }
+  }
+
+  if (els.btnTemplateRefresh) {
+    els.btnTemplateRefresh.addEventListener("click", async () => {
+      try {
+        await loadTemplateList();
+      } catch (e) {
+        showAlert("Error carregant plantilles: " + e.message);
+      }
+    });
+  }
+
+  if (els.btnTemplateCheck) {
+    els.btnTemplateCheck.addEventListener("click", async () => {
+      try {
+        await checkSelectedTemplate();
+      } catch (e) {
+        showAlert("Error comprovant plantilla: " + e.message);
+      }
+    });
+  }
+
+  if (els.btnTemplateApply) {
+    els.btnTemplateApply.addEventListener("click", async () => {
+      try {
+        await applySelectedTemplate();
+      } catch (e) {
+        if (e && e.details) {
+          showAlert("Error aplicant plantilla:\n" + summarizeTemplateValidation(e.details));
+        } else {
+          showAlert("Error aplicant plantilla: " + e.message);
+        }
+      }
+    });
+  }
+
+  if (els.btnTemplateSave) {
+    els.btnTemplateSave.addEventListener("click", async () => {
+      try {
+        await saveCurrentCfgAsTemplate();
+      } catch (e) {
+        showAlert("Error desant plantilla: " + e.message);
+      }
+    });
+  }
+
+  els.btnSave.addEventListener("click", async () => {
+    const cfg = currentCfg();
+    if (!cfg) return;
+    const previousCfgId = cfg.id;
+
+    clearBuilderSaveFeedback();
+    setSaveButtonBusy(true);
+    let saveDone = false;
+
+    try {
+      syncAdvancedFromUI({ preferAdvanced: true });
+      const payloadSchema = (cfg.schema && typeof cfg.schema === "object" && !Array.isArray(cfg.schema)) ? cfg.schema : {};
+      pruneSchemaAppReferences(payloadSchema, selectedAparellIdsFromUI());
+      cfg.schema = payloadSchema;
+      const payload = {
+        id: (String(cfg.id).startsWith("tmp_") ? null : cfg.id),
+        nom: cfg.nom,
+        slug: cfg.slug || "",
+        activa: !!cfg.activa,
+        ordre: cfg.ordre || 1,
+        tipus: cfg.tipus || "individual",
+        schema: cfg.schema || DEFAULT_SCHEMA
+      };
+      const out = await postJson(SAVE_URL, payload);
+      const savedId = out && (out.id || (out.cfg && out.cfg.id));
+      if (savedId) {
+        cfg.id = savedId;
+        if (state.selectedId === previousCfgId) {
+          state.selectedId = savedId;
+        }
+        if (out.cfg && typeof out.cfg === "object") {
+          cfg.slug = String(out.cfg.slug || cfg.slug || "");
+          cfg.nom = String(out.cfg.nom || cfg.nom || "");
+          cfg.activa = !!out.cfg.activa;
+          cfg.tipus = String(out.cfg.tipus || cfg.tipus || "individual");
+          cfg.schema = out.cfg.schema || cfg.schema || DEFAULT_SCHEMA;
+        }
+        cfg._isTemp = false;
+        renderList();
+        if (state.selectedId === cfg.id) {
+          syncUIFromSchema(cfg.schema || DEFAULT_SCHEMA);
+        }
+      }
+      clearBuilderSaveFeedback();
+      showBuilderSaveSuccessFeedback("Guardat correctament");
+      saveDone = true;
+    } catch (e) {
+      const details = e && e.details ? e.details : null;
+      renderBuilderSaveErrors(details && details.error_details, (details && details.errors) || [e.message]);
+    } finally {
+      setSaveButtonBusy(false, saveDone);
+      if (saveDone) {
+        window.setTimeout(() => {
+          if (els.saveMsg) els.saveMsg.style.display = "none";
+        }, 2500);
+      }
+    }
+  });
+
+  els.btnDelete.addEventListener("click", async () => {
+    const cfg = currentCfg();
+    if (!cfg) return;
+    if (!await showConfirm("Eliminar aquesta configuració?")) return;
+
+    try {
+      if (String(cfg.id).startsWith("tmp_")) {
+        state.cfgs = state.cfgs.filter(x => x.id !== cfg.id);
+        state.selectedId = null;
+        renderList();
+        els.editorBody.style.display = "none";
+        els.editorEmpty.style.display = "";
+        return;
+      }
+      await postJson(DELETE_URL_PATTERN.replace("/0/", "/" + cfg.id + "/"), {});
+      state.cfgs = state.cfgs.filter(x => x.id !== cfg.id);
+      state.selectedId = null;
+      renderList();
+      els.editorBody.style.display = "none";
+      els.editorEmpty.style.display = "";
+    } catch (e) {
+      showAlert("Error eliminant: " + e.message);
+    }
+  });
+
+  if (els.btnPreview && CAN_PREVIEW) {
+  els.btnPreview.addEventListener("click", async () => {
+    const cfg = currentCfg();
+    if (!cfg) return;
+
+    syncAdvancedFromUI({ preferAdvanced: true });
+
+    try {
+      const cid = cfg.id;
+      if (String(cid).startsWith("tmp_")) {
+        els.previewBox.innerHTML = `<div class="text-muted small">Guarda abans de previsualitzar.</div>`;
+        return;
+      }
+      const res = await fetch(PREVIEW_URL_PATTERN.replace("/0/", "/" + cid + "/"), {
+        method:"POST",
+        headers:{ "X-CSRFToken": getCookie("csrftoken") }
+      });
+      const out = await res.json();
+      if (!res.ok || !out.ok) {
+        const error = String(out?.error || "Preview KO");
+        const details = Array.isArray(out?.errors) ? out.errors : [];
+        let html = `<div class="text-danger small">${esc(error)}</div>`;
+        if (details.length) {
+          html += `<ul class="small text-danger mb-0 mt-2">`;
+          details.forEach(msg => {
+            html += `<li>${esc(String(msg))}</li>`;
+          });
+          html += `</ul>`;
+        }
+        els.previewBox.innerHTML = html;
+        return;
+      }
+
+      const columns = normalizeColumnsFromSchema(out.columns || ((cfg.schema||{}).presentacio||{}).columnes || []);
+      const parts = out.data || [];
+      let html = "";
+      parts.forEach((p, pIdx) => {
+        const particioNom = formatPartitionTitle(p.particio);
+
+        const rowCount = (p.rows || []).length;
+        html += `<section class="partition-card part-idx-${esc(String(pIdx % 5))}">`;
+        html += `<div class="partition-head">`;
+        html += `<div class="partition-title-wrap">`;
+        html += `<div class="partition-sub">Particio</div>`;
+        html += `<div class="partition-title">${esc(particioNom)}</div>`;
+        html += `</div>`;
+        html += `<span class="partition-badge">${esc(String(rowCount))}</span>`;
+        html += `</div>`;
+        html += `<div class="table-responsive"><table class="table table-sm table-bordered preview-classif-table partition-table"><thead><tr>`;
+        columns.forEach(col => {
+          html += `<th class="${esc(previewColClass(col))}">${esc(col.label || col.key || "")}</th>`;
+        });
+        html += `</tr></thead><tbody>`;
+        (p.rows||[]).slice(0, 20).forEach(r => {
+          const cells = r.cells || r.display || {};
+          html += `<tr>`;
+          columns.forEach(col => {
+            const raw = Object.prototype.hasOwnProperty.call(cells, col.key)
+              ? cells[col.key]
+              : previewFallbackCellValue(r, col.key);
+            html += `<td class="${esc(previewColClass(col))}">${previewRenderCellHTML(raw, col)}</td>`;
+          });
+          html += `</tr>`;
+          if (r && r.detail && Array.isArray(r.detail.sections) && r.detail.sections.length) {
+            html += `<tr class="table-light"><td colspan="${columns.length}">${previewRenderDetailHTML(r.detail)}</td></tr>`;
+          }
+        });
+        html += `</tbody></table></div></section>`;
+      });
+
+      els.previewBox.innerHTML = html || `<div class="text-muted small">Sense dades.</div>`;
+    } catch (e) {
+      els.previewBox.innerHTML = `<div class="text-danger small">Error previsualitzant: ${esc(e.message)}</div>`;
+    }
+  });
+  }
+
+  // init
+  initBuilderSectionNav();
+  registerStaticErrorPaths();
+  relocateDetailConfigBox();
+  buildAparellChecks();
+  buildParticioFieldChecks();
+  renderList();
+  if (INITIAL_SELECTED_ID) selectCfg(INITIAL_SELECTED_ID);
+  else if (state.cfgs.length) selectCfg(state.cfgs[0].id);
+  else if (AUTO_ADD_NEW) els.btnAdd.click();
+  if (TEMPLATE_LIBRARY_ENABLED) {
+    loadTemplateList().catch((e) => {
+      console.error("Error carregant plantilles:", e);
+    });
+  }

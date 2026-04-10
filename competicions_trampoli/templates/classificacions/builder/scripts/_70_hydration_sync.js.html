@@ -1,0 +1,822 @@
+  function syncAdvancedFromUI(opts = {}) {
+    const preferAdvanced = !!opts.preferAdvanced;
+    const cfg = currentCfg();
+    if (!cfg) return;
+    clearBuilderSaveFeedback();
+
+    const partEntries = readParticioEntriesFromUI();
+    const parts = particioCodesFromEntries(partEntries);
+    const particionsCustom = readParticionsCustomUI(parts);
+    const particionsConfig = readParticionsConfigUI();
+
+    // filtres UI
+    function selectedValues(sel){
+      if (!sel) return [];
+      return Array.from(sel.selectedOptions).map(o => o.value);
+    }
+    let filtres = {
+      entitats_in: selectedValues(els.fEntitats).map(x => isNaN(x) ? x : Number(x)),
+      categories_in: selectedValues(els.fCategories).map(x => isNaN(x) ? x : Number(x)),
+      subcategories_in: selectedValues(els.fSubcategories).map(x => isNaN(x) ? x : Number(x)),
+      grups_in: selectedValues(els.fGrups),
+    };
+    filtres = normalizeFilters(filtres);
+
+    let usedAdvancedFiltres = false;
+    if (preferAdvanced && advancedDirty.filtres) {
+      try {
+        filtres = normalizeFilters(JSON.parse(els.tFiltres.value || "{}"));
+        usedAdvancedFiltres = true;
+      } catch(e) {}
+    }
+
+    const tipus = currentTipus();
+    const apIds = selectedAparellIdsFromUI();
+    const puntuacio = readPuntuacioSchemaFromUI();
+
+    // desempats
+    let desempat = readTieUI(true);
+    let usedAdvancedDesempat = false;
+    if (preferAdvanced && advancedDirty.desempat) {
+      const rawT = (els.tDesempat.value || "").trim();
+      if (rawT) {
+        try {
+          desempat = JSON.parse(rawT);
+          usedAdvancedDesempat = true;
+        } catch(e) {}
+      } else {
+        usedAdvancedDesempat = true;
+      }
+    }
+    desempat = sanitizeDesempatForTipus(desempat, tipus);
+    const equipsSchema = readEquipsSchemaUI(cfg.schema && cfg.schema.equips);
+    const detailSections = readDetailSectionsUI(true);
+    const detailLegacyColumns = serializeLegacyDetailColumns(detailSections);
+
+    const schema = {
+      particions: parts,
+      particions_v2: partEntries,
+      particions_custom: particionsCustom,
+      particions_config: particionsConfig,
+      filtres: filtres,
+      puntuacio: puntuacio,
+      desempat: desempat,
+      presentacio: {
+        top_n: Number(els.iTopN.value || 0),
+        mostrar_empats: !!els.cEmpats.checked,
+        columnes: readColumnsUI(true),
+        detall: {
+          enabled: !!els.detailEnabled?.checked,
+          default_open: !!els.detailDefaultOpen?.checked,
+          sections: detailSections,
+        },
+      },
+      equips: equipsSchema,
+    };
+    if (detailLegacyColumns?.length) {
+      schema.presentacio.detall.columnes = detailLegacyColumns;
+    }
+
+    cfg.schema = schema;
+    if (usedAdvancedDesempat) advancedDirty.desempat = false;
+    if (usedAdvancedFiltres) advancedDirty.filtres = false;
+    if (!advancedDirty.desempat) {
+      els.tDesempat.value = JSON.stringify(desempat, null, 2);
+    }
+    if (!advancedDirty.filtres) {
+      els.tFiltres.value = JSON.stringify(filtres, null, 2);
+    }
+    els.advancedJson.value = JSON.stringify(schema, null, 2);
+    if (Array.isArray(state.rehydrationIssues) && state.rehydrationIssues.length) {
+      state.rehydrationIssues = [];
+    }
+    refreshPuntuacioUI();
+    renderEquipsModeControls();
+    renderAppStaleWarningBanner(schema, apIds);
+  }
+
+  function syncUIFromSchema(schema) {
+    schema = normalizeForHydration(schema || DEFAULT_SCHEMA);
+    const cfg = currentCfg();
+    if (cfg) cfg.schema = schema;
+    state.rehydrationIssues = [];
+    advancedDirty.desempat = false;
+    advancedDirty.filtres = false;
+    els.tDesempat.value = JSON.stringify(schema.desempat || [], null, 2);
+    els.tFiltres.value = JSON.stringify(schema.filtres || {}, null, 2);
+    els.advancedJson.value = JSON.stringify(schema, null, 2);
+
+    const partEntries = normalizeParticioEntries(schema.particions_v2 || [], schema.particions || []);
+    const parts = particioCodesFromEntries(partEntries);
+    renderParticioStackUI(partEntries, schema.particions_custom || {});
+    renderDerivedPartitionConfigUI(schema.particions_config || {}, parts);
+    renderParticionsCustomUI(parts, schema.particions_custom || {});
+    syncEquipUIFromSchema(schema.equips || DEFAULT_SCHEMA.equips);
+
+    // aparells (sense mode "tots": normalitzem legacy a seleccio explicita)
+    const rawAparells = ((schema.puntuacio||{}).aparells||{});
+    const apMode = String(rawAparells.mode || "seleccionar").toLowerCase();
+    const idsLegacy = Array.isArray(rawAparells.ids) ? rawAparells.ids : [];
+    const idsBase = (apMode === "tots")
+      ? (APARELLS || []).map(a => a.id)
+      : idsLegacy;
+    const selectedCompatibleIds = sanitizeCompatibleAppIds(idsBase);
+    if (els.apSelBox) els.apSelBox.style.display = "";
+    buildAparellChecks(selectedCompatibleIds, { includeStale: false });
+    const selectedSet = new Set(selectedCompatibleIds.map(x => String(x)));
+    getAppChoices(selectedCompatibleIds, { includeStale: false }).forEach(a => {
+      const el = document.getElementById("app_" + a.id);
+      if (el) el.checked = selectedSet.has(String(a.id));
+    });
+    renderAppStaleWarningBanner(schema, selectedCompatibleIds);
+
+    [
+      els.sAggCamps,
+      els.sCandidateSourceMode,
+      els.sCandidateSourceSelectionMode,
+      els.sCandidateSourceAggExercicis,
+      els.sExerciseSelectionScope,
+      els.sModeSeleccioExercicis,
+      els.sExercicisMode,
+      els.sAggExercicis,
+      els.sAggAparells,
+      els.sModeResultatAparells,
+      els.sOrdre,
+      els.sVictoryModeCamps,
+      els.sVictoryModeExercicis,
+      els.sVictoryFieldSelectionMode,
+      els.sVictoryAggCamps,
+      els.sVictoryAggExercicis,
+    ].forEach(clearInjectedSelectOptions);
+
+    if (els.sAggCamps) {
+      ensureSelectOption(els.sAggCamps, (schema.puntuacio||{}).agregacio_camps, value => `${value} (legacy)`);
+      els.sAggCamps.value = (schema.puntuacio||{}).agregacio_camps || "sum";
+    }
+    if (els.sCandidateSourceMode) {
+      ensureSelectOption(els.sCandidateSourceMode, (schema.puntuacio||{}).candidate_source_mode, value => `${value} (legacy)`);
+      els.sCandidateSourceMode.value = (schema.puntuacio||{}).candidate_source_mode || "raw_exercise";
+    }
+    if (els.sCandidateSourceSelectionMode) {
+      const candidateCfg = (schema.puntuacio||{}).candidate_source_cfg || {};
+      ensureSelectOption(els.sCandidateSourceSelectionMode, candidateCfg.mode, value => `${value} (legacy)`);
+      els.sCandidateSourceSelectionMode.value = candidateCfg.mode || "tots";
+    }
+    if (els.sCandidateSourceAggExercicis) {
+      const candidateCfg = (schema.puntuacio||{}).candidate_source_cfg || {};
+      ensureSelectOption(els.sCandidateSourceAggExercicis, candidateCfg.agregacio_exercicis, value => `${value} (legacy)`);
+      els.sCandidateSourceAggExercicis.value = candidateCfg.agregacio_exercicis || "sum";
+    }
+    if (els.iCandidateSourceBestN) {
+      const candidateCfg = (schema.puntuacio||{}).candidate_source_cfg || {};
+      els.iCandidateSourceBestN.value = candidateCfg.best_n || 1;
+    }
+    if (els.iCandidateSourceIndex) {
+      const candidateCfg = (schema.puntuacio||{}).candidate_source_cfg || {};
+      els.iCandidateSourceIndex.value = candidateCfg.index || 1;
+    }
+    if (els.tCandidateSourceIds) {
+      const candidateCfg = (schema.puntuacio||{}).candidate_source_cfg || {};
+      if (Array.isArray(candidateCfg.ids)) els.tCandidateSourceIds.value = candidateCfg.ids.join(",");
+      else els.tCandidateSourceIds.value = String(candidateCfg.ids || "");
+    }
+    if (els.sExerciseSelectionScope) {
+      ensureSelectOption(els.sExerciseSelectionScope, (schema.puntuacio||{}).exercise_selection_scope, value => `${value} (legacy)`);
+      els.sExerciseSelectionScope.value = normalizeExerciseSelectionScope((schema.puntuacio||{}).exercise_selection_scope);
+    }
+    ensureSelectOption(els.sModeSeleccioExercicis, (schema.puntuacio||{}).mode_seleccio_exercicis, value => `${value} (legacy)`);
+    els.sModeSeleccioExercicis.value = (schema.puntuacio||{}).mode_seleccio_exercicis || "per_aparell_override";
+    const pEx = ((schema.puntuacio||{}).exercicis || {});
+    ensureSelectOption(els.sExercicisMode, pEx.mode, value => `${value} (legacy)`);
+    els.sExercicisMode.value = pEx.mode || "tots";
+    els.iExBestN.value = (schema.puntuacio||{}).exercicis_best_n || pEx.best_n || 1;
+    els.iExIndex.value = pEx.index || 1;
+    els.iExMaxPerParticipant.value = pEx.max_per_participant || 0;
+    if (Array.isArray(pEx.ids)) els.tExIds.value = pEx.ids.join(",");
+    else els.tExIds.value = String(pEx.ids || "");
+    refreshMainExercicisUI();
+    ensureSelectOption(els.sAggExercicis, (schema.puntuacio||{}).agregacio_exercicis, value => `${value} (legacy)`);
+    els.sAggExercicis.value = (schema.puntuacio||{}).agregacio_exercicis || "sum";
+    ensureSelectOption(els.sAggAparells, (schema.puntuacio||{}).agregacio_aparells, value => `${value} (legacy)`);
+    els.sAggAparells.value = (schema.puntuacio||{}).agregacio_aparells || "sum";
+    ensureSelectOption(els.sModeResultatAparells, (schema.puntuacio||{}).mode_resultat_aparells, value => `${value} (legacy)`);
+    els.sModeResultatAparells.value = (schema.puntuacio||{}).mode_resultat_aparells || "score";
+    ensureSelectOption(els.sOrdre, (schema.puntuacio||{}).ordre, value => `${value} (legacy)`);
+    els.sOrdre.value = (schema.puntuacio||{}).ordre || "desc";
+    hydratePuntuacioUI(schema);
+
+    els.iTopN.value = (schema.presentacio||{}).top_n ?? 0;
+    els.cEmpats.checked = !!((schema.presentacio||{}).mostrar_empats);
+    runSafeHydrationRender("columnes", () => {
+      renderColumnsUI((schema.presentacio||{}).columnes || DEFAULT_SCHEMA.presentacio.columnes);
+    });
+    const detailCfg = ((schema.presentacio || {}).detall || {});
+    if (els.detailEnabled) els.detailEnabled.checked = !!detailCfg.enabled;
+    if (els.detailDefaultOpen) els.detailDefaultOpen.checked = !!detailCfg.default_open;
+    runSafeHydrationRender("detall", () => {
+      renderDetailSectionsUI(normalizeDetailSectionsFromSchema(detailCfg));
+    });
+
+    // tie + filtres JSON
+    const victoriesCfg = ((schema.puntuacio || {}).victories || {});
+    if (els.sVictoryModeCamps) {
+      ensureSelectOption(els.sVictoryModeCamps, victoriesCfg.mode_camps, value => `${value} (legacy)`);
+      els.sVictoryModeCamps.value = victoriesCfg.mode_camps || "agregat";
+    }
+    if (els.sVictoryModeExercicis) {
+      ensureSelectOption(els.sVictoryModeExercicis, victoriesCfg.mode_exercicis, value => `${value} (legacy)`);
+      els.sVictoryModeExercicis.value = victoriesCfg.mode_exercicis || "agregat";
+    }
+    if (els.sVictoryFieldSelectionMode) {
+      ensureSelectOption(els.sVictoryFieldSelectionMode, victoriesCfg.mode_seleccio_exercicis_camps_separats, value => `${value} (legacy)`);
+      els.sVictoryFieldSelectionMode.value = victoriesCfg.mode_seleccio_exercicis_camps_separats || "per_camp";
+    }
+    if (els.sVictoryAggCamps) {
+      ensureSelectOption(els.sVictoryAggCamps, victoriesCfg.agregacio_victories_camps, value => `${value} (legacy)`);
+      els.sVictoryAggCamps.value = victoriesCfg.agregacio_victories_camps || "sum";
+    }
+    if (els.sVictoryAggExercicis) {
+      ensureSelectOption(els.sVictoryAggExercicis, victoriesCfg.agregacio_victories_exercicis, value => `${value} (legacy)`);
+      els.sVictoryAggExercicis.value = victoriesCfg.agregacio_victories_exercicis || "sum";
+    }
+    runSafeHydrationRender("desempat victories", () => {
+      renderVictoryTieUI(victoriesCfg.desempat_comparacio || []);
+    });
+    runSafeHydrationRender("desempat", () => {
+      renderTieUI(schema.desempat || []);
+    });
+    applyMultiSelectValues(els.fEntitats, (schema.filtres || {}).entitats_in || []);
+    applyMultiSelectValues(els.fCategories, (schema.filtres || {}).categories_in || []);
+    applyMultiSelectValues(els.fSubcategories, (schema.filtres || {}).subcategories_in || []);
+    applyMultiSelectValues(els.fGrups, (schema.filtres || {}).grups_in || []);
+    refreshTipusUI();
+
+    runSafeHydrationRender("per aparell", () => {
+      renderPuntuacioSection(schema);
+    });
+    renderEquipsModeControls();
+  }
+
+  function selectCfg(id) {
+    state.selectedId = id;
+    clearBuilderSaveFeedback();
+    renderList();
+    setActiveBuilderNav("section-meta");
+
+    const cfg = currentCfg();
+    if (!cfg) return;
+
+    els.editorEmpty.style.display = "none";
+    els.editorBody.style.display = "";
+
+    els.fNom.value = cfg.nom || "";
+    if (els.fSlug) els.fSlug.value = cfg.slug || "";
+    els.fActiva.checked = !!cfg.activa;
+    setTipusValue(cfg.tipus || "individual");
+
+    const schema = cfg.schema || JSON.parse(JSON.stringify(DEFAULT_SCHEMA));
+    syncUIFromSchema(schema);
+
+    if (els.previewBox) {
+      els.previewBox.innerHTML = CAN_PREVIEW
+        ? '<div class="text-muted small">Fes clic a "Previsualitzar".</div>'
+        : '<div class="text-muted small">La previsualització només està disponible dins d\'una competició.</div>';
+    }
+    requestAnimationFrame(updateBuilderNavFromScroll);
+  }
+
+  // events: canvis que afecten schema
+  ["change","input"].forEach(ev => {
+    const refreshPuntuacioIds = new Set([
+      "sCandidateSourceMode",
+      "sCandidateSourceSelectionMode",
+      "sCandidateSourceAggExercicis",
+      "iCandidateSourceBestN",
+      "iCandidateSourceIndex",
+      "tCandidateSourceIds",
+    ]);
+    ["sAggCamps","sCandidateSourceMode","sCandidateSourceSelectionMode","sCandidateSourceAggExercicis","iCandidateSourceBestN","iCandidateSourceIndex","tCandidateSourceIds","sModeSeleccioExercicis","sExercicisMode","iExBestN","iExIndex","iExMaxPerParticipant","tExIds","sAggExercicis","sAggAparells","sModeResultatAparells","sOrdre","iTopN","cEmpats","eqAssignmentContext","eqTeamMode","eqIncludeSenseEquip","sVictoryModeCamps","sVictoryModeExercicis","sVictoryFieldSelectionMode","sVictoryAggCamps","sVictoryAggExercicis"]
+      .forEach(id => {
+        const node = document.getElementById(id);
+        if (!node) return;
+        if (refreshPuntuacioIds.has(id)) {
+          node.addEventListener(ev, () => {
+            syncAdvancedFromUI();
+            refreshPuntuacioUI();
+          });
+          return;
+        }
+        node.addEventListener(ev, syncAdvancedFromUI);
+      });
+
+    [els.fEntitats, els.fCategories, els.fSubcategories, els.fGrups].forEach(x => {
+      if (x) x.addEventListener("change", syncAdvancedFromUI);
+    });
+  });
+
+  if (els.particionsFieldsBox) {
+    els.particionsFieldsBox.addEventListener("change", (ev) => {
+      const node = ev.target;
+      if (!node) return;
+      if (node.matches('[data-part-stack="available"]')) {
+        return;
+      }
+      if (node.matches('[data-part-entry="apply_mode"]')) {
+        const row = node.closest("[data-part-entry-row]");
+        const wrap = row ? row.querySelector("[data-part-entry-parent-wrap]") : null;
+        if (wrap) wrap.style.display = node.value === "some_parents" ? "" : "none";
+        syncAdvancedFromUI();
+        return;
+      }
+      if (node.matches('[data-part-entry="parent_values"]')) {
+        syncAdvancedFromUI();
+      }
+    });
+    els.particionsFieldsBox.addEventListener("click", (ev) => {
+      const btn = ev.target.closest("button[data-part-stack-act]");
+      if (!btn) return;
+      ev.preventDefault();
+      const act = String(btn.getAttribute("data-part-stack-act") || "").trim();
+      const entries = normalizeParticioEntries(readParticioEntriesFromUI());
+      const parts = particioCodesFromEntries(entries);
+      const custom = normalizeParticionsCustom(readParticionsCustomUI(parts));
+
+      if (act === "add") {
+        const select = els.particionsFieldsBox.querySelector('[data-part-stack="available"]');
+        const code = String((select && select.value) || "").trim();
+        if (!code || entries.some(entry => entry.code === code)) return;
+        entries.push({ code, apply_mode: "all", parent_values: [] });
+      } else {
+        const idx = Number(btn.getAttribute("data-idx"));
+        if (!Number.isInteger(idx) || idx < 0 || idx >= entries.length) return;
+        if (act === "remove") {
+          entries.splice(idx, 1);
+        } else if (act === "up" && idx > 0) {
+          const tmp = entries[idx - 1];
+          entries[idx - 1] = entries[idx];
+          entries[idx] = tmp;
+        } else if (act === "down" && idx < entries.length - 1) {
+          const tmp = entries[idx + 1];
+          entries[idx + 1] = entries[idx];
+          entries[idx] = tmp;
+        } else {
+          return;
+        }
+      }
+
+      renderParticioStackUI(entries, custom);
+      renderDerivedPartitionConfigUI(readParticionsConfigUI(), particioCodesFromEntries(entries));
+      renderParticionsCustomUI(particioCodesFromEntries(entries), custom);
+      syncAdvancedFromUI();
+    });
+  }
+
+  if (els.particionsCustomBox) {
+    els.particionsCustomBox.addEventListener("change", (ev) => {
+      const node = ev.target;
+      if (!node) return;
+      if (node.matches('[data-part-custom="mode"]')) {
+        const box = node.closest("[data-part-custom-field]");
+        const panel = box ? box.querySelector('[data-part-custom="panel"]') : null;
+        if (panel) panel.style.display = node.checked ? "" : "none";
+      }
+      renderParticioStackUI(readParticioEntriesFromUI(), readParticionsCustomUI(selectedParticioCodesFromUI()));
+      syncAdvancedFromUI();
+    });
+    els.particionsCustomBox.addEventListener("input", (ev) => {
+      const node = ev.target;
+      if (!node) return;
+      if (
+        node.matches('[data-part-custom="fallback"]') ||
+        node.matches('[data-part-custom-group="label"]')
+      ) {
+        renderParticioStackUI(readParticioEntriesFromUI(), readParticionsCustomUI(selectedParticioCodesFromUI()));
+        syncAdvancedFromUI();
+      }
+    });
+    els.particionsCustomBox.addEventListener("click", (ev) => {
+      const btn = ev.target.closest("button[data-part-custom-act]");
+      if (!btn) return;
+      ev.preventDefault();
+      const act = String(btn.getAttribute("data-part-custom-act") || "");
+      const code = String(btn.getAttribute("data-code") || "").trim();
+      if (!code) return;
+
+      const selected = selectedParticioCodesFromUI();
+      const cur = normalizeParticionsCustom(readParticionsCustomUI(selected));
+      const item = cur[code] || { mode: "custom", fallback_label: "", grups: [] };
+      item.mode = "custom";
+      item.grups = Array.isArray(item.grups) ? item.grups : [];
+
+      if (act === "add-group") {
+        item.grups.push({
+          key: `grp_${item.grups.length + 1}`,
+          label: `Grup ${item.grups.length + 1}`,
+          values: [],
+        });
+      } else if (act === "del-group") {
+        const idx = Number(btn.getAttribute("data-idx"));
+        if (Number.isInteger(idx) && idx >= 0 && idx < item.grups.length) {
+          item.grups.splice(idx, 1);
+        }
+      } else {
+        return;
+      }
+
+      cur[code] = item;
+      renderParticionsCustomUI(selected, cur);
+      renderParticioStackUI(readParticioEntriesFromUI(), cur);
+      syncAdvancedFromUI();
+    });
+  }
+
+  if (els.birthYearRangeConfigBox) {
+    els.birthYearRangeConfigBox.addEventListener("click", (ev) => {
+      const btn = ev.target.closest("button[data-byr-act]");
+      if (!btn) return;
+      ev.preventDefault();
+      const cfgMap = readParticionsConfigUI();
+      const cfg = normalizeBirthYearRangePartitionConfig(cfgMap[BIRTH_YEAR_RANGE_PARTITION_CODE]);
+      const ranges = Array.isArray(cfg.ranges) ? cfg.ranges.slice() : [];
+      const act = String(btn.getAttribute("data-byr-act") || "").trim();
+      if (act === "add") {
+        ranges.push({
+          label: `Forquilla ${ranges.length + 1}`,
+          from_date: null,
+          until_date: null,
+        });
+      } else if (act === "del") {
+        const idx = Number(btn.getAttribute("data-idx"));
+        if (!Number.isInteger(idx) || idx < 0 || idx >= ranges.length) return;
+        ranges.splice(idx, 1);
+      } else {
+        return;
+      }
+
+      cfgMap[BIRTH_YEAR_RANGE_PARTITION_CODE] = {
+        ...cfg,
+        ranges,
+      };
+      const partEntries = readParticioEntriesFromUI();
+      const parts = particioCodesFromEntries(partEntries);
+      const custom = normalizeParticionsCustom(readParticionsCustomUI(parts));
+      renderDerivedPartitionConfigUI(cfgMap, parts);
+      renderParticionsCustomUI(parts, custom);
+      renderParticioStackUI(partEntries, custom);
+      syncAdvancedFromUI();
+    });
+
+    els.birthYearRangeConfigBox.addEventListener("input", (ev) => {
+      const node = ev.target;
+      if (!node) return;
+      if (
+        node.matches('[data-byr="sense"]') ||
+        node.matches('[data-byr="outside"]') ||
+        node.matches('[data-byr="label"]') ||
+        node.matches('[data-byr="from"]') ||
+        node.matches('[data-byr="to"]') ||
+        node.matches('[data-byr="team-max-outside"]')
+      ) {
+        syncAdvancedFromUI();
+      }
+    });
+
+    els.birthYearRangeConfigBox.addEventListener("change", (ev) => {
+      const node = ev.target;
+      if (!node) return;
+      if (
+        node.matches('[data-byr="sense"]') ||
+        node.matches('[data-byr="outside"]') ||
+        node.matches('[data-byr="label"]') ||
+        node.matches('[data-byr="from"]') ||
+        node.matches('[data-byr="to"]') ||
+        node.matches('[data-byr="team-reference"]') ||
+        node.matches('[data-byr="team-compliance"]') ||
+        node.matches('[data-byr="team-max-outside"]')
+      ) {
+        const partEntries = readParticioEntriesFromUI();
+        const parts = particioCodesFromEntries(partEntries);
+        const custom = normalizeParticionsCustom(readParticionsCustomUI(parts));
+        const particionsConfig = readParticionsConfigUI();
+        renderDerivedPartitionConfigUI(particionsConfig, parts);
+        renderParticionsCustomUI(parts, custom);
+        renderParticioStackUI(partEntries, custom);
+        syncAdvancedFromUI();
+      }
+    });
+  }
+
+  if (els.sExercicisMode) {
+    els.sExercicisMode.addEventListener("change", refreshPuntuacioUI);
+  }
+  [els.iExBestN, els.iExIndex, els.iExMaxPerParticipant, els.tExIds].forEach((node) => {
+    if (!node) return;
+    node.addEventListener("input", refreshPuntuacioUI);
+    node.addEventListener("change", refreshPuntuacioUI);
+  });
+  if (els.sModeSeleccioExercicis) {
+    els.sModeSeleccioExercicis.addEventListener("change", () => {
+      refreshPuntuacioUI();
+      renderPuntuacioSection((currentCfg()||{}).schema || DEFAULT_SCHEMA);
+      syncAdvancedFromUI();
+    });
+  }
+  if (els.sExerciseSelectionScope) {
+    els.sExerciseSelectionScope.addEventListener("change", () => {
+      refreshPuntuacioUI();
+      renderPuntuacioSection((currentCfg()||{}).schema || DEFAULT_SCHEMA);
+      renderTieUI(readTieUI(true));
+      syncAdvancedFromUI();
+    });
+  }
+
+  if (els.tDesempat) {
+    els.tDesempat.addEventListener("input", () => {
+      advancedDirty.desempat = true;
+    });
+  }
+  if (els.tFiltres) {
+    els.tFiltres.addEventListener("input", () => {
+      advancedDirty.filtres = true;
+    });
+  }
+  if (els.sModeResultatAparells) {
+    els.sModeResultatAparells.addEventListener("change", () => {
+      refreshVictoryTieVisibility();
+      syncAdvancedFromUI();
+    });
+  }
+  if (els.sVictoryModeCamps) {
+    els.sVictoryModeCamps.addEventListener("change", () => {
+      refreshVictoryTieVisibility();
+      syncAdvancedFromUI();
+    });
+  }
+  if (els.sVictoryModeExercicis) {
+    els.sVictoryModeExercicis.addEventListener("change", () => {
+      refreshVictoryTieVisibility();
+      syncAdvancedFromUI();
+    });
+  }
+
+  if (els.btnEqManualAdd) {
+    els.btnEqManualAdd.addEventListener("click", () => {
+      const cur = readEquipManualRows();
+      cur.push(
+        usePortableEquipNameRows()
+          ? { key: `manual_${cur.length + 1}`, label: `Partició ${cur.length + 1}`, equips_noms: [] }
+          : { key: `manual_${cur.length + 1}`, label: `Partició ${cur.length + 1}`, equip_ids: [] }
+      );
+      renderEquipManualRows(cur);
+      syncAdvancedFromUI();
+    });
+  }
+
+  // quan es marca/desmarca un aparell
+  document.addEventListener("change", (e) => {
+    if (e.target && e.target.id && e.target.id.startsWith("app_")) {
+      renderPuntuacioSection((currentCfg()||{}).schema || DEFAULT_SCHEMA);
+      renderTieUI(readTieUI(true));
+      renderVictoryTieUI(readVictoryTieUI(true));
+      syncAdvancedFromUI();
+    }
+  });
+
+  els.btnTieAdd.addEventListener("click", () => {
+    const cur = readTieUI(true);
+    addDefaultTieCriterion(cur, isTipusEquips());
+    renderTieUI(cur);
+    syncAdvancedFromUI();
+  });
+  if (els.btnTieCloneFromPuntuacio) {
+    els.btnTieCloneFromPuntuacio.addEventListener("click", () => {
+      const cur = readTieUI(true);
+      const punt = readPuntuacioSchemaFromUI();
+      const idx = cur.length + 1;
+      cur.push({
+        id: `tie_${Date.now()}`,
+        nom: `Desempat ${idx}`,
+        ordre: String((punt || {}).ordre || "desc").toLowerCase().trim() === "asc" ? "asc" : "desc",
+        pipeline_version: 1,
+        pipeline: buildTiePipelineFromPuntuacioSchema(punt),
+      });
+      renderTieUI(cur);
+      syncAdvancedFromUI();
+    });
+  }
+  if (els.btnVictoryTieAdd) {
+    els.btnVictoryTieAdd.addEventListener("click", () => {
+      const cur = readVictoryTieUI(true);
+      cur.push({
+        camps: [],
+        agregacio_camps: "hereta",
+        ordre: "desc",
+        scope: { exercicis: { mode: "hereta" } },
+      });
+      renderVictoryTieUI(cur);
+      syncAdvancedFromUI();
+    });
+  }
+
+  if (els.btnColAddBuiltin) {
+    els.btnColAddBuiltin.addEventListener("click", () => {
+      const cur = readColumnsUI(true);
+      const candidates = [
+        { key: "posicio", label: "#" },
+        { key: "participant", label: "Nom" },
+        { key: "entitat_nom", label: "Entitat" },
+        { key: "participants", label: "Participants" },
+        { key: "punts", label: "Punts" },
+      ];
+      const used = new Set(
+        cur
+          .filter(x => x && String(x.type || "builtin") === "builtin")
+          .map(x => String(x.key || ""))
+      );
+      const next = candidates.find(c => !used.has(c.key));
+      if (!next) return;
+      cur.push({
+        type: "builtin",
+        key: next.key,
+        label: next.label,
+        align: next.key === "punts" ? "right" : "left",
+      });
+      renderColumnsUI(cur);
+      syncAdvancedFromUI();
+    });
+  }
+
+  if (els.btnColAddRaw) {
+    els.btnColAddRaw.addEventListener("click", () => {
+      const firstApp = getDefaultCompatibleAppId();
+      const cur = readColumnsUI(true);
+      cur.push({
+        type: "raw",
+        key: `raw_${cur.length + 1}`,
+        label: `Columna ${cur.length + 1}`,
+        align: "right",
+        decimals: 3,
+        source: {
+          aparell_id: firstApp,
+          exercici: 1,
+          camp: "",
+          jutges: { ids: [] },
+        },
+      });
+      renderColumnsUI(cur);
+      syncAdvancedFromUI();
+    });
+  }
+
+  if (els.btnDetailColAddBuiltin) {
+    els.btnDetailColAddBuiltin.addEventListener("click", () => {
+      const cur = readDetailColumnsUI(true);
+      const candidates = [
+        { key: "participant", label: "Participant" },
+        { key: "entitat_nom", label: "Entitat" },
+      ];
+      const used = new Set(
+        cur
+          .filter(x => x && String(x.type || "builtin") === "builtin")
+          .map(x => String(x.key || ""))
+      );
+      const next = candidates.find(c => !used.has(c.key));
+      if (!next) return;
+      cur.push({
+        type: "builtin",
+        key: next.key,
+        label: next.label,
+        align: "left",
+      });
+      renderDetailColumnsUI(cur);
+      syncAdvancedFromUI();
+    });
+  }
+
+  if (els.btnDetailColAddRaw) {
+    els.btnDetailColAddRaw.addEventListener("click", () => {
+      const firstApp = getDefaultCompatibleAppId();
+      const cur = readDetailColumnsUI(true);
+      cur.push({
+        type: "raw",
+        key: `detail_raw_${cur.length + 1}`,
+        label: `Detall ${cur.length + 1}`,
+        align: "right",
+        decimals: 3,
+        source: {
+          aparell_id: firstApp,
+          exercici: 1,
+          camp: "",
+          jutges: { ids: [] },
+        },
+      });
+      renderDetailColumnsUI(cur);
+      syncAdvancedFromUI();
+    });
+  }
+
+  if (els.btnDetailSectionAdd) {
+    els.btnDetailSectionAdd.addEventListener("click", () => {
+      const sectionType = String(els.detailSectionType?.value || "").trim();
+      if (!sectionType) return;
+      if (!canAddDetailSection(sectionType)) {
+        setDetailConfigAlert("Selecciona un aparell compatible amb camps disponibles abans d'afegir aquesta seccio.");
+        return;
+      }
+      const cur = readDetailSectionsUI(true);
+      cur.push(defaultDetailSection(sectionType));
+      renderDetailSectionsUI(cur);
+      syncAdvancedFromUI();
+    });
+  }
+
+  els.btnAdd.addEventListener("click", () => {
+    const nextOrd = (state.cfgs.length ? Math.max(...state.cfgs.map(x => x.ordre||0)) : 0) + 1;
+    const tmpId = "tmp_" + Math.random().toString(16).slice(2);
+    const defaultName = BUILDER_MODE === "global" ? "Nova plantilla" : "Nova classificació";
+    state.cfgs.push({
+      id: tmpId,
+      nom: defaultName,
+      slug: "",
+      activa: true,
+      ordre: nextOrd,
+      tipus: "individual",
+      schema: JSON.parse(JSON.stringify(DEFAULT_SCHEMA)),
+      _isTemp: true
+    });
+    renderList();
+    selectCfg(tmpId);
+  });
+
+  els.fNom.addEventListener("input", () => {
+    const cfg = currentCfg(); if (!cfg) return;
+    cfg.nom = els.fNom.value;
+    renderList();
+  });
+  if (els.fSlug) {
+    els.fSlug.addEventListener("input", () => {
+      const cfg = currentCfg(); if (!cfg) return;
+      cfg.slug = els.fSlug.value;
+      renderList();
+    });
+  }
+  els.fActiva.addEventListener("change", () => {
+    const cfg = currentCfg(); if (!cfg) return;
+    cfg.activa = !!els.fActiva.checked;
+    renderList();
+  });
+  els.fTipus.addEventListener("change", () => {
+    const cfg = currentCfg(); if (!cfg) return;
+    ensureLegacyTipusOption(els.fTipus.value);
+    cfg.tipus = els.fTipus.value;
+    refreshTipusUI({ includeStale: false, dropInvalidSelection: true });
+    renderPuntuacioSection((currentCfg()||{}).schema || DEFAULT_SCHEMA);
+    renderTieUI(readTieUI(true));
+    renderVictoryTieUI(readVictoryTieUI(true));
+    syncAdvancedFromUI();
+    renderList();
+  });
+  if (els.detailEnabled) {
+    els.detailEnabled.addEventListener("change", () => {
+      if (els.detailEnabled.checked && isDetailConfigAvailable()) {
+        const cur = readDetailSectionsUI(true);
+        if (!cur.length) {
+          const defaultSection = defaultDetailSectionForCurrentContext();
+          if (defaultSection) {
+            renderDetailSectionsUI([defaultSection]);
+          } else {
+            setDetailConfigAlert("Selecciona un aparell compatible amb camps disponibles abans d'afegir detall.");
+          }
+        }
+      }
+      refreshDetailConfigUI();
+      syncAdvancedFromUI();
+    });
+  }
+  if (els.detailDefaultOpen) {
+    els.detailDefaultOpen.addEventListener("change", syncAdvancedFromUI);
+  }
+  if (els.detailSectionType) {
+    els.detailSectionType.addEventListener("change", refreshDetailConfigUI);
+  }
+  if (els.eqAssignmentContext) {
+    els.eqAssignmentContext.addEventListener("change", () => {
+      refreshTipusUI({ includeStale: false, dropInvalidSelection: true });
+      renderEquipManualRows(readEquipManualRows());
+      renderPuntuacioSection((currentCfg()||{}).schema || DEFAULT_SCHEMA);
+      renderTieUI(readTieUI(true));
+      renderVictoryTieUI(readVictoryTieUI(true));
+      syncAdvancedFromUI();
+    });
+  }
+
+  if (els.eqTeamMode) {
+    els.eqTeamMode.addEventListener("change", () => {
+      refreshTipusUI({ includeStale: false, dropInvalidSelection: true });
+      renderPuntuacioSection((currentCfg()||{}).schema || DEFAULT_SCHEMA);
+      renderTieUI(readTieUI(true));
+      renderVictoryTieUI(readVictoryTieUI(true));
+      syncAdvancedFromUI();
+    });
+  }
+

@@ -1,0 +1,13 @@
+{% load static_extras %}
+<div id="classifHelpDrawer" class="classif-help-drawer" aria-hidden="true">
+  <div class="classif-help-backdrop" data-help-close></div>
+  <aside class="classif-help-panel" role="dialog" aria-modal="true" aria-labelledby="classifHelpTitle">
+    <div class="classif-help-head">
+      <h5 id="classifHelpTitle" class="mb-0">Ajuda</h5>
+      <button type="button" class="classif-help-close" data-help-close aria-label="Tancar ajuda">&times;</button>
+    </div>
+    <div id="classifHelpBody" class="classif-help-body"></div>
+  </aside>
+</div>
+
+<script src="{% staticv 'js/classificacions_builder_help.js' %}" defer></script>

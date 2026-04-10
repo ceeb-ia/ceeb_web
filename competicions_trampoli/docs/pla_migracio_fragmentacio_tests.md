@@ -8,6 +8,13 @@ L'objectiu no es reescriure tests ni canviar cobertura funcional, sino **moure'l
 
 Aquest document esta pensat perque **diversos agents en paral.lel i amb poc context** puguin executar la migracio amb exit.
 
+## Estat De Tancament
+
+- La migracio queda tancada quan el nou arbre sota `competicions_trampoli/tests/` es l'unica superficie executable oficial.
+- `competicions_trampoli/tests/__init__.py` ha de ser minim i no ha d'importar wrappers legacy.
+- Els antics fitxers `competicions_trampoli/tests/test_*.py` s'han de retirar del discovery; no hi ha compatibilitat temporal dins el patró `test*.py`.
+- Runner oficial: `docker compose run --rm web python manage.py test competicions_trampoli.tests --verbosity 1`
+
 ## Objectiu
 
 - Reduir la mida dels fitxers-monolit.
@@ -529,4 +536,3 @@ La migracio es considera completada quan es compleixen tots aquests punts:
 - la majoria de fitxers de tests son llegibles sense scroll massiu
 - es poden assignar canvis futurs a subarbres clars sense crear nous monolits
 - la suite continua verificant el mateix comportament funcional
-

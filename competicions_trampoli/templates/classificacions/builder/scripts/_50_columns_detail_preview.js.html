@@ -1,0 +1,2297 @@
+  function defaultDisplayColumns() {
+    return [
+      { type:"builtin", key:"posicio", label:"#", align:"left" },
+      { type:"builtin", key:"participant", label:"Nom", align:"left" },
+      { type:"builtin", key:"punts", label:"Punts", align:"right", decimals:3 },
+    ];
+  }
+
+  function normalizeColumnsFromSchema(rawCols) {
+    const cols = Array.isArray(rawCols) ? rawCols : [];
+    if (!cols.length) return defaultDisplayColumns();
+    const out = [];
+    const seen = new Set();
+    let rawIdx = 1;
+
+    cols.forEach(c => {
+      if (!c || typeof c !== "object") return;
+      const type = String(c.type || "builtin").toLowerCase().trim();
+      if (type === "raw") {
+        const key = String(c.key || `raw_${rawIdx++}`).trim();
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        const src = (c.source && typeof c.source === "object") ? c.source : {};
+        const j = (src.jutges && typeof src.jutges === "object") ? src.jutges : {};
+        const ids = Array.isArray(j.ids) ? j.ids : [];
+        const judgeIds = [];
+        ids.forEach(v => {
+          const n = Number(v);
+          if (Number.isFinite(n) && n > 0 && !judgeIds.includes(n)) judgeIds.push(n);
+        });
+        out.push({
+          type: "raw",
+          key,
+          label: String(c.label || key),
+          align: String(c.align || "right"),
+          decimals: Number.isFinite(Number(c.decimals)) ? Number(c.decimals) : 3,
+          source: {
+            aparell_id: Number.isFinite(Number(src.aparell_id)) ? Number(src.aparell_id) : null,
+            exercici: Math.max(1, Number(src.exercici || 1) || 1),
+            camp: String(src.camp || ""),
+            jutges: { ids: judgeIds },
+          },
+        });
+        return;
+      }
+      if (type === "metric") {
+        // compat: converteix metric antic a raw simple.
+        const key = String(c.key || `raw_${rawIdx++}`).trim();
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        const crit = (c.criteri && typeof c.criteri === "object") ? c.criteri : {};
+        const camps = normalizeTieCampsFromObj(crit);
+        const camp = camps.length ? camps[0] : "";
+        const apps = ((crit.scope || {}).aparells || {});
+        let appId = null;
+        if (String(apps.mode || "").toLowerCase() === "seleccionar" && Array.isArray(apps.ids) && apps.ids.length) {
+          const x = Number(apps.ids[0]);
+          appId = Number.isFinite(x) ? x : null;
+        }
+        const ex = ((crit.scope || {}).exercicis || {});
+        let exIdx = 1;
+        if (String(ex.mode || "").toLowerCase() === "index") {
+          const x = Number(ex.index || 1);
+          exIdx = Number.isFinite(x) && x > 0 ? x : 1;
+        }
+        out.push({
+          type: "raw",
+          key,
+          label: String(c.label || camp),
+          align: String(c.align || "right"),
+          decimals: Number.isFinite(Number(c.decimals)) ? Number(c.decimals) : 3,
+          source: {
+            aparell_id: appId,
+            exercici: exIdx,
+            camp: camp,
+            jutges: { ids: [] },
+          },
+        });
+        return;
+      }
+
+      const key = String(c.key || "").trim();
+      if (!["posicio","participant","nom","entitat_nom","participants","punts"].includes(key)) return;
+      if (seen.has(key)) return;
+      seen.add(key);
+      const x = {
+        type: "builtin",
+        key,
+        label: String(c.label || key),
+        align: String(c.align || (key === "punts" ? "right" : "left")),
+      };
+      if (Number.isFinite(Number(c.decimals))) x.decimals = Number(c.decimals);
+      out.push(x);
+    });
+
+    return out.length ? out : defaultDisplayColumns();
+  }
+
+  function detailSectionChoices() {
+    const tipus = currentTipus();
+    const teamMode = getEquipsUiState().effectiveTeamMode || TEAM_MODE_DERIVED;
+    if (tipus === "individual") {
+      return [{ type: "exercise_table", label: "Taula exercicis" }];
+    }
+    if (tipus === "entitat") {
+      return [{ type: "entity_members_table", label: "Taula participants entitat" }];
+    }
+    if (tipus === "equips" && teamMode === TEAM_MODE_NATIVE) {
+      return [
+        { type: "members_list", label: "Llista participants" },
+        { type: "team_metrics", label: "Metriques equip" },
+        { type: "team_members_table", label: "Notes per membre" },
+      ];
+    }
+    if (tipus === "equips") {
+      return [
+        { type: "members_list", label: "Llista participants" },
+        { type: "members_table", label: "Taula participants" },
+      ];
+    }
+    return [];
+  }
+
+  function detailAllowedBuiltinKeysForSection(sectionType) {
+    const st = String(sectionType || "").trim();
+    if (st === "exercise_table") return ["exercise_index", "aparell_nom", "participant", "entitat_nom"];
+    if (["members_table", "team_members_table", "entity_members_table", "team_metrics"].includes(st)) return ["participant", "entitat_nom"];
+    return [];
+  }
+
+  function detailPreferredAppIds() {
+    const cfg = currentCfg();
+    const schema = cfg && cfg.schema ? cfg.schema : DEFAULT_SCHEMA;
+    const selected = getCurrentBuilderAppIds(schema);
+    return sanitizeCompatibleAppIds(selected);
+  }
+
+  function detailSectionRequiresApp(sectionType) {
+    const st = String(sectionType || "").trim();
+    return ["members_table", "team_members_table", "entity_members_table", "exercise_table", "team_metrics"].includes(st);
+  }
+
+  function detailSectionRawAppMode(sectionType) {
+    const st = String(sectionType || "").trim();
+    if (st === "team_metrics" || st === "team_members_table") return "team";
+    return "individual";
+  }
+
+  function detailSectionNeedsInitialRaw(sectionType) {
+    const st = String(sectionType || "").trim();
+    return st === "exercise_table" || st === "team_metrics";
+  }
+
+  function getDetailSectionAppChoices(sectionType, selectedAppId = null) {
+    const st = String(sectionType || "").trim();
+    const requiredMode = detailSectionRawAppMode(st);
+    const preferredIds = detailPreferredAppIds();
+    const selectedId = Number(selectedAppId);
+    const preferredSet = new Set(
+      [...preferredIds, ...(Number.isFinite(selectedId) && selectedId > 0 ? [selectedId] : [])].map(id => String(id))
+    );
+    const allChoices = getAppChoices([], { includeStale: false });
+    const orderedChoices = [
+      ...allChoices.filter(app => preferredSet.has(String(app.id))),
+      ...allChoices.filter(app => !preferredSet.has(String(app.id))),
+    ];
+    const out = [];
+    const seen = new Set();
+
+    orderedChoices.forEach(app => {
+      const appId = Number(app && app.id);
+      if (!Number.isFinite(appId)) return;
+      const unit = getAppCompetitionUnitById(appId);
+      if (requiredMode === "team" && unit !== "team") return;
+      if (requiredMode === "individual" && unit === "team") return;
+      if (seen.has(appId)) return;
+      seen.add(appId);
+      out.push(app);
+    });
+    return out;
+  }
+
+  function getDefaultDetailSectionAppId(sectionType) {
+    const choices = getDetailSectionAppChoices(sectionType);
+    const first = choices[0] || null;
+    const appId = Number(first && first.id);
+    return Number.isFinite(appId) && appId > 0 ? appId : null;
+  }
+
+  function filterFieldOptionsForRawUsage(appId, usage = null) {
+    const options = getFieldOptionsForApp(appId);
+    const normalizedUsage = usage && typeof usage === "object" ? usage : {};
+    const sectionType = String(normalizedUsage.sectionType || "").trim();
+    if (sectionType === "team_members_table") {
+      return options.filter(opt => !!opt?.detail_displayable && !!opt?.member_dependent);
+    }
+    if (normalizedUsage.mainColumns) {
+      return options.filter(opt => !!opt?.scoreable && !opt?.member_dependent);
+    }
+    if (sectionType === "team_metrics") {
+      return options.filter(opt => !!opt?.scoreable && !opt?.member_dependent);
+    }
+    if (sectionType) {
+      return options.filter(opt => !!opt?.scoreable);
+    }
+    return options.filter(opt => !!opt?.scoreable);
+  }
+
+  function getDetailRawSourceForSection(sectionType, preferredAppId = null) {
+    const st = String(sectionType || "").trim();
+    const preferred = Number(preferredAppId);
+    const orderedChoices = getDetailSectionAppChoices(st, preferred);
+    for (const app of orderedChoices) {
+      const appId = Number(app && app.id);
+      if (!Number.isFinite(appId)) continue;
+      if (Number.isFinite(preferred) && preferred > 0 && appId !== preferred) {
+        continue;
+      }
+      const fieldOptions = filterFieldOptionsForRawUsage(appId, { sectionType: st });
+      const firstField = fieldOptions.find(opt => String(opt?.code || "").trim());
+      if (!firstField) continue;
+      return {
+        aparell_id: appId,
+        exercici: 1,
+        ...(st === "team_members_table" ? { exercise_mode: "selected" } : {}),
+        camp: String(firstField.code || "").trim(),
+        jutges: { ids: [] },
+      };
+    }
+    if (Number.isFinite(preferred) && preferred > 0) return null;
+    for (const app of getDetailSectionAppChoices(st)) {
+      const appId = Number(app && app.id);
+      if (!Number.isFinite(appId)) continue;
+      const fieldOptions = filterFieldOptionsForRawUsage(appId, { sectionType: st });
+      const firstField = fieldOptions.find(opt => String(opt?.code || "").trim());
+      if (!firstField) continue;
+      return {
+        aparell_id: appId,
+        exercici: 1,
+        ...(st === "team_members_table" ? { exercise_mode: "selected" } : {}),
+        camp: String(firstField.code || "").trim(),
+        jutges: { ids: [] },
+      };
+    }
+    return null;
+  }
+
+  function canAddDetailSection(sectionType) {
+    if (!sectionType) return false;
+    if (!detailSectionNeedsInitialRaw(sectionType)) return true;
+    return !!getDetailRawSourceForSection(sectionType);
+  }
+
+  function canAddDetailRawColumn(sectionType, sectionAppId = null) {
+    return !!getDetailRawSourceForSection(sectionType, sectionAppId);
+  }
+
+  function defaultDetailColumnsForSection(sectionType, sectionAppId = null) {
+    const st = String(sectionType || "").trim();
+    if (st === "exercise_table") {
+      const source = getDetailRawSourceForSection(st, sectionAppId);
+      return [
+        { type:"builtin", key:"aparell_nom", label:"Aparell", align:"left" },
+        { type:"builtin", key:"exercise_index", label:"Ex.", align:"left" },
+        ...(source ? [{ type:"raw", key:"exercise_raw_1", label:"Total", align:"right", decimals:3, source }] : []),
+      ];
+    }
+    if (st === "team_metrics") {
+      const source = getDetailRawSourceForSection(st, sectionAppId);
+      return source
+        ? [{ type:"raw", key:"team_raw_1", label:"Total", align:"right", decimals:3, source }]
+        : [];
+    }
+    if (st === "members_table" || st === "team_members_table" || st === "entity_members_table") {
+      return [
+        { type:"builtin", key:"participant", label:"Participant", align:"left" },
+      ];
+    }
+    return [];
+  }
+
+  function defaultDetailSection(sectionType, preferredAppId = null) {
+    const st = String(sectionType || "").trim();
+    if (st === "members_list") return { type: "members_list", label: "Participants" };
+    const appId = Number.isFinite(Number(preferredAppId)) && Number(preferredAppId) > 0
+      ? Number(preferredAppId)
+      : getDefaultDetailSectionAppId(st);
+    if (st === "team_metrics") return { type: "team_metrics", label: "Notes equip", aparell_id: appId, columns: defaultDetailColumnsForSection(st, appId) };
+    if (st === "team_members_table") return { type: "team_members_table", label: "Notes per membre", aparell_id: appId, columns: defaultDetailColumnsForSection(st, appId) };
+    if (st === "exercise_table") return { type: "exercise_table", label: "Exercicis", aparell_id: appId, columns: defaultDetailColumnsForSection(st, appId) };
+    if (st === "entity_members_table") return { type: "entity_members_table", label: "Participants", aparell_id: appId, columns: defaultDetailColumnsForSection(st, appId) };
+    return { type: "members_table", label: "Detall", aparell_id: appId, columns: defaultDetailColumnsForSection("members_table", appId) };
+  }
+
+  function defaultDetailSectionForCurrentContext() {
+    const tipus = currentTipus();
+    const teamMode = getEquipsUiState().effectiveTeamMode || TEAM_MODE_DERIVED;
+    if (tipus === "individual") {
+      return canAddDetailSection("exercise_table") ? defaultDetailSection("exercise_table") : null;
+    }
+    if (tipus === "entitat") {
+      return defaultDetailSection("entity_members_table");
+    }
+    if (tipus === "equips" && teamMode === TEAM_MODE_NATIVE) {
+      return defaultDetailSection("members_list");
+    }
+    if (tipus === "equips") {
+      return defaultDetailSection("members_table");
+    }
+    return null;
+  }
+
+  function defaultDetailDisplayColumns() {
+    return defaultDetailColumnsForSection("members_table");
+  }
+
+  function normalizeDetailColumnsFromSchema(rawCols) {
+    return normalizeDetailColumnsForSection(rawCols, "members_table");
+  }
+
+  function detailLegacyColumnsFromSections(rawSections) {
+    const sections = normalizeDetailSectionsFromSchema({ sections: rawSections });
+    if (sections.length !== 1) return [];
+    const only = sections[0] || {};
+    if (String(only.type || "") !== "members_table") return [];
+    return normalizeDetailColumnsForSection(only.columns || [], "members_table");
+  }
+
+  function detailSupportsLegacyColumns() {
+    return detailSectionChoices().some(choice => String(choice?.type || "").trim() === "members_table");
+  }
+
+  function serializeLegacyDetailColumns(detailSections, rawDetail = null) {
+    if (!detailSupportsLegacyColumns()) return undefined;
+    if (Array.isArray(rawDetail?.columnes) && rawDetail.columnes.length) {
+      const normalizedLegacy = normalizeDetailColumnsFromSchema(rawDetail.columnes);
+      if (normalizedLegacy.length) return normalizedLegacy;
+    }
+    const derivedLegacy = detailLegacyColumnsFromSections(detailSections);
+    return derivedLegacy.length ? derivedLegacy : undefined;
+  }
+
+  function normalizeDetailColumnsForSection(rawCols, sectionType, sectionAppId = null) {
+    const cols = Array.isArray(rawCols) ? rawCols : [];
+    const defaults = defaultDetailColumnsForSection(sectionType, sectionAppId);
+    const allowedBuiltins = new Set(detailAllowedBuiltinKeysForSection(sectionType));
+    if (!cols.length) return defaults;
+    const out = [];
+    const seen = new Set();
+    let rawIdx = 1;
+
+    cols.forEach(c => {
+      if (!c || typeof c !== "object") return;
+      const type = String(c.type || "builtin").toLowerCase().trim();
+      if (type === "raw") {
+        const key = String(c.key || `detail_raw_${rawIdx++}`).trim();
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        const src = (c.source && typeof c.source === "object") ? c.source : {};
+        const j = (src.jutges && typeof src.jutges === "object") ? src.jutges : {};
+        const ids = Array.isArray(j.ids) ? j.ids : [];
+        const judgeIds = [];
+        ids.forEach(v => {
+          const n = Number(v);
+          if (Number.isFinite(n) && n > 0 && !judgeIds.includes(n)) judgeIds.push(n);
+        });
+        out.push({
+          type: "raw",
+          key,
+          label: String(c.label || key),
+          align: String(c.align || "right"),
+          decimals: Number.isFinite(Number(c.decimals)) ? Number(c.decimals) : 3,
+          source: {
+            aparell_id: Number.isFinite(Number(src.aparell_id))
+              ? Number(src.aparell_id)
+              : (Number.isFinite(Number(sectionAppId)) ? Number(sectionAppId) : null),
+            camp: String(src.camp || ""),
+            jutges: { ids: judgeIds },
+            ...(String(sectionType || "").trim() === "team_members_table"
+              ? {
+                  exercise_mode: String(src.exercise_mode || "").toLowerCase().trim() === "fixed" ? "fixed" : "selected",
+                  ...(String(src.exercise_mode || "").toLowerCase().trim() === "fixed"
+                    ? { exercici: Math.max(1, Number(src.exercici || 1) || 1) }
+                    : {}),
+                }
+              : {
+                  exercici: Math.max(1, Number(src.exercici || 1) || 1),
+                }),
+          },
+        });
+        return;
+      }
+
+      const key = String(c.key || "").trim();
+      if (!allowedBuiltins.has(key) || seen.has(key)) return;
+      seen.add(key);
+      const builtinLabels = {
+        participant: "Participant",
+        entitat_nom: "Entitat",
+        exercise_index: "Ex.",
+        aparell_nom: "Aparell",
+      };
+      const x = {
+        type: "builtin",
+        key,
+        label: String(c.label || builtinLabels[key] || key),
+        align: String(c.align || "left"),
+      };
+      if (Number.isFinite(Number(c.decimals))) x.decimals = Number(c.decimals);
+      out.push(x);
+    });
+
+    return out.length ? out : defaults;
+  }
+
+  function normalizeDetailSectionsFromSchema(detailCfgRaw) {
+    const detailCfg = detailCfgRaw && typeof detailCfgRaw === "object" ? detailCfgRaw : {};
+    const rawSections = Array.isArray(detailCfg.sections) ? detailCfg.sections : [];
+    const out = [];
+    const allowedTypes = new Set(detailSectionChoices().map(x => x.type));
+    rawSections.forEach(section => {
+      if (!section || typeof section !== "object") return;
+      const type = String(section.type || "").trim();
+      if (!allowedTypes.has(type)) return;
+      const sectionAppIdRaw = Number(section.aparell_id);
+      const rawAppIds = Array.from(new Set(
+        (Array.isArray(section.columns) ? section.columns : [])
+          .filter(col => col && String(col.type || "builtin").toLowerCase() === "raw")
+          .map(col => Number(col?.source?.aparell_id))
+          .filter(appId => Number.isFinite(appId) && appId > 0)
+      ));
+      const hasMixedRawApps =
+        rawAppIds.length > 1 ||
+        ((Number.isFinite(sectionAppIdRaw) && sectionAppIdRaw > 0) && rawAppIds.some(appId => appId !== sectionAppIdRaw));
+      const inferredAppId = Number.isFinite(sectionAppIdRaw) && sectionAppIdRaw > 0
+        ? sectionAppIdRaw
+        : (rawAppIds.length === 1 ? rawAppIds[0] : null);
+      const fallbackAppId = inferredAppId || getDefaultDetailSectionAppId(type);
+      const base = defaultDetailSection(type, inferredAppId);
+      const normalized = {
+        ...base,
+        ...section,
+        type,
+        label: String(section.label || base.label || "").trim() || base.label,
+      };
+      if (Array.isArray(base.columns) || Array.isArray(section.columns)) {
+        normalized.columns = normalizeDetailColumnsForSection(
+          section.columns || base.columns || [],
+          type,
+          hasMixedRawApps ? null : inferredAppId
+        );
+      } else {
+        delete normalized.columns;
+      }
+      if (detailSectionRequiresApp(type)) {
+        normalized.aparell_id = Number.isFinite(inferredAppId) && inferredAppId > 0 ? inferredAppId : null;
+        if (!normalized.aparell_id && !rawAppIds.length && Number.isFinite(fallbackAppId) && fallbackAppId > 0) {
+          normalized.aparell_id = fallbackAppId;
+        }
+      } else {
+        delete normalized.aparell_id;
+      }
+      out.push(normalized);
+    });
+    if (out.length) return out;
+    if (Array.isArray(detailCfg.columnes) && allowedTypes.has("members_table")) {
+      const legacyAppIds = Array.from(new Set(
+        detailCfg.columnes
+          .filter(col => col && String(col.type || "builtin").toLowerCase() === "raw")
+          .map(col => Number(col?.source?.aparell_id))
+          .filter(appId => Number.isFinite(appId) && appId > 0)
+      ));
+      const inferredAppId = legacyAppIds.length === 1 ? legacyAppIds[0] : null;
+      const fallbackAppId = inferredAppId || getDefaultDetailSectionAppId("members_table");
+      return [{
+        type: "members_table",
+        label: "Detall",
+        aparell_id: Number.isFinite(inferredAppId) && inferredAppId > 0 ? inferredAppId : (!legacyAppIds.length && Number.isFinite(fallbackAppId) && fallbackAppId > 0 ? fallbackAppId : null),
+        columns: normalizeDetailColumnsForSection(detailCfg.columnes, "members_table", legacyAppIds.length > 1 ? null : inferredAppId),
+      }];
+    }
+    return [];
+  }
+
+  function getAparellById(appId) {
+    const id = Number(appId);
+    if (!Number.isFinite(id)) return null;
+    return (APARELLS || []).find(a => Number(a.id) === id) || null;
+  }
+
+  function detailSectionAppName(appId) {
+    const app = getAparellById(appId);
+    return String(app?.nom || "").trim();
+  }
+
+  function getDetailSectionRawAppIds(section) {
+    const out = [];
+    (Array.isArray(section?.columns) ? section.columns : []).forEach(col => {
+      if (!col || String(col.type || "builtin").toLowerCase() !== "raw") return;
+      const appId = Number(col?.source?.aparell_id);
+      if (Number.isFinite(appId) && appId > 0 && !out.includes(appId)) out.push(appId);
+    });
+    return out;
+  }
+
+  function getDetailSectionSplitInfo(section) {
+    const appIds = getDetailSectionRawAppIds(section);
+    const sectionAppId = Number(section?.aparell_id || 0);
+    const mismatchAppIds = appIds.filter(appId => Number.isFinite(sectionAppId) && sectionAppId > 0 && appId !== sectionAppId);
+    return {
+      appIds,
+      mismatchAppIds,
+      hasAppMismatch: mismatchAppIds.length > 0,
+      needsSplit: appIds.length > 1,
+    };
+  }
+
+  function splitDetailSectionByApp(section) {
+    const rawColumns = (Array.isArray(section?.columns) ? section.columns : []).filter(col => col && String(col.type || "builtin").toLowerCase() === "raw");
+    const builtinColumns = (Array.isArray(section?.columns) ? section.columns : []).filter(col => col && String(col.type || "builtin").toLowerCase() !== "raw");
+    const grouped = new Map();
+    rawColumns.forEach(col => {
+      const appId = Number(col?.source?.aparell_id);
+      if (!Number.isFinite(appId) || appId <= 0) return;
+      if (!grouped.has(appId)) grouped.set(appId, []);
+      grouped.get(appId).push(JSON.parse(JSON.stringify(col)));
+    });
+    if (!grouped.size) return [section];
+    return Array.from(grouped.entries()).map(([appId, cols]) => {
+      const appName = detailSectionAppName(appId) || `Aparell ${appId}`;
+      return {
+        ...JSON.parse(JSON.stringify(section)),
+        label: `${String(section?.label || "Detall")} · ${appName}`,
+        aparell_id: appId,
+        columns: [
+          ...JSON.parse(JSON.stringify(builtinColumns)),
+          ...cols.map(col => ({
+            ...col,
+            source: {
+              ...(col.source || {}),
+              aparell_id: appId,
+            },
+          })),
+        ],
+      };
+    });
+  }
+
+  function getCompatibleDetailColumnsForSectionApp(columns, nextAppId) {
+    const kept = [];
+    const removed = [];
+    (Array.isArray(columns) ? columns : []).forEach(col => {
+      if (String(col?.type || "builtin").toLowerCase() !== "raw") {
+        kept.push(col);
+        return;
+      }
+      const rawAppId = Number(col?.source?.aparell_id || 0);
+      if (Number.isFinite(Number(nextAppId)) && Number(nextAppId) > 0 && rawAppId === Number(nextAppId)) {
+        kept.push({
+          ...col,
+          source: {
+            ...(col.source || {}),
+            aparell_id: Number(nextAppId),
+          },
+        });
+        return;
+      }
+      removed.push(col);
+    });
+    return { kept, removed };
+  }
+
+  function focusBuilderErrorTarget(node) {
+    if (!node) return;
+    const tag = String(node.tagName || "").toUpperCase();
+    const direct = ["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(tag) ? node : null;
+    const target = direct || node.querySelector?.("input,select,textarea,button");
+    if (target && typeof target.focus === "function") {
+      target.focus({ preventScroll: true });
+    }
+  }
+
+  function getFieldOptionsForApp(appId) {
+    const id = Number(appId);
+    if (!Number.isFinite(id)) return [];
+    const unit = getAppCompetitionUnitById(id);
+    const tipus = currentTipus();
+    if (tipus === "individual") {
+      return unit === "team" ? [] : (APARELL_FIELD_OPTIONS[String(id)] || []);
+    }
+
+    const uiState = getEquipsUiState();
+    const teamMode = uiState.effectiveTeamMode || TEAM_MODE_DERIVED;
+    if (teamMode === TEAM_MODE_NATIVE) {
+      if (unit !== "team") return [];
+      const cap = uiState.contextCapability || null;
+      if (cap && cap.available && cap.has_team_apps === false) return [];
+      if (cap && cap.available && Array.isArray(cap.eligible_team_app_ids) && cap.eligible_team_app_ids.length) {
+        const eligibleIds = new Set(cap.eligible_team_app_ids.map(x => String(x)));
+        if (!eligibleIds.has(String(id))) return [];
+      }
+      return APARELL_FIELD_OPTIONS[String(id)] || [];
+    }
+
+    return unit === "team" ? [] : (APARELL_FIELD_OPTIONS[String(id)] || []);
+  }
+
+  function getActiveAppIds() {
+    return _uniquePositiveInts((APARELLS || []).map(a => a.id));
+  }
+
+  function sanitizeAppIds(appIds) {
+    const active = new Set(getActiveAppIds().map(x => String(x)));
+    const out = [];
+    _uniquePositiveInts(appIds).forEach(appId => {
+      if (active.has(String(appId))) out.push(appId);
+    });
+    return out;
+  }
+
+  function getRealFieldCodesForApp(appId) {
+    return new Set(
+      getFieldOptionsForApp(appId)
+        .filter(o => !!o?.scoreable)
+        .map(o => String(o && o.code || "").trim())
+        .filter(Boolean)
+    );
+  }
+
+  function isRealFieldForApp(appId, code) {
+    const camp = String(code || "").trim();
+    if (!camp) return false;
+    return getRealFieldCodesForApp(appId).has(camp);
+  }
+
+  function _uniquePositiveInts(arr) {
+    const out = [];
+    (arr || []).forEach(x => {
+      const n = Number(x);
+      if (Number.isFinite(n) && n > 0 && !out.includes(n)) out.push(n);
+    });
+    return out;
+  }
+
+  function buildRawAppOptionsHTML(selectedAppId) {
+    const selected = getSingleCompatibleAppId(selectedAppId);
+    return [
+      `<option value="" ${selected ? "" : "selected"}>Selecciona aparell</option>`,
+      ...getAppChoices([], { includeStale: false }).map(app => `
+      <option value="${esc(app.id)}" ${Number(app.id) === selected ? "selected" : ""}>${esc(app.nom)}</option>
+    `),
+    ].join("");
+  }
+
+  function buildDetailSectionAppOptionsHTML(sectionType, selectedAppId) {
+    const selected = Number(selectedAppId);
+    const options = getDetailSectionAppChoices(sectionType, selected);
+    const hasSelected = options.some(app => Number(app.id) === selected);
+    let html = `<option value="" ${hasSelected ? "" : "selected"}>Selecciona aparell</option>`;
+    options.forEach(app => {
+      html += `<option value="${esc(app.id)}" ${Number(app.id) === selected ? "selected" : ""}>${esc(app.nom)}</option>`;
+    });
+    return html;
+  }
+
+  function _legacyBuildTieAppScopeOptionsHTML1(selectedScope) {
+    let selectedAppId = null;
+    const scope = String(selectedScope || "hereta");
+    if (scope.startsWith("app:")) {
+      const parsed = Number(scope.split(":")[1]);
+      if (Number.isFinite(parsed) && parsed > 0) selectedAppId = parsed;
+    }
+    return [
+      '<option value="hereta">Mateixos aparells que la puntuació</option>',
+      ...getAppChoices([], { includeStale: false }).map(app => `<option value="app:${esc(app.id)}">${esc(app.nom)}</option>`),
+    ].join("");
+  }
+
+  function _legacyBuildTieAppScopeOptionsHTML2(selectedScope) {
+    let selectedAppId = null;
+    const scope = String(selectedScope || "hereta");
+    if (scope.startsWith("app:")) {
+      const parsed = Number(scope.split(":")[1]);
+      if (Number.isFinite(parsed) && parsed > 0) selectedAppId = parsed;
+    }
+    const appChoices = getAppChoices(
+      Number.isFinite(selectedAppId) && selectedAppId > 0 ? [selectedAppId] : [],
+      { includeStale: true }
+    );
+    return [
+      `<option value="hereta" ${scope === "hereta" ? "selected" : ""}>Mateixos aparells que la puntuació</option>`,
+      ...appChoices.map(app => `<option value="app:${esc(app.id)}" ${scope === `app:${app.id}` ? "selected" : ""} ${app.injected ? 'data-injected="1"' : ""} ${app.stale ? 'data-stale="1"' : ""}>${esc(app.nom)}${app.stale ? " (no disponible)" : ""}</option>`),
+    ].join("");
+  }
+
+  function buildTieAppScopeOptionsHTML(selectedScope) {
+    const rawScope = String(selectedScope || "hereta");
+    const parsedAppId = rawScope.startsWith("app:") ? Number(rawScope.split(":")[1]) : null;
+    const compatibleAppId = getSingleCompatibleAppId(parsedAppId);
+    const scope = Number.isFinite(compatibleAppId) ? `app:${compatibleAppId}` : "hereta";
+    return [
+      `<option value="hereta" ${scope === "hereta" ? "selected" : ""}>Mateixos aparells que la puntuació</option>`,
+      ...getAppChoices([], { includeStale: false }).map(app => `<option value="app:${esc(app.id)}" ${scope === `app:${app.id}` ? "selected" : ""}>${esc(app.nom)}</option>`),
+    ].join("");
+  }
+
+  function buildRawCampOptionsHTML(appId, selectedCamp, usage = null) {
+    const compatibleAppId = getSingleCompatibleAppId(appId);
+    if (!Number.isFinite(compatibleAppId)) {
+      return '<option value="" selected>Selecciona aparell</option>';
+    }
+    const opts = extendOptionsWithSelectedValues(
+      filterFieldOptionsForRawUsage(compatibleAppId, usage),
+      selectedCamp ? [selectedCamp] : [],
+      value => value
+    );
+    const camp = String(selectedCamp || "").trim();
+    return opts.map(o => {
+      const jc = Number(o.judges_count || 1);
+      const label = `${o.label} (${o.code})${o.stale ? " (no disponible)" : ""}`;
+      return `<option value="${esc(o.code)}" data-judges-count="${esc(jc)}" data-kind="${esc(o.kind || "")}" ${o.injected ? 'data-injected="1"' : ""} ${o.stale ? 'data-stale="1"' : ""} ${String(o.code) === camp ? "selected" : ""}>${esc(label)}</option>`;
+    }).join("");
+  }
+
+  function buildExerciciOptionsHTML(appId, selectedEx) {
+    const compatibleAppId = getSingleCompatibleAppId(appId);
+    if (!Number.isFinite(compatibleAppId)) {
+      return '<option value="" selected>Selecciona aparell</option>';
+    }
+    const app = getAparellById(compatibleAppId);
+    const n = Math.max(1, Number(app?.nombre_exercicis || 1) || 1);
+    const ex = Math.max(1, Number(selectedEx || 1) || 1);
+    let html = "";
+    for (let i = 1; i <= n; i++) {
+      html += `<option value="${i}" ${i === ex ? "selected" : ""}>${i}</option>`;
+    }
+    return html;
+  }
+
+  function rawUsageFromRow(row, explicitUsage = null) {
+    if (explicitUsage && typeof explicitUsage === "object") return explicitUsage;
+    const usage = {};
+    if (String(row?.dataset?.rawUsage || "").trim() === "main") usage.mainColumns = true;
+    const sectionType = String(row?.dataset?.sectionType || "").trim();
+    if (sectionType) usage.sectionType = sectionType;
+    return usage;
+  }
+
+  function refreshRawControls(row, keepJudgeIds, explicitUsage = null) {
+    const appSel = row.querySelector('[data-k="app_id"]');
+    const campSel = row.querySelector('[data-k="camp"]');
+    const exSel = row.querySelector('[data-k="exercici"]');
+    const judgeWrap = row.querySelector('[data-k="judge_wrap"]');
+    const judgeSel = row.querySelector('[data-k="judge_ids"]');
+    if (!appSel || !campSel || !exSel || !judgeWrap || !judgeSel) return;
+
+    const appId = Number(appSel.value);
+    const prevCamp = String(campSel.value || "");
+    const prevEx = Number(exSel.value || 1);
+    const usage = rawUsageFromRow(row, explicitUsage);
+    const selectedJudgeIds = Array.isArray(keepJudgeIds)
+      ? _uniquePositiveInts(keepJudgeIds)
+      : _uniquePositiveInts(Array.from(judgeSel.selectedOptions || []).map(o => Number(o.value)));
+
+    campSel.innerHTML = buildRawCampOptionsHTML(appId, prevCamp, usage);
+    if (!campSel.value) {
+      const first = campSel.querySelector("option");
+      campSel.value = first ? first.value : "";
+    }
+
+    exSel.innerHTML = buildExerciciOptionsHTML(appId, prevEx);
+    if (!exSel.value) {
+      const first = exSel.querySelector("option");
+      exSel.value = first ? first.value : "";
+    }
+
+    const selectedCampOpt = campSel.options[campSel.selectedIndex];
+    const judgesCount = Number(selectedCampOpt?.dataset?.judgesCount || 1);
+    if (judgesCount > 1) {
+      judgeWrap.style.display = "";
+      judgeSel.innerHTML = "";
+      for (let j = 1; j <= judgesCount; j++) {
+        const opt = document.createElement("option");
+        opt.value = String(j);
+        opt.textContent = `J${j}`;
+        if (selectedJudgeIds.includes(j)) opt.selected = true;
+        judgeSel.appendChild(opt);
+      }
+    } else {
+      judgeWrap.style.display = "none";
+      judgeSel.innerHTML = "";
+    }
+  }
+
+  function renderColumnsUI(rawCols) {
+    if (!els.columnsBox) return;
+    const cols = normalizeColumnsFromSchema(rawCols);
+    els.columnsBox.innerHTML = "";
+
+    const builtins = [
+      ["posicio", "#"],
+      ["participant", "Nom"],
+      ["entitat_nom", "Entitat"],
+      ["participants", "Participants"],
+      ["punts", "Punts"],
+    ];
+
+    cols.forEach((col, idx) => {
+      const row = document.createElement("div");
+      row.className = "border rounded p-2 mb-2 col-row";
+      row.setAttribute("data-type", col.type || "builtin");
+
+      if ((col.type || "builtin") === "raw") {
+        const src = (col.source && typeof col.source === "object") ? col.source : {};
+        const appId = Number.isFinite(Number(src.aparell_id)) ? Number(src.aparell_id) : null;
+        const camp = String(src.camp || "");
+        const ex = Math.max(1, Number(src.exercici || 1) || 1);
+        const judgeIds = _uniquePositiveInts((((src.jutges || {}).ids) || []));
+
+        row.innerHTML = `
+          <div class="row">
+            <div class="col-12 col-md-2 mb-2">
+              <label class="small text-muted mb-1">Tipus</label>
+              <input class="form-control form-control-sm" value="Camp" disabled>
+            </div>
+            <div class="col-12 col-md-2 mb-2">
+              <label class="small text-muted mb-1">Key</label>
+              <input class="form-control form-control-sm" data-k="key" value="${esc(col.key || `raw_${idx+1}`)}">
+            </div>
+            <div class="col-12 col-md-3 mb-2">
+              <label class="small text-muted mb-1">Etiqueta</label>
+              <input class="form-control form-control-sm" data-k="label" value="${esc(col.label || "")}">
+            </div>
+            <div class="col-12 col-md-3 mb-2">
+              <label class="small text-muted mb-1">Aparell</label>
+              <select class="form-control form-control-sm" data-k="app_id">
+                ${buildRawAppOptionsHTML(appId)}
+              </select>
+            </div>
+            <div class="col-6 col-md-1 mb-2">
+              <label class="small text-muted mb-1">Dec</label>
+              <input class="form-control form-control-sm" data-k="decimals" type="number" min="0" max="6" value="${esc(col.decimals ?? 3)}">
+            </div>
+            <div class="col-6 col-md-1 mb-2">
+              <label class="small text-muted mb-1">Align</label>
+              <select class="form-control form-control-sm" data-k="align">
+                <option value="right" ${(col.align || "right") === "right" ? "selected" : ""}>R</option>
+                <option value="left" ${(col.align || "") === "left" ? "selected" : ""}>L</option>
+                <option value="center" ${(col.align || "") === "center" ? "selected" : ""}>C</option>
+              </select>
+            </div>
+          </div>
+          <div class="row">
+            <div class="col-12 col-md-5 mb-2">
+              <label class="small text-muted mb-1">Camp</label>
+              <select class="form-control form-control-sm" data-k="camp">
+                ${buildRawCampOptionsHTML(appId, camp, { mainColumns: true })}
+              </select>
+            </div>
+            <div class="col-12 col-md-2 mb-2">
+              <label class="small text-muted mb-1">Exercici</label>
+              <select class="form-control form-control-sm" data-k="exercici">
+                ${buildExerciciOptionsHTML(appId, ex)}
+              </select>
+            </div>
+            <div class="col-12 col-md-2 mb-2" data-k="judge_wrap" style="display:none;">
+              <label class="small text-muted mb-1">Jutges</label>
+              <select class="form-control form-control-sm" data-k="judge_ids" multiple size="3">
+              </select>
+            </div>
+            <div class="col-12 col-md-3 mb-2 d-flex align-items-end justify-content-end gap-1">
+              <button type="button" class="btn btn-sm btn-outline-secondary" data-act="up">↑</button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" data-act="down">↓</button>
+              <button type="button" class="btn btn-sm btn-outline-danger" data-act="del">Eliminar</button>
+            </div>
+          </div>
+        `;
+        row.dataset.rawUsage = "main";
+        refreshRawControls(row, judgeIds, { mainColumns: true });
+      } else {
+        const key = String(col.key || "participant");
+        row.innerHTML = `
+          <div class="row">
+            <div class="col-12 col-md-2 mb-2">
+              <label class="small text-muted mb-1">Tipus</label>
+              <input class="form-control form-control-sm" value="Builtin" disabled>
+            </div>
+            <div class="col-12 col-md-3 mb-2">
+              <label class="small text-muted mb-1">Camp</label>
+              <select class="form-control form-control-sm" data-k="key">
+                ${builtins.map(([k,l]) => `<option value="${k}" ${k===key ? "selected" : ""}>${l}</option>`).join("")}
+              </select>
+            </div>
+            <div class="col-12 col-md-3 mb-2">
+              <label class="small text-muted mb-1">Etiqueta</label>
+              <input class="form-control form-control-sm" data-k="label" value="${esc(col.label || "")}">
+            </div>
+            <div class="col-6 col-md-2 mb-2">
+              <label class="small text-muted mb-1">Align</label>
+              <select class="form-control form-control-sm" data-k="align">
+                <option value="left" ${(col.align || "left") === "left" ? "selected" : ""}>L</option>
+                <option value="right" ${(col.align || "") === "right" ? "selected" : ""}>R</option>
+                <option value="center" ${(col.align || "") === "center" ? "selected" : ""}>C</option>
+              </select>
+            </div>
+            <div class="col-6 col-md-1 mb-2">
+              <label class="small text-muted mb-1">Dec</label>
+              <input class="form-control form-control-sm" data-k="decimals" type="number" min="0" max="6" value="${esc(col.decimals ?? "")}">
+            </div>
+            <div class="col-12 col-md-1 mb-2 d-flex align-items-end justify-content-end gap-1">
+              <button type="button" class="btn btn-sm btn-outline-secondary" data-act="up">↑</button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" data-act="down">↓</button>
+              <button type="button" class="btn btn-sm btn-outline-danger" data-act="del">-</button>
+            </div>
+          </div>
+        `;
+      }
+
+      row.querySelectorAll("input,select").forEach(el => {
+        el.addEventListener("change", () => {
+          if (row.getAttribute("data-type") === "raw") {
+            if (el.matches('[data-k="app_id"]')) {
+              refreshRawControls(row, [], { mainColumns: true });
+            } else if (el.matches('[data-k="camp"]')) {
+              refreshRawControls(row, null, { mainColumns: true });
+            }
+          }
+          syncAdvancedFromUI();
+        });
+        el.addEventListener("input", syncAdvancedFromUI);
+      });
+
+      row.querySelector('[data-act="del"]').addEventListener("click", () => {
+        const cur = readColumnsUI(true);
+        cur.splice(idx, 1);
+        renderColumnsUI(cur);
+        syncAdvancedFromUI();
+      });
+      row.querySelector('[data-act="up"]').addEventListener("click", () => {
+        if (idx <= 0) return;
+        const cur = readColumnsUI(true);
+        const t = cur[idx - 1];
+        cur[idx - 1] = cur[idx];
+        cur[idx] = t;
+        renderColumnsUI(cur);
+        syncAdvancedFromUI();
+      });
+      row.querySelector('[data-act="down"]').addEventListener("click", () => {
+        const cur = readColumnsUI(true);
+        if (idx >= cur.length - 1) return;
+        const t = cur[idx + 1];
+        cur[idx + 1] = cur[idx];
+        cur[idx] = t;
+        renderColumnsUI(cur);
+        syncAdvancedFromUI();
+      });
+
+      els.columnsBox.appendChild(row);
+    });
+  }
+
+  function readColumnsUI(includeInvalid) {
+    const out = [];
+    document.querySelectorAll("#columnsBox .col-row").forEach((row, idx) => {
+      const type = row.getAttribute("data-type") || "builtin";
+      const key = String(row.querySelector('[data-k="key"]')?.value || "").trim();
+      const label = String(row.querySelector('[data-k="label"]')?.value || "").trim();
+      const align = String(row.querySelector('[data-k="align"]')?.value || (type === "raw" ? "right" : "left")).trim();
+      const decRaw = String(row.querySelector('[data-k="decimals"]')?.value || "").trim();
+      const decimals = decRaw === "" ? null : Number(decRaw);
+
+      if (type === "raw") {
+        const appId = Number(row.querySelector('[data-k="app_id"]')?.value);
+        const ex = Math.max(1, Number(row.querySelector('[data-k="exercici"]')?.value || 1));
+        const camp = String(row.querySelector('[data-k="camp"]')?.value || "").trim();
+        const judgeIds = _uniquePositiveInts(Array.from(row.querySelector('[data-k="judge_ids"]')?.selectedOptions || []).map(o => Number(o.value)));
+        if (!includeInvalid && (!Number.isFinite(appId) || !getAparellById(appId) || !camp || !isRealFieldForApp(appId, camp))) return;
+        out.push({
+          type: "raw",
+          key: key || `raw_${idx + 1}`,
+          label: label || key || `raw_${idx + 1}`,
+          align: ["left","right","center"].includes(align) ? align : "right",
+          decimals: Number.isFinite(decimals) ? Math.max(0, Math.min(6, decimals)) : 3,
+          source: {
+            aparell_id: Number.isFinite(appId) ? appId : null,
+            exercici: ex,
+            camp: camp,
+            jutges: { ids: judgeIds },
+          },
+        });
+      } else {
+        if (!["posicio","participant","nom","entitat_nom","participants","punts"].includes(key)) return;
+        const item = {
+          type: "builtin",
+          key,
+          label: label || key,
+          align: ["left","right","center"].includes(align) ? align : (key === "punts" ? "right" : "left"),
+        };
+        if (Number.isFinite(decimals)) item.decimals = Math.max(0, Math.min(6, decimals));
+        out.push(item);
+      }
+    });
+    return out.length ? out : defaultDisplayColumns();
+  }
+
+  function isDetailConfigAvailable() {
+    return detailSectionChoices().length > 0;
+  }
+
+  function renderDetailContextualCopy() {
+    if (!els.detailScopeHint) return;
+    const tipus = currentTipus();
+    const teamMode = getEquipsUiState().effectiveTeamMode || TEAM_MODE_DERIVED;
+    els.detailScopeHint.className = "alert alert-info py-2 px-3 small mb-3";
+    if (tipus === "individual") {
+      els.detailScopeHint.textContent = "El detall desplegable mostrara els exercicis del participant segons les seccions configurades.";
+      return;
+    }
+    if (tipus === "entitat") {
+      els.detailScopeHint.textContent = "El detall desplegable mostrara els participants agregats sota cada entitat.";
+      return;
+    }
+    if (tipus === "equips" && teamMode === TEAM_MODE_NATIVE) {
+      els.detailScopeHint.textContent = "El detall desplegable mostrara la llista de membres, les metriques d'equip i, si es configura, les notes individuals per membre.";
+      return;
+    }
+    if (tipus === "equips") {
+      els.detailScopeHint.textContent = "El detall desplegable mostrara membres i detall per participant dins de cada equip.";
+      return;
+    }
+    els.detailScopeHint.className = "alert alert-secondary py-2 px-3 small mb-3";
+    els.detailScopeHint.textContent = "Aquest tipus de classificacio no admet detall desplegable.";
+    return;
+    if (isDetailConfigAvailable()) {
+      els.detailScopeHint.className = "alert alert-info py-2 px-3 small mb-3";
+      els.detailScopeHint.textContent = "El detall desplegable es mostrara sota cada equip i renderitzara una fila per membre.";
+      return;
+    }
+    els.detailScopeHint.className = "alert alert-secondary py-2 px-3 small mb-3";
+    els.detailScopeHint.textContent = "Disponible nomes a classificacions d'equips amb mode derivat d'individual.";
+  }
+
+  function setDetailConfigAlert(message) {
+    if (!els.detailConfigAlert) return;
+    const text = String(message || "").trim();
+    if (!text) {
+      els.detailConfigAlert.style.display = "none";
+      els.detailConfigAlert.textContent = "";
+      return;
+    }
+    els.detailConfigAlert.style.display = "";
+    els.detailConfigAlert.textContent = text;
+  }
+
+  function relocateDetailConfigBox() {
+    if (!els.detailConfigBox) return;
+    const presentacioStack = document.querySelector("#section-presentacio .builder-section__stack");
+    const presentacioAdvanced = document.querySelector("#section-presentacio .builder-advanced");
+    if (!presentacioStack || !presentacioAdvanced) return;
+    if (els.detailConfigBox.closest("#section-presentacio")) return;
+    presentacioStack.insertBefore(els.detailConfigBox, presentacioAdvanced);
+  }
+
+  function renderDetailSectionTypeOptions() {
+    if (!els.detailSectionType) return;
+    const options = detailSectionChoices();
+    const current = String(els.detailSectionType.value || "");
+    els.detailSectionType.innerHTML = options.map(opt => `<option value="${esc(opt.type)}">${esc(opt.label)}</option>`).join("");
+    if (options.some(opt => opt.type === current)) els.detailSectionType.value = current;
+    else if (options.length) els.detailSectionType.value = options[0].type;
+  }
+
+  function refreshDetailConfigUI() {
+    const available = isDetailConfigAvailable();
+    renderDetailSectionTypeOptions();
+    renderDetailContextualCopy();
+    if (els.detailConfigBox) {
+      els.detailConfigBox.style.display = "";
+    }
+    if (els.detailEnabled) {
+      els.detailEnabled.disabled = !available;
+      if (!available) els.detailEnabled.checked = false;
+    }
+    const detailChecked = !!els.detailEnabled?.checked && available;
+    if (els.detailDefaultOpen) {
+      els.detailDefaultOpen.disabled = !detailChecked;
+      if (!detailChecked) els.detailDefaultOpen.checked = false;
+    }
+    const selectedSectionType = String(els.detailSectionType?.value || "").trim();
+    const canAddSelectedSection = detailChecked && canAddDetailSection(selectedSectionType);
+    if (els.detailSectionType) els.detailSectionType.disabled = !available || !detailChecked;
+    if (els.btnDetailSectionAdd) els.btnDetailSectionAdd.disabled = !available || !canAddSelectedSection;
+    const sections = readDetailSectionsUI(true);
+    if (!detailChecked) {
+      setDetailConfigAlert("");
+    } else if (!sections.length && detailSectionNeedsInitialRaw(selectedSectionType) && !canAddDetailSection(selectedSectionType)) {
+      setDetailConfigAlert("Selecciona un aparell compatible amb camps disponibles abans d'afegir aquesta seccio.");
+    } else {
+      setDetailConfigAlert("");
+    }
+    renderDetailSectionsUI(sections);
+  }
+
+  function renderDetailColumnsUI(rawCols) {
+    if (!els.detailColumnsBox) return;
+    const cols = normalizeDetailColumnsFromSchema(rawCols);
+    const enabled = isDetailConfigAvailable();
+    els.detailColumnsBox.innerHTML = "";
+
+    const builtins = [
+      ["participant", "Participant"],
+      ["entitat_nom", "Entitat"],
+    ];
+
+    cols.forEach((col, idx) => {
+      const row = document.createElement("div");
+      row.className = "border rounded p-2 mb-2 col-row";
+      row.setAttribute("data-type", col.type || "builtin");
+
+      if ((col.type || "builtin") === "raw") {
+        const src = (col.source && typeof col.source === "object") ? col.source : {};
+        const appId = Number.isFinite(Number(src.aparell_id)) ? Number(src.aparell_id) : null;
+        const camp = String(src.camp || "");
+        const ex = Math.max(1, Number(src.exercici || 1) || 1);
+        const judgeIds = _uniquePositiveInts((((src.jutges || {}).ids) || []));
+
+        row.innerHTML = `
+          <div class="row">
+            <div class="col-12 col-md-2 mb-2">
+              <label class="small text-muted mb-1">Tipus</label>
+              <input class="form-control form-control-sm" value="Camp" disabled>
+            </div>
+            <div class="col-12 col-md-2 mb-2">
+              <label class="small text-muted mb-1">Key</label>
+              <input class="form-control form-control-sm" data-k="key" value="${esc(col.key || `detail_raw_${idx+1}`)}" ${enabled ? "" : "disabled"}>
+            </div>
+            <div class="col-12 col-md-3 mb-2">
+              <label class="small text-muted mb-1">Etiqueta</label>
+              <input class="form-control form-control-sm" data-k="label" value="${esc(col.label || "")}" ${enabled ? "" : "disabled"}>
+            </div>
+            <div class="col-12 col-md-3 mb-2">
+              <label class="small text-muted mb-1">Aparell</label>
+              <select class="form-control form-control-sm" data-k="app_id" ${enabled ? "" : "disabled"}>
+                ${buildRawAppOptionsHTML(appId)}
+              </select>
+            </div>
+            <div class="col-6 col-md-1 mb-2">
+              <label class="small text-muted mb-1">Dec</label>
+              <input class="form-control form-control-sm" data-k="decimals" type="number" min="0" max="6" value="${esc(col.decimals ?? 3)}" ${enabled ? "" : "disabled"}>
+            </div>
+            <div class="col-6 col-md-1 mb-2">
+              <label class="small text-muted mb-1">Align</label>
+              <select class="form-control form-control-sm" data-k="align" ${enabled ? "" : "disabled"}>
+                <option value="right" ${(col.align || "right") === "right" ? "selected" : ""}>R</option>
+                <option value="left" ${(col.align || "") === "left" ? "selected" : ""}>L</option>
+                <option value="center" ${(col.align || "") === "center" ? "selected" : ""}>C</option>
+              </select>
+            </div>
+          </div>
+          <div class="row">
+            <div class="col-12 col-md-5 mb-2">
+              <label class="small text-muted mb-1">Camp</label>
+              <select class="form-control form-control-sm" data-k="camp" ${enabled ? "" : "disabled"}>
+                ${buildRawCampOptionsHTML(appId, camp)}
+              </select>
+            </div>
+            <div class="col-12 col-md-2 mb-2">
+              <label class="small text-muted mb-1">Exercici</label>
+              <select class="form-control form-control-sm" data-k="exercici" ${enabled ? "" : "disabled"}>
+                ${buildExerciciOptionsHTML(appId, ex)}
+              </select>
+            </div>
+            <div class="col-12 col-md-2 mb-2" data-k="judge_wrap" style="display:none;">
+              <label class="small text-muted mb-1">Jutges</label>
+              <select class="form-control form-control-sm" data-k="judge_ids" multiple size="3" ${enabled ? "" : "disabled"}>
+              </select>
+            </div>
+            <div class="col-12 col-md-3 mb-2 d-flex align-items-end justify-content-end gap-1">
+              <button type="button" class="btn btn-sm btn-outline-secondary" data-act="up" ${enabled ? "" : "disabled"}>Up</button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" data-act="down" ${enabled ? "" : "disabled"}>Down</button>
+              <button type="button" class="btn btn-sm btn-outline-danger" data-act="del" ${enabled ? "" : "disabled"}>Eliminar</button>
+            </div>
+          </div>
+        `;
+        refreshRawControls(row, judgeIds);
+      } else {
+        const key = String(col.key || "participant");
+        row.innerHTML = `
+          <div class="row">
+            <div class="col-12 col-md-2 mb-2">
+              <label class="small text-muted mb-1">Tipus</label>
+              <input class="form-control form-control-sm" value="Builtin" disabled>
+            </div>
+            <div class="col-12 col-md-3 mb-2">
+              <label class="small text-muted mb-1">Camp</label>
+              <select class="form-control form-control-sm" data-k="key" ${enabled ? "" : "disabled"}>
+                ${builtins.map(([k,l]) => `<option value="${k}" ${k===key ? "selected" : ""}>${l}</option>`).join("")}
+              </select>
+            </div>
+            <div class="col-12 col-md-3 mb-2">
+              <label class="small text-muted mb-1">Etiqueta</label>
+              <input class="form-control form-control-sm" data-k="label" value="${esc(col.label || "")}" ${enabled ? "" : "disabled"}>
+            </div>
+            <div class="col-6 col-md-2 mb-2">
+              <label class="small text-muted mb-1">Align</label>
+              <select class="form-control form-control-sm" data-k="align" ${enabled ? "" : "disabled"}>
+                <option value="left" ${(col.align || "left") === "left" ? "selected" : ""}>L</option>
+                <option value="right" ${(col.align || "") === "right" ? "selected" : ""}>R</option>
+                <option value="center" ${(col.align || "") === "center" ? "selected" : ""}>C</option>
+              </select>
+            </div>
+            <div class="col-6 col-md-1 mb-2">
+              <label class="small text-muted mb-1">Dec</label>
+              <input class="form-control form-control-sm" data-k="decimals" type="number" min="0" max="6" value="${esc(col.decimals ?? "")}" ${enabled ? "" : "disabled"}>
+            </div>
+            <div class="col-12 col-md-1 mb-2 d-flex align-items-end justify-content-end gap-1">
+              <button type="button" class="btn btn-sm btn-outline-secondary" data-act="up" ${enabled ? "" : "disabled"}>Up</button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" data-act="down" ${enabled ? "" : "disabled"}>Down</button>
+              <button type="button" class="btn btn-sm btn-outline-danger" data-act="del" ${enabled ? "" : "disabled"}>-</button>
+            </div>
+          </div>
+        `;
+      }
+
+      row.querySelectorAll("input,select").forEach(el => {
+        el.addEventListener("change", () => {
+          if (row.getAttribute("data-type") === "raw") {
+            if (el.matches('[data-k="app_id"]')) {
+              refreshRawControls(row, []);
+            } else if (el.matches('[data-k="camp"]')) {
+              refreshRawControls(row);
+            }
+          }
+          syncAdvancedFromUI();
+        });
+        el.addEventListener("input", syncAdvancedFromUI);
+      });
+
+      row.querySelector('[data-act="del"]').addEventListener("click", () => {
+        const cur = readDetailColumnsUI(true);
+        cur.splice(idx, 1);
+        renderDetailColumnsUI(cur);
+        syncAdvancedFromUI();
+      });
+      row.querySelector('[data-act="up"]').addEventListener("click", () => {
+        if (idx <= 0) return;
+        const cur = readDetailColumnsUI(true);
+        const t = cur[idx - 1];
+        cur[idx - 1] = cur[idx];
+        cur[idx] = t;
+        renderDetailColumnsUI(cur);
+        syncAdvancedFromUI();
+      });
+      row.querySelector('[data-act="down"]').addEventListener("click", () => {
+        const cur = readDetailColumnsUI(true);
+        if (idx >= cur.length - 1) return;
+        const t = cur[idx + 1];
+        cur[idx + 1] = cur[idx];
+        cur[idx] = t;
+        renderDetailColumnsUI(cur);
+        syncAdvancedFromUI();
+      });
+
+      els.detailColumnsBox.appendChild(row);
+    });
+  }
+
+  function readDetailColumnsUI(includeInvalid) {
+    if (!document.getElementById("detailColumnsBox")) {
+      return detailLegacyColumnsFromSections(readDetailSectionsUI(includeInvalid));
+    }
+    const out = [];
+    document.querySelectorAll("#detailColumnsBox .col-row").forEach((row, idx) => {
+      const type = row.getAttribute("data-type") || "builtin";
+      const key = String(row.querySelector('[data-k="key"]')?.value || "").trim();
+      const label = String(row.querySelector('[data-k="label"]')?.value || "").trim();
+      const align = String(row.querySelector('[data-k="align"]')?.value || (type === "raw" ? "right" : "left")).trim();
+      const decRaw = String(row.querySelector('[data-k="decimals"]')?.value || "").trim();
+      const decimals = decRaw === "" ? null : Number(decRaw);
+
+      if (type === "raw") {
+        const appId = Number(row.querySelector('[data-k="app_id"]')?.value);
+        const ex = Math.max(1, Number(row.querySelector('[data-k="exercici"]')?.value || 1));
+        const camp = String(row.querySelector('[data-k="camp"]')?.value || "").trim();
+        const judgeIds = _uniquePositiveInts(Array.from(row.querySelector('[data-k="judge_ids"]')?.selectedOptions || []).map(o => Number(o.value)));
+        if (!includeInvalid && (!Number.isFinite(appId) || !getAparellById(appId) || !camp || !isRealFieldForApp(appId, camp))) return;
+        out.push({
+          type: "raw",
+          key: key || `detail_raw_${idx + 1}`,
+          label: label || key || `detail_raw_${idx + 1}`,
+          align: ["left","right","center"].includes(align) ? align : "right",
+          decimals: Number.isFinite(decimals) ? Math.max(0, Math.min(6, decimals)) : 3,
+          source: {
+            aparell_id: Number.isFinite(appId) ? appId : null,
+            exercici: ex,
+            camp: camp,
+            jutges: { ids: judgeIds },
+          },
+        });
+      } else {
+        if (!["participant","entitat_nom"].includes(key)) return;
+        const item = {
+          type: "builtin",
+          key,
+          label: label || (key === "participant" ? "Participant" : "Entitat"),
+          align: ["left","right","center"].includes(align) ? align : "left",
+        };
+        if (Number.isFinite(decimals)) item.decimals = Math.max(0, Math.min(6, decimals));
+        out.push(item);
+      }
+    });
+    return out.length ? out : defaultDetailDisplayColumns();
+  }
+
+  function renderDetailSectionColumnsUI(sectionBox, sectionType, rawCols, enabled, sectionIdx) {
+    const cols = normalizeDetailColumnsForSection(rawCols, sectionType);
+    const builtins = detailAllowedBuiltinKeysForSection(sectionType).map(key => {
+      const labels = { participant: "Participant", entitat_nom: "Entitat", exercise_index: "Ex.", aparell_nom: "Aparell" };
+      return [key, labels[key] || key];
+    });
+    const body = sectionBox.querySelector("[data-k='columns_box']");
+    if (!body) return;
+    body.innerHTML = "";
+
+    cols.forEach((col, idx) => {
+      const row = document.createElement("div");
+      row.className = "border rounded p-2 mb-2 col-row";
+      row.setAttribute("data-type", col.type || "builtin");
+
+      if ((col.type || "builtin") === "raw") {
+        const src = (col.source && typeof col.source === "object") ? col.source : {};
+        const appId = Number.isFinite(Number(src.aparell_id)) ? Number(src.aparell_id) : null;
+        const camp = String(src.camp || "");
+        const ex = Math.max(1, Number(src.exercici || 1) || 1);
+        const judgeIds = _uniquePositiveInts((((src.jutges || {}).ids) || []));
+        row.innerHTML = `
+          <div class="row">
+            <div class="col-12 col-md-2 mb-2"><label class="small text-muted mb-1">Tipus</label><input class="form-control form-control-sm" value="Camp" disabled></div>
+            <div class="col-12 col-md-2 mb-2"><label class="small text-muted mb-1">Key</label><input class="form-control form-control-sm" data-k="key" value="${esc(col.key || `detail_raw_${idx+1}`)}" ${enabled ? "" : "disabled"}></div>
+            <div class="col-12 col-md-3 mb-2"><label class="small text-muted mb-1">Etiqueta</label><input class="form-control form-control-sm" data-k="label" value="${esc(col.label || "")}" ${enabled ? "" : "disabled"}></div>
+            <div class="col-12 col-md-3 mb-2"><label class="small text-muted mb-1">Aparell</label><select class="form-control form-control-sm" data-k="app_id" ${enabled ? "" : "disabled"}>${buildRawAppOptionsHTML(appId)}</select></div>
+            <div class="col-6 col-md-1 mb-2"><label class="small text-muted mb-1">Dec</label><input class="form-control form-control-sm" data-k="decimals" type="number" min="0" max="6" value="${esc(col.decimals ?? 3)}" ${enabled ? "" : "disabled"}></div>
+            <div class="col-6 col-md-1 mb-2"><label class="small text-muted mb-1">Align</label><select class="form-control form-control-sm" data-k="align" ${enabled ? "" : "disabled"}><option value="right" ${(col.align || "right") === "right" ? "selected" : ""}>R</option><option value="left" ${(col.align || "") === "left" ? "selected" : ""}>L</option><option value="center" ${(col.align || "") === "center" ? "selected" : ""}>C</option></select></div>
+          </div>
+          <div class="row">
+            <div class="col-12 col-md-5 mb-2"><label class="small text-muted mb-1">Camp</label><select class="form-control form-control-sm" data-k="camp" ${enabled ? "" : "disabled"}>${buildRawCampOptionsHTML(appId, camp)}</select></div>
+            <div class="col-12 col-md-2 mb-2"><label class="small text-muted mb-1">Exercici</label><select class="form-control form-control-sm" data-k="exercici" ${enabled ? "" : "disabled"}>${buildExerciciOptionsHTML(appId, ex)}</select></div>
+            <div class="col-12 col-md-2 mb-2" data-k="judge_wrap" style="display:none;"><label class="small text-muted mb-1">Jutges</label><select class="form-control form-control-sm" data-k="judge_ids" multiple size="3" ${enabled ? "" : "disabled"}></select></div>
+            <div class="col-12 col-md-3 mb-2 d-flex align-items-end justify-content-end gap-1"><button type="button" class="btn btn-sm btn-outline-secondary" data-act="up" ${enabled ? "" : "disabled"}>Up</button><button type="button" class="btn btn-sm btn-outline-secondary" data-act="down" ${enabled ? "" : "disabled"}>Down</button><button type="button" class="btn btn-sm btn-outline-danger" data-act="del" ${enabled ? "" : "disabled"}>Eliminar</button></div>
+          </div>
+        `;
+        refreshRawControls(row, judgeIds);
+      } else {
+        const key = String(col.key || builtins[0]?.[0] || "participant");
+        row.innerHTML = `
+          <div class="row">
+            <div class="col-12 col-md-2 mb-2"><label class="small text-muted mb-1">Tipus</label><input class="form-control form-control-sm" value="Builtin" disabled></div>
+            <div class="col-12 col-md-3 mb-2"><label class="small text-muted mb-1">Camp</label><select class="form-control form-control-sm" data-k="key" ${enabled ? "" : "disabled"}>${builtins.map(([k,l]) => `<option value="${k}" ${k===key ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+            <div class="col-12 col-md-3 mb-2"><label class="small text-muted mb-1">Etiqueta</label><input class="form-control form-control-sm" data-k="label" value="${esc(col.label || "")}" ${enabled ? "" : "disabled"}></div>
+            <div class="col-6 col-md-2 mb-2"><label class="small text-muted mb-1">Align</label><select class="form-control form-control-sm" data-k="align" ${enabled ? "" : "disabled"}><option value="left" ${(col.align || "left") === "left" ? "selected" : ""}>L</option><option value="right" ${(col.align || "") === "right" ? "selected" : ""}>R</option><option value="center" ${(col.align || "") === "center" ? "selected" : ""}>C</option></select></div>
+            <div class="col-6 col-md-1 mb-2"><label class="small text-muted mb-1">Dec</label><input class="form-control form-control-sm" data-k="decimals" type="number" min="0" max="6" value="${esc(col.decimals ?? "")}" ${enabled ? "" : "disabled"}></div>
+            <div class="col-12 col-md-1 mb-2 d-flex align-items-end justify-content-end gap-1"><button type="button" class="btn btn-sm btn-outline-secondary" data-act="up" ${enabled ? "" : "disabled"}>Up</button><button type="button" class="btn btn-sm btn-outline-secondary" data-act="down" ${enabled ? "" : "disabled"}>Down</button><button type="button" class="btn btn-sm btn-outline-danger" data-act="del" ${enabled ? "" : "disabled"}>-</button></div>
+          </div>
+        `;
+      }
+
+      row.querySelectorAll("input,select").forEach(el => {
+        el.addEventListener("change", () => {
+          if (row.getAttribute("data-type") === "raw") {
+            if (el.matches('[data-k="app_id"]')) refreshRawControls(row, []);
+            else if (el.matches('[data-k="camp"]')) refreshRawControls(row);
+          }
+          syncAdvancedFromUI();
+        });
+        el.addEventListener("input", syncAdvancedFromUI);
+      });
+      row.querySelector('[data-act="del"]').addEventListener("click", () => {
+        const sections = readDetailSectionsUI(true);
+        const cur = normalizeDetailColumnsForSection((((sections[sectionIdx] || {}).columns) || []), sectionType);
+        cur.splice(idx, 1);
+        sections[sectionIdx].columns = cur;
+        renderDetailSectionsUI(sections);
+        syncAdvancedFromUI();
+      });
+      row.querySelector('[data-act="up"]').addEventListener("click", () => {
+        if (idx <= 0) return;
+        const sections = readDetailSectionsUI(true);
+        const cur = normalizeDetailColumnsForSection((((sections[sectionIdx] || {}).columns) || []), sectionType);
+        const t = cur[idx - 1]; cur[idx - 1] = cur[idx]; cur[idx] = t;
+        sections[sectionIdx].columns = cur;
+        renderDetailSectionsUI(sections);
+        syncAdvancedFromUI();
+      });
+      row.querySelector('[data-act="down"]').addEventListener("click", () => {
+        const sections = readDetailSectionsUI(true);
+        const cur = normalizeDetailColumnsForSection((((sections[sectionIdx] || {}).columns) || []), sectionType);
+        if (idx >= cur.length - 1) return;
+        const t = cur[idx + 1]; cur[idx + 1] = cur[idx]; cur[idx] = t;
+        sections[sectionIdx].columns = cur;
+        renderDetailSectionsUI(sections);
+        syncAdvancedFromUI();
+      });
+      body.appendChild(row);
+    });
+  }
+
+  function renderBuilderSaveErrors(rawDetails, fallbackMessages) {
+    clearBuilderSaveFeedback();
+    const details = normalizeSaveErrorDetails(rawDetails);
+    const fallback = (Array.isArray(fallbackMessages) ? fallbackMessages : []).map(msg => String(msg || "").trim()).filter(Boolean);
+    if (els.saveErrorsBox) {
+      const lines = [];
+      if (details.length) {
+        lines.push(`No s'ha pogut guardar. ${details.length} error(s):`);
+        details.slice(0, 8).forEach((item, idx) => lines.push(`${idx + 1}. ${item.message}`));
+        if (details.length > 8) lines.push(`... i ${details.length - 8} errors mes.`);
+      } else if (fallback.length) {
+        lines.push(`No s'ha pogut guardar. ${fallback.length} error(s):`);
+        fallback.slice(0, 8).forEach((msg, idx) => lines.push(`${idx + 1}. ${msg}`));
+        if (fallback.length > 8) lines.push(`... i ${fallback.length - 8} errors mes.`);
+      }
+      if (lines.length) {
+        els.saveErrorsBox.style.display = "";
+        els.saveErrorsBox.textContent = lines.join("\n");
+      }
+    }
+
+    let firstTarget = null;
+    const source = details.length ? details : fallback.map(msg => ({ path: "", message: msg, section: "general", severity: "error" }));
+    source.forEach(item => {
+      const sectionId = builderSectionIdFromErrorPath(item.path || item.section);
+      if (sectionId) {
+        const sectionNode = document.getElementById(sectionId);
+        if (sectionNode) sectionNode.classList.add("has-error");
+      }
+      const node = findBestErrorNode(item.path);
+      if (node) {
+        node.classList.add("builder-error-target");
+        appendErrorNote(node, item.message);
+        if (!firstTarget) firstTarget = node;
+      } else if (!firstTarget && sectionId) {
+        firstTarget = document.getElementById(sectionId);
+      }
+    });
+
+    if (firstTarget) {
+      const targetSection = firstTarget.closest("[data-builder-section]");
+      if (targetSection && targetSection.id) setActiveBuilderNav(targetSection.id);
+      firstTarget.scrollIntoView({ behavior: "smooth", block: "center" });
+      focusBuilderErrorTarget(firstTarget);
+    }
+  }
+
+  function renderDetailContextualCopy() {
+    if (!els.detailScopeHint) return;
+    const tipus = currentTipus();
+    const teamMode = getEquipsUiState().effectiveTeamMode || TEAM_MODE_DERIVED;
+    els.detailScopeHint.className = "alert alert-info py-2 px-3 small mb-3";
+    if (tipus === "individual") {
+      els.detailScopeHint.textContent = "El detall desplegable mostrara els exercicis del participant segons les seccions configurades.";
+      return;
+    }
+    if (tipus === "entitat") {
+      els.detailScopeHint.textContent = "El detall desplegable mostrara els participants agregats sota cada entitat.";
+      return;
+    }
+    if (tipus === "equips" && teamMode === TEAM_MODE_NATIVE) {
+      els.detailScopeHint.textContent = "El detall desplegable mostrara la llista de membres i les metriques propies de l'equip.";
+      return;
+    }
+    if (tipus === "equips") {
+      els.detailScopeHint.textContent = "El detall desplegable mostrara membres i detall per participant dins de cada equip.";
+      return;
+    }
+    els.detailScopeHint.className = "alert alert-secondary py-2 px-3 small mb-3";
+    els.detailScopeHint.textContent = "Aquest tipus de classificacio no admet detall desplegable.";
+  }
+
+  function refreshTeamMembersTableExerciseControls(row) {
+    if (!row || String(row.dataset.sectionType || "").trim() !== "team_members_table") return;
+    const modeSelect = row.querySelector('[data-k="exercise_mode"]');
+    const exerciseInput = row.querySelector('[data-k="exercici"]');
+    const exerciseWrap = row.querySelector('[data-k="exercise_wrap"]');
+    const mode = String(modeSelect?.value || "selected").trim().toLowerCase() === "fixed" ? "fixed" : "selected";
+    if (exerciseInput) exerciseInput.disabled = mode !== "fixed" || !!modeSelect?.disabled;
+    if (exerciseWrap) exerciseWrap.style.display = mode === "fixed" ? "" : "none";
+  }
+
+  function renderDetailSectionColumnsUI(sectionBox, sectionType, rawCols, enabled, sectionIdx, sectionAppId) {
+    const cols = normalizeDetailColumnsForSection(rawCols, sectionType, sectionAppId);
+    const builtins = detailAllowedBuiltinKeysForSection(sectionType).map(key => {
+      const labels = { participant: "Participant", entitat_nom: "Entitat", exercise_index: "Ex.", aparell_nom: "Aparell" };
+      return [key, labels[key] || key];
+    });
+    const body = sectionBox.querySelector("[data-k='columns_box']");
+    if (!body) return;
+    body.innerHTML = "";
+
+    cols.forEach((col, idx) => {
+      const colPath = `presentacio.detall.sections[${sectionIdx}].columns[${idx}]`;
+      const row = document.createElement("div");
+      row.className = "border rounded p-2 mb-2 col-row";
+      row.setAttribute("data-type", col.type || "builtin");
+      row.dataset.errorPath = colPath;
+
+      if ((col.type || "builtin") === "raw") {
+        const src = (col.source && typeof col.source === "object") ? col.source : {};
+        const appId = Number(src.aparell_id || sectionAppId || 0);
+        const camp = String(src.camp || "");
+        const ex = Math.max(1, Number(src.exercici || 1) || 1);
+        const exerciseMode = sectionType === "team_members_table"
+          ? (String(src.exercise_mode || "").trim().toLowerCase() === "fixed" ? "fixed" : "selected")
+          : "";
+        const judgeIds = _uniquePositiveInts((((src.jutges || {}).ids) || []));
+        const exerciseModeControl = sectionType === "team_members_table"
+          ? `<div class="col-12 col-md-3 mb-2"><label class="small text-muted mb-1">Mode exercici</label><select class="form-control form-control-sm" data-k="exercise_mode" data-error-path="${esc(colPath + ".source.exercise_mode")}" ${enabled ? "" : "disabled"}><option value="selected" ${exerciseMode === "selected" ? "selected" : ""}>Seguir seleccio de la classificacio</option><option value="fixed" ${exerciseMode === "fixed" ? "selected" : ""}>Forcar exercici concret</option></select></div>`
+          : "";
+        const exerciseControl = sectionType === "team_members_table"
+          ? `<div class="col-12 col-md-2 mb-2" data-k="exercise_wrap" style="${exerciseMode === "fixed" ? "" : "display:none;"}"><label class="small text-muted mb-1">Exercici</label><select class="form-control form-control-sm" data-k="exercici" data-error-path="${esc(colPath + ".source.exercici")}" ${(enabled && exerciseMode === "fixed") ? "" : "disabled"}>${buildExerciciOptionsHTML(appId, ex)}</select></div>`
+          : `<div class="col-12 col-md-2 mb-2"><label class="small text-muted mb-1">Exercici</label><select class="form-control form-control-sm" data-k="exercici" data-error-path="${esc(colPath + ".source.exercici")}" ${enabled ? "" : "disabled"}>${buildExerciciOptionsHTML(appId, ex)}</select></div>`;
+        row.innerHTML = `
+          <input type="hidden" data-k="app_id" value="${esc(String(appId || ""))}">
+          <div class="row">
+            <div class="col-12 col-md-2 mb-2"><label class="small text-muted mb-1">Tipus</label><input class="form-control form-control-sm" value="Camp" disabled></div>
+            <div class="col-12 col-md-2 mb-2"><label class="small text-muted mb-1">Key</label><input class="form-control form-control-sm" data-k="key" data-error-path="${esc(colPath + ".key")}" value="${esc(col.key || `detail_raw_${idx+1}`)}" ${enabled ? "" : "disabled"}></div>
+            <div class="col-12 col-md-3 mb-2"><label class="small text-muted mb-1">Etiqueta</label><input class="form-control form-control-sm" data-k="label" data-error-path="${esc(colPath + ".label")}" value="${esc(col.label || "")}" ${enabled ? "" : "disabled"}></div>
+            <div class="col-12 col-md-3 mb-2"><label class="small text-muted mb-1">Aparell</label><input class="form-control form-control-sm" value="${esc(detailSectionAppName(appId) || "")}" disabled></div>
+            <div class="col-6 col-md-1 mb-2"><label class="small text-muted mb-1">Dec</label><input class="form-control form-control-sm" data-k="decimals" data-error-path="${esc(colPath + ".decimals")}" type="number" min="0" max="6" value="${esc(col.decimals ?? 3)}" ${enabled ? "" : "disabled"}></div>
+            <div class="col-6 col-md-1 mb-2"><label class="small text-muted mb-1">Align</label><select class="form-control form-control-sm" data-k="align" data-error-path="${esc(colPath + ".align")}" ${enabled ? "" : "disabled"}><option value="right" ${(col.align || "right") === "right" ? "selected" : ""}>R</option><option value="left" ${(col.align || "") === "left" ? "selected" : ""}>L</option><option value="center" ${(col.align || "") === "center" ? "selected" : ""}>C</option></select></div>
+          </div>
+          <div class="row">
+            <div class="col-12 col-md-5 mb-2"><label class="small text-muted mb-1">Camp</label><select class="form-control form-control-sm" data-k="camp" data-error-path="${esc(colPath + ".source.camp")}" ${enabled ? "" : "disabled"}>${buildRawCampOptionsHTML(appId, camp, { sectionType })}</select></div>
+            ${exerciseModeControl}
+            ${exerciseControl}
+            <div class="col-12 col-md-2 mb-2" data-k="judge_wrap" style="display:none;"><label class="small text-muted mb-1">Jutges</label><select class="form-control form-control-sm" data-k="judge_ids" data-error-path="${esc(colPath + ".source.jutges.ids")}" multiple size="3" ${enabled ? "" : "disabled"}></select></div>
+            <div class="col-12 col-md-3 mb-2 d-flex align-items-end justify-content-end gap-1"><button type="button" class="btn btn-sm btn-outline-secondary" data-act="up" ${enabled ? "" : "disabled"}>Up</button><button type="button" class="btn btn-sm btn-outline-secondary" data-act="down" ${enabled ? "" : "disabled"}>Down</button><button type="button" class="btn btn-sm btn-outline-danger" data-act="del" ${enabled ? "" : "disabled"}>Eliminar</button></div>
+          </div>
+        `;
+        row.dataset.sectionType = sectionType;
+        refreshRawControls(row, judgeIds, { sectionType });
+      } else {
+        const key = String(col.key || builtins[0]?.[0] || "participant");
+        row.innerHTML = `
+          <div class="row">
+            <div class="col-12 col-md-2 mb-2"><label class="small text-muted mb-1">Tipus</label><input class="form-control form-control-sm" value="Builtin" disabled></div>
+            <div class="col-12 col-md-3 mb-2"><label class="small text-muted mb-1">Camp</label><select class="form-control form-control-sm" data-k="key" data-error-path="${esc(colPath + ".key")}" ${enabled ? "" : "disabled"}>${builtins.map(([k,l]) => `<option value="${k}" ${k===key ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+            <div class="col-12 col-md-3 mb-2"><label class="small text-muted mb-1">Etiqueta</label><input class="form-control form-control-sm" data-k="label" data-error-path="${esc(colPath + ".label")}" value="${esc(col.label || "")}" ${enabled ? "" : "disabled"}></div>
+            <div class="col-6 col-md-2 mb-2"><label class="small text-muted mb-1">Align</label><select class="form-control form-control-sm" data-k="align" data-error-path="${esc(colPath + ".align")}" ${enabled ? "" : "disabled"}><option value="left" ${(col.align || "left") === "left" ? "selected" : ""}>L</option><option value="right" ${(col.align || "") === "right" ? "selected" : ""}>R</option><option value="center" ${(col.align || "") === "center" ? "selected" : ""}>C</option></select></div>
+            <div class="col-6 col-md-1 mb-2"><label class="small text-muted mb-1">Dec</label><input class="form-control form-control-sm" data-k="decimals" data-error-path="${esc(colPath + ".decimals")}" type="number" min="0" max="6" value="${esc(col.decimals ?? "")}" ${enabled ? "" : "disabled"}></div>
+            <div class="col-12 col-md-1 mb-2 d-flex align-items-end justify-content-end gap-1"><button type="button" class="btn btn-sm btn-outline-secondary" data-act="up" ${enabled ? "" : "disabled"}>Up</button><button type="button" class="btn btn-sm btn-outline-secondary" data-act="down" ${enabled ? "" : "disabled"}>Down</button><button type="button" class="btn btn-sm btn-outline-danger" data-act="del" ${enabled ? "" : "disabled"}>-</button></div>
+          </div>
+        `;
+      }
+
+      row.querySelectorAll("input,select").forEach(el => {
+        el.addEventListener("change", () => {
+          if (row.getAttribute("data-type") === "raw" && el.matches('[data-k="camp"]')) {
+            refreshRawControls(row, null, { sectionType });
+          }
+          if (row.getAttribute("data-type") === "raw" && el.matches('[data-k="exercise_mode"]')) {
+            refreshTeamMembersTableExerciseControls(row);
+          }
+          syncAdvancedFromUI();
+        });
+        el.addEventListener("input", syncAdvancedFromUI);
+      });
+      refreshTeamMembersTableExerciseControls(row);
+      row.querySelector('[data-act="del"]').addEventListener("click", () => {
+        const sections = readDetailSectionsUI(true);
+        const curSection = sections[sectionIdx] || {};
+        const cur = normalizeDetailColumnsForSection((curSection.columns || []), sectionType, curSection.aparell_id);
+        cur.splice(idx, 1);
+        sections[sectionIdx].columns = cur;
+        renderDetailSectionsUI(sections);
+        syncAdvancedFromUI();
+      });
+      row.querySelector('[data-act="up"]').addEventListener("click", () => {
+        if (idx <= 0) return;
+        const sections = readDetailSectionsUI(true);
+        const curSection = sections[sectionIdx] || {};
+        const cur = normalizeDetailColumnsForSection((curSection.columns || []), sectionType, curSection.aparell_id);
+        const t = cur[idx - 1]; cur[idx - 1] = cur[idx]; cur[idx] = t;
+        sections[sectionIdx].columns = cur;
+        renderDetailSectionsUI(sections);
+        syncAdvancedFromUI();
+      });
+      row.querySelector('[data-act="down"]').addEventListener("click", () => {
+        const sections = readDetailSectionsUI(true);
+        const curSection = sections[sectionIdx] || {};
+        const cur = normalizeDetailColumnsForSection((curSection.columns || []), sectionType, curSection.aparell_id);
+        if (idx >= cur.length - 1) return;
+        const t = cur[idx + 1]; cur[idx + 1] = cur[idx]; cur[idx] = t;
+        sections[sectionIdx].columns = cur;
+        renderDetailSectionsUI(sections);
+        syncAdvancedFromUI();
+      });
+      body.appendChild(row);
+    });
+  }
+
+  function renderDetailSectionsUI(rawSections) {
+    if (!els.detailSectionsBox) return;
+    const sections = normalizeDetailSectionsFromSchema({ sections: rawSections });
+    const enabled = isDetailConfigAvailable() && !!els.detailEnabled?.checked;
+    els.detailSectionsBox.innerHTML = "";
+
+    sections.forEach((section, idx) => {
+      const sectionPath = `presentacio.detall.sections[${idx}]`;
+      const sectionAppId = Number(section?.aparell_id || 0);
+      const splitInfo = getDetailSectionSplitInfo(section);
+      const box = document.createElement("div");
+      box.className = "border rounded p-2 mb-3";
+      box.setAttribute("data-section-idx", String(idx));
+      box.setAttribute("data-section-type", String(section.type || ""));
+      box.dataset.errorPath = sectionPath;
+      const hasColumns = Array.isArray(section.columns);
+      const requiresApp = detailSectionRequiresApp(section.type);
+      const sectionConflict = splitInfo.needsSplit || splitInfo.hasAppMismatch;
+      const canAddRaw = canAddDetailRawColumn(section.type, sectionAppId);
+      const appHelp = requiresApp && hasColumns && !sectionAppId
+        ? `<div class="small text-muted mb-2">Selecciona un aparell per poder afegir i validar les columnes raw d'aquesta seccio.</div>`
+        : "";
+      const splitWarning = splitInfo.needsSplit
+        ? `<div class="alert alert-warning py-2 px-3 small mb-2" data-error-path="${esc(sectionPath + ".columns")}">Aquesta seccio barreja columnes raw de diversos aparells. Divideix-la en una seccio per aparell abans de desar.</div>`
+        : "";
+      const mismatchWarning = splitInfo.hasAppMismatch
+        ? `<div class="alert alert-danger py-2 px-3 small mb-2" data-error-path="${esc(sectionPath + ".aparell_id")}">L'aparell de la seccio no concorda amb ${splitInfo.mismatchAppIds.length === 1 ? "la columna raw existent" : "algunes columnes raw"}. Revisa l'aparell de la seccio o elimina les columnes incompatibles abans de desar.</div>`
+        : "";
+      const appSelector = requiresApp
+        ? `<div class="col-12 col-md-4 mb-2"><label class="small text-muted mb-1">Aparell</label><select class="form-control form-control-sm" data-k="section_app_id" data-error-path="${esc(sectionPath + ".aparell_id")}" ${enabled && !splitInfo.needsSplit ? "" : "disabled"}>${buildDetailSectionAppOptionsHTML(section.type, sectionAppId)}</select></div>`
+        : "";
+      box.innerHTML = `
+        <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+          <div class="flex-fill">
+            <div class="small text-muted mb-1">Seccio</div>
+            <div class="font-weight-bold">${esc(detailSectionChoices().find(x => x.type === section.type)?.label || section.type)}</div>
+          </div>
+          <div class="d-flex gap-1">
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-act="up" ${enabled ? "" : "disabled"}>Up</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-act="down" ${enabled ? "" : "disabled"}>Down</button>
+            <button type="button" class="btn btn-sm btn-outline-danger" data-act="del" ${enabled ? "" : "disabled"}>Eliminar</button>
+          </div>
+        </div>
+        <div class="row">
+          <div class="col-12 col-md-4 mb-2"><label class="small text-muted mb-1">Tipus</label><input class="form-control form-control-sm" value="${esc(detailSectionChoices().find(x => x.type === section.type)?.label || section.type)}" disabled></div>
+          ${appSelector}
+          <div class="col-12 ${requiresApp ? "col-md-4" : "col-md-8"} mb-2"><label class="small text-muted mb-1">Etiqueta</label><input class="form-control form-control-sm" data-k="label" data-error-path="${esc(sectionPath + ".label")}" value="${esc(section.label || "")}" ${enabled ? "" : "disabled"}></div>
+        </div>
+        ${splitWarning}
+        ${mismatchWarning}
+        ${hasColumns ? `${appHelp}<div class="d-flex flex-wrap gap-2 mb-2"><button type="button" class="btn btn-sm btn-outline-primary" data-act="add_builtin" ${enabled ? "" : "disabled"}>+ Builtin</button><button type="button" class="btn btn-sm btn-outline-primary" data-act="add_raw" ${(enabled && canAddRaw && !sectionConflict) ? "" : "disabled"}>+ Camp</button>${splitInfo.needsSplit ? `<button type="button" class="btn btn-sm btn-outline-warning" data-act="split" ${enabled ? "" : "disabled"}>Dividir per aparell</button>` : ""}</div>${!canAddRaw && !sectionConflict ? `<div class="small text-muted mb-2">Cal un aparell compatible amb camps disponibles per afegir columnes raw en aquesta seccio.</div>` : ""}<div data-k="columns_box" data-error-path="${esc(sectionPath + ".columns")}"></div>` : `<div class="small text-muted">Aquesta seccio no necessita columnes configurables.</div>`}
+      `;
+      box.querySelector('[data-k="label"]').addEventListener("input", syncAdvancedFromUI);
+      const appSelect = box.querySelector('[data-k="section_app_id"]');
+      if (appSelect) {
+        appSelect.addEventListener("change", async () => {
+          const cur = readDetailSectionsUI(true);
+          const currentSection = cur[idx] || {};
+          const prevAppId = Number(currentSection.aparell_id || 0);
+          const nextAppId = Number(appSelect.value || 0);
+          if (prevAppId === nextAppId) {
+            syncAdvancedFromUI();
+            return;
+          }
+          const currentColumns = Array.isArray(currentSection.columns) ? currentSection.columns : [];
+          const compat = getCompatibleDetailColumnsForSectionApp(currentColumns, nextAppId);
+          if (compat.removed.length) {
+            const accepted = await showConfirm(`Canviar l'aparell eliminara ${compat.removed.length} columna(es) raw incompatible(s) d'aquesta seccio. Vols continuar?`);
+            if (!accepted) {
+              appSelect.value = prevAppId ? String(prevAppId) : "";
+              return;
+            }
+          }
+          currentSection.aparell_id = Number.isFinite(nextAppId) && nextAppId > 0 ? nextAppId : null;
+          currentSection.columns = normalizeDetailColumnsForSection(
+            compat.kept,
+            currentSection.type,
+            currentSection.aparell_id
+          );
+          cur[idx] = currentSection;
+          renderDetailSectionsUI(cur);
+          syncAdvancedFromUI();
+        });
+      }
+      box.querySelector('[data-act="del"]').addEventListener("click", () => {
+        const cur = readDetailSectionsUI(true);
+        cur.splice(idx, 1);
+        renderDetailSectionsUI(cur);
+        syncAdvancedFromUI();
+      });
+      box.querySelector('[data-act="up"]').addEventListener("click", () => {
+        if (idx <= 0) return;
+        const cur = readDetailSectionsUI(true);
+        const t = cur[idx - 1]; cur[idx - 1] = cur[idx]; cur[idx] = t;
+        renderDetailSectionsUI(cur);
+        syncAdvancedFromUI();
+      });
+      box.querySelector('[data-act="down"]').addEventListener("click", () => {
+        const cur = readDetailSectionsUI(true);
+        if (idx >= cur.length - 1) return;
+        const t = cur[idx + 1]; cur[idx + 1] = cur[idx]; cur[idx] = t;
+        renderDetailSectionsUI(cur);
+        syncAdvancedFromUI();
+      });
+      if (hasColumns) {
+        const splitBtn = box.querySelector('[data-act="split"]');
+        if (splitBtn) {
+          splitBtn.addEventListener("click", () => {
+            const cur = readDetailSectionsUI(true);
+            const replacement = splitDetailSectionByApp(cur[idx] || {});
+            if (!replacement.length) return;
+            cur.splice(idx, 1, ...replacement);
+            renderDetailSectionsUI(cur);
+            syncAdvancedFromUI();
+          });
+        }
+        box.querySelector('[data-act="add_builtin"]').addEventListener("click", () => {
+          const cur = readDetailSectionsUI(true);
+          const builtins = detailAllowedBuiltinKeysForSection(section.type);
+          const used = new Set((((cur[idx] || {}).columns) || []).filter(x => String(x?.type || "builtin") === "builtin").map(x => String(x.key || "")));
+          const nextKey = builtins.find(key => !used.has(key)) || builtins[0];
+          if (!nextKey) return;
+          const labels = { participant: "Participant", entitat_nom: "Entitat", exercise_index: "Ex.", aparell_nom: "Aparell" };
+          cur[idx].columns = [...((((cur[idx] || {}).columns) || [])), { type: "builtin", key: nextKey, label: labels[nextKey] || nextKey, align: "left" }];
+          renderDetailSectionsUI(cur);
+          syncAdvancedFromUI();
+        });
+        box.querySelector('[data-act="add_raw"]').addEventListener("click", () => {
+          const cur = readDetailSectionsUI(true);
+          const currentSection = cur[idx] || {};
+          const currentAppId = Number(currentSection.aparell_id || 0);
+          const source = getDetailRawSourceForSection(section.type, currentAppId);
+          if (!source) {
+            setDetailConfigAlert("Selecciona un aparell compatible amb camps disponibles abans d'afegir una columna raw.");
+            return;
+          }
+          cur[idx].aparell_id = Number(source.aparell_id || currentAppId || 0) || null;
+          cur[idx].columns = [...((((cur[idx] || {}).columns) || [])), { type: "raw", key: `detail_raw_${((((cur[idx] || {}).columns) || []).length + 1)}`, label: "Detall", align: "right", decimals: 3, source: { ...source, aparell_id: cur[idx].aparell_id } }];
+          renderDetailSectionsUI(cur);
+          syncAdvancedFromUI();
+        });
+        renderDetailSectionColumnsUI(box, section.type, section.columns || [], enabled, idx, sectionAppId);
+      }
+      els.detailSectionsBox.appendChild(box);
+    });
+  }
+
+  function readDetailSectionsUI(includeInvalid) {
+    const out = [];
+    document.querySelectorAll("#detailSectionsBox [data-section-idx]").forEach(sectionBox => {
+      const sectionType = String(sectionBox.getAttribute("data-section-type") || "").trim();
+      if (!sectionType) return;
+      const section = {
+        type: sectionType,
+        label: String(sectionBox.querySelector('[data-k="label"]')?.value || "").trim() || (defaultDetailSection(sectionType).label || sectionType),
+      };
+      const sectionAppIdRaw = Number(sectionBox.querySelector('[data-k="section_app_id"]')?.value || 0);
+      const selectedSectionAppId = Number.isFinite(sectionAppIdRaw) && sectionAppIdRaw > 0 ? sectionAppIdRaw : null;
+      const columnsHost = sectionBox.querySelector("[data-k='columns_box']");
+      let inferredSectionAppId = selectedSectionAppId;
+      if (columnsHost) {
+        const cols = [];
+        const rawAppIds = new Set();
+        columnsHost.querySelectorAll(".col-row").forEach((row, idx) => {
+          const type = row.getAttribute("data-type") || "builtin";
+          const key = String(row.querySelector('[data-k="key"]')?.value || "").trim();
+          const label = String(row.querySelector('[data-k="label"]')?.value || "").trim();
+          const align = String(row.querySelector('[data-k="align"]')?.value || (type === "raw" ? "right" : "left")).trim();
+          const decRaw = String(row.querySelector('[data-k="decimals"]')?.value || "").trim();
+          const decimals = decRaw === "" ? null : Number(decRaw);
+          if (type === "raw") {
+            const rowAppIdRaw = Number(row.querySelector('[data-k="app_id"]')?.value || 0);
+            const rowAppId = Number.isFinite(rowAppIdRaw) && rowAppIdRaw > 0 ? rowAppIdRaw : null;
+            const appId = rowAppId ?? selectedSectionAppId;
+            const exerciseMode = sectionType === "team_members_table"
+              ? (String(row.querySelector('[data-k="exercise_mode"]')?.value || "selected").trim().toLowerCase() === "fixed" ? "fixed" : "selected")
+              : "";
+            const ex = Math.max(1, Number(row.querySelector('[data-k="exercici"]')?.value || 1));
+            const camp = String(row.querySelector('[data-k="camp"]')?.value || "").trim();
+            const judgeIds = _uniquePositiveInts(Array.from(row.querySelector('[data-k="judge_ids"]')?.selectedOptions || []).map(o => Number(o.value)));
+            if (Number.isFinite(appId) && appId > 0) rawAppIds.add(appId);
+            if (!includeInvalid && (!Number.isFinite(appId) || !getAparellById(appId) || !camp || !isRealFieldForApp(appId, camp))) return;
+            const source = {
+              aparell_id: Number.isFinite(appId) ? appId : null,
+              camp,
+              jutges: { ids: judgeIds },
+            };
+            if (sectionType === "team_members_table") {
+              source.exercise_mode = exerciseMode;
+              if (exerciseMode === "fixed") source.exercici = ex;
+            } else {
+              source.exercici = ex;
+            }
+            cols.push({ type: "raw", key: key || `detail_raw_${idx + 1}`, label: label || key || `detail_raw_${idx + 1}`, align: ["left","right","center"].includes(align) ? align : "right", decimals: Number.isFinite(decimals) ? Math.max(0, Math.min(6, decimals)) : 3, source });
+          } else {
+            if (!detailAllowedBuiltinKeysForSection(sectionType).includes(key)) return;
+            const labels = { participant: "Participant", entitat_nom: "Entitat", exercise_index: "Ex.", aparell_nom: "Aparell" };
+            const item = { type: "builtin", key, label: label || labels[key] || key, align: ["left","right","center"].includes(align) ? align : "left" };
+            if (Number.isFinite(decimals)) item.decimals = Math.max(0, Math.min(6, decimals));
+            cols.push(item);
+          }
+        });
+        if (!inferredSectionAppId && rawAppIds.size === 1) {
+          inferredSectionAppId = Array.from(rawAppIds)[0] || null;
+        }
+        section.columns = normalizeDetailColumnsForSection(cols, sectionType, inferredSectionAppId);
+      }
+      if (detailSectionRequiresApp(sectionType)) section.aparell_id = inferredSectionAppId;
+      else delete section.aparell_id;
+      out.push(section);
+    });
+    return out;
+  }
+
+  function sanitizeMainCampsPerAparell(rawMap, selectedAppIds) {
+    const out = {};
+    const selected = sanitizeAppIds(selectedAppIds);
+    selected.forEach(appId => {
+      const rawCodes = rawMap && typeof rawMap === "object" ? (rawMap[String(appId)] ?? rawMap[appId]) : [];
+      const seen = new Set();
+      const kept = [];
+      const list = Array.isArray(rawCodes) ? rawCodes : (typeof rawCodes === "string" ? rawCodes.split(",") : []);
+      list.forEach(code => {
+        const camp = String(code || "").trim();
+        if (!camp || seen.has(camp) || !isRealFieldForApp(appId, camp)) return;
+        seen.add(camp);
+        kept.push(camp);
+      });
+      if (kept.length) out[String(appId)] = kept;
+    });
+    return out;
+  }
+
+  function sanitizeTieItemForUI(rawTie, selectedMainIds, allowAppScope, allowParticipants, fallbackPuntuacio) {
+    if (!rawTie || typeof rawTie !== "object" || Array.isArray(rawTie)) return null;
+    const source = cloneJsonValue(rawTie, {});
+    const fallbackPipeline = buildTiePipelineFromPuntuacioSchema(fallbackPuntuacio || (readPuntuacioSchemaFromUI ? readPuntuacioSchemaFromUI() : {}));
+    source.pipeline = normalizeTiePipeline(source.pipeline || fallbackPipeline, fallbackPipeline);
+    source.id = String(source.id || `tie_${Math.random().toString(16).slice(2)}`).trim();
+    source.nom = String(source.nom || `Desempat ${selectedMainIds.length ? selectedMainIds.length : 1}`).trim();
+    source.pipeline_version = Number(source.pipeline_version || 1) || 1;
+
+    const pipeline = source.pipeline;
+    const inheritedIds = sanitizeAppIds(selectedMainIds);
+    const pipelineAppIds = getTiePipelineVisibleAppIds(source);
+    const targetIds = pipelineAppIds.length ? pipelineAppIds : inheritedIds.slice();
+    if (!targetIds.length) return null;
+
+    const validCamps = [];
+    const seenCamps = new Set();
+    getTieVisibleCamps(source).forEach(code => {
+      const camp = String(code || "").trim();
+      if (!camp || seenCamps.has(camp)) return;
+      if (!targetIds.every(appId => isRealFieldForApp(appId, camp))) return;
+      seenCamps.add(camp);
+      validCamps.push(camp);
+    });
+    if (!validCamps.length) return null;
+
+    source.camps = validCamps;
+    source.agregacio_camps = getTieVisibleAggCamps(source);
+    source.ordre = String(pipeline.ordre || source.ordre || "desc").toLowerCase() === "asc" ? "asc" : "desc";
+
+    const scope = source.scope && typeof source.scope === "object" && !Array.isArray(source.scope) ? cloneJsonValue(source.scope, {}) : {};
+    if (allowAppScope) {
+      const appScope = pipeline.aparells || {};
+      const ids = sanitizeAppIds(Array.isArray(appScope.ids) ? appScope.ids : []);
+      const mode = String(appScope.mode || "hereta").toLowerCase().trim();
+      if (mode === "tots") {
+        scope.aparells = { mode: "tots" };
+      } else if (mode === "seleccionar" && ids.length === 1) {
+        scope.aparells = { mode: "seleccionar", ids };
+      } else {
+        scope.aparells = { mode: "hereta" };
+      }
+    } else {
+      scope.aparells = scope.aparells && typeof scope.aparells === "object" && !Array.isArray(scope.aparells)
+        ? cloneJsonValue(scope.aparells, {})
+        : { mode: "hereta" };
+    }
+
+    const exScope = pipeline.exercicis && typeof pipeline.exercicis === "object" && !Array.isArray(pipeline.exercicis)
+      ? pipeline.exercicis
+      : ((scope.exercicis && typeof scope.exercicis === "object" && !Array.isArray(scope.exercicis)) ? scope.exercicis : {});
+    scope.exercicis = normalizeTieExercicisCfg(exScope);
+    source.scope = scope;
+
+    const exSelMode = normalizeTieModeSeleccioExercicis(pipeline.mode_seleccio_exercicis || source.mode_seleccio_exercicis || exScope.mode_seleccio_exercicis || "hereta");
+    if (exSelMode !== "hereta") source.mode_seleccio_exercicis = exSelMode;
+    else delete source.mode_seleccio_exercicis;
+    if (isDerivedExerciseSelectionScopeAvailable()) {
+      const exSelectionScope = normalizeTieExerciseSelectionScope(pipeline.exercise_selection_scope || source.exercise_selection_scope || "hereta");
+      if (exSelectionScope !== EXERCISE_SELECTION_SCOPE_INHERIT) source.exercise_selection_scope = exSelectionScope;
+      else delete source.exercise_selection_scope;
+    } else {
+      delete source.exercise_selection_scope;
+    }
+
+    const exPerAppSource = pipeline.exercicis_per_aparell || source.exercicis_per_aparell || exScope.exercicis_per_aparell || {};
+    const exPerAppMap = normalizeTieExercicisPerAparellMap(exPerAppSource);
+    const aggExPerAppSource = pipeline.agregacio_exercicis_per_aparell || source.agregacio_exercicis_per_aparell || {};
+    const aggExPerAppMap = normalizeTiePipelineAggMap(
+      aggExPerAppSource,
+      {},
+      targetIds,
+      pipeline.agregacio_exercicis || source.agregacio_exercicis || "sum",
+    );
+    if (exSelMode === "per_aparell_override") {
+      const filteredMap = {};
+      const filteredAggMap = {};
+      targetIds.forEach(appId => {
+        const key = String(appId);
+        if (exPerAppMap[key]) filteredMap[key] = exPerAppMap[key];
+        if (aggExPerAppMap[key]) filteredAggMap[key] = aggExPerAppMap[key];
+      });
+      if (Object.keys(filteredMap).length) source.exercicis_per_aparell = filteredMap;
+      else delete source.exercicis_per_aparell;
+      if (Object.keys(filteredAggMap).length) source.agregacio_exercicis_per_aparell = filteredAggMap;
+      else delete source.agregacio_exercicis_per_aparell;
+      source.agregacio_exercicis = buildLegacyAggFromPerAppMap(targetIds, filteredAggMap, pipeline.agregacio_exercicis || source.agregacio_exercicis || "sum");
+      if (source.pipeline && typeof source.pipeline === "object" && !Array.isArray(source.pipeline)) {
+        source.pipeline.exercicis_per_aparell = filteredMap;
+        source.pipeline.agregacio_exercicis_per_aparell = filteredAggMap;
+      }
+    } else {
+      delete source.exercicis_per_aparell;
+      delete source.agregacio_exercicis_per_aparell;
+      if (source.pipeline && typeof source.pipeline === "object" && !Array.isArray(source.pipeline)) {
+        delete source.pipeline.exercicis_per_aparell;
+        delete source.pipeline.agregacio_exercicis_per_aparell;
+      }
+    }
+
+    if (!allowParticipants) {
+      delete source.agregacio_participants;
+      delete scope.participants;
+      if (source.pipeline && typeof source.pipeline === "object" && !Array.isArray(source.pipeline)) {
+        delete source.pipeline.participants;
+        delete source.pipeline.agregacio_participants;
+      }
+    } else {
+      const parts = getTieVisibleParticipants(source);
+      scope.participants = { mode: parts.mode };
+      if (isParticipantsModeWithN(parts.mode)) scope.participants.n = parts.n;
+      source.agregacio_participants = normalizeTieAggValue(source.agregacio_participants || pipeline.agregacio_participants || "sum", "sum");
+    }
+
+    source.pipeline = normalizeTiePipeline(pipeline, fallbackPipeline);
+    source.pipeline.ordre = source.ordre;
+    source.pipeline.aparells = normalizeTiePipelineAppScope(source.pipeline.aparells, fallbackPipeline.aparells);
+    source.pipeline.camps_per_aparell = normalizeTiePipelineCampsPerApp(
+      source.pipeline.camps_per_aparell,
+      fallbackPipeline.camps_per_aparell,
+      getTiePipelineVisibleAppIds(source).length ? getTiePipelineVisibleAppIds(source) : targetIds,
+    );
+    source.pipeline.agregacio_camps_per_aparell = normalizeTiePipelineAggMap(
+      source.pipeline.agregacio_camps_per_aparell,
+      fallbackPipeline.agregacio_camps_per_aparell,
+      getTiePipelineVisibleAppIds(source).length ? getTiePipelineVisibleAppIds(source) : targetIds,
+      source.pipeline.agregacio_camps || fallbackPipeline.agregacio_camps || "sum",
+    );
+    source.pipeline.agregacio_camps = normalizeTieAggValue(source.agregacio_camps || source.pipeline.agregacio_camps || "sum", "sum");
+    source.pipeline.candidate_source_mode = _normalize_candidate_source_mode_like(source.pipeline.candidate_source_mode || fallbackPipeline.candidate_source_mode || "raw_exercise");
+    source.pipeline.candidate_source_cfg = _copyCandidateSourceCfg(source.pipeline.candidate_source_cfg || fallbackPipeline.candidate_source_cfg || {});
+    source.pipeline.candidate_source_per_aparell = normalizeTiePipelineCandidateSourceMap(
+      source.pipeline.candidate_source_per_aparell,
+      fallbackPipeline.candidate_source_per_aparell,
+      getTiePipelineVisibleAppIds(source).length ? getTiePipelineVisibleAppIds(source) : targetIds,
+    );
+    source.pipeline.exercicis = normalizeTieExercicisCfg(source.pipeline.exercicis || scope.exercicis || {});
+    source.pipeline.exercise_selection_scope = isDerivedExerciseSelectionScopeAvailable()
+      ? normalizeTieExerciseSelectionScope(source.exercise_selection_scope || source.pipeline.exercise_selection_scope || "hereta")
+      : "hereta";
+    source.pipeline.mode_seleccio_exercicis = normalizeTieModeSeleccioExercicis(source.mode_seleccio_exercicis || source.pipeline.mode_seleccio_exercicis || "hereta");
+    source.pipeline.exercicis_per_aparell = normalizeTiePipelineExercicisPerApp(
+      source.pipeline.exercicis_per_aparell,
+      fallbackPipeline.exercicis_per_aparell,
+      getTiePipelineVisibleAppIds(source).length ? getTiePipelineVisibleAppIds(source) : targetIds,
+    );
+    source.pipeline.agregacio_exercicis = normalizeTieAggValue(
+      source.agregacio_exercicis || source.pipeline.agregacio_exercicis || "sum",
+      fallbackPipeline.agregacio_exercicis || "sum",
+    );
+    source.pipeline.agregacio_exercicis_per_aparell = normalizeTiePipelineAggMap(
+      source.agregacio_exercicis_per_aparell || source.pipeline.agregacio_exercicis_per_aparell,
+      fallbackPipeline.agregacio_exercicis_per_aparell,
+      getTiePipelineVisibleAppIds(source).length ? getTiePipelineVisibleAppIds(source) : targetIds,
+      source.pipeline.agregacio_exercicis || fallbackPipeline.agregacio_exercicis || "sum",
+    );
+    source.pipeline.agregacio_aparells = normalizeTieAggValue(source.pipeline.agregacio_aparells || "sum", fallbackPipeline.agregacio_aparells || "sum");
+    source.pipeline.mode_resultat_aparells = "score";
+    if (allowParticipants) {
+      source.pipeline.participants = normalizeTiePipelineParticipants(
+        scope.participants || source.pipeline.participants || {},
+        fallbackPipeline.participants || {},
+      );
+      source.pipeline.agregacio_participants = normalizeTieAggValue(
+        source.agregacio_participants || source.pipeline.agregacio_participants || "sum",
+        "sum",
+      );
+    } else {
+      delete source.pipeline.participants;
+      delete source.pipeline.agregacio_participants;
+    }
+
+    return source;
+  }
+
+  function sanitizeRawColumnsForUI(rawCols, selectedMainIds) {
+    const cols = normalizeColumnsFromSchema(rawCols);
+    const selectedSet = new Set(sanitizeAppIds(selectedMainIds).map(x => String(x)));
+    const out = [];
+    cols.forEach(col => {
+      if (!col || typeof col !== "object") return;
+      if (String(col.type || "builtin").toLowerCase() !== "raw") {
+        out.push(col);
+        return;
+      }
+      const src = col.source && typeof col.source === "object" && !Array.isArray(col.source) ? col.source : {};
+      const appId = Number(src.aparell_id);
+      const camp = String(src.camp || "").trim();
+      if (!Number.isFinite(appId) || !getAparellById(appId)) return;
+      if (selectedSet.size && !selectedSet.has(String(appId))) return;
+      if (!camp || !isRealFieldForApp(appId, camp)) return;
+      out.push(col);
+    });
+    return out.length ? out : defaultDisplayColumns();
+  }
+
+  function normalizeForHydration(rawSchema) {
+    const fallback = JSON.parse(JSON.stringify(DEFAULT_SCHEMA));
+    const schema = rawSchema && typeof rawSchema === "object" && !Array.isArray(rawSchema)
+      ? JSON.parse(JSON.stringify(rawSchema))
+      : fallback;
+    const punt = schema.puntuacio && typeof schema.puntuacio === "object" && !Array.isArray(schema.puntuacio) ? schema.puntuacio : {};
+    schema.puntuacio = punt;
+
+    const rawApps = punt.aparells && typeof punt.aparells === "object" && !Array.isArray(punt.aparells) ? punt.aparells : {};
+    punt.aparells = {
+      ...rawApps,
+      ids: Array.isArray(rawApps.ids) ? rawApps.ids.slice() : [],
+    };
+    if (!punt.camps_per_aparell || typeof punt.camps_per_aparell !== "object" || Array.isArray(punt.camps_per_aparell)) {
+      punt.camps_per_aparell = {};
+    }
+    if (!punt.agregacio_camps_per_aparell || typeof punt.agregacio_camps_per_aparell !== "object" || Array.isArray(punt.agregacio_camps_per_aparell)) {
+      punt.agregacio_camps_per_aparell = {};
+    }
+    punt.exercicis = punt.exercicis && typeof punt.exercicis === "object" && !Array.isArray(punt.exercicis)
+      ? punt.exercicis
+      : {};
+    punt.candidate_source_mode = String(punt.candidate_source_mode || "raw_exercise").toLowerCase().trim();
+    punt.candidate_source_cfg = punt.candidate_source_cfg && typeof punt.candidate_source_cfg === "object" && !Array.isArray(punt.candidate_source_cfg)
+      ? punt.candidate_source_cfg
+      : JSON.parse(JSON.stringify(fallback.puntuacio.candidate_source_cfg));
+    if (!punt.exercicis_per_aparell || typeof punt.exercicis_per_aparell !== "object" || Array.isArray(punt.exercicis_per_aparell)) {
+      punt.exercicis_per_aparell = {};
+    }
+    if (!punt.candidate_source_per_aparell || typeof punt.candidate_source_per_aparell !== "object" || Array.isArray(punt.candidate_source_per_aparell)) {
+      punt.candidate_source_per_aparell = {};
+    }
+    punt.exercise_selection_scope = normalizeExerciseSelectionScope(punt.exercise_selection_scope);
+
+    const victories = punt.victories && typeof punt.victories === "object" && !Array.isArray(punt.victories) ? punt.victories : {};
+    victories.desempat_comparacio = Array.isArray(victories.desempat_comparacio) ? victories.desempat_comparacio : [];
+    punt.victories = victories;
+    schema.filtres = normalizeFilters(schema.filtres);
+    schema.desempat = Array.isArray(schema.desempat) ? schema.desempat : [];
+
+    const presentacio = schema.presentacio && typeof schema.presentacio === "object" && !Array.isArray(schema.presentacio) ? schema.presentacio : {};
+    presentacio.columnes = Array.isArray(presentacio.columnes) ? presentacio.columnes : fallback.presentacio.columnes;
+    presentacio.detall = presentacio.detall && typeof presentacio.detall === "object" && !Array.isArray(presentacio.detall)
+      ? presentacio.detall
+      : fallback.presentacio.detall;
+    schema.presentacio = presentacio;
+    schema.particions = Array.isArray(schema.particions) ? schema.particions : [];
+    schema.particions_v2 = Array.isArray(schema.particions_v2) ? schema.particions_v2 : [];
+    schema.particions_custom = schema.particions_custom && typeof schema.particions_custom === "object" && !Array.isArray(schema.particions_custom)
+      ? schema.particions_custom
+      : {};
+    schema.particions_config = normalizeParticionsConfig(
+      schema.particions_config && typeof schema.particions_config === "object" && !Array.isArray(schema.particions_config)
+        ? schema.particions_config
+        : fallback.particions_config
+    );
+    schema.equips = schema.equips && typeof schema.equips === "object" && !Array.isArray(schema.equips)
+      ? schema.equips
+      : fallback.equips;
+    schema.equips.context_code = normalizeContextCode(
+      schema.equips.assignment_source?.context_code ||
+      schema.equips.context_code ||
+      "native"
+    );
+    schema.equips.team_mode = normalizeTeamMode(schema.equips.team_mode || "");
+    schema.equips.mode_resolution = schema.equips.mode_resolution && typeof schema.equips.mode_resolution === "object" && !Array.isArray(schema.equips.mode_resolution)
+      ? schema.equips.mode_resolution
+      : fallback.equips.mode_resolution;
+    schema.equips.assignment_source = schema.equips.assignment_source && typeof schema.equips.assignment_source === "object" && !Array.isArray(schema.equips.assignment_source)
+      ? schema.equips.assignment_source
+      : fallback.equips.assignment_source;
+
+    const selectedAppIds = (() => {
+      const rawApps = punt.aparells || {};
+      const mode = String(rawApps.mode || "seleccionar").toLowerCase().trim();
+      if (mode === "tots") return getCompatibleAppIds();
+      return _uniquePositiveInts(Array.isArray(rawApps.ids) ? rawApps.ids : []);
+    })();
+    punt.aparells = {
+      ...(punt.aparells || {}),
+      mode: "seleccionar",
+      ids: selectedAppIds,
+    };
+    punt.camps_per_aparell = punt.camps_per_aparell && typeof punt.camps_per_aparell === "object" && !Array.isArray(punt.camps_per_aparell)
+      ? { ...punt.camps_per_aparell }
+      : {};
+    punt.agregacio_camps_per_aparell = punt.agregacio_camps_per_aparell && typeof punt.agregacio_camps_per_aparell === "object" && !Array.isArray(punt.agregacio_camps_per_aparell)
+      ? { ...punt.agregacio_camps_per_aparell }
+      : {};
+    punt.exercicis_per_aparell = punt.exercicis_per_aparell && typeof punt.exercicis_per_aparell === "object" && !Array.isArray(punt.exercicis_per_aparell)
+      ? { ...punt.exercicis_per_aparell }
+      : {};
+    punt.candidate_source_per_aparell = punt.candidate_source_per_aparell && typeof punt.candidate_source_per_aparell === "object" && !Array.isArray(punt.candidate_source_per_aparell)
+      ? { ...punt.candidate_source_per_aparell }
+      : {};
+
+    const victoriesOut = punt.victories && typeof punt.victories === "object" && !Array.isArray(punt.victories)
+      ? { ...punt.victories }
+      : {};
+    victoriesOut.desempat_comparacio = Array.isArray(victoriesOut.desempat_comparacio) ? victoriesOut.desempat_comparacio : [];
+    punt.victories = victoriesOut;
+
+    schema.presentacio = {
+      ...schema.presentacio,
+      columnes: normalizeColumnsFromSchema(schema.presentacio?.columnes || fallback.presentacio.columnes),
+      detall: (() => {
+        const detailRaw = schema.presentacio?.detall || fallback.presentacio.detall;
+        const detailSections = normalizeDetailSectionsFromSchema(detailRaw);
+        const detailOut = {
+          ...detailRaw,
+          enabled: !!(schema.presentacio?.detall?.enabled),
+          default_open: !!(schema.presentacio?.detall?.default_open),
+          sections: detailSections,
+        };
+        const legacyColumns = serializeLegacyDetailColumns(detailSections, detailRaw);
+        if (legacyColumns?.length) detailOut.columnes = legacyColumns;
+        else delete detailOut.columnes;
+        return detailOut;
+      })(),
+    };
+
+    return schema;
+  }
+
+  function previewColClass(col){
+    const a = String((col && col.align) || "").toLowerCase();
+    if (a === "right") return "text-right";
+    if (a === "center") return "text-center";
+    return "";
+  }
+
+  function previewFallbackCellValue(row, key){
+    if (key === "participant" || key === "nom") return row.participant || row.nom || row.entitat_nom || "";
+    if (key === "punts") return row.punts;
+    if (key === "posicio") return row.posicio;
+    if (key === "entitat_nom") return row.entitat_nom || "";
+    if (key === "participants") return row.participants ?? "";
+    return row[key];
+  }
+
+  function previewFormatCellText(v, col){
+    if (v === null || v === undefined) return "";
+    const dec = Number.isInteger(col?.decimals) ? col.decimals : null;
+    if (typeof v === "number") return dec !== null ? v.toFixed(dec) : String(v);
+    if (dec !== null) {
+      const n = Number(v);
+      if (Number.isFinite(n)) return n.toFixed(dec);
+    }
+    return String(v);
+  }
+
+  function previewRenderJudgeRowsCell(v, col){
+    const rows = Array.isArray(v?.rows) ? v.rows : [];
+    if (!rows.length) return "";
+
+    let html = '<div class="judge-cell">';
+    rows.forEach(r => {
+      const judgeNum = Number(r?.judge);
+      const judgeLabel = Number.isFinite(judgeNum) && judgeNum > 0 ? `J${judgeNum}` : "J?";
+      const items = Array.isArray(r?.items) ? r.items : [];
+      html += '<div class="judge-row">';
+      html += '<span class="judge-label">' + esc(judgeLabel) + "</span>";
+      html += '<div class="judge-items">';
+      items.forEach((it, idx) => {
+        html += '<span class="judge-item"><span class="idx">' + esc(String(idx + 1)) + "</span>";
+        html += '<span class="val">' + esc(previewFormatCellText(it, col)) + "</span></span>";
+      });
+      html += "</div></div>";
+    });
+    html += "</div>";
+    return html;
+  }
+
+  function previewRenderTeamRawDetailCell(v, col){
+    const rows = Array.isArray(v?.rows) ? v.rows : [];
+    const summary = v?.summary;
+    let html = '<div class="team-raw-cell">';
+    if (summary !== null && summary !== undefined && summary !== "") {
+      html += `<div class="team-raw-summary">${esc(previewFormatCellText(summary, col))}</div>`;
+    }
+    if (rows.length) {
+      html += '<div class="team-raw-list">';
+      rows.forEach(r => {
+        const label = String(r?.label || "").trim();
+        if (!label) return;
+        html += '<div class="team-raw-row">';
+        html += `<div class="team-raw-label">${esc(label)}</div>`;
+        if (r && typeof r.judge_rows === "object" && r.judge_rows._kind === "judge_rows") {
+          html += previewRenderJudgeRowsCell(r.judge_rows, col);
+        } else {
+          html += `<div>${esc(previewFormatCellText(r?.value, col))}</div>`;
+        }
+        html += "</div>";
+      });
+      html += "</div>";
+    }
+    html += "</div>";
+    return html;
+  }
+
+  function previewRenderCellHTML(v, col){
+    if (v && typeof v === "object" && v._kind === "judge_rows") {
+      return previewRenderJudgeRowsCell(v, col);
+    }
+    if (v && typeof v === "object" && v._kind === "team_raw_detail") {
+      return previewRenderTeamRawDetailCell(v, col);
+    }
+    return esc(previewFormatCellText(v, col));
+  }
+
+  function previewRenderDetailHTML(detail){
+    const sections = Array.isArray(detail?.sections) ? detail.sections : [];
+    if (!sections.length) return "";
+
+    const renderSectionTable = (section) => {
+      const columns = Array.isArray(section?.columns) ? section.columns : [];
+      const rows = Array.isArray(section?.rows) ? section.rows : [];
+      if (!columns.length || !rows.length) return "";
+      let html = `<div class="table-responsive mt-2"><table class="table table-sm table-bordered mb-0 preview-classif-table"><thead><tr>`;
+      columns.forEach(col => {
+        html += `<th class="${esc(previewColClass(col))}">${esc(col.label || col.key || "")}</th>`;
+      });
+      html += `</tr></thead><tbody>`;
+      rows.forEach(row => {
+        const cells = row.cells || row.display || {};
+        html += `<tr>`;
+        columns.forEach(col => {
+          const raw = Object.prototype.hasOwnProperty.call(cells, col.key)
+            ? cells[col.key]
+            : previewFallbackCellValue(row, col.key);
+          html += `<td class="${esc(previewColClass(col))}">${previewRenderCellHTML(raw, col)}</td>`;
+        });
+        html += `</tr>`;
+      });
+      html += `</tbody></table></div>`;
+      return html;
+    };
+
+    let html = `<details class="mt-2"${detail?.default_open ? " open" : ""}>`;
+    html += `<summary class="small font-weight-bold">Detall</summary>`;
+    sections.forEach(section => {
+      const type = String(section?.type || "").trim();
+      const label = String(section?.label || "").trim();
+      if (label) html += `<div class="small font-weight-bold mt-2">${esc(label)}</div>`;
+      if (type === "members_list") {
+        const items = Array.isArray(section?.items) ? section.items : [];
+        html += `<div class="small text-muted">${items.map(item => esc(String(item?.participant || ""))).filter(Boolean).join(" · ")}</div>`;
+      } else {
+        html += renderSectionTable(section);
+      }
+    });
+    html += `</details>`;
+    return html;
+  }
+
+  function formatPartitionTitle(raw){
+    const source = (raw === null || raw === undefined) ? "global" : String(raw);
+    const parts = source
+      .split("|")
+      .map(part => {
+        const token = String(part || "").trim();
+        if (!token) return "";
+        const idx = token.indexOf(":");
+        return idx >= 0 ? token.slice(idx + 1).trim() : token;
+      })
+      .filter(Boolean);
+    return parts.length ? parts.join(" / ") : "global";
+  }

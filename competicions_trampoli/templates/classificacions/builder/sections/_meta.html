@@ -1,0 +1,69 @@
+              <section id="section-meta" class="builder-section builder-section--meta" data-builder-section>
+                <div class="builder-section__header">
+                  <div>
+                    <div class="builder-section__eyebrow">Base</div>
+                    <h4 class="builder-section__title">Metadades <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="meta_overview" aria-label="Ajuda metadades">?</button></h4>
+                    <p class="builder-section__desc">Nom, tipus i estat general de la classificació abans d'entrar en la lògica.</p>
+                  </div>
+                  <div class="builder-help-badge">Primer pas</div>
+                </div>
+                <div class="builder-section__body">
+                  <div class="builder-subsection builder-subsection--muted">
+                    <div id="classifStatusBox" class="builder-status-stack mb-3"></div>
+
+          <div class="row">
+            <div class="col-12 col-md-6 mb-3">
+              <label class="font-weight-bold">Nom</label>
+              <input class="form-control" id="fNom" type="text">
+            </div>
+            {% if is_global_builder %}
+            <div class="col-12 col-md-3 mb-3">
+              <label class="font-weight-bold">Slug</label>
+              <input class="form-control" id="fSlug" type="text">
+            </div>
+            {% endif %}
+            <div class="col-6 col-md-3 mb-3">
+              <label class="font-weight-bold">Tipus <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="field_tipus" aria-label="Ajuda tipus">?</button></label>
+              <select class="form-control" id="fTipus">
+                <option value="individual">Individual</option>
+                <option value="equips">Equips</option>
+              </select>
+            </div>
+            <div class="col-6 col-md-2 mb-3">
+              <label class="font-weight-bold d-block">Activa</label>
+              <div class="form-check mt-2">
+                <input class="form-check-input" type="checkbox" id="fActiva">
+                <label class="form-check-label" for="fActiva">Sí</label>
+              </div>
+            </div>
+          </div>
+
+          <div id="equipMetaBox" class="border rounded p-3" style="display:none;">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+              <div>
+                <div class="font-weight-bold">Context d'equips</div>
+                <div class="small text-muted">Defineix el context i el mode abans de configurar particions o puntuació.</div>
+              </div>
+              <div class="builder-inline-note">Només equips</div>
+            </div>
+            <div class="row">
+              <div class="col-12 col-md-6 mb-3">
+                <label class="small text-muted mb-1">Context d'equips</label>
+                <select class="form-control form-control-sm" id="eqAssignmentContext"></select>
+                <div class="small text-muted mt-1" id="eqAssignmentContextHint"></div>
+              </div>
+              <div class="col-12 col-md-6 mb-3" id="eqTeamModeWrap" style="display:none;">
+                <label class="small text-muted mb-1">Mode d'equips</label>
+                <select class="form-control form-control-sm" id="eqTeamMode">
+                  <option value="derived_from_individual">Derivada d'individual</option>
+                  <option value="native_team">Nativa d'equip</option>
+                </select>
+                <div class="small text-muted mt-1" id="eqTeamModeHint"></div>
+              </div>
+            </div>
+            <div id="eqCompatBanner" class="builder-status-stack"></div>
+          </div>
+
+                  </div>
+                </div>
+              </section>

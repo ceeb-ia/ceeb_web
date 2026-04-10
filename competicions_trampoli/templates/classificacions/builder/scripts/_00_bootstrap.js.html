@@ -1,0 +1,133 @@
+  function parseJsonScript(id, fallbackValue) {
+    const node = document.getElementById(id);
+    if (!node) return fallbackValue;
+    try {
+      return JSON.parse(node.textContent);
+    } catch (_err) {
+      return fallbackValue;
+    }
+  }
+
+  // DATA del backend (mateix patró que ara)
+  const COMPETICIO_ID = parseJsonScript("competicio-id", null);
+
+  const CFGS = parseJsonScript("cfgs-data-v2", []);
+  const APARELLS = parseJsonScript("aparells-data-v2", []);
+  const EQUIPS = parseJsonScript("equips-data-v2", []);
+  const EQUIP_CONTEXTS = parseJsonScript("equip-contexts-data-v2", []);
+  const PARTICIO_FIELDS = parseJsonScript("particio-fields-data-v2", []);
+  const PARTICIO_VALUE_CHOICES = parseJsonScript("particio-value-choices-data-v2", {});
+  const APARELL_FIELD_OPTIONS = parseJsonScript("aparell-field-options-data", {});
+  const CAN_MANAGE_GLOBAL_TEMPLATES = parseJsonScript("can-manage-global-templates", false);
+  const BUILDER_MODE = parseJsonScript("builder-mode", "competition");
+  const SAVE_URL = parseJsonScript("builder-save-url", "");
+  const DELETE_URL_PATTERN = parseJsonScript("builder-delete-url-pattern", "");
+  const PREVIEW_URL_PATTERN = parseJsonScript("builder-preview-url-pattern", "");
+  const TEMPLATE_LIBRARY_ENABLED = parseJsonScript("builder-enable-template-library", true);
+  const CAN_PREVIEW = parseJsonScript("builder-can-preview", true);
+  const INITIAL_SELECTED_ID = parseJsonScript("builder-selected-id", null);
+  const AUTO_ADD_NEW = parseJsonScript("builder-auto-add-new", false);
+  const TEAM_CONTEXT_CAPABILITIES = parseJsonScript("team-context-capabilities-data-v2", null);
+  const CFG_STATUSES = parseJsonScript("cfg-statuses-data-v2", null);
+  const BIRTH_YEAR_RANGE_PARTITION_CODE = "any_naixement_forquilla";
+  const TEAM_MODE_DERIVED = "derived_from_individual";
+  const TEAM_MODE_NATIVE = "native_team";
+  const EXERCISE_SELECTION_SCOPE_PER_MEMBER = "per_member";
+  const EXERCISE_SELECTION_SCOPE_TEAM_POOL = "team_pool";
+  const EXERCISE_SELECTION_SCOPE_INHERIT = "hereta";
+
+  const TEMPLATE_LIST_URL = "{% if competicio %}{% url 'classificacio_template_list' competicio.id %}{% endif %}";
+  const TEMPLATE_SAVE_URL = "{% if competicio %}{% url 'classificacio_template_save' competicio.id %}{% endif %}";
+  const TEMPLATE_VALIDATE_URL = "{% if competicio %}{% url 'classificacio_template_validate' competicio.id %}{% endif %}";
+  const TEMPLATE_APPLY_URL = "{% if competicio %}{% url 'classificacio_template_apply' competicio.id %}{% endif %}";
+
+  // DEFAULT schema coherent amb backend nou
+  const DEFAULT_SCHEMA = {
+    particions: [],
+    particions_v2: [],
+    particions_custom: {},
+    particions_config: {
+      [BIRTH_YEAR_RANGE_PARTITION_CODE]: {
+        ranges: [],
+        sense_data_label: "Sense data",
+        fora_rang_label: "Fora de forquilla",
+        team_rules: {
+          reference_mode: "oldest_member_birthdate",
+          compliance_mode: "strict",
+          max_members_outside_range: 0,
+          missing_birthdate_policy: "outside_range",
+        },
+      },
+    },
+    filtres: {},
+    puntuacio: {
+      aparells: { mode:"tots", ids:[] },
+      camps_per_aparell: {},
+      agregacio_camps_per_aparell: {},
+      agregacio_camps: "sum",
+      candidate_source_mode: "raw_exercise",
+      candidate_source_cfg: {
+        mode: "tots",
+        best_n: 1,
+        index: 1,
+        ids: [],
+        agregacio_exercicis: "sum",
+      },
+      candidate_source_per_aparell: {},
+      exercicis: { mode:"tots", index: 1, ids: [], max_per_participant: 0 },
+      exercicis_best_n: 1,
+      exercise_selection_scope: EXERCISE_SELECTION_SCOPE_PER_MEMBER,
+      mode_seleccio_exercicis: "per_aparell_global",
+      exercicis_per_aparell: {},
+      agregacio_exercicis_per_aparell: {},
+      agregacio_exercicis: "sum",
+      agregacio_aparells: "sum",
+      mode_resultat_aparells: "score",
+      victories: {
+        punts_victoria: 1,
+        punts_empat: 0.5,
+        sense_nota_mode: "skip",
+        mode_camps: "agregat",
+        mode_exercicis: "agregat",
+        mode_seleccio_exercicis_camps_separats: "per_camp",
+        agregacio_victories_camps: "sum",
+        agregacio_victories_exercicis: "sum",
+        desempat_comparacio: [],
+      },
+      ordre: "desc",
+
+      // legacy (per compat / si algú edita JSON a mà)
+      camp: "total",
+      agregacio: "sum",
+      best_n: 1
+    },
+    desempat: [],
+    presentacio: {
+      top_n:0,
+      mostrar_empats:true,
+      columnes: [
+        { type:"builtin", key:"posicio", label:"#", align:"left" },
+        { type:"builtin", key:"participant", label:"Nom", align:"left" },
+        { type:"builtin", key:"punts", label:"Punts", align:"right", decimals:3 },
+      ],
+      detall: {
+        enabled: false,
+        default_open: false,
+        sections: [],
+        columnes: [
+          { type:"builtin", key:"participant", label:"Participant", align:"left" },
+        ],
+      },
+    },
+    equips: {
+      context_code: "native",
+      team_mode: "",
+      mode_resolution: { resolved_at: "", eligible_team_app_ids_at_save: [] },
+      assignment_source: { mode:"context", context_code:"native", fallback:"native" },
+      incloure_sense_equip: false,
+      particions_manuals: [],
+      particio_edat: { activa:false, llindars:[], sense_data_label:"Sense edat" },
+      combinar_manual_i_edat: false
+    }
+  };
+

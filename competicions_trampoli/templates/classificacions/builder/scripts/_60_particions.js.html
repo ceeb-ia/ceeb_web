@@ -1,0 +1,876 @@
+  function normalizeParticioCodes(raw) {
+    if (!Array.isArray(raw)) return [];
+    const out = [];
+    const seen = new Set();
+    raw.forEach(item => {
+      const code = String(item || "").trim();
+      if (!code || seen.has(code)) return;
+      seen.add(code);
+      out.push(code);
+    });
+    return out;
+  }
+
+  function normalizeParticioParentValues(raw) {
+    let vals = [];
+    if (Array.isArray(raw)) vals = raw.map(v => String(v || "").trim());
+    else if (typeof raw === "string") vals = raw.split(",").map(v => v.trim());
+    const out = [];
+    const seen = new Set();
+    vals.forEach(v => {
+      if (!v) return;
+      const key = particioValueKey(v);
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      out.push(v);
+    });
+    return out;
+  }
+
+  function normalizeParticioEntries(raw, fallbackCodes) {
+    const rawList = Array.isArray(raw) ? raw : [];
+    const fallback = Array.isArray(fallbackCodes) ? fallbackCodes : [];
+    const source = rawList.length ? rawList : fallback;
+    const out = [];
+    const seen = new Set();
+
+    source.forEach((item, idx) => {
+      let code = "";
+      let apply_mode = "all";
+      let parent_values = [];
+
+      if (item && typeof item === "object" && !Array.isArray(item)) {
+        code = String(item.code || "").trim();
+        apply_mode = String(item.apply_mode || "all").trim().toLowerCase();
+        parent_values = normalizeParticioParentValues(item.parent_values);
+      } else {
+        code = String(item || "").trim();
+      }
+
+      if (!code || seen.has(code)) return;
+      seen.add(code);
+
+      if (idx === 0) {
+        apply_mode = "all";
+        parent_values = [];
+      } else if (apply_mode !== "some_parents") {
+        apply_mode = "all";
+        parent_values = [];
+      }
+
+      out.push({ code, apply_mode, parent_values });
+    });
+
+    return out;
+  }
+
+  function particioCodesFromEntries(raw, fallbackCodes) {
+    return normalizeParticioEntries(raw, fallbackCodes).map(entry => entry.code);
+  }
+
+  function particioValueKey(raw) {
+    return String(raw || "").replace(/\s+/g, " ").trim().toLowerCase();
+  }
+
+  function splitParticioCustomValues(raw) {
+    let vals = [];
+    if (Array.isArray(raw)) vals = raw.map(v => String(v || "").trim());
+    else if (typeof raw === "string") vals = raw.split(",").map(v => v.trim());
+    const out = [];
+    const seen = new Set();
+    vals.forEach(v => {
+      if (!v) return;
+      const key = particioValueKey(v);
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      out.push(v);
+    });
+    return out;
+  }
+
+  function normalizeParticioChoiceEntries(raw) {
+    const arr = Array.isArray(raw) ? raw : [];
+    const out = [];
+    const seen = new Set();
+    arr.forEach(item => {
+      let value = "";
+      let label = "";
+      let count = 0;
+
+      if (item && typeof item === "object" && !Array.isArray(item)) {
+        value = String(item.value ?? item.label ?? "").trim();
+        label = String(item.label ?? value).trim();
+        const n = Number(item.count ?? 0);
+        count = Number.isFinite(n) && n > 0 ? Math.trunc(n) : 0;
+      } else {
+        value = String(item || "").trim();
+        label = value;
+      }
+
+      if (!value) return;
+      const key = particioValueKey(value);
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      out.push({
+        value: value,
+        label: label || value,
+        count: count,
+      });
+    });
+    return out;
+  }
+
+  function getParticioChoiceEntriesForCode(code) {
+    const synthetic = syntheticParticioChoiceEntries(code, readParticionsConfigUI());
+    if (synthetic) {
+      return normalizeParticioChoiceEntries(synthetic);
+    }
+    const raw = (PARTICIO_VALUE_CHOICES && Object.prototype.hasOwnProperty.call(PARTICIO_VALUE_CHOICES, code))
+      ? PARTICIO_VALUE_CHOICES[code]
+      : [];
+    return normalizeParticioChoiceEntries(raw);
+  }
+
+  function normalizeParticionsCustom(raw) {
+    const out = {};
+    if (!raw || typeof raw !== "object") return out;
+    Object.entries(raw).forEach(([fieldCode, cfg]) => {
+      const code = String(fieldCode || "").trim();
+      if (!code || !cfg || typeof cfg !== "object") return;
+      const mode = String(cfg.mode || "raw").toLowerCase() === "custom" ? "custom" : "raw";
+      const fallback = String(cfg.fallback_label || "").trim();
+      const groups = [];
+      const rawGroups = Array.isArray(cfg.grups) ? cfg.grups : [];
+      rawGroups.forEach((g, idx) => {
+        if (!g || typeof g !== "object") return;
+        const label = String(g.label || g.key || `Grup ${idx + 1}`).trim() || `Grup ${idx + 1}`;
+        groups.push({
+          key: String(g.key || `grp_${idx + 1}`),
+          label: label,
+          values: splitParticioCustomValues(g.values),
+        });
+      });
+      out[code] = { mode: mode, fallback_label: fallback, grups: groups };
+    });
+    return out;
+  }
+
+  function partFieldMetaByCode(code) {
+    const all = Array.isArray(PARTICIO_FIELDS) ? PARTICIO_FIELDS : [];
+    const hit = all.find(x => String(x.code || "") === String(code || ""));
+    if (hit) return hit;
+    return { code: String(code || ""), label: String(code || ""), ui_label: String(code || "") };
+  }
+
+  function resolveParticioDisplayValue(code, rawValue, customMapRaw) {
+    const display = String(rawValue || "").trim();
+    const customMap = normalizeParticionsCustom(customMapRaw || {});
+    const cfg = customMap[code] || { mode: "raw", fallback_label: "", grups: [] };
+    if (String(cfg.mode || "raw").toLowerCase() !== "custom") return display;
+
+    const key = particioValueKey(display);
+    for (const group of (Array.isArray(cfg.grups) ? cfg.grups : [])) {
+      const values = splitParticioCustomValues(group.values);
+      if (values.some(val => particioValueKey(val) === key)) {
+        return String(group.label || group.key || display).trim() || display;
+      }
+    }
+
+    const fallback = String(cfg.fallback_label || "").trim();
+    return fallback || display;
+  }
+
+  function getResolvedParentChoiceEntries(code, customMapRaw) {
+    const rawEntries = getParticioChoiceEntriesForCode(code);
+    const customMap = normalizeParticionsCustom(customMapRaw || {});
+    const cfg = customMap[code] || { mode: "raw", fallback_label: "", grups: [] };
+    if (String(cfg.mode || "raw").toLowerCase() !== "custom") {
+      return rawEntries;
+    }
+
+    const out = [];
+    const seen = new Set();
+    function pushEntry(value, count){
+      const txt = String(value || "").trim();
+      if (!txt) return;
+      const key = particioValueKey(txt);
+      if (!key) return;
+      const idx = out.findIndex(item => particioValueKey(item.value) === key);
+      if (idx >= 0) {
+        out[idx].count += Number(count || 0);
+        return;
+      }
+      if (seen.has(key)) return;
+      seen.add(key);
+      out.push({ value: txt, label: txt, count: Number(count || 0) });
+    }
+
+    rawEntries.forEach(entry => {
+      const resolved = resolveParticioDisplayValue(code, entry.value, customMap);
+      pushEntry(resolved, entry.count || 0);
+    });
+    (Array.isArray(cfg.grups) ? cfg.grups : []).forEach((group, idx) => {
+      pushEntry(String(group.label || group.key || `Grup ${idx + 1}`).trim(), 0);
+    });
+    if (cfg.fallback_label) pushEntry(cfg.fallback_label, 0);
+    return out;
+  }
+
+  function readParticioEntriesFromUI() {
+    const out = [];
+    document.querySelectorAll("[data-part-entry-row]").forEach((row, idx) => {
+      const code = String(row.getAttribute("data-code") || "").trim();
+      if (!code) return;
+      const modeNode = row.querySelector('[data-part-entry="apply_mode"]');
+      let apply_mode = (idx === 0) ? "all" : String((modeNode && modeNode.value) || "all").trim().toLowerCase();
+      if (apply_mode !== "some_parents") apply_mode = "all";
+
+      let parent_values = [];
+      if (idx > 0 && apply_mode === "some_parents") {
+        const valuesNode = row.querySelector('[data-part-entry="parent_values"]');
+        parent_values = valuesNode
+          ? Array.from(valuesNode.selectedOptions).map(opt => String(opt.value || "").trim())
+          : [];
+        parent_values = normalizeParticioParentValues(parent_values);
+      }
+
+      out.push({ code, apply_mode, parent_values });
+    });
+    return normalizeParticioEntries(out);
+  }
+
+  function selectedParticioCodesFromUI() {
+    return particioCodesFromEntries(readParticioEntriesFromUI());
+  }
+
+  function renderParticioStackUI(entriesRaw, customMapRaw) {
+    if (!els.particionsFieldsBox) return;
+    const fields = Array.isArray(PARTICIO_FIELDS) ? PARTICIO_FIELDS : [];
+    const entries = normalizeParticioEntries(entriesRaw || []);
+    if (!fields.length) {
+      els.particionsFieldsBox.innerHTML = `<div class="small text-muted">Sense camps de partició disponibles.</div>`;
+      return;
+    }
+
+    const selected = new Set(entries.map(entry => entry.code));
+    const availableOptions = fields
+      .filter(f => {
+        const code = String(f.code || "").trim();
+        return code && !selected.has(code);
+      })
+      .map(f => {
+        const code = String(f.code || "").trim();
+        const label = String(f.ui_label || f.label || code);
+        return `<option value="${esc(code)}">${esc(label)}</option>`;
+      })
+      .join("");
+
+    let html = `
+      <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+        <select class="form-control form-control-sm w-auto" data-part-stack="available">
+          ${availableOptions || '<option value="">Tots els camps ja estan afegits</option>'}
+        </select>
+        <button type="button" class="btn btn-sm btn-outline-primary" data-part-stack-act="add" ${availableOptions ? "" : "disabled"}>+ Afegir nivell</button>
+      </div>
+      <div class="small text-muted mb-2">L'ordre defineix la jerarquia de particions. Cada nivell pot dependre del valor resolt del nivell anterior.</div>
+    `;
+
+    if (!entries.length) {
+      html += `<div class="small text-muted border rounded p-2">Cap partició definida. Si no n'afegeixes cap, la classificació serà global.</div>`;
+      els.particionsFieldsBox.innerHTML = html;
+      return;
+    }
+
+    entries.forEach((entry, idx) => {
+      const code = String(entry.code || "").trim();
+      const meta = partFieldMetaByCode(code);
+      const label = String(meta.ui_label || meta.label || code);
+      const isFirst = idx === 0;
+      const parentCode = !isFirst ? String(entries[idx - 1].code || "").trim() : "";
+      const parentMeta = !isFirst ? partFieldMetaByCode(parentCode) : null;
+      const applyMode = !isFirst && entry.apply_mode === "some_parents" ? "some_parents" : "all";
+      const selectedParentValues = new Set(normalizeParticioParentValues(entry.parent_values).map(v => particioValueKey(v)));
+      const parentChoices = !isFirst ? getResolvedParentChoiceEntries(parentCode, customMapRaw || {}) : [];
+      const parentOptionsHtml = parentChoices.map(opt => {
+        const value = String(opt.value || "").trim();
+        const count = Number(opt.count || 0);
+        const selectedAttr = selectedParentValues.has(particioValueKey(value)) ? "selected" : "";
+        const suffix = count > 0 ? ` (${count})` : "";
+        return `<option value="${esc(value)}" ${selectedAttr}>${esc(String(opt.label || value) + suffix)}</option>`;
+      }).join("");
+      const parentHint = isFirst
+        ? "Nivell base de la jerarquia."
+        : `S'aplica després de ${esc(String(parentMeta && (parentMeta.ui_label || parentMeta.label || parentCode) || parentCode))}.`;
+
+      html += `
+        <div class="border rounded p-2 mb-2" data-part-entry-row data-code="${esc(code)}">
+          <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+            <div>
+              <div class="font-weight-bold small">${esc(String(idx + 1))}. ${esc(label)}</div>
+              <div class="small text-muted">${parentHint}</div>
+            </div>
+            <div class="btn-group btn-group-sm" role="group" aria-label="Ordre partició">
+              <button type="button" class="btn btn-outline-secondary" data-part-stack-act="up" data-idx="${esc(String(idx))}" ${idx === 0 ? "disabled" : ""}>Pujar</button>
+              <button type="button" class="btn btn-outline-secondary" data-part-stack-act="down" data-idx="${esc(String(idx))}" ${idx === entries.length - 1 ? "disabled" : ""}>Baixar</button>
+              <button type="button" class="btn btn-outline-danger" data-part-stack-act="remove" data-idx="${esc(String(idx))}">Eliminar</button>
+            </div>
+          </div>
+          ${isFirst ? "" : `
+            <div class="row mt-2">
+              <div class="col-12 col-lg-4 mb-2">
+                <label class="small text-muted mb-1">Aplicació</label>
+                <select class="form-control form-control-sm" data-part-entry="apply_mode">
+                  <option value="all" ${applyMode === "all" ? "selected" : ""}>Aplicar a totes les particions anteriors</option>
+                  <option value="some_parents" ${applyMode === "some_parents" ? "selected" : ""}>Aplicar només a alguns valors del pare</option>
+                </select>
+              </div>
+              <div class="col-12 col-lg-8 mb-2" data-part-entry-parent-wrap style="display:${applyMode === "some_parents" ? "" : "none"};">
+                <label class="small text-muted mb-1">Valors del pare</label>
+                <select class="form-control form-control-sm" data-part-entry="parent_values" multiple size="${Math.min(Math.max(parentChoices.length || 2, 2), 6)}">
+                  ${parentOptionsHtml}
+                </select>
+                <div class="small text-muted mt-1">Es compara contra el valor resolt del nivell anterior, incloent grups custom.</div>
+              </div>
+            </div>
+          `}
+        </div>
+      `;
+    });
+
+    els.particionsFieldsBox.innerHTML = html;
+  }
+
+  function buildParticioFieldChecks() {
+    renderParticioStackUI([], {});
+  }
+
+  function renderParticioCustomItem(entry) {
+    const value = String((entry && entry.value) || "").trim();
+    if (!value) return "";
+    const label = String((entry && entry.label) || value).trim() || value;
+    const count = Number((entry && entry.count) || 0);
+    const detected = entry ? entry.detected !== false : true;
+    const countHtml = count > 0 ? `<span class="part-custom-item-count">${esc(String(count))}</span>` : "";
+    const staleHtml = detected ? "" : `<span class="part-custom-item-count" title="Valor no detectat amb el context actual">?</span>`;
+    return `
+      <div class="part-custom-item js-part-custom-item" data-value="${esc(value)}">
+        <span class="part-custom-item-handle js-part-custom-item-handle" title="Arrossega per moure">&#8942;&#8942;</span>
+        <span class="part-custom-item-label" title="${esc(label)}">${esc(label)}</span>
+        ${countHtml}
+        ${staleHtml}
+      </div>
+    `;
+  }
+
+  function readParticioCustomValuesFromList(listNode) {
+    if (!listNode) return [];
+    return splitParticioCustomValues(
+      Array.from(listNode.querySelectorAll(".js-part-custom-item"))
+        .map(node => String(node.getAttribute("data-value") || "").trim())
+    );
+  }
+
+  function refreshParticioCustomDndEmptyState(listNode) {
+    if (!listNode) return;
+    const emptyNode = listNode.querySelector(".js-part-custom-empty");
+    if (!emptyNode) return;
+    const hasItems = !!listNode.querySelector(".js-part-custom-item");
+    emptyNode.style.display = hasItems ? "none" : "";
+  }
+
+  function refreshParticioCustomFieldDndState(fieldBox) {
+    if (!fieldBox) return;
+    fieldBox.querySelectorAll("[data-part-custom-dnd-list]").forEach(refreshParticioCustomDndEmptyState);
+  }
+
+  function initParticionsCustomSortables() {
+    if (!els.particionsCustomBox || typeof Sortable === "undefined") return;
+
+    els.particionsCustomBox.querySelectorAll("[data-part-custom-field]").forEach(fieldBox => {
+      const code = String(fieldBox.getAttribute("data-part-custom-field") || "").trim();
+      if (!code) return;
+      const groupName = `part_custom_${code}`;
+
+      fieldBox.querySelectorAll("[data-part-custom-dnd-list]").forEach(listNode => {
+        if (listNode.dataset.sortableInit === "1") return;
+        Sortable.create(listNode, {
+          group: {
+            name: groupName,
+            pull: true,
+            put: true,
+          },
+          animation: 120,
+          handle: ".js-part-custom-item-handle",
+          draggable: ".js-part-custom-item",
+          onEnd: () => {
+            refreshParticioCustomFieldDndState(fieldBox);
+            syncAdvancedFromUI();
+          },
+        });
+        listNode.dataset.sortableInit = "1";
+      });
+      refreshParticioCustomFieldDndState(fieldBox);
+    });
+  }
+
+  function renderParticionsCustomUI(selectedCodes, customMapRaw) {
+    if (!els.particionsCustomBox) return;
+    const selected = normalizeParticioCodes(selectedCodes || []);
+    const customMap = normalizeParticionsCustom(customMapRaw || {});
+
+    if (!selected.length) {
+      els.particionsCustomBox.innerHTML = `<div class="small text-muted">Selecciona almenys un camp de partició per configurar grups custom.</div>`;
+      return;
+    }
+
+    let html = "";
+    selected.forEach((code, fieldIdx) => {
+      const meta = partFieldMetaByCode(code);
+      const cfg = customMap[code] || { mode: "raw", fallback_label: "", grups: [] };
+      const groups = Array.isArray(cfg.grups) ? cfg.grups : [];
+      const customEnabled = String(cfg.mode || "raw").toLowerCase() === "custom";
+      const modeId = `pc_mode_${fieldIdx}`;
+      const detectedValues = getParticioChoiceEntriesForCode(code);
+      const detectedByKey = new Map();
+      detectedValues.forEach(entry => {
+        const key = particioValueKey(entry.value);
+        if (key && !detectedByKey.has(key)) {
+          detectedByKey.set(key, entry);
+        }
+      });
+
+      const assignedKeys = new Set();
+      groups.forEach(g => {
+        splitParticioCustomValues(g.values).forEach(val => {
+          const key = particioValueKey(val);
+          if (key) assignedKeys.add(key);
+        });
+      });
+
+      const availableItemsHtml = detectedValues
+        .filter(entry => !assignedKeys.has(particioValueKey(entry.value)))
+        .map(renderParticioCustomItem)
+        .join("");
+
+      const staleAssignedCount = groups.reduce((acc, g) => {
+        let plus = 0;
+        splitParticioCustomValues(g.values).forEach(val => {
+          if (!detectedByKey.has(particioValueKey(val))) plus += 1;
+        });
+        return acc + plus;
+      }, 0);
+
+      const staleHint = staleAssignedCount > 0
+        ? `<div class="small text-warning mt-2">${esc(String(staleAssignedCount))} valor(s) ja no detectats mantenen assignació.</div>`
+        : "";
+
+      const sortableWarning = (typeof Sortable === "undefined")
+        ? `<div class="small text-danger mt-2">No s'ha carregat el modul drag-and-drop (SortableJS).</div>`
+        : "";
+
+      html += `
+        <div class="border rounded p-2 mb-2" data-part-custom-field="${esc(code)}">
+          <div class="d-flex justify-content-between align-items-center">
+            <div class="font-weight-bold small">${esc(meta.ui_label || meta.label || code)}</div>
+            <div class="form-check m-0">
+              <input class="form-check-input" type="checkbox" id="${esc(modeId)}"
+                     data-part-custom="mode" ${customEnabled ? "checked" : ""}>
+              <label class="form-check-label small" for="${esc(modeId)}">Particio custom</label>
+            </div>
+          </div>
+          <div class="mt-2" data-part-custom="panel" style="display:${customEnabled ? "" : "none"};">
+            <div class="form-group mb-2">
+              <label class="small text-muted mb-1">Etiqueta per no assignats (opcional)</label>
+              <input class="form-control form-control-sm" type="text" data-part-custom="fallback"
+                      value="${esc(cfg.fallback_label || "")}" placeholder="Altres">
+            </div>
+            <div class="part-custom-grid">
+              <div class="part-custom-panel">
+                <div class="part-custom-panel-title">Valors detectats</div>
+                <div class="part-custom-list" data-part-custom-dnd-list data-part-custom-dnd-kind="pool">
+                  ${availableItemsHtml}
+                  <div class="part-custom-empty js-part-custom-empty">Cap valor disponible.</div>
+                </div>
+                <div class="small text-muted mt-1">Arrossega valors cap als grups.</div>
+              </div>
+              <div>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <label class="small text-muted m-0">Grups</label>
+                  <button type="button" class="btn btn-sm btn-outline-primary"
+                          data-part-custom-act="add-group" data-code="${esc(code)}">+ Grup</button>
+                </div>
+                <div data-part-custom="groups">
+      `;
+
+      if (!groups.length) {
+        html += `<div class="small text-muted mb-2">Cap grup definit.</div>`;
+      } else {
+        groups.forEach((g, idx) => {
+          const gLabel = String(g.label || g.key || `Grup ${idx + 1}`).trim() || `Grup ${idx + 1}`;
+          const groupItemsHtml = splitParticioCustomValues(g.values)
+            .map(val => {
+              const detected = detectedByKey.get(particioValueKey(val));
+              return renderParticioCustomItem({
+                value: val,
+                label: detected ? detected.label : val,
+                count: detected ? detected.count : 0,
+                detected: !!detected,
+              });
+            })
+            .join("");
+          html += `
+            <div class="part-custom-group-card" data-part-custom-group-box>
+              <div class="part-custom-group-head mb-2">
+                <div class="small text-muted">Grup ${esc(String(idx + 1))}</div>
+                <button type="button" class="btn btn-sm btn-outline-danger"
+                        data-part-custom-act="del-group" data-code="${esc(code)}" data-idx="${esc(String(idx))}">Eliminar grup</button>
+              </div>
+              <div class="form-group mb-2">
+                <label class="small text-muted mb-1">Etiqueta grup</label>
+                <input class="form-control form-control-sm" type="text" data-part-custom-group="label"
+                       value="${esc(gLabel)}" placeholder="Base">
+              </div>
+              <div class="small text-muted mb-1">Valors del grup</div>
+              <div class="part-custom-list" data-part-custom-dnd-list data-part-custom-dnd-kind="group" data-part-custom-group-idx="${esc(String(idx))}">
+                ${groupItemsHtml}
+                <div class="part-custom-empty js-part-custom-empty">Arrossega valors aqui.</div>
+              </div>
+            </div>
+          `;
+        });
+      }
+
+      html += `
+                </div>
+                ${staleHint}
+                ${sortableWarning}
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    });
+
+    els.particionsCustomBox.innerHTML = html;
+    els.particionsCustomBox.querySelectorAll("[data-part-custom-field]").forEach(refreshParticioCustomFieldDndState);
+    initParticionsCustomSortables();
+  }
+
+  function readParticionsCustomUI(selectedCodes) {
+    const selected = normalizeParticioCodes(selectedCodes || selectedParticioCodesFromUI());
+    const selectedSet = new Set(selected);
+    const out = {};
+
+    document.querySelectorAll("[data-part-custom-field]").forEach(box => {
+      const code = String(box.getAttribute("data-part-custom-field") || "").trim();
+      if (!code || !selectedSet.has(code)) return;
+
+      const modeNode = box.querySelector('[data-part-custom="mode"]');
+      const mode = modeNode && modeNode.checked ? "custom" : "raw";
+      if (mode !== "custom") return;
+      const fallbackNode = box.querySelector('[data-part-custom="fallback"]');
+      const fallback = String((fallbackNode && fallbackNode.value) || "").trim();
+      const groups = [];
+      box.querySelectorAll('[data-part-custom="groups"] > [data-part-custom-group-box]').forEach((gBox, idx) => {
+        const labelNode = gBox.querySelector('[data-part-custom-group="label"]');
+        const valuesNode = gBox.querySelector('[data-part-custom-dnd-list][data-part-custom-dnd-kind="group"]');
+        const label = String((labelNode && labelNode.value) || "").trim() || `Grup ${idx + 1}`;
+        const values = readParticioCustomValuesFromList(valuesNode);
+        if (!values.length) return;
+        groups.push({
+          key: `grp_${idx + 1}`,
+          label: label,
+          values: values,
+        });
+      });
+
+      out[code] = {
+        mode: "custom",
+        fallback_label: fallback,
+        grups: groups,
+      };
+    });
+
+    return out;
+  }
+
+  function normalizeBirthYearRangeDateValue(raw) {
+    const token = String(raw ?? "").trim();
+    return /^\d{4}-\d{2}-\d{2}$/.test(token) ? token : "";
+  }
+
+  function defaultBirthYearRangeLabel(fromDate, untilDate, idx) {
+    if (fromDate && untilDate) return `${fromDate} a ${untilDate}`;
+    if (fromDate) return `Des de ${fromDate}`;
+    if (untilDate) return `Fins ${untilDate}`;
+    return `Forquilla ${Number(idx) + 1}`;
+  }
+
+  function normalizeBirthYearRangePartitionConfig(raw) {
+    const fallback = (((DEFAULT_SCHEMA || {}).particions_config || {})[BIRTH_YEAR_RANGE_PARTITION_CODE]) || {
+      ranges: [],
+      sense_data_label: "Sense data",
+      fora_rang_label: "Fora de forquilla",
+      team_rules: {
+        reference_mode: "oldest_member_birthdate",
+        compliance_mode: "strict",
+        max_members_outside_range: 0,
+        missing_birthdate_policy: "outside_range",
+      },
+    };
+    const cfg = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+    const fallbackRules = fallback.team_rules || {};
+    const rules = cfg.team_rules && typeof cfg.team_rules === "object" && !Array.isArray(cfg.team_rules) ? cfg.team_rules : {};
+    const out = {
+      ranges: [],
+      sense_data_label: String(cfg.sense_data_label || fallback.sense_data_label || "Sense data").trim() || "Sense data",
+      fora_rang_label: String(cfg.fora_rang_label || fallback.fora_rang_label || "Fora de forquilla").trim() || "Fora de forquilla",
+      team_rules: {
+        reference_mode: String(rules.reference_mode || fallbackRules.reference_mode || "oldest_member_birthdate").trim() || "oldest_member_birthdate",
+        compliance_mode: String(rules.compliance_mode || fallbackRules.compliance_mode || "strict").trim() || "strict",
+        max_members_outside_range: Math.max(0, Number.parseInt(rules.max_members_outside_range ?? fallbackRules.max_members_outside_range ?? 0, 10) || 0),
+        missing_birthdate_policy: String(rules.missing_birthdate_policy || fallbackRules.missing_birthdate_policy || "outside_range").trim() || "outside_range",
+      },
+    };
+
+    (Array.isArray(cfg.ranges) ? cfg.ranges : []).forEach((item, idx) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return;
+      const rawLabel = String(item.label || "").trim();
+      let fromDate = normalizeBirthYearRangeDateValue(item.from_date);
+      let untilDate = normalizeBirthYearRangeDateValue(item.until_date);
+      if (!fromDate) {
+        const fromYear = String(item.from_year ?? "").trim();
+        fromDate = /^\d{4}$/.test(fromYear) ? `${fromYear}-01-01` : "";
+      }
+      if (!untilDate) {
+        const toYear = String(item.to_year ?? "").trim();
+        untilDate = /^\d{4}$/.test(toYear) ? `${toYear}-12-31` : "";
+      }
+      if (!rawLabel && !fromDate && !untilDate) return;
+      out.ranges.push({
+        label: rawLabel || defaultBirthYearRangeLabel(fromDate, untilDate, idx),
+        from_date: fromDate || null,
+        until_date: untilDate || null,
+      });
+    });
+    return out;
+  }
+
+  function normalizeParticionsConfig(raw) {
+    const cfg = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+    return {
+      [BIRTH_YEAR_RANGE_PARTITION_CODE]: normalizeBirthYearRangePartitionConfig(cfg[BIRTH_YEAR_RANGE_PARTITION_CODE]),
+    };
+  }
+
+  function currentParticionsConfigFallback() {
+    const cfg = currentCfg();
+    const schema = cfg && cfg.schema && typeof cfg.schema === "object" ? cfg.schema : DEFAULT_SCHEMA;
+    return normalizeParticionsConfig(schema.particions_config || {});
+  }
+
+  function readBirthYearRangePartitionConfigUI() {
+    const fallback = currentParticionsConfigFallback()[BIRTH_YEAR_RANGE_PARTITION_CODE];
+    if (!els.birthYearRangeConfigBox || els.birthYearRangeConfigBox.dataset.rendered !== "1") {
+      return fallback;
+    }
+
+    const ranges = [];
+    els.birthYearRangeConfigBox.querySelectorAll("[data-byr-row]").forEach((row, idx) => {
+      const rawLabel = String(row.querySelector('[data-byr="label"]')?.value || "").trim();
+      const fromDate = normalizeBirthYearRangeDateValue(row.querySelector('[data-byr="from"]')?.value);
+      const untilDate = normalizeBirthYearRangeDateValue(row.querySelector('[data-byr="to"]')?.value);
+      if (!rawLabel && !fromDate && !untilDate) return;
+      ranges.push({
+        label: rawLabel || defaultBirthYearRangeLabel(fromDate, untilDate, idx),
+        from_date: fromDate || null,
+        until_date: untilDate || null,
+      });
+    });
+
+    return normalizeBirthYearRangePartitionConfig({
+      ranges,
+      sense_data_label: String(els.birthYearRangeConfigBox.querySelector('[data-byr="sense"]')?.value || fallback.sense_data_label || "Sense data").trim() || "Sense data",
+      fora_rang_label: String(els.birthYearRangeConfigBox.querySelector('[data-byr="outside"]')?.value || fallback.fora_rang_label || "Fora de forquilla").trim() || "Fora de forquilla",
+      team_rules: {
+        reference_mode: String(els.birthYearRangeConfigBox.querySelector('[data-byr="team-reference"]')?.value || fallback.team_rules?.reference_mode || "oldest_member_birthdate").trim() || "oldest_member_birthdate",
+        compliance_mode: String(els.birthYearRangeConfigBox.querySelector('[data-byr="team-compliance"]')?.value || fallback.team_rules?.compliance_mode || "strict").trim() || "strict",
+        max_members_outside_range: Math.max(0, Number.parseInt(els.birthYearRangeConfigBox.querySelector('[data-byr="team-max-outside"]')?.value || fallback.team_rules?.max_members_outside_range || 0, 10) || 0),
+        missing_birthdate_policy: String(els.birthYearRangeConfigBox.querySelector('[data-byr="team-missing"]')?.value || fallback.team_rules?.missing_birthdate_policy || "outside_range").trim() || "outside_range",
+      },
+    });
+  }
+
+  function readParticionsConfigUI() {
+    const current = currentParticionsConfigFallback();
+    current[BIRTH_YEAR_RANGE_PARTITION_CODE] = readBirthYearRangePartitionConfigUI();
+    return current;
+  }
+
+  function syntheticParticioChoiceEntries(code, particionsConfigRaw) {
+    if (String(code || "").trim() !== BIRTH_YEAR_RANGE_PARTITION_CODE) return null;
+    const cfg = normalizeParticionsConfig(particionsConfigRaw || readParticionsConfigUI())[BIRTH_YEAR_RANGE_PARTITION_CODE];
+    const out = [];
+    const seen = new Set();
+    const pushValue = (label) => {
+      const txt = String(label || "").trim();
+      if (!txt) return;
+      const key = particioValueKey(txt);
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      out.push({ value: txt, label: txt, count: 0 });
+    };
+    (Array.isArray(cfg.ranges) ? cfg.ranges : []).forEach(item => pushValue(item?.label));
+    pushValue(cfg.sense_data_label);
+    pushValue(cfg.fora_rang_label);
+    return out;
+  }
+
+  function renderDerivedPartitionConfigUI(particionsConfigRaw, selectedCodesRaw) {
+    if (!els.particionsDerivedBox || !els.birthYearRangeConfigBox) return;
+    const selectedCodes = normalizeParticioCodes(selectedCodesRaw || selectedParticioCodesFromUI());
+    const active = selectedCodes.includes(BIRTH_YEAR_RANGE_PARTITION_CODE);
+    if (!active) {
+      els.particionsDerivedBox.style.display = "none";
+      els.birthYearRangeConfigBox.dataset.rendered = "0";
+      els.birthYearRangeConfigBox.innerHTML = "";
+      return;
+    }
+
+    const cfg = normalizeParticionsConfig(particionsConfigRaw || readParticionsConfigUI())[BIRTH_YEAR_RANGE_PARTITION_CODE];
+    const isEquips = currentTipus() === "equips";
+    const teamRules = cfg.team_rules || {};
+    const uiState = getEquipsUiState();
+    const legacyAgeCfg = uiState?.equips?.particio_edat || {};
+    let html = `
+      <div class="row mb-2">
+        <div class="col-12 col-md-6 mb-2">
+          <label class="small text-muted mb-1">Etiqueta sense data</label>
+          <input class="form-control form-control-sm" data-byr="sense" type="text" value="${esc(cfg.sense_data_label || "Sense data")}">
+        </div>
+        <div class="col-12 col-md-6 mb-2">
+          <label class="small text-muted mb-1">Etiqueta fora de forquilla</label>
+          <input class="form-control form-control-sm" data-byr="outside" type="text" value="${esc(cfg.fora_rang_label || "Fora de forquilla")}">
+        </div>
+      </div>
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <label class="small text-muted mb-0">Forquilles</label>
+        <button type="button" class="btn btn-sm btn-outline-primary" data-byr-act="add">+ Forquilla</button>
+      </div>
+    `;
+    if (isEquips) {
+      html += `
+        <div class="alert alert-info py-2 px-3 small mb-3">
+          La forquilla de l'equip es calcula amb la data de naixement del membre més gran. Els membres sense data compten com a fora de forquilla.
+        </div>
+      `;
+      if (legacyAgeCfg && legacyAgeCfg.activa) {
+        html += `
+          <div class="alert alert-warning py-2 px-3 small mb-3">
+            Configuració legacy detectada: la partició antiga d'edat màxima s'ha inferit dins aquesta forquilla de naixement.
+          </div>
+        `;
+      }
+    }
+    if (!(cfg.ranges || []).length) {
+      html += `<div class="small text-muted border rounded p-2 mb-2">Cap forquilla definida.</div>`;
+    }
+    (cfg.ranges || []).forEach((item, idx) => {
+      html += `
+        <div class="border rounded p-2 mb-2" data-byr-row data-idx="${esc(String(idx))}">
+          <div class="row">
+            <div class="col-12 col-md-4 mb-2">
+              <label class="small text-muted mb-1">Etiqueta</label>
+              <input class="form-control form-control-sm" data-byr="label" type="text" value="${esc(item.label || "")}" placeholder="2007-2009">
+            </div>
+            <div class="col-6 col-md-3 mb-2">
+              <label class="small text-muted mb-1">Data inici</label>
+              <input class="form-control form-control-sm" data-byr="from" type="date" value="${esc(item.from_date || "")}">
+            </div>
+            <div class="col-6 col-md-3 mb-2">
+              <label class="small text-muted mb-1">Data final</label>
+              <input class="form-control form-control-sm" data-byr="to" type="date" value="${esc(item.until_date || "")}">
+            </div>
+            <div class="col-12 col-md-2 d-flex align-items-end mb-2">
+              <button type="button" class="btn btn-sm btn-outline-danger w-100" data-byr-act="del" data-idx="${esc(String(idx))}">-</button>
+            </div>
+          </div>
+        </div>
+      `;
+    });
+    if (isEquips) {
+      const complianceMode = String(teamRules.compliance_mode || "strict");
+      const maxOutside = Math.max(0, Number.parseInt(teamRules.max_members_outside_range ?? 0, 10) || 0);
+      html += `
+        <div class="border rounded p-3 mt-3">
+          <div class="font-weight-bold mb-1">Regla d'equip</div>
+          <div class="small text-muted mb-3">Es fa servir sempre la data del membre més gran per determinar la forquilla candidata.</div>
+          <div class="row">
+            <div class="col-12 col-md-4 mb-2">
+              <label class="small text-muted mb-1">Referència</label>
+              <select class="form-control form-control-sm" data-byr="team-reference">
+                <option value="oldest_member_birthdate" selected>Membre més gran</option>
+              </select>
+            </div>
+            <div class="col-12 col-md-4 mb-2">
+              <label class="small text-muted mb-1">Compliment</label>
+              <select class="form-control form-control-sm" data-byr="team-compliance">
+                <option value="strict" ${complianceMode === "strict" ? "selected" : ""}>Estricte</option>
+                <option value="allow_outside_n" ${complianceMode === "allow_outside_n" ? "selected" : ""}>Permetre N fora</option>
+              </select>
+            </div>
+            <div class="col-12 col-md-4 mb-2">
+              <label class="small text-muted mb-1">Membres fora de forquilla</label>
+              <input class="form-control form-control-sm" data-byr="team-max-outside" type="number" min="0" value="${esc(String(maxOutside))}" ${complianceMode === "allow_outside_n" ? "" : "disabled"}>
+            </div>
+          </div>
+          <input type="hidden" data-byr="team-missing" value="outside_range">
+        </div>
+      `;
+    }
+
+    els.particionsDerivedBox.style.display = "";
+    els.birthYearRangeConfigBox.dataset.rendered = "1";
+    els.birthYearRangeConfigBox.innerHTML = html;
+  }
+
+  function ensureSelectOption(selectEl, rawValue, labelBuilder) {
+    if (!selectEl) return;
+    const value = String(rawValue ?? "").trim();
+    if (!value) return;
+    const existing = Array.from(selectEl.options || []).find(opt => String(opt.value || "").trim() === value);
+    if (existing) return;
+    const opt = document.createElement("option");
+    opt.value = value;
+    opt.textContent = typeof labelBuilder === "function" ? labelBuilder(value) : `${value} (legacy)`;
+    opt.dataset.injected = "1";
+    selectEl.appendChild(opt);
+  }
+
+  function clearInjectedSelectOptions(selectEl) {
+    if (!selectEl) return;
+    Array.from(selectEl.options || []).forEach(opt => {
+      if (opt?.dataset?.injected === "1") opt.remove();
+    });
+  }
+
+  function ensureMultiSelectOptions(selectEl, rawValues, labelBuilder) {
+    if (!selectEl) return;
+    const wanted = new Set(
+      (Array.isArray(rawValues) ? rawValues : [])
+        .map(value => String(value ?? "").trim())
+        .filter(Boolean)
+    );
+    Array.from(selectEl.options || []).forEach(opt => {
+      if (opt?.dataset?.injected === "1") opt.remove();
+    });
+    wanted.forEach(value => ensureSelectOption(selectEl, value, labelBuilder));
+    Array.from(selectEl.options || []).forEach(opt => {
+      opt.selected = wanted.has(String(opt.value || "").trim());
+    });
+  }
+
+  function applyMultiSelectValues(selectEl, rawValues) {
+    ensureMultiSelectOptions(selectEl, rawValues, value => `${value} (no disponible)`);
+  }
+

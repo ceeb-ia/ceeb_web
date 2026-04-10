@@ -1,0 +1,106 @@
+<div id="classif-builder-v2" class="container-fluid mt-4">
+  <div class="card-surface">
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+    <div>
+      <h3 class="mb-0">{{ builder_title|default:"Classificacions" }}</h3>
+      <div class="text-muted small">{% if builder_subtitle %}{{ builder_subtitle }}{% elif competicio %}{{ competicio.nom }}{% endif %}</div>
+    </div>
+    <div class="d-flex flex-wrap justify-content-end gap-2">
+      <a class="btn btn-sm btn-outline-secondary" href="{{ builder_home_url|default:'#' }}">{{ builder_home_label|default:'Configuració' }}</a>
+      {% if global_templates_url %}
+        <a class="btn btn-sm btn-outline-secondary" href="{{ global_templates_url }}">Plantilles globals</a>
+      {% endif %}
+      <button type="button" class="btn btn-sm btn-outline-primary" id="btnAdd">+ Afegir</button>
+      <button type="button" class="btn btn-sm btn-primary" id="btnSave">Guardar</button>
+      <button type="button" class="btn btn-sm btn-outline-danger" id="btnDelete">Eliminar</button>
+    </div>
+  </div>
+
+  {% if builder_enable_template_library|default:True %}
+  <div class="d-flex align-items-center flex-wrap gap-2 mb-3">
+    <select id="templateSelect" class="form-control form-control-sm" style="max-width: 360px;">
+      <option value="">Les meves plantilles...</option>
+    </select>
+    <button type="button" class="btn btn-sm btn-outline-secondary" id="btnTemplateRefresh">Recarregar</button>
+    <button type="button" class="btn btn-sm btn-outline-info" id="btnTemplateCheck">Comprovar</button>
+    <button type="button" class="btn btn-sm btn-outline-success" id="btnTemplateApply">Aplicar</button>
+    {% if can_manage_global_templates %}
+      <button type="button" class="btn btn-sm btn-outline-primary" id="btnTemplateSave">Desar com plantilla</button>
+    {% endif %}
+  </div>
+  {% endif %}
+
+    <div id="saveMsg" class="alert alert-success py-2 px-3 mb-2" style="display:none;">
+    Guardat correctament
+  </div>
+  <div id="saveErrorsBox" class="alert alert-danger py-2 px-3 mb-2 builder-save-errors" style="display:none;"></div>
+  <div class="row">
+    <div class="col-12 col-lg-4 mb-3">
+      <div class="card">
+        <div class="card-header font-weight-bold">Configuracions</div>
+        <div class="list-group list-group-flush" id="cfgList"></div>
+      </div>
+
+      <div class="small text-muted mt-2">
+        Tip: crea una classificació per "General", una per "Categoria", etc.
+      </div>
+    </div>
+
+    <div class="col-12 col-lg-8">
+      <div id="editorEmpty" class="card">
+        <div class="card-body text-muted">
+          Selecciona una configuració a l'esquerra.
+        </div>
+      </div>
+
+      <div id="editorBody" class="card" style="display:none;">
+        <div class="card-body builder-editor-body">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <div class="small text-muted">
+              Manual contextual del builder amb exemples i advertiments d'ús.
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-info classif-help-trigger" data-help-key="global_overview" aria-label="Obrir manual del builder de classificacions">Ajuda</button>
+          </div>
+          <div class="builder-shell">
+            <aside class="builder-nav" aria-label="Navegació interna del builder">
+              <div class="builder-nav-card">
+                <div class="builder-nav-eyebrow">Editor</div>
+                <div class="builder-nav-title">Blocs de configuració</div>
+                <div class="builder-nav-links">
+                  <a class="builder-nav-link" data-builder-nav-link href="#section-meta"><span class="builder-nav-index">01</span><span>Metadades</span></a>
+                  <a class="builder-nav-link" data-builder-nav-link href="#section-particions"><span class="builder-nav-index">02</span><span>Particions</span></a>
+                  <a class="builder-nav-link" data-builder-nav-link href="#section-puntuacio"><span class="builder-nav-index">03</span><span>Puntuació</span></a>
+                  <a class="builder-nav-link" data-builder-nav-link href="#section-desempat"><span class="builder-nav-index">04</span><span>Desempat</span></a>
+                  <a class="builder-nav-link" data-builder-nav-link href="#section-filtres"><span class="builder-nav-index">05</span><span>Filtres</span></a>
+                  <a class="builder-nav-link" data-builder-nav-link href="#section-presentacio"><span class="builder-nav-index">06</span><span>Presentació</span></a>
+                </div>
+              </div>
+            </aside>
+
+            <div class="builder-main">
+              {% include "classificacions/builder/sections/_meta.html" %}
+
+              {% include "classificacions/builder/sections/_particions.html" %}
+
+              {% include "classificacions/puntuacio.html" %}
+
+              {% include "classificacions/builder/sections/_desempat.html" %}
+
+              {% include "classificacions/builder/sections/_filtres_detail.html" %}
+
+              {% include "classificacions/builder/sections/_presentacio.html" %}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  </div>
+  <button type="button"
+          class="btn btn-sm btn-primary classif-builder-back-to-top"
+          id="classif-builder-back-to-top"
+          aria-label="Tornar a l'inici"
+          title="Tornar a dalt">
+    <span aria-hidden="true">&uarr;</span>
+  </button>
+</div>

@@ -1,0 +1,27 @@
+{{ cfgs|json_script:"cfgs-data-v2" }}
+{{ aparells|json_script:"aparells-data-v2" }}
+{{ equips|json_script:"equips-data-v2" }}
+{{ equip_contexts|json_script:"equip-contexts-data-v2" }}
+{{ particio_fields|json_script:"particio-fields-data-v2" }}
+{{ particio_value_choices|json_script:"particio-value-choices-data-v2" }}
+{{ aparell_field_options|json_script:"aparell-field-options-data" }}
+{% if competicio %}
+{{ competicio.id|json_script:"competicio-id" }}
+{% else %}
+{{ None|json_script:"competicio-id" }}
+{% endif %}
+{{ builder_mode|default:"competition"|json_script:"builder-mode" }}
+{{ builder_save_url|default:""|json_script:"builder-save-url" }}
+{{ builder_delete_url_pattern|default:""|json_script:"builder-delete-url-pattern" }}
+{{ builder_preview_url_pattern|default:""|json_script:"builder-preview-url-pattern" }}
+{{ builder_enable_template_library|default:True|json_script:"builder-enable-template-library" }}
+{{ builder_can_preview|default:True|json_script:"builder-can-preview" }}
+{{ builder_selected_id|default:None|json_script:"builder-selected-id" }}
+{{ builder_auto_add_new|default:False|json_script:"builder-auto-add-new" }}
+{{ can_manage_global_templates|default:False|json_script:"can-manage-global-templates" }}
+{% if team_context_capabilities %}
+{{ team_context_capabilities|json_script:"team-context-capabilities-data-v2" }}
+{% endif %}
+{% if cfg_statuses %}
+{{ cfg_statuses|json_script:"cfg-statuses-data-v2" }}
+{% endif %}

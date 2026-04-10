@@ -1,0 +1,1603 @@
+  function getParticipantsCellHTML() {
+    return `
+      <td data-cell="participants">
+        <div class="d-flex flex-column gap-1">
+          <div class="small text-muted" data-k="p_locked_note" style="display:none;">En pool d'equip no es reescullen participants.</div>
+          <select class="form-control form-control-sm" data-k="p_mode">
+            <option value="tots">Tots</option>
+            <option value="millor_1">Millor 1</option>
+            <option value="millor_n">Millors N</option>
+            <option value="pitjor_1">Pitjor 1</option>
+            <option value="pitjor_n">Pitjors N</option>
+          </select>
+          <input class="form-control form-control-sm" data-k="p_n" type="number" min="1" value="1" style="display:none;" placeholder="N participants">
+          <select class="form-control form-control-sm" data-k="p_agg">
+            <option value="sum">Suma</option>
+            <option value="avg">Mitjana</option>
+            <option value="median">Mediana</option>
+            <option value="max">Màxim</option>
+            <option value="min">Mínim</option>
+          </select>
+        </div>
+      </td>
+    `;
+  }
+
+  function getParticipantsDefaults() {
+    return {
+      participants: { mode: "hereta" },
+      agregacio_participants: "sum",
+    };
+  }
+
+  function isParticipantsModeWithN(mode) {
+    return mode === "millor_n" || mode === "pitjor_n";
+  }
+
+  function normalizeTieCampsFromObj(t) {
+    const out = [];
+    const raw = t && t.camps;
+    if (Array.isArray(raw)) {
+      raw.forEach(x => {
+        const s = String(x || "").trim();
+        if (s) out.push(s);
+      });
+    } else if (typeof raw === "string") {
+      raw.split(",").forEach(x => {
+        const s = String(x || "").trim();
+        if (s) out.push(s);
+      });
+    }
+    if (!out.length) {
+      const legacy = String((t && t.camp) || "").trim();
+      if (legacy) out.push(legacy);
+    }
+    const dedup = [];
+    const seen = new Set();
+    out.forEach(c => {
+      if (seen.has(c)) return;
+      seen.add(c);
+      dedup.push(c);
+    });
+    return dedup;
+  }
+
+  function normalizeTieAggCampsFromObj(t) {
+    const v = String((t && t.agregacio_camps) || "hereta").toLowerCase().trim();
+    if (["hereta","sum","avg","median","max","min"].includes(v)) return v;
+    return "hereta";
+  }
+
+  function cloneJsonValue(raw, fallback = null) {
+    try {
+      return JSON.parse(JSON.stringify(raw));
+    } catch (_) {
+      return fallback;
+    }
+  }
+
+  function normalizeTieAggValue(rawValue, fallbackValue = "sum") {
+    const agg = String(rawValue || fallbackValue || "sum").toLowerCase().trim();
+    if (["sum", "avg", "median", "max", "min"].includes(agg)) return agg;
+    return "sum";
+  }
+
+  function normalizeTiePipelineAppScope(rawScope, fallbackScope) {
+    const scope = (rawScope && typeof rawScope === "object" && !Array.isArray(rawScope)) ? cloneJsonValue(rawScope, {}) : {};
+    const fallback = (fallbackScope && typeof fallbackScope === "object" && !Array.isArray(fallbackScope)) ? fallbackScope : {};
+    const ids = sanitizeAppIds(Array.isArray(scope.ids) ? scope.ids : (Array.isArray(fallback.ids) ? fallback.ids : []));
+    let mode = String(scope.mode || fallback.mode || (ids.length ? "seleccionar" : "hereta")).toLowerCase().trim();
+    if (!["seleccionar", "tots"].includes(mode)) {
+      mode = ids.length ? "seleccionar" : "hereta";
+    }
+    if (mode === "seleccionar") {
+      return { mode, ids };
+    }
+    return { mode: "tots", ids };
+  }
+
+  function normalizeTiePipelineCampsPerApp(rawMap, fallbackMap, appIds) {
+    const out = {};
+    const fallback = (fallbackMap && typeof fallbackMap === "object" && !Array.isArray(fallbackMap)) ? fallbackMap : {};
+    const source = (rawMap && typeof rawMap === "object" && !Array.isArray(rawMap)) ? rawMap : {};
+    const keys = Array.isArray(appIds) && appIds.length
+      ? appIds.map(id => String(id))
+      : Array.from(new Set([...Object.keys(source), ...Object.keys(fallback)]));
+    keys.forEach(key => {
+      const raw = source[key] ?? source[Number(key)] ?? fallback[key] ?? fallback[Number(key)];
+      const camps = normalizeTieCampsFromObj({ camps: raw });
+      if (camps.length) out[String(Number(key))] = camps;
+    });
+    return out;
+  }
+
+  function normalizeTiePipelineAggMap(rawMap, fallbackMap, appIds, fallbackAgg) {
+    const out = {};
+    const fallback = (fallbackMap && typeof fallbackMap === "object" && !Array.isArray(fallbackMap)) ? fallbackMap : {};
+    const source = (rawMap && typeof rawMap === "object" && !Array.isArray(rawMap)) ? rawMap : {};
+    const keys = Array.isArray(appIds) && appIds.length
+      ? appIds.map(id => String(id))
+      : Array.from(new Set([...Object.keys(source), ...Object.keys(fallback)]));
+    const fallbackValue = normalizeTieAggValue(fallbackAgg, "sum");
+    keys.forEach(key => {
+      const raw = source[key] ?? source[Number(key)] ?? fallback[key] ?? fallback[Number(key)];
+      out[String(Number(key))] = normalizeTieAggValue(raw, fallbackValue);
+    });
+    return out;
+  }
+
+  function buildLegacyAggFromPerAppMap(appIds, rawMap, fallbackAgg) {
+    const map = normalizeTiePipelineAggMap(rawMap, {}, appIds, fallbackAgg || "sum");
+    const keys = Array.isArray(appIds) ? appIds.map(id => String(id)) : Object.keys(map);
+    if (!keys.length) return normalizeTieAggValue(fallbackAgg || "sum", "sum");
+    const values = keys.map(key => normalizeTieAggValue(map[key] || fallbackAgg || "sum", fallbackAgg || "sum"));
+    return values.every(value => value === values[0]) ? values[0] : normalizeTieAggValue(fallbackAgg || "sum", "sum");
+  }
+
+  function normalizeTiePipelineCandidateSourceMap(rawMap, fallbackMap, appIds) {
+    const out = {};
+    const fallback = (fallbackMap && typeof fallbackMap === "object" && !Array.isArray(fallbackMap)) ? fallbackMap : {};
+    const source = (rawMap && typeof rawMap === "object" && !Array.isArray(rawMap)) ? rawMap : {};
+    const keys = Array.isArray(appIds) && appIds.length
+      ? appIds.map(id => String(id))
+      : Array.from(new Set([...Object.keys(source), ...Object.keys(fallback)]));
+    keys.forEach(key => {
+      const raw = source[key] ?? source[Number(key)] ?? fallback[key] ?? fallback[Number(key)];
+      out[String(Number(key))] = _copyCandidateSourceEntry(raw, fallback?.mode || "raw_exercise", fallback?.cfg || {});
+    });
+    return out;
+  }
+
+  function normalizeTiePipelineExercicisPerApp(rawMap, fallbackMap, appIds) {
+    const out = {};
+    const fallback = (fallbackMap && typeof fallbackMap === "object" && !Array.isArray(fallbackMap)) ? fallbackMap : {};
+    const source = (rawMap && typeof rawMap === "object" && !Array.isArray(rawMap)) ? rawMap : {};
+    const keys = Array.isArray(appIds) && appIds.length
+      ? appIds.map(id => String(id))
+      : Array.from(new Set([...Object.keys(source), ...Object.keys(fallback)]));
+    keys.forEach(key => {
+      const raw = source[key] ?? source[Number(key)] ?? fallback[key] ?? fallback[Number(key)];
+      const cfg = normalizeTieExercicisCfg(raw);
+      if (Object.keys(cfg).length) out[String(Number(key))] = cfg;
+    });
+    return out;
+  }
+
+  function normalizeTiePipelineParticipants(rawParticipants, fallbackParticipants) {
+    const participants = (rawParticipants && typeof rawParticipants === "object" && !Array.isArray(rawParticipants))
+      ? rawParticipants
+      : {};
+    const fallback = (fallbackParticipants && typeof fallbackParticipants === "object" && !Array.isArray(fallbackParticipants))
+      ? fallbackParticipants
+      : {};
+    let mode = String(participants.mode || fallback.mode || "tots").toLowerCase().trim();
+    if (mode === "hereta" || !mode) mode = "tots";
+    if (!["tots", "millor_1", "millor_n", "pitjor_1", "pitjor_n"].includes(mode)) {
+      mode = "tots";
+    }
+    const out = { mode };
+    if (mode !== "tots") {
+      out.n = Math.max(1, Number(participants.n || fallback.n || 1));
+    }
+    return out;
+  }
+
+  function normalizeTiePipeline(rawPipeline, fallbackPipeline) {
+    const source = (rawPipeline && typeof rawPipeline === "object" && !Array.isArray(rawPipeline))
+      ? cloneJsonValue(rawPipeline, {})
+      : {};
+    const fallback = (fallbackPipeline && typeof fallbackPipeline === "object" && !Array.isArray(fallbackPipeline))
+      ? fallbackPipeline
+      : {};
+    const out = source;
+    ["victories", "desempat", "presentacio", "particions", "particions_v2", "particions_custom", "filtres", "equips"].forEach(key => {
+      delete out[key];
+    });
+
+    out.aparells = normalizeTiePipelineAppScope(out.aparells, fallback.aparells);
+    const appIds = Array.isArray(out.aparells.ids) ? out.aparells.ids : [];
+    out.camps_per_aparell = normalizeTiePipelineCampsPerApp(out.camps_per_aparell, fallback.camps_per_aparell, appIds);
+    out.agregacio_camps_per_aparell = normalizeTiePipelineAggMap(
+      out.agregacio_camps_per_aparell,
+      fallback.agregacio_camps_per_aparell,
+      appIds,
+      out.agregacio_camps || fallback.agregacio_camps || "sum",
+    );
+    out.agregacio_camps = normalizeTieAggValue(out.agregacio_camps, fallback.agregacio_camps || "sum");
+    out.candidate_source_mode = _normalize_candidate_source_mode_like(out.candidate_source_mode || fallback.candidate_source_mode || "raw_exercise");
+    out.candidate_source_cfg = _copyCandidateSourceCfg(out.candidate_source_cfg || fallback.candidate_source_cfg || {});
+    out.candidate_source_per_aparell = normalizeTiePipelineCandidateSourceMap(
+      out.candidate_source_per_aparell,
+      fallback.candidate_source_per_aparell,
+      appIds,
+    );
+    out.exercicis = normalizeTieExercicisCfg(out.exercicis || fallback.exercicis || {});
+    out.exercise_selection_scope = normalizeTieExerciseSelectionScope(
+      out.exercise_selection_scope || fallback.exercise_selection_scope || "hereta",
+    );
+    out.mode_seleccio_exercicis = normalizeTieModeSeleccioExercicis(
+      out.mode_seleccio_exercicis || fallback.mode_seleccio_exercicis || "hereta",
+    );
+    out.exercicis_per_aparell = normalizeTiePipelineExercicisPerApp(
+      out.exercicis_per_aparell,
+      fallback.exercicis_per_aparell,
+      appIds,
+    );
+    out.agregacio_exercicis = normalizeTieAggValue(out.agregacio_exercicis, fallback.agregacio_exercicis || "sum");
+    out.agregacio_exercicis_per_aparell = normalizeTiePipelineAggMap(
+      out.agregacio_exercicis_per_aparell,
+      fallback.agregacio_exercicis_per_aparell,
+      appIds,
+      out.agregacio_exercicis || fallback.agregacio_exercicis || "sum",
+    );
+    out.agregacio_aparells = normalizeTieAggValue(out.agregacio_aparells, fallback.agregacio_aparells || "sum");
+    out.mode_resultat_aparells = String(out.mode_resultat_aparells || fallback.mode_resultat_aparells || "score").toLowerCase().trim();
+    if (out.mode_resultat_aparells !== "score") {
+      out.mode_resultat_aparells = "score";
+    }
+    out.ordre = String(out.ordre || fallback.ordre || "desc").toLowerCase().trim();
+    if (!["asc", "desc"].includes(out.ordre)) {
+      out.ordre = "desc";
+    }
+    out.participants = normalizeTiePipelineParticipants(out.participants, fallback.participants);
+    out.agregacio_participants = normalizeTieAggValue(out.agregacio_participants, fallback.agregacio_participants || "sum");
+    return out;
+  }
+
+  function buildTiePipelineFromPuntuacioSchema(punt) {
+    const base = cloneJsonValue(punt || {}, {});
+    if (!base || typeof base !== "object" || Array.isArray(base)) return normalizeTiePipeline({}, {});
+    delete base.victories;
+    return normalizeTiePipeline(base, {});
+  }
+
+  function getTiePipelineVisibleAppIds(tie) {
+    const pipeline = tie && typeof tie.pipeline === "object" && !Array.isArray(tie.pipeline) ? tie.pipeline : {};
+    return sanitizeAppIds((((pipeline.aparells || {}).ids) || []));
+  }
+
+  function getTieVisibleCamps(tie) {
+    const legacyCamps = normalizeTieCampsFromObj(tie);
+    if (legacyCamps.length) return legacyCamps;
+    const pipeline = tie && typeof tie.pipeline === "object" && !Array.isArray(tie.pipeline) ? tie.pipeline : {};
+    const ids = getTiePipelineVisibleAppIds(tie);
+    const campsMap = pipeline.camps_per_aparell && typeof pipeline.camps_per_aparell === "object" && !Array.isArray(pipeline.camps_per_aparell)
+      ? pipeline.camps_per_aparell
+      : {};
+    const keys = ids.length ? ids.map(id => String(id)) : Object.keys(campsMap);
+    for (const key of keys) {
+      const camps = normalizeTieCampsFromObj({ camps: campsMap[key] ?? campsMap[Number(key)] });
+      if (camps.length) return camps;
+    }
+    return [];
+  }
+
+  function getTieVisibleAggCamps(tie) {
+    const legacy = normalizeTieAggCampsFromObj(tie);
+    if (legacy !== "hereta") return legacy;
+    const pipeline = tie && typeof tie.pipeline === "object" && !Array.isArray(tie.pipeline) ? tie.pipeline : {};
+    return normalizeTieAggValue(pipeline.agregacio_camps || "sum", "sum");
+  }
+
+  function getTieVisibleParticipants(tie) {
+    const legacyScope = ((tie || {}).scope || {}).participants || {};
+    const pipeline = tie && typeof tie.pipeline === "object" && !Array.isArray(tie.pipeline) ? tie.pipeline : {};
+    const raw = pipeline.participants && typeof pipeline.participants === "object" && !Array.isArray(pipeline.participants)
+      ? pipeline.participants
+      : legacyScope;
+    const mode = String(raw.mode || "tots").toLowerCase().trim();
+    if (mode === "hereta") return { mode: "tots", n: 1 };
+    const out = { mode: ["tots", "millor_1", "millor_n", "pitjor_1", "pitjor_n"].includes(mode) ? mode : "tots" };
+    if (out.mode !== "tots") out.n = Math.max(1, Number(raw.n || 1));
+    return out;
+  }
+
+  function getTieVisibleAppScopeValue(tie) {
+    const pipeline = tie && typeof tie.pipeline === "object" && !Array.isArray(tie.pipeline) ? tie.pipeline : {};
+    const appScope = pipeline.aparells && typeof pipeline.aparells === "object" && !Array.isArray(pipeline.aparells) ? pipeline.aparells : {};
+    const ids = sanitizeAppIds(appScope.ids || []);
+    const mode = String(appScope.mode || "hereta").toLowerCase().trim();
+    if (mode === "tots") return "tots";
+    if (mode === "seleccionar" && ids.length === 1) return `app:${ids[0]}`;
+    return "hereta";
+  }
+
+  function getTieVisibleSummary(tie) {
+    const parts = [];
+    const appScope = getTieVisibleAppScopeValue(tie);
+    if (appScope === "tots") {
+      parts.push("Tots els aparells");
+    } else if (appScope.startsWith("app:")) {
+      const appId = Number(appScope.split(":")[1]);
+      parts.push(formatAppRefLabel(appId) || `Aparell ${appId}`);
+    } else {
+      const ids = getTiePipelineVisibleAppIds(tie);
+      if (ids.length > 1) {
+        parts.push(`${ids.length} aparells`);
+      } else {
+        parts.push("Mateixos aparells que la puntuació");
+      }
+    }
+    const camps = getTieVisibleCamps(tie);
+    if (camps.length) parts.push(camps.join(" + "));
+    const tiePipeline = tie && typeof tie.pipeline === "object" && !Array.isArray(tie.pipeline) ? tie.pipeline : {};
+    const ex = tiePipeline.exercicis || ((tie || {}).scope || {}).exercicis || {};
+    const exMode = String(ex.mode || "hereta").toLowerCase().trim();
+    if (exMode && exMode !== "hereta") {
+      if (exMode === "millor_n" || exMode === "pitjor_n") {
+        parts.push(`${exMode.replace("_", " ")} ${Math.max(1, Number(ex.best_n || 1))}`);
+      } else if (exMode === "index") {
+        parts.push(`exercici #${Math.max(1, Number(ex.index || 1))}`);
+      } else if (exMode === "llista") {
+        const ids = Array.isArray(ex.ids) ? ex.ids.join(",") : String(ex.ids || "");
+        parts.push(`llista ${ids || "?"}`);
+      } else {
+        parts.push(exMode);
+      }
+    }
+    const exSelMode = normalizeTieModeSeleccioExercicis(tiePipeline.mode_seleccio_exercicis || (tie || {}).mode_seleccio_exercicis || "hereta");
+    if (exSelMode === "per_aparell_override") {
+      const aggExPerApp = normalizeTiePipelineAggMap(
+        tiePipeline.agregacio_exercicis_per_aparell || (tie || {}).agregacio_exercicis_per_aparell || {},
+        {},
+        getTiePipelineVisibleAppIds(tie),
+        tiePipeline.agregacio_exercicis || (tie || {}).agregacio_exercicis || "sum",
+      );
+      if (Object.keys(aggExPerApp).length) parts.push("agg ex per aparell");
+    }
+    const agg = getTieVisibleAggCamps(tie);
+    if (agg && agg !== "hereta") parts.push(agg);
+    const participants = getTieVisibleParticipants(tie);
+    if (participants && participants.mode && participants.mode !== "tots") {
+      parts.push(participants.mode);
+    }
+    return parts.join(" | ");
+  }
+
+  function normalizeTieModeSeleccioExercicis(rawMode){
+    const mode = String(rawMode || "hereta").toLowerCase().trim();
+    if (["hereta","per_aparell_global","per_aparell_override","global_pool"].includes(mode)) return mode;
+    return "hereta";
+  }
+
+  function normalizeTieExercicisCfg(rawCfg){
+    const cfg = (rawCfg && typeof rawCfg === "object" && !Array.isArray(rawCfg)) ? rawCfg : {};
+    const mode = String(cfg.mode || "tots").toLowerCase().trim();
+    const outMode = ["tots","millor_1","millor_n","pitjor_1","pitjor_n","primer","ultim","index","llista"].includes(mode) ? mode : "tots";
+    const out = { mode: outMode };
+    if (isBestNMode(outMode)) out.best_n = Math.max(1, Number(cfg.best_n || 1));
+    if (outMode === "index") out.index = Math.max(1, Number(cfg.index || 1));
+    const maxPerParticipant = Math.max(0, Number(cfg.max_per_participant || 0));
+    if (maxPerParticipant > 0) out.max_per_participant = maxPerParticipant;
+    if (outMode === "llista") {
+      const idsRaw = Array.isArray(cfg.ids) ? cfg.ids.join(",") : cfg.ids;
+      out.ids = parsePositiveIds(idsRaw || "");
+    }
+    return out;
+  }
+
+  function normalizeTieExercicisPerAparellMap(rawMap){
+    const out = {};
+    if (!rawMap || typeof rawMap !== "object" || Array.isArray(rawMap)) return out;
+    Object.entries(rawMap).forEach(([k, v]) => {
+      const appId = Number(k);
+      if (!Number.isFinite(appId) || appId <= 0) return;
+      out[String(appId)] = normalizeTieExercicisCfg(v);
+    });
+    return out;
+  }
+
+  function getTieInheritedAppIds(){
+    const ids = selectedAparellIdsFromUI();
+    if (ids.length) return ids;
+    return getAppChoices([], { includeStale: false }).map(a => a.id);
+  }
+
+  function getTieTargetAppIds(tr){
+    const appScope = String(tr.querySelector('[data-k="app_scope"]')?.value || "hereta");
+    if (appScope === "tots") return getAppChoices([], { includeStale: false }).map(a => a.id);
+    if (appScope.startsWith("app:")) {
+      const id = Number(appScope.split(":")[1]);
+      return Number.isFinite(id) ? [id] : [];
+    }
+    const rawTie = tr && tr.__tieSourceRaw && typeof tr.__tieSourceRaw === "object" ? tr.__tieSourceRaw : null;
+    const rawPipelineIds = rawTie ? getTiePipelineVisibleAppIds(rawTie) : [];
+    if (rawPipelineIds.length) return rawPipelineIds;
+    return getTieInheritedAppIds();
+  }
+
+  function tiePerAppExercicisHTML(tr, compAparellId, exCfg){
+    const cfg = normalizeTieExercicisCfg(exCfg);
+    const mode = String(cfg.mode || "tots").toLowerCase().trim();
+    const bestN = Math.max(1, Number(cfg.best_n || 1));
+    const index = Math.max(1, Number(cfg.index || 1));
+    const maxPerParticipant = Math.max(0, Number(cfg.max_per_participant || 0));
+    const ids = Array.isArray(cfg.ids) ? cfg.ids.join(",") : "";
+    const aggEx = normalizeTieAggValue(readTiePerAppAggState(tr)[String(compAparellId)] || "sum", "sum");
+    const app = getAparellById(compAparellId);
+    const appName = app ? app.nom : `Aparell ${compAparellId}`;
+    const showMaxPerParticipant = !isDerivedExerciseSelectionScopeAvailable() || getEffectiveTieExerciseSelectionScope(tr?.querySelector('[data-k="ex_scope"]')?.value || EXERCISE_SELECTION_SCOPE_INHERIT) === EXERCISE_SELECTION_SCOPE_TEAM_POOL;
+    return `
+      <div class="border rounded p-2 mt-2" data-k="tie_app_ex_card" data-app-id="${esc(compAparellId)}">
+        <div class="small font-weight-bold mb-1">${esc(appName)} (${esc(compAparellId)})</div>
+        <select class="form-control form-control-sm mb-1" data-k="tie_app_ex_mode" data-app-id="${esc(compAparellId)}">
+          <option value="tots" ${mode==="tots" ? "selected" : ""}>Tots</option>
+          <option value="millor_1" ${mode==="millor_1" ? "selected" : ""}>Millor 1</option>
+          <option value="millor_n" ${mode==="millor_n" ? "selected" : ""}>Millors N</option>
+          <option value="pitjor_1" ${mode==="pitjor_1" ? "selected" : ""}>Pitjor 1</option>
+          <option value="pitjor_n" ${mode==="pitjor_n" ? "selected" : ""}>Pitjors N</option>
+          <option value="primer" ${mode==="primer" ? "selected" : ""}>Primer existent</option>
+          <option value="ultim" ${mode==="ultim" ? "selected" : ""}>Últim existent</option>
+          <option value="index" ${mode==="index" ? "selected" : ""}>Exercici #</option>
+          <option value="llista" ${mode==="llista" ? "selected" : ""}>Exercicis (llista)</option>
+        </select>
+        <input class="form-control form-control-sm mb-1"
+               data-k="tie_app_ex_best_n" data-app-id="${esc(compAparellId)}"
+               type="number" min="1" value="${esc(bestN)}" placeholder="N">
+        <input class="form-control form-control-sm mb-1"
+               data-k="tie_app_ex_index" data-app-id="${esc(compAparellId)}"
+               type="number" min="1" value="${esc(index)}" placeholder="Índex">
+        <input class="form-control form-control-sm mb-1"
+               data-k="tie_app_ex_max_pp" data-app-id="${esc(compAparellId)}"
+               type="number" min="0" value="${esc(maxPerParticipant)}" placeholder="Max N per participant (0 = sense limit)" style="${showMaxPerParticipant ? "" : "display:none;"}">
+        <input class="form-control form-control-sm"
+               data-k="tie_app_ex_ids" data-app-id="${esc(compAparellId)}"
+               type="text" value="${esc(ids)}" placeholder="Llista (ex: 1,3,4)">
+        <select class="form-control form-control-sm mt-1" data-k="tie_app_ex_agg" data-app-id="${esc(compAparellId)}">
+          <option value="sum" ${aggEx==="sum" ? "selected" : ""}>Agregacio exercicis: Suma</option>
+          <option value="avg" ${aggEx==="avg" ? "selected" : ""}>Agregacio exercicis: Mitjana</option>
+          <option value="median" ${aggEx==="median" ? "selected" : ""}>Agregacio exercicis: Mediana</option>
+          <option value="max" ${aggEx==="max" ? "selected" : ""}>Agregacio exercicis: Maxim</option>
+          <option value="min" ${aggEx==="min" ? "selected" : ""}>Agregacio exercicis: Minim</option>
+        </select>
+      </div>
+    `;
+  }
+
+  function refreshTiePerAppExCardUI(card){
+    const modeSel = card.querySelector('[data-k="tie_app_ex_mode"]');
+    if (!modeSel) return;
+    const mode = String(modeSel.value || "tots").toLowerCase().trim();
+    const best = card.querySelector('[data-k="tie_app_ex_best_n"]');
+    const idx = card.querySelector('[data-k="tie_app_ex_index"]');
+    const max = card.querySelector('[data-k="tie_app_ex_max_pp"]');
+    const ids = card.querySelector('[data-k="tie_app_ex_ids"]');
+    const tr = card.closest("tr");
+    const showMaxPerParticipant = !isDerivedExerciseSelectionScopeAvailable() || getEffectiveTieExerciseSelectionScope(tr?.querySelector('[data-k="ex_scope"]')?.value || EXERCISE_SELECTION_SCOPE_INHERIT) === EXERCISE_SELECTION_SCOPE_TEAM_POOL;
+    if (best) best.style.display = isBestNMode(mode) ? "" : "none";
+    if (idx) idx.style.display = (mode === "index") ? "" : "none";
+    if (max) max.style.display = showMaxPerParticipant ? "" : "none";
+    if (ids) ids.style.display = (mode === "llista") ? "" : "none";
+  }
+
+  function readTiePerAppState(tr){
+    const stateNode = tr.querySelector('[data-k="ex_per_app_state"]');
+    if (!stateNode) return {};
+    try {
+      return normalizeTieExercicisPerAparellMap(JSON.parse(stateNode.value || "{}"));
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function writeTiePerAppState(tr, map){
+    const stateNode = tr.querySelector('[data-k="ex_per_app_state"]');
+    if (!stateNode) return;
+    try {
+      stateNode.value = JSON.stringify(normalizeTieExercicisPerAparellMap(map || {}));
+    } catch (_) {
+      stateNode.value = "{}";
+    }
+  }
+
+  function readTiePerAppAggState(tr){
+    const stateNode = tr.querySelector('[data-k="ex_agg_per_app_state"]');
+    if (!stateNode) return {};
+    try {
+      return normalizeTiePipelineAggMap(JSON.parse(stateNode.value || "{}"), {}, [], "sum");
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function writeTiePerAppAggState(tr, map){
+    const stateNode = tr.querySelector('[data-k="ex_agg_per_app_state"]');
+    if (!stateNode) return;
+    try {
+      stateNode.value = JSON.stringify(normalizeTiePipelineAggMap(map || {}, {}, [], "sum"));
+    } catch (_) {
+      stateNode.value = "{}";
+    }
+  }
+
+  function collectVisibleTiePerAppOverrides(tr, fallbackMap){
+    const box = tr.querySelector('[data-k="ex_per_app_box"]');
+    let state = normalizeTieExercicisPerAparellMap(fallbackMap || readTiePerAppState(tr));
+    if (!box) {
+      writeTiePerAppState(tr, state);
+      return state;
+    }
+
+    box.querySelectorAll('[data-k="tie_app_ex_mode"]').forEach(sel => {
+      const appId = String(sel.getAttribute("data-app-id") || "").trim();
+      if (!appId) return;
+      const mode = String(sel.value || "tots").toLowerCase().trim();
+      const bestNode = box.querySelector(`[data-k="tie_app_ex_best_n"][data-app-id="${appId}"]`);
+      const idxNode = box.querySelector(`[data-k="tie_app_ex_index"][data-app-id="${appId}"]`);
+      const maxNode = box.querySelector(`[data-k="tie_app_ex_max_pp"][data-app-id="${appId}"]`);
+      const idsNode = box.querySelector(`[data-k="tie_app_ex_ids"][data-app-id="${appId}"]`);
+      const cfg = { mode };
+      if (isBestNMode(mode)) cfg.best_n = Math.max(1, Number(bestNode?.value || 1));
+      if (mode === "index") cfg.index = Math.max(1, Number(idxNode?.value || 1));
+      const maxPerParticipant = Math.max(0, Number(maxNode?.value || 0));
+      if ((!isDerivedExerciseSelectionScopeAvailable() || getEffectiveTieExerciseSelectionScope(tr.querySelector('[data-k="ex_scope"]')?.value || EXERCISE_SELECTION_SCOPE_INHERIT) === EXERCISE_SELECTION_SCOPE_TEAM_POOL) && maxPerParticipant > 0) {
+        cfg.max_per_participant = maxPerParticipant;
+      }
+      if (mode === "llista") cfg.ids = parsePositiveIds(idsNode?.value || "");
+      state[appId] = cfg;
+    });
+
+    writeTiePerAppState(tr, state);
+    return state;
+  }
+
+  function collectVisibleTiePerAppAggOverrides(tr, fallbackMap){
+    const box = tr.querySelector('[data-k="ex_per_app_box"]');
+    let state = normalizeTiePipelineAggMap(fallbackMap || readTiePerAppAggState(tr), {}, [], "sum");
+    if (!box) {
+      writeTiePerAppAggState(tr, state);
+      return state;
+    }
+
+    box.querySelectorAll('[data-k="tie_app_ex_agg"]').forEach(sel => {
+      const appId = String(sel.getAttribute("data-app-id") || "").trim();
+      if (!appId) return;
+      state[appId] = normalizeTieAggValue(sel.value || "sum", "sum");
+    });
+
+    writeTiePerAppAggState(tr, state);
+    return state;
+  }
+
+  function readTiePerAppExercicisFromRow(tr, fallbackMap){
+    if (isTieExerciseSelectionLockedToMainPool(tr.querySelector('[data-k="ex_scope"]')?.value || EXERCISE_SELECTION_SCOPE_INHERIT)) {
+      writeTiePerAppState(tr, {});
+      return {};
+    }
+    const modeSel = normalizeTieModeSeleccioExercicis(tr.querySelector('[data-k="ex_sel_mode"]')?.value || "hereta");
+    let state = normalizeTieExercicisPerAparellMap(fallbackMap || readTiePerAppState(tr));
+    if (modeSel === "per_aparell_override") {
+      state = collectVisibleTiePerAppOverrides(tr, state);
+    } else {
+      writeTiePerAppState(tr, state);
+    }
+    return state;
+  }
+
+  function readTiePerAppAggExercicisFromRow(tr, fallbackMap){
+    if (isTieExerciseSelectionLockedToMainPool(tr.querySelector('[data-k="ex_scope"]')?.value || EXERCISE_SELECTION_SCOPE_INHERIT)) {
+      writeTiePerAppAggState(tr, {});
+      return {};
+    }
+    const modeSel = normalizeTieModeSeleccioExercicis(tr.querySelector('[data-k="ex_sel_mode"]')?.value || "hereta");
+    let state = normalizeTiePipelineAggMap(fallbackMap || readTiePerAppAggState(tr), {}, [], "sum");
+    if (modeSel === "per_aparell_override") {
+      state = collectVisibleTiePerAppAggOverrides(tr, state);
+    } else {
+      writeTiePerAppAggState(tr, state);
+    }
+    return state;
+  }
+
+  function renderTiePerAppExercicisUI(tr){
+    if (isTieExerciseSelectionLockedToMainPool(tr.querySelector('[data-k="ex_scope"]')?.value || EXERCISE_SELECTION_SCOPE_INHERIT)) {
+      writeTiePerAppState(tr, {});
+      writeTiePerAppAggState(tr, {});
+      const box = tr.querySelector('[data-k="ex_per_app_box"]');
+      if (box) {
+        box.style.display = "none";
+        box.innerHTML = "";
+      }
+      return;
+    }
+    const modeSel = normalizeTieModeSeleccioExercicis(tr.querySelector('[data-k="ex_sel_mode"]')?.value || "hereta");
+    const box = tr.querySelector('[data-k="ex_per_app_box"]');
+    if (!box) return;
+    if (modeSel !== "per_aparell_override") {
+      box.style.display = "none";
+      box.innerHTML = "";
+      return;
+    }
+
+    const state = collectVisibleTiePerAppOverrides(tr);
+    collectVisibleTiePerAppAggOverrides(tr);
+    const appIds = _uniquePositiveInts(getTieTargetAppIds(tr));
+    box.style.display = "";
+    if (!appIds.length) {
+      box.innerHTML = `<div class="small text-muted mt-1">Sense aparells disponibles per definir override.</div>`;
+      return;
+    }
+
+    box.innerHTML = appIds.map(appId => {
+      const key = String(appId);
+      return tiePerAppExercicisHTML(tr, key, state[key] || {});
+    }).join("");
+
+    box.querySelectorAll('[data-k="tie_app_ex_card"]').forEach(card => refreshTiePerAppExCardUI(card));
+    box.querySelectorAll('[data-k="tie_app_ex_mode"], [data-k="tie_app_ex_best_n"], [data-k="tie_app_ex_index"], [data-k="tie_app_ex_max_pp"], [data-k="tie_app_ex_ids"], [data-k="tie_app_ex_agg"]').forEach(node => {
+      node.addEventListener("change", () => {
+        if (node.matches('[data-k="tie_app_ex_mode"]')) {
+          const card = node.closest('[data-k="tie_app_ex_card"]');
+          if (card) refreshTiePerAppExCardUI(card);
+        }
+        collectVisibleTiePerAppOverrides(tr);
+        collectVisibleTiePerAppAggOverrides(tr);
+        syncAdvancedFromUI();
+      });
+      node.addEventListener("input", () => {
+        collectVisibleTiePerAppOverrides(tr);
+        collectVisibleTiePerAppAggOverrides(tr);
+        syncAdvancedFromUI();
+      });
+    });
+  }
+
+  function readTieCampsFromRow(tr) {
+    const campsSel = tr.querySelector('[data-k="camps"]');
+    const aggSel = tr.querySelector('[data-k="agg_camps"]');
+    const camps = Array.from(campsSel?.selectedOptions || []).map(o => String(o.value)).filter(Boolean);
+    const agg = String(aggSel?.value || "hereta").toLowerCase();
+    return {
+      camps: camps,
+      agregacio_camps: ["hereta","sum","avg","median","max","min"].includes(agg) ? agg : "hereta",
+    };
+  }
+
+  function readParticipantsFromRow(tr) {
+    const pModeEl = tr.querySelector('[data-k="p_mode"]');
+    const pNEl = tr.querySelector('[data-k="p_n"]');
+    const pAggEl = tr.querySelector('[data-k="p_agg"]');
+    const pMode = pModeEl ? pModeEl.value : "tots";
+    const pN = pNEl ? Number(pNEl.value || 1) : 1;
+    const pAgg = pAggEl ? pAggEl.value : "sum";
+    return { pMode, pN, pAgg };
+  }
+
+  function applyParticipantsToObj(obj, rowParticipants) {
+    const { pMode, pN, pAgg } = rowParticipants || {};
+    obj.scope.participants = { mode: pMode || "tots" };
+    if (isParticipantsModeWithN(pMode)) obj.scope.participants.n = pN;
+    obj.agregacio_participants = pAgg || "sum";
+  }
+
+  function readTieObjFromRow(tr, includeParticipants) {
+    const campCfg = readTieCampsFromRow(tr);
+    const ordre = tr.querySelector('[data-k="ordre"]').value;
+    const nom = String(tr.querySelector('[data-k="tie_nom"]')?.value || "").trim();
+
+    const appScope = tr.querySelector('[data-k="app_scope"]').value; // hereta|app:<id>
+    const exScope = normalizeTieExerciseSelectionScope(tr.querySelector('[data-k="ex_scope"]')?.value || "hereta");
+    const fixedTeamPool = isTieExerciseSelectionLockedToMainPool(exScope);
+    const exSelMode = normalizeTieModeSeleccioExercicis(tr.querySelector('[data-k="ex_sel_mode"]')?.value || "hereta");
+    const exMode = tr.querySelector('[data-k="ex_mode"]').value; // hereta|tots|millor_1|millor_n|pitjor_1|pitjor_n|primer|ultim|index|llista
+    const bestN = Number(tr.querySelector('[data-k="ex_best_n"]').value || 1);
+    const exIndex = Number(tr.querySelector('[data-k="ex_index"]').value || 1);
+    const exMaxPP = Math.max(0, Number(tr.querySelector('[data-k="ex_max_pp"]')?.value || 0));
+    const exIds = parsePositiveIds(tr.querySelector('[data-k="ex_ids"]').value || "");
+    const exPerApp = readTiePerAppExercicisFromRow(tr);
+    const aggExPerApp = readTiePerAppAggExercicisFromRow(tr);
+    const allowMaxPerParticipant = !isDerivedExerciseSelectionScopeAvailable() || getEffectiveTieExerciseSelectionScope(exScope) === EXERCISE_SELECTION_SCOPE_TEAM_POOL;
+
+    const obj = {
+      id: String(tr.dataset.tieId || ""),
+      nom,
+      camps: campCfg.camps,
+      agregacio_camps: campCfg.agregacio_camps,
+      ordre,
+    };
+    obj.scope = {
+      aparells: { mode: "hereta" },
+    };
+
+    if (appScope.startsWith("app:")) {
+      const id = Number(appScope.split(":")[1]);
+      if (!isNaN(id)) {
+        obj.scope.aparells.mode = "seleccionar";
+        obj.scope.aparells.ids = [id];
+      }
+    }
+
+    if (isDerivedExerciseSelectionScopeAvailable() && exScope !== EXERCISE_SELECTION_SCOPE_INHERIT) {
+      obj.exercise_selection_scope = exScope;
+    }
+
+    if (!fixedTeamPool) {
+      obj.scope.exercicis = { mode: exMode };
+      if (exMode === "millor_n" || exMode === "pitjor_n") obj.scope.exercicis.best_n = bestN;
+      if (exMode === "index") obj.scope.exercicis.index = exIndex;
+      if (allowMaxPerParticipant && exMaxPP > 0) {
+        obj.scope.exercicis.max_per_participant = exMaxPP;
+      }
+      if (exMode === "llista") obj.scope.exercicis.ids = exIds;
+      if (exSelMode !== "hereta") obj.mode_seleccio_exercicis = exSelMode;
+      if (exSelMode === "per_aparell_override") {
+        obj.exercicis_per_aparell = exPerApp;
+        obj.agregacio_exercicis_per_aparell = aggExPerApp;
+        obj.agregacio_exercicis = buildLegacyAggFromPerAppMap(getTieTargetAppIds(tr), aggExPerApp, "sum");
+      }
+    }
+
+    if (includeParticipants && !fixedTeamPool) {
+      applyParticipantsToObj(obj, readParticipantsFromRow(tr));
+    }
+
+    return obj;
+  }
+
+  function normalizeVictoryTieModeSeleccioExercicis(rawMode){
+    const mode = normalizeTieModeSeleccioExercicis(rawMode);
+    if (["hereta","per_aparell_global","per_aparell_override","global_pool"].includes(mode)) return mode;
+    return "hereta";
+  }
+
+  function readVictoryTieObjFromRow(tr) {
+    const campCfg = readTieCampsFromRow(tr);
+    const ordre = tr.querySelector('[data-k="ordre"]').value;
+    const exSelMode = normalizeVictoryTieModeSeleccioExercicis(tr.querySelector('[data-k="ex_sel_mode"]')?.value || "hereta");
+    const exMode = tr.querySelector('[data-k="ex_mode"]').value;
+    const bestN = Number(tr.querySelector('[data-k="ex_best_n"]').value || 1);
+    const exIndex = Number(tr.querySelector('[data-k="ex_index"]').value || 1);
+    const exMaxPP = Math.max(0, Number(tr.querySelector('[data-k="ex_max_pp"]')?.value || 0));
+    const exIds = parsePositiveIds(tr.querySelector('[data-k="ex_ids"]').value || "");
+    const exPerApp = readTiePerAppExercicisFromRow(tr);
+    const aggExPerApp = readTiePerAppAggExercicisFromRow(tr);
+
+    const obj = {
+      camps: campCfg.camps,
+      agregacio_camps: campCfg.agregacio_camps,
+      ordre,
+      scope: {
+        exercicis: { mode: exMode },
+      },
+    };
+
+    if (exMode === "millor_n" || exMode === "pitjor_n") obj.scope.exercicis.best_n = bestN;
+    if (exMode === "index") obj.scope.exercicis.index = exIndex;
+    if (exMaxPP > 0) obj.scope.exercicis.max_per_participant = exMaxPP;
+    if (exMode === "llista") obj.scope.exercicis.ids = exIds;
+    if (exSelMode !== "hereta") obj.mode_seleccio_exercicis = exSelMode;
+    if (exSelMode === "per_aparell_override") {
+      obj.exercicis_per_aparell = exPerApp;
+      obj.agregacio_exercicis_per_aparell = aggExPerApp;
+      obj.agregacio_exercicis = buildLegacyAggFromPerAppMap(getTieInheritedAppIds(), aggExPerApp, "sum");
+    }
+    return obj;
+  }
+
+  function readVictoryTieUI(includeInvalid) {
+    const out = [];
+    document.querySelectorAll("#victoryTieBody tr").forEach(tr => {
+      const item = readVictoryTieObjFromRow(tr);
+      if (includeInvalid || (item.camps || []).length) out.push(item);
+    });
+    return out;
+  }
+
+  function renderVictoryTieUI(list) {
+    if (!els.victoryTieBody) return;
+    const rows = Array.isArray(list) ? list : [];
+    const appIds = getTieInheritedAppIds();
+    els.victoryTieBody.innerHTML = "";
+
+    rows.forEach((t, idx) => {
+      const tr = document.createElement("tr");
+      const scope = t && typeof t === "object" ? (t.scope || {}) : {};
+      const sEx = scope && typeof scope === "object" ? (scope.exercicis || {}) : {};
+      const tieCamps = normalizeTieCampsFromObj(t || {});
+      const tieAggCamps = normalizeTieAggCampsFromObj(t || {});
+      const ordre = String((t && t.ordre) || "desc").toLowerCase();
+      const exSelMode = normalizeVictoryTieModeSeleccioExercicis(
+        (t && (t.mode_seleccio_exercicis || (sEx && sEx.mode_seleccio_exercicis))) || "hereta"
+      );
+      let exMode = String((sEx && sEx.mode) || "hereta").toLowerCase().trim();
+      if (!["hereta","tots","millor_1","millor_n","pitjor_1","pitjor_n","primer","ultim","index","llista"].includes(exMode)) exMode = "hereta";
+      const exBestN = Math.max(1, Number((sEx && sEx.best_n) || 1));
+      const exIndex = Math.max(1, Number((sEx && sEx.index) || 1));
+      const exMaxPP = Math.max(0, Number((sEx && sEx.max_per_participant) || 0));
+      const exIds = Array.isArray(sEx && sEx.ids) ? sEx.ids : [];
+      const exIdsStr = exIds.length ? exIds.join(",") : "";
+      const exPerAppSeed = normalizeTieExercicisPerAparellMap((t && t.exercicis_per_aparell) || {});
+      const exAggPerAppSeed = normalizeTiePipelineAggMap(
+        (t && t.agregacio_exercicis_per_aparell) || {},
+        {},
+        appIds,
+        (t && t.agregacio_exercicis) || "sum",
+      );
+
+      tr.innerHTML = `
+        <td data-cell="camp"></td>
+        <td>
+          <div class="d-flex flex-column gap-1">
+            <select class="form-control form-control-sm" data-k="ex_sel_mode">
+              <option value="hereta">Selecció ex: Mateixa que puntuació</option>
+              <option value="per_aparell_global">Selecció ex: Per aparell (global)</option>
+              <option value="per_aparell_override">Selecció ex: Per aparell (override)</option>
+              <option value="global_pool">Selecció ex: Sac global</option>
+            </select>
+            <select class="form-control form-control-sm" data-k="ex_mode">
+              <option value="hereta">Tractament: Mateix que puntuació</option>
+              <option value="tots">Tots</option>
+              <option value="millor_1">Millor 1</option>
+              <option value="millor_n">Millors N</option>
+              <option value="pitjor_1">Pitjor 1</option>
+              <option value="pitjor_n">Pitjors N</option>
+              <option value="primer">Primer existent</option>
+              <option value="ultim">Últim existent</option>
+              <option value="index">Exercici #</option>
+              <option value="llista">Exercicis (llista)</option>
+            </select>
+            <div class="d-flex gap-1">
+              <input class="form-control form-control-sm" data-k="ex_best_n" type="number" min="1" value="1" style="display:none;" placeholder="N">
+              <input class="form-control form-control-sm" data-k="ex_index" type="number" min="1" value="1" style="display:none;" placeholder="Índex">
+            </div>
+            <input class="form-control form-control-sm" data-k="ex_max_pp" type="number" min="0" value="0" style="display:none;" placeholder="Max N per participant (0 = sense limit)">
+            <input class="form-control form-control-sm" data-k="ex_ids" type="text" style="display:none;" placeholder="ex: 1,3,4">
+            <input type="hidden" data-k="ex_per_app_state" value="{}">
+            <input type="hidden" data-k="ex_agg_per_app_state" value="{}">
+            <div data-k="ex_per_app_box" style="display:none;"></div>
+            <div class="small text-muted" data-k="ex_hint" style="display:none;"></div>
+          </div>
+        </td>
+        <td>
+          <select class="form-control form-control-sm" data-k="ordre">
+            <option value="desc">Desc</option>
+            <option value="asc">Asc</option>
+          </select>
+        </td>
+        <td class="text-right">
+          <button type="button" class="btn btn-sm btn-outline-danger" data-act="del">×</button>
+        </td>
+      `;
+
+      const campCell = tr.querySelector('[data-cell="camp"]');
+      const exSelModeSel = tr.querySelector('[data-k="ex_sel_mode"]');
+      const exModeSel = tr.querySelector('[data-k="ex_mode"]');
+      const exBestNEl = tr.querySelector('[data-k="ex_best_n"]');
+      const exIndexEl = tr.querySelector('[data-k="ex_index"]');
+      const exMaxPPEl = tr.querySelector('[data-k="ex_max_pp"]');
+      const exIdsEl = tr.querySelector('[data-k="ex_ids"]');
+      const exHint = tr.querySelector('[data-k="ex_hint"]');
+      const ordSel = tr.querySelector('[data-k="ordre"]');
+
+      campCell.innerHTML = buildCampSelectHTMLForApps(appIds, tieCamps, tieAggCamps);
+      ensureSelectOption(exSelModeSel, exSelMode, value => `${value} (legacy)`);
+      exSelModeSel.value = exSelMode;
+      ensureSelectOption(exModeSel, exMode, value => `${value} (legacy)`);
+      exModeSel.value = exMode;
+      exBestNEl.value = exBestN;
+      exIndexEl.value = exIndex;
+      exMaxPPEl.value = exMaxPP;
+      exIdsEl.value = exIdsStr;
+      writeTiePerAppState(tr, exPerAppSeed);
+      writeTiePerAppAggState(tr, exAggPerAppSeed);
+      ensureSelectOption(ordSel, ordre, value => `${value} (legacy)`);
+      ordSel.value = ordre;
+
+      function refreshExUI() {
+        const m = String(exModeSel.value || "hereta").toLowerCase().trim();
+        const modeSel = normalizeVictoryTieModeSeleccioExercicis(exSelModeSel.value);
+        const isOverride = modeSel === "per_aparell_override";
+        exModeSel.style.display = isOverride ? "none" : "";
+        exBestNEl.style.display = !isOverride && (m === "millor_n" || m === "pitjor_n") ? "" : "none";
+        exIndexEl.style.display = !isOverride && (m === "index") ? "" : "none";
+        exMaxPPEl.style.display = !isOverride && (m === "hereta") ? "none" : (!isOverride ? "" : "none");
+        exIdsEl.style.display = !isOverride && (m === "llista") ? "" : "none";
+        renderTiePerAppExercicisUI(tr);
+
+        if (m === "millor_n") exHint.textContent = "Tria els N millors exercicis.";
+        else if (m === "pitjor_n") exHint.textContent = "Tria els N pitjors exercicis.";
+        else if (m === "pitjor_1") exHint.textContent = "Agafa el pitjor exercici existent.";
+        else if (m === "primer") exHint.textContent = "Agafa el primer exercici existent.";
+        else if (m === "ultim") exHint.textContent = "Agafa l'últim exercici existent.";
+        else if (m === "index") exHint.textContent = "Fa servir només l'exercici # (1..N).";
+        else if (m === "llista") exHint.textContent = "Llista d'índexs: 1,3,4.";
+        else if (isOverride) exHint.textContent = "Override per aparell actiu.";
+        else exHint.textContent = "";
+
+        if (exHint.textContent) {
+          if (modeSel === "global_pool") exHint.textContent += " Aplicat al sac global.";
+          else if (modeSel === "per_aparell_global") exHint.textContent += " Aplicat per aparell.";
+          exHint.style.display = "";
+        } else {
+          exHint.style.display = "none";
+        }
+      }
+
+      refreshExUI();
+
+      tr.addEventListener("change", (e) => {
+        if (e.target && e.target.matches('[data-k="camps"],[data-k="agg_camps"],[data-k="ordre"],[data-k="ex_sel_mode"],[data-k="ex_mode"],[data-k="ex_best_n"],[data-k="ex_index"],[data-k="ex_max_pp"],[data-k="ex_ids"],[data-k="tie_app_ex_agg"]')) {
+          refreshExUI();
+          syncAdvancedFromUI();
+        }
+      });
+      tr.addEventListener("input", (e) => {
+        if (e.target && e.target.matches('[data-k="ex_best_n"],[data-k="ex_index"],[data-k="ex_max_pp"],[data-k="ex_ids"],[data-k="tie_app_ex_agg"]')) {
+          syncAdvancedFromUI();
+        }
+      });
+
+      tr.querySelector('[data-act="del"]').addEventListener("click", () => {
+        const cur = readVictoryTieUI(true);
+        cur.splice(idx, 1);
+        renderVictoryTieUI(cur);
+        syncAdvancedFromUI();
+      });
+
+      els.victoryTieBody.appendChild(tr);
+    });
+
+    refreshVictoryTieVisibility();
+  }
+
+  function setParticipantsUI(tr, pMode, pN, pAgg) {
+    const pModeSel = tr.querySelector('[data-k="p_mode"]');
+    const pNEl = tr.querySelector('[data-k="p_n"]');
+    const pAggSel = tr.querySelector('[data-k="p_agg"]');
+    if (pModeSel) pModeSel.value = pMode;
+    if (pNEl) pNEl.value = pN;
+    if (pAggSel) pAggSel.value = pAgg;
+  }
+
+  function refreshParticipantsControls(tr) {
+    const pModeSel = tr.querySelector('[data-k="p_mode"]');
+    const pNEl = tr.querySelector('[data-k="p_n"]');
+    const pAggSel = tr.querySelector('[data-k="p_agg"]');
+    const pLockedNote = tr.querySelector('[data-k="p_locked_note"]');
+    if (!pModeSel || !pNEl || !pAggSel) return;
+    const fixedTeamPool = isTieExerciseSelectionLockedToMainPool(
+      tr.querySelector('[data-k="ex_scope"]')?.value || EXERCISE_SELECTION_SCOPE_INHERIT
+    );
+    if (fixedTeamPool) {
+      pModeSel.style.display = "none";
+      pNEl.style.display = "none";
+      pAggSel.style.display = "none";
+      if (pLockedNote) pLockedNote.style.display = "";
+      return;
+    }
+    if (pLockedNote) pLockedNote.style.display = "none";
+    pModeSel.style.display = "";
+    pAggSel.style.display = "";
+    const m = pModeSel.value;
+    pNEl.style.display = isParticipantsModeWithN(m) ? "" : "none";
+  }
+
+  function bindParticipantsListeners(tr) {
+    const pModeSel = tr.querySelector('[data-k="p_mode"]');
+    const pNEl = tr.querySelector('[data-k="p_n"]');
+    const pAggSel = tr.querySelector('[data-k="p_agg"]');
+    if (pModeSel) {
+      pModeSel.addEventListener("change", () => {
+        refreshParticipantsControls(tr);
+        syncAdvancedFromUI();
+      });
+    }
+    if (pNEl) pNEl.addEventListener("input", syncAdvancedFromUI);
+    if (pAggSel) pAggSel.addEventListener("change", syncAdvancedFromUI);
+  }
+
+  function normalizeParticipantsFromTie(t) {
+    const scope = t.scope || {};
+    const sParts = scope.participants || {};
+    let pMode = (sParts.mode || "hereta").toLowerCase().trim();
+    if (pMode === "hereta") pMode = "tots";
+    if (!["tots","millor_1","millor_n","pitjor_1","pitjor_n"].includes(pMode)) pMode = "tots";
+    const pN = Number(sParts.n || 1);
+    const pAgg = (t.agregacio_participants || "sum").toLowerCase();
+    return { pMode, pN, pAgg };
+  }
+
+  function addDefaultTieCriterion(cur, includeParticipants) {
+    const item = {
+      id: `tie_${Math.random().toString(16).slice(2)}`,
+      nom: `Desempat ${cur.length + 1}`,
+      camps: [],
+      agregacio_camps: "hereta",
+      ordre: "desc",
+      pipeline_version: 1,
+      scope: {
+        aparells: { mode: "hereta" },
+        exercicis: { mode: "hereta" },
+      },
+    };
+    if (includeParticipants) {
+      const defaults = getParticipantsDefaults();
+      item.scope.participants = defaults.participants;
+      item.agregacio_participants = defaults.agregacio_participants;
+    }
+    cur.push(item);
+  }
+
+  function _equipsOptionsHTML(selectedIds) {
+    const selected = new Set((selectedIds || []).map(x => String(x)));
+    const selectedContextCode = String(els.eqAssignmentContext?.value || "native").trim() || "native";
+    return (EQUIPS || []).filter((e) => {
+      const teamContextCode = String(e?.context_code || "native").trim() || "native";
+      return teamContextCode === selectedContextCode;
+    }).map(e => `
+      <option value="${esc(e.id)}" ${selected.has(String(e.id)) ? "selected" : ""}>
+        ${esc(e.nom)} (${esc(e.membres_count || 0)})
+      </option>
+    `).join("");
+  }
+
+  function renderEquipContextOptions(selectedCode) {
+    if (!els.eqAssignmentContext) return;
+    const target = String(selectedCode || "native");
+    els.eqAssignmentContext.innerHTML = (EQUIP_CONTEXTS || []).map(ctx => {
+      const code = String(ctx.code || "native");
+      const label = String(ctx.nom || code);
+      const suffix = code === "native" ? "base" : code;
+      const description = String(ctx.description || "").trim();
+      return `<option value="${esc(code)}" ${code === target ? "selected" : ""} title="${esc(description)}">${esc(label)}${suffix ? ` (${esc(suffix)})` : ""}</option>`;
+    }).join("");
+    ensureSelectOption(els.eqAssignmentContext, target, code => `${code} (context no disponible)`);
+    els.eqAssignmentContext.value = target;
+    const ctxMeta = (EQUIP_CONTEXTS || []).find(ctx => String(ctx.code || "native") === target);
+    if (els.eqAssignmentContextHint) {
+      if (ctxMeta) {
+        const description = String(ctxMeta.description || "").trim();
+        els.eqAssignmentContextHint.textContent = description || `Context seleccionat: ${String(ctxMeta.nom || target)}`;
+      } else {
+        els.eqAssignmentContextHint.textContent = `Context guardat no disponible actualment: ${target}.`;
+      }
+    }
+  }
+
+  function usePortableEquipNameRows() {
+    return BUILDER_MODE === "global";
+  }
+
+  function splitPortableEquipNames(raw) {
+    const text = String(raw || "");
+    const seen = new Set();
+    return text
+      .split(/[\n,;]+/g)
+      .map(part => part.trim())
+      .filter(Boolean)
+      .filter(name => {
+        const key = name.toLocaleLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+  }
+
+  function renderEquipManualRows(rows) {
+    if (!els.eqManualRows) return;
+    const data = Array.isArray(rows) ? rows : [];
+    els.eqManualRows.innerHTML = "";
+
+    if (!data.length) {
+      els.eqManualRows.innerHTML = `<div class="small text-muted">Cap partició manual definida.</div>`;
+      return;
+    }
+
+    data.forEach((r, idx) => {
+      const label = (r && (r.label || r.key) || "").toString();
+      const equipIds = Array.isArray(r && r.equip_ids) ? r.equip_ids : [];
+      const equipNames = Array.isArray(r && r.equips_noms) ? r.equips_noms : [];
+      const teamFieldHtml = usePortableEquipNameRows()
+        ? `<input class="form-control form-control-sm" data-k="equips_noms" type="text" value="${esc(equipNames.join(", "))}" placeholder="Equip A, Equip B">`
+        : `<select class="form-control form-control-sm" data-k="equip_ids" multiple size="4">
+              ${_equipsOptionsHTML(equipIds)}
+            </select>`;
+      const teamFieldLabel = usePortableEquipNameRows() ? "Equips (noms)" : "Equips";
+
+      const row = document.createElement("div");
+      row.className = "eq-manual-row border rounded p-2 mb-2";
+      row.innerHTML = `
+        <div class="row">
+          <div class="col-12 col-md-4 mb-2">
+            <label class="small text-muted mb-1">Etiqueta</label>
+            <input class="form-control form-control-sm" data-k="label" type="text" value="${esc(label)}" placeholder="Bloc A">
+          </div>
+          <div class="col-12 col-md-7 mb-2">
+            <label class="small text-muted mb-1">${teamFieldLabel}</label>
+            ${teamFieldHtml}
+          </div>
+          <div class="col-12 col-md-1 d-flex align-items-end mb-2">
+            <button type="button" class="btn btn-sm btn-outline-danger w-100" data-act="del">-</button>
+          </div>
+        </div>
+      `;
+
+      row.querySelector('[data-act="del"]').addEventListener("click", () => {
+        const cur = readEquipManualRows();
+        cur.splice(idx, 1);
+        renderEquipManualRows(cur);
+        syncAdvancedFromUI();
+      });
+
+      row.querySelectorAll('input,select').forEach(node => {
+        node.addEventListener("input", syncAdvancedFromUI);
+        node.addEventListener("change", syncAdvancedFromUI);
+      });
+
+      els.eqManualRows.appendChild(row);
+    });
+  }
+
+  function readEquipManualRows() {
+    const out = [];
+    document.querySelectorAll("#eqManualRows .eq-manual-row").forEach((row, idx) => {
+      const labelRaw = (row.querySelector('[data-k="label"]')?.value || "").trim();
+      if (usePortableEquipNameRows()) {
+        const names = splitPortableEquipNames(row.querySelector('[data-k="equips_noms"]')?.value || "");
+        if (!labelRaw && !names.length) return;
+        out.push({
+          key: `manual_${idx + 1}`,
+          label: labelRaw || `Particio ${idx + 1}`,
+          equips_noms: names
+        });
+        return;
+      }
+      const ids = Array.from(row.querySelector('[data-k="equip_ids"]')?.selectedOptions || [])
+        .map(o => Number(o.value))
+        .filter(v => !isNaN(v));
+      if (!labelRaw && !ids.length) return;
+      out.push({
+        key: `manual_${idx + 1}`,
+        label: labelRaw || `Particio ${idx + 1}`,
+        equip_ids: ids
+      });
+    });
+    return out;
+  }
+
+  function readEquipsSchemaUI(currentEquipsSchema) {
+    const prev = currentEquipsSchema && typeof currentEquipsSchema === "object" && !Array.isArray(currentEquipsSchema)
+      ? JSON.parse(JSON.stringify(currentEquipsSchema))
+      : {};
+    const currentAssignment = prev.assignment_source && typeof prev.assignment_source === "object" && !Array.isArray(prev.assignment_source)
+      ? prev.assignment_source
+      : {};
+    const fallbackContextCode = normalizeContextCode(currentAssignment.context_code || prev.context_code || "");
+    const selectedContextCode = normalizeContextCode(els.eqAssignmentContext?.value || fallbackContextCode || "native");
+    const selectedTeamMode = normalizeTeamMode(els.eqTeamMode?.value || prev.team_mode || "");
+    const assignmentSource = { mode: "context", context_code: selectedContextCode, fallback: "native" };
+
+    return {
+      ...prev,
+      context_code: selectedContextCode,
+      team_mode: selectedTeamMode || prev.team_mode || "",
+      assignment_source: assignmentSource,
+      incloure_sense_equip: !!(els.eqIncludeSenseEquip && els.eqIncludeSenseEquip.checked),
+      particions_manuals: readEquipManualRows(),
+      particio_edat: { activa: false, llindars: [], sense_data_label: "Sense edat" },
+      combinar_manual_i_edat: false,
+    };
+  }
+
+  function syncEquipUIFromSchema(schema) {
+    const eq = schema || {};
+    const assignmentSource = eq.assignment_source || {};
+    const selectedContextCode = normalizeContextCode(
+      String(assignmentSource.context_code || "") ||
+      eq.context_code ||
+      "native"
+    );
+    const teamMode = normalizeTeamMode(eq.team_mode || "");
+
+    renderEquipContextOptions(selectedContextCode);
+    if (els.eqAssignmentContext) els.eqAssignmentContext.value = selectedContextCode;
+    if (els.eqTeamMode) els.eqTeamMode.value = teamMode || TEAM_MODE_DERIVED;
+    if (els.eqIncludeSenseEquip) els.eqIncludeSenseEquip.checked = !!eq.incloure_sense_equip;
+    renderEquipManualRows(Array.isArray(eq.particions_manuals) ? eq.particions_manuals : []);
+    renderEquipsModeControls();
+  }
+
+  function readTieUI(includeInvalid) {
+    const out = [];
+    const includeParticipants = isTipusEquips() && getEquipsUiState().effectiveTeamMode !== TEAM_MODE_NATIVE;
+    const selectedMainIds = selectedAparellIdsFromUI();
+    const fallbackPuntuacio = readPuntuacioSchemaFromUI();
+    document.querySelectorAll("#tieBody tr").forEach(tr => {
+      const rawItem = readTieObjFromRow(tr, includeParticipants);
+      const item = sanitizeTieItemForUI(
+        { ...(tr.__tieSourceRaw || {}), ...rawItem },
+        selectedMainIds,
+        true,
+        includeParticipants,
+        fallbackPuntuacio,
+      );
+      if (!item) return;
+      if (includeInvalid || (item.camps || []).length) out.push(item);
+    });
+    return out;
+  }
+
+  
+
+  function renderTieUI(list) {
+    els.tieBody.innerHTML = "";
+    const includeParticipants = isTipusEquips() && getEquipsUiState().effectiveTeamMode !== TEAM_MODE_NATIVE;
+    const selectedMainIds = selectedAparellIdsFromUI();
+    const fallbackPuntuacio = readPuntuacioSchemaFromUI();
+
+    (list || []).forEach((t, idx) => {
+      t = sanitizeTieItemForUI(t, selectedMainIds, true, includeParticipants, fallbackPuntuacio) || t;
+      const tr = document.createElement("tr");
+      tr.__tieSourceRaw = cloneJsonValue(t, {});
+      tr.dataset.tieId = String((t && t.id) || `tie_${idx + 1}`);
+
+      // --- Normalitza entrada (compat) ---
+      const scope = t.scope || {};
+      const sApps = scope.aparells || {};
+      const sEx = scope.exercicis || {};
+      // aparells (single-choice)
+      let appMode = (sApps.mode || "").toLowerCase().trim();
+      let appIds = Array.isArray(sApps.ids) ? sApps.ids.map(Number).filter(x => !isNaN(x)) : [];
+
+      // compat antic
+      if (!appMode && t.aparell_id != null) {
+        appMode = "seleccionar";
+        appIds = [Number(t.aparell_id)];
+      }
+
+      // map a appScope: hereta|app:<id>
+      let appScope = "hereta";
+      if (appMode === "seleccionar" && appIds.length) appScope = `app:${appIds[0]}`;
+      if (appScope.startsWith("app:")) {
+        const compatibleAppId = getSingleCompatibleAppId(appScope.split(":")[1]);
+        appScope = Number.isFinite(compatibleAppId) ? `app:${compatibleAppId}` : "hereta";
+      }
+
+      // exercicis
+      let exMode = (sEx.mode || "hereta").toLowerCase().trim();
+      if (!["hereta","tots","millor_1","millor_n","pitjor_1","pitjor_n","primer","ultim","index","llista"].includes(exMode)) exMode = "hereta";
+      const exBestN = Number(sEx.best_n || 1);
+      const exIndex = Number(sEx.index || 1);
+      const exMaxPP = Math.max(0, Number(sEx.max_per_participant || 0));
+      const exIds = Array.isArray(sEx.ids) ? sEx.ids : [];
+      const exIdsStr = exIds.length ? exIds.join(",") : "";
+      const exSelectionScope = normalizeTieExerciseSelectionScope(t.exercise_selection_scope || "hereta");
+      const exSelMode = normalizeTieModeSeleccioExercicis(
+        t.mode_seleccio_exercicis || sEx.mode_seleccio_exercicis || "hereta"
+      );
+      const exPerAppSeed = normalizeTieExercicisPerAparellMap(
+        t.exercicis_per_aparell || sEx.exercicis_per_aparell || {}
+      );
+      const exAggPerAppSeed = normalizeTiePipelineAggMap(
+        t.agregacio_exercicis_per_aparell || {},
+        {},
+        getTiePipelineVisibleAppIds(t).length ? getTiePipelineVisibleAppIds(t) : getTieInheritedAppIds(),
+        t.agregacio_exercicis || ((t.pipeline || {}).agregacio_exercicis) || "sum",
+      );
+
+      const pNorm = normalizeParticipantsFromTie(t);
+      const pMode = pNorm.pMode;
+      const pN = pNorm.pN;
+      const pAgg = pNorm.pAgg;
+      const tieNom = String((t && t.nom) || `Desempat ${idx + 1}`).trim();
+      const tieSummaryText = getTieVisibleSummary(t);
+
+      // camp(s)/ordre
+      const tieCamps = normalizeTieCampsFromObj(t);
+      const tieAggCamps = normalizeTieAggCampsFromObj(t);
+      const ordre = (t.ordre || "desc").toLowerCase();
+
+      // options aparells single
+      const appScopeOpts = buildTieAppScopeOptionsHTML(appScope);
+      const showSelectionScope = isDerivedExerciseSelectionScopeAvailable();
+
+      tr.innerHTML = `
+        <td>
+          <input class="form-control form-control-sm mb-1" data-k="tie_nom" type="text" value="${esc(tieNom)}" placeholder="Nom del criteri">
+          <div class="small text-muted" data-k="tie_summary">${esc(tieSummaryText)}</div>
+        </td>
+
+        <td>
+          <select class="form-control form-control-sm" data-k="app_scope">
+            ${appScopeOpts}
+          </select>
+        </td>
+
+        <td data-cell="camp"></td>
+
+        <td>
+          <div class="d-flex flex-column gap-1">
+            <select class="form-control form-control-sm" data-k="ex_scope" style="${showSelectionScope ? "" : "display:none;"}">
+              <option value="hereta">Base: Mateixa que puntuació</option>
+              <option value="per_member">Base: Per membre</option>
+              <option value="team_pool">Base: Pool d'equip</option>
+            </select>
+            <select class="form-control form-control-sm" data-k="ex_sel_mode">
+              <option value="hereta">Selecció ex: Mateixa que puntuació</option>
+              <option value="per_aparell_global">Selecció ex: Per aparell (global)</option>
+              <option value="per_aparell_override">Selecció ex: Per aparell (override)</option>
+              <option value="global_pool">Selecció ex: Sac global</option>
+            </select>
+            <select class="form-control form-control-sm" data-k="ex_mode">
+              <option value="hereta">Tractament: Mateix que puntuació</option>
+              <option value="tots">Tots</option>
+              <option value="millor_1">Millor 1</option>
+              <option value="millor_n">Millors N</option>
+              <option value="pitjor_1">Pitjor 1</option>
+              <option value="pitjor_n">Pitjors N</option>
+              <option value="primer">Primer existent</option>
+              <option value="ultim">Últim existent</option>
+              <option value="index">Exercici #</option>
+              <option value="llista">Exercicis (llista)</option>
+            </select>
+
+            <div class="d-flex gap-1">
+              <input class="form-control form-control-sm" data-k="ex_best_n" type="number" min="1" value="1" style="display:none;" placeholder="N">
+              <input class="form-control form-control-sm" data-k="ex_index" type="number" min="1" value="1" style="display:none;" placeholder="Índex">
+            </div>
+            <input class="form-control form-control-sm" data-k="ex_max_pp" type="number" min="0" value="0" style="display:none;" placeholder="Max N per participant (0 = sense limit)">
+
+            <input class="form-control form-control-sm" data-k="ex_ids" type="text" style="display:none;" placeholder="ex: 1,3,4">
+            <input type="hidden" data-k="ex_per_app_state" value="{}">
+            <input type="hidden" data-k="ex_agg_per_app_state" value="{}">
+            <div data-k="ex_per_app_box" style="display:none;"></div>
+            <div class="small text-muted" data-k="ex_summary"></div>
+            <div class="small text-muted" data-k="ex_hint" style="display:none;"></div>
+          </div>
+        </td>
+
+        ${getParticipantsCellHTML()}
+
+        <td>
+          <select class="form-control form-control-sm" data-k="ordre">
+            <option value="desc">Desc</option>
+            <option value="asc">Asc</option>
+          </select>
+        </td>
+
+        <td class="text-right">
+          <button type="button" class="btn btn-sm btn-outline-danger" data-act="del">×</button>
+        </td>
+      `;
+
+      // set valors inicials
+      const appScopeSel = tr.querySelector('[data-k="app_scope"]');
+
+      const exScopeSel = tr.querySelector('[data-k="ex_scope"]');
+      const exSelModeSel = tr.querySelector('[data-k="ex_sel_mode"]');
+      const exModeSel = tr.querySelector('[data-k="ex_mode"]');
+      const exBestNEl = tr.querySelector('[data-k="ex_best_n"]');
+      const exIndexEl = tr.querySelector('[data-k="ex_index"]');
+      const exMaxPPEl = tr.querySelector('[data-k="ex_max_pp"]');
+      const exIdsEl = tr.querySelector('[data-k="ex_ids"]');
+      const exSummary = tr.querySelector('[data-k="ex_summary"]');
+      const exHint = tr.querySelector('[data-k="ex_hint"]');
+      const ordSel = tr.querySelector('[data-k="ordre"]');
+      const tieSummary = tr.querySelector('[data-k="tie_summary"]');
+      const tieNomInput = tr.querySelector('[data-k="tie_nom"]');
+
+      ensureSelectOption(appScopeSel, appScope, value => {
+        if (String(value || "") === "hereta") return "Mateixos aparells que la puntuació";
+        if (String(value || "").startsWith("app:")) {
+          const id = Number(String(value || "").split(":")[1]);
+          const app = getAppChoices(Number.isFinite(id) && id > 0 ? [id] : [], { includeStale: true })
+            .find(item => Number(item.id) === id);
+          return `${app?.nom || `Aparell ${id}`}${app?.stale ? " (no disponible)" : ""}`;
+        }
+        return `${value} (legacy)`;
+      });
+      appScopeSel.value = appScope;
+      const selectedAppScopeOption = appScopeSel?.selectedOptions?.[0] || null;
+      if (selectedAppScopeOption && (selectedAppScopeOption.dataset.injected === "1" || selectedAppScopeOption.dataset.stale === "1")) {
+        selectedAppScopeOption.remove();
+        appScopeSel.value = "hereta";
+      }
+      ensureSelectOption(ordSel, ordre, value => `${value} (legacy)`);
+      ordSel.value = ordre;
+
+      ensureSelectOption(exScopeSel, exSelectionScope, value => `${value} (legacy)`);
+      exScopeSel.value = exSelectionScope;
+      ensureSelectOption(exSelModeSel, exSelMode, value => `${value} (legacy)`);
+      exSelModeSel.value = exSelMode;
+      ensureSelectOption(exModeSel, exMode, value => `${value} (legacy)`);
+      exModeSel.value = exMode;
+      exBestNEl.value = exBestN;
+      exIndexEl.value = exIndex;
+      exMaxPPEl.value = exMaxPP;
+      exIdsEl.value = exIdsStr;
+      writeTiePerAppState(tr, exPerAppSeed);
+      writeTiePerAppAggState(tr, exAggPerAppSeed);
+      setParticipantsUI(tr, pMode, pN, pAgg);
+
+      function getCurrentAppIds() {
+        const v = appScopeSel.value;
+        if (v === "tots") return (APARELLS || []).map(a => a.id);
+        if (v.startsWith("app:")) {
+          const id = Number(v.split(":")[1]);
+          return isNaN(id) ? [] : [id];
+        }
+        // hereta -> usem unio d'opcions
+        return getTieInheritedAppIds();
+      }
+
+      function refreshAppUI() {
+        // Quan canvia l'scope d'aparell, refresca el dropdown de camp
+        const curr = readTieCampsFromRow(tr);
+        const campCell = tr.querySelector('[data-cell="camp"]');
+        campCell.innerHTML = buildCampSelectHTMLForApps(getCurrentAppIds(), curr.camps, curr.agregacio_camps);
+        if (tieSummary) {
+          const next = sanitizeTieItemForUI(
+            { ...(tr.__tieSourceRaw || {}), ...readTieObjFromRow(tr, includeParticipants) },
+            selectedMainIds,
+            true,
+            includeParticipants,
+            fallbackPuntuacio,
+          );
+          tieSummary.textContent = getTieVisibleSummary(next || t);
+        }
+      }
+
+      function refreshExUI() {
+        collectVisibleTiePerAppOverrides(tr);
+        const m = exModeSel.value;
+        const selectionScope = getEffectiveTieExerciseSelectionScope(exScopeSel?.value || EXERCISE_SELECTION_SCOPE_INHERIT);
+        const fixedTeamPool = showSelectionScope && selectionScope === EXERCISE_SELECTION_SCOPE_TEAM_POOL;
+        const modeSel = normalizeTieModeSeleccioExercicis(exSelModeSel.value);
+        const isOverride = modeSel === "per_aparell_override";
+        exSelModeSel.style.display = fixedTeamPool ? "none" : "";
+        exModeSel.style.display = (fixedTeamPool || isOverride) ? "none" : "";
+        exBestNEl.style.display = (!fixedTeamPool && !isOverride && (m === "millor_n" || m === "pitjor_n")) ? "" : "none";
+        exIndexEl.style.display = (!fixedTeamPool && !isOverride && (m === "index")) ? "" : "none";
+        exMaxPPEl.style.display = (!fixedTeamPool && !isOverride && (!showSelectionScope || selectionScope === EXERCISE_SELECTION_SCOPE_TEAM_POOL)) ? "" : "none";
+        exIdsEl.style.display = (!fixedTeamPool && !isOverride && (m === "llista")) ? "" : "none";
+        renderTiePerAppExercicisUI(tr);
+
+        if (exSummary) {
+          if (showSelectionScope) {
+            if (fixedTeamPool) {
+              exSummary.textContent = "TR: mateix set d'exercicis que la puntuació; opcionalment filtrat per aparell.";
+            } else {
+              const summaryLabel = describeExerciseMode(
+                m,
+                exBestNEl?.value,
+                exIndexEl?.value,
+                exIdsEl?.value,
+              );
+              const maxTxt = Math.max(0, Number(exMaxPPEl?.value || 0));
+              exSummary.textContent = selectionScope === EXERCISE_SELECTION_SCOPE_TEAM_POOL
+              ? `TR: ${summaryLabel} de l'equip; ${maxTxt > 0 ? `màxim ${maxTxt} per membre` : "sense límit per membre"}`
+              : `TR: ${summaryLabel} per membre; després suma`;
+            }
+          } else {
+            exSummary.textContent = "";
+          }
+        }
+
+        if (fixedTeamPool) {
+          exHint.style.display = "";
+          exHint.textContent = "En pool d'equip, el desempat reutilitza exactament els exercicis seleccionats a la puntuació principal.";
+        } else if (isOverride) {
+          exHint.style.display = "";
+          exHint.textContent = "Override per aparell actiu (criteri global ocult).";
+        } else if (m === "millor_n") {
+          exHint.style.display = "";
+          exHint.textContent = "Tria els N millors exercicis.";
+        } else if (m === "pitjor_n") {
+          exHint.style.display = "";
+          exHint.textContent = "Tria els N pitjors exercicis.";
+        } else if (m === "pitjor_1") {
+          exHint.style.display = "";
+          exHint.textContent = "Agafa el pitjor exercici existent.";
+        } else if (m === "primer") {
+          exHint.style.display = "";
+          exHint.textContent = "Agafa el primer exercici existent.";
+        } else if (m === "ultim") {
+          exHint.style.display = "";
+          exHint.textContent = "Agafa l'últim exercici existent.";
+        } else if (m === "index") {
+          exHint.style.display = "";
+          exHint.textContent = "Fa servir només l'exercici # (1..N).";
+        } else if (m === "llista") {
+          exHint.style.display = "";
+          exHint.textContent = "Llista d'índexs: 1,3,4.";
+        } else {
+          exHint.style.display = "none";
+          exHint.textContent = "";
+        }
+
+        if (!fixedTeamPool && !isOverride && exHint.style.display !== "none") {
+          if (modeSel === "per_aparell_override") exHint.textContent += " Override per aparell.";
+          else if (modeSel === "global_pool") exHint.textContent += " Aplicat al sac global.";
+          else exHint.textContent += " Aplicat per aparell.";
+        }
+        if (showSelectionScope && exHint.style.display !== "none" && !fixedTeamPool) {
+          exHint.textContent += selectionScope === EXERCISE_SELECTION_SCOPE_TEAM_POOL
+            ? " Calculat sobre el pool d'equip."
+            : " Calculat per membre i després sumat.";
+        }
+        if (showSelectionScope) {
+          if (fixedTeamPool) {
+            if (exSummary) {
+              exSummary.textContent = "TR: mateix set d'exercicis que la puntuacio; opcionalment filtrat per aparell.";
+            }
+            exHint.style.display = "";
+            exHint.textContent = "En pool d'equip, el desempat reutilitza exactament els exercicis seleccionats a la puntuacio principal.";
+          } else if (exSummary) {
+            const summaryLabel = describeExerciseMode(
+              m,
+              exBestNEl?.value,
+              exIndexEl?.value,
+              exIdsEl?.value,
+            );
+            const maxTxt = Math.max(0, Number(exMaxPPEl?.value || 0));
+            exSummary.textContent = selectionScope === EXERCISE_SELECTION_SCOPE_TEAM_POOL
+              ? `TR: ${summaryLabel} de l'equip; ${maxTxt > 0 ? `maxim ${maxTxt} per membre` : "sense limit per membre"}`
+              : `TR: ${summaryLabel} per membre; despres suma`;
+            if (exHint.style.display !== "none") {
+              let hintBase = "";
+              if (isOverride) hintBase = "Override per aparell actiu (criteri global ocult).";
+              else if (m === "millor_n") hintBase = "Tria els N millors exercicis.";
+              else if (m === "pitjor_n") hintBase = "Tria els N pitjors exercicis.";
+              else if (m === "pitjor_1") hintBase = "Agafa el pitjor exercici existent.";
+              else if (m === "primer") hintBase = "Agafa el primer exercici existent.";
+              else if (m === "ultim") hintBase = "Agafa l'ultim exercici existent.";
+              else if (m === "index") hintBase = "Fa servir nomes l'exercici # (1..N).";
+              else if (m === "llista") hintBase = "Llista d'indexs: 1,3,4.";
+
+              if (!isOverride) {
+                if (modeSel === "per_aparell_override") hintBase += " Override per aparell.";
+                else if (modeSel === "global_pool") hintBase += " Aplicat al sac global.";
+                else if (hintBase) hintBase += " Aplicat per aparell.";
+              }
+
+              const finalScopeHint = selectionScope === EXERCISE_SELECTION_SCOPE_TEAM_POOL
+                ? "Calculat sobre el pool d'equip."
+                : "Calculat per membre i despres sumat.";
+              exHint.textContent = hintBase ? `${hintBase} ${finalScopeHint}` : finalScopeHint;
+            }
+          }
+        }
+        refreshParticipantsControls(tr);
+      }
+      // Render inicial camp + controls
+      const campCell = tr.querySelector('[data-cell="camp"]');
+      campCell.innerHTML = buildCampSelectHTMLForApps(getCurrentAppIds(), tieCamps, tieAggCamps);
+
+      refreshAppUI();
+      refreshExUI();
+      refreshParticipantsControls(tr);
+
+      // listeners
+      appScopeSel.addEventListener("change", () => {
+        refreshAppUI();
+        refreshExUI();
+        syncAdvancedFromUI();
+      });
+
+      exScopeSel.addEventListener("change", () => { refreshExUI(); syncAdvancedFromUI(); });
+      exSelModeSel.addEventListener("change", () => { refreshExUI(); syncAdvancedFromUI(); });
+      exModeSel.addEventListener("change", () => { refreshExUI(); syncAdvancedFromUI(); });
+      exBestNEl.addEventListener("input", syncAdvancedFromUI);
+      exIndexEl.addEventListener("input", syncAdvancedFromUI);
+      exMaxPPEl.addEventListener("input", syncAdvancedFromUI);
+      exIdsEl.addEventListener("input", syncAdvancedFromUI);
+      if (tieNomInput) tieNomInput.addEventListener("input", syncAdvancedFromUI);
+      bindParticipantsListeners(tr);
+
+      tr.addEventListener("change", (e) => {
+        if (e.target && e.target.matches('[data-k="camps"],[data-k="agg_camps"],[data-k="ordre"]')) {
+          syncAdvancedFromUI();
+        }
+      });
+
+      tr.querySelector('[data-act="del"]').addEventListener("click", () => {
+        const cur = readTieUI(true);
+        cur.splice(idx, 1);
+        renderTieUI(cur);
+        syncAdvancedFromUI();
+      });
+
+      els.tieBody.appendChild(tr);
+    });
+    refreshTipusUI();
+  }
