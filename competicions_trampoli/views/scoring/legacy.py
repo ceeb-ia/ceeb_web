@@ -14,7 +14,7 @@ from ...models.competicio import Aparell, CompeticioAparell, TrampoliConfiguraci
 
 
 class TrampoliNotesHome(TemplateView):
-    template_name = "competicio/trampoli_notes_home.html"
+    template_name = "legacy/trampoli_notes_home.html"
 
     def get(self, request, *args, **kwargs):
         self.competicio = get_object_or_404(Competicio, pk=kwargs["pk"])

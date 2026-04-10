@@ -99,7 +99,7 @@ def rotacions_planner(request, pk):
         .select_related("comp_aparell__aparell")
         .order_by("ordre", "id")
     )
-    franges = list(RotacioFranja.objects.filter(competicio=competicio).order_by("ordre", "id"))
+    franges = list(RotacioFranja.objects.filter(competicio=competicio).order_by("ordre_visual", "id"))
     franja_type_options = [
         {"value": value, "label": label}
         for value, label in RotacioFranja.TIPUS_CHOICES
@@ -166,6 +166,7 @@ def rotacions_planner(request, pk):
         "franja_order_modes_json": json.dumps(franja_modes, ensure_ascii=False),
         "franja_type_options": franja_type_options,
         "franja_type_options_json": json.dumps(franja_type_options, ensure_ascii=False),
+        "franja_default_colors_json": json.dumps(RotacioFranja.DEFAULT_BACKGROUND_COLORS, ensure_ascii=False),
         "export_meta_json": json.dumps(export_meta, ensure_ascii=False),
         "export_participant_fields_json": json.dumps(export_participant_fields, ensure_ascii=False),
         "grups_json": json.dumps(grups, ensure_ascii=False),

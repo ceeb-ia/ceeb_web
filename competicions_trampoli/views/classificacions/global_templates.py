@@ -164,7 +164,7 @@ def _collect_particio_value_choices(templates):
 
 
 class ClassificacioTemplateGlobalList(ListView):
-    template_name = "competicio/classificacio_templates_list.html"
+    template_name = "classificacions/classificacio_templates_list.html"
     context_object_name = "templates"
 
     def get_queryset(self):

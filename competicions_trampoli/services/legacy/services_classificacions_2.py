@@ -23,6 +23,7 @@ from ..teams.equip_contexts import (
 )
 from ...models.competicio import CompeticioAparell
 from ...models.scoring import ScoreEntry, TeamScoreEntry
+from ..classificacions.pipeline_runtime import compute_metric_from_pipeline, materialize_desempat_item
 from ..scoring.team_scoring import is_team_context_app, member_runtime_code
 
 logger = logging.getLogger(__name__)
@@ -137,6 +138,13 @@ def _normalize_classificacio_filters(raw_filters):
         if values:
             out[key] = values
     return out
+
+
+def _json_clone(value):
+    try:
+        return json.loads(json.dumps(value))
+    except Exception:
+        return value
 
 
 def _normalized_group_filter_value(inscripcio) -> str:
@@ -1464,7 +1472,37 @@ def _normalize_tie_camps(crit: dict):
     return dedup
 
 
+def _is_pipeline_tie(crit: dict) -> bool:
+    return isinstance(crit, dict) and isinstance(crit.get("pipeline"), dict)
+
+
+def _pipeline_tie_signature(crit: dict) -> str:
+    if not isinstance(crit, dict):
+        return ""
+    try:
+        pipeline_version = int(crit.get("pipeline_version") or 1)
+    except Exception:
+        pipeline_version = 1
+    payload = {
+        "id": str(crit.get("id") or "").strip(),
+        "nom": str(crit.get("nom") or "").strip(),
+        "ordre": str(crit.get("ordre") or "desc").lower().strip() or "desc",
+        "pipeline_version": pipeline_version,
+        "pipeline": _json_clone(crit.get("pipeline") or {}),
+    }
+    try:
+        return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    except Exception:
+        return str(payload)
+
+
 def _tie_key(crit: dict) -> str:
+    if _is_pipeline_tie(crit):
+        tie_id = str((crit or {}).get("id") or "").strip()
+        if tie_id:
+            return tie_id
+        return _pipeline_tie_signature(crit)
+
     camps = _normalize_tie_camps(crit)
     if not camps:
         return ""
@@ -1540,6 +1578,14 @@ def _tie_key(crit: dict) -> str:
                 c += f":mpp={int(cfg.get('max_per_participant') or 0)}"
             chunks.append(c)
         ex_per_app_sig = ";".join(chunks)
+    agg_ex_per_app = crit.get("agregacio_exercicis_per_aparell") or {}
+    agg_ex_per_app_sig = ""
+    if isinstance(agg_ex_per_app, dict) and agg_ex_per_app:
+        chunks = []
+        for k in sorted(agg_ex_per_app.keys(), key=lambda x: str(x)):
+            agg_value = str(agg_ex_per_app.get(k) or "sum").lower().strip()
+            chunks.append(f"{k}:{agg_value}")
+        agg_ex_per_app_sig = ";".join(chunks)
 
     p_mode = (parts.get("mode") or "hereta").lower().strip()
     p_sig = p_mode
@@ -1553,10 +1599,37 @@ def _tie_key(crit: dict) -> str:
     p_agg = (crit.get("agregacio_participants") or "sum").lower().strip()
     return (
         f"camps[{camps_sig}]|{apps_sig}|ex[{ex_sig}]"
-        f"|ex_sel[{ex_sel_mode}]|ex_scope[{ex_sel_scope}]|ex_app[{ex_per_app_sig}]"
+        f"|ex_sel[{ex_sel_mode}]|ex_scope[{ex_sel_scope}]|ex_app[{ex_per_app_sig}]|agg_ex_app[{agg_ex_per_app_sig}]"
         f"|agg_c[{agg_c}]|agg_e[{agg_e}]|agg_a[{agg_a}]"
         f"|parts[{p_sig}]|parts_agg[{p_agg}]"
     )
+
+
+def _pipeline_subject_key(row: dict):
+    if not isinstance(row, dict):
+        return None
+    ins_id = _normalize_positive_int(row.get("inscripcio_id"))
+    if ins_id is not None:
+        return ("ins", ins_id)
+    equip_id = _normalize_positive_int(row.get("equip_id"))
+    if equip_id is not None:
+        return ("equip", equip_id)
+    member_ids = row.get("_member_ids")
+    if isinstance(member_ids, (list, tuple)) and member_ids:
+        mids = []
+        for raw in member_ids:
+            mid = _normalize_positive_int(raw)
+            if mid is not None:
+                mids.append(mid)
+        if mids:
+            return ("members", tuple(sorted(set(mids))))
+    entitat_nom = str(row.get("entitat_nom") or "").strip()
+    if entitat_nom:
+        return ("entitat", _normalized_text_token(entitat_nom))
+    participant = str(row.get("participant") or row.get("nom") or "").strip()
+    if participant:
+        return ("nom", _normalized_text_token(participant))
+    return None
 
 
 def _sanitize_desempat_for_tipus(desempat, tipus):
@@ -2228,6 +2301,9 @@ def compute_classificacio(competicio, cfg_obj):
     candidate_source_per_aparell = punt.get("candidate_source_per_aparell") or {}
     if not isinstance(candidate_source_per_aparell, dict):
         candidate_source_per_aparell = {}
+    agregacio_exercicis_per_aparell = punt.get("agregacio_exercicis_per_aparell") or {}
+    if not isinstance(agregacio_exercicis_per_aparell, dict):
+        agregacio_exercicis_per_aparell = {}
 
     agg_camps = (punt.get("agregacio_camps") or "sum").lower().strip()
     candidate_source_mode = _normalize_candidate_source_mode(punt.get("candidate_source_mode"))
@@ -2291,6 +2367,17 @@ def compute_classificacio(competicio, cfg_obj):
             return "raw_exercise", fallback_cfg
         cfg = _normalize_candidate_source_cfg(entry.get("cfg"), fallback=fallback_cfg)
         return mode, cfg
+
+    def resolve_agregacio_exercicis_for_app(app_id: int):
+        raw = agregacio_exercicis_per_aparell.get(str(app_id))
+        if raw is None:
+            raw = agregacio_exercicis_per_aparell.get(app_id)
+        agg = str(raw or agg_exercicis or "sum").lower().strip()
+        if agg not in ("sum", "avg", "median", "max", "min"):
+            agg = str(agg_exercicis or "sum").lower().strip()
+        if agg not in ("sum", "avg", "median", "max", "min"):
+            agg = "sum"
+        return agg
 
     # si no hi ha aparells seleccionats -> retorn buit
     if not aparells:
@@ -2385,6 +2472,30 @@ def compute_classificacio(competicio, cfg_obj):
         out = list(_score_camps_for_app(app_id))
         seen = set()
         for crit in desempat or []:
+            if isinstance(crit, dict) and isinstance(crit.get("pipeline"), dict):
+                pipeline = crit.get("pipeline") or {}
+                app_cfg = pipeline.get("aparells") if isinstance(pipeline.get("aparells"), dict) else {}
+                target_ids = []
+                for raw_app_id in (app_cfg.get("ids") or []):
+                    try:
+                        target_ids.append(int(raw_app_id))
+                    except Exception:
+                        continue
+                if not target_ids:
+                    target_ids = [int(app_id)]
+                if int(app_id) in target_ids:
+                    camps_map = pipeline.get("camps_per_aparell") if isinstance(pipeline.get("camps_per_aparell"), dict) else {}
+                    raw_camps = camps_map.get(str(app_id))
+                    if raw_camps is None:
+                        raw_camps = camps_map.get(app_id)
+                    if raw_camps is None and len(target_ids) == 1:
+                        raw_camps = next(iter(camps_map.values()), [])
+                    if isinstance(raw_camps, list):
+                        out.extend(str(x).strip() for x in raw_camps if str(x).strip())
+                    elif isinstance(raw_camps, str) and raw_camps.strip():
+                        out.extend(x.strip() for x in raw_camps.split(",") if x.strip())
+                continue
+
             scope = (crit.get("scope") or {}) if isinstance(crit, dict) else {}
             app_scope = (scope.get("aparells") or {}) if isinstance(scope, dict) else {}
             app_mode = str(app_scope.get("mode") or "").strip().lower()
@@ -3352,9 +3463,10 @@ def compute_classificacio(competicio, cfg_obj):
             app_id = ca.id
             if ins_id not in ins_ids_by_app.get(app_id, set()):
                 continue
+            agg_exercicis_for_app = resolve_agregacio_exercicis_for_app(app_id)
             score_app = _apply_simple_agg(
                 [_to_float(row.get("value")) for row in selected_rows_by_app.get(app_id, [])],
-                agg_exercicis,
+                agg_exercicis_for_app,
             )
             obj["by_app_base"][app_id] = float(score_app)
 
@@ -3404,6 +3516,13 @@ def compute_classificacio(competicio, cfg_obj):
                 "agregacio_aparells":"hereta"|"sum"|"avg"|"median"|"max"|"min"
             }
         """
+
+        if _is_pipeline_tie(crit):
+            try:
+                iid = int(ins_id)
+            except Exception:
+                return 0.0
+            return float(_pipeline_metric_map_for_crit(crit).get(("ins", iid), 0.0))
 
         if forced_camps is not None:
             camps = [str(x).strip() for x in (forced_camps or []) if str(x).strip()]
@@ -3473,6 +3592,9 @@ def compute_classificacio(competicio, cfg_obj):
         )
         if not isinstance(crit_ex_per_app_raw, dict):
             crit_ex_per_app_raw = {}
+        crit_agg_ex_per_app_raw = crit.get("agregacio_exercicis_per_aparell") or {}
+        if not isinstance(crit_agg_ex_per_app_raw, dict):
+            crit_agg_ex_per_app_raw = {}
 
         # -----------------------------
         # Aparells objectiu del criteri
@@ -3557,6 +3679,32 @@ def compute_classificacio(competicio, cfg_obj):
                 raw = crit_ex_per_app_raw.get(app_id)
             return _normalize_exercicis_cfg(raw, fallback=crit_ex_cfg_global)
 
+        def _resolve_tie_agg_ex_for_app(app_id: int):
+            if crit_mode_sel != "per_aparell_override":
+                return crit_agg_exercicis
+            raw = crit_agg_ex_per_app_raw.get(str(app_id))
+            if raw is None:
+                raw = crit_agg_ex_per_app_raw.get(app_id)
+            agg = str(raw or crit_agg_exercicis or "sum").lower().strip()
+            if agg not in ("sum", "avg", "median", "max", "min"):
+                agg = str(crit_agg_exercicis or "sum").lower().strip()
+            if agg not in ("sum", "avg", "median", "max", "min"):
+                agg = "sum"
+            return agg
+
+        def _resolve_tie_agg_ex_for_app(app_id: int):
+            if crit_mode_sel != "per_aparell_override":
+                return crit_agg_exercicis
+            raw = crit_agg_ex_per_app_raw.get(str(app_id))
+            if raw is None:
+                raw = crit_agg_ex_per_app_raw.get(app_id)
+            agg = str(raw or crit_agg_exercicis or "sum").lower().strip()
+            if agg not in ("sum", "avg", "median", "max", "min"):
+                agg = str(crit_agg_exercicis or "sum").lower().strip()
+            if agg not in ("sum", "avg", "median", "max", "min"):
+                agg = "sum"
+            return agg
+
         if forced_exercicis_set is not None:
             for ta in target_apps:
                 vals_ex = app_vals_ex.get(ta, [])
@@ -3609,6 +3757,7 @@ def compute_classificacio(competicio, cfg_obj):
             for ta in target_apps:
                 vals_ex = app_vals_ex.get(ta, [])
                 ex_cfg_app = _resolve_tie_ex_cfg_for_app(ta)
+                agg_ex_app = _resolve_tie_agg_ex_for_app(ta)
                 picked = _pick_exercicis_tuples(
                     vals_ex,
                     ex_cfg_app["mode"],
@@ -3618,7 +3767,7 @@ def compute_classificacio(competicio, cfg_obj):
                     max_per_participant=ex_cfg_app.get("max_per_participant", 0),
                     participant_key="inscripcio_id",
                 )
-                val_app = _apply_simple_agg(picked, crit_agg_exercicis)
+                val_app = _apply_simple_agg(picked, agg_ex_app)
                 vals_apps.append(val_app)
 
         return float(_apply_simple_agg(vals_apps, crit_agg_aparells))
@@ -4043,6 +4192,7 @@ def compute_classificacio(competicio, cfg_obj):
             for app_id in target_apps:
                 vals_ex = app_vals_ex.get(app_id, [])
                 ex_cfg_app = _resolve_tie_ex_cfg_for_app(app_id)
+                agg_ex_app = _resolve_tie_agg_ex_for_app(app_id)
                 picked = _pick_exercicis_tuples(
                     vals_ex,
                     ex_cfg_app["mode"],
@@ -4052,9 +4202,165 @@ def compute_classificacio(competicio, cfg_obj):
                     max_per_participant=ex_cfg_app.get("max_per_participant", 0),
                     participant_key="equip_id",
                 )
-                vals_apps.append(_apply_simple_agg(picked, crit_agg_exercicis))
+                vals_apps.append(_apply_simple_agg(picked, agg_ex_app))
 
         return float(_apply_simple_agg(vals_apps, crit_agg_aparells))
+
+    grouped = {}
+    per_particio = {}
+    pipeline_metric_cache = {}
+    pipeline_metric_cache_ready = {}
+    pipeline_runtime_ctx_cache = {"ctx": None}
+
+    def _pipeline_runtime_ctx():
+        cached = pipeline_runtime_ctx_cache.get("ctx")
+        if cached is not None:
+            return cached
+
+        ctx = {
+            "app_ex_rows_by_ins": app_ex_rows_by_ins,
+            "team_app_ex_rows_by_equip": team_app_ex_rows_by_equip,
+            "app_order": app_order,
+            "copy_ex_row_with_value": _copy_ex_row_with_value,
+            "to_float": _to_float,
+            "apply_simple_agg": _apply_simple_agg,
+            "pick_exercicis_rows": _pick_exercicis_rows,
+            "pick_exercicis_tuples": _pick_exercicis_tuples,
+            "pick_participants": _pick_participants,
+        }
+
+        if tipus == "equips" and team_mode != "native_team":
+            def _selected_rows_for_group(member_ids):
+                mids = _dedupe_int_ids_preserve_order(member_ids or [])
+                cache_key = _derived_team_cache_key(None, mids)
+                return _get_main_selected_rows_for_group(cache_key, mids)
+
+            ctx["get_main_selected_rows_for_group"] = _selected_rows_for_group
+
+        pipeline_runtime_ctx_cache["ctx"] = ctx
+        return ctx
+
+    def _pipeline_metric_map_for_crit(crit: dict):
+        if not _is_pipeline_tie(crit):
+            return {}
+
+        sig = _pipeline_tie_signature(crit)
+        cache_ready = (
+            tipus == "individual"
+            or (tipus == "equips" and bool(grouped))
+            or (tipus == "entitat" and bool(per_particio))
+        )
+        cached = pipeline_metric_cache.get(sig)
+        if cached is not None and (pipeline_metric_cache_ready.get(sig) or not cache_ready):
+            return cached
+
+        pipeline = _json_clone((crit or {}).get("pipeline") or {})
+        if not isinstance(pipeline, dict):
+            pipeline = {}
+
+        try:
+            ctx = _pipeline_runtime_ctx()
+            out = {}
+            if tipus == "individual":
+                for ins_id in per_ins.keys():
+                    out[("ins", int(ins_id))] = float(
+                        compute_metric_from_pipeline(
+                            ctx,
+                            pipeline,
+                            {"kind": "individual", "inscripcio_id": int(ins_id)},
+                        )
+                    )
+            elif tipus == "equips":
+                if team_mode == "native_team":
+                    grouped_ref = grouped or {}
+                    seen_team_ids = set()
+                    for teams in grouped_ref.values():
+                        for team_id_key in (teams or {}).keys():
+                            try:
+                                equip_id = int(team_id_key)
+                            except Exception:
+                                continue
+                            if equip_id in seen_team_ids:
+                                continue
+                            seen_team_ids.add(equip_id)
+                            out[("equip", equip_id)] = float(
+                                compute_metric_from_pipeline(
+                                    ctx,
+                                    pipeline,
+                                    {"kind": "native_team", "equip_id": equip_id},
+                                )
+                            )
+                else:
+                    grouped_ref = grouped or {}
+                    seen_team_keys = set()
+                    team_pool_legacy_tie = None
+                    if str((pipeline or {}).get("exercise_selection_scope") or "").strip().lower() == EXERCISE_SELECTION_SCOPE_TEAM_POOL:
+                        team_pool_legacy_tie = materialize_desempat_item(
+                            crit,
+                            tipus=tipus,
+                            team_mode=team_mode,
+                            allow_participants=True,
+                        )
+                    for teams in grouped_ref.values():
+                        for team_id_key, members in (teams or {}).items():
+                            member_ids = _dedupe_int_ids_preserve_order(
+                                [getattr(member, "id", None) for member, _resolved_equip in (members or [])]
+                            )
+                            if not member_ids:
+                                continue
+                            if team_pool_legacy_tie is not None:
+                                value = float(calc_metric_value_for_group(member_ids, team_pool_legacy_tie))
+                            else:
+                                value = float(
+                                    compute_metric_from_pipeline(
+                                        ctx,
+                                        pipeline,
+                                        {"kind": "group", "member_ids": member_ids},
+                                    )
+                                )
+                            try:
+                                equip_id = int(team_id_key)
+                            except Exception:
+                                equip_id = None
+                            if equip_id is not None:
+                                if ("equip", equip_id) not in seen_team_keys:
+                                    out[("equip", equip_id)] = value
+                                    seen_team_keys.add(("equip", equip_id))
+                            members_key = ("members", tuple(sorted(set(member_ids))))
+                            if members_key not in seen_team_keys:
+                                out[members_key] = value
+                                seen_team_keys.add(members_key)
+            elif tipus == "entitat":
+                seen_entities = set()
+                for rows in per_particio.values():
+                    by_ent = defaultdict(list)
+                    for row in rows or []:
+                        by_ent[row.get("entitat_nom") or ""].append(row)
+                    for ent_nom, items in by_ent.items():
+                        ent_key = ("entitat", _normalized_text_token(ent_nom))
+                        if ent_key in seen_entities:
+                            continue
+                        seen_entities.add(ent_key)
+                        member_ids = [
+                            int(row.get("inscripcio_id"))
+                            for row in items
+                            if _normalize_positive_int(row.get("inscripcio_id")) is not None
+                        ]
+                        out[ent_key] = float(
+                            compute_metric_from_pipeline(
+                                ctx,
+                                pipeline,
+                                {"kind": "group", "member_ids": member_ids},
+                            )
+                        )
+        except Exception as exc:
+            logger.warning("No s'ha pogut calcular el pipeline de desempat %s: %s", sig, exc)
+            pipeline_metric_cache[sig] = {}
+            return {}
+
+        pipeline_metric_cache[sig] = out
+        pipeline_metric_cache_ready[sig] = cache_ready
+        return out
 
     def _apply_decimals_if_numeric(v, decimals):
         if decimals is None:
@@ -4947,9 +5253,10 @@ def compute_classificacio(competicio, cfg_obj):
                             selected_rows = _selected_field_rows_for_app(ins_id, app_id, field_code)
                             if not selected_rows:
                                 continue
+                            agg_exercicis_for_app = resolve_agregacio_exercicis_for_app(app_id)
                             base_val = _apply_simple_agg(
                                 [_to_float(item.get("value")) for item in selected_rows],
-                                agg_exercicis,
+                                agg_exercicis_for_app,
                             )
                             entries.append({"row": row, "base": base_val})
 
@@ -5239,10 +5546,11 @@ def compute_classificacio(competicio, cfg_obj):
                         selected_rows = _get_main_selected_rows_agg_for_team(int(equip_id)).get(app_id, [])
                         if not selected_rows:
                             continue
+                        agg_exercicis_for_app = resolve_agregacio_exercicis_for_app(app_id)
                         team_by_app[app_id] = float(
                             _apply_simple_agg(
                                 [_to_float(row.get("value")) for row in selected_rows],
-                                agg_exercicis,
+                                agg_exercicis_for_app,
                             )
                         )
                         continue
@@ -5256,10 +5564,11 @@ def compute_classificacio(competicio, cfg_obj):
                             member_ids,
                         ).get(app_id, [])
                         if selected_rows:
+                            agg_exercicis_for_app = resolve_agregacio_exercicis_for_app(app_id)
                             team_by_app[app_id] = float(
                                 _apply_simple_agg(
                                     [_to_float(row.get("value")) for row in selected_rows],
-                                    agg_exercicis,
+                                    agg_exercicis_for_app,
                                 )
                             )
                         continue
@@ -5282,7 +5591,16 @@ def compute_classificacio(competicio, cfg_obj):
                     tkey = _tie_key(t)
                     if not tkey:
                         continue
-                    if use_native_team_mode and equip_id is not None:
+                    if _is_pipeline_tie(t):
+                        try:
+                            team_key = int(equip_id)
+                        except Exception:
+                            team_key = None
+                        if team_key is None:
+                            team_tie[tkey] = 0.0
+                        else:
+                            team_tie[tkey] = float(_pipeline_metric_map_for_crit(t).get(("equip", team_key), 0.0))
+                    elif use_native_team_mode and equip_id is not None:
                         team_tie[tkey] = calc_metric_value_for_native_team(int(equip_id), t)
                     else:
                         team_tie[tkey] = calc_metric_value_for_group(member_ids, t)
@@ -5317,7 +5635,12 @@ def compute_classificacio(competicio, cfg_obj):
                     tkey = _tie_key(t)
                     if not tkey:
                         continue
-                    ent_tie[tkey] = sum([_to_float((x.get("tie") or {}).get(tkey, 0.0)) for x in items])
+                    if _is_pipeline_tie(t):
+                        ent_tie[tkey] = float(
+                            _pipeline_metric_map_for_crit(t).get(("entitat", _normalized_text_token(ent_nom)), 0.0)
+                        )
+                    else:
+                        ent_tie[tkey] = sum([_to_float((x.get("tie") or {}).get(tkey, 0.0)) for x in items])
 
                 ent_rows.append({
                     "entitat_nom": ent_nom,

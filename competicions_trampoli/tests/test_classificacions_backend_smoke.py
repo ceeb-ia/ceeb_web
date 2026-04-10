@@ -110,13 +110,13 @@ class ClassificacionsBackendSmokeTests(_BaseTrampoliDataMixin, TestCase):
 
         live_response = self.client.get(reverse("classificacions_live", kwargs={"pk": self.comp.id}))
         self.assertEqual(live_response.status_code, 200)
-        self.assertTemplateUsed(live_response, "competicio/classificacions_live.html")
+        self.assertTemplateUsed(live_response, "classificacions/classificacions_live.html")
         self.assertIn("cfgs", live_response.context)
         self.assertIn("poll_ms", live_response.context)
 
         public_response = self.client.get(reverse("public_live_portal", kwargs={"token": self.token.id}))
         self.assertEqual(public_response.status_code, 200)
-        self.assertTemplateUsed(public_response, "competicio/classificacions_live.html")
+        self.assertTemplateUsed(public_response, "classificacions/classificacions_live.html")
         self.assertTrue(public_response.context["is_public"])
         self.assertTrue(public_response.context["public_token_can_view_media"])
 

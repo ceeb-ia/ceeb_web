@@ -194,6 +194,91 @@
       padding: 0;
       line-height: 1;
     }
+    .franja-drag-handle {
+      cursor: grab;
+      font-weight: 700;
+      color: #64748b;
+      margin-right: 8px;
+      user-select: none;
+    }
+    .franja-visual-drag-handle {
+      cursor: grab;
+      font-weight: 700;
+      color: inherit;
+      margin-right: 8px;
+      user-select: none;
+      opacity: .72;
+    }
+    .franja-row-competitive,
+    .franja-row-global {
+      --franja-bg: #ffffff;
+      --franja-fg: #0f172a;
+      --franja-border: #cbd5e1;
+    }
+    .franja-row-competitive > th,
+    .franja-row-competitive > td,
+    .franja-row-global > th {
+      background: var(--franja-bg);
+      color: var(--franja-fg);
+      border-color: var(--franja-border);
+    }
+    .franja-row-global > th {
+      transition: box-shadow .12s ease, transform .12s ease;
+    }
+    .franja-row-competitive.is-drag-target > th,
+    .franja-row-competitive.is-drag-target > td {
+      outline: 2px dashed #94a3b8;
+      outline-offset: -2px;
+      box-shadow: inset 0 0 0 9999px rgba(255, 255, 255, 0.22);
+    }
+    .franja-row-global.is-visual-dragging > th {
+      opacity: .62;
+    }
+    .franja-row-global.is-visual-target-before > th {
+      box-shadow: inset 0 4px 0 #0f172a;
+    }
+    .franja-row-global.is-visual-target-after > th {
+      box-shadow: inset 0 -4px 0 #0f172a;
+    }
+    .franja-row-competitive.is-visual-target-before > th,
+    .franja-row-competitive.is-visual-target-before > td {
+      box-shadow: inset 0 4px 0 #0f172a;
+    }
+    .franja-row-competitive.is-visual-target-after > th,
+    .franja-row-competitive.is-visual-target-after > td {
+      box-shadow: inset 0 -4px 0 #0f172a;
+    }
+    .reorder-preview-origin {
+      padding: 10px 12px;
+      border: 1px solid #dbe3f3;
+      border-radius: 12px;
+      background: #f8fbff;
+      margin-bottom: 12px;
+    }
+    .reorder-preview-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 280px;
+      overflow: auto;
+    }
+    .reorder-preview-item {
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      padding: 8px 10px;
+      background: #fff;
+    }
+    .reorder-preview-item strong {
+      display: block;
+      margin-bottom: 2px;
+    }
+    .reorder-preview-empty {
+      padding: 10px 12px;
+      border: 1px dashed #d1d5db;
+      border-radius: 10px;
+      color: #6b7280;
+      background: #fafafa;
+    }
 
 
     /* quan passes el ratolí per la cel·la/filera de la franja */
@@ -456,15 +541,12 @@
     }
     .drawer-active-station-meta { font-size: .8rem; color: #6b7280; }
     .planner-program-bucket[hidden] { display:none !important; }
-    .franja-row--break th,
-    .franja-row--awards th,
-    .franja-row--separator th {
-      background: linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%);
-    }
     .franja-special-cell {
       padding: 14px;
       text-align: left;
-      background: linear-gradient(135deg, #f8fafc 0%, #ffffff 100%);
+      background: var(--franja-bg);
+      color: var(--franja-fg);
+      border-color: var(--franja-border);
     }
     .franja-special-badge {
       display:inline-flex;
@@ -472,15 +554,15 @@
       gap:6px;
       padding: 5px 10px;
       border-radius: 999px;
-      border: 1px solid #cfd6e6;
-      background: #fff;
+      border: 1px solid var(--franja-border);
+      background: rgba(255, 255, 255, 0.72);
       font-size: .8rem;
       font-weight: 700;
-      color: #334155;
+      color: var(--franja-fg);
     }
     .franja-special-label {
       font-weight: 700;
-      color: #0f172a;
+      color: var(--franja-fg);
     }
     .cell.is-active-station { outline:2px solid #1d4ed8; outline-offset:-2px; }
     th.js-col-h.is-active-station {
@@ -802,6 +884,8 @@
             <input type="time" class="form-control form-control-sm" id="hi" style="width:130px;">
             <input type="time" class="form-control form-control-sm" id="hf" style="width:130px;">
             <input type="text" class="form-control form-control-sm" id="ft" placeholder="Titol" style="flex:1; min-width:140px;">
+            <input type="color" class="form-control form-control-sm p-1" id="fcolor" value="#EFF6FF" title="Color de fons" style="width:58px;">
+            <button class="btn btn-sm btn-outline-secondary" id="btnResetFranjaColor" type="button" title="Restablir color">Color</button>
             <button class="btn btn-sm btn-outline-dark" id="btnAddFranja">+</button>
           </div>
         </section>
@@ -897,11 +981,16 @@
             <tbody>
               {% for f in franges %}
                 {% if f.is_competitive %}
-                  <tr>
+                  <tr class="franja-row-competitive js-franja-visual-target"
+                      data-franja-row="{{ f.id }}"
+                      data-franja-visual-row="{{ f.id }}"
+                      data-color-raw="{{ f.color_fons|default_if_none:'' }}"
+                      draggable="true"
+                      style="--franja-bg: {{ f.resolved_background_color }}; --franja-fg: {{ f.resolved_text_color }}; --franja-border: {{ f.resolved_border_color }};">
                     <th>
                       <div class="franja-head">
                         <div class="franja-info">
-                          <div class="fw-semibold">{{ f.display_label|default:"Franja" }}</div>
+                          <div class="fw-semibold"><span class="franja-drag-handle" title="Arrossega per reordenar">&#8942;&#8942;</span>{{ f.display_label|default:"Franja" }}</div>
                           <div class="mini">{{ f.hora_inici }} – {{ f.hora_fi }}</div>
                           <div class="mini mt-1 d-flex align-items-center" style="gap:6px;">
                             <span>Ordre:</span>
@@ -924,6 +1013,7 @@
                                   data-hi="{{ f.hora_inici|time:'H:i' }}"
                                   data-hf="{{ f.hora_fi|time:'H:i' }}"
                                   data-tipus="{{ f.tipus }}"
+                                  data-color="{{ f.color_fons|default_if_none:'' }}"
                                   title="Editar">✏️</button>
 
                           <button class="btn btn-sm btn-light franja-btn js-insert-after"
@@ -950,13 +1040,17 @@
                     {% endfor %}
                   </tr>
                 {% else %}
-                  <tr class="franja-row--{{ f.tipus }}">
+                  <tr class="franja-row-global franja-row--{{ f.tipus }} js-franja-visual-target"
+                      data-franja-visual-row="{{ f.id }}"
+                      data-color-raw="{{ f.color_fons|default_if_none:'' }}"
+                      draggable="true"
+                      style="--franja-bg: {{ f.resolved_background_color }}; --franja-fg: {{ f.resolved_text_color }}; --franja-border: {{ f.resolved_border_color }};">
                     <th colspan="{{ estacions|length|add:1 }}" class="franja-special-cell">
                       <div class="franja-head">
                         <div class="franja-info">
                           <div class="d-flex align-items-center flex-wrap" style="gap:8px;">
                             <span class="franja-special-badge">{{ f.tipus_label }}</span>
-                            <span class="franja-special-label">{{ f.display_label }}</span>
+                            <span class="franja-special-label"><span class="franja-visual-drag-handle" title="Arrossega per moure visualment">&#8942;&#8942;</span>{{ f.display_label }}</span>
                           </div>
                           <div class="mini mt-1">{{ f.hora_inici }} – {{ f.hora_fi }}</div>
                         </div>
@@ -1095,11 +1189,36 @@
           <input type="time" class="form-control form-control-sm" id="editFrHi">
           <input type="time" class="form-control form-control-sm" id="editFrHf">
         </div>
+        <div class="d-flex align-items-center" style="gap:8px;">
+          <input type="color" class="form-control form-control-sm p-1" id="editFrColor" value="#EFF6FF" title="Color de fons" style="width:58px;">
+          <button class="btn btn-sm btn-outline-secondary" type="button" id="btnEditFrColorReset">Restablir color</button>
+        </div>
         <div class="mini text-muted">En desar, les franges següents s’ajustaran automàticament.</div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-sm btn-outline-secondary" data-dismiss="modal">Cancel·lar</button>
         <button class="btn btn-sm btn-primary" id="btnEditFrSave">Desar</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="modal fade" id="franjaReorderModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Confirmar reordenacio horaria</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Tancar"></button>
+      </div>
+      <div class="modal-body">
+        <div class="reorder-preview-origin" id="franjaReorderOrigin"></div>
+        <div class="mini text-muted mb-2" id="franjaReorderCopy">
+          Aquest canvi recalculara l'ordre competitiu a partir del nou horari. Notes i jutges seguiran la sequencia competitiva resultant.
+        </div>
+        <div class="reorder-preview-list" id="franjaReorderList"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-sm btn-outline-secondary" data-dismiss="modal">Cancel.lar</button>
+        <button class="btn btn-sm btn-primary" id="btnFranjaReorderAccept">Acceptar i reordenar</button>
       </div>
     </div>
   </div>
@@ -1110,6 +1229,7 @@
 <script id="group-sidebar-data" type="application/json">{{ group_sidebar_json|safe }}</script>
 <script id="station-modes-data" type="application/json">{{ station_modes_json|safe }}</script>
 <script id="franja-order-modes-data" type="application/json">{{ franja_order_modes_json|safe }}</script>
+<script id="franja-default-colors-data" type="application/json">{{ franja_default_colors_json|safe }}</script>
 <script id="export-meta-data" type="application/json">{{ export_meta_json|safe }}</script>
 <script id="export-participant-fields-data" type="application/json">{{ export_participant_fields_json|safe }}</script>
 <script src="{% staticv 'js/rotacions_help.js' %}" defer></script>
@@ -1229,6 +1349,8 @@ const REORDER_COLS_URL = "{% url 'rotacions_estacions_reorder' competicio.id %}"
 const CLEAR_ALL_URL    = "{% url 'rotacions_clear_all' competicio.id %}";
 const OUT_OF_PROGRAM_VISIBILITY_SAVE_URL = "{% url 'rotacions_out_of_program_visibility_save' competicio.id %}";
 const INSERT_AFTER_URL = "{% url 'rotacions_franja_insert_after' competicio.id 0 %}";
+const REORDER_FRANGES_URL = "{% url 'rotacions_franges_reorder' competicio.id %}";
+const REORDER_VISUAL_FRANGES_URL = "{% url 'rotacions_franges_reorder_visual' competicio.id %}";
 const EXTRAPOLAR_URL0  = "{% url 'rotacions_extrapolar' competicio.id 0 %}";
 const DEL_ES_URL0      = "{% url 'rotacions_estacio_delete' competicio.id 0 %}";
 const DEL_FR_URL0      = "{% url 'rotacions_franja_delete' competicio.id 0 %}";
@@ -1236,6 +1358,9 @@ const FR_ORDER_MODE_URL0 = "{% url 'rotacions_franja_order_mode_set' competicio.
 const EXPORT_META_SAVE_URL = "{% url 'rotacions_export_meta_save' competicio.id %}";
 const EXPORT_LOGO_UPLOAD_URL = "{% url 'rotacions_export_logo_upload' competicio.id %}";
 const EXPORT_LOGO_CLEAR_URL = "{% url 'rotacions_export_logo_clear' competicio.id %}";
+const DND_PROGRAM_ITEM_MIME = "application/x-rotacions-program-item";
+const DND_FRANJA_ROW_MIME = "application/x-rotacions-franja-row";
+const DND_FRANJA_VISUAL_ROW_MIME = "application/x-rotacions-franja-visual-row";
 
 function insertAfterUrl(frId){
   return INSERT_AFTER_URL.replace("/0/", `/${frId}/`);
@@ -1284,6 +1409,85 @@ async function postFormData(url, formData){
   return null;
 }
 
+let pendingFranjaReorderAccept = null;
+
+function previewRowHtml(item){
+  if (!item) return "";
+  const title = escapeHtml(item.title || "Franja");
+  const oldRange = `${escapeHtml(item.old_start || "")}-${escapeHtml(item.old_end || "")}`;
+  const newRange = `${escapeHtml(item.new_start || "")}-${escapeHtml(item.new_end || "")}`;
+  const duration = Number(item.duration_minutes || 0);
+  return `
+    <div class="reorder-preview-item">
+      <strong>${title}</strong>
+      <div class="mini text-muted">Abans: ${oldRange}</div>
+      <div class="mini">Despres: ${newRange}</div>
+      <div class="mini text-muted">Durada preservada: ${duration} min</div>
+    </div>
+  `;
+}
+
+function showFranjaReorderModal(preview){
+  return new Promise((resolve) => {
+    const originEl = document.getElementById("franjaReorderOrigin");
+    const listEl = document.getElementById("franjaReorderList");
+    const acceptBtn = document.getElementById("btnFranjaReorderAccept");
+    const modalSelector = "#franjaReorderModal";
+    const origin = preview?.origin || {};
+    const affected = Array.isArray(preview?.affected) ? preview.affected : [];
+    if (originEl) {
+      const oldRange = origin.old_start && origin.old_end ? `${escapeHtml(origin.old_start)}-${escapeHtml(origin.old_end)}` : "nou";
+      const newRange = `${escapeHtml(origin.new_start || "")}-${escapeHtml(origin.new_end || "")}`;
+      originEl.innerHTML = `
+        <strong>${escapeHtml(preview?.action_label || "Reordenacio horaria")}</strong>
+        <div class="mini text-muted mt-1">${escapeHtml(origin.title || "Franja")}</div>
+        <div class="mini">Abans: ${oldRange}</div>
+        <div class="mini">Despres: ${newRange}</div>
+      `;
+    }
+    if (listEl) {
+      listEl.innerHTML = affected.length
+        ? affected.map(previewRowHtml).join("")
+        : '<div class="reorder-preview-empty">No hi ha cap altra franja competitiva afectada.</div>';
+    }
+
+    pendingFranjaReorderAccept = () => {
+      pendingFranjaReorderAccept = null;
+      if (window.jQuery) window.jQuery(modalSelector).modal("hide");
+      resolve(true);
+    };
+
+    if (acceptBtn) {
+      acceptBtn.disabled = false;
+    }
+
+    if (window.jQuery) {
+      const $modal = window.jQuery(modalSelector);
+      $modal.off("hidden.bs.modal.reorder");
+      $modal.on("hidden.bs.modal.reorder", function () {
+        if (pendingFranjaReorderAccept) {
+          pendingFranjaReorderAccept = null;
+          resolve(false);
+        }
+        $modal.off("hidden.bs.modal.reorder");
+      });
+      $modal.modal("show");
+    } else {
+      resolve(window.confirm("Acceptar la reordenacio horaria de les franges competitives?"));
+    }
+  });
+}
+
+async function submitFranjaMutation(url, payload){
+  const preview = await postJSON(url, {...payload, preview_only: true});
+  if (preview?.requires_confirmation) {
+    const accepted = await showFranjaReorderModal(preview);
+    if (!accepted) return {cancelled: true, preview};
+    return await postJSON(url, {...payload, confirm_reorder: true});
+  }
+  return await postJSON(url, payload);
+}
+
 // --- UI helpers ---
 const groupLabels = (() => {
   try {
@@ -1309,6 +1513,13 @@ const stationModes = (() => {
 const franjaOrderModes = (() => {
   try {
     return JSON.parse(document.getElementById("franja-order-modes-data")?.textContent || "{}");
+  } catch (e) {
+    return {};
+  }
+})();
+const franjaDefaultColors = (() => {
+  try {
+    return JSON.parse(document.getElementById("franja-default-colors-data")?.textContent || "{}");
   } catch (e) {
     return {};
   }
@@ -1761,7 +1972,9 @@ function initColumnDnD(){
 function initChipDnD(){
   document.querySelectorAll(".chip[draggable='true']").forEach((chip) => {
     chip.addEventListener("dragstart", (ev) => {
-      ev.dataTransfer.setData("text/plain", chip.dataset.key ?? "");
+      const key = chip.dataset.key ?? "";
+      ev.dataTransfer.setData("text/plain", key);
+      ev.dataTransfer.setData(DND_PROGRAM_ITEM_MIME, key);
     });
   });
 }
@@ -1775,9 +1988,10 @@ function initCellDnD(){
     cell.addEventListener("dragleave", () => cell.classList.remove("is-over"));
     cell.addEventListener("drop", (ev) => {
       ev.preventDefault();
+      ev.stopPropagation();
       cell.classList.remove("is-over");
 
-      const itemKey = ev.dataTransfer.getData("text/plain"); // "" => buida
+      const itemKey = ev.dataTransfer.getData(DND_PROGRAM_ITEM_MIME) || ev.dataTransfer.getData("text/plain"); // "" => buida
       const fr = cell.dataset.franja;
       const es = cell.dataset.estacio;
 
@@ -1802,12 +2016,108 @@ function initCellDnD(){
 
 // --- Modal edició franja (BS4) ---
 let editFrUrl = null;
+let addFranjaUsesDefaultColor = true;
+let editFrUsesDefaultColor = true;
 
 function initEditModalPlacement(){
   const modalEl = document.getElementById("editFrModal");
   if (modalEl && modalEl.parentElement !== document.body){
     document.body.appendChild(modalEl);
   }
+  const reorderModalEl = document.getElementById("franjaReorderModal");
+  if (reorderModalEl && reorderModalEl.parentElement !== document.body){
+    document.body.appendChild(reorderModalEl);
+  }
+}
+
+function initReorderModalControls(){
+  const acceptBtn = document.getElementById("btnFranjaReorderAccept");
+  if (acceptBtn) {
+    acceptBtn.addEventListener("click", () => {
+      if (typeof pendingFranjaReorderAccept === "function") {
+        const fn = pendingFranjaReorderAccept;
+        pendingFranjaReorderAccept = null;
+        fn();
+      }
+    });
+  }
+}
+
+function defaultFranjaColor(tipus){
+  const key = String(tipus || "competition");
+  return String(franjaDefaultColors[key] || franjaDefaultColors.competition || "#EFF6FF").toUpperCase();
+}
+
+function normalizeFranjaColorValue(value, tipus){
+  const raw = String(value || "").trim();
+  return /^#[0-9A-Fa-f]{6}$/.test(raw) ? raw.toUpperCase() : defaultFranjaColor(tipus);
+}
+
+function syncAddFranjaColorInput(){
+  const tipus = document.getElementById("ftype")?.value || "competition";
+  const input = document.getElementById("fcolor");
+  if (input && addFranjaUsesDefaultColor) {
+    input.value = defaultFranjaColor(tipus);
+  }
+}
+
+function syncEditFranjaColorInput(){
+  const tipus = document.getElementById("editFrTipus")?.value || "competition";
+  const input = document.getElementById("editFrColor");
+  if (input && editFrUsesDefaultColor) {
+    input.value = defaultFranjaColor(tipus);
+  }
+}
+
+function currentAddFranjaColorPayload(){
+  const tipus = document.getElementById("ftype")?.value || "competition";
+  const input = document.getElementById("fcolor");
+  if (!input || addFranjaUsesDefaultColor) return "";
+  return normalizeFranjaColorValue(input.value, tipus);
+}
+
+function currentEditFranjaColorPayload(){
+  const tipus = document.getElementById("editFrTipus")?.value || "competition";
+  const input = document.getElementById("editFrColor");
+  if (!input || editFrUsesDefaultColor) return "";
+  return normalizeFranjaColorValue(input.value, tipus);
+}
+
+function initFranjaColorControls(){
+  const createType = document.getElementById("ftype");
+  const createColor = document.getElementById("fcolor");
+  const createReset = document.getElementById("btnResetFranjaColor");
+  if (createType) createType.addEventListener("change", () => syncAddFranjaColorInput());
+  if (createColor) {
+    createColor.addEventListener("input", () => {
+      addFranjaUsesDefaultColor = false;
+    });
+  }
+  if (createReset) {
+    createReset.addEventListener("click", () => {
+      addFranjaUsesDefaultColor = true;
+      syncAddFranjaColorInput();
+    });
+  }
+
+  const editType = document.getElementById("editFrTipus");
+  const editColor = document.getElementById("editFrColor");
+  const editReset = document.getElementById("btnEditFrColorReset");
+  if (editType) editType.addEventListener("change", () => syncEditFranjaColorInput());
+  if (editColor) {
+    editColor.addEventListener("input", () => {
+      editFrUsesDefaultColor = false;
+    });
+  }
+  if (editReset) {
+    editReset.addEventListener("click", () => {
+      editFrUsesDefaultColor = true;
+      syncEditFranjaColorInput();
+    });
+  }
+
+  syncAddFranjaColorInput();
+  syncEditFranjaColorInput();
 }
 
 // --- Init controls (botons fora de la taula) ---
@@ -1861,8 +2171,10 @@ function initTopButtons(){
       const hora_fi = document.getElementById("hf")?.value;
       const titol = document.getElementById("ft")?.value;
       const tipus = document.getElementById("ftype")?.value || "competition";
+      const color_fons = currentAddFranjaColorPayload();
       try {
-        await postJSON(ADD_FR_URL, {hora_inici, hora_fi, titol, tipus});
+        const resp = await submitFranjaMutation(ADD_FR_URL, {hora_inici, hora_fi, titol, tipus, color_fons});
+        if (resp?.cancelled) return;
         location.reload();
       } catch(e){
         showAlert("Error creant franja: " + (e.message || e));
@@ -2071,11 +2383,16 @@ function initGlobalClickHandler(){
       const tipus = document.getElementById("editFrTipus");
       const hi = document.getElementById("editFrHi");
       const hf = document.getElementById("editFrHf");
+      const color = document.getElementById("editFrColor");
+      const rawColor = editBtn.dataset.color || editBtn.closest("[data-color-raw]")?.dataset.colorRaw || "";
 
       if (t) t.value = editBtn.dataset.titol || "";
       if (tipus) tipus.value = editBtn.dataset.tipus || "competition";
       if (hi) hi.value = editBtn.dataset.hi || "";
       if (hf) hf.value = editBtn.dataset.hf || "";
+      editFrUsesDefaultColor = !rawColor;
+      if (color) color.value = normalizeFranjaColorValue(rawColor, editBtn.dataset.tipus || "competition");
+      syncEditFranjaColorInput();
 
       if (window.jQuery) {
         window.jQuery("#editFrModal").modal("show");
@@ -2092,9 +2409,11 @@ function initGlobalClickHandler(){
       const tipus = document.getElementById("editFrTipus")?.value || "competition";
       const hora_inici = document.getElementById("editFrHi")?.value || "";
       const hora_fi = document.getElementById("editFrHf")?.value || "";
+      const color_fons = currentEditFranjaColorPayload();
 
       try{
-        await postJSON(editFrUrl, {titol, tipus, hora_inici, hora_fi});
+        const resp = await submitFranjaMutation(editFrUrl, {titol, tipus, hora_inici, hora_fi, color_fons});
+        if (resp?.cancelled) return;
         if (window.jQuery) window.jQuery("#editFrModal").modal("hide");
         location.reload();
       } catch(e){
@@ -2154,7 +2473,8 @@ function initGlobalClickHandler(){
     const ins = insBtn?.dataset?.fr;
     if (ins){
       try{
-        await postJSON(insertAfterUrl(ins), {});
+        const resp = await submitFranjaMutation(insertAfterUrl(ins), {});
+        if (resp?.cancelled) return;
         location.reload();
       } catch(e){
         showAlert("Error inserint franja: " + (e.message || e));
@@ -2345,6 +2665,118 @@ function syncPlannerDrawerPanels(){
   document.querySelectorAll("[data-drawer-panel]").forEach((panel) => {
     const shouldShow = String(panel.dataset.drawerPanel || "") === activePlannerDrawerPanel;
     panel.hidden = !shouldShow;
+  });
+}
+
+let draggedFranjaRowId = null;
+let draggedVisualFranjaRowId = null;
+
+function initFranjaRowDnD(){
+  document.querySelectorAll(".franja-row-competitive").forEach((row) => {
+    row.addEventListener("dragstart", (ev) => {
+      draggedFranjaRowId = row.dataset.franjaRow || null;
+      ev.dataTransfer.effectAllowed = "move";
+      ev.dataTransfer.setData(DND_FRANJA_ROW_MIME, draggedFranjaRowId || "");
+      row.style.opacity = "0.55";
+    });
+    row.addEventListener("dragend", () => {
+      draggedFranjaRowId = null;
+      row.style.opacity = "";
+      document.querySelectorAll(".franja-row-competitive.is-drag-target").forEach((node) => node.classList.remove("is-drag-target"));
+    });
+    row.addEventListener("dragover", (ev) => {
+      ev.preventDefault();
+      row.classList.add("is-drag-target");
+    });
+    row.addEventListener("dragleave", () => {
+      row.classList.remove("is-drag-target");
+    });
+    row.addEventListener("drop", async (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      row.classList.remove("is-drag-target");
+      const targetId = row.dataset.franjaRow || "";
+      const fromId = draggedFranjaRowId || ev.dataTransfer.getData(DND_FRANJA_ROW_MIME);
+      if (!fromId) return;
+      if (!fromId || !targetId || fromId === targetId) return;
+      const rect = row.getBoundingClientRect();
+      const position = (ev.clientY - rect.top) > (rect.height / 2) ? "after" : "before";
+      try {
+        await submitFranjaMutation(REORDER_FRANGES_URL, {
+          dragged_id: parseInt(fromId, 10),
+          target_id: parseInt(targetId, 10),
+          position,
+        });
+        location.reload();
+      } catch (e) {
+        showAlert("Error reordenant franges: " + (e.message || e));
+      }
+    });
+  });
+}
+
+function clearVisualFranjaTargets(){
+  document.querySelectorAll(".js-franja-visual-target.is-visual-target-before, .js-franja-visual-target.is-visual-target-after").forEach((node) => {
+    node.classList.remove("is-visual-target-before", "is-visual-target-after");
+  });
+}
+
+function setVisualFranjaTargetState(row, clientY){
+  if (!row) return "before";
+  clearVisualFranjaTargets();
+  const rect = row.getBoundingClientRect();
+  const position = (clientY - rect.top) > (rect.height / 2) ? "after" : "before";
+  row.classList.add(position === "after" ? "is-visual-target-after" : "is-visual-target-before");
+  return position;
+}
+
+function initVisualFranjaRowDnD(){
+  document.querySelectorAll(".franja-row-global").forEach((row) => {
+    row.addEventListener("dragstart", (ev) => {
+      draggedVisualFranjaRowId = row.dataset.franjaVisualRow || null;
+      row.classList.add("is-visual-dragging");
+      ev.dataTransfer.effectAllowed = "move";
+      ev.dataTransfer.setData(DND_FRANJA_VISUAL_ROW_MIME, draggedVisualFranjaRowId || "");
+    });
+    row.addEventListener("dragend", () => {
+      draggedVisualFranjaRowId = null;
+      row.classList.remove("is-visual-dragging");
+      clearVisualFranjaTargets();
+    });
+  });
+
+  document.querySelectorAll(".js-franja-visual-target").forEach((row) => {
+    row.addEventListener("dragover", (ev) => {
+      const fromId = draggedVisualFranjaRowId || ev.dataTransfer.getData(DND_FRANJA_VISUAL_ROW_MIME);
+      if (!fromId) return;
+      ev.preventDefault();
+      setVisualFranjaTargetState(row, ev.clientY);
+    });
+    row.addEventListener("dragleave", (ev) => {
+      if (!row.contains(ev.relatedTarget)) {
+        row.classList.remove("is-visual-target-before", "is-visual-target-after");
+      }
+    });
+    row.addEventListener("drop", async (ev) => {
+      const fromId = draggedVisualFranjaRowId || ev.dataTransfer.getData(DND_FRANJA_VISUAL_ROW_MIME);
+      if (!fromId) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      const targetId = row.dataset.franjaVisualRow || "";
+      const position = setVisualFranjaTargetState(row, ev.clientY);
+      clearVisualFranjaTargets();
+      if (!targetId || !fromId || fromId === targetId) return;
+      try {
+        await postJSON(REORDER_VISUAL_FRANGES_URL, {
+          dragged_id: parseInt(fromId, 10),
+          target_id: parseInt(targetId, 10),
+          position,
+        });
+        location.reload();
+      } catch (e) {
+        showAlert("Error reordenant visualment les franges globals: " + (e.message || e));
+      }
+    });
   });
 }
 
@@ -2637,7 +3069,11 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   initEditModalPlacement();
+  initReorderModalControls();
+  initFranjaColorControls();
   initColumnDnD();
+  initFranjaRowDnD();
+  initVisualFranjaRowDnD();
   initChipDnD();
   initCellDnD();
   initTopButtons();

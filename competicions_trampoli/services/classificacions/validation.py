@@ -10,6 +10,9 @@ from .classificacio_templates import (
     normalize_particions_schema,
     split_particio_custom_values,
 )
+from .pipeline_runtime import materialize_desempat_items
+from .pipeline_runtime import build_main_scoring_pipeline_from_schema
+from .pipeline_validation import validate_scoring_pipeline_shape
 from .detail_schema_validation import (
     build_validation_detail,
     detail_section_key_for_tipus,
@@ -871,6 +874,44 @@ def _validate_agregacio_camps_per_aparell(competicio, schema: dict):
     return errors
 
 
+def _validate_agregacio_exercicis_per_aparell(competicio, schema: dict):
+    schema = schema or {}
+    punt = schema.get("puntuacio") or {}
+    if not isinstance(punt, dict):
+        punt = {}
+
+    mode_sel = str(punt.get("mode_seleccio_exercicis") or "per_aparell_global").strip().lower()
+    if mode_sel not in {"per_aparell_global", "per_aparell_override", "global_pool"}:
+        mode_sel = "per_aparell_global"
+    if mode_sel != "per_aparell_override":
+        return []
+
+    raw_map = punt.get("agregacio_exercicis_per_aparell") or {}
+    if not raw_map:
+        return []
+    if not isinstance(raw_map, dict):
+        return ["puntuacio.agregacio_exercicis_per_aparell ha de ser un objecte {app_id: agregacio}."]
+
+    active_app_ids, selected_ids = _get_active_and_selected_app_ids(competicio, punt)
+    errors = []
+    for raw_key, raw_value in raw_map.items():
+        try:
+            app_id = int(raw_key)
+        except Exception:
+            errors.append(f"puntuacio.agregacio_exercicis_per_aparell: app_id invalid {raw_key}")
+            continue
+        if app_id not in active_app_ids:
+            errors.append(f"puntuacio.agregacio_exercicis_per_aparell: aparell {app_id} no valid o no actiu.")
+            continue
+        if selected_ids and app_id not in selected_ids:
+            errors.append(f"puntuacio.agregacio_exercicis_per_aparell: aparell {app_id} no esta seleccionat a puntuacio.")
+            continue
+        agg = str(raw_value or "sum").strip().lower()
+        if agg not in {"sum", "avg", "median", "max", "min"}:
+            errors.append(f"puntuacio.agregacio_exercicis_per_aparell[{app_id}] invalid: {agg}")
+    return errors
+
+
 def _validate_candidate_source_per_aparell(competicio, schema: dict, *, tipus="individual", team_mode=""):
     schema = schema or {}
     punt = (schema.get("puntuacio") or {})
@@ -918,9 +959,13 @@ def _validate_candidate_source_per_aparell(competicio, schema: dict, *, tipus="i
         if mode == "raw_exercise":
             continue
         cfg = raw_value.get("cfg")
-        if not isinstance(cfg, dict):
-            errors.append(f"puntuacio.candidate_source_per_aparell[{app_id}].cfg ha de ser un objecte.")
-            continue
+        fallback_cfg = punt.get("candidate_source_cfg") if isinstance(punt.get("candidate_source_cfg"), dict) else {}
+        if isinstance(cfg, dict):
+            merged_cfg = dict(fallback_cfg)
+            merged_cfg.update(cfg)
+            cfg = merged_cfg
+        else:
+            cfg = fallback_cfg
         errors.extend(
             _validate_candidate_source_cfg_obj(
                 cfg,
@@ -1604,6 +1649,11 @@ def _validate_tie_exercicis_selection(competicio, schema: dict, *, tipus="indivi
                 errors.append(
                     f"desempat[{idx}].exercicis_per_aparell no es compatible amb exercise_selection_scope=team_pool."
                 )
+            raw_agg_map = tie.get("agregacio_exercicis_per_aparell")
+            if raw_agg_map not in (None, {}, []):
+                errors.append(
+                    f"desempat[{idx}].agregacio_exercicis_per_aparell no es compatible amb exercise_selection_scope=team_pool."
+                )
             if scope.get("participants") not in (None, {}):
                 errors.append(
                     f"desempat[{idx}].scope.participants no es compatible amb exercise_selection_scope=team_pool."
@@ -1674,6 +1724,31 @@ def _validate_tie_exercicis_selection(competicio, schema: dict, *, tipus="indivi
                 )
             )
 
+        raw_agg_map = tie.get("agregacio_exercicis_per_aparell")
+        if raw_agg_map is None:
+            raw_agg_map = {}
+        if not isinstance(raw_agg_map, dict):
+            errors.append(f"desempat[{idx}].agregacio_exercicis_per_aparell ha de ser un objecte {{app_id: agregacio}}.")
+            continue
+        for app_key, raw_value in raw_agg_map.items():
+            try:
+                app_id = int(app_key)
+            except Exception:
+                errors.append(f"desempat[{idx}].agregacio_exercicis_per_aparell: app_id invalid {app_key}")
+                continue
+            if app_id not in active_app_ids:
+                errors.append(
+                    f"desempat[{idx}].agregacio_exercicis_per_aparell: aparell {app_id} no valid o no actiu."
+                )
+                continue
+            if target_ids and app_id not in target_ids:
+                continue
+            agg = str(raw_value or "sum").strip().lower()
+            if agg not in {"sum", "avg", "median", "max", "min"}:
+                errors.append(
+                    f"desempat[{idx}].agregacio_exercicis_per_aparell[{app_id}] invalid: {agg}"
+                )
+
     return errors
 
 
@@ -1730,6 +1805,62 @@ def _validate_victories_schema(competicio, schema: dict, tipus="individual"):
         camps = _normalize_tie_camps_for_validation(tie)
         if not camps:
             errors.append(f"puntuacio.victories.desempat_comparacio[{idx}] requereix almenys un camp.")
+        mode_sel = str(tie.get("mode_seleccio_exercicis") or "hereta").strip().lower()
+        if mode_sel == "per_aparell_override":
+            active_app_ids, selected_ids_main = _get_active_and_selected_app_ids(competicio, punt)
+            raw_map = tie.get("exercicis_per_aparell") or {}
+            if not isinstance(raw_map, dict):
+                errors.append(
+                    f"puntuacio.victories.desempat_comparacio[{idx}].exercicis_per_aparell ha de ser un objecte {{app_id: cfg}}."
+                )
+            else:
+                for app_key, ex_cfg in raw_map.items():
+                    try:
+                        app_id = int(app_key)
+                    except Exception:
+                        errors.append(
+                            f"puntuacio.victories.desempat_comparacio[{idx}].exercicis_per_aparell: app_id invalid {app_key}"
+                        )
+                        continue
+                    if app_id not in active_app_ids:
+                        errors.append(
+                            f"puntuacio.victories.desempat_comparacio[{idx}].exercicis_per_aparell: aparell {app_id} no valid o no actiu."
+                        )
+                        continue
+                    if selected_ids_main and app_id not in selected_ids_main:
+                        continue
+                    errors.extend(
+                        _validate_exercicis_cfg_obj(
+                            ex_cfg,
+                            f"puntuacio.victories.desempat_comparacio[{idx}].exercicis_per_aparell[{app_id}]",
+                        )
+                    )
+            raw_agg_map = tie.get("agregacio_exercicis_per_aparell") or {}
+            if not isinstance(raw_agg_map, dict):
+                errors.append(
+                    f"puntuacio.victories.desempat_comparacio[{idx}].agregacio_exercicis_per_aparell ha de ser un objecte {{app_id: agregacio}}."
+                )
+            else:
+                for app_key, raw_value in raw_agg_map.items():
+                    try:
+                        app_id = int(app_key)
+                    except Exception:
+                        errors.append(
+                            f"puntuacio.victories.desempat_comparacio[{idx}].agregacio_exercicis_per_aparell: app_id invalid {app_key}"
+                        )
+                        continue
+                    if app_id not in active_app_ids:
+                        errors.append(
+                            f"puntuacio.victories.desempat_comparacio[{idx}].agregacio_exercicis_per_aparell: aparell {app_id} no valid o no actiu."
+                        )
+                        continue
+                    if selected_ids_main and app_id not in selected_ids_main:
+                        continue
+                    agg = str(raw_value or "sum").strip().lower()
+                    if agg not in {"sum", "avg", "median", "max", "min"}:
+                        errors.append(
+                            f"puntuacio.victories.desempat_comparacio[{idx}].agregacio_exercicis_per_aparell[{app_id}] invalid: {agg}"
+                        )
 
     return errors
 
@@ -1891,6 +2022,47 @@ def validate_schema_for_competicio_detailed(competicio, schema_local, tipus="ind
                     selected_apps=selected_apps_list,
                 )
             )
+
+    pipeline_team_mode = normalize_team_mode(schema_local.get("equips", {}).get("team_mode", ""))
+    allow_pipeline_participants = tipus_norm == "equips" and pipeline_team_mode != "native_team"
+    allow_pipeline_exercise_scope = tipus_norm == "equips" and pipeline_team_mode == "derived_from_individual"
+    desempat_raw = schema_local.get("desempat") or []
+    if desempat_raw is not None and not isinstance(desempat_raw, list):
+        errors.append("desempat ha de ser una llista.")
+        desempat_raw = []
+
+    for idx, tie in enumerate(desempat_raw if isinstance(desempat_raw, list) else []):
+        if not isinstance(tie, dict):
+            errors.append(f"desempat[{idx}] ha de ser un objecte.")
+            continue
+        raw_pipeline = tie.get("pipeline")
+        if raw_pipeline is None:
+            continue
+        errors.extend(validate_scoring_pipeline_shape(raw_pipeline, prefix=f"desempat[{idx}].pipeline"))
+        if isinstance(raw_pipeline, dict):
+            if not allow_pipeline_participants:
+                if raw_pipeline.get("participants") not in (None, {}) or str(raw_pipeline.get("agregacio_participants") or "").strip():
+                    errors.append(
+                        f"desempat[{idx}].pipeline.participants no es compatible amb tipus='{tipus_norm}'."
+                    )
+            raw_scope = str(raw_pipeline.get("exercise_selection_scope") or "").strip().lower()
+            if raw_scope == "team_pool" and not allow_pipeline_exercise_scope:
+                errors.append(
+                    f"desempat[{idx}].pipeline.exercise_selection_scope no es compatible amb tipus='{tipus_norm}' i team_mode='{schema_local.get('equips', {}).get('team_mode', '')}'."
+                )
+
+    materialized_desempat = materialize_desempat_items(
+        desempat_raw if isinstance(desempat_raw, list) else [],
+        tipus=tipus,
+        team_mode=schema_local.get("equips", {}).get("team_mode", ""),
+        selected_app_ids=selected_app_ids,
+        allow_participants=allow_pipeline_participants,
+        fallback_pipeline=build_main_scoring_pipeline_from_schema(
+            {"puntuacio": schema_local.get("puntuacio") or {}},
+            tipus=tipus,
+            team_mode=schema_local.get("equips", {}).get("team_mode", ""),
+        ),
+    )
     errors.extend(
         _validate_exercise_selection_scope(
             schema_local,
@@ -1903,6 +2075,7 @@ def validate_schema_for_competicio_detailed(competicio, schema_local, tipus="ind
     errors.extend(_validate_no_tots_mode(schema_local))
     errors.extend(_validate_camps_per_aparell(competicio, schema_local))
     errors.extend(_validate_agregacio_camps_per_aparell(competicio, schema_local))
+    errors.extend(_validate_agregacio_exercicis_per_aparell(competicio, schema_local))
     errors.extend(
         _validate_candidate_source(
             schema_local,
@@ -1918,7 +2091,6 @@ def validate_schema_for_competicio_detailed(competicio, schema_local, tipus="ind
             team_mode=schema_local.get("equips", {}).get("team_mode", ""),
         )
     )
-    errors.extend(_validate_tie_camps_per_aparell(competicio, schema_local))
     presentacio_errors, presentacio_details = _validate_presentacio_columns_details(competicio, schema_local, tipus=tipus)
     errors.extend(presentacio_errors)
     details.extend(presentacio_details)
@@ -1931,6 +2103,8 @@ def validate_schema_for_competicio_detailed(competicio, schema_local, tipus="ind
             team_mode=schema_local.get("equips", {}).get("team_mode", ""),
         )
     )
+    schema_local["desempat"] = materialized_desempat
+    errors.extend(_validate_tie_camps_per_aparell(competicio, schema_local))
     errors.extend(_validate_victories_schema(competicio, schema_local, tipus=tipus))
     return schema_local, errors, details
 

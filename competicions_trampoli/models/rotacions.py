@@ -1,3 +1,5 @@
+import re
+
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
@@ -5,6 +7,59 @@ from django.db.models import Q
 from .base import Competicio
 from .competicio import CompeticioAparell
 from .inscripcions import GrupCompeticio
+
+
+HEX_COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
+DEFAULT_FRANJA_BACKGROUND_COLORS = {
+    "competition": "#EFF6FF",
+    "break": "#FFF7ED",
+    "awards": "#FEF3C7",
+    "separator": "#F1F5F9",
+}
+
+
+def normalize_hex_color(value):
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    if not HEX_COLOR_RE.match(raw):
+        raise ValidationError("El color de fons ha de tenir format #RRGGBB.")
+    return raw.upper()
+
+
+def _hex_to_rgb(value):
+    clean = normalize_hex_color(value).lstrip("#")
+    return tuple(int(clean[idx:idx + 2], 16) for idx in (0, 2, 4))
+
+
+def _rgb_to_hex(rgb):
+    r, g, b = [max(0, min(255, int(channel))) for channel in rgb]
+    return f"#{r:02X}{g:02X}{b:02X}"
+
+
+def background_text_color(value):
+    try:
+        red, green, blue = _hex_to_rgb(value)
+    except ValidationError:
+        return "#0F172A"
+    luminance = (0.299 * red) + (0.587 * green) + (0.114 * blue)
+    return "#0F172A" if luminance >= 170 else "#FFFFFF"
+
+
+def background_border_color(value):
+    try:
+        red, green, blue = _hex_to_rgb(value)
+    except ValidationError:
+        return "#CBD5E1"
+    is_light = background_text_color(value) == "#0F172A"
+    factor = 0.82 if is_light else 1.18
+    adjusted = []
+    for channel in (red, green, blue):
+        if is_light:
+            adjusted.append(channel * factor)
+        else:
+            adjusted.append(channel + ((255 - channel) * (factor - 1.0)))
+    return _rgb_to_hex(adjusted)
 
 class RotacioEstacio(models.Model):
     TIPUS_CHOICES = [
@@ -74,13 +129,16 @@ class RotacioFranja(models.Model):
         TIPUS_AWARDS: "Premis",
         TIPUS_SEPARATOR: "Separador",
     }
+    DEFAULT_BACKGROUND_COLORS = DEFAULT_FRANJA_BACKGROUND_COLORS
 
     competicio = models.ForeignKey(Competicio, on_delete=models.CASCADE, related_name="rot_franges")
     hora_inici = models.TimeField()
     hora_fi = models.TimeField()
     ordre = models.PositiveIntegerField(default=1, db_index=True)
+    ordre_visual = models.PositiveIntegerField(default=1, db_index=True)
     titol = models.CharField(max_length=120, blank=True, default="")
     tipus = models.CharField(max_length=20, choices=TIPUS_CHOICES, default=TIPUS_COMPETITION, db_index=True)
+    color_fons = models.CharField(max_length=7, blank=True, default="")
 
     class Meta:
         ordering = ["ordre", "id"]
@@ -94,6 +152,7 @@ class RotacioFranja(models.Model):
             raise ValidationError("Tipus de franja invalid.")
         if self.hora_fi <= self.hora_inici:
             raise ValidationError("L'hora fi ha de ser posterior a l'hora inici.")
+        self.color_fons = normalize_hex_color(self.color_fons)
 
     @property
     def is_competitive(self):
@@ -106,6 +165,22 @@ class RotacioFranja(models.Model):
     @property
     def display_label(self):
         return self.titol.strip() or self.tipus_label
+
+    @property
+    def resolved_background_color(self):
+        try:
+            manual = normalize_hex_color(self.color_fons)
+        except ValidationError:
+            manual = ""
+        return manual or self.DEFAULT_BACKGROUND_COLORS.get(self.tipus, self.DEFAULT_BACKGROUND_COLORS[self.TIPUS_COMPETITION])
+
+    @property
+    def resolved_text_color(self):
+        return background_text_color(self.resolved_background_color)
+
+    @property
+    def resolved_border_color(self):
+        return background_border_color(self.resolved_background_color)
 
     def __str__(self):
         label = self.display_label

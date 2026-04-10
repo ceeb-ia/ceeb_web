@@ -258,12 +258,18 @@ class InscripcionsBackendSmokeTests(_BaseTrampoliDataMixin, TestCase):
         groups_wrapper = (
             package_root / "templates" / "competicio" / "inscripcions" / "scripts" / "_groups.html"
         ).read_text(encoding="utf-8")
-        groups_workspace = (package_root / "templates" / "competicio" / "_groups_workspace_script.html").read_text(encoding="utf-8")
-        teams_script = (package_root / "templates" / "competicio" / "_team_workspace_script.html").read_text(encoding="utf-8")
+        groups_workspace = (
+            package_root / "templates" / "competicio" / "inscripcions" / "scripts" / "_groups_workspace_script.html"
+        ).read_text(encoding="utf-8")
+        teams_script = (
+            package_root / "templates" / "competicio" / "inscripcions" / "scripts" / "_team_workspace_script.html"
+        ).read_text(encoding="utf-8")
         teams_wrapper = (
             package_root / "templates" / "competicio" / "inscripcions" / "scripts" / "_teams.html"
         ).read_text(encoding="utf-8")
-        series_script = (package_root / "templates" / "competicio" / "_series_workspace_script.html").read_text(encoding="utf-8")
+        series_script = (
+            package_root / "templates" / "competicio" / "inscripcions" / "scripts" / "_series_workspace_script.html"
+        ).read_text(encoding="utf-8")
         series_wrapper = (
             package_root / "templates" / "competicio" / "inscripcions" / "scripts" / "_series.html"
         ).read_text(encoding="utf-8")

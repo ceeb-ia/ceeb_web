@@ -391,6 +391,35 @@
   .puntuacio-step-card__body > :last-child {
     margin-bottom: 0;
   }
+  .builder-summary-box__text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    color: #0f172a;
+    line-height: 1.45;
+  }
+  .builder-summary-line {
+    display: grid;
+    grid-template-columns: minmax(110px, 145px) minmax(0, 1fr);
+    gap: 0.6rem;
+    align-items: start;
+  }
+  .builder-summary-line__label {
+    font-size: 0.77rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #475467;
+  }
+  .builder-summary-line__text {
+    min-width: 0;
+  }
+  .builder-summary-line--empty {
+    display: block;
+  }
+  .builder-summary-line--empty .builder-summary-line__text {
+    color: #667085;
+  }
   #exerciseCriteriaCard {
     background: linear-gradient(180deg, #f8fafc 0%, #f4f7fb 100%);
     border-color: #d7dfeb;
@@ -793,6 +822,10 @@
     .builder-subsection__head {
       flex-direction: column;
     }
+    .builder-summary-line {
+      grid-template-columns: 1fr;
+      gap: 0.2rem;
+    }
   }
 
 </style>
@@ -1028,18 +1061,19 @@
                       <div class="builder-subsection__head">
                         <div>
                           <p class="builder-subsection__title">Criteris de desempat</p>
-                          <p class="builder-subsection__desc">Cada criteri pot definir <strong>Aparells</strong>, <strong>Camp(s)</strong> i <strong>Exercicis</strong> en l'ordre exacte d'aplicació.</p>
+                          <p class="builder-subsection__desc">Cada criteri calcula un valor independent amb el seu propi pipeline i s'aplica en l'ordre exacte de la llista.</p>
                         </div>
                       </div>
           <div class="builder-table-shell table-responsive mb-2">
             <table class="table table-sm mb-0">
               <thead>
                 <tr>
-                  <th style="width:22%;">Aparells <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="desempat_aparells" aria-label="Ajuda aparells de desempat">?</button></th>
-                  <th style="width:22%;">Camp <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="desempat_camps" aria-label="Ajuda camps de desempat">?</button></th>
-                  <th style="width:24%;">Exercicis <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="desempat_exercicis" aria-label="Ajuda exercicis de desempat">?</button></th>
-                  <th id="tieParticipantsHead" style="width:20%;">Participants <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="desempat_participants" aria-label="Ajuda participants de desempat">?</button></th>
-                  <th style="width:12%;">Ordre <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="desempat_ordre" aria-label="Ajuda ordre de desempat">?</button></th>
+                  <th style="width:18%;">Nom <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="desempat_overview" aria-label="Ajuda nom de desempat">?</button></th>
+                  <th style="width:18%;">Aparells <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="desempat_aparells" aria-label="Ajuda aparells de desempat">?</button></th>
+                  <th style="width:18%;">Camp <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="desempat_camps" aria-label="Ajuda camps de desempat">?</button></th>
+                  <th style="width:22%;">Exercicis <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="desempat_exercicis" aria-label="Ajuda exercicis de desempat">?</button></th>
+                  <th id="tieParticipantsHead" style="width:16%;">Participants <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="desempat_participants" aria-label="Ajuda participants de desempat">?</button></th>
+                  <th style="width:8%;">Ordre <button type="button" class="classif-help-trigger classif-help-trigger--inline" data-help-key="desempat_ordre" aria-label="Ajuda ordre de desempat">?</button></th>
                   <th style="width:10%;" class="text-right">Accions</th>
                 </tr>
               </thead>
@@ -1047,14 +1081,15 @@
             </table>
           </div>
 
-          <button type="button" class="btn btn-sm btn-outline-primary mb-3" id="btnTieAdd">+ Afegir criteri</button>
+          <button type="button" class="btn btn-sm btn-outline-primary mb-3" id="btnTieAdd">+ Afegir criteri buit</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary mb-3 ml-2" id="btnTieCloneFromPuntuacio">+ Crear des de puntuació actual</button>
 
           <details class="builder-advanced">
             <summary class="small text-muted">Opcions avançades (JSON)</summary>
             <div class="mt-2">
               <textarea class="form-control" id="tDesempat" rows="3"></textarea>
               <div class="form-text text-muted">
-                Exemple: [{"aparell_id":12,"camp":"E_total","ordre":"desc"},{"camp":"penalitzacio","ordre":"asc"}]
+                Exemple: [{"id":"tie_1","nom":"Millor execució","ordre":"desc","pipeline_version":1,"pipeline":{...}}]
               </div>
             </div>
           </details>
@@ -1355,6 +1390,7 @@
       exercise_selection_scope: EXERCISE_SELECTION_SCOPE_PER_MEMBER,
       mode_seleccio_exercicis: "per_aparell_global",
       exercicis_per_aparell: {},
+      agregacio_exercicis_per_aparell: {},
       agregacio_exercicis: "sum",
       agregacio_aparells: "sum",
       mode_resultat_aparells: "score",
@@ -1499,7 +1535,6 @@
     exMaxPerParticipantBox: document.getElementById("exMaxPerParticipantBox"),
     exIdsBox: document.getElementById("exIdsBox"),
     exModeHint: document.getElementById("exModeHint"),
-    exSelectionSummary: document.getElementById("exSelectionSummary"),
     restrictionsHint: document.getElementById("restrictionsHint"),
     perAppConfigIntro: document.getElementById("perAppConfigIntro"),
     puntuacioSummaryBox: document.getElementById("puntuacioSummaryBox"),
@@ -1528,6 +1563,7 @@
     tieBody: document.getElementById("tieBody"),
     tieParticipantsHead: document.getElementById("tieParticipantsHead"),
     btnTieAdd: document.getElementById("btnTieAdd"),
+    btnTieCloneFromPuntuacio: document.getElementById("btnTieCloneFromPuntuacio"),
     tDesempat: document.getElementById("tDesempat"),
 
     fEntitats: document.getElementById("fEntitats"),
@@ -2431,6 +2467,11 @@
     pushMany(Object.keys((punt.candidate_source_per_aparell && typeof punt.candidate_source_per_aparell === "object") ? punt.candidate_source_per_aparell : {}));
     desempat.forEach(item => {
       pushMany((((item || {}).scope || {}).aparells || {}).ids || []);
+      pushMany((((item || {}).pipeline || {}).aparells || {}).ids || []);
+      pushMany(Object.keys((((item || {}).pipeline || {}).camps_per_aparell || {})));
+      pushMany(Object.keys((((item || {}).pipeline || {}).agregacio_camps_per_aparell || {})));
+      pushMany(Object.keys((((item || {}).pipeline || {}).exercicis_per_aparell || {})));
+      pushMany(Object.keys((((item || {}).pipeline || {}).candidate_source_per_aparell || {})));
     });
     (Array.isArray(victories.desempat_comparacio) ? victories.desempat_comparacio : []).forEach(item => {
       pushMany((((item || {}).scope || {}).aparells || {}).ids || []);
@@ -2524,6 +2565,7 @@
   function pruneTieCriteriaAppReferences(rawList, allowedIds) {
     const items = Array.isArray(rawList) ? rawList : [];
     const out = [];
+    const allowed = sanitizeCompatibleAppIds(allowedIds);
     items.forEach(item => {
       if (!item || typeof item !== "object" || Array.isArray(item)) return;
       const next = { ...item };
@@ -2534,6 +2576,54 @@
         if (!pruned.keep) return;
         if (pruned.scope !== undefined) scope.aparells = pruned.scope;
         next.scope = scope;
+      }
+      if (next.pipeline && typeof next.pipeline === "object" && !Array.isArray(next.pipeline)) {
+        const pipeline = { ...next.pipeline };
+        if (pipeline.aparells && typeof pipeline.aparells === "object" && !Array.isArray(pipeline.aparells)) {
+          const appScope = { ...pipeline.aparells };
+          if (String(appScope.mode || "").toLowerCase().trim() === "seleccionar") {
+            appScope.ids = sanitizeCompatibleAppIds(appScope.ids || []).filter(id => allowed.includes(id));
+            if (!appScope.ids.length) appScope.ids = [];
+          }
+          pipeline.aparells = appScope;
+        }
+        if (pipeline.camps_per_aparell && typeof pipeline.camps_per_aparell === "object" && !Array.isArray(pipeline.camps_per_aparell)) {
+          const camps = {};
+          Object.entries(pipeline.camps_per_aparell).forEach(([key, value]) => {
+            const appId = Number(key);
+            if (!Number.isFinite(appId) || !allowed.includes(appId)) return;
+            camps[String(appId)] = value;
+          });
+          pipeline.camps_per_aparell = camps;
+        }
+        if (pipeline.agregacio_camps_per_aparell && typeof pipeline.agregacio_camps_per_aparell === "object" && !Array.isArray(pipeline.agregacio_camps_per_aparell)) {
+          const camps = {};
+          Object.entries(pipeline.agregacio_camps_per_aparell).forEach(([key, value]) => {
+            const appId = Number(key);
+            if (!Number.isFinite(appId) || !allowed.includes(appId)) return;
+            camps[String(appId)] = value;
+          });
+          pipeline.agregacio_camps_per_aparell = camps;
+        }
+        if (pipeline.exercicis_per_aparell && typeof pipeline.exercicis_per_aparell === "object" && !Array.isArray(pipeline.exercicis_per_aparell)) {
+          const ex = {};
+          Object.entries(pipeline.exercicis_per_aparell).forEach(([key, value]) => {
+            const appId = Number(key);
+            if (!Number.isFinite(appId) || !allowed.includes(appId)) return;
+            ex[String(appId)] = value;
+          });
+          pipeline.exercicis_per_aparell = ex;
+        }
+        if (pipeline.candidate_source_per_aparell && typeof pipeline.candidate_source_per_aparell === "object" && !Array.isArray(pipeline.candidate_source_per_aparell)) {
+          const cs = {};
+          Object.entries(pipeline.candidate_source_per_aparell).forEach(([key, value]) => {
+            const appId = Number(key);
+            if (!Number.isFinite(appId) || !allowed.includes(appId)) return;
+            cs[String(appId)] = value;
+          });
+          pipeline.candidate_source_per_aparell = cs;
+        }
+        next.pipeline = pipeline;
       }
       out.push(next);
     });
@@ -3183,6 +3273,13 @@
         delete scope.participants;
         out.scope = scope;
       }
+      if (out.pipeline && typeof out.pipeline === "object" && !Array.isArray(out.pipeline)) {
+        const pipeline = { ...out.pipeline };
+        delete pipeline.participants;
+        delete pipeline.agregacio_participants;
+        delete pipeline.exercise_selection_scope;
+        out.pipeline = pipeline;
+      }
       delete out.agregacio_participants;
       delete out.exercise_selection_scope;
       return out;
@@ -3297,6 +3394,292 @@
     return "hereta";
   }
 
+  function cloneJsonValue(raw, fallback = null) {
+    try {
+      return JSON.parse(JSON.stringify(raw));
+    } catch (_) {
+      return fallback;
+    }
+  }
+
+  function normalizeTieAggValue(rawValue, fallbackValue = "sum") {
+    const agg = String(rawValue || fallbackValue || "sum").toLowerCase().trim();
+    if (["sum", "avg", "median", "max", "min"].includes(agg)) return agg;
+    return "sum";
+  }
+
+  function normalizeTiePipelineAppScope(rawScope, fallbackScope) {
+    const scope = (rawScope && typeof rawScope === "object" && !Array.isArray(rawScope)) ? cloneJsonValue(rawScope, {}) : {};
+    const fallback = (fallbackScope && typeof fallbackScope === "object" && !Array.isArray(fallbackScope)) ? fallbackScope : {};
+    const ids = sanitizeAppIds(Array.isArray(scope.ids) ? scope.ids : (Array.isArray(fallback.ids) ? fallback.ids : []));
+    let mode = String(scope.mode || fallback.mode || (ids.length ? "seleccionar" : "hereta")).toLowerCase().trim();
+    if (!["seleccionar", "tots"].includes(mode)) {
+      mode = ids.length ? "seleccionar" : "hereta";
+    }
+    if (mode === "seleccionar") {
+      return { mode, ids };
+    }
+    return { mode: "tots", ids };
+  }
+
+  function normalizeTiePipelineCampsPerApp(rawMap, fallbackMap, appIds) {
+    const out = {};
+    const fallback = (fallbackMap && typeof fallbackMap === "object" && !Array.isArray(fallbackMap)) ? fallbackMap : {};
+    const source = (rawMap && typeof rawMap === "object" && !Array.isArray(rawMap)) ? rawMap : {};
+    const keys = Array.isArray(appIds) && appIds.length
+      ? appIds.map(id => String(id))
+      : Array.from(new Set([...Object.keys(source), ...Object.keys(fallback)]));
+    keys.forEach(key => {
+      const raw = source[key] ?? source[Number(key)] ?? fallback[key] ?? fallback[Number(key)];
+      const camps = normalizeTieCampsFromObj({ camps: raw });
+      if (camps.length) out[String(Number(key))] = camps;
+    });
+    return out;
+  }
+
+  function normalizeTiePipelineAggMap(rawMap, fallbackMap, appIds, fallbackAgg) {
+    const out = {};
+    const fallback = (fallbackMap && typeof fallbackMap === "object" && !Array.isArray(fallbackMap)) ? fallbackMap : {};
+    const source = (rawMap && typeof rawMap === "object" && !Array.isArray(rawMap)) ? rawMap : {};
+    const keys = Array.isArray(appIds) && appIds.length
+      ? appIds.map(id => String(id))
+      : Array.from(new Set([...Object.keys(source), ...Object.keys(fallback)]));
+    const fallbackValue = normalizeTieAggValue(fallbackAgg, "sum");
+    keys.forEach(key => {
+      const raw = source[key] ?? source[Number(key)] ?? fallback[key] ?? fallback[Number(key)];
+      out[String(Number(key))] = normalizeTieAggValue(raw, fallbackValue);
+    });
+    return out;
+  }
+
+  function buildLegacyAggFromPerAppMap(appIds, rawMap, fallbackAgg) {
+    const map = normalizeTiePipelineAggMap(rawMap, {}, appIds, fallbackAgg || "sum");
+    const keys = Array.isArray(appIds) ? appIds.map(id => String(id)) : Object.keys(map);
+    if (!keys.length) return normalizeTieAggValue(fallbackAgg || "sum", "sum");
+    const values = keys.map(key => normalizeTieAggValue(map[key] || fallbackAgg || "sum", fallbackAgg || "sum"));
+    return values.every(value => value === values[0]) ? values[0] : normalizeTieAggValue(fallbackAgg || "sum", "sum");
+  }
+
+  function normalizeTiePipelineCandidateSourceMap(rawMap, fallbackMap, appIds) {
+    const out = {};
+    const fallback = (fallbackMap && typeof fallbackMap === "object" && !Array.isArray(fallbackMap)) ? fallbackMap : {};
+    const source = (rawMap && typeof rawMap === "object" && !Array.isArray(rawMap)) ? rawMap : {};
+    const keys = Array.isArray(appIds) && appIds.length
+      ? appIds.map(id => String(id))
+      : Array.from(new Set([...Object.keys(source), ...Object.keys(fallback)]));
+    keys.forEach(key => {
+      const raw = source[key] ?? source[Number(key)] ?? fallback[key] ?? fallback[Number(key)];
+      out[String(Number(key))] = _copyCandidateSourceEntry(raw, fallback?.mode || "raw_exercise", fallback?.cfg || {});
+    });
+    return out;
+  }
+
+  function normalizeTiePipelineExercicisPerApp(rawMap, fallbackMap, appIds) {
+    const out = {};
+    const fallback = (fallbackMap && typeof fallbackMap === "object" && !Array.isArray(fallbackMap)) ? fallbackMap : {};
+    const source = (rawMap && typeof rawMap === "object" && !Array.isArray(rawMap)) ? rawMap : {};
+    const keys = Array.isArray(appIds) && appIds.length
+      ? appIds.map(id => String(id))
+      : Array.from(new Set([...Object.keys(source), ...Object.keys(fallback)]));
+    keys.forEach(key => {
+      const raw = source[key] ?? source[Number(key)] ?? fallback[key] ?? fallback[Number(key)];
+      const cfg = normalizeTieExercicisCfg(raw);
+      if (Object.keys(cfg).length) out[String(Number(key))] = cfg;
+    });
+    return out;
+  }
+
+  function normalizeTiePipelineParticipants(rawParticipants, fallbackParticipants) {
+    const participants = (rawParticipants && typeof rawParticipants === "object" && !Array.isArray(rawParticipants))
+      ? rawParticipants
+      : {};
+    const fallback = (fallbackParticipants && typeof fallbackParticipants === "object" && !Array.isArray(fallbackParticipants))
+      ? fallbackParticipants
+      : {};
+    let mode = String(participants.mode || fallback.mode || "tots").toLowerCase().trim();
+    if (mode === "hereta" || !mode) mode = "tots";
+    if (!["tots", "millor_1", "millor_n", "pitjor_1", "pitjor_n"].includes(mode)) {
+      mode = "tots";
+    }
+    const out = { mode };
+    if (mode !== "tots") {
+      out.n = Math.max(1, Number(participants.n || fallback.n || 1));
+    }
+    return out;
+  }
+
+  function normalizeTiePipeline(rawPipeline, fallbackPipeline) {
+    const source = (rawPipeline && typeof rawPipeline === "object" && !Array.isArray(rawPipeline))
+      ? cloneJsonValue(rawPipeline, {})
+      : {};
+    const fallback = (fallbackPipeline && typeof fallbackPipeline === "object" && !Array.isArray(fallbackPipeline))
+      ? fallbackPipeline
+      : {};
+    const out = source;
+    ["victories", "desempat", "presentacio", "particions", "particions_v2", "particions_custom", "filtres", "equips"].forEach(key => {
+      delete out[key];
+    });
+
+    out.aparells = normalizeTiePipelineAppScope(out.aparells, fallback.aparells);
+    const appIds = Array.isArray(out.aparells.ids) ? out.aparells.ids : [];
+    out.camps_per_aparell = normalizeTiePipelineCampsPerApp(out.camps_per_aparell, fallback.camps_per_aparell, appIds);
+    out.agregacio_camps_per_aparell = normalizeTiePipelineAggMap(
+      out.agregacio_camps_per_aparell,
+      fallback.agregacio_camps_per_aparell,
+      appIds,
+      out.agregacio_camps || fallback.agregacio_camps || "sum",
+    );
+    out.agregacio_camps = normalizeTieAggValue(out.agregacio_camps, fallback.agregacio_camps || "sum");
+    out.candidate_source_mode = _normalize_candidate_source_mode_like(out.candidate_source_mode || fallback.candidate_source_mode || "raw_exercise");
+    out.candidate_source_cfg = _copyCandidateSourceCfg(out.candidate_source_cfg || fallback.candidate_source_cfg || {});
+    out.candidate_source_per_aparell = normalizeTiePipelineCandidateSourceMap(
+      out.candidate_source_per_aparell,
+      fallback.candidate_source_per_aparell,
+      appIds,
+    );
+    out.exercicis = normalizeTieExercicisCfg(out.exercicis || fallback.exercicis || {});
+    out.exercise_selection_scope = normalizeTieExerciseSelectionScope(
+      out.exercise_selection_scope || fallback.exercise_selection_scope || "hereta",
+    );
+    out.mode_seleccio_exercicis = normalizeTieModeSeleccioExercicis(
+      out.mode_seleccio_exercicis || fallback.mode_seleccio_exercicis || "hereta",
+    );
+    out.exercicis_per_aparell = normalizeTiePipelineExercicisPerApp(
+      out.exercicis_per_aparell,
+      fallback.exercicis_per_aparell,
+      appIds,
+    );
+    out.agregacio_exercicis = normalizeTieAggValue(out.agregacio_exercicis, fallback.agregacio_exercicis || "sum");
+    out.agregacio_exercicis_per_aparell = normalizeTiePipelineAggMap(
+      out.agregacio_exercicis_per_aparell,
+      fallback.agregacio_exercicis_per_aparell,
+      appIds,
+      out.agregacio_exercicis || fallback.agregacio_exercicis || "sum",
+    );
+    out.agregacio_aparells = normalizeTieAggValue(out.agregacio_aparells, fallback.agregacio_aparells || "sum");
+    out.mode_resultat_aparells = String(out.mode_resultat_aparells || fallback.mode_resultat_aparells || "score").toLowerCase().trim();
+    if (out.mode_resultat_aparells !== "score") {
+      out.mode_resultat_aparells = "score";
+    }
+    out.ordre = String(out.ordre || fallback.ordre || "desc").toLowerCase().trim();
+    if (!["asc", "desc"].includes(out.ordre)) {
+      out.ordre = "desc";
+    }
+    out.participants = normalizeTiePipelineParticipants(out.participants, fallback.participants);
+    out.agregacio_participants = normalizeTieAggValue(out.agregacio_participants, fallback.agregacio_participants || "sum");
+    return out;
+  }
+
+  function buildTiePipelineFromPuntuacioSchema(punt) {
+    const base = cloneJsonValue(punt || {}, {});
+    if (!base || typeof base !== "object" || Array.isArray(base)) return normalizeTiePipeline({}, {});
+    delete base.victories;
+    return normalizeTiePipeline(base, {});
+  }
+
+  function getTiePipelineVisibleAppIds(tie) {
+    const pipeline = tie && typeof tie.pipeline === "object" && !Array.isArray(tie.pipeline) ? tie.pipeline : {};
+    return sanitizeAppIds((((pipeline.aparells || {}).ids) || []));
+  }
+
+  function getTieVisibleCamps(tie) {
+    const legacyCamps = normalizeTieCampsFromObj(tie);
+    if (legacyCamps.length) return legacyCamps;
+    const pipeline = tie && typeof tie.pipeline === "object" && !Array.isArray(tie.pipeline) ? tie.pipeline : {};
+    const ids = getTiePipelineVisibleAppIds(tie);
+    const campsMap = pipeline.camps_per_aparell && typeof pipeline.camps_per_aparell === "object" && !Array.isArray(pipeline.camps_per_aparell)
+      ? pipeline.camps_per_aparell
+      : {};
+    const keys = ids.length ? ids.map(id => String(id)) : Object.keys(campsMap);
+    for (const key of keys) {
+      const camps = normalizeTieCampsFromObj({ camps: campsMap[key] ?? campsMap[Number(key)] });
+      if (camps.length) return camps;
+    }
+    return [];
+  }
+
+  function getTieVisibleAggCamps(tie) {
+    const legacy = normalizeTieAggCampsFromObj(tie);
+    if (legacy !== "hereta") return legacy;
+    const pipeline = tie && typeof tie.pipeline === "object" && !Array.isArray(tie.pipeline) ? tie.pipeline : {};
+    return normalizeTieAggValue(pipeline.agregacio_camps || "sum", "sum");
+  }
+
+  function getTieVisibleParticipants(tie) {
+    const legacyScope = ((tie || {}).scope || {}).participants || {};
+    const pipeline = tie && typeof tie.pipeline === "object" && !Array.isArray(tie.pipeline) ? tie.pipeline : {};
+    const raw = pipeline.participants && typeof pipeline.participants === "object" && !Array.isArray(pipeline.participants)
+      ? pipeline.participants
+      : legacyScope;
+    const mode = String(raw.mode || "tots").toLowerCase().trim();
+    if (mode === "hereta") return { mode: "tots", n: 1 };
+    const out = { mode: ["tots", "millor_1", "millor_n", "pitjor_1", "pitjor_n"].includes(mode) ? mode : "tots" };
+    if (out.mode !== "tots") out.n = Math.max(1, Number(raw.n || 1));
+    return out;
+  }
+
+  function getTieVisibleAppScopeValue(tie) {
+    const pipeline = tie && typeof tie.pipeline === "object" && !Array.isArray(tie.pipeline) ? tie.pipeline : {};
+    const appScope = pipeline.aparells && typeof pipeline.aparells === "object" && !Array.isArray(pipeline.aparells) ? pipeline.aparells : {};
+    const ids = sanitizeAppIds(appScope.ids || []);
+    const mode = String(appScope.mode || "hereta").toLowerCase().trim();
+    if (mode === "tots") return "tots";
+    if (mode === "seleccionar" && ids.length === 1) return `app:${ids[0]}`;
+    return "hereta";
+  }
+
+  function getTieVisibleSummary(tie) {
+    const parts = [];
+    const appScope = getTieVisibleAppScopeValue(tie);
+    if (appScope === "tots") {
+      parts.push("Tots els aparells");
+    } else if (appScope.startsWith("app:")) {
+      const appId = Number(appScope.split(":")[1]);
+      parts.push(formatAppRefLabel(appId) || `Aparell ${appId}`);
+    } else {
+      const ids = getTiePipelineVisibleAppIds(tie);
+      if (ids.length > 1) {
+        parts.push(`${ids.length} aparells`);
+      } else {
+        parts.push("Mateixos aparells que la puntuació");
+      }
+    }
+    const camps = getTieVisibleCamps(tie);
+    if (camps.length) parts.push(camps.join(" + "));
+    const tiePipeline = tie && typeof tie.pipeline === "object" && !Array.isArray(tie.pipeline) ? tie.pipeline : {};
+    const ex = tiePipeline.exercicis || ((tie || {}).scope || {}).exercicis || {};
+    const exMode = String(ex.mode || "hereta").toLowerCase().trim();
+    if (exMode && exMode !== "hereta") {
+      if (exMode === "millor_n" || exMode === "pitjor_n") {
+        parts.push(`${exMode.replace("_", " ")} ${Math.max(1, Number(ex.best_n || 1))}`);
+      } else if (exMode === "index") {
+        parts.push(`exercici #${Math.max(1, Number(ex.index || 1))}`);
+      } else if (exMode === "llista") {
+        const ids = Array.isArray(ex.ids) ? ex.ids.join(",") : String(ex.ids || "");
+        parts.push(`llista ${ids || "?"}`);
+      } else {
+        parts.push(exMode);
+      }
+    }
+    const exSelMode = normalizeTieModeSeleccioExercicis(tiePipeline.mode_seleccio_exercicis || (tie || {}).mode_seleccio_exercicis || "hereta");
+    if (exSelMode === "per_aparell_override") {
+      const aggExPerApp = normalizeTiePipelineAggMap(
+        tiePipeline.agregacio_exercicis_per_aparell || (tie || {}).agregacio_exercicis_per_aparell || {},
+        {},
+        getTiePipelineVisibleAppIds(tie),
+        tiePipeline.agregacio_exercicis || (tie || {}).agregacio_exercicis || "sum",
+      );
+      if (Object.keys(aggExPerApp).length) parts.push("agg ex per aparell");
+    }
+    const agg = getTieVisibleAggCamps(tie);
+    if (agg && agg !== "hereta") parts.push(agg);
+    const participants = getTieVisibleParticipants(tie);
+    if (participants && participants.mode && participants.mode !== "tots") {
+      parts.push(participants.mode);
+    }
+    return parts.join(" | ");
+  }
+
   function normalizeTieModeSeleccioExercicis(rawMode){
     const mode = String(rawMode || "hereta").toLowerCase().trim();
     if (["hereta","per_aparell_global","per_aparell_override","global_pool"].includes(mode)) return mode;
@@ -3343,6 +3726,9 @@
       const id = Number(appScope.split(":")[1]);
       return Number.isFinite(id) ? [id] : [];
     }
+    const rawTie = tr && tr.__tieSourceRaw && typeof tr.__tieSourceRaw === "object" ? tr.__tieSourceRaw : null;
+    const rawPipelineIds = rawTie ? getTiePipelineVisibleAppIds(rawTie) : [];
+    if (rawPipelineIds.length) return rawPipelineIds;
     return getTieInheritedAppIds();
   }
 
@@ -3353,6 +3739,7 @@
     const index = Math.max(1, Number(cfg.index || 1));
     const maxPerParticipant = Math.max(0, Number(cfg.max_per_participant || 0));
     const ids = Array.isArray(cfg.ids) ? cfg.ids.join(",") : "";
+    const aggEx = normalizeTieAggValue(readTiePerAppAggState(tr)[String(compAparellId)] || "sum", "sum");
     const app = getAparellById(compAparellId);
     const appName = app ? app.nom : `Aparell ${compAparellId}`;
     const showMaxPerParticipant = !isDerivedExerciseSelectionScopeAvailable() || getEffectiveTieExerciseSelectionScope(tr?.querySelector('[data-k="ex_scope"]')?.value || EXERCISE_SELECTION_SCOPE_INHERIT) === EXERCISE_SELECTION_SCOPE_TEAM_POOL;
@@ -3382,6 +3769,13 @@
         <input class="form-control form-control-sm"
                data-k="tie_app_ex_ids" data-app-id="${esc(compAparellId)}"
                type="text" value="${esc(ids)}" placeholder="Llista (ex: 1,3,4)">
+        <select class="form-control form-control-sm mt-1" data-k="tie_app_ex_agg" data-app-id="${esc(compAparellId)}">
+          <option value="sum" ${aggEx==="sum" ? "selected" : ""}>Agregacio exercicis: Suma</option>
+          <option value="avg" ${aggEx==="avg" ? "selected" : ""}>Agregacio exercicis: Mitjana</option>
+          <option value="median" ${aggEx==="median" ? "selected" : ""}>Agregacio exercicis: Mediana</option>
+          <option value="max" ${aggEx==="max" ? "selected" : ""}>Agregacio exercicis: Maxim</option>
+          <option value="min" ${aggEx==="min" ? "selected" : ""}>Agregacio exercicis: Minim</option>
+        </select>
       </div>
     `;
   }
@@ -3422,6 +3816,26 @@
     }
   }
 
+  function readTiePerAppAggState(tr){
+    const stateNode = tr.querySelector('[data-k="ex_agg_per_app_state"]');
+    if (!stateNode) return {};
+    try {
+      return normalizeTiePipelineAggMap(JSON.parse(stateNode.value || "{}"), {}, [], "sum");
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function writeTiePerAppAggState(tr, map){
+    const stateNode = tr.querySelector('[data-k="ex_agg_per_app_state"]');
+    if (!stateNode) return;
+    try {
+      stateNode.value = JSON.stringify(normalizeTiePipelineAggMap(map || {}, {}, [], "sum"));
+    } catch (_) {
+      stateNode.value = "{}";
+    }
+  }
+
   function collectVisibleTiePerAppOverrides(tr, fallbackMap){
     const box = tr.querySelector('[data-k="ex_per_app_box"]');
     let state = normalizeTieExercicisPerAparellMap(fallbackMap || readTiePerAppState(tr));
@@ -3453,6 +3867,24 @@
     return state;
   }
 
+  function collectVisibleTiePerAppAggOverrides(tr, fallbackMap){
+    const box = tr.querySelector('[data-k="ex_per_app_box"]');
+    let state = normalizeTiePipelineAggMap(fallbackMap || readTiePerAppAggState(tr), {}, [], "sum");
+    if (!box) {
+      writeTiePerAppAggState(tr, state);
+      return state;
+    }
+
+    box.querySelectorAll('[data-k="tie_app_ex_agg"]').forEach(sel => {
+      const appId = String(sel.getAttribute("data-app-id") || "").trim();
+      if (!appId) return;
+      state[appId] = normalizeTieAggValue(sel.value || "sum", "sum");
+    });
+
+    writeTiePerAppAggState(tr, state);
+    return state;
+  }
+
   function readTiePerAppExercicisFromRow(tr, fallbackMap){
     if (isTieExerciseSelectionLockedToMainPool(tr.querySelector('[data-k="ex_scope"]')?.value || EXERCISE_SELECTION_SCOPE_INHERIT)) {
       writeTiePerAppState(tr, {});
@@ -3468,9 +3900,25 @@
     return state;
   }
 
+  function readTiePerAppAggExercicisFromRow(tr, fallbackMap){
+    if (isTieExerciseSelectionLockedToMainPool(tr.querySelector('[data-k="ex_scope"]')?.value || EXERCISE_SELECTION_SCOPE_INHERIT)) {
+      writeTiePerAppAggState(tr, {});
+      return {};
+    }
+    const modeSel = normalizeTieModeSeleccioExercicis(tr.querySelector('[data-k="ex_sel_mode"]')?.value || "hereta");
+    let state = normalizeTiePipelineAggMap(fallbackMap || readTiePerAppAggState(tr), {}, [], "sum");
+    if (modeSel === "per_aparell_override") {
+      state = collectVisibleTiePerAppAggOverrides(tr, state);
+    } else {
+      writeTiePerAppAggState(tr, state);
+    }
+    return state;
+  }
+
   function renderTiePerAppExercicisUI(tr){
     if (isTieExerciseSelectionLockedToMainPool(tr.querySelector('[data-k="ex_scope"]')?.value || EXERCISE_SELECTION_SCOPE_INHERIT)) {
       writeTiePerAppState(tr, {});
+      writeTiePerAppAggState(tr, {});
       const box = tr.querySelector('[data-k="ex_per_app_box"]');
       if (box) {
         box.style.display = "none";
@@ -3488,6 +3936,7 @@
     }
 
     const state = collectVisibleTiePerAppOverrides(tr);
+    collectVisibleTiePerAppAggOverrides(tr);
     const appIds = _uniquePositiveInts(getTieTargetAppIds(tr));
     box.style.display = "";
     if (!appIds.length) {
@@ -3501,17 +3950,19 @@
     }).join("");
 
     box.querySelectorAll('[data-k="tie_app_ex_card"]').forEach(card => refreshTiePerAppExCardUI(card));
-    box.querySelectorAll('[data-k="tie_app_ex_mode"], [data-k="tie_app_ex_best_n"], [data-k="tie_app_ex_index"], [data-k="tie_app_ex_max_pp"], [data-k="tie_app_ex_ids"]').forEach(node => {
+    box.querySelectorAll('[data-k="tie_app_ex_mode"], [data-k="tie_app_ex_best_n"], [data-k="tie_app_ex_index"], [data-k="tie_app_ex_max_pp"], [data-k="tie_app_ex_ids"], [data-k="tie_app_ex_agg"]').forEach(node => {
       node.addEventListener("change", () => {
         if (node.matches('[data-k="tie_app_ex_mode"]')) {
           const card = node.closest('[data-k="tie_app_ex_card"]');
           if (card) refreshTiePerAppExCardUI(card);
         }
         collectVisibleTiePerAppOverrides(tr);
+        collectVisibleTiePerAppAggOverrides(tr);
         syncAdvancedFromUI();
       });
       node.addEventListener("input", () => {
         collectVisibleTiePerAppOverrides(tr);
+        collectVisibleTiePerAppAggOverrides(tr);
         syncAdvancedFromUI();
       });
     });
@@ -3548,6 +3999,7 @@
   function readTieObjFromRow(tr, includeParticipants) {
     const campCfg = readTieCampsFromRow(tr);
     const ordre = tr.querySelector('[data-k="ordre"]').value;
+    const nom = String(tr.querySelector('[data-k="tie_nom"]')?.value || "").trim();
 
     const appScope = tr.querySelector('[data-k="app_scope"]').value; // hereta|app:<id>
     const exScope = normalizeTieExerciseSelectionScope(tr.querySelector('[data-k="ex_scope"]')?.value || "hereta");
@@ -3559,9 +4011,12 @@
     const exMaxPP = Math.max(0, Number(tr.querySelector('[data-k="ex_max_pp"]')?.value || 0));
     const exIds = parsePositiveIds(tr.querySelector('[data-k="ex_ids"]').value || "");
     const exPerApp = readTiePerAppExercicisFromRow(tr);
+    const aggExPerApp = readTiePerAppAggExercicisFromRow(tr);
     const allowMaxPerParticipant = !isDerivedExerciseSelectionScopeAvailable() || getEffectiveTieExerciseSelectionScope(exScope) === EXERCISE_SELECTION_SCOPE_TEAM_POOL;
 
     const obj = {
+      id: String(tr.dataset.tieId || ""),
+      nom,
       camps: campCfg.camps,
       agregacio_camps: campCfg.agregacio_camps,
       ordre,
@@ -3591,7 +4046,11 @@
       }
       if (exMode === "llista") obj.scope.exercicis.ids = exIds;
       if (exSelMode !== "hereta") obj.mode_seleccio_exercicis = exSelMode;
-      if (exSelMode === "per_aparell_override") obj.exercicis_per_aparell = exPerApp;
+      if (exSelMode === "per_aparell_override") {
+        obj.exercicis_per_aparell = exPerApp;
+        obj.agregacio_exercicis_per_aparell = aggExPerApp;
+        obj.agregacio_exercicis = buildLegacyAggFromPerAppMap(getTieTargetAppIds(tr), aggExPerApp, "sum");
+      }
     }
 
     if (includeParticipants && !fixedTeamPool) {
@@ -3603,7 +4062,7 @@
 
   function normalizeVictoryTieModeSeleccioExercicis(rawMode){
     const mode = normalizeTieModeSeleccioExercicis(rawMode);
-    if (["hereta","per_aparell_global","global_pool"].includes(mode)) return mode;
+    if (["hereta","per_aparell_global","per_aparell_override","global_pool"].includes(mode)) return mode;
     return "hereta";
   }
 
@@ -3616,6 +4075,8 @@
     const exIndex = Number(tr.querySelector('[data-k="ex_index"]').value || 1);
     const exMaxPP = Math.max(0, Number(tr.querySelector('[data-k="ex_max_pp"]')?.value || 0));
     const exIds = parsePositiveIds(tr.querySelector('[data-k="ex_ids"]').value || "");
+    const exPerApp = readTiePerAppExercicisFromRow(tr);
+    const aggExPerApp = readTiePerAppAggExercicisFromRow(tr);
 
     const obj = {
       camps: campCfg.camps,
@@ -3631,6 +4092,11 @@
     if (exMaxPP > 0) obj.scope.exercicis.max_per_participant = exMaxPP;
     if (exMode === "llista") obj.scope.exercicis.ids = exIds;
     if (exSelMode !== "hereta") obj.mode_seleccio_exercicis = exSelMode;
+    if (exSelMode === "per_aparell_override") {
+      obj.exercicis_per_aparell = exPerApp;
+      obj.agregacio_exercicis_per_aparell = aggExPerApp;
+      obj.agregacio_exercicis = buildLegacyAggFromPerAppMap(getTieInheritedAppIds(), aggExPerApp, "sum");
+    }
     return obj;
   }
 
@@ -3666,6 +4132,13 @@
       const exMaxPP = Math.max(0, Number((sEx && sEx.max_per_participant) || 0));
       const exIds = Array.isArray(sEx && sEx.ids) ? sEx.ids : [];
       const exIdsStr = exIds.length ? exIds.join(",") : "";
+      const exPerAppSeed = normalizeTieExercicisPerAparellMap((t && t.exercicis_per_aparell) || {});
+      const exAggPerAppSeed = normalizeTiePipelineAggMap(
+        (t && t.agregacio_exercicis_per_aparell) || {},
+        {},
+        appIds,
+        (t && t.agregacio_exercicis) || "sum",
+      );
 
       tr.innerHTML = `
         <td data-cell="camp"></td>
@@ -3674,6 +4147,7 @@
             <select class="form-control form-control-sm" data-k="ex_sel_mode">
               <option value="hereta">Selecció ex: Mateixa que puntuació</option>
               <option value="per_aparell_global">Selecció ex: Per aparell (global)</option>
+              <option value="per_aparell_override">Selecció ex: Per aparell (override)</option>
               <option value="global_pool">Selecció ex: Sac global</option>
             </select>
             <select class="form-control form-control-sm" data-k="ex_mode">
@@ -3694,6 +4168,9 @@
             </div>
             <input class="form-control form-control-sm" data-k="ex_max_pp" type="number" min="0" value="0" style="display:none;" placeholder="Max N per participant (0 = sense limit)">
             <input class="form-control form-control-sm" data-k="ex_ids" type="text" style="display:none;" placeholder="ex: 1,3,4">
+            <input type="hidden" data-k="ex_per_app_state" value="{}">
+            <input type="hidden" data-k="ex_agg_per_app_state" value="{}">
+            <div data-k="ex_per_app_box" style="display:none;"></div>
             <div class="small text-muted" data-k="ex_hint" style="display:none;"></div>
           </div>
         </td>
@@ -3727,16 +4204,21 @@
       exIndexEl.value = exIndex;
       exMaxPPEl.value = exMaxPP;
       exIdsEl.value = exIdsStr;
+      writeTiePerAppState(tr, exPerAppSeed);
+      writeTiePerAppAggState(tr, exAggPerAppSeed);
       ensureSelectOption(ordSel, ordre, value => `${value} (legacy)`);
       ordSel.value = ordre;
 
       function refreshExUI() {
         const m = String(exModeSel.value || "hereta").toLowerCase().trim();
         const modeSel = normalizeVictoryTieModeSeleccioExercicis(exSelModeSel.value);
-        exBestNEl.style.display = (m === "millor_n" || m === "pitjor_n") ? "" : "none";
-        exIndexEl.style.display = (m === "index") ? "" : "none";
-        exMaxPPEl.style.display = (m === "hereta") ? "none" : "";
-        exIdsEl.style.display = (m === "llista") ? "" : "none";
+        const isOverride = modeSel === "per_aparell_override";
+        exModeSel.style.display = isOverride ? "none" : "";
+        exBestNEl.style.display = !isOverride && (m === "millor_n" || m === "pitjor_n") ? "" : "none";
+        exIndexEl.style.display = !isOverride && (m === "index") ? "" : "none";
+        exMaxPPEl.style.display = !isOverride && (m === "hereta") ? "none" : (!isOverride ? "" : "none");
+        exIdsEl.style.display = !isOverride && (m === "llista") ? "" : "none";
+        renderTiePerAppExercicisUI(tr);
 
         if (m === "millor_n") exHint.textContent = "Tria els N millors exercicis.";
         else if (m === "pitjor_n") exHint.textContent = "Tria els N pitjors exercicis.";
@@ -3745,6 +4227,7 @@
         else if (m === "ultim") exHint.textContent = "Agafa l'últim exercici existent.";
         else if (m === "index") exHint.textContent = "Fa servir només l'exercici # (1..N).";
         else if (m === "llista") exHint.textContent = "Llista d'índexs: 1,3,4.";
+        else if (isOverride) exHint.textContent = "Override per aparell actiu.";
         else exHint.textContent = "";
 
         if (exHint.textContent) {
@@ -3759,13 +4242,13 @@
       refreshExUI();
 
       tr.addEventListener("change", (e) => {
-        if (e.target && e.target.matches('[data-k="camps"],[data-k="agg_camps"],[data-k="ordre"],[data-k="ex_sel_mode"],[data-k="ex_mode"],[data-k="ex_best_n"],[data-k="ex_index"],[data-k="ex_max_pp"],[data-k="ex_ids"]')) {
+        if (e.target && e.target.matches('[data-k="camps"],[data-k="agg_camps"],[data-k="ordre"],[data-k="ex_sel_mode"],[data-k="ex_mode"],[data-k="ex_best_n"],[data-k="ex_index"],[data-k="ex_max_pp"],[data-k="ex_ids"],[data-k="tie_app_ex_agg"]')) {
           refreshExUI();
           syncAdvancedFromUI();
         }
       });
       tr.addEventListener("input", (e) => {
-        if (e.target && e.target.matches('[data-k="ex_best_n"],[data-k="ex_index"],[data-k="ex_max_pp"],[data-k="ex_ids"]')) {
+        if (e.target && e.target.matches('[data-k="ex_best_n"],[data-k="ex_index"],[data-k="ex_max_pp"],[data-k="ex_ids"],[data-k="tie_app_ex_agg"]')) {
           syncAdvancedFromUI();
         }
       });
@@ -3842,9 +4325,12 @@
 
   function addDefaultTieCriterion(cur, includeParticipants) {
     const item = {
+      id: `tie_${Math.random().toString(16).slice(2)}`,
+      nom: `Desempat ${cur.length + 1}`,
       camps: [],
       agregacio_camps: "hereta",
       ordre: "desc",
+      pipeline_version: 1,
       scope: {
         aparells: { mode: "hereta" },
         exercicis: { mode: "hereta" },
@@ -4040,8 +4526,18 @@
   function readTieUI(includeInvalid) {
     const out = [];
     const includeParticipants = isTipusEquips() && getEquipsUiState().effectiveTeamMode !== TEAM_MODE_NATIVE;
+    const selectedMainIds = selectedAparellIdsFromUI();
+    const fallbackPuntuacio = readPuntuacioSchemaFromUI();
     document.querySelectorAll("#tieBody tr").forEach(tr => {
-      const item = readTieObjFromRow(tr, includeParticipants);
+      const rawItem = readTieObjFromRow(tr, includeParticipants);
+      const item = sanitizeTieItemForUI(
+        { ...(tr.__tieSourceRaw || {}), ...rawItem },
+        selectedMainIds,
+        true,
+        includeParticipants,
+        fallbackPuntuacio,
+      );
+      if (!item) return;
       if (includeInvalid || (item.camps || []).length) out.push(item);
     });
     return out;
@@ -4051,9 +4547,15 @@
 
   function renderTieUI(list) {
     els.tieBody.innerHTML = "";
+    const includeParticipants = isTipusEquips() && getEquipsUiState().effectiveTeamMode !== TEAM_MODE_NATIVE;
+    const selectedMainIds = selectedAparellIdsFromUI();
+    const fallbackPuntuacio = readPuntuacioSchemaFromUI();
 
     (list || []).forEach((t, idx) => {
+      t = sanitizeTieItemForUI(t, selectedMainIds, true, includeParticipants, fallbackPuntuacio) || t;
       const tr = document.createElement("tr");
+      tr.__tieSourceRaw = cloneJsonValue(t, {});
+      tr.dataset.tieId = String((t && t.id) || `tie_${idx + 1}`);
 
       // --- Normalitza entrada (compat) ---
       const scope = t.scope || {};
@@ -4092,11 +4594,19 @@
       const exPerAppSeed = normalizeTieExercicisPerAparellMap(
         t.exercicis_per_aparell || sEx.exercicis_per_aparell || {}
       );
+      const exAggPerAppSeed = normalizeTiePipelineAggMap(
+        t.agregacio_exercicis_per_aparell || {},
+        {},
+        getTiePipelineVisibleAppIds(t).length ? getTiePipelineVisibleAppIds(t) : getTieInheritedAppIds(),
+        t.agregacio_exercicis || ((t.pipeline || {}).agregacio_exercicis) || "sum",
+      );
 
       const pNorm = normalizeParticipantsFromTie(t);
       const pMode = pNorm.pMode;
       const pN = pNorm.pN;
       const pAgg = pNorm.pAgg;
+      const tieNom = String((t && t.nom) || `Desempat ${idx + 1}`).trim();
+      const tieSummaryText = getTieVisibleSummary(t);
 
       // camp(s)/ordre
       const tieCamps = normalizeTieCampsFromObj(t);
@@ -4108,6 +4618,11 @@
       const showSelectionScope = isDerivedExerciseSelectionScopeAvailable();
 
       tr.innerHTML = `
+        <td>
+          <input class="form-control form-control-sm mb-1" data-k="tie_nom" type="text" value="${esc(tieNom)}" placeholder="Nom del criteri">
+          <div class="small text-muted" data-k="tie_summary">${esc(tieSummaryText)}</div>
+        </td>
+
         <td>
           <select class="form-control form-control-sm" data-k="app_scope">
             ${appScopeOpts}
@@ -4150,6 +4665,7 @@
 
             <input class="form-control form-control-sm" data-k="ex_ids" type="text" style="display:none;" placeholder="ex: 1,3,4">
             <input type="hidden" data-k="ex_per_app_state" value="{}">
+            <input type="hidden" data-k="ex_agg_per_app_state" value="{}">
             <div data-k="ex_per_app_box" style="display:none;"></div>
             <div class="small text-muted" data-k="ex_summary"></div>
             <div class="small text-muted" data-k="ex_hint" style="display:none;"></div>
@@ -4183,6 +4699,8 @@
       const exSummary = tr.querySelector('[data-k="ex_summary"]');
       const exHint = tr.querySelector('[data-k="ex_hint"]');
       const ordSel = tr.querySelector('[data-k="ordre"]');
+      const tieSummary = tr.querySelector('[data-k="tie_summary"]');
+      const tieNomInput = tr.querySelector('[data-k="tie_nom"]');
 
       ensureSelectOption(appScopeSel, appScope, value => {
         if (String(value || "") === "hereta") return "Mateixos aparells que la puntuació";
@@ -4214,6 +4732,7 @@
       exMaxPPEl.value = exMaxPP;
       exIdsEl.value = exIdsStr;
       writeTiePerAppState(tr, exPerAppSeed);
+      writeTiePerAppAggState(tr, exAggPerAppSeed);
       setParticipantsUI(tr, pMode, pN, pAgg);
 
       function getCurrentAppIds() {
@@ -4232,6 +4751,16 @@
         const curr = readTieCampsFromRow(tr);
         const campCell = tr.querySelector('[data-cell="camp"]');
         campCell.innerHTML = buildCampSelectHTMLForApps(getCurrentAppIds(), curr.camps, curr.agregacio_camps);
+        if (tieSummary) {
+          const next = sanitizeTieItemForUI(
+            { ...(tr.__tieSourceRaw || {}), ...readTieObjFromRow(tr, includeParticipants) },
+            selectedMainIds,
+            true,
+            includeParticipants,
+            fallbackPuntuacio,
+          );
+          tieSummary.textContent = getTieVisibleSummary(next || t);
+        }
       }
 
       function refreshExUI() {
@@ -4378,6 +4907,7 @@
       exIndexEl.addEventListener("input", syncAdvancedFromUI);
       exMaxPPEl.addEventListener("input", syncAdvancedFromUI);
       exIdsEl.addEventListener("input", syncAdvancedFromUI);
+      if (tieNomInput) tieNomInput.addEventListener("input", syncAdvancedFromUI);
       bindParticipantsListeners(tr);
 
       tr.addEventListener("change", (e) => {
@@ -6231,36 +6761,24 @@
     return out;
   }
 
-  function sanitizeTieItemForUI(rawTie, selectedMainIds, allowAppScope, allowParticipants) {
+  function sanitizeTieItemForUI(rawTie, selectedMainIds, allowAppScope, allowParticipants, fallbackPuntuacio) {
     if (!rawTie || typeof rawTie !== "object" || Array.isArray(rawTie)) return null;
-    const item = JSON.parse(JSON.stringify(rawTie));
-    delete item.camp;
-    delete item.aparell_id;
+    const source = cloneJsonValue(rawTie, {});
+    const fallbackPipeline = buildTiePipelineFromPuntuacioSchema(fallbackPuntuacio || (readPuntuacioSchemaFromUI ? readPuntuacioSchemaFromUI() : {}));
+    source.pipeline = normalizeTiePipeline(source.pipeline || fallbackPipeline, fallbackPipeline);
+    source.id = String(source.id || `tie_${Math.random().toString(16).slice(2)}`).trim();
+    source.nom = String(source.nom || `Desempat ${selectedMainIds.length ? selectedMainIds.length : 1}`).trim();
+    source.pipeline_version = Number(source.pipeline_version || 1) || 1;
 
-    const scope = item.scope && typeof item.scope === "object" && !Array.isArray(item.scope) ? item.scope : {};
-    const exScope = scope.exercicis && typeof scope.exercicis === "object" && !Array.isArray(scope.exercicis) ? scope.exercicis : {};
-    const normalizedScope = { exercicis: normalizeTieExercicisCfg(exScope) };
+    const pipeline = source.pipeline;
     const inheritedIds = sanitizeAppIds(selectedMainIds);
-
-    let targetIds = inheritedIds.slice();
-    if (allowAppScope) {
-      const appScope = scope.aparells && typeof scope.aparells === "object" && !Array.isArray(scope.aparells) ? scope.aparells : {};
-      const mode = String(appScope.mode || "hereta").toLowerCase().trim();
-      if (mode === "seleccionar") {
-        targetIds = sanitizeAppIds(appScope.ids || []);
-        if (!targetIds.length) return null;
-        normalizedScope.aparells = { mode: "seleccionar", ids: targetIds };
-      } else {
-        if (!targetIds.length) return null;
-        normalizedScope.aparells = { mode: "hereta" };
-      }
-    } else if (!targetIds.length) {
-      return null;
-    }
+    const pipelineAppIds = getTiePipelineVisibleAppIds(source);
+    const targetIds = pipelineAppIds.length ? pipelineAppIds : inheritedIds.slice();
+    if (!targetIds.length) return null;
 
     const validCamps = [];
     const seenCamps = new Set();
-    normalizeTieCampsFromObj(item).forEach(code => {
+    getTieVisibleCamps(source).forEach(code => {
       const camp = String(code || "").trim();
       if (!camp || seenCamps.has(camp)) return;
       if (!targetIds.every(appId => isRealFieldForApp(appId, camp))) return;
@@ -6269,46 +6787,153 @@
     });
     if (!validCamps.length) return null;
 
-    item.camps = validCamps;
-    item.agregacio_camps = normalizeTieAggCampsFromObj(item);
-    item.ordre = String(item.ordre || "desc").toLowerCase() === "asc" ? "asc" : "desc";
-    item.scope = normalizedScope;
+    source.camps = validCamps;
+    source.agregacio_camps = getTieVisibleAggCamps(source);
+    source.ordre = String(pipeline.ordre || source.ordre || "desc").toLowerCase() === "asc" ? "asc" : "desc";
 
-    const exSelMode = normalizeTieModeSeleccioExercicis(item.mode_seleccio_exercicis || exScope.mode_seleccio_exercicis || "hereta");
-    if (exSelMode !== "hereta") item.mode_seleccio_exercicis = exSelMode;
-    else delete item.mode_seleccio_exercicis;
-    if (isDerivedExerciseSelectionScopeAvailable()) {
-      const exSelectionScope = normalizeTieExerciseSelectionScope(item.exercise_selection_scope || "hereta");
-      if (exSelectionScope !== EXERCISE_SELECTION_SCOPE_INHERIT) item.exercise_selection_scope = exSelectionScope;
-      else delete item.exercise_selection_scope;
+    const scope = source.scope && typeof source.scope === "object" && !Array.isArray(source.scope) ? cloneJsonValue(source.scope, {}) : {};
+    if (allowAppScope) {
+      const appScope = pipeline.aparells || {};
+      const ids = sanitizeAppIds(Array.isArray(appScope.ids) ? appScope.ids : []);
+      const mode = String(appScope.mode || "hereta").toLowerCase().trim();
+      if (mode === "tots") {
+        scope.aparells = { mode: "tots" };
+      } else if (mode === "seleccionar" && ids.length === 1) {
+        scope.aparells = { mode: "seleccionar", ids };
+      } else {
+        scope.aparells = { mode: "hereta" };
+      }
     } else {
-      delete item.exercise_selection_scope;
+      scope.aparells = scope.aparells && typeof scope.aparells === "object" && !Array.isArray(scope.aparells)
+        ? cloneJsonValue(scope.aparells, {})
+        : { mode: "hereta" };
     }
 
-    const exPerAppSource = item.exercicis_per_aparell || exScope.exercicis_per_aparell || {};
+    const exScope = pipeline.exercicis && typeof pipeline.exercicis === "object" && !Array.isArray(pipeline.exercicis)
+      ? pipeline.exercicis
+      : ((scope.exercicis && typeof scope.exercicis === "object" && !Array.isArray(scope.exercicis)) ? scope.exercicis : {});
+    scope.exercicis = normalizeTieExercicisCfg(exScope);
+    source.scope = scope;
+
+    const exSelMode = normalizeTieModeSeleccioExercicis(pipeline.mode_seleccio_exercicis || source.mode_seleccio_exercicis || exScope.mode_seleccio_exercicis || "hereta");
+    if (exSelMode !== "hereta") source.mode_seleccio_exercicis = exSelMode;
+    else delete source.mode_seleccio_exercicis;
+    if (isDerivedExerciseSelectionScopeAvailable()) {
+      const exSelectionScope = normalizeTieExerciseSelectionScope(pipeline.exercise_selection_scope || source.exercise_selection_scope || "hereta");
+      if (exSelectionScope !== EXERCISE_SELECTION_SCOPE_INHERIT) source.exercise_selection_scope = exSelectionScope;
+      else delete source.exercise_selection_scope;
+    } else {
+      delete source.exercise_selection_scope;
+    }
+
+    const exPerAppSource = pipeline.exercicis_per_aparell || source.exercicis_per_aparell || exScope.exercicis_per_aparell || {};
     const exPerAppMap = normalizeTieExercicisPerAparellMap(exPerAppSource);
+    const aggExPerAppSource = pipeline.agregacio_exercicis_per_aparell || source.agregacio_exercicis_per_aparell || {};
+    const aggExPerAppMap = normalizeTiePipelineAggMap(
+      aggExPerAppSource,
+      {},
+      targetIds,
+      pipeline.agregacio_exercicis || source.agregacio_exercicis || "sum",
+    );
     if (exSelMode === "per_aparell_override") {
       const filteredMap = {};
+      const filteredAggMap = {};
       targetIds.forEach(appId => {
         const key = String(appId);
         if (exPerAppMap[key]) filteredMap[key] = exPerAppMap[key];
+        if (aggExPerAppMap[key]) filteredAggMap[key] = aggExPerAppMap[key];
       });
-      if (Object.keys(filteredMap).length) item.exercicis_per_aparell = filteredMap;
-      else delete item.exercicis_per_aparell;
+      if (Object.keys(filteredMap).length) source.exercicis_per_aparell = filteredMap;
+      else delete source.exercicis_per_aparell;
+      if (Object.keys(filteredAggMap).length) source.agregacio_exercicis_per_aparell = filteredAggMap;
+      else delete source.agregacio_exercicis_per_aparell;
+      source.agregacio_exercicis = buildLegacyAggFromPerAppMap(targetIds, filteredAggMap, pipeline.agregacio_exercicis || source.agregacio_exercicis || "sum");
+      if (source.pipeline && typeof source.pipeline === "object" && !Array.isArray(source.pipeline)) {
+        source.pipeline.exercicis_per_aparell = filteredMap;
+        source.pipeline.agregacio_exercicis_per_aparell = filteredAggMap;
+      }
     } else {
-      delete item.exercicis_per_aparell;
+      delete source.exercicis_per_aparell;
+      delete source.agregacio_exercicis_per_aparell;
+      if (source.pipeline && typeof source.pipeline === "object" && !Array.isArray(source.pipeline)) {
+        delete source.pipeline.exercicis_per_aparell;
+        delete source.pipeline.agregacio_exercicis_per_aparell;
+      }
     }
 
     if (!allowParticipants) {
-      delete item.agregacio_participants;
+      delete source.agregacio_participants;
+      delete scope.participants;
+      if (source.pipeline && typeof source.pipeline === "object" && !Array.isArray(source.pipeline)) {
+        delete source.pipeline.participants;
+        delete source.pipeline.agregacio_participants;
+      }
     } else {
-      const parts = normalizeParticipantsFromTie(item);
-      item.scope.participants = { mode: parts.pMode };
-      if (isParticipantsModeWithN(parts.pMode)) item.scope.participants.n = parts.pN;
-      item.agregacio_participants = parts.pAgg;
+      const parts = getTieVisibleParticipants(source);
+      scope.participants = { mode: parts.mode };
+      if (isParticipantsModeWithN(parts.mode)) scope.participants.n = parts.n;
+      source.agregacio_participants = normalizeTieAggValue(source.agregacio_participants || pipeline.agregacio_participants || "sum", "sum");
     }
 
-    return item;
+    source.pipeline = normalizeTiePipeline(pipeline, fallbackPipeline);
+    source.pipeline.ordre = source.ordre;
+    source.pipeline.aparells = normalizeTiePipelineAppScope(source.pipeline.aparells, fallbackPipeline.aparells);
+    source.pipeline.camps_per_aparell = normalizeTiePipelineCampsPerApp(
+      source.pipeline.camps_per_aparell,
+      fallbackPipeline.camps_per_aparell,
+      getTiePipelineVisibleAppIds(source).length ? getTiePipelineVisibleAppIds(source) : targetIds,
+    );
+    source.pipeline.agregacio_camps_per_aparell = normalizeTiePipelineAggMap(
+      source.pipeline.agregacio_camps_per_aparell,
+      fallbackPipeline.agregacio_camps_per_aparell,
+      getTiePipelineVisibleAppIds(source).length ? getTiePipelineVisibleAppIds(source) : targetIds,
+      source.pipeline.agregacio_camps || fallbackPipeline.agregacio_camps || "sum",
+    );
+    source.pipeline.agregacio_camps = normalizeTieAggValue(source.agregacio_camps || source.pipeline.agregacio_camps || "sum", "sum");
+    source.pipeline.candidate_source_mode = _normalize_candidate_source_mode_like(source.pipeline.candidate_source_mode || fallbackPipeline.candidate_source_mode || "raw_exercise");
+    source.pipeline.candidate_source_cfg = _copyCandidateSourceCfg(source.pipeline.candidate_source_cfg || fallbackPipeline.candidate_source_cfg || {});
+    source.pipeline.candidate_source_per_aparell = normalizeTiePipelineCandidateSourceMap(
+      source.pipeline.candidate_source_per_aparell,
+      fallbackPipeline.candidate_source_per_aparell,
+      getTiePipelineVisibleAppIds(source).length ? getTiePipelineVisibleAppIds(source) : targetIds,
+    );
+    source.pipeline.exercicis = normalizeTieExercicisCfg(source.pipeline.exercicis || scope.exercicis || {});
+    source.pipeline.exercise_selection_scope = isDerivedExerciseSelectionScopeAvailable()
+      ? normalizeTieExerciseSelectionScope(source.exercise_selection_scope || source.pipeline.exercise_selection_scope || "hereta")
+      : "hereta";
+    source.pipeline.mode_seleccio_exercicis = normalizeTieModeSeleccioExercicis(source.mode_seleccio_exercicis || source.pipeline.mode_seleccio_exercicis || "hereta");
+    source.pipeline.exercicis_per_aparell = normalizeTiePipelineExercicisPerApp(
+      source.pipeline.exercicis_per_aparell,
+      fallbackPipeline.exercicis_per_aparell,
+      getTiePipelineVisibleAppIds(source).length ? getTiePipelineVisibleAppIds(source) : targetIds,
+    );
+    source.pipeline.agregacio_exercicis = normalizeTieAggValue(
+      source.agregacio_exercicis || source.pipeline.agregacio_exercicis || "sum",
+      fallbackPipeline.agregacio_exercicis || "sum",
+    );
+    source.pipeline.agregacio_exercicis_per_aparell = normalizeTiePipelineAggMap(
+      source.agregacio_exercicis_per_aparell || source.pipeline.agregacio_exercicis_per_aparell,
+      fallbackPipeline.agregacio_exercicis_per_aparell,
+      getTiePipelineVisibleAppIds(source).length ? getTiePipelineVisibleAppIds(source) : targetIds,
+      source.pipeline.agregacio_exercicis || fallbackPipeline.agregacio_exercicis || "sum",
+    );
+    source.pipeline.agregacio_aparells = normalizeTieAggValue(source.pipeline.agregacio_aparells || "sum", fallbackPipeline.agregacio_aparells || "sum");
+    source.pipeline.mode_resultat_aparells = "score";
+    if (allowParticipants) {
+      source.pipeline.participants = normalizeTiePipelineParticipants(
+        scope.participants || source.pipeline.participants || {},
+        fallbackPipeline.participants || {},
+      );
+      source.pipeline.agregacio_participants = normalizeTieAggValue(
+        source.agregacio_participants || source.pipeline.agregacio_participants || "sum",
+        "sum",
+      );
+    } else {
+      delete source.pipeline.participants;
+      delete source.pipeline.agregacio_participants;
+    }
+
+    return source;
   }
 
   function sanitizeRawColumnsForUI(rawCols, selectedMainIds) {
@@ -7730,7 +8355,7 @@
     applyMultiSelectValues(els.fGrups, (schema.filtres || {}).grups_in || []);
     refreshTipusUI();
 
-    runSafeHydrationRender("puntuacio", () => {
+    runSafeHydrationRender("per aparell", () => {
       renderPuntuacioSection(schema);
     });
     renderEquipsModeControls();
@@ -8067,6 +8692,22 @@
     renderTieUI(cur);
     syncAdvancedFromUI();
   });
+  if (els.btnTieCloneFromPuntuacio) {
+    els.btnTieCloneFromPuntuacio.addEventListener("click", () => {
+      const cur = readTieUI(true);
+      const punt = readPuntuacioSchemaFromUI();
+      const idx = cur.length + 1;
+      cur.push({
+        id: `tie_${Date.now()}`,
+        nom: `Desempat ${idx}`,
+        ordre: String((punt || {}).ordre || "desc").toLowerCase().trim() === "asc" ? "asc" : "desc",
+        pipeline_version: 1,
+        pipeline: buildTiePipelineFromPuntuacioSchema(punt),
+      });
+      renderTieUI(cur);
+      syncAdvancedFromUI();
+    });
+  }
   if (els.btnVictoryTieAdd) {
     els.btnVictoryTieAdd.addEventListener("click", () => {
       const cur = readVictoryTieUI(true);

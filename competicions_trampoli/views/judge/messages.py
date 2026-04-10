@@ -416,7 +416,7 @@ def judge_messages_hub(request, competicio_id):
     ]
     return render(
         request,
-        "competicio/judge_messages_hub.html",
+        "judge/judge_messages_hub.html",
         {
             "competicio": competicio,
             "tokens": tokens,

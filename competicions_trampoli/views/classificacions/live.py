@@ -31,7 +31,7 @@ def live_data_payload(competicio, since_raw=None):
 
 
 class ClassificacionsLive(TemplateView):
-    template_name = "competicio/classificacions_live.html"
+    template_name = "classificacions/classificacions_live.html"
 
     def dispatch(self, request, *args, **kwargs):
         self.competicio = get_object_or_404(Competicio, pk=kwargs["pk"])
@@ -54,7 +54,7 @@ class ClassificacionsLive(TemplateView):
 
 
 class ClassificacionsLoopLive(TemplateView):
-    template_name = "competicio/classificacions_loop_live.html"
+    template_name = "classificacions/classificacions_loop_live.html"
 
     @staticmethod
     def _parse_int_param(raw, default: int, min_value: int, max_value: int) -> int:
@@ -94,7 +94,7 @@ class ClassificacionsLoopLive(TemplateView):
 
 
 class PublicClassificacionsLive(TemplateView):
-    template_name = "competicio/classificacions_live.html"
+    template_name = "classificacions/classificacions_live.html"
 
     def dispatch(self, request, *args, **kwargs):
         self.token_obj = get_object_or_404(PublicLiveToken, pk=kwargs["token"])
@@ -123,7 +123,7 @@ class PublicClassificacionsLive(TemplateView):
 
 
 class PublicClassificacionsLoopLive(TemplateView):
-    template_name = "competicio/classificacions_loop_live.html"
+    template_name = "classificacions/classificacions_loop_live.html"
 
     @staticmethod
     def _parse_int_param(raw, default: int, min_value: int, max_value: int) -> int:

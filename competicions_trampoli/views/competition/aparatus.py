@@ -13,7 +13,7 @@ from ...models.scoring import ScoringSchema
 
 
 class TrampoliAparellList(ListView):
-    template_name = "competicio/trampoli_aparells_list.html"
+    template_name = "legacy/trampoli_aparells_list.html"
     context_object_name = "aparells_cfg"
 
     def dispatch(self, request, *args, **kwargs):
@@ -39,7 +39,7 @@ class TrampoliAparellList(ListView):
 
 
 class CompeticioAparellCreate(CreateView):
-    template_name = "competicio/trampoli_aparell_form.html"
+    template_name = "legacy/trampoli_aparell_form.html"
     form_class = CompeticioAparellForm
 
     def dispatch(self, request, *args, **kwargs):
@@ -73,7 +73,7 @@ class CompeticioAparellCreate(CreateView):
         return ctx
 
 class CompeticioAparellUpdate(UpdateView):
-    template_name = "competicio/trampoli_aparell_form.html"
+    template_name = "legacy/trampoli_aparell_form.html"
     form_class = CompeticioAparellForm
     model = CompeticioAparell
     pk_url_kwarg = "app_id"

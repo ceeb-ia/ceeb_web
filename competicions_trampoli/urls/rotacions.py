@@ -66,6 +66,16 @@ urlpatterns = [
         name="rotacions_franja_insert_after",
     ),
     path(
+        "competicio/<int:pk>/rotacions/franges/reorder/",
+        competition_view(views_rotacions.franges_reorder, "rotacions.edit"),
+        name="rotacions_franges_reorder",
+    ),
+    path(
+        "competicio/<int:pk>/rotacions/franges/reorder-visual/",
+        competition_view(views_rotacions.franges_reorder_visual, "rotacions.edit"),
+        name="rotacions_franges_reorder_visual",
+    ),
+    path(
         "competicio/<int:pk>/rotacions/franges/<int:franja_id>/update_inline/",
         competition_view(views_rotacions.franja_update_inline, "rotacions.edit"),
         name="rotacions_franja_update_inline",

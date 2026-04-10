@@ -646,6 +646,357 @@ class RotationOrderingDisplayTests(_BaseTrampoliDataMixin, TestCase):
         self.assertNotIn("Number(item?.id", body)
 
 
+class CompetitiveFranjaTimingTests(_BaseTrampoliDataMixin, TestCase):
+    def setUp(self):
+        self.comp = self._create_competicio("Comp Franja Timing")
+        User = get_user_model()
+        self.user = User.objects.create_user(
+            username="franja_timing_owner",
+            password="testpass123",
+            email="franja-timing-owner@example.com",
+        )
+        CompeticioMembership.objects.create(
+            user=self.user,
+            competicio=self.comp,
+            role=CompeticioMembership.Role.OWNER,
+            is_active=True,
+        )
+        self.client.force_login(self.user)
+        self.f1 = RotacioFranja.objects.create(
+            competicio=self.comp,
+            hora_inici="09:00",
+            hora_fi="09:30",
+            ordre=1,
+            titol="Franja 1",
+            tipus=RotacioFranja.TIPUS_COMPETITION,
+        )
+        self.f2 = RotacioFranja.objects.create(
+            competicio=self.comp,
+            hora_inici="09:30",
+            hora_fi="10:00",
+            ordre=2,
+            titol="Franja 2",
+            tipus=RotacioFranja.TIPUS_COMPETITION,
+        )
+        self.f3 = RotacioFranja.objects.create(
+            competicio=self.comp,
+            hora_inici="10:00",
+            hora_fi="10:30",
+            ordre=3,
+            titol="Franja 3",
+            tipus=RotacioFranja.TIPUS_COMPETITION,
+        )
+
+    def _post_json(self, url, payload):
+        return self.client.post(
+            url,
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+    def test_competitive_create_preview_and_confirm_shift_following_franges(self):
+        url = reverse("rotacions_franja_create", kwargs={"pk": self.comp.id})
+        preview_res = self._post_json(
+            url,
+            {
+                "hora_inici": "09:30",
+                "hora_fi": "09:45",
+                "titol": "Nova",
+                "tipus": "competition",
+                "preview_only": True,
+            },
+        )
+        self.assertEqual(preview_res.status_code, 200)
+        preview = preview_res.json()
+        self.assertTrue(preview["requires_confirmation"])
+        self.assertEqual(preview["origin"]["new_start"], "09:30")
+        self.assertEqual(preview["origin"]["new_end"], "09:45")
+        self.assertEqual([item["franja_id"] for item in preview["affected"]], [self.f2.id, self.f3.id])
+        self.assertEqual(preview["affected"][0]["new_start"], "09:45")
+        self.assertEqual(preview["affected"][0]["new_end"], "10:15")
+
+        apply_res = self._post_json(
+            url,
+            {
+                "hora_inici": "09:30",
+                "hora_fi": "09:45",
+                "titol": "Nova",
+                "tipus": "competition",
+                "confirm_reorder": True,
+            },
+        )
+        self.assertEqual(apply_res.status_code, 200)
+        franges = list(RotacioFranja.objects.filter(competicio=self.comp).order_by("ordre", "id"))
+        self.assertEqual(
+            [(fr.titol, str(fr.hora_inici), str(fr.hora_fi), fr.ordre) for fr in franges],
+            [
+                ("Franja 1", "09:00:00", "09:30:00", 1),
+                ("Nova", "09:30:00", "09:45:00", 2),
+                ("Franja 2", "09:45:00", "10:15:00", 3),
+                ("Franja 3", "10:15:00", "10:45:00", 4),
+            ],
+        )
+
+    def test_competitive_create_rejects_overlap_with_previous_competitive_franja(self):
+        url = reverse("rotacions_franja_create", kwargs={"pk": self.comp.id})
+        res = self._post_json(
+            url,
+            {
+                "hora_inici": "09:15",
+                "hora_fi": "09:45",
+                "titol": "Solapa",
+                "tipus": "competition",
+                "preview_only": True,
+            },
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("solapa", res.content.decode("utf-8").lower())
+
+    def test_competitive_row_reorder_preview_and_confirm_preserve_durations(self):
+        url = reverse("rotacions_franges_reorder", kwargs={"pk": self.comp.id})
+        preview_res = self._post_json(
+            url,
+            {
+                "dragged_id": self.f3.id,
+                "target_id": self.f2.id,
+                "position": "before",
+                "preview_only": True,
+            },
+        )
+        self.assertEqual(preview_res.status_code, 200)
+        preview = preview_res.json()
+        self.assertTrue(preview["requires_confirmation"])
+        self.assertEqual(preview["origin"]["franja_id"], self.f3.id)
+        self.assertEqual(preview["origin"]["new_start"], "09:30")
+        self.assertEqual(preview["origin"]["new_end"], "10:00")
+        self.assertEqual([item["franja_id"] for item in preview["affected"]], [self.f3.id, self.f2.id])
+
+        apply_res = self._post_json(
+            url,
+            {
+                "dragged_id": self.f3.id,
+                "target_id": self.f2.id,
+                "position": "before",
+                "confirm_reorder": True,
+            },
+        )
+        self.assertEqual(apply_res.status_code, 200)
+        franges = list(RotacioFranja.objects.filter(competicio=self.comp).order_by("ordre", "id"))
+        self.assertEqual(
+            [(fr.titol, str(fr.hora_inici), str(fr.hora_fi), fr.ordre) for fr in franges],
+            [
+                ("Franja 1", "09:00:00", "09:30:00", 1),
+                ("Franja 3", "09:30:00", "10:00:00", 2),
+                ("Franja 2", "10:00:00", "10:30:00", 3),
+            ],
+        )
+
+
+class FranjaVisualOrderingTests(_BaseTrampoliDataMixin, TestCase):
+    def setUp(self):
+        self.comp = self._create_competicio("Comp Franja Visual")
+        User = get_user_model()
+        self.user = User.objects.create_user(
+            username="franja_visual_owner",
+            password="testpass123",
+            email="franja-visual-owner@example.com",
+        )
+        CompeticioMembership.objects.create(
+            user=self.user,
+            competicio=self.comp,
+            role=CompeticioMembership.Role.OWNER,
+            is_active=True,
+        )
+        self.client.force_login(self.user)
+
+        self.aparell = self._create_aparell("ROT_VIS", "Rotation Visual")
+        self.comp_app = self._create_comp_aparell(self.comp, self.aparell, ordre=1, actiu=True)
+        self.estacio = RotacioEstacio.objects.create(
+            competicio=self.comp,
+            tipus="aparell",
+            comp_aparell=self.comp_app,
+            ordre=1,
+            actiu=True,
+        )
+
+        self.f1 = RotacioFranja.objects.create(
+            competicio=self.comp,
+            hora_inici="09:00",
+            hora_fi="09:30",
+            ordre=1,
+            ordre_visual=1,
+            titol="Franja 1",
+            tipus=RotacioFranja.TIPUS_COMPETITION,
+        )
+        self.break_f = RotacioFranja.objects.create(
+            competicio=self.comp,
+            hora_inici="09:30",
+            hora_fi="09:40",
+            ordre=2,
+            ordre_visual=2,
+            titol="Descans global",
+            tipus=RotacioFranja.TIPUS_BREAK,
+        )
+        self.f2 = RotacioFranja.objects.create(
+            competicio=self.comp,
+            hora_inici="09:40",
+            hora_fi="10:10",
+            ordre=3,
+            ordre_visual=3,
+            titol="Franja 2",
+            tipus=RotacioFranja.TIPUS_COMPETITION,
+        )
+        self.f3 = RotacioFranja.objects.create(
+            competicio=self.comp,
+            hora_inici="10:10",
+            hora_fi="10:40",
+            ordre=4,
+            ordre_visual=4,
+            titol="Franja 3",
+            tipus=RotacioFranja.TIPUS_COMPETITION,
+        )
+
+    def _post_json(self, url, payload):
+        return self.client.post(
+            url,
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+    def test_visual_reorder_of_global_franja_changes_only_visual_order(self):
+        url = reverse("rotacions_franges_reorder_visual", kwargs={"pk": self.comp.id})
+        res = self._post_json(
+            url,
+            {
+                "dragged_id": self.break_f.id,
+                "target_id": self.f1.id,
+                "position": "before",
+            },
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(
+            list(RotacioFranja.objects.filter(competicio=self.comp).order_by("ordre_visual", "id").values_list("titol", flat=True)),
+            ["Descans global", "Franja 1", "Franja 2", "Franja 3"],
+        )
+        self.assertEqual(
+            list(RotacioFranja.objects.filter(competicio=self.comp).order_by("ordre", "id").values_list("titol", flat=True)),
+            ["Franja 1", "Descans global", "Franja 2", "Franja 3"],
+        )
+
+    def test_competitive_reorder_syncs_visual_order_around_global_rows(self):
+        url = reverse("rotacions_franges_reorder", kwargs={"pk": self.comp.id})
+        res = self._post_json(
+            url,
+            {
+                "dragged_id": self.f3.id,
+                "target_id": self.f2.id,
+                "position": "before",
+                "confirm_reorder": True,
+            },
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(
+            list(RotacioFranja.objects.filter(competicio=self.comp).order_by("ordre_visual", "id").values_list("titol", flat=True)),
+            ["Franja 1", "Descans global", "Franja 3", "Franja 2"],
+        )
+        self.assertEqual(
+            list(RotacioFranja.objects.filter(competicio=self.comp).order_by("ordre", "id").values_list("titol", flat=True)),
+            ["Franja 1", "Descans global", "Franja 3", "Franja 2"],
+        )
+
+    def test_insert_after_places_new_competitive_immediately_after_origin_visually(self):
+        url = reverse("rotacions_franja_insert_after", kwargs={"pk": self.comp.id, "franja_id": self.f1.id})
+        res = self._post_json(
+            url,
+            {
+                "titol": "Nova",
+                "confirm_reorder": True,
+            },
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(
+            list(RotacioFranja.objects.filter(competicio=self.comp).order_by("ordre_visual", "id").values_list("titol", flat=True)),
+            ["Franja 1", "Nova", "Descans global", "Franja 2", "Franja 3"],
+        )
+
+    def test_create_and_update_franja_color_persist_and_allow_reset(self):
+        create_url = reverse("rotacions_franja_create", kwargs={"pk": self.comp.id})
+        create_res = self._post_json(
+            create_url,
+            {
+                "hora_inici": "11:00",
+                "hora_fi": "11:20",
+                "titol": "Premis color",
+                "tipus": RotacioFranja.TIPUS_AWARDS,
+                "color_fons": "#123456",
+            },
+        )
+        self.assertEqual(create_res.status_code, 200)
+        created = RotacioFranja.objects.get(pk=create_res.json()["id"])
+        self.assertEqual(created.color_fons, "#123456")
+
+        update_url = reverse("rotacions_franja_update_inline", kwargs={"pk": self.comp.id, "franja_id": created.id})
+        update_res = self._post_json(
+            update_url,
+            {
+                "hora_inici": "11:00",
+                "hora_fi": "11:20",
+                "titol": "Premis color",
+                "tipus": RotacioFranja.TIPUS_AWARDS,
+                "color_fons": "",
+            },
+        )
+        self.assertEqual(update_res.status_code, 200)
+        created.refresh_from_db()
+        self.assertEqual(created.color_fons, "")
+        self.assertEqual(created.resolved_background_color, RotacioFranja.DEFAULT_BACKGROUND_COLORS[RotacioFranja.TIPUS_AWARDS])
+
+    def test_export_uses_visual_order_and_row_fill_color(self):
+        self.break_f.ordre_visual = 1
+        self.break_f.color_fons = "#123456"
+        self.f1.ordre_visual = 2
+        self.f2.ordre_visual = 3
+        self.f3.ordre_visual = 4
+        RotacioFranja.objects.bulk_update(
+            [self.break_f, self.f1, self.f2, self.f3],
+            ["ordre_visual", "color_fons"],
+        )
+
+        url = reverse("rotacions_franges_export_excel", kwargs={"pk": self.comp.id})
+        res = self.client.get(url, {"mode": "groups"})
+        self.assertEqual(res.status_code, 200)
+
+        wb = load_workbook(filename=BytesIO(res.content))
+        ws = wb.active
+        franja_rows = []
+        for row_idx in range(1, ws.max_row + 1):
+            value = str(ws.cell(row=row_idx, column=1).value or "")
+            if "Descans global" in value or "Franja 1" in value:
+                franja_rows.append((row_idx, value))
+        self.assertGreaterEqual(len(franja_rows), 2)
+        self.assertIn("Descans global", franja_rows[0][1])
+        self.assertIn("Franja 1", franja_rows[1][1])
+        self.assertTrue(str(ws.cell(row=franja_rows[0][0], column=1).fill.fgColor.rgb or "").upper().endswith("123456"))
+
+    def test_planner_context_orders_franges_by_ordre_visual(self):
+        self.break_f.ordre_visual = 1
+        self.f1.ordre_visual = 2
+        self.f2.ordre_visual = 3
+        self.f3.ordre_visual = 4
+        RotacioFranja.objects.bulk_update(
+            [self.break_f, self.f1, self.f2, self.f3],
+            ["ordre_visual"],
+        )
+
+        url = reverse("rotacions_planner", kwargs={"pk": self.comp.id})
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(
+            [fr.id for fr in res.context["franges"]],
+            [self.break_f.id, self.f1.id, self.f2.id, self.f3.id],
+        )
+
+
 class RotacionsPackageContractTests(TestCase):
     ROUTE_EXPORTS = [
         "estacio_delete",
@@ -653,6 +1004,8 @@ class RotacionsPackageContractTests(TestCase):
         "estacions_reorder",
         "franges_auto_create",
         "franges_export_excel",
+        "franges_reorder",
+        "franges_reorder_visual",
         "franja_create",
         "franja_delete",
         "franja_insert_after",
@@ -703,6 +1056,8 @@ class RotacionsPackageContractTests(TestCase):
             ("rotacions_clear_all", {"pk": 1}),
             ("rotacions_out_of_program_visibility_save", {"pk": 1}),
             ("rotacions_franja_insert_after", {"pk": 1, "franja_id": 1}),
+            ("rotacions_franges_reorder", {"pk": 1}),
+            ("rotacions_franges_reorder_visual", {"pk": 1}),
             ("rotacions_franja_update_inline", {"pk": 1, "franja_id": 1}),
             ("rotacions_franja_order_mode_set", {"pk": 1, "franja_id": 1}),
             ("rotacions_export_meta_save", {"pk": 1}),

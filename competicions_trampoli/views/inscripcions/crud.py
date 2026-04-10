@@ -28,7 +28,7 @@ from ...services.inscripcions.import_excel import importar_inscripcions_excel
 
 class InscripcioFormViewMixin:
     form_class = InscripcioForm
-    template_name = "competicio/inscripcio_form.html"
+    template_name = "competicio/inscripcions/inscripcio_form.html"
 
     def dispatch(self, request, *args, **kwargs):
         self.competicio = get_object_or_404(Competicio, pk=kwargs["pk"])
@@ -165,7 +165,7 @@ class InscripcioCreateView(InscripcioFormViewMixin, CreateView):
 class InscripcioDeleteView(DeleteView):
     model = Inscripcio
     pk_url_kwarg = "ins_id"
-    template_name = "competicio/inscripcio_confirm_delete.html"
+    template_name = "competicio/inscripcions/inscripcio_confirm_delete.html"
 
     def get_queryset(self):
         return Inscripcio.objects.filter(competicio_id=self.kwargs["pk"])
@@ -185,7 +185,7 @@ class InscripcioDeleteView(DeleteView):
         return response
 
 class InscripcionsImportExcelView(FormView):
-    template_name = "competicio/inscripcions_import.html"
+    template_name = "competicio/inscripcions/inscripcions_import.html"
     form_class = ImportInscripcionsExcelForm
 
     def dispatch(self, request, *args, **kwargs):

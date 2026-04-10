@@ -683,6 +683,413 @@ class ClassificacioMatrixScalarTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual((cfg.schema.get("desempat") or [])[0].get("camps"), ["E_total"])
         self.assertNotIn("camp", (cfg.schema.get("desempat") or [])[0])
 
+    def test_classificacio_save_persists_tie_pipeline_canonical_format(self):
+        ScoringSchema.objects.create(
+            aparell=self.app_a,
+            schema={
+                "fields": [
+                    {"code": "E_total", "label": "Execucio", "type": "number"},
+                ],
+                "computed": [],
+            },
+        )
+        app_key = str(self.comp_app_a.id)
+        payload = {
+            "nom": "Cfg tie pipeline",
+            "activa": True,
+            "ordre": 1,
+            "tipus": "individual",
+            "schema": {
+                "particions": [],
+                "filtres": {},
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [self.comp_app_a.id]},
+                    "camps_per_aparell": {app_key: ["E_total"]},
+                    "agregacio_camps": "sum",
+                    "exercicis": {"mode": "tots"},
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "ordre": "desc",
+                },
+                "desempat": [
+                    {
+                        "id": "tie_exec",
+                        "nom": "Millor execucio",
+                        "ordre": "desc",
+                        "pipeline_version": 1,
+                        "pipeline": {
+                            "aparells": {"mode": "seleccionar", "ids": [self.comp_app_a.id]},
+                            "camps_per_aparell": {app_key: ["E_total"]},
+                            "agregacio_camps_per_aparell": {app_key: "sum"},
+                            "agregacio_camps": "sum",
+                            "candidate_source_mode": "raw_exercise",
+                            "candidate_source_cfg": {
+                                "mode": "tots",
+                                "best_n": 1,
+                                "index": 1,
+                                "ids": [],
+                                "agregacio_exercicis": "sum",
+                            },
+                            "candidate_source_per_aparell": {app_key: {"mode": "raw_exercise"}},
+                            "exercicis": {"mode": "tots", "index": 1, "ids": [], "max_per_participant": 0},
+                            "exercise_selection_scope": "per_member",
+                            "mode_seleccio_exercicis": "per_aparell_global",
+                            "exercicis_per_aparell": {},
+                            "agregacio_exercicis": "sum",
+                            "agregacio_aparells": "sum",
+                            "mode_resultat_aparells": "score",
+                            "ordre": "desc",
+                        },
+                    }
+                ],
+                "presentacio": {"top_n": 0, "mostrar_empats": True},
+            },
+        }
+        res = self.client.post(
+            reverse("classificacio_save", kwargs={"pk": self.comp.id}),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 200)
+        cfg = ClassificacioConfig.objects.get(pk=res.json()["id"])
+        tie = (cfg.schema.get("desempat") or [])[0]
+        self.assertEqual(tie.get("id"), "tie_exec")
+        self.assertEqual(tie.get("nom"), "Millor execucio")
+        self.assertEqual(tie.get("ordre"), "desc")
+        self.assertEqual(tie.get("pipeline_version"), 1)
+        self.assertEqual((((tie.get("pipeline") or {}).get("aparells") or {}).get("ids")), [self.comp_app_a.id])
+        self.assertEqual((((tie.get("pipeline") or {}).get("camps_per_aparell") or {}).get(app_key)), ["E_total"])
+
+    def test_classificacio_save_rejects_forbidden_tie_pipeline_keys(self):
+        payload = {
+            "nom": "Cfg tie pipeline invalid",
+            "activa": True,
+            "ordre": 1,
+            "tipus": "individual",
+            "schema": {
+                "particions": [],
+                "filtres": {},
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [self.comp_app_a.id]},
+                    "camps_per_aparell": {str(self.comp_app_a.id): ["total"]},
+                    "agregacio_camps": "sum",
+                    "exercicis": {"mode": "tots"},
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "ordre": "desc",
+                },
+                "desempat": [
+                    {
+                        "id": "tie_invalid",
+                        "ordre": "desc",
+                        "pipeline_version": 1,
+                        "pipeline": {
+                            "aparells": {"mode": "seleccionar", "ids": [self.comp_app_a.id]},
+                            "camps_per_aparell": {str(self.comp_app_a.id): ["total"]},
+                            "agregacio_camps_per_aparell": {str(self.comp_app_a.id): "sum"},
+                            "agregacio_camps": "sum",
+                            "exercicis": {"mode": "tots"},
+                            "exercise_selection_scope": "per_member",
+                            "mode_seleccio_exercicis": "per_aparell_global",
+                            "agregacio_exercicis": "sum",
+                            "agregacio_aparells": "sum",
+                            "mode_resultat_aparells": "score",
+                            "victories": {},
+                        },
+                    }
+                ],
+                "presentacio": {"top_n": 0, "mostrar_empats": True},
+            },
+        }
+        res = self.client.post(
+            reverse("classificacio_save", kwargs={"pk": self.comp.id}),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 400)
+        body = res.json()
+        self.assertTrue(any("desempat[0].pipeline.victories" in err for err in body.get("errors", [])))
+
+    def test_prepare_schema_for_builder_hydration_materializes_legacy_tie_pipeline(self):
+        schema = self._base_cfg_schema()
+        schema["puntuacio"]["aparells"] = {"mode": "seleccionar", "ids": [self.comp_app_a.id]}
+        schema["puntuacio"]["camps_per_aparell"] = {str(self.comp_app_a.id): ["total"]}
+        schema["desempat"] = [
+            {
+                "camp": "total",
+                "camps": ["total"],
+                "ordre": "desc",
+                "scope": {
+                    "aparells": {"mode": "seleccionar", "ids": [self.comp_app_a.id]},
+                    "exercicis": {"mode": "tots"},
+                },
+            }
+        ]
+        hydrated = prepare_schema_for_builder_hydration(self.comp, schema, tipus="individual")
+        tie = (hydrated.get("desempat") or [])[0]
+        self.assertEqual(tie.get("id"), "tie_1")
+        self.assertEqual(tie.get("pipeline_version"), 1)
+        self.assertEqual((((tie.get("pipeline") or {}).get("aparells") or {}).get("ids")), [self.comp_app_a.id])
+        self.assertEqual((((tie.get("pipeline") or {}).get("camps_per_aparell") or {}).get(str(self.comp_app_a.id))), ["total"])
+
+    def test_compute_classificacio_pipeline_tie_supports_per_app_override_exercicis(self):
+        self.comp_app_a.nombre_exercicis = 2
+        self.comp_app_a.save(update_fields=["nombre_exercicis"])
+        self.comp_app_b.nombre_exercicis = 2
+        self.comp_app_b.save(update_fields=["nombre_exercicis"])
+
+        for inscripcio, comp_aparell, exercici, total in (
+            (self.ins_a, self.comp_app_a, 1, 9.0),
+            (self.ins_a, self.comp_app_a, 2, 1.0),
+            (self.ins_a, self.comp_app_b, 1, 5.0),
+            (self.ins_a, self.comp_app_b, 2, 5.0),
+            (self.ins_b, self.comp_app_a, 1, 6.0),
+            (self.ins_b, self.comp_app_a, 2, 4.0),
+            (self.ins_b, self.comp_app_b, 1, 8.0),
+            (self.ins_b, self.comp_app_b, 2, 2.0),
+        ):
+            ScoreEntry.objects.create(
+                competicio=self.comp,
+                inscripcio=inscripcio,
+                exercici=exercici,
+                comp_aparell=comp_aparell,
+                inputs={},
+                outputs={},
+                total=total,
+            )
+
+        schema = self._base_cfg_schema()
+        schema["puntuacio"]["aparells"] = {"mode": "seleccionar", "ids": [self.comp_app_a.id, self.comp_app_b.id]}
+        schema["puntuacio"]["camps_per_aparell"] = {
+            str(self.comp_app_a.id): ["total"],
+            str(self.comp_app_b.id): ["total"],
+        }
+        schema["puntuacio"]["agregacio_camps_per_aparell"] = {
+            str(self.comp_app_a.id): "sum",
+            str(self.comp_app_b.id): "sum",
+        }
+        schema["puntuacio"]["candidate_source_per_aparell"] = {
+            str(self.comp_app_a.id): {"mode": "raw_exercise"},
+            str(self.comp_app_b.id): {"mode": "raw_exercise"},
+        }
+        schema["puntuacio"]["exercicis"] = {"mode": "tots"}
+        schema["desempat"] = [
+            {
+                "id": "tie_pipeline_override",
+                "ordre": "desc",
+                "pipeline_version": 1,
+                "pipeline": {
+                    "aparells": {"mode": "seleccionar", "ids": [self.comp_app_a.id, self.comp_app_b.id]},
+                    "camps_per_aparell": {
+                        str(self.comp_app_a.id): ["total"],
+                        str(self.comp_app_b.id): ["total"],
+                    },
+                    "agregacio_camps_per_aparell": {
+                        str(self.comp_app_a.id): "sum",
+                        str(self.comp_app_b.id): "sum",
+                    },
+                    "agregacio_camps": "sum",
+                    "candidate_source_mode": "raw_exercise",
+                    "candidate_source_cfg": {
+                        "mode": "tots",
+                        "best_n": 1,
+                        "index": 1,
+                        "ids": [],
+                        "agregacio_exercicis": "sum",
+                    },
+                    "candidate_source_per_aparell": {
+                        str(self.comp_app_a.id): {"mode": "raw_exercise"},
+                        str(self.comp_app_b.id): {"mode": "raw_exercise"},
+                    },
+                    "exercicis": {"mode": "tots", "index": 1, "ids": [], "max_per_participant": 0},
+                    "exercise_selection_scope": "per_member",
+                    "mode_seleccio_exercicis": "per_aparell_override",
+                    "exercicis_per_aparell": {
+                        str(self.comp_app_a.id): {"mode": "millor_1", "index": 1, "ids": [], "max_per_participant": 0},
+                        str(self.comp_app_b.id): {"mode": "pitjor_1", "index": 1, "ids": [], "max_per_participant": 0},
+                    },
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "mode_resultat_aparells": "score",
+                    "ordre": "desc",
+                },
+            }
+        ]
+
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Tie pipeline per app override",
+            activa=True,
+            ordre=1,
+            tipus="individual",
+            schema=schema,
+        )
+        rows = compute_classificacio(self.comp, cfg).get("global", [])
+        self.assertEqual([row["participant"] for row in rows], ["Participant A", "Participant B"])
+
+    def test_compute_classificacio_main_score_supports_per_app_exercise_aggregation(self):
+        self.comp_app_a.nombre_exercicis = 2
+        self.comp_app_a.save(update_fields=["nombre_exercicis"])
+        self.comp_app_b.nombre_exercicis = 2
+        self.comp_app_b.save(update_fields=["nombre_exercicis"])
+
+        for inscripcio, comp_aparell, exercici, total in (
+            (self.ins_a, self.comp_app_a, 1, 9.0),
+            (self.ins_a, self.comp_app_a, 2, 1.0),
+            (self.ins_a, self.comp_app_b, 1, 5.0),
+            (self.ins_a, self.comp_app_b, 2, 5.0),
+            (self.ins_b, self.comp_app_a, 1, 6.0),
+            (self.ins_b, self.comp_app_a, 2, 6.0),
+            (self.ins_b, self.comp_app_b, 1, 8.0),
+            (self.ins_b, self.comp_app_b, 2, 2.0),
+        ):
+            ScoreEntry.objects.create(
+                competicio=self.comp,
+                inscripcio=inscripcio,
+                exercici=exercici,
+                comp_aparell=comp_aparell,
+                inputs={},
+                outputs={},
+                total=total,
+            )
+
+        schema = self._base_cfg_schema()
+        schema["puntuacio"]["aparells"] = {"mode": "seleccionar", "ids": [self.comp_app_a.id, self.comp_app_b.id]}
+        schema["puntuacio"]["camps_per_aparell"] = {
+            str(self.comp_app_a.id): ["total"],
+            str(self.comp_app_b.id): ["total"],
+        }
+        schema["puntuacio"]["agregacio_camps_per_aparell"] = {
+            str(self.comp_app_a.id): "sum",
+            str(self.comp_app_b.id): "sum",
+        }
+        schema["puntuacio"]["candidate_source_per_aparell"] = {
+            str(self.comp_app_a.id): {"mode": "raw_exercise"},
+            str(self.comp_app_b.id): {"mode": "raw_exercise"},
+        }
+        schema["puntuacio"]["exercicis"] = {"mode": "tots"}
+        schema["puntuacio"]["mode_seleccio_exercicis"] = "per_aparell_override"
+        schema["puntuacio"]["exercicis_per_aparell"] = {
+            str(self.comp_app_a.id): {"mode": "tots"},
+            str(self.comp_app_b.id): {"mode": "tots"},
+        }
+        schema["puntuacio"]["agregacio_exercicis_per_aparell"] = {
+            str(self.comp_app_a.id): "max",
+            str(self.comp_app_b.id): "sum",
+        }
+        schema["puntuacio"]["agregacio_exercicis"] = "sum"
+        schema["puntuacio"]["agregacio_aparells"] = "sum"
+
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Puntuacio agg ex per app",
+            activa=True,
+            ordre=1,
+            tipus="individual",
+            schema=schema,
+        )
+        rows = compute_classificacio(self.comp, cfg).get("global", [])
+        self.assertEqual([row["participant"] for row in rows], ["Participant A", "Participant B"])
+        self.assertEqual((rows[0].get("by_app") or {}).get(self.comp_app_a.id), 9.0)
+        self.assertEqual((rows[0].get("by_app") or {}).get(self.comp_app_b.id), 10.0)
+        self.assertEqual(rows[0].get("score"), 19.0)
+
+    def test_prepare_schema_for_builder_hydration_preserves_per_app_exercise_aggregation_maps(self):
+        schema = self._base_cfg_schema()
+        schema["puntuacio"]["aparells"] = {"mode": "seleccionar", "ids": [self.comp_app_a.id, self.comp_app_b.id]}
+        schema["puntuacio"]["camps_per_aparell"] = {
+            str(self.comp_app_a.id): ["total"],
+            str(self.comp_app_b.id): ["total"],
+        }
+        schema["puntuacio"]["exercicis_per_aparell"] = {
+            str(self.comp_app_a.id): {"mode": "millor_1"},
+            str(self.comp_app_b.id): {"mode": "tots"},
+        }
+        schema["puntuacio"]["agregacio_exercicis_per_aparell"] = {
+            str(self.comp_app_a.id): "max",
+            str(self.comp_app_b.id): "sum",
+        }
+        schema["desempat"] = [
+            {
+                "camp": "total",
+                "camps": ["total"],
+                "ordre": "desc",
+                "mode_seleccio_exercicis": "per_aparell_override",
+                "exercicis_per_aparell": {
+                    str(self.comp_app_a.id): {"mode": "millor_1"},
+                    str(self.comp_app_b.id): {"mode": "pitjor_1"},
+                },
+                "agregacio_exercicis_per_aparell": {
+                    str(self.comp_app_a.id): "max",
+                    str(self.comp_app_b.id): "min",
+                },
+                "scope": {
+                    "aparells": {"mode": "seleccionar", "ids": [self.comp_app_a.id, self.comp_app_b.id]},
+                    "exercicis": {"mode": "tots"},
+                },
+            }
+        ]
+        schema["puntuacio"]["victories"] = {
+            "punts_victoria": 1,
+            "punts_empat": 0.5,
+            "sense_nota_mode": "skip",
+            "mode_camps": "agregat",
+            "mode_exercicis": "agregat",
+            "mode_seleccio_exercicis_camps_separats": "per_camp",
+            "agregacio_victories_camps": "sum",
+            "agregacio_victories_exercicis": "sum",
+            "desempat_comparacio": [
+                {
+                    "camp": "total",
+                    "camps": ["total"],
+                    "ordre": "desc",
+                    "mode_seleccio_exercicis": "per_aparell_override",
+                    "exercicis_per_aparell": {
+                        str(self.comp_app_a.id): {"mode": "millor_1"},
+                        str(self.comp_app_b.id): {"mode": "tots"},
+                    },
+                    "agregacio_exercicis_per_aparell": {
+                        str(self.comp_app_a.id): "max",
+                        str(self.comp_app_b.id): "sum",
+                    },
+                    "scope": {"exercicis": {"mode": "tots"}},
+                }
+            ],
+        }
+
+        hydrated = prepare_schema_for_builder_hydration(self.comp, schema, tipus="individual")
+        punt = hydrated.get("puntuacio") or {}
+        self.assertEqual(
+            punt.get("agregacio_exercicis_per_aparell"),
+            {
+                str(self.comp_app_a.id): "max",
+                str(self.comp_app_b.id): "sum",
+            },
+        )
+        tie = (hydrated.get("desempat") or [])[0] or {}
+        self.assertEqual(
+            tie.get("agregacio_exercicis_per_aparell"),
+            {
+                str(self.comp_app_a.id): "max",
+                str(self.comp_app_b.id): "min",
+            },
+        )
+        self.assertEqual(
+            (((tie.get("pipeline") or {}).get("agregacio_exercicis_per_aparell")) or {}),
+            {
+                str(self.comp_app_a.id): "max",
+                str(self.comp_app_b.id): "min",
+            },
+        )
+        victory_tie = ((((punt.get("victories") or {}).get("desempat_comparacio")) or [])[0] or {})
+        self.assertEqual(
+            victory_tie.get("agregacio_exercicis_per_aparell"),
+            {
+                str(self.comp_app_a.id): "max",
+                str(self.comp_app_b.id): "sum",
+            },
+        )
+
     def test_classificacio_save_returns_persisted_team_schema_with_mode_resolution(self):
         self._ensure_native_equip_context(self.comp)
         payload = {
@@ -2809,8 +3216,79 @@ class ClassificacioTemplateFlowTests(_BaseTrampoliDataMixin, TestCase):
             (punt.get("victories") or {}).get("mode_seleccio_exercicis_camps_separats"),
             "global",
         )
+
+    def test_template_schema_helpers_roundtrip_per_app_exercise_aggregation_maps(self):
+        schema = json.loads(json.dumps(self.cfg_source.schema or {}))
+        schema["puntuacio"]["aparells"] = {"mode": "seleccionar", "ids": [self.source_app.id]}
+        schema["puntuacio"]["camps_per_aparell"] = {str(self.source_app.id): ["E_total"]}
+        schema["puntuacio"]["mode_seleccio_exercicis"] = "per_aparell_override"
+        schema["puntuacio"]["exercicis_per_aparell"] = {str(self.source_app.id): {"mode": "millor_1"}}
+        schema["puntuacio"]["agregacio_exercicis_per_aparell"] = {str(self.source_app.id): "max"}
+        schema["desempat"] = [
+            {
+                "camps": ["E_total"],
+                "agregacio_camps": "hereta",
+                "ordre": "desc",
+                "mode_seleccio_exercicis": "per_aparell_override",
+                "exercicis_per_aparell": {str(self.source_app.id): {"mode": "millor_1"}},
+                "agregacio_exercicis_per_aparell": {str(self.source_app.id): "max"},
+                "scope": {"aparells": {"mode": "seleccionar", "ids": [self.source_app.id]}},
+            }
+        ]
+        schema["puntuacio"]["victories"] = {
+            "punts_victoria": 1,
+            "punts_empat": 0.5,
+            "sense_nota_mode": "skip",
+            "mode_camps": "agregat",
+            "mode_exercicis": "agregat",
+            "mode_seleccio_exercicis_camps_separats": "per_camp",
+            "agregacio_victories_camps": "sum",
+            "agregacio_victories_exercicis": "sum",
+            "desempat_comparacio": [
+                {
+                    "camps": ["E_total"],
+                    "agregacio_camps": "hereta",
+                    "ordre": "desc",
+                    "mode_seleccio_exercicis": "per_aparell_override",
+                    "exercicis_per_aparell": {str(self.source_app.id): {"mode": "millor_1"}},
+                    "agregacio_exercicis_per_aparell": {str(self.source_app.id): "max"},
+                    "scope": {"exercicis": {"mode": "tots"}},
+                }
+            ],
+        }
+
+        schema_tpl, warnings = _schema_to_template_schema(self.comp_source, schema)
         self.assertEqual(
-            ((((punt.get("victories") or {}).get("desempat_comparacio")) or [])[0] or {}).get("camps"),
+            warnings,
+            ["equips.assignment_source.mode='native' detectat; es normalitza al context Base."],
+        )
+        punt_tpl = schema_tpl.get("puntuacio") or {}
+        self.assertEqual(
+            punt_tpl.get("agregacio_exercicis_per_aparell"),
+            {self.app.codi: "max"},
+        )
+
+        self._ensure_native_equip_context(self.comp_target)
+        schema_local, mapping_warnings, mapping = _template_schema_to_competicio_schema(self.comp_target, schema_tpl)
+        self.assertFalse(mapping_warnings)
+        self.assertEqual(mapping.get(self.app.codi), self.target_app.id)
+        punt_local = schema_local.get("puntuacio") or {}
+        self.assertEqual(
+            punt_local.get("agregacio_exercicis_per_aparell"),
+            {str(self.target_app.id): "max"},
+        )
+        tie_local = (schema_local.get("desempat") or [])[0] or {}
+        self.assertEqual(
+            tie_local.get("agregacio_exercicis_per_aparell"),
+            {str(self.target_app.id): "max"},
+        )
+        victory_tie_local = ((((punt_local.get("victories") or {}).get("desempat_comparacio")) or [])[0] or {})
+        self.assertEqual(
+            victory_tie_local.get("agregacio_exercicis_per_aparell"),
+            {str(self.target_app.id): "max"},
+        )
+        self.assertEqual(
+            ((((punt_local.get("victories") or {}).get("desempat_comparacio")) or [])[0] or {}).get("camps"),
             ["E_total"],
         )
 
@@ -3260,6 +3738,8 @@ class ClassificacioTemplateFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertContains(res, 'id="sVictoryModeCamps"')
         self.assertContains(res, 'id="sVictoryModeExercicis"')
         self.assertContains(res, 'id="puntuacioSummaryText"')
+        self.assertContains(res, 'class="builder-summary-box__text"')
+        self.assertNotContains(res, 'id="exSelectionSummary"')
         self.assertContains(res, 'id="candidateScopeHint"')
         self.assertContains(res, 'id="classifHelpDrawer"')
         self.assertContains(res, 'id="classif-builder-back-to-top"')
@@ -3286,6 +3766,10 @@ class ClassificacioTemplateFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertContains(res, 'runSafeHydrationRender("per aparell", () => {')
         self.assertContains(res, 'state.rehydrationIssues = [];')
         self.assertEqual(content.count("function buildTieAppScopeOptionsHTML("), 1)
+        self.assertContains(res, "function _buildPretractamentSegment(punt, perAppEntries)")
+        self.assertContains(res, "function _buildScoreSelectionSegment({")
+        self.assertContains(res, "function _buildVictoriesComparisonSegment(victoriesCfg)")
+        self.assertNotContains(res, "function buildPuntuacioLiveSummary({")
         self.assertContains(res, "Agregació camps: Mateixa que puntuació")
         self.assertContains(res, "Base: Mateixa que puntuació")
         self.assertContains(res, "Selecció ex: Mateixa que puntuació")
@@ -4302,6 +4786,8 @@ class GlobalClassificacioTemplateManagementTests(_BaseTrampoliDataMixin, TestCas
         self.assertContains(res, 'id="sVictoryModeCamps"')
         self.assertContains(res, 'id="sVictoryModeExercicis"')
         self.assertContains(res, 'id="puntuacioSummaryText"')
+        self.assertContains(res, 'class="builder-summary-box__text"')
+        self.assertNotContains(res, 'id="exSelectionSummary"')
         self.assertContains(res, 'id="candidateScopeHint"')
         self.assertContains(res, 'id="classifHelpDrawer"')
         self.assertContains(res, 'id="classif-builder-back-to-top"')
@@ -4323,6 +4809,10 @@ class GlobalClassificacioTemplateManagementTests(_BaseTrampoliDataMixin, TestCas
         self.assertContains(res, 'runSafeHydrationRender("per aparell", () => {')
         self.assertContains(res, 'state.rehydrationIssues = [];')
         self.assertEqual(content.count("function buildTieAppScopeOptionsHTML("), 1)
+        self.assertContains(res, "function _buildPretractamentSegment(punt, perAppEntries)")
+        self.assertContains(res, "function _buildScoreSelectionSegment({")
+        self.assertContains(res, "function _buildVictoriesComparisonSegment(victoriesCfg)")
+        self.assertNotContains(res, "function buildPuntuacioLiveSummary({")
         self.assertContains(res, "function previewRenderTeamRawDetailCell(v, col)")
         self.assertContains(res, "En equips derivats, les columnes de camp mostren un resum i el detall per membres de l'equip.")
         self.assertContains(res, "En equips amb nota nativa, les columnes de camp mostren el valor d'equip i només són representables per aparells d'equip.")

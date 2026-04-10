@@ -85,24 +85,66 @@ def _sync_per_app_puntuacio_legacy_mirrors(schema_local):
 
     candidate_map = punt.get("candidate_source_per_aparell") or {}
     if isinstance(candidate_map, dict) and app_ids:
+        fallback_mode = _normalize_candidate_source_mode(punt.get("candidate_source_mode") or "raw_exercise")
+        fallback_cfg = _sanitize_candidate_source_cfg(punt.get("candidate_source_cfg") or {})
         entries = []
+        normalized_candidate_map = {}
         for app_id in app_ids:
             raw_entry = candidate_map.get(str(app_id))
             if raw_entry is None:
                 raw_entry = candidate_map.get(app_id)
             entry = raw_entry if isinstance(raw_entry, dict) else {}
-            mode = _normalize_candidate_source_mode(entry.get("mode") or "raw_exercise")
-            cfg = _sanitize_candidate_source_cfg(entry.get("cfg") or {})
+            mode = _normalize_candidate_source_mode(entry.get("mode") or fallback_mode)
+            raw_cfg = entry.get("cfg") if isinstance(entry.get("cfg"), dict) else {}
+            merged_cfg = dict(fallback_cfg)
+            merged_cfg.update(raw_cfg)
+            cfg = _sanitize_candidate_source_cfg(merged_cfg)
+            normalized_entry = {"mode": mode}
+            if mode in {"participant_aggregate", "team_aggregate"}:
+                normalized_entry["cfg"] = cfg
+            normalized_candidate_map[str(app_id)] = normalized_entry
             entries.append({"mode": mode, "cfg": cfg})
-        first = entries[0] if entries else {"mode": "raw_exercise", "cfg": _sanitize_candidate_source_cfg({})}
+        first = entries[0] if entries else {"mode": fallback_mode, "cfg": fallback_cfg}
         if entries and all(entry == first for entry in entries):
             punt["candidate_source_mode"] = first["mode"]
             punt["candidate_source_cfg"] = first["cfg"]
         else:
-            punt["candidate_source_mode"] = "raw_exercise"
-            punt["candidate_source_cfg"] = _sanitize_candidate_source_cfg({})
+            punt["candidate_source_mode"] = fallback_mode
+            punt["candidate_source_cfg"] = fallback_cfg
+        punt["candidate_source_per_aparell"] = normalized_candidate_map
 
     schema["puntuacio"] = punt
+    return schema
+
+
+def _canonicalize_tie_items(raw_items):
+    out = []
+    for idx, tie in enumerate(raw_items if isinstance(raw_items, list) else []):
+        if not isinstance(tie, dict):
+            continue
+        item = dict(tie)
+        item["id"] = str(item.get("id") or f"tie_{idx + 1}").strip() or f"tie_{idx + 1}"
+        item["ordre"] = "asc" if str(item.get("ordre") or "desc").strip().lower() == "asc" else "desc"
+        try:
+            item["pipeline_version"] = int(item.get("pipeline_version") or 1)
+        except Exception:
+            item["pipeline_version"] = 1
+        item["pipeline"] = item.get("pipeline") if isinstance(item.get("pipeline"), dict) else {}
+        item.pop("camp", None)
+        out.append(item)
+    return out
+
+
+def _canonicalize_desempat_for_persistence(schema_local):
+    schema = schema_local if isinstance(schema_local, dict) else {}
+    schema["desempat"] = _canonicalize_tie_items(schema.get("desempat") or [])
+    punt = schema.get("puntuacio")
+    if isinstance(punt, dict):
+        victories = punt.get("victories")
+        if isinstance(victories, dict):
+            victories["desempat_comparacio"] = _canonicalize_tie_items(victories.get("desempat_comparacio") or [])
+            punt["victories"] = victories
+        schema["puntuacio"] = punt
     return schema
 
 
@@ -126,6 +168,7 @@ def prepare_schema_for_persistence(competicio, schema_local, *, tipus="individua
         persist=True,
     )
     schema_local = _sync_per_app_puntuacio_legacy_mirrors(schema_local)
+    schema_local = _canonicalize_desempat_for_persistence(schema_local)
     schema_local = with_mode_resolution(competicio, tipus, schema_local)
     return {
         "schema": schema_local,

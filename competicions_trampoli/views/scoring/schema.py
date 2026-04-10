@@ -149,7 +149,7 @@ def _recalculate_scores_for_comp_aparell(
 class ScoringSchemaUpdate(UpdateView):
     model = ScoringSchema
     form_class = ScoringSchemaForm
-    template_name = "competicio/scoring_schema_builder.html"
+    template_name = "scoring/scoring_schema_builder.html"
 
     def dispatch(self, request, *args, **kwargs):
         # per poder tornar on toca

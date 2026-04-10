@@ -27,6 +27,10 @@ from .partitions import (
     normalize_particions_v2_entries,
     normalize_schema_legacy_team_birth_partition,
 )
+from .pipeline_runtime import (
+    build_main_scoring_pipeline_from_schema,
+    materialize_desempat_item,
+)
 from .validation import (
     build_scoreable_meta_for_schema,
     get_team_context_capabilities,
@@ -204,6 +208,36 @@ def _effective_tie_exercise_selection_scope(tie: dict, *, main_scope=None):
     return tie_scope
 
 
+def _materialize_desempat_item_for_builder(
+    tie,
+    *,
+    idx: int,
+    tipus="individual",
+    team_mode="",
+    selected_main_ids=None,
+    allow_app_scope=True,
+    allow_participants=True,
+    fallback_pipeline=None,
+):
+    item = materialize_desempat_item(
+        tie,
+        tipus=tipus,
+        team_mode=team_mode,
+        selected_app_ids=selected_main_ids,
+        default_id=f"tie_{idx + 1}",
+        default_nom=f"Criteri {idx + 1}",
+        allow_participants=allow_participants,
+        fallback_pipeline=fallback_pipeline,
+    )
+    if not isinstance(item, dict):
+        return None
+    if not allow_app_scope:
+        scope = item.get("scope") if isinstance(item.get("scope"), dict) else {}
+        scope.pop("aparells", None)
+        item["scope"] = scope
+    return item
+
+
 def build_cfg_status(competicio, tipus, schema_local):
     _schema_with_legacy, legacy_info = normalize_schema_legacy_team_birth_partition(
         competicio,
@@ -360,6 +394,10 @@ def _sanitize_agregacio_camps_per_aparell(raw_map, *, fallback="sum"):
         agg = _normalize_agregacio_camps_value(raw_value or fallback_value)
         out[str(app_id)] = agg
     return out
+
+
+def _sanitize_agregacio_exercicis_per_aparell(raw_map, *, fallback="sum"):
+    return _sanitize_agregacio_camps_per_aparell(raw_map, fallback=fallback)
 
 
 def _sanitize_candidate_source_entry(raw_entry, *, fallback_mode="raw_exercise", fallback_cfg=None):
@@ -532,6 +570,10 @@ def prepare_schema_for_builder_hydration(competicio, schema_local, tipus="indivi
             if app_id > 0:
                 ex_per_app_out[str(app_id)] = cfg
     punt["exercicis_per_aparell"] = ex_per_app_out
+    punt["agregacio_exercicis_per_aparell"] = _sanitize_agregacio_exercicis_per_aparell(
+        punt.get("agregacio_exercicis_per_aparell") or {},
+        fallback=punt.get("agregacio_exercicis", "sum"),
+    )
 
     victories = punt.get("victories") or {}
     if not isinstance(victories, dict):
@@ -539,7 +581,32 @@ def prepare_schema_for_builder_hydration(competicio, schema_local, tipus="indivi
     victories["desempat_comparacio"] = list(victories.get("desempat_comparacio") or []) if isinstance(victories.get("desempat_comparacio"), list) else []
     punt["victories"] = victories
 
-    schema["desempat"] = list(schema.get("desempat") or []) if isinstance(schema.get("desempat"), list) else []
+    selected_ids_hydration = punt.get("aparells", {}).get("ids") or []
+    hydration_team_mode = normalize_team_mode((schema.get("equips") or {}).get("team_mode", ""))
+    fallback_pipeline = build_main_scoring_pipeline_from_schema(
+        {"puntuacio": punt},
+        tipus=tipus,
+        team_mode=hydration_team_mode,
+    )
+    des_in = schema.get("desempat") or []
+    des_out = []
+    if isinstance(des_in, list):
+        for idx, tie in enumerate(des_in):
+            if not isinstance(tie, dict):
+                continue
+            item = _materialize_desempat_item_for_builder(
+                tie,
+                idx=idx,
+                tipus=tipus,
+                team_mode=hydration_team_mode,
+                selected_main_ids=selected_ids_hydration,
+                allow_app_scope=True,
+                allow_participants=(str(tipus or "").strip().lower() == "equips" and hydration_team_mode != "native_team"),
+                fallback_pipeline=fallback_pipeline,
+            )
+            if item:
+                des_out.append(item)
+    schema["desempat"] = des_out
     schema["particions"] = list(schema.get("particions") or []) if isinstance(schema.get("particions"), list) else []
     schema["particions_v2"] = list(schema.get("particions_v2") or []) if isinstance(schema.get("particions_v2"), list) else []
     schema["particions_custom"] = schema.get("particions_custom") if isinstance(schema.get("particions_custom"), dict) else {}
@@ -666,6 +733,20 @@ def sanitize_schema_for_builder(competicio, schema_local, tipus="individual"):
             if app_id in active_set and app_id in selected_set:
                 ex_per_app_out[str(app_id)] = cfg
     punt["exercicis_per_aparell"] = ex_per_app_out
+    agg_ex_per_app_in = punt.get("agregacio_exercicis_per_aparell") or {}
+    agg_ex_per_app_out = {}
+    if isinstance(agg_ex_per_app_in, dict):
+        for raw_key, raw_value in agg_ex_per_app_in.items():
+            try:
+                app_id = int(raw_key)
+            except Exception:
+                continue
+            if app_id in active_set and app_id in selected_set:
+                agg_ex_per_app_out[str(app_id)] = raw_value
+    punt["agregacio_exercicis_per_aparell"] = _sanitize_agregacio_exercicis_per_aparell(
+        agg_ex_per_app_out,
+        fallback=punt.get("agregacio_exercicis", "sum"),
+    )
     allow_exercise_scope = _is_derived_team_scope_enabled(
         tipus=tipus,
         team_mode=effective_team_mode,
@@ -707,42 +788,41 @@ def sanitize_schema_for_builder(competicio, schema_local, tipus="individual"):
         punt.pop("candidate_source_cfg", None)
         punt.pop("candidate_source_per_aparell", None)
     main_exercise_scope = punt.get("exercise_selection_scope") or EXERCISE_SELECTION_SCOPE_PER_MEMBER
+    fallback_pipeline = build_main_scoring_pipeline_from_schema(
+        {"puntuacio": punt},
+        tipus=tipus,
+        team_mode=effective_team_mode,
+    )
 
-    def sanitize_tie_item(raw_tie, *, selected_main_ids, allow_app_scope: bool, allow_participants: bool):
+    def sanitize_tie_item(raw_tie, *, idx: int, selected_main_ids, allow_app_scope: bool, allow_participants: bool):
         if not isinstance(raw_tie, dict):
             return None
 
-        item = json_clone(raw_tie)
-        item.pop("camp", None)
-        item.pop("aparell_id", None)
-
-        scope = item.get("scope") or {}
-        if not isinstance(scope, dict):
-            scope = {}
-
+        target_ids = [x for x in selected_main_ids if x in active_set]
         if allow_app_scope:
-            app_scope = scope.get("aparells") or {}
-            if not isinstance(app_scope, dict):
-                app_scope = {}
-            app_mode = str(app_scope.get("mode") or "hereta").strip().lower()
-            if app_mode == "seleccionar":
-                target_ids = [x for x in _parse_positive_int_list(app_scope.get("ids")) if x in active_set]
-                if not target_ids:
-                    return None
-                scope["aparells"] = {"mode": "seleccionar", "ids": target_ids}
-            else:
-                target_ids = [x for x in selected_main_ids if x in active_set]
-                if not target_ids:
-                    return None
-                scope["aparells"] = {"mode": "hereta"}
-        else:
-            scope.pop("aparells", None)
-            target_ids = [x for x in selected_main_ids if x in active_set]
-            if not target_ids:
-                return None
+            scope = raw_tie.get("scope") or {}
+            if isinstance(scope, dict):
+                app_scope = scope.get("aparells") or {}
+                if isinstance(app_scope, dict) and str(app_scope.get("mode") or "hereta").strip().lower() == "seleccionar":
+                    scoped_ids = [x for x in _parse_positive_int_list(app_scope.get("ids")) if x in active_set]
+                    if scoped_ids:
+                        target_ids = scoped_ids
 
-        if not allow_participants:
-            scope.pop("participants", None)
+        if not target_ids:
+            return None
+
+        item = _materialize_desempat_item_for_builder(
+            raw_tie,
+            idx=idx,
+            tipus=tipus,
+            team_mode=effective_team_mode,
+            selected_main_ids=target_ids,
+            allow_app_scope=allow_app_scope,
+            allow_participants=allow_participants,
+            fallback_pipeline=fallback_pipeline,
+        )
+        if not item:
+            return None
 
         valid_camps = []
         seen_camps = set()
@@ -756,18 +836,16 @@ def sanitize_schema_for_builder(competicio, schema_local, tipus="individual"):
             return None
 
         item["camps"] = valid_camps
-        item["scope"] = scope
-
-        effective_tie_scope = _effective_tie_exercise_selection_scope(
-            item,
-            main_scope=main_exercise_scope,
-        )
+        item["camp"] = valid_camps[0]
+        scope = item.get("scope") if isinstance(item.get("scope"), dict) else {}
+        effective_tie_scope = _effective_tie_exercise_selection_scope(item, main_scope=main_exercise_scope)
         if effective_tie_scope == "team_pool":
             scope.pop("exercicis", None)
             scope.pop("participants", None)
             item.pop("agregacio_participants", None)
             item.pop("mode_seleccio_exercicis", None)
             item.pop("exercicis_per_aparell", None)
+            item.pop("agregacio_exercicis_per_aparell", None)
 
         ex_map_in = item.get("exercicis_per_aparell") or {}
         ex_map_out = {}
@@ -784,11 +862,30 @@ def sanitize_schema_for_builder(competicio, schema_local, tipus="individual"):
         else:
             item.pop("exercicis_per_aparell", None)
 
-        if allow_exercise_scope:
-            tie_scope = normalize_exercise_selection_scope(
-                item.get("exercise_selection_scope"),
-                allow_inherit=True,
+        agg_ex_map_in = item.get("agregacio_exercicis_per_aparell") or {}
+        agg_ex_map_out = {}
+        if (
+            effective_tie_scope != "team_pool"
+            and str(item.get("mode_seleccio_exercicis") or "hereta").strip().lower() == "per_aparell_override"
+            and isinstance(agg_ex_map_in, dict)
+        ):
+            for raw_key, raw_value in agg_ex_map_in.items():
+                try:
+                    app_id = int(raw_key)
+                except Exception:
+                    continue
+                if app_id in target_ids:
+                    agg_ex_map_out[str(app_id)] = raw_value
+        if agg_ex_map_out:
+            item["agregacio_exercicis_per_aparell"] = _sanitize_agregacio_exercicis_per_aparell(
+                agg_ex_map_out,
+                fallback=item.get("agregacio_exercicis", "sum"),
             )
+        else:
+            item.pop("agregacio_exercicis_per_aparell", None)
+
+        if allow_exercise_scope:
+            tie_scope = normalize_exercise_selection_scope(item.get("exercise_selection_scope"), allow_inherit=True)
             if tie_scope == EXERCISE_SELECTION_SCOPE_INHERIT:
                 item.pop("exercise_selection_scope", None)
             else:
@@ -804,6 +901,7 @@ def sanitize_schema_for_builder(competicio, schema_local, tipus="individual"):
         for tie in des_in:
             item = sanitize_tie_item(
                 tie,
+                idx=len(des_out),
                 selected_main_ids=selected_ids,
                 allow_app_scope=True,
                 allow_participants=(tipus == "equips"),
@@ -821,6 +919,7 @@ def sanitize_schema_for_builder(competicio, schema_local, tipus="individual"):
             for tie in compare_ties:
                 item = sanitize_tie_item(
                     tie,
+                    idx=len(compare_out),
                     selected_main_ids=selected_ids,
                     allow_app_scope=False,
                     allow_participants=False,
@@ -898,6 +997,7 @@ def build_force_minimal_schema(competicio, schema_local):
     punt["agregacio_camps_per_aparell"] = {str(app_id): "sum" for app_id in active_ids}
     punt["mode_seleccio_exercicis"] = "per_aparell_global"
     punt["exercicis_per_aparell"] = {}
+    punt["agregacio_exercicis_per_aparell"] = {str(app_id): "sum" for app_id in active_ids}
     punt["agregacio_camps"] = "sum"
     punt["candidate_source_mode"] = "raw_exercise"
     punt["candidate_source_cfg"] = {
@@ -1068,6 +1168,20 @@ def autofix_schema_for_competicio(competicio, schema_local, mode: str, tipus=Non
             if app_id in selected_ids_after:
                 ex_per_app_out[str(app_id)] = cfg
     punt["exercicis_per_aparell"] = ex_per_app_out
+    agg_ex_per_app_in = punt.get("agregacio_exercicis_per_aparell") or {}
+    agg_ex_per_app_out = {}
+    if isinstance(agg_ex_per_app_in, dict):
+        for raw_key, raw_value in agg_ex_per_app_in.items():
+            try:
+                app_id = int(raw_key)
+            except Exception:
+                continue
+            if app_id in selected_ids_after:
+                agg_ex_per_app_out[str(app_id)] = raw_value
+    punt["agregacio_exercicis_per_aparell"] = _sanitize_agregacio_exercicis_per_aparell(
+        agg_ex_per_app_out,
+        fallback=punt.get("agregacio_exercicis", "sum"),
+    )
 
     allowed_particio_codes = {
         str(item.get("code") or "").strip()
@@ -1106,7 +1220,22 @@ def autofix_schema_for_competicio(competicio, schema_local, mode: str, tipus=Non
     for idx, tie in enumerate(des_in if isinstance(des_in, list) else []):
         if not isinstance(tie, dict):
             continue
-        item = json_clone(tie)
+        item = materialize_desempat_item(
+            tie,
+            tipus=tipus,
+            team_mode=equips_cfg.get("team_mode", ""),
+            selected_app_ids=selected_ids_after,
+            default_id=f"tie_{idx + 1}",
+            default_nom=f"Criteri {idx + 1}",
+            allow_participants=(str(tipus or "").strip().lower() == "equips" and normalize_team_mode(equips_cfg.get("team_mode")) != "native_team"),
+            fallback_pipeline=build_main_scoring_pipeline_from_schema(
+                {"puntuacio": punt},
+                tipus=tipus,
+                team_mode=equips_cfg.get("team_mode", ""),
+            ),
+        )
+        if not isinstance(item, dict):
+            continue
         camps = _normalize_tie_camps_for_validation(item)
         if not camps:
             dropped.append(f"desempat[{idx}] (sense camps)")
@@ -1165,6 +1294,20 @@ def autofix_schema_for_competicio(competicio, schema_local, mode: str, tipus=Non
                 if app_id in target_ids:
                     ex_map_out[str(app_id)] = cfg
         item["exercicis_per_aparell"] = ex_map_out
+        agg_ex_map_in = item.get("agregacio_exercicis_per_aparell") or {}
+        agg_ex_map_out = {}
+        if isinstance(agg_ex_map_in, dict):
+            for raw_key, raw_value in agg_ex_map_in.items():
+                try:
+                    app_id = int(raw_key)
+                except Exception:
+                    continue
+                if app_id in target_ids:
+                    agg_ex_map_out[str(app_id)] = raw_value
+        item["agregacio_exercicis_per_aparell"] = _sanitize_agregacio_exercicis_per_aparell(
+            agg_ex_map_out,
+            fallback=item.get("agregacio_exercicis", "sum"),
+        )
         des_out.append(item)
     schema["desempat"] = des_out
 

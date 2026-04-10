@@ -52,6 +52,18 @@ def _is_competitive_franja(franja):
     return getattr(franja, "tipus", RotacioFranja.TIPUS_COMPETITION) == RotacioFranja.TIPUS_COMPETITION
 
 
+def _excel_hex(value: str) -> str:
+    return str(value or "").strip().lstrip("#").upper()
+
+
+def _franja_excel_style_parts(franja):
+    fill = PatternFill("solid", fgColor=_excel_hex(franja.resolved_background_color))
+    border_side = Side(style="thin", color=_excel_hex(franja.resolved_border_color))
+    border = Border(left=border_side, right=border_side, top=border_side, bottom=border_side)
+    font_color = _excel_hex(franja.resolved_text_color)
+    return fill, font_color, border
+
+
 @require_POST
 @csrf_protect
 def rotacions_export_meta_save(request, pk):
@@ -173,7 +185,7 @@ def franges_export_excel(request, pk):
         .select_related("comp_aparell__aparell")
         .order_by("ordre", "id")
     )
-    franges = list(RotacioFranja.objects.filter(competicio=competicio).order_by("ordre", "id"))
+    franges = list(RotacioFranja.objects.filter(competicio=competicio).order_by("ordre_visual", "id"))
 
     franja_modes = get_rotacions_order_modes(competicio)
 
@@ -410,7 +422,6 @@ def franges_export_excel(request, pk):
     fill_title = PatternFill("solid", fgColor="1F4E79")
     fill_sub = PatternFill("solid", fgColor="D9E1F2")
     fill_hdr = PatternFill("solid", fgColor="E9EEF7")
-    fill_zebra = PatternFill("solid", fgColor="F6F8FC")
     fill_special = PatternFill("solid", fgColor="EEF2F7")
 
     thin = Side(style="thin", color="9AA7B2")
@@ -515,6 +526,7 @@ def franges_export_excel(request, pk):
             label = getattr(f, "display_label", None) or (f.titol or "").strip() or "Franja"
             fr_txt = f"{label}\n{f.hora_inici.strftime('%H:%M')}-{f.hora_fi.strftime('%H:%M')}"
             is_competitive = _is_competitive_franja(f)
+            row_fill, row_font_color, row_border = _franja_excel_style_parts(f)
 
             if not is_competitive:
                 start_row = current_row
@@ -527,12 +539,13 @@ def franges_export_excel(request, pk):
                 )
                 fr_cell = ws.cell(row=start_row, column=1, value=fr_txt)
                 fr_cell.alignment = center
-                fr_cell.border = border
-                fr_cell.font = bold
+                fr_cell.border = row_border
+                fr_cell.font = Font(bold=True, color=row_font_color)
                 for col in range(1, total_cols + 1):
                     cell = ws.cell(row=start_row, column=col)
-                    cell.fill = fill_special
-                    cell.border = border
+                    cell.fill = row_fill
+                    cell.border = row_border
+                    cell.font = Font(color=row_font_color)
                 ws.row_dimensions[start_row].height = 24
                 current_row = end_row + 1
                 continue
@@ -565,17 +578,23 @@ def franges_export_excel(request, pk):
             )
             fr_cell = ws.cell(row=start_row, column=1, value=fr_txt)
             fr_cell.alignment = center
-            fr_cell.border = border
+            fr_cell.border = row_border
+            fr_cell.font = Font(bold=True, color=row_font_color)
             for rr in range(start_row, end_row + 1):
                 c1 = ws.cell(row=rr, column=1)
                 c1.alignment = center
-                c1.border = border
+                c1.border = row_border
+                c1.fill = row_fill
+                c1.font = Font(bold=True, color=row_font_color)
                 ws.row_dimensions[rr].height = 22
 
-            if i % 2 == 0:
-                for rr in range(start_row, end_row + 1):
-                    for col in range(1, total_cols + 1):
-                        ws.cell(row=rr, column=col).fill = fill_zebra
+            for rr in range(start_row, end_row + 1):
+                for col in range(1, total_cols + 1):
+                    cell = ws.cell(row=rr, column=col)
+                    cell.fill = row_fill
+                    cell.border = row_border
+                    if col != 1:
+                        cell.font = Font(color=row_font_color)
 
             for rr_offset in range(block_rows):
                 rr = start_row + rr_offset
@@ -599,13 +618,15 @@ def franges_export_excel(request, pk):
                                 value = _format_field_value(_inscripcio_field_value(current_ins, code))
                         cell = ws.cell(row=rr, column=start_col + idx, value=value)
                         cell.alignment = left_center
-                        cell.border = border
+                        cell.border = row_border
+                        cell.fill = row_fill
+                        cell.font = Font(color=row_font_color)
 
             current_row = end_row + 1
 
         ws.row_dimensions[header_row_top].height = 24
         ws.row_dimensions[header_row_sub].height = 22
-        ws.freeze_panes = ws["B" + str(data_start_row)]
+        ws.freeze_panes = f"B{data_start_row}"
     else:
         header_row = ws.max_row + 1
         ws.cell(row=header_row, column=1, value="Franja").font = bold
@@ -624,26 +645,32 @@ def franges_export_excel(request, pk):
             r = header_row + i
             label = getattr(f, "display_label", None) or (f.titol or "").strip() or "Franja"
             fr_txt = f"{label}\n{f.hora_inici.strftime('%H:%M')}-{f.hora_fi.strftime('%H:%M')}"
+            row_fill, row_font_color, row_border = _franja_excel_style_parts(f)
             if not _is_competitive_franja(f):
                 ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=total_cols)
                 c0 = ws.cell(row=r, column=1, value=fr_txt)
                 c0.alignment = center
-                c0.border = border
-                c0.font = bold
+                c0.border = row_border
+                c0.font = Font(bold=True, color=row_font_color)
                 for col in range(1, total_cols + 1):
                     cell = ws.cell(row=r, column=col)
-                    cell.fill = fill_special
-                    cell.border = border
+                    cell.fill = row_fill
+                    cell.border = row_border
+                    cell.font = Font(color=row_font_color)
                 ws.row_dimensions[r].height = 24
                 continue
 
             c0 = ws.cell(row=r, column=1, value=fr_txt)
             c0.alignment = center
-            c0.border = border
-
-            if i % 2 == 0:
-                for col in range(1, total_cols + 1):
-                    ws.cell(row=r, column=col).fill = fill_zebra
+            c0.border = row_border
+            c0.fill = row_fill
+            c0.font = Font(bold=True, color=row_font_color)
+            for col in range(1, total_cols + 1):
+                cell = ws.cell(row=r, column=col)
+                cell.fill = row_fill
+                cell.border = row_border
+                if col != 1:
+                    cell.font = Font(color=row_font_color)
 
             for j, e in enumerate(estacions, start=2):
                 gs = cell_groups.get((f.id, e.id), [])
@@ -665,7 +692,9 @@ def franges_export_excel(request, pk):
                     txt = "\n".join(labels) if labels else "-"
                 cell = ws.cell(row=r, column=j, value=txt)
                 cell.alignment = center
-                cell.border = border
+                cell.border = row_border
+                cell.fill = row_fill
+                cell.font = Font(color=row_font_color)
 
             ws.row_dimensions[r].height = 30
 
@@ -673,7 +702,7 @@ def franges_export_excel(request, pk):
             ws.column_dimensions[get_column_letter(j)].width = 24
 
         ws.row_dimensions[header_row].height = 22
-        ws.freeze_panes = ws["B" + str(header_row + 1)]
+        ws.freeze_panes = f"B{header_row + 1}"
 
     logo_added = False
     if logo_path:

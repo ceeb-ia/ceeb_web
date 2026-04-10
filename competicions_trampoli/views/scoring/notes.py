@@ -47,7 +47,7 @@ class ScoringNotesHome(TemplateView):
     Pantalla de notes dinàmica basada en schema.
     Convivència amb la pantalla trampolí actual: és una home nova.
     """
-    template_name = "competicio/scoring_notes_home.html"
+    template_name = "scoring/scoring_notes_home.html"
 
     def get(self, request, *args, **kwargs):
         self.competicio = get_object_or_404(Competicio, pk=kwargs["pk"])

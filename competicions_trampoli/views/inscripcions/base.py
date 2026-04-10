@@ -145,7 +145,7 @@ def _resolve_group_id_for_inscripcio(inscripcio, groups_by_display_num):
 
 
 class InscripcionsImportExcelView(FormView):
-    template_name = "competicio/inscripcions_import.html"
+    template_name = "competicio/inscripcions/inscripcions_import.html"
     form_class = ImportInscripcionsExcelForm
 
     def dispatch(self, request, *args, **kwargs):
@@ -199,7 +199,7 @@ class InscripcionsImportExcelView(FormView):
 
 
 class InscripcionsListView(ListView):
-    template_name = "competicio/inscripcions_list.html"
+    template_name = "legacy/inscripcions_list.html"
     context_object_name = "records"
     paginate_by = 25
 

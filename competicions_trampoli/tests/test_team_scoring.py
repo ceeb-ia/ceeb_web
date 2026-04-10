@@ -5120,6 +5120,43 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
 
         self.assertTrue(any("scope.participants" in err for err in errors))
 
+    def test_classificacio_validation_rejects_native_team_pipeline_with_participants(self):
+        _schema, errors = _validate_schema_for_competicio(
+            self.comp,
+            self._native_team_schema_with_tie(
+                {
+                    "id": "tie_native_pipeline",
+                    "ordre": "desc",
+                    "pipeline_version": 1,
+                    "pipeline": {
+                        "aparells": {"mode": "seleccionar", "ids": [self.comp_app.id]},
+                        "camps_per_aparell": {str(self.comp_app.id): ["TOTAL"]},
+                        "agregacio_camps_per_aparell": {str(self.comp_app.id): "sum"},
+                        "agregacio_camps": "sum",
+                        "candidate_source_mode": "team_aggregate",
+                        "candidate_source_cfg": {
+                            "mode": "tots",
+                            "best_n": 1,
+                            "index": 1,
+                            "ids": [],
+                            "agregacio_exercicis": "sum",
+                        },
+                        "candidate_source_per_aparell": {str(self.comp_app.id): {"mode": "team_aggregate"}},
+                        "exercicis": {"mode": "tots"},
+                        "exercise_selection_scope": "per_member",
+                        "mode_seleccio_exercicis": "per_aparell_global",
+                        "agregacio_exercicis": "sum",
+                        "agregacio_aparells": "sum",
+                        "mode_resultat_aparells": "score",
+                        "participants": {"mode": "millor_n", "n": 1},
+                        "agregacio_participants": "sum",
+                    },
+                }
+            ),
+            tipus="equips",
+        )
+        self.assertTrue(any("desempat[0].pipeline.participants" in err for err in errors))
+
     def test_classificacio_validation_rejects_native_team_tie_with_participant_aggregation(self):
         _schema, errors = _validate_schema_for_competicio(
             self.comp,
@@ -7342,6 +7379,95 @@ class TeamContextScoringFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual([row["participant"] for row in rows[:2]], ["Parella 2", "Parella 1"])
         self.assertEqual(rows[0]["score"], 17.0)
         self.assertEqual(rows[1]["score"], 17.0)
+
+    def test_compute_classificacio_derived_team_pool_pipeline_reuses_main_selected_rows(self):
+        individual_app = self._create_aparell("TRP", "Tramp tie pipeline")
+        individual_comp_app = self._create_comp_aparell(self.comp, individual_app, ordre=2)
+        individual_comp_app.nombre_exercicis = 2
+        individual_comp_app.save(update_fields=["nombre_exercicis"])
+        _equip_2, members_2 = self._create_team_with_members("Parella 2", ["Nora", "Marta"], start_order=20)
+
+        for inscripcio, exercici, total, d_value in (
+            (self.ins1, 1, 10.0, 1.0),
+            (self.ins1, 2, 1.0, 100.0),
+            (self.ins2, 1, 7.0, 7.0),
+            (self.ins2, 2, 0.0, 0.0),
+            (members_2[0], 1, 9.0, 5.0),
+            (members_2[0], 2, 2.0, 6.0),
+            (members_2[1], 1, 8.0, 4.0),
+            (members_2[1], 2, 1.0, 5.0),
+        ):
+            ScoreEntry.objects.create(
+                competicio=self.comp,
+                comp_aparell=individual_comp_app,
+                inscripcio=inscripcio,
+                exercici=exercici,
+                inputs={"D": d_value},
+                outputs={},
+                total=total,
+            )
+
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Derived team pool tie pipeline",
+            activa=True,
+            ordre=1,
+            tipus="equips",
+            schema={
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [individual_comp_app.id]},
+                    "camps_per_aparell": {str(individual_comp_app.id): ["total"]},
+                    "agregacio_camps_per_aparell": {str(individual_comp_app.id): "sum"},
+                    "candidate_source_per_aparell": {str(individual_comp_app.id): {"mode": "raw_exercise"}},
+                    "agregacio_camps": "sum",
+                    "exercicis": {"mode": "millor_n", "best_n": 2, "max_per_participant": 1},
+                    "exercise_selection_scope": "team_pool",
+                    "mode_seleccio_exercicis": "per_aparell_global",
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "ordre": "desc",
+                },
+                "desempat": [
+                    {
+                        "id": "tie_team_pool_pipeline",
+                        "ordre": "desc",
+                        "pipeline_version": 1,
+                        "pipeline": {
+                            "aparells": {"mode": "seleccionar", "ids": [individual_comp_app.id]},
+                            "camps_per_aparell": {str(individual_comp_app.id): ["D"]},
+                            "agregacio_camps_per_aparell": {str(individual_comp_app.id): "sum"},
+                            "agregacio_camps": "sum",
+                            "candidate_source_mode": "raw_exercise",
+                            "candidate_source_cfg": {
+                                "mode": "tots",
+                                "best_n": 1,
+                                "index": 1,
+                                "ids": [],
+                                "agregacio_exercicis": "sum",
+                            },
+                            "candidate_source_per_aparell": {str(individual_comp_app.id): {"mode": "raw_exercise"}},
+                            "exercicis": {"mode": "tots"},
+                            "exercise_selection_scope": "team_pool",
+                            "mode_seleccio_exercicis": "per_aparell_global",
+                            "agregacio_exercicis": "sum",
+                            "agregacio_aparells": "sum",
+                            "mode_resultat_aparells": "score",
+                            "ordre": "desc",
+                            "participants": {"mode": "tots"},
+                            "agregacio_participants": "sum",
+                        },
+                    }
+                ],
+                "equips": {
+                    "context_code": "parelles",
+                    "team_mode": "derived_from_individual",
+                    "incloure_sense_equip": False,
+                },
+            },
+        )
+
+        rows = compute_classificacio(self.comp, cfg).get("global", [])
+        self.assertEqual([row["participant"] for row in rows[:2]], ["Parella 2", "Parella 1"])
 
     def test_classificacio_save_persists_derived_exercise_selection_scope_default(self):
         individual_app = self._create_aparell("TRS", "Tramp save")

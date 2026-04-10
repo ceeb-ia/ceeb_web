@@ -246,6 +246,63 @@ def _assign_presentacio_column_group(presentacio, path, cols_out):
             presentacio["detall"] = detail
 
 
+def _map_tie_pipeline_app_refs(pipeline, resolver, *, prefix="", warnings=None):
+    if not isinstance(pipeline, dict):
+        return pipeline
+    warnings = warnings if isinstance(warnings, list) else []
+
+    def map_keys(raw_map, label):
+        if not isinstance(raw_map, dict):
+            return raw_map
+        out = {}
+        for raw_key, raw_value in raw_map.items():
+            mapped = resolver(raw_key)
+            if not mapped:
+                warnings.append(f"{label}: aparell no exportat ({raw_key})")
+                continue
+            out[str(mapped)] = raw_value
+        return out
+
+    def map_ids(raw_ids, label):
+        if not isinstance(raw_ids, list):
+            return raw_ids
+        out = []
+        seen = set()
+        for raw in raw_ids:
+            mapped = resolver(raw)
+            if not mapped:
+                warnings.append(f"{label} no exportat: {raw}")
+                continue
+            key = str(mapped)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(mapped)
+        return out
+
+    out = dict(pipeline)
+    apps = out.get("aparells") if isinstance(out.get("aparells"), dict) else {}
+    if isinstance(apps, dict):
+        apps2 = dict(apps)
+        apps2["ids"] = map_ids(apps.get("ids") or [], f"{prefix}.aparells.ids")
+        out["aparells"] = apps2
+    out["camps_per_aparell"] = map_keys(out.get("camps_per_aparell") or {}, f"{prefix}.camps_per_aparell")
+    out["agregacio_camps_per_aparell"] = map_keys(
+        out.get("agregacio_camps_per_aparell") or {},
+        f"{prefix}.agregacio_camps_per_aparell",
+    )
+    out["candidate_source_per_aparell"] = map_keys(
+        out.get("candidate_source_per_aparell") or {},
+        f"{prefix}.candidate_source_per_aparell",
+    )
+    out["exercicis_per_aparell"] = map_keys(out.get("exercicis_per_aparell") or {}, f"{prefix}.exercicis_per_aparell")
+    out["agregacio_exercicis_per_aparell"] = map_keys(
+        out.get("agregacio_exercicis_per_aparell") or {},
+        f"{prefix}.agregacio_exercicis_per_aparell",
+    )
+    return out
+
+
 def _iter_presentacio_detail_sections(presentacio):
     if not isinstance(presentacio, dict):
         return []
@@ -437,6 +494,17 @@ def schema_to_template_schema(competicio, schema_local):
             item.get("exercicis_per_aparell") or {},
             f"{prefix}.exercicis_per_aparell",
         )
+        item["agregacio_exercicis_per_aparell"] = map_keys_to_codes(
+            item.get("agregacio_exercicis_per_aparell") or {},
+            f"{prefix}.agregacio_exercicis_per_aparell",
+        )
+        if isinstance(item.get("pipeline"), dict):
+            item["pipeline"] = _map_tie_pipeline_app_refs(
+                item.get("pipeline"),
+                lambda raw: resolve_app_code_for_template(raw, by_id_all, by_code_all),
+                prefix=f"{prefix}.pipeline",
+                warnings=warnings,
+            )
         return item
 
     punt["camps_per_aparell"] = map_keys_to_codes(punt.get("camps_per_aparell") or {}, "camps_per_aparell")
@@ -447,6 +515,10 @@ def schema_to_template_schema(competicio, schema_local):
     punt["exercicis_per_aparell"] = map_keys_to_codes(
         punt.get("exercicis_per_aparell") or {},
         "exercicis_per_aparell",
+    )
+    punt["agregacio_exercicis_per_aparell"] = map_keys_to_codes(
+        punt.get("agregacio_exercicis_per_aparell") or {},
+        "agregacio_exercicis_per_aparell",
     )
     punt["candidate_source_per_aparell"] = map_keys_to_codes(
         punt.get("candidate_source_per_aparell") or {},
@@ -651,6 +723,17 @@ def template_schema_to_competicio_schema(competicio, schema_tpl):
             item.get("exercicis_per_aparell") or {},
             f"{prefix}.exercicis_per_aparell",
         )
+        item["agregacio_exercicis_per_aparell"] = map_keys_to_ids(
+            item.get("agregacio_exercicis_per_aparell") or {},
+            f"{prefix}.agregacio_exercicis_per_aparell",
+        )
+        if isinstance(item.get("pipeline"), dict):
+            item["pipeline"] = _map_tie_pipeline_app_refs(
+                item.get("pipeline"),
+                lambda raw: resolve_app_id(raw, by_id_active, by_code_active),
+                prefix=f"{prefix}.pipeline",
+                warnings=warnings,
+            )
         return item
 
     punt["camps_per_aparell"] = map_keys_to_ids(punt.get("camps_per_aparell") or {}, "camps_per_aparell")
@@ -661,6 +744,10 @@ def template_schema_to_competicio_schema(competicio, schema_tpl):
     punt["exercicis_per_aparell"] = map_keys_to_ids(
         punt.get("exercicis_per_aparell") or {},
         "exercicis_per_aparell",
+    )
+    punt["agregacio_exercicis_per_aparell"] = map_keys_to_ids(
+        punt.get("agregacio_exercicis_per_aparell") or {},
+        "agregacio_exercicis_per_aparell",
     )
     punt["candidate_source_per_aparell"] = map_keys_to_ids(
         punt.get("candidate_source_per_aparell") or {},
@@ -876,11 +963,13 @@ def template_schema_to_global_ui_schema(schema_tpl, by_id, by_code):
                 scope2["aparells"] = apps2
             item["scope"] = scope2
         item["exercicis_per_aparell"] = map_keys_to_ids(item.get("exercicis_per_aparell") or {})
+        item["agregacio_exercicis_per_aparell"] = map_keys_to_ids(item.get("agregacio_exercicis_per_aparell") or {})
         return item
 
     punt["camps_per_aparell"] = map_keys_to_ids(punt.get("camps_per_aparell") or {})
     punt["agregacio_camps_per_aparell"] = map_keys_to_ids(punt.get("agregacio_camps_per_aparell") or {})
     punt["exercicis_per_aparell"] = map_keys_to_ids(punt.get("exercicis_per_aparell") or {})
+    punt["agregacio_exercicis_per_aparell"] = map_keys_to_ids(punt.get("agregacio_exercicis_per_aparell") or {})
     punt["candidate_source_per_aparell"] = map_keys_to_ids(punt.get("candidate_source_per_aparell") or {})
     victories = punt.get("victories") or {}
     if isinstance(victories, dict):
@@ -1016,11 +1105,20 @@ def global_ui_schema_to_template_schema(schema_ui, by_id, by_code):
                 scope2["aparells"] = apps2
             item["scope"] = scope2
         item["exercicis_per_aparell"] = map_keys_to_codes(item.get("exercicis_per_aparell") or {})
+        item["agregacio_exercicis_per_aparell"] = map_keys_to_codes(item.get("agregacio_exercicis_per_aparell") or {})
+        if isinstance(item.get("pipeline"), dict):
+            item["pipeline"] = _map_tie_pipeline_app_refs(
+                item.get("pipeline"),
+                lambda raw: resolve_app_code_for_template(raw, by_id, by_code),
+                prefix="pipeline",
+                warnings=warnings,
+            )
         return item
 
     punt["camps_per_aparell"] = map_keys_to_codes(punt.get("camps_per_aparell") or {})
     punt["agregacio_camps_per_aparell"] = map_keys_to_codes(punt.get("agregacio_camps_per_aparell") or {})
     punt["exercicis_per_aparell"] = map_keys_to_codes(punt.get("exercicis_per_aparell") or {})
+    punt["agregacio_exercicis_per_aparell"] = map_keys_to_codes(punt.get("agregacio_exercicis_per_aparell") or {})
     punt["candidate_source_per_aparell"] = map_keys_to_codes(punt.get("candidate_source_per_aparell") or {})
     victories = punt.get("victories") or {}
     if isinstance(victories, dict):
@@ -1106,26 +1204,62 @@ def collect_required_app_codes_from_template(schema_tpl):
             code = canon_app_code(raw_key)
             if code:
                 out.add(code)
+        for raw_key in (punt.get("agregacio_exercicis_per_aparell") or {}).keys() if isinstance(punt.get("agregacio_exercicis_per_aparell"), dict) else []:
+            code = canon_app_code(raw_key)
+            if code:
+                out.add(code)
         for raw_key in (punt.get("candidate_source_per_aparell") or {}).keys() if isinstance(punt.get("candidate_source_per_aparell"), dict) else []:
             code = canon_app_code(raw_key)
             if code:
                 out.add(code)
+
+    def collect_tie_app_codes(tie):
+        if not isinstance(tie, dict):
+            return
+        code = canon_app_code(tie.get("aparell_codi"))
+        if code:
+            out.add(code)
+        scope = tie.get("scope") or {}
+        if isinstance(scope, dict):
+            apps = scope.get("aparells") or {}
+            if isinstance(apps, dict):
+                for raw in (apps.get("ids") or []):
+                    code = canon_app_code(raw)
+                    if code:
+                        out.add(code)
+        for map_key in ("exercicis_per_aparell", "agregacio_exercicis_per_aparell"):
+            raw_map = tie.get(map_key) or {}
+            if not isinstance(raw_map, dict):
+                continue
+            for raw_key in raw_map.keys():
+                code = canon_app_code(raw_key)
+                if code:
+                    out.add(code)
+        pipeline = tie.get("pipeline") or {}
+        if isinstance(pipeline, dict):
+            for map_key in (
+                "camps_per_aparell",
+                "agregacio_camps_per_aparell",
+                "candidate_source_per_aparell",
+                "exercicis_per_aparell",
+                "agregacio_exercicis_per_aparell",
+            ):
+                raw_map = pipeline.get(map_key) or {}
+                if not isinstance(raw_map, dict):
+                    continue
+                for raw_key in raw_map.keys():
+                    code = canon_app_code(raw_key)
+                    if code:
+                        out.add(code)
+
     desempat = schema.get("desempat") or []
     if isinstance(desempat, list):
         for tie in desempat:
-            if not isinstance(tie, dict):
-                continue
-            code = canon_app_code(tie.get("aparell_codi"))
-            if code:
-                out.add(code)
-            scope = tie.get("scope") or {}
-            if isinstance(scope, dict):
-                apps = scope.get("aparells") or {}
-                if isinstance(apps, dict):
-                    for raw in (apps.get("ids") or []):
-                        code = canon_app_code(raw)
-                        if code:
-                            out.add(code)
+            collect_tie_app_codes(tie)
+    victories = punt.get("victories") or {}
+    if isinstance(victories, dict):
+        for tie in victories.get("desempat_comparacio") or []:
+            collect_tie_app_codes(tie)
     presentacio = schema.get("presentacio") or {}
     if isinstance(presentacio, dict):
         for _path, cols in _iter_presentacio_column_groups(presentacio):
@@ -1308,6 +1442,7 @@ def _global_builder_known_merge_shape():
             "exercicis_best_n": None,
             "mode_seleccio_exercicis": None,
             "exercicis_per_aparell": None,
+            "agregacio_exercicis_per_aparell": None,
             "aparells": {"mode": None, "ids": None},
             "camps_per_aparell": None,
             "agregacio_camps_per_aparell": None,
@@ -1685,6 +1820,21 @@ def validate_template_schema_global(
             agg = str(raw_value or "sum").strip().lower()
             if agg not in {"sum", "avg", "median", "max", "min"}:
                 errors.append(f"puntuacio.agregacio_camps_per_aparell[{app_code}] invalid: {agg}")
+
+    agg_ex_per_aparell = punt.get("agregacio_exercicis_per_aparell") or {}
+    if agg_ex_per_aparell and not isinstance(agg_ex_per_aparell, dict):
+        errors.append("puntuacio.agregacio_exercicis_per_aparell ha de ser un objecte {aparell_codi: agregacio}.")
+    elif isinstance(agg_ex_per_aparell, dict):
+        for raw_key, raw_value in agg_ex_per_aparell.items():
+            app_code = canon_app_code(raw_key)
+            if app_code not in available_app_codes:
+                errors.append(f"aparell global no valid a agregacio_exercicis_per_aparell: {raw_key}")
+                continue
+            if selected_codes and app_code not in selected_codes:
+                continue
+            agg = str(raw_value or "sum").strip().lower()
+            if agg not in {"sum", "avg", "median", "max", "min"}:
+                errors.append(f"puntuacio.agregacio_exercicis_per_aparell[{app_code}] invalid: {agg}")
 
     candidate_source_per_aparell = punt.get("candidate_source_per_aparell") or {}
     if candidate_source_per_aparell and not isinstance(candidate_source_per_aparell, dict):
