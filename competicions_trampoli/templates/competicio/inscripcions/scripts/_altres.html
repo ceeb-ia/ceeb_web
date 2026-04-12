@@ -29,7 +29,9 @@
     const items = getColumnItems();
     const visible = items.filter((item) => item.querySelector('.js-col-check')?.checked).length;
     const counter = document.getElementById('cols-visible-count');
+    const navCounter = document.getElementById('cols-visible-count-nav');
     if (counter) counter.textContent = `${visible}/${items.length}`;
+    if (navCounter) navCounter.textContent = `${visible}/${items.length}`;
   }
 
   function collectTableColumns() {
@@ -56,7 +58,7 @@
     }
     const data = await API.postJson(API.app.urls.saveTableColumns, { table_columns: columns });
     if (!data?.ok) throw new Error("No s'han pogut desar les columnes.");
-    API.reloadWithUiState();
+    await API.refreshHtmlFragments(['header', 'history', 'table']);
   }
 
   function exportExcel() {
@@ -81,24 +83,58 @@
     });
   }
 
-  document.addEventListener('DOMContentLoaded', () => {
+  function hydrateColumnsPanel() {
     initColumnsSortable();
     updateColumnCounter();
-    document.querySelectorAll('.js-col-check').forEach((input) => {
-      input.addEventListener('change', updateColumnCounter);
+  }
+
+  function wireColumnsPanel() {
+    document.addEventListener('change', (event) => {
+      if (event.target.closest('.js-col-check')) updateColumnCounter();
     });
 
-    document.getElementById('btn-cols-all')?.addEventListener('click', () => setColumnsChecked(() => true));
-    document.getElementById('btn-cols-none')?.addEventListener('click', () => setColumnsChecked((code) => code === 'nom_i_cognoms'));
-    document.getElementById('btn-cols-default')?.addEventListener('click', () => setColumnsChecked((code) => defaultColumns.includes(code)));
-    document.getElementById('btn-save-cols')?.addEventListener('click', async () => {
-      try {
-        await saveTableColumns();
-      } catch (err) {
-        API.showAlert(err.message || err);
+    document.addEventListener('click', async (event) => {
+      if (event.target.closest('#btn-cols-all')) {
+        event.preventDefault();
+        setColumnsChecked(() => true);
+        return;
+      }
+      if (event.target.closest('#btn-cols-none')) {
+        event.preventDefault();
+        setColumnsChecked((code) => code === 'nom_i_cognoms');
+        return;
+      }
+      if (event.target.closest('#btn-cols-default')) {
+        event.preventDefault();
+        setColumnsChecked((code) => defaultColumns.includes(code));
+        return;
+      }
+      if (event.target.closest('#btn-save-cols')) {
+        event.preventDefault();
+        try {
+          await saveTableColumns();
+        } catch (err) {
+          API.showAlert(err.message || err);
+        }
+        return;
+      }
+      if (event.target.closest('#btn-export-excel')) {
+        event.preventDefault();
+        exportExcel();
       }
     });
-    document.getElementById('btn-export-excel')?.addEventListener('click', exportExcel);
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    wireColumnsPanel();
+    hydrateColumnsPanel();
+  });
+  document.addEventListener('inscripcions:fragments-refreshed', (event) => {
+    const fragments = Array.isArray(event?.detail?.fragments) ? event.detail.fragments : [];
+    const panelKey = String(event?.detail?.panelKey || '').trim();
+    if (fragments.includes('panel') && panelKey === 'columnes') {
+      hydrateColumnsPanel();
+    }
   });
 })();
 </script>

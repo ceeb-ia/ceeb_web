@@ -10,13 +10,7 @@
             </div>
             <span class="badge badge-info">{{ inscrits_filtered_count }}</span>
           </div>
-          <div class="actions-history">
-            <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-history-undo">Desfer</button>
-            <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-history-redo">Refer</button>
-            <span class="text-muted small align-self-center" id="history-stack-summary">
-              Desfer {{ history_state.undo_count|default:0 }} · Refer {{ history_state.redo_count|default:0 }}
-            </span>
-          </div>
+          {% include "competicio/inscripcions/_history_summary.html" %}
         </div>
 
         <input type="hidden" name="q" value="{{ request.GET.q|default:'' }}">
@@ -54,14 +48,14 @@
             <button type="button" class="actions-nav-btn" data-panel-target="equips">
               <span class="actions-nav-btn-title">
                 <span>Equips</span>
-                <span class="badge badge-light">{{ equips_existing|length }}</span>
+                <span class="badge badge-light">Carregant</span>
               </span>
               <span class="actions-nav-btn-meta">Automatic i manual</span>
             </button>
             <button type="button" class="actions-nav-btn" data-panel-target="series-equips">
               <span class="actions-nav-btn-title">
-                <span>Sèries d'equip</span>
-                <span class="badge badge-light">{{ series_team_aparells|length }}</span>
+                <span>Series d'equip</span>
+                <span class="badge badge-light">Carregant</span>
               </span>
               <span class="actions-nav-btn-meta">Workspace i programacio</span>
             </button>
@@ -84,10 +78,57 @@
             <div class="d-flex flex-column gap-2 mb-3" id="inscripcions-panels">
               {% include "competicio/inscripcions/_grouping_panel.html" %}
               {% include "competicio/inscripcions/_columns_panel.html" %}
-              {% include "competicio/inscripcions/_groups_panel.html" %}
-              {% include "competicio/inscripcions/_teams_panel.html" %}
-              {% include "competicio/inscripcions/_series_panel.html" %}
-              {% include "competicio/inscripcions/_media_panel.html" %}
+              {% if inscripcions_lazy_panels %}
+                <section class="action-panel d-none" id="panel-grups" data-panel-key="grups" data-panel-lazy="1" hidden>
+                  <div class="action-panel-header">
+                    <div>
+                      <p class="panel-title mb-0">Grups</p>
+                      <div class="subtle">El panell es carrega quan l'obres.</div>
+                    </div>
+                  </div>
+                  <div class="action-panel-body">
+                    <div class="small text-muted">Carregant grups...</div>
+                  </div>
+                </section>
+                <section class="action-panel d-none" id="panel-equips" data-panel-key="equips" data-panel-lazy="1" hidden>
+                  <div class="action-panel-header">
+                    <div>
+                      <p class="panel-title mb-0">Fer Equips</p>
+                      <div class="subtle">El workspace es carrega quan l'obres.</div>
+                    </div>
+                  </div>
+                  <div class="action-panel-body">
+                    <div class="small text-muted">Carregant equips...</div>
+                  </div>
+                </section>
+                <section class="action-panel d-none" id="panel-series-equips" data-panel-key="series-equips" data-panel-lazy="1" hidden>
+                  <div class="action-panel-header">
+                    <div>
+                      <p class="panel-title mb-0">Series d'equips</p>
+                      <div class="subtle">El workspace es carrega quan l'obres.</div>
+                    </div>
+                  </div>
+                  <div class="action-panel-body">
+                    <div class="small text-muted">Carregant series...</div>
+                  </div>
+                </section>
+                <section class="action-panel d-none" id="panel-media" data-panel-key="media" data-panel-lazy="1" hidden>
+                  <div class="action-panel-header">
+                    <div>
+                      <p class="panel-title mb-0">Multimedia</p>
+                      <div class="subtle">El panell es carrega quan l'obres.</div>
+                    </div>
+                  </div>
+                  <div class="action-panel-body">
+                    <div class="small text-muted">Carregant multimedia...</div>
+                  </div>
+                </section>
+              {% else %}
+                {% include "competicio/inscripcions/_groups_panel.html" %}
+                {% include "competicio/inscripcions/_teams_panel.html" %}
+                {% include "competicio/inscripcions/_series_panel.html" %}
+                {% include "competicio/inscripcions/_media_panel.html" %}
+              {% endif %}
               {% include "competicio/inscripcions/_altres_panel.html" %}
             </div>
           </div>

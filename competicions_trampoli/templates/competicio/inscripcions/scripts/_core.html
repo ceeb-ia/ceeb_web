@@ -47,6 +47,9 @@
   };
 
   const UI_STATE_MAX_AGE_MS = 45 * 60 * 1000;
+  const FRAGMENT_QUERY_PARAM = '__fragments';
+  const PANEL_QUERY_PARAM = '__panel_key';
+  const ACTIVE_GROUP_QUERY_PARAM = '__active_group_key';
   let uiStateRestoring = false;
   const expandedModalState = {
     cardId: '',
@@ -54,6 +57,21 @@
     nextSibling: null,
   };
   const panelInitRuns = new Map();
+  const fragmentSelectorByName = {
+    header: '#inscripcions-header-fragment',
+    history: '#inscripcions-history-fragment',
+    table: '#inscripcions-table-fragment',
+    toolbar: '#inscripcions-toolbar-fragment',
+  };
+  const panelSelectorByKey = {
+    agrupacio: '[data-panel-key="agrupacio"]',
+    columnes: '[data-panel-key="columnes"]',
+    grups: '#panel-grups',
+    equips: '#panel-equips',
+    'series-equips': '#panel-series-equips',
+    media: '#panel-media',
+    altres: '#panel-altres',
+  };
 
   function getDialogDelegate(name, localImpl) {
     const candidate = window[name];
@@ -141,6 +159,150 @@
     return data;
   }
 
+  function normalizeFragmentNames(names) {
+    const out = [];
+    (Array.isArray(names) ? names : []).forEach((name) => {
+      const token = String(name || '').trim().toLowerCase();
+      if (!token) return;
+      if (token === 'panel' || fragmentSelectorByName[token]) {
+        if (!out.includes(token)) out.push(token);
+      }
+    });
+    return out;
+  }
+
+  function applyBootPayload(nextBoot) {
+    const payload = (nextBoot && typeof nextBoot === 'object') ? nextBoot : {};
+    const nextFlags = payload.flags && typeof payload.flags === 'object' ? payload.flags : {};
+    const nextUrls = payload.urls && typeof payload.urls === 'object' ? payload.urls : {};
+    const nextInitial = payload.initial && typeof payload.initial === 'object' ? payload.initial : {};
+    if (Object.prototype.hasOwnProperty.call(nextFlags, 'canEdit')) {
+      app.canEdit = !!nextFlags.canEdit;
+    }
+    if (typeof nextFlags.sortContextKey === 'string') {
+      app.sortContextKey = String(nextFlags.sortContextKey || '').trim();
+    }
+    if (Object.keys(nextUrls).length) {
+      app.urls = Object.assign({}, app.urls, nextUrls);
+    }
+    if (Object.keys(nextInitial).length) {
+      app.initial = Object.assign({}, app.initial, nextInitial);
+    }
+    if (payload.ids && typeof payload.ids === 'object' && payload.ids.competicioId) {
+      app.competicioId = String(payload.ids.competicioId || '').trim() || app.competicioId;
+    }
+  }
+
+  function replaceHtmlFragment(selector, html) {
+    const current = document.querySelector(selector);
+    if (!current || typeof html !== 'string') return null;
+    const template = document.createElement('template');
+    template.innerHTML = html.trim();
+    const replacement = template.content.firstElementChild;
+    if (!replacement) return null;
+    current.replaceWith(replacement);
+    return replacement;
+  }
+
+  function getPanelElement(panelKey) {
+    const selector = panelSelectorByKey[resolvePanelAlias(panelKey)];
+    return selector ? document.querySelector(selector) : null;
+  }
+
+  function isLazyPanel(panelKey) {
+    return getPanelElement(panelKey)?.getAttribute('data-panel-lazy') === '1';
+  }
+
+  async function ensurePanelLoaded(panelKey) {
+    const resolved = resolvePanelAlias(panelKey);
+    if (!resolved || !isLazyPanel(resolved)) return false;
+    await refreshHtmlFragments(['panel'], { panelKey: resolved });
+    return true;
+  }
+
+  async function fetchHtmlFragments(names, options = {}) {
+    const fragments = normalizeFragmentNames(names);
+    if (!fragments.length) return { ok: true, fragments: {}, boot: {} };
+    const url = getCurrentUrl();
+    url.searchParams.set(FRAGMENT_QUERY_PARAM, fragments.join(','));
+    const panelKey = resolvePanelAlias(options.panelKey || '');
+    if (fragments.includes('panel') && panelKey) url.searchParams.set(PANEL_QUERY_PARAM, panelKey);
+    else url.searchParams.delete(PANEL_QUERY_PARAM);
+    const activeGroupKey = String(
+      options.activeGroupKey || (fragments.includes('table') ? getActiveGroupKey() : '')
+    ).trim();
+    if (fragments.includes('table') && activeGroupKey) url.searchParams.set(ACTIVE_GROUP_QUERY_PARAM, activeGroupKey);
+    else url.searchParams.delete(ACTIVE_GROUP_QUERY_PARAM);
+    return getJson(url.toString());
+  }
+
+  async function refreshHtmlFragments(names, options = {}) {
+    const fragments = normalizeFragmentNames(names);
+    if (!fragments.length) return null;
+    const activePanelKey = resolvePanelAlias(options.panelKey || getActiveActionsPanelKey());
+    const storedBefore = captureUiState(options.uiState || {});
+    saveUiState(storedBefore);
+
+    const activeGroupKey = String(
+      options.activeGroupKey || (fragments.includes('table') ? getActiveGroupKey() : '')
+    ).trim();
+    const data = await fetchHtmlFragments(fragments, { panelKey: activePanelKey, activeGroupKey });
+    if (!data?.ok || !data.fragments || typeof data.fragments !== 'object') {
+      throw new Error("No s'han pogut refrescar els fragments.");
+    }
+
+    applyBootPayload(data.boot || {});
+
+    fragments.forEach((name) => {
+      if (name === 'panel') {
+        const panelData = data.fragments.panel;
+        const panelKey = resolvePanelAlias(panelData?.panel_key || activePanelKey);
+        const selector = panelSelectorByKey[panelKey];
+        const html = typeof panelData?.html === 'string' ? panelData.html : '';
+        if (selector && html) {
+          panelInitRuns.delete(panelKey);
+          const element = replaceHtmlFragment(selector, html);
+          if (element) {
+            document.dispatchEvent(new CustomEvent('inscripcions:panel-loaded', {
+              detail: {
+                panelKey,
+                element,
+              },
+            }));
+          }
+        }
+        return;
+      }
+      const selector = fragmentSelectorByName[name];
+      const html = data.fragments[name];
+      if (selector && typeof html === 'string') replaceHtmlFragment(selector, html);
+    });
+
+    restoreUiState();
+    syncSelectionUi();
+    applyHistoryState((data.boot && data.boot.initial && data.boot.initial.historyState) || app.historyState);
+
+    document.dispatchEvent(new CustomEvent('inscripcions:fragments-refreshed', {
+      detail: {
+        fragments,
+        panelKey: activePanelKey,
+        activeGroupKey,
+      },
+    }));
+    return data;
+  }
+
+  async function refreshCentralBlock(options = {}) {
+    return refreshHtmlFragments(['header', 'toolbar', 'history', 'table'], options);
+  }
+
+  async function refreshLightMutation(options = {}) {
+    const fragments = ['header', 'history', 'table'];
+    if (options.includeToolbar !== false) fragments.splice(1, 0, 'toolbar');
+    if (options.includeActivePanel) fragments.push('panel');
+    return refreshHtmlFragments(fragments, options);
+  }
+
   function getCurrentUrl() {
     return new URL(window.location.href);
   }
@@ -204,6 +366,10 @@
     const activeLink = document.querySelector('#tabs-root a.nav-link.active');
     const li = activeLink ? activeLink.closest('li.nav-item') : null;
     return li ? String(li.getAttribute('data-group-key') || '').trim() : '';
+  }
+
+  function getActiveGroupKey() {
+    return getActiveTabKey();
   }
 
   function getUiStateKey() {
@@ -305,17 +471,19 @@
       panel.hidden = !active;
     });
 
-    emitPanelActivated(resolved, previousPanelKey);
+    if (!options.skipEmit) emitPanelActivated(resolved, previousPanelKey);
     if (!options.skipSave) saveUiState();
   }
 
   function activatePanel(panelKey) {
-    setActiveActionsPanel(panelKey);
+    return openPanel(panelKey);
   }
 
-  function openPanel(panelKey) {
+  async function openPanel(panelKey) {
     const resolved = resolvePanelAlias(panelKey);
     if (!resolved) return;
+    setActiveActionsPanel(resolved, { skipSave: true, skipEmit: true });
+    await ensurePanelLoaded(resolved);
     setActiveActionsPanel(resolved, { skipSave: true });
     setActionsDrawerOpen(true, { skipSave: true });
     saveUiState();
@@ -511,7 +679,7 @@
 
       const activeActionsPanel = String(state.activeActionsPanel || '').trim();
       if (activeActionsPanel) {
-        setActiveActionsPanel(activeActionsPanel, { skipSave: true });
+        setActiveActionsPanel(activeActionsPanel, { skipSave: true, skipEmit: isLazyPanel(activeActionsPanel) });
       } else {
         const firstBtn = document.querySelector('.actions-nav-btn[data-panel-target], .actions-nav-btn[data-panel]');
         if (firstBtn) {
@@ -519,8 +687,8 @@
         }
       }
 
-      const savedSelection = Array.isArray(state.selectedIds) ? state.selectedIds : [];
-      if (savedSelection.length) {
+      const savedSelection = Array.isArray(state.selectedIds) ? state.selectedIds : null;
+      if (savedSelection !== null) {
         updateMainInscripcioSelection(savedSelection, 'replace', { skipSave: true });
       }
 
@@ -571,6 +739,14 @@
     window.location.reload();
   }
 
+  async function updateUrlAndRefresh(url, options = {}) {
+    const nextUrl = url instanceof URL ? new URL(url.toString()) : new URL(String(url || ''), window.location.href);
+    const uiState = Object.prototype.hasOwnProperty.call(options, 'uiState') ? options.uiState : undefined;
+    saveUiState(uiState);
+    window.history.replaceState({}, '', nextUrl.toString());
+    return refreshHtmlFragments(options.fragments || ['header', 'toolbar', 'history', 'table'], options);
+  }
+
   function getVisibleInscripcioIds() {
     return Array
       .from(document.querySelectorAll('tbody tr[data-inscripcio-id], tbody tr.inscripcio-row[data-id]'))
@@ -619,6 +795,11 @@
     document.dispatchEvent(new CustomEvent('inscripcions:selection-changed', {
       detail: { ids: Array.from(app.selection), source: options.source || 'main' },
     }));
+    if (typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(syncSelectionUi);
+    } else {
+      window.setTimeout(syncSelectionUi, 0);
+    }
   }
 
   function setVisibleInscripcioSelection(checked) {
@@ -677,7 +858,9 @@
         showAlert('No hi ha cap canvi per desfer.');
         return;
       }
-      reloadWithUiState();
+      await refreshLightMutation({
+        includeActivePanel: ['altres', 'media'].includes(getActiveActionsPanelKey()),
+      });
     } catch (err) {
       showAlert(`No s'ha pogut desfer l'ultim canvi.\n${err.message || err}`);
     }
@@ -692,7 +875,9 @@
         showAlert('No hi ha cap canvi per refer.');
         return;
       }
-      reloadWithUiState();
+      await refreshLightMutation({
+        includeActivePanel: ['altres', 'media'].includes(getActiveActionsPanelKey()),
+      });
     } catch (err) {
       showAlert(`No s'ha pogut refer el canvi.\n${err.message || err}`);
     }
@@ -746,60 +931,91 @@
 
     document.querySelectorAll('.actions-nav-btn[data-panel-target], .actions-nav-btn[data-panel]').forEach((btn) => {
       btn.addEventListener('click', () => {
-        openPanel(btn.getAttribute('data-panel-target') || btn.dataset.panel || '');
+        openPanel(btn.getAttribute('data-panel-target') || btn.dataset.panel || '').catch((error) => showAlert(error.message || error));
       });
     });
 
     document.querySelectorAll('[data-open-panel]').forEach((btn) => {
       btn.addEventListener('click', (event) => {
         event.preventDefault();
-        openPanel(btn.getAttribute('data-open-panel') || '');
+        openPanel(btn.getAttribute('data-open-panel') || '').catch((error) => showAlert(error.message || error));
       });
     });
 
-    document.querySelectorAll('.js-expand-tab-select').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const targetId = btn.getAttribute('data-expand-target') || '';
-        if (targetId) toggleExpandedGroupCard(targetId);
-      });
+    document.addEventListener('click', (event) => {
+      const btn = event.target.closest('.js-expand-tab-select');
+      if (!btn) return;
+      const modal = document.getElementById('group-buckets-modal');
+      if (!root.contains(btn) && !modal?.contains(btn)) return;
+      const targetId = btn.getAttribute('data-expand-target') || '';
+      if (targetId) toggleExpandedGroupCard(targetId);
     });
 
     getActionsDrawerInner()?.addEventListener('scroll', () => saveUiState(), { passive: true });
   }
 
   function wireSearch() {
-    const searchInput = document.getElementById('search-input');
-    if (!searchInput) return;
-
-    const applySearch = () => {
+    const applySearch = async () => {
+      const searchInput = document.getElementById('search-input');
+      if (!searchInput) return;
       const value = searchInput.value.trim();
       const url = getCurrentUrl();
       if (value) url.searchParams.set('q', value);
       else url.searchParams.delete('q');
-      navigateWithUiState(url.toString());
+      await updateUrlAndRefresh(url, { fragments: ['header', 'toolbar', 'history', 'table'] });
     };
+    const runSearch = () => {
+      applySearch().catch((err) => showAlert(err.message || err));
+    };
+    const debouncedApplySearch = debounce(runSearch, 450);
 
-    document.getElementById('search-btn')?.addEventListener('click', applySearch);
-    document.getElementById('clear-search-btn')?.addEventListener('click', () => {
-      searchInput.value = '';
-      applySearch();
-    });
-    searchInput.addEventListener('keypress', (event) => {
-      if (event.key === 'Enter') {
+    document.addEventListener('click', (event) => {
+      if (event.target.closest('#search-btn')) {
         event.preventDefault();
-        applySearch();
+        runSearch();
+        return;
+      }
+      if (event.target.closest('#clear-search-btn')) {
+        event.preventDefault();
+        const searchInput = document.getElementById('search-input');
+        if (searchInput) searchInput.value = '';
+        runSearch();
       }
     });
-    searchInput.addEventListener('input', debounce(applySearch, 450));
+    document.addEventListener('keypress', (event) => {
+      const searchInput = event.target.closest('#search-input');
+      if (!searchInput) return;
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        runSearch();
+      }
+    });
+    document.addEventListener('input', (event) => {
+      if (!event.target.closest('#search-input')) return;
+      debouncedApplySearch();
+    });
   }
 
   function wireHistoryButtons() {
-    document.getElementById('btn-history-undo')?.addEventListener('click', () => undoHistory());
-    document.getElementById('btn-history-redo')?.addEventListener('click', () => redoHistory());
+    document.addEventListener('click', (event) => {
+      if (event.target.closest('#btn-history-undo')) {
+        event.preventDefault();
+        undoHistory();
+        return;
+      }
+      if (event.target.closest('#btn-history-redo')) {
+        event.preventDefault();
+        redoHistory();
+      }
+    });
   }
 
   function wireGlobalSelection() {
     document.addEventListener('change', (event) => {
+      if (event.target.closest('#select-all-visible')) {
+        setVisibleInscripcioSelection(!!event.target.checked);
+        return;
+      }
       const checkbox = event.target.closest('.js-inscripcio-select, .js-team-row-select');
       if (!checkbox) return;
       const id = parseInt(
@@ -811,14 +1027,21 @@
         10
       );
       if (!Number.isInteger(id) || id <= 0) return;
-      updateMainInscripcioSelection([id], checkbox.checked ? 'add' : 'remove');
+      const mode = app.selection.has(id) ? 'remove' : 'add';
+      updateMainInscripcioSelection([id], mode);
     });
 
-    document.getElementById('select-all-visible')?.addEventListener('change', (event) => {
-      setVisibleInscripcioSelection(!!event.target.checked);
+    document.addEventListener('click', (event) => {
+      if (event.target.closest('#btn-team-select-visible')) {
+        event.preventDefault();
+        setVisibleInscripcioSelection(true);
+        return;
+      }
+      if (event.target.closest('#btn-team-unselect-visible')) {
+        event.preventDefault();
+        setVisibleInscripcioSelection(false);
+      }
     });
-    document.getElementById('btn-team-select-visible')?.addEventListener('click', () => setVisibleInscripcioSelection(true));
-    document.getElementById('btn-team-unselect-visible')?.addEventListener('click', () => setVisibleInscripcioSelection(false));
   }
 
   function exposeLegacySelectionApi() {
@@ -869,17 +1092,24 @@
     getCurrentGroupByCodes,
     getSelectedTeamContextCode,
     getSelectedTeamFields,
+    getActiveGroupKey,
     getVisibleInscripcioIds,
     getUiStateKey,
     saveUiState,
     restoreUiState,
     navigateWithUiState,
     reloadWithUiState,
+    updateUrlAndRefresh,
+    fetchHtmlFragments,
+    refreshHtmlFragments,
+    refreshCentralBlock,
+    refreshLightMutation,
     updateMainInscripcioSelection,
     setVisibleInscripcioSelection,
     applyHistoryState,
     activatePanel,
     openPanel,
+    ensurePanelLoaded,
     getActiveActionsPanelKey,
     setActiveActionsPanel,
     getInscripcionsPageShell,
@@ -905,6 +1135,7 @@
   window.restoreUiState = restoreUiState;
   window.navigateWithUiState = navigateWithUiState;
   window.reloadWithUiState = reloadWithUiState;
+  window.updateUrlAndRefresh = updateUrlAndRefresh;
   window.getSelectedInscripcioIds = getSelectedInscripcioIds;
   window.getCurrentInscripcioFilters = getCurrentInscripcioFilters;
   window.getCurrentGroupBy = getCurrentGroupBy;
@@ -933,6 +1164,10 @@
     wireHistoryButtons();
     wireGlobalSelection();
     restoreUiState();
+    const activePanel = getActiveActionsPanelKey();
+    if (activePanel && isLazyPanel(activePanel)) {
+      openPanel(activePanel).catch((error) => showAlert(error.message || error));
+    }
     applyHistoryState(app.initial.historyState || {});
     exposeLegacySelectionApi();
     syncSelectionUi();

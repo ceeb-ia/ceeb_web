@@ -1,0 +1,520 @@
+{
+  "metadata": {
+    "generated_at": "2026-04-10T17:24:36.871851+00:00",
+    "app_env": "dev",
+    "debug": true,
+    "database_vendor": "postgresql",
+    "database_engine": "django.db.backends.postgresql",
+    "database_name": "ceeb_db",
+    "service_hostname": "1eb687583090",
+    "warmup": 1,
+    "repeats": 1,
+    "datasets": [
+      "small",
+      "medium",
+      "large"
+    ],
+    "scenarios": [
+      "get_list"
+    ]
+  },
+  "results": [
+    {
+      "dataset": "small",
+      "scenario": "get_list",
+      "run_index": 1,
+      "is_warmup": true,
+      "elapsed_ms": 650.454,
+      "sql_count": 21,
+      "sql_time_ms": 67.0,
+      "response_bytes": 1546607,
+      "status_code": 200,
+      "url": "/competicions/44/inscripcions/?group_by=categoria&group_by=subcategoria",
+      "timings": {
+        "enabled": true,
+        "sections": [
+          {
+            "name": "base.records_queryset",
+            "elapsed_ms": 0.245
+          },
+          {
+            "name": "base.records_materialization",
+            "elapsed_ms": 5.673
+          },
+          {
+            "name": "base.records_runtime",
+            "elapsed_ms": 21.603
+          },
+          {
+            "name": "base.grouping_merge",
+            "elapsed_ms": 0.492
+          },
+          {
+            "name": "base.excel_columns",
+            "elapsed_ms": 0.143
+          },
+          {
+            "name": "base.categories_history",
+            "elapsed_ms": 2.03
+          },
+          {
+            "name": "listing.permissions_counts",
+            "elapsed_ms": 17.36
+          },
+          {
+            "name": "listing.table_context",
+            "elapsed_ms": 0.292
+          },
+          {
+            "name": "listing.sort_context",
+            "elapsed_ms": 0.105
+          },
+          {
+            "name": "listing.sort_entries",
+            "elapsed_ms": 0.021
+          },
+          {
+            "name": "listing.workspace_context",
+            "elapsed_ms": 41.57
+          },
+          {
+            "name": "listing.media_maps",
+            "elapsed_ms": 21.529
+          },
+          {
+            "name": "render.template",
+            "elapsed_ms": 514.2
+          }
+        ],
+        "total_ms": 625.263
+      }
+    },
+    {
+      "dataset": "small",
+      "scenario": "get_list",
+      "run_index": 2,
+      "is_warmup": false,
+      "elapsed_ms": 316.911,
+      "sql_count": 21,
+      "sql_time_ms": 20.0,
+      "response_bytes": 1546607,
+      "status_code": 200,
+      "url": "/competicions/44/inscripcions/?group_by=categoria&group_by=subcategoria",
+      "timings": {
+        "enabled": true,
+        "sections": [
+          {
+            "name": "base.records_queryset",
+            "elapsed_ms": 0.344
+          },
+          {
+            "name": "base.records_materialization",
+            "elapsed_ms": 3.37
+          },
+          {
+            "name": "base.records_runtime",
+            "elapsed_ms": 7.619
+          },
+          {
+            "name": "base.grouping_merge",
+            "elapsed_ms": 0.504
+          },
+          {
+            "name": "base.excel_columns",
+            "elapsed_ms": 0.12
+          },
+          {
+            "name": "base.categories_history",
+            "elapsed_ms": 1.775
+          },
+          {
+            "name": "listing.permissions_counts",
+            "elapsed_ms": 7.432
+          },
+          {
+            "name": "listing.table_context",
+            "elapsed_ms": 0.268
+          },
+          {
+            "name": "listing.sort_context",
+            "elapsed_ms": 0.094
+          },
+          {
+            "name": "listing.sort_entries",
+            "elapsed_ms": 0.019
+          },
+          {
+            "name": "listing.workspace_context",
+            "elapsed_ms": 10.756
+          },
+          {
+            "name": "listing.media_maps",
+            "elapsed_ms": 7.131
+          },
+          {
+            "name": "render.template",
+            "elapsed_ms": 262.884
+          }
+        ],
+        "total_ms": 302.316
+      }
+    },
+    {
+      "dataset": "medium",
+      "scenario": "get_list",
+      "run_index": 1,
+      "is_warmup": true,
+      "elapsed_ms": 546.655,
+      "sql_count": 21,
+      "sql_time_ms": 27.0,
+      "response_bytes": 2602591,
+      "status_code": 200,
+      "url": "/competicions/45/inscripcions/?group_by=categoria&group_by=subcategoria",
+      "timings": {
+        "enabled": true,
+        "sections": [
+          {
+            "name": "base.records_queryset",
+            "elapsed_ms": 0.662
+          },
+          {
+            "name": "base.records_materialization",
+            "elapsed_ms": 10.863
+          },
+          {
+            "name": "base.records_runtime",
+            "elapsed_ms": 15.028
+          },
+          {
+            "name": "base.grouping_merge",
+            "elapsed_ms": 1.37
+          },
+          {
+            "name": "base.excel_columns",
+            "elapsed_ms": 0.09
+          },
+          {
+            "name": "base.categories_history",
+            "elapsed_ms": 1.886
+          },
+          {
+            "name": "listing.permissions_counts",
+            "elapsed_ms": 7.275
+          },
+          {
+            "name": "listing.table_context",
+            "elapsed_ms": 0.229
+          },
+          {
+            "name": "listing.sort_context",
+            "elapsed_ms": 0.156
+          },
+          {
+            "name": "listing.sort_entries",
+            "elapsed_ms": 0.017
+          },
+          {
+            "name": "listing.workspace_context",
+            "elapsed_ms": 10.15
+          },
+          {
+            "name": "listing.media_maps",
+            "elapsed_ms": 10.247
+          },
+          {
+            "name": "render.template",
+            "elapsed_ms": 474.255
+          }
+        ],
+        "total_ms": 532.228
+      }
+    },
+    {
+      "dataset": "medium",
+      "scenario": "get_list",
+      "run_index": 2,
+      "is_warmup": false,
+      "elapsed_ms": 531.47,
+      "sql_count": 21,
+      "sql_time_ms": 24.0,
+      "response_bytes": 2602591,
+      "status_code": 200,
+      "url": "/competicions/45/inscripcions/?group_by=categoria&group_by=subcategoria",
+      "timings": {
+        "enabled": true,
+        "sections": [
+          {
+            "name": "base.records_queryset",
+            "elapsed_ms": 0.421
+          },
+          {
+            "name": "base.records_materialization",
+            "elapsed_ms": 9.907
+          },
+          {
+            "name": "base.records_runtime",
+            "elapsed_ms": 13.828
+          },
+          {
+            "name": "base.grouping_merge",
+            "elapsed_ms": 1.465
+          },
+          {
+            "name": "base.excel_columns",
+            "elapsed_ms": 0.084
+          },
+          {
+            "name": "base.categories_history",
+            "elapsed_ms": 1.636
+          },
+          {
+            "name": "listing.permissions_counts",
+            "elapsed_ms": 8.514
+          },
+          {
+            "name": "listing.table_context",
+            "elapsed_ms": 0.208
+          },
+          {
+            "name": "listing.sort_context",
+            "elapsed_ms": 0.161
+          },
+          {
+            "name": "listing.sort_entries",
+            "elapsed_ms": 0.014
+          },
+          {
+            "name": "listing.workspace_context",
+            "elapsed_ms": 8.296
+          },
+          {
+            "name": "listing.media_maps",
+            "elapsed_ms": 9.867
+          },
+          {
+            "name": "render.template",
+            "elapsed_ms": 465.459
+          }
+        ],
+        "total_ms": 519.86
+      }
+    },
+    {
+      "dataset": "large",
+      "scenario": "get_list",
+      "run_index": 1,
+      "is_warmup": true,
+      "elapsed_ms": 1682.054,
+      "sql_count": 21,
+      "sql_time_ms": 39.0,
+      "response_bytes": 5147818,
+      "status_code": 200,
+      "url": "/competicions/46/inscripcions/?group_by=categoria&group_by=subcategoria",
+      "timings": {
+        "enabled": true,
+        "sections": [
+          {
+            "name": "base.records_queryset",
+            "elapsed_ms": 0.53
+          },
+          {
+            "name": "base.records_materialization",
+            "elapsed_ms": 23.982
+          },
+          {
+            "name": "base.records_runtime",
+            "elapsed_ms": 21.39
+          },
+          {
+            "name": "base.grouping_merge",
+            "elapsed_ms": 3.698
+          },
+          {
+            "name": "base.excel_columns",
+            "elapsed_ms": 0.106
+          },
+          {
+            "name": "base.categories_history",
+            "elapsed_ms": 2.059
+          },
+          {
+            "name": "listing.permissions_counts",
+            "elapsed_ms": 8.362
+          },
+          {
+            "name": "listing.table_context",
+            "elapsed_ms": 0.203
+          },
+          {
+            "name": "listing.sort_context",
+            "elapsed_ms": 0.28
+          },
+          {
+            "name": "listing.sort_entries",
+            "elapsed_ms": 0.014
+          },
+          {
+            "name": "listing.workspace_context",
+            "elapsed_ms": 12.639
+          },
+          {
+            "name": "listing.media_maps",
+            "elapsed_ms": 24.327
+          },
+          {
+            "name": "render.template",
+            "elapsed_ms": 1571.955
+          }
+        ],
+        "total_ms": 1669.545
+      }
+    },
+    {
+      "dataset": "large",
+      "scenario": "get_list",
+      "run_index": 2,
+      "is_warmup": false,
+      "elapsed_ms": 1890.859,
+      "sql_count": 21,
+      "sql_time_ms": 33.0,
+      "response_bytes": 5147818,
+      "status_code": 200,
+      "url": "/competicions/46/inscripcions/?group_by=categoria&group_by=subcategoria",
+      "timings": {
+        "enabled": true,
+        "sections": [
+          {
+            "name": "base.records_queryset",
+            "elapsed_ms": 0.175
+          },
+          {
+            "name": "base.records_materialization",
+            "elapsed_ms": 25.3
+          },
+          {
+            "name": "base.records_runtime",
+            "elapsed_ms": 22.067
+          },
+          {
+            "name": "base.grouping_merge",
+            "elapsed_ms": 4.433
+          },
+          {
+            "name": "base.excel_columns",
+            "elapsed_ms": 0.082
+          },
+          {
+            "name": "base.categories_history",
+            "elapsed_ms": 1.315
+          },
+          {
+            "name": "listing.permissions_counts",
+            "elapsed_ms": 7.852
+          },
+          {
+            "name": "listing.table_context",
+            "elapsed_ms": 0.24
+          },
+          {
+            "name": "listing.sort_context",
+            "elapsed_ms": 0.406
+          },
+          {
+            "name": "listing.sort_entries",
+            "elapsed_ms": 0.022
+          },
+          {
+            "name": "listing.workspace_context",
+            "elapsed_ms": 9.309
+          },
+          {
+            "name": "listing.media_maps",
+            "elapsed_ms": 19.991
+          },
+          {
+            "name": "render.template",
+            "elapsed_ms": 1786.157
+          }
+        ],
+        "total_ms": 1877.349
+      }
+    }
+  ],
+  "summary": [
+    {
+      "dataset": "large",
+      "scenario": "get_list",
+      "scenario_label": "GET llistat principal",
+      "runs": 1,
+      "status_codes": [
+        200
+      ],
+      "elapsed_ms_min": 1890.859,
+      "elapsed_ms_mean": 1890.859,
+      "elapsed_ms_median": 1890.859,
+      "elapsed_ms_max": 1890.859,
+      "sql_count_min": 21,
+      "sql_count_mean": 21,
+      "sql_count_median": 21,
+      "sql_count_max": 21,
+      "sql_time_ms_min": 33.0,
+      "sql_time_ms_mean": 33.0,
+      "sql_time_ms_median": 33.0,
+      "sql_time_ms_max": 33.0,
+      "response_bytes_min": 5147818,
+      "response_bytes_mean": 5147818,
+      "response_bytes_median": 5147818,
+      "response_bytes_max": 5147818
+    },
+    {
+      "dataset": "medium",
+      "scenario": "get_list",
+      "scenario_label": "GET llistat principal",
+      "runs": 1,
+      "status_codes": [
+        200
+      ],
+      "elapsed_ms_min": 531.47,
+      "elapsed_ms_mean": 531.47,
+      "elapsed_ms_median": 531.47,
+      "elapsed_ms_max": 531.47,
+      "sql_count_min": 21,
+      "sql_count_mean": 21,
+      "sql_count_median": 21,
+      "sql_count_max": 21,
+      "sql_time_ms_min": 24.0,
+      "sql_time_ms_mean": 24.0,
+      "sql_time_ms_median": 24.0,
+      "sql_time_ms_max": 24.0,
+      "response_bytes_min": 2602591,
+      "response_bytes_mean": 2602591,
+      "response_bytes_median": 2602591,
+      "response_bytes_max": 2602591
+    },
+    {
+      "dataset": "small",
+      "scenario": "get_list",
+      "scenario_label": "GET llistat principal",
+      "runs": 1,
+      "status_codes": [
+        200
+      ],
+      "elapsed_ms_min": 316.911,
+      "elapsed_ms_mean": 316.911,
+      "elapsed_ms_median": 316.911,
+      "elapsed_ms_max": 316.911,
+      "sql_count_min": 21,
+      "sql_count_mean": 21,
+      "sql_count_median": 21,
+      "sql_count_max": 21,
+      "sql_time_ms_min": 20.0,
+      "sql_time_ms_mean": 20.0,
+      "sql_time_ms_median": 20.0,
+      "sql_time_ms_max": 20.0,
+      "response_bytes_min": 1546607,
+      "response_bytes_mean": 1546607,
+      "response_bytes_median": 1546607,
+      "response_bytes_max": 1546607
+    }
+  ]
+}

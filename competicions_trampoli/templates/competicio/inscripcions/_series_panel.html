@@ -20,7 +20,9 @@
           <div class="small text-muted">Cada serie pertany a un aparell d'equip concret i agrupa team subjects, no inscripcions individuals.</div>
         </div>
         <div class="tab-select-card-tools">
-          <span class="badge badge-light border" id="series-selected-app-badge">Sense aparell</span>
+          <span class="badge badge-light border" id="series-selected-app-badge">
+            {% if series_default_comp_aparell and series_default_comp_aparell.aparell %}{{ series_default_comp_aparell.aparell.nom }}{% else %}Sense aparell{% endif %}
+          </span>
           <button
             type="button"
             class="btn btn-sm btn-outline-primary tab-select-expand-btn js-expand-tab-select"
@@ -34,7 +36,6 @@
         </div>
       </div>
 
-      {% if series_team_aparells %}
       <div class="team-compact-summary">
         <div class="team-compact-summary-copy">
           Selecciona un aparell d'equip, revisa l'estat global i obre el workspace quan necessitis preparar la seleccio o inspeccionar una serie en detall.
@@ -42,9 +43,11 @@
         <div class="d-flex flex-wrap align-items-center" style="gap:8px;">
           <label class="small text-muted mb-0" for="series-comp-aparell-select">Aparell</label>
           <select id="series-comp-aparell-select" class="form-control form-control-sm" style="width:min(100%, 320px);">
-            {% for app in series_team_aparells %}
-              <option value="{{ app.id }}">{{ app.aparell.nom }}</option>
-            {% endfor %}
+            {% if series_default_comp_aparell %}
+              <option value="{{ series_default_comp_aparell.id }}" selected>{{ series_default_comp_aparell.aparell.nom }}</option>
+            {% else %}
+              <option value="">Sense aparell actiu</option>
+            {% endif %}
           </select>
           <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-series-refresh">Refrescar</button>
           <button type="button" class="btn btn-sm btn-outline-primary" id="btn-series-export-start-list">Start list</button>
@@ -87,7 +90,7 @@
       <div class="team-compact-summary mt-3">
         <div class="team-compact-summary-copy">
           <div class="fw-semibold mb-2">Series en vista rapida</div>
-          <div class="small text-muted" id="series-compact-list-note">Mostrant les series actives de l'aparell seleccionat.</div>
+          <div class="small text-muted" id="series-compact-list-note">La llista es completa quan el workspace carrega les dades de l'aparell actiu.</div>
         </div>
         <div class="team-compact-summary-metrics w-100" id="series-compact-list"></div>
       </div>
@@ -96,7 +99,9 @@
         <div class="team-workspace-header groups-workspace-header-compact">
           <div class="team-workspace-header-bar">
             <div class="team-workspace-header-main">
-              <span class="badge badge-light border" id="series-workspace-badge">Sense aparell</span>
+              <span class="badge badge-light border" id="series-workspace-badge">
+                {% if series_team_aparells %}{{ series_team_aparells.0.aparell.nom }}{% else %}Sense aparell{% endif %}
+              </span>
               <div class="team-workspace-title-wrap">
                 <div class="team-workspace-title" id="series-workspace-title">Workspace de series</div>
                 <div class="small text-muted" id="series-workspace-description">Selecciona candidates, prepara una accio i revisa les series en un board estable.</div>
@@ -126,13 +131,15 @@
                     <span class="badge badge-light border" id="series-candidates-count-badge">0 candidates</span>
                   </div>
 
-                  <div class="team-manual-banner">
+                    <div class="team-manual-banner">
                     <div class="d-flex flex-wrap align-items-center" style="gap:8px;">
                       <label class="small text-muted mb-0" for="series-workspace-comp-aparell-select">Aparell d'equip</label>
                       <select id="series-workspace-comp-aparell-select" class="form-control form-control-sm" style="min-width:220px; max-width:320px;">
-                        {% for app in series_team_aparells %}
-                          <option value="{{ app.id }}">{{ app.aparell.nom }}</option>
-                        {% endfor %}
+                        {% if series_team_aparells %}
+                          <option value="{{ series_team_aparells.0.id }}" selected>{{ series_team_aparells.0.aparell.nom }}</option>
+                        {% else %}
+                          <option value="">Sense aparell actiu</option>
+                        {% endif %}
                       </select>
                       <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-series-workspace-refresh">Refrescar</button>
                       <button type="button" class="btn btn-sm btn-outline-dark" id="btn-series-workspace-export-start-list">Start list</button>
@@ -411,11 +418,6 @@
           </section>
         </div>
       </div>
-      {% else %}
-      <div class="alert alert-light border mt-3 mb-0">
-        No hi ha cap aparell d'equip actiu en aquesta competicio. Quan n'activis un, podras crear series d'equips des d'aqui.
-      </div>
-      {% endif %}
     </div>
   </div>
 </section>

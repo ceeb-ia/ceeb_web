@@ -1,0 +1,7 @@
+<div class="actions-history" id="inscripcions-history-fragment">
+  <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-history-undo">Desfer</button>
+  <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-history-redo">Refer</button>
+  <span class="text-muted small align-self-center" id="history-stack-summary">
+    Desfer {{ history_state.undo_count|default:0 }} &middot; Refer {{ history_state.redo_count|default:0 }}
+  </span>
+</div>

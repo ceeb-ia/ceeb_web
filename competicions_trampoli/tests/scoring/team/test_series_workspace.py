@@ -8,18 +8,24 @@ class TeamSeriesWorkspaceTests(TeamContextScoringFlowTestBase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'data-panel-target="series-equips"')
         self.assertContains(response, 'id="panel-series-equips"')
+        self.assertContains(response, 'data-panel-lazy="1"')
+        self.assertNotContains(response, 'id="series-workspace-shell"')
 
-    def test_inscripcions_list_renders_series_workspace_shell_and_inspector(self):
-        response = self.client.get(reverse("inscripcions_list", kwargs={"pk": self.comp.id}))
+    def test_series_panel_fragment_renders_workspace_shell_and_inspector(self):
+        response = self.client.get(
+            reverse("inscripcions_list", kwargs={"pk": self.comp.id}),
+            {"__fragments": "panel", "__panel_key": "series-equips"},
+        )
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'id="series-workspace-shell"')
-        self.assertContains(response, "1. Filtra l'univers")
-        self.assertContains(response, "2. Aplica una operacio")
-        self.assertContains(response, "3. Revisa l'impacte")
-        self.assertContains(response, 'id="series-right-pane-card"')
-        self.assertContains(response, 'id="btn-series-right-tab-preview"')
-        self.assertContains(response, 'id="series-board-filters-panel"')
+        html = response.json()["fragments"]["panel"]["html"]
+        self.assertIn('id="series-workspace-shell"', html)
+        self.assertIn("1. Filtra l'univers", html)
+        self.assertIn("2. Aplica una operacio", html)
+        self.assertIn("3. Revisa l'impacte", html)
+        self.assertIn('id="series-right-pane-card"', html)
+        self.assertIn('id="btn-series-right-tab-preview"', html)
+        self.assertIn('id="series-board-filters-panel"', html)
 
     def test_series_preview_signature_is_required_for_selection_actions(self):
         equip2, _members2 = self._create_team_with_members("Parella 2", ["Nora", "Marta"], start_order=30)

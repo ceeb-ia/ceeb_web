@@ -1,0 +1,202 @@
+{
+  "metadata": {
+    "generated_at": "2026-04-10T17:01:31.743145+00:00",
+    "app_env": "dev",
+    "debug": true,
+    "database_vendor": "postgresql",
+    "database_engine": "django.db.backends.postgresql",
+    "database_name": "ceeb_db",
+    "service_hostname": "1eb687583090",
+    "warmup": 0,
+    "repeats": 1,
+    "datasets": [
+      "small",
+      "medium",
+      "large"
+    ],
+    "scenarios": [
+      "media_match_preview"
+    ]
+  },
+  "results": [
+    {
+      "dataset": "small",
+      "scenario": "media_match_preview",
+      "run_index": 1,
+      "is_warmup": false,
+      "elapsed_ms": 25.182,
+      "sql_count": 7,
+      "sql_time_ms": 4.0,
+      "response_bytes": 28994,
+      "status_code": 200,
+      "url": "/competicio/44/inscripcions/media/match-preview/",
+      "timings": {
+        "enabled": true,
+        "sections": [
+          {
+            "name": "media.preview_input",
+            "elapsed_ms": 0.002
+          },
+          {
+            "name": "media.candidates",
+            "elapsed_ms": 2.713
+          },
+          {
+            "name": "media.matching",
+            "elapsed_ms": 11.17
+          },
+          {
+            "name": "media.serialization",
+            "elapsed_ms": 0.605
+          }
+        ],
+        "total_ms": 14.49
+      }
+    },
+    {
+      "dataset": "medium",
+      "scenario": "media_match_preview",
+      "run_index": 1,
+      "is_warmup": false,
+      "elapsed_ms": 369.519,
+      "sql_count": 7,
+      "sql_time_ms": 2.0,
+      "response_bytes": 174349,
+      "status_code": 200,
+      "url": "/competicio/45/inscripcions/media/match-preview/",
+      "timings": {
+        "enabled": true,
+        "sections": [
+          {
+            "name": "media.preview_input",
+            "elapsed_ms": 0.003
+          },
+          {
+            "name": "media.candidates",
+            "elapsed_ms": 9.748
+          },
+          {
+            "name": "media.matching",
+            "elapsed_ms": 348.933
+          },
+          {
+            "name": "media.serialization",
+            "elapsed_ms": 1.962
+          }
+        ],
+        "total_ms": 360.646
+      }
+    },
+    {
+      "dataset": "large",
+      "scenario": "media_match_preview",
+      "run_index": 1,
+      "is_warmup": false,
+      "elapsed_ms": 2383.497,
+      "sql_count": 7,
+      "sql_time_ms": 3.0,
+      "response_bytes": 520878,
+      "status_code": 200,
+      "url": "/competicio/46/inscripcions/media/match-preview/",
+      "timings": {
+        "enabled": true,
+        "sections": [
+          {
+            "name": "media.preview_input",
+            "elapsed_ms": 0.002
+          },
+          {
+            "name": "media.candidates",
+            "elapsed_ms": 22.876
+          },
+          {
+            "name": "media.matching",
+            "elapsed_ms": 2346.752
+          },
+          {
+            "name": "media.serialization",
+            "elapsed_ms": 4.495
+          }
+        ],
+        "total_ms": 2374.125
+      }
+    }
+  ],
+  "summary": [
+    {
+      "dataset": "large",
+      "scenario": "media_match_preview",
+      "scenario_label": "Preview media matching",
+      "runs": 1,
+      "status_codes": [
+        200
+      ],
+      "elapsed_ms_min": 2383.497,
+      "elapsed_ms_mean": 2383.497,
+      "elapsed_ms_median": 2383.497,
+      "elapsed_ms_max": 2383.497,
+      "sql_count_min": 7,
+      "sql_count_mean": 7,
+      "sql_count_median": 7,
+      "sql_count_max": 7,
+      "sql_time_ms_min": 3.0,
+      "sql_time_ms_mean": 3.0,
+      "sql_time_ms_median": 3.0,
+      "sql_time_ms_max": 3.0,
+      "response_bytes_min": 520878,
+      "response_bytes_mean": 520878,
+      "response_bytes_median": 520878,
+      "response_bytes_max": 520878
+    },
+    {
+      "dataset": "medium",
+      "scenario": "media_match_preview",
+      "scenario_label": "Preview media matching",
+      "runs": 1,
+      "status_codes": [
+        200
+      ],
+      "elapsed_ms_min": 369.519,
+      "elapsed_ms_mean": 369.519,
+      "elapsed_ms_median": 369.519,
+      "elapsed_ms_max": 369.519,
+      "sql_count_min": 7,
+      "sql_count_mean": 7,
+      "sql_count_median": 7,
+      "sql_count_max": 7,
+      "sql_time_ms_min": 2.0,
+      "sql_time_ms_mean": 2.0,
+      "sql_time_ms_median": 2.0,
+      "sql_time_ms_max": 2.0,
+      "response_bytes_min": 174349,
+      "response_bytes_mean": 174349,
+      "response_bytes_median": 174349,
+      "response_bytes_max": 174349
+    },
+    {
+      "dataset": "small",
+      "scenario": "media_match_preview",
+      "scenario_label": "Preview media matching",
+      "runs": 1,
+      "status_codes": [
+        200
+      ],
+      "elapsed_ms_min": 25.182,
+      "elapsed_ms_mean": 25.182,
+      "elapsed_ms_median": 25.182,
+      "elapsed_ms_max": 25.182,
+      "sql_count_min": 7,
+      "sql_count_mean": 7,
+      "sql_count_median": 7,
+      "sql_count_max": 7,
+      "sql_time_ms_min": 4.0,
+      "sql_time_ms_mean": 4.0,
+      "sql_time_ms_median": 4.0,
+      "sql_time_ms_max": 4.0,
+      "response_bytes_min": 28994,
+      "response_bytes_mean": 28994,
+      "response_bytes_median": 28994,
+      "response_bytes_max": 28994
+    }
+  ]
+}

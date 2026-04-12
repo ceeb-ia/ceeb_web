@@ -1,0 +1,82 @@
+{
+  "metadata": {
+    "generated_at": "2026-04-10T17:26:02.412038+00:00",
+    "app_env": "dev",
+    "debug": true,
+    "database_vendor": "postgresql",
+    "database_engine": "django.db.backends.postgresql",
+    "database_name": "ceeb_db",
+    "service_hostname": "1eb687583090",
+    "warmup": 0,
+    "repeats": 1,
+    "datasets": [
+      "large"
+    ],
+    "scenarios": [
+      "media_match_preview"
+    ]
+  },
+  "results": [
+    {
+      "dataset": "large",
+      "scenario": "media_match_preview",
+      "run_index": 1,
+      "is_warmup": false,
+      "elapsed_ms": 5251.199,
+      "sql_count": 7,
+      "sql_time_ms": 12.0,
+      "response_bytes": 520878,
+      "status_code": 200,
+      "url": "/competicio/46/inscripcions/media/match-preview/",
+      "timings": {
+        "enabled": true,
+        "sections": [
+          {
+            "name": "media.preview_input",
+            "elapsed_ms": 0.009
+          },
+          {
+            "name": "media.candidates",
+            "elapsed_ms": 56.901
+          },
+          {
+            "name": "media.matching",
+            "elapsed_ms": 5158.125
+          },
+          {
+            "name": "media.serialization",
+            "elapsed_ms": 6.741
+          }
+        ],
+        "total_ms": 5221.776
+      }
+    }
+  ],
+  "summary": [
+    {
+      "dataset": "large",
+      "scenario": "media_match_preview",
+      "scenario_label": "Preview media matching",
+      "runs": 1,
+      "status_codes": [
+        200
+      ],
+      "elapsed_ms_min": 5251.199,
+      "elapsed_ms_mean": 5251.199,
+      "elapsed_ms_median": 5251.199,
+      "elapsed_ms_max": 5251.199,
+      "sql_count_min": 7,
+      "sql_count_mean": 7,
+      "sql_count_median": 7,
+      "sql_count_max": 7,
+      "sql_time_ms_min": 12.0,
+      "sql_time_ms_mean": 12.0,
+      "sql_time_ms_median": 12.0,
+      "sql_time_ms_max": 12.0,
+      "response_bytes_min": 520878,
+      "response_bytes_mean": 520878,
+      "response_bytes_median": 520878,
+      "response_bytes_max": 520878
+    }
+  ]
+}

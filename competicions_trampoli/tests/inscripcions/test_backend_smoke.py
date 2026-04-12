@@ -9,6 +9,7 @@ from django.urls import resolve, reverse
 from openpyxl import Workbook
 
 from ...models import Competicio, CompeticioMembership, Inscripcio, InscripcioMedia
+from ...models.competicio import Aparell
 from ...services.inscripcions.import_excel import importar_inscripcions_excel
 from ...views.inscripcions.listing import _serialize_listing_media_item
 from ..base import _BaseTrampoliDataMixin
@@ -179,22 +180,152 @@ class InscripcionsBackendSmokeTests(_BaseTrampoliDataMixin, TestCase):
         self.assertContains(response, reverse("inscripcio_add", kwargs={"pk": self.comp.id}))
         self.assertContains(response, reverse("scoring_notes_home", kwargs={"pk": self.comp.id}))
         self.assertContains(response, reverse("rotacions_planner", kwargs={"pk": self.comp.id}))
-        self.assertContains(response, 'id="btn-groups-preview-confirm"', html=False)
-        self.assertContains(response, 'id="btn-groups-preview-clear"', html=False)
-        self.assertContains(response, 'id="btn-groups-preview-count"', html=False)
-        self.assertContains(response, 'id="btn-groups-create-count"', html=False)
-        self.assertContains(response, 'id="btn-groups-preview-size"', html=False)
-        self.assertContains(response, 'id="btn-groups-create-size"', html=False)
-        self.assertContains(response, 'id="btn-groups-preview-range-balanced"', html=False)
-        self.assertContains(response, 'id="btn-groups-create-range-balanced"', html=False)
-        self.assertContains(response, 'id="btn-groups-preview-count-range"', html=False)
-        self.assertContains(response, 'id="btn-groups-create-count-range"', html=False)
-        self.assertContains(response, 'id="btn-groups-preview-per-bucket"', html=False)
-        self.assertContains(response, 'id="btn-groups-create-per-bucket"', html=False)
+        self.assertContains(response, 'id="panel-grups"', html=False)
+        self.assertContains(response, 'data-panel-lazy="1"', html=False)
+        self.assertContains(response, 'id="panel-media"', html=False)
+        self.assertContains(response, 'data-panel-key="media"', html=False)
+        self.assertNotContains(response, 'id="btn-groups-preview-confirm"', html=False)
+        self.assertNotContains(response, 'id="media-folder-input"', html=False)
+        panel_response = self.client.get(
+            reverse("inscripcions_list", kwargs={"pk": self.comp.id}),
+            {"__fragments": "panel", "__panel_key": "grups"},
+        )
+        self.assertEqual(panel_response.status_code, 200)
+        panel_html = panel_response.json()["fragments"]["panel"]["html"]
+        self.assertIn('id="btn-groups-preview-confirm"', panel_html)
+        self.assertIn('id="btn-groups-preview-clear"', panel_html)
+        self.assertIn('id="btn-groups-preview-count"', panel_html)
+        self.assertIn('id="btn-groups-create-count"', panel_html)
+        self.assertIn('id="btn-groups-preview-size"', panel_html)
+        self.assertIn('id="btn-groups-create-size"', panel_html)
+        self.assertIn('id="btn-groups-preview-range-balanced"', panel_html)
+        self.assertIn('id="btn-groups-create-range-balanced"', panel_html)
+        self.assertIn('id="btn-groups-preview-count-range"', panel_html)
+        self.assertIn('id="btn-groups-create-count-range"', panel_html)
+        self.assertIn('id="btn-groups-preview-per-bucket"', panel_html)
+        self.assertIn('id="btn-groups-create-per-bucket"', panel_html)
         self.assertContains(response, '/static/js/vendor/Sortable.min.js', html=False)
         self.assertNotContains(response, 'cdn.jsdelivr.net/npm/sortablejs', html=False)
         self.assertNotIn("mediaMatchInscripcionsOptions", response.context["inscripcions_page_boot"]["initial"])
         self.assertNotContains(response, '"mediaMatchInscripcionsOptions":', html=False)
+
+    def test_fragment_html_contract_returns_header_toolbar_history_table(self):
+        response = self.client.get(
+            reverse("inscripcions_list", kwargs={"pk": self.comp.id}),
+            {"__fragments": "header,toolbar,history,table"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload.get("ok"))
+        self.assertIn("boot", payload)
+        self.assertIn("fragments", payload)
+
+        fragments = payload["fragments"]
+        self.assertEqual(set(fragments.keys()), {"header", "toolbar", "history", "table"})
+        self.assertIn('id="inscripcions-header-fragment"', fragments["header"])
+        self.assertIn('id="inscripcions-toolbar-fragment"', fragments["toolbar"])
+        self.assertIn('id="inscripcions-history-fragment"', fragments["history"])
+        self.assertIn('id="inscripcions-table-fragment"', fragments["table"])
+
+    def test_lazy_panel_fragments_return_real_workspace_panels(self):
+        markers_by_panel = {
+            "grups": ['id="groups-workspace-shell"', 'id="btn-groups-preview-confirm"'],
+            "equips": ['id="team-workspace-shell"', 'id="btn-team-compact-open-workspace"'],
+            "series-equips": ['id="series-workspace-shell"', 'id="series-comp-aparell-select"'],
+            "media": ['id="media-folder-input"', 'id="btn-media-match-preview"'],
+        }
+
+        for panel_key, markers in markers_by_panel.items():
+            with self.subTest(panel_key=panel_key):
+                response = self.client.get(
+                    reverse("inscripcions_list", kwargs={"pk": self.comp.id}),
+                    {"__fragments": "panel", "__panel_key": panel_key},
+                )
+
+                self.assertEqual(response.status_code, 200)
+                payload = response.json()
+                self.assertTrue(payload.get("ok"))
+                fragment = payload["fragments"]["panel"]
+                self.assertEqual(fragment["panel_key"], panel_key)
+                for marker in markers:
+                    self.assertIn(marker, fragment["html"])
+
+    def test_lazy_grouped_table_renders_active_rows_and_complete_order_payload(self):
+        self.ins.categoria = "A"
+        self.ins.save(update_fields=["categoria"])
+        second = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Berta Smoke",
+            entitat="Club Smoke",
+            categoria="B",
+            ordre_sortida=2,
+        )
+        third = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Carla Smoke",
+            entitat="Club Smoke",
+            categoria="B",
+            ordre_sortida=3,
+        )
+
+        response = self.client.get(
+            reverse("inscripcions_list", kwargs={"pk": self.comp.id}),
+            {"group_by": "categoria"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["lazy_group_tabs_enabled"])
+        payload = response.context["lazy_group_order_payload"]
+        self.assertIn("tab_order", payload)
+        self.assertIn("group_ids_by_key", payload)
+
+        payload_ids = []
+        for tab_key in payload["tab_order"]:
+            payload_ids.extend(payload["group_ids_by_key"][tab_key])
+        self.assertEqual(payload_ids, [self.ins.id, second.id, third.id])
+
+        active_group_key = response.context["active_group_key"]
+        grouped_by_key = {
+            group_key: group_records
+            for _group_label, group_records, group_key in response.context["records_grouped"]
+        }
+        self.assertEqual([record.id for record in grouped_by_key[active_group_key]], [self.ins.id])
+        inactive_keys = [key for key in grouped_by_key if key != active_group_key]
+        self.assertTrue(inactive_keys)
+        self.assertTrue(all(grouped_by_key[key] == [] for key in inactive_keys))
+        self.assertContains(response, 'id="inscripcions-lazy-group-order-data"', html=False)
+        self.assertContains(response, "inscripcions-tab-placeholder", html=False)
+        self.assertEqual(response.content.decode("utf-8").count('class="inscripcio-row"'), 1)
+
+    def test_render_smoke_keeps_later_payloads_out_of_initial_get_context(self):
+        response = self.client.get(reverse("inscripcions_list", kwargs={"pk": self.comp.id}))
+
+        self.assertEqual(response.status_code, 200)
+
+        heavy_context_keys = [
+            "equips_existing",
+            "team_context_summary",
+            "series_team_aparells",
+            "inscripcio_aparells_excluded_map",
+            "inscripcio_media_map",
+            "media_matching_config",
+        ]
+        for key in heavy_context_keys:
+            with self.subTest(context_key=key):
+                self.assertNotIn(key, response.context)
+
+        boot = response.context["inscripcions_page_boot"]
+        self.assertIn("ids", boot)
+        self.assertIn("flags", boot)
+        self.assertIn("urls", boot)
+        self.assertIn("initial", boot)
+        self.assertNotIn("equipsExisting", boot["initial"])
+        self.assertNotIn("teamContextSummary", boot["initial"])
+        self.assertNotIn("seriesTeamAparells", boot["initial"])
+        self.assertNotIn("inscripcioAparellsExcludedMap", boot["initial"])
+        self.assertNotIn("inscripcioMediaMap", boot["initial"])
+        self.assertNotIn("mediaMatchInscripcionsOptions", boot["initial"])
 
     def test_column_filter_query_params_accept_canonical_and_legacy_prefixes(self):
         Inscripcio.objects.create(
@@ -228,15 +359,25 @@ class InscripcionsBackendSmokeTests(_BaseTrampoliDataMixin, TestCase):
         self.assertIn("if (typeof window.showPrompt !== 'function') {", source)
         self.assertIn("ensureDialogGlobals();", source)
         self.assertIn("inscripcions:panel-activated", source)
+        self.assertIn("inscripcions:panel-loaded", source)
         self.assertIn("function runOnceForPanel", source)
+        self.assertIn("panelInitRuns.delete(panelKey);", source)
+        self.assertIn("const btn = event.target.closest('.js-expand-tab-select');", source)
         self.assertIn("function readStoredUiState()", source)
         self.assertIn("const existingState = readStoredUiState();", source)
         self.assertIn("const shellState = captureUiState();", source)
         self.assertIn("Object.assign({}, existingState, shellState, extra || {})", source)
-        self.assertRegex(
-            source,
-            r"function reloadWithUiState\(extra\)[\s\S]*saveUiState\(extra\);[\s\S]*window\.location\.reload\(\);",
-        )
+        self.assertIn("function updateUrlAndRefresh", source)
+        self.assertIn("window.history.replaceState", source)
+        self.assertIn("refreshHtmlFragments(", source)
+        self.assertIn("updateUrlAndRefresh(url", source)
+        self.assertIn("function getActiveGroupKey", source)
+        self.assertIn("fragments.includes('table') ? getActiveGroupKey() : ''", source)
+        self.assertIn("getActiveGroupKey,", source)
+        self.assertIn("const mode = app.selection.has(id) ? 'remove' : 'add';", source)
+        self.assertIn("updateMainInscripcioSelection([id], mode);", source)
+        self.assertNotIn("updateMainInscripcioSelection([id], checkbox.checked ? 'add' : 'remove');", source)
+        self.assertNotIn("navigateWithUiState(url.toString())", source)
         self.assertRegex(source, r"window\.addEventListener\('beforeunload',\s*\(\)\s*=>\s*saveUiState\(\)\);")
 
     def test_core_ui_state_save_merges_existing_state_instead_of_overwriting_namespaces(self):
@@ -249,7 +390,50 @@ class InscripcionsBackendSmokeTests(_BaseTrampoliDataMixin, TestCase):
         self.assertIn("const shellState = captureUiState();", source)
         self.assertIn("JSON.stringify(Object.assign({}, existingState, shellState, extra || {}))", source)
         self.assertIn("let state = readStoredUiState();", source)
+        self.assertIn("const savedSelection = Array.isArray(state.selectedIds) ? state.selectedIds : null;", source)
+        self.assertIn("if (savedSelection !== null) {", source)
         self.assertNotIn("sessionStorage.setItem(getUiStateKey(), JSON.stringify(captureUiState(extra)));", source)
+
+    def test_sorting_script_uses_fragment_refresh_for_column_filters(self):
+        package_root = Path(__file__).resolve().parents[2]
+        source = (
+            package_root / "templates" / "competicio" / "inscripcions" / "scripts" / "_sorting.html"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("function saveColumnFilterValues", source)
+        self.assertIn("API.updateUrlAndRefresh", source)
+        self.assertNotIn("API.navigateWithUiState(url.toString())", source)
+
+    def test_groups_preview_script_refreshes_lightly_after_group_creation(self):
+        package_root = Path(__file__).resolve().parents[2]
+        source = (
+            package_root / "templates" / "competicio" / "inscripcions" / "scripts" / "_groups_preview.html"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("postJson(groupsFromSortUrl, payload)", source)
+        self.assertIn("API.refreshLightMutation({ includeActivePanel: true })", source)
+        self.assertIn("function getMainSelectedInscripcioIds", source)
+        self.assertIn("window.__inscripcionsSelectionApi.getSelectedIds()", source)
+        self.assertIn("window.getSelectedInscripcioIds().map(String).filter(Boolean)", source)
+        self.assertIn(": getMainSelectedInscripcioIds();", source)
+        self.assertNotIn("reloadWithUiState()", source)
+
+    def test_groups_workspace_syncs_external_selection_and_refreshes_list_after_manual_mutations(self):
+        package_root = Path(__file__).resolve().parents[2]
+        source = (
+            package_root / "templates" / "competicio" / "inscripcions" / "scripts" / "_groups_workspace_script.html"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("inscripcions:selection-changed", source)
+        self.assertIn("window.__groupsWorkspaceSelectionBridgeBound", source)
+        self.assertIn("if (detail.source === 'groups_workspace') return;", source)
+        self.assertIn("workspaceApi.setExternalSelection(ids, { source: 'main' });", source)
+        self.assertIn("setExternalSelection: syncExternalSelection", source)
+        self.assertIn("async function refreshInscripcionsListAfterGroupMutation(action)", source)
+        self.assertIn("['create', 'assign', 'unassign'].includes(String(action || ''))", source)
+        self.assertIn("const api = window.InscripcionsApp || null;", source)
+        self.assertIn("await api.refreshLightMutation({ includeActivePanel: true });", source)
+        self.assertIn("await refreshInscripcionsListAfterGroupMutation(action);", source)
 
     def test_panel_scripts_expose_lazy_initializers_instead_of_eager_refreshes(self):
         package_root = Path(__file__).resolve().parents[2]
@@ -276,19 +460,41 @@ class InscripcionsBackendSmokeTests(_BaseTrampoliDataMixin, TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn("window.initGroupsPanel", groups_preview)
+        self.assertIn("window.__groupsPanelRoot", groups_preview)
         self.assertNotIn("document.addEventListener('DOMContentLoaded', initGroupsPanel)", groups_preview)
         self.assertIn("window.initGroupsWorkspace = async function ()", groups_workspace)
+        self.assertIn("window.__groupsWorkspaceRoot", groups_workspace)
         self.assertIn("await fetchWorkspace();", groups_workspace)
         self.assertIn("inscripcions:panel-activated", groups_wrapper)
+        self.assertIn("inscripcions:panel-loaded", groups_wrapper)
         self.assertIn("window.initTeamsWorkspace = async function ()", teams_script)
+        self.assertIn("window.__teamWorkspaceRoot", teams_script)
         self.assertIn("function setTeamPreviewLoading", teams_script)
         self.assertIn("function renderTeamPreview", teams_script)
         self.assertIn("window.__teamPreviewApi = {", teams_script)
         self.assertIn("inscripcions:panel-activated", teams_wrapper)
+        self.assertIn("inscripcions:panel-loaded", teams_wrapper)
         self.assertIn("window.initTeamsWorkspace?.()", teams_wrapper)
         self.assertIn("window.initSeriesWorkspace = async function ()", series_script)
+        self.assertIn("window.__seriesWorkspaceRoot", series_script)
+        self.assertIn("function readCompAparellIdFromDom()", series_script)
+        self.assertIn("document.getElementById('series-comp-aparell-select')?.value", series_script)
         self.assertNotIn("refreshWorkspace({ preservePage: false }).catch", series_script)
         self.assertIn("inscripcions:panel-activated", series_wrapper)
+        self.assertIn("inscripcions:panel-loaded", series_wrapper)
+
+    def test_table_script_keeps_drag_drop_enabled_with_lazy_group_tabs(self):
+        package_root = Path(__file__).resolve().parents[2]
+        source = (
+            package_root / "templates" / "competicio" / "inscripcions" / "scripts" / "_table.html"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("function getLazyGroupOrderPayload()", source)
+        self.assertIn("group_ids_by_key", source)
+        self.assertIn("idsFromPaneId(paneId)", source)
+        self.assertIn("refreshCentralBlockKeepingActiveTab", source)
+        self.assertIn("activeGroupKey: key", source)
+        self.assertNotIn("if (hasLazyGroupTabs()) return;", source)
 
     def test_ajax_payload_contract_smoke_for_sorting_groups_and_media(self):
         sorting_response = self.client.post(
@@ -336,6 +542,21 @@ class InscripcionsBackendSmokeTests(_BaseTrampoliDataMixin, TestCase):
         self.assertIn("rows", media_payload)
         self.assertIn("counts", media_payload)
         self.assertIn("config", media_payload)
-        self.assertIn("inscripcions_options", media_payload)
+        self.assertNotIn("inscripcions_options", media_payload)
+
+        team_app = self._create_aparell("TEAMSMOKE", "Team Smoke")
+        team_app.competition_unit = Aparell.CompetitionUnit.TEAM
+        team_app.save(update_fields=["competition_unit"])
+        comp_app = self._create_comp_aparell(self.comp, team_app, ordre=1)
+
+        series_response = self.client.post(
+            reverse("inscripcions_series_equips_workspace", kwargs={"pk": self.comp.id}),
+            data=json.dumps({"comp_aparell_id": comp_app.id}),
+            content_type="application/json",
+        )
+        self.assertEqual(series_response.status_code, 200)
+        series_payload = series_response.json()
+        self.assertTrue(series_payload.get("ok"))
+        self.assertIn("workspace", series_payload)
 
 

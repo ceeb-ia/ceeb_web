@@ -6,12 +6,23 @@
   const API = window.InscripcionsApp;
   if (!API) return;
 
-  document.addEventListener('inscripcions:panel-activated', (event) => {
-    const panelKey = String(event?.detail?.panelKey || '').trim();
-    if (panelKey !== 'equips') return;
+  function hydrateTeamsPanel() {
+    if (!document.getElementById('panel-equips') || !document.getElementById('team-workspace-shell')) return;
     API.runOnceForPanel('equips', () => window.initTeamsWorkspace?.()).catch((error) => {
       API.showAlert(error?.message || error);
     });
+  }
+
+  document.addEventListener('inscripcions:panel-activated', (event) => {
+    const panelKey = String(event?.detail?.panelKey || '').trim();
+    if (panelKey !== 'equips') return;
+    hydrateTeamsPanel();
+  });
+
+  document.addEventListener('inscripcions:panel-loaded', (event) => {
+    const panelKey = String(event?.detail?.panelKey || '').trim();
+    if (panelKey !== 'equips') return;
+    hydrateTeamsPanel();
   });
 })();
 </script>

@@ -1,0 +1,118 @@
+{
+  "metadata": {
+    "generated_at": "2026-04-11T14:03:31.641867+00:00",
+    "app_env": "dev",
+    "debug": true,
+    "database_vendor": "postgresql",
+    "database_engine": "django.db.backends.postgresql",
+    "database_name": "ceeb_db",
+    "service_hostname": "1eb687583090",
+    "warmup": 0,
+    "repeats": 1,
+    "datasets": [
+      "large"
+    ],
+    "scenarios": [
+      "get_list"
+    ]
+  },
+  "results": [
+    {
+      "dataset": "large",
+      "scenario": "get_list",
+      "run_index": 1,
+      "is_warmup": false,
+      "elapsed_ms": 716.055,
+      "sql_count": 21,
+      "sql_time_ms": 116.0,
+      "response_bytes": 950566,
+      "status_code": 200,
+      "url": "/competicions/46/inscripcions/?group_by=categoria&group_by=subcategoria",
+      "timings": {
+        "enabled": true,
+        "sections": [
+          {
+            "name": "base.records_queryset",
+            "elapsed_ms": 0.49
+          },
+          {
+            "name": "base.records_materialization",
+            "elapsed_ms": 42.156
+          },
+          {
+            "name": "base.records_runtime",
+            "elapsed_ms": 48.015
+          },
+          {
+            "name": "base.grouping_merge",
+            "elapsed_ms": 5.253
+          },
+          {
+            "name": "base.excel_columns",
+            "elapsed_ms": 0.111
+          },
+          {
+            "name": "base.categories_history",
+            "elapsed_ms": 3.498
+          },
+          {
+            "name": "listing.permissions_counts",
+            "elapsed_ms": 11.346
+          },
+          {
+            "name": "listing.table_context",
+            "elapsed_ms": 0.228
+          },
+          {
+            "name": "listing.sort_context",
+            "elapsed_ms": 0.321
+          },
+          {
+            "name": "listing.sort_entries",
+            "elapsed_ms": 0.019
+          },
+          {
+            "name": "listing.workspace_context",
+            "elapsed_ms": 25.9
+          },
+          {
+            "name": "listing.media_maps",
+            "elapsed_ms": 27.427
+          },
+          {
+            "name": "render.template",
+            "elapsed_ms": 508.916
+          }
+        ],
+        "total_ms": 673.68
+      }
+    }
+  ],
+  "summary": [
+    {
+      "dataset": "large",
+      "scenario": "get_list",
+      "scenario_label": "GET llistat principal",
+      "runs": 1,
+      "status_codes": [
+        200
+      ],
+      "elapsed_ms_min": 716.055,
+      "elapsed_ms_mean": 716.055,
+      "elapsed_ms_median": 716.055,
+      "elapsed_ms_max": 716.055,
+      "sql_count_min": 21,
+      "sql_count_mean": 21,
+      "sql_count_median": 21,
+      "sql_count_max": 21,
+      "sql_time_ms_min": 116.0,
+      "sql_time_ms_mean": 116.0,
+      "sql_time_ms_median": 116.0,
+      "sql_time_ms_max": 116.0,
+      "response_bytes_min": 950566,
+      "response_bytes_mean": 950566,
+      "response_bytes_median": 950566,
+      "response_bytes_max": 950566
+    }
+  ]
+}

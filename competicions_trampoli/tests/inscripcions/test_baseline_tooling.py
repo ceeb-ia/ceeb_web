@@ -67,7 +67,7 @@ class InscripcionsBaselineToolingTests(TestCase):
         client = self.client_class()
         client.force_login(user)
 
-        request_spec = build_scenario_request(competicio, "filter_values")
+        request_spec = build_scenario_request(competicio, "get_list")
         result = measure_client_request(client, request_spec)
 
         self.assertEqual(result["status_code"], 200)
@@ -75,6 +75,9 @@ class InscripcionsBaselineToolingTests(TestCase):
         self.assertIn("sql_count", result)
         self.assertIn("sql_time_ms", result)
         self.assertIn("response_bytes", result)
+        self.assertIn("timings", result)
+        self.assertTrue(result["timings"])
+        self.assertGreater(len(result["timings"].get("sections") or []), 0)
         self.assertGreaterEqual(result["response_bytes"], 1)
 
     def test_generate_benchmark_data_command_creates_canonical_dataset(self):

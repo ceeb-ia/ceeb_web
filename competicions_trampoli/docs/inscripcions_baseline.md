@@ -159,32 +159,47 @@ Arguments disponibles:
 - Resum tabular per stdout
 - Snippet Markdown per enganxar a aquest document
 
+## Objectius de millora prioritaris
+
+| Cas critic | Baseline actual | Objectiu de la fase seguent |
+| --- | ---: | ---: |
+| `large:get_list` | 3835.468 ms | <= 2500 ms |
+| `large:equips_workspace` | 4965.553 ms | <= 3000 ms |
+| `large:media_match_preview` | 3926.480 ms | <= 2500 ms |
+| `medium:get_list` | 1349.577 ms | <= 1000 ms |
+| `medium:equips_workspace` | 1737.181 ms | <= 1200 ms |
+| `large:groups_workspace` | 235.361 ms | <= 180 ms |
+
 ## Baseline acceptada actual
-- Pendent d'omplir
+- Acceptada el `2026-04-10`
+- Snapshot generat a `2026-04-10T16:24:50.075354+00:00`
+- Entorn: `dev`, `postgresql`, `DEBUG=True`, `1` warmup i `5` runs mesurats
+- Artefacte de referencia: `var/benchmarks/inscripcions/20260410_162652.json`
+- Nota: els valors de `sql_count` i `sql_time_ms` s'han de llegir com a metrics aproximades. En datasets `medium` i `large`, diversos escenaris han quedat a `0` per l'avis de limit del query logging de Django durant la captura.
 
 | Dataset | Scenario | Mean ms | Mean SQL count | Mean SQL ms | Mean response bytes | Status |
 | --- | --- | ---: | ---: | ---: | ---: | --- |
-| small | get_list | pending | pending | pending | pending | pending |
-| small | filter_values | pending | pending | pending | pending | pending |
-| small | sort_apply | pending | pending | pending | pending | pending |
-| small | groups_preview | pending | pending | pending | pending | pending |
-| small | groups_workspace | pending | pending | pending | pending | pending |
-| small | equips_workspace | pending | pending | pending | pending | pending |
-| small | media_match_preview | pending | pending | pending | pending | pending |
-| medium | get_list | pending | pending | pending | pending | pending |
-| medium | filter_values | pending | pending | pending | pending | pending |
-| medium | sort_apply | pending | pending | pending | pending | pending |
-| medium | groups_preview | pending | pending | pending | pending | pending |
-| medium | groups_workspace | pending | pending | pending | pending | pending |
-| medium | equips_workspace | pending | pending | pending | pending | pending |
-| medium | media_match_preview | pending | pending | pending | pending | pending |
-| large | get_list | pending | pending | pending | pending | pending |
-| large | filter_values | pending | pending | pending | pending | pending |
-| large | sort_apply | pending | pending | pending | pending | pending |
-| large | groups_preview | pending | pending | pending | pending | pending |
-| large | groups_workspace | pending | pending | pending | pending | pending |
-| large | equips_workspace | pending | pending | pending | pending | pending |
-| large | media_match_preview | pending | pending | pending | pending | pending |
+| small | get_list | 304.845 | 242.000 | 14.400 | 1560497.000 | accepted |
+| small | filter_values | 7.409 | 7.000 | 0.600 | 814.000 | accepted |
+| small | sort_apply | 41.674 | 51.000 | 8.800 | 285.000 | accepted |
+| small | groups_preview | 19.575 | 19.000 | 2.400 | 4442.000 | accepted |
+| small | groups_workspace | 33.259 | 32.000 | 3.000 | 38006.000 | accepted |
+| small | equips_workspace | 323.057 | 371.000 | 20.000 | 15443.000 | accepted |
+| small | media_match_preview | 18.903 | 7.000 | 0.200 | 32156.000 | accepted |
+| medium | get_list | 1349.577 | 427.200 | 27.800 | 2668537.000 | accepted |
+| medium | filter_values | 11.460 | 0.000 | 0.000 | 820.000 | accepted |
+| medium | sort_apply | 145.266 | 0.000 | 0.000 | 287.000 | accepted |
+| medium | groups_preview | 28.506 | 0.000 | 0.000 | 18517.000 | accepted |
+| medium | groups_workspace | 90.986 | 0.000 | 0.000 | 110534.000 | accepted |
+| medium | equips_workspace | 1737.181 | 0.000 | 0.000 | 26305.000 | accepted |
+| medium | media_match_preview | 406.042 | 0.000 | 0.000 | 193436.000 | accepted |
+| large | get_list | 3835.468 | 0.000 | 0.000 | 5336664.000 | accepted |
+| large | filter_values | 14.780 | 0.000 | 0.000 | 827.000 | accepted |
+| large | sort_apply | 498.569 | 0.000 | 0.000 | 287.000 | accepted |
+| large | groups_preview | 97.173 | 0.000 | 0.000 | 52314.000 | accepted |
+| large | groups_workspace | 235.361 | 0.000 | 0.000 | 278656.000 | accepted |
+| large | equips_workspace | 4965.553 | 0.000 | 0.000 | 51034.000 | accepted |
+| large | media_match_preview | 3926.480 | 0.000 | 0.000 | 578042.000 | accepted |
 
 ## Futures comparatives
 - Afegir aqui snapshots de baseline acceptades noves amb data i commit si cal.

@@ -27,37 +27,45 @@
       group_num: scope === 'group' ? groupNum : null,
     }));
     if (!data?.ok) throw new Error("No s'ha pogut aplicar l'ordenacio.");
-    API.reloadWithUiState();
+    await API.refreshLightMutation({
+      includeActivePanel: API.getActiveActionsPanelKey() === 'altres',
+    });
   }
 
   async function removeSort(priority) {
     const data = await API.postJson(API.app.urls.sortRemove, buildSortPayload({ priority }));
     if (!data?.ok) throw new Error("No s'ha pogut treure el criteri.");
-    API.reloadWithUiState();
+    await API.refreshLightMutation({
+      includeActivePanel: API.getActiveActionsPanelKey() === 'altres',
+    });
   }
 
   async function clearSort() {
     const data = await API.postJson(API.app.urls.sortClear, buildSortPayload());
     if (!data?.ok) throw new Error("No s'ha pogut netejar l'ordenacio.");
-    API.reloadWithUiState();
+    await API.refreshLightMutation({
+      includeActivePanel: API.getActiveActionsPanelKey() === 'altres',
+    });
   }
 
   async function toggleCompetitionTail(enabled) {
     const data = await API.postJson(API.app.urls.sortTailToggle, buildSortPayload({ enabled: !!enabled }));
     if (!data?.ok) throw new Error("No s'ha pogut actualitzar l'ordre de competicio.");
-    API.reloadWithUiState();
+    await API.refreshLightMutation({
+      includeActivePanel: API.getActiveActionsPanelKey() === 'altres',
+    });
   }
 
   async function loadColumnFilterValues(columnCode) {
     return API.postJson(API.app.urls.filterValues, buildSortPayload({ column_code: columnCode }));
   }
 
-  function saveColumnFilterValues(columnCode, tokens) {
+  async function saveColumnFilterValues(columnCode, tokens) {
     const url = API.getCurrentUrl();
     const key = `cf_${columnCode}`;
     if (tokens && tokens.length) url.searchParams.set(key, tokens.join('|'));
     else url.searchParams.delete(key);
-    API.navigateWithUiState(url.toString());
+    await API.updateUrlAndRefresh(url, { fragments: ['header', 'toolbar', 'history', 'table'] });
   }
 
   async function loadCustomSortValues(sortKey) {
@@ -71,7 +79,10 @@
       preserve_missing_context: true,
     }));
     if (!data?.ok) throw new Error("No s'ha pogut desar l'ordre custom.");
-    API.reloadWithUiState();
+    closeCustomSortModal();
+    await API.refreshLightMutation({
+      includeActivePanel: API.getActiveActionsPanelKey() === 'altres',
+    });
   }
 
   function getModalEls() {
@@ -323,7 +334,7 @@
         event.preventDefault();
         const menu = filterApplyBtn.closest('[data-col-sort-menu]');
         if (!menu) return;
-        saveColumnFilterValues(menu.getAttribute('data-col-code') || '', collectSelectedFilterTokens(menu));
+        await saveColumnFilterValues(menu.getAttribute('data-col-code') || '', collectSelectedFilterTokens(menu));
         return;
       }
 
@@ -332,7 +343,7 @@
         event.preventDefault();
         const menu = filterClearBtn.closest('[data-col-sort-menu]');
         if (!menu) return;
-        saveColumnFilterValues(menu.getAttribute('data-col-code') || '', []);
+        await saveColumnFilterValues(menu.getAttribute('data-col-code') || '', []);
         return;
       }
 
@@ -352,18 +363,6 @@
       const menu = search.closest('[data-col-sort-menu]');
       if (menu) filterVisibleOptions(menu, search.value);
     });
-
-    const tailToggle = document.getElementById('competition-order-tail-toggle');
-    if (tailToggle) {
-      tailToggle.addEventListener('change', async () => {
-        try {
-          await toggleCompetitionTail(tailToggle.checked);
-        } catch (err) {
-          API.showAlert(err.message || err);
-          tailToggle.checked = !tailToggle.checked;
-        }
-      });
-    }
 
     const els = getModalEls();
     if (els.backdrop) els.backdrop.addEventListener('click', closeCustomSortModal);
@@ -391,6 +390,17 @@
         return;
       }
       if (event.key === 'Escape') closeMenus();
+    });
+
+    document.addEventListener('change', async (event) => {
+      const tailToggle = event.target.closest('#competition-order-tail-toggle');
+      if (!tailToggle) return;
+      try {
+        await toggleCompetitionTail(tailToggle.checked);
+      } catch (err) {
+        API.showAlert(err.message || err);
+        tailToggle.checked = !tailToggle.checked;
+      }
     });
   }
 

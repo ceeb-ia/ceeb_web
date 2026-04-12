@@ -1,0 +1,94 @@
+{
+  "metadata": {
+    "generated_at": "2026-04-11T14:03:50.592340+00:00",
+    "app_env": "dev",
+    "debug": true,
+    "database_vendor": "postgresql",
+    "database_engine": "django.db.backends.postgresql",
+    "database_name": "ceeb_db",
+    "service_hostname": "1eb687583090",
+    "warmup": 0,
+    "repeats": 1,
+    "datasets": [
+      "large"
+    ],
+    "scenarios": [
+      "media_match_preview"
+    ]
+  },
+  "results": [
+    {
+      "dataset": "large",
+      "scenario": "media_match_preview",
+      "run_index": 1,
+      "is_warmup": false,
+      "elapsed_ms": 4750.669,
+      "sql_count": 7,
+      "sql_time_ms": 9.0,
+      "response_bytes": 520878,
+      "status_code": 200,
+      "url": "/competicio/46/inscripcions/media/match-preview/",
+      "timings": {
+        "enabled": true,
+        "sections": [
+          {
+            "name": "media.preview_input",
+            "elapsed_ms": 0.004
+          },
+          {
+            "name": "media.candidates.query",
+            "elapsed_ms": 0.215
+          },
+          {
+            "name": "media.candidates.build",
+            "elapsed_ms": 25.159
+          },
+          {
+            "name": "media.candidates.index",
+            "elapsed_ms": 2.607
+          },
+          {
+            "name": "media.candidates",
+            "elapsed_ms": 28.105
+          },
+          {
+            "name": "media.matching",
+            "elapsed_ms": 4698.419
+          },
+          {
+            "name": "media.serialization",
+            "elapsed_ms": 7.984
+          }
+        ],
+        "total_ms": 4762.493
+      }
+    }
+  ],
+  "summary": [
+    {
+      "dataset": "large",
+      "scenario": "media_match_preview",
+      "scenario_label": "Preview media matching",
+      "runs": 1,
+      "status_codes": [
+        200
+      ],
+      "elapsed_ms_min": 4750.669,
+      "elapsed_ms_mean": 4750.669,
+      "elapsed_ms_median": 4750.669,
+      "elapsed_ms_max": 4750.669,
+      "sql_count_min": 7,
+      "sql_count_mean": 7,
+      "sql_count_median": 7,
+      "sql_count_max": 7,
+      "sql_time_ms_min": 9.0,
+      "sql_time_ms_mean": 9.0,
+      "sql_time_ms_median": 9.0,
+      "sql_time_ms_max": 9.0,
+      "response_bytes_min": 520878,
+      "response_bytes_mean": 520878,
+      "response_bytes_median": 520878,
+      "response_bytes_max": 520878
+    }
+  ]
+}

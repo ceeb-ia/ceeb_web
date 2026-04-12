@@ -19,11 +19,7 @@
           <div class="fw-semibold">Gestor d'equips</div>
           <div class="small text-muted">
             Context actiu:
-            <strong id="team-context-title-inline">
-              {% for ctx in team_contexts %}
-                {% if ctx.code == team_context_selected_code %}{{ ctx.nom }}{% endif %}
-              {% endfor %}
-            </strong>
+            <strong id="team-context-title-inline">{{ team_context_selected_label|default:team_context_selected_code }}</strong>
           </div>
         </div>
         <div class="tab-select-card-tools">
@@ -47,12 +43,10 @@
       <div class="team-compact-summary">
         <div class="team-compact-summary-copy">
           Defineix el context, prepara una seleccio explicita i crea o reassigna equips sense perdre de vista el board actual.
-          Flux complet d'equips.
+          El detall complet es carrega quan obres el workspace.
         </div>
         <div class="team-compact-summary-metrics" id="team-compact-summary-metrics">
-          <span class="group-preview-badge badge badge-light border">{{ team_context_summary.teams_with_members }} equips actius</span>
-          <span class="group-preview-badge badge badge-light border">{{ team_context_summary.assigned_count }} amb equip</span>
-          <span class="group-preview-badge badge badge-light border">{{ team_context_summary.unassigned_count }} sense equip</span>
+          <span class="group-preview-badge badge badge-light border">Carregant resum...</span>
         </div>
       </div>
 
@@ -65,9 +59,7 @@
           <div class="d-flex flex-wrap align-items-center" style="gap:8px;">
             <label class="small text-muted mb-0" for="team-compact-context">Context</label>
             <select id="team-compact-context" class="form-control form-control-sm" style="width:190px;">
-              {% for ctx in team_contexts %}
-                <option value="{{ ctx.code }}" {% if ctx.code == team_context_selected_code %}selected{% endif %}>{{ ctx.nom }}</option>
-              {% endfor %}
+              <option value="{{ team_context_selected_code }}" selected>{{ team_context_selected_label|default:team_context_selected_code }}</option>
             </select>
             <label class="small text-muted mb-0" for="team-compact-scope">Abast</label>
             <select id="team-compact-scope" class="form-control form-control-sm" style="width:170px;">
@@ -76,10 +68,7 @@
             </select>
             <label class="small text-muted mb-0" for="team-compact-target-team">Equip desti</label>
             <select id="team-compact-target-team" class="form-control form-control-sm" style="width:min(100%, 260px); min-width:220px;">
-              <option value="">-- Selecciona equip --</option>
-              {% for e in equips_existing %}
-                <option value="{{ e.id }}">{{ e.nom }} ({{ e.membres_count }})</option>
-              {% endfor %}
+              <option value="">Carregant equips...</option>
             </select>
           </div>
           <div class="d-flex flex-wrap align-items-center" style="gap:8px;">
@@ -102,19 +91,15 @@
             <div class="team-workspace-header-main">
               <span class="badge badge-light border" id="team-context-badge">Context {{ team_context_selected_code }}</span>
               <div class="team-workspace-title-wrap">
-                <div class="team-workspace-title" id="team-context-title">
-                  {% for ctx in team_contexts %}
-                    {% if ctx.code == team_context_selected_code %}{{ ctx.nom }}{% endif %}
-                  {% endfor %}
-                </div>
+                <div class="team-workspace-title" id="team-context-title">{{ team_context_selected_label|default:team_context_selected_code }}</div>
                 <div class="small text-muted" id="team-context-description">Filtra l'univers del context actiu, construeix la seleccio i aplica operacions sobre ella.</div>
               </div>
             </div>
             <div class="team-workspace-header-tools">
-              <span class="badge badge-light border"><strong id="team-summary-teams-with-members">{{ team_context_summary.teams_with_members }}</strong> equips</span>
-              <span class="badge badge-light border"><strong id="team-summary-assigned">{{ team_context_summary.assigned_count }}</strong> amb equip</span>
-              <span class="badge badge-light border"><strong id="team-summary-unassigned">{{ team_context_summary.unassigned_count }}</strong> sense equip</span>
-              <span class="badge badge-light border"><strong id="team-summary-total">{{ team_context_summary.total_inscripcions }}</strong> totals</span>
+              <span class="badge badge-light border"><strong id="team-summary-teams-with-members">-</strong> equips</span>
+              <span class="badge badge-light border"><strong id="team-summary-assigned">-</strong> amb equip</span>
+              <span class="badge badge-light border"><strong id="team-summary-unassigned">-</strong> sense equip</span>
+              <span class="badge badge-light border"><strong id="team-summary-total">-</strong> totals</span>
             </div>
           </div>
         </div>
@@ -137,9 +122,7 @@
                     <div class="d-flex flex-wrap align-items-center" style="gap:8px;">
                       <label class="small text-muted mb-0" for="team-workspace-context-select">Context d'equips</label>
                       <select id="team-workspace-context-select" class="form-control form-control-sm" style="min-width:220px; max-width:320px;">
-                        {% for ctx in team_contexts %}
-                          <option value="{{ ctx.code }}" {% if ctx.code == team_context_selected_code %}selected{% endif %}>{{ ctx.nom }}</option>
-                        {% endfor %}
+                        <option value="{{ team_context_selected_code }}" selected>{{ team_context_selected_label|default:team_context_selected_code }}</option>
                       </select>
                       <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-team-workspace-context-toggle" aria-expanded="false">
                         Veure gestio del context
@@ -155,7 +138,7 @@
                       <div class="team-workspace-context-head">
                         <div>
                           <div class="team-workspace-eyebrow">Gestio del context</div>
-                          <div class="small text-muted">Canvia, crea o elimina contextos sense sortir del pas 1.</div>
+                          <div class="small text-muted">Canvia, crea o elimina contextos sense sortir del pas 1. Les dades completes es carreguen en obrir el workspace.</div>
                         </div>
                       </div>
                       <div class="d-flex align-items-center flex-wrap mt-2" style="gap:10px;">
@@ -180,19 +163,19 @@
                     <div class="team-context-metrics" id="team-context-metrics">
                       <div class="team-context-metric">
                         <span class="team-context-metric-label">Equips actius</span>
-                        <strong class="team-context-metric-value" id="team-context-metric-teams-with-members">{{ team_context_summary.teams_with_members }}</strong>
+                        <strong class="team-context-metric-value" id="team-context-metric-teams-with-members">-</strong>
                       </div>
                       <div class="team-context-metric">
                         <span class="team-context-metric-label">Amb equip</span>
-                        <strong class="team-context-metric-value" id="team-context-metric-assigned">{{ team_context_summary.assigned_count }}</strong>
+                        <strong class="team-context-metric-value" id="team-context-metric-assigned">-</strong>
                       </div>
                       <div class="team-context-metric">
                         <span class="team-context-metric-label">Sense equip</span>
-                        <strong class="team-context-metric-value" id="team-context-metric-unassigned">{{ team_context_summary.unassigned_count }}</strong>
+                        <strong class="team-context-metric-value" id="team-context-metric-unassigned">-</strong>
                       </div>
                       <div class="team-context-metric">
                         <span class="team-context-metric-label">Total inscripcions</span>
-                        <strong class="team-context-metric-value" id="team-context-metric-total">{{ team_context_summary.total_inscripcions }}</strong>
+                        <strong class="team-context-metric-value" id="team-context-metric-total">-</strong>
                       </div>
                     </div>
                   </div>
@@ -288,9 +271,7 @@
                     </div>
                     <div class="team-manual-banner mt-2">
                       Aquestes accions s'aplicaran al context <strong id="team-manual-context-name">
-                        {% for ctx in team_contexts %}
-                          {% if ctx.code == team_context_selected_code %}{{ ctx.nom }}{% endif %}
-                        {% endfor %}
+                        {{ team_context_selected_label|default:team_context_selected_code }}
                       </strong>.
                       <div class="d-flex flex-wrap mt-2" style="gap:8px;">
                         <select id="team-workspace-existing-select" class="form-control form-control-sm" style="min-width:220px; max-width:320px;">

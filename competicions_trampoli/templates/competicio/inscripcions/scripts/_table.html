@@ -22,17 +22,86 @@
     return true;
   }
 
+  function getTableFragment() {
+    return document.getElementById('inscripcions-table-fragment');
+  }
+
+  function hasLazyGroupTabs() {
+    return getTableFragment()?.getAttribute('data-lazy-group-tabs') === '1';
+  }
+
+  function getLazyGroupOrderPayload() {
+    if (!hasLazyGroupTabs()) return null;
+    const data = API.parseJsonScript?.('inscripcions-lazy-group-order-data');
+    return data && typeof data === 'object' ? data : null;
+  }
+
+  function getActiveGroupKey() {
+    const activeLink = document.querySelector('#tabs-root a.nav-link.active');
+    return String(activeLink?.closest('li.nav-item')?.getAttribute('data-group-key') || '').trim();
+  }
+
+  function isGroupTabLoaded(groupKey) {
+    const li = document.querySelector(`#tabs-root > li.nav-item[data-group-key="${CSS.escape(String(groupKey || ''))}"]`);
+    const paneId = li?.getAttribute('data-pane-id') || '';
+    const pane = paneId ? document.getElementById(paneId) : null;
+    return !!pane && !pane.querySelector('.inscripcions-tab-placeholder');
+  }
+
+  async function ensureGroupTabLoaded(groupKey) {
+    const key = String(groupKey || '').trim();
+    if (!key || !hasLazyGroupTabs() || isGroupTabLoaded(key)) return;
+    await API.refreshHtmlFragments(['table'], {
+      activeGroupKey: key,
+      uiState: { activeTabKey: key },
+    });
+  }
+
+  function ensureActiveGroupTabLoaded() {
+    const key = getActiveGroupKey();
+    if (!key) return;
+    ensureGroupTabLoaded(key).catch((err) => API.showAlert(err.message || err));
+  }
+
+  function idsFromPaneId(paneId) {
+    if (!paneId) return [];
+    const tbody = document.querySelector(`#${CSS.escape(paneId)} tbody.sortable-body`);
+    if (!tbody) return [];
+    return Array
+      .from(tbody.querySelectorAll('tr.inscripcio-row'))
+      .map((row) => String(row.dataset.id || '').trim())
+      .filter(Boolean);
+  }
+
+  function refreshCentralBlockKeepingActiveTab() {
+    const activeGroupKey = getActiveGroupKey();
+    return API.refreshCentralBlock({
+      activeGroupKey,
+      uiState: activeGroupKey ? { activeTabKey: activeGroupKey } : {},
+    });
+  }
+
+  function refreshFragmentsKeepingActiveTab(fragments) {
+    const activeGroupKey = getActiveGroupKey();
+    return API.refreshHtmlFragments(fragments, {
+      activeGroupKey,
+      uiState: activeGroupKey ? { activeTabKey: activeGroupKey } : {},
+    });
+  }
+
   function collectGlobalIds() {
     const ids = [];
     if (API.hasTabs()) {
+      const lazyPayload = getLazyGroupOrderPayload();
+      const idsByKey = lazyPayload?.group_ids_by_key || {};
       Array.from(document.querySelectorAll('#tabs-root > li.nav-item')).forEach((li) => {
         const paneId = li.getAttribute('data-pane-id');
-        if (!paneId) return;
-        const tbody = document.querySelector(`#${paneId} tbody.sortable-body`);
-        if (!tbody) return;
-        Array.from(tbody.querySelectorAll('tr.inscripcio-row')).forEach((row) => {
-          if (row.dataset.id) ids.push(String(row.dataset.id));
-        });
+        const groupKey = String(li.getAttribute('data-group-key') || '').trim();
+        const paneIds = idsFromPaneId(paneId);
+        const sourceIds = paneIds.length
+          ? paneIds
+          : (Array.isArray(idsByKey[groupKey]) ? idsByKey[groupKey].map(String).filter(Boolean) : []);
+        sourceIds.forEach((id) => ids.push(String(id)));
       });
       return ids;
     }
@@ -192,7 +261,7 @@
       target_key: target,
     });
     if (!data?.ok) throw new Error("No s'han pogut fusionar les pestanyes.");
-    API.reloadWithUiState();
+    await refreshCentralBlockKeepingActiveTab();
   }
 
   function inferTargetGroupForRow(row) {
@@ -217,7 +286,7 @@
         handle: '.drag-handle',
         draggable: 'tr.inscripcio-row',
         filter: 'button, a, .hidden-tab, input, select, textarea',
-        preventOnFilter: true,
+        preventOnFilter: false,
         forceFallback: true,
         fallbackOnBody: true,
         onChoose: () => setDragging(true),
@@ -230,10 +299,10 @@
           const originalGroup = String(row?.dataset.group || '').trim() || null;
           try {
             await saveGlobalOrder(movedId, targetGroup, originalGroup);
-            API.reloadWithUiState();
+            await refreshCentralBlockKeepingActiveTab();
           } catch (err) {
             API.showAlert(err.message || err);
-            API.reloadWithUiState();
+            await refreshCentralBlockKeepingActiveTab();
           } finally {
             clearDraggingState();
           }
@@ -269,17 +338,17 @@
               );
             } catch (err) {
               API.showAlert(err.message || err);
-              API.reloadWithUiState();
+              await refreshCentralBlockKeepingActiveTab();
             }
             return;
           }
         }
         try {
           await saveGlobalOrder(null, null, null);
-          API.reloadWithUiState();
+          await refreshCentralBlockKeepingActiveTab();
         } catch (err) {
           API.showAlert(err.message || err);
-          API.reloadWithUiState();
+          await refreshCentralBlockKeepingActiveTab();
         } finally {
           clearDraggingState();
         }
@@ -480,19 +549,20 @@
     });
     if (!data?.ok) throw new Error("No s'ha pogut desar l'ordre de competicio.");
     closeGroupCompetitionModal({ restoreFocus: false });
-    API.reloadWithUiState();
+    await refreshCentralBlockKeepingActiveTab();
   }
 
   function wireTableActions() {
-    document.querySelectorAll('.js-aparells-select').forEach((selectEl) => {
-      selectEl.addEventListener('change', async () => {
-        try {
-          await saveAparells(selectEl);
-        } catch (err) {
-          API.showAlert(err.message || err);
-          API.reloadWithUiState();
-        }
-      });
+    document.addEventListener('change', async (event) => {
+      const selectEl = event.target.closest('.js-aparells-select');
+      if (!selectEl) return;
+      try {
+        await saveAparells(selectEl);
+        await refreshFragmentsKeepingActiveTab(['table', 'history']);
+      } catch (err) {
+        API.showAlert(err.message || err);
+        await refreshFragmentsKeepingActiveTab(['table', 'history']);
+      }
     });
 
     document.addEventListener('click', async (event) => {
@@ -518,7 +588,7 @@
         if (nextName === null) return;
         try {
           await setGroupName(groupNum, nextName.trim());
-          API.reloadWithUiState();
+          await refreshFragmentsKeepingActiveTab(['header', 'history', 'table']);
         } catch (err) {
           API.showAlert(err.message || err);
         }
@@ -583,21 +653,42 @@
     });
   }
 
-  document.addEventListener('DOMContentLoaded', () => {
-    bindDraggingStateCleanup();
+  function hydrateTableFragment() {
     initSortableTabs();
     initSortableRows();
-    wireTableActions();
     applyGroupBands();
     scheduleRefreshGroupHeaderIndicators();
-    document.querySelectorAll('#tabs-root a.nav-link').forEach((link) => {
-      link.addEventListener('click', () => scheduleRefreshGroupHeaderIndicators());
-    });
+    ensureActiveGroupTabLoaded();
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    bindDraggingStateCleanup();
+    wireTableActions();
+    hydrateTableFragment();
     if (window.jQuery) {
-      window.jQuery('a[data-toggle="tab"]').on('shown.bs.tab', function () {
-        API.saveUiState?.();
+      window.jQuery(document).on('shown.bs.tab', 'a[data-toggle="tab"]', function () {
+        const groupKey = String(this.closest('li.nav-item')?.getAttribute('data-group-key') || '').trim();
+        API.saveUiState?.({ activeTabKey: groupKey });
+        ensureGroupTabLoaded(groupKey).catch((err) => API.showAlert(err.message || err));
         scheduleRefreshGroupHeaderIndicators();
       });
+    }
+  });
+
+  document.addEventListener('click', (event) => {
+    if (event.target.closest('#tabs-root a.nav-link')) {
+      const groupKey = String(event.target.closest('li.nav-item')?.getAttribute('data-group-key') || '').trim();
+      if (groupKey) {
+        API.saveUiState?.({ activeTabKey: groupKey });
+      }
+      scheduleRefreshGroupHeaderIndicators();
+    }
+  });
+
+  document.addEventListener('inscripcions:fragments-refreshed', (event) => {
+    const fragments = Array.isArray(event?.detail?.fragments) ? event.detail.fragments : [];
+    if (fragments.includes('table')) {
+      hydrateTableFragment();
     }
   });
 

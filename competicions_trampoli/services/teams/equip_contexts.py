@@ -209,27 +209,23 @@ def get_equips_for_context(competicio, context_code):
 def get_team_members_payload_for_context(competicio, context_code):
     ctx = get_equip_context(competicio, context_code)
     grouped = OrderedDict()
-    base_assignment_map = get_contextual_assignment_map(competicio, Inscripcio.objects.filter(competicio=competicio).values_list("id", flat=True), NATIVE_EQUIP_CONTEXT_CODE)
+    member_ids = set()
 
     def _append_member(team_id, inscripcio):
         if not team_id or inscripcio is None:
             return
         members = grouped.setdefault(int(team_id), [])
-        base_team = resolve_inscripcio_equip(
-            inscripcio,
-            context_code=NATIVE_EQUIP_CONTEXT_CODE,
-            fallback=None,
-            assignment_map=base_assignment_map,
-        )
+        member_id = int(getattr(inscripcio, "id", 0) or 0)
+        if member_id > 0:
+            member_ids.add(member_id)
         members.append(
             {
-                "id": int(getattr(inscripcio, "id", 0) or 0),
+                "id": member_id,
                 "nom": str(getattr(inscripcio, "nom_i_cognoms", "") or "").strip(),
                 "document": str(getattr(inscripcio, "document", "") or "").strip(),
                 "entitat": str(getattr(inscripcio, "entitat", "") or "").strip(),
                 "categoria": str(getattr(inscripcio, "categoria", "") or "").strip(),
                 "subcategoria": str(getattr(inscripcio, "subcategoria", "") or "").strip(),
-                "native_team_name": str(getattr(base_team, "nom", "") or "").strip(),
             }
         )
 
@@ -255,6 +251,17 @@ def get_team_members_payload_for_context(competicio, context_code):
     )
     for row in rows:
         _append_member(getattr(row, "equip_id", None), getattr(row, "inscripcio", None))
+
+    base_assignment_map = get_contextual_assignment_map(competicio, member_ids, NATIVE_EQUIP_CONTEXT_CODE)
+    if not base_assignment_map:
+        return grouped
+
+    for members in grouped.values():
+        for member in members:
+            member_id = int(member.get("id") or 0)
+            base_row = base_assignment_map.get(member_id)
+            base_team = getattr(base_row, "equip", None) if base_row is not None else None
+            member["native_team_name"] = str(getattr(base_team, "nom", "") or "").strip()
     return grouped
 
 

@@ -1,9 +1,16 @@
 {% load competicio_extras %}
 
+<div
+  id="inscripcions-table-fragment"
+  data-lazy-group-tabs="{% if lazy_group_tabs_enabled %}1{% else %}0{% endif %}">
+{% if lazy_group_tabs_enabled %}
+  {{ lazy_group_order_payload|json_script:"inscripcions-lazy-group-order-data" }}
+{% endif %}
 <div class="inscripcions-table-stage">
   {% if selected_group_fields and records_grouped %}
     <ul class="nav nav-tabs mt-3" role="tablist" id="tabs-root">
       {% for group_label, group_records, group_key in records_grouped %}
+        {% with tab_count=group_counts_by_key|get_item:group_key %}
         <li
           class="nav-item"
           role="presentation"
@@ -11,146 +18,153 @@
           data-group-key="{{ group_key }}"
           data-group-label="{{ group_label|escape }}">
           <a
-            class="nav-link {% if forloop.first %}active{% endif %}"
+            class="nav-link {% if group_key == active_group_key %}active{% endif %}"
             id="tab-{{ forloop.counter0 }}"
             data-toggle="tab"
             href="#pane-{{ forloop.counter0 }}"
             role="tab"
             aria-controls="pane-{{ forloop.counter0 }}"
-            aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
+            aria-selected="{% if group_key == active_group_key %}true{% else %}false{% endif %}">
             {{ group_label|default:"(Sense valor)" }}
-            <span class="badge badge-light ml-1">{{ group_records|length }}</span>
+            <span class="badge badge-light ml-1">{% if tab_count %}{{ tab_count }}{% else %}{{ group_records|length }}{% endif %}</span>
           </a>
         </li>
+        {% endwith %}
       {% endfor %}
     </ul>
 
     <div class="tab-content pt-3" id="tabs-content">
       {% for group_label, group_records, group_key in records_grouped %}
         <div
-          class="tab-pane fade {% if forloop.first %}show active{% endif %}"
+          class="tab-pane fade {% if group_key == active_group_key %}show active{% endif %}"
           id="pane-{{ forloop.counter0 }}"
           role="tabpanel"
           aria-labelledby="tab-{{ forloop.counter0 }}">
 
-          <div class="table-responsive">
-            <table class="table table-striped table-bordered table-sm align-middle">
-              <thead class="table-light">
-                <tr>
-                  <th class="control-col">
-                    <input type="checkbox" id="select-all-visible">
-                  </th>
-                  {% for col in selected_table_columns %}
-                    <th>
-                      <div class="th-col-head">
-                        <div class="th-col-label-wrap">
-                          <span>{{ col.ui_label|default:col.label }}</span>
-                          {% if custom_sort_enabled_by_code|get_item:col.code %}
-                            <span class="custom-sort-badge">Custom</span>
-                          {% endif %}
-                          {% with col_filter=column_filter_indicator_by_code|get_item:col.code %}
-                            {% if col_filter %}
-                              <span class="col-filter-indicator" title="{{ col_filter.title }}">
-                                F {{ col_filter.count }}
-                              </span>
-                            {% endif %}
-                          {% endwith %}
-                          {% with col_ind=column_sort_indicator_by_code|get_item:col.code %}
-                            {% if col_ind %}
-                              <span class="col-sort-indicator" title="{{ col_ind.title }}">
-                                #{{ col_ind.priority }} {{ col_ind.symbol }} {{ col_ind.scope_short }}
-                                <button
-                                  type="button"
-                                  class="col-sort-remove js-col-sort-remove"
-                                  data-sort-priority="{{ col_ind.remove_priority }}"
-                                  title="Eliminar aquest criteri d'ordenacio"
-                                  aria-label="Eliminar criteri d'ordenacio">
-                                  x
-                                </button>
-                              </span>
-                            {% endif %}
-                          {% endwith %}
-                        </div>
-                        {% if col.code in column_menu_codes %}
-                          <div class="col-sort-pop">
-                            <button
-                              type="button"
-                              class="btn btn-link btn-sm p-0 js-col-sort-toggle"
-                              data-col-sort-toggle
-                              title="Opcions de columna">
-                              &#8942;
-                            </button>
-                            <div class="col-sort-menu d-none" data-col-sort-menu data-col-code="{{ col.code }}">
-                              <div class="small fw-semibold mb-2 js-col-sort-title">{{ col.ui_label|default:col.label }}</div>
-                              {% if col.code in sortable_table_column_codes %}
-                                <div class="js-col-sort-block">
-                                  <label class="small text-muted mb-1 d-block">Mode</label>
-                                  <select class="form-control form-control-sm js-col-sort-dir mb-2">
-                                    <option value="asc">Asc</option>
-                                    <option value="desc">Desc</option>
-                                    <option value="arrow_asc">Fletxa (asc)</option>
-                                    <option value="arrow_desc">Fletxa (desc)</option>
-                                    <option value="custom">Custom</option>
-                                  </select>
-
-                                  <label class="small text-muted mb-1 d-block">Ambit</label>
-                                  <select class="form-control form-control-sm js-col-sort-scope">
-                                    <option value="all">Totes les inscripcions filtrades</option>
-                                    <option value="tab">Dins de cada pestanya activa</option>
-                                    <option value="all_groups">Dins de cada grup</option>
-                                    <option value="group">Nomes un grup numeric concret</option>
-                                  </select>
-                                  <div class="small text-muted mt-2 js-col-sort-scope-help">
-                                    Pot canviar l'ordre de les pestanyes actives, incloent membres fora del filtre actual.
-                                  </div>
-
-                                  <div class="mt-2 d-none js-col-sort-group-wrap">
-                                    <label class="small text-muted mb-1 d-block">Grup numeric</label>
-                                    <select class="form-control form-control-sm js-col-sort-group"></select>
-                                  </div>
-
-                                  <div class="mt-2">
-                                    <button type="button" class="btn btn-sm btn-outline-secondary w-100 js-col-sort-custom">Ordre custom</button>
-                                    <button type="button" class="btn btn-sm btn-outline-light w-100 mt-1 js-col-sort-custom-clear">Reset custom</button>
-                                    <div class="custom-sort-list mt-2 d-none js-col-sort-custom-preview"></div>
-                                  </div>
-
-                                  <div class="d-flex justify-content-end mt-2" style="gap:8px;">
-                                    <button type="button" class="btn btn-sm btn-primary js-col-sort-apply">Aplicar</button>
-                                  </div>
-                                </div>
-                              {% endif %}
-                              {% if col.code in filterable_table_column_codes %}
-                                <div class="col-menu-section js-col-filter-block">
-                                  <div class="d-flex justify-content-between align-items-center mb-2" style="gap:8px;">
-                                    <div class="small fw-semibold">Filtrar valors</div>
-                                    <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2 js-col-filter-refresh">Carregar</button>
-                                  </div>
-                                  <input
-                                    type="text"
-                                    class="form-control form-control-sm js-col-filter-search"
-                                    placeholder="Cerca dins els valors..."
-                                    disabled>
-                                  <div class="small text-muted mt-2 js-col-filter-status">Carrega els valors de la columna per filtrar.</div>
-                                  <div class="col-filter-options mt-2 d-none js-col-filter-options"></div>
-                                  <div class="small text-muted col-filter-search-empty d-none js-col-filter-search-empty">No hi ha valors que coincideixin amb la cerca.</div>
-                                  <div class="d-flex justify-content-end mt-2" style="gap:8px;">
-                                    <button type="button" class="btn btn-sm btn-outline-light js-col-filter-clear">Netejar filtre</button>
-                                    <button type="button" class="btn btn-sm btn-success js-col-filter-apply">Aplicar filtre</button>
-                                  </div>
-                                </div>
-                              {% endif %}
-                            </div>
-                          </div>
-                        {% endif %}
-                      </div>
+          {% if group_key == active_group_key %}
+            <div class="table-responsive">
+              <table class="table table-striped table-bordered table-sm align-middle">
+                <thead class="table-light">
+                  <tr>
+                    <th class="control-col">
+                      <input type="checkbox" id="select-all-visible">
                     </th>
-                  {% endfor %}
-                </tr>
-              </thead>
-              {% include "competicio/inscripcions/_table_rows.html" with rows=group_records pane_id=forloop.counter0 %}
-            </table>
-          </div>
+                    {% for col in selected_table_columns %}
+                      <th>
+                        <div class="th-col-head">
+                          <div class="th-col-label-wrap">
+                            <span>{{ col.ui_label|default:col.label }}</span>
+                            {% if custom_sort_enabled_by_code|get_item:col.code %}
+                              <span class="custom-sort-badge">Custom</span>
+                            {% endif %}
+                            {% with col_filter=column_filter_indicator_by_code|get_item:col.code %}
+                              {% if col_filter %}
+                                <span class="col-filter-indicator" title="{{ col_filter.title }}">
+                                  F {{ col_filter.count }}
+                                </span>
+                              {% endif %}
+                            {% endwith %}
+                            {% with col_ind=column_sort_indicator_by_code|get_item:col.code %}
+                              {% if col_ind %}
+                                <span class="col-sort-indicator" title="{{ col_ind.title }}">
+                                  #{{ col_ind.priority }} {{ col_ind.symbol }} {{ col_ind.scope_short }}
+                                  <button
+                                    type="button"
+                                    class="col-sort-remove js-col-sort-remove"
+                                    data-sort-priority="{{ col_ind.remove_priority }}"
+                                    title="Eliminar aquest criteri d'ordenacio"
+                                    aria-label="Eliminar criteri d'ordenacio">
+                                    x
+                                  </button>
+                                </span>
+                              {% endif %}
+                            {% endwith %}
+                          </div>
+                          {% if col.code in column_menu_codes %}
+                            <div class="col-sort-pop">
+                              <button
+                                type="button"
+                                class="btn btn-link btn-sm p-0 js-col-sort-toggle"
+                                data-col-sort-toggle
+                                title="Opcions de columna">
+                                &#8942;
+                              </button>
+                              <div class="col-sort-menu d-none" data-col-sort-menu data-col-code="{{ col.code }}">
+                                <div class="small fw-semibold mb-2 js-col-sort-title">{{ col.ui_label|default:col.label }}</div>
+                                {% if col.code in sortable_table_column_codes %}
+                                  <div class="js-col-sort-block">
+                                    <label class="small text-muted mb-1 d-block">Mode</label>
+                                    <select class="form-control form-control-sm js-col-sort-dir mb-2">
+                                      <option value="asc">Asc</option>
+                                      <option value="desc">Desc</option>
+                                      <option value="arrow_asc">Fletxa (asc)</option>
+                                      <option value="arrow_desc">Fletxa (desc)</option>
+                                      <option value="custom">Custom</option>
+                                    </select>
+
+                                    <label class="small text-muted mb-1 d-block">Ambit</label>
+                                    <select class="form-control form-control-sm js-col-sort-scope">
+                                      <option value="all">Totes les inscripcions filtrades</option>
+                                      <option value="tab">Dins de cada pestanya activa</option>
+                                      <option value="all_groups">Dins de cada grup</option>
+                                      <option value="group">Nomes un grup numeric concret</option>
+                                    </select>
+                                    <div class="small text-muted mt-2 js-col-sort-scope-help">
+                                      Pot canviar l'ordre de les pestanyes actives, incloent membres fora del filtre actual.
+                                    </div>
+
+                                    <div class="mt-2 d-none js-col-sort-group-wrap">
+                                      <label class="small text-muted mb-1 d-block">Grup numeric</label>
+                                      <select class="form-control form-control-sm js-col-sort-group"></select>
+                                    </div>
+
+                                    <div class="mt-2">
+                                      <button type="button" class="btn btn-sm btn-outline-secondary w-100 js-col-sort-custom">Ordre custom</button>
+                                      <button type="button" class="btn btn-sm btn-outline-light w-100 mt-1 js-col-sort-custom-clear">Reset custom</button>
+                                      <div class="custom-sort-list mt-2 d-none js-col-sort-custom-preview"></div>
+                                    </div>
+
+                                    <div class="d-flex justify-content-end mt-2" style="gap:8px;">
+                                      <button type="button" class="btn btn-sm btn-primary js-col-sort-apply">Aplicar</button>
+                                    </div>
+                                  </div>
+                                {% endif %}
+                                {% if col.code in filterable_table_column_codes %}
+                                  <div class="col-menu-section js-col-filter-block">
+                                    <div class="d-flex justify-content-between align-items-center mb-2" style="gap:8px;">
+                                      <div class="small fw-semibold">Filtrar valors</div>
+                                      <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2 js-col-filter-refresh">Carregar</button>
+                                    </div>
+                                    <input
+                                      type="text"
+                                      class="form-control form-control-sm js-col-filter-search"
+                                      placeholder="Cerca dins els valors..."
+                                      disabled>
+                                    <div class="small text-muted mt-2 js-col-filter-status">Carrega els valors de la columna per filtrar.</div>
+                                    <div class="col-filter-options mt-2 d-none js-col-filter-options"></div>
+                                    <div class="small text-muted col-filter-search-empty d-none js-col-filter-search-empty">No hi ha valors que coincideixin amb la cerca.</div>
+                                    <div class="d-flex justify-content-end mt-2" style="gap:8px;">
+                                      <button type="button" class="btn btn-sm btn-outline-light js-col-filter-clear">Netejar filtre</button>
+                                      <button type="button" class="btn btn-sm btn-success js-col-filter-apply">Aplicar filtre</button>
+                                    </div>
+                                  </div>
+                                {% endif %}
+                              </div>
+                            </div>
+                          {% endif %}
+                        </div>
+                      </th>
+                    {% endfor %}
+                  </tr>
+                </thead>
+                {% include "competicio/inscripcions/_table_rows.html" with rows=group_records pane_id=forloop.counter0 %}
+              </table>
+            </div>
+          {% else %}
+            <div class="table-responsive inscripcions-tab-placeholder" data-group-key="{{ group_key }}">
+              <div class="small text-muted py-3">Carregant pestanya...</div>
+            </div>
+          {% endif %}
         </div>
       {% endfor %}
     </div>
@@ -274,4 +288,5 @@
       </table>
     </div>
   {% endif %}
+</div>
 </div>

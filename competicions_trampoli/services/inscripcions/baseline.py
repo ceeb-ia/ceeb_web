@@ -33,6 +33,7 @@ from ...models import (
 )
 from ..shared.competition_groups import ensure_group_for_display_num
 from ..teams.equip_contexts import NATIVE_EQUIP_CONTEXT_CODE, ensure_base_equip_context
+from .timing import INSCRIPCIONS_TIMINGS_HEADER
 
 
 DEFAULT_BENCHMARK_SEED = 20260410
@@ -514,6 +515,7 @@ def measure_client_request(client: Client, request_spec: dict[str, Any]) -> dict
     request_kwargs = {
         "HTTP_HOST": "localhost",
         "HTTP_X_REQUESTED_WITH": "XMLHttpRequest",
+        "HTTP_X_INSCRIPCIONS_TIMINGS": "1",
         **headers,
     }
 
@@ -536,6 +538,14 @@ def measure_client_request(client: Client, request_spec: dict[str, Any]) -> dict
     except Exception:
         response_bytes = 0
 
+    timings = None
+    timings_raw = getattr(getattr(response, "headers", {}), "get", lambda *_args, **_kwargs: "")(INSCRIPCIONS_TIMINGS_HEADER, "")
+    if timings_raw:
+        try:
+            timings = json.loads(timings_raw)
+        except Exception:
+            timings = {"raw": str(timings_raw)}
+
     sql_time_ms = 0.0
     for row in captured.captured_queries:
         try:
@@ -549,6 +559,7 @@ def measure_client_request(client: Client, request_spec: dict[str, Any]) -> dict
         "response_bytes": int(response_bytes),
         "status_code": int(getattr(response, "status_code", 0) or 0),
         "url": str(url),
+        "timings": timings,
     }
 
 

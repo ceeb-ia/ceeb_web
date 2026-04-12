@@ -246,9 +246,8 @@
   const API = window.InscripcionsApp;
   if (!API) return;
 
-  document.addEventListener('inscripcions:panel-activated', (event) => {
-    const panelKey = String(event?.detail?.panelKey || '').trim();
-    if (panelKey !== 'grups') return;
+  function hydrateGroupsPanel() {
+    if (!document.getElementById('panel-grups') || !document.getElementById('groups-workspace-shell')) return;
     API.runOnceForPanel('grups', async () => {
       if (typeof window.initGroupsWorkspace === 'function') {
         await window.initGroupsWorkspace();
@@ -260,6 +259,18 @@
     }).catch((error) => {
       API.showAlert(error?.message || error);
     });
+  }
+
+  document.addEventListener('inscripcions:panel-activated', (event) => {
+    const panelKey = String(event?.detail?.panelKey || '').trim();
+    if (panelKey !== 'grups') return;
+    hydrateGroupsPanel();
+  });
+
+  document.addEventListener('inscripcions:panel-loaded', (event) => {
+    const panelKey = String(event?.detail?.panelKey || '').trim();
+    if (panelKey !== 'grups') return;
+    hydrateGroupsPanel();
   });
 })();
 </script>

@@ -64,6 +64,7 @@ from ...services.inscripcions.sorting import (
     shuffle_ordre_sortida,
     sort_records_by_field_stable,
 )
+from ...services.inscripcions.timing import get_inscripcions_timing_collector
 
 def _norm_val(value):
     return "__NULL__" if value in (None, "") else str(value)
@@ -202,10 +203,20 @@ class InscripcionsListView(ListView):
     template_name = "legacy/inscripcions_list.html"
     context_object_name = "records"
     paginate_by = 25
+    enable_lazy_group_tabs = False
 
     def dispatch(self, request, *args, **kwargs):
         self.competicio = get_object_or_404(Competicio, pk=kwargs["pk"])
         return super().dispatch(request, *args, **kwargs)
+
+    def render_to_response(self, context, **response_kwargs):
+        response = super().render_to_response(context, **response_kwargs)
+        timing = get_inscripcions_timing_collector(self.request)
+        if timing.enabled:
+            with timing.section("render.template"):
+                response = response.render()
+            timing.apply_to_response(response)
+        return response
 
     def get_queryset(self):
         return self.get_queryset_base_filtrada().order_by("ordre_sortida", "id")
@@ -769,11 +780,12 @@ class InscripcionsListView(ListView):
         selected = [group for group in selected if group in allowed_codes]
         ctx["selected_group_fields"] = selected
 
-        records_qs = self.get_queryset_base_filtrada()
-        if selected:
-            records_qs = annotate_inscripcions_queryset_for_group_codes(records_qs, self.competicio, selected)
-        records = list(records_qs.order_by("ordre_sortida", "id"))
-        _attach_base_equip_runtime(records)
+        timing = get_inscripcions_timing_collector(self.request)
+        with timing.section("base.records_queryset"):
+            records_qs = self.get_queryset_base_filtrada()
+            if selected:
+                records_qs = annotate_inscripcions_queryset_for_group_codes(records_qs, self.competicio, selected)
+        records = None
         grouping_sig = "|".join(selected) if selected else ""
         ctx["grouping_sig"] = grouping_sig
 
@@ -781,71 +793,118 @@ class InscripcionsListView(ListView):
             return "(Sense valor)" if value in (None, "") else str(value)
 
         if selected:
-            grouped = OrderedDict()
-            label_map = {}
-            for record in records:
-                values = [_norm_val(get_inscripcio_value(record, code)) for code in selected]
-                key = json.dumps(values, ensure_ascii=False)
-                grouped.setdefault(key, []).append(record)
-                if key not in label_map:
-                    parts = [pretty_val(get_inscripcio_value(record, code)) for code in selected]
-                    label_map[key] = " · ".join(parts)
+            with timing.section("base.records_materialization"):
+                records = list(records_qs.order_by("ordre_sortida", "id"))
+            with timing.section("base.records_runtime"):
+                _attach_base_equip_runtime(records)
+            with timing.section("base.grouping_merge"):
+                grouped = OrderedDict()
+                label_map = {}
+                for record in records:
+                    values = [_norm_val(get_inscripcio_value(record, code)) for code in selected]
+                    key = json.dumps(values, ensure_ascii=False)
+                    grouped.setdefault(key, []).append(record)
+                    if key not in label_map:
+                        parts = [pretty_val(get_inscripcio_value(record, code)) for code in selected]
+                        label_map[key] = " · ".join(parts)
 
-            merges = (self.competicio.tab_merges or {}).get(grouping_sig, [])
-            merge_map = {}
-            for group_keys in merges:
-                if not group_keys:
-                    continue
-                group_tuple = tuple(group_keys)
-                for group_key in group_keys:
-                    merge_map[group_key] = group_tuple
+                merges = (self.competicio.tab_merges or {}).get(grouping_sig, [])
+                merge_map = {}
+                for group_keys in merges:
+                    if not group_keys:
+                        continue
+                    group_tuple = tuple(group_keys)
+                    for group_key in group_keys:
+                        merge_map[group_key] = group_tuple
 
-            grouped_merged = OrderedDict()
-            label_map_merged = {}
-            for key, rows in grouped.items():
-                merged_tuple = merge_map.get(key)
-                if merged_tuple:
-                    tab_key = json.dumps(list(merged_tuple), ensure_ascii=False)
-                    grouped_merged.setdefault(tab_key, []).extend(rows)
-                    if tab_key not in label_map_merged:
-                        parts = []
-                        for simple_key in merged_tuple:
-                            label = label_map.get(simple_key, simple_key)
-                            if label not in parts:
-                                parts.append(label)
-                        label_map_merged[tab_key] = " + ".join(parts)
-                else:
-                    grouped_merged.setdefault(key, []).extend(rows)
-                    label_map_merged.setdefault(key, label_map.get(key, key))
+                grouped_merged = OrderedDict()
+                label_map_merged = {}
+                for key, rows in grouped.items():
+                    merged_tuple = merge_map.get(key)
+                    if merged_tuple:
+                        tab_key = json.dumps(list(merged_tuple), ensure_ascii=False)
+                        grouped_merged.setdefault(tab_key, []).extend(rows)
+                        if tab_key not in label_map_merged:
+                            parts = []
+                            for simple_key in merged_tuple:
+                                label = label_map.get(simple_key, simple_key)
+                                if label not in parts:
+                                    parts.append(label)
+                            label_map_merged[tab_key] = " + ".join(parts)
+                    else:
+                        grouped_merged.setdefault(key, []).extend(rows)
+                        label_map_merged.setdefault(key, label_map.get(key, key))
 
-            records_grouped = [(label_map_merged.get(key, key), rows, key) for key, rows in grouped_merged.items()]
-            ctx["tabs"] = [
-                {"key": group_key, "label": group_label, "count": len(group_records)}
-                for (group_label, group_records, group_key) in records_grouped
-            ]
-            ctx["records_grouped"] = records_grouped
+                full_records_grouped = [(label_map_merged.get(key, key), rows, key) for key, rows in grouped_merged.items()]
+                active_group_key = str(self.request.GET.get("__active_group_key") or "").strip()
+                group_keys = [group_key for _group_label, _group_records, group_key in full_records_grouped]
+                if active_group_key not in group_keys:
+                    active_group_key = group_keys[0] if group_keys else ""
+                lazy_group_tabs_enabled = bool(full_records_grouped) and bool(getattr(self, "enable_lazy_group_tabs", False))
+                group_counts_by_key = {
+                    group_key: len(group_records)
+                    for _group_label, group_records, group_key in full_records_grouped
+                }
+                lazy_group_order_payload = {
+                    "tab_order": list(group_keys),
+                    "group_ids_by_key": {
+                        group_key: [
+                            int(record.id)
+                            for record in group_records
+                            if getattr(record, "id", None) is not None
+                        ]
+                        for _group_label, group_records, group_key in full_records_grouped
+                    },
+                }
+                records_grouped = [
+                    (group_label, group_records if (not lazy_group_tabs_enabled or group_key == active_group_key) else [], group_key)
+                    for group_label, group_records, group_key in full_records_grouped
+                ]
+                ctx["tabs"] = [
+                    {"key": group_key, "label": group_label, "count": group_counts_by_key.get(group_key, 0)}
+                    for (group_label, _group_records, group_key) in full_records_grouped
+                ]
+                ctx["active_group_key"] = active_group_key
+                ctx["group_counts_by_key"] = group_counts_by_key
+                ctx["lazy_group_tabs_enabled"] = lazy_group_tabs_enabled
+                ctx["lazy_group_order_payload"] = lazy_group_order_payload if lazy_group_tabs_enabled else {}
+                ctx["records_grouped"] = records_grouped
+                ctx["records"] = records
         else:
             ctx["records_grouped"] = None
+            ctx["active_group_key"] = ""
+            ctx["group_counts_by_key"] = {}
+            ctx["lazy_group_tabs_enabled"] = False
+            ctx["lazy_group_order_payload"] = {}
+            ctx_records = ctx.get("records")
+            with timing.section("base.records_materialization"):
+                if ctx_records is None:
+                    records = list(records_qs.order_by("ordre_sortida", "id"))
+                else:
+                    records = list(ctx_records)
+            with timing.section("base.records_runtime"):
+                _attach_base_equip_runtime(records)
+            ctx["records"] = records
+        ctx["_inscripcions_materialized_records"] = records or []
 
-        ctx_records = ctx.get("records")
-        if ctx_records is not None:
-            _attach_base_equip_runtime(list(ctx_records))
+        with timing.section("base.excel_columns"):
+            excel_cols = get_available_excel_columns(self.competicio)
+            excel_codes = {column["code"] for column in excel_cols}
+            ctx["allowed_excel_columns"] = [(column["code"], column.get("ui_label") or column["label"]) for column in excel_cols]
+            selected_excel_cols = []
+            for raw in self.request.GET.getlist("excel_cols"):
+                code = LEGACY_EXCEL_COL_MAP.get(raw, raw)
+                if code in excel_codes and code not in selected_excel_cols:
+                    selected_excel_cols.append(code)
+            if not selected_excel_cols:
+                selected_excel_cols = [column["code"] for column in excel_cols]
+            ctx["excel_cols_selected"] = selected_excel_cols
 
-        excel_cols = get_available_excel_columns(self.competicio)
-        excel_codes = {column["code"] for column in excel_cols}
-        ctx["allowed_excel_columns"] = [(column["code"], column.get("ui_label") or column["label"]) for column in excel_cols]
-        selected_excel_cols = []
-        for raw in self.request.GET.getlist("excel_cols"):
-            code = LEGACY_EXCEL_COL_MAP.get(raw, raw)
-            if code in excel_codes and code not in selected_excel_cols:
-                selected_excel_cols.append(code)
-        if not selected_excel_cols:
-            selected_excel_cols = [column["code"] for column in excel_cols]
-        ctx["excel_cols_selected"] = selected_excel_cols
-        base = self.get_queryset_base_filtrada()
-        ctx["categories_distinct"] = list(base.order_by().values_list("categoria", flat=True).distinct())
-        ctx["cats_selected"] = self.request.GET.getlist("cats")
-        ctx["history_state"] = get_inscripcions_history_state(self.request, self.competicio.id)
+        with timing.section("base.categories_history"):
+            base = self.get_queryset_base_filtrada()
+            ctx["categories_distinct"] = list(base.order_by().values_list("categoria", flat=True).distinct())
+            ctx["cats_selected"] = self.request.GET.getlist("cats")
+            ctx["history_state"] = get_inscripcions_history_state(self.request, self.competicio.id)
         return ctx
 
 

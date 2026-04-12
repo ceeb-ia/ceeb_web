@@ -101,9 +101,19 @@ class Command(BaseCommand):
                     )
                     raw_results.append(measured)
                     phase = "warmup" if is_warmup else "measured"
+                    timings = measured.get("timings") or {}
+                    timing_suffix = ""
+                    sections = timings.get("sections") if isinstance(timings, dict) else None
+                    if sections:
+                        compact = ", ".join(
+                            f"{str(section.get('name') or '').strip()}={float(section.get('elapsed_ms') or 0.0):.3f}ms"
+                            for section in sections[:5]
+                            if isinstance(section, dict)
+                        )
+                        timing_suffix = f" timings=[{compact}]"
                     self.stdout.write(
                         f"[{dataset}:{scenario}] run={run_index + 1}/{total_runs} phase={phase} "
-                        f"status={measured['status_code']} elapsed_ms={measured['elapsed_ms']}"
+                        f"status={measured['status_code']} elapsed_ms={measured['elapsed_ms']}{timing_suffix}"
                     )
 
         summary_rows = aggregate_benchmark_results(raw_results)

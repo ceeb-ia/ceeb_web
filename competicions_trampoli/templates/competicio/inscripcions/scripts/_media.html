@@ -7,7 +7,6 @@
 
   let mediaFolderSelection = [];
   let mediaPreviewRows = [];
-  let mediaMatchInscripcionsOptions = [];
 
   function buildMediaFolderSelection() {
     const input = document.getElementById('media-folder-input');
@@ -78,12 +77,10 @@
       empty.textContent = '-- Sense assignar --';
       select.appendChild(empty);
 
-      const optionPool = Array.isArray(row.top_candidates) && row.top_candidates.length
-        ? row.top_candidates.map((candidate) => ({
-            id: candidate.inscripcio_id,
-            label: `${candidate.label || candidate.inscripcio_id} (${Number(candidate.score || 0).toFixed(3)})`,
-          }))
-        : mediaMatchInscripcionsOptions;
+      const optionPool = Array.isArray(row.top_candidates) ? row.top_candidates.map((candidate) => ({
+        id: candidate.inscripcio_id,
+        label: `${candidate.label || candidate.inscripcio_id} (${Number(candidate.score || 0).toFixed(3)})`,
+      })) : [];
       optionPool.forEach((candidate) => {
         const opt = document.createElement('option');
         opt.value = String(candidate.id || candidate.inscripcio_id || '');
@@ -129,9 +126,6 @@
     });
     if (!data?.ok) throw new Error("No s'ha pogut previsualitzar el match.");
     mediaPreviewRows = Array.isArray(data.rows) ? data.rows : [];
-    if (Array.isArray(data.inscripcions_options)) {
-      mediaMatchInscripcionsOptions = data.inscripcions_options.slice();
-    }
     renderMediaMatchRows(mediaPreviewRows, data.counts || {});
   }
 
@@ -174,7 +168,11 @@
     }
     const data = await response.json();
     if (!data?.ok) throw new Error("No s'han pogut aplicar les assignacions.");
-    API.reloadWithUiState();
+    await API.refreshLightMutation({
+      includeToolbar: false,
+      includeActivePanel: API.getActiveActionsPanelKey() === 'media',
+      panelKey: 'media',
+    });
   }
 
   async function uploadMedia(inscripcioId, file) {
@@ -205,38 +203,38 @@
   }
 
   function wireMediaActions() {
-    const folderInput = document.getElementById('media-folder-input');
-    if (folderInput) {
-      folderInput.addEventListener('change', () => {
-        const entries = buildMediaFolderSelection();
-        mediaPreviewRows = [];
-        renderMediaMatchRows([], {});
-        if (!entries.length) {
-          renderMediaMatchSummary('Cap fitxer carregat.');
-          return;
-        }
-        const autoMin = Number(API.app.initial.mediaMatchingConfig?.thresholds?.auto_score_min || 0).toFixed(2);
-        renderMediaMatchSummary(`${entries.length} fitxers preparats per al match (AUTO >= ${autoMin}).`);
-      });
-    }
-
-    document.getElementById('btn-media-match-preview')?.addEventListener('click', async () => {
-      try {
-        await previewMediaFolderMatch();
-      } catch (err) {
-        API.showAlert(err.message || err);
+    document.addEventListener('change', (event) => {
+      if (!event.target.closest('#media-folder-input')) return;
+      const entries = buildMediaFolderSelection();
+      mediaPreviewRows = [];
+      renderMediaMatchRows([], {});
+      if (!entries.length) {
+        renderMediaMatchSummary('Cap fitxer carregat.');
+        return;
       }
-    });
-
-    document.getElementById('btn-media-match-apply')?.addEventListener('click', async () => {
-      try {
-        await applyMediaFolderMatch();
-      } catch (err) {
-        API.showAlert(err.message || err);
-      }
+      const autoMin = Number(API.app.initial.mediaMatchingConfig?.thresholds?.auto_score_min ?? 0.85).toFixed(2);
+      renderMediaMatchSummary(`${entries.length} fitxers preparats per al match (AUTO >= ${autoMin}).`);
     });
 
     document.addEventListener('click', async (e) => {
+      if (e.target.closest('#btn-media-match-preview')) {
+        try {
+          await previewMediaFolderMatch();
+        } catch (err) {
+          API.showAlert(err.message || err);
+        }
+        return;
+      }
+
+      if (e.target.closest('#btn-media-match-apply')) {
+        try {
+          await applyMediaFolderMatch();
+        } catch (err) {
+          API.showAlert(err.message || err);
+        }
+        return;
+      }
+
       const uploadBtn = e.target.closest('.js-media-upload-btn');
       if (uploadBtn) {
         const insId = parseInt(uploadBtn.dataset.insId || '0', 10);
@@ -249,7 +247,11 @@
         try {
           const data = await uploadMedia(insId, file);
           if (!data?.ok) throw new Error("No s'ha pogut pujar el fitxer.");
-          API.reloadWithUiState();
+          await API.refreshLightMutation({
+            includeToolbar: false,
+            includeActivePanel: API.getActiveActionsPanelKey() === 'media',
+            panelKey: 'media',
+          });
         } catch (err) {
           API.showAlert(err.message || err);
         }
@@ -261,7 +263,11 @@
         try {
           const data = await setPrimary(parseInt(primaryBtn.dataset.mediaId || '0', 10));
           if (!data?.ok) throw new Error("No s'ha pogut marcar com a principal.");
-          API.reloadWithUiState();
+          await API.refreshLightMutation({
+            includeToolbar: false,
+            includeActivePanel: API.getActiveActionsPanelKey() === 'media',
+            panelKey: 'media',
+          });
         } catch (err) {
           API.showAlert(err.message || err);
         }
@@ -275,7 +281,11 @@
         try {
           const data = await removeMedia(parseInt(deleteBtn.dataset.mediaId || '0', 10));
           if (!data?.ok) throw new Error("No s'ha pogut eliminar el fitxer.");
-          API.reloadWithUiState();
+          await API.refreshLightMutation({
+            includeToolbar: false,
+            includeActivePanel: API.getActiveActionsPanelKey() === 'media',
+            panelKey: 'media',
+          });
         } catch (err) {
           API.showAlert(err.message || err);
         }

@@ -1,6 +1,7 @@
 import json
 import mimetypes
 import os
+from contextlib import nullcontext
 from decimal import Decimal
 
 from django.db import transaction
@@ -14,9 +15,11 @@ from ...models import Competicio, Inscripcio, InscripcioMedia
 from ...services.inscripcions.history import with_inscripcions_history_payload
 from ...services.inscripcions.media_matching import (
     build_inscripcio_media_match_candidates,
+    build_inscripcio_media_match_candidate_index,
     match_media_files_to_inscripcions,
     normalize_media_matching_config,
 )
+from ...services.inscripcions.timing import get_inscripcions_timing_collector
 
 
 MEDIA_MAX_SIZE_BYTES = 250 * 1024 * 1024
@@ -39,6 +42,12 @@ MEDIA_ALLOWED_EXTENSIONS = {
 def _get_media_matching_config(competicio):
     view_cfg = competicio.inscripcions_view or {}
     return normalize_media_matching_config(view_cfg.get("media_matching"))
+
+
+def _timing_scope(timing, name):
+    if timing is None:
+        return nullcontext()
+    return timing.section(name)
 
 
 def _load_json_body(request):
@@ -258,40 +267,58 @@ def inscripcions_media_set_primary(request, pk):
 @csrf_protect
 def inscripcions_media_match_preview(request, pk):
     competicio = get_object_or_404(Competicio, pk=pk)
+    timing = get_inscripcions_timing_collector(request)
     try:
         payload = _load_json_body(request)
     except ValueError as exc:
         return HttpResponseBadRequest(str(exc))
 
-    files = payload.get("files") or []
-    if not isinstance(files, list):
-        return HttpResponseBadRequest("files ha de ser una llista")
-    if len(files) > 3000:
-        return HttpResponseBadRequest("Massa fitxers al preview")
+    with _timing_scope(timing, "media.preview_input"):
+        files = payload.get("files") or []
+        if not isinstance(files, list):
+            return HttpResponseBadRequest("files ha de ser una llista")
+        if len(files) > 3000:
+            return HttpResponseBadRequest("Massa fitxers al preview")
 
-    inscripcions = Inscripcio.objects.filter(competicio=competicio).only("id", "nom_i_cognoms", "entitat", "subcategoria", "sexe")
-    candidates = build_inscripcio_media_match_candidates(inscripcions)
-    cfg = _get_media_matching_config(competicio)
-    rows = match_media_files_to_inscripcions(files, candidates, config=cfg, top_k=3)
-    inscripcions_options = [{"id": cand.inscripcio_id, "label": cand.label} for cand in candidates]
+    with _timing_scope(timing, "media.candidates"):
+        with _timing_scope(timing, "media.candidates.query"):
+            inscripcions = Inscripcio.objects.filter(competicio=competicio).only("id", "nom_i_cognoms", "entitat", "subcategoria", "sexe")
+        with _timing_scope(timing, "media.candidates.build"):
+            candidates = build_inscripcio_media_match_candidates(inscripcions)
+        with _timing_scope(timing, "media.candidates.index"):
+            candidate_index = build_inscripcio_media_match_candidate_index(candidates)
+        cfg = _get_media_matching_config(competicio)
 
-    auto_count = len([row for row in rows if row.get("status") == "auto"])
-    review_count = len([row for row in rows if row.get("status") == "review"])
-    unmatched_count = len([row for row in rows if row.get("status") == "unmatched"])
-    return JsonResponse(
-        {
-            "ok": True,
-            "rows": rows,
-            "counts": {
-                "total": len(rows),
-                "auto": auto_count,
-                "review": review_count,
-                "unmatched": unmatched_count,
-            },
-            "config": cfg,
-            "inscripcions_options": inscripcions_options,
-        }
-    )
+    with _timing_scope(timing, "media.matching"):
+        rows = match_media_files_to_inscripcions(
+            files,
+            candidates,
+            config=cfg,
+            top_k=3,
+            candidate_index=candidate_index,
+        )
+
+    with _timing_scope(timing, "media.serialization"):
+        auto_count = len([row for row in rows if row.get("status") == "auto"])
+        review_count = len([row for row in rows if row.get("status") == "review"])
+        unmatched_count = len([row for row in rows if row.get("status") == "unmatched"])
+        response = JsonResponse(
+            {
+                "ok": True,
+                "rows": rows,
+                "counts": {
+                    "total": len(rows),
+                    "auto": auto_count,
+                    "review": review_count,
+                    "unmatched": unmatched_count,
+                },
+                "config": cfg,
+                # El frontend pinta el selector amb `top_candidates` de cada fila;
+                # no cal enviar un cataleg global complet d'inscripcions.
+            }
+        )
+    timing.apply_to_response(response)
+    return response
 
 
 @require_POST

@@ -16,11 +16,12 @@ __all__ = [
 ]
 
 import json
+from contextlib import nullcontext
 from collections import OrderedDict, defaultdict
 from typing import Optional
 
 from django.db import transaction
-from django.db.models import Count
+from django.db.models import CharField, Count, IntegerField, OuterRef, Subquery
 from django.http import HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils.text import slugify
@@ -35,7 +36,6 @@ from ...services.teams.equip_contexts import (
     build_unique_equip_context_code,
     get_contextual_assignment_map,
     get_equip_context,
-    get_equip_context_summary,
     get_equip_context_payload,
     get_equips_for_context,
     get_team_members_payload_for_context,
@@ -48,6 +48,7 @@ from ...services.inscripcions.history import (
     record_inscripcions_history_entry,
     with_inscripcions_history_payload,
 )
+from ...services.inscripcions.timing import get_inscripcions_timing_collector
 from ...services.inscripcions.queries import (
     _build_inscripcions_filtered_qs,
     _normalize_sort_filters,
@@ -91,6 +92,12 @@ def _payload_context_code(payload) -> str:
     if not isinstance(payload, dict):
         return NATIVE_EQUIP_CONTEXT_CODE
     return normalize_equip_context_code(payload.get("context_code"))
+
+
+def _timing_scope(timing, name):
+    if timing is None:
+        return nullcontext()
+    return timing.section(name)
 
 
 def _mark_live_dirty_on_commit(competicio_id):
@@ -418,14 +425,23 @@ def _resolve_workspace_target_records(
 
 
 def _serialize_workspace_candidate(ins, context_code, current_team=None, base_assignment_map=None):
-    native_team = resolve_inscripcio_equip(
-        ins,
-        context_code=NATIVE_EQUIP_CONTEXT_CODE,
-        fallback=None,
-        assignment_map=base_assignment_map,
-    )
     current_team_id = getattr(current_team, "id", None)
-    native_team_id = getattr(native_team, "id", None)
+    current_team_name = str(getattr(current_team, "nom", "") or "").strip()
+    if current_team is None:
+        current_team_id = getattr(ins, "current_team_id", current_team_id)
+        current_team_name = str(getattr(ins, "current_team_name", current_team_name) or "").strip()
+
+    native_team_id = getattr(ins, "native_team_id", None)
+    native_team_name = str(getattr(ins, "native_team_name", "") or "").strip()
+    if native_team_id is None and base_assignment_map is not None:
+        native_team = resolve_inscripcio_equip(
+            ins,
+            context_code=NATIVE_EQUIP_CONTEXT_CODE,
+            fallback=None,
+            assignment_map=base_assignment_map,
+        )
+        native_team_id = getattr(native_team, "id", None)
+        native_team_name = str(getattr(native_team, "nom", "") or "").strip()
     return {
         "id": int(ins.id),
         "nom": str(getattr(ins, "nom_i_cognoms", "") or "").strip(),
@@ -434,37 +450,72 @@ def _serialize_workspace_candidate(ins, context_code, current_team=None, base_as
         "categoria": str(getattr(ins, "categoria", "") or "").strip(),
         "subcategoria": str(getattr(ins, "subcategoria", "") or "").strip(),
         "current_team_id": current_team_id,
-        "current_team_name": str(getattr(current_team, "nom", "") or "").strip(),
+        "current_team_name": current_team_name,
         "native_team_id": native_team_id,
-        "native_team_name": str(getattr(native_team, "nom", "") or "").strip(),
+        "native_team_name": native_team_name,
         "has_team_in_context": bool(current_team_id),
         "show_native_team_hint": not is_native_equip_context(context_code),
     }
 
 
-def _build_workspace_filter_option_source_records(competicio: Competicio, context_code: str, filters=None):
-    option_filters = {
-        **_normalize_workspace_filters(filters),
-        "categoria": "",
-        "subcategoria": "",
-        "entitat": "",
-        "categories": [],
-        "subcategories": [],
-        "entitats": [],
-    }
-    resolved = _resolve_workspace_records(
-        competicio,
-        context_code,
-        filters=option_filters,
-        only_fields=["categoria", "subcategoria", "entitat"],
+def _build_workspace_candidate_queryset(competicio: Competicio, context_code: str, filters=None):
+    clean_filters = _normalize_workspace_filters(filters)
+    ctx = get_equip_context(competicio, context_code)
+    if ctx is None:
+        return None, clean_filters
+
+    current_assignment_qs = (
+        InscripcioEquipAssignacio.objects
+        .filter(competicio=competicio, context=ctx, inscripcio_id=OuterRef("pk"))
+        .order_by()
     )
-    return [row["inscripcio"] for row in resolved["rows"]]
+    native_ctx = get_equip_context(competicio, NATIVE_EQUIP_CONTEXT_CODE)
+    native_assignment_qs = (
+        InscripcioEquipAssignacio.objects
+        .filter(competicio=competicio, context=native_ctx, inscripcio_id=OuterRef("pk"))
+        .order_by()
+    )
+
+    qs = _build_inscripcions_filtered_qs(competicio, clean_filters).annotate(
+        current_team_id=Subquery(current_assignment_qs.values("equip_id")[:1], output_field=IntegerField()),
+        current_team_name=Subquery(current_assignment_qs.values("equip__nom")[:1], output_field=CharField()),
+        native_team_id=Subquery(native_assignment_qs.values("equip_id")[:1], output_field=IntegerField()),
+        native_team_name=Subquery(native_assignment_qs.values("equip__nom")[:1], output_field=CharField()),
+    )
+
+    assignment_state = str(clean_filters.get("assignment_state") or "all").strip().lower()
+    equip_filter_ids = {int(value) for value in (clean_filters.get("equip_ids") or []) if str(value).isdigit()}
+    if assignment_state == "assigned":
+        qs = qs.filter(current_team_id__isnull=False)
+    elif assignment_state == "unassigned":
+        qs = qs.filter(current_team_id__isnull=True)
+    if equip_filter_ids:
+        qs = qs.filter(current_team_id__in=equip_filter_ids)
+    return qs.order_by("ordre_sortida", "id"), clean_filters
 
 
-def _build_workspace_filter_options(records, teams):
-    categories = sorted({str(getattr(ins, "categoria", "") or "").strip() for ins in records if str(getattr(ins, "categoria", "") or "").strip()})
-    subcategories = sorted({str(getattr(ins, "subcategoria", "") or "").strip() for ins in records if str(getattr(ins, "subcategoria", "") or "").strip()})
-    entitats = sorted({str(getattr(ins, "entitat", "") or "").strip() for ins in records if str(getattr(ins, "entitat", "") or "").strip()})
+def _build_workspace_filter_options(candidate_qs, teams):
+    categories = sorted(
+        {
+            str(value).strip()
+            for value in candidate_qs.order_by().values_list("categoria", flat=True).distinct()
+            if str(value or "").strip()
+        }
+    )
+    subcategories = sorted(
+        {
+            str(value).strip()
+            for value in candidate_qs.order_by().values_list("subcategoria", flat=True).distinct()
+            if str(value or "").strip()
+        }
+    )
+    entitats = sorted(
+        {
+            str(value).strip()
+            for value in candidate_qs.order_by().values_list("entitat", flat=True).distinct()
+            if str(value or "").strip()
+        }
+    )
     return {
         "categories": categories,
         "subcategories": subcategories,
@@ -534,62 +585,63 @@ def _filter_partition_records_by_bucket_keys(records, fields, raw_bucket_keys):
     return filtered_records, filtered_grouped, list(filtered_grouped.keys())
 
 
-def _build_workspace_payload(competicio, context_code, filters=None, page=1, page_size=40):
-    resolved = _resolve_workspace_records(competicio, context_code, filters=filters)
-    filters = resolved["filters"]
+def _build_workspace_payload(competicio, context_code, filters=None, page=1, page_size=40, *, request=None):
+    timing = get_inscripcions_timing_collector(request) if request is not None else None
     page = max(1, int(page or 1))
     page_size = max(10, min(200, int(page_size or 40)))
-    records = list(_build_workspace_filter_option_source_records(competicio, context_code, filters))
-    teams = list(get_equips_for_context(competicio, context_code))
-    team_members = get_team_members_payload_for_context(competicio, context_code)
-    base_assignment_map = resolved["base_assignment_map"]
 
-    filtered_candidates = []
-    for row in resolved["rows"]:
-        ins = row["inscripcio"]
-        current_team = row["current_team"]
-        filtered_candidates.append(
-            _serialize_workspace_candidate(
-                ins,
-                context_code,
-                current_team=current_team,
-                base_assignment_map=base_assignment_map,
-            )
-        )
+    with _timing_scope(timing, "equips.resolve_candidate_qs"):
+        candidate_qs, filters = _build_workspace_candidate_queryset(competicio, context_code, filters=filters)
+        if candidate_qs is None:
+            candidate_qs = Inscripcio.objects.none()
 
-    total_filtered = len(filtered_candidates)
-    start = (page - 1) * page_size
-    end = start + page_size
-    page_rows = filtered_candidates[start:end]
-    summary = get_equip_context_summary(competicio, context_code)
+    with _timing_scope(timing, "equips.page_slice"):
+        teams = list(get_equips_for_context(competicio, context_code))
+        team_members = get_team_members_payload_for_context(competicio, context_code)
+        contexts = _serialize_contexts(competicio)
+        total_filtered = candidate_qs.count()
+        start = (page - 1) * page_size
+        end = start + page_size
+        page_rows = list(candidate_qs[start:end])
+        assigned_count = sum(int(getattr(equip, "membres_count", 0) or 0) for equip in teams)
+        total_inscripcions = int(Inscripcio.objects.filter(competicio=competicio).count() or 0)
+        summary = {
+            "context_code": normalize_equip_context_code(context_code),
+            "teams_total": len(teams),
+            "teams_with_members": sum(1 for equip in teams if int(getattr(equip, "membres_count", 0) or 0) > 0),
+            "assigned_count": assigned_count,
+            "unassigned_count": max(0, total_inscripcions - assigned_count),
+            "total_inscripcions": total_inscripcions,
+        }
 
-    return {
-        "ok": True,
-        "context_code": context_code,
-        "context": next((item for item in get_equip_context_payload(competicio) if item["code"] == context_code), {
-            "code": context_code,
-            "nom": "Context",
-            "description": "",
-            "is_native": is_native_equip_context(context_code),
-        }),
-        "summary": {
-            **summary,
-            "filtered_count": total_filtered,
-            "page_count": len(page_rows),
-        },
-        "filters": filters,
-        "filter_options": _build_workspace_filter_options(records, teams),
-        "candidates": {
-            "items": page_rows,
-            "total": total_filtered,
-            "page": page,
-            "page_size": page_size,
-            "has_more": end < total_filtered,
-        },
-        "teams": _serialize_equips(competicio, context_code, members_by_team_id=team_members),
-        "contexts": _serialize_contexts(competicio),
-        "team_comp_aparells": _serialize_team_comp_aparell_sources(competicio, context_code),
-    }
+    with _timing_scope(timing, "equips.payload"):
+        return {
+            "ok": True,
+            "context_code": context_code,
+            "context": next((item for item in contexts if item["code"] == context_code), {
+                "code": context_code,
+                "nom": "Context",
+                "description": "",
+                "is_native": is_native_equip_context(context_code),
+            }),
+            "summary": {
+                **summary,
+                "filtered_count": total_filtered,
+                "page_count": len(page_rows),
+            },
+            "filters": filters,
+            "filter_options": _build_workspace_filter_options(candidate_qs, teams),
+            "candidates": {
+                "items": [_serialize_workspace_candidate(row, context_code) for row in page_rows],
+                "total": total_filtered,
+                "page": page,
+                "page_size": page_size,
+                "has_more": end < total_filtered,
+            },
+            "teams": _serialize_equips(competicio, context_code, members_by_team_id=team_members),
+            "contexts": contexts,
+            "team_comp_aparells": _serialize_team_comp_aparell_sources(competicio, context_code),
+        }
 
 
 @require_POST
@@ -609,7 +661,7 @@ def equips_workspace(request, pk):
     filters = payload.get("filters") or {}
     if operation == "resolve_filtered_ids":
         resolved = _resolve_workspace_filtered_target_ids(competicio, context_code, filters=filters)
-        return JsonResponse(
+        response = JsonResponse(
             with_inscripcions_history_payload(
                 {
                     "ok": True,
@@ -623,6 +675,8 @@ def equips_workspace(request, pk):
                 competicio.id,
             )
         )
+        get_inscripcions_timing_collector(request).apply_to_response(response)
+        return response
     if operation == "resolve_auto_context":
         fields = _validated_partition_fields(competicio, payload.get("fields"))
         if not fields:
@@ -635,7 +689,7 @@ def equips_workspace(request, pk):
             only_fields=["extra", *[f for f in fields if hasattr(Inscripcio, f)]],
         )
         buckets = _build_team_partition_buckets(target["records"], fields) if target["records"] else []
-        return JsonResponse(
+        response = JsonResponse(
             with_inscripcions_history_payload(
                 {
                     "ok": True,
@@ -651,9 +705,13 @@ def equips_workspace(request, pk):
                 competicio.id,
             )
         )
+        get_inscripcions_timing_collector(request).apply_to_response(response)
+        return response
     page = payload.get("page") or 1
     page_size = payload.get("page_size") or 40
-    return JsonResponse(_build_workspace_payload(competicio, context_code, filters=filters, page=page, page_size=page_size))
+    response = JsonResponse(_build_workspace_payload(competicio, context_code, filters=filters, page=page, page_size=page_size, request=request))
+    get_inscripcions_timing_collector(request).apply_to_response(response)
+    return response
 
 
 @require_POST

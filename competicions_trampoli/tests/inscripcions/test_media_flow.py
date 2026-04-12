@@ -66,6 +66,12 @@ from ...models.competicio import (
 from ...models import CompeticioMembership
 from ...scoring_engine import ScoringEngine
 from ...services.inscripcions.groups import renumber_groups_for_competicio
+from ...services.inscripcions import media_matching
+from ...services.inscripcions.media_matching import (
+    build_inscripcio_media_match_candidates,
+    build_inscripcio_media_match_candidate_index,
+    match_media_files_to_inscripcions,
+)
 from ...services.inscripcions.sorting import (
     _split_custom_sort_tokens,
     sort_records_by_field_stable,
@@ -264,6 +270,181 @@ class InscripcionsMediaFlowTests(_BaseTrampoliDataMixin, TestCase):
 
         item = InscripcioMedia.objects.get(inscripcio=self.ins)
         self.assertEqual(item.source, InscripcioMedia.Source.ASSISTED)
+
+    def test_media_matching_uses_shortlist_and_keeps_id_tie_break(self):
+        candidates = build_inscripcio_media_match_candidates(
+            [
+                SimpleNamespace(
+                    id=7,
+                    nom_i_cognoms="LUCIA POZO SANCHEZ",
+                    entitat="Club A",
+                    subcategoria="GEN",
+                    sexe="F",
+                ),
+                SimpleNamespace(
+                    id=3,
+                    nom_i_cognoms="LUCIA POZO SANCHEZ",
+                    entitat="Club A",
+                    subcategoria="GEN",
+                    sexe="F",
+                ),
+                SimpleNamespace(
+                    id=11,
+                    nom_i_cognoms="MARC GOMEZ",
+                    entitat="Escola Nord",
+                    subcategoria="INF",
+                    sexe="M",
+                ),
+            ]
+        )
+        candidate_index = build_inscripcio_media_match_candidate_index(candidates)
+        real_score_candidate = media_matching._score_candidate
+        scored_ids = []
+
+        def wrapped_score_candidate(file_tokens, file_sexe_key, candidate, cfg, *, include_field_scores=True):
+            scored_ids.append(candidate.inscripcio_id)
+            return real_score_candidate(
+                file_tokens,
+                file_sexe_key,
+                candidate,
+                cfg,
+                include_field_scores=include_field_scores,
+            )
+
+        files = [
+            {
+                "key": "0",
+                "filename": "1 - -LUCIA POZO SANCHEZ-Club-A-GEN-F.mp3",
+                "relative_path": "music/1 - -LUCIA POZO SANCHEZ-Club-A-GEN-F.mp3",
+                "size": 1234,
+            }
+        ]
+
+        with patch.object(media_matching, "_score_candidate", side_effect=wrapped_score_candidate):
+            rows = match_media_files_to_inscripcions(
+                files,
+                candidates,
+                candidate_index=candidate_index,
+                top_k=3,
+            )
+
+        self.assertEqual(rows[0].get("suggested_inscripcio_id"), 3)
+        self.assertEqual(sorted(scored_ids), [3, 3, 7])
+        self.assertNotIn(11, scored_ids)
+
+    def test_media_matching_ignores_overly_common_shortlist_tokens(self):
+        raw_candidates = [
+            SimpleNamespace(
+                id=index,
+                nom_i_cognoms=f"COMMON NAME {index}",
+                entitat="Shared Club",
+                subcategoria="GEN",
+                sexe="F",
+            )
+            for index in range(1, 81)
+        ]
+        raw_candidates.append(
+            SimpleNamespace(
+                id=999,
+                nom_i_cognoms="COMMON TARGET SPECIAL",
+                entitat="Shared Club",
+                subcategoria="GEN",
+                sexe="F",
+            )
+        )
+        candidates = build_inscripcio_media_match_candidates(raw_candidates)
+        candidate_index = build_inscripcio_media_match_candidate_index(candidates)
+        real_score_candidate = media_matching._score_candidate
+        scored_ids = []
+
+        def wrapped_score_candidate(file_tokens, file_sexe_key, candidate, cfg, *, include_field_scores=True):
+            scored_ids.append(candidate.inscripcio_id)
+            return real_score_candidate(
+                file_tokens,
+                file_sexe_key,
+                candidate,
+                cfg,
+                include_field_scores=include_field_scores,
+            )
+
+        with patch.object(media_matching, "_score_candidate", side_effect=wrapped_score_candidate):
+            rows = match_media_files_to_inscripcions(
+                [
+                    {
+                        "key": "0",
+                        "filename": "COMMON TARGET SPECIAL - Shared Club.mp3",
+                        "relative_path": "audio/COMMON TARGET SPECIAL - Shared Club.mp3",
+                        "size": 1234,
+                    }
+                ],
+                candidates,
+                candidate_index=candidate_index,
+                top_k=3,
+            )
+
+        self.assertEqual(rows[0].get("suggested_inscripcio_id"), 999)
+        self.assertIn(999, scored_ids)
+        self.assertLess(len(set(scored_ids)), len(candidates))
+
+    def test_media_matching_falls_back_to_full_scan_without_useful_tokens(self):
+        candidates = build_inscripcio_media_match_candidates(
+            [
+                SimpleNamespace(
+                    id=1,
+                    nom_i_cognoms="LUCIA POZO SANCHEZ",
+                    entitat="Club A",
+                    subcategoria="GEN",
+                    sexe="F",
+                ),
+                SimpleNamespace(
+                    id=2,
+                    nom_i_cognoms="MARTA LOPEZ",
+                    entitat="Club B",
+                    subcategoria="INF",
+                    sexe="F",
+                ),
+                SimpleNamespace(
+                    id=3,
+                    nom_i_cognoms="JORDI PEREZ",
+                    entitat="Escola Nord",
+                    subcategoria="PRO",
+                    sexe="M",
+                ),
+            ]
+        )
+        candidate_index = build_inscripcio_media_match_candidate_index(candidates)
+        real_score_candidate = media_matching._score_candidate
+        scored_ids = []
+
+        def wrapped_score_candidate(file_tokens, file_sexe_key, candidate, cfg, *, include_field_scores=True):
+            scored_ids.append(candidate.inscripcio_id)
+            return real_score_candidate(
+                file_tokens,
+                file_sexe_key,
+                candidate,
+                cfg,
+                include_field_scores=include_field_scores,
+            )
+
+        files = [
+            {
+                "key": "0",
+                "filename": "unknown.mp3",
+                "relative_path": "music/unknown.mp3",
+                "size": 1234,
+            }
+        ]
+
+        with patch.object(media_matching, "_score_candidate", side_effect=wrapped_score_candidate):
+            rows = match_media_files_to_inscripcions(
+                files,
+                candidates,
+                candidate_index=candidate_index,
+                top_k=3,
+            )
+
+        self.assertEqual(rows[0].get("suggested_inscripcio_id"), 1)
+        self.assertEqual(sorted(scored_ids), [1, 1, 2, 3])
 
 class InscripcionsListingMediaUrlTests(_BaseTrampoliDataMixin, TestCase):
     def test_listing_media_item_uses_registered_route(self):

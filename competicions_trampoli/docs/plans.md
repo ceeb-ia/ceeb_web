@@ -139,6 +139,11 @@
 
 ## Fase 0. Baseline I Instrumentacio Minima
 
+### Estat
+- Tancada el `2026-04-10`.
+- Snapshot acceptat documentat a `competicions_trampoli/docs/inscripcions_baseline.md`.
+- Artefacte de referencia: `var/benchmarks/inscripcions/20260410_162652.json`.
+
 ### Prioritat
 - P0
 

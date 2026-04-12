@@ -429,19 +429,29 @@ class InscripcionsSortBirthRangeTests(InscripcionsSortFlowBaseMixin, TestCase):
     def test_inscripcions_list_renders_unified_groups_panel(self):
         response = self.client.get(reverse("inscripcions_list", kwargs={"pk": self.comp.id}))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'id="groups-workspace-shell"')
-        self.assertContains(response, "Divisions actives:")
-        self.assertContains(response, "Ordenacions detectades:")
-        self.assertContains(response, "Resolucio final:")
-        self.assertNotContains(response, "Base de creacio:")
-        self.assertNotContains(response, "Crear grups per pestanyes")
-        self.assertNotContains(response, "Crear grups per ordenacio")
-        self.assertContains(response, 'id="groups-board-filter-q"')
-        self.assertContains(response, 'id="groups-board-filter-categoria"')
-        self.assertContains(response, 'id="groups-board-filter-program-state"')
-        self.assertContains(response, 'id="groups-board-filter-count"')
-        self.assertContains(response, 'id="btn-groups-board-filters-toggle"')
-        self.assertContains(response, 'id="groups-board-filters-panel"')
+        self.assertContains(response, 'id="panel-grups"')
+        self.assertContains(response, 'data-panel-lazy="1"')
+        self.assertNotContains(response, 'id="groups-workspace-shell"')
+
+        panel_response = self.client.get(
+            reverse("inscripcions_list", kwargs={"pk": self.comp.id}),
+            {"__fragments": "panel", "__panel_key": "grups"},
+        )
+        self.assertEqual(panel_response.status_code, 200)
+        panel_html = panel_response.json()["fragments"]["panel"]["html"]
+        self.assertIn('id="groups-workspace-shell"', panel_html)
+        self.assertIn("Divisions actives:", panel_html)
+        self.assertIn("Ordenacions detectades:", panel_html)
+        self.assertIn("Resolucio final:", panel_html)
+        self.assertNotIn("Base de creacio:", panel_html)
+        self.assertNotIn("Crear grups per pestanyes", panel_html)
+        self.assertNotIn("Crear grups per ordenacio", panel_html)
+        self.assertIn('id="groups-board-filter-q"', panel_html)
+        self.assertIn('id="groups-board-filter-categoria"', panel_html)
+        self.assertIn('id="groups-board-filter-program-state"', panel_html)
+        self.assertIn('id="groups-board-filter-count"', panel_html)
+        self.assertIn('id="btn-groups-board-filters-toggle"', panel_html)
+        self.assertIn('id="groups-board-filters-panel"', panel_html)
 
     def test_sort_context_key_changes_when_column_filters_change(self):
         base_filters = {

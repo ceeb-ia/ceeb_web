@@ -170,7 +170,17 @@ def _attach_base_equip_runtime(records):
         return {}
     assignment_map = get_contextual_assignment_map(competicio, rows, NATIVE_EQUIP_CONTEXT_CODE)
     for obj in rows:
-        _resolve_base_equip_for_inscripcio(obj, assignment_map=assignment_map)
+        equip = None
+        row = assignment_map.get(getattr(obj, "id", None))
+        if row is not None:
+            equip = getattr(row, "equip", None)
+        try:
+            obj._base_equip_cache = equip
+            obj._base_equip_cache_ready = True
+            obj._base_equip_id_cache = getattr(equip, "id", None)
+            obj._base_equip_name_cache = str(getattr(equip, "nom", "") or "").strip()
+        except Exception:
+            pass
     return assignment_map
 
 

@@ -53,16 +53,8 @@
       class="inscripcio-row"
       data-inscripcio-id="{{ r.id }}"
       data-id="{{ r.id }}"
-      data-name="{{ r.nom_i_cognoms|default:''|escape }}"
-      data-document="{{ r.document|default:''|escape }}"
-      data-entitat="{{ r.entitat|default:''|escape }}"
-      data-categoria="{{ r.categoria|default:''|escape }}"
-      data-subcategoria="{{ r.subcategoria|default:''|escape }}"
-      data-sexe="{{ r.sexe|default:''|escape }}"
       data-group="{{ r.grup|default:'' }}"
-      data-group-name="{% with gkey=r.grup|stringformat:'s' %}{{ group_names|get_item:gkey|default:''|escape }}{% endwith %}"
-      data-competition-order="{{ r.ordre_competicio|default:'' }}"
-      data-team="{{ r.base_equip_id|default:'' }}">
+      data-competition-order="{{ r.ordre_competicio|default:'' }}">
       <td class="control-col">
         <div class="row-controls">
           <input type="checkbox" class="inscripcio-select js-inscripcio-select js-team-row-select" value="{{ r.id }}" data-inscripcio-id="{{ r.id }}" data-ins-id="{{ r.id }}">
@@ -78,9 +70,9 @@
             {{ r.nom_i_cognoms|default:"-" }}
           {% elif col.code == "equip" %}
             {% if r.base_equip_id %}
-              {% with ek=r.base_equip_id|stringformat:"s" %}
-                <span class="equip-badge">{{ equip_name_map|get_item:ek|default:"Equip "|add:ek }}</span>
-              {% endwith %}
+              <span class="equip-badge">
+                {% if r.base_equip_name %}{{ r.base_equip_name }}{% else %}Equip {{ r.base_equip_id }}{% endif %}
+              </span>
             {% else %}
               -
             {% endif %}
@@ -100,7 +92,7 @@
             <span class="js-ordre-sortida-cell" data-ins-id="{{ r.id }}">{{ r.ordre_sortida|default:"-" }}</span>
           {% elif col.code == "__aparells__" %}
             {% with rid=r.id|stringformat:"s" %}
-              {% with ex_ids=inscripcio_aparells_excluded_map|get_item:rid %}
+              {% with ex_ids=table_runtime.inscripcio_aparells_excluded_map|get_item:rid %}
                 <select class="form-control form-control-sm aparells-select js-aparells-select" data-ins-id="{{ r.id }}" multiple size="3" {% if not can_edit_inscripcions %}disabled{% endif %}>
                   {% for app in inscripcio_aparells_cfg %}
                     <option value="{{ app.id }}" {% if app.id not in ex_ids %}selected{% endif %}>{{ app.aparell.nom }}</option>
@@ -112,7 +104,7 @@
             {% endwith %}
           {% elif col.code == "__media__" %}
             {% with rid=r.id|stringformat:"s" %}
-              {% with media_items=inscripcio_media_map|get_item:rid %}
+              {% with media_items=table_runtime.inscripcio_media_map|get_item:rid %}
                 <div class="media-cell" data-ins-id="{{ r.id }}">
                   <div class="media-list js-media-list" data-ins-id="{{ r.id }}">
                     {% for m in media_items %}

@@ -7,7 +7,6 @@
   const groupsFromSortUrl = "{% url 'inscripcions_groups_from_sort' competicio.id %}";
   const showAlert = typeof window.showAlert === 'function' ? window.showAlert : API.showAlert;
   const postJson = typeof window.postJson === 'function' ? window.postJson : API.postJson;
-  const reloadWithUiState = typeof window.reloadWithUiState === 'function' ? window.reloadWithUiState : API.reloadWithUiState;
   const getCurrentInscripcioFilters = typeof window.getCurrentInscripcioFilters === 'function'
     ? window.getCurrentInscripcioFilters
     : API.getCurrentInscripcioFilters;
@@ -297,12 +296,24 @@
     return window.__groupsWorkspaceApi.getState();
   }
 
+  function getMainSelectedInscripcioIds() {
+    if (window.__inscripcionsSelectionApi && typeof window.__inscripcionsSelectionApi.getSelectedIds === 'function') {
+      return window.__inscripcionsSelectionApi.getSelectedIds().map(String).filter(Boolean);
+    }
+    if (typeof window.getSelectedInscripcioIds === 'function') {
+      return window.getSelectedInscripcioIds().map(String).filter(Boolean);
+    }
+    return [];
+  }
+
   function buildGroupsPayload(strategy, extraPayload = {}) {
     const workspaceState = getGroupsWorkspaceState();
     const filters = workspaceState?.filters && typeof workspaceState.filters === 'object'
       ? workspaceState.filters
       : getCurrentInscripcioFilters();
-    const selectedIds = Array.isArray(workspaceState?.selectedIds) ? workspaceState.selectedIds : [];
+    const selectedIds = Array.isArray(workspaceState?.selectedIds)
+      ? workspaceState.selectedIds
+      : getMainSelectedInscripcioIds();
     return Object.assign({
       resolution_mode: 'auto',
       strategy,
@@ -783,7 +794,7 @@
         return false;
       }
       clearGroupPreviewConfirmIntent();
-      reloadWithUiState();
+      await API.refreshLightMutation({ includeActivePanel: true });
       return true;
     } catch (err) {
       showAlert(`No s'han pogut crear grups.\n${err.message || err}`);
@@ -979,8 +990,10 @@
   };
 
   window.initGroupsPanel = function () {
-    if (window.__groupsPanelInitialized) return window.__groupsPreviewApi;
+    const root = document.getElementById('groups-preview');
+    if (window.__groupsPanelInitialized && window.__groupsPanelRoot === root) return window.__groupsPreviewApi;
     window.__groupsPanelInitialized = true;
+    window.__groupsPanelRoot = root;
     initGroupsPanel();
     return window.__groupsPreviewApi;
   };

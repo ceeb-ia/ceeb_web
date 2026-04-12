@@ -1,6 +1,8 @@
+import heapq
 import os
 import re
 import unicodedata
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Sequence, Set
 
@@ -32,6 +34,50 @@ class MatchCandidate:
     entitat_tokens: Set[str]
     sexe_key: str
     subcategoria_tokens: Set[str]
+
+
+@dataclass
+class MediaMatchCandidateIndex:
+    candidates: List[MatchCandidate]
+    token_to_candidate_indexes: Dict[str, List[int]]
+    candidate_count: int
+
+    @classmethod
+    def from_candidates(cls, candidates: Sequence[MatchCandidate]) -> "MediaMatchCandidateIndex":
+        candidate_list = list(candidates or [])
+        token_to_candidate_indexes = defaultdict(list)
+        for idx, candidate in enumerate(candidate_list):
+            for token in _candidate_shortlist_tokens(candidate):
+                token_to_candidate_indexes[token].append(idx)
+        return cls(
+            candidates=candidate_list,
+            token_to_candidate_indexes=dict(token_to_candidate_indexes),
+            candidate_count=len(candidate_list),
+        )
+
+    def shortlist_indexes_for_file(self, file_tokens: Set[str]) -> List[int]:
+        usable_tokens = {token for token in (file_tokens or set()) if _is_shortlist_token(token)}
+        if not usable_tokens or self.candidate_count <= 0:
+            return []
+
+        counts = Counter()
+        for token in usable_tokens:
+            candidate_indexes = self.token_to_candidate_indexes.get(token, ())
+            if len(candidate_indexes) > max(64, int(self.candidate_count * 0.2)):
+                continue
+            for idx in candidate_indexes:
+                counts[idx] += 1
+
+        if not counts:
+            return []
+
+        shortlist_size = len(counts)
+        if shortlist_size >= self.candidate_count:
+            return []
+        if shortlist_size > max(64, int(self.candidate_count * 0.8)):
+            return []
+
+        return [idx for idx, _count in counts.most_common()]
 
 
 def _safe_float(value, default: float) -> float:
@@ -129,6 +175,29 @@ def _overlap_score(candidate_tokens: Set[str], file_tokens: Set[str]) -> Optiona
     return inter / max(1, len(candidate_tokens))
 
 
+def _is_shortlist_token(token: str) -> bool:
+    token = str(token or "").strip()
+    if len(token) < 2:
+        return False
+    if token.isdigit():
+        return False
+    if token in _SEXE_F_KEYS or token in _SEXE_M_KEYS:
+        return False
+    return True
+
+
+def _candidate_shortlist_tokens(candidate: MatchCandidate) -> Set[str]:
+    return {
+        token
+        for token in (
+            candidate.nom_tokens
+            | candidate.entitat_tokens
+            | candidate.subcategoria_tokens
+        )
+        if _is_shortlist_token(token)
+    }
+
+
 def build_inscripcio_media_match_candidates(inscripcions: Iterable) -> List[MatchCandidate]:
     out: List[MatchCandidate] = []
     for ins in inscripcions:
@@ -151,7 +220,18 @@ def build_inscripcio_media_match_candidates(inscripcions: Iterable) -> List[Matc
     return out
 
 
-def _score_candidate(file_tokens: Set[str], file_sexe_key: str, candidate: MatchCandidate, cfg: dict) -> dict:
+def build_inscripcio_media_match_candidate_index(candidates: Sequence[MatchCandidate]) -> MediaMatchCandidateIndex:
+    return MediaMatchCandidateIndex.from_candidates(candidates)
+
+
+def _score_candidate(
+    file_tokens: Set[str],
+    file_sexe_key: str,
+    candidate: MatchCandidate,
+    cfg: dict,
+    *,
+    include_field_scores: bool = True,
+):
     weights = cfg["weights"]
 
     def _weighted(field_key: str, component: Optional[float]) -> tuple:
@@ -175,7 +255,7 @@ def _score_candidate(file_tokens: Set[str], file_sexe_key: str, candidate: Match
 
     numer = 0.0
     denom = 0.0
-    field_scores = {}
+    field_scores = {} if include_field_scores else None
     for field_key, component in (
         ("nom", nom_component),
         ("entitat", ent_component),
@@ -185,7 +265,8 @@ def _score_candidate(file_tokens: Set[str], file_sexe_key: str, candidate: Match
         part_num, part_den = _weighted(field_key, component)
         numer += part_num
         denom += part_den
-        field_scores[field_key] = None if component is None else round(float(component), 4)
+        if field_scores is not None:
+            field_scores[field_key] = None if component is None else round(float(component), 4)
 
     if denom <= 0:
         total = 0.0
@@ -193,10 +274,12 @@ def _score_candidate(file_tokens: Set[str], file_sexe_key: str, candidate: Match
         total = numer / denom
     total = max(0.0, min(1.0, total))
 
-    return {
-        "score": round(total, 4),
-        "field_scores": field_scores,
-    }
+    if include_field_scores:
+        return {
+            "score": round(total, 4),
+            "field_scores": field_scores or {},
+        }
+    return round(total, 4)
 
 
 def _status_from_scores(score: float, margin: float, cfg: dict) -> str:
@@ -213,10 +296,14 @@ def match_media_files_to_inscripcions(
     candidates: Sequence[MatchCandidate],
     config: Optional[dict] = None,
     top_k: int = 3,
+    candidate_index: Optional[MediaMatchCandidateIndex] = None,
 ) -> List[dict]:
     cfg = normalize_media_matching_config(config)
     out: List[dict] = []
     kk = max(1, int(top_k or 1))
+    candidate_list = list(candidates or [])
+    index = candidate_index or build_inscripcio_media_match_candidate_index(candidate_list)
+    indexed_candidates = index.candidates if index.candidates else candidate_list
 
     for raw in (files or []):
         row = raw if isinstance(raw, dict) else {}
@@ -227,30 +314,35 @@ def match_media_files_to_inscripcions(
 
         file_tokens = _filename_base_tokens(filename)
         file_sexe_key = _extract_filename_sexe_key(file_tokens)
+        shortlist_indexes = index.shortlist_indexes_for_file(file_tokens) if index else []
+        scored_candidates = indexed_candidates
+        if shortlist_indexes:
+            scored_candidates = [indexed_candidates[idx] for idx in shortlist_indexes]
 
-        scored = []
-        for cand in candidates:
-            s = _score_candidate(file_tokens, file_sexe_key, cand, cfg)
-            scored.append(
-                {
-                    "inscripcio_id": cand.inscripcio_id,
-                    "label": cand.label,
-                    "score": s["score"],
-                    "field_scores": s["field_scores"],
-                }
-            )
-        scored.sort(key=lambda x: (x["score"], -x["inscripcio_id"]), reverse=True)
+        scored = heapq.nlargest(
+            kk,
+            (
+                (
+                    _score_candidate(file_tokens, file_sexe_key, cand, cfg, include_field_scores=False),
+                    -cand.inscripcio_id,
+                    cand,
+                )
+                for cand in scored_candidates
+            ),
+        )
 
-        top = scored[:kk]
-        best = top[0] if top else None
-        second = top[1] if len(top) > 1 else None
-        best_score = float(best["score"]) if best else 0.0
-        margin = best_score - (float(second["score"]) if second else 0.0)
+        best_tuple = scored[0] if scored else None
+        second_tuple = scored[1] if len(scored) > 1 else None
+        best = best_tuple[2] if best_tuple else None
+        second_score = float(second_tuple[0]) if second_tuple else 0.0
+        best_details = _score_candidate(file_tokens, file_sexe_key, best, cfg) if best else {"score": 0.0, "field_scores": {}}
+        best_score = float(best_details["score"])
+        margin = best_score - second_score
         status = _status_from_scores(best_score, margin, cfg)
 
         reason = []
         if best:
-            fs = best.get("field_scores") or {}
+            fs = best_details.get("field_scores") or {}
             if fs.get("nom") is not None:
                 reason.append(f"nom={fs['nom']}")
             if fs.get("entitat") is not None:
@@ -269,15 +361,15 @@ def match_media_files_to_inscripcions(
                 "status": status,
                 "score": round(best_score, 4),
                 "margin": round(margin, 4),
-                "suggested_inscripcio_id": best["inscripcio_id"] if best else None,
-                "suggested_label": best["label"] if best else "",
+                "suggested_inscripcio_id": best.inscripcio_id if best else None,
+                "suggested_label": best.label if best else "",
                 "top_candidates": [
                     {
-                        "inscripcio_id": c["inscripcio_id"],
-                        "label": c["label"],
-                        "score": c["score"],
+                        "inscripcio_id": cand.inscripcio_id,
+                        "label": cand.label,
+                        "score": round(float(score or 0.0), 4),
                     }
-                    for c in top
+                    for score, _neg_inscripcio_id, cand in scored
                 ],
                 "reason": ", ".join(reason),
             }

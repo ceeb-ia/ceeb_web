@@ -1,9 +1,11 @@
 window.initSeriesWorkspace = async function () {
-  if (window.__seriesWorkspaceInitialized) return window.__seriesWorkspaceApi || null;
-
   const shell = document.getElementById('series-workspace-shell');
   if (!shell) return null;
+  if (window.__seriesWorkspaceInitialized && window.__seriesWorkspaceRoot === shell) {
+    return window.__seriesWorkspaceApi || null;
+  }
   window.__seriesWorkspaceInitialized = true;
+  window.__seriesWorkspaceRoot = shell;
 
   const workspaceUrl = "{% url 'inscripcions_series_equips_workspace' competicio.id %}";
   const detailUrl = "{% url 'inscripcions_series_equips_detail' competicio.id %}";
@@ -206,6 +208,15 @@ window.initSeriesWorkspace = async function () {
       if (!select || id === skipId) return;
       if (select.value !== state.compAparellId) select.value = state.compAparellId;
     });
+  }
+
+  function readCompAparellIdFromDom() {
+    return String(
+      document.getElementById('series-comp-aparell-select')?.value ||
+      document.getElementById('series-workspace-comp-aparell-select')?.value ||
+      state.compAparellId ||
+      ''
+    ).trim();
   }
 
   function fillSelect(selectEl, items, selectedValue, emptyLabel, mapItem) {
@@ -1545,7 +1556,14 @@ window.initSeriesWorkspace = async function () {
   }
 
   async function refreshWorkspace(options = {}) {
-    if (!state.compAparellId) return null;
+    state.compAparellId = readCompAparellIdFromDom();
+    if (!state.compAparellId) {
+      setText('series-candidates-status', 'Selecciona un aparell d\'equip per carregar el workspace.');
+      setText('series-compact-list-note', 'Selecciona un aparell d\'equip per carregar les series.');
+      updateSelectionSummary();
+      saveWorkspaceState();
+      return null;
+    }
     syncFiltersFromDom();
     if (!options.preservePage) state.page = 1;
     try {
@@ -1752,6 +1770,7 @@ window.initSeriesWorkspace = async function () {
   });
 
   window.__seriesWorkspaceApi = {
+    root: shell,
     refresh: refreshWorkspace,
     getState: () => ({
       compAparellId: state.compAparellId,

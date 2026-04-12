@@ -1,0 +1,78 @@
+{
+  "metadata": {
+    "generated_at": "2026-04-11T14:07:51.292541+00:00",
+    "app_env": "dev",
+    "debug": true,
+    "database_vendor": "postgresql",
+    "database_engine": "django.db.backends.postgresql",
+    "database_name": "ceeb_db",
+    "service_hostname": "1eb687583090",
+    "warmup": 0,
+    "repeats": 1,
+    "datasets": [
+      "large"
+    ],
+    "scenarios": [
+      "equips_workspace"
+    ]
+  },
+  "results": [
+    {
+      "dataset": "large",
+      "scenario": "equips_workspace",
+      "run_index": 1,
+      "is_warmup": false,
+      "elapsed_ms": 85.029,
+      "sql_count": 30,
+      "sql_time_ms": 37.0,
+      "response_bytes": 51034,
+      "status_code": 200,
+      "url": "/competicio/46/inscripcions/equips/workspace/",
+      "timings": {
+        "enabled": true,
+        "sections": [
+          {
+            "name": "equips.resolve_candidate_qs",
+            "elapsed_ms": 4.052
+          },
+          {
+            "name": "equips.page_slice",
+            "elapsed_ms": 47.71
+          },
+          {
+            "name": "equips.payload",
+            "elapsed_ms": 17.376
+          }
+        ],
+        "total_ms": 69.138
+      }
+    }
+  ],
+  "summary": [
+    {
+      "dataset": "large",
+      "scenario": "equips_workspace",
+      "scenario_label": "Workspace d'equips",
+      "runs": 1,
+      "status_codes": [
+        200
+      ],
+      "elapsed_ms_min": 85.029,
+      "elapsed_ms_mean": 85.029,
+      "elapsed_ms_median": 85.029,
+      "elapsed_ms_max": 85.029,
+      "sql_count_min": 30,
+      "sql_count_mean": 30,
+      "sql_count_median": 30,
+      "sql_count_max": 30,
+      "sql_time_ms_min": 37.0,
+      "sql_time_ms_mean": 37.0,
+      "sql_time_ms_median": 37.0,
+      "sql_time_ms_max": 37.0,
+      "response_bytes_min": 51034,
+      "response_bytes_mean": 51034,
+      "response_bytes_median": 51034,
+      "response_bytes_max": 51034
+    }
+  ]
+}

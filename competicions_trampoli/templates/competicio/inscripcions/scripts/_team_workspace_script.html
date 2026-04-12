@@ -1,9 +1,11 @@
 window.initTeamsWorkspace = async function () {
-  if (window.__teamWorkspaceInitialized) return window.__teamWorkspaceApi || null;
-
   const teamWorkspaceShell = document.getElementById('team-workspace-shell');
   if (!teamWorkspaceShell) return null;
+  if (window.__teamWorkspaceInitialized && window.__teamWorkspaceRoot === teamWorkspaceShell) {
+    return window.__teamWorkspaceApi || null;
+  }
   window.__teamWorkspaceInitialized = true;
+  window.__teamWorkspaceRoot = teamWorkspaceShell;
 
   const workspaceUrl = "{% url 'inscripcions_equips_workspace' competicio.id %}";
   const previewUrl = "{% url 'inscripcions_equips_preview' competicio.id %}";
@@ -2924,6 +2926,7 @@ window.initTeamsWorkspace = async function () {
   };
 
   window.__teamWorkspaceApi = {
+    root: teamWorkspaceShell,
     refresh: refreshWorkspace,
     setExternalSelection: syncExternalSelection,
     getState: () => ({

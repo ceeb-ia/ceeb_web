@@ -1,10 +1,12 @@
 window.initGroupsWorkspace = async function () {
-  if (window.__groupsWorkspaceInitialized) return window.__groupsWorkspaceApi || null;
-
   const groupsWorkspaceShell = document.getElementById('groups-workspace-shell');
   const groupsMainCard = document.getElementById('groups-main-card');
   if (!groupsWorkspaceShell || !groupsMainCard) return null;
+  if (window.__groupsWorkspaceInitialized && window.__groupsWorkspaceRoot === groupsWorkspaceShell) {
+    return window.__groupsWorkspaceApi || null;
+  }
   window.__groupsWorkspaceInitialized = true;
+  window.__groupsWorkspaceRoot = groupsWorkspaceShell;
 
   const groupsWorkspaceUrl = "{% url 'groups_workspace' competicio.id %}";
   const groupsDetailUrl = "{% url 'groups_detail' competicio.id %}";
@@ -447,6 +449,13 @@ window.initGroupsWorkspace = async function () {
 
   function syncExternalSelection(ids, options = {}) {
     updateSelection(ids, 'set', { ...options, skipSyncToMain: true });
+  }
+
+  async function refreshInscripcionsListAfterGroupMutation(action) {
+    if (!['create', 'assign', 'unassign'].includes(String(action || ''))) return;
+    const api = window.InscripcionsApp || null;
+    if (!api || typeof api.refreshLightMutation !== 'function') return;
+    await api.refreshLightMutation({ includeActivePanel: true });
   }
 
   function scrollSelectedGroupCardIntoView(groupId) {
@@ -1324,6 +1333,7 @@ window.initGroupsWorkspace = async function () {
         state.selectedGroupMembersPage = 1;
       }
       await fetchWorkspace();
+      await refreshInscripcionsListAfterGroupMutation(action);
       if (window.__groupsPreviewApi && typeof window.__groupsPreviewApi.clearConfirmIntent === 'function') {
         window.__groupsPreviewApi.clearConfirmIntent();
       }
@@ -1496,6 +1506,19 @@ window.initGroupsWorkspace = async function () {
       }
       await selectGroup(cleanValue, { scroll: false, ...options });
     };
+
+    if (!window.__groupsWorkspaceSelectionBridgeBound) {
+      window.__groupsWorkspaceSelectionBridgeBound = true;
+      document.addEventListener('inscripcions:selection-changed', (event) => {
+        const detail = event?.detail || {};
+        if (detail.source === 'groups_workspace') return;
+        const ids = Array.isArray(detail.ids) ? detail.ids : [];
+        const workspaceApi = window.__groupsWorkspaceApi;
+        if (workspaceApi && typeof workspaceApi.setExternalSelection === 'function') {
+          workspaceApi.setExternalSelection(ids, { source: 'main' });
+        }
+      });
+    }
 
     ['groups-workspace-target-group', 'groups-compact-target-group'].forEach((id) => {
       const select = document.getElementById(id);
@@ -1868,6 +1891,7 @@ window.initGroupsWorkspace = async function () {
   }
 
   window.__groupsWorkspaceApi = {
+    root: groupsWorkspaceShell,
     refresh: fetchWorkspace,
     resolveAutoContext: (extra = {}) => postJson(groupsWorkspaceUrl, buildPayload({ operation: 'resolve_auto_context', ...extra })),
     applyAutoContextSelection: (extra = {}) => postJson(groupsWorkspaceUrl, buildPayload({ operation: 'apply_auto_context_selection', ...extra })),
