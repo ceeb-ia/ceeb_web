@@ -33,6 +33,8 @@ window.initGroupsWorkspace = async function () {
       entitats: [],
       members_state: 'all',
       program_state: 'all',
+      min_size: null,
+      max_size: null,
     },
     boardFiltersExpanded: false,
     selectedIds: new Set((typeof getSelectedInscripcioIds === 'function' ? getSelectedInscripcioIds() : []).map(String)),
@@ -93,10 +95,23 @@ window.initGroupsWorkspace = async function () {
       .map((value) => String(value || '').trim())
       .filter(Boolean)
   )).sort((a, b) => a.localeCompare(b, 'ca'));
+  const parseBoardSizeFilter = (value, minValue = 0) => {
+    const raw = String(value ?? '').trim();
+    if (!raw) return null;
+    const parsed = Number.parseInt(raw, 10);
+    return Number.isFinite(parsed) && parsed >= minValue ? parsed : null;
+  };
   const normalizeBoardFilters = (raw) => {
     const data = raw && typeof raw === 'object' ? raw : {};
     const membersState = String(data.members_state || 'all').trim() || 'all';
     const programState = String(data.program_state || 'all').trim() || 'all';
+    let minSize = parseBoardSizeFilter(data.min_size, 1);
+    let maxSize = parseBoardSizeFilter(data.max_size, 0);
+    if (minSize !== null && maxSize !== null && minSize > maxSize) {
+      const previousMin = minSize;
+      minSize = maxSize;
+      maxSize = previousMin;
+    }
     return {
       q: String(data.q || '').trim(),
       categories: uniqueSortedStrings(data.categories),
@@ -104,6 +119,8 @@ window.initGroupsWorkspace = async function () {
       entitats: uniqueSortedStrings(data.entitats),
       members_state: ['all', 'with_members', 'empty'].includes(membersState) ? membersState : 'all',
       program_state: ['all', 'programmed', 'out_of_program'].includes(programState) ? programState : 'all',
+      min_size: minSize,
+      max_size: maxSize,
     };
   };
   const invalidateAllGroupDetails = () => {
@@ -273,6 +290,8 @@ window.initGroupsWorkspace = async function () {
       entitats: selectedOptionValues(document.getElementById('groups-board-filter-entitat')),
       members_state: document.getElementById('groups-board-filter-members-state')?.value || 'all',
       program_state: document.getElementById('groups-board-filter-program-state')?.value || 'all',
+      min_size: document.getElementById('groups-board-filter-min-size')?.value || '',
+      max_size: document.getElementById('groups-board-filter-max-size')?.value || '',
     });
   }
 
@@ -288,6 +307,10 @@ window.initGroupsWorkspace = async function () {
     if (membersState) membersState.value = String(data.members_state || 'all');
     const programState = document.getElementById('groups-board-filter-program-state');
     if (programState) programState.value = String(data.program_state || 'all');
+    const minSize = document.getElementById('groups-board-filter-min-size');
+    if (minSize) minSize.value = data.min_size === null ? '' : String(data.min_size);
+    const maxSize = document.getElementById('groups-board-filter-max-size');
+    if (maxSize) maxSize.value = data.max_size === null ? '' : String(data.max_size);
   }
 
   function buildBoardFilterOptions(groups) {
@@ -324,6 +347,8 @@ window.initGroupsWorkspace = async function () {
       || current.entitats.length
       || current.members_state !== 'all'
       || current.program_state !== 'all'
+      || current.min_size !== null
+      || current.max_size !== null
     );
   }
 
@@ -338,6 +363,13 @@ window.initGroupsWorkspace = async function () {
     if (current.members_state === 'empty') parts.push('nomes buits');
     if (current.program_state === 'programmed') parts.push('programats');
     if (current.program_state === 'out_of_program') parts.push('fora de programa');
+    if (current.min_size !== null && current.max_size !== null) {
+      parts.push(current.min_size === current.max_size ? `mida ${current.min_size}` : `mida ${current.min_size}-${current.max_size}`);
+    } else if (current.min_size !== null) {
+      parts.push(`mida >= ${current.min_size}`);
+    } else if (current.max_size !== null) {
+      parts.push(`mida <= ${current.max_size}`);
+    }
     if (!parts.length) return 'Nom del grup, participants i facetes agregades del board actual.';
     return `Filtres actius: ${parts.join(' | ')}.`;
   }
@@ -363,6 +395,8 @@ window.initGroupsWorkspace = async function () {
     if (current.members_state === 'empty' && membersCount > 0) return false;
     if (current.program_state === 'programmed' && !group?.is_programmed) return false;
     if (current.program_state === 'out_of_program' && !group?.is_out_of_program) return false;
+    if (current.min_size !== null && membersCount < current.min_size) return false;
+    if (current.max_size !== null && membersCount > current.max_size) return false;
     if (current.categories.length && !current.categories.some((value) => (group?.categories || []).includes(value))) return false;
     if (current.subcategories.length && !current.subcategories.some((value) => (group?.subcategories || []).includes(value))) return false;
     if (current.entitats.length && !current.entitats.some((value) => (group?.entitats || []).includes(value))) return false;
@@ -1561,6 +1595,14 @@ window.initGroupsWorkspace = async function () {
       .forEach((id) => {
         const el = document.getElementById(id);
         if (el) el.addEventListener('change', applyBoardFilterChange);
+      });
+    ['groups-board-filter-min-size', 'groups-board-filter-max-size']
+      .forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) {
+          el.addEventListener('input', applyBoardFilterChange);
+          el.addEventListener('change', applyBoardFilterChange);
+        }
       });
     document.getElementById('btn-groups-board-filters-clear')?.addEventListener('click', () => {
       state.boardFilters = normalizeBoardFilters();

@@ -907,6 +907,71 @@ class InscripcionsGroupsPreviewAndApplyTests(InscripcionsSortFlowBaseMixin, Test
         self.assertEqual(len(groups), 1)
         self.assertEqual(groups[0].get("suggested_name"), "Alevi · Club A")
 
+    def test_groups_preview_workspace_bucket_fields_are_used_for_bucket_creation(self):
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Alevi A",
+            categoria="Alevi",
+            entitat="Club A",
+            ordre_sortida=1,
+            grup=None,
+        )
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Alevi B",
+            categoria="Alevi",
+            entitat="Club B",
+            ordre_sortida=2,
+            grup=None,
+        )
+        Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Senior A",
+            categoria="Senior",
+            entitat="Club A",
+            ordre_sortida=3,
+            grup=None,
+        )
+
+        records = list(
+            _build_inscripcions_filtered_qs(
+                self.comp,
+                {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+            ).order_by("ordre_sortida", "id")
+        )
+        resolution = _resolve_group_creation_buckets(
+            self.comp,
+            records,
+            group_codes=["categoria"],
+            workspace_codes=["entitat"],
+        )
+        combined_key = next(
+            bucket.get("key")
+            for bucket in (resolution.get("buckets") or [])
+            if bucket.get("label") == "Alevi / Club B"
+        )
+
+        resp = self._post_json(
+            "inscripcions_groups_from_sort",
+            self._groups_payload(
+                strategy="per_bucket",
+                group_by=["categoria"],
+                workspace_bucket_fields=["categoria", "entitat"],
+                selected_keys=[combined_key],
+            ),
+        )
+        self.assertEqual(resp.status_code, 200)
+
+        data = resp.json()
+        self.assertEqual(data.get("layers_used"), ["tabs", "workspace"])
+        self.assertEqual(data.get("workspace_bucket_fields"), ["entitat"])
+        self.assertEqual(data.get("buckets_applied"), 1)
+        preview = data.get("preview") or {}
+        self.assertEqual(preview.get("members_total"), 1)
+        groups = preview.get("groups") or []
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0].get("suggested_name"), "Alevi · Club B")
+
     def test_groups_preview_tab_merges_apply_before_combining_with_sort(self):
         Inscripcio.objects.create(
             competicio=self.comp,

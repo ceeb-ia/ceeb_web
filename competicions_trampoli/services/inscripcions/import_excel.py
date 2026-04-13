@@ -177,9 +177,7 @@ BUILTIN = {
             "nom_i_llinatges",
             "nombre_y_apellidos",
             "nombre_completo",
-            "nom_inscripcio",
-            "nom_inscripció",
-            "nom_federat",
+            "nom_inscripcio_complet",
             "nom_federat_complet",
 
         ],
@@ -188,12 +186,12 @@ BUILTIN = {
     # per si ve separat:
     "nom": {
         "label": "Nom",
-        "syn": ["nom", "nombre", "name"],
+        "syn": ["nom", "nombre", "name","nom_inscripcio", "nom_inscripció", "nombre_inscripcion", "nombre_inscripción", "nom_federat", "nombre_federado", "nom_participant", "nombre_participante"],
         "setter": None,  # es tracta a banda
     },
     "cognoms": {
         "label": "Cognoms",
-        "syn": ["cognoms", "apellidos", "surname", "llinatges"],
+        "syn": ["cognoms", "apellidos", "surname", "llinatges", "cognoms_inscripcio", "cognoms_inscripció", "cognoms_federat","apellidos_inscripcion", "apellidos_inscripción", "llinatges_inscripcio", "llinatges_inscripció", "apellido_federado", "llinatges_federat", "cognoms_participant", "apellidos_participante"],
         "setter": None,  # es tracta a banda
     },
     "entitat": {

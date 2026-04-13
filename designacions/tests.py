@@ -4,11 +4,13 @@ import tempfile
 import asyncio
 import xml.etree.ElementTree as ET
 from datetime import date, time
+from io import StringIO
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import httpx
 import pandas as pd
+from django.core.management import call_command
 from django.test import SimpleTestCase, TestCase
 from django.urls import reverse
 from openpyxl import load_workbook
@@ -31,6 +33,7 @@ from .services.assignment_explainer import (
     find_better_alternatives,
 )
 from .services.assignment_feasibility import build_match_descriptor, has_vehicle, inspect_mobility_transitions
+from .services.addressing import resolve_address
 from .services.manual_assignment import (
     build_manual_assignment_context,
     build_run_mobility_summary,
@@ -247,6 +250,108 @@ class DesignacionsDateAwareHelpersTests(SimpleTestCase):
 
         self.assertEqual([issue.reason_code for issue in issues], ["same_cluster_gap_violation"])
         self.assertFalse(issues[0].same_pitch)
+
+    def test_mobility_allows_same_address_without_cluster_when_gap_is_enough(self):
+        descriptors = [
+            build_match_descriptor(
+                identifier="M1",
+                date_value="2026-02-24",
+                time_value="18:00:00",
+                venue="Pista A",
+                modality="Futbol Sala",
+                cluster_id=None,
+                address_id=10,
+                cluster_status="missing_geocode",
+            ),
+            build_match_descriptor(
+                identifier="M2",
+                date_value="2026-02-24",
+                time_value="19:20:00",
+                venue="Pista B",
+                modality="Futbol Sala",
+                cluster_id=None,
+                address_id=10,
+                cluster_status="missing_geocode",
+            ),
+        ]
+
+        issues = inspect_mobility_transitions(
+            descriptors,
+            transport="Bus",
+            gap_same_pitch_min=60,
+            gap_diff_pitch_min=75,
+            gap_diff_cluster_min=100,
+        )
+
+        self.assertEqual(issues, [])
+
+    def test_mobility_blocks_missing_cluster_for_different_addresses(self):
+        descriptors = [
+            build_match_descriptor(
+                identifier="M1",
+                date_value="2026-02-24",
+                time_value="18:00:00",
+                venue="Pista A",
+                modality="Futbol Sala",
+                cluster_id=None,
+                address_id=10,
+                cluster_status="missing_geocode",
+            ),
+            build_match_descriptor(
+                identifier="M2",
+                date_value="2026-02-24",
+                time_value="19:20:00",
+                venue="Pista B",
+                modality="Futbol Sala",
+                cluster_id=None,
+                address_id=11,
+                cluster_status="missing_geocode",
+            ),
+        ]
+
+        issues = inspect_mobility_transitions(
+            descriptors,
+            transport="Cotxe",
+            gap_same_pitch_min=60,
+            gap_diff_pitch_min=75,
+            gap_diff_cluster_min=100,
+        )
+
+        self.assertEqual([issue.reason_code for issue in issues], ["missing_cluster_for_mobility_validation"])
+
+    def test_mobility_identifies_outlier_clusters(self):
+        descriptors = [
+            build_match_descriptor(
+                identifier="M1",
+                date_value="2026-02-24",
+                time_value="18:00:00",
+                venue="Pista A",
+                modality="Futbol Sala",
+                cluster_id=None,
+                address_id=10,
+                cluster_status="outlier",
+            ),
+            build_match_descriptor(
+                identifier="M2",
+                date_value="2026-02-24",
+                time_value="19:20:00",
+                venue="Pista B",
+                modality="Futbol Sala",
+                cluster_id=7,
+                address_id=11,
+                cluster_status="clustered",
+            ),
+        ]
+
+        issues = inspect_mobility_transitions(
+            descriptors,
+            transport="Cotxe",
+            gap_same_pitch_min=60,
+            gap_diff_pitch_min=75,
+            gap_diff_cluster_min=100,
+        )
+
+        self.assertEqual([issue.reason_code for issue in issues], ["outlier_cluster_for_mobility_validation"])
 
     def test_xml_to_dataframe_returns_empty_dataframe_when_group_is_missing(self):
         parsed = {
@@ -850,14 +955,16 @@ class DesignacionsManualAssignmentsTests(TestCase):
         )
 
     def _set_match_cluster(self, match, cluster_id):
-        address, _ = Address.objects.get_or_create(
-            text=f"{match.domicile}, {match.municipality}",
-            defaults={"municipality": match.municipality},
-        )
+        address = resolve_address(domicile=match.domicile, municipality=match.municipality)
+        match.address = address
+        match.save(update_fields=["address"])
         AddressCluster.objects.update_or_create(
             run=self.run,
             address=address,
-            defaults={"cluster_id": cluster_id},
+            defaults={
+                "cluster_id": cluster_id,
+                "cluster_status": "clustered" if cluster_id is not None else "pending",
+            },
         )
 
     def test_diagnosis_marks_valid_candidate_with_cost(self):
@@ -886,6 +993,19 @@ class DesignacionsManualAssignmentsTests(TestCase):
         self.assertFalse(diagnosis["is_valid"])
         self.assertIn("same_cluster_gap_violation", diagnosis["warning_reasons"])
         self.assertFalse(diagnosis["mobility_issues"][0].same_pitch)
+
+    def test_diagnosis_allows_same_address_without_cluster_when_gap_is_enough(self):
+        same_address_match = self._create_match("M-SAME-ADDRESS", date(2026, 3, 1), "20:30:00", "Pista Aux")
+        same_address_match.domicile = self.target_match.domicile
+        same_address_match.municipality = self.target_match.municipality
+        same_address_match.address = self.target_match.address
+        same_address_match.save(update_fields=["domicile", "municipality", "address"])
+        same_address_assignment = Assignment.objects.create(run=self.run, match=same_address_match, referee=self.ref_best)
+
+        diagnosis = diagnose_assignment_for_referee(self.run, same_address_assignment, self.ref_best)
+
+        self.assertTrue(diagnosis["is_valid"])
+        self.assertEqual(diagnosis["warning_reasons"], [])
 
     def test_explain_candidate_marks_ideal_assignment_as_recommended(self):
         explanation = explain_candidate_for_assignment(
@@ -975,6 +1095,9 @@ class DesignacionsManualAssignmentsTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertNotIn("eligible_proposals_by_assignment", response.context)
         self.assertNotIn("referee_options_by_assignment", response.context)
+        self.assertEqual(response.context["filter_level_options"], ["NIVELLA1", "NIVELLB1", "NIVELLC1", "NIVELLD1", "D"])
+        self.assertIn("INFANTIL", response.context["filter_category_options"])
+        self.assertIn(self.target_match.category, response.context["filter_category_options"])
         self.assertEqual(
             response.context["availability_by_assignment"][self.display_assignment.id]["Hora Inici"],
             "18:00:00",
@@ -1003,6 +1126,27 @@ class DesignacionsManualAssignmentsTests(TestCase):
         self.assertIn("proposal-rank--1", content)
         self.assertIn("proposal-rank--2", content)
         self.assertIn("proposal-rank--3", content)
+        self.assertIn("assignmentFiltersPanel", content)
+        self.assertIn("assignmentFiltersCollapse", content)
+        self.assertIn("assignmentFiltersToggle", content)
+        self.assertIn("assignmentFiltersSummary", content)
+        self.assertIn("assignmentFiltersResultSummary", content)
+        self.assertIn("assignmentFiltersEmptyState", content)
+        self.assertIn("filterTutorLevel", content)
+        self.assertIn("filterAssignmentStatus", content)
+        self.assertIn("filterMatchCategory", content)
+        self.assertIn("filterMatchVenue", content)
+        self.assertIn("assignmentFiltersReset", content)
+        self.assertIn("Amagar filtres", content)
+        self.assertIn("countActiveAssignmentFilters", content)
+        self.assertIn("rowMatchesAssignmentStatus", content)
+        self.assertIn("updateFilterToggleLabel", content)
+        self.assertIn('data-level="', content)
+        self.assertIn('data-category="', content)
+        self.assertIn('data-has-mobility-error="', content)
+        self.assertIn('data-has-mobility-warning="', content)
+        self.assertIn('data-has-manual-warning="', content)
+        self.assertIn('data-has-locked="', content)
 
     def test_manual_assignment_options_view_returns_top_proposals_and_compatible_referees(self):
         response = self.client.get(
@@ -1231,6 +1375,32 @@ class DesignacionsManualAssignmentsTests(TestCase):
         self.assertIn("5013 F5", needs_review_codes)
         self.assertNotIn("5012 F5", needs_review_codes)
         self.assertEqual(group_levels["5014 F5"], "NIVELLB1")
+
+    def test_assignments_view_exposes_group_filter_metadata(self):
+        self.display_assignment.manual_override_warning = True
+        self.display_assignment.manual_override_reason = "Warning manual"
+        self.display_assignment.locked = True
+        self.display_assignment.save(
+            update_fields=["manual_override_warning", "manual_override_reason", "locked", "updated_at"]
+        )
+        extra_match = self._create_match("M-360", date(2026, 3, 2), "21:30:00", "Pista E", category="CADET")
+        self._set_match_cluster(extra_match, 11)
+        Assignment.objects.create(run=self.run, match=extra_match, referee=self.ref_display)
+
+        response = self.client.get(reverse("designacions_assignments", args=[self.run.id]))
+
+        self.assertEqual(response.status_code, 200)
+        group_by_code = {group["referee"].code: group for group in response.context["groups"]}
+        display_group = group_by_code["5005 F5"]
+
+        self.assertEqual(display_group["level"], "NIVELLB1")
+        self.assertEqual(display_group["modality"], "Futbol Sala")
+        self.assertTrue(display_group["has_manual_override"])
+        self.assertTrue(display_group["has_locked"])
+        self.assertTrue(display_group["has_mobility_warning"])
+        self.assertFalse(display_group["has_mobility_error"])
+        self.assertEqual(display_group["categories"], ["CADET", "INFANTIL"])
+        self.assertEqual(display_group["venues"], ["Pista C", "Pista E"])
 
     @patch("designacions.views.rebuild_run_map_task.delay")
     def test_update_assignment_async_returns_run_scoped_level_in_payload(self, rebuild_map_delay_mock):
@@ -1525,7 +1695,6 @@ class DesignacionsProgressFlowTests(SimpleTestCase):
     @patch("designacions.main_fixed.mapa_assignacions_interactiu", side_effect=lambda **kwargs: kwargs["out_html"])
     @patch("designacions.main_fixed.persist_assignacions_to_db")
     @patch("designacions.main_fixed.AddressCluster.objects.update_or_create")
-    @patch("designacions.main_fixed.Address.objects.filter")
     @patch("designacions.main_fixed.clusteritza_i_plota")
     @patch("designacions.main_fixed.addresses_to_df")
     @patch("designacions.main_fixed.geocodifica_adreces")
@@ -1540,7 +1709,6 @@ class DesignacionsProgressFlowTests(SimpleTestCase):
         geocodifica_adreces_mock,
         addresses_to_df_mock,
         clusteritza_i_plota_mock,
-        address_filter_mock,
         _address_cluster_update_mock,
         _persist_mock,
         _map_mock,
@@ -1595,25 +1763,27 @@ class DesignacionsProgressFlowTests(SimpleTestCase):
                 {"Id Categoria": "10.0", "Modalitat": "Basquet", "Nom": "INFANTIL"},
             ]
         )
-        geocodifica_adreces_mock.return_value = ["ok"]
+        geocodifica_adreces_mock.return_value = [
+            SimpleNamespace(id=1, text="Carrer 1, Barcelona", lat=41.0, lon=2.0),
+            SimpleNamespace(id=2, text="Carrer 2, Barcelona", lat=41.1, lon=2.1),
+        ]
         addresses_to_df_mock.return_value = pd.DataFrame(
             [
-                {"adreca": "Carrer 1, Barcelona", "lat": 41.0, "lon": 2.0},
-                {"adreca": "Carrer 2, Barcelona", "lat": 41.1, "lon": 2.1},
+                {"address_id": 1, "adreca": "Carrer 1, Barcelona", "lat": 41.0, "lon": 2.0},
+                {"address_id": 2, "adreca": "Carrer 2, Barcelona", "lat": 41.1, "lon": 2.1},
             ]
         )
         clusteritza_i_plota_mock.return_value = (
             pd.DataFrame(
                 [
-                    {"adreca": "Carrer 1, Barcelona", "cluster": 1, "lat": 41.0, "lon": 2.0},
-                    {"adreca": "Carrer 2, Barcelona", "cluster": 2, "lat": 41.1, "lon": 2.1},
+                    {"address_id": 1, "adreca": "Carrer 1, Barcelona", "cluster": 1, "lat": 41.0, "lon": 2.0},
+                    {"address_id": 2, "adreca": "Carrer 2, Barcelona", "cluster": 2, "lat": 41.1, "lon": 2.1},
                 ]
             ),
             None,
             None,
             None,
         )
-        address_filter_mock.return_value.first.return_value = None
 
         df_dispos = pd.DataFrame(
             [
@@ -1702,7 +1872,6 @@ class DesignacionsProgressFlowTests(SimpleTestCase):
     @patch("designacions.main_fixed.mapa_assignacions_interactiu", side_effect=lambda **kwargs: kwargs["out_html"])
     @patch("designacions.main_fixed.persist_assignacions_to_db")
     @patch("designacions.main_fixed.AddressCluster.objects.update_or_create")
-    @patch("designacions.main_fixed.Address.objects.filter")
     @patch("designacions.main_fixed.clusteritza_i_plota")
     @patch("designacions.main_fixed.addresses_to_df")
     @patch("designacions.main_fixed.geocodifica_adreces")
@@ -1715,7 +1884,6 @@ class DesignacionsProgressFlowTests(SimpleTestCase):
         geocodifica_adreces_mock,
         addresses_to_df_mock,
         clusteritza_i_plota_mock,
-        address_filter_mock,
         _address_cluster_update_mock,
         _persist_mock,
         _map_mock,
@@ -1741,25 +1909,27 @@ class DesignacionsProgressFlowTests(SimpleTestCase):
         load_modalitat_map_df_mock.return_value = pd.DataFrame(
             [{"Id Categoria": "9.0", "Modalitat": "Futbol Sala", "Nom": "CADET"}]
         )
-        geocodifica_adreces_mock.return_value = ["ok"]
+        geocodifica_adreces_mock.return_value = [
+            SimpleNamespace(id=1, text="Carrer 1, Barcelona", lat=41.0, lon=2.0),
+            SimpleNamespace(id=2, text="Carrer 2, Barcelona", lat=41.1, lon=2.1),
+        ]
         addresses_to_df_mock.return_value = pd.DataFrame(
             [
-                {"adreca": "Carrer 1, Barcelona", "lat": 41.0, "lon": 2.0},
-                {"adreca": "Carrer 2, Barcelona", "lat": 41.1, "lon": 2.1},
+                {"address_id": 1, "adreca": "Carrer 1, Barcelona", "lat": 41.0, "lon": 2.0},
+                {"address_id": 2, "adreca": "Carrer 2, Barcelona", "lat": 41.1, "lon": 2.1},
             ]
         )
         clusteritza_i_plota_mock.return_value = (
             pd.DataFrame(
                 [
-                    {"adreca": "Carrer 1, Barcelona", "cluster": 1, "lat": 41.0, "lon": 2.0},
-                    {"adreca": "Carrer 2, Barcelona", "cluster": 2, "lat": 41.1, "lon": 2.1},
+                    {"address_id": 1, "adreca": "Carrer 1, Barcelona", "cluster": 1, "lat": 41.0, "lon": 2.0},
+                    {"address_id": 2, "adreca": "Carrer 2, Barcelona", "cluster": 2, "lat": 41.1, "lon": 2.1},
                 ]
             ),
             None,
             None,
             None,
         )
-        address_filter_mock.return_value.first.return_value = None
 
         df_dispos = pd.DataFrame(
             [
@@ -1835,7 +2005,6 @@ class DesignacionsProgressFlowTests(SimpleTestCase):
     @patch("designacions.main_fixed.mapa_assignacions_interactiu", side_effect=lambda **kwargs: kwargs["out_html"])
     @patch("designacions.main_fixed.persist_assignacions_to_db")
     @patch("designacions.main_fixed.AddressCluster.objects.update_or_create")
-    @patch("designacions.main_fixed.Address.objects.filter")
     @patch("designacions.main_fixed.clusteritza_i_plota")
     @patch("designacions.main_fixed.addresses_to_df")
     @patch("designacions.main_fixed.geocodifica_adreces")
@@ -1848,7 +2017,6 @@ class DesignacionsProgressFlowTests(SimpleTestCase):
         geocodifica_adreces_mock,
         addresses_to_df_mock,
         clusteritza_i_plota_mock,
-        address_filter_mock,
         _address_cluster_update_mock,
         _persist_mock,
         _map_mock,
@@ -1874,19 +2042,18 @@ class DesignacionsProgressFlowTests(SimpleTestCase):
         load_modalitat_map_df_mock.return_value = pd.DataFrame(
             [{"Id Categoria": "9.0", "Modalitat": "Futbol Sala", "Nom": "CADET"}]
         )
-        geocodifica_adreces_mock.return_value = ["ok"]
+        geocodifica_adreces_mock.return_value = [SimpleNamespace(id=1, text="Carrer 1, Barcelona", lat=41.0, lon=2.0)]
         addresses_to_df_mock.return_value = pd.DataFrame(
-            [{"adreca": "Carrer 1, Barcelona", "lat": 41.0, "lon": 2.0}]
+            [{"address_id": 1, "adreca": "Carrer 1, Barcelona", "lat": 41.0, "lon": 2.0}]
         )
         clusteritza_i_plota_mock.return_value = (
             pd.DataFrame(
-                [{"adreca": "Carrer 1, Barcelona", "cluster": 1, "lat": 41.0, "lon": 2.0}]
+                [{"address_id": 1, "adreca": "Carrer 1, Barcelona", "cluster": 1, "lat": 41.0, "lon": 2.0}]
             ),
             None,
             None,
             None,
         )
-        address_filter_mock.return_value.first.return_value = None
 
         df_dispos = pd.DataFrame(
             [
@@ -2035,3 +2202,129 @@ class DesignacionsRunDetailViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         content = response.content.decode("utf-8")
         self.assertIn("El run ha finalitzat amb error.", content)
+
+
+class DesignacionsGeodataRepairTests(TestCase):
+    def test_geocoding_pending_view_shows_reason_and_excludes_ok_addresses(self):
+        Address.objects.create(
+            text="Carrer Sense Coordenades, Barcelona",
+            normalized_text="carrer sense coordenades, barcelona",
+            geocode_status="not_found",
+            last_error="Sense resultat",
+        )
+        Address.objects.create(
+            text="Carrer OK, Barcelona",
+            normalized_text="carrer ok, barcelona",
+            lat=41.0,
+            lon=2.0,
+            geocode_status="ok",
+        )
+
+        response = self.client.get(reverse("designacions_geocoding_pending"))
+
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode("utf-8")
+        self.assertIn("Sense resultat", content)
+        self.assertIn("Carrer Sense Coordenades, Barcelona", content)
+        self.assertNotIn("Carrer OK, Barcelona", content)
+
+    @patch("designacions.management.commands.repair_designacions_geodata.clusteritza_i_plota")
+    def test_repair_command_backfills_match_address_and_marks_invalid_assignment(self, clusteritza_mock):
+        run = DesignationRun.objects.create(
+            task_id="task-repair-1",
+            status="done",
+            params={"cluster_eps_m": 500, "cluster_min_samples": 2, "max_partits_subgrup": 3},
+        )
+        referee = Referee.objects.create(
+            code="5001 F5",
+            name="Tutor Repair",
+            level="NIVELLC1",
+            modality="Futbol Sala",
+            transport="Bus",
+        )
+        Availability.objects.create(
+            run=run,
+            referee=referee,
+            raw={
+                "Data": "2026-03-06",
+                "Hora Inici": "17:00:00",
+                "Hora Fi": "22:00:00",
+                "Nivell": "NIVELLC1",
+                "Modalitat": "Futbol Sala",
+                "MitjÃ  de Transport": "Bus",
+            },
+        )
+        address_1 = Address.objects.create(
+            text="Institut Valldemossa, Barcelona",
+            normalized_text="institut valldemossa, barcelona",
+            lat=41.40,
+            lon=2.17,
+            geocode_status="pending",
+        )
+        address_2 = Address.objects.create(
+            text="Col·legi Pare Manyanet, Barcelona",
+            normalized_text="col legi pare manyanet, barcelona",
+            lat=41.39,
+            lon=2.15,
+            geocode_status="pending",
+        )
+        match_1 = Match.objects.create(
+            run=run,
+            code="31935",
+            category="INFANTIL",
+            modality="Futbol Sala",
+            date=date(2026, 3, 6),
+            hour_raw="18:00:00",
+            domicile="Institut Valldemossa",
+            municipality="Barcelona",
+            venue="Institut Valldemossa",
+        )
+        match_2 = Match.objects.create(
+            run=run,
+            code="46473",
+            category="PREINFANTIL",
+            modality="Futbol Sala",
+            date=date(2026, 3, 6),
+            hour_raw="19:15:00",
+            domicile="Col·legi Pare Manyanet",
+            municipality="Barcelona",
+            venue="Col·legi Pare Manyanet",
+        )
+        Assignment.objects.create(run=run, match=match_1, referee=referee)
+        Assignment.objects.create(run=run, match=match_2, referee=referee)
+
+        clusteritza_mock.return_value = (
+            pd.DataFrame(
+                [
+                    {"address_id": address_1.id, "adreca": address_1.text, "lat": address_1.lat, "lon": address_1.lon, "cluster": -1},
+                    {"address_id": address_2.id, "adreca": address_2.text, "lat": address_2.lat, "lon": address_2.lon, "cluster": -1},
+                ]
+            ),
+            None,
+            None,
+            None,
+        )
+
+        stdout = StringIO()
+        call_command("repair_designacions_geodata", run_id=run.id, stdout=stdout)
+
+        match_1.refresh_from_db()
+        match_2.refresh_from_db()
+        self.assertEqual(match_1.address_id, address_1.id)
+        self.assertEqual(match_2.address_id, address_2.id)
+
+        cluster_rows = {
+            cluster.address_id: cluster
+            for cluster in AddressCluster.objects.filter(run=run).order_by("address_id")
+        }
+        self.assertEqual(cluster_rows[address_1.id].cluster_status, "outlier")
+        self.assertIsNone(cluster_rows[address_1.id].cluster_id)
+
+        for assignment in Assignment.objects.filter(run=run):
+            assignment.refresh_from_db()
+            self.assertTrue(assignment.manual_override_warning)
+            self.assertIn("Revisio automatica", assignment.manual_override_reason)
+
+        run.refresh_from_db()
+        self.assertEqual(run.result_summary["mobility_error_count"], 1)
+        self.assertIn("matches_sense_address=0", stdout.getvalue())

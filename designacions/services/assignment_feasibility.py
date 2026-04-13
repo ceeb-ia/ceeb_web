@@ -23,6 +23,7 @@ REASON_PRIORITY = [
     "cross_cluster_without_vehicle",
     "cross_cluster_gap_violation",
     "same_cluster_gap_violation",
+    "outlier_cluster_for_mobility_validation",
     "missing_cluster_for_mobility_validation",
     "time_conflict_same_pitch",
     "time_conflict_diff_pitch",
@@ -41,6 +42,8 @@ class MatchDescriptor:
     modality: str
     category: str
     cluster_id: str | None = None
+    address_id: int | None = None
+    cluster_status: str | None = None
 
 
 @dataclass(frozen=True)
@@ -128,6 +131,8 @@ def build_match_descriptor(
     modality,
     category="",
     cluster_id=None,
+    address_id=None,
+    cluster_status=None,
 ):
     match_datetime = combine_date_time(date_value, time_value)
     if pd.isna(match_datetime):
@@ -141,6 +146,8 @@ def build_match_descriptor(
         modality=normalize_text(modality),
         category=normalize_text(category),
         cluster_id=normalize_cluster_id(cluster_id),
+        address_id=address_id,
+        cluster_status=normalize_text(cluster_status) or None,
     )
 
 
@@ -238,6 +245,11 @@ def has_vehicle(transport_value) -> bool:
     return any(token in normalized for token in vehicle_tokens)
 
 
+def normalize_cluster_status(value):
+    normalized = normalize_text_key(value)
+    return normalized or None
+
+
 def detect_time_conflicts(
     descriptors: list[MatchDescriptor],
     existing_descriptors: list[MatchDescriptor],
@@ -314,11 +326,33 @@ def inspect_mobility_transitions(
 
         left_cluster_id = normalize_cluster_id(left.cluster_id)
         right_cluster_id = normalize_cluster_id(right.cluster_id)
+        left_cluster_status = normalize_cluster_status(left.cluster_status)
+        right_cluster_status = normalize_cluster_status(right.cluster_status)
 
         if left_cluster_id is None or right_cluster_id is None:
+            if left.address_id is not None and left.address_id == right.address_id:
+                if minutes < base_gap:
+                    issues.append(
+                        MobilityTransitionIssue(
+                            reason_code="same_cluster_gap_violation",
+                            left_identifier=left.identifier,
+                            right_identifier=right.identifier,
+                            match_date=left.date,
+                            left_cluster_id=left_cluster_id,
+                            right_cluster_id=right_cluster_id,
+                            required_gap_min=base_gap,
+                            actual_gap_min=minutes,
+                            same_pitch=same_pitch_transition,
+                        )
+                    )
+                continue
+
+            reason_code = "missing_cluster_for_mobility_validation"
+            if left_cluster_status == "outlier" or right_cluster_status == "outlier":
+                reason_code = "outlier_cluster_for_mobility_validation"
             issues.append(
                 MobilityTransitionIssue(
-                    reason_code="missing_cluster_for_mobility_validation",
+                    reason_code=reason_code,
                     left_identifier=left.identifier,
                     right_identifier=right.identifier,
                     match_date=left.date,

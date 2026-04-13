@@ -123,6 +123,52 @@
       align-items:center;
       margin-bottom:.2rem;
     }
+    .filter-panel{
+      border: 1px solid #d8dee6;
+      border-radius: 8px;
+      background: #fbfcfe;
+      margin-bottom: 1rem;
+    }
+    .filter-panel__header{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:.75rem;
+      padding:.75rem 1rem;
+    }
+    .filter-panel__summary{
+      font-size: .82rem;
+      color: #5f6b76;
+    }
+    .filter-panel__body{
+      border-top: 1px solid #e5e7eb;
+      padding: 1rem;
+    }
+    .filter-panel__label{
+      font-size: .78rem;
+      font-weight: 700;
+      color: #4b5563;
+      text-transform: uppercase;
+      letter-spacing: .02em;
+      margin-bottom: .3rem;
+    }
+    .filter-panel__footer{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:.75rem;
+      margin-top:.75rem;
+    }
+    .filter-panel__status{
+      font-size:.82rem;
+      color:#5f6b76;
+    }
+    .filter-empty-state{
+      border: 1px dashed #c7ced6;
+      border-radius: 8px;
+      padding: .75rem 1rem;
+      background: #f8fafc;
+    }
   </style>
 
   <div class="card-surface p-3">
@@ -205,12 +251,74 @@
       <!-- TAB 1: Assignacions agrupades -->
       <div class="tab-pane fade show active" id="t1" role="tabpanel" aria-labelledby="t1-tab">
 
-        <div class="form-row mb-3">
-          <div class="col-12 col-lg-6 mb-2 mb-lg-0">
-            <input id="searchTutor" class="form-control form-control-sm" placeholder="Cerca tutor (codi o nom)..." />
+        <div class="filter-panel" id="assignmentFiltersPanel">
+          <div class="filter-panel__header">
+            <div>
+              <div class="font-weight-bold">Filtres d'assignacions</div>
+              <div class="filter-panel__summary" id="assignmentFiltersSummary">Sense filtres actius.</div>
+            </div>
+            <button
+              class="btn btn-sm btn-outline-secondary"
+              type="button"
+              data-toggle="collapse"
+              data-target="#assignmentFiltersCollapse"
+              aria-expanded="true"
+              aria-controls="assignmentFiltersCollapse"
+              id="assignmentFiltersToggle">
+              Amagar filtres
+            </button>
           </div>
-          <div class="col-12 col-lg-6">
-            <input id="searchMatch" class="form-control form-control-sm" placeholder="Cerca partit (codi, club, pista, categoria)..." />
+          <div class="collapse show" id="assignmentFiltersCollapse">
+            <div class="filter-panel__body">
+              <div class="form-row">
+                <div class="col-12 col-lg-6 mb-3">
+                  <div class="filter-panel__label">Tutor</div>
+                  <input id="searchTutor" class="form-control form-control-sm" placeholder="Cerca tutor (codi o nom)..." />
+                </div>
+                <div class="col-12 col-lg-6 mb-3">
+                  <div class="filter-panel__label">Partit</div>
+                  <input id="searchMatch" class="form-control form-control-sm" placeholder="Cerca partit (codi, club, pista, categoria)..." />
+                </div>
+                <div class="col-12 col-md-6 col-xl-3 mb-3">
+                  <div class="filter-panel__label">Nivell tutor</div>
+                  <select id="filterTutorLevel" class="form-control form-control-sm">
+                    <option value="">Tots</option>
+                    {% for level in filter_level_options %}
+                    <option value="{{ level }}">{{ level }}</option>
+                    {% endfor %}
+                    <option value="__missing__">Sense nivell</option>
+                  </select>
+                </div>
+                <div class="col-12 col-md-6 col-xl-3 mb-3">
+                  <div class="filter-panel__label">Estat</div>
+                  <select id="filterAssignmentStatus" class="form-control form-control-sm">
+                    <option value="">Tots</option>
+                    <option value="mobility_error">Amb error mobilitat</option>
+                    <option value="mobility_warning">Amb warning mobilitat</option>
+                    <option value="manual_warning">Amb warning manual</option>
+                    <option value="locked">Amb bloquejats</option>
+                    <option value="clean">Sense incidencies</option>
+                  </select>
+                </div>
+                <div class="col-12 col-md-6 col-xl-3 mb-3">
+                  <div class="filter-panel__label">Categoria partit</div>
+                  <select id="filterMatchCategory" class="form-control form-control-sm">
+                    <option value="">Totes</option>
+                    {% for category in filter_category_options %}
+                    <option value="{{ category }}">{{ category }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="col-12 col-md-6 col-xl-3 mb-3">
+                  <div class="filter-panel__label">Pista</div>
+                  <input id="filterMatchVenue" class="form-control form-control-sm" placeholder="Cerca pista..." />
+                </div>
+              </div>
+              <div class="filter-panel__footer">
+                <div class="filter-panel__status" id="assignmentFiltersResultSummary">Mostrant totes les assignacions.</div>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="assignmentFiltersReset">Netejar filtres</button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -218,6 +326,14 @@
           {% for g in groups %}
           <div class="card tutor-group mb-2 w-100"
                data-tutor="{{ g.referee.code }} {{ g.referee.name|default:'' }}"
+               data-level="{{ g.level }}"
+               data-modality="{{ g.modality }}"
+               data-has-mobility-error="{% if g.has_mobility_error %}1{% else %}0{% endif %}"
+               data-has-mobility-warning="{% if g.has_mobility_warning %}1{% else %}0{% endif %}"
+               data-has-manual-warning="{% if g.has_manual_override %}1{% else %}0{% endif %}"
+               data-has-locked="{% if g.has_locked %}1{% else %}0{% endif %}"
+               data-categories="{% for category in g.categories %}{{ category }} {% endfor %}"
+               data-venues="{% for venue in g.venues %}{{ venue }} {% endfor %}"
                style="width:100%">
 
             <div class="card-header p-0" id="h{{ g.referee.id }}">
@@ -275,7 +391,12 @@
                       <tr class="match-row assigned-match-row{% if a.manual_override_warning %} table-warning{% endif %}{% if mobility_errors %} table-danger{% endif %}"
                           data-assignment-id="{{ a.id }}"
                           data-assignment-explanation-url="{% url 'designacions_assignment_explanation' run.id a.id %}"
-                          data-match="{{ a.match.code }} {{ a.match.club_local|default:'' }} {{ a.match.equip_local|default:'' }} {{ a.match.equip_visitant|default:'' }} {{ a.match.venue|default:'' }} {{ a.match.category|default:'' }}">
+                          data-match="{{ a.match.code }} {{ a.match.club_local|default:'' }} {{ a.match.equip_local|default:'' }} {{ a.match.equip_visitant|default:'' }} {{ a.match.venue|default:'' }} {{ a.match.category|default:'' }}"
+                          data-category="{{ a.match.category|default:'' }}"
+                          data-venue="{{ a.match.venue|default:'' }}"
+                          data-has-manual-warning="{% if a.manual_override_warning %}1{% else %}0{% endif %}"
+                          data-has-mobility-error="{% if mobility_errors %}1{% else %}0{% endif %}"
+                          data-has-mobility-warning="{% if mobility_warnings %}1{% else %}0{% endif %}">
                         <td class="font-weight-bold">
                           {{ a.match.code }}
                           {% if mobility_errors %}
@@ -367,6 +488,9 @@
           {% empty %}
             <div class="text-muted">No hi ha assignacions amb tutor.</div>
           {% endfor %}
+        </div>
+        <div class="filter-empty-state text-muted d-none" id="assignmentFiltersEmptyState">
+          No hi ha assignacions visibles amb els filtres actuals.
         </div>
 
       </div>
@@ -777,6 +901,20 @@
   (function(){
     var alertBox = document.getElementById('assignmentAjaxAlert');
     var unassignModalAsyncUrl = null;
+    var tutorInput = document.getElementById('searchTutor');
+    var matchInput = document.getElementById('searchMatch');
+    var levelSelect = document.getElementById('filterTutorLevel');
+    var statusSelect = document.getElementById('filterAssignmentStatus');
+    var categorySelect = document.getElementById('filterMatchCategory');
+    var venueInput = document.getElementById('filterMatchVenue');
+    var resetFiltersButton = document.getElementById('assignmentFiltersReset');
+    var filtersSummary = document.getElementById('assignmentFiltersSummary');
+    var filtersResultSummary = document.getElementById('assignmentFiltersResultSummary');
+    var filtersEmptyState = document.getElementById('assignmentFiltersEmptyState');
+    var filtersToggle = document.getElementById('assignmentFiltersToggle');
+    var filtersCollapse = document.getElementById('assignmentFiltersCollapse');
+    var unassignedMatchInput = document.getElementById('searchUnassignedMatch');
+    var unassignedTutorInput = document.getElementById('searchUnassignedTutor');
 
     function normalize(s){ return (s || "").toLowerCase().trim(); }
 
@@ -843,10 +981,137 @@
         cell.innerHTML = '<div class="warning-box"></div>';
         cell.querySelector('.warning-box').textContent = warning.text;
         row.classList.add('table-warning');
+        row.dataset.hasManualWarning = '1';
       } else {
         cell.innerHTML = '<span class="text-muted small">Sense warning</span>';
         row.classList.remove('table-warning');
+        row.dataset.hasManualWarning = '0';
       }
+    }
+
+    function countActiveAssignmentFilters(){
+      var filters = [
+        tutorInput ? tutorInput.value : '',
+        matchInput ? matchInput.value : '',
+        levelSelect ? levelSelect.value : '',
+        statusSelect ? statusSelect.value : '',
+        categorySelect ? categorySelect.value : '',
+        venueInput ? venueInput.value : ''
+      ];
+      return filters.filter(function(value){
+        return normalize(value) !== '';
+      }).length;
+    }
+
+    function rowMatchesAssignmentStatus(row, status){
+      if (!status) return true;
+
+      var hasManualWarning = row.dataset.hasManualWarning === '1';
+      var hasMobilityError = row.dataset.hasMobilityError === '1';
+      var hasMobilityWarning = row.dataset.hasMobilityWarning === '1';
+
+      if (status === 'mobility_error') return hasMobilityError;
+      if (status === 'mobility_warning') return hasMobilityWarning;
+      if (status === 'manual_warning') return hasManualWarning;
+      if (status === 'clean') return !hasManualWarning && !hasMobilityError && !hasMobilityWarning;
+      return true;
+    }
+
+    function applyFilters(){
+      var tutorQ = normalize(tutorInput ? tutorInput.value : '');
+      var matchQ = normalize(matchInput ? matchInput.value : '');
+      var levelQ = normalize(levelSelect ? levelSelect.value : '');
+      var statusQ = normalize(statusSelect ? statusSelect.value : '');
+      var categoryQ = normalize(categorySelect ? categorySelect.value : '');
+      var venueQ = normalize(venueInput ? venueInput.value : '');
+      var unassignedMatchQ = normalize(unassignedMatchInput ? unassignedMatchInput.value : '');
+      var unassignedTutorQ = normalize(unassignedTutorInput ? unassignedTutorInput.value : '');
+      var groups = Array.from(document.querySelectorAll('.tutor-group'));
+      var totalGroups = groups.length;
+      var totalRows = 0;
+      var visibleGroups = 0;
+      var visibleRows = 0;
+
+      groups.forEach(function(group){
+        var tutorText = normalize(group.getAttribute('data-tutor'));
+        var groupLevel = normalize(group.getAttribute('data-level'));
+        var tutorOk = !tutorQ || tutorText.indexOf(tutorQ) !== -1;
+        var levelOk = !levelQ || (levelQ === '__missing__' ? !groupLevel : groupLevel === levelQ);
+        var groupStatusOk = !statusQ || statusQ !== 'locked' || group.getAttribute('data-has-locked') === '1';
+        var anyMatchVisible = false;
+
+        group.querySelectorAll('.match-row').forEach(function(row){
+          totalRows += 1;
+          var rowMatch = normalize(row.getAttribute('data-match'));
+          var rowCategory = normalize(row.getAttribute('data-category'));
+          var rowVenue = normalize(row.getAttribute('data-venue'));
+          var matchOk = !matchQ || rowMatch.indexOf(matchQ) !== -1;
+          var categoryOk = !categoryQ || rowCategory === categoryQ;
+          var venueOk = !venueQ || rowVenue.indexOf(venueQ) !== -1;
+          var statusOk = statusQ === 'locked' ? true : rowMatchesAssignmentStatus(row, statusQ);
+          var rowVisible = matchOk && categoryOk && venueOk && statusOk;
+          row.style.display = rowVisible ? '' : 'none';
+          if (rowVisible) {
+            anyMatchVisible = true;
+            visibleRows += 1;
+          }
+        });
+
+        var groupVisible = tutorOk && levelOk && groupStatusOk && anyMatchVisible;
+        group.style.display = groupVisible ? '' : 'none';
+        if (groupVisible) {
+          visibleGroups += 1;
+        }
+      });
+
+      document.querySelectorAll('.unassigned-match-row').forEach(function(row){
+        var matchText = normalize(row.getAttribute('data-match'));
+        row.style.display = (!unassignedMatchQ || matchText.indexOf(unassignedMatchQ) !== -1) ? '' : 'none';
+      });
+
+      document.querySelectorAll('.unassigned-ref-row').forEach(function(row){
+        var refereeText = normalize(row.getAttribute('data-referee'));
+        row.style.display = (!unassignedTutorQ || refereeText.indexOf(unassignedTutorQ) !== -1) ? '' : 'none';
+      });
+
+      var activeFilterCount = countActiveAssignmentFilters();
+      if (filtersSummary) {
+        if (!activeFilterCount) {
+          filtersSummary.textContent = 'Sense filtres actius.';
+        } else {
+          var hiddenRows = totalRows - visibleRows;
+          var text = activeFilterCount + ' filtre' + (activeFilterCount === 1 ? '' : 's') + ' actiu' + (activeFilterCount === 1 ? '' : 's');
+          if (hiddenRows > 0) {
+            text += ' · ' + hiddenRows + ' partit' + (hiddenRows === 1 ? '' : 's') + ' ocult' + (hiddenRows === 1 ? '' : 's');
+          }
+          filtersSummary.textContent = text + '.';
+        }
+      }
+      if (filtersResultSummary) {
+        if (!totalGroups) {
+          filtersResultSummary.textContent = 'No hi ha assignacions amb tutor.';
+        } else {
+          filtersResultSummary.textContent = 'Mostrant ' + visibleGroups + ' de ' + totalGroups + ' tutors i ' + visibleRows + ' de ' + totalRows + ' partits.';
+        }
+      }
+      if (filtersEmptyState) {
+        filtersEmptyState.classList.toggle('d-none', visibleRows !== 0 || totalRows === 0);
+      }
+    }
+
+    function resetAssignmentFilters(){
+      if (tutorInput) tutorInput.value = '';
+      if (matchInput) matchInput.value = '';
+      if (levelSelect) levelSelect.value = '';
+      if (statusSelect) statusSelect.value = '';
+      if (categorySelect) categorySelect.value = '';
+      if (venueInput) venueInput.value = '';
+      applyFilters();
+    }
+
+    function updateFilterToggleLabel(){
+      if (!filtersToggle || !filtersCollapse) return;
+      filtersToggle.textContent = filtersCollapse.classList.contains('show') ? 'Amagar filtres' : 'Mostrar filtres';
     }
 
     var suggestionTable = document.querySelector('#t2 table[data-manual-suggestions-bulk-url]');
@@ -1268,6 +1533,7 @@
             if (data.refresh_suggestions) {
               markAllUnassignedRowsStaleAndRefresh(data.assigned_referee_id);
             }
+            applyFilters();
             return;
           }
           if (data.row_state === 'unassigned' && row.classList.contains('assigned-match-row')) {
@@ -1276,6 +1542,7 @@
           if (data.refresh_suggestions) {
             markAllUnassignedRowsStaleAndRefresh(data.assigned_referee_id);
           }
+          applyFilters();
         })
         .catch(function(error){
           showAlert((error && error.message) || "No s'ha pogut desar el canvi.", 'danger');
@@ -1358,6 +1625,7 @@
             if (data.refresh_suggestions) {
               markAllUnassignedRowsStaleAndRefresh(data.assigned_referee_id);
             }
+            applyFilters();
             $('#confirmUnassignModal').modal('hide');
           })
           .catch(function(error){
@@ -1368,51 +1636,24 @@
       $('a[data-toggle="tab"][href="#t2"]').on('shown.bs.tab', function () {
         pumpSuggestionQueue();
       });
+
+      $('#assignmentFiltersCollapse').on('shown.bs.collapse hidden.bs.collapse', function () {
+        updateFilterToggleLabel();
+      });
     });
 
     scheduleInitialSuggestionPreload();
 
-    var tutorInput = document.getElementById('searchTutor');
-    var matchInput = document.getElementById('searchMatch');
-    var unassignedMatchInput = document.getElementById('searchUnassignedMatch');
-    var unassignedTutorInput = document.getElementById('searchUnassignedTutor');
-
-    function applyFilters(){
-      var tutorQ = normalize(tutorInput ? tutorInput.value : "");
-      var matchQ = normalize(matchInput ? matchInput.value : "");
-      var unassignedMatchQ = normalize(unassignedMatchInput ? unassignedMatchInput.value : "");
-      var unassignedTutorQ = normalize(unassignedTutorInput ? unassignedTutorInput.value : "");
-
-      document.querySelectorAll('.tutor-group').forEach(function(group){
-        var tutorText = normalize(group.getAttribute('data-tutor'));
-        var tutorOk = !tutorQ || tutorText.indexOf(tutorQ) !== -1;
-        var anyMatchOk = false;
-
-        group.querySelectorAll('.match-row').forEach(function(row){
-          var m = normalize(row.getAttribute('data-match'));
-          var ok = !matchQ || m.indexOf(matchQ) !== -1;
-          row.style.display = ok ? "" : "none";
-          if (ok) anyMatchOk = true;
-        });
-
-        group.style.display = (tutorOk && (!matchQ || anyMatchOk)) ? "" : "none";
-      });
-
-      document.querySelectorAll('.unassigned-match-row').forEach(function(row){
-        var m = normalize(row.getAttribute('data-match'));
-        row.style.display = (!unassignedMatchQ || m.indexOf(unassignedMatchQ) !== -1) ? "" : "none";
-      });
-
-      document.querySelectorAll('.unassigned-ref-row').forEach(function(row){
-        var m = normalize(row.getAttribute('data-referee'));
-        row.style.display = (!unassignedTutorQ || m.indexOf(unassignedTutorQ) !== -1) ? "" : "none";
-      });
-    }
-
     if (tutorInput) tutorInput.addEventListener('input', applyFilters);
     if (matchInput) matchInput.addEventListener('input', applyFilters);
+    if (levelSelect) levelSelect.addEventListener('change', applyFilters);
+    if (statusSelect) statusSelect.addEventListener('change', applyFilters);
+    if (categorySelect) categorySelect.addEventListener('change', applyFilters);
+    if (venueInput) venueInput.addEventListener('input', applyFilters);
+    if (resetFiltersButton) resetFiltersButton.addEventListener('click', resetAssignmentFilters);
     if (unassignedMatchInput) unassignedMatchInput.addEventListener('input', applyFilters);
     if (unassignedTutorInput) unassignedTutorInput.addEventListener('input', applyFilters);
+    updateFilterToggleLabel();
     applyFilters();
 
     var sortState = {col: null, asc: true};

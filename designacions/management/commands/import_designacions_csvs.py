@@ -1,15 +1,26 @@
-import pandas as pd
 from pathlib import Path
 
+import pandas as pd
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
-from designacions.models import ModalityMap, Address, AddressCluster
+from designacions.models import Address, AddressCluster, ModalityMap
+from designacions.services.addressing import build_address_payload, resolve_address
 
-def _safe_str(v):
-    if pd.isna(v):
+
+def _safe_str(value):
+    if pd.isna(value):
         return ""
-    return str(v).strip()
+    return str(value).strip()
+
+
+def _cluster_status_from_csv(cluster_id, lat, lon) -> str:
+    if lat is None or lon is None:
+        return "missing_geocode"
+    if cluster_id is None or cluster_id == -1:
+        return "outlier"
+    return "clustered"
+
 
 class Command(BaseCommand):
     help = "Importa map_modalitat_nom.csv + domicilis_geocodificats.csv + (opcional) domicilis_clusteritzats.csv a la BD."
@@ -19,23 +30,18 @@ class Command(BaseCommand):
             "--base-dir",
             type=str,
             default=None,
-            help="Directori on hi ha els CSV (ex: /app/designacions)."
+            help="Directori on hi ha els CSV (ex: /app/designacions).",
         )
         parser.add_argument(
             "--run-id",
             type=int,
             default=None,
-            help="Si s’indica, importa també domicilis_clusteritzats.csv i el guarda a AddressCluster per aquest run."
+            help="Si s'indica, importa també domicilis_clusteritzats.csv i el guarda a AddressCluster per aquest run.",
         )
 
     @transaction.atomic
     def handle(self, *args, **opts):
-        # On són els CSV
-        if opts["base_dir"]:
-            base_dir = Path(opts["base_dir"]).resolve()
-        else:
-            # fallback: carpeta del paquet designacions
-            base_dir = Path(__file__).resolve().parents[3]
+        base_dir = Path(opts["base_dir"]).resolve() if opts["base_dir"] else Path(__file__).resolve().parents[3]
         run_id = opts.get("run_id")
 
         self.stdout.write(self.style.NOTICE(f"Base dir CSV: {base_dir}"))
@@ -46,11 +52,10 @@ class Command(BaseCommand):
         path_geo = base_dir / "designacions" / "domicilis_geocodificats.csv"
         path_cluster = base_dir / "designacions" / "domicilis_clusteritzats.csv"
 
-        # 1) map_modalitat_nom.csv (delimiter ';', BOM possible)
         if path_map.exists():
             df = pd.read_csv(path_map, sep=";", encoding="utf-8-sig")
             required = ["Id Categoria", "Modalitat", "Nom", "Descripció", "Nom Abreviat", "Ordre", "CodiExtern"]
-            missing = [c for c in required if c not in df.columns]
+            missing = [column for column in required if column not in df.columns]
             if missing:
                 raise Exception(f"Falten columnes a {path_map}: {missing}. Columnes actuals: {list(df.columns)}")
 
@@ -64,16 +69,15 @@ class Command(BaseCommand):
                 if not modalitat or not nom:
                     continue
 
-                # clau estable (i curta) per mantenir unique de forma segura
                 key = f"{modalitat}::{nom}"
                 if len(key) > 255:
-                    # últim recurs: retallem però mantenim diferenciació amb hash
                     import hashlib
-                    h = hashlib.sha1(key.encode("utf-8")).hexdigest()[:10]
-                    key = (key[:240] + "::" + h)
+
+                    digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:10]
+                    key = key[:240] + "::" + digest
 
                 defaults = {
-                    "name": nom,           # compat
+                    "name": nom,
                     "id_categoria": id_cat,
                     "modalitat": modalitat,
                     "nom": nom,
@@ -82,7 +86,6 @@ class Command(BaseCommand):
                     "ordre": None if pd.isna(row.get("Ordre")) else int(row.get("Ordre")),
                     "codi_extern": _safe_str(row.get("CodiExtern")) or None,
                 }
-
                 ModalityMap.objects.update_or_create(key=key, defaults=defaults)
                 upsert += 1
 
@@ -90,18 +93,17 @@ class Command(BaseCommand):
         else:
             self.stdout.write(self.style.WARNING(f"No trobo {path_map} (saltat)."))
 
-        # 2) domicilis_geocodificats.csv (adreca,lat,lon)
         if path_geo.exists():
             df = pd.read_csv(path_geo, on_bad_lines="skip", encoding="utf-8-sig")
             required = ["adreca", "lat", "lon"]
-            missing = [c for c in required if c not in df.columns]
+            missing = [column for column in required if column not in df.columns]
             if missing:
                 raise Exception(f"Falten columnes a {path_geo}: {missing}. Columnes actuals: {list(df.columns)}")
 
             upsert = 0
             for _, row in df.iterrows():
-                adreca = _safe_str(row.get("adreca"))
-                if not adreca:
+                payload = build_address_payload(text=row.get("adreca"))
+                if not payload["text"]:
                     continue
 
                 lat = row.get("lat")
@@ -109,17 +111,17 @@ class Command(BaseCommand):
                 lat = None if pd.isna(lat) else float(lat)
                 lon = None if pd.isna(lon) else float(lon)
 
-                status = "ok" if (lat is not None and lon is not None) else "pending"
+                address = resolve_address(text=payload["text"], municipality=payload["municipality"])
+                if address is None:
+                    continue
 
-                Address.objects.update_or_create(
-                    text=adreca,
-                    defaults={
-                        "lat": lat,
-                        "lon": lon,
-                        "geocode_status": status,
-                        "provider": "import_csv",
-                        "last_error": None,
-                    }
+                address.lat = lat
+                address.lon = lon
+                address.geocode_status = "ok" if lat is not None and lon is not None else "pending"
+                address.provider = "import_csv"
+                address.last_error = None
+                address.save(
+                    update_fields=["text", "normalized_text", "municipality", "lat", "lon", "geocode_status", "provider", "last_error", "updated_at"]
                 )
                 upsert += 1
 
@@ -127,49 +129,54 @@ class Command(BaseCommand):
         else:
             self.stdout.write(self.style.WARNING(f"No trobo {path_geo} (saltat)."))
 
-        # 3) domicilis_clusteritzats.csv (adreca,lat,lon,cluster) -> només si hi ha --run-id
         if path_cluster.exists():
             if not run_id:
-                self.stdout.write(self.style.WARNING(
-                    f"He detectat {path_cluster}, però la clusterització s’ha de guardar per RUN. "
-                    "Executa amb --run-id <id> per importar-lo."
-                ))
+                self.stdout.write(
+                    self.style.WARNING(
+                        f"He detectat {path_cluster}, però la clusterització s'ha de guardar per RUN. Executa amb --run-id <id>."
+                    )
+                )
             else:
                 df = pd.read_csv(path_cluster, on_bad_lines="skip", encoding="utf-8-sig")
                 required = ["adreca", "cluster"]
-                missing = [c for c in required if c not in df.columns]
+                missing = [column for column in required if column not in df.columns]
                 if missing:
                     raise Exception(f"Falten columnes a {path_cluster}: {missing}. Columnes actuals: {list(df.columns)}")
 
                 upsert = 0
                 for _, row in df.iterrows():
-                    adreca = _safe_str(row.get("adreca"))
-                    if not adreca:
+                    payload = build_address_payload(text=row.get("adreca"))
+                    if not payload["text"]:
                         continue
 
-                    # assegurem Address existeix (i aprofitem lat/lon si ve al CSV)
                     lat = row.get("lat", None)
                     lon = row.get("lon", None)
                     lat = None if pd.isna(lat) else float(lat)
                     lon = None if pd.isna(lon) else float(lon)
 
-                    addr, _ = Address.objects.get_or_create(text=adreca)
-                    if addr.lat is None and lat is not None:
-                        addr.lat = lat
-                    if addr.lon is None and lon is not None:
-                        addr.lon = lon
-                    if addr.lat is not None and addr.lon is not None and addr.geocode_status in ("pending", "not_found"):
-                        addr.geocode_status = "ok"
-                    addr.provider = addr.provider or "import_csv"
-                    addr.save()
+                    address = resolve_address(text=payload["text"], municipality=payload["municipality"])
+                    if address is None:
+                        continue
 
-                    c = row.get("cluster")
-                    cluster_id = None if pd.isna(c) else int(c)
+                    if address.lat is None and lat is not None:
+                        address.lat = lat
+                    if address.lon is None and lon is not None:
+                        address.lon = lon
+                    if address.lat is not None and address.lon is not None and address.geocode_status in {"pending", "not_found"}:
+                        address.geocode_status = "ok"
+                    address.provider = address.provider or "import_csv"
+                    address.save(update_fields=["lat", "lon", "geocode_status", "provider", "updated_at"])
+
+                    raw_cluster = row.get("cluster")
+                    cluster_id = None if pd.isna(raw_cluster) else int(raw_cluster)
+                    if cluster_id == -1:
+                        cluster_id = None
+                    cluster_status = _cluster_status_from_csv(cluster_id, address.lat, address.lon)
 
                     AddressCluster.objects.update_or_create(
                         run_id=run_id,
-                        address=addr,
-                        defaults={"cluster_id": cluster_id}
+                        address=address,
+                        defaults={"cluster_id": cluster_id, "cluster_status": cluster_status},
                     )
                     upsert += 1
 

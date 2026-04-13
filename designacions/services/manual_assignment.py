@@ -8,7 +8,7 @@ from datetime import date, datetime, time
 from django.db.models import Count, Q
 import pandas as pd
 
-from ..models import Address, AddressCluster, Assignment, Referee
+from ..models import AddressCluster, Assignment, Referee
 from .assignment_feasibility import (
     DEFAULT_AVAILABILITY_END_BUFFER_MIN,
     DEFAULT_GAP_DIFF_CLUSTER_MIN,
@@ -43,6 +43,7 @@ WARNING_MESSAGES = {
     "cross_cluster_gap_violation": "Gap insuficient per canviar de cluster.",
     "cross_cluster_without_vehicle": "Canvi de cluster no permes per a un tutor sense vehicle.",
     "missing_cluster_for_mobility_validation": "Falta cluster per validar la mobilitat del tutor.",
+    "outlier_cluster_for_mobility_validation": "La ubicacio ha quedat fora de cluster i no es pot validar la mobilitat del tutor.",
     "missing_availability_for_day": "Sense disponibilitat registrada per al dia del partit.",
     "missing_match_datetime": "No es pot validar l'horari del partit.",
 }
@@ -314,26 +315,32 @@ def build_assigned_by_referee(run):
     return assigned
 
 
-def build_cluster_by_match_id(run):
-    match_by_address = {}
-    address_texts = set()
-    for match in run.matches.all():
-        address_text = f"{_normalize_text(match.domicile)}, {_normalize_text(match.municipality)}".strip(", ")
-        if address_text:
-            match_by_address[match.id] = address_text
-            address_texts.add(address_text)
-
-    if not address_texts:
-        return {}
-
-    addresses = {address.text: address.id for address in Address.objects.filter(text__in=address_texts)}
-    clusters = {
-        cluster.address_id: cluster.cluster_id
-        for cluster in AddressCluster.objects.filter(run=run, address_id__in=addresses.values())
+def build_match_location_by_match_id(run):
+    matches = list(run.matches.select_related("address").all())
+    address_ids = {match.address_id for match in matches if match.address_id}
+    cluster_by_address_id = {
+        cluster.address_id: {
+            "cluster_id": cluster.cluster_id,
+            "cluster_status": cluster.cluster_status,
+        }
+        for cluster in AddressCluster.objects.filter(run=run, address_id__in=address_ids)
     }
+
+    locations = {}
+    for match in matches:
+        cluster_info = cluster_by_address_id.get(match.address_id, {})
+        locations[match.id] = {
+            "address_id": match.address_id,
+            "cluster_id": cluster_info.get("cluster_id"),
+            "cluster_status": cluster_info.get("cluster_status"),
+        }
+    return locations
+
+
+def build_cluster_by_match_id(run):
     return {
-        match_id: clusters.get(addresses.get(address_text))
-        for match_id, address_text in match_by_address.items()
+        match_id: location.get("cluster_id")
+        for match_id, location in build_match_location_by_match_id(run).items()
     }
 
 
@@ -355,7 +362,11 @@ def build_manual_assignment_context(run, referees_with_counts=None):
     referee_summaries = build_run_scoped_referee_summaries(run, referees_with_counts=referees_with_counts)
     availability_lookup = build_availability_lookup_by_ref_and_date(run)
     assignments_by_referee = build_assigned_by_referee(run)
-    cluster_by_match_id = build_cluster_by_match_id(run)
+    match_location_by_match_id = build_match_location_by_match_id(run)
+    cluster_by_match_id = {
+        match_id: location.get("cluster_id")
+        for match_id, location in match_location_by_match_id.items()
+    }
     referees_by_assignment = build_referee_options_by_assignment(
         run,
         run.assignments.select_related("match").all(),
@@ -368,6 +379,7 @@ def build_manual_assignment_context(run, referees_with_counts=None):
         "availability_lookup": availability_lookup,
         "assignments_by_referee": assignments_by_referee,
         "cluster_by_match_id": cluster_by_match_id,
+        "match_location_by_match_id": match_location_by_match_id,
         "referees_by_assignment": referees_by_assignment,
     }
 
@@ -384,8 +396,9 @@ def _availability_covers_match(raw: dict | None, match, availability_end_buffer_
     return availability_covers_descriptors(raw, [descriptor], availability_end_buffer_min)
 
 
-def _build_assignment_descriptor(assignment, cluster_by_match_id):
+def _build_assignment_descriptor(assignment, match_location_by_match_id):
     match = assignment.match
+    location = match_location_by_match_id.get(match.id, {})
     return build_match_descriptor(
         identifier=assignment.id,
         date_value=match.date,
@@ -393,7 +406,9 @@ def _build_assignment_descriptor(assignment, cluster_by_match_id):
         venue=match.venue,
         modality=match.modality,
         category=match.category,
-        cluster_id=cluster_by_match_id.get(match.id),
+        cluster_id=location.get("cluster_id"),
+        address_id=location.get("address_id"),
+        cluster_status=location.get("cluster_status"),
     )
 
 
@@ -401,17 +416,17 @@ def _detect_mobility_conflicts(
     assignment,
     referee,
     assignments_by_referee,
-    cluster_by_match_id,
+    match_location_by_match_id,
     gap_same_pitch_min: int,
     gap_diff_pitch_min: int,
     gap_diff_cluster_min: int,
 ):
-    match_descriptor = _build_assignment_descriptor(assignment, cluster_by_match_id)
+    match_descriptor = _build_assignment_descriptor(assignment, match_location_by_match_id)
     existing_descriptors = []
     for other_assignment in assignments_by_referee.get(referee.id, []):
         if other_assignment.id == assignment.id:
             continue
-        existing_descriptors.append(_build_assignment_descriptor(other_assignment, cluster_by_match_id))
+        existing_descriptors.append(_build_assignment_descriptor(other_assignment, match_location_by_match_id))
     return inspect_mobility_transitions(
         [match_descriptor],
         existing_descriptors,
@@ -509,7 +524,12 @@ def diagnose_assignment_for_referee(
 ):
     availability_lookup = availability_lookup or build_availability_lookup_by_ref_and_date(run)
     assignments_by_referee = assignments_by_referee or build_assigned_by_referee(run)
-    cluster_by_match_id = cluster_by_match_id or build_cluster_by_match_id(run)
+    match_location_by_match_id = build_match_location_by_match_id(run)
+    if cluster_by_match_id is None:
+        cluster_by_match_id = {
+            match_id: location.get("cluster_id")
+            for match_id, location in match_location_by_match_id.items()
+        }
 
     gap_same_pitch_min = _config_int(run, "gap_same_pitch_min", DEFAULT_GAP_SAME_PITCH_MIN)
     gap_diff_pitch_min = _config_int(run, "gap_diff_pitch_min", DEFAULT_GAP_DIFF_PITCH_MIN)
@@ -544,7 +564,7 @@ def diagnose_assignment_for_referee(
         assignment,
         referee,
         assignments_by_referee,
-        cluster_by_match_id,
+        match_location_by_match_id,
         gap_same_pitch_min=gap_same_pitch_min,
         gap_diff_pitch_min=gap_diff_pitch_min,
         gap_diff_cluster_min=gap_diff_cluster_min,
@@ -588,7 +608,7 @@ def diagnose_assignment_for_referee(
 def build_run_mobility_summary(run, *, context=None):
     context = context or build_manual_assignment_context(run)
     assignments_by_referee = context["assignments_by_referee"]
-    cluster_by_match_id = context["cluster_by_match_id"]
+    match_location_by_match_id = context["match_location_by_match_id"]
     referee_summary_by_id = context["referee_summaries_by_id"]
 
     gap_same_pitch_min = _config_int(run, "gap_same_pitch_min", DEFAULT_GAP_SAME_PITCH_MIN)
@@ -606,7 +626,7 @@ def build_run_mobility_summary(run, *, context=None):
         if not assignments:
             continue
 
-        descriptors = [_build_assignment_descriptor(assignment, cluster_by_match_id) for assignment in assignments]
+        descriptors = [_build_assignment_descriptor(assignment, match_location_by_match_id) for assignment in assignments]
         descriptors_by_id = {str(descriptor.identifier): descriptor for descriptor in descriptors}
         referee = referee_summary_by_id.get(referee_id)
         issues = inspect_mobility_transitions(

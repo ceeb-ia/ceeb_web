@@ -1163,7 +1163,8 @@ def _decorate_buckets_with_sources(buckets, kind):
     return out
 
 
-def _build_sort_partition_buckets(records, partition_codes):
+def _build_sort_partition_buckets(records, partition_codes, *, source_kind="sort"):
+    source_kind = str(source_kind or "sort").strip().lower() or "sort"
     buckets = OrderedDict()
     for record in records:
         raw_vals = [get_inscripcio_value(record, code) for code in partition_codes]
@@ -1177,7 +1178,7 @@ def _build_sort_partition_buckets(records, partition_codes):
                 label = _clean_group_suggestion_label(_s(raw_value))
                 if not label:
                     continue
-                source = _build_group_name_source(kind="sort", key=f"sort:{code}:{json.dumps(norm_value, ensure_ascii=False)}", label=label, field_code=code, value_label=label, origin_scope="bucket")
+                source = _build_group_name_source(kind=source_kind, key=f"{source_kind}:{code}:{json.dumps(norm_value, ensure_ascii=False)}", label=label, field_code=code, value_label=label, origin_scope="bucket")
                 if source is not None:
                     sources.append(source)
             bucket = {"key": bucket_key, "label": " · ".join(label_parts) if label_parts else "(Sense valor)", "count": 0, "ids": [], "sources": sources}
@@ -1289,20 +1290,35 @@ def _build_combined_partition_buckets(records, layers):
     return list(buckets.values())
 
 
-def _resolve_group_creation_buckets(competicio, records, *, group_codes=None, partition_codes=None, fallback_mode="all_filtered"):
+def _resolve_group_creation_buckets(competicio, records, *, group_codes=None, partition_codes=None, workspace_codes=None, fallback_mode="all_filtered"):
     group_codes = list(group_codes or [])
     partition_codes = list(partition_codes or [])
+    workspace_codes = list(workspace_codes or [])
+    used_codes = set()
+    for code in list(group_codes) + list(partition_codes):
+        if code:
+            used_codes.add(code)
+    workspace_codes = [code for code in dict.fromkeys(workspace_codes) if code and code not in used_codes]
     tabs_buckets = _build_tabs_partition_buckets(competicio, records, group_codes) if group_codes else []
     sort_buckets = _build_sort_partition_buckets(records, partition_codes) if partition_codes else []
+    workspace_buckets = _build_sort_partition_buckets(records, workspace_codes, source_kind="workspace") if workspace_codes else []
     tabs_buckets = _decorate_buckets_with_sources(tabs_buckets, "tabs")
     sort_buckets = _decorate_buckets_with_sources(sort_buckets, "sort")
+    workspace_buckets = _decorate_buckets_with_sources(workspace_buckets, "workspace")
     if tabs_buckets and sort_buckets and _partitions_are_equivalent(tabs_buckets, sort_buckets):
         sort_buckets = []
+    if workspace_buckets:
+        if tabs_buckets and _partitions_are_equivalent(tabs_buckets, workspace_buckets):
+            workspace_buckets = []
+        elif sort_buckets and _partitions_are_equivalent(sort_buckets, workspace_buckets):
+            workspace_buckets = []
     layers_used = []
     if tabs_buckets:
         layers_used.append("tabs")
     if sort_buckets:
         layers_used.append("sort")
+    if workspace_buckets:
+        layers_used.append("workspace")
     if not layers_used:
         if fallback_mode == "strict":
             return {"ok": False, "error": "No hi ha criteris resolubles per construir blocs d'origen", "buckets": [], "layers_used": [], "used_fallback": False, "fallback_reason": "no_resolvable_criteria"}
@@ -1314,13 +1330,15 @@ def _resolve_group_creation_buckets(competicio, records, *, group_codes=None, pa
             "fallback_reason": "no_resolvable_criteria_used_all_filtered",
         }
     if len(layers_used) == 1:
-        buckets = tabs_buckets if tabs_buckets else sort_buckets
+        buckets = tabs_buckets or sort_buckets or workspace_buckets
     else:
         layers = []
         if tabs_buckets:
             layers.append({"kind": "tabs", "by_id": {ins_id: list(bucket.get("sources") or []) for bucket in tabs_buckets for ins_id in (bucket.get("ids") or [])}})
         if sort_buckets:
             layers.append({"kind": "sort", "by_id": {ins_id: list(bucket.get("sources") or []) for bucket in sort_buckets for ins_id in (bucket.get("ids") or [])}})
+        if workspace_buckets:
+            layers.append({"kind": "workspace", "by_id": {ins_id: list(bucket.get("sources") or []) for bucket in workspace_buckets for ins_id in (bucket.get("ids") or [])}})
         buckets = _build_combined_partition_buckets(records, layers)
     return {"ok": True, "buckets": buckets, "layers_used": layers_used, "used_fallback": False, "fallback_reason": ""}
 

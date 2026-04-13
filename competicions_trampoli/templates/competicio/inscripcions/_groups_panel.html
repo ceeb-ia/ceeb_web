@@ -308,6 +308,23 @@
                           </span>
                         </div>
 
+                        <div class="mb-2">
+                          <label class="small text-muted fw-semibold mb-1 d-block" for="groups-workspace-bucket-fields">Criteris afegits del workspace</label>
+                          <select id="groups-workspace-bucket-fields" class="form-control form-control-sm" multiple size="4">
+                            {% for f in allowed_group_fields %}
+                              <option value="{{ f.code }}">{{ f.ui_label|default:f.label }}</option>
+                            {% endfor %}
+                          </select>
+                          <div class="small text-muted mt-1">Aquests criteris complementen les divisions i ordenacions sense modificar el llistat general.</div>
+                        </div>
+
+                        <div class="small mb-2">
+                          <span class="text-muted fw-semibold mr-2">Criteris afegits actius:</span>
+                          <span id="groups-detected-workspace-fields" class="d-inline-flex flex-wrap" style="gap:4px;">
+                            <span class="text-muted">cap</span>
+                          </span>
+                        </div>
+
                         <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
                           <span class="text-muted small fw-semibold">Resolucio final:</span>
                           <span class="badge badge-light border" id="groups-resolution-label">Blocs proposats</span>
@@ -327,12 +344,47 @@
                         <div class="d-flex align-items-center flex-wrap mb-2" style="gap:8px;">
                           <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-groups-buckets-all">Marcar tots</button>
                           <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-groups-buckets-none">Desmarcar</button>
+                          <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-groups-buckets-visible-all">Marcar visibles</button>
+                          <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-groups-buckets-visible-none">Desmarcar visibles</button>
                           <button type="button" class="btn btn-sm btn-outline-primary" id="btn-groups-buckets-add">Afegir a la seleccio</button>
                           <button type="button" class="btn btn-sm btn-outline-warning" id="btn-groups-buckets-remove">Treure de la seleccio</button>
                           <button type="button" class="btn btn-sm btn-primary" id="btn-groups-buckets-set">Substituir la seleccio</button>
                           <span class="text-muted small" id="groups-buckets-count">Blocs proposats sobre tota la competicio: 0</span>
                         </div>
                         <div class="text-muted small mb-2" id="groups-buckets-selection-summary">Seleccionades globalment: 0</div>
+
+                        <div class="team-auto-buckets-filter-grid mb-2">
+                          <div>
+                            <label class="small text-muted mb-1 d-block" for="groups-buckets-filter-q">Cerca buckets</label>
+                            <input type="text" class="form-control form-control-sm" id="groups-buckets-filter-q" placeholder="Nom, components o origen...">
+                          </div>
+                          <div>
+                            <label class="small text-muted mb-1 d-block" for="groups-buckets-filter-selected-state">Estat</label>
+                            <select id="groups-buckets-filter-selected-state" class="form-control form-control-sm">
+                              <option value="all">Tots</option>
+                              <option value="selected">Marcats</option>
+                              <option value="unselected">No marcats</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label class="small text-muted mb-1 d-block" for="groups-buckets-filter-kind">Origen</label>
+                            <select id="groups-buckets-filter-kind" class="form-control form-control-sm">
+                              <option value="all">Tots</option>
+                              <option value="tabs">Divisions</option>
+                              <option value="sort">Ordenacions</option>
+                              <option value="workspace">Criteris afegits</option>
+                              <option value="combined">Combinats</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label class="small text-muted mb-1 d-block" for="groups-buckets-filter-sort">Ordenacio</label>
+                            <select id="groups-buckets-filter-sort" class="form-control form-control-sm">
+                              <option value="count_desc">Mida desc</option>
+                              <option value="count_asc">Mida asc</option>
+                              <option value="label">Etiqueta</option>
+                            </select>
+                          </div>
+                        </div>
 
                         <div class="tab-select-grid mb-3" id="groups-buckets-grid"></div>
                         <div class="text-muted small mb-3" id="groups-buckets-empty">
@@ -410,6 +462,14 @@
                         <option value="programmed">Programats</option>
                         <option value="out_of_program">Fora de programa</option>
                       </select>
+                    </div>
+                    <div>
+                      <label class="small text-muted mb-1 d-block" for="groups-board-filter-min-size">Mida minima</label>
+                      <input type="number" class="form-control form-control-sm" id="groups-board-filter-min-size" min="1" step="1" inputmode="numeric" placeholder="Sense minim">
+                    </div>
+                    <div>
+                      <label class="small text-muted mb-1 d-block" for="groups-board-filter-max-size">Mida maxima</label>
+                      <input type="number" class="form-control form-control-sm" id="groups-board-filter-max-size" min="0" step="1" inputmode="numeric" placeholder="Sense maxim">
                     </div>
                   </div>
                   <div class="small text-muted mt-2">

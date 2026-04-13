@@ -4,39 +4,23 @@ import pandas as pd
 from django.conf import settings
 
 from ..main_fixed import mapa_assignacions_interactiu
-from ..models import Address
-
-
 def rebuild_run_map(run) -> str | None:
     """
     Regenera el mapa folium del run a partir de BD (Match + Assignment + Address).
     Retorna map_path (relatiu a MEDIA_ROOT) o None si no es pot construir.
     """
 
-    matches = list(run.matches.all().select_related())
+    matches = list(run.matches.select_related("address").all())
     if not matches:
         run.map_path = None
         run.save(update_fields=["map_path"])
         return None
 
     # df_partits_geo: el mapa espera lat/lon + adreca + Codi + altres camps opcionals
-    address_texts = set()
-    match_addresses = {}
-    for m in matches:
-        adreca = f"{(m.domicile or '').strip()}, {(m.municipality or '').strip()}".strip().strip(",")
-        match_addresses[m.id] = adreca
-        if adreca:
-            address_texts.add(adreca)
-
-    addresses_by_text = {
-        address.text: address
-        for address in Address.objects.filter(text__in=address_texts)
-    }
-
     rows_p = []
     for m in matches:
-        adreca = match_addresses.get(m.id, "")
-        addr = addresses_by_text.get(adreca) if adreca else None
+        addr = m.address
+        adreca = getattr(addr, "text", None) or f"{(m.domicile or '').strip()}, {(m.municipality or '').strip()}".strip().strip(",")
 
         rows_p.append({
             "Codi": m.code,

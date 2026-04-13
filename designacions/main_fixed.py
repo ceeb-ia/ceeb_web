@@ -22,13 +22,14 @@ from asgiref.sync import async_to_sync
 from django.db import transaction
 from django.utils.dateparse import parse_date
 from .services.geocoding_db import geocodifica_adreces, addresses_to_df
+from .services.addressing import build_address_payload, resolve_address
 from .services.assignment_feasibility import (
     DEFAULT_GAP_DIFF_CLUSTER_MIN,
     build_match_descriptor,
     diagnose_segment_feasibility,
     primary_reason_code,
 )
-from .models import Address, AddressCluster, DesignationRun
+from .models import AddressCluster, DesignationRun
 from .services.manual_assignment import update_run_mobility_summary
 
 
@@ -108,6 +109,21 @@ def _safe_position_int(value, default: int = -1) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _cluster_status_from_values(cluster_value, lat_value, lon_value) -> str:
+    lat_missing = lat_value is None or pd.isna(lat_value)
+    lon_missing = lon_value is None or pd.isna(lon_value)
+    if lat_missing or lon_missing:
+        return "missing_geocode"
+    if cluster_value is None or pd.isna(cluster_value):
+        return "outlier"
+    try:
+        if int(cluster_value) == -1:
+            return "outlier"
+    except (TypeError, ValueError):
+        pass
+    return "clustered"
 
 
 def _build_tutor_working_id(row) -> str:
@@ -350,6 +366,8 @@ def _build_subgroup_descriptors(subgrup) -> list:
             modality=row.get("Modalitat"),
             category=row.get("Categoria", ""),
             cluster_id=row.get("cluster"),
+            address_id=row.get("address_id"),
+            cluster_status=row.get("cluster_status"),
         )
         for row in subgrup
     ]
@@ -995,6 +1013,8 @@ def persist_assignacions_to_db(
             except Exception:
                 date_val = None
 
+            address = resolve_address(domicile=p.get("Domicili"), municipality=p.get("Municipi"))
+
             Match.objects.update_or_create(
                 run=run,
                 code=codi,
@@ -1011,6 +1031,7 @@ def persist_assignacions_to_db(
                     "subcategory": p.get("Subcategoria"),
                     "date": date_val,
                     "hour_raw": str(p.get("Hora", "")).strip() or None,
+                    "address": address,
                     "domicile": p.get("Domicili"),
                     "municipality": p.get("Municipi"),
                     "venue": p.get("Pista joc"),
@@ -1195,7 +1216,11 @@ def main(
     df_dispos = df_dispos.sort_values('Nivell').reset_index(drop=True)
 
     # ------------ Adreces (geocodificació BD) + clusterització ------------
-    df_partits['adreca'] = df_partits['Domicili'].astype(str) + ', ' + df_partits['Municipi'].astype(str)
+    address_payloads = df_partits.apply(
+        lambda row: build_address_payload(domicile=row.get("Domicili"), municipality=row.get("Municipi")),
+        axis=1,
+    )
+    df_partits["adreca"] = address_payloads.map(lambda payload: payload["text"])
 
     if task_id:
         async_to_sync(push_log)(task_id, "Iniciant geocodificació d'adreces.", 45)
@@ -1203,41 +1228,66 @@ def main(
     adreces_uniques = df_partits["adreca"].unique().tolist()
     addr_objs = geocodifica_adreces(adreces_uniques, task_id=task_id)  # respecte Nominatim intern
     df_geocodificats = addresses_to_df(addr_objs)
+    address_by_text = {address.text: address for address in addr_objs}
+    df_partits["address_id"] = df_partits["adreca"].map(lambda text: getattr(address_by_text.get(text), "id", None))
 
     if task_id:
         async_to_sync(push_log)(task_id, "Geocodificació completada.", 57)
         async_to_sync(push_log)(task_id, "Iniciant agrupació geogràfica d'adreces.", 58)
 
 
-    domicilis_clusteritzats, _, _, _ = clusteritza_i_plota(
-        df_geocodificats,
-        lat_col="lat",
-        lon_col="lon",
-        eps_metres=cluster_eps_m,
-        min_samples=cluster_min_samples,
-        max_punts_per_subcluster=max_partits_subgrup,  
-    )
+    if df_geocodificats.empty:
+        domicilis_clusteritzats = pd.DataFrame(columns=["address_id", "adreca", "lat", "lon", "cluster"])
+    else:
+        domicilis_clusteritzats, _, _, _ = clusteritza_i_plota(
+            df_geocodificats,
+            lat_col="lat",
+            lon_col="lon",
+            eps_metres=cluster_eps_m,
+            min_samples=cluster_min_samples,
+            max_punts_per_subcluster=max_partits_subgrup,
+        )
+
+    if not domicilis_clusteritzats.empty:
+        domicilis_clusteritzats["cluster_status"] = domicilis_clusteritzats.apply(
+            lambda row: _cluster_status_from_values(row.get("cluster"), row.get("lat"), row.get("lon")),
+            axis=1,
+        )
+        domicilis_clusteritzats["cluster_persisted_id"] = domicilis_clusteritzats["cluster"].apply(
+            lambda value: None if pd.isna(value) or int(value) == -1 else int(value)
+        )
+    else:
+        domicilis_clusteritzats["cluster_status"] = pd.Series(dtype="object")
+        domicilis_clusteritzats["cluster_persisted_id"] = pd.Series(dtype="float64")
 
     # Guardem clusters per RUN (si run_id ve informat)
     if run_id is not None:
-        for _, r in domicilis_clusteritzats.iterrows():
-            adreca_txt = str(r.get("adreca", "")).strip()
-            if not adreca_txt:
+        cluster_rows_by_address_id = {}
+        for _, row in domicilis_clusteritzats.iterrows():
+            address_id = row.get("address_id")
+            if pd.isna(address_id):
                 continue
-            addr = Address.objects.filter(text=adreca_txt).first()
-            if not addr:
-                continue
-            cluster_val = r.get("cluster", None)
-            cluster_id = None if pd.isna(cluster_val) else int(cluster_val)
+            cluster_rows_by_address_id[int(address_id)] = row
+
+        for address in addr_objs:
+            cluster_row = cluster_rows_by_address_id.get(address.id)
+            if cluster_row is None:
+                cluster_status = "missing_geocode" if address.lat is None or address.lon is None else "pending"
+                cluster_id = None
+            else:
+                cluster_status = cluster_row.get("cluster_status") or "pending"
+                cluster_id = cluster_row.get("cluster_persisted_id")
+                if pd.isna(cluster_id):
+                    cluster_id = None
             AddressCluster.objects.update_or_create(
                 run_id=run_id,
-                address=addr,
-                defaults={"cluster_id": cluster_id},
+                address=address,
+                defaults={"cluster_id": cluster_id, "cluster_status": cluster_status},
             )
 
     # Enllacem cluster al df_partits
     df_localitzats = pd.merge(df_partits, domicilis_clusteritzats, on='adreca', how='inner')
-    df_partits = pd.merge(df_partits, df_localitzats[['ID', 'cluster']], on='ID', how='left')
+    df_partits = pd.merge(df_partits, df_localitzats[['ID', 'cluster', 'cluster_status']], on='ID', how='left')
     df_partits_geo = df_partits.merge(
         domicilis_clusteritzats[["adreca", "lat", "lon"]],
         on="adreca",

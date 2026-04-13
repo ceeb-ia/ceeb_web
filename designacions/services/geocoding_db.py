@@ -1,16 +1,17 @@
-# designacions/services/geocoding_db.py
 from __future__ import annotations
 
-from dataclasses import dataclass
 from time import sleep
 from typing import Iterable
 
 import pandas as pd
-from geopy.geocoders import Nominatim
 from asgiref.sync import async_to_sync
+from geopy.geocoders import Nominatim
+
+from designacions.geolocate import extreu_municipi, geocode_address_amb_fallback
 from designacions.models import Address
-from designacions.geolocate import geocode_address_amb_fallback, extreu_municipi
 from logs import push_log
+
+from .addressing import build_address_payload, resolve_address
 
 
 _geolocator = Nominatim(user_agent="designacions_ceeb")
@@ -20,68 +21,76 @@ def geocodifica_adreces(adreces: Iterable[str], *, sleep_seconds: float = 2.0, t
     """
     Geocodifica una llista d'adreces utilitzant Address (BD) com a master.
 
-    - Si l'adreça ja existeix amb lat/lon -> la reutilitza.
-    - Si no existeix o no té coords -> geocodifica (Nominatim) i guarda a BD.
-    - Retorna la llista d'Address (en el mateix ordre d'entrada, deduplicat).
+    - Si l'adreca ja existeix amb lat/lon -> la reutilitza i normalitza l'estat.
+    - Si no existeix o no te coords -> geocodifica i guarda lat/lon + geocode_status.
+    - Retorna la llista d'Address en el mateix ordre d'entrada deduplicat.
     """
-    # dedup estable
     seen = set()
-    norm = []
-    for a in adreces:
-        a = (a or "").strip()
-        if not a or a in seen:
+    ordered_addresses = []
+    for raw_address in adreces:
+        payload = build_address_payload(text=raw_address, municipality=extreu_municipi(raw_address))
+        if not payload["text"] or payload["normalized_text"] in seen:
             continue
-        seen.add(a)
-        norm.append(a)
+        seen.add(payload["normalized_text"])
+        ordered_addresses.append(payload)
 
-    out: list[Address] = []
-
-    for counter, adreca in enumerate(norm):
-        percentage = 45 + int((counter + 1) / len(norm) * (55 - 45))
-        municipi = extreu_municipi(adreca)
-
-        addr, _ = Address.objects.get_or_create(
-            text=adreca,
-            defaults={"municipality": municipi},
-        )
-
-        # Si ja té coords, OK
-        if addr.lat is not None and addr.lon is not None:
-            out.append(addr)
+    resolved = []
+    total = len(ordered_addresses)
+    for counter, payload in enumerate(ordered_addresses):
+        percentage = 45 + int((counter + 1) / max(total, 1) * (55 - 45))
+        address = resolve_address(text=payload["text"], municipality=payload["municipality"])
+        if address is None:
             continue
 
-        # Geocodifica
+        if address.lat is not None and address.lon is not None:
+            if address.geocode_status not in {"ok", "manual"} or address.last_error:
+                address.geocode_status = "ok" if address.geocode_status != "manual" else "manual"
+                address.last_error = None
+                address.save(update_fields=["geocode_status", "last_error", "updated_at"])
+            resolved.append(address)
+            continue
+
         if task_id:
-            async_to_sync(push_log)(task_id, f"Geocodificant adreça: {adreca}", percentage)
-        lat, lon, _query_used = geocode_address_amb_fallback(_geolocator, adreca)
+            async_to_sync(push_log)(task_id, f"Geocodificant adreca: {payload['text']}", percentage)
+        lat, lon, query_used = geocode_address_amb_fallback(_geolocator, payload["text"])
 
         if lat is not None and lon is not None:
-            addr.lat = float(lat)
-            addr.lon = float(lon)
-            if not addr.municipality and municipi:
-                addr.municipality = municipi
-            addr.save(update_fields=["lat", "lon", "municipality"])
-        # si no troba coords, queda a BD amb lat/lon null i després ho arreglaràs via la vista manual
+            address.lat = float(lat)
+            address.lon = float(lon)
+            if payload["municipality"] and not address.municipality:
+                address.municipality = payload["municipality"]
+            address.geocode_status = "ok"
+            address.provider = "nominatim"
+            address.last_error = None
+            address.save(
+                update_fields=["lat", "lon", "municipality", "geocode_status", "provider", "last_error", "updated_at"]
+            )
+        else:
+            address.geocode_status = "not_found"
+            address.provider = "nominatim"
+            address.last_error = f"Sense resultat per a '{query_used or payload['text']}'"
+            address.save(update_fields=["geocode_status", "provider", "last_error", "updated_at"])
 
-        out.append(addr)
+        resolved.append(address)
 
-        # respecta rate limit Nominatim
         if sleep_seconds:
             sleep(sleep_seconds)
 
-    return out
+    return resolved
 
 
 def addresses_to_df(addresses: Iterable[Address]) -> pd.DataFrame:
     """
-    Converteix Addresses a un DataFrame compatible amb clusteritza_i_plota()
-    (columnes: adreca, lat, lon).
+    Converteix Address a un DataFrame compatible amb clusteritza_i_plota().
     """
     rows = []
-    for a in addresses:
-        rows.append({
-            "adreca": a.text,
-            "lat": a.lat,
-            "lon": a.lon,
-        })
+    for address in addresses:
+        rows.append(
+            {
+                "address_id": address.id,
+                "adreca": address.text,
+                "lat": address.lat,
+                "lon": address.lon,
+            }
+        )
     return pd.DataFrame(rows)

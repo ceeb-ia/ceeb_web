@@ -431,6 +431,7 @@ def logs_stream_view(request, task_id: str):
 @require_GET
 def assignments_view(request, run_id: int):
     run = get_object_or_404(DesignationRun, id=run_id)
+    filter_level_options = ["NIVELLA1", "NIVELLB1", "NIVELLC1", "NIVELLD1", "D"]
 
     # Assignacions del run
     qs = list(
@@ -515,6 +516,34 @@ def assignments_view(request, run_id: int):
         referee_id = group["referee"].id if group.get("referee") else None
         group["mobility_warning_count"] = int(mobility_warning_counts_by_referee.get(referee_id, 0))
         group["mobility_error_count"] = int(mobility_error_counts_by_referee.get(referee_id, 0))
+        group["level"] = (group["referee"].level or "").strip() if group.get("referee") else ""
+        group["modality"] = (group["referee"].modality or "").strip() if group.get("referee") else ""
+        group["has_mobility_error"] = group["mobility_error_count"] > 0
+        group["has_mobility_warning"] = group["mobility_warning_count"] > 0
+        group["has_manual_override"] = any(item.manual_override_warning for item in group["items"])
+        group["has_locked"] = group["locked"] > 0
+        group["categories"] = sorted(
+            {
+                (item.match.category or "").strip()
+                for item in group["items"]
+                if (item.match.category or "").strip()
+            }
+        )
+        group["venues"] = sorted(
+            {
+                (item.match.venue or "").strip()
+                for item in group["items"]
+                if (item.match.venue or "").strip()
+            }
+        )
+
+    filter_category_options = sorted(
+        {
+            (assignment.match.category or "").strip()
+            for assignment in assigned_qs
+            if (assignment.match.category or "").strip()
+        }
+    )
 
     return render(request, "assignments.html", {
         "run": run,
@@ -530,6 +559,8 @@ def assignments_view(request, run_id: int):
         "mobility_summary": mobility_summary,
         "mobility_warning_assignment_ids": mobility_warning_assignment_ids,
         "mobility_error_assignment_ids": mobility_error_assignment_ids,
+        "filter_level_options": filter_level_options,
+        "filter_category_options": filter_category_options,
     })
 
 @require_GET

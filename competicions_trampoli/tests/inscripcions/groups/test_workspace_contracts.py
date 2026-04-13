@@ -492,6 +492,93 @@ class GroupManagerV1Tests(_BaseTrampoliDataMixin, TestCase):
             ["Alevi", "Infantil", "Senior"],
         )
 
+    def test_groups_workspace_resolve_auto_context_combines_workspace_bucket_fields(self):
+        rows = [
+            (self.ins_programmed_a, "Alevi", "Club A"),
+            (self.ins_free_a, "Alevi", "Club B"),
+            (self.ins_programmed_b, "Senior", "Club A"),
+            (self.ins_other, "Senior", "Club B"),
+            (self.ins_free_b, "Infantil", "Club B"),
+        ]
+        for ins, categoria, entitat in rows:
+            ins.categoria = categoria
+            ins.entitat = entitat
+            ins.save(update_fields=["categoria", "entitat"])
+
+        resp = self._post_json(
+            "groups_workspace",
+            {
+                "operation": "resolve_auto_context",
+                "selected_ids": [],
+                "sort_context_filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                "workspace_filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                "group_by": ["categoria"],
+                "workspace_bucket_fields": ["categoria", "entitat"],
+                "source_scope": "competition_all",
+            },
+        )
+
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data.get("ok"))
+        self.assertEqual(data.get("workspace_bucket_fields"), ["entitat"])
+        self.assertEqual(data.get("layers_used"), ["tabs", "workspace"])
+        self.assertEqual(int(data.get("buckets_total") or 0), 5)
+        self.assertEqual(
+            sorted(bucket.get("label") for bucket in (data.get("buckets") or [])),
+            [
+                "Alevi / Club A",
+                "Alevi / Club B",
+                "Infantil / Club B",
+                "Senior / Club A",
+                "Senior / Club B",
+            ],
+        )
+        self.assertEqual(
+            data.get("detected_workspace_fields"),
+            [{"code": "entitat", "label": "Entitat (Nativa)"}],
+        )
+        self.assertTrue(
+            all(sorted(bucket.get("kinds") or []) == ["tabs", "workspace"] for bucket in (data.get("buckets") or []))
+        )
+
+    def test_groups_workspace_resolve_auto_context_supports_excel_workspace_bucket_fields(self):
+        self.comp.inscripcions_schema = {
+            "columns": [
+                {"code": "nivell", "label": "Nivell", "kind": "extra"},
+            ]
+        }
+        self.comp.save(update_fields=["inscripcions_schema"])
+        self.ins_programmed_a.extra = {"nivell": "A"}
+        self.ins_programmed_a.save(update_fields=["extra"])
+        self.ins_free_a.extra = {"nivell": "A"}
+        self.ins_free_a.save(update_fields=["extra"])
+        self.ins_programmed_b.extra = {"nivell": "B"}
+        self.ins_programmed_b.save(update_fields=["extra"])
+
+        resp = self._post_json(
+            "groups_workspace",
+            {
+                "operation": "resolve_auto_context",
+                "selected_ids": [self.ins_programmed_a.id],
+                "sort_context_filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                "workspace_filters": {"q": "", "categoria": "", "subcategoria": "", "entitat": ""},
+                "group_by": [],
+                "workspace_bucket_fields": ["excel__nivell"],
+                "source_scope": "competition_all",
+            },
+        )
+
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data.get("ok"))
+        self.assertEqual(data.get("layers_used"), ["workspace"])
+        self.assertEqual(data.get("workspace_bucket_fields"), ["nivell"])
+        self.assertEqual(
+            sorted(bucket.get("label") for bucket in (data.get("buckets") or [])),
+            ["(Sense valor)", "A", "B"],
+        )
+
     def test_groups_workspace_resolve_auto_context_tracks_visible_and_selected_counts(self):
         self.ins_programmed_a.categoria = "Alevi"
         self.ins_programmed_a.save(update_fields=["categoria"])

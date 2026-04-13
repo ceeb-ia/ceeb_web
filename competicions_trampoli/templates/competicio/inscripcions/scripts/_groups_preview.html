@@ -24,9 +24,15 @@
     };
 
   const groupBucketSelectionState = {
-    mode: 'none',
+    mode: 'all',
     availableKeys: [],
     selectedKeys: new Set(),
+  };
+  let groupBucketViewFilters = {
+    q: '',
+    selected_state: 'all',
+    kind: 'all',
+    sort: 'count_desc',
   };
   let currentGroupsAutoContext = null;
   let lastConfirmableGroupPreview = null;
@@ -37,6 +43,7 @@
       source: document.getElementById('groups-auto-context-source'),
       detectedGroups: document.getElementById('groups-detected-group-fields'),
       detectedSorts: document.getElementById('groups-detected-sort-fields'),
+      detectedWorkspace: document.getElementById('groups-detected-workspace-fields'),
       resolutionLabel: document.getElementById('groups-resolution-label'),
       resolutionStatus: document.getElementById('groups-resolution-status'),
       bucketsCount: document.getElementById('groups-buckets-count'),
@@ -58,6 +65,89 @@
     if (!note) return;
     note.textContent = message || '';
     note.classList.toggle('d-none', !message);
+  }
+
+  function normalizeSearchText(value) {
+    return String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+  }
+
+  function selectedOptionValues(selectEl) {
+    return Array.from(selectEl?.selectedOptions || [])
+      .map((option) => String(option?.value || '').trim())
+      .filter(Boolean);
+  }
+
+  function normalizeGroupBucketViewFilters(raw) {
+    const data = raw && typeof raw === 'object' ? raw : {};
+    const selectedState = String(data.selected_state || 'all').trim() || 'all';
+    const kind = String(data.kind || 'all').trim() || 'all';
+    const sort = String(data.sort || 'count_desc').trim() || 'count_desc';
+    return {
+      q: String(data.q || '').trim(),
+      selected_state: ['all', 'selected', 'unselected'].includes(selectedState) ? selectedState : 'all',
+      kind: ['all', 'tabs', 'sort', 'workspace', 'combined'].includes(kind) ? kind : 'all',
+      sort: ['count_desc', 'count_asc', 'label'].includes(sort) ? sort : 'count_desc',
+    };
+  }
+
+  function readGroupBucketViewFilters() {
+    return normalizeGroupBucketViewFilters({
+      q: document.getElementById('groups-buckets-filter-q')?.value || '',
+      selected_state: document.getElementById('groups-buckets-filter-selected-state')?.value || 'all',
+      kind: document.getElementById('groups-buckets-filter-kind')?.value || 'all',
+      sort: document.getElementById('groups-buckets-filter-sort')?.value || 'count_desc',
+    });
+  }
+
+  function getWorkspaceBucketFields() {
+    return selectedOptionValues(document.getElementById('groups-workspace-bucket-fields'));
+  }
+
+  function groupsBucketUiStorageKey() {
+    if (typeof getUiStateKey !== 'function') return '';
+    return `${getUiStateKey()}:groups-bucket-ui`;
+  }
+
+  function saveGroupsBucketUiState() {
+    const key = groupsBucketUiStorageKey();
+    if (!key || typeof sessionStorage === 'undefined') return;
+    try {
+      sessionStorage.setItem(key, JSON.stringify({
+        workspace_bucket_fields: getWorkspaceBucketFields(),
+        bucket_view_filters: normalizeGroupBucketViewFilters(groupBucketViewFilters),
+      }));
+    } catch (_err) {}
+  }
+
+  function restoreGroupsBucketUiState() {
+    const key = groupsBucketUiStorageKey();
+    if (!key || typeof sessionStorage === 'undefined') return;
+    let saved = {};
+    try {
+      saved = JSON.parse(sessionStorage.getItem(key) || '{}') || {};
+    } catch (_err) {
+      saved = {};
+    }
+    const fieldsSelect = document.getElementById('groups-workspace-bucket-fields');
+    const selectedFields = new Set((Array.isArray(saved.workspace_bucket_fields) ? saved.workspace_bucket_fields : []).map((value) => String(value || '').trim()).filter(Boolean));
+    if (fieldsSelect && selectedFields.size) {
+      Array.from(fieldsSelect.options || []).forEach((option) => {
+        option.selected = selectedFields.has(String(option.value || '').trim());
+      });
+    }
+    groupBucketViewFilters = normalizeGroupBucketViewFilters(saved.bucket_view_filters);
+    const q = document.getElementById('groups-buckets-filter-q');
+    if (q) q.value = String(groupBucketViewFilters.q || '');
+    const selectedState = document.getElementById('groups-buckets-filter-selected-state');
+    if (selectedState) selectedState.value = String(groupBucketViewFilters.selected_state || 'all');
+    const kind = document.getElementById('groups-buckets-filter-kind');
+    if (kind) kind.value = String(groupBucketViewFilters.kind || 'all');
+    const sort = document.getElementById('groups-buckets-filter-sort');
+    if (sort) sort.value = String(groupBucketViewFilters.sort || 'count_desc');
   }
 
   function setGroupsBucketSelectionMode(mode) {
@@ -89,6 +179,24 @@
     }
     applyGroupBucketSelectionToDom();
     setGroupsBucketSelectionNote('');
+  }
+
+  function setVisibleGroupBucketSelection(checked) {
+    const visibleKeys = getVisibleGroupBuckets()
+      .map((bucket) => String(bucket?.key || '').trim())
+      .filter(Boolean);
+    if (!visibleKeys.length) return;
+    const selected = new Set(getSelectedGroupBucketKeys());
+    visibleKeys.forEach((key) => {
+      if (checked) selected.add(key);
+      else selected.delete(key);
+    });
+    groupBucketSelectionState.selectedKeys = selected;
+    groupBucketSelectionState.mode = selected.size === 0
+      ? 'none'
+      : (selected.size === groupBucketSelectionState.availableKeys.length ? 'all' : 'custom');
+    applyGroupBucketSelectionToDom();
+    setGroupsBucketSelectionNote(checked ? `${visibleKeys.length} bloc(s) visible(s) marcats.` : `${visibleKeys.length} bloc(s) visible(s) desmarcats.`);
   }
 
   function updateGroupBucketSelectionForContext(buckets) {
@@ -161,9 +269,30 @@
     });
   }
 
+  function renderDetectedWorkspaceFields(fields) {
+    const wrap = getGroupsAutoContextElements().detectedWorkspace;
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    const rows = Array.isArray(fields) ? fields : [];
+    if (!rows.length) {
+      const empty = document.createElement('span');
+      empty.className = 'text-muted';
+      empty.textContent = 'cap';
+      wrap.appendChild(empty);
+      return;
+    }
+    rows.forEach((field) => {
+      const badge = document.createElement('span');
+      badge.className = 'badge badge-secondary';
+      badge.textContent = String(field?.label || field?.code || '');
+      wrap.appendChild(badge);
+    });
+  }
+
   function describeGroupsResolutionLabel(layersUsed) {
     const layers = Array.isArray(layersUsed) ? layersUsed : [];
-    if (layers.includes('tabs') && layers.includes('sort')) return 'Tota la competicio + resolucio combinada';
+    if (layers.length > 1) return 'Tota la competicio + resolucio combinada';
+    if (layers.includes('workspace')) return 'Tota la competicio + criteris afegits';
     if (layers.includes('tabs')) return 'Tota la competicio + agrupacions';
     if (layers.includes('sort')) return 'Tota la competicio + ordenacions';
     return 'Sense criteris resolubles';
@@ -175,11 +304,12 @@
     const layersUsed = Array.isArray(context?.layers_used) ? context.layers_used : [];
     if (!sourceTotal) return 'No hi ha inscripcions disponibles a la competicio.';
     if (!bucketsTotal) return "No s'han detectat divisions ni ordenacions segmentadores sobre tota la competicio.";
-    if (layersUsed.includes('tabs') && layersUsed.includes('sort')) {
-      return 'Blocs proposats sobre tota la competicio combinant divisions i ordenacions.';
+    if (layersUsed.length > 1) {
+      return 'Blocs proposats sobre tota la competicio combinant divisions, ordenacions i criteris afegits.';
     }
     if (layersUsed.includes('tabs')) return 'Blocs proposats sobre tota la competicio a partir de les divisions.';
     if (layersUsed.includes('sort')) return 'Blocs proposats sobre tota la competicio a partir de les ordenacions.';
+    if (layersUsed.includes('workspace')) return 'Blocs proposats sobre tota la competicio a partir dels criteris afegits del workspace.';
     return 'Blocs proposats sobre tota la competicio.';
   }
 
@@ -191,6 +321,58 @@
     else badge.className += ' badge-light border';
     badge.textContent = String(text || '');
     return badge;
+  }
+
+  function groupBucketMatchesViewFilters(bucket, filters = groupBucketViewFilters, activeKeySet = new Set(getSelectedGroupBucketKeys())) {
+    const current = normalizeGroupBucketViewFilters(filters);
+    const key = String(bucket?.key || '').trim();
+    const isSelected = activeKeySet.has(key);
+    const kinds = Array.isArray(bucket?.kinds) ? bucket.kinds.map((kind) => String(kind || '').trim()).filter(Boolean) : [];
+    if (current.selected_state === 'selected' && !isSelected) return false;
+    if (current.selected_state === 'unselected' && isSelected) return false;
+    if (current.kind === 'combined' && kinds.length <= 1) return false;
+    if (current.kind !== 'all' && current.kind !== 'combined' && !kinds.includes(current.kind)) return false;
+    if (current.q) {
+      const sourceText = (Array.isArray(bucket?.sources) ? bucket.sources : [])
+        .map((source) => [
+          source?.label,
+          source?.value_label,
+          source?.field_code,
+          source?.kind,
+        ].filter(Boolean).join(' '))
+        .join(' ');
+      const haystack = normalizeSearchText([
+        bucket?.label,
+        sourceText,
+        kinds.join(' '),
+      ].filter(Boolean).join(' '));
+      if (!haystack.includes(normalizeSearchText(current.q))) return false;
+    }
+    return true;
+  }
+
+  function sortVisibleGroupBuckets(buckets, filters = groupBucketViewFilters) {
+    const current = normalizeGroupBucketViewFilters(filters);
+    const rows = Array.isArray(buckets) ? [...buckets] : [];
+    rows.sort((a, b) => {
+      const countDiff = Number(a?.global_count || a?.count || 0) - Number(b?.global_count || b?.count || 0);
+      if (current.sort === 'count_asc' && countDiff !== 0) return countDiff;
+      if (current.sort === 'count_desc' && countDiff !== 0) return -countDiff;
+      const labelA = String(a?.label || a?.key || '').trim();
+      const labelB = String(b?.label || b?.key || '').trim();
+      return labelA.localeCompare(labelB, 'ca');
+    });
+    return rows;
+  }
+
+  function getVisibleGroupBuckets() {
+    const buckets = Array.isArray(currentGroupsAutoContext?.buckets) ? currentGroupsAutoContext.buckets : [];
+    const selected = new Set(getSelectedGroupBucketKeys());
+    groupBucketViewFilters = readGroupBucketViewFilters();
+    return sortVisibleGroupBuckets(
+      buckets.filter((bucket) => groupBucketMatchesViewFilters(bucket, groupBucketViewFilters, selected)),
+      groupBucketViewFilters,
+    );
   }
 
   function createGroupBucketNode(bucket) {
@@ -219,6 +401,7 @@
     const selectionCount = Number(context?.selection_count || 0);
     const bucketsTotal = Number(context?.buckets_total || 0);
     const markedBuckets = getSelectedGroupBucketKeys().length;
+    const visibleBuckets = getVisibleGroupBuckets().length;
     const hasSelection = selectionCount > 0;
 
     [
@@ -242,6 +425,11 @@
       if (el) el.disabled = bucketsTotal === 0;
     });
 
+    ['btn-groups-buckets-visible-all', 'btn-groups-buckets-visible-none'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.disabled = visibleBuckets === 0;
+    });
+
     ['btn-groups-buckets-add', 'btn-groups-buckets-remove', 'btn-groups-buckets-set'].forEach((id) => {
       const el = document.getElementById(id);
       if (el) el.disabled = bucketsTotal === 0 || markedBuckets === 0;
@@ -254,6 +442,7 @@
     const buckets = Array.isArray(data.buckets) ? data.buckets : [];
     currentGroupsAutoContext = data;
     updateGroupBucketSelectionForContext(buckets);
+    const visibleBuckets = getVisibleGroupBuckets();
 
     if (els.source) {
       els.source.textContent = String(data.source_scope || 'competition_all') === 'competition_all'
@@ -262,21 +451,26 @@
     }
     renderDetectedGroupFields(data.detected_group_fields);
     renderDetectedSortFields(data.detected_sort_fields);
+    renderDetectedWorkspaceFields(data.detected_workspace_fields);
 
     if (els.resolutionLabel) els.resolutionLabel.textContent = describeGroupsResolutionLabel(data.layers_used);
     if (els.resolutionStatus) els.resolutionStatus.textContent = describeGroupsResolutionStatus(data);
-    if (els.bucketsCount) els.bucketsCount.textContent = `Blocs proposats sobre tota la competicio: ${Number(data.buckets_total || 0)}`;
+    if (els.bucketsCount) els.bucketsCount.textContent = `Blocs proposats sobre tota la competicio: ${visibleBuckets.length} visibles de ${Number(data.buckets_total || 0)}`;
     if (els.bucketsSelectionSummary) {
       els.bucketsSelectionSummary.textContent = `Seleccionades globalment: ${Number(data.selection_count || 0)}`;
     }
     if (els.bucketsGrid) {
       els.bucketsGrid.innerHTML = '';
-      buckets.forEach((bucket) => els.bucketsGrid.appendChild(createGroupBucketNode(bucket)));
-      els.bucketsGrid.classList.toggle('d-none', buckets.length === 0);
+      visibleBuckets.forEach((bucket) => els.bucketsGrid.appendChild(createGroupBucketNode(bucket)));
+      els.bucketsGrid.classList.toggle('d-none', visibleBuckets.length === 0);
     }
 
     updateGroupsStrategyButtonsState(data);
-    setGroupsAutoContextMessage(buckets.length ? '' : "No s'han detectat blocs proposables sobre tota la competicio.");
+    setGroupsAutoContextMessage(
+      buckets.length
+        ? (visibleBuckets.length ? '' : 'Cap bloc proposat coincideix amb els filtres de buckets.')
+        : "No s'han detectat blocs proposables sobre tota la competicio."
+    );
     applyGroupBucketSelectionToDom();
   }
 
@@ -323,6 +517,9 @@
       filters,
       sort_context_filters: getCurrentInscripcioFilters(),
       group_by: getCurrentGroupByCodes(),
+      workspace_bucket_fields: getWorkspaceBucketFields(),
+      selected_keys: getSelectedGroupBucketKeys(),
+      bucket_selection_mode: groupBucketSelectionState.mode === 'none' ? 'none' : 'custom',
     }, extraPayload || {});
   }
 
@@ -338,6 +535,7 @@
         sort_context_filters: getCurrentInscripcioFilters(),
         workspace_filters: workspaceState?.filters || {},
         selected_ids: Array.isArray(workspaceState?.selectedIds) ? workspaceState.selectedIds : [],
+        workspace_bucket_fields: getWorkspaceBucketFields(),
         source_scope: 'competition_all',
       });
       renderGroupsAutoContext(data);
@@ -349,6 +547,7 @@
       setGroupsBucketSelectionNote('');
       renderDetectedGroupFields([]);
       renderDetectedSortFields([]);
+      renderDetectedWorkspaceFields([]);
       const els = getGroupsAutoContextElements();
       if (els.bucketsCount) els.bucketsCount.textContent = 'Blocs proposats sobre tota la competicio: 0';
       if (els.bucketsSelectionSummary) els.bucketsSelectionSummary.textContent = 'Seleccionades globalment: 0';
@@ -383,6 +582,7 @@
         sort_context_filters: getCurrentInscripcioFilters(),
         workspace_filters: workspaceState?.filters || {},
         group_by: getCurrentGroupByCodes(),
+        workspace_bucket_fields: getWorkspaceBucketFields(),
         source_scope: 'competition_all',
       });
       if (typeof window.__groupsWorkspaceApi.setSelection === 'function') {
@@ -794,7 +994,11 @@
         return false;
       }
       clearGroupPreviewConfirmIntent();
-      await API.refreshLightMutation({ includeActivePanel: true });
+      await API.refreshLightMutation({ includeActivePanel: false });
+      if (window.__groupsWorkspaceApi && typeof window.__groupsWorkspaceApi.refresh === 'function') {
+        await window.__groupsWorkspaceApi.refresh();
+      }
+      clearGroupPreview("Grups creats. El workspace s'ha actualitzat.");
       return true;
     } catch (err) {
       showAlert(`No s'han pogut crear grups.\n${err.message || err}`);
@@ -831,6 +1035,22 @@
       });
     }
 
+    const btnVisibleAll = document.getElementById('btn-groups-buckets-visible-all');
+    if (btnVisibleAll) {
+      btnVisibleAll.addEventListener('click', () => {
+        setVisibleGroupBucketSelection(true);
+        updateGroupsStrategyButtonsState(currentGroupsAutoContext);
+      });
+    }
+
+    const btnVisibleNone = document.getElementById('btn-groups-buckets-visible-none');
+    if (btnVisibleNone) {
+      btnVisibleNone.addEventListener('click', () => {
+        setVisibleGroupBucketSelection(false);
+        updateGroupsStrategyButtonsState(currentGroupsAutoContext);
+      });
+    }
+
     const btnAdd = document.getElementById('btn-groups-buckets-add');
     if (btnAdd) btnAdd.addEventListener('click', async () => { await applySelectedGroupBuckets('add'); });
 
@@ -845,14 +1065,44 @@
       bucketsGrid.addEventListener('change', (event) => {
         const checkbox = event.target.closest('.js-group-bucket-check');
         if (!checkbox) return;
+        const key = String(checkbox.value || '').trim();
+        const selected = new Set(getSelectedGroupBucketKeys());
+        if (checkbox.checked && key) selected.add(key);
+        else if (key) selected.delete(key);
         setGroupsBucketSelectionMode('custom');
-        groupBucketSelectionState.selectedKeys = new Set(
-          Array.from(document.querySelectorAll('.js-group-bucket-check:checked'))
-            .map((el) => String(el.value || '').trim())
-            .filter(Boolean)
-        );
+        groupBucketSelectionState.selectedKeys = selected;
+        if (selected.size === 0) setGroupsBucketSelectionMode('none');
+        else if (selected.size === groupBucketSelectionState.availableKeys.length) setGroupsBucketSelectionMode('all');
         setGroupsBucketSelectionNote('');
         updateGroupsStrategyButtonsState(currentGroupsAutoContext);
+      });
+    }
+
+    const bucketFilterQ = document.getElementById('groups-buckets-filter-q');
+    if (bucketFilterQ) {
+      bucketFilterQ.addEventListener('input', () => {
+        groupBucketViewFilters = readGroupBucketViewFilters();
+        saveGroupsBucketUiState();
+        renderGroupsAutoContext(currentGroupsAutoContext);
+      });
+    }
+    ['groups-buckets-filter-selected-state', 'groups-buckets-filter-kind', 'groups-buckets-filter-sort'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.addEventListener('change', () => {
+          groupBucketViewFilters = readGroupBucketViewFilters();
+          saveGroupsBucketUiState();
+          renderGroupsAutoContext(currentGroupsAutoContext);
+        });
+      }
+    });
+
+    const workspaceBucketFields = document.getElementById('groups-workspace-bucket-fields');
+    if (workspaceBucketFields) {
+      workspaceBucketFields.addEventListener('change', async () => {
+        markGroupPreviewDirty();
+        saveGroupsBucketUiState();
+        await refreshGroupsAutoContext();
       });
     }
 
@@ -975,6 +1225,7 @@
       '#groups-group-count-range',
     ], 'input');
 
+    restoreGroupsBucketUiState();
     clearGroupPreview();
     updateGroupsStrategyButtonsState(null);
     refreshGroupsAutoContext();

@@ -69,6 +69,7 @@ class Match(models.Model):
 
     date = models.DateField(null=True, blank=True)                          # "Data"
     hour_raw = models.CharField(max_length=50, null=True, blank=True)       # "Hora" (tal qual)
+    address = models.ForeignKey("Address", null=True, blank=True, on_delete=models.SET_NULL, related_name="matches")
     domicile = models.CharField(max_length=255, null=True, blank=True)      # "Domicili"
     municipality = models.CharField(max_length=120, null=True, blank=True)  # "Municipi"
     venue = models.CharField(max_length=255, null=True, blank=True)         # "Pista joc"
@@ -137,6 +138,7 @@ class Address(models.Model):
     Master d’adreces (substitueix domicilis_geocodificats.csv)
     """
     text = models.CharField(max_length=500, unique=True, db_index=True)
+    normalized_text = models.CharField(max_length=500, unique=True, db_index=True, null=True, blank=True)
     municipality = models.CharField(max_length=120, null=True, blank=True)
 
     lat = models.FloatField(null=True, blank=True)
@@ -163,6 +165,16 @@ class AddressCluster(models.Model):
     address = models.ForeignKey(Address, on_delete=models.CASCADE, related_name="clusters")
 
     cluster_id = models.IntegerField(null=True, blank=True, db_index=True)
+    cluster_status = models.CharField(
+        max_length=20,
+        default="pending",
+        choices=[
+            ("pending", "pending"),
+            ("clustered", "clustered"),
+            ("outlier", "outlier"),
+            ("missing_geocode", "missing_geocode"),
+        ],
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
