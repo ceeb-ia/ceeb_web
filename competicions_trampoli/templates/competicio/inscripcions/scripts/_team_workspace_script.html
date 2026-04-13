@@ -1256,6 +1256,7 @@ window.initTeamsWorkspace = async function () {
     setText('team-summary-assigned', Number(summary?.assigned_count || 0));
     setText('team-summary-unassigned', Number(summary?.unassigned_count || 0));
     setText('team-summary-total', Number(summary?.total_inscripcions || 0));
+    setText('teams-nav-badge', Number(summary?.teams_total || 0));
     setText('team-context-metric-teams-with-members', Number(summary?.teams_with_members || 0));
     setText('team-context-metric-assigned', Number(summary?.assigned_count || 0));
     setText('team-context-metric-unassigned', Number(summary?.unassigned_count || 0));
@@ -2414,6 +2415,19 @@ window.initTeamsWorkspace = async function () {
       if (card) card.classList.toggle('is-selected', input.checked);
       updateAutoBucketsMeta();
       dirtyPreview();
+    });
+  }
+
+  if (!window.__teamsWorkspaceSelectionBridgeBound) {
+    window.__teamsWorkspaceSelectionBridgeBound = true;
+    document.addEventListener('inscripcions:selection-changed', (event) => {
+      const detail = event?.detail || {};
+      if (detail.source === 'team_workspace') return;
+      const ids = Array.isArray(detail.ids) ? detail.ids : [];
+      const workspaceApi = window.__teamWorkspaceApi;
+      if (workspaceApi && typeof workspaceApi.setExternalSelection === 'function') {
+        workspaceApi.setExternalSelection(ids, { source: 'main' });
+      }
     });
   }
 

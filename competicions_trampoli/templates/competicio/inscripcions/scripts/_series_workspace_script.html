@@ -1160,6 +1160,7 @@ window.initSeriesWorkspace = async function () {
     const summary = workspace?.summary || {};
     const issues = Array.isArray(workspace?.issues) ? workspace.issues : [];
     renderCompactSummary(summary);
+    setText('series-nav-badge', Number(summary?.series_total || 0));
 
     const headerWrap = document.getElementById('series-summary-metrics');
     if (headerWrap) {
@@ -1560,6 +1561,7 @@ window.initSeriesWorkspace = async function () {
     if (!state.compAparellId) {
       setText('series-candidates-status', 'Selecciona un aparell d\'equip per carregar el workspace.');
       setText('series-compact-list-note', 'Selecciona un aparell d\'equip per carregar les series.');
+      setText('series-nav-badge', '0');
       updateSelectionSummary();
       saveWorkspaceState();
       return null;

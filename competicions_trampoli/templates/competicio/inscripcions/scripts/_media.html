@@ -1206,7 +1206,7 @@
     try {
       await refreshWorkspace();
     } catch (error) {
-      setWorkspaceSummary(error?.message || 'No s'ha pogut carregar el workspace de multimedia.');
+      setWorkspaceSummary(error?.message || "No s'ha pogut carregar el workspace de multimedia.");
     }
 
     state.draftDirty = !configsEqual(state.draftConfig, state.savedConfig);

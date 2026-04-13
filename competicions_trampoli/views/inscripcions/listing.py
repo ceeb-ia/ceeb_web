@@ -24,8 +24,11 @@ from ...services.shared.competition_groups import get_group_for_display_num, get
 from ...services.teams.equip_contexts import (
     NATIVE_EQUIP_CONTEXT_CODE,
     get_equip_context,
+    get_equip_context_summary,
     normalize_equip_context_code,
 )
+from ...services.scoring.team_scoring import build_team_subjects_for_comp_aparell, is_team_context_app
+from ...services.teams.team_series import get_series_summary_payload
 from ...services.inscripcions.history import (
     capture_inscripcions_history_snapshot,
     record_inscripcions_history_entry,
@@ -466,6 +469,24 @@ class InscripcionsListNewView(InscripcionsListView):
             active_app_ids = [app.id for app in aparells_cfg]
             ctx["inscripcio_aparells_cfg"] = aparells_cfg
             ctx["inscripcio_aparells_active_ids"] = active_app_ids
+            ctx["sidebar_team_nav_count"] = int(
+                get_equip_context_summary(self.competicio, team_context_code).get("teams_total") or 0
+            )
+            default_series_comp_aparell = next((app for app in aparells_cfg if is_team_context_app(app)), None)
+            if default_series_comp_aparell is not None:
+                series_subjects, _series_issues = build_team_subjects_for_comp_aparell(
+                    self.competicio,
+                    default_series_comp_aparell,
+                )
+                ctx["sidebar_series_nav_count"] = int(
+                    get_series_summary_payload(
+                        self.competicio,
+                        default_series_comp_aparell,
+                        series_subjects,
+                    ).get("series_total") or 0
+                )
+            else:
+                ctx["sidebar_series_nav_count"] = 0
 
         with inscripcions_timing_section(self.request, "listing.media_maps"):
             visible_ins_ids = set()

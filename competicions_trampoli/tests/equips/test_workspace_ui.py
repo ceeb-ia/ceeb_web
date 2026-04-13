@@ -280,6 +280,24 @@ class EquipPreviewUiTests(_BaseTrampoliDataMixin, TestCase):
         self.assertContains(response, "source: 'groups_workspace'")
         self.assertContains(response, "source: 'team_workspace'")
 
+    def test_inscripcions_list_renders_sidebar_badges_for_teams_and_series_without_loading_text(self):
+        response = self.client.get(reverse("inscripcions_list", kwargs={"pk": self.comp.id}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="teams-nav-badge"')
+        self.assertContains(response, 'id="teams-nav-badge">1<', html=False)
+        self.assertContains(response, 'id="series-nav-badge"')
+        self.assertContains(response, 'id="series-nav-badge">0<', html=False)
+        self.assertNotContains(response, '<span class="badge badge-light">Carregant</span>', html=False)
+
+    def test_inscripcions_list_exposes_team_workspace_selection_bridge(self):
+        response = self.client.get(reverse("inscripcions_list", kwargs={"pk": self.comp.id}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "__teamsWorkspaceSelectionBridgeBound")
+        self.assertContains(response, "detail.source === 'team_workspace'")
+        self.assertContains(response, "workspaceApi.setExternalSelection(ids, { source: 'main' })")
+
     def test_equips_workspace_returns_context_summary_candidates_and_filters(self):
         response = self.client.post(
             reverse("inscripcions_equips_workspace", kwargs={"pk": self.comp.id}),

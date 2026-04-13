@@ -48,14 +48,14 @@
             <button type="button" class="actions-nav-btn" data-panel-target="equips">
               <span class="actions-nav-btn-title">
                 <span>Equips</span>
-                <span class="badge badge-light">Carregant</span>
+                <span class="badge badge-light" id="teams-nav-badge">{{ sidebar_team_nav_count|default:0 }}</span>
               </span>
               <span class="actions-nav-btn-meta">Automatic i manual</span>
             </button>
             <button type="button" class="actions-nav-btn" data-panel-target="series-equips">
               <span class="actions-nav-btn-title">
                 <span>Series d'equip</span>
-                <span class="badge badge-light">Carregant</span>
+                <span class="badge badge-light" id="series-nav-badge">{{ sidebar_series_nav_count|default:0 }}</span>
               </span>
               <span class="actions-nav-btn-meta">Workspace i programacio</span>
             </button>

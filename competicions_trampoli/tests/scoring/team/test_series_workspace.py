@@ -11,6 +11,22 @@ class TeamSeriesWorkspaceTests(TeamContextScoringFlowTestBase):
         self.assertContains(response, 'data-panel-lazy="1"')
         self.assertNotContains(response, 'id="series-workspace-shell"')
 
+    def test_inscripcions_list_renders_series_sidebar_badge_from_initial_summary(self):
+        response = self.client.get(reverse("inscripcions_list", kwargs={"pk": self.comp.id}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="series-nav-badge">0<', html=False)
+        self.assertNotContains(response, '<span class="badge badge-light">Carregant</span>', html=False)
+
+    def test_inscripcions_list_renders_zero_series_badge_without_active_team_aparell(self):
+        self.comp_app.actiu = False
+        self.comp_app.save(update_fields=["actiu"])
+
+        response = self.client.get(reverse("inscripcions_list", kwargs={"pk": self.comp.id}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="series-nav-badge">0<', html=False)
+
     def test_series_panel_fragment_renders_workspace_shell_and_inspector(self):
         response = self.client.get(
             reverse("inscripcions_list", kwargs={"pk": self.comp.id}),
