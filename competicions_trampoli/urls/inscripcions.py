@@ -50,8 +50,11 @@ from ..views.inscripcions.media import (
     inscripcions_media_delete,
     inscripcions_media_file,
     inscripcions_media_match_apply,
+    inscripcions_media_match_config_save,
     inscripcions_media_match_preview,
+    inscripcions_media_reassign,
     inscripcions_media_set_primary,
+    inscripcions_media_workspace,
     inscripcions_media_upload,
 )
 from ..views.inscripcions.sorting import (
@@ -289,6 +292,11 @@ urlpatterns = [
         name="inscripcions_media_set_primary",
     ),
     path(
+        "competicio/<int:pk>/inscripcions/media/match-config/save/",
+        competition_view(inscripcions_media_match_config_save, "inscripcions.edit"),
+        name="inscripcions_media_match_config_save",
+    ),
+    path(
         "competicio/<int:pk>/inscripcions/media/match-preview/",
         competition_view(inscripcions_media_match_preview, "inscripcions.view"),
         name="inscripcions_media_match_preview",
@@ -297,6 +305,16 @@ urlpatterns = [
         "competicio/<int:pk>/inscripcions/media/match-apply/",
         competition_view(inscripcions_media_match_apply, "inscripcions.edit"),
         name="inscripcions_media_match_apply",
+    ),
+    path(
+        "competicio/<int:pk>/inscripcions/media/workspace/",
+        competition_view(inscripcions_media_workspace, "inscripcions.view"),
+        name="inscripcions_media_workspace",
+    ),
+    path(
+        "competicio/<int:pk>/inscripcions/media/reassign/",
+        competition_view(inscripcions_media_reassign, "inscripcions.edit"),
+        name="inscripcions_media_reassign",
     ),
     path(
         "competicio/<int:pk>/inscripcions/equips/preview/",

@@ -126,8 +126,11 @@ class InscripcionsBackendSmokeTests(_BaseTrampoliDataMixin, TestCase):
             "inscripcions_media_upload",
             "inscripcions_media_delete",
             "inscripcions_media_set_primary",
+            "inscripcions_media_match_config_save",
             "inscripcions_media_match_preview",
             "inscripcions_media_match_apply",
+            "inscripcions_media_workspace",
+            "inscripcions_media_reassign",
             "inscripcions_media_file",
             "inscripcions_equips_preview",
             "inscripcions_equips_workspace",
@@ -207,6 +210,10 @@ class InscripcionsBackendSmokeTests(_BaseTrampoliDataMixin, TestCase):
         self.assertContains(response, '/static/js/vendor/Sortable.min.js', html=False)
         self.assertNotContains(response, 'cdn.jsdelivr.net/npm/sortablejs', html=False)
         self.assertNotIn("mediaMatchInscripcionsOptions", response.context["inscripcions_page_boot"]["initial"])
+        self.assertIn("mediaMatchingConfig", response.context["inscripcions_page_boot"]["initial"])
+        self.assertIn("mediaWorkspace", response.context["inscripcions_page_boot"]["urls"])
+        self.assertIn("mediaSaveMatchingConfig", response.context["inscripcions_page_boot"]["urls"])
+        self.assertIn("mediaReassign", response.context["inscripcions_page_boot"]["urls"])
         self.assertNotContains(response, '"mediaMatchInscripcionsOptions":', html=False)
 
     def test_fragment_html_contract_returns_header_toolbar_history_table(self):
@@ -326,6 +333,10 @@ class InscripcionsBackendSmokeTests(_BaseTrampoliDataMixin, TestCase):
         self.assertNotIn("inscripcioAparellsExcludedMap", boot["initial"])
         self.assertNotIn("inscripcioMediaMap", boot["initial"])
         self.assertNotIn("mediaMatchInscripcionsOptions", boot["initial"])
+        self.assertIn("mediaMatchingConfig", boot["initial"])
+        self.assertIn("mediaWorkspace", boot["urls"])
+        self.assertIn("mediaSaveMatchingConfig", boot["urls"])
+        self.assertIn("mediaReassign", boot["urls"])
 
     def test_column_filter_query_params_accept_canonical_and_legacy_prefixes(self):
         Inscripcio.objects.create(
@@ -458,6 +469,9 @@ class InscripcionsBackendSmokeTests(_BaseTrampoliDataMixin, TestCase):
         series_wrapper = (
             package_root / "templates" / "competicio" / "inscripcions" / "scripts" / "_series.html"
         ).read_text(encoding="utf-8")
+        media_script = (
+            package_root / "templates" / "competicio" / "inscripcions" / "scripts" / "_media.html"
+        ).read_text(encoding="utf-8")
 
         self.assertIn("window.initGroupsPanel", groups_preview)
         self.assertIn("window.__groupsPanelRoot", groups_preview)
@@ -482,6 +496,10 @@ class InscripcionsBackendSmokeTests(_BaseTrampoliDataMixin, TestCase):
         self.assertNotIn("refreshWorkspace({ preservePage: false }).catch", series_script)
         self.assertIn("inscripcions:panel-activated", series_wrapper)
         self.assertIn("inscripcions:panel-loaded", series_wrapper)
+        self.assertIn("window.initMediaWorkspace = initMediaWorkspace", media_script)
+        self.assertIn("API.runOnceForPanel('media'", media_script)
+        self.assertIn("inscripcions:panel-activated", media_script)
+        self.assertIn("inscripcions:panel-loaded", media_script)
 
     def test_table_script_keeps_drag_drop_enabled_with_lazy_group_tabs(self):
         package_root = Path(__file__).resolve().parents[2]
@@ -524,6 +542,7 @@ class InscripcionsBackendSmokeTests(_BaseTrampoliDataMixin, TestCase):
             reverse("inscripcions_media_match_preview", kwargs={"pk": self.comp.id}),
             data=json.dumps(
                 {
+                    "detail_level": "expanded",
                     "files": [
                         {
                             "key": "smoke-0",
@@ -542,7 +561,20 @@ class InscripcionsBackendSmokeTests(_BaseTrampoliDataMixin, TestCase):
         self.assertIn("rows", media_payload)
         self.assertIn("counts", media_payload)
         self.assertIn("config", media_payload)
+        self.assertEqual(media_payload.get("detail_level"), "expanded")
+        self.assertIn("breakdown", media_payload["rows"][0])
         self.assertNotIn("inscripcions_options", media_payload)
+
+        media_workspace_response = self.client.post(
+            reverse("inscripcions_media_workspace", kwargs={"pk": self.comp.id}),
+            data=json.dumps({"filters": {"media_state": "all"}, "page": 1, "page_size": 25}),
+            content_type="application/json",
+        )
+        self.assertEqual(media_workspace_response.status_code, 200)
+        media_workspace_payload = media_workspace_response.json()
+        self.assertTrue(media_workspace_payload.get("ok"))
+        self.assertIn("workspace", media_workspace_payload)
+        self.assertIn("rows", media_workspace_payload["workspace"])
 
         team_app = self._create_aparell("TEAMSMOKE", "Team Smoke")
         team_app.competition_unit = Aparell.CompetitionUnit.TEAM

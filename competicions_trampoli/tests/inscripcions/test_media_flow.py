@@ -137,15 +137,17 @@ class InscripcionsMediaFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.comp = self._create_competicio("Comp Media")
         self.ins = self._create_inscripcio(self.comp, "LUCIA POZO SANCHEZ")
         self.ins.entitat = "Collegi Sagrat Cor Diputacio"
+        self.ins.categoria = "GEN"
         self.ins.subcategoria = "GEN"
         self.ins.sexe = "F"
-        self.ins.save(update_fields=["entitat", "subcategoria", "sexe"])
+        self.ins.save(update_fields=["entitat", "categoria", "subcategoria", "sexe"])
 
         self.ins_2 = self._create_inscripcio(self.comp, "MARTA LOPEZ", ordre=2, grup=1)
         self.ins_2.entitat = "Club Prova"
+        self.ins_2.categoria = "ALT"
         self.ins_2.subcategoria = "GEN"
         self.ins_2.sexe = "F"
-        self.ins_2.save(update_fields=["entitat", "subcategoria", "sexe"])
+        self.ins_2.save(update_fields=["entitat", "categoria", "subcategoria", "sexe"])
 
         User = get_user_model()
         self.user = User.objects.create_user(
@@ -270,6 +272,197 @@ class InscripcionsMediaFlowTests(_BaseTrampoliDataMixin, TestCase):
 
         item = InscripcioMedia.objects.get(inscripcio=self.ins)
         self.assertEqual(item.source, InscripcioMedia.Source.ASSISTED)
+
+    def test_media_matching_config_save_preview_and_workspace_reassign(self):
+        save_url = reverse("inscripcions_media_match_config_save", kwargs={"pk": self.comp.id})
+        saved_res = self.client.post(
+            save_url,
+            data=json.dumps(
+                {
+                    "config": {
+                        "weights": {
+                            "nom": 0,
+                            "entitat": 0,
+                            "sexe": 0,
+                            "subcategoria": 0,
+                            "categoria": 80,
+                        },
+                        "thresholds": {
+                            "auto_score_min": 0.7,
+                            "review_score_min": 0.3,
+                            "auto_margin_min": 0.1,
+                        },
+                    }
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(saved_res.status_code, 200)
+        saved_payload = saved_res.json()
+        self.assertTrue(saved_payload.get("ok"))
+        self.assertIn("history", saved_payload)
+        self.assertEqual(saved_payload["config"]["weights"]["categoria"], 80)
+        self.comp.refresh_from_db()
+        self.assertEqual(self.comp.inscripcions_view["media_matching"]["weights"]["categoria"], 80)
+
+        preview_url = reverse("inscripcions_media_match_preview", kwargs={"pk": self.comp.id})
+        preview_res = self.client.post(
+            preview_url,
+            data=json.dumps(
+                {
+                    "detail_level": "expanded",
+                    "config_draft": {
+                        "weights": {
+                            "nom": 0,
+                            "entitat": 0,
+                            "sexe": 0,
+                            "subcategoria": 0,
+                            "categoria": 100,
+                        },
+                        "thresholds": {
+                            "auto_score_min": 0.5,
+                            "review_score_min": 0.2,
+                            "auto_margin_min": 0.05,
+                        },
+                    },
+                    "files": [
+                        {
+                            "key": "draft-0",
+                            "filename": "1 - GEN.mp3",
+                            "relative_path": "audio/1 - GEN.mp3",
+                            "size": 1234,
+                        }
+                    ],
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(preview_res.status_code, 200)
+        preview_payload = preview_res.json()
+        self.assertEqual(preview_payload.get("detail_level"), "expanded")
+        self.assertEqual(preview_payload["config"]["weights"]["categoria"], 100)
+        self.comp.refresh_from_db()
+        self.assertEqual(self.comp.inscripcions_view["media_matching"]["weights"]["categoria"], 80)
+        preview_row = preview_payload["rows"][0]
+        self.assertIn("breakdown", preview_row)
+        self.assertIn("categoria", preview_row["breakdown"]["field_breakdown"])
+        self.assertEqual(preview_row["breakdown"]["field_breakdown"]["categoria"]["score"], 1.0)
+        self.assertEqual(preview_row["breakdown"]["field_breakdown"]["categoria"]["contribution"], 100.0)
+
+        self._upload_media(self.ins.id, filename="source-a.mp3")
+        self._upload_media(self.ins.id, filename="source-b.mp3")
+        self._upload_media(self.ins.id, filename="source-c.mp3")
+
+        workspace_url = reverse("inscripcions_media_workspace", kwargs={"pk": self.comp.id})
+        workspace_res = self.client.post(
+            workspace_url,
+            data=json.dumps(
+                {
+                    "filters": {
+                        "q": "Lucia",
+                        "media_state": "all",
+                        "source": "manual",
+                        "tipus": "audio",
+                        "inscripcio_id": self.ins.id,
+                    },
+                    "page": 1,
+                    "page_size": 10,
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(workspace_res.status_code, 200)
+        workspace_payload = workspace_res.json()
+        self.assertTrue(workspace_payload.get("ok"))
+        workspace = workspace_payload["workspace"]
+        self.assertEqual(workspace["filters"]["media_state"], "all")
+        self.assertEqual(workspace["filters"]["source"], "manual")
+        self.assertEqual(workspace["filters"]["tipus"], "audio")
+        self.assertEqual(workspace["summary"]["filtered_inscripcions"], 1)
+        self.assertEqual(workspace["summary"]["media_total"], 3)
+        self.assertEqual(workspace["summary"]["primary_media_total"], 1)
+        self.assertEqual(len(workspace["rows"]), 1)
+        row = workspace["rows"][0]
+        self.assertEqual(row["inscripcio_id"], self.ins.id)
+        self.assertEqual(row["inscripcio_label"], self.ins.nom_i_cognoms)
+        self.assertEqual(row["media_state"], "with")
+        self.assertEqual(row["media_count"], 3)
+        self.assertEqual(row["primary_media_count"], 1)
+        self.assertEqual(len(row["media_items"]), 3)
+        self.assertEqual(workspace["total"], 1)
+        self.assertEqual(workspace["pages"], 1)
+
+        source_media = InscripcioMedia.objects.filter(inscripcio=self.ins, tipus=InscripcioMedia.Tipus.AUDIO).order_by("created_at", "id")
+        moved_primary = source_media.first()
+        other_item = source_media.last()
+        self.assertIsNotNone(moved_primary)
+        self.assertIsNotNone(other_item)
+
+        reassign_url = reverse("inscripcions_media_reassign", kwargs={"pk": self.comp.id})
+        reassign_res = self.client.post(
+            reassign_url,
+            data=json.dumps({"media_id": moved_primary.id, "inscripcio_id": self.ins_2.id}),
+            content_type="application/json",
+        )
+        self.assertEqual(reassign_res.status_code, 200)
+        reassign_payload = reassign_res.json()
+        self.assertTrue(reassign_payload.get("ok"))
+        moved_item = InscripcioMedia.objects.get(id=moved_primary.id)
+        self.assertEqual(moved_item.inscripcio_id, self.ins_2.id)
+        self.assertTrue(moved_item.is_primary)
+        other_item.refresh_from_db()
+        self.assertTrue(other_item.is_primary)
+
+        second_source_media = InscripcioMedia.objects.create(
+            competicio=self.comp,
+            inscripcio=self.ins,
+            fitxer=SimpleUploadedFile("source-d.mp3", b"abc123", content_type="audio/mpeg"),
+            tipus=InscripcioMedia.Tipus.AUDIO,
+            mime_type="audio/mpeg",
+            original_filename="source-d.mp3",
+            file_size_bytes=6,
+            is_primary=False,
+            source=InscripcioMedia.Source.MANUAL,
+        )
+        reassign_res_2 = self.client.post(
+            reassign_url,
+            data=json.dumps({"media_id": second_source_media.id, "inscripcio_id": self.ins_2.id}),
+            content_type="application/json",
+        )
+        self.assertEqual(reassign_res_2.status_code, 200)
+        moved_item_2 = InscripcioMedia.objects.get(id=second_source_media.id)
+        self.assertEqual(moved_item_2.inscripcio_id, self.ins_2.id)
+        self.assertFalse(moved_item_2.is_primary)
+        self.assertTrue(InscripcioMedia.objects.filter(inscripcio=self.ins_2, tipus=InscripcioMedia.Tipus.AUDIO, is_primary=True).exists())
+
+    def test_media_workspace_filters_accept_aliases_and_primary_state(self):
+        self._upload_media(self.ins.id, filename="one.mp3")
+        self._upload_media(self.ins.id, filename="two.mp3")
+
+        workspace_url = reverse("inscripcions_media_workspace", kwargs={"pk": self.comp.id})
+        workspace_res = self.client.post(
+            workspace_url,
+            data=json.dumps(
+                {
+                    "filters": {
+                        "media_state": "with",
+                        "source": "upload",
+                        "tipus": "audio",
+                    },
+                    "page": 1,
+                    "page_size": 10,
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(workspace_res.status_code, 200)
+        workspace = workspace_res.json()["workspace"]
+        self.assertEqual(workspace["filters"]["media_state"], "with")
+        self.assertEqual(workspace["filters"]["source"], InscripcioMedia.Source.MANUAL)
+        self.assertEqual(workspace["filters"]["tipus"], InscripcioMedia.Tipus.AUDIO)
+        self.assertEqual(workspace["summary"]["filtered_inscripcions"], 1)
+        self.assertEqual(len(workspace["rows"]), 1)
+        self.assertEqual(workspace["rows"][0]["media_state"], "with")
 
     def test_media_matching_uses_shortlist_and_keeps_id_tie_break(self):
         candidates = build_inscripcio_media_match_candidates(
@@ -445,6 +638,12 @@ class InscripcionsMediaFlowTests(_BaseTrampoliDataMixin, TestCase):
 
         self.assertEqual(rows[0].get("suggested_inscripcio_id"), 1)
         self.assertEqual(sorted(scored_ids), [1, 1, 2, 3])
+
+    def test_media_matching_category_weight_defaults_to_zero(self):
+        cfg = media_matching.normalize_media_matching_config({})
+        self.assertEqual(cfg["weights"]["categoria"], 0)
+        self.assertEqual(cfg["thresholds"]["review_score_min"], 0.60)
+        self.assertEqual(cfg["thresholds"]["auto_margin_min"], 0.08)
 
 class InscripcionsListingMediaUrlTests(_BaseTrampoliDataMixin, TestCase):
     def test_listing_media_item_uses_registered_route(self):

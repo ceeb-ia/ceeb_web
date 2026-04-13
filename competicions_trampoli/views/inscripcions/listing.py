@@ -31,6 +31,7 @@ from ...services.inscripcions.history import (
     record_inscripcions_history_entry,
     with_inscripcions_history_payload,
 )
+from ...services.inscripcions.media_matching import normalize_media_matching_config
 from ...services.inscripcions.queries import (
     _label_with_source,
     _normalize_schema_extra_code,
@@ -536,8 +537,11 @@ class InscripcionsListNewView(InscripcionsListView):
                     "mediaUpload": reverse("inscripcions_media_upload", kwargs={"pk": self.competicio.id}),
                     "mediaSetPrimary": reverse("inscripcions_media_set_primary", kwargs={"pk": self.competicio.id}),
                     "mediaDelete": reverse("inscripcions_media_delete", kwargs={"pk": self.competicio.id}),
+                    "mediaSaveMatchingConfig": reverse("inscripcions_media_match_config_save", kwargs={"pk": self.competicio.id}),
                     "mediaMatchPreview": reverse("inscripcions_media_match_preview", kwargs={"pk": self.competicio.id}),
                     "mediaMatchApply": reverse("inscripcions_media_match_apply", kwargs={"pk": self.competicio.id}),
+                    "mediaWorkspace": reverse("inscripcions_media_workspace", kwargs={"pk": self.competicio.id}),
+                    "mediaReassign": reverse("inscripcions_media_reassign", kwargs={"pk": self.competicio.id}),
                     "reorder": reverse("inscripcions_reorder", kwargs={"pk": self.competicio.id}),
                     "saveTableColumns": reverse("inscripcions_save_table_columns", kwargs={"pk": self.competicio.id}),
                     "setGroupName": reverse("inscripcions_set_group_name", kwargs={"pk": self.competicio.id}),
@@ -549,6 +553,9 @@ class InscripcionsListNewView(InscripcionsListView):
                 "initial": {
                     "historyState": ctx["history_state"],
                     "birthYearRangeGroupConfig": ctx["birth_year_range_group_config"],
+                    "mediaMatchingConfig": normalize_media_matching_config(
+                        (self.competicio.inscripcions_view or {}).get("media_matching")
+                    ),
                 },
             }
         return ctx

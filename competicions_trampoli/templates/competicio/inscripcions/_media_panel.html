@@ -1,51 +1,258 @@
-<div class="panel" id="panel-media" data-panel-key="media">
-  <div class="panel-head">
-    <h3 class="panel-title">Media</h3>
-    <div class="subtle">Assignacio assistida i gestio de fitxers.</div>
-  </div>
-
-  <div class="panel-body">
-    <div class="team-box mb-3">
-      <div class="fw-semibold">Assignacio assistida des de carpeta</div>
-      <div class="text-muted small mb-2">
-        Selecciona una carpeta local. El sistema fara match automatic per nom, entitat, sexe i subcategoria.
-      </div>
-
-      <div class="d-flex align-items-center flex-wrap" style="gap:8px;">
-        <input type="file" id="media-folder-input" class="form-control form-control-sm" webkitdirectory directory multiple>
-        <button type="button" class="btn btn-sm btn-outline-primary" id="btn-media-match-preview">
-          Previsualitzar match
-        </button>
-        <button type="button" class="btn btn-sm btn-primary" id="btn-media-match-apply" {% if not can_edit_inscripcions %}disabled{% endif %}>
-          Aplicar assignacions
-        </button>
-      </div>
-
-      <div class="small text-muted mt-2" id="media-match-summary">
-        Cap fitxer carregat.
-      </div>
-
-      <div class="media-match-table-wrap mt-2 d-none" id="media-match-table-wrap">
-        <table class="table table-sm mb-0 media-match-table">
-          <thead class="table-light">
-            <tr>
-              <th>Fitxer</th>
-              <th>Estat</th>
-              <th>Inscripcio</th>
-              <th>Score</th>
-              <th>Detall</th>
-            </tr>
-          </thead>
-          <tbody id="media-match-table-body"></tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="mt-4">
-      <div class="fw-semibold mb-2">Configuracio actual</div>
-      <div class="small text-muted">
-        La configuracio de match i les opcions d'inscripcions es llegeixen del boot inicial de la pagina.
-      </div>
+<section class="action-panel" id="panel-media" data-panel-key="media">
+  <div class="action-panel-header">
+    <div>
+      <p class="panel-title mb-0">Multimedia</p>
+      <div class="subtle">Workspace per ajustar el match, revisar la preview i gestionar assignacions existents.</div>
     </div>
   </div>
-</div>
+
+  <div class="action-panel-body">
+    <div
+      class="tab-select-card team-workbench-card"
+      id="media-main-card"
+      data-expand-card="media-main-card"
+      data-expand-title="Workspace de multimedia"
+      data-expand-subtitle="Configura el match, revisa la preview i gestiona les assignacions en una sola vista."
+    >
+        <div class="tab-select-card-head">
+          <div>
+            <div class="fw-semibold">Workspace de multimedia</div>
+            <div class="small text-muted">
+              Ajusta pesos i llindars, prova una preview amb configuracio draft i revisa el que ja esta assignat.
+            </div>
+          </div>
+          <div class="tab-select-card-tools">
+            <span class="badge badge-light border" id="media-compact-config-badge">Config carregant...</span>
+            <span class="badge badge-light border" id="media-compact-preview-badge">Preview 0 fitxers</span>
+            <span class="badge badge-light border" id="media-compact-workspace-badge">Workspace 0</span>
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-primary tab-select-expand-btn js-expand-tab-select"
+              data-expand-target="media-main-card"
+              data-label-collapsed="Obrir workspace"
+              data-label-expanded="Tancar vista ampla"
+              aria-expanded="false"
+            >
+              Obrir workspace
+            </button>
+          </div>
+        </div>
+
+        <div class="team-compact-summary">
+          <div class="team-compact-summary-copy">
+            <div class="fw-semibold mb-1">Flux de treball</div>
+            <div class="small text-muted">
+              Carrega una carpeta local per revisar el match assistit, desa canvis de configuracio quan els tinguis
+              validats i torna a carregar el workspace per veure l'impacte sobre les inscripcions.
+            </div>
+          </div>
+          <div class="team-compact-summary-metrics" id="media-compact-summary-metrics">
+            <span class="group-preview-badge badge badge-light border" id="media-compact-summary-config">Config</span>
+            <span class="group-preview-badge badge badge-light border" id="media-compact-summary-thresholds">Llindars</span>
+            <span class="group-preview-badge badge badge-light border" id="media-compact-summary-folder">Cap carpeta carregada</span>
+          </div>
+        </div>
+
+        <div class="team-compact-summary">
+          <div class="team-compact-summary-copy">
+            <div class="fw-semibold mb-1">Accions rapides</div>
+            <div class="small text-muted">
+              Previsualitza el match amb la configuracio actual, aplica les assignacions seleccionades i refresca el
+              workspace quan canviis fitxers.
+            </div>
+          </div>
+          <div class="d-flex flex-column" style="gap:10px; min-width:min(100%, 760px);">
+            <div class="d-flex flex-wrap align-items-center" style="gap:8px;">
+              <input
+                type="file"
+                id="media-folder-input"
+                class="form-control form-control-sm"
+                webkitdirectory
+                directory
+                multiple
+              >
+              <button type="button" class="btn btn-sm btn-outline-primary" id="btn-media-match-preview">
+                Previsualitzar match
+              </button>
+              <button type="button" class="btn btn-sm btn-primary" id="btn-media-match-apply" {% if not can_edit_inscripcions %}disabled{% endif %}>
+                Aplicar assignacions
+              </button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-media-workspace-refresh">
+                Refrescar workspace
+              </button>
+            </div>
+            <div class="small text-muted" id="media-match-summary">Cap fitxer carregat.</div>
+          </div>
+        </div>
+
+        <div class="team-workspace-shell media-workspace-shell" id="media-workspace-shell">
+          <div class="team-workspace-header">
+            <div class="team-workspace-header-bar">
+              <div class="team-workspace-header-main">
+                <div class="team-workspace-title-wrap">
+                  <div class="team-workspace-title">Workspace de multimedia</div>
+                  <div class="small text-muted">
+                    Una vista per validar la configuracio, comparar candidats i gestionar les assignacions reals.
+                  </div>
+                </div>
+              </div>
+              <div class="team-workspace-header-tools">
+                <span class="badge badge-light border" id="media-summary-preview-count"><strong id="media-summary-preview-total">0</strong> preview</span>
+                <span class="badge badge-light border" id="media-summary-workspace-count"><strong id="media-summary-workspace-total">0</strong> inscripcions</span>
+                <span class="badge badge-light border" id="media-summary-primary-count"><strong id="media-summary-primary-total">0</strong> principals</span>
+                <span class="badge badge-light border" id="media-summary-folder-count"><strong id="media-summary-folder-total">0</strong> fitxers</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="team-workspace-grid media-workspace-grid">
+            <section class="team-workspace-pane">
+              <div class="team-pane-card">
+                <div class="team-pane-head">
+                  <div>
+                    <div class="fw-semibold">Configuracio de match</div>
+                    <div class="small text-muted">
+                      Ajusta els pesos i els llindars per treballar amb el match assistit sense desar res fins que ho
+                      tinguis clar.
+                    </div>
+                  </div>
+                </div>
+
+                <div class="team-filters-grid media-config-grid" id="media-config-grid">
+                  <div>
+                    <label class="small text-muted mb-1 d-block" for="media-config-weight-nom">Nom</label>
+                    <input type="number" min="0" step="1" class="form-control form-control-sm" id="media-config-weight-nom">
+                  </div>
+                  <div>
+                    <label class="small text-muted mb-1 d-block" for="media-config-weight-categoria">Categoria</label>
+                    <input type="number" min="0" step="1" class="form-control form-control-sm" id="media-config-weight-categoria">
+                  </div>
+                  <div>
+                    <label class="small text-muted mb-1 d-block" for="media-config-weight-subcategoria">Subcategoria</label>
+                    <input type="number" min="0" step="1" class="form-control form-control-sm" id="media-config-weight-subcategoria">
+                  </div>
+                  <div>
+                    <label class="small text-muted mb-1 d-block" for="media-config-weight-entitat">Entitat</label>
+                    <input type="number" min="0" step="1" class="form-control form-control-sm" id="media-config-weight-entitat">
+                  </div>
+                  <div>
+                    <label class="small text-muted mb-1 d-block" for="media-config-weight-sexe">Sexe</label>
+                    <input type="number" min="0" step="1" class="form-control form-control-sm" id="media-config-weight-sexe">
+                  </div>
+                  <div>
+                    <label class="small text-muted mb-1 d-block" for="media-config-auto-score-min">Llindar auto</label>
+                    <input type="number" min="0" max="1" step="0.01" class="form-control form-control-sm" id="media-config-auto-score-min">
+                  </div>
+                  <div>
+                    <label class="small text-muted mb-1 d-block" for="media-config-review-score-min">Llindar review</label>
+                    <input type="number" min="0" max="1" step="0.01" class="form-control form-control-sm" id="media-config-review-score-min">
+                  </div>
+                  <div>
+                    <label class="small text-muted mb-1 d-block" for="media-config-auto-margin-min">Margen auto</label>
+                    <input type="number" min="0" max="1" step="0.01" class="form-control form-control-sm" id="media-config-auto-margin-min">
+                  </div>
+                </div>
+
+                <div class="small text-muted" id="media-config-status">Carregant configuracio...</div>
+                <div class="d-flex flex-wrap" style="gap:8px;">
+                  <button type="button" class="btn btn-sm btn-outline-primary" id="btn-media-config-preview">
+                    Previsualitzar amb aquesta configuracio
+                  </button>
+                  <button type="button" class="btn btn-sm btn-primary" id="btn-media-config-save" {% if not can_edit_inscripcions %}disabled{% endif %}>
+                    Desar configuracio
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <section class="team-workspace-pane">
+              <div class="team-pane-card">
+                <div class="team-pane-head">
+                  <div>
+                    <div class="fw-semibold">Previsualitzacio de match</div>
+                    <div class="small text-muted">
+                      Filtra per estat i canvia entre vista compacta i expandida per revisar score, marge i
+                      desglossament.
+                    </div>
+                  </div>
+                  <div class="d-flex flex-wrap" style="gap:6px;">
+                    <button type="button" class="btn btn-sm btn-outline-secondary js-media-preview-status" data-media-preview-status="all">Totes</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary js-media-preview-status" data-media-preview-status="auto">Auto</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary js-media-preview-status" data-media-preview-status="review">Review</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary js-media-preview-status" data-media-preview-status="unmatched">Sense match</button>
+                  </div>
+                </div>
+
+                <div class="d-flex flex-wrap align-items-center justify-content-between" style="gap:8px;">
+                  <div class="small text-muted" id="media-preview-status-line">Encara no s'ha calculat cap previsualitzacio.</div>
+                  <div class="d-flex flex-wrap align-items-center" style="gap:8px;">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-media-preview-refresh">Refrescar vista</button>
+                    <button type="button" class="btn btn-sm btn-outline-info" id="btn-media-preview-mode">
+                      Vista expandida
+                    </button>
+                  </div>
+                </div>
+
+                <div class="small text-muted" id="media-preview-summary"></div>
+
+                <div class="media-preview-wrap mt-2" id="media-preview-wrap">
+                  <div class="text-muted small">Carrega fitxers per veure la previsualitzacio.</div>
+                </div>
+              </div>
+            </section>
+
+            <section class="team-workspace-pane">
+              <div class="team-pane-card">
+                <div class="team-pane-head">
+                  <div>
+                    <div class="fw-semibold">Assignacions actuals</div>
+                    <div class="small text-muted">
+                      Llistat filtrable per estat, origen, tipus, inscripcio i cerca. Pots obrir el fitxer, marcar
+                      principal, reassignar o eliminar cada media.
+                    </div>
+                  </div>
+                </div>
+
+                <div class="team-filters-grid media-workspace-filters">
+                  <div>
+                    <label class="small text-muted mb-1 d-block" for="media-workspace-filter-q">Cerca</label>
+                    <input type="text" class="form-control form-control-sm" id="media-workspace-filter-q" placeholder="Nom, inscripcio, fitxer o entitat...">
+                  </div>
+                  <div>
+                    <label class="small text-muted mb-1 d-block" for="media-workspace-filter-inscripcio-id">Inscripcio ID</label>
+                    <input type="number" class="form-control form-control-sm" id="media-workspace-filter-inscripcio-id" min="1" step="1" placeholder="Opcional">
+                  </div>
+                  <div>
+                    <label class="small text-muted mb-1 d-block" for="media-workspace-filter-media-state">Estat</label>
+                    <select class="form-control form-control-sm" id="media-workspace-filter-media-state"></select>
+                  </div>
+                  <div>
+                    <label class="small text-muted mb-1 d-block" for="media-workspace-filter-source">Origen</label>
+                    <select class="form-control form-control-sm" id="media-workspace-filter-source"></select>
+                  </div>
+                  <div>
+                    <label class="small text-muted mb-1 d-block" for="media-workspace-filter-tipus">Tipus</label>
+                    <select class="form-control form-control-sm" id="media-workspace-filter-tipus"></select>
+                  </div>
+                  <div>
+                    <label class="small text-muted mb-1 d-block" for="media-workspace-filter-page">Pagina</label>
+                    <input type="number" class="form-control form-control-sm" id="media-workspace-filter-page" min="1" step="1" value="1">
+                  </div>
+                </div>
+
+                <div class="d-flex flex-wrap" style="gap:8px;">
+                  <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-media-workspace-prev">Anterior</button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-media-workspace-next">Seguent</button>
+                </div>
+
+                <div class="small text-muted" id="media-workspace-summary">Carregant assignacions...</div>
+                <div class="media-workspace-list-wrap mt-2" id="media-workspace-list-wrap">
+                  <div class="text-muted small">Carregant workspace...</div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+    </div>
+  </div>
+</section>

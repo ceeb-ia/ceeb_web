@@ -13,11 +13,12 @@ DEFAULT_MEDIA_MATCHING_CONFIG = {
         "entitat": 20,
         "sexe": 10,
         "subcategoria": 10,
+        "categoria": 0,
     },
     "thresholds": {
         "auto_score_min": 0.85,
-        "review_score_min": 0.65,
-        "auto_margin_min": 0.12,
+        "review_score_min": 0.60,
+        "auto_margin_min": 0.08,
     },
 }
 
@@ -30,6 +31,7 @@ _SEXE_M_KEYS = {"m", "masculi", "masculi", "masculino", "male", "home", "boy"}
 class MatchCandidate:
     inscripcio_id: int
     label: str
+    categoria_tokens: Set[str]
     nom_tokens: Set[str]
     entitat_tokens: Set[str]
     sexe_key: str
@@ -104,6 +106,7 @@ def normalize_media_matching_config(raw_config: Optional[dict]) -> dict:
         "entitat": max(0, _safe_int(raw_weights.get("entitat"), DEFAULT_MEDIA_MATCHING_CONFIG["weights"]["entitat"])),
         "sexe": max(0, _safe_int(raw_weights.get("sexe"), DEFAULT_MEDIA_MATCHING_CONFIG["weights"]["sexe"])),
         "subcategoria": max(0, _safe_int(raw_weights.get("subcategoria"), DEFAULT_MEDIA_MATCHING_CONFIG["weights"]["subcategoria"])),
+        "categoria": max(0, _safe_int(raw_weights.get("categoria"), DEFAULT_MEDIA_MATCHING_CONFIG["weights"]["categoria"])),
     }
 
     thresholds = {
@@ -190,7 +193,8 @@ def _candidate_shortlist_tokens(candidate: MatchCandidate) -> Set[str]:
     return {
         token
         for token in (
-            candidate.nom_tokens
+            candidate.categoria_tokens
+            | candidate.nom_tokens
             | candidate.entitat_tokens
             | candidate.subcategoria_tokens
         )
@@ -202,15 +206,17 @@ def build_inscripcio_media_match_candidates(inscripcions: Iterable) -> List[Matc
     out: List[MatchCandidate] = []
     for ins in inscripcions:
         nom = str(getattr(ins, "nom_i_cognoms", "") or "").strip()
+        categoria = str(getattr(ins, "categoria", "") or "").strip()
         entitat = str(getattr(ins, "entitat", "") or "").strip()
         subcategoria = str(getattr(ins, "subcategoria", "") or "").strip()
         sexe = str(getattr(ins, "sexe", "") or "").strip()
-        meta_parts = [p for p in [entitat, subcategoria, sexe] if p]
+        meta_parts = [p for p in [categoria, entitat, subcategoria, sexe] if p]
         label = nom if not meta_parts else f"{nom} ({' · '.join(meta_parts)})"
         out.append(
             MatchCandidate(
                 inscripcio_id=int(ins.id),
                 label=label,
+                categoria_tokens=_tokenize(categoria),
                 nom_tokens=_tokenize(nom),
                 entitat_tokens=_tokenize(entitat),
                 sexe_key=_normalize_sexe(sexe),
@@ -241,6 +247,7 @@ def _score_candidate(
         return (w * component), w
 
     nom_component = _overlap_score(candidate.nom_tokens, file_tokens)
+    cat_component = _overlap_score(candidate.categoria_tokens, file_tokens)
     ent_component = _overlap_score(candidate.entitat_tokens, file_tokens)
     sub_component = _overlap_score(candidate.subcategoria_tokens, file_tokens)
 
@@ -256,8 +263,10 @@ def _score_candidate(
     numer = 0.0
     denom = 0.0
     field_scores = {} if include_field_scores else None
+    field_breakdown = {} if include_field_scores else None
     for field_key, component in (
         ("nom", nom_component),
+        ("categoria", cat_component),
         ("entitat", ent_component),
         ("subcategoria", sub_component),
         ("sexe", sexe_component),
@@ -267,6 +276,11 @@ def _score_candidate(
         denom += part_den
         if field_scores is not None:
             field_scores[field_key] = None if component is None else round(float(component), 4)
+            field_breakdown[field_key] = {
+                "score": None if component is None else round(float(component), 4),
+                "weight": int(max(0, weights.get(field_key, 0))),
+                "contribution": round(float(part_num), 4),
+            }
 
     if denom <= 0:
         total = 0.0
@@ -278,6 +292,7 @@ def _score_candidate(
         return {
             "score": round(total, 4),
             "field_scores": field_scores or {},
+            "field_breakdown": field_breakdown or {},
         }
     return round(total, 4)
 
@@ -297,8 +312,10 @@ def match_media_files_to_inscripcions(
     config: Optional[dict] = None,
     top_k: int = 3,
     candidate_index: Optional[MediaMatchCandidateIndex] = None,
+    detail_level: str = "compact",
 ) -> List[dict]:
     cfg = normalize_media_matching_config(config)
+    expanded = str(detail_level or "").strip().lower() == "expanded"
     out: List[dict] = []
     kk = max(1, int(top_k or 1))
     candidate_list = list(candidates or [])
@@ -335,7 +352,7 @@ def match_media_files_to_inscripcions(
         second_tuple = scored[1] if len(scored) > 1 else None
         best = best_tuple[2] if best_tuple else None
         second_score = float(second_tuple[0]) if second_tuple else 0.0
-        best_details = _score_candidate(file_tokens, file_sexe_key, best, cfg) if best else {"score": 0.0, "field_scores": {}}
+        best_details = _score_candidate(file_tokens, file_sexe_key, best, cfg, include_field_scores=True) if best else {"score": 0.0, "field_scores": {}, "field_breakdown": {}}
         best_score = float(best_details["score"])
         margin = best_score - second_score
         status = _status_from_scores(best_score, margin, cfg)
@@ -345,12 +362,27 @@ def match_media_files_to_inscripcions(
             fs = best_details.get("field_scores") or {}
             if fs.get("nom") is not None:
                 reason.append(f"nom={fs['nom']}")
+            if fs.get("categoria") is not None:
+                reason.append(f"categoria={fs['categoria']}")
             if fs.get("entitat") is not None:
                 reason.append(f"entitat={fs['entitat']}")
             if fs.get("sexe") is not None:
                 reason.append(f"sexe={fs['sexe']}")
             if fs.get("subcategoria") is not None:
                 reason.append(f"subcategoria={fs['subcategoria']}")
+
+        top_candidates = []
+        for score, _neg_inscripcio_id, cand in scored:
+            candidate_row = {
+                "inscripcio_id": cand.inscripcio_id,
+                "label": cand.label,
+                "score": round(float(score or 0.0), 4),
+            }
+            if expanded:
+                details = _score_candidate(file_tokens, file_sexe_key, cand, cfg, include_field_scores=True)
+                candidate_row["field_scores"] = details.get("field_scores") or {}
+                candidate_row["field_breakdown"] = details.get("field_breakdown") or {}
+            top_candidates.append(candidate_row)
 
         out.append(
             {
@@ -363,16 +395,15 @@ def match_media_files_to_inscripcions(
                 "margin": round(margin, 4),
                 "suggested_inscripcio_id": best.inscripcio_id if best else None,
                 "suggested_label": best.label if best else "",
-                "top_candidates": [
-                    {
-                        "inscripcio_id": cand.inscripcio_id,
-                        "label": cand.label,
-                        "score": round(float(score or 0.0), 4),
-                    }
-                    for score, _neg_inscripcio_id, cand in scored
-                ],
+                "top_candidates": top_candidates,
                 "reason": ", ".join(reason),
             }
         )
+        if expanded:
+            out[-1]["breakdown"] = {
+                "field_scores": best_details.get("field_scores") or {},
+                "field_breakdown": best_details.get("field_breakdown") or {},
+                "top_candidate_count": len(top_candidates),
+            }
     return out
 

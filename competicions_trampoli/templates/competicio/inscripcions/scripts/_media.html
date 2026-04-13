@@ -5,240 +5,1129 @@
   const API = window.InscripcionsApp;
   if (!API) return;
 
-  let mediaFolderSelection = [];
-  let mediaPreviewRows = [];
+  const DEFAULT_MEDIA_MATCHING_CONFIG = {
+    weights: { nom: 60, categoria: 0, subcategoria: 10, entitat: 20, sexe: 10 },
+    thresholds: { auto_score_min: 0.85, review_score_min: 0.65, auto_margin_min: 0.12 },
+  };
 
-  function buildMediaFolderSelection() {
+  const MEDIA_PREVIEW_FILTERS = ['all', 'auto', 'review', 'unmatched'];
+  const MEDIA_WORKSPACE_DEFAULTS = { q: '', media_state: 'all', source: 'all', tipus: 'all', page: 1 };
+  const WORKSPACE_FILTER_DEFAULTS = { q: '', inscripcio_id: '', media_state: 'all', source: 'all', tipus: 'all' };
+  const FALLBACK_WORKSPACE_FILTER_OPTIONS = {
+    media_state: [
+      { code: 'all', label: 'Tots' },
+      { code: 'with', label: 'Amb media' },
+      { code: 'without', label: 'Sense media' },
+    ],
+    source: [
+      { code: 'all', label: 'Tots' },
+      { code: 'manual', label: 'Manual' },
+      { code: 'assisted', label: 'Assistit' },
+    ],
+    tipus: [
+      { code: 'all', label: 'Tots' },
+      { code: 'audio', label: 'Audio' },
+      { code: 'video', label: 'Video' },
+      { code: 'image', label: 'Imatge' },
+      { code: 'other', label: 'Altre' },
+    ],
+  };
+
+  const mediaUrls = {
+    workspace: () => API.app.urls.mediaWorkspace || '',
+    saveConfig: () => API.app.urls.mediaSaveMatchingConfig || '',
+    reassign: () => API.app.urls.mediaReassign || '',
+    preview: () => API.app.urls.mediaMatchPreview || '',
+    apply: () => API.app.urls.mediaMatchApply || '',
+    upload: () => API.app.urls.mediaUpload || '',
+    setPrimary: () => API.app.urls.mediaSetPrimary || '',
+    delete: () => API.app.urls.mediaDelete || '',
+  };
+
+  const state = {
+    savedConfig: normalizeConfig(API.app.initial.mediaMatchingConfig || API.app.initial.media_matching_config || null),
+    draftConfig: null,
+    draftDirty: false,
+    folderSelection: [],
+    previewRows: [],
+    previewCounts: {},
+    previewFilter: 'all',
+    previewExpanded: false,
+    workspace: {
+      filters: Object.assign({}, {
+        q: '',
+        inscripcio_id: '',
+        media_state: 'all',
+        source: 'all',
+        tipus: 'all',
+      }),
+      page: 1,
+      page_size: 40,
+    },
+    workspaceRows: [],
+    workspaceCounts: {},
+    workspaceSummary: {},
+    workspaceFilterOptions: {},
+    workspacePages: 1,
+    workspaceTotal: 0,
+    workspaceLoaded: false,
+    loadingWorkspace: false,
+    listenersBound: false,
+  };
+  state.draftConfig = cloneConfig(state.savedConfig);
+
+  function getMediaPanelElements() {
+    return {
+      panel: document.getElementById('panel-media'),
+      root: document.getElementById('media-main-card'),
+    };
+  }
+
+  function cloneConfig(cfg) {
+    return JSON.parse(JSON.stringify(cfg || DEFAULT_MEDIA_MATCHING_CONFIG));
+  }
+
+  function toNumber(value, fallback = 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  function escapeHtml(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function safeSelector(value) {
+    if (window.CSS && typeof CSS.escape === 'function') {
+      return CSS.escape(String(value || ''));
+    }
+    return String(value || '').replace(/["\\]/g, '\\$&');
+  }
+
+  function getSavedUiState() {
+    if (typeof getUiStateKey !== 'function') return {};
+    try {
+      return JSON.parse(sessionStorage.getItem(getUiStateKey()) || '{}') || {};
+    } catch (_error) {
+      return {};
+    }
+  }
+
+  function saveWorkspaceState(extra = {}) {
+    if (typeof saveUiState !== 'function') return;
+    saveUiState({
+      mediaWorkspaceState: Object.assign({
+        draftConfig: cloneConfig(state.draftConfig || state.savedConfig),
+        draftDirty: !!state.draftDirty,
+        previewFilter: state.previewFilter,
+        previewExpanded: !!state.previewExpanded,
+        workspace: {
+          filters: Object.assign({}, state.workspace.filters || WORKSPACE_FILTER_DEFAULTS),
+          page: state.workspace.page || 1,
+          page_size: state.workspace.page_size || 40,
+        },
+      }, extra || {}),
+    });
+  }
+
+  function restoreWorkspaceState() {
+    const saved = getSavedUiState().mediaWorkspaceState || {};
+    if (!saved || typeof saved !== 'object') return;
+
+    if (saved.draftConfig && typeof saved.draftConfig === 'object') {
+      state.draftConfig = normalizeConfig(saved.draftConfig);
+    }
+    if (Object.prototype.hasOwnProperty.call(saved, 'draftDirty')) {
+      state.draftDirty = !!saved.draftDirty;
+    }
+    if (MEDIA_PREVIEW_FILTERS.includes(String(saved.previewFilter || ''))) {
+      state.previewFilter = String(saved.previewFilter);
+    }
+    if (Object.prototype.hasOwnProperty.call(saved, 'previewExpanded')) {
+      state.previewExpanded = !!saved.previewExpanded;
+    }
+    if (saved.workspace && typeof saved.workspace === 'object') {
+      const workspace = saved.workspace;
+      if (workspace.filters && typeof workspace.filters === 'object') {
+        state.workspace.filters = Object.assign({}, state.workspace.filters || WORKSPACE_FILTER_DEFAULTS, workspace.filters);
+      }
+      if (workspace.page) {
+        state.workspace.page = Math.max(1, Math.floor(toNumber(workspace.page, 1)));
+      }
+      if (workspace.page_size) {
+        state.workspace.page_size = Math.max(1, Math.floor(toNumber(workspace.page_size, 40)));
+      }
+    }
+  }
+
+  function getUrl(name) {
+    return typeof mediaUrls[name] === 'function' ? String(mediaUrls[name]() || '').trim() : '';
+  }
+
+  function getInitialMatchingConfig() {
+    return API.app.initial.mediaMatchingConfig || API.app.initial.media_matching_config || null;
+  }
+
+  function normalizeConfig(raw) {
+    const cfg = raw && typeof raw === 'object' ? raw : {};
+    const weights = cfg.weights && typeof cfg.weights === 'object' ? cfg.weights : cfg;
+    const thresholds = cfg.thresholds && typeof cfg.thresholds === 'object' ? cfg.thresholds : cfg;
+    const normalized = {
+      weights: {
+        nom: clamp(toNumber(weights.nom ?? weights.name ?? weights.title ?? DEFAULT_MEDIA_MATCHING_CONFIG.weights.nom), 0, 1000),
+        categoria: clamp(toNumber(weights.categoria ?? weights.category ?? DEFAULT_MEDIA_MATCHING_CONFIG.weights.categoria), 0, 1000),
+        subcategoria: clamp(toNumber(weights.subcategoria ?? weights.subcategory ?? DEFAULT_MEDIA_MATCHING_CONFIG.weights.subcategoria), 0, 1000),
+        entitat: clamp(toNumber(weights.entitat ?? weights.entity ?? weights.club ?? DEFAULT_MEDIA_MATCHING_CONFIG.weights.entitat), 0, 1000),
+        sexe: clamp(toNumber(weights.sexe ?? weights.gender ?? DEFAULT_MEDIA_MATCHING_CONFIG.weights.sexe), 0, 1000),
+      },
+      thresholds: {
+        auto_score_min: clamp(toNumber(thresholds.auto_score_min ?? thresholds.autoScoreMin ?? DEFAULT_MEDIA_MATCHING_CONFIG.thresholds.auto_score_min), 0, 1),
+        review_score_min: clamp(toNumber(thresholds.review_score_min ?? thresholds.reviewScoreMin ?? DEFAULT_MEDIA_MATCHING_CONFIG.thresholds.review_score_min), 0, 1),
+        auto_margin_min: clamp(toNumber(thresholds.auto_margin_min ?? thresholds.autoMarginMin ?? DEFAULT_MEDIA_MATCHING_CONFIG.thresholds.auto_margin_min), 0, 1),
+      },
+    };
+    if (normalized.thresholds.review_score_min > normalized.thresholds.auto_score_min) {
+      normalized.thresholds.review_score_min = normalized.thresholds.auto_score_min;
+    }
+    return normalized;
+  }
+
+  function configsEqual(a, b) {
+    return JSON.stringify(normalizeConfig(a)) === JSON.stringify(normalizeConfig(b));
+  }
+
+  function formatScore(value) {
+    return toNumber(value, 0).toFixed(3);
+  }
+
+  function formatWeight(value) {
+    const num = toNumber(value, 0);
+    return Number.isInteger(num) ? String(num) : num.toFixed(1);
+  }
+
+  function formatCount(value) {
+    return String(Math.max(0, Math.floor(toNumber(value, 0))));
+  }
+
+  function buildFolderSelection() {
     const input = document.getElementById('media-folder-input');
     const files = Array.from(input?.files || []);
-    mediaFolderSelection = files.map((file, idx) => ({
-      key: String(idx),
+    state.folderSelection = files.map((file, index) => ({
+      key: String(index),
       filename: String(file?.name || ''),
       relative_path: String(file?.webkitRelativePath || file?.name || ''),
-      size: Number(file?.size || 0),
+      size: toNumber(file?.size, 0),
       file,
     }));
-    return mediaFolderSelection;
+    return state.folderSelection;
   }
 
-  function formatBytes(num) {
-    const n = Number(num || 0);
-    if (!Number.isFinite(n) || n <= 0) return '0 B';
-    const units = ['B', 'KB', 'MB', 'GB'];
-    let value = n;
-    let idx = 0;
-    while (value >= 1024 && idx < units.length - 1) {
-      value /= 1024;
-      idx += 1;
+  function getPreviewTopCandidates(row) {
+    const raw = row?.top_candidates || row?.candidates || row?.suggestions || [];
+    return Array.isArray(raw)
+      ? raw.map((candidate) => ({
+        id: candidate?.inscripcio_id ?? candidate?.id ?? candidate?.value ?? candidate?.target_id ?? null,
+        label: String(candidate?.label || candidate?.inscripcio_label || candidate?.name || candidate?.nom || candidate?.title || '').trim(),
+        score: toNumber(candidate?.score ?? candidate?.match_score ?? candidate?.weight ?? 0, 0),
+        reason: String(candidate?.reason || candidate?.detail || candidate?.notes || '').trim(),
+      }))
+      : [];
+  }
+
+  function getPreviewBreakdownEntries(row) {
+    const raw = (row?.breakdown && typeof row.breakdown === 'object' && row.breakdown.field_breakdown)
+      ? row.breakdown.field_breakdown
+      : row?.field_breakdown || row?.score_breakdown || row?.breakdown || row?.contributions || row?.matches || null;
+    if (!raw) return [];
+    if (Array.isArray(raw)) {
+      return raw.map((entry) => ({
+        field: String(entry?.field || entry?.code || entry?.key || '').trim(),
+        value: entry?.value ?? entry?.score ?? entry?.weight ?? entry?.match ?? '',
+      })).filter((entry) => entry.field);
     }
-    return `${value.toFixed(idx === 0 ? 0 : 1)} ${units[idx]}`;
+    if (typeof raw === 'object') {
+      return Object.entries(raw).map(([field, value]) => ({ field: String(field || '').trim(), value })).filter((entry) => entry.field);
+    }
+    return [];
   }
 
-  function renderMediaMatchSummary(text) {
+  function normalizePreviewStatus(value) {
+    const status = String(value || 'unmatched').trim().toLowerCase();
+    if (status === 'auto' || status === 'review' || status === 'unmatched') return status;
+    if (status === 'manual' || status === 'assigned') return 'review';
+    return 'unmatched';
+  }
+
+  function normalizePreviewRow(row) {
+    const topCandidates = getPreviewTopCandidates(row);
+    const suggested = row?.suggested_inscripcio_id ?? row?.match_inscripcio_id ?? row?.inscripcio_id ?? topCandidates[0]?.id ?? '';
+    return {
+      key: String(row?.key ?? row?.file_key ?? row?.relative_path ?? row?.filename ?? '').trim(),
+      filename: String(row?.filename || row?.original_filename || row?.name || '').trim(),
+      relative_path: String(row?.relative_path || row?.path || row?.webkitRelativePath || row?.filename || '').trim(),
+      size: toNumber(row?.size ?? row?.bytes ?? 0, 0),
+      status: normalizePreviewStatus(row?.status ?? row?.match_status ?? row?.state),
+      inscripcio_id: suggested == null || suggested === '' ? '' : String(suggested),
+      inscripcio_label: String(row?.inscripcio_label || row?.suggested_label || row?.match_label || '').trim(),
+      score: toNumber(row?.score ?? row?.match_score ?? 0, 0),
+      margin: toNumber(row?.margin ?? row?.delta ?? row?.score_margin ?? 0, 0),
+      reason: String(row?.reason || row?.detail || row?.notes || '').trim(),
+      top_candidates: topCandidates,
+      breakdown: getPreviewBreakdownEntries(row),
+      raw: row,
+    };
+  }
+
+  function normalizeWorkspaceRow(row) {
+    const mediaItemsRaw = Array.isArray(row?.media_items) ? row.media_items : [];
+    const mediaItems = mediaItemsRaw.map((item) => ({
+      media_id: item?.id == null ? '' : String(item.id),
+      inscripcio_id: item?.inscripcio_id == null ? '' : String(item.inscripcio_id),
+      tipus: String(item?.tipus || item?.media_type || item?.type || item?.kind || 'other').trim().toLowerCase(),
+      source: String(item?.source || item?.origen || item?.origin || 'manual').trim().toLowerCase(),
+      original_filename: String(item?.original_filename || item?.filename || item?.file_name || item?.name || '').trim(),
+      url: String(item?.url || item?.download_url || '').trim(),
+      mime_type: String(item?.mime_type || '').trim(),
+      size: toNumber(item?.file_size_bytes ?? item?.size ?? item?.bytes ?? 0, 0),
+      is_primary: !!(item?.is_primary || item?.primary || item?.principal),
+      match_score: item?.match_score == null ? null : toNumber(item.match_score, 0),
+      created_at: String(item?.created_at || '').trim(),
+      updated_at: String(item?.updated_at || '').trim(),
+      raw: item,
+    }));
+    const inscripcioId = row?.inscripcio_id ?? row?.target_inscripcio_id ?? row?.assignment_id ?? row?.registration_id ?? '';
+    return {
+      inscripcio_id: inscripcioId == null ? '' : String(inscripcioId),
+      inscripcio_label: String(row?.inscripcio_label || row?.inscripcio_name || row?.inscripcio_nom || row?.nom_inscripcio || (inscripcioId ? `Inscripcio ${inscripcioId}` : '')).trim(),
+      nom_i_cognoms: String(row?.nom_i_cognoms || '').trim(),
+      entitat: String(row?.entitat || '').trim(),
+      categoria: String(row?.categoria || '').trim(),
+      subcategoria: String(row?.subcategoria || '').trim(),
+      sexe: String(row?.sexe || '').trim(),
+      ordre_sortida: Math.max(0, Math.floor(toNumber(row?.ordre_sortida, 0))),
+      media_items: mediaItems,
+      media_count: Math.max(0, Math.floor(toNumber(row?.media_count, mediaItems.length))),
+      primary_media_count: Math.max(0, Math.floor(toNumber(row?.primary_media_count, mediaItems.filter((item) => item.is_primary).length))),
+      media_state: String(row?.media_state || (mediaItems.length ? 'with' : 'without')).trim().toLowerCase(),
+      filename: String(row?.original_filename || row?.filename || row?.file_name || row?.name || '').trim(),
+      url: String(row?.url || row?.download_url || '').trim(),
+      tipus: String(row?.tipus || row?.media_type || row?.type || row?.kind || 'other').trim().toLowerCase(),
+      source: String(row?.source || row?.origen || row?.origin || 'manual').trim().toLowerCase(),
+      is_primary: !!(row?.is_primary || row?.primary || row?.principal),
+      size: toNumber(row?.size ?? row?.bytes ?? 0, 0),
+      created_at: String(row?.created_at || row?.created || row?.uploaded_at || '').trim(),
+      updated_at: String(row?.updated_at || row?.modified_at || '').trim(),
+      raw: row,
+    };
+  }
+
+  function normalizeWorkspaceResponse(data) {
+    const source = data?.workspace && typeof data.workspace === 'object' ? data.workspace : data || {};
+    const rows = Array.isArray(source?.rows)
+      ? source.rows
+      : Array.isArray(source?.items)
+        ? source.items
+        : Array.isArray(source?.media)
+          ? source.media
+          : Array.isArray(source?.assignments)
+            ? source.assignments
+            : [];
+    const normalizedRows = rows.map(normalizeWorkspaceRow);
+    const page = Math.max(1, Math.floor(toNumber(source?.page ?? data?.page ?? state.workspace.page, 1)));
+    const pageSize = Math.max(1, Math.floor(toNumber(source?.page_size ?? data?.page_size ?? state.workspace.page_size ?? 40, 40)));
+    const pages = Math.max(page, Math.floor(toNumber(source?.pages ?? data?.pages ?? source?.total_pages ?? data?.total_pages ?? 1, 1)));
+    const total = Math.max(normalizedRows.length, Math.floor(toNumber(source?.total ?? data?.total ?? source?.count ?? data?.count ?? normalizedRows.length, normalizedRows.length)));
+    return {
+      rows: normalizedRows,
+      page,
+      page_size: pageSize,
+      pages,
+      total,
+      counts: source?.counts && typeof source.counts === 'object' ? source.counts : data?.counts && typeof data.counts === 'object' ? data.counts : {},
+      summary: source?.summary && typeof source.summary === 'object' ? source.summary : data?.summary && typeof data.summary === 'object' ? data.summary : {},
+      filter_options: source?.filter_options && typeof source.filter_options === 'object' ? source.filter_options : data?.filter_options && typeof data.filter_options === 'object' ? data.filter_options : {},
+    };
+  }
+
+  function setCompactBadges() {
+    const cfg = normalizeConfig(state.draftConfig || state.savedConfig);
+    const configBadge = document.getElementById('media-compact-config-badge');
+    const previewBadge = document.getElementById('media-compact-preview-badge');
+    const workspaceBadge = document.getElementById('media-compact-workspace-badge');
+    const summaryConfig = document.getElementById('media-compact-summary-config');
+    const summaryThresholds = document.getElementById('media-compact-summary-thresholds');
+    const summaryFolder = document.getElementById('media-compact-summary-folder');
+
+    if (configBadge) configBadge.textContent = `Nom ${formatWeight(cfg.weights.nom)} / Categoria ${formatWeight(cfg.weights.categoria)}`;
+    if (previewBadge) previewBadge.textContent = `Preview ${formatCount(state.previewRows.length)} fitxers`;
+    if (workspaceBadge) workspaceBadge.textContent = `Workspace ${formatCount(state.workspaceTotal || state.workspaceRows.length)}`;
+    if (summaryConfig) {
+      summaryConfig.textContent = `Nom ${formatWeight(cfg.weights.nom)} / Categoria ${formatWeight(cfg.weights.categoria)} / Subcategoria ${formatWeight(cfg.weights.subcategoria)} / Entitat ${formatWeight(cfg.weights.entitat)} / Sexe ${formatWeight(cfg.weights.sexe)}`;
+    }
+    if (summaryThresholds) {
+      summaryThresholds.textContent = `Auto ${cfg.thresholds.auto_score_min.toFixed(2)} / Review ${cfg.thresholds.review_score_min.toFixed(2)} / Margin ${cfg.thresholds.auto_margin_min.toFixed(2)}`;
+    }
+    if (summaryFolder) summaryFolder.textContent = state.folderSelection.length ? `${state.folderSelection.length} fitxers carregats` : 'Cap carpeta carregada';
+
+    const previewTotal = document.getElementById('media-summary-preview-total');
+    const workspaceTotal = document.getElementById('media-summary-workspace-total');
+    const primaryTotal = document.getElementById('media-summary-primary-total');
+    const folderTotal = document.getElementById('media-summary-folder-total');
+    if (previewTotal) previewTotal.textContent = formatCount(state.previewRows.length);
+    if (workspaceTotal) workspaceTotal.textContent = formatCount(state.workspaceTotal || state.workspaceRows.length);
+    if (primaryTotal) primaryTotal.textContent = formatCount(state.workspaceRows.reduce((acc, row) => acc + row.media_items.filter((item) => item.is_primary).length, 0));
+    if (folderTotal) folderTotal.textContent = formatCount(state.folderSelection.length);
+  }
+
+  function setConfigStatus(message) {
+    const status = document.getElementById('media-config-status');
+    if (status) status.textContent = String(message || '');
+  }
+
+  function setPreviewStatusLine(message) {
+    const status = document.getElementById('media-preview-status-line');
+    if (status) status.textContent = String(message || '');
+  }
+
+  function setPreviewSummary(message) {
+    const summary = document.getElementById('media-preview-summary');
+    if (summary) summary.textContent = String(message || '');
+  }
+
+  function setWorkspaceSummary(message) {
+    const summary = document.getElementById('media-workspace-summary');
+    if (summary) summary.textContent = String(message || '');
+  }
+
+  function setMediaMatchSummary(message) {
     const summary = document.getElementById('media-match-summary');
-    if (summary) summary.textContent = text || '';
+    if (summary) summary.textContent = String(message || '');
   }
 
-  function renderMediaMatchRows(rows, counts) {
-    const wrap = document.getElementById('media-match-table-wrap');
-    const tbody = document.getElementById('media-match-table-body');
-    if (!wrap || !tbody) return;
-    tbody.innerHTML = '';
-    const list = Array.isArray(rows) ? rows : [];
-    if (!list.length) {
-      wrap.classList.add('d-none');
-      renderMediaMatchSummary('No hi ha resultats de match.');
+  function renderConfigInputs() {
+    const cfg = normalizeConfig(state.draftConfig || state.savedConfig);
+    const ids = {
+      nom: 'media-config-weight-nom',
+      categoria: 'media-config-weight-categoria',
+      subcategoria: 'media-config-weight-subcategoria',
+      entitat: 'media-config-weight-entitat',
+      sexe: 'media-config-weight-sexe',
+      auto_score_min: 'media-config-auto-score-min',
+      review_score_min: 'media-config-review-score-min',
+      auto_margin_min: 'media-config-auto-margin-min',
+    };
+    Object.entries(ids).forEach(([key, id]) => {
+      const input = document.getElementById(id);
+      if (!input) return;
+      if (Object.prototype.hasOwnProperty.call(cfg.weights, key)) input.value = formatWeight(cfg.weights[key]);
+      else input.value = cfg.thresholds[key].toFixed(2);
+    });
+    setConfigStatus(state.draftDirty ? 'Hi ha canvis pendents de desar.' : 'Configuracio desada.');
+    setCompactBadges();
+  }
+
+  function readConfigInputs() {
+    const cfg = normalizeConfig(state.draftConfig || state.savedConfig);
+    const read = (id, fallback) => {
+      const input = document.getElementById(id);
+      return input ? toNumber(input.value, fallback) : fallback;
+    };
+    return normalizeConfig({
+      weights: {
+        nom: read('media-config-weight-nom', cfg.weights.nom),
+        categoria: read('media-config-weight-categoria', cfg.weights.categoria),
+        subcategoria: read('media-config-weight-subcategoria', cfg.weights.subcategoria),
+        entitat: read('media-config-weight-entitat', cfg.weights.entitat),
+        sexe: read('media-config-weight-sexe', cfg.weights.sexe),
+      },
+      thresholds: {
+        auto_score_min: read('media-config-auto-score-min', cfg.thresholds.auto_score_min),
+        review_score_min: read('media-config-review-score-min', cfg.thresholds.review_score_min),
+        auto_margin_min: read('media-config-auto-margin-min', cfg.thresholds.auto_margin_min),
+      },
+    });
+  }
+
+  function syncConfigFromInputs() {
+    state.draftConfig = readConfigInputs();
+    state.draftDirty = !configsEqual(state.draftConfig, state.savedConfig);
+    setConfigStatus(state.draftDirty ? 'Hi ha canvis pendents de desar.' : 'Configuracio desada.');
+    setCompactBadges();
+    saveWorkspaceState();
+  }
+
+  function renderPreviewStatusButtons() {
+    document.querySelectorAll('.js-media-preview-status').forEach((button) => {
+      const status = String(button.getAttribute('data-media-preview-status') || '').trim();
+      const active = status === state.previewFilter;
+      button.classList.toggle('btn-secondary', active);
+      button.classList.toggle('btn-outline-secondary', !active);
+      button.classList.toggle('btn-primary', active);
+    });
+    const modeButton = document.getElementById('btn-media-preview-mode');
+    if (modeButton) modeButton.textContent = state.previewExpanded ? 'Vista compacta' : 'Vista expandida';
+  }
+
+  function renderPreviewSummary() {
+    const counts = state.previewCounts || {};
+    const filtered = state.previewRows.filter((row) => state.previewFilter === 'all' || row.status === state.previewFilter);
+    const total = toNumber(counts.total ?? state.previewRows.length, state.previewRows.length);
+    const auto = toNumber(counts.auto ?? state.previewRows.filter((row) => row.status === 'auto').length, 0);
+    const review = toNumber(counts.review ?? state.previewRows.filter((row) => row.status === 'review').length, 0);
+    const unmatched = toNumber(counts.unmatched ?? state.previewRows.filter((row) => row.status === 'unmatched').length, 0);
+    const suffix = state.previewFilter === 'all' ? 'Totes' : state.previewFilter === 'auto' ? 'AUTO' : state.previewFilter === 'review' ? 'Review' : 'Sense match';
+    setPreviewSummary(`Fitxers: ${total} · AUTO: ${auto} · Review: ${review} · Sense match: ${unmatched} · Vista: ${suffix} (${filtered.length})`);
+    setPreviewStatusLine(filtered.length ? `${filtered.length} fitxers visibles amb la vista ${state.previewExpanded ? 'expandida' : 'compacta'}.` : 'No hi ha resultats per a aquest filtre.');
+  }
+
+  function renderPreviewRowSelect(row) {
+    const options = ['<option value="">-- Sense assignar --</option>'];
+    const current = row.inscripcio_id ? String(row.inscripcio_id) : '';
+    row.top_candidates.forEach((candidate) => {
+      const value = candidate.id == null ? '' : String(candidate.id);
+      if (!value) return;
+      const selected = value === current ? ' selected' : '';
+      options.push(`<option value="${escapeHtml(value)}"${selected}>${escapeHtml(candidate.label || value)}${candidate.score || candidate.score === 0 ? ` (${formatScore(candidate.score)})` : ''}</option>`);
+    });
+    return `<select class="form-control form-control-sm js-media-match-select" data-key="${escapeHtml(row.key)}">${options.join('')}</select>`;
+  }
+
+  function renderPreviewBreakdown(row) {
+    if (!row.breakdown.length) return '';
+    return `<div class="table-responsive mt-2"><table class="table table-sm mb-0"><thead class="table-light"><tr><th>Camp</th><th>Score</th><th>Pes</th><th>Contribucio</th></tr></thead><tbody>${row.breakdown.map((entry) => {
+      const value = entry.value && typeof entry.value === 'object' ? entry.value : {};
+      const score = value.score == null ? value : value.score;
+      const weight = value.weight == null ? '' : value.weight;
+      const contribution = value.contribution == null ? '' : value.contribution;
+      return `<tr><td>${escapeHtml(entry.field)}</td><td>${escapeHtml(score == null || score === '' ? '-' : String(score))}</td><td>${escapeHtml(weight === '' ? '-' : String(weight))}</td><td>${escapeHtml(contribution === '' ? '-' : String(contribution))}</td></tr>`;
+    }).join('')}</tbody></table></div>`;
+  }
+
+  function renderPreviewCandidates(row) {
+    if (!row.top_candidates.length) return '<div class="small text-muted">Sense candidats top.</div>';
+    return `<ul class="pl-3 mb-0">${row.top_candidates.slice(0, 5).map((candidate) => `<li class="small">${escapeHtml(candidate.label || candidate.id || '-')} <span class="badge badge-light border">${formatScore(candidate.score)}</span>${candidate.reason ? ` <span class="text-muted">- ${escapeHtml(candidate.reason)}</span>` : ''}</li>`).join('')}</ul>`;
+  }
+
+  function renderPreviewCompactRow(row) {
+    const statusLabel = row.status === 'auto' ? 'AUTO' : row.status === 'review' ? 'REVIEW' : 'SENSE MATCH';
+    const detail = row.reason || (row.top_candidates[0]?.label ? `Top: ${row.top_candidates[0].label}` : '');
+    return `<tr data-preview-row="${escapeHtml(row.key)}">
+      <td>
+        <div class="font-weight-medium">${escapeHtml(row.relative_path || row.filename || '-')}</div>
+        <div class="small text-muted">${escapeHtml(row.filename || '')}${row.size ? ` · ${escapeHtml(String(row.size))} bytes` : ''}</div>
+      </td>
+      <td><span class="media-match-status ${escapeHtml(row.status)}">${statusLabel}</span></td>
+      <td>${renderPreviewRowSelect(row)}</td>
+      <td>${formatScore(row.score)} <span class="text-muted">(Δ ${formatScore(row.margin)})</span></td>
+      <td class="small text-muted">${escapeHtml(detail || '')}</td>
+    </tr>`;
+  }
+
+  function renderPreviewExpandedRow(row) {
+    const statusLabel = row.status === 'auto' ? 'AUTO' : row.status === 'review' ? 'REVIEW' : 'SENSE MATCH';
+    return `<div class="border rounded p-2 mb-2" data-preview-row="${escapeHtml(row.key)}">
+      <div class="d-flex align-items-start justify-content-between flex-wrap" style="gap:8px;">
+        <div>
+          <div class="fw-semibold">${escapeHtml(row.relative_path || row.filename || '-')}</div>
+          <div class="small text-muted">${escapeHtml(row.filename || '')}${row.size ? ` · ${escapeHtml(String(row.size))} bytes` : ''}</div>
+        </div>
+        <div class="d-flex align-items-center flex-wrap" style="gap:6px;">
+          <span class="media-match-status ${escapeHtml(row.status)}">${statusLabel}</span>
+          <span class="badge badge-light border">${formatScore(row.score)} score</span>
+          <span class="badge badge-light border">Δ ${formatScore(row.margin)}</span>
+        </div>
+      </div>
+      <div class="mt-2"><label class="small text-muted mb-1 d-block">Assignacio proposta</label>${renderPreviewRowSelect(row)}</div>
+      <div class="mt-2 small text-muted">${escapeHtml(row.reason || '')}</div>
+      <div class="mt-2"><div class="small fw-semibold mb-1">Top candidats</div>${renderPreviewCandidates(row)}</div>
+      <div class="mt-2"><div class="small fw-semibold mb-1">Desglossament de camps</div>${renderPreviewBreakdown(row) || '<div class="small text-muted">Sense desglossament disponible.</div>'}</div>
+    </div>`;
+  }
+
+  function renderMediaPreview() {
+    renderPreviewStatusButtons();
+    renderPreviewSummary();
+    const wrap = document.getElementById('media-preview-wrap');
+    if (!wrap) return;
+    const rows = state.previewRows.filter((row) => state.previewFilter === 'all' || row.status === state.previewFilter);
+    if (!rows.length) {
+      wrap.innerHTML = '<div class="text-muted small">No hi ha resultats per a aquest filtre.</div>';
       return;
     }
+    wrap.innerHTML = state.previewExpanded
+      ? rows.map(renderPreviewExpandedRow).join('')
+      : `<div class="table-responsive"><table class="table table-sm table-hover mb-0"><thead class="table-light"><tr><th>Fitxer</th><th>Estat</th><th>Inscripcio</th><th>Score</th><th>Detall</th></tr></thead><tbody>${rows.map(renderPreviewCompactRow).join('')}</tbody></table></div>`;
+  }
 
-    wrap.classList.remove('d-none');
-    const statusLabel = { auto: 'AUTO', review: 'REVISAR', unmatched: 'SENSE MATCH' };
-    list.forEach((row) => {
-      const tr = document.createElement('tr');
+  function getFilteredPreviewRows() {
+    return state.previewRows.filter((row) => state.previewFilter === 'all' || row.status === state.previewFilter);
+  }
 
-      const fileTd = document.createElement('td');
-      fileTd.textContent = `${row.relative_path || row.filename || '-'} (${formatBytes(row.size)})`;
-      tr.appendChild(fileTd);
+  function renderWorkspaceCounts() {
+    const rows = state.workspaceRows || [];
+    const total = state.workspaceTotal || rows.length;
+    const primary = rows.reduce((acc, row) => acc + row.media_items.filter((item) => item.is_primary).length, 0);
+    const workspaceTotal = document.getElementById('media-summary-workspace-total');
+    const previewTotal = document.getElementById('media-summary-preview-total');
+    const primaryTotal = document.getElementById('media-summary-primary-total');
+    const folderTotal = document.getElementById('media-summary-folder-total');
+    if (workspaceTotal) workspaceTotal.textContent = formatCount(total);
+    if (previewTotal) previewTotal.textContent = formatCount(state.previewRows.length);
+    if (primaryTotal) primaryTotal.textContent = formatCount(primary);
+    if (folderTotal) folderTotal.textContent = formatCount(state.folderSelection.length);
+    const workspaceBadge = document.getElementById('media-compact-workspace-badge');
+    if (workspaceBadge) workspaceBadge.textContent = `Workspace ${formatCount(total)}`;
+  }
 
-      const statusTd = document.createElement('td');
-      const badge = document.createElement('span');
-      const status = String(row.status || 'unmatched');
-      badge.className = `media-match-status ${status}`;
-      badge.textContent = statusLabel[status] || status.toUpperCase();
-      statusTd.appendChild(badge);
-      tr.appendChild(statusTd);
+  function renderWorkspacePageControls() {
+    const pageInput = document.getElementById('media-workspace-filter-page');
+    if (pageInput) pageInput.value = String(state.workspace.page || 1);
+  }
 
-      const selectTd = document.createElement('td');
-      const select = document.createElement('select');
-      select.className = 'form-control form-control-sm js-media-match-select';
-      select.dataset.key = String(row.key || '');
-      const empty = document.createElement('option');
-      empty.value = '';
-      empty.textContent = '-- Sense assignar --';
-      select.appendChild(empty);
-
-      const optionPool = Array.isArray(row.top_candidates) ? row.top_candidates.map((candidate) => ({
-        id: candidate.inscripcio_id,
-        label: `${candidate.label || candidate.inscripcio_id} (${Number(candidate.score || 0).toFixed(3)})`,
-      })) : [];
-      optionPool.forEach((candidate) => {
-        const opt = document.createElement('option');
-        opt.value = String(candidate.id || candidate.inscripcio_id || '');
-        opt.textContent = candidate.label || String(candidate.id || candidate.inscripcio_id || '');
-        select.appendChild(opt);
-      });
-      if (row.suggested_inscripcio_id != null) {
-        select.value = String(row.suggested_inscripcio_id);
-      }
-      selectTd.appendChild(select);
-      tr.appendChild(selectTd);
-
-      const scoreTd = document.createElement('td');
-      scoreTd.textContent = `${Number(row.score || 0).toFixed(3)} (Δ ${Number(row.margin || 0).toFixed(3)})`;
-      tr.appendChild(scoreTd);
-
-      const detailTd = document.createElement('td');
-      detailTd.textContent = String(row.reason || '');
-      tr.appendChild(detailTd);
-
-      tbody.appendChild(tr);
+  function renderWorkspaceFilterOptions() {
+    const optionsByKey = state.workspaceFilterOptions || {};
+    const fallbackByKey = FALLBACK_WORKSPACE_FILTER_OPTIONS;
+    const current = state.workspace.filters || Object.assign({}, WORKSPACE_FILTER_DEFAULTS);
+    [
+      ['media_state', 'media-workspace-filter-media-state'],
+      ['source', 'media-workspace-filter-source'],
+      ['tipus', 'media-workspace-filter-tipus'],
+    ].forEach(([key, id]) => {
+      const select = document.getElementById(id);
+      if (!select) return;
+      const options = Array.isArray(optionsByKey[key]) && optionsByKey[key].length ? optionsByKey[key] : fallbackByKey[key];
+      const previous = String(current[key] || 'all');
+      select.innerHTML = options.map((entry) => {
+        const count = entry.count == null ? '' : ` (${formatCount(entry.count)})`;
+        return `<option value="${escapeHtml(entry.code)}">${escapeHtml(entry.label || entry.code)}${count}</option>`;
+      }).join('');
+      select.value = options.some((entry) => String(entry.code) === previous) ? previous : 'all';
     });
+  }
 
-    const c = counts || {};
-    renderMediaMatchSummary(
-      `Fitxers: ${Number(c.total || list.length)} · AUTO: ${Number(c.auto || 0)} · REVISAR: ${Number(c.review || 0)} · SENSE MATCH: ${Number(c.unmatched || 0)}`
-    );
+  function renderWorkspaceList() {
+    renderWorkspaceCounts();
+    renderWorkspaceFilterOptions();
+    setCompactBadges();
+    const wrap = document.getElementById('media-workspace-list-wrap');
+    if (!wrap) return;
+    const rows = state.workspaceRows || [];
+    if (!rows.length) {
+      wrap.innerHTML = '<div class="text-muted small">No hi ha assignacions per aquests filtres.</div>';
+      return;
+    }
+    const page = Math.max(1, state.workspace.page || 1);
+    const pages = Math.max(1, state.workspacePages || 1);
+    const total = state.workspaceTotal || rows.length;
+    wrap.innerHTML = `<div class="media-assignment-list">${rows.map((row) => {
+      const meta = [row.categoria, row.subcategoria, row.sexe].filter(Boolean).join(' / ');
+      const mediaCount = formatCount(row.media_items.length);
+      const primaryCount = formatCount(row.media_items.filter((item) => item.is_primary).length);
+      return `<article class="media-assignment-card" data-inscripcio-id="${escapeHtml(row.inscripcio_id)}">
+        <div class="d-flex align-items-start justify-content-between flex-wrap" style="gap:8px;">
+          <div>
+            <div class="fw-semibold">${escapeHtml(row.nom_i_cognoms || row.inscripcio_label || `Inscripcio ${row.inscripcio_id}`)}</div>
+            <div class="small text-muted">
+              ID ${escapeHtml(row.inscripcio_id || '-')}${row.entitat ? ` - ${escapeHtml(row.entitat)}` : ''}${meta ? ` - ${escapeHtml(meta)}` : ''}
+            </div>
+          </div>
+          <div class="d-flex flex-wrap" style="gap:6px;">
+            <span class="badge badge-light border">${mediaCount} fitxers</span>
+            <span class="badge badge-light border">${primaryCount} principals</span>
+            <span class="badge badge-light border">${escapeHtml(row.media_state === 'with' ? 'Amb media' : 'Sense media')}</span>
+          </div>
+        </div>
+        ${API.app.canEdit ? `<div class="media-upload-row mt-2">
+          <input type="file" class="form-control form-control-sm js-media-upload-input" data-ins-id="${escapeHtml(row.inscripcio_id)}" accept=".mp3,.wav,.m4a,.aac,.ogg,.mp4,.mov,.m4v,.webm,.jpg,.jpeg,.png">
+          <button type="button" class="btn btn-sm btn-outline-primary js-media-upload-btn" data-ins-id="${escapeHtml(row.inscripcio_id)}">Pujar</button>
+        </div>` : ''}
+        <div class="media-assignment-items">
+          ${row.media_items.length ? row.media_items.map((item) => `<div class="media-item" data-media-id="${escapeHtml(item.media_id)}">
+            <div class="d-flex align-items-start justify-content-between flex-wrap" style="gap:8px;">
+              <div>
+                <div class="fw-semibold">${escapeHtml(item.original_filename || 'Fitxer sense nom')}</div>
+                <div class="small text-muted">
+                  ${escapeHtml(item.source || 'manual')} / ${escapeHtml(item.tipus || 'other')}${item.size ? ` - ${escapeHtml(String(item.size))} bytes` : ''}
+                </div>
+              </div>
+              <div class="d-flex flex-wrap" style="gap:6px;">
+                <span class="badge badge-light border">${escapeHtml(item.source || 'manual')}</span>
+                <span class="badge badge-light border">${escapeHtml(item.tipus || 'other')}</span>
+                ${item.is_primary ? '<span class="badge badge-primary">Principal</span>' : '<span class="badge badge-light border">Secundari</span>'}
+              </div>
+            </div>
+            <div class="media-item-actions">
+              <a class="btn btn-sm btn-outline-secondary" href="${escapeHtml(item.url || '#')}" ${item.url ? 'target="_blank" rel="noopener noreferrer"' : 'aria-disabled="true" tabindex="-1"'}>Obrir</a>
+              <button type="button" class="btn btn-sm btn-outline-primary js-media-set-primary" data-media-id="${escapeHtml(item.media_id)}" ${item.is_primary || !API.app.canEdit ? 'disabled' : ''}>Principal</button>
+              <button type="button" class="btn btn-sm btn-outline-secondary js-media-reassign" data-media-id="${escapeHtml(item.media_id)}" data-inscripcio-id="${escapeHtml(row.inscripcio_id)}" ${!API.app.canEdit ? 'disabled' : ''}>Reassignar</button>
+              <button type="button" class="btn btn-sm btn-outline-danger js-media-delete" data-media-id="${escapeHtml(item.media_id)}" ${!API.app.canEdit ? 'disabled' : ''}>Eliminar</button>
+            </div>
+          </div>`).join('') : '<div class="small text-muted">No hi ha fitxers assignats.</div>'}
+        </div>
+      </article>`;
+    }).join('')}</div>
+    <div class="d-flex align-items-center justify-content-between flex-wrap mt-2" style="gap:8px;">
+      <div class="small text-muted">Pagina ${page} de ${pages} - ${total} resultats</div>
+      <div class="small text-muted">Mostrant ${formatCount(rows.length)} resultats visibles</div>
+    </div>`;
+  }
+
+  function readWorkspaceFiltersFromUi() {
+    const q = String(document.getElementById('media-workspace-filter-q')?.value || '').trim();
+    const inscripcioId = String(document.getElementById('media-workspace-filter-inscripcio-id')?.value || '').trim();
+    const mediaState = String(document.getElementById('media-workspace-filter-media-state')?.value || 'all').trim();
+    const source = String(document.getElementById('media-workspace-filter-source')?.value || 'all').trim();
+    const tipus = String(document.getElementById('media-workspace-filter-tipus')?.value || 'all').trim();
+    const page = Math.max(1, Math.floor(toNumber(document.getElementById('media-workspace-filter-page')?.value || 1, 1)));
+    state.workspace.filters = { q, inscripcio_id: inscripcioId, media_state: mediaState, source, tipus };
+    state.workspace.page = page;
+    saveWorkspaceState();
+    return state.workspace;
+  }
+
+  function applyWorkspaceFiltersToUi() {
+    const filters = state.workspace.filters || Object.assign({}, WORKSPACE_FILTER_DEFAULTS);
+    const q = document.getElementById('media-workspace-filter-q');
+    const inscripcioId = document.getElementById('media-workspace-filter-inscripcio-id');
+    const mediaState = document.getElementById('media-workspace-filter-media-state');
+    const source = document.getElementById('media-workspace-filter-source');
+    const tipus = document.getElementById('media-workspace-filter-tipus');
+    const page = document.getElementById('media-workspace-filter-page');
+    if (q) q.value = filters.q || '';
+    if (inscripcioId) inscripcioId.value = filters.inscripcio_id || '';
+    if (mediaState) mediaState.value = filters.media_state || 'all';
+    if (source) source.value = filters.source || 'all';
+    if (tipus) tipus.value = filters.tipus || 'all';
+    if (page) page.value = String(state.workspace.page == null ? 1 : state.workspace.page);
+  }
+
+  async function refreshPageFragmentsAfterMutation() {
+    if (typeof API.refreshLightMutation !== 'function') return;
+    try {
+      await API.refreshLightMutation({
+        includeToolbar: false,
+        includeActivePanel: false,
+        panelKey: 'media',
+      });
+    } catch (error) {
+      console.warn('Media refreshLightMutation failed', error);
+    }
+  }
+
+  async function fetchWorkspace(extra = {}) {
+    const url = getUrl('workspace');
+    if (!url) {
+      state.workspaceRows = [];
+      state.workspaceTotal = 0;
+      state.workspacePages = 1;
+      state.workspaceLoaded = false;
+      renderWorkspaceList();
+      setWorkspaceSummary('La URL del workspace encara no esta disponible.');
+      return null;
+    }
+
+    state.loadingWorkspace = true;
+    setWorkspaceSummary('Carregant assignacions...');
+    const payload = {
+      filters: Object.assign({}, state.workspace.filters || WORKSPACE_FILTER_DEFAULTS),
+      page: state.workspace.page || 1,
+      page_size: state.workspace.page_size || 40,
+    };
+    if (extra && typeof extra === 'object') {
+      if (Object.prototype.hasOwnProperty.call(extra, 'page')) payload.page = Math.max(1, Math.floor(toNumber(extra.page, 1)));
+      if (Object.prototype.hasOwnProperty.call(extra, 'page_size')) payload.page_size = Math.max(1, Math.floor(toNumber(extra.page_size, 40)));
+      if (extra.filters && typeof extra.filters === 'object') {
+        payload.filters = Object.assign({}, payload.filters, extra.filters);
+      }
+    }
+    try {
+      const data = await API.postJson(url, payload);
+      if (!data || data.ok === false) {
+        throw new Error("No s'ha pogut carregar el workspace de multimedia.");
+      }
+
+      const normalized = normalizeWorkspaceResponse(data);
+      state.workspaceRows = normalized.rows;
+      state.workspaceCounts = normalized.counts;
+      state.workspaceSummary = normalized.summary || {};
+      state.workspaceFilterOptions = normalized.filter_options || {};
+      state.workspacePages = normalized.pages;
+      state.workspaceTotal = normalized.total;
+      state.workspace.page = normalized.page;
+      state.workspace.page_size = normalized.page_size;
+      state.workspaceLoaded = true;
+      renderWorkspacePageControls();
+      renderWorkspaceList();
+      setWorkspaceSummary(`Mostrant ${formatCount(normalized.rows.length)} assignacions a la pagina ${normalized.page} de ${normalized.pages}.`);
+      saveWorkspaceState();
+      return normalized;
+    } catch (error) {
+      state.workspaceRows = [];
+      state.workspaceCounts = {};
+      state.workspaceSummary = {};
+      state.workspacePages = 1;
+      state.workspaceTotal = 0;
+      renderWorkspacePageControls();
+      renderWorkspaceList();
+      setWorkspaceSummary(error?.message || 'No s ha pogut carregar el workspace de multimedia.');
+      throw error;
+    } finally {
+      state.loadingWorkspace = false;
+    }
+  }
+
+  async function refreshWorkspace(extra = {}) {
+    readWorkspaceFiltersFromUi();
+    if (extra && typeof extra === 'object') {
+      if (Object.prototype.hasOwnProperty.call(extra, 'page')) state.workspace.page = Math.max(1, Math.floor(toNumber(extra.page, 1)));
+      if (Object.prototype.hasOwnProperty.call(extra, 'page_size')) state.workspace.page_size = Math.max(1, Math.floor(toNumber(extra.page_size, 40)));
+      if (extra.filters && typeof extra.filters === 'object') {
+        state.workspace.filters = Object.assign({}, state.workspace.filters || WORKSPACE_FILTER_DEFAULTS, extra.filters);
+      }
+    }
+    applyWorkspaceFiltersToUi();
+    return fetchWorkspace(extra);
+  }
+
+  async function saveMatchingConfig() {
+    const url = getUrl('saveConfig');
+    if (!url) {
+      API.showAlert('La URL per desar la configuracio encara no esta disponible.');
+      return;
+    }
+    const cfg = readConfigInputs();
+    const data = await API.postJson(url, { config: cfg, config_draft: cfg, draft_config: cfg, media_matching: cfg });
+    if (!data || data.ok === false) {
+      throw new Error("No s'ha pogut desar la configuracio de match.");
+    }
+    const next = normalizeConfig(data.config || data.saved_config || data.matching_config || cfg);
+    state.savedConfig = next;
+    state.draftConfig = cloneConfig(next);
+    state.draftDirty = false;
+    renderConfigInputs();
+    setConfigStatus('Configuracio desada.');
+    setCompactBadges();
+    saveWorkspaceState();
+    API.showAlert('Configuracio desada.');
   }
 
   async function previewMediaFolderMatch() {
-    const entries = buildMediaFolderSelection();
+    const url = getUrl('preview');
+    if (!url) {
+      API.showAlert('La URL de previsualitzacio encara no esta disponible.');
+      return;
+    }
+    const entries = buildFolderSelection();
     if (!entries.length) {
       API.showAlert('Selecciona primer una carpeta amb fitxers.');
       return;
     }
-    const data = await API.postJson(API.app.urls.mediaMatchPreview, {
+    const cfg = normalizeConfig(state.draftConfig || state.savedConfig);
+    const data = await API.postJson(url, {
       files: entries.map((entry) => ({
         key: entry.key,
         filename: entry.filename,
         relative_path: entry.relative_path,
         size: entry.size,
       })),
+      config: cfg,
+      config_draft: cfg,
+      draft_config: cfg,
+      detail_level: state.previewExpanded ? 'expanded' : 'compact',
+      expanded: state.previewExpanded,
     });
-    if (!data?.ok) throw new Error("No s'ha pogut previsualitzar el match.");
-    mediaPreviewRows = Array.isArray(data.rows) ? data.rows : [];
-    renderMediaMatchRows(mediaPreviewRows, data.counts || {});
+    if (!data || data.ok === false) {
+      throw new Error("No s'ha pogut previsualitzar el match.");
+    }
+    state.previewRows = Array.isArray(data.rows) ? data.rows.map(normalizePreviewRow) : [];
+    state.previewCounts = data.counts && typeof data.counts === 'object' ? data.counts : {};
+    renderMediaPreview();
+    setCompactBadges();
+    saveWorkspaceState();
   }
 
-  async function applyMediaFolderMatch() {
-    if (!Array.isArray(mediaPreviewRows) || !mediaPreviewRows.length) {
-      API.showAlert('Fes primer la previsualització de match.');
+  async function applyPreviewMatch() {
+    const url = getUrl('apply');
+    if (!url) {
+      API.showAlert('La URL per aplicar el match encara no esta disponible.');
       return;
     }
-    const fileByKey = new Map((mediaFolderSelection || []).map((entry) => [String(entry.key), entry.file]));
-    const form = new FormData();
+    const rowsToApply = getFilteredPreviewRows();
+    if (!rowsToApply.length) {
+      API.showAlert('Fes primer la previsualitzacio del match.');
+      return;
+    }
+    const fileByKey = new Map(state.folderSelection.map((entry) => [String(entry.key), entry.file]));
     const mapping = [];
-
-    mediaPreviewRows.forEach((row) => {
-      const key = String(row.key || '');
-      const select = document.querySelector(`.js-media-match-select[data-key="${CSS.escape(key)}"]`);
-      const inscripcioId = parseInt(select?.value || '0', 10);
-      const file = fileByKey.get(key);
-      if (!Number.isInteger(inscripcioId) || inscripcioId <= 0 || !file) return;
-      mapping.push({ key, inscripcio_id: inscripcioId, score: Number(row.score || 0) });
-      form.append(`file_${key}`, file, file.name);
+    const form = new FormData();
+    rowsToApply.forEach((row) => {
+      const select = document.querySelector(`.js-media-match-select[data-key="${safeSelector(row.key)}"]`);
+      const inscripcioId = toNumber(select?.value || row.inscripcio_id || 0, 0);
+      const file = fileByKey.get(String(row.key));
+      if (!inscripcioId || !file) return;
+      mapping.push({
+        key: row.key,
+        inscripcio_id: inscripcioId,
+        score: row.score,
+        status: row.status,
+      });
+      form.append(`file_${row.key}`, file, file.name);
     });
-
     if (!mapping.length) {
-      API.showAlert("No hi ha cap assignació seleccionada.");
+      API.showAlert('No hi ha cap assignacio seleccionada.');
       return;
     }
-
     form.append('mapping_json', JSON.stringify(mapping));
-    const response = await fetch(API.app.urls.mediaMatchApply, {
+    const response = await fetch(url, {
       method: 'POST',
-      headers: {
-        'X-CSRFToken': API.csrfToken(),
-      },
+      headers: { 'X-CSRFToken': API.csrfToken() },
       credentials: 'same-origin',
       body: form,
     });
     if (!response.ok) {
-      const text = await response.text();
-      throw new Error(text || `HTTP ${response.status}`);
+      throw new Error(await response.text() || `HTTP ${response.status}`);
     }
     const data = await response.json();
-    if (!data?.ok) throw new Error("No s'han pogut aplicar les assignacions.");
-    await API.refreshLightMutation({
-      includeToolbar: false,
-      includeActivePanel: API.getActiveActionsPanelKey() === 'media',
-      panelKey: 'media',
-    });
+    if (!data || data.ok === false) {
+      throw new Error("No s'han pogut aplicar les assignacions.");
+    }
+    await refreshPageFragmentsAfterMutation();
+    await refreshWorkspace();
+    API.showAlert('Assignacions aplicades.');
   }
 
   async function uploadMedia(inscripcioId, file) {
+    const url = getUrl('upload');
+    if (!url) throw new Error('La URL de pujada encara no esta disponible.');
     const form = new FormData();
     form.append('inscripcio_id', String(inscripcioId));
     form.append('media_file', file, file.name);
-    const response = await fetch(API.app.urls.mediaUpload, {
+    const response = await fetch(url, {
       method: 'POST',
-      headers: {
-        'X-CSRFToken': API.csrfToken(),
-      },
+      headers: { 'X-CSRFToken': API.csrfToken() },
       credentials: 'same-origin',
       body: form,
     });
     if (!response.ok) {
-      const text = await response.text();
-      throw new Error(text || `HTTP ${response.status}`);
+      throw new Error(await response.text() || `HTTP ${response.status}`);
     }
     return response.json();
   }
 
   async function setPrimary(mediaId) {
-    return API.postJson(API.app.urls.mediaSetPrimary, { media_id: mediaId });
+    const url = getUrl('setPrimary');
+    if (!url) throw new Error('La URL per marcar principals encara no esta disponible.');
+    return API.postJson(url, { media_id: mediaId });
   }
 
-  async function removeMedia(mediaId) {
-    return API.postJson(API.app.urls.mediaDelete, { media_id: mediaId });
+  async function deleteMedia(mediaId) {
+    const url = getUrl('delete');
+    if (!url) throw new Error('La URL per eliminar encara no esta disponible.');
+    return API.postJson(url, { media_id: mediaId });
   }
 
-  function wireMediaActions() {
+  async function reassignMedia(mediaId, currentInscripcioId) {
+    const url = getUrl('reassign');
+    if (!url) throw new Error('La URL per reassignar encara no esta disponible.');
+    const promptLabel = currentInscripcioId ? `Nova inscripcio ID per al fitxer ${currentInscripcioId}:` : 'Nova inscripcio ID de desti:';
+    const raw = await API.showPrompt(promptLabel, String(currentInscripcioId || ''));
+    const nextId = Math.floor(toNumber(raw, 0));
+    if (!nextId) return;
+    const data = await API.postJson(url, {
+      media_id: mediaId,
+      inscripcio_id: nextId,
+      target_inscripcio_id: nextId,
+    });
+    if (!data || data.ok === false) {
+      throw new Error("No s'ha pogut reassignar el fitxer.");
+    }
+    await refreshPageFragmentsAfterMutation();
+    await refreshWorkspace();
+    API.showAlert('Fitxer reassignat.');
+  }
+
+  function updateMediaMatchSummaryFromSelection() {
+    const total = state.folderSelection.length;
+    if (!total) {
+      setMediaMatchSummary('Cap fitxer carregat.');
+      setCompactBadges();
+      return;
+    }
+    const cfg = normalizeConfig(state.draftConfig || state.savedConfig);
+    setMediaMatchSummary(`${total} fitxers preparats per al match (AUTO >= ${cfg.thresholds.auto_score_min.toFixed(2)}).`);
+    setCompactBadges();
+  }
+
+  function renderPreviewAndWorkspace() {
+    renderConfigInputs();
+    renderMediaPreview();
+    renderWorkspaceList();
+    updateMediaMatchSummaryFromSelection();
+  }
+
+  function scheduleWorkspaceRefresh() {
+    clearTimeout(scheduleWorkspaceRefresh._timer);
+    scheduleWorkspaceRefresh._timer = window.setTimeout(() => {
+      refreshWorkspace().catch((error) => API.showAlert(error?.message || error));
+    }, 250);
+  }
+
+  function wireMediaWorkspace() {
+    if (state.listenersBound) return;
+    state.listenersBound = true;
+
     document.addEventListener('change', (event) => {
-      if (!event.target.closest('#media-folder-input')) return;
-      const entries = buildMediaFolderSelection();
-      mediaPreviewRows = [];
-      renderMediaMatchRows([], {});
-      if (!entries.length) {
-        renderMediaMatchSummary('Cap fitxer carregat.');
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+
+      if (target.closest('#media-folder-input')) {
+        buildFolderSelection();
+        state.previewRows = [];
+        state.previewCounts = {};
+        renderMediaPreview();
+        updateMediaMatchSummaryFromSelection();
         return;
       }
-      const autoMin = Number(API.app.initial.mediaMatchingConfig?.thresholds?.auto_score_min ?? 0.85).toFixed(2);
-      renderMediaMatchSummary(`${entries.length} fitxers preparats per al match (AUTO >= ${autoMin}).`);
+
+      if (target.closest('#media-workspace-filter-q, #media-workspace-filter-inscripcio-id, #media-workspace-filter-media-state, #media-workspace-filter-source, #media-workspace-filter-tipus, #media-workspace-filter-page')) {
+        readWorkspaceFiltersFromUi();
+        scheduleWorkspaceRefresh();
+        return;
+      }
+
+      if (target.closest('#media-config-grid input')) {
+        syncConfigFromInputs();
+        return;
+      }
+
+      if (target.closest('.js-media-match-select')) {
+        setCompactBadges();
+      }
     });
 
-    document.addEventListener('click', async (e) => {
-      if (e.target.closest('#btn-media-match-preview')) {
+    document.addEventListener('input', (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+
+      if (target.closest('#media-workspace-filter-q, #media-workspace-filter-inscripcio-id')) {
+        readWorkspaceFiltersFromUi();
+        scheduleWorkspaceRefresh();
+        return;
+      }
+
+      if (target.closest('#media-config-grid input')) {
+        syncConfigFromInputs();
+      }
+    });
+
+    document.addEventListener('click', async (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+
+      const previewStatusBtn = target.closest('.js-media-preview-status');
+      if (previewStatusBtn) {
+        state.previewFilter = String(previewStatusBtn.getAttribute('data-media-preview-status') || 'all').trim() || 'all';
+        renderMediaPreview();
+        saveWorkspaceState();
+        return;
+      }
+
+      if (target.closest('#btn-media-preview-mode')) {
+        state.previewExpanded = !state.previewExpanded;
+        renderMediaPreview();
+        saveWorkspaceState();
+        return;
+      }
+
+      if (target.closest('#btn-media-preview-refresh')) {
         try {
           await previewMediaFolderMatch();
-        } catch (err) {
-          API.showAlert(err.message || err);
+        } catch (error) {
+          API.showAlert(error?.message || error);
         }
         return;
       }
 
-      if (e.target.closest('#btn-media-match-apply')) {
+      if (target.closest('#btn-media-config-preview')) {
         try {
-          await applyMediaFolderMatch();
-        } catch (err) {
-          API.showAlert(err.message || err);
+          await previewMediaFolderMatch();
+        } catch (error) {
+          API.showAlert(error?.message || error);
         }
         return;
       }
 
-      const uploadBtn = e.target.closest('.js-media-upload-btn');
+      if (target.closest('#btn-media-config-save')) {
+        try {
+          await saveMatchingConfig();
+        } catch (error) {
+          API.showAlert(error?.message || error);
+        }
+        return;
+      }
+
+      if (target.closest('#btn-media-match-preview')) {
+        try {
+          await previewMediaFolderMatch();
+        } catch (error) {
+          API.showAlert(error?.message || error);
+        }
+        return;
+      }
+
+      if (target.closest('#btn-media-match-apply')) {
+        try {
+          await applyPreviewMatch();
+        } catch (error) {
+          API.showAlert(error?.message || error);
+        }
+        return;
+      }
+
+      if (target.closest('#btn-media-workspace-refresh')) {
+        try {
+          await refreshWorkspace();
+        } catch (error) {
+          API.showAlert(error?.message || error);
+        }
+        return;
+      }
+
+      if (target.closest('#btn-media-workspace-prev')) {
+        state.workspace.page = Math.max(1, Math.floor(toNumber(state.workspace.page, 1) - 1));
+        applyWorkspaceFiltersToUi();
+        try {
+          await refreshWorkspace();
+        } catch (error) {
+          API.showAlert(error?.message || error);
+        }
+        return;
+      }
+
+      if (target.closest('#btn-media-workspace-next')) {
+        state.workspace.page = Math.max(1, Math.floor(toNumber(state.workspace.page, 1) + 1));
+        applyWorkspaceFiltersToUi();
+        try {
+          await refreshWorkspace();
+        } catch (error) {
+          API.showAlert(error?.message || error);
+        }
+        return;
+      }
+
+      const uploadBtn = target.closest('.js-media-upload-btn');
       if (uploadBtn) {
-        const insId = parseInt(uploadBtn.dataset.insId || '0', 10);
-        const input = document.querySelector(`.js-media-upload-input[data-ins-id="${CSS.escape(String(insId))}"]`);
+        const insId = Math.floor(toNumber(uploadBtn.getAttribute('data-ins-id') || '0', 0));
+        const scope = uploadBtn.closest('.media-assignment-card, .media-cell, .media-upload-row, .team-pane-card, .panel-body, .action-panel-body') || document;
+        const input = scope.querySelector(`.js-media-upload-input[data-ins-id="${safeSelector(String(insId))}"]`) || document.querySelector(`.js-media-upload-input[data-ins-id="${safeSelector(String(insId))}"]`);
         const file = input?.files?.[0];
         if (!file) {
           API.showAlert('Selecciona un fitxer abans de pujar-lo.');
@@ -246,53 +1135,148 @@
         }
         try {
           const data = await uploadMedia(insId, file);
-          if (!data?.ok) throw new Error("No s'ha pogut pujar el fitxer.");
-          await API.refreshLightMutation({
-            includeToolbar: false,
-            includeActivePanel: API.getActiveActionsPanelKey() === 'media',
-            panelKey: 'media',
-          });
-        } catch (err) {
-          API.showAlert(err.message || err);
+          if (!data || data.ok === false) throw new Error("No s'ha pogut pujar el fitxer.");
+          await refreshPageFragmentsAfterMutation();
+          await refreshWorkspace();
+        } catch (error) {
+          API.showAlert(error?.message || error);
         }
         return;
       }
 
-      const primaryBtn = e.target.closest('.js-media-set-primary');
+      const primaryBtn = target.closest('.js-media-set-primary');
       if (primaryBtn) {
         try {
-          const data = await setPrimary(parseInt(primaryBtn.dataset.mediaId || '0', 10));
-          if (!data?.ok) throw new Error("No s'ha pogut marcar com a principal.");
-          await API.refreshLightMutation({
-            includeToolbar: false,
-            includeActivePanel: API.getActiveActionsPanelKey() === 'media',
-            panelKey: 'media',
-          });
-        } catch (err) {
-          API.showAlert(err.message || err);
+          const data = await setPrimary(toNumber(primaryBtn.getAttribute('data-media-id') || '0', 0));
+          if (!data || data.ok === false) throw new Error("No s'ha pogut marcar com a principal.");
+          await refreshPageFragmentsAfterMutation();
+          await refreshWorkspace();
+        } catch (error) {
+          API.showAlert(error?.message || error);
         }
         return;
       }
 
-      const deleteBtn = e.target.closest('.js-media-delete');
+      const deleteBtn = target.closest('.js-media-delete');
       if (deleteBtn) {
         const ok = await API.showConfirm('Eliminar aquest fitxer?');
         if (!ok) return;
         try {
-          const data = await removeMedia(parseInt(deleteBtn.dataset.mediaId || '0', 10));
-          if (!data?.ok) throw new Error("No s'ha pogut eliminar el fitxer.");
-          await API.refreshLightMutation({
-            includeToolbar: false,
-            includeActivePanel: API.getActiveActionsPanelKey() === 'media',
-            panelKey: 'media',
-          });
-        } catch (err) {
-          API.showAlert(err.message || err);
+          const data = await deleteMedia(toNumber(deleteBtn.getAttribute('data-media-id') || '0', 0));
+          if (!data || data.ok === false) throw new Error("No s'ha pogut eliminar el fitxer.");
+          await refreshPageFragmentsAfterMutation();
+          await refreshWorkspace();
+        } catch (error) {
+          API.showAlert(error?.message || error);
+        }
+        return;
+      }
+
+      const reassignBtn = target.closest('.js-media-reassign');
+      if (reassignBtn) {
+        try {
+          await reassignMedia(
+            toNumber(reassignBtn.getAttribute('data-media-id') || '0', 0),
+            toNumber(reassignBtn.getAttribute('data-inscripcio-id') || '0', 0)
+          );
+        } catch (error) {
+          API.showAlert(error?.message || error);
         }
       }
     });
   }
 
-  document.addEventListener('DOMContentLoaded', wireMediaActions);
+  async function initMediaWorkspace() {
+    const { panel, root } = getMediaPanelElements();
+    if (!panel || !root) return null;
+    if (window.__mediaWorkspaceInitialized && window.__mediaWorkspaceRoot === root) {
+      return window.__mediaWorkspaceApi || null;
+    }
+    window.__mediaWorkspaceInitialized = true;
+    window.__mediaWorkspaceRoot = root;
+
+    state.savedConfig = normalizeConfig(getInitialMatchingConfig() || state.savedConfig);
+    restoreWorkspaceState();
+    if (!state.draftDirty) {
+      state.draftConfig = cloneConfig(state.savedConfig);
+    }
+
+    applyWorkspaceFiltersToUi();
+    renderPreviewAndWorkspace();
+    try {
+      await refreshWorkspace();
+    } catch (error) {
+      setWorkspaceSummary(error?.message || 'No s'ha pogut carregar el workspace de multimedia.');
+    }
+
+    state.draftDirty = !configsEqual(state.draftConfig, state.savedConfig);
+    renderConfigInputs();
+    renderMediaPreview();
+    renderWorkspaceList();
+    updateMediaMatchSummaryFromSelection();
+
+    window.__mediaWorkspaceApi = {
+      refreshWorkspace,
+      refreshMediaPreview: previewMediaFolderMatch,
+      setPreviewFilter: (filter) => {
+        state.previewFilter = MEDIA_PREVIEW_FILTERS.includes(filter) ? filter : 'all';
+        renderMediaPreview();
+      },
+      setPreviewMode: (expanded) => {
+        state.previewExpanded = !!expanded;
+        renderMediaPreview();
+      },
+      getDraftConfig: () => cloneConfig(state.draftConfig || state.savedConfig),
+    };
+
+    return window.__mediaWorkspaceApi;
+  }
+
+  function hydrateMediaPanel(attempt = 0) {
+    const { panel, root } = getMediaPanelElements();
+    if (!panel) return;
+    if (!root) {
+      const activePanelKey = typeof API.getActiveActionsPanelKey === 'function'
+        ? String(API.getActiveActionsPanelKey() || '').trim()
+        : '';
+      if (activePanelKey !== 'media' || attempt >= 8) return;
+      clearTimeout(hydrateMediaPanel._timer);
+      hydrateMediaPanel._timer = window.setTimeout(() => hydrateMediaPanel(attempt + 1), 60);
+      return;
+    }
+    API.runOnceForPanel('media', async () => (window.initMediaWorkspace ? window.initMediaWorkspace() : null)).catch((error) => {
+      API.showAlert(error?.message || error);
+    });
+  }
+
+  function wireMediaGlobals() {
+    if (window.__mediaWorkspaceGlobalsBound) return;
+    window.__mediaWorkspaceGlobalsBound = true;
+    wireMediaWorkspace();
+    hydrateMediaPanel();
+    document.addEventListener('inscripcions:panel-activated', (event) => {
+      if (String(event?.detail?.panelKey || '').trim() !== 'media') return;
+      hydrateMediaPanel();
+    });
+    document.addEventListener('inscripcions:panel-loaded', (event) => {
+      if (String(event?.detail?.panelKey || '').trim() !== 'media') return;
+      hydrateMediaPanel();
+    });
+    document.addEventListener('inscripcions:fragments-refreshed', (event) => {
+      const panelKey = String(event?.detail?.panelKey || '').trim();
+      if (panelKey !== 'media') return;
+      window.setTimeout(() => hydrateMediaPanel(), 0);
+    });
+  }
+
+  window.initMediaWorkspace = initMediaWorkspace;
+  window.refreshMediaWorkspace = refreshWorkspace;
+  window.__mediaWorkspaceApi = window.__mediaWorkspaceApi || null;
+  window.__mediaWorkspaceInitialized = window.__mediaWorkspaceInitialized || false;
+  window.__mediaWorkspaceRoot = window.__mediaWorkspaceRoot || null;
+  wireMediaGlobals();
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => hydrateMediaPanel(), { once: true });
+  }
 })();
 </script>
