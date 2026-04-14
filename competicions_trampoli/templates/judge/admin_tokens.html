@@ -121,7 +121,7 @@
               </div>
             {% endif %}
 
-            <form method="post">
+            <form method="post" id="judgeTokenCreateForm">
               {% csrf_token %}
               <input type="hidden" name="action" value="create"/>
 
@@ -461,10 +461,12 @@
     const counter = document.getElementById("permCounter");
     const totalFormsInput = document.getElementById("id_form-TOTAL_FORMS");
     const rowTemplate = document.getElementById("permRowTemplate");
-    if (!tbody || !addBtn || !counter || !totalFormsInput || !rowTemplate) return;
+    const createForm = document.getElementById("judgeTokenCreateForm");
+    if (!tbody || !addBtn || !counter || !totalFormsInput || !rowTemplate || !createForm) return;
 
     const maxPermissions = Number(tbody.dataset.maxPermissions || "10");
     const isTeamContextMode = tbody.dataset.teamContext === "1";
+    const draftStorageKey = `judge-token-create-draft:{{ competicio.id }}:{{ comp_aparell.id|default:'none' }}`;
     const fieldCatalogEl = document.getElementById("judge-schema-field-catalog");
     let fieldCatalog = [];
     try {
@@ -525,6 +527,73 @@
       return configured
         ? `${configured}/${itemsCount} noms configurats`
         : `Sense noms personalitzats (${itemsCount} items)`;
+    }
+
+    function readDraftBoolean(value) {
+      return value === true || value === "true" || value === "1" || value === 1;
+    }
+
+    function serializeCreateFormDraft() {
+      const draft = {};
+      Array.from(createForm.elements).forEach((field) => {
+        if (!field || !field.name || field.disabled || field.name === "csrfmiddlewaretoken") return;
+        if (field.type === "checkbox") {
+          draft[field.name] = !!field.checked;
+          return;
+        }
+        draft[field.name] = field.value;
+      });
+      return draft;
+    }
+
+    function saveCreateFormDraft() {
+      try {
+        window.sessionStorage.setItem(draftStorageKey, JSON.stringify(serializeCreateFormDraft()));
+      } catch (_err) {
+        // ignore storage failures
+      }
+    }
+
+    function clearCreateFormDraft() {
+      try {
+        window.sessionStorage.removeItem(draftStorageKey);
+      } catch (_err) {
+        // ignore storage failures
+      }
+    }
+
+    function loadCreateFormDraft() {
+      try {
+        const raw = window.sessionStorage.getItem(draftStorageKey);
+        return raw ? JSON.parse(raw) : null;
+      } catch (_err) {
+        return null;
+      }
+    }
+
+    function ensurePermissionRows(total) {
+      let desired = Math.max(0, Number(total || "0"));
+      while (Number(totalFormsInput.value || "0") < desired && Number(totalFormsInput.value || "0") < maxPermissions) {
+        addBtn.click();
+      }
+    }
+
+    function applyCreateFormDraft(draft) {
+      if (!draft || typeof draft !== "object") return;
+      ensurePermissionRows(draft["form-TOTAL_FORMS"]);
+      Array.from(createForm.elements).forEach((field) => {
+        if (!field || !field.name || field.name === "csrfmiddlewaretoken") return;
+        if (!Object.prototype.hasOwnProperty.call(draft, field.name)) return;
+        const value = draft[field.name];
+        if (field.type === "checkbox") {
+          field.checked = readDraftBoolean(value);
+        } else if (value != null) {
+          field.value = String(value);
+        }
+      });
+      Array.from(createForm.querySelectorAll("select, input")).forEach((field) => {
+        field.dispatchEvent(new Event("change", { bubbles: true }));
+      });
     }
 
     function openItemLabelsModal(fieldCode) {
@@ -717,6 +786,17 @@
     if (itemLabelsForm) {
       itemLabelsForm.addEventListener("submit", syncItemLabelsJson);
     }
+    createForm.addEventListener("input", saveCreateFormDraft);
+    createForm.addEventListener("change", saveCreateFormDraft);
+    createForm.addEventListener("submit", () => {
+      clearCreateFormDraft();
+    });
+    if (itemLabelsForm) {
+      itemLabelsForm.addEventListener("submit", () => {
+        saveCreateFormDraft();
+      });
+    }
+    applyCreateFormDraft(loadCreateFormDraft());
     refreshCounter();
   })();
 </script>

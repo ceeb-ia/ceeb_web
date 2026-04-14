@@ -466,8 +466,9 @@ class InscripcionsListNewView(InscripcionsListView):
             aparells_cfg = list(
                 CompeticioAparell.objects.filter(competicio=self.competicio, actiu=True).select_related("aparell").order_by("ordre", "id")
             )
-            active_app_ids = [app.id for app in aparells_cfg]
-            ctx["inscripcio_aparells_cfg"] = aparells_cfg
+            individual_aparells_cfg = [app for app in aparells_cfg if not is_team_context_app(app)]
+            active_app_ids = [app.id for app in individual_aparells_cfg]
+            ctx["inscripcio_aparells_cfg"] = individual_aparells_cfg
             ctx["inscripcio_aparells_active_ids"] = active_app_ids
             ctx["sidebar_team_nav_count"] = int(
                 get_equip_context_summary(self.competicio, team_context_code).get("teams_total") or 0
@@ -524,6 +525,8 @@ class InscripcionsListNewView(InscripcionsListView):
                         excluded_map.setdefault(str(ins_id), []).append(app_id)
                     for ins_id in excluded_map:
                         excluded_map[ins_id].sort()
+                for ins_id in visible_ins_ids:
+                    excluded_map.setdefault(str(ins_id), [])
                 table_runtime["inscripcio_aparells_excluded_map"] = excluded_map
 
             if "__media__" in selected_table_column_codes:
@@ -717,12 +720,16 @@ def inscripcions_set_aparells(request, pk):
         return HttpResponseBadRequest("selected_comp_aparell_ids ha de ser una llista")
 
     inscripcio = get_object_or_404(Inscripcio, pk=inscripcio_id, competicio=competicio)
-    active_ids = list(
-        CompeticioAparell.objects
-        .filter(competicio=competicio, actiu=True)
-        .order_by("ordre", "id")
-        .values_list("id", flat=True)
-    )
+    active_ids = [
+        int(comp_aparell.id)
+        for comp_aparell in (
+            CompeticioAparell.objects
+            .filter(competicio=competicio, actiu=True)
+            .select_related("aparell")
+            .order_by("ordre", "id")
+        )
+        if not is_team_context_app(comp_aparell)
+    ]
     active_set = set(active_ids)
     selected_set = set()
     for value in selected_ids_raw:
