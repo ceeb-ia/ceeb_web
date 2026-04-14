@@ -2531,6 +2531,17 @@ window.initTeamsWorkspace = async function () {
     });
   }
 
+  async function refreshLoadedSeriesPanel() {
+    if (!document.getElementById('series-workspace-shell')) return;
+    if (!window.InscripcionsApp || typeof window.InscripcionsApp.refreshHtmlFragments !== 'function') return;
+    window.__seriesWorkspaceHydrationRetry = false;
+    try {
+      await window.InscripcionsApp.refreshHtmlFragments(['panel'], { panelKey: 'series-equips' });
+    } catch (_err) {
+      // No bloquegis el desat del context si nomes falla el refresc del panell dependent.
+    }
+  }
+
   const contextSourcesSave = document.getElementById('btn-team-context-sources-save');
   if (contextSourcesSave) {
     contextSourcesSave.addEventListener('click', async () => {
@@ -2547,6 +2558,7 @@ window.initTeamsWorkspace = async function () {
           return;
         }
         await refreshWorkspace();
+        await refreshLoadedSeriesPanel();
       } catch (err) {
         showAlert(`No s'han pogut desar els aparells globals d'equip.\n${err.message || err}`);
       }

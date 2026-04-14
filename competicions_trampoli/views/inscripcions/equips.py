@@ -494,6 +494,22 @@ def _build_workspace_candidate_queryset(competicio: Competicio, context_code: st
     return qs.order_by("ordre_sortida", "id"), clean_filters
 
 
+def _build_workspace_filter_option_source_qs(competicio: Competicio, context_code: str, filters=None):
+    option_filters = {
+        **_normalize_workspace_filters(filters),
+        "categoria": "",
+        "subcategoria": "",
+        "entitat": "",
+        "categories": [],
+        "subcategories": [],
+        "entitats": [],
+    }
+    qs, _clean_filters = _build_workspace_candidate_queryset(competicio, context_code, filters=option_filters)
+    if qs is None:
+        return Inscripcio.objects.none()
+    return qs
+
+
 def _build_workspace_filter_options(candidate_qs, teams):
     categories = sorted(
         {
@@ -594,6 +610,7 @@ def _build_workspace_payload(competicio, context_code, filters=None, page=1, pag
         candidate_qs, filters = _build_workspace_candidate_queryset(competicio, context_code, filters=filters)
         if candidate_qs is None:
             candidate_qs = Inscripcio.objects.none()
+        filter_option_qs = _build_workspace_filter_option_source_qs(competicio, context_code, filters=filters)
 
     with _timing_scope(timing, "equips.page_slice"):
         teams = list(get_equips_for_context(competicio, context_code))
@@ -630,7 +647,7 @@ def _build_workspace_payload(competicio, context_code, filters=None, page=1, pag
                 "page_count": len(page_rows),
             },
             "filters": filters,
-            "filter_options": _build_workspace_filter_options(candidate_qs, teams),
+            "filter_options": _build_workspace_filter_options(filter_option_qs, teams),
             "candidates": {
                 "items": [_serialize_workspace_candidate(row, context_code) for row in page_rows],
                 "total": total_filtered,

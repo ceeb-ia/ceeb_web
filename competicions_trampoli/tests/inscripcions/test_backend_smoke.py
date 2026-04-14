@@ -99,6 +99,8 @@ class InscripcionsBackendSmokeTests(_BaseTrampoliDataMixin, TestCase):
             "groups_delete",
             "groups_delete_all",
             "groups_delete_empty",
+            "groups_transform_preview",
+            "groups_transform_apply",
             "groups_workspace_legacy",
             "groups_detail_legacy",
             "groups_preview_legacy",
@@ -108,6 +110,8 @@ class InscripcionsBackendSmokeTests(_BaseTrampoliDataMixin, TestCase):
             "groups_delete_legacy",
             "groups_delete_all_legacy",
             "groups_delete_empty_legacy",
+            "groups_transform_preview_legacy",
+            "groups_transform_apply_legacy",
             "inscripcions_sort_apply",
             "inscripcions_sort_remove",
             "inscripcions_sort_clear",
@@ -257,6 +261,31 @@ class InscripcionsBackendSmokeTests(_BaseTrampoliDataMixin, TestCase):
                 self.assertEqual(fragment["panel_key"], panel_key)
                 for marker in markers:
                     self.assertIn(marker, fragment["html"])
+
+    def test_lazy_series_panel_lists_all_team_aparells_only(self):
+        team_app_a = self._create_aparell("TEAM-A-SMOKE", "Team A Smoke")
+        team_app_a.competition_unit = Aparell.CompetitionUnit.TEAM
+        team_app_a.save(update_fields=["competition_unit"])
+        team_app_b = self._create_aparell("TEAM-B-SMOKE", "Team B Smoke")
+        team_app_b.competition_unit = Aparell.CompetitionUnit.TEAM
+        team_app_b.save(update_fields=["competition_unit"])
+        individual_app = self._create_aparell("IND-SMOKE", "Individual Smoke")
+        comp_app_a = self._create_comp_aparell(self.comp, team_app_a, ordre=1)
+        self._create_comp_aparell(self.comp, individual_app, ordre=2)
+        comp_app_b = self._create_comp_aparell(self.comp, team_app_b, ordre=3)
+
+        response = self.client.get(
+            reverse("inscripcions_list", kwargs={"pk": self.comp.id}),
+            {"__fragments": "panel", "__panel_key": "series-equips"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        html = response.json()["fragments"]["panel"]["html"]
+        self.assertIn("Team A Smoke", html)
+        self.assertIn("Team B Smoke", html)
+        self.assertNotIn("Individual Smoke", html)
+        self.assertEqual(html.count(f'value="{comp_app_a.id}"'), 2)
+        self.assertEqual(html.count(f'value="{comp_app_b.id}"'), 2)
 
     def test_lazy_grouped_table_renders_active_rows_and_complete_order_payload(self):
         self.ins.categoria = "A"
@@ -422,7 +451,8 @@ class InscripcionsBackendSmokeTests(_BaseTrampoliDataMixin, TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn("postJson(groupsFromSortUrl, payload)", source)
-        self.assertIn("API.refreshLightMutation({ includeActivePanel: true })", source)
+        self.assertIn("API.refreshLightMutation({ includeActivePanel: false })", source)
+        self.assertIn("window.__groupsWorkspaceApi.refresh", source)
         self.assertIn("function getMainSelectedInscripcioIds", source)
         self.assertIn("window.__inscripcionsSelectionApi.getSelectedIds()", source)
         self.assertIn("window.getSelectedInscripcioIds().map(String).filter(Boolean)", source)
@@ -445,6 +475,9 @@ class InscripcionsBackendSmokeTests(_BaseTrampoliDataMixin, TestCase):
         self.assertIn("const api = window.InscripcionsApp || null;", source)
         self.assertIn("await api.refreshLightMutation({ includeActivePanel: true });", source)
         self.assertIn("await refreshInscripcionsListAfterGroupMutation(action);", source)
+        self.assertIn("groups-transform-target-search", source)
+        self.assertIn("data-group-transform-toggle", source)
+        self.assertIn("function applyGroupTransformTargetSearch()", source)
 
     def test_panel_scripts_expose_lazy_initializers_instead_of_eager_refreshes(self):
         package_root = Path(__file__).resolve().parents[2]

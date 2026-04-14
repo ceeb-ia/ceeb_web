@@ -43,8 +43,10 @@
         <div class="d-flex flex-wrap align-items-center" style="gap:8px;">
           <label class="small text-muted mb-0" for="series-comp-aparell-select">Aparell</label>
           <select id="series-comp-aparell-select" class="form-control form-control-sm" style="width:min(100%, 320px);">
-            {% if series_default_comp_aparell %}
-              <option value="{{ series_default_comp_aparell.id }}" selected>{{ series_default_comp_aparell.aparell.nom }}</option>
+            {% if series_team_aparells %}
+              {% for comp_aparell in series_team_aparells %}
+                <option value="{{ comp_aparell.id }}"{% if series_default_comp_aparell and comp_aparell.id == series_default_comp_aparell.id %} selected{% endif %}>{{ comp_aparell.aparell.nom }}</option>
+              {% endfor %}
             {% else %}
               <option value="">Sense aparell actiu</option>
             {% endif %}
@@ -136,7 +138,9 @@
                       <label class="small text-muted mb-0" for="series-workspace-comp-aparell-select">Aparell d'equip</label>
                       <select id="series-workspace-comp-aparell-select" class="form-control form-control-sm" style="min-width:220px; max-width:320px;">
                         {% if series_team_aparells %}
-                          <option value="{{ series_team_aparells.0.id }}" selected>{{ series_team_aparells.0.aparell.nom }}</option>
+                          {% for comp_aparell in series_team_aparells %}
+                            <option value="{{ comp_aparell.id }}"{% if series_default_comp_aparell and comp_aparell.id == series_default_comp_aparell.id %} selected{% endif %}>{{ comp_aparell.aparell.nom }}</option>
+                          {% endfor %}
                         {% else %}
                           <option value="">Sense aparell actiu</option>
                         {% endif %}

@@ -472,7 +472,10 @@ class InscripcionsListNewView(InscripcionsListView):
             ctx["sidebar_team_nav_count"] = int(
                 get_equip_context_summary(self.competicio, team_context_code).get("teams_total") or 0
             )
-            default_series_comp_aparell = next((app for app in aparells_cfg if is_team_context_app(app)), None)
+            series_team_aparells = [app for app in aparells_cfg if is_team_context_app(app)]
+            ctx["series_team_aparells"] = series_team_aparells
+            ctx["series_default_comp_aparell"] = series_team_aparells[0] if series_team_aparells else None
+            default_series_comp_aparell = series_team_aparells[0] if series_team_aparells else None
             if default_series_comp_aparell is not None:
                 series_subjects, _series_issues = build_team_subjects_for_comp_aparell(
                     self.competicio,

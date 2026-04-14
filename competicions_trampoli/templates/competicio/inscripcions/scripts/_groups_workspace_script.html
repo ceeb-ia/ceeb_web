@@ -11,6 +11,8 @@ window.initGroupsWorkspace = async function () {
   const groupsWorkspaceUrl = "{% url 'groups_workspace' competicio.id %}";
   const groupsDetailUrl = "{% url 'groups_detail' competicio.id %}";
   const groupsPreviewUrl = "{% url 'groups_preview' competicio.id %}";
+  const groupsTransformPreviewUrl = "{% url 'groups_transform_preview' competicio.id %}";
+  const groupsTransformApplyUrl = "{% url 'groups_transform_apply' competicio.id %}";
   const groupsCreateUrl = "{% url 'groups_create' competicio.id %}";
   const groupsAssignUrl = "{% url 'groups_assign' competicio.id %}";
   const groupsUnassignUrl = "{% url 'groups_unassign' competicio.id %}";
@@ -44,6 +46,11 @@ window.initGroupsWorkspace = async function () {
     selectedGroupDetail: null,
     selectedGroupMembersPage: 1,
     selectedRightPaneTab: 'preview',
+    transformPreview: null,
+    transformPayload: null,
+    transformBusy: false,
+    transformActionsExpanded: false,
+    transformTargetQuery: '',
     autoContextExpanded: false,
     filterTimer: null,
     workspace: null,
@@ -710,6 +717,350 @@ window.initGroupsWorkspace = async function () {
     root.appendChild(placeholder);
   }
 
+  function groupTransformAvailableTargets(groupId) {
+    return (Array.isArray(state.workspace?.groups) ? state.workspace.groups : [])
+      .filter((group) => String(group?.id || '') !== String(groupId || ''))
+      .filter((group) => !group?.is_programmed && group?.actiu !== false)
+      .sort((a, b) => Number(a?.display_num || 0) - Number(b?.display_num || 0));
+  }
+
+  function groupTransformTargetSearchText(group) {
+    return normalizeSearchText([
+      group?.label,
+      group?.name,
+      group?.display_num ? `grup ${group.display_num}` : '',
+      group?.members_count ? `${group.members_count} participants` : '',
+      group?.search_text,
+      ...(group?.categories || []),
+      ...(group?.subcategories || []),
+      ...(group?.entitats || []),
+    ].filter(Boolean).join(' '));
+  }
+
+  function appendGroupTransformField(parent, labelText, control, options = {}) {
+    const wrap = document.createElement('div');
+    if (options?.wide) wrap.className = 'groups-transform-field-wide';
+    const label = document.createElement('label');
+    label.className = 'small text-muted mb-1 d-block';
+    label.textContent = labelText;
+    wrap.appendChild(label);
+    wrap.appendChild(control);
+    parent.appendChild(wrap);
+    return wrap;
+  }
+
+  function createGroupTransformButton(label, operation, variant = 'outline-secondary') {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `btn btn-sm btn-${variant}`;
+    button.setAttribute('data-group-transform-preview', operation);
+    button.textContent = label;
+    return button;
+  }
+
+  function populateGroupTransformTargets(select, groupId) {
+    if (!select) return;
+    select.innerHTML = '';
+    groupTransformAvailableTargets(groupId).forEach((group) => {
+      const option = document.createElement('option');
+      option.value = String(group?.id || '');
+      option.textContent = String(group?.label || `Grup ${group?.display_num || ''}`);
+      option.dataset.searchText = groupTransformTargetSearchText(group);
+      select.appendChild(option);
+    });
+  }
+
+  function applyGroupTransformTargetSearch() {
+    const select = document.getElementById('groups-transform-target-groups');
+    if (!select) return;
+    const query = normalizeSearchText(state.transformTargetQuery);
+    Array.from(select.options || []).forEach((option) => {
+      const matches = !query || String(option.dataset.searchText || '').includes(query);
+      option.hidden = !matches && !option.selected;
+    });
+  }
+
+  function populateGroupTransformBucketFields(select) {
+    if (!select) return;
+    select.innerHTML = '';
+    const source = document.getElementById('groups-workspace-bucket-fields');
+    Array.from(source?.options || []).forEach((sourceOption) => {
+      const option = document.createElement('option');
+      option.value = String(sourceOption.value || '');
+      option.textContent = String(sourceOption.textContent || sourceOption.value || '');
+      select.appendChild(option);
+    });
+  }
+
+  function renderGroupTransformPreview(previewData = state.transformPreview) {
+    const root = document.getElementById('groups-detail-transform-preview');
+    if (!root) return;
+    root.innerHTML = '';
+    if (!previewData) {
+      root.classList.add('d-none');
+      return;
+    }
+    root.classList.remove('d-none');
+
+    const title = document.createElement('div');
+    title.className = 'fw-semibold';
+    title.textContent = previewData.can_apply === false ? 'Previsualitzacio bloquejada' : 'Previsualitzacio de transformacio';
+    root.appendChild(title);
+
+    const meta = document.createElement('div');
+    meta.className = 'small text-muted mb-2';
+    meta.textContent = `${Number(previewData.members_total || 0)} participants en ${Number(previewData.groups_total || 0)} grup(s) resultants.`;
+    root.appendChild(meta);
+
+    const list = document.createElement('div');
+    list.className = 'list-group list-group-flush mb-2';
+    (Array.isArray(previewData.planned_groups) ? previewData.planned_groups : []).forEach((group) => {
+      const item = document.createElement('div');
+      item.className = 'list-group-item px-0 py-2';
+      const label = String(group?.suggested_name || group?.label || `Grup ${group?.group_num || ''}`).trim();
+      const kind = group?.impact_kind === 'removed'
+        ? 'desactivat'
+        : (group?.preview_kind === 'created' ? 'nou' : 'actualitzat');
+      item.textContent = `${label} - ${Number(group?.members_count || 0)} participants (${kind})`;
+      list.appendChild(item);
+    });
+    root.appendChild(list);
+
+    const actions = document.createElement('div');
+    actions.className = 'd-flex align-items-center flex-wrap';
+    actions.style.gap = '8px';
+    const confirm = document.createElement('button');
+    confirm.type = 'button';
+    confirm.className = 'btn btn-sm btn-primary';
+    confirm.setAttribute('data-group-transform-apply', '1');
+    confirm.textContent = state.transformBusy ? 'Aplicant...' : 'Confirmar transformacio';
+    confirm.disabled = !editable() || state.transformBusy || previewData.can_apply === false;
+    actions.appendChild(confirm);
+    const clear = document.createElement('button');
+    clear.type = 'button';
+    clear.className = 'btn btn-sm btn-outline-secondary';
+    clear.setAttribute('data-group-transform-clear', '1');
+    clear.textContent = 'Netejar';
+    actions.appendChild(clear);
+    root.appendChild(actions);
+  }
+
+  function renderGroupTransformQuickActions(detailGroup, groupId) {
+    const root = document.getElementById('groups-detail-quick-actions');
+    if (!root) return;
+    root.innerHTML = '';
+    if (!groupId || !detailGroup) {
+      renderGroupTransformPreview(null);
+      return;
+    }
+
+    const blocked = !editable() || !!detailGroup?.is_programmed;
+    const card = document.createElement('div');
+    card.className = 'card groups-transform-card';
+    root.appendChild(card);
+
+    const header = document.createElement('div');
+    header.className = 'card-header py-2 d-flex align-items-center justify-content-between flex-wrap';
+    header.style.gap = '8px';
+    card.appendChild(header);
+
+    const headText = document.createElement('div');
+    const title = document.createElement('div');
+    title.className = 'fw-semibold';
+    title.textContent = 'Accions rapides';
+    headText.appendChild(title);
+    const subtitle = document.createElement('div');
+    subtitle.className = 'small text-muted';
+    subtitle.textContent = blocked
+      ? 'Transformacions bloquejades per aquest grup.'
+      : 'Unir, dividir, extreure o reequilibrar.';
+    headText.appendChild(subtitle);
+    header.appendChild(headText);
+
+    const headerActions = document.createElement('div');
+    headerActions.className = 'd-flex align-items-center flex-wrap';
+    headerActions.style.gap = '8px';
+    if (detailGroup?.is_programmed) {
+      const badge = document.createElement('span');
+      badge.className = 'badge badge-warning';
+      badge.textContent = 'Programat';
+      headerActions.appendChild(badge);
+    }
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'btn btn-sm btn-outline-secondary';
+    toggle.setAttribute('data-group-transform-toggle', '1');
+    toggle.setAttribute('aria-expanded', state.transformActionsExpanded ? 'true' : 'false');
+    toggle.textContent = state.transformActionsExpanded ? 'Amagar' : 'Mostrar';
+    headerActions.appendChild(toggle);
+    header.appendChild(headerActions);
+
+    const body = document.createElement('div');
+    body.className = `card-body py-2${state.transformActionsExpanded ? '' : ' d-none'}`;
+    card.appendChild(body);
+
+    if (blocked) {
+      const note = document.createElement('div');
+      note.className = 'small text-muted';
+      note.textContent = detailGroup?.is_programmed
+        ? 'Aquest grup esta programat a rotacions i no admet transformacions estructurals.'
+        : 'Accions rapides disponibles nomes en mode edicio.';
+      body.appendChild(note);
+      renderGroupTransformPreview(state.transformPreview);
+      return;
+    }
+
+    const grid = document.createElement('div');
+    grid.className = 'team-filters-grid groups-transform-grid';
+
+    const targets = document.createElement('select');
+    targets.id = 'groups-transform-target-groups';
+    targets.className = 'form-control form-control-sm';
+    targets.multiple = true;
+    targets.size = 4;
+    populateGroupTransformTargets(targets, groupId);
+    const targetWrap = document.createElement('div');
+    const targetSearch = document.createElement('input');
+    targetSearch.type = 'search';
+    targetSearch.id = 'groups-transform-target-search';
+    targetSearch.className = 'form-control form-control-sm mb-1';
+    targetSearch.placeholder = 'Cerca grup...';
+    targetSearch.value = String(state.transformTargetQuery || '');
+    targetWrap.appendChild(targetSearch);
+    targetWrap.appendChild(targets);
+    appendGroupTransformField(grid, 'Altres grups', targetWrap, { wide: true });
+    applyGroupTransformTargetSearch();
+
+    const countInput = document.createElement('input');
+    countInput.type = 'number';
+    countInput.id = 'groups-transform-count';
+    countInput.className = 'form-control form-control-sm';
+    countInput.min = '2';
+    countInput.step = '1';
+    countInput.placeholder = 'Nombre de grups';
+    appendGroupTransformField(grid, 'Dividir / reequilibrar en N', countInput);
+
+    const sizeInput = document.createElement('input');
+    sizeInput.type = 'number';
+    sizeInput.id = 'groups-transform-size';
+    sizeInput.className = 'form-control form-control-sm';
+    sizeInput.min = '1';
+    sizeInput.step = '1';
+    sizeInput.placeholder = 'Mida fixa';
+    appendGroupTransformField(grid, 'Mida fixa', sizeInput);
+
+    const rangeWrap = document.createElement('div');
+    rangeWrap.className = 'd-flex align-items-center';
+    rangeWrap.style.gap = '6px';
+    const minInput = document.createElement('input');
+    minInput.type = 'number';
+    minInput.id = 'groups-transform-min-size';
+    minInput.className = 'form-control form-control-sm';
+    minInput.min = '1';
+    minInput.step = '1';
+    minInput.placeholder = 'Min';
+    const maxInput = document.createElement('input');
+    maxInput.type = 'number';
+    maxInput.id = 'groups-transform-max-size';
+    maxInput.className = 'form-control form-control-sm';
+    maxInput.min = '1';
+    maxInput.step = '1';
+    maxInput.placeholder = 'Max';
+    rangeWrap.appendChild(minInput);
+    rangeWrap.appendChild(maxInput);
+    appendGroupTransformField(grid, 'Forquilla de mida', rangeWrap);
+
+    const bucketFields = document.createElement('select');
+    bucketFields.id = 'groups-transform-bucket-fields';
+    bucketFields.className = 'form-control form-control-sm';
+    bucketFields.multiple = true;
+    bucketFields.size = 4;
+    populateGroupTransformBucketFields(bucketFields);
+    appendGroupTransformField(grid, 'Criteris per dividir', bucketFields, { wide: true });
+
+    body.appendChild(grid);
+
+    const buttons = document.createElement('div');
+    buttons.className = 'd-flex align-items-center flex-wrap mt-2';
+    buttons.style.gap = '8px';
+    buttons.appendChild(createGroupTransformButton('Unir amb seleccionats', 'merge_into_current', 'outline-primary'));
+    buttons.appendChild(createGroupTransformButton('Dividir en N', 'split_count'));
+    buttons.appendChild(createGroupTransformButton('Dividir per mida', 'split_size'));
+    buttons.appendChild(createGroupTransformButton('Dividir per criteri', 'split_bucket'));
+    buttons.appendChild(createGroupTransformButton('Extreure seleccio', 'extract_selection', 'outline-primary'));
+    buttons.appendChild(createGroupTransformButton('Reequilibrar amb seleccionats', 'rebalance', 'outline-info'));
+    body.appendChild(buttons);
+
+    const note = document.createElement('div');
+    note.className = 'small text-muted mt-2';
+    note.textContent = 'Les transformacions es previsualitzen abans de confirmar i no poden tocar grups programats a rotacions.';
+    body.appendChild(note);
+    renderGroupTransformPreview(state.transformPreview);
+  }
+
+  function readGroupTransformPayload(operation) {
+    const payload = {
+      operation,
+      source_group_id: state.selectedGroupId,
+      target_group_ids: selectedOptionValues(document.getElementById('groups-transform-target-groups')),
+      selected_ids: selectedIds(),
+    };
+    const count = Number.parseInt(document.getElementById('groups-transform-count')?.value || '', 10);
+    if (Number.isFinite(count) && count > 0) payload.group_count = count;
+    const size = Number.parseInt(document.getElementById('groups-transform-size')?.value || '', 10);
+    if (Number.isFinite(size) && size > 0) payload.group_size = size;
+    const minSize = Number.parseInt(document.getElementById('groups-transform-min-size')?.value || '', 10);
+    const maxSize = Number.parseInt(document.getElementById('groups-transform-max-size')?.value || '', 10);
+    if (Number.isFinite(minSize) && minSize > 0) payload.min_size = minSize;
+    if (Number.isFinite(maxSize) && maxSize > 0) payload.max_size = maxSize;
+    payload.bucket_fields = selectedOptionValues(document.getElementById('groups-transform-bucket-fields'));
+    return payload;
+  }
+
+  async function previewGroupTransform(operation) {
+    if (!editable()) return;
+    const payload = readGroupTransformPayload(operation);
+    try {
+      state.transformBusy = true;
+      renderGroupTransformPreview(state.transformPreview);
+      const data = await postJson(groupsTransformPreviewUrl, payload);
+      state.transformPayload = payload;
+      state.transformPreview = data?.preview || null;
+      renderGroupTransformPreview(state.transformPreview);
+    } catch (err) {
+      showRequestError("No s'ha pogut previsualitzar la transformacio.", err);
+    } finally {
+      state.transformBusy = false;
+      renderGroupTransformPreview(state.transformPreview);
+    }
+  }
+
+  async function applyGroupTransform() {
+    if (!editable() || !state.transformPayload) return;
+    const ok = await confirmBox('Aplicar aquesta transformacio de grups?');
+    if (!ok) return;
+    try {
+      state.transformBusy = true;
+      renderGroupTransformPreview(state.transformPreview);
+      const data = await postJson(groupsTransformApplyUrl, state.transformPayload);
+      invalidateAllGroupDetails();
+      state.transformPreview = null;
+      state.transformPayload = null;
+      if (data?.selected_group_id) {
+        state.selectedGroupId = String(data.selected_group_id);
+        state.selectedRightPaneTab = 'detail';
+      }
+      await (window.InscripcionsApp?.refreshLightMutation?.({ includeActivePanel: false }) || Promise.resolve());
+      await fetchWorkspace();
+      if (typeof clearGroupPreview === 'function') clearGroupPreview('La transformacio de grups s\'ha aplicat.');
+    } catch (err) {
+      showRequestError("No s'ha pogut aplicar la transformacio.", err);
+    } finally {
+      state.transformBusy = false;
+      renderGroupTransformPreview(state.transformPreview);
+    }
+  }
+
   function getGroupDetail(groupId) {
     return state.groupDetailCache[String(groupId || '').trim()] || null;
   }
@@ -744,6 +1095,11 @@ window.initGroupsWorkspace = async function () {
       pager.innerHTML = '';
       pager.classList.add('d-none');
       state.selectedGroupDetail = null;
+      state.transformPreview = null;
+      state.transformPayload = null;
+      state.transformActionsExpanded = false;
+      state.transformTargetQuery = '';
+      renderGroupTransformQuickActions(null, '');
       return;
     }
 
@@ -839,6 +1195,7 @@ window.initGroupsWorkspace = async function () {
     nameNote.textContent = detailGroup?.name
       ? `Nom: ${detailGroup.name}`
       : (group?.name ? `Nom: ${group.name}` : 'Sense observacions');
+    renderGroupTransformQuickActions(detailGroup, groupId);
 
     membersList.innerHTML = '';
     membersList.dataset.groupId = groupId;
@@ -1144,6 +1501,12 @@ window.initGroupsWorkspace = async function () {
     if (!cleanId) return null;
     const opts = options || {};
     openWorkspaceCard();
+    if (cleanId !== String(state.selectedGroupId || '')) {
+      state.transformPreview = null;
+      state.transformPayload = null;
+      state.transformActionsExpanded = false;
+      state.transformTargetQuery = '';
+    }
     state.selectedGroupId = cleanId;
     state.selectedGroupDetail = state.groupDetailCache[cleanId] || null;
     state.selectedRightPaneTab = 'detail';
@@ -1195,6 +1558,10 @@ window.initGroupsWorkspace = async function () {
         state.selectedGroupId = '';
         state.selectedGroupDetail = null;
         state.selectedGroupMembersPage = 1;
+        state.transformPreview = null;
+        state.transformPayload = null;
+        state.transformActionsExpanded = false;
+        state.transformTargetQuery = '';
       }
 
       setFiltersToDom(state.filters, workspace.filter_options || {});
@@ -1657,6 +2024,18 @@ window.initGroupsWorkspace = async function () {
       checkbox.dispatchEvent(new Event('change', { bubbles: true }));
     });
 
+    groupsMainCard.addEventListener('input', (event) => {
+      const targetSearch = event.target.closest('#groups-transform-target-search');
+      if (!targetSearch) return;
+      state.transformTargetQuery = String(targetSearch.value || '');
+      applyGroupTransformTargetSearch();
+    });
+
+    groupsMainCard.addEventListener('change', (event) => {
+      if (!event.target.closest('#groups-transform-target-groups')) return;
+      applyGroupTransformTargetSearch();
+    });
+
     const resolveTargetGroupId = () => {
       const workspaceValue = String(document.getElementById('groups-workspace-target-group')?.value || '').trim();
       if (workspaceValue) return workspaceValue;
@@ -1668,6 +2047,37 @@ window.initGroupsWorkspace = async function () {
       if (tabBtn) {
         event.preventDefault();
         setRightPaneTab(String(tabBtn.getAttribute('data-groups-right-tab') || '').trim());
+        return;
+      }
+
+      const transformToggleBtn = event.target.closest('[data-group-transform-toggle]');
+      if (transformToggleBtn) {
+        event.preventDefault();
+        state.transformActionsExpanded = !state.transformActionsExpanded;
+        renderDetailPane();
+        return;
+      }
+
+      const transformPreviewBtn = event.target.closest('[data-group-transform-preview]');
+      if (transformPreviewBtn) {
+        event.preventDefault();
+        await previewGroupTransform(String(transformPreviewBtn.getAttribute('data-group-transform-preview') || '').trim());
+        return;
+      }
+
+      const transformApplyBtn = event.target.closest('[data-group-transform-apply]');
+      if (transformApplyBtn) {
+        event.preventDefault();
+        await applyGroupTransform();
+        return;
+      }
+
+      const transformClearBtn = event.target.closest('[data-group-transform-clear]');
+      if (transformClearBtn) {
+        event.preventDefault();
+        state.transformPreview = null;
+        state.transformPayload = null;
+        renderGroupTransformPreview(null);
         return;
       }
 

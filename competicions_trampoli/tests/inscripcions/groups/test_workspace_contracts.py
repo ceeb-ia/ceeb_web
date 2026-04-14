@@ -1141,3 +1141,140 @@ class GroupManagerV1Tests(_BaseTrampoliDataMixin, TestCase):
         self.assertIsNone(self.ins_other.grup_competicio_id)
         self.assertIsNone(self.ins_other.grup)
         self.assertIsNone(self.ins_other.ordre_competicio)
+
+    def test_groups_transform_merge_moves_members_and_deactivates_source_group(self):
+        source = GrupCompeticio.objects.create(competicio=self.comp, legacy_num=10, display_num=10, nom="Source", actiu=True)
+        target = GrupCompeticio.objects.create(competicio=self.comp, legacy_num=11, display_num=11, nom="Target", actiu=True)
+        source_member = Inscripcio.objects.create(competicio=self.comp, nom_i_cognoms="Source member", ordre_sortida=20, grup=10, grup_competicio=source)
+        target_member = Inscripcio.objects.create(competicio=self.comp, nom_i_cognoms="Target member", ordre_sortida=21, grup=11, grup_competicio=target)
+
+        preview = self._post_json(
+            "groups_transform_preview",
+            {"operation": "merge_into_current", "source_group_id": source.id, "target_group_ids": [target.id]},
+        )
+        self.assertEqual(preview.status_code, 200)
+        target.refresh_from_db()
+        self.assertTrue(target.actiu)
+
+        resp = self._post_json(
+            "groups_transform_apply",
+            {"operation": "merge_into_current", "source_group_id": source.id, "target_group_ids": [target.id]},
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data.get("ok"))
+        self.assertIn("history", data)
+
+        target.refresh_from_db()
+        source_member.refresh_from_db()
+        target_member.refresh_from_db()
+        self.assertFalse(target.actiu)
+        self.assertEqual(source_member.grup_competicio_id, source.id)
+        self.assertEqual(target_member.grup_competicio_id, source.id)
+        self.assertEqual([source_member.ordre_competicio, target_member.ordre_competicio], [1, 2])
+
+    def test_groups_transform_blocks_programmed_groups(self):
+        resp = self._post_json(
+            "groups_transform_preview",
+            {
+                "operation": "merge_into_current",
+                "source_group_id": self.other_group.id,
+                "target_group_ids": [self.programmed_group.id],
+            },
+        )
+
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("program", resp.content.decode("utf-8").lower())
+
+    def test_groups_transform_split_count_reuses_source_and_creates_new_group(self):
+        source = GrupCompeticio.objects.create(competicio=self.comp, legacy_num=12, display_num=12, nom="Split", actiu=True)
+        members = [
+            Inscripcio.objects.create(competicio=self.comp, nom_i_cognoms=f"Split {idx}", ordre_sortida=30 + idx, grup=12, grup_competicio=source)
+            for idx in range(4)
+        ]
+
+        resp = self._post_json(
+            "groups_transform_apply",
+            {"operation": "split_count", "source_group_id": source.id, "group_count": 2},
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data.get("ok"))
+        planned = data.get("preview", {}).get("planned_groups") or []
+        self.assertEqual([row.get("members_count") for row in planned if row.get("impact_kind") != "removed"], [2, 2])
+
+        created = GrupCompeticio.objects.filter(competicio=self.comp, display_num__gt=12, actiu=True).order_by("-display_num").first()
+        self.assertIsNotNone(created)
+        for member in members:
+            member.refresh_from_db()
+        self.assertEqual([member.grup_competicio_id for member in members[:2]], [source.id, source.id])
+        self.assertEqual([member.grup_competicio_id for member in members[2:]], [created.id, created.id])
+
+    def test_groups_transform_split_size_respects_fixed_size(self):
+        source = GrupCompeticio.objects.create(competicio=self.comp, legacy_num=13, display_num=13, nom="Size", actiu=True)
+        for idx in range(5):
+            Inscripcio.objects.create(competicio=self.comp, nom_i_cognoms=f"Size {idx}", ordre_sortida=40 + idx, grup=13, grup_competicio=source)
+
+        resp = self._post_json(
+            "groups_transform_preview",
+            {"operation": "split_size", "source_group_id": source.id, "group_size": 2},
+        )
+        self.assertEqual(resp.status_code, 200)
+        planned = resp.json().get("preview", {}).get("planned_groups") or []
+        self.assertEqual([row.get("members_count") for row in planned], [2, 2, 1])
+
+    def test_groups_transform_split_bucket_supports_excel_fields(self):
+        self.comp.inscripcions_schema = {"columns": [{"code": "nivell", "label": "Nivell", "kind": "extra"}]}
+        self.comp.save(update_fields=["inscripcions_schema"])
+        source = GrupCompeticio.objects.create(competicio=self.comp, legacy_num=14, display_num=14, nom="Bucket", actiu=True)
+        Inscripcio.objects.create(competicio=self.comp, nom_i_cognoms="Nivell A", ordre_sortida=50, grup=14, grup_competicio=source, extra={"nivell": "A"})
+        Inscripcio.objects.create(competicio=self.comp, nom_i_cognoms="Nivell B", ordre_sortida=51, grup=14, grup_competicio=source, extra={"nivell": "B"})
+
+        resp = self._post_json(
+            "groups_transform_preview",
+            {"operation": "split_bucket", "source_group_id": source.id, "bucket_fields": ["nivell"]},
+        )
+        self.assertEqual(resp.status_code, 200)
+        planned = resp.json().get("preview", {}).get("planned_groups") or []
+        self.assertEqual(len(planned), 2)
+        self.assertTrue(any("A" in str(row.get("suggested_name") or row.get("label") or "") for row in planned))
+
+    def test_groups_transform_extract_selection_only_moves_members_from_source_group(self):
+        source = GrupCompeticio.objects.create(competicio=self.comp, legacy_num=15, display_num=15, nom="Extract", actiu=True)
+        keep = Inscripcio.objects.create(competicio=self.comp, nom_i_cognoms="Keep", ordre_sortida=60, grup=15, grup_competicio=source)
+        move = Inscripcio.objects.create(competicio=self.comp, nom_i_cognoms="Move", ordre_sortida=61, grup=15, grup_competicio=source)
+
+        resp = self._post_json(
+            "groups_transform_apply",
+            {
+                "operation": "extract_selection",
+                "source_group_id": source.id,
+                "selected_ids": [move.id, self.ins_free_a.id],
+            },
+        )
+        self.assertEqual(resp.status_code, 200)
+        keep.refresh_from_db()
+        move.refresh_from_db()
+        self.ins_free_a.refresh_from_db()
+        self.assertEqual(keep.grup_competicio_id, source.id)
+        self.assertNotEqual(move.grup_competicio_id, source.id)
+        self.assertIsNone(self.ins_free_a.grup_competicio_id)
+
+    def test_groups_transform_rebalance_keeps_affected_group_count_by_default(self):
+        first = GrupCompeticio.objects.create(competicio=self.comp, legacy_num=16, display_num=16, nom="First", actiu=True)
+        second = GrupCompeticio.objects.create(competicio=self.comp, legacy_num=17, display_num=17, nom="Second", actiu=True)
+        for idx in range(1):
+            Inscripcio.objects.create(competicio=self.comp, nom_i_cognoms=f"First {idx}", ordre_sortida=70 + idx, grup=16, grup_competicio=first)
+        for idx in range(3):
+            Inscripcio.objects.create(competicio=self.comp, nom_i_cognoms=f"Second {idx}", ordre_sortida=80 + idx, grup=17, grup_competicio=second)
+
+        resp = self._post_json(
+            "groups_transform_apply",
+            {"operation": "rebalance", "source_group_id": first.id, "target_group_ids": [second.id]},
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        planned = data.get("preview", {}).get("planned_groups") or []
+        self.assertEqual([row.get("members_count") for row in planned if row.get("impact_kind") != "removed"], [2, 2])
+        self.assertTrue(GrupCompeticio.objects.get(id=first.id).actiu)
+        self.assertTrue(GrupCompeticio.objects.get(id=second.id).actiu)

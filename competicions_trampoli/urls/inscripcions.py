@@ -31,6 +31,8 @@ from ..views.inscripcions.groups import (
     groups_delete_empty,
     groups_detail,
     groups_preview,
+    groups_transform_apply,
+    groups_transform_preview,
     groups_unassign,
     groups_workspace,
     inscripcions_group_competition_order_preview,
@@ -157,6 +159,16 @@ urlpatterns = [
         name="groups_delete_empty",
     ),
     path(
+        "competicio/<int:pk>/groups/transform-preview/",
+        competition_view(groups_transform_preview, "inscripcions.view"),
+        name="groups_transform_preview",
+    ),
+    path(
+        "competicio/<int:pk>/groups/transform-apply/",
+        competition_view(groups_transform_apply, "inscripcions.edit"),
+        name="groups_transform_apply",
+    ),
+    path(
         "competicio/<int:pk>/inscripcions/groups/workspace/",
         competition_view(groups_workspace, "inscripcions.view"),
         name="groups_workspace_legacy",
@@ -200,6 +212,16 @@ urlpatterns = [
         "competicio/<int:pk>/inscripcions/groups/delete-empty/",
         competition_view(groups_delete_empty, "inscripcions.edit"),
         name="groups_delete_empty_legacy",
+    ),
+    path(
+        "competicio/<int:pk>/inscripcions/groups/transform-preview/",
+        competition_view(groups_transform_preview, "inscripcions.view"),
+        name="groups_transform_preview_legacy",
+    ),
+    path(
+        "competicio/<int:pk>/inscripcions/groups/transform-apply/",
+        competition_view(groups_transform_apply, "inscripcions.edit"),
+        name="groups_transform_apply_legacy",
     ),
     path(
         "competicio/<int:pk>/inscripcions/sort-apply/",

@@ -202,7 +202,32 @@ window.initSeriesWorkspace = async function () {
     saveWorkspaceState();
   }
 
+  function firstAvailableCompAparellId() {
+    for (const id of ['series-comp-aparell-select', 'series-workspace-comp-aparell-select']) {
+      const select = document.getElementById(id);
+      const option = Array.from(select?.options || []).find((row) => String(row?.value || '').trim());
+      if (option) return String(option.value || '').trim();
+    }
+    return '';
+  }
+
+  function compAparellSelectsContain(value) {
+    const clean = String(value || '').trim();
+    if (!clean) return false;
+    return ['series-comp-aparell-select', 'series-workspace-comp-aparell-select'].some((id) => {
+      const select = document.getElementById(id);
+      return Array.from(select?.options || []).some((option) => String(option?.value || '').trim() === clean);
+    });
+  }
+
+  function ensureCompAparellIdAvailable() {
+    if (compAparellSelectsContain(state.compAparellId)) return;
+    const fallback = firstAvailableCompAparellId();
+    if (fallback) state.compAparellId = fallback;
+  }
+
   function syncAparellSelects(skipId) {
+    ensureCompAparellIdAvailable();
     ['series-comp-aparell-select', 'series-workspace-comp-aparell-select'].forEach((id) => {
       const select = document.getElementById(id);
       if (!select || id === skipId) return;
@@ -211,12 +236,28 @@ window.initSeriesWorkspace = async function () {
   }
 
   function readCompAparellIdFromDom() {
-    return String(
+    const value = String(
       document.getElementById('series-comp-aparell-select')?.value ||
       document.getElementById('series-workspace-comp-aparell-select')?.value ||
       state.compAparellId ||
       ''
     ).trim();
+    if (value && compAparellSelectsContain(value)) return value;
+    const fallback = firstAvailableCompAparellId();
+    if (fallback) state.compAparellId = fallback;
+    return fallback;
+  }
+
+  async function rehydrateSeriesPanelOnce() {
+    if (window.__seriesWorkspaceHydrationRetry) return false;
+    if (!window.InscripcionsApp || typeof window.InscripcionsApp.refreshHtmlFragments !== 'function') return false;
+    window.__seriesWorkspaceHydrationRetry = true;
+    try {
+      await window.InscripcionsApp.refreshHtmlFragments(['panel'], { panelKey: 'series-equips' });
+      return true;
+    } catch (_err) {
+      return false;
+    }
   }
 
   function fillSelect(selectEl, items, selectedValue, emptyLabel, mapItem) {
@@ -1559,6 +1600,9 @@ window.initSeriesWorkspace = async function () {
   async function refreshWorkspace(options = {}) {
     state.compAparellId = readCompAparellIdFromDom();
     if (!state.compAparellId) {
+      if (await rehydrateSeriesPanelOnce()) {
+        return null;
+      }
       setText('series-candidates-status', 'Selecciona un aparell d\'equip per carregar el workspace.');
       setText('series-compact-list-note', 'Selecciona un aparell d\'equip per carregar les series.');
       setText('series-nav-badge', '0');

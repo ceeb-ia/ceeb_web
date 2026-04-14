@@ -457,6 +457,8 @@ class InscripcionsSortBirthRangeTests(InscripcionsSortFlowBaseMixin, TestCase):
         self.assertIn('id="groups-board-filter-program-state"', panel_html)
         self.assertIn('id="groups-board-filter-min-size"', panel_html)
         self.assertIn('id="groups-board-filter-max-size"', panel_html)
+        self.assertIn('id="groups-detail-quick-actions"', panel_html)
+        self.assertIn('id="groups-detail-transform-preview"', panel_html)
         self.assertIn('id="groups-board-filter-count"', panel_html)
         self.assertIn('id="btn-groups-board-filters-toggle"', panel_html)
         self.assertIn('id="groups-board-filters-panel"', panel_html)

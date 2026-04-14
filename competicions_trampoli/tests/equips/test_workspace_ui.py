@@ -408,6 +408,73 @@ class EquipPreviewUiTests(_BaseTrampoliDataMixin, TestCase):
             ["Anna Keep"],
         )
 
+    def test_equips_workspace_filter_options_keep_other_entitats_visible_after_filtering_one(self):
+        response = self.client.post(
+            reverse("inscripcions_equips_workspace", kwargs={"pk": self.comp.id}),
+            data=json.dumps(
+                {
+                    "context_code": "finals",
+                    "filters": {
+                        "q": "",
+                        "categoria": "",
+                        "subcategoria": "",
+                        "entitat": "",
+                        "entitats": ["Club C"],
+                        "assignment_state": "all",
+                        "equip_id": "",
+                    },
+                    "page": 1,
+                    "page_size": 25,
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload.get("ok"))
+        self.assertEqual(
+            sorted(payload.get("filter_options", {}).get("entitats") or []),
+            ["Club A", "Club C"],
+        )
+        self.assertEqual(
+            [row.get("nom") for row in (payload.get("candidates", {}).get("items") or [])],
+            ["Carla New"],
+        )
+
+    def test_equips_workspace_filter_options_keep_assignment_scope_when_clearing_facets(self):
+        self.ins_keep.categoria = "Alevi"
+        self.ins_keep.save(update_fields=["categoria"])
+        self.ins_ctx.categoria = "Senior"
+        self.ins_ctx.save(update_fields=["categoria"])
+
+        response = self.client.post(
+            reverse("inscripcions_equips_workspace", kwargs={"pk": self.comp.id}),
+            data=json.dumps(
+                {
+                    "context_code": "finals",
+                    "filters": {
+                        "q": "",
+                        "categoria": "",
+                        "subcategoria": "",
+                        "entitat": "",
+                        "categories": ["Alevi"],
+                        "assignment_state": "assigned",
+                        "equip_ids": [str(self.team_existing.id)],
+                    },
+                    "page": 1,
+                    "page_size": 25,
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload.get("ok"))
+        self.assertEqual(payload.get("candidates", {}).get("total"), 0)
+        self.assertEqual(payload.get("filter_options", {}).get("categories") or [], ["Senior"])
+
     def test_equips_workspace_can_resolve_filtered_ids_for_full_selection_strip(self):
         response = self.client.post(
             reverse("inscripcions_equips_workspace", kwargs={"pk": self.comp.id}),

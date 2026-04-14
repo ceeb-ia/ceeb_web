@@ -651,6 +651,431 @@ def _build_group_creation_preview(objs, sizes, start_group_num, bucket_sources_b
     return _apply_group_suggested_names(out, filter_sources=filter_name_sources)
 
 
+GROUP_TRANSFORM_OPERATIONS = {
+    "merge_into_current",
+    "split_count",
+    "split_size",
+    "split_bucket",
+    "extract_selection",
+    "rebalance",
+}
+
+
+def _normalize_group_id_list(raw_values):
+    out = []
+    seen = set()
+    values = raw_values if isinstance(raw_values, list) else []
+    for raw in values:
+        try:
+            clean = int(raw)
+        except Exception:
+            continue
+        if clean <= 0 or clean in seen:
+            continue
+        seen.add(clean)
+        out.append(clean)
+    return out
+
+
+def _group_transform_error(message, status=400):
+    return HttpResponseBadRequest(str(message or "transform invalid"))
+
+
+def _group_transform_member_names(members, limit=4):
+    names = []
+    for member in list(members or [])[:limit]:
+        label = str(getattr(member, "nom_i_cognoms", "") or "").strip()
+        if label:
+            names.append(label)
+    return names
+
+
+def _group_transform_group_row(group, members_count=None, impact_kind="updated"):
+    return {
+        "id": int(group.id),
+        "group_id": int(group.id),
+        "group_num": int(group.display_num),
+        "label": group_label(group),
+        "name": str(getattr(group, "nom", "") or "").strip(),
+        "members_count": int(members_count or 0),
+        "impact_kind": impact_kind,
+        "is_programmed": False,
+    }
+
+
+def _group_transform_assignment_row(group, members, *, impact_kind="updated", suggested_name="", sources=None, rename_existing=False):
+    row = {
+        "preview_kind": "existing" if group is not None and getattr(group, "id", None) else "created",
+        "impact_kind": impact_kind,
+        "group_id": int(group.id) if group is not None and getattr(group, "id", None) else None,
+        "group_num": int(group.display_num) if group is not None and getattr(group, "display_num", None) else None,
+        "label": group_label(group) if group is not None and getattr(group, "id", None) else "",
+        "name": str(getattr(group, "nom", "") or "").strip() if group is not None else "",
+        "suggested_name": str(suggested_name or "").strip(),
+        "rename_existing": bool(rename_existing),
+        "members_count": len(members or []),
+        "member_names_preview": _group_transform_member_names(members),
+        "member_names_remaining": max(0, len(members or []) - min(len(members or []), 4)),
+        "sources": list(sources or []),
+        "member_ids": [int(member.id) for member in members or []],
+    }
+    return row
+
+
+def _group_transform_created_row(display_num, members, *, suggested_name="", sources=None):
+    return {
+        "preview_kind": "created",
+        "impact_kind": "created",
+        "group_id": None,
+        "group_num": int(display_num),
+        "label": str(suggested_name or "").strip() or f"Grup {int(display_num)}",
+        "name": "",
+        "suggested_name": str(suggested_name or "").strip(),
+        "members_count": len(members or []),
+        "member_names_preview": _group_transform_member_names(members),
+        "member_names_remaining": max(0, len(members or []) - min(len(members or []), 4)),
+        "sources": list(sources or []),
+        "member_ids": [int(member.id) for member in members or []],
+    }
+
+
+def _group_transform_suffix_name(group, idx, total):
+    base = str(getattr(group, "nom", "") or "").strip() or group_label(group)
+    return f"{base} {idx}/{total}".strip()
+
+
+def _group_transform_get_members(competicio, group):
+    if group is None:
+        return []
+    return list(
+        Inscripcio.objects
+        .filter(competicio=competicio, grup_competicio=group)
+        .select_related("grup_competicio")
+        .order_by("ordre_competicio", "ordre_sortida", "id")
+        .only(
+            "id",
+            "nom_i_cognoms",
+            "entitat",
+            "categoria",
+            "subcategoria",
+            "extra",
+            "data_naixement",
+            "grup",
+            "grup_competicio",
+            "ordre_competicio",
+            "ordre_sortida",
+        )
+    )
+
+
+def _group_transform_resolve_context(competicio, payload):
+    operation = str(payload.get("operation") or "").strip().lower()
+    if operation not in GROUP_TRANSFORM_OPERATIONS:
+        raise ValueError("operation invalid")
+    source_payload = {"group_id": payload.get("source_group_id") or payload.get("group_id")}
+    source_group = _resolve_group_workspace_group(competicio, source_payload, include_inactive=False)
+    if source_group is None or not getattr(source_group, "actiu", False):
+        raise ValueError("source group invalid")
+
+    target_ids = _normalize_group_id_list(payload.get("target_group_ids"))
+    group_maps = get_group_maps(competicio, include_inactive=False)
+    target_groups = []
+    for group_id in target_ids:
+        if group_id == source_group.id:
+            continue
+        group = group_maps["by_id"].get(group_id)
+        if group is not None and getattr(group, "actiu", False) and group not in target_groups:
+            target_groups.append(group)
+
+    if operation in {"merge_into_current", "rebalance"} and not target_groups:
+        raise ValueError("target group invalid")
+
+    affected_groups = [source_group]
+    for group in target_groups:
+        if group.id not in {row.id for row in affected_groups}:
+            affected_groups.append(group)
+
+    programmed_ids = set(get_programmed_group_ids(competicio) or [])
+    blocked = [group for group in affected_groups if int(group.id) in programmed_ids]
+    if blocked:
+        labels = [group_label(group) for group in blocked]
+        raise ValueError(f"No es poden transformar grups programats a rotacions: {', '.join(labels)}.")
+
+    source_members = _group_transform_get_members(competicio, source_group)
+    if not source_members:
+        raise ValueError("source group empty")
+    target_members_by_group = {group.id: _group_transform_get_members(competicio, group) for group in target_groups}
+    return {
+        "operation": operation,
+        "source_group": source_group,
+        "target_groups": target_groups,
+        "affected_groups": affected_groups,
+        "source_members": source_members,
+        "target_members_by_group": target_members_by_group,
+    }
+
+
+def _group_transform_assignments_from_parts(competicio, source_group, parts, *, source_names=True, source_rows=None):
+    max_num = (GrupCompeticio.objects.filter(competicio=competicio).aggregate(m=Max("display_num"))["m"] or 0)
+    assignments = []
+    created_index = 0
+    total = len(parts)
+    for idx, part in enumerate(parts, start=1):
+        members = list(part.get("members") or [])
+        sources = list(part.get("sources") or [])
+        suggested_name = str(part.get("suggested_name") or "").strip()
+        if not suggested_name and source_names:
+            suggested_name = _group_transform_suffix_name(source_group, idx, total)
+        if idx == 1:
+            assignments.append(
+                _group_transform_assignment_row(
+                    source_group,
+                    members,
+                    impact_kind="updated",
+                    suggested_name=suggested_name,
+                    sources=sources,
+                    rename_existing=not str(getattr(source_group, "nom", "") or "").strip(),
+                )
+            )
+        else:
+            created_index += 1
+            assignments.append(
+                _group_transform_created_row(
+                    max_num + created_index,
+                    members,
+                    suggested_name=suggested_name,
+                    sources=sources,
+                )
+            )
+    if source_rows:
+        assignments = _apply_group_suggested_names(assignments)
+        for idx, part in enumerate(parts, start=1):
+            fallback = str(part.get("suggested_name") or "").strip()
+            if fallback and not str(assignments[idx - 1].get("suggested_name") or "").strip():
+                assignments[idx - 1]["suggested_name"] = fallback
+    return assignments
+
+
+def _build_group_transform_plan(competicio, payload):
+    context = _group_transform_resolve_context(competicio, payload)
+    operation = context["operation"]
+    source_group = context["source_group"]
+    target_groups = context["target_groups"]
+    source_members = context["source_members"]
+    target_members_by_group = context["target_members_by_group"]
+    affected_groups = context["affected_groups"]
+    assignments = []
+    deactivate_group_ids = []
+
+    if operation == "merge_into_current":
+        members = list(source_members)
+        for group in target_groups:
+            members.extend(target_members_by_group.get(group.id) or [])
+            deactivate_group_ids.append(int(group.id))
+        assignments = [_group_transform_assignment_row(source_group, members, impact_kind="updated")]
+
+    elif operation == "split_count":
+        try:
+            group_count = int(payload.get("group_count") or 0)
+        except Exception:
+            group_count = 0
+        if group_count < 2 or group_count > len(source_members):
+            raise ValueError("group_count invalid")
+        sizes = _balanced_sizes(len(source_members), group_count)
+        parts = []
+        offset = 0
+        for size in sizes:
+            parts.append({"members": source_members[offset:offset + size]})
+            offset += size
+        assignments = _group_transform_assignments_from_parts(competicio, source_group, parts)
+
+    elif operation == "split_size":
+        group_size_raw = payload.get("group_size")
+        group_size = 0
+        try:
+            group_size = int(group_size_raw or 0)
+        except Exception:
+            group_size = 0
+        if group_size > 0:
+            sizes = _fixed_sizes(len(source_members), group_size)
+        else:
+            try:
+                min_size = int(payload.get("min_size") or 0)
+                max_size = int(payload.get("max_size") or 0)
+            except Exception:
+                raise ValueError("min_size/max_size invalid")
+            if min_size <= 0 or max_size <= 0 or min_size > max_size:
+                raise ValueError("min_size/max_size invalid")
+            k_resolved, _meta = _resolve_k_for_range(len(source_members), min_size, max_size, fallback_mode="strict")
+            if k_resolved is None:
+                raise ValueError("No es pot resoldre una particio valida amb aquesta forquilla")
+            sizes = _balanced_sizes(len(source_members), k_resolved)
+        if len([size for size in sizes if size > 0]) < 2:
+            raise ValueError("split would not create multiple groups")
+        parts = []
+        offset = 0
+        for size in sizes:
+            parts.append({"members": source_members[offset:offset + size]})
+            offset += size
+        assignments = _group_transform_assignments_from_parts(competicio, source_group, parts)
+
+    elif operation == "split_bucket":
+        allowed_group_fields = get_allowed_group_fields(competicio)
+        allowed_codes = {field["code"] for field in allowed_group_fields if isinstance(field, dict) and field.get("code")}
+        bucket_codes = _normalize_group_workspace_bucket_fields(payload.get("bucket_fields"), allowed_codes)
+        if not bucket_codes:
+            raise ValueError("bucket_fields invalid")
+        builtin_fields = [code for code in bucket_codes if hasattr(Inscripcio, code)]
+        qs = Inscripcio.objects.filter(competicio=competicio, grup_competicio=source_group)
+        qs = annotate_inscripcions_queryset_for_group_codes(qs, competicio, bucket_codes)
+        records = list(qs.order_by("ordre_competicio", "ordre_sortida", "id").only("id", "extra", "data_naixement", *builtin_fields))
+        resolution = _resolve_group_creation_buckets(competicio, records, group_codes=[], partition_codes=[], workspace_codes=bucket_codes, fallback_mode="strict")
+        buckets = [bucket for bucket in (resolution.get("buckets") if resolution.get("ok") else []) or [] if bucket.get("ids")]
+        if len(buckets) < 2:
+            raise ValueError("split buckets invalid")
+        record_by_id = {record.id: record for record in records}
+        parts = []
+        for bucket in buckets:
+            members = [record_by_id[ins_id] for ins_id in normalize_inscripcio_ids(bucket.get("ids") or []) if ins_id in record_by_id]
+            if not members:
+                continue
+            sources = list(bucket.get("sources") or [])
+            source_row = {
+                "label": _build_bucket_source_label(sources),
+                "count": len(members),
+                "kinds": _build_bucket_source_kinds(sources),
+                "labels_by_kind": dict(_bucket_labels_by_kind(sources)),
+                "components": list(_normalize_bucket_source_entries(sources)),
+            }
+            suggested = (_apply_group_suggested_names([{"sources": [source_row]}])[0] or {}).get("suggested_name") or ""
+            parts.append({"members": members, "sources": [source_row], "suggested_name": suggested})
+        if len(parts) < 2:
+            raise ValueError("split buckets invalid")
+        assignments = _group_transform_assignments_from_parts(competicio, source_group, parts, source_names=False, source_rows=True)
+
+    elif operation == "extract_selection":
+        selected_ids = set(normalize_inscripcio_ids(payload.get("selected_ids") or payload.get("ids") or []))
+        source_ids = {member.id for member in source_members}
+        extracted = [member for member in source_members if member.id in selected_ids and member.id in source_ids]
+        if not extracted or len(extracted) >= len(source_members):
+            raise ValueError("selected_ids invalid")
+        remaining = [member for member in source_members if member.id not in {row.id for row in extracted}]
+        max_num = (GrupCompeticio.objects.filter(competicio=competicio).aggregate(m=Max("display_num"))["m"] or 0)
+        assignments = [
+            _group_transform_assignment_row(source_group, remaining, impact_kind="updated"),
+            _group_transform_created_row(max_num + 1, extracted, suggested_name=f"{group_label(source_group)} - seleccio"),
+        ]
+
+    elif operation == "rebalance":
+        members = list(source_members)
+        for group in target_groups:
+            members.extend(target_members_by_group.get(group.id) or [])
+        try:
+            group_count = int(payload.get("group_count") or 0)
+        except Exception:
+            group_count = 0
+        if group_count <= 0:
+            group_count = len(affected_groups)
+        if group_count < 1 or group_count > len(members):
+            raise ValueError("group_count invalid")
+        sizes = _balanced_sizes(len(members), group_count)
+        reusable_groups = list(affected_groups[:len(sizes)])
+        max_num = (GrupCompeticio.objects.filter(competicio=competicio).aggregate(m=Max("display_num"))["m"] or 0)
+        created_index = 0
+        offset = 0
+        for idx, size in enumerate(sizes):
+            part_members = members[offset:offset + size]
+            offset += size
+            if idx < len(reusable_groups):
+                assignments.append(_group_transform_assignment_row(reusable_groups[idx], part_members, impact_kind="updated"))
+            else:
+                created_index += 1
+                assignments.append(_group_transform_created_row(max_num + created_index, part_members, suggested_name=f"Reequilibri {created_index}"))
+        deactivate_group_ids = [int(group.id) for group in affected_groups[len(sizes):]]
+
+    if not assignments:
+        raise ValueError("transform empty")
+
+    affected_rows = []
+    for group in affected_groups:
+        if group.id == source_group.id:
+            count = len(source_members)
+        else:
+            count = len(target_members_by_group.get(group.id) or [])
+        affected_rows.append(_group_transform_group_row(group, count, impact_kind="affected"))
+
+    planned_groups = []
+    planned_groups.extend(assignments)
+    for group in affected_groups:
+        if int(group.id) in set(deactivate_group_ids):
+            planned_groups.append(_group_transform_assignment_row(group, [], impact_kind="removed"))
+
+    return {
+        "operation": operation,
+        "can_apply": True,
+        "source_group_id": int(source_group.id),
+        "affected_groups": affected_rows,
+        "planned_groups": planned_groups,
+        "assignments": assignments,
+        "deactivate_group_ids": deactivate_group_ids,
+        "members_total": sum(len(row.get("member_ids") or []) for row in assignments),
+        "groups_total": len(assignments),
+        "warnings": [],
+    }
+
+
+def _apply_group_transform_plan(competicio, plan):
+    assignment_rows = []
+    selected_group_id = None
+    with transaction.atomic():
+        for assignment in plan.get("assignments") or []:
+            group = None
+            if assignment.get("group_id"):
+                group = GrupCompeticio.objects.select_for_update().filter(competicio=competicio, id=assignment["group_id"], actiu=True).first()
+            if group is None:
+                group = ensure_group_for_display_num(
+                    competicio,
+                    assignment.get("group_num"),
+                    name=str(assignment.get("suggested_name") or "").strip(),
+                )
+            if group is None:
+                raise ValueError("group invalid")
+            member_ids = normalize_inscripcio_ids(assignment.get("member_ids") or [])
+            members_by_id = {
+                ins.id: ins
+                for ins in Inscripcio.objects.select_for_update().filter(competicio=competicio, id__in=member_ids)
+            }
+            updates = []
+            for order_idx, member_id in enumerate(member_ids, start=1):
+                inscripcio = members_by_id.get(member_id)
+                if inscripcio is None:
+                    continue
+                inscripcio.grup_competicio = group
+                inscripcio.grup = group.display_num
+                inscripcio.ordre_competicio = order_idx
+                updates.append(inscripcio)
+            if updates:
+                Inscripcio.objects.bulk_update(updates, ["grup_competicio", "grup", "ordre_competicio"], batch_size=500)
+            suggested_name = str(assignment.get("suggested_name") or "").strip()
+            if suggested_name and (assignment.get("preview_kind") == "created" or (assignment.get("rename_existing") and not str(group.nom or "").strip())):
+                if group.nom != suggested_name:
+                    group.nom = suggested_name
+                    group.save(update_fields=["nom"])
+            if selected_group_id is None:
+                selected_group_id = int(group.id)
+            assignment_rows.append(get_group_detail_payload(group, member_limit=5))
+
+        for group_id in _normalize_group_id_list(plan.get("deactivate_group_ids") or []):
+            group = GrupCompeticio.objects.select_for_update().filter(competicio=competicio, id=group_id).first()
+            if group is None:
+                continue
+            ok, reason = safe_deactivate_empty_group(group)
+            if not ok:
+                raise ValueError("group not empty" if reason == "group_not_empty" else "group invalid")
+        sync_competicio_group_names_view(competicio)
+    return {"groups": assignment_rows, "selected_group_id": selected_group_id}
+
+
 def _parse_fallback_mode(raw):
     mode = str(raw or "all_filtered").strip().lower()
     if mode not in ("all_filtered", "strict", "adjust_k", "ignore_range"):
@@ -735,6 +1160,70 @@ def groups_preview(request, pk):
         payload = {}
     preview = _group_workspace_action_preview(competicio, payload)
     return JsonResponse(with_inscripcions_history_payload({"ok": True, "preview": preview}, request, competicio.id))
+
+
+@require_POST
+@csrf_protect
+def groups_transform_preview(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        payload = {}
+    try:
+        plan = _build_group_transform_plan(competicio, payload)
+    except ValueError as exc:
+        return _group_transform_error(str(exc))
+    return JsonResponse(with_inscripcions_history_payload({"ok": True, "preview": plan}, request, competicio.id))
+
+
+@require_POST
+@csrf_protect
+def groups_transform_apply(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        payload = {}
+    try:
+        plan = _build_group_transform_plan(competicio, payload)
+    except ValueError as exc:
+        return _group_transform_error(str(exc))
+    before_snapshot = capture_inscripcions_history_snapshot(request, competicio)
+    try:
+        result = _apply_group_transform_plan(competicio, plan)
+    except ValueError as exc:
+        return _group_transform_error(str(exc))
+    operation = str(plan.get("operation") or "transform").strip()
+    label_by_operation = {
+        "merge_into_current": "Unir grups",
+        "split_count": "Dividir grup per nombre",
+        "split_size": "Dividir grup per mida",
+        "split_bucket": "Dividir grup per criteri",
+        "extract_selection": "Extreure seleccio a grup nou",
+        "rebalance": "Reequilibrar grups",
+    }
+    record_inscripcions_history_entry(
+        request,
+        competicio,
+        action_type=f"groups_transform_{operation}",
+        action_label=label_by_operation.get(operation, "Transformar grups"),
+        before_snapshot=before_snapshot,
+        after_snapshot=capture_inscripcions_history_snapshot(request, competicio),
+    )
+    return JsonResponse(
+        with_inscripcions_history_payload(
+            {
+                "ok": True,
+                "operation": operation,
+                "preview": plan,
+                "groups": result.get("groups") or [],
+                "selected_group_id": result.get("selected_group_id"),
+            },
+            request,
+            competicio.id,
+        )
+    )
 
 
 @require_POST
@@ -1363,6 +1852,8 @@ __all__ = [
     "groups_delete_empty",
     "groups_detail",
     "groups_preview",
+    "groups_transform_apply",
+    "groups_transform_preview",
     "groups_unassign",
     "groups_workspace",
     "inscripcions_group_competition_order_preview",
