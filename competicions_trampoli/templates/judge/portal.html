@@ -549,6 +549,7 @@
 </div>
 
 {{ schema|json_script:"schema-data" }}
+{{ judge_item_labels_map|json_script:"judge-item-labels-data" }}
 {{ permissions|json_script:"perms-data" }}
 {{ subjects_payload_json|json_script:"subjects-data" }}
 {{ scores_payload_json|json_script:"scores-data" }}
@@ -563,6 +564,7 @@
 </script>
 <script>
   const SCHEMA = JSON.parse(document.getElementById("schema-data").textContent || "{}");
+  const ITEM_LABELS_BY_FIELD = JSON.parse(document.getElementById("judge-item-labels-data").textContent || "{}");
   const PERMS  = JSON.parse(document.getElementById("perms-data").textContent || "[]");
   const SUBJECTS = JSON.parse(document.getElementById("subjects-data").textContent || "[]");
   const SCORES = JSON.parse(document.getElementById("scores-data").textContent || "{}");
@@ -580,6 +582,15 @@
   const VIDEO_MAX_DURATION_SECONDS = Number("{{ video_max_duration_seconds|default:90 }}") || 90;
   const VIDEO_MAX_SIZE_BYTES = Number("{{ video_max_size_bytes|default:125829120 }}") || (120 * 1024 * 1024);
   const SUPPORT_DEFAULT_COOLDOWN_SECONDS = 30;
+
+  function getItemDisplayLabel(fieldCode, idx1){
+    const cleanCode = String(fieldCode || "").trim();
+    const labels = cleanCode && ITEM_LABELS_BY_FIELD && Array.isArray(ITEM_LABELS_BY_FIELD[cleanCode])
+      ? ITEM_LABELS_BY_FIELD[cleanCode]
+      : [];
+    const configured = String(labels[idx1 - 1] || "").trim();
+    return configured || `Item ${idx1}`;
+  }
   const EXERCISES = {{ exercicis|safe }};
   const EXERCICI_HINT = {{ exercici }};
   const TEAM_SUBJECT_MODE = {{ team_subject_mode|yesno:"true,false" }};
@@ -1817,7 +1828,7 @@
       const lab = document.createElement("div");
       lab.className = "judge-meta";
       lab.style.minWidth = "64px";
-      lab.textContent = `Item ${idx1}`;
+      lab.textContent = getItemDisplayLabel(perm.field_code, idx1);
 
       const inp = document.createElement("input");
       inp.className = "form-control form-control-sm input-salt";

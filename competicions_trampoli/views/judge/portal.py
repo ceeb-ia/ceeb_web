@@ -42,6 +42,7 @@ from ...services.scoring.team_subject_contract import (
 from ._shared import (
     _clamp_exercici_for_aparell,
     _filter_inputs_for_allowed_codes,
+    _judge_item_labels_map_for_comp_aparell,
     _judge_video_capture_enabled_for_token,
     _qr_png_response,
     _subject_dom_id,
@@ -392,6 +393,7 @@ def judge_portal(request, token):
         "hide_base_chrome": True,
         "judge_kiosk": True,
         "schema": schema,
+        "judge_item_labels_map": _judge_item_labels_map_for_comp_aparell(comp_aparell),
         "permissions": permissions,
         "inscripcions": subject_list,
         "subjects_payload_json": subject_list,

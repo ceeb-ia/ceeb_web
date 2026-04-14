@@ -59,6 +59,27 @@ def _load_visual_franges(competicio):
     return list(RotacioFranja.objects.filter(competicio=competicio).order_by("ordre_visual", "id"))
 
 
+def _rotation_station_mode(estacio):
+    if getattr(estacio, "tipus", "") != "aparell" or not getattr(estacio, "comp_aparell_id", None):
+        return "other"
+    aparell = getattr(getattr(estacio, "comp_aparell", None), "aparell", None)
+    if aparell is not None and getattr(aparell, "competition_unit", "") == "team":
+        return "team"
+    return "individual"
+
+
+def _build_shifted_station_payloads(estacions, base_payloads_by_station, *, key, steps):
+    ordered_stations = list(estacions or [])
+    if not ordered_stations:
+        return {}
+    values = [list((base_payloads_by_station.get(estacio.id) or {}).get(key, [])) for estacio in ordered_stations]
+    total = len(ordered_stations)
+    return {
+        estacio.id: list(values[(index - steps) % total])
+        for index, estacio in enumerate(ordered_stations)
+    }
+
+
 def _resequence_all_franges(competicio):
     franges = _load_franges(competicio)
     ordered = resequence_franja_orders(franges)
@@ -762,6 +783,7 @@ def rotacions_extrapolar(request, pk, franja_id):
     count = payload.get("count", None)
     estacions = list(
         RotacioEstacio.objects.filter(competicio=competicio, actiu=True)
+        .select_related("comp_aparell__aparell")
         .order_by("ordre", "id")
     )
     if not estacions:
@@ -786,8 +808,32 @@ def rotacions_extrapolar(request, pk, franja_id):
     ):
         base_map[a.estacio_id] = _assignacio_program_keys(a)
 
-    base_groups = [base_map.get(e.id, []) for e in estacions]
-    if all(len(gs) == 0 for gs in base_groups):
+    groups_by_id = get_group_maps(competicio)["by_id"]
+    series_by_id = {
+        int(serie.id): serie
+        for serie in SerieEquip.objects.filter(competicio=competicio, actiu=True).select_related("comp_aparell")
+    }
+    station_modes = {estacio.id: _rotation_station_mode(estacio) for estacio in estacions}
+    individual_stations = [estacio for estacio in estacions if station_modes.get(estacio.id) == "individual"]
+    team_stations = [estacio for estacio in estacions if station_modes.get(estacio.id) == "team"]
+    team_stations_by_app = {}
+    for estacio in team_stations:
+        team_stations_by_app.setdefault(int(getattr(estacio, "comp_aparell_id", 0) or 0), []).append(estacio)
+    base_payloads_by_station = {}
+    has_program = False
+    for estacio in estacions:
+        mode = station_modes.get(estacio.id, "other")
+        group_ids, serie_ids = _split_program_keys(base_map.get(estacio.id, []))
+        if mode == "individual":
+            payload_entry = {"groups": group_ids, "series": []}
+        elif mode == "team":
+            payload_entry = {"groups": [], "series": serie_ids}
+        else:
+            payload_entry = {"groups": [], "series": []}
+        if payload_entry["groups"] or payload_entry["series"]:
+            has_program = True
+        base_payloads_by_station[estacio.id] = payload_entry
+    if not has_program:
         return HttpResponseBadRequest("La franja base no te cap grup assignat.")
 
     franges = _load_franges(competicio)
@@ -813,11 +859,6 @@ def rotacions_extrapolar(request, pk, franja_id):
         interval_min = FRANJA_FALLBACK_DURATION_MINUTES
 
     created = 0
-    groups_by_id = get_group_maps(competicio)["by_id"]
-    series_by_id = {
-        int(serie.id): serie
-        for serie in SerieEquip.objects.filter(competicio=competicio, actiu=True).select_related("comp_aparell")
-    }
     with transaction.atomic():
         franges = _load_franges(competicio)
         competition_franges = [fr for fr in franges if is_competitive_franja(fr)]
@@ -853,31 +894,44 @@ def rotacions_extrapolar(request, pk, franja_id):
                 target_franges.append(nf)
 
         filled_cells = 0
-        n = len(estacions)
         for k, fr_t in enumerate(target_franges, start=1):
-            shifted = [list(base_groups[(i - k) % n]) for i in range(n)]
-            for e, gs in zip(estacions, shifted):
-                group_ids, serie_ids = _split_program_keys(gs)
+            shifted_groups_by_station = _build_shifted_station_payloads(
+                individual_stations,
+                base_payloads_by_station,
+                key="groups",
+                steps=k,
+            )
+            shifted_series_by_station = {}
+            for team_station_group in team_stations_by_app.values():
+                shifted_series_by_station.update(
+                    _build_shifted_station_payloads(
+                        team_station_group,
+                        base_payloads_by_station,
+                        key="series",
+                        steps=k,
+                    )
+                )
+            for e in estacions:
+                station_mode = station_modes.get(e.id, "other")
+                if station_mode == "individual":
+                    group_ids = list(shifted_groups_by_station.get(e.id, []))
+                    serie_ids = []
+                elif station_mode == "team":
+                    group_ids = []
+                    serie_ids = [
+                        serie_id
+                        for serie_id in shifted_series_by_station.get(e.id, [])
+                        if serie_id in series_by_id and int(series_by_id[serie_id].comp_aparell_id or 0) == int(getattr(e, "comp_aparell_id", 0) or 0)
+                    ]
+                else:
+                    group_ids = []
+                    serie_ids = []
                 assignacio, _created = RotacioAssignacio.objects.update_or_create(
                     competicio=competicio,
                     franja=fr_t,
                     estacio=e,
                     defaults={"grups": [], "grup": None},
                 )
-                is_team_station = bool(
-                    getattr(e, "tipus", "") == "aparell"
-                    and getattr(getattr(e, "comp_aparell", None), "aparell", None)
-                    and getattr(e.comp_aparell.aparell, "competition_unit", "") == "team"
-                )
-                if is_team_station:
-                    group_ids = []
-                    serie_ids = [
-                        serie_id
-                        for serie_id in serie_ids
-                        if serie_id in series_by_id and int(series_by_id[serie_id].comp_aparell_id or 0) == int(getattr(e, "comp_aparell_id", 0) or 0)
-                    ]
-                else:
-                    serie_ids = []
                 _sync_assignacio_groups(assignacio, group_ids, groups_by_id)
                 _sync_assignacio_series(assignacio, serie_ids, series_by_id)
                 filled_cells += 1
