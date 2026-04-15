@@ -414,6 +414,12 @@ class InscripcionsBackendSmokeTests(_BaseTrampoliDataMixin, TestCase):
         self.assertIn("function getActiveGroupKey", source)
         self.assertIn("fragments.includes('table') ? getActiveGroupKey() : ''", source)
         self.assertIn("getActiveGroupKey,", source)
+        self.assertIn("function clearExpandedGroupCardState()", source)
+        self.assertIn("function isExpandedGroupCardInPanel(panelKey)", source)
+        self.assertIn("function prepareExpandedGroupCardRefresh(panelKey)", source)
+        self.assertIn("if (!expandedModalState.parent.isConnected) {", source)
+        self.assertIn("const expandedGroupCardId = fragments.includes('panel') ? prepareExpandedGroupCardRefresh(activePanelKey) : '';", source)
+        self.assertIn("setExpandedGroupCard('', { skipSave: true });", source)
         self.assertIn("const mode = app.selection.has(id) ? 'remove' : 'add';", source)
         self.assertIn("updateMainInscripcioSelection([id], mode);", source)
         self.assertNotIn("updateMainInscripcioSelection([id], checkbox.checked ? 'add' : 'remove');", source)
@@ -473,11 +479,47 @@ class InscripcionsBackendSmokeTests(_BaseTrampoliDataMixin, TestCase):
         self.assertIn("async function refreshInscripcionsListAfterGroupMutation(action)", source)
         self.assertIn("['create', 'assign', 'unassign'].includes(String(action || ''))", source)
         self.assertIn("const api = window.InscripcionsApp || null;", source)
-        self.assertIn("await api.refreshLightMutation({ includeActivePanel: true });", source)
+        self.assertIn("await api.refreshLightMutation({ includeActivePanel: false });", source)
         self.assertIn("await refreshInscripcionsListAfterGroupMutation(action);", source)
+        self.assertIn("async function refreshAfterGroupRename(details = {})", source)
+        self.assertIn("refreshAfterRename: refreshAfterGroupRename,", source)
+        self.assertIn("if (opts.openWorkspace === true) openWorkspaceCard();", source)
+        self.assertIn("const viewportState = preserveViewport ? captureWorkspaceViewportState() : null;", source)
+        self.assertIn("restoreWorkspaceViewportState(viewportState);", source)
+        self.assertIn("await selectGroup(groupId, { openWorkspace: true, scroll: true, resetPage: !preservePage, forceReload: true });", source)
+        self.assertIn("window.__inscripcionsPostGroupRenameRefresh", source)
         self.assertIn("groups-transform-target-search", source)
         self.assertIn("data-group-transform-toggle", source)
         self.assertIn("function applyGroupTransformTargetSearch()", source)
+        self.assertNotIn("const opts = options || {};\n    openWorkspaceCard();", source)
+
+    def test_group_rename_and_series_panel_scripts_use_selective_refresh_helpers(self):
+        package_root = Path(__file__).resolve().parents[2]
+        table_source = (
+            package_root / "templates" / "competicio" / "inscripcions" / "scripts" / "_table.html"
+        ).read_text(encoding="utf-8")
+        sidebar_source = (
+            package_root / "templates" / "competicio" / "inscripcions" / "_sidebar.html"
+        ).read_text(encoding="utf-8")
+        groups_source = (
+            package_root / "templates" / "competicio" / "inscripcions" / "scripts" / "_groups_workspace_script.html"
+        ).read_text(encoding="utf-8")
+        team_source = (
+            package_root / "templates" / "competicio" / "inscripcions" / "scripts" / "_team_workspace_script.html"
+        ).read_text(encoding="utf-8")
+        series_source = (
+            package_root / "templates" / "competicio" / "inscripcions" / "scripts" / "_series_workspace_script.html"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("async function refreshGroupRenameAfterMutation(details = {})", table_source)
+        self.assertIn("window.__inscripcionsPostGroupRenameRefresh = refreshGroupRenameAfterMutation;", table_source)
+        self.assertIn("await refreshGroupRenameAfterMutation({ groupNum });", table_source)
+        self.assertIn('id="groups-nav-badge"', sidebar_source)
+        self.assertIn("text('groups-nav-badge', Number(summary.groups_total || 0));", groups_source)
+        self.assertIn("async function refreshWorkspaceInPlace(options = {})", series_source)
+        self.assertIn("refreshInPlace: refreshWorkspaceInPlace,", series_source)
+        self.assertIn("const seriesApi = window.__seriesWorkspaceApi || null;", team_source)
+        self.assertIn("await seriesApi.refreshInPlace();", team_source)
 
     def test_panel_scripts_expose_lazy_initializers_instead_of_eager_refreshes(self):
         package_root = Path(__file__).resolve().parents[2]

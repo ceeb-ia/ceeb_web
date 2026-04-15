@@ -60,7 +60,12 @@ class MobilityTransitionIssue:
 
 
 def normalize_text(value) -> str:
-    return str(value or "").strip()
+    try:
+        if pd.isna(value):
+            return ""
+    except Exception:
+        pass
+    return str(value).strip()
 
 
 def normalize_text_key(value) -> str:
@@ -71,7 +76,7 @@ def normalize_text_key(value) -> str:
 
 
 def parse_date_value(value):
-    if value in (None, ""):
+    if normalize_text(value) == "":
         return None
     if isinstance(value, datetime):
         return value.date()
@@ -95,7 +100,7 @@ def parse_date_value(value):
 
 
 def parse_time_value(value):
-    if value in (None, ""):
+    if normalize_text(value) == "":
         return None
     if isinstance(value, datetime):
         return value.time().replace(microsecond=0)
@@ -199,14 +204,6 @@ def same_pitch(left: MatchDescriptor, right: MatchDescriptor) -> bool:
 
 
 def normalize_cluster_id(value):
-    if value in (None, ""):
-        return None
-    try:
-        if pd.isna(value):
-            return None
-    except Exception:
-        pass
-
     raw = normalize_text(value)
     if not raw:
         return None

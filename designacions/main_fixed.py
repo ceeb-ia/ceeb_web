@@ -66,6 +66,21 @@ def _normalize_date_series(series):
     return pd.to_datetime(series, errors="coerce").dt.normalize()
 
 
+def _is_missing_value(value) -> bool:
+    if value is None:
+        return True
+    try:
+        return bool(pd.isna(value))
+    except (TypeError, ValueError):
+        return False
+
+
+def _values_equal(left, right) -> bool:
+    if _is_missing_value(left) or _is_missing_value(right):
+        return False
+    return left == right
+
+
 def _date_token(value) -> str:
     normalized = _normalize_date_value(value)
     if pd.isna(normalized):
@@ -77,7 +92,7 @@ def _combine_date_time(date_value, time_value):
     normalized_date = _normalize_date_value(date_value)
     if pd.isna(normalized_date):
         return pd.NaT
-    if time_value in (None, "") or pd.isna(time_value):
+    if _is_missing_value(time_value) or time_value == "":
         return pd.NaT
     if isinstance(time_value, pd.Timestamp):
         parsed_time = time_value.time()
@@ -98,12 +113,7 @@ def _combine_date_time(date_value, time_value):
 
 
 def _safe_position_int(value, default: int = -1) -> int:
-    try:
-        if pd.isna(value):
-            return default
-    except Exception:
-        pass
-    if value in (None, ""):
+    if _is_missing_value(value) or value == "":
         return default
     try:
         return int(value)
@@ -226,16 +236,16 @@ def _fuse_daily_subgroups(subgrups: list, gap_diff_pitch_min: int, max_partits_s
                 data_actual = _subgroup_date_key(merged_sg)
                 data_seguent = _subgroup_date_key(next_sg)
                 if (
-                    pista_actual == pista_seguent
-                    or modalitat_actual != modalitat_seguent
+                    _values_equal(pista_actual, pista_seguent)
+                    or not _values_equal(modalitat_actual, modalitat_seguent)
                     or pd.isna(data_actual)
                     or pd.isna(data_seguent)
                     or data_actual != data_seguent
                     or pd.isna(cluster_actual)
                     or pd.isna(cluster_seguent)
-                    or cluster_actual == -1
-                    or cluster_seguent == -1
-                    or cluster_actual != cluster_seguent
+                    or _safe_position_int(cluster_actual) == -1
+                    or _safe_position_int(cluster_seguent) == -1
+                    or not _values_equal(cluster_actual, cluster_seguent)
                 ):
                     continue
 

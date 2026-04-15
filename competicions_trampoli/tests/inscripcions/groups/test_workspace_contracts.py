@@ -333,6 +333,10 @@ class GroupManagerV1Tests(_BaseTrampoliDataMixin, TestCase):
         self.assertTrue(payload.get("ok"))
         self.assertIn("history", payload)
         self.assertEqual(payload.get("name"), "Final A")
+        history = payload.get("history") or {}
+        self.assertTrue(history.get("can_undo"))
+        self.assertFalse(history.get("can_redo"))
+        self.assertEqual(history.get("undo_count"), 1)
 
         self.programmed_group.refresh_from_db()
         self.comp.refresh_from_db()

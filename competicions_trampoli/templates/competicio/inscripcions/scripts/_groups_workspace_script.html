@@ -19,6 +19,7 @@ window.initGroupsWorkspace = async function () {
   const groupsDeleteUrl = "{% url 'groups_delete' competicio.id %}";
   const groupsDeleteAllUrl = "{% url 'groups_delete_all' competicio.id %}";
   const groupsDeleteEmptyUrl = "{% url 'groups_delete_empty' competicio.id %}";
+  const groupsSetGroupNameUrl = "{% url 'inscripcions_set_group_name' competicio.id %}";
 
   const state = {
     filters: Object.assign({
@@ -496,7 +497,37 @@ window.initGroupsWorkspace = async function () {
     if (!['create', 'assign', 'unassign'].includes(String(action || ''))) return;
     const api = window.InscripcionsApp || null;
     if (!api || typeof api.refreshLightMutation !== 'function') return;
-    await api.refreshLightMutation({ includeActivePanel: true });
+    await api.refreshLightMutation({ includeActivePanel: false });
+  }
+
+  function resolveRenamedGroupSelectionId(details = {}) {
+    const groupId = String(details?.groupId || '').trim();
+    if (groupId) return groupId;
+    const groupNum = String(details?.groupNum || '').trim();
+    if (!groupNum) return '';
+    const selectedId = String(state.selectedGroupId || '').trim();
+    if (!selectedId) return '';
+    const groups = Array.isArray(state.workspace?.groups) ? state.workspace.groups : [];
+    const selectedGroup = groups.find((group) => String(group?.id || '').trim() === selectedId);
+    if (selectedGroup && String(selectedGroup?.display_num || '').trim() === groupNum) {
+      return selectedId;
+    }
+    return '';
+  }
+
+  async function refreshAfterGroupRename(details = {}) {
+    const selectedGroupId = resolveRenamedGroupSelectionId(details);
+    if (selectedGroupId) {
+      state.editingGroupIds.delete(selectedGroupId);
+      delete state.groupDetailCache[selectedGroupId];
+      if (String(state.selectedGroupId || '') === selectedGroupId) {
+        state.selectedGroupDetail = null;
+      }
+    }
+    await fetchWorkspace();
+    if (selectedGroupId) {
+      await selectGroup(selectedGroupId, { scroll: false, resetPage: false, forceReload: true });
+    }
   }
 
   function scrollSelectedGroupCardIntoView(groupId) {
@@ -683,9 +714,10 @@ window.initGroupsWorkspace = async function () {
       remove.dataset.inscripcioId = id;
       remove.dataset.groupId = String(groupId || '');
       remove.textContent = 'Treure';
-      remove.addEventListener('click', (event) => {
+      remove.addEventListener('click', async (event) => {
         event.preventDefault();
         event.stopPropagation();
+        await unassignSingleMember(id);
       });
       row.appendChild(remove);
     }
@@ -1500,7 +1532,9 @@ window.initGroupsWorkspace = async function () {
     const cleanId = String(groupId || '').trim();
     if (!cleanId) return null;
     const opts = options || {};
-    openWorkspaceCard();
+    const preserveViewport = opts.preserveViewport !== false && opts.scroll === false;
+    const viewportState = preserveViewport ? captureWorkspaceViewportState() : null;
+    if (opts.openWorkspace === true) openWorkspaceCard();
     if (cleanId !== String(state.selectedGroupId || '')) {
       state.transformPreview = null;
       state.transformPayload = null;
@@ -1532,6 +1566,7 @@ window.initGroupsWorkspace = async function () {
     }
     renderCards(state.workspace);
     setupDnd();
+    if (viewportState) restoreWorkspaceViewportState(viewportState);
     if (opts.scroll !== false) {
       requestAnimationFrame(() => scrollSelectedGroupCardIntoView(cleanId));
     }
@@ -1540,6 +1575,7 @@ window.initGroupsWorkspace = async function () {
 
   async function fetchWorkspace() {
     const selectionKeyAtRequest = selectionSummaryKey();
+    const viewportState = captureWorkspaceViewportState();
     destroySortables();
     try {
       const data = await postJson(groupsWorkspaceUrl, buildPayload());
@@ -1573,6 +1609,7 @@ window.initGroupsWorkspace = async function () {
       renderSelectionSummary();
 
       const summary = workspace.summary || {};
+      text('groups-nav-badge', Number(summary.groups_total || 0));
       text('groups-summary-total', Number(summary.groups_total || 0));
       text('groups-summary-with-members', Number(summary.groups_with_members || 0));
       text('groups-summary-empty', Number(summary.empty_groups || 0));
@@ -1604,6 +1641,7 @@ window.initGroupsWorkspace = async function () {
       syncTargetGroupSelectors();
       await ensureSelectedGroupDetail();
       setupDnd();
+      restoreWorkspaceViewportState(viewportState);
       dispatchGroupCreationContextChanged();
       return workspace;
     } catch (err) {
@@ -1622,6 +1660,37 @@ window.initGroupsWorkspace = async function () {
     }
     const btn = document.querySelector('[data-expand-target="groups-main-card"]');
     if (btn && btn.getAttribute('aria-expanded') !== 'true') btn.click();
+  }
+
+  function captureWorkspaceViewportState() {
+    const scrollTops = {};
+    ['groups-candidates-list', 'groups-active-list', 'groups-empty-list', 'groups-detail-members-list'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) scrollTops[id] = el.scrollTop;
+    });
+    return {
+      cardTop: groupsMainCard ? groupsMainCard.getBoundingClientRect().top : null,
+      scrollTops,
+    };
+  }
+
+  function restoreWorkspaceViewportState(snapshot) {
+    if (!snapshot || typeof snapshot !== 'object') return;
+    const scrollTops = snapshot.scrollTops && typeof snapshot.scrollTops === 'object'
+      ? snapshot.scrollTops
+      : {};
+    requestAnimationFrame(() => {
+      Object.entries(scrollTops).forEach(([id, value]) => {
+        const el = document.getElementById(id);
+        if (el) el.scrollTop = Number(value) || 0;
+      });
+      if (!groupsMainCard || !Number.isFinite(snapshot.cardTop)) return;
+      const nextTop = groupsMainCard.getBoundingClientRect().top;
+      const delta = nextTop - snapshot.cardTop;
+      if (Math.abs(delta) > 1 && typeof window.scrollBy === 'function') {
+        window.scrollBy(0, delta);
+      }
+    });
   }
 
   function visibleCandidateIds() {
@@ -2086,7 +2155,7 @@ window.initGroupsWorkspace = async function () {
         event.preventDefault();
         const groupId = String(openBtn.getAttribute('data-group-open') || '').trim();
         const preservePage = !!openBtn.closest('#groups-right-pane-detail') || groupId === String(state.selectedGroupId || '');
-        await selectGroup(groupId, { scroll: true, resetPage: !preservePage, forceReload: true });
+        await selectGroup(groupId, { openWorkspace: true, scroll: true, resetPage: !preservePage, forceReload: true });
         return;
       }
 
@@ -2095,7 +2164,6 @@ window.initGroupsWorkspace = async function () {
         event.preventDefault();
         const groupId = String(assignBtn.getAttribute('data-group-assign-to') || '').trim();
         if (!groupId) return;
-        await selectGroup(groupId, { scroll: false, resetPage: false });
         await runAction('assign', groupsAssignUrl, { group_id: groupId });
         return;
       }
@@ -2119,7 +2187,7 @@ window.initGroupsWorkspace = async function () {
         event.preventDefault();
         const groupId = String(renameBtn.getAttribute('data-group-rename') || '').trim();
         if (!groupId) return;
-        await selectGroup(groupId, { scroll: true, resetPage: false });
+        await selectGroup(groupId, { scroll: false, resetPage: false });
         state.editingGroupIds.add(groupId);
         renderCards(state.workspace);
         setupDnd();
@@ -2149,14 +2217,23 @@ window.initGroupsWorkspace = async function () {
         const input = document.querySelector(`[data-group-name-input="${CSS.escape(groupId)}"]`);
         const nextName = String(input?.value || '').trim();
         if (!groupId || !groupNum) return;
-        if (typeof setGroupName !== 'function') return;
-        const ok = await setGroupName(groupNum, nextName);
-        if (!ok) return;
-        state.editingGroupIds.delete(groupId);
-        delete state.groupDetailCache[groupId];
-        await fetchWorkspace();
-        await selectGroup(groupId, { scroll: false, resetPage: false, forceReload: true });
-        alertBox('Nom del grup desat.');
+        try {
+          const data = await postJson(groupsSetGroupNameUrl, { group: groupNum, name: nextName });
+          if (!data?.ok) throw new Error("No s'ha pogut desar el nom del grup.");
+          const postRenameRefresh = window.__inscripcionsPostGroupRenameRefresh;
+          if (typeof postRenameRefresh === 'function') {
+            await postRenameRefresh({ groupId, groupNum });
+          } else {
+            const app = window.InscripcionsApp || null;
+            if (app && typeof app.refreshHtmlFragments === 'function') {
+              await app.refreshHtmlFragments(['header', 'history', 'table']);
+            }
+            await refreshAfterGroupRename({ groupId, groupNum });
+          }
+          alertBox('Nom del grup desat.');
+        } catch (err) {
+          showRequestError("No s'ha pogut desar el nom del grup.", err);
+        }
         return;
       }
 
@@ -2181,7 +2258,6 @@ window.initGroupsWorkspace = async function () {
         event.preventDefault();
         const groupId = String(deleteCardBtn.getAttribute('data-group-delete') || '').trim();
         if (!groupId) return;
-        await selectGroup(groupId, { scroll: false, resetPage: false });
         await runAction('delete', groupsDeleteUrl, { group_id: groupId });
         return;
       }
@@ -2250,7 +2326,6 @@ window.initGroupsWorkspace = async function () {
           alertBox('Selecciona un grup desti.');
           return;
         }
-        syncSelectedGroup(groupId);
         await runAction('assign', groupsAssignUrl, { group_id: groupId });
         return;
       }
@@ -2266,7 +2341,6 @@ window.initGroupsWorkspace = async function () {
           alertBox('Selecciona un grup per desactivar.');
           return;
         }
-        syncSelectedGroup(groupId);
         await runAction('delete', groupsDeleteUrl, { group_id: groupId });
         return;
       }
@@ -2345,9 +2419,10 @@ window.initGroupsWorkspace = async function () {
   window.__groupsWorkspaceApi = {
     root: groupsWorkspaceShell,
     refresh: fetchWorkspace,
+    refreshAfterRename: refreshAfterGroupRename,
     resolveAutoContext: (extra = {}) => postJson(groupsWorkspaceUrl, buildPayload({ operation: 'resolve_auto_context', ...extra })),
     applyAutoContextSelection: (extra = {}) => postJson(groupsWorkspaceUrl, buildPayload({ operation: 'apply_auto_context_selection', ...extra })),
-    selectGroup: (groupId) => selectGroup(groupId, { scroll: true, resetPage: true }),
+    selectGroup: (groupId, options = {}) => selectGroup(groupId, { scroll: true, resetPage: true, ...options }),
     preview: previewAction,
     setExternalSelection: syncExternalSelection,
     setSelection: (ids, options = {}) => updateSelection(ids, 'set', options),

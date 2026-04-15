@@ -116,6 +116,32 @@ class DesignacionsDateAwareHelpersTests(SimpleTestCase):
 
         self.assertEqual([[item["ID"] for item in subgrup] for subgrup in subgrups], [["A1", "A2"], ["B1"]])
 
+    def test_daily_subgroups_tolerate_missing_cluster_values(self):
+        df = pd.DataFrame(
+            [
+                {
+                    "ID": "A1",
+                    "Data": "2026-02-24",
+                    "Hora": time(10, 0),
+                    "Pista joc": "Pista A",
+                    "Modalitat": "Futbol Sala",
+                    "cluster": pd.NA,
+                },
+                {
+                    "ID": "B1",
+                    "Data": "2026-02-24",
+                    "Hora": time(12, 0),
+                    "Pista joc": "Pista B",
+                    "Modalitat": "Futbol Sala",
+                    "cluster": pd.NA,
+                },
+            ]
+        )
+
+        subgrups = _build_daily_subgroups(df, gap_same_pitch_min=60, gap_diff_pitch_min=75, max_partits_subgrup=3)
+
+        self.assertEqual([[item["ID"] for item in subgrup] for subgrup in subgrups], [["A1"], ["B1"]])
+
     def test_availability_penalty_blocks_other_day_reuse(self):
         tutor_row = {
             "Data": "2026-02-24",
@@ -153,6 +179,28 @@ class DesignacionsDateAwareHelpersTests(SimpleTestCase):
         penalty = _availability_penalty_for_subgroup(tutor_row, subgrup, availability_end_buffer_min=60)
 
         self.assertEqual(penalty, 0.0)
+
+    def test_match_descriptor_handles_pandas_na_values(self):
+        descriptor = build_match_descriptor(
+            identifier=pd.NA,
+            date_value=pd.NA,
+            time_value=pd.NA,
+            venue=pd.NA,
+            modality=pd.NA,
+            category=pd.NA,
+            cluster_id=pd.NA,
+            address_id=None,
+            cluster_status=pd.NA,
+        )
+
+        self.assertEqual(descriptor.identifier, "")
+        self.assertIsNone(descriptor.date)
+        self.assertIsNone(descriptor.match_datetime)
+        self.assertEqual(descriptor.venue, "")
+        self.assertEqual(descriptor.modality, "")
+        self.assertEqual(descriptor.category, "")
+        self.assertIsNone(descriptor.cluster_id)
+        self.assertIsNone(descriptor.cluster_status)
 
     def test_has_vehicle_normalizes_transport_values(self):
         self.assertTrue(has_vehicle("Patinet elèctric"))

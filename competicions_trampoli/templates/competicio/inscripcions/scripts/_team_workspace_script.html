@@ -2532,6 +2532,19 @@ window.initTeamsWorkspace = async function () {
   }
 
   async function refreshLoadedSeriesPanel() {
+    const seriesApi = window.__seriesWorkspaceApi || null;
+    if (seriesApi && typeof seriesApi.refreshInPlace === 'function') {
+      try {
+        await seriesApi.refreshInPlace();
+        return;
+      } catch (_err) {}
+    }
+    if (seriesApi && typeof seriesApi.refresh === 'function') {
+      try {
+        await seriesApi.refresh({ preservePage: true });
+        return;
+      } catch (_err) {}
+    }
     if (!document.getElementById('series-workspace-shell')) return;
     if (!window.InscripcionsApp || typeof window.InscripcionsApp.refreshHtmlFragments !== 'function') return;
     window.__seriesWorkspaceHydrationRetry = false;

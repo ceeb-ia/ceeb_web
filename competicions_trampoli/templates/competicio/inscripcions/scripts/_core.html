@@ -252,6 +252,7 @@
     }
 
     applyBootPayload(data.boot || {});
+    const expandedGroupCardId = fragments.includes('panel') ? prepareExpandedGroupCardRefresh(activePanelKey) : '';
 
     fragments.forEach((name) => {
       if (name === 'panel') {
@@ -501,6 +502,36 @@
     return modal ? String(modal.getAttribute('data-active-card-id') || '') : '';
   }
 
+  function clearExpandedGroupCardState() {
+    expandedModalState.cardId = '';
+    expandedModalState.parent = null;
+    expandedModalState.nextSibling = null;
+  }
+
+  function getExpandedGroupCardElement() {
+    const cardId = String(expandedModalState.cardId || '').trim();
+    return cardId ? document.getElementById(cardId) : null;
+  }
+
+  function removeExpandedGroupCardElement() {
+    const card = getExpandedGroupCardElement();
+    if (card) card.remove();
+  }
+
+  function isExpandedGroupCardInPanel(panelKey) {
+    const cardId = String(expandedModalState.cardId || '').trim();
+    if (!cardId || !expandedModalState.parent) return false;
+    const panel = getPanelElement(panelKey);
+    return !!panel && panel.contains(expandedModalState.parent);
+  }
+
+  function prepareExpandedGroupCardRefresh(panelKey) {
+    const expandedCardId = String(expandedModalState.cardId || '').trim();
+    if (!expandedCardId || !isExpandedGroupCardInPanel(panelKey)) return '';
+    setExpandedGroupCard('', { skipSave: true });
+    return expandedCardId;
+  }
+
   function refreshExpandButtons() {
     const expandedCardId = getExpandedGroupCardId();
     document.querySelectorAll('.js-expand-tab-select').forEach((btn) => {
@@ -514,18 +545,25 @@
   }
 
   function restoreExpandedGroupCardToOrigin() {
-    if (!expandedModalState.cardId || !expandedModalState.parent) return;
-    const card = document.getElementById(expandedModalState.cardId);
-    if (!card) return;
+    if (!expandedModalState.cardId || !expandedModalState.parent) return false;
+    const card = getExpandedGroupCardElement();
+    if (!card) {
+      clearExpandedGroupCardState();
+      return false;
+    }
     card.classList.remove('is-expanded');
+    if (!expandedModalState.parent.isConnected) {
+      removeExpandedGroupCardElement();
+      clearExpandedGroupCardState();
+      return false;
+    }
     if (expandedModalState.nextSibling && expandedModalState.nextSibling.parentNode === expandedModalState.parent) {
       expandedModalState.parent.insertBefore(card, expandedModalState.nextSibling);
     } else {
       expandedModalState.parent.appendChild(card);
     }
-    expandedModalState.cardId = '';
-    expandedModalState.parent = null;
-    expandedModalState.nextSibling = null;
+    clearExpandedGroupCardState();
+    return true;
   }
 
   function setExpandedGroupCard(cardId, options = {}) {

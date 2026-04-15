@@ -1637,6 +1637,10 @@ window.initSeriesWorkspace = async function () {
     }
   }
 
+  async function refreshWorkspaceInPlace(options = {}) {
+    return refreshWorkspace({ preservePage: true, ...options });
+  }
+
   function bindFilter(id) {
     const el = document.getElementById(id);
     if (!el) return;
@@ -1818,6 +1822,7 @@ window.initSeriesWorkspace = async function () {
   window.__seriesWorkspaceApi = {
     root: shell,
     refresh: refreshWorkspace,
+    refreshInPlace: refreshWorkspaceInPlace,
     getState: () => ({
       compAparellId: state.compAparellId,
       selectedIds: selectedIds(),

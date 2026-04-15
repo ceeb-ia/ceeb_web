@@ -89,6 +89,25 @@
     });
   }
 
+  async function refreshGroupRenameAfterMutation(details = {}) {
+    const groupNum = String(details?.groupNum || '').trim();
+    await refreshFragmentsKeepingActiveTab(['header', 'history', 'table']);
+    const groupsApi = window.__groupsWorkspaceApi || null;
+    if (!groupsApi) return;
+    if (typeof groupsApi.refreshAfterRename === 'function') {
+      await groupsApi.refreshAfterRename({
+        groupId: String(details?.groupId || '').trim(),
+        groupNum,
+      });
+      return;
+    }
+    if (typeof groupsApi.refresh === 'function') {
+      await groupsApi.refresh({ preservePage: true });
+    }
+  }
+
+  window.__inscripcionsPostGroupRenameRefresh = refreshGroupRenameAfterMutation;
+
   function collectGlobalIds() {
     const ids = [];
     if (API.hasTabs()) {
@@ -588,7 +607,7 @@
         if (nextName === null) return;
         try {
           await setGroupName(groupNum, nextName.trim());
-          await refreshFragmentsKeepingActiveTab(['header', 'history', 'table']);
+          await refreshGroupRenameAfterMutation({ groupNum });
         } catch (err) {
           API.showAlert(err.message || err);
         }
