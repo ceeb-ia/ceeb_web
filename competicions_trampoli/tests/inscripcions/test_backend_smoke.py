@@ -1,6 +1,7 @@
 import importlib
 import json
 from pathlib import Path
+from urllib.parse import quote
 from datetime import date, datetime
 from io import BytesIO
 
@@ -11,6 +12,7 @@ from openpyxl import Workbook
 from ...models import Competicio, CompeticioMembership, Inscripcio, InscripcioMedia
 from ...models.competicio import Aparell
 from ...services.inscripcions.import_excel import importar_inscripcions_excel
+from ...views.inscripcions.navigation import sanitize_inscripcions_return_url
 from ...views.inscripcions.listing import _serialize_listing_media_item
 from ..base import _BaseTrampoliDataMixin
 
@@ -238,6 +240,113 @@ class InscripcionsBackendSmokeTests(_BaseTrampoliDataMixin, TestCase):
         self.assertIn('id="inscripcions-toolbar-fragment"', fragments["toolbar"])
         self.assertIn('id="inscripcions-history-fragment"', fragments["history"])
         self.assertIn('id="inscripcions-table-fragment"', fragments["table"])
+
+    def test_full_page_links_strip_internal_fragment_params_from_next(self):
+        list_url = reverse("inscripcions_list", kwargs={"pk": self.comp.id})
+        response = self.client.get(
+            list_url,
+            {
+                "q": "Lucia",
+                "__panel_key": "grups",
+                "__active_group_key": "tab-1",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        expected_next = sanitize_inscripcions_return_url(response.wsgi_request.get_full_path(), list_url)
+        add_url = f"{reverse('inscripcio_add', kwargs={'pk': self.comp.id})}?next={quote(expected_next)}"
+        edit_url = (
+            f"{reverse('inscripcio_edit', kwargs={'pk': self.comp.id, 'ins_id': self.ins.id})}"
+            f"?team_context=native&next={quote(expected_next)}"
+        )
+        delete_url = f"{reverse('inscripcio_delete', kwargs={'pk': self.comp.id, 'ins_id': self.ins.id})}?next={quote(expected_next)}"
+
+        self.assertContains(response, add_url, html=False)
+        self.assertContains(response, edit_url, html=False)
+        self.assertContains(response, delete_url, html=False)
+        self.assertNotIn("__panel_key", expected_next)
+        self.assertNotIn("__active_group_key", expected_next)
+
+    def test_fragment_links_strip_internal_fragment_params_from_next(self):
+        list_url = reverse("inscripcions_list", kwargs={"pk": self.comp.id})
+        response = self.client.get(
+            list_url,
+            {
+                "__fragments": "header,toolbar,history,table",
+                "q": "Lucia",
+                "__panel_key": "grups",
+                "__active_group_key": "tab-1",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        expected_next = sanitize_inscripcions_return_url(response.wsgi_request.get_full_path(), list_url)
+        add_url = f"{reverse('inscripcio_add', kwargs={'pk': self.comp.id})}?next={quote(expected_next)}"
+        edit_url = (
+            f"{reverse('inscripcio_edit', kwargs={'pk': self.comp.id, 'ins_id': self.ins.id})}"
+            f"?team_context=native&next={quote(expected_next)}"
+        )
+        delete_url = f"{reverse('inscripcio_delete', kwargs={'pk': self.comp.id, 'ins_id': self.ins.id})}?next={quote(expected_next)}"
+
+        self.assertIn(add_url, payload["fragments"]["header"])
+        self.assertIn(edit_url, payload["fragments"]["table"])
+        self.assertIn(delete_url, payload["fragments"]["table"])
+        self.assertNotIn("__fragments", expected_next)
+        self.assertNotIn("__panel_key", expected_next)
+        self.assertNotIn("__active_group_key", expected_next)
+
+    def test_delete_redirect_sanitizes_fragment_next_params(self):
+        list_url = reverse("inscripcions_list", kwargs={"pk": self.comp.id})
+        contaminated_next = (
+            f"{list_url}?group_by=categoria&__fragments=header,toolbar,history,table&__active_group_key=tab-2"
+        )
+        delete_url = (
+            f"{reverse('inscripcio_delete', kwargs={'pk': self.comp.id, 'ins_id': self.ins.id})}"
+            f"?next={quote(contaminated_next, safe='')}"
+        )
+
+        response = self.client.post(delete_url)
+
+        self.assertRedirects(
+            response,
+            f"{list_url}?group_by=categoria",
+            fetch_redirect_response=False,
+        )
+
+    def test_edit_redirect_sanitizes_fragment_next_params(self):
+        list_url = reverse("inscripcions_list", kwargs={"pk": self.comp.id})
+        contaminated_next = (
+            f"{list_url}?q=Lucia&group_by=categoria&__fragments=header,toolbar,history,table&__active_group_key=tab-2"
+        )
+        edit_url = (
+            f"{reverse('inscripcio_edit', kwargs={'pk': self.comp.id, 'ins_id': self.ins.id})}"
+            f"?team_context=native&next={quote(contaminated_next, safe='')}"
+        )
+
+        response = self.client.post(
+            edit_url,
+            data={
+                "nom_i_cognoms": "Lucia Smoke Updated",
+                "entitat_choice": "Club Smoke",
+                "entitat_altres": "",
+                "categoria_choice": "",
+                "categoria_altres": "",
+                "subcategoria_choice": "",
+                "subcategoria_altres": "",
+                "grup_competicio_choice": "",
+                "equip_choice": "",
+                "equip_altres": "",
+                "team_context": "native",
+                "next": contaminated_next,
+            },
+        )
+
+        self.assertRedirects(
+            response,
+            f"{list_url}?q=Lucia&group_by=categoria",
+            fetch_redirect_response=False,
+        )
 
     def test_lazy_panel_fragments_return_real_workspace_panels(self):
         markers_by_panel = {

@@ -64,8 +64,8 @@
       {% for col in selected_table_columns %}
         <td class="{% if col.code == 'nom_i_cognoms' %}font-weight-bold{% endif %} {% if col.code == '__actions__' %}text-nowrap{% endif %}">
           {% if col.code == "__actions__" %}
-            <a class="btn btn-sm btn-outline-primary" href="{% url 'inscripcio_edit' competicio.id r.id %}?team_context={{ team_context_selected_code|urlencode }}&next={{ request.get_full_path|urlencode }}">Editar</a>
-            <a class="btn btn-sm btn-outline-danger" href="{% url 'inscripcio_delete' competicio.id r.id %}?next={{ request.get_full_path|urlencode }}">Eliminar</a>
+            <a class="btn btn-sm btn-outline-primary" href="{% url 'inscripcio_edit' competicio.id r.id %}?team_context={{ team_context_selected_code|urlencode }}&next={{ inscripcions_return_url|urlencode }}">Editar</a>
+            <a class="btn btn-sm btn-outline-danger" href="{% url 'inscripcio_delete' competicio.id r.id %}?next={{ inscripcions_return_url|urlencode }}">Eliminar</a>
           {% elif col.code == "nom_i_cognoms" %}
             {{ r.nom_i_cognoms|default:"-" }}
           {% elif col.code == "equip" %}

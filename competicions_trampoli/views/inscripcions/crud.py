@@ -24,6 +24,15 @@ from ...services.teams.equip_contexts import (
     normalize_equip_context_code,
 )
 from ...services.inscripcions.import_excel import importar_inscripcions_excel
+from .navigation import sanitize_inscripcions_return_url
+
+
+def _get_inscripcions_fallback_url(pk):
+    return reverse("inscripcions_list", kwargs={"pk": pk})
+
+
+def _sanitize_inscripcions_return_url(raw_url, pk):
+    return sanitize_inscripcions_return_url(raw_url, _get_inscripcions_fallback_url(pk))
 
 
 class InscripcioFormViewMixin:
@@ -79,15 +88,33 @@ class InscripcioFormViewMixin:
         kwargs["team_context_code"] = self.team_context_code
         return kwargs
 
+    def _get_raw_next_url(self):
+        return self.request.GET.get("next") or self.request.POST.get("next", "")
+
+    def _get_sanitized_next_url(self):
+        raw_next = str(self._get_raw_next_url() or "").strip()
+        if not raw_next:
+            return ""
+        return _sanitize_inscripcions_return_url(raw_next, self.kwargs["pk"])
+
+    def _get_cancel_url(self):
+        next_url = self._get_sanitized_next_url()
+        if next_url:
+            return next_url
+        raw_referer = self.request.META.get("HTTP_REFERER")
+        if raw_referer:
+            return _sanitize_inscripcions_return_url(raw_referer, self.kwargs["pk"])
+        return _get_inscripcions_fallback_url(self.kwargs["pk"])
+
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        next_url = self.request.GET.get("next") or self.request.POST.get("next", "")
+        next_url = self._get_sanitized_next_url()
         ctx["competicio"] = self.competicio
         ctx["next"] = next_url
         ctx["team_context_selected_code"] = self.team_context_code
         ctx["team_context_selected"] = self.team_context_selected
         ctx["team_contexts"] = list(self.team_contexts_payload)
-        ctx["cancel_url"] = next_url or self.request.META.get("HTTP_REFERER") or reverse("inscripcions_list", kwargs={"pk": self.kwargs["pk"]})
+        ctx["cancel_url"] = self._get_cancel_url()
         form = ctx.get("form")
         ctx["form_basic_fields"] = []
         ctx["form_extra_fields"] = []
@@ -106,10 +133,10 @@ class InscripcioFormViewMixin:
         return ctx
 
     def get_success_url(self):
-        nxt = self.request.GET.get("next") or self.request.POST.get("next")
-        if nxt:
-            return nxt
-        return reverse("inscripcions_list", kwargs={"pk": self.kwargs["pk"]})
+        next_url = self._get_sanitized_next_url()
+        if next_url:
+            return next_url
+        return _get_inscripcions_fallback_url(self.kwargs["pk"])
 
 
 class InscripcioUpdateView(InscripcioFormViewMixin, UpdateView):
@@ -171,10 +198,10 @@ class InscripcioDeleteView(DeleteView):
         return Inscripcio.objects.filter(competicio_id=self.kwargs["pk"])
 
     def get_success_url(self):
-        nxt = self.request.GET.get("next")
-        if nxt:
-            return nxt
-        return reverse("inscripcions_list", kwargs={"pk": self.kwargs["pk"]})
+        raw_next = self.request.GET.get("next") or self.request.POST.get("next")
+        if raw_next:
+            return _sanitize_inscripcions_return_url(raw_next, self.kwargs["pk"])
+        return _get_inscripcions_fallback_url(self.kwargs["pk"])
 
     def delete(self, request, *args, **kwargs):
         self.object = self.get_object()

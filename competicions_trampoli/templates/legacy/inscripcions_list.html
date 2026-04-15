@@ -153,7 +153,7 @@
 
       <div class="d-flex flex-wrap justify-content-end gap-2">
         <a href="{% url 'import' competicio.id %}" class="btn btn-sm btn-success">+ Importar Excel</a>
-        <a href="{% url 'inscripcio_add' competicio.id %}?next={{ request.get_full_path|urlencode }}"
+        <a href="{% url 'inscripcio_add' competicio.id %}?next={{ inscripcions_return_url|urlencode }}"
            class="btn btn-sm btn-primary">+ Afegir inscripció</a>
         <a href="{% url 'trampoli_config' competicio.id %}" class="btn btn-sm btn-outline-warning">
           Configuració competició
@@ -558,9 +558,9 @@
                       <td>{{ r.ordre_sortida|default:"-" }}</td>
                       <td class="text-nowrap">
                         <a class="btn btn-sm btn-outline-primary"
-                           href="{% url 'inscripcio_edit' competicio.id r.id %}?next={{ request.get_full_path|urlencode }}">Editar</a>
+                           href="{% url 'inscripcio_edit' competicio.id r.id %}?next={{ inscripcions_return_url|urlencode }}">Editar</a>
                         <a class="btn btn-sm btn-outline-danger"
-                           href="{% url 'inscripcio_delete' competicio.id r.id %}?next={{ request.get_full_path|urlencode }}">Eliminar</a>
+                           href="{% url 'inscripcio_delete' competicio.id r.id %}?next={{ inscripcions_return_url|urlencode }}">Eliminar</a>
                       </td>
                     </tr>
 
@@ -605,11 +605,11 @@
                 <td>{{ r.ordre_sortida|default:"-" }}</td>
                 <td class="text-nowrap">
                   <a class="btn btn-sm btn-outline-primary"
-                     href="{% url 'inscripcio_edit' competicio.id r.id %}?next={{ request.get_full_path|urlencode }}">
+                     href="{% url 'inscripcio_edit' competicio.id r.id %}?next={{ inscripcions_return_url|urlencode }}">
                     Editar
                   </a>
                   <a class="btn btn-sm btn-outline-danger"
-                     href="{% url 'inscripcio_delete' competicio.id r.id %}?next={{ request.get_full_path|urlencode }}">
+                     href="{% url 'inscripcio_delete' competicio.id r.id %}?next={{ inscripcions_return_url|urlencode }}">
                     Eliminar
                   </a>
                 </td>

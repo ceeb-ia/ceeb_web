@@ -9,7 +9,7 @@ from django.db import transaction
 from django.db.models import Case, IntegerField, Max, When
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
-from django.urls import reverse_lazy
+from django.urls import reverse, reverse_lazy
 from django.views.generic import FormView, ListView
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -65,6 +65,7 @@ from ...services.inscripcions.sorting import (
     sort_records_by_field_stable,
 )
 from ...services.inscripcions.timing import get_inscripcions_timing_collector
+from .navigation import sanitize_inscripcions_return_url
 
 def _norm_val(value):
     return "__NULL__" if value in (None, "") else str(value)
@@ -760,6 +761,10 @@ class InscripcionsListView(ListView):
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         ctx["competicio"] = self.competicio
+        ctx["inscripcions_return_url"] = sanitize_inscripcions_return_url(
+            self.request.get_full_path(),
+            reverse("inscripcions_list", kwargs={"pk": self.competicio.pk}),
+        )
         allowed = get_allowed_group_fields(self.competicio)
         allowed_codes = {field["code"] for field in allowed}
         ctx["allowed_group_fields"] = allowed

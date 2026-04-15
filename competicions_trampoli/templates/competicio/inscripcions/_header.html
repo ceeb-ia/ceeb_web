@@ -27,7 +27,7 @@
 
   <div class="d-flex flex-wrap align-items-center" style="gap:8px;">
     {% if can_edit_inscripcions %}
-      <a class="btn btn-sm btn-primary" href="{% url 'inscripcio_add' competicio.id %}?next={{ request.get_full_path|urlencode }}">
+      <a class="btn btn-sm btn-primary" href="{% url 'inscripcio_add' competicio.id %}?next={{ inscripcions_return_url|urlencode }}">
         + Afegir inscripció manual
       </a>
     {% endif %}
