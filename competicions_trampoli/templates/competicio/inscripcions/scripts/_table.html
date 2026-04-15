@@ -13,6 +13,7 @@
     source: 'general_list',
     trigger: null,
   };
+  const apparellsSaveStateByInsId = new Map();
 
   function arraysEqual(a, b) {
     if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
@@ -156,6 +157,66 @@
         row.setAttribute('data-ordre-sortida', nextValue);
       });
     });
+  }
+
+  function apparellsSelectState(selectEl) {
+    const options = Array.from(selectEl?.options || []).filter((option) => option && option.value && !option.disabled);
+    const selected = options.filter((option) => option.selected);
+    return {
+      total: options.length,
+      selectedCount: selected.length,
+      selectedLabels: selected.map((option) => String(option.textContent || '').trim()).filter(Boolean),
+    };
+  }
+
+  function apparellsSummaryText(selectEl) {
+    const state = apparellsSelectState(selectEl);
+    if (!state.total) return 'Sense aparells individuals actius.';
+    if (state.selectedCount === state.total) return 'Competeix a tots els aparells individuals.';
+    if (state.selectedCount === 0) return 'No competeix a cap aparell individual.';
+    if (state.selectedCount === 1) {
+      return `Competeix a 1 de ${state.total} aparells individuals.`;
+    }
+    return `Competeix a ${state.selectedCount} de ${state.total} aparells individuals.`;
+  }
+
+  function apparellsSelectInsId(selectEl) {
+    return String(selectEl?.dataset?.insId || '').trim();
+  }
+
+  function renderAparellsSelectSummary(selectEl) {
+    if (!selectEl) return;
+    const insId = apparellsSelectInsId(selectEl);
+    if (!insId) return;
+    const summaryEl = document.querySelector(`.js-aparells-select-summary[data-ins-id="${CSS.escape(insId)}"]`);
+    if (!summaryEl) return;
+    const summaryText = apparellsSummaryText(selectEl);
+    summaryEl.textContent = summaryText;
+    selectEl.setAttribute('aria-description', summaryText);
+  }
+
+  function renderAparellsSelectStatus(selectEl, message = '') {
+    if (!selectEl) return;
+    const insId = apparellsSelectInsId(selectEl);
+    if (!insId) return;
+    const statusEl = document.querySelector(`.js-aparells-select-status[data-ins-id="${CSS.escape(insId)}"]`);
+    if (!statusEl) return;
+    statusEl.textContent = String(message || '').trim();
+  }
+
+  function renderAllAparellsSelectSummaries() {
+    document.querySelectorAll('.js-aparells-select').forEach((selectEl) => {
+      renderAparellsSelectSummary(selectEl);
+      renderAparellsSelectStatus(selectEl, '');
+    });
+  }
+
+  function selectedAparellIdsFromSelect(selectEl) {
+    return Array
+      .from(selectEl?.options || [])
+      .filter((option) => option && option.selected)
+      .map((option) => parseInt(option.value || '0', 10))
+      .filter((value) => Number.isInteger(value) && value > 0);
   }
 
   function getSavedCompetitionOrderIdsForGroupInContainer(groupNum, container, options = {}) {
@@ -380,19 +441,74 @@
     if (!data?.ok) throw new Error("No s'ha pogut desar el nom del grup.");
   }
 
-  async function saveAparells(selectEl) {
-    const inscripcioId = parseInt(selectEl.dataset.insId || '0', 10);
-    const selectedIds = Array
-      .from(selectEl.options || [])
-      .filter((option) => option.selected)
-      .map((option) => parseInt(option.value || '0', 10))
-      .filter((value) => Number.isInteger(value) && value > 0);
-
+  async function saveAparells(inscripcioId, selectedIds) {
     const data = await API.postJson(API.app.urls.setAparells, {
       inscripcio_id: inscripcioId,
       selected_comp_aparell_ids: selectedIds,
     });
     if (!data?.ok) throw new Error("No s'han pogut desar els aparells.");
+    return data;
+  }
+
+  function ensureAparellsSaveState(selectEl) {
+    const insId = apparellsSelectInsId(selectEl);
+    if (!insId) return null;
+    if (!apparellsSaveStateByInsId.has(insId)) {
+      apparellsSaveStateByInsId.set(insId, {
+        inscripcioId: parseInt(insId, 10),
+        latestSelectedIds: selectedAparellIdsFromSelect(selectEl),
+        inFlight: false,
+        queued: false,
+        promise: null,
+        clearTimer: null,
+      });
+    }
+    return apparellsSaveStateByInsId.get(insId);
+  }
+
+  async function flushAparellsSave(selectEl, state) {
+    if (!state || state.inFlight) return state?.promise || Promise.resolve();
+    state.promise = (async () => {
+      try {
+        while (true) {
+          const selectedIds = state.latestSelectedIds.slice();
+          state.inFlight = true;
+          state.queued = false;
+          renderAparellsSelectStatus(selectEl, 'Guardant canvis...');
+          await saveAparells(state.inscripcioId, selectedIds);
+          state.inFlight = false;
+          if (!state.queued) break;
+        }
+        renderAparellsSelectStatus(selectEl, 'Guardat.');
+        try {
+          await refreshFragmentsKeepingActiveTab(['history']);
+        } catch (_err) {}
+        if (state.clearTimer) window.clearTimeout(state.clearTimer);
+        state.clearTimer = window.setTimeout(() => {
+          renderAparellsSelectStatus(selectEl, '');
+        }, 1600);
+      } finally {
+        state.inFlight = false;
+        state.promise = null;
+      }
+    })();
+    return state.promise;
+  }
+
+  function queueAparellsSave(selectEl) {
+    const state = ensureAparellsSaveState(selectEl);
+    if (!state) return Promise.resolve();
+    state.latestSelectedIds = selectedAparellIdsFromSelect(selectEl);
+    if (state.clearTimer) {
+      window.clearTimeout(state.clearTimer);
+      state.clearTimer = null;
+    }
+    if (state.inFlight) {
+      state.queued = true;
+      renderAparellsSelectStatus(selectEl, 'Guardant canvis...');
+      return state.promise || Promise.resolve();
+    }
+    return flushAparellsSave(selectEl, state);
   }
 
   function getGroupModalEls() {
@@ -575,9 +691,9 @@
     document.addEventListener('change', async (event) => {
       const selectEl = event.target.closest('.js-aparells-select');
       if (!selectEl) return;
+      renderAparellsSelectSummary(selectEl);
       try {
-        await saveAparells(selectEl);
-        await refreshFragmentsKeepingActiveTab(['table', 'history']);
+        await queueAparellsSave(selectEl);
       } catch (err) {
         API.showAlert(err.message || err);
         await refreshFragmentsKeepingActiveTab(['table', 'history']);
@@ -676,6 +792,7 @@
     initSortableTabs();
     initSortableRows();
     applyGroupBands();
+    renderAllAparellsSelectSummaries();
     scheduleRefreshGroupHeaderIndicators();
     ensureActiveGroupTabLoaded();
   }

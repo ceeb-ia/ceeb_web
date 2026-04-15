@@ -156,6 +156,24 @@ class InscripcionsSetAparellsViewTests(_BaseTrampoliDataMixin, TestCase):
 
         self.ins = self._create_inscripcio(self.comp, "Ginmasta 1")
 
+    def test_table_fragment_shows_only_individual_apps_selected_by_default(self):
+        team_app = self._create_aparell("TEAM_APP", "Equip App")
+        team_app.competition_unit = Aparell.CompetitionUnit.TEAM
+        team_app.save(update_fields=["competition_unit"])
+        self._create_comp_aparell(self.comp, team_app, ordre=3, actiu=True)
+
+        response = self.client.get(
+            reverse("inscripcions_list", kwargs={"pk": self.comp.id}),
+            {"__fragments": "table"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        html = response.json()["fragments"]["table"]
+        self.assertIn(f'<option value="{self.comp_app_1.id}" selected>', html)
+        self.assertIn(f'<option value="{self.comp_app_2.id}" selected>', html)
+        self.assertNotIn("Equip App", html)
+        self.assertIn("Per defecte competeix a tots els aparells individuals. Desmarca nomes exclusions.", html)
+
     def test_set_aparells_creates_and_replaces_exclusions(self):
         url = reverse("inscripcions_set_aparells", kwargs={"pk": self.comp.id})
 
@@ -209,6 +227,26 @@ class InscripcionsSetAparellsViewTests(_BaseTrampoliDataMixin, TestCase):
             ),
             content_type="application/json",
         )
+        self.assertEqual(r.status_code, 400)
+
+    def test_set_aparells_rejects_team_apps_from_general_selector(self):
+        team_app = self._create_aparell("TEAM_APP", "Equip App")
+        team_app.competition_unit = Aparell.CompetitionUnit.TEAM
+        team_app.save(update_fields=["competition_unit"])
+        team_comp_app = self._create_comp_aparell(self.comp, team_app, ordre=3, actiu=True)
+
+        url = reverse("inscripcions_set_aparells", kwargs={"pk": self.comp.id})
+        r = self.client.post(
+            url,
+            data=json.dumps(
+                {
+                    "inscripcio_id": self.ins.id,
+                    "selected_comp_aparell_ids": [self.comp_app_1.id, team_comp_app.id],
+                }
+            ),
+            content_type="application/json",
+        )
+
         self.assertEqual(r.status_code, 400)
 
 

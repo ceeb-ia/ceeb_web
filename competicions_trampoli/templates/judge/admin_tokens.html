@@ -33,6 +33,27 @@
       color: #fff;
       border-color: #0d6efd;
     }
+    #itemLabelsModal {
+      z-index: 200010;
+    }
+    #itemLabelsModal .modal-dialog {
+      margin: 1.75rem auto;
+      max-width: 640px;
+    }
+    #itemLabelsModal .modal-content {
+      max-height: calc(100vh - 3.5rem);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    #itemLabelsModal .modal-body {
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      max-height: calc(100vh - 220px);
+    }
+    .modal-backdrop.show {
+      z-index: 200000;
+    }
   </style>
   <div class="card-surface">
     <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
@@ -100,7 +121,7 @@
               </div>
             {% endif %}
 
-            <form method="post">
+            <form method="post" id="judgeTokenCreateForm">
               {% csrf_token %}
               <input type="hidden" name="action" value="create"/>
 
@@ -169,6 +190,12 @@
                             {{ f.member_mode.as_hidden }}
                             {{ f.member_slots }}
                           {% endif %}
+                          <div class="mt-1 d-none" data-item-labels-controls="1">
+                            <button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-item-labels-trigger="1">
+                              Noms d'items
+                            </button>
+                            <div class="text-muted small mt-1" data-item-labels-summary="1"></div>
+                          </div>
                           {% if f.field_code.errors %}
                             <div class="text-danger small mt-1">{{ f.field_code.errors }}</div>
                           {% endif %}
@@ -250,6 +277,12 @@
                         {{ formset.empty_form.member_mode.as_hidden }}
                         {{ formset.empty_form.member_slots }}
                       {% endif %}
+                      <div class="mt-1 d-none" data-item-labels-controls="1">
+                        <button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-item-labels-trigger="1">
+                          Noms d'items
+                        </button>
+                        <div class="text-muted small mt-1" data-item-labels-summary="1"></div>
+                      </div>
                     </td>
                     {% if is_team_context_mode %}
                     <td>{{ formset.empty_form.scope }}</td>
@@ -294,6 +327,38 @@
                 <button type="submit" class="btn btn-sm btn-primary">Crear token</button>
               </div>
             </form>
+
+            <div class="modal fade" id="itemLabelsModal" tabindex="-1" aria-labelledby="itemLabelsModalTitle" aria-hidden="true">
+              <div class="modal-dialog modal-dialog-scrollable">
+                <div class="modal-content">
+                  <form method="post" id="itemLabelsForm">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="save_item_labels">
+                    <input type="hidden" name="field_code" id="itemLabelsFieldCode">
+                    <input type="hidden" name="item_labels_json" id="itemLabelsJson">
+                    <div class="modal-header">
+                      <div>
+                        <h5 class="modal-title mb-1" id="itemLabelsModalTitle">Noms d'items</h5>
+                        <div class="text-muted small" id="itemLabelsModalMeta"></div>
+                      </div>
+                      <button type="button" class="close" data-dismiss="modal" aria-label="Tancar">
+                        <span aria-hidden="true">&times;</span>
+                      </button>
+                    </div>
+                    <div class="modal-body">
+                      <div class="alert alert-light border small">
+                        Aquesta configuracio es global per aquest aparell i camp. Tots els QRs del mateix aparell veuran els mateixos noms.
+                      </div>
+                      <div id="itemLabelsRows"></div>
+                    </div>
+                    <div class="modal-footer">
+                      <button type="button" class="btn btn-sm btn-outline-secondary" data-dismiss="modal">Cancelar</button>
+                      <button type="submit" class="btn btn-sm btn-primary">Desar noms</button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -396,10 +461,12 @@
     const counter = document.getElementById("permCounter");
     const totalFormsInput = document.getElementById("id_form-TOTAL_FORMS");
     const rowTemplate = document.getElementById("permRowTemplate");
-    if (!tbody || !addBtn || !counter || !totalFormsInput || !rowTemplate) return;
+    const createForm = document.getElementById("judgeTokenCreateForm");
+    if (!tbody || !addBtn || !counter || !totalFormsInput || !rowTemplate || !createForm) return;
 
     const maxPermissions = Number(tbody.dataset.maxPermissions || "10");
     const isTeamContextMode = tbody.dataset.teamContext === "1";
+    const draftStorageKey = `judge-token-create-draft:{{ competicio.id }}:{{ comp_aparell.id|default:'none' }}`;
     const fieldCatalogEl = document.getElementById("judge-schema-field-catalog");
     let fieldCatalog = [];
     try {
@@ -412,6 +479,17 @@
         .filter((item) => item && item.code)
         .map((item) => [String(item.code), item])
     );
+    const itemLabelsModalEl = document.getElementById("itemLabelsModal");
+    const itemLabelsForm = document.getElementById("itemLabelsForm");
+    const itemLabelsFieldCodeInput = document.getElementById("itemLabelsFieldCode");
+    const itemLabelsJsonInput = document.getElementById("itemLabelsJson");
+    const itemLabelsTitleEl = document.getElementById("itemLabelsModalTitle");
+    const itemLabelsMetaEl = document.getElementById("itemLabelsModalMeta");
+    const itemLabelsRowsEl = document.getElementById("itemLabelsRows");
+    if (itemLabelsModalEl && itemLabelsModalEl.parentElement !== document.body) {
+      document.body.appendChild(itemLabelsModalEl);
+    }
+    const itemLabelsModal = (window.jQuery && itemLabelsModalEl) ? window.jQuery(itemLabelsModalEl) : null;
 
     function parseSlotsValue(rawValue) {
       if (!rawValue) return [];
@@ -431,6 +509,141 @@
       return isTeamContextMode ? "member" : "shared";
     }
 
+    function normalizeItemLabels(rawValue, itemsCount) {
+      const out = [];
+      const rawItems = Array.isArray(rawValue) ? rawValue : [];
+      for (let idx = 0; idx < itemsCount; idx += 1) {
+        const value = idx < rawItems.length ? rawItems[idx] : "";
+        out.push(String(value == null ? "" : value).trim());
+      }
+      return out;
+    }
+
+    function itemLabelsSummary(meta) {
+      const itemsCount = Math.max(1, Number((meta && meta.items_count) || 1));
+      const configured = normalizeItemLabels(meta && meta.item_labels, itemsCount)
+        .filter((item) => item)
+        .length;
+      return configured
+        ? `${configured}/${itemsCount} noms configurats`
+        : `Sense noms personalitzats (${itemsCount} items)`;
+    }
+
+    function readDraftBoolean(value) {
+      return value === true || value === "true" || value === "1" || value === 1;
+    }
+
+    function serializeCreateFormDraft() {
+      const draft = {};
+      Array.from(createForm.elements).forEach((field) => {
+        if (!field || !field.name || field.disabled || field.name === "csrfmiddlewaretoken") return;
+        if (field.type === "checkbox") {
+          draft[field.name] = !!field.checked;
+          return;
+        }
+        draft[field.name] = field.value;
+      });
+      return draft;
+    }
+
+    function saveCreateFormDraft() {
+      try {
+        window.sessionStorage.setItem(draftStorageKey, JSON.stringify(serializeCreateFormDraft()));
+      } catch (_err) {
+        // ignore storage failures
+      }
+    }
+
+    function clearCreateFormDraft() {
+      try {
+        window.sessionStorage.removeItem(draftStorageKey);
+      } catch (_err) {
+        // ignore storage failures
+      }
+    }
+
+    function loadCreateFormDraft() {
+      try {
+        const raw = window.sessionStorage.getItem(draftStorageKey);
+        return raw ? JSON.parse(raw) : null;
+      } catch (_err) {
+        return null;
+      }
+    }
+
+    function ensurePermissionRows(total) {
+      let desired = Math.max(0, Number(total || "0"));
+      while (Number(totalFormsInput.value || "0") < desired && Number(totalFormsInput.value || "0") < maxPermissions) {
+        addBtn.click();
+      }
+    }
+
+    function applyCreateFormDraft(draft) {
+      if (!draft || typeof draft !== "object") return;
+      ensurePermissionRows(draft["form-TOTAL_FORMS"]);
+      Array.from(createForm.elements).forEach((field) => {
+        if (!field || !field.name || field.name === "csrfmiddlewaretoken") return;
+        if (!Object.prototype.hasOwnProperty.call(draft, field.name)) return;
+        const value = draft[field.name];
+        if (field.type === "checkbox") {
+          field.checked = readDraftBoolean(value);
+        } else if (value != null) {
+          field.value = String(value);
+        }
+      });
+      Array.from(createForm.querySelectorAll("select, input")).forEach((field) => {
+        field.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+    }
+
+    function openItemLabelsModal(fieldCode) {
+      const cleanCode = String(fieldCode || "").trim();
+      const meta = fieldMetaByCode.get(cleanCode) || null;
+      if (!cleanCode || !meta || String(meta.type || "") !== "matrix" || !itemLabelsRowsEl || !itemLabelsFieldCodeInput) {
+        return;
+      }
+      const itemsCount = Math.max(1, Number(meta.items_count || 1));
+      const itemLabels = normalizeItemLabels(meta.item_labels, itemsCount);
+      itemLabelsFieldCodeInput.value = cleanCode;
+      if (itemLabelsTitleEl) {
+        itemLabelsTitleEl.textContent = `Noms d'items · ${meta.label || cleanCode}`;
+      }
+      if (itemLabelsMetaEl) {
+        itemLabelsMetaEl.textContent = `${cleanCode} · configuracio global per aquest aparell · ${itemsCount} items`;
+      }
+      itemLabelsRowsEl.innerHTML = "";
+      for (let idx = 0; idx < itemsCount; idx += 1) {
+        const group = document.createElement("div");
+        group.className = "form-group";
+
+        const label = document.createElement("label");
+        label.className = "form-label small text-muted mb-1";
+        label.textContent = `Item ${idx + 1}`;
+
+        const input = document.createElement("input");
+        input.type = "text";
+        input.className = "form-control form-control-sm";
+        input.value = itemLabels[idx] || "";
+        input.placeholder = `Item ${idx + 1}`;
+        input.setAttribute("data-item-label-input", "1");
+        input.setAttribute("data-item-label-index", String(idx));
+
+        group.appendChild(label);
+        group.appendChild(input);
+        itemLabelsRowsEl.appendChild(group);
+      }
+      if (itemLabelsModal) {
+        itemLabelsModal.modal("show");
+      }
+    }
+
+    function syncItemLabelsJson() {
+      if (!itemLabelsJsonInput || !itemLabelsRowsEl) return;
+      const values = Array.from(itemLabelsRowsEl.querySelectorAll('[data-item-label-input="1"]'))
+        .map((input) => String(input.value || "").trim());
+      itemLabelsJsonInput.value = JSON.stringify(values);
+    }
+
     function bindPermissionRow(row) {
       if (!row) return;
       const fieldSelect = row.querySelector('select[name$="-field_code"]');
@@ -441,6 +654,9 @@
       const targetWrap = row.querySelector('[data-member-target="1"]');
       const checks = Array.from(row.querySelectorAll('[data-member-slot-check="1"]'));
       const labels = Array.from(row.querySelectorAll('[data-member-slot-label="1"]'));
+      const itemLabelsControls = row.querySelector('[data-item-labels-controls="1"]');
+      const itemLabelsTrigger = row.querySelector('[data-item-labels-trigger="1"]');
+      const itemLabelsSummaryEl = row.querySelector('[data-item-labels-summary="1"]');
       if (!fieldSelect || !slotsInput) return;
 
       function applyEffectiveScope() {
@@ -456,6 +672,18 @@
           scopeInput.value = effectiveScope;
         }
         return effectiveScope;
+      }
+
+      function refreshItemLabelsControls() {
+        const fieldCode = String(fieldSelect.value || "").trim();
+        const meta = fieldMetaByCode.get(fieldCode) || null;
+        const canConfigure = !!(meta && String(meta.type || "") === "matrix");
+        if (itemLabelsControls) {
+          itemLabelsControls.classList.toggle("d-none", !canConfigure);
+        }
+        if (itemLabelsSummaryEl) {
+          itemLabelsSummaryEl.textContent = canConfigure ? itemLabelsSummary(meta) : "";
+        }
       }
 
       function syncFromInput() {
@@ -513,6 +741,7 @@
         }
         syncFromInput();
         syncToInput();
+        refreshItemLabelsControls();
       }
 
       fieldSelect.addEventListener("change", refreshVisibility);
@@ -525,6 +754,11 @@
       checks.forEach((check) => {
         check.addEventListener("change", syncToInput);
       });
+      if (itemLabelsTrigger) {
+        itemLabelsTrigger.addEventListener("click", () => {
+          openItemLabelsModal(fieldSelect.value);
+        });
+      }
 
       applyEffectiveScope();
       syncFromInput();
@@ -549,6 +783,20 @@
     });
 
     Array.from(tbody.querySelectorAll(".perm-row")).forEach(bindPermissionRow);
+    if (itemLabelsForm) {
+      itemLabelsForm.addEventListener("submit", syncItemLabelsJson);
+    }
+    createForm.addEventListener("input", saveCreateFormDraft);
+    createForm.addEventListener("change", saveCreateFormDraft);
+    createForm.addEventListener("submit", () => {
+      clearCreateFormDraft();
+    });
+    if (itemLabelsForm) {
+      itemLabelsForm.addEventListener("submit", () => {
+        saveCreateFormDraft();
+      });
+    }
+    applyCreateFormDraft(loadCreateFormDraft());
     refreshCounter();
   })();
 </script>

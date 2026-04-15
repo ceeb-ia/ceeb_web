@@ -230,6 +230,29 @@ def _judge_video_capture_enabled_for_token(tok) -> bool:
     return bool(getattr(tok, "can_record_video", False))
 
 
+def _judge_item_labels_map_for_comp_aparell(comp_aparell) -> dict:
+    if comp_aparell is None:
+        return {}
+    raw_config = getattr(comp_aparell, "judge_ui_config", None)
+    if not isinstance(raw_config, dict):
+        return {}
+    raw_map = raw_config.get("field_item_labels")
+    if not isinstance(raw_map, dict):
+        return {}
+
+    out = {}
+    for raw_code, raw_labels in raw_map.items():
+        code = str(raw_code or "").strip()
+        if not code or not isinstance(raw_labels, list):
+            continue
+        clean_labels = []
+        for raw_label in raw_labels:
+            text = "" if raw_label in (None, "") else str(raw_label).strip()
+            clean_labels.append(text)
+        out[code] = clean_labels
+    return out
+
+
 def _protected_video_response(video_file, *, original_filename: str = "", mime_type: str = ""):
     if not video_file or not getattr(video_file, "name", ""):
         raise Http404("Video no disponible")

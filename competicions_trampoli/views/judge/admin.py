@@ -1,3 +1,6 @@
+import json
+
+from django.contrib import messages
 from django.forms import formset_factory
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -18,6 +21,7 @@ from ...services.scoring.team_scoring import (
     permission_runtime_code,
     runtime_schema_for_comp_aparell,
 )
+from ._shared import _judge_item_labels_map_for_comp_aparell
 
 MAX_TOKEN_PERMISSIONS = 15
 
@@ -44,20 +48,46 @@ def _schema_field_by_code(schema: dict):
     return {f.get("code"): f for f in (schema.get("fields") or []) if isinstance(f, dict) and f.get("code")}
 
 
-def _schema_field_catalog(schema: dict, *, team_context_mode: bool = False):
+def _field_items_count(field: dict) -> int:
+    if str((field or {}).get("type") or "number").strip().lower() != "matrix":
+        return 1
+    return max(1, int((((field or {}).get("items") or {}).get("count")) or 1))
+
+
+def _schema_field_catalog(schema: dict, *, comp_aparell=None, team_context_mode: bool = False):
+    item_labels_map = _judge_item_labels_map_for_comp_aparell(comp_aparell)
     items = []
     for f in (schema.get("fields") or []):
         if not isinstance(f, dict) or not f.get("code"):
             continue
         code = str(f.get("code") or "").strip()
         label = str(f.get("label") or code).strip() or code
+        items_count = _field_items_count(f)
         items.append({
             "code": code,
             "label": label,
             "type": str(f.get("type") or "number").strip().lower() or "number",
             "scope": _schema_field_scope(f, team_context_mode=team_context_mode),
+            "items_count": items_count,
+            "item_labels": list(item_labels_map.get(code) or [])[:items_count],
         })
     return items
+
+
+def _save_comp_aparell_item_labels(comp_aparell, field_code: str, item_labels: list[str]) -> None:
+    config = dict(comp_aparell.judge_ui_config if isinstance(comp_aparell.judge_ui_config, dict) else {})
+    raw_field_map = config.get("field_item_labels")
+    field_map = dict(raw_field_map) if isinstance(raw_field_map, dict) else {}
+    if any(item_labels):
+        field_map[field_code] = list(item_labels)
+    else:
+        field_map.pop(field_code, None)
+    if field_map:
+        config["field_item_labels"] = field_map
+    else:
+        config.pop("field_item_labels", None)
+    comp_aparell.judge_ui_config = config
+    comp_aparell.save(update_fields=["judge_ui_config"])
 
 
 def _member_slot_choices(competicio, comp_aparell):
@@ -196,7 +226,11 @@ def judges_qr_home(request, competicio_id):
     if comp_aparell:
         _schema_obj, schema = resolve_scoring_schema_for_comp_aparell(comp_aparell)
         runtime_schema = runtime_schema_for_comp_aparell(schema, comp_aparell)
-        field_catalog = _schema_field_catalog(schema, team_context_mode=team_context_mode)
+        field_catalog = _schema_field_catalog(
+            schema,
+            comp_aparell=comp_aparell,
+            team_context_mode=team_context_mode,
+        )
 
     field_choices = _schema_field_choices(schema)
     schema_by_code = _schema_field_by_code(schema)
@@ -211,13 +245,68 @@ def judges_qr_home(request, competicio_id):
     )
 
     if request.method == "POST":
-        action = request.POST.get("action") or ""
+        action = str(request.POST.get("action") or "").strip().lower()
         if action == "revoke":
             token_id = request.POST.get("token_id")
             tok = get_object_or_404(JudgeDeviceToken, pk=token_id, competicio=competicio)
             tok.revoked_at = timezone.now()
             tok.is_active = False
             tok.save(update_fields=["revoked_at", "is_active"])
+            return redirect(
+                f"{reverse('judges_qr_home', kwargs={'competicio_id': competicio.id})}"
+                f"?comp_aparell={comp_aparell.id}"
+            )
+
+        if action == "save_item_labels":
+            if not comp_aparell:
+                messages.error(request, "No hi ha cap aparell seleccionat.")
+                return redirect(reverse("judges_qr_home", kwargs={"competicio_id": competicio.id}))
+
+            field_code = str(request.POST.get("field_code") or "").strip()
+            raw_labels_json = request.POST.get("item_labels_json") or "[]"
+            field = schema_by_code.get(field_code)
+            if not field:
+                messages.error(request, "El camp seleccionat no existeix al schema.")
+                return redirect(
+                    f"{reverse('judges_qr_home', kwargs={'competicio_id': competicio.id})}"
+                    f"?comp_aparell={comp_aparell.id}"
+                )
+            if str(field.get("type") or "number").strip().lower() != "matrix":
+                messages.error(request, "Nomes es poden configurar noms d'items per camps matrix.")
+                return redirect(
+                    f"{reverse('judges_qr_home', kwargs={'competicio_id': competicio.id})}"
+                    f"?comp_aparell={comp_aparell.id}"
+                )
+            try:
+                raw_labels = json.loads(raw_labels_json)
+            except Exception:
+                messages.error(request, "El format dels noms d'items no es valid.")
+                return redirect(
+                    f"{reverse('judges_qr_home', kwargs={'competicio_id': competicio.id})}"
+                    f"?comp_aparell={comp_aparell.id}"
+                )
+            if not isinstance(raw_labels, list):
+                messages.error(request, "Els noms d'items han de ser una llista.")
+                return redirect(
+                    f"{reverse('judges_qr_home', kwargs={'competicio_id': competicio.id})}"
+                    f"?comp_aparell={comp_aparell.id}"
+                )
+
+            max_items = _field_items_count(field)
+            if len(raw_labels) > max_items:
+                messages.error(request, f"No es poden desar mes de {max_items} noms d'items.")
+                return redirect(
+                    f"{reverse('judges_qr_home', kwargs={'competicio_id': competicio.id})}"
+                    f"?comp_aparell={comp_aparell.id}"
+                )
+
+            clean_labels = []
+            for idx in range(max_items):
+                raw_label = raw_labels[idx] if idx < len(raw_labels) else ""
+                clean_labels.append("" if raw_label in (None, "") else str(raw_label).strip())
+
+            _save_comp_aparell_item_labels(comp_aparell, field_code, clean_labels)
+            messages.success(request, "Noms d'items desats.")
             return redirect(
                 f"{reverse('judges_qr_home', kwargs={'competicio_id': competicio.id})}"
                 f"?comp_aparell={comp_aparell.id}"

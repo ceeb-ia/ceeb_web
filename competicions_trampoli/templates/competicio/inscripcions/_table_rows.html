@@ -93,13 +93,26 @@
           {% elif col.code == "__aparells__" %}
             {% with rid=r.id|stringformat:"s" %}
               {% with ex_ids=table_runtime.inscripcio_aparells_excluded_map|get_item:rid %}
-                <select class="form-control form-control-sm aparells-select js-aparells-select" data-ins-id="{{ r.id }}" multiple size="3" {% if not can_edit_inscripcions %}disabled{% endif %}>
-                  {% for app in inscripcio_aparells_cfg %}
-                    <option value="{{ app.id }}" {% if app.id not in ex_ids %}selected{% endif %}>{{ app.aparell.nom }}</option>
-                  {% empty %}
-                    <option value="" disabled>(Sense aparells actius)</option>
-                  {% endfor %}
-                </select>
+                <div class="aparells-select-wrap">
+                  <select
+                    class="form-control form-control-sm aparells-select js-aparells-select"
+                    data-ins-id="{{ r.id }}"
+                    multiple
+                    size="3"
+                    title="Per defecte competeix a tots els aparells individuals. Desmarca nomes exclusions."
+                    aria-label="Aparells de la inscripcio {{ r.nom_i_cognoms }}"
+                    {% if not can_edit_inscripcions %}disabled{% endif %}>
+                    {% for app in inscripcio_aparells_cfg %}
+                      <option value="{{ app.id }}" {% if app.id not in ex_ids %}selected{% endif %}>{{ app.aparell.nom }}</option>
+                    {% empty %}
+                      <option value="" disabled>(Sense aparells actius)</option>
+                    {% endfor %}
+                  </select>
+                  <div class="aparells-select-meta">
+                    <div class="small font-weight-semibold aparells-select-summary js-aparells-select-summary" data-ins-id="{{ r.id }}"></div>
+                    <div class="small text-muted aparells-select-status js-aparells-select-status" data-ins-id="{{ r.id }}" aria-live="polite"></div>
+                  </div>
+                </div>
               {% endwith %}
             {% endwith %}
           {% elif col.code == "__media__" %}
