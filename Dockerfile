@@ -27,6 +27,9 @@ RUN python -m pip install --upgrade pip setuptools wheel
 # Install the dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Install Playwright browser binaries for browser-driven tests.
+RUN python -m playwright install --with-deps chromium
+
 # Copy the Django project files
 COPY . .
 

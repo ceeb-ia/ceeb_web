@@ -1090,7 +1090,22 @@
     const canAddSelectedSection = detailChecked && canAddDetailSection(selectedSectionType);
     if (els.detailSectionType) els.detailSectionType.disabled = !available || !detailChecked;
     if (els.btnDetailSectionAdd) els.btnDetailSectionAdd.disabled = !available || !canAddSelectedSection;
-    const sections = readDetailSectionsUI(true);
+    let sections = readDetailSectionsUI(true);
+    if (
+      state.isHydratingSchema &&
+      !sections.length &&
+      Array.isArray(state.hydrationDetailSections) &&
+      state.hydrationDetailSections.length
+    ) {
+      sections = JSON.parse(JSON.stringify(state.hydrationDetailSections));
+    } else if (
+      !sections.length &&
+      !state.detailUiTouched &&
+      Array.isArray(state.persistedDetailSections) &&
+      state.persistedDetailSections.length
+    ) {
+      sections = JSON.parse(JSON.stringify(state.persistedDetailSections));
+    }
     if (!detailChecked) {
       setDetailConfigAlert("");
     } else if (!sections.length && detailSectionNeedsInitialRaw(selectedSectionType) && !canAddDetailSection(selectedSectionType)) {

@@ -26,3 +26,5 @@ xlrd
 weasyprint
 qrcode
 setuptools
+playwright
+chromium

@@ -2,6 +2,7 @@
     const preferAdvanced = !!opts.preferAdvanced;
     const cfg = currentCfg();
     if (!cfg) return;
+    if (state.isHydratingSchema) return;
     clearBuilderSaveFeedback();
 
     const partEntries = readParticioEntriesFromUI();
@@ -50,7 +51,21 @@
     }
     desempat = sanitizeDesempatForTipus(desempat, tipus);
     const equipsSchema = readEquipsSchemaUI(cfg.schema && cfg.schema.equips);
-    const detailSections = readDetailSectionsUI(true);
+    let detailSections = readDetailSectionsUI(true);
+    if (
+      !detailSections.length &&
+      Array.isArray(state.hydrationDetailSections) &&
+      state.hydrationDetailSections.length
+    ) {
+      detailSections = JSON.parse(JSON.stringify(state.hydrationDetailSections));
+    } else if (
+      !detailSections.length &&
+      !state.detailUiTouched &&
+      Array.isArray(state.persistedDetailSections) &&
+      state.persistedDetailSections.length
+    ) {
+      detailSections = JSON.parse(JSON.stringify(state.persistedDetailSections));
+    }
     const detailLegacyColumns = serializeLegacyDetailColumns(detailSections);
 
     const schema = {
@@ -95,166 +110,207 @@
     renderAppStaleWarningBanner(schema, apIds);
   }
 
+  function rerenderDetailForCurrentMode() {
+    let detailSections = readDetailSectionsUI(true);
+    if (
+      !detailSections.length &&
+      Array.isArray(state.persistedDetailSections) &&
+      state.persistedDetailSections.length
+    ) {
+      detailSections = JSON.parse(JSON.stringify(state.persistedDetailSections));
+    } else if (
+      !detailSections.length &&
+      Array.isArray(state.hydrationDetailSections) &&
+      state.hydrationDetailSections.length
+    ) {
+      detailSections = JSON.parse(JSON.stringify(state.hydrationDetailSections));
+    }
+    renderDetailSectionsUI(detailSections);
+    refreshDetailConfigUI();
+  }
+
   function syncUIFromSchema(schema) {
+    const rawDetailCfg = JSON.parse(JSON.stringify((((schema || {}).presentacio || {}).detall) || {}));
     schema = normalizeForHydration(schema || DEFAULT_SCHEMA);
     const cfg = currentCfg();
     if (cfg) cfg.schema = schema;
+    state.isHydratingSchema = true;
     state.rehydrationIssues = [];
     advancedDirty.desempat = false;
     advancedDirty.filtres = false;
+    state.detailUiTouched = false;
     els.tDesempat.value = JSON.stringify(schema.desempat || [], null, 2);
     els.tFiltres.value = JSON.stringify(schema.filtres || {}, null, 2);
     els.advancedJson.value = JSON.stringify(schema, null, 2);
 
-    const partEntries = normalizeParticioEntries(schema.particions_v2 || [], schema.particions || []);
-    const parts = particioCodesFromEntries(partEntries);
-    renderParticioStackUI(partEntries, schema.particions_custom || {});
-    renderDerivedPartitionConfigUI(schema.particions_config || {}, parts);
-    renderParticionsCustomUI(parts, schema.particions_custom || {});
-    syncEquipUIFromSchema(schema.equips || DEFAULT_SCHEMA.equips);
+    try {
+      const partEntries = normalizeParticioEntries(schema.particions_v2 || [], schema.particions || []);
+      const parts = particioCodesFromEntries(partEntries);
+      renderParticioStackUI(partEntries, schema.particions_custom || {});
+      renderDerivedPartitionConfigUI(schema.particions_config || {}, parts);
+      renderParticionsCustomUI(parts, schema.particions_custom || {});
+      syncEquipUIFromSchema(schema.equips || DEFAULT_SCHEMA.equips);
 
-    // aparells (sense mode "tots": normalitzem legacy a seleccio explicita)
-    const rawAparells = ((schema.puntuacio||{}).aparells||{});
-    const apMode = String(rawAparells.mode || "seleccionar").toLowerCase();
-    const idsLegacy = Array.isArray(rawAparells.ids) ? rawAparells.ids : [];
-    const idsBase = (apMode === "tots")
-      ? (APARELLS || []).map(a => a.id)
-      : idsLegacy;
-    const selectedCompatibleIds = sanitizeCompatibleAppIds(idsBase);
-    if (els.apSelBox) els.apSelBox.style.display = "";
-    buildAparellChecks(selectedCompatibleIds, { includeStale: false });
-    const selectedSet = new Set(selectedCompatibleIds.map(x => String(x)));
-    getAppChoices(selectedCompatibleIds, { includeStale: false }).forEach(a => {
-      const el = document.getElementById("app_" + a.id);
-      if (el) el.checked = selectedSet.has(String(a.id));
-    });
-    renderAppStaleWarningBanner(schema, selectedCompatibleIds);
+      // aparells (sense mode "tots": normalitzem legacy a seleccio explicita)
+      const rawAparells = ((schema.puntuacio||{}).aparells||{});
+      const apMode = String(rawAparells.mode || "seleccionar").toLowerCase();
+      const idsLegacy = Array.isArray(rawAparells.ids) ? rawAparells.ids : [];
+      const idsBase = (apMode === "tots")
+        ? (APARELLS || []).map(a => a.id)
+        : idsLegacy;
+      const selectedCompatibleIds = sanitizeCompatibleAppIds(idsBase);
+      if (els.apSelBox) els.apSelBox.style.display = "";
+      buildAparellChecks(selectedCompatibleIds, { includeStale: false });
+      const selectedSet = new Set(selectedCompatibleIds.map(x => String(x)));
+      getAppChoices(selectedCompatibleIds, { includeStale: false }).forEach(a => {
+        const el = document.getElementById("app_" + a.id);
+        if (el) el.checked = selectedSet.has(String(a.id));
+      });
+      renderAppStaleWarningBanner(schema, selectedCompatibleIds);
 
-    [
-      els.sAggCamps,
-      els.sCandidateSourceMode,
-      els.sCandidateSourceSelectionMode,
-      els.sCandidateSourceAggExercicis,
-      els.sExerciseSelectionScope,
-      els.sModeSeleccioExercicis,
-      els.sExercicisMode,
-      els.sAggExercicis,
-      els.sAggAparells,
-      els.sModeResultatAparells,
-      els.sOrdre,
-      els.sVictoryModeCamps,
-      els.sVictoryModeExercicis,
-      els.sVictoryFieldSelectionMode,
-      els.sVictoryAggCamps,
-      els.sVictoryAggExercicis,
-    ].forEach(clearInjectedSelectOptions);
+      [
+        els.sAggCamps,
+        els.sCandidateSourceMode,
+        els.sCandidateSourceSelectionMode,
+        els.sCandidateSourceAggExercicis,
+        els.sExerciseSelectionScope,
+        els.sModeSeleccioExercicis,
+        els.sExercicisMode,
+        els.sAggExercicis,
+        els.sAggAparells,
+        els.sModeResultatAparells,
+        els.sOrdre,
+        els.sVictoryModeCamps,
+        els.sVictoryModeExercicis,
+        els.sVictoryFieldSelectionMode,
+        els.sVictoryAggCamps,
+        els.sVictoryAggExercicis,
+      ].forEach(clearInjectedSelectOptions);
 
-    if (els.sAggCamps) {
-      ensureSelectOption(els.sAggCamps, (schema.puntuacio||{}).agregacio_camps, value => `${value} (legacy)`);
-      els.sAggCamps.value = (schema.puntuacio||{}).agregacio_camps || "sum";
-    }
-    if (els.sCandidateSourceMode) {
-      ensureSelectOption(els.sCandidateSourceMode, (schema.puntuacio||{}).candidate_source_mode, value => `${value} (legacy)`);
-      els.sCandidateSourceMode.value = (schema.puntuacio||{}).candidate_source_mode || "raw_exercise";
-    }
-    if (els.sCandidateSourceSelectionMode) {
-      const candidateCfg = (schema.puntuacio||{}).candidate_source_cfg || {};
-      ensureSelectOption(els.sCandidateSourceSelectionMode, candidateCfg.mode, value => `${value} (legacy)`);
-      els.sCandidateSourceSelectionMode.value = candidateCfg.mode || "tots";
-    }
-    if (els.sCandidateSourceAggExercicis) {
-      const candidateCfg = (schema.puntuacio||{}).candidate_source_cfg || {};
-      ensureSelectOption(els.sCandidateSourceAggExercicis, candidateCfg.agregacio_exercicis, value => `${value} (legacy)`);
-      els.sCandidateSourceAggExercicis.value = candidateCfg.agregacio_exercicis || "sum";
-    }
-    if (els.iCandidateSourceBestN) {
-      const candidateCfg = (schema.puntuacio||{}).candidate_source_cfg || {};
-      els.iCandidateSourceBestN.value = candidateCfg.best_n || 1;
-    }
-    if (els.iCandidateSourceIndex) {
-      const candidateCfg = (schema.puntuacio||{}).candidate_source_cfg || {};
-      els.iCandidateSourceIndex.value = candidateCfg.index || 1;
-    }
-    if (els.tCandidateSourceIds) {
-      const candidateCfg = (schema.puntuacio||{}).candidate_source_cfg || {};
-      if (Array.isArray(candidateCfg.ids)) els.tCandidateSourceIds.value = candidateCfg.ids.join(",");
-      else els.tCandidateSourceIds.value = String(candidateCfg.ids || "");
-    }
-    if (els.sExerciseSelectionScope) {
-      ensureSelectOption(els.sExerciseSelectionScope, (schema.puntuacio||{}).exercise_selection_scope, value => `${value} (legacy)`);
-      els.sExerciseSelectionScope.value = normalizeExerciseSelectionScope((schema.puntuacio||{}).exercise_selection_scope);
-    }
-    ensureSelectOption(els.sModeSeleccioExercicis, (schema.puntuacio||{}).mode_seleccio_exercicis, value => `${value} (legacy)`);
-    els.sModeSeleccioExercicis.value = (schema.puntuacio||{}).mode_seleccio_exercicis || "per_aparell_override";
-    const pEx = ((schema.puntuacio||{}).exercicis || {});
-    ensureSelectOption(els.sExercicisMode, pEx.mode, value => `${value} (legacy)`);
-    els.sExercicisMode.value = pEx.mode || "tots";
-    els.iExBestN.value = (schema.puntuacio||{}).exercicis_best_n || pEx.best_n || 1;
-    els.iExIndex.value = pEx.index || 1;
-    els.iExMaxPerParticipant.value = pEx.max_per_participant || 0;
-    if (Array.isArray(pEx.ids)) els.tExIds.value = pEx.ids.join(",");
-    else els.tExIds.value = String(pEx.ids || "");
-    refreshMainExercicisUI();
-    ensureSelectOption(els.sAggExercicis, (schema.puntuacio||{}).agregacio_exercicis, value => `${value} (legacy)`);
-    els.sAggExercicis.value = (schema.puntuacio||{}).agregacio_exercicis || "sum";
-    ensureSelectOption(els.sAggAparells, (schema.puntuacio||{}).agregacio_aparells, value => `${value} (legacy)`);
-    els.sAggAparells.value = (schema.puntuacio||{}).agregacio_aparells || "sum";
-    ensureSelectOption(els.sModeResultatAparells, (schema.puntuacio||{}).mode_resultat_aparells, value => `${value} (legacy)`);
-    els.sModeResultatAparells.value = (schema.puntuacio||{}).mode_resultat_aparells || "score";
-    ensureSelectOption(els.sOrdre, (schema.puntuacio||{}).ordre, value => `${value} (legacy)`);
-    els.sOrdre.value = (schema.puntuacio||{}).ordre || "desc";
-    hydratePuntuacioUI(schema);
+      if (els.sAggCamps) {
+        ensureSelectOption(els.sAggCamps, (schema.puntuacio||{}).agregacio_camps, value => `${value} (legacy)`);
+        els.sAggCamps.value = (schema.puntuacio||{}).agregacio_camps || "sum";
+      }
+      if (els.sCandidateSourceMode) {
+        ensureSelectOption(els.sCandidateSourceMode, (schema.puntuacio||{}).candidate_source_mode, value => `${value} (legacy)`);
+        els.sCandidateSourceMode.value = (schema.puntuacio||{}).candidate_source_mode || "raw_exercise";
+      }
+      if (els.sCandidateSourceSelectionMode) {
+        const candidateCfg = (schema.puntuacio||{}).candidate_source_cfg || {};
+        ensureSelectOption(els.sCandidateSourceSelectionMode, candidateCfg.mode, value => `${value} (legacy)`);
+        els.sCandidateSourceSelectionMode.value = candidateCfg.mode || "tots";
+      }
+      if (els.sCandidateSourceAggExercicis) {
+        const candidateCfg = (schema.puntuacio||{}).candidate_source_cfg || {};
+        ensureSelectOption(els.sCandidateSourceAggExercicis, candidateCfg.agregacio_exercicis, value => `${value} (legacy)`);
+        els.sCandidateSourceAggExercicis.value = candidateCfg.agregacio_exercicis || "sum";
+      }
+      if (els.iCandidateSourceBestN) {
+        const candidateCfg = (schema.puntuacio||{}).candidate_source_cfg || {};
+        els.iCandidateSourceBestN.value = candidateCfg.best_n || 1;
+      }
+      if (els.iCandidateSourceIndex) {
+        const candidateCfg = (schema.puntuacio||{}).candidate_source_cfg || {};
+        els.iCandidateSourceIndex.value = candidateCfg.index || 1;
+      }
+      if (els.tCandidateSourceIds) {
+        const candidateCfg = (schema.puntuacio||{}).candidate_source_cfg || {};
+        if (Array.isArray(candidateCfg.ids)) els.tCandidateSourceIds.value = candidateCfg.ids.join(",");
+        else els.tCandidateSourceIds.value = String(candidateCfg.ids || "");
+      }
+      if (els.sExerciseSelectionScope) {
+        ensureSelectOption(els.sExerciseSelectionScope, (schema.puntuacio||{}).exercise_selection_scope, value => `${value} (legacy)`);
+        els.sExerciseSelectionScope.value = normalizeExerciseSelectionScope((schema.puntuacio||{}).exercise_selection_scope);
+      }
+      ensureSelectOption(els.sModeSeleccioExercicis, (schema.puntuacio||{}).mode_seleccio_exercicis, value => `${value} (legacy)`);
+      els.sModeSeleccioExercicis.value = (schema.puntuacio||{}).mode_seleccio_exercicis || "per_aparell_override";
+      const pEx = ((schema.puntuacio||{}).exercicis || {});
+      ensureSelectOption(els.sExercicisMode, pEx.mode, value => `${value} (legacy)`);
+      els.sExercicisMode.value = pEx.mode || "tots";
+      els.iExBestN.value = (schema.puntuacio||{}).exercicis_best_n || pEx.best_n || 1;
+      els.iExIndex.value = pEx.index || 1;
+      els.iExMaxPerParticipant.value = pEx.max_per_participant || 0;
+      if (Array.isArray(pEx.ids)) els.tExIds.value = pEx.ids.join(",");
+      else els.tExIds.value = String(pEx.ids || "");
+      refreshMainExercicisUI();
+      ensureSelectOption(els.sAggExercicis, (schema.puntuacio||{}).agregacio_exercicis, value => `${value} (legacy)`);
+      els.sAggExercicis.value = (schema.puntuacio||{}).agregacio_exercicis || "sum";
+      ensureSelectOption(els.sAggAparells, (schema.puntuacio||{}).agregacio_aparells, value => `${value} (legacy)`);
+      els.sAggAparells.value = (schema.puntuacio||{}).agregacio_aparells || "sum";
+      ensureSelectOption(els.sModeResultatAparells, (schema.puntuacio||{}).mode_resultat_aparells, value => `${value} (legacy)`);
+      els.sModeResultatAparells.value = (schema.puntuacio||{}).mode_resultat_aparells || "score";
+      ensureSelectOption(els.sOrdre, (schema.puntuacio||{}).ordre, value => `${value} (legacy)`);
+      els.sOrdre.value = (schema.puntuacio||{}).ordre || "desc";
+      hydratePuntuacioUI(schema);
 
-    els.iTopN.value = (schema.presentacio||{}).top_n ?? 0;
-    els.cEmpats.checked = !!((schema.presentacio||{}).mostrar_empats);
-    runSafeHydrationRender("columnes", () => {
-      renderColumnsUI((schema.presentacio||{}).columnes || DEFAULT_SCHEMA.presentacio.columnes);
-    });
-    const detailCfg = ((schema.presentacio || {}).detall || {});
-    if (els.detailEnabled) els.detailEnabled.checked = !!detailCfg.enabled;
-    if (els.detailDefaultOpen) els.detailDefaultOpen.checked = !!detailCfg.default_open;
-    runSafeHydrationRender("detall", () => {
-      renderDetailSectionsUI(normalizeDetailSectionsFromSchema(detailCfg));
-    });
+      els.iTopN.value = (schema.presentacio||{}).top_n ?? 0;
+      els.cEmpats.checked = !!((schema.presentacio||{}).mostrar_empats);
+      runSafeHydrationRender("columnes", () => {
+        renderColumnsUI((schema.presentacio||{}).columnes || DEFAULT_SCHEMA.presentacio.columnes);
+      });
+      const detailCfg = ((schema.presentacio || {}).detall || {});
+      const detailSections = normalizeDetailSectionsFromSchema(rawDetailCfg);
+      state.hydrationDetailSections = JSON.parse(JSON.stringify(detailSections));
+      state.persistedDetailSections = JSON.parse(JSON.stringify(detailSections));
+      schema.presentacio.detall = {
+        ...detailCfg,
+        enabled: !!rawDetailCfg.enabled,
+        default_open: !!rawDetailCfg.default_open,
+        sections: JSON.parse(JSON.stringify(detailSections)),
+      };
+      const detailLegacyColumns = serializeLegacyDetailColumns(detailSections, rawDetailCfg);
+      if (detailLegacyColumns?.length) schema.presentacio.detall.columnes = detailLegacyColumns;
+      else delete schema.presentacio.detall.columnes;
+      if (cfg) cfg.schema = schema;
+      els.advancedJson.value = JSON.stringify(schema, null, 2);
+      if (els.detailEnabled) els.detailEnabled.checked = !!rawDetailCfg.enabled;
+      if (els.detailDefaultOpen) els.detailDefaultOpen.checked = !!rawDetailCfg.default_open;
+      runSafeHydrationRender("detall", () => {
+        renderDetailSectionsUI(state.hydrationDetailSections);
+      });
 
-    // tie + filtres JSON
-    const victoriesCfg = ((schema.puntuacio || {}).victories || {});
-    if (els.sVictoryModeCamps) {
-      ensureSelectOption(els.sVictoryModeCamps, victoriesCfg.mode_camps, value => `${value} (legacy)`);
-      els.sVictoryModeCamps.value = victoriesCfg.mode_camps || "agregat";
-    }
-    if (els.sVictoryModeExercicis) {
-      ensureSelectOption(els.sVictoryModeExercicis, victoriesCfg.mode_exercicis, value => `${value} (legacy)`);
-      els.sVictoryModeExercicis.value = victoriesCfg.mode_exercicis || "agregat";
-    }
-    if (els.sVictoryFieldSelectionMode) {
-      ensureSelectOption(els.sVictoryFieldSelectionMode, victoriesCfg.mode_seleccio_exercicis_camps_separats, value => `${value} (legacy)`);
-      els.sVictoryFieldSelectionMode.value = victoriesCfg.mode_seleccio_exercicis_camps_separats || "per_camp";
-    }
-    if (els.sVictoryAggCamps) {
-      ensureSelectOption(els.sVictoryAggCamps, victoriesCfg.agregacio_victories_camps, value => `${value} (legacy)`);
-      els.sVictoryAggCamps.value = victoriesCfg.agregacio_victories_camps || "sum";
-    }
-    if (els.sVictoryAggExercicis) {
-      ensureSelectOption(els.sVictoryAggExercicis, victoriesCfg.agregacio_victories_exercicis, value => `${value} (legacy)`);
-      els.sVictoryAggExercicis.value = victoriesCfg.agregacio_victories_exercicis || "sum";
-    }
-    runSafeHydrationRender("desempat victories", () => {
-      renderVictoryTieUI(victoriesCfg.desempat_comparacio || []);
-    });
-    runSafeHydrationRender("desempat", () => {
-      renderTieUI(schema.desempat || []);
-    });
-    applyMultiSelectValues(els.fEntitats, (schema.filtres || {}).entitats_in || []);
-    applyMultiSelectValues(els.fCategories, (schema.filtres || {}).categories_in || []);
-    applyMultiSelectValues(els.fSubcategories, (schema.filtres || {}).subcategories_in || []);
-    applyMultiSelectValues(els.fGrups, (schema.filtres || {}).grups_in || []);
-    refreshTipusUI();
+      // tie + filtres JSON
+      const victoriesCfg = ((schema.puntuacio || {}).victories || {});
+      if (els.sVictoryModeCamps) {
+        ensureSelectOption(els.sVictoryModeCamps, victoriesCfg.mode_camps, value => `${value} (legacy)`);
+        els.sVictoryModeCamps.value = victoriesCfg.mode_camps || "agregat";
+      }
+      if (els.sVictoryModeExercicis) {
+        ensureSelectOption(els.sVictoryModeExercicis, victoriesCfg.mode_exercicis, value => `${value} (legacy)`);
+        els.sVictoryModeExercicis.value = victoriesCfg.mode_exercicis || "agregat";
+      }
+      if (els.sVictoryFieldSelectionMode) {
+        ensureSelectOption(els.sVictoryFieldSelectionMode, victoriesCfg.mode_seleccio_exercicis_camps_separats, value => `${value} (legacy)`);
+        els.sVictoryFieldSelectionMode.value = victoriesCfg.mode_seleccio_exercicis_camps_separats || "per_camp";
+      }
+      if (els.sVictoryAggCamps) {
+        ensureSelectOption(els.sVictoryAggCamps, victoriesCfg.agregacio_victories_camps, value => `${value} (legacy)`);
+        els.sVictoryAggCamps.value = victoriesCfg.agregacio_victories_camps || "sum";
+      }
+      if (els.sVictoryAggExercicis) {
+        ensureSelectOption(els.sVictoryAggExercicis, victoriesCfg.agregacio_victories_exercicis, value => `${value} (legacy)`);
+        els.sVictoryAggExercicis.value = victoriesCfg.agregacio_victories_exercicis || "sum";
+      }
+      runSafeHydrationRender("desempat victories", () => {
+        renderVictoryTieUI(victoriesCfg.desempat_comparacio || []);
+      });
+      runSafeHydrationRender("desempat", () => {
+        renderTieUI(schema.desempat || []);
+      });
+      applyMultiSelectValues(els.fEntitats, (schema.filtres || {}).entitats_in || []);
+      applyMultiSelectValues(els.fCategories, (schema.filtres || {}).categories_in || []);
+      applyMultiSelectValues(els.fSubcategories, (schema.filtres || {}).subcategories_in || []);
+      applyMultiSelectValues(els.fGrups, (schema.filtres || {}).grups_in || []);
+      refreshTipusUI();
 
-    runSafeHydrationRender("per aparell", () => {
-      renderPuntuacioSection(schema);
-    });
-    renderEquipsModeControls();
+      runSafeHydrationRender("per aparell", () => {
+        renderPuntuacioSection(schema);
+      });
+      renderEquipsModeControls();
+    } finally {
+      state.isHydratingSchema = false;
+      state.hydrationDetailSections = null;
+    }
   }
 
   function selectCfg(id) {
@@ -799,9 +855,30 @@
   if (els.detailSectionType) {
     els.detailSectionType.addEventListener("change", refreshDetailConfigUI);
   }
+  if (els.detailConfigBox) {
+    const markDetailUiTouched = (ev) => {
+      const target = ev && ev.target;
+      if (!target || !els.detailConfigBox.contains(target)) return;
+      if (
+        target.closest("[data-section-idx]") ||
+        target.closest("[data-k='columns_box']") ||
+        target.closest("[data-act]") ||
+        target === els.detailEnabled ||
+        target === els.detailDefaultOpen ||
+        target === els.detailSectionType ||
+        target === els.btnDetailSectionAdd
+      ) {
+        state.detailUiTouched = true;
+      }
+    };
+    els.detailConfigBox.addEventListener("input", markDetailUiTouched, true);
+    els.detailConfigBox.addEventListener("change", markDetailUiTouched, true);
+    els.detailConfigBox.addEventListener("click", markDetailUiTouched, true);
+  }
   if (els.eqAssignmentContext) {
     els.eqAssignmentContext.addEventListener("change", () => {
       refreshTipusUI({ includeStale: false, dropInvalidSelection: true });
+      rerenderDetailForCurrentMode();
       renderEquipManualRows(readEquipManualRows());
       renderPuntuacioSection((currentCfg()||{}).schema || DEFAULT_SCHEMA);
       renderTieUI(readTieUI(true));
@@ -813,6 +890,7 @@
   if (els.eqTeamMode) {
     els.eqTeamMode.addEventListener("change", () => {
       refreshTipusUI({ includeStale: false, dropInvalidSelection: true });
+      rerenderDetailForCurrentMode();
       renderPuntuacioSection((currentCfg()||{}).schema || DEFAULT_SCHEMA);
       renderTieUI(readTieUI(true));
       renderVictoryTieUI(readVictoryTieUI(true));

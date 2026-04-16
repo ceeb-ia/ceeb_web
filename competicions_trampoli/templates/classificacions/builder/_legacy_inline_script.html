@@ -6888,7 +6888,21 @@
     renderAppStaleWarningBanner(schema, apIds);
   }
 
+  function rerenderDetailForCurrentMode() {
+    const cfg = currentCfg();
+    let detailSections = readDetailSectionsUI(true);
+    if (!detailSections.length) {
+      const persistedSections = ((((cfg && cfg.schema) || {}).presentacio || {}).detall || {}).sections;
+      detailSections = Array.isArray(persistedSections)
+        ? JSON.parse(JSON.stringify(persistedSections))
+        : [];
+    }
+    renderDetailSectionsUI(detailSections);
+    refreshDetailConfigUI();
+  }
+
   function syncUIFromSchema(schema) {
+    const rawDetailCfg = JSON.parse(JSON.stringify((((schema || {}).presentacio || {}).detall) || {}));
     schema = normalizeForHydration(schema || DEFAULT_SCHEMA);
     const cfg = currentCfg();
     if (cfg) cfg.schema = schema;
@@ -7004,10 +7018,22 @@
       renderColumnsUI((schema.presentacio||{}).columnes || DEFAULT_SCHEMA.presentacio.columnes);
     });
     const detailCfg = ((schema.presentacio || {}).detall || {});
-    if (els.detailEnabled) els.detailEnabled.checked = !!detailCfg.enabled;
-    if (els.detailDefaultOpen) els.detailDefaultOpen.checked = !!detailCfg.default_open;
+    const detailSections = normalizeDetailSectionsFromSchema(rawDetailCfg);
+    schema.presentacio.detall = {
+      ...detailCfg,
+      enabled: !!rawDetailCfg.enabled,
+      default_open: !!rawDetailCfg.default_open,
+      sections: JSON.parse(JSON.stringify(detailSections)),
+    };
+    const detailLegacyColumns = serializeLegacyDetailColumns(detailSections, rawDetailCfg);
+    if (detailLegacyColumns?.length) schema.presentacio.detall.columnes = detailLegacyColumns;
+    else delete schema.presentacio.detall.columnes;
+    if (cfg) cfg.schema = schema;
+    els.advancedJson.value = JSON.stringify(schema, null, 2);
+    if (els.detailEnabled) els.detailEnabled.checked = !!rawDetailCfg.enabled;
+    if (els.detailDefaultOpen) els.detailDefaultOpen.checked = !!rawDetailCfg.default_open;
     runSafeHydrationRender("detall", () => {
-      renderDetailSectionsUI(normalizeDetailSectionsFromSchema(detailCfg));
+      renderDetailSectionsUI(detailSections);
     });
 
     // tie + filtres JSON
@@ -7595,6 +7621,7 @@
   if (els.eqAssignmentContext) {
     els.eqAssignmentContext.addEventListener("change", () => {
       refreshTipusUI({ includeStale: false, dropInvalidSelection: true });
+      rerenderDetailForCurrentMode();
       renderEquipManualRows(readEquipManualRows());
       renderPuntuacioSection((currentCfg()||{}).schema || DEFAULT_SCHEMA);
       renderTieUI(readTieUI(true));
@@ -7606,6 +7633,7 @@
   if (els.eqTeamMode) {
     els.eqTeamMode.addEventListener("change", () => {
       refreshTipusUI({ includeStale: false, dropInvalidSelection: true });
+      rerenderDetailForCurrentMode();
       renderPuntuacioSection((currentCfg()||{}).schema || DEFAULT_SCHEMA);
       renderTieUI(readTieUI(true));
       renderVictoryTieUI(readVictoryTieUI(true));
