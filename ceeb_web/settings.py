@@ -56,7 +56,11 @@ APP_ENV = os.getenv("APP_ENV", "dev")
 DEFAULT_PROJECT_APPS = (
     "ceeb_web,competicions_trampoli"
     if APP_ENV == "prod"
-    else "ceeb_web,alumnat,competicions_trampoli,marbella_informes,designacions"
+    else (
+        "ceeb_web,competicions_trampoli,marbella_informes,designacions"
+        if APP_ENV == "intern"
+        else "ceeb_web,alumnat,competicions_trampoli,marbella_informes,designacions"
+    )
 )
 PROJECT_APPS = _env_csv("PROJECT_APPS", DEFAULT_PROJECT_APPS)
 
@@ -86,7 +90,11 @@ MIDDLEWARE = [
 
 # filepath: c:\Users\Extra\Desktop\ceeb_web\ceeb_web\settings.py
 SECRET_KEY = _env_str("DJANGO_SECRET_KEY")
-ROOT_URLCONF = "ceeb_web.urls_prod" if APP_ENV == "prod" else "ceeb_web.urls"
+ROOT_URLCONF = (
+    "ceeb_web.urls_prod"
+    if APP_ENV == "prod"
+    else "ceeb_web.urls_intern" if APP_ENV == "intern" else "ceeb_web.urls"
+)
 # filepath: c:\Users\Extra\Desktop\ceeb_web\ceeb_web\settings.py
 ALLOWED_HOSTS = _env_csv("ALLOWED_HOSTS", "localhost,127.0.0.1")
 
@@ -108,7 +116,7 @@ TEMPLATES = [
         },
     },
 ]
-DEBUG = _env_bool("DEBUG", APP_ENV != "prod")
+DEBUG = _env_bool("DEBUG", APP_ENV not in {"prod", "intern"})
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 POSTGRES_DB = os.getenv("POSTGRES_DB")

@@ -14,6 +14,7 @@ from .pipeline_runtime import (
     _normalize_exercicis_cfg,
     _normalize_participants_cfg,
     _pipeline_selected_app_ids,
+    _sanitize_scoring_pipeline_legacy_aliases,
     normalize_scoring_pipeline,
 )
 
@@ -55,10 +56,11 @@ def validate_scoring_pipeline_shape(raw_pipeline, *, prefix="pipeline"):
     if not isinstance(raw_pipeline, dict):
         return [f"{prefix} ha de ser un objecte."]
 
-    errors = list(_report_disallowed_keys(raw_pipeline, prefix=prefix))
-    normalized = normalize_scoring_pipeline(raw_pipeline, strict=True)
+    compat_pipeline = _sanitize_scoring_pipeline_legacy_aliases(raw_pipeline)
+    errors = list(_report_disallowed_keys(compat_pipeline, prefix=prefix))
+    normalized = normalize_scoring_pipeline(compat_pipeline, strict=True)
 
-    aparells = raw_pipeline.get("aparells")
+    aparells = compat_pipeline.get("aparells")
     if not isinstance(aparells, dict):
         errors.append(f"{prefix}.aparells ha de ser un objecte.")
     else:
@@ -68,7 +70,7 @@ def validate_scoring_pipeline_shape(raw_pipeline, *, prefix="pipeline"):
         if not _pipeline_selected_app_ids(normalized):
             errors.append(f"{prefix}.aparells.ids ha de tenir almenys un aparell.")
 
-    camps_map = raw_pipeline.get("camps_per_aparell")
+    camps_map = compat_pipeline.get("camps_per_aparell")
     if not isinstance(camps_map, dict):
         errors.append(f"{prefix}.camps_per_aparell ha de ser un objecte.")
     else:
@@ -77,41 +79,41 @@ def validate_scoring_pipeline_shape(raw_pipeline, *, prefix="pipeline"):
                 errors.append(f"{prefix}.camps_per_aparell[{app_key}] ha de ser una llista o text.")
 
     for key in ("agregacio_camps_per_aparell", "candidate_source_per_aparell", "exercicis_per_aparell", "agregacio_exercicis_per_aparell"):
-        if key in raw_pipeline and not isinstance(raw_pipeline.get(key), dict):
+        if key in compat_pipeline and not isinstance(compat_pipeline.get(key), dict):
             errors.append(f"{prefix}.{key} ha de ser un objecte.")
 
-    mode_resultat = str(raw_pipeline.get("mode_resultat_aparells") or "").strip().lower()
+    mode_resultat = str(compat_pipeline.get("mode_resultat_aparells") or "").strip().lower()
     if mode_resultat and mode_resultat != "score":
-        errors.append(f"{prefix}.mode_resultat_aparells invalid: {raw_pipeline.get('mode_resultat_aparells')}")
+        errors.append(f"{prefix}.mode_resultat_aparells invalid: {compat_pipeline.get('mode_resultat_aparells')}")
 
-    ordre = str(raw_pipeline.get("ordre") or "").strip().lower()
+    ordre = str(compat_pipeline.get("ordre") or "").strip().lower()
     if ordre and ordre not in {"asc", "desc"}:
-        errors.append(f"{prefix}.ordre invalid: {raw_pipeline.get('ordre')}")
+        errors.append(f"{prefix}.ordre invalid: {compat_pipeline.get('ordre')}")
 
-    raw_scope = str(raw_pipeline.get("exercise_selection_scope") or "").strip().lower()
+    raw_scope = str(compat_pipeline.get("exercise_selection_scope") or "").strip().lower()
     if raw_scope == "hereta":
         errors.append(f"{prefix}.exercise_selection_scope no admet 'hereta'.")
     elif raw_scope and raw_scope not in ALLOWED_EXERCISE_SELECTION_SCOPES:
-        errors.append(f"{prefix}.exercise_selection_scope invalid: {raw_pipeline.get('exercise_selection_scope')}")
+        errors.append(f"{prefix}.exercise_selection_scope invalid: {compat_pipeline.get('exercise_selection_scope')}")
 
-    mode_sel = str(raw_pipeline.get("mode_seleccio_exercicis") or "").strip().lower()
+    mode_sel = str(compat_pipeline.get("mode_seleccio_exercicis") or "").strip().lower()
     if mode_sel == "hereta":
         errors.append(f"{prefix}.mode_seleccio_exercicis no admet 'hereta'.")
     elif mode_sel and mode_sel not in ALLOWED_EXERCISE_SELECTION_MODES:
-        errors.append(f"{prefix}.mode_seleccio_exercicis invalid: {raw_pipeline.get('mode_seleccio_exercicis')}")
+        errors.append(f"{prefix}.mode_seleccio_exercicis invalid: {compat_pipeline.get('mode_seleccio_exercicis')}")
 
-    candidate_mode = str(raw_pipeline.get("candidate_source_mode") or "").strip().lower()
+    candidate_mode = str(compat_pipeline.get("candidate_source_mode") or "").strip().lower()
     if candidate_mode and candidate_mode not in ALLOWED_CANDIDATE_SOURCE_MODES:
-        errors.append(f"{prefix}.candidate_source_mode invalid: {raw_pipeline.get('candidate_source_mode')}")
-    if "candidate_source_cfg" in raw_pipeline and raw_pipeline.get("candidate_source_cfg") is not None:
-        if not isinstance(raw_pipeline.get("candidate_source_cfg"), dict):
+        errors.append(f"{prefix}.candidate_source_mode invalid: {compat_pipeline.get('candidate_source_mode')}")
+    if "candidate_source_cfg" in compat_pipeline and compat_pipeline.get("candidate_source_cfg") is not None:
+        if not isinstance(compat_pipeline.get("candidate_source_cfg"), dict):
             errors.append(f"{prefix}.candidate_source_cfg ha de ser un objecte.")
         else:
-            cfg_mode = str((raw_pipeline.get("candidate_source_cfg") or {}).get("mode") or "").strip().lower()
+            cfg_mode = str((compat_pipeline.get("candidate_source_cfg") or {}).get("mode") or "").strip().lower()
             if cfg_mode and cfg_mode not in ALLOWED_EXERCISE_MODES:
-                errors.append(f"{prefix}.candidate_source_cfg.mode invalid: {(raw_pipeline.get('candidate_source_cfg') or {}).get('mode')}")
+                errors.append(f"{prefix}.candidate_source_cfg.mode invalid: {(compat_pipeline.get('candidate_source_cfg') or {}).get('mode')}")
 
-    exercicis = raw_pipeline.get("exercicis")
+    exercicis = compat_pipeline.get("exercicis")
     if exercicis is not None and not isinstance(exercicis, dict):
         errors.append(f"{prefix}.exercicis ha de ser un objecte.")
     elif isinstance(exercicis, dict):
@@ -129,7 +131,7 @@ def validate_scoring_pipeline_shape(raw_pipeline, *, prefix="pipeline"):
             except Exception:
                 errors.append(f"{prefix}.exercicis.{num_key} invalid.")
 
-    participants = raw_pipeline.get("participants")
+    participants = compat_pipeline.get("participants")
     if participants is not None and not isinstance(participants, dict):
         errors.append(f"{prefix}.participants ha de ser un objecte.")
     elif isinstance(participants, dict):
@@ -143,7 +145,7 @@ def validate_scoring_pipeline_shape(raw_pipeline, *, prefix="pipeline"):
             except Exception:
                 errors.append(f"{prefix}.participants.n invalid.")
 
-    errors.extend(_validate_aggs(raw_pipeline, prefix=prefix))
+    errors.extend(_validate_aggs(compat_pipeline, prefix=prefix))
     return errors
 
 

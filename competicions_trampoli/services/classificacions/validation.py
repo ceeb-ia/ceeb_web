@@ -10,8 +10,11 @@ from .classificacio_templates import (
     normalize_particions_schema,
     split_particio_custom_values,
 )
-from .pipeline_runtime import materialize_desempat_items
-from .pipeline_runtime import build_main_scoring_pipeline_from_schema
+from .pipeline_runtime import (
+    _sanitize_scoring_pipeline_legacy_aliases,
+    build_main_scoring_pipeline_from_schema,
+    materialize_desempat_items,
+)
 from .pipeline_validation import validate_scoring_pipeline_shape
 from .detail_schema_validation import (
     build_validation_detail,
@@ -2040,12 +2043,13 @@ def validate_schema_for_competicio_detailed(competicio, schema_local, tipus="ind
             continue
         errors.extend(validate_scoring_pipeline_shape(raw_pipeline, prefix=f"desempat[{idx}].pipeline"))
         if isinstance(raw_pipeline, dict):
+            compat_pipeline = _sanitize_scoring_pipeline_legacy_aliases(raw_pipeline)
             if not allow_pipeline_participants:
-                if raw_pipeline.get("participants") not in (None, {}) or str(raw_pipeline.get("agregacio_participants") or "").strip():
+                if compat_pipeline.get("participants") not in (None, {}) or str(compat_pipeline.get("agregacio_participants") or "").strip():
                     errors.append(
                         f"desempat[{idx}].pipeline.participants no es compatible amb tipus='{tipus_norm}'."
                     )
-            raw_scope = str(raw_pipeline.get("exercise_selection_scope") or "").strip().lower()
+            raw_scope = str(compat_pipeline.get("exercise_selection_scope") or "").strip().lower()
             if raw_scope == "team_pool" and not allow_pipeline_exercise_scope:
                 errors.append(
                     f"desempat[{idx}].pipeline.exercise_selection_scope no es compatible amb tipus='{tipus_norm}' i team_mode='{schema_local.get('equips', {}).get('team_mode', '')}'."

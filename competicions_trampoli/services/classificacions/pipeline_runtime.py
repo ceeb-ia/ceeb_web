@@ -46,6 +46,12 @@ SCORING_PIPELINE_FORBIDDEN_KEYS = {
     "filtres",
     "equips",
 }
+SCORING_PIPELINE_LEGACY_CLONE_KEYS = {
+    "camp",
+    "agregacio",
+    "best_n",
+    "exercicis_best_n",
+}
 
 
 def _to_positive_int(value):
@@ -215,6 +221,25 @@ def _normalize_participants_cfg(raw_cfg):
     return out
 
 
+def _sanitize_scoring_pipeline_legacy_aliases(raw_pipeline):
+    pipeline = json.loads(json.dumps(raw_pipeline if isinstance(raw_pipeline, dict) else {}))
+
+    legacy_best_n = pipeline.get("exercicis_best_n")
+    if legacy_best_n not in (None, ""):
+        exercicis = pipeline.get("exercicis")
+        if not isinstance(exercicis, dict):
+            exercicis = {}
+        else:
+            exercicis = dict(exercicis)
+        if exercicis.get("best_n") in (None, ""):
+            exercicis["best_n"] = legacy_best_n
+        pipeline["exercicis"] = exercicis
+
+    for key in SCORING_PIPELINE_LEGACY_CLONE_KEYS:
+        pipeline.pop(key, None)
+    return pipeline
+
+
 def build_main_scoring_pipeline_from_schema(schema_local, *, tipus="individual", team_mode=""):
     schema = schema_local if isinstance(schema_local, dict) else {}
     punt = schema.get("puntuacio") if isinstance(schema.get("puntuacio"), dict) else {}
@@ -274,7 +299,7 @@ def build_main_scoring_pipeline_from_schema(schema_local, *, tipus="individual",
 
 
 def normalize_scoring_pipeline(raw_pipeline, *, tipus="individual", team_mode="", strict=False):
-    pipeline_in = raw_pipeline if isinstance(raw_pipeline, dict) else {}
+    pipeline_in = _sanitize_scoring_pipeline_legacy_aliases(raw_pipeline)
     tipus_norm = str(tipus or "").strip().lower()
     team_mode_norm = normalize_team_mode(team_mode)
     app_cfg = pipeline_in.get("aparells") if isinstance(pipeline_in.get("aparells"), dict) else {}

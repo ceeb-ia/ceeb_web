@@ -294,6 +294,10 @@ class HomeCalendarView(LoginRequiredMixin, TemplateView):
     template_name = "home.html"
 
 
+class InternalHomeView(LoginRequiredMixin, TemplateView):
+    template_name = "home_internal.html"
+
+
 class CalendarEventsJsonView(LoginRequiredMixin, View):
     def get(self, request):
         # Només mostra els esdeveniments creats per l'usuari autenticat

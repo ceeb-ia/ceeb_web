@@ -190,7 +190,20 @@
       ? fallbackPipeline
       : {};
     const out = source;
+    const legacyExBestN = out.exercicis_best_n;
+    if (legacyExBestN != null && legacyExBestN !== "") {
+      const exercicis = (out.exercicis && typeof out.exercicis === "object" && !Array.isArray(out.exercicis))
+        ? { ...out.exercicis }
+        : {};
+      if (!Object.prototype.hasOwnProperty.call(exercicis, "best_n")) {
+        exercicis.best_n = legacyExBestN;
+      }
+      out.exercicis = exercicis;
+    }
     ["victories", "desempat", "presentacio", "particions", "particions_v2", "particions_custom", "filtres", "equips"].forEach(key => {
+      delete out[key];
+    });
+    ["camp", "agregacio", "best_n", "exercicis_best_n"].forEach(key => {
       delete out[key];
     });
 

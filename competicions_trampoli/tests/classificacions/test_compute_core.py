@@ -760,6 +760,138 @@ class ClassificacioMatrixScalarTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual((((tie.get("pipeline") or {}).get("aparells") or {}).get("ids")), [self.comp_app_a.id])
         self.assertEqual((((tie.get("pipeline") or {}).get("camps_per_aparell") or {}).get(app_key)), ["E_total"])
 
+    def test_classificacio_save_promotes_legacy_tie_pipeline_best_n_alias_and_cleans_clone_keys(self):
+        ScoringSchema.objects.create(
+            aparell=self.app_a,
+            schema={
+                "fields": [
+                    {"code": "E_total", "label": "Execucio", "type": "number"},
+                ],
+                "computed": [],
+            },
+        )
+        app_key = str(self.comp_app_a.id)
+        payload = {
+            "nom": "Cfg tie pipeline legacy alias",
+            "activa": True,
+            "ordre": 1,
+            "tipus": "individual",
+            "schema": {
+                "particions": [],
+                "filtres": {},
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [self.comp_app_a.id]},
+                    "camps_per_aparell": {app_key: ["E_total"]},
+                    "agregacio_camps": "sum",
+                    "exercicis": {"mode": "tots"},
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "ordre": "desc",
+                },
+                "desempat": [
+                    {
+                        "id": "tie_exec_legacy",
+                        "ordre": "desc",
+                        "pipeline_version": 1,
+                        "pipeline": {
+                            "aparells": {"mode": "seleccionar", "ids": [self.comp_app_a.id]},
+                            "camps_per_aparell": {app_key: ["E_total"]},
+                            "agregacio_camps_per_aparell": {app_key: "sum"},
+                            "agregacio_camps": "sum",
+                            "exercicis": {"mode": "millor_n", "index": 1, "ids": [], "max_per_participant": 0},
+                            "exercicis_best_n": 2,
+                            "exercise_selection_scope": "per_member",
+                            "mode_seleccio_exercicis": "per_aparell_global",
+                            "agregacio_exercicis": "sum",
+                            "agregacio_aparells": "sum",
+                            "mode_resultat_aparells": "score",
+                            "camp": "E_total",
+                            "agregacio": "sum",
+                            "best_n": 7,
+                            "ordre": "desc",
+                        },
+                    }
+                ],
+                "presentacio": {"top_n": 0, "mostrar_empats": True},
+            },
+        }
+        res = self.client.post(
+            reverse("classificacio_save", kwargs={"pk": self.comp.id}),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 200)
+        cfg = ClassificacioConfig.objects.get(pk=res.json()["id"])
+        pipeline = (((cfg.schema.get("desempat") or [])[0] or {}).get("pipeline") or {})
+        self.assertEqual(((pipeline.get("exercicis") or {}).get("best_n")), 2)
+        self.assertNotIn("exercicis_best_n", pipeline)
+        self.assertNotIn("camp", pipeline)
+        self.assertNotIn("agregacio", pipeline)
+        self.assertNotIn("best_n", pipeline)
+
+    def test_classificacio_save_tie_pipeline_canonical_best_n_precedence_wins_over_legacy_alias(self):
+        ScoringSchema.objects.create(
+            aparell=self.app_a,
+            schema={
+                "fields": [
+                    {"code": "E_total", "label": "Execucio", "type": "number"},
+                ],
+                "computed": [],
+            },
+        )
+        app_key = str(self.comp_app_a.id)
+        payload = {
+            "nom": "Cfg tie pipeline precedence",
+            "activa": True,
+            "ordre": 1,
+            "tipus": "individual",
+            "schema": {
+                "particions": [],
+                "filtres": {},
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [self.comp_app_a.id]},
+                    "camps_per_aparell": {app_key: ["E_total"]},
+                    "agregacio_camps": "sum",
+                    "exercicis": {"mode": "tots"},
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "ordre": "desc",
+                },
+                "desempat": [
+                    {
+                        "id": "tie_exec_precedence",
+                        "ordre": "desc",
+                        "pipeline_version": 1,
+                        "pipeline": {
+                            "aparells": {"mode": "seleccionar", "ids": [self.comp_app_a.id]},
+                            "camps_per_aparell": {app_key: ["E_total"]},
+                            "agregacio_camps_per_aparell": {app_key: "sum"},
+                            "agregacio_camps": "sum",
+                            "exercicis": {"mode": "millor_n", "best_n": 3, "index": 1, "ids": [], "max_per_participant": 0},
+                            "exercicis_best_n": 2,
+                            "exercise_selection_scope": "per_member",
+                            "mode_seleccio_exercicis": "per_aparell_global",
+                            "agregacio_exercicis": "sum",
+                            "agregacio_aparells": "sum",
+                            "mode_resultat_aparells": "score",
+                            "ordre": "desc",
+                        },
+                    }
+                ],
+                "presentacio": {"top_n": 0, "mostrar_empats": True},
+            },
+        }
+        res = self.client.post(
+            reverse("classificacio_save", kwargs={"pk": self.comp.id}),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 200)
+        cfg = ClassificacioConfig.objects.get(pk=res.json()["id"])
+        pipeline = (((cfg.schema.get("desempat") or [])[0] or {}).get("pipeline") or {})
+        self.assertEqual(((pipeline.get("exercicis") or {}).get("best_n")), 3)
+        self.assertNotIn("exercicis_best_n", pipeline)
+
     def test_classificacio_save_rejects_forbidden_tie_pipeline_keys(self):
         payload = {
             "nom": "Cfg tie pipeline invalid",
@@ -810,6 +942,56 @@ class ClassificacioMatrixScalarTests(_BaseTrampoliDataMixin, TestCase):
         body = res.json()
         self.assertTrue(any("desempat[0].pipeline.victories" in err for err in body.get("errors", [])))
 
+    def test_classificacio_save_rejects_unknown_tie_pipeline_keys_after_legacy_cleanup(self):
+        payload = {
+            "nom": "Cfg tie pipeline unknown key",
+            "activa": True,
+            "ordre": 1,
+            "tipus": "individual",
+            "schema": {
+                "particions": [],
+                "filtres": {},
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [self.comp_app_a.id]},
+                    "camps_per_aparell": {str(self.comp_app_a.id): ["total"]},
+                    "agregacio_camps": "sum",
+                    "exercicis": {"mode": "tots"},
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "ordre": "desc",
+                },
+                "desempat": [
+                    {
+                        "id": "tie_unknown",
+                        "ordre": "desc",
+                        "pipeline_version": 1,
+                        "pipeline": {
+                            "aparells": {"mode": "seleccionar", "ids": [self.comp_app_a.id]},
+                            "camps_per_aparell": {str(self.comp_app_a.id): ["total"]},
+                            "agregacio_camps_per_aparell": {str(self.comp_app_a.id): "sum"},
+                            "agregacio_camps": "sum",
+                            "exercicis": {"mode": "tots"},
+                            "exercise_selection_scope": "per_member",
+                            "mode_seleccio_exercicis": "per_aparell_global",
+                            "agregacio_exercicis": "sum",
+                            "agregacio_aparells": "sum",
+                            "mode_resultat_aparells": "score",
+                            "unexpected_key": True,
+                        },
+                    }
+                ],
+                "presentacio": {"top_n": 0, "mostrar_empats": True},
+            },
+        }
+        res = self.client.post(
+            reverse("classificacio_save", kwargs={"pk": self.comp.id}),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 400)
+        body = res.json()
+        self.assertTrue(any("desempat[0].pipeline.unexpected_key" in err for err in body.get("errors", [])))
+
     def test_prepare_schema_for_builder_hydration_materializes_legacy_tie_pipeline(self):
         schema = self._base_cfg_schema()
         schema["puntuacio"]["aparells"] = {"mode": "seleccionar", "ids": [self.comp_app_a.id]}
@@ -831,6 +1013,42 @@ class ClassificacioMatrixScalarTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(tie.get("pipeline_version"), 1)
         self.assertEqual((((tie.get("pipeline") or {}).get("aparells") or {}).get("ids")), [self.comp_app_a.id])
         self.assertEqual((((tie.get("pipeline") or {}).get("camps_per_aparell") or {}).get(str(self.comp_app_a.id))), ["total"])
+
+    def test_prepare_schema_for_builder_hydration_promotes_legacy_tie_pipeline_best_n_alias(self):
+        schema = self._base_cfg_schema()
+        schema["puntuacio"]["aparells"] = {"mode": "seleccionar", "ids": [self.comp_app_a.id]}
+        schema["puntuacio"]["camps_per_aparell"] = {str(self.comp_app_a.id): ["total"]}
+        schema["desempat"] = [
+            {
+                "id": "tie_legacy_best_n",
+                "ordre": "desc",
+                "pipeline_version": 1,
+                "pipeline": {
+                    "aparells": {"mode": "seleccionar", "ids": [self.comp_app_a.id]},
+                    "camps_per_aparell": {str(self.comp_app_a.id): ["total"]},
+                    "agregacio_camps_per_aparell": {str(self.comp_app_a.id): "sum"},
+                    "agregacio_camps": "sum",
+                    "exercicis": {"mode": "millor_n"},
+                    "exercicis_best_n": 2,
+                    "exercise_selection_scope": "per_member",
+                    "mode_seleccio_exercicis": "per_aparell_global",
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "mode_resultat_aparells": "score",
+                    "camp": "total",
+                    "agregacio": "sum",
+                    "best_n": 9,
+                    "ordre": "desc",
+                },
+            }
+        ]
+        hydrated = prepare_schema_for_builder_hydration(self.comp, schema, tipus="individual")
+        pipeline = (((hydrated.get("desempat") or [])[0] or {}).get("pipeline") or {})
+        self.assertEqual(((pipeline.get("exercicis") or {}).get("best_n")), 2)
+        self.assertNotIn("exercicis_best_n", pipeline)
+        self.assertNotIn("camp", pipeline)
+        self.assertNotIn("agregacio", pipeline)
+        self.assertNotIn("best_n", pipeline)
 
     def test_compute_classificacio_pipeline_tie_supports_per_app_override_exercicis(self):
         self.comp_app_a.nombre_exercicis = 2

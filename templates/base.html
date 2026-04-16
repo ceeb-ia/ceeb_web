@@ -43,17 +43,22 @@
                             </button>
                             <div class="collapse navbar-collapse" id="navbarSupportedContent">
                                 <ul class="navbar-nav ml-auto">
-                                    {% url 'competicions_home' as competicions_home_url %}
                                     {% url 'login' as login_url %}
                                     {% url 'logout' as logout_url %}
 
 
                                     {% if user.is_authenticated %}
-                                        {% if not IS_PROD and user.is_staff %}
+                                        {% if user.is_staff %}
                                         <li class="nav-item">
                                             <a class="nav-link" href="{% url 'admin:index' %}">Admin</a>
                                         </li>
                                         {% endif %}
+
+                                        {% for app in internal_nav_apps %}
+                                        <li class="nav-item">
+                                            <a class="nav-link{% if app.active %} active{% endif %}" href="{{ app.url }}">{{ app.label }}</a>
+                                        </li>
+                                        {% endfor %}
 
                                         {% if logout_url %}
                                         <li class="nav-item">
@@ -64,13 +69,6 @@
                                         </li>
                                         {% endif %}
 
-                                        {% if competicions_home_url and IS_PROD %}
-                                        <li class="nav-item">
-                                            <a class="nav-link" href="{{ competicions_home_url }}">Competicions</a>
-                                        </li>
-                                        {% endif %}
-
-
                                     {% else %}
                                         {% if login_url %}
                                         <li class="nav-item">
@@ -79,7 +77,7 @@
                                         {% endif %}
                                     {% endif %}
 
-                                    {% if not IS_PROD %}
+                                    {% if not IS_PROD and not is_internal_env %}
                                     <li class="nav-item dropdown">
                                         <a class="nav-link dropdown-toggle" href="#" id="ComunicacioDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Comunicacio</a>
                                         <ul class="dropdown-menu" aria-labelledby="ComunicacioDropdown">
