@@ -12,7 +12,15 @@
 
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
 <script>
-{% include "classificacions/builder/_legacy_inline_script.html" %}
+{% include "classificacions/builder/scripts/_00_bootstrap.js.html" %}
+{% include "classificacions/builder/scripts/_10_core_ui.js.html" %}
+{% include "classificacions/builder/scripts/_20_team_templates_apps.js.html" %}
+{% include "classificacions/_puntuacio_script.html" %}
+{% include "classificacions/builder/scripts/_40_ties_and_teams.js.html" %}
+{% include "classificacions/builder/scripts/_50_columns_detail_preview.js.html" %}
+{% include "classificacions/builder/scripts/_60_particions.js.html" %}
+{% include "classificacions/builder/scripts/_70_hydration_sync.js.html" %}
+{% include "classificacions/builder/scripts/_80_actions_init.js.html" %}
 </script>
 
 {% include "classificacions/builder/_help_drawer.html" %}

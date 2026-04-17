@@ -12,7 +12,6 @@ from .classificacio_templates import (
     normalize_particions_custom,
     normalize_particions_schema,
 )
-from .builder_tie_rehydration import project_builder_tie_rehydration
 from .compute import DEFAULT_SCHEMA
 from .filters import (
     EXERCISE_SELECTION_SCOPE_INHERIT,
@@ -30,8 +29,9 @@ from .partitions import (
 )
 from .pipeline_runtime import (
     build_main_scoring_pipeline_from_schema,
-    materialize_desempat_item,
 )
+from .ties.builder_rehydration import project_tie_for_builder_rehydration
+from .ties.legacy_projection import project_tie_legacy_projection
 from .validation import (
     build_scoreable_meta_for_schema,
     get_team_context_capabilities,
@@ -220,8 +220,9 @@ def _materialize_desempat_item_for_builder(
     allow_participants=True,
     fallback_pipeline=None,
 ):
-    item = materialize_desempat_item(
+    item = project_tie_legacy_projection(
         tie,
+        idx=idx,
         tipus=tipus,
         team_mode=team_mode,
         selected_app_ids=selected_main_ids,
@@ -595,7 +596,7 @@ def prepare_schema_for_builder_hydration(competicio, schema_local, tipus="indivi
         for idx, tie in enumerate(des_in):
             if not isinstance(tie, dict):
                 continue
-            item = _materialize_desempat_item_for_builder(
+            item = project_tie_for_builder_rehydration(
                 tie,
                 idx=idx,
                 tipus=tipus,
@@ -606,14 +607,7 @@ def prepare_schema_for_builder_hydration(competicio, schema_local, tipus="indivi
                 fallback_pipeline=fallback_pipeline,
             )
             if item:
-                des_out.append(
-                    project_builder_tie_rehydration(
-                        item,
-                        main_pipeline=fallback_pipeline,
-                        tipus=tipus,
-                        team_mode=hydration_team_mode,
-                    )
-                )
+                des_out.append(item)
     schema["desempat"] = des_out
     schema["particions"] = list(schema.get("particions") or []) if isinstance(schema.get("particions"), list) else []
     schema["particions_v2"] = list(schema.get("particions_v2") or []) if isinstance(schema.get("particions_v2"), list) else []
@@ -1235,8 +1229,9 @@ def autofix_schema_for_competicio(competicio, schema_local, mode: str, tipus=Non
     for idx, tie in enumerate(des_in if isinstance(des_in, list) else []):
         if not isinstance(tie, dict):
             continue
-        item = materialize_desempat_item(
+        item = project_tie_legacy_projection(
             tie,
+            idx=idx,
             tipus=tipus,
             team_mode=equips_cfg.get("team_mode", ""),
             selected_app_ids=selected_ids_after,

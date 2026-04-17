@@ -1,0 +1,561 @@
+  function tieStateAsObject(value) {
+    if (typeof tieIsPlainObject === "function") {
+      return tieIsPlainObject(value) ? value : {};
+    }
+    return tieIsObject(value) ? value : {};
+  }
+
+  function tiePruneKeys(container, keys) {
+    if (!tieIsObject(container)) return container;
+    (Array.isArray(keys) ? keys : []).forEach(key => {
+      delete container[key];
+    });
+    return container;
+  }
+
+  function tieNormalizeAggValue(rawValue, fallbackValue) {
+    if (typeof normalizeTieAggValue === "function") {
+      return normalizeTieAggValue(rawValue, fallbackValue);
+    }
+    const value = String(rawValue || fallbackValue || "sum").trim().toLowerCase();
+    if (["sum", "avg", "median", "max", "min"].includes(value)) return value;
+    return "sum";
+  }
+
+  function tieNormalizeCampsFromValue(rawValue) {
+    if (typeof normalizeTieCampsFromObj === "function") {
+      return normalizeTieCampsFromObj({ camps: rawValue });
+    }
+    const out = [];
+    const source = Array.isArray(rawValue) ? rawValue : String(rawValue || "").split(",");
+    source.forEach(item => {
+      const value = String(item || "").trim();
+      if (value && !out.includes(value)) out.push(value);
+    });
+    return out;
+  }
+
+  function tieNormalizeAggCampsValue(rawValue) {
+    if (typeof normalizeTieAggCampsFromObj === "function") {
+      return normalizeTieAggCampsFromObj({ agregacio_camps: rawValue });
+    }
+    const value = String(rawValue || "hereta").trim().toLowerCase();
+    if (["hereta", "sum", "avg", "median", "max", "min"].includes(value)) return value;
+    return "hereta";
+  }
+
+  function tieNormalizeModeSeleccioExercicisValue(rawValue) {
+    if (typeof normalizeTieModeSeleccioExercicis === "function") {
+      return normalizeTieModeSeleccioExercicis(rawValue);
+    }
+    const value = String(rawValue || "hereta").trim().toLowerCase();
+    if (["hereta", "per_aparell_global", "per_aparell_override", "global_pool"].includes(value)) return value;
+    return "hereta";
+  }
+
+  function tieNormalizeExercicisCfg(rawCfg, fallbackCfg) {
+    if (typeof normalizeTieExercicisCfg === "function") {
+      return normalizeTieExercicisCfg(rawCfg, fallbackCfg);
+    }
+    const cfg = tieStateAsObject(rawCfg);
+    const fb = tieStateAsObject(fallbackCfg);
+    const mode = String(cfg.mode || fb.mode || "tots").trim().toLowerCase();
+    const outMode = ["tots", "millor_1", "millor_n", "pitjor_1", "pitjor_n", "primer", "ultim", "index", "llista"].includes(mode) ? mode : "tots";
+    const out = { mode: outMode };
+    if (outMode === "millor_n" || outMode === "pitjor_n") out.best_n = Math.max(1, Number(cfg.best_n || fb.best_n || 1));
+    if (outMode === "index") out.index = Math.max(1, Number(cfg.index || fb.index || 1));
+    const maxPerParticipant = Math.max(0, Number(cfg.max_per_participant || fb.max_per_participant || 0));
+    if (maxPerParticipant > 0) out.max_per_participant = maxPerParticipant;
+    if (outMode === "llista") {
+      const ids = Array.isArray(cfg.ids) ? cfg.ids : String(cfg.ids || fb.ids || "").split(",");
+      out.ids = ids.map(value => Math.trunc(Number(value))).filter(value => Number.isFinite(value) && value > 0);
+    }
+    return out;
+  }
+
+  function tieNormalizeExercicisPerAparell(rawMap, fallbackMap, appIds) {
+    if (typeof normalizeTieExercicisPerAparellMap === "function") {
+      return normalizeTieExercicisPerAparellMap(rawMap, fallbackMap, appIds);
+    }
+    const out = {};
+    const source = tieStateAsObject(rawMap);
+    const fallback = tieStateAsObject(fallbackMap);
+    const keys = Array.isArray(appIds) && appIds.length
+      ? appIds.map(id => String(id))
+      : Array.from(new Set([...Object.keys(source), ...Object.keys(fallback)]));
+    keys.forEach(key => {
+      out[String(Number(key))] = tieNormalizeExercicisCfg(source[key] ?? source[Number(key)] ?? fallback[key] ?? fallback[Number(key)], {});
+    });
+    return out;
+  }
+
+  function tieNormalizePipelineAggMap(rawMap, fallbackMap, appIds, fallbackAgg) {
+    if (typeof normalizeTiePipelineAggMap === "function") {
+      return normalizeTiePipelineAggMap(rawMap, fallbackMap, appIds, fallbackAgg);
+    }
+    const out = {};
+    const source = tieStateAsObject(rawMap);
+    const fallback = tieStateAsObject(fallbackMap);
+    const keys = Array.isArray(appIds) && appIds.length
+      ? appIds.map(id => String(id))
+      : Array.from(new Set([...Object.keys(source), ...Object.keys(fallback)]));
+    const fallbackValue = tieNormalizeAggValue(fallbackAgg, "sum");
+    keys.forEach(key => {
+      out[String(Number(key))] = tieNormalizeAggValue(source[key] ?? source[Number(key)] ?? fallback[key] ?? fallback[Number(key)], fallbackValue);
+    });
+    return out;
+  }
+
+  function tieNormalizePipelineAppScope(rawScope, fallbackScope) {
+    if (typeof normalizeTiePipelineAppScope === "function") {
+      return normalizeTiePipelineAppScope(rawScope, fallbackScope);
+    }
+    const scope = tieStateAsObject(rawScope);
+    const fallback = tieStateAsObject(fallbackScope);
+    const ids = tiePositiveInts(Array.isArray(scope.ids) ? scope.ids : (Array.isArray(fallback.ids) ? fallback.ids : []));
+    let mode = String(scope.mode || fallback.mode || (ids.length ? "seleccionar" : "hereta")).trim().toLowerCase();
+    if (!["seleccionar", "tots"].includes(mode)) mode = ids.length ? "seleccionar" : "hereta";
+    if (mode === "seleccionar") return { mode, ids };
+    return { mode: "tots", ids };
+  }
+
+  function tieNormalizePipelineCampsPerApp(rawMap, fallbackMap, appIds) {
+    if (typeof normalizeTiePipelineCampsPerApp === "function") {
+      return normalizeTiePipelineCampsPerApp(rawMap, fallbackMap, appIds);
+    }
+    const out = {};
+    const source = tieStateAsObject(rawMap);
+    const fallback = tieStateAsObject(fallbackMap);
+    const keys = Array.isArray(appIds) && appIds.length
+      ? appIds.map(id => String(id))
+      : Array.from(new Set([...Object.keys(source), ...Object.keys(fallback)]));
+    keys.forEach(key => {
+      const value = source[key] ?? source[Number(key)] ?? fallback[key] ?? fallback[Number(key)] ?? [];
+      out[String(Number(key))] = tieNormalizeCampsFromValue(value);
+    });
+    return out;
+  }
+
+  function tieNormalizePipelineParticipants(rawParticipants, fallbackParticipants) {
+    if (typeof normalizeTiePipelineParticipants === "function") {
+      return normalizeTiePipelineParticipants(rawParticipants, fallbackParticipants);
+    }
+    const participants = tieStateAsObject(rawParticipants);
+    const fallback = tieStateAsObject(fallbackParticipants);
+    let mode = String(participants.mode || fallback.mode || "tots").trim().toLowerCase();
+    if (!["tots", "millor_1", "millor_n", "pitjor_1", "pitjor_n"].includes(mode)) mode = "tots";
+    const out = { mode };
+    if (mode !== "tots") {
+      out.n = Math.max(1, Number(participants.n || fallback.n || 1));
+    }
+    return out;
+  }
+
+  function tieAppScopeToValue(appScope) {
+    const scope = tieStateAsObject(appScope);
+    const mode = String(scope.mode || "hereta").trim().toLowerCase();
+    if (mode === "tots") return "tots";
+    if (mode === "seleccionar") {
+      const ids = tiePositiveInts(scope.ids);
+      if (ids.length === 1) return `app:${ids[0]}`;
+    }
+    return "hereta";
+  }
+
+  function tieAppScopeToObject(value) {
+    const raw = String(value || "hereta").trim();
+    if (raw === "tots") return { mode: "tots" };
+    if (raw.indexOf("app:") === 0) {
+      const id = Number(raw.split(":")[1]);
+      if (Number.isFinite(id) && id > 0) return { mode: "seleccionar", ids: [id] };
+    }
+    return { mode: "hereta" };
+  }
+
+  function tieBuildUiStateFromRow(tr, options) {
+    const opts = tieStateAsObject(options);
+    const context = opts.context || tieResolveContext(tr, opts);
+    const allowParticipants = opts.allowParticipants != null
+      ? !!opts.allowParticipants
+      : !!tieContextAllowsParticipants(context);
+    const row = tr && typeof tr.querySelector === "function" ? tr : null;
+    const camps = typeof readTieCampsFromRow === "function"
+      ? readTieCampsFromRow(row)
+      : {
+          camps: Array.from(row?.querySelectorAll ? row.querySelectorAll('[data-k="camps"] option:checked') : []).map(node => String(node.value || "").trim()).filter(Boolean),
+          agregacio_camps: tieNormalizeAggCampsValue(row?.querySelector('[data-k="agg_camps"]')?.value || "hereta"),
+        };
+    const appScopeValue = String(row?.querySelector('[data-k="app_scope"]')?.value || "hereta").trim();
+    const exScopeValue = String(row?.querySelector('[data-k="ex_scope"]')?.value || "hereta").trim();
+    const exSelModeValue = tieNormalizeModeSeleccioExercicisValue(row?.querySelector('[data-k="ex_sel_mode"]')?.value || "hereta");
+    const exModeValue = String(row?.querySelector('[data-k="ex_mode"]')?.value || "hereta").trim().toLowerCase();
+    const exBestN = Math.max(1, Number(row?.querySelector('[data-k="ex_best_n"]')?.value || 1));
+    const exIndex = Math.max(1, Number(row?.querySelector('[data-k="ex_index"]')?.value || 1));
+    const exMaxPP = Math.max(0, Number(row?.querySelector('[data-k="ex_max_pp"]')?.value || 0));
+    const exIds = String(row?.querySelector('[data-k="ex_ids"]')?.value || "").split(",").map(value => Math.trunc(Number(value))).filter(value => Number.isFinite(value) && value > 0);
+    const participants = allowParticipants && typeof readParticipantsFromRow === "function"
+      ? readParticipantsFromRow(row)
+      : null;
+    const exPerApp = typeof readTiePerAppExercicisFromRow === "function"
+      ? readTiePerAppExercicisFromRow(row)
+      : {};
+    const exAggPerApp = typeof readTiePerAppAggExercicisFromRow === "function"
+      ? readTiePerAppAggExercicisFromRow(row)
+      : {};
+    const builderUi = tieStateAsObject(opts.builderUi || (row && tieIsObject(row.__tieBuilderState) ? row.__tieBuilderState._builder_ui : {}));
+    const state = {
+      id: String(row?.dataset?.tieId || opts.id || "").trim(),
+      nom: String(row?.querySelector('[data-k="tie_nom"]')?.value || opts.nom || "").trim(),
+      camps: tieNormalizeCampsFromValue(camps.camps),
+      agregacio_camps: tieNormalizeAggCampsValue(camps.agregacio_camps),
+      ordre: String(row?.querySelector('[data-k="ordre"]')?.value || opts.ordre || "desc").trim().toLowerCase() === "asc" ? "asc" : "desc",
+      app_scope: appScopeValue,
+      scope: {
+        aparells: tieAppScopeToObject(appScopeValue),
+        exercicis: { mode: exModeValue },
+      },
+      exercise_selection_scope: tieNormalizeExerciseSelectionScope(exScopeValue),
+      mode_seleccio_exercicis: exSelModeValue,
+      exercicis_per_aparell: tieNormalizeExercicisPerAparell(exPerApp, {}, tiePositiveInts(context.targetAppIds)),
+      agregacio_exercicis_per_aparell: tieNormalizePipelineAggMap(exAggPerApp, {}, tiePositiveInts(context.targetAppIds), "sum"),
+      participants: participants ? tieNormalizePipelineParticipants(participants, {}) : null,
+      agregacio_participants: participants ? tieNormalizeAggValue(participants.agregacio || participants.agregacio_participants || "sum", "sum") : null,
+      _builder_ui: tieCloneJson(builderUi, {}),
+    };
+    if (exModeValue === "millor_n" || exModeValue === "pitjor_n") state.scope.exercicis.best_n = exBestN;
+    if (exModeValue === "index") state.scope.exercicis.index = exIndex;
+    if (exMaxPP > 0) state.scope.exercicis.max_per_participant = exMaxPP;
+    if (exModeValue === "llista") state.scope.exercicis.ids = exIds;
+    if (participants) {
+      state.scope.participants = tieNormalizePipelineParticipants(participants, {});
+    }
+    if (allowParticipants && participants) {
+      state.agregacio_participants = tieNormalizeAggValue(participants.agregacio || participants.agregacio_participants || "sum", "sum");
+    }
+    return tieNormalizeUiState(state, context, opts);
+  }
+
+  function tieProjectUiStateFromCanonical(canonicalTie, options) {
+    const opts = tieStateAsObject(options);
+    const context = opts.context || tieResolveContext(canonicalTie, opts);
+    const tie = tieStateAsObject(canonicalTie);
+    const pipeline = tieStateAsObject(tie.pipeline);
+    const scope = tieStateAsObject(tie.scope);
+    const builderUi = tieCloneJson(tie._builder_ui || {}, {});
+    const state = {
+      id: String(tie.id || opts.id || "").trim(),
+      nom: String(tie.nom || opts.nom || "").trim(),
+      camps: typeof getTieVisibleCamps === "function" ? getTieVisibleCamps(tie) : tieNormalizeCampsFromValue(scope.camps || tie.camps || []),
+      agregacio_camps: typeof getTieVisibleAggCamps === "function"
+        ? getTieVisibleAggCamps(tie)
+        : tieNormalizeAggCampsValue(scope.agregacio_camps || tie.agregacio_camps || pipeline.agregacio_camps || "hereta"),
+      ordre: String(tie.ordre || pipeline.ordre || opts.ordre || "desc").trim().toLowerCase() === "asc" ? "asc" : "desc",
+      app_scope: typeof getTieVisibleAppScopeValue === "function"
+        ? getTieVisibleAppScopeValue(tie)
+        : tieAppScopeToValue(tieStateAsObject(pipeline.aparells || scope.aparells)),
+      scope: {
+        aparells: tieNormalizePipelineAppScope(pipeline.aparells || scope.aparells || { mode: "hereta" }, scope.aparells),
+        exercicis: tieNormalizeExercicisCfg(pipeline.exercicis || scope.exercicis || {}, scope.exercicis),
+      },
+      exercise_selection_scope: tieNormalizeExerciseSelectionScope(
+        pipeline.exercise_selection_scope ||
+        tie.exercise_selection_scope ||
+        builderUi.exercise_selection_scope_ui ||
+        "hereta"
+      ),
+      mode_seleccio_exercicis: tieNormalizeModeSeleccioExercicisValue(
+        pipeline.mode_seleccio_exercicis ||
+        tie.mode_seleccio_exercicis ||
+        builderUi.mode_seleccio_exercicis_ui ||
+        "hereta"
+      ),
+      exercicis_per_aparell: tieNormalizeExercicisPerAparell(
+        pipeline.exercicis_per_aparell || tie.exercicis_per_aparell || builderUi.exercicis_per_aparell_ui || {},
+        {},
+        tiePositiveInts(context.targetAppIds)
+      ),
+      agregacio_exercicis_per_aparell: tieNormalizePipelineAggMap(
+        pipeline.agregacio_exercicis_per_aparell || tie.agregacio_exercicis_per_aparell || builderUi.agregacio_exercicis_per_aparell_ui || {},
+        {},
+        tiePositiveInts(context.targetAppIds),
+        pipeline.agregacio_exercicis || tie.agregacio_exercicis || "sum"
+      ),
+      participants: tieNormalizePipelineParticipants(
+        pipeline.participants || scope.participants || tie.participants || builderUi.participants_ui || {},
+        scope.participants
+      ),
+      agregacio_participants: tieNormalizeAggValue(
+        pipeline.agregacio_participants || tie.agregacio_participants || builderUi.agregacio_participants_ui || "sum",
+        "sum"
+      ),
+      _builder_ui: builderUi,
+    };
+    if (pipeline.exercise_selection_scope || tie.exercise_selection_scope) {
+      state.exercise_selection_scope = tieNormalizeExerciseSelectionScope(pipeline.exercise_selection_scope || tie.exercise_selection_scope);
+    }
+    return tieNormalizeUiState(state, context, opts);
+  }
+
+  function tieSanitizeUiStateForContract(uiState, context, policy) {
+    const opts = tieStateAsObject(policy);
+    const ctx = tieStateAsObject(context);
+    const state = tieCloneJson(uiState, {});
+    const forceScope = tieNormalizeExerciseSelectionScope(
+      opts.forceExerciseSelectionScope ||
+      ctx.exerciseSelectionScope ||
+      state.exercise_selection_scope ||
+      "hereta"
+    );
+    const allowExerciseConfig = opts.allowExerciseConfig !== false;
+    const allowPerAppOverrides = opts.allowPerAppOverrides !== false;
+    const allowParticipants = opts.allowParticipants === true;
+
+    state.scope = tieStateAsObject(state.scope);
+    state.scope.aparells = tieNormalizePipelineAppScope(state.scope.aparells || tieAppScopeToObject(state.app_scope), {});
+    state.app_scope = tieAppScopeToValue(state.scope.aparells);
+    state.exercise_selection_scope = forceScope;
+    state.scope.exercicis = tieNormalizeExercicisCfg(state.scope.exercicis || {}, {});
+    state.mode_seleccio_exercicis = tieNormalizeModeSeleccioExercicisValue(state.mode_seleccio_exercicis || "hereta");
+    state.exercicis_per_aparell = tieNormalizeExercicisPerAparell(state.exercicis_per_aparell || {}, {}, tiePositiveInts(ctx.targetAppIds));
+    state.agregacio_exercicis_per_aparell = tieNormalizePipelineAggMap(state.agregacio_exercicis_per_aparell || {}, {}, tiePositiveInts(ctx.targetAppIds), "sum");
+    state.participants = state.participants ? tieNormalizePipelineParticipants(state.participants, {}) : null;
+    state.agregacio_participants = state.agregacio_participants ? tieNormalizeAggValue(state.agregacio_participants, "sum") : null;
+    state._builder_ui = tieStateAsObject(state._builder_ui);
+    state._builder_ui.scope_exercicis_ui = tieCloneJson(state.scope.exercicis, {});
+    state._builder_ui.exercise_selection_scope_ui = forceScope;
+    state._builder_ui.mode_seleccio_exercicis_ui = state.mode_seleccio_exercicis;
+    state._builder_ui.app_scope = tieAppScopeToValue(state.scope.aparells);
+    state._builder_ui.camps = tieCloneJson(state.camps || [], []);
+    state._builder_ui.agregacio_camps = tieNormalizeAggCampsValue(state.agregacio_camps || "hereta");
+
+    if (!allowExerciseConfig) {
+      delete state.scope.exercicis;
+      delete state.mode_seleccio_exercicis;
+      delete state.exercicis_per_aparell;
+      delete state.agregacio_exercicis_per_aparell;
+      delete state._builder_ui.scope_exercicis_ui;
+      delete state._builder_ui.mode_seleccio_exercicis_ui;
+      delete state._builder_ui.exercicis_per_aparell_ui;
+      delete state._builder_ui.agregacio_exercicis_per_aparell_ui;
+    } else if (!allowPerAppOverrides) {
+      delete state.exercicis_per_aparell;
+      delete state.agregacio_exercicis_per_aparell;
+      delete state._builder_ui.exercicis_per_aparell_ui;
+      delete state._builder_ui.agregacio_exercicis_per_aparell_ui;
+    }
+
+    if (!allowParticipants) {
+      delete state.scope.participants;
+      delete state.participants;
+      delete state.agregacio_participants;
+      delete state._builder_ui.participants_ui;
+      delete state._builder_ui.agregacio_participants_ui;
+    } else {
+      state.scope.participants = tieNormalizePipelineParticipants(state.scope.participants || state.participants || {}, {});
+      state.participants = tieCloneJson(state.scope.participants, {});
+      if (state.agregacio_participants != null) {
+        state.agregacio_participants = tieNormalizeAggValue(state.agregacio_participants, "sum");
+      }
+      state._builder_ui.participants_ui = tieCloneJson(state.scope.participants, {});
+      if (state.agregacio_participants != null) {
+        state._builder_ui.agregacio_participants_ui = state.agregacio_participants;
+      }
+    }
+
+    if (forceScope === "team_pool") {
+      delete state.scope.participants;
+      delete state.participants;
+      delete state.agregacio_participants;
+      delete state.scope.exercicis;
+      delete state.mode_seleccio_exercicis;
+      delete state.exercicis_per_aparell;
+      delete state.agregacio_exercicis_per_aparell;
+      delete state._builder_ui.participants_ui;
+      delete state._builder_ui.agregacio_participants_ui;
+      delete state._builder_ui.scope_exercicis_ui;
+      delete state._builder_ui.mode_seleccio_exercicis_ui;
+      delete state._builder_ui.exercicis_per_aparell_ui;
+      delete state._builder_ui.agregacio_exercicis_per_aparell_ui;
+    }
+
+    return state;
+  }
+
+  function tieBuildPipelineFromUiState(uiState, context, fallbackPipeline, policy) {
+    const ctx = tieStateAsObject(context);
+    const opts = tieStateAsObject(policy);
+    const state = tieSanitizeUiStateForContract(uiState, ctx, opts);
+    const pipeline = tieCloneJson(fallbackPipeline || ctx.fallbackPipeline || {}, {});
+    const selectedIds = tiePositiveInts(
+      tieIsObject(state.scope) && tieIsObject(state.scope.aparells)
+        ? state.scope.aparells.ids
+        : ctx.targetAppIds
+    );
+
+    pipeline.aparells = tieNormalizePipelineAppScope(state.scope.aparells || tieAppScopeToObject(state.app_scope), pipeline.aparells);
+    pipeline.camps_per_aparell = tieNormalizePipelineCampsPerApp(
+      selectedIds.length ? Object.fromEntries(selectedIds.map(id => [String(id), tieCloneJson(state.camps || [], [])])) : {},
+      pipeline.camps_per_aparell,
+      selectedIds
+    );
+    pipeline.agregacio_camps = tieNormalizeAggValue(state.agregacio_camps || pipeline.agregacio_camps || "sum", "sum");
+    pipeline.agregacio_camps_per_aparell = tieNormalizePipelineAggMap(
+      selectedIds.length ? Object.fromEntries(selectedIds.map(id => [String(id), pipeline.agregacio_camps])) : {},
+      pipeline.agregacio_camps_per_aparell,
+      selectedIds,
+      pipeline.agregacio_camps
+    );
+    pipeline.exercise_selection_scope = tieNormalizeExerciseSelectionScope(
+      state.exercise_selection_scope || pipeline.exercise_selection_scope || ctx.exerciseSelectionScope || "hereta"
+    );
+    pipeline.agregacio_aparells = tieNormalizeAggValue(state.agregacio_aparells || pipeline.agregacio_aparells || "sum", "sum");
+    pipeline.mode_resultat_aparells = "score";
+    pipeline.ordre = String(state.ordre || pipeline.ordre || "desc").trim().toLowerCase() === "asc" ? "asc" : "desc";
+
+    if (opts.allowExerciseConfig !== false && pipeline.exercise_selection_scope !== "team_pool") {
+      pipeline.exercicis = tieNormalizeExercicisCfg(state.scope.exercicis || state.exercicis || pipeline.exercicis || {}, pipeline.exercicis);
+      pipeline.mode_seleccio_exercicis = tieNormalizeModeSeleccioExercicisValue(
+        state.mode_seleccio_exercicis || pipeline.mode_seleccio_exercicis || "per_aparell_global"
+      );
+      if (pipeline.mode_seleccio_exercicis === "per_aparell_override") {
+        pipeline.exercicis_per_aparell = tieNormalizeExercicisPerAparell(
+          state.exercicis_per_aparell || {},
+          pipeline.exercicis_per_aparell,
+          selectedIds
+        );
+        pipeline.agregacio_exercicis = tieNormalizeAggValue(state.agregacio_exercicis || pipeline.agregacio_exercicis || "sum", "sum");
+        pipeline.agregacio_exercicis_per_aparell = tieNormalizePipelineAggMap(
+          state.agregacio_exercicis_per_aparell || {},
+          pipeline.agregacio_exercicis_per_aparell,
+          selectedIds,
+          pipeline.agregacio_exercicis
+        );
+      } else {
+        pipeline.exercicis_per_aparell = {};
+        pipeline.agregacio_exercicis_per_aparell = {};
+        pipeline.agregacio_exercicis = tieNormalizeAggValue(pipeline.agregacio_exercicis || "sum", "sum");
+      }
+    } else {
+      delete pipeline.exercicis;
+      delete pipeline.mode_seleccio_exercicis;
+      delete pipeline.exercicis_per_aparell;
+      delete pipeline.agregacio_exercicis;
+      delete pipeline.agregacio_exercicis_per_aparell;
+    }
+
+    if (opts.allowParticipants === true && pipeline.exercise_selection_scope !== "team_pool") {
+      pipeline.participants = tieNormalizePipelineParticipants(state.scope.participants || state.participants || pipeline.participants || {}, pipeline.participants);
+      pipeline.agregacio_participants = tieNormalizeAggValue(state.agregacio_participants || pipeline.agregacio_participants || "sum", "sum");
+    } else {
+      delete pipeline.participants;
+      delete pipeline.agregacio_participants;
+    }
+
+    return pipeline;
+  }
+
+  function tieBuildCanonicalTieFromUiState(uiState, context, fallbackPipeline, policy) {
+    const ctx = tieStateAsObject(context);
+    const opts = tieStateAsObject(policy);
+    const state = tieSanitizeUiStateForContract(uiState, ctx, opts);
+    const pipeline = tieBuildPipelineFromUiState(state, ctx, fallbackPipeline, opts);
+    const canonical = {
+      id: String(state.id || uiState?.id || "").trim(),
+      nom: String(state.nom || uiState?.nom || "").trim(),
+      ordre: String(state.ordre || "desc").trim().toLowerCase() === "asc" ? "asc" : "desc",
+      pipeline_version: Math.max(1, Number(uiState?.pipeline_version || state.pipeline_version || 1) || 1),
+      pipeline,
+    };
+    if (!canonical.id) canonical.id = `tie_${Math.random().toString(16).slice(2)}`;
+    if (!canonical.nom) canonical.nom = "Desempat";
+    return canonical;
+  }
+
+  function tieSanitizeCanonicalTieForContract(canonicalTie, context, fallbackPipeline, policy) {
+    const ctx = tieStateAsObject(context);
+    const opts = tieStateAsObject(policy);
+    const projected = tieProjectUiStateFromCanonical(canonicalTie, { context: ctx });
+    const sanitizedUi = tieSanitizeUiStateForContract(projected, ctx, opts);
+    return tieBuildCanonicalTieFromUiState(sanitizedUi, ctx, fallbackPipeline, opts);
+  }
+
+  function tieValidateCanonicalTieForContract(canonicalTie, context, policy) {
+    const opts = tieStateAsObject(policy);
+    const ctx = tieStateAsObject(context);
+    const tie = tieStateAsObject(canonicalTie);
+    const pipeline = tieStateAsObject(tie.pipeline);
+    const errors = [];
+    const forceScope = tieNormalizeExerciseSelectionScope(
+      opts.forceExerciseSelectionScope ||
+      ctx.exerciseSelectionScope ||
+      pipeline.exercise_selection_scope ||
+      "hereta"
+    );
+    const allowExerciseConfig = opts.allowExerciseConfig !== false;
+    const allowPerAppOverrides = opts.allowPerAppOverrides !== false;
+    const allowParticipants = opts.allowParticipants === true;
+
+    if (!tie.id) errors.push("desempat.id is required.");
+    if (!tie.nom) errors.push("desempat.nom is required.");
+    if (!tie.pipeline || !tieIsObject(tie.pipeline)) errors.push("desempat.pipeline must be an object.");
+    if (tie._builder_ui) errors.push("desempat._builder_ui must not be persisted.");
+
+    if (pipeline.exercise_selection_scope && forceScope && tieNormalizeExerciseSelectionScope(pipeline.exercise_selection_scope) !== forceScope) {
+      errors.push(`desempat.pipeline.exercise_selection_scope must be ${forceScope}.`);
+    }
+
+    if (!allowExerciseConfig) {
+      ["exercicis", "mode_seleccio_exercicis", "exercicis_per_aparell", "agregacio_exercicis_per_aparell", "agregacio_exercicis"].forEach(key => {
+        if (key in tie || key in pipeline || (tie.scope && key === "exercicis" && tie.scope.exercicis)) {
+          errors.push(`desempat.${key} is not allowed for this contract.`);
+        }
+      });
+    } else if (!allowPerAppOverrides) {
+      ["exercicis_per_aparell", "agregacio_exercicis_per_aparell"].forEach(key => {
+        if (key in tie || key in pipeline) {
+          errors.push(`desempat.${key} is not allowed for this contract.`);
+        }
+      });
+    }
+
+    if (!allowParticipants || forceScope === "team_pool") {
+      ["participants", "agregacio_participants"].forEach(key => {
+        if (key in tie || key in pipeline || (tie.scope && key === "participants" && tie.scope.participants)) {
+          errors.push(`desempat.${key} is not allowed for this contract.`);
+        }
+      });
+    }
+
+    return errors;
+  }
+
+  function tieNormalizeUiState(uiState, context, options) {
+    const ctx = tieStateAsObject(context);
+    const contract = tieResolveContract(ctx);
+    const normalized = tieSanitizeUiStateForContract(uiState, ctx, options || {});
+    return contract.sanitizeUiState(normalized, ctx, options || {});
+  }
+
+  function tieSanitizeCanonicalTie(canonicalTie, context, fallbackPipeline, policy) {
+    const ctx = tieStateAsObject(context);
+    const contract = tieResolveContract(ctx);
+    return contract.sanitizeCanonicalTie(canonicalTie, ctx, fallbackPipeline, policy || {});
+  }
+
+  function tieProjectUiState(canonicalTie, context, options) {
+    return tieProjectUiStateFromCanonical(canonicalTie, tieStateAsObject(options).context ? options : { context: context });
+  }
+
+  function readTieUiStateFromRow(tr, options) {
+    return tieBuildUiStateFromRow(tr, options || {});
+  }
+
+  function writeTieUiStateToRow(tr, uiState, options) {
+    const row = tr && typeof tr.querySelector === "function" ? tr : null;
+    if (!row) return null;
+    const context = tieResolveContext(uiState, options || {});
+    const normalized = tieNormalizeUiState(uiState, context, options || {});
+    row.__tieBuilderState = tieCloneJson(normalized, {});
+    row.__tieSourceRaw = tieCloneJson(normalized, {});
+    return normalized;
+  }

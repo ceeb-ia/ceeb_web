@@ -10,6 +10,8 @@ from ..filters import (
 
 TIE_CONTRACT_PER_MEMBER = "per_member"
 TIE_CONTRACT_TEAM_POOL = "team_pool"
+TIE_CONTRACT_DERIVED_TEAM = "derived_team"
+TIE_CONTRACT_NATIVE_TEAM = "native_team"
 
 
 @dataclass(frozen=True)
@@ -20,6 +22,7 @@ class TieContext:
     contract_name: str = TIE_CONTRACT_PER_MEMBER
     is_team: bool = False
     is_derived_team: bool = False
+    is_native_team: bool = False
 
     @property
     def is_team_pool(self):
@@ -28,6 +31,10 @@ class TieContext:
     @property
     def is_per_member(self):
         return self.contract_name == TIE_CONTRACT_PER_MEMBER
+
+    @property
+    def is_team_pool_scope(self):
+        return self.exercise_selection_scope == EXERCISE_SELECTION_SCOPE_TEAM_POOL
 
 
 def _extract_exercise_selection_scope(tie, main_pipeline=None):
@@ -48,11 +55,16 @@ def resolve_tie_context(tie, *, tipus="individual", team_mode="", main_pipeline=
     tipus_norm = str(tipus or "").strip().lower()
     team_mode_norm = normalize_team_mode(team_mode)
     exercise_selection_scope = _extract_exercise_selection_scope(tie, main_pipeline=main_pipeline)
-    contract_name = (
-        TIE_CONTRACT_TEAM_POOL
-        if exercise_selection_scope == EXERCISE_SELECTION_SCOPE_TEAM_POOL
-        else TIE_CONTRACT_PER_MEMBER
-    )
+    if team_mode_norm == "native_team":
+        contract_name = TIE_CONTRACT_NATIVE_TEAM
+    elif team_mode_norm == "derived_from_individual":
+        contract_name = TIE_CONTRACT_DERIVED_TEAM
+    else:
+        contract_name = (
+            TIE_CONTRACT_TEAM_POOL
+            if exercise_selection_scope == EXERCISE_SELECTION_SCOPE_TEAM_POOL
+            else TIE_CONTRACT_PER_MEMBER
+        )
     return TieContext(
         tipus=tipus_norm or "individual",
         team_mode=team_mode_norm,
@@ -60,4 +72,5 @@ def resolve_tie_context(tie, *, tipus="individual", team_mode="", main_pipeline=
         contract_name=contract_name,
         is_team=tipus_norm == "equips",
         is_derived_team=tipus_norm == "equips" and team_mode_norm == "derived_from_individual",
+        is_native_team=tipus_norm == "equips" and team_mode_norm == "native_team",
     )

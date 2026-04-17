@@ -10,8 +10,7 @@ from .classificacio_templates import (
     normalize_particions_schema,
     split_particio_custom_values,
 )
-from .ties.validation import strip_team_pool_tie_payload, validate_team_pool_tie_contract
-from .pipeline_runtime import materialize_desempat_items
+from .ties.validation import materialize_desempat_for_validation, validate_team_pool_tie_contract
 from .pipeline_runtime import build_main_scoring_pipeline_from_schema
 from .pipeline_validation import validate_scoring_pipeline_shape
 from .detail_schema_validation import (
@@ -2035,13 +2034,11 @@ def validate_schema_for_competicio_detailed(competicio, schema_local, tipus="ind
                     )
             raw_scope = str(raw_pipeline.get("exercise_selection_scope") or "").strip().lower()
             if raw_scope and not allow_pipeline_exercise_scope:
-                # Drop stale save payload data here instead of teaching
-                # pipeline_runtime to omit it globally. That runtime is reused
-                # for builder rehydration, so a change there affects how old
-                # desempats reopen in the UI.
+                # Drop stale save payload data here without changing the
+                # projection helpers used to reopen existing ties in the UI.
                 raw_pipeline.pop("exercise_selection_scope", None)
 
-    materialized_desempat = materialize_desempat_items(
+    materialized_desempat = materialize_desempat_for_validation(
         desempat_raw if isinstance(desempat_raw, list) else [],
         tipus=tipus,
         team_mode=schema_local.get("equips", {}).get("team_mode", ""),
@@ -2052,11 +2049,9 @@ def validate_schema_for_competicio_detailed(competicio, schema_local, tipus="ind
             tipus=tipus,
             team_mode=schema_local.get("equips", {}).get("team_mode", ""),
         ),
+        main_scope=schema_local.get("puntuacio", {}).get("exercise_selection_scope"),
+        strip_pipeline_exercise_scope=not allow_pipeline_exercise_scope,
     )
-    for tie in materialized_desempat:
-        if not isinstance(tie, dict):
-            continue
-        strip_team_pool_tie_payload(tie, main_scope=schema_local.get("puntuacio", {}).get("exercise_selection_scope"))
     errors.extend(
         _validate_exercise_selection_scope(
             schema_local,
@@ -2097,18 +2092,6 @@ def validate_schema_for_competicio_detailed(competicio, schema_local, tipus="ind
     errors.extend(presentacio_errors)
     details.extend(presentacio_details)
     errors.extend(_validate_exercicis_selection(competicio, schema_local))
-    if not allow_pipeline_exercise_scope:
-        for tie in materialized_desempat:
-            if not isinstance(tie, dict):
-                continue
-            # Clean the materialized save payload here, after the shared runtime
-            # has done its builder-facing rehydration work. If this cleanup is
-            # moved into pipeline_runtime instead, old desempats reopen with a
-            # different shape in the builder.
-            tie.pop("exercise_selection_scope", None)
-            pipeline = tie.get("pipeline")
-            if isinstance(pipeline, dict):
-                pipeline.pop("exercise_selection_scope", None)
     desempat_validation_schema = dict(schema_local)
     desempat_validation_schema["desempat"] = materialized_desempat
     if native_team_desempat_validation:

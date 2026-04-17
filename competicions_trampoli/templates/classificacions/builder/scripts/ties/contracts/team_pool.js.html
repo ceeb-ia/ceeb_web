@@ -1,0 +1,42 @@
+  function getTeamPoolTieContract() {
+    return tieCreateContract({
+      code: "team_pool",
+      label: "Team pool",
+      allowsParticipants: function () {
+        return false;
+      },
+      allowsExerciseSelectionControls: function () {
+        return false;
+      },
+      allowsPerAppOverrides: function () {
+        return false;
+      },
+      sanitizeUiState: function (uiState, context, policy) {
+        return tieSanitizeUiStateForContract(uiState, context, {
+          forceExerciseSelectionScope: "team_pool",
+          allowExerciseConfig: false,
+          allowPerAppOverrides: false,
+          allowParticipants: false,
+          ...(tieStateAsObject(policy) || {}),
+        });
+      },
+      sanitizeCanonicalTie: function (canonicalTie, context, fallbackPipeline, policy) {
+        return tieSanitizeCanonicalTieForContract(canonicalTie, context, fallbackPipeline, {
+          forceExerciseSelectionScope: "team_pool",
+          allowExerciseConfig: false,
+          allowPerAppOverrides: false,
+          allowParticipants: false,
+          ...(tieStateAsObject(policy) || {}),
+        });
+      },
+      validateCanonicalTie: function (canonicalTie, context, policy) {
+        return tieValidateCanonicalTieForContract(canonicalTie, context, {
+          forceExerciseSelectionScope: "team_pool",
+          allowExerciseConfig: false,
+          allowPerAppOverrides: false,
+          allowParticipants: false,
+          ...(tieStateAsObject(policy) || {}),
+        });
+      },
+    });
+  }

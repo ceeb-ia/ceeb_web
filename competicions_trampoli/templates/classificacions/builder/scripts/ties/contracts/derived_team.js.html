@@ -1,0 +1,42 @@
+  function getDerivedTeamTieContract() {
+    return tieCreateContract({
+      code: "derived_team",
+      label: "Derived team",
+      allowsParticipants: function () {
+        return true;
+      },
+      allowsExerciseSelectionControls: function () {
+        return true;
+      },
+      allowsPerAppOverrides: function () {
+        return true;
+      },
+      sanitizeUiState: function (uiState, context, policy) {
+        return tieSanitizeUiStateForContract(uiState, context, {
+          forceExerciseSelectionScope: "per_member",
+          allowExerciseConfig: true,
+          allowPerAppOverrides: true,
+          allowParticipants: true,
+          ...(tieStateAsObject(policy) || {}),
+        });
+      },
+      sanitizeCanonicalTie: function (canonicalTie, context, fallbackPipeline, policy) {
+        return tieSanitizeCanonicalTieForContract(canonicalTie, context, fallbackPipeline, {
+          forceExerciseSelectionScope: "per_member",
+          allowExerciseConfig: true,
+          allowPerAppOverrides: true,
+          allowParticipants: true,
+          ...(tieStateAsObject(policy) || {}),
+        });
+      },
+      validateCanonicalTie: function (canonicalTie, context, policy) {
+        return tieValidateCanonicalTieForContract(canonicalTie, context, {
+          forceExerciseSelectionScope: "per_member",
+          allowExerciseConfig: true,
+          allowPerAppOverrides: true,
+          allowParticipants: true,
+          ...(tieStateAsObject(policy) || {}),
+        });
+      },
+    });
+  }

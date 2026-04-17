@@ -1,0 +1,42 @@
+  function getPerMemberTieContract() {
+    return tieCreateContract({
+      code: "per_member",
+      label: "Per member",
+      allowsParticipants: function () {
+        return false;
+      },
+      allowsExerciseSelectionControls: function () {
+        return true;
+      },
+      allowsPerAppOverrides: function () {
+        return true;
+      },
+      sanitizeUiState: function (uiState, context, policy) {
+        return tieSanitizeUiStateForContract(uiState, context, {
+          forceExerciseSelectionScope: "per_member",
+          allowExerciseConfig: true,
+          allowPerAppOverrides: true,
+          allowParticipants: false,
+          ...(tieStateAsObject(policy) || {}),
+        });
+      },
+      sanitizeCanonicalTie: function (canonicalTie, context, fallbackPipeline, policy) {
+        return tieSanitizeCanonicalTieForContract(canonicalTie, context, fallbackPipeline, {
+          forceExerciseSelectionScope: "per_member",
+          allowExerciseConfig: true,
+          allowPerAppOverrides: true,
+          allowParticipants: false,
+          ...(tieStateAsObject(policy) || {}),
+        });
+      },
+      validateCanonicalTie: function (canonicalTie, context, policy) {
+        return tieValidateCanonicalTieForContract(canonicalTie, context, {
+          forceExerciseSelectionScope: "per_member",
+          allowExerciseConfig: true,
+          allowPerAppOverrides: true,
+          allowParticipants: false,
+          ...(tieStateAsObject(policy) || {}),
+        });
+      },
+    });
+  }

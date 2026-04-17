@@ -36,7 +36,7 @@
     const puntuacio = readPuntuacioSchemaFromUI();
 
     // desempats
-    let desempat = readTieUI(true);
+    let desempat = readTieCanonicalForSave(true);
     let usedAdvancedDesempat = false;
     if (preferAdvanced && advancedDirty.desempat) {
       const rawT = (els.tDesempat.value || "").trim();

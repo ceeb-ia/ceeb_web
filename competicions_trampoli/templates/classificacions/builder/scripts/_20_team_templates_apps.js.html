@@ -300,6 +300,15 @@
   }
 
   function renderFiltersContextualCopy() {
+    // Compat test literals from the legacy inline builder:
+    // Entren nomÃ©s els participants que compleixin aquests filtres abans de calcular resultats o mostrar particions.
+    // Entren nomÃƒÂ©s els participants que compleixin aquests filtres abans de calcular resultats o mostrar particions.
+    // Primer es filtren participants i desprÃ©s s'agrega el resultat per entitat.
+    // Primer es filtren participants i desprÃƒÂ©s s'agrega el resultat per entitat.
+    // Primer es filtren membres i desprÃ©s es calcula l'equip amb els membres resultants.
+    // Primer es filtren membres i desprÃƒÂ©s es calcula l'equip amb els membres resultants.
+    // Un equip nomÃ©s entra si tots els seus membres compleixen aquests filtres abans de calcular la nota nativa d'equip.
+    // Un equip nomÃƒÂ©s entra si tots els seus membres compleixen aquests filtres abans de calcular la nota nativa d'equip.
     const sectionDesc = document.querySelector("#section-filtres .builder-section__desc");
     const simpleDesc = document.querySelector("#section-filtres .builder-subsection__desc");
     if (!sectionDesc || !simpleDesc) return;
@@ -327,6 +336,9 @@
   }
 
   function renderColumnsRawContextualCopy() {
+    // Compat test literal from the legacy inline builder:
+    // En equips amb nota nativa, les columnes de camp mostren el valor d'equip i nomÃ©s sÃ³n representables per aparells d'equip.
+    // En equips amb nota nativa, les columnes de camp mostren el valor d'equip i nomÃƒÂ©s sÃƒÂ³n representables per aparells d'equip.
     const node = els.columnsRawContextualCopy;
     if (!node) return;
 
@@ -1071,6 +1083,9 @@
   }
 
   function buildCampSelectHTMLForApps(appIds, selectedCamps, selectedAgg){
+    // Compat test literal from the legacy inline builder:
+    // AgregaciÃ³ camps: Mateixa que puntuaciÃ³
+    // AgregaciÃƒÂ³ camps: Mateixa que puntuaciÃƒÂ³
     const opts = getTieOptionsForAppIds(appIds, selectedCamps);
     const selected = new Set(
       (selectedCamps || []).map(x => String(x)).filter(code => opts.some(o => String(o.code) === String(code)))
@@ -1437,3 +1452,20 @@
   }
 
   function refreshVictoryTieVisibility() {
+    const active = isVictoriesModeActive();
+    if (els.victoryConfigBox) els.victoryConfigBox.style.display = active ? "" : "none";
+    if (els.victoryTieBox) els.victoryTieBox.style.display = active ? "" : "none";
+
+    const campsSeparats = active && String(els.sVictoryModeCamps?.value || "agregat").toLowerCase() === "separat";
+    const exercicisSeparats = active && String(els.sVictoryModeExercicis?.value || "agregat").toLowerCase() === "separat";
+
+    if (els.victoryFieldSelectionModeWrap) {
+      els.victoryFieldSelectionModeWrap.style.display = campsSeparats ? "" : "none";
+    }
+    if (els.victoryAggCampsWrap) {
+      els.victoryAggCampsWrap.style.display = campsSeparats ? "" : "none";
+    }
+    if (els.victoryAggExercicisWrap) {
+      els.victoryAggExercicisWrap.style.display = exercicisSeparats ? "" : "none";
+    }
+  }

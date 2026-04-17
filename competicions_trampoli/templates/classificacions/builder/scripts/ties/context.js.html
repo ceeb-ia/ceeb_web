@@ -1,0 +1,335 @@
+  function tieIsObject(value) {
+    return !!value && typeof value === "object" && !Array.isArray(value);
+  }
+
+  function tieIsPlainObject(value) {
+    return tieIsObject(value) && typeof value.querySelector !== "function" && typeof value.nodeType !== "number";
+  }
+
+  function tieCloneJson(value, fallback = null) {
+    try {
+      return JSON.parse(JSON.stringify(value));
+    } catch (_) {
+      return fallback;
+    }
+  }
+
+  function tieNormalizeText(value, fallback = "") {
+    const text = String(value == null ? fallback : value).trim();
+    return text || String(fallback || "");
+  }
+
+  function tiePositiveInts(rawValues) {
+    const values = Array.isArray(rawValues) ? rawValues : (rawValues == null || rawValues === "" ? [] : [rawValues]);
+    const out = [];
+    const seen = new Set();
+    values.forEach(raw => {
+      const parsed = Number(raw);
+      if (!Number.isFinite(parsed)) return;
+      const id = Math.trunc(parsed);
+      if (id <= 0 || seen.has(id)) return;
+      seen.add(id);
+      out.push(id);
+    });
+    return out;
+  }
+
+  function tieNormalizeExerciseSelectionScope(rawScope) {
+    if (typeof normalizeTieExerciseSelectionScope === "function") {
+      return normalizeTieExerciseSelectionScope(rawScope);
+    }
+    const fallback = typeof EXERCISE_SELECTION_SCOPE_PER_MEMBER !== "undefined"
+      ? EXERCISE_SELECTION_SCOPE_PER_MEMBER
+      : "per_member";
+    const scope = String(rawScope || "").trim().toLowerCase();
+    if (scope === "hereta") return "hereta";
+    if (scope === "per_member" || scope === "team_pool") return scope;
+    return fallback;
+  }
+
+  function tieNormalizeTeamMode(rawMode) {
+    if (typeof normalizeTeamMode === "function") {
+      return normalizeTeamMode(rawMode);
+    }
+    const mode = String(rawMode || "").trim().toLowerCase();
+    if (mode === "derived_from_individual" || mode === "native_team") return mode;
+    return "";
+  }
+
+  function tieGetCurrentTipus() {
+    if (typeof currentTipus === "function") {
+      return tieNormalizeText(currentTipus(), "individual");
+    }
+    return "individual";
+  }
+
+  function tieGetCurrentEquipsUiState() {
+    if (typeof getEquipsUiState === "function") {
+      const state = getEquipsUiState();
+      return tieIsObject(state) ? state : {};
+    }
+    return {};
+  }
+
+  function tieGetSelectedMainAppIds() {
+    if (typeof selectedAparellIdsFromUI === "function") {
+      return tiePositiveInts(selectedAparellIdsFromUI());
+    }
+    return [];
+  }
+
+  function tieGetFallbackPuntuacioSchema(options) {
+    if (options && tieIsObject(options.fallbackPipeline)) {
+      return tieCloneJson(options.fallbackPipeline, {});
+    }
+    if (typeof readPuntuacioSchemaFromUI === "function") {
+      return tieCloneJson(readPuntuacioSchemaFromUI(), {});
+    }
+    return {};
+  }
+
+  function tieCreateContract(spec) {
+    const definition = tieIsObject(spec) ? spec : {};
+    const code = tieNormalizeText(definition.code, "per_member") || "per_member";
+    const label = tieNormalizeText(definition.label, code) || code;
+    return {
+      code,
+      label,
+      allowsParticipants: typeof definition.allowsParticipants === "function"
+        ? definition.allowsParticipants
+        : function () { return false; },
+      allowsExerciseSelectionControls: typeof definition.allowsExerciseSelectionControls === "function"
+        ? definition.allowsExerciseSelectionControls
+        : function () { return true; },
+      allowsPerAppOverrides: typeof definition.allowsPerAppOverrides === "function"
+        ? definition.allowsPerAppOverrides
+        : function () { return true; },
+      sanitizeUiState: typeof definition.sanitizeUiState === "function"
+        ? definition.sanitizeUiState
+        : function (uiState) { return tieCloneJson(uiState, {}); },
+      sanitizeCanonicalTie: typeof definition.sanitizeCanonicalTie === "function"
+        ? definition.sanitizeCanonicalTie
+        : function (canonicalTie) { return tieCloneJson(canonicalTie, {}); },
+      validateCanonicalTie: typeof definition.validateCanonicalTie === "function"
+        ? definition.validateCanonicalTie
+        : function () { return []; },
+    };
+  }
+
+  function tieResolveContractCode(context) {
+    const ctx = tieIsObject(context) ? context : {};
+    if (ctx.contractCode) {
+      return tieNormalizeText(ctx.contractCode, "per_member");
+    }
+    if (ctx.exerciseSelectionScope === "team_pool") {
+      return "team_pool";
+    }
+    if (ctx.tipus === "equips") {
+      const nativeMode = typeof TEAM_MODE_NATIVE !== "undefined" ? TEAM_MODE_NATIVE : "native_team";
+      if (ctx.teamMode === nativeMode) return "native_team";
+      return "derived_team";
+    }
+    return "per_member";
+  }
+
+  function tieResolveContext(source, options) {
+    const opts = tieIsObject(options) ? options : {};
+    const rawSource = tieIsPlainObject(source) ? source : {};
+    const rawTie = tieIsPlainObject(opts.tie) ? opts.tie : rawSource;
+    const rawRow = source && typeof source.querySelector === "function" ? source : (opts.row && typeof opts.row.querySelector === "function" ? opts.row : null);
+    const rawUiState = tieIsObject(opts.uiState)
+      ? opts.uiState
+      : (tieIsObject(rawTie._builder_ui) ? rawTie._builder_ui : {});
+    const equipsUiState = tieGetCurrentEquipsUiState();
+    const tipus = tieNormalizeText(
+      opts.tipus ||
+      rawSource.tipus ||
+      rawTie.tipus ||
+      (typeof currentTipus === "function" ? currentTipus() : null),
+      "individual"
+    );
+    const teamMode = tieNormalizeTeamMode(
+      opts.teamMode ||
+      rawSource.teamMode ||
+      rawTie.team_mode ||
+      rawTie.teamMode ||
+      equipsUiState.effectiveTeamMode ||
+      equipsUiState.declaredTeamMode ||
+      ""
+    );
+    const fallbackPipeline = tieGetFallbackPuntuacioSchema(opts);
+    const pipeline = tieIsObject(rawTie.pipeline) ? rawTie.pipeline : {};
+    const uiScope = tieIsObject(rawUiState.scope_exercicis_ui) ? rawUiState.scope_exercicis_ui : {};
+    const exerciseSelectionScope = tieNormalizeExerciseSelectionScope(
+      opts.exerciseSelectionScope ||
+      rawSource.exerciseSelectionScope ||
+      rawSource.exercise_selection_scope ||
+      rawTie.exerciseSelectionScope ||
+      rawTie.exercise_selection_scope ||
+      pipeline.exercise_selection_scope ||
+      uiScope.exercise_selection_scope ||
+      (typeof getExerciseSelectionScopeFromUI === "function" ? getExerciseSelectionScopeFromUI() : null)
+    );
+    const selectedMainIds = tiePositiveInts(
+      opts.selectedMainIds ||
+      opts.targetAppIds ||
+      tieGetSelectedMainAppIds()
+    );
+    const pipelineAppIds = tiePositiveInts(
+      pipeline.aparells && tieIsObject(pipeline.aparells) ? pipeline.aparells.ids : []
+    );
+    const fallbackMainIds = tiePositiveInts(
+      opts.fallbackMainIds ||
+      pipelineAppIds ||
+      tieGetSelectedMainAppIds()
+    );
+    const contractCode = tieResolveContractCode({
+      contractCode: opts.contractCode,
+      tipus,
+      teamMode,
+      exerciseSelectionScope,
+    });
+    const context = {
+      source: rawSource,
+      row: rawRow,
+      tie: rawTie,
+      uiState: rawUiState,
+      tipus,
+      teamMode,
+      exerciseSelectionScope,
+      contractCode,
+      isTeam: tipus === "equips",
+      isDerivedTeam: tipus === "equips" && teamMode === (typeof TEAM_MODE_DERIVED !== "undefined" ? TEAM_MODE_DERIVED : "derived_from_individual"),
+      isNativeTeam: tipus === "equips" && teamMode === (typeof TEAM_MODE_NATIVE !== "undefined" ? TEAM_MODE_NATIVE : "native_team"),
+      isTeamPool: contractCode === "team_pool",
+      selectedMainIds,
+      fallbackMainIds,
+      targetAppIds: selectedMainIds.length ? selectedMainIds : fallbackMainIds,
+      fallbackPipeline,
+      equipsUiState,
+    };
+    return context;
+  }
+
+  function tieGetContractRegistry() {
+    const registry = {};
+    if (typeof getPerMemberTieContract === "function") registry.per_member = getPerMemberTieContract();
+    if (typeof getTeamPoolTieContract === "function") registry.team_pool = getTeamPoolTieContract();
+    if (typeof getDerivedTeamTieContract === "function") registry.derived_team = getDerivedTeamTieContract();
+    if (typeof getNativeTeamTieContract === "function") registry.native_team = getNativeTeamTieContract();
+    return registry;
+  }
+
+  function tieFallbackContractForCode(code) {
+    const normalized = tieNormalizeText(code, "per_member") || "per_member";
+    const policyByCode = {
+      per_member: {
+        forceExerciseSelectionScope: "per_member",
+        allowExerciseConfig: true,
+        allowPerAppOverrides: true,
+        allowParticipants: false,
+      },
+      team_pool: {
+        forceExerciseSelectionScope: "team_pool",
+        allowExerciseConfig: false,
+        allowPerAppOverrides: false,
+        allowParticipants: false,
+      },
+      derived_team: {
+        forceExerciseSelectionScope: "per_member",
+        allowExerciseConfig: true,
+        allowPerAppOverrides: true,
+        allowParticipants: true,
+      },
+      native_team: {
+        forceExerciseSelectionScope: "per_member",
+        allowExerciseConfig: true,
+        allowPerAppOverrides: true,
+        allowParticipants: false,
+      },
+    };
+    const policy = policyByCode[normalized] || policyByCode.per_member;
+    return tieCreateContract({
+      code: normalized,
+      label: normalized,
+      allowsParticipants: function () {
+        return !!policy.allowParticipants;
+      },
+      allowsExerciseSelectionControls: function () {
+        return !!policy.allowExerciseConfig;
+      },
+      allowsPerAppOverrides: function () {
+        return !!policy.allowPerAppOverrides;
+      },
+      sanitizeUiState: function (uiState, context, extraPolicy) {
+        if (typeof tieSanitizeUiStateForContract === "function") {
+          return tieSanitizeUiStateForContract(uiState, context, {
+            ...policy,
+            ...(tieIsObject(extraPolicy) ? extraPolicy : {}),
+          });
+        }
+        return tieCloneJson(uiState, {});
+      },
+      sanitizeCanonicalTie: function (canonicalTie, context, fallbackPipeline, extraPolicy) {
+        if (typeof tieSanitizeCanonicalTieForContract === "function") {
+          return tieSanitizeCanonicalTieForContract(canonicalTie, context, fallbackPipeline, {
+            ...policy,
+            ...(tieIsObject(extraPolicy) ? extraPolicy : {}),
+          });
+        }
+        return tieCloneJson(canonicalTie, {});
+      },
+      validateCanonicalTie: function (canonicalTie, context, extraPolicy) {
+        if (typeof tieValidateCanonicalTieForContract === "function") {
+          return tieValidateCanonicalTieForContract(canonicalTie, context, {
+            ...policy,
+            ...(tieIsObject(extraPolicy) ? extraPolicy : {}),
+          });
+        }
+        return [];
+      },
+    });
+  }
+
+  function tieResolveContract(context) {
+    const ctx = tieIsObject(context) ? context : tieResolveContext(context, {});
+    const code = tieResolveContractCode(ctx);
+    const registry = tieGetContractRegistry();
+    if (registry[code]) return registry[code];
+    return tieFallbackContractForCode(code);
+  }
+
+  function tieContextAllowsParticipants(context) {
+    const contract = tieResolveContract(context);
+    return !!contract.allowsParticipants(tieIsObject(context) ? context : tieResolveContext(context, {}));
+  }
+
+  function tieContextAllowsExerciseSelectionControls(context) {
+    const contract = tieResolveContract(context);
+    return !!contract.allowsExerciseSelectionControls(tieIsObject(context) ? context : tieResolveContext(context, {}));
+  }
+
+  function tieContextAllowsPerAppOverrides(context) {
+    const contract = tieResolveContract(context);
+    return !!contract.allowsPerAppOverrides(tieIsObject(context) ? context : tieResolveContext(context, {}));
+  }
+
+  function tieContextAllowsTeamPool(context) {
+    return tieResolveContractCode(context) === "team_pool";
+  }
+
+  function tieContextAllowsDerivedTeam(context) {
+    return tieResolveContractCode(context) === "derived_team";
+  }
+
+  function tieContextAllowsNativeTeam(context) {
+    return tieResolveContractCode(context) === "native_team";
+  }
+
+  function resolveTieContext(source, options) {
+    return tieResolveContext(source, options);
+  }
+
+  function resolveTieContract(context) {
+    return tieResolveContract(context);
+  }

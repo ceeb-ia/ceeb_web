@@ -1,0 +1,87 @@
+  function setParticipantsUI(tr, pMode, pN, pAgg) {
+    const pModeSel = tr.querySelector('[data-k="p_mode"]');
+    const pNEl = tr.querySelector('[data-k="p_n"]');
+    const pAggSel = tr.querySelector('[data-k="p_agg"]');
+    if (pModeSel) pModeSel.value = pMode;
+    if (pNEl) pNEl.value = pN;
+    if (pAggSel) pAggSel.value = pAgg;
+  }
+
+  function refreshParticipantsControls(tr) {
+    const pModeSel = tr.querySelector('[data-k="p_mode"]');
+    const pNEl = tr.querySelector('[data-k="p_n"]');
+    const pAggSel = tr.querySelector('[data-k="p_agg"]');
+    const pLockedNote = tr.querySelector('[data-k="p_locked_note"]');
+    if (!pModeSel || !pNEl || !pAggSel) return;
+    const fixedTeamPool = isTieExerciseSelectionLockedToMainPool(
+      tr.querySelector('[data-k="ex_scope"]')?.value || EXERCISE_SELECTION_SCOPE_INHERIT
+    );
+    if (fixedTeamPool) {
+      pModeSel.style.display = "none";
+      pNEl.style.display = "none";
+      pAggSel.style.display = "none";
+      if (pLockedNote) pLockedNote.style.display = "";
+      return;
+    }
+    if (pLockedNote) pLockedNote.style.display = "none";
+    pModeSel.style.display = "";
+    pAggSel.style.display = "";
+    const m = pModeSel.value;
+    pNEl.style.display = isParticipantsModeWithN(m) ? "" : "none";
+  }
+
+  function bindParticipantsListeners(tr, onChange) {
+    const pModeSel = tr.querySelector('[data-k="p_mode"]');
+    const pNEl = tr.querySelector('[data-k="p_n"]');
+    const pAggSel = tr.querySelector('[data-k="p_agg"]');
+    if (pModeSel) {
+      pModeSel.addEventListener("change", () => {
+        refreshParticipantsControls(tr);
+        if (typeof onChange === "function") onChange();
+        syncAdvancedFromUI();
+      });
+    }
+    if (pNEl) pNEl.addEventListener("input", () => {
+      if (typeof onChange === "function") onChange();
+      syncAdvancedFromUI();
+    });
+    if (pAggSel) pAggSel.addEventListener("change", () => {
+      if (typeof onChange === "function") onChange();
+      syncAdvancedFromUI();
+    });
+  }
+
+  function normalizeParticipantsFromTie(t) {
+    const scope = t.scope || {};
+    const sParts = getTieBuilderUiParticipants(t) || scope.participants || {};
+    let pMode = (sParts.mode || "hereta").toLowerCase().trim();
+    if (pMode === "hereta") pMode = "tots";
+    if (!["tots","millor_1","millor_n","pitjor_1","pitjor_n"].includes(pMode)) pMode = "tots";
+    const pN = Number(sParts.n || 1);
+    const pAgg = normalizeTieAggValue(
+      sParts.agregacio || sParts.agregacio_participants || t.agregacio_participants || "sum",
+      "sum",
+    );
+    return { pMode, pN, pAgg };
+  }
+
+  function addDefaultTieCriterion(cur, includeParticipants) {
+    const item = {
+      id: `tie_${Math.random().toString(16).slice(2)}`,
+      nom: `Desempat ${cur.length + 1}`,
+      camps: [],
+      agregacio_camps: "hereta",
+      ordre: "desc",
+      pipeline_version: 1,
+      scope: {
+        aparells: { mode: "hereta" },
+        exercicis: { mode: "hereta" },
+      },
+    };
+    if (includeParticipants) {
+      const defaults = getParticipantsDefaults();
+      item.scope.participants = defaults.participants;
+      item.agregacio_participants = defaults.agregacio_participants;
+    }
+    cur.push(item);
+  }

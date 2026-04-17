@@ -558,10 +558,184 @@ Cada subagent ha de rebre sempre:
   - no sols fragmentacio per fitxers
   - no mantenir un objecte `desempat` que intenti ser alhora UI, persistencia, validacio i compat legacy
 
+### Avanc 2026-04-17. Projeccions backend per a reopen del builder
+- S'ha treballat el paquet del Subagent 6: Legacy i builder backend.
+- S'han creat les fronteres Python:
+  - `services/classificacions/ties/legacy_projection.py`
+  - `services/classificacions/ties/ui_projection.py`
+  - `services/classificacions/ties/builder_rehydration.py`
+- `prepare_schema_for_builder_hydration()` delega la reobertura de `desempat` a `builder_rehydration.py`.
+- `builder_tie_rehydration.py` queda com a wrapper de compatibilitat cap a `ties/ui_projection.py`.
+- S'han afegit tests unitaris de:
+  - `canonical/pipeline -> ui_projection`
+  - `canonical/pipeline -> legacy_projection`
+  - `builder_rehydration = legacy_projection + ui_projection`
+
+Limitacions conscients d'aquest tall:
+- La materialitzacio legacy encara reutilitza `pipeline_runtime.materialize_desempat_item()` internament; la frontera explicita ja existeix, pero el trasllat complet de la logica fora de `pipeline_runtime.py` queda pendent.
+- `validation.py` encara materialitza i neteja part de `desempat`; la Fase 5 no esta tancada del tot.
+- El frontend no s'ha tocat: `_legacy_inline_script.html` continua governant render i save de `desempat`.
+- No s'han creat encara contractes separats `derived_team.py` i `native_team.py`.
+
+### Avanc 2026-04-17. Legacy projection real fora de `pipeline_runtime.py`
+- S'ha completat el seguent tall de la Fase 6:
+  - `services/classificacions/ties/pipeline_helpers.py` concentra helpers purs compartibles per normalitzar camps, exercicis, participants, agregacions i seleccio d'aparells.
+  - `services/classificacions/ties/legacy_projection.py` ja materialitza directament els mirrors legacy des de `desempat[].pipeline`.
+  - `pipeline_runtime.materialize_desempat_item()` i `pipeline_runtime.materialize_desempat_items()` queden com a wrappers de compatibilitat amb import local cap a `ties/legacy_projection.py`.
+  - `builder.py` i `validation.py` passen a entrar directament per `ties/legacy_projection.py` quan necessiten shape legacy.
+- S'ha eliminat la implementacio privada antiga de materialitzacio legacy dins `pipeline_runtime.py`.
+
+Limitacions conscients d'aquest tall:
+- SUPERAT en el tall posterior: `legacy_projection.py` ja no usa `build_tie_pipeline_criterion()` de `pipeline_runtime.py`.
+- `pipeline_runtime.py` encara conserva helpers interns similars als de `ties/pipeline_helpers.py`; desduplicar-los queda pendent si es vol una unificacio mes profunda.
+- `validation.py` encara fa neteja i validacio al voltant de la projeccio; la Fase 5 segueix parcial.
+
+### Avanc 2026-04-17. Façana de validacio de `desempat`
+- S'ha afegit `services/classificacions/ties/validation.py::materialize_desempat_for_validation()` com a helper de façana per al bloc final de validacio.
+- La nova funcio combina `project_ties_legacy_projection()` amb `strip_team_pool_tie_payload()` i centralitza la neteja temporal de `exercise_selection_scope` en la shape materialitzada.
+- `validate_team_pool_tie_contract()` i `strip_team_pool_tie_payload()` es mantenen compatibles i sense canvis de comportament.
+- S'ha afegit cobertura unitaria lleugera al test de `ties` per congelar la shape de materialitzacio de validacio.
+
+Limitacions conscients d'aquest tall:
+- SUPERAT en el rollout principal: `services/classificacions/validation.py` ja delega aquesta facana.
+- La validacio de `desempat` encara conserva validacions amb DB i compatibilitat dins el facade antic, pero la materialitzacio/cleanup de la shape temporal ja viu a `ties/validation.py`.
+
+### Avanc 2026-04-17. Constructor de tie pipeline separat
+- S'ha creat `services/classificacions/ties/pipeline_builder.py` amb la implementacio real de `build_tie_pipeline_criterion()`.
+- `legacy_projection.py` i `serializer_save.py` ja importen el constructor des de `ties/pipeline_builder.py`.
+- `pipeline_runtime.py` conserva `build_tie_pipeline_criterion()` com a wrapper de compatibilitat i deixa la logica real al paquet `ties/`.
+- S'ha verificat que la ruta nova no introdueix cicles d'import.
+
+Limitacions conscients d'aquest tall:
+- `pipeline_runtime.py` encara guarda helpers legacy i continua sent la facana general de scoring.
+- `pipeline_builder.py` encara depen de `normalize_scoring_pipeline()` i `PIPELINE_VERSION` via import local del runtime, cosa deliberada per mantenir el canvi petit i sense canvi funcional.
+
+### Avanc 2026-04-17. Tancament backend abans del front
+- S'ha integrat la facana `materialize_desempat_for_validation()` dins `services/classificacions/validation.py`.
+- La materialitzacio temporal usada per validar `desempat` queda centralitzada a `services/classificacions/ties/validation.py`.
+- S'ha afegit `validate_raw_desempat_legacy_payload()` per conservar errors legacy abans que `prepare_schema_for_persistence()` compacti el payload a pipeline-first.
+- `services/classificacions/ties/__init__.py` exporta les peces backend principals del paquet `ties/`:
+  - constructor de pipeline del tie
+  - serializer de save
+  - legacy projection
+  - UI projection
+  - builder rehydration
+  - facana de validacio
+- `pipeline_runtime.py` queda com a compatibilitat/facana per al constructor del tie, no com a propietari de la implementacio real.
+
+Limitacions conscients d'aquest tancament:
+- `pipeline_runtime.py` encara conserva helpers generals de scoring i wrappers de compatibilitat.
+- `pipeline_builder.py` encara reutilitza `normalize_scoring_pipeline()` del runtime amb import local; es pot desduplicar mes endavant, pero ja no bloqueja el tall de frontend.
+- La validacio amb DB de camps/aparells/exercicis continua a `services/classificacions/validation.py`; el paquet `ties/` ja concentra la shape i els contractes, no tota la infraestructura de validacio global.
+
+Verificacio executada:
+- `test_ties_serializer`
+- `test_builder_hydration`
+- `test_schema_validation`
+- `test_classificacio_filters_and_validation`
+- `manage.py check`
+
 ## Seguent Pas Operatiu
-- Quan es vulgui executar aquest pla amb subagents reals, cal generar un paquet per cadascun amb:
-  - prompt exacte
-  - fitxers propietat
-  - APIs d'entrada/sortida
-  - criteri de done
-  - proves que ha de deixar verdes
+- Continuar la Fase 8 amb un segon tall frontend sobre normalitzadors/UI state que encara queden a `_40_ties_and_teams.js.html` i `_50_columns_detail_preview.js.html`.
+- No obrir mes refactors backend grans abans d'aquest tall, excepte regressions detectades pels tests.
+
+### Avanc 2026-04-17. Fase 8 iniciada: slice frontend de `desempat`
+- `templates/competicio/classificacions_builder_v2.html` deixa de carregar `_legacy_inline_script.html` com a script servit i passa a incloure els fragments existents:
+  - `_00_bootstrap.js.html`
+  - `_10_core_ui.js.html`
+  - `_20_team_templates_apps.js.html`
+  - `classificacions/_puntuacio_script.html`
+  - `_40_ties_and_teams.js.html`
+  - `_50_columns_detail_preview.js.html`
+  - `_60_particions.js.html`
+  - `_70_hydration_sync.js.html`
+  - `_80_actions_init.js.html`
+- S'ha creat el primer slice `templates/classificacions/builder/scripts/ties/`:
+  - `context.js.html`
+  - `ui_state.js.html`
+  - `contracts/per_member.js.html`
+  - `contracts/team_pool.js.html`
+  - `contracts/derived_team.js.html`
+  - `contracts/native_team.js.html`
+  - `save_serializer.js.html`
+  - `victory.js.html`
+  - `participants.js.html`
+  - `render.js.html`
+- `_40_ties_and_teams.js.html` queda com a parcial intermedi que inclou aquests fitxers i conserva helpers compartits que encara no s'han mogut.
+- `syncAdvancedFromUI()` torna a guardar `desempat` via `readTieCanonicalForSave(true)`, preservant el payload pipeline-first.
+- S'han mantingut literals de compatibilitat en comentaris per conservar els tests de contracte textual del builder fragmentat.
+
+Limitacions conscients d'aquest tall:
+- `_legacy_inline_script.html` encara existeix com a fitxer historic/fallback, pero ja no es el script carregat pel builder v2.
+- El slice `ties/` encara depen de helpers globals definits a `_20`, `_40`, `_50` i `_70`.
+- L'extraccio frontend ja te context, `ui_state` i contractes JS, pero `_40_ties_and_teams.js.html` encara conserva normalitzadors i helpers compartits de compatibilitat.
+- Queda pendent reduir encara mes `_40` i tancar la paritat completa `save -> reopen -> render` sense duplicacions residuals.
+
+Verificacio executada:
+- `test_templates_global`
+- `test_templates_competition`
+- `test_builder_hydration`
+- `test_ties_serializer`
+- `test_schema_validation`
+- `test_classificacio_filters_and_validation`
+- `manage.py check`
+
+### Avanc 2026-04-17. Orquestracio dels passos 1 i 2
+- S'ha executat una orquestracio per write sets disjunts per tancar:
+  - Pas 1: contractes backend `derived_team` i `native_team`
+  - Pas 2: extraccio del nucli frontend de `desempat` cap a `templates/classificacions/builder/scripts/ties/*`
+- Repartiment de responsabilitats aplicat:
+  - Worker backend contractes:
+    - `services/classificacions/ties/contracts/derived_team.py`
+    - `services/classificacions/ties/contracts/native_team.py`
+  - Worker backend integracio:
+    - `services/classificacions/ties/context.py`
+    - `services/classificacions/ties/registry.py`
+    - `services/classificacions/ties/__init__.py`
+    - `services/classificacions/ties/serializer_save.py`
+    - `services/classificacions/ties/validation.py`
+    - `tests/classificacions/test_ties_serializer.py`
+  - Worker frontend context/estat/contractes:
+    - `templates/classificacions/builder/scripts/ties/context.js.html`
+    - `templates/classificacions/builder/scripts/ties/ui_state.js.html`
+    - `templates/classificacions/builder/scripts/ties/contracts/*.js.html`
+  - Worker frontend render/save:
+    - `templates/classificacions/builder/scripts/ties/save_serializer.js.html`
+    - `templates/classificacions/builder/scripts/ties/render.js.html`
+    - `templates/classificacions/builder/scripts/_40_ties_and_teams.js.html`
+
+Resultat del Pas 1:
+- `services/classificacions/ties/context.py` resol explicitament els contractes `per_member`, `team_pool`, `derived_team` i `native_team`.
+- `services/classificacions/ties/registry.py` delega a contractes separats dins `contracts/`.
+- `services/classificacions/ties/contracts/derived_team.py` i `services/classificacions/ties/contracts/native_team.py` ja existeixen com a peces reals del paquet.
+- `services/classificacions/ties/serializer_save.py` preserva `exercise_selection_scope` des del pipeline normalitzat.
+- `services/classificacions/ties/validation.py` elimina payload de participants quan el context resolt es `native_team`.
+
+Resultat del Pas 2:
+- `_40_ties_and_teams.js.html` ja inclou el nou ordre de slices:
+  - `context.js.html`
+  - `ui_state.js.html`
+  - `contracts/*.js.html`
+  - `save_serializer.js.html`
+  - `victory.js.html`
+  - `participants.js.html`
+  - `render.js.html`
+- El nucli de canonicalitzacio del `save` viu a `save_serializer.js.html`.
+- La lectura de fila, projeccio visible i bona part del render viu a `render.js.html`.
+- `context.js.html` i `ui_state.js.html` aporten el resolver de context/contracte i la normalitzacio de l'estat editable.
+
+Limitacions conscients d'aquesta orquestracio:
+- `_40_ties_and_teams.js.html` encara no es una shell minima; manté helpers compartits de normalitzacio i compatibilitat.
+- El slice frontend nou encara depen de funcions globals del builder existent.
+- El legacy ja no es necessari per al runtime del builder v2, pero encara es util com a referencia de comparacio mentre no es tanqui la Fase 9.
+
+Verificacio executada en aquest tall:
+- `test_ties_serializer`
+- `test_builder_hydration`
+- `test_templates_competition`
+- `test_templates_global`
+- Ajust puntual validat: `derived_team` aplica neteja de `team_pool` quan el `exercise_selection_scope` resolt es `team_pool`
+
+Seguent pas operatiu recomanat:
+- reduir `_40_ties_and_teams.js.html` fins a shell fina
+- afegir cobertura de regressio `save -> reopen -> render` per `per_member`, `team_pool`, `derived_team` i `native_team`

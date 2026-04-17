@@ -1,5 +1,6 @@
-from ..pipeline_runtime import build_main_scoring_pipeline_from_schema, build_tie_pipeline_criterion
+from ..pipeline_runtime import build_main_scoring_pipeline_from_schema
 from .context import resolve_tie_context
+from .pipeline_builder import build_tie_pipeline_criterion
 from .registry import resolve_tie_contract
 
 
@@ -39,10 +40,13 @@ def serialize_tie_for_save(
     context = resolve_tie_context(item, tipus=tipus, team_mode=team_mode, main_pipeline=fallback)
     contract = resolve_tie_contract(context)
     serialized = contract.sanitize_item_for_save(item, context)
-    if not context.is_derived_team:
-        serialized_pipeline = serialized.get("pipeline") if isinstance(serialized.get("pipeline"), dict) else {}
+    serialized_pipeline = serialized.get("pipeline") if isinstance(serialized.get("pipeline"), dict) else {}
+    raw_pipeline = item.get("pipeline") if isinstance(item.get("pipeline"), dict) else {}
+    if raw_pipeline and "exercise_selection_scope" in raw_pipeline:
+        serialized_pipeline["exercise_selection_scope"] = raw_pipeline.get("exercise_selection_scope")
+    else:
         serialized_pipeline.pop("exercise_selection_scope", None)
-        serialized["pipeline"] = serialized_pipeline
+    serialized["pipeline"] = serialized_pipeline
     return serialized
 
 

@@ -163,6 +163,18 @@ def _canonicalize_desempat_for_persistence(schema_local, *, tipus="individual"):
 
 
 def prepare_schema_for_persistence(competicio, schema_local, *, tipus="individual"):
+    from .ties.validation import validate_raw_desempat_legacy_payload
+
+    raw_desempat_errors = validate_raw_desempat_legacy_payload(
+        (schema_local or {}).get("desempat") if isinstance(schema_local, dict) else []
+    )
+    if raw_desempat_errors:
+        return {
+            "schema": schema_local,
+            "errors": raw_desempat_errors,
+            "error_details": build_validation_error_details(raw_desempat_errors),
+        }
+
     schema_local = _canonicalize_desempat_for_persistence(schema_local, tipus=tipus)
 
     schema_local, validation_errors, validation_details = validate_schema_for_competicio_detailed(
