@@ -12,6 +12,7 @@ from .classificacio_templates import (
     normalize_particions_custom,
     normalize_particions_schema,
 )
+from .builder_tie_rehydration import project_builder_tie_rehydration
 from .compute import DEFAULT_SCHEMA
 from .filters import (
     EXERCISE_SELECTION_SCOPE_INHERIT,
@@ -605,7 +606,14 @@ def prepare_schema_for_builder_hydration(competicio, schema_local, tipus="indivi
                 fallback_pipeline=fallback_pipeline,
             )
             if item:
-                des_out.append(item)
+                des_out.append(
+                    project_builder_tie_rehydration(
+                        item,
+                        main_pipeline=fallback_pipeline,
+                        tipus=tipus,
+                        team_mode=hydration_team_mode,
+                    )
+                )
     schema["desempat"] = des_out
     schema["particions"] = list(schema.get("particions") or []) if isinstance(schema.get("particions"), list) else []
     schema["particions_v2"] = list(schema.get("particions_v2") or []) if isinstance(schema.get("particions_v2"), list) else []

@@ -1849,6 +1849,10 @@
   function sanitizeTieItemForUI(rawTie, selectedMainIds, allowAppScope, allowParticipants, fallbackPuntuacio) {
     if (!rawTie || typeof rawTie !== "object" || Array.isArray(rawTie)) return null;
     const source = cloneJsonValue(rawTie, {});
+    const builderUiScopeExercicis = getTieBuilderUiScopeExercicis(rawTie);
+    const builderUiExerciseSelectionScope = getTieBuilderUiExerciseSelectionScope(rawTie);
+    const builderUiModeSeleccioExercicis = getTieBuilderUiModeSeleccioExercicis(rawTie);
+    const builderUiExercicisPerApp = getTieBuilderUiExercicisPerAparell(rawTie);
     const fallbackPipeline = buildTiePipelineFromPuntuacioSchema(fallbackPuntuacio || (readPuntuacioSchemaFromUI ? readPuntuacioSchemaFromUI() : {}));
     source.pipeline = normalizeTiePipeline(source.pipeline || fallbackPipeline, fallbackPipeline);
     source.id = String(source.id || `tie_${Math.random().toString(16).slice(2)}`).trim();
@@ -1894,26 +1898,43 @@
         : { mode: "hereta" };
     }
 
+    const builderUiAggExercicisPerApp = getTieBuilderUiAggExercicisPerAparell(
+      rawTie,
+      targetIds,
+      pipeline.agregacio_exercicis || source.agregacio_exercicis || "sum",
+    );
+
     const exScope = pipeline.exercicis && typeof pipeline.exercicis === "object" && !Array.isArray(pipeline.exercicis)
       ? pipeline.exercicis
-      : ((scope.exercicis && typeof scope.exercicis === "object" && !Array.isArray(scope.exercicis)) ? scope.exercicis : {});
+      : (builderUiScopeExercicis || ((scope.exercicis && typeof scope.exercicis === "object" && !Array.isArray(scope.exercicis)) ? scope.exercicis : {}));
     scope.exercicis = normalizeTieExercicisCfg(exScope);
     source.scope = scope;
 
-    const exSelMode = normalizeTieModeSeleccioExercicis(pipeline.mode_seleccio_exercicis || source.mode_seleccio_exercicis || exScope.mode_seleccio_exercicis || "hereta");
+    const exSelMode = normalizeTieModeSeleccioExercicis(
+      pipeline.mode_seleccio_exercicis || source.mode_seleccio_exercicis || builderUiModeSeleccioExercicis || exScope.mode_seleccio_exercicis || "hereta"
+    );
     if (exSelMode !== "hereta") source.mode_seleccio_exercicis = exSelMode;
     else delete source.mode_seleccio_exercicis;
     if (isDerivedExerciseSelectionScopeAvailable()) {
-      const exSelectionScope = normalizeTieExerciseSelectionScope(pipeline.exercise_selection_scope || source.exercise_selection_scope || "hereta");
+      const exSelectionScope = normalizeTieExerciseSelectionScope(
+        pipeline.exercise_selection_scope || source.exercise_selection_scope || builderUiExerciseSelectionScope || "hereta"
+      );
       if (exSelectionScope !== EXERCISE_SELECTION_SCOPE_INHERIT) source.exercise_selection_scope = exSelectionScope;
       else delete source.exercise_selection_scope;
     } else {
       delete source.exercise_selection_scope;
     }
 
-    const exPerAppSource = pipeline.exercicis_per_aparell || source.exercicis_per_aparell || exScope.exercicis_per_aparell || {};
+    const exPerAppSource = pipeline.exercicis_per_aparell
+      || source.exercicis_per_aparell
+      || (Object.keys(builderUiExercicisPerApp).length ? builderUiExercicisPerApp : null)
+      || exScope.exercicis_per_aparell
+      || {};
     const exPerAppMap = normalizeTieExercicisPerAparellMap(exPerAppSource);
-    const aggExPerAppSource = pipeline.agregacio_exercicis_per_aparell || source.agregacio_exercicis_per_aparell || {};
+    const aggExPerAppSource = pipeline.agregacio_exercicis_per_aparell
+      || source.agregacio_exercicis_per_aparell
+      || (Object.keys(builderUiAggExercicisPerApp).length ? builderUiAggExercicisPerApp : null)
+      || {};
     const aggExPerAppMap = normalizeTiePipelineAggMap(
       aggExPerAppSource,
       {},
@@ -2029,6 +2050,7 @@
       delete source.pipeline.agregacio_participants;
     }
 
+    delete source._builder_ui;
     return source;
   }
 

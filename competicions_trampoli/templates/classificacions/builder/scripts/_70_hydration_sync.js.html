@@ -133,15 +133,16 @@
     const rawDetailCfg = JSON.parse(JSON.stringify((((schema || {}).presentacio || {}).detall) || {}));
     schema = normalizeForHydration(schema || DEFAULT_SCHEMA);
     const cfg = currentCfg();
+    let schemaForEditor = stripBuilderUiFromSchema(schema);
     if (cfg) cfg.schema = schema;
     state.isHydratingSchema = true;
     state.rehydrationIssues = [];
     advancedDirty.desempat = false;
     advancedDirty.filtres = false;
     state.detailUiTouched = false;
-    els.tDesempat.value = JSON.stringify(schema.desempat || [], null, 2);
-    els.tFiltres.value = JSON.stringify(schema.filtres || {}, null, 2);
-    els.advancedJson.value = JSON.stringify(schema, null, 2);
+    els.tDesempat.value = JSON.stringify(schemaForEditor.desempat || [], null, 2);
+    els.tFiltres.value = JSON.stringify(schemaForEditor.filtres || {}, null, 2);
+    els.advancedJson.value = JSON.stringify(schemaForEditor, null, 2);
 
     try {
       const partEntries = normalizeParticioEntries(schema.particions_v2 || [], schema.particions || []);
@@ -261,8 +262,9 @@
       const detailLegacyColumns = serializeLegacyDetailColumns(detailSections, rawDetailCfg);
       if (detailLegacyColumns?.length) schema.presentacio.detall.columnes = detailLegacyColumns;
       else delete schema.presentacio.detall.columnes;
+      schemaForEditor = stripBuilderUiFromSchema(schema);
       if (cfg) cfg.schema = schema;
-      els.advancedJson.value = JSON.stringify(schema, null, 2);
+      els.advancedJson.value = JSON.stringify(schemaForEditor, null, 2);
       if (els.detailEnabled) els.detailEnabled.checked = !!rawDetailCfg.enabled;
       if (els.detailDefaultOpen) els.detailDefaultOpen.checked = !!rawDetailCfg.default_open;
       runSafeHydrationRender("detall", () => {
@@ -581,7 +583,7 @@
     els.sExerciseSelectionScope.addEventListener("change", () => {
       refreshPuntuacioUI();
       renderPuntuacioSection((currentCfg()||{}).schema || DEFAULT_SCHEMA);
-      renderTieUI(readTieUI(true));
+      renderTieUI(readTieBuilderState(true));
       syncAdvancedFromUI();
     });
   }
@@ -632,21 +634,21 @@
   document.addEventListener("change", (e) => {
     if (e.target && e.target.id && e.target.id.startsWith("app_")) {
       renderPuntuacioSection((currentCfg()||{}).schema || DEFAULT_SCHEMA);
-      renderTieUI(readTieUI(true));
+      renderTieUI(readTieBuilderState(true));
       renderVictoryTieUI(readVictoryTieUI(true));
       syncAdvancedFromUI();
     }
   });
 
   els.btnTieAdd.addEventListener("click", () => {
-    const cur = readTieUI(true);
+    const cur = readTieBuilderState(true);
     addDefaultTieCriterion(cur, isTipusEquips());
     renderTieUI(cur);
     syncAdvancedFromUI();
   });
   if (els.btnTieCloneFromPuntuacio) {
     els.btnTieCloneFromPuntuacio.addEventListener("click", () => {
-      const cur = readTieUI(true);
+      const cur = readTieBuilderState(true);
       const punt = readPuntuacioSchemaFromUI();
       const idx = cur.length + 1;
       cur.push({
@@ -827,7 +829,7 @@
     cfg.tipus = els.fTipus.value;
     refreshTipusUI({ includeStale: false, dropInvalidSelection: true });
     renderPuntuacioSection((currentCfg()||{}).schema || DEFAULT_SCHEMA);
-    renderTieUI(readTieUI(true));
+    renderTieUI(readTieBuilderState(true));
     renderVictoryTieUI(readVictoryTieUI(true));
     syncAdvancedFromUI();
     renderList();
@@ -881,7 +883,7 @@
       rerenderDetailForCurrentMode();
       renderEquipManualRows(readEquipManualRows());
       renderPuntuacioSection((currentCfg()||{}).schema || DEFAULT_SCHEMA);
-      renderTieUI(readTieUI(true));
+      renderTieUI(readTieBuilderState(true));
       renderVictoryTieUI(readVictoryTieUI(true));
       syncAdvancedFromUI();
     });
@@ -892,7 +894,7 @@
       refreshTipusUI({ includeStale: false, dropInvalidSelection: true });
       rerenderDetailForCurrentMode();
       renderPuntuacioSection((currentCfg()||{}).schema || DEFAULT_SCHEMA);
-      renderTieUI(readTieUI(true));
+      renderTieUI(readTieBuilderState(true));
       renderVictoryTieUI(readVictoryTieUI(true));
       syncAdvancedFromUI();
     });

@@ -4,6 +4,10 @@ from .builder import with_mode_resolution
 from .compute import compute_classificacio
 from .display import get_display_columns
 from .partitions import normalize_schema_legacy_team_birth_partition
+from .pipeline_runtime import (
+    build_main_scoring_pipeline_from_schema,
+    canonicalize_desempat_items_for_persistence,
+)
 from .validation import (
     build_validation_error_details,
     validate_schema_for_competicio_detailed,
@@ -135,9 +139,19 @@ def _canonicalize_tie_items(raw_items):
     return out
 
 
-def _canonicalize_desempat_for_persistence(schema_local):
+def _canonicalize_desempat_for_persistence(schema_local, *, tipus="individual"):
     schema = schema_local if isinstance(schema_local, dict) else {}
-    schema["desempat"] = _canonicalize_tie_items(schema.get("desempat") or [])
+    team_mode = str((((schema.get("equips") or {}).get("team_mode")) or "")).strip().lower()
+    schema["desempat"] = canonicalize_desempat_items_for_persistence(
+        schema.get("desempat") or [],
+        tipus=tipus,
+        team_mode=team_mode,
+        fallback_pipeline=build_main_scoring_pipeline_from_schema(
+            {"puntuacio": schema.get("puntuacio") or {}},
+            tipus=tipus,
+            team_mode=team_mode,
+        ),
+    )
     punt = schema.get("puntuacio")
     if isinstance(punt, dict):
         victories = punt.get("victories")
@@ -168,7 +182,7 @@ def prepare_schema_for_persistence(competicio, schema_local, *, tipus="individua
         persist=True,
     )
     schema_local = _sync_per_app_puntuacio_legacy_mirrors(schema_local)
-    schema_local = _canonicalize_desempat_for_persistence(schema_local)
+    schema_local = _canonicalize_desempat_for_persistence(schema_local, tipus=tipus)
     schema_local = with_mode_resolution(competicio, tipus, schema_local)
     return {
         "schema": schema_local,

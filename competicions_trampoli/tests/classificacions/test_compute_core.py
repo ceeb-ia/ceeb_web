@@ -540,7 +540,12 @@ class ClassificacioMatrixScalarTests(_BaseTrampoliDataMixin, TestCase):
         res = self.client.post(url, data=json.dumps(payload), content_type="application/json")
         self.assertEqual(res.status_code, 200)
         cfg = ClassificacioConfig.objects.get(pk=res.json()["id"])
-        self.assertEqual((((cfg.schema.get("desempat") or [])[0]) or {}).get("camps"), ["X_copy"])
+        tie = (((cfg.schema.get("desempat") or [])[0]) or {})
+        self.assertNotIn("camps", tie)
+        self.assertEqual(
+            ((((tie.get("pipeline") or {}).get("camps_per_aparell") or {}).get(str(self.comp_app_a.id))) or []),
+            ["X_copy"],
+        )
 
     def test_classificacio_save_requires_real_camps_for_selected_apps(self):
         payload = {
@@ -680,8 +685,13 @@ class ClassificacioMatrixScalarTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual((cfg.schema.get("puntuacio") or {}).get("camp"), "total")
         self.assertEqual((cfg.schema.get("puntuacio") or {}).get("agregacio"), "sum")
         self.assertEqual((cfg.schema.get("puntuacio") or {}).get("best_n"), 1)
-        self.assertEqual((cfg.schema.get("desempat") or [])[0].get("camps"), ["E_total"])
-        self.assertNotIn("camp", (cfg.schema.get("desempat") or [])[0])
+        tie = (cfg.schema.get("desempat") or [])[0]
+        self.assertNotIn("camps", tie)
+        self.assertNotIn("camp", tie)
+        self.assertEqual(
+            ((((tie.get("pipeline") or {}).get("camps_per_aparell") or {}).get(str(self.comp_app_a.id))) or []),
+            ["E_total"],
+        )
 
     def test_classificacio_save_persists_tie_pipeline_canonical_format(self):
         ScoringSchema.objects.create(

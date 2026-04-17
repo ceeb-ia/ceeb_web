@@ -1965,6 +1965,7 @@ def validate_schema_for_competicio_detailed(competicio, schema_local, tipus="ind
         for ca in CompeticioAparell.objects.filter(competicio=competicio, id__in=selected_app_ids).select_related("aparell")
     }
     selected_apps_list = [selected_apps[app_id] for app_id in selected_app_ids if app_id in selected_apps]
+    native_team_desempat_validation = None
     tipus_norm = str(tipus or "").strip().lower()
     if tipus_norm == "individual":
         for app_id in selected_app_ids:
@@ -2020,17 +2021,13 @@ def validate_schema_for_competicio_detailed(competicio, schema_local, tipus="ind
                 errors.append("equips.incloure_sense_equip no es compatible amb team_mode=native_team.")
             if equips_cfg.get("particions_manuals"):
                 errors.append("equips.particions_manuals no es compatible amb team_mode=native_team.")
-            errors.extend(
-                _validate_desempat_mode_compatibility(
-                    competicio,
-                    schema_local,
-                    tipus=tipus,
-                    team_mode=effective_team_mode,
-                    context_code=context_code,
-                    capabilities=capabilities,
-                    selected_apps=selected_apps_list,
-                )
-            )
+            native_team_desempat_validation = {
+                "tipus": tipus,
+                "team_mode": effective_team_mode,
+                "context_code": context_code,
+                "capabilities": capabilities,
+                "selected_apps": selected_apps_list,
+            }
 
     pipeline_team_mode = normalize_team_mode(schema_local.get("equips", {}).get("team_mode", ""))
     allow_pipeline_participants = tipus_norm == "equips" and pipeline_team_mode != "native_team"
@@ -2087,6 +2084,14 @@ def validate_schema_for_competicio_detailed(competicio, schema_local, tipus="ind
     errors.extend(_validate_camps_per_aparell(competicio, schema_local))
     errors.extend(_validate_agregacio_camps_per_aparell(competicio, schema_local))
     errors.extend(_validate_agregacio_exercicis_per_aparell(competicio, schema_local))
+    if native_team_desempat_validation:
+        errors.extend(
+            _validate_desempat_mode_compatibility(
+                competicio,
+                schema_local,
+                **native_team_desempat_validation,
+            )
+        )
     errors.extend(
         _validate_candidate_source(
             schema_local,
@@ -2106,14 +2111,6 @@ def validate_schema_for_competicio_detailed(competicio, schema_local, tipus="ind
     errors.extend(presentacio_errors)
     details.extend(presentacio_details)
     errors.extend(_validate_exercicis_selection(competicio, schema_local))
-    errors.extend(
-        _validate_tie_exercicis_selection(
-            competicio,
-            schema_local,
-            tipus=tipus,
-            team_mode=schema_local.get("equips", {}).get("team_mode", ""),
-        )
-    )
     if not allow_pipeline_exercise_scope:
         for tie in materialized_desempat:
             if not isinstance(tie, dict):
@@ -2126,8 +2123,25 @@ def validate_schema_for_competicio_detailed(competicio, schema_local, tipus="ind
             pipeline = tie.get("pipeline")
             if isinstance(pipeline, dict):
                 pipeline.pop("exercise_selection_scope", None)
-    schema_local["desempat"] = materialized_desempat
-    errors.extend(_validate_tie_camps_per_aparell(competicio, schema_local))
+    desempat_validation_schema = dict(schema_local)
+    desempat_validation_schema["desempat"] = materialized_desempat
+    if native_team_desempat_validation:
+        errors.extend(
+            _validate_desempat_mode_compatibility(
+                competicio,
+                desempat_validation_schema,
+                **native_team_desempat_validation,
+            )
+        )
+    errors.extend(
+        _validate_tie_exercicis_selection(
+            competicio,
+            desempat_validation_schema,
+            tipus=tipus,
+            team_mode=schema_local.get("equips", {}).get("team_mode", ""),
+        )
+    )
+    errors.extend(_validate_tie_camps_per_aparell(competicio, desempat_validation_schema))
     errors.extend(_validate_victories_schema(competicio, schema_local, tipus=tipus))
     return schema_local, errors, details
 

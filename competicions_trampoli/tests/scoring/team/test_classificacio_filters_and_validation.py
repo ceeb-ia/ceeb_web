@@ -1066,6 +1066,43 @@ class TeamContextClassificacioFiltersAndValidationTests(TeamContextScoringFlowTe
         self.assertNotIn("exercise_selection_scope", tie)
         self.assertNotIn("exercise_selection_scope", tie.get("pipeline") or {})
 
+    def test_prepare_schema_for_persistence_persists_desempat_pipeline_only(self):
+        schema = self._native_team_schema_with_tie(
+            {
+                "id": "tie_legacy",
+                "nom": "Desempat legacy",
+                "camps": ["TOTAL"],
+                "aparell_id": self.comp_app.id,
+                "agregacio_camps": "sum",
+                "scope": {
+                    "aparells": {"mode": "seleccionar", "ids": [self.comp_app.id]},
+                    "exercicis": {"mode": "index", "index": 2},
+                },
+                "exercise_selection_scope": "team_pool",
+                "mode_seleccio_exercicis": "per_aparell_override",
+                "exercicis_per_aparell": {
+                    str(self.comp_app.id): {"mode": "millor_1"},
+                },
+                "agregacio_exercicis_per_aparell": {
+                    str(self.comp_app.id): "sum",
+                },
+                "agregacio_exercicis": "sum",
+                "agregacio_aparells": "sum",
+            }
+        )
+
+        prepared = prepare_schema_for_persistence(self.comp, schema, tipus="equips")
+
+        self.assertEqual(prepared["errors"], [])
+        tie = (((prepared["schema"] or {}).get("desempat") or [])[0])
+        self.assertEqual(
+            sorted(tie.keys()),
+            ["id", "nom", "ordre", "pipeline", "pipeline_version"],
+        )
+        self.assertEqual(tie.get("id"), "tie_legacy")
+        self.assertEqual(tie.get("nom"), "Desempat legacy")
+        self.assertNotIn("exercise_selection_scope", tie.get("pipeline") or {})
+
     def test_competition_template_roundtrip_preserves_team_members_table_exercise_mode(self):
         ScoringSchema.objects.create(
             aparell=self.app,
@@ -1634,6 +1671,156 @@ class TeamContextClassificacioFiltersAndValidationTests(TeamContextScoringFlowTe
         self.assertEqual(errors, [])
         self.assertNotIn("exercise_selection_scope", (cleaned_schema.get("puntuacio") or {}))
         self.assertNotIn("exercise_selection_scope", ((cleaned_schema.get("desempat") or [])[0]))
+
+    def test_classificacio_validation_accepts_canonical_desempat_without_legacy_mirrors(self):
+        schema = self._native_team_schema_with_tie(
+            {
+                "id": "tie_canonic",
+                "nom": "Desempat canonic",
+                "ordre": "desc",
+                "pipeline_version": 1,
+                "pipeline": {
+                    "aparells": {"mode": "seleccionar", "ids": [self.comp_app.id]},
+                    "camps_per_aparell": {str(self.comp_app.id): ["TOTAL"]},
+                    "agregacio_camps_per_aparell": {str(self.comp_app.id): "sum"},
+                    "agregacio_camps": "sum",
+                    "candidate_source_mode": "raw_exercise",
+                    "candidate_source_cfg": {
+                        "mode": "tots",
+                        "best_n": 1,
+                        "index": 1,
+                        "ids": [],
+                        "agregacio_exercicis": "sum",
+                    },
+                    "candidate_source_per_aparell": {
+                        str(self.comp_app.id): {"mode": "raw_exercise"}
+                    },
+                    "exercicis": {"mode": "tots"},
+                    "mode_seleccio_exercicis": "per_aparell_global",
+                    "exercicis_per_aparell": {},
+                    "agregacio_exercicis_per_aparell": {},
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "mode_resultat_aparells": "score",
+                    "ordre": "desc",
+                },
+            }
+        )
+
+        cleaned_schema, errors = _validate_schema_for_competicio(
+            self.comp,
+            schema,
+            tipus="equips",
+        )
+
+        self.assertEqual(errors, [])
+        tie = ((cleaned_schema.get("desempat") or [])[0])
+        self.assertEqual(sorted(tie.keys()), ["id", "nom", "ordre", "pipeline", "pipeline_version"])
+
+    def test_prepare_schema_for_persistence_keeps_sparse_derived_team_tie_pipeline(self):
+        individual_app, individual_comp_app = self._create_individual_comp_aparell("TRSP", "Sparse tie")
+        ScoringSchema.objects.create(
+            aparell=individual_app,
+            schema={
+                "fields": [
+                    {"code": "e_", "label": "Exec", "type": "number"},
+                ],
+                "computed": [],
+            },
+        )
+        schema = {
+            "puntuacio": {
+                "aparells": {"mode": "seleccionar", "ids": [individual_comp_app.id]},
+                "camps_per_aparell": {str(individual_comp_app.id): ["e_"]},
+                "agregacio_camps": "sum",
+                "exercicis": {"mode": "index", "index": 2},
+                "exercise_selection_scope": "per_member",
+                "mode_seleccio_exercicis": "per_aparell_override",
+                "exercicis_per_aparell": {
+                    str(individual_comp_app.id): {"mode": "millor_1"},
+                },
+                "candidate_source_mode": "participant_aggregate",
+                "candidate_source_cfg": {
+                    "mode": "tots",
+                    "agregacio_exercicis": "sum",
+                },
+                "candidate_source_per_aparell": {
+                    str(individual_comp_app.id): {
+                        "mode": "participant_aggregate",
+                        "cfg": {"mode": "tots", "agregacio_exercicis": "sum"},
+                    }
+                },
+                "agregacio_exercicis": "sum",
+                "agregacio_aparells": "sum",
+                "ordre": "desc",
+            },
+            "desempat": [
+                {
+                    "id": "tie_sparse",
+                    "nom": "Desempat sparse",
+                    "ordre": "desc",
+                    "pipeline_version": 1,
+                    "pipeline": {
+                        "aparells": {"mode": "seleccionar", "ids": [individual_comp_app.id]},
+                        "camps_per_aparell": {str(individual_comp_app.id): ["e_"]},
+                        "agregacio_camps_per_aparell": {str(individual_comp_app.id): "sum"},
+                        "agregacio_camps": "sum",
+                        "exercicis": {"mode": "index", "index": 2},
+                        "exercise_selection_scope": "per_member",
+                        "mode_seleccio_exercicis": "per_aparell_override",
+                        "exercicis_per_aparell": {
+                            str(individual_comp_app.id): {"mode": "millor_1"},
+                        },
+                        "agregacio_exercicis_per_aparell": {
+                            str(individual_comp_app.id): "sum",
+                        },
+                        "agregacio_exercicis": "sum",
+                        "agregacio_aparells": "sum",
+                        "candidate_source_mode": "participant_aggregate",
+                        "candidate_source_cfg": {
+                            "mode": "tots",
+                            "agregacio_exercicis": "sum",
+                        },
+                        "candidate_source_per_aparell": {
+                            str(individual_comp_app.id): {
+                                "mode": "participant_aggregate",
+                                "cfg": {"mode": "tots", "agregacio_exercicis": "sum"},
+                            }
+                        },
+                        "mode_resultat_aparells": "score",
+                        "ordre": "desc",
+                        "participants": {"mode": "tots"},
+                        "agregacio_participants": "sum",
+                    },
+                }
+            ],
+            "equips": {
+                "context_code": "parelles",
+                "team_mode": "derived_from_individual",
+                "incloure_sense_equip": False,
+            },
+        }
+
+        prepared = prepare_schema_for_persistence(self.comp, schema, tipus="equips")
+
+        self.assertEqual(prepared["errors"], [])
+        pipeline = (((prepared["schema"] or {}).get("desempat") or [])[0].get("pipeline") or {})
+        self.assertEqual(pipeline.get("exercicis"), {"mode": "index", "index": 2})
+        self.assertEqual(
+            pipeline.get("exercicis_per_aparell"),
+            {str(individual_comp_app.id): {"mode": "millor_1"}},
+        )
+        self.assertEqual(
+            pipeline.get("candidate_source_cfg"),
+            {"mode": "tots", "agregacio_exercicis": "sum"},
+        )
+        self.assertEqual(
+            ((pipeline.get("candidate_source_per_aparell") or {}).get(str(individual_comp_app.id)) or {}),
+            {
+                "mode": "participant_aggregate",
+                "cfg": {"mode": "tots", "agregacio_exercicis": "sum"},
+            },
+        )
 
     def test_classificacio_validation_rejects_team_pool_tie_reselection_fields(self):
         individual_app = self._create_aparell("TRV", "Tramp validation")

@@ -495,6 +495,194 @@ def build_tie_pipeline_criterion(raw_tie, *, idx=0, tipus="individual", team_mod
     }
 
 
+def _compact_exercicis_cfg_for_persistence(raw_cfg):
+    cfg = raw_cfg if isinstance(raw_cfg, dict) else {}
+    mode = str(cfg.get("mode") or "tots").strip().lower() or "tots"
+    out = {"mode": mode}
+    if mode in {"millor_n", "pitjor_n"}:
+        out["best_n"] = max(1, int(cfg.get("best_n") or 1))
+    elif mode == "index":
+        out["index"] = max(1, int(cfg.get("index") or 1))
+    elif mode == "llista":
+        ids = _unique_positive_ints(cfg.get("ids"))
+        out["ids"] = ids
+    max_per_participant = cfg.get("max_per_participant")
+    try:
+        max_per_participant = int(max_per_participant or 0)
+    except Exception:
+        max_per_participant = 0
+    if max_per_participant > 0:
+        out["max_per_participant"] = max_per_participant
+    return out
+
+
+def _compact_candidate_source_cfg_for_persistence(raw_cfg):
+    cfg = raw_cfg if isinstance(raw_cfg, dict) else {}
+    mode = str(cfg.get("mode") or "tots").strip().lower() or "tots"
+    out = {"mode": mode}
+    if mode in {"millor_n", "pitjor_n"}:
+        out["best_n"] = max(1, int(cfg.get("best_n") or 1))
+    elif mode == "index":
+        out["index"] = max(1, int(cfg.get("index") or 1))
+    elif mode == "llista":
+        out["ids"] = _unique_positive_ints(cfg.get("ids"))
+    agg = _normalize_aggregation(cfg.get("agregacio_exercicis"), fallback="sum")
+    if agg != "sum" or "agregacio_exercicis" in cfg:
+        out["agregacio_exercicis"] = agg
+    return out
+
+
+def _compact_candidate_source_entry_for_persistence(raw_entry):
+    entry = raw_entry if isinstance(raw_entry, dict) else {}
+    mode = _normalize_candidate_source_mode(entry.get("mode") or "raw_exercise")
+    out = {"mode": mode}
+    if mode in {"participant_aggregate", "team_aggregate"}:
+        out["cfg"] = _compact_candidate_source_cfg_for_persistence(entry.get("cfg"))
+    return out
+
+
+def _compact_pipeline_for_persistence(raw_pipeline):
+    pipeline = raw_pipeline if isinstance(raw_pipeline, dict) else {}
+    out = {
+        "aparells": {
+            "mode": "seleccionar",
+            "ids": _resolve_pipeline_target_app_ids(pipeline),
+        },
+        "camps_per_aparell": {
+            str(app_id): _unique_nonempty_strings(
+                ((pipeline.get("camps_per_aparell") or {}).get(str(app_id)))
+                or ((pipeline.get("camps_per_aparell") or {}).get(app_id))
+            )
+            for app_id in _resolve_pipeline_target_app_ids(pipeline)
+        },
+        "agregacio_camps_per_aparell": {
+            str(app_id): _normalize_aggregation(
+                ((pipeline.get("agregacio_camps_per_aparell") or {}).get(str(app_id)))
+                or ((pipeline.get("agregacio_camps_per_aparell") or {}).get(app_id)),
+                fallback=pipeline.get("agregacio_camps", "sum"),
+            )
+            for app_id in _resolve_pipeline_target_app_ids(pipeline)
+        },
+        "agregacio_camps": _normalize_aggregation(pipeline.get("agregacio_camps"), "sum"),
+        "candidate_source_mode": _normalize_candidate_source_mode(pipeline.get("candidate_source_mode")),
+        "candidate_source_cfg": _compact_candidate_source_cfg_for_persistence(pipeline.get("candidate_source_cfg")),
+        "candidate_source_per_aparell": {},
+        "exercicis": _compact_exercicis_cfg_for_persistence(pipeline.get("exercicis")),
+        "mode_seleccio_exercicis": str(pipeline.get("mode_seleccio_exercicis") or "per_aparell_global").strip().lower() or "per_aparell_global",
+        "exercicis_per_aparell": {},
+        "agregacio_exercicis": _normalize_aggregation(pipeline.get("agregacio_exercicis"), "sum"),
+        "agregacio_exercicis_per_aparell": {},
+        "agregacio_aparells": _normalize_aggregation(pipeline.get("agregacio_aparells"), "sum"),
+        "mode_resultat_aparells": str(pipeline.get("mode_resultat_aparells") or "score").strip().lower() or "score",
+        "ordre": "asc" if str(pipeline.get("ordre") or "desc").strip().lower() == "asc" else "desc",
+    }
+    if "exercise_selection_scope" in pipeline:
+        out["exercise_selection_scope"] = normalize_exercise_selection_scope(pipeline.get("exercise_selection_scope")) or EXERCISE_SELECTION_SCOPE_PER_MEMBER
+    if isinstance(pipeline.get("participants"), dict):
+        out["participants"] = _normalize_participants_cfg(pipeline.get("participants"))
+        if "agregacio_participants" in pipeline:
+            out["agregacio_participants"] = _normalize_aggregation(pipeline.get("agregacio_participants"), "sum")
+    source_map = pipeline.get("candidate_source_per_aparell") if isinstance(pipeline.get("candidate_source_per_aparell"), dict) else {}
+    for raw_key, raw_value in source_map.items():
+        app_id = _to_positive_int(raw_key)
+        if app_id is None:
+            continue
+        out["candidate_source_per_aparell"][str(app_id)] = _compact_candidate_source_entry_for_persistence(raw_value)
+    ex_map = pipeline.get("exercicis_per_aparell") if isinstance(pipeline.get("exercicis_per_aparell"), dict) else {}
+    for raw_key, raw_value in ex_map.items():
+        app_id = _to_positive_int(raw_key)
+        if app_id is None:
+            continue
+        out["exercicis_per_aparell"][str(app_id)] = _compact_exercicis_cfg_for_persistence(raw_value)
+    agg_ex_map = pipeline.get("agregacio_exercicis_per_aparell") if isinstance(pipeline.get("agregacio_exercicis_per_aparell"), dict) else {}
+    for raw_key, raw_value in agg_ex_map.items():
+        app_id = _to_positive_int(raw_key)
+        if app_id is None:
+            continue
+        out["agregacio_exercicis_per_aparell"][str(app_id)] = _normalize_aggregation(
+            raw_value,
+            fallback=pipeline.get("agregacio_exercicis", "sum"),
+        )
+    if not out["candidate_source_per_aparell"]:
+        out["candidate_source_per_aparell"] = {
+            str(app_id): {"mode": out["candidate_source_mode"]}
+            for app_id in out["aparells"]["ids"]
+        }
+    if not out["agregacio_exercicis_per_aparell"]:
+        out.pop("agregacio_exercicis_per_aparell", None)
+    if not out["exercicis_per_aparell"]:
+        out.pop("exercicis_per_aparell", None)
+    return out
+
+
+def canonicalize_desempat_item_for_persistence(
+    raw_tie,
+    *,
+    tipus="individual",
+    team_mode="",
+    selected_app_ids=None,
+    default_id="tie_1",
+    default_nom="",
+    fallback_pipeline=None,
+):
+    allow_exercise_scope = (
+        str(tipus or "").strip().lower() == "equips"
+        and normalize_team_mode(team_mode) == "derived_from_individual"
+    )
+    fallback = fallback_pipeline or _default_pipeline_from_selected_app_ids(
+        selected_app_ids,
+        tipus=tipus,
+        team_mode=team_mode,
+    )
+    item = build_tie_pipeline_criterion(
+        raw_tie,
+        idx=0,
+        tipus=tipus,
+        team_mode=team_mode,
+        fallback_pipeline=fallback,
+    )
+    if default_id and not str(item.get("id") or "").strip():
+        item["id"] = str(default_id).strip()
+    if default_nom and not str(item.get("nom") or "").strip():
+        item["nom"] = str(default_nom).strip()
+    pipeline = _compact_pipeline_for_persistence(item.get("pipeline"))
+    if not allow_exercise_scope:
+        pipeline.pop("exercise_selection_scope", None)
+    return {
+        "id": str(item.get("id") or default_id).strip() or str(default_id).strip(),
+        "nom": str(item.get("nom") or default_nom).strip(),
+        "ordre": "asc" if str(item.get("ordre") or "desc").strip().lower() == "asc" else "desc",
+        "pipeline_version": PIPELINE_VERSION,
+        "pipeline": pipeline,
+    }
+
+
+def canonicalize_desempat_items_for_persistence(
+    desempat,
+    *,
+    tipus="individual",
+    team_mode="",
+    selected_app_ids=None,
+    fallback_pipeline=None,
+):
+    out = []
+    for idx, tie in enumerate(desempat if isinstance(desempat, list) else []):
+        if not isinstance(tie, dict):
+            continue
+        item = canonicalize_desempat_item_for_persistence(
+            tie,
+            tipus=tipus,
+            team_mode=team_mode,
+            selected_app_ids=selected_app_ids,
+            default_id=f"tie_{idx + 1}",
+            default_nom=f"Criteri {idx + 1}",
+            fallback_pipeline=fallback_pipeline,
+        )
+        if item:
+            out.append(item)
+    return out
+
+
 def _materialize_legacy_mirrors_from_pipeline(item, *, allow_participants=True):
     pipeline = item.get("pipeline") if isinstance(item.get("pipeline"), dict) else {}
     app_ids = _resolve_pipeline_target_app_ids(pipeline)
@@ -867,6 +1055,8 @@ __all__ = [
     "SCORING_PIPELINE_FORBIDDEN_KEYS",
     "build_main_scoring_pipeline_from_schema",
     "build_tie_pipeline_criterion",
+    "canonicalize_desempat_item_for_persistence",
+    "canonicalize_desempat_items_for_persistence",
     "compute_metric_from_pipeline",
     "materialize_desempat_item",
     "materialize_desempat_items",
