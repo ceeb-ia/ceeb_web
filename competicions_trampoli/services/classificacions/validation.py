@@ -10,6 +10,7 @@ from .classificacio_templates import (
     normalize_particions_schema,
     split_particio_custom_values,
 )
+from .ties.validation import strip_team_pool_tie_payload, validate_team_pool_tie_contract
 from .pipeline_runtime import materialize_desempat_items
 from .pipeline_runtime import build_main_scoring_pipeline_from_schema
 from .pipeline_validation import validate_scoring_pipeline_shape
@@ -1624,6 +1625,19 @@ def _validate_tie_exercicis_selection(competicio, schema: dict, *, tipus="indivi
             errors.append(f"desempat[{idx}] ha de ser un objecte.")
             continue
 
+        effective_tie_scope = _effective_tie_exercise_selection_scope(
+            tie,
+            main_scope=main_scope,
+        )
+        team_pool_contract_errors = validate_team_pool_tie_contract(
+            tie,
+            idx=idx,
+            main_scope=main_scope,
+        )
+        if team_pool_contract_errors is not None:
+            errors.extend(team_pool_contract_errors)
+            continue
+
         scope = tie.get("scope") or {}
         if not isinstance(scope, dict):
             errors.append(f"desempat[{idx}].scope ha de ser un objecte.")
@@ -1633,45 +1647,6 @@ def _validate_tie_exercicis_selection(competicio, schema: dict, *, tipus="indivi
             errors.append(f"desempat[{idx}].scope.exercicis ha de ser un objecte.")
         if not isinstance(ex_scope, dict):
             ex_scope = {}
-
-        effective_tie_scope = _effective_tie_exercise_selection_scope(
-            tie,
-            main_scope=main_scope,
-        )
-        if effective_tie_scope == EXERCISE_SELECTION_SCOPE_TEAM_POOL:
-            if scope.get("exercicis") not in (None, {}):
-                errors.append(
-                    f"desempat[{idx}].scope.exercicis no es compatible amb exercise_selection_scope=team_pool."
-                )
-            mode_sel_present = (
-                tie.get("mode_seleccio_exercicis") not in (None, "")
-                or ex_scope.get("mode_seleccio_exercicis") not in (None, "")
-            )
-            if mode_sel_present:
-                errors.append(
-                    f"desempat[{idx}].mode_seleccio_exercicis no es compatible amb exercise_selection_scope=team_pool."
-                )
-            raw_map = tie.get("exercicis_per_aparell")
-            if raw_map is None:
-                raw_map = ex_scope.get("exercicis_per_aparell")
-            if raw_map not in (None, {}, []):
-                errors.append(
-                    f"desempat[{idx}].exercicis_per_aparell no es compatible amb exercise_selection_scope=team_pool."
-                )
-            raw_agg_map = tie.get("agregacio_exercicis_per_aparell")
-            if raw_agg_map not in (None, {}, []):
-                errors.append(
-                    f"desempat[{idx}].agregacio_exercicis_per_aparell no es compatible amb exercise_selection_scope=team_pool."
-                )
-            if scope.get("participants") not in (None, {}):
-                errors.append(
-                    f"desempat[{idx}].scope.participants no es compatible amb exercise_selection_scope=team_pool."
-                )
-            if tie.get("agregacio_participants") not in (None, ""):
-                errors.append(
-                    f"desempat[{idx}].agregacio_participants no es compatible amb exercise_selection_scope=team_pool."
-                )
-            continue
 
         ex_mode = str(ex_scope.get("mode") or "hereta").strip().lower()
         if ex_mode != "hereta":
@@ -2041,6 +2016,13 @@ def validate_schema_for_competicio_detailed(competicio, schema_local, tipus="ind
         if not isinstance(tie, dict):
             errors.append(f"desempat[{idx}] ha de ser un objecte.")
             continue
+        raw_team_pool_contract_errors = validate_team_pool_tie_contract(
+            tie,
+            idx=idx,
+            main_scope=schema_local.get("puntuacio", {}).get("exercise_selection_scope"),
+        )
+        if raw_team_pool_contract_errors is not None:
+            errors.extend(raw_team_pool_contract_errors)
         raw_pipeline = tie.get("pipeline")
         if raw_pipeline is None:
             continue
@@ -2071,6 +2053,10 @@ def validate_schema_for_competicio_detailed(competicio, schema_local, tipus="ind
             team_mode=schema_local.get("equips", {}).get("team_mode", ""),
         ),
     )
+    for tie in materialized_desempat:
+        if not isinstance(tie, dict):
+            continue
+        strip_team_pool_tie_payload(tie, main_scope=schema_local.get("puntuacio", {}).get("exercise_selection_scope"))
     errors.extend(
         _validate_exercise_selection_scope(
             schema_local,

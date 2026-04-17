@@ -6,8 +6,8 @@ from .display import get_display_columns
 from .partitions import normalize_schema_legacy_team_birth_partition
 from .pipeline_runtime import (
     build_main_scoring_pipeline_from_schema,
-    canonicalize_desempat_items_for_persistence,
 )
+from .ties.serializer_save import canonicalize_desempat_items_for_persistence
 from .validation import (
     build_validation_error_details,
     validate_schema_for_competicio_detailed,
@@ -163,6 +163,8 @@ def _canonicalize_desempat_for_persistence(schema_local, *, tipus="individual"):
 
 
 def prepare_schema_for_persistence(competicio, schema_local, *, tipus="individual"):
+    schema_local = _canonicalize_desempat_for_persistence(schema_local, tipus=tipus)
+
     schema_local, validation_errors, validation_details = validate_schema_for_competicio_detailed(
         competicio,
         schema_local,

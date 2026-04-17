@@ -1,593 +1,567 @@
 # Pla D'Implementacio De La Desmonolititzacio De `desempat` Per Subagents
 
 ## Objectiu
-- Treure del flux actual de `desempat` la barreja de responsabilitats entre builder, persistencia, validacio, runtime i compat legacy.
-- Permetre que el sistema guardi un contracte canonic de `desempat` sense materialitzar mirrors legacy complets al `save`.
-- Mantenir reobertura robusta del builder sense fer dependre el `save` del format de rehidratacio UI.
-- Deixar la feina empaquetada per subagents independents, amb context minim, write scopes disjunts i handoffs clars.
+- Treure `desempat` de la cadena monolitica compartida entre builder, persistencia, validacio, runtime i compat legacy.
+- Convertir `desempat` en un sistema de contractes resolts per context, amb shape canonica minima i projeccions separades.
+- Permetre que diversos subagents treballin en paral.lel sobre write scopes disjunts, amb handoffs clars i sense dependre de context oral.
+- Resoldre el problema estructural actual: camps valids en un contracte persisteixen o es reintrodueixen en un altre contracte.
+
+## Resum Executiu
+- El problema de fons no es nomes el monolit frontend.
+- `desempat` avui intenta servir alhora:
+  - estat UI de builder
+  - payload de `save`
+  - mirror legacy per reopen
+  - entrada de validacio
+  - entrada de runtime/calcul
+- Aixo genera shapes hibrides, herencia implícita i reintroduccio de camps no desitjats.
+- La solucio correcta no es nomes "partir el fitxer", sino separar:
+  - resolucio de context
+  - contracte canonic
+  - serializer de `save`
+  - validacio
+  - UI projection
+  - legacy projection
+  - render/frontend slice especialitzat
 
 ## Regla Principal
-- Aquesta feina si que es funcional; no es una mera refactoritzacio cosmetica.
-- Tot canvi ha de preservar el comportament public actual del ranking, la validacio i el builder, excepte la densificacio no desitjada del tie al guardar.
-- El `pipeline` ha de continuar sent l'unica font de veritat canonica.
-- `_builder_ui` continua sent exclusivament builder-only i no s'ha de persistir mai.
-- Els mirrors legacy de `desempat` no s'han de seguir regenerant automaticament al cami de persistencia, excepte si hi ha un consumidor explicit que encara els necessiti.
-
-## Decisions Tancades
-- El contracte persistent final de `desempat` sera `pipeline-first` estricte.
-- `validation.py` ha d'evolucionar cap a validacio del contracte canonic; qualsevol lectura legacy que sobrevisqui durant la transicio ha de ser temporal i explicitament encapsulada.
-- Els wrappers temporals de `pipeline_runtime.py` nomes existeixen per transicio.
-- La seccio frontend de `desempat` ha de deixar de dependre de `_legacy_inline_script.html` com a font de veritat.
-- Els fitxers especialitzats de builder per `desempat` han de passar a ser la implementacio servida real, no nomes una branca paral.lela.
-- Un wrapper temporal s'ha de poder eliminar quan:
-  - no quedi cap consumidor de shape legacy cru identificat al repo
-  - persistencia i validacio treballin ja sobre contracte canonic
-  - builder hydration no depengui de mirrors legacy persistits
-
-## Estat Actual Real
-- El backend de persistencia de `schema.desempat` ja esta parcialment desacoblat:
-  - el `save` persisteix `desempat` en format `pipeline-first`
-  - la resposta del backend ja no reintrodueix mirrors top-level densificats per defecte a `desempat`
-  - la compactacio sparse del `pipeline` de `desempat` ja existeix
-- La rehidratacio backend del builder amb `_builder_ui` tambe existeix.
-- El bloqueig principal actual es frontend:
-  - el template servit continua injectant `_legacy_inline_script.html`
-  - els fitxers modulars de `builder/scripts/` no son avui la font de veritat efectiva del navegador
-  - dins del monolit legacy encara hi ha call sites que fan `renderTieUI(readTieUI(true))`
-  - aixo reconstrueix tota la seccio `desempat` des de shape canonic/legacy i destrueix l'estat UI row-local
-- Consequencia observable:
-  - no es corromp nomes `camp` o `camps`
-  - col.lapsen tots els dropdowns de la fila o de la seccio
-  - valors com `mode_seleccio_exercicis`, `exercise_selection_scope`, `participants`, agregacions i overrides per aparell tornen a defaults o derivacions no desitjades
-- Implicacio per al pla:
-  - la desmonolititzacio backend ja no es suficient per si sola
-  - cal una onada explicita de desmonolititzacio frontend servida per `desempat`
+- Aquesta feina es funcional i arquitectonica alhora.
+- No s'ha de limitar a moure codi de lloc mantenint la mateixa barreja de responsabilitats.
+- El `pipeline` ha de continuar sent l'unica font de veritat canonica persistent.
+- `_builder_ui` continua sent exclusivament UI i no s'ha de persistir mai.
+- Cap contracte no pot persistir ni reintroduir camps que no li pertoquin.
+- El backend no pot reconstruir camps prohibits per un contracte resolt.
+- El frontend no pot emetre camps ocults o stale per un contracte que no els admet.
 
 ## Problema Actual
-- El flux actual reutilitza la mateixa cadena per:
-  - construir `pipeline` des d'un tie minim
-  - projectar mirrors legacy
-  - rehidratar el builder
-  - validar el schema
-  - preparar el payload de persistencia
-- El punt critic es `materialize_desempat_item()` a `services/classificacions/pipeline_runtime.py`.
-- Aquest helper acaba cridant `_materialize_legacy_mirrors_from_pipeline()`, que regenera:
-  - `camps`
-  - `camp`
-  - `aparell_id`
-  - `scope`
-  - `exercise_selection_scope`
-  - `mode_seleccio_exercicis`
-  - `exercicis_per_aparell`
-  - `agregacio_exercicis_per_aparell`
-  - agregacions legacy
-- Despres `validate_schema_for_competicio_detailed()` substitueix `schema_local["desempat"]` per la versio materialitzada.
-- Finalment `prepare_schema_for_persistence()` persisteix aquesta shape ja densificada.
-- Consequencia:
-  - el tie minim editat des del builder no sobreviu al `save`
-  - el `save` queda acoblat a decisions de reobertura builder i compat legacy
-  - qualsevol canvi a la materialitzacio compartida es converteix en regressio potencial de builder o persistencia
-- A mes, avui hi ha un segon problema independent i ja confirmat:
-  - el frontend real servit continua sent el monolit legacy
-  - aquest monolit continua refent `desempat` des de `readTieUI(true)` en diversos punts de rerender
-  - per tant, encara que persistencia i hydration backend millorin, la UI pot seguir destruint l'estat seleccionat abans del `save`
 
-## Arquitectura Objectiu
+### Monolit funcional existent
+- El frontend real servit continua governat principalment per:
+  - `competicions_trampoli/templates/classificacions/builder/_legacy_inline_script.html`
+- El backend de `desempat` es reparteix entre:
+  - `competicions_trampoli/services/classificacions/pipeline_runtime.py`
+  - `competicions_trampoli/services/classificacions/validation.py`
+  - `competicions_trampoli/services/classificacions/builder.py`
+  - `competicions_trampoli/services/classificacions/runtime.py`
 
-### Contractes finals
-- Contracte canonic persistit:
-  - `desempat[i]` amb metadades minimes i `pipeline` complet
-  - sense `_builder_ui`
-  - sense necessitat de mirrors legacy densificats
-- Contracte de rehidratacio builder:
-  - `desempat[i]` canonic + `_builder_ui`
-- Contracte de compat legacy runtime:
-  - projeccio opcional i explicita des de `pipeline`
-  - no aplicada per defecte al `save`
+### Símptoma arquitectonic
+- El mateix tie intenta ser alhora:
+  - shape canonica
+  - shape legacy
+  - shape UI
+  - shape de validacio
+- Aixo fa que:
+  - camps d'un mode contaminin un altre
+  - el frontend no sàpiga si esta renderitzant o serialitzant
+  - el backend reintrodueixi mirrors per altres capes
+  - una mateixa key signifiqui coses diferents segons el punt del flux
 
-### Arquitectura frontend objectiu per `desempat`
-- La seccio `desempat` ha de tenir un slice propi end-to-end:
-  - markup especialitzat de seccio
-  - estat UI especialitzat
-  - render especialitzat
-  - lectura canonic/serialitzacio especialitzada
-  - hydration especialitzada
-- El monolit legacy no ha de ser la font de veritat de `desempat`.
-- El template actiu ha de muntar els fitxers especialitzats de `builder/scripts/` o un bundle equivalent que els agregui.
-- `_legacy_inline_script.html` nomes pot sobreviure com a adapter temporal mentre es completa el tall, pero no ha de continuar governant `desempat`.
+### Símptoma funcional ja vist
+- Cas `team_pool`:
+  - la UI amaga dropdowns de configuracio propia del tie
+  - el serializer encara pot heretar `exercicis` o `mode_seleccio_exercicis`
+  - el backend pot reintroduir `participants` i `agregacio_participants`
+  - la validacio ho rebutja perquè aquest contracte no admet aquests camps
+- El problema no es que `team_pool` no es pugui fer servir.
+- El problema es que el tie no s'esta persistint en un contracte net de `team_pool`.
 
-### Responsabilitats separades
-- Canonicalitzacio de ties:
-  - input minim o mixed
-  - output canonic amb `pipeline`
-- Projeccio legacy:
-  - input canonic
-  - output mirrors legacy per consumidors antics
-- Projeccio builder:
-  - input canonic
-  - output `_builder_ui`
-- Validacio:
-  - valida contracte canonic
-  - no ha de convertir el payload persistit a una shape legacy densa
-- Persistencia:
-  - desa contracte canonic
-  - no materialitza mirrors si no son estrictament necessaris
-- Frontend `desempat`:
-  - mante estat UI row-local
-  - rerenderitza des d'aquest estat UI i no des de `readTieUI(true)`
-  - compila al contracte canonic nomes al cami de serialitzacio
-
-## Estrategia De Compatibilitat
-
-### Principi De Transicio
-- La transicio s'ha de fer amb:
-  - lectura compatible
-  - escriptura canonica
-- Aixo vol dir:
-  - el `save` passa progressivament a `pipeline-first`
-  - els consumidors antics no poden continuar depenent del shape legacy cru guardat a DB
-  - mentre existeixin consumidors antics, han de rebre una projeccio legacy explicita des del contracte canonic
-
-### Regla Operativa
-- La base de dades ha d'acabar persistint `desempat` en format canonic:
-  - metadades minimes
-  - `pipeline`
-- Els mirrors legacy no s'han de considerar part del contracte persistent.
-- Si un consumidor antic necessita `scope`, `camps`, `aparell_id` o similars:
-  - no els ha de llegir directament del shape guardat
-  - els ha d'obtenir via `tie_legacy_projection.py`
-- No s'han d'afegir nous consumidors del shape legacy guardat.
-
-### Consumidors Legacy A Adaptar Abans Del Tall Estricte
-- `services/classificacions/classificacio_templates.py`
-  - encara llegeix camps top-level legacy com `aparell_id`, `scope`, `exercicis_per_aparell` i agregacions derivades
-  - aquest subsistema ha de passar a consumir una projeccio legacy explicita
-- `services/classificacions/validation.py`
-  - encara te validacions que llegeixen shape top-level legacy de `desempat`
-  - s'ha d'acostar al contracte canonic o, si cal temporalment, consumir una projeccio legacy controlada
-
-### Inventari Concret De Consumidors Legacy Detectats
-- `services/classificacions/pipeline_runtime.py`
-  - `_normalize_legacy_tie_pipeline()`
-  - `build_tie_pipeline_criterion()`
-  - `materialize_desempat_item()`
-  - `materialize_desempat_items()`
-  - rol durant la transicio: pont de migracio i materialitzacio legacy sota demanda
-- `services/classificacions/classificacio_templates.py`
-  - `template_schema_to_global_ui_schema()`
-  - `global_ui_schema_to_template_schema()`
-  - `collect_required_app_codes_from_template()`
-  - `validate_template_schema_global()`
-  - `normalize_tie_camps_for_validation()`
-  - risc: export/import i roundtrip de plantilles
-- `services/classificacions/validation.py`
-  - `_resolve_tie_target_app_ids()`
-  - `_validate_desempat_mode_compatibility()`
-  - `_validate_tie_exercicis_selection()`
-  - `validate_schema_for_competicio_detailed()`
-  - risc: validacio/save i neteges transitòries
-- `services/classificacions/builder.py`
-  - `_normalize_tie_camps_for_validation()`
-  - `_effective_tie_exercise_selection_scope()`
-  - `prepare_schema_for_builder_hydration()`
-  - `sanitize_schema_for_builder()`
-  - risc: reobertura backend del builder
-- `templates/classificacions/builder/scripts/_50_columns_detail_preview.js.html`
-  - `sanitizeTieItemForUI()`
-  - risc: reobertura i resum de UI
-- `templates/classificacions/builder/scripts/_40_ties_and_teams.js.html`
-  - `getTieVisibleCamps()`
-  - `getTieVisibleAggCamps()`
-  - `getTieVisibleParticipants()`
-  - `getTieVisibleSummary()`
-  - `readTieUI()`
-  - `renderTieUI()`
-  - risc: rerender de fila i estat visible
-- `templates/classificacions/builder/_legacy_inline_script.html`
-  - implementacio legacy realment servida avui per `templates/competicio/classificacions_builder_v2.html`
-  - continua contenint call sites que fan `renderTieUI(readTieUI(true))`
-  - risc principal actual: qualsevol canvi parcial als fitxers modulars no te efecte si no es talla aquest punt de muntatge
-- `templates/competicio/classificacions_builder_v2.html`
-  - avui inclou directament `_legacy_inline_script.html`
-  - risc: el builder productiu segueix governat pel monolit, no pels fitxers modulars de `builder/scripts/`
-- `services/legacy/services_classificacions_2.py`
-  - `_tie_key()`
-  - `calc_metric_value_for_ins()`
-  - `calc_metric_value_for_group()`
-  - `calc_metric_value_for_native_team()`
-  - `_rank_v2()`
-  - risc: motor legacy de ranking encara operatiu
-
-### Criteri De Migracio
-- Les classificacions legacy ja presents a DB s'han de continuar llegint.
-- Quan s'obren:
-  - es canonicalitzen en memoria
-  - el builder i el runtime treballen sobre aquesta versio canonica
-- Quan es tornen a guardar:
-  - s'han de desar en el contracte nou `pipeline-first`
-- Aquesta migracio ha de ser lazy:
-  - compatibilitat de lectura per legacy
-  - persistencia neta per noves escriptures
-
-## Moduls Objectiu
-
-### Nous moduls recomanats
-- `competicions_trampoli/services/classificacions/tie_canonicalization.py`
-  - entrada: tie raw o minim
-  - sortida: tie canonic amb `pipeline`
-  - ownership:
-    - normalitzacio de `exercicis`
-    - normalitzacio de `candidate_source_cfg`
-    - normalitzacio de `participants`
-    - construccio de `pipeline`
-- `competicions_trampoli/services/classificacions/tie_legacy_projection.py`
-  - entrada: tie canonic
-  - sortida: tie amb mirrors legacy
-  - ownership:
-    - `scope`
-    - `camps`
-    - `aparell_id`
-    - claus legacy derivades del `pipeline`
-- `competicions_trampoli/services/classificacions/tie_builder_projection.py`
-  - entrada: tie canonic
-  - sortida: tie + `_builder_ui`
-  - ownership:
-    - estat builder-only de reobertura
-    - resum i sentinels `hereta`
-
-### Moduls existents a simplificar
-- `pipeline_runtime.py`
-  - ha de deixar de ser el lloc on es barregen canonicalitzacio i projeccio legacy
-- `validation.py`
-  - ha de deixar de substituir `schema_local["desempat"]` per la shape legacy materialitzada
-- `runtime.py`
-  - ha de persistir el contracte canonic, no el resultat d'una projeccio legacy
-- `builder.py`
-  - hydration del builder ha de projectar `_builder_ui` a partir del contracte canonic
-- `templates/competicio/classificacions_builder_v2.html`
-  - ha de deixar de muntar `desempat` exclusivament via `_legacy_inline_script.html`
-- builder JS de `desempat`
-  - ha de continuar treballant amb estat UI propi, pero serialitzant sempre al contracte canonic
-  - ha de tenir un punt de muntatge real i servit
-
-### Slice frontend objectiu de `desempat`
-- Template de muntatge:
-  - `templates/competicio/classificacions_builder_v2.html`
-- Seccio HTML:
-  - `templates/classificacions/builder/sections/_desempat.html`
-- Scripts especialitzats:
-  - `templates/classificacions/builder/scripts/_40_ties_and_teams.js.html`
-  - `templates/classificacions/builder/scripts/_50_columns_detail_preview.js.html`
-  - `templates/classificacions/builder/scripts/_70_hydration_sync.js.html`
-  - `templates/classificacions/builder/scripts/_80_actions_init.js.html`
-- Adapter legacy temporal:
-  - `templates/classificacions/builder/_legacy_inline_script.html`
-- Regla:
-  - qualsevol logica nova de `desempat` s'ha de concentrar al slice especialitzat
-  - el monolit legacy nomes pot delegar o deixar de tocar aquesta seccio
-
-## Guardrails De No Regressio
-
-### Invariants
-- El ranking final de `desempat` no canvia.
-- `prepare_schema_for_builder_hydration()` continua reobrint ties antics i nous.
-- `exercise_selection_scope` per `native_team` continua eliminant-se al cami canonic on avui ja s'elimina.
-- `advancedJson` i `tDesempat` continuen sense `_builder_ui`.
-- Els templates i vistes d'entrada no canvien.
-- El builder servit al navegador ha d'acabar executant la logica especialitzada de `desempat`, no una copia legacy divergent.
-
-### Canvis explicitament permesos
-- Que el schema persistit de `desempat` deixi de contenir mirrors legacy densificats quan no siguin part del contracte canonic definit.
-- Que la validacio i persistencia usin helpers nous en comptes del runtime compartit actual.
-
-### Canvis explicitament no permesos
-- No tocar `puntuacio.victories.desempat_comparacio` en aquesta fase.
-- No reescriure el builder sencer.
-- No moure tota la logica del builder a `static/`.
-- No canviar el contracte public dels endpoints de `classificacio_save`.
-
-## Carrils Per Subagents
-
-### Agent 1: Canonicalitzacio De Ties
-- Objectiu:
-  - extreure la logica `raw/minim -> canonic`
-  - fer que aquesta logica no projecti mirrors legacy
-- Fitxers propis:
-  - nou `tie_canonicalization.py`
-  - `pipeline_runtime.py` només per adaptar imports i facades
-- Treball concret:
-  - moure `build_tie_pipeline_criterion()` i les normalitzacions estrictament canonitzadores al nou modul
-  - deixar una facade a `pipeline_runtime.py` per compatibilitat temporal
-  - no tocar builder ni validacio
-- Resultat esperat:
-  - existeix una API clara de canonicalitzacio sense side effects de compat
-
-### Agent 2: Projeccio Legacy
-- Objectiu:
-  - extreure `pipeline -> legacy mirrors`
-  - convertir-ho en pas explicit, no implicit
-- Fitxers propis:
-  - nou `tie_legacy_projection.py`
-  - `pipeline_runtime.py` per redirigir `_materialize_legacy_mirrors_from_pipeline()`
-- Treball concret:
-  - moure la logica de mirrors legacy al nou modul
-  - deixar `pipeline_runtime.py` com a wrapper fi mentre hi hagi consumidors antics
-  - inventariar quins consumidors continuen llegint `desempat` en shape legacy i documentar el seu estat de migracio
-  - no tocar persistencia ni builder
-- Resultat esperat:
-  - hi ha una API clara per projectar legacy sobre demanda
-  - els consumidors antics queden identificats i encapsulats
-
-### Agent 3: Persistencia I Validacio
-- Objectiu:
-  - fer que el `save` usi contracte canonic
-  - eliminar la densificacio automatica del `desempat` al persistir
-- Fitxers propis:
-  - `validation.py`
-  - `runtime.py`
-  - opcionalment `builder_shared.py` si cal una facade comuna
-- Treball concret:
-  - deixar de substituir `schema_local["desempat"]` per la shape materialitzada legacy dins `validate_schema_for_competicio_detailed()`
-  - fer que la validacio treballi amb ties canonics
-  - fer que `prepare_schema_for_persistence()` persisteixi la versio canonica
-  - mantenir neteja de casos incompatibles com `native_team`
-  - aplicar la regla de transicio:
-    - lectura compatible
-    - escriptura canonica
-- Resultat esperat:
-  - editar i guardar un tie no l'expandeix a mirrors legacy complets
-  - el `save` deixa de dependre del shape legacy persistit
-
-### Agent 4: Builder Hydration Backend
-- Objectiu:
-  - acoblar la nova canonicalitzacio al builder sense perdre reobertura robusta
-- Fitxers propis:
-  - `builder.py`
-  - `builder_tie_rehydration.py`
-- Treball concret:
-  - fer que la hidratacio del builder parteixi del tie canonic
-  - aplicar `_builder_ui` com a projeccio separada
-  - no dependre de mirrors legacy de persistencia per reobrir la UI
-- Resultat esperat:
-  - la UI es reobre identica encara que la persistencia guardi tie canonic minim
-
-### Agent 5: Builder JS
-- Objectiu:
-  - assegurar equivalencia entre estat UI row-local i contracte canonic serialitzat
-- Fitxers propis:
-  - `templates/classificacions/builder/scripts/_40_ties_and_teams.js.html`
-  - `templates/classificacions/builder/scripts/_50_columns_detail_preview.js.html`
-  - `templates/classificacions/builder/scripts/_70_hydration_sync.js.html`
-  - `templates/classificacions/builder/scripts/_80_actions_init.js.html`
-- Treball concret:
-  - mantenir el nou `__tieBuilderState`
-  - garantir que el cami de guardat construeix el tie canonic i no depen de mirrors legacy
-  - garantir que cap rerender de `desempat` surti de `readTieUI(true)` quan l'objectiu es preservar estat visible
-  - no tocar `victories`
-- Resultat esperat:
-  - la UI pot editar ties canonics minsos i seguir reobrint-se correctament
-
-### Agent 5B: Frontend Desmonolititzacio De `desempat`
-- Objectiu:
-  - tallar el domini efectiu de `_legacy_inline_script.html` sobre la seccio `desempat`
-  - fer que el builder servit executi la implementacio especialitzada real d'aquesta seccio
-- Fitxers propis:
-  - `templates/competicio/classificacions_builder_v2.html`
-  - `templates/classificacions/builder/_legacy_inline_script.html`
-  - `templates/classificacions/builder/sections/_desempat.html`
-  - si cal, fitxer agregador o inclusions dels scripts modulars
-- Treball concret:
-  - decidir el mecanisme de muntatge definitiu:
-    - o servir els fitxers modulars directament
-    - o fer que el monolit legacy delegui la seccio `desempat` a les funcions modulars
-  - eliminar els call sites legacy que avui fan `renderTieUI(readTieUI(true))` en el flux servit
-  - garantir que el template actiu ja no executa una copia divergent del comportament de `desempat`
-- Resultat esperat:
-  - els canvis al slice modular de `desempat` tenen efecte real al navegador
-  - la seccio deixa de col.lapsar dropdowns per rerenders legacy
-
-### Agent 6: Tests I Guards
-- Objectiu:
-  - cobrir contracte canonic, regressions builder i no regressions `native_team`
-- Fitxers propis:
-  - `tests/classificacions/test_builder_hydration.py`
-  - `tests/classificacions/test_compute_core.py`
-  - `tests/scoring/team/test_classificacio_filters_and_validation.py`
-- Treball concret:
-  - afegir proves que el `save` no densifica `desempat`
-  - afegir proves que el builder continua reobrint ties canonics minsos
-  - mantenir guards existents de neteja per `native_team`
-- Resultat esperat:
-  - el comportament objectiu queda blindat
-
-### Agent 7: Integracio Final
-- Objectiu:
-  - ajuntar els carrils sense reintroduir acoblaments
-- Fitxers propis:
-  - qualsevol fitxer de cola estrictament necessari
-  - no ha de reimplementar el treball dels altres
-- Treball concret:
-  - triar les noves APIs definitives
-  - eliminar wrappers temporals que ja no calguin
-  - confirmar que cada consumidor usa el modul correcte:
-    - persistencia -> canonicalitzacio
-    - builder hydration -> canonicalitzacio + builder projection
-    - compat antiga -> legacy projection
-- Resultat esperat:
-  - el sistema deixa de tenir una cadena monolitica compartida per tots els usos
-  - el frontend servit de `desempat` coincideix amb el slice especialitzat i no amb una copia legacy divergent
-
-## Contractes Entre Carrils
-
-### API canonica
-- `canonicalize_tie_item(raw_tie, *, tipus, team_mode, selected_app_ids, fallback_pipeline, allow_participants) -> dict`
-- `canonicalize_tie_items(raw_ties, **kwargs) -> list[dict]`
-- La sortida ha de contenir:
+## Decisions Tancades
+- El contracte persistent final de `desempat` sera `pipeline-first`.
+- La shape persistent minima de cada tie sera:
   - `id`
   - `nom`
   - `ordre`
   - `pipeline_version`
   - `pipeline`
-- No ha de contenir mirrors legacy si no se li demanen explicitament.
+- `validation.py` ha d'evolucionar cap a validacio per contracte resolt.
+- `_legacy_inline_script.html` no pot continuar sent la font de veritat de `desempat`.
+- Les projeccions de UI i compat legacy han de ser explicites i separades.
+- El primer tall funcional prioritari ha d'arreglar els contractes:
+  - `team_pool`
+  - `per_member`
 
-### API de projeccio legacy
-- `project_legacy_tie_mirrors(tie, *, allow_participants) -> dict`
-- `project_legacy_tie_mirrors_many(ties, *, allow_participants) -> list[dict]`
-- Aquesta API pot afegir:
-  - `camps`
-  - `camp`
-  - `aparell_id`
-  - `scope`
-  - claus legacy derivades
+## No Objectius
+- No tocar ara `puntuacio.victories.desempat_comparacio` excepte helpers neutrals clarament compartits.
+- No reescriure tot el builder de classificacions a la vegada.
+- No canviar el ranking public final fora dels casos que avui son incorrectes per culpa del monolit.
+- No introduir un segon monolit de `desempat` repartit en fitxers nous.
 
-### API de projeccio builder
-- `project_builder_tie_rehydration(tie, *, main_pipeline, tipus, team_mode) -> dict`
-- Aquesta API pot afegir:
-  - `_builder_ui`
-- No ha de tocar el `pipeline`.
+## Arquitectura Objectiu
 
-### API frontend de `desempat`
-- `renderTieUI(list) -> void`
-- `readTieUI(includeInvalid) -> list[dict]`
-- `readTieBuilderState(includeInvalid) -> list[dict]`
-- `buildTieBuilderStateFromRow(tr, includeParticipants, selectedMainIds, fallbackPuntuacio) -> dict`
-- Regla de contracte:
-  - `readTieUI()` retorna contracte canonic serialitzable
-  - `readTieBuilderState()` retorna estat de sessio amb `_builder_ui`
-  - cap rerender de `desempat` pot usar `readTieUI(true)` si l'objectiu es preservar l'estat visible de la fila
+### Capes
+- `context resolver`
+  Decideix quin contracte efectiu aplica a un tie.
+- `canonical contract`
+  Shape persistent minima i estable.
+- `save serializer`
+  Construeix el payload canonico segons contracte.
+- `validation`
+  Valida nomes els camps admesos pel contracte resolt.
+- `ui projection`
+  Canonic -> estat editable del builder.
+- `legacy projection`
+  Canonic -> mirrors legacy temporals de reopen/compatibilitat.
+- `frontend ties slice`
+  Estat UI, render i serializer de `save` fora del monolit.
 
-## Ordre D'Implementacio Recomanat
-1. Agent 1 extreu canonicalitzacio.
-2. Agent 2 extreu projeccio legacy.
-3. Agent 6 afegeix primers tests de contracte per blindar el canvi abans de moure persistencia.
-4. Agent 3 refa validacio i persistencia perque usin canonic.
-5. Agent 4 adapta hydration backend del builder al nou contracte.
-6. Agent 5 ajusta builder JS per serialitzar i reobrir amb el nou shape persistit.
-7. Agent 5B talla el monolit frontend servit i fa que `desempat` passi a slice especialitzat real.
-8. Agent 6 completa cobertura final.
-9. Agent 7 integra, elimina wrappers temporals i fa pass final de regressions.
+### Principi de funcionament
+1. La UI edita un `ui_state`.
+2. El resolver calcula el context efectiu.
+3. El contracte resolt defineix:
+   - quins camps es poden mostrar
+   - quins camps es poden persistir
+   - quins camps s'han de buidar
+4. El serializer de `save` emet un tie canonic net.
+5. El backend valida contra aquell contracte.
+6. Si cal reopen, es projecta des de canonic cap a UI.
+7. Si cal compat legacy, es projecta de forma explicita, no implicita.
 
-## Orquestracio D'Execucio
+## Contractes A Suportar
 
-### Onada 1: Separacio D'APIs
-- Agent 1 ha de deixar disponible `canonicalize_tie_item()` sense projeccio legacy.
-- Agent 2 ha de deixar disponible `project_legacy_tie_mirrors()` i inventari de consumidors.
-- Gate de sortida:
-  - existeixen API canonica i API legacy separades
-  - `pipeline_runtime.py` encara pot tenir facades, pero ja no concentra la logica real
+### `per_member`
+- Permet configuracio propia d'exercicis del tie.
+- Pot usar:
+  - `pipeline.exercicis`
+  - `pipeline.mode_seleccio_exercicis`
+  - `pipeline.exercicis_per_aparell`
+  - `pipeline.agregacio_exercicis_per_aparell`
+- `participants` nomes si el context resolt ho permet.
 
-### Onada 2: Blindatge De Contracte
-- Agent 6 ha d'afegir asserts que defineixin:
-  - que el `save` no densifica `desempat`
-  - que els casos `native_team` continuen nets
-  - que el builder continua reobrint ties canonics minsos
-- Gate de sortida:
-  - hi ha proves vermelles si es reintrodueix densificacio o si es trenca la reobertura
+### `team_pool`
+- El tie reutilitza el set d'exercicis de la puntuacio principal.
+- No pot persistir:
+  - `scope.exercicis`
+  - `mode_seleccio_exercicis`
+  - `exercicis_per_aparell`
+  - `agregacio_exercicis_per_aparell`
+  - `scope.participants`
+  - `agregacio_participants`
+  - els equivalents canonic/pipeline si representen configuracio propia del tie
 
-### Onada 3: Tall De Persistencia
-- Agent 3 ha de moure `save` i validacio cap a contracte canonic.
-- Nomes es permet projeccio legacy explicita per compatibilitat de lectura.
-- Gate de sortida:
-  - `prepare_schema_for_persistence()` ja no persisteix mirrors legacy per defecte
-  - `validate_schema_for_competicio_detailed()` no substitueix `desempat` per una shape legacy densa
+### `derived_team`
+- Context `tipus=equips` amb `team_mode=derived_from_individual`.
+- Pot admetre `participants` quan el contracte concret no sigui `team_pool`.
+- No pot reintroduir participants si el contracte efectiu es `team_pool`.
 
-### Onada 4: Rehidratacio Builder
-- Agents 4 i 5 han de garantir que builder backend i builder JS reobren ties canonics sense dependre del shape persistit legacy.
-- Gate de sortida:
-  - reobertura UI robusta sobre persistencia `pipeline-first`
-  - `_builder_ui` continua fora del contracte persistent
+### `native_team`
+- Context `tipus=equips` amb `team_mode=native_team`.
+- No admet configuracions de participants derivats.
+- No pot projectar ni persistir camps que impliquin agregacio per membres si el mode no els suporta.
 
-### Onada 4B: Tall Del Monolit Frontend Servit
-- Agent 5B ha de garantir que el template actiu deixa de fer servir el flux legacy divergent per `desempat`.
-- Gate de sortida:
-  - `classificacions_builder_v2.html` ja no governa `desempat` exclusivament via `_legacy_inline_script.html`
-  - no queden call sites servits que facin `renderTieUI(readTieUI(true))` per preservacio d'estat de `desempat`
-  - els scripts especialitzats de `desempat` son la implementacio efectiva al navegador
+## Shape Canonica Persistent
 
-### Onada 5: Compatibilitat I Neteja Final
-- Agent 7 integra els carrils i elimina wrappers temporals que ja no calguin.
-- Nomes poden quedar adapters legacy a consumidors antics encara no migrats, mai al cami generic de persistencia.
-- Gate de sortida:
-  - els consumidors legacy coneguts estan adaptats o encapsulats
-  - el cami generic de `save` i runtime principal ja no depen de legacy projection
+```json
+{
+  "id": "tie_1",
+  "nom": "Desempat 1",
+  "ordre": "desc",
+  "pipeline_version": 1,
+  "pipeline": {}
+}
+```
 
-## Handoffs Obligatoris
-- Agent 1 ha de documentar quines funcions extretes segueixen sent wrappers temporals a `pipeline_runtime.py`.
-- Agent 2 ha de deixar clar quins consumidors continuen necessitant projeccio legacy.
-- Agent 2 ha de marcar explicitament quins consumidors poden deixar de dependre de legacy en aquesta fase i quins no.
-- Agent 3 no pot assumir cap shape builder-only; ha de treballar exclusivament amb contracte canonic.
-- Agent 4 no pot tornar a fer que el builder depengui de la shape persistida legacy.
-- Agent 5 no pot canviar el contracte persistent; només l'adapta al builder.
-- Agent 6 ha de convertir els requisits de contracte en asserts concrets abans que Agent 7 tanqui la integracio.
+### Regla
+- Tot el que no sigui aquest shape es projeccio.
+- `_builder_ui` no forma part del contracte persistent.
+- Qualsevol top-level legacy addicional es transitori i nomes pot sortir de `legacy_projection.py`.
 
-- Agent 5B no pot limitar-se a duplicar logica del monolit; ha de tallar o delegar el punt de muntatge real del builder servit.
+## Mapa De Moduls Backend
 
-## Pla De Proves
+### Paquet nou
+- `competicions_trampoli/services/classificacions/ties/__init__.py`
 
-### Persistencia canonica
-- Guardar un `desempat` minim i verificar que:
-  - es persisteix `pipeline`
-  - no apareixen mirrors legacy densificats si no formen part del contracte canonic final triat
-- Guardar un tie amb `per_aparell_override` i verificar que no s'omplen claus no demanades fora del `pipeline`.
+### Resolucio de context
+- `competicions_trampoli/services/classificacions/ties/context.py`
+  - resol `tipus`
+  - resol `team_mode`
+  - resol `exercise_selection_scope`
+  - resol si es permeten `participants`
+  - resol si es permeten overrides per aparell
 
-### Compatibilitat De Lectura
-- Obrir classificacions legacy ja presents a DB i verificar que:
-  - es poden canonicalitzar sense perdre semantica funcional
-  - es poden reobrir al builder sense requerir mirrors persistits
-- Tornar a guardar aquestes classificacions i verificar que:
-  - queden en format `pipeline-first`
-  - no es trenca la lectura posterior
-- Verificar que els consumidors antics identificats continuen funcionant:
-  - via projeccio legacy explicita
-  - no via lectura directa del shape persistent legacy
+### Registry
+- `competicions_trampoli/services/classificacions/ties/registry.py`
+  - selecciona handler de contracte a partir del context
 
-### Builder hydration
-- Obrir una config guardada amb ties canonics minsos i verificar que:
-  - el builder reobre `scope`, `mode_seleccio_exercicis`, `exercise_selection_scope`, overrides per aparell i participants
-  - no cal cap shape legacy persistida per reobrir correctament
+### Contractes
+- `competicions_trampoli/services/classificacions/ties/contracts/base.py`
+- `competicions_trampoli/services/classificacions/ties/contracts/per_member.py`
+- `competicions_trampoli/services/classificacions/ties/contracts/team_pool.py`
+- `competicions_trampoli/services/classificacions/ties/contracts/derived_team.py`
+- `competicions_trampoli/services/classificacions/ties/contracts/native_team.py`
 
-### Frontend servit de `desempat`
-- Verificar que el template actiu executa el slice especialitzat de `desempat`.
-- Verificar que canviar qualsevol dropdown de `desempat`:
-  - no col.lapsa la resta de dropdowns de la fila
-  - no reverteix `camp`, `camps`, overrides o agregacions a valors stale
-  - no reconstrueix la fila des de `readTieUI(true)` durant rerenders de preservacio d'estat
-- Verificar que el payload abans del `save` no contingui divergencies entre:
-  - `camps`
-  - `_builder_ui.camps`
-  - `pipeline.camps_per_aparell`
+### Serializer i validacio
+- `competicions_trampoli/services/classificacions/ties/serializer_save.py`
+- `competicions_trampoli/services/classificacions/ties/validation.py`
 
-### Guards existents
-- `native_team` continua eliminant `exercise_selection_scope` on pertoqui.
-- El ranking i el compute no canvien.
-- `advancedJson` i `tDesempat` continuen sense `_builder_ui`.
+### Projeccions
+- `competicions_trampoli/services/classificacions/ties/ui_projection.py`
+- `competicions_trampoli/services/classificacions/ties/legacy_projection.py`
+- `competicions_trampoli/services/classificacions/ties/builder_rehydration.py`
 
-### Execucions recomanades
-- `competicions_trampoli.tests.classificacions.test_builder_hydration`
-- `competicions_trampoli.tests.classificacions.test_compute_core`
-- `competicions_trampoli.tests.scoring.team.test_classificacio_filters_and_validation`
+## Mapa De Moduls Frontend
+
+### Slice nou
+- `competicions_trampoli/templates/classificacions/builder/scripts/ties/context.js.html`
+- `competicions_trampoli/templates/classificacions/builder/scripts/ties/ui_state.js.html`
+- `competicions_trampoli/templates/classificacions/builder/scripts/ties/save_serializer.js.html`
+- `competicions_trampoli/templates/classificacions/builder/scripts/ties/ui_projection.js.html`
+- `competicions_trampoli/templates/classificacions/builder/scripts/ties/render.js.html`
+- `competicions_trampoli/templates/classificacions/builder/scripts/ties/contracts/per_member.js.html`
+- `competicions_trampoli/templates/classificacions/builder/scripts/ties/contracts/team_pool.js.html`
+- `competicions_trampoli/templates/classificacions/builder/scripts/ties/contracts/derived_team.js.html`
+- `competicions_trampoli/templates/classificacions/builder/scripts/ties/contracts/native_team.js.html`
+
+### Estat del monolit
+- `competicions_trampoli/templates/classificacions/builder/_legacy_inline_script.html`
+  - passa a ser shell temporal
+  - no pot continuar concentrant la logica real de `desempat`
+  - nomes pot delegar o desaparèixer progressivament
+
+## Funcions Actuals A Extreure
+
+### Des de `pipeline_runtime.py`
+- `build_tie_pipeline_criterion`
+- `materialize_desempat_item`
+- `materialize_desempat_items`
+- `_materialize_legacy_mirrors_from_pipeline`
+- compactacio i normalitzacio tie-specific del pipeline
+
+### Des de `validation.py`
+- tot el bloc de validacio de `desempat[...]`
+- tota la logica de `exercise_selection_scope`
+- checks de compatibilitat segons `team_mode`
+
+### Des de `builder.py`
+- sanejaments específics de ties per reopen del builder
+- neteges condicionals segons `team_pool` o equips
+
+### Des de `_legacy_inline_script.html`
+- `readTieObjFromRow`
+- `buildTieCanonicalForSaveFromRow`
+- `readTieBuilderState`
+- `readTieCanonicalForSave`
+- `renderTieUI`
+- helpers de `_builder_ui`
+- projeccions de resum/camps/participants
+
+## Fitxer Actual -> Fitxer Nou
+
+### Backend
+- `services/classificacions/pipeline_runtime.py`
+  - contract logic -> `services/classificacions/ties/contracts/*.py`
+  - persistence serializer -> `services/classificacions/ties/serializer_save.py`
+  - legacy mirrors -> `services/classificacions/ties/legacy_projection.py`
+
+- `services/classificacions/validation.py`
+  - tie validation -> `services/classificacions/ties/validation.py`
+
+- `services/classificacions/builder.py`
+  - builder reopen projection -> `services/classificacions/ties/builder_rehydration.py`
+
+- `services/classificacions/runtime.py`
+  - facade cap al serializer/validator nous
+
+### Frontend
+- `templates/classificacions/builder/_legacy_inline_script.html`
+  - tie UI state -> `templates/classificacions/builder/scripts/ties/ui_state.js.html`
+  - tie save serializer -> `templates/classificacions/builder/scripts/ties/save_serializer.js.html`
+  - tie render -> `templates/classificacions/builder/scripts/ties/render.js.html`
+  - contract logic -> `templates/classificacions/builder/scripts/ties/contracts/*.js.html`
+
+## Invariants Per Contracte
+
+### `team_pool`
+- no pot serialitzar camps propis d'exercicis
+- no pot serialitzar camps de participants
+- no pot rehidratar `mode_seleccio_exercicis` com a valor editable
+- no pot rebre auto-injeccio backend de participants
+
+### `per_member`
+- pot serialitzar configuracio propia d'exercicis
+- pot usar override per aparell quan el contracte ho admet
+- els camps absents es resolen per contracte, no per herencia invisible de UI stale
+
+### `derived_team`
+- `participants` nomes si el contracte resolt ho permet
+- no pot injectar `participants` si `exercise_selection_scope == team_pool`
+
+### `native_team`
+- no admet mirrors o payloads de participants derivats
+- qualsevol projeccio UI ha de reflectir aquesta restriccio
+
+## API Interna A Congelar
+
+Abans que els subagents avancin, aquestes signatures s'han de tancar:
+
+- `resolve_tie_context(...) -> TieContext`
+- `resolve_tie_contract(context) -> TieContractHandler`
+- `serialize_tie_for_save(raw_tie, context, fallback_pipeline) -> dict`
+- `validate_tie(canonical_tie, context) -> list[str]`
+- `project_tie_to_ui(canonical_tie, context) -> dict`
+- `project_tie_to_legacy(canonical_tie, context) -> dict`
+
+## Fases De Migracio
+
+### Fase 0. Congelacio de contracte i inventari
+- Documentar tots els punts del repo on `desempat` es llegeix, es valida, es guarda o es renderitza.
+- Tancar la shape persistent minima.
+- Definir formalment `TieContext`.
+- Identificar quins consumidors encara necessiten shape legacy.
+
+### Fase 1. Nucli de context i registry
+- Crear:
+  - `ties/context.py`
+  - `ties/registry.py`
+  - `ties/contracts/base.py`
+- Cap canvi funcional encara al frontend.
+- Sortida d'aquesta fase:
+  - context resolt estable
+  - seleccio estable de contracte
+
+### Fase 2. Contractes base `team_pool` i `per_member`
+- Crear:
+  - `ties/contracts/team_pool.py`
+  - `ties/contracts/per_member.py`
+- Codificar:
+  - camps permesos
+  - camps prohibits
+  - regles de neteja
+  - regles de defaults
+- Primer objectiu funcional:
+  - arreglar el bug de `team_pool` sense dependre del monolit
+
+### Fase 3. Variants d'equip
+- Crear:
+  - `ties/contracts/derived_team.py`
+  - `ties/contracts/native_team.py`
+- Extreure la logica de participants i compatibilitat de team mode.
+
+### Fase 4. Serializer de `save`
+- Crear `ties/serializer_save.py`.
+- Fer que `runtime.py` hi delegui.
+- El serializer ha d'emetre nomes camps admesos pel contracte resolt.
+- El backend ha de deixar de reintroduir camps prohibits.
+
+### Fase 5. Validacio per contracte
+- Crear `ties/validation.py`.
+- Fer que `validation.py` hi delegui.
+- Validar contra el contracte resolt i no contra la shape hibrida.
+
+### Fase 6. Legacy projection explicita
+- Crear `ties/legacy_projection.py`.
+- Moure la materialitzacio legacy aqui.
+- Eliminar densificacio implicita del cami de persistencia.
+
+### Fase 7. UI projection i builder backend
+- Crear:
+  - `ties/ui_projection.py`
+  - `ties/builder_rehydration.py`
+- Fer que `builder.py` deixi de barrejar persistencia i reopen.
+
+### Fase 8. Extraccio frontend del slice `desempat`
+- Crear els fitxers `templates/.../scripts/ties/*.js.html`.
+- Moure-hi:
+  - estat UI
+  - serializer de `save`
+  - render
+  - contractes de UI
+- El monolit queda com a shell temporal.
+
+### Fase 9. Tall final del monolit
+- Eliminar logica real de `desempat` de `_legacy_inline_script.html`.
+- Deixar wrappers o includes minims.
+- Eliminar duplicacions i helpers morts.
+
+## Paquets De Feina Per Subagents
+
+### Subagent 1. Context i registry
+- Write set:
+  - `services/classificacions/ties/context.py`
+  - `services/classificacions/ties/registry.py`
+  - `services/classificacions/ties/contracts/base.py`
+- Output:
+  - context efectiu del tie
+  - selector de contracte
+- No toca frontend.
+- No toca validacio.
+
+### Subagent 2. Contractes `team_pool` i `per_member`
+- Write set:
+  - `services/classificacions/ties/contracts/team_pool.py`
+  - `services/classificacions/ties/contracts/per_member.py`
+- Output:
+  - sanititzacio i regles de persistencia
+- No toca templates.
+- No toca runtime facade.
+
+### Subagent 3. Variants d'equip
+- Write set:
+  - `services/classificacions/ties/contracts/derived_team.py`
+  - `services/classificacions/ties/contracts/native_team.py`
+- Output:
+  - regles de participants i equips
+- No toca frontend.
+
+### Subagent 4. Serializer i integracio runtime
+- Write set:
+  - `services/classificacions/ties/serializer_save.py`
+  - integracio minima a `services/classificacions/runtime.py`
+- Output:
+  - `save` canonic net
+- No toca validacio.
+- No toca render.
+
+### Subagent 5. Validation extraction
+- Write set:
+  - `services/classificacions/ties/validation.py`
+  - delegacio minima des de `services/classificacions/validation.py`
+- Output:
+  - validacio per contracte resolt
+- No toca serializer.
+- No toca frontend.
+
+### Subagent 6. Legacy i builder backend
+- Write set:
+  - `services/classificacions/ties/legacy_projection.py`
+  - `services/classificacions/ties/ui_projection.py`
+  - `services/classificacions/ties/builder_rehydration.py`
+  - integracio minima a `services/classificacions/builder.py`
+- Output:
+  - reopen coherent del builder
+- No toca render JS.
+
+### Subagent 7. Frontend slice `desempat`
+- Write set:
+  - `templates/classificacions/builder/scripts/ties/*.js.html`
+  - wiring minim des de `_legacy_inline_script.html`
+- Output:
+  - render, estat UI i `save` fora del monolit
+- No toca backend Python.
+
+### Subagent 8. Tests i fixtures
+- Write set:
+  - tests classificacions/builder
+- Output:
+  - cobertura funcional i snapshots de payload
+- No toca codi de produccio.
+
+## Ordre Recomanat Entre Subagents
+1. Subagent 1
+2. Subagent 2 i 3 en paral.lel
+3. Subagent 4
+4. Subagent 5
+5. Subagent 6
+6. Subagent 7
+7. Subagent 8 de forma transversal i tancament final al final
+
+## Prompt Base Per Cada Subagent
+
+Cada subagent ha de rebre sempre:
+
+- aquest document
+- el seu write set exclusiu
+- les signatures d'API congelades
+- els criteris de done de la seva fase
+- la prohibicio expressa de:
+  - revertir canvis d'altres subagents
+  - tocar fitxers fora del seu write set
+  - reintroduir shape hibrida a `desempat`
+
+## Criteris De Done Per Fase
+
+### Done Fase 1
+- existeix `TieContext`
+- es pot resoldre contracte efectiu sense UI
+
+### Done Fase 2
+- `team_pool` i `per_member` tenen sanititzacio explicita
+- no depenen de `_legacy_inline_script.html`
+
+### Done Fase 3
+- les regles d'equips no estan barrejades amb els contractes base
+
+### Done Fase 4
+- `save` persisteix nomes contracte canonic
+- no reintrodueix camps prohibits
+
+### Done Fase 5
+- la validacio no depen de shape top-level legacy per decidir incompatibilitats
+
+### Done Fase 6
+- els mirrors legacy només surten d'una projeccio explicita
+- persistencia i reopen no comparteixen shape obligada
+
+### Done Fase 7
+- el builder reopen usa `ui_projection`
+- `_builder_ui` no surt al `save`
+
+### Done Fase 8
+- el navegador ja executa el slice especialitzat de `desempat`
+- no queden punts reals de `save` o rerender governats exclusivament pel monolit legacy
+
+### Done Fase 9
+- el monolit deixa de contenir la logica real de `desempat`
+
+## Tests Obligatoris
+
+### Persistencia
+- `team_pool` no persisteix camps propis d'exercicis.
+- `team_pool` no persisteix participants.
+- `per_member` persisteix `mode_seleccio_exercicis` i `exercicis_per_aparell` quan toca.
+- `derived_team + team_pool` no reintrodueix participants.
+- `native_team` rebutja participants derivats.
+
+### Builder
+- el `payload` de `save` reflecteix exactament la configuracio visible.
+- canviar dropdowns de `desempat` no col.lapsa la fila.
+- reopen del builder conserva l'estat visible.
+- `_builder_ui` no es persisteix mai.
+
+### Legacy / transicio
+- els consumidors que encara necessiten shape legacy la reben via projeccio explicita.
+- la persistencia no densifica ties per defecte.
+
+### Integracio
+- passar tests de classificacions dins Docker.
+- afegir casos explicits de:
+  - `team_pool`
+  - `per_member`
+  - equips derivats
+  - equips natius
 
 ## Criteris D'Acceptacio Finals
-- El tie editat pel builder deixa de densificar-se automaticament al guardar.
-- El builder continua reobrint ties antics i nous sense regressions de UX.
-- Persistencia, validacio i builder deixen de dependre del mateix helper monolitic per objectius diferents.
-- La seccio `desempat` servida al navegador deixa de dependre del monolit legacy com a font de veritat.
-- La transicio queda definida i aplicada amb la regla:
-  - lectura compatible
-  - escriptura canonica
-- Els consumidors antics coneguts de shape legacy queden:
-  - adaptats
-  - o explicitament encapsulats darrere d'una projeccio legacy
-- Existeixen moduls separats i localitzables per:
-  - canonicalitzacio
-  - projeccio legacy
-  - projeccio builder
-- Existeix un slice frontend especialitzat i realment servit per `desempat`.
-- Un agent extern pot identificar on tocar cada responsabilitat sense haver d'entendre tot el builder ni tot `pipeline_runtime.py`.
+- `desempat` es pot guardar sense passar per una shape hibrida.
+- `team_pool` i `per_member` tenen serializers diferents.
+- el backend no injecta camps prohibits pel contracte.
+- el frontend no envia camps ocults o stale.
+- reopen del builder usa `ui_projection`, no mirrors implicits.
+- `_legacy_inline_script.html` deixa de governar `desempat`.
+- els tests funcionals i de builder passen dins Docker.
 
-## No Fer
-- No moure aquesta refactoritzacio dins d'un unic fitxer gegant de `desempat`.
-- No mantenir el comportament antic a base de seguir cridant una materialitzacio legacy i netejar-la despres.
-- No acoblar el nou modul canonic a `_builder_ui`.
-- No tocar `puntuacio.victories.desempat_comparacio` en aquesta fase.
-- No deixar els fitxers modulars de `desempat` com a codi mort mentre el template actiu continua servint el monolit legacy.
+## Riscos Coneguts
+- Desalineacio temporal entre `ui_projection` i `legacy_projection`.
+- Regressions a `victories.desempat_comparacio` si es comparteixen helpers sense separar-los.
+- Duplicacio temporal entre monolit i nous mòduls durant la fase híbrida.
+- Consumidors antics que llegeixen shape legacy sense estar documentats.
+
+## Mitigacions
+- congelar signatures abans de paral.lelitzar
+- write sets disjunts
+- tests de snapshot de payload
+- inventari dels consumidors legacy
+- no moure lògica de dos contractes diferents al mateix subagent si no cal
+
+## Estat Actual Del Pla
+- Aquest document substitueix la versio anterior del pla de desmonolititzacio de `desempat`.
+- A partir d'ara, la direccio oficial es:
+  - fragmentacio per contractes i responsabilitats
+  - no sols fragmentacio per fitxers
+  - no mantenir un objecte `desempat` que intenti ser alhora UI, persistencia, validacio i compat legacy
+
+## Seguent Pas Operatiu
+- Quan es vulgui executar aquest pla amb subagents reals, cal generar un paquet per cadascun amb:
+  - prompt exacte
+  - fitxers propietat
+  - APIs d'entrada/sortida
+  - criteri de done
+  - proves que ha de deixar verdes

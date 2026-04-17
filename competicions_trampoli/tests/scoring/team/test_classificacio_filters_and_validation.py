@@ -1872,3 +1872,142 @@ class TeamContextClassificacioFiltersAndValidationTests(TeamContextScoringFlowTe
         self.assertTrue(any("desempat[0].scope.participants" in err for err in errors))
         self.assertTrue(any("desempat[0].agregacio_participants" in err for err in errors))
 
+    def test_classificacio_validation_rejects_team_pool_pipeline_first_reselection_fields(self):
+        individual_app = self._create_aparell("TRV", "Tramp validation")
+        individual_comp_app = self._create_comp_aparell(self.comp, individual_app, ordre=2)
+        schema = {
+            "puntuacio": {
+                "aparells": {"mode": "seleccionar", "ids": [individual_comp_app.id]},
+                "camps_per_aparell": {str(individual_comp_app.id): ["total"]},
+                "agregacio_camps": "sum",
+                "exercicis": {"mode": "millor_n", "best_n": 2, "max_per_participant": 1},
+                "exercise_selection_scope": "team_pool",
+                "agregacio_exercicis": "sum",
+                "agregacio_aparells": "sum",
+                "ordre": "desc",
+            },
+            "desempat": [
+                {
+                    "id": "tie_1",
+                    "nom": "Desempat 1",
+                    "ordre": "desc",
+                    "pipeline_version": 1,
+                    "pipeline": {
+                        "aparells": {"mode": "seleccionar", "ids": [individual_comp_app.id]},
+                        "camps_per_aparell": {str(individual_comp_app.id): ["TOTAL"]},
+                        "agregacio_camps_per_aparell": {str(individual_comp_app.id): "sum"},
+                        "agregacio_camps": "sum",
+                        "exercicis": {"mode": "tots"},
+                        "exercise_selection_scope": "team_pool",
+                        "mode_seleccio_exercicis": "per_aparell_override",
+                        "exercicis_per_aparell": {},
+                        "agregacio_exercicis_per_aparell": {},
+                        "agregacio_exercicis": "sum",
+                        "agregacio_aparells": "sum",
+                        "candidate_source_per_aparell": {
+                            str(individual_comp_app.id): {
+                                "mode": "participant_aggregate",
+                                "cfg": {"mode": "tots", "agregacio_exercicis": "sum"},
+                            }
+                        },
+                        "candidate_source_mode": "raw_exercise",
+                        "candidate_source_cfg": {
+                            "mode": "tots",
+                            "agregacio_exercicis": "sum",
+                        },
+                        "mode_resultat_aparells": "score",
+                        "ordre": "desc",
+                        "participants": {"mode": "tots"},
+                        "agregacio_participants": "sum",
+                    },
+                }
+            ],
+            "equips": {
+                "context_code": "parelles",
+                "team_mode": "derived_from_individual",
+                "incloure_sense_equip": False,
+            },
+        }
+
+        _schema, errors = _validate_schema_for_competicio(
+            self.comp,
+            schema,
+            tipus="equips",
+        )
+
+        self.assertTrue(any("desempat[0].scope.exercicis" in err for err in errors))
+        self.assertTrue(any("desempat[0].mode_seleccio_exercicis" in err for err in errors))
+        self.assertTrue(any("desempat[0].exercicis_per_aparell" in err for err in errors))
+        self.assertTrue(any("desempat[0].scope.participants" in err for err in errors))
+        self.assertTrue(any("desempat[0].agregacio_participants" in err for err in errors))
+
+    def test_prepare_schema_for_persistence_strips_team_pool_tie_pipeline_reselection_fields(self):
+        individual_app = self._create_aparell("TRW", "Tramp save validation")
+        individual_comp_app = self._create_comp_aparell(self.comp, individual_app, ordre=3)
+        schema = {
+            "puntuacio": {
+                "aparells": {"mode": "seleccionar", "ids": [individual_comp_app.id]},
+                "camps_per_aparell": {str(individual_comp_app.id): ["total"]},
+                "agregacio_camps": "sum",
+                "exercicis": {"mode": "millor_n", "best_n": 2, "max_per_participant": 1},
+                "exercise_selection_scope": "team_pool",
+                "agregacio_exercicis": "sum",
+                "agregacio_aparells": "sum",
+                "ordre": "desc",
+            },
+            "desempat": [
+                {
+                    "id": "tie_clean_team_pool",
+                    "nom": "Desempat net team pool",
+                    "ordre": "desc",
+                    "pipeline_version": 1,
+                    "pipeline": {
+                        "aparells": {"mode": "seleccionar", "ids": [individual_comp_app.id]},
+                        "camps_per_aparell": {str(individual_comp_app.id): ["TOTAL"]},
+                        "agregacio_camps_per_aparell": {str(individual_comp_app.id): "sum"},
+                        "agregacio_camps": "sum",
+                        "exercicis": {"mode": "tots"},
+                        "exercise_selection_scope": "team_pool",
+                        "mode_seleccio_exercicis": "per_aparell_override",
+                        "exercicis_per_aparell": {str(individual_comp_app.id): {"mode": "millor_1"}},
+                        "agregacio_exercicis_per_aparell": {str(individual_comp_app.id): "sum"},
+                        "agregacio_exercicis": "sum",
+                        "agregacio_aparells": "sum",
+                        "candidate_source_per_aparell": {
+                            str(individual_comp_app.id): {
+                                "mode": "participant_aggregate",
+                                "cfg": {"mode": "tots", "agregacio_exercicis": "sum"},
+                            }
+                        },
+                        "candidate_source_mode": "raw_exercise",
+                        "candidate_source_cfg": {
+                            "mode": "tots",
+                            "agregacio_exercicis": "sum",
+                        },
+                        "mode_resultat_aparells": "score",
+                        "ordre": "desc",
+                        "participants": {"mode": "tots"},
+                        "agregacio_participants": "sum",
+                    },
+                }
+            ],
+            "equips": {
+                "context_code": "parelles",
+                "team_mode": "derived_from_individual",
+                "incloure_sense_equip": False,
+            },
+        }
+
+        prepared = prepare_schema_for_persistence(self.comp, schema, tipus="equips")
+
+        self.assertEqual(prepared["errors"], [])
+        pipeline = (((prepared["schema"] or {}).get("desempat") or [])[0].get("pipeline") or {})
+        self.assertEqual(pipeline.get("exercise_selection_scope"), "team_pool")
+        self.assertNotIn("exercicis", pipeline)
+        self.assertNotIn("mode_seleccio_exercicis", pipeline)
+        self.assertNotIn("exercicis_per_aparell", pipeline)
+        self.assertNotIn("agregacio_exercicis", pipeline)
+        self.assertNotIn("agregacio_exercicis_per_aparell", pipeline)
+        self.assertNotIn("participants", pipeline)
+        self.assertNotIn("agregacio_participants", pipeline)
+
