@@ -48,6 +48,50 @@ class TeamContextScoringBuilderAndSchemaResolutionTests(TeamContextScoringFlowTe
         self.assertFalse(meta["E_by_judge"]["detail_displayable"])
         self.assertEqual(meta["E_by_judge"]["detail_display_kind"], "none")
 
+    def test_build_metric_meta_keeps_summed_member_computed_as_member_dependent(self):
+        schema_obj = {
+            "meta": {"subject_mode": "team"},
+            "fields": [
+                {
+                    "code": "E",
+                    "label": "Execucio",
+                    "scope": "member",
+                    "type": "matrix",
+                    "shape": "judge_x_item",
+                    "judges": {"count": 1},
+                    "items": {"count": 10},
+                },
+            ],
+            "computed": [
+                {
+                    "code": "FIRST5",
+                    "label": "Primers 5",
+                    "formula": "row_custom_compute('E', 'x', col_select='first_n', count=5, row_select='all', row_agg='sum', col_agg='sum')",
+                },
+                {
+                    "code": "LAST5",
+                    "label": "Ultims 5",
+                    "formula": "row_custom_compute('E', 'x', col_select='last_n', count=5, row_select='all', row_agg='sum', col_agg='sum')",
+                },
+                {
+                    "code": "BOTH",
+                    "label": "Suma",
+                    "formula": "FIRST5 + LAST5",
+                },
+            ],
+        }
+
+        meta = _build_metric_meta_for_comp_aparell(self.comp_app, schema_obj, strict_unknown=True)
+
+        self.assertEqual(meta["FIRST5"]["kind"], "member_scalar")
+        self.assertTrue(meta["FIRST5"]["member_dependent"])
+        self.assertEqual(meta["LAST5"]["kind"], "member_scalar")
+        self.assertTrue(meta["LAST5"]["member_dependent"])
+        self.assertEqual(meta["BOTH"]["kind"], "member_scalar")
+        self.assertTrue(meta["BOTH"]["member_dependent"])
+        self.assertTrue(meta["BOTH"]["detail_displayable"])
+        self.assertEqual(meta["BOTH"]["detail_display_kind"], "scalar")
+
     def test_builder_context_exposes_displayable_member_fields_for_native_team(self):
         ScoringSchema.objects.create(
             aparell=self.app,
@@ -98,6 +142,142 @@ class TeamContextScoringBuilderAndSchemaResolutionTests(TeamContextScoringFlowTe
         self.assertEqual(by_code["E"]["detail_display_kind"], "judge_rows")
         self.assertTrue(by_code["E_mem"]["detail_displayable"])
         self.assertEqual(by_code["E_mem"]["detail_display_kind"], "scalar")
+
+    def test_builder_context_exposes_summed_member_computed_for_native_team_detail(self):
+        ScoringSchema.objects.create(
+            aparell=self.app,
+            schema={
+                "meta": {"subject_mode": "team"},
+                "fields": [
+                    {
+                        "code": "E",
+                        "label": "Execucio",
+                        "scope": "member",
+                        "type": "matrix",
+                        "shape": "judge_x_item",
+                        "judges": {"count": 1},
+                        "items": {"count": 10},
+                    },
+                ],
+                "computed": [
+                    {
+                        "code": "FIRST5",
+                        "label": "Primers 5",
+                        "formula": "row_custom_compute('E', 'x', col_select='first_n', count=5, row_select='all', row_agg='sum', col_agg='sum')",
+                    },
+                    {
+                        "code": "LAST5",
+                        "label": "Ultims 5",
+                        "formula": "row_custom_compute('E', 'x', col_select='last_n', count=5, row_select='all', row_agg='sum', col_agg='sum')",
+                    },
+                    {
+                        "code": "BOTH",
+                        "label": "Suma",
+                        "formula": "FIRST5 + LAST5",
+                    },
+                ],
+            },
+        )
+
+        request = RequestFactory().get("/competicio/test/classificacions/")
+        request.user = self.user
+        view = ClassificacionsHome()
+        view.request = request
+        view.kwargs = {"pk": self.comp.id}
+        view.competicio = self.comp
+
+        ctx = view.get_context_data()
+        options = ctx["aparell_field_options"][str(self.comp_app.id)]
+        by_code = {item["code"]: item for item in options}
+
+        self.assertIn("BOTH", by_code)
+        self.assertEqual(by_code["BOTH"]["kind"], "computed")
+        self.assertTrue(by_code["BOTH"]["member_dependent"])
+        self.assertTrue(by_code["BOTH"]["detail_displayable"])
+        self.assertEqual(by_code["BOTH"]["detail_display_kind"], "scalar")
+
+    def test_build_metric_meta_keeps_member_treatment_outputs_as_team_metrics(self):
+        schema_obj = {
+            "meta": {"subject_mode": "team"},
+            "fields": [
+                {
+                    "code": "E",
+                    "label": "Execucio",
+                    "var": "e",
+                    "scope": "member",
+                    "type": "matrix",
+                    "shape": "judge_x_item",
+                    "judges": {"count": 3},
+                    "items": {"count": 5},
+                },
+                {
+                    "code": "DD",
+                    "label": "Dificultat",
+                    "var": "x",
+                    "scope": "shared",
+                    "type": "matrix",
+                    "shape": "judge_x_item",
+                    "judges": {"count": 1},
+                    "items": {"count": 1},
+                },
+                {
+                    "code": "S",
+                    "label": "Sync",
+                    "var": "s",
+                    "scope": "shared",
+                    "type": "matrix",
+                    "shape": "judge_x_item",
+                    "judges": {"count": 1},
+                    "items": {"count": 1},
+                },
+            ],
+            "computed": [
+                {
+                    "code": "E_mem",
+                    "label": "Execucio Membre",
+                    "formula": "row_custom_compute('E','1 - x', select_on='raw')",
+                    "builder": {
+                        "preset": "row_compute",
+                        "source": "E",
+                        "item_expr": "1 - x",
+                        "row_select": "all",
+                        "row_agg": "sum",
+                        "col_select": "all",
+                        "col_agg": "sum",
+                        "row_select_on": "raw",
+                        "row_agg_on": "expr",
+                        "col_select_on": "expr",
+                    },
+                },
+                {
+                    "code": "e_total",
+                    "label": "E_total",
+                    "formula": "member_treatment(E_mem)",
+                    "builder": {
+                        "preset": "member_treatment_guided",
+                        "source": "E_mem",
+                        "select": "all",
+                        "agg": "sum",
+                    },
+                },
+                {
+                    "code": "tot",
+                    "label": "TOTAL",
+                    "formula": "e_total + s + x",
+                },
+            ],
+        }
+
+        meta = _build_metric_meta_for_comp_aparell(self.comp_app, schema_obj, strict_unknown=True)
+
+        self.assertEqual(meta["E_mem"]["kind"], "member_scalar")
+        self.assertTrue(meta["E_mem"]["member_dependent"])
+        self.assertEqual(meta["e_total"]["kind"], "shared_scalar")
+        self.assertFalse(meta["e_total"]["member_dependent"])
+        self.assertEqual(meta["tot"]["kind"], "shared_scalar")
+        self.assertFalse(meta["tot"]["member_dependent"])
+        self.assertTrue(meta["tot"]["detail_displayable"])
+        self.assertEqual(meta["tot"]["detail_display_kind"], "scalar")
 
     def _native_team_schema_with_tie(self, tie):
         return {

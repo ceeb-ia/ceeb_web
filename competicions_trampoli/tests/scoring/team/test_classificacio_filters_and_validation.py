@@ -250,7 +250,7 @@ class TeamContextClassificacioFiltersAndValidationTests(TeamContextScoringFlowTe
         self.assertEqual(response.status_code, 400)
         self.assertTrue(any("clau no admesa" in err for err in response.json().get("errors", [])))
 
-    def test_classificacio_save_rejects_exercise_selection_scope_for_native_team(self):
+    def test_classificacio_save_drops_exercise_selection_scope_for_native_team(self):
         payload = self._classificacio_payload(
             tipus="equips",
             app_ids=[self.comp_app.id],
@@ -268,10 +268,10 @@ class TeamContextClassificacioFiltersAndValidationTests(TeamContextScoringFlowTe
 
         response = self._post_json("classificacio_save", payload)
 
-        self.assertEqual(response.status_code, 400)
-        errors = response.json().get("errors", [])
-        self.assertTrue(any("puntuacio.exercise_selection_scope" in err for err in errors))
-        self.assertTrue(any("desempat[0].exercise_selection_scope" in err for err in errors))
+        self.assertEqual(response.status_code, 200)
+        cfg = ClassificacioConfig.objects.get(pk=response.json()["id"])
+        self.assertNotIn("exercise_selection_scope", (cfg.schema.get("puntuacio") or {}))
+        self.assertNotIn("exercise_selection_scope", ((cfg.schema.get("desempat") or [])[0]))
 
     def test_classificacio_save_accepts_team_aggregate_for_native_team(self):
         payload = self._classificacio_payload(
@@ -1037,6 +1037,35 @@ class TeamContextClassificacioFiltersAndValidationTests(TeamContextScoringFlowTe
         self.assertEqual(col_source.get("exercise_mode"), "fixed")
         self.assertNotIn("has_explicit_exercici", col_source)
 
+    def test_prepare_schema_for_persistence_drops_tie_pipeline_exercise_selection_scope_for_native_team(self):
+        schema = self._native_team_schema_with_tie(
+            {
+                "camps": ["TOTAL"],
+                "ordre": "desc",
+                "exercise_selection_scope": "team_pool",
+                "pipeline": {
+                    "aparells": {"mode": "seleccionar", "ids": [self.comp_app.id]},
+                    "camps_per_aparell": {str(self.comp_app.id): ["TOTAL"]},
+                    "agregacio_camps_per_aparell": {str(self.comp_app.id): "sum"},
+                    "agregacio_camps": "sum",
+                    "exercicis": {"mode": "tots"},
+                    "exercise_selection_scope": "team_pool",
+                    "mode_seleccio_exercicis": "per_aparell_global",
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "mode_resultat_aparells": "score",
+                    "ordre": "desc",
+                },
+            }
+        )
+
+        prepared = prepare_schema_for_persistence(self.comp, schema, tipus="equips")
+
+        self.assertEqual(prepared["errors"], [])
+        tie = (((prepared["schema"] or {}).get("desempat") or [])[0])
+        self.assertNotIn("exercise_selection_scope", tie)
+        self.assertNotIn("exercise_selection_scope", tie.get("pipeline") or {})
+
     def test_competition_template_roundtrip_preserves_team_members_table_exercise_mode(self):
         ScoringSchema.objects.create(
             aparell=self.app,
@@ -1586,7 +1615,7 @@ class TeamContextClassificacioFiltersAndValidationTests(TeamContextScoringFlowTe
             "per_member",
         )
 
-    def test_classificacio_validation_rejects_exercise_selection_scope_for_native_team(self):
+    def test_classificacio_validation_drops_exercise_selection_scope_for_native_team(self):
         schema = self._native_team_schema_with_tie(
             {
                 "camps": ["TOTAL"],
@@ -1596,14 +1625,15 @@ class TeamContextClassificacioFiltersAndValidationTests(TeamContextScoringFlowTe
         )
         schema["puntuacio"]["exercise_selection_scope"] = "team_pool"
 
-        _schema, errors = _validate_schema_for_competicio(
+        cleaned_schema, errors = _validate_schema_for_competicio(
             self.comp,
             schema,
             tipus="equips",
         )
 
-        self.assertTrue(any("puntuacio.exercise_selection_scope" in err for err in errors))
-        self.assertTrue(any("desempat[0].exercise_selection_scope" in err for err in errors))
+        self.assertEqual(errors, [])
+        self.assertNotIn("exercise_selection_scope", (cleaned_schema.get("puntuacio") or {}))
+        self.assertNotIn("exercise_selection_scope", ((cleaned_schema.get("desempat") or [])[0]))
 
     def test_classificacio_validation_rejects_team_pool_tie_reselection_fields(self):
         individual_app = self._create_aparell("TRV", "Tramp validation")

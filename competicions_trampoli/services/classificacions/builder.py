@@ -892,6 +892,13 @@ def sanitize_schema_for_builder(competicio, schema_local, tipus="individual"):
                 item["exercise_selection_scope"] = tie_scope
         else:
             item.pop("exercise_selection_scope", None)
+            pipeline = item.get("pipeline")
+            if isinstance(pipeline, dict):
+                # Keep this cleanup local to the builder/save path. If the shared
+                # pipeline materialization helpers start dropping this key too,
+                # tie rehydration in the builder changes shape and breaks when
+                # reopening existing classificacions.
+                pipeline.pop("exercise_selection_scope", None)
 
         return item
 

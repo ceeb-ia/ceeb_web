@@ -2208,6 +2208,7 @@
     ["victories", "desempat", "presentacio", "particions", "particions_v2", "particions_custom", "filtres", "equips"].forEach(key => {
       delete out[key];
     });
+    delete out.exercicis_best_n;
 
     out.aparells = normalizeTiePipelineAppScope(out.aparells, fallback.aparells);
     const appIds = Array.isArray(out.aparells.ids) ? out.aparells.ids : [];
@@ -3219,8 +3220,10 @@
     const fallbackPuntuacio = readPuntuacioSchemaFromUI();
     document.querySelectorAll("#tieBody tr").forEach(tr => {
       const rawItem = readTieObjFromRow(tr, includeParticipants);
+      const rawBase = { ...(tr.__tieSourceRaw || {}) };
+      delete rawBase.pipeline;
       const item = sanitizeTieItemForUI(
-        { ...(tr.__tieSourceRaw || {}), ...rawItem },
+        { ...rawBase, ...rawItem },
         selectedMainIds,
         true,
         includeParticipants,
@@ -3441,8 +3444,10 @@
         const campCell = tr.querySelector('[data-cell="camp"]');
         campCell.innerHTML = buildCampSelectHTMLForApps(getCurrentAppIds(), curr.camps, curr.agregacio_camps);
         if (tieSummary) {
+          const rawBase = { ...(tr.__tieSourceRaw || {}) };
+          delete rawBase.pipeline;
           const next = sanitizeTieItemForUI(
-            { ...(tr.__tieSourceRaw || {}), ...readTieObjFromRow(tr, includeParticipants) },
+            { ...rawBase, ...readTieObjFromRow(tr, includeParticipants) },
             selectedMainIds,
             true,
             includeParticipants,
@@ -5587,9 +5592,20 @@
       getTiePipelineVisibleAppIds(source).length ? getTiePipelineVisibleAppIds(source) : targetIds,
     );
     source.pipeline.exercicis = normalizeTieExercicisCfg(source.pipeline.exercicis || scope.exercicis || {});
-    source.pipeline.exercise_selection_scope = isDerivedExerciseSelectionScopeAvailable()
-      ? normalizeTieExerciseSelectionScope(source.exercise_selection_scope || source.pipeline.exercise_selection_scope || "hereta")
-      : "hereta";
+    if (isDerivedExerciseSelectionScopeAvailable()) {
+      // "hereta" is only a UI sentinel. If it reaches the canonical pipeline,
+      // backend validation rejects it and tie save/hydration diverge.
+      const pipelineExerciseScope = normalizeTieExerciseSelectionScope(
+        source.exercise_selection_scope || source.pipeline.exercise_selection_scope || "hereta"
+      );
+      if (pipelineExerciseScope === EXERCISE_SELECTION_SCOPE_INHERIT) {
+        delete source.pipeline.exercise_selection_scope;
+      } else {
+        source.pipeline.exercise_selection_scope = pipelineExerciseScope;
+      }
+    } else {
+      delete source.pipeline.exercise_selection_scope;
+    }
     source.pipeline.mode_seleccio_exercicis = normalizeTieModeSeleccioExercicis(source.mode_seleccio_exercicis || source.pipeline.mode_seleccio_exercicis || "hereta");
     source.pipeline.exercicis_per_aparell = normalizeTiePipelineExercicisPerApp(
       source.pipeline.exercicis_per_aparell,

@@ -46,8 +46,6 @@ SCORING_PIPELINE_FORBIDDEN_KEYS = {
     "filtres",
     "equips",
 }
-
-
 def _to_positive_int(value):
     try:
         parsed = int(value)
@@ -229,9 +227,6 @@ def build_main_scoring_pipeline_from_schema(schema_local, *, tipus="individual",
         "candidate_source_cfg": _normalize_candidate_source_cfg(punt.get("candidate_source_cfg")),
         "candidate_source_per_aparell": {},
         "exercicis": _normalize_exercicis_cfg(punt.get("exercicis")),
-        "exercise_selection_scope": normalize_exercise_selection_scope(
-            punt.get("exercise_selection_scope")
-        ) or EXERCISE_SELECTION_SCOPE_PER_MEMBER,
         "mode_seleccio_exercicis": str(punt.get("mode_seleccio_exercicis") or "per_aparell_global").strip().lower(),
         "exercicis_per_aparell": {},
         "agregacio_exercicis_per_aparell": {},
@@ -240,6 +235,10 @@ def build_main_scoring_pipeline_from_schema(schema_local, *, tipus="individual",
         "mode_resultat_aparells": str(punt.get("mode_resultat_aparells") or "score").strip().lower() or "score",
         "ordre": "desc" if str(punt.get("ordre") or "desc").strip().lower() != "asc" else "asc",
     }
+    pipeline["exercise_selection_scope"] = (
+        normalize_exercise_selection_scope(punt.get("exercise_selection_scope"))
+        or EXERCISE_SELECTION_SCOPE_PER_MEMBER
+    )
     camps_map = punt.get("camps_per_aparell") if isinstance(punt.get("camps_per_aparell"), dict) else {}
     agg_map = punt.get("agregacio_camps_per_aparell") if isinstance(punt.get("agregacio_camps_per_aparell"), dict) else {}
     ex_map = punt.get("exercicis_per_aparell") if isinstance(punt.get("exercicis_per_aparell"), dict) else {}
@@ -532,6 +531,9 @@ def _materialize_legacy_mirrors_from_pipeline(item, *, allow_participants=True):
     else:
         item.pop("agregacio_participants", None)
     item["scope"] = scope
+    # This helper is shared by persistence and builder rehydration. If this
+    # mirror stops materializing a field here, the builder reopens old ties
+    # with a different shape even when save-time validation still succeeds.
     item["exercise_selection_scope"] = pipeline.get("exercise_selection_scope")
     item["mode_seleccio_exercicis"] = pipeline.get("mode_seleccio_exercicis")
     item["exercicis_per_aparell"] = _normalize_exercicis_per_aparell(
@@ -574,7 +576,10 @@ def materialize_desempat_item(
         item["id"] = str(default_id).strip()
     if default_nom and not str(item.get("nom") or "").strip():
         item["nom"] = str(default_nom).strip()
-    return _materialize_legacy_mirrors_from_pipeline(item, allow_participants=allow_participants)
+    return _materialize_legacy_mirrors_from_pipeline(
+        item,
+        allow_participants=allow_participants,
+    )
 
 
 def materialize_desempat_items(

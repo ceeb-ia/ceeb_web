@@ -612,7 +612,7 @@ def build_metric_meta_for_schema_owner(schema_owner, schema_obj: dict, strict_un
                 unknown = [name for name in names if name not in allowed_names]
                 if not unknown:
                     kind = infer_team_expr_kind(tree.body, kind_env)
-                    member_dependent = _computed_is_member_dependent(comp, tree, member_env)
+                    member_dependent = kind in {KIND_MEMBER_SCALAR, KIND_MEMBER_LIST, KIND_MEMBER_MATRIX}
                     display_meta = _detail_display_meta_for_computed_shape(inferred_shapes.get(code))
                     if _formula_forces_vector_return(formula):
                         display_meta = {"detail_displayable": False, "detail_display_kind": DETAIL_DISPLAY_KIND_NONE}
@@ -624,6 +624,12 @@ def build_metric_meta_for_schema_owner(schema_owner, schema_obj: dict, strict_un
         meta[code]["member_dependent"] = member_dependent
         meta[code]["detail_displayable"] = display_meta["detail_displayable"]
         meta[code]["detail_display_kind"] = display_meta["detail_display_kind"]
+        kind_env[code] = kind
+        member_env[code] = kind in {KIND_MEMBER_SCALAR, KIND_MEMBER_LIST, KIND_MEMBER_MATRIX}
+        var = str(comp.get("var") or "").strip()
+        if var:
+            kind_env[var] = kind
+            member_env[var] = kind in {KIND_MEMBER_SCALAR, KIND_MEMBER_LIST, KIND_MEMBER_MATRIX}
     return meta
 
 
@@ -1027,9 +1033,11 @@ def _validate_exercise_selection_scope(schema: dict, *, tipus="individual", team
             errors.append(f"puntuacio.exercise_selection_scope invalid: {raw_main_scope}")
         punt["exercise_selection_scope"] = main_scope or EXERCISE_SELECTION_SCOPE_PER_MEMBER
     elif raw_main_scope not in (None, ""):
-        errors.append(
-            "puntuacio.exercise_selection_scope nomes es compatible amb tipus='equips' + team_mode=derived_from_individual."
-        )
+        # Validation is allowed to be tolerant here because this is the last
+        # cleanup step before save. Making the shared pipeline runtime reshape
+        # this key instead would also change tie hydration when the builder
+        # reopens an existing classificacio.
+        punt.pop("exercise_selection_scope", None)
     desempat = schema.get("desempat") or []
     if not isinstance(desempat, list):
         return errors
@@ -1046,9 +1054,10 @@ def _validate_exercise_selection_scope(schema: dict, *, tipus="individual", team
             else:
                 tie["exercise_selection_scope"] = tie_scope
         elif raw_tie_scope not in (None, ""):
-            errors.append(
-                f"desempat[{idx}].exercise_selection_scope nomes es compatible amb tipus='equips' + team_mode=derived_from_individual."
-            )
+            # Same contract as above: clean stale UI state at validation/save
+            # time, but keep the shared runtime materialization stable because
+            # the builder depends on that shape for desempat rehydration.
+            tie.pop("exercise_selection_scope", None)
     return errors
 
 
@@ -2046,10 +2055,12 @@ def validate_schema_for_competicio_detailed(competicio, schema_local, tipus="ind
                         f"desempat[{idx}].pipeline.participants no es compatible amb tipus='{tipus_norm}'."
                     )
             raw_scope = str(raw_pipeline.get("exercise_selection_scope") or "").strip().lower()
-            if raw_scope == "team_pool" and not allow_pipeline_exercise_scope:
-                errors.append(
-                    f"desempat[{idx}].pipeline.exercise_selection_scope no es compatible amb tipus='{tipus_norm}' i team_mode='{schema_local.get('equips', {}).get('team_mode', '')}'."
-                )
+            if raw_scope and not allow_pipeline_exercise_scope:
+                # Drop stale save payload data here instead of teaching
+                # pipeline_runtime to omit it globally. That runtime is reused
+                # for builder rehydration, so a change there affects how old
+                # desempats reopen in the UI.
+                raw_pipeline.pop("exercise_selection_scope", None)
 
     materialized_desempat = materialize_desempat_items(
         desempat_raw if isinstance(desempat_raw, list) else [],
@@ -2103,6 +2114,18 @@ def validate_schema_for_competicio_detailed(competicio, schema_local, tipus="ind
             team_mode=schema_local.get("equips", {}).get("team_mode", ""),
         )
     )
+    if not allow_pipeline_exercise_scope:
+        for tie in materialized_desempat:
+            if not isinstance(tie, dict):
+                continue
+            # Clean the materialized save payload here, after the shared runtime
+            # has done its builder-facing rehydration work. If this cleanup is
+            # moved into pipeline_runtime instead, old desempats reopen with a
+            # different shape in the builder.
+            tie.pop("exercise_selection_scope", None)
+            pipeline = tie.get("pipeline")
+            if isinstance(pipeline, dict):
+                pipeline.pop("exercise_selection_scope", None)
     schema_local["desempat"] = materialized_desempat
     errors.extend(_validate_tie_camps_per_aparell(competicio, schema_local))
     errors.extend(_validate_victories_schema(competicio, schema_local, tipus=tipus))

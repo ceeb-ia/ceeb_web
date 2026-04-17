@@ -193,6 +193,7 @@
     ["victories", "desempat", "presentacio", "particions", "particions_v2", "particions_custom", "filtres", "equips"].forEach(key => {
       delete out[key];
     });
+    delete out.exercicis_best_n;
 
     out.aparells = normalizeTiePipelineAppScope(out.aparells, fallback.aparells);
     const appIds = Array.isArray(out.aparells.ids) ? out.aparells.ids : [];
@@ -1204,8 +1205,10 @@
     const fallbackPuntuacio = readPuntuacioSchemaFromUI();
     document.querySelectorAll("#tieBody tr").forEach(tr => {
       const rawItem = readTieObjFromRow(tr, includeParticipants);
+      const rawBase = { ...(tr.__tieSourceRaw || {}) };
+      delete rawBase.pipeline;
       const item = sanitizeTieItemForUI(
-        { ...(tr.__tieSourceRaw || {}), ...rawItem },
+        { ...rawBase, ...rawItem },
         selectedMainIds,
         true,
         includeParticipants,
@@ -1426,8 +1429,10 @@
         const campCell = tr.querySelector('[data-cell="camp"]');
         campCell.innerHTML = buildCampSelectHTMLForApps(getCurrentAppIds(), curr.camps, curr.agregacio_camps);
         if (tieSummary) {
+          const rawBase = { ...(tr.__tieSourceRaw || {}) };
+          delete rawBase.pipeline;
           const next = sanitizeTieItemForUI(
-            { ...(tr.__tieSourceRaw || {}), ...readTieObjFromRow(tr, includeParticipants) },
+            { ...rawBase, ...readTieObjFromRow(tr, includeParticipants) },
             selectedMainIds,
             true,
             includeParticipants,
