@@ -1,4 +1,7 @@
+from copy import deepcopy
+
 from .legacy_projection import project_tie_legacy_projection
+from .pipeline_builder import strip_unsupported_per_exercise_field_pipeline_keys
 from .ui_projection import project_tie_with_ui_state
 
 
@@ -13,6 +16,10 @@ def project_tie_for_builder_rehydration(
     allow_participants=True,
     fallback_pipeline=None,
 ):
+    preserved_pipeline = None
+    if isinstance((tie if isinstance(tie, dict) else {}).get("pipeline"), dict):
+        preserved_pipeline = strip_unsupported_per_exercise_field_pipeline_keys(tie.get("pipeline"))
+
     item = project_tie_legacy_projection(
         tie,
         idx=idx,
@@ -30,9 +37,12 @@ def project_tie_for_builder_rehydration(
         scope.pop("aparells", None)
         item["scope"] = scope
 
-    return project_tie_with_ui_state(
+    projected = project_tie_with_ui_state(
         item,
         main_pipeline=fallback_pipeline,
         tipus=tipus,
         team_mode=team_mode,
     )
+    if preserved_pipeline is not None and isinstance(projected, dict):
+        projected["pipeline"] = deepcopy(preserved_pipeline)
+    return projected

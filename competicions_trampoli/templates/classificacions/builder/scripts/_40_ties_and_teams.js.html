@@ -2,7 +2,10 @@
     return `
       <td data-cell="participants">
         <div class="d-flex flex-column gap-1">
+          <div class="small text-muted" data-k="participants_step_label">5. Membres / pool</div>
+          <div class="small text-muted" data-k="participants_step_hint">Combina el resultat dels membres o reutilitza el pool final de puntuació.</div>
           <div class="small text-muted" data-k="p_locked_note" style="display:none;">En pool d'equip no es reescullen participants.</div>
+          <div class="d-flex flex-column gap-1" data-k="participants_inputs_wrap">
           <select class="form-control form-control-sm" data-k="p_mode">
             <option value="tots">Tots</option>
             <option value="millor_1">Millor 1</option>
@@ -18,6 +21,7 @@
             <option value="max">Màxim</option>
             <option value="min">Mínim</option>
           </select>
+          </div>
         </div>
       </td>
     `;

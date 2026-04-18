@@ -1739,6 +1739,7 @@
     const inp = document.createElement("input");
     inp.className = "form-control form-control-sm";
     inp.type = "number";
+    inp.inputMode = "decimal";
     inp.step = decimalsStep(field.decimals);
     inp.value = (value ?? "");
     inp.dataset.kind = "number";
@@ -1761,6 +1762,7 @@
     const inp = document.createElement("input");
     inp.className = "form-control form-control-sm input-salt";
     inp.type = "number";
+    inp.inputMode = "decimal";
     inp.step = decimalsStep(field.decimals);
     inp.value = (baseArr[j-1] ?? "");
     inp.dataset.kind = "list";
@@ -1833,6 +1835,7 @@
       const inp = document.createElement("input");
       inp.className = "form-control form-control-sm input-salt";
       inp.type = "number";
+      inp.inputMode = "decimal";
       inp.step = decimalsStep(field.decimals);
       inp.value = (mat[j-1][idx0] ?? "");
       inp.dataset.kind = "matrix";

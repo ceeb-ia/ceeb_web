@@ -21,6 +21,13 @@ UNSUPPORTED_PER_EXERCISE_FIELD_PIPELINE_KEYS = (
     "agregacio_camps_per_exercici_per_aparell",
 )
 
+TIE_INPUT_SOURCE_RAW_EXERCISES = "raw_exercises"
+TIE_INPUT_SOURCE_MAIN_SELECTED_CONTRIBUTORS = "main_selected_contributors"
+ALLOWED_TIE_INPUT_SOURCE_MODES = {
+    TIE_INPUT_SOURCE_RAW_EXERCISES,
+    TIE_INPUT_SOURCE_MAIN_SELECTED_CONTRIBUTORS,
+}
+
 
 def strip_unsupported_per_exercise_field_pipeline_keys(raw_pipeline):
     if not isinstance(raw_pipeline, dict):
@@ -29,6 +36,33 @@ def strip_unsupported_per_exercise_field_pipeline_keys(raw_pipeline):
     for key in UNSUPPORTED_PER_EXERCISE_FIELD_PIPELINE_KEYS:
         pipeline.pop(key, None)
     return pipeline
+
+
+def normalize_tie_input_source(raw_input_source, *, fallback=None):
+    entry = raw_input_source if isinstance(raw_input_source, dict) else {}
+    fallback_entry = fallback if isinstance(fallback, dict) else {}
+    mode = str(
+        entry.get("mode")
+        or fallback_entry.get("mode")
+        or raw_input_source
+        or fallback
+        or TIE_INPUT_SOURCE_RAW_EXERCISES
+    ).strip().lower()
+    if mode not in ALLOWED_TIE_INPUT_SOURCE_MODES:
+        mode = TIE_INPUT_SOURCE_RAW_EXERCISES
+    return {"mode": mode}
+
+
+def _extract_tie_input_source(tie, *, fallback_pipeline=None):
+    item = tie if isinstance(tie, dict) else {}
+    pipeline = item.get("pipeline") if isinstance(item.get("pipeline"), dict) else {}
+    raw_input_source = pipeline.get("input_source")
+    if raw_input_source is None:
+        raw_input_source = item.get("input_source")
+    fallback_input_source = None
+    if isinstance(fallback_pipeline, dict):
+        fallback_input_source = fallback_pipeline.get("input_source")
+    return normalize_tie_input_source(raw_input_source, fallback=fallback_input_source)
 
 
 def _normalize_legacy_tie_pipeline(raw_tie, *, tipus="individual", team_mode="", fallback_pipeline=None):
@@ -101,6 +135,7 @@ def _normalize_legacy_tie_pipeline(raw_tie, *, tipus="individual", team_mode="",
     pipeline = {
         **base,
         "aparells": {"mode": "seleccionar", "ids": app_ids},
+        "input_source": _extract_tie_input_source(tie, fallback_pipeline=base),
         "camps_per_aparell": camps_map,
         "agregacio_camps_per_aparell": agg_map,
         "agregacio_camps": normalize_aggregation(tie.get("agregacio_camps"), fallback=base.get("agregacio_camps", "sum")),
@@ -126,6 +161,7 @@ def build_tie_pipeline_criterion(raw_tie, *, idx=0, tipus="individual", team_mod
 
     tie = raw_tie if isinstance(raw_tie, dict) else {}
     ordre = "asc" if str(tie.get("ordre") or "desc").strip().lower() == "asc" else "desc"
+    input_source = _extract_tie_input_source(tie, fallback_pipeline=fallback_pipeline)
     if isinstance(tie.get("pipeline"), dict):
         raw_pipeline = strip_unsupported_per_exercise_field_pipeline_keys(tie.get("pipeline"))
     else:
@@ -137,6 +173,7 @@ def build_tie_pipeline_criterion(raw_tie, *, idx=0, tipus="individual", team_mod
         )
     pipeline = normalize_scoring_pipeline(raw_pipeline, tipus=tipus, team_mode=team_mode, strict=False)
     pipeline["ordre"] = ordre
+    pipeline["input_source"] = input_source
     item_id = str(tie.get("id") or f"tie_{idx + 1}").strip() or f"tie_{idx + 1}"
     nom = str(tie.get("nom") or "").strip()
     return {
@@ -149,6 +186,10 @@ def build_tie_pipeline_criterion(raw_tie, *, idx=0, tipus="individual", team_mod
 
 
 __all__ = [
+    "ALLOWED_TIE_INPUT_SOURCE_MODES",
+    "TIE_INPUT_SOURCE_MAIN_SELECTED_CONTRIBUTORS",
+    "TIE_INPUT_SOURCE_RAW_EXERCISES",
     "build_tie_pipeline_criterion",
+    "normalize_tie_input_source",
     "strip_unsupported_per_exercise_field_pipeline_keys",
 ]

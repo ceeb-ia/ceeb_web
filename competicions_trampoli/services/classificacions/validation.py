@@ -10,6 +10,7 @@ from .classificacio_templates import (
     normalize_particions_schema,
     split_particio_custom_values,
 )
+from .ties.pipeline_builder import ALLOWED_TIE_INPUT_SOURCE_MODES, normalize_tie_input_source
 from .ties.validation import materialize_desempat_for_validation, validate_team_pool_tie_contract
 from .pipeline_runtime import build_main_scoring_pipeline_from_schema
 from .pipeline_validation import validate_scoring_pipeline_shape
@@ -1349,6 +1350,23 @@ def _validate_camps_per_aparell(competicio, schema: dict):
     return errors
 
 
+def _validate_tie_pipeline_input_source(raw_pipeline, *, prefix):
+    if not isinstance(raw_pipeline, dict):
+        return []
+    raw_input_source = raw_pipeline.get("input_source")
+    if raw_input_source is None:
+        return []
+    if not isinstance(raw_input_source, dict):
+        return [f"{prefix}.input_source ha de ser un objecte."]
+    mode = str(raw_input_source.get("mode") or "").strip().lower()
+    if mode not in ALLOWED_TIE_INPUT_SOURCE_MODES:
+        return [f"{prefix}.input_source.mode invalid: {raw_input_source.get('mode')}"]
+    normalized = normalize_tie_input_source(raw_input_source)
+    if normalized.get("mode") not in ALLOWED_TIE_INPUT_SOURCE_MODES:
+        return [f"{prefix}.input_source.mode invalid: {raw_input_source.get('mode')}"]
+    return []
+
+
 def _raw_map_value_for_app(raw_map, app_id):
     if not isinstance(raw_map, dict):
         return None
@@ -2269,6 +2287,7 @@ def validate_schema_for_competicio_detailed(competicio, schema_local, tipus="ind
         raw_pipeline = tie.get("pipeline")
         if raw_pipeline is None:
             continue
+        pipeline_for_shape = raw_pipeline
         if isinstance(raw_pipeline, dict):
             for key in (
                 "camps_mode_per_aparell",
@@ -2277,7 +2296,15 @@ def validate_schema_for_competicio_detailed(competicio, schema_local, tipus="ind
             ):
                 if key in raw_pipeline:
                     errors.append(f"desempat[{idx}].pipeline.{key} no esta permes.")
-        errors.extend(validate_scoring_pipeline_shape(raw_pipeline, prefix=f"desempat[{idx}].pipeline"))
+            errors.extend(
+                _validate_tie_pipeline_input_source(
+                    raw_pipeline,
+                    prefix=f"desempat[{idx}].pipeline",
+                )
+            )
+            pipeline_for_shape = dict(raw_pipeline)
+            pipeline_for_shape.pop("input_source", None)
+        errors.extend(validate_scoring_pipeline_shape(pipeline_for_shape, prefix=f"desempat[{idx}].pipeline"))
         if isinstance(raw_pipeline, dict):
             if not allow_pipeline_participants:
                 if raw_pipeline.get("participants") not in (None, {}) or str(raw_pipeline.get("agregacio_participants") or "").strip():

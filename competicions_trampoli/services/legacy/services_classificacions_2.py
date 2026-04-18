@@ -23,6 +23,7 @@ from ..teams.equip_contexts import (
 )
 from ...models.competicio import CompeticioAparell
 from ...models.scoring import ScoreEntry, TeamScoreEntry
+from ..classificacions.provenance import clone_row, resolve_main_selected_contributors
 from ..classificacions.pipeline_runtime import compute_metric_from_pipeline, materialize_desempat_item
 from ..scoring.team_scoring import is_team_context_app, member_runtime_code
 
@@ -2786,7 +2787,60 @@ def compute_classificacio(competicio, cfg_obj):
         item = dict(row or {})
         item["value"] = _to_float(value)
         item["by_camp"] = dict((row or {}).get("by_camp") or {})
+        raw_sources = (row or {}).get("source_rows")
+        if isinstance(raw_sources, list) and raw_sources:
+            item["source_rows"] = [
+                {
+                    "idx": int((src or {}).get("idx", 0) or 0),
+                    "app_id": int((src or {}).get("app_id", 0) or 0),
+                    "app_order": int((src or {}).get("app_order", 0) or 0),
+                    "exercici": int((src or {}).get("exercici", 1) or 1),
+                    "inscripcio_id": _normalize_positive_int((src or {}).get("inscripcio_id")),
+                    "equip_id": _normalize_positive_int((src or {}).get("equip_id")),
+                    "value": _to_float((src or {}).get("value")),
+                    "by_camp": dict((src or {}).get("by_camp") or {}),
+                }
+                for src in raw_sources
+                if isinstance(src, dict)
+            ]
+        elif isinstance(row, dict):
+            item["source_rows"] = [
+                {
+                    "idx": int(row.get("idx", 0) or 0),
+                    "app_id": int(row.get("app_id", 0) or 0),
+                    "app_order": int(row.get("app_order", 0) or 0),
+                    "exercici": int(row.get("exercici", 1) or 1),
+                    "inscripcio_id": _normalize_positive_int(row.get("inscripcio_id")),
+                    "equip_id": _normalize_positive_int(row.get("equip_id")),
+                    "value": _to_float(row.get("value")),
+                    "by_camp": dict(row.get("by_camp") or {}),
+                }
+            ]
         return item
+
+    def _merge_source_rows(rows):
+        merged = []
+        seen = set()
+        for row in (rows or []):
+            if not isinstance(row, dict):
+                continue
+            source_rows = row.get("source_rows")
+            if not isinstance(source_rows, list) or not source_rows:
+                source_rows = [_copy_ex_row_with_value(row, row.get("value"))]
+            for src in source_rows:
+                if not isinstance(src, dict):
+                    continue
+                key = (
+                    _normalize_positive_int(src.get("inscripcio_id")),
+                    _normalize_positive_int(src.get("equip_id")),
+                    _normalize_positive_int(src.get("app_id")),
+                    _normalize_positive_int(src.get("exercici")),
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                merged.append(_copy_ex_row_with_value(src, src.get("value")))
+        return merged
 
     def _build_candidate_rows_from_source_rows(rows_ex, app_id: int, *, participant_key="inscripcio_id"):
         base_rows = [
@@ -2838,6 +2892,7 @@ def compute_classificacio(competicio, cfg_obj):
         candidate_row["by_camp"] = by_camp
         candidate_row["candidate_source_mode"] = source_mode
         candidate_row["candidate_source_count"] = len(picked_rows)
+        candidate_row["source_rows"] = _merge_source_rows(picked_rows)
         return [candidate_row]
 
     selected_rows_agg_cache = {}
@@ -3474,6 +3529,134 @@ def compute_classificacio(competicio, cfg_obj):
 
         main_selected_rows_for_group_cache[team_cache_key] = dict(picked_by_app)
         return main_selected_rows_for_group_cache[team_cache_key]
+
+    def _contributors_by_app_from_selected_rows(selected_rows_by_app):
+        return {
+            int(app_id): [clone_row(row) for row in rows]
+            for app_id, rows in resolve_main_selected_contributors(selected_rows_by_app).items()
+        }
+
+    def _contributors_by_member_from_selected_rows(selected_rows_by_app):
+        contributors = defaultdict(lambda: defaultdict(list))
+        seen = set()
+        for app_id, rows in (selected_rows_by_app or {}).items():
+            try:
+                app_id_int = int(app_id)
+            except Exception:
+                continue
+            for src in _merge_source_rows(rows):
+                member_id = _normalize_positive_int(src.get("inscripcio_id"))
+                if member_id is None:
+                    continue
+                key = (
+                    member_id,
+                    app_id_int,
+                    _normalize_positive_int(src.get("exercici")),
+                    _normalize_positive_int(src.get("equip_id")),
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                contributors[member_id][app_id_int].append(_copy_ex_row_with_value(src, src.get("value")))
+        return {member_id: dict(rows_by_app) for member_id, rows_by_app in contributors.items()}
+
+    def _pick_participant_member_ids(member_values, mode: str, n: int):
+        rows = []
+        for idx, item in enumerate(member_values or []):
+            if not isinstance(item, (list, tuple)) or len(item) < 2:
+                continue
+            member_id = _normalize_positive_int(item[0])
+            if member_id is None:
+                continue
+            rows.append((member_id, _to_float(item[1]), idx))
+        if not rows:
+            return []
+
+        normalized_mode = str(mode or "tots").strip().lower()
+        if normalized_mode in {"", "hereta", "tots"}:
+            return [member_id for member_id, _value, _idx in rows]
+
+        reverse = normalized_mode.startswith("millor_")
+        if normalized_mode.endswith("_1"):
+            limit = 1
+        elif normalized_mode.endswith("_n"):
+            try:
+                limit = max(1, int(n or 1))
+            except Exception:
+                limit = 1
+        else:
+            limit = len(rows)
+
+        ordered = sorted(rows, key=lambda item: (item[1], -item[2]) if reverse else (item[1], item[2]), reverse=reverse)
+        return [member_id for member_id, _value, _idx in ordered[:limit]]
+
+    def _get_main_selected_contributors_for_individual(ins_id: int):
+        return _contributors_by_app_from_selected_rows(_get_selected_rows_agg_for_ins(ins_id))
+
+    def _get_main_selected_contributors_for_native_team(equip_id: int):
+        return _contributors_by_app_from_selected_rows(_get_main_selected_rows_agg_for_team(equip_id))
+
+    def _get_main_selected_contributors_for_group(team_cache_key: str, member_ids):
+        mids = _dedupe_int_ids_preserve_order(member_ids or [])
+        if not mids:
+            return {}
+
+        if exercise_selection_scope == EXERCISE_SELECTION_SCOPE_TEAM_POOL:
+            selected_rows_by_app = _get_main_selected_rows_for_group(team_cache_key, mids)
+            return _contributors_by_member_from_selected_rows(selected_rows_by_app)
+
+        selected_members_by_app = {}
+        for ca in aparells:
+            app_id = int(ca.id)
+            member_values = []
+            for member_id in mids:
+                member_rows = (_get_selected_rows_agg_for_ins(member_id) or {}).get(app_id, [])
+                if not member_rows:
+                    continue
+                member_score = _apply_simple_agg(
+                    [_to_float(row.get("value")) for row in member_rows],
+                    resolve_agregacio_exercicis_for_app(app_id),
+                )
+                member_values.append((member_id, member_score))
+
+            if allow_main_participant_selection_step:
+                participants_cfg, _agg_participants = resolve_participants_for_app(app_id)
+                selected_members_by_app[app_id] = set(
+                    _pick_participant_member_ids(
+                        member_values,
+                        participants_cfg.get("mode"),
+                        int(participants_cfg.get("n") or 1),
+                    )
+                )
+            else:
+                selected_members_by_app[app_id] = {member_id for member_id, _score in member_values}
+
+        contributors = defaultdict(lambda: defaultdict(list))
+        seen = set()
+        for member_id in mids:
+            selected_rows_by_app = _get_selected_rows_agg_for_ins(member_id) or {}
+            for app_id, rows in selected_rows_by_app.items():
+                try:
+                    app_id_int = int(app_id)
+                except Exception:
+                    continue
+                if member_id not in selected_members_by_app.get(app_id_int, set()):
+                    continue
+                for src in _merge_source_rows(rows):
+                    key = (
+                        member_id,
+                        app_id_int,
+                        _normalize_positive_int(src.get("exercici")),
+                        _normalize_positive_int(src.get("equip_id")),
+                    )
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    item = _copy_ex_row_with_value(src, src.get("value"))
+                    item["inscripcio_id"] = member_id
+                    contributors[member_id][app_id_int].append(item)
+
+        return {member_id: dict(rows_by_app) for member_id, rows_by_app in contributors.items()}
 
     def _get_selected_rows_for_derived_team_field(team_cache_key: str, member_ids, field_code: str):
         cache_key = (team_cache_key, str(field_code or ""))
@@ -4364,6 +4547,8 @@ def compute_classificacio(competicio, cfg_obj):
             "pick_exercicis_rows": _pick_exercicis_rows,
             "pick_exercicis_tuples": _pick_exercicis_tuples,
             "pick_participants": _pick_participants,
+            "get_main_selected_contributors_for_individual": _get_main_selected_contributors_for_individual,
+            "get_main_selected_contributors_for_native_team": _get_main_selected_contributors_for_native_team,
         }
 
         if tipus == "equips" and team_mode != "native_team":
@@ -4373,6 +4558,13 @@ def compute_classificacio(competicio, cfg_obj):
                 return _get_main_selected_rows_for_group(cache_key, mids)
 
             ctx["get_main_selected_rows_for_group"] = _selected_rows_for_group
+
+            def _selected_contributors_for_group(member_ids):
+                mids = _dedupe_int_ids_preserve_order(member_ids or [])
+                cache_key = _derived_team_cache_key(None, mids)
+                return _get_main_selected_contributors_for_group(cache_key, mids)
+
+            ctx["get_main_selected_contributors_for_group"] = _selected_contributors_for_group
 
         pipeline_runtime_ctx_cache["ctx"] = ctx
         return ctx

@@ -446,6 +446,85 @@ class ClassificacioBuilderHydrationTests(_BaseTrampoliDataMixin, TestCase):
         )
         self.assertEqual(builder_ui.get("participants_ui"), {"mode": "millor_n", "n": 2})
 
+    def test_prepare_schema_for_builder_hydration_preserves_compact_saved_tie_pipeline(self):
+        schema = self._builder_schema(context_code="ctx-finals", team_mode="derived_from_individual")
+        schema["puntuacio"]["aparells"] = {"mode": "seleccionar", "ids": [self.comp_ind_app.id]}
+        schema["puntuacio"]["camps_per_aparell"] = {str(self.comp_ind_app.id): ["tot"]}
+        schema["puntuacio"]["candidate_source_mode"] = "participant_aggregate"
+        schema["puntuacio"]["candidate_source_cfg"] = {
+            "mode": "tots",
+            "agregacio_exercicis": "sum",
+        }
+        schema["puntuacio"]["candidate_source_per_aparell"] = {
+            str(self.comp_ind_app.id): {
+                "mode": "participant_aggregate",
+                "cfg": {
+                    "mode": "tots",
+                    "agregacio_exercicis": "sum",
+                },
+            },
+        }
+        schema["puntuacio"]["exercicis"] = {"mode": "tots"}
+        schema["puntuacio"]["exercise_selection_scope"] = "per_member"
+        schema["puntuacio"]["mode_seleccio_exercicis"] = "per_aparell_override"
+        schema["puntuacio"]["exercicis_per_aparell"] = {
+            str(self.comp_ind_app.id): {"mode": "ultim"},
+        }
+        schema["puntuacio"]["agregacio_exercicis"] = "sum"
+        schema["puntuacio"]["agregacio_exercicis_per_aparell"] = {str(self.comp_ind_app.id): "sum"}
+        schema["desempat"] = [
+            {
+                "id": "tie_compact_saved_pipeline",
+                "nom": "Desempat compacte",
+                "ordre": "desc",
+                "pipeline_version": 1,
+                "pipeline": {
+                    "aparells": {"mode": "seleccionar", "ids": [self.comp_ind_app.id]},
+                    "camps_per_aparell": {str(self.comp_ind_app.id): ["tot"]},
+                    "agregacio_camps_per_aparell": {str(self.comp_ind_app.id): "sum"},
+                    "agregacio_camps": "sum",
+                    "candidate_source_mode": "participant_aggregate",
+                    "candidate_source_cfg": {
+                        "mode": "tots",
+                        "agregacio_exercicis": "sum",
+                    },
+                    "candidate_source_per_aparell": {
+                        str(self.comp_ind_app.id): {
+                            "mode": "participant_aggregate",
+                            "cfg": {
+                                "mode": "tots",
+                                "agregacio_exercicis": "sum",
+                            },
+                        },
+                    },
+                    "exercicis": {"mode": "tots"},
+                    "mode_seleccio_exercicis": "per_aparell_override",
+                    "exercicis_per_aparell": {
+                        str(self.comp_ind_app.id): {"mode": "ultim"},
+                    },
+                    "agregacio_exercicis": "sum",
+                    "agregacio_exercicis_per_aparell": {str(self.comp_ind_app.id): "sum"},
+                    "agregacio_aparells": "sum",
+                    "mode_resultat_aparells": "score",
+                    "ordre": "desc",
+                    "exercise_selection_scope": "per_member",
+                    "participants": {"mode": "tots"},
+                    "agregacio_participants": "sum",
+                    "input_source": {"mode": "main_selected_contributors"},
+                },
+            }
+        ]
+
+        original_pipeline = json.loads(json.dumps(schema["desempat"][0]["pipeline"]))
+        hydrated = prepare_schema_for_builder_hydration(self.comp, schema, tipus="equips")
+        tie = (hydrated.get("desempat") or [])[0] or {}
+        builder_ui = tie.get("_builder_ui") or {}
+
+        self.assertEqual(tie.get("pipeline"), original_pipeline)
+        self.assertEqual(builder_ui.get("mode_seleccio_exercicis_ui"), "hereta")
+        self.assertEqual(builder_ui.get("scope_exercicis_ui"), {"mode": "hereta"})
+        self.assertEqual(builder_ui.get("participants_ui"), {"mode": "tots"})
+
     def test_prepare_schema_for_builder_hydration_builder_ui_excludes_derived_fields_for_native_team(self):
         schema = self._builder_schema(context_code="ctx-finals", team_mode="native_team")
         schema["puntuacio"]["aparells"] = {"mode": "seleccionar", "ids": [self.comp_team_app_finals.id]}

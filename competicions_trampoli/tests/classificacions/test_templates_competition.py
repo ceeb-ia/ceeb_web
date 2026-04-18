@@ -428,6 +428,57 @@ class ClassificacioTemplateFlowTests(_BaseTrampoliDataMixin, TestCase):
             {str(self.target_app.id): {"1": "sum"}},
         )
 
+    def test_template_schema_helpers_roundtrip_tie_pipeline_input_source(self):
+        schema = json.loads(json.dumps(self.cfg_source.schema or {}))
+        schema["puntuacio"]["aparells"] = {"mode": "seleccionar", "ids": [self.source_app.id]}
+        schema["puntuacio"]["camps_per_aparell"] = {str(self.source_app.id): ["E_total"]}
+        schema["desempat"] = [
+            {
+                "id": "tie_input_source",
+                "nom": "Desempat contributors",
+                "ordre": "desc",
+                "pipeline_version": 1,
+                "pipeline": {
+                    "aparells": {"mode": "seleccionar", "ids": [self.source_app.id]},
+                    "camps_per_aparell": {str(self.source_app.id): ["E_total"]},
+                    "agregacio_camps_per_aparell": {str(self.source_app.id): "sum"},
+                    "agregacio_camps": "sum",
+                    "candidate_source_mode": "raw_exercise",
+                    "candidate_source_cfg": {"mode": "tots", "agregacio_exercicis": "sum"},
+                    "candidate_source_per_aparell": {
+                        str(self.source_app.id): {"mode": "raw_exercise"}
+                    },
+                    "exercicis": {"mode": "tots"},
+                    "mode_seleccio_exercicis": "per_aparell_global",
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "mode_resultat_aparells": "score",
+                    "input_source": {"mode": "main_selected_contributors"},
+                    "ordre": "desc",
+                },
+            }
+        ]
+
+        schema_tpl, warnings = _schema_to_template_schema(self.comp_source, schema)
+        self.assertFalse(
+            [warning for warning in warnings if "assignment_source.mode='native'" not in warning]
+        )
+        tie_tpl = (schema_tpl.get("desempat") or [])[0] or {}
+        self.assertEqual(
+            (((tie_tpl.get("pipeline") or {}).get("input_source")) or {}).get("mode"),
+            "main_selected_contributors",
+        )
+
+        self._ensure_native_equip_context(self.comp_target)
+        schema_local, mapping_warnings, mapping = _template_schema_to_competicio_schema(self.comp_target, schema_tpl)
+        self.assertFalse(mapping_warnings)
+        self.assertEqual(mapping.get(self.app.codi), self.target_app.id)
+        tie_local = (schema_local.get("desempat") or [])[0] or {}
+        self.assertEqual(
+            (((tie_local.get("pipeline") or {}).get("input_source")) or {}).get("mode"),
+            "main_selected_contributors",
+        )
+
     def test_template_schema_helpers_roundtrip_member_selection_step(self):
         schema = json.loads(json.dumps(self.cfg_source.schema or {}))
         schema["equips"] = {
@@ -944,6 +995,15 @@ class ClassificacioTemplateFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertContains(res, "function buildTieCanonicalForSaveFromRow(")
         self.assertContains(res, "function readTieBuilderState(")
         self.assertContains(res, "function readTieCanonicalForSave(")
+        self.assertContains(res, 'data-k="input_source_mode"')
+        self.assertContains(res, "Entrada: contributors de la puntuacio")
+        self.assertContains(res, "Criteri i entrada")
+        self.assertContains(res, "Flux del conjunt")
+        self.assertContains(res, "Membres / pool final")
+        self.assertContains(res, "1. Conjunt inicial del desempat")
+        self.assertContains(res, "2. Valoracio dels exercicis")
+        self.assertContains(res, "3. Base i pretractament")
+        self.assertContains(res, "4. Seleccio del conjunt")
         self.assertContains(res, "function isMemberSelectionAggregationAvailable()")
         self.assertContains(res, "function _getPerAppParticipantsForUi(punt, appId)")
         self.assertContains(res, "function _copyPuntuacioParticipantsCfg(rawCfg)")

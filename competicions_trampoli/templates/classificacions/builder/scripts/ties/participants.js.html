@@ -7,22 +7,71 @@
     if (pAggSel) pAggSel.value = pAgg;
   }
 
+  function getTieParticipantsUxVariant(tr) {
+    const rawState = tr && tr.__tieBuilderState ? tr.__tieBuilderState : {};
+    const context = typeof resolveTieContext === "function"
+      ? resolveTieContext(rawState, { row: tr, tie: rawState, uiState: rawState._builder_ui || {} })
+      : {};
+    if (context && context.contractCode === "team_pool") return "team_pool";
+    if (context && context.isTeam && !context.isNativeTeam) return "per_member";
+    return "direct";
+  }
+
+  function refreshParticipantsUxCopy(tr) {
+    const titleEl = tr.querySelector('[data-k="participants_step_label"]');
+    const hintEl = tr.querySelector('[data-k="participants_step_hint"]');
+    const lockedNoteEl = tr.querySelector('[data-k="p_locked_note"]');
+    const variant = getTieParticipantsUxVariant(tr);
+    if (titleEl) {
+      titleEl.textContent = variant === "team_pool"
+        ? "5. Pool final"
+        : variant === "per_member"
+          ? "5. Seleccio i agregacio entre membres"
+          : "5. Tancament del conjunt";
+    }
+    if (hintEl) {
+      hintEl.textContent = variant === "team_pool"
+        ? "La bossa comuna ja ve delimitada; aqui nomes es conserva el pool final que es tornara a calcular."
+        : variant === "per_member"
+          ? "Aquest pas decideix quins membres acaben contribuint al valor final del desempat."
+          : "Aquest tipus no reescull membres: el desempat es tanca directament sobre el conjunt d'exercicis.";
+    }
+    if (lockedNoteEl) {
+      lockedNoteEl.textContent = variant === "team_pool"
+        ? "En pool d'equip no es reescullen participants."
+        : "En aquest context no hi ha seleccio entre membres.";
+    }
+  }
+
   function refreshParticipantsControls(tr) {
     const pModeSel = tr.querySelector('[data-k="p_mode"]');
     const pNEl = tr.querySelector('[data-k="p_n"]');
     const pAggSel = tr.querySelector('[data-k="p_agg"]');
     const pLockedNote = tr.querySelector('[data-k="p_locked_note"]');
+    const pInputsWrap = tr.querySelector('[data-k="participants_inputs_wrap"]');
+    const variant = getTieParticipantsUxVariant(tr);
+    refreshParticipantsUxCopy(tr);
     if (!pModeSel || !pNEl || !pAggSel) return;
     const fixedTeamPool = isTieExerciseSelectionLockedToMainPool(
       tr.querySelector('[data-k="ex_scope"]')?.value || EXERCISE_SELECTION_SCOPE_INHERIT
     );
     if (fixedTeamPool) {
+      if (pInputsWrap) pInputsWrap.style.display = "none";
       pModeSel.style.display = "none";
       pNEl.style.display = "none";
       pAggSel.style.display = "none";
       if (pLockedNote) pLockedNote.style.display = "";
       return;
     }
+    if (variant === "direct") {
+      if (pInputsWrap) pInputsWrap.style.display = "none";
+      pModeSel.style.display = "none";
+      pNEl.style.display = "none";
+      pAggSel.style.display = "none";
+      if (pLockedNote) pLockedNote.style.display = "";
+      return;
+    }
+    if (pInputsWrap) pInputsWrap.style.display = "";
     if (pLockedNote) pLockedNote.style.display = "none";
     pModeSel.style.display = "";
     pAggSel.style.display = "";

@@ -37,7 +37,8 @@
     const rawScope = builderUi.app_scope;
     if (typeof rawScope === "string") {
       const value = String(rawScope || "").trim().toLowerCase();
-      if (value === "hereta" || value === "tots") return value;
+      if (value === "hereta") return null;
+      if (value === "tots") return value;
       if (value.startsWith("app:")) {
         const appId = Number(value.split(":")[1]);
         if (Number.isFinite(appId) && appId > 0) return `app:${appId}`;
@@ -49,7 +50,7 @@
       const ids = sanitizeAppIds(rawScope.ids || []);
       if (mode === "tots") return "tots";
       if (mode === "seleccionar" && ids.length === 1) return `app:${ids[0]}`;
-      if (mode === "hereta") return "hereta";
+      if (mode === "hereta") return null;
     }
     return null;
   }
@@ -69,20 +70,24 @@
   function getTieBuilderUiExerciseSelectionScope(tie) {
     const builderUi = getTieBuilderUiBlock(tie);
     if (!Object.prototype.hasOwnProperty.call(builderUi, "exercise_selection_scope_ui")) return null;
-    return normalizeTieExerciseSelectionScope(builderUi.exercise_selection_scope_ui || "hereta");
+    const value = normalizeTieExerciseSelectionScope(builderUi.exercise_selection_scope_ui || "hereta");
+    return value === EXERCISE_SELECTION_SCOPE_INHERIT ? null : value;
   }
 
   function getTieBuilderUiModeSeleccioExercicis(tie) {
     const builderUi = getTieBuilderUiBlock(tie);
     if (!Object.prototype.hasOwnProperty.call(builderUi, "mode_seleccio_exercicis_ui")) return null;
-    return normalizeTieModeSeleccioExercicis(builderUi.mode_seleccio_exercicis_ui || "hereta");
+    const value = normalizeTieModeSeleccioExercicis(builderUi.mode_seleccio_exercicis_ui || "hereta");
+    return value === "hereta" ? null : value;
   }
 
   function getTieBuilderUiScopeExercicis(tie) {
     const builderUi = getTieBuilderUiBlock(tie);
     const rawScope = builderUi.scope_exercicis_ui;
     if (!rawScope || typeof rawScope !== "object" || Array.isArray(rawScope)) return null;
-    return cloneJsonValue(rawScope, {});
+    const scope = cloneJsonValue(rawScope, {});
+    const mode = String(scope.mode || "hereta").trim().toLowerCase();
+    return mode === "hereta" ? null : scope;
   }
 
   function getTieBuilderUiExercicisPerAparell(tie) {
@@ -107,6 +112,12 @@
     const rawParticipants = builderUi.participants_ui;
     if (!rawParticipants || typeof rawParticipants !== "object" || Array.isArray(rawParticipants)) return null;
     return cloneJsonValue(rawParticipants, {});
+  }
+
+  function getTieBuilderUiInputSourceMode(tie) {
+    const builderUi = getTieBuilderUiBlock(tie);
+    if (!Object.prototype.hasOwnProperty.call(builderUi, "input_source_mode_ui")) return null;
+    return normalizeTieInputSourceMode(builderUi.input_source_mode_ui || "raw_exercises");
   }
 
   function getTieBuilderUiSummarySeed(tie) {
@@ -180,42 +191,131 @@
     return "hereta";
   }
 
+  function getTieVisibleInputSourceMode(tie) {
+    const builderUiMode = getTieBuilderUiInputSourceMode(tie);
+    if (builderUiMode) return builderUiMode;
+    const pipeline = tie && typeof tie.pipeline === "object" && !Array.isArray(tie.pipeline) ? tie.pipeline : {};
+    const inputSource = pipeline.input_source && typeof pipeline.input_source === "object" && !Array.isArray(pipeline.input_source)
+      ? pipeline.input_source
+      : {};
+    return normalizeTieInputSourceMode(inputSource.mode || "raw_exercises");
+  }
+
   function getTieVisibleSummary(tie) {
     const summarySeed = getTieBuilderUiSummarySeed(tie);
     if (summarySeed) return summarySeed;
     const parts = [];
+    const inputSourceMode = getTieVisibleInputSourceMode(tie);
+    if (inputSourceMode === "main_selected_contributors") {
+      parts.push("Entrada: contributors de la puntuacio");
+    } else {
+      parts.push("Entrada: tots els exercicis disponibles");
+    }
     const appScope = getTieVisibleAppScopeValue(tie);
     if (appScope === "tots") {
-      parts.push("Tots els aparells");
+      parts.push("Aparells: tots");
     } else if (appScope.startsWith("app:")) {
       const appId = Number(appScope.split(":")[1]);
-      parts.push(formatAppRefLabel(appId) || `Aparell ${appId}`);
+      parts.push(`Aparells: ${formatAppRefLabel(appId) || `Aparell ${appId}`}`);
     } else {
       const ids = getTiePipelineVisibleAppIds(tie);
-      if (ids.length) parts.push(ids.map(id => formatAppRefLabel(id) || `Aparell ${id}`).join(", "));
+      if (ids.length) parts.push(`Aparells: ${ids.map(id => formatAppRefLabel(id) || `Aparell ${id}`).join(", ")}`);
     }
     const camps = getTieVisibleCamps(tie);
-    if (camps.length) parts.push(`camps ${camps.join(", ")}`);
+    if (camps.length) parts.push(`Camps: ${camps.join(", ")}`);
     const agg = getTieVisibleAggCamps(tie);
-    if (agg && agg !== "hereta") parts.push(`agregacio ${agg}`);
-    const participants = getTieVisibleParticipants(tie);
-    if (participants.mode && participants.mode !== "tots") {
-      parts.push(`participants ${participants.mode}${participants.n ? ` ${participants.n}` : ""}`);
-    }
+    if (agg && agg !== "hereta") parts.push(`Agregacio camps: ${agg}`);
     const exScope = getTieBuilderUiExerciseSelectionScope(tie) || normalizeTieExerciseSelectionScope((tie || {}).exercise_selection_scope || "hereta");
     const exSelMode = getTieBuilderUiModeSeleccioExercicis(tie) || normalizeTieModeSeleccioExercicis((tie || {}).mode_seleccio_exercicis || "hereta");
     const ex = getTieBuilderUiScopeExercicis(tie) || (((tie || {}).scope || {}).exercicis || {});
     if (exScope && exScope !== EXERCISE_SELECTION_SCOPE_INHERIT) {
-      parts.push(`scope ${exScope}`);
+      parts.push(`Base: ${exScope}`);
     }
     if (exSelMode && exSelMode !== "hereta") {
-      parts.push(`seleccio ${exSelMode}`);
+      parts.push(`Seleccio: ${exSelMode}`);
     }
     if (ex && typeof ex === "object") {
       const mode = String(ex.mode || "hereta").toLowerCase().trim();
-      if (mode && mode !== "hereta") parts.push(`ex ${mode}`);
+      if (mode && mode !== "hereta") parts.push(`Exercicis: ${mode}`);
+    }
+    const participants = getTieVisibleParticipants(tie);
+    if (participants.mode && participants.mode !== "tots") {
+      parts.push(`Membres: ${participants.mode}${participants.n ? ` ${participants.n}` : ""}`);
     }
     return parts.join(" | ");
+  }
+
+  function describeTieFlowVariant(context) {
+    const ctx = (context && typeof context === "object") ? context : {};
+    if (ctx.contractCode === "team_pool") {
+      return {
+        title: "Pool d'equip",
+        hint: "Treballa sobre una bossa comuna d'exercicis contributors i després agrega el resultat del pool.",
+        exerciseScopeLabel: "3. Base del conjunt",
+        exerciseScopeHint: "Defineix si el tie tracta el conjunt com a pool d'equip o hereta la base de puntuació.",
+        selectionLabel: "4. Selecció del conjunt",
+      };
+    }
+    if (ctx.contractCode === "derived_team") {
+      return {
+        title: "Per membre",
+        hint: "Treballa per membre abans de combinar només els membres que compten per aparell.",
+        exerciseScopeLabel: "3. Base del conjunt",
+        exerciseScopeHint: "Defineix si el tie conserva una base per membre o heretada abans de seleccionar exercicis.",
+        selectionLabel: "4. Selecció d'exercicis",
+      };
+    }
+    if (ctx.contractCode === "native_team") {
+      return {
+        title: "Equip natiu",
+        hint: "Flux directe d'equip: valora, selecciona exercicis i agrega per aparell sense capa entre membres.",
+        exerciseScopeLabel: "3. Flux de l'equip",
+        exerciseScopeHint: "L'equip és el subjecte directe del tie; no hi ha una selecció posterior entre membres.",
+        selectionLabel: "4. Selecció d'exercicis",
+      };
+    }
+    return {
+      title: "Individual",
+      hint: "Flux directe: valora exercicis, selecciona el conjunt final i agrega per aparell.",
+      exerciseScopeLabel: "3. Flux del conjunt",
+      exerciseScopeHint: "La selecció i l'agregació es fan directament sobre els exercicis d'entrada del tie.",
+      selectionLabel: "4. Selecció d'exercicis",
+    };
+  }
+
+  function getTieParticipantsBlockMeta(context) {
+    const ctx = (context && typeof context === "object") ? context : {};
+    if (ctx.contractCode === "team_pool") {
+      return {
+        label: "5. Pool final",
+        hint: "En pool d'equip no es tornen a escollir membres: es reutilitza el conjunt final del pool.",
+      };
+    }
+    return {
+      label: "5. Membres",
+      hint: "Combina els membres que compten després d'haver valorat i seleccionat els seus exercicis.",
+    };
+  }
+
+  function getTieUxVariant(source, options) {
+    const context = tieResolveContext(source, options || {});
+    if (context && context.contractCode === "team_pool") return "team_pool";
+    if (context && context.isTeam && !context.isNativeTeam) return "per_member";
+    return "direct";
+  }
+
+  function buildTieCampBlockHTML(appIds, selectedCamps, selectedAgg) {
+    return `
+      <div class="small text-muted mb-1">2. Valoracio dels exercicis</div>
+      <div class="small text-muted mb-1" data-k="camp_hint">El tie valora els exercicis amb camps comuns per aparell.</div>
+      <div data-k="camp_box">
+        ${buildCampSelectHTMLForApps(appIds, selectedCamps, selectedAgg)}
+      </div>
+    `;
+  }
+
+  function buildTieCampCellHTML(appIds, selectedCamps, selectedAgg, _variant) {
+    return buildTieCampBlockHTML(appIds, selectedCamps, selectedAgg);
   }
 
   function readTieCampsFromRow(tr) {
@@ -264,6 +364,16 @@
     if (Object.prototype.hasOwnProperty.call(builderUi, "exercise_selection_scope_ui")) {
       seed.exercise_selection_scope = builderUi.exercise_selection_scope_ui;
     }
+    if (Object.prototype.hasOwnProperty.call(builderUi, "input_source_mode_ui")) {
+      seed.pipeline = seed.pipeline && typeof seed.pipeline === "object" && !Array.isArray(seed.pipeline)
+        ? cloneJsonValue(seed.pipeline, {})
+        : {};
+      if (normalizeTieInputSourceMode(builderUi.input_source_mode_ui) === "main_selected_contributors") {
+        seed.pipeline.input_source = { mode: "main_selected_contributors" };
+      } else {
+        delete seed.pipeline.input_source;
+      }
+    }
     if (Object.prototype.hasOwnProperty.call(builderUi, "exercicis_per_aparell_ui")) {
       seed.exercicis_per_aparell = cloneJsonValue(builderUi.exercicis_per_aparell_ui, {});
     }
@@ -279,8 +389,10 @@
     const campCfg = readTieCampsFromRow(tr);
     const appScopeValue = String(tr.querySelector('[data-k="app_scope"]')?.value || "hereta").trim();
     const exScope = normalizeTieExerciseSelectionScope(tr.querySelector('[data-k="ex_scope"]')?.value || "hereta");
+    const inputSourceMode = normalizeTieInputSourceMode(tr.querySelector('[data-k="input_source_mode"]')?.value || "raw_exercises");
     const fixedTeamPool = isTieExerciseSelectionLockedToMainPool(exScope);
     const exSelMode = normalizeTieModeSeleccioExercicis(tr.querySelector('[data-k="ex_sel_mode"]')?.value || "hereta");
+    const usesPerAppOverride = !fixedTeamPool && exSelMode === "per_aparell_override";
     const exMode = String(tr.querySelector('[data-k="ex_mode"]')?.value || "hereta").toLowerCase().trim();
     const exBestN = Math.max(1, Number(tr.querySelector('[data-k="ex_best_n"]')?.value || 1));
     const exIndex = Math.max(1, Number(tr.querySelector('[data-k="ex_index"]')?.value || 1));
@@ -292,6 +404,7 @@
       app_scope: { mode: "hereta" },
       camps: campCfg.camps,
       agregacio_camps: campCfg.agregacio_camps,
+      input_source_mode_ui: inputSourceMode,
       mode_seleccio_exercicis_ui: exSelMode,
       scope_exercicis_ui: { mode: "hereta" },
     };
@@ -309,7 +422,7 @@
       builderUi.exercise_selection_scope_ui = exScope;
     }
 
-    if (!fixedTeamPool) {
+    if (!fixedTeamPool && !usesPerAppOverride) {
       builderUi.scope_exercicis_ui = { mode: exMode };
       if (isBestNMode(exMode)) builderUi.scope_exercicis_ui.best_n = exBestN;
       if (exMode === "index") builderUi.scope_exercicis_ui.index = exIndex;
@@ -387,6 +500,7 @@
     const exScope = normalizeTieExerciseSelectionScope(tr.querySelector('[data-k="ex_scope"]')?.value || "hereta");
     const fixedTeamPool = isTieExerciseSelectionLockedToMainPool(exScope);
     const exSelMode = normalizeTieModeSeleccioExercicis(tr.querySelector('[data-k="ex_sel_mode"]')?.value || "hereta");
+    const usesPerAppOverride = !fixedTeamPool && exSelMode === "per_aparell_override";
     const exMode = tr.querySelector('[data-k="ex_mode"]').value; // hereta|tots|millor_1|millor_n|pitjor_1|pitjor_n|primer|ultim|index|llista
     const bestN = Number(tr.querySelector('[data-k="ex_best_n"]').value || 1);
     const exIndex = Number(tr.querySelector('[data-k="ex_index"]').value || 1);
@@ -394,6 +508,7 @@
     const exIds = parsePositiveIds(tr.querySelector('[data-k="ex_ids"]').value || "");
     const exPerApp = readTiePerAppExercicisFromRow(tr);
     const aggExPerApp = readTiePerAppAggExercicisFromRow(tr);
+    const inputSourceMode = normalizeTieInputSourceMode(tr.querySelector('[data-k="input_source_mode"]')?.value || "raw_exercises");
     const allowMaxPerParticipant = !isDerivedExerciseSelectionScopeAvailable() || getEffectiveTieExerciseSelectionScope(exScope) === EXERCISE_SELECTION_SCOPE_TEAM_POOL;
 
     const obj = {
@@ -401,6 +516,7 @@
       nom,
       camps: campCfg.camps,
       agregacio_camps: campCfg.agregacio_camps,
+      input_source_mode: inputSourceMode,
       ordre,
     };
     obj.scope = {
@@ -419,7 +535,7 @@
       obj.exercise_selection_scope = exScope;
     }
 
-    if (!fixedTeamPool) {
+    if (!fixedTeamPool && !usesPerAppOverride) {
       obj.scope.exercicis = { mode: exMode };
       if (exMode === "millor_n" || exMode === "pitjor_n") obj.scope.exercicis.best_n = bestN;
       if (exMode === "index") obj.scope.exercicis.index = exIndex;
@@ -427,8 +543,10 @@
         obj.scope.exercicis.max_per_participant = exMaxPP;
       }
       if (exMode === "llista") obj.scope.exercicis.ids = exIds;
+    }
+    if (!fixedTeamPool) {
       if (exSelMode !== "hereta") obj.mode_seleccio_exercicis = exSelMode;
-      if (exSelMode === "per_aparell_override") {
+      if (usesPerAppOverride) {
         obj.exercicis_per_aparell = exPerApp;
         obj.agregacio_exercicis_per_aparell = aggExPerApp;
         obj.agregacio_exercicis = buildLegacyAggFromPerAppMap(getTieTargetAppIds(tr), aggExPerApp, "sum");
@@ -533,6 +651,7 @@
       const pMode = pNorm.pMode;
       const pN = pNorm.pN;
       const pAgg = pNorm.pAgg;
+      const inputSourceMode = getTieVisibleInputSourceMode(rawTie);
       const tieNom = String((t && t.nom) || `Desempat ${idx + 1}`).trim();
       const tieSummaryText = getTieVisibleSummary(rawTie) || getTieVisibleSummary(t);
 
@@ -540,6 +659,7 @@
       const tieCamps = getTieVisibleCamps(rawTie);
       const tieAggCamps = getTieVisibleAggCamps(rawTie);
       const ordre = (t.ordre || "desc").toLowerCase();
+      const uxVariant = getTieUxVariant(rawTie);
 
       // options aparells single
       const appScopeOpts = buildTieAppScopeOptionsHTML(appScope);
@@ -547,25 +667,37 @@
 
       tr.innerHTML = `
         <td>
+          <div class="small text-muted mb-1">1. Conjunt inicial del desempat</div>
           <input class="form-control form-control-sm mb-1" data-k="tie_nom" type="text" value="${esc(tieNom)}" placeholder="Nom del criteri">
+          <select class="form-control form-control-sm mb-1" data-k="input_source_mode">
+            <option value="raw_exercises">Tots els exercicis disponibles</option>
+            <option value="main_selected_contributors">Nomes contributors de puntuacio</option>
+          </select>
+          <div class="small text-muted mb-1" data-k="input_source_hint"></div>
+          <div class="small text-muted mb-1" data-k="tie_flow_title"></div>
           <div class="small text-muted" data-k="tie_summary">${esc(tieSummaryText)}</div>
         </td>
 
         <td>
+          <div class="small text-muted mb-1">Abast del tie</div>
           <select class="form-control form-control-sm" data-k="app_scope">
             ${appScopeOpts}
           </select>
+          <div class="small text-muted mt-1">Hereta els aparells de puntuacio o centra el tie en un aparell concret.</div>
         </td>
 
         <td data-cell="camp"></td>
 
         <td>
           <div class="d-flex flex-column gap-1">
+            <div class="small text-muted" data-k="ex_scope_label" style="${showSelectionScope ? "" : "display:none;"}">${uxVariant === "team_pool" ? "3. Base del pool" : "3. Base i pretractament"}</div>
+            <div class="small text-muted" data-k="ex_scope_hint"></div>
             <select class="form-control form-control-sm" data-k="ex_scope" style="${showSelectionScope ? "" : "display:none;"}">
               <option value="hereta">Base: Mateixa que puntuació</option>
               <option value="per_member">Base: Per membre</option>
               <option value="team_pool">Base: Pool d'equip</option>
             </select>
+            <div class="small text-muted" data-k="ex_selection_label">4. Seleccio del conjunt</div>
             <select class="form-control form-control-sm" data-k="ex_sel_mode">
               <option value="hereta">Selecció ex: Mateixa que puntuació</option>
               <option value="per_aparell_global">Selecció ex: Per aparell (global)</option>
@@ -620,6 +752,9 @@
       const exScopeSel = tr.querySelector('[data-k="ex_scope"]');
       const exSelModeSel = tr.querySelector('[data-k="ex_sel_mode"]');
       const exModeSel = tr.querySelector('[data-k="ex_mode"]');
+      const exScopeLabel = tr.querySelector('[data-k="ex_scope_label"]');
+      const exScopeHint = tr.querySelector('[data-k="ex_scope_hint"]');
+      const exSelectionLabel = tr.querySelector('[data-k="ex_selection_label"]');
       const exBestNEl = tr.querySelector('[data-k="ex_best_n"]');
       const exIndexEl = tr.querySelector('[data-k="ex_index"]');
       const exMaxPPEl = tr.querySelector('[data-k="ex_max_pp"]');
@@ -629,6 +764,25 @@
       const ordSel = tr.querySelector('[data-k="ordre"]');
       const tieSummary = tr.querySelector('[data-k="tie_summary"]');
       const tieNomInput = tr.querySelector('[data-k="tie_nom"]');
+      const inputSourceSel = tr.querySelector('[data-k="input_source_mode"]');
+      const inputSourceHint = tr.querySelector('[data-k="input_source_hint"]');
+      const tieFlowTitle = tr.querySelector('[data-k="tie_flow_title"]');
+      const participantsStepLabel = tr.querySelector('[data-k="participants_step_label"]');
+      const participantsStepHint = tr.querySelector('[data-k="participants_step_hint"]');
+
+      function getCurrentTieContext() {
+        const currentState = buildTieBuilderStateFromRow(
+          tr,
+          includeParticipants,
+          selectedMainIds,
+          fallbackPuntuacio,
+        ) || tr.__tieBuilderState || rawTie || t;
+        return tieResolveContext(currentState, {
+          selectedMainIds,
+          fallbackPipeline: fallbackPuntuacio,
+          tie: currentState,
+        });
+      }
 
       function refreshTieBuilderState() {
         const next = buildTieBuilderStateFromRow(tr, includeParticipants, selectedMainIds, fallbackPuntuacio);
@@ -636,6 +790,17 @@
           tieSummary.textContent = getTieVisibleSummary(next || tr.__tieBuilderState || rawTie || t);
         }
         return next;
+      }
+
+      function refreshInputSourceUI() {
+        const mode = normalizeTieInputSourceMode(inputSourceSel?.value || "raw_exercises");
+        const context = getCurrentTieContext();
+        const flowMeta = describeTieFlowVariant(context);
+        if (tieFlowTitle) tieFlowTitle.textContent = `Flux: ${flowMeta.title}. ${flowMeta.hint}`;
+        if (!inputSourceHint) return;
+        inputSourceHint.textContent = mode === "main_selected_contributors"
+          ? "Parteix nomes dels exercicis originals que han contribuit a la puntuacio. Despres, el tie recalcula el seu propi flux."
+          : "Parteix de tots els exercicis disponibles dins del context del tie i recalcula el flux des de zero.";
       }
 
       ensureSelectOption(appScopeSel, appScope, value => {
@@ -656,6 +821,14 @@
       }
       ensureSelectOption(ordSel, ordre, value => `${value} (legacy)`);
       ordSel.value = ordre;
+      ensureSelectOption(
+        inputSourceSel,
+        inputSourceMode,
+        value => value === "main_selected_contributors"
+          ? "Nomes contributors de puntuacio"
+          : "Tots els exercicis disponibles"
+      );
+      inputSourceSel.value = inputSourceMode;
 
       ensureSelectOption(exScopeSel, exSelectionScope, value => `${value} (legacy)`);
       exScopeSel.value = exSelectionScope;
@@ -685,18 +858,46 @@
       function refreshAppUI() {
         // Quan canvia l'scope d'aparell, refresca el dropdown de camp
         const curr = readTieCampsFromRow(tr);
+        const context = getCurrentTieContext();
+        const currentVariant = context && context.contractCode === "team_pool"
+          ? "team_pool"
+          : (context && context.isTeam && !context.isNativeTeam ? "per_member" : "direct");
         const campCell = tr.querySelector('[data-cell="camp"]');
-        campCell.innerHTML = buildCampSelectHTMLForApps(getCurrentAppIds(), curr.camps, curr.agregacio_camps);
+        campCell.innerHTML = buildTieCampCellHTML(getCurrentAppIds(), curr.camps, curr.agregacio_camps, currentVariant);
         refreshTieBuilderState();
       }
 
       function refreshExUI() {
         collectVisibleTiePerAppOverrides(tr);
+        const context = getCurrentTieContext();
+        const flowMeta = describeTieFlowVariant(context);
+        const participantsMeta = getTieParticipantsBlockMeta(context);
         const m = exModeSel.value;
         const selectionScope = getEffectiveTieExerciseSelectionScope(exScopeSel?.value || EXERCISE_SELECTION_SCOPE_INHERIT);
         const fixedTeamPool = showSelectionScope && selectionScope === EXERCISE_SELECTION_SCOPE_TEAM_POOL;
         const modeSel = normalizeTieModeSeleccioExercicis(exSelModeSel.value);
         const isOverride = modeSel === "per_aparell_override";
+        const summaryLabel = describeExerciseMode(
+          m,
+          exBestNEl?.value,
+          exIndexEl?.value,
+          exIdsEl?.value,
+        );
+
+        if (exScopeLabel) {
+          exScopeLabel.style.display = showSelectionScope ? "" : "none";
+          exScopeLabel.textContent = flowMeta.exerciseScopeLabel;
+        }
+        if (exScopeHint) {
+          exScopeHint.style.display = showSelectionScope ? "" : "none";
+          exScopeHint.textContent = flowMeta.exerciseScopeHint;
+        }
+        if (exSelectionLabel) {
+          exSelectionLabel.textContent = flowMeta.selectionLabel;
+        }
+        if (participantsStepLabel) participantsStepLabel.textContent = participantsMeta.label;
+        if (participantsStepHint) participantsStepHint.textContent = participantsMeta.hint;
+
         exSelModeSel.style.display = fixedTeamPool ? "none" : "";
         exModeSel.style.display = (fixedTeamPool || isOverride) ? "none" : "";
         exBestNEl.style.display = (!fixedTeamPool && !isOverride && (m === "millor_n" || m === "pitjor_n")) ? "" : "none";
@@ -706,118 +907,52 @@
         renderTiePerAppExercicisUI(tr);
 
         if (exSummary) {
-          if (showSelectionScope) {
-            if (fixedTeamPool) {
-              exSummary.textContent = "TR: mateix set d'exercicis que la puntuació; opcionalment filtrat per aparell.";
-            } else {
-              const summaryLabel = describeExerciseMode(
-                m,
-                exBestNEl?.value,
-                exIndexEl?.value,
-                exIdsEl?.value,
-              );
-              const maxTxt = Math.max(0, Number(exMaxPPEl?.value || 0));
-              exSummary.textContent = selectionScope === EXERCISE_SELECTION_SCOPE_TEAM_POOL
-              ? `TR: ${summaryLabel} de l'equip; ${maxTxt > 0 ? `màxim ${maxTxt} per membre` : "sense límit per membre"}`
-              : `TR: ${summaryLabel} per membre; després suma`;
-            }
-          } else {
-            exSummary.textContent = "";
-          }
-        }
-
-        if (fixedTeamPool) {
-          exHint.style.display = "";
-          exHint.textContent = "En pool d'equip, el desempat reutilitza exactament els exercicis seleccionats a la puntuació principal.";
-        } else if (isOverride) {
-          exHint.style.display = "";
-          exHint.textContent = "Override per aparell actiu (criteri global ocult).";
-        } else if (m === "millor_n") {
-          exHint.style.display = "";
-          exHint.textContent = "Tria els N millors exercicis.";
-        } else if (m === "pitjor_n") {
-          exHint.style.display = "";
-          exHint.textContent = "Tria els N pitjors exercicis.";
-        } else if (m === "pitjor_1") {
-          exHint.style.display = "";
-          exHint.textContent = "Agafa el pitjor exercici existent.";
-        } else if (m === "primer") {
-          exHint.style.display = "";
-          exHint.textContent = "Agafa el primer exercici existent.";
-        } else if (m === "ultim") {
-          exHint.style.display = "";
-          exHint.textContent = "Agafa l'últim exercici existent.";
-        } else if (m === "index") {
-          exHint.style.display = "";
-          exHint.textContent = "Fa servir només l'exercici # (1..N).";
-        } else if (m === "llista") {
-          exHint.style.display = "";
-          exHint.textContent = "Llista d'índexs: 1,3,4.";
-        } else {
-          exHint.style.display = "none";
-          exHint.textContent = "";
-        }
-
-        if (!fixedTeamPool && !isOverride && exHint.style.display !== "none") {
-          if (modeSel === "per_aparell_override") exHint.textContent += " Override per aparell.";
-          else if (modeSel === "global_pool") exHint.textContent += " Aplicat al sac global.";
-          else exHint.textContent += " Aplicat per aparell.";
-        }
-        if (showSelectionScope && exHint.style.display !== "none" && !fixedTeamPool) {
-          exHint.textContent += selectionScope === EXERCISE_SELECTION_SCOPE_TEAM_POOL
-            ? " Calculat sobre el pool d'equip."
-            : " Calculat per membre i després sumat.";
-        }
-        if (showSelectionScope) {
           if (fixedTeamPool) {
-            if (exSummary) {
-              exSummary.textContent = "TR: mateix set d'exercicis que la puntuacio; opcionalment filtrat per aparell.";
-            }
-            exHint.style.display = "";
-            exHint.textContent = "En pool d'equip, el desempat reutilitza exactament els exercicis seleccionats a la puntuacio principal.";
-          } else if (exSummary) {
-            const summaryLabel = describeExerciseMode(
-              m,
-              exBestNEl?.value,
-              exIndexEl?.value,
-              exIdsEl?.value,
-            );
+            exSummary.textContent = `${flowMeta.selectionLabel}: reutilitza el conjunt final del pool de puntuacio.`;
+          } else {
             const maxTxt = Math.max(0, Number(exMaxPPEl?.value || 0));
-            exSummary.textContent = selectionScope === EXERCISE_SELECTION_SCOPE_TEAM_POOL
-              ? `TR: ${summaryLabel} de l'equip; ${maxTxt > 0 ? `maxim ${maxTxt} per membre` : "sense limit per membre"}`
-              : `TR: ${summaryLabel} per membre; despres suma`;
-            if (exHint.style.display !== "none") {
-              let hintBase = "";
-              if (isOverride) hintBase = "Override per aparell actiu (criteri global ocult).";
-              else if (m === "millor_n") hintBase = "Tria els N millors exercicis.";
-              else if (m === "pitjor_n") hintBase = "Tria els N pitjors exercicis.";
-              else if (m === "pitjor_1") hintBase = "Agafa el pitjor exercici existent.";
-              else if (m === "primer") hintBase = "Agafa el primer exercici existent.";
-              else if (m === "ultim") hintBase = "Agafa l'ultim exercici existent.";
-              else if (m === "index") hintBase = "Fa servir nomes l'exercici # (1..N).";
-              else if (m === "llista") hintBase = "Llista d'indexs: 1,3,4.";
-
-              if (!isOverride) {
-                if (modeSel === "per_aparell_override") hintBase += " Override per aparell.";
-                else if (modeSel === "global_pool") hintBase += " Aplicat al sac global.";
-                else if (hintBase) hintBase += " Aplicat per aparell.";
-              }
-
-              const finalScopeHint = selectionScope === EXERCISE_SELECTION_SCOPE_TEAM_POOL
-                ? "Calculat sobre el pool d'equip."
-                : "Calculat per membre i despres sumat.";
-              exHint.textContent = hintBase ? `${hintBase} ${finalScopeHint}` : finalScopeHint;
-            }
+            const maxSuffix = maxTxt > 0 ? ` Maxim ${maxTxt} per membre.` : "";
+            const scopeSuffix = context.contractCode === "derived_team"
+              ? " Calculat per membre abans de combinar membres."
+              : (context.contractCode === "team_pool" ? " Calculat sobre una bossa comuna d'equip." : "");
+            exSummary.textContent = `${flowMeta.selectionLabel}: ${summaryLabel}.${maxSuffix}${scopeSuffix}`;
           }
         }
+
+        let hintBase = "";
+        if (fixedTeamPool) hintBase = "En pool d'equip, el tie reutilitza el conjunt final del pool de puntuacio.";
+        else if (isOverride) hintBase = "Override per aparell actiu. El criteri global queda ocult mentre aquest mode esta actiu.";
+        else if (m === "millor_n") hintBase = "Tria els N millors exercicis.";
+        else if (m === "pitjor_n") hintBase = "Tria els N pitjors exercicis.";
+        else if (m === "pitjor_1") hintBase = "Agafa el pitjor exercici existent.";
+        else if (m === "primer") hintBase = "Agafa el primer exercici existent.";
+        else if (m === "ultim") hintBase = "Agafa l'ultim exercici existent.";
+        else if (m === "index") hintBase = "Fa servir nomes l'exercici # (1..N).";
+        else if (m === "llista") hintBase = "Llista d'indexs: 1,3,4.";
+
+        if (!fixedTeamPool && hintBase) {
+          if (modeSel === "per_aparell_override") hintBase += " Override per aparell.";
+          else if (modeSel === "global_pool") hintBase += " Aplicat al sac global.";
+          else hintBase += " Aplicat per aparell.";
+          if (context.contractCode === "derived_team") hintBase += " Despres es combinen nomes els membres que compten.";
+          else if (context.contractCode === "team_pool") hintBase += " El conjunt segueix una bossa comuna d'equip.";
+        }
+
+        if (exHint) {
+          exHint.style.display = hintBase ? "" : "none";
+          exHint.textContent = hintBase;
+        }
+
         refreshParticipantsControls(tr);
         refreshTieBuilderState();
       }
+
       // Render inicial camp + controls
       const campCell = tr.querySelector('[data-cell="camp"]');
-      campCell.innerHTML = buildCampSelectHTMLForApps(getCurrentAppIds(), tieCamps, tieAggCamps);
+      campCell.innerHTML = buildTieCampCellHTML(getCurrentAppIds(), tieCamps, tieAggCamps, uxVariant);
 
       refreshAppUI();
+      refreshInputSourceUI();
       refreshExUI();
       refreshParticipantsControls(tr);
 
@@ -836,6 +971,11 @@
       exMaxPPEl.addEventListener("input", () => { refreshTieBuilderState(); syncAdvancedFromUI(); });
       exIdsEl.addEventListener("input", () => { refreshTieBuilderState(); syncAdvancedFromUI(); });
       if (tieNomInput) tieNomInput.addEventListener("input", () => { refreshTieBuilderState(); syncAdvancedFromUI(); });
+      if (inputSourceSel) inputSourceSel.addEventListener("change", () => {
+        refreshInputSourceUI();
+        refreshTieBuilderState();
+        syncAdvancedFromUI();
+      });
       bindParticipantsListeners(tr, refreshTieBuilderState);
 
       tr.addEventListener("change", (e) => {

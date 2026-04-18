@@ -1,7 +1,7 @@
 from ..filters import normalize_team_mode
 from ..pipeline_runtime import build_main_scoring_pipeline_from_schema
 from .context import resolve_tie_context
-from .pipeline_builder import build_tie_pipeline_criterion
+from .pipeline_builder import build_tie_pipeline_criterion, normalize_tie_input_source
 from .registry import resolve_tie_contract
 
 
@@ -47,6 +47,9 @@ def serialize_tie_for_save(
         serialized_pipeline["exercise_selection_scope"] = raw_pipeline.get("exercise_selection_scope")
     else:
         serialized_pipeline.pop("exercise_selection_scope", None)
+    serialized_pipeline["input_source"] = normalize_tie_input_source(
+        raw_pipeline.get("input_source") if isinstance(raw_pipeline, dict) else None,
+    )
     serialized["pipeline"] = serialized_pipeline
     return serialized
 

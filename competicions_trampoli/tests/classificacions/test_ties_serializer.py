@@ -5,6 +5,10 @@ from ...services.classificacions.ties.context import (
     TIE_CONTRACT_NATIVE_TEAM,
     resolve_tie_context,
 )
+from ...services.classificacions.ties.pipeline_builder import (
+    TIE_INPUT_SOURCE_MAIN_SELECTED_CONTRIBUTORS,
+    TIE_INPUT_SOURCE_RAW_EXERCISES,
+)
 from ...services.classificacions.ties.builder_rehydration import project_tie_for_builder_rehydration
 from ...services.classificacions.ties.legacy_projection import project_tie_legacy_projection
 from ...services.classificacions.ties.registry import resolve_tie_contract
@@ -29,6 +33,7 @@ class TieSerializerSaveTests(SimpleTestCase):
         self.assertTrue(context.is_derived_team)
         self.assertFalse(context.is_native_team)
         self.assertTrue(context.is_team_pool_scope)
+        self.assertEqual(context.input_source_mode, TIE_INPUT_SOURCE_RAW_EXERCISES)
 
     def test_resolve_tie_context_detects_native_team_contract(self):
         tie = {
@@ -44,6 +49,19 @@ class TieSerializerSaveTests(SimpleTestCase):
         self.assertTrue(context.is_native_team)
         self.assertFalse(context.is_derived_team)
         self.assertFalse(context.is_team_pool_scope)
+        self.assertEqual(context.input_source_mode, TIE_INPUT_SOURCE_RAW_EXERCISES)
+
+    def test_resolve_tie_context_reads_input_source_mode_from_pipeline(self):
+        tie = {
+            "pipeline": {
+                "exercise_selection_scope": "per_member",
+                "input_source": {"mode": "main_selected_contributors"},
+            }
+        }
+
+        context = resolve_tie_context(tie, tipus="equips", team_mode="derived_from_individual")
+
+        self.assertEqual(context.input_source_mode, TIE_INPUT_SOURCE_MAIN_SELECTED_CONTRIBUTORS)
 
     def test_derived_team_serializer_strips_team_pool_forbidden_fields(self):
         raw_tie = {
@@ -121,7 +139,7 @@ class TieSerializerSaveTests(SimpleTestCase):
         self.assertEqual(serialized["nom"], "Desempat equip natiu")
         self.assertEqual(serialized["ordre"], "asc")
         self.assertEqual(serialized["pipeline_version"], 1)
-        self.assertEqual(pipeline["exercise_selection_scope"], "per_member")
+        self.assertNotIn("exercise_selection_scope", pipeline)
         self.assertEqual(pipeline["exercicis"], {"mode": "index", "index": 2})
         self.assertEqual(pipeline["mode_seleccio_exercicis"], "per_aparell_override")
         self.assertNotIn("participants", pipeline)
@@ -159,10 +177,42 @@ class TieSerializerSaveTests(SimpleTestCase):
         self.assertEqual(serialized["ordre"], "asc")
         self.assertEqual(serialized["pipeline_version"], 1)
         self.assertEqual(pipeline["exercise_selection_scope"], "per_member")
+        self.assertEqual(pipeline["input_source"], {"mode": TIE_INPUT_SOURCE_RAW_EXERCISES})
         self.assertEqual(pipeline["exercicis"], {"mode": "index", "index": 2})
         self.assertEqual(pipeline["mode_seleccio_exercicis"], "per_aparell_override")
         self.assertEqual(pipeline["exercicis_per_aparell"], {"161": {"mode": "millor_1"}})
         self.assertEqual(pipeline["agregacio_exercicis_per_aparell"], {"161": "sum"})
+
+    def test_serializer_keeps_explicit_input_source_mode(self):
+        raw_tie = {
+            "id": "tie_input_source",
+            "nom": "Desempat contributors",
+            "ordre": "desc",
+            "pipeline": {
+                "aparells": {"mode": "seleccionar", "ids": [161]},
+                "camps_per_aparell": {"161": ["TOTAL"]},
+                "agregacio_camps_per_aparell": {"161": "sum"},
+                "agregacio_camps": "sum",
+                "exercicis": {"mode": "tots"},
+                "exercise_selection_scope": "per_member",
+                "mode_seleccio_exercicis": "per_aparell_global",
+                "agregacio_exercicis": "sum",
+                "agregacio_aparells": "sum",
+                "input_source": {"mode": "main_selected_contributors"},
+                "ordre": "desc",
+            },
+        }
+
+        serialized = serialize_tie_for_save(
+            raw_tie,
+            tipus="equips",
+            team_mode="derived_from_individual",
+        )
+
+        self.assertEqual(
+            (serialized.get("pipeline") or {}).get("input_source"),
+            {"mode": TIE_INPUT_SOURCE_MAIN_SELECTED_CONTRIBUTORS},
+        )
 
     def test_ui_projection_is_explicit_builder_state_without_mutating_tie(self):
         tie = {
@@ -273,10 +323,10 @@ class TieSerializerSaveTests(SimpleTestCase):
         )
 
         self.assertEqual(projected["camps"], ["TOTAL"])
-        self.assertEqual(projected["scope"]["participants"], {"mode": "tots"})
+        self.assertNotIn("participants", projected["scope"])
         self.assertEqual((projected.get("_builder_ui") or {}).get("app_scope"), {"mode": "hereta"})
         self.assertEqual((projected.get("_builder_ui") or {}).get("exercise_selection_scope_ui"), "hereta")
-        self.assertEqual((projected.get("_builder_ui") or {}).get("participants_ui"), {"mode": "tots"})
+        self.assertIsNone((projected.get("_builder_ui") or {}).get("participants_ui"))
 
     def test_validation_materialization_strips_team_pool_payload_and_legacy_scope(self):
         raw_tie = {

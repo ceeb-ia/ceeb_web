@@ -17,6 +17,7 @@ ALLOWED_EXERCISE_MODES = {"tots", "millor_1", "millor_n", "pitjor_1", "pitjor_n"
 ALLOWED_EXERCISE_SELECTION_MODES = {"per_aparell_global", "per_aparell_override", "global_pool"}
 ALLOWED_PARTICIPANT_MODES = {"tots", "millor_1", "millor_n", "pitjor_1", "pitjor_n"}
 ALLOWED_FIELD_MODES_PER_APP = {"comu", "per_exercici"}
+ALLOWED_INPUT_SOURCE_MODES = {"raw_exercises", "main_selected_contributors"}
 SCORING_PIPELINE_ALLOWED_KEYS = {
     "aparells",
     "camps_mode_per_aparell",
@@ -288,6 +289,14 @@ def _normalize_participants_per_aparell(raw_map):
     return out
 
 
+def _normalize_input_source(raw_value):
+    raw = raw_value if isinstance(raw_value, dict) else {}
+    mode = str(raw.get("mode") or "raw_exercises").strip().lower()
+    if mode not in ALLOWED_INPUT_SOURCE_MODES:
+        mode = "raw_exercises"
+    return {"mode": mode}
+
+
 def _normalize_agregacio_participants_per_aparell(raw_map, *, fallback="sum"):
     out = {}
     for raw_key, raw_value in (raw_map.items() if isinstance(raw_map, dict) else []):
@@ -523,6 +532,8 @@ def normalize_scoring_pipeline(raw_pipeline, *, tipus="individual", team_mode=""
         "mode_resultat_aparells": str(pipeline_in.get("mode_resultat_aparells") or "score").strip().lower() or "score",
         "ordre": ordre,
     }
+    if "input_source" in pipeline_in:
+        pipeline["input_source"] = _normalize_input_source(pipeline_in.get("input_source"))
     if "participants_per_aparell" in pipeline_in:
         pipeline["participants_per_aparell"] = part_map
     if "agregacio_participants_per_aparell" in pipeline_in:
@@ -1035,6 +1046,10 @@ def _copy_row_with_value(ctx, row, value):
     return item
 
 
+def _resolve_pipeline_input_source_mode(pipeline):
+    return _normalize_input_source((pipeline or {}).get("input_source")).get("mode") or "raw_exercises"
+
+
 def _pipeline_rows_for_source_rows(ctx, rows_ex, app_id, pipeline, *, participant_key):
     computed_rows = []
     for row in rows_ex or []:
@@ -1081,6 +1096,68 @@ def _pipeline_rows_for_source_rows(ctx, rows_ex, app_id, pipeline, *, participan
     candidate_row["candidate_source_mode"] = source_mode
     candidate_row["candidate_source_count"] = len(picked_rows)
     return [candidate_row]
+
+
+def _source_rows_by_app_for_individual(ctx, pipeline, inscripcio_id):
+    input_source_mode = _resolve_pipeline_input_source_mode(pipeline)
+    if input_source_mode == "main_selected_contributors" and callable(ctx.get("get_main_selected_contributors_for_individual")):
+        return ctx["get_main_selected_contributors_for_individual"](inscripcio_id) or {}
+    app_ex_rows_by_ins = ctx.get("app_ex_rows_by_ins") or {}
+    return {
+        app_id: (((app_ex_rows_by_ins.get(app_id) or {}).get(inscripcio_id)) or [])
+        for app_id in _resolve_pipeline_target_app_ids(pipeline)
+    }
+
+
+def _source_rows_by_app_for_native_team(ctx, pipeline, equip_id):
+    input_source_mode = _resolve_pipeline_input_source_mode(pipeline)
+    if input_source_mode == "main_selected_contributors" and callable(ctx.get("get_main_selected_contributors_for_native_team")):
+        return ctx["get_main_selected_contributors_for_native_team"](equip_id) or {}
+    team_rows_by_equip = ctx.get("team_app_ex_rows_by_equip") or {}
+    return {
+        app_id: (((team_rows_by_equip.get(app_id) or {}).get(equip_id)) or [])
+        for app_id in _resolve_pipeline_target_app_ids(pipeline)
+    }
+
+
+def _source_rows_by_member_for_group(ctx, pipeline, member_ids):
+    mids = _unique_positive_ints(member_ids)
+    if not mids:
+        return {}
+    input_source_mode = _resolve_pipeline_input_source_mode(pipeline)
+    if input_source_mode == "main_selected_contributors" and callable(ctx.get("get_main_selected_contributors_for_group")):
+        return ctx["get_main_selected_contributors_for_group"](mids) or {}
+    app_ex_rows_by_ins = ctx.get("app_ex_rows_by_ins") or {}
+    target_app_ids = _resolve_pipeline_target_app_ids(pipeline)
+    out = {}
+    for member_id in mids:
+        rows_by_app = {}
+        for app_id in target_app_ids:
+            rows = (((app_ex_rows_by_ins.get(app_id) or {}).get(member_id)) or [])
+            if rows:
+                rows_by_app[app_id] = rows
+        out[member_id] = rows_by_app
+    return out
+
+
+def _score_subject_from_source_rows_by_app(ctx, pipeline, source_rows_by_app, *, participant_key, target_app_ids=None):
+    app_ids = list(target_app_ids or _resolve_pipeline_target_app_ids(pipeline))
+    rows_by_app = {}
+    for app_id in app_ids:
+        rows_by_app[app_id] = _pipeline_rows_for_source_rows(
+            ctx,
+            (source_rows_by_app or {}).get(app_id, []),
+            app_id,
+            pipeline,
+            participant_key=participant_key,
+        )
+    return _aggregate_rows_per_pipeline(
+        ctx,
+        rows_by_app,
+        app_ids,
+        pipeline,
+        participant_key=participant_key,
+    )
 
 
 def _aggregate_rows_per_pipeline(ctx, rows_by_app, target_app_ids, pipeline, *, participant_key):
@@ -1146,22 +1223,11 @@ def _aggregate_rows_per_pipeline(ctx, rows_by_app, target_app_ids, pipeline, *, 
 
 def _score_individual_subject(ctx, pipeline, inscripcio_id):
     target_app_ids = _resolve_pipeline_target_app_ids(pipeline)
-    rows_by_app = {}
-    app_ex_rows_by_ins = ctx.get("app_ex_rows_by_ins") or {}
-    for app_id in target_app_ids:
-        rows = ((app_ex_rows_by_ins.get(app_id) or {}).get(inscripcio_id)) or []
-        rows_by_app[app_id] = _pipeline_rows_for_source_rows(
-            ctx,
-            rows,
-            app_id,
-            pipeline,
-            participant_key="inscripcio_id",
-        )
-    return _aggregate_rows_per_pipeline(
+    return _score_subject_from_source_rows_by_app(
         ctx,
-        rows_by_app,
-        target_app_ids,
         pipeline,
+        _source_rows_by_app_for_individual(ctx, pipeline, inscripcio_id),
+        target_app_ids=target_app_ids,
         participant_key="inscripcio_id",
     )
 
@@ -1170,22 +1236,11 @@ def _score_individual_subject_for_app(ctx, pipeline, inscripcio_id, app_id):
     target_app_ids = _resolve_pipeline_target_app_ids(pipeline)
     if app_id not in target_app_ids:
         return 0.0
-    app_ex_rows_by_ins = ctx.get("app_ex_rows_by_ins") or {}
-    rows = ((app_ex_rows_by_ins.get(app_id) or {}).get(inscripcio_id)) or []
-    rows_by_app = {
-        app_id: _pipeline_rows_for_source_rows(
-            ctx,
-            rows,
-            app_id,
-            pipeline,
-            participant_key="inscripcio_id",
-        )
-    }
-    return _aggregate_rows_per_pipeline(
+    return _score_subject_from_source_rows_by_app(
         ctx,
-        rows_by_app,
-        [app_id],
         pipeline,
+        _source_rows_by_app_for_individual(ctx, pipeline, inscripcio_id),
+        target_app_ids=[app_id],
         participant_key="inscripcio_id",
     )
 
@@ -1195,13 +1250,30 @@ def _score_group_subject(ctx, pipeline, member_ids):
     if not mids:
         return 0.0
     selection_scope = normalize_exercise_selection_scope(pipeline.get("exercise_selection_scope"))
+    input_source_mode = _resolve_pipeline_input_source_mode(pipeline)
     participants_per_aparell = pipeline.get("participants_per_aparell") if isinstance(pipeline.get("participants_per_aparell"), dict) else None
     agregacio_participants_per_aparell = (
         pipeline.get("agregacio_participants_per_aparell")
         if isinstance(pipeline.get("agregacio_participants_per_aparell"), dict)
         else None
     )
+    contributor_rows_by_member = None
+    if input_source_mode == "main_selected_contributors":
+        contributor_rows_by_member = _source_rows_by_member_for_group(ctx, pipeline, mids)
     if selection_scope == EXERCISE_SELECTION_SCOPE_TEAM_POOL and callable(ctx.get("get_main_selected_rows_for_group")):
+        if input_source_mode == "main_selected_contributors":
+            target_app_ids = _resolve_pipeline_target_app_ids(pipeline)
+            selected_rows_by_app = {}
+            for rows_by_app in (contributor_rows_by_member or {}).values():
+                for app_id, rows in (rows_by_app or {}).items():
+                    selected_rows_by_app.setdefault(app_id, []).extend(rows or [])
+            return _score_subject_from_source_rows_by_app(
+                ctx,
+                pipeline,
+                selected_rows_by_app,
+                target_app_ids=target_app_ids,
+                participant_key="inscripcio_id",
+            )
         target_app_ids = _resolve_pipeline_target_app_ids(pipeline)
         selected_rows_by_app = ctx["get_main_selected_rows_for_group"](mids)
         rows_by_app = {}
@@ -1229,7 +1301,20 @@ def _score_group_subject(ctx, pipeline, member_ids):
         legacy_participants_cfg = _normalize_participants_cfg((pipeline or {}).get("participants"))
         legacy_agg_parts = _normalize_aggregation((pipeline or {}).get("agregacio_participants"), "sum")
         for app_id in target_app_ids:
-            member_vals = [_score_individual_subject_for_app(ctx, pipeline, member_id, app_id) for member_id in mids]
+            member_vals = []
+            for member_id in mids:
+                if contributor_rows_by_member is not None:
+                    member_vals.append(
+                        _score_subject_from_source_rows_by_app(
+                            ctx,
+                            pipeline,
+                            (contributor_rows_by_member.get(member_id) or {}),
+                            target_app_ids=[app_id],
+                            participant_key="inscripcio_id",
+                        )
+                    )
+                else:
+                    member_vals.append(_score_individual_subject_for_app(ctx, pipeline, member_id, app_id))
             if has_per_app_participants:
                 part_cfg = _normalize_participants_cfg((participants_per_aparell or {}).get(str(app_id)) or {})
                 if not part_cfg:
@@ -1246,29 +1331,29 @@ def _score_group_subject(ctx, pipeline, member_ids):
         return float(ctx["apply_simple_agg"](vals_apps, _normalize_aggregation((pipeline or {}).get("agregacio_aparells"), "sum")))
     part_cfg = _normalize_participants_cfg((pipeline or {}).get("participants"))
     agg_parts = _normalize_aggregation((pipeline or {}).get("agregacio_participants"), "sum")
-    vals = [_score_individual_subject(ctx, pipeline, member_id) for member_id in mids]
+    if contributor_rows_by_member is not None:
+        vals = [
+            _score_subject_from_source_rows_by_app(
+                ctx,
+                pipeline,
+                (contributor_rows_by_member.get(member_id) or {}),
+                participant_key="inscripcio_id",
+            )
+            for member_id in mids
+        ]
+    else:
+        vals = [_score_individual_subject(ctx, pipeline, member_id) for member_id in mids]
     selected_vals = ctx["pick_participants"](vals, part_cfg["mode"], int(part_cfg.get("n") or 1))
     return float(ctx["apply_simple_agg"](selected_vals, agg_parts))
 
 
 def _score_native_team_subject(ctx, pipeline, equip_id):
-    team_rows_by_equip = ctx.get("team_app_ex_rows_by_equip") or {}
     target_app_ids = _resolve_pipeline_target_app_ids(pipeline)
-    rows_by_app = {}
-    for app_id in target_app_ids:
-        rows = ((team_rows_by_equip.get(app_id) or {}).get(equip_id)) or []
-        rows_by_app[app_id] = _pipeline_rows_for_source_rows(
-            ctx,
-            rows,
-            app_id,
-            pipeline,
-            participant_key="equip_id",
-        )
-    return _aggregate_rows_per_pipeline(
+    return _score_subject_from_source_rows_by_app(
         ctx,
-        rows_by_app,
-        target_app_ids,
         pipeline,
+        _source_rows_by_app_for_native_team(ctx, pipeline, equip_id),
+        target_app_ids=target_app_ids,
         participant_key="equip_id",
     )
 

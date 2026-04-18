@@ -1717,6 +1717,95 @@ class TeamContextClassificacioFiltersAndValidationTests(TeamContextScoringFlowTe
         tie = ((cleaned_schema.get("desempat") or [])[0])
         self.assertEqual(sorted(tie.keys()), ["id", "nom", "ordre", "pipeline", "pipeline_version"])
 
+    def test_classificacio_validation_accepts_tie_pipeline_input_source(self):
+        schema = self._native_team_schema_with_tie(
+            {
+                "id": "tie_input_source",
+                "nom": "Desempat contributors",
+                "ordre": "desc",
+                "pipeline_version": 1,
+                "pipeline": {
+                    "aparells": {"mode": "seleccionar", "ids": [self.comp_app.id]},
+                    "camps_per_aparell": {str(self.comp_app.id): ["TOTAL"]},
+                    "agregacio_camps_per_aparell": {str(self.comp_app.id): "sum"},
+                    "agregacio_camps": "sum",
+                    "candidate_source_mode": "raw_exercise",
+                    "candidate_source_cfg": {
+                        "mode": "tots",
+                        "best_n": 1,
+                        "index": 1,
+                        "ids": [],
+                        "agregacio_exercicis": "sum",
+                    },
+                    "candidate_source_per_aparell": {
+                        str(self.comp_app.id): {"mode": "raw_exercise"}
+                    },
+                    "exercicis": {"mode": "tots"},
+                    "mode_seleccio_exercicis": "per_aparell_global",
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "mode_resultat_aparells": "score",
+                    "input_source": {"mode": "main_selected_contributors"},
+                    "ordre": "desc",
+                },
+            }
+        )
+
+        cleaned_schema, errors = _validate_schema_for_competicio(
+            self.comp,
+            schema,
+            tipus="equips",
+        )
+
+        self.assertEqual(errors, [])
+        tie = ((cleaned_schema.get("desempat") or [])[0]) or {}
+        self.assertEqual(
+            (((tie.get("pipeline") or {}).get("input_source")) or {}).get("mode"),
+            "main_selected_contributors",
+        )
+
+    def test_classificacio_validation_rejects_invalid_tie_pipeline_input_source_mode(self):
+        schema = self._native_team_schema_with_tie(
+            {
+                "id": "tie_bad_input_source",
+                "nom": "Desempat invalid input source",
+                "ordre": "desc",
+                "pipeline_version": 1,
+                "pipeline": {
+                    "aparells": {"mode": "seleccionar", "ids": [self.comp_app.id]},
+                    "camps_per_aparell": {str(self.comp_app.id): ["TOTAL"]},
+                    "agregacio_camps_per_aparell": {str(self.comp_app.id): "sum"},
+                    "agregacio_camps": "sum",
+                    "candidate_source_mode": "raw_exercise",
+                    "candidate_source_cfg": {
+                        "mode": "tots",
+                        "best_n": 1,
+                        "index": 1,
+                        "ids": [],
+                        "agregacio_exercicis": "sum",
+                    },
+                    "candidate_source_per_aparell": {
+                        str(self.comp_app.id): {"mode": "raw_exercise"}
+                    },
+                    "exercicis": {"mode": "tots"},
+                    "mode_seleccio_exercicis": "per_aparell_global",
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "mode_resultat_aparells": "score",
+                    "input_source": {"mode": "selected_rows"},
+                    "ordre": "desc",
+                },
+            }
+        )
+
+        _cleaned_schema, errors = _validate_schema_for_competicio(
+            self.comp,
+            schema,
+            tipus="equips",
+        )
+
+        self.assertTrue(any("desempat[0].pipeline.input_source.mode invalid" in err for err in errors))
+
     def test_prepare_schema_for_persistence_keeps_sparse_derived_team_tie_pipeline(self):
         individual_app, individual_comp_app = self._create_individual_comp_aparell("TRSP", "Sparse tie")
         ScoringSchema.objects.create(

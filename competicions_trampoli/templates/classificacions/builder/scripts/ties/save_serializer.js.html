@@ -4,6 +4,16 @@
     return "sum";
   }
 
+  function normalizeTiePipelineInputSource(rawInputSource, fallbackInputSource) {
+    const source = (rawInputSource && typeof rawInputSource === "object" && !Array.isArray(rawInputSource))
+      ? rawInputSource
+      : {};
+    const fallback = (fallbackInputSource && typeof fallbackInputSource === "object" && !Array.isArray(fallbackInputSource))
+      ? fallbackInputSource
+      : {};
+    return { mode: normalizeTieInputSourceMode(source.mode || fallback.mode || "raw_exercises") };
+  }
+
   function normalizeTiePipelineAppScope(rawScope, fallbackScope) {
     const scope = (rawScope && typeof rawScope === "object" && !Array.isArray(rawScope)) ? cloneJsonValue(rawScope, {}) : {};
     const fallback = (fallbackScope && typeof fallbackScope === "object" && !Array.isArray(fallbackScope)) ? fallbackScope : {};
@@ -138,6 +148,7 @@
     out.exercise_selection_scope = normalizeTieExerciseSelectionScope(
       out.exercise_selection_scope || fallback.exercise_selection_scope || "hereta",
     );
+    out.input_source = normalizeTiePipelineInputSource(out.input_source, fallback.input_source);
     out.mode_seleccio_exercicis = normalizeTieModeSeleccioExercicis(
       out.mode_seleccio_exercicis || fallback.mode_seleccio_exercicis || "hereta",
     );
@@ -253,6 +264,12 @@
     const rawExerciseSelectionScope = isDerivedExerciseSelectionScopeAvailable()
       ? normalizeTieExerciseSelectionScope(rawItem.exercise_selection_scope || EXERCISE_SELECTION_SCOPE_INHERIT)
       : null;
+    const inputSourceMode = normalizeTieInputSourceMode(
+      rawItem.input_source_mode ||
+      tr.querySelector('[data-k="input_source_mode"]')?.value ||
+      ((rawBase.pipeline || {}).input_source || {}).mode ||
+      "raw_exercises"
+    );
     const effectiveExerciseSelectionScope = isDerivedExerciseSelectionScopeAvailable()
       ? (
           rawExerciseSelectionScope === EXERCISE_SELECTION_SCOPE_INHERIT
@@ -278,14 +295,29 @@
       rawItem.scope.exercicis &&
       typeof rawItem.scope.exercicis === "object" &&
       !Array.isArray(rawItem.scope.exercicis)
-    ) ? rawItem.scope.exercicis : null;
+      ) ? rawItem.scope.exercicis : null;
     const rawExerciseMode = String((rawExerciseScope || {}).mode || "hereta").toLowerCase().trim();
+    const rawSelectionMode = normalizeTieModeSeleccioExercicis(rawItem.mode_seleccio_exercicis || "hereta");
     if (fixedTeamPool) {
       delete canonical.pipeline.exercicis;
       delete canonical.pipeline.mode_seleccio_exercicis;
       delete canonical.pipeline.exercicis_per_aparell;
       delete canonical.pipeline.agregacio_exercicis;
       delete canonical.pipeline.agregacio_exercicis_per_aparell;
+    } else if (
+      (
+        rawSelectionMode === "per_aparell_override" ||
+        (
+          rawSelectionMode === "hereta" &&
+          normalizeTieModeSeleccioExercicis(
+            pipeline.mode_seleccio_exercicis || fallbackFromPuntuacio.mode_seleccio_exercicis || "per_aparell_global"
+          ) === "per_aparell_override"
+        )
+      )
+    ) {
+      canonical.pipeline.exercicis = normalizeTieExercicisCfg(
+        fallbackFromPuntuacio.exercicis || pipeline.exercicis || {}
+      );
     } else if (rawExerciseMode === "hereta") {
       canonical.pipeline.exercicis = normalizeTieExercicisCfg(
         pipeline.exercicis || fallbackFromPuntuacio.exercicis || {}
@@ -297,7 +329,6 @@
       );
     }
 
-    const rawSelectionMode = normalizeTieModeSeleccioExercicis(rawItem.mode_seleccio_exercicis || "hereta");
     if (!fixedTeamPool) {
       canonical.pipeline.mode_seleccio_exercicis = rawSelectionMode === "hereta"
         ? normalizeTieModeSeleccioExercicis(
@@ -337,6 +368,11 @@
     );
     canonical.pipeline.mode_resultat_aparells = "score";
     canonical.pipeline.ordre = canonical.ordre;
+    if (inputSourceMode === "main_selected_contributors") {
+      canonical.pipeline.input_source = { mode: "main_selected_contributors" };
+    } else {
+      delete canonical.pipeline.input_source;
+    }
 
     if (includeParticipants && !fixedTeamPool) {
       const participantsScope = (
