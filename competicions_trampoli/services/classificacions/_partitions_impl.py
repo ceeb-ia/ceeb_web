@@ -38,8 +38,11 @@ DEFAULT_SCHEMA = {
         "mode_seleccio_exercicis": "per_aparell_global",
         "exercicis_per_aparell": {},
         "aparells": {"mode": "tots", "ids": []},
+        "camps_mode_per_aparell": {},
         "camps_per_aparell": {},
+        "camps_per_exercici_per_aparell": {},
         "agregacio_camps_per_aparell": {},
+        "agregacio_camps_per_exercici_per_aparell": {},
         "agregacio_camps": "sum",
         "candidate_source_mode": "raw_exercise",
         "candidate_source_cfg": {

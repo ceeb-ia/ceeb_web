@@ -1349,6 +1349,183 @@ def _validate_camps_per_aparell(competicio, schema: dict):
     return errors
 
 
+def _raw_map_value_for_app(raw_map, app_id):
+    if not isinstance(raw_map, dict):
+        return None
+    raw_selected = raw_map.get(str(app_id))
+    if raw_selected is None:
+        raw_selected = raw_map.get(app_id)
+    return raw_selected
+
+
+def _normalize_score_camps_list(raw_camps):
+    if isinstance(raw_camps, str):
+        return [x.strip() for x in raw_camps.split(",") if x and x.strip()]
+    if isinstance(raw_camps, list):
+        return [str(x).strip() for x in raw_camps if str(x).strip()]
+    return None
+
+
+def _validate_camps_per_exercici_per_aparell(competicio, schema: dict):
+    schema = schema or {}
+    punt = schema.get("puntuacio") or {}
+    if not isinstance(punt, dict):
+        punt = {}
+
+    mode_resultat = str(punt.get("mode_resultat_aparells") or "score").strip().lower()
+    if mode_resultat == "victories":
+        return []
+
+    active_apps = list(
+        CompeticioAparell.objects
+        .filter(competicio=competicio, actiu=True)
+        .select_related("aparell")
+    )
+    app_by_id = {ca.id: ca for ca in active_apps}
+    if not app_by_id:
+        return []
+
+    schemas_by_aparell = {
+        s.aparell_id: (s.schema or {})
+        for s in ScoringSchema.objects.filter(aparell_id__in=[ca.aparell_id for ca in active_apps]).only("aparell_id", "schema")
+    }
+
+    _, selected_ids = _get_active_and_selected_app_ids(competicio, punt)
+    selected_ids = selected_ids or set(app_by_id.keys())
+    equips_cfg = normalize_classificacio_equips_cfg(schema.get("equips") or {})
+    team_mode = normalize_team_mode(equips_cfg.get("team_mode"))
+    meta_cache = {}
+    errors = []
+
+    raw_mode_map = punt.get("camps_mode_per_aparell") or {}
+    if raw_mode_map and not isinstance(raw_mode_map, dict):
+        return ["puntuacio.camps_mode_per_aparell ha de ser un objecte {app_id: mode}."]
+    if not isinstance(raw_mode_map, dict):
+        raw_mode_map = {}
+
+    per_exercise_app_ids = set()
+    for raw_key, raw_value in raw_mode_map.items():
+        try:
+            app_id = int(raw_key)
+        except Exception:
+            errors.append(f"puntuacio.camps_mode_per_aparell: app_id invalid {raw_key}")
+            continue
+        if app_id not in app_by_id:
+            errors.append(f"puntuacio.camps_mode_per_aparell: aparell {app_id} no valid o no actiu.")
+            continue
+        if selected_ids and app_id not in selected_ids:
+            errors.append(f"puntuacio.camps_mode_per_aparell: aparell {app_id} no esta seleccionat a puntuacio.")
+            continue
+        mode = str(raw_value or "comu").strip().lower()
+        if mode not in {"comu", "per_exercici"}:
+            errors.append(f"puntuacio.camps_mode_per_aparell[{app_id}] invalid: {mode}")
+            continue
+        if mode == "per_exercici":
+            per_exercise_app_ids.add(app_id)
+
+    if not per_exercise_app_ids:
+        return errors
+
+    raw_camps_map = punt.get("camps_per_exercici_per_aparell") or {}
+    if raw_camps_map and not isinstance(raw_camps_map, dict):
+        errors.append(
+            "puntuacio.camps_per_exercici_per_aparell ha de ser un objecte {app_id: {exercici: [camps]}}."
+        )
+        raw_camps_map = {}
+    if not isinstance(raw_camps_map, dict):
+        raw_camps_map = {}
+
+    raw_agg_map = punt.get("agregacio_camps_per_exercici_per_aparell") or {}
+    if raw_agg_map and not isinstance(raw_agg_map, dict):
+        errors.append(
+            "puntuacio.agregacio_camps_per_exercici_per_aparell ha de ser un objecte {app_id: {exercici: agregacio}}."
+        )
+        raw_agg_map = {}
+    if not isinstance(raw_agg_map, dict):
+        raw_agg_map = {}
+
+    for app_id in sorted(per_exercise_app_ids):
+        raw_per_exercise_camps = _raw_map_value_for_app(raw_camps_map, app_id)
+        if raw_per_exercise_camps not in (None, {}):
+            if not isinstance(raw_per_exercise_camps, dict):
+                errors.append(
+                    f"puntuacio.camps_per_exercici_per_aparell[{app_id}] ha de ser un objecte {{exercici: [camps]}}."
+                )
+            else:
+                if app_id not in meta_cache:
+                    sch = schemas_by_aparell.get(app_by_id[app_id].aparell_id, {}) or {}
+                    meta_cache[app_id] = build_scoreable_meta_for_schema(sch, strict_unknown=True)
+                meta = meta_cache[app_id]
+
+                for raw_exercici, raw_camps in raw_per_exercise_camps.items():
+                    try:
+                        exercici = int(raw_exercici)
+                    except Exception:
+                        exercici = 0
+                    if exercici < 1:
+                        errors.append(
+                            f"puntuacio.camps_per_exercici_per_aparell[{app_id}]: exercici invalid {raw_exercici}"
+                        )
+                        continue
+
+                    camps = _normalize_score_camps_list(raw_camps)
+                    if camps is None:
+                        errors.append(
+                            f"puntuacio.camps_per_exercici_per_aparell[{app_id}][{exercici}] ha de ser llista o CSV."
+                        )
+                        continue
+                    if not camps:
+                        errors.append(
+                            f"puntuacio.camps_per_exercici_per_aparell[{app_id}][{exercici}] ha de contenir almenys un camp real."
+                        )
+                        continue
+
+                    for code in camps:
+                        info = meta.get(code)
+                        if not info:
+                            errors.append(
+                                f"puntuacio.camps_per_exercici_per_aparell[{app_id}][{exercici}]: camp '{code}' no existeix al schema."
+                            )
+                            continue
+                        if not info.get("scoreable", False):
+                            errors.append(
+                                f"puntuacio.camps_per_exercici_per_aparell[{app_id}][{exercici}]: camp '{code}' no es puntuable directament "
+                                f"({info.get('reason')})."
+                            )
+                            continue
+                        if team_mode == "native_team" and not _is_native_team_metric_compatible(info):
+                            errors.append(
+                                f"puntuacio.camps_per_exercici_per_aparell[{app_id}][{exercici}]: camp '{code}' no es compatible amb team_mode=native_team."
+                            )
+
+        raw_per_exercise_agg = _raw_map_value_for_app(raw_agg_map, app_id)
+        if raw_per_exercise_agg in (None, {}):
+            continue
+        if not isinstance(raw_per_exercise_agg, dict):
+            errors.append(
+                f"puntuacio.agregacio_camps_per_exercici_per_aparell[{app_id}] ha de ser un objecte {{exercici: agregacio}}."
+            )
+            continue
+
+        for raw_exercici, raw_value in raw_per_exercise_agg.items():
+            try:
+                exercici = int(raw_exercici)
+            except Exception:
+                exercici = 0
+            if exercici < 1:
+                errors.append(
+                    f"puntuacio.agregacio_camps_per_exercici_per_aparell[{app_id}]: exercici invalid {raw_exercici}"
+                )
+                continue
+            agg = str(raw_value or "sum").strip().lower()
+            if agg not in {"sum", "avg", "median", "max", "min"}:
+                errors.append(
+                    f"puntuacio.agregacio_camps_per_exercici_per_aparell[{app_id}][{exercici}] invalid: {agg}"
+                )
+
+    return errors
+
+
 def _validate_presentacio_columns_details(competicio, schema: dict, tipus="individual"):
     schema = schema or {}
     punt = schema.get("puntuacio") or {}
@@ -2092,6 +2269,14 @@ def validate_schema_for_competicio_detailed(competicio, schema_local, tipus="ind
         raw_pipeline = tie.get("pipeline")
         if raw_pipeline is None:
             continue
+        if isinstance(raw_pipeline, dict):
+            for key in (
+                "camps_mode_per_aparell",
+                "camps_per_exercici_per_aparell",
+                "agregacio_camps_per_exercici_per_aparell",
+            ):
+                if key in raw_pipeline:
+                    errors.append(f"desempat[{idx}].pipeline.{key} no esta permes.")
         errors.extend(validate_scoring_pipeline_shape(raw_pipeline, prefix=f"desempat[{idx}].pipeline"))
         if isinstance(raw_pipeline, dict):
             if not allow_pipeline_participants:
@@ -2130,6 +2315,7 @@ def validate_schema_for_competicio_detailed(competicio, schema_local, tipus="ind
     errors.extend(_validate_particions_config_schema(schema_local, tipus=tipus))
     errors.extend(_validate_no_tots_mode(schema_local))
     errors.extend(_validate_camps_per_aparell(competicio, schema_local))
+    errors.extend(_validate_camps_per_exercici_per_aparell(competicio, schema_local))
     errors.extend(_validate_agregacio_camps_per_aparell(competicio, schema_local))
     errors.extend(_validate_agregacio_exercicis_per_aparell(competicio, schema_local))
     if native_team_desempat_validation:

@@ -820,6 +820,66 @@ class ClassificacioMatrixScalarTests(_BaseTrampoliDataMixin, TestCase):
         body = res.json()
         self.assertTrue(any("desempat[0].pipeline.victories" in err for err in body.get("errors", [])))
 
+    def test_classificacio_save_strips_per_exercise_field_keys_from_tie_pipeline(self):
+        app_key = str(self.comp_app_a.id)
+        payload = {
+            "nom": "Cfg tie pipeline strips per exercise fields",
+            "activa": True,
+            "ordre": 1,
+            "tipus": "individual",
+            "schema": {
+                "particions": [],
+                "filtres": {},
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [self.comp_app_a.id]},
+                    "camps_per_aparell": {app_key: ["total"]},
+                    "camps_mode_per_aparell": {app_key: "per_exercici"},
+                    "camps_per_exercici_per_aparell": {app_key: {"1": ["total"]}},
+                    "agregacio_camps_per_exercici_per_aparell": {app_key: {"1": "sum"}},
+                    "agregacio_camps": "sum",
+                    "exercicis": {"mode": "tots"},
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "ordre": "desc",
+                },
+                "desempat": [
+                    {
+                        "id": "tie_strip",
+                        "ordre": "desc",
+                        "pipeline_version": 1,
+                        "pipeline": {
+                            "aparells": {"mode": "seleccionar", "ids": [self.comp_app_a.id]},
+                            "camps_per_aparell": {app_key: ["total"]},
+                            "camps_mode_per_aparell": {app_key: "per_exercici"},
+                            "camps_per_exercici_per_aparell": {app_key: {"1": ["total"]}},
+                            "agregacio_camps_per_exercici_per_aparell": {app_key: {"1": "sum"}},
+                            "agregacio_camps_per_aparell": {app_key: "sum"},
+                            "agregacio_camps": "sum",
+                            "exercicis": {"mode": "tots"},
+                            "exercise_selection_scope": "per_member",
+                            "mode_seleccio_exercicis": "per_aparell_global",
+                            "agregacio_exercicis": "sum",
+                            "agregacio_aparells": "sum",
+                            "mode_resultat_aparells": "score",
+                        },
+                    }
+                ],
+                "presentacio": {"top_n": 0, "mostrar_empats": True},
+            },
+        }
+        res = self.client.post(
+            reverse("classificacio_save", kwargs={"pk": self.comp.id}),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 200)
+        cfg = ClassificacioConfig.objects.get(pk=res.json()["id"])
+        tie = (cfg.schema.get("desempat") or [])[0]
+        pipeline = tie.get("pipeline") or {}
+        self.assertNotIn("camps_mode_per_aparell", pipeline)
+        self.assertNotIn("camps_per_exercici_per_aparell", pipeline)
+        self.assertNotIn("agregacio_camps_per_exercici_per_aparell", pipeline)
+
     def test_prepare_schema_for_builder_hydration_materializes_legacy_tie_pipeline(self):
         schema = self._base_cfg_schema()
         schema["puntuacio"]["aparells"] = {"mode": "seleccionar", "ids": [self.comp_app_a.id]}
@@ -1100,6 +1160,173 @@ class ClassificacioMatrixScalarTests(_BaseTrampoliDataMixin, TestCase):
             },
         )
 
+    def test_prepare_schema_for_builder_hydration_prunes_per_exercise_scoring_field_maps(self):
+        self.comp_app_a.nombre_exercicis = 2
+        self.comp_app_a.save(update_fields=["nombre_exercicis"])
+
+        schema = self._base_cfg_schema()
+        schema["puntuacio"]["aparells"] = {"mode": "seleccionar", "ids": [self.comp_app_a.id, self.comp_app_b.id]}
+        schema["puntuacio"]["camps_per_aparell"] = {
+            str(self.comp_app_a.id): ["total"],
+            str(self.comp_app_b.id): ["total"],
+        }
+        schema["puntuacio"]["camps_mode_per_aparell"] = {
+            str(self.comp_app_a.id): "per_exercici",
+            str(self.comp_app_b.id): "comu",
+        }
+        schema["puntuacio"]["camps_per_exercici_per_aparell"] = {
+            str(self.comp_app_a.id): {
+                "1": ["E_total"],
+                "2": ["D_total"],
+                "3": ["X_total"],
+            },
+            str(self.comp_app_b.id): {
+                "1": ["total"],
+                "2": ["X_total"],
+            },
+        }
+        schema["puntuacio"]["agregacio_camps_per_exercici_per_aparell"] = {
+            str(self.comp_app_a.id): {
+                "1": "sum",
+                "2": "avg",
+                "3": "max",
+            },
+            str(self.comp_app_b.id): {
+                "1": "sum",
+                "2": "min",
+            },
+        }
+
+        hydrated = prepare_schema_for_builder_hydration(self.comp, schema, tipus="individual")
+        punt = hydrated.get("puntuacio") or {}
+        self.assertEqual(
+            punt.get("camps_mode_per_aparell"),
+            {
+                str(self.comp_app_a.id): "per_exercici",
+                str(self.comp_app_b.id): "comu",
+            },
+        )
+        self.assertEqual(
+            punt.get("camps_per_exercici_per_aparell"),
+            {
+                str(self.comp_app_a.id): {
+                    "1": ["E_total"],
+                    "2": ["D_total"],
+                },
+                str(self.comp_app_b.id): {
+                    "1": ["total"],
+                },
+            },
+        )
+        self.assertEqual(
+            punt.get("agregacio_camps_per_exercici_per_aparell"),
+            {
+                str(self.comp_app_a.id): {
+                    "1": "sum",
+                    "2": "avg",
+                },
+                str(self.comp_app_b.id): {
+                    "1": "sum",
+                },
+            },
+        )
+
+    def test_classificacio_save_roundtrip_preserves_per_exercise_scoring_field_maps_in_victories(self):
+        self.comp_app_a.nombre_exercicis = 2
+        self.comp_app_a.save(update_fields=["nombre_exercicis"])
+        payload_schema = self._selected_total_schema([self.comp_app_a.id])
+        payload_schema["puntuacio"] = {
+            **payload_schema["puntuacio"],
+            "mode_resultat_aparells": "victories",
+            "camps_mode_per_aparell": {
+                str(self.comp_app_a.id): "per_exercici",
+            },
+            "camps_per_exercici_per_aparell": {
+                str(self.comp_app_a.id): {
+                    "1": ["E_total"],
+                    "2": ["D_total"],
+                },
+            },
+            "agregacio_camps_per_exercici_per_aparell": {
+                str(self.comp_app_a.id): {
+                    "1": "sum",
+                    "2": "avg",
+                },
+            },
+        }
+        payload = {
+            "nom": "Cfg camps per exercici",
+            "activa": True,
+            "ordre": 1,
+            "tipus": "individual",
+            "schema": payload_schema,
+        }
+
+        res = self.client.post(
+            reverse("classificacio_save", kwargs={"pk": self.comp.id}),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        self.assertEqual(res.status_code, 200)
+        body = res.json()
+        cfg = ClassificacioConfig.objects.get(pk=body["id"])
+        punt = cfg.schema.get("puntuacio") or {}
+        self.assertEqual(
+            punt.get("camps_mode_per_aparell"),
+            {str(self.comp_app_a.id): "per_exercici"},
+        )
+        self.assertEqual(
+            punt.get("camps_per_exercici_per_aparell"),
+            {
+                str(self.comp_app_a.id): {
+                    "1": ["E_total"],
+                    "2": ["D_total"],
+                },
+            },
+        )
+        self.assertEqual(
+            punt.get("agregacio_camps_per_exercici_per_aparell"),
+            {
+                str(self.comp_app_a.id): {
+                    "1": "sum",
+                    "2": "avg",
+                },
+            },
+        )
+
+        hydrated = prepare_schema_for_builder_hydration(self.comp, cfg.schema or {}, tipus="individual")
+        hydrated_punt = hydrated.get("puntuacio") or {}
+        self.assertEqual(
+            hydrated_punt.get("camps_mode_per_aparell"),
+            {str(self.comp_app_a.id): "per_exercici"},
+        )
+        self.assertEqual(
+            hydrated_punt.get("camps_per_exercici_per_aparell"),
+            {
+                str(self.comp_app_a.id): {
+                    "1": ["E_total"],
+                    "2": ["D_total"],
+                },
+            },
+        )
+        self.assertEqual(
+            hydrated_punt.get("agregacio_camps_per_exercici_per_aparell"),
+            {
+                str(self.comp_app_a.id): {
+                    "1": "sum",
+                    "2": "avg",
+                },
+            },
+        )
+
+    def test_classificacions_home_includes_per_exercise_field_builder_copy(self):
+        self.client.force_login(self.user)
+        res = self.client.get(reverse("classificacions_home", kwargs={"pk": self.comp.id}))
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, "Tractament de camps")
+        self.assertContains(res, "Per exercici")
+
     def test_classificacio_save_returns_persisted_team_schema_with_mode_resolution(self):
         self._ensure_native_equip_context(self.comp)
         payload = {
@@ -1316,4 +1543,76 @@ class ClassificacioMatrixScalarTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(body.get("error"), "No s'ha pogut previsualitzar la classificacio.")
         self.assertEqual(body.get("errors"), ["boom preview"])
         self.assertTrue(body.get("error_details"))
+
+
+class ClassificacioPerExerciciScoringTests(_BaseTrampoliDataMixin, TestCase):
+    def setUp(self):
+        self.comp = self._create_competicio("Comp per exercici")
+        self.app = self._create_aparell("APP_EX", "Aparell Exercicis")
+        self.comp_app = self._create_comp_aparell(self.comp, self.app, ordre=1, actiu=True)
+        self.comp_app.nombre_exercicis = 2
+        self.comp_app.save(update_fields=["nombre_exercicis"])
+        self.ins_a = self._create_inscripcio(self.comp, "Participant A", ordre=1)
+        self.ins_b = self._create_inscripcio(self.comp, "Participant B", ordre=2)
+
+    def test_compute_classificacio_per_exercise_fields_uses_complete_fallback(self):
+        ScoringSchema.objects.create(
+            aparell=self.app,
+            schema={
+                "fields": [
+                    {"code": "A", "type": "number"},
+                    {"code": "B", "type": "number"},
+                ],
+                "computed": [],
+            },
+        )
+        for inscripcio, exercici, a_value, b_value in (
+            (self.ins_a, 1, 4.0, 8.0),
+            (self.ins_a, 2, 6.0, 1.0),
+            (self.ins_b, 1, 3.0, 9.0),
+            (self.ins_b, 2, 4.0, 10.0),
+        ):
+            ScoreEntry.objects.create(
+                competicio=self.comp,
+                inscripcio=inscripcio,
+                exercici=exercici,
+                comp_aparell=self.comp_app,
+                inputs={"A": a_value, "B": b_value},
+                outputs={},
+                total=0,
+            )
+
+        schema = {
+            "puntuacio": {
+                "aparells": {"mode": "seleccionar", "ids": [self.comp_app.id]},
+                "camps_per_aparell": {str(self.comp_app.id): ["A"]},
+                "agregacio_camps_per_aparell": {str(self.comp_app.id): "sum"},
+                "camps_mode_per_aparell": {str(self.comp_app.id): "per_exercici"},
+                "camps_per_exercici_per_aparell": {
+                    str(self.comp_app.id): {
+                        "2": ["B"],
+                    }
+                },
+                "agregacio_camps": "sum",
+                "exercicis": {"mode": "tots"},
+                "agregacio_exercicis": "sum",
+                "agregacio_aparells": "sum",
+                "ordre": "desc",
+            }
+        }
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Per exercici fallback complet",
+            activa=True,
+            ordre=1,
+            tipus="individual",
+            schema=schema,
+        )
+
+        rows = compute_classificacio(self.comp, cfg).get("global", [])
+        points_by_name = {row["participant"]: row["punts"] for row in rows}
+
+        self.assertEqual(rows[0]["participant"], "Participant A")
+        self.assertEqual(points_by_name["Participant A"], 10.0)
+        self.assertEqual(points_by_name["Participant B"], 7.0)
 

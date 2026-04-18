@@ -398,8 +398,101 @@ def _sanitize_agregacio_camps_per_aparell(raw_map, *, fallback="sum"):
     return out
 
 
+def _normalize_camps_mode_per_aparell_value(raw_value):
+    mode = str(raw_value or "comu").strip().lower()
+    return "per_exercici" if mode == "per_exercici" else "comu"
+
+
+def _sanitize_camps_mode_per_aparell(raw_map, *, fallback_by_app=None):
+    out = {}
+    source = raw_map if isinstance(raw_map, dict) else {}
+    fallback_map = fallback_by_app if isinstance(fallback_by_app, dict) else {}
+    raw_keys = set(source.keys()) | set(fallback_map.keys())
+    for raw_key in raw_keys:
+        try:
+            app_id = int(raw_key)
+        except Exception:
+            continue
+        if app_id <= 0:
+            continue
+        raw_value = source.get(str(app_id))
+        if raw_value is None:
+            raw_value = source.get(app_id)
+        if raw_value is None:
+            raw_value = fallback_map.get(str(app_id))
+        if raw_value is None:
+            raw_value = fallback_map.get(app_id)
+        out[str(app_id)] = _normalize_camps_mode_per_aparell_value(raw_value)
+    return out
+
+
 def _sanitize_agregacio_exercicis_per_aparell(raw_map, *, fallback="sum"):
     return _sanitize_agregacio_camps_per_aparell(raw_map, fallback=fallback)
+
+
+def _sanitize_camps_per_exercici_per_aparell(raw_map, *, known_counts_by_app=None):
+    out = {}
+    counts = known_counts_by_app if isinstance(known_counts_by_app, dict) else {}
+    if not isinstance(raw_map, dict):
+        return out
+    for raw_key, raw_value in raw_map.items():
+        try:
+            app_id = int(raw_key)
+        except Exception:
+            continue
+        if app_id <= 0 or not isinstance(raw_value, dict):
+            continue
+        max_ex = counts.get(app_id)
+        app_out = {}
+        for raw_ex, raw_codes in raw_value.items():
+            try:
+                exercici = int(raw_ex)
+            except Exception:
+                continue
+            if exercici <= 0:
+                continue
+            if max_ex is not None and exercici > max_ex:
+                continue
+            if isinstance(raw_codes, str):
+                codes = [x.strip() for x in raw_codes.split(",") if x and x.strip()]
+            elif isinstance(raw_codes, list):
+                codes = [str(x).strip() for x in raw_codes if str(x).strip()]
+            else:
+                continue
+            if codes:
+                app_out[str(exercici)] = codes
+        if app_out:
+            out[str(app_id)] = app_out
+    return out
+
+
+def _sanitize_agregacio_camps_per_exercici_per_aparell(raw_map, *, known_counts_by_app=None):
+    out = {}
+    counts = known_counts_by_app if isinstance(known_counts_by_app, dict) else {}
+    if not isinstance(raw_map, dict):
+        return out
+    for raw_key, raw_value in raw_map.items():
+        try:
+            app_id = int(raw_key)
+        except Exception:
+            continue
+        if app_id <= 0 or not isinstance(raw_value, dict):
+            continue
+        max_ex = counts.get(app_id)
+        app_out = {}
+        for raw_ex, raw_agg in raw_value.items():
+            try:
+                exercici = int(raw_ex)
+            except Exception:
+                continue
+            if exercici <= 0:
+                continue
+            if max_ex is not None and exercici > max_ex:
+                continue
+            app_out[str(exercici)] = _normalize_agregacio_camps_value(raw_agg)
+        if app_out:
+            out[str(app_id)] = app_out
+    return out
 
 
 def _sanitize_candidate_source_entry(raw_entry, *, fallback_mode="raw_exercise", fallback_cfg=None):
@@ -542,6 +635,35 @@ def prepare_schema_for_builder_hydration(competicio, schema_local, tipus="indivi
     for app_id in ids_out:
         agg_camps_map.setdefault(str(app_id), fallback_agg_camps)
     punt["agregacio_camps_per_aparell"] = agg_camps_map
+    known_counts_by_app = {
+        int(comp_aparell.id): max(1, int(getattr(comp_aparell, "nombre_exercicis", 1) or 1))
+        for comp_aparell in (
+            CompeticioAparell.objects
+            .filter(competicio=competicio)
+            .only("id", "nombre_exercicis")
+        )
+    }
+    camps_per_exercici = _sanitize_camps_per_exercici_per_aparell(
+        punt.get("camps_per_exercici_per_aparell") or {},
+        known_counts_by_app=known_counts_by_app,
+    )
+    agg_camps_per_exercici = _sanitize_agregacio_camps_per_exercici_per_aparell(
+        punt.get("agregacio_camps_per_exercici_per_aparell") or {},
+        known_counts_by_app=known_counts_by_app,
+    )
+    camps_mode_fallback = {}
+    all_mode_keys = set(camps_per_exercici.keys()) | set(agg_camps_per_exercici.keys()) | {str(app_id) for app_id in ids_out}
+    for raw_key in all_mode_keys:
+        key = str(raw_key)
+        camps_mode_fallback[key] = "per_exercici" if (
+            camps_per_exercici.get(key) or agg_camps_per_exercici.get(key)
+        ) else "comu"
+    punt["camps_mode_per_aparell"] = _sanitize_camps_mode_per_aparell(
+        punt.get("camps_mode_per_aparell") or {},
+        fallback_by_app=camps_mode_fallback,
+    )
+    punt["camps_per_exercici_per_aparell"] = camps_per_exercici
+    punt["agregacio_camps_per_exercici_per_aparell"] = agg_camps_per_exercici
 
     punt["exercicis"] = punt.get("exercicis") if isinstance(punt.get("exercicis"), dict) else {}
     punt["candidate_source_mode"] = _normalize_candidate_source_mode(punt.get("candidate_source_mode"))

@@ -16,10 +16,14 @@ ALLOWED_CANDIDATE_SOURCE_MODES = {"raw_exercise", "participant_aggregate", "team
 ALLOWED_EXERCISE_MODES = {"tots", "millor_1", "millor_n", "pitjor_1", "pitjor_n", "primer", "ultim", "index", "llista"}
 ALLOWED_EXERCISE_SELECTION_MODES = {"per_aparell_global", "per_aparell_override", "global_pool"}
 ALLOWED_PARTICIPANT_MODES = {"tots", "millor_1", "millor_n", "pitjor_1", "pitjor_n"}
+ALLOWED_FIELD_MODES_PER_APP = {"comu", "per_exercici"}
 SCORING_PIPELINE_ALLOWED_KEYS = {
     "aparells",
+    "camps_mode_per_aparell",
     "camps_per_aparell",
+    "camps_per_exercici_per_aparell",
     "agregacio_camps_per_aparell",
+    "agregacio_camps_per_exercici_per_aparell",
     "agregacio_camps",
     "candidate_source_mode",
     "candidate_source_cfg",
@@ -94,6 +98,15 @@ def _normalize_aggregation(raw_value, fallback="sum"):
     return value
 
 
+def _normalize_field_mode(raw_value, fallback="comu"):
+    value = str(raw_value or fallback or "comu").strip().lower()
+    if value not in ALLOWED_FIELD_MODES_PER_APP:
+        value = str(fallback or "comu").strip().lower()
+    if value not in ALLOWED_FIELD_MODES_PER_APP:
+        value = "comu"
+    return value
+
+
 def _normalize_candidate_source_mode(raw_mode):
     mode = str(raw_mode or "raw_exercise").strip().lower()
     return mode if mode in ALLOWED_CANDIDATE_SOURCE_MODES else "raw_exercise"
@@ -148,6 +161,56 @@ def _normalize_candidate_source_per_aparell(raw_map, *, fallback_mode="raw_exerc
             fallback_mode=fallback_mode,
             fallback_cfg=fallback_cfg,
         )
+    return out
+
+
+def _normalize_camps_mode_per_aparell(raw_map, *, fallback="comu"):
+    out = {}
+    for raw_key, raw_value in (raw_map.items() if isinstance(raw_map, dict) else []):
+        app_id = _to_positive_int(raw_key)
+        if app_id is None:
+            continue
+        out[str(app_id)] = _normalize_field_mode(raw_value, fallback=fallback)
+    return out
+
+
+def _normalize_camps_per_exercici_entry(raw_value):
+    out = {}
+    for raw_key, raw_fields in (raw_value.items() if isinstance(raw_value, dict) else []):
+        ex_idx = _to_positive_int(raw_key)
+        if ex_idx is None:
+            continue
+        out[str(ex_idx)] = _unique_nonempty_strings(raw_fields)
+    return out
+
+
+def _normalize_camps_per_exercici_per_aparell(raw_map):
+    out = {}
+    for raw_key, raw_value in (raw_map.items() if isinstance(raw_map, dict) else []):
+        app_id = _to_positive_int(raw_key)
+        if app_id is None:
+            continue
+        out[str(app_id)] = _normalize_camps_per_exercici_entry(raw_value)
+    return out
+
+
+def _normalize_agregacio_camps_per_exercici_entry(raw_value, *, fallback="sum"):
+    out = {}
+    for raw_key, raw_agg in (raw_value.items() if isinstance(raw_value, dict) else []):
+        ex_idx = _to_positive_int(raw_key)
+        if ex_idx is None:
+            continue
+        out[str(ex_idx)] = _normalize_aggregation(raw_agg, fallback=fallback)
+    return out
+
+
+def _normalize_agregacio_camps_per_exercici_per_aparell(raw_map, *, fallback="sum"):
+    out = {}
+    for raw_key, raw_value in (raw_map.items() if isinstance(raw_map, dict) else []):
+        app_id = _to_positive_int(raw_key)
+        if app_id is None:
+            continue
+        out[str(app_id)] = _normalize_agregacio_camps_per_exercici_entry(raw_value, fallback=fallback)
     return out
 
 
@@ -242,8 +305,11 @@ def build_main_scoring_pipeline_from_schema(schema_local, *, tipus="individual",
     selected_ids = _unique_positive_ints(app_cfg.get("ids"))
     pipeline = {
         "aparells": {"mode": "seleccionar", "ids": selected_ids},
+        "camps_mode_per_aparell": {},
         "camps_per_aparell": {},
+        "camps_per_exercici_per_aparell": {},
         "agregacio_camps_per_aparell": {},
+        "agregacio_camps_per_exercici_per_aparell": {},
         "agregacio_camps": _normalize_aggregation(punt.get("agregacio_camps"), "sum"),
         "candidate_source_mode": _normalize_candidate_source_mode(punt.get("candidate_source_mode")),
         "candidate_source_cfg": _normalize_candidate_source_cfg(punt.get("candidate_source_cfg")),
@@ -261,8 +327,19 @@ def build_main_scoring_pipeline_from_schema(schema_local, *, tipus="individual",
         normalize_exercise_selection_scope(punt.get("exercise_selection_scope"))
         or EXERCISE_SELECTION_SCOPE_PER_MEMBER
     )
+    field_mode_map = punt.get("camps_mode_per_aparell") if isinstance(punt.get("camps_mode_per_aparell"), dict) else {}
     camps_map = punt.get("camps_per_aparell") if isinstance(punt.get("camps_per_aparell"), dict) else {}
+    ex_camps_map = (
+        punt.get("camps_per_exercici_per_aparell")
+        if isinstance(punt.get("camps_per_exercici_per_aparell"), dict)
+        else {}
+    )
     agg_map = punt.get("agregacio_camps_per_aparell") if isinstance(punt.get("agregacio_camps_per_aparell"), dict) else {}
+    ex_agg_camps_map = (
+        punt.get("agregacio_camps_per_exercici_per_aparell")
+        if isinstance(punt.get("agregacio_camps_per_exercici_per_aparell"), dict)
+        else {}
+    )
     ex_map = punt.get("exercicis_per_aparell") if isinstance(punt.get("exercicis_per_aparell"), dict) else {}
     agg_ex_map = punt.get("agregacio_exercicis_per_aparell") if isinstance(punt.get("agregacio_exercicis_per_aparell"), dict) else {}
     source_map = punt.get("candidate_source_per_aparell") if isinstance(punt.get("candidate_source_per_aparell"), dict) else {}
@@ -274,11 +351,24 @@ def build_main_scoring_pipeline_from_schema(schema_local, *, tipus="individual",
     )
     for app_id in selected_ids:
         key = str(app_id)
+        pipeline["camps_mode_per_aparell"][key] = _normalize_field_mode(
+            field_mode_map.get(key) or field_mode_map.get(app_id),
+            fallback="comu",
+        )
         pipeline["camps_per_aparell"][key] = _unique_nonempty_strings(camps_map.get(key) or camps_map.get(app_id) or ["total"])
+        if key in ex_camps_map or app_id in ex_camps_map:
+            pipeline["camps_per_exercici_per_aparell"][key] = _normalize_camps_per_exercici_entry(
+                ex_camps_map.get(key) or ex_camps_map.get(app_id)
+            )
         pipeline["agregacio_camps_per_aparell"][key] = _normalize_aggregation(
             agg_map.get(key) or agg_map.get(app_id),
             fallback=pipeline["agregacio_camps"],
         )
+        if key in ex_agg_camps_map or app_id in ex_agg_camps_map:
+            pipeline["agregacio_camps_per_exercici_per_aparell"][key] = _normalize_agregacio_camps_per_exercici_entry(
+                ex_agg_camps_map.get(key) or ex_agg_camps_map.get(app_id),
+                fallback=pipeline["agregacio_camps_per_aparell"][key],
+            )
         pipeline["candidate_source_per_aparell"][key] = _normalize_candidate_source_entry(
             source_map.get(key) or source_map.get(app_id) or {},
             fallback_mode=pipeline["candidate_source_mode"],
@@ -325,7 +415,22 @@ def normalize_scoring_pipeline(raw_pipeline, *, tipus="individual", team_mode=""
     if selection_scope not in {EXERCISE_SELECTION_SCOPE_PER_MEMBER, EXERCISE_SELECTION_SCOPE_TEAM_POOL}:
         selection_scope = EXERCISE_SELECTION_SCOPE_PER_MEMBER
     camps_map_raw = pipeline_in.get("camps_per_aparell") if isinstance(pipeline_in.get("camps_per_aparell"), dict) else {}
+    field_mode_map_raw = (
+        pipeline_in.get("camps_mode_per_aparell")
+        if isinstance(pipeline_in.get("camps_mode_per_aparell"), dict)
+        else {}
+    )
+    ex_camps_map_raw = (
+        pipeline_in.get("camps_per_exercici_per_aparell")
+        if isinstance(pipeline_in.get("camps_per_exercici_per_aparell"), dict)
+        else {}
+    )
     agg_map_raw = pipeline_in.get("agregacio_camps_per_aparell") if isinstance(pipeline_in.get("agregacio_camps_per_aparell"), dict) else {}
+    ex_agg_camps_map_raw = (
+        pipeline_in.get("agregacio_camps_per_exercici_per_aparell")
+        if isinstance(pipeline_in.get("agregacio_camps_per_exercici_per_aparell"), dict)
+        else {}
+    )
     source_map_raw = pipeline_in.get("candidate_source_per_aparell") if isinstance(pipeline_in.get("candidate_source_per_aparell"), dict) else {}
     ex_map_raw = pipeline_in.get("exercicis_per_aparell") if isinstance(pipeline_in.get("exercicis_per_aparell"), dict) else {}
     agg_ex_map_raw = pipeline_in.get("agregacio_exercicis_per_aparell") if isinstance(pipeline_in.get("agregacio_exercicis_per_aparell"), dict) else {}
@@ -335,8 +440,11 @@ def normalize_scoring_pipeline(raw_pipeline, *, tipus="individual", team_mode=""
         if isinstance(pipeline_in.get("agregacio_participants_per_aparell"), dict)
         else {}
     )
+    field_mode_map = {}
     camps_per_aparell = {}
+    ex_camps_map = {}
     agg_map = {}
+    ex_agg_camps_map = {}
     source_map = {}
     ex_map = {}
     agg_ex_map = {}
@@ -344,14 +452,27 @@ def normalize_scoring_pipeline(raw_pipeline, *, tipus="individual", team_mode=""
     agg_part_map = {}
     for app_id in app_ids:
         key = str(app_id)
+        field_mode_map[key] = _normalize_field_mode(
+            field_mode_map_raw.get(key) or field_mode_map_raw.get(app_id),
+            fallback="comu",
+        )
         if key in camps_map_raw or app_id in camps_map_raw:
             camps_per_aparell[key] = _unique_nonempty_strings(camps_map_raw.get(key) or camps_map_raw.get(app_id))
         else:
             camps_per_aparell[key] = []
+        if key in ex_camps_map_raw or app_id in ex_camps_map_raw:
+            ex_camps_map[key] = _normalize_camps_per_exercici_entry(
+                ex_camps_map_raw.get(key) or ex_camps_map_raw.get(app_id)
+            )
         agg_map[key] = _normalize_aggregation(
             agg_map_raw.get(key) or agg_map_raw.get(app_id),
             fallback=agg_camps,
         )
+        if key in ex_agg_camps_map_raw or app_id in ex_agg_camps_map_raw:
+            ex_agg_camps_map[key] = _normalize_agregacio_camps_per_exercici_entry(
+                ex_agg_camps_map_raw.get(key) or ex_agg_camps_map_raw.get(app_id),
+                fallback=agg_map[key],
+            )
         source_map[key] = _normalize_candidate_source_entry(
             source_map_raw.get(key) or source_map_raw.get(app_id) or {},
             fallback_mode=candidate_source_mode,
@@ -380,8 +501,11 @@ def normalize_scoring_pipeline(raw_pipeline, *, tipus="individual", team_mode=""
             "mode": "seleccionar",
             "ids": app_ids,
         },
+        "camps_mode_per_aparell": field_mode_map,
         "camps_per_aparell": camps_per_aparell,
+        "camps_per_exercici_per_aparell": ex_camps_map,
         "agregacio_camps_per_aparell": agg_map,
+        "agregacio_camps_per_exercici_per_aparell": ex_agg_camps_map,
         "agregacio_camps": agg_camps,
         "candidate_source_mode": candidate_source_mode,
         "candidate_source_cfg": candidate_source_cfg,
@@ -425,8 +549,11 @@ def _default_pipeline_from_selected_app_ids(selected_app_ids, *, tipus="individu
     app_ids = _unique_positive_ints(selected_app_ids)
     pipeline = {
         "aparells": {"mode": "seleccionar", "ids": app_ids},
+        "camps_mode_per_aparell": {str(app_id): "comu" for app_id in app_ids},
         "camps_per_aparell": {str(app_id): ["total"] for app_id in app_ids},
+        "camps_per_exercici_per_aparell": {},
         "agregacio_camps_per_aparell": {str(app_id): "sum" for app_id in app_ids},
+        "agregacio_camps_per_exercici_per_aparell": {},
         "agregacio_camps": "sum",
         "candidate_source_mode": "raw_exercise",
         "candidate_source_cfg": _normalize_candidate_source_cfg({}),
@@ -596,6 +723,7 @@ def _compact_pipeline_for_persistence(raw_pipeline):
             "mode": "seleccionar",
             "ids": _resolve_pipeline_target_app_ids(pipeline),
         },
+        "camps_mode_per_aparell": {},
         "camps_per_aparell": {
             str(app_id): _unique_nonempty_strings(
                 ((pipeline.get("camps_per_aparell") or {}).get(str(app_id)))
@@ -603,6 +731,7 @@ def _compact_pipeline_for_persistence(raw_pipeline):
             )
             for app_id in _resolve_pipeline_target_app_ids(pipeline)
         },
+        "camps_per_exercici_per_aparell": {},
         "agregacio_camps_per_aparell": {
             str(app_id): _normalize_aggregation(
                 ((pipeline.get("agregacio_camps_per_aparell") or {}).get(str(app_id)))
@@ -611,6 +740,7 @@ def _compact_pipeline_for_persistence(raw_pipeline):
             )
             for app_id in _resolve_pipeline_target_app_ids(pipeline)
         },
+        "agregacio_camps_per_exercici_per_aparell": {},
         "agregacio_camps": _normalize_aggregation(pipeline.get("agregacio_camps"), "sum"),
         "candidate_source_mode": _normalize_candidate_source_mode(pipeline.get("candidate_source_mode")),
         "candidate_source_cfg": _compact_candidate_source_cfg_for_persistence(pipeline.get("candidate_source_cfg")),
@@ -631,6 +761,31 @@ def _compact_pipeline_for_persistence(raw_pipeline):
         if "agregacio_participants" in pipeline:
             out["agregacio_participants"] = _normalize_aggregation(pipeline.get("agregacio_participants"), "sum")
     source_map = pipeline.get("candidate_source_per_aparell") if isinstance(pipeline.get("candidate_source_per_aparell"), dict) else {}
+    field_mode_map = pipeline.get("camps_mode_per_aparell") if isinstance(pipeline.get("camps_mode_per_aparell"), dict) else {}
+    ex_camps_map = (
+        pipeline.get("camps_per_exercici_per_aparell")
+        if isinstance(pipeline.get("camps_per_exercici_per_aparell"), dict)
+        else {}
+    )
+    ex_agg_camps_map = (
+        pipeline.get("agregacio_camps_per_exercici_per_aparell")
+        if isinstance(pipeline.get("agregacio_camps_per_exercici_per_aparell"), dict)
+        else {}
+    )
+    for app_id in _resolve_pipeline_target_app_ids(pipeline):
+        key = str(app_id)
+        mode = _normalize_field_mode(field_mode_map.get(key) or field_mode_map.get(app_id), fallback="comu")
+        ex_fields = _normalize_camps_per_exercici_entry(ex_camps_map.get(key) or ex_camps_map.get(app_id))
+        ex_aggs = _normalize_agregacio_camps_per_exercici_entry(
+            ex_agg_camps_map.get(key) or ex_agg_camps_map.get(app_id),
+            fallback=((out.get("agregacio_camps_per_aparell") or {}).get(key) or out.get("agregacio_camps", "sum")),
+        )
+        if mode != "comu" or ex_fields or ex_aggs:
+            out["camps_mode_per_aparell"][key] = mode
+        if ex_fields:
+            out["camps_per_exercici_per_aparell"][key] = ex_fields
+        if ex_aggs:
+            out["agregacio_camps_per_exercici_per_aparell"][key] = ex_aggs
     for raw_key, raw_value in source_map.items():
         app_id = _to_positive_int(raw_key)
         if app_id is None:
@@ -656,6 +811,12 @@ def _compact_pipeline_for_persistence(raw_pipeline):
             str(app_id): {"mode": out["candidate_source_mode"]}
             for app_id in out["aparells"]["ids"]
         }
+    if not out["camps_mode_per_aparell"]:
+        out.pop("camps_mode_per_aparell", None)
+    if not out["camps_per_exercici_per_aparell"]:
+        out.pop("camps_per_exercici_per_aparell", None)
+    if not out["agregacio_camps_per_exercici_per_aparell"]:
+        out.pop("agregacio_camps_per_exercici_per_aparell", None)
     if not out["agregacio_exercicis_per_aparell"]:
         out.pop("agregacio_exercicis_per_aparell", None)
     if not out["exercicis_per_aparell"]:
@@ -823,6 +984,51 @@ def _resolve_pipeline_ex_agg_for_app(pipeline, app_id):
     return _normalize_aggregation(raw, fallback=agg_exercicis)
 
 
+def _resolve_pipeline_fields_cfg_for_app_exercise(pipeline, app_id, ex_idx):
+    app_key = str(app_id)
+    ex_key = str(_to_positive_int(ex_idx) or 1)
+    camps_map = (pipeline.get("camps_per_aparell") or {})
+    agg_map = (pipeline.get("agregacio_camps_per_aparell") or {})
+    base_fields = _unique_nonempty_strings(camps_map.get(app_key) or camps_map.get(app_id))
+    base_agg = _normalize_aggregation(
+        agg_map.get(app_key) or agg_map.get(app_id),
+        fallback=pipeline.get("agregacio_camps", "sum"),
+    )
+    mode_map = (pipeline.get("camps_mode_per_aparell") or {})
+    mode = _normalize_field_mode(mode_map.get(app_key) or mode_map.get(app_id), fallback="comu")
+    if mode != "per_exercici":
+        return base_fields, base_agg
+
+    ex_camps_per_app = (pipeline.get("camps_per_exercici_per_aparell") or {})
+    ex_aggs_per_app = (pipeline.get("agregacio_camps_per_exercici_per_aparell") or {})
+    app_ex_fields = ex_camps_per_app.get(app_key)
+    if app_ex_fields is None:
+        app_ex_fields = ex_camps_per_app.get(app_id)
+    app_ex_aggs = ex_aggs_per_app.get(app_key)
+    if app_ex_aggs is None:
+        app_ex_aggs = ex_aggs_per_app.get(app_id)
+    resolved_fields = _unique_nonempty_strings(
+        (app_ex_fields or {}).get(ex_key) if isinstance(app_ex_fields, dict) else []
+    )
+    raw_agg = (app_ex_aggs or {}).get(ex_key) if isinstance(app_ex_aggs, dict) else None
+    resolved_agg = str(raw_agg or "").strip().lower()
+    if resolved_agg and resolved_agg not in ALLOWED_AGGREGATIONS:
+        resolved_agg = ""
+    if not resolved_fields or not resolved_agg:
+        return base_fields, base_agg
+    return resolved_fields, resolved_agg
+
+
+def resolve_fields_for_app_exercise(app_id, ex_idx, pipeline):
+    fields, _agg = _resolve_pipeline_fields_cfg_for_app_exercise(pipeline or {}, app_id, ex_idx)
+    return fields
+
+
+def resolve_field_agg_for_app_exercise(app_id, ex_idx, pipeline):
+    _fields, agg = _resolve_pipeline_fields_cfg_for_app_exercise(pipeline or {}, app_id, ex_idx)
+    return agg
+
+
 def _copy_row_with_value(ctx, row, value):
     item = ctx["copy_ex_row_with_value"](row, value)
     item["by_camp"] = dict((row or {}).get("by_camp") or {})
@@ -830,17 +1036,12 @@ def _copy_row_with_value(ctx, row, value):
 
 
 def _pipeline_rows_for_source_rows(ctx, rows_ex, app_id, pipeline, *, participant_key):
-    camps_map = (pipeline.get("camps_per_aparell") or {})
-    camps = _unique_nonempty_strings(camps_map.get(str(app_id)) or camps_map.get(app_id))
-    if not camps:
-        return []
-    agg_map = (pipeline.get("agregacio_camps_per_aparell") or {})
-    agg_camps = _normalize_aggregation(
-        agg_map.get(str(app_id)) or agg_map.get(app_id),
-        fallback=pipeline.get("agregacio_camps", "sum"),
-    )
     computed_rows = []
     for row in rows_ex or []:
+        ex_idx = _to_positive_int((row or {}).get("exercici")) or _to_positive_int((row or {}).get("idx")) or 1
+        camps, agg_camps = _resolve_pipeline_fields_cfg_for_app_exercise(pipeline, app_id, ex_idx)
+        if not camps:
+            continue
         by_camp = dict((row or {}).get("by_camp") or {})
         values = [ctx["to_float"](by_camp.get(code)) for code in camps]
         computed_rows.append(_copy_row_with_value(ctx, row, ctx["apply_simple_agg"](values, agg_camps)))
@@ -1098,4 +1299,6 @@ __all__ = [
     "_normalize_agg",
     "_pipeline_selected_app_ids",
     "pipeline_metric_key",
+    "resolve_field_agg_for_app_exercise",
+    "resolve_fields_for_app_exercise",
 ]

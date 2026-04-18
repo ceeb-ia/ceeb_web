@@ -204,9 +204,19 @@ def validate_raw_desempat_legacy_payload(desempat):
 
     errors = []
     allowed_selection_modes = {"hereta", "per_aparell_global", "per_aparell_override", "global_pool"}
+    forbidden_pipeline_keys = {
+        "victories",
+        "camps_mode_per_aparell",
+        "camps_per_exercici_per_aparell",
+        "agregacio_camps_per_exercici_per_aparell",
+    }
     for idx, tie in enumerate(desempat if isinstance(desempat, list) else []):
         if not isinstance(tie, dict):
             continue
+        pipeline = _as_dict(tie.get("pipeline"))
+        for key in forbidden_pipeline_keys:
+            if key in pipeline:
+                errors.append(f"desempat[{idx}].pipeline.{key} no esta permes.")
         scope = _as_dict(tie.get("scope"))
         app_scope = _as_dict(scope.get("aparells"))
         app_mode = str(app_scope.get("mode") or "hereta").strip().lower()

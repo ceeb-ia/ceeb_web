@@ -129,6 +129,13 @@
   }
 
   function _summaryPerAppDetails(punt, appIds) {
+    const commonFieldCodesUi = {};
+    (Array.isArray(appIds) ? appIds : []).forEach((appId) => {
+      commonFieldCodesUi[String(appId)] = _getCommonFieldCodesForUi(punt, appId);
+    });
+    const campsModeUi = readPerAppCampsModeFromUI();
+    const perExerciseFieldsUi = readPerExerciseFieldCodesFromUI(campsModeUi);
+    const perExerciseAggUi = readPerExerciseAggCampsFromUI(campsModeUi, perExerciseFieldsUi);
     const aggCampsUi = readPerAppAggCampsFromUI();
     const candidateUi = readPerAppCandidateSourceFromUI();
     const exUi = readPerAppExercicisFromUI();
@@ -141,10 +148,18 @@
       const candidateSummary = _stripTrailingPeriod(_describeCandidateSourceEntry(candidateEntry).summary);
       const exCfg = exUi[key] || _getPerAppExerciseCfgForUi(punt, appId);
       const participantsCfg = participantsUi[key] || _getPerAppParticipantsForUi(punt, appId);
+      const fieldUiState = {
+        commonFieldCodes: commonFieldCodesUi,
+        commonAgg: aggCampsUi,
+        campsMode: campsModeUi,
+        perExerciseFields: perExerciseFieldsUi,
+        perExerciseAgg: perExerciseAggUi,
+      };
       return {
         appId,
         appName: _summaryAppName(appId),
         aggCamps: _describeAggLabel(aggCampsUi[key] || _getPerAppAggCampsForUi(punt, appId)),
+        fieldSummary: _buildPerAppFieldSummary(punt, appId, fieldUiState),
         candidateSummary,
         exerciseLabel: describeExerciseMode(exCfg.mode, exCfg.best_n, exCfg.index, exCfg.ids),
         aggEx: _describeAggLabel(aggExUi[key] || _getPerAppAggExercicisForUi(punt, appId)),
@@ -165,11 +180,22 @@
   function _buildPretractamentSegment(punt, perAppEntries) {
     const entries = Array.isArray(perAppEntries) ? perAppEntries : [];
     if (!entries.length) return "sense aparells seleccionats";
-    if (_allPerAppEntriesEqual(entries, ["aggCamps", "candidateSummary"])) {
-      return `camps per ${entries[0].aggCamps}; ${_lowercaseFirst(entries[0].candidateSummary)}`;
+    if (_allPerAppEntriesEqual(entries, ["candidateSummary"])) {
+      return _lowercaseFirst(entries[0].candidateSummary);
     }
     return entries
-      .map((entry) => `a ${entry.appName}, camps per ${entry.aggCamps} i ${_lowercaseFirst(entry.candidateSummary)}`)
+      .map((entry) => `a ${entry.appName}, ${_lowercaseFirst(entry.candidateSummary)}`)
+      .join("; ");
+  }
+
+  function _buildFieldTreatmentSegment(perAppEntries) {
+    const entries = Array.isArray(perAppEntries) ? perAppEntries : [];
+    if (!entries.length) return "sense camps definits";
+    if (_allPerAppEntriesEqual(entries, ["fieldSummary"])) {
+      return `a cada aparell, ${entries[0].fieldSummary}`;
+    }
+    return entries
+      .map((entry) => `a ${entry.appName}, ${entry.fieldSummary}`)
       .join("; ");
   }
 
@@ -436,6 +462,149 @@
   function _normalizeAggCampsValue(rawValue) {
     const agg = String(rawValue || "sum").toLowerCase().trim();
     return ["sum","avg","median","max","min"].includes(agg) ? agg : "sum";
+  }
+
+  function _normalizePerAppCampsMode(rawValue) {
+    return String(rawValue || "comu").toLowerCase().trim() === "per_exercici" ? "per_exercici" : "comu";
+  }
+
+  function _normalizeExerciseNumber(rawValue) {
+    const parsed = Number.parseInt(rawValue, 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }
+
+  function _getAppExerciseCount(appId) {
+    const app = getAparellById(appId);
+    return Math.max(1, Number(app?.nombre_exercicis || 1) || 1);
+  }
+
+  function _getCommonFieldCodesForUi(punt, appId) {
+    const key = String(appId);
+    const select = document.querySelector(`[data-app-select="${key}"]`);
+    if (select) {
+      return Array.from(select.selectedOptions || [])
+        .map(opt => String(opt.value || "").trim())
+        .filter(Boolean);
+    }
+    const rawMap = punt && typeof punt.camps_per_aparell === "object" && !Array.isArray(punt.camps_per_aparell)
+      ? punt.camps_per_aparell
+      : {};
+    const rawCodes = rawMap[key] ?? rawMap[appId];
+    if (Array.isArray(rawCodes)) {
+      return rawCodes.map(code => String(code || "").trim()).filter(Boolean);
+    }
+    if (typeof rawCodes === "string") {
+      return rawCodes.split(",").map(code => String(code || "").trim()).filter(Boolean);
+    }
+    return [];
+  }
+
+  function _getPerAppCampsModeForUi(punt, appId) {
+    const key = String(appId);
+    const modeSel = document.querySelector(`[data-app-camps-mode][data-app-id="${key}"]`);
+    if (modeSel) return _normalizePerAppCampsMode(modeSel.value || "comu");
+    const rawMap = punt && typeof punt.camps_mode_per_aparell === "object" && !Array.isArray(punt.camps_mode_per_aparell)
+      ? punt.camps_mode_per_aparell
+      : {};
+    const directValue = rawMap[key] ?? rawMap[appId];
+    if (directValue != null) return _normalizePerAppCampsMode(directValue);
+    const perExerciseFields = punt && typeof punt.camps_per_exercici_per_aparell === "object" && !Array.isArray(punt.camps_per_exercici_per_aparell)
+      ? punt.camps_per_exercici_per_aparell
+      : {};
+    const perExerciseAgg = punt && typeof punt.agregacio_camps_per_exercici_per_aparell === "object" && !Array.isArray(punt.agregacio_camps_per_exercici_per_aparell)
+      ? punt.agregacio_camps_per_exercici_per_aparell
+      : {};
+    const hasExerciseConfig = (
+      (perExerciseFields[key] && typeof perExerciseFields[key] === "object")
+      || (perExerciseAgg[key] && typeof perExerciseAgg[key] === "object")
+      || (perExerciseFields[appId] && typeof perExerciseFields[appId] === "object")
+      || (perExerciseAgg[appId] && typeof perExerciseAgg[appId] === "object")
+    );
+    return hasExerciseConfig ? "per_exercici" : "comu";
+  }
+
+  function _getPerExerciseFieldsMapForUi(punt, appId) {
+    const rawMap = punt && typeof punt.camps_per_exercici_per_aparell === "object" && !Array.isArray(punt.camps_per_exercici_per_aparell)
+      ? punt.camps_per_exercici_per_aparell
+      : {};
+    const key = String(appId);
+    const appMap = rawMap[key] ?? rawMap[appId];
+    return appMap && typeof appMap === "object" && !Array.isArray(appMap) ? appMap : {};
+  }
+
+  function _getPerExerciseAggMapForUi(punt, appId) {
+    const rawMap = punt && typeof punt.agregacio_camps_per_exercici_per_aparell === "object" && !Array.isArray(punt.agregacio_camps_per_exercici_per_aparell)
+      ? punt.agregacio_camps_per_exercici_per_aparell
+      : {};
+    const key = String(appId);
+    const appMap = rawMap[key] ?? rawMap[appId];
+    return appMap && typeof appMap === "object" && !Array.isArray(appMap) ? appMap : {};
+  }
+
+  function _getPerExerciseFieldsForUi(punt, appId, exercici) {
+    const rawCodes = _getPerExerciseFieldsMapForUi(punt, appId)[String(exercici)];
+    if (Array.isArray(rawCodes)) {
+      return rawCodes.map(code => String(code || "").trim()).filter(Boolean);
+    }
+    if (typeof rawCodes === "string") {
+      return rawCodes.split(",").map(code => String(code || "").trim()).filter(Boolean);
+    }
+    return [];
+  }
+
+  function _getPerExerciseAggForUi(punt, appId, exercici) {
+    const rawValue = _getPerExerciseAggMapForUi(punt, appId)[String(exercici)];
+    return rawValue == null ? null : _normalizeAggCampsValue(rawValue);
+  }
+
+  function _describeFieldCodesLabel(rawCodes) {
+    const codes = (Array.isArray(rawCodes) ? rawCodes : [])
+      .map(code => String(code || "").trim())
+      .filter(Boolean);
+    if (!codes.length) return "sense camps definits";
+    return _joinCatalanList(codes);
+  }
+
+  function _describeFieldConfigLabel(rawCodes, rawAgg) {
+    return `${_describeFieldCodesLabel(rawCodes)} per ${_describeAggLabel(rawAgg || "sum")}`;
+  }
+
+  function _copyEffectivePerExerciseFieldCfg(punt, appId, exercici, uiState) {
+    const state = uiState || {};
+    const key = String(appId);
+    const exKey = String(exercici);
+    const commonCodes = Array.isArray(state.commonFieldCodes?.[key])
+      ? state.commonFieldCodes[key]
+      : _getCommonFieldCodesForUi(punt, appId);
+    const commonAgg = state.commonAgg?.[key] || _getPerAppAggCampsForUi(punt, appId);
+    const mode = state.campsMode?.[key] || _getPerAppCampsModeForUi(punt, appId);
+    if (mode !== "per_exercici") {
+      return { mode, inherited: false, codes: commonCodes, agg: commonAgg };
+    }
+    const exerciseCodes = Array.isArray(state.perExerciseFields?.[key]?.[exKey])
+      ? state.perExerciseFields[key][exKey]
+      : _getPerExerciseFieldsForUi(punt, appId, exercici);
+    const exerciseAgg = state.perExerciseAgg?.[key]?.[exKey] || _getPerExerciseAggForUi(punt, appId, exercici);
+    if (exerciseCodes.length && exerciseAgg) {
+      return { mode, inherited: false, codes: exerciseCodes, agg: exerciseAgg };
+    }
+    return { mode, inherited: true, codes: commonCodes, agg: commonAgg };
+  }
+
+  function _buildPerAppFieldSummary(punt, appId, uiState) {
+    const exerciseCount = _getAppExerciseCount(appId);
+    const effectiveEntries = [];
+    for (let exercici = 1; exercici <= exerciseCount; exercici += 1) {
+      const effectiveCfg = _copyEffectivePerExerciseFieldCfg(punt, appId, exercici, uiState);
+      effectiveEntries.push({
+        exercici,
+        label: _describeFieldConfigLabel(effectiveCfg.codes, effectiveCfg.agg),
+      });
+    }
+    if (!effectiveEntries.length) return "sense camps definits";
+    const baseLabel = effectiveEntries[0].label;
+    if (effectiveEntries.every(entry => entry.label === baseLabel)) return baseLabel;
+    return effectiveEntries.map(entry => `exercici ${entry.exercici}: ${entry.label}`).join("; ");
   }
 
   function _copyCandidateSourceEntry(rawEntry, fallbackMode, fallbackCfg) {
@@ -711,8 +880,8 @@
     }
     if (els.perAppConfigIntro) {
       els.perAppConfigIntro.textContent = isCombinedApps
-        ? "Cada targeta mostra els camps, l'agregacio de camps i el pretractament de l'aparell. La seleccio final es resol sobre una sola bossa comuna."
-        : "Cada targeta mostra els camps, l'agregacio de camps, el pretractament, la seleccio d'exercicis, la seleccio i agregacio de membres i l'agregacio final d'exercicis propis d'aquest aparell.";
+        ? "Cada targeta mostra la base comuna de camps, el tractament comu o per exercici i el pretractament de l'aparell. La seleccio final es resol sobre una sola bossa comuna."
+        : "Cada targeta mostra la base comuna de camps, el tractament comu o per exercici, el pretractament, la seleccio d'exercicis, la seleccio i agregacio de membres i l'agregacio final d'exercicis propis d'aquest aparell.";
     }
     if (els.restrictionsHint) {
       const maxPerParticipant = Math.max(0, Number(els.iExMaxPerParticipant?.value || 0));
@@ -755,6 +924,7 @@
       return;
     }
 
+    const fieldTreatmentSegment = _buildFieldTreatmentSegment(perAppEntries);
     const pretractament = _buildPretractamentSegment(punt, perAppEntries);
     const selectionSegment = _buildScoreSelectionSegment({
       punt,
@@ -767,6 +937,7 @@
     const restrictionsSegment = _buildRestrictionsSegment(isCombinedApps, showScope, isTeamPool, perAppEntries, exCfg);
 
     summaryLines.push(
+      { label: "Camps", text: fieldTreatmentSegment },
       { label: "Pretractament", text: pretractament },
       { label: "Seleccio final", text: selectionSegment },
       { label: "Final", text: finalSegment },
@@ -816,6 +987,99 @@
         <input class="form-control form-control-sm"
                data-app-ex-ids data-app-id="${esc(compAparellId)}"
                type="text" value="${esc(ids)}" placeholder="Llista (ex: 1,3,4)">
+        </div>
+      </div>
+    `;
+  }
+
+  function perAppFieldModeHTML(compAparellId, modeValue) {
+    const mode = _normalizePerAppCampsMode(modeValue);
+    return `
+      <div class="puntuacio-step-card puntuacio-step-card--shared" data-app-camps-mode-box="${esc(compAparellId)}">
+        <label class="small text-muted mb-1">1c. Tractament de camps</label>
+        <div class="puntuacio-step-card__head">
+          <div class="puntuacio-step-card__label">1c. Tractament de camps</div>
+        </div>
+        <div class="puntuacio-step-card__body">
+          <select class="form-control form-control-sm" data-app-camps-mode data-app-id="${esc(compAparellId)}">
+            <option value="comu" ${mode === "comu" ? "selected" : ""}>Comu</option>
+            <option value="per_exercici" ${mode === "per_exercici" ? "selected" : ""}>Per exercici</option>
+          </select>
+          <div class="small text-muted mt-2">La base comuna continua sent obligatoria. Si actives el mode per exercici, cada exercici pot tenir la seva propia seleccio de camps i agregacio.</div>
+        </div>
+      </div>
+    `;
+  }
+
+  function perAppExerciseFieldsHTML(compAparellId, modeValue, punt) {
+    const mode = _normalizePerAppCampsMode(modeValue);
+    const exerciseCount = _getAppExerciseCount(compAparellId);
+    const explicitFieldsMap = _getPerExerciseFieldsMapForUi(punt, compAparellId);
+    const explicitAggMap = _getPerExerciseAggMapForUi(punt, compAparellId);
+    const blocks = [];
+    for (let exercici = 1; exercici <= exerciseCount; exercici += 1) {
+      const exKey = String(exercici);
+      const selectedCodes = Array.isArray(explicitFieldsMap[exKey])
+        ? explicitFieldsMap[exKey].map(code => String(code || "").trim()).filter(Boolean)
+        : [];
+      const aggValue = _normalizeAggCampsValue(explicitAggMap[exKey] || _getPerAppAggCampsForUi(punt, compAparellId));
+      const opts = extendOptionsWithSelectedValues(
+        (APARELL_FIELD_OPTIONS[String(compAparellId)] || []).filter(o => !!o?.scoreable),
+        selectedCodes,
+        value => value,
+      );
+      const selected = new Set(
+        selectedCodes.map(String).filter(code => opts.some(o => String(o.code) === String(code)))
+      );
+      blocks.push(`
+        <div class="border rounded p-2 ${exercici < exerciseCount ? "mb-2" : ""}" data-app-exercise-fields-row data-app-id="${esc(compAparellId)}" data-exercise="${esc(exercici)}">
+          <div class="font-weight-bold">Exercici ${esc(exercici)}</div>
+          <div class="small text-muted mt-1 mb-2" data-app-exercise-fields-hint data-app-id="${esc(compAparellId)}" data-exercise="${esc(exercici)}">Si no es defineix, aquest exercici hereta la base comuna de l'aparell.</div>
+          <div class="row">
+            <div class="col-12 col-md-7 mb-2 mb-md-0">
+              <label class="small text-muted mb-1">Camps</label>
+              <select class="form-control form-control-sm"
+                      data-app-exercise-fields
+                      data-app-id="${esc(compAparellId)}"
+                      data-exercise="${esc(exercici)}"
+                      multiple size="5">
+                ${opts.map(o => {
+                  const kind = String(o.kind || "");
+                  const kindLabel = kind === "field" ? "input" : (kind === "computed" ? "computed" : (kind || "camp"));
+                  const judgesCount = Number(o.judges_count || 1);
+                  const judgesLabel = judgesCount > 1 ? `, ${judgesCount} jutges` : "";
+                  const label = `${o.label} (${o.code}) - ${kindLabel}${judgesLabel}${o.stale ? " (no disponible)" : ""}`;
+                  return `
+                    <option value="${esc(o.code)}" ${selected.has(String(o.code)) ? "selected" : ""} ${o.injected ? 'data-injected="1"' : ""} ${o.stale ? 'data-stale="1"' : ""}>
+                      ${esc(label)}
+                    </option>
+                  `;
+                }).join("")}
+              </select>
+            </div>
+            <div class="col-12 col-md-5">
+              <label class="small text-muted mb-1">Agregacio de camps</label>
+              <select class="form-control form-control-sm" data-app-exercise-agg-camps data-app-id="${esc(compAparellId)}" data-exercise="${esc(exercici)}">
+                <option value="sum" ${aggValue === "sum" ? "selected" : ""}>Suma</option>
+                <option value="avg" ${aggValue === "avg" ? "selected" : ""}>Mitjana</option>
+                <option value="median" ${aggValue === "median" ? "selected" : ""}>Mediana</option>
+                <option value="max" ${aggValue === "max" ? "selected" : ""}>Maxim</option>
+                <option value="min" ${aggValue === "min" ? "selected" : ""}>Minim</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      `);
+    }
+    return `
+      <div class="puntuacio-step-card puntuacio-step-card--shared" data-app-exercise-fields-box="${esc(compAparellId)}" style="${mode === "per_exercici" ? "" : "display:none;"}">
+        <label class="small text-muted mb-1">1d. Personalitzacio per exercici</label>
+        <div class="puntuacio-step-card__head">
+          <div class="puntuacio-step-card__label">1d. Camps per exercici</div>
+        </div>
+        <div class="puntuacio-step-card__body">
+          <div class="small text-muted mb-2">Base comuna per a tots els exercicis d'aquest aparell. Nomes cal omplir un exercici si ha de sortir de la base comuna.</div>
+          ${blocks.join("")}
         </div>
       </div>
     `;
@@ -1022,6 +1286,35 @@
     aggBox.style.display = _perAppSelectedFieldCount(card) >= 2 ? "" : "none";
   }
 
+  function refreshPerAppExerciseFieldOverridesCardUI(card, punt) {
+    const modeSel = card.querySelector("[data-app-camps-mode]");
+    const wrapper = card.querySelector("[data-app-exercise-fields-box]");
+    const appId = String(modeSel?.getAttribute("data-app-id") || wrapper?.getAttribute("data-app-exercise-fields-box") || "").trim();
+    if (!modeSel || !wrapper || !appId) return;
+    const mode = _normalizePerAppCampsMode(modeSel.value || "comu");
+    wrapper.style.display = mode === "per_exercici" ? "" : "none";
+    const livePunt = punt && typeof punt === "object" ? punt : (((currentCfg() || {}).schema || DEFAULT_SCHEMA).puntuacio || {});
+    const commonCodes = _getCommonFieldCodesForUi(livePunt, appId);
+    const commonAgg = _getPerAppAggCampsForUi(livePunt, appId);
+    wrapper.querySelectorAll("[data-app-exercise-fields-row]").forEach(row => {
+      const exercici = _normalizeExerciseNumber(row.getAttribute("data-exercise"));
+      const hint = row.querySelector("[data-app-exercise-fields-hint]");
+      if (!exercici || !hint) return;
+      const codes = Array.from((row.querySelector("[data-app-exercise-fields]")?.selectedOptions || []))
+        .map(opt => String(opt.value || "").trim())
+        .filter(Boolean);
+      const agg = _normalizeAggCampsValue(row.querySelector("[data-app-exercise-agg-camps]")?.value || commonAgg);
+      const sameAsCommon = codes.length && JSON.stringify(codes) === JSON.stringify(commonCodes) && agg === commonAgg;
+      if (!codes.length) {
+        hint.textContent = `Si no es defineix, aquest exercici hereta la base comuna de l'aparell (${_describeFieldConfigLabel(commonCodes, commonAgg)}).`;
+      } else if (sameAsCommon) {
+        hint.textContent = `Configuracio efectiva igual a la base comuna (${_describeFieldConfigLabel(commonCodes, commonAgg)}).`;
+      } else {
+        hint.textContent = `Configuracio propia per a aquest exercici: ${_describeFieldConfigLabel(codes, agg)}.`;
+      }
+    });
+  }
+
   function _candidateSourceNeedsExerciseAggregation(selectionMode) {
     return ["tots", "millor_n", "pitjor_n", "llista"].includes(String(selectionMode || "tots").toLowerCase().trim());
   }
@@ -1058,6 +1351,7 @@
       const key = String(id);
       const selectedCodes = (punt.camps_per_aparell || {})[key] || [];
       const aggCamps = _getPerAppAggCampsForUi(punt, id);
+      const campsMode = _getPerAppCampsModeForUi(punt, id);
       const candidateSourceEntry = _getPerAppCandidateSourceForUi(punt, id);
       const perAppExCfg = _getPerAppExerciseCfgForUi(punt, id);
       const perAppAggEx = _getPerAppAggExercicisForUi(punt, id);
@@ -1084,6 +1378,8 @@
         <div class="puntuacio-app-card__body">
           ${perAppFieldsHTML(key, selectedCodes)}
           ${perAppAggCampsHTML(key, aggCamps)}
+          ${perAppFieldModeHTML(key, campsMode)}
+          ${perAppExerciseFieldsHTML(key, campsMode, punt)}
           ${isCandidateSourceAvailable() ? perAppCandidateSourceHTML(key, candidateSourceEntry) : ""}
           ${showExOverride ? `${perAppExercicisHTML(key, perAppExCfg)}${perAppAggExercicisHTML(key, perAppAggEx)}${showMemberSelection ? perAppParticipantsHTML(key, perAppParticipantsCfg, perAppAggParticipants) : ""}` : perAppGlobalPoolContextHTML(key)}
         </div>
@@ -1091,6 +1387,7 @@
       els.perAppBox.appendChild(card);
 
       refreshPerAppAggCampsCardUI(card);
+      refreshPerAppExerciseFieldOverridesCardUI(card, punt);
       const exModeNode = card.querySelector("[data-app-ex-mode]");
       if (exModeNode) {
         refreshPerAppExCardUI(card);
@@ -1103,9 +1400,12 @@
       if (candidateModeNode) {
         refreshPerAppCandidateSourceCardUI(card);
       }
-      card.querySelectorAll("[data-app-select], [data-app-agg-camps], [data-app-candidate-mode], [data-app-candidate-selection-mode], [data-app-candidate-agg], [data-app-candidate-best-n], [data-app-candidate-index], [data-app-candidate-ids], [data-app-ex-mode], [data-app-ex-best-n], [data-app-ex-index], [data-app-ex-max-per-participant], [data-app-ex-ids], [data-app-agg-exercicis], [data-app-participants-mode], [data-app-participants-best-n], [data-app-agregacio-participants]").forEach(node => {
+      card.querySelectorAll("[data-app-select], [data-app-agg-camps], [data-app-camps-mode], [data-app-exercise-fields], [data-app-exercise-agg-camps], [data-app-candidate-mode], [data-app-candidate-selection-mode], [data-app-candidate-agg], [data-app-candidate-best-n], [data-app-candidate-index], [data-app-candidate-ids], [data-app-ex-mode], [data-app-ex-best-n], [data-app-ex-index], [data-app-ex-max-per-participant], [data-app-ex-ids], [data-app-agg-exercicis], [data-app-participants-mode], [data-app-participants-best-n], [data-app-agregacio-participants]").forEach(node => {
         node.addEventListener("change", () => {
           if (node.matches("[data-app-select]")) refreshPerAppAggCampsCardUI(card);
+          if (node.matches("[data-app-select], [data-app-agg-camps], [data-app-camps-mode], [data-app-exercise-fields], [data-app-exercise-agg-camps]")) {
+            refreshPerAppExerciseFieldOverridesCardUI(card, readPuntuacioSchemaFromUI());
+          }
           if (node.matches("[data-app-ex-mode]")) refreshPerAppExCardUI(card);
           if (node.matches("[data-app-participants-mode]")) refreshPerAppParticipantsCardUI(card);
           if (node.matches("[data-app-candidate-mode], [data-app-candidate-selection-mode]")) refreshPerAppCandidateSourceCardUI(card);
@@ -1114,6 +1414,9 @@
         });
         node.addEventListener("input", () => {
           if (node.matches("[data-app-select]")) refreshPerAppAggCampsCardUI(card);
+          if (node.matches("[data-app-select], [data-app-agg-camps], [data-app-camps-mode], [data-app-exercise-fields], [data-app-exercise-agg-camps]")) {
+            refreshPerAppExerciseFieldOverridesCardUI(card, readPuntuacioSchemaFromUI());
+          }
           if (node.matches("[data-app-participants-mode]")) refreshPerAppParticipantsCardUI(card);
           if (node.matches("[data-app-candidate-mode], [data-app-candidate-selection-mode]")) refreshPerAppCandidateSourceCardUI(card);
           syncAdvancedFromUI();
@@ -1129,6 +1432,51 @@
       const appId = String(sel.getAttribute("data-app-id") || "").trim();
       if (!appId) return;
       map[appId] = _normalizeAggCampsValue(sel.value || "sum");
+    });
+    return map;
+  }
+
+  function readPerAppCampsModeFromUI() {
+    const map = {};
+    document.querySelectorAll("[data-app-camps-mode]").forEach(sel => {
+      const appId = String(sel.getAttribute("data-app-id") || "").trim();
+      if (!appId) return;
+      map[appId] = _normalizePerAppCampsMode(sel.value || "comu");
+    });
+    return map;
+  }
+
+  function readPerExerciseFieldCodesFromUI(existingModeMap) {
+    const modeMap = existingModeMap || readPerAppCampsModeFromUI();
+    const map = {};
+    document.querySelectorAll("[data-app-exercise-fields]").forEach(sel => {
+      const appId = String(sel.getAttribute("data-app-id") || "").trim();
+      const exercici = _normalizeExerciseNumber(sel.getAttribute("data-exercise"));
+      if (!appId || !exercici || modeMap[appId] !== "per_exercici") return;
+      if (exercici > _getAppExerciseCount(appId)) return;
+      const codes = Array.from(sel.selectedOptions || [])
+        .map(opt => String(opt.value || "").trim())
+        .filter(Boolean);
+      if (!codes.length) return;
+      if (!map[appId]) map[appId] = {};
+      map[appId][String(exercici)] = codes;
+    });
+    return map;
+  }
+
+  function readPerExerciseAggCampsFromUI(existingModeMap, existingFieldsMap) {
+    const modeMap = existingModeMap || readPerAppCampsModeFromUI();
+    const fieldsMap = existingFieldsMap || readPerExerciseFieldCodesFromUI(modeMap);
+    const map = {};
+    document.querySelectorAll("[data-app-exercise-agg-camps]").forEach(sel => {
+      const appId = String(sel.getAttribute("data-app-id") || "").trim();
+      const exercici = _normalizeExerciseNumber(sel.getAttribute("data-exercise"));
+      const exKey = String(exercici || "");
+      if (!appId || !exercici || modeMap[appId] !== "per_exercici") return;
+      if (exercici > _getAppExerciseCount(appId)) return;
+      if (!Array.isArray(fieldsMap?.[appId]?.[exKey]) || !fieldsMap[appId][exKey].length) return;
+      if (!map[appId]) map[appId] = {};
+      map[appId][exKey] = _normalizeAggCampsValue(sel.value || "sum");
     });
     return map;
   }
@@ -1405,6 +1753,12 @@
     });
 
     const agregacio_camps_per_aparell = readPerAppAggCampsFromUI();
+    const camps_mode_per_aparell = readPerAppCampsModeFromUI();
+    const camps_per_exercici_per_aparell = readPerExerciseFieldCodesFromUI(camps_mode_per_aparell);
+    const agregacio_camps_per_exercici_per_aparell = readPerExerciseAggCampsFromUI(
+      camps_mode_per_aparell,
+      camps_per_exercici_per_aparell,
+    );
     const exCfg = readMainExercicisFromUI();
     const modeSeleccioExercicis = apMode;
     const exPerAppCfg = readPerAppExercicisFromUI();
@@ -1424,6 +1778,9 @@
       aparells: { mode: "seleccionar", ids: apIds },
       camps_per_aparell,
       agregacio_camps_per_aparell,
+      camps_mode_per_aparell,
+      camps_per_exercici_per_aparell,
+      agregacio_camps_per_exercici_per_aparell,
       agregacio_camps: legacyAggCamps,
       exercicis: exCfg.cfg,
       exercicis_best_n: exCfg.bestN,

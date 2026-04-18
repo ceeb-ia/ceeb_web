@@ -376,6 +376,84 @@ class GlobalClassificacioTemplateManagementTests(_BaseTrampoliDataMixin, TestCas
         details = body.get("error_details") or []
         self.assertTrue(any(item.get("path") == "presentacio.detall.sections[0].columns[1].source.camp" for item in details))
 
+    def test_global_template_save_roundtrips_per_exercise_scoring_field_maps_and_requirements(self):
+        self.client.force_login(self.user)
+        save_url = reverse("classificacio_template_global_save")
+        schema = self._build_global_schema_payload(self.app.id)
+        schema["puntuacio"]["agregacio_camps_per_aparell"] = {str(self.app.id): "sum"}
+        schema["puntuacio"]["camps_mode_per_aparell"] = {str(self.app.id): "per_exercici"}
+        schema["puntuacio"]["camps_per_exercici_per_aparell"] = {
+            str(self.app.id): {
+                "1": ["total"],
+                "2": ["total"],
+            }
+        }
+        schema["puntuacio"]["agregacio_camps_per_exercici_per_aparell"] = {
+            str(self.app.id): {
+                "1": "sum",
+                "2": "avg",
+            }
+        }
+
+        res = self.client.post(
+            save_url,
+            data=json.dumps(
+                {
+                    "nom": "Plantilla Global Per Exercici",
+                    "slug": "plantilla-global-per-exercici",
+                    "activa": True,
+                    "tipus": "individual",
+                    "schema": schema,
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 200)
+        body = res.json()
+        self.assertTrue(body.get("ok"))
+
+        cfg = body.get("cfg") or {}
+        punt_ui = (cfg.get("schema") or {}).get("puntuacio") or {}
+        self.assertEqual(
+            punt_ui.get("camps_mode_per_aparell"),
+            {str(self.app.id): "per_exercici"},
+        )
+        self.assertEqual(
+            punt_ui.get("camps_per_exercici_per_aparell"),
+            {str(self.app.id): {"1": ["total"], "2": ["total"]}},
+        )
+        self.assertEqual(
+            punt_ui.get("agregacio_camps_per_exercici_per_aparell"),
+            {str(self.app.id): {"1": "sum", "2": "avg"}},
+        )
+
+        tpl = ClassificacioTemplateGlobal.objects.get(pk=cfg.get("id"))
+        punt_tpl = (((tpl.payload or {}).get("schema")) or {}).get("puntuacio") or {}
+        self.assertEqual(
+            punt_tpl.get("camps_mode_per_aparell"),
+            {self.app.codi: "per_exercici"},
+        )
+        self.assertEqual(
+            punt_tpl.get("camps_per_exercici_per_aparell"),
+            {self.app.codi: {"1": ["total"], "2": ["total"]}},
+        )
+        self.assertEqual(
+            punt_tpl.get("agregacio_camps_per_exercici_per_aparell"),
+            {self.app.codi: {"1": "sum", "2": "avg"}},
+        )
+        self.assertEqual(
+            (tpl.requirements or {}).get("camps_mode_per_aparell"),
+            {self.app.codi: "per_exercici"},
+        )
+        self.assertEqual(
+            (tpl.requirements or {}).get("camps_per_exercici_per_aparell"),
+            {self.app.codi: {"1": ["total"], "2": ["total"]}},
+        )
+        self.assertEqual(
+            (tpl.requirements or {}).get("agregacio_camps_per_exercici_per_aparell"),
+            {self.app.codi: {"1": "sum", "2": "avg"}},
+        )
+
     def test_global_template_save_defers_detail_exercise_range_validation_until_competicio(self):
         self.client.force_login(self.user)
         save_url = reverse("classificacio_template_global_save")
@@ -840,6 +918,74 @@ class GlobalClassificacioTemplateManagementTests(_BaseTrampoliDataMixin, TestCas
         self.assertEqual(
             ((((tpl.payload or {}).get("schema") or {}).get("equips") or {}).get("particions_manuals") or [])[0].get("equips_noms"),
             ["Equip A", "Equip B"],
+        )
+
+    def test_global_template_edit_preserves_per_exercise_scoring_field_maps_until_builder_supports_them(self):
+        schema_tpl = {
+            "puntuacio": {
+                "aparells": {"mode": "seleccionar", "ids": [self.app.codi]},
+                "camps_per_aparell": {self.app.codi: ["total"]},
+                "agregacio_camps_per_aparell": {self.app.codi: "sum"},
+                "camps_mode_per_aparell": {self.app.codi: "per_exercici"},
+                "camps_per_exercici_per_aparell": {
+                    self.app.codi: {
+                        "1": ["total"],
+                        "2": ["total"],
+                    }
+                },
+                "agregacio_camps_per_exercici_per_aparell": {
+                    self.app.codi: {
+                        "1": "sum",
+                        "2": "avg",
+                    }
+                },
+            },
+            "presentacio": {
+                "columnes": [
+                    {"type": "builtin", "key": "participant", "label": "Nom", "align": "left"},
+                ]
+            },
+        }
+        tpl = ClassificacioTemplateGlobal.objects.create(
+            nom="Tpl Per Exercici Legacy",
+            slug="tpl-per-exercici-legacy",
+            tipus="individual",
+            activa=True,
+            payload={"schema": schema_tpl},
+            requirements={},
+            created_by=self.user,
+        )
+
+        self.client.force_login(self.user)
+        res = self.client.post(
+            reverse("classificacio_template_global_save"),
+            data=json.dumps(
+                {
+                    "id": tpl.id,
+                    "nom": "Tpl Per Exercici Legacy Updated",
+                    "slug": "tpl-per-exercici-legacy-updated",
+                    "activa": True,
+                    "tipus": "individual",
+                    "schema": self._build_global_schema_payload(self.app.id),
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 200)
+
+        tpl.refresh_from_db()
+        punt_tpl = (((tpl.payload or {}).get("schema")) or {}).get("puntuacio") or {}
+        self.assertEqual(
+            punt_tpl.get("camps_mode_per_aparell"),
+            {self.app.codi: "per_exercici"},
+        )
+        self.assertEqual(
+            punt_tpl.get("camps_per_exercici_per_aparell"),
+            {self.app.codi: {"1": ["total"], "2": ["total"]}},
+        )
+        self.assertEqual(
+            punt_tpl.get("agregacio_camps_per_exercici_per_aparell"),
+            {self.app.codi: {"1": "sum", "2": "avg"}},
         )
 
     def test_global_edit_preserves_legacy_extra_fields(self):

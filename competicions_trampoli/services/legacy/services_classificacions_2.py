@@ -277,8 +277,11 @@ DEFAULT_SCHEMA = {
         # --- NOU ---
         # camps per aparell: dict { "<comp_aparell_id>": ["TOTAL","E_total",...]}
         # (no validem contra allowed fixed; si el camp no existeix -> 0)
+        "camps_mode_per_aparell": {},
         "camps_per_aparell": {},
+        "camps_per_exercici_per_aparell": {},
         "agregacio_camps_per_aparell": {},
+        "agregacio_camps_per_exercici_per_aparell": {},
 
         # agregació dels camps seleccionats DINS d'un exercici (nota)
         # sum/avg/median/max/min
@@ -1394,6 +1397,35 @@ def _normalize_candidate_source_cfg(raw_cfg, fallback=None):
     return ex_cfg
 
 
+def _unique_nonempty_strings(raw_values):
+    out = []
+    seen = set()
+    values = raw_values
+    if isinstance(values, str):
+        values = values.split(",")
+    if not isinstance(values, (list, tuple)):
+        return out
+    for raw in values:
+        txt = str(raw or "").strip()
+        if not txt or txt in seen:
+            continue
+        seen.add(txt)
+        out.append(txt)
+    return out
+
+
+def _normalize_field_mode(raw_mode):
+    mode = str(raw_mode or "comu").strip().lower()
+    if mode not in {"comu", "per_exercici"}:
+        mode = "comu"
+    return mode
+
+
+def _normalize_optional_agg(raw_agg):
+    agg = str(raw_agg or "").strip().lower()
+    return agg if agg in {"sum", "avg", "median", "max", "min"} else ""
+
+
 def _pick_participants(vals, mode: str, n: int):
     xs = [_to_float(x) for x in (vals or [])]
     if not xs:
@@ -2314,9 +2346,18 @@ def compute_classificacio(competicio, cfg_obj):
     exercicis_per_aparell = punt.get("exercicis_per_aparell") or {}
     if not isinstance(exercicis_per_aparell, dict):
         exercicis_per_aparell = {}
+    camps_mode_per_aparell = punt.get("camps_mode_per_aparell") or {}
+    if not isinstance(camps_mode_per_aparell, dict):
+        camps_mode_per_aparell = {}
+    camps_per_exercici_per_aparell = punt.get("camps_per_exercici_per_aparell") or {}
+    if not isinstance(camps_per_exercici_per_aparell, dict):
+        camps_per_exercici_per_aparell = {}
     agregacio_camps_per_aparell = punt.get("agregacio_camps_per_aparell") or {}
     if not isinstance(agregacio_camps_per_aparell, dict):
         agregacio_camps_per_aparell = {}
+    agregacio_camps_per_exercici_per_aparell = punt.get("agregacio_camps_per_exercici_per_aparell") or {}
+    if not isinstance(agregacio_camps_per_exercici_per_aparell, dict):
+        agregacio_camps_per_exercici_per_aparell = {}
     candidate_source_per_aparell = punt.get("candidate_source_per_aparell") or {}
     if not isinstance(candidate_source_per_aparell, dict):
         candidate_source_per_aparell = {}
@@ -2380,6 +2421,12 @@ def compute_classificacio(competicio, cfg_obj):
         if agg not in ("sum", "avg", "median", "max", "min"):
             agg = "sum"
         return agg
+
+    def resolve_camps_mode_for_app(app_id: int):
+        raw = camps_mode_per_aparell.get(str(app_id))
+        if raw is None:
+            raw = camps_mode_per_aparell.get(app_id)
+        return _normalize_field_mode(raw)
 
     def resolve_candidate_source_for_app(app_id: int):
         fallback_mode = candidate_source_mode
@@ -2504,18 +2551,48 @@ def compute_classificacio(competicio, cfg_obj):
     # fallback legacy: si no hi ha camps_per_aparell, usem camp legacy per tots els aparells
     legacy_camp = (punt.get("camp") or "total").strip()
 
-    def _score_camps_for_app(app_id: int):
+    def _score_camps_for_app(app_id: int, *, include_per_exercise=False):
         raw = camps_per_aparell.get(str(app_id)) or camps_per_aparell.get(app_id)
-        if isinstance(raw, list) and raw:
-            return [str(x).strip() for x in raw if str(x).strip()]
-        if isinstance(raw, str) and raw.strip():
-            # permet "total,execucio_total"
-            return [x.strip() for x in raw.split(",") if x.strip()]
-        # legacy
-        return [legacy_camp] if legacy_camp else ["total"]
+        out = _unique_nonempty_strings(raw)
+        if not out:
+            # legacy
+            out = [legacy_camp] if legacy_camp else ["total"]
+        if include_per_exercise and resolve_camps_mode_for_app(app_id) == "per_exercici":
+            raw_map = camps_per_exercici_per_aparell.get(str(app_id))
+            if raw_map is None:
+                raw_map = camps_per_exercici_per_aparell.get(app_id)
+            for raw_fields in (raw_map.values() if isinstance(raw_map, dict) else []):
+                for code in _unique_nonempty_strings(raw_fields):
+                    if code not in out:
+                        out.append(code)
+        return out
+
+    def resolve_score_fields_for_app_exercise(app_id: int, ex_idx: int):
+        common_fields = list(_score_camps_for_app(app_id))
+        common_agg = resolve_agregacio_camps_for_app(app_id)
+        if resolve_camps_mode_for_app(app_id) != "per_exercici":
+            return common_fields, common_agg
+
+        raw_fields_by_ex = camps_per_exercici_per_aparell.get(str(app_id))
+        if raw_fields_by_ex is None:
+            raw_fields_by_ex = camps_per_exercici_per_aparell.get(app_id)
+        raw_agg_by_ex = agregacio_camps_per_exercici_per_aparell.get(str(app_id))
+        if raw_agg_by_ex is None:
+            raw_agg_by_ex = agregacio_camps_per_exercici_per_aparell.get(app_id)
+
+        ex_key = str(max(1, int(ex_idx or 1)))
+        ex_fields = _unique_nonempty_strings(
+            (raw_fields_by_ex or {}).get(ex_key) if isinstance(raw_fields_by_ex, dict) else []
+        )
+        ex_agg = _normalize_optional_agg(
+            (raw_agg_by_ex or {}).get(ex_key) if isinstance(raw_agg_by_ex, dict) else None
+        )
+        if not ex_fields or not ex_agg:
+            return common_fields, common_agg
+        return ex_fields, ex_agg
 
     def camps_for_app(app_id: int):
-        out = list(_score_camps_for_app(app_id))
+        out = list(_score_camps_for_app(app_id, include_per_exercise=True))
         seen = set()
         for crit in desempat or []:
             if isinstance(crit, dict) and isinstance(crit.get("pipeline"), dict):
@@ -2614,7 +2691,6 @@ def compute_classificacio(competicio, cfg_obj):
         n_ex = max(1, min(50, n_ex))
         score_fields = _score_camps_for_app(app_id)
         fields = camps_for_app(app_id)
-        agg_camps_for_app = resolve_agregacio_camps_for_app(app_id)
         app_fields_by_app[app_id] = list(score_fields)
 
         if tipus == "equips" and is_team_context_app(ca):
@@ -2634,9 +2710,10 @@ def compute_classificacio(competicio, cfg_obj):
                     nt = by_team_ex.get(equip_id, {}).get(ex_idx)
                     if not nt:
                         continue
+                    score_fields_for_ex, agg_camps_for_ex = resolve_score_fields_for_app_exercise(app_id, ex_idx)
                     fields_map = {f: _get_score_field(nt, f) for f in fields}
-                    v_fields = [fields_map.get(f, 0.0) for f in score_fields]
-                    v_ex = _apply_simple_agg(v_fields, agg_camps_for_app)
+                    v_fields = [fields_map.get(f, 0.0) for f in score_fields_for_ex]
+                    v_ex = _apply_simple_agg(v_fields, agg_camps_for_ex)
                     vals_rows.append(
                         {
                             "idx": int(ex_idx),
@@ -2677,10 +2754,11 @@ def compute_classificacio(competicio, cfg_obj):
                 nt = by_ins_ex.get(ins_id, {}).get(ex_idx)
                 if not nt:
                     continue
+                score_fields_for_ex, agg_camps_for_ex = resolve_score_fields_for_app_exercise(app_id, ex_idx)
                 fields_map = {f: _get_score_field(nt, f) for f in fields}
-                v_fields = [fields_map.get(f, 0.0) for f in score_fields]
+                v_fields = [fields_map.get(f, 0.0) for f in score_fields_for_ex]
 
-                v_ex = _apply_simple_agg(v_fields, agg_camps_for_app)  # agregacio camps dins exercici
+                v_ex = _apply_simple_agg(v_fields, agg_camps_for_ex)  # agregacio camps dins exercici
                 vals_ex.append((ex_idx, v_ex))
                 vals_rows.append(
                     {

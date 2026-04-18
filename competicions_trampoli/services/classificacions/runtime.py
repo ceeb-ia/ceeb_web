@@ -8,6 +8,7 @@ from .pipeline_runtime import (
     build_main_scoring_pipeline_from_schema,
 )
 from .ties.serializer_save import canonicalize_desempat_items_for_persistence
+from .ties.pipeline_builder import strip_unsupported_per_exercise_field_pipeline_keys
 from .validation import (
     build_validation_error_details,
     validate_schema_for_competicio_detailed,
@@ -143,6 +144,24 @@ def _canonicalize_tie_items(raw_items):
     return out
 
 
+def _strip_per_exercise_field_cfg_from_raw_desempat(schema_local):
+    schema = schema_local if isinstance(schema_local, dict) else {}
+    desempat = schema.get("desempat")
+    if not isinstance(desempat, list):
+        return schema
+    out = []
+    for tie in desempat:
+        if not isinstance(tie, dict):
+            out.append(tie)
+            continue
+        item = dict(tie)
+        if isinstance(item.get("pipeline"), dict):
+            item["pipeline"] = strip_unsupported_per_exercise_field_pipeline_keys(item.get("pipeline"))
+        out.append(item)
+    schema["desempat"] = out
+    return schema
+
+
 def _canonicalize_desempat_for_persistence(schema_local, *, tipus="individual"):
     schema = schema_local if isinstance(schema_local, dict) else {}
     team_mode = str((((schema.get("equips") or {}).get("team_mode")) or "")).strip().lower()
@@ -168,6 +187,8 @@ def _canonicalize_desempat_for_persistence(schema_local, *, tipus="individual"):
 
 def prepare_schema_for_persistence(competicio, schema_local, *, tipus="individual"):
     from .ties.validation import validate_raw_desempat_legacy_payload
+
+    schema_local = _strip_per_exercise_field_cfg_from_raw_desempat(schema_local)
 
     raw_desempat_errors = validate_raw_desempat_legacy_payload(
         (schema_local or {}).get("desempat") if isinstance(schema_local, dict) else []

@@ -367,6 +367,67 @@ class ClassificacioTemplateFlowTests(_BaseTrampoliDataMixin, TestCase):
             ["E_total"],
         )
 
+    def test_template_schema_helpers_roundtrip_per_exercise_scoring_field_maps_and_prune_extra_exercises(self):
+        self.source_app.nombre_exercicis = 2
+        self.source_app.save(update_fields=["nombre_exercicis"])
+        self.target_app.nombre_exercicis = 1
+        self.target_app.save(update_fields=["nombre_exercicis"])
+
+        schema = json.loads(json.dumps(self.cfg_source.schema or {}))
+        schema["puntuacio"]["aparells"] = {"mode": "seleccionar", "ids": [self.source_app.id]}
+        schema["puntuacio"]["camps_per_aparell"] = {str(self.source_app.id): ["E_total"]}
+        schema["puntuacio"]["agregacio_camps_per_aparell"] = {str(self.source_app.id): "sum"}
+        schema["puntuacio"]["camps_mode_per_aparell"] = {str(self.source_app.id): "per_exercici"}
+        schema["puntuacio"]["camps_per_exercici_per_aparell"] = {
+            str(self.source_app.id): {
+                "1": ["E_total"],
+                "2": ["E_total"],
+            }
+        }
+        schema["puntuacio"]["agregacio_camps_per_exercici_per_aparell"] = {
+            str(self.source_app.id): {
+                "1": "sum",
+                "2": "avg",
+            }
+        }
+
+        schema_tpl, warnings = _schema_to_template_schema(self.comp_source, schema)
+        self.assertFalse(
+            [warning for warning in warnings if "assignment_source.mode='native'" not in warning]
+        )
+        punt_tpl = schema_tpl.get("puntuacio") or {}
+        self.assertEqual(
+            punt_tpl.get("camps_mode_per_aparell"),
+            {self.app.codi: "per_exercici"},
+        )
+        self.assertEqual(
+            punt_tpl.get("camps_per_exercici_per_aparell"),
+            {self.app.codi: {"1": ["E_total"], "2": ["E_total"]}},
+        )
+        self.assertEqual(
+            punt_tpl.get("agregacio_camps_per_exercici_per_aparell"),
+            {self.app.codi: {"1": "sum", "2": "avg"}},
+        )
+
+        schema_local, mapping_warnings, mapping = _template_schema_to_competicio_schema(self.comp_target, schema_tpl)
+        self.assertFalse(
+            [warning for warning in mapping_warnings if "equips.context_code 'native'" not in warning]
+        )
+        self.assertEqual(mapping.get(self.app.codi), self.target_app.id)
+        punt_local = schema_local.get("puntuacio") or {}
+        self.assertEqual(
+            punt_local.get("camps_mode_per_aparell"),
+            {str(self.target_app.id): "per_exercici"},
+        )
+        self.assertEqual(
+            punt_local.get("camps_per_exercici_per_aparell"),
+            {str(self.target_app.id): {"1": ["E_total"]}},
+        )
+        self.assertEqual(
+            punt_local.get("agregacio_camps_per_exercici_per_aparell"),
+            {str(self.target_app.id): {"1": "sum"}},
+        )
+
     def test_template_schema_helpers_roundtrip_member_selection_step(self):
         schema = json.loads(json.dumps(self.cfg_source.schema or {}))
         schema["equips"] = {

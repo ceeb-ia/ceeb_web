@@ -246,7 +246,15 @@ def _assign_presentacio_column_group(presentacio, path, cols_out):
             presentacio["detall"] = detail
 
 
-def _map_tie_pipeline_app_refs(pipeline, resolver, *, prefix="", warnings=None):
+def _map_tie_pipeline_app_refs(
+    pipeline,
+    resolver,
+    *,
+    prefix="",
+    warnings=None,
+    missing_reason="no exportat",
+    max_exercises_by_app=None,
+):
     if not isinstance(pipeline, dict):
         return pipeline
     warnings = warnings if isinstance(warnings, list) else []
@@ -290,6 +298,26 @@ def _map_tie_pipeline_app_refs(pipeline, resolver, *, prefix="", warnings=None):
     out["agregacio_camps_per_aparell"] = map_keys(
         out.get("agregacio_camps_per_aparell") or {},
         f"{prefix}.agregacio_camps_per_aparell",
+    )
+    out["camps_mode_per_aparell"] = map_keys(
+        out.get("camps_mode_per_aparell") or {},
+        f"{prefix}.camps_mode_per_aparell",
+    )
+    out["camps_per_exercici_per_aparell"] = _map_per_app_exercise_map(
+        out.get("camps_per_exercici_per_aparell") or {},
+        resolver,
+        field_label=f"{prefix}.camps_per_exercici_per_aparell",
+        warnings=warnings,
+        missing_reason=missing_reason,
+        max_exercises_by_app=max_exercises_by_app,
+    )
+    out["agregacio_camps_per_exercici_per_aparell"] = _map_per_app_exercise_map(
+        out.get("agregacio_camps_per_exercici_per_aparell") or {},
+        resolver,
+        field_label=f"{prefix}.agregacio_camps_per_exercici_per_aparell",
+        warnings=warnings,
+        missing_reason=missing_reason,
+        max_exercises_by_app=max_exercises_by_app,
     )
     out["candidate_source_per_aparell"] = map_keys(
         out.get("candidate_source_per_aparell") or {},
@@ -402,6 +430,66 @@ def resolve_app_id(raw, by_id, by_code):
     return app_id if app_id in by_id else None
 
 
+def _normalize_exercise_key(raw):
+    txt = str(raw or "").strip()
+    if not txt:
+        return "", None
+    try:
+        exercise = int(txt)
+    except Exception:
+        return txt, None
+    return str(exercise), exercise
+
+
+def _map_per_app_exercise_map(
+    raw_map,
+    resolver,
+    *,
+    field_label="",
+    warnings=None,
+    missing_reason="no disponible",
+    max_exercises_by_app=None,
+):
+    out = {}
+    if not isinstance(raw_map, dict):
+        return out
+
+    warnings = warnings if isinstance(warnings, list) else []
+    max_exercises_by_app = max_exercises_by_app if isinstance(max_exercises_by_app, dict) else {}
+
+    for raw_key, raw_value in raw_map.items():
+        mapped = resolver(raw_key)
+        if not mapped:
+            if field_label:
+                warnings.append(f"{field_label}: aparell {missing_reason} ({raw_key})")
+            continue
+
+        app_key = str(mapped)
+        if not isinstance(raw_value, dict):
+            out[app_key] = json_clone(raw_value)
+            continue
+
+        max_exercises = max_exercises_by_app.get(app_key)
+        try:
+            max_exercises = int(max_exercises or 0)
+        except Exception:
+            max_exercises = 0
+        if max_exercises <= 0:
+            max_exercises = None
+
+        exercise_map = {}
+        for raw_exercise, exercise_value in raw_value.items():
+            exercise_key, exercise_num = _normalize_exercise_key(raw_exercise)
+            if not exercise_key:
+                continue
+            if max_exercises is not None and exercise_num is not None and (exercise_num < 1 or exercise_num > max_exercises):
+                continue
+            exercise_map[exercise_key] = json_clone(exercise_value)
+        out[app_key] = exercise_map
+
+    return out
+
+
 def next_template_slug(base_name: str, owner_id: int, exclude_template_id=None):
     base = slugify(base_name or "") or "classificacio-template"
     slug = base
@@ -504,6 +592,7 @@ def schema_to_template_schema(competicio, schema_local):
                 lambda raw: resolve_app_code_for_template(raw, by_id_all, by_code_all),
                 prefix=f"{prefix}.pipeline",
                 warnings=warnings,
+                missing_reason="no exportat",
             )
         return item
 
@@ -511,6 +600,24 @@ def schema_to_template_schema(competicio, schema_local):
     punt["agregacio_camps_per_aparell"] = map_keys_to_codes(
         punt.get("agregacio_camps_per_aparell") or {},
         "agregacio_camps_per_aparell",
+    )
+    punt["camps_mode_per_aparell"] = map_keys_to_codes(
+        punt.get("camps_mode_per_aparell") or {},
+        "camps_mode_per_aparell",
+    )
+    punt["camps_per_exercici_per_aparell"] = _map_per_app_exercise_map(
+        punt.get("camps_per_exercici_per_aparell") or {},
+        lambda raw: resolve_app_code_for_template(raw, by_id_all, by_code_all),
+        field_label="camps_per_exercici_per_aparell",
+        warnings=warnings,
+        missing_reason="no exportat",
+    )
+    punt["agregacio_camps_per_exercici_per_aparell"] = _map_per_app_exercise_map(
+        punt.get("agregacio_camps_per_exercici_per_aparell") or {},
+        lambda raw: resolve_app_code_for_template(raw, by_id_all, by_code_all),
+        field_label="agregacio_camps_per_exercici_per_aparell",
+        warnings=warnings,
+        missing_reason="no exportat",
     )
     punt["exercicis_per_aparell"] = map_keys_to_codes(
         punt.get("exercicis_per_aparell") or {},
@@ -657,6 +764,10 @@ def template_schema_to_competicio_schema(competicio, schema_tpl):
 
     _apps_active, by_id_active, by_code_active = get_comp_aparell_maps(competicio, active_only=True)
     mapping = {code: int(ca.id) for code, ca in by_code_active.items()}
+    max_exercises_by_app = {
+        str(ca.id): max(1, int(getattr(ca, "nombre_exercicis", 1) or 1))
+        for ca in by_id_active.values()
+    }
 
     punt = schema.get("puntuacio") or {}
     if not isinstance(punt, dict):
@@ -741,6 +852,8 @@ def template_schema_to_competicio_schema(competicio, schema_tpl):
                 lambda raw: resolve_app_id(raw, by_id_active, by_code_active),
                 prefix=f"{prefix}.pipeline",
                 warnings=warnings,
+                missing_reason="no disponible",
+                max_exercises_by_app=max_exercises_by_app,
             )
         return item
 
@@ -748,6 +861,24 @@ def template_schema_to_competicio_schema(competicio, schema_tpl):
     punt["agregacio_camps_per_aparell"] = map_keys_to_ids(
         punt.get("agregacio_camps_per_aparell") or {},
         "agregacio_camps_per_aparell",
+    )
+    punt["camps_mode_per_aparell"] = map_keys_to_ids(
+        punt.get("camps_mode_per_aparell") or {},
+        "camps_mode_per_aparell",
+    )
+    punt["camps_per_exercici_per_aparell"] = _map_per_app_exercise_map(
+        punt.get("camps_per_exercici_per_aparell") or {},
+        lambda raw: resolve_app_id(raw, by_id_active, by_code_active),
+        field_label="camps_per_exercici_per_aparell",
+        warnings=warnings,
+        max_exercises_by_app=max_exercises_by_app,
+    )
+    punt["agregacio_camps_per_exercici_per_aparell"] = _map_per_app_exercise_map(
+        punt.get("agregacio_camps_per_exercici_per_aparell") or {},
+        lambda raw: resolve_app_id(raw, by_id_active, by_code_active),
+        field_label="agregacio_camps_per_exercici_per_aparell",
+        warnings=warnings,
+        max_exercises_by_app=max_exercises_by_app,
     )
     punt["exercicis_per_aparell"] = map_keys_to_ids(
         punt.get("exercicis_per_aparell") or {},
@@ -984,6 +1115,15 @@ def template_schema_to_global_ui_schema(schema_tpl, by_id, by_code):
 
     punt["camps_per_aparell"] = map_keys_to_ids(punt.get("camps_per_aparell") or {})
     punt["agregacio_camps_per_aparell"] = map_keys_to_ids(punt.get("agregacio_camps_per_aparell") or {})
+    punt["camps_mode_per_aparell"] = map_keys_to_ids(punt.get("camps_mode_per_aparell") or {})
+    punt["camps_per_exercici_per_aparell"] = _map_per_app_exercise_map(
+        punt.get("camps_per_exercici_per_aparell") or {},
+        lambda raw: resolve_app_id(raw, by_id, by_code),
+    )
+    punt["agregacio_camps_per_exercici_per_aparell"] = _map_per_app_exercise_map(
+        punt.get("agregacio_camps_per_exercici_per_aparell") or {},
+        lambda raw: resolve_app_id(raw, by_id, by_code),
+    )
     punt["exercicis_per_aparell"] = map_keys_to_ids(punt.get("exercicis_per_aparell") or {})
     punt["agregacio_exercicis_per_aparell"] = map_keys_to_ids(punt.get("agregacio_exercicis_per_aparell") or {})
     punt["candidate_source_per_aparell"] = map_keys_to_ids(punt.get("candidate_source_per_aparell") or {})
@@ -1128,11 +1268,27 @@ def global_ui_schema_to_template_schema(schema_ui, by_id, by_code):
                 lambda raw: resolve_app_code_for_template(raw, by_id, by_code),
                 prefix="pipeline",
                 warnings=warnings,
+                missing_reason="no exportat",
             )
         return item
 
     punt["camps_per_aparell"] = map_keys_to_codes(punt.get("camps_per_aparell") or {})
     punt["agregacio_camps_per_aparell"] = map_keys_to_codes(punt.get("agregacio_camps_per_aparell") or {})
+    punt["camps_mode_per_aparell"] = map_keys_to_codes(punt.get("camps_mode_per_aparell") or {})
+    punt["camps_per_exercici_per_aparell"] = _map_per_app_exercise_map(
+        punt.get("camps_per_exercici_per_aparell") or {},
+        lambda raw: resolve_app_code_for_template(raw, by_id, by_code),
+    )
+    punt["agregacio_camps_per_exercici_per_aparell"] = _map_per_app_exercise_map(
+        punt.get("agregacio_camps_per_exercici_per_aparell") or {},
+        lambda raw: resolve_app_code_for_template(raw, by_id, by_code),
+    )
+    if not punt["camps_mode_per_aparell"]:
+        punt.pop("camps_mode_per_aparell", None)
+    if not punt["camps_per_exercici_per_aparell"]:
+        punt.pop("camps_per_exercici_per_aparell", None)
+    if not punt["agregacio_camps_per_exercici_per_aparell"]:
+        punt.pop("agregacio_camps_per_exercici_per_aparell", None)
     punt["exercicis_per_aparell"] = map_keys_to_codes(punt.get("exercicis_per_aparell") or {})
     punt["agregacio_exercicis_per_aparell"] = map_keys_to_codes(punt.get("agregacio_exercicis_per_aparell") or {})
     punt["candidate_source_per_aparell"] = map_keys_to_codes(punt.get("candidate_source_per_aparell") or {})
@@ -1220,6 +1376,18 @@ def collect_required_app_codes_from_template(schema_tpl):
             code = canon_app_code(raw_key)
             if code:
                 out.add(code)
+        for raw_key in (punt.get("camps_mode_per_aparell") or {}).keys() if isinstance(punt.get("camps_mode_per_aparell"), dict) else []:
+            code = canon_app_code(raw_key)
+            if code:
+                out.add(code)
+        for raw_key in (punt.get("camps_per_exercici_per_aparell") or {}).keys() if isinstance(punt.get("camps_per_exercici_per_aparell"), dict) else []:
+            code = canon_app_code(raw_key)
+            if code:
+                out.add(code)
+        for raw_key in (punt.get("agregacio_camps_per_exercici_per_aparell") or {}).keys() if isinstance(punt.get("agregacio_camps_per_exercici_per_aparell"), dict) else []:
+            code = canon_app_code(raw_key)
+            if code:
+                out.add(code)
         for raw_key in (punt.get("exercicis_per_aparell") or {}).keys() if isinstance(punt.get("exercicis_per_aparell"), dict) else []:
             code = canon_app_code(raw_key)
             if code:
@@ -1268,6 +1436,9 @@ def collect_required_app_codes_from_template(schema_tpl):
             for map_key in (
                 "camps_per_aparell",
                 "agregacio_camps_per_aparell",
+                "camps_mode_per_aparell",
+                "camps_per_exercici_per_aparell",
+                "agregacio_camps_per_exercici_per_aparell",
                 "candidate_source_per_aparell",
                 "exercicis_per_aparell",
                 "agregacio_exercicis_per_aparell",
@@ -1333,6 +1504,9 @@ def build_template_requirements(schema_tpl, *, tipus=None):
         "aparells_codis": sorted(collect_required_app_codes_from_template(schema)),
         "particions": particio_codes_from_entries(part_entries),
         "camps_per_aparell": {},
+        "camps_mode_per_aparell": {},
+        "camps_per_exercici_per_aparell": {},
+        "agregacio_camps_per_exercici_per_aparell": {},
         "desempat_camps": [],
         "team_mode": team_mode,
         "context_code": context_code if context_code else "",
@@ -1356,6 +1530,35 @@ def build_template_requirements(schema_tpl, *, tipus=None):
             elif isinstance(raw_codes, str):
                 vals = [x.strip() for x in raw_codes.split(",") if x.strip()]
             req["camps_per_aparell"][code] = vals
+
+    camps_mode_map = punt.get("camps_mode_per_aparell") or {}
+    if isinstance(camps_mode_map, dict):
+        for raw_key, raw_value in camps_mode_map.items():
+            code = canon_app_code(raw_key)
+            if not code:
+                continue
+            req["camps_mode_per_aparell"][code] = str(raw_value or "").strip().lower()
+
+    for req_key in ("camps_per_exercici_per_aparell", "agregacio_camps_per_exercici_per_aparell"):
+        raw_map = punt.get(req_key) or {}
+        if not isinstance(raw_map, dict):
+            continue
+        normalized = {}
+        for raw_key, raw_value in raw_map.items():
+            code = canon_app_code(raw_key)
+            if not code:
+                continue
+            if not isinstance(raw_value, dict):
+                normalized[code] = json_clone(raw_value)
+                continue
+            exercise_map = {}
+            for raw_exercise, exercise_value in raw_value.items():
+                exercise_key, _exercise_num = _normalize_exercise_key(raw_exercise)
+                if not exercise_key:
+                    continue
+                exercise_map[exercise_key] = json_clone(exercise_value)
+            normalized[code] = exercise_map
+        req[req_key] = normalized
 
     tie_codes = set()
     for tie in (schema.get("desempat") or []):

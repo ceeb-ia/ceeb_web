@@ -15,9 +15,25 @@ from .pipeline_helpers import (
 )
 
 
+UNSUPPORTED_PER_EXERCISE_FIELD_PIPELINE_KEYS = (
+    "camps_mode_per_aparell",
+    "camps_per_exercici_per_aparell",
+    "agregacio_camps_per_exercici_per_aparell",
+)
+
+
+def strip_unsupported_per_exercise_field_pipeline_keys(raw_pipeline):
+    if not isinstance(raw_pipeline, dict):
+        return {}
+    pipeline = json.loads(json.dumps(raw_pipeline))
+    for key in UNSUPPORTED_PER_EXERCISE_FIELD_PIPELINE_KEYS:
+        pipeline.pop(key, None)
+    return pipeline
+
+
 def _normalize_legacy_tie_pipeline(raw_tie, *, tipus="individual", team_mode="", fallback_pipeline=None):
     tie = raw_tie if isinstance(raw_tie, dict) else {}
-    base = json.loads(json.dumps(fallback_pipeline or {}))
+    base = strip_unsupported_per_exercise_field_pipeline_keys(fallback_pipeline or {})
     app_ids = []
     scope = tie.get("scope") if isinstance(tie.get("scope"), dict) else {}
     app_scope = scope.get("aparells") if isinstance(scope.get("aparells"), dict) else {}
@@ -111,7 +127,7 @@ def build_tie_pipeline_criterion(raw_tie, *, idx=0, tipus="individual", team_mod
     tie = raw_tie if isinstance(raw_tie, dict) else {}
     ordre = "asc" if str(tie.get("ordre") or "desc").strip().lower() == "asc" else "desc"
     if isinstance(tie.get("pipeline"), dict):
-        raw_pipeline = tie.get("pipeline")
+        raw_pipeline = strip_unsupported_per_exercise_field_pipeline_keys(tie.get("pipeline"))
     else:
         raw_pipeline = _normalize_legacy_tie_pipeline(
             tie,
@@ -134,4 +150,5 @@ def build_tie_pipeline_criterion(raw_tie, *, idx=0, tipus="individual", team_mod
 
 __all__ = [
     "build_tie_pipeline_criterion",
+    "strip_unsupported_per_exercise_field_pipeline_keys",
 ]
