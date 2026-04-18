@@ -117,6 +117,10 @@ def _sync_per_app_puntuacio_legacy_mirrors(schema_local):
             punt["candidate_source_cfg"] = fallback_cfg
         punt["candidate_source_per_aparell"] = normalized_candidate_map
 
+    if isinstance(punt.get("participants_per_aparell"), dict):
+        punt.pop("participants", None)
+        punt.pop("agregacio_participants", None)
+
     schema["puntuacio"] = punt
     return schema
 

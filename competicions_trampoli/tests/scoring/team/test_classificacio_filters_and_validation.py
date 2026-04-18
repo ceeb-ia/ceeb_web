@@ -1941,6 +1941,116 @@ class TeamContextClassificacioFiltersAndValidationTests(TeamContextScoringFlowTe
         self.assertTrue(any("desempat[0].scope.participants" in err for err in errors))
         self.assertTrue(any("desempat[0].agregacio_participants" in err for err in errors))
 
+    def test_classificacio_validation_accepts_puntuacio_member_selection_step_for_derived_per_member(self):
+        individual_app = self._create_aparell("TRV_PM", "Tramp validation per member")
+        individual_comp_app = self._create_comp_aparell(self.comp, individual_app, ordre=2)
+        schema = {
+            "puntuacio": {
+                "aparells": {"mode": "seleccionar", "ids": [individual_comp_app.id]},
+                "camps_per_aparell": {str(individual_comp_app.id): ["total"]},
+                "agregacio_camps": "sum",
+                "exercicis": {"mode": "tots"},
+                "exercise_selection_scope": "per_member",
+                "mode_seleccio_exercicis": "per_aparell_override",
+                "participants_per_aparell": {
+                    str(individual_comp_app.id): {"mode": "millor_n", "n": 2},
+                },
+                "agregacio_participants_per_aparell": {
+                    str(individual_comp_app.id): "avg",
+                },
+                "agregacio_exercicis": "sum",
+                "agregacio_aparells": "sum",
+                "ordre": "desc",
+            },
+            "equips": {
+                "context_code": "parelles",
+                "team_mode": "derived_from_individual",
+                "incloure_sense_equip": False,
+            },
+        }
+
+        _schema, errors = _validate_schema_for_competicio(
+            self.comp,
+            schema,
+            tipus="equips",
+        )
+
+        self.assertEqual(errors, [])
+
+    def test_prepare_schema_for_persistence_strips_legacy_global_participants_when_per_app_maps_present(self):
+        individual_app = self._create_aparell("TRV_SAVE_PM", "Tramp save per member")
+        individual_comp_app = self._create_comp_aparell(self.comp, individual_app, ordre=2)
+        schema = {
+            "puntuacio": {
+                "aparells": {"mode": "seleccionar", "ids": [individual_comp_app.id]},
+                "camps_per_aparell": {str(individual_comp_app.id): ["total"]},
+                "agregacio_camps": "sum",
+                "exercicis": {"mode": "tots"},
+                "exercise_selection_scope": "per_member",
+                "mode_seleccio_exercicis": "per_aparell_override",
+                "participants_per_aparell": {
+                    str(individual_comp_app.id): {"mode": "millor_n", "n": 2},
+                },
+                "agregacio_participants_per_aparell": {
+                    str(individual_comp_app.id): "avg",
+                },
+                "participants": {"mode": "millor_1"},
+                "agregacio_participants": "sum",
+                "agregacio_exercicis": "sum",
+                "agregacio_aparells": "sum",
+                "ordre": "desc",
+            },
+            "equips": {
+                "context_code": "parelles",
+                "team_mode": "derived_from_individual",
+                "incloure_sense_equip": False,
+            },
+        }
+
+        prepared = prepare_schema_for_persistence(self.comp, schema, tipus="equips")
+
+        self.assertEqual(prepared["errors"], [])
+        punt = (prepared["schema"] or {}).get("puntuacio") or {}
+        self.assertIn("participants_per_aparell", punt)
+        self.assertNotIn("participants", punt)
+        self.assertNotIn("agregacio_participants", punt)
+
+    def test_classificacio_validation_rejects_puntuacio_member_selection_step_outside_per_member(self):
+        individual_app = self._create_aparell("TRV_PM_GP", "Tramp validation global pool")
+        individual_comp_app = self._create_comp_aparell(self.comp, individual_app, ordre=2)
+        schema = {
+            "puntuacio": {
+                "aparells": {"mode": "seleccionar", "ids": [individual_comp_app.id]},
+                "camps_per_aparell": {str(individual_comp_app.id): ["total"]},
+                "agregacio_camps": "sum",
+                "exercicis": {"mode": "tots"},
+                "exercise_selection_scope": "per_member",
+                "mode_seleccio_exercicis": "global_pool",
+                "participants_per_aparell": {
+                    str(individual_comp_app.id): {"mode": "millor_n", "n": 2},
+                },
+                "agregacio_participants_per_aparell": {
+                    str(individual_comp_app.id): "avg",
+                },
+                "agregacio_exercicis": "sum",
+                "agregacio_aparells": "sum",
+                "ordre": "desc",
+            },
+            "equips": {
+                "context_code": "parelles",
+                "team_mode": "derived_from_individual",
+                "incloure_sense_equip": False,
+            },
+        }
+
+        _schema, errors = _validate_schema_for_competicio(
+            self.comp,
+            schema,
+            tipus="equips",
+        )
+
+        self.assertTrue(any("participants_per_aparell" in err for err in errors))
+
     def test_prepare_schema_for_persistence_strips_team_pool_tie_pipeline_reselection_fields(self):
         individual_app = self._create_aparell("TRW", "Tramp save validation")
         individual_comp_app = self._create_comp_aparell(self.comp, individual_app, ordre=3)

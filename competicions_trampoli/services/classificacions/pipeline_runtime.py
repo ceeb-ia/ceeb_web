@@ -33,6 +33,8 @@ SCORING_PIPELINE_ALLOWED_KEYS = {
     "agregacio_aparells",
     "mode_resultat_aparells",
     "ordre",
+    "participants_per_aparell",
+    "agregacio_participants_per_aparell",
     "participants",
     "agregacio_participants",
 }
@@ -213,6 +215,26 @@ def _normalize_participants_cfg(raw_cfg):
     return out
 
 
+def _normalize_participants_per_aparell(raw_map):
+    out = {}
+    for raw_key, raw_value in (raw_map.items() if isinstance(raw_map, dict) else []):
+        app_id = _to_positive_int(raw_key)
+        if app_id is None:
+            continue
+        out[str(app_id)] = _normalize_participants_cfg(raw_value)
+    return out
+
+
+def _normalize_agregacio_participants_per_aparell(raw_map, *, fallback="sum"):
+    out = {}
+    for raw_key, raw_value in (raw_map.items() if isinstance(raw_map, dict) else []):
+        app_id = _to_positive_int(raw_key)
+        if app_id is None:
+            continue
+        out[str(app_id)] = _normalize_aggregation(raw_value, fallback=fallback)
+    return out
+
+
 def build_main_scoring_pipeline_from_schema(schema_local, *, tipus="individual", team_mode=""):
     schema = schema_local if isinstance(schema_local, dict) else {}
     punt = schema.get("puntuacio") if isinstance(schema.get("puntuacio"), dict) else {}
@@ -244,6 +266,12 @@ def build_main_scoring_pipeline_from_schema(schema_local, *, tipus="individual",
     ex_map = punt.get("exercicis_per_aparell") if isinstance(punt.get("exercicis_per_aparell"), dict) else {}
     agg_ex_map = punt.get("agregacio_exercicis_per_aparell") if isinstance(punt.get("agregacio_exercicis_per_aparell"), dict) else {}
     source_map = punt.get("candidate_source_per_aparell") if isinstance(punt.get("candidate_source_per_aparell"), dict) else {}
+    part_map = punt.get("participants_per_aparell") if isinstance(punt.get("participants_per_aparell"), dict) else {}
+    agg_part_map = (
+        punt.get("agregacio_participants_per_aparell")
+        if isinstance(punt.get("agregacio_participants_per_aparell"), dict)
+        else {}
+    )
     for app_id in selected_ids:
         key = str(app_id)
         pipeline["camps_per_aparell"][key] = _unique_nonempty_strings(camps_map.get(key) or camps_map.get(app_id) or ["total"])
@@ -266,9 +294,17 @@ def build_main_scoring_pipeline_from_schema(schema_local, *, tipus="individual",
                 agg_ex_map.get(key) or agg_ex_map.get(app_id),
                 fallback=pipeline["agregacio_exercicis"],
             )
-    if str(tipus or "").strip().lower() == "equips" and normalize_team_mode(team_mode) == "derived_from_individual":
-        pipeline["participants"] = {"mode": "tots"}
-        pipeline["agregacio_participants"] = "sum"
+    if (
+        str(tipus or "").strip().lower() == "equips"
+        and normalize_team_mode(team_mode) == "derived_from_individual"
+        and pipeline["exercise_selection_scope"] == EXERCISE_SELECTION_SCOPE_PER_MEMBER
+        and pipeline["mode_seleccio_exercicis"] != "global_pool"
+    ):
+        pipeline["participants_per_aparell"] = _normalize_participants_per_aparell(part_map)
+        pipeline["agregacio_participants_per_aparell"] = _normalize_agregacio_participants_per_aparell(
+            agg_part_map,
+            fallback=_normalize_aggregation(punt.get("agregacio_participants"), "sum"),
+        )
     return pipeline
 
 
@@ -293,11 +329,19 @@ def normalize_scoring_pipeline(raw_pipeline, *, tipus="individual", team_mode=""
     source_map_raw = pipeline_in.get("candidate_source_per_aparell") if isinstance(pipeline_in.get("candidate_source_per_aparell"), dict) else {}
     ex_map_raw = pipeline_in.get("exercicis_per_aparell") if isinstance(pipeline_in.get("exercicis_per_aparell"), dict) else {}
     agg_ex_map_raw = pipeline_in.get("agregacio_exercicis_per_aparell") if isinstance(pipeline_in.get("agregacio_exercicis_per_aparell"), dict) else {}
+    part_map_raw = pipeline_in.get("participants_per_aparell") if isinstance(pipeline_in.get("participants_per_aparell"), dict) else {}
+    agg_part_map_raw = (
+        pipeline_in.get("agregacio_participants_per_aparell")
+        if isinstance(pipeline_in.get("agregacio_participants_per_aparell"), dict)
+        else {}
+    )
     camps_per_aparell = {}
     agg_map = {}
     source_map = {}
     ex_map = {}
     agg_ex_map = {}
+    part_map = {}
+    agg_part_map = {}
     for app_id in app_ids:
         key = str(app_id)
         if key in camps_map_raw or app_id in camps_map_raw:
@@ -322,6 +366,13 @@ def normalize_scoring_pipeline(raw_pipeline, *, tipus="individual", team_mode=""
             agg_ex_map[key] = _normalize_aggregation(
                 agg_ex_map_raw.get(key) or agg_ex_map_raw.get(app_id),
                 fallback=pipeline_in.get("agregacio_exercicis") or "sum",
+            )
+        if key in part_map_raw or app_id in part_map_raw:
+            part_map[key] = _normalize_participants_cfg(part_map_raw.get(key) or part_map_raw.get(app_id))
+        if key in agg_part_map_raw or app_id in agg_part_map_raw:
+            agg_part_map[key] = _normalize_aggregation(
+                agg_part_map_raw.get(key) or agg_part_map_raw.get(app_id),
+                fallback="sum",
             )
     ordre = "asc" if str(pipeline_in.get("ordre") or "desc").strip().lower() == "asc" else "desc"
     pipeline = {
@@ -348,7 +399,16 @@ def normalize_scoring_pipeline(raw_pipeline, *, tipus="individual", team_mode=""
         "mode_resultat_aparells": str(pipeline_in.get("mode_resultat_aparells") or "score").strip().lower() or "score",
         "ordre": ordre,
     }
-    if tipus_norm == "equips" and team_mode_norm == "derived_from_individual":
+    if "participants_per_aparell" in pipeline_in:
+        pipeline["participants_per_aparell"] = part_map
+    if "agregacio_participants_per_aparell" in pipeline_in:
+        pipeline["agregacio_participants_per_aparell"] = agg_part_map
+    if (
+        tipus_norm == "equips"
+        and team_mode_norm == "derived_from_individual"
+        and selection_scope == EXERCISE_SELECTION_SCOPE_PER_MEMBER
+        and mode_seleccio != "global_pool"
+    ):
         pipeline["participants"] = _normalize_participants_cfg(pipeline_in.get("participants"))
         pipeline["agregacio_participants"] = _normalize_aggregation(
             pipeline_in.get("agregacio_participants"),
@@ -905,11 +965,41 @@ def _score_individual_subject(ctx, pipeline, inscripcio_id):
     )
 
 
+def _score_individual_subject_for_app(ctx, pipeline, inscripcio_id, app_id):
+    target_app_ids = _resolve_pipeline_target_app_ids(pipeline)
+    if app_id not in target_app_ids:
+        return 0.0
+    app_ex_rows_by_ins = ctx.get("app_ex_rows_by_ins") or {}
+    rows = ((app_ex_rows_by_ins.get(app_id) or {}).get(inscripcio_id)) or []
+    rows_by_app = {
+        app_id: _pipeline_rows_for_source_rows(
+            ctx,
+            rows,
+            app_id,
+            pipeline,
+            participant_key="inscripcio_id",
+        )
+    }
+    return _aggregate_rows_per_pipeline(
+        ctx,
+        rows_by_app,
+        [app_id],
+        pipeline,
+        participant_key="inscripcio_id",
+    )
+
+
 def _score_group_subject(ctx, pipeline, member_ids):
     mids = _unique_positive_ints(member_ids)
     if not mids:
         return 0.0
     selection_scope = normalize_exercise_selection_scope(pipeline.get("exercise_selection_scope"))
+    participants_per_aparell = pipeline.get("participants_per_aparell") if isinstance(pipeline.get("participants_per_aparell"), dict) else None
+    agregacio_participants_per_aparell = (
+        pipeline.get("agregacio_participants_per_aparell")
+        if isinstance(pipeline.get("agregacio_participants_per_aparell"), dict)
+        else None
+    )
     if selection_scope == EXERCISE_SELECTION_SCOPE_TEAM_POOL and callable(ctx.get("get_main_selected_rows_for_group")):
         target_app_ids = _resolve_pipeline_target_app_ids(pipeline)
         selected_rows_by_app = ctx["get_main_selected_rows_for_group"](mids)
@@ -929,6 +1019,30 @@ def _score_group_subject(ctx, pipeline, member_ids):
             pipeline,
             participant_key="inscripcio_id",
         )
+    if selection_scope == EXERCISE_SELECTION_SCOPE_PER_MEMBER:
+        target_app_ids = _resolve_pipeline_target_app_ids(pipeline)
+        if not target_app_ids:
+            return 0.0
+        vals_apps = []
+        has_per_app_participants = participants_per_aparell is not None or agregacio_participants_per_aparell is not None
+        legacy_participants_cfg = _normalize_participants_cfg((pipeline or {}).get("participants"))
+        legacy_agg_parts = _normalize_aggregation((pipeline or {}).get("agregacio_participants"), "sum")
+        for app_id in target_app_ids:
+            member_vals = [_score_individual_subject_for_app(ctx, pipeline, member_id, app_id) for member_id in mids]
+            if has_per_app_participants:
+                part_cfg = _normalize_participants_cfg((participants_per_aparell or {}).get(str(app_id)) or {})
+                if not part_cfg:
+                    part_cfg = {"mode": "tots"}
+                agg_parts = _normalize_aggregation(
+                    (agregacio_participants_per_aparell or {}).get(str(app_id)),
+                    "sum",
+                )
+            else:
+                part_cfg = legacy_participants_cfg
+                agg_parts = legacy_agg_parts
+            selected_vals = ctx["pick_participants"](member_vals, part_cfg["mode"], int(part_cfg.get("n") or 1))
+            vals_apps.append(float(ctx["apply_simple_agg"](selected_vals, agg_parts)))
+        return float(ctx["apply_simple_agg"](vals_apps, _normalize_aggregation((pipeline or {}).get("agregacio_aparells"), "sum")))
     part_cfg = _normalize_participants_cfg((pipeline or {}).get("participants"))
     agg_parts = _normalize_aggregation((pipeline or {}).get("agregacio_participants"), "sum")
     vals = [_score_individual_subject(ctx, pipeline, member_id) for member_id in mids]

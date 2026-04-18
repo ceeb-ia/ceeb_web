@@ -37,7 +37,13 @@ def _report_disallowed_keys(raw_pipeline, *, prefix):
 
 def _validate_aggs(raw_pipeline, *, prefix):
     errors = []
-    for key in ("agregacio_camps", "agregacio_exercicis", "agregacio_aparells", "agregacio_participants"):
+    for key in (
+        "agregacio_camps",
+        "agregacio_exercicis",
+        "agregacio_aparells",
+        "agregacio_participants",
+        "agregacio_participants_per_aparell",
+    ):
         if key not in raw_pipeline:
             continue
         value = str(raw_pipeline.get(key) or "").strip().lower()
@@ -48,6 +54,11 @@ def _validate_aggs(raw_pipeline, *, prefix):
             value = str(raw_value or "").strip().lower()
             if value and value not in ALLOWED_AGGREGATIONS:
                 errors.append(f"{prefix}.agregacio_exercicis_per_aparell[{app_key}] invalid: {raw_value}")
+    if "agregacio_participants_per_aparell" in raw_pipeline and isinstance(raw_pipeline.get("agregacio_participants_per_aparell"), dict):
+        for app_key, raw_value in (raw_pipeline.get("agregacio_participants_per_aparell") or {}).items():
+            value = str(raw_value or "").strip().lower()
+            if value and value not in ALLOWED_AGGREGATIONS:
+                errors.append(f"{prefix}.agregacio_participants_per_aparell[{app_key}] invalid: {raw_value}")
     return errors
 
 
@@ -76,7 +87,7 @@ def validate_scoring_pipeline_shape(raw_pipeline, *, prefix="pipeline"):
             if not isinstance(raw_codes, (list, tuple, str)):
                 errors.append(f"{prefix}.camps_per_aparell[{app_key}] ha de ser una llista o text.")
 
-    for key in ("agregacio_camps_per_aparell", "candidate_source_per_aparell", "exercicis_per_aparell", "agregacio_exercicis_per_aparell"):
+    for key in ("agregacio_camps_per_aparell", "candidate_source_per_aparell", "exercicis_per_aparell", "agregacio_exercicis_per_aparell", "participants_per_aparell", "agregacio_participants_per_aparell"):
         if key in raw_pipeline and not isinstance(raw_pipeline.get(key), dict):
             errors.append(f"{prefix}.{key} ha de ser un objecte.")
 
@@ -128,6 +139,28 @@ def validate_scoring_pipeline_shape(raw_pipeline, *, prefix="pipeline"):
                     raise ValueError
             except Exception:
                 errors.append(f"{prefix}.exercicis.{num_key} invalid.")
+
+    participants_per_aparell = raw_pipeline.get("participants_per_aparell")
+    if participants_per_aparell is not None and not isinstance(participants_per_aparell, dict):
+        errors.append(f"{prefix}.participants_per_aparell ha de ser un objecte.")
+    elif isinstance(participants_per_aparell, dict):
+        for app_key, raw_cfg in participants_per_aparell.items():
+            if not isinstance(raw_cfg, dict):
+                errors.append(f"{prefix}.participants_per_aparell[{app_key}] ha de ser un objecte.")
+                continue
+            mode = str(raw_cfg.get("mode") or "").strip().lower()
+            if mode and mode not in ALLOWED_PARTICIPANT_MODES:
+                errors.append(f"{prefix}.participants_per_aparell[{app_key}].mode invalid: {raw_cfg.get('mode')}")
+            if mode in {"millor_n", "pitjor_n"}:
+                try:
+                    if int(raw_cfg.get("n") or 0) <= 0:
+                        raise ValueError
+                except Exception:
+                    errors.append(f"{prefix}.participants_per_aparell[{app_key}].n invalid.")
+
+    agg_participants_per_aparell = raw_pipeline.get("agregacio_participants_per_aparell")
+    if agg_participants_per_aparell is not None and not isinstance(agg_participants_per_aparell, dict):
+        errors.append(f"{prefix}.agregacio_participants_per_aparell ha de ser un objecte.")
 
     participants = raw_pipeline.get("participants")
     if participants is not None and not isinstance(participants, dict):

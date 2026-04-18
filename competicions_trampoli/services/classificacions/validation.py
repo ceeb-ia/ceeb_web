@@ -981,6 +981,72 @@ def _validate_candidate_source_per_aparell(competicio, schema: dict, *, tipus="i
     return errors
 
 
+def _validate_participants_per_aparell(competicio, schema: dict, *, tipus="individual", team_mode=""):
+    schema = schema or {}
+    punt = schema.get("puntuacio")
+    if not isinstance(punt, dict):
+        punt = {}
+
+    raw_map = punt.get("participants_per_aparell") or {}
+    raw_agg_map = punt.get("agregacio_participants_per_aparell") or {}
+    if not raw_map and not raw_agg_map:
+        return []
+    if raw_map and not isinstance(raw_map, dict):
+        return ["puntuacio.participants_per_aparell ha de ser un objecte {app_id: cfg}."]
+    if raw_agg_map and not isinstance(raw_agg_map, dict):
+        return ["puntuacio.agregacio_participants_per_aparell ha de ser un objecte {app_id: agregacio}."]
+
+    allow_member_selection = _is_derived_team_scope_enabled(tipus=tipus, team_mode=team_mode) and str(punt.get("exercise_selection_scope") or "").strip().lower() == EXERCISE_SELECTION_SCOPE_PER_MEMBER
+    if str(punt.get("mode_seleccio_exercicis") or "per_aparell_override").strip().lower() == "global_pool":
+        allow_member_selection = False
+    if (raw_map and not allow_member_selection) or (raw_agg_map and not allow_member_selection):
+        return [
+            "puntuacio.participants_per_aparell nomes es compatible amb tipus='equips' + team_mode=derived_from_individual + exercise_selection_scope=per_member.",
+        ]
+
+    active_app_ids, selected_ids = _get_active_and_selected_app_ids(competicio, punt)
+    errors = []
+    for raw_key, raw_cfg in raw_map.items():
+        try:
+            app_id = int(raw_key)
+        except Exception:
+            errors.append(f"puntuacio.participants_per_aparell: app_id invalid {raw_key}")
+            continue
+        if app_id not in active_app_ids:
+            errors.append(f"puntuacio.participants_per_aparell: aparell {app_id} no valid o no actiu.")
+            continue
+        if selected_ids and app_id not in selected_ids:
+            continue
+        if not isinstance(raw_cfg, dict):
+            errors.append(f"puntuacio.participants_per_aparell[{app_id}] ha de ser un objecte.")
+            continue
+        mode = str(raw_cfg.get("mode") or "tots").strip().lower()
+        if mode not in {"tots", "millor_1", "millor_n", "pitjor_1", "pitjor_n"}:
+            errors.append(f"puntuacio.participants_per_aparell[{app_id}].mode invalid: {mode}")
+            continue
+        if mode in {"millor_n", "pitjor_n"}:
+            try:
+                if int(raw_cfg.get("n") or 0) <= 0:
+                    raise ValueError
+            except Exception:
+                errors.append(f"puntuacio.participants_per_aparell[{app_id}].n invalid.")
+    for raw_key, raw_value in raw_agg_map.items():
+        try:
+            app_id = int(raw_key)
+        except Exception:
+            errors.append(f"puntuacio.agregacio_participants_per_aparell: app_id invalid {raw_key}")
+            continue
+        if app_id not in active_app_ids:
+            errors.append(f"puntuacio.agregacio_participants_per_aparell: aparell {app_id} no valid o no actiu.")
+            continue
+        if selected_ids and app_id not in selected_ids:
+            continue
+        agg = str(raw_value or "sum").strip().lower()
+        if agg not in {"sum", "avg", "median", "max", "min"}:
+            errors.append(f"puntuacio.agregacio_participants_per_aparell[{app_id}] invalid: {agg}")
+    return errors
+
+
 def _validate_victories_granular_options(victories, prefix: str):
     errors = []
     if not isinstance(victories, dict):
@@ -2015,13 +2081,14 @@ def validate_schema_for_competicio_detailed(competicio, schema_local, tipus="ind
         if not isinstance(tie, dict):
             errors.append(f"desempat[{idx}] ha de ser un objecte.")
             continue
-        raw_team_pool_contract_errors = validate_team_pool_tie_contract(
-            tie,
-            idx=idx,
-            main_scope=schema_local.get("puntuacio", {}).get("exercise_selection_scope"),
-        )
-        if raw_team_pool_contract_errors is not None:
-            errors.extend(raw_team_pool_contract_errors)
+        if allow_pipeline_exercise_scope:
+            raw_team_pool_contract_errors = validate_team_pool_tie_contract(
+                tie,
+                idx=idx,
+                main_scope=schema_local.get("puntuacio", {}).get("exercise_selection_scope"),
+            )
+            if raw_team_pool_contract_errors is not None:
+                errors.extend(raw_team_pool_contract_errors)
         raw_pipeline = tie.get("pipeline")
         if raw_pipeline is None:
             continue
@@ -2082,6 +2149,14 @@ def validate_schema_for_competicio_detailed(competicio, schema_local, tipus="ind
     )
     errors.extend(
         _validate_candidate_source_per_aparell(
+            competicio,
+            schema_local,
+            tipus=tipus,
+            team_mode=schema_local.get("equips", {}).get("team_mode", ""),
+        )
+    )
+    errors.extend(
+        _validate_participants_per_aparell(
             competicio,
             schema_local,
             tipus=tipus,

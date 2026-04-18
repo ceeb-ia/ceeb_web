@@ -409,6 +409,140 @@ class TeamContextClassificacioComputeModesTests(TeamContextScoringFlowTestBase):
         self.assertEqual(rows[0]["punts"], 17.0)
         self.assertEqual(rows[1]["punts"], 17.0)
 
+    def test_compute_classificacio_derived_team_per_member_selects_participants_per_app_before_aggregating_apps(self):
+        _app_a, comp_app_a = self._create_individual_comp_aparell("TR_PM_A", "Tramp per member A", ordre=2)
+        _app_b, comp_app_b = self._create_individual_comp_aparell("TR_PM_B", "Tramp per member B", ordre=3)
+
+        for inscripcio, total_a, total_b in (
+            (self.ins1, 100.0, 1.0),
+            (self.ins2, 90.0, 90.0),
+        ):
+            ScoreEntry.objects.create(
+                competicio=self.comp,
+                comp_aparell=comp_app_a,
+                inscripcio=inscripcio,
+                exercici=1,
+                inputs={},
+                outputs={},
+                total=total_a,
+            )
+            ScoreEntry.objects.create(
+                competicio=self.comp,
+                comp_aparell=comp_app_b,
+                inscripcio=inscripcio,
+                exercici=1,
+                inputs={},
+                outputs={},
+                total=total_b,
+            )
+
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Derived per member ordering",
+            activa=True,
+            ordre=1,
+            tipus="equips",
+            schema={
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [comp_app_a.id, comp_app_b.id]},
+                    "camps_per_aparell": {
+                        str(comp_app_a.id): ["total"],
+                        str(comp_app_b.id): ["total"],
+                    },
+                    "agregacio_camps": "sum",
+                    "exercicis": {"mode": "tots"},
+                    "exercise_selection_scope": "per_member",
+                    "participants_per_aparell": {
+                        str(comp_app_a.id): {"mode": "millor_1"},
+                        str(comp_app_b.id): {"mode": "millor_1"},
+                    },
+                    "agregacio_participants_per_aparell": {
+                        str(comp_app_a.id): "sum",
+                        str(comp_app_b.id): "sum",
+                    },
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "ordre": "desc",
+                },
+                "equips": {
+                    "context_code": "parelles",
+                    "team_mode": "derived_from_individual",
+                    "incloure_sense_equip": False,
+                },
+            },
+        )
+
+        rows = compute_classificacio(self.comp, cfg).get("global", [])
+
+        self.assertEqual(rows[0]["participant"], "Parella 1")
+        self.assertEqual(rows[0]["score"], 190.0)
+
+    def test_compute_classificacio_derived_team_per_member_falls_back_to_default_participant_selection_per_app(self):
+        _app_a, comp_app_a = self._create_individual_comp_aparell("TR_PM_FA", "Tramp per member fallback A", ordre=2)
+        _app_b, comp_app_b = self._create_individual_comp_aparell("TR_PM_FB", "Tramp per member fallback B", ordre=3)
+
+        for inscripcio, total_a, total_b in (
+            (self.ins1, 100.0, 1.0),
+            (self.ins2, 90.0, 90.0),
+        ):
+            ScoreEntry.objects.create(
+                competicio=self.comp,
+                comp_aparell=comp_app_a,
+                inscripcio=inscripcio,
+                exercici=1,
+                inputs={},
+                outputs={},
+                total=total_a,
+            )
+            ScoreEntry.objects.create(
+                competicio=self.comp,
+                comp_aparell=comp_app_b,
+                inscripcio=inscripcio,
+                exercici=1,
+                inputs={},
+                outputs={},
+                total=total_b,
+            )
+
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Derived per member fallback",
+            activa=True,
+            ordre=1,
+            tipus="equips",
+            schema={
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [comp_app_a.id, comp_app_b.id]},
+                    "camps_per_aparell": {
+                        str(comp_app_a.id): ["total"],
+                        str(comp_app_b.id): ["total"],
+                    },
+                    "agregacio_camps": "sum",
+                    "exercicis": {"mode": "tots"},
+                    "exercise_selection_scope": "per_member",
+                    "participants_per_aparell": {
+                        str(comp_app_a.id): {"mode": "millor_1"},
+                    },
+                    "agregacio_participants_per_aparell": {
+                        str(comp_app_a.id): "sum",
+                    },
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "ordre": "desc",
+                },
+                "equips": {
+                    "context_code": "parelles",
+                    "team_mode": "derived_from_individual",
+                    "incloure_sense_equip": False,
+                },
+            },
+        )
+
+        rows = compute_classificacio(self.comp, cfg).get("global", [])
+
+        self.assertEqual(rows[0]["participant"], "Parella 1")
+        self.assertEqual(rows[0]["score"], 191.0)
+
     def test_compute_classificacio_native_team_tie_uses_team_scores_only(self):
         equip_2, _members = self._create_team_with_members("Parella 2", ["Nora", "Marta"], start_order=20)
         ScoringSchema.objects.create(

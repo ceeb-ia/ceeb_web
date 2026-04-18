@@ -301,6 +301,10 @@ DEFAULT_SCHEMA = {
         # sum/avg/median/max/min
         "agregacio_aparells": "sum",
 
+        # selecció final de membres per aparell
+        "participants_per_aparell": {},
+        "agregacio_participants_per_aparell": {},
+
         # resultat comparable per aparell:
         # - score: usa directament el valor agregat per aparell
         # - victories: compara participants dins de cada aparell i suma victories
@@ -1411,6 +1415,21 @@ def _pick_participants(vals, mode: str, n: int):
     return xs
 
 
+def _normalize_participants_cfg(raw_cfg):
+    cfg = raw_cfg if isinstance(raw_cfg, dict) else {}
+    mode = str(cfg.get("mode") or "tots").strip().lower()
+    if mode not in {"tots", "millor_1", "millor_n", "pitjor_1", "pitjor_n"}:
+        mode = "tots"
+    try:
+        n_value = max(1, int(cfg.get("n") or cfg.get("best_n") or 1))
+    except Exception:
+        n_value = 1
+    out = {"mode": mode}
+    if mode in {"millor_n", "pitjor_n"}:
+        out["n"] = n_value
+    return out
+
+
 def _years_old(birth_date, ref_date):
     if not isinstance(birth_date, date) or not isinstance(ref_date, date):
         return None
@@ -2332,6 +2351,18 @@ def compute_classificacio(competicio, cfg_obj):
         exercise_selection_scope = _normalize_exercise_selection_scope(
             punt.get("exercise_selection_scope")
         )
+    allow_main_participant_selection_step = (
+        tipus == "equips"
+        and team_mode == "derived_from_individual"
+        and exercise_selection_scope == EXERCISE_SELECTION_SCOPE_PER_MEMBER
+        and mode_seleccio_exercicis != "global_pool"
+    )
+    participants_per_aparell = punt.get("participants_per_aparell") if isinstance(punt.get("participants_per_aparell"), dict) else {}
+    agregacio_participants_per_aparell = (
+        punt.get("agregacio_participants_per_aparell")
+        if isinstance(punt.get("agregacio_participants_per_aparell"), dict)
+        else {}
+    )
     allow_candidate_source = (
         tipus == "individual"
         or (tipus == "equips" and team_mode in ("derived_from_individual", "native_team"))
@@ -2378,6 +2409,21 @@ def compute_classificacio(competicio, cfg_obj):
         if agg not in ("sum", "avg", "median", "max", "min"):
             agg = "sum"
         return agg
+
+    def resolve_participants_for_app(app_id: int):
+        raw = participants_per_aparell.get(str(app_id))
+        if raw is None:
+            raw = participants_per_aparell.get(app_id)
+        cfg = _normalize_participants_cfg(raw if isinstance(raw, dict) else {})
+        if not cfg:
+            cfg = {"mode": "tots"}
+        raw_agg = agregacio_participants_per_aparell.get(str(app_id))
+        if raw_agg is None:
+            raw_agg = agregacio_participants_per_aparell.get(app_id)
+        agg = str(raw_agg or "sum").lower().strip()
+        if agg not in ("sum", "avg", "median", "max", "min"):
+            agg = "sum"
+        return cfg, agg
 
     # si no hi ha aparells seleccionats -> retorn buit
     if not aparells:
@@ -4134,6 +4180,19 @@ def compute_classificacio(competicio, cfg_obj):
                 raw = crit_ex_per_app_raw.get(app_id)
             return _normalize_exercicis_cfg(raw, fallback=crit_ex_cfg_global)
 
+        def _resolve_tie_agg_ex_for_app(app_id: int):
+            if crit_mode_sel != "per_aparell_override":
+                return crit_agg_exercicis
+            raw = crit_agg_ex_per_app_raw.get(str(app_id))
+            if raw is None:
+                raw = crit_agg_ex_per_app_raw.get(app_id)
+            agg = str(raw or crit_agg_exercicis or "sum").lower().strip()
+            if agg not in ("sum", "avg", "median", "max", "min"):
+                agg = str(crit_agg_exercicis or "sum").lower().strip()
+            if agg not in ("sum", "avg", "median", "max", "min"):
+                agg = "sum"
+            return agg
+
         vals_apps = []
         app_vals_ex = {}
         for app_id in target_apps:
@@ -5573,16 +5632,26 @@ def compute_classificacio(competicio, cfg_obj):
                             )
                         continue
 
-                    app_total = 0.0
-                    found_any = False
+                    member_app_vals = []
                     for m, _resolved_equip in members:
                         by_app_base = per_ins.get(m.id, {}).get("by_app_base") or {}
                         if app_id not in by_app_base:
                             continue
-                        found_any = True
-                        app_total += _to_float(by_app_base.get(app_id))
-                    if found_any:
-                        team_by_app[app_id] = float(app_total)
+                        member_app_vals.append(_to_float(by_app_base.get(app_id)))
+                    if not member_app_vals:
+                        continue
+                    if allow_main_participant_selection_step:
+                        participants_cfg, agg_participants = resolve_participants_for_app(app_id)
+                        selected_member_vals = _pick_participants(
+                            member_app_vals,
+                            participants_cfg["mode"],
+                            int(participants_cfg.get("n") or 1),
+                        )
+                        team_by_app[app_id] = float(
+                            _apply_simple_agg(selected_member_vals, agg_participants)
+                        )
+                    else:
+                        team_by_app[app_id] = float(sum(member_app_vals))
 
                 team_score = float(_apply_simple_agg(list(team_by_app.values()), agg_aparells))
 

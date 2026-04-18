@@ -524,6 +524,14 @@ def schema_to_template_schema(competicio, schema_local):
         punt.get("candidate_source_per_aparell") or {},
         "candidate_source_per_aparell",
     )
+    punt["participants_per_aparell"] = map_keys_to_codes(
+        punt.get("participants_per_aparell") or {},
+        "participants_per_aparell",
+    )
+    punt["agregacio_participants_per_aparell"] = map_keys_to_codes(
+        punt.get("agregacio_participants_per_aparell") or {},
+        "agregacio_participants_per_aparell",
+    )
     victories = punt.get("victories") or {}
     if isinstance(victories, dict):
         victories_out = dict(victories)
@@ -752,6 +760,14 @@ def template_schema_to_competicio_schema(competicio, schema_tpl):
     punt["candidate_source_per_aparell"] = map_keys_to_ids(
         punt.get("candidate_source_per_aparell") or {},
         "candidate_source_per_aparell",
+    )
+    punt["participants_per_aparell"] = map_keys_to_ids(
+        punt.get("participants_per_aparell") or {},
+        "participants_per_aparell",
+    )
+    punt["agregacio_participants_per_aparell"] = map_keys_to_ids(
+        punt.get("agregacio_participants_per_aparell") or {},
+        "agregacio_participants_per_aparell",
     )
     victories = punt.get("victories") or {}
     if isinstance(victories, dict):
@@ -1120,6 +1136,10 @@ def global_ui_schema_to_template_schema(schema_ui, by_id, by_code):
     punt["exercicis_per_aparell"] = map_keys_to_codes(punt.get("exercicis_per_aparell") or {})
     punt["agregacio_exercicis_per_aparell"] = map_keys_to_codes(punt.get("agregacio_exercicis_per_aparell") or {})
     punt["candidate_source_per_aparell"] = map_keys_to_codes(punt.get("candidate_source_per_aparell") or {})
+    punt["participants_per_aparell"] = map_keys_to_codes(punt.get("participants_per_aparell") or {})
+    punt["agregacio_participants_per_aparell"] = map_keys_to_codes(
+        punt.get("agregacio_participants_per_aparell") or {}
+    )
     victories = punt.get("victories") or {}
     if isinstance(victories, dict):
         victories_out = dict(victories)
@@ -1209,6 +1229,14 @@ def collect_required_app_codes_from_template(schema_tpl):
             if code:
                 out.add(code)
         for raw_key in (punt.get("candidate_source_per_aparell") or {}).keys() if isinstance(punt.get("candidate_source_per_aparell"), dict) else []:
+            code = canon_app_code(raw_key)
+            if code:
+                out.add(code)
+        for raw_key in (punt.get("participants_per_aparell") or {}).keys() if isinstance(punt.get("participants_per_aparell"), dict) else []:
+            code = canon_app_code(raw_key)
+            if code:
+                out.add(code)
+        for raw_key in (punt.get("agregacio_participants_per_aparell") or {}).keys() if isinstance(punt.get("agregacio_participants_per_aparell"), dict) else []:
             code = canon_app_code(raw_key)
             if code:
                 out.add(code)
@@ -1460,6 +1488,8 @@ def _global_builder_known_merge_shape():
             "agregacio_aparells": None,
             "mode_resultat_aparells": None,
             "exercise_selection_scope": None,
+            "participants_per_aparell": None,
+            "agregacio_participants_per_aparell": None,
             "victories": {
                 "punts_victoria": None,
                 "punts_empat": None,
@@ -1887,6 +1917,72 @@ def validate_template_schema_global(
             cfg_agg = str(cfg.get("agregacio_exercicis") or "sum").strip().lower()
             if cfg_agg not in {"sum", "avg", "median", "max", "min"}:
                 errors.append(f"puntuacio.candidate_source_per_aparell[{app_code}].cfg.agregacio_exercicis invalid: {cfg_agg}")
+
+    exercise_selection_scope_value = str(punt.get("exercise_selection_scope") or "").strip().lower()
+    allow_member_selection = (
+        str(tipus or "").strip().lower() == "equips"
+        and team_mode_value == "derived_from_individual"
+        and exercise_selection_scope_value == "per_member"
+        and str(punt.get("mode_seleccio_exercicis") or "per_aparell_override").strip().lower() != "global_pool"
+    )
+    participants_per_aparell_cfg = punt.get("participants_per_aparell") or {}
+    if participants_per_aparell_cfg and not isinstance(participants_per_aparell_cfg, dict):
+        errors.append("puntuacio.participants_per_aparell ha de ser un objecte.")
+    elif isinstance(participants_per_aparell_cfg, dict):
+        if participants_per_aparell_cfg and not allow_member_selection:
+            errors.append(
+                "puntuacio.participants_per_aparell nomes es compatible amb tipus='equips' + team_mode=derived_from_individual + exercise_selection_scope=per_member."
+            )
+        else:
+            for app_key, raw_cfg in participants_per_aparell_cfg.items():
+                if not isinstance(raw_cfg, dict):
+                    errors.append(f"puntuacio.participants_per_aparell[{app_key}] ha de ser un objecte.")
+                    continue
+                mode = str(raw_cfg.get("mode") or "tots").strip().lower()
+                if mode not in {"tots", "millor_1", "millor_n", "pitjor_1", "pitjor_n"}:
+                    errors.append(f"puntuacio.participants_per_aparell[{app_key}].mode invalid: {mode}")
+                    continue
+                if mode in {"millor_n", "pitjor_n"}:
+                    try:
+                        n_value = int(raw_cfg.get("n") or 0)
+                    except Exception:
+                        n_value = 0
+                    if n_value <= 0:
+                        errors.append(f"puntuacio.participants_per_aparell[{app_key}].n invalid per mode {mode}.")
+    agg_participants_per_aparell = punt.get("agregacio_participants_per_aparell") or {}
+    if agg_participants_per_aparell and not isinstance(agg_participants_per_aparell, dict):
+        errors.append("puntuacio.agregacio_participants_per_aparell ha de ser un objecte.")
+    elif isinstance(agg_participants_per_aparell, dict) and agg_participants_per_aparell:
+        if not allow_member_selection:
+            errors.append(
+                "puntuacio.agregacio_participants_per_aparell nomes es compatible amb tipus='equips' + team_mode=derived_from_individual + exercise_selection_scope=per_member."
+            )
+        else:
+            for app_key, raw_value in agg_participants_per_aparell.items():
+                agg_participants = str(raw_value or "sum").strip().lower()
+                if agg_participants not in {"sum", "avg", "median", "max", "min"}:
+                    errors.append(f"puntuacio.agregacio_participants_per_aparell[{app_key}] invalid: {agg_participants}")
+
+    # Legacy global participant selection is still accepted by old ties but
+    # ignored by the active puntuacio flow.
+    participants_cfg = punt.get("participants") or {}
+    if participants_cfg and not isinstance(participants_cfg, dict):
+        errors.append("puntuacio.participants ha de ser un objecte.")
+    elif isinstance(participants_cfg, dict) and participants_cfg:
+        mode = str(participants_cfg.get("mode") or "tots").strip().lower()
+        if mode not in {"tots", "millor_1", "millor_n", "pitjor_1", "pitjor_n"}:
+            errors.append(f"puntuacio.participants.mode invalid: {mode}")
+        if mode in {"millor_n", "pitjor_n"}:
+            try:
+                n_value = int(participants_cfg.get("n") or 0)
+            except Exception:
+                n_value = 0
+            if n_value <= 0:
+                errors.append(f"puntuacio.participants.n invalid per mode {mode}.")
+    if punt.get("agregacio_participants") not in (None, ""):
+        agg_participants = str(punt.get("agregacio_participants") or "sum").strip().lower()
+        if agg_participants not in {"sum", "avg", "median", "max", "min"}:
+            errors.append(f"puntuacio.agregacio_participants invalid: {agg_participants}")
 
     if str(punt.get("mode_resultat_aparells") or "score").strip().lower() == "victories" and str(tipus or "individual").strip().lower() != "individual":
         errors.append("puntuacio.mode_resultat_aparells='victories' nomes s'admet per tipus='individual'.")

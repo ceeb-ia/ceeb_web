@@ -1,3 +1,4 @@
+from ..filters import normalize_team_mode
 from ..pipeline_runtime import build_main_scoring_pipeline_from_schema
 from .context import resolve_tie_context
 from .pipeline_builder import build_tie_pipeline_criterion
@@ -42,7 +43,7 @@ def serialize_tie_for_save(
     serialized = contract.sanitize_item_for_save(item, context)
     serialized_pipeline = serialized.get("pipeline") if isinstance(serialized.get("pipeline"), dict) else {}
     raw_pipeline = item.get("pipeline") if isinstance(item.get("pipeline"), dict) else {}
-    if raw_pipeline and "exercise_selection_scope" in raw_pipeline:
+    if raw_pipeline and "exercise_selection_scope" in raw_pipeline and normalize_team_mode(team_mode) != "native_team":
         serialized_pipeline["exercise_selection_scope"] = raw_pipeline.get("exercise_selection_scope")
     else:
         serialized_pipeline.pop("exercise_selection_scope", None)

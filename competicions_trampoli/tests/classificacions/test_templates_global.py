@@ -83,6 +83,7 @@ from ...services.inscripcions.queries import (
 from ...services.classificacions.classificacio_templates import (
     normalize_particions_schema as _normalize_particions_schema,
     schema_to_template_schema as _schema_to_template_schema,
+    validate_template_schema_global as _validate_template_schema_global,
     template_schema_to_competicio_schema as _template_schema_to_competicio_schema_service,
 )
 from ...services.classificacions.builder import (
@@ -941,6 +942,9 @@ class GlobalClassificacioTemplateManagementTests(_BaseTrampoliDataMixin, TestCas
         self.assertContains(res, 'id="sVictoryModeCamps"')
         self.assertContains(res, 'id="sVictoryModeExercicis"')
         self.assertContains(res, 'id="puntuacioSummaryText"')
+        self.assertNotContains(res, 'id="participantSelectionCard"')
+        self.assertContains(res, 'data-app-participants-mode')
+        self.assertContains(res, 'data-app-agregacio-participants')
         self.assertContains(res, 'class="builder-summary-box__text"')
         self.assertNotContains(res, 'id="exSelectionSummary"')
         self.assertContains(res, 'id="candidateScopeHint"')
@@ -966,6 +970,10 @@ class GlobalClassificacioTemplateManagementTests(_BaseTrampoliDataMixin, TestCas
         self.assertContains(res, "function buildTieCanonicalForSaveFromRow(")
         self.assertContains(res, "function readTieBuilderState(")
         self.assertContains(res, "function readTieCanonicalForSave(")
+        self.assertContains(res, "function isMemberSelectionAggregationAvailable()")
+        self.assertContains(res, "function _getPerAppParticipantsForUi(punt, appId)")
+        self.assertContains(res, "function _copyPuntuacioParticipantsCfg(rawCfg)")
+        self.assertContains(res, "function _buildMemberSelectionSegment(perAppEntries)")
         self.assertContains(res, "let desempat = readTieCanonicalForSave(true);")
         self.assertContains(res, "renderTieUI(readTieBuilderState(true));")
         self.assertNotContains(res, "renderTieUI(readTieUI(true));")
@@ -973,14 +981,54 @@ class GlobalClassificacioTemplateManagementTests(_BaseTrampoliDataMixin, TestCas
         self.assertContains(res, "delete canonical.pipeline.exercicis_per_aparell;")
         self.assertContains(res, "delete canonical.pipeline.mode_seleccio_exercicis;")
         self.assertContains(res, "delete canonical.pipeline.participants;")
+        self.assertContains(res, "participants_per_aparell")
+        self.assertContains(res, "agregacio_participants_per_aparell")
         self.assertEqual(content.count("function buildTieAppScopeOptionsHTML("), 1)
         self.assertContains(res, "function _buildPretractamentSegment(punt, perAppEntries)")
         self.assertContains(res, "function _buildScoreSelectionSegment({")
         self.assertContains(res, "function _buildVictoriesComparisonSegment(victoriesCfg)")
         self.assertNotContains(res, "function buildPuntuacioLiveSummary({")
+        self.assertContains(res, "5. Seleccio i agregacio entre membres")
+        self.assertContains(res, "5. Combinacio final entre aparells")
         self.assertContains(res, "function previewRenderTeamRawDetailCell(v, col)")
         self.assertContains(res, "En equips derivats, les columnes de camp mostren un resum i el detall per membres de l'equip.")
         self.assertContains(res, "En equips amb nota nativa, les columnes de camp mostren el valor d'equip i nomÃ©s sÃ³n representables per aparells d'equip.")
+
+    def test_validate_template_schema_global_member_selection_step_is_contextual(self):
+        schema = {
+            "puntuacio": {
+                "aparells": {"mode": "seleccionar", "ids": [self.app.codi]},
+                "exercise_selection_scope": "per_member",
+                "participants_per_aparell": {
+                    self.app.codi: {"mode": "millor_1"},
+                },
+                "agregacio_participants_per_aparell": {
+                    self.app.codi: "avg",
+                },
+            },
+            "equips": {
+                "team_mode": "derived_from_individual",
+            },
+        }
+        meta = {
+            self.app.codi: _build_scoreable_meta_for_schema(
+                (ScoringSchema.objects.get(aparell=self.app).schema or {}),
+                strict_unknown=True,
+            )
+        }
+
+        normalized, errors, _details = _validate_template_schema_global(
+            schema,
+            available_app_codes={self.app.codi},
+            field_meta_by_code=meta,
+            allowed_particio_codes=set(),
+            allowed_filter_keys=set(),
+            tipus="equips",
+        )
+        self.assertFalse(errors)
+        punt = normalized.get("puntuacio") or {}
+        self.assertEqual(punt.get("participants_per_aparell"), {self.app.codi: {"mode": "millor_1"}})
+        self.assertEqual(punt.get("agregacio_participants_per_aparell"), {self.app.codi: "avg"})
 
     def test_admin_global_builder_edit_is_scoped_to_template_owner_catalog(self):
         own_tpl = ClassificacioTemplateGlobal.objects.create(

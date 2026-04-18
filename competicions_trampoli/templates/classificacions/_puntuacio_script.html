@@ -133,11 +133,14 @@
     const candidateUi = readPerAppCandidateSourceFromUI();
     const exUi = readPerAppExercicisFromUI();
     const aggExUi = readPerAppAggExercicisFromUI();
+    const participantsUi = readPerAppParticipantsFromUI();
+    const aggParticipantsUi = readPerAppAggParticipantsFromUI();
     return (Array.isArray(appIds) ? appIds : []).map((appId) => {
       const key = String(appId);
       const candidateEntry = candidateUi[key] || _getPerAppCandidateSourceForUi(punt, appId);
       const candidateSummary = _stripTrailingPeriod(_describeCandidateSourceEntry(candidateEntry).summary);
       const exCfg = exUi[key] || _getPerAppExerciseCfgForUi(punt, appId);
+      const participantsCfg = participantsUi[key] || _getPerAppParticipantsForUi(punt, appId);
       return {
         appId,
         appName: _summaryAppName(appId),
@@ -145,6 +148,8 @@
         candidateSummary,
         exerciseLabel: describeExerciseMode(exCfg.mode, exCfg.best_n, exCfg.index, exCfg.ids),
         aggEx: _describeAggLabel(aggExUi[key] || _getPerAppAggExercicisForUi(punt, appId)),
+        participantsLabel: _describeParticipantSelectionMode(participantsCfg.mode, participantsCfg.n),
+        participantsAgg: _describeAggLabel(aggParticipantsUi[key] || _getPerAppAggParticipantsForUi(punt, appId)),
         maxPerParticipant: Math.max(0, Number(exCfg.max_per_participant || 0)),
       };
     });
@@ -237,6 +242,17 @@
     }
     return entries
       .map((entry) => `${entry.appName}: maxim ${entry.maxPerParticipant} notes per participant`)
+      .join("; ");
+  }
+
+  function _buildMemberSelectionSegment(perAppEntries) {
+    const entries = Array.isArray(perAppEntries) ? perAppEntries : [];
+    if (!entries.length || !isMemberSelectionAggregationAvailable()) return "";
+    if (_allPerAppEntriesEqual(entries, ["participantsLabel", "participantsAgg"])) {
+      return `a cada aparell, es seleccionen ${entries[0].participantsLabel} i s'agrega per ${entries[0].participantsAgg}`;
+    }
+    return entries
+      .map((entry) => `a ${entry.appName}, es seleccionen ${entry.participantsLabel} i s'agrega per ${entry.participantsAgg}`)
       .join("; ");
   }
 
@@ -333,6 +349,28 @@
     const maxPerParticipant = Math.max(0, Number(cfg.max_per_participant || 0));
     if (maxPerParticipant > 0) out.max_per_participant = maxPerParticipant;
     return out;
+  }
+
+  function _copyPuntuacioParticipantsCfg(rawCfg) {
+    const cfg = (rawCfg && typeof rawCfg === "object" && !Array.isArray(rawCfg)) ? rawCfg : {};
+    const mode = String(cfg.mode || "tots").toLowerCase().trim();
+    const outMode = ["tots", "millor_1", "millor_n", "pitjor_1", "pitjor_n"].includes(mode)
+      ? mode
+      : "tots";
+    const out = { mode: outMode };
+    if (outMode === "millor_n" || outMode === "pitjor_n") {
+      out.n = Math.max(1, Number(cfg.n || cfg.best_n || 1));
+    }
+    return out;
+  }
+
+  function isMemberSelectionAggregationAvailable() {
+    return (
+      isTipusEquips() &&
+      getEquipsUiState().effectiveTeamMode === TEAM_MODE_DERIVED &&
+      getExerciseSelectionScopeFromUI() === EXERCISE_SELECTION_SCOPE_PER_MEMBER &&
+      _isPerAppExerciseResolutionActive()
+    );
   }
 
   function isCandidateSourceAvailable() {
@@ -558,9 +596,35 @@
     return _normalizeAggCampsValue(rawMap[key] ?? rawMap[appId] ?? ((punt && punt.agregacio_exercicis) || "sum"));
   }
 
+  function _getPerAppParticipantsForUi(punt, appId) {
+    const rawMap = punt && typeof punt.participants_per_aparell === "object" && !Array.isArray(punt.participants_per_aparell)
+      ? punt.participants_per_aparell
+      : {};
+    const key = String(appId);
+    const rawCfg = rawMap[key] ?? rawMap[appId];
+    return _copyPuntuacioParticipantsCfg(rawCfg || {});
+  }
+
+  function _getPerAppAggParticipantsForUi(punt, appId) {
+    const rawMap = punt && typeof punt.agregacio_participants_per_aparell === "object" && !Array.isArray(punt.agregacio_participants_per_aparell)
+      ? punt.agregacio_participants_per_aparell
+      : {};
+    const key = String(appId);
+    return _normalizeAggCampsValue(rawMap[key] ?? rawMap[appId] ?? "sum");
+  }
+
   function _isPerAppExerciseResolutionActive(appCount) {
     const currentCount = Number.isFinite(Number(appCount)) ? Number(appCount) : _puntuacioSelectedAppCount();
     return getModeSeleccioExercicisFromUI() === "per_aparell_override" || currentCount <= 1;
+  }
+
+  function _describeParticipantSelectionMode(mode, nValue) {
+    const normalized = String(mode || "tots").toLowerCase().trim();
+    if (normalized === "millor_n") return `els millors ${Math.max(1, Number(nValue || 1))} membres`;
+    if (normalized === "pitjor_n") return `els pitjors ${Math.max(1, Number(nValue || 1))} membres`;
+    if (normalized === "millor_1") return "el millor membre";
+    if (normalized === "pitjor_1") return "el pitjor membre";
+    return "tots els membres";
   }
 
   function _describePuntuacioCandidateScope(schema) {
@@ -648,7 +712,7 @@
     if (els.perAppConfigIntro) {
       els.perAppConfigIntro.textContent = isCombinedApps
         ? "Cada targeta mostra els camps, l'agregacio de camps i el pretractament de l'aparell. La seleccio final es resol sobre una sola bossa comuna."
-        : "Cada targeta mostra els camps, l'agregacio de camps, el pretractament, la seleccio final i l'agregacio final d'exercicis propis d'aquest aparell.";
+        : "Cada targeta mostra els camps, l'agregacio de camps, el pretractament, la seleccio d'exercicis, la seleccio i agregacio de membres i l'agregacio final d'exercicis propis d'aquest aparell.";
     }
     if (els.restrictionsHint) {
       const maxPerParticipant = Math.max(0, Number(els.iExMaxPerParticipant?.value || 0));
@@ -670,11 +734,15 @@
     const appTreatment = isCombinedApps ? "tractats en un sac global" : "tractats per aparell";
     const subjectLabel = _summarySubjectLabel(showScope, isTeamPool);
     const finalSegment = _buildFinalSegment(modeSel, selectedAppIds.length, punt.agregacio_aparells || els.sAggAparells?.value || "sum");
+    const memberSelectionSegment = _buildMemberSelectionSegment(perAppEntries);
     const summaryLines = [
       { label: "Resultat", text: `${resultMode} en ordre ${orderLabel}` },
       { label: "Aparells", text: `${appNamesLabel}, ${appTreatment}` },
       { label: "Subjecte", text: subjectLabel },
     ];
+    if (memberSelectionSegment) {
+      summaryLines.push({ label: "Membres per aparell", text: memberSelectionSegment });
+    }
 
     if (resultMode === "victories") {
       const victoriesCfg = punt.victories || {};
@@ -773,6 +841,64 @@
         </div>
       </div>
     `;
+  }
+
+  function perAppParticipantsHTML(compAparellId, participantsCfg, participantsAgg) {
+    const cfg = _copyPuntuacioParticipantsCfg(participantsCfg || {});
+    const agg = _normalizeAggCampsValue(participantsAgg || "sum");
+    const showStep = isMemberSelectionAggregationAvailable();
+    return `
+      <div class="puntuacio-step-card puntuacio-step-card--selection" data-app-participants-box="${esc(compAparellId)}" style="${showStep ? "" : "display:none;"}">
+        <label class="small text-muted mb-1">5. Seleccio i agregacio entre membres</label>
+        <div class="puntuacio-step-card__head">
+          <div class="puntuacio-step-card__label">5. Seleccio i agregacio entre membres</div>
+        </div>
+        <div class="puntuacio-step-card__body">
+          <select class="form-control form-control-sm mb-1" data-app-participants-mode data-app-id="${esc(compAparellId)}">
+            <option value="tots" ${cfg.mode === "tots" ? "selected" : ""}>Tots</option>
+            <option value="millor_1" ${cfg.mode === "millor_1" ? "selected" : ""}>Millor 1</option>
+            <option value="millor_n" ${cfg.mode === "millor_n" ? "selected" : ""}>Millors N</option>
+            <option value="pitjor_1" ${cfg.mode === "pitjor_1" ? "selected" : ""}>Pitjor 1</option>
+            <option value="pitjor_n" ${cfg.mode === "pitjor_n" ? "selected" : ""}>Pitjors N</option>
+          </select>
+          <div class="small text-muted mt-1" data-app-participants-step-hint data-app-id="${esc(compAparellId)}">Selecciona quins membres entren en aquest pas abans d'agregar-los.</div>
+          <div class="row mt-2">
+            <div class="col-12 col-md-4 mb-2" data-app-participants-best-n-box data-app-id="${esc(compAparellId)}" style="${(_copyPuntuacioParticipantsCfg(cfg).mode === "millor_n" || _copyPuntuacioParticipantsCfg(cfg).mode === "pitjor_n") ? "" : "display:none;"}">
+              <label class="small text-muted">N</label>
+              <input class="form-control form-control-sm" data-app-participants-best-n data-app-id="${esc(compAparellId)}" type="number" min="1" value="${esc(Math.max(1, Number(cfg.n || 1)))}">
+            </div>
+            <div class="col-12 col-md-8 mb-2">
+              <label class="font-weight-bold">Agregacio entre membres</label>
+              <select class="form-control form-control-sm" data-app-agregacio-participants data-app-id="${esc(compAparellId)}">
+                <option value="sum" ${agg === "sum" ? "selected" : ""}>Suma</option>
+                <option value="avg" ${agg === "avg" ? "selected" : ""}>Mitjana</option>
+                <option value="median" ${agg === "median" ? "selected" : ""}>Mediana</option>
+                <option value="max" ${agg === "max" ? "selected" : ""}>Maxim</option>
+                <option value="min" ${agg === "min" ? "selected" : ""}>Minim</option>
+              </select>
+            </div>
+          </div>
+          <div class="small text-muted mt-1">Aquest pas es configura per aparell i es calcula abans de la combinacio final entre aparells.</div>
+        </div>
+      </div>
+    `;
+  }
+
+  function refreshPerAppParticipantsCardUI(card) {
+    const modeSel = card.querySelector("[data-app-participants-mode]");
+    const bestBox = card.querySelector("[data-app-participants-best-n-box]");
+    const bestN = card.querySelector("[data-app-participants-best-n]");
+    const hint = card.querySelector("[data-app-participants-step-hint]");
+    if (!modeSel) return;
+    const mode = String(modeSel.value || "tots").toLowerCase().trim();
+    const showBest = mode === "millor_n" || mode === "pitjor_n";
+    if (bestBox) bestBox.style.display = showBest ? "" : "none";
+    if (bestN && !bestN.value) bestN.value = "1";
+    if (hint) {
+      hint.textContent = showBest
+        ? "Selecciona quins membres entren en aquest pas abans d'agregar-los."
+        : "Aquest pas selecciona els membres del resultat d'aquest aparell abans de combinar-los.";
+    }
   }
 
   function perAppAggCampsHTML(compAparellId, aggValue){
@@ -925,6 +1051,7 @@
     const appCount = appIds.length;
     const modeSel = getModeSeleccioExercicisFromUI() || _puntuacioNormalizeModeSelection(punt.mode_seleccio_exercicis || "per_aparell_override", appCount);
     const showExOverride = modeSel === "per_aparell_override" || appCount <= 1;
+    const showMemberSelection = isMemberSelectionAggregationAvailable();
     els.perAppBox.innerHTML = "";
 
     appIds.forEach(id => {
@@ -934,6 +1061,8 @@
       const candidateSourceEntry = _getPerAppCandidateSourceForUi(punt, id);
       const perAppExCfg = _getPerAppExerciseCfgForUi(punt, id);
       const perAppAggEx = _getPerAppAggExercicisForUi(punt, id);
+      const perAppParticipantsCfg = _getPerAppParticipantsForUi(punt, id);
+      const perAppAggParticipants = _getPerAppAggParticipantsForUi(punt, id);
       const app = getAparellById(id);
       const appName = app ? app.nom : `Aparell ${key}`;
       const appCode = app && app.codi ? String(app.codi) : "";
@@ -956,7 +1085,7 @@
           ${perAppFieldsHTML(key, selectedCodes)}
           ${perAppAggCampsHTML(key, aggCamps)}
           ${isCandidateSourceAvailable() ? perAppCandidateSourceHTML(key, candidateSourceEntry) : ""}
-          ${showExOverride ? `${perAppExercicisHTML(key, perAppExCfg)}${perAppAggExercicisHTML(key, perAppAggEx)}` : perAppGlobalPoolContextHTML(key)}
+          ${showExOverride ? `${perAppExercicisHTML(key, perAppExCfg)}${perAppAggExercicisHTML(key, perAppAggEx)}${showMemberSelection ? perAppParticipantsHTML(key, perAppParticipantsCfg, perAppAggParticipants) : ""}` : perAppGlobalPoolContextHTML(key)}
         </div>
       `;
       els.perAppBox.appendChild(card);
@@ -966,20 +1095,26 @@
       if (exModeNode) {
         refreshPerAppExCardUI(card);
       }
+      const participantsModeNode = card.querySelector("[data-app-participants-mode]");
+      if (participantsModeNode) {
+        refreshPerAppParticipantsCardUI(card);
+      }
       const candidateModeNode = card.querySelector("[data-app-candidate-mode]");
       if (candidateModeNode) {
         refreshPerAppCandidateSourceCardUI(card);
       }
-      card.querySelectorAll("[data-app-select], [data-app-agg-camps], [data-app-candidate-mode], [data-app-candidate-selection-mode], [data-app-candidate-agg], [data-app-candidate-best-n], [data-app-candidate-index], [data-app-candidate-ids], [data-app-ex-mode], [data-app-ex-best-n], [data-app-ex-index], [data-app-ex-max-per-participant], [data-app-ex-ids], [data-app-agg-exercicis]").forEach(node => {
+      card.querySelectorAll("[data-app-select], [data-app-agg-camps], [data-app-candidate-mode], [data-app-candidate-selection-mode], [data-app-candidate-agg], [data-app-candidate-best-n], [data-app-candidate-index], [data-app-candidate-ids], [data-app-ex-mode], [data-app-ex-best-n], [data-app-ex-index], [data-app-ex-max-per-participant], [data-app-ex-ids], [data-app-agg-exercicis], [data-app-participants-mode], [data-app-participants-best-n], [data-app-agregacio-participants]").forEach(node => {
         node.addEventListener("change", () => {
           if (node.matches("[data-app-select]")) refreshPerAppAggCampsCardUI(card);
           if (node.matches("[data-app-ex-mode]")) refreshPerAppExCardUI(card);
+          if (node.matches("[data-app-participants-mode]")) refreshPerAppParticipantsCardUI(card);
           if (node.matches("[data-app-candidate-mode], [data-app-candidate-selection-mode]")) refreshPerAppCandidateSourceCardUI(card);
           syncAdvancedFromUI();
           refreshPuntuacioUI();
         });
         node.addEventListener("input", () => {
           if (node.matches("[data-app-select]")) refreshPerAppAggCampsCardUI(card);
+          if (node.matches("[data-app-participants-mode]")) refreshPerAppParticipantsCardUI(card);
           if (node.matches("[data-app-candidate-mode], [data-app-candidate-selection-mode]")) refreshPerAppCandidateSourceCardUI(card);
           syncAdvancedFromUI();
           refreshPuntuacioUI();
@@ -1053,6 +1188,32 @@
     const map = {};
     if (!_isPerAppExerciseResolutionActive()) return map;
     document.querySelectorAll("[data-app-agg-exercicis]").forEach(sel => {
+      const appId = String(sel.getAttribute("data-app-id") || "").trim();
+      if (!appId) return;
+      map[appId] = _normalizeAggCampsValue(sel.value || "sum");
+    });
+    return map;
+  }
+
+  function readPerAppParticipantsFromUI() {
+    const map = {};
+    if (!isMemberSelectionAggregationAvailable()) return map;
+    document.querySelectorAll("[data-app-participants-mode]").forEach(sel => {
+      const appId = String(sel.getAttribute("data-app-id") || "").trim();
+      if (!appId) return;
+      const mode = String(sel.value || "tots").toLowerCase().trim();
+      const bestNode = document.querySelector(`[data-app-participants-best-n][data-app-id="${appId}"]`);
+      const cfg = { mode };
+      if (mode === "millor_n" || mode === "pitjor_n") cfg.n = Math.max(1, Number(bestNode?.value || 1));
+      map[appId] = _copyPuntuacioParticipantsCfg(cfg);
+    });
+    return map;
+  }
+
+  function readPerAppAggParticipantsFromUI() {
+    const map = {};
+    if (!isMemberSelectionAggregationAvailable()) return map;
+    document.querySelectorAll("[data-app-agregacio-participants]").forEach(sel => {
       const appId = String(sel.getAttribute("data-app-id") || "").trim();
       if (!appId) return;
       map[appId] = _normalizeAggCampsValue(sel.value || "sum");
@@ -1140,7 +1301,6 @@
     const isCombinedPool = modeSel === "global_pool";
     const showFieldAggregation = _puntuacioHasAnyMultiFieldSelection(schema);
     const showAppAggregation = !isCombinedPool && appCount > 1;
-
     if (els.exerciseSelectionScopeWrap) els.exerciseSelectionScopeWrap.style.display = showScope ? "" : "none";
     if (els.fieldAggregationCard) els.fieldAggregationCard.style.display = showFieldAggregation ? "" : "none";
     if (els.appAggregationCard) els.appAggregationCard.style.display = showAppAggregation ? "" : "none";
@@ -1252,6 +1412,8 @@
     const modeResultatAparells = currentModeResultatAparells();
     const victoriesCompareTie = readVictoryTieUI(true);
     const candidateSourcePerApp = readPerAppCandidateSourceFromUI();
+    const participantsPerApp = readPerAppParticipantsFromUI();
+    const aggParticipantsPerApp = readPerAppAggParticipantsFromUI();
     const legacyAggCamps = buildLegacyAggCampsMirror(apIdKeys, agregacio_camps_per_aparell);
     const legacyAggExercicis = apMode === "per_aparell_override"
       ? buildLegacyAggExercicisMirror(apIdKeys, aggExPerAppCfg)
@@ -1275,6 +1437,10 @@
       candidate_source_mode: legacyCandidateSource.candidate_source_mode,
       candidate_source_cfg: legacyCandidateSource.candidate_source_cfg,
       mode_resultat_aparells: modeResultatAparells,
+      ...(isMemberSelectionAggregationAvailable() ? {
+        participants_per_aparell: participantsPerApp,
+        agregacio_participants_per_aparell: aggParticipantsPerApp,
+      } : {}),
       victories: {
         punts_victoria: 1,
         punts_empat: 0.5,

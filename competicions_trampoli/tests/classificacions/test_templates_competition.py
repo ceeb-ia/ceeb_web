@@ -367,6 +367,43 @@ class ClassificacioTemplateFlowTests(_BaseTrampoliDataMixin, TestCase):
             ["E_total"],
         )
 
+    def test_template_schema_helpers_roundtrip_member_selection_step(self):
+        schema = json.loads(json.dumps(self.cfg_source.schema or {}))
+        schema["equips"] = {
+            "context_code": "native",
+            "assignment_source": {"mode": "context", "context_code": "native", "fallback": "native"},
+            "team_mode": "derived_from_individual",
+        }
+        schema["puntuacio"]["exercise_selection_scope"] = "per_member"
+        schema["puntuacio"]["participants_per_aparell"] = {str(self.source_app.id): {"mode": "millor_1"}}
+        schema["puntuacio"]["agregacio_participants_per_aparell"] = {str(self.source_app.id): "avg"}
+
+        schema_tpl, warnings = _schema_to_template_schema(self.comp_source, schema)
+        self.assertFalse(warnings)
+        punt_tpl = schema_tpl.get("puntuacio") or {}
+        self.assertEqual(
+            punt_tpl.get("participants_per_aparell"),
+            {self.app.codi: {"mode": "millor_1"}},
+        )
+        self.assertEqual(
+            punt_tpl.get("agregacio_participants_per_aparell"),
+            {self.app.codi: "avg"},
+        )
+
+        self._ensure_native_equip_context(self.comp_target)
+        schema_local, mapping_warnings, mapping = _template_schema_to_competicio_schema(self.comp_target, schema_tpl)
+        self.assertFalse(mapping_warnings)
+        self.assertEqual(mapping.get(self.app.codi), self.target_app.id)
+        punt_local = schema_local.get("puntuacio") or {}
+        self.assertEqual(
+            punt_local.get("participants_per_aparell"),
+            {str(self.target_app.id): {"mode": "millor_1"}},
+        )
+        self.assertEqual(
+            punt_local.get("agregacio_participants_per_aparell"),
+            {str(self.target_app.id): "avg"},
+        )
+
     def test_template_schema_helpers_roundtrip_presentacio_detall_columns(self):
         schema = {
             "puntuacio": {
@@ -813,6 +850,9 @@ class ClassificacioTemplateFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertContains(res, 'id="sVictoryModeCamps"')
         self.assertContains(res, 'id="sVictoryModeExercicis"')
         self.assertContains(res, 'id="puntuacioSummaryText"')
+        self.assertNotContains(res, 'id="participantSelectionCard"')
+        self.assertContains(res, 'data-app-participants-mode')
+        self.assertContains(res, 'data-app-agregacio-participants')
         self.assertContains(res, 'class="builder-summary-box__text"')
         self.assertNotContains(res, 'id="exSelectionSummary"')
         self.assertContains(res, 'id="candidateScopeHint"')
@@ -843,6 +883,10 @@ class ClassificacioTemplateFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertContains(res, "function buildTieCanonicalForSaveFromRow(")
         self.assertContains(res, "function readTieBuilderState(")
         self.assertContains(res, "function readTieCanonicalForSave(")
+        self.assertContains(res, "function isMemberSelectionAggregationAvailable()")
+        self.assertContains(res, "function _getPerAppParticipantsForUi(punt, appId)")
+        self.assertContains(res, "function _copyPuntuacioParticipantsCfg(rawCfg)")
+        self.assertContains(res, "function _buildMemberSelectionSegment(perAppEntries)")
         self.assertContains(res, "let desempat = readTieCanonicalForSave(true);")
         self.assertContains(res, "renderTieUI(readTieBuilderState(true));")
         self.assertNotContains(res, "renderTieUI(readTieUI(true));")
@@ -850,11 +894,15 @@ class ClassificacioTemplateFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertContains(res, "delete canonical.pipeline.exercicis_per_aparell;")
         self.assertContains(res, "delete canonical.pipeline.mode_seleccio_exercicis;")
         self.assertContains(res, "delete canonical.pipeline.participants;")
+        self.assertContains(res, "participants_per_aparell")
+        self.assertContains(res, "agregacio_participants_per_aparell")
         self.assertEqual(content.count("function buildTieAppScopeOptionsHTML("), 1)
         self.assertContains(res, "function _buildPretractamentSegment(punt, perAppEntries)")
         self.assertContains(res, "function _buildScoreSelectionSegment({")
         self.assertContains(res, "function _buildVictoriesComparisonSegment(victoriesCfg)")
         self.assertNotContains(res, "function buildPuntuacioLiveSummary({")
+        self.assertContains(res, "5. Seleccio i agregacio entre membres")
+        self.assertContains(res, "5. Combinacio final entre aparells")
         self.assertContains(res, "AgregaciÃ³ camps: Mateixa que puntuaciÃ³")
         self.assertContains(res, "Base: Mateixa que puntuaciÃ³")
         self.assertContains(res, "SelecciÃ³ ex: Mateixa que puntuaciÃ³")
