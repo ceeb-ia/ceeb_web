@@ -568,13 +568,76 @@
     return lines.join("\n");
   }
 
+  function isPersistedCfgId(cfgId) {
+    return !String(cfgId || "").startsWith("tmp_");
+  }
+
+  function sortedCfgItems() {
+    return [...state.cfgs].sort((a, b) => (a.ordre || 0) - (b.ordre || 0));
+  }
+
+  function canPersistCfgReorder() {
+    return !!REORDER_URL && BUILDER_MODE === "competition" && !state.cfgs.some(cfg => !isPersistedCfgId(cfg.id));
+  }
+
+  function reorderDisabledReason() {
+    if (!REORDER_URL || BUILDER_MODE !== "competition") {
+      return "El reorder nomes esta disponible al builder de competicio.";
+    }
+    if (state.cfgs.some(cfg => !isPersistedCfgId(cfg.id))) {
+      return "Guarda primer les classificacions noves abans de canviar-ne l'ordre.";
+    }
+    return "";
+  }
+
+  function normalizeCfgOrdre(items) {
+    items.forEach((cfg, idx) => {
+      cfg.ordre = idx + 1;
+    });
+    return items;
+  }
+
+  async function moveCfgByOffset(cfgId, offset) {
+    if (state.reorderBusy) return;
+    if (!canPersistCfgReorder()) {
+      showAlert(reorderDisabledReason() || "No s'ha pogut canviar l'ordre ara mateix.");
+      return;
+    }
+
+    const items = normalizeCfgOrdre(sortedCfgItems());
+    const currentIndex = items.findIndex(cfg => String(cfg.id) === String(cfgId));
+    const targetIndex = currentIndex + Number(offset || 0);
+    if (currentIndex < 0 || targetIndex < 0 || targetIndex >= items.length) return;
+
+    const previousCfgs = state.cfgs.map(cfg => JSON.parse(JSON.stringify(cfg)));
+    const [moved] = items.splice(currentIndex, 1);
+    items.splice(targetIndex, 0, moved);
+    state.cfgs = normalizeCfgOrdre(items);
+    state.reorderBusy = true;
+    renderList();
+
+    try {
+      await postJson(REORDER_URL, {
+        order: state.cfgs.map(cfg => cfg.id),
+      });
+    } catch (e) {
+      state.cfgs = previousCfgs;
+      showAlert("Error reordenant classificacions: " + e.message);
+    } finally {
+      state.reorderBusy = false;
+      renderList();
+    }
+  }
+
   function renderList() {
     els.list.innerHTML = "";
-    const items = [...state.cfgs].sort((a,b) => (a.ordre||0)-(b.ordre||0));
-    items.forEach(cfg => {
-      const a = document.createElement("button");
-      a.type = "button";
-      a.className = "list-group-item list-group-item-action " + (cfg.id===state.selectedId ? "active":"");
+    const showReorderControls = !!REORDER_URL && BUILDER_MODE === "competition";
+    const items = sortedCfgItems();
+    const reorderEnabled = canPersistCfgReorder();
+    const reorderTitle = reorderDisabledReason();
+    items.forEach((cfg, idx) => {
+      const row = document.createElement("div");
+      row.className = "list-group-item px-0 py-0 " + (cfg.id===state.selectedId ? "active":"");
       const cfgStatus = getCfgStatus(cfg);
       const equips = cfg && cfg.schema && typeof cfg.schema === "object" ? (cfg.schema.equips || {}) : {};
       const teamMode = normalizeTeamMode(equips.team_mode || cfgStatus.effective_team_mode || "");
@@ -584,12 +647,28 @@
       if (cfgStatus.legacy_inferred) metaBits.push("legacy");
       if (cfgStatus.is_stale) metaBits.push("stale");
       const metaLine = metaBits.join(" · ");
-      a.innerHTML = `<div class="d-flex justify-content-between">
-        <div><div class="font-weight-bold">${esc(cfg.nom)}</div><div class="small opacity-75">${metaLine}</div></div>
-        <div class="small">${cfg.activa ? "Activa" : "Inactiva"}</div>
+      const disableUp = !reorderEnabled || state.reorderBusy || idx === 0;
+      const disableDown = !reorderEnabled || state.reorderBusy || idx === items.length - 1;
+      const moveUpTitle = disableUp ? (idx === 0 ? "Ja es la primera classificacio." : reorderTitle) : "Pujar classificacio";
+      const moveDownTitle = disableDown ? (idx === items.length - 1 ? "Ja es l'ultima classificacio." : reorderTitle) : "Baixar classificacio";
+      const controlsHtml = showReorderControls ? `<div class="builder-cfg-controls">
+          <button type="button" class="builder-cfg-move" data-move-dir="-1" data-cfg-move="${esc(String(cfg.id))}" aria-label="Pujar classificacio" title="${esc(moveUpTitle)}" ${disableUp ? "disabled" : ""}>&uarr;</button>
+          <button type="button" class="builder-cfg-move" data-move-dir="1" data-cfg-move="${esc(String(cfg.id))}" aria-label="Baixar classificacio" title="${esc(moveDownTitle)}" ${disableDown ? "disabled" : ""}>&darr;</button>
+        </div>` : "";
+      row.innerHTML = `<div class="builder-cfg-row">
+        <button type="button" class="builder-cfg-main" data-cfg-select="${esc(String(cfg.id))}">
+          <div class="d-flex justify-content-between">
+            <div><div class="font-weight-bold">${esc(cfg.nom)}</div><div class="small opacity-75">${metaLine}</div></div>
+            <div class="small">${cfg.activa ? "Activa" : "Inactiva"}</div>
+          </div>
+        </button>
+        ${controlsHtml}
       </div>`;
-      a.addEventListener("click", () => selectCfg(cfg.id));
-      els.list.appendChild(a);
+      row.querySelector("[data-cfg-select]")?.addEventListener("click", () => selectCfg(cfg.id));
+      row.querySelectorAll("[data-cfg-move]").forEach(btn => {
+        btn.addEventListener("click", () => moveCfgByOffset(cfg.id, Number(btn.getAttribute("data-move-dir") || 0)));
+      });
+      els.list.appendChild(row);
     });
   }
 

@@ -292,6 +292,7 @@ class ClassificacionsHome(TemplateView):
                 "builder_save_url": reverse("classificacio_save", kwargs={"pk": competicio.id}),
                 "builder_delete_url_pattern": reverse("classificacio_delete", kwargs={"pk": competicio.id, "cid": 0}),
                 "builder_preview_url_pattern": reverse("classificacio_preview", kwargs={"pk": competicio.id, "cid": 0}),
+                "builder_reorder_url": reverse("classificacio_reorder", kwargs={"pk": competicio.id}),
                 "builder_enable_template_library": True,
                 "builder_can_preview": True,
                 "builder_selected_id": None,

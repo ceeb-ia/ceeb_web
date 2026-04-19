@@ -161,6 +161,78 @@
     flex-direction: column;
     gap: 1rem;
   }
+  .builder-cfg-row {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+  }
+  .builder-cfg-main {
+    flex: 1 1 auto;
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    text-align: left;
+    padding: 0.75rem 1rem;
+    color: inherit;
+  }
+  .builder-cfg-main:hover,
+  .builder-cfg-main:focus {
+    background: rgba(15, 110, 207, 0.05);
+    outline: 0;
+  }
+  .list-group-item.active .builder-cfg-main,
+  .list-group-item.active .builder-cfg-main:hover,
+  .list-group-item.active .builder-cfg-main:focus {
+    background: transparent;
+    color: inherit;
+  }
+  .builder-cfg-controls {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.2rem;
+    padding: 0.45rem 0.55rem 0.45rem 0;
+  }
+  .builder-cfg-move {
+    width: 1.9rem;
+    height: 1.9rem;
+    border: 1px solid var(--builder-border-strong);
+    border-radius: 8px;
+    background: #fff;
+    color: #334155;
+    font-size: 0.95rem;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease;
+  }
+  .builder-cfg-move:hover,
+  .builder-cfg-move:focus {
+    border-color: #0f6ecf;
+    color: #0f172a;
+    background: #f7fbff;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+    outline: 0;
+  }
+  .builder-cfg-move:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+  .list-group-item.active .builder-cfg-move {
+    border-color: rgba(255, 255, 255, 0.65);
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+  }
+  .list-group-item.active .builder-cfg-move:hover,
+  .list-group-item.active .builder-cfg-move:focus {
+    background: rgba(255, 255, 255, 0.2);
+    color: #fff;
+  }
+  .list-group-item.active .builder-cfg-move:disabled {
+    opacity: 0.35;
+  }
   .builder-section {
     --section-accent: #2f80ed;
     --section-tint: #f8fbff;
