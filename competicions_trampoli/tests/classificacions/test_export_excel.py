@@ -303,3 +303,121 @@ class ClassificacionsExportExcelTests(_BaseTrampoliDataMixin, TestCase):
         self.assertIn("No s'ha pogut renderitzar la classificacio.", body)
         self.assertIn("boom export", body)
 
+    def test_export_excel_includes_detail_table_sections_under_main_row(self):
+        self.client.force_login(self.user)
+        url = reverse("classificacions_live_export_excel", kwargs={"pk": self.comp.id})
+        runtime_payload = {
+            "error": None,
+            "columns": [
+                {"type": "builtin", "key": "participant", "label": "Nom", "align": "left"},
+                {"type": "builtin", "key": "punts", "label": "Punts", "align": "right", "decimals": 3},
+            ],
+            "parts": [
+                {
+                    "particio": "global",
+                    "rows": [
+                        {
+                            "participant": "Participant A",
+                            "posicio": 1,
+                            "cells": {"participant": "Participant A", "punts": 9.6},
+                            "detail": {
+                                "default_open": True,
+                                "sections": [
+                                    {
+                                        "type": "members_table",
+                                        "label": "Detall proves",
+                                        "columns": [
+                                            {"type": "builtin", "key": "participant", "label": "Participant", "align": "left"},
+                                            {"type": "raw", "key": "detail_exec", "label": "Execucio", "align": "right", "decimals": 3},
+                                        ],
+                                        "rows": [
+                                            {
+                                                "cells": {
+                                                    "participant": "Membre 1",
+                                                    "detail_exec": {
+                                                        "_kind": "judge_rows",
+                                                        "rows": [{"judge": 1, "items": [9.321]}],
+                                                    },
+                                                }
+                                            }
+                                        ],
+                                    }
+                                ],
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+
+        with patch("competicions_trampoli.views.classificacions.export.execute_classificacio_runtime", return_value=runtime_payload):
+            res = self.client.get(url, {"cfg_id": self.cfg_general.id})
+
+        self.assertEqual(res.status_code, 200)
+        wb = load_workbook(filename=BytesIO(res.content))
+        ws = wb[wb.sheetnames[0]]
+        values = [
+            str(cell)
+            for row in ws.iter_rows(values_only=True)
+            for cell in row
+            if cell not in (None, "")
+        ]
+        self.assertTrue(any("Detall: Participant A" in value for value in values))
+        self.assertTrue(any("Detall proves" in value for value in values))
+        self.assertIn("Participant", values)
+        self.assertIn("Execucio", values)
+        self.assertIn("Membre 1", values)
+        self.assertTrue(any("J1: 9.321" in value for value in values))
+
+    def test_export_excel_includes_members_list_detail_sections(self):
+        self.client.force_login(self.user)
+        url = reverse("classificacions_live_export_excel", kwargs={"pk": self.comp.id})
+        runtime_payload = {
+            "error": None,
+            "columns": [
+                {"type": "builtin", "key": "participant", "label": "Nom", "align": "left"},
+                {"type": "builtin", "key": "punts", "label": "Punts", "align": "right", "decimals": 3},
+            ],
+            "parts": [
+                {
+                    "particio": "global",
+                    "rows": [
+                        {
+                            "participant": "Equip A",
+                            "posicio": 1,
+                            "cells": {"participant": "Equip A", "punts": 27.5},
+                            "detail": {
+                                "default_open": False,
+                                "sections": [
+                                    {
+                                        "type": "members_list",
+                                        "label": "Participants",
+                                        "items": [
+                                            {"participant": "Membre 1"},
+                                            {"participant": "Membre 2"},
+                                        ],
+                                    }
+                                ],
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+
+        with patch("competicions_trampoli.views.classificacions.export.execute_classificacio_runtime", return_value=runtime_payload):
+            res = self.client.get(url, {"cfg_id": self.cfg_general.id})
+
+        self.assertEqual(res.status_code, 200)
+        wb = load_workbook(filename=BytesIO(res.content))
+        ws = wb[wb.sheetnames[0]]
+        values = [
+            str(cell)
+            for row in ws.iter_rows(values_only=True)
+            for cell in row
+            if cell not in (None, "")
+        ]
+        self.assertTrue(any("Detall: Equip A" in value for value in values))
+        self.assertIn("Participants", values)
+        self.assertTrue(any("Membre 1" in value and "Membre 2" in value for value in values))
+

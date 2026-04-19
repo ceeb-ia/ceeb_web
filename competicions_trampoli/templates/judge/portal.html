@@ -720,10 +720,44 @@
       // ignore unsupported selection APIs
     }
   }
+  function ensureInputVisible(input){
+    if(!input || typeof input.getBoundingClientRect !== "function") return;
+
+    const scrollIfNeeded = () => {
+      const rect = input.getBoundingClientRect();
+      const viewportHeight = (window.visualViewport && Number(window.visualViewport.height))
+        ? Number(window.visualViewport.height)
+        : window.innerHeight;
+      const topMargin = 20;
+      const bottomMargin = 80;
+      const isAbove = rect.top < topMargin;
+      const isBelow = rect.bottom > Math.max(topMargin + 40, viewportHeight - bottomMargin);
+
+      if(isAbove || isBelow){
+        input.scrollIntoView({
+          behavior: "smooth",
+          block: "nearest",
+          inline: "nearest",
+        });
+      }
+    };
+
+    scrollIfNeeded();
+    window.setTimeout(scrollIfNeeded, 90);
+  }
+  function updateInputEnterKeyHint(input){
+    if(!input) return;
+    const inputs = getEditableInputs(input.dataset.insId || "", input.dataset.exercici || "");
+    const idx = inputs.indexOf(input);
+    const hint = (idx !== -1 && idx < inputs.length - 1) ? "next" : "done";
+    input.setAttribute("enterkeyhint", hint);
+  }
   function focusEditableInput(input){
     if(!input) return;
     input.focus();
     selectInputContents(input);
+    updateInputEnterKeyHint(input);
+    ensureInputVisible(input);
   }
   function focusNextEditableInput(currentInput){
     if(!currentInput) return;
@@ -756,8 +790,11 @@
     input.dataset.insId = String(insId);
     input.dataset.exercici = exerciseKey(exercici);
     input.dataset.navScope = "score-input";
+    updateInputEnterKeyHint(input);
     input.addEventListener("focus", () => {
+      updateInputEnterKeyHint(input);
       selectInputContents(input);
+      ensureInputVisible(input);
     });
     input.addEventListener("keydown", (evt) => {
       if(evt.key !== "Enter" && evt.key !== "Tab") return;

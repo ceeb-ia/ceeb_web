@@ -149,15 +149,44 @@ def build_excel_sheet_name(raw_name, used_names):
     return candidate
 
 
+def detail_sections_for_row(row: dict):
+    detail = row.get("detail") if isinstance(row, dict) else None
+    sections = detail.get("sections") if isinstance(detail, dict) else None
+    return sections if isinstance(sections, list) else []
+
+
+def max_detail_table_columns(parts):
+    max_cols = 0
+    for part in parts if isinstance(parts, list) else []:
+        for row in (part or {}).get("rows") or []:
+            for section in detail_sections_for_row(row):
+                columns = section.get("columns") if isinstance(section, dict) else None
+                if isinstance(columns, list):
+                    max_cols = max(max_cols, len(columns))
+    return max_cols
+
+
+def has_detail_sections(parts):
+    for part in parts if isinstance(parts, list) else []:
+        for row in (part or {}).get("rows") or []:
+            if detail_sections_for_row(row):
+                return True
+    return False
+
+
 def write_cfg_excel_sheet(ws, competicio, cfg_nom, columns, parts):
     cols = columns if isinstance(columns, list) and columns else default_live_columns()
-    total_cols = max(1, len(cols))
+    detail_cols = max_detail_table_columns(parts)
+    total_cols = max(2 if has_detail_sections(parts) else 1, len(cols), detail_cols + 1)
 
     fill_title = PatternFill("solid", fgColor="1F4E79")
     fill_subtitle = PatternFill("solid", fgColor="D9E1F2")
     fill_partition = PatternFill("solid", fgColor="DDE7FF")
     fill_header = PatternFill("solid", fgColor="E9EEF7")
     fill_zebra = PatternFill("solid", fgColor="F7F9FC")
+    fill_detail_title = PatternFill("solid", fgColor="F4F7FB")
+    fill_detail_section = PatternFill("solid", fgColor="EEF3FA")
+    fill_detail_header = PatternFill("solid", fgColor="F8FAFD")
     fill_first = PatternFill("solid", fgColor="F6E27A")
     fill_second = PatternFill("solid", fgColor="E3E8EF")
     fill_third = PatternFill("solid", fgColor="E8C7A3")
@@ -177,13 +206,127 @@ def write_cfg_excel_sheet(ws, competicio, cfg_nom, columns, parts):
         longest = max([len(line) for line in txt.splitlines()] or [0])
         col_widths[col_idx - 1] = min(48, max(col_widths[col_idx - 1], longest + 2))
 
-    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=total_cols)
+    def merge_range_if_needed(*, start_row, start_column, end_row, end_column):
+        if start_row == end_row and start_column == end_column:
+            return
+        ws.merge_cells(
+            start_row=start_row,
+            start_column=start_column,
+            end_row=end_row,
+            end_column=end_column,
+        )
+
+    def write_detail_block(start_row_idx, row):
+        sections = detail_sections_for_row(row)
+        if not sections:
+            return start_row_idx
+
+        participant_label = str((row or {}).get("participant") or (row or {}).get("nom") or "").strip()
+        title = f"Detall: {participant_label}" if participant_label else "Detall"
+        merge_range_if_needed(start_row=start_row_idx, start_column=1, end_row=start_row_idx, end_column=total_cols)
+        title_cell = ws.cell(row=start_row_idx, column=1, value=title)
+        title_cell.fill = fill_detail_title
+        title_cell.font = Font(bold=True)
+        title_cell.alignment = align_left
+        title_cell.border = border
+        update_col_width(1, title)
+        start_row_idx += 1
+
+        for section in sections:
+            section_type = str((section or {}).get("type") or "").strip().lower()
+            section_label = str((section or {}).get("label") or "Detall").strip()
+
+            merge_range_if_needed(start_row=start_row_idx, start_column=1, end_row=start_row_idx, end_column=total_cols)
+            section_cell = ws.cell(row=start_row_idx, column=1, value=section_label)
+            section_cell.fill = fill_detail_section
+            section_cell.font = Font(bold=True)
+            section_cell.alignment = align_left
+            section_cell.border = border
+            update_col_width(1, section_label)
+            start_row_idx += 1
+
+            if section_type == "members_list":
+                items = section.get("items") if isinstance(section, dict) else None
+                members = [
+                    str(item.get("participant") or "").strip()
+                    for item in (items or [])
+                    if isinstance(item, dict) and str(item.get("participant") or "").strip()
+                ]
+                members_text = " · ".join(members) if members else "Sense detalls."
+                merge_range_if_needed(start_row=start_row_idx, start_column=2, end_row=start_row_idx, end_column=total_cols)
+                members_cell = ws.cell(row=start_row_idx, column=2, value=excel_safe_text(members_text))
+                members_cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+                members_cell.border = border
+                update_col_width(2, members_text)
+                start_row_idx += 1
+                continue
+
+            section_columns = section.get("columns") if isinstance(section, dict) else None
+            section_rows = section.get("rows") if isinstance(section, dict) else None
+            section_columns = section_columns if isinstance(section_columns, list) else []
+            section_rows = section_rows if isinstance(section_rows, list) else []
+            if not section_columns:
+                merge_range_if_needed(start_row=start_row_idx, start_column=2, end_row=start_row_idx, end_column=total_cols)
+                empty_cell = ws.cell(row=start_row_idx, column=2, value="Sense detall exportable.")
+                empty_cell.alignment = align_left
+                empty_cell.font = Font(italic=True)
+                empty_cell.border = border
+                update_col_width(2, empty_cell.value)
+                start_row_idx += 1
+                continue
+
+            for col_pos, col in enumerate(section_columns, start=2):
+                label = str((col or {}).get("label") or (col or {}).get("key") or "")
+                header_cell = ws.cell(row=start_row_idx, column=col_pos, value=label)
+                header_cell.fill = fill_detail_header
+                header_cell.font = header_font
+                header_cell.alignment = align_center
+                header_cell.border = border
+                update_col_width(col_pos, label)
+            start_row_idx += 1
+
+            if not section_rows:
+                merge_range_if_needed(start_row=start_row_idx, start_column=2, end_row=start_row_idx, end_column=total_cols)
+                empty_cell = ws.cell(row=start_row_idx, column=2, value="Sense resultats en aquesta seccio.")
+                empty_cell.alignment = align_left
+                empty_cell.font = Font(italic=True)
+                empty_cell.border = border
+                update_col_width(2, empty_cell.value)
+                start_row_idx += 1
+                continue
+
+            for detail_pos, detail_row in enumerate(section_rows):
+                max_lines = 1
+                for col_pos, col in enumerate(section_columns, start=2):
+                    raw_value = extract_export_value(detail_row or {}, col or {})
+                    value, number_format, wrap_text = normalize_excel_cell(raw_value, col or {})
+                    cell = ws.cell(row=start_row_idx, column=col_pos, value=value)
+                    cell.border = border
+                    if number_format:
+                        cell.number_format = number_format
+                    align = str((col or {}).get("align") or "").strip().lower()
+                    horizontal = "right" if align == "right" else ("center" if align == "center" else "left")
+                    vertical = "top" if wrap_text else "center"
+                    cell.alignment = Alignment(horizontal=horizontal, vertical=vertical, wrap_text=wrap_text)
+                    if detail_pos % 2 == 1:
+                        cell.fill = fill_zebra
+                    value_txt = "" if value is None else str(value)
+                    max_lines = max(max_lines, len(value_txt.splitlines()) if value_txt else 1)
+                    update_col_width(col_pos, value)
+                if max_lines > 1:
+                    ws.row_dimensions[start_row_idx].height = min(120, max(18, max_lines * 14))
+                start_row_idx += 1
+            start_row_idx += 1
+
+        return start_row_idx
+
+    merge_range_if_needed(start_row=1, start_column=1, end_row=1, end_column=total_cols)
     c_title = ws.cell(row=1, column=1, value=f"{competicio.nom} - {cfg_nom}")
     c_title.fill = fill_title
     c_title.font = title_font
     c_title.alignment = align_center
 
-    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=total_cols)
+    merge_range_if_needed(start_row=2, start_column=1, end_row=2, end_column=total_cols)
     c_sub = ws.cell(
         row=2,
         column=1,
@@ -200,7 +343,7 @@ def write_cfg_excel_sheet(ws, competicio, cfg_nom, columns, parts):
     first_data_row = None
     parts_list = parts if isinstance(parts, list) else []
     if not parts_list:
-        ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=total_cols)
+        merge_range_if_needed(start_row=row_idx, start_column=1, end_row=row_idx, end_column=total_cols)
         empty = ws.cell(row=row_idx, column=1, value="Sense resultats.")
         empty.alignment = align_left
         empty.font = Font(italic=True)
@@ -210,7 +353,7 @@ def write_cfg_excel_sheet(ws, competicio, cfg_nom, columns, parts):
         part_rows = (part or {}).get("rows") or []
         part_name = format_partition_title((part or {}).get("particio"))
 
-        ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=total_cols)
+        merge_range_if_needed(start_row=row_idx, start_column=1, end_row=row_idx, end_column=total_cols)
         pc = ws.cell(row=row_idx, column=1, value=f"Particio: {part_name} ({len(part_rows)} files)")
         pc.fill = fill_partition
         pc.font = Font(bold=True)
@@ -232,7 +375,7 @@ def write_cfg_excel_sheet(ws, competicio, cfg_nom, columns, parts):
         row_idx += 1
 
         if not part_rows:
-            ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=total_cols)
+            merge_range_if_needed(start_row=row_idx, start_column=1, end_row=row_idx, end_column=total_cols)
             rc = ws.cell(row=row_idx, column=1, value="Sense resultats en aquesta particio.")
             rc.alignment = align_left
             rc.font = Font(italic=True)
@@ -276,6 +419,7 @@ def write_cfg_excel_sheet(ws, competicio, cfg_nom, columns, parts):
             if max_lines > 1:
                 ws.row_dimensions[row_idx].height = min(120, max(18, max_lines * 14))
             row_idx += 1
+            row_idx = write_detail_block(row_idx, row)
         row_idx += 1
 
     if first_data_row:
