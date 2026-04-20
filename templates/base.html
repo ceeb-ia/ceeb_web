@@ -1,4 +1,4 @@
-{% load static static_extras competicio_extras %}
+{% load static static_extras %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -23,7 +23,7 @@
             .navbar-nav .dropdown-menu .dropdown-item { padding-left: 1rem; padding-right: 1rem; }
         </style>
 </head>
-<body data-app-env="{{ APP_ENV|default:'dev' }}" style="--ceeb-page-background-image: url('{% competicio_background_url %}');">
+<body data-app-env="{{ APP_ENV|default:'dev' }}" style="--ceeb-page-background-image: url('{% page_background_url %}');">
     <div class="background-container"></div>
     {% if not hide_base_chrome %}
     <div class="hero_area">
@@ -48,17 +48,22 @@
 
 
                                     {% if user.is_authenticated %}
-                                        {% if user.is_staff %}
+                                        {% if is_internal_env and internal_nav_apps %}
+                                        <li class="nav-item dropdown">
+                                            <a class="nav-link dropdown-toggle{% if has_active_internal_nav_app %} active{% endif %}" href="#" id="internalAppsDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Apps internes</a>
+                                            <ul class="dropdown-menu" aria-labelledby="internalAppsDropdown">
+                                                {% for app in internal_nav_apps %}
+                                                <li><a class="dropdown-item{% if app.active %} active{% endif %}" href="{{ app.url }}">{{ app.label }}</a></li>
+                                                {% endfor %}
+                                            </ul>
+                                        </li>
+                                        {% endif %}
+
+                                        {% if user.is_superuser and user.is_staff %}
                                         <li class="nav-item">
                                             <a class="nav-link" href="{% url 'admin:index' %}">Admin</a>
                                         </li>
                                         {% endif %}
-
-                                        {% for app in internal_nav_apps %}
-                                        <li class="nav-item">
-                                            <a class="nav-link{% if app.active %} active{% endif %}" href="{{ app.url }}">{{ app.label }}</a>
-                                        </li>
-                                        {% endfor %}
 
                                         {% if logout_url %}
                                         <li class="nav-item">
@@ -187,7 +192,7 @@
     {% if not hide_base_chrome %}
     <!-- Footer -->
     <footer class="footer_section">
-        <p>&copy; 2025 <a href="https://ceeb.cat/">Web CEEB</a></p>
+        <p>&copy; 2026 <a href="https://ceeb.cat/">Web CEEB</a></p>
     </footer>
     <!-- End Footer -->
     {% endif %}
