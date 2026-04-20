@@ -58,7 +58,15 @@ def classificacions_live_export_excel(request, pk):
             )
         parts = runtime["parts"]
         columns = runtime["columns"] or default_live_columns()
-        write_cfg_excel_sheet(ws, competicio, cfg.nom or f"Classificacio {idx + 1}", columns, parts)
+        write_cfg_excel_sheet(
+            ws,
+            competicio,
+            cfg.nom or f"Classificacio {idx + 1}",
+            columns,
+            parts,
+            tipus=cfg.tipus,
+            schema=runtime["schema"],
+        )
 
     content = BytesIO()
     wb.save(content)

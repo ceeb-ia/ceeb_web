@@ -826,6 +826,112 @@ class TeamContextClassificacioDetailSectionsTests(TeamContextScoringFlowTestBase
         self.assertEqual(metric_cell["_kind"], "team_raw_detail")
         self.assertEqual(metric_cell["summary"], 31.0)
 
+    def test_compute_classificacio_native_team_team_metrics_honors_fixed_exercise_per_section(self):
+        self.comp_app.nombre_exercicis = 2
+        self.comp_app.save(update_fields=["nombre_exercicis"])
+        team_subject, _subject_meta = self._team_subject()
+        TeamScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            team_subject=team_subject,
+            exercici=1,
+            inputs={"SYNC": 6.5},
+            outputs={},
+            total=20,
+        )
+        TeamScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            team_subject=team_subject,
+            exercici=2,
+            inputs={"SYNC": 7.4},
+            outputs={},
+            total=30,
+        )
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Native metrics fixed exercises",
+            activa=True,
+            ordre=1,
+            tipus="equips",
+            schema={
+                "puntuacio": {
+                    "aparells": {"mode": "seleccionar", "ids": [self.comp_app.id]},
+                    "camps_per_aparell": {str(self.comp_app.id): ["total"]},
+                    "agregacio_camps": "sum",
+                    "exercicis": {"mode": "millor_n", "best_n": 1},
+                    "agregacio_exercicis": "sum",
+                    "agregacio_aparells": "sum",
+                    "ordre": "desc",
+                },
+                "presentacio": {
+                    "columnes": [
+                        {"type": "builtin", "key": "participant", "label": "Nom", "align": "left"},
+                    ],
+                    "detall": {
+                        "enabled": True,
+                        "sections": [
+                            {
+                                "type": "team_metrics",
+                                "label": "Exercici 1",
+                                "aparell_id": self.comp_app.id,
+                                "columns": [
+                                    {
+                                        "type": "raw",
+                                        "key": "team_sync_ex1",
+                                        "label": "Sync",
+                                        "align": "right",
+                                        "decimals": 2,
+                                        "source": {
+                                            "aparell_id": self.comp_app.id,
+                                            "exercici": 1,
+                                            "camp": "SYNC",
+                                            "jutges": {"ids": []},
+                                        },
+                                    },
+                                ],
+                            },
+                            {
+                                "type": "team_metrics",
+                                "label": "Exercici 2",
+                                "aparell_id": self.comp_app.id,
+                                "columns": [
+                                    {
+                                        "type": "raw",
+                                        "key": "team_sync_ex2",
+                                        "label": "Sync",
+                                        "align": "right",
+                                        "decimals": 2,
+                                        "source": {
+                                            "aparell_id": self.comp_app.id,
+                                            "exercici": 2,
+                                            "camp": "SYNC",
+                                            "jutges": {"ids": []},
+                                        },
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                },
+                "equips": {
+                    "context_code": "parelles",
+                    "team_mode": "native_team",
+                    "incloure_sense_equip": False,
+                },
+            },
+        )
+
+        rows = compute_classificacio(self.comp, cfg).get("global", [])
+
+        detail = rows[0]["detail"]
+        ex1_cell = detail["sections"][0]["rows"][0]["cells"]["team_sync_ex1"]
+        ex2_cell = detail["sections"][1]["rows"][0]["cells"]["team_sync_ex2"]
+        self.assertEqual(ex1_cell["_kind"], "team_raw_detail")
+        self.assertEqual(ex2_cell["_kind"], "team_raw_detail")
+        self.assertEqual(ex1_cell["summary"], 6.5)
+        self.assertEqual(ex2_cell["summary"], 7.4)
+
     def test_compute_classificacio_native_team_team_members_table_uses_fixed_exercise_when_configured(self):
         self.comp_app.nombre_exercicis = 2
         self.comp_app.save(update_fields=["nombre_exercicis"])
