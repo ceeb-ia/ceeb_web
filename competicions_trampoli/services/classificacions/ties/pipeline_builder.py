@@ -8,6 +8,10 @@ from ..filters import (
 from .pipeline_helpers import (
     ALLOWED_EXERCISE_SELECTION_MODES,
     normalize_aggregation,
+    normalize_candidate_source_cfg,
+    normalize_candidate_source_entry,
+    normalize_candidate_source_mode,
+    normalize_candidate_source_per_aparell,
     normalize_exercicis_cfg,
     normalize_participants_cfg,
     unique_nonempty_strings,
@@ -132,6 +136,32 @@ def _normalize_legacy_tie_pipeline(raw_tie, *, tipus="individual", team_mode="",
                 fallback=agg_exercicis,
             )
 
+    candidate_source_mode = normalize_candidate_source_mode(
+        tie.get("candidate_source_mode") or base.get("candidate_source_mode")
+    )
+    candidate_source_cfg = normalize_candidate_source_cfg(
+        tie.get("candidate_source_cfg"),
+        fallback=base.get("candidate_source_cfg"),
+    )
+    raw_candidate_source_map = (
+        tie.get("candidate_source_per_aparell")
+        if isinstance(tie.get("candidate_source_per_aparell"), dict)
+        else base.get("candidate_source_per_aparell")
+    )
+    candidate_source_per_app = normalize_candidate_source_per_aparell(
+        raw_candidate_source_map,
+        fallback_mode=candidate_source_mode,
+        fallback_cfg=candidate_source_cfg,
+    )
+    for app_id in app_ids:
+        key = str(app_id)
+        if key not in candidate_source_per_app:
+            candidate_source_per_app[key] = normalize_candidate_source_entry(
+                {"mode": candidate_source_mode, "cfg": candidate_source_cfg},
+                fallback_mode=candidate_source_mode,
+                fallback_cfg=candidate_source_cfg,
+            )
+
     pipeline = {
         **base,
         "aparells": {"mode": "seleccionar", "ids": app_ids},
@@ -139,6 +169,9 @@ def _normalize_legacy_tie_pipeline(raw_tie, *, tipus="individual", team_mode="",
         "camps_per_aparell": camps_map,
         "agregacio_camps_per_aparell": agg_map,
         "agregacio_camps": normalize_aggregation(tie.get("agregacio_camps"), fallback=base.get("agregacio_camps", "sum")),
+        "candidate_source_mode": candidate_source_mode,
+        "candidate_source_cfg": candidate_source_cfg,
+        "candidate_source_per_aparell": candidate_source_per_app,
         "exercicis": ex_cfg,
         "exercise_selection_scope": tie_scope,
         "mode_seleccio_exercicis": mode_seleccio if mode_seleccio in ALLOWED_EXERCISE_SELECTION_MODES else "per_aparell_global",

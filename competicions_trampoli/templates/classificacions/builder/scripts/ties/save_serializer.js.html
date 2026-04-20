@@ -66,7 +66,7 @@
     return values.every(value => value === values[0]) ? values[0] : normalizeTieAggValue(fallbackAgg || "sum", "sum");
   }
 
-  function normalizeTiePipelineCandidateSourceMap(rawMap, fallbackMap, appIds) {
+  function normalizeTiePipelineCandidateSourceMap(rawMap, fallbackMap, appIds, fallbackMode = "raw_exercise", fallbackCfg = {}) {
     const out = {};
     const fallback = (fallbackMap && typeof fallbackMap === "object" && !Array.isArray(fallbackMap)) ? fallbackMap : {};
     const source = (rawMap && typeof rawMap === "object" && !Array.isArray(rawMap)) ? rawMap : {};
@@ -75,7 +75,55 @@
       : Array.from(new Set([...Object.keys(source), ...Object.keys(fallback)]));
     keys.forEach(key => {
       const raw = source[key] ?? source[Number(key)] ?? fallback[key] ?? fallback[Number(key)];
-      out[String(Number(key))] = _copyCandidateSourceEntry(raw, fallback?.mode || "raw_exercise", fallback?.cfg || {});
+      const fallbackEntry = fallback[key] ?? fallback[Number(key)] ?? {};
+      out[String(Number(key))] = _copyCandidateSourceEntry(
+        raw,
+        fallbackEntry?.mode || fallbackMode || "raw_exercise",
+        fallbackEntry?.cfg || fallbackCfg || {},
+      );
+    });
+    return out;
+  }
+
+  function normalizeTieCandidateSourceUiMode(rawMode) {
+    const mode = String(rawMode || "hereta").toLowerCase().trim();
+    if (mode === "hereta") return "hereta";
+    return _normalize_candidate_source_mode_like(mode);
+  }
+
+  function copyTieCandidateSourceCfg(rawCfg, fallbackCfg) {
+    return _copyCandidateSourceCfg(rawCfg || fallbackCfg || {});
+  }
+
+  function applyTieCandidateSourceToPipeline(pipeline, control, targetIds, fallbackPipeline) {
+    const out = pipeline && typeof pipeline === "object" && !Array.isArray(pipeline) ? pipeline : {};
+    const fallback = fallbackPipeline && typeof fallbackPipeline === "object" && !Array.isArray(fallbackPipeline)
+      ? fallbackPipeline
+      : {};
+    const mode = normalizeTieCandidateSourceUiMode((control || {}).mode || "hereta");
+    const fallbackMode = _normalize_candidate_source_mode_like(fallback.candidate_source_mode || "raw_exercise");
+    const fallbackCfg = copyTieCandidateSourceCfg(fallback.candidate_source_cfg || {});
+    if (mode === "hereta") {
+      out.candidate_source_mode = _normalize_candidate_source_mode_like(out.candidate_source_mode || fallbackMode || "raw_exercise");
+      out.candidate_source_cfg = copyTieCandidateSourceCfg(out.candidate_source_cfg || fallbackCfg);
+      out.candidate_source_per_aparell = normalizeTiePipelineCandidateSourceMap(
+        out.candidate_source_per_aparell,
+        fallback.candidate_source_per_aparell,
+        targetIds,
+        out.candidate_source_mode,
+        out.candidate_source_cfg,
+      );
+      return out;
+    }
+
+    const cfg = copyTieCandidateSourceCfg((control || {}).cfg || out.candidate_source_cfg || fallbackCfg);
+    out.candidate_source_mode = mode;
+    out.candidate_source_cfg = cfg;
+    out.candidate_source_per_aparell = {};
+    (Array.isArray(targetIds) ? targetIds : []).forEach(appId => {
+      const key = String(Number(appId));
+      if (key === "NaN") return;
+      out.candidate_source_per_aparell[key] = _copyCandidateSourceEntry({ mode, cfg }, mode, cfg);
     });
     return out;
   }
@@ -143,6 +191,8 @@
       out.candidate_source_per_aparell,
       fallback.candidate_source_per_aparell,
       appIds,
+      out.candidate_source_mode,
+      out.candidate_source_cfg,
     );
     out.exercicis = normalizeTieExercicisCfg(out.exercicis || fallback.exercicis || {});
     out.exercise_selection_scope = normalizeTieExerciseSelectionScope(
@@ -264,6 +314,34 @@
     const rawExerciseSelectionScope = isDerivedExerciseSelectionScopeAvailable()
       ? normalizeTieExerciseSelectionScope(rawItem.exercise_selection_scope || EXERCISE_SELECTION_SCOPE_INHERIT)
       : null;
+    let rawCandidateSourceMode = normalizeTieCandidateSourceUiMode(
+      rawItem.candidate_source_mode ||
+      tr.querySelector('[data-k="tie_candidate_source_mode"]')?.value ||
+      "hereta"
+    );
+    const rawCandidateSourceCfg = copyTieCandidateSourceCfg(
+      rawItem.candidate_source_cfg || {
+        mode: tr.querySelector('[data-k="tie_candidate_source_ex_mode"]')?.value || "tots",
+        best_n: tr.querySelector('[data-k="tie_candidate_source_best_n"]')?.value || 1,
+        index: tr.querySelector('[data-k="tie_candidate_source_index"]')?.value || 1,
+        ids: tr.querySelector('[data-k="tie_candidate_source_ids"]')?.value || "",
+        agregacio_exercicis: tr.querySelector('[data-k="tie_candidate_source_agg"]')?.value || "sum",
+      },
+      pipeline.candidate_source_cfg || fallbackFromPuntuacio.candidate_source_cfg || {},
+    );
+    if (typeof tieResolveContext === "function" && typeof getAllowedTieCandidateSourceModes === "function") {
+      const candidateContext = tieResolveContext(
+        { ...rawBase, ...rawItem, pipeline: canonical.pipeline },
+        {
+          selectedMainIds,
+          fallbackPipeline: fallbackFromPuntuacio,
+          tie: { ...rawBase, ...rawItem, pipeline: canonical.pipeline },
+        },
+      );
+      if (!getAllowedTieCandidateSourceModes(candidateContext).includes(rawCandidateSourceMode)) {
+        rawCandidateSourceMode = "hereta";
+      }
+    }
     const inputSourceMode = normalizeTieInputSourceMode(
       rawItem.input_source_mode ||
       tr.querySelector('[data-k="input_source_mode"]')?.value ||
@@ -284,6 +362,13 @@
     } else {
       delete canonical.pipeline.exercise_selection_scope;
     }
+
+    applyTieCandidateSourceToPipeline(
+      canonical.pipeline,
+      { mode: rawCandidateSourceMode, cfg: rawCandidateSourceCfg },
+      targetIds,
+      fallbackFromPuntuacio,
+    );
 
     const fixedTeamPool = isTieExerciseSelectionLockedToMainPool(
       effectiveExerciseSelectionScope || EXERCISE_SELECTION_SCOPE_INHERIT

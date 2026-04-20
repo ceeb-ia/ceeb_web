@@ -1853,6 +1853,8 @@
     const builderUiExerciseSelectionScope = getTieBuilderUiExerciseSelectionScope(rawTie);
     const builderUiModeSeleccioExercicis = getTieBuilderUiModeSeleccioExercicis(rawTie);
     const builderUiExercicisPerApp = getTieBuilderUiExercicisPerAparell(rawTie);
+    const builderUiCandidateSourceMode = getTieBuilderUiCandidateSourceMode(rawTie);
+    const builderUiCandidateSourceCfg = getTieBuilderUiCandidateSourceCfg(rawTie);
     const fallbackPipeline = buildTiePipelineFromPuntuacioSchema(fallbackPuntuacio || (readPuntuacioSchemaFromUI ? readPuntuacioSchemaFromUI() : {}));
     source.pipeline = normalizeTiePipeline(source.pipeline || fallbackPipeline, fallbackPipeline);
     source.id = String(source.id || `tie_${Math.random().toString(16).slice(2)}`).trim();
@@ -1999,12 +2001,25 @@
       source.pipeline.agregacio_camps || fallbackPipeline.agregacio_camps || "sum",
     );
     source.pipeline.agregacio_camps = normalizeTieAggValue(source.agregacio_camps || source.pipeline.agregacio_camps || "sum", "sum");
-    source.pipeline.candidate_source_mode = _normalize_candidate_source_mode_like(source.pipeline.candidate_source_mode || fallbackPipeline.candidate_source_mode || "raw_exercise");
-    source.pipeline.candidate_source_cfg = _copyCandidateSourceCfg(source.pipeline.candidate_source_cfg || fallbackPipeline.candidate_source_cfg || {});
-    source.pipeline.candidate_source_per_aparell = normalizeTiePipelineCandidateSourceMap(
-      source.pipeline.candidate_source_per_aparell,
-      fallbackPipeline.candidate_source_per_aparell,
+    let visibleCandidateSourceMode = builderUiCandidateSourceMode || "hereta";
+    if (typeof tieResolveContext === "function" && typeof getAllowedTieCandidateSourceModes === "function") {
+      const candidateContext = tieResolveContext(source, {
+        selectedMainIds,
+        fallbackPipeline,
+        tie: source,
+      });
+      if (!getAllowedTieCandidateSourceModes(candidateContext).includes(visibleCandidateSourceMode)) {
+        visibleCandidateSourceMode = "hereta";
+      }
+    }
+    applyTieCandidateSourceToPipeline(
+      source.pipeline,
+      {
+        mode: visibleCandidateSourceMode,
+        cfg: builderUiCandidateSourceCfg || source.pipeline.candidate_source_cfg || fallbackPipeline.candidate_source_cfg || {},
+      },
       getTiePipelineVisibleAppIds(source).length ? getTiePipelineVisibleAppIds(source) : targetIds,
+      fallbackPipeline,
     );
     source.pipeline.exercicis = exSelMode === "per_aparell_override"
       ? normalizeTieExercicisCfg(fallbackPipeline.exercicis || {})

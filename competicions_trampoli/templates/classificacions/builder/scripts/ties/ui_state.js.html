@@ -202,6 +202,14 @@
     const exMaxPP = Math.max(0, Number(row?.querySelector('[data-k="ex_max_pp"]')?.value || 0));
     const exIds = String(row?.querySelector('[data-k="ex_ids"]')?.value || "").split(",").map(value => Math.trunc(Number(value))).filter(value => Number.isFinite(value) && value > 0);
     const inputSourceMode = normalizeTieInputSourceMode(row?.querySelector('[data-k="input_source_mode"]')?.value || "raw_exercises");
+    const candidateSourceMode = normalizeTieCandidateSourceUiMode(row?.querySelector('[data-k="tie_candidate_source_mode"]')?.value || "hereta");
+    const candidateSourceCfg = copyTieCandidateSourceCfg({
+      mode: row?.querySelector('[data-k="tie_candidate_source_ex_mode"]')?.value || "tots",
+      best_n: row?.querySelector('[data-k="tie_candidate_source_best_n"]')?.value || 1,
+      index: row?.querySelector('[data-k="tie_candidate_source_index"]')?.value || 1,
+      ids: row?.querySelector('[data-k="tie_candidate_source_ids"]')?.value || "",
+      agregacio_exercicis: row?.querySelector('[data-k="tie_candidate_source_agg"]')?.value || "sum",
+    });
     const participants = allowParticipants && typeof readParticipantsFromRow === "function"
       ? readParticipantsFromRow(row)
       : null;
@@ -223,6 +231,8 @@
         aparells: tieAppScopeToObject(appScopeValue),
       },
       input_source_mode: inputSourceMode,
+      candidate_source_mode: candidateSourceMode,
+      candidate_source_cfg: candidateSourceCfg,
       exercise_selection_scope: tieNormalizeExerciseSelectionScope(exScopeValue),
       mode_seleccio_exercicis: exSelModeValue,
       exercicis_per_aparell: tieNormalizeExercicisPerAparell(exPerApp, {}, tiePositiveInts(context.targetAppIds)),
@@ -291,6 +301,8 @@
         tieStateAsObject(pipeline.input_source).mode ||
         "raw_exercises"
       ),
+      candidate_source_mode: getTieBuilderUiCandidateSourceMode(tie) || getTieVisibleCandidateSourceMode(tie, fallbackPipeline),
+      candidate_source_cfg: getTieBuilderUiCandidateSourceCfg(tie) || getTieVisibleCandidateSourceCfg(tie, fallbackPipeline),
       exercicis_per_aparell: tieNormalizeExercicisPerAparell(
         pipeline.exercicis_per_aparell || tie.exercicis_per_aparell || builderUi.exercicis_per_aparell_ui || {},
         {},
@@ -336,6 +348,14 @@
     state.scope.aparells = tieNormalizePipelineAppScope(state.scope.aparells || tieAppScopeToObject(state.app_scope), {});
     state.app_scope = tieAppScopeToValue(state.scope.aparells);
     state.input_source_mode = normalizeTieInputSourceMode(state.input_source_mode || "raw_exercises");
+    state.candidate_source_mode = normalizeTieCandidateSourceUiMode(state.candidate_source_mode || "hereta");
+    state.candidate_source_cfg = copyTieCandidateSourceCfg(state.candidate_source_cfg || {});
+    if (typeof getAllowedTieCandidateSourceModes === "function") {
+      const allowedCandidateModes = getAllowedTieCandidateSourceModes(ctx);
+      if (!allowedCandidateModes.includes(state.candidate_source_mode)) {
+        state.candidate_source_mode = "hereta";
+      }
+    }
     state.exercise_selection_scope = forceScope;
     state.scope.exercicis = tieNormalizeExercicisCfg(state.scope.exercicis || {}, {});
     state.mode_seleccio_exercicis = tieNormalizeModeSeleccioExercicisValue(state.mode_seleccio_exercicis || "hereta");
@@ -348,6 +368,8 @@
     state._builder_ui.exercise_selection_scope_ui = forceScope;
     state._builder_ui.mode_seleccio_exercicis_ui = state.mode_seleccio_exercicis;
     state._builder_ui.input_source_mode_ui = state.input_source_mode;
+    state._builder_ui.candidate_source_mode_ui = state.candidate_source_mode;
+    state._builder_ui.candidate_source_cfg_ui = tieCloneJson(state.candidate_source_cfg, {});
     state._builder_ui.app_scope = tieAppScopeToValue(state.scope.aparells);
     state._builder_ui.camps = tieCloneJson(state.camps || [], []);
     state._builder_ui.agregacio_camps = tieNormalizeAggCampsValue(state.agregacio_camps || "hereta");
@@ -437,6 +459,12 @@
     } else {
       delete pipeline.input_source;
     }
+    applyTieCandidateSourceToPipeline(
+      pipeline,
+      { mode: state.candidate_source_mode || "hereta", cfg: state.candidate_source_cfg || {} },
+      selectedIds,
+      fallbackPipeline || ctx.fallbackPipeline || {},
+    );
     pipeline.agregacio_aparells = tieNormalizeAggValue(state.agregacio_aparells || pipeline.agregacio_aparells || "sum", "sum");
     pipeline.mode_resultat_aparells = "score";
     pipeline.ordre = String(state.ordre || pipeline.ordre || "desc").trim().toLowerCase() === "asc" ? "asc" : "desc";

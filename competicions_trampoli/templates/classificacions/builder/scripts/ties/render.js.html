@@ -120,6 +120,18 @@
     return normalizeTieInputSourceMode(builderUi.input_source_mode_ui || "raw_exercises");
   }
 
+  function getTieBuilderUiCandidateSourceMode(tie) {
+    const builderUi = getTieBuilderUiBlock(tie);
+    if (!Object.prototype.hasOwnProperty.call(builderUi, "candidate_source_mode_ui")) return null;
+    return normalizeTieCandidateSourceUiMode(builderUi.candidate_source_mode_ui || "hereta");
+  }
+
+  function getTieBuilderUiCandidateSourceCfg(tie) {
+    const builderUi = getTieBuilderUiBlock(tie);
+    if (!Object.prototype.hasOwnProperty.call(builderUi, "candidate_source_cfg_ui")) return null;
+    return copyTieCandidateSourceCfg(builderUi.candidate_source_cfg_ui || {});
+  }
+
   function getTieBuilderUiSummarySeed(tie) {
     const builderUi = getTieBuilderUiBlock(tie);
     if (typeof builderUi.summary_seed !== "string") return "";
@@ -201,48 +213,105 @@
     return normalizeTieInputSourceMode(inputSource.mode || "raw_exercises");
   }
 
+  function getTieVisibleCandidateSourceMode(tie, fallbackPipeline) {
+    const builderUiMode = getTieBuilderUiCandidateSourceMode(tie);
+    if (builderUiMode) return builderUiMode;
+    const pipeline = tie && typeof tie.pipeline === "object" && !Array.isArray(tie.pipeline) ? tie.pipeline : {};
+    const fallback = fallbackPipeline && typeof fallbackPipeline === "object" && !Array.isArray(fallbackPipeline) ? fallbackPipeline : {};
+    const mode = _normalize_candidate_source_mode_like(pipeline.candidate_source_mode || fallback.candidate_source_mode || "raw_exercise");
+    const cfg = copyTieCandidateSourceCfg(pipeline.candidate_source_cfg || fallback.candidate_source_cfg || {});
+    const fallbackMode = _normalize_candidate_source_mode_like(fallback.candidate_source_mode || "raw_exercise");
+    const fallbackCfg = copyTieCandidateSourceCfg(fallback.candidate_source_cfg || {});
+    if (_candidateSourceEntriesEqual({ mode, cfg }, { mode: fallbackMode, cfg: fallbackCfg })) return "hereta";
+    return mode;
+  }
+
+  function getTieVisibleCandidateSourceCfg(tie, fallbackPipeline) {
+    const builderUiCfg = getTieBuilderUiCandidateSourceCfg(tie);
+    if (builderUiCfg) return builderUiCfg;
+    const pipeline = tie && typeof tie.pipeline === "object" && !Array.isArray(tie.pipeline) ? tie.pipeline : {};
+    const fallback = fallbackPipeline && typeof fallbackPipeline === "object" && !Array.isArray(fallbackPipeline) ? fallbackPipeline : {};
+    return copyTieCandidateSourceCfg(pipeline.candidate_source_cfg || fallback.candidate_source_cfg || {});
+  }
+
+  function describeTieCandidateSourceMode(mode, fallbackPipeline) {
+    const normalized = normalizeTieCandidateSourceUiMode(mode);
+    const fallbackMode = _normalize_candidate_source_mode_like((fallbackPipeline || {}).candidate_source_mode || "raw_exercise");
+    const effective = normalized === "hereta" ? fallbackMode : normalized;
+    if (normalized === "hereta") {
+      if (fallbackMode === "raw_exercise") return "Pre: hereta originals";
+      return "Pre: hereta agregat";
+    }
+    if (effective === "raw_exercise") return "Pre: originals";
+    if (effective === "team_aggregate") return "Pre: equip";
+    return "Pre: participant";
+  }
+
+  function getTieCandidateSourceModeLabel(mode) {
+    const value = normalizeTieCandidateSourceUiMode(mode);
+    if (value === "hereta") return "Mateix que puntuacio";
+    if (value === "raw_exercise") return "Exercicis originals";
+    if (value === "team_aggregate") return "Agrega per equip";
+    return "Agrega per participant";
+  }
+
+  function getAllowedTieCandidateSourceModes(context) {
+    const ctx = context && typeof context === "object" ? context : {};
+    const contract = String(ctx.contractCode || "").trim().toLowerCase();
+    const modes = ["hereta", "raw_exercise"];
+    if (contract === "native_team" || ctx.isNativeTeam) {
+      modes.push("team_aggregate");
+      return modes;
+    }
+    const tipus = String(ctx.tipus || "").trim().toLowerCase();
+    const teamMode = String(ctx.teamMode || "").trim().toLowerCase();
+    if (
+      contract !== "team_pool" &&
+      (
+        tipus === "individual" ||
+        ctx.isDerivedTeam ||
+        teamMode === "derived_from_individual"
+      )
+    ) {
+      modes.push("participant_aggregate");
+    }
+    return modes;
+  }
+
   function getTieVisibleSummary(tie) {
     const summarySeed = getTieBuilderUiSummarySeed(tie);
     if (summarySeed) return summarySeed;
     const parts = [];
     const inputSourceMode = getTieVisibleInputSourceMode(tie);
     if (inputSourceMode === "main_selected_contributors") {
-      parts.push("Entrada: contributors de la puntuacio");
-    } else {
-      parts.push("Entrada: tots els exercicis disponibles");
+      parts.push("Contributors");
     }
-    const appScope = getTieVisibleAppScopeValue(tie);
-    if (appScope === "tots") {
-      parts.push("Aparells: tots");
-    } else if (appScope.startsWith("app:")) {
-      const appId = Number(appScope.split(":")[1]);
-      parts.push(`Aparells: ${formatAppRefLabel(appId) || `Aparell ${appId}`}`);
-    } else {
-      const ids = getTiePipelineVisibleAppIds(tie);
-      if (ids.length) parts.push(`Aparells: ${ids.map(id => formatAppRefLabel(id) || `Aparell ${id}`).join(", ")}`);
+    const fallbackPipeline = buildTiePipelineFromPuntuacioSchema(readPuntuacioSchemaFromUI ? readPuntuacioSchemaFromUI() : {});
+    const candidateSourceMode = getTieVisibleCandidateSourceMode(tie, fallbackPipeline);
+    if (candidateSourceMode && candidateSourceMode !== "hereta") {
+      parts.push(describeTieCandidateSourceMode(candidateSourceMode, fallbackPipeline));
     }
-    const camps = getTieVisibleCamps(tie);
-    if (camps.length) parts.push(`Camps: ${camps.join(", ")}`);
-    const agg = getTieVisibleAggCamps(tie);
-    if (agg && agg !== "hereta") parts.push(`Agregacio camps: ${agg}`);
     const exScope = getTieBuilderUiExerciseSelectionScope(tie) || normalizeTieExerciseSelectionScope((tie || {}).exercise_selection_scope || "hereta");
     const exSelMode = getTieBuilderUiModeSeleccioExercicis(tie) || normalizeTieModeSeleccioExercicis((tie || {}).mode_seleccio_exercicis || "hereta");
     const ex = getTieBuilderUiScopeExercicis(tie) || (((tie || {}).scope || {}).exercicis || {});
     if (exScope && exScope !== EXERCISE_SELECTION_SCOPE_INHERIT) {
-      parts.push(`Base: ${exScope}`);
+      parts.push(exScope === EXERCISE_SELECTION_SCOPE_TEAM_POOL ? "Base: pool" : "Base: membre");
     }
     if (exSelMode && exSelMode !== "hereta") {
-      parts.push(`Seleccio: ${exSelMode}`);
+      const label = exSelMode === "per_aparell_override"
+        ? "Sel: override"
+        : (exSelMode === "global_pool" ? "Sel: sac global" : "Sel: per aparell");
+      parts.push(label);
     }
     if (ex && typeof ex === "object") {
       const mode = String(ex.mode || "hereta").toLowerCase().trim();
-      if (mode && mode !== "hereta") parts.push(`Exercicis: ${mode}`);
+      if (mode && mode !== "hereta") parts.push(`Ex: ${describeExerciseMode(mode, ex.best_n, ex.index, ex.ids)}`);
     }
     const participants = getTieVisibleParticipants(tie);
     if (participants.mode && participants.mode !== "tots") {
       parts.push(`Membres: ${participants.mode}${participants.n ? ` ${participants.n}` : ""}`);
     }
-    return parts.join(" | ");
+    return parts.join(" / ");
   }
 
   function describeTieFlowVariant(context) {
@@ -250,36 +319,36 @@
     if (ctx.contractCode === "team_pool") {
       return {
         title: "Pool d'equip",
-        hint: "Treballa sobre una bossa comuna d'exercicis contributors i després agrega el resultat del pool.",
-        exerciseScopeLabel: "3. Base del conjunt",
-        exerciseScopeHint: "Defineix si el tie tracta el conjunt com a pool d'equip o hereta la base de puntuació.",
-        selectionLabel: "4. Selecció del conjunt",
+        hint: "",
+        exerciseScopeLabel: "<strong>5. Base</strong>",
+        exerciseScopeHint: "",
+        selectionLabel: "<strong>6. Seleccio</strong>",
       };
     }
     if (ctx.contractCode === "derived_team") {
       return {
         title: "Per membre",
-        hint: "Treballa per membre abans de combinar només els membres que compten per aparell.",
-        exerciseScopeLabel: "3. Base del conjunt",
-        exerciseScopeHint: "Defineix si el tie conserva una base per membre o heretada abans de seleccionar exercicis.",
-        selectionLabel: "4. Selecció d'exercicis",
+        hint: "",
+        exerciseScopeLabel: "<strong>5. Base</strong>",
+        exerciseScopeHint: "",
+        selectionLabel: "<strong>6. Seleccio</strong>",
       };
     }
     if (ctx.contractCode === "native_team") {
       return {
         title: "Equip natiu",
-        hint: "Flux directe d'equip: valora, selecciona exercicis i agrega per aparell sense capa entre membres.",
-        exerciseScopeLabel: "3. Flux de l'equip",
-        exerciseScopeHint: "L'equip és el subjecte directe del tie; no hi ha una selecció posterior entre membres.",
-        selectionLabel: "4. Selecció d'exercicis",
+        hint: "",
+        exerciseScopeLabel: "<strong>5. Base</strong>",
+        exerciseScopeHint: "",
+        selectionLabel: "<strong>5. Seleccio</strong>",
       };
     }
     return {
       title: "Individual",
-      hint: "Flux directe: valora exercicis, selecciona el conjunt final i agrega per aparell.",
-      exerciseScopeLabel: "3. Flux del conjunt",
-      exerciseScopeHint: "La selecció i l'agregació es fan directament sobre els exercicis d'entrada del tie.",
-      selectionLabel: "4. Selecció d'exercicis",
+      hint: "",
+      exerciseScopeLabel: "<strong>5. Base</strong>",
+      exerciseScopeHint: "",
+      selectionLabel: "<strong>5. Seleccio</strong>",
     };
   }
 
@@ -287,13 +356,13 @@
     const ctx = (context && typeof context === "object") ? context : {};
     if (ctx.contractCode === "team_pool") {
       return {
-        label: "5. Pool final",
-        hint: "En pool d'equip no es tornen a escollir membres: es reutilitza el conjunt final del pool.",
+        label: "7. Pool final",
+        hint: "",
       };
     }
     return {
-      label: "5. Membres",
-      hint: "Combina els membres que compten després d'haver valorat i seleccionat els seus exercicis.",
+      label: "7. Membres",
+      hint: "",
     };
   }
 
@@ -306,8 +375,7 @@
 
   function buildTieCampBlockHTML(appIds, selectedCamps, selectedAgg) {
     return `
-      <div class="small text-muted mb-1">2. Valoracio dels exercicis</div>
-      <div class="small text-muted mb-1" data-k="camp_hint">El tie valora els exercicis amb camps comuns per aparell.</div>
+      <div class="small text-muted mb-1"><strong>4. Camps</strong></div>
       <div data-k="camp_box">
         ${buildCampSelectHTMLForApps(appIds, selectedCamps, selectedAgg)}
       </div>
@@ -374,6 +442,16 @@
         delete seed.pipeline.input_source;
       }
     }
+    if (Object.prototype.hasOwnProperty.call(builderUi, "candidate_source_mode_ui")) {
+      seed.pipeline = seed.pipeline && typeof seed.pipeline === "object" && !Array.isArray(seed.pipeline)
+        ? cloneJsonValue(seed.pipeline, {})
+        : {};
+      const mode = normalizeTieCandidateSourceUiMode(builderUi.candidate_source_mode_ui || "hereta");
+      if (mode !== "hereta") {
+        seed.pipeline.candidate_source_mode = mode;
+        seed.pipeline.candidate_source_cfg = copyTieCandidateSourceCfg(builderUi.candidate_source_cfg_ui || seed.pipeline.candidate_source_cfg || {});
+      }
+    }
     if (Object.prototype.hasOwnProperty.call(builderUi, "exercicis_per_aparell_ui")) {
       seed.exercicis_per_aparell = cloneJsonValue(builderUi.exercicis_per_aparell_ui, {});
     }
@@ -390,6 +468,14 @@
     const appScopeValue = String(tr.querySelector('[data-k="app_scope"]')?.value || "hereta").trim();
     const exScope = normalizeTieExerciseSelectionScope(tr.querySelector('[data-k="ex_scope"]')?.value || "hereta");
     const inputSourceMode = normalizeTieInputSourceMode(tr.querySelector('[data-k="input_source_mode"]')?.value || "raw_exercises");
+    const candidateSourceMode = normalizeTieCandidateSourceUiMode(tr.querySelector('[data-k="tie_candidate_source_mode"]')?.value || "hereta");
+    const candidateSourceCfg = copyTieCandidateSourceCfg({
+      mode: tr.querySelector('[data-k="tie_candidate_source_ex_mode"]')?.value || "tots",
+      best_n: tr.querySelector('[data-k="tie_candidate_source_best_n"]')?.value || 1,
+      index: tr.querySelector('[data-k="tie_candidate_source_index"]')?.value || 1,
+      ids: tr.querySelector('[data-k="tie_candidate_source_ids"]')?.value || "",
+      agregacio_exercicis: tr.querySelector('[data-k="tie_candidate_source_agg"]')?.value || "sum",
+    });
     const fixedTeamPool = isTieExerciseSelectionLockedToMainPool(exScope);
     const exSelMode = normalizeTieModeSeleccioExercicis(tr.querySelector('[data-k="ex_sel_mode"]')?.value || "hereta");
     const usesPerAppOverride = !fixedTeamPool && exSelMode === "per_aparell_override";
@@ -405,6 +491,8 @@
       camps: campCfg.camps,
       agregacio_camps: campCfg.agregacio_camps,
       input_source_mode_ui: inputSourceMode,
+      candidate_source_mode_ui: candidateSourceMode,
+      candidate_source_cfg_ui: candidateSourceCfg,
       mode_seleccio_exercicis_ui: exSelMode,
       scope_exercicis_ui: { mode: "hereta" },
     };
@@ -509,6 +597,14 @@
     const exPerApp = readTiePerAppExercicisFromRow(tr);
     const aggExPerApp = readTiePerAppAggExercicisFromRow(tr);
     const inputSourceMode = normalizeTieInputSourceMode(tr.querySelector('[data-k="input_source_mode"]')?.value || "raw_exercises");
+    const candidateSourceMode = normalizeTieCandidateSourceUiMode(tr.querySelector('[data-k="tie_candidate_source_mode"]')?.value || "hereta");
+    const candidateSourceCfg = copyTieCandidateSourceCfg({
+      mode: tr.querySelector('[data-k="tie_candidate_source_ex_mode"]')?.value || "tots",
+      best_n: tr.querySelector('[data-k="tie_candidate_source_best_n"]')?.value || 1,
+      index: tr.querySelector('[data-k="tie_candidate_source_index"]')?.value || 1,
+      ids: tr.querySelector('[data-k="tie_candidate_source_ids"]')?.value || "",
+      agregacio_exercicis: tr.querySelector('[data-k="tie_candidate_source_agg"]')?.value || "sum",
+    });
     const allowMaxPerParticipant = !isDerivedExerciseSelectionScopeAvailable() || getEffectiveTieExerciseSelectionScope(exScope) === EXERCISE_SELECTION_SCOPE_TEAM_POOL;
 
     const obj = {
@@ -517,6 +613,8 @@
       camps: campCfg.camps,
       agregacio_camps: campCfg.agregacio_camps,
       input_source_mode: inputSourceMode,
+      candidate_source_mode: candidateSourceMode,
+      candidate_source_cfg: candidateSourceCfg,
       ordre,
     };
     obj.scope = {
@@ -602,6 +700,7 @@
       const rawTie = cloneJsonValue(t, {});
       t = sanitizeTieItemForUI(rawTie, selectedMainIds, true, includeParticipants, fallbackPuntuacio) || cloneTieWithoutBuilderUi(rawTie, {});
       const tr = document.createElement("tr");
+      tr.classList.add("tie-criterion-row", idx % 2 === 0 ? "tie-criterion-row--a" : "tie-criterion-row--b");
       tr.__tieBuilderState = cloneJsonValue(rawTie, {});
       tr.__tieSourceRaw = cloneTieWithoutBuilderUi(t, {});
       tr.dataset.tieId = String((t && t.id) || `tie_${idx + 1}`);
@@ -652,6 +751,9 @@
       const pN = pNorm.pN;
       const pAgg = pNorm.pAgg;
       const inputSourceMode = getTieVisibleInputSourceMode(rawTie);
+      const fallbackPipelineForTie = buildTiePipelineFromPuntuacioSchema(fallbackPuntuacio || {});
+      const candidateSourceMode = getTieVisibleCandidateSourceMode(rawTie, fallbackPipelineForTie);
+      const candidateSourceCfg = getTieVisibleCandidateSourceCfg(rawTie, fallbackPipelineForTie);
       const tieNom = String((t && t.nom) || `Desempat ${idx + 1}`).trim();
       const tieSummaryText = getTieVisibleSummary(rawTie) || getTieVisibleSummary(t);
 
@@ -667,59 +769,92 @@
 
       tr.innerHTML = `
         <td>
-          <div class="small text-muted mb-1">1. Conjunt inicial del desempat</div>
+          <div class="small text-muted mb-1"><strong>1. Entrada</strong></div>
           <input class="form-control form-control-sm mb-1" data-k="tie_nom" type="text" value="${esc(tieNom)}" placeholder="Nom del criteri">
           <select class="form-control form-control-sm mb-1" data-k="input_source_mode">
             <option value="raw_exercises">Tots els exercicis disponibles</option>
             <option value="main_selected_contributors">Nomes contributors de puntuacio</option>
           </select>
           <div class="small text-muted mb-1" data-k="input_source_hint"></div>
-          <div class="small text-muted mb-1" data-k="tie_flow_title"></div>
-          <div class="small text-muted" data-k="tie_summary">${esc(tieSummaryText)}</div>
-        </td>
-
-        <td>
-          <div class="small text-muted mb-1">Abast del tie</div>
-          <select class="form-control form-control-sm" data-k="app_scope">
-            ${appScopeOpts}
+          <div class="small text-muted mb-1"><strong>2. Pretractament</strong></div>
+          <select class="form-control form-control-sm mb-1" data-k="tie_candidate_source_mode">
+            <option value="hereta">Mateix que puntuacio</option>
+            <option value="raw_exercise">Exercicis originals</option>
+            <option value="participant_aggregate">Agrega per participant</option>
+            <option value="team_aggregate">Agrega per equip</option>
           </select>
-          <div class="small text-muted mt-1">Hereta els aparells de puntuacio o centra el tie en un aparell concret.</div>
-        </td>
-
-        <td data-cell="camp"></td>
-
-        <td>
-          <div class="d-flex flex-column gap-1">
-            <div class="small text-muted" data-k="ex_scope_label" style="${showSelectionScope ? "" : "display:none;"}">${uxVariant === "team_pool" ? "3. Base del pool" : "3. Base i pretractament"}</div>
-            <div class="small text-muted" data-k="ex_scope_hint"></div>
-            <select class="form-control form-control-sm" data-k="ex_scope" style="${showSelectionScope ? "" : "display:none;"}">
-              <option value="hereta">Base: Mateixa que puntuació</option>
-              <option value="per_member">Base: Per membre</option>
-              <option value="team_pool">Base: Pool d'equip</option>
-            </select>
-            <div class="small text-muted" data-k="ex_selection_label">4. Seleccio del conjunt</div>
-            <select class="form-control form-control-sm" data-k="ex_sel_mode">
-              <option value="hereta">Selecció ex: Mateixa que puntuació</option>
-              <option value="per_aparell_global">Selecció ex: Per aparell (global)</option>
-              <option value="per_aparell_override">Selecció ex: Per aparell (override)</option>
-              <option value="global_pool">Selecció ex: Sac global</option>
-            </select>
-            <select class="form-control form-control-sm" data-k="ex_mode">
-              <option value="hereta">Tractament: Mateix que puntuació</option>
+          <div class="flex-column gap-1 mb-1" data-k="tie_candidate_source_cfg" style="display:none;">
+            <div class="small text-muted">Agrupar abans</div>
+            <select class="form-control form-control-sm" data-k="tie_candidate_source_ex_mode">
               <option value="tots">Tots</option>
               <option value="millor_1">Millor 1</option>
               <option value="millor_n">Millors N</option>
               <option value="pitjor_1">Pitjor 1</option>
               <option value="pitjor_n">Pitjors N</option>
               <option value="primer">Primer existent</option>
-              <option value="ultim">Últim existent</option>
+              <option value="ultim">Ultim existent</option>
+              <option value="index">Exercici #</option>
+              <option value="llista">Exercicis (llista)</option>
+            </select>
+            <div class="d-flex gap-1">
+              <input class="form-control form-control-sm" data-k="tie_candidate_source_best_n" type="number" min="1" value="1" style="display:none;" placeholder="N">
+              <input class="form-control form-control-sm" data-k="tie_candidate_source_index" type="number" min="1" value="1" style="display:none;" placeholder="Index">
+            </div>
+            <input class="form-control form-control-sm" data-k="tie_candidate_source_ids" type="text" style="display:none;" placeholder="ex: 1,3,4">
+            <select class="form-control form-control-sm" data-k="tie_candidate_source_agg">
+              <option value="sum">Agregacio previa: Suma</option>
+              <option value="avg">Agregacio previa: Mitjana</option>
+              <option value="median">Agregacio previa: Mediana</option>
+              <option value="max">Agregacio previa: Maxim</option>
+              <option value="min">Agregacio previa: Minim</option>
+            </select>
+          </div>
+          <div class="small text-muted mb-1" data-k="tie_candidate_source_hint"></div>
+          <div class="small text-muted mb-1" data-k="tie_flow_title"></div>
+          <div class="small text-muted" data-k="tie_summary">${esc(tieSummaryText)}</div>
+        </td>
+
+        <td>
+          <div class="small text-muted mb-1"> <strong>3. Aparells</strong></div>
+          <select class="form-control form-control-sm" data-k="app_scope">
+            ${appScopeOpts}
+          </select>
+        </td>
+
+        <td data-cell="camp"></td>
+
+        <td>
+          <div class="d-flex flex-column gap-1">
+            <div class="small text-muted" data-k="ex_scope_label" style="${showSelectionScope ? "" : "display:none;"}">5. Base</div>
+            <div class="small text-muted" data-k="ex_scope_hint"></div>
+            <select class="form-control form-control-sm" data-k="ex_scope" style="${showSelectionScope ? "" : "display:none;"}">
+              <option value="hereta">Base: Mateixa que puntuacio</option>
+              <option value="per_member">Base: Per membre</option>
+              <option value="team_pool">Base: Pool d'equip</option>
+            </select>
+            <div class="small text-muted" data-k="ex_selection_label">5. Seleccio</div>
+            <select class="form-control form-control-sm" data-k="ex_sel_mode">
+              <option value="hereta">Seleccio ex: Mateixa que puntuacio</option>
+              <option value="per_aparell_global">Seleccio ex: Per aparell (global)</option>
+              <option value="per_aparell_override">Seleccio ex: Per aparell (override)</option>
+              <option value="global_pool">Seleccio ex: Sac global</option>
+            </select>
+            <select class="form-control form-control-sm" data-k="ex_mode">
+              <option value="hereta">Tractament: Mateix que puntuacio</option>
+              <option value="tots">Tots</option>
+              <option value="millor_1">Millor 1</option>
+              <option value="millor_n">Millors N</option>
+              <option value="pitjor_1">Pitjor 1</option>
+              <option value="pitjor_n">Pitjors N</option>
+              <option value="primer">Primer existent</option>
+              <option value="ultim">Ultim existent</option>
               <option value="index">Exercici #</option>
               <option value="llista">Exercicis (llista)</option>
             </select>
 
             <div class="d-flex gap-1">
               <input class="form-control form-control-sm" data-k="ex_best_n" type="number" min="1" value="1" style="display:none;" placeholder="N">
-              <input class="form-control form-control-sm" data-k="ex_index" type="number" min="1" value="1" style="display:none;" placeholder="Índex">
+              <input class="form-control form-control-sm" data-k="ex_index" type="number" min="1" value="1" style="display:none;" placeholder="Index">
             </div>
             <input class="form-control form-control-sm" data-k="ex_max_pp" type="number" min="0" value="0" style="display:none;" placeholder="Max N per participant (0 = sense limit)">
 
@@ -735,6 +870,7 @@
         ${getParticipantsCellHTML()}
 
         <td>
+          <div class="small text-muted mb-1"><strong>8. Ordre</strong></div>
           <select class="form-control form-control-sm" data-k="ordre">
             <option value="desc">Desc</option>
             <option value="asc">Asc</option>
@@ -766,6 +902,14 @@
       const tieNomInput = tr.querySelector('[data-k="tie_nom"]');
       const inputSourceSel = tr.querySelector('[data-k="input_source_mode"]');
       const inputSourceHint = tr.querySelector('[data-k="input_source_hint"]');
+      const candidateSourceModeSel = tr.querySelector('[data-k="tie_candidate_source_mode"]');
+      const candidateSourceCfgWrap = tr.querySelector('[data-k="tie_candidate_source_cfg"]');
+      const candidateSourceExModeSel = tr.querySelector('[data-k="tie_candidate_source_ex_mode"]');
+      const candidateSourceBestNEl = tr.querySelector('[data-k="tie_candidate_source_best_n"]');
+      const candidateSourceIndexEl = tr.querySelector('[data-k="tie_candidate_source_index"]');
+      const candidateSourceIdsEl = tr.querySelector('[data-k="tie_candidate_source_ids"]');
+      const candidateSourceAggSel = tr.querySelector('[data-k="tie_candidate_source_agg"]');
+      const candidateSourceHint = tr.querySelector('[data-k="tie_candidate_source_hint"]');
       const tieFlowTitle = tr.querySelector('[data-k="tie_flow_title"]');
       const participantsStepLabel = tr.querySelector('[data-k="participants_step_label"]');
       const participantsStepHint = tr.querySelector('[data-k="participants_step_hint"]');
@@ -796,11 +940,52 @@
         const mode = normalizeTieInputSourceMode(inputSourceSel?.value || "raw_exercises");
         const context = getCurrentTieContext();
         const flowMeta = describeTieFlowVariant(context);
-        if (tieFlowTitle) tieFlowTitle.textContent = `Flux: ${flowMeta.title}. ${flowMeta.hint}`;
+        if (tieFlowTitle) tieFlowTitle.textContent = flowMeta.title ? `Flux: ${flowMeta.title}` : "";
         if (!inputSourceHint) return;
         inputSourceHint.textContent = mode === "main_selected_contributors"
-          ? "Parteix nomes dels exercicis originals que han contribuit a la puntuacio. Despres, el tie recalcula el seu propi flux."
-          : "Parteix de tots els exercicis disponibles dins del context del tie i recalcula el flux des de zero.";
+          ? "Reutilitza els exercicis que han comptat."
+          : "";
+      }
+
+      function syncCandidateSourceModeOptions(context) {
+        if (!candidateSourceModeSel) return "hereta";
+        const allowed = getAllowedTieCandidateSourceModes(context);
+        Array.from(candidateSourceModeSel.options || []).forEach(option => {
+          const value = normalizeTieCandidateSourceUiMode(option.value || "hereta");
+          const isAllowed = allowed.includes(value);
+          option.hidden = !isAllowed;
+          option.disabled = !isAllowed;
+          option.textContent = getTieCandidateSourceModeLabel(value);
+        });
+        const current = normalizeTieCandidateSourceUiMode(candidateSourceModeSel.value || "hereta");
+        if (!allowed.includes(current)) {
+          candidateSourceModeSel.value = "hereta";
+          return "hereta";
+        }
+        return current;
+      }
+
+      function refreshCandidateSourceUI() {
+        const context = getCurrentTieContext();
+        const mode = syncCandidateSourceModeOptions(context);
+        const cfgMode = String(candidateSourceExModeSel?.value || "tots").trim().toLowerCase();
+        const explicitAggregate = mode === "participant_aggregate" || mode === "team_aggregate";
+        if (candidateSourceCfgWrap) candidateSourceCfgWrap.style.display = explicitAggregate ? "flex" : "none";
+        if (candidateSourceBestNEl) candidateSourceBestNEl.style.display = explicitAggregate && (cfgMode === "millor_n" || cfgMode === "pitjor_n") ? "" : "none";
+        if (candidateSourceIndexEl) candidateSourceIndexEl.style.display = explicitAggregate && cfgMode === "index" ? "" : "none";
+        if (candidateSourceIdsEl) candidateSourceIdsEl.style.display = explicitAggregate && cfgMode === "llista" ? "" : "none";
+        if (candidateSourceHint) {
+          if (mode === "hereta") {
+            candidateSourceHint.textContent = describeTieCandidateSourceMode("hereta", fallbackPipelineForTie);
+          } else if (mode === "raw_exercise") {
+            candidateSourceHint.textContent = "Sense agregacio previa.";
+          } else if (mode === "participant_aggregate") {
+            candidateSourceHint.textContent = "Agrega per participant abans de seleccionar.";
+          } else {
+            candidateSourceHint.textContent = "Agrega per equip abans de seleccionar.";
+          }
+        }
+        refreshTieBuilderState();
       }
 
       ensureSelectOption(appScopeSel, appScope, value => {
@@ -829,6 +1014,17 @@
           : "Tots els exercicis disponibles"
       );
       inputSourceSel.value = inputSourceMode;
+      ensureSelectOption(candidateSourceModeSel, candidateSourceMode, value => `${value} (legacy)`);
+      candidateSourceModeSel.value = candidateSourceMode;
+      ensureSelectOption(candidateSourceExModeSel, candidateSourceCfg.mode || "tots", value => `${value} (legacy)`);
+      candidateSourceExModeSel.value = candidateSourceCfg.mode || "tots";
+      candidateSourceBestNEl.value = Math.max(1, Number(candidateSourceCfg.best_n || 1));
+      candidateSourceIndexEl.value = Math.max(1, Number(candidateSourceCfg.index || 1));
+      candidateSourceIdsEl.value = Array.isArray(candidateSourceCfg.ids)
+        ? candidateSourceCfg.ids.join(",")
+        : String(candidateSourceCfg.ids || "");
+      ensureSelectOption(candidateSourceAggSel, candidateSourceCfg.agregacio_exercicis || "sum", value => `${value} (legacy)`);
+      candidateSourceAggSel.value = candidateSourceCfg.agregacio_exercicis || "sum";
 
       ensureSelectOption(exScopeSel, exSelectionScope, value => `${value} (legacy)`);
       exScopeSel.value = exSelectionScope;
@@ -886,17 +1082,20 @@
 
         if (exScopeLabel) {
           exScopeLabel.style.display = showSelectionScope ? "" : "none";
-          exScopeLabel.textContent = flowMeta.exerciseScopeLabel;
+          exScopeLabel.innerHTML = flowMeta.exerciseScopeLabel;
         }
         if (exScopeHint) {
-          exScopeHint.style.display = showSelectionScope ? "" : "none";
+          exScopeHint.style.display = showSelectionScope && flowMeta.exerciseScopeHint ? "" : "none";
           exScopeHint.textContent = flowMeta.exerciseScopeHint;
         }
         if (exSelectionLabel) {
-          exSelectionLabel.textContent = flowMeta.selectionLabel;
+          exSelectionLabel.innerHTML = flowMeta.selectionLabel;
         }
         if (participantsStepLabel) participantsStepLabel.textContent = participantsMeta.label;
-        if (participantsStepHint) participantsStepHint.textContent = participantsMeta.hint;
+        if (participantsStepHint) {
+          participantsStepHint.textContent = participantsMeta.hint;
+          participantsStepHint.style.display = participantsMeta.hint ? "" : "none";
+        }
 
         exSelModeSel.style.display = fixedTeamPool ? "none" : "";
         exModeSel.style.display = (fixedTeamPool || isOverride) ? "none" : "";
@@ -908,35 +1107,21 @@
 
         if (exSummary) {
           if (fixedTeamPool) {
-            exSummary.textContent = `${flowMeta.selectionLabel}: reutilitza el conjunt final del pool de puntuacio.`;
+            exSummary.textContent = "Pool final de puntuacio.";
+          } else if (isOverride) {
+            exSummary.textContent = "Override per aparell.";
           } else {
             const maxTxt = Math.max(0, Number(exMaxPPEl?.value || 0));
-            const maxSuffix = maxTxt > 0 ? ` Maxim ${maxTxt} per membre.` : "";
-            const scopeSuffix = context.contractCode === "derived_team"
-              ? " Calculat per membre abans de combinar membres."
-              : (context.contractCode === "team_pool" ? " Calculat sobre una bossa comuna d'equip." : "");
-            exSummary.textContent = `${flowMeta.selectionLabel}: ${summaryLabel}.${maxSuffix}${scopeSuffix}`;
+            const maxSuffix = maxTxt > 0 ? `, max ${maxTxt}/membre` : "";
+            exSummary.textContent = `${summaryLabel}${maxSuffix}`;
           }
         }
 
-        let hintBase = "";
-        if (fixedTeamPool) hintBase = "En pool d'equip, el tie reutilitza el conjunt final del pool de puntuacio.";
-        else if (isOverride) hintBase = "Override per aparell actiu. El criteri global queda ocult mentre aquest mode esta actiu.";
-        else if (m === "millor_n") hintBase = "Tria els N millors exercicis.";
-        else if (m === "pitjor_n") hintBase = "Tria els N pitjors exercicis.";
-        else if (m === "pitjor_1") hintBase = "Agafa el pitjor exercici existent.";
-        else if (m === "primer") hintBase = "Agafa el primer exercici existent.";
-        else if (m === "ultim") hintBase = "Agafa l'ultim exercici existent.";
-        else if (m === "index") hintBase = "Fa servir nomes l'exercici # (1..N).";
-        else if (m === "llista") hintBase = "Llista d'indexs: 1,3,4.";
 
-        if (!fixedTeamPool && hintBase) {
-          if (modeSel === "per_aparell_override") hintBase += " Override per aparell.";
-          else if (modeSel === "global_pool") hintBase += " Aplicat al sac global.";
-          else hintBase += " Aplicat per aparell.";
-          if (context.contractCode === "derived_team") hintBase += " Despres es combinen nomes els membres que compten.";
-          else if (context.contractCode === "team_pool") hintBase += " El conjunt segueix una bossa comuna d'equip.";
-        }
+        let hintBase = "";
+        if (isOverride) hintBase = "";
+        else if (m === "index") hintBase = "Exercici # dins el conjunt.";
+        else if (m === "llista") hintBase = "Indexs separats per comes.";
 
         if (exHint) {
           exHint.style.display = hintBase ? "" : "none";
@@ -953,6 +1138,7 @@
 
       refreshAppUI();
       refreshInputSourceUI();
+      refreshCandidateSourceUI();
       refreshExUI();
       refreshParticipantsControls(tr);
 
@@ -963,7 +1149,11 @@
         syncAdvancedFromUI();
       });
 
-      exScopeSel.addEventListener("change", () => { refreshExUI(); syncAdvancedFromUI(); });
+      exScopeSel.addEventListener("change", () => {
+        refreshCandidateSourceUI();
+        refreshExUI();
+        syncAdvancedFromUI();
+      });
       exSelModeSel.addEventListener("change", () => { refreshExUI(); syncAdvancedFromUI(); });
       exModeSel.addEventListener("change", () => { refreshExUI(); syncAdvancedFromUI(); });
       exBestNEl.addEventListener("input", () => { refreshTieBuilderState(); syncAdvancedFromUI(); });
@@ -975,6 +1165,24 @@
         refreshInputSourceUI();
         refreshTieBuilderState();
         syncAdvancedFromUI();
+      });
+      if (candidateSourceModeSel) candidateSourceModeSel.addEventListener("change", () => {
+        refreshCandidateSourceUI();
+        syncAdvancedFromUI();
+      });
+      [candidateSourceExModeSel, candidateSourceAggSel].forEach(el => {
+        if (!el) return;
+        el.addEventListener("change", () => {
+          refreshCandidateSourceUI();
+          syncAdvancedFromUI();
+        });
+      });
+      [candidateSourceBestNEl, candidateSourceIndexEl, candidateSourceIdsEl].forEach(el => {
+        if (!el) return;
+        el.addEventListener("input", () => {
+          refreshCandidateSourceUI();
+          syncAdvancedFromUI();
+        });
       });
       bindParticipantsListeners(tr, refreshTieBuilderState);
 

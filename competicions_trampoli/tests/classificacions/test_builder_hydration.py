@@ -521,9 +521,75 @@ class ClassificacioBuilderHydrationTests(_BaseTrampoliDataMixin, TestCase):
         builder_ui = tie.get("_builder_ui") or {}
 
         self.assertEqual(tie.get("pipeline"), original_pipeline)
+        self.assertEqual(builder_ui.get("candidate_source_mode_ui"), "hereta")
+        self.assertEqual((builder_ui.get("candidate_source_cfg_ui") or {}).get("mode"), "tots")
         self.assertEqual(builder_ui.get("mode_seleccio_exercicis_ui"), "hereta")
         self.assertEqual(builder_ui.get("scope_exercicis_ui"), {"mode": "hereta"})
         self.assertEqual(builder_ui.get("participants_ui"), {"mode": "tots"})
+
+    def test_prepare_schema_for_builder_hydration_exposes_explicit_tie_candidate_source(self):
+        schema = self._builder_schema(context_code="ctx-finals", team_mode="derived_from_individual")
+        app_key = str(self.comp_ind_app.id)
+        schema["puntuacio"]["aparells"] = {"mode": "seleccionar", "ids": [self.comp_ind_app.id]}
+        schema["puntuacio"]["camps_per_aparell"] = {app_key: ["tot"]}
+        schema["puntuacio"]["candidate_source_mode"] = "participant_aggregate"
+        schema["puntuacio"]["candidate_source_cfg"] = {
+            "mode": "tots",
+            "agregacio_exercicis": "sum",
+        }
+        schema["puntuacio"]["candidate_source_per_aparell"] = {
+            app_key: {
+                "mode": "participant_aggregate",
+                "cfg": {
+                    "mode": "tots",
+                    "agregacio_exercicis": "sum",
+                },
+            },
+        }
+        schema["puntuacio"]["exercicis"] = {"mode": "tots"}
+        schema["puntuacio"]["exercise_selection_scope"] = "per_member"
+        schema["puntuacio"]["mode_seleccio_exercicis"] = "per_aparell_override"
+        schema["puntuacio"]["exercicis_per_aparell"] = {app_key: {"mode": "ultim"}}
+        schema["desempat"] = [
+            {
+                "id": "tie_explicit_raw_candidate_source",
+                "nom": "Ultim exercici real",
+                "ordre": "desc",
+                "pipeline_version": 1,
+                "pipeline": {
+                    "aparells": {"mode": "seleccionar", "ids": [self.comp_ind_app.id]},
+                    "camps_per_aparell": {app_key: ["tot"]},
+                    "agregacio_camps_per_aparell": {app_key: "sum"},
+                    "agregacio_camps": "sum",
+                    "candidate_source_mode": "raw_exercise",
+                    "candidate_source_cfg": {
+                        "mode": "tots",
+                        "agregacio_exercicis": "sum",
+                    },
+                    "candidate_source_per_aparell": {app_key: {"mode": "raw_exercise"}},
+                    "exercicis": {"mode": "tots"},
+                    "mode_seleccio_exercicis": "per_aparell_override",
+                    "exercicis_per_aparell": {app_key: {"mode": "ultim"}},
+                    "agregacio_exercicis": "sum",
+                    "agregacio_exercicis_per_aparell": {app_key: "sum"},
+                    "agregacio_aparells": "sum",
+                    "mode_resultat_aparells": "score",
+                    "ordre": "desc",
+                    "exercise_selection_scope": "per_member",
+                    "participants": {"mode": "tots"},
+                    "agregacio_participants": "sum",
+                    "input_source": {"mode": "main_selected_contributors"},
+                },
+            }
+        ]
+
+        hydrated = prepare_schema_for_builder_hydration(self.comp, schema, tipus="equips")
+        tie = (hydrated.get("desempat") or [])[0] or {}
+        builder_ui = tie.get("_builder_ui") or {}
+
+        self.assertEqual((tie.get("pipeline") or {}).get("candidate_source_mode"), "raw_exercise")
+        self.assertEqual(builder_ui.get("candidate_source_mode_ui"), "raw_exercise")
+        self.assertEqual((builder_ui.get("candidate_source_cfg_ui") or {}).get("mode"), "tots")
 
     def test_prepare_schema_for_builder_hydration_builder_ui_excludes_derived_fields_for_native_team(self):
         schema = self._builder_schema(context_code="ctx-finals", team_mode="native_team")

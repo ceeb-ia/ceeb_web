@@ -2,8 +2,8 @@
     return `
       <td data-cell="participants">
         <div class="d-flex flex-column gap-1">
-          <div class="small text-muted" data-k="participants_step_label">5. Membres / pool</div>
-          <div class="small text-muted" data-k="participants_step_hint">Combina el resultat dels membres o reutilitza el pool final de puntuació.</div>
+          <div class="small text-muted" data-k="participants_step_label">7. Membres</div>
+          <div class="small text-muted" data-k="participants_step_hint"></div>
           <div class="small text-muted" data-k="p_locked_note" style="display:none;">En pool d'equip no es reescullen participants.</div>
           <div class="d-flex flex-column gap-1" data-k="participants_inputs_wrap">
           <select class="form-control form-control-sm" data-k="p_mode">
@@ -130,7 +130,7 @@
     return values.every(value => value === values[0]) ? values[0] : normalizeTieAggValue(fallbackAgg || "sum", "sum");
   }
 
-  function normalizeTiePipelineCandidateSourceMap(rawMap, fallbackMap, appIds) {
+  function normalizeTiePipelineCandidateSourceMap(rawMap, fallbackMap, appIds, fallbackMode = "raw_exercise", fallbackCfg = {}) {
     const out = {};
     const fallback = (fallbackMap && typeof fallbackMap === "object" && !Array.isArray(fallbackMap)) ? fallbackMap : {};
     const source = (rawMap && typeof rawMap === "object" && !Array.isArray(rawMap)) ? rawMap : {};
@@ -139,7 +139,12 @@
       : Array.from(new Set([...Object.keys(source), ...Object.keys(fallback)]));
     keys.forEach(key => {
       const raw = source[key] ?? source[Number(key)] ?? fallback[key] ?? fallback[Number(key)];
-      out[String(Number(key))] = _copyCandidateSourceEntry(raw, fallback?.mode || "raw_exercise", fallback?.cfg || {});
+      const fallbackEntry = fallback[key] ?? fallback[Number(key)] ?? {};
+      out[String(Number(key))] = _copyCandidateSourceEntry(
+        raw,
+        fallbackEntry?.mode || fallbackMode || "raw_exercise",
+        fallbackEntry?.cfg || fallbackCfg || {},
+      );
     });
     return out;
   }
@@ -207,6 +212,8 @@
       out.candidate_source_per_aparell,
       fallback.candidate_source_per_aparell,
       appIds,
+      out.candidate_source_mode,
+      out.candidate_source_cfg,
     );
     out.exercicis = normalizeTieExercicisCfg(out.exercicis || fallback.exercicis || {});
     out.exercise_selection_scope = normalizeTieExerciseSelectionScope(

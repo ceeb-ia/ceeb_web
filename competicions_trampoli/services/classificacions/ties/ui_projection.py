@@ -1,6 +1,10 @@
 from copy import deepcopy
 
 from ..filters import normalize_exercise_selection_scope, normalize_team_mode
+from .pipeline_helpers import (
+    normalize_candidate_source_cfg,
+    normalize_candidate_source_mode,
+)
 
 
 ALLOWED_EXERCISE_SELECTION_MODES = {
@@ -27,6 +31,8 @@ def project_tie_ui_state(
         "agregacio_camps": _normalize_aggregation(
             item.get("agregacio_camps") or pipeline.get("agregacio_camps")
         ),
+        "candidate_source_mode_ui": _project_candidate_source_mode_ui(pipeline, main),
+        "candidate_source_cfg_ui": _project_candidate_source_cfg_ui(pipeline, main),
         "mode_seleccio_exercicis_ui": _project_mode_seleccio_exercicis_ui(pipeline, main),
         "scope_exercicis_ui": _project_scope_exercicis_ui(pipeline, main),
     }
@@ -131,6 +137,23 @@ def _project_mode_seleccio_exercicis_ui(pipeline, main_pipeline):
     main_mode = _normalize_mode(main_pipeline.get("mode_seleccio_exercicis"))
     tie_mode = _normalize_mode(pipeline.get("mode_seleccio_exercicis"))
     return "hereta" if tie_mode == main_mode else tie_mode
+
+
+def _project_candidate_source_mode_ui(pipeline, main_pipeline):
+    if "candidate_source_mode" not in pipeline and "candidate_source_per_aparell" not in pipeline:
+        return "hereta"
+    main_mode = normalize_candidate_source_mode(main_pipeline.get("candidate_source_mode"))
+    tie_mode = normalize_candidate_source_mode(pipeline.get("candidate_source_mode"))
+    main_cfg = normalize_candidate_source_cfg(main_pipeline.get("candidate_source_cfg"))
+    tie_cfg = normalize_candidate_source_cfg(pipeline.get("candidate_source_cfg"), fallback=main_cfg)
+    return "hereta" if tie_mode == main_mode and tie_cfg == main_cfg else tie_mode
+
+
+def _project_candidate_source_cfg_ui(pipeline, main_pipeline):
+    return normalize_candidate_source_cfg(
+        pipeline.get("candidate_source_cfg"),
+        fallback=main_pipeline.get("candidate_source_cfg"),
+    )
 
 
 def _project_scope_exercicis_ui(pipeline, main_pipeline):

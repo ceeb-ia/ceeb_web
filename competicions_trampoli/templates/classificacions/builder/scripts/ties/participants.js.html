@@ -23,12 +23,13 @@
     const lockedNoteEl = tr.querySelector('[data-k="p_locked_note"]');
     const variant = getTieParticipantsUxVariant(tr);
     if (titleEl) {
-      titleEl.textContent = variant === "team_pool"
-        ? "5. Pool final"
+      titleEl.innerHTML = variant === "team_pool"
+        ? "<strong>5. Pool final</strong>"
         : variant === "per_member"
-          ? "5. Seleccio i agregacio entre membres"
-          : "5. Tancament del conjunt";
+          ? "<strong>5. Seleccio i agregacio entre membres</strong>"
+          : "<strong>5. Tancament del conjunt</strong>";
     }
+
     if (hintEl) {
       hintEl.textContent = variant === "team_pool"
         ? "La bossa comuna ja ve delimitada; aqui nomes es conserva el pool final que es tornara a calcular."
