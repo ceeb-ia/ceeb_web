@@ -244,6 +244,15 @@ class ClassificacionsExportExcelTests(_BaseTrampoliDataMixin, TestCase):
             },
         }
 
+    def _export_with_runtime(self, cfg, runtime_payload):
+        self.client.force_login(self.user)
+        url = reverse("classificacions_live_export_excel", kwargs={"pk": self.comp.id})
+        with patch(
+            "competicions_trampoli.views.classificacions.export.execute_classificacio_runtime",
+            return_value=runtime_payload,
+        ):
+            return self.client.get(url, {"cfg_id": cfg.id})
+
     def test_export_excel_creates_one_sheet_per_classificacio(self):
         self.client.force_login(self.user)
         url = reverse("classificacions_live_export_excel", kwargs={"pk": self.comp.id})
@@ -302,4 +311,462 @@ class ClassificacionsExportExcelTests(_BaseTrampoliDataMixin, TestCase):
         body = res.content.decode("utf-8")
         self.assertIn("No s'ha pogut renderitzar la classificacio.", body)
         self.assertIn("boom export", body)
+
+    def test_export_excel_flattens_individual_detail_sections_before_last_builtin(self):
+        runtime = {
+            "schema": {"presentacio": {}, "equips": {}},
+            "columns": [
+                {"type": "builtin", "key": "posicio", "label": "Pos.", "align": "left"},
+                {"type": "builtin", "key": "participant", "label": "Nom", "align": "left"},
+                {"type": "builtin", "key": "punts", "label": "Punts", "align": "right", "decimals": 3},
+            ],
+            "parts": [
+                {
+                    "particio": "global",
+                    "rows": [
+                        {
+                            "posicio": 1,
+                            "participant": "Participant A",
+                            "punts": 18.5,
+                            "cells": {"posicio": 1, "participant": "Participant A", "punts": 18.5},
+                            "detail": {
+                                "sections": [
+                                    {
+                                        "type": "exercise_table",
+                                        "label": "Exercicis",
+                                        "columns": [
+                                            {"type": "builtin", "key": "aparell_nom", "label": "Aparell", "align": "left"},
+                                            {"type": "builtin", "key": "exercise_index", "label": "Ex.", "align": "left"},
+                                            {
+                                                "type": "raw",
+                                                "key": "exercise_total",
+                                                "label": "Total",
+                                                "align": "right",
+                                                "decimals": 3,
+                                            },
+                                        ],
+                                        "rows": [
+                                            {
+                                                "app_id": self.comp_app.id,
+                                                "exercise_index": 1,
+                                                "aparell_nom": "Tramp",
+                                                "cells": {
+                                                    "aparell_nom": "Tramp",
+                                                    "exercise_index": 1,
+                                                    "exercise_total": 9.25,
+                                                },
+                                            },
+                                            {
+                                                "app_id": self.comp_app.id,
+                                                "exercise_index": 2,
+                                                "aparell_nom": "Tramp",
+                                                "cells": {
+                                                    "aparell_nom": "Tramp",
+                                                    "exercise_index": 2,
+                                                    "exercise_total": 9.25,
+                                                },
+                                            },
+                                        ],
+                                    }
+                                ]
+                            },
+                        }
+                    ],
+                }
+            ],
+            "error": None,
+        }
+
+        res = self._export_with_runtime(self.cfg_general, runtime)
+        self.assertEqual(res.status_code, 200)
+
+        wb = load_workbook(filename=BytesIO(res.content))
+        ws = wb[wb.sheetnames[0]]
+
+        self.assertEqual(ws.freeze_panes, "A8")
+        self.assertIn("C5:H5", {str(rng) for rng in ws.merged_cells.ranges})
+        self.assertIn("C6:E6", {str(rng) for rng in ws.merged_cells.ranges})
+        self.assertIn("F6:H6", {str(rng) for rng in ws.merged_cells.ranges})
+        self.assertEqual(ws["C5"].value, "Exercicis")
+        self.assertEqual(ws["C6"].value, "Tramp - Ex.1")
+        self.assertEqual(ws["F6"].value, "Tramp - Ex.2")
+        self.assertEqual(ws["I7"].value, "Punts")
+        self.assertEqual(ws["C8"].value, "Tramp")
+        self.assertEqual(ws["D8"].value, 1)
+        self.assertEqual(ws["E8"].value, 9.25)
+        self.assertEqual(ws["H8"].value, 9.25)
+        self.assertEqual(ws["I8"].value, 18.5)
+
+    def test_export_excel_renders_derived_team_detail_as_block_rows(self):
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Equips derivats",
+            activa=True,
+            ordre=10,
+            tipus="equips",
+            schema={"equips": {"team_mode": "derived_from_individual"}},
+        )
+        runtime = {
+            "schema": {"equips": {"team_mode": "derived_from_individual"}},
+            "columns": [
+                {"type": "builtin", "key": "posicio", "label": "Pos.", "align": "left"},
+                {"type": "builtin", "key": "participant", "label": "Equip", "align": "left"},
+                {"type": "builtin", "key": "punts", "label": "Punts", "align": "right", "decimals": 3},
+            ],
+            "parts": [
+                {
+                    "particio": "global",
+                    "rows": [
+                        {
+                            "posicio": 1,
+                            "participant": "Equip A",
+                            "punts": 25.3,
+                            "cells": {"posicio": 1, "participant": "Equip A", "punts": 25.3},
+                            "detail": {
+                                "sections": [
+                                    {
+                                        "type": "members_table",
+                                        "label": "Detall membres",
+                                        "columns": [
+                                            {"type": "builtin", "key": "participant", "label": "Participant", "align": "left"},
+                                            {
+                                                "type": "raw",
+                                                "key": "member_total",
+                                                "label": "Total",
+                                                "align": "right",
+                                                "decimals": 3,
+                                            },
+                                        ],
+                                        "rows": [
+                                            {
+                                                "member_id": 101,
+                                                "participant": "Anna",
+                                                "cells": {"participant": "Anna", "member_total": 12.6},
+                                            },
+                                            {
+                                                "member_id": 102,
+                                                "participant": "Berta",
+                                                "cells": {"participant": "Berta", "member_total": 12.7},
+                                            },
+                                        ],
+                                    }
+                                ]
+                            },
+                        }
+                    ],
+                }
+            ],
+            "error": None,
+        }
+
+        res = self._export_with_runtime(cfg, runtime)
+        self.assertEqual(res.status_code, 200)
+
+        wb = load_workbook(filename=BytesIO(res.content))
+        ws = wb[wb.sheetnames[0]]
+        merged = {str(rng) for rng in ws.merged_cells.ranges}
+
+        self.assertEqual(ws.freeze_panes, "A8")
+        self.assertIn("A8:A9", merged)
+        self.assertIn("B8:B9", merged)
+        self.assertIn("E8:E9", merged)
+        self.assertNotIn("C8:C9", merged)
+        self.assertEqual(ws["C5"].value, "Detall membres")
+        self.assertEqual(ws["C8"].value, "Anna")
+        self.assertEqual(ws["C9"].value, "Berta")
+        self.assertEqual(ws["D8"].value, 12.6)
+        self.assertEqual(ws["E8"].value, 25.3)
+
+    def test_export_excel_renders_native_team_metrics_with_member_rows(self):
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Equips natius",
+            activa=True,
+            ordre=11,
+            tipus="equips",
+            schema={"equips": {"team_mode": "native_team"}},
+        )
+        runtime = {
+            "schema": {"equips": {"team_mode": "native_team"}},
+            "columns": [
+                {"type": "builtin", "key": "posicio", "label": "Pos.", "align": "left"},
+                {"type": "builtin", "key": "participant", "label": "Equip", "align": "left"},
+                {"type": "builtin", "key": "punts", "label": "Punts", "align": "right", "decimals": 3},
+            ],
+            "parts": [
+                {
+                    "particio": "global",
+                    "rows": [
+                        {
+                            "posicio": 1,
+                            "participant": "Equip Team",
+                            "punts": 24.8,
+                            "cells": {"posicio": 1, "participant": "Equip Team", "punts": 24.8},
+                            "detail": {
+                                "sections": [
+                                    {
+                                        "type": "team_metrics",
+                                        "label": "Notes equip",
+                                        "columns": [
+                                            {
+                                                "type": "raw",
+                                                "key": "team_total",
+                                                "label": "Total equip",
+                                                "align": "right",
+                                                "decimals": 3,
+                                            }
+                                        ],
+                                        "rows": [{"cells": {"team_total": 24.8}}],
+                                    },
+                                    {
+                                        "type": "team_members_table",
+                                        "label": "Notes per membre",
+                                        "columns": [
+                                            {"type": "builtin", "key": "participant", "label": "Participant", "align": "left"},
+                                            {
+                                                "type": "raw",
+                                                "key": "member_total",
+                                                "label": "Total",
+                                                "align": "right",
+                                                "decimals": 3,
+                                            },
+                                        ],
+                                        "rows": [
+                                            {
+                                                "member_id": 201,
+                                                "participant": "Anna",
+                                                "cells": {"participant": "Anna", "member_total": 12.4},
+                                            },
+                                            {
+                                                "member_id": 202,
+                                                "participant": "Berta",
+                                                "cells": {"participant": "Berta", "member_total": 12.4},
+                                            },
+                                        ],
+                                    },
+                                ]
+                            },
+                        }
+                    ],
+                }
+            ],
+            "error": None,
+        }
+
+        res = self._export_with_runtime(cfg, runtime)
+        self.assertEqual(res.status_code, 200)
+
+        wb = load_workbook(filename=BytesIO(res.content))
+        ws = wb[wb.sheetnames[0]]
+        merged = {str(rng) for rng in ws.merged_cells.ranges}
+
+        self.assertEqual(ws.freeze_panes, "A8")
+        self.assertIn("A8:A9", merged)
+        self.assertIn("B8:B9", merged)
+        self.assertIn("C8:C9", merged)
+        self.assertIn("F8:F9", merged)
+        self.assertNotIn("D8:D9", merged)
+        self.assertEqual(ws["C5"].value, "Notes equip")
+        self.assertEqual(ws["D5"].value, "Notes per membre")
+        self.assertEqual(ws["C8"].value, 24.8)
+        self.assertEqual(ws["D8"].value, "Anna")
+        self.assertEqual(ws["D9"].value, "Berta")
+        self.assertEqual(ws["F8"].value, 24.8)
+
+    def test_export_excel_preserves_interleaved_native_team_section_order(self):
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Equips natius ordre",
+            activa=True,
+            ordre=11,
+            tipus="equips",
+            schema={"equips": {"team_mode": "native_team"}},
+        )
+        runtime = {
+            "schema": {"equips": {"team_mode": "native_team"}},
+            "columns": [
+                {"type": "builtin", "key": "posicio", "label": "Pos.", "align": "left"},
+                {"type": "builtin", "key": "participant", "label": "Equip", "align": "left"},
+                {"type": "builtin", "key": "punts", "label": "Punts", "align": "right", "decimals": 3},
+            ],
+            "parts": [
+                {
+                    "particio": "global",
+                    "rows": [
+                        {
+                            "posicio": 1,
+                            "participant": "Equip Team",
+                            "punts": 40.0,
+                            "cells": {"posicio": 1, "participant": "Equip Team", "punts": 40.0},
+                            "detail": {
+                                "sections": [
+                                    {
+                                        "type": "team_metrics",
+                                        "label": "Metriques 1",
+                                        "columns": [
+                                            {
+                                                "type": "raw",
+                                                "key": "team_total_1",
+                                                "label": "Total 1",
+                                                "align": "right",
+                                                "decimals": 3,
+                                            }
+                                        ],
+                                        "rows": [{"cells": {"team_total_1": 10.0}}],
+                                    },
+                                    {
+                                        "type": "team_members_table",
+                                        "label": "Notes 1",
+                                        "columns": [
+                                            {"type": "builtin", "key": "participant", "label": "Participant 1", "align": "left"},
+                                        ],
+                                        "rows": [
+                                            {
+                                                "member_id": 201,
+                                                "participant": "Anna",
+                                                "cells": {"participant": "Anna"},
+                                            },
+                                            {
+                                                "member_id": 202,
+                                                "participant": "Berta",
+                                                "cells": {"participant": "Berta"},
+                                            },
+                                        ],
+                                    },
+                                    {
+                                        "type": "team_metrics",
+                                        "label": "Metriques 2",
+                                        "columns": [
+                                            {
+                                                "type": "raw",
+                                                "key": "team_total_2",
+                                                "label": "Total 2",
+                                                "align": "right",
+                                                "decimals": 3,
+                                            }
+                                        ],
+                                        "rows": [{"cells": {"team_total_2": 20.0}}],
+                                    },
+                                    {
+                                        "type": "team_members_table",
+                                        "label": "Notes 2",
+                                        "columns": [
+                                            {"type": "builtin", "key": "participant", "label": "Participant 2", "align": "left"},
+                                        ],
+                                        "rows": [
+                                            {
+                                                "member_id": 201,
+                                                "participant": "Anna 2",
+                                                "cells": {"participant": "Anna 2"},
+                                            },
+                                            {
+                                                "member_id": 202,
+                                                "participant": "Berta 2",
+                                                "cells": {"participant": "Berta 2"},
+                                            },
+                                        ],
+                                    },
+                                ]
+                            },
+                        }
+                    ],
+                }
+            ],
+            "error": None,
+        }
+
+        res = self._export_with_runtime(cfg, runtime)
+        self.assertEqual(res.status_code, 200)
+
+        wb = load_workbook(filename=BytesIO(res.content))
+        ws = wb[wb.sheetnames[0]]
+
+        self.assertEqual(ws["C5"].value, "Metriques 1")
+        self.assertEqual(ws["D5"].value, "Notes 1")
+        self.assertEqual(ws["E5"].value, "Metriques 2")
+        self.assertEqual(ws["F5"].value, "Notes 2")
+        self.assertEqual(ws["C7"].value, "Total 1")
+        self.assertEqual(ws["D7"].value, "Participant 1")
+        self.assertEqual(ws["E7"].value, "Total 2")
+        self.assertEqual(ws["F7"].value, "Participant 2")
+        self.assertEqual(ws["C8"].value, 10.0)
+        self.assertEqual(ws["D8"].value, "Anna")
+        self.assertEqual(ws["E8"].value, 20.0)
+        self.assertEqual(ws["F8"].value, "Anna 2")
+
+    def test_export_excel_renders_entity_detail_as_block_rows(self):
+        cfg = ClassificacioConfig.objects.create(
+            competicio=self.comp,
+            nom="Per entitats",
+            activa=True,
+            ordre=12,
+            tipus="entitat",
+            schema={},
+        )
+        runtime = {
+            "schema": {},
+            "columns": [
+                {"type": "builtin", "key": "posicio", "label": "Pos.", "align": "left"},
+                {"type": "builtin", "key": "participant", "label": "Entitat", "align": "left"},
+                {"type": "builtin", "key": "punts", "label": "Punts", "align": "right", "decimals": 3},
+            ],
+            "parts": [
+                {
+                    "particio": "global",
+                    "rows": [
+                        {
+                            "posicio": 1,
+                            "participant": "Club X",
+                            "entitat_nom": "Club X",
+                            "punts": 20.0,
+                            "cells": {
+                                "posicio": 1,
+                                "participant": "Club X",
+                                "entitat_nom": "Club X",
+                                "punts": 20.0,
+                            },
+                            "detail": {
+                                "sections": [
+                                    {
+                                        "type": "entity_members_table",
+                                        "label": "Participants",
+                                        "columns": [
+                                            {"type": "builtin", "key": "participant", "label": "Participant", "align": "left"},
+                                        ],
+                                        "rows": [
+                                            {
+                                                "member_id": 301,
+                                                "participant": "Anna",
+                                                "cells": {"participant": "Anna"},
+                                            },
+                                            {
+                                                "member_id": 302,
+                                                "participant": "Berta",
+                                                "cells": {"participant": "Berta"},
+                                            },
+                                        ],
+                                    }
+                                ]
+                            },
+                        }
+                    ],
+                }
+            ],
+            "error": None,
+        }
+
+        res = self._export_with_runtime(cfg, runtime)
+        self.assertEqual(res.status_code, 200)
+
+        wb = load_workbook(filename=BytesIO(res.content))
+        ws = wb[wb.sheetnames[0]]
+        merged = {str(rng) for rng in ws.merged_cells.ranges}
+
+        self.assertEqual(ws.freeze_panes, "A8")
+        self.assertIn("A8:A9", merged)
+        self.assertIn("B8:B9", merged)
+        self.assertIn("D8:D9", merged)
+        self.assertEqual(ws["C5"].value, "Participants")
+        self.assertEqual(ws["C8"].value, "Anna")
+        self.assertEqual(ws["C9"].value, "Berta")
 

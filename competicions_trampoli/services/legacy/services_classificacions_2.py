@@ -4965,12 +4965,13 @@ def compute_classificacio(competicio, cfg_obj):
             return ""
         return _apply_judge_selection(member_raw, judge_ids)
 
-    def _raw_col_value_for_team_row(row, col):
+    def _raw_col_value_for_team_row(row, col, *, honor_fixed_exercise=False):
         team_mode_value = str(row.get("_team_mode") or "").strip().lower()
         equip_id = row.get("equip_id")
         member_ids = row.get("_member_ids") or []
         src = col.get("source") or {}
         camp = str(src.get("camp") or "total").strip() or "total"
+        fixed_exercici = _normalize_positive_int(src.get("exercici"))
         jcfg = src.get("jutges") if isinstance(src.get("jutges"), dict) else {}
         jids = jcfg.get("ids") if isinstance(jcfg.get("ids"), list) else []
         try:
@@ -4983,7 +4984,16 @@ def compute_classificacio(competicio, cfg_obj):
             ca = next((item for item in aparells if int(item.id) == app_id), None)
             if not ca or not is_team_context_app(ca):
                 return ""
-            selected_rows = _get_main_selected_team_rows_for_field(int(equip_id), camp).get(app_id, [])
+            if honor_fixed_exercise and fixed_exercici is not None:
+                selected_rows = [
+                    {
+                        "equip_id": int(equip_id),
+                        "app_id": int(app_id),
+                        "exercici": int(fixed_exercici),
+                    }
+                ]
+            else:
+                selected_rows = _get_main_selected_team_rows_for_field(int(equip_id), camp).get(app_id, [])
             raw_value = _aggregate_selected_raw_values([
                 _raw_value_for_selected_team_row(selected_row, camp, jids)
                 for selected_row in selected_rows
@@ -5225,7 +5235,7 @@ def compute_classificacio(competicio, cfg_obj):
             if not ckey:
                 continue
             if ctype == "raw":
-                val = _raw_col_value_for_team_row(row, col)
+                val = _raw_col_value_for_team_row(row, col, honor_fixed_exercise=True)
                 if not (isinstance(val, dict) and val.get("_kind") == "team_raw_detail"):
                     val = _apply_decimals_if_numeric(val, col.get("decimals"))
             else:
