@@ -1,6 +1,8 @@
 from django.contrib.auth.decorators import login_required
 from django.urls import path
 
+from ceeb_web.access import app_authenticated_view
+
 from ..access import require_competicio_capability, require_global_groups
 from ..views.classificacions.global_templates import (
     ClassificacioTemplateGlobalBuilder,
@@ -114,8 +116,8 @@ urlpatterns = [
         global_authenticated_view(CompeticioCreateView.as_view(), "platform_admin", "competicions_manager"),
         name="create",
     ),
-    path("competicions/created/", authenticated_view(CompeticioListView.as_view()), name="created"),
-    path("competicions/", authenticated_view(CompeticioHomeView.as_view()), name="competicions_home"),
+    path("competicions/created/", app_authenticated_view(CompeticioListView.as_view(), "competicions"), name="created"),
+    path("competicions/", app_authenticated_view(CompeticioHomeView.as_view(), "competicions"), name="competicions_home"),
     path(
         "competicions/<int:pk>/delete/",
         competition_view(CompeticioDeleteView.as_view(), "competition.delete"),

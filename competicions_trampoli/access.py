@@ -4,6 +4,8 @@ from django.contrib.auth.mixins import AccessMixin, LoginRequiredMixin
 from django.core.exceptions import PermissionDenied
 from django.shortcuts import get_object_or_404
 
+from ceeb_web.access import GlobalGroupRequiredMixin, require_global_groups, user_has_any_global_group
+
 from .models import Competicio, CompeticioMembership
 
 
@@ -63,15 +65,6 @@ COMPETICIO_ROLE_CAPABILITIES = {
     },
 }
 
-
-def user_has_any_global_group(user, group_names) -> bool:
-    if not getattr(user, "is_authenticated", False):
-        return False
-    if getattr(user, "is_superuser", False):
-        return True
-    return user.groups.filter(name__in=tuple(group_names)).exists()
-
-
 def user_has_global_competicions_access(user) -> bool:
     # Bypass global de permisos per competicio: nomes platform_admin.
     return user_has_any_global_group(user, GLOBAL_COMPETICIO_BYPASS_GROUPS)
@@ -101,22 +94,6 @@ def user_has_competicio_capability(user, competicio, capability: str) -> bool:
     allowed = COMPETICIO_ROLE_CAPABILITIES.get(membership.role, set())
     return "*" in allowed or capability in allowed
 
-
-def require_global_groups(*group_names):
-    allowed_groups = tuple(group_names)
-
-    def decorator(view_func):
-        @wraps(view_func)
-        def _wrapped(request, *args, **kwargs):
-            if not user_has_any_global_group(request.user, allowed_groups):
-                raise PermissionDenied("No tens permisos per accedir a aquesta area.")
-            return view_func(request, *args, **kwargs)
-
-        return _wrapped
-
-    return decorator
-
-
 def require_competicio_capability(capability: str, competicio_kwarg: str = "pk"):
     def decorator(view_func):
         @wraps(view_func)
@@ -129,16 +106,6 @@ def require_competicio_capability(capability: str, competicio_kwarg: str = "pk")
         return _wrapped
 
     return decorator
-
-
-class GlobalGroupRequiredMixin(LoginRequiredMixin, AccessMixin):
-    required_global_groups = ()
-
-    def dispatch(self, request, *args, **kwargs):
-        if not user_has_any_global_group(request.user, self.required_global_groups):
-            raise PermissionDenied("No tens permisos per accedir a aquesta area.")
-        return super().dispatch(request, *args, **kwargs)
-
 
 class CompeticioCapabilityRequiredMixin(LoginRequiredMixin, AccessMixin):
     required_competicio_capability = ""
