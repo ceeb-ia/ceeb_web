@@ -43,6 +43,7 @@
                             </button>
                             <div class="collapse navbar-collapse" id="navbarSupportedContent">
                                 <ul class="navbar-nav ml-auto">
+                                    {% url 'competicions_home' as competicions_home_url %}
                                     {% url 'login' as login_url %}
                                     {% url 'logout' as logout_url %}
 
@@ -71,6 +72,12 @@
                                                 {% csrf_token %}
                                                 <button type="submit" class="nav-link btn btn-link p-0">Sortir</button>
                                             </form>
+                                        </li>
+                                        {% endif %}
+
+                                        {% if IS_PROD and competicions_home_url %}
+                                        <li class="nav-item">
+                                            <a class="nav-link" href="{{ competicions_home_url }}">Competicions</a>
                                         </li>
                                         {% endif %}
 
