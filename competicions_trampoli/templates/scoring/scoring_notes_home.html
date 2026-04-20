@@ -1155,8 +1155,34 @@
     return row ? String(row.getAttribute("data-score-key") || "") : "";
   }
 
+  function activeScoreTable(){
+    const active = document.activeElement;
+    if(!active || typeof active.closest !== "function") return null;
+    return active.closest("table[data-scoring-table='1']");
+  }
+
+  function scoreTablesForScoreKey(scoreKey){
+    const resolved = String(scoreKey || "");
+    if(!resolved) return [];
+    const tables = [];
+    const seen = new Set();
+    document.querySelectorAll(`tr[data-score-key="${CSS.escape(resolved)}"]`).forEach((row) => {
+      const table = row.closest("table[data-scoring-table='1']");
+      if(!table) return;
+      const marker = table.getAttribute("id") || `${table.getAttribute("data-group")}|${table.getAttribute("data-exercici")}|${table.getAttribute("data-comp-aparell-id")}`;
+      if(seen.has(marker)) return;
+      seen.add(marker);
+      tables.push(table);
+    });
+    return tables;
+  }
+
   function isEditingScoreKey(scoreKey){
-    return !!scoreKey && activeScoreKey() === String(scoreKey);
+    const resolved = String(scoreKey || "");
+    if(!resolved) return false;
+    const activeTable = activeScoreTable();
+    if(!activeTable) return false;
+    return scoreTablesForScoreKey(resolved).some((table) => table === activeTable);
   }
 
   function markScoreKeyPendingRemoteRerender(scoreKey){
@@ -1291,11 +1317,20 @@
     });
   }
 
+  function flushPendingRemoteRerendersForTable(table){
+    if(!table || activeScoreTable() === table) return;
+    const relatedScoreKeys = Array.from(pendingRemoteScoreKeys).filter((scoreKey) => {
+      return scoreTablesForScoreKey(scoreKey).some((candidate) => candidate === table);
+    });
+    if(!relatedScoreKeys.length) return;
+    relatedScoreKeys.forEach((scoreKey) => pendingRemoteScoreKeys.delete(scoreKey));
+    rerenderTable(table);
+  }
+
   function flushPendingRemoteRerender(scoreKey){
-    const resolved = String(scoreKey || "");
-    if(!resolved || isEditingScoreKey(resolved) || !pendingRemoteScoreKeys.has(resolved)) return;
-    pendingRemoteScoreKeys.delete(resolved);
-    rerenderTablesForScoreKey(resolved);
+    scoreTablesForScoreKey(scoreKey).forEach((table) => {
+      flushPendingRemoteRerendersForTable(table);
+    });
   }
 
   function rerenderTable(table){
@@ -1348,9 +1383,20 @@
   }
 
   // Actualitza outputs: sempre a la fila del jutge 1 (és on hi ha els outputs)
+  function updateTeamOutputs(scoreKey, resp){
+    const outputs = (resp && resp.outputs) || {};
+    document.querySelectorAll(`tr[data-score-key="${CSS.escape(String(scoreKey || ""))}"] [data-out]`).forEach((cell) => {
+      const code = String(cell.getAttribute("data-out") || "");
+      const value = (code === "TOTAL" && outputs.TOTAL === undefined)
+        ? resp.total
+        : outputs[code];
+      cell.textContent = formatComputedValue(value);
+    });
+  }
+
   function updateOutputs(scoreKey, resp){
     if(String(scoreKey || "").startsWith("team_unit:")){
-      rerenderTablesForScoreKey(scoreKey);
+      updateTeamOutputs(scoreKey, resp);
       return;
     }
     const mainRow = document.querySelector(
@@ -1537,6 +1583,11 @@
         const resp = await saveEntry(insId, exercici, appId, patch);
         setScore(insId, exercici, appId, { inputs: resp.inputs || {}, outputs: resp.outputs || {}, total: resp.total || 0 });
         updateOutputs(scoreKey, resp);
+        if(isEditingScoreKey(scoreKey)){
+          markScoreKeyPendingRemoteRerender(scoreKey);
+          return;
+        }
+        rerenderTablesForScoreKey(scoreKey);
       }catch(e){ console.error(e); showAlert(e.message); }
     });
   }
@@ -2443,12 +2494,11 @@
 
   document.addEventListener("DOMContentLoaded", ()=>{
     document.addEventListener("focusout", (ev)=>{
-      const row = ev.target && typeof ev.target.closest === "function"
-        ? ev.target.closest("tr[data-score-key]")
+      const table = ev.target && typeof ev.target.closest === "function"
+        ? ev.target.closest("table[data-scoring-table='1']")
         : null;
-      const scoreKey = row ? String(row.getAttribute("data-score-key") || "") : "";
-      if(!scoreKey) return;
-      setTimeout(()=>flushPendingRemoteRerender(scoreKey), 0);
+      if(!table) return;
+      setTimeout(()=>flushPendingRemoteRerendersForTable(table), 0);
     });
 
     document.addEventListener("click", (ev)=>{

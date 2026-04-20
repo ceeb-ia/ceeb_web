@@ -319,7 +319,11 @@ class ScoringMediaPlaybackContextTests(_BaseTrampoliDataMixin, TestCase):
         self.assertIn("const pendingRemoteScoreKeys = new Set();", body)
         self.assertIn("function isEditingScoreKey(scoreKey){", body)
         self.assertIn("markScoreKeyPendingRemoteRerender(scoreKey);", body)
-        self.assertIn("setTimeout(()=>flushPendingRemoteRerender(scoreKey), 0);", body)
+        self.assertIn("function flushPendingRemoteRerendersForTable(table){", body)
+        self.assertIn("setTimeout(()=>flushPendingRemoteRerendersForTable(table), 0);", body)
         self.assertIn("rerenderTablesForScoreKey(scoreKey);", body)
+        self.assertIn("function updateTeamOutputs(scoreKey, resp){", body)
+        self.assertIn("updateTeamOutputs(scoreKey, resp);", body)
+        self.assertIn("if(isEditingScoreKey(scoreKey)){", body)
 
 
