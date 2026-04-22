@@ -43,6 +43,10 @@ REDIS_URL = os.getenv("REDIS_URL") or os.getenv("CELERY_BROKER_URL", "redis://re
 MATCH_FILE_COLUMNS = {
     "codi",
     "codi extern local",
+    "codis tutor de joc",
+    "club local",
+    "equip local",
+    "equip visitant",
     "lliga",
     "local",
     "visitant",
@@ -124,8 +128,10 @@ def _detect_designacions_upload_kind(uploaded_file) -> str:
     match_score = len(columns & MATCH_FILE_COLUMNS)
     availability_score = len(columns & AVAILABILITY_FILE_COLUMNS)
 
-    if {"codi", "codi extern local", "lliga"}.issubset(columns):
+    if {"codi", "lliga", "modalitat", "categoria"}.issubset(columns):
         match_score += 3
+    if {"equip local", "equip visitant"}.issubset(columns):
+        match_score += 2
     if "codi tutor de joc" in columns:
         availability_score += 3
     if "categoria" in columns:

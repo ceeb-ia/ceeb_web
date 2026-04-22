@@ -76,6 +76,55 @@ class DesignacionsUploadFileDetectionTests(TestCase):
             [["P1", "L1", "Lliga A", "Equip Local", "Equip Visitant", "Pista 1", "ALEVI", "FUTBOL 5"]],
         )
 
+    def _real_export_matches_upload(self, name="partits.xlsx"):
+        return _xlsx_upload(
+            name,
+            [
+                "Codi",
+                "Codis Tutor de Joc",
+                "Club Local",
+                "Estat",
+                "Equip local",
+                "Equip visitant",
+                "PL",
+                "PV",
+                "Lliga",
+                "Grup",
+                "Jornada",
+                "Modalitat",
+                "Categoria",
+                "Subcategoria",
+                "Data",
+                "Hora",
+                "Domicili",
+                "Municipi",
+                "Pista joc",
+                "SubPista joc",
+            ],
+            [[
+                "P1",
+                "",
+                "Club Local",
+                "",
+                "Equip Local",
+                "Equip Visitant",
+                "",
+                "",
+                "Lliga A",
+                "Grup A",
+                "1",
+                "FUTBOL 5",
+                "ALEVI",
+                "MIXT",
+                "2026-04-17",
+                "18:00",
+                "Carrer 1",
+                "BARCELONA",
+                "Pista 1",
+                "",
+            ]],
+        )
+
     def _availability_upload(self, name="disponibilitats.xlsx"):
         return _xlsx_upload(
             name,
@@ -111,6 +160,19 @@ class DesignacionsUploadFileDetectionTests(TestCase):
              patch("designacions.views.write_job_sync"), \
              patch("designacions.views.process_designacions_run.delay") as delay:
             request = self._post_upload([self._matches_upload(), self._availability_upload()])
+
+            response = upload_view(request)
+
+        self.assertEqual(response.status_code, 302)
+        args = delay.call_args.args
+        self.assertIn("disponibilitats.xlsx", args[2])
+        self.assertIn("partits.xlsx", args[3])
+
+    def test_upload_accepts_real_export_matches_headers(self):
+        with self.settings(MEDIA_ROOT=self.media_tmp.name), \
+             patch("designacions.views.write_job_sync"), \
+             patch("designacions.views.process_designacions_run.delay") as delay:
+            request = self._post_upload([self._availability_upload(), self._real_export_matches_upload()])
 
             response = upload_view(request)
 
