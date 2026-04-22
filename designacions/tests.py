@@ -22,6 +22,7 @@ from .main_fixed import (
     _availability_penalty_for_subgroup,
     _build_daily_subgroups,
     _build_tutor_working_id,
+    _normalize_token_no_accents,
     _run_rescue_assignment,
     _safe_position_int,
     _segment_failed_subgroup,
@@ -199,6 +200,10 @@ class DesignacionsUploadFileDetectionTests(TestCase):
 
 
 class DesignacionsDateAwareHelpersTests(SimpleTestCase):
+    def test_normalize_token_no_accents_accepts_femeni_without_accent(self):
+        self.assertEqual(_normalize_token_no_accents("FEMENI"), "femeni")
+        self.assertEqual(_normalize_token_no_accents("FEMENÍ"), "femeni")
+
     def test_tutor_working_id_includes_date(self):
         row_day_1 = {
             "Codi Tutor de Joc": "5002 F5",

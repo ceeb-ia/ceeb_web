@@ -943,6 +943,12 @@ def _normalize_entity_name(name: str) -> str:
 
 
 
+def _normalize_token_no_accents(value) -> str:
+    normalized = unicodedata.normalize("NFKD", str(value or "")).casefold().strip()
+    without_accents = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+    return " ".join(without_accents.split())
+
+
 def read_excel_file(path):
     """Read an Excel file using an engine inferred from the extension.
 
@@ -1401,9 +1407,10 @@ def main(
                 raise ValueError(f"Múltiples grups detectats dins {grup}")
 
             genere = df_partits_grup["Subcategoria"].iloc[0]
-            if genere == "MIXT":
+            genere_key = _normalize_token_no_accents(genere)
+            if genere_key == "mixt":
                 p5 = "SXMIX"
-            elif genere == "FEMENÍ":
+            elif genere_key == "femeni":
                 p5 = "SXFEM"
             else:
                 raise ValueError(f"Subcategoria desconeguda: {genere}")
