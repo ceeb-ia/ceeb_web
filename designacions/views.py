@@ -807,7 +807,9 @@ def run_map_view(request, run_id: int):
         data = f.read()
 
     # IMPORTANT: és HTML generat per folium. El servim tal qual.
-    return HttpResponse(data, content_type="text/html; charset=utf-8")
+    response = HttpResponse(data, content_type="text/html; charset=utf-8")
+    response["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
 
 
 @require_POST
