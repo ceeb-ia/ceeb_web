@@ -322,6 +322,9 @@ class SelectionRuntime:
             item["source_rows"] = [self._normalized_source_row(row)]
         return item
 
+    def copy_ex_row_with_value(self, row, value):
+        return self._copy_ex_row_with_value(row, value)
+
     def _merge_source_rows(self, rows):
         merged = []
         seen = set()
@@ -492,6 +495,9 @@ class SelectionRuntime:
         )
         return self.selected_rows_agg_cache[ins_id]
 
+    def get_selected_rows_agg_for_ins(self, ins_id: int):
+        return self._get_selected_rows_agg_for_ins(ins_id)
+
     def _get_selected_rows_agg_for_team(self, equip_id: int):
         equip_id = _normalize_positive_int(equip_id)
         if equip_id is None:
@@ -509,6 +515,9 @@ class SelectionRuntime:
             participant_key="equip_id",
         )
         return self.selected_team_rows_agg_cache[equip_id]
+
+    def get_selected_rows_agg_for_team(self, equip_id: int):
+        return self._get_selected_rows_agg_for_team(equip_id)
 
     def _get_selected_rows_for_field(self, ins_id: int, field_code: str):
         cache_key = (_normalize_positive_int(ins_id), str(field_code or ""))
@@ -528,6 +537,9 @@ class SelectionRuntime:
         )
         return self.selected_rows_field_cache[cache_key]
 
+    def get_selected_rows_for_field(self, ins_id: int, field_code: str):
+        return self._get_selected_rows_for_field(ins_id, field_code)
+
     def _get_selected_team_rows_for_field(self, equip_id: int, field_code: str):
         cache_key = (_normalize_positive_int(equip_id), str(field_code or ""))
         if cache_key in self.selected_team_rows_field_cache:
@@ -541,6 +553,9 @@ class SelectionRuntime:
             participant_key="equip_id",
         )
         return self.selected_team_rows_field_cache[cache_key]
+
+    def get_selected_team_rows_for_field(self, equip_id: int, field_code: str):
+        return self._get_selected_team_rows_for_field(equip_id, field_code)
 
     def _get_main_selected_rows_agg_for_team(self, equip_id: int):
         equip_id = _normalize_positive_int(equip_id)
@@ -562,6 +577,9 @@ class SelectionRuntime:
         )
         return self.main_selected_team_rows_agg_cache[equip_id]
 
+    def get_main_selected_rows_agg_for_team(self, equip_id: int):
+        return self._get_main_selected_rows_agg_for_team(equip_id)
+
     def _get_main_selected_team_rows_for_field(self, equip_id: int, field_code: str):
         cache_key = (_normalize_positive_int(equip_id), str(field_code or ""))
         if cache_key in self.main_selected_team_rows_field_cache:
@@ -579,6 +597,9 @@ class SelectionRuntime:
             participant_key="equip_id",
         )
         return self.main_selected_team_rows_field_cache[cache_key]
+
+    def get_main_selected_team_rows_for_field(self, equip_id: int, field_code: str):
+        return self._get_main_selected_team_rows_for_field(equip_id, field_code)
 
     def _derived_team_cache_key(self, equip_id=None, member_ids=None):
         if equip_id not in (None, "", "__sense_equip__"):
@@ -631,6 +652,9 @@ class SelectionRuntime:
         )
         return self.derived_team_selected_rows_agg_cache[cache_key]
 
+    def get_selected_rows_agg_for_derived_team(self, team_cache_key, member_ids=None):
+        return self._get_selected_rows_agg_for_derived_team(team_cache_key, member_ids)
+
     def _get_main_selected_rows_for_group(self, team_cache_key, member_ids=None):
         cache_key, mids = self._resolve_group_call_args(team_cache_key, member_ids)
         if cache_key in self.main_selected_rows_for_group_cache:
@@ -667,6 +691,9 @@ class SelectionRuntime:
 
         self.main_selected_rows_for_group_cache[cache_key] = dict(picked_by_app)
         return self.main_selected_rows_for_group_cache[cache_key]
+
+    def get_main_selected_rows_for_group(self, team_cache_key, member_ids=None):
+        return self._get_main_selected_rows_for_group(team_cache_key, member_ids)
 
     def _contributors_by_app_from_selected_rows(self, selected_rows_by_app):
         return {
@@ -736,8 +763,14 @@ class SelectionRuntime:
     def _get_main_selected_contributors_for_individual(self, ins_id: int):
         return self._contributors_by_app_from_selected_rows(self._get_selected_rows_agg_for_ins(ins_id))
 
+    def get_main_selected_contributors_for_individual(self, ins_id: int):
+        return self._get_main_selected_contributors_for_individual(ins_id)
+
     def _get_main_selected_contributors_for_native_team(self, equip_id: int):
         return self._contributors_by_app_from_selected_rows(self._get_main_selected_rows_agg_for_team(equip_id))
+
+    def get_main_selected_contributors_for_native_team(self, equip_id: int):
+        return self._get_main_selected_contributors_for_native_team(equip_id)
 
     def _get_main_selected_contributors_for_group(self, team_cache_key, member_ids=None):
         cache_key, mids = self._resolve_group_call_args(team_cache_key, member_ids)
@@ -799,6 +832,9 @@ class SelectionRuntime:
 
         return {member_id: dict(rows_by_app) for member_id, rows_by_app in contributors.items()}
 
+    def get_main_selected_contributors_for_group(self, team_cache_key, member_ids=None):
+        return self._get_main_selected_contributors_for_group(team_cache_key, member_ids)
+
     def _get_selected_rows_for_derived_team_field(self, team_cache_key, member_ids=None, field_code: str = ""):
         cache_key, mids = self._resolve_group_call_args(team_cache_key, member_ids)
         field_cache_key = (cache_key, str(field_code or ""))
@@ -813,6 +849,9 @@ class SelectionRuntime:
             participant_key="inscripcio_id",
         )
         return self.derived_team_selected_rows_field_cache[field_cache_key]
+
+    def get_selected_rows_for_derived_team_field(self, team_cache_key, member_ids=None, field_code: str = ""):
+        return self._get_selected_rows_for_derived_team_field(team_cache_key, member_ids, field_code)
 
     def _get_main_selected_rows_for_group_field(self, team_cache_key, member_ids=None, field_code: str = ""):
         cache_key, mids = self._resolve_group_call_args(team_cache_key, member_ids)
@@ -852,18 +891,36 @@ class SelectionRuntime:
         self.main_selected_rows_for_group_field_cache[field_cache_key] = dict(picked_by_app)
         return self.main_selected_rows_for_group_field_cache[field_cache_key]
 
+    def get_main_selected_rows_for_group_field(self, team_cache_key, member_ids=None, field_code: str = ""):
+        return self._get_main_selected_rows_for_group_field(team_cache_key, member_ids, field_code)
+
     def build_ctx_exports(self):
         return {
-            "copy_ex_row_with_value": self._copy_ex_row_with_value,
-            "get_main_selected_contributors_for_individual": self._get_main_selected_contributors_for_individual,
-            "get_main_selected_contributors_for_native_team": self._get_main_selected_contributors_for_native_team,
-            "get_main_selected_contributors_for_group": lambda member_ids: self._get_main_selected_contributors_for_group(
-                member_ids
-            ),
-            "get_main_selected_rows_for_group": lambda member_ids: self._get_main_selected_rows_for_group(
-                member_ids
-            ),
+            "copy_ex_row_with_value": self.copy_ex_row_with_value,
+            "get_main_selected_contributors_for_individual": self.get_main_selected_contributors_for_individual,
+            "get_main_selected_contributors_for_native_team": self.get_main_selected_contributors_for_native_team,
+            "get_main_selected_contributors_for_group": self.get_main_selected_contributors_for_group,
+            "get_main_selected_rows_for_group": self.get_main_selected_rows_for_group,
         }
+
+    def build_orchestrator_exports(self):
+        exports = dict(self.build_ctx_exports())
+        exports.update(
+            {
+                "resolve_agregacio_exercicis_for_app": self.resolve_agregacio_exercicis_for_app,
+                "resolve_participants_for_app": self.resolve_participants_for_app,
+                "get_selected_rows_agg_for_ins": self.get_selected_rows_agg_for_ins,
+                "get_selected_rows_agg_for_team": self.get_selected_rows_agg_for_team,
+                "get_selected_rows_for_field": self.get_selected_rows_for_field,
+                "get_selected_team_rows_for_field": self.get_selected_team_rows_for_field,
+                "get_main_selected_rows_agg_for_team": self.get_main_selected_rows_agg_for_team,
+                "get_main_selected_team_rows_for_field": self.get_main_selected_team_rows_for_field,
+                "get_selected_rows_agg_for_derived_team": self.get_selected_rows_agg_for_derived_team,
+                "get_selected_rows_for_derived_team_field": self.get_selected_rows_for_derived_team_field,
+                "get_main_selected_rows_for_group_field": self.get_main_selected_rows_for_group_field,
+            }
+        )
+        return exports
 
 
 def build_selection_runtime(**kwargs):

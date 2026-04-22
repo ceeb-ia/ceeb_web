@@ -3,8 +3,8 @@ from types import SimpleNamespace
 from django.test import TestCase
 
 from ...models import EquipContext, InscripcioEquipAssignacio
-from ...models.competicio import CompeticioAparellEquipContextSource
-from ...models.scoring import ScoreEntry
+from ...models.competicio import Aparell, CompeticioAparellEquipContextSource
+from ...models.scoring import ScoreEntry, TeamCompetitiveSubject, TeamScoreEntry
 from ...services.classificacions.compute import compute_classificacio as engine_compute_classificacio
 from ...services.legacy.services_classificacions_2 import compute_classificacio as legacy_compute_classificacio
 
@@ -225,3 +225,107 @@ class ComputeEngineParityTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(rows_by_entitat["Club A"]["posicio"], 1)
         self.assertEqual(rows_by_entitat["Club B"]["score"], 15.0)
         self.assertEqual(rows_by_entitat["Club B"]["posicio"], 2)
+
+    def test_compute_parity_individual_victories_simple(self):
+        app = self._create_aparell("TRVICT", "Tramp Victories")
+        comp_app = self._create_comp_aparell(self.comp, app, ordre=1, actiu=True)
+        ins_a = self._create_inscripcio(self.comp, "Participant A", ordre=1)
+        ins_b = self._create_inscripcio(self.comp, "Participant B", ordre=2)
+
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=comp_app,
+            inscripcio=ins_a,
+            exercici=1,
+            inputs={},
+            outputs={},
+            total=10.0,
+        )
+        ScoreEntry.objects.create(
+            competicio=self.comp,
+            comp_aparell=comp_app,
+            inscripcio=ins_b,
+            exercici=1,
+            inputs={},
+            outputs={},
+            total=7.0,
+        )
+
+        schema = self._base_schema(comp_app.id)
+        schema["puntuacio"]["mode_resultat_aparells"] = "victories"
+        schema["puntuacio"]["victories"] = {
+            "punts_victoria": 1,
+            "punts_empat": 0.5,
+            "sense_nota_mode": "skip",
+            "mode_camps": "agregat",
+            "mode_exercicis": "agregat",
+            "mode_seleccio_exercicis_camps_separats": "per_camp",
+            "agregacio_victories_camps": "sum",
+            "agregacio_victories_exercicis": "sum",
+            "desempat_comparacio": [],
+        }
+
+        legacy, engine = self._compute_pair(tipus="individual", schema=schema)
+
+        self.assertEqual(legacy, engine)
+        rows_by_participant = {row["participant"]: row for row in engine["global"]}
+        self.assertEqual(rows_by_participant["Participant A"]["score"], 1.0)
+        self.assertEqual(rows_by_participant["Participant A"]["posicio"], 1)
+        self.assertEqual(rows_by_participant["Participant B"]["score"], 0.0)
+        self.assertEqual(rows_by_participant["Participant B"]["posicio"], 2)
+
+    def test_compute_parity_native_team_simple(self):
+        app = self._create_aparell("TRNAT", "Tramp Native Team")
+        app.competition_unit = Aparell.CompetitionUnit.TEAM
+        app.save(update_fields=["competition_unit"])
+        comp_app = self._create_comp_aparell(self.comp, app, ordre=1, actiu=True)
+
+        context = EquipContext.objects.create(competicio=self.comp, code="parelles", nom="Parelles")
+        CompeticioAparellEquipContextSource.objects.create(
+            competicio=self.comp,
+            comp_aparell=comp_app,
+            context=context,
+        )
+        equip = self._create_equip(self.comp, "Parella 1", context=context)
+        members = [
+            self._create_inscripcio(self.comp, "Anna", ordre=1),
+            self._create_inscripcio(self.comp, "Berta", ordre=2),
+        ]
+        for member in members:
+            InscripcioEquipAssignacio.objects.create(
+                competicio=self.comp,
+                context=context,
+                inscripcio=member,
+                equip=equip,
+            )
+        team_subject = TeamCompetitiveSubject.objects.create(
+            competicio=self.comp,
+            comp_aparell=comp_app,
+            context=context,
+            equip=equip,
+            member_ids=[member.id for member in members],
+        )
+        TeamScoreEntry.objects.create(
+            competicio=self.comp,
+            team_subject=team_subject,
+            comp_aparell=comp_app,
+            exercici=1,
+            inputs={},
+            outputs={},
+            total=30.0,
+        )
+
+        schema = self._base_schema(comp_app.id)
+        schema["equips"] = {
+            "context_code": "parelles",
+            "team_mode": "native_team",
+            "incloure_sense_equip": False,
+        }
+
+        legacy, engine = self._compute_pair(tipus="equips", schema=schema)
+
+        self.assertEqual(legacy, engine)
+        rows_by_participant = {row["participant"]: row for row in engine["global"]}
+        self.assertEqual(rows_by_participant["Parella 1"]["score"], 30.0)
+        self.assertEqual(rows_by_participant["Parella 1"]["participants"], 2)
+        self.assertEqual(rows_by_participant["Parella 1"]["posicio"], 1)

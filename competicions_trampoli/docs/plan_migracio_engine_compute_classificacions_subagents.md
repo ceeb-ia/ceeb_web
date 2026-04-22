@@ -43,7 +43,8 @@
 ### Bridge Temporal Actual
 - `competicions_trampoli/services/classificacions/_compute_bridge.py`
   importa directament des de:
-- `competicions_trampoli/services/legacy/services_classificacions_2.py`
+- `competicions_trampoli/services/classificacions/engine/schema.py`
+- `competicions_trampoli/services/classificacions/engine/orchestrator.py`
 
 ### Moduls Ja Separats O Quasi Separats
 - `competicions_trampoli/services/classificacions/filters.py`
@@ -53,9 +54,82 @@
 - `competicions_trampoli/services/classificacions/pipeline_runtime.py`
 - `competicions_trampoli/services/classificacions/provenance/`
 - `competicions_trampoli/services/classificacions/ties/`
+- `competicions_trampoli/services/classificacions/engine/common.py`
+- `competicions_trampoli/services/classificacions/engine/model_utils.py`
+- `competicions_trampoli/services/classificacions/engine/schema.py`
+- `competicions_trampoli/services/classificacions/engine/loaders.py`
+- `competicions_trampoli/services/classificacions/engine/score_values.py`
+- `competicions_trampoli/services/classificacions/engine/filter_runtime.py`
+- `competicions_trampoli/services/classificacions/engine/partition_runtime.py`
+- `competicions_trampoli/services/classificacions/engine/selection.py`
+- `competicions_trampoli/services/classificacions/engine/selection_runtime.py`
+- `competicions_trampoli/services/classificacions/engine/metrics_runtime.py`
+- `competicions_trampoli/services/classificacions/engine/victories.py`
+- `competicions_trampoli/services/classificacions/engine/teams.py`
+- `competicions_trampoli/services/classificacions/engine/detail_payload.py`
+- `competicions_trampoli/services/classificacions/engine/ranking.py`
 
-### Monolit A Migrar
+### Monolit Residual A Aprimar
+- `competicions_trampoli/services/classificacions/engine/orchestrator.py`
+
+### Oracle Legacy Encara Present
 - `competicions_trampoli/services/legacy/services_classificacions_2.py`
+
+### Actualitzacio 2026-04-22
+- El punt d'entrada public ja no depen del legacy. El cutover funcional del bridge esta fet.
+- La Fase 4 queda funcionalment tancada en aquesta iteracio:
+  - `selection_runtime.py` ja exposa exports per a l'orquestrador i cobreix selected rows, candidate source i contributors.
+  - `metrics_runtime.py` ja exposa adapters bound per metriques, desempats i pipeline maps.
+  - `victories.py` ja exposa adapters bound per al mode `mode_resultat_aparells=victories`.
+  - `teams.py` ja agrupa i compon rows d'equip des de l'orquestrador.
+  - `detail_payload.py` i `ranking.py` continuen sent els owners del detail/display i del ranking.
+- L'orquestrador encara no es "prim". El fitxer segueix contenint molt codi duplicat del snapshot legacy, pero l'execucio efectiva ja consumeix els runtimes nous per:
+  - selection
+  - metrics/ties
+  - victories
+  - teams
+  - detail/display
+- Validacio executada en aquesta iteracio:
+  - `docker compose exec -T web python manage.py test competicions_trampoli.tests.scoring.test_engine_selection_runtime competicions_trampoli.tests.scoring.test_engine_metrics_runtime competicions_trampoli.tests.equips.test_engine_team_runtime competicions_trampoli.tests.classificacions.test_compute_engine_parity --verbosity 1`
+  - `docker compose exec -T web python manage.py test competicions_trampoli.tests.classificacions.test_filters competicions_trampoli.tests.equips.test_classificacio_integration competicions_trampoli.tests.scoring.team.test_classificacio_detail_sections competicions_trampoli.tests.inscripcions.groups.test_birth_ranges --verbosity 1`
+- Resultat: `24 + 47` tests en verd.
+- Conclusio d'estat:
+  - Fase 1, 2 i 3: completes a efectes practics
+  - Fase 4: completada funcionalment
+  - Fase 5: pendent de completar fisicament
+  - Fase 6: funcionalment feta
+  - Fase 7 i 8: pendents
+- Seguent pas recomanat:
+  - entrar a Fase 5 per aprimar `engine/orchestrator.py`
+  - substituir blocs locals morts per imports directes o eliminar-los
+  - deixar l'orquestrador com a compositor real de fases
+  - ampliar una mica mes la paritat abans d'eliminar el legacy
+- Actualitzacio Fase 5 - primera passada:
+  - eliminat del `compute path` el bloc local de `victories` a `engine/orchestrator.py`
+  - eliminats els helpers inline de `detail payload` dins `compute_classificacio()`, ja que el cami actiu passa per `engine/detail_payload.py`
+  - la validacio continua verda amb la mateixa bateria de `24 + 47` tests
+  - encara queden pendents dins `engine/orchestrator.py`:
+    - `_rank_v2` local residual
+    - helpers locals de `ties`
+    - bloc gran de selection local definit dins `compute_classificacio()` i sobreescrit posteriorment per `selection_runtime`
+    - config d'equips encara owned localment
+  - conclusio:
+    - Fase 5 esta començada i validada
+    - cal una segona passada per completar l'aprimament fisic del fitxer
+
+- Actualitzacio Fase 5 - tancament fisic:
+  - orquestracio implementada amb subagents d'auditoria S5.A, S5.B i S5.C, mantenint `engine/orchestrator.py` com a write scope exclusiu de l'integrador.
+  - eliminat el bloc local de `selection` dins `compute_classificacio()` que quedava sobreescrit per `selection_runtime`.
+  - eliminats els blocs locals de metriques/pipeline i detail/display ja substituits per `metrics_runtime` i `detail_payload`.
+  - eliminats residus locals de `score_values` i `_rank_v2`; el cami actiu usa els owners nous.
+  - `engine/orchestrator.py` passa aproximadament de 5.676 linies a 2.447 linies.
+  - validacio executada:
+    - `docker compose exec -T web python manage.py test competicions_trampoli.tests.scoring.test_engine_selection_runtime competicions_trampoli.tests.scoring.test_engine_metrics_runtime competicions_trampoli.tests.equips.test_engine_team_runtime competicions_trampoli.tests.classificacions.test_compute_engine_parity competicions_trampoli.tests.scoring.team.test_classificacio_detail_sections --verbosity 1`
+  - resultat: `51` tests en verd.
+  - conclusio:
+    - Fase 5 queda tancada a efectes practics.
+    - Queden duplicats top-level de compatibilitat a aprimar en Fase 8 o abans de retirar el legacy, sobretot schema/common/particions, pero ja no bloquegen el compositor runtime.
+    - Fase 7 pendent: ampliar paritat i eliminar `services/legacy/services_classificacions_2.py`.
 
 ## Decisions Tancades
 - `compute.py` continua sent la frontera publica.

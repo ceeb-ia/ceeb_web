@@ -30,6 +30,21 @@ from .score_values import _apply_simple_agg, _to_float
 from .selection import _pick_participants
 
 
+def _dedupe_int_ids_preserve_order(raw_ids):
+    out = []
+    seen = set()
+    for raw_id in list(raw_ids or []):
+        try:
+            value = int(raw_id)
+        except Exception:
+            continue
+        if value in seen:
+            continue
+        seen.add(value)
+        out.append(value)
+    return out
+
+
 def _legacy_native_equip_for_classificacio(inscripcio):
     equip = getattr(inscripcio, "equip", None)
     if equip is not None:
@@ -245,11 +260,9 @@ def _build_team_grouped(
 
                 member_rows = []
                 missing_members = False
-                for raw_member_id in getattr(subject, "member_ids", []) or []:
-                    try:
-                        member_id = int(raw_member_id)
-                    except Exception:
-                        continue
+                for member_id in _dedupe_int_ids_preserve_order(
+                    getattr(subject, "member_ids", []) or []
+                ):
                     member = _mapping_get(all_ins_by_id or {}, member_id)
                     if member is None:
                         missing_members = True

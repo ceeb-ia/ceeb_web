@@ -4,11 +4,14 @@ from competicions_trampoli.services.classificacions.engine.metrics_runtime impor
     _pipeline_metric_map_for_crit,
     _pipeline_subject_key,
     _sanitize_desempat_for_tipus,
+    build_metrics_runtime_adapters,
+    build_pipeline_runtime_context,
     build_metrics_runtime,
     calc_metric_value_for_group,
     calc_metric_value_for_ins,
     calc_metric_value_for_native_team,
 )
+from competicions_trampoli.services.classificacions.engine.victories import build_victories_adapters
 
 
 def _row(*, app_id, idx, camp_values, inscripcio_id=None, equip_id=None):
@@ -49,6 +52,45 @@ class MetricsRuntimeTests(SimpleTestCase):
             [{"camp": "E", "scope": {"aparells": {"mode": "seleccionar", "ids": [1]}}}],
         )
         self.assertEqual(_sanitize_desempat_for_tipus(desempat, "equips"), desempat)
+
+    def test_build_pipeline_runtime_context_caches_and_adapts_group_helpers(self):
+        calls = {"cache_keys": [], "rows": [], "contributors": []}
+
+        def derived_team_cache_key(_equip_id, member_ids):
+            mids = tuple(member_ids)
+            calls["cache_keys"].append(mids)
+            return f"group:{','.join(str(item) for item in mids)}"
+
+        def get_main_selected_rows_for_group(cache_key, member_ids):
+            calls["rows"].append((cache_key, tuple(member_ids)))
+            return {"cache_key": cache_key, "member_ids": tuple(member_ids)}
+
+        def get_main_selected_contributors_for_group(cache_key, member_ids):
+            calls["contributors"].append((cache_key, tuple(member_ids)))
+            return [{"cache_key": cache_key, "member_ids": tuple(member_ids)}]
+
+        runtime = build_metrics_runtime(
+            tipus="equips",
+            team_mode="derived_from_individual",
+            derived_team_cache_key=derived_team_cache_key,
+            get_main_selected_rows_for_group=get_main_selected_rows_for_group,
+            get_main_selected_contributors_for_group=get_main_selected_contributors_for_group,
+        )
+
+        ctx = build_pipeline_runtime_context(runtime)
+        self.assertIs(ctx, build_pipeline_runtime_context(runtime))
+
+        self.assertEqual(
+            ctx["get_main_selected_rows_for_group"]([11, 12]),
+            {"cache_key": "group:11,12", "member_ids": (11, 12)},
+        )
+        self.assertEqual(
+            ctx["get_main_selected_contributors_for_group"]([11, 12]),
+            [{"cache_key": "group:11,12", "member_ids": (11, 12)}],
+        )
+        self.assertEqual(calls["cache_keys"], [(11, 12), (11, 12)])
+        self.assertEqual(calls["rows"], [("group:11,12", (11, 12))])
+        self.assertEqual(calls["contributors"], [("group:11,12", (11, 12))])
 
     def test_calc_metric_value_for_ins_projects_legacy_tie_to_pipeline(self):
         runtime = build_metrics_runtime(
@@ -160,3 +202,115 @@ class MetricsRuntimeTests(SimpleTestCase):
                 ("entitat", "club b"): 7.5,
             },
         )
+
+    def test_pipeline_metric_map_for_crit_supports_group_subjects_with_team_pool(self):
+        selected_rows = {
+            "group:501": {
+                1: [
+                    _row(app_id=1, idx=1, inscripcio_id=201, camp_values={"E": 8.0}),
+                    _row(app_id=1, idx=2, inscripcio_id=202, camp_values={"E": 9.5}),
+                ]
+            },
+            "group:502": {
+                1: [_row(app_id=1, idx=1, inscripcio_id=203, camp_values={"E": 7.25})]
+            },
+        }
+
+        runtime = build_metrics_runtime(
+            tipus="equips",
+            team_mode="derived_from_individual",
+            selected_app_ids=[1],
+            app_order={1: 1},
+            group_subjects=[
+                {"equip_id": 501, "member_ids": [201, 202]},
+                {"equip_id": 502, "member_ids": [203]},
+            ],
+            derived_team_cache_key=lambda _equip_id, mids: "group:501" if tuple(mids) == (201, 202) else "group:502",
+            get_main_selected_rows_for_group=lambda cache_key, _mids: selected_rows[cache_key],
+        )
+
+        tie = {
+            "id": "pipe-team-pool",
+            "ordre": "desc",
+            "pipeline": {
+                "aparells": {"mode": "seleccionar", "ids": [1]},
+                "camps_mode_per_aparell": {"1": "comu"},
+                "camps_per_aparell": {"1": ["E"]},
+                "agregacio_camps": "sum",
+                "exercicis": {"mode": "tots", "best_n": 1, "index": 1, "ids": [], "max_per_participant": 0},
+                "mode_seleccio_exercicis": "per_aparell_global",
+                "agregacio_exercicis": "sum",
+                "agregacio_aparells": "sum",
+                "exercise_selection_scope": "team_pool",
+            },
+        }
+
+        self.assertEqual(
+            _pipeline_metric_map_for_crit(runtime, tie),
+            {
+                ("equip", 501): 17.5,
+                ("members", (201, 202)): 17.5,
+                ("equip", 502): 7.25,
+                ("members", (203,)): 7.25,
+            },
+        )
+
+    def test_bound_metric_and_victories_adapters_apply_per_app_duels(self):
+        runtime = build_metrics_runtime(
+            tipus="individual",
+            selected_app_ids=[1, 2],
+            per_ins={1: {}, 2: {}},
+            app_order={1: 1, 2: 2},
+            app_ex_rows_by_ins={
+                1: {
+                    1: [_row(app_id=1, idx=1, inscripcio_id=1, camp_values={"E": 9.0})],
+                    2: [_row(app_id=1, idx=1, inscripcio_id=2, camp_values={"E": 8.0})],
+                },
+                2: {
+                    1: [_row(app_id=2, idx=1, inscripcio_id=1, camp_values={"E": 7.0})],
+                    2: [_row(app_id=2, idx=1, inscripcio_id=2, camp_values={"E": 8.5})],
+                },
+            },
+        )
+        metric_adapters = build_metrics_runtime_adapters(runtime)
+        victories_adapters = build_victories_adapters(metric_adapters["calc_metric_value_for_ins"])
+        pipeline_tie = {
+            "id": "pipe-individual-e",
+            "ordre": "desc",
+            "pipeline": {
+                "aparells": {"mode": "seleccionar", "ids": [1]},
+                "camps_mode_per_aparell": {"1": "comu"},
+                "camps_per_aparell": {"1": ["E"]},
+                "agregacio_camps": "sum",
+                "exercicis": {"mode": "tots", "best_n": 1, "index": 1, "ids": [], "max_per_participant": 0},
+                "mode_seleccio_exercicis": "per_aparell_global",
+                "agregacio_exercicis": "sum",
+                "agregacio_aparells": "sum",
+                "exercise_selection_scope": "per_member",
+            },
+        }
+
+        ranked_rows = victories_adapters["apply_victories_per_app_to_rows"](
+            [
+                {"inscripcio_id": 1, "participant": "A", "by_app_base": {1: 10.0, 2: 10.0}},
+                {"inscripcio_id": 2, "participant": "B", "by_app_base": {1: 10.0, 2: 10.0}},
+            ],
+            [1, 2],
+            "desc",
+            "sum",
+            {
+                "punts_victoria": 1.0,
+                "punts_empat": 0.5,
+                "desempat_comparacio": [{"camp": "E", "ordre": "desc"}],
+            },
+        )
+        by_name = {row["participant"]: row for row in ranked_rows}
+
+        self.assertEqual(
+            metric_adapters["pipeline_metric_map_for_crit"](pipeline_tie),
+            {("ins", 1): 9.0, ("ins", 2): 8.0},
+        )
+        self.assertEqual(by_name["A"]["by_app"], {1: 1.0, 2: 0.0})
+        self.assertEqual(by_name["B"]["by_app"], {1: 0.0, 2: 1.0})
+        self.assertEqual(by_name["A"]["score"], 1.0)
+        self.assertEqual(by_name["B"]["score"], 1.0)

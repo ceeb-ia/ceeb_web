@@ -265,6 +265,34 @@ def _apply_victories_per_app_to_rows(
     return rows
 
 
+def build_victories_adapters(metric_value_getter):
+    getter = metric_value_getter if callable(metric_value_getter) else (lambda _ins_id, _crit, **_kwargs: 0.0)
+
+    def _compute(entries, ordre_principal, victories_cfg, **kwargs):
+        return _compute_victory_points_for_entries(
+            entries,
+            ordre_principal,
+            victories_cfg,
+            getter,
+            **kwargs,
+        )
+
+    def _apply(rows, app_ids, ordre_principal, agg_aparells, victories_cfg):
+        return _apply_victories_per_app_to_rows(
+            rows,
+            app_ids,
+            ordre_principal,
+            agg_aparells,
+            victories_cfg,
+            getter,
+        )
+
+    return {
+        "apply_victories_per_app_to_rows": _apply,
+        "compute_victory_points_for_entries": _compute,
+    }
+
+
 __all__ = [
     "_apply_victories_per_app_to_rows",
     "_compute_victory_points_for_entries",
@@ -273,4 +301,5 @@ __all__ = [
     "_row_base_for_app",
     "_row_has_app",
     "_sanitize_victories_compare_ties",
+    "build_victories_adapters",
 ]

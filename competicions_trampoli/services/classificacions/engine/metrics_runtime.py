@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 import logging
 
-from ..filters import normalize_team_mode
+from ..filters import EXERCISE_SELECTION_SCOPE_TEAM_POOL, normalize_team_mode
 from ..pipeline_runtime import compute_metric_from_pipeline, materialize_desempat_item
 from .common import json_clone_value, normalize_positive_int, normalized_text_token
 from .ranking import _is_pipeline_tie, _normalize_tie_camps, _pipeline_tie_signature, _tie_key
@@ -72,6 +73,7 @@ def build_metrics_runtime(**kwargs):
     runtime["selected_app_ids"] = _dedupe_int_ids_preserve_order(runtime.get("selected_app_ids") or [])
     runtime.setdefault("metric_cache", {})
     runtime.setdefault("pipeline_metric_cache", {})
+    runtime.setdefault("pipeline_metric_cache_ready", {})
     runtime.setdefault("pipeline_runtime_ctx_cache", {})
     return runtime
 
@@ -80,12 +82,60 @@ def _runtime_dict(runtime):
     if isinstance(runtime, dict):
         runtime.setdefault("metric_cache", {})
         runtime.setdefault("pipeline_metric_cache", {})
+        runtime.setdefault("pipeline_metric_cache_ready", {})
         runtime.setdefault("pipeline_runtime_ctx_cache", {})
         runtime.setdefault("selected_app_ids", [])
         runtime.setdefault("tipus", "individual")
         runtime["team_mode"] = normalize_team_mode(runtime.get("team_mode"))
         return runtime
     return build_metrics_runtime()
+
+
+def _required_positional_params(func):
+    try:
+        signature = inspect.signature(func)
+    except (TypeError, ValueError):
+        return None
+
+    return sum(
+        1
+        for param in signature.parameters.values()
+        if param.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+        and param.default is inspect.Parameter.empty
+    )
+
+
+def _resolve_group_cache_key(builder, member_ids):
+    required = _required_positional_params(builder)
+    if required is None:
+        try:
+            return builder(None, member_ids)
+        except TypeError:
+            return builder(member_ids)
+    if required <= 1:
+        return builder(member_ids)
+    return builder(None, member_ids)
+
+
+def _adapt_group_runtime_helper(runtime_dict, key):
+    value = runtime_dict.get(key)
+    if not callable(value):
+        return None
+
+    required = _required_positional_params(value)
+    if required is None or required <= 1:
+        return value
+
+    cache_key_builder = runtime_dict.get("derived_team_cache_key")
+    if not callable(cache_key_builder):
+        return value
+
+    def _wrapped(member_ids, _value=value, _cache_key_builder=cache_key_builder):
+        mids = _dedupe_int_ids_preserve_order(member_ids or [])
+        cache_key = _resolve_group_cache_key(_cache_key_builder, mids)
+        return _value(cache_key, mids)
+
+    return _wrapped
 
 
 def build_pipeline_runtime_context(runtime):
@@ -106,13 +156,13 @@ def build_pipeline_runtime_context(runtime):
         "pick_participants": runtime_dict.get("pick_participants") or _pick_participants,
     }
 
-    for key in (
-        "get_main_selected_contributors_for_individual",
-        "get_main_selected_contributors_for_native_team",
-        "get_main_selected_rows_for_group",
-        "get_main_selected_contributors_for_group",
-    ):
+    for key in ("get_main_selected_contributors_for_individual", "get_main_selected_contributors_for_native_team"):
         value = runtime_dict.get(key)
+        if callable(value):
+            ctx[key] = value
+
+    for key in ("get_main_selected_rows_for_group", "get_main_selected_contributors_for_group"):
+        value = _adapt_group_runtime_helper(runtime_dict, key)
         if callable(value):
             ctx[key] = value
 
@@ -488,6 +538,24 @@ def _iter_entity_subjects(runtime):
             yield entitat, _dedupe_int_ids_preserve_order(mids)
 
 
+def _pipeline_metric_cache_is_ready(runtime):
+    runtime_dict = _runtime_dict(runtime)
+    tipus = str(runtime_dict.get("tipus") or "individual").strip().lower() or "individual"
+    if tipus == "individual":
+        return True
+    if tipus == "equips":
+        if normalize_team_mode(runtime_dict.get("team_mode")) == "native_team":
+            return bool(
+                _dedupe_int_ids_preserve_order(runtime_dict.get("native_team_ids") or [])
+                or runtime_dict.get("grouped")
+                or runtime_dict.get("team_app_ex_rows_by_equip")
+            )
+        return bool(runtime_dict.get("group_subjects") or runtime_dict.get("grouped"))
+    if tipus == "entitat":
+        return bool(runtime_dict.get("entity_subjects") or runtime_dict.get("per_particio"))
+    return True
+
+
 def _pipeline_metric_map_for_crit(runtime, crit: dict):
     runtime_dict = _runtime_dict(runtime)
     item = _prepare_metric_tie(
@@ -500,8 +568,9 @@ def _pipeline_metric_map_for_crit(runtime, crit: dict):
         return {}
 
     sig = _pipeline_tie_signature(item)
+    cache_ready = _pipeline_metric_cache_is_ready(runtime_dict)
     cached = runtime_dict["pipeline_metric_cache"].get(sig)
-    if cached is not None:
+    if cached is not None and (runtime_dict["pipeline_metric_cache_ready"].get(sig) or not cache_ready):
         return cached
 
     ctx = build_pipeline_runtime_context(runtime_dict)
@@ -534,13 +603,19 @@ def _pipeline_metric_map_for_crit(runtime, crit: dict):
         elif tipus == "equips":
             for subject in _iter_group_subjects(runtime_dict):
                 mids = subject["member_ids"]
-                value = float(
-                    compute_metric_from_pipeline(
-                        ctx,
-                        pipeline,
-                        {"kind": "group", "member_ids": mids},
+                if (
+                    str((pipeline or {}).get("exercise_selection_scope") or "").strip().lower()
+                    == EXERCISE_SELECTION_SCOPE_TEAM_POOL
+                ):
+                    value = float(calc_metric_value_for_group(runtime_dict, mids, item))
+                else:
+                    value = float(
+                        compute_metric_from_pipeline(
+                            ctx,
+                            pipeline,
+                            {"kind": "group", "member_ids": mids},
+                        )
                     )
-                )
                 equip_id = subject.get("equip_id")
                 if equip_id is not None:
                     out[("equip", equip_id)] = value
@@ -560,11 +635,36 @@ def _pipeline_metric_map_for_crit(runtime, crit: dict):
         return {}
 
     runtime_dict["pipeline_metric_cache"][sig] = out
+    runtime_dict["pipeline_metric_cache_ready"][sig] = cache_ready
     return out
 
 
 def pipeline_metric_map_for_crit(runtime, crit: dict):
     return _pipeline_metric_map_for_crit(runtime, crit)
+
+
+def build_metrics_runtime_adapters(runtime):
+    runtime_dict = _runtime_dict(runtime)
+
+    def _calc_metric_value_for_ins(ins_id, crit, **kwargs):
+        return calc_metric_value_for_ins(runtime_dict, ins_id, crit, **kwargs)
+
+    def _calc_metric_value_for_group(member_ids, crit):
+        return calc_metric_value_for_group(runtime_dict, member_ids, crit)
+
+    def _calc_metric_value_for_native_team(equip_id, crit):
+        return calc_metric_value_for_native_team(runtime_dict, equip_id, crit)
+
+    def _pipeline_metric_map(crit):
+        return pipeline_metric_map_for_crit(runtime_dict, crit)
+
+    return {
+        "build_pipeline_runtime_context": lambda: build_pipeline_runtime_context(runtime_dict),
+        "calc_metric_value_for_group": _calc_metric_value_for_group,
+        "calc_metric_value_for_ins": _calc_metric_value_for_ins,
+        "calc_metric_value_for_native_team": _calc_metric_value_for_native_team,
+        "pipeline_metric_map_for_crit": _pipeline_metric_map,
+    }
 
 
 __all__ = [
@@ -576,6 +676,7 @@ __all__ = [
     "_sanitize_desempat_for_tipus",
     "_tie_key",
     "build_metrics_runtime",
+    "build_metrics_runtime_adapters",
     "build_pipeline_runtime_context",
     "calc_criterion_value",
     "calc_metric_value_for_group",

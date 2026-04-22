@@ -21,6 +21,49 @@ def _row(*, app_id, inscripcio_id=None, equip_id=None, exercici, value, by_camp=
 
 
 class EngineSelectionRuntimeTests(unittest.TestCase):
+    def _build_derived_team_runtime(self, **overrides):
+        params = {
+            "aparells": [SimpleNamespace(id=1, is_team_competition_unit=False)],
+            "tipus": "equips",
+            "team_mode": "derived_from_individual",
+            "base_ex_cfg": {"mode": "millor_1"},
+            "candidate_source_mode": "participant_aggregate",
+            "candidate_source_cfg": {"mode": "millor_n", "best_n": 2, "agregacio_exercicis": "avg"},
+            "exercise_selection_scope": EXERCISE_SELECTION_SCOPE_TEAM_POOL,
+            "app_ex_rows_by_ins": {
+                1: {
+                    101: [
+                        _row(app_id=1, inscripcio_id=101, exercici=1, value=8.0, by_camp={"total": 8.0, "E": 3.0}),
+                        _row(app_id=1, inscripcio_id=101, exercici=2, value=9.0, by_camp={"total": 9.0, "E": 4.0}),
+                    ],
+                    202: [
+                        _row(app_id=1, inscripcio_id=202, exercici=1, value=7.0, by_camp={"total": 7.0, "E": 2.0}),
+                        _row(app_id=1, inscripcio_id=202, exercici=2, value=6.0, by_camp={"total": 6.0, "E": 1.0}),
+                    ],
+                }
+            },
+        }
+        params.update(overrides)
+        return SelectionRuntime(**params)
+
+    def _build_native_team_runtime(self, **overrides):
+        params = {
+            "aparells": [SimpleNamespace(id=9, is_team_competition_unit=True)],
+            "tipus": "equips",
+            "team_mode": "native_team",
+            "base_ex_cfg": {"mode": "millor_1"},
+            "team_app_ex_rows_by_equip": {
+                9: {
+                    55: [
+                        _row(app_id=9, equip_id=55, exercici=1, value=12.0, by_camp={"total": 12.0, "E": 5.0}),
+                        _row(app_id=9, equip_id=55, exercici=2, value=13.5, by_camp={"total": 13.5, "E": 6.0}),
+                    ]
+                }
+            },
+        }
+        params.update(overrides)
+        return SelectionRuntime(**params)
+
     def test_resolve_score_fields_for_app_exercise_supports_per_exercise_override(self):
         runtime = SelectionRuntime(
             aparells=[SimpleNamespace(id=11, is_team_competition_unit=False)],
@@ -102,14 +145,7 @@ class EngineSelectionRuntimeTests(unittest.TestCase):
         )
 
     def test_team_pool_group_contributors_trace_candidate_sources_back_to_members(self):
-        runtime = SelectionRuntime(
-            aparells=[SimpleNamespace(id=1, is_team_competition_unit=False)],
-            tipus="equips",
-            team_mode="derived_from_individual",
-            base_ex_cfg={"mode": "millor_1"},
-            candidate_source_mode="participant_aggregate",
-            candidate_source_cfg={"mode": "millor_n", "best_n": 2, "agregacio_exercicis": "avg"},
-            exercise_selection_scope=EXERCISE_SELECTION_SCOPE_TEAM_POOL,
+        runtime = self._build_derived_team_runtime(
             app_ex_rows_by_ins={
                 1: {
                     101: [
@@ -121,7 +157,7 @@ class EngineSelectionRuntimeTests(unittest.TestCase):
                         _row(app_id=1, inscripcio_id=202, exercici=2, value=6.0, by_camp={"total": 6.0}),
                     ],
                 }
-            },
+            }
         )
 
         selected_rows = runtime._get_main_selected_rows_for_group([101, 202])
@@ -135,6 +171,69 @@ class EngineSelectionRuntimeTests(unittest.TestCase):
             [(101, 1, 8.0), (101, 2, 9.0)],
         )
         self.assertNotIn(202, contributors)
+
+    def test_build_ctx_exports_exposes_bound_group_adapters(self):
+        runtime = self._build_derived_team_runtime()
+
+        exports = runtime.build_ctx_exports()
+
+        self.assertIs(exports["copy_ex_row_with_value"].__self__, runtime)
+        self.assertIs(exports["get_main_selected_rows_for_group"].__self__, runtime)
+        self.assertIs(exports["get_main_selected_contributors_for_group"].__self__, runtime)
+        self.assertEqual(
+            [(row["inscripcio_id"], row["exercici"], row["value"]) for row in exports["get_main_selected_rows_for_group"]([101, 202])[1]],
+            [(101, 2, 8.5)],
+        )
+        self.assertEqual(
+            [(row["inscripcio_id"], row["exercici"], row["value"]) for row in exports["get_main_selected_contributors_for_group"]([101, 202])[101][1]],
+            [(101, 1, 8.0), (101, 2, 9.0)],
+        )
+
+    def test_group_selection_public_methods_accept_explicit_or_adapted_signatures(self):
+        runtime = self._build_derived_team_runtime()
+        cache_key = "members:101,202"
+
+        self.assertEqual(
+            runtime.get_selected_rows_agg_for_derived_team([101, 202]),
+            runtime.get_selected_rows_agg_for_derived_team(cache_key, [101, 202]),
+        )
+        self.assertEqual(
+            runtime.get_main_selected_rows_for_group([101, 202]),
+            runtime.get_main_selected_rows_for_group(cache_key, [101, 202]),
+        )
+        self.assertEqual(
+            runtime.get_main_selected_contributors_for_group([101, 202]),
+            runtime.get_main_selected_contributors_for_group(cache_key, [101, 202]),
+        )
+        self.assertEqual(
+            runtime.get_main_selected_rows_for_group_field([101, 202], field_code="total"),
+            runtime.get_main_selected_rows_for_group_field(cache_key, [101, 202], "total"),
+        )
+
+    def test_build_orchestrator_exports_exposes_group_and_team_selection_callables(self):
+        derived_runtime = self._build_derived_team_runtime()
+        derived_exports = derived_runtime.build_orchestrator_exports()
+
+        self.assertEqual(
+            [(row["inscripcio_id"], row["exercici"], row["value"]) for row in derived_exports["get_selected_rows_agg_for_derived_team"]("members:101,202", [101, 202])[1]],
+            [(101, 2, 8.5)],
+        )
+        self.assertEqual(
+            [(row["inscripcio_id"], row["exercici"], row["value"]) for row in derived_exports["get_main_selected_rows_for_group_field"]("members:101,202", [101, 202], "E")[1]],
+            [(101, 2, 3.5)],
+        )
+
+        native_runtime = self._build_native_team_runtime()
+        native_exports = native_runtime.build_orchestrator_exports()
+
+        self.assertEqual(
+            [(row["equip_id"], row["exercici"], row["value"]) for row in native_exports["get_main_selected_rows_agg_for_team"](55)[9]],
+            [(55, 2, 13.5)],
+        )
+        self.assertEqual(
+            [(row["equip_id"], row["exercici"], row["value"]) for row in native_exports["get_main_selected_team_rows_for_field"](55, "E")[9]],
+            [(55, 2, 6.0)],
+        )
 
 
 if __name__ == "__main__":
