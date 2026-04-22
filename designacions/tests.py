@@ -4,16 +4,17 @@ import tempfile
 import asyncio
 import xml.etree.ElementTree as ET
 from datetime import date, time
-from io import StringIO
+from io import BytesIO, StringIO
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import httpx
 import pandas as pd
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
-from django.test import SimpleTestCase, TestCase
+from django.test import RequestFactory, SimpleTestCase, TestCase
 from django.urls import reverse
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
 
 from logs import _read_job, _write_job, push_log
 from .models import Address, AddressCluster, Assignment, Availability, DesignationRun, Match, Referee
@@ -43,6 +44,96 @@ from .services.manual_assignment import (
 )
 from .services.run_scope import load_scoped_run_data
 from .tasks import rebuild_run_map_task
+from .views import upload_view
+
+
+def _xlsx_upload(name: str, headers: list[str], rows: list[list[object]]) -> SimpleUploadedFile:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.append(headers)
+    for row in rows:
+        sheet.append(row)
+    data = BytesIO()
+    workbook.save(data)
+    data.seek(0)
+    return SimpleUploadedFile(
+        name,
+        data.read(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+class DesignacionsUploadFileDetectionTests(TestCase):
+    def setUp(self):
+        self.factory = RequestFactory()
+        self.media_tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.media_tmp.cleanup)
+
+    def _matches_upload(self, name="partits.xlsx"):
+        return _xlsx_upload(
+            name,
+            ["Codi", "Codi Extern Local", "Lliga", "Local", "Visitant", "Pista joc", "Categoria", "Modalitat"],
+            [["P1", "L1", "Lliga A", "Equip Local", "Equip Visitant", "Pista 1", "ALEVI", "FUTBOL 5"]],
+        )
+
+    def _availability_upload(self, name="disponibilitats.xlsx"):
+        return _xlsx_upload(
+            name,
+            ["Codi Tutor de Joc", "Nom", "Nivell", "Categoria", "Data", "Hora Inici", "Hora Fi"],
+            [["5001 F5", "Tutor Prova", "NIVELL A", "TUTOR/TUTORA DE JOC", "2026-04-17", "18:00", "21:00"]],
+        )
+
+    def _post_upload(self, files):
+        return self.factory.post(
+            reverse("designacions_upload"),
+            data={"files": files},
+        )
+
+    def test_upload_accepts_availability_then_matches(self):
+        with self.settings(MEDIA_ROOT=self.media_tmp.name), \
+             patch("designacions.views.write_job_sync"), \
+             patch("designacions.views.process_designacions_run.delay") as delay:
+            request = self._post_upload([self._availability_upload(), self._matches_upload()])
+
+            response = upload_view(request)
+
+        self.assertEqual(response.status_code, 302)
+        run = DesignationRun.objects.get()
+        self.assertTrue(run.input_partits.name.endswith("partits.xlsx"))
+        self.assertTrue(run.input_disponibilitats.name.endswith("disponibilitats.xlsx"))
+        args = delay.call_args.args
+        self.assertEqual(args[0], run.id)
+        self.assertIn("disponibilitats.xlsx", args[2])
+        self.assertIn("partits.xlsx", args[3])
+
+    def test_upload_accepts_matches_then_availability(self):
+        with self.settings(MEDIA_ROOT=self.media_tmp.name), \
+             patch("designacions.views.write_job_sync"), \
+             patch("designacions.views.process_designacions_run.delay") as delay:
+            request = self._post_upload([self._matches_upload(), self._availability_upload()])
+
+            response = upload_view(request)
+
+        self.assertEqual(response.status_code, 302)
+        args = delay.call_args.args
+        self.assertIn("disponibilitats.xlsx", args[2])
+        self.assertIn("partits.xlsx", args[3])
+
+    def test_upload_rejects_two_availability_files(self):
+        with self.settings(MEDIA_ROOT=self.media_tmp.name), \
+             patch("designacions.views.write_job_sync"), \
+             patch("designacions.views.process_designacions_run.delay") as delay:
+            request = self._post_upload([
+                self._availability_upload("disponibilitats-1.xlsx"),
+                self._availability_upload("disponibilitats-2.xlsx"),
+            ])
+
+            response = upload_view(request)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("dos fitxers que semblen de disponibilitats", response.content.decode("utf-8"))
+        self.assertFalse(delay.called)
+        self.assertEqual(DesignationRun.objects.count(), 0)
 
 
 class DesignacionsDateAwareHelpersTests(SimpleTestCase):

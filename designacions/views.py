@@ -40,6 +40,26 @@ from .services.manual_assignment import (
 
 REDIS_URL = os.getenv("REDIS_URL") or os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
 
+MATCH_FILE_COLUMNS = {
+    "codi",
+    "codi extern local",
+    "lliga",
+    "local",
+    "visitant",
+    "pista joc",
+}
+AVAILABILITY_FILE_COLUMNS = {
+    "codi tutor de joc",
+    "nivell",
+    "hora inici",
+    "hora fi",
+    "mitja de transport",
+    "mitjà de transport",
+}
+UPLOAD_KIND_MATCHES = "partits"
+UPLOAD_KIND_AVAILABILITY = "disponibilitats"
+UPLOAD_KIND_UNKNOWN = "desconegut"
+
 def _to_int(v, default):
     try:
         return int(str(v).strip())
@@ -77,10 +97,78 @@ def _temp_dir():
 
 def _save_uploaded(f, prefix: str) -> str:
     out_path = os.path.join(_temp_dir(), f"{prefix}__{f.name}")
+    if hasattr(f, "seek"):
+        f.seek(0)
     with open(out_path, "wb") as dest:
         for chunk in f.chunks():
             dest.write(chunk)
+    if hasattr(f, "seek"):
+        f.seek(0)
     return out_path
+
+
+def _normalized_excel_columns(df: pd.DataFrame) -> set[str]:
+    return {str(column).strip().casefold() for column in df.columns if str(column).strip()}
+
+
+def _detect_designacions_upload_kind(uploaded_file) -> str:
+    try:
+        df = pd.read_excel(uploaded_file, engine="openpyxl", nrows=50)
+    except Exception:
+        return UPLOAD_KIND_UNKNOWN
+    finally:
+        if hasattr(uploaded_file, "seek"):
+            uploaded_file.seek(0)
+
+    columns = _normalized_excel_columns(df)
+    match_score = len(columns & MATCH_FILE_COLUMNS)
+    availability_score = len(columns & AVAILABILITY_FILE_COLUMNS)
+
+    if {"codi", "codi extern local", "lliga"}.issubset(columns):
+        match_score += 3
+    if "codi tutor de joc" in columns:
+        availability_score += 3
+    if "categoria" in columns:
+        categories = (
+            df["Categoria"]
+            .dropna()
+            .astype(str)
+            .str.strip()
+            .str.casefold()
+        )
+        if categories.eq("tutor/tutora de joc").any():
+            availability_score += 3
+
+    if match_score >= 4 and match_score > availability_score:
+        return UPLOAD_KIND_MATCHES
+    if availability_score >= 3 and availability_score > match_score:
+        return UPLOAD_KIND_AVAILABILITY
+    return UPLOAD_KIND_UNKNOWN
+
+
+def _resolve_designacions_upload_files(files):
+    detected = [(file, _detect_designacions_upload_kind(file)) for file in files]
+    by_kind = {kind: [file for file, detected_kind in detected if detected_kind == kind] for kind in (
+        UPLOAD_KIND_MATCHES,
+        UPLOAD_KIND_AVAILABILITY,
+        UPLOAD_KIND_UNKNOWN,
+    )}
+
+    if len(by_kind[UPLOAD_KIND_MATCHES]) == 1 and len(by_kind[UPLOAD_KIND_AVAILABILITY]) == 1:
+        return by_kind[UPLOAD_KIND_MATCHES][0], by_kind[UPLOAD_KIND_AVAILABILITY][0], detected
+
+    names_by_kind = {
+        kind: [getattr(file, "name", "fitxer") for file in kind_files]
+        for kind, kind_files in by_kind.items()
+        if kind_files
+    }
+    if len(by_kind[UPLOAD_KIND_MATCHES]) == 2:
+        detail = "Has pujat dos fitxers que semblen de partits. Falta el fitxer de disponibilitats."
+    elif len(by_kind[UPLOAD_KIND_AVAILABILITY]) == 2:
+        detail = "Has pujat dos fitxers que semblen de disponibilitats. Falta el fitxer de partits."
+    else:
+        detail = "No s'han pogut identificar els fitxers. Cal pujar un Excel de partits i un de disponibilitats."
+    raise ValueError(f"{detail} Detectat: {names_by_kind}")
 
 
 def _build_counts(run, referees_with_counts=None):
@@ -305,10 +393,15 @@ def upload_view(request):
     if len(files) != 2:
         return HttpResponseBadRequest("Cal pujar exactament 2 fitxers .xlsx (partits i disponibilitats).")
 
+    try:
+        partits_file, disponibilitats_file, detected_files = _resolve_designacions_upload_files(files)
+    except ValueError as exc:
+        return HttpResponseBadRequest(str(exc))
+
     task_id = uuid.uuid4().hex
 
-    path1 = _save_uploaded(files[0], task_id)
-    path2 = _save_uploaded(files[1], task_id)
+    path_partits = _save_uploaded(partits_file, f"{task_id}__partits")
+    path_disponibilitats = _save_uploaded(disponibilitats_file, f"{task_id}__disponibilitats")
 
     # --- PARAMS del run (venen del formulari) ---
     params = {
@@ -327,15 +420,19 @@ def upload_view(request):
     run = DesignationRun.objects.create(
         task_id=task_id,
         status="queued",
-        input_partits=files[0],
-        input_disponibilitats=files[1],
+        input_partits=partits_file,
+        input_disponibilitats=disponibilitats_file,
         params=params,
     )
 
-    write_job_sync(task_id, {"status": "queued", "task_id": task_id})
+    detected_summary = {
+        getattr(file, "name", "fitxer"): kind
+        for file, kind in detected_files
+    }
+    write_job_sync(task_id, {"status": "queued", "task_id": task_id, "detected_files": detected_summary})
 
     # passa params a celery
-    process_designacions_run.delay(run.id, task_id, path1, path2, params)
+    process_designacions_run.delay(run.id, task_id, path_disponibilitats, path_partits, params)
 
     return redirect("designacions_run_detail", run_id=run.id)
 
