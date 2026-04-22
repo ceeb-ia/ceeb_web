@@ -1,8 +1,8 @@
-"""Legacy frozen compute module kept for historical reference only.
+"""Frozen compute runtime moved out of the legacy package.
 
-This file is intentionally retained in-repo, but the active runtime path
-now goes through `competicions_trampoli.services.classificacions.engine`.
-Do not wire new production/runtime imports back to this module.
+This module is a temporary runtime snapshot that keeps the public
+classification compute path off `services/legacy/` while the extracted
+engine modules continue converging on a smaller orchestrator.
 """
 
 import json
@@ -11,27 +11,37 @@ from collections import defaultdict
 from datetime import date
 from decimal import Decimal
 from types import SimpleNamespace
+
 from django.db import models
 from django.utils import timezone
-from ...models import Inscripcio
-from ..shared.birth_year_ranges import (
+
+from ....models import Inscripcio
+from ....models.competicio import CompeticioAparell
+from ....models.scoring import ScoreEntry, TeamScoreEntry
+from ..provenance import clone_row, resolve_main_selected_contributors
+from ..pipeline_runtime import compute_metric_from_pipeline, materialize_desempat_item
+from ...shared.birth_year_ranges import (
     BIRTH_YEAR_RANGE_PARTITION_CODE,
     DEFAULT_BIRTH_YEAR_RANGE_PARTITION_CONFIG,
     birth_year_range_partition_value,
     legacy_team_age_partition_to_birth_year_range_config,
     normalize_birth_year_range_partition_config,
 )
-from ..teams.equip_contexts import (
+from ...teams.equip_contexts import (
     NATIVE_EQUIP_CONTEXT_CODE,
     get_contextual_assignment_map,
     normalize_equip_context_code,
     resolve_inscripcio_equip,
 )
-from ...models.competicio import CompeticioAparell
-from ...models.scoring import ScoreEntry, TeamScoreEntry
-from ..classificacions.provenance import clone_row, resolve_main_selected_contributors
-from ..classificacions.pipeline_runtime import compute_metric_from_pipeline, materialize_desempat_item
-from ..scoring.team_scoring import is_team_context_app, member_runtime_code
+from ...scoring.team_scoring import is_team_context_app, member_runtime_code
+from .detail_payload import (
+    build_detail_runtime,
+    get_detail_display_config as engine_get_detail_display_config,
+    get_display_columns as engine_get_display_columns,
+)
+from .loaders import load_engine_orm_data
+from .ranking import _rank_v2 as engine_rank_rows
+from .schema import normalize_schema as engine_normalize_schema
 
 logger = logging.getLogger(__name__)
 
@@ -2301,7 +2311,7 @@ def compute_classificacio(competicio, cfg_obj):
       - posicio/punts els posa _rank()
     """
     tipus = (getattr(cfg_obj, "tipus", "individual") or "individual").lower().strip()
-    schema, _legacy_info = normalize_schema_legacy_team_birth_partition(
+    schema, _legacy_info = engine_normalize_schema(
         competicio,
         getattr(cfg_obj, "schema", {}) or {},
         tipus=tipus,
@@ -2316,7 +2326,7 @@ def compute_classificacio(competicio, cfg_obj):
     punt = schema["puntuacio"] or {}
     desempat = schema["desempat"] or []
     presentacio = schema["presentacio"] or {}
-    display_columns = get_display_columns(schema)
+    display_columns = engine_get_display_columns(schema)
     equips_cfg = _normalize_classificacio_equips_cfg(schema.get("equips") or {})
     assignment_source = equips_cfg.get("assignment_source") or _normalize_equip_assignment_source({})
     team_context_code = _get_effective_team_context_code(equips_cfg)
@@ -2381,18 +2391,17 @@ def compute_classificacio(competicio, cfg_obj):
     agg_exercicis = (punt.get("agregacio_exercicis") or "sum").lower().strip()
     agg_aparells = (punt.get("agregacio_aparells") or "sum").lower().strip()
 
-    # 2) APARELLS sobre els quals es computa
-    app_mode = ((punt.get("aparells") or {}).get("mode") or "tots").lower().strip()
-    app_ids = (punt.get("aparells") or {}).get("ids") or []
-
-    aparells_qs = CompeticioAparell.objects.filter(competicio=competicio, actiu=True).select_related("aparell")
-    if app_mode == "seleccionar" and app_ids:
-        aparells_qs = aparells_qs.filter(id__in=app_ids)
-    aparells = list(aparells_qs.order_by("ordre", "id"))
-    team_mode = ""
-    if tipus == "equips":
-        team_mode = _normalize_team_mode(equips_cfg.get("team_mode")) or _infer_team_mode_from_comp_aparells(aparells)
-    detail_config = get_detail_display_config(schema, tipus=tipus, team_mode=team_mode)
+    orm_data = load_engine_orm_data(
+        competicio,
+        punt=punt,
+        tipus=tipus,
+        filtres=filtres,
+        equips_cfg=equips_cfg,
+    )
+    aparells = orm_data.aparells
+    team_mode = orm_data.team_mode if tipus == "equips" else ""
+    team_context_code = orm_data.team_context_code or team_context_code
+    detail_config = engine_get_detail_display_config(schema, tipus=tipus, team_mode=team_mode)
     detail_enabled = bool(detail_config.get("enabled"))
     exercise_selection_scope = EXERCISE_SELECTION_SCOPE_PER_MEMBER
     if tipus == "equips" and team_mode == "derived_from_individual":
@@ -2484,22 +2493,10 @@ def compute_classificacio(competicio, cfg_obj):
         return {"global": []}
 
     # 3) INSCRIPCIONS per competició, agrupades per aparell
-    all_ins_qs = Inscripcio.objects.filter(competicio=competicio)
-
-    sr = []
-    for f in ("entitat", "categoria", "subcategoria", "equip", "grup_competicio"):
-        if _is_relational_field(Inscripcio, f):
-            sr.append(f)
-    if sr:
-        all_ins_qs = all_ins_qs.select_related(*sr)
-
-    all_ins_list = list(all_ins_qs)
-    all_ins_by_id = {i.id: i for i in all_ins_list}
-    filtered_ins_list = [
-        ins for ins in all_ins_list
-        if _inscripcio_matches_classificacio_filters(ins, filtres)
-    ]
-    filtered_ins_by_id = {i.id: i for i in filtered_ins_list}
+    all_ins_list = orm_data.all_ins_list
+    all_ins_by_id = orm_data.all_ins_by_id
+    filtered_ins_list = orm_data.ins_list
+    filtered_ins_by_id = orm_data.ins_by_id
     ins_list = filtered_ins_list
     ins_by_id = filtered_ins_by_id
     team_assignment_map = {}
@@ -2510,48 +2507,14 @@ def compute_classificacio(competicio, cfg_obj):
             team_context_code,
         )
 
-    # notes per tots els aparells seleccionats (una query)
-    notes_qs = (
-        ScoreEntry.objects
-      .filter(competicio=competicio, inscripcio__in=ins_list, comp_aparell__in=aparells)
-      .select_related("inscripcio", "comp_aparell")
-    )
-    notes = list(notes_qs)
-    team_notes = []
-    if tipus == "equips" and team_mode == "native_team":
-        team_apps = [ca for ca in aparells if is_team_context_app(ca)]
-        if team_apps:
-            team_notes = list(
-                TeamScoreEntry.objects
-                .filter(competicio=competicio, comp_aparell__in=team_apps)
-                .select_related("team_subject__equip", "team_subject__context", "comp_aparell")
-            )
-
-    notes_by_app = defaultdict(list)  # app_id -> [notes...]
-    notes_by_key = {}
-    for n in notes:
-        notes_by_app[n.comp_aparell_id].append(n)
-        ex_idx = int(getattr(n, "exercici", 1) or 1)
-        notes_by_key[(n.inscripcio_id, n.comp_aparell_id, ex_idx)] = n
-
-    # inscripcions que realment "competeixen" a cada aparell (tenen notes)
-    ins_ids_by_app = defaultdict(set)
-    for app_id, lst in notes_by_app.items():
-        for n in lst:
-            ins_ids_by_app[app_id].add(n.inscripcio_id)
-    team_notes_by_app = defaultdict(list)
-    team_notes_by_key = {}
-    team_ids_by_app = defaultdict(set)
-    for n in team_notes:
-        note_context_code = normalize_equip_context_code(
-            getattr(getattr(getattr(n, "team_subject", None), "context", None), "code", "")
-        )
-        if note_context_code != team_context_code:
-            continue
-        team_notes_by_app[n.comp_aparell_id].append(n)
-        ex_idx = int(getattr(n, "exercici", 1) or 1)
-        team_notes_by_key[(n.equip_id, n.comp_aparell_id, ex_idx)] = n
-        team_ids_by_app[n.comp_aparell_id].add(n.equip_id)
+    notes = orm_data.notes
+    notes_by_app = orm_data.notes_by_app
+    notes_by_key = orm_data.notes_by_key
+    ins_ids_by_app = orm_data.ins_ids_by_app
+    team_notes = orm_data.team_notes
+    team_notes_by_app = orm_data.team_notes_by_app
+    team_notes_by_key = orm_data.team_notes_by_key
+    team_ids_by_app = orm_data.team_ids_by_app
 
     # 4) CAMPS per aparell (lliures)
     camps_per_aparell = punt.get("camps_per_aparell") or {}
@@ -5508,6 +5471,19 @@ def compute_classificacio(competicio, cfg_obj):
             row.pop("_team_mode", None)
         return rows
 
+    detail_runtime = build_detail_runtime(
+        notes_by_key=notes_by_key,
+        team_notes_by_key=team_notes_by_key,
+        all_ins_by_id=all_ins_by_id,
+        aparells=aparells,
+        display_columns=display_columns,
+        detail_enabled=detail_enabled,
+        detail_config=detail_config,
+        get_main_selected_rows_agg_for_team=_get_main_selected_rows_agg_for_team,
+        get_main_selected_team_rows_for_field=_get_main_selected_team_rows_for_field,
+        get_main_selected_rows_for_group_field=_get_main_selected_rows_for_group_field,
+    )
+
     # guardem tie values (amb clau estable per UI)
     for crit in desempat:
         key = _tie_key(crit)
@@ -5972,8 +5948,8 @@ def compute_classificacio(competicio, cfg_obj):
                 })
 
         for pkey, rows in out.items():
-            ranked = _rank_v2(rows, desempat, presentacio, ordre_principal=ordre_principal, entity_mode=True)
-            out[pkey] = _attach_display_cells(ranked, entity_mode=True)
+            ranked = engine_rank_rows(rows, desempat, presentacio, ordre_principal=ordre_principal, entity_mode=True)
+            out[pkey] = detail_runtime.attach_display_cells(ranked, entity_mode=True)
         return out
 
     if tipus == "entitat":
@@ -6005,13 +5981,13 @@ def compute_classificacio(competicio, cfg_obj):
                     "_member_ids": [x.get("inscripcio_id") for x in items if x.get("inscripcio_id") is not None],
                 })
 
-            ranked = _rank_v2(ent_rows, desempat, presentacio, ordre_principal=ordre_principal, entity_mode=True)
-            out[pkey] = _attach_display_cells(ranked, entity_mode=True)
+            ranked = engine_rank_rows(ent_rows, desempat, presentacio, ordre_principal=ordre_principal, entity_mode=True)
+            out[pkey] = detail_runtime.attach_display_cells(ranked, entity_mode=True)
         return out
 
     for pkey, rows in per_particio.items():
-        ranked = _rank_v2(rows, desempat, presentacio, ordre_principal=ordre_principal, entity_mode=False)
-        out[pkey] = _attach_display_cells(ranked, entity_mode=False)
+        ranked = engine_rank_rows(rows, desempat, presentacio, ordre_principal=ordre_principal, entity_mode=False)
+        out[pkey] = detail_runtime.attach_display_cells(ranked, entity_mode=False)
     return out
 
 
