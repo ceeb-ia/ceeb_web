@@ -308,6 +308,86 @@ class ComputeEngineContractTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(rows_by_participant["Parella B"]["score"], 9.0)
         self.assertEqual(rows_by_participant["Parella B"]["posicio"], 2)
 
+    def test_compute_derived_team_team_pool_per_exercise_preaggregation(self):
+        app = self._create_aparell("TRPOOLX", "Tramp Team Pool Per Exercici")
+        comp_app = self._create_comp_aparell(self.comp, app, ordre=1, actiu=True)
+        comp_app.nombre_exercicis = 2
+        comp_app.save(update_fields=["nombre_exercicis"])
+
+        native_ctx = self._ensure_native_equip_context(self.comp)
+        context = EquipContext.objects.create(competicio=self.comp, code="trios", nom="Trios")
+        CompeticioAparellEquipContextSource.objects.create(
+            competicio=self.comp,
+            comp_aparell=comp_app,
+            context=context,
+        )
+
+        team_a = self._create_equip(self.comp, "Equip A", context=context)
+        team_b = self._create_equip(self.comp, "Equip B", context=context)
+        rows = (
+            (team_a, "A1", (10.0, 7.0)),
+            (team_a, "A2", (9.0, 1.0)),
+            (team_a, "A3", (8.0, 1.0)),
+            (team_b, "B1", (6.0, 5.0)),
+            (team_b, "B2", (6.0, 5.0)),
+            (team_b, "B3", (6.0, 5.0)),
+        )
+        for ordre, (team, name, scores) in enumerate(rows, start=1):
+            ins = self._create_inscripcio(self.comp, name, ordre=ordre)
+            InscripcioEquipAssignacio.objects.create(
+                competicio=self.comp,
+                context=native_ctx,
+                inscripcio=ins,
+                equip=self._create_equip(self.comp, f"Native {name}", context=native_ctx),
+            )
+            InscripcioEquipAssignacio.objects.create(
+                competicio=self.comp,
+                context=context,
+                inscripcio=ins,
+                equip=team,
+            )
+            for exercici, total in enumerate(scores, start=1):
+                ScoreEntry.objects.create(
+                    competicio=self.comp,
+                    comp_aparell=comp_app,
+                    inscripcio=ins,
+                    exercici=exercici,
+                    inputs={},
+                    outputs={},
+                    total=total,
+                )
+
+        schema = self._base_schema(comp_app.id)
+        schema["puntuacio"]["exercise_selection_scope"] = "team_pool"
+        schema["puntuacio"]["team_pool_mode_per_aparell"] = {str(comp_app.id): "per_exercici"}
+        schema["puntuacio"]["team_pool_participants_per_exercici_per_aparell"] = {
+            str(comp_app.id): {
+                "1": {"mode": "millor_n", "n": 2},
+                "2": {"mode": "millor_1"},
+            }
+        }
+        schema["puntuacio"]["team_pool_agregacio_participants_per_exercici_per_aparell"] = {
+            str(comp_app.id): {
+                "1": "sum",
+                "2": "sum",
+            }
+        }
+        schema["puntuacio"]["exercicis"] = {"mode": "tots"}
+        schema["puntuacio"]["agregacio_exercicis"] = "sum"
+        schema["equips"] = {
+            "context_code": "trios",
+            "team_mode": "derived_from_individual",
+            "incloure_sense_equip": False,
+        }
+
+        engine = self._compute_engine(tipus="equips", schema=schema)
+        rows_by_participant = {row["participant"]: row for row in engine["global"]}
+        self.assertEqual(sorted(rows_by_participant.keys()), ["Equip A", "Equip B"])
+        self.assertEqual(rows_by_participant["Equip A"]["score"], 26.0)
+        self.assertEqual(rows_by_participant["Equip A"]["posicio"], 1)
+        self.assertEqual(rows_by_participant["Equip B"]["score"], 17.0)
+        self.assertEqual(rows_by_participant["Equip B"]["posicio"], 2)
+
     def test_compute_derived_team_simple(self):
         app = self._create_aparell("TRTEAM", "Tramp Equips")
         comp_app = self._create_comp_aparell(self.comp, app, ordre=1, actiu=True)

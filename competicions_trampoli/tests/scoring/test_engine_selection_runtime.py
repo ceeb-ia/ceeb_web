@@ -172,6 +172,47 @@ class EngineSelectionRuntimeTests(unittest.TestCase):
         )
         self.assertNotIn(202, contributors)
 
+    def test_team_pool_per_exercise_keeps_buckets_split_before_main_selection(self):
+        runtime = self._build_derived_team_runtime(
+            base_ex_cfg={"mode": "millor_1"},
+            candidate_source_mode="participant_aggregate",
+            candidate_source_cfg={"mode": "millor_n", "best_n": 2, "agregacio_exercicis": "avg"},
+            team_pool_mode_per_aparell={"1": "per_exercici"},
+            team_pool_participants_per_exercici_per_aparell={
+                "1": {
+                    "1": {"mode": "millor_1"},
+                    "2": {"mode": "millor_1"},
+                }
+            },
+            team_pool_agregacio_participants_per_exercici_per_aparell={"1": {"1": "sum", "2": "sum"}},
+            app_ex_rows_by_ins={
+                1: {
+                    101: [
+                        _row(app_id=1, inscripcio_id=101, exercici=1, value=9.0, by_camp={"total": 9.0, "E": 4.0}),
+                        _row(app_id=1, inscripcio_id=101, exercici=2, value=1.0, by_camp={"total": 1.0, "E": 1.0}),
+                    ],
+                    202: [
+                        _row(app_id=1, inscripcio_id=202, exercici=1, value=8.0, by_camp={"total": 8.0, "E": 3.0}),
+                        _row(app_id=1, inscripcio_id=202, exercici=2, value=8.0, by_camp={"total": 8.0, "E": 2.0}),
+                    ],
+                }
+            },
+        )
+
+        selected_rows = runtime.get_main_selected_rows_for_group([101, 202])
+        contributors = runtime.get_main_selected_contributors_for_group([101, 202])
+
+        self.assertEqual(len(selected_rows[1]), 1)
+        self.assertEqual(selected_rows[1][0]["value"], 9.0)
+        self.assertEqual(selected_rows[1][0]["exercici"], 1)
+        self.assertEqual(selected_rows[1][0]["team_pool_bucket_mode"], "per_exercici")
+        self.assertEqual(selected_rows[1][0]["team_pool_bucket_member_count"], 1)
+        self.assertEqual(
+            [(row["inscripcio_id"], row["exercici"], row["value"]) for row in contributors[101][1]],
+            [(101, 1, 9.0)],
+        )
+        self.assertNotIn(202, contributors)
+
     def test_build_ctx_exports_exposes_bound_group_adapters(self):
         runtime = self._build_derived_team_runtime()
 

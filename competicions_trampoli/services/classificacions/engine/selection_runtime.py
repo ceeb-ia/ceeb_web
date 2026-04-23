@@ -14,6 +14,11 @@ from .selection import (
     _normalize_participants_cfg,
     _pick_exercicis_rows,
 )
+from .team_pool_buckets import (
+    TEAM_POOL_MODE_PER_EXERCISE,
+    build_team_pool_bucket_rows,
+    resolve_team_pool_mode_for_app as resolve_team_pool_bucket_mode_for_app,
+)
 
 
 EXERCISE_SELECTION_SCOPE_PER_MEMBER = "per_member"
@@ -106,6 +111,9 @@ class SelectionRuntime:
         candidate_source_per_aparell: Mapping[Any, Any] | None = None,
         participants_per_aparell: Mapping[Any, Any] | None = None,
         agregacio_participants_per_aparell: Mapping[Any, Any] | None = None,
+        team_pool_mode_per_aparell: Mapping[Any, Any] | None = None,
+        team_pool_participants_per_exercici_per_aparell: Mapping[Any, Any] | None = None,
+        team_pool_agregacio_participants_per_exercici_per_aparell: Mapping[Any, Any] | None = None,
         exercise_selection_scope: str = EXERCISE_SELECTION_SCOPE_PER_MEMBER,
         allow_candidate_source: bool | None = None,
         allow_main_participant_selection_step: bool | None = None,
@@ -134,6 +142,13 @@ class SelectionRuntime:
         self.candidate_source_per_aparell = dict(candidate_source_per_aparell or {})
         self.participants_per_aparell = dict(participants_per_aparell or {})
         self.agregacio_participants_per_aparell = dict(agregacio_participants_per_aparell or {})
+        self.team_pool_mode_per_aparell = dict(team_pool_mode_per_aparell or {})
+        self.team_pool_participants_per_exercici_per_aparell = dict(
+            team_pool_participants_per_exercici_per_aparell or {}
+        )
+        self.team_pool_agregacio_participants_per_exercici_per_aparell = dict(
+            team_pool_agregacio_participants_per_exercici_per_aparell or {}
+        )
         self.exercise_selection_scope = self._normalize_exercise_selection_scope(exercise_selection_scope)
         self.allow_candidate_source = (
             bool(allow_candidate_source)
@@ -225,6 +240,8 @@ class SelectionRuntime:
     def resolve_candidate_source_for_app(self, app_id: int):
         fallback_mode = self.candidate_source_mode
         fallback_cfg = dict(self.candidate_source_cfg)
+        if self._is_team_pool_per_exercise_for_app(app_id):
+            return "raw_exercise", fallback_cfg
         if not self.allow_candidate_source:
             return "raw_exercise", fallback_cfg
 
@@ -251,6 +268,17 @@ class SelectionRuntime:
             cfg = {"mode": "tots"}
         raw_agg = _lookup_app_cfg_value(self.agregacio_participants_per_aparell, app_id)
         return cfg, _normalize_agg(raw_agg, "sum")
+
+    def resolve_team_pool_mode_for_app(self, app_id: int):
+        return resolve_team_pool_bucket_mode_for_app(self.team_pool_mode_per_aparell, app_id)
+
+    def _is_team_pool_per_exercise_for_app(self, app_id: int):
+        return (
+            self.tipus == "equips"
+            and self.team_mode == "derived_from_individual"
+            and self.exercise_selection_scope == EXERCISE_SELECTION_SCOPE_TEAM_POOL
+            and self.resolve_team_pool_mode_for_app(app_id) == TEAM_POOL_MODE_PER_EXERCISE
+        )
 
     def _score_camps_for_app(self, app_id: int, *, include_per_exercise=False):
         raw = _lookup_app_cfg_value(self.camps_per_aparell, app_id)
@@ -610,7 +638,7 @@ class SelectionRuntime:
         mids = sorted(set(_dedupe_int_ids_preserve_order(member_ids or [])))
         return f"members:{','.join(str(member_id) for member_id in mids)}"
 
-    def _build_derived_team_rows_for_app(self, member_ids, app_id: int, *, field_code=None):
+    def _build_derived_team_flat_rows_for_app(self, member_ids, app_id: int, *, field_code=None):
         rows = []
         for member_id in _dedupe_int_ids_preserve_order(member_ids):
             member_rows = ((self.app_ex_rows_by_ins.get(int(app_id)) or {}).get(member_id)) or []
@@ -630,6 +658,33 @@ class SelectionRuntime:
                 item["inscripcio_id"] = member_id
                 rows.append(item)
         return rows
+
+    def _build_derived_team_rows_for_app(self, member_ids, app_id: int, *, field_code=None):
+        if not self._is_team_pool_per_exercise_for_app(app_id):
+            return self._build_derived_team_flat_rows_for_app(member_ids, app_id, field_code=field_code)
+
+        source_rows = []
+        for member_id in _dedupe_int_ids_preserve_order(member_ids):
+            member_rows = ((self.app_ex_rows_by_ins.get(int(app_id)) or {}).get(member_id)) or []
+            for base_row in member_rows:
+                value = (
+                    ((base_row.get("by_camp") or {}).get(field_code))
+                    if field_code is not None
+                    else base_row.get("value")
+                )
+                item = self._copy_ex_row_with_value(base_row, value)
+                item["inscripcio_id"] = member_id
+                source_rows.append(item)
+
+        if not source_rows:
+            return []
+
+        return build_team_pool_bucket_rows(
+            app_id=int(app_id),
+            rows=source_rows,
+            team_pool_participants_per_exercici_per_aparell=self.team_pool_participants_per_exercici_per_aparell,
+            team_pool_agregacio_participants_per_exercici_per_aparell=self.team_pool_agregacio_participants_per_exercici_per_aparell,
+        )
 
     def _resolve_group_call_args(self, team_cache_key, member_ids):
         if member_ids is None:

@@ -128,6 +128,39 @@ class EngineSchemaTests(SimpleTestCase):
         self.assertEqual(merged["puntuacio"]["agregacio_participants_per_aparell"], {})
         self.assertEqual(merged["puntuacio"]["agregacio_exercicis_per_aparell"], {"1": "max"})
 
+    def test_merge_schema_keeps_team_pool_per_exercici_maps(self):
+        raw_schema = {
+            "puntuacio": {
+                "team_pool_mode_per_aparell": {"12": "per_exercici"},
+                "team_pool_participants_per_exercici_per_aparell": {
+                    "12": {
+                        "1": {"mode": "millor_n", "n": 2},
+                        "2": {"mode": "millor_1"},
+                    }
+                },
+                "team_pool_agregacio_participants_per_exercici_per_aparell": {
+                    "12": {"1": "sum", "2": "avg"}
+                },
+            }
+        }
+
+        merged = merge_schema(raw_schema)
+
+        self.assertEqual(merged["puntuacio"]["team_pool_mode_per_aparell"], {"12": "per_exercici"})
+        self.assertEqual(
+            merged["puntuacio"]["team_pool_participants_per_exercici_per_aparell"],
+            {
+                "12": {
+                    "1": {"mode": "millor_n", "n": 2},
+                    "2": {"mode": "millor_1"},
+                }
+            },
+        )
+        self.assertEqual(
+            merged["puntuacio"]["team_pool_agregacio_participants_per_exercici_per_aparell"],
+            {"12": {"1": "sum", "2": "avg"}},
+        )
+
     def test_normalize_schema_matches_current_team_birth_partition_flow(self):
         competicio = SimpleNamespace(data=date(2026, 4, 21))
         raw_schema = {

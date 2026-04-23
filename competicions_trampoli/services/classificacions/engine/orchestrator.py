@@ -158,6 +158,15 @@ def compute_classificacio(competicio, cfg_obj):
     agregacio_exercicis_per_aparell = punt.get("agregacio_exercicis_per_aparell") or {}
     if not isinstance(agregacio_exercicis_per_aparell, dict):
         agregacio_exercicis_per_aparell = {}
+    team_pool_mode_per_aparell = punt.get("team_pool_mode_per_aparell") or {}
+    if not isinstance(team_pool_mode_per_aparell, dict):
+        team_pool_mode_per_aparell = {}
+    team_pool_participants_per_exercici_per_aparell = punt.get("team_pool_participants_per_exercici_per_aparell") or {}
+    if not isinstance(team_pool_participants_per_exercici_per_aparell, dict):
+        team_pool_participants_per_exercici_per_aparell = {}
+    team_pool_agregacio_participants_per_exercici_per_aparell = punt.get("team_pool_agregacio_participants_per_exercici_per_aparell") or {}
+    if not isinstance(team_pool_agregacio_participants_per_exercici_per_aparell, dict):
+        team_pool_agregacio_participants_per_exercici_per_aparell = {}
 
     agg_camps = (punt.get("agregacio_camps") or "sum").lower().strip()
     candidate_source_mode = _normalize_candidate_source_mode(punt.get("candidate_source_mode"))
@@ -203,6 +212,21 @@ def compute_classificacio(competicio, cfg_obj):
     )
     if not allow_candidate_source:
         candidate_source_mode = "raw_exercise"
+    if (
+        tipus == "equips"
+        and team_mode == "derived_from_individual"
+        and exercise_selection_scope == "team_pool"
+    ):
+        for raw_app_id, raw_mode in list(team_pool_mode_per_aparell.items()):
+            try:
+                app_id = int(raw_app_id)
+            except Exception:
+                continue
+            if str(raw_mode or "").strip().lower() == "per_exercici":
+                candidate_source_per_aparell[str(app_id)] = {"mode": "raw_exercise"}
+        if any(str(raw_mode or "").strip().lower() == "per_exercici" for raw_mode in team_pool_mode_per_aparell.values()):
+            if str(candidate_source_mode or "").strip().lower() != "raw_exercise":
+                candidate_source_mode = "raw_exercise"
 
     def resolve_agregacio_camps_for_app(app_id: int):
         raw = agregacio_camps_per_aparell.get(str(app_id))
@@ -498,6 +522,9 @@ def compute_classificacio(competicio, cfg_obj):
         candidate_source_per_aparell=candidate_source_per_aparell,
         participants_per_aparell=participants_per_aparell,
         agregacio_participants_per_aparell=agregacio_participants_per_aparell,
+        team_pool_mode_per_aparell=team_pool_mode_per_aparell,
+        team_pool_participants_per_exercici_per_aparell=team_pool_participants_per_exercici_per_aparell,
+        team_pool_agregacio_participants_per_exercici_per_aparell=team_pool_agregacio_participants_per_exercici_per_aparell,
         exercise_selection_scope=exercise_selection_scope,
         allow_candidate_source=allow_candidate_source,
         allow_main_participant_selection_step=allow_main_participant_selection_step,
