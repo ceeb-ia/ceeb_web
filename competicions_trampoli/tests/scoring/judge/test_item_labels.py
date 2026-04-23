@@ -40,6 +40,14 @@ class JudgeItemLabelsAdminTests(_BaseTrampoliDataMixin, TestCase):
         comp_aparell = CompeticioAparell.objects.get(pk=self.comp_app.pk)
         self.assertEqual(comp_aparell.judge_ui_config, {})
 
+    def test_judge_admin_does_not_render_portal_display_mode_controls(self):
+        response = self.client.get(
+            f"{reverse('judges_qr_home', kwargs={'competicio_id': self.comp.id})}?comp_aparell={self.comp_app.id}"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "Mode del portal de jutges")
+        self.assertNotContains(response, "save_portal_display_mode")
+
     def test_judge_admin_saves_matrix_item_labels_on_comp_aparell(self):
         response = self.client.post(
             f"{reverse('judges_qr_home', kwargs={'competicio_id': self.comp.id})}?comp_aparell={self.comp_app.id}",

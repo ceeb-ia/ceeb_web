@@ -275,6 +275,23 @@
     .judge-exercise-panel-subtitle{ color:#6c757d; font-size:.8rem; margin-top:.1rem; }
     .judge-exercise-actions{ display:flex; justify-content:flex-end; gap:.5rem; margin-top:.75rem; }
     .judge-video-disabled{ margin-top:.5rem; }
+    .judge-view-mode{ display:flex; align-items:center; gap:.55rem; flex-wrap:wrap; }
+    .judge-view-mode-label{ color:#6c757d; font-size:.8rem; font-weight:600; }
+    .judge-view-mode-select{ width:auto; min-width:180px; }
+    .judge-competition-exercise-band{ margin-bottom:1rem; }
+    .judge-competition-exercise-title{
+      position:sticky;
+      top:0;
+      z-index:4;
+      padding:.55rem .7rem;
+      margin-bottom:.55rem;
+      border:1px solid #dbe7ff;
+      border-radius:.55rem;
+      background:#f8fbff;
+      color:#1e3a8a;
+      font-weight:800;
+    }
+    .judge-competition-entry .judge-exercise-panel{ margin-top:.65rem; }
   </style>
 
   <div class="card-surface">
@@ -293,13 +310,25 @@
         <div class="mt-2">
           <div class="judge-meta">
             Ordre segons la franja assignada a cada {% if team_subject_mode %}serie{% else %}grup{% endif %}.
-            {% if exercicis|length > 1 %}
+            {% if exercicis|length > 1 and portal_display_mode != "competition_order" %}
               Exercici inicial obert: {{ exercici }}.
+            {% elif exercicis|length > 1 %}
+              Mode ordre competicio: exercicis desplegats en sequencia.
             {% endif %}
             {% if franja_override %}
               Override actiu: {{ franja_override.titol|default:"Franja" }} · {{ franja_override.hora_inici|time:"H:i" }}-{{ franja_override.hora_fi|time:"H:i" }}.
             {% endif %}
           </div>
+          {% if exercicis|length > 1 %}
+          <div class="judge-view-mode mt-2">
+            <span class="judge-view-mode-label">Visualitzacio</span>
+            <select class="form-select form-select-sm judge-view-mode-select" id="portalViewModeSelect" aria-label="Canviar visualitzacio del portal">
+              {% for value, label in portal_display_mode_options %}
+                <option value="{{ value }}" {% if value == portal_display_mode %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          {% endif %}
         </div>
       </div>
       <div class="d-flex gap-2 align-items-center">
@@ -309,7 +338,7 @@
         {% if permissions %}
         <button
           type="button"
-          class="judge-nav-toggle d-lg-none"
+          class="judge-nav-toggle"
           id="insNavToggle"
           aria-label="Obrir navegacio d'inscripcions"
           aria-controls="insNavDrawer"
@@ -343,12 +372,6 @@
       </div>
 
       <div id="listWrap">
-        <div class="judge-nav-panel d-none d-lg-block mb-3">
-          <div class="judge-meta mb-2">Navegacio per {% if team_subject_mode %}equip{% else %}inscripcio{% endif %}</div>
-          <input type="text" class="form-control form-control-sm judge-nav-search" id="insNavSearchDesktop" placeholder="Cerca subjecte...">
-          <div id="insNavListDesktop"></div>
-        </div>
-
         {% if group_blocks or out_of_program_group_blocks %}
           <ul class="nav nav-tabs mb-3" id="groupTabs" role="tablist">
             {% for bloc in group_blocks %}
@@ -383,6 +406,64 @@
           {% if group_blocks or out_of_program_group_blocks %}
           {% for bloc in group_blocks %}
             <div class="group-pane {% if bloc.key != active_group_key %}d-none{% endif %}" data-group-pane="group-{{ bloc.key }}" data-group-label="{{ bloc.label }}">
+              {% if portal_display_mode == "competition_order" %}
+                {% for ex in exercicis %}
+                  <div class="judge-competition-exercise-band" data-competition-exercise-section="1" data-exercici="{{ ex }}">
+                    <div class="judge-competition-exercise-title">Exercici {{ ex }}</div>
+                    {% for ins in bloc.list %}
+                      <div id="card-{{ ins.id }}-{{ ex }}" class="judge-card judge-competition-entry mb-2" data-ins-id="{{ ins.id }}" data-exercici="{{ ex }}" data-subject-kind="{{ ins.subject_kind|default:'inscripcio' }}" data-ins-name="{{ ins.name|default:'Inscripcio' }}">
+                        <div class="d-flex justify-content-between align-items-center">
+                          <div>
+                            <div class="fw-semibold">{{ ins.nom_i_cognoms|default:"Inscripcio" }}</div>
+                            <div class="judge-meta">
+                              {{ bloc.label }} · Exercici {{ ex }} · Ordre {{ ins.rotation_order_display|default_if_none:ins.ordre_sortida }}{% if ins.rotation_base_order_display %} · Base {{ ins.rotation_base_order_display }}{% endif %}{% if bloc.franja_label %} · {{ bloc.franja_label }}{% endif %}
+                            </div>
+                            {% if team_subject_mode and ins.members %}
+                            <div class="judge-meta">
+                              {% for member in ins.members %}
+                                {% if not forloop.first %} · {% endif %}M{{ forloop.counter }} {{ member.name }}
+                              {% endfor %}
+                            </div>
+                            {% endif %}
+                          </div>
+                        </div>
+
+                        <section class="judge-exercise-panel" data-exercise-panel="1" data-ins-id="{{ ins.id }}" data-exercici="{{ ex }}" data-competition-order-panel="1">
+                          <div class="judge-exercise-panel-head">
+                            <div>
+                              <div class="judge-exercise-panel-title">Exercici {{ ex }}</div>
+                              <div class="judge-exercise-panel-subtitle">Puntuacio i video d'aquesta entrada.</div>
+                            </div>
+                            <div class="judge-meta" id="status-{{ ins.id }}-{{ ex }}"></div>
+                          </div>
+                          <div id="editor-inner-{{ ins.id }}-{{ ex }}"></div>
+                          {% if video_capture_enabled %}
+                          <div class="mt-2" id="video-panel-{{ ins.id }}-{{ ex }}" data-video-panel-inner="1" data-ins-id="{{ ins.id }}" data-exercici="{{ ex }}">
+                            <div class="d-flex align-items-center flex-wrap" style="gap:8px;">
+                              <button type="button" class="btn btn-sm btn-outline-danger" id="video-rec-btn-{{ ins.id }}-{{ ex }}" onclick="toggleRecord('{{ ins.id }}', '{{ ex }}')">Gravar</button>
+                              <button type="button" class="btn btn-sm btn-outline-primary" id="video-upload-btn-{{ ins.id }}-{{ ex }}" onclick="uploadRecorded('{{ ins.id }}', '{{ ex }}')" disabled>Pujar</button>
+                              <button type="button" class="btn btn-sm btn-outline-secondary" id="video-delete-btn-{{ ins.id }}-{{ ex }}" onclick="deleteVideo('{{ ins.id }}', '{{ ex }}')" disabled>Regravar</button>
+                              <span class="judge-meta video-status" id="video-status-{{ ins.id }}-{{ ex }}">Sense video</span>
+                            </div>
+                            <video id="video-preview-{{ ins.id }}-{{ ex }}" class="judge-video-preview mt-2" controls playsinline style="display:none;"></video>
+                          </div>
+                          {% else %}
+                          <div class="judge-video-disabled">
+                            <span class="judge-meta">Gravacio desactivada per aquest QR.</span>
+                          </div>
+                          {% endif %}
+                          <div class="judge-exercise-actions">
+                            {% if not judge_kiosk %}
+                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="copyPrev('{{ ins.id }}', '{{ ex }}')">Copia anterior</button>
+                            {% endif %}
+                            <button type="button" class="btn btn-sm btn-primary" onclick="saveNow('{{ ins.id }}', '{{ ex }}')">Desa</button>
+                          </div>
+                        </section>
+                      </div>
+                    {% endfor %}
+                  </div>
+                {% endfor %}
+              {% else %}
               {% for ins in bloc.list %}
                 <div id="card-{{ ins.id }}" class="judge-card mb-2" data-ins-id="{{ ins.id }}" data-subject-kind="{{ ins.subject_kind|default:'inscripcio' }}" data-ins-name="{{ ins.name|default:'Inscripcio' }}">
                   <div class="d-flex justify-content-between align-items-center">
@@ -444,10 +525,62 @@
                   </div>
                 </div>
               {% endfor %}
+              {% endif %}
             </div>
           {% endfor %}
           {% for bloc in out_of_program_group_blocks %}
             <div class="group-pane {% if bloc.key != active_group_key %}d-none{% endif %}" data-group-pane="group-{{ bloc.key }}" data-group-label="{{ bloc.label }} (fora de programa)">
+              {% if portal_display_mode == "competition_order" %}
+                {% for ex in exercicis %}
+                  <div class="judge-competition-exercise-band" data-competition-exercise-section="1" data-exercici="{{ ex }}">
+                    <div class="judge-competition-exercise-title">Exercici {{ ex }}</div>
+                    {% for ins in bloc.list %}
+                      <div id="off-program-card-{{ ins.id }}-{{ ex }}" class="judge-card judge-competition-entry mb-2" data-ins-id="{{ ins.id }}" data-exercici="{{ ex }}" data-subject-kind="{{ ins.subject_kind|default:'inscripcio' }}" data-ins-name="{{ ins.nom_i_cognoms|default:'Inscripcio' }}">
+                        <div class="d-flex justify-content-between align-items-center">
+                          <div>
+                            <div class="fw-semibold">{{ ins.nom_i_cognoms|default:"Inscripcio" }}</div>
+                            <div class="judge-meta">
+                              Fora de programa · {{ bloc.label }} · Exercici {{ ex }} · Ordre {{ ins.rotation_order_display|default_if_none:ins.ordre_sortida }}{% if ins.rotation_base_order_display %} · Base {{ ins.rotation_base_order_display }}{% endif %}{% if bloc.franja_label %} · {{ bloc.franja_label }}{% endif %}
+                            </div>
+                          </div>
+                        </div>
+
+                        <section class="judge-exercise-panel" data-exercise-panel="1" data-ins-id="{{ ins.id }}" data-exercici="{{ ex }}" data-competition-order-panel="1">
+                          <div class="judge-exercise-panel-head">
+                            <div>
+                              <div class="judge-exercise-panel-title">Exercici {{ ex }}</div>
+                              <div class="judge-exercise-panel-subtitle">Puntuacio i video d'aquesta entrada.</div>
+                            </div>
+                            <div class="judge-meta" id="status-{{ ins.id }}-{{ ex }}"></div>
+                          </div>
+                          <div id="editor-inner-{{ ins.id }}-{{ ex }}"></div>
+                          {% if video_capture_enabled %}
+                          <div class="mt-2" id="video-panel-{{ ins.id }}-{{ ex }}" data-video-panel-inner="1" data-ins-id="{{ ins.id }}" data-exercici="{{ ex }}">
+                            <div class="d-flex align-items-center flex-wrap" style="gap:8px;">
+                              <button type="button" class="btn btn-sm btn-outline-danger" id="video-rec-btn-{{ ins.id }}-{{ ex }}" onclick="toggleRecord('{{ ins.id }}', '{{ ex }}')">Gravar</button>
+                              <button type="button" class="btn btn-sm btn-outline-primary" id="video-upload-btn-{{ ins.id }}-{{ ex }}" onclick="uploadRecorded('{{ ins.id }}', '{{ ex }}')" disabled>Pujar</button>
+                              <button type="button" class="btn btn-sm btn-outline-secondary" id="video-delete-btn-{{ ins.id }}-{{ ex }}" onclick="deleteVideo('{{ ins.id }}', '{{ ex }}')" disabled>Regravar</button>
+                              <span class="judge-meta video-status" id="video-status-{{ ins.id }}-{{ ex }}">Sense video</span>
+                            </div>
+                            <video id="video-preview-{{ ins.id }}-{{ ex }}" class="judge-video-preview mt-2" controls playsinline style="display:none;"></video>
+                          </div>
+                          {% else %}
+                          <div class="judge-video-disabled">
+                            <span class="judge-meta">Gravacio desactivada per aquest QR.</span>
+                          </div>
+                          {% endif %}
+                          <div class="judge-exercise-actions">
+                            {% if not judge_kiosk %}
+                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="copyPrev('{{ ins.id }}', '{{ ex }}')">Copia anterior</button>
+                            {% endif %}
+                            <button type="button" class="btn btn-sm btn-primary" onclick="saveNow('{{ ins.id }}', '{{ ex }}')">Desa</button>
+                          </div>
+                        </section>
+                      </div>
+                    {% endfor %}
+                  </div>
+                {% endfor %}
+              {% else %}
               {% for ins in bloc.list %}
                 <div id="off-program-card-{{ ins.id }}" class="judge-card mb-2" data-ins-id="{{ ins.id }}" data-ins-name="{{ ins.nom_i_cognoms|default:'Inscripcio' }}">
                   <div class="d-flex justify-content-between align-items-center">
@@ -502,6 +635,7 @@
                   </div>
                 </div>
               {% endfor %}
+              {% endif %}
             </div>
           {% endfor %}
           {% else %}
@@ -512,15 +646,15 @@
           <div class="judge-meta mb-3">Els grups fora de programa apareixen com a pestanyes marcades amb l'etiqueta "Fora".</div>
         {% endif %}
       </div>
-      <div class="judge-nav-backdrop d-lg-none" id="insNavBackdrop"></div>
-      <aside class="judge-nav-drawer d-lg-none" id="insNavDrawer" aria-hidden="true">
+      <div class="judge-nav-backdrop" id="insNavBackdrop"></div>
+      <aside class="judge-nav-drawer" id="insNavDrawer" aria-hidden="true">
         <div class="judge-nav-drawer-head">
           <div class="fw-semibold">Navegacio</div>
           <button type="button" class="btn btn-sm btn-outline-secondary" id="insNavClose">Tancar</button>
         </div>
         <div class="judge-nav-drawer-body">
-          <input type="text" class="form-control form-control-sm judge-nav-search" id="insNavSearchMobile" placeholder="Cerca nom...">
-          <div id="insNavListMobile"></div>
+          <input type="text" class="form-control form-control-sm judge-nav-search" id="insNavSearchDrawer" placeholder="Cerca nom...">
+          <div id="insNavListDrawer"></div>
         </div>
       </aside>
       <div class="judge-support-backdrop" id="supportNavBackdrop"></div>
@@ -563,6 +697,28 @@
   const CSRF_TOKEN = "{{ csrf_token }}";
 </script>
 <script>
+  (function(){
+    const url = new URL(window.location.href);
+    const current = String(url.searchParams.get("view_mode") || "").trim().toLowerCase();
+    if(current) return;
+
+    let saved = "";
+    try{
+      saved = String(
+        window.localStorage.getItem("judgePortalViewMode:token:{{ token_obj.id }}")
+        || window.localStorage.getItem("judgePortalViewMode:comp_aparell:{{ comp_aparell.id }}")
+        || ""
+      ).trim().toLowerCase();
+    } catch(_err){
+      saved = "";
+    }
+
+    if(saved !== "competition_order") return;
+    url.searchParams.set("view_mode", saved);
+    window.location.replace(url.toString());
+  })();
+</script>
+<script>
   const SCHEMA = JSON.parse(document.getElementById("schema-data").textContent || "{}");
   const ITEM_LABELS_BY_FIELD = JSON.parse(document.getElementById("judge-item-labels-data").textContent || "{}");
   const PERMS  = JSON.parse(document.getElementById("perms-data").textContent || "[]");
@@ -593,6 +749,9 @@
   }
   const EXERCISES = {{ exercicis|safe }};
   const EXERCICI_HINT = {{ exercici }};
+  const PORTAL_DISPLAY_MODE = "{{ portal_display_mode|default:'compact' }}";
+  const PORTAL_DISPLAY_MODE_STORAGE_KEY = "judgePortalViewMode:token:{{ token_obj.id }}";
+  const PORTAL_DISPLAY_MODE_COMP_APARELL_KEY = "judgePortalViewMode:comp_aparell:{{ comp_aparell.id }}";
   const TEAM_SUBJECT_MODE = {{ team_subject_mode|yesno:"true,false" }};
   const SUBJECTS_BY_ID = {};
   const SUBJECT_DOM_ID_BY_SUBJECT_ID = {};
@@ -633,6 +792,46 @@
   }
   function allExerciseKeys(){
     return Array.isArray(EXERCISES) ? EXERCISES.map((ex) => exerciseKey(ex)) : [];
+  }
+  function sanitizePortalDisplayMode(mode){
+    const clean = String(mode || "").trim().toLowerCase();
+    return clean === "competition_order" ? "competition_order" : "compact";
+  }
+  function persistPortalDisplayMode(mode){
+    const clean = sanitizePortalDisplayMode(mode);
+    try{
+      window.localStorage.setItem(PORTAL_DISPLAY_MODE_STORAGE_KEY, clean);
+      window.localStorage.setItem(PORTAL_DISPLAY_MODE_COMP_APARELL_KEY, clean);
+    } catch(_err){
+      // ignore storage failures
+    }
+    return clean;
+  }
+  function updatePortalDisplayMode(mode){
+    const clean = persistPortalDisplayMode(mode);
+    const url = new URL(window.location.href);
+    const current = sanitizePortalDisplayMode(url.searchParams.get("view_mode") || PORTAL_DISPLAY_MODE);
+    if(clean === "compact"){
+      url.searchParams.delete("view_mode");
+    } else {
+      url.searchParams.set("view_mode", clean);
+    }
+    const nextUrl = url.toString();
+    if(clean === current && nextUrl === window.location.href){
+      return;
+    }
+    window.location.assign(nextUrl);
+  }
+  function initPortalViewModeControl(){
+    const select = document.getElementById("portalViewModeSelect");
+    if(!select) return;
+    select.value = sanitizePortalDisplayMode(PORTAL_DISPLAY_MODE);
+    select.addEventListener("change", () => {
+      updatePortalDisplayMode(select.value);
+    });
+  }
+  function isCompetitionOrderMode(){
+    return PORTAL_DISPLAY_MODE === "competition_order";
   }
   function getInsScoreBox(insId){
     const key = String(insId);
@@ -946,6 +1145,10 @@
     ));
   }
   const NAV_LINKS_BY_INS = {};
+  const NAV_LINKS_BY_ENTRY = {};
+  function navEntryKey(insId, exercici){
+    return `${String(insId)}:${exerciseKey(exercici)}`;
+  }
   function getVideoState(insId, exercici){
     const key = entryKey(insId, exercici);
     if(!recordedVideoByEntry[key]){
@@ -1584,7 +1787,24 @@
   function loadVisibleExerciseVideos(){
     if(!VIDEO_CAPTURE_ENABLED) return;
     document.querySelectorAll('[data-group-pane]:not(.d-none) [data-exercise-panel="1"]:not(.d-none)[data-ins-id][data-exercici]').forEach((panel) => {
-      openExercisePanel(panel.dataset.insId || "", panel.dataset.exercici || "", { forceVideo: false });
+      const insId = panel.dataset.insId || "";
+      const exercici = panel.dataset.exercici || "";
+      if(isCompetitionOrderMode()){
+        const videoState = getVideoState(insId, exercici);
+        if(!canRecordVideo()){
+          setVideoStatus(insId, exercici, "err", "Camera no disponible en aquest navegador.");
+          applyVideoUiState(insId, exercici, {
+            busy: false,
+            hasPending: !!videoState.pendingBlob,
+            hasStored: !!videoState.hasStored,
+            isRecording: false,
+          });
+        } else {
+          fetchVideoStatus(insId, exercici, { force: false });
+        }
+        return;
+      }
+      openExercisePanel(insId, exercici, { forceVideo: false });
     });
   }
 
@@ -1615,21 +1835,31 @@
     loadVisibleExerciseVideos();
   }
 
-  function markActiveNav(insId){
+  function markActiveNav(insId, exercici){
     document.querySelectorAll(".judge-nav-link.is-active").forEach(el => el.classList.remove("is-active"));
+    if(isCompetitionOrderMode() && exercici){
+      (NAV_LINKS_BY_ENTRY[navEntryKey(insId, exercici)] || []).forEach(el => el.classList.add("is-active"));
+      return;
+    }
     (NAV_LINKS_BY_INS[String(insId)] || []).forEach(el => el.classList.add("is-active"));
   }
 
-  function focusInscripcioCard(insId){
-    const card = document.querySelector(`.judge-card[data-ins-id="${insId}"]`);
+  function focusEntryCard(insId, exercici){
+    const card = (isCompetitionOrderMode() && exercici)
+      ? document.querySelector(`.judge-card[data-ins-id="${insId}"][data-exercici="${exerciseKey(exercici)}"]`)
+      : document.querySelector(`.judge-card[data-ins-id="${insId}"]`);
     if(!card) return;
     const pane = card.closest("[data-group-pane]");
     if(pane) setActiveGroup(pane.dataset.groupPane);
-    markActiveNav(insId);
+    markActiveNav(insId, card.dataset.exercici || exercici || "");
     card.classList.add("flash");
     card.scrollIntoView({ behavior: "smooth", block: "start" });
     window.setTimeout(() => card.classList.remove("flash"), 650);
     closeMobileInsNav();
+  }
+
+  function focusInscripcioCard(insId){
+    focusEntryCard(insId, "");
   }
 
   function collectInsNavRows(){
@@ -1640,6 +1870,7 @@
       pane.querySelectorAll(".judge-card[data-ins-id]").forEach((card) => {
         rows.push({
           insId: String(card.dataset.insId || ""),
+          exercici: exerciseKey(card.dataset.exercici || ""),
           name: String(card.dataset.insName || card.querySelector(".fw-semibold")?.textContent || "").trim(),
           groupTarget: gTarget,
           groupLabel: gLabel,
@@ -1681,23 +1912,39 @@
         a.href = "#";
         a.className = "judge-nav-link is-empty";
         a.dataset.insId = row.insId;
-        a.innerHTML = `
-          <span class="judge-nav-link-main">
-            <span class="judge-nav-label">${escHtml(row.name || `Inscripcio ${row.insId}`)}</span>
-            <span class="judge-nav-status is-empty" data-nav-status="1" data-ins-id="${escHtml(row.insId)}">Pendent</span>
-          </span>
-          <span class="judge-nav-ex-row">
-            ${exerciseKeys.map((exercici) => (
-              `<span class="judge-nav-ex-chip is-empty" data-nav-ex-chip="1" data-ins-id="${escHtml(row.insId)}" data-exercici="${escHtml(exercici)}">${escHtml(`Ex${exercici}`)}</span>`
-            )).join("")}
-          </span>
-        `;
+        if(isCompetitionOrderMode()){
+          const rowExercise = row.exercici || "";
+          a.dataset.exercici = rowExercise;
+          a.innerHTML = `
+            <span class="judge-nav-link-main">
+              <span class="judge-nav-label">${escHtml(row.name || `Inscripcio ${row.insId}`)} · ${escHtml(`Ex${rowExercise}`)}</span>
+              <span class="judge-nav-status is-empty" data-nav-entry-status="1" data-ins-id="${escHtml(row.insId)}" data-exercici="${escHtml(rowExercise)}">Pendent</span>
+            </span>
+          `;
+        } else {
+          a.innerHTML = `
+            <span class="judge-nav-link-main">
+              <span class="judge-nav-label">${escHtml(row.name || `Inscripcio ${row.insId}`)}</span>
+              <span class="judge-nav-status is-empty" data-nav-status="1" data-ins-id="${escHtml(row.insId)}">Pendent</span>
+            </span>
+            <span class="judge-nav-ex-row">
+              ${exerciseKeys.map((exercici) => (
+                `<span class="judge-nav-ex-chip is-empty" data-nav-ex-chip="1" data-ins-id="${escHtml(row.insId)}" data-exercici="${escHtml(exercici)}">${escHtml(`Ex${exercici}`)}</span>`
+              )).join("")}
+            </span>
+          `;
+        }
         a.addEventListener("click", (evt) => {
           evt.preventDefault();
-          focusInscripcioCard(row.insId);
+          focusEntryCard(row.insId, row.exercici || "");
         });
         if(!NAV_LINKS_BY_INS[row.insId]) NAV_LINKS_BY_INS[row.insId] = [];
         NAV_LINKS_BY_INS[row.insId].push(a);
+        if(isCompetitionOrderMode() && row.exercici){
+          const entryKey = navEntryKey(row.insId, row.exercici);
+          if(!NAV_LINKS_BY_ENTRY[entryKey]) NAV_LINKS_BY_ENTRY[entryKey] = [];
+          NAV_LINKS_BY_ENTRY[entryKey].push(a);
+        }
         containerEl.appendChild(a);
       });
     });
@@ -1732,6 +1979,25 @@
         });
       });
     });
+    Object.keys(NAV_LINKS_BY_ENTRY).forEach((key) => {
+      const parts = String(key).split(":");
+      const insId = parts[0] || "";
+      const exercici = parts.slice(1).join(":") || "";
+      const visualState = getExerciseVisualState(insId, exercici);
+      const statusText = visualState === "saved" ? "Desat" : (visualState === "dirty" ? "Pendent" : "Pendent");
+      (NAV_LINKS_BY_ENTRY[key] || []).forEach((linkEl) => {
+        linkEl.classList.toggle("is-complete", visualState === "saved");
+        linkEl.classList.toggle("is-partial", visualState === "dirty");
+        linkEl.classList.toggle("is-empty", visualState === "empty");
+        const statusEl = linkEl.querySelector('[data-nav-entry-status="1"]');
+        if(statusEl){
+          statusEl.textContent = statusText;
+          statusEl.classList.toggle("is-complete", visualState === "saved");
+          statusEl.classList.toggle("is-partial", visualState === "dirty");
+          statusEl.classList.toggle("is-empty", visualState === "empty");
+        }
+      });
+    });
   }
 
   function openMobileInsNav(){
@@ -1760,40 +2026,40 @@
   }
 
   function initInsNavigation(){
-    const desktopList = document.getElementById("insNavListDesktop");
-    const mobileList = document.getElementById("insNavListMobile");
-    const searchDesktop = document.getElementById("insNavSearchDesktop");
-    const searchMobile = document.getElementById("insNavSearchMobile");
+    const drawerList = document.getElementById("insNavListDrawer");
+    const searchDrawer = document.getElementById("insNavSearchDrawer");
     const openBtn = document.getElementById("insNavToggle");
     const closeBtn = document.getElementById("insNavClose");
     const backdrop = document.getElementById("insNavBackdrop");
 
-    const renderAll = () => {
-      Object.keys(NAV_LINKS_BY_INS).forEach(k => delete NAV_LINKS_BY_INS[k]);
-      renderInsNavList(desktopList, searchDesktop ? searchDesktop.value : "");
-      Object.keys(NAV_LINKS_BY_INS).forEach(k => delete NAV_LINKS_BY_INS[k]);
-      renderInsNavList(mobileList, searchMobile ? searchMobile.value : "");
-      const desktopLinks = document.querySelectorAll("#insNavListDesktop .judge-nav-link");
-      desktopLinks.forEach((el) => {
+    const registerNavLinks = (selector) => {
+      document.querySelectorAll(selector).forEach((el) => {
         const id = String(el.dataset.insId || "");
+        if(!id) return;
         if(!NAV_LINKS_BY_INS[id]) NAV_LINKS_BY_INS[id] = [];
         NAV_LINKS_BY_INS[id].push(el);
+        if(isCompetitionOrderMode() && el.dataset.exercici){
+          const key = navEntryKey(id, el.dataset.exercici);
+          if(!NAV_LINKS_BY_ENTRY[key]) NAV_LINKS_BY_ENTRY[key] = [];
+          NAV_LINKS_BY_ENTRY[key].push(el);
+        }
       });
-      document.querySelectorAll("#insNavListMobile .judge-nav-link").forEach((el) => {
-        const id = String(el.dataset.insId || "");
-        if(!NAV_LINKS_BY_INS[id]) NAV_LINKS_BY_INS[id] = [];
-        NAV_LINKS_BY_INS[id].push(el);
-      });
+    };
+
+    const renderDrawer = () => {
+      Object.keys(NAV_LINKS_BY_INS).forEach(k => delete NAV_LINKS_BY_INS[k]);
+      Object.keys(NAV_LINKS_BY_ENTRY).forEach(k => delete NAV_LINKS_BY_ENTRY[k]);
+      renderInsNavList(drawerList, searchDrawer ? searchDrawer.value : "");
+      registerNavLinks("#insNavListDrawer .judge-nav-link");
       refreshInsNavStatuses();
     };
 
-    if(searchDesktop) searchDesktop.addEventListener("input", renderAll);
-    if(searchMobile) searchMobile.addEventListener("input", renderAll);
+    if(searchDrawer) searchDrawer.addEventListener("input", renderDrawer);
     if(openBtn) openBtn.addEventListener("click", openMobileInsNav);
     if(closeBtn) closeBtn.addEventListener("click", closeMobileInsNav);
     if(backdrop) backdrop.addEventListener("click", closeMobileInsNav);
 
-    renderAll();
+    renderDrawer();
   }
 
   function renderAllEditors(){
@@ -2151,12 +2417,20 @@
 
   function copyPrev(insId, exercici){
     exercici = exerciseKey(exercici);
-    const currentCard = document.querySelector(`.judge-card[data-ins-id="${insId}"]`);
+    const currentCard = isCompetitionOrderMode()
+      ? document.querySelector(`.judge-card[data-ins-id="${insId}"][data-exercici="${exercici}"]`)
+      : document.querySelector(`.judge-card[data-ins-id="${insId}"]`);
     const pane = currentCard ? currentCard.closest("[data-group-pane]") : null;
+    const selector = isCompetitionOrderMode()
+      ? `.judge-card[data-ins-id][data-exercici="${exercici}"]`
+      : ".judge-card[data-ins-id]";
     const cards = pane
-      ? Array.from(pane.querySelectorAll(".judge-card[data-ins-id]"))
-      : Array.from(document.querySelectorAll(".judge-card[data-ins-id]"));
-    const idx = cards.findIndex(c => c.getAttribute("data-ins-id") === String(insId));
+      ? Array.from(pane.querySelectorAll(selector))
+      : Array.from(document.querySelectorAll(selector));
+    const idx = cards.findIndex(c => (
+      c.getAttribute("data-ins-id") === String(insId)
+      && (!isCompetitionOrderMode() || exerciseKey(c.dataset.exercici || "") === exercici)
+    ));
     if(idx <= 0) return;
 
     const prevId = cards[idx-1].getAttribute("data-ins-id");
@@ -2489,6 +2763,7 @@
   }
   // init
   buildPermText();
+  initPortalViewModeControl();
   renderAllEditors();
   initGroupTabs();
   initInsNavigation();

@@ -406,6 +406,68 @@ class RotationOrderingDisplayTests(_BaseTrampoliDataMixin, TestCase):
         self.assertIn('data-exercise-chip="1"', body)
         self.assertNotIn("data-exercise-link", body)
 
+    def test_judge_portal_uses_compact_display_mode_by_default(self):
+        self.comp_app.nombre_exercicis = 2
+        self.comp_app.save(update_fields=["nombre_exercicis"])
+
+        portal_url = reverse("judge_portal", kwargs={"token": self.token.id})
+        portal_res = self.client.get(portal_url)
+
+        self.assertEqual(portal_res.status_code, 200)
+        self.assertEqual(portal_res.context["portal_display_mode"], "compact")
+        body = portal_res.content.decode("utf-8")
+        self.assertIn('id="insNavDrawer"', body)
+        self.assertIn('id="insNavListDrawer"', body)
+        self.assertIn('data-exercise-chip="1"', body)
+        self.assertNotIn('data-competition-order-panel="1"', body)
+        self.assertNotIn('id="insNavListDesktop"', body)
+        self.assertNotIn('id="insNavListMobile"', body)
+        self.assertIn('id="portalViewModeSelect"', body)
+
+    def test_judge_portal_competition_order_display_groups_by_exercise_then_rotation_order(self):
+        extra_1 = self._create_inscripcio(self.comp, "Participant 4", ordre=4, grup=1)
+        extra_2 = self._create_inscripcio(self.comp, "Participant 5", ordre=5, grup=1)
+        Inscripcio.objects.filter(pk=extra_1.pk).update(ordre_competicio=4)
+        Inscripcio.objects.filter(pk=extra_2.pk).update(ordre_competicio=5)
+        extra_1.refresh_from_db()
+        extra_2.refresh_from_db()
+        self.comp_app.nombre_exercicis = 2
+        self.comp_app.save(update_fields=["nombre_exercicis"])
+
+        portal_url = reverse("judge_portal", kwargs={"token": self.token.id})
+        portal_res = self.client.get(portal_url, {"view_mode": "competition_order"})
+
+        self.assertEqual(portal_res.status_code, 200)
+        self.assertEqual(portal_res.context["portal_display_mode"], "competition_order")
+        expected_order = [self.ins_1, self.ins_3, extra_1, extra_2, self.ins_2]
+        self.assertEqual(
+            [ins["subject_id"] for ins in portal_res.context["group_blocks"][0]["list"]],
+            [ins.id for ins in expected_order],
+        )
+
+        body = portal_res.content.decode("utf-8")
+        self.assertNotIn('<button type="button" class="judge-exercise-chip"', body)
+        self.assertIn('data-competition-order-panel="1"', body)
+        ordered_markers = [
+            *(f'id="card-{ins.id}-1"' for ins in expected_order),
+            *(f'id="card-{ins.id}-2"' for ins in expected_order),
+        ]
+        marker_positions = [body.index(marker) for marker in ordered_markers]
+        self.assertEqual(marker_positions, sorted(marker_positions))
+
+    def test_judge_portal_invalid_view_mode_falls_back_to_compact(self):
+        self.comp_app.nombre_exercicis = 2
+        self.comp_app.save(update_fields=["nombre_exercicis"])
+
+        portal_url = reverse("judge_portal", kwargs={"token": self.token.id})
+        portal_res = self.client.get(portal_url, {"view_mode": "not-a-mode"})
+
+        self.assertEqual(portal_res.status_code, 200)
+        self.assertEqual(portal_res.context["portal_display_mode"], "compact")
+        body = portal_res.content.decode("utf-8")
+        self.assertIn('data-exercise-chip="1"', body)
+        self.assertNotIn('data-competition-order-panel="1"', body)
+
     def test_judge_portal_bootstraps_polling_contract_and_support_updates_url(self):
         self.token.can_record_video = True
         self.token.save(update_fields=["can_record_video"])

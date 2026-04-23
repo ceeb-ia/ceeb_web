@@ -40,6 +40,9 @@ from ...services.scoring.team_subject_contract import (
     runtime_schema_for_team_subjects,
 )
 from ._shared import (
+    JUDGE_PORTAL_DISPLAY_COMPACT,
+    JUDGE_PORTAL_DISPLAY_COMPETITION_ORDER,
+    _sanitize_judge_portal_display_mode,
     _clamp_exercici_for_aparell,
     _filter_inputs_for_allowed_codes,
     _judge_item_labels_map_for_comp_aparell,
@@ -56,6 +59,7 @@ from .permissions import (
 
 def _is_competitive_franja(franja):
     return getattr(franja, "tipus", RotacioFranja.TIPUS_COMPETITION) == RotacioFranja.TIPUS_COMPETITION
+
 
 @require_http_methods(["GET"])
 def judge_portal(request, token):
@@ -350,6 +354,7 @@ def judge_portal(request, token):
     max_ex = max(1, int(getattr(comp_aparell, "nombre_exercicis", 1) or 1))
     exercicis = list(range(1, max_ex + 1))
     exercici_default = _clamp_exercici_for_aparell(comp_aparell, request.GET.get("ex"))
+    portal_display_mode = _sanitize_judge_portal_display_mode(request.GET.get("view_mode"))
     scores_payload = {}
     for item in subject_list:
         subject_dom_id = _subject_dom_id(item) or str(item.get("subject_id") or "")
@@ -427,6 +432,11 @@ def judge_portal(request, token):
         "video_max_size_bytes": ScoreEntryVideo.VIDEO_MAX_SIZE_BYTES,
         "exercicis": exercicis,
         "exercici": exercici_default,
+        "portal_display_mode": portal_display_mode,
+        "portal_display_mode_options": [
+            (JUDGE_PORTAL_DISPLAY_COMPACT, "Compacte"),
+            (JUDGE_PORTAL_DISPLAY_COMPETITION_ORDER, "Ordre competicio"),
+        ],
         "team_subject_mode": team_subject_mode,
         "franges": competition_franges,
     }

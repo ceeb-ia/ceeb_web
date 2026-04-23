@@ -19,6 +19,13 @@ from ...services.scoring.update_payloads import (
 
 logger = logging.getLogger(__name__)
 
+JUDGE_PORTAL_DISPLAY_COMPACT = "compact"
+JUDGE_PORTAL_DISPLAY_COMPETITION_ORDER = "competition_order"
+JUDGE_PORTAL_DISPLAY_MODE_CHOICES = [
+    JUDGE_PORTAL_DISPLAY_COMPACT,
+    JUDGE_PORTAL_DISPLAY_COMPETITION_ORDER,
+]
+
 try:
     import qrcode
 except ImportError:  # pragma: no cover - optional at import time, required at runtime for QR endpoints.
@@ -228,6 +235,11 @@ def _clamp_exercici_for_aparell(comp_aparell, exercici_raw):
 
 def _judge_video_capture_enabled_for_token(tok) -> bool:
     return bool(getattr(tok, "can_record_video", False))
+
+
+def _sanitize_judge_portal_display_mode(value) -> str:
+    mode = str(value or "").strip().lower()
+    return mode if mode in JUDGE_PORTAL_DISPLAY_MODE_CHOICES else JUDGE_PORTAL_DISPLAY_COMPACT
 
 
 def _judge_item_labels_map_for_comp_aparell(comp_aparell) -> dict:
