@@ -638,9 +638,20 @@ def write_cfg_excel_sheet(ws, competicio, cfg_nom, columns, parts, *, tipus="ind
                         cursor += 1
 
             for col in layout["trailing"]:
-                ws.merge_cells(start_row=header_row, start_column=cursor, end_row=header_row + 2, end_column=cursor)
-                hc = ws.cell(row=header_row, column=cursor, value=str(col.get("label") or col.get("key") or ""))
-                hc.fill = fill_header_group
+                top = ws.cell(row=header_row, column=cursor, value="")
+                top.fill = fill_header_group
+                top.font = header_font
+                top.alignment = align_center
+                top.border = border
+
+                middle = ws.cell(row=header_row + 1, column=cursor, value="")
+                middle.fill = fill_header_subgroup
+                middle.font = header_font
+                middle.alignment = align_center
+                middle.border = border
+
+                hc = ws.cell(row=header_row + 2, column=cursor, value=str(col.get("label") or col.get("key") or ""))
+                hc.fill = fill_header
                 hc.font = header_font
                 hc.alignment = align_center
                 hc.border = border

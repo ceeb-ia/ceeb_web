@@ -1,4 +1,10 @@
-# services_classificacions.py
+"""Legacy frozen compute module kept for historical reference only.
+
+This file is intentionally retained in-repo, but the active runtime path
+now goes through `competicions_trampoli.services.classificacions.engine`.
+Do not wire new production/runtime imports back to this module.
+"""
+
 import json
 import logging
 from collections import defaultdict

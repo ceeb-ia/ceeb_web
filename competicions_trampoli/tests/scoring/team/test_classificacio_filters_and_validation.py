@@ -2030,6 +2030,265 @@ class TeamContextClassificacioFiltersAndValidationTests(TeamContextScoringFlowTe
         self.assertTrue(any("desempat[0].scope.participants" in err for err in errors))
         self.assertTrue(any("desempat[0].agregacio_participants" in err for err in errors))
 
+    def test_classificacio_validation_accepts_team_pool_per_exercici_for_derived_team(self):
+        individual_app = self._create_aparell("TRV_TP_OK", "Tramp team pool per exercise")
+        individual_comp_app = self._create_comp_aparell(self.comp, individual_app, ordre=2)
+        schema = {
+            "puntuacio": {
+                "aparells": {"mode": "seleccionar", "ids": [individual_comp_app.id]},
+                "camps_per_aparell": {str(individual_comp_app.id): ["total"]},
+                "agregacio_camps": "sum",
+                "exercicis": {"mode": "tots"},
+                "exercise_selection_scope": "team_pool",
+                "team_pool_mode_per_aparell": {
+                    str(individual_comp_app.id): "per_exercici",
+                },
+                "team_pool_participants_per_exercici_per_aparell": {
+                    str(individual_comp_app.id): {
+                        "1": {"mode": "millor_n", "n": 2},
+                        "2": {"mode": "millor_1"},
+                    }
+                },
+                "team_pool_agregacio_participants_per_exercici_per_aparell": {
+                    str(individual_comp_app.id): {"1": "sum", "2": "avg"}
+                },
+                "candidate_source_per_aparell": {
+                    str(individual_comp_app.id): {"mode": "raw_exercise"},
+                },
+                "agregacio_exercicis": "sum",
+                "agregacio_aparells": "sum",
+                "ordre": "desc",
+            },
+            "equips": {
+                "context_code": "parelles",
+                "team_mode": "derived_from_individual",
+                "incloure_sense_equip": False,
+            },
+        }
+
+        _schema, errors = _validate_schema_for_competicio(
+            self.comp,
+            schema,
+            tipus="equips",
+        )
+
+        self.assertEqual(errors, [])
+
+    def test_classificacio_validation_rejects_team_pool_per_exercici_outside_team_pool_scope(self):
+        individual_app = self._create_aparell("TRV_TP_SCOPE", "Tramp invalid scope")
+        individual_comp_app = self._create_comp_aparell(self.comp, individual_app, ordre=2)
+        schema = {
+            "puntuacio": {
+                "aparells": {"mode": "seleccionar", "ids": [individual_comp_app.id]},
+                "camps_per_aparell": {str(individual_comp_app.id): ["total"]},
+                "agregacio_camps": "sum",
+                "exercicis": {"mode": "tots"},
+                "exercise_selection_scope": "per_member",
+                "team_pool_mode_per_aparell": {
+                    str(individual_comp_app.id): "per_exercici",
+                },
+                "team_pool_participants_per_exercici_per_aparell": {
+                    str(individual_comp_app.id): {
+                        "1": {"mode": "millor_n", "n": 2},
+                    }
+                },
+                "team_pool_agregacio_participants_per_exercici_per_aparell": {
+                    str(individual_comp_app.id): {"1": "sum"}
+                },
+                "agregacio_exercicis": "sum",
+                "agregacio_aparells": "sum",
+                "ordre": "desc",
+            },
+            "equips": {
+                "context_code": "parelles",
+                "team_mode": "derived_from_individual",
+                "incloure_sense_equip": False,
+            },
+        }
+
+        _schema, errors = _validate_schema_for_competicio(
+            self.comp,
+            schema,
+            tipus="equips",
+        )
+
+        self.assertTrue(any("team_pool_mode_per_aparell" in err for err in errors))
+        self.assertTrue(any("exercise_selection_scope=team_pool" in err for err in errors))
+
+    def test_classificacio_validation_rejects_non_raw_candidate_source_for_team_pool_per_exercici(self):
+        individual_app = self._create_aparell("TRV_TP_CS", "Tramp candidate source")
+        individual_comp_app = self._create_comp_aparell(self.comp, individual_app, ordre=2)
+        schema = {
+            "puntuacio": {
+                "aparells": {"mode": "seleccionar", "ids": [individual_comp_app.id]},
+                "camps_per_aparell": {str(individual_comp_app.id): ["total"]},
+                "agregacio_camps": "sum",
+                "exercicis": {"mode": "tots"},
+                "exercise_selection_scope": "team_pool",
+                "team_pool_mode_per_aparell": {
+                    str(individual_comp_app.id): "per_exercici",
+                },
+                "team_pool_participants_per_exercici_per_aparell": {
+                    str(individual_comp_app.id): {
+                        "1": {"mode": "millor_n", "n": 2},
+                    }
+                },
+                "team_pool_agregacio_participants_per_exercici_per_aparell": {
+                    str(individual_comp_app.id): {"1": "sum"}
+                },
+                "candidate_source_mode": "participant_aggregate",
+                "candidate_source_cfg": {
+                    "mode": "tots",
+                    "agregacio_exercicis": "sum",
+                },
+                "candidate_source_per_aparell": {
+                    str(individual_comp_app.id): {
+                        "mode": "participant_aggregate",
+                        "cfg": {
+                            "mode": "tots",
+                            "agregacio_exercicis": "sum",
+                        },
+                    }
+                },
+                "agregacio_exercicis": "sum",
+                "agregacio_aparells": "sum",
+                "ordre": "desc",
+            },
+            "equips": {
+                "context_code": "parelles",
+                "team_mode": "derived_from_individual",
+                "incloure_sense_equip": False,
+            },
+        }
+
+        _schema, errors = _validate_schema_for_competicio(
+            self.comp,
+            schema,
+            tipus="equips",
+        )
+
+        self.assertTrue(any("puntuacio.candidate_source_mode" in err for err in errors))
+        self.assertTrue(any("puntuacio.candidate_source_per_aparell" in err for err in errors))
+        self.assertTrue(any("nomes admet exercicis crus" in err for err in errors))
+
+    def test_classificacio_validation_rejects_incomplete_team_pool_per_exercici_config(self):
+        individual_app = self._create_aparell("TRV_TP_PART", "Tramp incomplete team pool")
+        individual_comp_app = self._create_comp_aparell(self.comp, individual_app, ordre=2)
+        schema = {
+            "puntuacio": {
+                "aparells": {"mode": "seleccionar", "ids": [individual_comp_app.id]},
+                "camps_per_aparell": {str(individual_comp_app.id): ["total"]},
+                "agregacio_camps": "sum",
+                "exercicis": {"mode": "tots"},
+                "exercise_selection_scope": "team_pool",
+                "team_pool_mode_per_aparell": {
+                    str(individual_comp_app.id): "per_exercici",
+                },
+                "team_pool_participants_per_exercici_per_aparell": {
+                    str(individual_comp_app.id): {
+                        "1": {"mode": "millor_n", "n": 2},
+                        "2": {"mode": "millor_1"},
+                    }
+                },
+                "team_pool_agregacio_participants_per_exercici_per_aparell": {
+                    str(individual_comp_app.id): {"1": "sum"}
+                },
+                "agregacio_exercicis": "sum",
+                "agregacio_aparells": "sum",
+                "ordre": "desc",
+            },
+            "equips": {
+                "context_code": "parelles",
+                "team_mode": "derived_from_individual",
+                "incloure_sense_equip": False,
+            },
+        }
+
+        _schema, errors = _validate_schema_for_competicio(
+            self.comp,
+            schema,
+            tipus="equips",
+        )
+
+        self.assertTrue(
+            any(
+                "team_pool_agregacio_participants_per_exercici_per_aparell"
+                in err and "[2] es obligatori" in err
+                for err in errors
+            )
+        )
+
+    def test_classificacio_validation_rejects_team_pool_per_exercici_inside_desempat(self):
+        individual_app = self._create_aparell("TRV_TP_TIE", "Tramp team pool tie")
+        individual_comp_app = self._create_comp_aparell(self.comp, individual_app, ordre=2)
+        schema = {
+            "puntuacio": {
+                "aparells": {"mode": "seleccionar", "ids": [individual_comp_app.id]},
+                "camps_per_aparell": {str(individual_comp_app.id): ["total"]},
+                "agregacio_camps": "sum",
+                "exercicis": {"mode": "tots"},
+                "exercise_selection_scope": "team_pool",
+                "agregacio_exercicis": "sum",
+                "agregacio_aparells": "sum",
+                "ordre": "desc",
+            },
+            "desempat": [
+                {
+                    "camps": ["total"],
+                    "ordre": "desc",
+                    "team_pool_mode_per_aparell": {
+                        str(individual_comp_app.id): "per_exercici",
+                    },
+                    "pipeline_version": 1,
+                    "pipeline": {
+                        "aparells": {"mode": "seleccionar", "ids": [individual_comp_app.id]},
+                        "camps_per_aparell": {str(individual_comp_app.id): ["TOTAL"]},
+                        "agregacio_camps_per_aparell": {str(individual_comp_app.id): "sum"},
+                        "agregacio_camps": "sum",
+                        "exercise_selection_scope": "team_pool",
+                        "agregacio_exercicis": "sum",
+                        "agregacio_aparells": "sum",
+                        "mode_resultat_aparells": "score",
+                        "ordre": "desc",
+                        "team_pool_mode_per_aparell": {
+                            str(individual_comp_app.id): "per_exercici",
+                        },
+                        "team_pool_participants_per_exercici_per_aparell": {
+                            str(individual_comp_app.id): {
+                                "1": {"mode": "millor_n", "n": 2},
+                            }
+                        },
+                        "team_pool_agregacio_participants_per_exercici_per_aparell": {
+                            str(individual_comp_app.id): {"1": "sum"}
+                        },
+                    },
+                }
+            ],
+            "equips": {
+                "context_code": "parelles",
+                "team_mode": "derived_from_individual",
+                "incloure_sense_equip": False,
+            },
+        }
+
+        _schema, errors = _validate_schema_for_competicio(
+            self.comp,
+            schema,
+            tipus="equips",
+        )
+
+        self.assertTrue(any("desempat[0].team_pool_mode_per_aparell" in err for err in errors))
+        self.assertTrue(any("desempat[0].pipeline.team_pool_mode_per_aparell" in err for err in errors))
+        self.assertTrue(
+            any("desempat[0].pipeline.team_pool_participants_per_exercici_per_aparell" in err for err in errors)
+        )
+        self.assertTrue(
+            any(
+                "desempat[0].pipeline.team_pool_agregacio_participants_per_exercici_per_aparell" in err
+                for err in errors
+            )
+        )
+
     def test_classificacio_validation_accepts_puntuacio_member_selection_step_for_derived_per_member(self):
         individual_app = self._create_aparell("TRV_PM", "Tramp validation per member")
         individual_comp_app = self._create_comp_aparell(self.comp, individual_app, ordre=2)

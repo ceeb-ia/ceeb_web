@@ -71,6 +71,10 @@ from .partitions import (
 DETAIL_DISPLAY_KIND_NONE = "none"
 DETAIL_DISPLAY_KIND_SCALAR = "scalar"
 DETAIL_DISPLAY_KIND_JUDGE_ROWS = "judge_rows"
+TEAM_POOL_PER_EXERCISE_RAW_ONLY_ERROR = (
+    "El mode `team_pool` per exercici nomes admet exercicis crus. "
+    "No es compatible amb preseleccio o agregacio previa per membre."
+)
 
 
 def _is_native_team_metric_compatible(info: dict) -> bool:
@@ -939,6 +943,7 @@ def _validate_candidate_source_per_aparell(competicio, schema: dict, *, tipus="i
 
     active_app_ids, selected_ids = _get_active_and_selected_app_ids(competicio, punt)
     errors = []
+    per_exercici_app_ids = _team_pool_per_exercici_app_ids(punt)
     for raw_key, raw_value in raw_map.items():
         try:
             app_id = int(raw_key)
@@ -957,6 +962,11 @@ def _validate_candidate_source_per_aparell(competicio, schema: dict, *, tipus="i
         mode = str(raw_value.get("mode") or "raw_exercise").strip().lower()
         if mode not in {"raw_exercise", "participant_aggregate", "team_aggregate"}:
             errors.append(f"puntuacio.candidate_source_per_aparell[{app_id}].mode invalid: {mode}")
+            continue
+        if app_id in per_exercici_app_ids and mode != "raw_exercise":
+            errors.append(
+                f"puntuacio.candidate_source_per_aparell[{app_id}]: {TEAM_POOL_PER_EXERCISE_RAW_ONLY_ERROR}"
+            )
             continue
         if not _candidate_source_mode_allowed(mode, tipus=tipus, team_mode=team_mode):
             errors.append(
@@ -1045,6 +1055,247 @@ def _validate_participants_per_aparell(competicio, schema: dict, *, tipus="indiv
         agg = str(raw_value or "sum").strip().lower()
         if agg not in {"sum", "avg", "median", "max", "min"}:
             errors.append(f"puntuacio.agregacio_participants_per_aparell[{app_id}] invalid: {agg}")
+    return errors
+
+
+def _team_pool_per_exercici_app_ids(punt: dict):
+    punt = punt if isinstance(punt, dict) else {}
+    raw_map = punt.get("team_pool_mode_per_aparell") or {}
+    if not isinstance(raw_map, dict):
+        return set()
+    app_ids = set()
+    for raw_key, raw_value in raw_map.items():
+        try:
+            app_id = int(raw_key)
+        except Exception:
+            continue
+        if str(raw_value or "flat").strip().lower() == "per_exercici":
+            app_ids.add(app_id)
+    return app_ids
+
+
+def _validate_team_pool_participants_cfg_obj(cfg, prefix: str):
+    errors = []
+    if not isinstance(cfg, dict):
+        return [f"{prefix} ha de ser un objecte."]
+    mode = str(cfg.get("mode") or "tots").strip().lower()
+    if mode not in {"tots", "millor_1", "millor_n", "pitjor_1", "pitjor_n"}:
+        errors.append(f"{prefix}.mode invalid: {mode}")
+        return errors
+    if mode in {"millor_n", "pitjor_n"}:
+        try:
+            n_value = int(cfg.get("n") or 0)
+        except Exception:
+            n_value = 0
+        if n_value <= 0:
+            errors.append(f"{prefix}.n invalid.")
+    return errors
+
+
+def _validate_team_pool_per_exercici_per_aparell(competicio, schema: dict, *, tipus="individual", team_mode=""):
+    schema = schema or {}
+    punt = schema.get("puntuacio")
+    if not isinstance(punt, dict):
+        punt = {}
+
+    raw_mode_map = punt.get("team_pool_mode_per_aparell") or {}
+    raw_participants_map = punt.get("team_pool_participants_per_exercici_per_aparell") or {}
+    raw_agg_map = punt.get("team_pool_agregacio_participants_per_exercici_per_aparell") or {}
+    has_payload = any(
+        key in punt
+        for key in (
+            "team_pool_mode_per_aparell",
+            "team_pool_participants_per_exercici_per_aparell",
+            "team_pool_agregacio_participants_per_exercici_per_aparell",
+        )
+    )
+    if not has_payload and not raw_mode_map and not raw_participants_map and not raw_agg_map:
+        return []
+
+    errors = []
+    if raw_mode_map and not isinstance(raw_mode_map, dict):
+        errors.append("puntuacio.team_pool_mode_per_aparell ha de ser un objecte {app_id: mode}.")
+    if raw_participants_map and not isinstance(raw_participants_map, dict):
+        errors.append(
+            "puntuacio.team_pool_participants_per_exercici_per_aparell ha de ser un objecte {app_id: {exercici: cfg}}."
+        )
+    if raw_agg_map and not isinstance(raw_agg_map, dict):
+        errors.append(
+            "puntuacio.team_pool_agregacio_participants_per_exercici_per_aparell ha de ser un objecte {app_id: {exercici: agregacio}}."
+        )
+    if errors:
+        return errors
+
+    allow_team_pool_per_exercici = (
+        _is_derived_team_scope_enabled(tipus=tipus, team_mode=team_mode)
+        and str(punt.get("exercise_selection_scope") or "").strip().lower() == EXERCISE_SELECTION_SCOPE_TEAM_POOL
+    )
+    if not allow_team_pool_per_exercici:
+        return [
+            "puntuacio.team_pool_mode_per_aparell, "
+            "puntuacio.team_pool_participants_per_exercici_per_aparell i "
+            "puntuacio.team_pool_agregacio_participants_per_exercici_per_aparell "
+            "nomes son compatibles amb tipus='equips' + team_mode=derived_from_individual + "
+            "exercise_selection_scope=team_pool."
+        ]
+
+    active_app_ids, selected_ids = _get_active_and_selected_app_ids(competicio, punt)
+    per_exercici_app_ids = set()
+    participant_exercises_by_app = {}
+    agg_exercises_by_app = {}
+
+    for raw_key, raw_value in raw_mode_map.items():
+        try:
+            app_id = int(raw_key)
+        except Exception:
+            errors.append(f"puntuacio.team_pool_mode_per_aparell: app_id invalid {raw_key}")
+            continue
+        if app_id not in active_app_ids:
+            errors.append(f"puntuacio.team_pool_mode_per_aparell: aparell {app_id} no valid o no actiu.")
+            continue
+        if selected_ids and app_id not in selected_ids:
+            errors.append(f"puntuacio.team_pool_mode_per_aparell: aparell {app_id} no esta seleccionat a puntuacio.")
+            continue
+        mode = str(raw_value or "flat").strip().lower()
+        if mode not in {"flat", "per_exercici"}:
+            errors.append(f"puntuacio.team_pool_mode_per_aparell[{app_id}] invalid: {mode}")
+            continue
+        if mode == "per_exercici":
+            per_exercici_app_ids.add(app_id)
+
+    for raw_key, raw_value in raw_participants_map.items():
+        try:
+            app_id = int(raw_key)
+        except Exception:
+            errors.append(f"puntuacio.team_pool_participants_per_exercici_per_aparell: app_id invalid {raw_key}")
+            continue
+        if app_id not in active_app_ids:
+            errors.append(
+                f"puntuacio.team_pool_participants_per_exercici_per_aparell: aparell {app_id} no valid o no actiu."
+            )
+            continue
+        if selected_ids and app_id not in selected_ids:
+            errors.append(
+                f"puntuacio.team_pool_participants_per_exercici_per_aparell: aparell {app_id} no esta seleccionat a puntuacio."
+            )
+            continue
+        if app_id not in per_exercici_app_ids:
+            errors.append(
+                f"puntuacio.team_pool_participants_per_exercici_per_aparell[{app_id}] "
+                f"nomes es compatible amb puntuacio.team_pool_mode_per_aparell[{app_id}]=per_exercici."
+            )
+            continue
+        if not isinstance(raw_value, dict):
+            errors.append(f"puntuacio.team_pool_participants_per_exercici_per_aparell[{app_id}] ha de ser un objecte.")
+            continue
+        exercise_ids = set()
+        for raw_ex_key, ex_cfg in raw_value.items():
+            try:
+                exercici = int(raw_ex_key)
+            except Exception:
+                errors.append(
+                    f"puntuacio.team_pool_participants_per_exercici_per_aparell[{app_id}]: exercici invalid {raw_ex_key}"
+                )
+                continue
+            if exercici <= 0:
+                errors.append(
+                    f"puntuacio.team_pool_participants_per_exercici_per_aparell[{app_id}]: exercici invalid {raw_ex_key}"
+                )
+                continue
+            exercise_ids.add(exercici)
+            errors.extend(
+                _validate_team_pool_participants_cfg_obj(
+                    ex_cfg,
+                    f"puntuacio.team_pool_participants_per_exercici_per_aparell[{app_id}][{exercici}]",
+                )
+            )
+        participant_exercises_by_app[app_id] = exercise_ids
+        if not exercise_ids:
+            errors.append(
+                f"puntuacio.team_pool_participants_per_exercici_per_aparell[{app_id}] requereix almenys un exercici."
+            )
+
+    for raw_key, raw_value in raw_agg_map.items():
+        try:
+            app_id = int(raw_key)
+        except Exception:
+            errors.append(
+                f"puntuacio.team_pool_agregacio_participants_per_exercici_per_aparell: app_id invalid {raw_key}"
+            )
+            continue
+        if app_id not in active_app_ids:
+            errors.append(
+                f"puntuacio.team_pool_agregacio_participants_per_exercici_per_aparell: aparell {app_id} no valid o no actiu."
+            )
+            continue
+        if selected_ids and app_id not in selected_ids:
+            errors.append(
+                f"puntuacio.team_pool_agregacio_participants_per_exercici_per_aparell: aparell {app_id} no esta seleccionat a puntuacio."
+            )
+            continue
+        if app_id not in per_exercici_app_ids:
+            errors.append(
+                f"puntuacio.team_pool_agregacio_participants_per_exercici_per_aparell[{app_id}] "
+                f"nomes es compatible amb puntuacio.team_pool_mode_per_aparell[{app_id}]=per_exercici."
+            )
+            continue
+        if not isinstance(raw_value, dict):
+            errors.append(
+                f"puntuacio.team_pool_agregacio_participants_per_exercici_per_aparell[{app_id}] ha de ser un objecte."
+            )
+            continue
+        exercise_ids = set()
+        for raw_ex_key, agg_value in raw_value.items():
+            try:
+                exercici = int(raw_ex_key)
+            except Exception:
+                errors.append(
+                    f"puntuacio.team_pool_agregacio_participants_per_exercici_per_aparell[{app_id}]: exercici invalid {raw_ex_key}"
+                )
+                continue
+            if exercici <= 0:
+                errors.append(
+                    f"puntuacio.team_pool_agregacio_participants_per_exercici_per_aparell[{app_id}]: exercici invalid {raw_ex_key}"
+                )
+                continue
+            exercise_ids.add(exercici)
+            agg = str(agg_value or "sum").strip().lower()
+            if agg not in {"sum", "avg", "median", "max", "min"}:
+                errors.append(
+                    f"puntuacio.team_pool_agregacio_participants_per_exercici_per_aparell[{app_id}][{exercici}] invalid: {agg}"
+                )
+        agg_exercises_by_app[app_id] = exercise_ids
+        if not exercise_ids:
+            errors.append(
+                f"puntuacio.team_pool_agregacio_participants_per_exercici_per_aparell[{app_id}] requereix almenys un exercici."
+            )
+
+    for app_id in per_exercici_app_ids:
+        participant_ids = participant_exercises_by_app.get(app_id)
+        agg_ids = agg_exercises_by_app.get(app_id)
+        if participant_ids is None:
+            errors.append(
+                f"puntuacio.team_pool_participants_per_exercici_per_aparell[{app_id}] "
+                f"es obligatori quan puntuacio.team_pool_mode_per_aparell[{app_id}]=per_exercici."
+            )
+            participant_ids = set()
+        if agg_ids is None:
+            errors.append(
+                f"puntuacio.team_pool_agregacio_participants_per_exercici_per_aparell[{app_id}] "
+                f"es obligatori quan puntuacio.team_pool_mode_per_aparell[{app_id}]=per_exercici."
+            )
+            agg_ids = set()
+        missing_participants = sorted(agg_ids - participant_ids)
+        missing_agg = sorted(participant_ids - agg_ids)
+        for exercici in missing_participants:
+            errors.append(
+                f"puntuacio.team_pool_participants_per_exercici_per_aparell[{app_id}][{exercici}] es obligatori."
+            )
+        for exercici in missing_agg:
+            errors.append(
+                f"puntuacio.team_pool_agregacio_participants_per_exercici_per_aparell[{app_id}][{exercici}] es obligatori."
+            )
+
     return errors
 
 
@@ -1749,6 +2000,8 @@ def _validate_candidate_source(schema: dict, *, tipus="individual", team_mode=""
         return [
             f"puntuacio.candidate_source_mode no es compatible amb tipus={tipus} i team_mode={team_mode or 'none'}."
         ]
+    if _team_pool_per_exercici_app_ids(punt) and raw_mode != "raw_exercise":
+        return [f"puntuacio.candidate_source_mode: {TEAM_POOL_PER_EXERCISE_RAW_ONLY_ERROR}"]
     if raw_mode == "raw_exercise":
         return []
 
@@ -2276,6 +2529,16 @@ def validate_schema_for_competicio_detailed(competicio, schema_local, tipus="ind
         if not isinstance(tie, dict):
             errors.append(f"desempat[{idx}] ha de ser un objecte.")
             continue
+        raw_pipeline = tie.get("pipeline")
+        for key in (
+            "team_pool_mode_per_aparell",
+            "team_pool_participants_per_exercici_per_aparell",
+            "team_pool_agregacio_participants_per_exercici_per_aparell",
+        ):
+            if key in tie:
+                errors.append(f"desempat[{idx}].{key} no esta permes.")
+            if isinstance(raw_pipeline, dict) and key in raw_pipeline:
+                errors.append(f"desempat[{idx}].pipeline.{key} no esta permes.")
         if allow_pipeline_exercise_scope:
             raw_team_pool_contract_errors = validate_team_pool_tie_contract(
                 tie,
@@ -2284,7 +2547,6 @@ def validate_schema_for_competicio_detailed(competicio, schema_local, tipus="ind
             )
             if raw_team_pool_contract_errors is not None:
                 errors.extend(raw_team_pool_contract_errors)
-        raw_pipeline = tie.get("pipeline")
         if raw_pipeline is None:
             continue
         pipeline_for_shape = raw_pipeline
@@ -2345,6 +2607,14 @@ def validate_schema_for_competicio_detailed(competicio, schema_local, tipus="ind
     errors.extend(_validate_camps_per_exercici_per_aparell(competicio, schema_local))
     errors.extend(_validate_agregacio_camps_per_aparell(competicio, schema_local))
     errors.extend(_validate_agregacio_exercicis_per_aparell(competicio, schema_local))
+    errors.extend(
+        _validate_team_pool_per_exercici_per_aparell(
+            competicio,
+            schema_local,
+            tipus=tipus,
+            team_mode=schema_local.get("equips", {}).get("team_mode", ""),
+        )
+    )
     if native_team_desempat_validation:
         errors.extend(
             _validate_desempat_mode_compatibility(
