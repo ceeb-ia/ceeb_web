@@ -6,7 +6,7 @@
 <section class="about_section layout_padding">
   <div class="container">
     <div class="mb-4">
-      <h2 class="mb-1">Inici intern</h2>
+      <h2 class="mb-1">Inici</h2>
       {% if has_any_internal_app_access %}
       <p class="text-muted mb-0">Selecciona una de les aplicacions disponibles.</p>
       {% else %}
@@ -17,6 +17,20 @@
     {% if has_any_internal_app_access %}
     <div class="row">
       {% for app in internal_nav_apps %}
+
+      {% if app.app_key== "designacions" %}
+
+      <div class="card">
+          <img src="{% static 'images/designacions.jpg' %}" class="card-img-top" alt="Designacions">
+          <div class="card-body">
+              <h3 class="card-title">Designacions</h3>
+              <p class="card-text">Realitza les designacions arbitrals.</p>
+              <a href="{% url 'designacions_runs_list' %}" class="btn btn-primary">Accedeix</a>
+          </div>
+      </div>
+
+
+      {% else %}
       <div class="col-md-6 col-lg-3 mb-3">
         <div class="card h-100">
           <div class="card-body d-flex flex-column">
@@ -29,6 +43,7 @@
       </div>
       {% endfor %}
     </div>
+    {% endif %}
     {% endif %}
   </div>
 </section>

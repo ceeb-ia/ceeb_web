@@ -90,7 +90,7 @@
   - teams
   - detail/display
 - Validacio executada en aquesta iteracio:
-  - `docker compose exec -T web python manage.py test competicions_trampoli.tests.scoring.test_engine_selection_runtime competicions_trampoli.tests.scoring.test_engine_metrics_runtime competicions_trampoli.tests.equips.test_engine_team_runtime competicions_trampoli.tests.classificacions.test_compute_engine_parity --verbosity 1`
+  - `docker compose exec -T web python manage.py test competicions_trampoli.tests.scoring.test_engine_selection_runtime competicions_trampoli.tests.scoring.test_engine_metrics_runtime competicions_trampoli.tests.equips.test_engine_team_runtime competicions_trampoli.tests.classificacions.test_compute_engine_contract --verbosity 1`
   - `docker compose exec -T web python manage.py test competicions_trampoli.tests.classificacions.test_filters competicions_trampoli.tests.equips.test_classificacio_integration competicions_trampoli.tests.scoring.team.test_classificacio_detail_sections competicions_trampoli.tests.inscripcions.groups.test_birth_ranges --verbosity 1`
 - Resultat: `24 + 47` tests en verd.
 - Conclusio d'estat:
@@ -124,12 +124,209 @@
   - eliminats residus locals de `score_values` i `_rank_v2`; el cami actiu usa els owners nous.
   - `engine/orchestrator.py` passa aproximadament de 5.676 linies a 2.447 linies.
   - validacio executada:
-    - `docker compose exec -T web python manage.py test competicions_trampoli.tests.scoring.test_engine_selection_runtime competicions_trampoli.tests.scoring.test_engine_metrics_runtime competicions_trampoli.tests.equips.test_engine_team_runtime competicions_trampoli.tests.classificacions.test_compute_engine_parity competicions_trampoli.tests.scoring.team.test_classificacio_detail_sections --verbosity 1`
+    - `docker compose exec -T web python manage.py test competicions_trampoli.tests.scoring.test_engine_selection_runtime competicions_trampoli.tests.scoring.test_engine_metrics_runtime competicions_trampoli.tests.equips.test_engine_team_runtime competicions_trampoli.tests.classificacions.test_compute_engine_contract competicions_trampoli.tests.scoring.team.test_classificacio_detail_sections --verbosity 1`
   - resultat: `51` tests en verd.
   - conclusio:
     - Fase 5 queda tancada a efectes practics.
     - Queden duplicats top-level de compatibilitat a aprimar en Fase 8 o abans de retirar el legacy, sobretot schema/common/particions, pero ja no bloquegen el compositor runtime.
     - Fase 7 pendent: ampliar paritat i eliminar `services/legacy/services_classificacions_2.py`.
+
+- Actualitzacio Fase 5 - aprimament final verificat:
+  - iteracio executada amb subagents:
+    - S5.D auditoria de codi mort i duplicats dins `engine/orchestrator.py`.
+    - S5.E auditoria d'imports publics, legacy productiu i riscos de circularitat.
+    - S5.F ampliacio de paritat dins `tests/classificacions/test_compute_engine_contract.py`.
+  - confirmat que el runtime public continua sent:
+    - `services/classificacions/compute.py`
+    - `services/classificacions/_compute_bridge.py`
+    - `services/classificacions/engine/schema.py`
+    - `services/classificacions/engine/orchestrator.py`
+  - confirmat que `services/legacy/services_classificacions_2.py` no es troba en el cami productiu del compute public; continua viu com a oracle de tests.
+  - eliminats de `engine/orchestrator.py` els snapshots locals duplicats de:
+    - `DEFAULT_SCHEMA`, merge de schema i normalitzacio legacy de particio d'edat.
+    - filtres i helpers ORM/display.
+    - particions runtime.
+    - seleccio d'exercicis, candidate source i participants.
+    - tie keys, pipeline tie signatures i sanititzacio de desempats.
+  - `engine/orchestrator.py` ara importa aquests owners:
+    - `engine/common.py`
+    - `engine/model_utils.py`
+    - `engine/partition_runtime.py`
+    - `engine/selection.py`
+    - `engine/ranking.py`
+    - `engine/schema.py`
+  - `engine/orchestrator.py` passa de 2.142 linies a 863 linies.
+  - el fitxer queda com a compositor real del runtime; nomes conserva `_unique_nonempty_strings()` com a helper local menor.
+  - paritat ampliada amb tres casos nous:
+    - filtres per grup i categoria.
+    - particio per rang d'any de naixement.
+    - `derived_from_individual` amb `exercise_selection_scope=team_pool`.
+  - validacio executada:
+    - baseline abans dels canvis:
+      - `docker compose exec -T web python manage.py test competicions_trampoli.tests.classificacions.test_compute_engine_contract competicions_trampoli.tests.scoring.test_engine_selection_runtime competicions_trampoli.tests.scoring.test_engine_metrics_runtime competicions_trampoli.tests.equips.test_engine_team_runtime competicions_trampoli.tests.scoring.team.test_classificacio_detail_sections --verbosity 1`
+      - resultat: `51` tests en verd.
+    - validacio curta despres dels canvis:
+      - mateixa suite curta.
+      - resultat: `54` tests en verd.
+    - validacio ampliada final:
+      - `docker compose exec -T web python manage.py test competicions_trampoli.tests.classificacions.test_compute_engine_contract competicions_trampoli.tests.classificacions.test_engine_schema competicions_trampoli.tests.classificacions.test_engine_shared_primitives competicions_trampoli.tests.classificacions.test_filters competicions_trampoli.tests.classificacions.test_partitions competicions_trampoli.tests.scoring.test_engine_selection_runtime competicions_trampoli.tests.scoring.test_engine_metrics_runtime competicions_trampoli.tests.equips.test_engine_team_runtime competicions_trampoli.tests.scoring.team.test_classificacio_detail_sections --verbosity 1`
+      - resultat: `73` tests en verd.
+  - conclusio:
+    - Fase 5 queda tancada fisicament.
+    - El monolit residual ja no es `engine/orchestrator.py`; el risc restant es retirar l'oracle legacy i consolidar fronteres publiques/compat.
+
+## Seguent Iteracio Planificada
+
+### Objectiu
+- Preparar la Fase 7 sense eliminar encara el legacy.
+- Ampliar la paritat als casos de mes risc que encara depenen de `services/legacy/services_classificacions_2.py` com a oracle.
+- Identificar quins tests de paritat es poden convertir despres a tests de comportament amb resultat esperat.
+
+### Subagents Proposats
+
+#### Subagent S7.A - Paritat Detail I Raw Columns
+##### Write set
+- `competicions_trampoli/tests/classificacions/test_compute_engine_contract.py`
+
+##### Tasques
+- Afegir casos legacy vs engine per:
+  - raw columns en individual.
+  - `detail.sections` en individual o equip.
+  - detail de `native_team` si el setup es raonable.
+
+##### Restriccions
+- No tocar codi productiu.
+- No modificar fixtures compartides fora del fitxer de paritat.
+
+#### Subagent S7.B - Paritat Desempats I Pipeline
+##### Write set
+- `competicions_trampoli/tests/classificacions/test_compute_engine_contract.py`
+
+##### Tasques
+- Afegir casos legacy vs engine per:
+  - `entitat` amb desempats simples.
+  - `native_team` amb desempats simples.
+  - com a minim un pipeline tie representatiu, si es pot construir amb fixtures locals sense fragilitat excessiva.
+
+##### Restriccions
+- No canviar `pipeline_runtime.py`.
+- No tocar `ties/` ni `metrics_runtime.py` en aquesta iteracio.
+
+#### Subagent S7.C - Auditoria De Retirada Legacy
+##### Write set
+- Cap, nomes lectura.
+
+##### Tasques
+- Llistar tots els imports restants de `services/legacy/services_classificacions_2.py`.
+- Separar imports que son oracle de paritat dels que comparen primitives/schema.
+- Proposar quins tests es poden convertir a expected-output tests abans d'eliminar el legacy.
+
+#### Integrador Principal
+##### Write set
+- `competicions_trampoli/tests/classificacions/test_compute_engine_contract.py`
+- aquest document, si cal actualitzar estat.
+
+##### Tasques
+- Coordinar els casos de paritat per evitar duplicats.
+- Revisar que els casos nous cobreixin comportament, no detalls accidentals.
+- Executar suite curta i ampliada.
+- Decidir si la iteracio seguent ja pot eliminar `services/legacy/services_classificacions_2.py` o si cal una ronda mes de paritat.
+
+### Suite De Validacio Recomanada
+- `docker compose exec -T web python manage.py test competicions_trampoli.tests.classificacions.test_compute_engine_contract --verbosity 1`
+- `docker compose exec -T web python manage.py test competicions_trampoli.tests.classificacions.test_engine_schema competicions_trampoli.tests.classificacions.test_engine_shared_primitives competicions_trampoli.tests.classificacions.test_filters competicions_trampoli.tests.classificacions.test_partitions --verbosity 1`
+- `docker compose exec -T web python manage.py test competicions_trampoli.tests.scoring.test_engine_selection_runtime competicions_trampoli.tests.scoring.test_engine_metrics_runtime competicions_trampoli.tests.equips.test_engine_team_runtime competicions_trampoli.tests.scoring.team.test_classificacio_detail_sections --verbosity 1`
+
+### Criteri De Sortida
+- Paritat cobreix, com a minim:
+  - simple individual, entitat, derived team i native team.
+  - filtres.
+  - particions per rang de naixement.
+  - `team_pool`.
+  - detail/raw columns.
+  - desempats simples per entitat i native team.
+- Tots els imports productius del legacy continuen absents.
+- Hi ha una llista clara de tests legacy-oracle que s'han de convertir abans de suprimir el fitxer legacy.
+
+### Actualitzacio S7 - implementada
+- iteracio executada amb subagents:
+  - S7.A/S7.B combinats en un worker unic sobre `tests/classificacions/test_compute_engine_contract.py` per evitar conflictes de write set.
+  - S7.C auditoria nomes lectura dels imports restants de `services/legacy/services_classificacions_2.py`.
+  - auditoria nomes lectura de patrons existents per raw columns, detail sections, desempats i pipeline ties.
+- paritat ampliada a `tests/classificacions/test_compute_engine_contract.py`:
+  - `test_compute_individual_raw_columns`
+  - `test_compute_equips_detail_sections`
+  - `test_compute_entitat_simple_tie`
+  - `test_compute_native_team_simple_tie`
+- el normalitzador de paritat ara compara tambe:
+  - `tie`
+  - `by_app`
+  - `by_app_base`
+  - `cells`
+  - `display`
+  - `detail`
+  - `row_id`
+- la cobertura de paritat ja verifica payloads raw/detail/tie i no nomes score/posicio.
+- auditoria legacy:
+  - no s'ha trobat cap us productiu de `services/legacy/services_classificacions_2.py`.
+  - imports restants del legacy:
+    - `tests/classificacions/test_compute_engine_contract.py`: oracle de paritat.
+    - `tests/classificacions/test_engine_shared_primitives.py`: comparacio de primitives/helpers.
+    - `tests/classificacions/test_engine_schema.py`: comparacio de schema/merge/normalitzacio.
+  - abans d'eliminar el legacy cal convertir aquests tests a expected-output tests:
+    - `11` tests de paritat compute.
+    - `2` tests de primitives.
+    - `3` tests de schema.
+- validacio executada:
+  - `docker compose exec -T web python manage.py test competicions_trampoli.tests.classificacions.test_compute_engine_contract --verbosity 1`
+  - resultat: `11` tests en verd.
+  - `docker compose exec -T web python manage.py test competicions_trampoli.tests.classificacions.test_compute_engine_contract competicions_trampoli.tests.classificacions.test_engine_schema competicions_trampoli.tests.classificacions.test_engine_shared_primitives competicions_trampoli.tests.classificacions.test_filters competicions_trampoli.tests.classificacions.test_partitions competicions_trampoli.tests.scoring.test_engine_selection_runtime competicions_trampoli.tests.scoring.test_engine_metrics_runtime competicions_trampoli.tests.equips.test_engine_team_runtime competicions_trampoli.tests.scoring.team.test_classificacio_detail_sections --verbosity 1`
+  - resultat: `76` tests en verd.
+- conclusio:
+  - S7 deixa el legacy fora del runtime productiu i prou auditat per preparar la retirada.
+  - encara no s'ha d'eliminar `services/legacy/services_classificacions_2.py` fins que els `16` tests oracle restants quedin convertits a expected-output.
+
+## Seguent Iteracio Recomanada: Conversio D'Oracles Legacy
+
+### Objectiu
+- Eliminar la dependencia de tests envers `services/legacy/services_classificacions_2.py` sense perdre cobertura.
+- Convertir els oracles legacy en expected-output tests directes contra l'engine nou.
+
+### Subagents Proposats
+
+#### Subagent S7.D - Expected Output Compute
+##### Write set
+- `competicions_trampoli/tests/classificacions/test_compute_engine_contract.py`
+
+##### Tasques
+- Reanomenar el fitxer o deixar-lo temporalment, pero substituir `legacy_compute_classificacio` per expected outputs.
+- Convertir els `11` casos actuals en asserts directes sobre:
+  - particions.
+  - rows normalitzades.
+  - `score`, `posicio`, `tie`.
+  - `cells`, `display`, `detail` quan aplica.
+
+#### Subagent S7.E - Expected Output Schema I Primitives
+##### Write set
+- `competicions_trampoli/tests/classificacions/test_engine_schema.py`
+- `competicions_trampoli/tests/classificacions/test_engine_shared_primitives.py`
+
+##### Tasques
+- Substituir comparacions contra legacy per expected outputs locals i helpers publics actuals.
+- Mantenir tests que comparen contra helpers publics actuals quan no depenen del legacy.
+
+#### Subagent S7.F - Auditoria Post-Conversio
+##### Write set
+- Cap, nomes lectura.
+
+##### Tasques
+- Confirmar que no queda cap import de `services/legacy/services_classificacions_2.py`.
+- Proposar el patch de Fase 7 per eliminar o arxivar el fitxer legacy.
+
+### Criteri De Sortida
+- `rg services_classificacions_2 competicions_trampoli -g "*.py"` no retorna imports executables fora del fitxer legacy mateix.
+- La suite ampliada continua verda.
+- La Fase 7 pot passar de "preparada" a "eliminacio del legacy".
 
 ## Decisions Tancades
 - `compute.py` continua sent la frontera publica.
@@ -386,7 +583,7 @@ competicions_trampoli/services/classificacions/
 
 ## Subagent S1.2 - Harness de paritat
 ### Write set
-- `competicions_trampoli/tests/classificacions/test_compute_engine_parity.py`
+- `competicions_trampoli/tests/classificacions/test_compute_engine_contract.py`
 
 ### Tasques
 - crear harness de comparacio:
@@ -789,7 +986,7 @@ competicions_trampoli/services/classificacions/
 - `competicions_trampoli/tests/classificacions/test_export_excel.py`
 
 ## Test nou recomanat de paritat
-- `competicions_trampoli/tests/classificacions/test_compute_engine_parity.py`
+- `competicions_trampoli/tests/classificacions/test_compute_engine_contract.py`
 
 ### Casos que la paritat ha de cobrir
 - individual simple
@@ -830,8 +1027,26 @@ competicions_trampoli/services/classificacions/
 - integrador unic per al cutover
 - harness de paritat abans del tall final
 
+## Actualitzacio S8. Correccio De Tests Sense Oracle Legacy
+
+### Estat
+- `services_classificacions_2.py` es conserva fisicament a `services/legacy/`, pero queda fora dels tests executables de l'engine.
+- `test_compute_engine_contract.py` passa de paritat contra legacy a contracte explicit de l'engine.
+- `test_engine_schema.py` i `test_engine_shared_primitives.py` ja no importen helpers privats del monolit; comproven valors esperats o contractes compartits amb els moduls nous.
+- auditoria amb `rg` sobre tests de classificacions i `services/classificacions` sense referencies executables a `services_classificacions_2`.
+
+### Verificacio
+- `docker compose exec -T web python manage.py test competicions_trampoli.tests.classificacions.test_compute_engine_contract competicions_trampoli.tests.classificacions.test_engine_schema competicions_trampoli.tests.classificacions.test_engine_shared_primitives --verbosity 1` -> 18 tests OK.
+- `docker compose exec -T web python manage.py test competicions_trampoli.tests.classificacions.test_compute_engine_contract competicions_trampoli.tests.classificacions.test_engine_schema competicions_trampoli.tests.classificacions.test_engine_shared_primitives competicions_trampoli.tests.classificacions.test_filters competicions_trampoli.tests.classificacions.test_partitions competicions_trampoli.tests.scoring.test_engine_selection_runtime competicions_trampoli.tests.scoring.test_engine_metrics_runtime competicions_trampoli.tests.equips.test_engine_team_runtime competicions_trampoli.tests.scoring.team.test_classificacio_detail_sections --verbosity 1` -> 76 tests OK.
+
+### Seguent Iteracio Recomanada
+- auditar referencies documentals i imports residuals fora de `tests/classificacions` per separar clarament "historial de migracio" de "codi viu".
+- reanomenament completat dels noms de tests amb terminologia legacy; la terminologia activa del test passa a contracte de l'engine.
+- decidir si `services/legacy/services_classificacions_2.py` queda marcat amb capcalera de fitxer mort o si es mou a una zona d'arxiu en una fase posterior.
+
 ## Criteri De Tancament
 - `compute.py` deixa d'importar del legacy
 - `services_classificacions_2.py` ja no es usa pel runtime public
 - els tests critics de classificacions passen
 - la nova estructura te responsabilidades clares i sense monolit reempaquetat
+

@@ -40,17 +40,6 @@ from ...services.classificacions.engine import (
     normalized_text_token,
     resolve_classificacio_equips_context_code,
 )
-from ...services.legacy.services_classificacions_2 import (
-    _display_value as legacy_display_value,
-    _filter_in as legacy_filter_in,
-    _is_relational_field as legacy_is_relational_field,
-    _json_clone as legacy_json_clone,
-    _json_clone_value as legacy_json_clone_value,
-    _normalize_classificacio_filter_values as legacy_normalize_classificacio_filter_values,
-    _normalize_classificacio_filters as legacy_normalize_classificacio_filters,
-    _normalize_positive_int as legacy_normalize_positive_int,
-    _normalized_text_token as legacy_normalized_text_token,
-)
 
 
 class _DummyQuerySet:
@@ -63,20 +52,16 @@ class _DummyQuerySet:
 
 
 class EngineSharedPrimitivesTests(SimpleTestCase):
-    def test_common_normalizers_match_legacy_behavior(self):
+    def test_common_normalizers_match_current_contract(self):
         positive_int_values = [None, "", "0", "7", 9, 0, -4, 3.0, Decimal("11"), True]
+        expected_positive_ints = [None, None, None, 7, 9, None, None, 3, 11, 1]
         for raw_value in positive_int_values:
-            self.assertEqual(
-                normalize_positive_int(raw_value),
-                legacy_normalize_positive_int(raw_value),
-            )
+            self.assertEqual(normalize_positive_int(raw_value), expected_positive_ints.pop(0))
 
         text_values = [None, "", "  Club  A  ", "MiXeD Case", "  12 "]
+        expected_text_tokens = ["", "", "club a", "mixed case", "12"]
         for raw_value in text_values:
-            self.assertEqual(
-                normalized_text_token(raw_value),
-                legacy_normalized_text_token(raw_value),
-            )
+            self.assertEqual(normalized_text_token(raw_value), expected_text_tokens.pop(0))
 
         filter_value_cases = [
             ([1, "1", " 1 ", Decimal("1"), 2.0, 0, "", None, False, "Club"], False),
@@ -84,11 +69,14 @@ class EngineSharedPrimitivesTests(SimpleTestCase):
             ("7", False),
             (None, False),
         ]
-        for raw_values, groups in filter_value_cases:
-            self.assertEqual(
-                normalize_classificacio_filter_values(raw_values, groups=groups),
-                legacy_normalize_classificacio_filter_values(raw_values, groups=groups),
-            )
+        expected_filter_values = [
+            [1, 2, "0", "Club"],
+            ["1", "2", "Grup A", "3"],
+            [7],
+            [],
+        ]
+        for (raw_values, groups), expected_values in zip(filter_value_cases, expected_filter_values):
+            self.assertEqual(normalize_classificacio_filter_values(raw_values, groups=groups), expected_values)
 
         filter_payload = {
             "entitats_in": [" Club A ", "club a", None, 4, "4"],
@@ -99,12 +87,14 @@ class EngineSharedPrimitivesTests(SimpleTestCase):
         }
         self.assertEqual(
             normalize_classificacio_filters(filter_payload),
-            legacy_normalize_classificacio_filters(filter_payload),
+            {
+                "entitats_in": ["Club A", 4],
+                "categories_in": ["Base"],
+                "subcategories_in": [3, "Promo"],
+                "grups_in": ["1", "Final"],
+            },
         )
-        self.assertEqual(
-            normalize_classificacio_filters(filter_payload),
-            filters_normalize_classificacio_filters(filter_payload),
-        )
+        self.assertEqual(normalize_classificacio_filters(filter_payload), filters_normalize_classificacio_filters(filter_payload))
 
     def test_engine_common_matches_current_filter_and_partition_helpers(self):
         assignment_source = {
@@ -176,32 +166,25 @@ class EngineSharedPrimitivesTests(SimpleTestCase):
             "text": "Classe",
             "nested": {"list": [1, ("a", "b")]},
         }
-        self.assertEqual(json_clone(payload), legacy_json_clone(payload))
-        self.assertEqual(json_clone_value(payload), legacy_json_clone_value(payload))
+        expected_payload = {"text": "Classe", "nested": {"list": [1, ["a", "b"]]}}
+        self.assertEqual(json_clone(payload), expected_payload)
+        self.assertEqual(json_clone_value(payload), expected_payload)
         self.assertEqual(json_clone_value(payload), partitions_json_clone_value(payload))
 
-    def test_model_utils_match_legacy_helpers(self):
+    def test_model_utils_match_current_helpers(self):
         for field_name in ("equip", "grup_competicio", "categoria", "entitat", "missing_field"):
             self.assertEqual(
                 is_relational_field(Inscripcio, field_name),
-                legacy_is_relational_field(Inscripcio, field_name),
+                field_name in {"equip", "grup_competicio"},
             )
 
-        legacy_rel_qs = _DummyQuerySet()
         engine_rel_qs = _DummyQuerySet()
-        self.assertEqual(
-            filter_in(engine_rel_qs, Inscripcio, "equip", [3, 4]),
-            legacy_filter_in(legacy_rel_qs, Inscripcio, "equip", [3, 4]),
-        )
-        self.assertEqual(engine_rel_qs.calls, legacy_rel_qs.calls)
+        self.assertEqual(filter_in(engine_rel_qs, Inscripcio, "equip", [3, 4]), {"equip_id__in": [3, 4]})
+        self.assertEqual(engine_rel_qs.calls, [{"equip_id__in": [3, 4]}])
 
-        legacy_scalar_qs = _DummyQuerySet()
         engine_scalar_qs = _DummyQuerySet()
-        self.assertEqual(
-            filter_in(engine_scalar_qs, Inscripcio, "categoria", ["Base"]),
-            legacy_filter_in(legacy_scalar_qs, Inscripcio, "categoria", ["Base"]),
-        )
-        self.assertEqual(engine_scalar_qs.calls, legacy_scalar_qs.calls)
+        self.assertEqual(filter_in(engine_scalar_qs, Inscripcio, "categoria", ["Base"]), {"categoria__in": ["Base"]})
+        self.assertEqual(engine_scalar_qs.calls, [{"categoria__in": ["Base"]}])
 
         passthrough_qs = _DummyQuerySet()
         self.assertIs(filter_in(passthrough_qs, Inscripcio, "categoria", []), passthrough_qs)
@@ -211,6 +194,6 @@ class EngineSharedPrimitivesTests(SimpleTestCase):
         scalar_row = SimpleNamespace(categoria="Base")
         empty_row = SimpleNamespace(entitat=None)
 
-        self.assertEqual(display_value(relation_row, "entitat"), legacy_display_value(relation_row, "entitat"))
-        self.assertEqual(display_value(scalar_row, "categoria"), legacy_display_value(scalar_row, "categoria"))
-        self.assertEqual(display_value(empty_row, "entitat"), legacy_display_value(empty_row, "entitat"))
+        self.assertEqual(display_value(relation_row, "entitat"), "Club Nom")
+        self.assertEqual(display_value(scalar_row, "categoria"), "Base")
+        self.assertEqual(display_value(empty_row, "entitat"), "")
