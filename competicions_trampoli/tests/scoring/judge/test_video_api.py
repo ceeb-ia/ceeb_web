@@ -155,7 +155,7 @@ class JudgeVideoApiTests(_BaseTrampoliDataMixin, TestCase):
 
     @staticmethod
     def _fake_probe_uploaded_video_metadata(uploaded_file):
-        from ..views.judge import VideoValidationError
+        from competicions_trampoli.views.judge import VideoValidationError
 
         name = (getattr(uploaded_file, "name", "") or "").lower()
         if name.endswith(".txt"):

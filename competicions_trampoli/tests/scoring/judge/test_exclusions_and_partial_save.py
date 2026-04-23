@@ -206,6 +206,89 @@ class ScoringAndJudgeExclusionFlowTests(_BaseTrampoliDataMixin, TestCase):
         )
         self.assertEqual(r.status_code, 403)
 
+    def test_scoring_save_partial_preserves_absent_multijudge_rows(self):
+        url = reverse("scoring_save_partial", kwargs={"pk": self.comp.id})
+        r = self.client.post(
+            url,
+            data=json.dumps(
+                {
+                    "inscripcio_id": self.ins_allowed.id,
+                    "comp_aparell_id": self.comp_app.id,
+                    "exercici": 1,
+                    "inputs_patch": {
+                        "E": [[0.0, 0.3, 0.4, 0.5, 0.6], None],
+                        "__crash__E": [0, None],
+                        "__presence__E": [True, False],
+                    },
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(r.status_code, 200)
+        entry = ScoreEntry.objects.get(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            inscripcio=self.ins_allowed,
+            exercici=1,
+        )
+        self.assertEqual(entry.inputs["E"][0], [0.0, 0.3, 0.4, 0.5, 0.6])
+        self.assertIsNone(entry.inputs["E"][1])
+        self.assertEqual(entry.inputs["__crash__E"], [0, None])
+        self.assertEqual(entry.inputs["__presence__E"], [True, False])
+
+    def test_scoring_save_partial_presence_toggle_does_not_delete_notes(self):
+        url = reverse("scoring_save_partial", kwargs={"pk": self.comp.id})
+        first = self.client.post(
+            url,
+            data=json.dumps(
+                {
+                    "inscripcio_id": self.ins_allowed.id,
+                    "comp_aparell_id": self.comp_app.id,
+                    "exercici": 1,
+                    "inputs_patch": {
+                        "E": [
+                            [0.1, 0.2, 0.3, 0.4, 0.5],
+                            [1.1, 1.2, 1.3, 1.4, 1.5],
+                        ],
+                        "__crash__E": [0, 2],
+                        "__presence__E": [True, True],
+                    },
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(first.status_code, 200, first.content)
+
+        second = self.client.post(
+            url,
+            data=json.dumps(
+                {
+                    "inscripcio_id": self.ins_allowed.id,
+                    "comp_aparell_id": self.comp_app.id,
+                    "exercici": 1,
+                    "inputs_patch": {"__presence__E": [True, False]},
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(second.status_code, 200, second.content)
+        payload = second.json()
+        self.assertEqual(payload["inputs"]["E"][1], [1.1, 1.2, 1.3, 1.4, 1.5])
+        self.assertEqual(payload["inputs"]["__crash__E"], [0, 2])
+        self.assertEqual(payload["inputs"]["__presence__E"], [True, False])
+
+        entry = ScoreEntry.objects.get(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            inscripcio=self.ins_allowed,
+            exercici=1,
+        )
+        self.assertEqual(entry.inputs["E"][1], [1.1, 1.2, 1.3, 1.4, 1.5])
+        self.assertEqual(entry.inputs["__crash__E"], [0, 2])
+        self.assertEqual(entry.inputs["__presence__E"], [True, False])
+
     def test_judge_portal_hides_excluded_and_save_returns_403(self):
         portal_url = reverse("judge_portal", kwargs={"token": self.token.id})
         portal_res = self.client.get(portal_url)
@@ -344,7 +427,35 @@ class ScoringAndJudgeExclusionFlowTests(_BaseTrampoliDataMixin, TestCase):
             exercici=1,
         )
         self.assertEqual(entry.inputs.get("__crash__E", [None, None])[0], 3)
-        self.assertEqual(entry.inputs.get("__crash__E", [None, None])[1], 0)
+        self.assertEqual(entry.inputs.get("__crash__E", [None, None])[1], None)
+        self.assertEqual(entry.inputs.get("__presence__E"), [True, False])
+
+    def test_judge_save_partial_persists_presence_without_zero_filling_absent_judges(self):
+        save_url = reverse("judge_save_partial", kwargs={"token": self.token.id})
+        save_res = self.client.post(
+            save_url,
+            data=json.dumps(
+                {
+                    "inscripcio_id": self.ins_allowed.id,
+                    "exercici": 1,
+                    "inputs_patch": {
+                        "E": [0.0, 0.3, 0.4, 0.5, 0.6],
+                    },
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(save_res.status_code, 200)
+        entry = ScoreEntry.objects.get(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            inscripcio=self.ins_allowed,
+            exercici=1,
+        )
+        self.assertEqual(entry.inputs["E"][0], [0.0, 0.3, 0.4, 0.5, 0.6])
+        self.assertIsNone(entry.inputs["E"][1])
+        self.assertEqual(entry.inputs["__presence__E"], [True, False])
 
     def test_judge_save_partial_rejects_crash_for_unauthorized_field(self):
         save_url = reverse("judge_save_partial", kwargs={"token": self.token.id})

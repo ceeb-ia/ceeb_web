@@ -15,6 +15,11 @@ from ...services.scoring.scoring_subjects import (
     resolve_scoring_subject,
     serialize_subject_payload,
 )
+from ...services.scoring.judge_presence import (
+    build_runtime_inputs_from_canonical,
+    canonicalize_inputs_for_schema,
+    persist_inputs_after_compute,
+)
 from ...services.scoring.team_scoring import (
     MEMBER_CODE_SUFFIX_RE,
     eligible_team_ids_for_comp_aparell,
@@ -81,7 +86,8 @@ def scoring_save(request, pk):
             for key, value in inputs.items():
                 if key in allowed:
                     clean_inputs[key] = copy.deepcopy(value)
-        compute_inputs = logical_team_inputs_to_runtime_inputs(clean_inputs, team_subject, base_schema)
+        canonical_inputs = logical_team_inputs_to_runtime_inputs(clean_inputs, team_subject, base_schema)
+        runtime_inputs = build_runtime_inputs_from_canonical(canonical_inputs, schema)
     else:
         allowed = _allowed_input_codes_for_schema(base_schema, comp_aparell)
         clean_inputs = {}
@@ -89,11 +95,12 @@ def scoring_save(request, pk):
             for key, value in inputs.items():
                 if key in allowed:
                     clean_inputs[key] = value
-        compute_inputs = clean_inputs
+        canonical_inputs = canonicalize_inputs_for_schema(clean_inputs, schema)
+        runtime_inputs = build_runtime_inputs_from_canonical(canonical_inputs, schema)
 
     try:
         engine = ScoringEngine(schema)
-        result = engine.compute(compute_inputs)
+        result = engine.compute(runtime_inputs)
     except ScoringError as exc:
         return JsonResponse({"ok": False, "error": str(exc)}, status=400)
     except Exception:
@@ -109,9 +116,13 @@ def scoring_save(request, pk):
         subject=subject,
     )
     entry.inputs = (
-        runtime_inputs_to_logical_team_inputs(result.inputs, team_subject, base_schema)
+        runtime_inputs_to_logical_team_inputs(
+            persist_inputs_after_compute(canonical_inputs, result.inputs, schema),
+            team_subject,
+            base_schema,
+        )
         if team_subject is not None
-        else result.inputs
+        else persist_inputs_after_compute(canonical_inputs, result.inputs, schema)
     )
     entry.outputs = result.outputs
     entry.total = result.total
@@ -195,18 +206,22 @@ def scoring_save_partial(request, pk):
     if team_subject is not None:
         current_inputs, orphan_inputs = _split_inputs_by_allowed_codes(current_inputs, allowed)
         merged_logical = _merge_team_logical_patch(current_inputs, patch, base_schema)
-        compute_inputs = logical_team_inputs_to_runtime_inputs(merged_logical, team_subject, base_schema)
+        canonical_inputs = canonicalize_inputs_for_schema(
+            logical_team_inputs_to_runtime_inputs(merged_logical, team_subject, base_schema),
+            schema,
+        )
     else:
         orphan_inputs = {}
         merged = dict(current_inputs)
         for key, value in patch.items():
             if key in allowed:
                 merged[key] = value
-        compute_inputs = merged
+        canonical_inputs = canonicalize_inputs_for_schema(merged, schema)
+    runtime_inputs = build_runtime_inputs_from_canonical(canonical_inputs, schema)
 
     try:
         engine = ScoringEngine(schema)
-        result = engine.compute(compute_inputs)
+        result = engine.compute(runtime_inputs)
     except ScoringError as exc:
         return JsonResponse({"ok": False, "error": str(exc)}, status=400)
     except Exception:
@@ -214,11 +229,15 @@ def scoring_save_partial(request, pk):
 
     entry.inputs = (
         _merge_inputs_preserving_orphans(
-            runtime_inputs_to_logical_team_inputs(result.inputs, team_subject, base_schema),
+            runtime_inputs_to_logical_team_inputs(
+                persist_inputs_after_compute(canonical_inputs, result.inputs, schema),
+                team_subject,
+                base_schema,
+            ),
             orphan_inputs,
         )
         if team_subject is not None
-        else result.inputs
+        else persist_inputs_after_compute(canonical_inputs, result.inputs, schema)
     )
     entry.outputs = result.outputs
     entry.total = result.total
@@ -229,7 +248,11 @@ def scoring_save_partial(request, pk):
         "exercici": entry.exercici,
         "comp_aparell_id": comp_aparell.id,
         "inputs": (
-            runtime_inputs_to_logical_team_inputs(result.inputs, team_subject, base_schema)
+            runtime_inputs_to_logical_team_inputs(
+                persist_inputs_after_compute(canonical_inputs, result.inputs, schema),
+                team_subject,
+                base_schema,
+            )
             if team_subject is not None
             else entry.inputs
         ),

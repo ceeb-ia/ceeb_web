@@ -6,6 +6,7 @@ from django.urls import reverse
 from ...models import InscripcioMedia
 from ...models.scoring import TeamScoreEntryVideo
 from ...services.scoring.team_scoring import is_team_context_app, runtime_schema_for_comp_aparell
+from ...services.scoring.judge_presence import is_strict_presence_field, presence_key
 from ...services.scoring.team_subject_contract import build_team_subject_registry
 from ...services.scoring.update_payloads import build_score_update_payload, filter_inputs_for_allowed_codes
 
@@ -34,6 +35,8 @@ def _allowed_input_codes_for_schema(schema: dict, comp_aparell=None) -> set:
             if isinstance(field, dict) and field.get("code"):
                 allowed.add(field["code"])
                 allowed.add(f"__crash__{field['code']}")
+                if is_strict_presence_field(field):
+                    allowed.add(presence_key(str(field["code"])))
         return allowed
     runtime_schema = runtime_schema_for_comp_aparell(schema or {}, comp_aparell)
     allowed = set()
@@ -41,6 +44,8 @@ def _allowed_input_codes_for_schema(schema: dict, comp_aparell=None) -> set:
         if isinstance(field, dict) and field.get("code"):
             allowed.add(field["code"])
             allowed.add(f"__crash__{field['code']}")
+            if is_strict_presence_field(field):
+                allowed.add(presence_key(str(field["code"])))
     return allowed
 
 
@@ -51,6 +56,8 @@ def _logical_team_input_codes(schema: dict) -> set:
             code = str(field["code"])
             allowed.add(code)
             allowed.add(f"__crash__{code}")
+            if is_strict_presence_field(field):
+                allowed.add(presence_key(code))
     return allowed
 
 
@@ -85,6 +92,8 @@ def _team_field_scope_map(schema: dict) -> dict:
         scope = str(field.get("scope") or "member").strip().lower() or "member"
         scope_map[code] = scope
         scope_map[f"__crash__{code}"] = scope
+        if is_strict_presence_field(field):
+            scope_map[presence_key(code)] = scope
     return scope_map
 
 

@@ -427,7 +427,7 @@ class DetailPayloadRuntime:
         picked = []
         for judge_id in ids:
             idx = judge_id - 1
-            if 0 <= idx < len(raw_value):
+            if 0 <= idx < len(raw_value) and raw_value[idx] is not None:
                 picked.append((judge_id, raw_value[idx]))
         if not picked:
             return ""

@@ -10,6 +10,12 @@ from ...models.competicio import CompeticioAparell
 from ...models.judging import JudgeDeviceToken
 from ...scoring_engine import ScoringEngine, ScoringError
 from ...services.scoring.schema_resolution import resolve_scoring_schema_for_comp_aparell
+from ...services.scoring.judge_presence import (
+    build_runtime_inputs_from_canonical,
+    is_strict_presence_field,
+    persist_inputs_after_compute,
+    presence_key,
+)
 from ...services.scoring.scoring_subjects import (
     get_or_create_subject_entry_locked,
     resolve_scoring_subject,
@@ -115,21 +121,28 @@ def judge_save_partial(request, token):
         if isinstance(f, dict) and f.get("code"):
             allowed.add(f["code"])
             allowed.add(f"__crash__{f['code']}")
+            if is_strict_presence_field(f):
+                allowed.add(presence_key(str(f["code"])))
 
     clean_inputs = {k: v for k, v in merged_inputs.items() if k in allowed}
+    runtime_inputs = build_runtime_inputs_from_canonical(clean_inputs, schema)
 
     try:
         engine = ScoringEngine(schema)
-        result = engine.compute(clean_inputs)
+        result = engine.compute(runtime_inputs)
     except ScoringError as e:
         return JsonResponse({"ok": False, "error": str(e)}, status=400)
     except Exception:
         return JsonResponse({"ok": False, "error": "Error inesperat calculant puntuació"}, status=500)
 
     entry.inputs = (
-        runtime_inputs_to_logical_team_inputs(result.inputs, team_subject, base_schema)
+        runtime_inputs_to_logical_team_inputs(
+            persist_inputs_after_compute(clean_inputs, result.inputs, schema),
+            team_subject,
+            base_schema,
+        )
         if team_subject is not None
-        else result.inputs
+        else persist_inputs_after_compute(clean_inputs, result.inputs, schema)
     )
     entry.outputs = result.outputs
     entry.total = result.total
@@ -138,7 +151,14 @@ def judge_save_partial(request, token):
     return JsonResponse({
         "ok": True,
         **serialize_subject_payload(subject["subject_kind"], subject["subject_id"]),
-        "inputs": _filter_inputs_for_allowed_codes(result.inputs if team_subject is not None else entry.inputs, allowed_input_codes),
+        "inputs": _filter_inputs_for_allowed_codes(
+            (
+                persist_inputs_after_compute(clean_inputs, result.inputs, schema)
+                if team_subject is not None
+                else entry.inputs
+            ),
+            allowed_input_codes,
+        ),
         "outputs": entry.outputs or {},
         "total": float(entry.total),
         "updated_at": entry.updated_at.isoformat(),

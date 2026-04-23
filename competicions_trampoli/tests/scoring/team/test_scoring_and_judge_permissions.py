@@ -99,6 +99,155 @@ class TeamContextScoringAndJudgePermissionsTests(TeamContextScoringFlowTestBase)
         self.assertEqual(response.status_code, 400)
         self.assertIn("__mN", response.json()["error"])
 
+    def test_scoring_save_partial_team_1x1_judge_fields_can_be_empty(self):
+        ScoringSchema.objects.create(
+            aparell=self.app,
+            schema={
+                "meta": {"subject_mode": "team_context", "expected_team_size": 2},
+                "fields": [
+                    {
+                        "code": "DD",
+                        "label": "Dificultat",
+                        "type": "matrix",
+                        "shape": "judge_x_item",
+                        "scope": "shared",
+                        "judges": {"count": 1},
+                        "items": {"count": 1},
+                    },
+                    {
+                        "code": "S",
+                        "label": "Sincronisme",
+                        "type": "matrix",
+                        "shape": "judge_x_item",
+                        "scope": "shared",
+                        "judges": {"count": 1},
+                        "items": {"count": 1},
+                    },
+                    {
+                        "code": "P",
+                        "label": "Penalitzacio",
+                        "type": "matrix",
+                        "shape": "judge_x_item",
+                        "scope": "shared",
+                        "judges": {"count": 1},
+                        "items": {"count": 1},
+                    },
+                    {
+                        "code": "HD",
+                        "label": "Horizontal",
+                        "type": "matrix",
+                        "shape": "judge_x_item",
+                        "scope": "member",
+                        "judges": {"count": 1},
+                        "items": {"count": 1},
+                    },
+                ],
+                "computed": [
+                    {"code": "HD_SCORE", "label": "HD membre", "formula": "row_custom_compute('HD', 'x')"},
+                    {"code": "TOTAL", "label": "Total", "formula": "DD + S + P + member_treatment(HD_SCORE, agg='sum')"},
+                ],
+            },
+        )
+        team_subject, _subject_meta = self._team_subject()
+
+        response = self.client.post(
+            reverse("scoring_save_partial", kwargs={"pk": self.comp.id}),
+            data=json.dumps(
+                {
+                    "comp_aparell_id": self.comp_app.id,
+                    "subject_kind": "team_unit",
+                    "subject_id": team_subject.id,
+                    "exercici": 1,
+                    "inputs_patch": {
+                        "DD": [[None]],
+                        "S": [[None]],
+                        "P": [[None]],
+                    },
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        payload = response.json()
+        self.assertEqual(payload["inputs"]["DD"], [[0.0]])
+        self.assertEqual(payload["inputs"]["S"], [[0.0]])
+        self.assertEqual(payload["inputs"]["P"], [[0.0]])
+        self.assertNotIn("__presence__DD", payload["inputs"])
+        self.assertEqual(payload["total"], 0.0)
+
+    def test_scoring_save_partial_team_presence_toggle_does_not_delete_member_notes(self):
+        ScoringSchema.objects.create(
+            aparell=self.app,
+            schema={
+                "meta": {"subject_mode": "team_context", "expected_team_size": 2},
+                "fields": [
+                    {
+                        "code": "E",
+                        "label": "Exec",
+                        "type": "matrix",
+                        "shape": "judge_x_item",
+                        "scope": "member",
+                        "judges": {"count": 2},
+                        "items": {"count": 2},
+                    },
+                ],
+                "computed": [
+                    {"code": "E_SCORE", "label": "Exec", "formula": "row_custom_compute('E', 'x')"},
+                    {"code": "TOTAL", "label": "Total", "formula": "member_treatment(E_SCORE, agg='sum')"},
+                ],
+            },
+        )
+        team_subject, _subject_meta = self._team_subject()
+        member_id = str(team_subject.member_ids[0])
+        url = reverse("scoring_save_partial", kwargs={"pk": self.comp.id})
+
+        first = self.client.post(
+            url,
+            data=json.dumps(
+                {
+                    "comp_aparell_id": self.comp_app.id,
+                    "subject_kind": "team_unit",
+                    "subject_id": team_subject.id,
+                    "exercici": 1,
+                    "inputs_patch": {
+                        "E": {member_id: [[1, 2], [3, 4]]},
+                        "__presence__E": {member_id: [True, True]},
+                    },
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(first.status_code, 200, first.content)
+
+        second = self.client.post(
+            url,
+            data=json.dumps(
+                {
+                    "comp_aparell_id": self.comp_app.id,
+                    "subject_kind": "team_unit",
+                    "subject_id": team_subject.id,
+                    "exercici": 1,
+                    "inputs_patch": {"__presence__E": {member_id: [True, False]}},
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(second.status_code, 200, second.content)
+        payload = second.json()
+        self.assertEqual(payload["inputs"]["E"][member_id], [[1, 2], [3, 4]])
+        self.assertEqual(payload["inputs"]["__presence__E"][member_id], [True, False])
+
+        entry = TeamScoreEntry.objects.get(
+            competicio=self.comp,
+            comp_aparell=self.comp_app,
+            team_subject=team_subject,
+            exercici=1,
+        )
+        self.assertEqual(entry.inputs["E"][member_id], [[1, 2], [3, 4]])
+        self.assertEqual(entry.inputs["__presence__E"][member_id], [True, False])
+
     def test_schema_recalc_for_team_preserves_orphan_inputs(self):
         schema = ScoringSchema.objects.create(
             aparell=self.app,

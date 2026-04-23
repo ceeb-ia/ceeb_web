@@ -1432,10 +1432,41 @@
     return true;
   }
 
+  function presenceKey(code){
+    return `__presence__${String(code || "")}`;
+  }
+
+  function isJudgeShapedField(field){
+    if(!field || typeof field !== "object") return false;
+    const type = String(field.type || "number");
+    const shape = String(field.shape || "");
+    return (type === "list" && shape === "judge") || (type === "matrix" && (shape === "judge_x_item" || shape === "judge_x_element"));
+  }
+
+  function hasSavedScoreForPerm(inputs, perm){
+    const code = String(perm.runtime_field_code || perm.field_code || "");
+    if(!code) return false;
+    const field = perm.field || schemaField(code);
+    if(!isJudgeShapedField(field)){
+      return hasAnySavedValue(inputs[code]);
+    }
+    const judgeIdx = Math.max(1, Number(perm.judge_index || 1)) - 1;
+    const presence = inputs[presenceKey(code)];
+    if(Array.isArray(presence)){
+      return presence[judgeIdx] === true;
+    }
+    const raw = inputs[code];
+    if(Array.isArray(raw)){
+      return raw[judgeIdx] !== null && raw[judgeIdx] !== undefined;
+    }
+    const crash = inputs[`__crash__${code}`];
+    return Array.isArray(crash) && crash[judgeIdx] !== null && crash[judgeIdx] !== undefined;
+  }
+
   function hasSavedScoreForEntry(insId, exercici){
     const entry = getEntry(insId, exercici);
     const inputs = (entry.inputs && typeof entry.inputs === "object") ? entry.inputs : {};
-    return permittedFieldCodesForIns(insId).some(code => hasAnySavedValue(inputs[code]));
+    return resolvedPermsForIns(insId).some(perm => hasSavedScoreForPerm(inputs, perm));
   }
 
   function hasSavedScoreForIns(insId){

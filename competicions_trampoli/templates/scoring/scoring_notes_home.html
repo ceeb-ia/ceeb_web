@@ -32,6 +32,11 @@
     .playback-media-badge{ border:1px solid #d1d7de; border-radius:999px; padding:2px 8px; background:#f8f9fb; font-size:.74rem; color:#304255; }
     .playback-media-badge:hover{ background:#eef3f8; border-color:#bfc8d1; color:#1f3348; }
     .playback-active-row td{ background:#fff6de; }
+    .judge-row-counts td:first-child{ box-shadow: inset 3px 0 0 #198754; }
+    .judge-row-absent td:first-child{ box-shadow: inset 3px 0 0 #adb5bd; }
+    .judge-presence-chip{ display:inline-block; border-radius:999px; padding:1px 6px; font-size:.68rem; line-height:1.2; white-space:nowrap; }
+    .judge-presence-chip.counts{ background:#e7f4ec; color:#146c43; border:1px solid #b7dfc4; }
+    .judge-presence-chip.absent{ background:#f1f3f5; color:#6c757d; border:1px solid #d7dce0; }
     .playback-video{ width:100%; max-width:420px; border-radius:8px; background:#000; }
     .media-drawer-backdrop{
       position:fixed;
@@ -851,21 +856,156 @@
       {openDrawer: false}
     );
   }
-  function ensureMatrix(nJudges, nElements, val){
-    let m=Array.isArray(val)?val:[];
-    while(m.length<nJudges) m.push(Array(nElements).fill(0));
-    m=m.slice(0,nJudges);
-    for(let j=0;j<nJudges;j++){
-      let row=Array.isArray(m[j])?m[j]:[];
-      while(row.length<nElements) row.push(0);
-      m[j]=row.slice(0,nElements);
-    }
-    return m;
+  function presenceKey(fieldCode){ return `__presence__${String(fieldCode || "")}`; }
+
+  function cloneJsonValue(value){
+    if(value === undefined) return undefined;
+    try{ return JSON.parse(JSON.stringify(value)); }
+    catch(e){ return value; }
   }
-  function ensureList(n, val){
-    let a=Array.isArray(val)?val:[];
-    while(a.length<n) a.push(0);
-    return a.slice(0,n);
+
+  function judgeCountForField(field){
+    const n = Number(field?.judges?.count || 1);
+    return (Number.isFinite(n) && n > 0) ? n : 1;
+  }
+
+  function isJudgeShapedMultiJudgeField(field){
+    if(!field || judgeCountForField(field) <= 1) return false;
+    const type = String(field.type || "number").trim().toLowerCase();
+    const shape = String(field.shape || "").trim().toLowerCase();
+    if(type === "list") return !shape || shape === "judge";
+    if(type === "matrix") return !shape || shape === "judge_x_item" || shape === "judge_x_element";
+    return false;
+  }
+
+  function normalizePresenceForDisplay(nJudges, rawPresence){
+    const src = Array.isArray(rawPresence) ? rawPresence : [];
+    const out = [];
+    for(let idx = 0; idx < nJudges; idx++){
+      out.push(Boolean(src[idx]));
+    }
+    return out;
+  }
+
+  function inferPresenceForDisplay(nJudges, rawValue, rawCrash){
+    const values = Array.isArray(rawValue) ? rawValue : [];
+    const crash = Array.isArray(rawCrash) ? rawCrash : [];
+    const out = [];
+    for(let idx = 0; idx < nJudges; idx++){
+      out.push((idx < values.length && values[idx] !== null && values[idx] !== undefined)
+        || (idx < crash.length && crash[idx] !== null && crash[idx] !== undefined));
+    }
+    return out;
+  }
+
+  function presenceForField(inputs, field, code){
+    const nJudges = judgeCountForField(field);
+    const pk = presenceKey(code);
+    if(inputs && Object.prototype.hasOwnProperty.call(inputs, pk)){
+      return normalizePresenceForDisplay(nJudges, inputs[pk]);
+    }
+    return inferPresenceForDisplay(
+      nJudges,
+      inputs ? inputs[code] : undefined,
+      inputs ? inputs[crashKeyFor(code)] : undefined
+    );
+  }
+
+  function presenceForValue(field, rawPresence, rawValue, rawCrash){
+    const nJudges = judgeCountForField(field);
+    if(Array.isArray(rawPresence)){
+      return normalizePresenceForDisplay(nJudges, rawPresence);
+    }
+    return inferPresenceForDisplay(nJudges, rawValue, rawCrash);
+  }
+
+  function presenceForEditedJudge(inputs, field, code, judgeIdx){
+    const nJudges = judgeCountForField(field);
+    const presence = presenceForField(inputs || {}, field, code).slice(0, nJudges);
+    while(presence.length < nJudges) presence.push(false);
+    if(judgeIdx >= 1 && judgeIdx <= nJudges) presence[judgeIdx - 1] = true;
+    return presence;
+  }
+
+  function ensureListForDisplay(n, val){
+    const src = Array.isArray(val) ? val : [];
+    const out = [];
+    for(let idx = 0; idx < n; idx++){
+      out.push(src[idx] !== undefined && src[idx] !== null ? src[idx] : 0);
+    }
+    return out;
+  }
+
+  function ensureListForPatch(n, val){
+    const src = Array.isArray(val) ? val : [];
+    const out = [];
+    for(let idx = 0; idx < n; idx++){
+      out.push(idx < src.length && src[idx] !== undefined ? cloneJsonValue(src[idx]) : null);
+    }
+    return out;
+  }
+
+  function ensureMatrixForDisplay(nJudges, nElements, val){
+    const src = Array.isArray(val) ? val : [];
+    const out = [];
+    for(let judgeIdx = 0; judgeIdx < nJudges; judgeIdx++){
+      const srcRow = Array.isArray(src[judgeIdx]) ? src[judgeIdx] : [];
+      const row = [];
+      for(let itemIdx = 0; itemIdx < nElements; itemIdx++){
+        row.push(srcRow[itemIdx] !== undefined && srcRow[itemIdx] !== null ? srcRow[itemIdx] : 0);
+      }
+      out.push(row);
+    }
+    return out;
+  }
+
+  function ensureMatrixForPatch(nJudges, nElements, val){
+    const src = Array.isArray(val) ? val : [];
+    const out = [];
+    for(let judgeIdx = 0; judgeIdx < nJudges; judgeIdx++){
+      if(!Array.isArray(src[judgeIdx])){
+        out.push(null);
+        continue;
+      }
+      const row = [];
+      for(let itemIdx = 0; itemIdx < nElements; itemIdx++){
+        row.push(itemIdx < src[judgeIdx].length && src[judgeIdx][itemIdx] !== undefined ? cloneJsonValue(src[judgeIdx][itemIdx]) : null);
+      }
+      out.push(row);
+    }
+    return out;
+  }
+
+  function ensureCrashListForPatch(nJudges, val, judgeIdx){
+    const out = ensureListForPatch(nJudges, val);
+    if(judgeIdx >= 1 && judgeIdx <= nJudges && out[judgeIdx - 1] === null){
+      out[judgeIdx - 1] = 0;
+    }
+    return out;
+  }
+
+  function judgePresenceChip(isPresent, options = {}){
+    const attrs = {
+      class:`judge-presence-chip ${isPresent ? "counts" : "absent"}`,
+      text:isPresent ? "compta" : "no compta",
+      title:isPresent
+        ? "Aquest jutge compta en el càlcul. Clica per marcar-lo com no compta sense esborrar notes."
+        : "Aquest jutge no compta en el càlcul, però les notes es conserven. Clica per activar-lo.",
+    };
+    if(typeof options.onToggle === "function"){
+      attrs.type = "button";
+      attrs.class += " border-0";
+      const btn = el("button", attrs);
+      btn.disabled = Boolean(options.disabled);
+      btn.addEventListener("click", (evt)=>{
+        evt.preventDefault();
+        evt.stopPropagation();
+        if(btn.disabled) return;
+        options.onToggle();
+      });
+      return btn;
+    }
+    return el("span", attrs);
   }
 
   // --- Persistència ordre de columnes (per aparell) ---
@@ -1418,6 +1558,30 @@
     }
   }
 
+  function toggleIndividualJudgePresence({ ins, exercici, appId, scoreKey, field, code, judgeIdx, blockedRow }){
+    if(blockedRow) return;
+    const cur = getScore(ins.id, exercici, appId);
+    const curInputs = cur.inputs || {};
+    const nextPresence = presenceForField(curInputs, field, code);
+    const idx = Number(judgeIdx || 0) - 1;
+    if(idx < 0 || idx >= nextPresence.length) return;
+    nextPresence[idx] = !nextPresence[idx];
+    const inputsPatch = { [presenceKey(code)]: nextPresence };
+    setScore(ins.id, exercici, appId, {
+      inputs: { ...curInputs, ...inputsPatch },
+      outputs: cur.outputs || {},
+      total: cur.total || 0,
+    });
+    rerenderTablesForScoreKey(scoreKey);
+    scheduleSave(scoreKey, async ()=>{
+      try{
+        const resp = await saveEntry(ins.id, exercici, appId, inputsPatch);
+        setScore(ins.id, exercici, appId, {inputs: resp.inputs, outputs: resp.outputs, total: resp.total});
+        updateOutputs(scoreKey, resp);
+      }catch(e){ console.error(e); showAlert(e.message); }
+    });
+  }
+
   // --- Crash helpers (UI) ---
   function crashKeyFor(fieldCode){ return `__crash__${fieldCode}`; }
 
@@ -1460,6 +1624,7 @@
       const scope = String(field?.render_scope || field?.scope || "member").trim().toLowerCase() || "member";
       out[code] = scope;
       out[crashKeyFor(code)] = scope;
+      out[presenceKey(code)] = scope;
     });
     return out;
   }
@@ -1592,6 +1757,23 @@
     });
   }
 
+  function toggleTeamJudgePresence({ subject, exercici, appId, schema, scoreKey, field, code, memberId, judgeIdx }){
+    const live = getScore(subject.id, exercici, appId);
+    const liveInputs = live.inputs || {};
+    const source = memberId ? teamMemberValue(liveInputs, code, memberId) : liveInputs[code];
+    const crashCode = crashKeyFor(code);
+    const crashSource = memberId ? teamMemberValue(liveInputs, crashCode, memberId) : liveInputs[crashCode];
+    const presenceSource = memberId ? teamMemberValue(liveInputs, presenceKey(code), memberId) : liveInputs[presenceKey(code)];
+    const nextPresence = presenceForValue(field, presenceSource, source, crashSource);
+    const idx = Number(judgeIdx || 0) - 1;
+    if(idx < 0 || idx >= nextPresence.length) return;
+    nextPresence[idx] = !nextPresence[idx];
+    const patch = teamPatchForField(presenceKey(code), nextPresence, memberId);
+    updateTeamScoreLocally(subject.id, exercici, appId, schema, patch);
+    rerenderTablesForScoreKey(scoreKey);
+    scheduleTeamSave(scoreKey, subject.id, exercici, appId, patch);
+  }
+
   function renderTeamNumberControl(td, { field, subject, memberId, appId, exercici, scoreKey, blockedRow, schema }){
     const code = String(field.code);
     const cur = getScore(subject.id, exercici, appId);
@@ -1613,15 +1795,24 @@
 
   function renderTeamListControl(td, { field, subject, memberId, appId, exercici, scoreKey, blockedRow, schema }){
     const code = String(field.code);
-    const nJudges = Number(field?.judges?.count || 1) || 1;
+    const nJudges = judgeCountForField(field);
     const cur = getScore(subject.id, exercici, appId);
     const inputs = cur.inputs || {};
     const baseValue = memberId ? teamMemberValue(inputs, code, memberId) : inputs[code];
-    const arr = ensureList(nJudges, baseValue);
+    const presenceValue = memberId ? teamMemberValue(inputs, presenceKey(code), memberId) : inputs[presenceKey(code)];
+    const arr = ensureListForDisplay(nJudges, baseValue);
+    const presence = presenceForValue(field, presenceValue, baseValue, null);
     const stack = el("div", { class:"team-input-stack" });
     for(let judgeIdx = 1; judgeIdx <= nJudges; judgeIdx++){
       const row = el("div", { class:"team-input-inline" });
+      const rowCounts = presence[judgeIdx - 1];
       row.appendChild(el("span", { class:"team-mini-label", text:`J${judgeIdx}` }));
+      if(isJudgeShapedMultiJudgeField(field)){
+        row.appendChild(judgePresenceChip(rowCounts, {
+          disabled: blockedRow,
+          onToggle: ()=>toggleTeamJudgePresence({ subject, exercici, appId, schema, scoreKey, field, code, memberId, judgeIdx }),
+        }));
+      }
       const inp = el("input", { class:"form-control form-control-sm input-num", type:"number", step:"any" });
       inp.disabled = blockedRow;
       inp.value = arr[judgeIdx - 1] ?? 0;
@@ -1631,9 +1822,15 @@
         const live = getScore(subject.id, exercici, appId);
         const liveInputs = live.inputs || {};
         const source = memberId ? teamMemberValue(liveInputs, code, memberId) : liveInputs[code];
-        const nextArr = ensureList(nJudges, source);
+        const presenceSource = memberId ? teamMemberValue(liveInputs, presenceKey(code), memberId) : liveInputs[presenceKey(code)];
+        const nextArr = ensureListForPatch(nJudges, source);
+        const nextPresence = presenceForValue(field, presenceSource, source, null);
+        nextPresence[judgeIdx - 1] = true;
         nextArr[judgeIdx - 1] = Number(inp.value || 0);
-        const patch = teamPatchForField(code, nextArr, memberId);
+        const patch = {
+          ...teamPatchForField(code, nextArr, memberId),
+          ...teamPatchForField(presenceKey(code), nextPresence, memberId),
+        };
         updateTeamScoreLocally(subject.id, exercici, appId, schema, patch);
         scheduleTeamSave(scoreKey, subject.id, exercici, appId, patch);
       });
@@ -1644,22 +1841,30 @@
   }
 
   function renderTeamMatrixControl(td, { field, baseCode, itemIndex, subject, memberId, appId, exercici, scoreKey, blockedRow, schema, rowEl }){
-    const nJudges = Number(field?.judges?.count || 1) || 1;
+    const nJudges = judgeCountForField(field);
     const nItems = Number(field?.items?.count || 0) || 0;
     const crashEnabled = !!(field?.crash?.enabled);
     const cur = getScore(subject.id, exercici, appId);
     const inputs = cur.inputs || {};
     const source = memberId ? teamMemberValue(inputs, baseCode, memberId) : inputs[baseCode];
-    const mat = ensureMatrix(nJudges, nItems, source);
+    const mat = ensureMatrixForDisplay(nJudges, nItems, source);
     const crashSource = crashEnabled
       ? (memberId ? teamMemberValue(inputs, crashKeyFor(baseCode), memberId) : inputs[crashKeyFor(baseCode)])
       : null;
-    const crashArr = crashEnabled ? ensureList(nJudges, crashSource) : [];
+    const presenceValue = memberId ? teamMemberValue(inputs, presenceKey(baseCode), memberId) : inputs[presenceKey(baseCode)];
+    const presence = presenceForValue(field, presenceValue, source, crashSource);
+    const crashArr = crashEnabled ? ensureListForDisplay(nJudges, crashSource) : [];
     const stack = el("div", { class:"team-input-stack" });
 
     for(let judgeIdx = 1; judgeIdx <= nJudges; judgeIdx++){
       const row = el("div", { class:"team-input-inline" });
       row.appendChild(el("span", { class:"team-mini-label", text:`J${judgeIdx}` }));
+      if(isJudgeShapedMultiJudgeField(field) && itemIndex === 1){
+        row.appendChild(judgePresenceChip(presence[judgeIdx - 1], {
+          disabled: blockedRow,
+          onToggle: ()=>toggleTeamJudgePresence({ subject, exercici, appId, schema, scoreKey, field, code: baseCode, memberId, judgeIdx }),
+        }));
+      }
       const inp = el("input", {
         class:"form-control form-control-sm input-salt",
         type:"number",
@@ -1682,13 +1887,20 @@
         const live = getScore(subject.id, exercici, appId);
         const liveInputs = live.inputs || {};
         const liveSource = memberId ? teamMemberValue(liveInputs, baseCode, memberId) : liveInputs[baseCode];
-        const nextMat = ensureMatrix(nJudges, nItems, liveSource);
+        const presenceSource = memberId ? teamMemberValue(liveInputs, presenceKey(baseCode), memberId) : liveInputs[presenceKey(baseCode)];
+        const nextMat = ensureMatrixForPatch(nJudges, nItems, liveSource);
+        const liveCrashSource = crashEnabled ? (memberId ? teamMemberValue(liveInputs, crashKeyFor(baseCode), memberId) : liveInputs[crashKeyFor(baseCode)]) : null;
+        const nextPresence = presenceForValue(field, presenceSource, liveSource, liveCrashSource);
+        nextPresence[judgeIdx - 1] = true;
+        if(!Array.isArray(nextMat[judgeIdx - 1])) nextMat[judgeIdx - 1] = Array(nItems).fill(null);
         nextMat[judgeIdx - 1][itemIndex - 1] = Number(inp.value || 0);
-        const patch = teamPatchForField(baseCode, nextMat, memberId);
+        const patch = {
+          ...teamPatchForField(baseCode, nextMat, memberId),
+          ...teamPatchForField(presenceKey(baseCode), nextPresence, memberId),
+        };
         let mergedPatch = patch;
         if(crashEnabled){
-          const liveCrashSource = memberId ? teamMemberValue(liveInputs, crashKeyFor(baseCode), memberId) : liveInputs[crashKeyFor(baseCode)];
-          const nextCrash = ensureList(nJudges, liveCrashSource);
+          const nextCrash = ensureCrashListForPatch(nJudges, liveCrashSource, judgeIdx);
           mergedPatch = { ...patch, ...teamPatchForField(crashKeyFor(baseCode), nextCrash, memberId) };
         }
         updateTeamScoreLocally(subject.id, exercici, appId, schema, mergedPatch);
@@ -1714,14 +1926,19 @@
           const live = getScore(subject.id, exercici, appId);
           const liveInputs = live.inputs || {};
           const liveSource = memberId ? teamMemberValue(liveInputs, baseCode, memberId) : liveInputs[baseCode];
-          const nextMat = ensureMatrix(nJudges, nItems, liveSource);
+          const nextMat = ensureMatrixForPatch(nJudges, nItems, liveSource);
+          if(!Array.isArray(nextMat[judgeIdx - 1])) nextMat[judgeIdx - 1] = Array(nItems).fill(null);
           const liveCrashSource = memberId ? teamMemberValue(liveInputs, crashKeyFor(baseCode), memberId) : liveInputs[crashKeyFor(baseCode)];
-          const nextCrash = ensureList(nJudges, liveCrashSource);
+          const nextCrash = ensureCrashListForPatch(nJudges, liveCrashSource, judgeIdx);
+          const presenceSource = memberId ? teamMemberValue(liveInputs, presenceKey(baseCode), memberId) : liveInputs[presenceKey(baseCode)];
+          const nextPresence = presenceForValue(field, presenceSource, liveSource, liveCrashSource);
+          nextPresence[judgeIdx - 1] = true;
           const current = Number(nextCrash[judgeIdx - 1] || 0);
           nextCrash[judgeIdx - 1] = (current === itemIndex) ? 0 : itemIndex;
           const patch = {
             ...teamPatchForField(baseCode, nextMat, memberId),
             ...teamPatchForField(crashKeyFor(baseCode), nextCrash, memberId),
+            ...teamPatchForField(presenceKey(baseCode), nextPresence, memberId),
           };
           updateTeamScoreLocally(subject.id, exercici, appId, schema, patch);
           applyCrashDisable(rowEl, baseCode, judgeIdx, nItems, nextCrash[judgeIdx - 1]);
@@ -2116,6 +2333,8 @@
     rows.forEach((ins, idx)=>{
       const scoreKey = keyFor(ins.id, exercici, appId);
       const blockedRow = isBlockedSubjectForApp(ins, appId) && !inscripcioCompeteixAApp(ins, appId);
+      const rowScore = getScore(ins.id, exercici, appId);
+      const rowInputs = rowScore.inputs || {};
 
       // Files de jutge realment necessàries segons les columnes visibles
       const visibleJudgeRows = [];
@@ -2136,6 +2355,15 @@
         tr.dataset.exercici = String(exercici);
         tr.dataset.compAparellId = String(appId);
         if(blockedRow) tr.classList.add("table-warning");
+        const rowPresenceCandidates = cols
+          .map((col) => byCode[col] ? { code: col, field: byCode[col] } : null)
+          .filter((item) => item && isJudgeShapedMultiJudgeField(item.field) && j <= judgesForField(item.field));
+        const rowCounts = rowPresenceCandidates.some((item) => presenceForField(rowInputs, item.field, item.code)[j - 1]);
+        if(rowPresenceCandidates.length){
+          tr.classList.add(rowCounts ? "judge-row-counts" : "judge-row-absent");
+          tr.title = `J${j}: ${rowCounts ? "compta" : "no compta"}`;
+        }
+        let judgePresenceChipRendered = false;
 
         // Nom només a la primera fila real
         if(j === visibleJudgeRows[0]){
@@ -2211,16 +2439,23 @@
               return;
             }
 
-            const mat = ensureMatrix(nJudges, nElems, inputs[col]);
+            const mat = ensureMatrixForDisplay(nJudges, nElems, inputs[col]);
 
             // crash només si està habilitat
             const ck = crashEnabled ? crashKeyFor(col) : null;
-            const crash = crashEnabled ? ensureList(nJudges, inputs[ck]) : null;
+            const crash = crashEnabled ? ensureListForDisplay(nJudges, inputs[ck]) : null;
 
             for(let i=1;i<=nElems;i++){
               const td = el("td",{class:"cell-center"});
               const wrap = el("div",{class:"d-flex align-items-center"});
               wrap.style.gap = "6px";
+              if(!judgePresenceChipRendered && isJudgeShapedMultiJudgeField(f)){
+                wrap.appendChild(judgePresenceChip(rowCounts, {
+                  disabled: blockedRow,
+                  onToggle: ()=>toggleIndividualJudgePresence({ ins, exercici, appId, scoreKey, field: f, code: col, judgeIdx: j, blockedRow }),
+                }));
+                judgePresenceChipRendered = true;
+              }
 
               const inp = el("input",{
                 class:"form-control form-control-sm input-salt",
@@ -2256,24 +2491,26 @@
                 const cur = getScore(ins.id, exercici, appId);
                 const curInputs = cur.inputs || {};
 
-                const nextMat = ensureMatrix(nJudges, nElems, curInputs[col]);
+                const nextMat = ensureMatrixForPatch(nJudges, nElems, curInputs[col]);
+                if(!Array.isArray(nextMat[j-1])) nextMat[j-1] = Array(nElems).fill(null);
                 nextMat[j-1][i-1] = Number(inp.value || 0);
+                const nextPresence = presenceForEditedJudge(curInputs, f, col, j);
 
-                let nextInputs;
+                let inputsPatch;
                 let nextCrash = null;
 
                 if(crashEnabled){
-                  nextCrash = ensureList(nJudges, curInputs[ck]);
-                  nextInputs = { ...curInputs, [col]: nextMat, [ck]: nextCrash };
+                  nextCrash = ensureCrashListForPatch(nJudges, curInputs[ck], j);
+                  inputsPatch = { [col]: nextMat, [ck]: nextCrash, [presenceKey(col)]: nextPresence };
                 }else{
-                  nextInputs = { ...curInputs, [col]: nextMat };
+                  inputsPatch = { [col]: nextMat, [presenceKey(col)]: nextPresence };
                 }
 
+                const nextInputs = { ...curInputs, ...inputsPatch };
                 setScore(ins.id, exercici, appId, {inputs: nextInputs, outputs: cur.outputs || {}, total: cur.total || 0});
 
                 scheduleSave(scoreKey, async ()=>{
                   try{
-                    const inputsPatch = crashEnabled ? { [col]: nextMat, [ck]: nextCrash } : { [col]: nextMat };
                     const resp = await saveEntry(ins.id, exercici, appId, inputsPatch);
                     setScore(ins.id, exercici, appId, {inputs: resp.inputs, outputs: resp.outputs, total: resp.total});
                     updateOutputs(scoreKey, resp);
@@ -2287,22 +2524,23 @@
                   const cur = getScore(ins.id, exercici, appId);
                   const curInputs = cur.inputs || {};
 
-                  const nextMat = ensureMatrix(nJudges, nElems, curInputs[col]);
-                  const nextCrash = ensureList(nJudges, curInputs[ck]);
+                  const nextMat = ensureMatrixForPatch(nJudges, nElems, curInputs[col]);
+                  if(!Array.isArray(nextMat[j-1])) nextMat[j-1] = Array(nElems).fill(null);
+                  const nextCrash = ensureCrashListForPatch(nJudges, curInputs[ck], j);
+                  const nextPresence = presenceForEditedJudge(curInputs, f, col, j);
 
                   const current = Number(nextCrash[j-1] || 0);
                   const clicked = i; // 1..nElems
                   nextCrash[j-1] = (current === clicked) ? 0 : clicked;
 
                   // 1) actualitza estat local per UI (això ho pots mantenir)
-                  const nextInputs = { ...curInputs, [col]: nextMat, [ck]: nextCrash };
+                  const inputsPatch = { [col]: nextMat, [ck]: nextCrash, [presenceKey(col)]: nextPresence };
+                  const nextInputs = { ...curInputs, ...inputsPatch };
                   setScore(ins.id, exercici, appId, {inputs: nextInputs, outputs: cur.outputs || {}, total: cur.total || 0});
 
                   applyCrashDisable(tr, col, j, nElems, nextCrash[j-1]);
 
                   // 2) AQUI ÉS EL CANVI IMPORTANT: enviem PATCH, no nextInputs
-                  const inputsPatch = { [col]: nextMat, [ck]: nextCrash };
-
                   scheduleSave(scoreKey, async ()=>{
                     try{
                       const resp = await saveEntry(ins.id, exercici, appId, inputsPatch);
@@ -2337,8 +2575,15 @@
               return;
             }
 
-            const arr = ensureList(n, inputs[col]);
+            const arr = ensureListForDisplay(n, inputs[col]);
             const td = el("td",{class:"cell-center"});
+            if(!judgePresenceChipRendered && isJudgeShapedMultiJudgeField(f)){
+              td.appendChild(judgePresenceChip(rowCounts, {
+                disabled: blockedRow,
+                onToggle: ()=>toggleIndividualJudgePresence({ ins, exercici, appId, scoreKey, field: f, code: col, judgeIdx: j, blockedRow }),
+              }));
+              judgePresenceChipRendered = true;
+            }
             const inp = el("input",{class:"form-control form-control-sm input-num", type:"number", step:"any"});
             inp.disabled = blockedRow;
             inp.value = (arr[j-1]!==undefined) ? arr[j-1] : 0;
@@ -2349,16 +2594,18 @@
               const cur = getScore(ins.id, exercici, appId);
               const curInputs = cur.inputs || {};
 
-              const nextArr = ensureList(n, curInputs[col]);
+              const nextArr = ensureListForPatch(n, curInputs[col]);
+              const nextPresence = presenceForEditedJudge(curInputs, f, col, j);
               nextArr[j-1] = Number(inp.value || 0);
 
-              const nextInputs = { ...curInputs, [col]: nextArr };
+              const inputsPatch = { [col]: nextArr, [presenceKey(col)]: nextPresence };
+              const nextInputs = { ...curInputs, ...inputsPatch };
               setScore(ins.id, exercici, appId, {inputs: nextInputs, outputs: cur.outputs || {}, total: cur.total || 0});
 
               scheduleSave(scoreKey, async ()=>{
                 try{
-                  const resp = await saveEntry(ins.id, exercici, appId, nextInputs);
-                  setScore(ins.id, exercici, appId, {inputs: nextInputs, outputs: resp.outputs, total: resp.total});
+                  const resp = await saveEntry(ins.id, exercici, appId, inputsPatch);
+                  setScore(ins.id, exercici, appId, {inputs: resp.inputs, outputs: resp.outputs, total: resp.total});
                   updateOutputs(scoreKey, resp);
                 }catch(e){ console.error(e); showAlert(e.message); }
               });
@@ -2387,14 +2634,15 @@
               const cur = getScore(ins.id, exercici, appId);
               const curInputs = cur.inputs || {};
               const v = (inp.value === "" ? 0 : Number(inp.value));
-              const nextInputs = { ...curInputs, [col]: v };
+              const inputsPatch = { [col]: v };
+              const nextInputs = { ...curInputs, ...inputsPatch };
 
               setScore(ins.id, exercici, appId, {inputs: nextInputs, outputs: cur.outputs || {}, total: cur.total || 0});
 
               scheduleSave(scoreKey, async ()=>{
                 try{
-                  const resp = await saveEntry(ins.id, exercici, appId, nextInputs);
-                  setScore(ins.id, exercici, appId, {inputs: nextInputs, outputs: resp.outputs, total: resp.total});
+                  const resp = await saveEntry(ins.id, exercici, appId, inputsPatch);
+                  setScore(ins.id, exercici, appId, {inputs: resp.inputs, outputs: resp.outputs, total: resp.total});
                   updateOutputs(scoreKey, resp);
                 }catch(e){ console.error(e); showAlert(e.message); }
               });

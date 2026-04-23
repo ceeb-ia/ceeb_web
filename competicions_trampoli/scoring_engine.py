@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple, Callable, Set
 
 from .services.scoring.team_scoring import runtime_schema_for_comp_aparell
+from .services.scoring.judge_presence import infer_presence_for_field, is_strict_presence_field, presence_key
 
 NUM_SALTS_DEFAULT = 11
 
@@ -54,7 +55,7 @@ def calc_execucio_jutge(deduccions: List[Any], crash_at: int, num_elements: int 
 
 
 def select_exec_notes(exec_scores: List[float], k: int, criteri: str) -> List[float]:
-    vals = [float(x) for x in (exec_scores or [])]
+    vals = [to_float(x) for x in (exec_scores or []) if x is not None]
     n = len(vals)
     if n == 0:
         return []
@@ -493,19 +494,25 @@ class ScoringEngine:
 
 
     def _build_functions(self) -> Dict[str, Callable[..., Any]]:
+        def _present_values(values):
+            return [value for value in (values or []) if value is not None]
+
+        def _scalar_values(values):
+            return [to_float(value) for value in _present_values(values)]
+
         def _sum(x):
-            return sum(x or [])
+            return sum(_scalar_values(x))
         def _avg(x):
-            x = list(x or [])
+            x = _scalar_values(x)
             return (sum(x) / len(x)) if x else 0.0
         def _min(x):
-            x = list(x or [])
+            x = _scalar_values(x)
             return min(x) if x else 0.0
         def _max(x):
-            x = list(x or [])
+            x = _scalar_values(x)
             return max(x) if x else 0.0
         def _count(x):
-            return len(list(x or []))
+            return len(_present_values(x))
 
         def exec_by_judge(E, crash, params):
             n_elements = int((params or {}).get("n_elements") or (params or {}).get("num_elements") or NUM_SALTS_DEFAULT)
@@ -515,7 +522,10 @@ class ScoringEngine:
             cr = list(crash or [])
             out = []
             for j, row in enumerate(rows):
-                crash_at = int(cr[j]) if j < len(cr) else 0
+                if row is None:
+                    out.append(None)
+                    continue
+                crash_at = int(cr[j] or 0) if j < len(cr) else 0
                 out.append(calc_execucio_jutge(row or [], crash_at, num_elements=n_elements))
             return out
 
@@ -537,9 +547,13 @@ class ScoringEngine:
             """
             xs = []
             for x in (scores or []):
+                if x is None:
+                    continue
                 if isinstance(x, (list, tuple)):
                     # admet "vector columna" Jx1 -> [[v1], [v2], ...]
                     if len(x) == 1:
+                        if x[0] is None:
+                            continue
                         xs.append(to_float(x[0]))
                     else:
                         raise ScoringError(
@@ -588,8 +602,12 @@ class ScoringEngine:
         ):
             xs = []
             for value in (source or []):
+                if value is None:
+                    continue
                 if isinstance(value, (list, tuple)):
                     if len(value) == 1:
+                        if value[0] is None:
+                            continue
                         xs.append(to_float(value[0]))
                     else:
                         raise ScoringError(
@@ -607,7 +625,7 @@ class ScoringEngine:
             return float(_agg(selected, agg))
 
         def best_n(scores, n):
-            s = sorted([to_float(x) for x in (scores or [])], reverse=True)
+            s = sorted([to_float(x) for x in (scores or []) if x is not None], reverse=True)
             return s[: max(0, int(n or 0))]
 
         def as_float(x):
@@ -620,7 +638,7 @@ class ScoringEngine:
             return (self._latest_context or {}).get(self._crash_key(str(field_code)), [])
 
         def _median(vals):
-            s = sorted([to_float(x) for x in (vals or [])])
+            s = sorted([to_float(x) for x in (vals or []) if x is not None])
             n = len(s)
             if n == 0:
                 return 0.0
@@ -692,6 +710,9 @@ class ScoringEngine:
 
                 out = []
                 for v in list(by_judge or []):
+                    if v is None:
+                        out.append(None)
+                        continue
                     vv = float(v)
                     vv = float(PostAggExprEval({"m": vv}).visit(final_tree))
                     out.append(vv)
@@ -705,30 +726,31 @@ class ScoringEngine:
             Retorna els índexos seleccionats (sobre vals).
             Important per desacoblar select_on (què decideix) de agg_on (què agreguem).
             """
-            xs = [to_float(x) for x in (vals or [])]
-            if not xs:
+            pairs = [(idx, to_float(x)) for idx, x in enumerate(vals or []) if x is not None]
+            if not pairs:
                 return []
+            idx = [idx for idx, _ in pairs]
+            xs_by_idx = {idx: value for idx, value in pairs}
 
             m = (method or "all").lower().strip()
-            idx = list(range(len(xs)))
 
             if m == "all":
                 return idx
 
             if m == "drop_extremes":
-                if len(xs) <= 2:
+                if len(idx) <= 2:
                     return idx
                 # treu min i max una vegada
-                s = sorted(idx, key=lambda i: xs[i])  # asc
+                s = sorted(idx, key=lambda i: xs_by_idx[i])  # asc
                 return s[1:-1]
 
             if m == "drop_extremes_until_n":
                 if n is None:
                     raise ScoringError("drop_extremes_until_n requereix n.")
-                k = max(0, min(int(n), len(xs)))
+                k = max(0, min(int(n), len(idx)))
                 if k == 0:
                     return []
-                s = sorted(idx, key=lambda i: xs[i])  # asc
+                s = sorted(idx, key=lambda i: xs_by_idx[i])  # asc
                 toggle = 0  # 0->max, 1->min
                 while len(s) > k:
                     if toggle == 0:
@@ -741,8 +763,8 @@ class ScoringEngine:
             if m in ("best_n", "worst_n"):
                 if n is None:
                     return idx
-                k = max(0, min(int(n), len(xs)))
-                s = sorted(idx, key=lambda i: xs[i], reverse=(m == "best_n"))
+                k = max(0, min(int(n), len(idx)))
+                s = sorted(idx, key=lambda i: xs_by_idx[i], reverse=(m == "best_n"))
                 return s[:k]
 
             raise ScoringError(f"Mètode selecció no permès: {method}")
@@ -754,7 +776,7 @@ class ScoringEngine:
             agg:
               - "sum" "avg" "min" "max" "med"
             """
-            xs = [to_float(x) for x in (vals or [])]
+            xs = [to_float(x) for x in (vals or []) if x is not None]
             if not xs:
                 return 0.0
 
@@ -913,11 +935,15 @@ class ScoringEngine:
             by_judge_has_data = []
 
             for j, row in enumerate(rows):
+                if row is None:
+                    by_judge.append(None)
+                    by_judge_has_data.append(False)
+                    continue
                 row = list(row or [])
                 row = (row + [0] * n_items)[:n_items]
 
                 # límit per crash
-                crash_at = int(cr[j]) if j < len(cr) else 0
+                crash_at = int(cr[j] or 0) if j < len(cr) else 0
                 if crash_at and crash_at > 0:
                     max_k = max(0, min(n_items, crash_at - 1))
                 else:
@@ -1100,10 +1126,12 @@ class ScoringEngine:
                 raw_xs = []
                 vals_k = []
                 for j, row in enumerate(rows):
+                    if row is None:
+                        continue
                     row = list(row or [])
                     row = (row + [0] * n_items)[:n_items]
 
-                    crash_at = int(cr[j]) if j < len(cr) else 0
+                    crash_at = int(cr[j] or 0) if j < len(cr) else 0
                     if crash_at and crash_at > 0 and k >= (crash_at - 1):
                         continue  # aquest jutge no contribueix a l’ítem k
 
@@ -1185,10 +1213,13 @@ class ScoringEngine:
 
             out = []
             for j, row in enumerate(rows):
+                if row is None:
+                    out.append(None)
+                    continue
                 row = list(row or [])
                 row = (row + [0] * n_items)[:n_items]
 
-                crash_at = int(cr[j]) if j < len(cr) else 0
+                crash_at = int(cr[j] or 0) if j < len(cr) else 0
                 # límit per crash
                 if crash_at and crash_at > 0:
                     max_k = max(0, min(n_items, crash_at - 1))
@@ -1299,11 +1330,22 @@ class ScoringEngine:
 
             elif ftype == "list" and f.get("shape") == "judge":
                 arr = raw if isinstance(raw, list) else []
-                while len(arr) < n_judges:
-                    arr.append(0)
-                arr = arr[:n_judges]
+                strict_presence = is_strict_presence_field(f)
+                if strict_presence:
+                    pk = presence_key(str(code))
+                    if pk in inputs:
+                        raw_presence = inputs.get(pk) if isinstance(inputs.get(pk), list) else []
+                        presence = [bool(raw_presence[i]) if i < len(raw_presence) else False for i in range(n_judges)]
+                    else:
+                        presence = infer_presence_for_field(arr, None, n_judges)
+                else:
+                    presence = [True] * n_judges
                 out = []
-                for v in arr:
+                for idx in range(n_judges):
+                    if not presence[idx]:
+                        out.append(None)
+                        continue
+                    v = arr[idx] if idx < len(arr) else None
                     x = to_float(v)
                     if mn is not None: x = max(float(mn), x)
                     if mx is not None: x = min(float(mx), x)
@@ -1311,15 +1353,28 @@ class ScoringEngine:
                 normalized[code] = out
 
             elif ftype == "matrix" and f.get("shape") in ("judge_x_item", "judge_x_element"):
-                # normalitza n_judges x n_items
                 mat = raw if isinstance(raw, list) else []
-                while len(mat) < n_judges:
-                    mat.append([0] * n_items)
-                mat = mat[:n_judges]
+                crash_cfg = f.get("crash") if isinstance(f.get("crash"), dict) else {}
+                ck = self._crash_key(code)
+                raw_crash = inputs.get(ck, [])
+                strict_presence = is_strict_presence_field(f)
+                if strict_presence:
+                    pk = presence_key(str(code))
+                    if pk in inputs:
+                        raw_presence = inputs.get(pk) if isinstance(inputs.get(pk), list) else []
+                        presence = [bool(raw_presence[i]) if i < len(raw_presence) else False for i in range(n_judges)]
+                    else:
+                        presence = infer_presence_for_field(mat, raw_crash, n_judges)
+                else:
+                    presence = [True] * n_judges
 
                 out = []
                 for j in range(n_judges):
-                    row = mat[j] if isinstance(mat[j], list) else []
+                    if not presence[j]:
+                        out.append(None)
+                        continue
+                    raw_row = mat[j] if j < len(mat) else []
+                    row = raw_row if isinstance(raw_row, list) else []
                     row = (row + [0] * n_items)[:n_items]
                     r2 = []
                     for v in row:
@@ -1331,16 +1386,16 @@ class ScoringEngine:
                 normalized[code] = out
 
                 # crash per camp
-                crash_cfg = f.get("crash") if isinstance(f.get("crash"), dict) else {}
                 if crash_cfg.get("enabled"):
-                    ck = self._crash_key(code)
-                    raw_crash = inputs.get(ck, [])
                     cr = raw_crash if isinstance(raw_crash, list) else []
-                    while len(cr) < n_judges:
-                        cr.append(0)
-                    cr = cr[:n_judges]
-                    # crash_at 0..n_items
-                    normalized[ck] = [max(0, min(n_items, int(x or 0))) for x in cr]
+                    crash_out = []
+                    for idx in range(n_judges):
+                        if not presence[idx]:
+                            crash_out.append(None)
+                            continue
+                        raw_value = cr[idx] if idx < len(cr) else 0
+                        crash_out.append(max(0, min(n_items, int(raw_value or 0))))
+                    normalized[ck] = crash_out
 
             else:
                 normalized[code] = raw

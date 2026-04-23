@@ -3,6 +3,7 @@ from ...services.scoring.team_scoring import (
     normalize_permission_target,
     resolve_permission_runtime_entries,
 )
+from ...services.scoring.judge_presence import merge_judge_patch_into_canonical, presence_key
 
 
 def _sanitize_patch_by_permissions(schema: dict, permissions: list, patch: dict) -> dict:
@@ -147,6 +148,7 @@ def _allowed_input_codes_from_permissions(permissions: list) -> set:
             continue
         allowed_codes.add(str(code))
         allowed_codes.add(f"__crash__{code}")
+        allowed_codes.add(presence_key(str(code)))
     return allowed_codes
 
 
@@ -174,7 +176,7 @@ def _resolve_permissions_for_subject(permissions: list, comp_aparell, subject=No
 
 
 def _apply_sanitized_patch(current_inputs: dict, sanitized_patch: dict, schema: dict) -> dict:
-    out = dict(current_inputs or {})
+    out = merge_judge_patch_into_canonical(current_inputs or {}, sanitized_patch or {}, schema or {})
 
     by_code = {
         field.get("code"): field

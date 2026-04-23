@@ -15,6 +15,7 @@ from ...models.competicio import (
     CompeticioAparellEquipContextSource,
     InscripcioAparellExclusio,
 )
+from .judge_presence import is_strict_presence_field, presence_key
 from ..teams.team_series import enrich_team_subjects_with_series
 
 
@@ -951,9 +952,14 @@ def logical_team_inputs_to_runtime_inputs(inputs: dict, subject: TeamCompetitive
             crash_code = f"__crash__{code}"
             if crash_code in inputs:
                 out[crash_code] = copy.deepcopy(inputs.get(crash_code))
+            presence_code = presence_key(code)
+            if is_strict_presence_field(field) and presence_code in inputs:
+                out[presence_code] = copy.deepcopy(inputs.get(presence_code))
             continue
         member_map = inputs.get(code) if isinstance(inputs.get(code), dict) else {}
         crash_map = inputs.get(f"__crash__{code}") if isinstance(inputs.get(f"__crash__{code}"), dict) else {}
+        presence_code = presence_key(code)
+        presence_map = inputs.get(presence_code) if is_strict_presence_field(field) and isinstance(inputs.get(presence_code), dict) else {}
         for idx, member_id in enumerate(member_ids, start=1):
             runtime_code = member_runtime_code(code, idx)
             if member_id in member_map:
@@ -961,6 +967,8 @@ def logical_team_inputs_to_runtime_inputs(inputs: dict, subject: TeamCompetitive
             crash_value = crash_map.get(member_id)
             if crash_value is not None:
                 out[f"__crash__{runtime_code}"] = copy.deepcopy(crash_value)
+            if member_id in presence_map:
+                out[presence_key(runtime_code)] = copy.deepcopy(presence_map.get(member_id))
     return out
 
 
@@ -980,10 +988,14 @@ def runtime_inputs_to_logical_team_inputs(inputs: dict, subject: TeamCompetitive
             crash_code = f"__crash__{code}"
             if crash_code in inputs:
                 out[crash_code] = copy.deepcopy(inputs.get(crash_code))
+            presence_code = presence_key(code)
+            if is_strict_presence_field(field) and presence_code in inputs:
+                out[presence_code] = copy.deepcopy(inputs.get(presence_code))
             continue
 
         member_map = {}
         crash_map = {}
+        presence_map = {}
         for item in members:
             member_id = str(item["id"])
             runtime_code = member_runtime_code(code, item["slot"])
@@ -992,7 +1004,12 @@ def runtime_inputs_to_logical_team_inputs(inputs: dict, subject: TeamCompetitive
             runtime_crash_code = f"__crash__{runtime_code}"
             if runtime_crash_code in inputs:
                 crash_map[member_id] = copy.deepcopy(inputs.get(runtime_crash_code))
+            runtime_presence_code = presence_key(runtime_code)
+            if is_strict_presence_field(field) and runtime_presence_code in inputs:
+                presence_map[member_id] = copy.deepcopy(inputs.get(runtime_presence_code))
         out[code] = member_map
         if crash_map:
             out[f"__crash__{code}"] = crash_map
+        if presence_map:
+            out[f"__presence__{code}"] = presence_map
     return out

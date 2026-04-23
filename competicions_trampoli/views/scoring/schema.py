@@ -15,6 +15,11 @@ from ...models.competicio import Aparell, CompeticioAparell
 from ...models.scoring import ScoringSchema
 from ...scoring_engine import ScoringEngine, ScoringError
 from ...services.scoring.scoring_subjects import subject_entry_model
+from ...services.scoring.judge_presence import (
+    build_runtime_inputs_from_canonical,
+    canonicalize_inputs_for_schema,
+    persist_inputs_after_compute,
+)
 from ...services.scoring.team_scoring import (
     is_team_context_app,
     logical_team_inputs_to_runtime_inputs,
@@ -89,13 +94,22 @@ def _recalculate_scores_for_comp_aparell(
                 team_subject = getattr(entry, "team_subject", None)
                 member_count = len(getattr(team_subject, "member_ids", []) or []) if team_subject is not None else 0
                 runtime_schema = runtime_schema_for_comp_aparell(base_schema, comp_aparell, member_count=member_count)
-                runtime_inputs = logical_team_inputs_to_runtime_inputs(known_inputs, team_subject, base_schema)
+                canonical_inputs = logical_team_inputs_to_runtime_inputs(known_inputs, team_subject, base_schema)
+                runtime_inputs = build_runtime_inputs_from_canonical(canonical_inputs, runtime_schema)
                 result = ScoringEngine(runtime_schema).compute(runtime_inputs)
-                logical_inputs = runtime_inputs_to_logical_team_inputs(result.inputs, team_subject, base_schema)
+                logical_inputs = runtime_inputs_to_logical_team_inputs(
+                    persist_inputs_after_compute(canonical_inputs, result.inputs, runtime_schema),
+                    team_subject,
+                    base_schema,
+                )
                 entry_inputs = _merge_inputs_preserving_orphans(logical_inputs, orphan_inputs)
             else:
-                result = engine.compute(known_inputs)
-                entry_inputs = _merge_inputs_preserving_orphans(result.inputs, orphan_inputs)
+                canonical_inputs = canonicalize_inputs_for_schema(known_inputs, engine.schema)
+                result = engine.compute(build_runtime_inputs_from_canonical(canonical_inputs, engine.schema))
+                entry_inputs = _merge_inputs_preserving_orphans(
+                    persist_inputs_after_compute(canonical_inputs, result.inputs, engine.schema),
+                    orphan_inputs,
+                )
             pending_updates.append(
                 {
                     "entry": entry,
