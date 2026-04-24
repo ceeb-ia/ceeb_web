@@ -92,6 +92,25 @@ async def _read_job(task_id: str) -> dict | None:
     except Exception:
         return None
 
+
+def read_logs_sync(task_id: str, limit: int = 200) -> list[dict]:
+    r = _redis_sync()
+    try:
+        start = -abs(int(limit or 0)) if limit else 0
+        raw_items = r.lrange(_logs_key(task_id), start, -1)
+    finally:
+        r.close()
+
+    items: list[dict] = []
+    for raw in raw_items:
+        try:
+            parsed = json.loads(raw)
+        except Exception:
+            parsed = {"message": str(raw)}
+        if isinstance(parsed, dict):
+            items.append(parsed)
+    return items
+
 async def push_log(task_id: str, message: str, progress: int | None = None, status: str | None = None):
     r = _redis_async()
     try:

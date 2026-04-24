@@ -7,7 +7,7 @@ import pandas as pd
 from asgiref.sync import async_to_sync
 from geopy.geocoders import Nominatim
 
-from designacions.geolocate import extreu_municipi, geocode_address_amb_fallback
+from designacions.geolocate import GeocodingRateLimitedError, extreu_municipi, geocode_address_amb_fallback
 from designacions.models import Address
 from logs import push_log
 
@@ -36,6 +36,13 @@ def geocodifica_adreces(adreces: Iterable[str], *, sleep_seconds: float = 2.0, t
 
     resolved = []
     total = len(ordered_addresses)
+    rate_limited = False
+    if task_id:
+        async_to_sync(push_log)(
+            task_id,
+            f"Preparant geocodificacio de {total} adreces uniques.",
+            45,
+        )
     for counter, payload in enumerate(ordered_addresses):
         percentage = 45 + int((counter + 1) / max(total, 1) * (55 - 45))
         address = resolve_address(text=payload["text"], municipality=payload["municipality"])
@@ -47,12 +54,51 @@ def geocodifica_adreces(adreces: Iterable[str], *, sleep_seconds: float = 2.0, t
                 address.geocode_status = "ok" if address.geocode_status != "manual" else "manual"
                 address.last_error = None
                 address.save(update_fields=["geocode_status", "last_error", "updated_at"])
+            if task_id:
+                async_to_sync(push_log)(
+                    task_id,
+                    f"Adreca {counter + 1}/{total} reutilitzada des de cache: {payload['text']}",
+                    percentage,
+                )
+            resolved.append(address)
+            continue
+
+        if rate_limited:
+            address.geocode_status = "pending"
+            address.provider = "nominatim"
+            address.last_error = "Geocodificacio ajornada temporalment per limit de peticions del proveidor."
+            address.save(update_fields=["geocode_status", "provider", "last_error", "updated_at"])
+            if task_id:
+                async_to_sync(push_log)(
+                    task_id,
+                    f"Adreca {counter + 1}/{total} ajornada per limit temporal del proveidor: {payload['text']}",
+                    percentage,
+                )
             resolved.append(address)
             continue
 
         if task_id:
-            async_to_sync(push_log)(task_id, f"Geocodificant adreca: {payload['text']}", percentage)
-        lat, lon, query_used = geocode_address_amb_fallback(_geolocator, payload["text"])
+            async_to_sync(push_log)(
+                task_id,
+                f"Geocodificant adreca {counter + 1}/{total}: {payload['text']}",
+                percentage,
+            )
+        try:
+            lat, lon, query_used = geocode_address_amb_fallback(_geolocator, payload["text"])
+        except GeocodingRateLimitedError:
+            rate_limited = True
+            address.geocode_status = "pending"
+            address.provider = "nominatim"
+            address.last_error = "Limit temporal de peticions del proveidor de geocodificacio (HTTP 429)."
+            address.save(update_fields=["geocode_status", "provider", "last_error", "updated_at"])
+            resolved.append(address)
+            if task_id:
+                async_to_sync(push_log)(
+                    task_id,
+                    "El proveidor de geocodificacio ha limitat les peticions. Es continua el preview amb les adreces pendents sense noves consultes en viu.",
+                    percentage,
+                )
+            continue
 
         if lat is not None and lon is not None:
             address.lat = float(lat)
@@ -70,10 +116,22 @@ def geocodifica_adreces(adreces: Iterable[str], *, sleep_seconds: float = 2.0, t
             address.provider = "nominatim"
             address.last_error = f"Sense resultat per a '{query_used or payload['text']}'"
             address.save(update_fields=["geocode_status", "provider", "last_error", "updated_at"])
+            if task_id:
+                async_to_sync(push_log)(
+                    task_id,
+                    f"Sense resultat per a l'adreca {counter + 1}/{total}: {payload['text']}",
+                    percentage,
+                )
 
         resolved.append(address)
 
         if sleep_seconds:
+            if task_id and counter < total - 1:
+                async_to_sync(push_log)(
+                    task_id,
+                    f"Esperant {sleep_seconds:.0f}s abans de la seguent consulta de geocodificacio.",
+                    percentage,
+                )
             sleep(sleep_seconds)
 
     return resolved

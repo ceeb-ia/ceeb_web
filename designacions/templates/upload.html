@@ -79,7 +79,14 @@
           </div>
 
           <div class="form-row row">
-            <div class="form-group col-md-6">
+            <div class="form-group col-md-4">
+              <label>Radis preview (metres)</label>
+              <input type="text" name="preview_cluster_eps_options_csv" class="form-control form-control-sm"
+                    value="{{ defaults.preview_cluster_eps_options_csv }}">
+              <small class="form-text text-muted">Valors separats per comes per comparar escenaris al preview.</small>
+            </div>
+
+            <div class="form-group col-md-4">
               <label>Modalitats (selecció)</label>
 
               <div class="mb-3">
@@ -98,17 +105,16 @@
                 Selecciona els excels i es carregaran automàticament les modalitats del fitxer de partits.
               </small>
 
-              <!-- Aquest hidden és el que realment enviem al backend -->
               <input type="hidden" name="modalitats_csv" id="modalitatsCsv" value="">
             </div>
 
 
-            <div class="form-group col-md-3">
+            <div class="form-group col-md-2">
               <label>Data des de</label>
               <input type="date" name="date_from" class="form-control form-control-sm" value="{{ defaults.date_from }}">
             </div>
 
-            <div class="form-group col-md-3">
+            <div class="form-group col-md-2">
               <label>Data fins a</label>
               <input type="date" name="date_to" class="form-control form-control-sm" value="{{ defaults.date_to }}">
             </div>
@@ -119,9 +125,17 @@
       </div>
 
 
-      <button type="submit" class="btn btn-primary btn-sm">
-        Pujar i processar
-      </button>
+      <div class="d-flex gap-2">
+        <button type="submit"
+                class="btn btn-outline-primary btn-sm"
+                formaction="{% url 'designacions_cluster_preview_create' %}"
+                data-submit-mode="preview">
+          Previsualitzar escoles i clusters
+        </button>
+        <button type="submit" class="btn btn-primary btn-sm" data-submit-mode="run">
+          Pujar i processar
+        </button>
+      </div>
     </form>
 
     <div id="progress-section" class="mt-4 d-none">
@@ -323,28 +337,34 @@
     e.preventDefault();
     const formData = new FormData(form);
     const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    const submitter = e.submitter || document.activeElement;
+    const action = (submitter && submitter.formAction) || form.action || "";
 
-    const resp = await fetch("", {
+    const resp = await fetch(action, {
       method: "POST",
       headers: { "X-CSRFToken": csrfToken },
       body: formData
     });
 
     if (!resp.ok) {
-      appendLog("Error en pujar fitxers.");
+      let errorText = "Error en pujar fitxers.";
+      try {
+        errorText = await resp.text();
+      } catch (err) {}
+      appendLog(errorText);
       return;
     }
 
-    // El POST retorna redirect al run_detail (com et vaig passar abans),
-    // així que aquí fem una petita adaptació:
-    // Si prefereixes resposta JSON, t'ho canvio. Ara ho fem via Location.
-    const runUrl = resp.url; // URL final després de redirect
-    // suposem format .../designacions/run/<id>/
-    const m = runUrl.match(/\/designacions\/run\/(\d+)\//);
-    const runId = m ? m[1] : null;
+    const contentType = resp.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      const payload = await resp.json();
+      if (payload.detail_url) {
+        window.location.href = payload.detail_url;
+        return;
+      }
+    }
 
-    // fem reload al run_detail (que ja porta task_id). Més simple:
-    window.location.href = runUrl;
+    window.location.href = resp.url;
   });
 })();
 </script>

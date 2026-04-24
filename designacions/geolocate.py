@@ -17,6 +17,15 @@ from asgiref.sync import async_to_sync
 import numpy as np
 import matplotlib.pyplot as plt
 
+class GeocodingRateLimitedError(RuntimeError):
+    pass
+
+
+def _is_rate_limited_error(exc: Exception) -> bool:
+    message = str(exc or "").casefold()
+    return "429" in message or "too many requests" in message
+
+
 def haversine_km(lat1, lon1, lat2, lon2):
     # lat/lon en radians
     dlat = lat2 - lat1
@@ -377,6 +386,8 @@ def geocode_amb_reintents_limitat(
             time.sleep(pausa * (i + 1))
 
         except Exception as e:
+            if _is_rate_limited_error(e):
+                raise GeocodingRateLimitedError(str(e)) from e
             # qualsevol altre error NO ha de matar el procés
             print(f"[GEOCODING ERROR] {query}: {e}")
             return None

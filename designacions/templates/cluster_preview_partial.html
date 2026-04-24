@@ -1,0 +1,233 @@
+{% if result %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <div class="d-flex align-items-center gap-2">
+    <label class="small text-muted mb-0" for="preview-scenario-select">Radi a visualitzar</label>
+    <select class="form-control form-control-sm" id="preview-scenario-select" style="width: 180px;">
+      {% for scenario in scenario_summaries %}
+      <option value="{{ scenario.eps_m }}"{% if scenario.selected %} selected{% endif %}>
+        {{ scenario.eps_m }} m{% if scenario.recommended %} (recomanat){% endif %}
+      </option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <form method="post" action="{{ run_action_url }}" class="d-flex align-items-center gap-2 mb-0">
+    {% csrf_token %}
+    <input type="hidden" name="selected_eps_m" id="run-selected-eps-input" value="{{ result.selected_eps_m|default:selected_scenario.eps_m|default:'' }}">
+    <button type="submit" class="btn btn-sm btn-primary">
+      Executar run amb aquest radi
+    </button>
+  </form>
+</div>
+
+<div class="row g-2 mb-3">
+  <div class="col-6 col-lg-3">
+    <div class="border rounded p-3 h-100">
+      <div class="text-muted small">Adreces uniques</div>
+      <div class="h4 mb-0">{{ result.preview_counts.total_unique_addresses|default:0 }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="border rounded p-3 h-100">
+      <div class="text-muted small">Partits filtrats</div>
+      <div class="h4 mb-0">{{ result.preview_counts.total_matches|default:0 }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="border rounded p-3 h-100">
+      <div class="text-muted small">Radi seleccionat</div>
+      <div class="h4 mb-0" id="selected-eps-value">{{ result.selected_eps_m|default:"-" }} m</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="border rounded p-3 h-100">
+      <div class="text-muted small">Radi recomanat</div>
+      <div class="h4 mb-0">{% if result.recommended_eps_m %}{{ result.recommended_eps_m }} m{% else %}-{% endif %}</div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-2 mb-3">
+  <div class="col-6 col-lg-4">
+    <div class="border rounded p-3 h-100">
+      <div class="text-muted small">Tutors unics filtrats</div>
+      <div class="h4 mb-0">{{ result.availability_counts.total_unique_referees|default:0 }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-4">
+    <div class="border rounded p-3 h-100">
+      <div class="text-muted small">Disponibilitats filtrades</div>
+      <div class="h4 mb-0">{{ result.availability_counts.total_availability_rows|default:0 }}</div>
+    </div>
+  </div>
+  <div class="col-12 col-lg-4">
+    <div class="border rounded p-3 h-100">
+      <div class="text-muted small">Modalitats amb tutors</div>
+      <div class="h4 mb-0">{{ result.availability_counts.total_modalities_with_referees|default:0 }}</div>
+    </div>
+  </div>
+</div>
+
+{% if selected_scenario and selected_scenario.metrics %}
+<div class="row g-2 mb-3">
+  <div class="col-6 col-lg-3">
+    <div class="border rounded p-3 h-100">
+      <div class="text-muted small">Clusters</div>
+      <div class="h4 mb-0" id="metric-cluster-count">{{ selected_scenario.metrics.cluster_count|default:0 }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="border rounded p-3 h-100">
+      <div class="text-muted small">Outliers</div>
+      <div class="h4 mb-0" id="metric-outlier-points">{{ selected_scenario.metrics.outlier_points|default:0 }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="border rounded p-3 h-100">
+      <div class="text-muted small">Sense geocodificar</div>
+      <div class="h4 mb-0" id="metric-missing-geocode">{{ selected_scenario.metrics.missing_geocode_points|default:0 }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="border rounded p-3 h-100">
+      <div class="text-muted small">Subgrups estimats</div>
+      <div class="h4 mb-0" id="metric-subgroups">{{ selected_scenario.metrics.estimated_fused_subgroups|default:0 }}</div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="border rounded p-3 mb-3">
+  <div class="fw-bold mb-2">Comparativa modalitats i tutors</div>
+  <div class="text-muted small mb-2">
+    Dades filtrades del preview: partits, tutors disponibles i subgrups estimats per cada modalitat.
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm table-bordered align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Modalitat</th>
+          <th>Partits</th>
+          <th>Tutors</th>
+          <th>Disponibilitats</th>
+          <th>Subgrups</th>
+          <th>Partits/tutor</th>
+          <th>Subgrups/tutor</th>
+        </tr>
+      </thead>
+      <tbody id="preview-modality-breakdown-tbody">
+        {% if selected_scenario.modality_breakdown %}
+          {% for row in selected_scenario.modality_breakdown %}
+          <tr>
+            <td>{{ row.modality }}</td>
+            <td>{{ row.matches }}</td>
+            <td>{{ row.unique_referees }}</td>
+            <td>{{ row.availability_rows }}</td>
+            <td>{{ row.estimated_fused_subgroups }}</td>
+            <td>{% if row.matches_per_referee is not None %}{{ row.matches_per_referee }}{% else %}-{% endif %}</td>
+            <td>{% if row.subgroups_per_referee is not None %}{{ row.subgroups_per_referee }}{% else %}-{% endif %}</td>
+          </tr>
+          {% endfor %}
+        {% else %}
+        <tr>
+          <td colspan="7" class="text-muted">No hi ha dades de tutors/modalitats per al filtre actual.</td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-12 col-xl-7">
+    <div class="border rounded p-3 h-100">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <div class="fw-bold">Mapa de clusters</div>
+        {% if payload.map_ready %}
+        <a class="btn btn-sm btn-outline-secondary" id="preview-map-open-link" target="_blank" href="{{ payload.map_url }}{% if result.selected_eps_m %}?eps_m={{ result.selected_eps_m }}{% endif %}">Obrir mapa</a>
+        {% endif %}
+      </div>
+      {% if payload.map_ready %}
+      <iframe id="preview-map-frame" src="{{ payload.map_url }}{% if result.selected_eps_m %}?eps_m={{ result.selected_eps_m }}{% endif %}" style="width:100%;height:520px;border:0;" title="Mapa de clusters"></iframe>
+      {% else %}
+      <div class="alert alert-light small mb-0">El mapa encara no esta disponible.</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="col-12 col-xl-5">
+    <div class="border rounded p-3 mb-3">
+      <div class="fw-bold mb-2">Comparativa de radis</div>
+      {% if result.scenarios %}
+      <div class="table-responsive">
+        <table class="table table-sm table-bordered align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Radi</th>
+              <th>Clusters</th>
+              <th>Outliers</th>
+              <th>Subgrups</th>
+              <th>Score</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for scenario in result.scenarios %}
+            <tr
+              class="{% if scenario.selected %}table-primary{% elif scenario.recommended %}table-success{% endif %}"
+              data-scenario-row="true"
+              data-eps="{{ scenario.eps_m }}"
+              data-recommended="{% if scenario.recommended %}true{% else %}false{% endif %}"
+            >
+              <td>
+                <button type="button" class="btn btn-link btn-sm p-0 preview-scenario-trigger" data-eps="{{ scenario.eps_m }}">
+                  {{ scenario.eps_m }} m
+                </button>
+                <div class="mt-1">
+                  {% if scenario.selected %}<span class="badge text-bg-primary scenario-selected-badge">seleccionat</span>{% endif %}
+                  {% if scenario.recommended %}<span class="badge text-bg-success">recomanat</span>{% endif %}
+                </div>
+              </td>
+              <td>{{ scenario.metrics.cluster_count|default:0 }}</td>
+              <td>{{ scenario.metrics.outlier_points|default:0 }}</td>
+              <td>{{ scenario.metrics.estimated_fused_subgroups|default:0 }}</td>
+              <td>{{ scenario.metrics.scenario_score_total|floatformat:1 }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="text-muted small">No hi ha escenaris disponibles.</div>
+      {% endif %}
+    </div>
+
+    <div class="border rounded p-3">
+      <div class="fw-bold mb-2">Incidencies de geocodificacio</div>
+      {% if result.geocoding_issues %}
+      <div class="table-responsive" style="max-height: 260px;">
+        <table class="table table-sm table-bordered align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Adreca</th>
+              <th>Estat</th>
+              <th>Partits</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for issue in result.geocoding_issues %}
+            <tr>
+              <td>{{ issue.adreca }}</td>
+              <td>{{ issue.geocode_status }}</td>
+              <td>{{ issue.match_count }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="text-muted small">No hi ha incidencies de geocodificacio.</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endif %}

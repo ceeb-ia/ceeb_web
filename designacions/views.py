@@ -1,19 +1,26 @@
 # views.py
 from django.core.paginator import Paginator
-import os, uuid, json
+import os, uuid, json, time
 from redis import Redis
 from django.contrib import messages
 from .models import Address
 from django.conf import settings
 from django.http import JsonResponse, StreamingHttpResponse, HttpResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.views.decorators.http import require_http_methods, require_GET, require_POST
 from django.db.models import Count, Q
 from .services.colors import color_per_tutor
 from django.http import Http404
 from .models import DesignationRun, Assignment, Referee
-from .tasks import process_designacions_run, rebuild_run_map_task
-from .services.jobstore import write_job_sync, read_job_sync
+from .tasks import build_cluster_preview_task, process_designacions_run, rebuild_run_map_task
+from .services.jobstore import (
+    preview_map_rel_path,
+    read_job_logs_sync,
+    read_job_sync,
+    read_preview_map_html_sync,
+    write_job_sync,
+)
 from .services.excel_export import export_run_to_excel
 from .services.assignment_explainer import (
     explain_candidate_for_assignment,
@@ -87,6 +94,16 @@ def _to_str_list_csv(v):
         if x:
             parts.append(x)
     return parts
+
+
+def _to_int_list_csv(v):
+    values = []
+    for raw_value in _to_str_list_csv(v):
+        try:
+            values.append(int(float(raw_value)))
+        except (TypeError, ValueError):
+            continue
+    return values
 
 
 def _to_fase(v, default="FS1"):
@@ -175,6 +192,131 @@ def _resolve_designacions_upload_files(files):
     else:
         detail = "No s'han pogut identificar els fitxers. Cal pujar un Excel de partits i un de disponibilitats."
     raise ValueError(f"{detail} Detectat: {names_by_kind}")
+
+
+def _build_designacions_params(data):
+    return {
+        "cluster_eps_m": _to_float(data.get("cluster_eps_m"), 500),
+        "cluster_min_samples": _to_int(data.get("cluster_min_samples"), 2),
+        "max_partits_subgrup": _to_int(data.get("max_partits_subgrup"), 3),
+        "gap_same_pitch_min": _to_int(data.get("gap_same_pitch_min"), 60),
+        "gap_diff_pitch_min": _to_int(data.get("gap_diff_pitch_min"), 75),
+        "gap_diff_cluster_min": _to_int(data.get("gap_diff_cluster_min"), 100),
+        "modalitats": _to_str_list_csv(data.get("modalitats_csv")),
+        "preview_cluster_eps_options": _to_int_list_csv(data.get("preview_cluster_eps_options_csv")),
+        "date_from": (data.get("date_from") or "").strip(),
+        "date_to": (data.get("date_to") or "").strip(),
+        "fase": _to_fase(data.get("fase"), "FS1"),
+    }
+
+
+def _cluster_preview_urls(preview_id: str) -> dict:
+    return {
+        "detail_url": reverse("designacions_cluster_preview_detail", args=[preview_id]),
+        "status_url": reverse("designacions_cluster_preview_status", args=[preview_id]),
+        "map_url": reverse("designacions_cluster_preview_map", args=[preview_id]),
+        "logs_url": reverse("designacions_logs_stream", args=[preview_id]),
+    }
+
+
+def _normalize_preview_status(status):
+    if status in ("done", "SUCCESS"):
+        return "SUCCESS"
+    if status in ("failed", "FAILURE"):
+        return "FAILURE"
+    return status or "PENDING"
+
+
+def _serialize_cluster_preview_job(preview_id: str, job: dict | None, *, include_result: bool):
+    payload = dict(job or {})
+    status = _normalize_preview_status(payload.get("status"))
+    map_path = payload.get("map_path") or preview_map_rel_path(preview_id)
+    has_map = bool(read_preview_map_html_sync(rel_path=map_path))
+    updated_at = payload.get("updated_at")
+    seconds_since_update = None
+    if updated_at is not None:
+        try:
+            seconds_since_update = max(0, int(time.time() - float(updated_at)))
+        except (TypeError, ValueError):
+            seconds_since_update = None
+    is_processing = status not in ("SUCCESS", "FAILURE")
+    is_stalled = bool(is_processing and seconds_since_update is not None and seconds_since_update >= 20)
+    response = {
+        "ok": True,
+        "preview_id": preview_id,
+        "task_id": preview_id,
+        "status": status,
+        "raw_status": payload.get("status") or "PENDING",
+        "progress": payload.get("progress"),
+        "message": payload.get("message"),
+        "error": payload.get("error"),
+        "params": payload.get("params") or {},
+        "detected_files": payload.get("detected_files") or {},
+        "map_ready": has_map,
+        "map_path": map_path if has_map else None,
+        "updated_at": updated_at,
+        "seconds_since_update": seconds_since_update,
+        "stalled": is_stalled,
+        "stalled_message": (
+            "Fa estona que el worker no envia cap actualitzacio. Pot estar geocodificant, esperant el limit del proveidor o bloquejat."
+            if is_stalled
+            else None
+        ),
+    }
+    response.update(_cluster_preview_urls(preview_id))
+    if include_result:
+        response["result"] = payload.get("result")
+    return response
+
+
+def _preview_selected_scenario(result: dict | None):
+    if not isinstance(result, dict):
+        return None
+    selected_eps = result.get("selected_eps_m")
+    scenarios = result.get("scenarios") or []
+    for scenario in scenarios:
+        if not isinstance(scenario, dict):
+            continue
+        if scenario.get("selected") or scenario.get("eps_m") == selected_eps:
+            return scenario
+    return scenarios[0] if scenarios else None
+
+
+def _build_preview_scenario_summaries(preview_id: str, result: dict | None):
+    if not isinstance(result, dict):
+        return []
+    items = []
+    for scenario in result.get("scenarios") or []:
+        if not isinstance(scenario, dict):
+            continue
+        eps_m = scenario.get("eps_m")
+        items.append(
+            {
+                "eps_m": eps_m,
+                "metrics": scenario.get("metrics") or {},
+                "modality_breakdown": scenario.get("modality_breakdown") or [],
+                "selected": bool(scenario.get("selected")),
+                "recommended": bool(scenario.get("recommended")),
+                "map_url": f"{reverse('designacions_cluster_preview_map', args=[preview_id])}?eps_m={eps_m}",
+                "map_path": scenario.get("map_path"),
+            }
+        )
+    return items
+
+
+def _json_no_cache(payload: dict, *, status: int = 200):
+    response = JsonResponse(payload, status=status)
+    response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response["Pragma"] = "no-cache"
+    response["Expires"] = "0"
+    return response
+
+
+def _apply_no_cache_headers(response):
+    response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response["Pragma"] = "no-cache"
+    response["Expires"] = "0"
+    return response
 
 
 def _build_counts(run, referees_with_counts=None):
@@ -388,6 +530,7 @@ def upload_view(request):
                 "gap_same_pitch_min": 60,
                 "gap_diff_pitch_min": 75,
                 "gap_diff_cluster_min": 100,
+                "preview_cluster_eps_options_csv": "300, 400, 500, 650, 800",
                 "modalitats_csv": "",
                 "date_from": "",
                 "date_to": "",
@@ -410,18 +553,7 @@ def upload_view(request):
     path_disponibilitats = _save_uploaded(disponibilitats_file, f"{task_id}__disponibilitats")
 
     # --- PARAMS del run (venen del formulari) ---
-    params = {
-        "cluster_eps_m": _to_float(request.POST.get("cluster_eps_m"), 500),
-        "cluster_min_samples": _to_int(request.POST.get("cluster_min_samples"), 2),
-        "max_partits_subgrup": _to_int(request.POST.get("max_partits_subgrup"), 3),
-        "gap_same_pitch_min": _to_int(request.POST.get("gap_same_pitch_min"), 60),
-        "gap_diff_pitch_min": _to_int(request.POST.get("gap_diff_pitch_min"), 75),
-        "gap_diff_cluster_min": _to_int(request.POST.get("gap_diff_cluster_min"), 100),
-        "modalitats": _to_str_list_csv(request.POST.get("modalitats_csv")),
-        "date_from": (request.POST.get("date_from") or "").strip(),
-        "date_to": (request.POST.get("date_to") or "").strip(),
-        "fase": _to_fase(request.POST.get("fase"), "FS1"),
-    }
+    params = _build_designacions_params(request.POST)
 
     run = DesignationRun.objects.create(
         task_id=task_id,
@@ -440,6 +572,106 @@ def upload_view(request):
     # passa params a celery
     process_designacions_run.delay(run.id, task_id, path_disponibilitats, path_partits, params)
 
+    return redirect("designacions_run_detail", run_id=run.id)
+
+
+@require_POST
+def cluster_preview_create_view(request):
+    files = request.FILES.getlist("files")
+    if len(files) != 2:
+        return HttpResponseBadRequest("Cal pujar exactament 2 fitxers .xlsx (partits i disponibilitats).")
+
+    try:
+        partits_file, disponibilitats_file, detected_files = _resolve_designacions_upload_files(files)
+    except ValueError as exc:
+        return HttpResponseBadRequest(str(exc))
+
+    task_id = uuid.uuid4().hex
+    path_partits = _save_uploaded(partits_file, f"{task_id}__preview__partits")
+    path_disponibilitats = _save_uploaded(disponibilitats_file, f"{task_id}__preview__disponibilitats")
+    params = _build_designacions_params(request.POST)
+
+    detected_summary = {
+        getattr(file, "name", "fitxer"): kind
+        for file, kind in detected_files
+    }
+    write_job_sync(
+        task_id,
+        {
+            "status": "queued",
+            "task_id": task_id,
+            "preview_id": task_id,
+            "params": params,
+            "detected_files": detected_summary,
+            "path_partits": path_partits,
+            "path_disponibilitats": path_disponibilitats,
+            "partits_filename": getattr(partits_file, "name", "partits.xlsx"),
+            "disponibilitats_filename": getattr(disponibilitats_file, "name", "disponibilitats.xlsx"),
+        },
+    )
+    build_cluster_preview_task.delay(task_id, path_disponibilitats, path_partits, params)
+
+    response = _serialize_cluster_preview_job(task_id, {
+        "status": "queued",
+        "task_id": task_id,
+        "preview_id": task_id,
+        "params": params,
+        "detected_files": detected_summary,
+    }, include_result=False)
+    return JsonResponse(response, status=202)
+
+
+@require_POST
+def cluster_preview_run_view(request, preview_id: str):
+    job = read_job_sync(preview_id)
+    if not job:
+        return HttpResponseBadRequest("Preview no trobat.")
+
+    status = _normalize_preview_status((job or {}).get("status"))
+    if status != "SUCCESS":
+        return HttpResponseBadRequest("El preview encara no esta preparat per executar el run.")
+
+    path_partits = (job or {}).get("path_partits")
+    path_disponibilitats = (job or {}).get("path_disponibilitats")
+    if not path_partits or not path_disponibilitats:
+        return HttpResponseBadRequest("Falten els fitxers temporals del preview.")
+    if not os.path.exists(path_partits) or not os.path.exists(path_disponibilitats):
+        return HttpResponseBadRequest("Els fitxers temporals del preview ja no estan disponibles.")
+
+    params = dict((job or {}).get("params") or {})
+    try:
+        selected_eps_m = int(float(request.POST.get("selected_eps_m") or params.get("selected_eps_m") or params.get("cluster_eps_m") or 500))
+    except (TypeError, ValueError):
+        return HttpResponseBadRequest("Radi seleccionat no valid.")
+    available_eps = {
+        int(float(scenario.get("eps_m")))
+        for scenario in (((job or {}).get("result") or {}).get("scenarios") or [])
+        if isinstance(scenario, dict) and scenario.get("eps_m") is not None
+    }
+    if available_eps and selected_eps_m not in available_eps:
+        return HttpResponseBadRequest("El radi seleccionat no forma part del preview calculat.")
+    params["cluster_eps_m"] = selected_eps_m
+    params["selected_eps_m"] = selected_eps_m
+    params["source_preview_id"] = preview_id
+
+    run_task_id = uuid.uuid4().hex
+    run = DesignationRun.objects.create(
+        task_id=run_task_id,
+        status="queued",
+        map_status="queued",
+        params=params,
+    )
+
+    write_job_sync(
+        run_task_id,
+        {
+            "status": "queued",
+            "task_id": run_task_id,
+            "detected_files": (job or {}).get("detected_files") or {},
+            "message": f"Run creat des del preview {preview_id} amb radi {selected_eps_m} m.",
+        },
+    )
+    process_designacions_run.delay(run.id, run_task_id, path_disponibilitats, path_partits, params)
     return redirect("designacions_run_detail", run_id=run.id)
 
 @require_GET
@@ -480,31 +712,118 @@ def task_status_view(request, task_id: str):
 
     terminal_from_run = _serialize_terminal_run_status(run, job) if run else None
     if terminal_from_run and status not in ("done", "SUCCESS", "failed", "FAILURE"):
-        return JsonResponse(terminal_from_run)
+        return _json_no_cache(terminal_from_run)
 
     status = status or (run.status if run else "PENDING")
 
     if status in ("done", "SUCCESS"):
-        return JsonResponse({
+        return _json_no_cache({
             "status": "SUCCESS",
             "progress": 100,
             "message": job.get("message") or (terminal_from_run or {}).get("message"),
         })
 
     if status in ("failed", "FAILURE"):
-        return JsonResponse({
+        return _json_no_cache({
             "status": "FAILURE",
             "progress": job.get("progress"),
             "message": job.get("message"),
             "error": job.get("error") or (run.error if run else None),
         })
 
-    return JsonResponse({
+    return _json_no_cache({
         "status": status,
         "progress": job.get("progress"),
         "message": job.get("message"),
         "error": job.get("error"),
     })
+
+
+@require_GET
+def cluster_preview_detail_view(request, preview_id: str):
+    job = read_job_sync(preview_id)
+    if not job:
+        raise Http404("Preview no trobat.")
+    payload = _serialize_cluster_preview_job(preview_id, job, include_result=True)
+    payload["log_events"] = read_job_logs_sync(preview_id, limit=200)
+    scenario_summaries = _build_preview_scenario_summaries(preview_id, payload.get("result"))
+    response = render(
+        request,
+        "cluster_preview.html",
+        {
+            "preview_id": preview_id,
+            "payload": payload,
+            "result": payload.get("result") or {},
+            "selected_scenario": _preview_selected_scenario(payload.get("result")),
+            "scenario_summaries": scenario_summaries,
+            "run_action_url": reverse("designacions_cluster_preview_run", args=[preview_id]),
+        },
+    )
+    return _apply_no_cache_headers(response)
+
+
+@require_GET
+def cluster_preview_status_view(request, preview_id: str):
+    job = read_job_sync(preview_id)
+    if not job:
+        return _json_no_cache({
+            "ok": False,
+            "preview_id": preview_id,
+            "error": "Preview no trobat.",
+        }, status=404)
+
+    payload = _serialize_cluster_preview_job(preview_id, job, include_result=False)
+    return _json_no_cache(payload)
+
+
+@require_GET
+def cluster_preview_map_view(request, preview_id: str):
+    job = read_job_sync(preview_id) or {}
+    map_path = None
+    requested_eps = request.GET.get("eps_m")
+    if requested_eps:
+        try:
+            requested_eps_int = int(float(requested_eps))
+        except (TypeError, ValueError):
+            requested_eps_int = None
+        if requested_eps_int is not None:
+            scenarios = ((job.get("result") or {}).get("scenarios") or []) if isinstance(job.get("result"), dict) else []
+            for scenario in scenarios:
+                if not isinstance(scenario, dict):
+                    continue
+                if scenario.get("eps_m") == requested_eps_int:
+                    map_path = scenario.get("map_path")
+                    break
+    map_path = map_path or job.get("map_path") or preview_map_rel_path(preview_id)
+    html = read_preview_map_html_sync(rel_path=map_path)
+    if html is not None:
+        response = HttpResponse(html, content_type="text/html; charset=utf-8")
+        response["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        return _apply_no_cache_headers(response)
+
+    if not job:
+        return JsonResponse({
+            "ok": False,
+            "preview_id": preview_id,
+            "error": "Preview no trobat.",
+        }, status=404)
+
+    status = _normalize_preview_status(job.get("status"))
+    if status == "FAILURE":
+        return JsonResponse({
+            "ok": False,
+            "preview_id": preview_id,
+            "status": status,
+            "error": job.get("error"),
+            "message": job.get("message"),
+        }, status=409)
+
+    return JsonResponse({
+        "ok": False,
+        "preview_id": preview_id,
+        "status": status,
+        "message": job.get("message") or "El mapa encara no esta disponible.",
+    }, status=409)
 
 @require_GET
 def logs_stream_view(request, task_id: str):
