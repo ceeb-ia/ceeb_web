@@ -1,24 +1,4 @@
 {% if result %}
-<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-  <div class="d-flex align-items-center gap-2">
-    <label class="small text-muted mb-0" for="preview-scenario-select">Radi a visualitzar</label>
-    <select class="form-control form-control-sm" id="preview-scenario-select" style="width: 180px;">
-      {% for scenario in scenario_summaries %}
-      <option value="{{ scenario.eps_m }}"{% if scenario.selected %} selected{% endif %}>
-        {{ scenario.eps_m }} m{% if scenario.recommended %} (recomanat){% endif %}
-      </option>
-      {% endfor %}
-    </select>
-  </div>
-
-  <form method="post" action="{{ run_action_url }}" class="d-flex align-items-center gap-2 mb-0">
-    {% csrf_token %}
-    <input type="hidden" name="selected_eps_m" id="run-selected-eps-input" value="{{ result.selected_eps_m|default:selected_scenario.eps_m|default:'' }}">
-    <button type="submit" class="btn btn-sm btn-primary">
-      Executar run amb aquest radi
-    </button>
-  </form>
-</div>
 
 <div class="row g-2 mb-3">
   <div class="col-6 col-lg-3">
@@ -139,10 +119,15 @@
 </div>
 
 <div class="row g-3 mb-3">
-  <div class="col-12 col-xl-7">
+  <div class="col-12 col-xl-8">
     <div class="border rounded p-3 h-100">
       <div class="d-flex justify-content-between align-items-center mb-2">
-        <div class="fw-bold">Mapa de clusters</div>
+        <div>
+          <div class="fw-bold">Mapa de clusters</div>
+          <div class="small text-muted" id="preview-map-selected-venue">
+            Selecciona una seu al workspace inferior per preparar overrides manuals.
+          </div>
+        </div>
         {% if payload.map_ready %}
         <a class="btn btn-sm btn-outline-secondary" id="preview-map-open-link" target="_blank" href="{{ payload.map_url }}{% if result.selected_eps_m %}?eps_m={{ result.selected_eps_m }}{% endif %}">Obrir mapa</a>
         {% endif %}
@@ -155,8 +140,52 @@
     </div>
   </div>
 
-  <div class="col-12 col-xl-5">
-    <div class="border rounded p-3 mb-3">
+  <div class="col-12 col-xl-4">
+    <div class="border rounded p-3 h-100">
+      <div class="d-flex justify-content-between align-items-start gap-2 mb-3">
+        <div>
+          <div class="fw-bold">Seleccio de radis</div>
+          <div class="text-muted small">
+            Compara escenaris i deixa preparat el radi que portaràs al run.
+          </div>
+        </div>
+        <span class="badge text-bg-light border">Preview</span>
+      </div>
+
+      <div class="mb-3">
+        <label class="small text-muted mb-1" for="preview-scenario-select">Radi a visualitzar</label>
+        <select class="form-control form-control-sm" id="preview-scenario-select">
+          {% for scenario in scenario_summaries %}
+          <option value="{{ scenario.eps_m }}"{% if scenario.selected %} selected{% endif %}>
+            {{ scenario.eps_m }} m{% if scenario.recommended %} (recomanat){% endif %}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="row g-2 mb-3">
+        <div class="col-6">
+          <div class="border rounded p-2 h-100">
+            <div class="text-muted small">Radi actiu</div>
+            <div class="fw-semibold" id="selected-eps-value-side">{{ result.selected_eps_m|default:"-" }} m</div>
+          </div>
+        </div>
+        <div class="col-6">
+          <div class="border rounded p-2 h-100">
+            <div class="text-muted small">Radi recomanat</div>
+            <div class="fw-semibold">{% if result.recommended_eps_m %}{{ result.recommended_eps_m }} m{% else %}-{% endif %}</div>
+          </div>
+        </div>
+      </div>
+
+      <form method="post" action="{{ run_action_url }}" class="mb-3">
+        {% csrf_token %}
+        <input type="hidden" name="selected_eps_m" id="run-selected-eps-input" value="{{ result.selected_eps_m|default:'' }}">
+        <button type="submit" class="btn btn-sm btn-primary w-100">
+          Executar run amb aquest radi
+        </button>
+      </form>
+
       <div class="fw-bold mb-2">Comparativa de radis</div>
       {% if result.scenarios %}
       <div class="table-responsive">
@@ -200,34 +229,243 @@
       <div class="text-muted small">No hi ha escenaris disponibles.</div>
       {% endif %}
     </div>
+  </div>
+</div>
 
-    <div class="border rounded p-3">
-      <div class="fw-bold mb-2">Incidencies de geocodificacio</div>
-      {% if result.geocoding_issues %}
-      <div class="table-responsive" style="max-height: 260px;">
+<div class="border rounded p-3 mb-3">
+  <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+    <div>
+      <div class="fw-bold">Seus del radi seleccionat</div>
+      <div class="text-muted small">
+        Selecciona una seu, revisa el seu cluster i prepara overrides manuals sense sortir del preview.
+      </div>
+    </div>
+    <span class="badge text-bg-light border" id="preview-venue-selected-badge">Cap seu seleccionada</span>
+  </div>
+
+  <div class="row g-2 mb-3">
+    <div class="col-6 col-lg-2">
+      <div class="border rounded p-2 h-100">
+        <div class="text-muted small">Seus</div>
+        <div class="h5 mb-0" id="preview-venue-total-count">
+          {% if selected_scenario.venues %}{{ selected_scenario.venues|length }}{% else %}0{% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-lg-2">
+      <div class="border rounded p-2 h-100">
+        <div class="text-muted small">Overrides actius</div>
+        <div class="h5 mb-0" id="preview-venue-manual-count">
+          {% if selected_scenario.active_overrides %}{{ selected_scenario.active_overrides|length }}{% else %}0{% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-lg-2">
+      <div class="border rounded p-2 h-100">
+        <div class="text-muted small">Outliers/pending</div>
+        <div class="h5 mb-0" id="preview-venue-exception-count">0</div>
+      </div>
+    </div>
+    <div class="col-12 col-lg-3">
+      <label class="small text-muted mb-1" for="preview-venue-search">Cercar seu</label>
+      <input
+        type="search"
+        id="preview-venue-search"
+        class="form-control form-control-sm"
+        placeholder="Nom, adreca o modalitat"
+      >
+    </div>
+    <div class="col-12 col-lg-3">
+      <label class="small text-muted mb-1" for="preview-venue-filter">Filtre</label>
+      <select id="preview-venue-filter" class="form-control form-control-sm">
+        <option value="all">Totes</option>
+        <option value="manual">Amb override manual</option>
+        <option value="clustered">Clusteritzades</option>
+        <option value="outlier">Outliers</option>
+        <option value="missing_geocode">Sense geocodificar</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-12 col-xl-6">
+      <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+        <div class="fw-bold">Llistat de seus</div>
+        <div class="text-muted small">Vista operativa del radi actual.</div>
+      </div>
+
+      <div class="table-responsive mb-3" style="max-height: 300px;">
         <table class="table table-sm table-bordered align-middle mb-0">
           <thead class="table-light">
             <tr>
-              <th>Adreca</th>
+              <th>Seu</th>
+              <th>Cluster</th>
               <th>Estat</th>
               <th>Partits</th>
             </tr>
           </thead>
-          <tbody>
-            {% for issue in result.geocoding_issues %}
-            <tr>
-              <td>{{ issue.adreca }}</td>
-              <td>{{ issue.geocode_status }}</td>
-              <td>{{ issue.match_count }}</td>
+          <tbody id="preview-venues-tbody">
+            {% if selected_scenario.venues %}
+              {% for venue in selected_scenario.venues %}
+              <tr data-initial-venue-row="true">
+                <td>
+                  <button
+                    type="button"
+                    class="btn btn-link btn-sm p-0 text-start preview-venue-trigger"
+                    data-venue-id="{{ venue.id }}"
+                  >
+                    {{ venue.display_name|default:"Seu" }}
+                  </button>
+                  <div class="small text-muted">
+                    {{ venue.address|default:"-" }}
+                  </div>
+                  {% if venue.override_state and venue.override_state != "auto" %}
+                  <div class="mt-1"><span class="badge text-bg-warning">manual</span></div>
+                  {% endif %}
+                </td>
+                <td>{{ venue.cluster_label|default:"-" }}</td>
+                <td>{{ venue.cluster_status|default:"-" }}</td>
+                <td>{{ venue.match_count|default:0 }}</td>
+              </tr>
+              {% endfor %}
+            {% else %}
+            <tr id="preview-venues-empty-row">
+              <td colspan="4" class="text-muted small">
+                Quan el backend exposi la llista de seus per radi, aqui podras seleccionar-les i preparar overrides manuals.
+              </td>
             </tr>
-            {% endfor %}
+            {% endif %}
           </tbody>
         </table>
       </div>
-      {% else %}
-      <div class="text-muted small">No hi ha incidencies de geocodificacio.</div>
-      {% endif %}
+    </div>
+
+    <div class="col-12 col-xl-6">
+      <div class="border rounded p-3 bg-light-subtle mb-3">
+        <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+          <div>
+            <div class="fw-bold" id="preview-venue-detail-name">Cap seu seleccionada</div>
+            <div class="text-muted small" id="preview-venue-detail-address">Selecciona una fila per veure'n el detall operatiu.</div>
+          </div>
+          <span class="badge text-bg-secondary" id="preview-venue-detail-status">sense seleccio</span>
+        </div>
+        <div class="row g-2 small mb-3">
+          <div class="col-6">
+            <div class="text-muted">Cluster</div>
+            <div class="fw-semibold" id="preview-venue-detail-cluster">-</div>
+          </div>
+          <div class="col-6">
+            <div class="text-muted">Override</div>
+            <div class="fw-semibold" id="preview-venue-detail-override">Automatic</div>
+          </div>
+          <div class="col-6">
+            <div class="text-muted">Partits</div>
+            <div class="fw-semibold" id="preview-venue-detail-matches">0</div>
+          </div>
+          <div class="col-6">
+            <div class="text-muted">Modalitats</div>
+            <div class="fw-semibold" id="preview-venue-detail-modalities">-</div>
+          </div>
+        </div>
+
+        <div class="small text-muted mb-2">Accions manuals</div>
+        <div class="alert alert-light small py-2 mb-3" id="preview-venue-action-feedback">
+          Selecciona una seu i, si cal, tria una altra seu per fusionar-les dins del radi actual.
+        </div>
+
+        <form method="post" id="preview-venue-merge-form" class="mb-2" action="{{ payload.override_actions.merge_url }}">
+          {% csrf_token %}
+          <input type="hidden" name="preview_id" value="{{ preview_id }}">
+          <input type="hidden" name="selected_eps_m" id="preview-venue-merge-eps-input" value="{{ result.selected_eps_m|default:'' }}">
+          <input type="hidden" name="source_venue_id" id="preview-venue-merge-source-input" value="">
+          <input type="hidden" name="target_venue_id" id="preview-venue-merge-target-input" value="">
+          <div class="row g-2 align-items-end">
+            <div class="col-12 col-lg-8">
+              <label class="small text-muted mb-1" for="preview-venue-merge-target-select">Fusionar amb</label>
+              <select id="preview-venue-merge-target-select" class="form-control form-control-sm">
+                <option value="">Selecciona una altra seu</option>
+              </select>
+            </div>
+            <div class="col-12 col-lg-4">
+              <button type="submit" class="btn btn-sm btn-outline-primary w-100" id="preview-venue-merge-btn" disabled>
+                Fusionar
+              </button>
+            </div>
+          </div>
+        </form>
+
+        <div class="d-flex flex-wrap gap-2">
+          <form method="post" id="preview-venue-isolate-form" class="mb-0" action="{{ payload.override_actions.isolate_url }}">
+            {% csrf_token %}
+            <input type="hidden" name="preview_id" value="{{ preview_id }}">
+            <input type="hidden" name="selected_eps_m" id="preview-venue-isolate-eps-input" value="{{ result.selected_eps_m|default:'' }}">
+            <input type="hidden" name="source_venue_id" id="preview-venue-isolate-source-input" value="">
+            <button type="submit" class="btn btn-sm btn-outline-warning" id="preview-venue-isolate-btn" disabled>
+              Aillar aquesta seu
+            </button>
+          </form>
+          <form method="post" id="preview-venue-restore-form" class="mb-0" action="{{ payload.override_actions.restore_url }}">
+            {% csrf_token %}
+            <input type="hidden" name="preview_id" value="{{ preview_id }}">
+            <input type="hidden" name="selected_eps_m" id="preview-venue-restore-eps-input" value="{{ result.selected_eps_m|default:'' }}">
+            <input type="hidden" name="source_venue_id" id="preview-venue-restore-source-input" value="">
+            <button type="submit" class="btn btn-sm btn-outline-secondary" id="preview-venue-restore-btn" disabled>
+              Restaurar automatic
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <div>
+        <div class="fw-bold mb-2">Overrides actius</div>
+        <div class="small text-muted mb-2">
+          Resum de les modificacions manuals que s'aplicaran al recalcul del preview.
+        </div>
+        <div id="preview-active-overrides-empty" class="text-muted small{% if selected_scenario.active_overrides %} d-none{% endif %}">
+          No hi ha overrides manuals actius per aquest radi.
+        </div>
+        <div class="list-group list-group-flush" id="preview-active-overrides-list">
+          {% if selected_scenario.active_overrides %}
+            {% for override in selected_scenario.active_overrides %}
+            <div class="list-group-item px-0 py-2">
+              <div class="fw-semibold small">{{ override.label|default:"Override manual" }}</div>
+              <div class="text-muted small">
+                {{ override.description|default:"Canvi manual aplicat al radi seleccionat." }}
+              </div>
+            </div>
+            {% endfor %}
+          {% endif %}
+        </div>
+      </div>
     </div>
   </div>
+</div>
+
+<div class="border rounded p-3">
+  <div class="fw-bold mb-2">Incidencies de geocodificacio</div>
+  {% if result.geocoding_issues %}
+  <div class="table-responsive" style="max-height: 260px;">
+    <table class="table table-sm table-bordered align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Adreca</th>
+          <th>Estat</th>
+          <th>Partits</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for issue in result.geocoding_issues %}
+        <tr>
+          <td>{{ issue.adreca }}</td>
+          <td>{{ issue.geocode_status }}</td>
+          <td>{{ issue.match_count }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="text-muted small">No hi ha incidencies de geocodificacio.</div>
+  {% endif %}
 </div>
 {% endif %}

@@ -14,6 +14,7 @@ from .services.colors import color_per_tutor
 from django.http import Http404
 from .models import DesignationRun, Assignment, Referee
 from .tasks import build_cluster_preview_task, process_designacions_run, rebuild_run_map_task
+from .clusteritzacio.overrides import add_preview_override, load_preview_overrides, remove_preview_override
 from .services.jobstore import (
     preview_map_rel_path,
     read_job_logs_sync,
@@ -219,6 +220,14 @@ def _cluster_preview_urls(preview_id: str) -> dict:
     }
 
 
+def _cluster_preview_override_urls(preview_id: str) -> dict:
+    return {
+        "merge_url": reverse("designacions_cluster_preview_override_merge", args=[preview_id]),
+        "isolate_url": reverse("designacions_cluster_preview_override_isolate", args=[preview_id]),
+        "restore_url": reverse("designacions_cluster_preview_override_restore", args=[preview_id]),
+    }
+
+
 def _normalize_preview_status(status):
     if status in ("done", "SUCCESS"):
         return "SUCCESS"
@@ -282,6 +291,75 @@ def _preview_selected_scenario(result: dict | None):
     return scenarios[0] if scenarios else None
 
 
+def _override_state_for_point(point: dict) -> str:
+    if not isinstance(point, dict):
+        return "auto"
+    if not point.get("is_manual"):
+        return "auto"
+    manual_role = str(point.get("manual_role") or "").strip().lower()
+    if manual_role == "isolated":
+        return "isolated"
+    if manual_role in {"merged", "merge_target"}:
+        return "merged"
+    return "manual"
+
+
+def _override_summary_for_point(point: dict) -> str:
+    if not isinstance(point, dict):
+        return ""
+    manual_role = str(point.get("manual_role") or "").strip().lower()
+    if manual_role == "isolated":
+        return "Cluster manual independent"
+    if manual_role == "merged":
+        return "Fusionada manualment amb una altra seu"
+    if manual_role == "merge_target":
+        return "Seu desti dins d'una fusio manual"
+    return ""
+
+
+def _scenario_points_to_venues(scenario: dict | None):
+    if not isinstance(scenario, dict):
+        return []
+    points = scenario.get("points") or []
+    venues = []
+    for point in points:
+        if not isinstance(point, dict):
+            continue
+        address_id = point.get("address_id")
+        if address_id is None:
+            continue
+        cluster_value = point.get("cluster")
+        cluster_status = point.get("cluster_status") or "pending"
+        cluster_label = cluster_value if cluster_value is not None else ("outlier" if cluster_status == "outlier" else "-")
+        venues.append(
+            {
+                "id": address_id,
+                "address_id": address_id,
+                "display_name": point.get("adreca") or "Seu",
+                "address": point.get("adreca") or "-",
+                "cluster_id": cluster_value,
+                "cluster_label": cluster_label,
+                "cluster_status": cluster_status,
+                "match_count": int(point.get("match_count") or 0),
+                "modalities": list(point.get("modalities") or []),
+                "override_state": _override_state_for_point(point),
+                "override_summary": _override_summary_for_point(point),
+                "is_manual": bool(point.get("is_manual")),
+            }
+        )
+    venues.sort(key=lambda item: (-int(item.get("match_count") or 0), str(item.get("display_name") or "")))
+    return venues
+
+
+def _decorate_preview_scenario(preview_id: str, scenario: dict | None):
+    if not isinstance(scenario, dict):
+        return scenario
+    decorated = dict(scenario)
+    decorated["venues"] = _scenario_points_to_venues(scenario)
+    decorated["override_actions"] = _cluster_preview_override_urls(preview_id)
+    return decorated
+
+
 def _build_preview_scenario_summaries(preview_id: str, result: dict | None):
     if not isinstance(result, dict):
         return []
@@ -299,6 +377,9 @@ def _build_preview_scenario_summaries(preview_id: str, result: dict | None):
                 "recommended": bool(scenario.get("recommended")),
                 "map_url": f"{reverse('designacions_cluster_preview_map', args=[preview_id])}?eps_m={eps_m}",
                 "map_path": scenario.get("map_path"),
+                "venues": _scenario_points_to_venues(scenario),
+                "active_overrides": scenario.get("active_overrides") or [],
+                "override_actions": _cluster_preview_override_urls(preview_id),
             }
         )
     return items
@@ -653,6 +734,7 @@ def cluster_preview_run_view(request, preview_id: str):
     params["cluster_eps_m"] = selected_eps_m
     params["selected_eps_m"] = selected_eps_m
     params["source_preview_id"] = preview_id
+    params["preview_cluster_overrides"] = load_preview_overrides(preview_id)
 
     run_task_id = uuid.uuid4().hex
     run = DesignationRun.objects.create(
@@ -673,6 +755,113 @@ def cluster_preview_run_view(request, preview_id: str):
     )
     process_designacions_run.delay(run.id, run_task_id, path_disponibilitats, path_partits, params)
     return redirect("designacions_run_detail", run_id=run.id)
+
+
+def _queue_preview_rebuild(preview_id: str, job: dict, params: dict, message: str):
+    path_partits = (job or {}).get("path_partits")
+    path_disponibilitats = (job or {}).get("path_disponibilitats")
+    if not path_partits or not path_disponibilitats:
+        return HttpResponseBadRequest("Falten els fitxers temporals del preview.")
+    if not os.path.exists(path_partits) or not os.path.exists(path_disponibilitats):
+        return HttpResponseBadRequest("Els fitxers temporals del preview ja no estan disponibles.")
+
+    write_job_sync(
+        preview_id,
+        {
+            "status": "queued",
+            "task_id": preview_id,
+            "preview_id": preview_id,
+            "params": params,
+            "message": message,
+            "path_partits": path_partits,
+            "path_disponibilitats": path_disponibilitats,
+        },
+    )
+    build_cluster_preview_task.delay(preview_id, path_disponibilitats, path_partits, params)
+    return redirect("designacions_cluster_preview_detail", preview_id=preview_id)
+
+
+def _preview_override_common(request, preview_id: str):
+    job = read_job_sync(preview_id)
+    if not job:
+        return None, None, HttpResponseBadRequest("Preview no trobat.")
+    status = _normalize_preview_status((job or {}).get("status"))
+    if status != "SUCCESS":
+        return None, None, HttpResponseBadRequest("El preview ha d'estar finalitzat abans d'editar seus.")
+
+    params = dict((job or {}).get("params") or {})
+    try:
+        selected_eps_m = int(float(request.POST.get("selected_eps_m") or params.get("selected_eps_m") or params.get("cluster_eps_m") or 500))
+    except (TypeError, ValueError):
+        return None, None, HttpResponseBadRequest("Radi seleccionat no valid.")
+    params["cluster_eps_m"] = selected_eps_m
+    params["selected_eps_m"] = selected_eps_m
+    params["preview_cluster_overrides"] = load_preview_overrides(preview_id)
+    return job, params, None
+
+
+@require_POST
+def cluster_preview_override_merge_view(request, preview_id: str):
+    job, params, error_response = _preview_override_common(request, preview_id)
+    if error_response is not None:
+        return error_response
+
+    try:
+        source_address_id = int(request.POST.get("source_venue_id") or request.POST.get("source_address_id"))
+        target_address_id = int(request.POST.get("target_venue_id") or request.POST.get("target_address_id"))
+    except (TypeError, ValueError):
+        return HttpResponseBadRequest("Cal indicar una seu origen i una seu desti valides.")
+    if source_address_id == target_address_id:
+        return HttpResponseBadRequest("La seu origen i la seu desti no poden ser la mateixa.")
+
+    overrides = add_preview_override(
+        preview_id,
+        {
+            "kind": "merge_with_address",
+            "source_address_id": source_address_id,
+            "target_address_id": target_address_id,
+        },
+    )
+    params["preview_cluster_overrides"] = overrides
+    return _queue_preview_rebuild(preview_id, job, params, "Recalculant preview amb una fusio manual de seus.")
+
+
+@require_POST
+def cluster_preview_override_isolate_view(request, preview_id: str):
+    job, params, error_response = _preview_override_common(request, preview_id)
+    if error_response is not None:
+        return error_response
+
+    try:
+        source_address_id = int(request.POST.get("source_venue_id") or request.POST.get("source_address_id"))
+    except (TypeError, ValueError):
+        return HttpResponseBadRequest("Cal indicar una seu valida.")
+
+    overrides = add_preview_override(
+        preview_id,
+        {
+            "kind": "isolate_address",
+            "source_address_id": source_address_id,
+        },
+    )
+    params["preview_cluster_overrides"] = overrides
+    return _queue_preview_rebuild(preview_id, job, params, "Recalculant preview amb una seu aillada manualment.")
+
+
+@require_POST
+def cluster_preview_override_restore_view(request, preview_id: str):
+    job, params, error_response = _preview_override_common(request, preview_id)
+    if error_response is not None:
+        return error_response
+
+    try:
+        source_address_id = int(request.POST.get("source_venue_id") or request.POST.get("source_address_id"))
+    except (TypeError, ValueError):
+        return HttpResponseBadRequest("Cal indicar una seu valida.")
+
+    overrides = remove_preview_override(preview_id, source_address_id=source_address_id)
+    params["preview_cluster_overrides"] = overrides
+    return _queue_preview_rebuild(preview_id, job, params, "Recalculant preview restaurant la clusteritzacio automatica d'una seu.")
 
 @require_GET
 def run_detail_view(request, run_id: int):
@@ -745,8 +934,10 @@ def cluster_preview_detail_view(request, preview_id: str):
     if not job:
         raise Http404("Preview no trobat.")
     payload = _serialize_cluster_preview_job(preview_id, job, include_result=True)
+    payload["override_actions"] = _cluster_preview_override_urls(preview_id)
     payload["log_events"] = read_job_logs_sync(preview_id, limit=200)
     scenario_summaries = _build_preview_scenario_summaries(preview_id, payload.get("result"))
+    selected_scenario = _decorate_preview_scenario(preview_id, _preview_selected_scenario(payload.get("result")))
     response = render(
         request,
         "cluster_preview.html",
@@ -754,7 +945,7 @@ def cluster_preview_detail_view(request, preview_id: str):
             "preview_id": preview_id,
             "payload": payload,
             "result": payload.get("result") or {},
-            "selected_scenario": _preview_selected_scenario(payload.get("result")),
+            "selected_scenario": selected_scenario,
             "scenario_summaries": scenario_summaries,
             "run_action_url": reverse("designacions_cluster_preview_run", args=[preview_id]),
         },

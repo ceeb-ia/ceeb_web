@@ -22,6 +22,7 @@ from asgiref.sync import async_to_sync
 from django.db import transaction
 from django.utils.dateparse import parse_date
 from .services.geocoding_db import geocodifica_adreces, addresses_to_df
+from .clusteritzacio.overrides import apply_preview_overrides, resolve_preview_overrides
 from .services.addressing import build_address_payload, resolve_address
 from .services.assignment_feasibility import (
     DEFAULT_GAP_DIFF_CLUSTER_MIN,
@@ -1263,6 +1264,13 @@ def main(
             min_samples=cluster_min_samples,
             max_punts_per_subcluster=max_partits_subgrup,
         )
+
+    preview_overrides = resolve_preview_overrides(
+        preview_id=str(config.get("source_preview_id") or "") or None,
+        inline_overrides=config.get("preview_cluster_overrides") or config.get("cluster_overrides") or [],
+    )
+    if not domicilis_clusteritzats.empty and preview_overrides:
+        domicilis_clusteritzats, _, _ = apply_preview_overrides(domicilis_clusteritzats, preview_overrides)
 
     if not domicilis_clusteritzats.empty:
         domicilis_clusteritzats["cluster_status"] = domicilis_clusteritzats.apply(
