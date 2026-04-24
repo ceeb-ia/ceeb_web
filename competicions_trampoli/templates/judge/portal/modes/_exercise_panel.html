@@ -1,0 +1,17 @@
+<section class="judge-exercise-panel{% if not competition_order_panel and ex != exercici %} d-none{% endif %}" data-exercise-panel="1" data-ins-id="{{ ins.id }}" data-exercici="{{ ex }}"{% if competition_order_panel %} data-competition-order-panel="1"{% endif %}>
+  <div class="judge-exercise-panel-head">
+    <div>
+      <div class="judge-exercise-panel-title">Exercici {{ ex }}</div>
+      <div class="judge-exercise-panel-subtitle">{{ exercise_subtitle|default:"Puntuacio i video agrupats en aquest exercici." }}</div>
+    </div>
+    <div class="judge-meta" id="status-{{ ins.id }}-{{ ex }}"></div>
+  </div>
+  <div id="editor-inner-{{ ins.id }}-{{ ex }}"></div>
+  {% include "judge/portal/modes/_video_panel.html" with ins=ins ex=ex video_capture_enabled=video_capture_enabled only %}
+  <div class="judge-exercise-actions">
+    {% if not judge_kiosk %}
+    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="copyPrev('{{ ins.id }}', '{{ ex }}')">Copia anterior</button>
+    {% endif %}
+    <button type="button" class="btn btn-sm btn-primary" onclick="saveNow('{{ ins.id }}', '{{ ex }}')">Desa</button>
+  </div>
+</section>

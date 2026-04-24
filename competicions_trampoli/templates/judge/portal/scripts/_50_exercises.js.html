@@ -1,0 +1,257 @@
+  function hasAnySavedValue(v){
+    if(v === null || v === undefined || v === "") return false;
+    if(Array.isArray(v)) return v.some(hasAnySavedValue);
+    if(typeof v === "object") return Object.values(v).some(hasAnySavedValue);
+    return true;
+  }
+
+  function presenceKey(code){
+    return `__presence__${String(code || "")}`;
+  }
+
+  function isJudgeShapedField(field){
+    if(!field || typeof field !== "object") return false;
+    const type = String(field.type || "number");
+    const shape = String(field.shape || "");
+    return (type === "list" && shape === "judge") || (type === "matrix" && (shape === "judge_x_item" || shape === "judge_x_element"));
+  }
+
+  function hasSavedScoreForPerm(inputs, perm){
+    const code = String(perm.runtime_field_code || perm.field_code || "");
+    if(!code) return false;
+    const field = perm.field || schemaField(code);
+    if(!isJudgeShapedField(field)){
+      return hasAnySavedValue(inputs[code]);
+    }
+    const judgeIdx = Math.max(1, Number(perm.judge_index || 1)) - 1;
+    const presence = inputs[presenceKey(code)];
+    if(Array.isArray(presence)){
+      return presence[judgeIdx] === true;
+    }
+    const raw = inputs[code];
+    if(Array.isArray(raw)){
+      return raw[judgeIdx] !== null && raw[judgeIdx] !== undefined;
+    }
+    const crash = inputs[`__crash__${code}`];
+    return Array.isArray(crash) && crash[judgeIdx] !== null && crash[judgeIdx] !== undefined;
+  }
+
+  function hasSavedScoreForEntry(insId, exercici){
+    const entry = getEntry(insId, exercici);
+    const inputs = (entry.inputs && typeof entry.inputs === "object") ? entry.inputs : {};
+    return resolvedPermsForIns(insId).some(perm => hasSavedScoreForPerm(inputs, perm));
+  }
+
+  function hasSavedScoreForIns(insId){
+    return allExerciseKeys().some((exercici) => hasSavedScoreForEntry(insId, exercici));
+  }
+
+  function getExerciseVisualState(insId, exercici){
+    const normalizedExercise = exerciseKey(exercici);
+    if(hasDirty(insId, normalizedExercise)) return "dirty";
+    if(hasSavedScoreForEntry(insId, normalizedExercise)) return "saved";
+    return "empty";
+  }
+
+  function getInsVisualState(insId){
+    const exercises = visibleExercisesForIns(insId);
+    if(!exercises.length) return "empty";
+    let hasAnyProgress = false;
+    let allSaved = true;
+    exercises.forEach((exercici) => {
+      const state = getExerciseVisualState(insId, exercici);
+      if(state !== "empty") hasAnyProgress = true;
+      if(state !== "saved") allSaved = false;
+    });
+    if(allSaved) return "complete";
+    if(hasAnyProgress) return "partial";
+    return "empty";
+  }
+
+  function isExerciseOpen(insId, exercici){
+    const panel = document.querySelector(`[data-exercise-panel="1"][data-ins-id="${insId}"][data-exercici="${exercici}"]`);
+    return !!(panel && !panel.classList.contains("d-none"));
+  }
+
+  function refreshExerciseChipStates(insId){
+    const card = document.querySelector(`.judge-card[data-ins-id="${insId}"]`);
+    if(!card) return;
+    card.querySelectorAll('[data-exercise-chip="1"]').forEach((chip) => {
+      const exercici = exerciseKey(chip.dataset.exercici || "");
+      const visualState = getExerciseVisualState(insId, exercici);
+      chip.classList.toggle("is-open", isExerciseOpen(insId, exercici));
+      chip.classList.toggle("is-empty", visualState === "empty");
+      chip.classList.toggle("is-saved", visualState === "saved");
+      chip.classList.toggle("is-dirty", visualState === "dirty");
+      chip.classList.toggle("has-video", !!getVideoState(insId, exercici).hasStored);
+    });
+  }
+
+  function visibleExercisesForIns(insId){
+    return Array.from(document.querySelectorAll(`[data-exercise-panel="1"][data-ins-id="${insId}"]`))
+      .map((panel) => exerciseKey(panel.dataset.exercici || ""))
+      .filter(Boolean);
+  }
+
+  function selectInitialExerciseForIns(insId){
+    const visibleExercises = visibleExercisesForIns(insId);
+    if(!visibleExercises.length){
+      return exerciseKey(EXERCICI_HINT || EXERCISES[0] || 1);
+    }
+    const hinted = exerciseKey(EXERCICI_HINT);
+    if(visibleExercises.includes(hinted)){
+      return hinted;
+    }
+    const pending = visibleExercises.find((exercici) => !hasSavedScoreForEntry(insId, exercici));
+    return pending || visibleExercises[0];
+  }
+
+  function openExercisePanel(insId, exercici, opts = {}){
+    insId = String(insId);
+    exercici = exerciseKey(exercici);
+    const panels = Array.from(document.querySelectorAll(`[data-exercise-panel="1"][data-ins-id="${insId}"]`));
+    if(!panels.length) return;
+
+    let resolvedExercise = exercici;
+    if(!panels.some((panel) => exerciseKey(panel.dataset.exercici || "") === resolvedExercise)){
+      resolvedExercise = exerciseKey(panels[0].dataset.exercici || "");
+    }
+
+    panels.forEach((panel) => {
+      const panelExercise = exerciseKey(panel.dataset.exercici || "");
+      panel.classList.toggle("d-none", panelExercise !== resolvedExercise);
+    });
+
+    renderEditor(insId, resolvedExercise);
+    refreshExerciseChipStates(insId);
+
+    if(VIDEO_CAPTURE_ENABLED && !opts.skipVideo){
+      const videoState = getVideoState(insId, resolvedExercise);
+      if(!canRecordVideo()){
+        setVideoStatus(insId, resolvedExercise, "err", "Camera no disponible en aquest navegador.");
+        applyVideoUiState(insId, resolvedExercise, {
+          busy: false,
+          hasPending: !!videoState.pendingBlob,
+          hasStored: !!videoState.hasStored,
+          isRecording: false,
+        });
+      } else {
+        fetchVideoStatus(insId, resolvedExercise, opts.forceVideo ? { force: true } : {});
+      }
+    }
+  }
+
+  function initExercisePanels(){
+    document.querySelectorAll('[data-exercise-host="1"][data-ins-id]').forEach((host) => {
+      const insId = String(host.dataset.insId || "");
+      const card = host.closest(`.judge-card[data-ins-id="${insId}"]`);
+      (card || host).querySelectorAll('[data-exercise-chip="1"]').forEach((chip) => {
+        chip.addEventListener("click", () => {
+          openExercisePanel(insId, chip.dataset.exercici || EXERCISES[0]);
+        });
+      });
+      openExercisePanel(insId, selectInitialExerciseForIns(insId), { skipVideo: true });
+    });
+  }
+
+  function loadVisibleExerciseVideos(){
+    if(!VIDEO_CAPTURE_ENABLED) return;
+    document.querySelectorAll('[data-group-pane]:not(.d-none) [data-exercise-panel="1"]:not(.d-none)[data-ins-id][data-exercici]').forEach((panel) => {
+      const insId = panel.dataset.insId || "";
+      const exercici = panel.dataset.exercici || "";
+      if(isCompetitionOrderMode()){
+        const videoState = getVideoState(insId, exercici);
+        if(!canRecordVideo()){
+          setVideoStatus(insId, exercici, "err", "Camera no disponible en aquest navegador.");
+          applyVideoUiState(insId, exercici, {
+            busy: false,
+            hasPending: !!videoState.pendingBlob,
+            hasStored: !!videoState.hasStored,
+            isRecording: false,
+          });
+        } else {
+          fetchVideoStatus(insId, exercici, { force: false });
+        }
+        return;
+      }
+      openExercisePanel(insId, exercici, { forceVideo: false });
+    });
+  }
+
+  function copyPrev(insId, exercici){
+    exercici = exerciseKey(exercici);
+    const currentCard = isCompetitionOrderMode()
+      ? document.querySelector(`.judge-card[data-ins-id="${insId}"][data-exercici="${exercici}"]`)
+      : document.querySelector(`.judge-card[data-ins-id="${insId}"]`);
+    const pane = currentCard ? currentCard.closest("[data-group-pane]") : null;
+    const selector = isCompetitionOrderMode()
+      ? `.judge-card[data-ins-id][data-exercici="${exercici}"]`
+      : ".judge-card[data-ins-id]";
+    const cards = pane
+      ? Array.from(pane.querySelectorAll(selector))
+      : Array.from(document.querySelectorAll(selector));
+    const idx = cards.findIndex(c => (
+      c.getAttribute("data-ins-id") === String(insId)
+      && (!isCompetitionOrderMode() || exerciseKey(c.dataset.exercici || "") === exercici)
+    ));
+    if(idx <= 0) return;
+
+    const prevId = cards[idx-1].getAttribute("data-ins-id");
+    const currentInsId = String(insId);
+    const sourceInsId = String(prevId);
+
+    const resolvedPerms = resolvedPermsForIns(currentInsId);
+    resolvedPerms.forEach(perm => {
+      const field = perm.field;
+      if(!field) return;
+      const type = field.type || "number";
+      const code = perm.runtime_field_code;
+      const sourceVal = deepClone(effectiveInput(sourceInsId, exercici, code));
+
+      if(type === "number"){
+        updateDraftValue(currentInsId, exercici, code, (sourceVal ?? null), perm);
+        return;
+      }
+
+      if(type === "list"){
+        const j = Math.max(1, Number(perm.judge_index || 1));
+        const nJudges = Math.max(1, Number((field.judges && field.judges.count) || 1));
+        const target = Array.isArray(effectiveInput(currentInsId, exercici, code))
+          ? deepClone(effectiveInput(currentInsId, exercici, code))
+          : [];
+        while(target.length < nJudges) target.push(null);
+        const sourceArr = Array.isArray(sourceVal) ? sourceVal : [];
+        target[j-1] = (sourceArr[j-1] ?? null);
+        updateDraftValue(currentInsId, exercici, code, target, perm);
+        return;
+      }
+
+      if(type === "matrix"){
+        const j = Math.max(1, Number(perm.judge_index || 1));
+        const nJudges = Math.max(1, Number((field.judges && field.judges.count) || 1));
+        const nItems = Math.max(1, Number((field.items && field.items.count) || 1));
+        const start = Math.max(1, Number(perm.item_start || 1));
+        const count = perm.item_count ? Math.max(1, Number(perm.item_count)) : (nItems - start + 1);
+
+        const target = Array.isArray(effectiveInput(currentInsId, exercici, code))
+          ? deepClone(effectiveInput(currentInsId, exercici, code))
+          : [];
+        while(target.length < nJudges) target.push([]);
+        while((target[j-1] || []).length < nItems){
+          target[j-1] = Array.isArray(target[j-1]) ? target[j-1] : [];
+          target[j-1].push(null);
+        }
+
+        const sourceMat = Array.isArray(sourceVal) ? sourceVal : [];
+        const sourceRow = Array.isArray(sourceMat[j-1]) ? sourceMat[j-1] : [];
+        for(let k=0; k<count; k++){
+          const idx0 = start - 1 + k;
+          target[j-1][idx0] = (sourceRow[idx0] ?? null);
+        }
+        updateDraftValue(currentInsId, exercici, code, target, perm);
+      }
+    });
+
+    renderEditor(currentInsId, exercici);
+    refreshExerciseChipStates(currentInsId);
+  }

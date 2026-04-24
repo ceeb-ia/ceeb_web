@@ -1,0 +1,67 @@
+    <div class="d-flex justify-content-between align-items-start mb-3">
+      <div>
+        <h2 class="mb-1">{% if judge_kiosk %}Jurat{% else %}Jurat · Entrada per QR{% endif %}</h2>
+        {% if not judge_kiosk %}
+        <div class="text-muted small">
+          Competició: <span class="fw-semibold">{{ competicio.nom }}</span> ·
+          Aparell: <span class="fw-semibold">{{ comp_aparell.aparell.nom }}</span> ·
+        </div>
+        {% if token_obj.label %}
+          <div class="text-muted small">Token: <span class="fw-semibold">{{ token_obj.label }}</span></div>
+        {% endif %}
+        {% endif %}
+        <div class="mt-2">
+          <div class="judge-meta">
+            Ordre segons la franja assignada a cada {% if team_subject_mode %}serie{% else %}grup{% endif %}.
+            {% if exercicis|length > 1 and portal_display_mode != "competition_order" %}
+              Exercici inicial obert: {{ exercici }}.
+            {% elif exercicis|length > 1 %}
+              Mode ordre competicio: exercicis desplegats en sequencia.
+            {% endif %}
+            {% if franja_override %}
+              Override actiu: {{ franja_override.titol|default:"Franja" }} · {{ franja_override.hora_inici|time:"H:i" }}-{{ franja_override.hora_fi|time:"H:i" }}.
+            {% endif %}
+          </div>
+          {% if exercicis|length > 1 %}
+          <div class="judge-view-mode mt-2">
+            <span class="judge-view-mode-label">Visualitzacio</span>
+            <select class="form-select form-select-sm judge-view-mode-select" id="portalViewModeSelect" aria-label="Canviar visualitzacio del portal">
+              {% for value, label in portal_display_mode_options %}
+                <option value="{{ value }}" {% if value == portal_display_mode %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+      <div class="d-flex gap-2 align-items-center">
+        {% if not judge_kiosk %}
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'scoring_notes_home' competicio.id %}">Tornar a notes</a>
+        {% endif %}
+        {% if permissions %}
+        <button
+          type="button"
+          class="judge-nav-toggle"
+          id="insNavToggle"
+          aria-label="Obrir navegacio d'inscripcions"
+          aria-controls="insNavDrawer"
+          aria-expanded="false"
+          title="Navegacio"
+        >
+          <span class="judge-nav-toggle-icon" aria-hidden="true">&#9662;</span>
+        </button>
+        <button
+          type="button"
+          class="judge-support-toggle"
+          id="supportNavToggle"
+          aria-label="Obrir suport tecnic"
+          aria-controls="supportNavDrawer"
+          aria-expanded="false"
+          title="Suport"
+        >
+          SOS
+          <span id="supportUnreadBadge" class="judge-support-toggle-badge" style="display:none;"></span>
+        </button>
+        {% endif %}
+      </div>
+    </div>

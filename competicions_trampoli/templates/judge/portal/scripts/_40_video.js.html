@@ -1,0 +1,405 @@
+  function getVideoState(insId, exercici){
+    const key = entryKey(insId, exercici);
+    if(!recordedVideoByEntry[key]){
+      recordedVideoByEntry[key] = {
+        pendingBlob: null,
+        pendingDuration: null,
+        pendingMimeType: null,
+        hasStored: false,
+        loaded: false,
+        busy: false,
+        stream: null,
+        recorder: null,
+        chunks: [],
+        localObjectUrl: null,
+      };
+    }
+    return recordedVideoByEntry[key];
+  }
+
+  function canRecordVideo(){
+    return !!(window.MediaRecorder && navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  }
+
+  function getVideoEls(insId, exercici){
+    return {
+      recBtn: document.getElementById(`video-rec-btn-${insId}-${exercici}`),
+      uploadBtn: document.getElementById(`video-upload-btn-${insId}-${exercici}`),
+      deleteBtn: document.getElementById(`video-delete-btn-${insId}-${exercici}`),
+      status: document.getElementById(`video-status-${insId}-${exercici}`),
+      preview: document.getElementById(`video-preview-${insId}-${exercici}`),
+    };
+  }
+
+  function setVideoStatus(insId, exercici, kind, text){
+    const els = getVideoEls(insId, exercici);
+    if(!els.status) return;
+    const cls = kind === "ok" ? "ok" : kind === "err" ? "err" : kind === "info" ? "info" : "";
+    els.status.className = `judge-meta video-status ${cls}`.trim();
+    els.status.textContent = text || "";
+  }
+
+  function chooseRecorderMimeType(){
+    const candidates = [
+      "video/webm;codecs=vp9,opus",
+      "video/webm;codecs=vp8,opus",
+      "video/webm",
+      "video/mp4",
+    ];
+    for(const mt of candidates){
+      try{
+        if(window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(mt)){
+          return mt;
+        }
+      }catch(_e){}
+    }
+    return "";
+  }
+
+  function applyVideoUiState(insId, exercici, opts = {}){
+    const els = getVideoEls(insId, exercici);
+    if(!els.recBtn || !els.uploadBtn || !els.deleteBtn) return;
+
+    const st = getVideoState(insId, exercici);
+    const isRecording = !!opts.isRecording;
+    const hasPending = !!opts.hasPending;
+    const hasStored = !!opts.hasStored;
+    const busy = !!opts.busy;
+    const supported = canRecordVideo();
+    const key = entryKey(insId, exercici);
+
+    els.recBtn.disabled = !supported || busy || (!!currentRecordingEntryKey && currentRecordingEntryKey !== key);
+    els.recBtn.textContent = isRecording ? "Atura" : "Gravar";
+    els.recBtn.className = isRecording ? "btn btn-sm btn-danger" : "btn btn-sm btn-outline-danger";
+    els.uploadBtn.disabled = !supported || busy || !hasPending || isRecording;
+    els.deleteBtn.disabled = busy || isRecording || (!hasPending && !hasStored);
+    st.busy = busy;
+    st.hasStored = hasStored;
+    refreshExerciseChipStates(insId);
+  }
+
+  function clearPreviewUrl(insId, exercici){
+    const st = getVideoState(insId, exercici);
+    if(st.localObjectUrl){
+      try{ URL.revokeObjectURL(st.localObjectUrl); }catch(_e){}
+      st.localObjectUrl = null;
+    }
+  }
+
+  function stopStream(stream){
+    if(!stream) return;
+    try{
+      stream.getTracks().forEach(t => t.stop());
+    }catch(_e){}
+  }
+
+  async function fetchVideoStatus(insId, exercici, opts = {}){
+    const st = getVideoState(insId, exercici);
+    if(st.loaded && !opts.force) return;
+    const url = new URL(VIDEO_STATUS_URL, window.location.origin);
+    const subject = subjectForId(insId);
+    if(subject.subject_kind === "inscripcio"){
+      url.searchParams.set("inscripcio_id", String(subject.subject_id || insId));
+    }
+    url.searchParams.set("subject_kind", String(subject.subject_kind || (TEAM_SUBJECT_MODE ? "team_unit" : "inscripcio")));
+    url.searchParams.set("subject_id", String(subject.subject_id || insId));
+    url.searchParams.set("exercici", String(exercici));
+    const els = getVideoEls(insId, exercici);
+    if(!els.recBtn) return;
+
+    try{
+      const res = await fetch(url.toString(), { headers: { "Accept":"application/json" } });
+      const data = await res.json().catch(()=> ({}));
+      if(!res.ok || !data.ok){
+        throw new Error(data.error || "Error carregant estat de video");
+      }
+
+      st.loaded = true;
+      st.hasStored = !!data.has_video;
+      st.pendingBlob = st.pendingBlob || null;
+      st.busy = false;
+
+      if(data.has_video && data.video){
+        clearPreviewUrl(insId, exercici);
+        if(els.preview){
+          els.preview.src = data.video.url || "";
+          els.preview.style.display = data.video.url ? "" : "none";
+        }
+        setVideoStatus(insId, exercici, "ok", "Video vinculat");
+      } else if(!st.pendingBlob){
+        if(els.preview){
+          els.preview.removeAttribute("src");
+          els.preview.style.display = "none";
+        }
+        setVideoStatus(insId, exercici, "", "Sense video");
+      }
+
+      applyVideoUiState(insId, exercici, {
+        isRecording: false,
+        hasPending: !!st.pendingBlob,
+        hasStored: !!st.hasStored,
+        busy: false,
+      });
+    } catch(e){
+      setVideoStatus(insId, exercici, "err", e.message || "Error carregant video");
+      applyVideoUiState(insId, exercici, { busy: false, hasPending: !!st.pendingBlob, hasStored: !!st.hasStored });
+    }
+  }
+
+  async function toggleRecord(insId, exercici){
+    insId = String(insId);
+    exercici = exerciseKey(exercici);
+    const st = getVideoState(insId, exercici);
+    const key = entryKey(insId, exercici);
+
+    if(st.recorder && st.recorder.state === "recording"){
+      try{
+        st.recorder.stop();
+      }catch(_e){}
+      return;
+    }
+
+    if(!canRecordVideo()){
+      setVideoStatus(insId, exercici, "err", "Aquest dispositiu no suporta gravacio.");
+      applyVideoUiState(insId, exercici, { busy: false, hasPending: !!st.pendingBlob, hasStored: !!st.hasStored });
+      return;
+    }
+
+    if(currentRecordingEntryKey && currentRecordingEntryKey !== key){
+      setVideoStatus(insId, exercici, "err", "Ja hi ha una gravacio activa en una altra fila.");
+      return;
+    }
+
+    try{
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" } },
+        audio: true,
+      });
+      const mimeType = chooseRecorderMimeType();
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      const chunks = [];
+      const startedAt = Date.now();
+
+      st.stream = stream;
+      st.recorder = recorder;
+      st.chunks = chunks;
+      st.startedAt = startedAt;
+      st.mimeType = mimeType || "";
+      st.busy = false;
+      clearPreviewUrl(insId, exercici);
+      if(st.pendingBlob) st.pendingBlob = null;
+
+      currentRecordingEntryKey = key;
+      setVideoStatus(insId, exercici, "info", "Gravant...");
+      applyVideoUiState(insId, exercici, {
+        isRecording: true,
+        hasPending: false,
+        hasStored: !!st.hasStored,
+        busy: false,
+      });
+
+      st.autoStopTimer = window.setTimeout(() => {
+        try{
+          if(st.recorder && st.recorder.state === "recording") st.recorder.stop();
+        }catch(_e){}
+      }, VIDEO_MAX_DURATION_SECONDS * 1000);
+
+      recorder.ondataavailable = (evt) => {
+        if(evt && evt.data && evt.data.size > 0){
+          st.chunks.push(evt.data);
+        }
+      };
+
+      recorder.onerror = () => {
+        setVideoStatus(insId, exercici, "err", "Error de gravacio.");
+      };
+
+      recorder.onstop = async () => {
+        if(st.autoStopTimer){
+          clearTimeout(st.autoStopTimer);
+          st.autoStopTimer = null;
+        }
+
+        const elapsed = Math.max(1, Math.round((Date.now() - (st.startedAt || Date.now())) / 1000));
+        const blob = new Blob(st.chunks || [], { type: st.mimeType || "video/webm" });
+        stopStream(st.stream);
+        st.stream = null;
+        st.recorder = null;
+        st.chunks = [];
+        currentRecordingEntryKey = null;
+
+        if(!blob || blob.size <= 0){
+          setVideoStatus(insId, exercici, "err", "No s'ha pogut generar el video.");
+          applyVideoUiState(insId, exercici, { isRecording: false, hasPending: false, hasStored: !!st.hasStored, busy: false });
+          return;
+        }
+        if(blob.size > VIDEO_MAX_SIZE_BYTES){
+          setVideoStatus(insId, exercici, "err", "El video supera la mida maxima permesa.");
+          applyVideoUiState(insId, exercici, { isRecording: false, hasPending: false, hasStored: !!st.hasStored, busy: false });
+          return;
+        }
+
+        st.pendingBlob = blob;
+        st.pendingDuration = elapsed;
+        st.pendingMimeType = (blob.type || st.mimeType || "video/webm").split(";")[0].trim().toLowerCase();
+
+        const els = getVideoEls(insId, exercici);
+        clearPreviewUrl(insId, exercici);
+        st.localObjectUrl = URL.createObjectURL(blob);
+        if(els.preview){
+          els.preview.src = st.localObjectUrl;
+          els.preview.style.display = "";
+        }
+
+        setVideoStatus(insId, exercici, "info", "Pujant video...");
+        applyVideoUiState(insId, exercici, { isRecording: false, hasPending: true, hasStored: !!st.hasStored, busy: true });
+        await uploadRecorded(insId, exercici, { auto: true });
+      };
+
+      recorder.start();
+    } catch(e){
+      stopStream(st.stream);
+      st.stream = null;
+      st.recorder = null;
+      st.chunks = [];
+      currentRecordingEntryKey = null;
+      setVideoStatus(insId, exercici, "err", "No s'ha pogut obrir la camera.");
+      applyVideoUiState(insId, exercici, { isRecording: false, hasPending: !!st.pendingBlob, hasStored: !!st.hasStored, busy: false });
+    }
+  }
+
+  async function uploadRecorded(insId, exercici, opts = {}){
+    insId = String(insId);
+    exercici = exerciseKey(exercici);
+    const st = getVideoState(insId, exercici);
+    const blob = st.pendingBlob;
+    if(!blob){
+      setVideoStatus(insId, exercici, "err", "No hi ha cap video pendent de pujar.");
+      applyVideoUiState(insId, exercici, { busy: false, hasPending: false, hasStored: !!st.hasStored, isRecording: false });
+      return;
+    }
+
+    st.busy = true;
+    applyVideoUiState(insId, exercici, { busy: true, hasPending: true, hasStored: !!st.hasStored, isRecording: false });
+
+    const ext = (st.pendingMimeType || "").includes("mp4") ? "mp4" : ((st.pendingMimeType || "").includes("quicktime") ? "mov" : "webm");
+    const subject = subjectForId(insId);
+    const filename = `${subject.subject_kind === "team_unit" ? "team" : "ins"}_${insId}_ex_${exercici}_${Date.now()}.${ext}`;
+    const fileObj = new File([blob], filename, { type: st.pendingMimeType || blob.type || "video/webm" });
+
+    const fd = new FormData();
+    if(subject.subject_kind === "inscripcio"){
+      fd.append("inscripcio_id", String(subject.subject_id || insId));
+    }
+    fd.append("subject_kind", String(subject.subject_kind || (TEAM_SUBJECT_MODE ? "team_unit" : "inscripcio")));
+    fd.append("subject_id", String(subject.subject_id || insId));
+    fd.append("exercici", String(exercici));
+    if(st.pendingDuration) fd.append("duration_seconds", String(st.pendingDuration));
+    if(st.pendingMimeType) fd.append("mime_type", st.pendingMimeType);
+    fd.append("original_filename", filename);
+    fd.append("video_file", fileObj);
+
+    try{
+      const res = await fetch(VIDEO_UPLOAD_URL, {
+        method: "POST",
+        headers: {
+          "X-CSRFToken": CSRF_TOKEN,
+        },
+        body: fd,
+      });
+      const data = await res.json().catch(()=> ({}));
+      if(!res.ok || !data.ok){
+        throw new Error(data.error || "Error pujant video");
+      }
+
+      st.pendingBlob = null;
+      st.pendingDuration = null;
+      st.pendingMimeType = null;
+      st.hasStored = true;
+      st.loaded = true;
+      st.busy = false;
+
+      const els = getVideoEls(insId, exercici);
+      clearPreviewUrl(insId, exercici);
+      if(els.preview && data.video && data.video.url){
+        els.preview.src = data.video.url;
+        els.preview.style.display = "";
+      }
+
+      setVideoStatus(insId, exercici, "ok", (opts && opts.auto) ? "Video vinculat" : "Video pujat");
+      applyVideoUiState(insId, exercici, { busy: false, hasPending: false, hasStored: true, isRecording: false });
+    } catch(e){
+      st.busy = false;
+      setVideoStatus(insId, exercici, "err", e.message || "Error pujant video");
+      applyVideoUiState(insId, exercici, { busy: false, hasPending: !!st.pendingBlob, hasStored: !!st.hasStored, isRecording: false });
+    }
+  }
+
+  async function deleteVideo(insId, exercici){
+    insId = String(insId);
+    exercici = exerciseKey(exercici);
+    const st = getVideoState(insId, exercici);
+
+    if(st.recorder && st.recorder.state === "recording"){
+      try{ st.recorder.stop(); }catch(_e){}
+    }
+
+    st.busy = true;
+    applyVideoUiState(insId, exercici, { busy: true, hasPending: !!st.pendingBlob, hasStored: !!st.hasStored, isRecording: false });
+
+    const subject = subjectForId(insId);
+    const fd = new FormData();
+    if(subject.subject_kind === "inscripcio"){
+      fd.append("inscripcio_id", String(subject.subject_id || insId));
+    }
+    fd.append("subject_kind", String(subject.subject_kind || (TEAM_SUBJECT_MODE ? "team_unit" : "inscripcio")));
+    fd.append("subject_id", String(subject.subject_id || insId));
+    fd.append("exercici", String(exercici));
+
+    try{
+      const res = await fetch(VIDEO_DELETE_URL, {
+        method: "POST",
+        headers: { "X-CSRFToken": CSRF_TOKEN },
+        body: fd,
+      });
+      const data = await res.json().catch(()=> ({}));
+      if(!res.ok || !data.ok){
+        throw new Error(data.error || "Error eliminant video");
+      }
+
+      clearPreviewUrl(insId, exercici);
+      st.pendingBlob = null;
+      st.pendingDuration = null;
+      st.pendingMimeType = null;
+      st.hasStored = false;
+      st.loaded = true;
+      st.busy = false;
+
+      const els = getVideoEls(insId, exercici);
+      if(els.preview){
+        els.preview.removeAttribute("src");
+        els.preview.style.display = "none";
+      }
+
+      setVideoStatus(insId, exercici, "", "Sense video");
+      applyVideoUiState(insId, exercici, { busy: false, hasPending: false, hasStored: false, isRecording: false });
+    } catch(e){
+      st.busy = false;
+      setVideoStatus(insId, exercici, "err", e.message || "Error eliminant video");
+      applyVideoUiState(insId, exercici, { busy: false, hasPending: !!st.pendingBlob, hasStored: !!st.hasStored, isRecording: false });
+    }
+  }
+
+  function initVideoUI(){
+    document.querySelectorAll('[data-exercise-panel="1"][data-ins-id][data-exercici]').forEach((panel) => {
+      const insId = String(panel.dataset.insId || "");
+      const exercici = exerciseKey(panel.dataset.exercici || "");
+      const st = getVideoState(insId, exercici);
+      applyVideoUiState(insId, exercici, {
+        busy: false,
+        hasPending: !!st.pendingBlob,
+        hasStored: !!st.hasStored,
+        isRecording: false,
+      });
+    });
+  }

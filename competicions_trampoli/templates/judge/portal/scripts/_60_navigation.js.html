@@ -1,0 +1,271 @@
+  const NAV_LINKS_BY_INS = {};
+  const NAV_LINKS_BY_ENTRY = {};
+
+  function navEntryKey(insId, exercici){
+    return `${String(insId)}:${exerciseKey(exercici)}`;
+  }
+
+  function currentGroupTarget(){
+    const activeTab = document.querySelector("[data-group-target].active");
+    return activeTab ? String(activeTab.dataset.groupTarget || "") : "";
+  }
+
+  function updateGroupInUrl(target){
+    const url = new URL(window.location.href);
+    const rawTarget = String(target || "");
+    if(rawTarget.startsWith("group-")){
+      url.searchParams.set("group", rawTarget.slice("group-".length));
+    } else {
+      url.searchParams.delete("group");
+    }
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  }
+
+  function setActiveGroup(target){
+    if(!target) return;
+    const tabs = Array.from(document.querySelectorAll("[data-group-target]"));
+    tabs.forEach((b) => b.classList.toggle("active", b.dataset.groupTarget === target));
+    document.querySelectorAll("[data-group-pane]").forEach((pane) => {
+      pane.classList.toggle("d-none", pane.dataset.groupPane !== target);
+    });
+    updateGroupInUrl(target);
+    loadVisibleExerciseVideos();
+  }
+
+  function markActiveNav(insId, exercici){
+    document.querySelectorAll(".judge-nav-link.is-active").forEach((el) => el.classList.remove("is-active"));
+    if(isCompetitionOrderMode() && exercici){
+      (NAV_LINKS_BY_ENTRY[navEntryKey(insId, exercici)] || []).forEach((el) => el.classList.add("is-active"));
+      return;
+    }
+    (NAV_LINKS_BY_INS[String(insId)] || []).forEach((el) => el.classList.add("is-active"));
+  }
+
+  function focusEntryCard(insId, exercici){
+    const card = (isCompetitionOrderMode() && exercici)
+      ? document.querySelector(`.judge-card[data-ins-id="${insId}"][data-exercici="${exerciseKey(exercici)}"]`)
+      : document.querySelector(`.judge-card[data-ins-id="${insId}"]`);
+    if(!card) return;
+    const pane = card.closest("[data-group-pane]");
+    if(pane) setActiveGroup(pane.dataset.groupPane);
+    markActiveNav(insId, card.dataset.exercici || exercici || "");
+    card.classList.add("flash");
+    card.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.setTimeout(() => card.classList.remove("flash"), 650);
+    closeMobileInsNav();
+  }
+
+  function focusInscripcioCard(insId){
+    focusEntryCard(insId, "");
+  }
+
+  function collectInsNavRows(){
+    const rows = [];
+    document.querySelectorAll("[data-group-pane]").forEach((pane) => {
+      const gTarget = String(pane.dataset.groupPane || "");
+      const gLabel = String(pane.dataset.groupLabel || "");
+      pane.querySelectorAll(".judge-card[data-ins-id]").forEach((card) => {
+        rows.push({
+          insId: String(card.dataset.insId || ""),
+          exercici: exerciseKey(card.dataset.exercici || ""),
+          name: String(card.dataset.insName || card.querySelector(".fw-semibold")?.textContent || "").trim(),
+          groupTarget: gTarget,
+          groupLabel: gLabel,
+        });
+      });
+    });
+    return rows;
+  }
+
+  function renderInsNavList(containerEl, searchText){
+    if(!containerEl) return;
+    const q = String(searchText || "").trim().toLowerCase();
+    const rows = collectInsNavRows().filter((row) => {
+      if(!q) return true;
+      return row.name.toLowerCase().includes(q);
+    });
+
+    containerEl.innerHTML = "";
+    const byGroup = new Map();
+    rows.forEach((row) => {
+      if(!byGroup.has(row.groupTarget)){
+        byGroup.set(row.groupTarget, { label: row.groupLabel || "Grup", items: [] });
+      }
+      byGroup.get(row.groupTarget).items.push(row);
+    });
+
+    byGroup.forEach((group) => {
+      const title = document.createElement("div");
+      title.className = "judge-nav-group-title";
+      title.innerHTML = `
+        <span class="judge-nav-group-name">${escHtml(group.label)}</span>
+        <span class="judge-nav-group-count">${group.items.length}</span>
+      `;
+      containerEl.appendChild(title);
+
+      group.items.forEach((row) => {
+        const exerciseKeys = visibleExercisesForIns(row.insId);
+        const a = document.createElement("a");
+        a.href = "#";
+        a.className = "judge-nav-link is-empty";
+        a.dataset.insId = row.insId;
+        if(isCompetitionOrderMode()){
+          const rowExercise = row.exercici || "";
+          a.dataset.exercici = rowExercise;
+          a.innerHTML = `
+            <span class="judge-nav-link-main">
+              <span class="judge-nav-label">${escHtml(row.name || `Inscripcio ${row.insId}`)} · ${escHtml(`Ex${rowExercise}`)}</span>
+              <span class="judge-nav-status is-empty" data-nav-entry-status="1" data-ins-id="${escHtml(row.insId)}" data-exercici="${escHtml(rowExercise)}">Pendent</span>
+            </span>
+          `;
+        } else {
+          a.innerHTML = `
+            <span class="judge-nav-link-main">
+              <span class="judge-nav-label">${escHtml(row.name || `Inscripcio ${row.insId}`)}</span>
+              <span class="judge-nav-status is-empty" data-nav-status="1" data-ins-id="${escHtml(row.insId)}">Pendent</span>
+            </span>
+            <span class="judge-nav-ex-row">
+              ${exerciseKeys.map((exercici) => (
+                `<span class="judge-nav-ex-chip is-empty" data-nav-ex-chip="1" data-ins-id="${escHtml(row.insId)}" data-exercici="${escHtml(exercici)}">${escHtml(`Ex${exercici}`)}</span>`
+              )).join("")}
+            </span>
+          `;
+        }
+        a.addEventListener("click", (evt) => {
+          evt.preventDefault();
+          focusEntryCard(row.insId, row.exercici || "");
+        });
+        if(!NAV_LINKS_BY_INS[row.insId]) NAV_LINKS_BY_INS[row.insId] = [];
+        NAV_LINKS_BY_INS[row.insId].push(a);
+        if(isCompetitionOrderMode() && row.exercici){
+          const entryKey = navEntryKey(row.insId, row.exercici);
+          if(!NAV_LINKS_BY_ENTRY[entryKey]) NAV_LINKS_BY_ENTRY[entryKey] = [];
+          NAV_LINKS_BY_ENTRY[entryKey].push(a);
+        }
+        containerEl.appendChild(a);
+      });
+    });
+
+    refreshInsNavStatuses();
+  }
+
+  function refreshInsNavStatuses(){
+    document.querySelectorAll(".judge-nav-link.is-complete, .judge-nav-link.is-partial, .judge-nav-link.is-empty").forEach((el) => {
+      el.classList.remove("is-complete", "is-partial", "is-empty");
+    });
+    Object.keys(NAV_LINKS_BY_INS).forEach((insId) => {
+      const visualState = getInsVisualState(insId);
+      const statusText = visualState === "complete" ? "Complet" : (visualState === "partial" ? "Parcial" : "Pendent");
+      (NAV_LINKS_BY_INS[insId] || []).forEach((linkEl) => {
+        linkEl.classList.toggle("is-complete", visualState === "complete");
+        linkEl.classList.toggle("is-partial", visualState === "partial");
+        linkEl.classList.toggle("is-empty", visualState === "empty");
+        const statusEl = linkEl.querySelector('[data-nav-status="1"]');
+        if(statusEl){
+          statusEl.textContent = statusText;
+          statusEl.classList.toggle("is-complete", visualState === "complete");
+          statusEl.classList.toggle("is-partial", visualState === "partial");
+          statusEl.classList.toggle("is-empty", visualState === "empty");
+        }
+        linkEl.querySelectorAll('[data-nav-ex-chip="1"]').forEach((chipEl) => {
+          const exercici = exerciseKey(chipEl.dataset.exercici || "");
+          const exerciseState = getExerciseVisualState(insId, exercici);
+          chipEl.classList.toggle("is-empty", exerciseState === "empty");
+          chipEl.classList.toggle("is-dirty", exerciseState === "dirty");
+          chipEl.classList.toggle("is-saved", exerciseState === "saved");
+        });
+      });
+    });
+    Object.keys(NAV_LINKS_BY_ENTRY).forEach((key) => {
+      const parts = String(key).split(":");
+      const insId = parts[0] || "";
+      const exercici = parts.slice(1).join(":") || "";
+      const visualState = getExerciseVisualState(insId, exercici);
+      const statusText = visualState === "saved" ? "Desat" : (visualState === "dirty" ? "Pendent" : "Pendent");
+      (NAV_LINKS_BY_ENTRY[key] || []).forEach((linkEl) => {
+        linkEl.classList.toggle("is-complete", visualState === "saved");
+        linkEl.classList.toggle("is-partial", visualState === "dirty");
+        linkEl.classList.toggle("is-empty", visualState === "empty");
+        const statusEl = linkEl.querySelector('[data-nav-entry-status="1"]');
+        if(statusEl){
+          statusEl.textContent = statusText;
+          statusEl.classList.toggle("is-complete", visualState === "saved");
+          statusEl.classList.toggle("is-partial", visualState === "dirty");
+          statusEl.classList.toggle("is-empty", visualState === "empty");
+        }
+      });
+    });
+  }
+
+  function openMobileInsNav(){
+    const drawer = document.getElementById("insNavDrawer");
+    const backdrop = document.getElementById("insNavBackdrop");
+    const openBtn = document.getElementById("insNavToggle");
+    if(!drawer || !backdrop) return;
+    if(typeof closeSupportNav === "function"){
+      closeSupportNav();
+    }
+    drawer.classList.add("show");
+    backdrop.classList.add("show");
+    drawer.setAttribute("aria-hidden", "false");
+    if(openBtn) openBtn.setAttribute("aria-expanded", "true");
+  }
+
+  function closeMobileInsNav(){
+    const drawer = document.getElementById("insNavDrawer");
+    const backdrop = document.getElementById("insNavBackdrop");
+    const openBtn = document.getElementById("insNavToggle");
+    if(!drawer || !backdrop) return;
+    drawer.classList.remove("show");
+    backdrop.classList.remove("show");
+    drawer.setAttribute("aria-hidden", "true");
+    if(openBtn) openBtn.setAttribute("aria-expanded", "false");
+  }
+
+  function initInsNavigation(){
+    const drawerList = document.getElementById("insNavListDrawer");
+    const searchDrawer = document.getElementById("insNavSearchDrawer");
+    const openBtn = document.getElementById("insNavToggle");
+    const closeBtn = document.getElementById("insNavClose");
+    const backdrop = document.getElementById("insNavBackdrop");
+
+    const registerNavLinks = (selector) => {
+      document.querySelectorAll(selector).forEach((el) => {
+        const id = String(el.dataset.insId || "");
+        if(!id) return;
+        if(!NAV_LINKS_BY_INS[id]) NAV_LINKS_BY_INS[id] = [];
+        NAV_LINKS_BY_INS[id].push(el);
+        if(isCompetitionOrderMode() && el.dataset.exercici){
+          const key = navEntryKey(id, el.dataset.exercici);
+          if(!NAV_LINKS_BY_ENTRY[key]) NAV_LINKS_BY_ENTRY[key] = [];
+          NAV_LINKS_BY_ENTRY[key].push(el);
+        }
+      });
+    };
+
+    const renderDrawer = () => {
+      Object.keys(NAV_LINKS_BY_INS).forEach((k) => delete NAV_LINKS_BY_INS[k]);
+      Object.keys(NAV_LINKS_BY_ENTRY).forEach((k) => delete NAV_LINKS_BY_ENTRY[k]);
+      renderInsNavList(drawerList, searchDrawer ? searchDrawer.value : "");
+      registerNavLinks("#insNavListDrawer .judge-nav-link");
+      refreshInsNavStatuses();
+    };
+
+    if(searchDrawer) searchDrawer.addEventListener("input", renderDrawer);
+    if(openBtn) openBtn.addEventListener("click", openMobileInsNav);
+    if(closeBtn) closeBtn.addEventListener("click", closeMobileInsNav);
+    if(backdrop) backdrop.addEventListener("click", closeMobileInsNav);
+
+    renderDrawer();
+  }
+
+  function initGroupTabs(){
+    const tabs = Array.from(document.querySelectorAll("[data-group-target]"));
+    if(!tabs.length) return;
+
+    tabs.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        setActiveGroup(btn.dataset.groupTarget);
+      });
+    });
+  }
