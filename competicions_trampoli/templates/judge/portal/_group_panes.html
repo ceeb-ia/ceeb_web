@@ -1,0 +1,27 @@
+        <div id="groupPanes">
+          {% if group_blocks or out_of_program_group_blocks %}
+            {% for bloc in group_blocks %}
+              {% if portal_display_mode == "competition_order" %}
+                <div class="group-pane {% if bloc.key != active_group_key %}d-none{% endif %}" data-group-pane="group-{{ bloc.key }}" data-group-label="{{ bloc.label }}">
+                  {% include "judge/portal/modes/_group_competition_order.html" with bloc=bloc exercicis=exercicis team_subject_mode=team_subject_mode video_capture_enabled=video_capture_enabled judge_kiosk=judge_kiosk only %}
+                </div>
+              {% else %}
+                {% include "judge/portal/modes/_group_compact.html" with bloc=bloc exercicis=exercicis exercici=exercici active_group_key=active_group_key team_subject_mode=team_subject_mode judge_kiosk=judge_kiosk video_capture_enabled=video_capture_enabled off_program=False only %}
+              {% endif %}
+            {% endfor %}
+            {% for bloc in out_of_program_group_blocks %}
+              {% if portal_display_mode == "competition_order" %}
+                <div class="group-pane {% if bloc.key != active_group_key %}d-none{% endif %}" data-group-pane="group-{{ bloc.key }}" data-group-label="{{ bloc.label }} (fora de programa)">
+                  {% include "judge/portal/modes/_group_competition_order.html" with bloc=bloc exercicis=exercicis off_program_mode=True team_subject_mode=team_subject_mode video_capture_enabled=video_capture_enabled judge_kiosk=judge_kiosk only %}
+                </div>
+              {% else %}
+                {% include "judge/portal/modes/_group_compact.html" with bloc=bloc exercicis=exercicis exercici=exercici active_group_key=active_group_key team_subject_mode=team_subject_mode judge_kiosk=judge_kiosk video_capture_enabled=video_capture_enabled off_program=True only %}
+              {% endif %}
+            {% endfor %}
+          {% else %}
+            <div class="judge-meta mb-3">No hi ha cap grup programat per aquest aparell.</div>
+          {% endif %}
+        </div>
+        {% if out_of_program_group_blocks %}
+          <div class="judge-meta mb-3">Els grups fora de programa apareixen com a pestanyes marcades amb l'etiqueta "Fora".</div>
+        {% endif %}

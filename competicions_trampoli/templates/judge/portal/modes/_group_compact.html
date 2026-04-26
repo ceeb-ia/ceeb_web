@@ -1,0 +1,5 @@
+<div class="group-pane {% if bloc.key != active_group_key %}d-none{% endif %}" data-group-pane="group-{{ bloc.key }}" data-group-label="{% if off_program %}{{ bloc.label }} (fora de programa){% else %}{{ bloc.label }}{% endif %}">
+  {% for ins in bloc.list %}
+    {% include "judge/portal/modes/_entry_card_compact.html" with bloc=bloc ins=ins exercicis=exercicis exercici=exercici team_subject_mode=team_subject_mode judge_kiosk=judge_kiosk video_capture_enabled=video_capture_enabled off_program=off_program only %}
+  {% endfor %}
+</div>

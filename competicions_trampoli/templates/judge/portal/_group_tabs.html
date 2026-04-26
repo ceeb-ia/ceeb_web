@@ -1,0 +1,29 @@
+        {% if group_blocks or out_of_program_group_blocks %}
+          <ul class="nav nav-tabs mb-3" id="groupTabs" role="tablist">
+            {% for bloc in group_blocks %}
+              <li class="nav-item" role="presentation">
+                <button
+                  type="button"
+                  class="nav-link {% if bloc.key == active_group_key %}active{% endif %}"
+                  data-group-target="group-{{ bloc.key }}"
+                >
+                  {{ bloc.label }}
+                  <span class="badge text-bg-light group-tab-count">{{ bloc.list|length }}</span>
+                </button>
+              </li>
+            {% endfor %}
+            {% for bloc in out_of_program_group_blocks %}
+              <li class="nav-item" role="presentation">
+                <button
+                  type="button"
+                  class="nav-link {% if bloc.key == active_group_key %}active{% endif %}"
+                  data-group-target="group-{{ bloc.key }}"
+                >
+                  {{ bloc.label }}
+                  <span class="badge text-bg-warning group-tab-count">Fora</span>
+                  <span class="badge text-bg-light group-tab-count">{{ bloc.list|length }}</span>
+                </button>
+              </li>
+            {% endfor %}
+          </ul>
+        {% endif %}

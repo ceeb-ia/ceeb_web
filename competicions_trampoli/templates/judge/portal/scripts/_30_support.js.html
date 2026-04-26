@@ -1,0 +1,290 @@
+  function supportEls(){
+    return {
+      toggleBtn: document.getElementById("supportNavToggle"),
+      badge: document.getElementById("supportUnreadBadge"),
+      drawer: document.getElementById("supportNavDrawer"),
+      backdrop: document.getElementById("supportNavBackdrop"),
+      closeBtn: document.getElementById("supportNavClose"),
+      quickBtn: document.getElementById("assistQuickBtn"),
+      quickState: document.getElementById("assistQuickState"),
+      thread: document.getElementById("judgeSupportThread"),
+      empty: document.getElementById("judgeSupportEmpty"),
+      input: document.getElementById("judgeSupportInput"),
+      sendBtn: document.getElementById("judgeSupportSendBtn"),
+    };
+  }
+
+  function escHtml(s){
+    return String(s || "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+  }
+
+  function formatSupportTime(v){
+    if(!v) return "";
+    const dt = new Date(v);
+    if(Number.isNaN(dt.getTime())) return "";
+    return dt.toLocaleTimeString([], {hour: "2-digit", minute: "2-digit", second: "2-digit"});
+  }
+
+  function isSupportNavOpen(){
+    const els = supportEls();
+    return !!(els.drawer && els.drawer.classList.contains("show"));
+  }
+
+  function updateSupportUnreadBadge(){
+    const els = supportEls();
+    if(!els.badge) return;
+    const count = Math.max(0, Number(supportLocalUnread || 0));
+    if(!count){
+      els.badge.style.display = "none";
+      els.badge.textContent = "";
+      return;
+    }
+    els.badge.style.display = "";
+    els.badge.textContent = count > 99 ? "99+" : String(count);
+  }
+
+  function openSupportNav(){
+    const els = supportEls();
+    if(!els.drawer || !els.backdrop) return;
+    if(typeof closeMobileInsNav === "function"){
+      closeMobileInsNav();
+    }
+    els.drawer.classList.add("show");
+    els.backdrop.classList.add("show");
+    els.drawer.setAttribute("aria-hidden", "false");
+    if(els.toggleBtn) els.toggleBtn.setAttribute("aria-expanded", "true");
+    supportLocalUnread = 0;
+    updateSupportUnreadBadge();
+    renderSupportThread();
+  }
+
+  function closeSupportNav(){
+    const els = supportEls();
+    if(!els.drawer || !els.backdrop) return;
+    els.drawer.classList.remove("show");
+    els.backdrop.classList.remove("show");
+    els.drawer.setAttribute("aria-hidden", "true");
+    if(els.toggleBtn) els.toggleBtn.setAttribute("aria-expanded", "false");
+  }
+
+  function toggleSupportNav(){
+    if(isSupportNavOpen()){
+      closeSupportNav();
+      return;
+    }
+    openSupportNav();
+  }
+
+  function refreshSupportButtons(){
+    const els = supportEls();
+    if(!els.quickBtn || !els.sendBtn) return;
+    const status = String((supportConversation && supportConversation.status) || "idle");
+    const hasCooldown = Number(supportCooldownRemaining || 0) > 0;
+    els.quickBtn.disabled = supportBusy || hasCooldown;
+    els.sendBtn.disabled = supportBusy;
+
+    if(status === "requested" && hasCooldown){
+      els.quickBtn.textContent = `Assistencia solicitada (${supportCooldownRemaining}s)`;
+    } else if(status === "requested"){
+      els.quickBtn.textContent = "Reavisar assistencia";
+    } else {
+      els.quickBtn.textContent = "Solicitar assistencia";
+    }
+
+    if(els.quickState){
+      if(status === "requested"){
+        els.quickState.textContent = "Estat: pendent d'atencio d'organitzacio.";
+      } else if(status === "ack"){
+        els.quickState.textContent = "Estat: organitzacio treballant en la incidencia.";
+      } else if(status === "resolved"){
+        els.quickState.textContent = "Estat: incidencia marcada com a resolta.";
+      } else {
+        els.quickState.textContent = "";
+      }
+    }
+  }
+
+  function mergeSupportMessages(rows){
+    const ids = new Set(supportMessages.map(m => String(m.id)));
+    (rows || []).forEach((row) => {
+      const key = String(row.id);
+      if(ids.has(key)) return;
+      ids.add(key);
+      supportMessages.push(row);
+    });
+    supportMessages.sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")));
+  }
+
+  function renderSupportThread(){
+    const els = supportEls();
+    if(!els.thread || !els.empty) return;
+    if(!supportMessages.length){
+      els.thread.style.display = "none";
+      els.empty.style.display = "";
+      refreshSupportButtons();
+      updateSupportUnreadBadge();
+      return;
+    }
+    els.empty.style.display = "none";
+    els.thread.style.display = "";
+    els.thread.innerHTML = supportMessages.map((m) => {
+      const klass = m.sender_type === "judge" ? "judge" : (m.sender_type === "organization" ? "organization" : "system");
+      return `
+        <div class="judge-support-bubble ${klass}">
+          <div>${escHtml(m.text || "")}</div>
+          <span class="judge-support-meta">${escHtml(m.sender_label || "")} Â· ${escHtml(formatSupportTime(m.created_at))}</span>
+        </div>
+      `;
+    }).join("");
+    els.thread.scrollTop = els.thread.scrollHeight;
+    refreshSupportButtons();
+    updateSupportUnreadBadge();
+  }
+
+  async function postSupport(url, body){
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "X-CSRFToken": CSRF_TOKEN,
+      },
+      body: JSON.stringify(body || {}),
+    });
+    const data = await res.json().catch(() => ({}));
+    if(!res.ok || !data.ok){
+      const err = new Error(data.error || "Error de servidor");
+      err.data = data || {};
+      throw err;
+    }
+    return data;
+  }
+
+  async function requestQuickSupport(){
+    supportBusy = true;
+    refreshSupportButtons();
+    try{
+      const data = await postSupport(JUDGE_REQUEST_SUPPORT_URL, {quick: true});
+      supportConversation = data.conversation || supportConversation;
+      supportCooldownRemaining = Number(data.retry_after_seconds || SUPPORT_DEFAULT_COOLDOWN_SECONDS);
+      mergeSupportMessages(data.message ? [data.message] : []);
+      renderSupportThread();
+    } catch(e){
+      const payload = e && e.data ? e.data : {};
+      if(payload && payload.reason === "cooldown"){
+        supportCooldownRemaining = Number(payload.retry_after_seconds || 0);
+      } else {
+        alert(e.message || e);
+      }
+    } finally {
+      supportBusy = false;
+      refreshSupportButtons();
+    }
+  }
+
+  async function sendSupportMessage(){
+    const els = supportEls();
+    if(!els.input) return;
+    const text = String(els.input.value || "").trim();
+    if(!text) return;
+    supportBusy = true;
+    refreshSupportButtons();
+    try{
+      const data = await postSupport(JUDGE_SEND_MESSAGE_URL, {text});
+      supportConversation = data.conversation || supportConversation;
+      mergeSupportMessages(data.message ? [data.message] : []);
+      els.input.value = "";
+      renderSupportThread();
+    } catch(e){
+      alert(e.message || e);
+    } finally {
+      supportBusy = false;
+      refreshSupportButtons();
+    }
+  }
+
+  function tickSupportCooldown(){
+    if(!supportCooldownRemaining || supportCooldownRemaining <= 0) return;
+    supportCooldownRemaining = Math.max(0, Number(supportCooldownRemaining) - 1);
+    refreshSupportButtons();
+  }
+
+  async function pollSupportMessages(opts = {}){
+    const url = new URL(JUDGE_MESSAGES_UPDATES_URL, window.location.origin);
+    if(supportSince){
+      url.searchParams.set("since", supportSince);
+    }
+    if(supportAfterId){
+      url.searchParams.set("after_id", supportAfterId);
+    }
+    let nextPollDelay = opts.drain ? null : 1500;
+    try{
+      const res = await fetch(url.toString(), {headers: {"Accept":"application/json"}});
+      const data = await res.json().catch(() => ({}));
+      if(res.ok && data.ok){
+        supportConversation = data.conversation || supportConversation;
+        supportCooldownRemaining = Number(data.cooldown_remaining || 0);
+        const incoming = Array.isArray(data.messages) ? data.messages : [];
+        if(supportInitialLoaded && !isSupportNavOpen()){
+          const newUnread = incoming.filter((m) => m && m.sender_type !== "judge").length;
+          if(newUnread > 0){
+            supportLocalUnread = Number(supportLocalUnread || 0) + newUnread;
+          }
+        }
+        mergeSupportMessages(incoming);
+        supportInitialLoaded = true;
+        if(typeof data.next_since === "string" || data.next_since === null){
+          supportSince = data.next_since || supportSince;
+          supportAfterId = String(data.next_after_id || "");
+        } else if(data.now){
+          supportSince = data.now;
+          supportAfterId = "";
+        }
+        if(data.has_more){
+          nextPollDelay = 0;
+        }
+        renderSupportThread();
+      }
+    } catch(_e){
+      // ignore transient poll failures
+    } finally {
+      if(nextPollDelay !== null){
+        window.setTimeout(() => pollSupportMessages({drain: nextPollDelay === 0}), nextPollDelay);
+      }
+    }
+  }
+
+  function initSupportUi(){
+    const els = supportEls();
+    if(!els.quickBtn || !els.sendBtn || !els.toggleBtn || !els.drawer || !els.backdrop) return;
+    els.toggleBtn.addEventListener("click", toggleSupportNav);
+    if(els.closeBtn) els.closeBtn.addEventListener("click", closeSupportNav);
+    els.backdrop.addEventListener("click", closeSupportNav);
+    els.quickBtn.addEventListener("click", requestQuickSupport);
+    els.sendBtn.addEventListener("click", sendSupportMessage);
+    if(els.input){
+      els.input.addEventListener("keydown", (evt) => {
+        if(evt.key === "Enter"){
+          evt.preventDefault();
+          sendSupportMessage();
+        }
+      });
+    }
+    document.addEventListener("keydown", (evt) => {
+      if(evt.key === "Escape"){
+        closeSupportNav();
+      }
+    });
+    closeSupportNav();
+    refreshSupportButtons();
+    updateSupportUnreadBadge();
+    renderSupportThread();
+    window.setInterval(tickSupportCooldown, 1000);
+    pollSupportMessages();
+  }
+

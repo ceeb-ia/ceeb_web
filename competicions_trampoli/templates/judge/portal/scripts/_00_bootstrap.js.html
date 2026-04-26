@@ -1,0 +1,82 @@
+  const CSRF_TOKEN = "{{ csrf_token }}";
+  (function(){
+    const url = new URL(window.location.href);
+    const current = String(url.searchParams.get("view_mode") || "").trim().toLowerCase();
+    if(current) return;
+
+    let saved = "";
+    try{
+      saved = String(
+        window.localStorage.getItem("judgePortalViewMode:token:{{ token_obj.id }}")
+        || window.localStorage.getItem("judgePortalViewMode:comp_aparell:{{ comp_aparell.id }}")
+        || ""
+      ).trim().toLowerCase();
+    } catch(_err){
+      saved = "";
+    }
+
+    if(saved !== "competition_order") return;
+    url.searchParams.set("view_mode", saved);
+    window.location.replace(url.toString());
+  })();
+  const SCHEMA = JSON.parse(document.getElementById("schema-data").textContent || "{}");
+  const ITEM_LABELS_BY_FIELD = JSON.parse(document.getElementById("judge-item-labels-data").textContent || "{}");
+  const PERMS  = JSON.parse(document.getElementById("perms-data").textContent || "[]");
+  const SUBJECTS = JSON.parse(document.getElementById("subjects-data").textContent || "[]");
+  const SCORES = JSON.parse(document.getElementById("scores-data").textContent || "{}");
+  const UPDATES_CURSOR_INIT = JSON.parse(document.getElementById("updates-cursor-init").textContent || "null");
+
+  const SAVE_URL = "{{ save_url }}";
+  const UPDATES_URL = "{{ updates_url }}";
+  const VIDEO_STATUS_URL = "{{ video_status_url }}";
+  const VIDEO_UPLOAD_URL = "{{ video_upload_url }}";
+  const VIDEO_DELETE_URL = "{{ video_delete_url }}";
+  const JUDGE_REQUEST_SUPPORT_URL = "{% url 'judge_request_support' token_obj.id %}";
+  const JUDGE_SEND_MESSAGE_URL = "{% url 'judge_send_message' token_obj.id %}";
+  const JUDGE_MESSAGES_UPDATES_URL = "{% url 'judge_messages_updates' token_obj.id %}";
+  const VIDEO_CAPTURE_ENABLED = {{ video_capture_enabled|yesno:"true,false" }};
+  const VIDEO_MAX_DURATION_SECONDS = Number("{{ video_max_duration_seconds|default:90 }}") || 90;
+  const VIDEO_MAX_SIZE_BYTES = Number("{{ video_max_size_bytes|default:125829120 }}") || (120 * 1024 * 1024);
+  const SUPPORT_DEFAULT_COOLDOWN_SECONDS = 30;
+
+  function getItemDisplayLabel(fieldCode, idx1){
+    const cleanCode = String(fieldCode || "").trim();
+    const labels = cleanCode && ITEM_LABELS_BY_FIELD && Array.isArray(ITEM_LABELS_BY_FIELD[cleanCode])
+      ? ITEM_LABELS_BY_FIELD[cleanCode]
+      : [];
+    const configured = String(labels[idx1 - 1] || "").trim();
+    return configured || `Item ${idx1}`;
+  }
+  const EXERCISES = {{ exercicis|safe }};
+  const EXERCICI_HINT = {{ exercici }};
+  const PORTAL_DISPLAY_MODE = "{{ portal_display_mode|default:'compact' }}";
+  const PORTAL_DISPLAY_MODE_STORAGE_KEY = "judgePortalViewMode:token:{{ token_obj.id }}";
+  const PORTAL_DISPLAY_MODE_COMP_APARELL_KEY = "judgePortalViewMode:comp_aparell:{{ comp_aparell.id }}";
+  const TEAM_SUBJECT_MODE = {{ team_subject_mode|yesno:"true,false" }};
+  const SUBJECTS_BY_ID = {};
+  const SUBJECT_DOM_ID_BY_SUBJECT_ID = {};
+  SUBJECTS.forEach((subject) => {
+    if(!subject || typeof subject !== "object") return;
+    const domId = String(subject.id || subject.subject_id || "");
+    if(!domId) return;
+    SUBJECTS_BY_ID[domId] = subject;
+    if(subject.subject_id != null && subject.subject_id !== ""){
+      SUBJECT_DOM_ID_BY_SUBJECT_ID[String(subject.subject_id)] = domId;
+    }
+  });
+
+  let currentRecordingEntryKey = null;
+  let lastSince = UPDATES_CURSOR_INIT || new Date().toISOString();
+  let lastAfterId = "";
+  let supportSince = null;
+  let supportAfterId = "";
+  let supportConversation = null;
+  let supportBusy = false;
+  let supportCooldownRemaining = 0;
+  let supportInitialLoaded = false;
+  let supportLocalUnread = 0;
+  const recordedVideoByEntry = {};
+  const supportMessages = [];
+  const DRAFTS = {};
+  const DIRTY_BY_ENTRY = {};
+

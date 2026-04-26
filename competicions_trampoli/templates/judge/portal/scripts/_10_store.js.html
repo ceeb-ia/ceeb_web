@@ -1,0 +1,232 @@
+  function schemaField(code){
+    const fields = (SCHEMA && Array.isArray(SCHEMA.fields)) ? SCHEMA.fields : [];
+    return fields.find(f => f && f.code === code) || null;
+  }
+  function entryKey(insId, exercici){
+    return `${String(insId)}:${String(exercici)}`;
+  }
+  function exerciseKey(exercici){
+    return String(exercici);
+  }
+  function allExerciseKeys(){
+    return Array.isArray(EXERCISES) ? EXERCISES.map((ex) => exerciseKey(ex)) : [];
+  }
+  function sanitizePortalDisplayMode(mode){
+    const clean = String(mode || "").trim().toLowerCase();
+    return clean === "competition_order" ? "competition_order" : "compact";
+  }
+  function persistPortalDisplayMode(mode){
+    const clean = sanitizePortalDisplayMode(mode);
+    try{
+      window.localStorage.setItem(PORTAL_DISPLAY_MODE_STORAGE_KEY, clean);
+      window.localStorage.setItem(PORTAL_DISPLAY_MODE_COMP_APARELL_KEY, clean);
+    } catch(_err){
+      // ignore storage failures
+    }
+    return clean;
+  }
+  function updatePortalDisplayMode(mode){
+    const clean = persistPortalDisplayMode(mode);
+    const url = new URL(window.location.href);
+    const current = sanitizePortalDisplayMode(url.searchParams.get("view_mode") || PORTAL_DISPLAY_MODE);
+    if(clean === "compact"){
+      url.searchParams.delete("view_mode");
+    } else {
+      url.searchParams.set("view_mode", clean);
+    }
+    const nextUrl = url.toString();
+    if(clean === current && nextUrl === window.location.href){
+      return;
+    }
+    window.location.assign(nextUrl);
+  }
+  function initPortalViewModeControl(){
+    const select = document.getElementById("portalViewModeSelect");
+    if(!select) return;
+    select.value = sanitizePortalDisplayMode(PORTAL_DISPLAY_MODE);
+    select.addEventListener("change", () => {
+      updatePortalDisplayMode(select.value);
+    });
+  }
+  function isCompetitionOrderMode(){
+    return PORTAL_DISPLAY_MODE === "competition_order";
+  }
+  function getInsScoreBox(insId){
+    const key = String(insId);
+    if(!SCORES[key] || typeof SCORES[key] !== "object") SCORES[key] = {};
+    if(!SCORES[key].exercises || typeof SCORES[key].exercises !== "object") SCORES[key].exercises = {};
+    return SCORES[key];
+  }
+  function resolveInsDomId(insId){
+    return SUBJECT_DOM_ID_BY_SUBJECT_ID[String(insId)] || String(insId);
+  }
+  function subjectForId(insId){
+    const domId = resolveInsDomId(insId);
+    return SUBJECTS_BY_ID[domId] || {
+      id: domId,
+      subject_kind: TEAM_SUBJECT_MODE ? "team_unit" : "inscripcio",
+      subject_id: Number(insId),
+    };
+  }
+  function getEntry(insId, exercici){
+    const box = getInsScoreBox(insId);
+    const key = exerciseKey(exercici);
+    if(!box.exercises[key] || typeof box.exercises[key] !== "object"){
+      box.exercises[key] = {inputs:{}, outputs:{}, total:0, updated_at:null};
+    }
+    return box.exercises[key];
+  }
+  function setEntry(insId, exercici, nextEntry){
+    const box = getInsScoreBox(insId);
+    box.exercises[exerciseKey(exercici)] = {
+      inputs: (nextEntry && typeof nextEntry.inputs === "object") ? nextEntry.inputs : {},
+      outputs: (nextEntry && typeof nextEntry.outputs === "object") ? nextEntry.outputs : {},
+      total: Number.isFinite(Number(nextEntry && nextEntry.total)) ? Number(nextEntry.total) : 0,
+      updated_at: (nextEntry && nextEntry.updated_at) || null,
+    };
+  }
+  function getServerInput(insId, exercici, code){
+    const entry = getEntry(insId, exercici);
+    const inputs = (entry.inputs && typeof entry.inputs === "object") ? entry.inputs : {};
+    return inputs[code];
+  }
+  function deepClone(v){
+    if(v === null || v === undefined) return v;
+    if(typeof v !== "object") return v;
+    try{ return JSON.parse(JSON.stringify(v)); }catch(_e){ return v; }
+  }
+  function getDraft(insId, exercici){
+    const key = entryKey(insId, exercici);
+    if(!DRAFTS[key] || typeof DRAFTS[key] !== "object") DRAFTS[key] = {};
+    return DRAFTS[key];
+  }
+  function clearDraft(insId, exercici){
+    delete DRAFTS[entryKey(insId, exercici)];
+  }
+  function getDirtySet(insId, exercici){
+    const key = entryKey(insId, exercici);
+    if(!DIRTY_BY_ENTRY[key]) DIRTY_BY_ENTRY[key] = new Set();
+    return DIRTY_BY_ENTRY[key];
+  }
+  function markDirty(insId, exercici, permKey){
+    getDirtySet(insId, exercici).add(String(permKey || ""));
+  }
+  function clearDirty(insId, exercici){
+    delete DIRTY_BY_ENTRY[entryKey(insId, exercici)];
+  }
+  function hasDirty(insId, exercici){
+    const set = DIRTY_BY_ENTRY[entryKey(insId, exercici)];
+    return !!(set && set.size);
+  }
+  function isEditingEntry(insId, exercici){
+    const wrap = document.getElementById(`editor-inner-${insId}-${exercici}`);
+    const ae = document.activeElement;
+    return !!(wrap && ae && wrap.contains(ae));
+  }
+  function getEditableInputs(insId, exercici){
+    const panel = document.querySelector(`[data-exercise-panel="1"][data-ins-id="${String(insId)}"][data-exercici="${exerciseKey(exercici)}"]`);
+    if(!panel) return [];
+    return Array.from(panel.querySelectorAll('input[data-nav-scope="score-input"][data-ins-id][data-exercici]'))
+      .filter((input) => !input.disabled);
+  }
+  function selectInputContents(input){
+    if(!input) return;
+    try{
+      input.select();
+    } catch(_e){
+      // ignore unsupported selection APIs
+    }
+  }
+  function ensureInputVisible(input){
+    if(!input || typeof input.getBoundingClientRect !== "function") return;
+
+    const scrollIfNeeded = () => {
+      const rect = input.getBoundingClientRect();
+      const viewportHeight = (window.visualViewport && Number(window.visualViewport.height))
+        ? Number(window.visualViewport.height)
+        : window.innerHeight;
+      const topMargin = 20;
+      const bottomMargin = 80;
+      const isAbove = rect.top < topMargin;
+      const isBelow = rect.bottom > Math.max(topMargin + 40, viewportHeight - bottomMargin);
+
+      if(isAbove || isBelow){
+        input.scrollIntoView({
+          behavior: "smooth",
+          block: "nearest",
+          inline: "nearest",
+        });
+      }
+    };
+
+    scrollIfNeeded();
+    window.setTimeout(scrollIfNeeded, 90);
+  }
+  function updateInputEnterKeyHint(input){
+    if(!input) return;
+    const inputs = getEditableInputs(input.dataset.insId || "", input.dataset.exercici || "");
+    const idx = inputs.indexOf(input);
+    const hint = (idx !== -1 && idx < inputs.length - 1) ? "next" : "done";
+    input.setAttribute("enterkeyhint", hint);
+  }
+  function focusEditableInput(input){
+    if(!input) return;
+    input.focus();
+    selectInputContents(input);
+    updateInputEnterKeyHint(input);
+    ensureInputVisible(input);
+  }
+  function focusNextEditableInput(currentInput){
+    if(!currentInput) return;
+    const inputs = getEditableInputs(currentInput.dataset.insId || "", currentInput.dataset.exercici || "");
+    if(!inputs.length){
+      focusEditableInput(currentInput);
+      return;
+    }
+    const idx = inputs.indexOf(currentInput);
+    const target = (idx === -1)
+      ? inputs[0]
+      : inputs[Math.min(idx + 1, inputs.length - 1)];
+    focusEditableInput(target || currentInput);
+  }
+  function focusPrevEditableInput(currentInput){
+    if(!currentInput) return;
+    const inputs = getEditableInputs(currentInput.dataset.insId || "", currentInput.dataset.exercici || "");
+    if(!inputs.length){
+      focusEditableInput(currentInput);
+      return;
+    }
+    const idx = inputs.indexOf(currentInput);
+    const target = (idx === -1)
+      ? inputs[0]
+      : inputs[Math.max(idx - 1, 0)];
+    focusEditableInput(target || currentInput);
+  }
+  function bindScoreInputNavigation(input, insId, exercici){
+    if(!input) return;
+    input.dataset.insId = String(insId);
+    input.dataset.exercici = exerciseKey(exercici);
+    input.dataset.navScope = "score-input";
+    updateInputEnterKeyHint(input);
+    input.addEventListener("focus", () => {
+      updateInputEnterKeyHint(input);
+      selectInputContents(input);
+      ensureInputVisible(input);
+    });
+    input.addEventListener("keydown", (evt) => {
+      if(evt.key !== "Enter" && evt.key !== "Tab") return;
+      evt.preventDefault();
+      if(evt.key === "Tab" && evt.shiftKey){
+        focusPrevEditableInput(input);
+        return;
+      }
+      focusNextEditableInput(input);
+    });
+  }
+  function effectiveInput(insId, exercici, code){
+    const draft = DRAFTS[entryKey(insId, exercici)];
+    if(draft && Object.prototype.hasOwnProperty.call(draft, code)){
+      return draft[code];
+    }
+    return getServerInput(insId, exercici, code);
+  }

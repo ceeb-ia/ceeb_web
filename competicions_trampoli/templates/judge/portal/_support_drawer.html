@@ -1,0 +1,19 @@
+      <div class="judge-support-backdrop" id="supportNavBackdrop"></div>
+      <aside class="judge-support-drawer" id="supportNavDrawer" aria-hidden="true">
+        <div class="judge-support-drawer-head">
+          <div class="fw-semibold">Suport tecnic</div>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="supportNavClose">Tancar</button>
+        </div>
+        <div class="judge-support-drawer-body">
+          <div class="d-flex justify-content-end mb-2">
+            <button type="button" class="btn btn-sm btn-warning" id="assistQuickBtn">Solicitar assistencia</button>
+          </div>
+          <div class="judge-meta mt-1 mb-2" id="assistQuickState"></div>
+          <div id="judgeSupportThread" class="judge-support-thread mb-2" style="display:none;"></div>
+          <div id="judgeSupportEmpty" class="judge-support-empty mb-2">Encara no hi ha missatges de suport.</div>
+          <div class="input-group input-group-sm">
+            <input id="judgeSupportInput" type="text" class="form-control" maxlength="500" placeholder="Missatge opcional a organitzacio">
+            <button type="button" class="btn btn-outline-primary" id="judgeSupportSendBtn">Enviar</button>
+          </div>
+        </div>
+      </aside>
