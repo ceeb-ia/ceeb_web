@@ -365,7 +365,7 @@ class RotationOrderingDisplayTests(_BaseTrampoliDataMixin, TestCase):
         body = portal_res.content.decode("utf-8")
         self.assertRegex(
             body,
-            rf'class="nav-link active"\s+data-group-target="group-{extra_1.grup_competicio_id}"',
+            rf'(?s)<option[^>]+value="group-{extra_1.grup_competicio_id}"[^>]+selected',
         )
         self.assertRegex(
             body,
@@ -423,6 +423,10 @@ class RotationOrderingDisplayTests(_BaseTrampoliDataMixin, TestCase):
         self.assertNotIn('id="insNavListDesktop"', body)
         self.assertNotIn('id="insNavListMobile"', body)
         self.assertIn('id="portalViewModeSelect"', body)
+        self.assertIn('id="groupSelect"', body)
+        self.assertIn('id="groupPrevBtn"', body)
+        self.assertIn('id="groupNextBtn"', body)
+        self.assertNotIn('class="nav nav-tabs mb-3"', body)
 
     def test_judge_portal_competition_order_display_groups_by_exercise_then_rotation_order(self):
         extra_1 = self._create_inscripcio(self.comp, "Participant 4", ordre=4, grup=1)
@@ -448,6 +452,8 @@ class RotationOrderingDisplayTests(_BaseTrampoliDataMixin, TestCase):
         body = portal_res.content.decode("utf-8")
         self.assertNotIn('<button type="button" class="judge-exercise-chip"', body)
         self.assertIn('data-competition-order-panel="1"', body)
+        self.assertNotIn("Expected include context", body)
+        self.assertNotIn("must render the exact competition-order", body)
         ordered_markers = [
             *(f'id="card-{ins.id}-1"' for ins in expected_order),
             *(f'id="card-{ins.id}-2"' for ins in expected_order),

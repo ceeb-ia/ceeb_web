@@ -1,7 +1,6 @@
   // init
   buildPermText();
   initPortalViewModeControl();
-  renderAllEditors();
   initGroupTabs();
   initInsNavigation();
   initSupportUi();
@@ -9,5 +8,6 @@
     initVideoUI();
   }
   initExercisePanels();
+  renderVisibleEditorsInActiveGroup();
   loadVisibleExerciseVideos();
   pollUpdates();

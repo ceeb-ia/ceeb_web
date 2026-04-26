@@ -1,29 +1,57 @@
         {% if group_blocks or out_of_program_group_blocks %}
-          <ul class="nav nav-tabs mb-3" id="groupTabs" role="tablist">
-            {% for bloc in group_blocks %}
-              <li class="nav-item" role="presentation">
-                <button
-                  type="button"
-                  class="nav-link {% if bloc.key == active_group_key %}active{% endif %}"
-                  data-group-target="group-{{ bloc.key }}"
-                >
-                  {{ bloc.label }}
-                  <span class="badge text-bg-light group-tab-count">{{ bloc.list|length }}</span>
-                </button>
-              </li>
-            {% endfor %}
-            {% for bloc in out_of_program_group_blocks %}
-              <li class="nav-item" role="presentation">
-                <button
-                  type="button"
-                  class="nav-link {% if bloc.key == active_group_key %}active{% endif %}"
-                  data-group-target="group-{{ bloc.key }}"
-                >
-                  {{ bloc.label }}
-                  <span class="badge text-bg-warning group-tab-count">Fora</span>
-                  <span class="badge text-bg-light group-tab-count">{{ bloc.list|length }}</span>
-                </button>
-              </li>
-            {% endfor %}
-          </ul>
+          <div class="judge-group-switcher mb-3" id="groupSwitcher">
+            <button
+              type="button"
+              class="judge-group-step"
+              id="groupPrevBtn"
+              aria-label="Grup anterior"
+              title="Grup anterior"
+            >
+              &lsaquo;
+            </button>
+            <div class="judge-group-select-wrap">
+              <select class="form-select judge-group-select" id="groupSelect" aria-label="Seleccionar grup">
+                {% for bloc in group_blocks %}
+                  <option
+                    value="group-{{ bloc.key }}"
+                    data-group-target="group-{{ bloc.key }}"
+                    data-group-label="{{ bloc.label }}"
+                    data-group-count="{{ bloc.list|length }}"
+                    data-group-off-program="0"
+                    {% if bloc.key == active_group_key %}selected{% endif %}
+                  >
+                    {{ bloc.label }} · {{ bloc.list|length }}
+                  </option>
+                {% endfor %}
+                {% for bloc in out_of_program_group_blocks %}
+                  <option
+                    value="group-{{ bloc.key }}"
+                    data-group-target="group-{{ bloc.key }}"
+                    data-group-label="{{ bloc.label }}"
+                    data-group-count="{{ bloc.list|length }}"
+                    data-group-off-program="1"
+                    {% if bloc.key == active_group_key %}selected{% endif %}
+                  >
+                    {{ bloc.label }} · {{ bloc.list|length }} · Fora
+                  </option>
+                {% endfor %}
+              </select>
+              <div class="judge-group-current-meta">
+                <span class="judge-group-count" id="groupCurrentCount">
+                  {% for bloc in group_blocks %}{% if bloc.key == active_group_key %}{{ bloc.list|length }} inscripcions{% endif %}{% endfor %}
+                  {% for bloc in out_of_program_group_blocks %}{% if bloc.key == active_group_key %}{{ bloc.list|length }} inscripcions{% endif %}{% endfor %}
+                </span>
+                <span class="judge-group-off-program d-none" id="groupCurrentOffProgram">Fora de programa</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              class="judge-group-step"
+              id="groupNextBtn"
+              aria-label="Grup seguent"
+              title="Grup seguent"
+            >
+              &rsaquo;
+            </button>
+          </div>
         {% endif %}

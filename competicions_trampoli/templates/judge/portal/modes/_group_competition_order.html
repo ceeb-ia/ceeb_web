@@ -1,9 +1,10 @@
-{# Expected include context:
+{% comment %}
+Expected include context:
   - bloc: group block with key, label, franja_label, and list
   - exercicis: iterable of exercise numbers
   - off_program_mode: optional truthy flag for "Fora de programa" cards
   - team_subject_mode, video_capture_enabled, judge_kiosk: forwarded to the entry-card partial
-#}
+{% endcomment %}
 {% for ex in exercicis %}
   <div class="judge-competition-exercise-band" data-competition-exercise-section="1" data-exercici="{{ ex }}">
     <div class="judge-competition-exercise-title">Exercici {{ ex }}</div>

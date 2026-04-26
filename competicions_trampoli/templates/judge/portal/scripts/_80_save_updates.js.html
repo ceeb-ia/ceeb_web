@@ -70,7 +70,7 @@
 
     clearDraft(insId, exercici);
     clearDirty(insId, exercici);
-    renderEditor(insId, exercici);
+    renderEditor(insId, exercici, { force: true });
     refreshInsNavStatuses();
     refreshExerciseChipStates(insId);
     setStatus(insId, exercici, "ok", "Desat ✓");
@@ -103,7 +103,9 @@
     }
 
     if(Object.keys(incomingInputs).length){
-      renderEditor(insId, exercici);
+      if(isEditorRendered(insId, exercici)){
+        renderEditor(insId, exercici, { force: true });
+      }
       setStatus(insId, exercici, "", "Actualitzat");
     }
   }

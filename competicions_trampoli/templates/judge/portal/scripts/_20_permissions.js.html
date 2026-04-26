@@ -137,16 +137,21 @@
   }
 
   function buildPermText(){
-    const el = document.getElementById("permText");
-    if(!el) return;
+    const targets = Array.from(document.querySelectorAll("[data-perm-text]"));
+    const legacyEl = document.getElementById("permText");
+    if(legacyEl && !targets.includes(legacyEl)) targets.push(legacyEl);
+    if(!targets.length) return;
     const parts = PERMS.map((perm) => {
       const p = normalizePerm(perm);
       if(!p.field_code) return "";
       const range = p.item_count ? `(${p.item_start}..${p.item_start + p.item_count - 1})` : "";
-      const scope = p.scope === "member" ? `Individual · ${permissionTargetText(p)}` : "Compartit";
+      const scope = p.scope === "member" ? `Individual - ${permissionTargetText(p)}` : "Compartit";
       return `${p.field_code} [${scope}] [J${p.judge_index}] ${range}`.trim();
     });
-    el.textContent = parts.filter(Boolean).join(" · ");
+    const text = parts.filter(Boolean).join(" - ");
+    targets.forEach((el) => {
+      el.textContent = text;
+    });
   }
 
   function updateDraftValue(insId, exercici, code, nextValue, perm){

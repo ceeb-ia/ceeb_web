@@ -338,6 +338,102 @@ class ScoringAndJudgeExclusionFlowTests(_BaseTrampoliDataMixin, TestCase):
         self.assertNotIn('href="?ex=1"', body)
         self.assertNotIn('href="?ex=3"', body)
 
+    def test_judge_portal_uses_lazy_editor_and_video_boot_contract(self):
+        portal_url = reverse("judge_portal", kwargs={"token": self.token.id})
+        portal_res = self.client.get(portal_url, {"ex": 1})
+        self.assertEqual(portal_res.status_code, 200)
+
+        body = portal_res.content.decode("utf-8")
+        self.assertIn("function renderVisibleEditorsInActiveGroup(opts = {})", body)
+        self.assertIn("function isEditorRendered(insId, exercici)", body)
+        self.assertIn('wrap.dataset.editorRendered = "1";', body)
+        self.assertIn("if(!opts.skipRender){", body)
+        self.assertIn("skipVideo: true, skipRender: true", body)
+        self.assertIn("renderVisibleEditorsInActiveGroup();", body)
+        self.assertNotIn("renderAllEditors();", body)
+        self.assertIn("function loadVideoStatusForPanel(panel, opts = {})", body)
+        self.assertIn("function observeLazyVideoPanel(panel)", body)
+        self.assertIn("new IntersectionObserver", body)
+        self.assertIn("const LAZY_VIDEO_INITIAL_LIMIT = 8;", body)
+        self.assertIn("if(isEditorRendered(insId, exercici)){", body)
+
+    def test_judge_portal_does_not_expose_json_endpoints_as_html_navigation(self):
+        portal_url = reverse("judge_portal", kwargs={"token": self.token.id})
+        portal_res = self.client.get(portal_url, {"ex": 1})
+        self.assertEqual(portal_res.status_code, 200)
+        self.assertEqual(portal_res["Content-Type"].split(";")[0], "text/html")
+
+        body = portal_res.content.decode("utf-8")
+        save_url = reverse("judge_save_partial", kwargs={"token": self.token.id})
+        updates_url = reverse("judge_updates", kwargs={"token": self.token.id})
+        video_status_url = reverse("judge_video_status", kwargs={"token": self.token.id})
+        video_upload_url = reverse("judge_video_upload", kwargs={"token": self.token.id})
+        video_delete_url = reverse("judge_video_delete", kwargs={"token": self.token.id})
+
+        self.assertIn(f'const SAVE_URL = "{save_url}";', body)
+        self.assertIn(f'const UPDATES_URL = "{updates_url}";', body)
+        self.assertIn(f'const VIDEO_STATUS_URL = "{video_status_url}";', body)
+        self.assertIn(f'const VIDEO_UPLOAD_URL = "{video_upload_url}";', body)
+        self.assertIn(f'const VIDEO_DELETE_URL = "{video_delete_url}";', body)
+        self.assertNotRegex(body, r'<(?:a|form)\b[^>]*(?:href|action)=["\'][^"\']*/api/')
+
+        switcher_start = body.index('id="groupSwitcher"')
+        panes_start = body.index('id="groupPanes"')
+        self.assertNotIn("<form", body[switcher_start:panes_start].lower())
+
+        set_active_start = body.index("function setActiveGroup(target)")
+        mark_active_start = body.index("function markActiveNav", set_active_start)
+        set_active_body = body[set_active_start:mark_active_start]
+        self.assertIn("updateGroupInUrl(target);", set_active_body)
+        self.assertNotIn("window.location", set_active_body)
+
+        update_group_url_start = body.index("function updateGroupInUrl(target)")
+        set_active_start = body.index("function setActiveGroup(target)")
+        update_group_url_body = body[update_group_url_start:set_active_start]
+        self.assertIn("window.history.replaceState", update_group_url_body)
+        self.assertNotIn("window.location.assign", update_group_url_body)
+        self.assertNotIn("window.location.replace", update_group_url_body)
+        self.assertNotIn("window.location.href =", update_group_url_body)
+
+        updates_res = self.client.get(updates_url)
+        self.assertEqual(updates_res.status_code, 200)
+        self.assertEqual(updates_res["Content-Type"].split(";")[0], "application/json")
+
+    def test_judge_portal_rehydrates_present_judge_empty_items_as_visual_zero(self):
+        portal_url = reverse("judge_portal", kwargs={"token": self.token.id})
+        portal_res = self.client.get(portal_url, {"ex": 1})
+        self.assertEqual(portal_res.status_code, 200)
+
+        body = portal_res.content.decode("utf-8")
+        self.assertIn("function isJudgeRowPresent(insId, exercici, code, judgeIndex)", body)
+        self.assertIn("function presentJudgeDisplayValue(value, rowPresent)", body)
+        self.assertIn("const rowPresent = isJudgeRowPresent(insId, exercici, perm.runtime_field_code, j);", body)
+        self.assertIn("const displayValue = presentJudgeDisplayValue(baseArr[j-1], rowPresent);", body)
+        self.assertIn("const displayValue = presentJudgeDisplayValue(mat[j-1][idx0], rowPresent);", body)
+        self.assertIn("if(rowPresent && (value === null || value === undefined || value === \"\")){", body)
+        self.assertIn("return 0;", body)
+
+    def test_judge_portal_identifies_apparatus_and_field_blocks_visually(self):
+        portal_url = reverse("judge_portal", kwargs={"token": self.token.id})
+        portal_res = self.client.get(portal_url, {"ex": 1})
+        self.assertEqual(portal_res.status_code, 200)
+
+        body = portal_res.content.decode("utf-8")
+        self.assertIn("judge-portal-apparatus", body)
+        self.assertIn(self.comp_app.aparell.nom, body)
+        self.assertIn("judge-assignment-summary", body)
+        self.assertIn("data-perm-text", body)
+        self.assertIn("Camps puntuats", body)
+        self.assertIn("function appendPermissionHeader(block, perm, field)", body)
+        self.assertIn("judge-field-block", body)
+        self.assertIn("judge-field-head", body)
+        self.assertIn("judge-field-title", body)
+        self.assertIn("appendFieldBadge(badges, perm.field_code, \"code\");", body)
+        self.assertIn(".judge-field-badge.code", body)
+        self.assertIn("Jutge ${perm.judge_index}", body)
+        self.assertNotIn("Â", body)
+        self.assertNotIn("Ã", body)
+
     def test_judge_portal_renders_keyboard_navigation_helpers_for_score_inputs(self):
         portal_url = reverse("judge_portal", kwargs={"token": self.token.id})
         portal_res = self.client.get(portal_url, {"ex": 1})

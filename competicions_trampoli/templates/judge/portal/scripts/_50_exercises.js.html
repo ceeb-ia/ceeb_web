@@ -122,7 +122,9 @@
       panel.classList.toggle("d-none", panelExercise !== resolvedExercise);
     });
 
-    renderEditor(insId, resolvedExercise);
+    if(!opts.skipRender){
+      renderEditor(insId, resolvedExercise);
+    }
     refreshExerciseChipStates(insId);
 
     if(VIDEO_CAPTURE_ENABLED && !opts.skipVideo){
@@ -150,31 +152,62 @@
           openExercisePanel(insId, chip.dataset.exercici || EXERCISES[0]);
         });
       });
-      openExercisePanel(insId, selectInitialExerciseForIns(insId), { skipVideo: true });
+      openExercisePanel(insId, selectInitialExerciseForIns(insId), { skipVideo: true, skipRender: true });
     });
+  }
+
+  const LAZY_VIDEO_INITIAL_LIMIT = 8;
+  let lazyVideoObserver = null;
+
+  function loadVideoStatusForPanel(panel, opts = {}){
+    if(!VIDEO_CAPTURE_ENABLED || !panel) return;
+    const insId = panel.dataset.insId || "";
+    const exercici = panel.dataset.exercici || "";
+    if(!insId || !exercici) return;
+
+    const videoState = getVideoState(insId, exercici);
+    if(!canRecordVideo()){
+      setVideoStatus(insId, exercici, "err", "Camera no disponible en aquest navegador.");
+      applyVideoUiState(insId, exercici, {
+        busy: false,
+        hasPending: !!videoState.pendingBlob,
+        hasStored: !!videoState.hasStored,
+        isRecording: false,
+      });
+      return;
+    }
+    fetchVideoStatus(insId, exercici, opts.force ? { force: true } : { force: false });
+  }
+
+  function observeLazyVideoPanel(panel){
+    if(!panel || panel.dataset.videoObserved === "1") return;
+    if(!("IntersectionObserver" in window)){
+      return;
+    }
+    if(!lazyVideoObserver){
+      lazyVideoObserver = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          if(!entry.isIntersecting) return;
+          lazyVideoObserver.unobserve(entry.target);
+          entry.target.dataset.videoObserved = "1";
+          loadVideoStatusForPanel(entry.target);
+        });
+      }, { root: null, rootMargin: "320px 0px", threshold: 0.01 });
+    }
+    lazyVideoObserver.observe(panel);
   }
 
   function loadVisibleExerciseVideos(){
     if(!VIDEO_CAPTURE_ENABLED) return;
-    document.querySelectorAll('[data-group-pane]:not(.d-none) [data-exercise-panel="1"]:not(.d-none)[data-ins-id][data-exercici]').forEach((panel) => {
-      const insId = panel.dataset.insId || "";
-      const exercici = panel.dataset.exercici || "";
-      if(isCompetitionOrderMode()){
-        const videoState = getVideoState(insId, exercici);
-        if(!canRecordVideo()){
-          setVideoStatus(insId, exercici, "err", "Camera no disponible en aquest navegador.");
-          applyVideoUiState(insId, exercici, {
-            busy: false,
-            hasPending: !!videoState.pendingBlob,
-            hasStored: !!videoState.hasStored,
-            isRecording: false,
-          });
-        } else {
-          fetchVideoStatus(insId, exercici, { force: false });
+    const panels = Array.from(document.querySelectorAll('[data-group-pane]:not(.d-none) [data-exercise-panel="1"]:not(.d-none)[data-ins-id][data-exercici]'));
+    panels.forEach((panel, idx) => {
+      if(!("IntersectionObserver" in window)){
+        if(idx < LAZY_VIDEO_INITIAL_LIMIT){
+          loadVideoStatusForPanel(panel);
         }
         return;
       }
-      openExercisePanel(insId, exercici, { forceVideo: false });
+      observeLazyVideoPanel(panel);
     });
   }
 
@@ -252,6 +285,6 @@
       }
     });
 
-    renderEditor(currentInsId, exercici);
+    renderEditor(currentInsId, exercici, { force: true });
     refreshExerciseChipStates(currentInsId);
   }

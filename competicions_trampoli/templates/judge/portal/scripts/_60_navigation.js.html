@@ -6,8 +6,54 @@
   }
 
   function currentGroupTarget(){
+    const groupSelect = document.getElementById("groupSelect");
+    if(groupSelect && groupSelect.value){
+      return String(groupSelect.value || "");
+    }
     const activeTab = document.querySelector("[data-group-target].active");
     return activeTab ? String(activeTab.dataset.groupTarget || "") : "";
+  }
+
+  function groupTargetOptions(){
+    const groupSelect = document.getElementById("groupSelect");
+    if(groupSelect){
+      return Array.from(groupSelect.options).map((option) => String(option.value || "")).filter(Boolean);
+    }
+    return Array.from(document.querySelectorAll("[data-group-target]"))
+      .map((el) => String(el.dataset.groupTarget || ""))
+      .filter(Boolean);
+  }
+
+  function selectedGroupOption(){
+    const groupSelect = document.getElementById("groupSelect");
+    if(!groupSelect) return null;
+    return groupSelect.options[groupSelect.selectedIndex] || null;
+  }
+
+  function updateGroupSwitcherState(){
+    const groupSelect = document.getElementById("groupSelect");
+    const prevBtn = document.getElementById("groupPrevBtn");
+    const nextBtn = document.getElementById("groupNextBtn");
+    const countEl = document.getElementById("groupCurrentCount");
+    const offProgramEl = document.getElementById("groupCurrentOffProgram");
+    const targets = groupTargetOptions();
+    const current = currentGroupTarget();
+    const idx = targets.indexOf(current);
+
+    if(prevBtn) prevBtn.disabled = idx <= 0;
+    if(nextBtn) nextBtn.disabled = idx === -1 || idx >= targets.length - 1;
+
+    const option = selectedGroupOption();
+    if(countEl && option){
+      const count = String(option.dataset.groupCount || "");
+      countEl.textContent = count ? `${count} inscripcions` : "";
+    }
+    if(offProgramEl && option){
+      offProgramEl.classList.toggle("d-none", option.dataset.groupOffProgram !== "1");
+    }
+    if(groupSelect && current && groupSelect.value !== current){
+      groupSelect.value = current;
+    }
   }
 
   function updateGroupInUrl(target){
@@ -25,10 +71,16 @@
     if(!target) return;
     const tabs = Array.from(document.querySelectorAll("[data-group-target]"));
     tabs.forEach((b) => b.classList.toggle("active", b.dataset.groupTarget === target));
+    const groupSelect = document.getElementById("groupSelect");
+    if(groupSelect && groupSelect.value !== target){
+      groupSelect.value = target;
+    }
     document.querySelectorAll("[data-group-pane]").forEach((pane) => {
       pane.classList.toggle("d-none", pane.dataset.groupPane !== target);
     });
     updateGroupInUrl(target);
+    updateGroupSwitcherState();
+    renderVisibleEditorsInActiveGroup();
     loadVisibleExerciseVideos();
   }
 
@@ -261,11 +313,34 @@
 
   function initGroupTabs(){
     const tabs = Array.from(document.querySelectorAll("[data-group-target]"));
-    if(!tabs.length) return;
+    const groupSelect = document.getElementById("groupSelect");
+    const prevBtn = document.getElementById("groupPrevBtn");
+    const nextBtn = document.getElementById("groupNextBtn");
+    if(!tabs.length && !groupSelect) return;
 
     tabs.forEach((btn) => {
       btn.addEventListener("click", () => {
         setActiveGroup(btn.dataset.groupTarget);
       });
     });
+    if(groupSelect){
+      groupSelect.addEventListener("change", () => {
+        setActiveGroup(groupSelect.value);
+      });
+    }
+    if(prevBtn){
+      prevBtn.addEventListener("click", () => {
+        const targets = groupTargetOptions();
+        const idx = targets.indexOf(currentGroupTarget());
+        if(idx > 0) setActiveGroup(targets[idx - 1]);
+      });
+    }
+    if(nextBtn){
+      nextBtn.addEventListener("click", () => {
+        const targets = groupTargetOptions();
+        const idx = targets.indexOf(currentGroupTarget());
+        if(idx !== -1 && idx < targets.length - 1) setActiveGroup(targets[idx + 1]);
+      });
+    }
+    updateGroupSwitcherState();
   }

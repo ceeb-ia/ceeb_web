@@ -1,4 +1,5 @@
-{# Expected include context:
+{% comment %}
+Expected include context:
   - bloc: current group block
   - ins: current entry/registration
   - ex: current exercise number
@@ -15,7 +16,7 @@
       * the same save/copy actions
   - If _exercise_panel.html delegates video markup, _video_panel.html should receive
     ins, ex, and video_capture_enabled so it can preserve the existing ids/data-*.
-#}
+{% endcomment %}
 <div id="{% if off_program_mode %}off-program-card-{% else %}card-{% endif %}{{ ins.id }}-{{ ex }}" class="judge-card judge-competition-entry mb-2" data-ins-id="{{ ins.id }}" data-exercici="{{ ex }}" data-subject-kind="{{ ins.subject_kind|default:'inscripcio' }}" data-ins-name="{% if off_program_mode %}{{ ins.nom_i_cognoms|default:'Inscripcio' }}{% else %}{{ ins.name|default:'Inscripcio' }}{% endif %}">
   <div class="d-flex justify-content-between align-items-center">
     <div>

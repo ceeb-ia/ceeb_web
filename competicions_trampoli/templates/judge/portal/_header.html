@@ -1,14 +1,21 @@
     <div class="d-flex justify-content-between align-items-start mb-3">
       <div>
-        <h2 class="mb-1">{% if judge_kiosk %}Jurat{% else %}Jurat · Entrada per QR{% endif %}</h2>
-        {% if not judge_kiosk %}
-        <div class="text-muted small">
-          Competició: <span class="fw-semibold">{{ competicio.nom }}</span> ·
-          Aparell: <span class="fw-semibold">{{ comp_aparell.aparell.nom }}</span> ·
+        <h2 class="judge-portal-title mb-1">
+          <span>Jurat</span>
+          <span class="judge-portal-apparatus">{{ comp_aparell.aparell.nom }}</span>
+          {% if not judge_kiosk %}<span class="judge-portal-mode">Entrada per QR</span>{% endif %}
+        </h2>
+        <div class="judge-portal-context">
+          <span>Competicio: <span class="fw-semibold">{{ competicio.nom }}</span></span>
+          {% if token_obj.label %}
+            <span>QR: <span class="fw-semibold">{{ token_obj.label }}</span></span>
+          {% endif %}
         </div>
-        {% if token_obj.label %}
-          <div class="text-muted small">Token: <span class="fw-semibold">{{ token_obj.label }}</span></div>
-        {% endif %}
+        {% if permissions %}
+          <div class="judge-assignment-summary mt-2">
+            <span class="judge-assignment-label">Camps puntuats</span>
+            <span class="judge-assignment-values" data-perm-text></span>
+          </div>
         {% endif %}
         <div class="mt-2">
           <div class="judge-meta">
@@ -19,7 +26,7 @@
               Mode ordre competicio: exercicis desplegats en sequencia.
             {% endif %}
             {% if franja_override %}
-              Override actiu: {{ franja_override.titol|default:"Franja" }} · {{ franja_override.hora_inici|time:"H:i" }}-{{ franja_override.hora_fi|time:"H:i" }}.
+              Override actiu: {{ franja_override.titol|default:"Franja" }} - {{ franja_override.hora_inici|time:"H:i" }}-{{ franja_override.hora_fi|time:"H:i" }}.
             {% endif %}
           </div>
           {% if exercicis|length > 1 %}
