@@ -17,6 +17,46 @@ def _color_for_cluster(cluster_id) -> str:
     return "#" + digest[:6]
 
 
+def _add_base_tile_layers(fmap: folium.Map):
+    folium.TileLayer(
+        tiles="CartoDB positron",
+        name="Base · Minimal",
+        control=True,
+        overlay=False,
+        show=True,
+    ).add_to(fmap)
+    folium.TileLayer(
+        tiles="OpenStreetMap",
+        name="Base · Carrer",
+        control=True,
+        overlay=False,
+        show=False,
+    ).add_to(fmap)
+    folium.TileLayer(
+        tiles="CartoDB Voyager",
+        name="Base · Detallat",
+        control=True,
+        overlay=False,
+        show=False,
+    ).add_to(fmap)
+    folium.TileLayer(
+        tiles="OpenTopoMap",
+        name="Base · Topografic",
+        attr="Map data: OpenStreetMap contributors, SRTM | Map style: OpenTopoMap",
+        control=True,
+        overlay=False,
+        show=False,
+    ).add_to(fmap)
+    folium.TileLayer(
+        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        name="Base · Satellit",
+        attr="Tiles © Esri",
+        control=True,
+        overlay=False,
+        show=False,
+    ).add_to(fmap)
+
+
 def _build_popup_actions(scenario: PreviewScenario, point) -> str:
     if point.address_id is None:
         return ""
@@ -102,6 +142,19 @@ def _build_selection_sync_script(
         selectedMarkerSnapshot = null;
       }}
 
+      function clearSelectionRing() {{
+        const mapInstance = getMapInstance();
+        if (selectionRing && mapInstance && typeof mapInstance.removeLayer === 'function') {{
+          mapInstance.removeLayer(selectionRing);
+        }}
+        selectionRing = null;
+      }}
+
+      function clearSelection() {{
+        restoreSelectedMarker();
+        clearSelectionRing();
+      }}
+
       function renderSelectionRing(addressId) {{
         const coordinates = getCoordinates(addressId);
         const mapInstance = getMapInstance();
@@ -168,10 +221,16 @@ def _build_selection_sync_script(
 
       window.addEventListener('message', function(event) {{
         const data = event && event.data ? event.data : null;
-        if (!data || data.type !== 'cluster_preview_highlight_address') {{
+        if (!data || (data.type !== 'cluster_preview_highlight_address' && data.type !== 'cluster_preview_clear_selection')) {{
           return;
         }}
         if (data.epsM && String(data.epsM) !== selectedEpsM) {{
+          return;
+        }}
+        if (data.type === 'cluster_preview_clear_selection') {{
+          window.setTimeout(function() {{
+            clearSelection();
+          }}, 0);
           return;
         }}
         window.setTimeout(function() {{
@@ -191,7 +250,8 @@ def render_preview_map(scenario: PreviewScenario, out_html: str) -> str | None:
     center_lat = sum(point.lat for point in points if point.lat is not None) / len(points)
     center_lon = sum(point.lon for point in points if point.lon is not None) / len(points)
 
-    fmap = folium.Map(location=[center_lat, center_lon], zoom_start=11, control_scale=True)
+    fmap = folium.Map(location=[center_lat, center_lon], zoom_start=11, control_scale=True, tiles=None)
+    _add_base_tile_layers(fmap)
     fg_clustered = folium.FeatureGroup(name="Clusters", show=True)
     fg_outliers = folium.FeatureGroup(name="Outliers", show=True)
     fg_missing = folium.FeatureGroup(name="Sense geocodificar", show=False)

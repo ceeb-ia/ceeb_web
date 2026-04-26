@@ -373,6 +373,12 @@
           Selecciona una seu i, si cal, tria una altra seu per fusionar-les dins del radi actual.
         </div>
 
+        <div class="d-flex justify-content-end mb-3">
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="preview-venue-clear-selection-btn" disabled>
+            Deseleccionar
+          </button>
+        </div>
+
         <form method="post" id="preview-venue-merge-form" class="mb-2" action="{{ payload.override_actions.merge_url }}">
           {% csrf_token %}
           <input type="hidden" name="preview_id" value="{{ preview_id }}">

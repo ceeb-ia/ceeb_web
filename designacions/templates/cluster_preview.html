@@ -159,6 +159,7 @@
   const venueDetailMatches = document.getElementById('preview-venue-detail-matches');
   const venueDetailModalities = document.getElementById('preview-venue-detail-modalities');
   const venueFeedback = document.getElementById('preview-venue-action-feedback');
+  const venueClearSelectionButton = document.getElementById('preview-venue-clear-selection-btn');
   const venueMergeForm = document.getElementById('preview-venue-merge-form');
   const venueMergeTargetSelect = document.getElementById('preview-venue-merge-target-select');
   const venueMergeButton = document.getElementById('preview-venue-merge-btn');
@@ -183,6 +184,7 @@
   let currentVenueFilter = 'all';
   let currentVenueQuery = '';
   let pendingMapHighlight = null;
+  let selectionExplicitlyCleared = false;
 
   function formatSinceUpdate(seconds){
     if (typeof seconds !== 'number' || Number.isNaN(seconds)) {
@@ -274,6 +276,13 @@
     };
   }
 
+  function buildMapClearSelectionMessage(eps){
+    return {
+      type: 'cluster_preview_clear_selection',
+      epsM: eps ?? currentScenarioEps,
+    };
+  }
+
   function postMessageToMap(message, delayMs){
     if (!mapFrame || !mapFrame.contentWindow || !message) return;
     const send = () => {
@@ -292,6 +301,16 @@
     const message = buildMapHighlightMessage(selectedVenueId, scenario?.eps_m ?? currentScenarioEps);
     pendingMapHighlight = message;
     if (!message || resolvedOptions.skipImmediatePost) {
+      return;
+    }
+    postMessageToMap(message, resolvedOptions.delayMs || 0);
+  }
+
+  function clearSelectedVenueOnMap(scenario, options){
+    const resolvedOptions = options || {};
+    const message = buildMapClearSelectionMessage(scenario?.eps_m ?? currentScenarioEps);
+    pendingMapHighlight = null;
+    if (resolvedOptions.skipImmediatePost) {
       return;
     }
     postMessageToMap(message, resolvedOptions.delayMs || 0);
@@ -434,6 +453,9 @@
     const filteredVenues = getFilteredVenues(venues);
     const allIds = venues.map((venue) => getVenueId(venue));
     const filteredIds = filteredVenues.map((venue) => getVenueId(venue));
+    if (!selectedVenueId && selectionExplicitlyCleared) {
+      return;
+    }
     if (selectedVenueId && filteredIds.includes(String(selectedVenueId))) {
       return;
     }
@@ -610,6 +632,7 @@
       if (venueMergeTargetInput) venueMergeTargetInput.value = '';
       if (venueIsolateSourceInput) venueIsolateSourceInput.value = '';
       if (venueRestoreSourceInput) venueRestoreSourceInput.value = '';
+      if (venueClearSelectionButton) venueClearSelectionButton.disabled = true;
       if (venueMergeButton) venueMergeButton.disabled = true;
       if (venueIsolateButton) venueIsolateButton.disabled = true;
       if (venueRestoreButton) venueRestoreButton.disabled = true;
@@ -646,6 +669,7 @@
     if (venueIsolateSourceInput) venueIsolateSourceInput.value = venueId;
     if (venueRestoreSourceInput) venueRestoreSourceInput.value = venueId;
 
+    if (venueClearSelectionButton) venueClearSelectionButton.disabled = false;
     if (venueMergeButton) venueMergeButton.disabled = !(mergeUrl && venueMergeTargetSelect && venueMergeTargetSelect.value);
     if (venueIsolateButton) venueIsolateButton.disabled = !isolateUrl;
     if (venueRestoreButton) {
@@ -663,6 +687,7 @@
     if (addressId === null || addressId === undefined || addressId === '') {
       return;
     }
+    selectionExplicitlyCleared = false;
     selectedVenueId = String(addressId);
     const resolvedScenario = (options && options.scenario) || findScenario(currentScenarioEps);
     if (!resolvedScenario) {
@@ -670,6 +695,20 @@
     }
     renderVenuePanel(resolvedScenario);
     syncSelectedVenueToMap(resolvedScenario, {
+      skipImmediatePost: Boolean(options && options.syncMap === false),
+    });
+  }
+
+  function deselectVenue(options){
+    const resolvedScenario = (options && options.scenario) || findScenario(currentScenarioEps);
+    selectionExplicitlyCleared = true;
+    selectedVenueId = null;
+    if (!resolvedScenario) {
+      clearSelectedVenueOnMap(null);
+      return;
+    }
+    renderVenuePanel(resolvedScenario);
+    clearSelectedVenueOnMap(resolvedScenario, {
       skipImmediatePost: Boolean(options && options.syncMap === false),
     });
   }
@@ -724,6 +763,7 @@
       }
     }
     if (resolvedOptions.selectedAddressId !== null && resolvedOptions.selectedAddressId !== undefined && resolvedOptions.selectedAddressId !== '') {
+      selectionExplicitlyCleared = false;
       selectedVenueId = String(resolvedOptions.selectedAddressId);
     }
     renderVenuePanel(scenario);
@@ -830,6 +870,11 @@
       if (scenario) {
         renderVenuePanel(scenario);
       }
+    });
+  }
+  if (venueClearSelectionButton) {
+    venueClearSelectionButton.addEventListener('click', () => {
+      deselectVenue();
     });
   }
   if (venueFilterSelect) {
