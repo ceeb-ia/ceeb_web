@@ -30,6 +30,12 @@ from .services.assignment_feasibility import (
     diagnose_segment_feasibility,
     primary_reason_code,
 )
+from .services.vehicle_policy import (
+    build_vehicle_assignment_record,
+    build_vehicle_policy_context,
+    summarize_vehicle_assignments,
+    vehicle_policy_penalty,
+)
 from .models import AddressCluster, DesignationRun
 from .services.manual_assignment import update_run_mobility_summary
 from .clusteritzacio.maps import add_base_tile_layers
@@ -545,6 +551,33 @@ def _evaluate_subgroup_candidate(
     }
 
 
+def _apply_vehicle_policy_to_evaluation(
+    evaluation,
+    tutor_row,
+    subgrup,
+    *,
+    vehicle_policy_context,
+    candidate_referees,
+    raw_evaluator,
+):
+    penalty, diagnostics = vehicle_policy_penalty(
+        tutor_row,
+        subgrup,
+        evaluation.get("descriptors", []),
+        vehicle_policy_context,
+        candidate_referees,
+        raw_evaluator,
+    )
+    if penalty:
+        evaluation = dict(evaluation)
+        evaluation["cost"] = float(evaluation["cost"] + penalty)
+        evaluation["vehicle_policy_penalty"] = penalty
+    if diagnostics:
+        evaluation = dict(evaluation)
+        evaluation["vehicle_policy"] = diagnostics
+    return evaluation
+
+
 def _build_subgroup_cost_matrix(
     referee_rows,
     subgroups,
@@ -1025,6 +1058,10 @@ def persist_assignacions_to_db(
 
     run = DesignationRun.objects.get(id=run_id)
 
+    def _classification_position(value):
+        parsed = _safe_position_int(value, default=-1)
+        return parsed if parsed > 0 else None
+
     # Mapa ràpid: referee_code -> (nom complet)
     # df_dispos té 'Codi Tutor de Joc', 'Nom', 'Cognoms'
     dispo_name = {}
@@ -1080,6 +1117,8 @@ def persist_assignacions_to_db(
                     "club_local": p.get("Club Local"),
                     "equip_local": p.get("Equip local"),
                     "equip_visitant": p.get("Equip visitant"),
+                    "posicio_equip_local": _classification_position(p.get("Posició Equip Local")),
+                    "posicio_equip_visitant": _classification_position(p.get("Posició Equip Visitant")),
                     "lliga": p.get("Lliga"),
                     "group": p.get("Grup"),
                     "jornada": p.get("Jornada"),
@@ -1264,6 +1303,8 @@ def main(
             "mobility_error_count": 0,
             "mobility_warnings": [],
             "mobility_errors": [],
+            "pitch_change_warning_count": 0,
+            "pitch_change_warnings": [],
             "map_path": None,
         }
 
@@ -1399,6 +1440,8 @@ def main(
     rescue_rounds_count = 0
     remaining_unassigned_details = []
     remaining_unassigned_breakdown = Counter()
+    vehicle_assignment_records = []
+    vehicle_policy_contexts = []
     classification_cache = {}
     classification_parsed_cache = {}
     classification_cache_hits = 0
@@ -1537,6 +1580,12 @@ def main(
         final_subgrups = subgroup_stats["subgroups"]
         initial_subgroups_count += subgroup_stats["base_subgroups"]
         fused_subgroups_count += subgroup_stats["fused_subgroups"]
+        vehicle_policy_context = build_vehicle_policy_context(
+            [_build_subgroup_descriptors(subgrup) for subgrup in final_subgrups],
+            df_dispos_modalitat,
+            config,
+        )
+        vehicle_policy_contexts.append(vehicle_policy_context)
         if task_id:
             async_to_sync(push_log)(
                 task_id,
@@ -1547,7 +1596,7 @@ def main(
             )
 
         # --- matriu costos ---
-        def subgroup_eval_fn(tutor_row, subgrup, *, existing_descriptors=None):
+        def raw_subgroup_eval_fn(tutor_row, subgrup, *, existing_descriptors=None):
             return _evaluate_subgroup_candidate(
                 tutor_row,
                 subgrup,
@@ -1559,6 +1608,25 @@ def main(
                 gap_diff_pitch_min=gap_diff_pitch_min,
                 gap_diff_cluster_min=gap_diff_cluster_min,
                 existing_descriptors=existing_descriptors,
+            )
+
+        def subgroup_eval_fn(tutor_row, subgrup, *, existing_descriptors=None):
+            evaluation = raw_subgroup_eval_fn(
+                tutor_row,
+                subgrup,
+                existing_descriptors=existing_descriptors,
+            )
+            return _apply_vehicle_policy_to_evaluation(
+                evaluation,
+                tutor_row,
+                subgrup,
+                vehicle_policy_context=vehicle_policy_context,
+                candidate_referees=df_dispos_modalitat,
+                raw_evaluator=lambda candidate_row, candidate_segment: raw_subgroup_eval_fn(
+                    candidate_row,
+                    candidate_segment,
+                    existing_descriptors=existing_descriptors,
+                ),
             )
 
         def initial_cost_fn(tutor_row, subgrup):
@@ -1582,6 +1650,13 @@ def main(
             subgrup = final_subgrups[subgrup_idx]
             if C[tutor_idx, subgrup_idx] >= 1e5:
                 continue
+            vehicle_assignment_records.append(
+                build_vehicle_assignment_record(
+                    tutor_row,
+                    _build_subgroup_descriptors(subgrup),
+                    stage="initial",
+                )
+            )
             _append_segment_assignment(
                 tutor_row=tutor_row,
                 segment=subgrup,
@@ -1637,6 +1712,13 @@ def main(
         rescue_matches_recovered_count += idle_rescue["matches_recovered"]
         for assigned_segment in idle_rescue["assigned_segments"]:
             tutor_row = idle_referees.iloc[assigned_segment["tutor_idx"]]
+            vehicle_assignment_records.append(
+                build_vehicle_assignment_record(
+                    tutor_row,
+                    _build_subgroup_descriptors(assigned_segment["segment"]),
+                    stage="rescue_idle",
+                )
+            )
             _append_segment_assignment(
                 tutor_row=tutor_row,
                 segment=assigned_segment["segment"],
@@ -1658,6 +1740,13 @@ def main(
         rescue_matches_recovered_count += reused_rescue["matches_recovered"]
         for assigned_segment in reused_rescue["assigned_segments"]:
             tutor_row = reusable_referees.iloc[assigned_segment["tutor_idx"]]
+            vehicle_assignment_records.append(
+                build_vehicle_assignment_record(
+                    tutor_row,
+                    _build_subgroup_descriptors(assigned_segment["segment"]),
+                    stage="rescue_reused",
+                )
+            )
             _append_segment_assignment(
                 tutor_row=tutor_row,
                 segment=assigned_segment["segment"],
@@ -1772,6 +1861,16 @@ def main(
     if task_id:
         async_to_sync(push_log)(task_id, "Procés del motor finalitzat.", 96)
 
+    vehicle_usage_summary = summarize_vehicle_assignments(vehicle_assignment_records)
+    vehicle_usage_summary.update(
+        {
+            "vehicle_required_segments": int(sum(ctx.vehicle_required_count for ctx in vehicle_policy_contexts)),
+            "vehicle_preferred_segments": int(sum(ctx.vehicle_preferred_count for ctx in vehicle_policy_contexts)),
+            "vehicle_not_needed_segments": int(sum(ctx.vehicle_not_needed_count for ctx in vehicle_policy_contexts)),
+            "vehicle_pressure": any(ctx.has_vehicle_pressure for ctx in vehicle_policy_contexts),
+        }
+    )
+
     result = {
         "assigned": int(len(df_assignacions)) if df_assignacions is not None else 0,
         "unassigned_matches": int(len(df_unassigned)) if df_unassigned is not None else 0,
@@ -1794,6 +1893,9 @@ def main(
         "classification_cache_hits": int(classification_cache_hits),
         "classification_failed_requests": int(classification_failed_requests),
         "classification_groups_without_data": sorted(classification_groups_without_data),
+        "vehicle_usage_summary": vehicle_usage_summary,
+        "vehicle_used_on_easy_segments": vehicle_usage_summary["vehicle_used_on_easy_segments"],
+        "vehicle_reserved_count": int(vehicle_usage_summary["vehicle_reserved_count"]),
         "map_path": map_rel_path,   # relatiu a MEDIA_ROOT
     }
     if run_id is not None:
@@ -1810,6 +1912,8 @@ def main(
                     "mobility_error_count": int(mobility_summary["mobility_error_count"]),
                     "mobility_warnings": mobility_summary["mobility_warnings"],
                     "mobility_errors": mobility_summary["mobility_errors"],
+                    "pitch_change_warning_count": int(mobility_summary["pitch_change_warning_count"]),
+                    "pitch_change_warnings": mobility_summary["pitch_change_warnings"],
                 }
             )
         else:
@@ -1819,6 +1923,8 @@ def main(
                     "mobility_error_count": 0,
                     "mobility_warnings": [],
                     "mobility_errors": [],
+                    "pitch_change_warning_count": 0,
+                    "pitch_change_warnings": [],
                 }
             )
     else:
@@ -1828,6 +1934,8 @@ def main(
                 "mobility_error_count": 0,
                 "mobility_warnings": [],
                 "mobility_errors": [],
+                "pitch_change_warning_count": 0,
+                "pitch_change_warnings": [],
             }
         )
     # Retornem un resum (no Excel)

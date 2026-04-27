@@ -1230,6 +1230,8 @@ def run_detail_view(request, run_id: int):
         "mobility_error_count": 0,
         "mobility_warnings": [],
         "mobility_errors": [],
+        "pitch_change_warning_count": 0,
+        "pitch_change_warnings": [],
     }
     return render(request, "run_detail.html", {"run": run, "mobility_summary": mobility_summary})
 

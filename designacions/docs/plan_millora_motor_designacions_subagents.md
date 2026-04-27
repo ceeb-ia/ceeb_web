@@ -403,3 +403,62 @@ Per validar la millora, usar run 96 com a cas de prova:
 5. Quin impacte tindria avisar tots els canvis de pista en nombre de warnings?
 6. Es suficient una reoptimitzacio local o cal un motor de rutes?
 
+## Estat Del Codi Despres De La Iteracio Amb Subagents Del 2026-04-27
+
+Punt on es deixa el codi: Fase 1 aplicada i Fase 2 aplicada de forma conservadora. Fase 3, Fase 4 i Fase 5 queden pendents.
+
+### Fase 1 Aplicada
+
+- `designacions/services/assignment_feasibility.py`
+  - S'han separat incidencies bloquejants i avisos informatius amb `severity`.
+  - `mobility_reason_codes(...)` continua retornant nomes codis bloquejants per no trencar l'assignador.
+  - `inspect_mobility_transitions(...)` ara pot retornar avisos informatius per:
+    - `same_cluster_pitch_change_warning`
+    - `cross_cluster_with_vehicle_warning`
+    - `outlier_mobility_warning`
+    - `missing_cluster_mobility_warning`
+
+- `designacions/services/manual_assignment.py`
+  - `build_run_mobility_summary(...)` separa `mobility_errors` i `mobility_warnings`.
+  - S'han afegit `pitch_change_warning_count` i `pitch_change_warnings`.
+  - Les assignacions amb canvi de pista viable queden marcades com a warning revisable, no com a error.
+
+- UI/backend:
+  - `designacions/templates/assignments.html` i `designacions/templates/run_detail.html` mostren els warnings com avisos informatius de mobilitat.
+  - `designacions/services/assignment_explainer.py` diferencia `blocking_reasons` i `advisory_reasons`.
+
+### Fase 2 Aplicada
+
+- Nou fitxer `designacions/services/vehicle_policy.py`.
+- Es classifica cada unitat assignable, entenent unitat com a subgrup inicial o segment de repesca:
+  - `vehicle_required`
+  - `vehicle_preferred`
+  - `vehicle_not_needed`
+- `designacions/main_fixed.py` integra una penalitzacio configurable per usar tutors amb vehicle en unitats `vehicle_not_needed` quan:
+  - hi ha pressio de segments `vehicle_required`;
+  - el tutor candidat te vehicle;
+  - existeix com a minim una alternativa viable sense vehicle.
+- La penalitzacio es controla amb:
+  - `vehicle_policy_enabled` (per defecte activat)
+  - `vehicle_easy_segment_penalty` (per defecte `250.0`)
+- El `result_summary` incorpora:
+  - `vehicle_usage_summary`
+  - `vehicle_used_on_easy_segments`
+  - `vehicle_reserved_count`
+
+### Validacio Executada
+
+- OK: `docker compose run --rm web python manage.py test designacions.tests.DesignacionsDateAwareHelpersTests designacions.tests.DesignacionsManualAssignmentsTests.test_build_run_mobility_summary_marks_valid_multi_cluster_assignment_as_warning designacions.tests.DesignacionsManualAssignmentsTests.test_build_run_mobility_summary_keeps_pitch_change_issue_as_warning --verbosity 1`
+- OK: `docker compose run --rm web python manage.py test designacions.tests.DesignacionsProgressFlowTests --verbosity 1`
+- OK: `docker compose run --rm web python -m compileall designacions/services/assignment_feasibility.py designacions/services/manual_assignment.py designacions/services/vehicle_policy.py designacions/main_fixed.py designacions/views.py designacions/services/assignment_explainer.py`
+
+### Validacio Amb Risc Residual
+
+- Una execucio amplia de `DesignacionsManualAssignmentsTests` ha fallat amb multiples respostes `302` en endpoints que esperaven `200`, i un cas d'assignacio manual que ha quedat seleccionant un tutor diferent. Els tests enfocats sobre mobilitat i resum passen. Abans de donar la iteracio per tancada en produccio, cal revisar si aquests `302` son un requisit d'autenticacio/context de suite o una regressio no relacionada amb la logica nova.
+
+### Pendents Recomanats
+
+- Executar comparativa real amb el run 96 abans i despres de la Fase 2.
+- Revisar si `vehicle_easy_segment_penalty = 250.0` es prou fort o massa agressiu.
+- Afegir diagnostics agregats per hora/cluster (`coverage_by_hour`, `coverage_by_cluster`, `unassigned_by_reason_hour_cluster`), que encara no s'han implementat.
+- No iniciar Fase 3 d'outliers virtuals fins que la comparativa de run 96 confirmi l'impacte de Fase 1 i Fase 2.

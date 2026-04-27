@@ -73,6 +73,7 @@
           <div class="fw-bold mb-2">Validacions mobilitat</div>
           <div class="small mb-2">
             Warnings: <strong>{{ mobility_summary.mobility_warning_count }}</strong>
+            · Canvis de pista: <strong>{{ mobility_summary.pitch_change_warning_count }}</strong>
             · Errors: <strong>{{ mobility_summary.mobility_error_count }}</strong>
           </div>
           {% if mobility_summary.mobility_error_count %}
@@ -82,7 +83,7 @@
           {% endif %}
           {% if mobility_summary.mobility_warning_count %}
           <div class="alert alert-warning small mb-2">
-            Hi ha tutors que atenen mes d'un cluster de forma valida.
+            Hi ha avisos informatius de mobilitat per revisar.
           </div>
           {% endif %}
           {% if mobility_summary.mobility_warnings or mobility_summary.mobility_errors %}

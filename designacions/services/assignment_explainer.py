@@ -46,10 +46,12 @@ def _build_candidate_diagnoses_for_assignment(run, assignment, context):
 
 
 def _feasibility_status(diagnosis: dict) -> str:
-    warning_reasons = diagnosis.get("warning_reasons") or []
-    if not warning_reasons:
+    blocking_reasons = diagnosis.get("blocking_reasons")
+    if blocking_reasons is None:
+        blocking_reasons = diagnosis.get("warning_reasons") or []
+    if not blocking_reasons:
         return "valid"
-    if set(warning_reasons).issubset({"missing_match_datetime"}):
+    if set(blocking_reasons).issubset({"missing_match_datetime"}):
         return "unknown"
     return "invalid"
 
@@ -156,7 +158,8 @@ def _build_explanation_payload(run, assignment, diagnosis: dict, context, *, man
     explanation = {
         "feasibility": {
             "status": feasibility_status,
-            "blocking_reasons": diagnosis.get("warning_reasons") if feasibility_status == "invalid" else [],
+            "blocking_reasons": diagnosis.get("blocking_reasons", diagnosis.get("warning_reasons")) if feasibility_status == "invalid" else [],
+            "advisory_reasons": diagnosis.get("advisory_reasons", []),
             "warning_reasons": diagnosis.get("warning_reasons", []),
             "warning_messages": diagnosis.get("warning_messages", []),
         },

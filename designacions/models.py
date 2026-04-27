@@ -61,6 +61,8 @@ class Match(models.Model):
     club_local = models.CharField(max_length=255, null=True, blank=True)    # "Club Local"
     equip_local = models.CharField(max_length=255, null=True, blank=True)   # "Equip local"
     equip_visitant = models.CharField(max_length=255, null=True, blank=True)# "Equip visitant"
+    posicio_equip_local = models.IntegerField(null=True, blank=True)        # Posicio classificacio local
+    posicio_equip_visitant = models.IntegerField(null=True, blank=True)     # Posicio classificacio visitant
 
     lliga = models.CharField(max_length=255, null=True, blank=True)         # "Lliga"
     group = models.CharField(max_length=255, null=True, blank=True)         # "Grup"

@@ -209,7 +209,7 @@
     {% endif %}
     {% if mobility_summary.mobility_warning_count %}
     <div class="alert alert-warning mb-3" id="mobilityWarningBanner">
-      Hi ha {{ mobility_summary.mobility_warning_count }} tutors atenent diferents clusters de forma valida.
+      Hi ha {{ mobility_summary.mobility_warning_count }} avisos informatius de mobilitat per revisar.
     </div>
     {% else %}
     <div class="alert alert-warning mb-3 d-none" id="mobilityWarningBanner"></div>
@@ -371,7 +371,9 @@
                       <tr>
                         <th>Codi</th>
                         <th>Local</th>
+                        <th>Pos. local</th>
                         <th>Visitant</th>
+                        <th>Pos. visitant</th>
                         <th>Data</th>
                         <th>Hora</th>
                         <th>Pista</th>
@@ -406,7 +408,9 @@
                           {% endif %}
                         </td>
                         <td>{{ a.match.equip_local|default:"-" }}</td>
+                        <td class="text-center">{{ a.match.posicio_equip_local|default:"-" }}</td>
                         <td>{{ a.match.equip_visitant|default:"-" }}</td>
+                        <td class="text-center">{{ a.match.posicio_equip_visitant|default:"-" }}</td>
                         <td>{% if a.match.date %}{{ a.match.date|date:"d/m/Y" }}{% else %}-{% endif %}</td>
                         <td>{{ a.match.hour_raw|default:"-" }}</td>
                         <td>{{ a.match.venue|default:"-" }}</td>
@@ -969,7 +973,7 @@
       var warningBanner = document.getElementById('mobilityWarningBanner');
       if (warningBanner) {
         var warningCount = summary.mobility_warning_count || 0;
-        warningBanner.textContent = 'Hi ha ' + warningCount + ' tutors atenent diferents clusters de forma valida.';
+        warningBanner.textContent = 'Hi ha ' + warningCount + ' avisos informatius de mobilitat per revisar.';
         warningBanner.classList.toggle('d-none', !warningCount);
       }
     }

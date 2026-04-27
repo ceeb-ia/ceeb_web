@@ -17,6 +17,21 @@ TIME_CONFLICT_REASON_CODES = {
     "time_conflict_diff_pitch",
 }
 
+BLOCKING_MOBILITY_REASON_CODES = {
+    "cross_cluster_without_vehicle",
+    "cross_cluster_gap_violation",
+    "same_cluster_gap_violation",
+    "outlier_cluster_for_mobility_validation",
+    "missing_cluster_for_mobility_validation",
+}
+
+ADVISORY_MOBILITY_REASON_CODES = {
+    "same_cluster_pitch_change_warning",
+    "cross_cluster_with_vehicle_warning",
+    "outlier_mobility_warning",
+    "missing_cluster_mobility_warning",
+}
+
 REASON_PRIORITY = [
     "outside_availability_window",
     "missing_availability_for_day",
@@ -57,6 +72,15 @@ class MobilityTransitionIssue:
     required_gap_min: int | None
     actual_gap_min: float | None
     same_pitch: bool
+    severity: str = "blocking"
+
+    @property
+    def is_blocking(self) -> bool:
+        return self.severity == "blocking"
+
+    @property
+    def is_advisory(self) -> bool:
+        return self.severity == "advisory"
 
 
 def normalize_text(value) -> str:
@@ -247,6 +271,40 @@ def normalize_cluster_status(value):
     return normalized or None
 
 
+def _cluster_mobility_warning_code(left_cluster_status: str | None, right_cluster_status: str | None) -> str:
+    if left_cluster_status == "outlier" or right_cluster_status == "outlier":
+        return "outlier_mobility_warning"
+    return "missing_cluster_mobility_warning"
+
+
+def _mobility_issue(
+    *,
+    reason_code: str,
+    left: MatchDescriptor,
+    right: MatchDescriptor,
+    left_cluster_id: str | None,
+    right_cluster_id: str | None,
+    required_gap_min: int | None,
+    actual_gap_min: float | None,
+    same_pitch: bool,
+    severity: str | None = None,
+) -> MobilityTransitionIssue:
+    if severity is None:
+        severity = "advisory" if reason_code in ADVISORY_MOBILITY_REASON_CODES else "blocking"
+    return MobilityTransitionIssue(
+        reason_code=reason_code,
+        left_identifier=left.identifier,
+        right_identifier=right.identifier,
+        match_date=left.date,
+        left_cluster_id=left_cluster_id,
+        right_cluster_id=right_cluster_id,
+        required_gap_min=required_gap_min,
+        actual_gap_min=actual_gap_min,
+        same_pitch=same_pitch,
+        severity=severity,
+    )
+
+
 def detect_time_conflicts(
     descriptors: list[MatchDescriptor],
     existing_descriptors: list[MatchDescriptor],
@@ -330,11 +388,23 @@ def inspect_mobility_transitions(
             if left.address_id is not None and left.address_id == right.address_id:
                 if minutes < base_gap:
                     issues.append(
-                        MobilityTransitionIssue(
+                        _mobility_issue(
                             reason_code="same_cluster_gap_violation",
-                            left_identifier=left.identifier,
-                            right_identifier=right.identifier,
-                            match_date=left.date,
+                            left=left,
+                            right=right,
+                            left_cluster_id=left_cluster_id,
+                            right_cluster_id=right_cluster_id,
+                            required_gap_min=base_gap,
+                            actual_gap_min=minutes,
+                            same_pitch=same_pitch_transition,
+                        )
+                    )
+                elif not same_pitch_transition:
+                    issues.append(
+                        _mobility_issue(
+                            reason_code=_cluster_mobility_warning_code(left_cluster_status, right_cluster_status),
+                            left=left,
+                            right=right,
                             left_cluster_id=left_cluster_id,
                             right_cluster_id=right_cluster_id,
                             required_gap_min=base_gap,
@@ -348,11 +418,10 @@ def inspect_mobility_transitions(
             if left_cluster_status == "outlier" or right_cluster_status == "outlier":
                 reason_code = "outlier_cluster_for_mobility_validation"
             issues.append(
-                MobilityTransitionIssue(
+                _mobility_issue(
                     reason_code=reason_code,
-                    left_identifier=left.identifier,
-                    right_identifier=right.identifier,
-                    match_date=left.date,
+                    left=left,
+                    right=right,
                     left_cluster_id=left_cluster_id,
                     right_cluster_id=right_cluster_id,
                     required_gap_min=None,
@@ -365,11 +434,23 @@ def inspect_mobility_transitions(
         if left_cluster_id == right_cluster_id:
             if minutes < base_gap:
                 issues.append(
-                    MobilityTransitionIssue(
+                    _mobility_issue(
                         reason_code="same_cluster_gap_violation",
-                        left_identifier=left.identifier,
-                        right_identifier=right.identifier,
-                        match_date=left.date,
+                        left=left,
+                        right=right,
+                        left_cluster_id=left_cluster_id,
+                        right_cluster_id=right_cluster_id,
+                        required_gap_min=base_gap,
+                        actual_gap_min=minutes,
+                        same_pitch=same_pitch_transition,
+                    )
+                )
+            elif not same_pitch_transition:
+                issues.append(
+                    _mobility_issue(
+                        reason_code="same_cluster_pitch_change_warning",
+                        left=left,
+                        right=right,
                         left_cluster_id=left_cluster_id,
                         right_cluster_id=right_cluster_id,
                         required_gap_min=base_gap,
@@ -381,11 +462,10 @@ def inspect_mobility_transitions(
 
         if not vehicle_enabled:
             issues.append(
-                MobilityTransitionIssue(
+                _mobility_issue(
                     reason_code="cross_cluster_without_vehicle",
-                    left_identifier=left.identifier,
-                    right_identifier=right.identifier,
-                    match_date=left.date,
+                    left=left,
+                    right=right,
                     left_cluster_id=left_cluster_id,
                     right_cluster_id=right_cluster_id,
                     required_gap_min=max(base_gap, gap_diff_cluster_min),
@@ -398,11 +478,23 @@ def inspect_mobility_transitions(
         required_gap = max(base_gap, gap_diff_cluster_min)
         if minutes < required_gap:
             issues.append(
-                MobilityTransitionIssue(
+                _mobility_issue(
                     reason_code="cross_cluster_gap_violation",
-                    left_identifier=left.identifier,
-                    right_identifier=right.identifier,
-                    match_date=left.date,
+                    left=left,
+                    right=right,
+                    left_cluster_id=left_cluster_id,
+                    right_cluster_id=right_cluster_id,
+                    required_gap_min=required_gap,
+                    actual_gap_min=minutes,
+                    same_pitch=same_pitch_transition,
+                )
+            )
+        else:
+            issues.append(
+                _mobility_issue(
+                    reason_code="cross_cluster_with_vehicle_warning",
+                    left=left,
+                    right=right,
                     left_cluster_id=left_cluster_id,
                     right_cluster_id=right_cluster_id,
                     required_gap_min=required_gap,
@@ -412,6 +504,14 @@ def inspect_mobility_transitions(
             )
 
     return issues
+
+
+def blocking_mobility_issues(issues):
+    return [issue for issue in issues if getattr(issue, "is_blocking", True)]
+
+
+def advisory_mobility_issues(issues):
+    return [issue for issue in issues if getattr(issue, "is_advisory", False)]
 
 
 def mobility_reason_codes(
@@ -426,14 +526,16 @@ def mobility_reason_codes(
 ):
     return _dedupe_preserve_order(
         issue.reason_code
-        for issue in inspect_mobility_transitions(
-            descriptors,
-            existing_descriptors,
-            transport=transport,
-            gap_same_pitch_min=gap_same_pitch_min,
-            gap_diff_pitch_min=gap_diff_pitch_min,
-            gap_diff_cluster_min=gap_diff_cluster_min,
-            candidate_identifiers=candidate_identifiers,
+        for issue in blocking_mobility_issues(
+            inspect_mobility_transitions(
+                descriptors,
+                existing_descriptors,
+                transport=transport,
+                gap_same_pitch_min=gap_same_pitch_min,
+                gap_diff_pitch_min=gap_diff_pitch_min,
+                gap_diff_cluster_min=gap_diff_cluster_min,
+                candidate_identifiers=candidate_identifiers,
+            )
         )
     )
 

@@ -34,7 +34,20 @@ from .services.assignment_explainer import (
     explain_current_assignment,
     find_better_alternatives,
 )
-from .services.assignment_feasibility import build_match_descriptor, has_vehicle, inspect_mobility_transitions
+from .services.assignment_feasibility import (
+    MobilityTransitionIssue,
+    build_match_descriptor,
+    has_vehicle,
+    inspect_mobility_transitions,
+)
+from .services.vehicle_policy import (
+    VEHICLE_NOT_NEEDED,
+    VEHICLE_PREFERRED,
+    VEHICLE_REQUIRED,
+    build_vehicle_policy_context,
+    classify_assignable_unit,
+    vehicle_policy_penalty,
+)
 from .services.addressing import resolve_address
 from .services.manual_assignment import (
     build_manual_assignment_context,
@@ -365,6 +378,87 @@ class DesignacionsDateAwareHelpersTests(SimpleTestCase):
         self.assertTrue(has_vehicle("Bicicleta"))
         self.assertFalse(has_vehicle("Bus"))
 
+    def test_vehicle_policy_classifies_assignable_units(self):
+        same_cluster = [
+            build_match_descriptor(identifier="M1", date_value="2026-02-24", time_value="18:00", venue="Pista A", modality="F5", cluster_id=7),
+            build_match_descriptor(identifier="M2", date_value="2026-02-24", time_value="20:00", venue="Pista B", modality="F5", cluster_id=7),
+        ]
+        cross_cluster = [
+            build_match_descriptor(identifier="M1", date_value="2026-02-24", time_value="18:00", venue="Pista A", modality="F5", cluster_id=7),
+            build_match_descriptor(identifier="M2", date_value="2026-02-24", time_value="20:00", venue="Pista B", modality="F5", cluster_id=8),
+        ]
+        outlier = [
+            build_match_descriptor(identifier="M3", date_value="2026-02-24", time_value="21:00", venue="Pista C", modality="F5", cluster_id=None, cluster_status="outlier"),
+        ]
+
+        self.assertEqual(classify_assignable_unit(same_cluster), VEHICLE_NOT_NEEDED)
+        self.assertEqual(classify_assignable_unit(cross_cluster), VEHICLE_REQUIRED)
+        self.assertEqual(classify_assignable_unit(outlier), VEHICLE_PREFERRED)
+
+    def test_vehicle_policy_penalizes_easy_vehicle_assignment_only_with_alternative(self):
+        easy_segment = [
+            build_match_descriptor(identifier="E1", date_value="2026-02-24", time_value="18:00", venue="Pista A", modality="F5", cluster_id=7),
+        ]
+        required_segment = [
+            build_match_descriptor(identifier="R1", date_value="2026-02-24", time_value="18:00", venue="Pista A", modality="F5", cluster_id=7),
+            build_match_descriptor(identifier="R2", date_value="2026-02-24", time_value="20:00", venue="Pista B", modality="F5", cluster_id=8),
+        ]
+        referees = pd.DataFrame(
+            [
+                {"ID": "V1", "Codi Tutor de Joc": "5001", "Mitjà de Transport": "Cotxe"},
+                {"ID": "N1", "Codi Tutor de Joc": "5002", "Mitjà de Transport": "Bus"},
+            ]
+        )
+        context = build_vehicle_policy_context([easy_segment, required_segment], referees, {"vehicle_easy_segment_penalty": 333})
+
+        def raw_evaluator(row, segment):
+            return {"cost": 10.0, "reason_codes": [], "descriptors": segment}
+
+        penalty, diagnostics = vehicle_policy_penalty(
+            referees.iloc[0],
+            easy_segment,
+            easy_segment,
+            context,
+            referees,
+            raw_evaluator,
+        )
+
+        self.assertEqual(penalty, 333.0)
+        self.assertTrue(diagnostics["vehicle_easy_segment_with_alternative"])
+
+    def test_vehicle_policy_does_not_penalize_when_no_non_vehicle_alternative_exists(self):
+        easy_segment = [
+            build_match_descriptor(identifier="E1", date_value="2026-02-24", time_value="18:00", venue="Pista A", modality="F5", cluster_id=7),
+        ]
+        required_segment = [
+            build_match_descriptor(identifier="R1", date_value="2026-02-24", time_value="18:00", venue="Pista A", modality="F5", cluster_id=7),
+            build_match_descriptor(identifier="R2", date_value="2026-02-24", time_value="20:00", venue="Pista B", modality="F5", cluster_id=8),
+        ]
+        referees = pd.DataFrame(
+            [
+                {"ID": "V1", "Codi Tutor de Joc": "5001", "Mitjà de Transport": "Cotxe"},
+                {"ID": "N1", "Codi Tutor de Joc": "5002", "Mitjà de Transport": "Bus"},
+            ]
+        )
+        context = build_vehicle_policy_context([easy_segment, required_segment], referees, {"vehicle_easy_segment_penalty": 333})
+
+        def raw_evaluator(row, segment):
+            if row["ID"] == "N1":
+                return {"cost": 1e6, "reason_codes": ["outside_availability_window"], "descriptors": segment}
+            return {"cost": 10.0, "reason_codes": [], "descriptors": segment}
+
+        penalty, diagnostics = vehicle_policy_penalty(
+            referees.iloc[0],
+            easy_segment,
+            easy_segment,
+            context,
+            referees,
+            raw_evaluator,
+        )
+
+        self.assertEqual(penalty, 0.0)
+        self.assertTrue(diagnostics["vehicle_no_non_vehicle_alternative"])
+
     def test_mobility_blocks_cross_cluster_without_vehicle(self):
         descriptors = [
             build_match_descriptor(
@@ -426,6 +520,38 @@ class DesignacionsDateAwareHelpersTests(SimpleTestCase):
         self.assertEqual([issue.reason_code for issue in issues], ["cross_cluster_gap_violation"])
         self.assertEqual(issues[0].required_gap_min, 100)
 
+    def test_mobility_warns_cross_cluster_with_vehicle_when_gap_is_enough(self):
+        descriptors = [
+            build_match_descriptor(
+                identifier="M1",
+                date_value="2026-02-24",
+                time_value="18:00:00",
+                venue="Pista A",
+                modality="Futbol Sala",
+                cluster_id=7,
+            ),
+            build_match_descriptor(
+                identifier="M2",
+                date_value="2026-02-24",
+                time_value="20:00:00",
+                venue="Pista B",
+                modality="Futbol Sala",
+                cluster_id=8,
+            ),
+        ]
+
+        issues = inspect_mobility_transitions(
+            descriptors,
+            transport="Cotxe",
+            gap_same_pitch_min=60,
+            gap_diff_pitch_min=75,
+            gap_diff_cluster_min=100,
+        )
+
+        self.assertEqual([issue.reason_code for issue in issues], ["cross_cluster_with_vehicle_warning"])
+        self.assertTrue(issues[0].is_advisory)
+        self.assertEqual(issues[0].severity, "advisory")
+
     def test_mobility_detects_same_cluster_gap_violation(self):
         descriptors = [
             build_match_descriptor(
@@ -457,7 +583,38 @@ class DesignacionsDateAwareHelpersTests(SimpleTestCase):
         self.assertEqual([issue.reason_code for issue in issues], ["same_cluster_gap_violation"])
         self.assertFalse(issues[0].same_pitch)
 
-    def test_mobility_allows_same_address_without_cluster_when_gap_is_enough(self):
+    def test_mobility_warns_same_cluster_pitch_change_when_gap_is_enough(self):
+        descriptors = [
+            build_match_descriptor(
+                identifier="M1",
+                date_value="2026-02-24",
+                time_value="18:00:00",
+                venue="Pista A",
+                modality="Futbol Sala",
+                cluster_id=7,
+            ),
+            build_match_descriptor(
+                identifier="M2",
+                date_value="2026-02-24",
+                time_value="19:20:00",
+                venue="Pista B",
+                modality="Futbol Sala",
+                cluster_id=7,
+            ),
+        ]
+
+        issues = inspect_mobility_transitions(
+            descriptors,
+            transport="Cotxe",
+            gap_same_pitch_min=60,
+            gap_diff_pitch_min=75,
+            gap_diff_cluster_min=100,
+        )
+
+        self.assertEqual([issue.reason_code for issue in issues], ["same_cluster_pitch_change_warning"])
+        self.assertTrue(issues[0].is_advisory)
+
+    def test_mobility_warns_same_address_without_cluster_when_gap_is_enough(self):
         descriptors = [
             build_match_descriptor(
                 identifier="M1",
@@ -489,7 +646,8 @@ class DesignacionsDateAwareHelpersTests(SimpleTestCase):
             gap_diff_cluster_min=100,
         )
 
-        self.assertEqual(issues, [])
+        self.assertEqual([issue.reason_code for issue in issues], ["missing_cluster_mobility_warning"])
+        self.assertTrue(issues[0].is_advisory)
 
     def test_mobility_blocks_missing_cluster_for_different_addresses(self):
         descriptors = [
@@ -1422,7 +1580,45 @@ class DesignacionsManualAssignmentsTests(TestCase):
 
         self.assertEqual(summary["mobility_warning_count"], 1)
         self.assertEqual(summary["mobility_error_count"], 0)
+        self.assertEqual(summary["pitch_change_warning_count"], 1)
         self.assertEqual(summary["mobility_warnings"][0]["referee_code"], "5019 F5")
+        self.assertEqual(summary["mobility_warnings"][0]["reason_code"], "cross_cluster_with_vehicle_warning")
+
+    def test_build_run_mobility_summary_keeps_pitch_change_issue_as_warning(self):
+        ref = self._create_referee("5020 F5", "Tutor Canvi Pista", "NIVELLA1")
+        self._add_availability(ref, "2026-03-01", "15:00:00", "22:00:00")
+        first_match = self._create_match("M-420", date(2026, 3, 1), "16:00:00", "Pista Cl1 A", category="CADET")
+        second_match = self._create_match("M-421", date(2026, 3, 1), "18:00:00", "Pista Cl1 B", category="CADET")
+        self._set_match_cluster(first_match, 7)
+        self._set_match_cluster(second_match, 7)
+        first_assignment = Assignment.objects.create(run=self.run, match=first_match, referee=ref)
+        second_assignment = Assignment.objects.create(run=self.run, match=second_match, referee=ref)
+        issue = MobilityTransitionIssue(
+            reason_code="same_cluster_pitch_change_warning",
+            left_identifier=str(first_assignment.id),
+            right_identifier=str(second_assignment.id),
+            match_date=date(2026, 3, 1),
+            left_cluster_id="7",
+            right_cluster_id="7",
+            required_gap_min=75,
+            actual_gap_min=120,
+            same_pitch=False,
+        )
+
+        def fake_inspect(descriptors, *args, **kwargs):
+            identifiers = {descriptor.identifier for descriptor in descriptors}
+            if identifiers == {str(first_assignment.id), str(second_assignment.id)}:
+                return [issue]
+            return []
+
+        with patch("designacions.services.manual_assignment.inspect_mobility_transitions", side_effect=fake_inspect):
+            summary = build_run_mobility_summary(self.run)
+
+        self.assertEqual(summary["mobility_warning_count"], 1)
+        self.assertEqual(summary["mobility_error_count"], 0)
+        self.assertEqual(summary["pitch_change_warning_count"], 1)
+        self.assertEqual(summary["mobility_warnings"][0]["reason_code"], "same_cluster_pitch_change_warning")
+        self.assertEqual(summary["mobility_warnings"][0]["assignment_ids"], [first_assignment.id, second_assignment.id])
 
     def test_assignment_explanation_view_returns_expected_shape_and_better_alternatives(self):
         self.target_assignment.referee = self.ref_fourth
