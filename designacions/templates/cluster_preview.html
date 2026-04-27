@@ -7,7 +7,9 @@
     <div class="d-flex justify-content-between align-items-center mb-3">
       <div>
         <h2 class="mb-0">Previsualitzacio de geolocalitzacio</h2>
-        <div class="text-muted small">Preview {{ preview_id }}</div>
+        <div class="text-muted small">
+          {% if payload.run_name %}{{ payload.run_name }} Â· {% endif %}Preview {{ preview_id }}
+        </div>
       </div>
       <div class="d-flex gap-2">
         <a class="btn btn-sm btn-outline-secondary" href="{% url 'designacions_upload' %}">Tornar</a>
@@ -184,7 +186,10 @@
   let currentVenueFilter = 'all';
   let currentVenueQuery = '';
   let pendingMapHighlight = null;
+  let pendingMapViewRestore = null;
+  let latestMapViewState = null;
   let selectionExplicitlyCleared = false;
+  const previewUiStateKey = 'cluster-preview-ui-state-{{ preview_id }}';
 
   function formatSinceUpdate(seconds){
     if (typeof seconds !== 'number' || Number.isNaN(seconds)) {
@@ -296,6 +301,126 @@
     send();
   }
 
+  function requestMapViewState(){
+    if (!mapFrame || !mapFrame.contentWindow) return;
+    postMessageToMap({
+      type: 'cluster_preview_capture_view',
+      epsM: currentScenarioEps,
+    });
+  }
+
+  function captureMapViewStateFromFrame(){
+    if (!mapFrame || !mapFrame.contentWindow) return null;
+    try {
+      const frameWindow = mapFrame.contentWindow;
+      const keys = Object.keys(frameWindow);
+      for (const key of keys) {
+        const candidate = frameWindow[key];
+        if (
+          candidate
+          && typeof candidate.getCenter === 'function'
+          && typeof candidate.getZoom === 'function'
+        ) {
+          const center = candidate.getCenter();
+          if (center && typeof center.lat === 'number' && typeof center.lng === 'number') {
+            return {
+              epsM: currentScenarioEps,
+              center: { lat: center.lat, lng: center.lng },
+              zoom: candidate.getZoom(),
+            };
+          }
+        }
+      }
+    } catch (err) {
+      return null;
+    }
+    return null;
+  }
+
+  function restoreMapViewState(viewState, delayMs){
+    if (!viewState || !viewState.center) return;
+    postMessageToMap({
+      type: 'cluster_preview_set_view',
+      epsM: viewState.epsM || currentScenarioEps,
+      center: viewState.center,
+      zoom: viewState.zoom,
+    }, delayMs || 0);
+  }
+
+  function savePreviewUiState(action){
+    try {
+      requestMapViewState();
+      latestMapViewState = captureMapViewStateFromFrame() || latestMapViewState;
+      const payload = {
+        action: action || '',
+        savedAt: Date.now(),
+        epsM: currentScenarioEps,
+        selectedVenueId,
+        currentVenueFilter,
+        currentVenueQuery,
+        selectionExplicitlyCleared,
+        scrollY: window.scrollY || window.pageYOffset || 0,
+        targetClusterId: venueMergeTargetSelect ? venueMergeTargetSelect.value : '',
+        mapView: latestMapViewState,
+      };
+      window.sessionStorage.setItem(previewUiStateKey, JSON.stringify(payload));
+    } catch (err) {
+      // Non-critical: the action must continue even if browser storage is unavailable.
+    }
+  }
+
+  function readPreviewUiState(){
+    try {
+      const raw = window.sessionStorage.getItem(previewUiStateKey);
+      if (!raw) return null;
+      const payload = JSON.parse(raw);
+      if (!payload || !payload.savedAt || Date.now() - payload.savedAt > 24 * 60 * 60 * 1000) {
+        window.sessionStorage.removeItem(previewUiStateKey);
+        return null;
+      }
+      return payload;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function restorePreviewUiState(){
+    const state = readPreviewUiState();
+    if (!state) return false;
+    if (venueSearchInput && state.currentVenueQuery) {
+      venueSearchInput.value = state.currentVenueQuery;
+    }
+    if (venueFilterSelect && state.currentVenueFilter) {
+      venueFilterSelect.value = state.currentVenueFilter;
+    }
+    currentVenueQuery = String(state.currentVenueQuery || '').trim().toLowerCase();
+    currentVenueFilter = state.currentVenueFilter || 'all';
+    selectedVenueId = state.selectedVenueId ? String(state.selectedVenueId) : null;
+    selectionExplicitlyCleared = Boolean(state.selectionExplicitlyCleared);
+    if (state.mapView) {
+      pendingMapViewRestore = state.mapView;
+    }
+    const scenario = findScenario(state.epsM) || findScenario(currentScenarioEps);
+    if (scenario) {
+      updateScenarioSelection(scenario.eps_m, {
+        selectedAddressId: selectedVenueId,
+        forceMapReload: true,
+        syncMapSelection: !pendingMapViewRestore,
+      });
+    }
+    if (venueMergeTargetSelect && state.targetClusterId) {
+      venueMergeTargetSelect.value = state.targetClusterId;
+      if (venueMergeTargetInput) venueMergeTargetInput.value = state.targetClusterId;
+      if (venueMergeButton) {
+        venueMergeButton.disabled = !(venueMergeForm && venueMergeForm.getAttribute('action') && venueMergeTargetSelect.value);
+      }
+    }
+    window.setTimeout(() => {
+      window.scrollTo(0, Number(state.scrollY || 0));
+    }, 150);
+    return true;
+  }
+
   function syncSelectedVenueToMap(scenario, options){
     const resolvedOptions = options || {};
     const message = buildMapHighlightMessage(selectedVenueId, scenario?.eps_m ?? currentScenarioEps);
@@ -334,6 +459,26 @@
       return initialActiveOverrides;
     }
     return [];
+  }
+
+  function getScenarioClusters(scenario){
+    if (scenario && Array.isArray(scenario.cluster_options)) {
+      return scenario.cluster_options;
+    }
+    const byCluster = new Map();
+    getScenarioVenues(scenario).forEach((venue) => {
+      const clusterId = venue?.cluster_id;
+      if (clusterId === null || clusterId === undefined || clusterId === '') return;
+      const key = String(clusterId);
+      if (!byCluster.has(key)) {
+        byCluster.set(key, { cluster_id: clusterId, venue_count: 0, match_count: 0, sample_names: [] });
+      }
+      const item = byCluster.get(key);
+      item.venue_count += 1;
+      item.match_count += Number(getVenueMatches(venue) || 0);
+      if (item.sample_names.length < 3) item.sample_names.push(getVenueName(venue));
+    });
+    return Array.from(byCluster.values()).sort((a, b) => (b.match_count - a.match_count) || (Number(a.cluster_id) - Number(b.cluster_id)));
   }
 
   function getScenarioActions(scenario){
@@ -411,7 +556,7 @@
     const normalized = String(state || '').toLowerCase();
     if (!normalized || normalized === 'auto') return 'Automatic';
     if (normalized === 'isolated') return 'Aillada manualment';
-    if (normalized === 'merged') return 'Fusionada manualment';
+    if (normalized === 'merged') return 'Moguda manualment';
     return state;
   }
 
@@ -591,6 +736,25 @@
     }
   }
 
+  function updateClusterMergeOptions(scenario, selectedVenue){
+    if (!venueMergeTargetSelect) return;
+    const selectedClusterId = selectedVenue ? selectedVenue.cluster_id : null;
+    const previousValue = venueMergeTargetSelect.value;
+    venueMergeTargetSelect.innerHTML = '<option value="">Selecciona un cluster</option>';
+    getScenarioClusters(scenario)
+      .filter((cluster) => String(cluster.cluster_id) !== String(selectedClusterId))
+      .forEach((cluster) => {
+        const option = document.createElement('option');
+        option.value = cluster.cluster_id;
+        const samples = Array.isArray(cluster.sample_names) && cluster.sample_names.length ? ` - ${cluster.sample_names.join(', ')}` : '';
+        option.textContent = `Cluster ${cluster.cluster_id} - ${cluster.venue_count || 0} seus${samples}`;
+        venueMergeTargetSelect.appendChild(option);
+      });
+    if (previousValue && Array.from(venueMergeTargetSelect.options).some((option) => option.value === previousValue)) {
+      venueMergeTargetSelect.value = previousValue;
+    }
+  }
+
   function updateVenueDetail(scenario){
     const venues = getScenarioVenues(scenario);
     const overrides = getScenarioOverrides(scenario);
@@ -599,7 +763,7 @@
 
     updateVenueCounts(venues, overrides);
     renderOverridesList(overrides);
-    updateMergeOptions(venues, selectedVenue);
+    updateClusterMergeOptions(scenario, selectedVenue);
 
     if (venueMergeEpsInput) venueMergeEpsInput.value = scenario?.eps_m ?? '';
     if (venueIsolateEpsInput) venueIsolateEpsInput.value = scenario?.eps_m ?? '';
@@ -626,7 +790,7 @@
       if (venueDetailModalities) venueDetailModalities.textContent = '-';
       if (venueFeedback) {
         venueFeedback.className = 'alert alert-light small py-2 mb-3';
-        venueFeedback.textContent = 'Selecciona una seu i, si cal, tria una altra seu per fusionar-les dins del radi actual.';
+        venueFeedback.textContent = 'Selecciona una seu i, si cal, mou-la a un altre cluster del radi actual.';
       }
       if (venueMergeSourceInput) venueMergeSourceInput.value = '';
       if (venueMergeTargetInput) venueMergeTargetInput.value = '';
@@ -662,7 +826,7 @@
 
     if (venueFeedback) {
       venueFeedback.className = 'alert alert-light small py-2 mb-3';
-      venueFeedback.textContent = overrideSummary || 'Pots fusionar aquesta seu amb una altra, aillar-la o restaurar el comportament automatic.';
+      venueFeedback.textContent = overrideSummary || 'Pots moure aquesta seu a un altre cluster, aillar-la o restaurar el comportament automatic.';
     }
 
     if (venueMergeSourceInput) venueMergeSourceInput.value = venueId;
@@ -861,6 +1025,10 @@
       if (pendingMapHighlight) {
         postMessageToMap(pendingMapHighlight, 150);
       }
+      if (pendingMapViewRestore) {
+        restoreMapViewState(pendingMapViewRestore, 300);
+        pendingMapViewRestore = null;
+      }
     });
   }
   if (venueSearchInput) {
@@ -904,20 +1072,21 @@
         event.preventDefault();
         if (venueFeedback) {
           venueFeedback.className = 'alert alert-warning small py-2 mb-3';
-          venueFeedback.textContent = 'El backend encara no ha exposat l\'endpoint per fusionar seus.';
+          venueFeedback.textContent = 'El backend encara no ha exposat l\'endpoint per moure seus entre clusters.';
         }
         return;
       }
-      if (!selectedVenueId || !targetId || String(targetId) === String(selectedVenueId)) {
+      if (!selectedVenueId || !targetId) {
         event.preventDefault();
         if (venueFeedback) {
           venueFeedback.className = 'alert alert-warning small py-2 mb-3';
-          venueFeedback.textContent = 'Selecciona una seu origen i una altra seu desti abans de fusionar.';
+          venueFeedback.textContent = 'Selecciona una seu origen i un cluster desti abans de moure-la.';
         }
         return;
       }
       if (venueMergeSourceInput) venueMergeSourceInput.value = selectedVenueId;
       if (venueMergeTargetInput) venueMergeTargetInput.value = targetId;
+      savePreviewUiState('move');
     });
   }
   if (venueIsolateForm) {
@@ -934,6 +1103,7 @@
         return;
       }
       if (venueIsolateSourceInput) venueIsolateSourceInput.value = selectedVenueId;
+      savePreviewUiState('isolate');
     });
   }
   if (venueRestoreForm) {
@@ -950,10 +1120,21 @@
         return;
       }
       if (venueRestoreSourceInput) venueRestoreSourceInput.value = selectedVenueId;
+      savePreviewUiState('restore');
     });
   }
   window.addEventListener('message', (event) => {
     const data = event && event.data ? event.data : null;
+    if (data && data.type === 'cluster_preview_map_view') {
+      if (!data.epsM || String(data.epsM) === String(currentScenarioEps)) {
+        latestMapViewState = {
+          epsM: data.epsM || currentScenarioEps,
+          center: data.center,
+          zoom: data.zoom,
+        };
+      }
+      return;
+    }
     if (!data || data.type !== 'cluster_preview_select_address') {
       return;
     }
@@ -974,8 +1155,9 @@
     button.addEventListener('click', () => updateScenarioSelection(button.getAttribute('data-eps')));
   });
   if (scenarioSummaries.length) {
+    const restoredState = restorePreviewUiState();
     const initialScenario = scenarioSummaries.find((item) => item.selected) || scenarioSummaries[0];
-    if (initialScenario) {
+    if (!restoredState && initialScenario) {
       updateScenarioSelection(initialScenario.eps_m);
     }
   }

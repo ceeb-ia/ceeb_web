@@ -19,10 +19,10 @@
     </div>
 
     <form method="get" class="form-row row mb-3">
-      <div class="col-12 col-lg-6 mb-2 mb-lg-0">
-        <input class="form-control form-control-sm" name="q" value="{{ q }}" placeholder="Cerca per ID, task_id o params..." />
+      <div class="col-12 col-lg-4 mb-2 mb-lg-0">
+        <input class="form-control form-control-sm" name="q" value="{{ q }}" placeholder="Cerca per nom, ID, task_id o params..." />
       </div>
-      <div class="col-8 col-lg-3">
+      <div class="col-6 col-lg-3">
         <select class="form-control form-control-sm" name="status">
           <option value="">-- Tots els estats --</option>
           {% for k, label in status_choices %}
@@ -30,7 +30,15 @@
           {% endfor %}
         </select>
       </div>
-      <div class="col-4 col-lg-3">
+      <div class="col-6 col-lg-3">
+        <select class="form-control form-control-sm" name="modalitat">
+          <option value="">-- Totes les modalitats --</option>
+          {% for value in modality_options %}
+            <option value="{{ value }}" {% if modalitat == value %}selected{% endif %}>{{ value }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-12 col-lg-2 mt-2 mt-lg-0">
         <button class="btn btn-sm btn-outline-secondary w-100" type="submit">Filtrar</button>
       </div>
     </form>
@@ -40,6 +48,8 @@
         <thead class="thead-light">
           <tr>
             <th>Run</th>
+            <th>Nom</th>
+            <th>Modalitats</th>
             <th>Creat</th>
             <th>Estat</th>
             <th class="text-center">Partits</th>
@@ -52,6 +62,14 @@
           {% for run in page_obj.object_list %}
           <tr>
             <td class="font-weight-bold">#{{ run.id }}</td>
+            <td>{{ run.name }}</td>
+            <td>
+              {% if run.params.modalitats %}
+                {{ run.params.modalitats|join:", " }}
+              {% else %}
+                -
+              {% endif %}
+            </td>
             <td>
               {% if run.created_at %}{{ run.created_at|date:"d/m/Y H:i" }}{% else %}-{% endif %}
             </td>
@@ -62,6 +80,8 @@
                 <span class="badge badge-danger">Failed</span>
               {% elif run.status == "processing" %}
                 <span class="badge badge-warning">Processing</span>
+              {% elif run.status == "preview" %}
+                <span class="badge badge-info">Preview</span>
               {% else %}
                 <span class="badge badge-secondary">{{ run.status }}</span>
               {% endif %}
@@ -73,9 +93,15 @@
               <a class="btn btn-sm btn-outline-secondary" href="{% url 'designacions_run_detail' run.id %}">
                 Seguiment
               </a>
-              <a class="btn btn-sm btn-outline-primary" href="{% url 'designacions_assignments' run.id %}">
-                Assignacions
-              </a>
+              {% if run.status == "preview" %}
+                <a class="btn btn-sm btn-outline-primary" href="{% url 'designacions_cluster_preview_detail' run.task_id %}">
+                  Preview
+                </a>
+              {% else %}
+                <a class="btn btn-sm btn-outline-primary" href="{% url 'designacions_assignments' run.id %}">
+                  Assignacions
+                </a>
+              {% endif %}
               {% if run.map_path %}
                 <a class="btn btn-sm btn-outline-secondary" target="_blank" href="{% url 'designacions_run_map' run.id %}">
                   Mapa
@@ -84,10 +110,14 @@
                 <button class="btn btn-sm btn-outline-secondary" disabled>Mapa</button>
               {% endif %}
 
-              <form method="post" action="{% url 'designacions_export_excel' run.id %}" class="d-inline">
-                {% csrf_token %}
-                <button type="submit" class="btn btn-sm btn-success">Excel</button>
-              </form>
+              {% if run.status == "preview" %}
+                <button type="button" class="btn btn-sm btn-success" disabled>Excel</button>
+              {% else %}
+                <form method="post" action="{% url 'designacions_export_excel' run.id %}" class="d-inline">
+                  {% csrf_token %}
+                  <button type="submit" class="btn btn-sm btn-success">Excel</button>
+                </form>
+              {% endif %}
 
               <button type="button"
                       class="btn btn-sm btn-outline-danger"
@@ -101,7 +131,7 @@
           </tr>
           {% empty %}
           <tr>
-            <td colspan="7" class="text-center text-muted">Encara no hi ha cap run.</td>
+            <td colspan="9" class="text-center text-muted">Encara no hi ha cap run.</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -116,7 +146,7 @@
       <div>
         {% if page_obj.has_previous %}
           <a class="btn btn-sm btn-outline-secondary"
-             href="?q={{ q|urlencode }}&status={{ status|urlencode }}&page={{ page_obj.previous_page_number }}">Anterior</a>
+             href="?q={{ q|urlencode }}&status={{ status|urlencode }}&modalitat={{ modalitat|urlencode }}&page={{ page_obj.previous_page_number }}">Anterior</a>
         {% endif %}
         {% if page_obj.has_next %}
           <a class="btn btn-sm btn-outline-secondary"

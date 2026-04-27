@@ -91,6 +91,52 @@ class ClusterPreviewServiceTests(TestCase):
         self.assertEqual(override_effects[0]["status"], "applied")
         self.assertEqual(override_summary["manual_point_count"], 2)
 
+    def test_apply_preview_overrides_can_move_address_to_target_cluster_id(self):
+        points_df = pd.DataFrame(
+            [
+                {
+                    "address_id": 1,
+                    "adreca": "Carrer 1, Barcelona",
+                    "lat": 41.0,
+                    "lon": 2.0,
+                    "cluster": 2,
+                    "cluster_status": "clustered",
+                },
+                {
+                    "address_id": 2,
+                    "adreca": "Carrer 2, Barcelona",
+                    "lat": 41.0005,
+                    "lon": 2.0005,
+                    "cluster": 7,
+                    "cluster_status": "clustered",
+                },
+            ]
+        )
+
+        overridden_df, override_effects, override_summary = apply_preview_overrides(
+            points_df,
+            [
+                {
+                    "override_id": "ov-1",
+                    "kind": "merge_with_address",
+                    "source_address_id": 1,
+                    "target_cluster_id": 7,
+                    "eps_m": 650,
+                }
+            ],
+        )
+
+        by_address_id = {
+            int(row["address_id"]): row
+            for _, row in overridden_df.iterrows()
+        }
+        self.assertEqual(int(by_address_id[1]["cluster"]), 7)
+        self.assertEqual(int(by_address_id[2]["cluster"]), 7)
+        self.assertTrue(bool(by_address_id[1]["is_manual"]))
+        self.assertFalse(bool(by_address_id[2]["is_manual"]))
+        self.assertEqual(override_effects[0]["status"], "applied")
+        self.assertEqual(override_summary["manual_point_count"], 1)
+
     @patch("designacions.clusteritzacio.preview_service.geocodifica_adreces")
     def test_build_cluster_preview_returns_scenarios_and_counts(self, geocode_mock):
         address_1 = Address.objects.create(

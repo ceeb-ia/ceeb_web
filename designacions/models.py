@@ -5,6 +5,7 @@ class DesignationRun(models.Model):
     STATUS_CHOICES = [
         ("queued", "Queued"),
         ("processing", "Processing"),
+        ("preview", "Preview"),
         ("done", "Done"),
         ("failed", "Failed"),
     ]
@@ -19,6 +20,7 @@ class DesignationRun(models.Model):
     finished_at = models.DateTimeField(null=True, blank=True)
     result_summary = models.JSONField(null=True, blank=True, default=dict)
 
+    name = models.CharField(max_length=160, db_index=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="queued")
     error = models.TextField(null=True, blank=True)
 
@@ -30,7 +32,7 @@ class DesignationRun(models.Model):
     input_disponibilitats = models.FileField(upload_to="designacions/inputs/", null=True, blank=True)
 
     def __str__(self):
-        return f"Run {self.id} ({self.status})"
+        return f"{self.name} ({self.status})"
 
 
 class Referee(models.Model):

@@ -287,9 +287,11 @@ def build_cluster_preview(
     availability_counts = _build_availability_counts(df_dispos)
     geocoding_issues = _build_geocoding_issues(points_df)
     raw_overrides = params.get("cluster_overrides") or params.get("preview_cluster_overrides") or []
+    base_inline_overrides = raw_overrides if isinstance(raw_overrides, list) else []
     effective_overrides = resolve_preview_overrides(
         preview_id=preview_id,
-        inline_overrides=raw_overrides if isinstance(raw_overrides, list) else [],
+        inline_overrides=base_inline_overrides,
+        eps_m=cluster_eps_m,
     )
     override_payload = enrich_preview_overrides(points_df, effective_overrides)
 
@@ -298,6 +300,11 @@ def build_cluster_preview(
         _log(task_id, "Renderitzant mapes de preview per radi.", 82)
     scenarios = []
     for eps_m in eps_options:
+        scenario_overrides = resolve_preview_overrides(
+            preview_id=preview_id,
+            inline_overrides=base_inline_overrides,
+            eps_m=int(eps_m),
+        )
         scenario_points_df = cluster_points_dataframe(
             points_df,
             eps_m=eps_m,
@@ -306,7 +313,7 @@ def build_cluster_preview(
         )
         scenario_points_df, scenario_override_effects, scenario_override_summary = apply_preview_overrides(
             scenario_points_df,
-            effective_overrides,
+            scenario_overrides,
         )
         scenario_matches_df = _attach_clusters_to_matches(df_partits_preview, scenario_points_df)
         metrics = build_preview_metrics(

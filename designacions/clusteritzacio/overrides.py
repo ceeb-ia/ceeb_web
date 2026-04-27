@@ -15,8 +15,9 @@ from .contracts import PreviewClusterOverride
 PREVIEW_OVERRIDE_REL_DIR = os.path.join("designacions", "preview_overrides")
 
 
-def _preview_override_abs_path(preview_id: str) -> str:
-    return str(Path(settings.MEDIA_ROOT) / PREVIEW_OVERRIDE_REL_DIR / f"{preview_id}.json")
+def _preview_override_abs_path(preview_id: str, eps_m: int | None = None) -> str:
+    suffix = f"__eps_{int(eps_m)}" if eps_m is not None else ""
+    return str(Path(settings.MEDIA_ROOT) / PREVIEW_OVERRIDE_REL_DIR / f"{preview_id}{suffix}.json")
 
 
 def _normalize_override(raw_override) -> dict | None:
@@ -46,13 +47,26 @@ def _normalize_override(raw_override) -> dict | None:
         "created_at": str(raw_override.get("created_at") or int(time.time())),
     }
     if kind == "merge_with_address":
+        target_cluster_id = raw_override.get("target_cluster_id")
+        if target_cluster_id not in (None, ""):
+            try:
+                normalized["target_cluster_id"] = int(target_cluster_id)
+            except (TypeError, ValueError):
+                return None
+        else:
+            try:
+                target_address_id = int(raw_override.get("target_address_id"))
+            except (TypeError, ValueError):
+                return None
+            if target_address_id == source_address_id:
+                return None
+            normalized["target_address_id"] = target_address_id
+    raw_eps_m = raw_override.get("eps_m")
+    if raw_eps_m not in (None, ""):
         try:
-            target_address_id = int(raw_override.get("target_address_id"))
+            normalized["eps_m"] = int(float(raw_eps_m))
         except (TypeError, ValueError):
-            return None
-        if target_address_id == source_address_id:
-            return None
-        normalized["target_address_id"] = target_address_id
+            pass
     return normalized
 
 
@@ -67,8 +81,10 @@ def _normalize_override_list(raw_overrides) -> list[dict]:
     return [normalized_by_source[address_id] for address_id in sorted(normalized_by_source)]
 
 
-def load_preview_overrides(preview_id: str) -> list[dict]:
-    abs_path = _preview_override_abs_path(preview_id)
+def load_preview_overrides(preview_id: str, eps_m: int | None = None) -> list[dict]:
+    abs_path = _preview_override_abs_path(preview_id, eps_m=eps_m)
+    if eps_m is not None and not os.path.exists(abs_path):
+        abs_path = _preview_override_abs_path(preview_id)
     if not os.path.exists(abs_path):
         return []
     with open(abs_path, "r", encoding="utf-8") as handle:
@@ -79,43 +95,58 @@ def load_preview_overrides(preview_id: str) -> list[dict]:
     return _normalize_override_list(payload)
 
 
-def save_preview_overrides(preview_id: str, overrides) -> list[dict]:
+def save_preview_overrides(preview_id: str, overrides, eps_m: int | None = None) -> list[dict]:
     normalized = _normalize_override_list(overrides)
-    abs_path = _preview_override_abs_path(preview_id)
+    abs_path = _preview_override_abs_path(preview_id, eps_m=eps_m)
     Path(abs_path).parent.mkdir(parents=True, exist_ok=True)
     with open(abs_path, "w", encoding="utf-8") as handle:
         json.dump(normalized, handle, ensure_ascii=False, indent=2)
     return normalized
 
 
-def clear_preview_overrides(preview_id: str):
-    abs_path = _preview_override_abs_path(preview_id)
+def clear_preview_overrides(preview_id: str, eps_m: int | None = None):
+    abs_path = _preview_override_abs_path(preview_id, eps_m=eps_m)
     if os.path.exists(abs_path):
         os.remove(abs_path)
 
 
-def add_preview_override(preview_id: str, override_payload: dict) -> list[dict]:
-    overrides = load_preview_overrides(preview_id)
+def add_preview_override(preview_id: str, override_payload: dict, eps_m: int | None = None) -> list[dict]:
+    overrides = load_preview_overrides(preview_id, eps_m=eps_m)
     normalized = _normalize_override(override_payload)
     if normalized is None:
         return overrides
+    if eps_m is not None:
+        normalized["eps_m"] = int(eps_m)
     by_source = {int(item["source_address_id"]): item for item in overrides}
     by_source[int(normalized["source_address_id"])] = normalized
-    return save_preview_overrides(preview_id, by_source.values())
+    return save_preview_overrides(preview_id, by_source.values(), eps_m=eps_m)
 
 
-def remove_preview_override(preview_id: str, *, source_address_id: int) -> list[dict]:
-    overrides = load_preview_overrides(preview_id)
+def remove_preview_override(preview_id: str, *, source_address_id: int, eps_m: int | None = None) -> list[dict]:
+    overrides = load_preview_overrides(preview_id, eps_m=eps_m)
     filtered = [item for item in overrides if int(item["source_address_id"]) != int(source_address_id)]
-    return save_preview_overrides(preview_id, filtered)
+    return save_preview_overrides(preview_id, filtered, eps_m=eps_m)
 
 
-def resolve_preview_overrides(*, preview_id: str | None = None, inline_overrides=None) -> list[dict]:
+def resolve_preview_overrides(*, preview_id: str | None = None, inline_overrides=None, eps_m: int | None = None) -> list[dict]:
     if preview_id:
-        persisted = load_preview_overrides(preview_id)
+        persisted = load_preview_overrides(preview_id, eps_m=eps_m)
         if persisted:
-            return persisted
-    return _normalize_override_list(inline_overrides)
+            if eps_m is None:
+                return persisted
+            return [
+                item
+                for item in persisted
+                if item.get("eps_m") in (None, int(eps_m))
+            ]
+    normalized = _normalize_override_list(inline_overrides)
+    if eps_m is None:
+        return normalized
+    return [
+        item
+        for item in normalized
+        if item.get("eps_m") in (None, int(eps_m))
+    ]
 
 
 def enrich_preview_overrides(points_df: pd.DataFrame, overrides) -> list[PreviewClusterOverride]:
@@ -134,12 +165,14 @@ def enrich_preview_overrides(points_df: pd.DataFrame, overrides) -> list[Preview
     payload = []
     for override in normalized:
         target_address_id = override.get("target_address_id")
+        target_cluster_id = override.get("target_cluster_id")
         payload.append(
             PreviewClusterOverride(
                 override_id=str(override["override_id"]),
                 kind=str(override["kind"]),
                 source_address_id=int(override["source_address_id"]),
                 target_address_id=int(target_address_id) if target_address_id is not None else None,
+                target_cluster_id=int(target_cluster_id) if target_cluster_id is not None else None,
                 source_adreca=address_labels.get(int(override["source_address_id"]), ""),
                 target_adreca=address_labels.get(int(target_address_id), "") if target_address_id is not None else "",
                 created_at=str(override.get("created_at") or ""),
@@ -238,8 +271,9 @@ def apply_preview_overrides(points_df: pd.DataFrame, overrides) -> tuple[pd.Data
             continue
 
         target_address_id = override.get("target_address_id")
+        target_cluster_id = override.get("target_cluster_id")
         target_idx = index_by_address_id.get(int(target_address_id)) if target_address_id is not None else None
-        if target_idx is None:
+        if target_idx is None and target_cluster_id in (None, ""):
             effects.append(
                 {
                     "override_id": override_id,
@@ -253,7 +287,7 @@ def apply_preview_overrides(points_df: pd.DataFrame, overrides) -> tuple[pd.Data
             continue
 
         source_cluster = out.at[source_idx, "cluster"]
-        target_cluster = out.at[target_idx, "cluster"]
+        target_cluster = out.at[target_idx, "cluster"] if target_idx is not None else target_cluster_id
         cluster_id = None
         for raw_cluster in (target_cluster, source_cluster):
             if pd.isna(raw_cluster):
@@ -269,7 +303,7 @@ def apply_preview_overrides(points_df: pd.DataFrame, overrides) -> tuple[pd.Data
             cluster_id = next_cluster_id
             next_cluster_id += 1
 
-        target_adreca = str(out.at[target_idx, "adreca"] or "")
+        target_adreca = str(out.at[target_idx, "adreca"] or "") if target_idx is not None else f"cluster {cluster_id}"
         out.at[source_idx, "cluster"] = cluster_id
         out.at[source_idx, "cluster_status"] = "clustered"
         out.at[source_idx, "is_manual"] = True
@@ -278,19 +312,20 @@ def apply_preview_overrides(points_df: pd.DataFrame, overrides) -> tuple[pd.Data
         out.at[source_idx, "manual_override_ids"] = [override_id]
         out.at[source_idx, "manual_override_kinds"] = [kind]
 
-        out.at[target_idx, "cluster"] = cluster_id
-        out.at[target_idx, "cluster_status"] = "clustered"
-        out.at[target_idx, "is_manual"] = True
-        if not out.at[target_idx, "manual_role"]:
-            out.at[target_idx, "manual_role"] = "merge_target"
-        existing_ids = list(out.at[target_idx, "manual_override_ids"] or [])
-        existing_kinds = list(out.at[target_idx, "manual_override_kinds"] or [])
-        if override_id not in existing_ids:
-            existing_ids.append(override_id)
-        if kind not in existing_kinds:
-            existing_kinds.append(kind)
-        out.at[target_idx, "manual_override_ids"] = existing_ids
-        out.at[target_idx, "manual_override_kinds"] = existing_kinds
+        if target_idx is not None:
+            out.at[target_idx, "cluster"] = cluster_id
+            out.at[target_idx, "cluster_status"] = "clustered"
+            out.at[target_idx, "is_manual"] = True
+            if not out.at[target_idx, "manual_role"]:
+                out.at[target_idx, "manual_role"] = "merge_target"
+            existing_ids = list(out.at[target_idx, "manual_override_ids"] or [])
+            existing_kinds = list(out.at[target_idx, "manual_override_kinds"] or [])
+            if override_id not in existing_ids:
+                existing_ids.append(override_id)
+            if kind not in existing_kinds:
+                existing_kinds.append(kind)
+            out.at[target_idx, "manual_override_ids"] = existing_ids
+            out.at[target_idx, "manual_override_kinds"] = existing_kinds
 
         applied_override_count += 1
         effects.append(
@@ -298,8 +333,8 @@ def apply_preview_overrides(points_df: pd.DataFrame, overrides) -> tuple[pd.Data
                 "override_id": override_id,
                 "kind": kind,
                 "status": "applied",
-                "label": "Fusio manual de seus",
-                "description": f"{source_adreca} s'assigna al cluster de {target_adreca}.",
+                "label": "Moviment manual de cluster",
+                "description": f"{source_adreca} s'assigna a {target_adreca}.",
                 "source_name": source_adreca,
                 "target_name": target_adreca,
             }

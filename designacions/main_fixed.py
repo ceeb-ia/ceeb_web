@@ -32,6 +32,7 @@ from .services.assignment_feasibility import (
 )
 from .models import AddressCluster, DesignationRun
 from .services.manual_assignment import update_run_mobility_summary
+from .clusteritzacio.maps import add_base_tile_layers
 
 
 
@@ -135,6 +136,44 @@ def _cluster_status_from_values(cluster_value, lat_value, lon_value) -> str:
     except (TypeError, ValueError):
         pass
     return "clustered"
+
+
+def _apply_frozen_cluster_assignments(domicilis_clusteritzats: pd.DataFrame, frozen_assignments) -> pd.DataFrame:
+    if domicilis_clusteritzats.empty or not frozen_assignments:
+        return domicilis_clusteritzats
+
+    assignment_by_address_id = {}
+    for item in frozen_assignments:
+        if not isinstance(item, dict):
+            continue
+        try:
+            address_id = int(item.get("address_id"))
+        except (TypeError, ValueError):
+            continue
+        assignment_by_address_id[address_id] = item
+
+    if not assignment_by_address_id:
+        return domicilis_clusteritzats
+
+    out = domicilis_clusteritzats.copy()
+    for idx, row in out.iterrows():
+        address_id = row.get("address_id")
+        if pd.isna(address_id):
+            continue
+        assignment = assignment_by_address_id.get(int(address_id))
+        if assignment is None:
+            continue
+        cluster_value = assignment.get("cluster")
+        out.at[idx, "cluster"] = pd.NA if cluster_value is None else cluster_value
+        out.at[idx, "cluster_status"] = assignment.get("cluster_status") or _cluster_status_from_values(
+            cluster_value,
+            row.get("lat"),
+            row.get("lon"),
+        )
+
+    if "cluster" in out.columns:
+        out["cluster"] = pd.to_numeric(out["cluster"], errors="coerce").astype("Int64")
+    return out
 
 
 def _build_tutor_working_id(row) -> str:
@@ -789,7 +828,8 @@ def mapa_assignacions_interactiu(
         raise ValueError("No hi ha partits amb coordenades (lat/lon) per dibuixar el mapa.")
 
     center = [d_ok[lat_col].astype(float).mean(), d_ok[lon_col].astype(float).mean()]
-    m = folium.Map(location=center, zoom_start=zoom_start, control_scale=True)
+    m = folium.Map(location=center, zoom_start=zoom_start, control_scale=True, tiles=None)
+    add_base_tile_layers(m)
 
     # Apply _parse_times to the time column (returns a Series) instead of
     # applying row-wise which returned a Series per row and caused the
@@ -1265,11 +1305,16 @@ def main(
             max_punts_per_subcluster=max_partits_subgrup,
         )
 
+    frozen_cluster_assignments = config.get("preview_cluster_assignments") or []
+    if not domicilis_clusteritzats.empty and frozen_cluster_assignments:
+        domicilis_clusteritzats = _apply_frozen_cluster_assignments(domicilis_clusteritzats, frozen_cluster_assignments)
+
     preview_overrides = resolve_preview_overrides(
         preview_id=str(config.get("source_preview_id") or "") or None,
         inline_overrides=config.get("preview_cluster_overrides") or config.get("cluster_overrides") or [],
+        eps_m=int(cluster_eps_m) if cluster_eps_m else None,
     )
-    if not domicilis_clusteritzats.empty and preview_overrides:
+    if not domicilis_clusteritzats.empty and preview_overrides and not frozen_cluster_assignments:
         domicilis_clusteritzats, _, _ = apply_preview_overrides(domicilis_clusteritzats, preview_overrides)
 
     if not domicilis_clusteritzats.empty:

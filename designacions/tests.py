@@ -136,7 +136,7 @@ class DesignacionsUploadFileDetectionTests(TestCase):
     def _post_upload(self, files):
         return self.factory.post(
             reverse("designacions_upload"),
-            data={"files": files},
+            data={"files": files, "run_name": "Run prova"},
         )
 
     def test_upload_accepts_availability_then_matches(self):

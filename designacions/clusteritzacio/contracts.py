@@ -37,6 +37,7 @@ class PreviewClusterOverride:
     kind: str
     source_address_id: int
     target_address_id: int | None = None
+    target_cluster_id: int | None = None
     source_adreca: str = ""
     target_adreca: str = ""
     created_at: str | None = None

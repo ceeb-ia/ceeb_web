@@ -14,7 +14,11 @@ from .services.colors import color_per_tutor
 from django.http import Http404
 from .models import DesignationRun, Assignment, Referee
 from .tasks import build_cluster_preview_task, process_designacions_run, rebuild_run_map_task
-from .clusteritzacio.overrides import add_preview_override, load_preview_overrides, remove_preview_override
+from .clusteritzacio.contracts import PreviewAddressPoint, PreviewScenario
+from .clusteritzacio.maps import render_preview_map
+from .clusteritzacio.metrics import build_preview_metrics
+from .clusteritzacio.overrides import add_preview_override, apply_preview_overrides, load_preview_overrides, remove_preview_override
+from .clusteritzacio.preview_service import _attach_clusters_to_matches, _build_modality_breakdown, _build_partits_with_addresses
 from .services.jobstore import (
     preview_map_rel_path,
     read_job_logs_sync,
@@ -43,6 +47,7 @@ from .services.manual_assignment import (
     serialize_referee_option,
     update_run_mobility_summary,
 )
+from .services.run_scope import load_scoped_run_data
 
 
 
@@ -211,6 +216,13 @@ def _build_designacions_params(data):
     }
 
 
+def _run_name_from_request(data):
+    name = (data.get("run_name") or data.get("name") or "").strip()
+    if not name:
+        raise ValueError("Cal indicar un nom per al run.")
+    return name[:160]
+
+
 def _cluster_preview_urls(preview_id: str) -> dict:
     return {
         "detail_url": reverse("designacions_cluster_preview_detail", args=[preview_id]),
@@ -261,6 +273,8 @@ def _serialize_cluster_preview_job(preview_id: str, job: dict | None, *, include
         "error": payload.get("error"),
         "params": payload.get("params") or {},
         "detected_files": payload.get("detected_files") or {},
+        "run_id": payload.get("run_id"),
+        "run_name": payload.get("run_name"),
         "map_ready": has_map,
         "map_path": map_path if has_map else None,
         "updated_at": updated_at,
@@ -276,6 +290,46 @@ def _serialize_cluster_preview_job(preview_id: str, job: dict | None, *, include
     if include_result:
         response["result"] = payload.get("result")
     return response
+
+
+def _preview_job_from_run(preview_id: str) -> dict | None:
+    run = DesignationRun.objects.filter(task_id=preview_id).first()
+    if run is None:
+        return None
+    status = "done" if run.status == "preview" else run.status
+    job = {
+        "status": status,
+        "task_id": preview_id,
+        "preview_id": preview_id,
+        "params": run.params or {},
+        "result": run.result_summary or {},
+        "map_path": run.map_path,
+        "message": "Preview guardat." if run.status == "preview" else run.error,
+        "run_id": run.id,
+        "run_name": run.name,
+        "path_partits": run.input_partits.path if run.input_partits else None,
+        "path_disponibilitats": run.input_disponibilitats.path if run.input_disponibilitats else None,
+    }
+    return job
+
+
+def _read_preview_job(preview_id: str) -> dict | None:
+    return read_job_sync(preview_id) or _preview_job_from_run(preview_id)
+
+
+def _sync_preview_run_from_result(preview_id: str, params: dict, result: dict):
+    try:
+        run = DesignationRun.objects.filter(task_id=preview_id).first()
+    except Exception:
+        return
+    if run is None:
+        return
+    run.status = "preview"
+    run.params = params
+    run.result_summary = result
+    run.map_path = result.get("map_path")
+    run.map_status = "ready" if run.map_path else run.map_status
+    run.save(update_fields=["status", "params", "result_summary", "map_path", "map_status"])
 
 
 def _preview_selected_scenario(result: dict | None):
@@ -311,9 +365,9 @@ def _override_summary_for_point(point: dict) -> str:
     if manual_role == "isolated":
         return "Cluster manual independent"
     if manual_role == "merged":
-        return "Fusionada manualment amb una altra seu"
+        return "Moguda manualment a un altre cluster"
     if manual_role == "merge_target":
-        return "Seu desti dins d'una fusio manual"
+        return "Seu de referencia dins d'un moviment manual"
     return ""
 
 
@@ -356,6 +410,7 @@ def _decorate_preview_scenario(preview_id: str, scenario: dict | None):
         return scenario
     decorated = dict(scenario)
     decorated["venues"] = _scenario_points_to_venues(scenario)
+    decorated["cluster_options"] = _scenario_cluster_options(scenario)
     decorated["override_actions"] = _cluster_preview_override_urls(preview_id)
     return decorated
 
@@ -378,11 +433,223 @@ def _build_preview_scenario_summaries(preview_id: str, result: dict | None):
                 "map_url": f"{reverse('designacions_cluster_preview_map', args=[preview_id])}?eps_m={eps_m}",
                 "map_path": scenario.get("map_path"),
                 "venues": _scenario_points_to_venues(scenario),
+                "cluster_options": _scenario_cluster_options(scenario),
                 "active_overrides": scenario.get("active_overrides") or [],
                 "override_actions": _cluster_preview_override_urls(preview_id),
             }
         )
     return items
+
+
+def _scenario_cluster_options(scenario: dict | None) -> list[dict]:
+    if not isinstance(scenario, dict):
+        return []
+    clusters: dict[int, dict] = {}
+    for point in scenario.get("points") or []:
+        if not isinstance(point, dict):
+            continue
+        cluster_id = point.get("cluster")
+        if cluster_id is None:
+            continue
+        try:
+            cluster_id = int(cluster_id)
+        except (TypeError, ValueError):
+            continue
+        item = clusters.setdefault(cluster_id, {"cluster_id": cluster_id, "venue_count": 0, "match_count": 0, "sample_names": []})
+        item["venue_count"] += 1
+        item["match_count"] += int(point.get("match_count") or 0)
+        if len(item["sample_names"]) < 3:
+            item["sample_names"].append(point.get("adreca") or "Seu")
+    return sorted(clusters.values(), key=lambda item: (-item["match_count"], item["cluster_id"]))
+
+
+def _base_points_df_from_scenario(scenario: dict) -> pd.DataFrame:
+    rows = []
+    for point in scenario.get("points") or []:
+        if not isinstance(point, dict):
+            continue
+        row = dict(point)
+        row["cluster"] = row.get("auto_cluster", row.get("cluster"))
+        row["cluster_status"] = row.get("auto_cluster_status", row.get("cluster_status") or "pending")
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def _point_dicts_from_df(points_df: pd.DataFrame) -> list[dict]:
+    points = []
+    for _, row in points_df.iterrows():
+        raw_cluster = row.get("cluster")
+        raw_auto_cluster = row.get("auto_cluster")
+        points.append({
+            "address_id": int(row["address_id"]) if pd.notna(row.get("address_id")) else None,
+            "adreca": str(row.get("adreca") or ""),
+            "municipality": str(row.get("municipality") or ""),
+            "lat": float(row["lat"]) if pd.notna(row.get("lat")) else None,
+            "lon": float(row["lon"]) if pd.notna(row.get("lon")) else None,
+            "geocode_status": str(row.get("geocode_status") or "pending"),
+            "provider": str(row.get("provider") or ""),
+            "is_fresh_geocode": bool(row.get("is_fresh_geocode", False)),
+            "match_count": int(row.get("match_count") or 0),
+            "venue_count": int(row.get("venue_count") or 0),
+            "modalities": list(row.get("modalities") or []),
+            "cluster": int(raw_cluster) if pd.notna(raw_cluster) and int(raw_cluster) != -1 else None,
+            "cluster_status": str(row.get("cluster_status") or "pending"),
+            "auto_cluster": int(raw_auto_cluster) if pd.notna(raw_auto_cluster) and int(raw_auto_cluster) != -1 else None,
+            "auto_cluster_status": str(row.get("auto_cluster_status") or "pending"),
+            "is_manual": bool(row.get("is_manual", False)),
+            "manual_role": str(row.get("manual_role")) if row.get("manual_role") else None,
+            "cluster_origin": str(row.get("cluster_origin") or "automatic"),
+            "manual_override_ids": list(row.get("manual_override_ids") or []),
+            "manual_override_kinds": list(row.get("manual_override_kinds") or []),
+        })
+    return points
+
+
+def _refresh_scenario_point_metrics(scenario: dict):
+    points = [point for point in scenario.get("points") or [] if isinstance(point, dict)]
+    metrics = dict(scenario.get("metrics") or {})
+    cluster_values = [int(point["cluster"]) for point in points if point.get("cluster") is not None]
+    cluster_sizes = pd.Series(cluster_values, dtype="int64").value_counts() if cluster_values else pd.Series(dtype="int64")
+    metrics.update({
+        "clustered_points": sum(1 for point in points if point.get("cluster_status") == "clustered"),
+        "outlier_points": sum(1 for point in points if point.get("cluster_status") == "outlier"),
+        "missing_geocode_points": sum(1 for point in points if point.get("cluster_status") == "missing_geocode"),
+        "cluster_count": len(set(cluster_values)),
+        "largest_cluster_size": int(cluster_sizes.max()) if not cluster_sizes.empty else 0,
+        "average_cluster_size": float(cluster_sizes.mean()) if not cluster_sizes.empty else 0.0,
+        "cluster_size_distribution": cluster_sizes.tolist(),
+        "total_matches_with_cluster": sum(int(point.get("match_count") or 0) for point in points if point.get("cluster") is not None),
+        "total_matches_without_cluster": sum(int(point.get("match_count") or 0) for point in points if point.get("cluster") is None),
+    })
+    scenario["metrics"] = metrics
+
+
+def _refresh_scenario_operational_metrics(job: dict, scenario: dict, points_df: pd.DataFrame):
+    path_partits = (job or {}).get("path_partits")
+    path_disponibilitats = (job or {}).get("path_disponibilitats")
+    if not path_partits or not path_disponibilitats:
+        _refresh_scenario_point_metrics(scenario)
+        return
+    if not os.path.exists(path_partits) or not os.path.exists(path_disponibilitats):
+        _refresh_scenario_point_metrics(scenario)
+        return
+
+    params = dict((job or {}).get("params") or {})
+    try:
+        df_dispos, df_partits = load_scoped_run_data(path_disponibilitats, path_partits, params=params)
+        df_partits_preview = _build_partits_with_addresses(df_partits)
+    except Exception:
+        _refresh_scenario_point_metrics(scenario)
+        return
+
+    address_by_text = {
+        str(row.get("adreca") or ""): int(row.get("address_id"))
+        for _, row in points_df.iterrows()
+        if pd.notna(row.get("address_id"))
+    }
+    df_partits_preview["address_id"] = df_partits_preview["adreca"].map(lambda adreca: address_by_text.get(str(adreca or "")))
+    scenario_matches_df = _attach_clusters_to_matches(df_partits_preview, points_df)
+
+    max_points_per_subcluster = int(scenario.get("max_points_per_subcluster") or params.get("max_partits_subgrup") or 3)
+    gap_same_pitch_min = int(params.get("gap_same_pitch_min") or 60)
+    gap_diff_pitch_min = int(params.get("gap_diff_pitch_min") or 75)
+    scenario["metrics"] = build_preview_metrics(
+        points_df,
+        scenario_matches_df,
+        max_points_per_subcluster=max_points_per_subcluster,
+        gap_same_pitch_min=gap_same_pitch_min,
+        gap_diff_pitch_min=gap_diff_pitch_min,
+        max_partits_subgrup=max_points_per_subcluster,
+    ).to_dict()
+    scenario["modality_breakdown"] = _build_modality_breakdown(
+        df_dispos,
+        scenario_matches_df,
+        gap_same_pitch_min=gap_same_pitch_min,
+        gap_diff_pitch_min=gap_diff_pitch_min,
+        max_partits_subgrup=max_points_per_subcluster,
+    )
+
+
+def _render_static_preview_map(preview_id: str, scenario: dict) -> str | None:
+    points = [
+        PreviewAddressPoint(**{key: point.get(key) for key in PreviewAddressPoint.__dataclass_fields__})
+        for point in scenario.get("points") or []
+        if isinstance(point, dict)
+    ]
+    preview_scenario = PreviewScenario(
+        eps_m=int(scenario.get("eps_m") or 0),
+        min_samples=int(scenario.get("min_samples") or 2),
+        max_points_per_subcluster=int(scenario.get("max_points_per_subcluster") or 3),
+        points=points,
+    )
+    map_rel_path = scenario.get("map_path") or f"designacions/previews/{preview_id}__eps_{preview_scenario.eps_m}.html"
+    map_abs_path = os.path.join(settings.MEDIA_ROOT, map_rel_path)
+    saved_path = render_preview_map(preview_scenario, map_abs_path)
+    if not saved_path:
+        return scenario.get("map_path")
+    return os.path.relpath(saved_path, settings.MEDIA_ROOT).replace("\\", "/")
+
+
+def _apply_static_preview_overrides(preview_id: str, job: dict, selected_eps_m: int, overrides: list[dict]) -> dict:
+    result = dict((job or {}).get("result") or {})
+    scenarios = list(result.get("scenarios") or [])
+    selected_scenario = None
+    for scenario in scenarios:
+        if isinstance(scenario, dict) and int(float(scenario.get("eps_m") or 0)) == int(selected_eps_m):
+            selected_scenario = scenario
+            break
+    if selected_scenario is None:
+        raise ValueError("No s'ha trobat l'escenari del radi seleccionat.")
+
+    base_points_df = _base_points_df_from_scenario(selected_scenario)
+    updated_points_df, effects, summary = apply_preview_overrides(base_points_df, overrides)
+    selected_scenario["points"] = _point_dicts_from_df(updated_points_df)
+    selected_scenario["active_overrides"] = effects
+    selected_scenario["manual_point_count"] = int(summary.get("manual_point_count") or 0)
+    selected_scenario["manual_cluster_count"] = int(summary.get("manual_cluster_count") or 0)
+    selected_scenario["override_summary"] = summary
+    selected_scenario["map_path"] = _render_static_preview_map(preview_id, selected_scenario)
+    _refresh_scenario_operational_metrics(job, selected_scenario, updated_points_df)
+
+    result["selected_eps_m"] = int(selected_eps_m)
+    result["scenarios"] = scenarios
+    selected_scenario["selected"] = True
+    for scenario in scenarios:
+        if isinstance(scenario, dict) and scenario is not selected_scenario:
+            scenario["selected"] = False
+    result["map_path"] = selected_scenario.get("map_path")
+    result["summary"] = dict(result.get("summary") or {})
+    result["summary"]["selected_eps_m"] = int(selected_eps_m)
+    result["summary"]["active_override_count"] = len(overrides)
+    result["summary"]["manual_point_count"] = selected_scenario["manual_point_count"]
+    result["override_summary"] = {
+        "active_override_count": len(overrides),
+        "manual_point_count": selected_scenario["manual_point_count"],
+        "manual_cluster_count": selected_scenario["manual_cluster_count"],
+    }
+    result["cluster_overrides"] = overrides
+    return result
+
+
+def _scenario_frozen_cluster_assignments(result: dict | None, selected_eps_m: int) -> list[dict]:
+    if not isinstance(result, dict):
+        return []
+    for scenario in result.get("scenarios") or []:
+        if not isinstance(scenario, dict):
+            continue
+        if int(float(scenario.get("eps_m") or 0)) != int(selected_eps_m):
+            continue
+        assignments = []
+        for point in scenario.get("points") or []:
+            if not isinstance(point, dict) or point.get("address_id") is None:
+                continue
+            assignments.append({
+                "address_id": int(point["address_id"]),
+                "cluster": point.get("cluster"),
+                "cluster_status": point.get("cluster_status") or "pending",
+            })
+        return assignments
+    return []
 
 
 def _json_no_cache(payload: dict, *, status: int = 200):
@@ -628,6 +895,11 @@ def upload_view(request):
     except ValueError as exc:
         return HttpResponseBadRequest(str(exc))
 
+    try:
+        run_name = _run_name_from_request(request.POST)
+    except ValueError as exc:
+        return HttpResponseBadRequest(str(exc))
+
     task_id = uuid.uuid4().hex
 
     path_partits = _save_uploaded(partits_file, f"{task_id}__partits")
@@ -637,6 +909,7 @@ def upload_view(request):
     params = _build_designacions_params(request.POST)
 
     run = DesignationRun.objects.create(
+        name=run_name,
         task_id=task_id,
         status="queued",
         input_partits=partits_file,
@@ -667,10 +940,25 @@ def cluster_preview_create_view(request):
     except ValueError as exc:
         return HttpResponseBadRequest(str(exc))
 
+    try:
+        run_name = _run_name_from_request(request.POST)
+    except ValueError as exc:
+        return HttpResponseBadRequest(str(exc))
+
     task_id = uuid.uuid4().hex
     path_partits = _save_uploaded(partits_file, f"{task_id}__preview__partits")
     path_disponibilitats = _save_uploaded(disponibilitats_file, f"{task_id}__preview__disponibilitats")
     params = _build_designacions_params(request.POST)
+    run = DesignationRun.objects.create(
+        name=run_name,
+        task_id=task_id,
+        status="queued",
+        map_status="queued",
+        input_partits=partits_file,
+        input_disponibilitats=disponibilitats_file,
+        params=params,
+    )
+    params["preview_run_id"] = run.id
 
     detected_summary = {
         getattr(file, "name", "fitxer"): kind
@@ -683,6 +971,8 @@ def cluster_preview_create_view(request):
             "task_id": task_id,
             "preview_id": task_id,
             "params": params,
+            "run_id": run.id,
+            "run_name": run.name,
             "detected_files": detected_summary,
             "path_partits": path_partits,
             "path_disponibilitats": path_disponibilitats,
@@ -704,7 +994,7 @@ def cluster_preview_create_view(request):
 
 @require_POST
 def cluster_preview_run_view(request, preview_id: str):
-    job = read_job_sync(preview_id)
+    job = _read_preview_job(preview_id)
     if not job:
         return HttpResponseBadRequest("Preview no trobat.")
 
@@ -734,21 +1024,35 @@ def cluster_preview_run_view(request, preview_id: str):
     params["cluster_eps_m"] = selected_eps_m
     params["selected_eps_m"] = selected_eps_m
     params["source_preview_id"] = preview_id
-    params["preview_cluster_overrides"] = load_preview_overrides(preview_id)
+    params["preview_cluster_overrides"] = load_preview_overrides(preview_id, eps_m=selected_eps_m)
+    params["preview_cluster_assignments"] = _scenario_frozen_cluster_assignments((job or {}).get("result"), selected_eps_m)
 
+    run = None
+    if (job or {}).get("run_id"):
+        run = DesignationRun.objects.filter(id=(job or {}).get("run_id")).first()
     run_task_id = uuid.uuid4().hex
-    run = DesignationRun.objects.create(
-        task_id=run_task_id,
-        status="queued",
-        map_status="queued",
-        params=params,
-    )
+    if run is None:
+        run = DesignationRun.objects.create(
+            name=f"Run preview {preview_id[:8]}",
+            task_id=run_task_id,
+            status="queued",
+            map_status="queued",
+            params=params,
+        )
+    else:
+        run.task_id = run_task_id
+        run.status = "queued"
+        run.map_status = "queued"
+        run.params = params
+        run.error = ""
+        run.save(update_fields=["task_id", "status", "map_status", "params", "error"])
 
     write_job_sync(
         run_task_id,
         {
             "status": "queued",
             "task_id": run_task_id,
+            "run_id": run.id,
             "detected_files": (job or {}).get("detected_files") or {},
             "message": f"Run creat des del preview {preview_id} amb radi {selected_eps_m} m.",
         },
@@ -782,7 +1086,7 @@ def _queue_preview_rebuild(preview_id: str, job: dict, params: dict, message: st
 
 
 def _preview_override_common(request, preview_id: str):
-    job = read_job_sync(preview_id)
+    job = _read_preview_job(preview_id)
     if not job:
         return None, None, HttpResponseBadRequest("Preview no trobat.")
     status = _normalize_preview_status((job or {}).get("status"))
@@ -796,7 +1100,7 @@ def _preview_override_common(request, preview_id: str):
         return None, None, HttpResponseBadRequest("Radi seleccionat no valid.")
     params["cluster_eps_m"] = selected_eps_m
     params["selected_eps_m"] = selected_eps_m
-    params["preview_cluster_overrides"] = load_preview_overrides(preview_id)
+    params["preview_cluster_overrides"] = load_preview_overrides(preview_id, eps_m=selected_eps_m)
     return job, params, None
 
 
@@ -808,22 +1112,45 @@ def cluster_preview_override_merge_view(request, preview_id: str):
 
     try:
         source_address_id = int(request.POST.get("source_venue_id") or request.POST.get("source_address_id"))
-        target_address_id = int(request.POST.get("target_venue_id") or request.POST.get("target_address_id"))
+        target_cluster_id = int(request.POST.get("target_cluster_id"))
     except (TypeError, ValueError):
-        return HttpResponseBadRequest("Cal indicar una seu origen i una seu desti valides.")
-    if source_address_id == target_address_id:
-        return HttpResponseBadRequest("La seu origen i la seu desti no poden ser la mateixa.")
+        target_cluster_id = None
+    target_address_id = None
+    if target_cluster_id is None:
+        try:
+            target_address_id = int(request.POST.get("target_venue_id") or request.POST.get("target_address_id"))
+        except (TypeError, ValueError):
+            return HttpResponseBadRequest("Cal indicar una seu origen i un cluster desti valids.")
+        if source_address_id == target_address_id:
+            return HttpResponseBadRequest("La seu origen i la seu desti no poden ser la mateixa.")
 
-    overrides = add_preview_override(
-        preview_id,
-        {
-            "kind": "merge_with_address",
-            "source_address_id": source_address_id,
-            "target_address_id": target_address_id,
-        },
-    )
+    selected_eps_m = int(params["selected_eps_m"])
+    override_payload = {
+        "kind": "merge_with_address",
+        "source_address_id": source_address_id,
+        "eps_m": selected_eps_m,
+    }
+    if target_cluster_id is not None:
+        override_payload["target_cluster_id"] = target_cluster_id
+    else:
+        override_payload["target_address_id"] = target_address_id
+    overrides = add_preview_override(preview_id, override_payload, eps_m=selected_eps_m)
     params["preview_cluster_overrides"] = overrides
-    return _queue_preview_rebuild(preview_id, job, params, "Recalculant preview amb una fusio manual de seus.")
+    try:
+        result = _apply_static_preview_overrides(preview_id, job, selected_eps_m, overrides)
+    except ValueError as exc:
+        return HttpResponseBadRequest(str(exc))
+    write_job_sync(preview_id, {
+        "status": "done",
+        "task_id": preview_id,
+        "preview_id": preview_id,
+        "params": params,
+        "result": result,
+        "map_path": result.get("map_path"),
+        "message": "Seu moguda manualment al cluster seleccionat.",
+    })
+    _sync_preview_run_from_result(preview_id, params, result)
+    return redirect("designacions_cluster_preview_detail", preview_id=preview_id)
 
 
 @require_POST
@@ -837,15 +1164,32 @@ def cluster_preview_override_isolate_view(request, preview_id: str):
     except (TypeError, ValueError):
         return HttpResponseBadRequest("Cal indicar una seu valida.")
 
+    selected_eps_m = int(params["selected_eps_m"])
     overrides = add_preview_override(
         preview_id,
         {
             "kind": "isolate_address",
             "source_address_id": source_address_id,
+            "eps_m": selected_eps_m,
         },
+        eps_m=selected_eps_m,
     )
     params["preview_cluster_overrides"] = overrides
-    return _queue_preview_rebuild(preview_id, job, params, "Recalculant preview amb una seu aillada manualment.")
+    try:
+        result = _apply_static_preview_overrides(preview_id, job, selected_eps_m, overrides)
+    except ValueError as exc:
+        return HttpResponseBadRequest(str(exc))
+    write_job_sync(preview_id, {
+        "status": "done",
+        "task_id": preview_id,
+        "preview_id": preview_id,
+        "params": params,
+        "result": result,
+        "map_path": result.get("map_path"),
+        "message": "Seu aillada manualment dins del radi seleccionat.",
+    })
+    _sync_preview_run_from_result(preview_id, params, result)
+    return redirect("designacions_cluster_preview_detail", preview_id=preview_id)
 
 
 @require_POST
@@ -859,9 +1203,24 @@ def cluster_preview_override_restore_view(request, preview_id: str):
     except (TypeError, ValueError):
         return HttpResponseBadRequest("Cal indicar una seu valida.")
 
-    overrides = remove_preview_override(preview_id, source_address_id=source_address_id)
+    selected_eps_m = int(params["selected_eps_m"])
+    overrides = remove_preview_override(preview_id, source_address_id=source_address_id, eps_m=selected_eps_m)
     params["preview_cluster_overrides"] = overrides
-    return _queue_preview_rebuild(preview_id, job, params, "Recalculant preview restaurant la clusteritzacio automatica d'una seu.")
+    try:
+        result = _apply_static_preview_overrides(preview_id, job, selected_eps_m, overrides)
+    except ValueError as exc:
+        return HttpResponseBadRequest(str(exc))
+    write_job_sync(preview_id, {
+        "status": "done",
+        "task_id": preview_id,
+        "preview_id": preview_id,
+        "params": params,
+        "result": result,
+        "map_path": result.get("map_path"),
+        "message": "Clusteritzacio automatica restaurada dins del radi seleccionat.",
+    })
+    _sync_preview_run_from_result(preview_id, params, result)
+    return redirect("designacions_cluster_preview_detail", preview_id=preview_id)
 
 @require_GET
 def run_detail_view(request, run_id: int):
@@ -876,6 +1235,14 @@ def run_detail_view(request, run_id: int):
 
 def _serialize_terminal_run_status(run, job: dict | None = None):
     job = job or {}
+    if run.status == "preview":
+        return {
+            "status": "SUCCESS",
+            "progress": 100,
+            "message": job.get("message") or "Preview preparat.",
+            "error": job.get("error"),
+            "detail_url": reverse("designacions_cluster_preview_detail", args=[run.task_id]),
+        }
     if run.status == "done":
         return {
             "status": "SUCCESS",
@@ -906,11 +1273,14 @@ def task_status_view(request, task_id: str):
     status = status or (run.status if run else "PENDING")
 
     if status in ("done", "SUCCESS"):
-        return _json_no_cache({
+        payload = {
             "status": "SUCCESS",
             "progress": 100,
             "message": job.get("message") or (terminal_from_run or {}).get("message"),
-        })
+        }
+        if terminal_from_run and terminal_from_run.get("detail_url"):
+            payload["detail_url"] = terminal_from_run["detail_url"]
+        return _json_no_cache(payload)
 
     if status in ("failed", "FAILURE"):
         return _json_no_cache({
@@ -930,7 +1300,7 @@ def task_status_view(request, task_id: str):
 
 @require_GET
 def cluster_preview_detail_view(request, preview_id: str):
-    job = read_job_sync(preview_id)
+    job = _read_preview_job(preview_id)
     if not job:
         raise Http404("Preview no trobat.")
     payload = _serialize_cluster_preview_job(preview_id, job, include_result=True)
@@ -955,7 +1325,7 @@ def cluster_preview_detail_view(request, preview_id: str):
 
 @require_GET
 def cluster_preview_status_view(request, preview_id: str):
-    job = read_job_sync(preview_id)
+    job = _read_preview_job(preview_id)
     if not job:
         return _json_no_cache({
             "ok": False,
@@ -969,7 +1339,7 @@ def cluster_preview_status_view(request, preview_id: str):
 
 @require_GET
 def cluster_preview_map_view(request, preview_id: str):
-    job = read_job_sync(preview_id) or {}
+    job = _read_preview_job(preview_id) or {}
     map_path = None
     requested_eps = request.GET.get("eps_m")
     if requested_eps:
@@ -1493,6 +1863,7 @@ def runs_list_view(request):
     """
     q = (request.GET.get("q") or "").strip()
     status = (request.GET.get("status") or "").strip()
+    modality = (request.GET.get("modalitat") or "").strip()
 
     qs = (
         DesignationRun.objects
@@ -1506,14 +1877,26 @@ def runs_list_view(request):
 
     if status:
         qs = qs.filter(status=status)
+    if modality:
+        qs = qs.filter(params__icontains=modality)
 
     if q:
         # Cerca flexible: id, task_id i text dins params
         qs = qs.filter(
+            Q(name__icontains=q) |
             Q(task_id__icontains=q) |
             Q(id__icontains=q) |
             Q(params__icontains=q)
         )
+
+    modality_values = set()
+    for params in DesignationRun.objects.values_list("params", flat=True):
+        if not isinstance(params, dict):
+            continue
+        for item in params.get("modalitats") or []:
+            value = str(item or "").strip()
+            if value:
+                modality_values.add(value)
 
     paginator = Paginator(qs, 20)  # 20 per pàgina
     page_number = request.GET.get("page") or 1
@@ -1523,6 +1906,8 @@ def runs_list_view(request):
         "page_obj": page_obj,
         "q": q,
         "status": status,
+        "modalitat": modality,
+        "modality_options": sorted(modality_values),
         "status_choices": DesignationRun.STATUS_CHOICES,
     })
 

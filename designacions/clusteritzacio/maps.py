@@ -57,6 +57,10 @@ def _add_base_tile_layers(fmap: folium.Map):
     ).add_to(fmap)
 
 
+def add_base_tile_layers(fmap: folium.Map):
+    _add_base_tile_layers(fmap)
+
+
 def _build_popup_actions(scenario: PreviewScenario, point) -> str:
     if point.address_id is None:
         return ""
@@ -219,12 +223,55 @@ def _build_selection_sync_script(
         selectedMarkerName = markerName || null;
       }}
 
+      function sendCurrentView() {{
+        const mapInstance = getMapInstance();
+        if (!mapInstance || typeof mapInstance.getCenter !== 'function' || typeof mapInstance.getZoom !== 'function') {{
+          return;
+        }}
+        const center = mapInstance.getCenter();
+        if (!center) {{
+          return;
+        }}
+        window.parent.postMessage({{
+          type: 'cluster_preview_map_view',
+          epsM: selectedEpsM,
+          center: {{ lat: center.lat, lng: center.lng }},
+          zoom: mapInstance.getZoom(),
+        }}, '*');
+      }}
+
+      const mapInstanceForViewSync = getMapInstance();
+      if (mapInstanceForViewSync && typeof mapInstanceForViewSync.on === 'function') {{
+        mapInstanceForViewSync.on('moveend zoomend', sendCurrentView);
+        window.setTimeout(sendCurrentView, 0);
+      }}
+
       window.addEventListener('message', function(event) {{
         const data = event && event.data ? event.data : null;
-        if (!data || (data.type !== 'cluster_preview_highlight_address' && data.type !== 'cluster_preview_clear_selection')) {{
+        if (!data || (
+          data.type !== 'cluster_preview_highlight_address'
+          && data.type !== 'cluster_preview_clear_selection'
+          && data.type !== 'cluster_preview_capture_view'
+          && data.type !== 'cluster_preview_set_view'
+        )) {{
           return;
         }}
         if (data.epsM && String(data.epsM) !== selectedEpsM) {{
+          return;
+        }}
+        if (data.type === 'cluster_preview_capture_view') {{
+          window.setTimeout(sendCurrentView, 0);
+          return;
+        }}
+        if (data.type === 'cluster_preview_set_view') {{
+          const mapInstance = getMapInstance();
+          const center = data.center || null;
+          if (mapInstance && center && typeof center.lat === 'number' && typeof center.lng === 'number') {{
+            const zoom = typeof data.zoom === 'number' ? data.zoom : mapInstance.getZoom();
+            window.setTimeout(function() {{
+              mapInstance.setView([center.lat, center.lng], zoom, {{ animate: false }});
+            }}, 0);
+          }}
           return;
         }}
         if (data.type === 'cluster_preview_clear_selection') {{

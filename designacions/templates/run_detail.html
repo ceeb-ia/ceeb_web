@@ -7,7 +7,7 @@
     <div class="d-flex justify-content-between align-items-center mb-3">
       <div>
         <h2 class="mb-0">Execució #{{ run.id }}</h2>
-        <div class="text-muted small">Task: {{ run.task_id }}</div>
+        <div class="text-muted small">{{ run.name }} · Task: {{ run.task_id }}</div>
       </div>
       <a class="btn btn-sm btn-outline-secondary" href="{% url 'designacions_upload' %}">Nova execució</a>
     </div>
@@ -51,6 +51,10 @@
             {% if run.status == "done" %}
             <a class="btn btn-sm btn-outline-primary" href="{% url 'designacions_assignments' run.id %}">
               Veure i editar assignacions
+            </a>
+            {% elif run.status == "preview" %}
+            <a class="btn btn-sm btn-outline-primary" href="{% url 'designacions_cluster_preview_detail' run.task_id %}">
+              Continuar preview
             </a>
             {% elif run.status == "failed" %}
             <div class="alert alert-danger small mb-0">
@@ -228,11 +232,15 @@
         progressBar.style.width = '100%';
         setStep("import","done"); setStep("engine","done"); setStep("map","done"); setStep("done","done");
 
-        nextLink.innerHTML = `
-          <a class="btn btn-sm btn-outline-primary" href="/designacions/run/${runId}/assignments/">
-            Veure i editar assignacions
-          </a>
-        `;
+        if (data.detail_url) {
+          nextLink.innerHTML = `<a class="btn btn-sm btn-outline-primary" href="${data.detail_url}">Continuar preview</a>`;
+        } else {
+          nextLink.innerHTML = `
+            <a class="btn btn-sm btn-outline-primary" href="/designacions/run/${runId}/assignments/">
+              Veure i editar assignacions
+            </a>
+          `;
+        }
         if (es) es.close();
         return;
       }

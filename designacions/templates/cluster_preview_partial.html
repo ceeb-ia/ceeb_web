@@ -384,17 +384,17 @@
           <input type="hidden" name="preview_id" value="{{ preview_id }}">
           <input type="hidden" name="selected_eps_m" id="preview-venue-merge-eps-input" value="{{ result.selected_eps_m|default:'' }}">
           <input type="hidden" name="source_venue_id" id="preview-venue-merge-source-input" value="">
-          <input type="hidden" name="target_venue_id" id="preview-venue-merge-target-input" value="">
+          <input type="hidden" name="target_cluster_id" id="preview-venue-merge-target-input" value="">
           <div class="row g-2 align-items-end">
             <div class="col-12 col-lg-8">
-              <label class="small text-muted mb-1" for="preview-venue-merge-target-select">Fusionar amb</label>
+              <label class="small text-muted mb-1" for="preview-venue-merge-target-select">Moure al cluster</label>
               <select id="preview-venue-merge-target-select" class="form-control form-control-sm">
-                <option value="">Selecciona una altra seu</option>
+                <option value="">Selecciona un cluster</option>
               </select>
             </div>
             <div class="col-12 col-lg-4">
               <button type="submit" class="btn btn-sm btn-outline-primary w-100" id="preview-venue-merge-btn" disabled>
-                Fusionar
+                Moure
               </button>
             </div>
           </div>
@@ -425,7 +425,7 @@
       <div>
         <div class="fw-bold mb-2">Overrides actius</div>
         <div class="small text-muted mb-2">
-          Resum de les modificacions manuals que s'aplicaran al recalcul del preview.
+          Resum de les modificacions manuals del radi seleccionat.
         </div>
         <div id="preview-active-overrides-empty" class="text-muted small{% if selected_scenario.active_overrides %} d-none{% endif %}">
           No hi ha overrides manuals actius per aquest radi.
