@@ -28,6 +28,7 @@ from .services.assignment_feasibility import (
     DEFAULT_GAP_DIFF_CLUSTER_MIN,
     build_match_descriptor,
     diagnose_segment_feasibility,
+    has_vehicle,
     primary_reason_code,
 )
 from .services.vehicle_policy import (
@@ -36,6 +37,12 @@ from .services.vehicle_policy import (
     summarize_vehicle_assignments,
     vehicle_policy_penalty,
 )
+from .optimization.base_subgroups import build_base_subgroups_from_rows
+from .optimization.contracts import TutorCandidate
+from .optimization.package_generation import generate_package_candidates
+from .optimization.package_scoring import build_assignment_candidates
+from .optimization.pressure import build_pressure_summary
+from .optimization.solver import solve_assignment_candidates
 from .models import AddressCluster, DesignationRun
 from .services.manual_assignment import update_run_mobility_summary
 from .clusteritzacio.maps import add_base_tile_layers
@@ -442,6 +449,61 @@ def _build_tutor_transport(tutor_row):
     if pd.isna(transport):
         return ""
     return transport
+
+
+def _build_optimization_tutors(df_dispos_modalitat: pd.DataFrame) -> list[TutorCandidate]:
+    tutors = []
+    for _, row in df_dispos_modalitat.iterrows():
+        date_key = _date_token(row.get("Data"))
+        tutor_id = row.get("ID")
+        if pd.isna(tutor_id) or str(tutor_id).strip() == "":
+            tutor_id = row.get("Codi Tutor de Joc", "")
+        availability_by_date = {}
+        if date_key:
+            availability_by_date[date_key] = [
+                {
+                    "start": row.get("Hora Inici"),
+                    "end": row.get("Hora Fi"),
+                }
+            ]
+        tutors.append(
+            TutorCandidate(
+                id=tutor_id,
+                code=row.get("Codi Tutor de Joc", ""),
+                modality=row.get("Modalitat", ""),
+                level=row.get("Nivell", ""),
+                transport=_build_tutor_transport(row),
+                has_vehicle=has_vehicle(_build_tutor_transport(row)),
+                availability_by_date=availability_by_date,
+            )
+        )
+    return tutors
+
+
+def _tutor_candidate_id_from_row(row):
+    tutor_id = row.get("ID")
+    if pd.isna(tutor_id) or str(tutor_id).strip() == "":
+        tutor_id = row.get("Codi Tutor de Joc", "")
+    return str(tutor_id)
+
+
+def _package_solver_selected_records(solver_result, packages, tutor_rows_by_id, match_rows_by_id):
+    package_by_id = {str(package.id): package for package in packages}
+    records = []
+    for assignment in solver_result.selected_assignments:
+        package = package_by_id.get(str(assignment.package_id))
+        tutor_row = tutor_rows_by_id.get(str(assignment.tutor_id))
+        if package is None or tutor_row is None:
+            continue
+        segment = [
+            match_rows_by_id[match_id]
+            for match_id in assignment.match_ids
+            if match_id in match_rows_by_id
+        ]
+        if not segment:
+            continue
+        records.append((assignment, package, tutor_row, segment))
+    return records
 
 
 def _dedupe_preserve_order(values):
@@ -1186,6 +1248,7 @@ def main(
     modalitats_filter = config.get("modalitats") or []
     date_from = config.get("date_from") or None
     date_to = config.get("date_to") or None
+    assignment_engine = str(config.get("assignment_engine") or "legacy").strip().lower()
     fase = str(config.get("fase", "FS1") or "FS1").strip().upper()
     if fase not in {"FS1", "FS2"}:
         fase = "FS1"
@@ -1299,6 +1362,8 @@ def main(
             "classification_cache_hits": 0,
             "classification_failed_requests": 0,
             "classification_groups_without_data": [],
+            "engine_name": assignment_engine,
+            "package_solver_summary": [],
             "mobility_warning_count": 0,
             "mobility_error_count": 0,
             "mobility_warnings": [],
@@ -1442,6 +1507,7 @@ def main(
     remaining_unassigned_breakdown = Counter()
     vehicle_assignment_records = []
     vehicle_policy_contexts = []
+    package_solver_summaries = []
     classification_cache = {}
     classification_parsed_cache = {}
     classification_cache_hits = 0
@@ -1559,6 +1625,14 @@ def main(
                 # Afegim al df dues columnes que indiquin la posicio
                 df_partits_modalitat.loc[df_partits_modalitat['ID'] == partit['ID'], 'Posició Equip Local'] = pos_local
                 df_partits_modalitat.loc[df_partits_modalitat['ID'] == partit['ID'], 'Posició Equip Visitant'] = pos_visitant
+        for position_column in ("Posició Equip Local", "Posició Equip Visitant"):
+            if position_column in df_partits_modalitat.columns:
+                if position_column not in df_partits.columns:
+                    df_partits[position_column] = pd.NA
+                positions_by_id = df_partits_modalitat.set_index("ID")[position_column]
+                df_partits.loc[df_partits["ID"].isin(positions_by_id.index), position_column] = (
+                    df_partits.loc[df_partits["ID"].isin(positions_by_id.index), "ID"].map(positions_by_id)
+                )
         df_partits_modalitat['Hora'] = _parse_times(df_partits_modalitat['Hora'])
         df_dispos_modalitat['Hora Inici'] = _parse_times(df_dispos_modalitat['Hora Inici'])
         df_dispos_modalitat['Hora Fi'] = _parse_times(df_dispos_modalitat['Hora Fi'])
@@ -1594,6 +1668,102 @@ def main(
                     f"Després de fusió: {subgroup_stats['fused_subgroups']}."
                 ),
             )
+
+        if assignment_engine == "package_solver":
+            if task_id:
+                async_to_sync(push_log)(task_id, "Construint paquets i rutes candidates.", 72)
+
+            base_subgroups = build_base_subgroups_from_rows(final_subgrups)
+            optimization_tutors = _build_optimization_tutors(df_dispos_modalitat)
+            pressure_result = build_pressure_summary(base_subgroups, optimization_tutors, config)
+            packages = generate_package_candidates(base_subgroups, optimization_tutors, pressure_result, config)
+            assignment_candidates = build_assignment_candidates(packages, optimization_tutors, pressure_result, config)
+            solver_result = solve_assignment_candidates(assignment_candidates, packages, optimization_tutors, config)
+
+            tutor_rows_by_id = {_tutor_candidate_id_from_row(row): row for _, row in df_dispos_modalitat.iterrows()}
+            match_rows_by_id = {
+                str(row.get("ID")): row
+                for subgrup in final_subgrups
+                for row in subgrup
+            }
+            selected_records = _package_solver_selected_records(
+                solver_result,
+                packages,
+                tutor_rows_by_id,
+                match_rows_by_id,
+            )
+            for _assignment, _package, tutor_row, segment in selected_records:
+                vehicle_assignment_records.append(
+                    build_vehicle_assignment_record(
+                        tutor_row,
+                        _build_subgroup_descriptors(segment),
+                        stage="package_solver",
+                    )
+                )
+                _append_segment_assignment(
+                    tutor_row=tutor_row,
+                    segment=segment,
+                    assigned_tutors=assigned_tutors,
+                    assigned_partit_ids=assigned_partit_ids,
+                    assigned_tutor_ids=assigned_tutor_ids,
+                    assigned_descriptors_by_tutor=assigned_descriptors_by_tutor,
+                )
+                initial_assigned_matches_count += len(segment)
+
+            remaining_ids = {str(match_id) for match_id in solver_result.unassigned_match_ids}
+            for match_id in remaining_ids:
+                partit = match_rows_by_id.get(match_id)
+                if partit is None:
+                    continue
+                reason = "no_viable_package_solver_assignment"
+                remaining_unassigned_details.append(
+                    {
+                        "match_id": partit.get("ID", ""),
+                        "match_code": partit.get("Codi", ""),
+                        "modality": partit.get("Modalitat", ""),
+                        "reason": reason,
+                    }
+                )
+                remaining_unassigned_breakdown[reason] += 1
+
+            selected_match_count = sum(len(segment) for _, _, _, segment in selected_records)
+            level_blocking_counts = Counter()
+            selected_by_level_fit = Counter()
+            for candidate in assignment_candidates:
+                breakdown = getattr(candidate, "score_breakdown", {}) or {}
+                level_fit_label = str(breakdown.get("level_fit") or "unknown")
+                if "level_forbidden" in set(getattr(candidate, "blocking_reasons", ()) or ()):
+                    level_blocking_counts[level_fit_label] += 1
+            for assignment in solver_result.selected_assignments:
+                breakdown = getattr(assignment, "score_breakdown", {}) or {}
+                selected_by_level_fit[str(breakdown.get("level_fit") or "unknown")] += 1
+            package_solver_summaries.append(
+                {
+                    "modality": modalitat,
+                    "base_subgroup_count": len(base_subgroups),
+                    "candidate_package_count": len(packages),
+                    "assignment_candidate_count": len(assignment_candidates),
+                    "selected_assignment_count": len(solver_result.selected_assignments),
+                    "selected_match_count": selected_match_count,
+                    "unassigned_match_count": len(remaining_ids),
+                    "pressure_summary": pressure_result.get("pressure_summary", {}),
+                    "solver_objective": solver_result.objective_summary,
+                    "rejected_candidates_summary": solver_result.rejected_candidates_summary,
+                    "level_forbidden_candidate_count": int(sum(level_blocking_counts.values())),
+                    "level_blocking_counts": dict(sorted(level_blocking_counts.items())),
+                    "selected_by_level_fit": dict(sorted(selected_by_level_fit.items())),
+                    "level_exceptional_selected_count": int(
+                        solver_result.objective_summary.get("selected_exceptional_level_count", 0)
+                    ),
+                }
+            )
+            if task_id:
+                async_to_sync(push_log)(
+                    task_id,
+                    f"Package solver {modalitat}: {selected_match_count} partits assignats, {len(remaining_ids)} pendents.",
+                    82,
+                )
+            continue
 
         # --- matriu costos ---
         def raw_subgroup_eval_fn(tutor_row, subgrup, *, existing_descriptors=None):
@@ -1893,6 +2063,10 @@ def main(
         "classification_cache_hits": int(classification_cache_hits),
         "classification_failed_requests": int(classification_failed_requests),
         "classification_groups_without_data": sorted(classification_groups_without_data),
+        "engine_name": assignment_engine,
+        "package_solver_summary": package_solver_summaries,
+        "candidate_package_count": int(sum(item.get("candidate_package_count", 0) for item in package_solver_summaries)),
+        "selected_package_count": int(sum(item.get("selected_assignment_count", 0) for item in package_solver_summaries)),
         "vehicle_usage_summary": vehicle_usage_summary,
         "vehicle_used_on_easy_segments": vehicle_usage_summary["vehicle_used_on_easy_segments"],
         "vehicle_reserved_count": int(vehicle_usage_summary["vehicle_reserved_count"]),

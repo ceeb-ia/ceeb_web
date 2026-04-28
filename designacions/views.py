@@ -117,6 +117,11 @@ def _to_fase(v, default="FS1"):
     return value if value in {"FS1", "FS2"} else default
 
 
+def _to_assignment_engine(v, default="legacy"):
+    value = (v or default or "legacy").strip().lower()
+    return value if value in {"legacy", "package_solver"} else default
+
+
 def _temp_dir():
     d = os.path.join(settings.MEDIA_ROOT, "temp")
     os.makedirs(d, exist_ok=True)
@@ -213,6 +218,7 @@ def _build_designacions_params(data):
         "date_from": (data.get("date_from") or "").strip(),
         "date_to": (data.get("date_to") or "").strip(),
         "fase": _to_fase(data.get("fase"), "FS1"),
+        "assignment_engine": _to_assignment_engine(data.get("assignment_engine"), "legacy"),
     }
 
 
@@ -883,6 +889,7 @@ def upload_view(request):
                 "date_from": "",
                 "date_to": "",
                 "fase": "FS1",
+                "assignment_engine": "legacy",
             }
         })
 
@@ -1024,6 +1031,7 @@ def cluster_preview_run_view(request, preview_id: str):
     params["cluster_eps_m"] = selected_eps_m
     params["selected_eps_m"] = selected_eps_m
     params["source_preview_id"] = preview_id
+    params["assignment_engine"] = _to_assignment_engine(request.POST.get("assignment_engine"), "legacy")
     params["preview_cluster_overrides"] = load_preview_overrides(preview_id, eps_m=selected_eps_m)
     params["preview_cluster_assignments"] = _scenario_frozen_cluster_assignments((job or {}).get("result"), selected_eps_m)
 

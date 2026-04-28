@@ -3,7 +3,7 @@ import os
 import tempfile
 import asyncio
 import xml.etree.ElementTree as ET
-from datetime import date, time
+from datetime import date, datetime, time
 from io import BytesIO, StringIO
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -59,6 +59,11 @@ from .services.manual_assignment import (
 from .services.run_scope import load_scoped_run_data
 from .tasks import rebuild_run_map_task
 from .views import upload_view
+from .optimization.contracts import AssignmentCandidate, BaseSubgroup, PackageCandidate, TutorCandidate
+from .optimization.package_generation import generate_package_candidates
+from .optimization.package_scoring import build_assignment_candidates
+from .optimization.pressure import build_pressure_summary
+from .optimization.solver import solve_assignment_candidates
 
 
 def _xlsx_upload(name: str, headers: list[str], rows: list[list[object]]) -> SimpleUploadedFile:
@@ -75,6 +80,261 @@ def _xlsx_upload(name: str, headers: list[str], rows: list[list[object]]) -> Sim
         data.read(),
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
+
+
+class DesignacionsOptimizationPackageSolverTests(SimpleTestCase):
+    def test_solver_never_assigns_same_match_twice(self):
+        package_a = PackageCandidate(
+            id="A",
+            kind="base",
+            subgroup_ids=["S1"],
+            match_ids=["M1", "M2"],
+            date=date(2026, 3, 1),
+            modality="VOLEIBOL",
+            start_dt=datetime(2026, 3, 1, 18, 0),
+            end_dt=datetime(2026, 3, 1, 19, 0),
+        )
+        package_b = PackageCandidate(
+            id="B",
+            kind="single_match",
+            subgroup_ids=["S1"],
+            match_ids=["M1"],
+            date=date(2026, 3, 1),
+            modality="VOLEIBOL",
+            start_dt=datetime(2026, 3, 1, 18, 0),
+            end_dt=datetime(2026, 3, 1, 18, 0),
+        )
+        tutors = [
+            TutorCandidate("T1", "T1", "VOLEIBOL", "NIVELLA1", "Bus", False, {"2026-03-01": [{"start": "17:00", "end": "21:00"}]}),
+            TutorCandidate("T2", "T2", "VOLEIBOL", "NIVELLA1", "Bus", False, {"2026-03-01": [{"start": "17:00", "end": "21:00"}]}),
+        ]
+
+        candidates = build_assignment_candidates([package_a, package_b], tutors, {}, {})
+        result = solve_assignment_candidates(candidates, [package_a, package_b], tutors, {})
+
+        selected_match_ids = [
+            match_id
+            for assignment in result.selected_assignments
+            for match_id in assignment.match_ids
+        ]
+        self.assertEqual(len(selected_match_ids), len(set(selected_match_ids)))
+        self.assertEqual(set(selected_match_ids), {"M1", "M2"})
+
+    def test_route_generation_is_limited_by_vehicle_budget(self):
+        subgroups = [
+            BaseSubgroup(
+                id=f"S{i}",
+                match_ids=[f"M{i}"],
+                date=date(2026, 3, 1),
+                modality="VOLEIBOL",
+                start_dt=datetime(2026, 3, 1, 18 + i, 0),
+                end_dt=datetime(2026, 3, 1, 18 + i, 0),
+                venues=[f"Pista {i}"],
+                cluster_ids=[str(i)],
+                cluster_statuses=["clustered"],
+            )
+            for i in range(3)
+        ]
+        tutors = [
+            TutorCandidate("TV", "TV", "VOLEIBOL", "NIVELLA1", "Cotxe", True, {"2026-03-01": [{"start": "17:00", "end": "23:00"}]})
+        ]
+        pressure = build_pressure_summary(subgroups, tutors, {"time_bucket_minutes": 60})
+        packages = generate_package_candidates(
+            subgroups,
+            tutors,
+            pressure,
+            {
+                "gap_diff_cluster_min": 30,
+                "route_candidate_factor": 1,
+                "route_candidate_buffer": 0,
+                "max_split_variants_per_subgroup": 0,
+            },
+        )
+
+        route_packages = [package for package in packages if package.kind == "merged_route"]
+        self.assertLessEqual(len(route_packages), 1)
+
+    def test_package_scoring_uses_level_letter_distance(self):
+        package = PackageCandidate(
+            id="SENIOR",
+            kind="base",
+            subgroup_ids=["S1"],
+            match_ids=["M1"],
+            date=date(2026, 3, 1),
+            modality="VOLEIBOL",
+            start_dt=datetime(2026, 3, 1, 18, 0),
+            end_dt=datetime(2026, 3, 1, 19, 0),
+            level_demand="SÈNIOR",
+        )
+        availability = {"2026-03-01": [{"start": "17:00", "end": "21:00"}]}
+        tutors = [
+            TutorCandidate("A", "A", "VOLEIBOL", "NIVELLA1", "Bus", False, availability),
+            TutorCandidate("C", "C", "VOLEIBOL", "NIVELLC1", "Bus", False, availability),
+            TutorCandidate("D", "D", "VOLEIBOL", "NIVELLD1", "Bus", False, availability),
+        ]
+
+        candidates = build_assignment_candidates([package], tutors, {}, {})
+        costs = {candidate.tutor_id: candidate.score_breakdown["level_cost"] for candidate in candidates}
+
+        self.assertEqual(costs["A"], 0.0)
+        self.assertGreater(costs["C"], costs["A"])
+        self.assertGreater(costs["D"], costs["C"])
+
+    def test_classification_importance_penalizes_weaker_tutor(self):
+        package = PackageCandidate(
+            id="TOP",
+            kind="base",
+            subgroup_ids=["S1"],
+            match_ids=["M1"],
+            date=date(2026, 3, 1),
+            modality="VOLEIBOL",
+            start_dt=datetime(2026, 3, 1, 18, 0),
+            end_dt=datetime(2026, 3, 1, 19, 0),
+            level_demand="SÈNIOR",
+            classification_importance=1.0,
+            weighted_coverage_value=1.4,
+        )
+        availability = {"2026-03-01": [{"start": "17:00", "end": "21:00"}]}
+        tutors = [
+            TutorCandidate("A", "A", "VOLEIBOL", "NIVELLA1", "Bus", False, availability),
+            TutorCandidate("D", "D", "VOLEIBOL", "NIVELLD1", "Bus", False, availability),
+        ]
+
+        candidates = build_assignment_candidates([package], tutors, {}, {})
+        costs = {candidate.tutor_id: candidate.score_breakdown["classification_fit_cost"] for candidate in candidates}
+
+        self.assertEqual(costs["A"], 0.0)
+        self.assertGreater(costs["D"], costs["A"])
+
+    def test_solver_uses_weighted_coverage_before_cost(self):
+        top_package = PackageCandidate(
+            id="TOP",
+            kind="base",
+            subgroup_ids=["S1"],
+            match_ids=["M1"],
+            date=date(2026, 3, 1),
+            modality="VOLEIBOL",
+            start_dt=datetime(2026, 3, 1, 18, 0),
+            end_dt=datetime(2026, 3, 1, 19, 0),
+            weighted_coverage_value=1.4,
+        )
+        normal_package = PackageCandidate(
+            id="NORMAL",
+            kind="base",
+            subgroup_ids=["S2"],
+            match_ids=["M2"],
+            date=date(2026, 3, 1),
+            modality="VOLEIBOL",
+            start_dt=datetime(2026, 3, 1, 18, 0),
+            end_dt=datetime(2026, 3, 1, 19, 0),
+            weighted_coverage_value=1.0,
+        )
+        candidates = [
+            AssignmentCandidate("A", "TOP", ["M1"], True, cost=10.0),
+            AssignmentCandidate("A", "NORMAL", ["M2"], True, cost=0.0),
+        ]
+
+        result = solve_assignment_candidates(candidates, [top_package, normal_package], [], {})
+
+        self.assertEqual(result.selected_assignments[0].package_id, "TOP")
+
+    def test_solver_prefers_non_exceptional_level_before_small_cost_gain(self):
+        package = PackageCandidate(
+            id="P1",
+            kind="base",
+            subgroup_ids=["S1"],
+            match_ids=["M1"],
+            date=date(2026, 3, 1),
+            modality="VOLEIBOL",
+            start_dt=datetime(2026, 3, 1, 18, 0),
+            end_dt=datetime(2026, 3, 1, 19, 0),
+        )
+        candidates = [
+            AssignmentCandidate(
+                "EXCEPTIONAL",
+                "P1",
+                ["M1"],
+                True,
+                cost=0.0,
+                score_breakdown={"level_fit": "exceptional", "level_exceptional": True},
+            ),
+            AssignmentCandidate(
+                "NORMAL",
+                "P1",
+                ["M1"],
+                True,
+                cost=5.0,
+                score_breakdown={"level_fit": "acceptable", "level_exceptional": False},
+            ),
+        ]
+
+        result = solve_assignment_candidates(candidates, [package], [], {})
+
+        self.assertEqual(result.selected_assignments[0].tutor_id, "NORMAL")
+        self.assertEqual(result.objective_summary["selected_exceptional_level_count"], 0)
+
+    def test_senior_with_c_or_d_level_is_forbidden_when_strict_level_is_enabled(self):
+        package = PackageCandidate(
+            id="SENIOR",
+            kind="base",
+            subgroup_ids=["S1"],
+            match_ids=["M1"],
+            date=date(2026, 3, 1),
+            modality="VOLEIBOL",
+            start_dt=datetime(2026, 3, 1, 18, 0),
+            end_dt=datetime(2026, 3, 1, 19, 0),
+            level_demand="S\u00c8NIOR",
+        )
+        availability = {"2026-03-01": [{"start": "17:00", "end": "21:00"}]}
+        tutors = [
+            TutorCandidate("C", "C", "VOLEIBOL", "NIVELLC1", "Bus", False, availability),
+            TutorCandidate("D", "D", "VOLEIBOL", "NIVELLD1", "Bus", False, availability),
+        ]
+
+        candidates = build_assignment_candidates([package], tutors, {}, {"strict_level": True})
+
+        self.assertEqual({candidate.tutor_id for candidate in candidates}, {"C", "D"})
+        self.assertTrue(all(not candidate.is_viable for candidate in candidates))
+        self.assertTrue(
+            all(
+                {"level_forbidden", "level_mismatch"} & set(candidate.blocking_reasons)
+                for candidate in candidates
+            )
+        )
+
+    def test_split_recomputes_hardest_level_demand(self):
+        subgroup = BaseSubgroup(
+            id="S1",
+            match_ids=["M1", "M2"],
+            date=date(2026, 3, 1),
+            modality="VOLEIBOL",
+            start_dt=datetime(2026, 3, 1, 18, 0),
+            end_dt=datetime(2026, 3, 1, 19, 0),
+            venues=["Pista"],
+            cluster_ids=["1", "1"],
+            cluster_statuses=["clustered", "clustered"],
+            level_demand="BENJAMÍ",
+            rows=[
+                {"ID": "M1", "Categoria": "SÈNIOR", "Data": date(2026, 3, 1), "Hora": "18:00", "Pista joc": "Pista"},
+                {"ID": "M2", "Categoria": "BENJAMÍ", "Data": date(2026, 3, 1), "Hora": "19:00", "Pista joc": "Pista"},
+            ],
+        )
+        tutors = [
+            TutorCandidate("C", "C", "VOLEIBOL", "NIVELLC1", "Bus", False, {"2026-03-01": [{"start": "17:00", "end": "21:00"}]}),
+        ]
+
+        packages = generate_package_candidates(
+            [subgroup],
+            tutors,
+            {},
+            {"max_split_variants_per_subgroup": 4},
+        )
+        senior_single = next(package for package in packages if package.match_ids == ["M1"])
+        candidates = build_assignment_candidates([senior_single], tutors, {}, {})
+
+        self.assertEqual(senior_single.level_demand, "SÈNIOR")
+        self.assertFalse(candidates[0].is_viable)
+        self.assertIn("level_forbidden", candidates[0].blocking_reasons)
 
 
 class DesignacionsUploadFileDetectionTests(TestCase):
