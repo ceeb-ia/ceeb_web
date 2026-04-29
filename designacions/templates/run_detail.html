@@ -67,6 +67,59 @@
     </div>
 
     {% if run.status == "done" %}
+    {% if origin_summary %}
+    <div class="row g-2 mb-3">
+      <div class="col-12">
+        <div class="border rounded p-3">
+          <div class="fw-bold mb-2">Origen de les assignacions</div>
+          <div class="table-responsive">
+            <table class="table table-sm mb-0">
+              <thead>
+                <tr>
+                  <th>Origen</th>
+                  <th class="text-end">Partits</th>
+                  <th class="text-end">Sequencies</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for item in origin_summary %}
+                <tr>
+                  <td>
+                    <div>{{ item.label }}</div>
+                    <div class="text-muted small">{{ item.stage }}</div>
+                  </td>
+                  <td class="text-end">{{ item.match_count }}</td>
+                  <td class="text-end">{{ item.route_count }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+    {% if run.result_summary.engine_name == "phased_route_solver" %}
+    <div class="row g-2 mb-3">
+      <div class="col-12">
+        <div class="border rounded p-3">
+          <div class="fw-bold mb-2">Motor per fases i rutes</div>
+          <div class="small mb-2">
+            Rutes seleccionades: <strong>{{ run.result_summary.selected_route_count|default:0 }}</strong>
+            Â· Candidats: <strong>{{ run.result_summary.candidate_route_count|default:0 }}</strong>
+            Â· Recomanacions: <strong>{{ run.result_summary.swap_recommendations|length }}</strong>
+          </div>
+          {% if run.result_summary.phase_solver_summary %}
+          <ul class="small mb-0">
+            {% for item in run.result_summary.phase_solver_summary %}
+            <li>{{ item.modality }}: {{ item.selected_match_count }} assignats, {{ item.unassigned_match_count }} pendents</li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
     <div class="row g-2 mb-3">
       <div class="col-12">
         <div class="border rounded p-3">

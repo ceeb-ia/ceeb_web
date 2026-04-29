@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from typing import Any, Iterable
 
 from designacions.services.assignment_feasibility import has_vehicle, normalize_text_key
@@ -179,9 +179,14 @@ def _availability_covers_package(tutor, package, config):
     if not windows:
         return False
 
-    start_time = start_dt.time()
-    end_time = end_dt.time()
-    return any(window_start <= start_time and end_time <= window_end for window_start, window_end in windows)
+    return any(_window_covers(start_dt, end_dt, window_start, window_end, config) for window_start, window_end in windows)
+
+
+def _window_covers(start_dt: datetime, end_dt: datetime, start: time, end: time, config) -> bool:
+    buffer_min = int(_cfg(config, "availability_end_buffer_min", 60) or 0)
+    window_start = datetime.combine(start_dt.date(), start)
+    window_end = datetime.combine(start_dt.date(), end) - timedelta(minutes=buffer_min)
+    return window_start <= start_dt and end_dt <= window_end
 
 
 def _availability_windows(availability_by_date, package_date):

@@ -21,6 +21,22 @@ LEVEL_FIT_PRIORITY = {
     "unscorable": 3,
 }
 
+ORIGIN_LABELS = {
+    "high": ("Assignacio prioritaria", "El partit es va cobrir en la primera passada prioritaria."),
+    "medium": ("Assignacio de nivell mitja/alt", "El partit es va cobrir quan el motor va ampliar tutors i partits compatibles."),
+    "general": ("Assignacio general", "El partit es va cobrir en la passada general."),
+    "partial_rescue": ("Recuperacio parcial", "El partit es va recuperar despres d'una passada parcial."),
+    "final_rescue": ("Recuperacio final", "El partit es va assignar en una passada final de recuperacio."),
+    "new_route_rescue": ("Nova sequencia recuperada", "El motor va formar una nova sequencia amb partits pendents."),
+    "individual_rescue": ("Recuperacio individual", "El partit es va assignar individualment en una passada de recuperacio."),
+    "package_solver": ("Assignacio per paquet", "El partit es va assignar amb el motor de paquets."),
+    "initial": ("Assignacio inicial", "El partit es va cobrir en la passada inicial del motor."),
+    "rescue_idle": ("Recuperacio amb tutor lliure", "El partit es va recuperar amb un tutor que encara no tenia assignacions."),
+    "rescue_reused": ("Recuperacio afegida", "El partit es va recuperar reutilitzant un tutor compatible."),
+    "manual_override": ("Assignacio manual", "La designacio ha estat modificada manualment per un usuari."),
+    "manual_unassigned": ("Desassignacio manual", "La designacio ha estat retirada manualment per un usuari."),
+}
+
 
 def _ensure_context(run, context=None):
     return context or build_manual_assignment_context(run)
@@ -131,6 +147,88 @@ def _selection_reason_summary(feasibility_status: str, level_fit_label: str, qua
     return "; ".join(parts)
 
 
+def _trace_stage_key(trace) -> str:
+    stage = str(getattr(trace, "stage", "") or "")
+    phase_name = str(getattr(trace, "phase_name", "") or "")
+    rescue_kind = str(getattr(trace, "rescue_kind", "") or "")
+    if rescue_kind:
+        return rescue_kind
+    if phase_name in ORIGIN_LABELS:
+        return phase_name
+    if stage.startswith("phase:"):
+        return stage.split(":", 1)[1]
+    if stage.startswith("partial_rescue"):
+        return "partial_rescue"
+    if stage.startswith("individual_rescue"):
+        return "individual_rescue"
+    return stage
+
+
+def _assignment_origin_payload(assignment) -> dict:
+    trace = getattr(assignment, "trace", None)
+    if trace is None:
+        return {
+            "available": False,
+            "label": "Origen no disponible",
+            "summary": "Origen no disponible perque aquesta designacio es anterior al tracking.",
+            "stage": "",
+            "route_size": 1,
+            "inserted_into_existing_route": False,
+            "route_match_codes": [],
+        }
+    key = _trace_stage_key(trace)
+    label, summary = ORIGIN_LABELS.get(
+        key,
+        ("Assignacio automatica", "El partit es va assignar automaticament amb el motor de designacions."),
+    )
+    route_size = int(getattr(trace, "route_size", 1) or 1)
+    details = []
+    if route_size > 1:
+        details.append(f"Forma part d'una sequencia de {route_size} partits.")
+    if getattr(trace, "inserted_into_existing_route", False):
+        details.append("El partit es va afegir a una jornada que aquest tutor ja tenia assignada.")
+    warning_codes = list(getattr(trace, "warning_codes", None) or [])
+    if warning_codes:
+        details.append("La designacio queda marcada per revisio operativa.")
+    return {
+        "available": True,
+        "label": label,
+        "summary": " ".join([summary, *details]).strip(),
+        "stage": getattr(trace, "stage", "") or "",
+        "phase_name": getattr(trace, "phase_name", "") or "",
+        "route_size": route_size,
+        "inserted_into_existing_route": bool(getattr(trace, "inserted_into_existing_route", False)),
+        "route_match_codes": list(getattr(trace, "route_match_codes", None) or []),
+        "warning_codes": warning_codes,
+    }
+
+
+def _route_context_payload(trace) -> list[dict]:
+    if trace is None:
+        return []
+    ids = [str(value) for value in (getattr(trace, "route_match_ids", None) or [])]
+    codes = [str(value) for value in (getattr(trace, "route_match_codes", None) or [])]
+    if not (ids or codes):
+        return []
+    qs = trace.run.matches.all()
+    if ids:
+        qs = qs.filter(engine_id__in=ids)
+    else:
+        qs = qs.filter(code__in=codes)
+    matches = list(qs)
+    order = {value: index for index, value in enumerate(ids or codes)}
+    matches.sort(key=lambda match: (match.date or "", match.hour_raw or "", order.get(str(match.engine_id or match.code), 999)))
+    return [
+        {
+            "code": match.code or "",
+            "hour": match.hour_raw or "",
+            "venue": match.venue or "",
+            "category": match.category or "",
+        }
+        for match in matches
+    ]
+
+
 def _build_explanation_payload(run, assignment, diagnosis: dict, context, *, manual_override: bool = False) -> dict:
     referee = diagnosis["referee"]
     level_fit = classify_level_fit(assignment.match, referee)
@@ -155,7 +253,10 @@ def _build_explanation_payload(run, assignment, diagnosis: dict, context, *, man
         }
     )
 
+    trace = getattr(assignment, "trace", None)
     explanation = {
+        "assignment_origin": _assignment_origin_payload(assignment),
+        "route_context": _route_context_payload(trace),
         "feasibility": {
             "status": feasibility_status,
             "blocking_reasons": diagnosis.get("blocking_reasons", diagnosis.get("warning_reasons")) if feasibility_status == "invalid" else [],

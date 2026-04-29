@@ -62,8 +62,14 @@ from .views import upload_view
 from .optimization.contracts import AssignmentCandidate, BaseSubgroup, PackageCandidate, TutorCandidate
 from .optimization.package_generation import generate_package_candidates
 from .optimization.package_scoring import build_assignment_candidates
+from .optimization.level_fragments import build_level_fragments
+from .optimization.phases import PhaseSpec
+from .optimization.phase_runner import run_phased_route_solver
 from .optimization.pressure import build_pressure_summary
+from .optimization.rescue import run_individual_rescue
+from .optimization.route_generation import generate_phase_route_candidates
 from .optimization.solver import solve_assignment_candidates
+from .optimization.state import create_initial_state
 
 
 def _xlsx_upload(name: str, headers: list[str], rows: list[list[object]]) -> SimpleUploadedFile:
@@ -335,6 +341,281 @@ class DesignacionsOptimizationPackageSolverTests(SimpleTestCase):
         self.assertEqual(senior_single.level_demand, "SÈNIOR")
         self.assertFalse(candidates[0].is_viable)
         self.assertIn("level_forbidden", candidates[0].blocking_reasons)
+
+
+    def test_level_fragments_split_large_level_span(self):
+        subgroup = BaseSubgroup(
+            id="S1",
+            match_ids=["M1", "M2", "M3"],
+            date=date(2026, 3, 1),
+            modality="VOLEIBOL",
+            start_dt=datetime(2026, 3, 1, 18, 0),
+            end_dt=datetime(2026, 3, 1, 20, 0),
+            venues=["Pista", "Pista", "Pista"],
+            cluster_ids=["1", "1", "1"],
+            cluster_statuses=["clustered", "clustered", "clustered"],
+            rows=[
+                {"ID": "M1", "Categoria": "S\u00c8NIOR", "__match_datetime": datetime(2026, 3, 1, 18, 0), "Pista joc": "Pista"},
+                {"ID": "M2", "Categoria": "INFANTIL", "__match_datetime": datetime(2026, 3, 1, 19, 0), "Pista joc": "Pista"},
+                {"ID": "M3", "Categoria": "ALEV\u00cd", "__match_datetime": datetime(2026, 3, 1, 20, 0), "Pista joc": "Pista"},
+            ],
+        )
+
+        fragments = build_level_fragments([subgroup], {"level_fragment_max_size": 2, "level_fragment_max_span": 3})
+
+        self.assertEqual([fragment.match_ids for fragment in fragments], [["M1"], ["M2", "M3"]])
+        self.assertEqual(fragments[0].level_demand, "S\u00c8NIOR")
+        self.assertEqual(fragments[1].level_demand, "INFANTIL")
+
+    def test_phased_route_solver_never_duplicates_matches(self):
+        subgroups = [
+            BaseSubgroup(
+                id="S1",
+                match_ids=["M1"],
+                date=date(2026, 3, 1),
+                modality="VOLEIBOL",
+                start_dt=datetime(2026, 3, 1, 18, 0),
+                end_dt=datetime(2026, 3, 1, 18, 0),
+                venues=["Pista 1"],
+                cluster_ids=["1"],
+                cluster_statuses=["clustered"],
+                level_demand="ALEVÃ",
+                rows=[{"ID": "M1", "Categoria": "ALEVÃ", "__match_datetime": datetime(2026, 3, 1, 18, 0), "Pista joc": "Pista 1"}],
+            ),
+            BaseSubgroup(
+                id="S2",
+                match_ids=["M2"],
+                date=date(2026, 3, 1),
+                modality="VOLEIBOL",
+                start_dt=datetime(2026, 3, 1, 18, 0),
+                end_dt=datetime(2026, 3, 1, 18, 0),
+                venues=["Pista 2"],
+                cluster_ids=["1"],
+                cluster_statuses=["clustered"],
+                level_demand="ALEVÃ",
+                rows=[{"ID": "M2", "Categoria": "ALEVÃ", "__match_datetime": datetime(2026, 3, 1, 18, 0), "Pista joc": "Pista 2"}],
+            ),
+        ]
+        tutors = [
+            TutorCandidate("A", "A", "VOLEIBOL", "NIVELLA1", "Bus", False, {"2026-03-01": [{"start": "17:00", "end": "21:00"}]}),
+            TutorCandidate("C", "C", "VOLEIBOL", "NIVELLC1", "Bus", False, {"2026-03-01": [{"start": "17:00", "end": "21:00"}]}),
+        ]
+
+        result = run_phased_route_solver(subgroups, tutors, {"gap_diff_pitch_min": 30})
+        selected_match_ids = []
+        for route in result.selected_routes:
+            if isinstance(route, dict):
+                selected_match_ids.extend(route.get("new_match_ids", []))
+            else:
+                selected_match_ids.extend(route.new_match_ids)
+
+        self.assertEqual(len(selected_match_ids), len(set(selected_match_ids)))
+        self.assertEqual(set(selected_match_ids), {"M1", "M2"})
+
+    def test_individual_rescue_recovers_pending_with_unused_d1(self):
+        fragment = BaseSubgroup(
+            id="P1",
+            match_ids=["M1"],
+            date=date(2026, 3, 1),
+            modality="VOLEIBOL",
+            start_dt=datetime(2026, 3, 1, 18, 0),
+            end_dt=datetime(2026, 3, 1, 18, 0),
+            venues=["Pista"],
+            cluster_ids=["1"],
+            cluster_statuses=["clustered"],
+            level_demand="ALEV\u00cd",
+            rows=[{"ID": "M1", "Categoria": "ALEV\u00cd", "__match_datetime": datetime(2026, 3, 1, 18, 0), "Pista joc": "Pista"}],
+        )
+        tutor = TutorCandidate(
+            "D1",
+            "D1",
+            "VOLEIBOL",
+            "NIVELLD1",
+            "Bus",
+            False,
+            {"2026-03-01": [{"start": "17:00", "end": "21:00"}]},
+        )
+
+        result = run_individual_rescue([fragment], [tutor], create_initial_state(["M1"]), {})
+
+        self.assertEqual(result["recovered_match_ids"], ["M1"])
+        self.assertEqual(result["summary"]["recovered_match_count"], 1)
+        self.assertEqual(result["selected_routes"][0]["phase_name"], "individual_rescue:1")
+
+    def test_individual_rescue_respects_max_iterations(self):
+        fragments = [
+            BaseSubgroup(
+                id=f"P{i}",
+                match_ids=[f"M{i}"],
+                date=date(2026, 3, 1),
+                modality="VOLEIBOL",
+                start_dt=datetime(2026, 3, 1, 18 + i, 0),
+                end_dt=datetime(2026, 3, 1, 18 + i, 0),
+                venues=["Pista"],
+                cluster_ids=["1"],
+                cluster_statuses=["clustered"],
+                level_demand="ALEV\u00cd",
+                rows=[{"ID": f"M{i}", "Categoria": "ALEV\u00cd", "__match_datetime": datetime(2026, 3, 1, 18 + i, 0), "Pista joc": "Pista"}],
+            )
+            for i in range(1, 3)
+        ]
+        tutor = TutorCandidate(
+            "D1",
+            "D1",
+            "VOLEIBOL",
+            "NIVELLD1",
+            "Bus",
+            False,
+            {"2026-03-01": [{"start": "17:00", "end": "23:00"}]},
+        )
+
+        result = run_individual_rescue(
+            fragments,
+            [tutor],
+            create_initial_state(["M1", "M2"]),
+            {"individual_rescue_max_iterations": 1},
+        )
+
+        self.assertEqual(result["summary"]["recovered_match_count"], 1)
+        self.assertEqual(result["summary"]["stopped_reason"], "max_iterations_reached")
+        self.assertEqual(len(result["summary"]["iteration_summaries"]), 1)
+
+    def test_uncertain_cluster_plus_other_venue_requires_vehicle(self):
+        fragments = [
+            BaseSubgroup(
+                id="O1",
+                match_ids=["M1"],
+                date=date(2026, 3, 1),
+                modality="VOLEIBOL",
+                start_dt=datetime(2026, 3, 1, 18, 0),
+                end_dt=datetime(2026, 3, 1, 18, 0),
+                venues=["Outlier School"],
+                cluster_ids=[],
+                cluster_statuses=["outlier"],
+                level_demand="ALEV\u00cd",
+                rows=[{"ID": "M1", "Categoria": "ALEV\u00cd", "__match_datetime": datetime(2026, 3, 1, 18, 0), "Pista joc": "Outlier School"}],
+            ),
+            BaseSubgroup(
+                id="C1",
+                match_ids=["M2"],
+                date=date(2026, 3, 1),
+                modality="VOLEIBOL",
+                start_dt=datetime(2026, 3, 1, 20, 0),
+                end_dt=datetime(2026, 3, 1, 20, 0),
+                venues=["Clustered School"],
+                cluster_ids=["14"],
+                cluster_statuses=["clustered"],
+                level_demand="ALEV\u00cd",
+                rows=[{"ID": "M2", "Categoria": "ALEV\u00cd", "__match_datetime": datetime(2026, 3, 1, 20, 0), "Pista joc": "Clustered School"}],
+            ),
+        ]
+        tutor = TutorCandidate(
+            "D1",
+            "D1",
+            "VOLEIBOL",
+            "NIVELLD1",
+            "No tinc Vehicle Propi",
+            False,
+            {"2026-03-01": [{"start": "17:00", "end": "22:00"}]},
+        )
+        phase = PhaseSpec(name="general", allow_exceptional=True, max_route_size=2)
+
+        candidates = generate_phase_route_candidates(
+            fragments,
+            [tutor],
+            create_initial_state(["M1", "M2"]),
+            phase,
+            {"gap_diff_cluster_min": 90},
+        )
+
+        self.assertFalse(any(set(candidate.new_match_ids) == {"M1", "M2"} for candidate in candidates))
+
+    def test_same_outlier_venue_does_not_require_vehicle(self):
+        fragments = [
+            BaseSubgroup(
+                id="O1",
+                match_ids=["M1"],
+                date=date(2026, 3, 1),
+                modality="VOLEIBOL",
+                start_dt=datetime(2026, 3, 1, 18, 0),
+                end_dt=datetime(2026, 3, 1, 18, 0),
+                venues=["Outlier School"],
+                cluster_ids=[],
+                cluster_statuses=["outlier"],
+                level_demand="ALEV\u00cd",
+                rows=[{"ID": "M1", "Categoria": "ALEV\u00cd", "__match_datetime": datetime(2026, 3, 1, 18, 0), "Pista joc": "Outlier School"}],
+            ),
+            BaseSubgroup(
+                id="O2",
+                match_ids=["M2"],
+                date=date(2026, 3, 1),
+                modality="VOLEIBOL",
+                start_dt=datetime(2026, 3, 1, 20, 0),
+                end_dt=datetime(2026, 3, 1, 20, 0),
+                venues=["Outlier School"],
+                cluster_ids=[],
+                cluster_statuses=["outlier"],
+                level_demand="ALEV\u00cd",
+                rows=[{"ID": "M2", "Categoria": "ALEV\u00cd", "__match_datetime": datetime(2026, 3, 1, 20, 0), "Pista joc": "Outlier School"}],
+            ),
+        ]
+        tutor = TutorCandidate(
+            "D1",
+            "D1",
+            "VOLEIBOL",
+            "NIVELLD1",
+            "No tinc Vehicle Propi",
+            False,
+            {"2026-03-01": [{"start": "17:00", "end": "22:00"}]},
+        )
+        phase = PhaseSpec(name="general", allow_exceptional=True, max_route_size=2)
+
+        candidates = generate_phase_route_candidates(
+            fragments,
+            [tutor],
+            create_initial_state(["M1", "M2"]),
+            phase,
+            {"gap_same_pitch_min": 90},
+        )
+
+        route = next(candidate for candidate in candidates if set(candidate.new_match_ids) == {"M1", "M2"})
+        self.assertFalse(route.requires_vehicle)
+        self.assertIn("outlier_mobility_warning", route.warning_codes)
+
+    def test_phased_route_solver_respects_availability_end_buffer(self):
+        fragment = BaseSubgroup(
+            id="LATE",
+            match_ids=["M1"],
+            date=date(2026, 3, 1),
+            modality="VOLEIBOL",
+            start_dt=datetime(2026, 3, 1, 19, 0),
+            end_dt=datetime(2026, 3, 1, 19, 0),
+            venues=["Pista"],
+            cluster_ids=["1"],
+            cluster_statuses=["clustered"],
+            level_demand="ALEV\u00cd",
+            rows=[{"ID": "M1", "Categoria": "ALEV\u00cd", "__match_datetime": datetime(2026, 3, 1, 19, 0), "Pista joc": "Pista"}],
+        )
+        tutor = TutorCandidate(
+            "D1",
+            "D1",
+            "VOLEIBOL",
+            "NIVELLD1",
+            "No tinc Vehicle Propi",
+            False,
+            {"2026-03-01": [{"start": "17:00", "end": "19:00"}]},
+        )
+        phase = PhaseSpec(name="general", allow_exceptional=True, max_route_size=1)
+
+        candidates = generate_phase_route_candidates(
+            [fragment],
+            [tutor],
+            create_initial_state(["M1"]),
+            phase,
+            {"availability_end_buffer_min": 60},
+        )
+
+        self.assertEqual(candidates, [])
 
 
 class DesignacionsUploadFileDetectionTests(TestCase):
@@ -942,6 +1223,44 @@ class DesignacionsDateAwareHelpersTests(SimpleTestCase):
         )
 
         self.assertEqual([issue.reason_code for issue in issues], ["missing_cluster_for_mobility_validation"])
+        self.assertTrue(issues[0].is_blocking)
+        self.assertEqual(issues[0].required_gap_min, 100)
+
+    def test_mobility_warns_missing_cluster_with_vehicle_and_gap(self):
+        descriptors = [
+            build_match_descriptor(
+                identifier="M1",
+                date_value="2026-02-24",
+                time_value="18:00:00",
+                venue="Pista A",
+                modality="Futbol Sala",
+                cluster_id=1,
+                address_id=10,
+                cluster_status="clustered",
+            ),
+            build_match_descriptor(
+                identifier="M2",
+                date_value="2026-02-24",
+                time_value="19:45:00",
+                venue="Pista B",
+                modality="Futbol Sala",
+                cluster_id=None,
+                address_id=11,
+                cluster_status="missing_geocode",
+            ),
+        ]
+
+        issues = inspect_mobility_transitions(
+            descriptors,
+            transport="Cotxe",
+            gap_same_pitch_min=60,
+            gap_diff_pitch_min=75,
+            gap_diff_cluster_min=100,
+        )
+
+        self.assertEqual([issue.reason_code for issue in issues], ["missing_cluster_mobility_warning"])
+        self.assertTrue(issues[0].is_advisory)
+        self.assertEqual(issues[0].required_gap_min, 100)
 
     def test_mobility_identifies_outlier_clusters(self):
         descriptors = [
@@ -976,6 +1295,42 @@ class DesignacionsDateAwareHelpersTests(SimpleTestCase):
         )
 
         self.assertEqual([issue.reason_code for issue in issues], ["outlier_cluster_for_mobility_validation"])
+        self.assertTrue(issues[0].is_blocking)
+
+    def test_mobility_warns_outlier_with_vehicle_and_gap(self):
+        descriptors = [
+            build_match_descriptor(
+                identifier="M1",
+                date_value="2026-02-24",
+                time_value="18:00:00",
+                venue="Pista A",
+                modality="Futbol Sala",
+                cluster_id=None,
+                address_id=10,
+                cluster_status="outlier",
+            ),
+            build_match_descriptor(
+                identifier="M2",
+                date_value="2026-02-24",
+                time_value="19:45:00",
+                venue="Pista B",
+                modality="Futbol Sala",
+                cluster_id=7,
+                address_id=11,
+                cluster_status="clustered",
+            ),
+        ]
+
+        issues = inspect_mobility_transitions(
+            descriptors,
+            transport="Cotxe",
+            gap_same_pitch_min=60,
+            gap_diff_pitch_min=75,
+            gap_diff_cluster_min=100,
+        )
+
+        self.assertEqual([issue.reason_code for issue in issues], ["outlier_mobility_warning"])
+        self.assertTrue(issues[0].is_advisory)
 
     def test_xml_to_dataframe_returns_empty_dataframe_when_group_is_missing(self):
         parsed = {
@@ -1758,6 +2113,9 @@ class DesignacionsManualAssignmentsTests(TestCase):
         self.assertIn("assignmentFiltersEmptyState", content)
         self.assertIn("filterTutorLevel", content)
         self.assertIn("filterAssignmentStatus", content)
+        self.assertIn("filterTutorVehicle", content)
+        self.assertIn("filterTutorAvailabilityStart", content)
+        self.assertIn("filterTutorAvailabilityEnd", content)
         self.assertIn("filterMatchCategory", content)
         self.assertIn("filterMatchVenue", content)
         self.assertIn("assignmentFiltersReset", content)
@@ -1771,6 +2129,8 @@ class DesignacionsManualAssignmentsTests(TestCase):
         self.assertIn('data-has-mobility-warning="', content)
         self.assertIn('data-has-manual-warning="', content)
         self.assertIn('data-has-locked="', content)
+        self.assertIn('data-has-vehicle="', content)
+        self.assertIn('data-availability-windows="', content)
 
     def test_manual_assignment_options_view_returns_top_proposals_and_compatible_referees(self):
         response = self.client.get(
@@ -2061,6 +2421,8 @@ class DesignacionsManualAssignmentsTests(TestCase):
         self.assertTrue(display_group["has_locked"])
         self.assertTrue(display_group["has_mobility_warning"])
         self.assertFalse(display_group["has_mobility_error"])
+        self.assertTrue(display_group["has_vehicle"])
+        self.assertEqual(display_group["availability_windows"], ["16:00-21:00", "18:00-23:00"])
         self.assertEqual(display_group["categories"], ["CADET", "INFANTIL"])
         self.assertEqual(display_group["venues"], ["Pista C", "Pista E"])
 

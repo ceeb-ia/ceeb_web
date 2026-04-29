@@ -114,6 +114,53 @@ class Assignment(models.Model):
         return f"{self.match.code} -> {self.referee_id}"
 
 
+class AssignmentTrace(models.Model):
+    run = models.ForeignKey(DesignationRun, on_delete=models.CASCADE, related_name="assignment_traces")
+    assignment = models.OneToOneField(
+        Assignment,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="trace",
+    )
+    match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name="assignment_traces")
+    referee = models.ForeignKey(Referee, on_delete=models.SET_NULL, null=True, blank=True, related_name="assignment_traces")
+
+    engine_name = models.CharField(max_length=80)
+    stage = models.CharField(max_length=80)
+    phase_name = models.CharField(max_length=80, blank=True, default="")
+    rescue_kind = models.CharField(max_length=80, blank=True, default="")
+    rescue_iteration = models.IntegerField(null=True, blank=True)
+
+    route_id = models.CharField(max_length=255, blank=True, default="")
+    candidate_id = models.CharField(max_length=255, blank=True, default="")
+    tutor_id = models.CharField(max_length=80, blank=True, default="")
+    route_match_ids = models.JSONField(default=list)
+    route_match_codes = models.JSONField(default=list)
+    route_size = models.IntegerField(default=1)
+    inserted_into_existing_route = models.BooleanField(default=False)
+
+    selected_score = models.FloatField(null=True, blank=True)
+    selected_cost = models.FloatField(null=True, blank=True)
+    level_fit = models.CharField(max_length=80, blank=True, default="")
+    warning_codes = models.JSONField(default=list)
+    mobility_summary = models.JSONField(default=dict)
+    debug_payload = models.JSONField(default=dict)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["run", "stage"]),
+            models.Index(fields=["run", "referee"]),
+            models.Index(fields=["run", "match"]),
+            models.Index(fields=["route_id"]),
+        ]
+
+    def __str__(self):
+        return f"{self.match_id} trace {self.stage}"
+
+
 
 class ModalityMap(models.Model):
     """

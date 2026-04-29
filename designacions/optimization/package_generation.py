@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field, replace
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from inspect import signature
 from itertools import combinations
 from typing import Any, Iterable
@@ -17,6 +17,11 @@ from .levels import (
     LEVEL_FIT_UNSCORABLE,
     hardest_match_level,
     level_fit,
+)
+from .route_points import (
+    required_gap as atomic_required_gap,
+    route_points_from_segments,
+    transition_requires_vehicle as atomic_transition_requires_vehicle,
 )
 
 
@@ -211,6 +216,65 @@ def _clusters_need_vehicle(cluster_ids: Iterable[Any]) -> bool:
     return len(cleaned) > 1
 
 
+def _route_requires_vehicle(segments: Iterable[Any]) -> bool:
+    segment_list = list(segments)
+    points = route_points_from_segments(segment_list)
+    if len(points) >= 2:
+        return any(atomic_transition_requires_vehicle(left, right) for left, right in zip(points, points[1:]))
+    cluster_ids = [cluster for segment in segment_list for cluster in list(_obj_get(segment, "cluster_ids", []) or [])]
+    if _clusters_need_vehicle(cluster_ids):
+        return True
+    return _has_uncertain_cluster(segment_list) and not _segments_same_location(segment_list)
+
+
+def _transition_requires_vehicle(left: Any, right: Any) -> bool:
+    left_points = route_points_from_segments([left])
+    right_points = route_points_from_segments([right])
+    if left_points and right_points:
+        return atomic_transition_requires_vehicle(left_points[-1], right_points[0])
+    return _route_requires_vehicle([left, right])
+
+
+def _has_uncertain_cluster(segments: Iterable[Any]) -> bool:
+    segment_list = list(segments)
+    statuses = {
+        _clean_text(status).lower()
+        for segment in segment_list
+        for status in list(_obj_get(segment, "cluster_statuses", []) or [])
+        if _clean_text(status)
+    }
+    if statuses.intersection({"outlier", "missing_geocode", "pending", "not_found"}):
+        return True
+    return any(
+        not _clean_text(cluster)
+        for segment in segment_list
+        for cluster in list(_obj_get(segment, "cluster_ids", []) or [])
+    )
+
+
+def _segments_same_location(segments: Iterable[Any]) -> bool:
+    segment_list = list(segments)
+    venues = {
+        _clean_text(venue).lower()
+        for segment in segment_list
+        for venue in list(_obj_get(segment, "venues", []) or [])
+        if _clean_text(venue)
+    }
+    if len(venues) == 1:
+        return True
+    if len(venues) > 1:
+        return False
+    return _segment_match_count(segment_list) <= 1
+
+
+def _segment_match_count(segments: Iterable[Any]) -> int:
+    count = 0
+    for segment in segments:
+        match_ids = list(_obj_get(segment, "match_ids", []) or [])
+        count += len(match_ids) if match_ids else 1
+    return count
+
+
 def _has_unreliable_cluster(cluster_ids: Iterable[Any], statuses: Iterable[Any]) -> bool:
     if any(cluster is None or not _clean_text(cluster) for cluster in cluster_ids):
         return True
@@ -242,7 +306,14 @@ def _base_payload(base: Any, *, candidate_id: str, kind: str, match_ids: list[st
     selected_match_ids = list(match_ids if match_ids is not None else _obj_get(base, "match_ids", []))
     cluster_ids = list(_obj_get(base, "cluster_ids", []) or [])
     statuses = list(_obj_get(base, "cluster_statuses", []) or [])
-    requires_vehicle = _clusters_need_vehicle(cluster_ids)
+    venues = list(_obj_get(base, "venues", []) or [])
+    probe = {
+        "match_ids": selected_match_ids,
+        "cluster_ids": cluster_ids,
+        "cluster_statuses": statuses,
+        "venues": venues,
+    }
+    requires_vehicle = _route_requires_vehicle([probe])
     vehicle_preferred = _has_unreliable_cluster(cluster_ids, statuses)
     return {
         "id": candidate_id,
@@ -262,7 +333,7 @@ def _base_payload(base: Any, *, candidate_id: str, kind: str, match_ids: list[st
         "route_score": float(len(selected_match_ids)),
         "cluster_ids": cluster_ids,
         "cluster_statuses": statuses,
-        "venues": list(_obj_get(base, "venues", []) or []),
+        "venues": venues,
         "component_ids": [],
         "level_demand": _obj_get(base, "level_demand"),
         "classification_pressure": _obj_get(base, "classification_pressure", 0.0),
@@ -304,7 +375,7 @@ def _split_base_by_indices(base: Any, indexes: list[int], *, candidate_id: str, 
             len(payload["match_ids"]),
             payload["classification_importance"],
         )
-    payload["requires_vehicle"] = _clusters_need_vehicle(payload["cluster_ids"])
+    payload["requires_vehicle"] = _route_requires_vehicle([payload])
     payload["vehicle_preferred"] = _has_unreliable_cluster(payload["cluster_ids"], payload["cluster_statuses"])
     payload["warning_codes"] = _warning_codes(payload["cluster_ids"], payload["cluster_statuses"], requires_vehicle=payload["requires_vehicle"])
     return _candidate(payload)
@@ -419,7 +490,8 @@ def _tutor_matches_day_modality(tutor: Any, candidate: Any) -> bool:
     return tutor_date is None or candidate_date is None or tutor_date == candidate_date
 
 
-def _availability_covers(tutor: Any, candidate: Any) -> bool:
+def _availability_covers(tutor: Any, candidate: Any, config: dict[str, Any] | None = None) -> bool:
+    config = dict(config or {})
     if not _tutor_matches_day_modality(tutor, candidate):
         return False
     start_dt = _as_datetime(_obj_get(candidate, "start_dt"))
@@ -442,7 +514,7 @@ def _availability_covers(tutor: Any, candidate: Any) -> bool:
                     continue
                 start_time = _parse_time(start_value)
                 end_time = _parse_time(end_value)
-                if start_time is not None and end_time is not None and start_time <= start_dt.time() and end_dt.time() <= end_time:
+                if start_time is not None and end_time is not None and _window_covers(start_dt, end_dt, start_time, end_time, config):
                     return True
             return False
     start_time = _parse_time(_row_get(tutor, "Hora Inici"))
@@ -452,22 +524,29 @@ def _availability_covers(tutor: Any, candidate: Any) -> bool:
     availability_date = _parse_date(_row_get(tutor, "Data"))
     if isinstance(availability_date, date) and start_dt.date() != availability_date:
         return False
-    return start_time <= start_dt.time() and end_dt.time() <= end_time
+    return _window_covers(start_dt, end_dt, start_time, end_time, config)
 
 
-def _has_viable_tutor(candidate: Any, tutors: list[Any]) -> bool:
+def _window_covers(start_dt: datetime, end_dt: datetime, start: time, end: time, config: dict[str, Any]) -> bool:
+    buffer_min = int(config.get("availability_end_buffer_min", 60) or 0)
+    window_start = datetime.combine(start_dt.date(), start)
+    window_end = datetime.combine(start_dt.date(), end) - timedelta(minutes=buffer_min)
+    return window_start <= start_dt and end_dt <= window_end
+
+
+def _has_viable_tutor(candidate: Any, tutors: list[Any], config: dict[str, Any] | None = None) -> bool:
     if not tutors:
         return True
     for tutor in tutors:
-        if _tutor_can_cover_candidate(tutor, candidate):
+        if _tutor_can_cover_candidate(tutor, candidate, config):
             return True
     return False
 
 
-def _tutor_can_cover_candidate(tutor: Any, candidate: Any) -> bool:
+def _tutor_can_cover_candidate(tutor: Any, candidate: Any, config: dict[str, Any] | None = None) -> bool:
     if _obj_get(candidate, "requires_vehicle", False) and not _has_vehicle(tutor):
         return False
-    return _availability_covers(tutor, candidate)
+    return _availability_covers(tutor, candidate, config)
 
 
 def _level_label(value: Any) -> str:
@@ -551,7 +630,7 @@ def _level_fit_summary(candidate: Any, tutors: list[Any], config: dict[str, Any]
     if not tutors:
         return summary
     for tutor in tutors:
-        if not _tutor_can_cover_candidate(tutor, candidate):
+        if not _tutor_can_cover_candidate(tutor, candidate, config):
             continue
         summary[_candidate_level_fit_label(tutor, candidate, config)] += 1
     return summary
@@ -613,11 +692,10 @@ def _gap_minutes(left: Any, right: Any) -> float | None:
 
 
 def _required_gap(left: Any, right: Any, config: dict[str, Any], requires_vehicle: bool) -> int:
-    left_venues = set(_obj_get(left, "venues", []) or [])
-    right_venues = set(_obj_get(right, "venues", []) or [])
-    same_pitch = bool(left_venues and right_venues and left_venues.intersection(right_venues))
-    if same_pitch:
-        return int(config.get("gap_same_pitch_min", 90))
+    left_points = route_points_from_segments([left])
+    right_points = route_points_from_segments([right])
+    if left_points and right_points:
+        return atomic_required_gap(left_points[-1], right_points[0], config)
     if requires_vehicle:
         return int(config.get("gap_diff_cluster_min", 150))
     return int(config.get("gap_diff_pitch_min", 120))
@@ -633,14 +711,13 @@ def _can_route(left: Any, right: Any, config: dict[str, Any]) -> bool:
     minutes = _gap_minutes(left, right)
     if minutes is None or minutes < 0:
         return False
-    cluster_ids = list(_obj_get(left, "cluster_ids", []) or []) + list(_obj_get(right, "cluster_ids", []) or [])
-    return minutes >= _required_gap(left, right, config, _clusters_need_vehicle(cluster_ids))
+    return minutes >= _required_gap(left, right, config, _transition_requires_vehicle(left, right))
 
 
 def _merge_route(left: Any, right: Any, pressure_summary: Any, tutors: list[Any] | None = None, config: dict[str, Any] | None = None) -> Any:
     cluster_ids = list(_obj_get(left, "cluster_ids", []) or []) + list(_obj_get(right, "cluster_ids", []) or [])
     statuses = list(_obj_get(left, "cluster_statuses", []) or []) + list(_obj_get(right, "cluster_statuses", []) or [])
-    requires_vehicle = _clusters_need_vehicle(cluster_ids)
+    requires_vehicle = _route_requires_vehicle([left, right])
     vehicle_preferred = _has_unreliable_cluster(cluster_ids, statuses)
     component_ids = [_obj_get(left, "id"), _obj_get(right, "id")]
     kind = "merged_route"
@@ -710,12 +787,12 @@ def generate_package_candidates(
             tutor_rows,
             config,
         )
-        if _has_viable_tutor(base_candidate, tutor_rows):
+        if _has_viable_tutor(base_candidate, tutor_rows, config):
             candidates.append(base_candidate)
             seen_ids.add(_obj_get(base_candidate, "id"))
         for variant in _split_variants(base, config):
             variant = _score_candidate(variant, pressure_summary, tutor_rows, config)
-            if _obj_get(variant, "id") not in seen_ids and _has_viable_tutor(variant, tutor_rows):
+            if _obj_get(variant, "id") not in seen_ids and _has_viable_tutor(variant, tutor_rows, config):
                 candidates.append(variant)
                 seen_ids.add(_obj_get(variant, "id"))
 
@@ -732,7 +809,7 @@ def generate_package_candidates(
         if not _can_route(left, right, config):
             continue
         route = _merge_route(left, right, pressure_summary, tutor_rows, config)
-        if not _has_viable_tutor(route, tutor_rows):
+        if not _has_viable_tutor(route, tutor_rows, config):
             continue
         route_level_summary = _obj_get(route, "level_fit_summary", {}) or _level_fit_summary(route, tutor_rows, config)
         if not _route_has_allowed_level_fit(route, config, route_level_summary):

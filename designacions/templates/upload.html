@@ -138,14 +138,13 @@
 
           <div class="form-row row">
             <div class="form-group col-md-4">
-              <input type="hidden" name="assignment_engine" value="legacy">
-              <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="assignmentEnginePackageSolver" name="assignment_engine" value="package_solver" {% if defaults.assignment_engine == "package_solver" %}checked{% endif %}>
-                <label class="form-check-label" for="assignmentEnginePackageSolver">
-                  Usar motor nou package solver
-                </label>
-              </div>
-              <small class="form-text text-muted">Desmarcat manté el motor legacy.</small>
+              <label>Motor d'assignacio</label>
+              <select name="assignment_engine" class="form-control form-control-sm">
+                <option value="legacy" {% if defaults.assignment_engine == "legacy" %}selected{% endif %}>Legacy estable</option>
+                <option value="package_solver" {% if defaults.assignment_engine == "package_solver" %}selected{% endif %}>Package solver experimental</option>
+                <option value="phased_route_solver" {% if defaults.assignment_engine == "phased_route_solver" %}selected{% endif %}>Fases i rutes experimental</option>
+              </select>
+              <small class="form-text text-muted">El motor per fases crea rutes incrementals i guarda recomanacions per revisar.</small>
             </div>
           </div>
 

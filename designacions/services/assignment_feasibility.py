@@ -277,6 +277,40 @@ def _cluster_mobility_warning_code(left_cluster_status: str | None, right_cluste
     return "missing_cluster_mobility_warning"
 
 
+def _route_point_helpers():
+    from designacions.optimization.route_points import (
+        AtomicRoutePoint,
+        required_gap,
+        same_location,
+        transition_requires_vehicle,
+    )
+
+    return AtomicRoutePoint, required_gap, same_location, transition_requires_vehicle
+
+
+def _descriptor_route_point(descriptor: MatchDescriptor):
+    AtomicRoutePoint, _, _, _ = _route_point_helpers()
+    match_dt = None
+    if descriptor.match_datetime is not None and not pd.isna(descriptor.match_datetime):
+        match_dt = descriptor.match_datetime.to_pydatetime()
+    venue_id = str(descriptor.address_id) if descriptor.address_id is not None else None
+    return AtomicRoutePoint(
+        match_id=descriptor.identifier,
+        start_dt=match_dt,
+        end_dt=match_dt,
+        venue=descriptor.venue,
+        venue_id=venue_id,
+        cluster_id=normalize_cluster_id(descriptor.cluster_id),
+        cluster_status=normalize_cluster_status(descriptor.cluster_status),
+    )
+
+
+def _blocking_uncertain_cluster_code(left_cluster_status: str | None, right_cluster_status: str | None) -> str:
+    if left_cluster_status == "outlier" or right_cluster_status == "outlier":
+        return "outlier_cluster_for_mobility_validation"
+    return "missing_cluster_for_mobility_validation"
+
+
 def _mobility_issue(
     *,
     reason_code: str,
@@ -367,72 +401,35 @@ def inspect_mobility_transitions(
 
     issues = []
     vehicle_enabled = has_vehicle(transport)
+    gap_config = {
+        "gap_same_pitch_min": gap_same_pitch_min,
+        "gap_diff_pitch_min": gap_diff_pitch_min,
+        "gap_diff_cluster_min": gap_diff_cluster_min,
+    }
+    _, atomic_required_gap, atomic_same_location, atomic_transition_requires_vehicle = _route_point_helpers()
     for left, right in zip(combined, combined[1:]):
         if left.date is None or right.date is None or left.date != right.date:
             continue
         if candidate_identifiers and left.identifier not in candidate_identifiers and right.identifier not in candidate_identifiers:
             continue
 
-        same_pitch_transition = same_pitch(left, right)
-        base_gap = gap_same_pitch_min if same_pitch_transition else gap_diff_pitch_min
+        left_point = _descriptor_route_point(left)
+        right_point = _descriptor_route_point(right)
+        same_pitch_transition = atomic_same_location(left_point, right_point)
+        requires_vehicle = atomic_transition_requires_vehicle(left_point, right_point)
+        transition_gap = atomic_required_gap(left_point, right_point, gap_config)
         minutes = abs(
             (right.match_datetime.to_pydatetime() - left.match_datetime.to_pydatetime()).total_seconds()
         ) / 60.0
 
-        left_cluster_id = normalize_cluster_id(left.cluster_id)
-        right_cluster_id = normalize_cluster_id(right.cluster_id)
-        left_cluster_status = normalize_cluster_status(left.cluster_status)
-        right_cluster_status = normalize_cluster_status(right.cluster_status)
+        left_cluster_id = left_point.cluster_id
+        right_cluster_id = right_point.cluster_id
+        left_cluster_status = left_point.cluster_status
+        right_cluster_status = right_point.cluster_status
+        has_uncertain_cluster = left_cluster_id is None or right_cluster_id is None
 
-        if left_cluster_id is None or right_cluster_id is None:
-            if left.address_id is not None and left.address_id == right.address_id:
-                if minutes < base_gap:
-                    issues.append(
-                        _mobility_issue(
-                            reason_code="same_cluster_gap_violation",
-                            left=left,
-                            right=right,
-                            left_cluster_id=left_cluster_id,
-                            right_cluster_id=right_cluster_id,
-                            required_gap_min=base_gap,
-                            actual_gap_min=minutes,
-                            same_pitch=same_pitch_transition,
-                        )
-                    )
-                elif not same_pitch_transition:
-                    issues.append(
-                        _mobility_issue(
-                            reason_code=_cluster_mobility_warning_code(left_cluster_status, right_cluster_status),
-                            left=left,
-                            right=right,
-                            left_cluster_id=left_cluster_id,
-                            right_cluster_id=right_cluster_id,
-                            required_gap_min=base_gap,
-                            actual_gap_min=minutes,
-                            same_pitch=same_pitch_transition,
-                        )
-                    )
-                continue
-
-            reason_code = "missing_cluster_for_mobility_validation"
-            if left_cluster_status == "outlier" or right_cluster_status == "outlier":
-                reason_code = "outlier_cluster_for_mobility_validation"
-            issues.append(
-                _mobility_issue(
-                    reason_code=reason_code,
-                    left=left,
-                    right=right,
-                    left_cluster_id=left_cluster_id,
-                    right_cluster_id=right_cluster_id,
-                    required_gap_min=None,
-                    actual_gap_min=minutes,
-                    same_pitch=same_pitch_transition,
-                )
-            )
-            continue
-
-        if left_cluster_id == right_cluster_id:
-            if minutes < base_gap:
+        if same_pitch_transition:
+            if minutes < transition_gap:
                 issues.append(
                     _mobility_issue(
                         reason_code="same_cluster_gap_violation",
@@ -440,12 +437,41 @@ def inspect_mobility_transitions(
                         right=right,
                         left_cluster_id=left_cluster_id,
                         right_cluster_id=right_cluster_id,
-                        required_gap_min=base_gap,
+                        required_gap_min=transition_gap,
                         actual_gap_min=minutes,
                         same_pitch=same_pitch_transition,
                     )
                 )
-            elif not same_pitch_transition:
+            elif has_uncertain_cluster:
+                issues.append(
+                    _mobility_issue(
+                        reason_code=_cluster_mobility_warning_code(left_cluster_status, right_cluster_status),
+                        left=left,
+                        right=right,
+                        left_cluster_id=left_cluster_id,
+                        right_cluster_id=right_cluster_id,
+                        required_gap_min=transition_gap,
+                        actual_gap_min=minutes,
+                        same_pitch=same_pitch_transition,
+                    )
+                )
+            continue
+
+        if not requires_vehicle:
+            if minutes < transition_gap:
+                issues.append(
+                    _mobility_issue(
+                        reason_code="same_cluster_gap_violation",
+                        left=left,
+                        right=right,
+                        left_cluster_id=left_cluster_id,
+                        right_cluster_id=right_cluster_id,
+                        required_gap_min=transition_gap,
+                        actual_gap_min=minutes,
+                        same_pitch=same_pitch_transition,
+                    )
+                )
+            else:
                 issues.append(
                     _mobility_issue(
                         reason_code="same_cluster_pitch_change_warning",
@@ -453,7 +479,7 @@ def inspect_mobility_transitions(
                         right=right,
                         left_cluster_id=left_cluster_id,
                         right_cluster_id=right_cluster_id,
-                        required_gap_min=base_gap,
+                        required_gap_min=transition_gap,
                         actual_gap_min=minutes,
                         same_pitch=same_pitch_transition,
                     )
@@ -461,43 +487,51 @@ def inspect_mobility_transitions(
             continue
 
         if not vehicle_enabled:
+            reason_code = "cross_cluster_without_vehicle"
+            if has_uncertain_cluster:
+                reason_code = _blocking_uncertain_cluster_code(left_cluster_status, right_cluster_status)
             issues.append(
                 _mobility_issue(
-                    reason_code="cross_cluster_without_vehicle",
+                    reason_code=reason_code,
                     left=left,
                     right=right,
                     left_cluster_id=left_cluster_id,
                     right_cluster_id=right_cluster_id,
-                    required_gap_min=max(base_gap, gap_diff_cluster_min),
+                    required_gap_min=transition_gap,
                     actual_gap_min=minutes,
                     same_pitch=same_pitch_transition,
                 )
             )
             continue
 
-        required_gap = max(base_gap, gap_diff_cluster_min)
-        if minutes < required_gap:
+        if minutes < transition_gap:
+            reason_code = "cross_cluster_gap_violation"
+            if has_uncertain_cluster:
+                reason_code = _blocking_uncertain_cluster_code(left_cluster_status, right_cluster_status)
             issues.append(
                 _mobility_issue(
-                    reason_code="cross_cluster_gap_violation",
+                    reason_code=reason_code,
                     left=left,
                     right=right,
                     left_cluster_id=left_cluster_id,
                     right_cluster_id=right_cluster_id,
-                    required_gap_min=required_gap,
+                    required_gap_min=transition_gap,
                     actual_gap_min=minutes,
                     same_pitch=same_pitch_transition,
                 )
             )
         else:
+            reason_code = "cross_cluster_with_vehicle_warning"
+            if has_uncertain_cluster:
+                reason_code = _cluster_mobility_warning_code(left_cluster_status, right_cluster_status)
             issues.append(
                 _mobility_issue(
-                    reason_code="cross_cluster_with_vehicle_warning",
+                    reason_code=reason_code,
                     left=left,
                     right=right,
                     left_cluster_id=left_cluster_id,
                     right_cluster_id=right_cluster_id,
-                    required_gap_min=required_gap,
+                    required_gap_min=transition_gap,
                     actual_gap_min=minutes,
                     same_pitch=same_pitch_transition,
                 )

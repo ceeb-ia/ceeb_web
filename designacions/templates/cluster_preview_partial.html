@@ -181,12 +181,13 @@
       <form method="post" action="{{ run_action_url }}" class="mb-3">
         {% csrf_token %}
         <input type="hidden" name="selected_eps_m" id="run-selected-eps-input" value="{{ result.selected_eps_m|default:'' }}">
-        <input type="hidden" name="assignment_engine" value="legacy">
-        <div class="form-check mb-2">
-          <input class="form-check-input" type="checkbox" id="preview-assignment-engine-package-solver" name="assignment_engine" value="package_solver" {% if payload.params.assignment_engine == "package_solver" %}checked{% endif %}>
-          <label class="form-check-label small" for="preview-assignment-engine-package-solver">
-            Usar motor nou package solver
-          </label>
+        <div class="mb-2">
+          <label class="form-label small mb-1" for="preview-assignment-engine">Motor d'assignacio</label>
+          <select id="preview-assignment-engine" name="assignment_engine" class="form-control form-control-sm">
+            <option value="legacy" {% if payload.params.assignment_engine == "legacy" %}selected{% endif %}>Legacy estable</option>
+            <option value="package_solver" {% if payload.params.assignment_engine == "package_solver" %}selected{% endif %}>Package solver experimental</option>
+            <option value="phased_route_solver" {% if payload.params.assignment_engine == "phased_route_solver" %}selected{% endif %}>Fases i rutes experimental</option>
+          </select>
         </div>
         <button type="submit" class="btn btn-sm btn-primary w-100">
           Executar run amb aquest radi

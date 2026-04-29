@@ -12,7 +12,7 @@ from django.views.decorators.http import require_http_methods, require_GET, requ
 from django.db.models import Count, Q
 from .services.colors import color_per_tutor
 from django.http import Http404
-from .models import DesignationRun, Assignment, Referee
+from .models import DesignationRun, Assignment, AssignmentTrace, Referee
 from .tasks import build_cluster_preview_task, process_designacions_run, rebuild_run_map_task
 from .clusteritzacio.contracts import PreviewAddressPoint, PreviewScenario
 from .clusteritzacio.maps import render_preview_map
@@ -32,6 +32,7 @@ from .services.assignment_explainer import (
     explain_current_assignment,
 )
 import pandas as pd
+from .services.assignment_feasibility import has_vehicle
 from .services.manual_assignment import (
     build_assignment_availability_by_assignment,
     build_availability_display_by_ref,
@@ -52,6 +53,41 @@ from .services.run_scope import load_scoped_run_data
 
 
 REDIS_URL = os.getenv("REDIS_URL") or os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
+
+ORIGIN_LABELS = {
+    "high": "Assignacio prioritaria",
+    "medium": "Assignacio de nivell mitja/alt",
+    "general": "Assignacio general",
+    "partial_rescue": "Recuperacio parcial",
+    "final_rescue": "Recuperacio final",
+    "new_route_rescue": "Nova sequencia recuperada",
+    "individual_rescue": "Recuperacio individual",
+    "package_solver": "Assignacio per paquet",
+    "initial": "Assignacio inicial",
+    "rescue_idle": "Recuperacio amb tutor lliure",
+    "rescue_reused": "Recuperacio afegida",
+    "manual_override": "Assignacio manual",
+    "manual_unassigned": "Desassignacio manual",
+}
+
+
+def _origin_key_from_trace(trace) -> str:
+    if trace is None:
+        return "missing_trace"
+    key = trace.rescue_kind or trace.phase_name or trace.stage or trace.engine_name
+    if str(key).startswith("phase:"):
+        key = str(key).split(":", 1)[1]
+    elif str(key).startswith("partial_rescue"):
+        key = "partial_rescue"
+    elif str(key).startswith("individual_rescue"):
+        key = "individual_rescue"
+    return str(key or "unknown")
+
+
+def _origin_label_from_key(key: str) -> str:
+    if key == "missing_trace":
+        return "Origen no disponible"
+    return ORIGIN_LABELS.get(str(key), "Assignacio automatica")
 
 MATCH_FILE_COLUMNS = {
     "codi",
@@ -76,6 +112,18 @@ AVAILABILITY_FILE_COLUMNS = {
 UPLOAD_KIND_MATCHES = "partits"
 UPLOAD_KIND_AVAILABILITY = "disponibilitats"
 UPLOAD_KIND_UNKNOWN = "desconegut"
+
+
+def _time_token(value) -> str:
+    if value is None:
+        return ""
+    if hasattr(value, "strftime"):
+        try:
+            return value.strftime("%H:%M")
+        except Exception:
+            pass
+    text = str(value).strip()
+    return text[:5] if len(text) >= 5 else text
 
 def _to_int(v, default):
     try:
@@ -119,7 +167,7 @@ def _to_fase(v, default="FS1"):
 
 def _to_assignment_engine(v, default="legacy"):
     value = (v or default or "legacy").strip().lower()
-    return value if value in {"legacy", "package_solver"} else default
+    return value if value in {"legacy", "package_solver", "phased_route_solver"} else default
 
 
 def _temp_dir():
@@ -732,6 +780,51 @@ def _assignment_json_payload(run, assignment, message, counts, map_queued, refer
     }
 
 
+def _mark_assignment_trace_manual(run, assignment, *, previous_referee_id=None):
+    trace = getattr(assignment, "trace", None)
+    previous_debug = dict(getattr(trace, "debug_payload", None) or {}) if trace else {}
+    previous_stage = getattr(trace, "stage", "") if trace else ""
+    previous_engine = getattr(trace, "engine_name", "") if trace else ""
+    match_id = str(assignment.match.engine_id or "")
+    route_match_ids = [match_id] if match_id else []
+    warning_code = "manual_override" if assignment.referee_id else "manual_unassigned"
+    warning_codes = list(getattr(trace, "warning_codes", None) or []) if trace else []
+    if warning_code not in warning_codes:
+        warning_codes.append(warning_code)
+    debug_payload = {
+        **previous_debug,
+        "manual_override": True,
+        "previous_stage": previous_stage,
+        "previous_engine_name": previous_engine,
+        "previous_referee_id": previous_referee_id,
+        "manual_warning": assignment.manual_override_warning,
+        "manual_warning_reason": assignment.manual_override_reason or "",
+    }
+    defaults = {
+        "run": run,
+        "match": assignment.match,
+        "referee": assignment.referee if assignment.referee_id else None,
+        "engine_name": previous_engine or "manual",
+        "stage": "manual_override" if assignment.referee_id else "manual_unassigned",
+        "phase_name": "",
+        "rescue_kind": "",
+        "rescue_iteration": None,
+        "route_id": getattr(trace, "route_id", "") if trace else f"manual:{assignment.id}",
+        "candidate_id": getattr(trace, "candidate_id", "") if trace else f"manual:{assignment.id}",
+        "tutor_id": str(assignment.referee_id or ""),
+        "route_match_ids": list(getattr(trace, "route_match_ids", None) or route_match_ids),
+        "route_match_codes": list(getattr(trace, "route_match_codes", None) or [assignment.match.code]),
+        "route_size": int(getattr(trace, "route_size", 1) or 1) if trace else 1,
+        "inserted_into_existing_route": bool(getattr(trace, "inserted_into_existing_route", False)) if trace else False,
+        "warning_codes": warning_codes,
+        "debug_payload": debug_payload,
+    }
+    AssignmentTrace.objects.update_or_create(
+        assignment=assignment,
+        defaults=defaults,
+    )
+
+
 def _parse_assignment_ids(raw_assignment_ids):
     if not isinstance(raw_assignment_ids, list):
         raise ValueError("assignment_ids ha de ser una llista.")
@@ -854,6 +947,7 @@ def _apply_assignment_update(run, assignment, referee_id_raw, note, locked):
         assignment.locked = locked
     assignment.note = note
     assignment.save()
+    _mark_assignment_trace_manual(run, assignment, previous_referee_id=previous_referee_id)
 
     map_queued = previous_referee_id != assignment.referee_id
     if map_queued:
@@ -1241,7 +1335,39 @@ def run_detail_view(request, run_id: int):
         "pitch_change_warning_count": 0,
         "pitch_change_warnings": [],
     }
-    return render(request, "run_detail.html", {"run": run, "mobility_summary": mobility_summary})
+    origin_summary = []
+    if run.status == "done":
+        rows = (
+            run.assignment_traces.values("stage", "phase_name", "rescue_kind", "engine_name")
+            .annotate(match_count=Count("id"), route_count=Count("route_id", distinct=True))
+            .order_by("stage", "phase_name")
+        )
+        for row in rows:
+            trace_probe = type(
+                "TraceProbe",
+                (),
+                {
+                    "stage": row.get("stage") or "",
+                    "phase_name": row.get("phase_name") or "",
+                    "rescue_kind": row.get("rescue_kind") or "",
+                    "engine_name": row.get("engine_name") or "",
+                },
+            )()
+            key = _origin_key_from_trace(trace_probe)
+            origin_summary.append(
+                {
+                    "key": key,
+                    "label": _origin_label_from_key(key),
+                    "stage": row.get("stage") or "",
+                    "match_count": row.get("match_count") or 0,
+                    "route_count": row.get("route_count") or 0,
+                }
+            )
+    return render(
+        request,
+        "run_detail.html",
+        {"run": run, "mobility_summary": mobility_summary, "origin_summary": origin_summary},
+    )
 
 def _serialize_terminal_run_status(run, job: dict | None = None):
     job = job or {}
@@ -1421,6 +1547,26 @@ def logs_stream_view(request, task_id: str):
     return resp
 
 
+def _availability_windows_for_referee(availability_lookup: dict, referee_id: int | None) -> list[str]:
+    if referee_id is None:
+        return []
+    windows = []
+    seen = set()
+    for (raw_referee_id, _availability_date), raw in availability_lookup.items():
+        if raw_referee_id != referee_id or not isinstance(raw, dict):
+            continue
+        start = _time_token(raw.get("Hora Inici"))
+        end = _time_token(raw.get("Hora Fi"))
+        if not start or not end:
+            continue
+        token = f"{start}-{end}"
+        if token in seen:
+            continue
+        windows.append(token)
+        seen.add(token)
+    return windows
+
+
 @require_GET
 def assignments_view(request, run_id: int):
     run = get_object_or_404(DesignationRun, id=run_id)
@@ -1429,9 +1575,17 @@ def assignments_view(request, run_id: int):
     # Assignacions del run
     qs = list(
         run.assignments
-        .select_related("match", "referee")
+        .select_related("match", "referee", "trace")
         .all()
     )
+    for assignment in qs:
+        trace = getattr(assignment, "trace", None)
+        key = _origin_key_from_trace(trace)
+        assignment.origin_key = key
+        assignment.origin_label = _origin_label_from_key(key)
+        assignment.origin_route_label = (
+            f"Sequencia de {trace.route_size}" if trace is not None and int(trace.route_size or 1) > 1 else "Partit individual"
+        )
 
     assigned_qs = sorted(
         [assignment for assignment in qs if assignment.referee_id],
@@ -1515,6 +1669,8 @@ def assignments_view(request, run_id: int):
         group["has_mobility_warning"] = group["mobility_warning_count"] > 0
         group["has_manual_override"] = any(item.manual_override_warning for item in group["items"])
         group["has_locked"] = group["locked"] > 0
+        group["has_vehicle"] = has_vehicle(group["referee"].transport if group.get("referee") else "")
+        group["availability_windows"] = _availability_windows_for_referee(availability_lookup, referee_id)
         group["categories"] = sorted(
             {
                 (item.match.category or "").strip()
@@ -1529,6 +1685,33 @@ def assignments_view(request, run_id: int):
                 if (item.match.venue or "").strip()
             }
         )
+        group["origins"] = sorted(
+            {
+                getattr(item, "origin_key", "missing_trace")
+                for item in group["items"]
+                if getattr(item, "origin_key", "")
+            }
+        )
+        group["assignment_time_tokens"] = sorted(
+            {
+                _time_token(item.match.hour_raw)
+                for item in group["items"]
+                if _time_token(item.match.hour_raw)
+            }
+        )
+        group["match_filter_text"] = " ".join(
+            " ".join(
+                [
+                    item.match.code or "",
+                    item.match.club_local or "",
+                    item.match.equip_local or "",
+                    item.match.equip_visitant or "",
+                    item.match.venue or "",
+                    item.match.category or "",
+                ]
+            )
+            for item in group["items"]
+        )
 
     filter_category_options = sorted(
         {
@@ -1536,6 +1719,13 @@ def assignments_view(request, run_id: int):
             for assignment in assigned_qs
             if (assignment.match.category or "").strip()
         }
+    )
+    filter_origin_options = sorted(
+        {
+            (getattr(assignment, "origin_key", "missing_trace"), getattr(assignment, "origin_label", "Origen no disponible"))
+            for assignment in assigned_qs
+        },
+        key=lambda item: item[1],
     )
 
     return render(request, "assignments.html", {
@@ -1554,6 +1744,7 @@ def assignments_view(request, run_id: int):
         "mobility_error_assignment_ids": mobility_error_assignment_ids,
         "filter_level_options": filter_level_options,
         "filter_category_options": filter_category_options,
+        "filter_origin_options": filter_origin_options,
     })
 
 @require_GET
