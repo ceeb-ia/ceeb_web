@@ -32,6 +32,10 @@ def build_phase_summary(
         "selected_by_level_fit": selected_by_level_fit(selected),
         "load_penalty_total": sum(_load_penalty(route) for route in selected),
         "blocking_reason_counts": dict(sorted(blocking_reason_counts.items())),
+        "peak_buckets_selected": _peak_buckets(selected),
+        "peak_anchor_candidate_count": sum(1 for candidate in candidates if _score_breakdown(candidate).get("peak_anchor")),
+        "peak_anchor_selected_match_count": len(_peak_anchor_selected_match_ids(selected)),
+        "peak_anchor_uncovered_match_count": len(_peak_anchor_uncovered_match_ids(candidates, selected)),
     }
 
 
@@ -171,6 +175,53 @@ def _load_penalty(route: Mapping[str, Any]) -> float:
         except (TypeError, ValueError):
             return 0.0
     return 0.0
+
+
+def _score_breakdown(route: Mapping[str, Any]) -> Mapping[str, Any]:
+    breakdown = route.get("score_breakdown") or {}
+    return breakdown if isinstance(breakdown, Mapping) else {}
+
+
+def _peak_buckets(routes: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    rows: dict[str, dict[str, Any]] = {}
+    for route in routes or []:
+        breakdown = _score_breakdown(route)
+        bucket = str(breakdown.get("peak_bucket") or "")
+        if not bucket:
+            continue
+        row = rows.setdefault(
+            bucket,
+            {
+                "bucket": bucket,
+                "selected_route_count": 0,
+                "selected_match_count": 0,
+                "peak_pressure_score": float(breakdown.get("peak_pressure_score") or 0.0),
+            },
+        )
+        row["selected_route_count"] += 1
+        row["selected_match_count"] += len(_match_ids(route))
+        row["peak_pressure_score"] = max(row["peak_pressure_score"], float(breakdown.get("peak_pressure_score") or 0.0))
+    return sorted(rows.values(), key=lambda item: (-item["peak_pressure_score"], item["bucket"]))
+
+
+def _peak_anchor_selected_match_ids(selected: Iterable[Mapping[str, Any]]) -> set[str]:
+    selected_ids = set(_route_match_ids(selected or []))
+    anchor_ids = {
+        match_id
+        for route in selected or []
+        for match_id in _normalize_ids(_score_breakdown(route).get("peak_anchor_match_ids"))
+    }
+    return selected_ids & anchor_ids
+
+
+def _peak_anchor_uncovered_match_ids(candidates: Iterable[Mapping[str, Any]], selected: Iterable[Mapping[str, Any]]) -> set[str]:
+    selected_ids = set(_route_match_ids(selected or []))
+    anchor_ids = {
+        match_id
+        for candidate in candidates or []
+        for match_id in _normalize_ids(_score_breakdown(candidate).get("peak_anchor_match_ids"))
+    }
+    return anchor_ids - selected_ids
 
 
 def _tutor_id(tutor: Any) -> str:

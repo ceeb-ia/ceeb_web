@@ -72,23 +72,28 @@ def run_phased_route_solver(
         )
 
         if phase.rescue_after_phase and pending_fragments:
+            rescue_phase_name = f"partial_rescue:{phase.name}"
             rescue_payload = run_partial_rescue(
                 _pending_phase_fragments(fragments, state, phase),
                 eligible_tutors,
                 state,
-                {**config, "allow_exceptional_routes": phase.allow_exceptional},
+                {
+                    **config,
+                    "allow_exceptional_routes": phase.allow_exceptional,
+                    "_rescue_phase_name": rescue_phase_name,
+                    "_rescue_max_matches_per_route": phase.max_route_size,
+                },
             )
             rescued_routes = list(rescue_payload.get("selected_routes") or [])
             for route in rescued_routes:
-                _apply_selected_route(state, route, stage=f"partial_rescue:{phase.name}")
+                _apply_selected_route(state, route, stage=rescue_phase_name)
                 selected_routes.append(route)
-            if rescued_routes:
-                phase_summaries.append(
-                    {
-                        "phase_name": f"partial_rescue:{phase.name}",
-                        **dict(rescue_payload.get("summary") or {}),
-                    }
-                )
+            phase_summaries.append(
+                {
+                    "phase_name": rescue_phase_name,
+                    **dict(rescue_payload.get("summary") or {}),
+                }
+            )
 
     final_rescue_payload = run_final_rescue(_pending_fragments(fragments, state), tutor_list, state, config)
     base_final_rescue_summary = dict(final_rescue_payload.get("summary") or {})

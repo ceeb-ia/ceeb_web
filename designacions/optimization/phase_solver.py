@@ -19,7 +19,7 @@ def solve_phase_routes(candidates: Iterable[RouteCandidate], config: dict[str, A
     config = dict(config or {})
     all_candidates = list(candidates or [])
     viable = [candidate for candidate in all_candidates if not candidate.blocking_reasons]
-    exact_limit = int(config.get("set_packing_exact_candidate_limit", config.get("exact_solver_candidate_limit", 28)))
+    exact_limit = int(config.get("set_packing_exact_candidate_limit", config.get("exact_solver_candidate_limit", 80)))
 
     if len(viable) <= exact_limit:
         selected = _exact_select(viable)

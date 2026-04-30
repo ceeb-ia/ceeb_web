@@ -65,11 +65,12 @@ from .optimization.package_scoring import build_assignment_candidates
 from .optimization.level_fragments import build_level_fragments
 from .optimization.phases import PhaseSpec
 from .optimization.phase_runner import run_phased_route_solver
+from .optimization.peak_pressure import build_peak_anchors
 from .optimization.pressure import build_pressure_summary
-from .optimization.rescue import run_individual_rescue
+from .optimization.rescue import run_individual_rescue, run_partial_rescue
 from .optimization.route_generation import generate_phase_route_candidates
 from .optimization.solver import solve_assignment_candidates
-from .optimization.state import create_initial_state
+from .optimization.state import apply_route_assignment, create_initial_state
 
 
 def _xlsx_upload(name: str, headers: list[str], rows: list[list[object]]) -> SimpleUploadedFile:
@@ -412,6 +413,81 @@ class DesignacionsOptimizationPackageSolverTests(SimpleTestCase):
         self.assertEqual(len(selected_match_ids), len(set(selected_match_ids)))
         self.assertEqual(set(selected_match_ids), {"M1", "M2"})
 
+    def test_medium_partial_rescue_summary_is_recorded_when_empty(self):
+        subgroup = BaseSubgroup(
+            id="S1",
+            match_ids=["M1"],
+            date=date(2026, 3, 1),
+            modality="VOLEIBOL",
+            start_dt=datetime(2026, 3, 1, 18, 0),
+            end_dt=datetime(2026, 3, 1, 18, 0),
+            venues=["Pista"],
+            cluster_ids=["1"],
+            cluster_statuses=["clustered"],
+            level_demand="PREINFANTIL",
+            rows=[{"ID": "M1", "Categoria": "PREINFANTIL", "__match_datetime": datetime(2026, 3, 1, 18, 0), "Pista joc": "Pista"}],
+        )
+
+        with patch("designacions.optimization.phase_runner.run_partial_rescue") as mocked_rescue:
+            mocked_rescue.return_value = {
+                "selected_routes": [],
+                "recovered_match_ids": [],
+                "summary": {
+                    "kind": "partial_rescue",
+                    "attempted_match_count": 1,
+                    "recovered_match_count": 0,
+                    "selected_route_count": 0,
+                },
+            }
+            result = run_phased_route_solver([subgroup], [], {})
+
+        phase_names = [summary["phase_name"] for summary in result.phase_summaries]
+        self.assertIn("partial_rescue:medium", phase_names)
+        mocked_rescue.assert_called_once()
+        self.assertEqual(mocked_rescue.call_args.args[3]["_rescue_phase_name"], "partial_rescue:medium")
+
+    def test_partial_rescue_uses_phase_route_size_and_preserves_phase_name(self):
+        fragments = [
+            BaseSubgroup(
+                id=f"P{i}",
+                match_ids=[f"M{i}"],
+                date=date(2026, 3, 1),
+                modality="VOLEIBOL",
+                start_dt=datetime(2026, 3, 1, hour, 0),
+                end_dt=datetime(2026, 3, 1, hour, 0),
+                venues=["Pista"],
+                cluster_ids=["1"],
+                cluster_statuses=["clustered"],
+                level_demand="ALEV\u00cd",
+                rows=[{"ID": f"M{i}", "Categoria": "ALEV\u00cd", "__match_datetime": datetime(2026, 3, 1, hour, 0), "Pista joc": "Pista"}],
+            )
+            for i, hour in [(1, 18), (2, 20)]
+        ]
+        tutor = TutorCandidate(
+            "D1",
+            "D1",
+            "VOLEIBOL",
+            "NIVELLD1",
+            "Bus",
+            False,
+            {"2026-03-01": [{"start": "17:00", "end": "22:00"}]},
+        )
+
+        result = run_partial_rescue(
+            fragments,
+            [tutor],
+            create_initial_state(["M1", "M2"]),
+            {
+                "route_max_new_matches_per_phase": 2,
+                "gap_same_pitch_min": 90,
+                "_rescue_phase_name": "partial_rescue:medium",
+            },
+        )
+
+        self.assertEqual(result["recovered_match_ids"], ["M1", "M2"])
+        self.assertEqual(result["selected_routes"][0]["phase_name"], "partial_rescue:medium")
+        self.assertEqual(result["selected_routes"][0]["new_match_ids"], ["M1", "M2"])
+
     def test_individual_rescue_recovers_pending_with_unused_d1(self):
         fragment = BaseSubgroup(
             id="P1",
@@ -479,6 +555,351 @@ class DesignacionsOptimizationPackageSolverTests(SimpleTestCase):
         self.assertEqual(result["summary"]["recovered_match_count"], 1)
         self.assertEqual(result["summary"]["stopped_reason"], "max_iterations_reached")
         self.assertEqual(len(result["summary"]["iteration_summaries"]), 1)
+
+    def test_partial_rescue_fallback_respects_existing_route_gaps(self):
+        pending = BaseSubgroup(
+            id="PENDING",
+            match_ids=["M1"],
+            date=date(2026, 3, 1),
+            modality="VOLEIBOL",
+            start_dt=datetime(2026, 3, 1, 18, 0),
+            end_dt=datetime(2026, 3, 1, 18, 0),
+            venues=["Pista A"],
+            cluster_ids=["6"],
+            cluster_statuses=["clustered"],
+            level_demand="ALEV\u00cd",
+            rows=[
+                {
+                    "ID": "M1",
+                    "Categoria": "ALEV\u00cd",
+                    "__match_datetime": datetime(2026, 3, 1, 18, 0),
+                    "Pista joc": "Pista A",
+                    "cluster": "6",
+                    "cluster_status": "clustered",
+                }
+            ],
+        )
+        existing = BaseSubgroup(
+            id="EXISTING",
+            match_ids=["M2"],
+            date=date(2026, 3, 1),
+            modality="VOLEIBOL",
+            start_dt=datetime(2026, 3, 1, 19, 0),
+            end_dt=datetime(2026, 3, 1, 19, 0),
+            venues=["Pista B"],
+            cluster_ids=["13"],
+            cluster_statuses=["clustered"],
+            level_demand="ALEV\u00cd",
+            rows=[
+                {
+                    "ID": "M2",
+                    "Categoria": "ALEV\u00cd",
+                    "__match_datetime": datetime(2026, 3, 1, 19, 0),
+                    "Pista joc": "Pista B",
+                    "cluster": "13",
+                    "cluster_status": "clustered",
+                }
+            ],
+        )
+        state = create_initial_state(["M1", "M2"])
+        apply_route_assignment(
+            state,
+            "T1",
+            "2026-03-01",
+            ["M2"],
+            segment_rows=[existing],
+            descriptors=[existing],
+            stage="high",
+        )
+        tutor = TutorCandidate(
+            "T1",
+            "T1",
+            "VOLEIBOL",
+            "NIVELLD1",
+            "Cotxe",
+            True,
+            {"2026-03-01": [{"start": "17:00", "end": "22:00"}]},
+        )
+
+        with patch("designacions.optimization.route_generation.generate_phase_route_candidates", side_effect=RuntimeError("boom")):
+            result = run_partial_rescue(
+                [pending],
+                [tutor],
+                state,
+                {"gap_diff_cluster_min": 150, "partial_rescue_top_n_tutors": 1},
+            )
+
+        self.assertEqual(result["recovered_match_ids"], [])
+        self.assertEqual(result["summary"]["selected_route_count"], 0)
+        self.assertGreater(result["summary"]["blocking_reason_counts"].get("gap_too_short", 0), 0)
+
+    def test_peak_detection_selects_over_capacity_bucket(self):
+        fragments = [
+            BaseSubgroup(
+                id=f"P{i}",
+                match_ids=[f"P{i}"],
+                date=date(2026, 3, 1),
+                modality="VOLEIBOL",
+                start_dt=datetime(2026, 3, 1, 18, 0),
+                end_dt=datetime(2026, 3, 1, 18, 0),
+                venues=["Pista"],
+                cluster_ids=["1"],
+                cluster_statuses=["clustered"],
+                level_demand="ALEV\u00cd",
+                rows=[],
+            )
+            for i in range(3)
+        ] + [
+            BaseSubgroup(
+                id="L1",
+                match_ids=["L1"],
+                date=date(2026, 3, 1),
+                modality="VOLEIBOL",
+                start_dt=datetime(2026, 3, 1, 20, 0),
+                end_dt=datetime(2026, 3, 1, 20, 0),
+                venues=["Pista"],
+                cluster_ids=["1"],
+                cluster_statuses=["clustered"],
+                level_demand="ALEV\u00cd",
+                rows=[],
+            )
+        ]
+        tutors = [
+            TutorCandidate("T1", "T1", "VOLEIBOL", "NIVELLD1", "Bus", False, {"2026-03-01": [{"start": "17:00", "end": "22:00"}]}),
+            TutorCandidate("T2", "T2", "VOLEIBOL", "NIVELLD1", "Bus", False, {"2026-03-01": [{"start": "19:30", "end": "22:00"}]}),
+        ]
+
+        anchors = build_peak_anchors(
+            fragments,
+            tutors,
+            create_initial_state(["P0", "P1", "P2", "L1"]),
+            {"peak_time_bucket_minutes": 60, "peak_anchor_top_n": 1},
+        )
+
+        self.assertEqual(len(anchors), 1)
+        self.assertIn("18:00", anchors[0].key)
+
+    def test_peak_detection_keeps_distinct_local_peak_at_half_hour(self):
+        fragments = [
+            BaseSubgroup(
+                id=f"E{i}",
+                match_ids=[f"E{i}"],
+                date=date(2026, 3, 1),
+                modality="VOLEIBOL",
+                start_dt=datetime(2026, 3, 1, 18, 0),
+                end_dt=datetime(2026, 3, 1, 18, 0),
+                venues=["Pista"],
+                cluster_ids=["1"],
+                cluster_statuses=["clustered"],
+                level_demand="ALEV\u00cd",
+                rows=[],
+            )
+            for i in range(4)
+        ] + [
+            BaseSubgroup(
+                id=f"L{i}",
+                match_ids=[f"L{i}"],
+                date=date(2026, 3, 1),
+                modality="VOLEIBOL",
+                start_dt=datetime(2026, 3, 1, 19, 30),
+                end_dt=datetime(2026, 3, 1, 19, 30),
+                venues=["Pista"],
+                cluster_ids=["1"],
+                cluster_statuses=["clustered"],
+                level_demand="ALEV\u00cd",
+                rows=[],
+            )
+            for i in range(3)
+        ]
+        tutors = [
+            TutorCandidate("T1", "T1", "VOLEIBOL", "NIVELLD1", "Bus", False, {"2026-03-01": [{"start": "17:00", "end": "22:00"}]}),
+            TutorCandidate("T2", "T2", "VOLEIBOL", "NIVELLD1", "Bus", False, {"2026-03-01": [{"start": "17:00", "end": "22:00"}]}),
+        ]
+
+        anchors = build_peak_anchors(
+            fragments,
+            tutors,
+            create_initial_state([f"E{i}" for i in range(4)] + [f"L{i}" for i in range(3)]),
+            {"peak_anchor_top_n": 2, "peak_local_window_minutes": 30},
+        )
+
+        self.assertTrue(any("18:00" in anchor.key for anchor in anchors))
+        self.assertTrue(any("19:30" in anchor.key for anchor in anchors))
+
+    def test_route_generation_keeps_lax_gap_with_cost(self):
+        fragments = [
+            BaseSubgroup(
+                id="A",
+                match_ids=["A"],
+                date=date(2026, 3, 1),
+                modality="VOLEIBOL",
+                start_dt=datetime(2026, 3, 1, 18, 0),
+                end_dt=datetime(2026, 3, 1, 18, 0),
+                venues=["Pista"],
+                cluster_ids=["1"],
+                cluster_statuses=["clustered"],
+                level_demand="ALEV\u00cd",
+                rows=[{"ID": "A", "Categoria": "ALEV\u00cd", "__match_datetime": datetime(2026, 3, 1, 18, 0), "Pista joc": "Pista"}],
+            ),
+            BaseSubgroup(
+                id="B",
+                match_ids=["B"],
+                date=date(2026, 3, 1),
+                modality="VOLEIBOL",
+                start_dt=datetime(2026, 3, 1, 20, 0),
+                end_dt=datetime(2026, 3, 1, 20, 0),
+                venues=["Pista"],
+                cluster_ids=["1"],
+                cluster_statuses=["clustered"],
+                level_demand="ALEV\u00cd",
+                rows=[{"ID": "B", "Categoria": "ALEV\u00cd", "__match_datetime": datetime(2026, 3, 1, 20, 0), "Pista joc": "Pista"}],
+            ),
+        ]
+        tutor = TutorCandidate("T1", "T1", "VOLEIBOL", "NIVELLD1", "Bus", False, {"2026-03-01": [{"start": "17:00", "end": "22:00"}]})
+        phase = PhaseSpec(name="general", allow_exceptional=True, max_route_size=2)
+
+        candidates = generate_phase_route_candidates(
+            fragments,
+            [tutor],
+            create_initial_state(["A", "B"]),
+            phase,
+            {
+                "peak_anchored_routes_enabled": False,
+                "gap_same_pitch_min": 60,
+                "gap_laxity_cost_per_min": 1.0,
+            },
+        )
+
+        route = next(candidate for candidate in candidates if set(candidate.new_match_ids) == {"A", "B"})
+        self.assertGreater(route.score_breakdown["gap_laxity_cost"], 0.0)
+        self.assertEqual(route.score_breakdown["gap_laxity_summary"][0]["gap_type"], "same_pitch")
+
+    def test_peak_anchor_generation_keeps_anchor_and_expands_around_it(self):
+        fragments = [
+            BaseSubgroup(
+                id="PREV",
+                match_ids=["PREV"],
+                date=date(2026, 3, 1),
+                modality="VOLEIBOL",
+                start_dt=datetime(2026, 3, 1, 17, 0),
+                end_dt=datetime(2026, 3, 1, 17, 0),
+                venues=["Pista"],
+                cluster_ids=["1"],
+                cluster_statuses=["clustered"],
+                level_demand="ALEV\u00cd",
+                rows=[{"ID": "PREV", "Categoria": "ALEV\u00cd", "__match_datetime": datetime(2026, 3, 1, 17, 0), "Pista joc": "Pista"}],
+            ),
+            BaseSubgroup(
+                id="ANCHOR",
+                match_ids=["ANCHOR"],
+                date=date(2026, 3, 1),
+                modality="VOLEIBOL",
+                start_dt=datetime(2026, 3, 1, 18, 0),
+                end_dt=datetime(2026, 3, 1, 18, 0),
+                venues=["Pista"],
+                cluster_ids=["1"],
+                cluster_statuses=["clustered"],
+                level_demand="ALEV\u00cd",
+                rows=[{"ID": "ANCHOR", "Categoria": "ALEV\u00cd", "__match_datetime": datetime(2026, 3, 1, 18, 0), "Pista joc": "Pista"}],
+            ),
+            BaseSubgroup(
+                id="ANCHOR2",
+                match_ids=["ANCHOR2"],
+                date=date(2026, 3, 1),
+                modality="VOLEIBOL",
+                start_dt=datetime(2026, 3, 1, 18, 0),
+                end_dt=datetime(2026, 3, 1, 18, 0),
+                venues=["Pista 2"],
+                cluster_ids=["1"],
+                cluster_statuses=["clustered"],
+                level_demand="ALEV\u00cd",
+                rows=[{"ID": "ANCHOR2", "Categoria": "ALEV\u00cd", "__match_datetime": datetime(2026, 3, 1, 18, 0), "Pista joc": "Pista 2"}],
+            ),
+            BaseSubgroup(
+                id="NEXT",
+                match_ids=["NEXT"],
+                date=date(2026, 3, 1),
+                modality="VOLEIBOL",
+                start_dt=datetime(2026, 3, 1, 19, 0),
+                end_dt=datetime(2026, 3, 1, 19, 0),
+                venues=["Pista"],
+                cluster_ids=["1"],
+                cluster_statuses=["clustered"],
+                level_demand="ALEV\u00cd",
+                rows=[{"ID": "NEXT", "Categoria": "ALEV\u00cd", "__match_datetime": datetime(2026, 3, 1, 19, 0), "Pista joc": "Pista"}],
+            ),
+        ]
+        tutor = TutorCandidate("D1", "D1", "VOLEIBOL", "NIVELLD1", "Bus", False, {"2026-03-01": [{"start": "16:00", "end": "21:00"}]})
+        phase = PhaseSpec(name="general", allow_exceptional=True, max_route_size=3)
+
+        candidates = generate_phase_route_candidates(
+            fragments,
+            [tutor],
+            create_initial_state(["PREV", "ANCHOR", "ANCHOR2", "NEXT"]),
+            phase,
+            {
+                "peak_anchored_routes_enabled": True,
+                "peak_bucket_minutes": 60,
+                "peak_top_n_per_phase": 1,
+                "gap_same_pitch_min": 60,
+                "gap_diff_pitch_min": 60,
+            },
+        )
+        candidate_sets = {frozenset(candidate.new_match_ids): candidate for candidate in candidates}
+
+        self.assertTrue(candidate_sets[frozenset({"ANCHOR"})].score_breakdown["peak_anchor"])
+        self.assertIn(frozenset({"PREV", "ANCHOR"}), candidate_sets)
+        self.assertIn(frozenset({"ANCHOR", "NEXT"}), candidate_sets)
+
+    def test_peak_anchor_generation_keeps_anchor_when_expansion_is_blocked(self):
+        fragments = [
+            BaseSubgroup(
+                id="PREV",
+                match_ids=["PREV"],
+                date=date(2026, 3, 1),
+                modality="VOLEIBOL",
+                start_dt=datetime(2026, 3, 1, 17, 30),
+                end_dt=datetime(2026, 3, 1, 17, 30),
+                venues=["Pista"],
+                cluster_ids=["1"],
+                cluster_statuses=["clustered"],
+                level_demand="ALEV\u00cd",
+                rows=[{"ID": "PREV", "Categoria": "ALEV\u00cd", "__match_datetime": datetime(2026, 3, 1, 17, 30), "Pista joc": "Pista"}],
+            ),
+            BaseSubgroup(
+                id="ANCHOR",
+                match_ids=["ANCHOR"],
+                date=date(2026, 3, 1),
+                modality="VOLEIBOL",
+                start_dt=datetime(2026, 3, 1, 18, 0),
+                end_dt=datetime(2026, 3, 1, 18, 0),
+                venues=["Pista"],
+                cluster_ids=["1"],
+                cluster_statuses=["clustered"],
+                level_demand="ALEV\u00cd",
+                rows=[{"ID": "ANCHOR", "Categoria": "ALEV\u00cd", "__match_datetime": datetime(2026, 3, 1, 18, 0), "Pista joc": "Pista"}],
+            ),
+        ]
+        tutor = TutorCandidate("D1", "D1", "VOLEIBOL", "NIVELLD1", "Bus", False, {"2026-03-01": [{"start": "16:00", "end": "21:00"}]})
+        phase = PhaseSpec(name="general", allow_exceptional=True, max_route_size=2)
+
+        candidates = generate_phase_route_candidates(
+            fragments,
+            [tutor],
+            create_initial_state(["PREV", "ANCHOR"]),
+            phase,
+            {
+                "peak_anchored_routes_enabled": True,
+                "peak_bucket_minutes": 60,
+                "peak_top_n_per_phase": 2,
+                "gap_same_pitch_min": 60,
+            },
+        )
+        candidate_sets = {frozenset(candidate.new_match_ids): candidate for candidate in candidates}
+
+        self.assertIn(frozenset({"ANCHOR"}), candidate_sets)
+        self.assertTrue(candidate_sets[frozenset({"ANCHOR"})].score_breakdown["peak_anchor"])
+        self.assertNotIn(frozenset({"PREV", "ANCHOR"}), candidate_sets)
 
     def test_uncertain_cluster_plus_other_venue_requires_vehicle(self):
         fragments = [

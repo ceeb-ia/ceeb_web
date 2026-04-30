@@ -48,6 +48,14 @@ def run_partial_rescue(
     """
 
     cfg = dict(config or {})
+    max_matches = int(
+        cfg.get(
+            "partial_rescue_max_matches_per_route",
+            cfg.get("_rescue_max_matches_per_route", cfg.get("route_max_new_matches_per_phase", 2)),
+        )
+        or 2
+    )
+    cfg["_rescue_max_matches_per_route"] = max_matches
     return _run_rescue(
         fragments=fragments,
         tutors=tutors,
@@ -55,7 +63,7 @@ def run_partial_rescue(
         config=cfg,
         rescue_kind="partial_rescue",
         top_n_tutors=int(cfg.get("partial_rescue_top_n_tutors", DEFAULT_PARTIAL_TOP_N_TUTORS) or 0),
-        max_matches_per_route=int(cfg.get("partial_rescue_max_matches_per_route", 1) or 1),
+        max_matches_per_route=max_matches,
         allow_exceptional=bool(cfg.get("allow_exceptional_routes", False)),
     ).to_dict()
 
@@ -315,17 +323,19 @@ def _run_rescue(
         config,
         rescue_kind=rescue_kind,
     )
+    fallback_blocking_reason_counts: dict[str, int] = {}
     if not candidates:
-        candidates = _generate_fallback_candidates(
+        candidates, fallback_blocking_reason_counts = _generate_validated_fallback_candidates(
             candidate_fragments,
             tutor_list,
             state,
+            config,
             rescue_kind=rescue_kind,
             top_n_tutors=top_n_tutors,
         )
 
     viable_candidates: list[dict[str, Any]] = []
-    blocking_reason_counts: dict[str, int] = {}
+    blocking_reason_counts: dict[str, int] = dict(fallback_blocking_reason_counts)
     for candidate in candidates:
         candidate_dict = _candidate_to_dict(candidate, rescue_kind=rescue_kind)
         blocking_reasons = _normalize_ids(candidate_dict.get("blocking_reasons"))
@@ -342,7 +352,7 @@ def _run_rescue(
             continue
         viable_candidates.append(candidate_dict)
 
-    selected_routes = _select_non_overlapping_routes(viable_candidates)
+    selected_routes = _select_non_overlapping_routes(viable_candidates, prefer_coverage=True)
     recovered_match_ids = sorted(
         {
             match_id
@@ -386,14 +396,14 @@ def _generate_external_candidates(
         return []
 
     phase = PhaseSpec(
-        name=rescue_kind,
+        name=str(config.get("_rescue_phase_name") or rescue_kind),
         tutor_levels=[],
         allowed_max_level_position=None,
         allowed_level_labels=[],
         allow_exceptional=bool(config.get("allow_exceptional_routes", False)),
         rescue_after_phase=False,
-        max_route_size=int(config.get("final_rescue_max_matches_per_route", 2) or 2),
-        top_n_routes_per_tutor=int(config.get("route_top_n_per_tutor", 20) or 20),
+        max_route_size=int(config.get("_rescue_max_matches_per_route", config.get("final_rescue_max_matches_per_route", 2)) or 2),
+        top_n_routes_per_tutor=int(config.get("route_top_n_per_tutor", 80) or 80),
     )
     call_patterns = (
         lambda: generate_phase_route_candidates(fragments, tutors, state, phase, dict(config)),
@@ -416,54 +426,45 @@ def _generate_external_candidates(
     return []
 
 
-def _generate_fallback_candidates(
+def _generate_validated_fallback_candidates(
     fragments: list[Any],
     tutors: Iterable[Any],
     state: Any,
+    config: Mapping[str, Any],
     *,
     rescue_kind: str,
     top_n_tutors: int,
-) -> list[dict[str, Any]]:
-    tutor_list = list(tutors or [])
-    candidates: list[dict[str, Any]] = []
-    for fragment in fragments:
-        fragment_match_ids = _fragment_match_ids(fragment)
-        ranked_tutors = sorted(
-            tutor_list,
-            key=lambda tutor: (
-                _assigned_count_for_tutor(state, _tutor_id(tutor)),
-                _get(tutor, "level", "nivell", default=""),
-                _tutor_id(tutor),
-            ),
-        )
-        if top_n_tutors > 0:
-            ranked_tutors = ranked_tutors[:top_n_tutors]
-        for tutor in ranked_tutors:
-            tutor_id = _tutor_id(tutor)
-            load = _assigned_count_for_tutor(state, tutor_id)
-            cost = float(load * 60 - (50 if load == 0 else 0))
-            candidates.append(
-                {
-                    "id": f"{rescue_kind}:{tutor_id}:{_fragment_id(fragment)}",
-                    "phase_name": rescue_kind,
-                    "tutor_id": tutor_id,
-                    "new_match_ids": list(fragment_match_ids),
-                    "match_ids": list(fragment_match_ids),
-                    "full_route_match_ids": list(fragment_match_ids),
-                    "date": _get(fragment, "date", "data", default=None),
-                    "level_demand": _get(fragment, "level_demand", "demanda_nivell", default=None),
-                    "level_fit": "unknown",
-                    "warning_codes": ["fallback_rescue_candidate"],
-                    "blocking_reasons": [],
-                    "cost": cost,
-                    "score_breakdown": {
-                        "source": "fallback_rescue",
-                        "assigned_match_count_for_tutor": load,
-                        "coverage_value": len(fragment_match_ids),
-                    },
-                }
-            )
-    return candidates
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    max_matches = int(config.get("_rescue_max_matches_per_route", 1) or 1)
+    drafts = _build_rescue_route_drafts(
+        fragments,
+        rescue_kind=rescue_kind,
+        phase_name=str(config.get("_rescue_phase_name") or rescue_kind),
+        max_matches_per_route=max_matches,
+        config=config,
+    )
+    candidates, blocking_reason_counts = _generate_direct_candidates(
+        drafts,
+        tutors,
+        state,
+        config,
+        rescue_kind=rescue_kind,
+        include_existing_route_conflicts=True,
+    )
+    retained = _prune_direct_candidates(
+        candidates,
+        top_n_per_tutor=0,
+        top_n_per_match=top_n_tutors,
+    )
+    for candidate in retained:
+        score_breakdown = candidate.setdefault("score_breakdown", {})
+        if isinstance(score_breakdown, dict):
+            score_breakdown["source"] = "validated_fallback_rescue"
+        warnings = _normalize_ids(candidate.get("warning_codes"))
+        if "validated_fallback_rescue_candidate" not in warnings:
+            warnings.append("validated_fallback_rescue_candidate")
+        candidate["warning_codes"] = warnings
+    return retained, blocking_reason_counts
 
 
 def _pending_unassigned_fragments(fragments: Iterable[Any], state: Any) -> list[Any]:
@@ -537,7 +538,38 @@ def _build_new_route_drafts(fragments: list[Any], config: Mapping[str, Any]) -> 
     return drafts
 
 
-def _route_draft_from_fragments(fragments: Iterable[Any], *, rescue_kind: str) -> dict[str, Any]:
+def _build_rescue_route_drafts(
+    fragments: list[Any],
+    *,
+    rescue_kind: str,
+    phase_name: str,
+    max_matches_per_route: int,
+    config: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    max_size = max(1, int(max_matches_per_route or 1))
+    allowed_sizes = range(1, min(max_size, len(fragments)) + 1)
+    drafts: list[dict[str, Any]] = []
+    for size in allowed_sizes:
+        for group in combinations(fragments, size):
+            draft = _route_draft_from_fragments(group, rescue_kind=rescue_kind, phase_name=phase_name)
+            if not draft:
+                continue
+            if len(_normalize_ids(draft.get("match_ids"))) > max_size:
+                continue
+            if size >= 2 and not _draft_group_is_compatible(draft, config):
+                continue
+            if size >= 3 and not _draft_allows_three_fragments(draft, config):
+                continue
+            drafts.append(draft)
+    return drafts
+
+
+def _route_draft_from_fragments(
+    fragments: Iterable[Any],
+    *,
+    rescue_kind: str,
+    phase_name: str | None = None,
+) -> dict[str, Any]:
     fragment_list = list(fragments or [])
     if not fragment_list:
         return {}
@@ -577,7 +609,7 @@ def _route_draft_from_fragments(fragments: Iterable[Any], *, rescue_kind: str) -
         return {}
     return {
         "id": "+".join(fragment_ids) or "-".join(match_ids),
-        "phase_name": rescue_kind,
+        "phase_name": str(phase_name or rescue_kind),
         "fragments": fragment_list,
         "match_ids": match_ids,
         "date": dates[0] if dates else "",
@@ -733,9 +765,10 @@ def _score_direct_candidate(
     )
     coverage_reward = weighted * float(config.get("coverage_reward", 1000.0))
     cost = max(0.0, level_cost + exceptional_penalty + mobility_cost + load_penalty - underused_bonus - coverage_reward)
+    phase_name = str(config.get("_rescue_phase_name") or draft.get("phase_name") or rescue_kind)
     candidate = {
         "id": f"{rescue_kind}:{tutor_id}:{draft.get('id') or '-'.join(match_ids)}",
-        "phase_name": rescue_kind,
+        "phase_name": phase_name,
         "tutor_id": tutor_id,
         "new_match_ids": list(match_ids),
         "match_ids": list(match_ids),

@@ -295,8 +295,18 @@ phase_high_levels = SENIOR,JUNIOR,JUVENIL
 phase_medium_max_level = PREINFANTIL
 
 route_max_new_matches_per_phase = 2
-route_top_n_per_tutor = 20
-route_top_n_per_match = 8
+route_top_n_per_tutor = 80
+route_top_n_per_match = 30
+
+peak_anchored_routes_enabled = true
+peak_bucket_minutes = 15
+peak_top_n_per_phase = 8
+peak_anchor_max_matches_per_bucket = 20
+peak_anchor_min_pressure_ratio = 0.85
+peak_anchor_expand_backward = true
+peak_anchor_expand_forward = true
+peak_anchor_route_bonus = 0.35
+peak_anchor_non_peak_capacity_penalty = 80
 
 load_penalty_per_assigned_match = 60
 load_penalty_per_existing_route = 30
@@ -304,11 +314,12 @@ underused_tutor_bonus = 50
 high_level_easy_route_penalty = 150
 
 partial_rescue_top_n_tutors = 5
+partial_rescue_max_matches_per_route = 2  # si s'omet, hereta route_max_new_matches_per_phase
 final_rescue_top_n_tutors = 8
 allow_swap_recommendations = true
 auto_apply_swaps = false
 
-set_packing_exact_candidate_limit = 28
+set_packing_exact_candidate_limit = 80
 ```
 
 Jerarquia de costos:
@@ -427,6 +438,275 @@ Pruning recomanat:
 - conservar top N per partit;
 - conservar sempre algun candidat per partit si existeix;
 - limitar rutes cross-cluster segons pressio de vehicle.
+
+### Millora: Rutes Ancorades A Pics De Demanda
+
+Data: 2026-04-30
+
+Motivacio:
+
+- en runs de voleibol com el 179 s'observa que els pics reals de demanda son a franges com 18:00 i 19:30;
+- la generacio actual de rutes no te una hora d'origen fixa, pero tendeix a crear candidats per combinacio simple de fragments pendents;
+- el solver pot consumir tutors flexibles en franges anteriors i deixar poca capacitat real als pics;
+- la metrica de demanda per hora mostra que en aquests pics pot haver-hi tutors dins disponibilitat, pero pocs tutors realment lliures despres d'aplicar gaps i ruta acumulada;
+- cal fer que els pics siguin punts centrals de decisio, no consequencia indirecta d'una ruta formada per proximitat.
+
+Objectiu:
+
+- generar una capa de rutes candidates centrades en els partits de les franges mes tensionades de cada fase;
+- maximitzar cobertura en hores critiques sense trencar nivell, disponibilitat, vehicle ni mobilitat;
+- evitar que una ruta facil abans d'un pic consumeixi un tutor que era necessari per cobrir el pic;
+- mantenir el mateix solver per fase i el mateix `DesignationState`.
+
+Principi revisat:
+
+- les fases no son un mecanisme de ruta, sino de prioritat esportiva: decideixen quins tutors i quins partits entren en joc primer;
+- els anchors no han de dependre de buckets horaris rigids ni competir artificialment contra altres buckets;
+- si hi ha una concentracio real entre 18:00 i 19:00, aquesta zona pot generar molts anchors encara que els partits estiguin separats per 15 o 30 minuts;
+- el bucket pot existir com a diagnostic agregat, pero la decisio operativa ha de baixar a partit/fragment concret;
+- una franja com 19:30 no s'ha de diluir dins un bucket de 60 minuts si la demanda real indica un segon coll d'ampolla.
+
+Definicio de pressio local:
+
+```text
+punt = partit/fragment pendent concret
+finestra_pressio = partits/fragments pendents propers temporalment al punt
+  per exemple t-30..t+30, t-45..t+45 o una finestra configurable
+
+demanda_local = partits/fragments pendents dins la finestra_pressio
+capacitat_horaria = tutors elegibles de la fase amb disponibilitat dins la finestra
+capacitat_real_gap = tutors elegibles sense ruta acumulada incompatible amb el punt
+viables_unics = tutors que poden cobrir almenys un pendent de la finestra despres de nivell, vehicle i mobilitat simple
+zero_viable = partits pendents de la finestra amb 0 tutors viables
+one_viable = partits pendents de la finestra amb 1 tutor viable
+
+pressure_score =
+  demanda_local / max(capacitat_real_gap, 1)
++ zero_viable * 2.0
++ one_viable * 0.75
++ max(0, demanda_local - viables_unics) * 0.5
+```
+
+Notes:
+
+- `capacitat_real_gap` ha d'usar el gap que toca segons transicio real o probable: `gap_same_pitch_min`, `gap_diff_pitch_min` o `gap_diff_cluster_min`;
+- quan encara no es pot saber la transicio exacta, cal ser conservador i no assumir sempre `gap_same_pitch_min`;
+- `viables_unics` pot ser car de calcular si es fa complet; en primera versio es pot aproximar amb disponibilitat, nivell i vehicle, i deixar la mobilitat completa per scoring;
+- la pressio es calcula per fase, no globalment, perque cada fase te tutors i partits elegibles diferents.
+- els buckets agregats continuen sent utils per UI i diagnostics, pero no han de limitar quants anchors poden sortir d'una zona d'alta concentracio.
+
+Seleccio d'anchors:
+
+```text
+1. Calcular pressio local sobre cada fragment/partit pendent elegible de la fase.
+2. Ordenar punts per pressure_score, demanda local pendent i menor capacitat real.
+3. Seleccionar anchors concrets, no nomes buckets.
+4. Permetre que una mateixa zona temporal concentrada aporti molts anchors si realment es el coll d'ampolla.
+5. Prioritzar anchors:
+   - amb menys tutors viables;
+   - amb nivell esportiu mes exigent;
+   - amb classification_importance mes alta;
+   - amb menys alternatives de vehicle si cal vehicle.
+6. Usar limits globals i per zona nomes com a proteccio combinatoria, no com a repartiment artificial entre hores.
+```
+
+Generacio bidireccional:
+
+Per cada anchor:
+
+```text
+anchor
+anterior compatible + anchor
+anchor + posterior compatible
+anterior compatible + anchor + posterior compatible
+dos anteriors/posteriors nomes si route_max_new_matches_per_phase ho permet
+```
+
+Regles:
+
+- la ruta sempre ha de contenir l'anchor;
+- els fragments candidats anteriors/posteriors venen del mateix dia i modalitat;
+- ordenar temporalment la ruta final abans de validar;
+- validar gaps atomics entre tots els punts de la ruta;
+- generar opcions amb els tres tipus de transicio:
+  - mateixa pista: `gap_same_pitch_min`;
+  - diferent pista dins mateix cluster fiable: `gap_diff_pitch_min`;
+  - diferent cluster, outlier o cluster no fiable: `gap_diff_cluster_min`;
+- no quedar-se nomes amb el primer vei que encaixa: explorar diferents profunditats i diferents gaps valids;
+- conservar tambe rutes amb gaps mes laxos que el minim si son estrategicament utils, pero penalitzar l'espera o la laxitud al scoring;
+- validar disponibilitat completa contra la ruta expandida;
+- validar nivell amb `hardest_match_level(...)`;
+- si l'anchor es de pic, no permetre que una expansio de baixa prioritat faci caure el candidat per nivell o vehicle quan l'anchor sol era viable;
+- conservar sempre el candidat `anchor` individual si es viable.
+
+Scoring de gaps:
+
+```text
+gap_real < gap_minim:
+  prohibit
+
+gap_real prop del gap_minim:
+  molt eficient
+
+gap_real moderadament superior:
+  valid amb cost baix/moderat
+
+gap_real molt superior:
+  valid nomes si ajuda cobertura/pressio, amb penalitzacio d'espera
+```
+
+La penalitzacio ha de dependre del tipus de transicio. Una espera llarga en mateixa pista pot ser menys greu que una espera llarga consumint vehicle en ruta cross-cluster.
+
+Exemple conceptual:
+
+```text
+Pic 18:00 amb 38 partits i poca capacitat real.
+
+Partit anchor A a les 18:00.
+
+Candidats:
+  A
+  partit 17:00 compatible + A
+  A + partit 19:00 compatible
+  partit 17:00 compatible + A + partit 19:00 compatible
+
+No es genera nomes:
+  17:00 -> 18:00 -> 19:00
+
+La decisio neix a A, perque A esta dins el pic.
+```
+
+Integracio amb la generacio actual:
+
+La funcio `generate_phase_route_candidates(...)` pot mantenir dues capes:
+
+```text
+1. Capa peak-aware:
+   - detectar anchors de la fase;
+   - generar rutes centrades en anchors;
+   - puntuar-les amb bonus de pressio.
+
+2. Capa fallback normal:
+   - generar singles i combinacions simples com ara;
+   - garantir que franges no pic no desapareixen.
+```
+
+Desduplicacio:
+
+- dues rutes amb els mateixos `match_ids`, tutor, data i estat acumulat han de col-lapsar en un sol candidat;
+- si existeix una versio peak-aware i una versio normal de la mateixa ruta, conservar la peak-aware amb `score_breakdown["peak_anchor"] = true`;
+- el solver continua evitant que un partit surti dues vegades.
+
+Scoring recomanat:
+
+Afegir al `score_breakdown`:
+
+```text
+peak_bucket
+peak_pressure_score
+peak_anchor_match_ids
+peak_anchor_count
+peak_anchor_bonus
+non_peak_capacity_penalty
+```
+
+Formula inicial:
+
+```text
+weighted_coverage_value += peak_anchor_bonus
+
+peak_anchor_bonus =
+  peak_anchor_route_bonus
+  * suma(pressure_score dels anchors coberts)
+
+non_peak_capacity_penalty =
+  peak_anchor_non_peak_capacity_penalty
+  si el candidat consumeix un tutor en franja anterior/posterior
+  i no cobreix cap anchor de pic
+  i aquell tutor era viable per algun anchor pendent
+```
+
+Regles de seguretat:
+
+- el bonus de pic no pot convertir `level_forbidden` en viable;
+- el bonus de pic no pot compensar disponibilitat impossible;
+- el bonus de pic no pot compensar cross-cluster sense vehicle;
+- el bonus ha de servir per ordenar candidats validos, no per relaxar bloquejos.
+
+Interaccio amb fases:
+
+- fase prioritaria: anchors nomes entre partits d'alt nivell elegibles de la fase;
+- repesca prioritaria: pot usar els mateixos buckets pendents de la fase prioritaria;
+- fase intermedia: recalcula pressio sobre el pendent real despres de la fase prioritaria i la seva repesca;
+- fase general: recalcula pressio global dels pendents restants;
+- repesques finals: poden reutilitzar el mateix `peak_pressure_summary`, pero no han de dependre exclusivament d'anchors.
+
+Interaccio amb repesques:
+
+- `new_route_rescue` hauria de prioritzar pendents dels buckets de pic que han quedat sense cobrir;
+- `individual_rescue` hauria d'ordenar pendents per `peak_pressure_score`, `viable_count` ascendent i nivell;
+- les recomanacions de swap haurien de destacar si recuperen un partit en bucket de pic.
+
+Diagnostics obligatoris:
+
+Afegir a `phase_summaries` o `result_summary`:
+
+```text
+peak_pressure_summary
+peak_buckets_selected
+peak_anchor_count
+peak_anchor_candidate_count
+peak_anchor_viable_candidate_count
+peak_anchor_selected_route_count
+peak_anchor_selected_match_count
+peak_anchor_uncovered_match_count
+coverage_by_peak_bucket
+capacity_consumed_before_peak_count
+```
+
+Exemple de payload:
+
+```json
+{
+  "phase_name": "general",
+  "peak_buckets_selected": [
+    {
+      "bucket": "2026-04-24|voleibol|18:00",
+      "demand": 38,
+      "capacity_real_gap": 6,
+      "viable_unique_tutors": 5,
+      "pressure_score": 8.4,
+      "anchor_match_count": 20,
+      "selected_match_count": 12,
+      "uncovered_match_count": 8
+    }
+  ]
+}
+```
+
+UI/UX esperada:
+
+- a l'analitica del run, marcar quines franges han estat tractades com a pics;
+- a la progressio per fase, afegir columnes o tooltip:
+  - anchors generats;
+  - anchors coberts;
+  - cobertura en pics;
+- a l'explicacio d'una assignacio, si ve d'una ruta peak-aware:
+  - "Assignacio prioritzada per pic de demanda a les 18:00";
+  - evitar exposar `peak_anchor` com a label cru.
+
+Tests necessaris:
+
+1. Detecta com a pic una franja amb mes demanda que capacitat real.
+2. No detecta com a pic una franja amb demanda baixa i capacitat suficient.
+3. Genera candidat individual per cada anchor viable.
+4. Genera ruta `anterior + anchor` si el gap i disponibilitat encaixen.
+5. Genera ruta `anchor + posterior` si el gap i disponibilitat encaixen.
+6. No genera ruta expandida si l'expansio fa caure el nivell de l'anchor a `forbidden`.
+7. Conserva l'anchor individual encara que les expansions siguin inviables.
+8. El solver prefereix cobrir un anchor de pic davant una ruta no pic equivalent si la cobertura global es igual.
+9. El bonus de pic no permet seleccionar candidats amb bloquejos durs.
+10. Run sintetic tipus 179: amb pics 18:00 i 19:30, la cobertura de pics no baixa respecte el generador normal i idealment puja.
 
 ## Solver Per Fase
 
@@ -922,6 +1202,10 @@ pending_match_count_after
 selected_by_level_fit
 load_penalty_total
 blocking_reason_counts
+peak_buckets_selected
+peak_anchor_candidate_count
+peak_anchor_selected_match_count
+peak_anchor_uncovered_match_count
 ```
 
 `load_distribution_summary`:
@@ -1117,12 +1401,17 @@ Tests:
 Fitxers:
 
 - `designacions/optimization/route_generation.py`
+- possible nou `designacions/optimization/peak_pressure.py`
 - `designacions/tests.py`
 
 Objectiu:
 
 - generar candidats per tutor contra `DesignationState`;
 - suportar ruta nova i insercio en ruta existent;
+- calcular pressio per franja dins cada fase;
+- detectar anchors en pics de demanda;
+- generar rutes bidireccionals centrades en anchors;
+- combinar capa peak-aware amb fallback normal;
 - validar gaps, vehicle, disponibilitat i nivell;
 - pruning top N.
 
@@ -1132,6 +1421,11 @@ Tests:
 - genera insercio si encaixa entre partits existents;
 - bloqueja cross-cluster sense vehicle;
 - permet cross-cluster amb vehicle i warning si gap suficient.
+- detecta pics amb demanda alta i baixa capacitat real;
+- genera `anchor`, `anterior + anchor` i `anchor + posterior`;
+- conserva l'anchor individual si les expansions son inviables;
+- no deixa que el bonus de pic superi bloquejos durs;
+- augmenta o mante cobertura en pics en un cas sintetic tipus run 179.
 
 ### Subagent 5: Solver Per Fase
 
@@ -1339,9 +1633,11 @@ Tests d'integracio:
 Comparatives reals:
 
 - repetir runs historics 96/97/132/133/134 si estan disponibles;
+- repetir runs amb pics detectats com 179;
 - comparar `legacy`, `package_solver`, `phased_route_solver`;
 - revisar:
   - cobertura total;
+  - cobertura en buckets de pic;
   - cobertura de nivells alts;
   - `level_exceptional_selected_count`;
   - pendents per disponibilitat;
@@ -1370,11 +1666,15 @@ Funcional:
 - tutors ja assignats poden rebre mes partits nomes si la ruta acumulada es viable;
 - repesques no modifiquen assignacions congelades;
 - swaps nomes es guarden com a recomanacio.
+- si `peak_anchored_routes_enabled = true`, els buckets de pic han de tenir diagnostics auditables;
+- el bonus de pic no pot fer seleccionable cap candidat amb bloqueig dur;
+- la cobertura en pics no hauria de baixar respecte el generador normal en casos equivalents, excepte si evita un error dur.
 
 Qualitat:
 
 - cobertura igual o millor que `package_solver` en casos tensos, o explicacio clara si baixa per criteri esportiu;
 - menys casos de tutors A sobrecarregats quan hi ha alternatives viables;
+- millor cobertura o millor explicacio de no cobertura en franges de pic;
 - diagnostics suficients per entendre per que queda pendent un partit;
 - UI mostra fase/origen i recomanacions sense ocultar warnings.
 
@@ -1437,14 +1737,16 @@ Per reduir risc, la primera versio hauria de limitar-se a:
 3. Rutes de maxim 2 fragments nous.
 4. Insercio simple en ruta existent.
 5. Penalitzacio suau de carrega.
-6. Repesca parcial alta i final.
-7. Recomanacions de swap nomes calculades i mostrades.
-8. Sense aplicar swaps automaticament.
-9. Sense dependencia externa d'ILP.
+6. Rutes ancorades a pics activables amb flag, amb fallback normal.
+7. Repesca parcial alta, mitjana i final.
+8. Recomanacions de swap nomes calculades i mostrades.
+9. Sense aplicar swaps automaticament.
+10. Sense dependencia externa d'ILP.
 
 Un cop validat, es pot evolucionar cap a:
 
 - rutes de mes de 2 fragments;
+- pressio de pic amb mobilitat completa per cada partit pendent;
 - ILP/CP-SAT;
 - aplicacio assistida de recomanacions;
 - perfils de relaxacio mes sofisticats;

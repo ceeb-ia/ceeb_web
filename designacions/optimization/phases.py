@@ -17,7 +17,7 @@ class PhaseSpec:
     allow_exceptional: bool = False
     rescue_after_phase: bool = False
     max_route_size: int = 2
-    top_n_routes_per_tutor: int = 20
+    top_n_routes_per_tutor: int = 80
 
 
 def default_phase_specs(config: dict[str, Any] | None = None) -> list[PhaseSpec]:
@@ -29,7 +29,7 @@ def default_phase_specs(config: dict[str, Any] | None = None) -> list[PhaseSpec]
         medium_position = match_level_position("PREINFANTIL")
 
     max_route_size = int(config.get("route_max_new_matches_per_phase", 2))
-    top_n = int(config.get("route_top_n_per_tutor", 20))
+    top_n = int(config.get("route_top_n_per_tutor", 80))
 
     return [
         PhaseSpec(

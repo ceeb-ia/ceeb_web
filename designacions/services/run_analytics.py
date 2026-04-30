@@ -50,6 +50,15 @@ def build_run_analytics(run: DesignationRun) -> dict[str, Any]:
     origin_rows = _origin_rows(run, assigned, total_matches)
     vehicle_rows = _vehicle_rows(availability_rows, used_referee_ids)
     unassigned_analysis = _unassigned_analysis(run, unassigned)
+    charts = _chart_payloads(
+        run,
+        assignments,
+        availability_rows,
+        windows,
+        demand_by_hour,
+        origin_rows,
+        unassigned_analysis,
+    )
 
     return {
         "kpis": [
@@ -77,6 +86,7 @@ def build_run_analytics(run: DesignationRun) -> dict[str, Any]:
         "origin_rows": origin_rows,
         "vehicle_rows": vehicle_rows,
         "unassigned_analysis": unassigned_analysis,
+        "charts": charts,
     }
 
 
@@ -258,6 +268,175 @@ def _vehicle_rows(availability_rows: Iterable[Any], used_referee_ids: set[int]) 
     return list(rows.values())
 
 
+def _chart_payloads(
+    run: DesignationRun,
+    assignments: list[Assignment],
+    availability_rows: list[Any],
+    windows: list[_Window],
+    demand_by_hour: list[dict[str, Any]],
+    origin_rows: list[dict[str, Any]],
+    unassigned_analysis: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "hour_pressure": _hour_pressure_chart(demand_by_hour),
+        "cluster_hour_heatmap": _cluster_hour_heatmap(run, assignments, demand_by_hour),
+        "tutor_level_hour_heatmap": _tutor_level_hour_heatmap(availability_rows, windows, assignments, demand_by_hour),
+        "phase_progress": _phase_progress_chart(origin_rows),
+        "route_size_distribution": _route_size_distribution_chart(run),
+        "blocking_by_hour": _blocking_by_hour_chart(unassigned_analysis),
+        "pending_viability": _pending_viability_chart(unassigned_analysis),
+    }
+
+
+def _hour_pressure_chart(demand_by_hour: list[dict[str, Any]]) -> dict[str, Any]:
+    labels = [row["label"] for row in demand_by_hour]
+    demand = [int(row.get("total") or 0) for row in demand_by_hour]
+    free = [int(row.get("free_effective_tutors") or 0) for row in demand_by_hour]
+    pressure = [round((demand[index] / free[index]) if free[index] else float(demand[index]), 2) for index in range(len(labels))]
+    return {
+        "labels": labels,
+        "datasets": {
+            "demand": demand,
+            "assigned": [int(row.get("assigned") or 0) for row in demand_by_hour],
+            "unassigned": [int(row.get("unassigned") or 0) for row in demand_by_hour],
+            "schedule_available": [int(row.get("schedule_available_tutors") or 0) for row in demand_by_hour],
+            "free_effective": free,
+            "pressure_ratio": pressure,
+        },
+    }
+
+
+def _cluster_hour_heatmap(
+    run: DesignationRun,
+    assignments: list[Assignment],
+    demand_by_hour: list[dict[str, Any]],
+    *,
+    limit: int = 14,
+) -> dict[str, Any]:
+    hours = [row["label"] for row in demand_by_hour]
+    hour_set = set(hours)
+    cluster_lookup = {
+        cluster.address_id: cluster
+        for cluster in AddressCluster.objects.filter(run=run).select_related("address")
+    }
+    rows: dict[str, dict[str, Any]] = {}
+    for assignment in assignments:
+        hour = _hour_label(_time_to_minutes(assignment.match.hour_raw))
+        if hour not in hour_set:
+            continue
+        cluster_label = _assignment_cluster_label(assignment, cluster_lookup)
+        row = rows.setdefault(
+            cluster_label,
+            {
+                "label": _cluster_display_label(cluster_label),
+                "key": cluster_label,
+                "status": cluster_label.split(":", 1)[0] if ":" in cluster_label else "",
+                "total": 0,
+                "by_hour": {label: {"total": 0, "assigned": 0, "unassigned": 0} for label in hours},
+            },
+        )
+        row["total"] += 1
+        cell = row["by_hour"][hour]
+        cell["total"] += 1
+        if assignment.referee_id:
+            cell["assigned"] += 1
+        else:
+            cell["unassigned"] += 1
+
+    selected = sorted(rows.values(), key=lambda item: (-int(item["total"]), item["label"]))[:limit]
+    matrix = []
+    for row in selected:
+        values = []
+        for hour in hours:
+            cell = dict(row["by_hour"][hour])
+            cell["coverage_pct"] = _percent(cell["assigned"], cell["total"])
+            values.append(cell)
+        matrix.append({"label": row["label"], "status": row["status"], "total": row["total"], "values": values})
+    return {"hours": hours, "clusters": matrix}
+
+
+def _tutor_level_hour_heatmap(
+    availability_rows: list[Any],
+    windows: list[_Window],
+    assignments: list[Assignment],
+    demand_by_hour: list[dict[str, Any]],
+) -> dict[str, Any]:
+    hours = [row["label"] for row in demand_by_hour]
+    minutes_by_hour = {row["label"]: row.get("minutes") for row in demand_by_hour}
+    dates_by_hour: dict[str, set[date | None]] = defaultdict(set)
+    for assignment in assignments:
+        label = _hour_label(_time_to_minutes(assignment.match.hour_raw))
+        if label in minutes_by_hour:
+            dates_by_hour[label].add(assignment.match.date)
+    referee_levels = {
+        row.referee_id: (_clean(getattr(row.referee, "level", "")) or "Sense nivell")
+        for row in availability_rows
+        if row.referee_id
+    }
+    levels = sorted(set(referee_levels.values()))
+    rows = {level: [0 for _ in hours] for level in levels}
+    for hour_index, hour in enumerate(hours):
+        minutes = minutes_by_hour[hour] if minutes_by_hour[hour] != 10**9 else None
+        dates = dates_by_hour.get(hour) or {None}
+        seen: set[tuple[int, date | None]] = set()
+        for window in windows:
+            if not _window_contains_any_date(window, dates) or not _window_contains(window, minutes, effective=True):
+                continue
+            key = _window_slot_key(window)
+            if key in seen:
+                continue
+            seen.add(key)
+            level = referee_levels.get(window.referee_id, "Sense nivell")
+            rows.setdefault(level, [0 for _ in hours])[hour_index] += 1
+    return {
+        "hours": hours,
+        "levels": [{"label": level, "values": values, "total": sum(values)} for level, values in sorted(rows.items())],
+    }
+
+
+def _phase_progress_chart(origin_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "labels": [row["label"] for row in origin_rows],
+        "covered": [int(row.get("matches") or 0) for row in origin_rows],
+        "pending_after": [int(row.get("pending_after") or 0) for row in origin_rows],
+        "routes": [int(row.get("routes") or 0) for row in origin_rows],
+    }
+
+
+def _route_size_distribution_chart(run: DesignationRun) -> dict[str, Any]:
+    route_sizes: dict[str, int] = {}
+    traces = run.assignment_traces.all()
+    for trace in traces:
+        route_key = str(trace.route_id or trace.candidate_id or f"trace:{trace.id}")
+        route_sizes[route_key] = max(route_sizes.get(route_key, 0), int(trace.route_size or 1))
+    if not route_sizes:
+        for assignment in run.assignments.select_related("trace").filter(referee__isnull=False):
+            trace = getattr(assignment, "trace", None)
+            if trace is None:
+                continue
+            route_key = str(trace.route_id or trace.candidate_id or f"assignment:{assignment.id}")
+            route_sizes[route_key] = max(route_sizes.get(route_key, 0), int(trace.route_size or 1))
+
+    distribution = Counter("4+" if size >= 4 else str(size) for size in route_sizes.values())
+    labels = ["1", "2", "3", "4+"]
+    return {"labels": labels, "routes": [int(distribution.get(label, 0)) for label in labels]}
+
+
+def _blocking_by_hour_chart(unassigned_analysis: dict[str, Any]) -> dict[str, Any]:
+    return unassigned_analysis.get("blocking_by_hour") or {"hours": [], "reasons": [], "matrix": []}
+
+
+def _pending_viability_chart(unassigned_analysis: dict[str, Any]) -> dict[str, Any]:
+    return {"points": unassigned_analysis.get("viability_points") or []}
+
+
+def _cluster_display_label(label: str) -> str:
+    text = str(label or "")
+    if text.startswith("cluster:"):
+        return f"Cluster {text.split(':', 1)[1]}"
+    return text.replace(":", " ")
+
+
 def _load_distribution(assigned: list[Assignment], unique_referee_ids: set[int]) -> list[dict[str, Any]]:
     counts = Counter(assignment.referee_id for assignment in assigned if assignment.referee_id)
     distribution = Counter()
@@ -405,6 +584,8 @@ def _unassigned_analysis(run: DesignationRun, unassigned: list[Assignment]) -> d
             "viability_bins": [],
             "blocking_reasons": [],
             "bottlenecks": [],
+            "viability_points": [],
+            "blocking_by_hour": {"hours": [], "reasons": [], "matrix": []},
         }
 
     context = build_manual_assignment_context(run)
@@ -415,11 +596,14 @@ def _unassigned_analysis(run: DesignationRun, unassigned: list[Assignment]) -> d
 
     viability_counter = Counter()
     blocking_counter = Counter()
+    blocking_by_hour: dict[str, Counter[str]] = defaultdict(Counter)
     bottlenecks = []
+    viability_points = []
 
     for assignment in unassigned:
         viable_count = 0
         candidate_count = 0
+        hour_label = _hour_label(_time_to_minutes(assignment.match.hour_raw))
         for referee in referees_by_assignment.get(assignment.id, []):
             candidate_count += 1
             diagnosis = diagnose_assignment_for_referee(
@@ -435,8 +619,21 @@ def _unassigned_analysis(run: DesignationRun, unassigned: list[Assignment]) -> d
                 continue
             for reason in diagnosis.get("blocking_reasons") or []:
                 blocking_counter[reason] += 1
+                blocking_by_hour[hour_label][reason] += 1
         bin_label = "0" if viable_count == 0 else "1" if viable_count == 1 else "2" if viable_count == 2 else "3+"
         viability_counter[bin_label] += 1
+        viability_points.append(
+            {
+                "code": assignment.match.code,
+                "hour": hour_label,
+                "hour_minutes": _time_to_minutes(assignment.match.hour_raw),
+                "cluster": _cluster_display_label(_assignment_cluster_label_from_context(assignment, cluster_by_match_id)),
+                "category": assignment.match.category or "-",
+                "venue": assignment.match.venue or "-",
+                "viable_count": viable_count,
+                "candidate_count": candidate_count,
+            }
+        )
         bottlenecks.append(
             {
                 "code": assignment.match.code,
@@ -466,8 +663,40 @@ def _unassigned_analysis(run: DesignationRun, unassigned: list[Assignment]) -> d
             }
             for key, value in blocking_counter.most_common(8)
         ],
+        "blocking_by_hour": _blocking_by_hour_payload(blocking_by_hour, blocking_counter),
+        "viability_points": sorted(
+            viability_points,
+            key=lambda item: (
+                item["hour_minutes"] if item["hour_minutes"] is not None else 10**9,
+                item["viable_count"],
+                item["code"],
+            ),
+        ),
         "bottlenecks": sorted(bottlenecks, key=lambda item: (item["viable_count"], item["hour"], item["code"]))[:12],
     }
+
+
+def _blocking_by_hour_payload(blocking_by_hour: dict[str, Counter[str]], blocking_counter: Counter[str]) -> dict[str, Any]:
+    hours = sorted(blocking_by_hour.keys(), key=lambda label: _time_to_minutes(label) if _time_to_minutes(label) is not None else 10**9)
+    reasons = [key for key, _value in blocking_counter.most_common(6)]
+    return {
+        "hours": hours,
+        "reasons": [{"code": reason, "label": _blocking_reason_short_label(reason)} for reason in reasons],
+        "matrix": [
+            [int(blocking_by_hour.get(hour, Counter()).get(reason, 0)) for hour in hours]
+            for reason in reasons
+        ],
+    }
+
+
+def _assignment_cluster_label_from_context(assignment: Assignment, cluster_by_match_id: dict[Any, Any]) -> str:
+    cluster = cluster_by_match_id.get(assignment.match_id) or cluster_by_match_id.get(str(assignment.match_id))
+    cluster_id = getattr(cluster, "cluster_id", None)
+    if isinstance(cluster, dict):
+        cluster_id = cluster.get("cluster_id") or cluster.get("cluster")
+    if cluster_id is not None:
+        return f"cluster:{cluster_id}"
+    return f"sense_cluster:{assignment.match.venue or assignment.match.code}"
 
 
 def _availability_window(row: Any, buffer_min: int) -> _Window:

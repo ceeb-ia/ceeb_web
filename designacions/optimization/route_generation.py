@@ -16,9 +16,11 @@ from .levels import (
     level_fit,
 )
 from .phases import PhaseSpec, phase_allows_fragment, phase_allows_tutor
+from .peak_pressure import PeakAnchor, build_peak_anchors
 from .route_points import (
     required_gap as atomic_required_gap,
     route_points_from_segments,
+    same_location as atomic_same_location,
     transition_requires_vehicle as atomic_transition_requires_vehicle,
     validate_atomic_gaps,
 )
@@ -62,6 +64,11 @@ class _RouteDraft:
     venues: tuple[str, ...]
     classification_importance: float
     weighted_coverage_value: float
+    peak_anchor: bool = False
+    peak_bucket: str = ""
+    peak_pressure_score: float = 0.0
+    peak_anchor_match_ids: tuple[str, ...] = ()
+    peak_anchor_bonus: float = 0.0
 
 
 def generate_phase_route_candidates(
@@ -79,18 +86,30 @@ def generate_phase_route_candidates(
         if phase_allows_fragment(fragment, phase)
         and not (set(_str_list(_value(fragment, "match_ids"))) & assigned_match_ids)
     ]
+    eligible_tutors = [tutor for tutor in (tutors or []) if phase_allows_tutor(tutor, phase)]
     single_drafts = [_draft_from_fragments((fragment,)) for fragment in pending_fragments]
     drafts = list(single_drafts)
+    peak_anchors: list[PeakAnchor] = []
+    if _peak_routes_enabled(config):
+        peak_anchors = build_peak_anchors(
+            pending_fragments,
+            eligible_tutors,
+            state,
+            _peak_config(config),
+            top_n=int(config.get("peak_top_n_per_phase", config.get("peak_anchor_top_n", 8)) or 0),
+        )
+        drafts.extend(_peak_anchored_drafts(single_drafts, peak_anchors, phase, config))
     if int(phase.max_route_size or 1) >= 2:
         for left, right in combinations(single_drafts, 2):
             merged = _merge_drafts(left, right, config)
             if merged is not None:
                 drafts.append(merged)
+    if int(phase.max_route_size or 1) >= 3 and bool(config.get("route_generate_general_deep_routes", True)):
+        drafts.extend(_general_centered_drafts(single_drafts, phase, config))
+    drafts = _dedupe_drafts(drafts)
 
     candidates: list[RouteCandidate] = []
-    for tutor in tutors or []:
-        if not phase_allows_tutor(tutor, phase):
-            continue
+    for tutor in eligible_tutors:
         tutor_id = str(_value(tutor, "id", "tutor_id", "code", default=""))
         if not tutor_id:
             continue
@@ -118,7 +137,7 @@ def _score_route_candidate(
     if tutor_modality and normalize_text_key(draft.modality) and tutor_modality != normalize_text_key(draft.modality):
         blocking.append("modality_mismatch")
 
-    full_segments = _existing_segments(existing_route) + [draft]
+    full_segments = _existing_segments(existing_route) + _draft_segments(draft)
     full_segments = sorted(full_segments, key=lambda item: _segment_start(item) or datetime.min)
     full_match_ids = _dedupe(_existing_match_ids(existing_route) + list(draft.match_ids))
     inserted = bool(_value(existing_route, "assigned_match_ids") or _existing_segments(existing_route))
@@ -170,10 +189,24 @@ def _score_route_candidate(
         float(config.get("level_distance_weight", 1000.0)),
     )
     exceptional_penalty = float(config.get("exceptional_level_penalty", 3000.0)) if fit == LEVEL_FIT_EXCEPTIONAL else 0.0
+    gap_laxity_cost = _gap_laxity_cost(full_segments, config)
     mobility_cost = (40.0 if needs_vehicle else 0.0) + 10.0 * len(set(warnings))
     classification_cost = draft.classification_importance * float(config.get("classification_fit_weight", 500.0))
     coverage_reward = draft.weighted_coverage_value * float(config.get("coverage_reward", 1000.0))
-    cost = max(0.0, level_cost + exceptional_penalty + mobility_cost + classification_cost + load_penalty - underused_bonus)
+    non_peak_capacity_penalty = 0.0
+    if _peak_routes_enabled(config) and not draft.peak_anchor and assigned_count == 0:
+        non_peak_capacity_penalty = float(config.get("peak_anchor_non_peak_capacity_penalty", 0.0) or 0.0)
+    cost = max(
+        0.0,
+        level_cost
+        + exceptional_penalty
+        + mobility_cost
+        + gap_laxity_cost
+        + classification_cost
+        + load_penalty
+        + non_peak_capacity_penalty
+        - underused_bonus,
+    )
 
     candidate_id = f"{phase.name}:{tutor_id}:{draft.id}"
     if inserted:
@@ -201,12 +234,20 @@ def _score_route_candidate(
             "coverage_reward": -float(coverage_reward),
             "weighted_coverage_value": float(draft.weighted_coverage_value),
             "high_level_value": float(_high_level_value(draft.level_demand, draft.weighted_coverage_value)),
+            "peak_anchor": bool(draft.peak_anchor),
+            "peak_bucket": draft.peak_bucket,
+            "peak_pressure_score": float(draft.peak_pressure_score),
+            "peak_anchor_match_ids": list(draft.peak_anchor_match_ids),
+            "peak_anchor_bonus": float(draft.peak_anchor_bonus),
+            "non_peak_capacity_penalty": float(non_peak_capacity_penalty),
             "match_count": len(draft.match_ids),
             "level_cost": float(level_cost),
             "level_fit": fit,
             "level_exceptional": fit == LEVEL_FIT_EXCEPTIONAL,
             "exceptional_penalty": float(exceptional_penalty),
             "mobility_cost": float(mobility_cost),
+            "gap_laxity_cost": float(gap_laxity_cost),
+            "gap_laxity_summary": _gap_laxity_summary(full_segments, config),
             "classification_cost": float(classification_cost),
             "load_penalty": float(load_penalty),
             "underused_bonus": float(underused_bonus),
@@ -261,34 +302,276 @@ def _draft_from_fragments(fragments: tuple[Any, ...]) -> _RouteDraft:
     )
 
 
+def _draft_segments(draft: _RouteDraft) -> list[Any]:
+    return list(draft.fragments) if draft.fragments else [draft]
+
+
+def _with_peak_metadata(draft: _RouteDraft, anchor: PeakAnchor, config: dict[str, Any]) -> _RouteDraft:
+    anchor_match_ids = tuple(_dedupe([*draft.peak_anchor_match_ids, *anchor.match_ids]))
+    anchor_bonus = (
+        float(anchor.pressure_score)
+        * float(anchor.demand or 1.0)
+        * float(config.get("peak_anchor_route_bonus", 0.35) or 0.0)
+    )
+    return _RouteDraft(
+        id=f"peak:{draft.id}",
+        fragments=draft.fragments,
+        match_ids=draft.match_ids,
+        date=draft.date,
+        modality=draft.modality,
+        start_dt=draft.start_dt,
+        end_dt=draft.end_dt,
+        level_demand=draft.level_demand,
+        cluster_ids=draft.cluster_ids,
+        cluster_statuses=draft.cluster_statuses,
+        venues=draft.venues,
+        classification_importance=draft.classification_importance,
+        weighted_coverage_value=draft.weighted_coverage_value + anchor_bonus,
+        peak_anchor=True,
+        peak_bucket=anchor.key,
+        peak_pressure_score=float(anchor.pressure_score),
+        peak_anchor_match_ids=anchor_match_ids,
+        peak_anchor_bonus=anchor_bonus,
+    )
+
+
 def _merge_drafts(left: _RouteDraft, right: _RouteDraft, config: dict[str, Any]) -> _RouteDraft | None:
-    if left.date != right.date or normalize_text_key(left.modality) != normalize_text_key(right.modality):
+    return _merge_many_drafts((left, right), config)
+
+
+def _merge_many_drafts(drafts: tuple[_RouteDraft, ...], config: dict[str, Any]) -> _RouteDraft | None:
+    if len(drafts) < 2:
         return None
-    if set(left.match_ids) & set(right.match_ids):
+    dates = {draft.date for draft in drafts}
+    modalities = {normalize_text_key(draft.modality) for draft in drafts}
+    if len(dates) > 1 or len(modalities) > 1:
         return None
-    ordered = sorted([left, right], key=lambda item: item.start_dt or datetime.min)
+    all_match_ids = [match_id for draft in drafts for match_id in draft.match_ids]
+    if len(all_match_ids) != len(set(all_match_ids)):
+        return None
+    ordered = sorted(drafts, key=lambda item: item.start_dt or datetime.min)
     warnings, blocked = _validate_gaps(ordered, config)
     if blocked:
         return None
+    cluster_ids: list[Any] = []
+    cluster_statuses: list[Any] = []
+    venues: list[str] = []
+    for draft in ordered:
+        cluster_ids.extend(draft.cluster_ids)
+        cluster_statuses.extend(draft.cluster_statuses)
+        venues.extend(draft.venues)
     return _RouteDraft(
-        id=f"{ordered[0].id}+{ordered[1].id}",
-        fragments=ordered[0].fragments + ordered[1].fragments,
-        match_ids=ordered[0].match_ids + ordered[1].match_ids,
-        date=left.date,
-        modality=left.modality,
+        id="+".join(draft.id for draft in ordered),
+        fragments=tuple(fragment for draft in ordered for fragment in draft.fragments),
+        match_ids=tuple(match_id for draft in ordered for match_id in draft.match_ids),
+        date=ordered[0].date,
+        modality=ordered[0].modality,
         start_dt=ordered[0].start_dt,
         end_dt=ordered[-1].end_dt,
-        level_demand=hardest_match_level([left.level_demand, right.level_demand]),
-        cluster_ids=ordered[0].cluster_ids + ordered[1].cluster_ids,
-        cluster_statuses=ordered[0].cluster_statuses + ordered[1].cluster_statuses,
-        venues=tuple(_dedupe(list(ordered[0].venues) + list(ordered[1].venues))),
-        classification_importance=max(left.classification_importance, right.classification_importance),
-        weighted_coverage_value=left.weighted_coverage_value + right.weighted_coverage_value,
+        level_demand=hardest_match_level([draft.level_demand for draft in ordered]),
+        cluster_ids=tuple(cluster_ids),
+        cluster_statuses=tuple(cluster_statuses),
+        venues=tuple(_dedupe(venues)),
+        classification_importance=max(draft.classification_importance for draft in ordered),
+        weighted_coverage_value=sum(draft.weighted_coverage_value for draft in ordered),
+        peak_anchor=any(draft.peak_anchor for draft in ordered),
+        peak_bucket=next((draft.peak_bucket for draft in ordered if draft.peak_bucket), ""),
+        peak_pressure_score=max(draft.peak_pressure_score for draft in ordered),
+        peak_anchor_match_ids=tuple(_dedupe(match_id for draft in ordered for match_id in draft.peak_anchor_match_ids)),
+        peak_anchor_bonus=sum(draft.peak_anchor_bonus for draft in ordered),
     )
+
+
+def _peak_anchored_drafts(
+    single_drafts: list[_RouteDraft],
+    anchors: list[PeakAnchor],
+    phase: PhaseSpec,
+    config: dict[str, Any],
+) -> list[_RouteDraft]:
+    if not anchors:
+        return []
+    by_fragment_id = {str(_value(draft.fragments[0], "id", default=draft.id)): draft for draft in single_drafts if draft.fragments}
+    out: list[_RouteDraft] = []
+    max_size = int(phase.max_route_size or 1)
+    neighbor_limit = int(config.get("peak_anchor_neighbor_limit", 6) or 0)
+    per_anchor_limit = int(config.get("peak_anchor_route_limit_per_anchor", 80) or 0)
+    for anchor in anchors:
+        anchor_drafts = [by_fragment_id[fragment_id] for fragment_id in anchor.fragment_ids if fragment_id in by_fragment_id]
+        for anchor_draft in anchor_drafts:
+            marked_anchor = _with_peak_metadata(anchor_draft, anchor, config)
+            out.append(marked_anchor)
+            if max_size < 2:
+                continue
+            before, after = _neighbor_drafts(single_drafts, anchor_draft, neighbor_limit)
+            neighbors = _dedupe_drafts(before + after)
+            generated = 0
+            for route_size in range(2, max_size + 1):
+                for extra_drafts in combinations(neighbors, route_size - 1):
+                    merged = _merge_many_drafts((marked_anchor, *extra_drafts), config)
+                    if merged is not None and _draft_contains_anchor(merged, anchor):
+                        out.append(merged)
+                        generated += 1
+                    if per_anchor_limit > 0 and generated >= per_anchor_limit:
+                        break
+                if per_anchor_limit > 0 and generated >= per_anchor_limit:
+                    break
+    return out
+
+
+def _general_centered_drafts(
+    single_drafts: list[_RouteDraft],
+    phase: PhaseSpec,
+    config: dict[str, Any],
+) -> list[_RouteDraft]:
+    max_size = int(phase.max_route_size or 1)
+    if max_size < 3:
+        return []
+    neighbor_limit = int(config.get("route_general_neighbor_limit", 4) or 0)
+    per_center_limit = int(config.get("route_general_deep_limit_per_center", 40) or 0)
+    out: list[_RouteDraft] = []
+    for center in single_drafts:
+        before, after = _neighbor_drafts(single_drafts, center, neighbor_limit)
+        neighbors = _dedupe_drafts(before + after)
+        generated = 0
+        for route_size in range(3, max_size + 1):
+            for extra_drafts in combinations(neighbors, route_size - 1):
+                merged = _merge_many_drafts((center, *extra_drafts), config)
+                if merged is not None:
+                    out.append(merged)
+                    generated += 1
+                if per_center_limit > 0 and generated >= per_center_limit:
+                    break
+            if per_center_limit > 0 and generated >= per_center_limit:
+                break
+    return out
+
+
+def _neighbor_drafts(
+    single_drafts: list[_RouteDraft],
+    anchor: _RouteDraft,
+    limit: int,
+) -> tuple[list[_RouteDraft], list[_RouteDraft]]:
+    compatible = [
+        draft
+        for draft in single_drafts
+        if draft is not anchor
+        and draft.date == anchor.date
+        and normalize_text_key(draft.modality) == normalize_text_key(anchor.modality)
+        and not (set(draft.match_ids) & set(anchor.match_ids))
+    ]
+    before = sorted(
+        [draft for draft in compatible if (draft.start_dt or datetime.min) <= (anchor.start_dt or datetime.min)],
+        key=lambda item: item.start_dt or datetime.min,
+        reverse=True,
+    )
+    after = sorted(
+        [draft for draft in compatible if (draft.start_dt or datetime.min) >= (anchor.start_dt or datetime.min)],
+        key=lambda item: item.start_dt or datetime.min,
+    )
+    if limit > 0:
+        before = before[:limit]
+        after = after[:limit]
+    return before, after
+
+
+def _draft_contains_anchor(draft: _RouteDraft, anchor: PeakAnchor) -> bool:
+    return bool(set(draft.match_ids) & set(anchor.match_ids))
+
+
+def _dedupe_drafts(drafts: list[_RouteDraft]) -> list[_RouteDraft]:
+    retained: dict[tuple[Any, ...], _RouteDraft] = {}
+    for draft in drafts:
+        key = (draft.date, tuple(sorted(draft.match_ids)))
+        current = retained.get(key)
+        if current is None or _draft_rank(draft) < _draft_rank(current):
+            retained[key] = draft
+    return list(retained.values())
+
+
+def _draft_rank(draft: _RouteDraft) -> tuple[Any, ...]:
+    return (
+        not draft.peak_anchor,
+        -float(draft.weighted_coverage_value or 0.0),
+        float(draft.start_dt.timestamp()) if draft.start_dt else 0.0,
+        draft.id,
+    )
+
+
+def _peak_routes_enabled(config: dict[str, Any]) -> bool:
+    return bool(config.get("peak_anchored_routes_enabled", True))
+
+
+def _peak_config(config: dict[str, Any]) -> dict[str, Any]:
+    cfg = dict(config)
+    if "peak_bucket_minutes" in cfg and "peak_time_bucket_minutes" not in cfg:
+        cfg["peak_time_bucket_minutes"] = cfg["peak_bucket_minutes"]
+    if "peak_top_n_per_phase" in cfg and "peak_anchor_top_n" not in cfg:
+        cfg["peak_anchor_top_n"] = cfg["peak_top_n_per_phase"]
+    if "peak_anchor_min_pressure_ratio" in cfg and "peak_anchor_min_pressure" not in cfg:
+        cfg["peak_anchor_min_pressure"] = cfg["peak_anchor_min_pressure_ratio"]
+    if "peak_anchor_max_matches_per_bucket" in cfg and "peak_anchor_fragment_limit" not in cfg:
+        cfg["peak_anchor_fragment_limit"] = cfg["peak_anchor_max_matches_per_bucket"]
+    return cfg
 
 
 def _validate_gaps(segments: list[Any], config: dict[str, Any]) -> tuple[list[str], bool]:
     return validate_atomic_gaps(segments, {**dict(config), "has_vehicle": True})
+
+
+def _gap_laxity_cost(segments: list[Any], config: dict[str, Any]) -> float:
+    cost_per_min = float(config.get("gap_laxity_cost_per_min", 0.35) or 0.0)
+    if cost_per_min <= 0:
+        return 0.0
+    return sum(item["extra_minutes"] * item["weight"] * cost_per_min for item in _gap_laxity_items(segments, config))
+
+
+def _gap_laxity_summary(segments: list[Any], config: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {
+            "left_match_id": item["left_match_id"],
+            "right_match_id": item["right_match_id"],
+            "gap_type": item["gap_type"],
+            "actual_gap_min": item["actual_gap_min"],
+            "required_gap_min": item["required_gap_min"],
+            "extra_minutes": item["extra_minutes"],
+        }
+        for item in _gap_laxity_items(segments, config)
+        if item["extra_minutes"] > 0
+    ]
+
+
+def _gap_laxity_items(segments: list[Any], config: dict[str, Any]) -> list[dict[str, Any]]:
+    points = route_points_from_segments(segments)
+    items: list[dict[str, Any]] = []
+    for left, right in zip(points, points[1:]):
+        left_end = left.end_dt or left.start_dt
+        right_start = right.start_dt
+        if left_end is None or right_start is None:
+            continue
+        actual = (right_start - left_end).total_seconds() / 60.0
+        required = float(atomic_required_gap(left, right, config))
+        extra = max(0.0, actual - required)
+        if atomic_same_location(left, right):
+            gap_type = "same_pitch"
+            weight = float(config.get("gap_laxity_same_pitch_weight", 0.25) or 0.25)
+        elif atomic_transition_requires_vehicle(left, right):
+            gap_type = "diff_cluster"
+            weight = float(config.get("gap_laxity_diff_cluster_weight", 1.0) or 1.0)
+        else:
+            gap_type = "diff_pitch_same_cluster"
+            weight = float(config.get("gap_laxity_diff_pitch_weight", 0.55) or 0.55)
+        items.append(
+            {
+                "left_match_id": left.match_id,
+                "right_match_id": right.match_id,
+                "gap_type": gap_type,
+                "actual_gap_min": round(actual, 4),
+                "required_gap_min": required,
+                "extra_minutes": round(extra, 4),
+                "weight": weight,
+            }
+        )
+    return items
 
 
 def _required_gap(left: Any, right: Any, config: dict[str, Any]) -> int:
@@ -347,8 +630,8 @@ def _window_covers(start_dt: datetime, end_dt: datetime, start: time, end: time,
 
 
 def _prune_candidates(candidates: list[RouteCandidate], phase: PhaseSpec, config: dict[str, Any]) -> list[RouteCandidate]:
-    top_per_tutor = int(phase.top_n_routes_per_tutor or config.get("route_top_n_per_tutor", 20))
-    top_per_match = int(config.get("route_top_n_per_match", 8))
+    top_per_tutor = int(phase.top_n_routes_per_tutor or config.get("route_top_n_per_tutor", 80))
+    top_per_match = int(config.get("route_top_n_per_match", 30))
     by_tutor: dict[tuple[str, str], list[RouteCandidate]] = {}
     for candidate in candidates:
         by_tutor.setdefault((candidate.tutor_id, candidate.date), []).append(candidate)
