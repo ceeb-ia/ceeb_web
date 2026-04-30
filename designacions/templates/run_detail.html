@@ -49,6 +49,9 @@
           <div class="fw-bold mb-2">Accions</div>
           <div id="next-link" class="d-grid gap-2">
             {% if run.status == "done" %}
+            <a class="btn btn-sm btn-outline-primary" href="{% url 'designacions_run_analytics' run.id %}">
+              Veure analitica del run
+            </a>
             <a class="btn btn-sm btn-outline-primary" href="{% url 'designacions_assignments' run.id %}">
               Veure i editar assignacions
             </a>

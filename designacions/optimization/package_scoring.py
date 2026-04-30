@@ -86,6 +86,8 @@ def _score_candidate(package, tutor, pressure_summary, config):
 
     if not _availability_covers_package(tutor, package, config):
         blocking_reasons.append("outside_availability_window")
+    elif not _availability_respects_buffer_package(tutor, package, config):
+        warning_codes.append("availability_end_buffer_warning")
 
     tutor_has_vehicle = _tutor_has_vehicle(tutor)
     requires_vehicle = bool(_value(package, "requires_vehicle", default=False))
@@ -165,6 +167,14 @@ def _score_candidate(package, tutor, pressure_summary, config):
 
 
 def _availability_covers_package(tutor, package, config):
+    return _availability_package_window_check(tutor, package, config, use_buffer=False)
+
+
+def _availability_respects_buffer_package(tutor, package, config):
+    return _availability_package_window_check(tutor, package, config, use_buffer=True)
+
+
+def _availability_package_window_check(tutor, package, config, *, use_buffer: bool):
     availability_by_date = _value(tutor, "availability_by_date", default=None)
     if not availability_by_date:
         return bool(_cfg(config, "assume_available_when_missing", False))
@@ -179,11 +189,14 @@ def _availability_covers_package(tutor, package, config):
     if not windows:
         return False
 
-    return any(_window_covers(start_dt, end_dt, window_start, window_end, config) for window_start, window_end in windows)
+    return any(
+        _window_covers(start_dt, end_dt, window_start, window_end, config, use_buffer=use_buffer)
+        for window_start, window_end in windows
+    )
 
 
-def _window_covers(start_dt: datetime, end_dt: datetime, start: time, end: time, config) -> bool:
-    buffer_min = int(_cfg(config, "availability_end_buffer_min", 60) or 0)
+def _window_covers(start_dt: datetime, end_dt: datetime, start: time, end: time, config, *, use_buffer: bool = False) -> bool:
+    buffer_min = int(_cfg(config, "availability_end_buffer_min", 60) or 0) if use_buffer else 0
     window_start = datetime.combine(start_dt.date(), start)
     window_end = datetime.combine(start_dt.date(), end) - timedelta(minutes=buffer_min)
     return window_start <= start_dt and end_dt <= window_end

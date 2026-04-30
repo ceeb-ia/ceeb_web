@@ -46,7 +46,7 @@ def default_phase_specs(config: dict[str, Any] | None = None) -> list[PhaseSpec]
             tutor_levels=["NIVELLA1", "NIVELLB1"],
             allowed_max_level_position=medium_position,
             allow_exceptional=bool(config.get("phase_medium_allow_exceptional", False)),
-            rescue_after_phase=bool(config.get("phase_medium_rescue_after_phase", False)),
+            rescue_after_phase=bool(config.get("phase_medium_rescue_after_phase", True)),
             max_route_size=max_route_size,
             top_n_routes_per_tutor=top_n,
         ),

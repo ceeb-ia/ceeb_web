@@ -679,6 +679,8 @@ def _score_direct_candidate(
 
     if not _availability_covers(tutor, route_date, _route_start(draft_segments), _route_end(draft_segments), config):
         blocking.append("outside_availability_window")
+    elif not _availability_respects_buffer(tutor, route_date, _route_start(draft_segments), _route_end(draft_segments), config):
+        warnings.append("availability_end_buffer_warning")
 
     needs_vehicle = _route_requires_vehicle(full_segments)
     tutor_has_vehicle = _tutor_has_vehicle(tutor)
@@ -1110,6 +1112,22 @@ def _required_gap(left: Any, right: Any, config: Mapping[str, Any]) -> int:
 
 
 def _availability_covers(tutor: Any, route_date: str, start_dt: datetime | None, end_dt: datetime | None, config: Mapping[str, Any]) -> bool:
+    return _availability_window_check(tutor, route_date, start_dt, end_dt, config, use_buffer=False)
+
+
+def _availability_respects_buffer(tutor: Any, route_date: str, start_dt: datetime | None, end_dt: datetime | None, config: Mapping[str, Any]) -> bool:
+    return _availability_window_check(tutor, route_date, start_dt, end_dt, config, use_buffer=True)
+
+
+def _availability_window_check(
+    tutor: Any,
+    route_date: str,
+    start_dt: datetime | None,
+    end_dt: datetime | None,
+    config: Mapping[str, Any],
+    *,
+    use_buffer: bool,
+) -> bool:
     availability = _get(tutor, "availability_by_date", default=None)
     if not availability:
         return bool(config.get("assume_available_when_missing", True))
@@ -1130,13 +1148,13 @@ def _availability_covers(tutor: Any, route_date: str, start_dt: datetime | None,
             end = _time_value(window[1])
         else:
             continue
-        if start is not None and end is not None and _window_covers(start_dt, end_dt, start, end, config):
+        if start is not None and end is not None and _window_covers(start_dt, end_dt, start, end, config, use_buffer=use_buffer):
             return True
     return False
 
 
-def _window_covers(start_dt: datetime, end_dt: datetime, start: time, end: time, config: Mapping[str, Any]) -> bool:
-    buffer_min = int(config.get("availability_end_buffer_min", 60) or 0)
+def _window_covers(start_dt: datetime, end_dt: datetime, start: time, end: time, config: Mapping[str, Any], *, use_buffer: bool = False) -> bool:
+    buffer_min = int(config.get("availability_end_buffer_min", 60) or 0) if use_buffer else 0
     window_start = datetime.combine(start_dt.date(), start)
     window_end = datetime.combine(start_dt.date(), end) - timedelta(minutes=buffer_min)
     return window_start <= start_dt and end_dt <= window_end

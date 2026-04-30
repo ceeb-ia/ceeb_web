@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field, replace
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time
 from inspect import signature
 from itertools import combinations
 from typing import Any, Iterable
@@ -528,9 +528,8 @@ def _availability_covers(tutor: Any, candidate: Any, config: dict[str, Any] | No
 
 
 def _window_covers(start_dt: datetime, end_dt: datetime, start: time, end: time, config: dict[str, Any]) -> bool:
-    buffer_min = int(config.get("availability_end_buffer_min", 60) or 0)
     window_start = datetime.combine(start_dt.date(), start)
-    window_end = datetime.combine(start_dt.date(), end) - timedelta(minutes=buffer_min)
+    window_end = datetime.combine(start_dt.date(), end)
     return window_start <= start_dt and end_dt <= window_end
 
 

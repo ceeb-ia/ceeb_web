@@ -49,6 +49,7 @@ from .services.manual_assignment import (
     update_run_mobility_summary,
 )
 from .services.run_scope import load_scoped_run_data
+from .services.run_analytics import build_run_analytics
 
 
 
@@ -68,6 +69,14 @@ ORIGIN_LABELS = {
     "rescue_reused": "Recuperacio afegida",
     "manual_override": "Assignacio manual",
     "manual_unassigned": "Desassignacio manual",
+}
+
+TRACE_WARNING_LABELS = {
+    "availability_end_buffer_warning": "Dins la disponibilitat declarada, pero massa a prop de l'hora final. Cal confirmar-ho amb el tutor.",
+    "cross_cluster_with_vehicle_warning": "Canvi de cluster amb vehicle i gap suficient. Assignacio viable, pendent de revisio.",
+    "same_cluster_pitch_change_warning": "Canvi de pista dins del mateix cluster. Assignacio viable, pendent de revisio.",
+    "missing_cluster_mobility_warning": "Falta cluster o geocodificacio per validar completament el canvi de pista.",
+    "outlier_mobility_warning": "Almenys una ubicacio del canvi de pista no te cluster fiable.",
 }
 
 
@@ -1369,6 +1378,13 @@ def run_detail_view(request, run_id: int):
         {"run": run, "mobility_summary": mobility_summary, "origin_summary": origin_summary},
     )
 
+
+@require_GET
+def run_analytics_view(request, run_id: int):
+    run = get_object_or_404(DesignationRun, id=run_id)
+    analytics = build_run_analytics(run)
+    return render(request, "run_analytics.html", {"run": run, "analytics": analytics})
+
 def _serialize_terminal_run_status(run, job: dict | None = None):
     job = job or {}
     if run.status == "preview":
@@ -1586,6 +1602,12 @@ def assignments_view(request, run_id: int):
         assignment.origin_route_label = (
             f"Sequencia de {trace.route_size}" if trace is not None and int(trace.route_size or 1) > 1 else "Partit individual"
         )
+        warning_codes = list(getattr(trace, "warning_codes", None) or []) if trace is not None else []
+        assignment.trace_warning_messages = [
+            TRACE_WARNING_LABELS.get(code, code)
+            for code in warning_codes
+            if code in TRACE_WARNING_LABELS
+        ]
 
     assigned_qs = sorted(
         [assignment for assignment in qs if assignment.referee_id],
@@ -1668,6 +1690,7 @@ def assignments_view(request, run_id: int):
         group["has_mobility_error"] = group["mobility_error_count"] > 0
         group["has_mobility_warning"] = group["mobility_warning_count"] > 0
         group["has_manual_override"] = any(item.manual_override_warning for item in group["items"])
+        group["has_trace_warning"] = any(getattr(item, "trace_warning_messages", []) for item in group["items"])
         group["has_locked"] = group["locked"] > 0
         group["has_vehicle"] = has_vehicle(group["referee"].transport if group.get("referee") else "")
         group["availability_windows"] = _availability_windows_for_referee(availability_lookup, referee_id)

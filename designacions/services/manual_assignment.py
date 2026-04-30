@@ -15,6 +15,7 @@ from .assignment_feasibility import (
     DEFAULT_GAP_DIFF_PITCH_MIN,
     DEFAULT_GAP_SAME_PITCH_MIN,
     availability_covers_descriptors,
+    availability_respects_buffer_descriptors,
     build_match_descriptor,
     combine_date_time,
     inspect_mobility_transitions,
@@ -39,6 +40,7 @@ MATCH_LEVEL_ORDER = [
 WARNING_MESSAGES = {
     "modality_mismatch": "Modalitat diferent de la del partit.",
     "outside_availability_window": "Fora de la franja de disponibilitat del tutor.",
+    "availability_end_buffer_warning": "Dins la disponibilitat declarada, pero massa a prop de l'hora final. Cal confirmar-ho amb el tutor.",
     "same_cluster_gap_violation": "Gap insuficient per atendre dos partits dins del mateix cluster.",
     "same_cluster_pitch_change_warning": "Canvi de pista dins del mateix cluster. Assignacio viable, pendent de revisio.",
     "cross_cluster_with_vehicle_warning": "Canvi de cluster amb vehicle i gap suficient. Assignacio viable, pendent de revisio.",
@@ -403,8 +405,8 @@ def build_manual_assignment_context(run, referees_with_counts=None):
     }
 
 
-def _availability_covers_match(raw: dict | None, match, availability_end_buffer_min: int) -> bool:
-    descriptor = build_match_descriptor(
+def _availability_descriptor_for_match(match):
+    return build_match_descriptor(
         identifier=match.id,
         date_value=match.date,
         time_value=match.hour_raw,
@@ -412,8 +414,18 @@ def _availability_covers_match(raw: dict | None, match, availability_end_buffer_
         modality=match.modality,
         category=match.category,
     )
-    return availability_covers_descriptors(raw, [descriptor], availability_end_buffer_min)
 
+
+def _availability_covers_match(raw: dict | None, match, availability_end_buffer_min: int) -> bool:
+    return availability_covers_descriptors(raw, [_availability_descriptor_for_match(match)], availability_end_buffer_min)
+
+
+def _availability_respects_buffer(raw: dict | None, match, availability_end_buffer_min: int) -> bool:
+    return availability_respects_buffer_descriptors(
+        raw,
+        [_availability_descriptor_for_match(match)],
+        availability_end_buffer_min,
+    )
 
 def _build_assignment_descriptor(assignment, match_location_by_match_id):
     match = assignment.match
@@ -616,6 +628,8 @@ def diagnose_assignment_for_referee(
         blocking_codes.append("missing_availability_for_day")
     elif not _availability_covers_match(availability, match, availability_end_buffer_min):
         blocking_codes.append("outside_availability_window")
+    elif not _availability_respects_buffer(availability, match, availability_end_buffer_min):
+        advisory_codes.append("availability_end_buffer_warning")
 
     mobility_issues = _detect_mobility_conflicts(
         assignment,

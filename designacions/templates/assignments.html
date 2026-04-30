@@ -194,6 +194,10 @@
         </form>
         <a class="btn btn-sm btn-primary" href="{% url 'designacions_runs_list' %}">Tornar a designacions</a>
 
+        <a class="btn btn-sm btn-outline-primary" href="{% url 'designacions_run_analytics' run.id %}">
+          Analitica
+        </a>
+
         <a class="btn btn-sm btn-outline-secondary" href="{% url 'designacions_run_detail' run.id %}">
           Tornar al seguiment
         </a>
@@ -295,6 +299,7 @@
                     <option value="">Tots</option>
                     <option value="mobility_error">Amb error mobilitat</option>
                     <option value="mobility_warning">Amb warning mobilitat</option>
+                    <option value="engine_warning">Amb warning motor</option>
                     <option value="manual_warning">Amb warning manual</option>
                     <option value="locked">Amb bloquejats</option>
                     <option value="clean">Sense incidencies</option>
@@ -316,6 +321,14 @@
                     <option value="with">Amb vehicle</option>
                     <option value="without">Sense vehicle</option>
                   </select>
+                </div>
+                <div class="col-12 col-md-6 col-xl-3 mb-3">
+                  <div class="filter-panel__label">Partits assignats al tutor</div>
+                  <div class="d-flex align-items-center">
+                    <input id="filterTutorAssignmentsMin" type="number" min="0" step="1" class="form-control form-control-sm" aria-label="Minim de partits assignats" placeholder="Min">
+                    <span class="mx-2 text-muted">a</span>
+                    <input id="filterTutorAssignmentsMax" type="number" min="0" step="1" class="form-control form-control-sm" aria-label="Maxim de partits assignats" placeholder="Max">
+                  </div>
                 </div>
                 <div class="col-12 col-md-6 col-xl-3 mb-3">
                   <div class="filter-panel__label">Disponibilitat tutor</div>
@@ -364,8 +377,10 @@
                data-has-mobility-error="{% if g.has_mobility_error %}1{% else %}0{% endif %}"
                data-has-mobility-warning="{% if g.has_mobility_warning %}1{% else %}0{% endif %}"
                data-has-manual-warning="{% if g.has_manual_override %}1{% else %}0{% endif %}"
+               data-has-engine-warning="{% if g.has_trace_warning %}1{% else %}0{% endif %}"
                data-has-locked="{% if g.has_locked %}1{% else %}0{% endif %}"
                data-has-vehicle="{% if g.has_vehicle %}1{% else %}0{% endif %}"
+               data-assignment-count="{{ g.total }}"
                data-availability-windows="{% for window in g.availability_windows %}{{ window }} {% endfor %}"
                data-assignment-times="{% for time_token in g.assignment_time_tokens %}{{ time_token }} {% endfor %}"
                data-categories="{{ g.categories|join:'||' }}"
@@ -439,6 +454,7 @@
                           data-origin="{{ a.origin_key|default:'missing_trace' }}"
                           data-is-locked="{% if a.locked %}1{% else %}0{% endif %}"
                           data-has-manual-warning="{% if a.manual_override_warning %}1{% else %}0{% endif %}"
+                          data-has-engine-warning="{% if a.trace_warning_messages %}1{% else %}0{% endif %}"
                           data-has-mobility-error="{% if mobility_errors %}1{% else %}0{% endif %}"
                           data-has-mobility-warning="{% if mobility_warnings %}1{% else %}0{% endif %}">
                         <td class="font-weight-bold">
@@ -499,6 +515,8 @@
                             {% with first_warning=mobility_warnings|first %}
                               <div class="warning-box">{{ first_warning|get_item:"message" }}</div>
                             {% endwith %}
+                          {% elif a.trace_warning_messages %}
+                            <div class="warning-box">{{ a.trace_warning_messages.0 }}</div>
                           {% else %}
                             <span class="text-muted small">Sense warning</span>
                           {% endif %}
@@ -958,6 +976,8 @@
     var statusSelect = document.getElementById('filterAssignmentStatus');
     var originSelect = document.getElementById('filterAssignmentOrigin');
     var vehicleSelect = document.getElementById('filterTutorVehicle');
+    var assignmentsMinInput = document.getElementById('filterTutorAssignmentsMin');
+    var assignmentsMaxInput = document.getElementById('filterTutorAssignmentsMax');
     var availabilityStartInput = document.getElementById('filterTutorAvailabilityStart');
     var availabilityEndInput = document.getElementById('filterTutorAvailabilityEnd');
     var assignmentTimeStartInput = document.getElementById('filterAssignmentTimeStart');
@@ -1059,6 +1079,9 @@
       group.setAttribute('data-has-mobility-warning', rows.some(function(row){
         return row.dataset.hasMobilityWarning === '1';
       }) ? '1' : '0');
+      group.setAttribute('data-has-engine-warning', rows.some(function(row){
+        return row.dataset.hasEngineWarning === '1';
+      }) ? '1' : '0');
       group.setAttribute('data-has-locked', rows.some(function(row){
         return row.dataset.isLocked === '1';
       }) ? '1' : '0');
@@ -1072,6 +1095,8 @@
         statusSelect ? statusSelect.value : '',
         originSelect ? originSelect.value : '',
         vehicleSelect ? vehicleSelect.value : '',
+        assignmentsMinInput ? assignmentsMinInput.value : '',
+        assignmentsMaxInput ? assignmentsMaxInput.value : '',
         availabilityStartInput ? availabilityStartInput.value : '',
         availabilityEndInput ? availabilityEndInput.value : '',
         assignmentTimeStartInput ? assignmentTimeStartInput.value : '',
@@ -1103,13 +1128,15 @@
       var hasManualWarning = group.getAttribute('data-has-manual-warning') === '1';
       var hasMobilityError = group.getAttribute('data-has-mobility-error') === '1';
       var hasMobilityWarning = group.getAttribute('data-has-mobility-warning') === '1';
+      var hasEngineWarning = group.getAttribute('data-has-engine-warning') === '1';
       var hasLocked = group.getAttribute('data-has-locked') === '1';
 
       if (status === 'mobility_error') return hasMobilityError;
       if (status === 'mobility_warning') return hasMobilityWarning;
+      if (status === 'engine_warning') return hasEngineWarning;
       if (status === 'manual_warning') return hasManualWarning;
       if (status === 'locked') return hasLocked;
-      if (status === 'clean') return !hasManualWarning && !hasMobilityError && !hasMobilityWarning && !hasLocked;
+      if (status === 'clean') return !hasManualWarning && !hasMobilityError && !hasMobilityWarning && !hasEngineWarning && !hasLocked;
       return true;
     }
 
@@ -1122,6 +1149,22 @@
       var minutes = parseInt(parts[1], 10);
       if (isNaN(hours) || isNaN(minutes)) return null;
       return (hours * 60) + minutes;
+    }
+
+    function numberOrNull(value){
+      var raw = normalize(value);
+      if (!raw) return null;
+      var parsed = parseInt(raw, 10);
+      return isNaN(parsed) ? null : parsed;
+    }
+
+    function tutorMatchesAssignmentCount(group, minCount, maxCount){
+      if (minCount === null && maxCount === null) return true;
+      var count = numberOrNull(group.getAttribute('data-assignment-count'));
+      if (count === null) return false;
+      if (minCount !== null && count < minCount) return false;
+      if (maxCount !== null && count > maxCount) return false;
+      return true;
     }
 
     function tutorMatchesAvailabilityWindow(group, requestedStart, requestedEnd){
@@ -1169,6 +1212,8 @@
       var statusQ = normalize(statusSelect ? statusSelect.value : '');
       var originQ = normalize(originSelect ? originSelect.value : '');
       var vehicleQ = normalize(vehicleSelect ? vehicleSelect.value : '');
+      var assignmentsMin = numberOrNull(assignmentsMinInput ? assignmentsMinInput.value : '');
+      var assignmentsMax = numberOrNull(assignmentsMaxInput ? assignmentsMaxInput.value : '');
       var availabilityStart = timeToMinutes(availabilityStartInput ? availabilityStartInput.value : '');
       var availabilityEnd = timeToMinutes(availabilityEndInput ? availabilityEndInput.value : '');
       var assignmentTimeStart = timeToMinutes(assignmentTimeStartInput ? assignmentTimeStartInput.value : '');
@@ -1194,6 +1239,7 @@
         var levelOk = !levelQ || (levelQ === '__missing__' ? !groupLevel : groupLevel === levelQ);
         var hasVehicle = group.getAttribute('data-has-vehicle') === '1';
         var vehicleOk = !vehicleQ || (vehicleQ === 'with' ? hasVehicle : !hasVehicle);
+        var assignmentCountOk = tutorMatchesAssignmentCount(group, assignmentsMin, assignmentsMax);
         var availabilityOk = tutorMatchesAvailabilityWindow(group, availabilityStart, availabilityEnd);
         var assignmentTimeOk = tutorHasAssignmentInWindow(group, assignmentTimeStart, assignmentTimeEnd);
         var groupStatusOk = groupMatchesAssignmentStatus(group, statusQ);
@@ -1201,7 +1247,7 @@
         var categoryOk = delimitedListContains(groupCategories, categoryQ);
         var venueOk = !venueQ || groupVenues.indexOf(venueQ) !== -1;
         var originOk = delimitedListContains(groupOrigins, originQ);
-        var groupVisible = tutorOk && levelOk && vehicleOk && availabilityOk && assignmentTimeOk && groupStatusOk && matchOk && categoryOk && venueOk && originOk;
+        var groupVisible = tutorOk && levelOk && vehicleOk && assignmentCountOk && availabilityOk && assignmentTimeOk && groupStatusOk && matchOk && categoryOk && venueOk && originOk;
         var groupRows = Array.from(group.querySelectorAll('.match-row'));
 
         groupRows.forEach(function(row){
@@ -1260,6 +1306,8 @@
       if (statusSelect) statusSelect.value = '';
       if (originSelect) originSelect.value = '';
       if (vehicleSelect) vehicleSelect.value = '';
+      if (assignmentsMinInput) assignmentsMinInput.value = '';
+      if (assignmentsMaxInput) assignmentsMaxInput.value = '';
       if (availabilityStartInput) availabilityStartInput.value = '';
       if (availabilityEndInput) availabilityEndInput.value = '';
       if (assignmentTimeStartInput) assignmentTimeStartInput.value = '';
@@ -1840,6 +1888,8 @@
     if (statusSelect) statusSelect.addEventListener('change', applyFilters);
     if (originSelect) originSelect.addEventListener('change', applyFilters);
     if (vehicleSelect) vehicleSelect.addEventListener('change', applyFilters);
+    if (assignmentsMinInput) assignmentsMinInput.addEventListener('input', applyFilters);
+    if (assignmentsMaxInput) assignmentsMaxInput.addEventListener('input', applyFilters);
     if (availabilityStartInput) availabilityStartInput.addEventListener('input', applyFilters);
     if (availabilityEndInput) availabilityEndInput.addEventListener('input', applyFilters);
     if (assignmentTimeStartInput) assignmentTimeStartInput.addEventListener('input', applyFilters);

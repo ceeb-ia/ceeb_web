@@ -386,8 +386,7 @@ def _availability_penalty_for_subgroup(tutor_row, subgrup, availability_end_buff
     if pd.isna(sub_inici_dt) or pd.isna(sub_final_dt) or pd.isna(dispo_inici_dt) or pd.isna(dispo_final_dt):
         return penalty
 
-    dispo_final_adj = dispo_final_dt - timedelta(minutes=availability_end_buffer_min)
-    if dispo_inici_dt > sub_inici_dt or dispo_final_adj < sub_final_dt:
+    if dispo_inici_dt > sub_inici_dt or dispo_final_dt < sub_final_dt:
         return penalty
     return 0.0
 

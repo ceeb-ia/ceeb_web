@@ -582,7 +582,7 @@ class DesignacionsOptimizationPackageSolverTests(SimpleTestCase):
         self.assertFalse(route.requires_vehicle)
         self.assertIn("outlier_mobility_warning", route.warning_codes)
 
-    def test_phased_route_solver_respects_availability_end_buffer(self):
+    def test_phased_route_solver_warns_when_assignment_reaches_availability_buffer(self):
         fragment = BaseSubgroup(
             id="LATE",
             match_ids=["M1"],
@@ -615,7 +615,8 @@ class DesignacionsOptimizationPackageSolverTests(SimpleTestCase):
             {"availability_end_buffer_min": 60},
         )
 
-        self.assertEqual(candidates, [])
+        self.assertEqual(len(candidates), 1)
+        self.assertIn("availability_end_buffer_warning", candidates[0].warning_codes)
 
 
 class DesignacionsUploadFileDetectionTests(TestCase):

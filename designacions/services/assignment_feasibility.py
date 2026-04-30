@@ -202,6 +202,26 @@ def availability_covers_descriptors(
     descriptors: list[MatchDescriptor],
     availability_end_buffer_min: int,
 ) -> bool:
+    return _availability_covers_descriptors(raw, descriptors, availability_end_buffer_min=0)
+
+
+def availability_respects_buffer_descriptors(
+    raw: dict | None,
+    descriptors: list[MatchDescriptor],
+    availability_end_buffer_min: int,
+) -> bool:
+    return _availability_covers_descriptors(
+        raw,
+        descriptors,
+        availability_end_buffer_min=availability_end_buffer_min,
+    )
+
+
+def _availability_covers_descriptors(
+    raw: dict | None,
+    descriptors: list[MatchDescriptor],
+    availability_end_buffer_min: int,
+) -> bool:
     if not isinstance(raw, dict) or not descriptors:
         return False
 
@@ -219,8 +239,8 @@ def availability_covers_descriptors(
         return False
 
     start_dt = datetime.combine(availability_date, start)
-    buffered_end_dt = datetime.combine(availability_date, end) - timedelta(minutes=availability_end_buffer_min)
-    return all(start_dt <= descriptor.match_datetime.to_pydatetime() <= buffered_end_dt for descriptor in descriptors)
+    end_dt = datetime.combine(availability_date, end) - timedelta(minutes=availability_end_buffer_min)
+    return all(start_dt <= descriptor.match_datetime.to_pydatetime() <= end_dt for descriptor in descriptors)
 
 
 def same_pitch(left: MatchDescriptor, right: MatchDescriptor) -> bool:
