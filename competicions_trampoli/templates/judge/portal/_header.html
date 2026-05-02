@@ -48,6 +48,13 @@
         {% if permissions %}
         <button
           type="button"
+          class="btn btn-sm btn-primary"
+          onclick="if(window.openCompetitionModeFromCurrentGroup){ openCompetitionModeFromCurrentGroup(); } else { alert('Cal incloure els scripts del mode competicio.'); }"
+        >
+          Mode competicio
+        </button>
+        <button
+          type="button"
           class="judge-nav-toggle"
           id="insNavToggle"
           aria-label="Obrir navegacio d'inscripcions"

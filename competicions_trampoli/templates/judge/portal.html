@@ -22,6 +22,8 @@
       </div>
       {% include "judge/portal/_nav_drawer.html" %}
       {% include "judge/portal/_support_drawer.html" %}
+      {% include "judge/portal/_competition_mode_modal.html" %}
+      {% include "judge/portal/_score_confirm_modal.html" %}
     {% else %}
       <div class="text-muted">Aquest QR no te permisos configurats.</div>
     {% endif %}
@@ -41,8 +43,10 @@
 {% include "judge/portal/scripts/_40_video.js.html" %}
 {% include "judge/portal/scripts/_50_exercises.js.html" %}
 {% include "judge/portal/scripts/_60_navigation.js.html" %}
+{% include "judge/portal/scripts/_65_competition_mode_queue.js.html" %}
 {% include "judge/portal/scripts/_70_editor_render.js.html" %}
 {% include "judge/portal/scripts/_80_save_updates.js.html" %}
+{% include "judge/portal/scripts/_66_competition_mode_modal.js.html" %}
 {% include "judge/portal/scripts/_90_init.js.html" %}
 </script>
 {% endblock %}

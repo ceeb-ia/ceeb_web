@@ -23,6 +23,427 @@
     return patch;
   }
 
+  const SAVE_IN_FLIGHT = new Set();
+  const SCORE_CONFIRM_STATE = {
+    open: false,
+    saving: false,
+    insId: null,
+    exercici: null,
+    patch: null,
+    opts: {},
+    previousFocus: null,
+    bound: false,
+    fallbackBackdrop: null,
+  };
+
+  function buildSavePayload(insId, exercici, patch){
+    const subject = subjectForId(insId);
+    return {
+      inscripcio_id: subject.subject_kind === "inscripcio" ? Number(subject.subject_id || insId) : undefined,
+      subject_kind: subject.subject_kind || (TEAM_SUBJECT_MODE ? "team_unit" : "inscripcio"),
+      subject_id: Number(subject.subject_id || insId),
+      exercici: Number(exercici),
+      inputs_patch: patch,
+    };
+  }
+
+  function scoreConfirmEls(){
+    return {
+      modal: document.getElementById("scoreConfirmModal"),
+      close: document.getElementById("scoreConfirmModalClose"),
+      cancel: document.getElementById("scoreConfirmModalCancel"),
+      confirm: document.getElementById("scoreConfirmModalConfirm"),
+      context: document.getElementById("scoreConfirmModalContext"),
+      summary: document.getElementById("scoreConfirmModalSummary"),
+      status: document.getElementById("scoreConfirmModalStatus"),
+    };
+  }
+
+  function ensureScoreConfirmModal(){
+    let els = scoreConfirmEls();
+    if(!els.modal){
+      document.body.insertAdjacentHTML("beforeend", `
+        <div class="modal fade" id="scoreConfirmModal" tabindex="-1" role="dialog" aria-labelledby="scoreConfirmModalTitle" aria-hidden="true" style="z-index: 1110;">
+          <div class="modal-dialog modal-dialog-scrollable" role="document">
+            <div class="modal-content">
+              <div class="modal-header">
+                <div>
+                  <h5 class="modal-title mb-1" id="scoreConfirmModalTitle">Confirmacio de puntuacio</h5>
+                  <div class="small text-muted" id="scoreConfirmModalSubtitle">Revisa els canvis abans de desar.</div>
+                </div>
+                <button type="button" class="close" id="scoreConfirmModalClose" aria-label="Tancar"><span aria-hidden="true">&times;</span></button>
+              </div>
+              <div class="modal-body">
+                <div class="small text-muted mb-2" id="scoreConfirmModalContext"></div>
+                <div id="scoreConfirmModalSummary" class="list-group list-group-flush"></div>
+              </div>
+              <div class="modal-footer">
+                <div class="small text-muted mr-auto" id="scoreConfirmModalStatus"></div>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="scoreConfirmModalCancel">Cancelar</button>
+                <button type="button" class="btn btn-sm btn-primary" id="scoreConfirmModalConfirm">Confirmar i desar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `);
+      els = scoreConfirmEls();
+    }
+    if(els.modal && els.modal.parentElement !== document.body){
+      document.body.appendChild(els.modal);
+    }
+    bindScoreConfirmModal();
+    return els;
+  }
+
+  function bindScoreConfirmModal(){
+    if(SCORE_CONFIRM_STATE.bound) return;
+    const els = scoreConfirmEls();
+    if(!els.modal) return;
+    SCORE_CONFIRM_STATE.bound = true;
+    [els.close, els.cancel].forEach((btn) => {
+      if(btn) btn.addEventListener("click", () => closeScoreConfirmModal("cancel"));
+    });
+    if(els.confirm){
+      els.confirm.addEventListener("click", confirmScoreSaveFromModal);
+    }
+    document.addEventListener("keydown", (evt) => {
+      if(evt.key === "Escape" && SCORE_CONFIRM_STATE.open && !SCORE_CONFIRM_STATE.saving){
+        closeScoreConfirmModal("cancel");
+      }
+    });
+  }
+
+  function setScoreConfirmSaving(isSaving, msg){
+    SCORE_CONFIRM_STATE.saving = !!isSaving;
+    const els = scoreConfirmEls();
+    if(els.confirm) els.confirm.disabled = !!isSaving;
+    if(els.cancel) els.cancel.disabled = !!isSaving;
+    if(els.close) els.close.disabled = !!isSaving;
+    if(els.status) els.status.textContent = msg || "";
+  }
+
+  function showScoreConfirmDom(){
+    const els = scoreConfirmEls();
+    if(!els.modal) return;
+    if(els.modal.parentElement !== document.body){
+      document.body.appendChild(els.modal);
+    }
+    els.modal.style.zIndex = "1110";
+    els.modal.style.pointerEvents = "auto";
+    els.modal.classList.add("show");
+    els.modal.style.display = "block";
+    els.modal.removeAttribute("aria-hidden");
+    els.modal.setAttribute("aria-modal", "true");
+    document.body.classList.add("modal-open");
+    if(!SCORE_CONFIRM_STATE.fallbackBackdrop){
+      const backdrop = document.createElement("div");
+      backdrop.className = "score-confirm-backdrop";
+      backdrop.style.cssText = "position:fixed; inset:0; z-index:1100; background:rgba(15,23,42,.58);";
+      document.body.appendChild(backdrop);
+      SCORE_CONFIRM_STATE.fallbackBackdrop = backdrop;
+    }
+  }
+
+  function hideScoreConfirmDom(){
+    const els = scoreConfirmEls();
+    if(!els.modal) return;
+    els.modal.classList.remove("show");
+    els.modal.style.display = "none";
+    els.modal.setAttribute("aria-hidden", "true");
+    els.modal.removeAttribute("aria-modal");
+    if(!(window.COMPETITION_MODE && window.COMPETITION_MODE.active)){
+      document.body.classList.remove("modal-open");
+    }
+    if(SCORE_CONFIRM_STATE.fallbackBackdrop){
+      SCORE_CONFIRM_STATE.fallbackBackdrop.remove();
+      SCORE_CONFIRM_STATE.fallbackBackdrop = null;
+    }
+  }
+
+  function subjectDisplayName(insId){
+    const subject = subjectForId(insId);
+    const card = Array.from(document.querySelectorAll("[data-ins-id][data-ins-name]"))
+      .find((el) => String(el.dataset.insId || "") === String(insId));
+    return String(
+      (card && card.dataset.insName)
+      || subject.name
+      || subject.nom_i_cognoms
+      || subject.label
+      || `Inscripcio ${insId}`
+    );
+  }
+
+  function formatScoreValue(value){
+    if(value === null || value === undefined || value === "") return "Buit";
+    if(Array.isArray(value)) return value.map(formatScoreValue).join(", ");
+    if(typeof value === "object") return JSON.stringify(value);
+    return String(value);
+  }
+
+  function fieldDisplay(field, code){
+    const label = field && field.label ? String(field.label) : String(code || "Camp");
+    const cleanCode = String(code || "");
+    return cleanCode && cleanCode !== label ? `${label} [${cleanCode}]` : label;
+  }
+
+  function permMetaParts(perm){
+    const parts = [`Jutge ${Math.max(1, Number(perm && perm.judge_index || 1))}`];
+    if(perm && perm.item_count){
+      const start = Math.max(1, Number(perm.item_start || 1));
+      parts.push(`Items ${start}-${start + Math.max(1, Number(perm.item_count || 1)) - 1}`);
+    }
+    if(perm && perm.member_slot){
+      parts.push(perm.member_label || `M${perm.member_slot}`);
+    }
+    return parts;
+  }
+
+  function appendSummaryRow(rows, title, metaParts, value){
+    rows.push({
+      title,
+      meta: (metaParts || []).filter(Boolean).join(" - "),
+      value: formatScoreValue(value),
+    });
+  }
+
+  function buildCrashSummaryRows(rows, crashCode, value, resolvedPerms){
+    const baseCode = String(crashCode || "").replace(/^__crash__/, "");
+    const perms = resolvedPerms.filter((perm) => String(perm.runtime_field_code || perm.field_code || "") === baseCode);
+    const fallbackField = schemaField(baseCode);
+    const activePerms = perms.length ? perms : [{
+      runtime_field_code: baseCode,
+      field_code: baseCode,
+      judge_index: 1,
+      field: fallbackField,
+    }];
+    activePerms.forEach((perm) => {
+      const j = Math.max(1, Number(perm.judge_index || 1));
+      const crashAt = Array.isArray(value) ? Number(value[j - 1] || 0) : Number(value || 0);
+      const field = perm.field || fallbackField || schemaField(perm.runtime_field_code || perm.field_code);
+      const label = crashAt > 0
+        ? `${getItemDisplayLabel(perm.field_code || baseCode, crashAt)} (${crashAt})`
+        : "Sense crash";
+      appendSummaryRow(rows, `Crash - ${fieldDisplay(field, perm.runtime_field_code || baseCode)}`, permMetaParts(perm), label);
+    });
+  }
+
+  function buildFieldSummaryRows(rows, code, value, resolvedPerms){
+    const perms = resolvedPerms.filter((perm) => String(perm.runtime_field_code || perm.field_code || "") === String(code));
+    const fallbackField = schemaField(code);
+    const activePerms = perms.length ? perms : [{
+      runtime_field_code: code,
+      field_code: code,
+      judge_index: 1,
+      item_start: 1,
+      item_count: null,
+      field: fallbackField,
+    }];
+
+    activePerms.forEach((perm) => {
+      const field = perm.field || fallbackField || schemaField(perm.runtime_field_code || perm.field_code);
+      const type = field && field.type ? field.type : "";
+      const title = fieldDisplay(field, perm.runtime_field_code || code);
+      const meta = permMetaParts(perm);
+      const judgeIdx = Math.max(1, Number(perm.judge_index || 1)) - 1;
+
+      if(type === "matrix" && Array.isArray(value)){
+        const row = Array.isArray(value[judgeIdx]) ? value[judgeIdx] : [];
+        const nItems = Math.max(1, Number((field.items && field.items.count) || row.length || 1));
+        const start = Math.max(1, Number(perm.item_start || 1));
+        const count = perm.item_count ? Math.max(1, Number(perm.item_count)) : Math.max(1, nItems - start + 1);
+        for(let k = 0; k < count; k += 1){
+          const idx1 = start + k;
+          const itemLabel = getItemDisplayLabel(perm.field_code || code, idx1);
+          appendSummaryRow(rows, title, meta.concat([`${itemLabel} (${idx1})`]), row[idx1 - 1]);
+        }
+        return;
+      }
+
+      if((type === "list" || Array.isArray(value)) && Array.isArray(value)){
+        appendSummaryRow(rows, title, meta, value[judgeIdx]);
+        return;
+      }
+
+      appendSummaryRow(rows, title, meta, value);
+    });
+  }
+
+  function buildScoreConfirmSummary(insId, exercici, patch){
+    const rows = [];
+    const resolvedPerms = typeof resolvedPermsForIns === "function" ? resolvedPermsForIns(insId) : [];
+    Object.entries(patch || {}).forEach(([code, value]) => {
+      if(String(code).startsWith("__crash__")){
+        buildCrashSummaryRows(rows, code, value, resolvedPerms);
+        return;
+      }
+      buildFieldSummaryRows(rows, code, value, resolvedPerms);
+    });
+    return rows;
+  }
+
+  function renderScoreConfirmSummary(insId, exercici, patch){
+    const els = ensureScoreConfirmModal();
+    if(els.context){
+      els.context.textContent = `${subjectDisplayName(insId)} - Exercici ${exercici}`;
+    }
+    if(!els.summary) return;
+    els.summary.innerHTML = "";
+    const rows = buildScoreConfirmSummary(insId, exercici, patch);
+    if(!rows.length){
+      els.summary.innerHTML = `<div class="text-muted small">No hi ha canvis per mostrar.</div>`;
+      return;
+    }
+    rows.forEach((row) => {
+      const item = document.createElement("div");
+      item.className = "list-group-item px-0";
+      const title = document.createElement("div");
+      title.className = "fw-semibold";
+      title.textContent = row.title;
+      const meta = document.createElement("div");
+      meta.className = "small text-muted";
+      meta.textContent = row.meta;
+      const value = document.createElement("div");
+      value.className = "mt-1";
+      value.textContent = row.value;
+      item.appendChild(title);
+      if(row.meta) item.appendChild(meta);
+      item.appendChild(value);
+      els.summary.appendChild(item);
+    });
+  }
+
+  function openScoreConfirmModal(insId, exercici, patch, opts = {}){
+    exercici = exerciseKey(exercici);
+    SCORE_CONFIRM_STATE.open = true;
+    SCORE_CONFIRM_STATE.saving = false;
+    SCORE_CONFIRM_STATE.insId = String(insId);
+    SCORE_CONFIRM_STATE.exercici = exercici;
+    SCORE_CONFIRM_STATE.patch = deepClone(patch);
+    SCORE_CONFIRM_STATE.opts = opts || {};
+    SCORE_CONFIRM_STATE.previousFocus = document.activeElement;
+    renderScoreConfirmSummary(insId, exercici, patch);
+    setScoreConfirmSaving(false, "");
+    showScoreConfirmDom();
+    const els = scoreConfirmEls();
+    if(els.confirm) window.setTimeout(() => els.confirm.focus(), 0);
+  }
+
+  function clearScoreConfirmState(){
+    SCORE_CONFIRM_STATE.open = false;
+    SCORE_CONFIRM_STATE.insId = null;
+    SCORE_CONFIRM_STATE.exercici = null;
+    SCORE_CONFIRM_STATE.patch = null;
+    SCORE_CONFIRM_STATE.opts = {};
+  }
+
+  function closeScoreConfirmModal(reason){
+    if(SCORE_CONFIRM_STATE.saving) return;
+    hideScoreConfirmDom();
+    const previousFocus = SCORE_CONFIRM_STATE.previousFocus;
+    const opts = SCORE_CONFIRM_STATE.opts || {};
+    clearScoreConfirmState();
+    SCORE_CONFIRM_STATE.previousFocus = null;
+    if(reason === "cancel" && typeof opts.onCancel === "function"){
+      opts.onCancel();
+    }
+    if(previousFocus && typeof previousFocus.focus === "function"){
+      window.setTimeout(() => previousFocus.focus(), 0);
+    }
+  }
+
+  async function confirmScoreSaveFromModal(){
+    if(SCORE_CONFIRM_STATE.saving) return;
+    const insId = SCORE_CONFIRM_STATE.insId;
+    const exercici = SCORE_CONFIRM_STATE.exercici;
+    const patch = SCORE_CONFIRM_STATE.patch;
+    const opts = SCORE_CONFIRM_STATE.opts || {};
+    if(!insId || !exercici || !patch) return;
+
+    setScoreConfirmSaving(true, "Desant...");
+    const ok = await performSave(insId, exercici, patch, opts);
+    setScoreConfirmSaving(false, ok ? "" : "No s'ha pogut desar.");
+    if(ok){
+      hideScoreConfirmDom();
+      clearScoreConfirmState();
+      SCORE_CONFIRM_STATE.previousFocus = null;
+    }
+  }
+
+  async function performSave(insId, exercici, patch, opts = {}){
+    exercici = exerciseKey(exercici);
+    if(!patch){
+      setStatus(insId, exercici, "info", "No hi ha canvis pendents");
+      return false;
+    }
+
+    const saveKey = entryKey(insId, exercici);
+    if(SAVE_IN_FLIGHT.has(saveKey)){
+      setStatus(insId, exercici, "info", "Desant...");
+      return false;
+    }
+
+    setStatus(insId, exercici, "", "Desant...");
+    SAVE_IN_FLIGHT.add(saveKey);
+
+    try{
+      const payload = opts.payload || buildSavePayload(insId, exercici, patch);
+      if(typeof opts.onBeforeSave === "function"){
+        opts.onBeforeSave({ insId, exercici, patch, payload });
+      }
+
+      const res = await fetch(SAVE_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": CSRF_TOKEN,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json().catch(()=> ({}));
+      if(!res.ok || !data.ok){
+        setStatus(insId, exercici, "err", data.error || "Error desant");
+        if(typeof opts.onError === "function"){
+          opts.onError({ insId, exercici, patch, payload, data, response: res });
+        }
+        return false;
+      }
+
+      const prevEntry = getEntry(insId, exercici);
+      const prevInputs = (prevEntry.inputs && typeof prevEntry.inputs === "object") ? prevEntry.inputs : {};
+      const respInputs = (data.inputs && typeof data.inputs === "object") ? data.inputs : {};
+
+      setEntry(insId, exercici, {
+        inputs: { ...prevInputs, ...respInputs },
+        outputs: data.outputs || {},
+        total: data.total || 0,
+        updated_at: data.updated_at || null,
+      });
+
+      clearDraft(insId, exercici);
+      clearDirty(insId, exercici);
+      renderEditor(insId, exercici, { force: true });
+      refreshInsNavStatuses();
+      refreshExerciseChipStates(insId);
+      setStatus(insId, exercici, "ok", "Desat ✓");
+      if(typeof opts.onSuccess === "function"){
+        opts.onSuccess({ insId, exercici, patch, payload, data, response: res });
+      }
+      return true;
+    } catch(error){
+      setStatus(insId, exercici, "err", "Error desant");
+      if(typeof opts.onError === "function"){
+        opts.onError({ insId, exercici, patch, error });
+      }
+      return false;
+    } finally {
+      SAVE_IN_FLIGHT.delete(saveKey);
+      if(typeof opts.onFinally === "function"){
+        opts.onFinally({ insId, exercici, patch });
+      }
+    }
+  }
+
   async function saveNow(insId, exercici){
     exercici = exerciseKey(exercici);
     const patch = buildPatchFromCard(insId, exercici);
@@ -30,50 +451,7 @@
       setStatus(insId, exercici, "info", "No hi ha canvis pendents");
       return;
     }
-
-    setStatus(insId, exercici, "", "Desant...");
-
-    const res = await fetch(SAVE_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-CSRFToken": CSRF_TOKEN,
-      },
-      body: JSON.stringify((() => {
-        const subject = subjectForId(insId);
-        return {
-          inscripcio_id: subject.subject_kind === "inscripcio" ? Number(subject.subject_id || insId) : undefined,
-          subject_kind: subject.subject_kind || (TEAM_SUBJECT_MODE ? "team_unit" : "inscripcio"),
-          subject_id: Number(subject.subject_id || insId),
-          exercici: Number(exercici),
-          inputs_patch: patch,
-        };
-      })()),
-    });
-
-    const data = await res.json().catch(()=> ({}));
-    if(!res.ok || !data.ok){
-      setStatus(insId, exercici, "err", data.error || "Error desant");
-      return;
-    }
-
-    const prevEntry = getEntry(insId, exercici);
-    const prevInputs = (prevEntry.inputs && typeof prevEntry.inputs === "object") ? prevEntry.inputs : {};
-    const respInputs = (data.inputs && typeof data.inputs === "object") ? data.inputs : {};
-
-    setEntry(insId, exercici, {
-      inputs: { ...prevInputs, ...respInputs },
-      outputs: data.outputs || {},
-      total: data.total || 0,
-      updated_at: data.updated_at || null,
-    });
-
-    clearDraft(insId, exercici);
-    clearDirty(insId, exercici);
-    renderEditor(insId, exercici, { force: true });
-    refreshInsNavStatuses();
-    refreshExerciseChipStates(insId);
-    setStatus(insId, exercici, "ok", "Desat ✓");
+    openScoreConfirmModal(insId, exercici, patch);
   }
 
   function applyIncomingUpdate(update){

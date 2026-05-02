@@ -123,10 +123,18 @@
     const ae = document.activeElement;
     return !!(wrap && ae && wrap.contains(ae));
   }
+  function scoreInputRootFor(input, insId, exercici){
+    const scopedRoot = input && input.closest ? input.closest('[data-score-input-nav-root="1"]') : null;
+    if(scopedRoot) return scopedRoot;
+    return document.querySelector(`[data-exercise-panel="1"][data-ins-id="${String(insId)}"][data-exercici="${exerciseKey(exercici)}"]`);
+  }
   function getEditableInputs(insId, exercici){
-    const panel = document.querySelector(`[data-exercise-panel="1"][data-ins-id="${String(insId)}"][data-exercici="${exerciseKey(exercici)}"]`);
-    if(!panel) return [];
-    return Array.from(panel.querySelectorAll('input[data-nav-scope="score-input"][data-ins-id][data-exercici]'))
+    const currentInput = arguments.length >= 3 ? arguments[2] : null;
+    const root = scoreInputRootFor(currentInput, insId, exercici);
+    if(!root) return [];
+    return Array.from(root.querySelectorAll('input[data-nav-scope="score-input"][data-ins-id][data-exercici]'))
+      .filter((input) => String(input.dataset.insId || "") === String(insId))
+      .filter((input) => String(input.dataset.exercici || "") === exerciseKey(exercici))
       .filter((input) => !input.disabled);
   }
   function selectInputContents(input){
@@ -164,7 +172,7 @@
   }
   function updateInputEnterKeyHint(input){
     if(!input) return;
-    const inputs = getEditableInputs(input.dataset.insId || "", input.dataset.exercici || "");
+    const inputs = getEditableInputs(input.dataset.insId || "", input.dataset.exercici || "", input);
     const idx = inputs.indexOf(input);
     const hint = (idx !== -1 && idx < inputs.length - 1) ? "next" : "done";
     input.setAttribute("enterkeyhint", hint);
@@ -178,12 +186,19 @@
   }
   function focusNextEditableInput(currentInput){
     if(!currentInput) return;
-    const inputs = getEditableInputs(currentInput.dataset.insId || "", currentInput.dataset.exercici || "");
+    const inputs = getEditableInputs(currentInput.dataset.insId || "", currentInput.dataset.exercici || "", currentInput);
     if(!inputs.length){
       focusEditableInput(currentInput);
       return;
     }
     const idx = inputs.indexOf(currentInput);
+    if(idx !== -1 && idx >= inputs.length - 1 && competitionScoreAutoAdvanceIsActive()){
+      const saveBtn = document.getElementById("competitionModeSave");
+      if(saveBtn && !saveBtn.disabled){
+        saveBtn.focus();
+        return;
+      }
+    }
     const target = (idx === -1)
       ? inputs[0]
       : inputs[Math.min(idx + 1, inputs.length - 1)];
@@ -191,7 +206,7 @@
   }
   function focusPrevEditableInput(currentInput){
     if(!currentInput) return;
-    const inputs = getEditableInputs(currentInput.dataset.insId || "", currentInput.dataset.exercici || "");
+    const inputs = getEditableInputs(currentInput.dataset.insId || "", currentInput.dataset.exercici || "", currentInput);
     if(!inputs.length){
       focusEditableInput(currentInput);
       return;
@@ -202,7 +217,115 @@
       : inputs[Math.max(idx - 1, 0)];
     focusEditableInput(target || currentInput);
   }
+  function fieldAllowsDecimals(field){
+    return Number(field && field.decimals) > 0;
+  }
+  function scoreFieldBound(field, names){
+    if(!field || typeof field !== "object") return null;
+    for(const name of names){
+      if(field[name] === null || field[name] === undefined || field[name] === "") continue;
+      const value = Number(field[name]);
+      if(Number.isFinite(value)) return value;
+    }
+    return null;
+  }
+  function scoreInputCompletionState(input, field){
+    const raw = String(input && input.value !== undefined ? input.value : "").trim();
+    if(!raw) return { complete: false, valid: false, reason: "empty" };
+    if(/[.,]$/.test(raw)) return { complete: false, valid: false, reason: "decimal_pending" };
+
+    const allowsDecimals = fieldAllowsDecimals(field);
+    const numericPattern = allowsDecimals
+      ? /^[+-]?(?:\d+(?:[\.,]\d+)?|[\.,]\d+)$/
+      : /^[+-]?\d+$/;
+    if(!numericPattern.test(raw)) return { complete: false, valid: false, reason: "non_numeric" };
+
+    const value = Number(raw.replace(",", "."));
+    if(!Number.isFinite(value)) return { complete: false, valid: false, reason: "non_numeric" };
+    if(!allowsDecimals && !Number.isInteger(value)){
+      return { complete: false, valid: false, reason: "decimal_not_allowed" };
+    }
+
+    const min = scoreFieldBound(field, ["min", "minimum", "min_value", "minValue"]);
+    if(min !== null && value < min) return { complete: true, valid: false, reason: "below_min" };
+    const max = scoreFieldBound(field, ["max", "maximum", "max_value", "maxValue"]);
+    if(max !== null && value > max) return { complete: true, valid: false, reason: "above_max" };
+
+    return { complete: true, valid: true, reason: "" };
+  }
+  function scoreInputAutoAdvanceDelay(input, field, defaultDelay){
+    const raw = String(input && input.value !== undefined ? input.value : "").trim();
+    if(fieldAllowsDecimals(field) && raw && !/[.,]/.test(raw)){
+      return Math.max(Number(defaultDelay || 0), 1100);
+    }
+    return Math.max(0, Number(defaultDelay || 300) || 300);
+  }
+  function competitionScoreAutoAdvanceIsActive(){
+    if(typeof window.isCompetitionScoreAutoAdvanceActive === "function"){
+      try{
+        return !!window.isCompetitionScoreAutoAdvanceActive();
+      } catch(_err){
+        return false;
+      }
+    }
+    if(window.COMPETITION_MODE && typeof window.COMPETITION_MODE === "object"){
+      if(window.COMPETITION_MODE.autoAdvanceEnabled === false) return false;
+      return window.COMPETITION_MODE.active === true;
+    }
+    const state = window.judgeCompetitionModeState || window.JUDGE_COMPETITION_MODE_STATE || window.competitionModeState;
+    if(state && typeof state === "object" && !state.nodeType){
+      if(state.autoAdvanceEnabled === false) return false;
+      return state.active === true || state.isActive === true || state.enabled === true;
+    }
+    const candidates = [
+      window.isCompetitionModeActive,
+      window.competitionModeIsActive,
+    ];
+    for(const fn of candidates){
+      if(typeof fn !== "function") continue;
+      try{
+        if(fn()) return true;
+      } catch(_err){
+        // ignore optional integration hooks
+      }
+    }
+    if(window.competitionModeActive === true || window.JUDGE_COMPETITION_MODE_ACTIVE === true) return true;
+    return false;
+  }
+  function enableScoreInputAutoAdvance(input, field, opts = {}){
+    if(!input) return;
+    const baseDelay = Math.max(0, Number(opts.delayMs ?? 300) || 300);
+    if(input.dataset.scoreAutoAdvanceBound === "1") return;
+    input.dataset.scoreAutoAdvanceBound = "1";
+    let timer = null;
+    const clearTimer = () => {
+      if(timer){
+        window.clearTimeout(timer);
+        timer = null;
+      }
+    };
+    const schedule = () => {
+      clearTimer();
+      if(!competitionScoreAutoAdvanceIsActive()) return;
+      const state = scoreInputCompletionState(input, field);
+      if(!state.complete || !state.valid) return;
+      const delay = scoreInputAutoAdvanceDelay(input, field, baseDelay);
+      timer = window.setTimeout(() => {
+        timer = null;
+        if(document.activeElement !== input) return;
+        if(!competitionScoreAutoAdvanceIsActive()) return;
+        const nextState = scoreInputCompletionState(input, field);
+        if(nextState.complete && nextState.valid) focusNextEditableInput(input);
+      }, delay);
+    };
+    input.addEventListener("input", schedule);
+    input.addEventListener("keydown", (evt) => {
+      if(evt.key === "Enter" || evt.key === "Tab") clearTimer();
+    });
+    input.addEventListener("blur", clearTimer);
+  }
   function bindScoreInputNavigation(input, insId, exercici){
+    const field = arguments.length >= 4 ? arguments[3] : (input._scoreField || null);
     if(!input) return;
     input.dataset.insId = String(insId);
     input.dataset.exercici = exerciseKey(exercici);
@@ -222,6 +345,7 @@
       }
       focusNextEditableInput(input);
     });
+    enableScoreInputAutoAdvance(input, field);
   }
   function effectiveInput(insId, exercici, code){
     const draft = DRAFTS[entryKey(insId, exercici)];

@@ -71,6 +71,7 @@
     inp.value = (value ?? "");
     inp.dataset.kind = "number";
     inp.dataset.permKey = perm.key;
+    inp._scoreField = field;
     inp.addEventListener("input", () => {
       const v = (inp.value === "") ? null : Number(inp.value);
       updateDraftValue(insId, exercici, perm.runtime_field_code, v, perm);
@@ -96,6 +97,7 @@
     inp.value = (displayValue ?? "");
     inp.dataset.kind = "list";
     inp.dataset.permKey = perm.key;
+    inp._scoreField = field;
     inp.addEventListener("input", () => {
       const next = Array.isArray(effectiveInput(insId, exercici, perm.runtime_field_code))
         ? deepClone(effectiveInput(insId, exercici, perm.runtime_field_code))
@@ -172,6 +174,7 @@
       inp.dataset.kind = "matrix";
       inp.dataset.itemIndex0 = String(idx0);
       inp.dataset.permKey = perm.key;
+      inp._scoreField = field;
       inp.addEventListener("input", () => {
         const next = Array.isArray(effectiveInput(insId, exercici, perm.runtime_field_code))
           ? deepClone(effectiveInput(insId, exercici, perm.runtime_field_code))
@@ -275,10 +278,10 @@
     parent.appendChild(block);
   }
 
-  function renderEditor(insId, exercici, opts = {}){
-    const wrap = document.getElementById(editorInnerId(insId, exercici));
+  function renderEditorInto(wrap, insId, exercici, opts = {}){
     if(!wrap) return;
     if(wrap.dataset.editorRendered === "1" && !opts.force) return;
+    wrap.dataset.scoreInputNavRoot = "1";
     wrap.innerHTML = "";
     const resolvedPerms = resolvedPermsForIns(insId);
     if(!resolvedPerms.length){
@@ -288,4 +291,9 @@
     }
     resolvedPerms.forEach(perm => renderPermissionBlock(wrap, String(insId), exerciseKey(exercici), perm));
     wrap.dataset.editorRendered = "1";
+  }
+
+  function renderEditor(insId, exercici, opts = {}){
+    const wrap = document.getElementById(editorInnerId(insId, exercici));
+    renderEditorInto(wrap, insId, exercici, opts);
   }

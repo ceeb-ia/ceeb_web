@@ -144,11 +144,19 @@
     const parts = PERMS.map((perm) => {
       const p = normalizePerm(perm);
       if(!p.field_code) return "";
-      const range = p.item_count ? `(${p.item_start}..${p.item_start + p.item_count - 1})` : "";
-      const scope = p.scope === "member" ? `Individual - ${permissionTargetText(p)}` : "Compartit";
-      return `${p.field_code} [${scope}] [J${p.judge_index}] ${range}`.trim();
+      const field = schemaField(p.runtime_field_code || p.field_code) || schemaField(p.field_code) || {};
+      const label = String(field.label || p.label || p.field_code || "").trim();
+      const meta = [`J${p.judge_index}`];
+      if(p.item_count){
+        meta.push(`Items ${p.item_start}-${p.item_start + p.item_count - 1}`);
+      }
+      if(p.scope === "member"){
+        const target = permissionTargetText(p);
+        if(target && target !== "Compartit") meta.push(target);
+      }
+      return [label, ...meta].filter(Boolean).join(" · ");
     });
-    const text = parts.filter(Boolean).join(" - ");
+    const text = parts.filter(Boolean).join(" · ");
     targets.forEach((el) => {
       el.textContent = text;
     });

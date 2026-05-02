@@ -1,0 +1,125 @@
+  const COMPETITION_MODE = window.COMPETITION_MODE || {
+    active: false,
+    queue: [],
+    index: 0,
+    current: null,
+    autoAdvanceEnabled: true,
+    pendingAutoAdvanceTimer: null,
+  };
+  window.COMPETITION_MODE = COMPETITION_MODE;
+
+  function competitionModePaneForTarget(groupTarget){
+    const target = String(groupTarget || currentGroupTarget() || "");
+    if(!target) return null;
+    return document.querySelector(`[data-group-pane="${target}"]`);
+  }
+
+  function competitionModeGroupLabel(pane){
+    return String((pane && pane.dataset.groupLabel) || "Grup");
+  }
+
+  function competitionModeEntryName(card){
+    const configured = String((card && card.dataset.insName) || "").trim();
+    if(configured) return configured;
+    return String(card?.querySelector(".fw-semibold")?.textContent || "").trim();
+  }
+
+  function competitionModeOrderLabel(card){
+    const meta = String(card?.querySelector(".judge-meta")?.textContent || "").replace(/\s+/g, " ").trim();
+    const match = meta.match(/Ordre\s+(\S+)/i);
+    return match ? `Ordre ${match[1].trim()}` : "";
+  }
+
+  function competitionModeItemFromCard(card, pane, exercici){
+    const insId = String((card && card.dataset.insId) || "");
+    const ex = exerciseKey(exercici || (card && card.dataset.exercici) || "");
+    if(!insId || !ex) return null;
+    return {
+      insId,
+      exercici: ex,
+      groupTarget: String((pane && pane.dataset.groupPane) || ""),
+      groupLabel: competitionModeGroupLabel(pane),
+      name: competitionModeEntryName(card),
+      orderLabel: competitionModeOrderLabel(card),
+    };
+  }
+
+  function buildCompetitionModeQueue(groupTarget){
+    const pane = competitionModePaneForTarget(groupTarget);
+    if(!pane) return [];
+
+    const queue = [];
+    const seen = new Set();
+    const addItem = (item) => {
+      if(!item) return;
+      const key = entryKey(item.insId, item.exercici);
+      if(seen.has(key)) return;
+      seen.add(key);
+      queue.push(item);
+    };
+
+    if(isCompetitionOrderMode()){
+      pane.querySelectorAll(".judge-card[data-ins-id][data-exercici]").forEach((card) => {
+        addItem(competitionModeItemFromCard(card, pane, card.dataset.exercici || ""));
+      });
+      return queue;
+    }
+
+    const cards = Array.from(pane.querySelectorAll(".judge-card[data-ins-id]"));
+    allExerciseKeys().forEach((exercici) => {
+      cards.forEach((card) => {
+        const panel = card.querySelector(`[data-exercise-panel="1"][data-ins-id="${String(card.dataset.insId || "")}"][data-exercici="${exerciseKey(exercici)}"]`);
+        if(panel) addItem(competitionModeItemFromCard(card, pane, exercici));
+      });
+    });
+    return queue;
+  }
+
+  function findCompetitionQueueIndex(queue, insId, exercici){
+    const wantedId = String(insId);
+    const wantedExercise = exerciseKey(exercici);
+    return (Array.isArray(queue) ? queue : []).findIndex((item) => (
+      String(item.insId) === wantedId && exerciseKey(item.exercici) === wantedExercise
+    ));
+  }
+
+  function competitionQueueItemState(item){
+    if(!item) return "empty";
+    return getExerciseVisualState(item.insId, item.exercici);
+  }
+
+  function firstPendingCompetitionQueueIndex(queue){
+    const items = Array.isArray(queue) ? queue : [];
+    const idx = items.findIndex((item) => competitionQueueItemState(item) !== "saved");
+    return idx === -1 ? 0 : idx;
+  }
+
+  function openCompetitionModeWithQueue(queue, index){
+    const items = Array.isArray(queue) ? queue : [];
+    if(!items.length) return null;
+    const safeIndex = Math.max(0, Math.min(Number(index || 0), items.length - 1));
+    COMPETITION_MODE.active = true;
+    COMPETITION_MODE.queue = items;
+    COMPETITION_MODE.index = safeIndex;
+    COMPETITION_MODE.current = items[safeIndex] || null;
+    if(typeof openCompetitionModeQueue === "function"){
+      openCompetitionModeQueue(items, safeIndex);
+    }
+    return COMPETITION_MODE.current;
+  }
+
+  function openCompetitionModeFromEntry(insId, exercici){
+    const ex = exerciseKey(exercici);
+    const panel = document.querySelector(`[data-exercise-panel="1"][data-ins-id="${String(insId)}"][data-exercici="${ex}"]`);
+    const card = panel ? panel.closest(".judge-card[data-ins-id]") : document.querySelector(`.judge-card[data-ins-id="${String(insId)}"]`);
+    const pane = card ? card.closest("[data-group-pane]") : null;
+    const groupTarget = pane ? pane.dataset.groupPane : currentGroupTarget();
+    const queue = buildCompetitionModeQueue(groupTarget);
+    const idx = findCompetitionQueueIndex(queue, insId, ex);
+    return openCompetitionModeWithQueue(queue, idx === -1 ? firstPendingCompetitionQueueIndex(queue) : idx);
+  }
+
+  function openCompetitionModeFromCurrentGroup(){
+    const queue = buildCompetitionModeQueue(currentGroupTarget());
+    return openCompetitionModeWithQueue(queue, firstPendingCompetitionQueueIndex(queue));
+  }

@@ -1,0 +1,201 @@
+  function competitionModeElements(){
+    return {
+      modal: document.getElementById("competitionModeModal"),
+      title: document.getElementById("competitionModeTitle"),
+      subtitle: document.getElementById("competitionModeSubtitle"),
+      position: document.getElementById("competitionModePosition"),
+      state: document.getElementById("competitionModeState"),
+      host: document.getElementById("competitionModeEditorHost"),
+      prev: document.getElementById("competitionModePrev"),
+      next: document.getElementById("competitionModeNext"),
+      save: document.getElementById("competitionModeSave"),
+      close: document.getElementById("competitionModeClose"),
+      exit: document.getElementById("competitionModeExit"),
+    };
+  }
+
+  function isCompetitionModeActive(){
+    return !!(window.COMPETITION_MODE && window.COMPETITION_MODE.active);
+  }
+
+  function isCompetitionScoreAutoAdvanceActive(){
+    return !!(
+      window.COMPETITION_MODE
+      && window.COMPETITION_MODE.active
+      && window.COMPETITION_MODE.autoAdvanceEnabled !== false
+    );
+  }
+
+  function competitionModeCurrentItem(){
+    return COMPETITION_MODE.queue[COMPETITION_MODE.index] || null;
+  }
+
+  function competitionModeStateText(state){
+    if(state === "saved") return "Desat";
+    if(state === "dirty") return "Canvis pendents";
+    return "Pendent";
+  }
+
+  function competitionModeCanLeaveCurrent(){
+    const item = competitionModeCurrentItem();
+    if(!item || !hasDirty(item.insId, item.exercici)) return true;
+    return window.confirm("Hi ha canvis pendents en aquesta entrada. Vols sortir sense desar-los ara?");
+  }
+
+  function renderCompetitionModeModal(){
+    const els = competitionModeElements();
+    const item = competitionModeCurrentItem();
+    if(!els.modal || !item) return;
+    if(COMPETITION_MODE.active){
+      document.body.classList.add("modal-open");
+    }
+
+    const state = competitionQueueItemState(item);
+    const total = COMPETITION_MODE.queue.length;
+    const pos = COMPETITION_MODE.index + 1;
+
+    if(els.title) els.title.textContent = item.name || `Inscripcio ${item.insId}`;
+    if(els.subtitle){
+      const bits = [item.groupLabel, `Exercici ${item.exercici}`, item.orderLabel].filter(Boolean);
+      els.subtitle.textContent = bits.join(" - ");
+    }
+    if(els.position) els.position.textContent = `${pos} / ${total}`;
+    if(els.state){
+      els.state.textContent = competitionModeStateText(state);
+      els.state.className = `badge ${
+        state === "saved" ? "text-bg-success" : (state === "dirty" ? "text-bg-warning" : "text-bg-secondary")
+      }`;
+    }
+    if(els.prev) els.prev.disabled = COMPETITION_MODE.index <= 0;
+    if(els.next) els.next.disabled = COMPETITION_MODE.index >= total - 1;
+
+    if(els.host){
+      els.host.innerHTML = "";
+      els.host.dataset.insId = item.insId;
+      els.host.dataset.exercici = item.exercici;
+      if(typeof renderEditorInto === "function"){
+        renderEditorInto(els.host, item.insId, item.exercici, { force: true, competitionMode: true });
+      } else {
+        els.host.innerHTML = `
+          <div class="alert alert-info mb-0">
+            El mode competicio ja te la cua preparada. Falta integrar el renderer
+            <code>renderEditorInto(host, insId, exercici, opts)</code> per mostrar l'editor dins del modal sense duplicar ids.
+          </div>
+        `;
+      }
+    }
+  }
+
+  function showCompetitionModeModal(){
+    const els = competitionModeElements();
+    if(!els.modal){
+      window.alert("Cal incloure el parcial del modal de mode competicio.");
+      return;
+    }
+    els.modal.classList.remove("d-none");
+    els.modal.setAttribute("aria-hidden", "false");
+    document.body.classList.add("modal-open");
+    renderCompetitionModeModal();
+    window.setTimeout(() => {
+      const firstInput = els.host ? els.host.querySelector('input:not([disabled])') : null;
+      if(firstInput){
+        firstInput.focus();
+        selectInputContents(firstInput);
+      }
+      else if(els.next) els.next.focus();
+    }, 0);
+  }
+
+  function openCompetitionModeQueue(queue, index){
+    const items = Array.isArray(queue) ? queue : [];
+    if(!items.length){
+      window.alert("No hi ha entrades disponibles en aquest grup.");
+      return;
+    }
+    COMPETITION_MODE.active = true;
+    COMPETITION_MODE.queue = items;
+    COMPETITION_MODE.index = Math.max(0, Math.min(Number(index || 0), items.length - 1));
+    COMPETITION_MODE.current = competitionModeCurrentItem();
+    showCompetitionModeModal();
+  }
+
+  function closeCompetitionModeModal(){
+    if(!competitionModeCanLeaveCurrent()) return;
+    const item = competitionModeCurrentItem();
+    const els = competitionModeElements();
+    if(els.modal){
+      els.modal.classList.add("d-none");
+      els.modal.setAttribute("aria-hidden", "true");
+    }
+    document.body.classList.remove("modal-open");
+    COMPETITION_MODE.active = false;
+    if(item) focusEntryCard(item.insId, item.exercici);
+  }
+
+  function navigateCompetitionMode(delta){
+    if(!competitionModeCanLeaveCurrent()) return;
+    const total = COMPETITION_MODE.queue.length;
+    const nextIndex = Math.max(0, Math.min(COMPETITION_MODE.index + Number(delta || 0), total - 1));
+    if(nextIndex === COMPETITION_MODE.index) return;
+    COMPETITION_MODE.index = nextIndex;
+    COMPETITION_MODE.current = competitionModeCurrentItem();
+    renderCompetitionModeModal();
+  }
+
+  async function saveCompetitionModeCurrent(){
+    const item = competitionModeCurrentItem();
+    if(!item) return;
+    const patch = buildPatchFromCard(item.insId, item.exercici);
+    if(!patch){
+      setStatus(item.insId, item.exercici, "info", "No hi ha canvis pendents");
+      renderCompetitionModeModal();
+      return;
+    }
+    if(typeof openScoreConfirmModal !== "function"){
+      await performSave(item.insId, item.exercici, patch, {
+        onSuccess: () => advanceCompetitionModeAfterSave(),
+      });
+      renderCompetitionModeModal();
+      return;
+    }
+    openScoreConfirmModal(item.insId, item.exercici, patch, {
+      source: "competition_mode",
+      onSuccess: () => advanceCompetitionModeAfterSave(),
+      onCancel: () => renderCompetitionModeModal(),
+      onError: () => renderCompetitionModeModal(),
+      onFinally: () => {
+        if(COMPETITION_MODE.active) document.body.classList.add("modal-open");
+      },
+    });
+  }
+
+  function advanceCompetitionModeAfterSave(){
+    const total = COMPETITION_MODE.queue.length;
+    if(COMPETITION_MODE.index < total - 1){
+      COMPETITION_MODE.index += 1;
+      COMPETITION_MODE.current = competitionModeCurrentItem();
+      renderCompetitionModeModal();
+      return;
+    }
+    COMPETITION_MODE.current = competitionModeCurrentItem();
+    renderCompetitionModeModal();
+  }
+
+  function initCompetitionModeModal(){
+    const els = competitionModeElements();
+    if(!els.modal || els.modal.dataset.bound === "1") return;
+    els.modal.dataset.bound = "1";
+    if(els.prev) els.prev.addEventListener("click", () => navigateCompetitionMode(-1));
+    if(els.next) els.next.addEventListener("click", () => navigateCompetitionMode(1));
+    if(els.save) els.save.addEventListener("click", saveCompetitionModeCurrent);
+    if(els.close) els.close.addEventListener("click", closeCompetitionModeModal);
+    if(els.exit) els.exit.addEventListener("click", closeCompetitionModeModal);
+    els.modal.addEventListener("keydown", (evt) => {
+      if(evt.key === "Escape"){
+        evt.preventDefault();
+        closeCompetitionModeModal();
+      }
+    });
+  }
+
+  initCompetitionModeModal();

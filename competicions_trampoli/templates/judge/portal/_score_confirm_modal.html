@@ -1,0 +1,24 @@
+<div class="modal fade" id="scoreConfirmModal" tabindex="-1" role="dialog" aria-labelledby="scoreConfirmModalTitle" aria-hidden="true" style="z-index: 1110; pointer-events: auto;">
+  <div class="modal-dialog modal-dialog-scrollable" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <h5 class="modal-title mb-1" id="scoreConfirmModalTitle">Confirmacio de puntuacio</h5>
+          <div class="small text-muted" id="scoreConfirmModalSubtitle">Revisa els canvis abans de desar.</div>
+        </div>
+        <button type="button" class="close" id="scoreConfirmModalClose" aria-label="Tancar">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="small text-muted mb-2" id="scoreConfirmModalContext"></div>
+        <div id="scoreConfirmModalSummary" class="list-group list-group-flush"></div>
+      </div>
+      <div class="modal-footer">
+        <div class="small text-muted mr-auto" id="scoreConfirmModalStatus"></div>
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="scoreConfirmModalCancel">Cancelar</button>
+        <button type="button" class="btn btn-sm btn-primary" id="scoreConfirmModalConfirm">Confirmar i desar</button>
+      </div>
+    </div>
+  </div>
+</div>
