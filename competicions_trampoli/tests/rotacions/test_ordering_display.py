@@ -305,9 +305,10 @@ class RotationOrderingDisplayTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(portal_res.status_code, 200)
 
         blocks = portal_res.context["group_blocks"]
+        unit_key = f"unit:{self.ins_1.grup_competicio_id}+{extra_1.grup_competicio_id}"
         self.assertEqual(
             [block["key"] for block in blocks],
-            [self.ins_1.grup_competicio_id, extra_1.grup_competicio_id],
+            [self.ins_1.grup_competicio_id, unit_key],
         )
         self.assertEqual(blocks[0]["franja_id"], self.franja_2.id)
         self.assertEqual(
@@ -315,10 +316,59 @@ class RotationOrderingDisplayTests(_BaseTrampoliDataMixin, TestCase):
             ["Participant 1", "Participant 3", "Participant 2"],
         )
         self.assertEqual(blocks[1]["franja_id"], self.franja_3.id)
+        self.assertEqual(blocks[1]["label"], "Grup 1 + Grup 2")
         self.assertEqual(
             [ins["nom_i_cognoms"] for ins in blocks[1]["list"]],
-            ["Participant 5", "Participant 4"],
+            ["Participant 1", "Participant 3", "Participant 4", "Participant 5", "Participant 2"],
         )
+
+    def test_judge_portal_treats_multi_group_cell_as_single_rotation_unit(self):
+        RotacioAssignacio.objects.filter(
+            competicio=self.comp,
+            franja=self.franja_3,
+            estacio=self.estacio,
+        ).delete()
+        extra_1 = self._create_inscripcio(self.comp, "Participant 4", ordre=4, grup=2)
+        extra_2 = self._create_inscripcio(self.comp, "Participant 5", ordre=5, grup=2)
+        Inscripcio.objects.filter(pk=extra_1.pk).update(ordre_competicio=1)
+        Inscripcio.objects.filter(pk=extra_2.pk).update(ordre_competicio=2)
+        extra_1.refresh_from_db()
+        extra_2.refresh_from_db()
+
+        assignacio = RotacioAssignacio.objects.get(
+            competicio=self.comp,
+            franja=self.franja_2,
+            estacio=self.estacio,
+        )
+        RotacioAssignacioGrup.objects.create(
+            assignacio=assignacio,
+            grup=extra_1.grup_competicio,
+            ordre=2,
+        )
+
+        portal_url = reverse("judge_portal", kwargs={"token": self.token.id})
+        portal_res = self.client.get(portal_url)
+        self.assertEqual(portal_res.status_code, 200)
+
+        group_1_id = self.ins_1.grup_competicio_id
+        group_2_id = extra_1.grup_competicio_id
+        unit_key = f"unit:{group_1_id}+{group_2_id}"
+        blocks = portal_res.context["group_blocks"]
+        self.assertEqual([block["key"] for block in blocks], [unit_key])
+        self.assertEqual(blocks[0]["label"], "Grup 1 + Grup 2")
+        self.assertEqual(blocks[0]["member_keys"], [group_1_id, group_2_id])
+        self.assertEqual(
+            [ins["nom_i_cognoms"] for ins in blocks[0]["list"]],
+            ["Participant 1", "Participant 3", "Participant 4", "Participant 5", "Participant 2"],
+        )
+
+        body = portal_res.content.decode("utf-8")
+        self.assertIn(f'value="group-{unit_key}"', body)
+        self.assertIn("Grup 1 + Grup 2", body)
+
+        grouped_portal_res = self.client.get(portal_url, {"group": group_2_id})
+        self.assertEqual(grouped_portal_res.status_code, 200)
+        self.assertEqual(grouped_portal_res.context["active_group_key"], unit_key)
 
     def test_judge_portal_franja_override_only_affects_groups_present_in_that_franja(self):
         extra_1 = self._create_inscripcio(self.comp, "Participant 6", ordre=6, grup=3)
@@ -334,19 +384,21 @@ class RotationOrderingDisplayTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(portal_res.status_code, 200)
 
         blocks = portal_res.context["group_blocks"]
+        unit_key = f"unit:{self.ins_1.grup_competicio_id}+{extra_1.grup_competicio_id}"
         self.assertEqual(
             [block["key"] for block in blocks],
-            [self.ins_1.grup_competicio_id, extra_1.grup_competicio_id],
+            [unit_key, self.ins_1.grup_competicio_id],
         )
-        self.assertEqual(blocks[0]["franja_id"], self.franja_3.id)
+        self.assertEqual(blocks[0]["franja_id"], self.franja_2.id)
+        self.assertEqual(blocks[0]["label"], "Grup 1 + Grup 3")
         self.assertEqual(
             [ins["nom_i_cognoms"] for ins in blocks[0]["list"]],
-            ["Participant 3", "Participant 2", "Participant 1"],
+            ["Participant 1", "Participant 3", "Participant 6", "Participant 7", "Participant 2"],
         )
-        self.assertEqual(blocks[1]["franja_id"], self.franja_2.id)
+        self.assertEqual(blocks[1]["franja_id"], self.franja_3.id)
         self.assertEqual(
             [ins["nom_i_cognoms"] for ins in blocks[1]["list"]],
-            ["Participant 7", "Participant 6"],
+            ["Participant 1", "Participant 3", "Participant 2"],
         )
 
     def test_judge_portal_uses_group_query_for_active_group(self):
@@ -360,16 +412,17 @@ class RotationOrderingDisplayTests(_BaseTrampoliDataMixin, TestCase):
         portal_url = reverse("judge_portal", kwargs={"token": self.token.id})
         portal_res = self.client.get(portal_url, {"group": extra_1.grup_competicio_id})
         self.assertEqual(portal_res.status_code, 200)
-        self.assertEqual(portal_res.context["active_group_key"], extra_1.grup_competicio_id)
+        unit_key = f"unit:{self.ins_1.grup_competicio_id}+{extra_1.grup_competicio_id}"
+        self.assertEqual(portal_res.context["active_group_key"], unit_key)
 
         body = portal_res.content.decode("utf-8")
         self.assertRegex(
             body,
-            rf'(?s)<option[^>]+value="group-{extra_1.grup_competicio_id}"[^>]+selected',
+            rf'(?s)<option[^>]+value="group-{re.escape(unit_key)}"[^>]+selected',
         )
         self.assertRegex(
             body,
-            rf'class="group-pane\s*"\s+data-group-pane="group-{extra_1.grup_competicio_id}"',
+            rf'class="group-pane\s*"\s+data-group-pane="group-{re.escape(unit_key)}"',
         )
 
     def test_judge_portal_invalid_group_query_falls_back_to_first_visible_group(self):

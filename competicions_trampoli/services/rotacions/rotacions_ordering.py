@@ -130,6 +130,24 @@ def effective_rotate_steps(mode: str, base_step: int = 0) -> int:
     return step
 
 
+def rotation_unit_key(item_ids: Iterable) -> object:
+    items = [item for item in list(item_ids or []) if item not in (None, "")]
+    if not items:
+        return None
+    if len(items) == 1:
+        return items[0]
+    return "unit:" + "+".join(str(item) for item in items)
+
+
+def rotation_unit_label(item_ids: Iterable, label_for_item, separator: str = " + ") -> str:
+    labels = []
+    for item in list(item_ids or []):
+        label = str(label_for_item(item) or "").strip()
+        if label:
+            labels.append(label)
+    return separator.join(labels) if labels else "Grup"
+
+
 def assignacio_grups(assignacio) -> List[int]:
     raw_links = getattr(assignacio, "grup_links", None)
     if raw_links is not None:
@@ -248,6 +266,45 @@ def build_series_rotation_step_map(assignacions, franja_modes=None) -> Dict[Tupl
             mode = sanitize_order_mode(modes.get(str(franja_id)))
             if mode == ORDER_MODE_ROTATE:
                 counters[serie_id] = step + 1
+
+    return out
+
+
+def build_rotation_unit_step_map(assignacions, unit_key_for_assignacio, franja_modes=None) -> Dict[Tuple[object, int], int]:
+    """
+    Returns a map keyed by (unit_key, franja_id) -> 0-based rotation step.
+
+    A unit can be a single group/series or a whole rotation cell containing
+    several groups. This lets order modes operate on the same competitive unit
+    shown to judges instead of advancing each group independently.
+    """
+    out: Dict[Tuple[object, int], int] = {}
+    counters: Dict[object, int] = {}
+    seen = set()
+    modes = franja_modes or {}
+
+    for assignacio in list(assignacions or []):
+        try:
+            franja_id = int(getattr(assignacio, "franja_id", None) or 0)
+        except Exception:
+            franja_id = 0
+        if franja_id <= 0:
+            continue
+
+        unit_key = unit_key_for_assignacio(assignacio)
+        if unit_key in (None, ""):
+            continue
+
+        seen_key = (unit_key, franja_id)
+        if seen_key in seen:
+            continue
+        seen.add(seen_key)
+
+        step = counters.get(unit_key, 0)
+        out[seen_key] = step
+        mode = sanitize_order_mode(modes.get(str(franja_id)))
+        if mode == ORDER_MODE_ROTATE:
+            counters[unit_key] = step + 1
 
     return out
 

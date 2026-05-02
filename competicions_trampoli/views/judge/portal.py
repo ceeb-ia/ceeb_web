@@ -20,11 +20,12 @@ from ...services.rotacions.rotacions_ordering import (
     ORDER_MODE_MAINTAIN,
     assignacio_grups,
     assignacio_series,
-    build_group_rotation_step_map,
-    build_series_rotation_step_map,
+    build_rotation_unit_step_map,
     effective_rotate_steps,
     get_rotacions_order_modes,
     order_pairs_for_mode,
+    rotation_unit_key,
+    rotation_unit_label,
     unique_ordered,
 )
 from ...services.scoring.scoring_subjects import subject_entry_model
@@ -105,10 +106,23 @@ def judge_portal(request, token):
         .prefetch_related("grup_links__grup", "serie_links__serie")
         .order_by("franja__ordre", "franja_id", "estacio__ordre", "id")
     )
-    rotation_step_map = (
-        build_series_rotation_step_map(all_assigns, franja_modes)
-        if team_subject_mode
-        else build_group_rotation_step_map(all_assigns, franja_modes)
+    def subject_group_keys_for_assignacio(assignacio):
+        if team_subject_mode:
+            estacio = getattr(assignacio, "estacio", None)
+            app_id = int(getattr(estacio, "comp_aparell_id", None) or comp_aparell.id)
+            return [
+                team_subject_bucket_key({"serie_id": serie_id}, app_id)
+                for serie_id in assignacio_series(assignacio)
+            ]
+        return assignacio_grups(assignacio)
+
+    def unit_key_for_assignacio(assignacio):
+        return rotation_unit_key(subject_group_keys_for_assignacio(assignacio))
+
+    rotation_step_map = build_rotation_unit_step_map(
+        all_assigns,
+        unit_key_for_assignacio,
+        franja_modes,
     )
     assigns = [
         a for a in all_assigns
@@ -120,27 +134,40 @@ def judge_portal(request, token):
         if getattr(a, "franja_id", None)
     )
     app_programmed_group_ids = []
-    app_groups_by_franja = {}
-    group_first_app_franja_id = {}
+    app_unit_keys = []
+    app_units_by_key = {}
+    app_units_by_franja = {}
     for a in assigns:
         fid = getattr(a, "franja_id", None)
         if not fid:
             continue
-        if team_subject_mode:
-            groups_for_assignacio = [
-                team_subject_bucket_key({"serie_id": serie_id}, comp_aparell.id)
-                for serie_id in assignacio_series(a)
-            ]
-        else:
-            groups_for_assignacio = assignacio_grups(a)
+        groups_for_assignacio = subject_group_keys_for_assignacio(a)
         if not groups_for_assignacio:
             continue
-        app_groups_by_franja[fid] = unique_ordered(
-            list(app_groups_by_franja.get(fid, [])) + list(groups_for_assignacio)
+        unit_key = rotation_unit_key(groups_for_assignacio)
+        if unit_key in (None, ""):
+            continue
+        spec = app_units_by_key.get(unit_key)
+        if spec is None:
+            spec = {
+                "key": unit_key,
+                "member_keys": list(groups_for_assignacio),
+                "first_franja_id": fid,
+                "candidates_by_franja": {},
+            }
+            app_units_by_key[unit_key] = spec
+            app_unit_keys.append(unit_key)
+        spec["candidates_by_franja"].setdefault(
+            fid,
+            {
+                "member_keys": list(groups_for_assignacio),
+                "assignacio_id": int(getattr(a, "id", 0) or 0),
+            },
+        )
+        app_units_by_franja[fid] = unique_ordered(
+            list(app_units_by_franja.get(fid, [])) + [unit_key]
         )
         app_programmed_group_ids = unique_ordered(list(app_programmed_group_ids) + list(groups_for_assignacio))
-        for group_id in groups_for_assignacio:
-            group_first_app_franja_id.setdefault(group_id, fid)
 
     raw_franja_override = request.GET.get("franja")
     try:
@@ -194,9 +221,9 @@ def judge_portal(request, token):
                 "meta": "",
             })
 
-    # El portal mostra tots els grups programats de l'aparell i calcula la
-    # posicio efectiva segons la primera franja assignada a cada grup, amb
-    # suport d'override per query string quan arriba ?franja=...
+    # El portal mostra totes les unitats programades de l'aparell. Una unitat
+    # pot ser un sol grup o una cel-la de rotacio amb diversos grups que han
+    # de competir com un bloc conjunt.
     subject_list = []
     grouped = {}
     for subject in base_subjects:
@@ -206,7 +233,11 @@ def judge_portal(request, token):
             key = 0 if subject.get("group") in (None, 0) else int(subject.get("group") or 0)
         grouped.setdefault(key, []).append(subject)
 
-    ordered_groups = [g for g in app_programmed_group_ids if g in grouped]
+    ordered_groups = [
+        unit_key
+        for unit_key in app_unit_keys
+        if any(member_key in grouped for member_key in app_units_by_key.get(unit_key, {}).get("member_keys", []))
+    ]
     if team_subject_mode:
         unassigned_key = team_subject_bucket_key({}, comp_aparell.id)
         remaining_groups = sorted(
@@ -224,10 +255,10 @@ def judge_portal(request, token):
             always_visible_group_ids.append(0)
     show_out_of_program_groups = show_out_of_program_in_competition_views(competicio)
 
-    override_group_ids = set(app_groups_by_franja.get(franja_override_id, [])) if franja_override_id else set()
+    override_group_ids = set(app_units_by_franja.get(franja_override_id, [])) if franja_override_id else set()
 
     def resolve_group_franja_id(group_id):
-        default_fid = group_first_app_franja_id.get(group_id)
+        default_fid = (app_units_by_key.get(group_id) or {}).get("first_franja_id")
         if not franja_override_id:
             return default_fid
         if group_id in override_group_ids:
@@ -253,17 +284,25 @@ def judge_portal(request, token):
         return text[:5] if len(text) >= 5 else text
 
     def build_group_block(group_id):
-        group_items = grouped.get(group_id, [])
+        spec = app_units_by_key.get(group_id)
+        if spec:
+            fid = resolve_group_franja_id(group_id)
+            candidate = (spec.get("candidates_by_franja") or {}).get(fid) if fid else None
+            member_keys = list((candidate or {}).get("member_keys") or spec.get("member_keys") or [])
+            label = rotation_unit_label(member_keys, group_label_for)
+        else:
+            fid = None
+            member_keys = [group_id]
+            label = group_label_for(group_id)
+
+        group_items = []
+        for member_key in member_keys:
+            group_items.extend(grouped.get(member_key, []))
         base_pairs = [(item["subject_id"], item) for item in group_items]
-        fid = resolve_group_franja_id(group_id)
         mode_for_group = franja_modes.get(str(fid), ORDER_MODE_MAINTAIN) if fid else ORDER_MODE_MAINTAIN
         rotate_steps = effective_rotate_steps(
             mode_for_group,
-            (
-                rotation_step_map.get((int(str(group_id).rsplit("-", 1)[-1]), fid), 0)
-                if team_subject_mode and str(group_id).startswith(f"app-{comp_aparell.id}-serie-") and fid
-                else rotation_step_map.get((group_id, fid), 0) if fid else 0
-            ),
+            rotation_step_map.get((group_id, fid), 0) if fid else 0,
         )
         seed_franja = fid if fid is not None else 0
 
@@ -281,7 +320,8 @@ def judge_portal(request, token):
             ordered_subjects.append(item)
         return {
             "key": group_id,
-            "label": group_label_for(group_id),
+            "label": label,
+            "member_keys": member_keys,
             "franja_id": fid,
             "franja_label": (
                 f"{getattr(franges_by_id.get(fid), 'titol', None) or 'Franja'} · "
@@ -316,15 +356,30 @@ def judge_portal(request, token):
     visible_group_keys = [block["key"] for block in programmed_group_blocks]
     visible_group_keys.extend(block["key"] for block in out_of_program_group_blocks)
     raw_group = request.GET.get("group")
-    if team_subject_mode:
-        requested_group_key = str(raw_group).strip() if raw_group not in (None, "") else None
-    else:
-        try:
-            requested_group_key = int(raw_group) if raw_group not in (None, "") else None
-        except Exception:
-            requested_group_key = None
+    raw_group_text = str(raw_group).strip() if raw_group not in (None, "") else ""
+    visible_key_by_text = {str(key): key for key in visible_group_keys}
+    requested_group_key = visible_key_by_text.get(raw_group_text)
+    requested_member_key = None
+    if requested_group_key is None and raw_group_text:
+        if team_subject_mode:
+            requested_member_key = raw_group_text
+        else:
+            try:
+                requested_member_key = int(raw_group_text)
+            except Exception:
+                requested_member_key = None
+    all_visible_blocks = programmed_group_blocks + out_of_program_group_blocks
     if requested_group_key in visible_group_keys:
         active_group_key = requested_group_key
+    elif requested_member_key is not None:
+        containing_block = next(
+            (
+                block for block in all_visible_blocks
+                if requested_member_key in (block.get("member_keys") or [])
+            ),
+            None,
+        )
+        active_group_key = containing_block["key"] if containing_block else (visible_group_keys[0] if visible_group_keys else None)
     elif visible_group_keys:
         active_group_key = visible_group_keys[0]
     else:
