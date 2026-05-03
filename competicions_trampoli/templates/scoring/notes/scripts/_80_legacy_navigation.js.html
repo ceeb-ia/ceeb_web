@@ -1,0 +1,255 @@
+  function activateTabLink(link){
+    if(!link) return;
+    if(window.jQuery && typeof window.jQuery.fn?.tab === "function"){
+      window.jQuery(link).tab("show");
+    }else{
+      link.click();
+    }
+  }
+
+  function tabLinkForHref(href){
+    const resolved = String(href || "");
+    return Array.from(document.querySelectorAll('a[data-toggle="tab"]'))
+      .find((link) => String(link.getAttribute("href") || "") === resolved) || null;
+  }
+
+  function paneLabelForHref(href){
+    const link = tabLinkForHref(href);
+    if(!link) return href.replace(/^#/, "");
+    return (link.textContent || "").replace(/\s+/g, " ").trim();
+  }
+
+  function tableContext(table){
+    if(!table) return null;
+    const appPane = table.closest('.tab-pane[data-comp-aparell-id]');
+    const exPane = table.closest('.tab-pane[id*="-ex-"]');
+    const groupPane = appPane ? appPane.parentElement?.closest(".tab-pane") : null;
+    const groupHref = groupPane ? `#${groupPane.id}` : "";
+    const appHref = appPane ? `#${appPane.id}` : "";
+    const exHref = exPane ? `#${exPane.id}` : "";
+    return {
+      table,
+      group: table.getAttribute("data-group"),
+      appId: table.getAttribute("data-comp-aparell-id"),
+      exercici: table.getAttribute("data-exercici"),
+      groupHref,
+      appHref,
+      exHref,
+      groupLabel: paneLabelForHref(groupHref),
+      appLabel: paneLabelForHref(appHref),
+      exLabel: paneLabelForHref(exHref),
+    };
+  }
+
+  function allTableContexts(){
+    return Array.from(document.querySelectorAll("table[data-scoring-table='1']"))
+      .map(tableContext)
+      .filter(Boolean);
+  }
+
+  function activeTableContext(){
+    return tableContext(activeScoringTable());
+  }
+
+  function setSelectOptions(select, options, value){
+    if(!select) return;
+    const current = value != null ? String(value) : String(select.value || "");
+    select.innerHTML = "";
+    options.forEach((option) => {
+      const opt = document.createElement("option");
+      opt.value = String(option.value);
+      opt.textContent = option.label;
+      select.appendChild(opt);
+    });
+    if(options.some((option) => String(option.value) === current)){
+      select.value = current;
+    }
+  }
+
+  function uniqueOptions(items, valueKey, labelKey){
+    const seen = new Set();
+    const out = [];
+    items.forEach((item) => {
+      const value = String(item[valueKey] || "");
+      if(!value || seen.has(value)) return;
+      seen.add(value);
+      out.push({value, label: item[labelKey] || value});
+    });
+    return out;
+  }
+
+  function updateNotesToolbar(){
+    const contexts = allTableContexts();
+    const active = activeTableContext() || contexts[0];
+    const groupSelect = document.querySelector('[data-notes-group-select="1"]');
+    const appSelect = document.querySelector('[data-notes-app-select="1"]');
+    const exSelect = document.querySelector('[data-notes-exercise-select="1"]');
+    if(!contexts.length || !active){
+      return;
+    }
+
+    setSelectOptions(groupSelect, uniqueOptions(contexts, "groupHref", "groupLabel"), active.groupHref);
+    const groupContexts = contexts.filter((ctx) => ctx.groupHref === active.groupHref);
+    setSelectOptions(appSelect, uniqueOptions(groupContexts, "appHref", "appLabel"), active.appHref);
+    const appContexts = groupContexts.filter((ctx) => ctx.appHref === active.appHref);
+    setSelectOptions(exSelect, uniqueOptions(appContexts, "exHref", "exLabel"), active.exHref);
+    renderProgramStrip(groupContexts, active);
+  }
+
+  function renderProgramStrip(contexts, active){
+    const strip = document.querySelector('[data-notes-program-strip="1"]');
+    if(!strip) return;
+    strip.innerHTML = "";
+    uniqueOptions(contexts, "appHref", "appLabel").forEach((option) => {
+      const ctx = contexts.find((item) => item.appHref === option.value);
+      if(!ctx) return;
+      const count = visibleRowsForAppGroup(ctx.group, ctx.appId, getSchema(ctx.appId)).length;
+      const chip = el("button", {
+        type:"button",
+        class:`notes-program-chip ${active && active.appHref === ctx.appHref ? "font-weight-bold" : ""}`,
+        text:`${option.label} · ${count}`,
+      });
+      chip.addEventListener("click", () => {
+        activateTabLink(tabLinkForHref(ctx.appHref));
+        setTimeout(() => {
+          renderActiveTableOnly();
+          updateNotesToolbar();
+          syncPlaybackContextToVisibleRow();
+        }, 80);
+      });
+      strip.appendChild(chip);
+    });
+  }
+
+  function jumpToContext(ctx){
+    if(!ctx) return;
+    activateTabLink(tabLinkForHref(ctx.groupHref));
+    setTimeout(() => {
+      activateTabLink(tabLinkForHref(ctx.appHref));
+      setTimeout(() => {
+        activateTabLink(tabLinkForHref(ctx.exHref));
+        setTimeout(() => {
+          renderActiveTableOnly();
+          updateNotesToolbar();
+          syncPlaybackContextToVisibleRow();
+        }, 80);
+      }, 60);
+    }, 60);
+  }
+
+  function contextsForSubject(subject){
+    if(!subject) return [];
+    return allTableContexts().filter((ctx) => {
+      if(String(ctx.group) !== String(subject.group)) return false;
+      const schema = getSchema(ctx.appId);
+      const teamMode = isTeamSchema(schema);
+      if(teamMode && String(subject.subject_kind || "") !== "team_unit") return false;
+      if(!teamMode && String(subject.subject_kind || "inscripcio") === "team_unit") return false;
+      if(!inscripcioCompeteixAApp(subject, ctx.appId) && !isBlockedSubjectForApp(subject, ctx.appId)) return false;
+      if(appHasRotationGroups(ctx.appId) && !inscripcioInRotationGroup(subject, ctx.appId)) return false;
+      return true;
+    });
+  }
+
+  function focusSubjectRow(subject, ctx){
+    if(!subject || !ctx) return;
+    const table = ctx.table;
+    renderTableIfNeeded(table);
+    const row = table.querySelector(`tr[data-ins-id="${CSS.escape(String(subject.id))}"]`);
+    if(row){
+      row.scrollIntoView({behavior:"smooth", block:"center"});
+      row.classList.add("playback-active-row");
+      setTimeout(() => row.classList.remove("playback-active-row"), 1800);
+    }
+  }
+
+  function renderSearchResults(query){
+    const results = document.querySelector('[data-notes-search-results="1"]');
+    if(!results) return;
+    const q = String(query || "").trim().toLowerCase();
+    results.innerHTML = "";
+    if(q.length < 2){
+      results.classList.remove("show");
+      return;
+    }
+    const matches = (INS || []).filter((item) => {
+      const haystack = [item.name, item.meta, item.context_name, item.group_label, item.group]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(q);
+    }).slice(0, 12);
+
+    if(!matches.length){
+      results.appendChild(el("div", {class:"notes-search-result text-muted", text:"Cap resultat local"}));
+      results.classList.add("show");
+      return;
+    }
+
+    matches.forEach((subject) => {
+      const contexts = contextsForSubject(subject);
+      const ctx = contexts[0];
+      const btn = el("button", {type:"button", class:"notes-search-result"});
+      btn.appendChild(el("div", {class:"name", text:subject.name || "Subjecte"}));
+      btn.appendChild(el("div", {
+        class:"meta",
+        text:[subject.meta, ctx ? `${ctx.groupLabel} · ${ctx.appLabel}` : ""].filter(Boolean).join(" · "),
+      }));
+      btn.addEventListener("click", () => {
+        results.classList.remove("show");
+        const input = document.querySelector('[data-notes-search-input="1"]');
+        if(input) input.value = subject.name || "";
+        if(!ctx) return;
+        jumpToContext(ctx);
+        setTimeout(() => focusSubjectRow(subject, ctx), 260);
+      });
+      results.appendChild(btn);
+    });
+    results.classList.add("show");
+  }
+
+  function bindNotesToolbar(){
+    const groupSelect = document.querySelector('[data-notes-group-select="1"]');
+    const appSelect = document.querySelector('[data-notes-app-select="1"]');
+    const exSelect = document.querySelector('[data-notes-exercise-select="1"]');
+    const rowFilterSelect = document.querySelector('[data-notes-row-filter-select="1"]');
+    const searchInput = document.querySelector('[data-notes-search-input="1"]');
+    if(groupSelect){
+      groupSelect.addEventListener("change", () => {
+        const ctx = allTableContexts().find((item) => item.groupHref === groupSelect.value);
+        jumpToContext(ctx);
+      });
+    }
+    if(appSelect){
+      appSelect.addEventListener("change", () => {
+        const active = activeTableContext();
+        const ctx = allTableContexts().find((item) => item.groupHref === active?.groupHref && item.appHref === appSelect.value);
+        jumpToContext(ctx);
+      });
+    }
+    if(exSelect){
+      exSelect.addEventListener("change", () => {
+        const active = activeTableContext();
+        const ctx = allTableContexts().find((item) => item.groupHref === active?.groupHref && item.appHref === active?.appHref && item.exHref === exSelect.value);
+        jumpToContext(ctx);
+      });
+    }
+    if(searchInput){
+      searchInput.addEventListener("input", () => renderSearchResults(searchInput.value));
+      searchInput.addEventListener("keydown", (ev) => {
+        if(ev.key !== "Enter") return;
+        const first = document.querySelector(".notes-search-result");
+        if(first && typeof first.click === "function"){
+          ev.preventDefault();
+          first.click();
+        }
+      });
+    }
+    document.addEventListener("click", (ev) => {
+      if(ev.target.closest(".notes-search-wrap")) return;
+      const results = document.querySelector('[data-notes-search-results="1"]');
+      if(results) results.classList.remove("show");
+    });
+    updateNotesToolbar();
+  }
+

@@ -1,0 +1,121 @@
+  // Scrollbar top sincronitzat amb el wrapper de taula
+  function syncScrollbars(){
+    document.querySelectorAll('[data-scroll-wrap="1"]').forEach((wrap)=>{
+      const topbar = wrap.parentElement.querySelector('[data-scrollbar-top="1"]');
+      const inner  = topbar ? topbar.querySelector('[data-scrollbar-inner="1"]') : null;
+      if(!topbar || !inner) return;
+
+      const table = wrap.querySelector("table");
+      const w = table ? table.scrollWidth : 2000;
+      inner.style.width = w + "px";
+
+      if(wrap.dataset.scrollBound === "1") return;
+      wrap.dataset.scrollBound = "1";
+
+      topbar.addEventListener("scroll", ()=>{ wrap.scrollLeft = topbar.scrollLeft; });
+      wrap.addEventListener("scroll", ()=>{ topbar.scrollLeft = wrap.scrollLeft; });
+    });
+  }
+
+  let lastSince = (typeof UPDATES_CURSOR_INIT === "string" && UPDATES_CURSOR_INIT)
+    ? UPDATES_CURSOR_INIT
+    : new Date().toISOString();
+  let lastAfterId = "";
+
+  async function pollUpdates(opts = {}){
+    const url = new URL(UPDATES_URL, window.location.origin);
+    url.searchParams.set("since", lastSince);
+    if(lastAfterId){
+      url.searchParams.set("after_id", lastAfterId);
+    }
+    let nextPollDelay = opts.drain ? null : 1200;
+
+    try{
+      const res = await fetch(url.toString(), {headers: {"Accept":"application/json"}});
+      const data = await res.json();
+      if(data.ok){
+        (data.updates || []).forEach(u=>{
+          applyUpdate(u);
+        });
+        if(typeof data.next_since === "string" || data.next_since === null){
+          lastSince = data.next_since || lastSince;
+          lastAfterId = String(data.next_after_id || "");
+        } else {
+          let maxTs = lastSince;
+          (data.updates || []).forEach((u)=>{
+            if(u.updated_at && u.updated_at > maxTs) maxTs = u.updated_at;
+          });
+          lastSince = maxTs;
+          lastAfterId = "";
+        }
+        if(data.has_more){
+          nextPollDelay = 0;
+        }
+      }
+    }catch(e){
+      console.warn("pollUpdates error", e);
+    }finally{
+      if(nextPollDelay !== null){
+        setTimeout(() => pollUpdates({drain: nextPollDelay === 0}), nextPollDelay); // 1.2s normal / 0ms drenatge
+      }
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded", ()=>{
+    document.addEventListener("focusout", (ev)=>{
+      const table = ev.target && typeof ev.target.closest === "function"
+        ? ev.target.closest("table[data-scoring-table='1']")
+        : null;
+      if(!table) return;
+      setTimeout(()=>flushPendingRemoteRerendersForTable(table), 0);
+    });
+
+    document.addEventListener("click", (ev)=>{
+      const closeBtn = ev.target.closest("#media-drawer-close");
+      if(closeBtn){
+        ev.preventDefault();
+        setPlaybackDrawerOpen(false);
+        return;
+      }
+
+      const backdrop = ev.target.closest("#media-drawer-backdrop");
+      if(backdrop){
+        ev.preventDefault();
+        setPlaybackDrawerOpen(false);
+        return;
+      }
+
+      const playbackBtn = ev.target.closest(".js-open-playback");
+      if(playbackBtn){
+        ev.preventDefault();
+        loadPlaybackContext(
+          playbackBtn.dataset.insId,
+          playbackBtn.dataset.exercici,
+          playbackBtn.dataset.compAparellId,
+          {openDrawer: true}
+        );
+        return;
+      }
+
+      const tabBtn = ev.target.closest('[data-toggle="tab"]');
+      if(tabBtn){
+        setTimeout(()=>{
+          renderActiveTableOnly();
+          updateNotesToolbar();
+          syncPlaybackContextToVisibleRow();
+        }, 80);
+      }
+    });
+
+    document.addEventListener("keydown", (ev)=>{
+      if(ev.key === "Escape" && PLAYBACK_STATE.drawerOpen){
+        setPlaybackDrawerOpen(false);
+      }
+    });
+
+    initLazyNotesPanel();
+    syncScrollbars();
+    renderPlaybackPanel();
+    window.addEventListener("resize", syncScrollbars);
+    pollUpdates(); // START
+  });

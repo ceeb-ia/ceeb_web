@@ -1,0 +1,196 @@
+  // --- Crash helpers (UI) ---
+  function crashKeyFor(fieldCode){ return `__crash__${fieldCode}`; }
+
+  function warningItemCountForField(field){
+    const n = Number(field?.items?.count || 0);
+    return (Number.isFinite(n) && n > 0) ? n : 0;
+  }
+
+  function isBlankWarningValue(value){
+    return value === null || value === undefined || value === "";
+  }
+
+  function numericWarningValue(value){
+    if(typeof value === "boolean" || isBlankWarningValue(value)) return null;
+    const n = Number(String(value).trim().replace(",", "."));
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function decimalPlacesForWarning(value){
+    if(typeof value === "boolean" || isBlankWarningValue(value)) return 0;
+    const raw = String(value).trim().replace(",", ".");
+    if(!raw || raw.includes("e") || raw.includes("E")) return 0;
+    const parts = raw.split(".");
+    return parts.length > 1 ? parts[1].length : 0;
+  }
+
+  function warningPointLabel(code, point){
+    const bits = [code];
+    if(point.judge) bits.push(`J${point.judge}`);
+    if(point.item) bits.push(`S${point.item}`);
+    return bits.join(" ");
+  }
+
+  function addRangeAndDecimalWarnings(out, field, code, point){
+    const value = point.value;
+    const numeric = numericWarningValue(value);
+    if(numeric !== null){
+      const min = numericWarningValue(field.min);
+      const max = numericWarningValue(field.max);
+      if(min !== null && numeric < min){
+        out.push(`${warningPointLabel(code, point)} per sota del minim ${min}`);
+      }
+      if(max !== null && numeric > max){
+        out.push(`${warningPointLabel(code, point)} per sobre del maxim ${max}`);
+      }
+    }
+    if(field.decimals !== undefined){
+      const decimals = Number(field.decimals);
+      if(Number.isFinite(decimals) && decimalPlacesForWarning(value) > decimals){
+        out.push(`${warningPointLabel(code, point)} te massa decimals`);
+      }
+    }
+  }
+
+  function fieldAcceptsImplicitZero(field){
+    const min = numericWarningValue(field?.min);
+    const max = numericWarningValue(field?.max);
+    if(min !== null && min > 0) return false;
+    if(max !== null && max < 0) return false;
+    return min !== null || max !== null;
+  }
+
+  function addZeroPatternWarnings(out, field, code, inputs){
+    if(String(field?.type || "").trim().toLowerCase() !== "matrix") return;
+    if(!fieldAcceptsImplicitZero(field)) return;
+    const nItems = warningItemCountForField(field);
+    if(nItems < 3) return;
+    const rows = Array.isArray(inputs?.[code]) ? inputs[code] : [];
+    const explicitPresence = Array.isArray(inputs?.[presenceKey(code)]) ? inputs[presenceKey(code)] : null;
+    const crashValues = Array.isArray(inputs?.[crashKeyFor(code)]) ? inputs[crashKeyFor(code)] : [];
+    const nJudges = judgeCountForField(field);
+    for(let judgeIdx = 0; judgeIdx < nJudges; judgeIdx++){
+      if(explicitPresence && !Boolean(explicitPresence[judgeIdx])) continue;
+      const row = Array.isArray(rows[judgeIdx]) ? rows[judgeIdx] : [];
+      if(!row.length && !explicitPresence) continue;
+      const crashAt = Number(crashValues[judgeIdx] || 0);
+      const requiredItems = Number.isFinite(crashAt) && crashAt > 0
+        ? Math.max(0, Math.min(nItems, crashAt - 1))
+        : nItems;
+      if(requiredItems < 3) continue;
+      let zeroCount = 0;
+      for(let itemIdx = 0; itemIdx < requiredItems; itemIdx++){
+        const cellValue = itemIdx < row.length ? row[itemIdx] : null;
+        const numeric = numericWarningValue(cellValue);
+        if(numeric === 0 || isBlankWarningValue(cellValue)){
+          zeroCount += 1;
+        }
+      }
+      const ratio = requiredItems ? zeroCount / requiredItems : 0;
+      if(zeroCount === requiredItems || (zeroCount >= 3 && ratio >= 0.8)){
+        out.push(`${code} J${judgeIdx + 1} te ${zeroCount}/${requiredItems} valors a 0`);
+      }
+    }
+  }
+
+  function scoreWarningsForInputs(schema, inputs){
+    const out = [];
+    const fields = Array.isArray(schema?.fields) ? schema.fields : [];
+    fields.forEach((field) => {
+      if(!field || !field.code) return;
+      const code = String(field.code);
+      const type = String(field.type || "number").trim().toLowerCase();
+      const shape = String(field.shape || "").trim().toLowerCase();
+      const value = inputs ? inputs[code] : undefined;
+
+      if(type === "matrix" || shape === "judge_x_item" || shape === "judge_x_element"){
+        const rows = Array.isArray(value) ? value : [];
+        const nJudges = judgeCountForField(field);
+        const nItems = warningItemCountForField(field);
+        for(let judgeIdx = 0; judgeIdx < nJudges; judgeIdx++){
+          const row = Array.isArray(rows[judgeIdx]) ? rows[judgeIdx] : [];
+          for(let itemIdx = 0; itemIdx < nItems; itemIdx++){
+            const cellValue = itemIdx < row.length ? row[itemIdx] : null;
+            if(!isBlankWarningValue(cellValue)){
+              addRangeAndDecimalWarnings(out, field, code, {
+                judge: judgeIdx + 1,
+                item: itemIdx + 1,
+                value: cellValue,
+              });
+            }
+          }
+        }
+      }else if(type === "list" || shape === "judge"){
+        const values = Array.isArray(value) ? value : [];
+        const nJudges = judgeCountForField(field);
+        for(let judgeIdx = 0; judgeIdx < nJudges; judgeIdx++){
+          const judgeValue = judgeIdx < values.length ? values[judgeIdx] : null;
+          if(!isBlankWarningValue(judgeValue)){
+            addRangeAndDecimalWarnings(out, field, code, {
+              judge: judgeIdx + 1,
+              item: null,
+              value: judgeValue,
+            });
+          }
+        }
+      }else if(!isBlankWarningValue(value)){
+        addRangeAndDecimalWarnings(out, field, code, {judge:null, item:null, value});
+      }
+
+      const explicitPresence = inputs ? inputs[presenceKey(code)] : null;
+      if(!isJudgeShapedMultiJudgeField(field) || !Array.isArray(explicitPresence)) return;
+      const allowImplicitZero = fieldAcceptsImplicitZero(field);
+      const nJudges = judgeCountForField(field);
+      const crashValues = Array.isArray(inputs?.[crashKeyFor(code)]) ? inputs[crashKeyFor(code)] : [];
+      const nItems = warningItemCountForField(field);
+      for(let judgeIdx = 0; judgeIdx < nJudges; judgeIdx++){
+        const present = Boolean(explicitPresence[judgeIdx]);
+        if(type === "matrix"){
+          const rows = Array.isArray(value) ? value : [];
+          const row = Array.isArray(rows[judgeIdx]) ? rows[judgeIdx] : [];
+          const crashAt = Number(crashValues[judgeIdx] || 0);
+          const requiredItems = Number.isFinite(crashAt) && crashAt > 0 ? Math.max(0, Math.min(nItems, crashAt - 1)) : nItems;
+          const hasValue = row.some((item) => !isBlankWarningValue(item));
+          if(present){
+            for(let itemIdx = 0; itemIdx < requiredItems; itemIdx++){
+              const cellValue = itemIdx < row.length ? row[itemIdx] : null;
+              if(isBlankWarningValue(cellValue) && !allowImplicitZero){
+                out.push(`${code} J${judgeIdx + 1} S${itemIdx + 1} sense valor`);
+              }
+            }
+          }else if(hasValue){
+            out.push(`${code} J${judgeIdx + 1} te valor amb el jutge absent`);
+          }
+          if(Number.isFinite(crashAt) && crashAt > 0){
+            for(let itemIdx = Math.max(0, crashAt - 1); itemIdx < nItems; itemIdx++){
+              const cellValue = itemIdx < row.length ? row[itemIdx] : null;
+              if(!isBlankWarningValue(cellValue)){
+                out.push(`${code} J${judgeIdx + 1} S${itemIdx + 1} posterior al crash`);
+              }
+            }
+          }
+        }else{
+          const values = Array.isArray(value) ? value : [];
+          const judgeValue = judgeIdx < values.length ? values[judgeIdx] : null;
+          if(present && isBlankWarningValue(judgeValue) && !allowImplicitZero){
+            out.push(`${code} J${judgeIdx + 1} sense valor`);
+          }else if(!present && !isBlankWarningValue(judgeValue)){
+            out.push(`${code} J${judgeIdx + 1} te valor amb el jutge absent`);
+          }
+        }
+      }
+
+      addZeroPatternWarnings(out, field, code, inputs || {});
+    });
+    return out;
+  }
+
+  function appendScoreWarningChip(container, warnings){
+    if(!container || !warnings || !warnings.length) return;
+    const chip = el("span", {
+      class:"score-warning-chip",
+      text:`Avis ${warnings.length}`,
+    });
+    chip.title = warnings.slice(0, 6).join("\n");
+    container.appendChild(chip);
+  }

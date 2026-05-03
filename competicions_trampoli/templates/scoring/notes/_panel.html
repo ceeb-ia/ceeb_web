@@ -1,0 +1,354 @@
+{% load competicio_extras %}
+
+  <div class="card-surface">
+    <!-- CAPÇALERA -->
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+      <div>
+        <h2 class="mb-1">Notes · Panell Central d'Organització</h2>
+        <div class="text-muted small">Competició: <span class="fw-semibold">{{ competicio.nom }}</span></div>
+        <div class="text-muted small">Entrada i càlcul depenen del schema de cada aparell.</div>
+      </div>
+      <div class="d-flex flex-wrap justify-content-end gap-2">
+        <a class="btn btn-sm btn-outline-primary" href="{% url 'inscripcions_list' competicio.id %}">Inscripcions</a>
+        <a class="btn btn-sm btn-outline-success" href="{% url 'classificacions_live' competicio.id %}">Classificacions en viu</a>
+        <a class="btn btn-sm btn-outline-success" href="{% url 'classificacions_loop_live' competicio.id %}?public=1">Classificacions loop</a>
+        <a class="btn btn-sm btn-outline-warning" href="{% url 'judge_messages_hub' competicio.id %}">Suport jutges</a>
+        <a class="btn btn-sm btn-outline-info" href="{% url 'public_live_qr_home' competicio.id %}">QR públic</a>
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'trampoli_config' competicio.id %}">Configuració</a>
+      </div>
+    </div>
+
+    {% if out_of_program_groups_render %}
+      <details class="alert alert-warning mt-3 py-2" role="alert">
+        <summary class="fw-semibold">Fora de programa · {{ out_of_program_groups_render|length }} blocs</summary>
+        <div class="small mb-2">Aquests blocs existeixen pero no tenen cap franja assignada dins el programa actual.</div>
+        <div class="d-flex flex-wrap" style="gap:8px;">
+          {% for group in out_of_program_groups_render %}
+            <span class="badge badge-warning p-2">
+              {{ group.label }} · {{ group.count }}
+            </span>
+          {% endfor %}
+        </div>
+      </details>
+    {% endif %}
+
+    {% if groups_render or out_of_program_groups_render %}
+      <div class="notes-control-panel" data-notes-control-panel="1">
+        <div class="notes-toolbar">
+          <div>
+            <label for="notes-franja-select">Franja</label>
+            <select id="notes-franja-select" class="form-control form-control-sm" data-notes-franja-select="1"></select>
+          </div>
+          <div>
+            <label for="notes-group-select">Unitat</label>
+            <select id="notes-group-select" class="form-control form-control-sm" data-notes-group-select="1"></select>
+          </div>
+          <div>
+            <label for="notes-app-select">Aparell</label>
+            <select id="notes-app-select" class="form-control form-control-sm" data-notes-app-select="1"></select>
+          </div>
+          <div>
+            <label for="notes-exercise-select">Exercici</label>
+            <select id="notes-exercise-select" class="form-control form-control-sm" data-notes-exercise-select="1"></select>
+          </div>
+          <div>
+            <label for="notes-row-filter-select">Filtre</label>
+            <select id="notes-row-filter-select" class="form-control form-control-sm" data-notes-row-filter-select="1">
+              <option value="all">Totes</option>
+              <option value="warnings">Amb avisos</option>
+              <option value="global-warnings">Tots els avisos</option>
+              <option value="counts">Jutges que compten</option>
+              <option value="absent">Jutges absents</option>
+            </select>
+          </div>
+          <div class="notes-search-wrap">
+            <label for="notes-search-input">Cerca inscripcio</label>
+            <input id="notes-search-input" class="form-control form-control-sm" type="search" autocomplete="off" placeholder="Nom, club, categoria..." data-notes-search-input="1">
+            <div id="notes-search-results" class="notes-search-results" data-notes-search-results="1"></div>
+          </div>
+        </div>
+        <div class="notes-program-strip" data-notes-program-strip="1"></div>
+      </div>
+
+      <div class="notes-main-shell" data-notes-main-shell="1">
+        <div class="notes-main-head">
+          <div>
+            <div class="notes-main-title" data-notes-main-title="1">Selecciona una unitat</div>
+            <div class="notes-main-meta" data-notes-main-meta="1">El panell carrega nomes la taula seleccionada.</div>
+          </div>
+          <div class="d-flex flex-wrap justify-content-end" style="gap:6px;">
+            <a class="btn btn-sm btn-outline-secondary d-none" href="#" data-notes-schema-link="1">Camps i funcions</a>
+            <a class="btn btn-sm btn-outline-primary d-none" href="#" data-notes-judges-link="1">Jurat / QRs</a>
+          </div>
+        </div>
+        <div class="notes-status mb-2" data-notes-status="1">Preparant el programa...</div>
+        <div class="table-scrollbar-top" data-scrollbar-top="1">
+          <div data-scrollbar-inner="1"></div>
+        </div>
+        <div class="table-responsive table-sticky" data-scroll-wrap="1">
+          <table class="table table-bordered table-sm align-middle"
+                 data-scoring-table="1"
+                 data-notes-main-table="1"
+                 data-group=""
+                 data-exercici="1"
+                 data-comp-aparell-id="">
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="notes-warning-summary d-none" data-notes-warning-summary="1"></div>
+      </div>
+
+      <!-- PESTANYES DE GRUPS -->
+      <ul class="nav nav-tabs notes-legacy-tabs d-none" role="tablist" data-notes-legacy-tabs="1">
+        {% for group in groups_render %}
+          <li class="nav-item" role="presentation">
+            <a class="nav-link {% if forloop.first %}active{% endif %}"
+               data-toggle="tab"
+               href="#pane-{{ group.key }}"
+               role="tab"
+               aria-controls="pane-{{ group.key }}"
+               aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
+              {{ group.label }}
+              <span class="badge badge-light ml-1">{{ group.count }}</span>
+            </a>
+          </li>
+        {% endfor %}
+        {% for group in out_of_program_groups_render %}
+          <li class="nav-item" role="presentation">
+            <a class="nav-link {% if not groups_render and forloop.first %}active{% endif %}"
+               data-toggle="tab"
+               href="#off-pane-{{ group.key }}"
+               role="tab"
+               aria-controls="off-pane-{{ group.key }}"
+               aria-selected="{% if not groups_render and forloop.first %}true{% else %}false{% endif %}">
+              {{ group.label }}
+              <span class="badge badge-warning ml-1">Fora</span>
+              <span class="badge badge-light ml-1">{{ group.count }}</span>
+            </a>
+          </li>
+        {% endfor %}
+      </ul>
+
+      <!-- CONTINGUT GRUP -->
+      <div class="tab-content pt-3 d-none" data-notes-legacy-content="1">
+        {% for group in groups_render %}
+          <div class="tab-pane fade {% if forloop.first %}show active{% endif %}"
+               id="pane-{{ group.key }}"
+               role="tabpanel">
+
+            <!-- SUB-PESTANYES D’APARELL (PILLS) -->
+            <ul class="nav nav-pills mb-3" role="tablist">
+              {% for app in group.apps %}
+                <li class="nav-item" role="presentation">
+                  <a class="nav-link {% if forloop.first %}active{% endif %}"
+                     data-toggle="tab"
+                     href="#pane-{{ group.key }}-app-{{ app.id }}"
+                     role="tab"
+                     aria-controls="pane-{{ group.key }}-app-{{ app.id }}"
+                     aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
+                    {{ app.aparell.nom }}
+                  </a>
+                </li>
+              {% endfor %}
+            </ul>
+
+            <div class="tab-content">
+              {% for app in group.apps %}
+                <div class="tab-pane fade {% if forloop.first %}show active{% endif %}"
+                     id="pane-{{ group.key }}-app-{{ app.id }}"
+                     role="tabpanel"
+                     data-comp-aparell-id="{{ app.id }}"
+                     data-group="{{ group.key }}"
+                     data-group-kind="{{ group.kind }}">
+
+                  <!-- SUB-PESTANYES D’EXERCICI -->
+                  <ul class="nav nav-tabs mb-3" role="tablist">
+                    {% for ex in exercicis %}
+                    {% if ex <= app.nombre_exercicis %}
+                      <li class="nav-item" role="presentation">
+                        <a class="nav-link {% if forloop.first %}active{% endif %}"
+                           data-toggle="tab"
+                           href="#pane-{{ group.key }}-app-{{ app.id }}-ex-{{ ex }}"
+                           role="tab"
+                           aria-controls="pane-{{ group.key }}-app-{{ app.id }}-ex-{{ ex }}"
+                           aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
+                          Exercici {{ ex }}
+                        </a>
+                      </li>
+                    {% endif %}
+                    {% endfor %}
+                  </ul>
+
+                  <div class="tab-content">
+                    {% for ex in exercicis %}
+                      {% if ex <= app.nombre_exercicis %}
+                        <div class="tab-pane fade {% if ex == 1 %}show active{% endif %}"
+                            id="pane-{{ group.key }}-app-{{ app.id }}-ex-{{ ex }}"
+                            role="tabpanel">
+
+                          <div class="d-flex justify-content-between align-items-center mb-2">
+                            <div class="mini-help">
+                              {{ group.label }} ·
+                              {{ app.aparell.nom }} · Exercici {{ ex }}
+                            </div>
+                            <div>
+                              <a class="btn btn-sm btn-outline-secondary"
+                                href="{% url 'scoring_schema_update' competicio.id app.id %}">
+                                Camps i funcions
+                              </a>
+                              <a class="btn btn-sm btn-outline-primary"
+                                href="{% url 'judges_qr_home' competicio.id %}?comp_aparell={{ app.id }}">
+                                Jurat / QRs
+                              </a>
+                            </div>
+                          </div>
+                          {% with appkey=app.id|stringformat:"s" %}
+                          {% if team_issues_by_app|get_item:appkey %}
+                          <div class="alert alert-warning py-2 small">
+                            <div class="fw-semibold">Incidencies d'equips</div>
+                            {% for issue in team_issues_by_app|get_item:appkey %}
+                            <div>{{ issue.team_label }}: {{ issue.reasons|join:", " }}</div>
+                            {% endfor %}
+                          </div>
+                          {% endif %}
+                          {% endwith %}
+
+                          <!-- Scrollbar top sincronitzat -->
+                          <div class="table-scrollbar-top" data-scrollbar-top="1">
+                            <div data-scrollbar-inner="1"></div>
+                          </div>
+
+                          <div class="table-responsive table-sticky" data-scroll-wrap="1">
+                            <table class="table table-bordered table-sm align-middle"
+                                  data-scoring-table="1"
+                                  data-group="{{ group.key }}"
+                                  data-exercici="{{ ex }}"
+                                  data-comp-aparell-id="{{ app.id }}">
+                              <thead></thead>
+                              <tbody></tbody>
+                            </table>
+                          </div>
+
+                        </div>
+                      {% endif %}
+                    {% endfor %}
+                  </div>
+
+
+                </div>
+              {% endfor %}
+            </div>
+
+          </div>
+        {% endfor %}
+        {% for group in out_of_program_groups_render %}
+          <div class="tab-pane fade {% if not groups_render and forloop.first %}show active{% endif %}"
+               id="off-pane-{{ group.key }}"
+               role="tabpanel">
+
+            <ul class="nav nav-pills mb-3" role="tablist">
+              {% for app in group.apps %}
+                <li class="nav-item" role="presentation">
+                  <a class="nav-link {% if forloop.first %}active{% endif %}"
+                     data-toggle="tab"
+                     href="#off-pane-{{ group.key }}-app-{{ app.id }}"
+                     role="tab"
+                     aria-controls="off-pane-{{ group.key }}-app-{{ app.id }}"
+                     aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
+                    {{ app.aparell.nom }}
+                  </a>
+                </li>
+              {% endfor %}
+            </ul>
+
+            <div class="tab-content">
+              {% for app in group.apps %}
+                <div class="tab-pane fade {% if forloop.first %}show active{% endif %}"
+                     id="off-pane-{{ group.key }}-app-{{ app.id }}"
+                     role="tabpanel"
+                     data-comp-aparell-id="{{ app.id }}"
+                     data-group="{{ group.key }}"
+                     data-group-kind="{{ group.kind }}">
+
+                  <ul class="nav nav-tabs mb-3" role="tablist">
+                    {% for ex in exercicis %}
+                    {% if ex <= app.nombre_exercicis %}
+                      <li class="nav-item" role="presentation">
+                        <a class="nav-link {% if forloop.first %}active{% endif %}"
+                           data-toggle="tab"
+                           href="#off-pane-{{ group.key }}-app-{{ app.id }}-ex-{{ ex }}"
+                           role="tab"
+                           aria-controls="off-pane-{{ group.key }}-app-{{ app.id }}-ex-{{ ex }}"
+                           aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
+                          Exercici {{ ex }}
+                        </a>
+                      </li>
+                    {% endif %}
+                    {% endfor %}
+                  </ul>
+
+                  <div class="tab-content">
+                    {% for ex in exercicis %}
+                      {% if ex <= app.nombre_exercicis %}
+                        <div class="tab-pane fade {% if ex == 1 %}show active{% endif %}"
+                            id="off-pane-{{ group.key }}-app-{{ app.id }}-ex-{{ ex }}"
+                            role="tabpanel">
+
+                          <div class="d-flex justify-content-between align-items-center mb-2">
+                            <div class="mini-help">
+                              Fora de programa · {{ group.label }} ·
+                              {{ app.aparell.nom }} · Exercici {{ ex }}
+                            </div>
+                            <div>
+                              <a class="btn btn-sm btn-outline-secondary"
+                                href="{% url 'scoring_schema_update' competicio.id app.id %}">
+                                Camps i funcions
+                              </a>
+                              <a class="btn btn-sm btn-outline-primary"
+                                href="{% url 'judges_qr_home' competicio.id %}?comp_aparell={{ app.id }}">
+                                Jurat / QRs
+                              </a>
+                            </div>
+                          </div>
+                          {% with appkey=app.id|stringformat:"s" %}
+                          {% if team_issues_by_app|get_item:appkey %}
+                          <div class="alert alert-warning py-2 small">
+                            <div class="fw-semibold">Incidencies d'equips</div>
+                            {% for issue in team_issues_by_app|get_item:appkey %}
+                            <div>{{ issue.team_label }}: {{ issue.reasons|join:", " }}</div>
+                            {% endfor %}
+                          </div>
+                          {% endif %}
+                          {% endwith %}
+
+                          <div class="table-scrollbar-top" data-scrollbar-top="1">
+                            <div data-scrollbar-inner="1"></div>
+                          </div>
+
+                          <div class="table-responsive table-sticky" data-scroll-wrap="1">
+                            <table class="table table-bordered table-sm align-middle"
+                                  data-scoring-table="1"
+                                  data-group="{{ group.key }}"
+                                  data-exercici="{{ ex }}"
+                                  data-comp-aparell-id="{{ app.id }}">
+                              <thead></thead>
+                              <tbody></tbody>
+                            </table>
+                          </div>
+
+                        </div>
+                      {% endif %}
+                    {% endfor %}
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="text-muted">Encara no hi ha inscripcions en aquesta competició.</div>
+    {% endif %}
+  </div>

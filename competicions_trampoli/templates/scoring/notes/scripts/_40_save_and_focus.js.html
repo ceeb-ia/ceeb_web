@@ -1,0 +1,374 @@
+  function applyUpdate(u){
+    const subjectId = (u.subject_kind === "inscripcio") ? (u.inscripcio_id || u.subject_id) : u.subject_id;
+    const scoreKey = keyForSubject(u.subject_kind || "inscripcio", subjectId, u.exercici, u.comp_aparell_id);
+
+    // scoring_updates és un feed incremental: sincronitzem el store local
+    // i deixem que el re-render del bloc complet governi la UI visible.
+    SCORES[scoreKey] = {
+      inputs: u.inputs || {},
+      outputs: u.outputs || {},
+      total: u.total || 0
+    };
+
+    if(isEditingScoreKey(scoreKey)){
+      markScoreKeyPendingRemoteRerender(scoreKey);
+      return;
+    }
+
+    rerenderTablesForScoreKey(scoreKey);
+  }
+  // --- Save ---
+  async function saveEntry(insId, ex, appId, inputsPatch){
+    const subject = SUBJECTS_BY_ID[String(insId)] || {};
+    const res = await fetch(SAVE_URL,{
+      method:"POST",
+      headers:{
+        "Content-Type":"application/json",
+        "X-CSRFToken": CSRF_TOKEN,
+      },
+      body: JSON.stringify({
+        inscripcio_id: subject.subject_kind === "inscripcio" ? subject.subject_id : undefined,
+        subject_kind: subject.subject_kind || "inscripcio",
+        subject_id: subject.subject_id || insId,
+        exercici: ex,
+        comp_aparell_id: appId,
+        inputs_patch: inputsPatch,
+      })
+    });
+
+    const txt = await res.text();
+    if(!res.ok){
+      throw new Error(`HTTP ${res.status} guardant: ${txt}`);
+    }
+    const data = JSON.parse(txt);
+    if(!data.ok) throw new Error(data.error || "Error guardant");
+    return data;
+  }
+
+  // Debounce per gimnasta+aparell+exercici (evita moltes peticions mentre escrius)
+  const timers=new Map();
+  const pendingSaveFns = new Map();
+  const pendingRemoteScoreKeys = new Set();
+  let pendingFocusRestoreDescriptor = null;
+  function scheduleSave(scoreKey, fn){
+    const resolved = String(scoreKey || "");
+    if(!resolved) return;
+    if(timers.has(resolved)) clearTimeout(timers.get(resolved));
+    pendingSaveFns.set(resolved, fn);
+    timers.set(resolved, setTimeout(async ()=>{
+      timers.delete(resolved);
+      const pendingFn = pendingSaveFns.get(resolved);
+      pendingSaveFns.delete(resolved);
+      if(pendingFn) await pendingFn();
+    }, 250));
+  }
+
+  async function flushPendingSaveForScoreKey(scoreKey){
+    const resolved = String(scoreKey || "");
+    if(!resolved || !timers.has(resolved)) return false;
+    clearTimeout(timers.get(resolved));
+    timers.delete(resolved);
+    const pendingFn = pendingSaveFns.get(resolved);
+    pendingSaveFns.delete(resolved);
+    if(pendingFn) await pendingFn();
+    return true;
+  }
+
+  function activeScoreKey(){
+    const active = document.activeElement;
+    if(!active || typeof active.closest !== "function") return "";
+    const row = active.closest("tr[data-score-key]");
+    return row ? String(row.getAttribute("data-score-key") || "") : "";
+  }
+
+  function activeScoreTable(){
+    const active = document.activeElement;
+    if(!active || typeof active.closest !== "function") return null;
+    return active.closest("table[data-scoring-table='1']");
+  }
+
+  function scoreTablesForScoreKey(scoreKey){
+    const resolved = String(scoreKey || "");
+    if(!resolved) return [];
+    const tables = [];
+    const seen = new Set();
+    document.querySelectorAll(`tr[data-score-key="${CSS.escape(resolved)}"]`).forEach((row) => {
+      const table = row.closest("table[data-scoring-table='1']");
+      if(!table) return;
+      const marker = table.getAttribute("id") || `${table.getAttribute("data-group")}|${table.getAttribute("data-exercici")}|${table.getAttribute("data-comp-aparell-id")}`;
+      if(seen.has(marker)) return;
+      seen.add(marker);
+      tables.push(table);
+    });
+    return tables;
+  }
+
+  function isEditingScoreKey(scoreKey){
+    const resolved = String(scoreKey || "");
+    if(!resolved) return false;
+    const activeTable = activeScoreTable();
+    if(!activeTable) return false;
+    return scoreTablesForScoreKey(resolved).some((table) => table === activeTable);
+  }
+
+  function markScoreKeyPendingRemoteRerender(scoreKey){
+    if(!scoreKey) return;
+    pendingRemoteScoreKeys.add(String(scoreKey));
+  }
+
+  function selectScoreInputContents(input){
+    if(!input) return;
+    try{
+      input.select();
+    }catch(_e){
+      // ignore unsupported selection APIs
+    }
+  }
+
+  function focusScoreInput(input){
+    if(!input) return false;
+    input.focus();
+    selectScoreInputContents(input);
+    return document.activeElement === input;
+  }
+
+  function scoreInputDescriptorForElement(input){
+    if(!input || input.tagName !== "INPUT") return null;
+    const table = input.closest("table[data-scoring-table='1']");
+    if(!table) return null;
+    return {
+      scoreKey: String(input.dataset.scoreKey || ""),
+      field: String(input.dataset.field || ""),
+      judge: String(input.dataset.j || ""),
+      item: String(input.dataset.i || ""),
+      memberId: String(input.dataset.memberId || ""),
+      appId: String(table.getAttribute("data-comp-aparell-id") || ""),
+      exercici: String(table.getAttribute("data-exercici") || ""),
+      group: String(table.getAttribute("data-group") || ""),
+    };
+  }
+
+  function activeScoreInputDescriptor(){
+    const active = document.activeElement;
+    if(!active || active.tagName !== "INPUT") return null;
+    if(String(active.dataset.navScope || "") !== "score-input") return null;
+    return scoreInputDescriptorForElement(active);
+  }
+
+  function findScoreTableForDescriptor(descriptor){
+    if(!descriptor) return null;
+    const sel = [
+      "table[data-scoring-table='1']",
+      `[data-comp-aparell-id="${CSS.escape(String(descriptor.appId || ""))}"]`,
+      `[data-exercici="${CSS.escape(String(descriptor.exercici || ""))}"]`,
+      `[data-group="${CSS.escape(String(descriptor.group || ""))}"]`,
+    ].join("");
+    return document.querySelector(sel);
+  }
+
+  function isScoreInputFocusable(input){
+    if(!input || input.disabled) return false;
+    return !!(input.offsetParent || input.getClientRects().length);
+  }
+
+  function getEditableScoreInputsInContext(source){
+    const table = source instanceof Element
+      ? source.closest("table[data-scoring-table='1']")
+      : findScoreTableForDescriptor(source);
+    if(!table) return [];
+    return Array.from(table.querySelectorAll('input[data-nav-scope="score-input"]'))
+      .filter(isScoreInputFocusable);
+  }
+
+  function findScoreInputByDescriptor(descriptor){
+    if(!descriptor) return null;
+    return getEditableScoreInputsInContext(descriptor).find((input) => {
+      const candidate = scoreInputDescriptorForElement(input);
+      return !!candidate
+        && candidate.scoreKey === String(descriptor.scoreKey || "")
+        && candidate.field === String(descriptor.field || "")
+        && candidate.judge === String(descriptor.judge || "")
+        && candidate.item === String(descriptor.item || "")
+        && candidate.memberId === String(descriptor.memberId || "");
+    }) || null;
+  }
+
+  function restoreScoreInputFocus(descriptor){
+    if(!descriptor) return false;
+    const exact = findScoreInputByDescriptor(descriptor);
+    if(exact) return focusScoreInput(exact);
+
+    const fallbackInputs = getEditableScoreInputsInContext(descriptor);
+    if(!fallbackInputs.length) return false;
+    const sameScore = fallbackInputs.find((input) => String(input.dataset.scoreKey || "") === String(descriptor.scoreKey || ""));
+    return focusScoreInput(sameScore || fallbackInputs[0]);
+  }
+
+  function adjacentScoreInputDescriptor(currentInput, direction){
+    const inputs = getEditableScoreInputsInContext(currentInput);
+    if(!inputs.length) return null;
+    const idx = inputs.indexOf(currentInput);
+    if(idx === -1) return scoreInputDescriptorForElement(inputs[0]);
+    const nextIdx = direction < 0
+      ? Math.max(idx - 1, 0)
+      : Math.min(idx + 1, inputs.length - 1);
+    return scoreInputDescriptorForElement(inputs[nextIdx] || currentInput);
+  }
+
+  function bindScoreInputNavigation(input, meta = {}){
+    if(!input) return;
+    input.dataset.navScope = "score-input";
+    input.dataset.scoreKey = String(meta.scoreKey || input.dataset.scoreKey || "");
+    input.dataset.field = String(meta.field || input.dataset.field || "");
+    input.dataset.j = meta.judge != null ? String(meta.judge) : String(input.dataset.j || "");
+    input.dataset.i = meta.item != null ? String(meta.item) : String(input.dataset.i || "");
+    if(meta.memberId !== undefined && meta.memberId !== null && meta.memberId !== ""){
+      input.dataset.memberId = String(meta.memberId);
+    }else{
+      delete input.dataset.memberId;
+    }
+    input.addEventListener("focus", ()=>{ selectScoreInputContents(input); });
+    input.addEventListener("keydown", async (evt)=>{
+      if(evt.key !== "Tab") return;
+      evt.preventDefault();
+      const scoreKey = String(input.dataset.scoreKey || "");
+      pendingFocusRestoreDescriptor = adjacentScoreInputDescriptor(input, evt.shiftKey ? -1 : 1)
+        || scoreInputDescriptorForElement(input);
+      await flushPendingSaveForScoreKey(scoreKey);
+      const restoreDescriptor = pendingFocusRestoreDescriptor;
+      pendingFocusRestoreDescriptor = null;
+      if(restoreDescriptor){
+        setTimeout(()=>{ restoreScoreInputFocus(restoreDescriptor); }, 0);
+      }
+    });
+  }
+
+  function flushPendingRemoteRerendersForTable(table){
+    if(!table || activeScoreTable() === table) return;
+    const relatedScoreKeys = Array.from(pendingRemoteScoreKeys).filter((scoreKey) => {
+      return scoreTablesForScoreKey(scoreKey).some((candidate) => candidate === table);
+    });
+    if(!relatedScoreKeys.length) return;
+    relatedScoreKeys.forEach((scoreKey) => pendingRemoteScoreKeys.delete(scoreKey));
+    rerenderTable(table);
+  }
+
+  function flushPendingRemoteRerender(scoreKey){
+    scoreTablesForScoreKey(scoreKey).forEach((table) => {
+      flushPendingRemoteRerendersForTable(table);
+    });
+  }
+
+  function rerenderTable(table){
+    if(!table) return;
+    const appId = table.getAttribute("data-comp-aparell-id");
+    const ex = table.getAttribute("data-exercici");
+    const group = table.getAttribute("data-group");
+    const schema = getSchema(appId);
+    buildHeader(table, schema);
+    buildBody(table, schema, ex, appId, group);
+    table.dataset.rendered = "1";
+    syncScrollbars();
+  }
+
+  function rerenderTablesForScoreKey(scoreKey){
+    const resolvedScoreKey = String(scoreKey || "");
+    const activeDescriptor = activeScoreInputDescriptor();
+    const restoreDescriptor = (
+      pendingFocusRestoreDescriptor && String(pendingFocusRestoreDescriptor.scoreKey || "") === resolvedScoreKey
+    )
+      ? { ...pendingFocusRestoreDescriptor }
+      : (
+        activeDescriptor && String(activeDescriptor.scoreKey || "") === resolvedScoreKey
+          ? activeDescriptor
+          : null
+      );
+    const seen = new Set();
+    document.querySelectorAll(`tr[data-score-key="${CSS.escape(resolvedScoreKey)}"]`).forEach((row) => {
+      const table = row.closest("table[data-scoring-table='1']");
+      if(!table) return;
+      const marker = table.getAttribute("id") || `${table.getAttribute("data-group")}|${table.getAttribute("data-exercici")}|${table.getAttribute("data-comp-aparell-id")}`;
+      if(seen.has(marker)) return;
+      seen.add(marker);
+      if(isTableVisible(table)){
+        rerenderTable(table);
+      }else{
+        markScoreKeyPendingRemoteRerender(resolvedScoreKey);
+      }
+    });
+    if(restoreDescriptor){
+      setTimeout(()=>{
+        restoreScoreInputFocus(restoreDescriptor);
+        if(
+          pendingFocusRestoreDescriptor
+          && String(pendingFocusRestoreDescriptor.scoreKey || "") === resolvedScoreKey
+          && String(pendingFocusRestoreDescriptor.field || "") === String(restoreDescriptor.field || "")
+          && String(pendingFocusRestoreDescriptor.judge || "") === String(restoreDescriptor.judge || "")
+          && String(pendingFocusRestoreDescriptor.item || "") === String(restoreDescriptor.item || "")
+          && String(pendingFocusRestoreDescriptor.memberId || "") === String(restoreDescriptor.memberId || "")
+        ){
+          pendingFocusRestoreDescriptor = null;
+        }
+      }, 0);
+    }
+  }
+
+  // Actualitza outputs: sempre a la fila del jutge 1 (és on hi ha els outputs)
+  function updateTeamOutputs(scoreKey, resp){
+    const outputs = (resp && resp.outputs) || {};
+    document.querySelectorAll(`tr[data-score-key="${CSS.escape(String(scoreKey || ""))}"] [data-out]`).forEach((cell) => {
+      const code = String(cell.getAttribute("data-out") || "");
+      const value = (code === "TOTAL" && outputs.TOTAL === undefined)
+        ? resp.total
+        : outputs[code];
+      cell.textContent = formatComputedValue(value);
+    });
+  }
+
+  function updateOutputs(scoreKey, resp){
+    if(String(scoreKey || "").startsWith("team_unit:")){
+      updateTeamOutputs(scoreKey, resp);
+      return;
+    }
+    const mainRow = document.querySelector(
+      `tr[data-score-key="${CSS.escape(scoreKey)}"][data-judge="1"]`
+    );
+    if(!mainRow) return;
+
+    if(resp.outputs){
+      for(const [code, value] of Object.entries(resp.outputs)){
+        const cell = mainRow.querySelector(`[data-out="${code}"]`);
+        if(cell) cell.textContent = formatComputedValue(value);
+      }
+    }
+
+    const totalCell = mainRow.querySelector(`[data-out="TOTAL"]`);
+    if(totalCell){
+      const v = (resp.outputs && resp.outputs.TOTAL !== undefined) ? resp.outputs.TOTAL : resp.total;
+      totalCell.textContent = formatComputedValue(v);
+    }
+  }
+
+  function toggleIndividualJudgePresence({ ins, exercici, appId, scoreKey, field, code, judgeIdx, blockedRow }){
+    if(blockedRow) return;
+    const cur = getScore(ins.id, exercici, appId);
+    const curInputs = cur.inputs || {};
+    const nextPresence = presenceForField(curInputs, field, code);
+    const idx = Number(judgeIdx || 0) - 1;
+    if(idx < 0 || idx >= nextPresence.length) return;
+    nextPresence[idx] = !nextPresence[idx];
+    const inputsPatch = { [presenceKey(code)]: nextPresence };
+    setScore(ins.id, exercici, appId, {
+      inputs: { ...curInputs, ...inputsPatch },
+      outputs: cur.outputs || {},
+      total: cur.total || 0,
+    });
+    rerenderTablesForScoreKey(scoreKey);
+    scheduleSave(scoreKey, async ()=>{
+      try{
+        const resp = await saveEntry(ins.id, exercici, appId, inputsPatch);
+        setScore(ins.id, exercici, appId, {inputs: resp.inputs, outputs: resp.outputs, total: resp.total});
+        updateOutputs(scoreKey, resp);
+      }catch(e){ console.error(e); showAlert(e.message); }
+    });
+  }

@@ -1,0 +1,527 @@
+  function notesMainTable(){
+    return document.querySelector('table[data-notes-main-table="1"]');
+  }
+
+  function setNotesStatus(text, isError = false){
+    const status = document.querySelector('[data-notes-status="1"]');
+    if(!status) return;
+    status.textContent = text || "";
+    status.classList.toggle("is-error", !!isError);
+  }
+
+  function setLazySelectLoadingState(label = "Carregant..."){
+    [
+      '[data-notes-franja-select="1"]',
+      '[data-notes-group-select="1"]',
+      '[data-notes-app-select="1"]',
+      '[data-notes-exercise-select="1"]',
+    ].forEach((selector) => {
+      const select = document.querySelector(selector);
+      if(!select) return;
+      setSelectOptions(select, [{value:"", label}], "");
+    });
+  }
+
+  function refreshLazyMainView(){
+    if(isGlobalWarningsMode()){
+      return loadGlobalWarnings();
+    }
+    return loadSelectedLazyTable();
+  }
+
+  function applyNotesRowFilter(table = notesMainTable()){
+    if(!table) return;
+    const mode = String(NOTES_STATE.rowFilter || "all");
+    const rows = Array.from(table.querySelectorAll("tbody tr"));
+    let visible = 0;
+    rows.forEach((row) => {
+      let show = true;
+      if(mode === "warnings"){
+        show = row.classList.contains("score-warning-row");
+      }else if(mode === "counts"){
+        show = row.classList.contains("judge-row-counts");
+      }else if(mode === "absent"){
+        show = row.classList.contains("judge-row-absent");
+      }
+      row.style.display = show ? "" : "none";
+      if(show) visible += 1;
+    });
+    table.dataset.visibleRows = String(visible);
+  }
+
+  function filterSummaryForTable(table = notesMainTable()){
+    if(!table) return "";
+    const rows = Array.from(table.querySelectorAll("tbody tr"));
+    if(!rows.length) return "";
+    const warnings = rows.filter((row) => row.classList.contains("score-warning-row")).length;
+    const counts = rows.filter((row) => row.classList.contains("judge-row-counts")).length;
+    const absent = rows.filter((row) => row.classList.contains("judge-row-absent")).length;
+    return `Files: ${rows.length} · Avisos: ${warnings} · Compten: ${counts} · Absents: ${absent}`;
+  }
+
+  function allLazyUnits(){
+    const manifest = NOTES_STATE.manifest || {};
+    return []
+      .concat(Array.isArray(manifest.units) ? manifest.units : [])
+      .concat(Array.isArray(manifest.out_of_program_units) ? manifest.out_of_program_units : []);
+  }
+
+  function lazyAppById(appId){
+    const manifest = NOTES_STATE.manifest || {};
+    return (Array.isArray(manifest.apps) ? manifest.apps : [])
+      .find((app) => String(app.id) === String(appId)) || null;
+  }
+
+  function franjaValueForUnit(unit){
+    return unit && unit.franja_id ? `franja:${unit.franja_id}` : "off";
+  }
+
+  function unitIdentity(unit){
+    if(!unit) return "";
+    return [
+      unit.franja_id ? `franja:${unit.franja_id}` : "off",
+      unit.comp_aparell_id || "",
+      unit.key || "",
+    ].join("|");
+  }
+
+  function unitsForSelectedFranja(){
+    const selected = String(NOTES_STATE.selectedFranja || "");
+    return allLazyUnits().filter((unit) => franjaValueForUnit(unit) === selected);
+  }
+
+  function unitsForSelectedApp(){
+    const units = unitsForSelectedFranja();
+    if(!NOTES_STATE.selectedAppId) return units;
+    return units.filter((unit) => String(unit.comp_aparell_id) === String(NOTES_STATE.selectedAppId));
+  }
+
+  function currentLazyUnit(){
+    const selected = String(NOTES_STATE.selectedUnitId || "");
+    return allLazyUnits().find((unit) => unitIdentity(unit) === selected) || null;
+  }
+
+  function selectFirstAvailableUnit(){
+    const unit = unitsForSelectedApp()[0] || unitsForSelectedFranja()[0] || allLazyUnits()[0] || null;
+    if(!unit){
+      NOTES_STATE.selectedUnitId = "";
+      NOTES_STATE.selectedAppId = "";
+      return null;
+    }
+    NOTES_STATE.selectedFranja = franjaValueForUnit(unit);
+    NOTES_STATE.selectedAppId = String(unit.comp_aparell_id || "");
+    NOTES_STATE.selectedUnitId = unitIdentity(unit);
+    return unit;
+  }
+
+  function populateLazyFranjaOptions(){
+    const manifest = NOTES_STATE.manifest || {};
+    const units = allLazyUnits();
+    const options = [];
+    (Array.isArray(manifest.franges) ? manifest.franges : []).forEach((franja) => {
+      const value = `franja:${franja.id}`;
+      const count = units.filter((unit) => franjaValueForUnit(unit) === value).length;
+      if(count > 0){
+        options.push({value, label:`${franja.label} (${count})`});
+      }
+    });
+    const offCount = units.filter((unit) => franjaValueForUnit(unit) === "off").length;
+    if(offCount > 0){
+      options.push({value:"off", label:`Fora de programa (${offCount})`});
+    }
+    if(!options.length){
+      options.push({value:"", label:"Sense programa"});
+    }
+    if(!options.some((option) => String(option.value) === String(NOTES_STATE.selectedFranja))){
+      NOTES_STATE.selectedFranja = String(options[0].value || "");
+    }
+    setSelectOptions(document.querySelector('[data-notes-franja-select="1"]'), options, NOTES_STATE.selectedFranja);
+  }
+
+  function populateLazyAppOptions(){
+    const units = unitsForSelectedFranja();
+    const seen = new Set();
+    const options = [];
+    units.forEach((unit) => {
+      const value = String(unit.comp_aparell_id || "");
+      if(!value || seen.has(value)) return;
+      seen.add(value);
+      options.push({value, label:unit.app_label || value});
+    });
+    if(!options.length){
+      options.push({value:"", label:"Sense aparells"});
+    }
+    if(!options.some((option) => String(option.value) === String(NOTES_STATE.selectedAppId))){
+      NOTES_STATE.selectedAppId = String(options[0].value || "");
+    }
+    setSelectOptions(document.querySelector('[data-notes-app-select="1"]'), options, NOTES_STATE.selectedAppId);
+  }
+
+  function populateLazyUnitOptions(){
+    const units = unitsForSelectedApp();
+    const options = units.map((unit) => ({
+      value: unitIdentity(unit),
+      label: `${unit.label || unit.key} · ${unit.count || 0}`,
+    }));
+    if(!options.length){
+      options.push({value:"", label:"Sense unitats"});
+    }
+    if(!options.some((option) => String(option.value) === String(NOTES_STATE.selectedUnitId))){
+      NOTES_STATE.selectedUnitId = String(options[0].value || "");
+    }
+    setSelectOptions(document.querySelector('[data-notes-group-select="1"]'), options, NOTES_STATE.selectedUnitId);
+  }
+
+  function populateLazyExerciseOptions(){
+    const unit = currentLazyUnit();
+    const app = lazyAppById(unit ? unit.comp_aparell_id : NOTES_STATE.selectedAppId);
+    const exercises = (app && Array.isArray(app.exercicis) && app.exercicis.length) ? app.exercicis : [1];
+    const options = exercises.map((ex) => ({value:String(ex), label:`Exercici ${ex}`}));
+    if(!options.some((option) => String(option.value) === String(NOTES_STATE.selectedExercise))){
+      NOTES_STATE.selectedExercise = String(options[0].value || "1");
+    }
+    setSelectOptions(document.querySelector('[data-notes-exercise-select="1"]'), options, NOTES_STATE.selectedExercise);
+  }
+
+  function syncLazyToolbar(){
+    populateLazyFranjaOptions();
+    populateLazyAppOptions();
+    populateLazyUnitOptions();
+    const unit = currentLazyUnit() || selectFirstAvailableUnit();
+    if(unit){
+      NOTES_STATE.selectedAppId = String(unit.comp_aparell_id || "");
+      NOTES_STATE.selectedUnitId = unitIdentity(unit);
+    }
+    populateLazyAppOptions();
+    populateLazyUnitOptions();
+    populateLazyExerciseOptions();
+    renderLazyProgramStrip();
+  }
+
+  function renderLazyProgramStrip(){
+    const strip = document.querySelector('[data-notes-program-strip="1"]');
+    if(!strip) return;
+    strip.innerHTML = "";
+    const units = unitsForSelectedFranja();
+    if(!units.length){
+      strip.appendChild(el("span", {class:"notes-status", text:"No hi ha unitats en aquesta franja."}));
+      return;
+    }
+    const seen = new Set();
+    units.forEach((unit) => {
+      const appId = String(unit.comp_aparell_id || "");
+      if(!appId || seen.has(appId)) return;
+      seen.add(appId);
+      const appUnits = units.filter((item) => String(item.comp_aparell_id) === appId);
+      const count = appUnits.reduce((total, item) => total + Number(item.count || 0), 0);
+      const chip = el("button", {
+        type:"button",
+        class:`notes-program-chip ${String(NOTES_STATE.selectedAppId) === appId ? "font-weight-bold" : ""}`,
+        text:`${unit.app_label || appId} · ${count}`,
+      });
+      chip.addEventListener("click", () => {
+        NOTES_STATE.selectedAppId = appId;
+        const firstUnit = appUnits[0];
+        NOTES_STATE.selectedUnitId = unitIdentity(firstUnit);
+        syncLazyToolbar();
+        refreshLazyMainView();
+      });
+      strip.appendChild(chip);
+    });
+  }
+
+  function updateLazyMainHead(payload){
+    const unit = payload?.unit || currentLazyUnit();
+    const app = lazyAppById(unit?.comp_aparell_id);
+    const title = document.querySelector('[data-notes-main-title="1"]');
+    const meta = document.querySelector('[data-notes-main-meta="1"]');
+    if(title){
+      title.textContent = unit ? `${unit.label || "Unitat"} · ${unit.app_label || app?.label || "Aparell"}` : "Selecciona una unitat";
+    }
+    if(meta){
+      const parts = [];
+      if(unit?.franja_label) parts.push(unit.franja_label);
+      if(unit?.is_out_of_program) parts.push("Fora de programa");
+      parts.push(`Exercici ${NOTES_STATE.selectedExercise || 1}`);
+      parts.push(`${unit?.count || 0} subjectes`);
+      meta.textContent = parts.join(" · ");
+    }
+    const schemaLink = document.querySelector('[data-notes-schema-link="1"]');
+    const judgesLink = document.querySelector('[data-notes-judges-link="1"]');
+    const appId = unit?.comp_aparell_id;
+    if(schemaLink && appId){
+      schemaLink.href = NOTES_SCHEMA_URL_TEMPLATE.replace("__APP_ID__", encodeURIComponent(appId));
+      schemaLink.classList.remove("d-none");
+    }
+    if(judgesLink && appId){
+      judgesLink.href = `${NOTES_JUDGES_URL}?comp_aparell=${encodeURIComponent(appId)}`;
+      judgesLink.classList.remove("d-none");
+    }
+  }
+
+  async function loadSelectedLazyTable(){
+    setGlobalWarningsMode(false);
+    const unit = currentLazyUnit() || selectFirstAvailableUnit();
+    const table = notesMainTable();
+    if(!unit || !table){
+      setNotesStatus("No hi ha cap unitat disponible.", true);
+      return;
+    }
+    const exercici = Number(NOTES_STATE.selectedExercise || 1) || 1;
+    const loadKey = `${unitIdentity(unit)}|${exercici}`;
+    NOTES_STATE.loadingKey = loadKey;
+    table.querySelector("thead").innerHTML = "";
+    table.querySelector("tbody").innerHTML = "";
+    setNotesStatus("Carregant taula...");
+    updateLazyMainHead({unit});
+
+    const url = new URL(NOTES_LAZY_ENDPOINTS.table, window.location.origin);
+    if(unit.franja_id) url.searchParams.set("franja_id", unit.franja_id);
+    url.searchParams.set("comp_aparell_id", unit.comp_aparell_id);
+    url.searchParams.set("exercici", exercici);
+    url.searchParams.set("unit_key", unit.key);
+
+    try{
+      const resp = await fetch(url.toString(), {headers:{"X-Requested-With":"XMLHttpRequest"}});
+      const payload = await resp.json();
+      if(!resp.ok || !payload.ok){
+        throw new Error(payload.error || `HTTP ${resp.status}`);
+      }
+      if(NOTES_STATE.loadingKey !== loadKey) return;
+
+      SCHEMAS[String(payload.context.comp_aparell_id)] = payload.schema || {};
+      LOGICAL_SCHEMAS[String(payload.context.comp_aparell_id)] = payload.logical_schema || payload.schema || {};
+      Object.entries(payload.scores || {}).forEach(([key, value]) => { SCORES[key] = value; });
+      Object.entries(payload.media_counts || {}).forEach(([key, value]) => { MEDIA_COUNTS_BY_INS[key] = value; });
+      Object.entries(payload.judge_video_presence || {}).forEach(([key, value]) => { JUDGE_VIDEO_PRESENCE_BY_KEY[key] = value; });
+      Object.entries(payload.rotation_rank || {}).forEach(([key, value]) => { ROTATION_RANK[key] = value; });
+      rememberSubjects(payload.subjects || []);
+
+      NOTES_STATE.activePayload = payload;
+      table.dataset.group = String(payload.unit.key || unit.key || "");
+      table.dataset.exercici = String(payload.context.exercici || exercici);
+      table.dataset.compAparellId = String(payload.context.comp_aparell_id || unit.comp_aparell_id || "");
+      table.dataset.rendered = "";
+      rerenderTable(table);
+      applyNotesRowFilter(table);
+      updateLazyMainHead(payload);
+      const warningCount = Array.isArray(payload.warnings) ? payload.warnings.length : 0;
+      const summary = filterSummaryForTable(table);
+      setNotesStatus([
+        warningCount ? `${warningCount} avisos detectats en aquesta taula.` : "Taula carregada.",
+        summary,
+      ].filter(Boolean).join(" "));
+      renderPlaybackPanel();
+      syncPlaybackContextToVisibleRow();
+    }catch(err){
+      setNotesStatus(`No s'ha pogut carregar la taula (${err.message || err}).`, true);
+    }
+  }
+
+  function bindLazyNotesToolbar(){
+    const franjaSelect = document.querySelector('[data-notes-franja-select="1"]');
+    const unitSelect = document.querySelector('[data-notes-group-select="1"]');
+    const appSelect = document.querySelector('[data-notes-app-select="1"]');
+    const exSelect = document.querySelector('[data-notes-exercise-select="1"]');
+    const rowFilterSelect = document.querySelector('[data-notes-row-filter-select="1"]');
+    const searchInput = document.querySelector('[data-notes-search-input="1"]');
+    if(franjaSelect && franjaSelect.dataset.lazyBound !== "1"){
+      franjaSelect.dataset.lazyBound = "1";
+      franjaSelect.addEventListener("change", () => {
+        NOTES_STATE.selectedFranja = franjaSelect.value;
+        NOTES_STATE.selectedAppId = "";
+        NOTES_STATE.selectedUnitId = "";
+        selectFirstAvailableUnit();
+        syncLazyToolbar();
+        refreshLazyMainView();
+      });
+    }
+    if(appSelect && appSelect.dataset.lazyBound !== "1"){
+      appSelect.dataset.lazyBound = "1";
+      appSelect.addEventListener("change", () => {
+        NOTES_STATE.selectedAppId = appSelect.value;
+        NOTES_STATE.selectedUnitId = "";
+        selectFirstAvailableUnit();
+        syncLazyToolbar();
+        refreshLazyMainView();
+      });
+    }
+    if(unitSelect && unitSelect.dataset.lazyBound !== "1"){
+      unitSelect.dataset.lazyBound = "1";
+      unitSelect.addEventListener("change", () => {
+        NOTES_STATE.selectedUnitId = unitSelect.value;
+        const unit = currentLazyUnit();
+        if(unit){
+          NOTES_STATE.selectedFranja = franjaValueForUnit(unit);
+          NOTES_STATE.selectedAppId = String(unit.comp_aparell_id || "");
+        }
+        syncLazyToolbar();
+        refreshLazyMainView();
+      });
+    }
+    if(exSelect && exSelect.dataset.lazyBound !== "1"){
+      exSelect.dataset.lazyBound = "1";
+      exSelect.addEventListener("change", () => {
+        NOTES_STATE.selectedExercise = exSelect.value || "1";
+        refreshLazyMainView();
+      });
+    }
+    if(rowFilterSelect && rowFilterSelect.dataset.lazyBound !== "1"){
+      rowFilterSelect.dataset.lazyBound = "1";
+      rowFilterSelect.addEventListener("change", () => {
+        NOTES_STATE.rowFilter = rowFilterSelect.value || "all";
+        if(isGlobalWarningsMode()){
+          loadGlobalWarnings();
+          return;
+        }
+        setGlobalWarningsMode(false);
+        const table = notesMainTable();
+        applyNotesRowFilter(table);
+        const summary = filterSummaryForTable(table);
+        if(summary) setNotesStatus(summary);
+      });
+    }
+    if(searchInput && searchInput.dataset.lazyBound !== "1"){
+      searchInput.dataset.lazyBound = "1";
+      searchInput.addEventListener("input", () => renderLazySearchResults(searchInput.value));
+      searchInput.addEventListener("keydown", (ev) => {
+        if(ev.key !== "Enter") return;
+        const first = document.querySelector(".notes-search-result");
+        if(first && typeof first.click === "function"){
+          ev.preventDefault();
+          first.click();
+        }
+      });
+    }
+    document.addEventListener("click", (ev) => {
+      if(ev.target.closest(".notes-search-wrap")) return;
+      const results = document.querySelector('[data-notes-search-results="1"]');
+      if(results) results.classList.remove("show");
+    }, {once:false});
+  }
+
+  function unitsForSubject(subject){
+    if(!subject) return [];
+    const subjectGroup = String(subject.group ?? "");
+    const subjectKind = String(subject.subject_kind || "inscripcio");
+    return allLazyUnits().filter((unit) => {
+      if(subjectKind === "team_unit" && unit.subject_kind !== "team_unit") return false;
+      if(subjectKind !== "team_unit" && unit.subject_kind === "team_unit") return false;
+      if(Array.isArray(subject.allowed_app_ids) && !subject.allowed_app_ids.map(String).includes(String(unit.comp_aparell_id))){
+        return false;
+      }
+      const members = (unit.member_keys || []).map(String);
+      return members.includes(subjectGroup);
+    });
+  }
+
+  function focusSubjectInMainTable(subject){
+    const table = notesMainTable();
+    if(!table || !subject) return;
+    const row = table.querySelector(`tr[data-ins-id="${CSS.escape(String(subject.id))}"]`);
+    if(row){
+      row.scrollIntoView({behavior:"smooth", block:"center"});
+      row.classList.add("playback-active-row");
+      setTimeout(() => row.classList.remove("playback-active-row"), 1800);
+    }
+  }
+
+  function renderLazySearchResults(query){
+    const results = document.querySelector('[data-notes-search-results="1"]');
+    if(!results) return;
+    const q = String(query || "").trim().toLowerCase();
+    results.innerHTML = "";
+    if(q.length < 2){
+      results.classList.remove("show");
+      return;
+    }
+    const matches = (INS || []).filter((item) => {
+      const haystack = [item.name, item.meta, item.context_name, item.group_label, item.group]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(q);
+    }).slice(0, 12);
+    if(!matches.length){
+      results.appendChild(el("div", {class:"notes-search-result text-muted", text:"Cap resultat local"}));
+      results.classList.add("show");
+      return;
+    }
+    matches.forEach((subject) => {
+      const unit = unitsForSubject(subject)[0];
+      const btn = el("button", {type:"button", class:"notes-search-result"});
+      btn.appendChild(el("div", {class:"name", text:subject.name || "Subjecte"}));
+      btn.appendChild(el("div", {
+        class:"meta",
+        text:[subject.meta, unit ? `${unit.franja_label || "Fora de programa"} · ${unit.app_label}` : ""].filter(Boolean).join(" · "),
+      }));
+      btn.addEventListener("click", async () => {
+        results.classList.remove("show");
+        const input = document.querySelector('[data-notes-search-input="1"]');
+        if(input) input.value = subject.name || "";
+        if(!unit) return;
+        NOTES_STATE.selectedFranja = franjaValueForUnit(unit);
+        NOTES_STATE.selectedAppId = String(unit.comp_aparell_id || "");
+        NOTES_STATE.selectedUnitId = unitIdentity(unit);
+        NOTES_STATE.selectedExercise = "1";
+        NOTES_STATE.rowFilter = "all";
+        const rowFilterSelect = document.querySelector('[data-notes-row-filter-select="1"]');
+        if(rowFilterSelect) rowFilterSelect.value = "all";
+        syncLazyToolbar();
+        await loadSelectedLazyTable();
+        focusSubjectInMainTable(subject);
+      });
+      results.appendChild(btn);
+    });
+    results.classList.add("show");
+  }
+
+  function selectInitialLazyContext(){
+    const manifest = NOTES_STATE.manifest || {};
+    const ctx = manifest.initial_context || {};
+    const units = allLazyUnits();
+    let unit = units.find((candidate) => {
+      return String(candidate.key) === String(ctx.unit_key || "")
+        && String(candidate.comp_aparell_id) === String(ctx.comp_aparell_id || "")
+        && String(candidate.franja_id || "") === String(ctx.franja_id || "");
+    }) || units[0] || null;
+    if(unit){
+      NOTES_STATE.selectedFranja = franjaValueForUnit(unit);
+      NOTES_STATE.selectedAppId = String(unit.comp_aparell_id || "");
+      NOTES_STATE.selectedUnitId = unitIdentity(unit);
+      NOTES_STATE.selectedExercise = String(ctx.exercici || 1);
+    }
+  }
+
+  function showLegacyNotesFallback(){
+    const tabs = document.querySelector('[data-notes-legacy-tabs="1"]');
+    const content = document.querySelector('[data-notes-legacy-content="1"]');
+    const shell = document.querySelector('[data-notes-main-shell="1"]');
+    if(tabs) tabs.classList.remove("d-none");
+    if(content) content.classList.remove("d-none");
+    if(shell) shell.classList.add("d-none");
+    renderActiveTableOnly();
+  }
+
+  async function initLazyNotesPanel(){
+    const shell = document.querySelector('[data-notes-main-shell="1"]');
+    if(!shell) return;
+    setLazySelectLoadingState();
+    setNotesStatus("Carregant programa...");
+    try{
+      const resp = await fetch(NOTES_LAZY_ENDPOINTS.manifest, {headers:{"X-Requested-With":"XMLHttpRequest"}});
+      const manifest = await resp.json();
+      if(!resp.ok || !manifest.ok){
+        throw new Error(manifest.error || `HTTP ${resp.status}`);
+      }
+      NOTES_STATE.manifest = manifest;
+      bindLazyNotesToolbar();
+      selectInitialLazyContext();
+      syncLazyToolbar();
+      await refreshLazyMainView();
+    }catch(err){
+      setNotesStatus(`No s'ha pogut carregar el programa lazy (${err.message || err}).`, true);
+      setLazySelectLoadingState("Error de carrega");
+    }
+  }
+

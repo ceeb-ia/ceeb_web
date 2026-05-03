@@ -573,7 +573,8 @@ class RotationOrderingDisplayTests(_BaseTrampoliDataMixin, TestCase):
         self.assertEqual(default_res.status_code, 200)
         default_body = default_res.content.decode("utf-8")
         self.assertNotIn('id="franjaSelect"', default_body)
-        self.assertNotIn(">Franja</label>", default_body)
+        self.assertIn('id="notes-franja-select"', default_body)
+        self.assertIn(">Franja</label>", default_body)
         self.assertIsNone(default_res.context["franja_selected_id"])
 
         scoring_res = self.client.get(scoring_url, {"franja": self.franja_3.id})

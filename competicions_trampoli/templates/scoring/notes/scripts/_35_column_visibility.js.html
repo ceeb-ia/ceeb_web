@@ -1,0 +1,209 @@
+  // --- Persistència ordre de columnes (per aparell) ---
+  function colsStorageKey(appId){ return `scoring_cols_v1:${String(appId)}`; }
+
+  function loadColsOrder(appId){
+    try{
+      const raw = localStorage.getItem(colsStorageKey(appId));
+      const arr = JSON.parse(raw || "null");
+      return Array.isArray(arr) ? arr : null;
+    }catch(e){ return null; }
+  }
+
+  function saveColsOrder(appId, cols){
+    try{ localStorage.setItem(colsStorageKey(appId), JSON.stringify(cols)); }catch(e){}
+  }
+
+  function applySavedOrder(appId, cols){
+    const saved = loadColsOrder(appId);
+    if(!saved) return cols;
+
+    const set = new Set(cols);
+    const out = [];
+    saved.forEach(c=>{ if(set.has(c)) out.push(c); });
+    cols.forEach(c=>{ if(!out.includes(c)) out.push(c); });
+    return out;
+  }
+
+  function hiddenColsStorageKey(appId){
+    return `scoring_hidden_cols_v1:${String(appId)}`;
+  }
+
+  function loadHiddenCols(appId){
+    try{
+      const raw = localStorage.getItem(hiddenColsStorageKey(appId));
+      const arr = JSON.parse(raw || "[]");
+      return new Set(Array.isArray(arr) ? arr : []);
+    }catch(e){
+      return new Set();
+    }
+  }
+
+  function saveHiddenCols(appId, hiddenSet){
+    try{
+      localStorage.setItem(hiddenColsStorageKey(appId), JSON.stringify(Array.from(hiddenSet)));
+    }catch(e){}
+  }
+
+  function applyVisibility(appId, cols){
+    const hidden = loadHiddenCols(appId);
+    return cols.filter(c => !hidden.has(c));
+  }
+
+  function getActiveContext(){
+    // tab pane visible (app + group)
+    const appPane = document.querySelector('.tab-pane.show.active[data-comp-aparell-id]');
+    if(!appPane) return null;
+
+    const appId = appPane.getAttribute("data-comp-aparell-id");
+    const group = appPane.getAttribute("data-group");
+
+    // dins d’aquest appPane, l’exercici actiu
+    const exPane = appPane.querySelector('.tab-pane.show.active[id*="-ex-"]');
+    if(!exPane) return {appId, group, exercici: null};
+
+    // l’exercici està a l’id: ...-ex-<n>
+    const m = exPane.id.match(/-ex-(\d+)$/);
+    const exercici = m ? m[1] : null;
+    return {appId, group, exercici};
+  }
+
+  function ensureColumnsPanel(table, schema){
+    const appId = table.getAttribute("data-comp-aparell-id");
+    const panelId = `cols-panel-${appId}`;
+
+    // ja existeix?
+    let panel = table.closest('[data-scroll-wrap="1"]')?.parentElement?.querySelector(`#${CSS.escape(panelId)}`);
+    if(panel) return;
+
+    panel = document.createElement("div");
+    panel.id = panelId;
+    panel.className = "border rounded p-2 mb-2";
+    panel.style.display = "none";
+
+    const allCols = (schema.ui && Array.isArray(schema.ui.columns)) ? schema.ui.columns : [];
+    const hidden = loadHiddenCols(appId);
+
+    // labels (fields + computed)
+    const byCode = {};
+    (Array.isArray(schema.fields) ? schema.fields : []).forEach(f=>{ if(f?.code) byCode[f.code]=f; });
+
+    const byComp = {};
+    (Array.isArray(schema.computed) ? schema.computed : []).forEach(c=>{ if(c?.code) byComp[c.code]=c; });
+
+    panel.innerHTML = `
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <div class="font-weight-bold">Columnes visibles</div>
+
+        <div class="btn-group btn-group-sm" role="group">
+          <button type="button" class="btn btn-outline-secondary" data-cols-all="1">Mostrar-ho tot</button>
+          <button type="button" class="btn btn-outline-secondary" data-cols-none="1">Amagar-ho tot</button>
+          <button type="button" class="btn btn-outline-secondary" data-cols-close="1">Tancar</button>
+        </div>
+      </div>
+
+      <!-- wrap de checkboxes: sense gap, fem servir marges -->
+      <div class="d-flex flex-wrap" data-cols-wrap="1"></div>
+
+      <div class="text-muted small mt-2">
+        Nota: Amagar una columna només afecta la visualització; els càlculs es continuen fent.
+      </div>
+
+    `;
+
+    const wrap = panel.querySelector('[data-cols-wrap="1"]');
+
+    allCols.forEach(code=>{
+      const f = byCode[code];
+      const c = byComp[code];
+      const label = (f?.label) ? f.label : (c?.label ? c.label : code);
+
+      const id = `chk-${appId}-${code}`;
+      const checked = !hidden.has(code);
+
+      const item = document.createElement("div");
+      item.className = "custom-control custom-checkbox mr-3 mb-2";
+      item.innerHTML = `
+        <input class="custom-control-input" type="checkbox" id="${id}" ${checked ? "checked": ""}>
+        <label class="custom-control-label" for="${id}">${label}</label>
+      `;
+
+      item.querySelector("input").addEventListener("change", (e)=>{
+        const h = loadHiddenCols(appId);
+        if(e.target.checked) h.delete(code);
+        else h.add(code);
+        saveHiddenCols(appId, h);
+
+        // re-render taula
+        buildHeader(table, schema);
+        buildBody(table, schema, table.getAttribute("data-exercici"), appId, table.getAttribute("data-group"));
+        syncScrollbars();
+      });
+
+      wrap.appendChild(item);
+    });
+
+    panel.querySelector('[data-cols-close="1"]').addEventListener("click", ()=>{
+      panel.style.display = "none";
+    });
+
+    panel.querySelector('[data-cols-all="1"]').addEventListener("click", ()=>{
+      const h = new Set(); // cap oculta
+      saveHiddenCols(appId, h);
+      // marca checks
+      panel.querySelectorAll('input[type="checkbox"]').forEach(cb=>cb.checked=true);
+      buildHeader(table, schema);
+      buildBody(table, schema, table.getAttribute("data-exercici"), appId, table.getAttribute("data-group"));
+      syncScrollbars();
+    });
+
+    panel.querySelector('[data-cols-none="1"]').addEventListener("click", ()=>{
+      // amagar tot menys el primer field útil? (aquí ho amaguem tot)
+      const h = new Set(allCols);
+      saveHiddenCols(appId, h);
+      panel.querySelectorAll('input[type="checkbox"]').forEach(cb=>cb.checked=false);
+      buildHeader(table, schema);
+      buildBody(table, schema, table.getAttribute("data-exercici"), appId, table.getAttribute("data-group"));
+      syncScrollbars();
+    });
+
+    // Inserim el panell just a sobre de la scrollbar top
+    const container = table.closest('[data-scroll-wrap="1"]')?.parentElement;
+    const topbar = container?.querySelector('[data-scrollbar-top="1"]');
+    if(container && topbar){
+      container.insertBefore(panel, topbar);
+    }
+  }
+
+  function ensureColumnsButton(table, schema){
+    const appId = table.getAttribute("data-comp-aparell-id");
+    const btnId = `cols-btn-${appId}`;
+
+    const container = table.closest('[data-scroll-wrap="1"]')?.parentElement;
+    if(!container) return;
+    if(table.dataset.notesMainTable === "1"){
+      container.querySelectorAll('[id^="cols-btn-"]').forEach((node) => {
+        if(node.id !== btnId) node.remove();
+      });
+      container.querySelectorAll('[id^="cols-panel-"]').forEach((node) => {
+        if(node.id !== `cols-panel-${appId}`) node.remove();
+      });
+    }
+
+    // evita duplicats
+    if(container.querySelector(`#${CSS.escape(btnId)}`)) return;
+
+    const btn = document.createElement("button");
+    btn.id = btnId;
+    btn.type = "button";
+    btn.className = "btn btn-sm btn-outline-secondary mb-2";
+    btn.textContent = "Columnes";
+
+    btn.addEventListener("click", ()=>{
+      ensureColumnsPanel(table, schema);
+      const panel = container.querySelector(`#${CSS.escape(`cols-panel-${appId}`)}`);
+      if(panel) panel.style.display = (panel.style.display === "none" ? "block" : "none");
+    });
+
+    // posa el botó abans del panell/scrollbar
+    container.insertBefore(btn, container.firstChild);
+  }

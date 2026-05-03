@@ -1,0 +1,29 @@
+  function subjectStoreIdForSubject(subject, fallbackId){
+    const kind = String((subject && subject.subject_kind) || "inscripcio");
+    const sid = String((subject && subject.subject_id) || fallbackId || "");
+    return `${kind}:${sid}`;
+  }
+  function subjectStoreIdForId(insId){
+    const subject = SUBJECTS_BY_ID[String(insId)] || {};
+    return subjectStoreIdForSubject(subject, insId);
+  }
+  function keyFor(insId, ex, appId){ return `${subjectStoreIdForId(insId)}|${ex}|${appId}`; }
+  function keyForSubject(subjectKind, subjectId, ex, appId){
+    return `${String(subjectKind)}:${String(subjectId)}|${ex}|${appId}`;
+  }
+  function rememberSubjects(subjects){
+    (Array.isArray(subjects) ? subjects : []).forEach((subject) => {
+      if(!subject || subject.id === undefined || subject.id === null) return;
+      const key = String(subject.id);
+      SUBJECTS_BY_ID[key] = subject;
+      if(!(INS || []).some((item) => String(item.id) === key)){
+        INS.push(subject);
+      }
+    });
+  }
+  function getScore(insId, ex, appId){
+    return SCORES[keyFor(insId, ex, appId)] || {inputs:{}, outputs:{}, total:0};
+  }
+  function setScore(insId, ex, appId, data){
+    SCORES[keyFor(insId, ex, appId)] = data;
+  }

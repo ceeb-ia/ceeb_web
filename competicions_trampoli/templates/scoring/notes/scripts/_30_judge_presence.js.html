@@ -1,0 +1,151 @@
+  function presenceKey(fieldCode){ return `__presence__${String(fieldCode || "")}`; }
+
+  function cloneJsonValue(value){
+    if(value === undefined) return undefined;
+    try{ return JSON.parse(JSON.stringify(value)); }
+    catch(e){ return value; }
+  }
+
+  function judgeCountForField(field){
+    const n = Number(field?.judges?.count || 1);
+    return (Number.isFinite(n) && n > 0) ? n : 1;
+  }
+
+  function isJudgeShapedMultiJudgeField(field){
+    if(!field || judgeCountForField(field) <= 1) return false;
+    const type = String(field.type || "number").trim().toLowerCase();
+    const shape = String(field.shape || "").trim().toLowerCase();
+    if(type === "list") return !shape || shape === "judge";
+    if(type === "matrix") return !shape || shape === "judge_x_item" || shape === "judge_x_element";
+    return false;
+  }
+
+  function normalizePresenceForDisplay(nJudges, rawPresence){
+    const src = Array.isArray(rawPresence) ? rawPresence : [];
+    const out = [];
+    for(let idx = 0; idx < nJudges; idx++){
+      out.push(Boolean(src[idx]));
+    }
+    return out;
+  }
+
+  function inferPresenceForDisplay(nJudges, rawValue, rawCrash){
+    const values = Array.isArray(rawValue) ? rawValue : [];
+    const crash = Array.isArray(rawCrash) ? rawCrash : [];
+    const out = [];
+    for(let idx = 0; idx < nJudges; idx++){
+      out.push((idx < values.length && values[idx] !== null && values[idx] !== undefined)
+        || (idx < crash.length && crash[idx] !== null && crash[idx] !== undefined));
+    }
+    return out;
+  }
+
+  function presenceForField(inputs, field, code){
+    const nJudges = judgeCountForField(field);
+    const pk = presenceKey(code);
+    if(inputs && Object.prototype.hasOwnProperty.call(inputs, pk)){
+      return normalizePresenceForDisplay(nJudges, inputs[pk]);
+    }
+    return inferPresenceForDisplay(
+      nJudges,
+      inputs ? inputs[code] : undefined,
+      inputs ? inputs[crashKeyFor(code)] : undefined
+    );
+  }
+
+  function presenceForValue(field, rawPresence, rawValue, rawCrash){
+    const nJudges = judgeCountForField(field);
+    if(Array.isArray(rawPresence)){
+      return normalizePresenceForDisplay(nJudges, rawPresence);
+    }
+    return inferPresenceForDisplay(nJudges, rawValue, rawCrash);
+  }
+
+  function presenceForEditedJudge(inputs, field, code, judgeIdx){
+    const nJudges = judgeCountForField(field);
+    const presence = presenceForField(inputs || {}, field, code).slice(0, nJudges);
+    while(presence.length < nJudges) presence.push(false);
+    if(judgeIdx >= 1 && judgeIdx <= nJudges) presence[judgeIdx - 1] = true;
+    return presence;
+  }
+
+  function ensureListForDisplay(n, val){
+    const src = Array.isArray(val) ? val : [];
+    const out = [];
+    for(let idx = 0; idx < n; idx++){
+      out.push(src[idx] !== undefined && src[idx] !== null ? src[idx] : 0);
+    }
+    return out;
+  }
+
+  function ensureListForPatch(n, val){
+    const src = Array.isArray(val) ? val : [];
+    const out = [];
+    for(let idx = 0; idx < n; idx++){
+      out.push(idx < src.length && src[idx] !== undefined ? cloneJsonValue(src[idx]) : null);
+    }
+    return out;
+  }
+
+  function ensureMatrixForDisplay(nJudges, nElements, val){
+    const src = Array.isArray(val) ? val : [];
+    const out = [];
+    for(let judgeIdx = 0; judgeIdx < nJudges; judgeIdx++){
+      const srcRow = Array.isArray(src[judgeIdx]) ? src[judgeIdx] : [];
+      const row = [];
+      for(let itemIdx = 0; itemIdx < nElements; itemIdx++){
+        row.push(srcRow[itemIdx] !== undefined && srcRow[itemIdx] !== null ? srcRow[itemIdx] : 0);
+      }
+      out.push(row);
+    }
+    return out;
+  }
+
+  function ensureMatrixForPatch(nJudges, nElements, val){
+    const src = Array.isArray(val) ? val : [];
+    const out = [];
+    for(let judgeIdx = 0; judgeIdx < nJudges; judgeIdx++){
+      if(!Array.isArray(src[judgeIdx])){
+        out.push(null);
+        continue;
+      }
+      const row = [];
+      for(let itemIdx = 0; itemIdx < nElements; itemIdx++){
+        row.push(itemIdx < src[judgeIdx].length && src[judgeIdx][itemIdx] !== undefined ? cloneJsonValue(src[judgeIdx][itemIdx]) : null);
+      }
+      out.push(row);
+    }
+    return out;
+  }
+
+  function ensureCrashListForPatch(nJudges, val, judgeIdx){
+    const out = ensureListForPatch(nJudges, val);
+    if(judgeIdx >= 1 && judgeIdx <= nJudges && out[judgeIdx - 1] === null){
+      out[judgeIdx - 1] = 0;
+    }
+    return out;
+  }
+
+  function judgePresenceChip(isPresent, options = {}){
+    const attrs = {
+      class:`judge-presence-chip ${isPresent ? "counts" : "absent"}`,
+      text:isPresent ? "compta" : "no compta",
+      title:isPresent
+        ? "Aquest jutge compta en el càlcul. Clica per marcar-lo com no compta sense esborrar notes."
+        : "Aquest jutge no compta en el càlcul, però les notes es conserven. Clica per activar-lo.",
+    };
+    if(typeof options.onToggle === "function"){
+      attrs.type = "button";
+      attrs.class += " border-0";
+      const btn = el("button", attrs);
+      btn.disabled = Boolean(options.disabled);
+      btn.addEventListener("click", (evt)=>{
+        evt.preventDefault();
+        evt.stopPropagation();
+        if(btn.disabled) return;
+        options.onToggle();
+      });
+      return btn;
+    }
+    return el("span", attrs);
+  }

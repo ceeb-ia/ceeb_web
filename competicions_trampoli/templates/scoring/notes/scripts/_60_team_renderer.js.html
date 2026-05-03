@@ -1,0 +1,548 @@
+  function isTeamSchema(schema){
+    return String((((schema || {}).meta || {}).subject_mode) || "individual") === "team";
+  }
+  function isBlockedSubjectForApp(subject, appId){
+    if(!subject || !Array.isArray(subject.invalid_reasons) || !subject.invalid_reasons.length) return false;
+    return String(subject.subject_kind || "") === "team_unit";
+  }
+  function memberLinesForSubject(subject){
+    if(!subject || !Array.isArray(subject.members)) return [];
+    return subject.members.map((m, idx) => `Membre ${idx + 1}: ${m && m.name ? m.name : ""}`);
+  }
+  function visibleRowsForAppGroup(group, appId, schema){
+    const active = NOTES_STATE.activePayload;
+    if(active && active.unit && String(active.unit.key) === String(group) && String(active.context?.comp_aparell_id) === String(appId)){
+      return Array.isArray(active.subjects) ? active.subjects.slice() : [];
+    }
+    const teamMode = isTeamSchema(schema);
+    return INS.filter(x => {
+      if(String(x.group)!==String(group)) return false;
+      if(teamMode){
+        if(String(x.subject_kind || "") !== "team_unit") return false;
+        if(appHasRotationGroups(appId) && !inscripcioInRotationGroup(x, appId)) return false;
+        if(inscripcioCompeteixAApp(x, appId)) return true;
+        return isBlockedSubjectForApp(x, appId);
+      }
+      if(!inscripcioCompeteixAApp(x, appId)) return false;
+      if(appHasRotationGroups(appId) && !inscripcioInRotationGroup(x, appId)) return false;
+      return true;
+    });
+  }
+
+  function memberRuntimeCode(baseCode, memberSlot){
+    return `${String(baseCode || "")}__m${Number(memberSlot || 0)}`;
+  }
+
+  function fieldScopeMap(schema){
+    const out = {};
+    (Array.isArray(schema?.fields) ? schema.fields : []).forEach((field) => {
+      const code = String(field?.code || "").trim();
+      if(!code) return;
+      const scope = String(field?.render_scope || field?.scope || "member").trim().toLowerCase() || "member";
+      out[code] = scope;
+      out[crashKeyFor(code)] = scope;
+      out[presenceKey(code)] = scope;
+    });
+    return out;
+  }
+
+  function mergeTeamInputsForStore(currentInputs, patch, schema){
+    const merged = JSON.parse(JSON.stringify(currentInputs || {}));
+    const scopeMap = fieldScopeMap(schema || {});
+    Object.entries(patch || {}).forEach(([code, value]) => {
+      if(!Object.prototype.hasOwnProperty.call(scopeMap, code)) return;
+      if(scopeMap[code] === "member" && value && typeof value === "object" && !Array.isArray(value)){
+        const currentMap = merged[code] && typeof merged[code] === "object" && !Array.isArray(merged[code]) ? merged[code] : {};
+        merged[code] = { ...currentMap };
+        Object.entries(value).forEach(([memberId, memberValue]) => {
+          merged[code][String(memberId)] = JSON.parse(JSON.stringify(memberValue));
+        });
+        return;
+      }
+      merged[code] = JSON.parse(JSON.stringify(value));
+    });
+    return merged;
+  }
+
+  function applyCrashDisable(rowEl, fieldCode, judgeIdx, nElems, crashAt){
+    const cut = Number(crashAt || 0);
+    for(let i=1;i<=nElems;i++){
+      const inp = rowEl.querySelector(`input[data-field="${fieldCode}"][data-j="${judgeIdx}"][data-i="${i}"]`);
+      if(!inp) continue;
+      inp.disabled = (cut > 0 && i >= cut);
+    }
+    for(let i=1;i<=nElems;i++){
+      const btn = rowEl.querySelector(`button[data-crash-btn="1"][data-field="${fieldCode}"][data-j="${judgeIdx}"][data-i="${i}"]`);
+      const inp = rowEl.querySelector(`input[data-field="${fieldCode}"][data-j="${judgeIdx}"][data-i="${i}"]`);
+      if(btn && inp) btn.style.opacity = inp.disabled ? "0.35" : "1";
+    }
+  }
+
+  function teamVisibleCols(table, schema){
+    let cols = (schema.ui && Array.isArray(schema.ui.columns)) ? schema.ui.columns : [];
+    cols = applySavedOrder(table.getAttribute("data-comp-aparell-id"), cols);
+    cols = applyVisibility(table.getAttribute("data-comp-aparell-id"), cols);
+    return cols;
+  }
+
+  function teamColumnDefs(table, schema){
+    const cols = teamVisibleCols(table, schema);
+    const fields = Array.isArray(schema.fields) ? schema.fields : [];
+    const computed = Array.isArray(schema.computed) ? schema.computed : [];
+    const byCode = {};
+    const byCompCode = {};
+    fields.forEach(f => { if(f && f.code) byCode[String(f.code)] = f; });
+    computed.forEach(c => { if(c && c.code) byCompCode[String(c.code)] = c; });
+
+    const defs = [];
+    cols.forEach((col) => {
+      const field = byCode[String(col)];
+      const comp = byCompCode[String(col)];
+      if(field && field.type === "matrix" && field.items && field.items.count){
+        const count = Number(field.items.count || 0);
+        for(let itemIdx = 1; itemIdx <= count; itemIdx++){
+          defs.push({
+            key: `${String(col)}__item_${itemIdx}`,
+            baseCode: String(col),
+            label: `${String(field.label || col)} ${itemIdx}`,
+            kind: "field",
+            scope: String(field.render_scope || field.scope || "member"),
+            field,
+            itemIndex: itemIdx,
+          });
+        }
+        return;
+      }
+      defs.push({
+        key: String(col),
+        baseCode: String(col),
+        label: String((field && field.label) || (comp && comp.label) || col),
+        kind: field ? "field" : "computed",
+        scope: String((field && (field.render_scope || field.scope)) || (comp && comp.render_scope) || "shared"),
+        field: field || null,
+        computed: comp || null,
+        itemIndex: null,
+      });
+    });
+    return defs;
+  }
+
+  function buildTeamHeader(table, schema){
+    const thead = table.querySelector("thead");
+    thead.innerHTML = "";
+    ensureColumnsButton(table, schema);
+    const defs = teamColumnDefs(table, schema);
+    const tr = document.createElement("tr");
+    tr.appendChild(el("th", { class:"th-center name-cell", text:"Equip / Membres" }));
+    defs.forEach((def) => {
+      tr.appendChild(el("th", { class:"th-center", text:def.label }));
+    });
+    thead.appendChild(tr);
+  }
+
+  function teamMemberValue(inputs, code, memberId){
+    const source = inputs && typeof inputs[code] === "object" && !Array.isArray(inputs[code]) ? inputs[code] : {};
+    return source[String(memberId)];
+  }
+
+  function teamPatchForField(code, value, memberId){
+    if(memberId === null || memberId === undefined || memberId === ""){
+      return { [code]: value };
+    }
+    return { [code]: { [String(memberId)]: value } };
+  }
+
+  function updateTeamScoreLocally(insId, exercici, appId, schema, patch){
+    const cur = getScore(insId, exercici, appId);
+    const nextInputs = mergeTeamInputsForStore(cur.inputs || {}, patch || {}, schema || {});
+    setScore(insId, exercici, appId, { inputs: nextInputs, outputs: cur.outputs || {}, total: cur.total || 0 });
+    return cur;
+  }
+
+  function scheduleTeamSave(scoreKey, insId, exercici, appId, patch){
+    scheduleSave(scoreKey, async ()=>{
+      try{
+        const resp = await saveEntry(insId, exercici, appId, patch);
+        setScore(insId, exercici, appId, { inputs: resp.inputs || {}, outputs: resp.outputs || {}, total: resp.total || 0 });
+        updateOutputs(scoreKey, resp);
+        if(isEditingScoreKey(scoreKey)){
+          markScoreKeyPendingRemoteRerender(scoreKey);
+          return;
+        }
+        rerenderTablesForScoreKey(scoreKey);
+      }catch(e){ console.error(e); showAlert(e.message); }
+    });
+  }
+
+  function toggleTeamJudgePresence({ subject, exercici, appId, schema, scoreKey, field, code, memberId, judgeIdx }){
+    const live = getScore(subject.id, exercici, appId);
+    const liveInputs = live.inputs || {};
+    const source = memberId ? teamMemberValue(liveInputs, code, memberId) : liveInputs[code];
+    const crashCode = crashKeyFor(code);
+    const crashSource = memberId ? teamMemberValue(liveInputs, crashCode, memberId) : liveInputs[crashCode];
+    const presenceSource = memberId ? teamMemberValue(liveInputs, presenceKey(code), memberId) : liveInputs[presenceKey(code)];
+    const nextPresence = presenceForValue(field, presenceSource, source, crashSource);
+    const idx = Number(judgeIdx || 0) - 1;
+    if(idx < 0 || idx >= nextPresence.length) return;
+    nextPresence[idx] = !nextPresence[idx];
+    const patch = teamPatchForField(presenceKey(code), nextPresence, memberId);
+    updateTeamScoreLocally(subject.id, exercici, appId, schema, patch);
+    rerenderTablesForScoreKey(scoreKey);
+    scheduleTeamSave(scoreKey, subject.id, exercici, appId, patch);
+  }
+
+  function renderTeamNumberControl(td, { field, subject, memberId, appId, exercici, scoreKey, blockedRow, schema }){
+    const code = String(field.code);
+    const cur = getScore(subject.id, exercici, appId);
+    const inputs = cur.inputs || {};
+    const currentValue = memberId ? teamMemberValue(inputs, code, memberId) : inputs[code];
+    const inp = el("input", { class:"form-control form-control-sm input-num", type:"number", step:"any" });
+    inp.disabled = blockedRow;
+    inp.value = (currentValue !== undefined && currentValue !== null) ? currentValue : "";
+    bindScoreInputNavigation(inp, { scoreKey, field: code, memberId });
+    inp.addEventListener("input", ()=>{
+      if(blockedRow) return;
+      const nextValue = (inp.value === "" ? 0 : Number(inp.value));
+      const patch = teamPatchForField(code, nextValue, memberId);
+      updateTeamScoreLocally(subject.id, exercici, appId, schema, patch);
+      scheduleTeamSave(scoreKey, subject.id, exercici, appId, patch);
+    });
+    td.appendChild(inp);
+  }
+
+  function renderTeamListControl(td, { field, subject, memberId, appId, exercici, scoreKey, blockedRow, schema }){
+    const code = String(field.code);
+    const nJudges = judgeCountForField(field);
+    const cur = getScore(subject.id, exercici, appId);
+    const inputs = cur.inputs || {};
+    const baseValue = memberId ? teamMemberValue(inputs, code, memberId) : inputs[code];
+    const presenceValue = memberId ? teamMemberValue(inputs, presenceKey(code), memberId) : inputs[presenceKey(code)];
+    const arr = ensureListForDisplay(nJudges, baseValue);
+    const presence = presenceForValue(field, presenceValue, baseValue, null);
+    const stack = el("div", { class:"team-input-stack" });
+    for(let judgeIdx = 1; judgeIdx <= nJudges; judgeIdx++){
+      const row = el("div", { class:"team-input-inline" });
+      const rowCounts = presence[judgeIdx - 1];
+      row.appendChild(el("span", { class:"team-mini-label", text:`J${judgeIdx}` }));
+      if(isJudgeShapedMultiJudgeField(field)){
+        row.appendChild(judgePresenceChip(rowCounts, {
+          disabled: blockedRow,
+          onToggle: ()=>toggleTeamJudgePresence({ subject, exercici, appId, schema, scoreKey, field, code, memberId, judgeIdx }),
+        }));
+      }
+      const inp = el("input", { class:"form-control form-control-sm input-num", type:"number", step:"any" });
+      inp.disabled = blockedRow;
+      inp.value = arr[judgeIdx - 1] ?? 0;
+      bindScoreInputNavigation(inp, { scoreKey, field: code, judge: judgeIdx, memberId });
+      inp.addEventListener("input", ()=>{
+        if(blockedRow) return;
+        const live = getScore(subject.id, exercici, appId);
+        const liveInputs = live.inputs || {};
+        const source = memberId ? teamMemberValue(liveInputs, code, memberId) : liveInputs[code];
+        const presenceSource = memberId ? teamMemberValue(liveInputs, presenceKey(code), memberId) : liveInputs[presenceKey(code)];
+        const nextArr = ensureListForPatch(nJudges, source);
+        const nextPresence = presenceForValue(field, presenceSource, source, null);
+        nextPresence[judgeIdx - 1] = true;
+        nextArr[judgeIdx - 1] = Number(inp.value || 0);
+        const patch = {
+          ...teamPatchForField(code, nextArr, memberId),
+          ...teamPatchForField(presenceKey(code), nextPresence, memberId),
+        };
+        updateTeamScoreLocally(subject.id, exercici, appId, schema, patch);
+        scheduleTeamSave(scoreKey, subject.id, exercici, appId, patch);
+      });
+      row.appendChild(inp);
+      stack.appendChild(row);
+    }
+    td.appendChild(stack);
+  }
+
+  function renderTeamMatrixControl(td, { field, baseCode, itemIndex, subject, memberId, appId, exercici, scoreKey, blockedRow, schema, rowEl }){
+    const nJudges = judgeCountForField(field);
+    const nItems = Number(field?.items?.count || 0) || 0;
+    const crashEnabled = !!(field?.crash?.enabled);
+    const cur = getScore(subject.id, exercici, appId);
+    const inputs = cur.inputs || {};
+    const source = memberId ? teamMemberValue(inputs, baseCode, memberId) : inputs[baseCode];
+    const mat = ensureMatrixForDisplay(nJudges, nItems, source);
+    const crashSource = crashEnabled
+      ? (memberId ? teamMemberValue(inputs, crashKeyFor(baseCode), memberId) : inputs[crashKeyFor(baseCode)])
+      : null;
+    const presenceValue = memberId ? teamMemberValue(inputs, presenceKey(baseCode), memberId) : inputs[presenceKey(baseCode)];
+    const presence = presenceForValue(field, presenceValue, source, crashSource);
+    const crashArr = crashEnabled ? ensureListForDisplay(nJudges, crashSource) : [];
+    const stack = el("div", { class:"team-input-stack" });
+
+    for(let judgeIdx = 1; judgeIdx <= nJudges; judgeIdx++){
+      const row = el("div", { class:"team-input-inline" });
+      row.appendChild(el("span", { class:"team-mini-label", text:`J${judgeIdx}` }));
+      if(isJudgeShapedMultiJudgeField(field) && itemIndex === 1){
+        row.appendChild(judgePresenceChip(presence[judgeIdx - 1], {
+          disabled: blockedRow,
+          onToggle: ()=>toggleTeamJudgePresence({ subject, exercici, appId, schema, scoreKey, field, code: baseCode, memberId, judgeIdx }),
+        }));
+      }
+      const inp = el("input", {
+        class:"form-control form-control-sm input-salt",
+        type:"number",
+        step:"any",
+        "data-field": baseCode,
+        "data-j": String(judgeIdx),
+        "data-i": String(itemIndex),
+      });
+      inp.disabled = blockedRow;
+      inp.value = (mat[judgeIdx - 1] && mat[judgeIdx - 1][itemIndex - 1] !== undefined) ? mat[judgeIdx - 1][itemIndex - 1] : 0;
+      bindScoreInputNavigation(inp, {
+        scoreKey,
+        field: baseCode,
+        judge: judgeIdx,
+        item: itemIndex,
+        memberId,
+      });
+      inp.addEventListener("input", ()=>{
+        if(blockedRow) return;
+        const live = getScore(subject.id, exercici, appId);
+        const liveInputs = live.inputs || {};
+        const liveSource = memberId ? teamMemberValue(liveInputs, baseCode, memberId) : liveInputs[baseCode];
+        const presenceSource = memberId ? teamMemberValue(liveInputs, presenceKey(baseCode), memberId) : liveInputs[presenceKey(baseCode)];
+        const nextMat = ensureMatrixForPatch(nJudges, nItems, liveSource);
+        const liveCrashSource = crashEnabled ? (memberId ? teamMemberValue(liveInputs, crashKeyFor(baseCode), memberId) : liveInputs[crashKeyFor(baseCode)]) : null;
+        const nextPresence = presenceForValue(field, presenceSource, liveSource, liveCrashSource);
+        nextPresence[judgeIdx - 1] = true;
+        if(!Array.isArray(nextMat[judgeIdx - 1])) nextMat[judgeIdx - 1] = Array(nItems).fill(null);
+        nextMat[judgeIdx - 1][itemIndex - 1] = Number(inp.value || 0);
+        const patch = {
+          ...teamPatchForField(baseCode, nextMat, memberId),
+          ...teamPatchForField(presenceKey(baseCode), nextPresence, memberId),
+        };
+        let mergedPatch = patch;
+        if(crashEnabled){
+          const nextCrash = ensureCrashListForPatch(nJudges, liveCrashSource, judgeIdx);
+          mergedPatch = { ...patch, ...teamPatchForField(crashKeyFor(baseCode), nextCrash, memberId) };
+        }
+        updateTeamScoreLocally(subject.id, exercici, appId, schema, mergedPatch);
+        scheduleTeamSave(scoreKey, subject.id, exercici, appId, mergedPatch);
+      });
+      row.appendChild(inp);
+
+      if(crashEnabled){
+        const btn = el("button", {
+          class:"btn btn-sm btn-outline-danger p-0",
+          type:"button",
+          text:"X",
+          "data-crash-btn":"1",
+          "data-field": baseCode,
+          "data-j": String(judgeIdx),
+          "data-i": String(itemIndex),
+        });
+        btn.style.width = "22px";
+        btn.style.height = "22px";
+        btn.disabled = blockedRow;
+        btn.addEventListener("click", ()=>{
+          if(blockedRow) return;
+          const live = getScore(subject.id, exercici, appId);
+          const liveInputs = live.inputs || {};
+          const liveSource = memberId ? teamMemberValue(liveInputs, baseCode, memberId) : liveInputs[baseCode];
+          const nextMat = ensureMatrixForPatch(nJudges, nItems, liveSource);
+          if(!Array.isArray(nextMat[judgeIdx - 1])) nextMat[judgeIdx - 1] = Array(nItems).fill(null);
+          const liveCrashSource = memberId ? teamMemberValue(liveInputs, crashKeyFor(baseCode), memberId) : liveInputs[crashKeyFor(baseCode)];
+          const nextCrash = ensureCrashListForPatch(nJudges, liveCrashSource, judgeIdx);
+          const presenceSource = memberId ? teamMemberValue(liveInputs, presenceKey(baseCode), memberId) : liveInputs[presenceKey(baseCode)];
+          const nextPresence = presenceForValue(field, presenceSource, liveSource, liveCrashSource);
+          nextPresence[judgeIdx - 1] = true;
+          const current = Number(nextCrash[judgeIdx - 1] || 0);
+          nextCrash[judgeIdx - 1] = (current === itemIndex) ? 0 : itemIndex;
+          const patch = {
+            ...teamPatchForField(baseCode, nextMat, memberId),
+            ...teamPatchForField(crashKeyFor(baseCode), nextCrash, memberId),
+            ...teamPatchForField(presenceKey(baseCode), nextPresence, memberId),
+          };
+          updateTeamScoreLocally(subject.id, exercici, appId, schema, patch);
+          applyCrashDisable(rowEl, baseCode, judgeIdx, nItems, nextCrash[judgeIdx - 1]);
+          scheduleTeamSave(scoreKey, subject.id, exercici, appId, patch);
+        });
+        row.appendChild(btn);
+        setTimeout(()=>applyCrashDisable(rowEl, baseCode, judgeIdx, nItems, Number(crashArr[judgeIdx - 1] || 0)), 0);
+      }
+
+      stack.appendChild(row);
+    }
+
+    td.appendChild(stack);
+  }
+
+  function appendTeamFieldCell(tr, def, ctx){
+    const td = el("td", { class:`cell-center ${ctx.isShared ? "team-shared-cell" : ""}` });
+    if(ctx.rowSpan && ctx.rowSpan > 1) td.rowSpan = ctx.rowSpan;
+    if(ctx.blockedRow) td.classList.add("table-warning");
+    if(def.field.type === "number"){
+      renderTeamNumberControl(td, { ...ctx, field:def.field });
+    } else if(def.field.type === "list"){
+      renderTeamListControl(td, { ...ctx, field:def.field });
+    } else if(def.field.type === "matrix"){
+      renderTeamMatrixControl(td, { ...ctx, field:def.field, baseCode:def.baseCode, itemIndex:def.itemIndex, rowEl:tr });
+    } else {
+      td.textContent = "";
+    }
+    tr.appendChild(td);
+  }
+
+  function appendTeamComputedCell(tr, def, { subject, memberIndex, score, rowSpan, isShared, blockedRow }){
+    const td = el("td", { class:`cell-center readonly ${isShared ? "team-shared-cell" : ""}` });
+    if(rowSpan && rowSpan > 1) td.rowSpan = rowSpan;
+    if(blockedRow) td.classList.add("table-warning");
+    let outputCode = def.baseCode;
+    if(def.scope === "member"){
+      outputCode = memberRuntimeCode(def.baseCode, memberIndex + 1);
+    }
+    td.dataset.out = outputCode;
+    td.textContent = formatComputedValue((score.outputs || {})[outputCode]);
+    tr.appendChild(td);
+  }
+
+  function buildTeamBody(table, schema, exercici, appId, group){
+    const tbody = table.querySelector("tbody");
+    tbody.innerHTML = "";
+    const defs = teamColumnDefs(table, schema);
+    const rows = visibleRowsForAppGroup(group, appId, schema);
+    rows.sort((a, b) => {
+      const ra = rotationRankFor(a.id, appId);
+      const rb = rotationRankFor(b.id, appId);
+      if(ra !== null && rb !== null) return ra - rb;
+      if(ra !== null) return -1;
+      if(rb !== null) return 1;
+      const oa = Number(a.order || 0);
+      const ob = Number(b.order || 0);
+      if(oa !== ob) return oa - ob;
+      return Number(a.id || 0) - Number(b.id || 0);
+    });
+
+    rows.forEach((subject) => {
+      const scoreKey = keyFor(subject.id, exercici, appId);
+      const score = getScore(subject.id, exercici, appId);
+      const scoreWarnings = scoreWarningsForInputs(schema, score.inputs || {});
+      const blockedRow = isBlockedSubjectForApp(subject, appId) && !inscripcioCompeteixAApp(subject, appId);
+      const members = Array.isArray(subject.members) ? subject.members : [];
+      const sharedRowSpan = Math.max(1, members.length + 1);
+
+      const summaryTr = document.createElement("tr");
+      summaryTr.classList.add("team-summary-row");
+      summaryTr.dataset.scoreKey = scoreKey;
+      summaryTr.dataset.insId = String(subject.id);
+      summaryTr.dataset.exercici = String(exercici);
+      summaryTr.dataset.compAparellId = String(appId);
+      if(scoreWarnings.length) summaryTr.classList.add("score-warning-row");
+
+      const summaryNameTd = document.createElement("td");
+      summaryNameTd.className = "name-cell";
+      const nameBtn = el("button", {
+        type:"button",
+        class:"btn btn-link p-0 playback-name-btn js-open-playback",
+        text:(subject.name || ""),
+      });
+      nameBtn.dataset.insId = String(subject.id);
+      nameBtn.dataset.exercici = String(exercici);
+      nameBtn.dataset.compAparellId = String(appId);
+      summaryNameTd.appendChild(nameBtn);
+      appendScoreWarningChip(summaryNameTd, scoreWarnings);
+      if(subject.context_name){
+        summaryNameTd.appendChild(el("div", { class:"small text-muted", text:subject.context_name }));
+      }
+      if(subject.meta){
+        summaryNameTd.appendChild(el("div", { class:"text-muted small", text:subject.meta }));
+      }
+      if(blockedRow){
+        summaryNameTd.appendChild(el("div", { class:"text-danger small", text:(subject.invalid_reasons || []).join(" ") }));
+      }
+      const mediaBadge = el("button", {
+        type:"button",
+        class:"playback-media-badge js-open-playback js-playback-media-badge",
+        text: playbackBadgeText(subject.id, exercici, appId),
+      });
+      mediaBadge.dataset.insId = String(subject.id);
+      mediaBadge.dataset.exercici = String(exercici);
+      mediaBadge.dataset.compAparellId = String(appId);
+      summaryNameTd.appendChild(el("div", { class:"mt-1" }, [mediaBadge]));
+      summaryTr.appendChild(summaryNameTd);
+
+      defs.forEach((def) => {
+        if(def.scope === "member"){
+          summaryTr.appendChild(el("td", { class:"cell-center readonly", text:"" }));
+          return;
+        }
+        if(def.kind === "computed"){
+          appendTeamComputedCell(summaryTr, def, {
+            subject,
+            memberIndex: null,
+            score,
+            rowSpan: sharedRowSpan,
+            isShared: true,
+            blockedRow,
+          });
+          return;
+        }
+        appendTeamFieldCell(summaryTr, def, {
+          subject,
+          memberId: null,
+          appId,
+          exercici,
+          scoreKey,
+          blockedRow,
+          schema,
+          rowSpan: sharedRowSpan,
+          isShared: true,
+        });
+      });
+      tbody.appendChild(summaryTr);
+
+      members.forEach((member, memberIndex) => {
+        const tr = document.createElement("tr");
+        tr.classList.add("team-member-row");
+        tr.dataset.scoreKey = scoreKey;
+        tr.dataset.insId = String(subject.id);
+        tr.dataset.exercici = String(exercici);
+        tr.dataset.compAparellId = String(appId);
+        tr.dataset.memberId = String(member.id || "");
+        if(scoreWarnings.length) tr.classList.add("score-warning-row");
+        if(blockedRow) tr.classList.add("table-warning");
+
+        const nameTd = document.createElement("td");
+        nameTd.className = "name-cell team-member-name";
+        nameTd.textContent = member && member.name ? member.name : `Membre ${memberIndex + 1}`;
+        tr.appendChild(nameTd);
+
+        defs.forEach((def) => {
+          if(def.scope === "shared"){
+            return;
+          }
+          if(def.kind === "computed"){
+            appendTeamComputedCell(tr, def, {
+              subject,
+              memberIndex,
+              score,
+              rowSpan: 1,
+              isShared: false,
+              blockedRow,
+            });
+            return;
+          }
+          appendTeamFieldCell(tr, def, {
+            subject,
+            memberId: String(member.id || ""),
+            appId,
+            exercici,
+            scoreKey,
+            blockedRow,
+            schema,
+            rowSpan: 1,
+            isShared: false,
+          });
+        });
+        tbody.appendChild(tr);
+      });
+    });
+    highlightPlaybackRows();
+  }
+
+  
+  // --- Header segons schema.ui.columns; matrix -> expand per ítems ---

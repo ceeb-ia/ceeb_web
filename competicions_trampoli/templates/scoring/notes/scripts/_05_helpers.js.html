@@ -1,0 +1,49 @@
+  // --- Helpers base ---
+  function getRuntimeSchema(appId){ return SCHEMAS[String(appId)] || {}; }
+  function getSchema(appId){ return LOGICAL_SCHEMAS[String(appId)] || getRuntimeSchema(appId); }
+
+  const COMPUTED_MAX_DECIMALS = 3;
+  function formatComputedValue(v, maxDecimals = COMPUTED_MAX_DECIMALS){
+    if(v === null || v === undefined || v === "") return "";
+    const n = Number(v);
+    if(!Number.isFinite(n)) return String(v);
+    if(!Number.isInteger(maxDecimals) || maxDecimals < 0){
+      return String(n);
+    }
+    const fixed = n.toFixed(maxDecimals);
+    return fixed.replace(/\.?0+$/, "");
+  }
+
+  function inscripcioCompeteixAApp(ins, appId){
+    if(!ins || !Array.isArray(ins.allowed_app_ids)) return true;
+    return ins.allowed_app_ids.map(String).includes(String(appId));
+  }
+  function rotationRankFor(insId, appId){
+    const k = `${String(appId)}|${String(insId)}`;
+    const n = Number(ROTATION_RANK[k]);
+    return Number.isFinite(n) ? n : null;
+  }
+  function appHasRotationGroups(appId){
+    const arr = ROTATION_GROUPS[String(appId)];
+    return Array.isArray(arr) && arr.length > 0;
+  }
+  function inscripcioInRotationGroup(ins, appId){
+    const arr = ROTATION_GROUPS[String(appId)];
+    if(!Array.isArray(arr) || !arr.length) return true;
+    const g = String(ins?.group ?? "0");
+    return arr.map((item) => String(item)).includes(g);
+  }
+
+  function el(tag, attrs={}, children=[]){
+    const n=document.createElement(tag);
+    for(const [k,v] of Object.entries(attrs)){
+      if(k==="class") n.className=v;
+      else if(k==="text") n.textContent=v;
+      else n.setAttribute(k,v);
+    }
+    for(const c of children){
+      if(c===null||c===undefined) continue;
+      n.appendChild(typeof c==="string" ? document.createTextNode(c) : c);
+    }
+    return n;
+  }

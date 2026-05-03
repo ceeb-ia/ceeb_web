@@ -1,0 +1,34 @@
+  // --- Dades JSON segures (json_script) ---
+  const SCHEMAS = JSON.parse(document.getElementById("schemas-data").textContent);
+  const LOGICAL_SCHEMAS = JSON.parse(document.getElementById("logical-schemas-data").textContent);
+  const SCORES  = JSON.parse(document.getElementById("scores-data").textContent);
+  const INS     = JSON.parse(document.getElementById("inscripcions-data").textContent);
+  const SUBJECTS_BY_ID = Object.fromEntries((INS || []).map((item) => [String(item.id), item]));
+  const MEDIA_COUNTS_BY_INS = JSON.parse(document.getElementById("media-counts-data").textContent || "{}");
+  const JUDGE_VIDEO_PRESENCE_BY_KEY = JSON.parse(document.getElementById("judge-video-presence-data").textContent || "{}");
+  const ROTATION_RANK = JSON.parse(document.getElementById("rotation-rank-data").textContent || "{}");
+  const ROTATION_GROUPS = JSON.parse(document.getElementById("rotation-groups-data").textContent || "{}");
+  const UPDATES_CURSOR_INIT = JSON.parse(document.getElementById("updates-cursor-init").textContent || "null");
+  const UPDATES_URL = "{% url 'scoring_updates' competicio.id %}";
+  const SAVE_URL = "{% url 'scoring_save_partial' competicio.id %}";
+  const MEDIA_CONTEXT_URL = "{% url 'scoring_media_context' competicio.id %}";
+  const NOTES_LAZY_ENDPOINTS = {
+    manifest: "{% url 'scoring_notes_manifest' competicio.id %}",
+    table: "{% url 'scoring_notes_table' competicio.id %}",
+    warnings: "{% url 'scoring_notes_warnings' competicio.id %}",
+    validateWarning: "{% url 'scoring_notes_warning_validate' competicio.id %}",
+    search: "",
+  };
+  const NOTES_SCHEMA_URL_TEMPLATE = "{% url 'scoring_schema_update' competicio.id 0 %}".replace("/0/", "/__APP_ID__/");
+  const NOTES_JUDGES_URL = "{% url 'judges_qr_home' competicio.id %}";
+  const NOTES_STATE = {
+    manifest: null,
+    selectedFranja: "",
+    selectedAppId: "",
+    selectedUnitId: "",
+    selectedExercise: 1,
+    rowFilter: "all",
+    activePayload: null,
+    loadingKey: "",
+    warningsLoadingKey: "",
+  };

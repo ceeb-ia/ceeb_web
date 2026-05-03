@@ -1,0 +1,596 @@
+  function buildHeader(table, schema){
+    const thead = table.querySelector("thead");
+    thead.innerHTML = "";
+
+    const teamMode = isTeamSchema(schema);
+    if(teamMode){
+      buildTeamHeader(table, schema);
+      return;
+    }
+    const tr1 = document.createElement("tr");
+    tr1.appendChild(el("th",{class:"th-center name-cell", text:"Nom"}));
+
+    ensureColumnsButton(table, schema);
+
+    // ✅ ordre guardat aplicat al HEADER
+    let cols = (schema.ui && Array.isArray(schema.ui.columns)) ? schema.ui.columns : [];
+    cols = applySavedOrder(table.getAttribute("data-comp-aparell-id"), cols);
+    cols = applyVisibility(table.getAttribute("data-comp-aparell-id"), cols);
+
+    const fields = Array.isArray(schema.fields) ? schema.fields : [];
+    const byCode = {};
+    fields.forEach(f=>{ if(f && f.code) byCode[f.code]=f; });
+
+    const computed = Array.isArray(schema.computed) ? schema.computed : [];
+    const byCompCode = {};
+    computed.forEach(c=>{ if(c && c.code) byCompCode[c.code]=c; });
+
+    if(teamMode){
+      const groupRow = document.createElement("tr");
+      groupRow.appendChild(el("th",{class:"th-center name-cell", text:"Subjecte"}));
+      let activeKey = "";
+      let activeCount = 0;
+      function flushGroup(){
+        if(!activeCount) return;
+        groupRow.appendChild(el("th",{class:"th-center", colspan:String(activeCount), text:activeKey}));
+      }
+      cols.forEach(col => {
+        const f = byCode[col];
+        const c = byCompCode[col];
+        let groupLabel = "Resultat";
+        let span = 1;
+        if(f){
+          if(f.type==="matrix" && f.items && f.items.count){
+            span = Number(f.items.count || 0);
+          }
+          groupLabel = (String(f.scope || "shared") === "member")
+            ? `Membre ${Number(f.member_slot || 1)}`
+            : "Compartit";
+        } else if(c){
+          groupLabel = "Resultat";
+        }
+        if(groupLabel !== activeKey){
+          flushGroup();
+          activeKey = groupLabel;
+          activeCount = 0;
+        }
+        activeCount += span;
+      });
+      flushGroup();
+      thead.appendChild(groupRow);
+    }
+
+    cols.forEach(col=>{
+      const f = byCode[col];
+      const c = byCompCode[col];
+      const label = (f && f.label) ? f.label : ((c && c.label) ? c.label : col);
+
+      // matrix: expand a col1..colN (draggable només el primer th del bloc i només si és field)
+      if(f && f.type==="matrix" && f.items && f.items.count){
+        const n = Number(f.items.count || 0);
+        for(let i=1;i<=n;i++){
+          const th = el("th",{class:"th-center", text:`${label} ${i}`});
+          if(i===1){
+            th.classList.add("th-draggable");
+            th.draggable = true;
+            th.dataset.col = col;       // col base
+            th.dataset.block = String(n);
+          }
+          tr1.appendChild(th);
+        }
+        return;
+      }
+
+      // ✅ columnes normals: draggable només si és FIELD (si és computed -> NO draggable)
+      const th = el("th",{class:"th-center", text:label});
+      th.classList.add("th-draggable");
+      th.draggable = true;
+      th.dataset.col = col;      
+      tr1.appendChild(th);
+    });
+
+    thead.appendChild(tr1);
+
+    // --- Drag & Drop column order (només per fields) ---
+    let dragCol = null;
+
+    function getDraggableThs(){
+      return Array.from(tr1.querySelectorAll("th.th-draggable"));
+    }
+
+    getDraggableThs().forEach(th=>{
+      th.addEventListener("dragstart", (e)=>{
+        dragCol = th.dataset.col;
+        th.classList.add("dragging");
+        e.dataTransfer.effectAllowed = "move";
+      });
+
+      th.addEventListener("dragend", ()=>{
+        th.classList.remove("dragging");
+        getDraggableThs().forEach(x=>x.classList.remove("th-drop-hint"));
+        dragCol = null;
+      });
+
+      th.addEventListener("dragover", (e)=>{
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        th.classList.add("th-drop-hint");
+      });
+
+      th.addEventListener("dragleave", ()=>{
+        th.classList.remove("th-drop-hint");
+      });
+
+      th.addEventListener("drop", (e)=>{
+        e.preventDefault();
+        th.classList.remove("th-drop-hint");
+
+        const targetCol = th.dataset.col;
+        if(!dragCol || !targetCol || dragCol === targetCol) return;
+
+        // Reordena a nivell de "col base" (schema.ui.columns)
+        const from = cols.indexOf(dragCol);
+        const to   = cols.indexOf(targetCol);
+        if(from < 0 || to < 0) return;
+
+        cols.splice(to, 0, cols.splice(from, 1)[0]);
+
+        const appId = table.getAttribute("data-comp-aparell-id");
+        saveColsOrder(appId, cols);
+
+        // re-render d’aquesta taula
+        buildHeader(table, schema);
+        buildBody(
+          table,
+          schema,
+          table.getAttribute("data-exercici"),
+          appId,
+          table.getAttribute("data-group")
+        );
+        syncScrollbars();
+      });
+    });
+  }
+
+  function buildBody(table, schema, exercici, appId, group){
+    const tbody = table.querySelector("tbody");
+    tbody.innerHTML = "";
+    if(isTeamSchema(schema)){
+      buildTeamBody(table, schema, exercici, appId, group);
+      return;
+    }
+
+    // ✅ ordre guardat aplicat al BODY (perquè es mogui el contingut, no només el títol)
+    let cols = (schema.ui && Array.isArray(schema.ui.columns)) ? schema.ui.columns : [];
+    cols = applySavedOrder(table.getAttribute("data-comp-aparell-id"), cols);
+    cols = applyVisibility(table.getAttribute("data-comp-aparell-id"), cols);
+
+    const fields = Array.isArray(schema.fields) ? schema.fields : [];
+    const byCode = {};
+    fields.forEach(f=>{ if(f && f.code) byCode[f.code]=f; });
+
+    const computed = Array.isArray(schema.computed) ? schema.computed : [];
+    const byCompCode = {};
+    computed.forEach(c=>{ if(c && c.code) byCompCode[c.code]=c; });
+
+    function judgesForField(f){
+      if(!f || !f.judges || f.judges.count == null) return 1;
+      const n = Number(f.judges.count || 1);
+      return (Number.isFinite(n) && n > 0) ? n : 1;
+    }
+    function crashEnabledForField(f){
+      return !!(f && f.crash && f.crash.enabled);
+    }
+
+    // màxim jutges només entre les columnes visibles (fields + computed no afecten)
+    let nJudgesTable = 1;
+    cols.forEach(col=>{
+      const f = byCode[col];
+      if(f) nJudgesTable = Math.max(nJudgesTable, judgesForField(f));
+    });
+
+    const rows = visibleRowsForAppGroup(group, appId, schema);
+    rows.sort((a, b) => {
+      const ra = rotationRankFor(a.id, appId);
+      const rb = rotationRankFor(b.id, appId);
+      if(ra !== null && rb !== null) return ra - rb;
+      if(ra !== null) return -1;
+      if(rb !== null) return 1;
+
+      const oa = Number(a.order || 0);
+      const ob = Number(b.order || 0);
+      if(oa !== ob) return oa - ob;
+      return Number(a.id || 0) - Number(b.id || 0);
+    });
+
+    rows.forEach((ins, idx)=>{
+      const scoreKey = keyFor(ins.id, exercici, appId);
+      const blockedRow = isBlockedSubjectForApp(ins, appId) && !inscripcioCompeteixAApp(ins, appId);
+      const rowScore = getScore(ins.id, exercici, appId);
+      const rowInputs = rowScore.inputs || {};
+      const rowWarnings = scoreWarningsForInputs(schema, rowInputs);
+
+      // Files de jutge realment necessàries segons les columnes visibles
+      const visibleJudgeRows = [];
+      for(let jj=1; jj<=nJudgesTable; jj++){
+        const ok = cols.some(col=>{
+          const f = byCode[col];
+          return f ? (judgesForField(f) >= jj) : false;
+        });
+        if(ok) visibleJudgeRows.push(jj);
+      }
+      if(visibleJudgeRows.length === 0) visibleJudgeRows.push(1);
+
+      for(const j of visibleJudgeRows){
+        const tr = document.createElement("tr");
+        tr.dataset.scoreKey = scoreKey;
+        tr.dataset.judge = String(j);
+        tr.dataset.insId = String(ins.id);
+        tr.dataset.exercici = String(exercici);
+        tr.dataset.compAparellId = String(appId);
+        if(rowWarnings.length) tr.classList.add("score-warning-row");
+        if(blockedRow) tr.classList.add("table-warning");
+        const rowPresenceCandidates = cols
+          .map((col) => byCode[col] ? { code: col, field: byCode[col] } : null)
+          .filter((item) => item && isJudgeShapedMultiJudgeField(item.field) && j <= judgesForField(item.field));
+        const rowCounts = rowPresenceCandidates.some((item) => presenceForField(rowInputs, item.field, item.code)[j - 1]);
+        if(rowPresenceCandidates.length){
+          tr.classList.add(rowCounts ? "judge-row-counts" : "judge-row-absent");
+          tr.title = `J${j}: ${rowCounts ? "compta" : "no compta"}`;
+        }
+        let judgePresenceChipRendered = false;
+
+        // Nom només a la primera fila real
+        if(j === visibleJudgeRows[0]){
+          const nameTd = document.createElement("td");
+          nameTd.className = "name-cell";
+          nameTd.rowSpan = visibleJudgeRows.length;
+          const nameBtn = el("button",{
+            type:"button",
+            class:"btn btn-link p-0 playback-name-btn js-open-playback",
+            text:(ins.name || "")
+          });
+          nameBtn.dataset.insId = String(ins.id);
+          nameBtn.dataset.exercici = String(exercici);
+          nameBtn.dataset.compAparellId = String(appId);
+          nameTd.appendChild(nameBtn);
+          appendScoreWarningChip(nameTd, rowWarnings);
+          if(String(ins.subject_kind || "") === "team_unit"){
+            memberLinesForSubject(ins).forEach(line => {
+              nameTd.appendChild(el("div",{class:"small", text:line}));
+            });
+          }
+          if(ins.meta){
+            nameTd.appendChild(el("div",{class:"text-muted small", text:ins.meta}));
+          }
+          if(blockedRow){
+            nameTd.appendChild(el("div",{class:"text-danger small", text:(ins.invalid_reasons || []).join(" ")}));
+          }
+          const mediaBadge = el("button",{
+            type:"button",
+            class:"playback-media-badge js-open-playback js-playback-media-badge",
+            text: playbackBadgeText(ins.id, exercici, appId),
+          });
+          mediaBadge.dataset.insId = String(ins.id);
+          mediaBadge.dataset.exercici = String(exercici);
+          mediaBadge.dataset.compAparellId = String(appId);
+          nameTd.appendChild(el("div",{class:"mt-1"},[mediaBadge]));
+          tr.appendChild(nameTd);
+        }
+
+        cols.forEach(col=>{
+          const f = byCode[col];
+          const c = byCompCode[col];
+          const isComputed = !!c;
+
+          const s = getScore(ins.id, exercici, appId);
+          const inputs = (s.inputs || {});
+
+          // ✅ computed: sempre readonly (no editable, sigui on sigui)
+          // i només a la primera fila de jutge (rowspan)
+          if(isComputed){
+            if(j !== visibleJudgeRows[0]) return;
+
+            const td = el("td",{class:"cell-center readonly"});
+            td.rowSpan = visibleJudgeRows.length;
+            td.dataset.out = col;
+            td.textContent = (s.outputs && s.outputs[col]!==undefined) ? formatComputedValue(s.outputs[col]) : "";
+            tr.appendChild(td);
+            return;
+          }
+
+          // --- MATRIX (judge_x_item) ---
+          if(f && f.type==="matrix" && f.items && f.items.count){
+            const nJudges = judgesForField(f);
+            const nElems  = Number(f.items.count || 0);
+            const crashEnabled = crashEnabledForField(f);
+
+            const hasThisJudge = (j <= nJudges);
+
+            // Si aquest camp NO té aquest jutge: pinta cel·les buides
+            if(!hasThisJudge){
+              for(let i=1;i<=nElems;i++){
+                tr.appendChild(el("td",{class:"cell-center"})); // buit
+              }
+              return;
+            }
+
+            const mat = ensureMatrixForDisplay(nJudges, nElems, inputs[col]);
+
+            // crash només si està habilitat
+            const ck = crashEnabled ? crashKeyFor(col) : null;
+            const crash = crashEnabled ? ensureListForDisplay(nJudges, inputs[ck]) : null;
+
+            for(let i=1;i<=nElems;i++){
+              const td = el("td",{class:"cell-center"});
+              const wrap = el("div",{class:"d-flex align-items-center"});
+              wrap.style.gap = "6px";
+              if(!judgePresenceChipRendered && isJudgeShapedMultiJudgeField(f)){
+                wrap.appendChild(judgePresenceChip(rowCounts, {
+                  disabled: blockedRow,
+                  onToggle: ()=>toggleIndividualJudgePresence({ ins, exercici, appId, scoreKey, field: f, code: col, judgeIdx: j, blockedRow }),
+                }));
+                judgePresenceChipRendered = true;
+              }
+
+              const inp = el("input",{
+                class:"form-control form-control-sm input-salt",
+                type:"number",
+                step:"any",
+                "data-field": col,
+                "data-j": String(j),
+                "data-i": String(i)
+              });
+              inp.disabled = blockedRow;
+              inp.value = (mat[j-1] && mat[j-1][i-1]!==undefined) ? mat[j-1][i-1] : 0;
+              bindScoreInputNavigation(inp, { scoreKey, field: col, judge: j, item: i });
+
+              let btn = null;
+              if(crashEnabled){
+                btn = el("button",{
+                  class:"btn btn-sm btn-outline-danger p-0",
+                  type:"button",
+                  text:"💥",
+                  "data-crash-btn":"1",
+                  "data-field": col,
+                  "data-j": String(j),
+                  "data-i": String(i)
+                });
+                btn.style.width="22px";
+                btn.style.height="22px";
+                btn.title="Crash";
+                btn.disabled = blockedRow;
+              }
+
+              inp.addEventListener("input", ()=>{
+                if(blockedRow) return;
+                const cur = getScore(ins.id, exercici, appId);
+                const curInputs = cur.inputs || {};
+
+                const nextMat = ensureMatrixForPatch(nJudges, nElems, curInputs[col]);
+                if(!Array.isArray(nextMat[j-1])) nextMat[j-1] = Array(nElems).fill(null);
+                nextMat[j-1][i-1] = Number(inp.value || 0);
+                const nextPresence = presenceForEditedJudge(curInputs, f, col, j);
+
+                let inputsPatch;
+                let nextCrash = null;
+
+                if(crashEnabled){
+                  nextCrash = ensureCrashListForPatch(nJudges, curInputs[ck], j);
+                  inputsPatch = { [col]: nextMat, [ck]: nextCrash, [presenceKey(col)]: nextPresence };
+                }else{
+                  inputsPatch = { [col]: nextMat, [presenceKey(col)]: nextPresence };
+                }
+
+                const nextInputs = { ...curInputs, ...inputsPatch };
+                setScore(ins.id, exercici, appId, {inputs: nextInputs, outputs: cur.outputs || {}, total: cur.total || 0});
+
+                scheduleSave(scoreKey, async ()=>{
+                  try{
+                    const resp = await saveEntry(ins.id, exercici, appId, inputsPatch);
+                    setScore(ins.id, exercici, appId, {inputs: resp.inputs, outputs: resp.outputs, total: resp.total});
+                    updateOutputs(scoreKey, resp);
+                  }catch(e){ console.error(e); showAlert(e.message); }
+                });
+              });
+
+              if(crashEnabled && btn){
+                btn.addEventListener("click", ()=>{
+                  if(blockedRow) return;
+                  const cur = getScore(ins.id, exercici, appId);
+                  const curInputs = cur.inputs || {};
+
+                  const nextMat = ensureMatrixForPatch(nJudges, nElems, curInputs[col]);
+                  if(!Array.isArray(nextMat[j-1])) nextMat[j-1] = Array(nElems).fill(null);
+                  const nextCrash = ensureCrashListForPatch(nJudges, curInputs[ck], j);
+                  const nextPresence = presenceForEditedJudge(curInputs, f, col, j);
+
+                  const current = Number(nextCrash[j-1] || 0);
+                  const clicked = i; // 1..nElems
+                  nextCrash[j-1] = (current === clicked) ? 0 : clicked;
+
+                  // 1) actualitza estat local per UI (això ho pots mantenir)
+                  const inputsPatch = { [col]: nextMat, [ck]: nextCrash, [presenceKey(col)]: nextPresence };
+                  const nextInputs = { ...curInputs, ...inputsPatch };
+                  setScore(ins.id, exercici, appId, {inputs: nextInputs, outputs: cur.outputs || {}, total: cur.total || 0});
+
+                  applyCrashDisable(tr, col, j, nElems, nextCrash[j-1]);
+
+                  // 2) AQUI ÉS EL CANVI IMPORTANT: enviem PATCH, no nextInputs
+                  scheduleSave(scoreKey, async ()=>{
+                    try{
+                      const resp = await saveEntry(ins.id, exercici, appId, inputsPatch);
+
+                      // 3) AQUI ÉS L’ALTRE CANVI IMPORTANT: després de desar, confia en el servidor
+                      setScore(ins.id, exercici, appId, {inputs: resp.inputs, outputs: resp.outputs, total: resp.total});
+                      updateOutputs(scoreKey, resp);
+                    }catch(e){ console.error(e); showAlert(e.message); }
+                  });
+                });
+
+                const crashAt = Number((crash && crash[j-1]) || 0);
+                setTimeout(()=>applyCrashDisable(tr, col, j, nElems, crashAt), 0);
+              }
+
+              wrap.appendChild(inp);
+              if(btn) wrap.appendChild(btn);
+              td.appendChild(wrap);
+              tr.appendChild(td);
+            }
+
+            return;
+          }
+
+          // --- LIST (judge) ---
+          if(f && f.type==="list" && f.judges && f.judges.count){
+            const n = judgesForField(f);
+            const hasThisJudge = (j <= n);
+
+            if(!hasThisJudge){
+              tr.appendChild(el("td",{class:"cell-center"})); // buit
+              return;
+            }
+
+            const arr = ensureListForDisplay(n, inputs[col]);
+            const td = el("td",{class:"cell-center"});
+            if(!judgePresenceChipRendered && isJudgeShapedMultiJudgeField(f)){
+              td.appendChild(judgePresenceChip(rowCounts, {
+                disabled: blockedRow,
+                onToggle: ()=>toggleIndividualJudgePresence({ ins, exercici, appId, scoreKey, field: f, code: col, judgeIdx: j, blockedRow }),
+              }));
+              judgePresenceChipRendered = true;
+            }
+            const inp = el("input",{class:"form-control form-control-sm input-num", type:"number", step:"any"});
+            inp.disabled = blockedRow;
+            inp.value = (arr[j-1]!==undefined) ? arr[j-1] : 0;
+            bindScoreInputNavigation(inp, { scoreKey, field: col, judge: j });
+
+            inp.addEventListener("input", ()=>{
+              if(blockedRow) return;
+              const cur = getScore(ins.id, exercici, appId);
+              const curInputs = cur.inputs || {};
+
+              const nextArr = ensureListForPatch(n, curInputs[col]);
+              const nextPresence = presenceForEditedJudge(curInputs, f, col, j);
+              nextArr[j-1] = Number(inp.value || 0);
+
+              const inputsPatch = { [col]: nextArr, [presenceKey(col)]: nextPresence };
+              const nextInputs = { ...curInputs, ...inputsPatch };
+              setScore(ins.id, exercici, appId, {inputs: nextInputs, outputs: cur.outputs || {}, total: cur.total || 0});
+
+              scheduleSave(scoreKey, async ()=>{
+                try{
+                  const resp = await saveEntry(ins.id, exercici, appId, inputsPatch);
+                  setScore(ins.id, exercici, appId, {inputs: resp.inputs, outputs: resp.outputs, total: resp.total});
+                  updateOutputs(scoreKey, resp);
+                }catch(e){ console.error(e); showAlert(e.message); }
+              });
+            });
+
+            td.appendChild(inp);
+            tr.appendChild(td);
+            return;
+          }
+
+          // --- NUMBER d’entrada (rowspan) ---
+          // (si en tens algun; si no existeixen, aquest bloc gairebé no s’executa)
+          if(j !== visibleJudgeRows[0]) return;
+
+          if(f){
+            const td = el("td",{class:"cell-center"});
+            td.rowSpan = visibleJudgeRows.length;
+
+            const inp = el("input",{class:"form-control form-control-sm input-num", type:"number", step:"any"});
+            inp.disabled = blockedRow;
+            inp.value = (inputs[col]!==undefined && inputs[col]!==null) ? inputs[col] : "";
+            bindScoreInputNavigation(inp, { scoreKey, field: col });
+
+            inp.addEventListener("input", ()=>{
+              if(blockedRow) return;
+              const cur = getScore(ins.id, exercici, appId);
+              const curInputs = cur.inputs || {};
+              const v = (inp.value === "" ? 0 : Number(inp.value));
+              const inputsPatch = { [col]: v };
+              const nextInputs = { ...curInputs, ...inputsPatch };
+
+              setScore(ins.id, exercici, appId, {inputs: nextInputs, outputs: cur.outputs || {}, total: cur.total || 0});
+
+              scheduleSave(scoreKey, async ()=>{
+                try{
+                  const resp = await saveEntry(ins.id, exercici, appId, inputsPatch);
+                  setScore(ins.id, exercici, appId, {inputs: resp.inputs, outputs: resp.outputs, total: resp.total});
+                  updateOutputs(scoreKey, resp);
+                }catch(e){ console.error(e); showAlert(e.message); }
+              });
+            });
+
+            td.appendChild(inp);
+            tr.appendChild(td);
+          }else{
+            // ni field ni computed: millor buit readonly
+            const td = el("td",{class:"cell-center readonly"});
+            td.rowSpan = visibleJudgeRows.length;
+            td.textContent = "";
+            tr.appendChild(td);
+          }
+        });
+
+        tbody.appendChild(tr);
+      }
+    });
+    highlightPlaybackRows();
+  }
+
+  function isTableVisible(table){
+    if(!table) return false;
+    if(table.dataset.notesMainTable === "1") return true;
+    const pane = table.closest(".tab-pane");
+    if(!pane || !pane.classList.contains("show") || !pane.classList.contains("active")) return false;
+    const appPane = table.closest('.tab-pane[data-comp-aparell-id]');
+    if(appPane && (!appPane.classList.contains("show") || !appPane.classList.contains("active"))) return false;
+    const groupPane = appPane ? appPane.parentElement?.closest(".tab-pane") : null;
+    if(groupPane && (!groupPane.classList.contains("show") || !groupPane.classList.contains("active"))) return false;
+    return true;
+  }
+
+  function activeScoringTable(){
+    const mainTable = document.querySelector('table[data-notes-main-table="1"]');
+    if(mainTable && !mainTable.closest('[data-notes-main-shell="1"]')?.classList.contains("d-none")) return mainTable;
+    const appPane = document.querySelector('.tab-pane.show.active[data-comp-aparell-id]');
+    if(!appPane) return null;
+    const exPane = appPane.querySelector('.tab-pane.show.active[id*="-ex-"]');
+    if(!exPane) return null;
+    return exPane.querySelector("table[data-scoring-table='1']");
+  }
+
+  function renderTableIfNeeded(table, opts = {}){
+    if(!table) return false;
+    let hasPendingRemote = false;
+    if(table.dataset.rendered === "1"){
+      hasPendingRemote = Array.from(pendingRemoteScoreKeys).some((scoreKey) => {
+        return !!table.querySelector(`tr[data-score-key="${CSS.escape(scoreKey)}"]`);
+      });
+    }
+    if(!opts.force && table.dataset.rendered === "1" && !hasPendingRemote) return true;
+    rerenderTable(table);
+    applyNotesRowFilter(table);
+    Array.from(pendingRemoteScoreKeys).forEach((scoreKey) => {
+      if(table.querySelector(`tr[data-score-key="${CSS.escape(scoreKey)}"]`)){
+        pendingRemoteScoreKeys.delete(scoreKey);
+      }
+    });
+    return true;
+  }
+
+  function renderActiveTableOnly(opts = {}){
+    const table = activeScoringTable();
+    if(!table) return;
+    renderTableIfNeeded(table, opts);
+    applyNotesRowFilter(table);
+    syncScrollbars();
+  }
+
+  function renderAll(){
+    renderActiveTableOnly({force:false});
+  }
+

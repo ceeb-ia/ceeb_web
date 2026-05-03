@@ -1,0 +1,33 @@
+  <div id="media-drawer-backdrop" class="media-drawer-backdrop" aria-hidden="true"></div>
+  <aside id="media-drawer" class="media-drawer" aria-hidden="true">
+    <div class="media-drawer-head">
+      <div>
+        <div class="playback-title mb-0">Reproduccio multimedia</div>
+        <div class="playback-subtitle mb-0" id="media-drawer-current">Selecciona un subjecte per carregar pistes.</div>
+      </div>
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="media-drawer-close">Tancar</button>
+    </div>
+    <div class="media-drawer-body">
+      <div id="media-drawer-empty" class="playback-empty mb-3">Sense multimedia associat per aquesta seleccio.</div>
+
+      <div class="media-track-group" id="media-drawer-audio-wrap">
+        <div class="small text-muted mb-1">Multimedia d'inscripcio · Audio</div>
+        <div class="playback-list" id="media-drawer-audio-list"></div>
+      </div>
+
+      <div class="media-track-group" id="media-drawer-video-wrap">
+        <div class="small text-muted mb-1">Multimedia d'inscripcio · Video</div>
+        <div class="playback-list" id="media-drawer-video-list"></div>
+      </div>
+
+      <div class="media-track-group" id="media-drawer-judge-wrap">
+        <div class="small text-muted mb-1">Video de jutge</div>
+        <div class="playback-list" id="media-drawer-judge-list"></div>
+      </div>
+
+      <div class="media-drawer-player mt-3">
+        <audio id="media-drawer-audio" controls preload="metadata" style="width:100%;display:none;"></audio>
+        <video id="media-drawer-video" class="playback-video" controls preload="metadata" style="display:none;"></video>
+      </div>
+    </div>
+  </aside>

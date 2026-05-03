@@ -1,0 +1,167 @@
+  function isGlobalWarningsMode(){
+    return String(NOTES_STATE.rowFilter || "all") === "global-warnings";
+  }
+
+  function setGlobalWarningsMode(active){
+    const shell = document.querySelector('[data-notes-main-shell="1"]');
+    const summary = document.querySelector('[data-notes-warning-summary="1"]');
+    const table = notesMainTable();
+    const scrollWrap = table ? table.closest('[data-scroll-wrap="1"]') : null;
+    const topbar = shell ? shell.querySelector('[data-scrollbar-top="1"]') : null;
+    if(summary) summary.classList.toggle("d-none", !active);
+    if(scrollWrap) scrollWrap.classList.toggle("d-none", !!active);
+    if(topbar) topbar.classList.toggle("d-none", !!active);
+  }
+
+  function warningContextUnit(warning){
+    const nav = warning?.navigation || {};
+    return allLazyUnits().find((unit) => (
+      String(unit.comp_aparell_id || "") === String(nav.comp_aparell_id || "")
+      && String(unit.key || "") === String(nav.unit_key || "")
+      && String(unit.franja_id || "") === String(nav.franja_id || "")
+    )) || null;
+  }
+
+  async function openWarningContext(warning){
+    const nav = warning?.navigation || {};
+    const unit = warningContextUnit(warning);
+    if(!unit) return;
+    NOTES_STATE.selectedFranja = franjaValueForUnit(unit);
+    NOTES_STATE.selectedAppId = String(nav.comp_aparell_id || unit.comp_aparell_id || "");
+    NOTES_STATE.selectedUnitId = unitIdentity(unit);
+    NOTES_STATE.selectedExercise = String(nav.exercici || 1);
+    NOTES_STATE.rowFilter = "warnings";
+    const rowFilterSelect = document.querySelector('[data-notes-row-filter-select="1"]');
+    if(rowFilterSelect) rowFilterSelect.value = "warnings";
+    syncLazyToolbar();
+    await loadSelectedLazyTable();
+    focusSubjectInMainTable(warning.subject || null);
+  }
+
+  async function validateGlobalWarning(warning, button){
+    const ackKeys = Array.isArray(warning?.ack_keys) && warning.ack_keys.length
+      ? warning.ack_keys
+      : (warning?.ack_key ? [warning.ack_key] : []);
+    if(!ackKeys.length) return;
+    if(button) button.disabled = true;
+    try{
+      const resp = await fetch(NOTES_LAZY_ENDPOINTS.validateWarning, {
+        method:"POST",
+        headers:{
+          "Content-Type":"application/json",
+          "X-CSRFToken": CSRF_TOKEN || "",
+          "X-Requested-With":"XMLHttpRequest",
+        },
+        body: JSON.stringify({ack_keys: ackKeys}),
+      });
+      const payload = await resp.json();
+      if(!resp.ok || !payload.ok){
+        throw new Error(payload.error || `HTTP ${resp.status}`);
+      }
+      await loadGlobalWarnings();
+    }catch(err){
+      if(button) button.disabled = false;
+      setNotesStatus(`No s'ha pogut validar l'avis (${err.message || err}).`, true);
+    }
+  }
+
+  function renderGlobalWarnings(payload){
+    const summary = document.querySelector('[data-notes-warning-summary="1"]');
+    if(!summary) return;
+    const warnings = Array.isArray(payload?.warnings) ? payload.warnings : [];
+    summary.innerHTML = "";
+    const head = el("div", {class:"d-flex justify-content-between align-items-center flex-wrap mb-2"});
+    const rawCount = Number(payload?.raw_count || warnings.length || 0);
+    head.appendChild(el("div", {
+      class:"fw-semibold",
+      text: warnings.length ? `${warnings.length} participants amb avisos` : "Cap avis pendent",
+    }));
+    if(rawCount > warnings.length){
+      head.appendChild(el("span", {
+        class:"badge badge-light",
+        text:`${rawCount} incidencies agrupades`,
+      }));
+    }
+    if(payload?.truncated){
+      head.appendChild(el("span", {
+        class:"badge badge-warning",
+        text:`Mostrant els primers ${payload.limit || warnings.length}`,
+      }));
+    }
+    summary.appendChild(head);
+    if(!warnings.length){
+      summary.appendChild(el("div", {class:"notes-warning-empty", text:"No s'han detectat avisos amb les dades actuals."}));
+      return;
+    }
+    const list = el("div", {class:"notes-warning-list"});
+    warnings.forEach((warning) => {
+      const subject = warning.subject || {};
+      const unit = warning.unit || {};
+      const app = warning.app || {};
+      const nav = warning.navigation || {};
+      const summary = warning.summary || {};
+      const warningCount = Number(warning.warning_count || 1);
+      const item = el("div", {class:"notes-warning-item"});
+      const textWrap = el("div");
+      textWrap.appendChild(el("div", {
+        class:"notes-warning-item-title",
+        text:[
+          subject.name || "Subjecte",
+          warningCount > 1 ? `${warningCount} avisos pendents` : (warning.message || "Avis"),
+        ].filter(Boolean).join(" - "),
+      }));
+      textWrap.appendChild(el("div", {
+        class:"notes-warning-item-meta",
+        text:[
+          (summary.franges || []).join(", ") || unit.franja_label || (unit.is_out_of_program ? "Fora de programa" : ""),
+          (summary.apps || []).join(", ") || app.label,
+          (summary.exercicis || []).length ? `Exercicis ${(summary.exercicis || []).join(", ")}` : (nav.exercici ? `Exercici ${nav.exercici}` : ""),
+          (summary.fields || []).length ? `Camps ${(summary.fields || []).join(", ")}` : (warning.field_code ? `Camp ${warning.field_code}` : ""),
+        ].filter(Boolean).join(" · "),
+      }));
+      const actions = el("div", {class:"d-flex flex-wrap justify-content-end", style:"gap:6px;"});
+      const btn = el("button", {type:"button", class:"btn btn-sm btn-outline-primary", text:"Obrir"});
+      const validateBtn = el("button", {type:"button", class:"btn btn-sm btn-outline-success", text:"Validar"});
+      btn.addEventListener("click", () => openWarningContext(warning));
+      validateBtn.addEventListener("click", () => validateGlobalWarning(warning, validateBtn));
+      item.appendChild(textWrap);
+      actions.appendChild(btn);
+      actions.appendChild(validateBtn);
+      item.appendChild(actions);
+      list.appendChild(item);
+    });
+    summary.appendChild(list);
+  }
+
+  async function loadGlobalWarnings(){
+    setGlobalWarningsMode(true);
+    const title = document.querySelector('[data-notes-main-title="1"]');
+    const meta = document.querySelector('[data-notes-main-meta="1"]');
+    const schemaLink = document.querySelector('[data-notes-schema-link="1"]');
+    const judgesLink = document.querySelector('[data-notes-judges-link="1"]');
+    if(title) title.textContent = "Avisos de tota la competicio";
+    if(meta) meta.textContent = "Resum agregat sense carregar totes les taules.";
+    if(schemaLink) schemaLink.classList.add("d-none");
+    if(judgesLink) judgesLink.classList.add("d-none");
+    const loadKey = `warnings:${Date.now()}`;
+    NOTES_STATE.warningsLoadingKey = loadKey;
+    setNotesStatus("Carregant avisos...");
+    const summary = document.querySelector('[data-notes-warning-summary="1"]');
+    if(summary) summary.innerHTML = "";
+    const url = new URL(NOTES_LAZY_ENDPOINTS.warnings, window.location.origin);
+    url.searchParams.set("limit", "500");
+    try{
+      const resp = await fetch(url.toString(), {headers:{"X-Requested-With":"XMLHttpRequest"}});
+      const payload = await resp.json();
+      if(!resp.ok || !payload.ok){
+        throw new Error(payload.error || `HTTP ${resp.status}`);
+      }
+      if(NOTES_STATE.warningsLoadingKey !== loadKey) return;
+      renderGlobalWarnings(payload);
+      const count = Number(payload.count || 0);
+      setNotesStatus(count ? `${count} avisos detectats a la competicio.` : "No hi ha avisos pendents.");
+    }catch(err){
+      setNotesStatus(`No s'han pogut carregar els avisos (${err.message || err}).`, true);
+      if(summary) summary.innerHTML = `<div class="notes-warning-empty">No s'han pogut carregar els avisos.</div>`;
+    }
+  }

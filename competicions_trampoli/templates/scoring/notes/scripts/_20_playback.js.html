@@ -1,0 +1,303 @@
+  const PLAYBACK_STATE = {
+    insId: null,
+    exercici: null,
+    appId: null,
+    payload: null,
+    error: "",
+    activeTrackKey: "",
+    drawerOpen: false,
+  };
+
+  function mediaCountsForIns(insId){
+    const raw = MEDIA_COUNTS_BY_INS[String(insId)] || {};
+    return {
+      audio: Number(raw.audio || 0),
+      video: Number(raw.video || 0),
+    };
+  }
+
+  function judgePresenceForKey(insId, exercici, appId){
+    const k = keyFor(insId, exercici, appId);
+    return Number(JUDGE_VIDEO_PRESENCE_BY_KEY[k] || 0) ? 1 : 0;
+  }
+
+  function playbackBadgeText(insId, exercici, appId){
+    const c = mediaCountsForIns(insId);
+    const j = judgePresenceForKey(insId, exercici, appId);
+    const sep = " \u00B7 ";
+    return `A:${c.audio}${sep}V:${c.video}${sep}J:${j}`;
+  }
+
+  function refreshPlaybackBadges(insId, exercici, appId){
+    if(!insId || !exercici || !appId) return;
+    const sel = `.js-playback-media-badge[data-ins-id="${CSS.escape(String(insId))}"][data-exercici="${CSS.escape(String(exercici))}"][data-comp-aparell-id="${CSS.escape(String(appId))}"]`;
+    document.querySelectorAll(sel).forEach((elBadge)=>{
+      elBadge.textContent = playbackBadgeText(insId, exercici, appId);
+    });
+  }
+
+  function setMediaElementSrc(mediaEl, url){
+    if(!mediaEl) return;
+    const safeUrl = String(url || "").trim();
+    if(!safeUrl){
+      try{ mediaEl.pause(); }catch(e){}
+      mediaEl.removeAttribute("src");
+      try{ mediaEl.load(); }catch(e){}
+      return;
+    }
+    if(mediaEl.getAttribute("src") !== safeUrl){
+      mediaEl.setAttribute("src", safeUrl);
+      try{ mediaEl.load(); }catch(e){}
+    }
+  }
+
+  function setPlaybackDrawerOpen(open){
+    const drawer = document.getElementById("media-drawer");
+    const backdrop = document.getElementById("media-drawer-backdrop");
+    if(!drawer || !backdrop) return;
+    PLAYBACK_STATE.drawerOpen = !!open;
+    drawer.classList.toggle("show", !!open);
+    backdrop.classList.toggle("show", !!open);
+    drawer.setAttribute("aria-hidden", open ? "false" : "true");
+    backdrop.setAttribute("aria-hidden", open ? "false" : "true");
+    document.body.classList.toggle("media-drawer-open", !!open);
+  }
+
+  function buildPlaybackTracks(payload){
+    const media = payload?.media || {};
+    const audioTracks = [];
+    const videoTracks = [];
+    const judgeTracks = [];
+
+    if(media.audio_primary){
+      audioTracks.push({
+        ...media.audio_primary,
+        track_key: `audio:${media.audio_primary.id}`,
+        kind: "audio",
+      });
+    }
+    (Array.isArray(media.audio_others) ? media.audio_others : []).forEach((track)=>{
+      audioTracks.push({...track, track_key: `audio:${track.id}`, kind: "audio"});
+    });
+
+    if(media.video_primary){
+      videoTracks.push({
+        ...media.video_primary,
+        track_key: `video:${media.video_primary.id}`,
+        kind: "video",
+      });
+    }
+    (Array.isArray(media.video_others) ? media.video_others : []).forEach((track)=>{
+      videoTracks.push({...track, track_key: `video:${track.id}`, kind: "video"});
+    });
+
+    if(payload?.judge_video){
+      judgeTracks.push({
+        ...payload.judge_video,
+        track_key: `judge:${payload.judge_video.id}`,
+        kind: "video",
+      });
+    }
+
+    return {
+      audioTracks,
+      videoTracks,
+      judgeTracks,
+      orderedTracks: [].concat(audioTracks, videoTracks, judgeTracks),
+    };
+  }
+
+  function renderDrawerTrackButtons(containerId, tracks, activeTrackKey, onPickTrack){
+    const wrap = document.getElementById(containerId);
+    if(!wrap) return false;
+    wrap.innerHTML = "";
+    if(!Array.isArray(tracks) || !tracks.length){
+      return false;
+    }
+    tracks.forEach((track)=>{
+      const btn = el("button", {
+        type: "button",
+        class: `playback-track-btn ${String(track.track_key) === String(activeTrackKey) ? "active" : ""}`,
+        text: track.original_filename || `Fitxer ${track.id}`,
+      });
+      btn.addEventListener("click", ()=>onPickTrack(track));
+      wrap.appendChild(btn);
+    });
+    return true;
+  }
+
+  function highlightPlaybackRows(){
+    document.querySelectorAll("tr.playback-active-row").forEach((tr)=>tr.classList.remove("playback-active-row"));
+    if(!PLAYBACK_STATE.insId || !PLAYBACK_STATE.exercici || !PLAYBACK_STATE.appId) return;
+    const sel = `tr[data-ins-id="${CSS.escape(String(PLAYBACK_STATE.insId))}"][data-exercici="${CSS.escape(String(PLAYBACK_STATE.exercici))}"][data-comp-aparell-id="${CSS.escape(String(PLAYBACK_STATE.appId))}"]`;
+    document.querySelectorAll(sel).forEach((tr)=>tr.classList.add("playback-active-row"));
+  }
+
+  function renderPlaybackPanel(){
+    const subtitle = document.getElementById("media-drawer-current");
+    const emptyBox = document.getElementById("media-drawer-empty");
+    const audioWrap = document.getElementById("media-drawer-audio-wrap");
+    const videoWrap = document.getElementById("media-drawer-video-wrap");
+    const judgeWrap = document.getElementById("media-drawer-judge-wrap");
+    const audioEl = document.getElementById("media-drawer-audio");
+    const videoEl = document.getElementById("media-drawer-video");
+
+    const payload = PLAYBACK_STATE.payload;
+    if(!payload || !payload.ok){
+      if(subtitle){
+        subtitle.textContent = PLAYBACK_STATE.error || "Selecciona un subjecte per carregar pistes.";
+      }
+      if(emptyBox){
+        emptyBox.style.display = "";
+        emptyBox.textContent = PLAYBACK_STATE.error || "Sense multimedia associat per aquesta seleccio.";
+      }
+      if(audioWrap) audioWrap.style.display = "none";
+      if(videoWrap) videoWrap.style.display = "none";
+      if(judgeWrap) judgeWrap.style.display = "none";
+      setMediaElementSrc(audioEl, "");
+      setMediaElementSrc(videoEl, "");
+      if(audioEl) audioEl.style.display = "none";
+      if(videoEl) videoEl.style.display = "none";
+      return;
+    }
+
+    const ins = payload.subject || payload.inscripcio || {};
+    const ctx = payload.context || {};
+    const sep = " \u00B7 ";
+    const metaTxt = (ins.meta ? `${sep}${ins.meta}` : "");
+    const appTxt = (ctx.comp_aparell_id ? `${sep}Aparell ${ctx.comp_aparell_id}` : "");
+    const exTxt = (ctx.exercici ? `${sep}Exercici ${ctx.exercici}` : "");
+    if(subtitle){
+      subtitle.textContent = `${ins.name || "Subjecte"}${metaTxt}${appTxt}${exTxt}`;
+    }
+
+    const tracksData = buildPlaybackTracks(payload);
+    const validKeys = new Set(tracksData.orderedTracks.map((t)=>String(t.track_key)));
+    if(!validKeys.has(String(PLAYBACK_STATE.activeTrackKey || ""))){
+      PLAYBACK_STATE.activeTrackKey = tracksData.orderedTracks.length ? tracksData.orderedTracks[0].track_key : "";
+    }
+
+    const hasAudio = renderDrawerTrackButtons(
+      "media-drawer-audio-list",
+      tracksData.audioTracks,
+      PLAYBACK_STATE.activeTrackKey,
+      (track)=>{ PLAYBACK_STATE.activeTrackKey = track.track_key; renderPlaybackPanel(); }
+    );
+    const hasVideo = renderDrawerTrackButtons(
+      "media-drawer-video-list",
+      tracksData.videoTracks,
+      PLAYBACK_STATE.activeTrackKey,
+      (track)=>{ PLAYBACK_STATE.activeTrackKey = track.track_key; renderPlaybackPanel(); }
+    );
+    const hasJudge = renderDrawerTrackButtons(
+      "media-drawer-judge-list",
+      tracksData.judgeTracks,
+      PLAYBACK_STATE.activeTrackKey,
+      (track)=>{ PLAYBACK_STATE.activeTrackKey = track.track_key; renderPlaybackPanel(); }
+    );
+
+    if(audioWrap) audioWrap.style.display = hasAudio ? "" : "none";
+    if(videoWrap) videoWrap.style.display = hasVideo ? "" : "none";
+    if(judgeWrap) judgeWrap.style.display = hasJudge ? "" : "none";
+
+    const hasAnyTrack = tracksData.orderedTracks.length > 0;
+    if(emptyBox){
+      emptyBox.style.display = hasAnyTrack ? "none" : "";
+      emptyBox.textContent = "Sense multimedia associat per aquesta seleccio.";
+    }
+
+    const activeTrack = tracksData.orderedTracks.find((t)=>String(t.track_key) === String(PLAYBACK_STATE.activeTrackKey || ""));
+    if(!activeTrack){
+      setMediaElementSrc(audioEl, "");
+      setMediaElementSrc(videoEl, "");
+      if(audioEl) audioEl.style.display = "none";
+      if(videoEl) videoEl.style.display = "none";
+      return;
+    }
+
+    if(activeTrack.kind === "audio"){
+      if(videoEl){
+        videoEl.style.display = "none";
+        setMediaElementSrc(videoEl, "");
+      }
+      if(audioEl){
+        audioEl.style.display = "";
+        setMediaElementSrc(audioEl, activeTrack.url || "");
+      }
+    }else{
+      if(audioEl){
+        audioEl.style.display = "none";
+        setMediaElementSrc(audioEl, "");
+      }
+      if(videoEl){
+        videoEl.style.display = "";
+        setMediaElementSrc(videoEl, activeTrack.url || "");
+      }
+    }
+  }
+
+  async function loadPlaybackContext(insId, exercici, appId, opts={}){
+    if(!insId) return;
+    const openDrawer = !!opts.openDrawer;
+
+    PLAYBACK_STATE.insId = String(insId);
+    PLAYBACK_STATE.exercici = exercici ? String(exercici) : null;
+    PLAYBACK_STATE.appId = appId ? String(appId) : null;
+    highlightPlaybackRows();
+
+    const url = new URL(MEDIA_CONTEXT_URL, window.location.origin);
+    const subject = SUBJECTS_BY_ID[String(insId)] || {};
+    if((subject.subject_kind || "inscripcio") === "inscripcio"){
+      url.searchParams.set("inscripcio_id", String(subject.subject_id || insId));
+    }
+    url.searchParams.set("subject_kind", String(subject.subject_kind || "inscripcio"));
+    url.searchParams.set("subject_id", String(subject.subject_id || insId));
+    if(exercici) url.searchParams.set("exercici", String(exercici));
+    if(appId) url.searchParams.set("comp_aparell_id", String(appId));
+
+    try{
+      const res = await fetch(url.toString(), {headers: {"Accept":"application/json"}});
+      const payload = await res.json();
+      if(!res.ok || !payload.ok){
+        throw new Error(payload.error || `HTTP ${res.status}`);
+      }
+      PLAYBACK_STATE.payload = payload;
+      PLAYBACK_STATE.error = "";
+      if(PLAYBACK_STATE.insId && PLAYBACK_STATE.exercici && PLAYBACK_STATE.appId){
+        const k = keyFor(PLAYBACK_STATE.insId, PLAYBACK_STATE.exercici, PLAYBACK_STATE.appId);
+        JUDGE_VIDEO_PRESENCE_BY_KEY[k] = payload.judge_video ? 1 : 0;
+        refreshPlaybackBadges(PLAYBACK_STATE.insId, PLAYBACK_STATE.exercici, PLAYBACK_STATE.appId);
+      }
+      renderPlaybackPanel();
+      highlightPlaybackRows();
+      if(openDrawer){
+        setPlaybackDrawerOpen(true);
+      }
+    }catch(err){
+      PLAYBACK_STATE.payload = null;
+      PLAYBACK_STATE.error = `No s'ha pogut carregar el context multimedia (${err.message || err}).`;
+      renderPlaybackPanel();
+      if(openDrawer){
+        setPlaybackDrawerOpen(true);
+      }
+    }
+  }
+
+  function firstVisiblePlaybackButton(){
+    const activeAppPane = document.querySelector('.tab-pane.show.active[data-comp-aparell-id]');
+    if(!activeAppPane) return null;
+    const activeExercisePane = activeAppPane.querySelector('.tab-pane.show.active[id*="-ex-"]');
+    if(!activeExercisePane) return null;
+    return activeExercisePane.querySelector(".js-open-playback");
+  }
+
+  function syncPlaybackContextToVisibleRow(){
+    const btn = firstVisiblePlaybackButton();
+    if(!btn) return;
+    loadPlaybackContext(
+      btn.dataset.insId,
+      btn.dataset.exercici,
+      btn.dataset.compAparellId,
+      {openDrawer: false}
+    );
+  }
