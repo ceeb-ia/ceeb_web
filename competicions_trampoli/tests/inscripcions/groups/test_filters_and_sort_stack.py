@@ -447,6 +447,143 @@ class InscripcionsSortFilteringAndDisplayTests(InscripcionsSortFlowBaseMixin, Te
         )
         self.assertEqual(save_res.status_code, 403)
 
+    def test_bulk_group_competition_order_reorders_each_group_by_native_field(self):
+        g1_z = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Zulu",
+            entitat="Club Z",
+            grup=1,
+            ordre_sortida=1,
+        )
+        g1_a = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Alpha",
+            entitat="Club A",
+            grup=1,
+            ordre_sortida=2,
+        )
+        g2_d = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Delta",
+            entitat="Club D",
+            grup=2,
+            ordre_sortida=3,
+        )
+        g2_b = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Beta",
+            entitat="Club B",
+            grup=2,
+            ordre_sortida=4,
+        )
+
+        preview = self._post_json(
+            "inscripcions_bulk_group_competition_order_preview",
+            {"sort_key": "nom_i_cognoms", "sort_dir": "asc", "scope": "all"},
+        )
+        self.assertEqual(preview.status_code, 200)
+        preview_data = preview.json().get("preview")
+        self.assertEqual(preview_data.get("groups_total"), 2)
+        self.assertEqual(preview_data.get("changed_groups"), 2)
+
+        response = self._post_json(
+            "inscripcions_bulk_group_competition_order_apply",
+            {"sort_key": "nom_i_cognoms", "sort_dir": "asc", "scope": "all"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json().get("ok"))
+
+        actual_g1 = list(
+            Inscripcio.objects.filter(competicio=self.comp, grup=1)
+            .order_by("ordre_competicio", "id")
+            .values_list("id", flat=True)
+        )
+        actual_g2 = list(
+            Inscripcio.objects.filter(competicio=self.comp, grup=2)
+            .order_by("ordre_competicio", "id")
+            .values_list("id", flat=True)
+        )
+        self.assertEqual(actual_g1, [g1_a.id, g1_z.id])
+        self.assertEqual(actual_g2, [g2_b.id, g2_d.id])
+
+        g1_z.refresh_from_db()
+        g1_a.refresh_from_db()
+        g2_d.refresh_from_db()
+        g2_b.refresh_from_db()
+        self.assertEqual((g1_z.ordre_sortida, g1_a.ordre_sortida, g2_d.ordre_sortida, g2_b.ordre_sortida), (1, 2, 3, 4))
+
+    def test_bulk_group_competition_order_supports_excel_extra_fields_and_selected_scope(self):
+        self.comp.inscripcions_schema = {
+            "columns": [
+                {"code": "excel__nivell", "label": "Nivell", "kind": "extra"},
+            ]
+        }
+        self.comp.save(update_fields=["inscripcions_schema"])
+        g1 = ensure_group_for_display_num(self.comp, 1)
+        g2 = ensure_group_for_display_num(self.comp, 2)
+        g1_low = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Baix",
+            extra={"excel__nivell": "B"},
+            grup=1,
+            ordre_sortida=1,
+        )
+        g1_high = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Alt",
+            extra={"excel__nivell": "A"},
+            grup=1,
+            ordre_sortida=2,
+        )
+        g2_low = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Resta baix",
+            extra={"excel__nivell": "B"},
+            grup=2,
+            ordre_sortida=3,
+        )
+        g2_high = Inscripcio.objects.create(
+            competicio=self.comp,
+            nom_i_cognoms="Resta alt",
+            extra={"excel__nivell": "A"},
+            grup=2,
+            ordre_sortida=4,
+        )
+
+        response = self._post_json(
+            "inscripcions_bulk_group_competition_order_apply",
+            {
+                "sort_key": "excel__nivell",
+                "sort_dir": "asc",
+                "scope": "selected",
+                "group_ids": [g1.id],
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json().get("ok"))
+
+        actual_g1 = list(
+            Inscripcio.objects.filter(competicio=self.comp, grup=1)
+            .order_by("ordre_competicio", "id")
+            .values_list("id", flat=True)
+        )
+        actual_g2 = list(
+            Inscripcio.objects.filter(competicio=self.comp, grup=2)
+            .order_by("ordre_competicio", "id")
+            .values_list("id", flat=True)
+        )
+        self.assertEqual(actual_g1, [g1_high.id, g1_low.id])
+        self.assertEqual(actual_g2, [g2_low.id, g2_high.id])
+
+        undo = self._post_history("undo")
+        self.assertEqual(undo.status_code, 200)
+        actual_g1_after_undo = list(
+            Inscripcio.objects.filter(competicio=self.comp, grup=1)
+            .order_by("ordre_competicio", "id")
+            .values_list("id", flat=True)
+        )
+        self.assertEqual(actual_g1_after_undo, [g1_low.id, g1_high.id])
+
     def test_sort_apply_reapplying_existing_criterion_keeps_priority(self):
         i1 = Inscripcio.objects.create(
             competicio=self.comp,

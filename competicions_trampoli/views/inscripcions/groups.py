@@ -29,6 +29,7 @@ from ...services.shared.competition_groups import (
     move_inscripcions_to_group,
     next_group_display_num,
     normalize_inscripcio_ids,
+    normalize_positive_int,
     safe_deactivate_empty_group,
     save_group_competition_order,
     sync_competicio_group_names_view,
@@ -47,6 +48,7 @@ from ...services.inscripcions.queries import (
     _build_existing_groups_preview,
     _build_group_name_filter_sources,
     _build_inscripcions_filtered_qs,
+    _build_sort_records_queryset,
     _build_bucket_source_kinds,
     _build_bucket_source_label,
     _bucket_labels_by_kind,
@@ -63,9 +65,11 @@ from ...services.inscripcions.queries import (
     competicio_has_rotacions,
     get_allowed_group_fields,
     get_available_sort_fields,
+    get_competicio_custom_sort_rank_map,
     get_inscripcions_sort_context_state,
     reconcile_inscripcions_sort_context_state,
 )
+from ...services.inscripcions.sorting import sort_records_by_field_stable
 
 
 def _normalize_group_workspace_filters(raw_filters):
@@ -1459,6 +1463,222 @@ def inscripcions_group_competition_order_preview(request, pk):
     )
 
 
+def _normalize_bulk_group_ids(raw_values):
+    ids = []
+    values = raw_values if isinstance(raw_values, list) else []
+    for value in values:
+        try:
+            clean = int(value)
+        except Exception:
+            continue
+        if clean > 0 and clean not in ids:
+            ids.append(clean)
+    return ids
+
+
+def _bulk_group_order_sort_label(sort_fields, sort_key):
+    for field in sort_fields or []:
+        if not isinstance(field, dict):
+            continue
+        if field.get("code") == sort_key:
+            return field.get("ui_label") or field.get("label") or sort_key
+    return sort_key
+
+
+def _current_competition_order_key(record):
+    current_order = normalize_positive_int(getattr(record, "ordre_competicio", None))
+    visual_order = normalize_positive_int(getattr(record, "ordre_sortida", None))
+    return (
+        current_order if current_order is not None else 10**12,
+        visual_order if visual_order is not None else 10**12,
+        int(getattr(record, "id", 0) or 0),
+    )
+
+
+def _build_bulk_group_competition_order_plan(competicio, payload):
+    sort_fields = get_available_sort_fields(competicio)
+    sort_codes = {field["code"] for field in sort_fields if isinstance(field, dict) and field.get("code")}
+    raw_sort_key = str(payload.get("sort_key") or "").strip()
+    sort_key = raw_sort_key
+    if sort_key not in sort_codes:
+        raise ValueError("sort_key invalid")
+
+    sort_dir = str(payload.get("sort_dir") or "asc").strip().lower()
+    if sort_dir not in {"asc", "desc", "custom"}:
+        raise ValueError("sort_dir invalid")
+
+    scope = str(payload.get("scope") or "all").strip().lower()
+    if scope not in {"all", "visible", "selected"}:
+        scope = "all"
+
+    group_ids = _normalize_bulk_group_ids(payload.get("group_ids"))
+    if scope in {"visible", "selected"} and not group_ids:
+        raise ValueError("Cal seleccionar almenys un grup")
+
+    groups_qs = GrupCompeticio.objects.filter(competicio=competicio, actiu=True)
+    if group_ids:
+        groups_qs = groups_qs.filter(id__in=group_ids)
+    groups = list(groups_qs.order_by("display_num", "id").only("id", "display_num", "nom"))
+    groups_by_id = {group.id: group for group in groups}
+    if scope in {"visible", "selected"} and not groups_by_id:
+        raise ValueError("No hi ha grups valids per aquest ambit")
+
+    rows_qs = Inscripcio.objects.filter(competicio=competicio, grup_competicio_id__isnull=False)
+    if groups_by_id:
+        rows_qs = rows_qs.filter(grup_competicio_id__in=list(groups_by_id.keys()))
+    elif scope == "all":
+        rows_qs = rows_qs.filter(grup_competicio__actiu=True)
+
+    records = list(_build_sort_records_queryset(rows_qs, [sort_key, "grup"], include_competition_order=True))
+    records_by_group_id = {}
+    for record in records:
+        group_id = getattr(record, "grup_competicio_id", None)
+        if not group_id:
+            continue
+        group = groups_by_id.get(group_id)
+        if group is None and scope == "all":
+            group = getattr(record, "grup_competicio", None)
+            if group is not None and getattr(group, "actiu", True):
+                groups_by_id[group_id] = group
+        if group is None:
+            continue
+        records_by_group_id.setdefault(group_id, []).append(record)
+
+    custom_rank_map = get_competicio_custom_sort_rank_map(competicio, sort_key, allowed_sort_codes=sort_codes) if sort_dir == "custom" else {}
+    descending = sort_dir == "desc"
+    groups_out = []
+    total_members = 0
+    changed_members = 0
+    changed_groups = 0
+    for group in sorted(groups_by_id.values(), key=lambda item: (normalize_positive_int(getattr(item, "display_num", None)) or 10**9, item.id)):
+        group_records = records_by_group_id.get(group.id) or []
+        if not group_records:
+            continue
+        group_records = sorted(group_records, key=_current_competition_order_key)
+        ordered_records = sort_records_by_field_stable(group_records, sort_key, descending=descending, custom_rank_map=custom_rank_map)
+        before_ids = [record.id for record in group_records]
+        after_ids = [record.id for record in ordered_records]
+        moved_count = sum(1 for idx, ins_id in enumerate(after_ids) if idx >= len(before_ids) or before_ids[idx] != ins_id)
+        total_members += len(group_records)
+        changed_members += moved_count
+        if moved_count:
+            changed_groups += 1
+        sample_rows = []
+        old_position_by_id = {ins_id: idx for idx, ins_id in enumerate(before_ids, start=1)}
+        for new_idx, record in enumerate(ordered_records[:8], start=1):
+            label = str(getattr(record, "nom_i_cognoms", "") or "").strip() or f"Inscripcio {record.id}"
+            secondary = str(getattr(record, "entitat", "") or "").strip()
+            sample_rows.append(
+                {
+                    "id": record.id,
+                    "label": label,
+                    "secondary_label": secondary,
+                    "old_order": old_position_by_id.get(record.id),
+                    "new_order": new_idx,
+                }
+            )
+        groups_out.append(
+            {
+                "group_id": group.id,
+                "group_num": int(getattr(group, "display_num", None) or 0),
+                "group_label": str(getattr(group, "nom", "") or "").strip() or f"Grup {getattr(group, 'display_num', '')}",
+                "members_count": len(group_records),
+                "changed_count": moved_count,
+                "ordered_ids": after_ids,
+                "sample_rows": sample_rows,
+            }
+        )
+
+    return {
+        "sort_key": sort_key,
+        "sort_label": _bulk_group_order_sort_label(sort_fields, sort_key),
+        "sort_dir": sort_dir,
+        "scope": scope,
+        "groups": groups_out,
+        "groups_total": len(groups_out),
+        "changed_groups": changed_groups,
+        "members_total": total_members,
+        "changed_members": changed_members,
+        "can_apply": bool(groups_out),
+    }
+
+
+@require_POST
+@csrf_protect
+def inscripcions_bulk_group_competition_order_preview(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        return HttpResponseBadRequest("JSON invalid")
+    try:
+        plan = _build_bulk_group_competition_order_plan(competicio, payload if isinstance(payload, dict) else {})
+    except ValueError as exc:
+        return HttpResponseBadRequest(str(exc))
+    return JsonResponse({"ok": True, "preview": plan})
+
+
+@require_POST
+@csrf_protect
+def inscripcions_bulk_group_competition_order_apply(request, pk):
+    competicio = get_object_or_404(Competicio, pk=pk)
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        return HttpResponseBadRequest("JSON invalid")
+    try:
+        plan = _build_bulk_group_competition_order_plan(competicio, payload if isinstance(payload, dict) else {})
+    except ValueError as exc:
+        return HttpResponseBadRequest(str(exc))
+    if not plan["groups"]:
+        return JsonResponse(with_inscripcions_history_payload({"ok": True, "updated": 0, "groups_total": 0, "members_total": 0, "changed_groups": 0, "changed_members": 0}, request, competicio.id))
+
+    before_snapshot = capture_inscripcions_history_snapshot(request, competicio)
+    updated = 0
+    groups_by_id = {
+        group.id: group
+        for group in GrupCompeticio.objects.filter(
+            competicio=competicio,
+            id__in=[row["group_id"] for row in plan["groups"]],
+        )
+    }
+    try:
+        with transaction.atomic():
+            for row in plan["groups"]:
+                group = groups_by_id.get(row["group_id"])
+                if group is None:
+                    continue
+                updated += save_group_competition_order(group, row["ordered_ids"])
+    except ValueError as exc:
+        return HttpResponseBadRequest(str(exc))
+
+    record_inscripcions_history_entry(
+        request,
+        competicio,
+        action_type="bulk_group_competition_order",
+        action_label="Reordenar ordre de competicio dels grups",
+        before_snapshot=before_snapshot,
+        after_snapshot=capture_inscripcions_history_snapshot(request, competicio),
+    )
+    return JsonResponse(
+        with_inscripcions_history_payload(
+            {
+                "ok": True,
+                "updated": updated,
+                "groups_total": plan["groups_total"],
+                "members_total": plan["members_total"],
+                "changed_groups": plan["changed_groups"],
+                "changed_members": plan["changed_members"],
+                "sort_key": plan["sort_key"],
+                "sort_label": plan["sort_label"],
+                "sort_dir": plan["sort_dir"],
+            },
+            request,
+            competicio.id,
+        )
+    )
+
+
 @require_POST
 @csrf_protect
 def inscripcions_groups_from_sort(request, pk):
@@ -1856,6 +2076,8 @@ __all__ = [
     "groups_transform_preview",
     "groups_unassign",
     "groups_workspace",
+    "inscripcions_bulk_group_competition_order_apply",
+    "inscripcions_bulk_group_competition_order_preview",
     "inscripcions_group_competition_order_preview",
     "inscripcions_groups_from_sort",
     "inscripcions_merge_tabs",

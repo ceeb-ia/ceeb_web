@@ -23,6 +23,8 @@ from ..services.inscripcions.sorting import (
     sort_records_by_field_stable,
 )
 from .inscripcions.groups import (
+    inscripcions_bulk_group_competition_order_apply,
+    inscripcions_bulk_group_competition_order_preview,
     inscripcions_groups_from_sort,
     inscripcions_merge_tabs,
     inscripcions_reorder,
@@ -54,6 +56,8 @@ __all__ = [
     "capture_inscripcions_history_snapshot",
     "get_competicio_custom_sort_rank_map",
     "inscripcions_filter_values",
+    "inscripcions_bulk_group_competition_order_apply",
+    "inscripcions_bulk_group_competition_order_preview",
     "inscripcions_groups_from_sort",
     "inscripcions_history_redo",
     "inscripcions_history_undo",

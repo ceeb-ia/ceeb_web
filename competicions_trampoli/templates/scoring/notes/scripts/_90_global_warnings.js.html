@@ -43,6 +43,14 @@
       ? warning.ack_keys
       : (warning?.ack_key ? [warning.ack_key] : []);
     if(!ackKeys.length) return;
+    const subjectName = warning?.subject?.name || "aquest avis";
+    const warningCount = Number(warning?.warning_count || ackKeys.length || 1);
+    const suffix = warningCount > 1
+      ? ` (${warningCount} avisos agrupats)`
+      : "";
+    if(!window.confirm(`Validar ${subjectName}${suffix}? Deixara d'apareixer com a avis pendent.`)){
+      return;
+    }
     if(button) button.disabled = true;
     try{
       const resp = await fetch(NOTES_LAZY_ENDPOINTS.validateWarning, {

@@ -1,3 +1,4 @@
+{% load competicio_extras %}
 <div class="inscripcions-backdrop" id="inscripcions-drawer-backdrop" aria-hidden="true"></div>
 <div class="group-buckets-backdrop" id="group-buckets-backdrop" aria-hidden="true"></div>
 
@@ -70,6 +71,62 @@
     <div class="group-competition-modal-actions d-flex" style="gap:8px;">
       <button type="button" class="btn btn-sm btn-outline-secondary" id="group-competition-modal-cancel">Cancelar</button>
       <button type="button" class="btn btn-sm btn-primary" id="group-competition-modal-save">Desar ordre</button>
+    </div>
+  </div>
+</div>
+
+<div class="group-competition-modal d-none" id="bulk-group-order-modal" aria-hidden="true">
+  <div class="group-competition-modal-head d-flex justify-content-between align-items-start" style="gap:12px;">
+    <div>
+      <h3 class="mb-1" id="bulk-group-order-modal-title">Reordenar ordre de competicio</h3>
+      <div class="small text-muted" id="bulk-group-order-modal-subtitle">Aplica un criteri a l'ordre intern dels grups existents sense moure participants de grup.</div>
+    </div>
+    <button type="button" class="btn btn-sm btn-outline-secondary" id="bulk-group-order-modal-close">Tancar</button>
+  </div>
+
+  <div class="group-competition-modal-status px-3 py-2">
+    <div class="team-filters-grid" style="gap:10px;">
+      <div>
+        <label class="small text-muted mb-1 d-block" for="bulk-group-order-sort-key">Criteri</label>
+        <select id="bulk-group-order-sort-key" class="form-control form-control-sm">
+          {% for field in sort_field_options %}
+            <option value="{{ field.code }}" data-custom-enabled="{% if custom_sort_enabled_by_code|get_item:field.code %}1{% else %}0{% endif %}">
+              {{ field.ui_label|default:field.label }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="small text-muted mb-1 d-block" for="bulk-group-order-sort-dir">Ordre</label>
+        <select id="bulk-group-order-sort-dir" class="form-control form-control-sm">
+          <option value="asc">Ascendent</option>
+          <option value="desc">Descendent</option>
+          <option value="custom">Custom guardat</option>
+        </select>
+      </div>
+      <div>
+        <label class="small text-muted mb-1 d-block" for="bulk-group-order-scope">Ambit</label>
+        <select id="bulk-group-order-scope" class="form-control form-control-sm">
+          <option value="all">Tots els grups</option>
+          <option value="visible">Grups visibles al board</option>
+          <option value="selected">Grup seleccionat</option>
+        </select>
+      </div>
+    </div>
+    <div class="small text-muted mt-2" id="bulk-group-order-modal-status">Tria un criteri i previsualitza abans d'aplicar.</div>
+  </div>
+
+  <div class="group-competition-modal-list-wrap p-3">
+    <div id="bulk-group-order-modal-preview" class="d-flex flex-column" style="gap:8px;">
+      <div class="group-competition-modal-empty">Encara no s'ha calculat cap previsualitzacio.</div>
+    </div>
+  </div>
+
+  <div class="group-competition-modal-foot d-flex justify-content-between align-items-center p-3" style="gap:12px;">
+    <div class="small text-muted" id="bulk-group-order-modal-footnote">La reordenacio nomes canvia l'ordre de competicio dins de cada grup.</div>
+    <div class="group-competition-modal-actions d-flex" style="gap:8px;">
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="bulk-group-order-modal-preview-btn">Previsualitzar</button>
+      <button type="button" class="btn btn-sm btn-primary" id="bulk-group-order-modal-apply" disabled>Aplicar reordenacio</button>
     </div>
   </div>
 </div>

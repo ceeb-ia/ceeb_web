@@ -92,6 +92,8 @@ class InscripcionsBackendSmokeTests(_BaseTrampoliDataMixin, TestCase):
             "inscripcions_reorder",
             "inscripcions_save_group_competition_order",
             "inscripcions_group_competition_order_preview",
+            "inscripcions_bulk_group_competition_order_preview",
+            "inscripcions_bulk_group_competition_order_apply",
             "groups_workspace",
             "groups_detail",
             "groups_preview",

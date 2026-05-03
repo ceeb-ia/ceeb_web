@@ -576,6 +576,8 @@ class InscripcionsListNewView(InscripcionsListView):
                     "mergeTabs": reverse("inscripcions_merge_tabs", kwargs={"pk": self.competicio.id}),
                     "groupCompetitionOrderPreview": reverse("inscripcions_group_competition_order_preview", kwargs={"pk": self.competicio.id}),
                     "saveGroupCompetitionOrder": reverse("inscripcions_save_group_competition_order", kwargs={"pk": self.competicio.id}),
+                    "bulkGroupCompetitionOrderPreview": reverse("inscripcions_bulk_group_competition_order_preview", kwargs={"pk": self.competicio.id}),
+                    "bulkGroupCompetitionOrderApply": reverse("inscripcions_bulk_group_competition_order_apply", kwargs={"pk": self.competicio.id}),
                 },
                 "initial": {
                     "historyState": ctx["history_state"],

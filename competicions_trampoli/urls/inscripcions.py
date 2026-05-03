@@ -35,6 +35,8 @@ from ..views.inscripcions.groups import (
     groups_transform_preview,
     groups_unassign,
     groups_workspace,
+    inscripcions_bulk_group_competition_order_apply,
+    inscripcions_bulk_group_competition_order_preview,
     inscripcions_group_competition_order_preview,
     inscripcions_groups_from_sort,
     inscripcions_merge_tabs,
@@ -112,6 +114,16 @@ urlpatterns = [
         "competicio/<int:pk>/inscripcions/group-competition-order/preview/",
         competition_view(inscripcions_group_competition_order_preview, "inscripcions.view"),
         name="inscripcions_group_competition_order_preview",
+    ),
+    path(
+        "competicio/<int:pk>/inscripcions/group-competition-order/bulk-preview/",
+        competition_view(inscripcions_bulk_group_competition_order_preview, "inscripcions.view"),
+        name="inscripcions_bulk_group_competition_order_preview",
+    ),
+    path(
+        "competicio/<int:pk>/inscripcions/group-competition-order/bulk-apply/",
+        competition_view(inscripcions_bulk_group_competition_order_apply, "inscripcions.edit"),
+        name="inscripcions_bulk_group_competition_order_apply",
     ),
     path(
         "competicio/<int:pk>/groups/workspace/",

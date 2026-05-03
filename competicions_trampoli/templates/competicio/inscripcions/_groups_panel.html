@@ -410,6 +410,7 @@
                   </div>
                   <div class="d-flex align-items-center flex-wrap" style="gap:8px;">
                     <span class="badge badge-light border" id="groups-existing-count-badge">0 grups</span>
+                    <button type="button" class="btn btn-sm btn-outline-primary" id="btn-groups-bulk-order" {% if not can_edit_inscripcions %}disabled{% endif %}>Reordenar ordre de competicio</button>
                     <button type="button" class="btn btn-sm btn-outline-danger" id="btn-groups-delete-empty" data-group-action="delete-empty">Desactivar buits</button>
                     <button type="button" class="btn btn-sm btn-danger" id="btn-groups-delete-all" data-group-action="delete-all">Esborrar tots els no programats</button>
                   </div>

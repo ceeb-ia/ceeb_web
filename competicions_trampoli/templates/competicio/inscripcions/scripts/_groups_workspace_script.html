@@ -7,6 +7,7 @@ window.initGroupsWorkspace = async function () {
   }
   window.__groupsWorkspaceInitialized = true;
   window.__groupsWorkspaceRoot = groupsWorkspaceShell;
+  const appApi = window.InscripcionsApp || {};
 
   const groupsWorkspaceUrl = "{% url 'groups_workspace' competicio.id %}";
   const groupsDetailUrl = "{% url 'groups_detail' competicio.id %}";
@@ -20,6 +21,8 @@ window.initGroupsWorkspace = async function () {
   const groupsDeleteAllUrl = "{% url 'groups_delete_all' competicio.id %}";
   const groupsDeleteEmptyUrl = "{% url 'groups_delete_empty' competicio.id %}";
   const groupsSetGroupNameUrl = "{% url 'inscripcions_set_group_name' competicio.id %}";
+  const bulkGroupOrderPreviewUrl = appApi.app?.urls?.bulkGroupCompetitionOrderPreview || '';
+  const bulkGroupOrderApplyUrl = appApi.app?.urls?.bulkGroupCompetitionOrderApply || '';
 
   const state = {
     filters: Object.assign({
@@ -50,6 +53,9 @@ window.initGroupsWorkspace = async function () {
     transformPreview: null,
     transformPayload: null,
     transformBusy: false,
+    bulkGroupOrderPreview: null,
+    bulkGroupOrderPayload: null,
+    bulkGroupOrderBusy: false,
     transformActionsExpanded: false,
     transformTargetQuery: '',
     autoContextExpanded: false,
@@ -1427,6 +1433,208 @@ window.initGroupsWorkspace = async function () {
     renderDetailPane();
   }
 
+  function getBulkGroupOrderEls() {
+    return {
+      backdrop: document.getElementById('group-competition-modal-backdrop'),
+      modal: document.getElementById('bulk-group-order-modal'),
+      close: document.getElementById('bulk-group-order-modal-close'),
+      sortKey: document.getElementById('bulk-group-order-sort-key'),
+      sortDir: document.getElementById('bulk-group-order-sort-dir'),
+      scope: document.getElementById('bulk-group-order-scope'),
+      status: document.getElementById('bulk-group-order-modal-status'),
+      preview: document.getElementById('bulk-group-order-modal-preview'),
+      previewBtn: document.getElementById('bulk-group-order-modal-preview-btn'),
+      applyBtn: document.getElementById('bulk-group-order-modal-apply'),
+      footnote: document.getElementById('bulk-group-order-modal-footnote'),
+    };
+  }
+
+  function visibleBoardGroupIds() {
+    return Array.from(document.querySelectorAll('#groups-active-list .team-context-team-card[data-group-id], #groups-empty-list .team-context-team-card[data-group-id]'))
+      .map((node) => String(node.dataset.groupId || '').trim())
+      .filter(Boolean);
+  }
+
+  function selectedBulkGroupIds(scope) {
+    if (scope === 'all') return [];
+    if (scope === 'selected') {
+      const selected = String(state.selectedGroupId || '').trim();
+      return selected ? [selected] : [];
+    }
+    return visibleBoardGroupIds();
+  }
+
+  function updateBulkGroupOrderCustomAvailability() {
+    const els = getBulkGroupOrderEls();
+    const selectedOption = els.sortKey?.selectedOptions?.[0] || null;
+    const hasCustom = String(selectedOption?.dataset?.customEnabled || '') === '1';
+    const customOption = Array.from(els.sortDir?.options || []).find((option) => String(option.value || '') === 'custom');
+    if (customOption) customOption.disabled = !hasCustom;
+    if (!hasCustom && String(els.sortDir?.value || '') === 'custom') {
+      els.sortDir.value = 'asc';
+    }
+  }
+
+  function buildBulkGroupOrderPayload() {
+    const els = getBulkGroupOrderEls();
+    const scope = String(els.scope?.value || 'all').trim() || 'all';
+    return {
+      sort_key: String(els.sortKey?.value || '').trim(),
+      sort_dir: String(els.sortDir?.value || 'asc').trim(),
+      scope,
+      group_ids: selectedBulkGroupIds(scope),
+    };
+  }
+
+  function setBulkGroupOrderBusy(busy) {
+    state.bulkGroupOrderBusy = !!busy;
+    const els = getBulkGroupOrderEls();
+    if (els.previewBtn) els.previewBtn.disabled = state.bulkGroupOrderBusy;
+    if (els.applyBtn) els.applyBtn.disabled = state.bulkGroupOrderBusy || !state.bulkGroupOrderPreview?.can_apply;
+  }
+
+  function closeBulkGroupOrderModal() {
+    const els = getBulkGroupOrderEls();
+    state.bulkGroupOrderPreview = null;
+    state.bulkGroupOrderPayload = null;
+    if (els.backdrop) els.backdrop.classList.remove('is-visible');
+    if (els.modal) {
+      els.modal.classList.remove('is-visible');
+      els.modal.classList.add('d-none');
+      els.modal.setAttribute('aria-hidden', 'true');
+    }
+    document.body.classList.remove('group-competition-modal-open');
+  }
+
+  function openBulkGroupOrderModal() {
+    const els = getBulkGroupOrderEls();
+    if (!els.modal) return;
+    if (els.backdrop && els.backdrop.parentNode !== document.body) document.body.appendChild(els.backdrop);
+    if (els.modal.parentNode !== document.body) document.body.appendChild(els.modal);
+    updateBulkGroupOrderCustomAvailability();
+    state.bulkGroupOrderPreview = null;
+    state.bulkGroupOrderPayload = null;
+    if (els.status) els.status.textContent = "Tria un criteri i previsualitza abans d'aplicar.";
+    if (els.preview) els.preview.innerHTML = "<div class=\"group-competition-modal-empty\">Encara no s'ha calculat cap previsualitzacio.</div>";
+    if (els.applyBtn) els.applyBtn.disabled = true;
+    if (els.backdrop) els.backdrop.classList.add('is-visible');
+    els.modal.classList.remove('d-none');
+    els.modal.classList.add('is-visible');
+    els.modal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('group-competition-modal-open');
+  }
+
+  function renderBulkGroupOrderPreview(preview) {
+    const els = getBulkGroupOrderEls();
+    if (!els.preview) return;
+    const data = preview && typeof preview === 'object' ? preview : {};
+    const groups = Array.isArray(data.groups) ? data.groups : [];
+    els.preview.innerHTML = '';
+    if (els.status) {
+      els.status.textContent = `${Number(data.groups_total || 0)} grups, ${Number(data.members_total || 0)} participants. Canvis detectats en ${Number(data.changed_groups || 0)} grups.`;
+    }
+    const summary = document.createElement('div');
+    summary.className = 'team-action-note';
+    summary.textContent = `${String(data.sort_label || data.sort_key || 'Criteri')} - ${String(data.sort_dir || 'asc')} - ${Number(data.changed_members || 0)} posicions canviaran.`;
+    els.preview.appendChild(summary);
+    if (!groups.length) {
+      const empty = document.createElement('div');
+      empty.className = 'group-competition-modal-empty';
+      empty.textContent = 'No hi ha grups amb participants en aquest ambit.';
+      els.preview.appendChild(empty);
+      if (els.applyBtn) els.applyBtn.disabled = true;
+      return;
+    }
+    groups.slice(0, 10).forEach((group) => {
+      const card = document.createElement('div');
+      card.className = 'border rounded p-2 bg-white';
+      const title = document.createElement('div');
+      title.className = 'd-flex justify-content-between align-items-start flex-wrap';
+      title.style.gap = '8px';
+      const name = document.createElement('div');
+      const groupName = document.createElement('div');
+      groupName.className = 'fw-semibold';
+      groupName.textContent = String(group.group_label || `Grup ${group.group_num || ''}`);
+      const groupMeta = document.createElement('div');
+      groupMeta.className = 'small text-muted';
+      groupMeta.textContent = `${Number(group.members_count || 0)} participants - ${Number(group.changed_count || 0)} canvi(s)`;
+      name.appendChild(groupName);
+      name.appendChild(groupMeta);
+      title.appendChild(name);
+      card.appendChild(title);
+      const list = document.createElement('div');
+      list.className = 'small mt-2';
+      (Array.isArray(group.sample_rows) ? group.sample_rows : []).forEach((row) => {
+        const item = document.createElement('div');
+        item.className = 'd-flex justify-content-between border-top py-1';
+        item.style.gap = '8px';
+        const label = document.createElement('span');
+        label.textContent = String(row.label || row.id || '');
+        const order = document.createElement('span');
+        order.className = 'text-muted';
+        order.textContent = `${row.old_order || '?'} -> ${row.new_order || '?'}`;
+        item.appendChild(label);
+        item.appendChild(order);
+        list.appendChild(item);
+      });
+      card.appendChild(list);
+      els.preview.appendChild(card);
+    });
+    if (groups.length > 10) {
+      const more = document.createElement('div');
+      more.className = 'small text-muted';
+      more.textContent = `Mostrant 10 de ${groups.length} grups.`;
+      els.preview.appendChild(more);
+    }
+    if (els.applyBtn) els.applyBtn.disabled = !editable() || !data.can_apply;
+  }
+
+  async function previewBulkGroupOrder() {
+    if (!bulkGroupOrderPreviewUrl) return;
+    const payload = buildBulkGroupOrderPayload();
+    if (!payload.sort_key) {
+      alertBox('Selecciona un criteri.');
+      return;
+    }
+    if (payload.scope !== 'all' && !payload.group_ids.length) {
+      alertBox(payload.scope === 'selected' ? 'Selecciona un grup del board.' : 'No hi ha grups visibles al board.');
+      return;
+    }
+    setBulkGroupOrderBusy(true);
+    try {
+      const data = await postJson(bulkGroupOrderPreviewUrl, payload);
+      if (!data?.ok) throw new Error("No s'ha pogut calcular la previsualitzacio.");
+      state.bulkGroupOrderPreview = data.preview || null;
+      state.bulkGroupOrderPayload = payload;
+      renderBulkGroupOrderPreview(state.bulkGroupOrderPreview);
+    } catch (err) {
+      showRequestError("No s'ha pogut calcular la reordenacio.", err);
+    } finally {
+      setBulkGroupOrderBusy(false);
+    }
+  }
+
+  async function applyBulkGroupOrder() {
+    if (!bulkGroupOrderApplyUrl || !state.bulkGroupOrderPayload || !state.bulkGroupOrderPreview?.can_apply) return;
+    const preview = state.bulkGroupOrderPreview;
+    const ok = await confirmBox(`Aplicar la reordenacio a ${Number(preview.groups_total || 0)} grup(s) i ${Number(preview.members_total || 0)} participant(s)?`);
+    if (!ok) return;
+    setBulkGroupOrderBusy(true);
+    try {
+      const data = await postJson(bulkGroupOrderApplyUrl, state.bulkGroupOrderPayload);
+      if (!data?.ok) throw new Error("No s'ha pogut aplicar la reordenacio.");
+      closeBulkGroupOrderModal();
+      invalidateAllGroupDetails();
+      await fetchWorkspace();
+      await (window.InscripcionsApp?.refreshLightMutation?.({ includeActivePanel: false }) || Promise.resolve());
+      alertBox(`Ordre de competicio actualitzat: ${Number(data.changed_groups || data.groups_total || 0)} grup(s) i ${Number(data.changed_members || data.members_total || 0)} inscripcio(ns) reordenades.`);
+    } catch (err) {
+      showRequestError("No s'ha pogut aplicar la reordenacio.", err);
+    } finally {
+      setBulkGroupOrderBusy(false);
+    }
+  }
+
   function previewPayload(preview) {
     const existing = Array.isArray(preview?.existing_groups) ? preview.existing_groups : [];
     const planned = (Array.isArray(preview?.groups) ? preview.groups : (preview?.planned_groups || [])).map((group) => ({
@@ -2407,6 +2615,41 @@ window.initGroupsWorkspace = async function () {
         if (typeof clearGroupPreview === 'function') clearGroupPreview();
       });
     }
+
+    const bulkOrderOpen = document.getElementById('btn-groups-bulk-order');
+    if (bulkOrderOpen) {
+      bulkOrderOpen.addEventListener('click', (event) => {
+        event.preventDefault();
+        openBulkGroupOrderModal();
+      });
+    }
+
+    const bulkEls = getBulkGroupOrderEls();
+    bulkEls.close?.addEventListener('click', closeBulkGroupOrderModal);
+    bulkEls.sortKey?.addEventListener('change', () => {
+      updateBulkGroupOrderCustomAvailability();
+      state.bulkGroupOrderPreview = null;
+      state.bulkGroupOrderPayload = null;
+      if (bulkEls.applyBtn) bulkEls.applyBtn.disabled = true;
+    });
+    bulkEls.sortDir?.addEventListener('change', () => {
+      state.bulkGroupOrderPreview = null;
+      state.bulkGroupOrderPayload = null;
+      if (bulkEls.applyBtn) bulkEls.applyBtn.disabled = true;
+    });
+    bulkEls.scope?.addEventListener('change', () => {
+      state.bulkGroupOrderPreview = null;
+      state.bulkGroupOrderPayload = null;
+      if (bulkEls.applyBtn) bulkEls.applyBtn.disabled = true;
+    });
+    bulkEls.previewBtn?.addEventListener('click', (event) => {
+      event.preventDefault();
+      previewBulkGroupOrder();
+    });
+    bulkEls.applyBtn?.addEventListener('click', (event) => {
+      event.preventDefault();
+      applyBulkGroupOrder();
+    });
 
     const autoContextToggle = document.getElementById('btn-groups-auto-context-toggle');
     if (autoContextToggle) {
